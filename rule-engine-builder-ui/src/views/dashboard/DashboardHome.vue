@@ -88,8 +88,6 @@
       show-icon
     />
 
-    <execution-metrics-panel />
-
     <div class="dashboard-sections">
       <dashboard-section
         title="进件与决策"
@@ -332,7 +330,6 @@ import ChartCard from '@/components/dashboard/DashboardChartCard.vue'
 import MetricCard from '@/components/dashboard/DashboardMetricCard.vue'
 import ResourceCard from '@/components/dashboard/DashboardResourceCard.vue'
 import DashboardSection from '@/components/dashboard/DashboardSection.vue'
-import ExecutionMetricsPanel from '@/components/dashboard/ExecutionMetricsPanel.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import {
   ADMIN_LEVEL_LABELS,
@@ -363,8 +360,7 @@ export default {
     RemoteFilterSelect,
     MetricCard,
     ChartCard,
-    ResourceCard,
-    ExecutionMetricsPanel
+    ResourceCard
   },
   data() {
     const filters = readDashboardFilters(window.sessionStorage)

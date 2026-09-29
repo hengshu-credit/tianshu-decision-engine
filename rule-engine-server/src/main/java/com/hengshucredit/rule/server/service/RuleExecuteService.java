@@ -307,6 +307,17 @@ public class RuleExecuteService {
                                                         VariableResolveOptions resolveOptions, String source,
                                                         ProjectAuthContext authContext,
                                                         boolean collectTrace, boolean recordTrace) {
+        return executePublishedWithOptions(published, params, projectId, clientAppName, resolveOptions, source,
+                authContext, collectTrace, recordTrace, true);
+    }
+
+    /** 执行指定发布内容；回溯场景可关闭持久化，避免把诊断执行写入生产日志和计费。 */
+    public ExecutionOutcome executePublishedWithOptions(RulePublished published, Map<String, Object> params,
+                                                        Long projectId, String clientAppName,
+                                                        VariableResolveOptions resolveOptions, String source,
+                                                        ProjectAuthContext authContext,
+                                                        boolean collectTrace, boolean recordTrace,
+                                                        boolean persistExecution) {
         if (published == null) {
             RuleResult r = new RuleResult();
             r.setSuccess(false);
@@ -376,6 +387,7 @@ public class RuleExecuteService {
                     executeParams, originalInput, false, runtimeModelJson, runtimeSnapshot, resumeTraceId);
         }
         bindInvocationCache(effectiveOptions);
+        runtimeRuleInvoker.setOfflineReplay(effectiveOptions.isOfflineReplay());
         if (idempotencyService != null && idempotencyService.current() != null) {
             var checkpointDecision = idempotencyService.current();
             effectiveOptions.getInvocationCache().setSourceStepListener(step ->
@@ -472,7 +484,9 @@ public class RuleExecuteService {
             definition.setExecutionTraceId(result.getTraceId());
             definition.setExecutionAttemptNo(result.getAttemptNo());
         }
-        persistExecution(isExperimentSource(source) ? null : log, definition, result, authContext);
+        if (persistExecution) {
+            persistExecution(isExperimentSource(source) ? null : log, definition, result, authContext);
+        }
 
         return new ExecutionOutcome(result, executeParams);
     }

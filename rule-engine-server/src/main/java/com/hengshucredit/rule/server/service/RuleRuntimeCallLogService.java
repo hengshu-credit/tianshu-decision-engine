@@ -123,6 +123,22 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
         return payloadsByRootTraceId(rootTraceId, null);
     }
 
+    /** 取回溯所需的同一根执行下全部来源日志；调用方只应使用这些日志装载离线结果。 */
+    public List<RuleRuntimeCallLog> sourceLogsByRootTraceId(String rootTraceId, Long projectId) {
+        if (!hasText(rootTraceId)) return Collections.emptyList();
+        LambdaQueryWrapper<RuleRuntimeCallLog> wrapper = new LambdaQueryWrapper<RuleRuntimeCallLog>()
+                .and(w -> w.eq(RuleRuntimeCallLog::getRootTraceId, rootTraceId)
+                        .or().eq(RuleRuntimeCallLog::getRuleTraceId, rootTraceId)
+                        .or().eq(RuleRuntimeCallLog::getTraceId, rootTraceId))
+                .in(RuleRuntimeCallLog::getActionType,
+                        "API_INVOKE", "API_ASSIGNMENT", "DB_VARIABLE_QUERY",
+                        "LIST_VARIABLE_MATCH", "MODEL_EXECUTE")
+                .orderByAsc(RuleRuntimeCallLog::getCreateTime)
+                .orderByAsc(RuleRuntimeCallLog::getId);
+        if (projectId != null) wrapper.eq(RuleRuntimeCallLog::getProjectId, projectId);
+        return list(wrapper);
+    }
+
     /** 按根 Trace 取外数报文；projectId 非空时同时做项目隔离。 */
     public List<Map<String, Object>> payloadsByRootTraceId(String rootTraceId, Long projectId) {
         if (!hasText(rootTraceId)) return Collections.emptyList();

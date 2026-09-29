@@ -249,16 +249,11 @@
             <span v-else style="color: var(--tianshu-text-tertiary)">-</span>
           </template>
         </el-table-column>
-        <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="70" align="center" fixed="right">
-          <template v-slot="{ row }"
-            ><el-button
-              link
-              size="small"
-              type="primary"
-              @click="handleViewDetail(row)"
-              >详情</el-button
-            ></template
-          >
+        <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="130" align="center" fixed="right">
+          <template v-slot="{ row }">
+            <el-button link size="small" type="primary" @click="handleViewDetail(row)">详情</el-button>
+            <el-button link size="small" type="warning" :loading="replayLoadingId === row.id" @click="handleReplay(row)">回溯</el-button>
+          </template>
         </el-table-column>
       </el-table>
       <el-pagination
@@ -478,6 +473,16 @@
       <div style="padding: 16px" v-if="detail">
         <el-tabs v-model="detailTab">
           <el-tab-pane label="基本信息" name="basic">
+            <el-alert
+              v-if="detail.replayWarnings && detail.replayWarnings.length"
+              title="本次回溯存在数据缺口"
+              type="warning"
+              show-icon
+              :closable="false"
+              style="margin-bottom: 12px"
+            >
+              <div v-for="(warning, index) in detail.replayWarnings" :key="index">{{ warning }}</div>
+            </el-alert>
             <div class="uiue-card trace-id-card">
               <div class="uiue-card-title">共享执行会话</div>
               <code>{{ detail.traceId || '-' }}</code>
@@ -571,7 +576,7 @@ import { listDefinitions as listRules, getContent } from '@/api/definition'
 import { getProject, listProjects } from '@/api/project'
 import { listAllFunctionsByProject } from '@/api/function'
 import { listAllModelsByProject } from '@/api/model'
-import { getRuleSetStats } from '@/api/runtimeLog'
+import { getRuleSetStats, replayExecutionLog } from '@/api/runtimeLog'
 import TraceTree from '@/components/common/TraceTree.vue'
 import AsyncState from '@/components/common/AsyncState.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
@@ -666,6 +671,7 @@ return [start, end];
 detailVis: false,
 detail: null,
 detailLoading: false,
+replayLoadingId: null,
 detailTab: 'basic',
 varMap: {},
 ruleMap: {},
@@ -1127,6 +1133,40 @@ try {
 } finally {
   this.detailLoading = false
 }
+},
+async handleReplay(row) {
+  if (!row || !row.id || this.replayLoadingId) return
+  this.replayLoadingId = row.id
+  try {
+    var response = await replayExecutionLog(row.id)
+    var replay = response && response.data ? response.data : response
+    if (!replay || !replay.replayed) throw new Error('回溯没有返回执行结果')
+    this.detail = Object.assign({}, row, replay, {
+      replayWarnings: Array.isArray(replay.warnings) ? replay.warnings : [],
+      traceInfo: replay.traceInfo || null,
+      inputParams: replay.inputParams,
+      outputResult: replay.outputResult,
+    })
+    this.detailVis = true
+    await this.ensureDetailMetadata(this.detail)
+    await this.loadVarMap()
+    await this.loadFunctionNameMap()
+    await this.loadModelJson()
+    this.detailTab = 'trace'
+    if (this.detail.replayWarnings.length) {
+      var warningText = this.detail.replayWarnings.join('\n')
+      if (typeof this.$alert === 'function') {
+        this.$alert(warningText, '回溯提示', { type: 'warning', confirmButtonText: '知道了' })
+      } else if (this.$message && typeof this.$message.warning === 'function') {
+        this.$message.warning(this.detail.replayWarnings[0])
+      }
+    }
+  } catch (error) {
+    var message = error && error.message ? error.message : '历史规则回溯失败'
+    if (this.$message && typeof this.$message.error === 'function') this.$message.error(message)
+  } finally {
+    this.replayLoadingId = null
+  }
 },
 /** formatParams: formatParams 的别名，内部实现委托给 fj */
 formatParams: function (s) {

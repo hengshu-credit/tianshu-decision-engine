@@ -10,6 +10,8 @@ import java.util.Map;
 @Data
 public class VariableResolveOptions {
     private boolean skipApiSources;
+    /** 仅使用已装载的历史来源结果；缺失来源写入 null，禁止访问线上数据源。 */
+    private boolean offlineReplay;
     private boolean forceRefreshSource;
     /** 仅沿直接引用向上游展开依赖，不根据已满足输入推导无关的下游模型。 */
     private boolean requiredNamesUpstreamOnly;

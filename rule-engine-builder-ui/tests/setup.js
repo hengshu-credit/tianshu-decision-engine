@@ -302,6 +302,7 @@ vi.mock('@/api/runtimeLog', () => ({
   getRuntimeCallPayloadByCallId: vi.fn(),
   getRuntimeCallPayloadsByRootTraceId: vi.fn(),
   getRuleSetStats: vi.fn(),
+  replayExecutionLog: vi.fn(),
   __esModule: true
 }))
 vi.mock('@/api/lineage', () => ({

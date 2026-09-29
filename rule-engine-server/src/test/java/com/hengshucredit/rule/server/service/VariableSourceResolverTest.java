@@ -118,6 +118,27 @@ public class VariableSourceResolverTest {
     }
 
     @Test
+    public void offlineReplayUsesNullForMissingApiWithoutCallingProvider() throws Exception {
+        RuleVariable variable = variable("riskScore", "API",
+                "{\"apiConfigId\":7,\"resultPath\":\"body.score\"}");
+        FakeApiService apiService = new FakeApiService(responseBody("score", 88));
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable), apiService,
+                new FakeDbPools(Collections.emptyList()));
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setOfflineReplay(true);
+        options.setRequiredScriptNames(java.util.Set.of("riskScore"));
+
+        Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap(), options);
+
+        assertTrue("缺少历史 API 结果时必须显式记录回溯缺口",
+                options.getInvocationCache().replayMissingSources().stream()
+                        .anyMatch(item -> "riskScore".equals(item.get("scriptName"))));
+        assertTrue("离线回溯不得调用线上 API", apiService.callCount == 0);
+        assertTrue(resolved.containsKey("riskScore"));
+        assertEquals(null, resolved.get("riskScore"));
+    }
+
+    @Test
     public void apiVariableRecordsActualAssignmentWithStableCallId() throws Exception {
         RuleVariable variable = variable("riskScore", "API",
                 "{\"apiConfigId\":7,\"resultPath\":\"body.score\"}");

@@ -242,6 +242,11 @@ public class RuleRuntimeInvoker {
         if (session != null) session.setTraceEnabled(traceEnabled);
     }
 
+    public void setOfflineReplay(boolean offlineReplay) {
+        RuleExecutionSession session = currentSession.get();
+        if (session != null) session.setOfflineReplay(offlineReplay);
+    }
+
     public void completeRoot(RuleResult result) {
         RuleExecutionSession session = currentSession.get();
         if (session == null || result == null) {
@@ -440,6 +445,7 @@ public class RuleRuntimeInvoker {
 
             VariableResolveOptions options = VariableResolveOptions.defaults();
             options.setInvocationCache(session.getInvocationCache());
+            options.setOfflineReplay(session.isOfflineReplay());
             options.setStatusReferenceKeys(SourceStatusUsage.scan(childModelJson));
             List<RuleDefinitionInputField> childFields = runtimeSnapshot == null
                     ? definitionService.listInputFields(targetDefinitionId)

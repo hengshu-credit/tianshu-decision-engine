@@ -35,3 +35,7 @@ export function getRuntimeExternalCallPayload(callId) {
 export function getRuleSetStats(params) {
   return request({ url: '/rule/log/rule-set-stats', method: 'get', params })
 }
+
+export function replayExecutionLog(id) {
+  return request({ url: `/rule/log/${id}/replay`, method: 'post' })
+}

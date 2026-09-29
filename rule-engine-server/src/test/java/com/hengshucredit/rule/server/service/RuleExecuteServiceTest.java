@@ -664,6 +664,13 @@ public class RuleExecuteServiceTest {
         assertTrue(experimentOutcome.getResult().isSuccess());
         assertEquals("普通执行日志不得重复记录实验组内部规则", 1, logService.saveCount);
         assertNotNull("实验组内部规则仍需生成 trace", experimentOutcome.getResult().getTraceId());
+
+        int beforeBilling = billingService.count;
+        service.executePublishedWithOptions(published, params, 1L, "replay",
+                VariableResolveOptions.defaults(), "REPLAY", null,
+                true, false, false);
+        assertEquals("回溯执行不能写入新的规则日志", 1, logService.saveCount);
+        assertEquals("回溯执行不能产生计费记录", beforeBilling, billingService.count);
     }
 
     @Test
@@ -880,10 +887,12 @@ public class RuleExecuteServiceTest {
 
     private static class RecordingBillingService extends RuleBillingService {
         private ProjectAuthContext authContext;
+        private int count;
 
         @Override
         public void recordEngineExecution(RuleDefinition definition, boolean success, Long executeTimeMs,
                                           String errorMessage, ProjectAuthContext authContext) {
+            count++;
             this.authContext = authContext;
             RuleResult ignored = new RuleResult();
             ignored.setSuccess(success);

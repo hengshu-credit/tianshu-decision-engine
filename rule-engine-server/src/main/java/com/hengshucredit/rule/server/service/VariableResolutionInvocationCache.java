@@ -38,6 +38,8 @@ public class VariableResolutionInvocationCache {
     private final Map<String, String> sourceFingerprints = new ConcurrentHashMap<>();
     /** Durable, non-repeatable source steps completed by this logical execution. */
     private final Map<String, SourceStep> completedSteps = new ConcurrentHashMap<>();
+    /** 离线回溯中没有历史快照而被置为 null 的来源。 */
+    private final Map<String, Map<String, Object>> replayMissingSources = new ConcurrentHashMap<>();
     private volatile SourceStepListener sourceStepListener;
     private static final Object NULL_VALUE = new Object();
 
@@ -150,6 +152,19 @@ public class VariableResolutionInvocationCache {
 
     public SourceStep completedStep(String sourceKey) {
         return sourceKey == null ? null : completedSteps.get(sourceKey);
+    }
+
+    public void recordReplayMissing(String sourceType, String sourceKey, String scriptName) {
+        if (sourceKey == null) return;
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("sourceType", sourceType);
+        item.put("sourceKey", sourceKey);
+        item.put("scriptName", scriptName);
+        replayMissingSources.putIfAbsent(sourceKey, item);
+    }
+
+    public List<Map<String, Object>> replayMissingSources() {
+        return new ArrayList<>(replayMissingSources.values());
     }
 
     public boolean hasReusableStep(String sourceKey, String configDigest,

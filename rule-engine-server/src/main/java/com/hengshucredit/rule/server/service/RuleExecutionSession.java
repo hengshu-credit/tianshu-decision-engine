@@ -25,6 +25,7 @@ public class RuleExecutionSession {
     private final Map<String, Object> originalInput;
     private final boolean testMode;
     private boolean traceEnabled = true;
+    private boolean offlineReplay;
     private final List<String> rootOutputScriptNames;
     private final Deque<String> ruleStack = new ArrayDeque<>();
     private final Map<String, com.hengshucredit.rule.model.entity.RulePublished> resolvedRules = new LinkedHashMap<>();
@@ -90,6 +91,14 @@ public class RuleExecutionSession {
 
     public boolean isTraceEnabled() {
         return traceEnabled;
+    }
+
+    public boolean isOfflineReplay() {
+        return offlineReplay;
+    }
+
+    void setOfflineReplay(boolean offlineReplay) {
+        this.offlineReplay = offlineReplay;
     }
 
     void setTraceEnabled(boolean traceEnabled) {

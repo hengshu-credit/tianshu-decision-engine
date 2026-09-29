@@ -374,6 +374,32 @@ describe('ExecutionLog — 筛选与分页', () => {
     expect(wrapper.vm.projectMap.project_a).toBe('项目A')
     expect(wrapper.vm.ruleMap.age_rule).toBe('年龄规则')
   })
+
+  test('日志回溯加载离线追踪树并提示无法回溯的来源', async () => {
+    runtimeLogApi.replayExecutionLog.mockResolvedValueOnce({
+      data: {
+        replayed: true,
+        traceId: 'REPLAY_TRACE',
+        traceInfo: '[{"traceId":"REPLAY_TRACE","status":"SUCCESS"}]',
+        inputParams: '{"amount":10}',
+        outputResult: '{"decision":"PASS"}',
+        warnings: ['数据库变量 dbScore 缺少历史查询日志，已使用 null。'],
+      },
+    })
+    wrapper.vm.ensureDetailMetadata = vi.fn().mockResolvedValue()
+    wrapper.vm.loadVarMap = vi.fn().mockResolvedValue()
+    wrapper.vm.loadFunctionNameMap = vi.fn().mockResolvedValue()
+    wrapper.vm.loadModelJson = vi.fn().mockResolvedValue()
+
+    await wrapper.vm.handleReplay({ id: 7, ruleCode: 'age_rule', projectCode: 'project_a' })
+
+    expect(runtimeLogApi.replayExecutionLog).toHaveBeenCalledWith(7)
+    expect(wrapper.vm.detailTab).toBe('trace')
+    expect(wrapper.vm.detail.traceInfo).toContain('REPLAY_TRACE')
+    expect(wrapper.vm.detail.replayWarnings).toEqual([
+      '数据库变量 dbScore 缺少历史查询日志，已使用 null。',
+    ])
+  })
 })
 
 describe('ExecutionLog — computed 属性', () => {

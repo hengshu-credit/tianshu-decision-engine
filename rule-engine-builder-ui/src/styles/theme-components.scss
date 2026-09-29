@@ -380,3 +380,227 @@ body,
 [data-theme='dark'] :where(.lf-node-content, .lf-node-text, .lf-html-overlay) {
   color: var(--tianshu-text-primary);
 }
+
+/* 表达式追踪树中包含模型语义色和历史浅色卡片，夜间模式统一映射到主题令牌。 */
+[data-theme='dark'] .trace-wrap {
+  color: var(--tianshu-text-primary);
+}
+
+[data-theme='dark'] .trace-wrap.trace-wrap :where(
+  .rule-trace-type,
+  .trace-count,
+  .var-tag,
+  .trace-step-result,
+  .fc-cond-var,
+  .fc-func-arg,
+  .fc-badge--hit,
+  .fc-badge--done,
+  .dt-legend,
+  .rs-cond-join
+) {
+  background: var(--tianshu-bg-muted) !important;
+  color: var(--tianshu-text-primary) !important;
+  border-color: var(--tianshu-border-subtle) !important;
+}
+
+[data-theme='dark'] .trace-wrap.trace-wrap :where(
+  .rule-trace-module,
+  .trace-step-main,
+  .fc-card,
+  .dt-body,
+  .trace-cross-matrix-wrap,
+  .trace-cross-matrix,
+  .rs-cond-line,
+  .rt-table
+) {
+  background: var(--tianshu-bg-surface) !important;
+  border-color: var(--tianshu-border-subtle) !important;
+  color: var(--tianshu-text-primary) !important;
+}
+
+[data-theme='dark'] .trace-wrap.trace-wrap :where(
+  .rule-trace-module,
+  .trace-step-head,
+  .fc-card-head,
+  .fc-card-body,
+  .fs-body,
+  .rs-trace-summary,
+  .rs-cond-line.is-pass,
+  .rs-cond-line.is-fail
+) {
+  background: var(--tianshu-bg-muted) !important;
+  border-color: var(--tianshu-border-subtle) !important;
+}
+
+[data-theme='dark'] .trace-wrap.trace-wrap :where(
+  .rule-trace-modules,
+  .rule-trace-expression,
+  .rule-trace-children,
+  .experiment-rule-execution,
+  .trace-step-head,
+  .fc-card-head
+) {
+  border-color: var(--tianshu-border-subtle) !important;
+}
+
+[data-theme='dark'] .trace-wrap.trace-wrap :where(
+  .rule-trace-type,
+  .rule-trace-module-step-index,
+  .trace-step-index,
+  .fc-badge--hit,
+  .fc-badge--done,
+  .fc-expr-result,
+  .rs-cond-result.is-pass
+) {
+  background: var(--tianshu-info-bg) !important;
+  color: var(--tianshu-info-text) !important;
+  border-color: var(--tianshu-info-border) !important;
+}
+
+[data-theme='dark'] .trace-wrap.trace-wrap :where(
+  .trace-step.is-true .trace-step-index,
+  .trace-step-result.is-true,
+  .fc-badge--end,
+  .fc-card--end,
+  .fc-expr-result.is-end,
+  .fc-action-bar,
+  .dt-path,
+  .sc-table tr.sc-hit td,
+  .sc-table tr.sc-result td,
+  .rs-cond-line.is-pass,
+  .rs-hit-pill,
+  .rs-status--hit,
+  .rt-table tr.rt-hit
+) {
+  background: var(--tianshu-success-bg) !important;
+  color: var(--tianshu-success-text) !important;
+  border-color: var(--tianshu-success-border) !important;
+}
+
+[data-theme='dark'] .trace-wrap.trace-wrap :where(
+  .trace-step.is-false .trace-step-index,
+  .trace-step-result.is-false,
+  .fc-badge--miss,
+  .fc-action-bar--else,
+  .rs-cond-line.is-fail,
+  .rs-status--miss
+) {
+  background: var(--tianshu-danger-bg) !important;
+  color: var(--tianshu-danger-text) !important;
+  border-color: var(--tianshu-danger-border) !important;
+}
+
+[data-theme='dark'] .trace-wrap.trace-wrap :where(
+  .rule-trace-status.is-success,
+  .rule-trace-module-status.is-success,
+  .var-v.is-true,
+  .result-val.is-true,
+  .fc-cond-check.is-true,
+  .sc-table .is-pos,
+  .sc-status--hit,
+  .rs-status--hit,
+  .rt-badge
+) {
+  color: var(--tianshu-success-text) !important;
+}
+
+[data-theme='dark'] .trace-wrap.trace-wrap :where(
+  .rule-trace-status.is-failed,
+  .rule-trace-module-status.is-failed,
+  .var-v.is-false,
+  .result-val.is-false,
+  .fc-cond-check.is-false,
+  .sc-table .is-neg,
+  .rs-status--miss
+) {
+  color: var(--tianshu-danger-text) !important;
+}
+
+[data-theme='dark'] .trace-wrap.trace-wrap :where(
+  .rule-trace-status.is-running,
+  .rule-trace-module-status.is-running,
+  .sc-status--miss,
+  .rt-badge--skipped
+) {
+  color: var(--tianshu-warning-text) !important;
+}
+
+[data-theme='dark'] .trace-wrap.trace-wrap :where(
+  .fc-cond-val,
+  .fc-func-name,
+  .fc-func-name code,
+  .fc-func-args-label,
+  .fc-func-arg-name,
+  .fc-action-prefix,
+  .dt-legend,
+  .trace-corner-row,
+  .trace-corner-col,
+  .rs-rule-meta,
+  .rs-summary-empty,
+  .rt-footer
+) {
+  color: var(--tianshu-text-secondary) !important;
+}
+
+[data-theme='dark'] .trace-wrap.trace-wrap :where(
+  .fc-cond-var,
+  .fc-func-name code,
+  .fc-func-arg,
+  .fc-action-bar,
+  .trace-step-result,
+  .rs-cond-var code,
+  .rs-action-line code
+) {
+  border-color: var(--tianshu-border-subtle) !important;
+}
+
+[data-theme='dark'] .trace-wrap .fc-func-name code {
+  background: var(--tianshu-bg-muted) !important;
+}
+
+[data-theme='dark'] .trace-wrap.trace-wrap :where(
+  .trace-step.is-skipped .trace-step-index,
+  .sc-table tr.sc-skipped td,
+  .rs-status--skipped,
+  .rt-table tr.rt-skipped
+) {
+  background: var(--tianshu-bg-muted) !important;
+  color: var(--tianshu-text-tertiary) !important;
+  border-color: var(--tianshu-border-subtle) !important;
+}
+
+[data-theme='dark'] .trace-wrap.trace-wrap :where(
+  .trace-cross-matrix--simple .trace-col-header,
+  .trace-cross-matrix--adv .trace-col-header,
+  .trace-row-header,
+  .trace-cross-matrix--adv .trace-row-header,
+  .trace-corner-cell,
+  .rs-trace-summary
+) {
+  background: var(--tianshu-bg-muted) !important;
+  color: var(--tianshu-text-primary) !important;
+  border-color: var(--tianshu-border-subtle) !important;
+}
+
+[data-theme='dark'] .trace-wrap.trace-wrap :where(
+  .trace-cross-cell--hit,
+  .trace-cross-axis--hit,
+  .trace-cross-legend-dot
+) {
+  background: var(--tianshu-success-bg) !important;
+  box-shadow: inset 0 0 0 2px var(--tianshu-success-text) !important;
+  border-color: var(--tianshu-success-border) !important;
+}
+
+[data-theme='dark'] .trace-wrap .trace-corner-divider {
+  background: linear-gradient(
+    to bottom right,
+    transparent calc(50% - 0.5px),
+    var(--tianshu-border-strong),
+    transparent calc(50% + 0.5px)
+  ) !important;
+}
+
+[data-theme='dark'] .trace-wrap .sc-table tr.sc-miss td {
+  background: var(--tianshu-bg-surface) !important;
+}

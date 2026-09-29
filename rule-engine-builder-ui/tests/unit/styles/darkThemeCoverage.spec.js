@@ -129,4 +129,14 @@ describe('全局日夜主题样式契约', () => {
 
     expect(offenders).toEqual([])
   })
+
+  test('表达式追踪树的夜间状态使用主题语义色', () => {
+    const css = compiled('theme-components.scss')
+
+    expect(css).toContain('[data-theme=dark] .trace-wrap')
+    expect(css).toContain('var(--tianshu-bg-surface)')
+    expect(css).toContain('var(--tianshu-success-bg)')
+    expect(css).toContain('var(--tianshu-danger-bg)')
+    expect(css).toContain('var(--tianshu-text-secondary)')
+  })
 })

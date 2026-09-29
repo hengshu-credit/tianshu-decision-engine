@@ -110,6 +110,30 @@ public class ConsolePermissionInterceptorTest {
     }
 
     @Test
+    public void explicitPermissionCoversOperationsPath() throws Exception {
+        RuleEngineConsoleLoginProperties properties =
+                new RuleEngineConsoleLoginProperties();
+        ConsolePermissionInterceptor interceptor =
+                new ConsolePermissionInterceptor(
+                        properties, new FixedPermissionService(false));
+        MockHttpServletRequest request = new MockHttpServletRequest(
+                "GET", "/api/rule/ops/execution-metrics");
+        request.getSession(true).setAttribute(
+                properties.getSessionUserIdAttribute(), 9L);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        boolean allowed = interceptor.preHandle(
+                request, response, handler("ruleView"));
+
+        Assert.assertFalse(allowed);
+        Assert.assertEquals(403, response.getStatus());
+        Assert.assertTrue(response.getContentAsString()
+                .contains("PERMISSION_DENIED"));
+        Assert.assertFalse(response.getContentAsString()
+                .contains("PERMISSION_MAPPING_MISSING"));
+    }
+
+    @Test
     public void dashboardEndpointUsesSectionLevelPermissionCropping()
             throws Exception {
         ConsolePermissionInterceptor interceptor =
@@ -149,6 +173,10 @@ public class ConsolePermissionInterceptorTest {
         }
 
         public void viewPublic() {
+        }
+
+        @RequirePermission("rule:view")
+        public void ruleView() {
         }
     }
 }

@@ -3,7 +3,6 @@ import { mount, shallowMount } from '@test-utils'
 import * as dashboardApi from '@/api/dashboard'
 import * as definitionApi from '@/api/definition'
 import * as projectApi from '@/api/project'
-import * as runtimeLogApi from '@/api/runtimeLog'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import DashboardHome from '@/views/dashboard/DashboardHome.vue'
 import { DASHBOARD_MAP_VIEW_KEY } from '@/utils/dashboardFilters'
@@ -42,13 +41,6 @@ describe('DashboardHome', () => {
     dashboardApi.getDashboardApplications.mockResolvedValue({ data: applications() })
     dashboardApi.getDashboardOperations.mockResolvedValue({ data: {} })
     dashboardApi.getDashboardGovernance.mockResolvedValue({ data: {} })
-    runtimeLogApi.getExecutionMetrics.mockResolvedValue({ data: {
-      persistence: { queueDepth: 2, queueCapacity: 20, fallback: 0, failed: 0, avgWriteMs: 3 },
-      sourceResolution: { queueDepth: 0, active: 1, parallelism: 4, failed: 0 },
-      openExecution: { queueDepth: 0, queueCapacity: 100, rejected: 0, timedOut: 0 },
-      externalCircuitBreakers: { registeredApis: 1, open: 0, halfOpen: 0, closed: 1 },
-      ruleWarmup: { state: 'READY', targetCount: 4, preparedCount: 4, failureCount: 0 }
-    } })
     vi.stubGlobal('fetch', vi.fn().mockImplementation(async url => ({
       ok: true,
       json: () => Promise.resolve(url.includes('dashboard-china') ? chinaMap : { type: 'FeatureCollection', features: [] })
@@ -67,14 +59,14 @@ describe('DashboardHome', () => {
     expect(dashboardApi.getDashboardApplications).toHaveBeenCalledOnce()
     expect(dashboardApi.getDashboardOperations).toHaveBeenCalledOnce()
     expect(dashboardApi.getDashboardGovernance).toHaveBeenCalledOnce()
-    expect(wrapper.findComponent({ name: 'ExecutionMetricsPanel' }).exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'ExecutionMetricsPanel' }).exists()).toBe(false)
     expect(wrapper.vm.summary.applicationCount).toBe(12)
     expect(wrapper.findAllComponents({ name: 'MetricCard' })
       .some(card => card.props('label') === '进件数')).toBe(true)
     wrapper.unmount()
   })
 
-  test('生产构建使用的运行时可以实际渲染指标组件', async () => {
+  test('生产构建使用的运行时可以实际渲染核心指标组件', async () => {
     const runtimeSafeComponents = ['MetricCard', 'ChartCard', 'ResourceCard']
     runtimeSafeComponents.forEach(name => {
       expect(DashboardHome.components[name].template).toBeUndefined()
@@ -88,7 +80,7 @@ describe('DashboardHome', () => {
     })
     await flushPromises()
 
-    expect(runtimeLogApi.getExecutionMetrics).toHaveBeenCalledOnce()
+    expect(wrapper.findComponent({ name: 'ExecutionMetricsPanel' }).exists()).toBe(false)
     expect(wrapper.find('.dashboard-metrics').text()).toContain('进件数')
     expect(wrapper.find('.dashboard-metrics').text()).toContain('12')
     wrapper.unmount()

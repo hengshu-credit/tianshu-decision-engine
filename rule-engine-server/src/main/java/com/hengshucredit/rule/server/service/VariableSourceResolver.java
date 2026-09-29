@@ -607,6 +607,7 @@ public class VariableSourceResolver {
     private VariableResolveOptions copyResolveOptions(VariableResolveOptions source) {
         VariableResolveOptions copy = VariableResolveOptions.defaults();
         copy.setSkipApiSources(source.isSkipApiSources());
+        copy.setOfflineReplay(source.isOfflineReplay());
         copy.setForceRefreshSource(source.isForceRefreshSource());
         copy.setRequiredNamesUpstreamOnly(source.isRequiredNamesUpstreamOnly());
         copy.setVariableReferencePaths(source.getVariableReferencePaths());
@@ -727,6 +728,11 @@ public class VariableSourceResolver {
         SourceStepDigests digests = sourceStepDigests(sourceKey, variable.getSourceConfig(), dependencies,
                 resolvedParams, invocationCache);
         SourceResolutionResult result = invocationCache.resolveVariable(sourceKey, () -> {
+            if (effectiveOptions.isOfflineReplay()) {
+                invocationCache.recordReplayMissing("VARIABLE", sourceKey, scriptName);
+                return new SourceResolutionResult(0, scriptName, true, null,
+                        Collections.emptyMap(), Collections.emptyList());
+            }
             Map<String, Object> values = new LinkedHashMap<>(resolvedParams);
             values.remove(scriptName);
             VariableResolveOptions options = copyResolveOptions(effectiveOptions);
@@ -1193,6 +1199,11 @@ public class VariableSourceResolver {
         // Model responses are source-owned cache entries. Associate the response with
         // the model source so a model config change removes the response itself.
         options.getInvocationCache().associateResponse(sourceKey, sourceKey);
+        if (options.isOfflineReplay() && !hadResult) {
+            options.getInvocationCache().recordReplayMissing("MODEL", sourceKey, modelCode);
+            resolvedParams.put(modelCode, new LinkedHashMap<String, Object>());
+            return;
+        }
         Map<String, Object> modelResult;
         try {
             modelResult = options.getInvocationCache().resolve(sourceKey, () -> {

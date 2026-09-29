@@ -12,6 +12,7 @@ import com.hengshucredit.rule.server.service.RulePublishOutboxService;
 import com.hengshucredit.rule.server.service.RuleExecutionPersistenceOutboxService;
 import com.hengshucredit.rule.server.service.LogRetentionService;
 import com.hengshucredit.rule.server.health.RuleWarmupStatus;
+import com.hengshucredit.rule.server.security.RequirePermission;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -51,6 +52,7 @@ public class ExecutionMetricsController {
     private String configuredInstanceId;
 
     @GetMapping("/execution-metrics")
+    @RequirePermission("rule:view")
     public R<Map<String, Object>> executionMetrics() {
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("instanceId", instanceId());
@@ -76,6 +78,7 @@ public class ExecutionMetricsController {
 
     /** 修复发布规则或函数后，允许运维在不重启服务的情况下重新验证预热。 */
     @org.springframework.web.bind.annotation.PostMapping("/rule-warmup/retry")
+    @RequirePermission("rule:submit")
     public R<Map<String, Object>> retryRuleWarmup() {
         return R.ok(ruleScriptPreparationService.warmupPublishedRules());
     }

@@ -3,6 +3,8 @@ package com.hengshucredit.rule.server.controller.mgmt;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.RuleExecutionLogService;
+import com.hengshucredit.rule.server.service.RuleExecutionReplayService;
+import com.hengshucredit.rule.server.security.RequirePermission;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
@@ -15,6 +17,8 @@ import java.util.Map;
 public class ExecutionLogController {
     @Resource
     private RuleExecutionLogService logService;
+    @Resource
+    private RuleExecutionReplayService replayService;
 
     @GetMapping("/list")
     public R<IPage<RuleExecutionLog>> list(
@@ -43,5 +47,12 @@ public class ExecutionLogController {
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
         return R.ok(logService.ruleSetStats(projectCode, projectName, ruleCode, startTime, endTime));
+    }
+
+    /** 仅基于历史日志离线回溯；不会写入新的执行日志、来源日志或计费记录。 */
+    @PostMapping("/{id}/replay")
+    @RequirePermission("rule:view")
+    public R<Map<String, Object>> replay(@PathVariable Long id) {
+        return R.ok(replayService.replay(id));
     }
 }
