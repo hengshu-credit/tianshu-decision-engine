@@ -814,10 +814,14 @@ public class ExternalApiInvokeServiceTest {
                 body, MediaType.APPLICATION_FORM_URLENCODED);
 
         assertTrue(requestBody instanceof MultiValueMap);
-        Map<?, ?> form = (Map<?, ?>) requestBody;
-        assertEquals("merchant-1", ((List<?>) form.get("member_id")).get(0));
-        assertEquals("json", ((List<?>) form.get("data_type")).get(0));
-        assertEquals(null, ((List<?>) form.get("empty")).get(0));
+        assertEquals("merchant-1", firstFormValue(requestBody, "member_id"));
+        assertEquals("json", firstFormValue(requestBody, "data_type"));
+        assertEquals(null, firstFormValue(requestBody, "empty"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object firstFormValue(Object value, String key) {
+        return ((MultiValueMap<String, ?>) value).getFirst(key);
     }
 
     @Test
