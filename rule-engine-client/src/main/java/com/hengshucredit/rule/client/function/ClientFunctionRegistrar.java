@@ -169,9 +169,24 @@ public class ClientFunctionRegistrar {
             log.info("[ClientFuncReg] 注册/更新远端 {} 函数: {}", key.scope, key.funcCode);
             return true;
         } catch (Exception e) {
-            log.error("[ClientFuncReg] 注册远端函数 {} 失败: {}", funcCode, e.getMessage(), e);
+            if (isMissingBeanFailure(e)) {
+                log.warn("[ClientFuncReg] 远端函数 {} 暂不可注册：Bean {} 尚未就绪，将在下一次推送或同步时重试",
+                        funcCode, trimToNull(function.getString("implBeanName")));
+            } else {
+                log.error("[ClientFuncReg] 注册远端函数 {} 失败: {}", funcCode, e.getMessage(), e);
+            }
             return false;
         }
+    }
+
+    private boolean isMissingBeanFailure(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if ("org.springframework.beans.factory.NoSuchBeanDefinitionException".equals(
+                    current.getClass().getName())) return true;
+            current = current.getCause();
+        }
+        return false;
     }
 
     /**

@@ -297,7 +297,12 @@ public class RedisSubscriber {
                         push.getFuncImplScript(), push.getFuncImplClass(),
                         push.getFuncImplMethod(), push.getFuncImplBeanName(),
                         push.getFuncParamsJson());
-                log.info("Function updated via Redis push: {} ({})", push.getFuncCode(), push.getFuncImplType());
+                if (handled) {
+                    log.info("Function updated via Redis push: {} ({})", push.getFuncCode(), push.getFuncImplType());
+                } else {
+                    log.warn("Function update deferred via Redis push: {} ({}); the operation remains retryable",
+                            push.getFuncCode(), push.getFuncImplType());
+                }
             }
 
         } else if ("FUNC_DELETE".equals(action)) {
