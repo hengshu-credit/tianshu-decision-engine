@@ -1,5 +1,6 @@
 <template>
   <section class="api-execution-editor" aria-label="统一外数链路配置">
+    <el-alert v-if="config.__parseError" :closable="false" type="error" title="统一链路配置无法解析" :description="`请导出并修复 JSON 后重新导入：${config.__parseError}`" />
     <el-alert :closable="false" type="info" title="API 只组装请求和统一响应；变量与对象选择结果路径，并覆盖已开放的入参。" />
     <div><el-button @click="configImportVisible = true">导入链路配置</el-button><span class="field-help">可导入经过检查的请求字段、步骤和响应配置，导入后仍需审批生效。</span></div>
     <el-tabs v-model="tab" :class="{ 'embedded-tabs': embeddedTabs }">

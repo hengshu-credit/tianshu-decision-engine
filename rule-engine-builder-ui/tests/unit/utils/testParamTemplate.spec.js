@@ -1,5 +1,6 @@
 import {
   buildObjectFromPaths,
+  collectOperandInputPaths,
   collectReferencePaths,
   collectReferencePathsFromText,
   sampleValueForVarType
@@ -41,5 +42,15 @@ describe('testParamTemplate', () => {
     expect(sampleValueForVarType('LIST')).toEqual([])
     expect(sampleValueForVarType('OBJECT')).toEqual({})
     expect(sampleValueForVarType('STRING')).toBe('')
+  })
+
+  test('collectOperandInputPaths extracts ID-bound business references and ignores API context', () => {
+    expect(collectOperandInputPaths({
+      kind: 'FUNCTION',
+      args: [
+        { kind: 'REFERENCE', refType: 'VARIABLE', refId: 7, code: 'customer.mobile' },
+        { kind: 'PATH', refType: 'API_CONTEXT', value: 'response.body.score' },
+      ],
+    })).toEqual(['customer.mobile'])
   })
 })

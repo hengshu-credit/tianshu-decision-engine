@@ -73,6 +73,51 @@ export function collectReferencePaths(value, options = {}) {
   return paths
 }
 
+const PROTOCOL_PATH_PREFIXES = [
+  'request.',
+  'response.',
+  'authentication.',
+  'steps.',
+  'callbacks.',
+  'status.',
+  'body.',
+  'input.__apiFields.',
+]
+
+function isProtocolPath(path) {
+  const value = normalizePath(path)
+  return value === 'callId' || value === 'costTimeMs' || PROTOCOL_PATH_PREFIXES.some(prefix => value.startsWith(prefix))
+}
+
+/**
+ * 从统一外数 operand 中提取真实业务入参路径。
+ * operand 的 code/refCode/value 是 ID 绑定后的展示路径；API_CONTEXT 和响应上下文不能作为测试入参。
+ */
+export function collectOperandInputPaths(value) {
+  const paths = []
+  const seen = new Set()
+  const visit = node => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) {
+      node.forEach(visit)
+      return
+    }
+    if (node.kind === 'REFERENCE' || node.kind === 'PATH') {
+      const candidate = node.code || node.refCode || node.value
+      if (node.refType !== 'API_CONTEXT' && candidate && !isProtocolPath(candidate)) {
+        const normalized = normalizePath(candidate)
+        if (normalized && !seen.has(normalized)) {
+          seen.add(normalized)
+          paths.push(normalized)
+        }
+      }
+    }
+    Object.values(node).forEach(visit)
+  }
+  visit(value)
+  return paths
+}
+
 export function setPathValue(target, path, value) {
   if (!target || !path) return
   const parts = normalizePath(path).split('.').map(item => item.trim()).filter(Boolean)

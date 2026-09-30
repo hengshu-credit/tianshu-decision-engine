@@ -20,6 +20,8 @@ import com.hengshucredit.rule.server.common.RuleGovernanceException;
 import com.hengshucredit.rule.server.mapper.RuleDesignerSaveOperationMapper;
 import jakarta.annotation.PreDestroy;
 import jakarta.annotation.Resource;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,11 +41,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 public class RuleDesignerService {
+    private static final String COMPILE_TASK_PREFIX = "rule:designer:compile:";
+    private static final long COMPILE_TASK_TTL_MINUTES = 30L;
     @Resource private RuleLifecycleService lifecycleService;
     @Resource private RuleDraftService draftService;
     @Resource private RulePreflightValidationService preflightService;
     @Resource private RuleDesignerSaveOperationMapper operationMapper;
     @Resource private ConsoleOperatorResolver operatorResolver;
+    @Autowired(required = false) private StringRedisTemplate compileTaskRedis;
 
     private final Map<String, CompileTask> compileTasks = new ConcurrentHashMap<>();
     private final ExecutorService compileExecutor = new ThreadPoolExecutor(
@@ -66,6 +71,7 @@ public class RuleDesignerService {
         CompileTask task = new CompileTask(UUID.randomUUID().toString(), definitionId);
         task.modelDigest = Sha256Digests.text(revision.getModelJson());
         compileTasks.put(task.taskId, task);
+        persistCompileTask(task);
         try {
             compileExecutor.execute(() -> runCompileTask(task, revision));
         } catch (RejectedExecutionException e) {
@@ -78,14 +84,18 @@ public class RuleDesignerService {
     public RuleDesignerCompileTaskResponse getCompileTask(Long definitionId,
                                                            String taskId) {
         CompileTask task = compileTasks.get(taskId);
+        if (task != null && definitionId.equals(task.definitionId)) return task.snapshot();
+        RuleDesignerCompileTaskResponse remote = readRemoteCompileTask(definitionId, taskId);
+        if (remote != null) return remote;
         if (task == null || !definitionId.equals(task.definitionId)) {
             throw error(404, "COMPILE_TASK_NOT_FOUND", "编译任务不存在或已过期");
         }
-        return task.snapshot();
+        throw error(404, "COMPILE_TASK_NOT_FOUND", "编译任务不存在或已过期");
     }
 
     private void runCompileTask(CompileTask task, RuleRevision revision) {
         task.status = "RUNNING";
+        persistCompileTask(task);
         try {
             task.result = compile(revision);
             task.status = "SUCCEEDED";
@@ -94,6 +104,7 @@ public class RuleDesignerService {
             task.status = "FAILED";
         } finally {
             task.completedAt = System.currentTimeMillis();
+            persistCompileTask(task);
         }
     }
 
@@ -199,14 +210,67 @@ public class RuleDesignerService {
                                                           RuleRevision revision) {
         if (request.getCompileTaskId() == null || request.getCompileTaskId().isBlank()) return null;
         CompileTask task = compileTasks.get(request.getCompileTaskId());
-        if (task == null || !definitionId.equals(task.definitionId)
-                || !Sha256Digests.text(revision.getModelJson()).equals(task.modelDigest)) {
+        RemoteCompileTask remote = task == null ? readRemoteCompileTaskData(definitionId, request.getCompileTaskId()) : null;
+        String modelDigest = task == null ? remote == null ? null : remote.modelDigest : task.modelDigest;
+        if ((task == null && remote == null) || (task != null && !definitionId.equals(task.definitionId))
+                || !Sha256Digests.text(revision.getModelJson()).equals(modelDigest)) {
             throw error(409, "COMPILE_TASK_STALE", "编译结果已过期或与当前配置不一致，请重新编译");
         }
-        if (!"SUCCEEDED".equals(task.status) || task.result == null) {
+        String status = task == null ? remote.status : task.status;
+        RuleDesignerCompileResponse result = task == null ? remote.result : task.result;
+        if (!"SUCCEEDED".equals(status) || result == null) {
             throw error(409, "COMPILE_TASK_NOT_READY", "编译尚未完成，请等待编译结束后再保存");
         }
-        return task.result;
+        return result;
+    }
+
+    private void persistCompileTask(CompileTask task) {
+        if (compileTaskRedis == null || task == null) return;
+        try {
+            Map<String, Object> payload = new java.util.LinkedHashMap<>();
+            payload.put("definitionId", task.definitionId);
+            payload.put("status", task.status);
+            payload.put("modelDigest", task.modelDigest);
+            payload.put("result", task.result);
+            payload.put("errorMessage", task.errorMessage);
+            compileTaskRedis.opsForValue().set(compileTaskKey(task.taskId), JSON.toJSONString(payload),
+                    COMPILE_TASK_TTL_MINUTES, TimeUnit.MINUTES);
+        } catch (RuntimeException ignored) {
+            // Redis is an optional cross-node enhancement; the local task remains usable when it is unavailable.
+        }
+    }
+
+    private RuleDesignerCompileTaskResponse readRemoteCompileTask(Long definitionId, String taskId) {
+        RemoteCompileTask task = readRemoteCompileTaskData(definitionId, taskId);
+        if (task == null) return null;
+        RuleDesignerCompileTaskResponse response = new RuleDesignerCompileTaskResponse();
+        response.setTaskId(taskId);
+        response.setStatus(task.status);
+        response.setResult(task.result);
+        response.setErrorMessage(task.errorMessage);
+        return response;
+    }
+
+    private RemoteCompileTask readRemoteCompileTaskData(Long definitionId, String taskId) {
+        if (compileTaskRedis == null || taskId == null || taskId.isBlank()) return null;
+        try {
+            String raw = compileTaskRedis.opsForValue().get(compileTaskKey(taskId));
+            if (raw == null) return null;
+            com.alibaba.fastjson.JSONObject payload = JSON.parseObject(raw);
+            if (!definitionId.equals(payload.getLong("definitionId"))) return null;
+            RemoteCompileTask task = new RemoteCompileTask();
+            task.status = payload.getString("status");
+            task.modelDigest = payload.getString("modelDigest");
+            task.result = payload.getObject("result", RuleDesignerCompileResponse.class);
+            task.errorMessage = payload.getString("errorMessage");
+            return task;
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private String compileTaskKey(String taskId) {
+        return COMPILE_TASK_PREFIX + taskId;
     }
 
     private CompileResult toCompileResult(RuleDesignerCompileResponse compiled) {
@@ -278,6 +342,13 @@ public class RuleDesignerService {
             response.setErrorMessage(errorMessage);
             return response;
         }
+    }
+
+    private static final class RemoteCompileTask {
+        private String status;
+        private String modelDigest;
+        private RuleDesignerCompileResponse result;
+        private String errorMessage;
     }
 
     private static final class CompileThreadFactory implements ThreadFactory {

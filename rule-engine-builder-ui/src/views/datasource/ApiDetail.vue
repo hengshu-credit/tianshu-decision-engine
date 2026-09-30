@@ -2206,6 +2206,7 @@ import {
   createEmptyLeaf,
 } from '@/utils/decisionConditionTree'
 import {
+  collectOperandInputPaths,
   collectReferencePaths,
   sampleValueForVarType,
   setPathValue,
@@ -4161,6 +4162,22 @@ export default {
           allowBarePath: false,
         }).forEach((path) => {
           addPath(path)
+        })
+      }
+
+      const addUnifiedOperandPaths = (value) => {
+        collectOperandInputPaths(value).forEach(addPath)
+      }
+      const unified = this.parseConfigForTemplate(row && row.executionConfig)
+      if (unified && typeof unified === 'object') {
+        const fields = [
+          ...(unified.requestFields || []),
+          ...(unified.requestBranches || []).flatMap(branch => branch.requestFields || []),
+          ...(unified.steps || []).flatMap(step => step.requestFields || []),
+        ]
+        fields.forEach(field => {
+          addUnifiedOperandPaths(field && field.value)
+          addUnifiedOperandPaths(field && field.defaultValue)
         })
       }
 

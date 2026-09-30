@@ -101,7 +101,7 @@ test('真实模型可确认参数来源并通过表单执行在线测试', async
     await page.locator('button[type="submit"]').click()
   }
 
-  const codeFilter = page.getByRole('combobox', { name: '模型编码' })
+  const codeFilter = page.getByRole('textbox', { name: '模型编码', exact: true }).first()
   await codeFilter.fill('score_f1')
   await codeFilter.press('Enter')
   await page.getByRole('button', { name: '查询', exact: true }).click()

@@ -52,6 +52,20 @@ describe('统一外数配置', () => {
     const spec = parseExecution(JSON.stringify({ version: 2, steps: [{ id: 'provider', type: 'HTTP' }] }))
     expect(spec.steps[0].exceptionConditionTree).toEqual({ type: 'group', operator: 'AND', children: [] })
   })
+  it('损坏配置不会让 API 编辑器直接崩溃，并保留解析错误提示', () => {
+    const spec = parseExecution('{broken')
+    expect(spec.__parseError).toBeTruthy()
+    expect(spec.requestFields).toEqual([])
+  })
+  it('在保存前阻止统一链路的前向步骤引用和重复目标路径', () => {
+    const spec = emptyExecution()
+    spec.steps.push({ id: 'first', type: 'HTTP', endpointUrl: '/first', requestFields: [{ id: 'a', location: 'JSON', path: 'score', value: { kind: 'LITERAL', valueType: 'NUMBER', value: '1' } }] })
+    spec.steps.push({ id: 'second', type: 'HTTP', endpointUrl: '/second', requestFields: [{ id: 'b', location: 'JSON', path: 'score', value: { kind: 'PATH', value: 'steps.third.body.score' } }] })
+    expect(validateExecution(spec, 'ASYNC')).toContain('尚未完成')
+    spec.steps[1].requestFields[0].value = { kind: 'LITERAL', valueType: 'NUMBER', value: '2' }
+    spec.steps[1].requestFields.push({ id: 'c', location: 'JSON', path: 'score', value: { kind: 'LITERAL', valueType: 'NUMBER', value: '3' } })
+    expect(validateExecution(spec, 'ASYNC')).toContain('目标路径重复')
+  })
   it('非安全页面缺少 randomUUID 时仍可生成链路 ID', () => {
     vi.stubGlobal('crypto', { getRandomValues: bytes => bytes.fill(0) })
     try {

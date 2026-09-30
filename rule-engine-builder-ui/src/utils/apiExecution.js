@@ -28,7 +28,18 @@ export const newApiId = () => {
 }
 export const emptyExecution = () => ({ version: 2, nullPolicy: 'OMIT', requestFields: [], requestBranches: [], responseBranches: [], exceptionBranches: [], billingBranches: [], retryBranches: [], steps: [], samples: [] })
 export function parseExecution(text) {
-  const config = { ...emptyExecution(), ...(text ? JSON.parse(text) : {}) }
+  let parsed = {}
+  let parseError = ''
+  if (text) {
+    try {
+      parsed = JSON.parse(text)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) parsed = {}
+    } catch (error) {
+      parseError = error.message || '统一链路配置不是合法 JSON'
+    }
+  }
+  const config = { ...emptyExecution(), ...parsed }
+  if (parseError) Object.defineProperty(config, '__parseError', { value: parseError, enumerable: false })
   if (!config.nullPolicy || config.nullPolicy === 'DEFAULT') config.nullPolicy = 'OMIT'
   const normalizeBranch = branch => ({
     condition: newCondition(),
@@ -104,21 +115,55 @@ export function apiFieldOptions(variables, objects) {
 }
 
 export function validateExecution(spec, requestMode) {
+  if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return '统一链路配置必须是 JSON 对象'
+  if (spec.version !== 2) return '统一链路配置版本必须为 2'
   if (requestMode === 'ASYNC' && !(spec.steps || []).length) return '异步接口请至少添加一个链路步骤'
-  const seen = new Set()
-  for (const field of spec.requestFields || []) {
-    if (!field.path?.trim()) return '请填写请求字段路径'
-    if (!field.id || seen.has(field.id)) return '请求字段 ID 重复或缺失'
-    seen.add(field.id)
-    if (!field.value && !field.defaultValue && field.required) return `请配置必填字段 ${field.path} 的取值`
+  const validateFields = (fields, label = '请求字段') => {
+    const seen = new Set()
+    const targets = new Set()
+    for (const field of fields || []) {
+      if (!field.path?.trim()) return `${label}路径不能为空`
+      if (!field.id || seen.has(field.id)) return `${label} ID 重复或缺失`
+      if (!field.location || !['HEADER', 'QUERY', 'JSON', 'FORM', 'FORM_DATA'].includes(field.location)) return `${label}位置无效`
+      const target = `${field.location}:${field.path}`
+      if (targets.has(target)) return `${label}目标路径重复：${field.path}`
+      if (field.location === 'HEADER' && field.overridable) return 'Header 字段不能由变量或对象覆盖'
+      if (field.required && !field.value && !field.defaultValue) return `请配置必填字段 ${field.path} 的取值`
+      seen.add(field.id)
+      targets.add(target)
+    }
+    return ''
+  }
+  let error = validateFields(spec.requestFields)
+  if (error) return error
+  for (const key of ['requestBranches', 'responseBranches', 'exceptionBranches', 'billingBranches', 'retryBranches']) {
+    const branches = spec[key] || []
+    const branchIds = new Set()
+    for (const branch of branches) {
+      if (!branch.id || branchIds.has(branch.id)) return `${key} 分支 ID 重复或缺失`
+      branchIds.add(branch.id)
+      error = validateFields(branch.requestFields, `${key} 分支请求字段`)
+      if (error) return error
+    }
   }
   if ((spec.steps || []).length && requestMode !== 'ASYNC') return '多步链路需要选择异步模式'
   const ids = new Set()
-  for (const step of spec.steps || []) {
+  for (const [index, step] of (spec.steps || []).entries()) {
     if (!step.id || ids.has(step.id)) return '步骤 ID 重复或缺失'
+    const prior = new Set(ids)
     ids.add(step.id)
     if (step.type === 'HTTP' && !step.apiConfigId && !step.endpointUrl) return '请填写步骤请求地址或关联 API'
-    if (step.type === 'CALLBACK' && !step.callback?.url) return '请填写回调地址模板'
+    if (!['HTTP', 'CALLBACK'].includes(step.type)) return `第 ${index + 1} 个步骤类型无效`
+    if (step.type === 'CALLBACK' && !/^https?:\/\/.+\/api\/external-callback\/\$\{invocationId\}$/.test(step.callback?.url || '')) return '回调步骤需要填写公网回调地址模板'
+    if (step.type === 'HTTP' && step.poll && !step.poll.until?.children?.length) return `第 ${index + 1} 个轮询步骤必须配置完成条件`
+    error = validateFields(step.requestFields, `第 ${index + 1} 个步骤请求字段`)
+    if (error) return error
+    const text = JSON.stringify(step)
+    const matcher = /(?:\$\.|\$\{)?steps\.([A-Za-z0-9_-]+)\./g
+    let match
+    while ((match = matcher.exec(text)) !== null) {
+      if (!prior.has(match[1])) return `步骤 ${step.id} 引用了尚未完成的步骤 ${match[1]}`
+    }
   }
   return ''
 }

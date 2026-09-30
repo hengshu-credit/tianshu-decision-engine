@@ -601,6 +601,24 @@ describe('ApiDetail helpers', () => {
     })
   })
 
+  test('buildApiInvokeParamTemplate includes ID-bound unified API request operands', () => {
+    const ctx = createContext({ form: { ...ApiDetail.methods.emptyForm() } })
+    const row = {
+      executionConfig: JSON.stringify({
+        version: 2,
+        requestFields: [
+          { id: 'mobile', location: 'JSON', path: 'mobile', value: { kind: 'REFERENCE', refType: 'VARIABLE', refId: 7, code: 'customer.mobile' } },
+          { id: 'score', location: 'JSON', path: 'score', defaultValue: { kind: 'REFERENCE', refType: 'VARIABLE', refId: 8, code: 'risk.score' } }
+        ]
+      })
+    }
+
+    expect(JSON.parse(ctx.buildApiInvokeParamTemplate(row))).toEqual({
+      customer: { mobile: '' },
+      risk: { score: '' }
+    })
+  })
+
   test('loadDataObjectOptions accepts variable tree wrapped in response data tree', async () => {
     const ctx = createContext()
     const requestNode = {

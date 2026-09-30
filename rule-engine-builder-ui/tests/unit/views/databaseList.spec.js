@@ -240,6 +240,13 @@ describe('DatabaseList — JDBC URL 生成', () => {
     expect(wrapper.vm.queryError).toContain('数据库连接暂时不可用')
   })
 
+  test('数据库权限失败提示可执行的修复路径', () => {
+    expect(wrapper.vm.requestErrorMessage(
+      new Error("Failed to initialize pool: Access denied for user 'root'@'localhost'"),
+      'fallback'
+    )).toContain('核对只读账号、密码和数据库权限')
+  })
+
   test('数值参数未填写时不会被误当成 0 发送', async () => {
     wrapper.vm.openQuery({ id: 31, datasourceName: '风控库' })
     wrapper.vm.queryForm.sql = 'SELECT ? AS score'

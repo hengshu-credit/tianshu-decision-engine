@@ -11,6 +11,7 @@
     :highlight-first-item="false"
     :teleported="true"
     :placeholder="placeholder"
+    :aria-label="$attrs['aria-label']"
     clearable
     fit-input-width
     @update:model-value="updateValue"
@@ -34,6 +35,7 @@
     remote
     :teleported="true"
     :placeholder="placeholder"
+    :aria-label="$attrs['aria-label']"
     :loading="loading"
     :remote-method="handleRemote"
     @update:model-value="updateValue"

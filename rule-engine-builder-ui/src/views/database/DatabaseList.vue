@@ -1189,7 +1189,16 @@ export default {
         error.response.data &&
         error.response.data.message
       const message = responseMessage || (error && error.message)
-      return message && String(message).trim() ? String(message) : fallback
+      const text = message && String(message).trim()
+      if (!text) return fallback
+      const normalized = text.toLowerCase()
+      if (normalized.includes('access denied for user') || normalized.includes('failed to initialize pool')) {
+        return `${text}；请编辑该数据源核对只读账号、密码和数据库权限后，先点击“测试连接”。`
+      }
+      if (normalized.includes('communications link failure') || normalized.includes('connection refused')) {
+        return `${text}；请核对数据库主机、端口、网络白名单和 SSH 隧道配置。`
+      }
+      return text
     },
     onScopeChange(scope) {
       if (scope === 'GLOBAL') this.form.projectId = 0

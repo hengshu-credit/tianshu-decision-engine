@@ -78,6 +78,7 @@
                 option-label-key="modelCode"
                 option-value-key="modelCode"
                 allow-free-input
+                aria-label="模型编码"
                 placeholder="输入筛选"
                 style="width: 140px"
               />
@@ -89,6 +90,7 @@
                 option-label-key="modelName"
                 option-value-key="modelName"
                 allow-free-input
+                aria-label="模型名称"
                 placeholder="输入筛选"
                 style="width: 140px"
               />
