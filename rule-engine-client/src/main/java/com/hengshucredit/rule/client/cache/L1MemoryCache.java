@@ -120,12 +120,24 @@ public class L1MemoryCache {
                 CacheEntry previous = cache.get(code);
                 if (previous != null) entry.lastAccess = previous.lastAccess;
             });
+            Comparator<Map.Entry<String, CacheEntry>> hottest = Comparator.comparingLong(
+                    (Map.Entry<String, CacheEntry> entry) -> entry.getValue().lastAccess).reversed();
+            List<Map.Entry<String, CacheEntry>> latest = incoming.entrySet().stream()
+                    .filter(entry -> !entry.getValue().rule.isFixedVersion())
+                    .sorted(hottest)
+                    .toList();
+            List<Map.Entry<String, CacheEntry>> fixed = incoming.entrySet().stream()
+                    .filter(entry -> entry.getValue().rule.isFixedVersion())
+                    .sorted(hottest)
+                    .toList();
+            // 最新版是按 ruleCode 执行的默认路径，固定版本只占用剩余容量，不能反过来挤掉最新版。
+            List<Map.Entry<String, CacheEntry>> retained = new java.util.ArrayList<>(
+                    latest.subList(0, Math.min(maxSize, latest.size())));
+            if (retained.size() < maxSize) {
+                retained.addAll(fixed.subList(0, Math.min(maxSize - retained.size(), fixed.size())));
+            }
             ConcurrentHashMap<String, CacheEntry> snapshot = new ConcurrentHashMap<>(maxSize);
-            incoming.entrySet().stream()
-                    .sorted(Comparator.comparingLong(
-                            (Map.Entry<String, CacheEntry> entry) -> entry.getValue().lastAccess).reversed())
-                    .limit(maxSize)
-                    .forEach(entry -> snapshot.put(entry.getKey(), entry.getValue()));
+            retained.forEach(entry -> snapshot.put(entry.getKey(), entry.getValue()));
             cache = snapshot;
             latestById.clear();
             snapshot.forEach((key, value) -> { if (!value.rule.isFixedVersion() && value.rule.getDefinitionId() != null) latestById.put(value.rule.getDefinitionId(), key); });

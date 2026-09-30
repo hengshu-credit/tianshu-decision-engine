@@ -76,6 +76,27 @@ public class L1MemoryCacheTest {
     }
 
     @Test
+    public void fullSyncPrioritizesLatestRulesOverFixedVersionEntries() {
+        L1MemoryCache cache = new L1MemoryCache(2);
+        CachedRule fixedOld = rule("same", 1);
+        fixedOld.setDefinitionId(7L);
+        fixedOld.setVersionBindingId(701L);
+        fixedOld.setFixedVersion(true);
+        CachedRule fixedNew = rule("same", 2);
+        fixedNew.setDefinitionId(7L);
+        fixedNew.setVersionBindingId(702L);
+        fixedNew.setFixedVersion(true);
+        CachedRule latest = rule("same", 3);
+        latest.setDefinitionId(7L);
+
+        cache.replaceSnapshot(java.util.List.of(fixedOld, fixedNew, latest));
+
+        assertEquals(3, cache.getById(7L, null).getVersion());
+        assertEquals(2, cache.size());
+        assertTrue(cache.getById(7L, 701L) != null || cache.getById(7L, 702L) != null);
+    }
+
+    @Test
     public void repeatedColdInsertionsDoNotEvictContinuouslyUsedRule() {
         L1MemoryCache cache = new L1MemoryCache(8);
         cache.put(rule("a"));
