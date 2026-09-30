@@ -18,16 +18,31 @@
           </div>
           <el-tag size="small" type="info">按血缘带出上游</el-tag>
         </div>
-        <p class="card-help">选择资源作为根节点，系统会递归带出变量、数据对象、函数、模型、外数、数据库、名单配置和规则依赖。</p>
+        <p class="card-help">按名称或编码搜索要迁移的资源，可添加多个。系统会按血缘一并导出所依赖的配置。</p>
         <div v-for="(root, index) in roots" :key="root.key" class="root-row">
-          <el-select v-model="root.resourceType" size="small" class="root-type">
+          <el-select v-model="root.resourceType" size="small" class="root-type" :aria-label="`第 ${index + 1} 项资源类型`" :disabled="exporting" @change="onRootTypeChange(root)">
             <el-option v-for="type in resourceTypes" :key="type.value" :label="type.label" :value="type.value" />
           </el-select>
-          <el-input v-model="root.resourceId" size="small" placeholder="资源 ID" inputmode="numeric" />
-          <el-button v-if="roots.length > 1" link type="danger" @click="removeRoot(index)">移除</el-button>
+          <div class="root-resource">
+            <remote-filter-select
+              :key="`${root.key}:${root.resourceType}`"
+              v-model:value="root.resourceId"
+              :fetch-options="root.fetchOptions"
+              option-label-key="label"
+              option-value-key="id"
+              :aria-label="`第 ${index + 1} 项导出资源`"
+              placeholder="搜索资源名称或编码"
+              size="small"
+              :disabled="exporting"
+              @change="onRootSelectionChange(root)"
+            />
+            <p v-if="root.loadError" class="root-error" role="alert">{{ root.loadError }}</p>
+          </div>
+          <el-button v-if="roots.length > 1" link type="danger" :disabled="exporting" :aria-label="`移除第 ${index + 1} 项资源`" @click="removeRoot(index)">移除</el-button>
         </div>
+        <el-alert v-if="exportError" :title="exportError" type="error" :closable="false" />
         <div class="card-actions">
-          <el-button size="small" @click="addRoot">添加根资源</el-button>
+          <el-button size="small" :disabled="exporting" @click="addRoot">添加根资源</el-button>
           <el-button type="primary" :loading="exporting" @click="exportPackage">生成并下载配置包</el-button>
         </div>
       </article>
@@ -126,7 +141,7 @@
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { exportResourceTransfer, importResourceTransfer, previewResourceTransfer } from '@/api/transfer'
+import { exportResourceTransfer, importResourceTransfer, previewResourceTransfer, listTransferResources } from '@/api/transfer'
 import { listProjects } from '@/api/project'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 
@@ -144,14 +159,20 @@ const RESOURCE_TYPES = [
   { value: 'EXPERIMENT', label: '分流实验' }
 ]
 
+const LINEAGE_TYPES = { DATABASE: 'DB', EXTERNAL_DATASOURCE: 'DATASOURCE', EXTERNAL_API: 'API', LIST_LIBRARY: 'LIST' }
+
+const newRoot = (key, fetch) => ({ key, resourceType: 'RULE', resourceId: '', loadError: '', requestId: 0, fetchOptions: params => fetch(key, params) })
+
 export default {
   name: 'OfflineTransfer',
   components: { RemoteFilterSelect },
   data() {
     return {
       resourceTypes: RESOURCE_TYPES,
-      roots: [{ resourceType: 'RULE', resourceId: '' }],
+      roots: [newRoot(1, this.fetchRootOptionsByKey)],
+      nextRootKey: 2,
       exporting: false,
+      exportError: '',
       previewing: false,
       applying: false,
       importFile: null,
@@ -182,8 +203,49 @@ export default {
   },
   beforeUnmount() { this.invalidatePreview() },
   methods: {
-    addRoot() { this.roots.push({ resourceType: 'RULE', resourceId: '' }) },
+    addRoot() { this.roots.push(newRoot(this.nextRootKey++, this.fetchRootOptionsByKey)) },
     removeRoot(index) { this.roots.splice(index, 1) },
+    onRootTypeChange(root) {
+      root.resourceId = ''
+      root.loadError = ''
+      root.requestId += 1
+      this.exportError = ''
+    },
+    onRootSelectionChange(root) {
+      this.exportError = ''
+      if (!root.resourceId) return
+      if (this.roots.some(other => other !== root && other.resourceType === root.resourceType
+        && String(other.resourceId) === String(root.resourceId))) {
+        root.resourceId = ''
+        ElMessage.warning('该资源已添加，请选择其他资源')
+      }
+    },
+    fetchRootOptionsByKey(key, params) {
+      const root = this.roots.find(item => item.key === key)
+      return root ? this.fetchRootOptions(root, params) : Promise.resolve({ records: [], total: 0 })
+    },
+    async fetchRootOptions(root, { query, pageNum, pageSize }) {
+      const resourceType = root.resourceType
+      const requestId = ++root.requestId
+      root.loadError = ''
+      try {
+        const response = await listTransferResources({
+          nodeType: LINEAGE_TYPES[resourceType] || resourceType, keyword: query, pageNum, pageSize
+        })
+        const data = response.data || {}
+        const records = (data.records || []).map(item => {
+          const scopeLabel = item.scope === 'GLOBAL' ? '全局'
+            : item.projectName ? `${item.projectName}${item.projectCode ? ` / ${item.projectCode}` : ''}` : item.projectId ? `项目 ${item.projectId}` : '未绑定项目'
+          return { id: item.id, label: resourceType === 'PROJECT' ? item.displayName : `${item.displayName} · ${scopeLabel}` }
+        })
+        return { ...data, records }
+      } catch (error) {
+        if (root.resourceType === resourceType && root.requestId === requestId) {
+          root.loadError = '候选资源加载失败，请重新展开选择器或搜索重试'
+        }
+        throw error
+      }
+    },
     invalidatePreview() {
       this.previewRequestId += 1
       this.preview = null
@@ -208,9 +270,15 @@ export default {
       this.options.projectName = ''
     },
     async exportPackage() {
+      if (this.exporting) return
+      this.exportError = ''
       const roots = this.roots.map(item => ({ resourceType: item.resourceType, resourceId: Number(item.resourceId) }))
-      if (roots.some(item => !Number.isInteger(item.resourceId) || item.resourceId <= 0)) {
-        ElMessage.warning('请填写有效的根资源 ID')
+      if (!roots.length || roots.some(item => !Number.isSafeInteger(item.resourceId) || item.resourceId <= 0)) {
+        ElMessage.warning('请为每一行选择要导出的资源')
+        return
+      }
+      if (new Set(roots.map(item => `${item.resourceType}:${item.resourceId}`)).size !== roots.length) {
+        ElMessage.warning('导出资源重复，请移除重复项')
         return
       }
       this.exporting = true
@@ -222,6 +290,8 @@ export default {
         anchor.download = 'tianshu-resource-transfer.zip'
         anchor.click()
         URL.revokeObjectURL(url)
+      } catch (error) {
+        this.exportError = error.message || '配置包生成失败，请重试'
       } finally { this.exporting = false }
     },
     async previewPackage() {
@@ -316,6 +386,8 @@ export default {
 .card-heading h2 { margin: 5px 0 0; font-size: 20px; }
 .card-help { color: var(--el-text-color-secondary); line-height: 1.65; min-height: 52px; }
 .root-row { display: grid; grid-template-columns: 160px 1fr auto; gap: 8px; margin: 10px 0; }
+.root-resource { min-width: 0; }
+.root-error { margin: 6px 0 0; color: var(--el-color-danger); font-size: 12px; line-height: 1.5; }
 .card-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .upload-copy { display: flex; flex-direction: column; gap: 8px; color: var(--el-text-color-secondary); }
 .upload-copy strong { color: var(--el-text-color-primary); }
@@ -327,4 +399,5 @@ export default {
 .preview-warning ul { margin: 0; padding-left: 18px; }
 .result-json { max-height: 360px; overflow: auto; background: var(--el-fill-color-light); padding: 12px; border-radius: 8px; font-size: 12px; }
 @media (max-width: 900px) { .transfer-grid { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .root-row { grid-template-columns: 1fr auto; } .root-type { grid-column: 1 / -1; } }
 </style>

@@ -296,6 +296,19 @@ export default {
       this.designerDraftTrackingReady = true
       this.designerRecoveryCandidate = null
     },
+    syncDesignerReferenceMetadata(sync) {
+      this.captureDesignerDraftState()
+      const wasClean = this.designerDraftTrackingReady && !this.designerRestoringRecovery &&
+        !this.designerHasUnsavedChanges && this.designerActionState !== 'SAVE_CONFLICT'
+      const before = this.designerCurrentFingerprint
+      sync()
+      if (wasClean && typeof this.serializeDesignerDraft === 'function') {
+        const serialized = this.serializeDesignerDraft()
+        if (createDraftFingerprint(serialized) !== before) {
+          this.initializeDesignerDraftTracking(serialized)
+        }
+      }
+    },
     queueDesignerDraftCapture() {
       if (
         this.designerCaptureQueued ||

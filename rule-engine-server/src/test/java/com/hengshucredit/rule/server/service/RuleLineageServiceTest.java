@@ -116,6 +116,11 @@ public class RuleLineageServiceTest {
                 RuleModelMapper.class.getClassLoader(),
                 new Class<?>[]{RuleModelMapper.class},
                 (proxy, method, args) -> {
+                    if ("selectMapsPage".equals(method.getName())) {
+                        var wrapper = (com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<?>) args[1];
+                        selections.add(wrapper.getSqlSelect());
+                        return args[0];
+                    }
                     if ("selectList".equals(method.getName())) {
                         @SuppressWarnings("unchecked")
                         LambdaQueryWrapper<RuleModel> wrapper = (LambdaQueryWrapper<RuleModel>) args[0];
@@ -130,19 +135,21 @@ public class RuleLineageServiceTest {
         service.graph("VARIABLE", 1L, "ALL", 2);
 
         assertEquals(2, selections.size());
-        for (String selection : selections) {
+        for (int index = 0; index < selections.size(); index++) {
+            String selection = selections.get(index);
             assertNotNull("前端可见的模型查询必须显式声明返回字段", selection);
             String normalized = selection.toLowerCase();
             assertTrue("模型编码必须保留，实际投影：" + normalized,
                     normalized.contains("model_code") || normalized.contains("modelcode"));
+            assertFalse("模型文件内容必须排除，实际投影：" + normalized,
+                    normalized.contains("model_content") || normalized.contains("modelcontent"));
+            if (index == 0) continue; // 候选只需 ID、名称、编码和归属；图查询保留其余元数据。
             assertTrue("模型配置必须保留，实际投影：" + normalized,
                     normalized.contains("model_config") || normalized.contains("modelconfig"));
             assertTrue("模型文件名必须保留，实际投影：" + normalized,
                     normalized.contains("model_file_name") || normalized.contains("modelfilename"));
             assertTrue("模型文件大小必须保留，实际投影：" + normalized,
                     normalized.contains("model_file_size") || normalized.contains("modelfilesize"));
-            assertFalse("模型文件内容必须排除，实际投影：" + normalized,
-                    normalized.contains("model_content") || normalized.contains("modelcontent"));
         }
     }
 

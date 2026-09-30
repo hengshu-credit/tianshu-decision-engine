@@ -17,6 +17,7 @@ import java.util.Map;
 public class GovernanceImpactService {
 
     private final RuleLineageService lineageService;
+    @jakarta.annotation.Resource private DataObjectUpdateReferenceGuard dataObjectUpdateGuard;
 
     public GovernanceImpactService(RuleLineageService lineageService) {
         this.lineageService = lineageService;
@@ -27,6 +28,10 @@ public class GovernanceImpactService {
             Long resourceId,
             String action,
             ResourceSnapshot snapshot) {
+        if ("UPDATE".equals(normalize(action)) && GovernanceResourceTypes.DATA_OBJECT.equals(normalize(resourceType))
+                && dataObjectUpdateGuard != null) {
+            return dataObjectUpdateGuard.validate(resourceId, CanonicalJson.readMap(snapshot.snapshotJson()));
+        }
         if (!destructive(action) || resourceId == null
                 || resourceId <= 0) {
             return List.of();

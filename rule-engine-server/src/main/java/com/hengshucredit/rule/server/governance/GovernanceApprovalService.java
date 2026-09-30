@@ -282,6 +282,15 @@ public class GovernanceApprovalService {
     public GovernanceApprovalRequest approve(Long requestId,
                                              GovernanceReviewRequest review,
                                              String actor) {
+        return approve(requestId, review, actor, applied -> { });
+    }
+
+    /** 供同一事务中的迁移流程接收落库时的准确 ID 映射，不通过编码反查。 */
+    @Transactional
+    public GovernanceApprovalRequest approve(Long requestId,
+                                             GovernanceReviewRequest review,
+                                             String actor,
+                                             java.util.function.Consumer<AppliedResource> appliedConsumer) {
         GovernanceApprovalRequest request = requireRequest(requestId);
         requireTransition(request, GovernanceRequestStatus.APPROVED);
         if (!canReview(request, actor)) {
@@ -358,6 +367,9 @@ public class GovernanceApprovalService {
                     "适配器返回的资源 ID 与审批目标不一致");
         }
 
+        // 审批申请保留提交内容；生效版本必须使用目标环境实际落库的字段及父子 ID。
+        ResourceSnapshot effectiveSnapshot = GovernanceResourceTypes.DATA_OBJECT.equals(request.getResourceType())
+                ? requireAdapter(request.getResourceType()).loadEffective(appliedResourceId) : snapshot;
         GovernedResourceVersion version = new GovernedResourceVersion();
         version.setGovernedResourceId(resource.getId());
         version.setResourceType(request.getResourceType());
@@ -365,11 +377,12 @@ public class GovernanceApprovalService {
         version.setVersionNo(nextVersionNo);
         version.setSourceVersionId(request.getSourceVersionId());
         version.setApprovalRequestId(request.getId());
-        version.setSnapshotJson(snapshot.snapshotJson());
-        version.setSnapshotDigest(request.getSnapshotDigest());
+        version.setSnapshotJson(effectiveSnapshot.snapshotJson());
+        version.setSnapshotDigest(effectiveSnapshot == snapshot ? request.getSnapshotDigest()
+                : Sha256Digests.text(effectiveSnapshot.snapshotJson()));
         version.setSecretPayloadCiphertext(
-                snapshot.secretPayloadCiphertext());
-        version.setSecretDigest(snapshot.secretDigest());
+                effectiveSnapshot.secretPayloadCiphertext());
+        version.setSecretDigest(effectiveSnapshot.secretDigest());
         version.setEffectiveStatus(applied.effectiveStatus() == null
                 ? snapshot.effectiveStatus() : applied.effectiveStatus());
         version.setChangeSummary(request.getChangeSummary());
@@ -397,6 +410,7 @@ public class GovernanceApprovalService {
         details.put("artifactId", applied.artifactId());
         appendEvent(request, "APPROVE", fromStatus, actor,
                 request.getReviewComment(), JSON.toJSONString(details));
+        appliedConsumer.accept(applied);
         return request;
     }
 

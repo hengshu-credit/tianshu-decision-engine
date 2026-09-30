@@ -1,9 +1,10 @@
 import { shallowMount } from '@test-utils'
 import { nextTick } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 vi.mock('@/api/transfer', () => ({
   exportResourceTransfer: vi.fn(),
+  listTransferResources: vi.fn(),
   previewResourceTransfer: vi.fn(),
   importResourceTransfer: vi.fn(),
 }))
@@ -15,11 +16,124 @@ import OfflineTransfer from '@/views/transfer/OfflineTransfer.vue'
 describe('OfflineTransfer', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    transferApi.listTransferResources.mockReset().mockResolvedValue({ data: { records: [], total: 0 } })
     transferApi.previewResourceTransfer.mockReset().mockResolvedValue({
       data: { packageDigest: 'digest-1', conflictCount: 0, resources: [], roots: [] },
     })
     transferApi.importResourceTransfer.mockReset().mockResolvedValue({ data: { status: 'APPLIED' } })
     ElMessageBox.confirm.mockReset().mockResolvedValue('confirm')
+  })
+
+  test('导出根资源使用名称编码候选并保留稳定 ID', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    const root = wrapper.vm.roots[0]
+    transferApi.listTransferResources.mockResolvedValueOnce({ data: { records: [
+      { id: 101, code: 'Risk_Mixed', label: '授信判断', displayName: '授信判断 (Risk_Mixed)', scope: 'GLOBAL' },
+    ], total: 1 } })
+    const result = await wrapper.vm.fetchRootOptions(root, { query: '授信', pageNum: 1, pageSize: 20 })
+    expect(transferApi.listTransferResources).toHaveBeenCalledWith({ nodeType: 'RULE', keyword: '授信', pageNum: 1, pageSize: 20 })
+    expect(result.records).toEqual([{ id: 101, label: '授信判断 (Risk_Mixed) · 全局' }])
+    expect(wrapper.find('input[placeholder="资源 ID"]').exists()).toBe(false)
+    const selector = wrapper.findAllComponents({ name: 'RemoteFilterSelect' })[0]
+    selector.vm.$emit('update:value', result.records[0].id)
+    await nextTick()
+    expect(root.resourceId).toBe(101)
+    wrapper.unmount()
+  })
+
+  test.each([
+    ['PROJECT', 'PROJECT'], ['RULE', 'RULE'], ['VARIABLE', 'VARIABLE'], ['DATA_OBJECT', 'DATA_OBJECT'],
+    ['FUNCTION', 'FUNCTION'], ['MODEL', 'MODEL'], ['EXPERIMENT', 'EXPERIMENT'],
+    ['DATABASE', 'DB'], ['EXTERNAL_DATASOURCE', 'DATASOURCE'], ['EXTERNAL_API', 'API'], ['LIST_LIBRARY', 'LIST'],
+  ])('%s 检索转换类型但不转换名称编码，支持翻页并区分项目归属', async (resourceType, nodeType) => {
+    const wrapper = shallowMount(OfflineTransfer)
+    const root = wrapper.vm.roots[0]
+    root.resourceType = resourceType
+    transferApi.listTransferResources.mockResolvedValueOnce({ data: { records: [
+      { id: 31, displayName: '同名配置 (Mixed_Case)', scope: 'PROJECT', projectId: 3, projectName: '授信项目', projectCode: 'credit' },
+    ], total: 41 } })
+    const result = await wrapper.vm.fetchRootOptions(root, { query: 'Mixed_Case', pageNum: 2, pageSize: 20 })
+    expect(transferApi.listTransferResources).toHaveBeenCalledWith({ nodeType, keyword: 'Mixed_Case', pageNum: 2, pageSize: 20 })
+    expect(result.total).toBe(41)
+    expect(result.records[0]).toEqual({ id: 31, label: resourceType === 'PROJECT'
+      ? '同名配置 (Mixed_Case)' : '同名配置 (Mixed_Case) · 授信项目 / credit' })
+    wrapper.unmount()
+  })
+
+  test('资源类型切换清除旧 ID 并重建候选选择器', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    const root = wrapper.vm.roots[0]
+    root.resourceId = 101
+    const oldSelector = wrapper.findAllComponents({ name: 'RemoteFilterSelect' })[0].vm
+    wrapper.findComponent('.root-type').vm.$emit('update:modelValue', 'MODEL')
+    wrapper.findComponent('.root-type').vm.$emit('change', 'MODEL')
+    await nextTick()
+    expect(root.resourceType).toBe('MODEL')
+    expect(root.resourceId).toBe('')
+    expect(wrapper.findAllComponents({ name: 'RemoteFilterSelect' })[0].vm).not.toBe(oldSelector)
+    wrapper.unmount()
+  })
+
+  test('删除中间根资源后其他行保持身份，新行不复用旧候选', () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    wrapper.vm.addRoot()
+    wrapper.vm.addRoot()
+    const keys = wrapper.vm.roots.map(root => root.key)
+    expect(new Set(keys).size).toBe(3)
+    wrapper.vm.roots[2].resourceId = 23
+    wrapper.vm.removeRoot(1)
+    wrapper.vm.addRoot()
+    expect(wrapper.vm.roots[1]).toMatchObject({ key: keys[2], resourceId: 23 })
+    expect(keys).not.toContain(wrapper.vm.roots[2].key)
+    wrapper.unmount()
+  })
+
+  test('同类型重复选择会清除当前选择，其他类型同 ID 可以保留', () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    wrapper.vm.roots[0].resourceId = 12
+    wrapper.vm.addRoot()
+    const second = wrapper.vm.roots[1]
+    second.resourceId = 12
+    wrapper.vm.onRootSelectionChange(second)
+    expect(second.resourceId).toBe('')
+    expect(ElMessage.warning).toHaveBeenCalledWith('该资源已添加，请选择其他资源')
+    second.resourceType = 'MODEL'
+    second.resourceId = 12
+    wrapper.vm.onRootSelectionChange(second)
+    expect(second.resourceId).toBe(12)
+    wrapper.unmount()
+  })
+
+  test('候选加载失败可重试，旧类型的迟到错误不污染新类型', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    const root = wrapper.vm.roots[0]
+    transferApi.listTransferResources.mockRejectedValueOnce(new Error('服务不可用'))
+    await expect(wrapper.vm.fetchRootOptions(root, { query: '', pageNum: 1 })).rejects.toThrow('服务不可用')
+    expect(root.loadError).toContain('重新展开')
+    await wrapper.vm.fetchRootOptions(root, { query: 'risk', pageNum: 1 })
+    expect(root.loadError).toBe('')
+    let rejectOld
+    transferApi.listTransferResources.mockReturnValueOnce(new Promise((resolve, reject) => { rejectOld = reject }))
+    const pending = wrapper.vm.fetchRootOptions(root, { query: 'old', pageNum: 1 })
+    root.resourceType = 'MODEL'
+    wrapper.vm.onRootTypeChange(root)
+    rejectOld(new Error('旧请求失败'))
+    await expect(pending).rejects.toThrow('旧请求失败')
+    expect(root.loadError).toBe('')
+    wrapper.unmount()
+  })
+
+  test('未选择候选不能导出，导出失败展示可重试错误且释放忙状态', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    await wrapper.vm.exportPackage()
+    expect(transferApi.exportResourceTransfer).not.toHaveBeenCalled()
+    expect(ElMessage.warning).toHaveBeenCalledWith('请为每一行选择要导出的资源')
+    wrapper.vm.roots[0].resourceId = 101
+    transferApi.exportResourceTransfer.mockRejectedValueOnce(new Error('配置包生成失败'))
+    await wrapper.vm.exportPackage()
+    expect(wrapper.vm.exportError).toBe('配置包生成失败')
+    expect(wrapper.vm.exporting).toBe(false)
+    wrapper.unmount()
   })
 
   async function previewGlobal() {

@@ -52,18 +52,16 @@ final class TransferResourceComparison {
         switch (type) {
             case VARIABLE -> children(config.get("options"), "variableId");
             case DATA_OBJECT -> {
-                Map<String, Integer> fieldIndexes = new HashMap<>();
-                if (config.get("fields") instanceof List<?> fields) {
-                    for (int i = 0; i < fields.size(); i++) {
-                        if (fields.get(i) instanceof Map<?, ?> field && field.get("id") != null) fieldIndexes.put(String.valueOf(field.get("id")), i);
-                    }
-                    for (Object value : fields) {
-                        Map<String, Object> field = object(value);
+                TransferObjectFieldIndex index = TransferObjectFieldIndex.of(config);
+                if (config.get("fields") instanceof List<?>) {
+                    List<Map<String, Object>> fields = index.sortedFields();
+                    for (Map<String, Object> field : fields) {
                         Object parent = field.get("parentFieldId");
-                        if (parent != null && fieldIndexes.containsKey(String.valueOf(parent))) field.put("parentFieldId", "field-index:" + fieldIndexes.get(String.valueOf(parent)));
+                        if (parent != null) field.put("parentFieldId", index.path(Long.valueOf(String.valueOf(parent))));
                         children(field.get("options"), "fieldId");
                     }
                     children(fields, "objectId");
+                    config.put("fields", fields);
                 }
             }
             case MODEL -> {

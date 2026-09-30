@@ -110,6 +110,22 @@ public class OfflineResourceReuseTest {
                 Map.of("body", Map.of("id", 8, "projectId", 1)), Map.of("body", Map.of("id", 9, "projectId", 1)), "ACTIVE"));
     }
 
+    @Test public void legacyGovernanceSnapshotCannotSupplyStaleObjectFieldIds() {
+        var f = new OfflineProjectBindingTest.Fixture();
+        f.seed("DATA_OBJECT", 8L, 0L, objectFields(90));
+        f.objectProjections.put(8L, objectFields(20));
+        f.seed("FUNCTION", 9L, 0L, Map.of("funcCode", "fn", "paramsJson", "[{\"varId\":21}]"));
+        byte[] bytes = new TransferBundleCodec().encode(new TransferBundle(List.of("FUNCTION:2"), List.of(
+                new TransferBundle.Resource("FUNCTION:2", Map.of("funcCode", "fn", "paramsJson", "[{\"varId\":11}]"),
+                        List.of(new TransferBundle.Reference("/paramsJson/@json/0/varId", "DATA_OBJECT:1", "/fields/1/id")), List.of()),
+                new TransferBundle.Resource("DATA_OBJECT:1", objectFields(10), List.of(), List.of())), List.of()));
+        List<?> conflicts = (List<?>) f.previewService.preview(bytes, REUSE).get("conflicts");
+        assertEquals("IDENTICAL", ((TransferConflict) conflicts.get(1)).conflictType());
+        var result = f.service.apply(bytes, REUSE, "tester");
+        assertEquals(9L, ((Map<?, ?>) result.get("resourceIdMapping")).get("FUNCTION:2"));
+        assertTrue(f.drafts.isEmpty());
+    }
+
     @Test public void constantCannotBeReusedAsOrdinaryInputWithSameType() {
         var f = new OfflineProjectBindingTest.Fixture();
         f.seed("VARIABLE", 8L, 0L, Map.of("varCode", "score", "varType", "NUMBER", "varSource", "CONSTANT"));

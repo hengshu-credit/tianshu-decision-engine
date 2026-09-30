@@ -3,6 +3,9 @@ package com.hengshucredit.rule.server.service;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
@@ -31,6 +34,8 @@ import com.hengshucredit.rule.server.mapper.RuleModelMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelOutputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
+import com.hengshucredit.rule.server.mapper.RuleFunctionMapper;
+import com.hengshucredit.rule.server.mapper.RuleExperimentMapper;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.Resource;
@@ -61,69 +66,102 @@ public class RuleLineageService {
     @Resource private RuleListLibraryMapper listLibraryMapper;
     @Resource private RuleDataObjectFieldMapper dataObjectFieldMapper;
     @Resource private RuleDataObjectMapper dataObjectMapper;
+    @Resource private RuleFunctionMapper functionMapper;
+    @Resource private RuleExperimentMapper experimentMapper;
 
     public List<Map<String, Object>> options(String nodeType, String keyword, Long projectId) {
+        return pageOptions(nodeType, keyword, projectId, 1, 80).getRecords();
+    }
+
+    public Page<Map<String, Object>> pageOptions(String nodeType, String keyword, Long projectId,
+                                                 int pageNum, int pageSize) {
+        if (pageNum < 1 || pageSize < 1 || pageSize > 100) {
+            throw new IllegalArgumentException("候选分页参数无效：页码需大于 0，每页数量需为 1 至 100");
+        }
         String type = normalizeType(nodeType);
-        List<Map<String, Object>> result = new ArrayList<>();
-        if ("PROJECT".equals(type)) {
-            for (RuleProject item : projectMapper.selectList(new LambdaQueryWrapper<RuleProject>().orderByDesc(RuleProject::getCreateTime))) {
-                addOption(result, "PROJECT", item.getId(), item.getProjectCode(), item.getProjectName(), keyword);
+        OptionSource source = switch (type) {
+            case "PROJECT" -> new OptionSource(projectMapper, "project_code", "project_name", false, "id");
+            case "RULE" -> new OptionSource(definitionMapper, "rule_code", "rule_name", true, "project_id");
+            case "VARIABLE" -> new OptionSource(variableMapper, "var_code", "var_label", true, "project_id");
+            case "DATA_OBJECT" -> new OptionSource(dataObjectMapper, "object_code", "object_label", true, "project_id");
+            case "FUNCTION" -> new OptionSource(functionMapper, "func_code", "func_name", true, "project_id");
+            case "MODEL" -> new OptionSource(modelMapper, "model_code", "model_name", true, "project_id");
+            case "EXPERIMENT" -> new OptionSource(experimentMapper, "experiment_code", "experiment_name", false, "project_id");
+            case "DB" -> new OptionSource(dbDatasourceMapper, "datasource_code", "datasource_name", true, "project_id");
+            case "LIST" -> new OptionSource(listLibraryMapper, "list_code", "list_name", true, "project_id");
+            case "DATASOURCE" -> new OptionSource(externalDatasourceMapper, "datasource_code", "datasource_name", true, "project_id");
+            case "API" -> new OptionSource(externalApiConfigMapper, "api_code", "api_name", false, "datasource_id");
+            default -> null;
+        };
+        if (source == null) return new Page<Map<String, Object>>(pageNum, pageSize).setRecords(List.of());
+        Page<Map<String, Object>> result = queryOptions(source.mapper(), source, type, keyword, projectId, pageNum, pageSize);
+        enrichOptionProjects(type, result.getRecords());
+        return result;
+    }
+
+    private <T> Page<Map<String, Object>> queryOptions(BaseMapper<T> mapper, OptionSource source, String type,
+                                                      String keyword, Long projectId, int pageNum, int pageSize) {
+        QueryWrapper<T> query = new QueryWrapper<>();
+        List<String> columns = new ArrayList<>(List.of("id", source.codeColumn() + " AS code",
+                source.labelColumn() + " AS label", source.ownerColumn() + ("API".equals(type) ? " AS datasourceId" : " AS projectId")));
+        if (source.scoped()) columns.add("scope");
+        query.select(columns).orderByDesc("id");
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            String search = keyword.trim().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+            query.and(w -> w.like(source.codeColumn(), search).or().like(source.labelColumn(), search));
+        }
+        if (projectId != null && projectId > 0 && !"PROJECT".equals(type) && !"API".equals(type)) {
+            if (source.scoped() && !"RULE".equals(type)) {
+                query.and(w -> w.eq("scope", "GLOBAL").or().eq("scope", "PROJECT").eq("project_id", projectId));
+            } else query.eq("project_id", projectId);
+        }
+        return mapper.selectMapsPage(new Page<>(pageNum, pageSize), query);
+    }
+
+    private void enrichOptionProjects(String type, List<Map<String, Object>> records) {
+        if (records.isEmpty()) return;
+        if ("API".equals(type)) {
+            Set<Long> datasourceIds = new LinkedHashSet<>();
+            for (Map<String, Object> row : records) {
+                if (row.get("datasourceId") instanceof Number id) datasourceIds.add(id.longValue());
             }
-        } else if ("VARIABLE".equals(type)) {
-            LambdaQueryWrapper<RuleVariable> wrapper = new LambdaQueryWrapper<>();
-            appendProjectScope(wrapper, projectId, RuleVariable::getProjectId, RuleVariable::getScope);
-            wrapper.orderByDesc(RuleVariable::getCreateTime);
-            for (RuleVariable item : variableMapper.selectList(wrapper)) {
-                addOption(result, "VARIABLE", item.getId(), item.getVarCode(), item.getVarLabel(), keyword);
+            Map<Long, RuleExternalDatasource> datasources = new LinkedHashMap<>();
+            if (!datasourceIds.isEmpty()) {
+                for (RuleExternalDatasource item : externalDatasourceMapper.selectList(new LambdaQueryWrapper<RuleExternalDatasource>()
+                        .select(RuleExternalDatasource::getId, RuleExternalDatasource::getProjectId, RuleExternalDatasource::getScope)
+                        .in(RuleExternalDatasource::getId, datasourceIds))) datasources.put(item.getId(), item);
             }
-        } else if ("DATA_OBJECT".equals(type)) {
-            LambdaQueryWrapper<RuleDataObject> wrapper = new LambdaQueryWrapper<>();
-            appendProjectScope(wrapper, projectId, RuleDataObject::getProjectId, RuleDataObject::getScope);
-            for (RuleDataObject item : dataObjectMapper.selectList(wrapper)) {
-                addOption(result, "DATA_OBJECT", item.getId(), item.getObjectCode(), item.getObjectLabel(), keyword);
-            }
-        } else if ("RULE".equals(type)) {
-            LambdaQueryWrapper<RuleDefinition> wrapper = new LambdaQueryWrapper<>();
-            appendProject(wrapper, projectId, RuleDefinition::getProjectId);
-            wrapper.orderByDesc(RuleDefinition::getCreateTime);
-            for (RuleDefinition item : definitionMapper.selectList(wrapper)) {
-                addOption(result, "RULE", item.getId(), item.getRuleCode(), item.getRuleName(), keyword);
-            }
-        } else if ("MODEL".equals(type)) {
-            LambdaQueryWrapper<RuleModel> wrapper = withoutModelContent();
-            appendProjectScope(wrapper, projectId, RuleModel::getProjectId, RuleModel::getScope);
-            wrapper.orderByDesc(RuleModel::getCreateTime);
-            for (RuleModel item : modelMapper.selectList(wrapper)) {
-                addOption(result, "MODEL", item.getId(), item.getModelCode(), item.getModelName(), keyword);
-            }
-        } else if ("API".equals(type)) {
-            for (RuleExternalApiConfig item : externalApiConfigMapper.selectList(new LambdaQueryWrapper<RuleExternalApiConfig>().orderByDesc(RuleExternalApiConfig::getCreateTime))) {
-                addOption(result, "API", item.getId(), item.getApiCode(), item.getApiName(), keyword);
-            }
-        } else if ("DB".equals(type)) {
-            LambdaQueryWrapper<RuleDbDatasource> wrapper = new LambdaQueryWrapper<>();
-            appendProjectScope(wrapper, projectId, RuleDbDatasource::getProjectId, RuleDbDatasource::getScope);
-            wrapper.orderByDesc(RuleDbDatasource::getCreateTime);
-            for (RuleDbDatasource item : dbDatasourceMapper.selectList(wrapper)) {
-                addOption(result, "DB", item.getId(), item.getDatasourceCode(), item.getDatasourceName(), keyword);
-            }
-        } else if ("LIST".equals(type)) {
-            LambdaQueryWrapper<RuleListLibrary> wrapper = new LambdaQueryWrapper<>();
-            appendProjectScope(wrapper, projectId, RuleListLibrary::getProjectId, RuleListLibrary::getScope);
-            wrapper.orderByDesc(RuleListLibrary::getCreateTime);
-            for (RuleListLibrary item : listLibraryMapper.selectList(wrapper)) {
-                addOption(result, "LIST", item.getId(), item.getListCode(), item.getListName(), keyword);
-            }
-        } else if ("DATASOURCE".equals(type)) {
-            LambdaQueryWrapper<RuleExternalDatasource> wrapper = new LambdaQueryWrapper<>();
-            appendProjectScope(wrapper, projectId, RuleExternalDatasource::getProjectId, RuleExternalDatasource::getScope);
-            wrapper.orderByDesc(RuleExternalDatasource::getCreateTime);
-            for (RuleExternalDatasource item : externalDatasourceMapper.selectList(wrapper)) {
-                addOption(result, "DATASOURCE", item.getId(), item.getDatasourceCode(), item.getDatasourceName(), keyword);
+            for (Map<String, Object> row : records) {
+                RuleExternalDatasource item = row.get("datasourceId") instanceof Number id ? datasources.get(id.longValue()) : null;
+                row.put("projectId", item == null ? null : item.getProjectId());
+                row.put("scope", item == null ? "UNBOUND" : item.getScope());
             }
         }
-        return result.size() > 80 ? new ArrayList<>(result.subList(0, 80)) : result;
+        Set<Long> projectIds = new LinkedHashSet<>();
+        for (Map<String, Object> row : records) {
+            if (row.get("projectId") instanceof Number id && id.longValue() > 0) projectIds.add(id.longValue());
+        }
+        Map<Long, RuleProject> projects = new LinkedHashMap<>();
+        if (!projectIds.isEmpty()) {
+            for (RuleProject project : projectMapper.selectList(new LambdaQueryWrapper<RuleProject>()
+                    .select(RuleProject::getId, RuleProject::getProjectCode, RuleProject::getProjectName)
+                    .in(RuleProject::getId, projectIds))) projects.put(project.getId(), project);
+        }
+        for (Map<String, Object> row : records) {
+            Long id = row.get("projectId") instanceof Number value ? value.longValue() : null;
+            row.put("type", type);
+            if (row.get("scope") == null) row.put("scope", id != null && id > 0 ? "PROJECT" : "GLOBAL");
+            RuleProject project = projects.get(id);
+            if (project != null) {
+                row.put("projectCode", project.getProjectCode());
+                row.put("projectName", project.getProjectName());
+            }
+            Object label = row.get("label");
+            row.put("displayName", (label == null || label.toString().trim().isEmpty() ? row.get("code") : label) + " (" + row.get("code") + ")");
+        }
     }
+
+    private record OptionSource(BaseMapper<?> mapper, String codeColumn, String labelColumn, boolean scoped, String ownerColumn) { }
 
     public Map<String, Object> graph(String nodeType, Long nodeId, String direction, Integer maxDepth) {
         FullGraph full = buildFullGraph();
@@ -460,24 +498,6 @@ public class RuleLineageService {
         graph.incomingEdges.computeIfAbsent(to, key -> new ArrayList<>()).add(edge);
     }
 
-    private void addOption(List<Map<String, Object>> result, String type, Long id, String code, String label, String keyword) {
-        if (!matches(keyword, code, label)) return;
-        Map<String, Object> item = new LinkedHashMap<>();
-        item.put("type", type);
-        item.put("id", id);
-        item.put("code", code);
-        item.put("label", label);
-        item.put("displayName", (label == null || label.trim().isEmpty() ? code : label) + " (" + code + ")");
-        result.add(item);
-    }
-
-    private boolean matches(String keyword, String code, String label) {
-        if (keyword == null || keyword.trim().isEmpty()) return true;
-        String lower = keyword.trim().toLowerCase();
-        return (code != null && code.toLowerCase().contains(lower))
-                || (label != null && label.toLowerCase().contains(lower));
-    }
-
     private JSONObject parseObject(String json) {
         if (json == null || json.trim().isEmpty()) return new JSONObject();
         try {
@@ -497,24 +517,6 @@ public class RuleLineageService {
         if ("DEFINITION".equals(value)) return "RULE";
         if ("DATABASE".equals(value)) return "DB";
         return value;
-    }
-
-    private <T> void appendProject(LambdaQueryWrapper<T> wrapper, Long projectId,
-                                   com.baomidou.mybatisplus.core.toolkit.support.SFunction<T, Long> projectColumn) {
-        if (projectId != null && projectId > 0) {
-            wrapper.eq(projectColumn, projectId);
-        }
-    }
-
-    private <T> void appendProjectScope(LambdaQueryWrapper<T> wrapper, Long projectId,
-                                        com.baomidou.mybatisplus.core.toolkit.support.SFunction<T, Long> projectColumn,
-                                        com.baomidou.mybatisplus.core.toolkit.support.SFunction<T, String> scopeColumn) {
-        if (projectId != null && projectId > 0) {
-            wrapper.and(w -> w.eq(scopeColumn, RuleVariableService.SCOPE_GLOBAL)
-                    .or()
-                    .eq(scopeColumn, RuleVariableService.SCOPE_PROJECT)
-                    .eq(projectColumn, projectId));
-        }
     }
 
     private static class FullGraph {

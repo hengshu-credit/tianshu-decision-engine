@@ -38,7 +38,6 @@
     :remote-method="handleRemote"
     @update:model-value="updateValue"
     @change="$emit('change', $event)"
-    @visible-change="handleVisibleChange"
     @popup-scroll="handleDropdownScroll"
   >
     <el-option
@@ -90,6 +89,10 @@ export default {
       this.lastInputValue = value
     },
   },
+  mounted() {
+    // Element Plus 的 visible-change 也受 loading/空候选影响，不能用作用户开关下拉的信号。
+    this.$watch(() => this.$refs.select?.expanded, this.handleSelectExpanded)
+  },
   beforeUnmount() {
     this.closeSuggestions()
   },
@@ -134,14 +137,19 @@ export default {
       this.loadOptions(true)
     },
     handleRemote(query) {
-      this.query = query || ''
+      const nextQuery = query || ''
+      if (this.loading && this.query === nextQuery) return
+      this.query = nextQuery
       this.loadOptions(true)
     },
-    handleVisibleChange(visible) {
-      if (visible) {
-        this.query = ''
-        this.loadOptions(true)
-      } else {
+    handleSelectExpanded(expanded) {
+      if (expanded) {
+        // 打开时 remote-method 可能已开始加载，同一请求不再重置候选。
+        if (!this.loading) {
+          this.query = ''
+          this.loadOptions(true)
+        }
+      } else if (expanded === false) {
         this.cancelPendingLoad()
       }
     },

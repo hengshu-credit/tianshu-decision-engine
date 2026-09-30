@@ -7,6 +7,8 @@ import com.hengshucredit.rule.server.transfer.TransferRootRequest;
 import com.hengshucredit.rule.server.transfer.TransferImportOptions;
 import com.hengshucredit.rule.server.transfer.OfflineResourceImportService;
 import com.hengshucredit.rule.server.service.ConsoleOperatorResolver;
+import com.hengshucredit.rule.server.service.RuleLineageService;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.alibaba.fastjson.JSON;
 import jakarta.annotation.Resource;
 import org.springframework.http.HttpHeaders;
@@ -25,6 +27,21 @@ public class OfflineResourceTransferController {
     @Resource private OfflineResourceTransferService service;
     @Resource private OfflineResourceImportService importService;
     @Resource private ConsoleOperatorResolver operatorResolver;
+    @Resource private RuleLineageService lineageService;
+
+    @GetMapping("/resources")
+    @RequirePermission("rule:view")
+    public R<Page<Map<String, Object>>> resources(@RequestParam String nodeType,
+                                                 @RequestParam(required = false) String keyword,
+                                                 @RequestParam(required = false) Long projectId,
+                                                 @RequestParam(defaultValue = "1") int pageNum,
+                                                 @RequestParam(defaultValue = "20") int pageSize) {
+        try {
+            return R.ok(lineageService.pageOptions(nodeType, keyword, projectId, pageNum, pageSize));
+        } catch (IllegalArgumentException error) {
+            return R.fail(422, error.getMessage());
+        }
+    }
 
     @PostMapping(value = "/export", produces = "application/zip")
     @RequirePermission("rule:view")

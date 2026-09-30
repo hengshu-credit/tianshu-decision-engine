@@ -157,6 +157,19 @@ public class OfflineProjectBindingTest {
     }
 
     @Test
+    public void globalDependenciesCanImportBeforeProjectTemplateInSamePackage() {
+        Fixture f = new Fixture();
+        byte[] bytes = new TransferBundleCodec().encode(new TransferBundle(List.of("FUNCTION:51", "PROJECT:7"), List.of(
+                new TransferBundle.Resource("FUNCTION:51", Map.of("funcCode", "fn", "scope", "GLOBAL", "projectId", 0L), List.of(), List.of()),
+                new TransferBundle.Resource("PROJECT:7", Map.of("projectCode", "source", "projectName", "源项目"), List.of(), List.of())), List.of()));
+        var result = f.service.apply(bytes, options(null, "REUSE", true, "new_target", Map.of()), "tester");
+        assertEquals(100L, result.get("targetProjectId"));
+        assertEquals(100L, f.drafts.get(0).getProjectId().longValue());
+        assertEquals(1, f.created.size());
+        assertEquals(100L, mapping(result).get("PROJECT:7"));
+    }
+
+    @Test
     public void conflictingNewAndExistingTargetChoicesAreRejectedBeforeWrites() {
         Fixture f = new Fixture();
         assertThrows(IllegalArgumentException.class, () -> f.service.apply(bundle(), options(99L, "REUSE", true, "new", Map.of()), "tester"));
@@ -186,8 +199,22 @@ public class OfflineProjectBindingTest {
         final List<GovernanceDraftRequest> drafts = new ArrayList<>();
         final List<GovernedResource> resources = new ArrayList<>();
         final Map<Long, GovernedResourceVersion> versions = new HashMap<>();
+        final Map<Long, Map<String, Object>> objectProjections = new HashMap<>();
+        Map<Long, Long> appliedFieldIds = Map.of();
+        String approvalStatus = "APPROVED";
 
         Fixture() {
+            var objectAdapter = (com.hengshucredit.rule.server.governance.GovernedResourceAdapter) Proxy.newProxyInstance(
+                    com.hengshucredit.rule.server.governance.GovernedResourceAdapter.class.getClassLoader(),
+                    new Class<?>[]{com.hengshucredit.rule.server.governance.GovernedResourceAdapter.class}, (proxy, method, args) -> {
+                        if ("resourceType".equals(method.getName())) return "DATA_OBJECT";
+                        if ("loadEffective".equals(method.getName())) return com.hengshucredit.rule.server.governance.ResourceSnapshot.ofJson(
+                                CanonicalJson.write(objectProjections.get(args[0])));
+                        throw new AssertionError(method.getName());
+                    });
+            var adapters = new com.hengshucredit.rule.server.governance.GovernedResourceAdapterRegistry(List.of(objectAdapter));
+            ReflectionTestUtils.setField(service, "adapterRegistry", adapters);
+            ReflectionTestUtils.setField(previewService, "adapterRegistry", adapters);
             for (long id : new long[]{42, 99}) { RuleProject project = new RuleProject(); project.setId(id); project.setStatus(1); projects.put(id, project); }
             ReflectionTestUtils.setField(service, "projectService", new RuleProjectService() {
                 @Override public RuleProject getById(Serializable id) { return projects.get(id); }
@@ -200,7 +227,13 @@ public class OfflineProjectBindingTest {
                     drafts.add(draft); return request();
                 }
                 @Override public GovernanceApprovalRequest submit(Long id, GovernanceSubmitRequest input, String actor) { return request(); }
-                @Override public GovernanceApprovalRequest approve(Long id, GovernanceReviewRequest input, String actor) { return request(); }
+                @Override public GovernanceApprovalRequest approve(Long id, GovernanceReviewRequest input, String actor,
+                        java.util.function.Consumer<com.hengshucredit.rule.server.governance.AppliedResource> applied) {
+                    GovernanceApprovalRequest result = request(); result.setStatus(approvalStatus);
+                    if ("APPROVED".equals(approvalStatus)) applied.accept(new com.hengshucredit.rule.server.governance.AppliedResource(
+                            result.getResourceId(), 1, "ACTIVE", null, appliedFieldIds));
+                    return result;
+                }
                 private GovernanceApprovalRequest request() {
                     GovernanceDraftRequest draft = drafts.get(drafts.size() - 1);
                     GovernanceApprovalRequest result = new GovernanceApprovalRequest(); result.setId(1L);
@@ -222,6 +255,7 @@ public class OfflineProjectBindingTest {
             ReflectionTestUtils.setField(previewService, "governedResourceVersionMapper", ReflectionTestUtils.getField(service, "governedResourceVersionMapper"));
         }
         void seed(String type, Long id, Long projectId, Map<String, Object> config) {
+            if ("DATA_OBJECT".equals(type)) objectProjections.put(id, config);
             GovernedResource row = new GovernedResource(); row.setResourceType(type); row.setResourceId(id);
             row.setEffectiveStatus("ACTIVE");
             row.setProjectId(projectId); row.setEffectiveVersionId(id); resources.add(row);

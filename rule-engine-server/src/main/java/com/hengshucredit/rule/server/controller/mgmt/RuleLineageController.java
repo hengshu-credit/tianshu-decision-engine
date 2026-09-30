@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.annotation.Resource;
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -19,10 +18,17 @@ public class RuleLineageController {
     private RuleLineageService lineageService;
 
     @GetMapping("/options")
-    public R<List<Map<String, Object>>> options(@RequestParam String nodeType,
+    public R<?> options(@RequestParam String nodeType,
                                                 @RequestParam(required = false) String keyword,
-                                                @RequestParam(required = false) Long projectId) {
-        return R.ok(lineageService.options(nodeType, keyword, projectId));
+                                                @RequestParam(required = false) Long projectId,
+                                                @RequestParam(required = false) Integer pageNum,
+                                                @RequestParam(required = false, defaultValue = "20") int pageSize) {
+        try {
+            return R.ok(pageNum == null ? lineageService.options(nodeType, keyword, projectId)
+                    : lineageService.pageOptions(nodeType, keyword, projectId, pageNum, pageSize));
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage());
+        }
     }
 
     @GetMapping("/graph")

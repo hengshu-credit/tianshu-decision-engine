@@ -55,6 +55,8 @@ public class OfflineResourceTransferService {
     private RuleVersionBindingMapper ruleVersionBindingMapper;
     @Resource
     private RuleDefinitionVersionMapper ruleDefinitionVersionMapper;
+    @Resource
+    private com.hengshucredit.rule.server.mapper.RuleDefinitionMapper ruleDefinitionMapper;
     private final TransferBundleCodec codec = new TransferBundleCodec();
 
     @Transactional(readOnly = true)
@@ -346,12 +348,20 @@ public class OfflineResourceTransferService {
             return null;
         }
         if (code == null || governedResourceMapper == null || governedResourceVersionMapper == null) return null;
-        if (!"GLOBAL".equals(options.normalizedScope()) && Boolean.TRUE.equals(options.createProject())) return null;
+        boolean newProject = !"GLOBAL".equals(options.normalizedScope()) && Boolean.TRUE.equals(options.createProject());
+        if (newProject && key.type() != TransferResourceType.RULE) return null;
         long targetProject = "GLOBAL".equals(options.normalizedScope()) ? 0L : options.targetProjectId() == null ? -1L : options.targetProjectId();
         if (!"GLOBAL".equals(options.normalizedScope()) && options.projectBindings() != null) {
             Long mapped = options.projectBindings().get(String.valueOf(resource.configuration().get("projectId")));
             if (mapped != null && mapped > 0) targetProject = mapped;
         }
+        com.hengshucredit.rule.model.entity.RuleDefinition occupiedRule = key.type() == TransferResourceType.RULE && ruleDefinitionMapper != null
+                ? ruleDefinitionMapper.selectOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.hengshucredit.rule.model.entity.RuleDefinition>()
+                .eq(com.hengshucredit.rule.model.entity.RuleDefinition::getRuleCode, code)) : null;
+        if (occupiedRule != null && (newProject || !java.util.Objects.equals(occupiedRule.getProjectId(), targetProject))) {
+            return ruleCodeConflict(resource, code, occupiedRule.getId());
+        }
+        if (newProject) return null;
         if (targetProject < 0) return new TransferConflict(resource.key(), key.type().name(), code,
                 "TARGET_PROJECT_REQUIRED", null, "SELECT_PROJECT", "项目级资源需要先选择目标项目");
         List<GovernedResource> candidates = governedResourceMapper.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<GovernedResource>()
@@ -361,6 +371,9 @@ public class OfflineResourceTransferService {
                     : governedResourceVersionMapper.selectById(candidate.getEffectiveVersionId());
             if (version == null) continue;
             Map<String, Object> current = CanonicalJson.readMap(version.getSnapshotJson());
+            if (key.type() == TransferResourceType.DATA_OBJECT) {
+                current = CanonicalJson.readMap(adapterRegistry.require(key.type().name()).loadEffective(candidate.getResourceId()).snapshotJson());
+            }
             if (!code.equals(identity(current, key.type()))) continue;
             if (key.type() == TransferResourceType.MODEL && secretCodec != null) {
                 current = secretCodec.restore(new ResourceSnapshot(version.getSnapshotJson(), candidate.getEffectiveStatus(),
@@ -372,7 +385,10 @@ public class OfflineResourceTransferService {
                     ? options.normalizedVariablePolicy() : options.normalizedResourcePolicy();
             boolean canReuse = TransferResourceComparison.reusable(key.type(), incoming, current, candidate.getEffectiveStatus());
             if (("REUSE".equals(action) && canReuse) || "OVERWRITE".equals(action)) {
-                targets.put(resource.key(), new PreviewTarget(candidate.getResourceId(), current, "REUSE".equals(action) && canReuse));
+                boolean reused = "REUSE".equals(action) && canReuse;
+                Map<String, Long> childIds = key.type() == TransferResourceType.DATA_OBJECT && reused
+                        ? previewFieldIds(resource.configuration(), current) : Map.of();
+                targets.put(resource.key(), new PreviewTarget(candidate.getResourceId(), childIds, reused));
             }
             if ("REUSE".equals(action) && !canReuse) action = "SUFFIX";
             return new TransferConflict(resource.key(), key.type().name(), code, conflictType,
@@ -380,7 +396,12 @@ public class OfflineResourceTransferService {
                     canReuse ? "目标环境已存在可复用的同编码资源，请确认复用、覆盖或添加后缀"
                             : "同编码资源的类型、配置、状态或环境凭据未匹配，不能复用；请更改为覆盖或添加后缀（类型冲突只能添加后缀）");
         }
-        return null;
+        return occupiedRule == null ? null : ruleCodeConflict(resource, code, occupiedRule.getId());
+    }
+
+    private TransferConflict ruleCodeConflict(TransferBundle.Resource resource, String code, Long existingId) {
+        return new TransferConflict(resource.key(), "RULE", code, "RULE_CODE_CONFLICT", "RULE:" + existingId, "SUFFIX",
+                "规则编码在全库唯一；其他项目或未发布规则已使用该编码，请选择新建并追加后缀，不能跨项目复用或覆盖");
     }
 
     private Map<String, Object> previewConfiguration(TransferBundle.Resource resource, Map<String, PreviewTarget> targets) {
@@ -391,8 +412,8 @@ public class OfflineResourceTransferService {
             if (target != null) {
                 if (reference.childPath() == null) replacement = target.id();
                 else if (target.reused()) {
-                    try { replacement = TransferJsonPath.read(target.configuration(), reference.childPath()); }
-                    catch (IllegalArgumentException ignored) { /* 子字段未确认，不能判为相同配置。 */ }
+                    Long childId = target.childIds().get(reference.childPath());
+                    if (childId != null) replacement = childId;
                 }
             }
             TransferJsonPath.replace(value, reference.path(), replacement);
@@ -400,6 +421,19 @@ public class OfflineResourceTransferService {
         return value;
     }
 
-    private record PreviewTarget(Long id, Map<String, Object> configuration, boolean reused) { }
+    private Map<String, Long> previewFieldIds(Map<String, Object> source, Map<String, Object> target) {
+        Map<Long, Long> ids = TransferObjectFieldIndex.of(source).matchingIds(TransferObjectFieldIndex.of(target));
+        Map<String, Long> result = new LinkedHashMap<>();
+        if (source.get("fields") instanceof List<?> fields) {
+            for (int i = 0; i < fields.size(); i++) {
+                Map<?, ?> field = (Map<?, ?>) fields.get(i);
+                Long targetId = ids.get(Long.valueOf(String.valueOf(field.get("id"))));
+                if (targetId != null) result.put("/fields/" + i + "/id", targetId);
+            }
+        }
+        return result;
+    }
+
+    private record PreviewTarget(Long id, Map<String, Long> childIds, boolean reused) { }
 
 }

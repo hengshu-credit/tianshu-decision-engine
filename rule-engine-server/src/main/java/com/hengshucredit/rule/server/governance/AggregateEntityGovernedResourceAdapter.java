@@ -72,8 +72,14 @@ public abstract class AggregateEntityGovernedResourceAdapter<T>
         AppliedResource applied = rootAdapter.apply(context);
         Map<String, Object> aggregate =
                 CanonicalJson.readMap(context.snapshot().snapshotJson());
-        applyAggregate(applied.resourceId(), aggregate);
+        applied = applyAggregateWithResult(applied, aggregate);
         return afterAggregateApplied(context, applied);
+    }
+
+    protected AppliedResource applyAggregateWithResult(
+            AppliedResource applied, Map<String, Object> snapshot) {
+        applyAggregate(applied.resourceId(), snapshot);
+        return applied;
     }
 
     protected abstract void enrichSnapshot(

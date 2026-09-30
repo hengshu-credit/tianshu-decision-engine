@@ -26,6 +26,17 @@ public class DataObjectGovernedResourceAdapter
     private final RuleDataObjectFieldMapper fieldMapper;
     private final RuleDataObjectFieldOptionMapper optionMapper;
     private final DataObjectFieldReferenceValidator referenceValidator;
+    @jakarta.annotation.Resource private DataObjectUpdateReferenceGuard updateReferenceGuard;
+
+    @Override
+    public AppliedResource apply(ApprovalApplyContext context) {
+        if ("UPDATE".equals(context.action()) && updateReferenceGuard != null) {
+            List<GovernanceIssue> issues = updateReferenceGuard.validate(context.resourceId(),
+                    CanonicalJson.readMap(context.snapshot().snapshotJson()));
+            if (!issues.isEmpty()) throw new IllegalArgumentException(issues.get(0).message());
+        }
+        return super.apply(context);
+    }
 
     @Override
     @SuppressWarnings("unchecked")
@@ -119,6 +130,19 @@ public class DataObjectGovernedResourceAdapter
     @Override
     protected void applyAggregate(Long resourceId,
                                   Map<String, Object> snapshot) {
+        applyFields(resourceId, snapshot);
+    }
+
+    @Override
+    protected AppliedResource applyAggregateWithResult(
+            AppliedResource applied, Map<String, Object> snapshot) {
+        Map<Long, Long> fields = applyFields(applied.resourceId(), snapshot);
+        return new AppliedResource(applied.resourceId(), applied.versionNo(),
+                applied.effectiveStatus(), applied.artifactId(), fields);
+    }
+
+    private Map<Long, Long> applyFields(Long resourceId,
+                                      Map<String, Object> snapshot) {
         List<RuleDataObjectField> existing = fieldMapper.selectList(
                 new LambdaQueryWrapper<RuleDataObjectField>()
                         .eq(RuleDataObjectField::getObjectId, resourceId));
@@ -127,7 +151,11 @@ public class DataObjectGovernedResourceAdapter
 
         List<FieldDraft> drafts = parseDrafts(snapshot);
         Set<Long> retainedIds = new HashSet<>();
+        Set<Long> sourceIds = new HashSet<>();
         for (FieldDraft draft : drafts) {
+            if (draft.field().getId() != null && !sourceIds.add(draft.field().getId())) {
+                throw new IllegalArgumentException("数据对象字段 ID 重复，无法建立唯一引用映射");
+            }
             if (draft.field().getId() != null
                     && existingById.containsKey(draft.field().getId())) {
                 retainedIds.add(draft.field().getId());
@@ -173,9 +201,9 @@ public class DataObjectGovernedResourceAdapter
                 } else {
                     field.setId(null);
                     fieldMapper.insert(field);
-                    if (clientId != null) {
-                        remappedIds.put(clientId, field.getId());
-                    }
+                }
+                if (clientId != null) {
+                    remappedIds.put(clientId, field.getId());
                 }
                 replaceOptions(field.getId(), draft.options());
                 pending.remove(index);
@@ -186,6 +214,7 @@ public class DataObjectGovernedResourceAdapter
                         "数据对象字段存在缺失或循环的父字段引用");
             }
         }
+        return remappedIds;
     }
 
     @Override

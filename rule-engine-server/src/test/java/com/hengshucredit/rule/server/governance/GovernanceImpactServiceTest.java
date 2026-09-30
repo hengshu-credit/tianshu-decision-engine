@@ -57,6 +57,21 @@ public class GovernanceImpactServiceTest {
                 .isEmpty());
     }
 
+    @Test public void dataObjectUpdateRunsFieldReferencePreflightAgainstTheExplicitTargetId() throws Exception {
+        GovernanceImpactService service = new GovernanceImpactService(lineage(List.of()));
+        var guard = new DataObjectUpdateReferenceGuard() {
+            @Override public List<GovernanceIssue> validate(Long objectId, Map<String, Object> incoming) {
+                Assert.assertEquals(Long.valueOf(4), objectId);
+                return List.of(GovernanceIssue.error("DATA_OBJECT_FIELD_IN_USE", "函数仍在引用", "DATA_OBJECT", objectId, "$.fields"));
+            }
+        };
+        var field = GovernanceImpactService.class.getDeclaredField("dataObjectUpdateGuard");
+        field.setAccessible(true); field.set(service, guard);
+        var issues = service.analyze("DATA_OBJECT", 4L, "UPDATE", ResourceSnapshot.ofJson("{\"id\":999,\"fields\":[]}"));
+        Assert.assertEquals(1, issues.size());
+        Assert.assertEquals("DATA_OBJECT_FIELD_IN_USE", issues.get(0).code());
+    }
+
     @Test
     public void dataObjectChecksEveryFieldNode() {
         GovernanceImpactService service = new GovernanceImpactService(

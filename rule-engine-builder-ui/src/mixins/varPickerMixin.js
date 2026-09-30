@@ -493,7 +493,11 @@ export default {
      */
     _trySyncModelVarRefs() {
       if (this.projectRefs && this.projectRefs.length > 0 && this.contentLoaded && typeof this._syncModelVarRefs === 'function') {
-        this._syncModelVarRefs()
+        if (typeof this.syncDesignerReferenceMetadata === 'function') {
+          this.syncDesignerReferenceMetadata(() => this._syncModelVarRefs())
+        } else {
+          this._syncModelVarRefs()
+        }
       }
     },
 

@@ -14,8 +14,6 @@ import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RuleRevision;
 import com.hengshucredit.rule.server.artifact.CanonicalJson;
 import com.hengshucredit.rule.server.governance.GovernanceApprovalService;
-import com.hengshucredit.rule.server.governance.GovernedResourceAdapter;
-import com.hengshucredit.rule.server.governance.GovernedResourceAdapterRegistry;
 import com.hengshucredit.rule.server.governance.ResourceSnapshot;
 import com.hengshucredit.rule.server.governance.GovernanceResourceTypes;
 import com.hengshucredit.rule.server.governance.GovernanceSecretCodec;
@@ -44,11 +42,12 @@ import java.util.Set;
 /** 将已确认的离线包写入目标环境；过程复用治理审批及规则草稿机制。 */
 @Service
 public class OfflineResourceImportService {
-    @Resource private GovernedResourceAdapterRegistry adapterRegistry;
+    @Resource private com.hengshucredit.rule.server.governance.GovernedResourceAdapterRegistry adapterRegistry;
     @Resource private GovernanceApprovalService approvalService;
     @Resource private GovernedResourceMapper governedResourceMapper;
     @Resource private GovernedResourceVersionMapper governedResourceVersionMapper;
     @Resource private RuleVersionBindingMapper ruleVersionBindingMapper;
+    @Resource private com.hengshucredit.rule.server.mapper.RuleDefinitionMapper ruleDefinitionMapper;
     @Resource private RuleDefinitionService definitionService;
     @Resource private RuleLifecycleService lifecycleService;
     @Resource private RuleDraftService draftService;
@@ -95,8 +94,16 @@ public class OfflineResourceImportService {
         List<Map<String, Object>> result = new ArrayList<>();
         Long effectiveTargetProjectId = global ? Long.valueOf(0) : options.targetProjectId();
         boolean createdProject = false;
-        if (createProject && !hasProjectResource) {
-            effectiveTargetProjectId = importProject(Map.of(), options, actor);
+        if (createProject) {
+            TransferBundle.Resource template = ordered.stream()
+                    .filter(resource -> TransferKey.parse(resource.key()).type() == TransferResourceType.PROJECT)
+                    .findFirst().orElse(null);
+            Map<String, Object> projectConfig = template == null ? Map.of() : copy(template.configuration());
+            if (template != null && "SUFFIX".equals(options.normalizedResourcePolicy())) {
+                addSuffix(projectConfig, TransferResourceType.PROJECT, options.normalizedSuffix());
+            }
+            effectiveTargetProjectId = importProject(projectConfig, options, actor);
+            if (template != null) idMap.put(template.key(), effectiveTargetProjectId);
             createdProject = true;
         }
         for (TransferBundle.Resource resource : ordered) {
@@ -130,17 +137,7 @@ public class OfflineResourceImportService {
                     result.add(row(resource, targetId, "BOUND", "已绑定目标项目"));
                     continue;
                 }
-                if (createdProject) {
-                    throw new IllegalArgumentException("一个离线包只能在本次导入中新建一个目标项目");
-                }
-                if ("SUFFIX".equals(options.normalizedResourcePolicy())) {
-                    addSuffix(configuration, sourceKey.type(), options.normalizedSuffix());
-                }
-                Long targetId = importProject(configuration, options, actor);
-                idMap.put(resource.key(), targetId);
-                effectiveTargetProjectId = targetId;
-                createdProject = true;
-                result.add(row(resource, targetId, "CREATED", null));
+                result.add(row(resource, effectiveTargetProjectId, "CREATED", null));
                 continue;
             }
             applyTargetScope(configuration, sourceKey.type(), options, effectiveTargetProjectId);
@@ -150,6 +147,15 @@ public class OfflineResourceImportService {
             rewriteReferences(configuration, resource, byKey, idMap, childMap);
             String policy = sourceKey.type() == TransferResourceType.VARIABLE
                     ? options.normalizedVariablePolicy() : options.normalizedResourcePolicy();
+            if (sourceKey.type() == TransferResourceType.RULE && ruleDefinitionMapper != null) {
+                RuleDefinition occupied = ruleDefinitionMapper.selectOne(new LambdaQueryWrapper<RuleDefinition>()
+                        .eq(RuleDefinition::getRuleCode, configuration.get("ruleCode")));
+                if (occupied != null && !occupied.getId().equals(existingId)) {
+                    if (!"SUFFIX".equals(policy)) throw new IllegalArgumentException("规则编码在其他项目或未发布规则中已存在，请选择新建并追加后缀: " + configuration.get("ruleCode"));
+                    addSuffix(configuration, sourceKey.type(), options.normalizedSuffix());
+                    existingId = null;
+                }
+            }
             if (existingId != null && "REUSE".equals(policy)) {
                 if (!TransferResourceComparison.reusable(sourceKey.type(), configuration, existing.configuration(), existing.status())) {
                     throw new IllegalArgumentException("资源不能复用（类型、配置、启用状态或环境凭据未匹配）: " + resource.key()
@@ -167,17 +173,34 @@ public class OfflineResourceImportService {
                 addSuffix(configuration, sourceKey.type(), options.normalizedSuffix());
                 existingId = null;
             }
+            Map<Long, Long> importedFieldIds = sourceKey.type() == TransferResourceType.DATA_OBJECT && existingId != null
+                    ? prepareObjectOverwrite(configuration, existing.configuration()) : Map.of();
+            if (sourceKey.type() == TransferResourceType.DATA_OBJECT && existingId != null) configuration.put("id", existingId);
             ResourceSnapshot snapshot = ResourceSnapshot.ofJson(CanonicalJson.write(configuration));
             Long targetId;
             if (sourceKey.type() == TransferResourceType.RULE) {
+                if (existingId == null && ruleDefinitionMapper != null && ruleDefinitionMapper.selectOne(new LambdaQueryWrapper<RuleDefinition>()
+                        .eq(RuleDefinition::getRuleCode, configuration.get("ruleCode"))) != null) {
+                    throw new IllegalArgumentException("目标规则编码已被占用，请修改新建后缀: " + configuration.get("ruleCode"));
+                }
                 targetId = importRuleDraft(configuration, existingId, options, resourceTargetProjectId, actor);
             } else {
-                targetId = approveResource(sourceKey.type(), existingId, options, resourceTargetProjectId, snapshot, actor);
+                Map<Long, Long> appliedFields = new HashMap<>();
+                targetId = approveResource(sourceKey.type(), existingId, options, resourceTargetProjectId, snapshot, actor, appliedFields);
+                if (sourceKey.type() == TransferResourceType.DATA_OBJECT) {
+                    if (importedFieldIds.isEmpty()) childMap.put(resource.key(), appliedFields);
+                    else {
+                        Map<Long, Long> sourceToApplied = new HashMap<>();
+                        importedFieldIds.forEach((sourceId, draftId) -> {
+                            Long appliedId = appliedFields.get(draftId);
+                            if (appliedId == null) throw new IllegalStateException("覆盖数据对象未返回实际字段 ID: " + sourceId);
+                            sourceToApplied.put(sourceId, appliedId);
+                        });
+                        childMap.put(resource.key(), sourceToApplied);
+                    }
+                }
             }
             idMap.put(resource.key(), targetId);
-            if (sourceKey.type() == TransferResourceType.DATA_OBJECT) {
-                childMap.put(resource.key(), fieldMap(configuration, sourceKey, targetId));
-            }
             result.add(row(resource, targetId, existingId == null ? "CREATED" : "OVERWRITTEN", null));
         }
         Map<String, Object> response = new LinkedHashMap<>();
@@ -191,8 +214,31 @@ public class OfflineResourceImportService {
         return response;
     }
 
+    /** 迁移时确认字段身份；源环境数字 ID 绝不能直接作为目标环境 UPDATE 的依据。 */
+    private Map<Long, Long> prepareObjectOverwrite(Map<String, Object> configuration, Map<String, Object> existing) {
+        Map<Long, Long> ids = new LinkedHashMap<>(TransferObjectFieldIndex.of(configuration)
+                .matchingIds(TransferObjectFieldIndex.of(existing)));
+        Set<Long> occupied = new HashSet<>();
+        for (Object value : list(existing.get("fields"))) occupied.add(number(object(value).get("id")));
+        long temporary = -1;
+        for (Object value : list(configuration.get("fields"))) {
+            Long sourceId = number(object(value).get("id"));
+            if (!ids.containsKey(sourceId)) {
+                while (occupied.contains(temporary)) temporary--;
+                ids.put(sourceId, temporary--);
+            }
+        }
+        for (Object value : list(configuration.get("fields"))) {
+            Map<String, Object> field = object(value);
+            Long parent = number(field.get("parentFieldId"));
+            field.put("id", ids.get(number(field.get("id"))));
+            if (parent != null) field.put("parentFieldId", ids.get(parent));
+        }
+        return ids;
+    }
+
     private Long approveResource(TransferResourceType type, Long existingId, TransferImportOptions options,
-                                 Long targetProjectId, ResourceSnapshot snapshot, String actor) {
+                                 Long targetProjectId, ResourceSnapshot snapshot, String actor, Map<Long, Long> appliedFields) {
         GovernanceDraftRequest draft = new GovernanceDraftRequest();
         draft.setResourceType(type.name());
         draft.setResourceId(existingId);
@@ -203,7 +249,10 @@ public class OfflineResourceImportService {
         draft.setChangeSummary("离线配置迁移");
         var request = approvalService.createDraft(draft, actor);
         approvalService.submit(request.getId(), new GovernanceSubmitRequest() {{ setComment("离线配置迁移自动提交"); }}, actor);
-        var approved = approvalService.approve(request.getId(), new GovernanceReviewRequest() {{ setComment("离线配置迁移自动审批"); }}, actor);
+        var approved = approvalService.approve(request.getId(), new GovernanceReviewRequest() {{ setComment("离线配置迁移自动审批"); }}, actor,
+                applied -> appliedFields.putAll(applied.fieldIdMapping()));
+        if (!"APPROVED".equals(approved.getStatus()))
+            throw new IllegalStateException("离线资源审批未生效: " + type + "，状态: " + approved.getStatus());
         if (approved.getResourceId() == null || approved.getResourceId() <= 0)
             throw new IllegalStateException("离线资源审批未返回目标资源 ID: " + type);
         return approved.getResourceId();
@@ -294,38 +343,9 @@ public class OfflineResourceImportService {
         }
     }
 
-    private Map<Long, Long> fieldMap(Map<String, Object> source, TransferKey sourceKey, Long targetId) {
-        try {
-            Map<String, Object> target = CanonicalJson.readMap(adapterRegistry.require(sourceKey.type().name()).loadEffective(targetId).snapshotJson());
-            List<?> sourceFields = list(source.get("fields"));
-            List<?> targetFields = list(target.get("fields"));
-            Map<Long, Long> result = new HashMap<>();
-            for (Object left : sourceFields) {
-                Map<String, Object> leftMap = object(left);
-                for (Object right : targetFields) {
-                    Map<String, Object> rightMap = object(right);
-                    if (String.valueOf(leftMap.get("varCode")).equals(String.valueOf(rightMap.get("varCode")))
-                            && String.valueOf(leftMap.get("varType")).equals(String.valueOf(rightMap.get("varType")))) {
-                        Long sourceId = number(leftMap.get("id")); Long targetFieldId = number(rightMap.get("id"));
-                        if (sourceId != null && targetFieldId != null) result.put(sourceId, targetFieldId);
-                    }
-                }
-            }
-            return result;
-        } catch (RuntimeException ignored) { return Map.of(); }
-    }
-
-    /** 配置比较已确认字段顺序和父子结构相同，按对应位置映射，避免不同对象分支下同名字段串绑。 */
+    /** 按完整父子结构产生 ID 映射，字段查询顺序变化不能改变引用关系。 */
     private Map<Long, Long> reusedFieldMap(Map<String, Object> source, Map<String, Object> target) {
-        List<?> sourceFields = list(source.get("fields"));
-        List<?> targetFields = list(target.get("fields"));
-        Map<Long, Long> result = new HashMap<>();
-        for (int i = 0; i < sourceFields.size(); i++) {
-            Long sourceId = number(object(sourceFields.get(i)).get("id"));
-            Long targetId = number(object(targetFields.get(i)).get("id"));
-            if (sourceId != null && targetId != null) result.put(sourceId, targetId);
-        }
-        return result;
+        return TransferObjectFieldIndex.of(source).matchingIds(TransferObjectFieldIndex.of(target));
     }
 
     private ExistingResource findExisting(TransferResourceType type, Map<String, Object> config, Long projectId) {
@@ -338,6 +358,9 @@ public class OfflineResourceImportService {
             GovernedResourceVersion version = governedResourceVersionMapper.selectById(row.getEffectiveVersionId());
             if (version == null) continue;
             Map<String, Object> current = CanonicalJson.readMap(version.getSnapshotJson());
+            if (type == TransferResourceType.DATA_OBJECT) {
+                current = CanonicalJson.readMap(adapterRegistry.require(type.name()).loadEffective(row.getResourceId()).snapshotJson());
+            }
             if (!code.equals(String.valueOf(current.get(type.codeField)))) continue;
             if (type == TransferResourceType.MODEL && secretCodec != null) {
                 current = secretCodec.restore(new ResourceSnapshot(version.getSnapshotJson(), row.getEffectiveStatus(),

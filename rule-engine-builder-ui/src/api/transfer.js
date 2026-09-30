@@ -1,5 +1,9 @@
 import request from './request'
 
+export function listTransferResources(params) {
+  return request({ url: '/rule/transfer/resources', method: 'get', params })
+}
+
 export function exportResourceTransfer(roots) {
   return request({
     url: '/rule/transfer/export',

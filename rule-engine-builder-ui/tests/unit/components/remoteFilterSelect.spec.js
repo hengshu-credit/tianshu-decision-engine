@@ -8,6 +8,12 @@ const AutocompleteStub = {
   template: '<input :value="modelValue" />',
 }
 
+const SelectStub = {
+  name: 'ElSelect',
+  data: () => ({ expanded: false }),
+  template: '<div><slot /></div>',
+}
+
 function mountSelect(props = {}) {
   return shallowMount(RemoteFilterSelect, {
     props: {
@@ -15,11 +21,52 @@ function mountSelect(props = {}) {
       allowFreeInput: true,
       ...props,
     },
-    stubs: { 'el-autocomplete': AutocompleteStub },
+    stubs: { 'el-autocomplete': AutocompleteStub, 'el-select': SelectStub },
   })
 }
 
 describe('RemoteFilterSelect', () => {
+  test('只读选择打开时 remote 请求与可见事件交错只查询一次，空候选假隐藏不取消', async () => {
+    let resolve
+    const fetchOptions = vi.fn(() => new Promise(done => { resolve = done }))
+    const wrapper = mountSelect({ allowFreeInput: false, fetchOptions })
+    const select = wrapper.findComponent(SelectStub)
+    await select.setData({ expanded: true })
+    wrapper.vm.handleRemote('')
+    select.vm.$emit('visible-change', true)
+    select.vm.$emit('visible-change', false)
+    select.vm.$emit('visible-change', true)
+    resolve({ records: [], total: 0 })
+    await flushPromises()
+    expect(fetchOptions).toHaveBeenCalledTimes(1)
+    expect(wrapper.vm.loading).toBe(false)
+    expect(wrapper.vm.options).toEqual([])
+    wrapper.unmount()
+  })
+
+  test('真实关闭后忽略迟到结果，重开及失败重试可重新查询', async () => {
+    const pending = []
+    const fetchOptions = vi.fn(() => new Promise((resolve, reject) => pending.push({ resolve, reject })))
+    const wrapper = mountSelect({ allowFreeInput: false, fetchOptions })
+    const select = wrapper.findComponent(SelectStub)
+    await select.setData({ expanded: true })
+    expect(fetchOptions).toHaveBeenCalledTimes(1)
+    await select.setData({ expanded: false })
+    pending[0].resolve(['旧候选'])
+    await flushPromises()
+    expect(wrapper.vm.options).toEqual([])
+    await select.setData({ expanded: true })
+    expect(fetchOptions).toHaveBeenCalledTimes(2)
+    pending[1].reject(new Error('offline'))
+    await flushPromises()
+    expect(wrapper.emitted('load-error')).toHaveLength(1)
+    await select.setData({ expanded: false })
+    await select.setData({ expanded: true })
+    pending[2].resolve(['已恢复'])
+    await flushPromises()
+    expect(wrapper.vm.options).toEqual(['已恢复'])
+    wrapper.unmount()
+  })
   test('候选层传送至 body，回车不默认选中首项', () => {
     const wrapper = mountSelect()
     const autocomplete = wrapper.findComponent(AutocompleteStub)

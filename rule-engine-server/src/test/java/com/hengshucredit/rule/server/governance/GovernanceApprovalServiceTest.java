@@ -509,6 +509,38 @@ public class GovernanceApprovalServiceTest {
     }
 
     @Test
+    public void dataObjectVersionStoresAppliedFieldIdsAndKeepsSubmittedSnapshot() {
+        TestService service = new TestService();
+        service.resource.setId(5L);
+        service.resource.setResourceType("DATA_OBJECT");
+        service.resource.setResourceId(7L);
+        service.resource.setEffectiveVersionId(3L);
+        service.resource.setEffectiveVersionNo(3);
+        service.request.setId(12L);
+        service.request.setResourceType("DATA_OBJECT");
+        service.request.setResourceId(7L);
+        service.request.setAction("UPDATE");
+        service.request.setStatus("PENDING");
+        service.request.setBaseVersionId(3L);
+        String submitted = "{\"fields\":[{\"id\":11,\"varCode\":\"age\"}]}";
+        service.request.setSubmittedSnapshotJson(submitted);
+        service.request.setSnapshotDigest("source-digest");
+        service.request.setDependencyDigest("dep-digest");
+        String effective = "{\"id\":7,\"fields\":[{\"id\":101,\"varCode\":\"age\"}]}";
+        service.effectiveSnapshot = ResourceSnapshot.ofJson(effective);
+        service.appliedFieldIds = java.util.Map.of(11L, 101L);
+        var mapping = new java.util.HashMap<Long, Long>();
+
+        service.approve(12L, new GovernanceReviewRequest(), "same-user", applied -> mapping.putAll(applied.fieldIdMapping()));
+
+        Assert.assertEquals(effective, service.versions.get(0).getSnapshotJson());
+        Assert.assertEquals(com.hengshucredit.rule.server.artifact.Sha256Digests.text(effective), service.versions.get(0).getSnapshotDigest());
+        Assert.assertEquals(submitted, service.request.getSubmittedSnapshotJson());
+        Assert.assertEquals("source-digest", service.request.getSnapshotDigest());
+        Assert.assertEquals(java.util.Map.of(11L, 101L), mapping);
+    }
+
+    @Test
     public void conflictRestoresLatestEffectiveProjectionNotStaleBase() {
         TestService service = new TestService();
         service.resource.setId(5L);
@@ -761,6 +793,7 @@ public class GovernanceApprovalServiceTest {
         private ResourceSnapshot terminatedCreateSnapshot;
         private int insertRequestCalls;
         private boolean applyCollision;
+        private java.util.Map<Long, Long> appliedFieldIds = java.util.Map.of();
 
         private String effectiveStatus(
                 GovernanceApprovalRequest value) {
@@ -932,7 +965,7 @@ public class GovernanceApprovalServiceTest {
                                 "duplicate business identity");
                     }
                     return new AppliedResource(7L,
-                            context.nextVersionNo(), "ACTIVE", null);
+                            context.nextVersionNo(), "ACTIVE", null, appliedFieldIds);
                 }
 
                 @Override

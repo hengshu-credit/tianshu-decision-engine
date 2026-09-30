@@ -7,7 +7,9 @@ async function installTransferRoutes(page) {
   const previews = []
   const imports = []
   const exports = []
+  const searches = []
   let delayNextPreview = null
+  let failNextSearch = false
   const parseOptions = request => {
     const match = /name="options"\r\n\r\n([\s\S]*?)\r\n--/.exec(request.postData())
     if (!match) throw new Error('导入请求缺少 options multipart 字段')
@@ -22,6 +24,18 @@ async function installTransferRoutes(page) {
     else if (pathname === '/api/auth/console/me') data = { username: 'e2e' }
     else if (pathname === '/api/rule/project/list') data = {
       records: [{ id: 7, projectName: '授信项目', projectCode: 'credit' }], total: 1,
+    }
+    else if (pathname === '/api/rule/transfer/resources') {
+      const params = Object.fromEntries(new URL(request.url()).searchParams)
+      searches.push(params)
+      if (failNextSearch) {
+        failNextSearch = false
+        await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 500, message: '候选服务暂时不可用' }) })
+        return
+      }
+      data = { records: params.nodeType === 'MODEL'
+        ? [{ id: 101, displayName: '授信评分 (score)', scope: 'GLOBAL' }]
+        : [{ id: 101, displayName: '授信判断 (risk_rule)', scope: 'PROJECT', projectId: 7, projectName: '授信项目', projectCode: 'credit' }], total: 1 }
     }
     else if (pathname === '/api/rule/transfer/export') {
       exports.push(request.postDataJSON())
@@ -42,11 +56,12 @@ async function installTransferRoutes(page) {
     }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, message: 'success', data }) })
   })
-  return { assertClean, previews, imports, exports, delayPreview(wait) { delayNextPreview = wait } }
+  return { assertClean, previews, imports, exports, searches, delayPreview(wait) { delayNextPreview = wait }, failSearch() { failNextSearch = true } }
 }
 
 async function exportAndUpload(page, testInfo) {
-  await page.getByPlaceholder('资源 ID').fill('101')
+  await page.getByRole('combobox', { name: '第 1 项导出资源', exact: true }).fill('授信')
+  await page.getByRole('option', { name: '授信判断 (risk_rule) · 授信项目 / credit', exact: true }).click()
   const downloaded = page.waitForEvent('download')
   await page.getByRole('button', { name: '生成并下载配置包' }).click()
   const file = testInfo.outputPath('transfer.zip')
@@ -68,7 +83,7 @@ test('离线迁移页面展示导出、目标范围和冲突策略流程', async
   await expect(page.getByRole('button', { name: '生成并下载配置包' })).toBeVisible()
   await expect(page.getByText('名单记录、日志和账单不会进入配置包。')).toBeVisible()
 
-  await page.getByPlaceholder('资源 ID').fill('101')
+  await expect(page.getByRole('combobox', { name: '第 1 项导出资源', exact: true })).toBeVisible()
   await page.getByText('导入时新建项目', { exact: true }).click()
   await expect(page.getByPlaceholder('新项目编码（可覆盖源编码）')).toBeVisible()
   await expect(page.getByPlaceholder('新项目名称（可覆盖源名称）')).toBeVisible()
@@ -164,5 +179,51 @@ test('新建项目与发布策略显示和发送一致', async ({ page }, testIn
   await expect(page.getByRole('dialog', { name: '导入结果' })).toContainText('规则已按所选策略发布')
   expect(fixture.imports).toEqual([fixture.previews[0]])
   expect(fixture.imports[0]).toMatchObject({ createProject: true, projectCode: 'new_credit', publishRules: true })
+  fixture.assertClean()
+})
+
+test('导出按名称选择，重复提示，切换类型后重新选择并提交各自 ID', async ({ page }, testInfo) => {
+  const fixture = await installTransferRoutes(page)
+  await page.goto(`${baseUrl}#/transfer`)
+  const first = page.getByRole('combobox', { name: '第 1 项导出资源', exact: true })
+  await first.fill('risk_rule')
+  await page.getByRole('option', { name: '授信判断 (risk_rule) · 授信项目 / credit', exact: true }).click()
+  await page.getByRole('button', { name: '添加根资源', exact: true }).click()
+  const second = page.getByRole('combobox', { name: '第 2 项导出资源', exact: true })
+  await second.fill('授信')
+  const secondList = page.locator(`[id="${await second.getAttribute('aria-controls')}"]`)
+  await secondList.getByRole('option', { name: '授信判断 (risk_rule) · 授信项目 / credit', exact: true }).click()
+  await expect(page.getByText('该资源已添加，请选择其他资源', { exact: true })).toBeVisible()
+  await page.getByRole('combobox', { name: '第 2 项资源类型', exact: true }).press('ArrowDown')
+  await page.getByRole('option', { name: '模型', exact: true }).click()
+  await page.getByRole('button', { name: '生成并下载配置包', exact: true }).click()
+  await expect(page.getByText('请为每一行选择要导出的资源', { exact: true })).toBeVisible()
+  expect(fixture.exports).toEqual([])
+  await second.fill('score')
+  await page.getByRole('option', { name: '授信评分 (score) · 全局', exact: true }).click()
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: '生成并下载配置包', exact: true }).click()
+  await (await download).saveAs(testInfo.outputPath('multiple-resources.zip'))
+  expect(fixture.exports).toEqual([[{ resourceType: 'RULE', resourceId: 101 }, { resourceType: 'MODEL', resourceId: 101 }]])
+  expect(fixture.searches).toContainEqual(expect.objectContaining({ nodeType: 'RULE', keyword: 'risk_rule', pageNum: '1', pageSize: '20' }))
+  expect(fixture.searches).toContainEqual(expect.objectContaining({ nodeType: 'MODEL', keyword: 'score' }))
+  await page.getByRole('button', { name: '移除第 1 项资源', exact: true }).click()
+  await expect(page.locator('.root-row')).toHaveCount(1)
+  await expect(page.locator('.root-row')).toContainText('授信评分 (score) · 全局')
+  fixture.assertClean()
+})
+
+test('资源候选加载失败后显示行内说明，再次搜索可恢复', async ({ page }) => {
+  const fixture = await installTransferRoutes(page)
+  await page.goto(`${baseUrl}#/transfer`)
+  fixture.failSearch()
+  const select = page.getByRole('combobox', { name: '第 1 项导出资源', exact: true })
+  await select.click()
+  await expect(page.getByText('候选资源加载失败，请重新展开选择器或搜索重试', { exact: true })).toBeVisible()
+  expect(fixture.searches).toHaveLength(1)
+  await select.fill('risk_rule')
+  await page.getByRole('option', { name: '授信判断 (risk_rule) · 授信项目 / credit', exact: true }).click()
+  await expect(page.locator('.root-error')).toHaveCount(0)
+  expect(fixture.searches).toHaveLength(2)
   fixture.assertClean()
 })
