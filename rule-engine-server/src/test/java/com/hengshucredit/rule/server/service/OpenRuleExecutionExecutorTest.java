@@ -86,4 +86,30 @@ public class OpenRuleExecutionExecutorTest {
             executor.close();
         }
     }
+
+    @Test
+    public void removesTimedOutQueuedTaskSoLaterRequestsCanUseTheQueue() throws Exception {
+        OpenRuleExecutionExecutor executor = new OpenRuleExecutionExecutor(1, 1);
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread first = new Thread(() -> executor.execute(() -> {
+            started.countDown();
+            release.await(2, TimeUnit.SECONDS);
+            return "first";
+        }));
+        first.start();
+        assertTrue(started.await(1, TimeUnit.SECONDS));
+
+        RequestDeadlineContext.start(50);
+        try {
+            executor.execute(() -> "queued-timeout");
+        } catch (OpenRuleExecutionExecutor.TimedOut expected) {
+            assertEquals(0, ((Number) executor.snapshot().get("queueDepth")).intValue());
+        } finally {
+            RequestDeadlineContext.clear();
+            release.countDown();
+            first.join(1000L);
+            executor.close();
+        }
+    }
 }

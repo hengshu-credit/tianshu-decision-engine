@@ -60,10 +60,10 @@ public class OpenRuleExecutionExecutor {
                     ? future.get() : future.get(timeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             timedOut.incrementAndGet();
-            future.cancel(true);
+            cancelAndRemove(future);
             throw new TimedOut(e);
         } catch (InterruptedException e) {
-            future.cancel(true);
+            cancelAndRemove(future);
             Thread.currentThread().interrupt();
             throw new IllegalStateException("开放规则执行被中断", e);
         } catch (ExecutionException e) {
@@ -72,6 +72,12 @@ public class OpenRuleExecutionExecutor {
             if (cause instanceof Error) throw (Error) cause;
             throw new IllegalStateException("开放规则执行失败", cause);
         }
+    }
+
+    private void cancelAndRemove(Future<?> future) {
+        future.cancel(true);
+        executor.remove((Runnable) future);
+        executor.purge();
     }
 
     public Map<String, Object> snapshot() {
