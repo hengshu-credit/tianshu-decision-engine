@@ -43,6 +43,9 @@
           <el-button v-if="roots.length > 1" link type="danger" :disabled="exporting" :aria-label="`移除第 ${index + 1} 项资源`" @click="removeRoot(index)">移除</el-button>
         </div>
         <el-alert v-if="exportError" :title="exportError" type="error" :closable="false" />
+        <el-checkbox v-model="exportOnlySelected" :disabled="exporting">
+          只迁移所选内容，不带出上游依赖
+        </el-checkbox>
         <div class="card-actions">
           <el-button size="small" :disabled="exporting" @click="addRoot">添加根资源</el-button>
           <el-button type="primary" :loading="exporting" @click="exportPackage">生成并下载配置包</el-button>
@@ -137,6 +140,17 @@
         <span>名单数据：不包含</span>
         <span>包摘要：{{ preview.packageDigest }}</span>
       </div>
+      <div v-if="preview.resources?.length" class="selected-resource-list">
+        <div class="selected-resource-list__heading">
+          <strong>选择要导入的内容</strong>
+          <span>取消勾选的资源会转为外部关联，导入时需要在下方选择目标内容。</span>
+        </div>
+        <el-checkbox-group v-model="selectedResourceKeysDraft" class="selected-resource-list__items">
+          <el-checkbox v-for="item in preview.resources" :key="item.key" :label="item.key">
+            {{ item.resourceCode || item.key }} · {{ item.resourceType }}
+          </el-checkbox>
+        </el-checkbox-group>
+      </div>
       <div v-if="previewLineageRoots.length" class="offline-lineage-panel">
         <div class="offline-lineage-toolbar">
           <div>
@@ -149,6 +163,14 @@
         </div>
         <lineage-graph v-if="offlineLineageGraph" embedded :initial-graph="offlineLineageGraph" />
       </div>
+      <transfer-association-panel
+        :associations="preview.associations || []"
+        :resource-bindings="resourceBindingsDraft"
+        :field-bindings="fieldBindingsDraft"
+        @update:resource-bindings="resourceBindingsDraft = $event"
+        @update:field-bindings="fieldBindingsDraft = $event"
+        @search="searchAssociationCandidates"
+      />
       <el-table :data="preview.conflicts || []" size="small" class="transfer-table">
         <el-table-column prop="resourceType" label="资源类型" width="150" />
         <el-table-column prop="resourceCode" label="编码" min-width="180" />
@@ -205,10 +227,11 @@
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { exportResourceTransfer, importResourceTransfer, previewResourceTransfer, listTransferResources, listTransferLogs, getTransferLog } from '@/api/transfer'
+import { exportResourceTransfer, importResourceTransfer, previewResourceTransfer, listTransferResources, listTransferResourceFields, listTransferLogs, getTransferLog } from '@/api/transfer'
 import { listProjects } from '@/api/project'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import LineageGraph from '@/views/lineage/LineageGraph.vue'
+import TransferAssociationPanel from '@/components/transfer/TransferAssociationPanel.vue'
 
 const RESOURCE_TYPES = [
   { value: 'PROJECT', label: '项目' },
@@ -230,13 +253,14 @@ const newRoot = (key, fetch) => ({ key, resourceType: 'RULE', resourceId: '', lo
 
 export default {
   name: 'OfflineTransfer',
-  components: { RemoteFilterSelect, LineageGraph },
+  components: { RemoteFilterSelect, LineageGraph, TransferAssociationPanel },
   data() {
     return {
       resourceTypes: RESOURCE_TYPES,
       roots: [newRoot(1, this.fetchRootOptionsByKey)],
       nextRootKey: 2,
       exporting: false,
+      exportOnlySelected: false,
       exportError: '',
       previewing: false,
       applying: false,
@@ -256,8 +280,12 @@ export default {
       options: {
         targetScope: 'PROJECT', targetProjectId: '', createProject: false,
         projectCode: '', projectName: '', publishRules: false,
-        variablePolicy: 'REUSE', resourcePolicy: 'SUFFIX', suffix: '_imported'
-      }
+        variablePolicy: 'REUSE', resourcePolicy: 'SUFFIX', suffix: '_imported',
+        selectedResourceKeys: [], resourceBindings: {}, fieldBindings: {}
+      },
+      selectedResourceKeysDraft: [],
+      resourceBindingsDraft: {},
+      fieldBindingsDraft: {},
     }
   },
   computed: {
@@ -374,7 +402,14 @@ export default {
       this.previewError = ''
       this.previewing = false
     },
-    selectFile(upload) { this.importFile = upload?.raw || null; this.selectedLineageRoot = ''; this.invalidatePreview() },
+    selectFile(upload) {
+      this.importFile = upload?.raw || null
+      this.selectedLineageRoot = ''
+      this.selectedResourceKeysDraft = []
+      this.resourceBindingsDraft = {}
+      this.fieldBindingsDraft = {}
+      this.invalidatePreview()
+    },
     async fetchTargetProjects({ query, pageNum, pageSize }) {
       const response = await listProjects({ keyword: query, pageNum, pageSize })
       const data = response.data || {}
@@ -403,7 +438,7 @@ export default {
       }
       this.exporting = true
       try {
-        const response = await exportResourceTransfer(roots)
+        const response = await exportResourceTransfer(roots, { includeDependencies: !this.exportOnlySelected })
         const url = URL.createObjectURL(response.data)
         const anchor = document.createElement('a')
         anchor.href = url
@@ -416,6 +451,10 @@ export default {
     },
     async previewPackage() {
       if (this.applying || !this.importFile) return
+      if (this.preview?.resources?.length && !this.selectedResourceKeysDraft.length) {
+        ElMessage.warning('请至少选择一项要导入的内容')
+        return
+      }
       this.invalidatePreview()
       if (!this.validateTargetOptions()) return
       const requestId = this.previewRequestId
@@ -428,6 +467,10 @@ export default {
         if (requestId !== this.previewRequestId || file !== this.importFile || signature !== this.optionsSignature) return
         if (!response.data?.packageDigest) throw new Error('预检未返回有效的配置包摘要，请重新预览冲突')
         this.preview = response.data
+        this.selectedResourceKeysDraft = (response.data.selectedResourceKeys
+          || (response.data.resources || []).map((item) => item.key)).slice()
+        this.resourceBindingsDraft = { ...(this.options.resourceBindings || {}), ...this.resourceBindingsDraft }
+        this.fieldBindingsDraft = { ...(this.options.fieldBindings || {}), ...this.fieldBindingsDraft }
         this.selectedLineageRoot = response.data.roots?.[0] || ''
         this.previewFile = file
         this.previewOptionsSignature = signature
@@ -439,6 +482,10 @@ export default {
     },
     async applyPackage() {
       if (this.applying) return
+      if (this.preview?.resources?.length && !this.selectedResourceKeysDraft.length) {
+        ElMessage.warning('请至少选择一项要导入的内容')
+        return
+      }
       if (!this.hasCurrentPreview) {
         ElMessage.warning('请先对当前文件和导入选项重新预览冲突')
         return
@@ -479,7 +526,40 @@ export default {
         projectCode: createProject ? this.options.projectCode.trim() : null,
         projectName: createProject ? this.options.projectName.trim() : null,
         projectBindings: {},
-        publishRules: Boolean(this.options.publishRules)
+        publishRules: Boolean(this.options.publishRules),
+        selectedResourceKeys: this.selectedResourceKeysDraft.slice(),
+        resourceBindings: { ...this.resourceBindingsDraft },
+        fieldBindings: { ...this.fieldBindingsDraft },
+      }
+    },
+    async searchAssociationCandidates(association) {
+      if (!association) return
+      try {
+        const response = await listTransferResources({
+          nodeType: LINEAGE_TYPES[association.targetResourceType] || association.targetResourceType,
+          keyword: association.targetCode || '',
+          pageNum: 1,
+          pageSize: 50,
+        })
+        const data = response.data || {}
+        const candidates = (data.records || []).map((item) => ({
+          id: item.id,
+          code: item.code || item.resourceCode,
+          name: item.displayName || item.name,
+          projectId: item.projectId,
+          fields: item.fields || [],
+        }))
+        const target = (this.preview.associations || []).find((item) => item.referenceKey === association.referenceKey)
+        if (target) {
+          target.candidates = candidates
+          const targetResourceId = association.targetResourceId || this.resourceBindingsDraft[association.targetKey]
+          if (target.childPath && targetResourceId) {
+            const fieldsResponse = await listTransferResourceFields('DATA_OBJECT', targetResourceId)
+            target.fieldCandidates = fieldsResponse.data || []
+          }
+        }
+      } catch (error) {
+        ElMessage.error(error.message || '加载关联候选失败')
       }
     },
     validateTargetOptions() {
@@ -532,6 +612,10 @@ export default {
 .import-options__policies .el-checkbox { white-space: nowrap; }
 .preview-card { margin-top: 18px; }
 .preview-summary { display: flex; flex-wrap: wrap; gap: 16px; padding: 16px 0; color: var(--el-text-color-secondary); font-size: 13px; }
+.selected-resource-list { margin-top: 16px; padding: 12px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--el-bg-color); }
+.selected-resource-list__heading { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.selected-resource-list__heading span { color: var(--el-text-color-secondary); font-size: 12px; }
+.selected-resource-list__items { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; }
 .offline-lineage-panel { margin: 2px 0 18px; padding: 12px; border: 1px solid var(--el-border-color-light); border-radius: 10px; background: var(--el-fill-color-extra-light); }
 .offline-lineage-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 10px; }
 .offline-lineage-toolbar > div { display: grid; gap: 3px; min-width: 0; }

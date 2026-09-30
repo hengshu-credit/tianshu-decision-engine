@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.transfer;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -17,14 +18,29 @@ public record TransferImportOptions(Long targetProjectId,
                                     String projectCode,
                                     String projectName,
                                     Map<String, Long> projectBindings,
-                                    Boolean publishRules) {
+                                    Boolean publishRules,
+                                    List<String> selectedResourceKeys,
+                                    Map<String, Long> resourceBindings,
+                                    Map<String, Long> fieldBindings) {
     public TransferImportOptions(Long targetProjectId, String targetScope,
                                  String variablePolicy, String resourcePolicy,
                                  String suffix, Boolean createProject,
                                  String projectCode, String projectName,
                                  Map<String, Long> projectBindings) {
         this(targetProjectId, targetScope, variablePolicy, resourcePolicy, suffix,
-                createProject, projectCode, projectName, projectBindings, false);
+                createProject, projectCode, projectName, projectBindings, false,
+                List.of(), Map.of(), Map.of());
+    }
+
+    public TransferImportOptions(Long targetProjectId, String targetScope,
+                                 String variablePolicy, String resourcePolicy,
+                                 String suffix, Boolean createProject,
+                                 String projectCode, String projectName,
+                                 Map<String, Long> projectBindings,
+                                 Boolean publishRules) {
+        this(targetProjectId, targetScope, variablePolicy, resourcePolicy, suffix,
+                createProject, projectCode, projectName, projectBindings, publishRules,
+                List.of(), Map.of(), Map.of());
     }
     public String normalizedScope() {
         return "GLOBAL".equalsIgnoreCase(targetScope) ? "GLOBAL" : "PROJECT";
@@ -39,5 +55,17 @@ public record TransferImportOptions(Long targetProjectId,
     }
     public String normalizedSuffix() {
         return suffix == null || suffix.isBlank() ? "_imported" : suffix.trim();
+    }
+
+    public List<String> normalizedSelectedResourceKeys() {
+        return selectedResourceKeys == null ? List.of() : List.copyOf(selectedResourceKeys);
+    }
+
+    public Map<String, Long> normalizedResourceBindings() {
+        return resourceBindings == null ? Map.of() : Map.copyOf(resourceBindings);
+    }
+
+    public Map<String, Long> normalizedFieldBindings() {
+        return fieldBindings == null ? Map.of() : Map.copyOf(fieldBindings);
     }
 }

@@ -61,4 +61,18 @@ public class TransferBundleCodecTest {
 
         Assert.assertEquals("{\"apiConfigId\":9,\"listIds\":[2]}", root.get("sourceConfig"));
     }
+
+    @Test
+    public void externalReferenceCanBePackagedWithoutItsUpstreamResource() {
+        TransferBundle bundle = new TransferBundle(List.of("VARIABLE:1"), List.of(
+                new TransferBundle.Resource("VARIABLE:1", Map.of("sourceConfig", "{\"apiConfigId\":7}"),
+                        List.of(new TransferBundle.Reference("/sourceConfig/@json/apiConfigId",
+                                "EXTERNAL_API:7", null, true, "credit_api", "授信接口")), List.of())), List.of());
+
+        TransferBundle.Resource resource = codec.decode(codec.encode(bundle)).bundle().resources().get(0);
+
+        Assert.assertTrue(resource.references().get(0).external());
+        Assert.assertEquals("credit_api", resource.references().get(0).targetCode());
+        Assert.assertEquals("授信接口", resource.references().get(0).targetName());
+    }
 }

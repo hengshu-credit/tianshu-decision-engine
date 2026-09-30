@@ -71,6 +71,8 @@ public class RuleDependencyClosureService {
     @Resource
     private RuleDataObjectMapper dataObjectMapper;
     @Resource private com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper apiConfigMapper;
+    @Resource private com.hengshucredit.rule.server.mapper.RuleDbDatasourceMapper dbDatasourceMapper;
+    @Resource private com.hengshucredit.rule.server.mapper.RuleListLibraryMapper listLibraryMapper;
     @Resource
     private RulePublishedMapper publishedMapper;
     @Resource private com.hengshucredit.rule.server.service.RuleVersionBindingService versionBindingService;
@@ -439,11 +441,31 @@ public class RuleDependencyClosureService {
         binding.put("sourceType", variable.getVarSource());
         binding.put("sourceResourceId", sourceResourceId);
         binding.put("targetResourceType", targetResourceType);
+        addSourceIdentity(targetResourceType, sourceResourceId, binding);
         String componentId = "BINDING:" + targetResourceType + ":" + sourceResourceId;
         addJsonDependency(componentId, "BINDING", sourceResourceId, null,
                 "bindings/resources/" + targetResourceType.toLowerCase(Locale.ROOT)
                         + "/" + sourceResourceId + ".json",
                 "EXPLICIT_BINDING", binding, dependencies);
+    }
+
+    private void addSourceIdentity(String targetResourceType, Long resourceId,
+                                   Map<String, Object> binding) {
+        if (resourceId == null) return;
+        Object code = null;
+        Object name = null;
+        if ("EXTERNAL_API".equals(targetResourceType) && apiConfigMapper != null) {
+            var api = apiConfigMapper.selectById(resourceId);
+            if (api != null) { code = api.getApiCode(); name = api.getApiName(); }
+        } else if ("DB_DATASOURCE".equals(targetResourceType) && dbDatasourceMapper != null) {
+            var datasource = dbDatasourceMapper.selectById(resourceId);
+            if (datasource != null) { code = datasource.getDatasourceCode(); name = datasource.getDatasourceName(); }
+        } else if ("LIST_LIBRARY".equals(targetResourceType) && listLibraryMapper != null) {
+            var list = listLibraryMapper.selectById(resourceId);
+            if (list != null) { code = list.getListCode(); name = list.getListName(); }
+        }
+        if (code != null) binding.put("sourceResourceCode", code);
+        if (name != null) binding.put("sourceResourceName", name);
     }
 
     private void addModelOutput(Long outputFieldId, Long projectId, String path,

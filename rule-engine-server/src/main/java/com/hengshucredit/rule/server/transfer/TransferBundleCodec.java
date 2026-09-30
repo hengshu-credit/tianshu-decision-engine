@@ -45,7 +45,9 @@ public final class TransferBundleCodec {
             for (Object item : items) {
                 Map<String, Object> reference = object(item);
                 references.add(new TransferBundle.Reference(requiredText(reference.get("path")),
-                        requiredText(reference.get("targetKey")), optionalText(reference.get("childPath"))));
+                        requiredText(reference.get("targetKey")), optionalText(reference.get("childPath")),
+                        Boolean.TRUE.equals(reference.get("external")),
+                        optionalText(reference.get("targetCode")), optionalText(reference.get("targetName"))));
             }
             resources.add(new TransferBundle.Resource(key, object(value.get("configuration")), references,
                     strings(value.get("requiredEnvironmentFields"))));
@@ -71,9 +73,11 @@ public final class TransferBundleCodec {
             Set<String> paths = new LinkedHashSet<>();
             for (var reference : resource.references()) {
                 if (!paths.add(reference.path())) throw new IllegalArgumentException("迁移引用路径重复: " + resource.key() + reference.path());
-                if (!keys.contains(reference.targetKey())) throw new IllegalArgumentException("离线包缺少上游依赖: " + reference.targetKey());
+                if (!reference.external() && !keys.contains(reference.targetKey())) {
+                    throw new IllegalArgumentException("离线包缺少上游依赖: " + reference.targetKey());
+                }
                 TransferJsonPath.read(resource.configuration(), reference.path());
-                if (reference.childPath() != null)
+                if (reference.childPath() != null && !reference.external())
                     TransferJsonPath.read(indexed.get(reference.targetKey()).configuration(), reference.childPath());
             }
         }

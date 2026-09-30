@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 /** 项目级离线导入必须按显式项目绑定解析目标 ID，不能按名称猜测。 */
 public class OfflineResourceImportServiceTest {
@@ -54,5 +55,21 @@ public class OfflineResourceImportServiceTest {
 
         assertEquals(List.of("RULE:2", "RULE_VERSION:9", "RULE:1"),
                 ordered.stream().map(TransferBundle.Resource::key).toList());
+    }
+
+    @Test
+    public void selectedImportAllowsAnExternalReferenceToBeResolvedByThePanel() {
+        OfflineResourceImportService service = new OfflineResourceImportService();
+        TransferBundle.Resource selected = new TransferBundle.Resource(
+                "RULE:1", Map.of("ruleCode", "caller"),
+                List.of(new TransferBundle.Reference("/dependencyId", "VARIABLE:9", null,
+                        true, "customer_id", "客户编号")), List.of());
+
+        @SuppressWarnings("unchecked")
+        List<TransferBundle.Resource> ordered = ReflectionTestUtils.invokeMethod(
+                service, "topologicalOrder", List.of(selected));
+
+        assertEquals(List.of("RULE:1"), ordered.stream().map(TransferBundle.Resource::key).toList());
+        assertTrue(ordered.get(0).references().get(0).external());
     }
 }

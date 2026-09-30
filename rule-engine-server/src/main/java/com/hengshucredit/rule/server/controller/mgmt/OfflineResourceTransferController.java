@@ -5,6 +5,7 @@ import com.hengshucredit.rule.server.security.RequirePermission;
 import com.hengshucredit.rule.server.transfer.OfflineResourceTransferService;
 import com.hengshucredit.rule.server.transfer.TransferRootRequest;
 import com.hengshucredit.rule.server.transfer.TransferImportOptions;
+import com.hengshucredit.rule.server.transfer.TransferExportRequest;
 import com.hengshucredit.rule.server.transfer.OfflineResourceImportService;
 import com.hengshucredit.rule.server.service.ConsoleOperatorResolver;
 import com.hengshucredit.rule.server.service.RuleLineageService;
@@ -65,6 +66,26 @@ public class OfflineResourceTransferController {
         }
     }
 
+    @PostMapping(value = "/export/options", produces = "application/zip")
+    @RequirePermission("rule:view")
+    public ResponseEntity<byte[]> exportWithOptions(@RequestBody TransferExportRequest request) {
+        String operator = operatorResolver == null ? ConsoleOperatorResolver.SYSTEM_CONSOLE : operatorResolver.resolve();
+        List<TransferRootRequest> roots = request == null ? List.of() : request.roots();
+        try {
+            byte[] bytes = service.export(roots, request == null || request.recursive());
+            if (logService != null) logService.recordExport(roots, bytes, operator);
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=tianshu-resource-transfer.zip")
+                    .header("X-Transfer-Package", "TIANSHU_RESOURCE_TRANSFER")
+                    .contentType(MediaType.parseMediaType("application/zip"))
+                    .contentLength(bytes.length)
+                    .body(bytes);
+        } catch (RuntimeException error) {
+            if (logService != null) logService.recordFailure("EXPORT", roots, operator, error.getMessage());
+            throw error;
+        }
+    }
+
     @PostMapping(value = "/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @RequirePermission("rule:view")
     public R<Map<String, Object>> preview(@RequestPart("file") MultipartFile file) {
@@ -93,6 +114,13 @@ public class OfflineResourceTransferController {
         } catch (Exception error) {
             return R.fail(500, "读取离线迁移包失败: " + error.getMessage());
         }
+    }
+
+    @GetMapping("/resource-fields")
+    @RequirePermission("rule:view")
+    public R<List<Map<String, Object>>> resourceFields(@RequestParam String resourceType,
+                                                        @RequestParam Long resourceId) {
+        return R.ok(service.resourceFields(resourceType, resourceId));
     }
 
     @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

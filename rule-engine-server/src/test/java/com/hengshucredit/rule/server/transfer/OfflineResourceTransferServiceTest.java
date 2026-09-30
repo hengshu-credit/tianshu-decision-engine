@@ -54,6 +54,21 @@ public class OfflineResourceTransferServiceTest {
         assertEquals("BASE64_MODEL_BYTES", configuration.get("modelContent"));
     }
 
+    @Test
+    public void selectedOnlyExportLeavesUpstreamAsExternalAssociation() {
+        var adapter = new StubAdapter("VARIABLE",
+                Map.of("id", 1, "varCode", "amount", "sourceConfig", "{\"listIds\":[7]}"),
+                List.of(new ResourceDependencyRef("LIST_LIBRARY", 7L, "LIST_LIBRARY",
+                        "$.sourceConfig[json].listIds[0]", "REFERENCES", true)));
+        var list = new StubAdapter("LIST_LIBRARY", Map.of("id", 7, "listCode", "credit_list"), List.of());
+
+        var bundle = new TransferBundleCodec().decode(service(adapter, list).export(
+                List.of(new TransferRootRequest("VARIABLE", 1L)), false)).bundle();
+
+        assertEquals(1, bundle.resources().size());
+        assertTrue(bundle.resources().get(0).references().get(0).external());
+    }
+
     private OfflineResourceTransferService service(StubAdapter... adapters) {
         var service = new OfflineResourceTransferService();
         ReflectionTestUtils.setField(service, "adapterRegistry", new GovernedResourceAdapterRegistry(List.of(adapters)));

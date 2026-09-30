@@ -6,9 +6,9 @@ describe('RuleLifecyclePanel', () => {
     ['DRAFT', ['view-design', 'preflight', 'submit']],
     ['REVIEW', ['view-design', 'reject', 'approve']],
     ['REJECTED', ['view-design']],
-    ['APPROVED', ['view-design', 'publish', 'edit-design', 'download']],
-    ['PUBLISHED', ['view-design', 'edit-design', 'download', 'offline']],
-    ['OFFLINE', ['view-design', 'edit-design', 'download']],
+    ['APPROVED', ['view-design', 'publish', 'edit-design', 'download', 'migration-download']],
+    ['PUBLISHED', ['view-design', 'edit-design', 'download', 'migration-download', 'offline']],
+    ['OFFLINE', ['view-design', 'edit-design', 'download', 'migration-download']],
   ])('%s 只显示合法动作', (state, expected) => {
     const wrapper = mount(RuleLifecyclePanel, {
       props: {

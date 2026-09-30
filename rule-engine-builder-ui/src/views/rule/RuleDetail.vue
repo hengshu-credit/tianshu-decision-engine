@@ -1549,9 +1549,9 @@ const DESIGNER_ROUTE_BY_MODEL_TYPE = {
 const LIFECYCLE_ACTIONS_BY_STATE = {
   DRAFT: ['preflight', 'submit'],
   REVIEW: ['reject', 'approve'],
-  APPROVED: ['publish', 'download'],
-  PUBLISHED: ['download', 'offline'],
-  OFFLINE: ['download'],
+  APPROVED: ['publish', 'download', 'migration-download'],
+  PUBLISHED: ['download', 'migration-download', 'offline'],
+  OFFLINE: ['download', 'migration-download'],
 }
 
 const OPEN_API_STATUS_CODES = [
@@ -2177,7 +2177,7 @@ export default {
       const allowedActions = LIFECYCLE_ACTIONS_BY_STATE[revision.state] || []
       if (
         !allowedActions.includes(action) ||
-        (action === 'download' && !revision.artifactId)
+        (['download', 'migration-download'].includes(action) && !revision.artifactId)
       ) {
         this.$message.warning('当前修订状态不支持该生命周期操作')
         return
@@ -2206,6 +2206,10 @@ export default {
             this.$router.push(`/approval/${response.data.id}`)
             return
           }
+        }
+        else if (action === 'migration-download') {
+          await this.downloadArtifactMigration(revision.artifactId)
+          return
         }
         else if (action === 'download') {
           await this.downloadDecisionArtifact(revision.artifactId)
@@ -2334,6 +2338,16 @@ export default {
       window.URL.revokeObjectURL(url)
       const digest = response.headers && response.headers['x-artifact-digest']
       this.$message.success(digest ? `制品已下载：${digest}` : '制品已下载')
+    },
+    async downloadArtifactMigration(artifactId) {
+      const response = await artifactApi.downloadArtifactMigration(artifactId, true)
+      const url = window.URL.createObjectURL(response.data)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `tianshu-resource-transfer-${artifactId}.zip`
+      anchor.click()
+      window.URL.revokeObjectURL(url)
+      this.$message.success('配置迁移包已下载，可在离线迁移页面继续选择内容和关联目标')
     },
     async handleArtifactFile(uploadFile) {
       try {

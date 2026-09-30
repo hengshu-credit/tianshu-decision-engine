@@ -30,6 +30,8 @@ import com.hengshucredit.rule.server.mapper.RuleModelMapper;
 import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
 import com.hengshucredit.rule.server.service.RuleDefinitionService;
 import com.hengshucredit.rule.server.service.RuleLifecycleService;
+import com.hengshucredit.rule.server.transfer.OfflineResourceTransferService;
+import com.hengshucredit.rule.server.transfer.TransferRootRequest;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -76,6 +78,8 @@ public class ArtifactDeploymentService {
     private RuleDbDatasourceMapper dbDatasourceMapper;
     @Resource
     private RuleListLibraryMapper listLibraryMapper;
+    @Resource
+    private OfflineResourceTransferService transferService;
 
     private final DecisionArtifactPackageCodec codec = new DecisionArtifactPackageCodec();
 
@@ -224,6 +228,26 @@ public class ArtifactDeploymentService {
         return loadArtifact(artifactId);
     }
 
+    public byte[] migrationPackage(Long artifactId, boolean includeDependencies) {
+        DecisionArtifact artifact = loadArtifact(artifactId);
+        if (artifact == null || transferService == null) {
+            throw new IllegalArgumentException("决策制品不存在或暂不支持配置迁移包");
+        }
+        Long definitionId = artifact.getDefinitionId();
+        if (definitionId == null && artifact.getPackageContent() != null) {
+            Object value = codec.decode(artifact.getPackageContent()).getArtifactPackage()
+                    .getMetadata().get("definitionId");
+            if (value instanceof Number number) definitionId = number.longValue();
+            else if (value != null) {
+                try { definitionId = Long.valueOf(String.valueOf(value)); }
+                catch (RuntimeException ignored) { }
+            }
+        }
+        if (definitionId == null) throw new IllegalArgumentException("决策制品缺少源规则定义");
+        return transferService.export(List.of(new TransferRootRequest("RULE", definitionId)),
+                includeDependencies);
+    }
+
     public Map<String, Object> describeArtifact(Long artifactId) {
         DecisionArtifact artifact = loadArtifact(artifactId);
         if (artifact == null) throw new IllegalArgumentException("决策制品不存在");
@@ -252,6 +276,76 @@ public class ArtifactDeploymentService {
     public List<ArtifactResourceBinding> listBindings(Long deploymentId) {
         if (deploymentId == null) throw new IllegalArgumentException("deploymentId 不能为空");
         return safe(loadBindings(deploymentId));
+    }
+
+    public Map<String, Object> deploymentOptions(Long artifactId, Long targetProjectId) {
+        DecisionArtifact artifact = loadArtifact(artifactId);
+        if (artifact == null) throw new IllegalArgumentException("决策制品不存在");
+        DecisionArtifactPackage artifactPackage = codec.decode(artifact.getPackageContent()).getArtifactPackage();
+        List<Map<String, Object>> requirements = new ArrayList<>();
+        for (Map.Entry<String, String> requirement : bindingRequirements(artifactPackage).entrySet()) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("componentId", requirement.getKey());
+            item.put("resourceType", requirement.getValue());
+            String candidateType = candidateType(requirement.getValue());
+            Map<String, Object> source = sourceIdentity(artifactPackage, requirement.getKey());
+            if (source.get("code") == null && transferService != null) {
+                Long sourceId = sourceResourceId(artifactPackage, requirement.getKey());
+                Map<String, String> identity = transferService.sourceIdentity(candidateType(requirement.getValue()), sourceId);
+                source.put("code", identity.get("code"));
+                source.put("name", identity.get("name"));
+            }
+            item.put("sourceCode", source.get("code"));
+            item.put("sourceName", source.get("name"));
+            List<Map<String, Object>> candidates = transferService == null ? List.of()
+                    : transferService.targetCandidates(candidateType, (String) source.get("code"), targetProjectId);
+            item.put("candidates", candidates);
+            item.put("suggestedTargetId", source.get("code") != null && !candidates.isEmpty()
+                    ? candidates.get(0).get("id") : null);
+            item.put("sameCodeCandidateCount", candidates.size());
+            requirements.add(item);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("artifactId", artifactId);
+        result.put("requirements", requirements);
+        return result;
+    }
+
+    private String candidateType(String resourceType) {
+        if ("DB_DATASOURCE".equals(resourceType)) return "DATABASE";
+        if ("DATA_OBJECT_ROOT".equals(resourceType)) return "DATA_OBJECT";
+        return resourceType;
+    }
+
+    private Map<String, Object> sourceIdentity(DecisionArtifactPackage artifactPackage, String componentId) {
+        for (DecisionArtifactPackage.Component component : artifactPackage.getComponents().values()) {
+            Map<String, Object> metadata = component.getMetadata();
+            if (!componentId.equals(metadata.get("componentId"))) continue;
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("code", metadata.get("sourceResourceCode"));
+            result.put("name", metadata.get("sourceResourceName"));
+            if (result.get("code") == null) result.put("code", metadata.get("ruleCode"));
+            if (result.get("name") == null) result.put("name", metadata.get("ruleName"));
+            if (result.get("code") == null && "RULE".equals(metadata.get("resourceType"))) {
+                Map<String, Object> content = CanonicalJson.readMap(new String(component.getContent(), java.nio.charset.StandardCharsets.UTF_8));
+                result.put("code", content.get("ruleCode"));
+                result.put("name", content.get("ruleName"));
+            }
+            return result;
+        }
+        return new LinkedHashMap<>();
+    }
+
+    private Long sourceResourceId(DecisionArtifactPackage artifactPackage, String componentId) {
+        for (DecisionArtifactPackage.Component component : artifactPackage.getComponents().values()) {
+            Map<String, Object> metadata = component.getMetadata();
+            if (!componentId.equals(metadata.get("componentId"))) continue;
+            Object value = metadata.get("sourceResourceId");
+            if (value instanceof Number number) return number.longValue();
+            try { return value == null ? null : Long.valueOf(String.valueOf(value)); }
+            catch (RuntimeException ignored) { return null; }
+        }
+        return null;
     }
 
     private ArtifactImportResult importResult(DecisionArtifact artifact,

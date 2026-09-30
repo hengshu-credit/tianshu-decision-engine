@@ -22,12 +22,24 @@ public record TransferBundle(List<String> roots, List<Resource> resources, List<
         }
     }
 
-    /** path 使用 JSON Pointer；@json 表示进入字符串编码的 JSON；childPath 指向聚合中的子实体。 */
-    public record Reference(String path, String targetKey, String childPath) {
+    /**
+     * path 使用 JSON Pointer；@json 表示进入字符串编码的 JSON；childPath 指向聚合中的子实体。
+     * external 表示目标资源没有随本包携带，需要在导入面板中关联目标资源。
+     */
+    public record Reference(String path, String targetKey, String childPath,
+                            boolean external, String targetCode, String targetName) {
+        public Reference(String path, String targetKey, String childPath) {
+            this(path, targetKey, childPath, false, null, null);
+        }
+
         public Reference {
             if (path == null || !path.startsWith("/")) throw new IllegalArgumentException("迁移引用路径无效");
             TransferKey.parse(targetKey);
             if (childPath != null && !childPath.startsWith("/")) throw new IllegalArgumentException("迁移子资源路径无效");
+        }
+
+        public Reference asExternal() {
+            return new Reference(path, targetKey, childPath, true, targetCode, targetName);
         }
     }
 }

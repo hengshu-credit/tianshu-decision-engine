@@ -140,6 +140,19 @@ describe('OfflineTransfer', () => {
     wrapper.unmount()
   })
 
+  test('关闭上游依赖选项时只导出当前选择的根资源', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    wrapper.vm.roots[0].resourceId = 101
+    wrapper.vm.exportOnlySelected = true
+    transferApi.exportResourceTransfer.mockResolvedValueOnce({ data: new Blob(['zip']) })
+    await wrapper.vm.exportPackage()
+    expect(transferApi.exportResourceTransfer).toHaveBeenCalledWith(
+      [{ resourceType: 'RULE', resourceId: 101 }],
+      { includeDependencies: false },
+    )
+    wrapper.unmount()
+  })
+
   async function previewGlobal() {
     const wrapper = shallowMount(OfflineTransfer)
     wrapper.vm.selectFile({ raw: new File(['zip'], 'transfer.zip') })
@@ -291,6 +304,32 @@ describe('OfflineTransfer', () => {
     expect(result).toEqual({ records: [{ id: 7, label: '授信项目 / credit' }], total: 21 })
     wrapper.vm.options.targetProjectId = result.records[0].id
     expect(wrapper.vm.normalizedOptions().targetProjectId).toBe(7)
+    wrapper.unmount()
+  })
+
+  test('预检报告展示外部关联并把手工资源和字段映射放进导入选项', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    wrapper.vm.selectFile({ raw: new File(['zip'], 'transfer.zip') })
+    wrapper.vm.options.targetScope = 'GLOBAL'
+    transferApi.previewResourceTransfer.mockResolvedValueOnce({ data: {
+      packageDigest: 'digest-association',
+      resources: [{ key: 'RULE:1', resourceCode: 'rule', resourceType: 'RULE' }],
+      selectedResourceKeys: ['RULE:1'],
+      roots: ['RULE:1'],
+      associations: [{
+        referenceKey: 'RULE:1|/content/@json/field|DATA_OBJECT:7|/fields/0/id',
+        targetKey: 'DATA_OBJECT:7',
+        targetResourceType: 'DATA_OBJECT',
+        childPath: '/fields/0/id',
+        candidates: [{ id: 101, fields: [{ id: 501 }] }],
+      }],
+    } })
+    await wrapper.vm.previewPackage()
+    wrapper.vm.resourceBindingsDraft = { 'DATA_OBJECT:7': 101 }
+    wrapper.vm.fieldBindingsDraft = { 'RULE:1|/content/@json/field|DATA_OBJECT:7|/fields/0/id': 501 }
+    const options = wrapper.vm.normalizedOptions()
+    expect(options.resourceBindings).toEqual({ 'DATA_OBJECT:7': 101 })
+    expect(options.fieldBindings).toEqual({ 'RULE:1|/content/@json/field|DATA_OBJECT:7|/fields/0/id': 501 })
     wrapper.unmount()
   })
 

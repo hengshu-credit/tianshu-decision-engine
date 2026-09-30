@@ -14,6 +14,7 @@ import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RuleRevision;
 import com.hengshucredit.rule.server.artifact.CanonicalJson;
 import com.hengshucredit.rule.server.governance.GovernanceApprovalService;
+import com.hengshucredit.rule.server.governance.GovernedResourceAdapter;
 import com.hengshucredit.rule.server.governance.ResourceSnapshot;
 import com.hengshucredit.rule.server.governance.GovernanceResourceTypes;
 import com.hengshucredit.rule.server.governance.GovernanceSecretCodec;
@@ -60,7 +61,12 @@ public class OfflineResourceImportService {
     public Map<String, Object> apply(byte[] bytes, TransferImportOptions options, String actor) {
         if (options == null) throw new IllegalArgumentException("请选择导入作用范围及目标项目");
         if (actor == null || actor.isBlank()) actor = ConsoleOperatorResolver.SYSTEM_CONSOLE;
-        TransferBundle bundle = codec.decode(bytes).bundle();
+        TransferBundle decodedBundle = codec.decode(bytes).bundle();
+        List<TransferBundle.Resource> selectedResources = TransferSelection.select(decodedBundle, options);
+        Set<String> selectedKeys = selectedResources.stream().map(TransferBundle.Resource::key)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        TransferBundle bundle = new TransferBundle(decodedBundle.roots().stream()
+                .filter(selectedKeys::contains).toList(), selectedResources, decodedBundle.warnings());
         boolean global = "GLOBAL".equals(options.normalizedScope());
         boolean createProject = !global && Boolean.TRUE.equals(options.createProject());
         boolean hasProjectResource = bundle.resources().stream().anyMatch(resource ->
@@ -90,6 +96,15 @@ public class OfflineResourceImportService {
                 }
             });
         }
+        options.normalizedResourceBindings().forEach((sourceKey, targetId) -> {
+            if (targetId == null || targetId <= 0) {
+                throw new IllegalArgumentException("资源关联目标 ID 无效: " + sourceKey);
+            }
+            TransferKey target = TransferKey.parse(sourceKey);
+            validateExternalTarget(target, targetId, options);
+            idMap.put(sourceKey, targetId);
+        });
+        validateExternalReferences(ordered, idMap, options);
         Map<String, Map<Long, Long>> childMap = new HashMap<>();
         List<Map<String, Object>> result = new ArrayList<>();
         Long effectiveTargetProjectId = global ? Long.valueOf(0) : options.targetProjectId();
@@ -144,7 +159,7 @@ public class OfflineResourceImportService {
             Long resourceTargetProjectId = number(configuration.get("projectId"));
             ExistingResource existing = findExisting(sourceKey.type(), configuration, resourceTargetProjectId);
             Long existingId = existing == null ? null : existing.id();
-            rewriteReferences(configuration, resource, byKey, idMap, childMap);
+            rewriteReferences(configuration, resource, byKey, idMap, childMap, options.normalizedFieldBindings());
             String policy = sourceKey.type() == TransferResourceType.VARIABLE
                     ? options.normalizedVariablePolicy() : options.normalizedResourcePolicy();
             if (sourceKey.type() == TransferResourceType.RULE && ruleDefinitionMapper != null) {
@@ -319,7 +334,8 @@ public class OfflineResourceImportService {
             for (TransferBundle.Resource resource : resources) {
                 if (done.contains(resource.key())) continue;
                 boolean ready = resource.references().stream().allMatch(reference ->
-                        byKey.containsKey(reference.targetKey()) && done.contains(reference.targetKey()));
+                        reference.external() || !byKey.containsKey(reference.targetKey())
+                                || done.contains(reference.targetKey()));
                 if (ready) { ordered.add(resource); done.add(resource.key()); progressed = true; }
             }
             if (!progressed) throw new IllegalArgumentException("离线资源依赖形成循环，无法安全导入");
@@ -329,17 +345,87 @@ public class OfflineResourceImportService {
 
     private void rewriteReferences(Map<String, Object> configuration, TransferBundle.Resource resource,
                                    Map<String, TransferBundle.Resource> byKey, Map<String, Long> idMap,
-                                   Map<String, Map<Long, Long>> childMap) {
+                                   Map<String, Map<Long, Long>> childMap,
+                                   Map<String, Long> fieldBindings) {
         for (TransferBundle.Reference reference : resource.references()) {
             Long target = idMap.get(reference.targetKey());
             if (target == null) throw new IllegalArgumentException("上游资源尚未导入: " + reference.targetKey());
             if (reference.childPath() != null) {
-                Object sourceChild = TransferJsonPath.read(byKey.get(reference.targetKey()).configuration(), reference.childPath());
-                Long mapped = childMap.getOrDefault(reference.targetKey(), Map.of()).get(number(sourceChild));
+                String referenceKey = TransferSelection.referenceKey(resource.key(), reference);
+                Long mapped = reference.external() ? fieldBindings.get(referenceKey) : null;
+                if (mapped == null && !reference.external()) {
+                    Object sourceChild = TransferJsonPath.read(byKey.get(reference.targetKey()).configuration(), reference.childPath());
+                    mapped = childMap.getOrDefault(reference.targetKey(), Map.of()).get(number(sourceChild));
+                }
                 if (mapped == null) throw new IllegalArgumentException("数据对象子字段无法映射: " + reference.targetKey());
                 target = mapped;
             }
             TransferJsonPath.replace(configuration, reference.path(), target);
+        }
+    }
+
+    private void validateExternalReferences(List<TransferBundle.Resource> resources,
+                                            Map<String, Long> idMap,
+                                            TransferImportOptions options) {
+        for (TransferBundle.Resource resource : resources) {
+            for (TransferBundle.Reference reference : resource.references()) {
+                if (!reference.external()) continue;
+                Long targetId = idMap.get(reference.targetKey());
+                if (targetId == null) {
+                    throw new IllegalArgumentException("请为外部关联选择目标资源: " + reference.targetKey());
+                }
+                if (reference.childPath() != null
+                        && options.normalizedFieldBindings().get(
+                        TransferSelection.referenceKey(resource.key(), reference)) == null) {
+                    throw new IllegalArgumentException("请为外部数据对象关联选择目标字段: " + reference.targetKey());
+                }
+                if (reference.childPath() != null) {
+                    Long fieldId = options.normalizedFieldBindings().get(
+                            TransferSelection.referenceKey(resource.key(), reference));
+                    validateExternalField(TransferKey.parse(reference.targetKey()), targetId, fieldId);
+                }
+            }
+        }
+    }
+
+    private void validateExternalField(TransferKey target, Long targetId, Long fieldId) {
+        if (target.type() != TransferResourceType.DATA_OBJECT || fieldId == null) {
+            throw new IllegalArgumentException("外部字段关联必须指向数据对象字段: " + target.value());
+        }
+        Map<String, Object> configuration = CanonicalJson.readMap(
+                adapterRegistry.require("DATA_OBJECT").loadEffective(targetId).snapshotJson());
+        Object fields = configuration.get("fields");
+        if (!(fields instanceof List<?> list) || list.stream().noneMatch(value ->
+                value instanceof Map<?, ?> map && String.valueOf(map.get("id")).equals(String.valueOf(fieldId)))) {
+            throw new IllegalArgumentException("目标数据对象不包含所选字段: " + fieldId);
+        }
+    }
+
+    private void validateExternalTarget(TransferKey target, Long targetId,
+                                        TransferImportOptions options) {
+        if (target.type() == TransferResourceType.RULE_VERSION) {
+            var binding = ruleVersionBindingMapper.selectById(targetId);
+            if (binding == null || !Integer.valueOf(1).equals(binding.getStatus())) {
+                throw new IllegalArgumentException("目标规则版本不存在或已下线: " + target.value());
+            }
+            return;
+        }
+        if (target.type() == TransferResourceType.PROJECT) {
+            if (projectService.getById(targetId) == null) {
+                throw new IllegalArgumentException("目标项目不存在: " + target.value());
+            }
+            return;
+        }
+        GovernedResourceAdapter adapter = adapterRegistry.require(target.type().name());
+        ResourceSnapshot snapshot = adapter.loadEffective(targetId);
+        if (snapshot == null) throw new IllegalArgumentException("目标资源不存在: " + target.value());
+        if (!"GLOBAL".equals(options.normalizedScope())) {
+            Map<String, Object> config = CanonicalJson.readMap(snapshot.snapshotJson());
+            Long projectId = number(config.get("projectId"));
+            if (projectId != null && options.targetProjectId() != null
+                    && projectId > 0 && !projectId.equals(options.targetProjectId())) {
+                throw new IllegalArgumentException("目标资源不属于所选项目: " + target.value());
+            }
         }
     }
 

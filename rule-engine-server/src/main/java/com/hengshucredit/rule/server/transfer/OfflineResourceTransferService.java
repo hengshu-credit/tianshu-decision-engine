@@ -61,6 +61,11 @@ public class OfflineResourceTransferService {
 
     @Transactional(readOnly = true)
     public byte[] export(List<TransferRootRequest> requests) {
+        return export(requests, true);
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] export(List<TransferRootRequest> requests, boolean includeDependencies) {
         List<TransferKey> roots = normalizeRoots(requests);
         Map<String, TransferBundle.Resource> resources = new LinkedHashMap<>();
         List<String> warnings = new ArrayList<>();
@@ -71,7 +76,7 @@ public class OfflineResourceTransferService {
             if (resources.containsKey(key.value())) continue;
             if (!visiting.add(key.value())) throw new IllegalArgumentException("离线导出依赖形成循环: " + key.value());
             if (key.type() == TransferResourceType.RULE_VERSION) {
-                resources.put(key.value(), exportRuleVersion(key, queue, warnings));
+                resources.put(key.value(), exportRuleVersion(key, queue, warnings, includeDependencies));
                 visiting.remove(key.value());
                 continue;
             }
@@ -111,11 +116,13 @@ public class OfflineResourceTransferService {
                 referencedValue = TransferJsonPath.read(configuration, pointer);
                 String targetKey = new TransferKey(targetType, dependency.targetResourceId()).value();
                 String childPath = childPath(targetType, dependency.targetResourceId(), referencedValue);
-                references.add(new TransferBundle.Reference(pointer, targetKey, childPath));
-                queue.addLast(new TransferKey(targetType, dependency.targetResourceId()));
+                Map<String, String> identity = resourceIdentity(targetType, dependency.targetResourceId());
+                references.add(new TransferBundle.Reference(pointer, targetKey, childPath,
+                        !includeDependencies, identity.get("code"), identity.get("name")));
+                if (includeDependencies) queue.addLast(new TransferKey(targetType, dependency.targetResourceId()));
             }
             if (key.type() == TransferResourceType.RULE) {
-                collectFixedRuleVersions(configuration, references, queue, warnings);
+                collectFixedRuleVersions(configuration, references, queue, warnings, includeDependencies);
             }
             resources.put(key.value(), new TransferBundle.Resource(key.value(), configuration,
                     references, requiredEnvironmentFields(key.type(), configuration)));
@@ -133,10 +140,12 @@ public class OfflineResourceTransferService {
     @Transactional(readOnly = true)
     public Map<String, Object> preview(byte[] bytes, TransferImportOptions options) {
         TransferBundleCodec.Decoded decoded = codec.decode(bytes);
+        List<TransferBundle.Resource> selectedResources = TransferSelection.select(decoded.bundle(), options);
         List<Map<String, Object>> resources = new ArrayList<>();
         List<TransferConflict> conflicts = new ArrayList<>();
+        List<Map<String, Object>> associations = new ArrayList<>();
         Map<String, PreviewTarget> targets = new LinkedHashMap<>();
-        for (TransferBundle.Resource resource : OfflineResourceImportService.topologicalOrder(decoded.bundle().resources())) {
+        for (TransferBundle.Resource resource : OfflineResourceImportService.topologicalOrder(selectedResources)) {
             TransferKey key = TransferKey.parse(resource.key());
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("key", resource.key());
@@ -151,19 +160,32 @@ public class OfflineResourceTransferService {
                 edge.put("targetKey", reference.targetKey());
                 edge.put("path", reference.path());
                 edge.put("childPath", reference.childPath());
+                edge.put("external", reference.external());
+                edge.put("targetCode", reference.targetCode());
+                edge.put("targetName", reference.targetName());
                 return edge;
             }).toList());
             item.put("requiredEnvironmentFields", resource.requiredEnvironmentFields());
             item.put("configurationOnly", DATA_FREE_TYPES.contains(key.type()));
+            item.put("selected", true);
             resources.add(item);
             TransferConflict conflict = findConflict(resource, key, options, targets);
             if (conflict != null) conflicts.add(conflict);
+            for (TransferBundle.Reference reference : resource.references()) {
+                if (reference.external()) {
+                    associations.add(buildAssociation(resource, reference, options));
+                }
+            }
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("packageKind", TransferBundleCodec.PACKAGE_KIND);
         result.put("packageDigest", decoded.packageDigest());
-        result.put("roots", decoded.bundle().roots());
+        Set<String> selectedKeys = selectedResources.stream().map(TransferBundle.Resource::key)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        result.put("roots", decoded.bundle().roots().stream().filter(selectedKeys::contains).toList());
         result.put("resources", resources);
+        result.put("selectedResourceKeys", selectedResources.stream().map(TransferBundle.Resource::key).toList());
+        result.put("associations", associations);
         result.put("warnings", decoded.bundle().warnings());
         result.put("listDataIncluded", false);
         result.put("targetScope", options.normalizedScope());
@@ -187,6 +209,44 @@ public class OfflineResourceTransferService {
         return result;
     }
 
+    private Map<String, Object> buildAssociation(TransferBundle.Resource resource,
+                                                  TransferBundle.Reference reference,
+                                                  TransferImportOptions options) {
+        TransferKey target = TransferKey.parse(reference.targetKey());
+        Long projectId = "GLOBAL".equals(options.normalizedScope()) ? 0L : options.targetProjectId();
+        List<Map<String, Object>> candidates = targetCandidates(target.type().name(), reference.targetCode(), projectId);
+        Long explicitTarget = options.normalizedResourceBindings().get(target.value());
+        Long suggested = explicitTarget;
+        if (suggested == null && !candidates.isEmpty() && reference.targetCode() != null) {
+            suggested = longValue(candidates.get(0).get("id"));
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("referenceKey", TransferSelection.referenceKey(resource.key(), reference));
+        result.put("sourceResourceKey", resource.key());
+        result.put("path", reference.path());
+        result.put("targetKey", target.value());
+        result.put("targetResourceType", target.type().name());
+        result.put("targetCode", reference.targetCode());
+        result.put("targetName", reference.targetName());
+        result.put("childPath", reference.childPath());
+        result.put("required", true);
+        result.put("candidates", candidates);
+        result.put("suggestedTargetId", suggested);
+        result.put("sameCodeCandidateCount", candidates.size());
+        result.put("selectedTargetId", explicitTarget);
+        result.put("selectedFieldId", options.normalizedFieldBindings()
+                .get(TransferSelection.referenceKey(resource.key(), reference)));
+        result.put("resolved", explicitTarget != null || (suggested != null && reference.childPath() == null));
+        return result;
+    }
+
+    private Long longValue(Object value) {
+        if (value instanceof Number number) return number.longValue();
+        if (value == null) return null;
+        try { return Long.valueOf(String.valueOf(value)); }
+        catch (RuntimeException ignored) { return null; }
+    }
+
     private List<TransferKey> normalizeRoots(List<TransferRootRequest> requests) {
         if (requests == null || requests.isEmpty()) throw new IllegalArgumentException("请选择至少一个导出资源");
         LinkedHashMap<String, TransferKey> unique = new LinkedHashMap<>();
@@ -198,7 +258,7 @@ public class OfflineResourceTransferService {
     }
 
     private TransferBundle.Resource exportRuleVersion(TransferKey key, Deque<TransferKey> queue,
-                                                       List<String> warnings) {
+                                                       List<String> warnings, boolean includeDependencies) {
         if (ruleVersionBindingMapper == null || ruleDefinitionVersionMapper == null)
             throw new IllegalStateException("规则版本迁移依赖版本绑定数据源");
         RuleVersionBinding binding = ruleVersionBindingMapper.selectById(key.id());
@@ -212,7 +272,7 @@ public class OfflineResourceTransferService {
         config.put("snapshot", CanonicalJson.readMap(CanonicalJson.write(snapshot)));
         List<TransferBundle.Reference> refs = List.of(
                 new TransferBundle.Reference("/definitionId", "RULE:" + binding.getDefinitionId(), null));
-        queue.addLast(new TransferKey(TransferResourceType.RULE, binding.getDefinitionId()));
+        if (includeDependencies) queue.addLast(new TransferKey(TransferResourceType.RULE, binding.getDefinitionId()));
         return new TransferBundle.Resource(key.value(), config, refs,
                 List.of("目标环境需要在规则发布后重新建立该业务版本绑定"));
     }
@@ -220,7 +280,8 @@ public class OfflineResourceTransferService {
     private void collectFixedRuleVersions(Map<String, Object> configuration,
                                           List<TransferBundle.Reference> references,
                                           Deque<TransferKey> queue,
-                                          List<String> warnings) {
+                                          List<String> warnings,
+                                          boolean includeDependencies) {
         Map<String, Object> content = object(configuration.get("content"));
         Object modelJson = content.get("modelJson");
         if (!(modelJson instanceof String script) || script.isBlank()) return;
@@ -236,9 +297,95 @@ public class OfflineResourceTransferService {
             String bindingKey = new TransferKey(TransferResourceType.RULE_VERSION,
                     reference.getVersionBindingId()).value();
             String pointer = "/content/modelJson/@json" + toPointer(reference.getPath());
-            references.add(new TransferBundle.Reference(pointer, bindingKey, null));
-            queue.addLast(new TransferKey(TransferResourceType.RULE_VERSION, reference.getVersionBindingId()));
+            references.add(new TransferBundle.Reference(pointer, bindingKey, null, !includeDependencies,
+                    null, null));
+            if (includeDependencies) {
+                queue.addLast(new TransferKey(TransferResourceType.RULE_VERSION, reference.getVersionBindingId()));
+            }
         }
+    }
+
+    /** 给未随包携带的引用补充安全的同码推荐信息；凭据仍不会进入包。 */
+    public List<Map<String, Object>> targetCandidates(String resourceType, String code, Long projectId) {
+        TransferResourceType type;
+        try {
+            type = TransferResourceType.valueOf(resourceType.trim().toUpperCase(Locale.ROOT));
+        } catch (RuntimeException invalid) {
+            return List.of();
+        }
+        if (governedResourceMapper == null || governedResourceVersionMapper == null) return List.of();
+        List<GovernedResource> rows = governedResourceMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<GovernedResource>()
+                        .eq(GovernedResource::getResourceType, type.name())
+                        .eq(projectId != null && projectId > 0, GovernedResource::getProjectId, projectId));
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (GovernedResource row : rows) {
+            if (row.getEffectiveVersionId() == null) continue;
+            GovernedResourceVersion version = governedResourceVersionMapper.selectById(row.getEffectiveVersionId());
+            if (version == null) continue;
+            Map<String, Object> configuration = CanonicalJson.readMap(version.getSnapshotJson());
+            String candidateCode = identity(configuration, type);
+            if (code != null && !code.isBlank() && !code.equals(candidateCode)) continue;
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", row.getResourceId());
+            item.put("code", candidateCode);
+            item.put("name", configuration.get(type.nameField));
+            item.put("resourceType", type.name());
+            item.put("projectId", row.getProjectId());
+            item.put("status", row.getEffectiveStatus());
+            if (type == TransferResourceType.DATA_OBJECT) {
+                item.put("fields", resourceFields(type.name(), row.getResourceId()));
+            }
+            result.add(item);
+        }
+        return result;
+    }
+
+    public Map<String, String> sourceIdentity(String resourceType, Long resourceId) {
+        if (resourceId == null) return Map.of();
+        try {
+            return resourceIdentity(TransferResourceType.valueOf(resourceType.trim().toUpperCase(Locale.ROOT)), resourceId);
+        } catch (RuntimeException invalid) {
+            return Map.of();
+        }
+    }
+
+    public List<Map<String, Object>> resourceFields(String resourceType, Long resourceId) {
+        if (resourceId == null || !"DATA_OBJECT".equalsIgnoreCase(resourceType) || adapterRegistry == null) {
+            return List.of();
+        }
+        try {
+            Map<String, Object> configuration = CanonicalJson.readMap(
+                    adapterRegistry.require("DATA_OBJECT").loadEffective(resourceId).snapshotJson());
+            Object fields = configuration.get("fields");
+            if (!(fields instanceof List<?> list)) return List.of();
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (Object value : list) {
+                if (!(value instanceof Map<?, ?> raw)) continue;
+                Map<String, Object> field = new LinkedHashMap<>();
+                field.put("id", raw.get("id"));
+                field.put("code", raw.get("varCode"));
+                field.put("name", raw.get("varLabel"));
+                field.put("type", raw.get("varType"));
+                result.add(field);
+            }
+            return result;
+        } catch (RuntimeException ignored) {
+            return List.of();
+        }
+    }
+
+    private Map<String, String> resourceIdentity(TransferResourceType type, Long resourceId) {
+        List<Map<String, Object>> candidates = targetCandidates(type.name(), null, null);
+        for (Map<String, Object> candidate : candidates) {
+            if (String.valueOf(resourceId).equals(String.valueOf(candidate.get("id")))) {
+                Map<String, String> result = new LinkedHashMap<>();
+                result.put("code", candidate.get("code") == null ? null : String.valueOf(candidate.get("code")));
+                result.put("name", candidate.get("name") == null ? null : String.valueOf(candidate.get("name")));
+                return result;
+            }
+        }
+        return Map.of();
     }
 
     @SuppressWarnings("unchecked")

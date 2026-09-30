@@ -47,6 +47,12 @@ public class DecisionArtifactController {
         return R.ok(deploymentService.listDeployments(artifactId));
     }
 
+    @GetMapping("/{artifactId:\\d+}/deployment-options")
+    public R<Map<String, Object>> deploymentOptions(@PathVariable Long artifactId,
+                                                    @RequestParam(required = false) Long targetProjectId) {
+        return R.ok(deploymentService.deploymentOptions(artifactId, targetProjectId));
+    }
+
     @GetMapping("/deployments/{deploymentId:\\d+}/bindings")
     public R<List<ArtifactResourceBinding>> bindings(@PathVariable Long deploymentId) {
         return R.ok(deploymentService.listBindings(deploymentId));
@@ -72,6 +78,18 @@ public class DecisionArtifactController {
                 .contentLength(artifact.getPackageContent().length)
                 .contentType(MediaType.parseMediaType("application/zip"))
                 .body(artifact.getPackageContent());
+    }
+
+    @GetMapping("/{artifactId:\\d+}/migration-download")
+    public ResponseEntity<byte[]> migrationDownload(@PathVariable Long artifactId,
+                                                    @RequestParam(defaultValue = "true") boolean includeDependencies) {
+        byte[] content = deploymentService.migrationPackage(artifactId, includeDependencies);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=tianshu-resource-transfer.zip")
+                .header("X-Transfer-Package", "TIANSHU_RESOURCE_TRANSFER")
+                .contentLength(content.length)
+                .contentType(MediaType.parseMediaType("application/zip"))
+                .body(content);
     }
 
     @PostMapping("/import")

@@ -4,12 +4,20 @@ export function listTransferResources(params) {
   return request({ url: '/rule/transfer/resources', method: 'get', params })
 }
 
-export function exportResourceTransfer(roots) {
+export function exportResourceTransfer(roots, options = null) {
   return request({
-    url: '/rule/transfer/export',
+    url: options ? '/rule/transfer/export/options' : '/rule/transfer/export',
     method: 'post',
-    data: roots,
+    data: options ? { roots, ...options } : roots,
     responseType: 'blob'
+  })
+}
+
+export function listTransferResourceFields(resourceType, resourceId) {
+  return request({
+    url: '/rule/transfer/resource-fields',
+    method: 'get',
+    params: { resourceType, resourceId },
   })
 }
 

@@ -45,6 +45,7 @@
       <el-button v-if="state === 'APPROVED'" data-testid="publish" type="primary" @click="emitAction('publish')">发布修订 v{{ lifecycleRevision.revisionNo }}</el-button>
       <el-button v-if="['APPROVED', 'PUBLISHED', 'OFFLINE'].includes(state)" data-testid="edit-design" :loading="actionLoading" :disabled="actionLoading" @click="emitAction('edit-design')">基于此修订编辑</el-button>
       <el-button v-if="['APPROVED', 'PUBLISHED', 'OFFLINE'].includes(state) && lifecycleRevision.artifactId" data-testid="download" @click="emitAction('download')">下载制品</el-button>
+      <el-button v-if="['APPROVED', 'PUBLISHED', 'OFFLINE'].includes(state) && lifecycleRevision.artifactId" data-testid="migration-download" @click="emitAction('migration-download')">下载当前配置迁移包</el-button>
       <el-button v-if="state === 'PUBLISHED'" data-testid="offline" @click="emitAction('offline')">下线</el-button>
     </div>
   </el-card>
