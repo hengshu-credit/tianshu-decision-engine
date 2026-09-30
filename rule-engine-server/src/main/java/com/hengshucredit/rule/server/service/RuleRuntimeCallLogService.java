@@ -171,7 +171,9 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
     public List<Map<String, Object>> payloadsByRootTraceId(String rootTraceId, Long projectId) {
         if (!hasText(rootTraceId)) return Collections.emptyList();
         LambdaQueryWrapper<RuleRuntimeCallLog> wrapper = new LambdaQueryWrapper<RuleRuntimeCallLog>()
-                .eq(RuleRuntimeCallLog::getRootTraceId, rootTraceId)
+                .and(w -> w.eq(RuleRuntimeCallLog::getRootTraceId, rootTraceId)
+                        .or().eq(RuleRuntimeCallLog::getRuleTraceId, rootTraceId)
+                        .or().eq(RuleRuntimeCallLog::getTraceId, rootTraceId))
                 .eq(RuleRuntimeCallLog::getModuleType, "DATASOURCE")
                 .eq(RuleRuntimeCallLog::getActionType, "API_INVOKE")
                 .orderByAsc(RuleRuntimeCallLog::getCreateTime)

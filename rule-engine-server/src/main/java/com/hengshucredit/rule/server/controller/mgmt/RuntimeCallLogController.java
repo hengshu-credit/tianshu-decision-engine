@@ -62,8 +62,10 @@ public class RuntimeCallLogController {
     }
 
     @GetMapping("/payload/by-root-trace-id")
-    public R<java.util.List<Map<String, Object>>> payloadsByRootTraceId(@RequestParam String rootTraceId) {
-        return R.ok(logService.payloadsByRootTraceId(rootTraceId));
+    public R<java.util.List<Map<String, Object>>> payloadsByRootTraceId(
+            @RequestParam String rootTraceId,
+            @RequestParam(required = false) Long projectId) {
+        return R.ok(logService.payloadsByRootTraceId(rootTraceId, projectId));
     }
 
     @GetMapping("/external-api-stats")

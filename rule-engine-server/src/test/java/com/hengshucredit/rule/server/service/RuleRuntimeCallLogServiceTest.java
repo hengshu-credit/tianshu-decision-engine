@@ -60,7 +60,9 @@ public class RuleRuntimeCallLogServiceTest {
     @Test
     public void rootTraceBatchesAssignmentsAndPreservesHistoricalRows() {
         RuleRuntimeCallLog first = traceLog("first", "API_INVOKE", "[]");
+        first.setRuleTraceId("root");
         RuleRuntimeCallLog second = traceLog("second", "API_INVOKE", "[]");
+        second.setTraceId("root");
         RuleRuntimeCallLog historical = traceLog(null, "API_INVOKE", null);
         QueryService service = new QueryService(null, List.of(first, second, historical), List.of(
                 traceLog("second", "API_ASSIGNMENT", "[{\"sequence\":1,\"refId\":12,\"value\":false}]")));
@@ -71,6 +73,20 @@ public class RuleRuntimeCallLogServiceTest {
         assertEquals(1, ((List<?>) result.get(1).get("traceSteps")).size());
         assertEquals(0, ((List<?>) result.get(2).get("traceSteps")).size());
         assertTrue(service.queries.get(1).getParamNameValuePairs().containsValue(5L));
+    }
+
+    @Test
+    public void rootTraceQueryMatchesAnyPersistedTraceIdentity() {
+        RuleRuntimeCallLog summary = traceLog("call-trace", "API_INVOKE", "[]");
+        summary.setTraceId("root-trace");
+        QueryService service = new QueryService(null, List.of(summary), List.of());
+
+        List<Map<String, Object>> result = service.payloadsByRootTraceId("root-trace", 5L);
+
+        assertEquals(1, result.size());
+        assertTrue(service.queries.get(0).getSqlSegment().contains("OR"));
+        assertTrue(service.queries.get(0).getParamNameValuePairs().containsValue("root-trace"));
+        assertTrue(service.queries.get(0).getParamNameValuePairs().containsValue(5L));
     }
 
     private static RuleRuntimeCallLog traceLog(String callId, String action, String steps) {
