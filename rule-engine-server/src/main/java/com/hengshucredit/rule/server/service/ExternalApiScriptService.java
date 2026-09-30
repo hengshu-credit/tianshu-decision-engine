@@ -26,7 +26,7 @@ public class ExternalApiScriptService {
                 .traceExpression(false)
                 .securityStrategy(QLExpressScriptSecurity.standardFunctionWhitelist())
                 .build());
-        AggregateBuiltinFunctionRegistry.register(runner);
+        AggregateBuiltinFunctionRegistry.register(runner, false);
         registerApiFunctions(new ExternalApiScriptFunctions());
     }
 

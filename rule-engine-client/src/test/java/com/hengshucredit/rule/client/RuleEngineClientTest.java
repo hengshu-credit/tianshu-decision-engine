@@ -282,6 +282,43 @@ public class RuleEngineClientTest {
         client.close();
     }
 
+    @Test
+    public void concurrentColdRuleExecutionUsesOneRemoteLoad() throws Exception {
+        RuleEngineClient client = RuleEngineClient.builder()
+                .connectionFactory(connectionFactory())
+                .projectId(1L)
+                .logReporter(new RecordingReporter())
+                .build();
+        BlockingRuleHttpSyncClient syncClient = new BlockingRuleHttpSyncClient(rule("COLD", "SCRIPT", "1 + 1"));
+        setField(client, "httpSyncClient", syncClient);
+        int workers = 8;
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(workers);
+        CountDownLatch ready = new CountDownLatch(workers);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<java.util.concurrent.Future<RuleResult>> futures = new java.util.ArrayList<>();
+            for (int i = 0; i < workers; i++) {
+                futures.add(executor.submit(() -> {
+                    ready.countDown();
+                    start.await(2, TimeUnit.SECONDS);
+                    return client.execute("COLD", new LinkedHashMap<>());
+                }));
+            }
+            assertTrue(ready.await(2, TimeUnit.SECONDS));
+            start.countDown();
+            assertTrue(syncClient.fetchRuleEntered.await(2, TimeUnit.SECONDS));
+            syncClient.allowFetchRule.countDown();
+            for (java.util.concurrent.Future<RuleResult> future : futures) {
+                assertTrue(future.get(3, TimeUnit.SECONDS).isSuccess());
+            }
+            assertEquals(1, syncClient.fetchRuleCalls);
+        } finally {
+            syncClient.allowFetchRule.countDown();
+            executor.shutdownNow();
+            client.close();
+        }
+    }
+
     private CachedRule rule(String code, String modelType, String script) {
         CachedRule rule = new CachedRule();
         rule.setRuleCode(code);
@@ -362,6 +399,33 @@ public class RuleEngineClientTest {
                 throw new AssertionError(e);
             }
             return super.fetchAll();
+        }
+    }
+
+    private static class BlockingRuleHttpSyncClient extends StubHttpSyncClient {
+        private final CachedRule rule;
+        private final CountDownLatch fetchRuleEntered = new CountDownLatch(1);
+        private final CountDownLatch allowFetchRule = new CountDownLatch(1);
+        private int fetchRuleCalls;
+
+        private BlockingRuleHttpSyncClient(CachedRule rule) {
+            super(Collections.emptyList());
+            this.rule = rule;
+        }
+
+        @Override
+        public CachedRule fetchRule(String ruleCode) {
+            fetchRuleCalls++;
+            fetchRuleEntered.countDown();
+            try {
+                if (!allowFetchRule.await(2, TimeUnit.SECONDS)) {
+                    throw new AssertionError("Rule load release timed out");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(e);
+            }
+            return rule;
         }
     }
 

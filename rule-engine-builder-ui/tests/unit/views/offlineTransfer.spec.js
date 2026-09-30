@@ -7,6 +7,8 @@ vi.mock('@/api/transfer', () => ({
   listTransferResources: vi.fn(),
   previewResourceTransfer: vi.fn(),
   importResourceTransfer: vi.fn(),
+  listTransferLogs: vi.fn(),
+  getTransferLog: vi.fn(),
 }))
 
 import * as transferApi from '@/api/transfer'
@@ -21,6 +23,8 @@ describe('OfflineTransfer', () => {
       data: { packageDigest: 'digest-1', conflictCount: 0, resources: [], roots: [] },
     })
     transferApi.importResourceTransfer.mockReset().mockResolvedValue({ data: { status: 'APPLIED' } })
+    transferApi.listTransferLogs.mockReset().mockResolvedValue({ data: { records: [], total: 0 } })
+    transferApi.getTransferLog.mockReset().mockResolvedValue({ data: null })
     ElMessageBox.confirm.mockReset().mockResolvedValue('confirm')
   })
 
@@ -359,6 +363,23 @@ describe('OfflineTransfer', () => {
       projectCode: '',
       projectName: '',
     })
+    wrapper.unmount()
+  })
+
+  test('新建项目区域保留固定占位，不因切换目标模式重排整个表单', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    const fields = wrapper.find('.project-create-fields')
+    expect(fields.exists()).toBe(true)
+    expect(fields.classes()).not.toContain('is-enabled')
+    expect(fields.find('.project-create-fields__placeholder').exists()).toBe(true)
+
+    wrapper.vm.options.targetScope = 'PROJECT'
+    wrapper.vm.options.createProject = true
+    await nextTick()
+    expect(wrapper.find('.project-create-fields').classes()).toContain('is-enabled')
+    expect(wrapper.find('.project-create-fields__inputs').exists()).toBe(true)
+    expect(wrapper.find('.project-create-fields__placeholder').isVisible()).toBe(false)
+    expect(wrapper.find('.import-options__policies').exists()).toBe(true)
     wrapper.unmount()
   })
 

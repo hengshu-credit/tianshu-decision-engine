@@ -188,6 +188,41 @@ describe.each(DESIGNERS)('%s画布持久化', (name, designer) => {
     expect(miniMap.hide).not.toHaveBeenCalled()
   })
 
+  test('缩放输入使用目标绝对比例并同步 LogicFlow 实际百分比', () => {
+    let scale = 1.1
+    const context = {
+      zoomInput: '125%',
+      zoomPercent: 110,
+      lf: {
+        getTransform: () => ({ SCALE_X: scale }),
+        zoom: vi.fn(targetScale => { scale = targetScale }),
+      },
+      updateZoom: designer.methods.updateZoom,
+      $nextTick: callback => callback(),
+    }
+
+    designer.methods.onZoomInputChange.call(context)
+
+    expect(context.lf.zoom).toHaveBeenCalledWith(1.25)
+    expect(context.zoomPercent).toBe(125)
+    expect(context.zoomInput).toBe('125%')
+  })
+
+  test('收到画布变换事件时立即显示实际缩放比例', () => {
+    const context = {
+      zoomPercent: 100,
+      zoomInput: '100%',
+      lf: { getTransform: () => ({ SCALE_X: 1 }) },
+      $nextTick: vi.fn(),
+    }
+
+    designer.methods.updateZoom.call(context, { SCALE_X: 1.26 })
+
+    expect(context.zoomPercent).toBe(126)
+    expect(context.zoomInput).toBe('126%')
+    expect(context.$nextTick).not.toHaveBeenCalled()
+  })
+
   test('分组仅写入 logicflow 画布数据，不进入业务节点和连线', () => {
     const graph = {
       nodes: [

@@ -105,6 +105,11 @@
       </el-form>
       <div class="uiue-btn-bar">
         <div class="btn-right">
+          <table-column-settings
+            v-model="ruleColumnOrder"
+            :columns="ruleColumns"
+            storage-key="tianshu:table-columns:rule-list"
+          />
           <el-button
             v-permission="'rule:edit'"
             type="primary"
@@ -123,76 +128,39 @@
       v-loading="loading"
       style="width: 100%"
     >
-      <el-table-column label="作用范围" width="90" align="center">
-        <template v-slot="{ row }">
+      <el-table-column
+        v-for="column in visibleRuleColumns"
+        :key="column.key"
+        :prop="column.key"
+        :label="column.label"
+        :min-width="column.minWidth"
+        :align="column.align"
+        show-overflow-tooltip
+      >
+        <template #default="{ row }">
           <el-tag
+            v-if="column.key === 'scope'"
             :class="row.scope === 'GLOBAL' ? 'el-tag--scope-global' : 'el-tag--scope-project'"
             size="small"
-            >{{ row.scope === 'GLOBAL' ? '全局' : '项目级' }}</el-tag
           >
+            {{ row.scope === 'GLOBAL' ? '全局' : '项目级' }}
+          </el-tag>
+          <el-tag v-else-if="column.key === 'modelType'" size="small">
+            {{ modelTypeLabel(row.modelType) }}
+          </el-tag>
+          <el-tag
+            v-else-if="column.key === 'status'"
+            :type="statusTagType(effectiveStatus(row))"
+            size="small"
+          >
+            {{ statusLabel(effectiveStatus(row)) }}
+          </el-tag>
+          <span v-else-if="column.key === 'publishedVersion'">
+            {{ publishedVersionLabel(row) }}
+          </span>
+          <span v-else>{{ ruleCellValue(row, column.key) }}</span>
         </template>
       </el-table-column>
-      <el-table-column
-        prop="projectName"
-        label="项目名称"
-        min-width="130"
-        show-overflow-tooltip
-      />
-      <el-table-column
-        prop="ruleCode"
-        label="规则编码"
-        min-width="150"
-        show-overflow-tooltip
-      />
-      <el-table-column
-        prop="ruleName"
-        label="规则名称"
-        min-width="140"
-        show-overflow-tooltip
-      />
-      <el-table-column
-        prop="modelType"
-        label="模型类型"
-        min-width="90"
-        align="center"
-      >
-        <template v-slot="{ row }">
-          <el-tag size="small">{{ modelTypeLabel(row.modelType) }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column
-        prop="status"
-        label="发布状态"
-        min-width="80"
-        align="center"
-      >
-        <template v-slot="{ row }">
-          <el-tag :type="statusTagType(effectiveStatus(row))" size="small">{{
-            statusLabel(effectiveStatus(row))
-          }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column
-        prop="currentVersion"
-        label="设计版本"
-        min-width="80"
-        align="center"
-      />
-      <el-table-column
-        prop="publishedVersion"
-        label="发布版本"
-        min-width="80"
-        align="center"
-      >
-        <template v-slot="{ row }">{{ publishedVersionLabel(row) }}</template>
-      </el-table-column>
-      <el-table-column
-        prop="description"
-        label="描述"
-        min-width="140"
-        show-overflow-tooltip
-      />
-      <el-table-column prop="updateTime" label="更新时间" min-width="160" />
       <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="190" align="center" fixed="right">
         <template v-slot="{ row }">
           <div class="table-operation-group">
@@ -361,6 +329,7 @@ import {
 } from '@/utils/pageStateCache'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
 import { ruleDesignerLocation } from '@/utils/ruleDesignerNavigation'
 import RuleModelTypeHelp from '@/components/rule/RuleModelTypeHelp.vue'
@@ -375,6 +344,30 @@ export default {
       projectList: [],
       filteredProjectCodes: [],
       filteredProjectNames: [],
+      ruleColumns: [
+        { key: 'scope', label: '作用范围', minWidth: 90, align: 'center', required: true },
+        { key: 'projectName', label: '项目名称', minWidth: 130 },
+        { key: 'ruleCode', label: '规则编码', minWidth: 150 },
+        { key: 'ruleName', label: '规则名称', minWidth: 140 },
+        { key: 'modelType', label: '模型类型', minWidth: 90, align: 'center' },
+        { key: 'status', label: '发布状态', minWidth: 80, align: 'center' },
+        { key: 'currentVersion', label: '设计版本', minWidth: 80, align: 'center' },
+        { key: 'publishedVersion', label: '发布版本', minWidth: 80, align: 'center' },
+        { key: 'description', label: '描述', minWidth: 140 },
+        { key: 'updateTime', label: '更新时间', minWidth: 160 },
+      ],
+      ruleColumnOrder: [
+        'scope',
+        'projectName',
+        'ruleCode',
+        'ruleName',
+        'modelType',
+        'status',
+        'currentVersion',
+        'publishedVersion',
+        'description',
+        'updateTime',
+      ],
       queryParams: {
         pageNum: 1,
         pageSize: 10,
@@ -416,8 +409,20 @@ export default {
       ElIconPlus: markRaw(ElIconPlus),
     }
   },
+  computed: {
+    visibleRuleColumns() {
+      return this.ruleColumnOrder
+        .map(key => this.ruleColumns.find(column => column.key === key))
+        .filter(Boolean)
+    },
+  },
   name: 'RuleList',
-  components: { RemoteFilterSelect, ProjectFilterSelect, RuleModelTypeHelp },
+  components: {
+    RemoteFilterSelect,
+    ProjectFilterSelect,
+    RuleModelTypeHelp,
+    TableColumnSettings,
+  },
   created() {
     this.contextProjectId = routeProjectId(
       this.$route,
@@ -580,6 +585,10 @@ export default {
       }
       clearPageState(projectPageStateKey('RuleList', this.contextProjectId))
       this.loadData()
+    },
+    ruleCellValue(row, key) {
+      const value = row && row[key]
+      return value === null || value === undefined || value === '' ? '—' : value
     },
     onRuleScopeChange(val) {
       if (val === 'GLOBAL') {

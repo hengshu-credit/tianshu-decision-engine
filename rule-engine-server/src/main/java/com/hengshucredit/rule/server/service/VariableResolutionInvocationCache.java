@@ -43,6 +43,14 @@ public class VariableResolutionInvocationCache {
     private volatile SourceStepListener sourceStepListener;
     private static final Object NULL_VALUE = new Object();
 
+    public List<Map<String, Object>> completedApiCalls() {
+        List<Map<String, Object>> calls = new ArrayList<>();
+        apiResponses.forEach((key, future) -> {
+            if (key.startsWith("API_CHAIN:") && future.isDone() && !future.isCompletedExceptionally()) calls.add(copyMap(future.join()));
+        });
+        return calls;
+    }
+
     /**
      * Durable sink supplied by the logical execution coordinator. The cache remains usable
      * without a listener for previews and ordinary executions.
@@ -154,6 +162,12 @@ public class VariableResolutionInvocationCache {
         return sourceKey == null ? null : completedSteps.get(sourceKey);
     }
 
+    /** 返回待恢复的异步来源；成功步骤和普通失败步骤不会被当作恢复凭据。 */
+    public SourceStep pendingStep(String sourceKey) {
+        SourceStep step = completedStep(sourceKey);
+        return step != null && "WAITING_EXTERNAL".equalsIgnoreCase(step.getStatus()) ? step : null;
+    }
+
     public void recordReplayMissing(String sourceType, String sourceKey, String scriptName) {
         if (sourceKey == null) return;
         Map<String, Object> item = new LinkedHashMap<>();
@@ -174,7 +188,7 @@ public class VariableResolutionInvocationCache {
                 && java.util.Objects.equals(step.getConfigDigest(), configDigest)
                 && java.util.Objects.equals(step.getInputDigest(), inputDigest)
                 && java.util.Objects.equals(step.getDependencyDigest(), dependencyDigest)
-                && !"FAILED".equalsIgnoreCase(step.getStatus());
+                && "SUCCESS".equalsIgnoreCase(step.getStatus());
     }
 
     /** Persist first, then expose the step to the in-memory cache. */
@@ -219,6 +233,7 @@ public class VariableResolutionInvocationCache {
         Map<String, Object> result = new LinkedHashMap<>();
         completedSteps.values().forEach(step -> {
             if (step == null) return;
+            if (!"SUCCESS".equalsIgnoreCase(step.getStatus())) return;
             Object path = step.getMetadata().get("scriptName");
             if (path == null) path = step.getMetadata().get("modelCode");
             if (path == null || String.valueOf(path).isBlank()) return;
@@ -233,11 +248,14 @@ public class VariableResolutionInvocationCache {
             SourceStep step = SourceStep.fromMap(String.valueOf(key), value);
             if (step == null) return;
             completedSteps.put(String.valueOf(key), step);
-            if ("VARIABLE".equalsIgnoreCase(step.getSourceType())) {
+            if ("VARIABLE".equalsIgnoreCase(step.getSourceType())
+                    && "SUCCESS".equalsIgnoreCase(step.getStatus())) {
                 Object scriptName = step.getMetadata().get("scriptName");
                 restoreVariableResult(step.getSourceKey(), scriptName == null ? null : String.valueOf(scriptName),
                         step.getValue(), step.getSourceStates());
-            } else if ("MODEL".equalsIgnoreCase(step.getSourceType())) {
+            } else if (("MODEL".equalsIgnoreCase(step.getSourceType())
+                    || "EXTERNAL_API".equalsIgnoreCase(step.getSourceType()))
+                    && "SUCCESS".equalsIgnoreCase(step.getStatus())) {
                 Map<String, Object> response = step.getResponse();
                 if (response == null && step.getValue() instanceof Map<?, ?> map) {
                     response = copyMapStatic(map);

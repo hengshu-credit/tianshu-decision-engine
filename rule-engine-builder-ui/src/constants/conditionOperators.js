@@ -129,6 +129,11 @@ const SOURCE_OUTCOME_OPERATORS = [
 ]
 
 const API_STATUS_OPERATORS = [
+  { label: '已计费', value: 'source_billed', noValue: true, dimension: 'BILLED', expected: 'TRUE' },
+  { label: '未计费', value: 'source_not_billed', noValue: true, dimension: 'BILLED', expected: 'FALSE' },
+  { label: '发生重试', value: 'source_retried', noValue: true, dimension: 'RETRIED', expected: 'TRUE' },
+  { label: '发生熔断', value: 'source_circuit_open', noValue: true, dimension: 'CIRCUIT_OPEN', expected: 'TRUE' },
+  { label: '存在异常', value: 'source_exception', noValue: true, dimension: 'EXCEPTION', expected: 'TRUE' },
   ...SOURCE_OUTCOME_OPERATORS,
   { label: '使用了兜底值', value: 'source_fallback', noValue: true, dimension: 'FALLBACK_USED', expected: 'TRUE' },
   { label: '已启用缓存', value: 'source_cache_enabled', noValue: true, dimension: 'CACHE_CONFIGURED', expected: 'TRUE' },
@@ -161,6 +166,7 @@ const MODEL_STATUS_OPERATORS = [
 ]
 
 const DATA_OBJECT_STATUS_OPERATORS = [
+  ...API_STATUS_OPERATORS,
   { label: '字段存在', value: 'source_field_present', noValue: true, dimension: 'PRESENCE', expected: 'PRESENT' },
   { label: '字段缺失', value: 'source_field_missing', noValue: true, dimension: 'PRESENCE', expected: 'MISSING' },
   { label: '类型转换异常', value: 'source_field_invalid', noValue: true, dimension: 'PRESENCE', expected: 'INVALID' }

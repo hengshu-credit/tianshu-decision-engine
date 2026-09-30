@@ -35,13 +35,35 @@ final class ExternalApiPayloadCapturePolicy {
         JSONObject phaseConfig = phaseConfig(config, phase);
         Object configured = phaseConfig.get("saveOriginal");
         boolean saveOriginal = configured == null || Boolean.TRUE.equals(configured);
-        if (saveOriginal) return originalBody;
+        if (saveOriginal) return sanitizeOriginalBody(phaseConfig, originalBody, capture);
         if (capture != null && "FAILED".equals(String.valueOf(capture.metadata.get("status")))) {
             capture.metadata.put("originalStored", true);
             capture.metadata.put("originalStoredReason", "CAPTURE_FAILED");
             return originalBody;
         }
         return null;
+    }
+
+    private static String sanitizeOriginalBody(JSONObject phaseConfig, String originalBody, Capture capture) {
+        List<FieldPolicy> policies = fieldPolicies(phaseConfig.get("oversizedFields"));
+        if (policies.isEmpty()) return originalBody;
+        Object structured = parseJson(originalBody);
+        if (structured == null) {
+            if (capture != null) {
+                capture.metadata.put("originalStored", false);
+                capture.metadata.put("originalStoredReason", "FIELD_POLICY_REQUIRES_JSON");
+            }
+            return null;
+        }
+        Set<String> omitted = new LinkedHashSet<>();
+        for (FieldPolicy policy : policies) {
+            applyFieldPolicy(structured, policy, parsePath(policy.path), 0, "$", omitted, new LinkedHashSet<>());
+        }
+        if (capture != null && !omitted.isEmpty()) {
+            capture.metadata.put("originalStored", true);
+            capture.metadata.put("originalStoredReason", "FIELD_POLICY");
+        }
+        return JSON.toJSONString(structured);
     }
 
     static Capture capture(String configJson, String phase, String originalBody,
@@ -100,13 +122,18 @@ final class ExternalApiPayloadCapturePolicy {
                 if (tokens.isEmpty()) throw new IllegalArgumentException("报文排除路径无效: " + path);
                 removeAtPath(structured, tokens, 0, path, omitted);
             }
+            List<FieldPolicy> fieldPolicies = fieldPolicies(phaseConfig.get("oversizedFields"));
+            Set<String> preservedPaths = new LinkedHashSet<>();
+            for (FieldPolicy policy : fieldPolicies) {
+                applyFieldPolicy(structured, policy, parsePath(policy.path), 0, "$", omitted, preservedPaths);
+            }
             int maxFieldBytes = integer(phaseConfig.get("maxFieldBytes"), 0);
             if (maxFieldBytes < 0 || maxFieldBytes > MAX_FIELD_BYTES) {
                 throw new IllegalArgumentException("maxFieldBytes 必须在0到" + MAX_FIELD_BYTES + "之间");
             }
-            if (maxFieldBytes > 0) trimLargeFields(structured, maxFieldBytes, "$", omitted);
+            if (maxFieldBytes > 0) trimLargeFields(structured, maxFieldBytes, "$", omitted, preservedPaths);
 
-            String captured = structured instanceof String && excludePaths.isEmpty() && maxFieldBytes == 0
+            String captured = structured instanceof String && excludePaths.isEmpty() && fieldPolicies.isEmpty() && maxFieldBytes == 0
                     ? (String) structured : JSON.toJSONString(structured);
             if (captured == null) return Capture.unavailable(source);
             return new Capture(captured, metadata(omitted, source,
@@ -160,6 +187,7 @@ final class ExternalApiPayloadCapturePolicy {
         }
         stringList(result.get("excludePaths"));
         integer(result.get("maxFieldBytes"), 0);
+        fieldPolicies(result.get("oversizedFields"));
         JSONObject decrypt = result.getJSONObject("decrypt");
         if (decrypt != null) {
             String mode = text(decrypt.get("mode"), "BASE64").toUpperCase(java.util.Locale.ROOT);
@@ -180,7 +208,9 @@ final class ExternalApiPayloadCapturePolicy {
     }
 
     private static boolean hasFilters(JSONObject config) {
-        return !stringList(config.get("excludePaths")).isEmpty() || integer(config.get("maxFieldBytes"), 0) > 0;
+        return !stringList(config.get("excludePaths")).isEmpty()
+                || !fieldPolicies(config.get("oversizedFields")).isEmpty()
+                || integer(config.get("maxFieldBytes"), 0) > 0;
     }
 
     private static String pathOf(JSONObject config, String key) {
@@ -314,21 +344,96 @@ final class ExternalApiPayloadCapturePolicy {
         if (next != null) removeAtPath(next, tokens, index + 1, originalPath, omitted);
     }
 
-    private static void trimLargeFields(Object current, int maxBytes, String path, Set<String> omitted) {
+    private static List<FieldPolicy> fieldPolicies(Object value) {
+        if (value == null) return Collections.emptyList();
+        if (!(value instanceof JSONArray) && !(value instanceof List)) {
+            throw new IllegalArgumentException("oversizedFields 必须是数组");
+        }
+        List<FieldPolicy> result = new ArrayList<>();
+        Set<String> paths = new LinkedHashSet<>();
+        for (Object item : (List<?>) value) {
+            if (!(item instanceof Map<?, ?> map)) throw new IllegalArgumentException("oversizedFields 项必须是对象");
+            String path = text(map.get("path"), "");
+            if (path.isBlank() || "$".equals(path) || parsePath(path).isEmpty()) {
+                throw new IllegalArgumentException("超长字段路径无效: " + path);
+            }
+            if (!paths.add(path)) throw new IllegalArgumentException("超长字段路径不能重复: " + path);
+            Object storeValue = map.get("store");
+            if (storeValue != null && !(storeValue instanceof Boolean)) {
+                throw new IllegalArgumentException("超长字段 store 必须是布尔值");
+            }
+            result.add(new FieldPolicy(path, !Boolean.FALSE.equals(storeValue)));
+        }
+        return result;
+    }
+
+    private static void applyFieldPolicy(Object current, FieldPolicy policy, List<Object> tokens,
+                                         int index, String path, Set<String> omitted,
+                                         Set<String> preservedPaths) {
+        if (index + 1 >= tokens.size()) return;
+        Object token = tokens.get(index + 1);
+        if (token instanceof String && WILDCARD.equals(token)) {
+            if (current instanceof Map<?, ?> map) {
+                for (Object key : new ArrayList<>(map.keySet())) {
+                    applyFieldPolicy(map.get(key), policy, tokens, index + 1,
+                            path + "." + key, omitted, preservedPaths);
+                }
+            } else if (current instanceof List<?> list) {
+                for (int i = 0; i < list.size(); i++) {
+                    applyFieldPolicy(list.get(i), policy, tokens, index + 1,
+                            path + "[" + i + "]", omitted, preservedPaths);
+                }
+            }
+            return;
+        }
+        if (index + 1 == tokens.size() - 1) {
+            Object value = readChild(current, token);
+            if (value == null) return;
+            String actualPath = path + (token instanceof Integer ? "[" + token + "]" : "." + token);
+            if (policy.store) {
+                preservedPaths.add(actualPath);
+            } else if (current instanceof Map<?, ?> map && token instanceof String) {
+                ((Map<?, ?>) map).remove(token);
+                omitted.add(actualPath);
+            } else if (current instanceof List<?> list && token instanceof Integer) {
+                int position = (Integer) token;
+                if (position >= 0 && position < list.size()) {
+                    list.remove(position);
+                    omitted.add(actualPath);
+                }
+            }
+            return;
+        }
+        Object next = readChild(current, token);
+        if (next != null) {
+            applyFieldPolicy(next, policy, tokens, index + 1,
+                    path + (token instanceof Integer ? "[" + token + "]" : "." + token),
+                    omitted, preservedPaths);
+        }
+    }
+
+    private static void trimLargeFields(Object current, int maxBytes, String path,
+                                        Set<String> omitted, Set<String> preservedPaths) {
         if (current instanceof Map<?, ?> map) {
             for (Object key : new ArrayList<>(map.keySet())) {
                 Object value = map.get(key);
                 String childPath = path + "." + key;
-                if (JSON.toJSONString(value).getBytes(StandardCharsets.UTF_8).length > maxBytes) { map.remove(key); omitted.add(childPath); }
-                else trimLargeFields(value, maxBytes, childPath, omitted);
+                if (JSON.toJSONString(value).getBytes(StandardCharsets.UTF_8).length > maxBytes
+                        && !isPreserved(childPath, preservedPaths)) { map.remove(key); omitted.add(childPath); }
+                else trimLargeFields(value, maxBytes, childPath, omitted, preservedPaths);
             }
         } else if (current instanceof List<?> list) {
             for (int i = list.size() - 1; i >= 0; i--) {
                 String childPath = path + "[" + i + "]";
-                if (JSON.toJSONString(list.get(i)).getBytes(StandardCharsets.UTF_8).length > maxBytes) { list.remove(i); omitted.add(childPath); }
-                else trimLargeFields(list.get(i), maxBytes, childPath, omitted);
+                if (JSON.toJSONString(list.get(i)).getBytes(StandardCharsets.UTF_8).length > maxBytes
+                        && !isPreserved(childPath, preservedPaths)) { list.remove(i); omitted.add(childPath); }
+                else trimLargeFields(list.get(i), maxBytes, childPath, omitted, preservedPaths);
             }
         }
+    }
+
+    private static boolean isPreserved(String path, Set<String> preservedPaths) {
+        return preservedPaths.stream().anyMatch(p -> path.equals(p) || path.startsWith(p + ".") || path.startsWith(p + "["));
     }
 
     private static Object readChild(Object current, Object token) {
@@ -366,6 +471,8 @@ final class ExternalApiPayloadCapturePolicy {
     }
 
     private static String text(Object value, String fallback) { return value == null ? fallback : String.valueOf(value).trim(); }
+
+    private record FieldPolicy(String path, boolean store) { }
 
     static final class Capture {
         private final String capturedBody;

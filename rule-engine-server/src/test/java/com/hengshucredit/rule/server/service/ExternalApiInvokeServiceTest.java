@@ -42,6 +42,177 @@ import static org.junit.Assert.assertTrue;
 
 public class ExternalApiInvokeServiceTest {
 
+    @Test public void creditPendingCodesOnlyRepeatStatusQueryAndPreserveWholeLargeData() throws Exception {
+        AtomicInteger authorizations = new AtomicInteger(); AtomicInteger polls = new AtomicInteger(); AtomicInteger reports = new AtomicInteger();
+        Map<String, Object> features = new LinkedHashMap<>();
+        for (int i = 0; i < 9937; i++) features.put("QY_" + i, i % 2 == 0 ? 0 : false);
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/C9004", exchange -> { authorizations.incrementAndGet(); byte[] bytes = "{\"code\":\"0000\",\"data\":{\"serialNumber\":\"serial\"}}".getBytes(StandardCharsets.UTF_8); exchange.sendResponseHeaders(200, bytes.length); exchange.getResponseBody().write(bytes); exchange.close(); });
+        server.createContext("/C9005", exchange -> { String code = polls.incrementAndGet() < 3 ? "B0013" : "0000"; byte[] bytes = ("{\"code\":\"" + code + "\",\"data\":{\"reportStatus\":\"01\"}}").getBytes(StandardCharsets.UTF_8); exchange.sendResponseHeaders(200, bytes.length); exchange.getResponseBody().write(bytes); exchange.close(); });
+        server.createContext("/R9005", exchange -> { reports.incrementAndGet(); byte[] bytes = JSON.toJSONBytes(Map.of("code", "0000", "data", Map.of("code", "0000", "securityComputingResult", features, "ErrorInfo", ""))); exchange.sendResponseHeaders(200, bytes.length); exchange.getResponseBody().write(bytes); exchange.close(); });
+        server.start();
+        try {
+            RuleExternalApiConfig api = basicApiConfig(1L, 1L, "/C9004"); api.setRequestMode("ASYNC");
+            api.setExecutionConfig("""
+                {"version":2,"requestFields":[],"steps":[
+                  {"id":"auth","type":"HTTP","endpointUrl":"/C9004","requestFields":[]},
+                  {"id":"status","type":"HTTP","endpointUrl":"/C9005","requestFields":[{"id":"serial","location":"JSON","path":"serialNumber","required":true,"value":{"kind":"PATH","value":"steps.auth.body.data.serialNumber"}}],
+                   "poll":{"maxAttempts":4,"intervalMs":1,"until":{"path":"response.body.code","operator":"==","value":"0000"},"failure":{"path":"response.body.code","operator":"not_in","values":["0000","B0013","B0015","B0016"]}}},
+                  {"id":"report","type":"HTTP","endpointUrl":"/R9005","requestFields":[]}],
+                 "responseBranches":[{"id":"data","mode":"VALUE","value":{"kind":"PATH","value":"response.body.data"}}]}
+                """);
+            var result = configuredService(api, httpDatasource(server)).invoke(api, Map.of());
+            assertEquals(true, result.get("success")); assertEquals(1, authorizations.get()); assertEquals(3, polls.get()); assertEquals(1, reports.get());
+            assertEquals(features, ExternalApiRequestPlan.read(result, "body.securityComputingResult"));
+            assertEquals("", ExternalApiRequestPlan.read(result, "body.ErrorInfo"));
+        } finally { server.stop(0); }
+    }
+
+    @Test public void authorizationFileUrlsAreOnlyDownloadedDuringInvocationAndCanBeZipped() throws Exception {
+        AtomicInteger downloads = new AtomicInteger();
+        AtomicInteger submissions = new AtomicInteger();
+        AtomicReference<JSONObject> submitted = new AtomicReference<>();
+        byte[] pdf = "%PDF-1.4\nlocal synthetic authorization\n%%EOF".getBytes(StandardCharsets.UTF_8);
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/authorization.pdf", exchange -> {
+            downloads.incrementAndGet(); exchange.sendResponseHeaders(200, pdf.length);
+            exchange.getResponseBody().write(pdf); exchange.close();
+        });
+        server.createContext("/authorization", exchange -> {
+            submissions.incrementAndGet(); submitted.set(JSON.parseObject(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8)));
+            byte[] response = "{\"code\":\"0000\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length); exchange.getResponseBody().write(response); exchange.close();
+        });
+        server.start();
+        try {
+            String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/authorization.pdf";
+            RuleExternalApiConfig api = basicApiConfig(1L, 1L, "/authorization"); api.setRequestMethod("POST");
+            api.setExecutionConfig(JSON.toJSONString(Map.of("version", 2, "requestFields", List.of(
+                    Map.of("id", "ca", "location", "JSON", "path", "caFile", "required", true, "value", Map.of("kind", "LITERAL", "value", url), "file", Map.of("mode", "BASE64", "kind", "PDF", "maxBytes", 307200)),
+                    Map.of("id", "other", "location", "JSON", "path", "otherFile", "value", Map.of("kind", "LITERAL", "value", url), "file", Map.of("mode", "ZIP_BASE64", "kind", "PDF", "maxBytes", 307200, "name", "application.pdf"))))));
+            var service = configuredService(api, httpDatasource(server));
+            var preview = service.previewRequest(api, Map.of(), null);
+            assertEquals(0, downloads.get()); assertEquals(0, submissions.get());
+            assertTrue(String.valueOf(ExternalApiRequestPlan.read(preview, "body.caFile")).contains("预览占位"));
+            var response = service.invoke(api, Map.of());
+            assertEquals(true, response.get("success")); assertEquals(1, downloads.get()); assertEquals(1, submissions.get());
+            org.junit.Assert.assertArrayEquals(pdf, java.util.Base64.getDecoder().decode(submitted.get().getString("caFile")));
+            try (var zip = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(java.util.Base64.getDecoder().decode(submitted.get().getString("otherFile"))))) {
+                assertEquals("application.pdf", zip.getNextEntry().getName()); org.junit.Assert.assertArrayEquals(pdf, zip.readAllBytes());
+            }
+            api.setExecutionConfig(api.getExecutionConfig().replace("307200", "1"));
+            var rejected = service.invoke(api, Map.of());
+            assertEquals(false, rejected.get("success")); assertEquals(1, submissions.get());
+            assertEquals(false, ExternalApiRequestPlan.read(rejected, "status.requestIssued"));
+        } finally { server.stop(0); }
+    }
+
+    @Test
+    public void unifiedWorkflowPreviewsWithoutRequestsAndKeepsRawResponsesAndAccurateStatus() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        AtomicInteger pollStatus = new AtomicInteger(200);
+        AtomicReference<String> submitted = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/submit", exchange -> {
+            calls.incrementAndGet();
+            submitted.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] body = "{\"task\":\"t1\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length); exchange.getResponseBody().write(body); exchange.close();
+        });
+        server.createContext("/poll", exchange -> {
+            calls.incrementAndGet();
+            byte[] body = "{\"score\":88,\"state\":\"DONE\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(pollStatus.get(), body.length); exchange.getResponseBody().write(body); exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalApiConfig api = basicApiConfig(1L, 1L, "/submit");
+            api.setRequestMode("ASYNC");
+            api.setExecutionConfig("""
+                {"version":2,"requestFields":[{"id":"phone","location":"JSON","path":"phone","value":{"kind":"LITERAL","value":"13000000001"}}],
+                 "steps":[{"id":"submit","type":"HTTP","endpointUrl":"/submit","requestMethod":"POST","sample":{"task":"t1"},
+                    "requestFields":[{"id":"p","location":"JSON","path":"phone","value":{"kind":"PATH","value":"input.__apiFields.phone"}}]},
+                    {"id":"poll","type":"HTTP","endpointUrl":"/poll","requestMethod":"GET","requestFields":[{"id":"t","location":"QUERY","path":"task","required":true,"value":{"kind":"PATH","value":"steps.submit.body.task"}}]}],
+                 "responseBranches":[{"id":"result","outputFields":[{"id":"s","path":"score","value":{"kind":"PATH","value":"response.body.score"}}]}]}
+                """);
+            ExternalApiInvokeService service = configuredService(api, httpDatasource(server));
+            ReflectionTestUtils.setField(service, "billingService", new RuleBillingService() {
+                @Override public boolean recordApiExecution(RuleExternalApiConfig a, RuleExternalDatasource d, boolean success, Long cost, String error) { return false; }
+            });
+            var preview = service.previewRequest(api, Map.of(), null);
+            assertEquals(false, preview.get("networkCalled"));
+            assertEquals("t1", ExternalApiRequestPlan.read(preview, "steps.poll.request.query.task"));
+            assertEquals(0, calls.get());
+            var result = service.invoke(api, Map.of());
+            assertEquals(2, calls.get());
+            assertEquals("13000000001", JSON.parseObject(submitted.get()).getString("phone"));
+            assertEquals(JSON.toJSONString(result), 88, ExternalApiRequestPlan.read(result, "body.score"));
+            assertEquals("DONE", ExternalApiRequestPlan.read(result, "response.body.state"));
+            assertEquals("t1", ExternalApiRequestPlan.read(result, "steps.submit.response.body.task"));
+            assertEquals(0, ExternalApiRequestPlan.read(result, "status.retryCount"));
+            assertEquals(false, ExternalApiRequestPlan.read(result, "status.billed"));
+            List<?> stages = (List<?>) result.get("traceSteps");
+            for (Object raw : stages) {
+                Map<?, ?> step = (Map<?, ?>) raw;
+                if ("WORKFLOW_STEP".equals(step.get("type"))) {
+                    assertFalse(Boolean.TRUE.equals(ExternalApiRequestPlan.read(step, "output.truncated")));
+                    assertNotNull(ExternalApiRequestPlan.read(step, "output.externalCall.traceSteps"));
+                }
+            }
+            pollStatus.set(503);
+            var failed = service.invoke(api, Map.of());
+            assertEquals(false, failed.get("success"));
+            assertEquals(503, ExternalApiRequestPlan.read(failed, "status.httpStatus"));
+            assertEquals(4, calls.get());
+        } finally { server.stop(0); }
+    }
+
+    @Test
+    public void largeWorkflowResponseKeepsInnerTraceStagesWhileSummarizingPayload() throws Exception {
+        String report = "x".repeat(40000);
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/report", exchange -> {
+            byte[] body = JSON.toJSONBytes(Map.of("code", "0000", "data", Map.of("report", report)));
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalApiConfig api = basicApiConfig(1L, 1L, "/report");
+            api.setRequestMode("ASYNC");
+            api.setExecutionConfig("""
+                {"version":2,"requestFields":[],
+                 "steps":[{"id":"report","type":"HTTP","endpointUrl":"/report","requestFields":[]}],
+                 "responseBranches":[{"id":"result","mode":"VALUE","value":{"kind":"PATH","value":"response.body.data"}}]}
+                """);
+            var result = configuredService(api, httpDatasource(server)).invoke(api, Map.of());
+            assertEquals(true, result.get("success"));
+            assertEquals(report, ExternalApiRequestPlan.read(result, "body.report"));
+            Map<?, ?> stage = ((List<?>) result.get("traceSteps")).stream()
+                    .map(value -> (Map<?, ?>) value).filter(value -> "WORKFLOW_STEP".equals(value.get("type")))
+                    .findFirst().orElseThrow();
+            assertEquals(true, ExternalApiRequestPlan.read(stage, "output.truncated"));
+            assertTrue("大报文摘要不能删除步骤内调用过程", stage.get("children") instanceof List<?>);
+            List<?> children = (List<?>) stage.get("children");
+            assertEquals(List.of("REQUEST_INPUT", "API_REQUEST", "AUTHENTICATION", "EXTERNAL_REQUEST", "EXTERNAL_RESPONSE", "RESPONSE_MAPPING"),
+                    children.stream().map(value -> ((Map<?, ?>) value).get("type")).toList());
+            assertEquals(true, ExternalApiRequestPlan.read(children.get(4), "output.truncated"));
+            assertEquals(true, ExternalApiRequestPlan.read(children.get(5), "output.truncated"));
+            for (int i = 0; i < children.size(); i++) {
+                assertEquals(i + 1, ((Map<?, ?>) children.get(i)).get("sequence"));
+                assertNotNull(((Map<?, ?>) children.get(i)).get("callId"));
+            }
+        } finally { server.stop(0); }
+    }
+
+    @Test public void responseConditionOperandsSupportNumericComparisonsAndPureExpressions() {
+        var service = new ExternalApiInvokeService();
+        String condition = "{\"type\":\"group\",\"operator\":\"AND\",\"children\":[{\"left\":{\"kind\":\"PATH\",\"value\":\"response.body.score\"},\"operator\":\">=\",\"right\":{\"kind\":\"LITERAL\",\"valueType\":\"NUMBER\",\"value\":80}}]}";
+        assertTrue(service.matchesResponseCondition(condition, Map.of("response", Map.of("body", Map.of("score", 88)))));
+        assertFalse(service.matchesResponseCondition(condition, Map.of("response", Map.of("body", Map.of("score", 60)))));
+    }
+
     @Test
     public void businessTokenFailureRefreshesBeforeResponseMapping() throws Exception {
         AtomicInteger tokens = new AtomicInteger();
@@ -406,6 +577,62 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
+    public void pendingAsyncInvocationResumesPollingWithoutResubmitting() throws Exception {
+        AtomicInteger submissions = new AtomicInteger();
+        AtomicInteger polls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/submit", exchange -> {
+            submissions.incrementAndGet();
+            byte[] body = "{\"taskId\":\"resume-task\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(202, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.createContext("/poll/resume-task", exchange -> {
+            int attempt = polls.incrementAndGet();
+            byte[] body = (attempt == 1 ? "{\"status\":\"PENDING\"}"
+                    : "{\"status\":\"SUCCESS\",\"data\":{\"score\":699}}")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalApiConfig config = basicApiConfig(91L, 1L, "/submit");
+            config.setRequestMode("ASYNC");
+            config.setAsyncResultMode("POLL");
+            config.setAsyncTimeoutMs(1000);
+            config.setAsyncPollConfig("{\"taskIdPath\":\"body.taskId\",\"resultEndpointUrl\":\"/poll/${taskId}\","
+                    + "\"statusPath\":\"body.status\",\"successValue\":\"SUCCESS\",\"resultPath\":\"body.data\","
+                    + "\"intervalMs\":2000,\"maxAttempts\":3}");
+            ExternalApiInvokeService service = configuredService(config, httpDatasource(server));
+            ExternalApiInvokeService.ApiInvokeException error;
+            try {
+                service.invoke(91L, Map.of());
+                fail("第一次调用应因等待预算耗尽而返回可恢复异常");
+                return;
+            } catch (ExternalApiInvokeService.ApiInvokeException expected) {
+                error = expected;
+            }
+            Map<String, Object> pending = error.getPendingAsync();
+            assertNotNull(pending);
+            assertEquals("resume-task", pending.get("taskId"));
+            assertEquals(1, submissions.get());
+            assertEquals(1, polls.get());
+
+            ExternalApiRequestPlan plan = ExternalApiRequestPlan.prepare(config, Map.of(), Map.of(), Map.of());
+            Map<String, Object> resumed = service.invokePending(plan, pending);
+            assertEquals(true, resumed.get("success"));
+            assertEquals(699, ((Map<?, ?>) resumed.get("body")).get("score"));
+            assertEquals(1, submissions.get());
+            assertEquals(2, polls.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     public void externalRequestUsesRemainingProjectDeadlineAsItsTimeout() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/slow", exchange -> {
@@ -673,6 +900,71 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
+    public void exceptionConditionSupportsMissingEmptyAndTypeChecks() {
+        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("body", new LinkedHashMap<>(Map.of("empty", "", "score", 88, "flag", true)));
+
+        assertTrue(service.matchesResponseCondition("{\"path\":\"body.missing\",\"operator\":\"missing\"}", response));
+        assertTrue(service.matchesResponseCondition("{\"path\":\"body.empty\",\"operator\":\"is_empty\"}", response));
+        assertTrue(service.matchesResponseCondition("{\"path\":\"body.score\",\"operator\":\"type_is\",\"value\":\"NUMBER\"}", response));
+        assertTrue(service.matchesResponseCondition("{\"path\":\"body.flag\",\"operator\":\"type_changed\",\"value\":\"STRING\"}", response));
+        assertFalse(service.matchesResponseCondition("{\"path\":\"body.missing\",\"operator\":\"is_empty\"}", response));
+    }
+
+    @Test
+    public void exceptionConditionCanClassifyHttpErrorBodyBeforeFallback() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/error", exchange -> {
+            byte[] body = "{\"errorCode\":\"MAINTENANCE\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(500, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalApiConfig config = basicApiConfig(92L, 1L, "/error");
+            config.setExceptionCondition("{\"path\":\"body.errorCode\",\"operator\":\"==\",\"value\":\"MAINTENANCE\"}");
+            config.setExceptionStrategy("RETURN_DEFAULT");
+            config.setFallbackValue("{\"available\":false}");
+            Map<String, Object> result = configuredService(config, httpDatasource(server)).invoke(92L, Map.of());
+            assertEquals(true, result.get("fallback"));
+            assertEquals(false, ((Map<?, ?>) result.get("body")).get("available"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void workflowStepExceptionConditionTreeClassifiesItsOwnErrorResponse() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/step-error", exchange -> {
+            byte[] body = "{\"errorCode\":\"MAINTENANCE\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(503, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalApiConfig config = basicApiConfig(93L, 1L, "/step-error");
+            config.setRequestMode("ASYNC");
+            config.setExceptionStrategy("RETURN_DEFAULT");
+            config.setExecutionConfig("""
+                {"version":2,"requestFields":[],"steps":[
+                  {"id":"provider","type":"HTTP","endpointUrl":"/step-error","requestFields":[],
+                   "exceptionConditionTree":{"type":"group","operator":"AND","children":[
+                     {"path":"response.body.errorCode","operator":"==","value":"MAINTENANCE"}]}}
+                ]}
+                """);
+            Map<String, Object> result = configuredService(config, httpDatasource(server)).invoke(93L, Map.of());
+            assertEquals(false, result.get("success"));
+            assertTrue(JSON.toJSONString(result.get("steps")).contains("\"type\":\"EXCEPTION_CONDITION\""));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     public void responseMappingUsesFirstAvailablePathForDynamicStructures() {
         RuleExternalApiConfig config = new RuleExternalApiConfig();
         config.setResponseMapping("{\"score\":[\"body.data.score\",\"body.model_params.br_applyloanstr_v2.score\",\"body.score\"],\"firstReason\":\"body.reasons.0.code\"}");
@@ -697,6 +989,19 @@ public class ExternalApiInvokeServiceTest {
         Map<?, ?> mapped = (Map<?, ?>) mappedResponse.get("body");
         assertEquals(661.8, ((Number) mapped.get("score")).doubleValue(), 0.000001);
         assertEquals("R001", mapped.get("firstReason"));
+    }
+
+    @Test
+    public void requestPathPresenceSupportsArrayAndQuotedObjectSegments() {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("score.value", 88);
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("items", List.of(item));
+        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        assertTrue((Boolean) ReflectionTestUtils.invokeMethod(service, "containsPath",
+                input, "$.items[0]['score.value']"));
+        assertFalse((Boolean) ReflectionTestUtils.invokeMethod(service, "containsPath",
+                input, "$.items[1]['score.value']"));
     }
 
     @Test
@@ -2031,6 +2336,13 @@ public class ExternalApiInvokeServiceTest {
         assertEquals("YES", ruleInput.get().get("signed"));
         assertEquals("13800138000", ruleInput.get().get("mobile_no"));
         assertEquals(680, ((Number) ((Map<String, Object>) response.get("body")).get("score")).intValue());
+
+        config.setExceptionCondition("{\"path\":\"body.score\",\"operator\":\"type_changed\",\"value\":\"STRING\"}");
+        config.setExceptionStrategy("RETURN_DEFAULT");
+        config.setFallbackValue("{\"available\":false}");
+        Map<String, Object> fallback = service.invoke(113L, params);
+        assertEquals(true, fallback.get("fallback"));
+        assertEquals(false, ((Map<String, Object>) fallback.get("body")).get("available"));
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -2106,9 +2418,10 @@ public class ExternalApiInvokeServiceTest {
         private final AtomicInteger recordCount = new AtomicInteger();
 
         @Override
-        public void recordApiExecution(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,
+        public boolean recordApiExecution(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,
                                        boolean success, Long costTimeMs, String errorMessage) {
             recordCount.incrementAndGet();
+            return true;
         }
     }
 

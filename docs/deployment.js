@@ -53,7 +53,7 @@
     localStorage.setItem('tianshu-manual-theme', body.classList.contains('dark') ? 'dark' : 'light')
     updateThemeLabel()
   })
-  search.addEventListener('input', event => filterSections(event.target.value))
+  search?.addEventListener('input', event => filterSections(event.target.value))
   tocLinks.forEach(link => {
     link.addEventListener('click', event => {
       const href = link.getAttribute('href')
@@ -67,11 +67,11 @@
   })
   window.addEventListener('hashchange', scrollToHash)
   document.addEventListener('keydown', event => {
-    if (event.key === '/' && document.activeElement !== search) {
+    if (search && event.key === '/' && document.activeElement !== search) {
       event.preventDefault()
       search.focus()
     }
-    if (event.key === 'Escape' && document.activeElement === search) {
+    if (search && event.key === 'Escape' && document.activeElement === search) {
       search.value = ''
       filterSections('')
       search.blur()

@@ -90,3 +90,33 @@ test('长函数参数保持单行并能悬停查看全文', async ({ page }) => 
   await expect(page.getByRole('tooltip').filter({ hasText: 'risk_evaluation_score' })).toBeVisible()
   assertClean()
 })
+
+test('项目列表字段设置支持隐藏和排序并持久化', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  const { assertClean } = await installDistRoutes(page)
+  await page.goto('http://tianshu.local/index.html#/project')
+
+  const table = page.locator('.el-table:visible').first()
+  await expect(table.locator('.el-table__body tr').first()).toBeVisible()
+  await page.getByRole('button', { name: '设置表格显示字段' }).click()
+  await expect(page.getByText('显示字段', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: '隐藏描述' }).click()
+  await page.locator('[aria-label="下移字段"]').nth(2).click()
+  await page.getByRole('button', { name: '应用', exact: true }).click()
+
+  let headers = await table.locator('th .cell').allTextContents()
+  headers = headers.map(text => text.trim()).filter(Boolean)
+  expect(headers.indexOf('状态')).toBeLessThan(headers.indexOf('创建时间'))
+  expect(headers).not.toContain('描述')
+
+  await page.reload()
+  const reloadedTable = page.locator('.el-table:visible').first()
+  await expect(reloadedTable.locator('.el-table__body tr').first()).toBeVisible()
+  const reloadedHeaders = (await reloadedTable.locator('th .cell').allTextContents())
+    .map(text => text.trim())
+    .filter(Boolean)
+  expect(reloadedHeaders).not.toContain('描述')
+  expect(reloadedHeaders.indexOf('状态')).toBeLessThan(reloadedHeaders.indexOf('创建时间'))
+  assertClean()
+})

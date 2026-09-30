@@ -6,8 +6,10 @@ const requireUi = createRequire(path.resolve(__dirname, '../../rule-engine-build
 const { chromium, expect } = requireUi('@playwright/test')
 const { installDistRoutes } = require('../../rule-engine-builder-ui/tests/e2e/support/distRoutes.cjs')
 const { createDocsApiData } = require('../../rule-engine-builder-ui/tests/e2e/support/docsFixtures.cjs')
+const { screenshotRoot, screenshotViewport, captureFileName, referencedScreenshots } = require('./screenshot-files.cjs')
 const root = path.resolve(__dirname, '../..')
-const output = path.join(root, 'docs/readme')
+const output = screenshotRoot
+const publishedScreenshots = referencedScreenshots()
 const examples = JSON.parse(fs.readFileSync(path.join(root, 'rule-engine-core/target/docs/executed-examples.json'), 'utf8'))
 for (const example of examples) assert.deepEqual(example.execution.result, example.expectedOutput, example.ruleCode)
 fs.mkdirSync(output, { recursive: true })
@@ -52,7 +54,7 @@ function fixtures(example) {
     { id: 2, roleCode: 'RISK_REVIEWER', roleName: '风险审核', permissions: ['rule:view', 'approval:view', 'approval:approve'], status: 1 }
   ])
   data.set('/api/rule/console/permissions', [])
-  data.set('/api/rule/governance/requests', { records: [{ id: 1, resourceId: 101, requestNo: 'DEMO-20260907-001', resourceType: 'RULE', action: 'UPDATE', status: 'PENDING', applicant: 'strategy_editor', submitTime: '2026-09-07 10:00:00', submittedSnapshotJson: JSON.stringify({ ruleName: '人脸阈值决策表', ruleCode: 'face_threshold_table' }) }], total: 1 })
+  data.set('/api/rule/governance/requests', { records: [{ id: 1, resourceId: 101, requestNo: 'DEMO-20260930-001', resourceType: 'RULE', action: 'UPDATE', status: 'PENDING', applicant: 'strategy_editor', submitTime: '2026-09-30 10:00:00', submittedSnapshotJson: JSON.stringify({ ruleName: '人脸阈值决策表', ruleCode: 'face_threshold_table' }) }], total: 1 })
   data.set('/api/rule/governance/requests/summary', { pendingCount: 1, myDraftCount: 0, myRequestCount: 1, completedCount: 0 })
   return data
 }
@@ -61,7 +63,9 @@ async function main() {
   const browser = await chromium.launch()
   try {
     const capture = async (name, route, action, example, customize) => {
-      const page = await browser.newPage({ viewport: { width: 1720, height: 1120 } })
+      const fileName = captureFileName(name)
+      if (!publishedScreenshots.has(fileName)) return
+      const page = await browser.newPage({ viewport: screenshotViewport, deviceScaleFactor: 1 })
       const data = fixtures(example)
       if (customize) customize(data)
       const checks = await installDistRoutes(page, { apiData: data })
@@ -73,8 +77,8 @@ async function main() {
         await expect(page.locator('.el-message:visible')).toHaveCount(0)
         await page.waitForTimeout(900)
         checks.assertClean()
-        await page.screenshot({ path: path.join(output, `${name}.png`), animations: 'disabled' })
-        captures.push(name)
+        await page.screenshot({ path: path.join(output, fileName), animations: 'disabled' })
+        captures.push(fileName)
         console.log(`CAPTURE ${name}`)
       } catch (error) {
         await page.screenshot({ path: path.join(root, 'rule-engine-core/target/docs/failed.png') })
@@ -85,9 +89,10 @@ async function main() {
     }
     const basic = [
       ['dashboard', '/dashboard'], ['project', '/project'], ['project-detail', '/project/1'],
-      ['rules', '/rule'], ['variable', '/variable'], ['lists', '/list'], ['datasource', '/datasource'],
+      ['rules', '/rule'], ['rule-detail', '/rule/101'], ['variable', '/variable'], ['lists', '/list'], ['datasource', '/datasource'],
       ['database', '/database'], ['models', '/model'], ['functions', '/function'],
       ['experiment', '/experiment'], ['logs', '/log'], ['billing', '/billing'],
+      ['transfer', '/transfer'],
       ['account', '/account'], ['approval', '/approval']
     ]
     for (const [name, route] of basic) await capture(name, route)
@@ -96,6 +101,26 @@ async function main() {
       await page.getByRole('tab', { name: '数据对象', exact: true }).click()
       await page.getByRole('row').filter({ hasText: 'FaceVerifyRequest' }).locator('.el-table__expand-icon').click()
       await expect(page.getByText('deviceId', { exact: true }).first()).toBeVisible()
+    })
+    await capture('api-list', '/datasource', async page => {
+      await page.getByRole('tab', { name: 'API 接口', exact: true }).click()
+      await expect(page.getByText('face_liveness_check', { exact: true })).toBeVisible()
+    })
+    await capture('external-call-trace', '/log', async page => {
+      const row = page.getByRole('row').filter({ hasText: 'FACE202607240930000000000000000001' })
+      await row.getByRole('button', { name: '详情', exact: true }).click()
+      const drawer = page.getByRole('dialog', { name: '日志详情' })
+      await expect(drawer).toBeVisible()
+      await drawer.getByRole('tab', { name: /表达式追踪树/ }).click()
+      await expect(drawer.getByText('拼装供应商请求', { exact: true })).toBeVisible()
+    })
+    await capture('experiment-trace', '/experiment/detail/61', async page => {
+      await page.getByRole('tab', { name: '分流日志', exact: true }).click()
+      await expect(page.getByText('REQ-FACE-20260724093115-001', { exact: true })).toBeVisible()
+      await page.getByRole('button', { name: '详情', exact: true }).last().click()
+      const drawer = page.getByRole('dialog', { name: '分流日志详情' })
+      await expect(drawer).toBeVisible()
+      await expect(drawer.getByText('分流实验', { exact: true })).toBeVisible()
     })
     await capture('lineage', '/lineage', async page => {
       await page.locator('.query-panel .el-form-item').filter({ hasText: '起点' }).locator('.el-select').click()
@@ -129,7 +154,7 @@ async function main() {
     })
     for (const example of examples) {
       await capture(`rule-${example.slug}-config`, `/designer/${example.slug}/${example.id}`, async page => {
-        await expect(page.getByRole('button', { name: '保存并检查', exact: true })).toBeVisible()
+        await expect(page.locator('.rule-designer-actions__compile')).toBeVisible()
       }, example)
       await capture(`rule-${example.slug}-trace`, '/test', async page => {
         await page.locator('.test-left .el-form-item').filter({ hasText: /^规则/ }).locator('.el-select').click()
@@ -141,7 +166,10 @@ async function main() {
         if (example.slug === 'score') await expect(page.locator('.trace-tree-wrap').getByText('基础分', { exact: true })).toBeVisible()
       }, example)
     }
-    fs.writeFileSync(path.join(output, 'capture-manifest.json'), JSON.stringify({ source: 'Current Vue production build; documentation API fixtures; nine rule traces from the local QLExpress engine', capturedAt: new Date().toISOString(), viewport: { width: 1720, height: 1120 }, images: captures.map(name => `${name}.png`) }, null, 2) + '\n')
+    const images = [...publishedScreenshots]
+      .filter(name => name.endsWith('.png') && fs.existsSync(path.join(output, name)))
+      .sort()
+    fs.writeFileSync(path.join(output, 'capture-manifest.json'), JSON.stringify({ source: 'Current Vue production build; documentation API fixtures; nine rule traces from the local QLExpress engine', capturedAt: new Date().toISOString(), viewport: screenshotViewport, images }, null, 2) + '\n')
     console.log(`PASS ${captures.length} screenshots, no unmatched API requests or browser errors`)
   } finally { await browser.close() }
 }

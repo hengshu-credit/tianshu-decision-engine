@@ -52,6 +52,7 @@
               <pre v-else>{{ displayValue(field.value) }}</pre>
             </div>
           </div>
+          <external-call-trace v-if="nestedSteps(step).length" :steps="nestedSteps(step)" title="步骤内调用过程" compact />
         </div>
       </article>
     </div>
@@ -105,6 +106,7 @@ export default {
     },
   },
   methods: {
+    nestedSteps(step) { return step.output?.externalCall?.traceSteps || step.children || [] },
     hasOwn(step, key) {
       return Object.prototype.hasOwnProperty.call(step, key) && step[key] !== undefined
     },

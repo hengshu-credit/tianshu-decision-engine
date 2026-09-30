@@ -190,7 +190,7 @@ export default {
   min-height: 34px;
   padding: 6px 12px;
   background: var(--tianshu-bg-surface);
-  border: 1px solid #d8dee9;
+  border: 1px solid var(--tianshu-border);
   border-radius: 6px;
   font-size: 12px;
   white-space: nowrap;
@@ -198,7 +198,7 @@ export default {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 .nd-box:hover {
-  border-color: #a8c8f0;
+  border-color: var(--tianshu-info-border);
   box-shadow: 0 2px 6px var(--tianshu-primary-shadow);
 }
 .nd-txt {
@@ -208,7 +208,7 @@ export default {
   color: var(--tianshu-text-primary);
 }
 .c-op {
-  color: #6b7280;
+  color: var(--tianshu-text-secondary);
   margin: 0 2px;
   font-weight: 600;
 }
@@ -218,13 +218,13 @@ export default {
   flex-shrink: 0;
 }
 .nd-res.is-true {
-  color: #529b2e;
+  color: var(--tianshu-success-text);
 }
 .nd-res.is-false {
-  color: #c45656;
+  color: var(--tianshu-danger-text);
 }
 .nd-res.is-val {
-  color: var(--el-color-primary);
+  color: var(--tianshu-info-text);
 }
 .nd-res.is-skip {
   color: var(--tianshu-text-tertiary);
@@ -243,7 +243,7 @@ export default {
   left: 50%;
   width: 1px;
   height: 14px;
-  background: #cbd5e1;
+  background: var(--tianshu-border);
 }
 .nd-kids > .nd {
   position: relative;
@@ -255,7 +255,7 @@ export default {
   left: 50%;
   width: 1px;
   height: 14px;
-  background: #cbd5e1;
+  background: var(--tianshu-border);
 }
 .nd-kids > .nd:first-child:not(:last-child)::after {
   content: '';
@@ -264,7 +264,7 @@ export default {
   left: 50%;
   right: 0;
   height: 1px;
-  background: #cbd5e1;
+  background: var(--tianshu-border);
 }
 .nd-kids > .nd:last-child:not(:first-child)::after {
   content: '';
@@ -273,7 +273,7 @@ export default {
   left: 0;
   right: 50%;
   height: 1px;
-  background: #cbd5e1;
+  background: var(--tianshu-border);
 }
 .nd-kids > .nd:not(:first-child):not(:last-child)::after {
   content: '';
@@ -282,7 +282,7 @@ export default {
   left: 0;
   right: 0;
   height: 1px;
-  background: #cbd5e1;
+  background: var(--tianshu-border);
 }
 .nd:not(.is-dim) > .nd-kids:not(.no-stem)::before {
   width: 2px;

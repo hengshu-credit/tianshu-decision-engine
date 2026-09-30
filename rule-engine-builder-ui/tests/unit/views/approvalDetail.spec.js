@@ -70,6 +70,17 @@ import { clearCurrentUser, setCurrentUser } from '@/security/permissionState'
 import ApprovalDetail from '@/views/approval/ApprovalDetail.vue'
 
 describe('统一审批详情', () => {
+  test('万字段 API 审批按页显示差异，可按路径搜索并显示接口名称', async () => {
+    const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
+    await flushPromises()
+    await wrapper.setData({ detail: { request: { id: 80, resourceType: 'EXTERNAL_API', resourceId: 0, status: 'EDITING', submittedSnapshotJson: null, draftSnapshotJson: '{"apiName":"华融三步查询"}' }, diff: { fields: Array.from({ length: 10001 }, (_, index) => ({ key: `$.sample.QY_${index}`, changed: true, changeType: 'ADDED', rightValue: 0 })) }, versions: [] } })
+    expect(wrapper.vm.resourceTitle).toBe('华融三步查询')
+    expect(wrapper.findAll('.diff-row')).toHaveLength(50)
+    await wrapper.setData({ fieldQuery: 'QY_9999' })
+    expect(wrapper.findAll('.diff-row')).toHaveLength(1)
+    expect(wrapper.find('.diff-row').text()).toContain('QY_9999')
+    wrapper.unmount()
+  })
   test('审批请求失败保留意见和对话框，不产生未处理拒绝', async () => {
     const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
     await flushPromises()

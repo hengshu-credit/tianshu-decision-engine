@@ -536,6 +536,10 @@ test('表头、状态、作用范围和普通操作随主题色切换', async ({
         getComputedStyle(document.documentElement)
           .getPropertyValue('--tianshu-action-edit')
       ),
+      successStatus: normalizeColor(
+        getComputedStyle(document.documentElement)
+          .getPropertyValue('--tianshu-status-success-text')
+      ),
       deleteAction: normalizeColor(
         getComputedStyle(document.documentElement)
           .getPropertyValue('--tianshu-action-delete')
@@ -559,7 +563,7 @@ test('表头、状态、作用范围和普通操作随主题色切换', async ({
       headerUpdated: current.headerBackground !== before.headerBackground,
       scopeUpdated: current.scopeBorder !== before.scopeBorder,
       scopeUsesAccent: current.scopeColor === current.accent,
-      statusUsesAccent: current.statusColor === current.accent,
+      statusUsesSemanticColor: current.statusColor === current.successStatus,
       editUsesActionColor: current.editColor === current.editAction,
       deleteUsesActionColor: current.deleteColor === current.deleteAction,
     }
@@ -567,7 +571,7 @@ test('表头、状态、作用范围和普通操作随主题色切换', async ({
     headerUpdated: true,
     scopeUpdated: true,
     scopeUsesAccent: true,
-    statusUsesAccent: true,
+    statusUsesSemanticColor: true,
     editUsesActionColor: true,
     deleteUsesActionColor: true,
   })
@@ -576,7 +580,7 @@ test('表头、状态、作用范围和普通操作随主题色切换', async ({
   expect(after.headerBackground).not.toBe(before.headerBackground)
   expect(after.scopeBorder).not.toBe(before.scopeBorder)
   expect(after.scopeColor).toBe(after.accent)
-  expect(after.statusColor).toBe(after.accent)
+  expect(after.statusColor).toBe(after.successStatus)
   expect(after.editColor).toBe(after.editAction)
   expect(after.deleteColor).toBe(after.deleteAction)
   expect(after.deleteColor).not.toBe(after.editColor)
@@ -587,7 +591,7 @@ test('表头、状态、作用范围和普通操作随主题色切换', async ({
     return {
       headerUpdated: current.headerBackground !== after.headerBackground,
       scopeUsesAccent: current.scopeColor === current.accent,
-      statusUsesAccent: current.statusColor === current.accent,
+      statusUsesSemanticColor: current.statusColor === current.successStatus,
       editUsesActionColor: current.editColor === current.editAction,
       deleteUsesActionColor: current.deleteColor === current.deleteAction,
       dangerRemainsDistinct: current.deleteColor !== current.editColor,
@@ -595,7 +599,7 @@ test('表头、状态、作用范围和普通操作随主题色切换', async ({
   }).toEqual({
     headerUpdated: true,
     scopeUsesAccent: true,
-    statusUsesAccent: true,
+    statusUsesSemanticColor: true,
     editUsesActionColor: true,
     deleteUsesActionColor: true,
     dangerRemainsDistinct: true,
@@ -610,7 +614,7 @@ test('项目列表同一行操作使用互不重复且语义稳定的主题色',
   await page.goto('http://tianshu.local/index.html#/project')
   const row = page.getByRole('row').filter({ hasText: 'E2E 项目' })
   const actions = row.locator('button[data-action]')
-  await expect(actions).toHaveCount(6)
+  await expect(actions).toHaveCount(5)
 
   const appearance = await actions.evaluateAll(buttons => buttons.map(button => ({
     action: button.dataset.action,
@@ -621,7 +625,6 @@ test('项目列表同一行操作使用互不重复且语义稳定的主题色',
     'detail',
     'configure',
     'docs',
-    'openapi',
     'delete',
   ])
   expect(new Set(appearance.map(item => item.color)).size).toBe(appearance.length)

@@ -45,6 +45,27 @@ test('当前配置纯编译，无保存，未保存配置可测试', async () =>
   wrapper.unmount()
 })
 
+test('后台编译任务完成后才更新编译结果和页面状态', async () => {
+  const wrapper = await host()
+  api.compileDesignerModel.mockResolvedValueOnce({ data: { taskId: 'compile-1', status: 'PENDING' } })
+  api.getDesignerCompileTask
+    .mockResolvedValueOnce({ data: { taskId: 'compile-1', status: 'RUNNING' } })
+    .mockResolvedValueOnce({ data: {
+      taskId: 'compile-1',
+      status: 'SUCCEEDED',
+      result: { compileSuccess: true, compiledScript: 'async;', preflightReport: { valid: true, errors: [] } },
+    } })
+
+  await wrapper.vm.compileDesignerDraft()
+
+  expect(api.getDesignerCompileTask).toHaveBeenCalledTimes(2)
+  expect(wrapper.vm.designerCompileResult.compiledScript).toBe('async;')
+  expect(wrapper.vm.designerActionState).toBe('READY_TO_TEST')
+  await wrapper.vm.saveDraftModel(wrapper.vm.modelJson, { saveMode: 'OVERWRITE' })
+  expect(api.saveDesignerDraft.mock.calls[0][1]).toMatchObject({ compileTaskId: 'compile-1' })
+  wrapper.unmount()
+})
+
 test('编译失败保留完整报告交给弹窗，不重复弹出错误提示', async () => {
   const wrapper = await host()
   const report = { valid: false, errors: [{ code: 'COMPILE_FAILED', message: '语法错误', path: '$.script' }], warnings: [] }

@@ -23,6 +23,45 @@ import static org.junit.Assert.assertNull;
 
 public class RuleBillingServiceTest {
 
+    @Test public void apiApprovalSynchronizesBillingAndOneCallIdProducesOneRecord() {
+        ApiBilling service = new ApiBilling();
+        var api = new com.hengshucredit.rule.model.entity.RuleExternalApiConfig();
+        api.setId(7L); api.setApiName("本地接口"); api.setStatus(1); api.setUnitPrice(new BigDecimal("0.20"));
+        api.setExecutionConfig("{\"version\":2,\"billingBranches\":[{\"id\":\"charge\",\"bill\":true}]}");
+        var source = new com.hengshucredit.rule.model.entity.RuleExternalDatasource();
+        source.setScope("GLOBAL");
+        service.syncApiBilling(api, source);
+        assertEquals("API_7", service.config.getBillingCode());
+        assertEquals(Long.valueOf(7), service.config.getTargetRefId());
+        api.setExecutionCallId("same-chain");
+        org.junit.Assert.assertTrue(service.recordApiExecution(api, source, true, 2L, null));
+        org.junit.Assert.assertTrue(service.recordApiExecution(api, source, true, 2L, null));
+        assertEquals(1, service.records.size());
+        assertEquals(new BigDecimal("0.200000"), service.records.get(0).getAmount());
+        api.setExecutionConfig("{\"version\":2}");
+        service.syncApiBilling(api, source);
+        assertEquals(Integer.valueOf(0), service.config.getStatus());
+        org.junit.Assert.assertFalse(service.recordApiExecution(api, source, true, 2L, null));
+    }
+
+    private static class ApiBilling extends RuleBillingService {
+        private RuleBillingConfig config;
+        private final List<RuleBillingRecord> records = new ArrayList<>();
+        @Override public RuleBillingConfig getOne(com.baomidou.mybatisplus.core.conditions.Wrapper<RuleBillingConfig> query) { return config; }
+        @Override public boolean save(RuleBillingConfig value) { config = value; config.setId(1L); return true; }
+        @Override public boolean updateById(RuleBillingConfig value) { config = value; return true; }
+        @Override public List<RuleBillingConfig> list(com.baomidou.mybatisplus.core.conditions.Wrapper<RuleBillingConfig> query) {
+            return config != null && Integer.valueOf(1).equals(config.getStatus()) ? List.of(config) : List.of();
+        }
+        @Override protected void insertRecord(RuleBillingRecord record) {
+            if (findByBillingDedupKey(record.getBillingDedupKey()) != null) throw new DuplicateKeyException("duplicate");
+            records.add(record);
+        }
+        @Override protected RuleBillingRecord findByBillingDedupKey(String key) {
+            return records.stream().filter(record -> key.equals(record.getBillingDedupKey())).findFirst().orElse(null);
+        }
+    }
+
     @Test
     public void engineBillingRecordStoresAuthAndIndividualTokenAttribution() {
         InMemoryBillingService service = serviceWithConfig();

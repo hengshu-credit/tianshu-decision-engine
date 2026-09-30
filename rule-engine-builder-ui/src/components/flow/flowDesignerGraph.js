@@ -4,6 +4,26 @@ import { graphContainsDirectedCycle } from '@/utils/flowGraphCycle'
 
 export const FLOW_THEME_COLOR = 'var(--el-color-primary)'
 export const ANCHOR_CLICK_TOLERANCE = 10
+export const DYNAMIC_GROUP_STYLE = Object.freeze({
+  fill: 'var(--tianshu-designer-accent-bg)',
+  stroke: 'var(--tianshu-designer-accent-border)',
+  strokeWidth: 2,
+})
+export const DYNAMIC_GROUP_TEXT_STYLE = Object.freeze({
+  color: 'var(--tianshu-text-primary)',
+  fontSize: 14,
+  fontWeight: 600,
+})
+
+function applyDynamicGroupTheme(node) {
+  if (!node || (node.type !== 'dynamic-group' && !(node.properties && node.properties.isGroup))) return node
+  node.properties = {
+    ...(node.properties || {}),
+    style: { ...DYNAMIC_GROUP_STYLE, ...(node.properties && node.properties.style) },
+    textStyle: { ...DYNAMIC_GROUP_TEXT_STYLE, ...(node.properties && node.properties.textStyle) },
+  }
+  return node
+}
 
 const COMMON_MENU_OPTIONS = [
   { type: 'exclusive-gateway', label: '条件判断', icon: 'Sort', color: '#FA8C16' },
@@ -317,6 +337,7 @@ function getStableTopologicalOrder(nodes, edges) {
 function refreshDynamicGroupBounds(nodes) {
   const byId = new Map(nodes.map(node => [node.id, node]))
   nodes.filter(node => node.type === 'dynamic-group' || (node.properties && node.properties.isGroup)).forEach(group => {
+    applyDynamicGroupTheme(group)
     const members = ((group.properties && group.properties.children) || [])
       .map(id => byId.get(id))
       .filter(Boolean)
@@ -662,6 +683,8 @@ export function createDynamicGroup(lf) {
     y: bounds.y,
     text: '分组',
     properties: {
+      style: { ...DYNAMIC_GROUP_STYLE },
+      textStyle: { ...DYNAMIC_GROUP_TEXT_STYLE },
       children,
       width: bounds.width,
       height: bounds.height,

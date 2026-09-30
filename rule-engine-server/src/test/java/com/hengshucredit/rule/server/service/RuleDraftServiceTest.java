@@ -94,6 +94,19 @@ public class RuleDraftServiceTest {
     }
 
     @Test
+    public void saveWithPrecompiledResultSkipsSecondCompilation() {
+        fixture.compileResult = CompileResult.fail("should not be called");
+        CompileResult precompiled = CompileResult.ok("return precompiled;", "QLEXPRESS");
+
+        RuleDraftSaveResponse saved = service.saveWithCompileResult(
+                request(30L, 6L, 0, modelJson()), precompiled);
+
+        assertTrue(saved.isCompileSuccess());
+        assertEquals("return precompiled;", saved.getRevision().getCompiledScript());
+        assertEquals("return precompiled;", fixture.savedContent.getCompiledScript());
+    }
+
+    @Test
     public void restoreEffectiveProjectionReplacesRejectedDraftContentAndFields() {
         RuleRevision effective = new RuleRevision();
         effective.setDefinitionId(30L);

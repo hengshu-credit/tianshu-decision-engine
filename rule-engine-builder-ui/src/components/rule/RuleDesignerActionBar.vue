@@ -6,7 +6,7 @@
         class="rule-designer-actions__button" :class="'rule-designer-actions__' + action.key"
         :data-action="action.key" :disabled="busy || state === 'SAVING' || (action.key === 'test' ? !canTest : !canEdit)"
         :aria-busy="busy" :title="action.key === 'test' ? '使用当前页面配置测试' : action.label"
-        @click="$emit(action.key)">{{ action.label }}</button>
+        @click="$emit(action.key)"><el-icon class="rule-designer-actions__icon"><component :is="action.icon" /></el-icon><span>{{ action.label }}</span></button>
     </div>
     <button v-if="report && (report.errors?.length || report.warnings?.length)" type="button"
       class="rule-designer-actions__button" data-action="show-report" @click="reportVisible = true">
@@ -26,6 +26,13 @@
 </template>
 
 <script>
+import { markRaw } from 'vue'
+import {
+  Cpu as ElIconCpu,
+  DocumentChecked as ElIconDocumentChecked,
+  Promotion as ElIconPromotion,
+  VideoPlay as ElIconVideoPlay,
+} from '@element-plus/icons-vue'
 import RuleValidationReport from '@/components/rule/RuleValidationReport.vue'
 import { validationPathLabel } from '@/utils/validationIssueLocation'
 export default {
@@ -39,7 +46,12 @@ export default {
     recovery: { type: Object, default: null },
   },
   emits: ['compile', 'save', 'publish', 'test', 'locate', 'restore', 'discard-recovery'],
-  data: () => ({ reportVisible: false, actions: [{ key: 'compile', label: '编译' }, { key: 'save', label: '保存' }, { key: 'publish', label: '发布' }, { key: 'test', label: '测试' }] }),
+  data: () => ({ reportVisible: false, actions: [
+    { key: 'compile', label: '编译', icon: markRaw(ElIconCpu) },
+    { key: 'save', label: '保存', icon: markRaw(ElIconDocumentChecked) },
+    { key: 'publish', label: '发布', icon: markRaw(ElIconPromotion) },
+    { key: 'test', label: '测试', icon: markRaw(ElIconVideoPlay) },
+  ] }),
   watch: {
     report: {
       immediate: true,
@@ -61,7 +73,8 @@ export default {
 <style scoped>
 .rule-designer-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; }
 .rule-designer-actions__buttons { display: inline-flex; align-items: center; gap: 8px; }
-.rule-designer-actions__button { min-height: 32px; padding: 0 14px; border: 1px solid var(--tianshu-border-subtle); border-radius: 6px; background: var(--tianshu-bg-surface); color: var(--tianshu-text-primary); font: inherit; cursor: pointer; }
+.rule-designer-actions__button { min-height: 32px; width: 78px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--tianshu-border-subtle); border-radius: 6px; background: var(--tianshu-bg-surface); color: var(--tianshu-text-primary); font: inherit; cursor: pointer; }
+.rule-designer-actions__icon { flex: none; font-size: 14px; }
 .rule-designer-actions__button:hover:not(:disabled) { background: var(--tianshu-bg-muted); color: var(--tianshu-text-primary); }
 .rule-designer-actions__publish { border-color: var(--el-color-primary); background-color: var(--el-color-primary); background-image: var(--tianshu-brand-gradient); color: var(--tianshu-brand-foreground); }
 .rule-designer-actions__publish:hover:not(:disabled) { background-color: var(--el-color-primary-dark-1); background-image: var(--tianshu-brand-gradient); color: var(--tianshu-brand-foreground); }

@@ -213,8 +213,8 @@ describe('DashboardHome', () => {
         .find(chart => chart.props('ariaLabel') === '进件地图热力图')
       expect(map.props('empty')).toBe(false)
       expect(wrapper.vm.mapCountry).toBe('CHN')
-      expect(map.props('option').geo.center).toBeUndefined()
-      expect(map.props('option').geo.boundingCoords).toEqual(CHINA_MAP_BOUNDS)
+      expect(map.props('option').geo.center).toEqual([105, 30])
+      expect(map.props('option').geo.boundingCoords).not.toEqual(CHINA_MAP_BOUNDS)
       expect(map.props('option').series[0].data).toEqual([])
       expect(wrapper.text()).toContain('暂无合法经纬度记录，展示初始视角')
       wrapper.unmount()
@@ -301,7 +301,8 @@ describe('DashboardHome', () => {
     expect(wrapper.vm.mapCountry).toBe('USA')
     expect(wrapper.vm.mapLevel).toBe('ADM1')
     expect(wrapper.vm.geoOption.geo.nameProperty).toBe('shapeID')
-    expect(wrapper.vm.geoOption.geo.center).toBeUndefined()
+    expect(wrapper.vm.geoOption.geo.center).toEqual([-95, 35])
+    expect(wrapper.vm.geoOption.geo.boundingCoords).toEqual([[-100.8, 40.8], [-89.2, 29.2]])
     expect(wrapper.vm.mapLayerOptions.map(layer => layer.level)).toEqual(['ADM0', 'ADM1', 'ADM2'])
     expect(wrapper.text()).toContain('geoBoundaries')
     await wrapper.vm.openMapCountry('region-1')
@@ -313,8 +314,8 @@ describe('DashboardHome', () => {
 
     await wrapper.vm.changeMapCountry('')
     expect(wrapper.vm.geoOption.geo.nameProperty).toBe('NAME_ZH')
-    expect(wrapper.vm.geoOption.geo.center).toEqual([104, 35])
-    expect(wrapper.vm.geoOption.geo.zoom).toBe(1.5)
+    expect(wrapper.vm.geoOption.geo.center).toEqual([0, 0])
+    expect(wrapper.vm.geoOption.geo.zoom).toBe(1)
     expect(wrapper.vm.mapReady).toBe(true)
     wrapper.unmount()
   })
@@ -362,6 +363,8 @@ describe('DashboardHome', () => {
     expect(wrapper.vm.mapLevel).toBe('ADM2')
     expect(wrapper.vm.mapRegionPathLabel).toBe('州一')
     expect(Object.keys(wrapper.vm.mapFeatureIndex)).toEqual(['county-1'])
+    expect(wrapper.vm.geoOption.geo.center).toEqual([-97.5, 5])
+    expect(wrapper.vm.geoOption.geo.boundingCoords).toEqual([[-100.4, 10.8], [-94.6, -0.8]])
     wrapper.vm.sections.applications.data.geo = {
       points: [
         { longitude: -98, latitude: 5, count: 2 },

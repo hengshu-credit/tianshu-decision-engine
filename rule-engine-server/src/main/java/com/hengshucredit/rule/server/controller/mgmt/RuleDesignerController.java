@@ -1,7 +1,7 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
 import com.hengshucredit.rule.model.dto.RuleDesignerCompileRequest;
-import com.hengshucredit.rule.model.dto.RuleDesignerCompileResponse;
+import com.hengshucredit.rule.model.dto.RuleDesignerCompileTaskResponse;
 import com.hengshucredit.rule.model.dto.RuleDesignerDraftRequest;
 import com.hengshucredit.rule.model.dto.RuleDraftSaveResponse;
 import com.hengshucredit.rule.server.common.R;
@@ -19,9 +19,15 @@ public class RuleDesignerController {
     @Resource private RuleLifecycleService lifecycleService;
 
     @PostMapping("/{id}/designer/compile")
-    public R<RuleDesignerCompileResponse> compile(@PathVariable Long id,
-                                                 @RequestBody RuleDesignerCompileRequest request) {
-        return R.ok(designerService.compile(id, request));
+    public R<RuleDesignerCompileTaskResponse> compile(@PathVariable Long id,
+                                                      @RequestBody RuleDesignerCompileRequest request) {
+        return R.ok(designerService.submitCompile(id, request));
+    }
+
+    @GetMapping("/{id}/designer/compile/{taskId}")
+    public R<RuleDesignerCompileTaskResponse> compileStatus(@PathVariable Long id,
+                                                             @PathVariable String taskId) {
+        return R.ok(designerService.getCompileTask(id, taskId));
     }
 
     @PostMapping("/{id}/designer/drafts")

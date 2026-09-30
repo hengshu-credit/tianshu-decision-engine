@@ -29,4 +29,28 @@ describe('ExternalCallTrace', () => {
     await wrapper.find('.external-call-trace-toggle').trigger('click')
     expect(wrapper.find('.external-call-trace-steps').exists()).toBe(true)
   })
+
+  test('工作流大报文截断后仍递归显示全部六个子阶段并保留摘要', () => {
+    const summary = { truncated: true, bytes: 255912, reason: '阶段追踪字段超过32KiB，仅保留摘要' }
+    const children = [
+      { type: 'REQUEST_INPUT', label: '规则请求入参', status: 'SUCCESS' },
+      { type: 'API_REQUEST', label: 'API请求报文拼装', status: 'SUCCESS' },
+      { type: 'AUTHENTICATION', label: '外数鉴权（已脱敏）', status: 'SUCCESS' },
+      { type: 'EXTERNAL_REQUEST', label: '发起外部请求', status: 'SENT' },
+      { type: 'EXTERNAL_RESPONSE', label: '外部数据响应', status: 'SUCCESS' },
+      { type: 'RESPONSE_MAPPING', label: '响应字段映射', status: 'SUCCESS' },
+    ]
+    const wrapper = mount(ExternalCallTrace, {
+      props: { steps: [{ type: 'WORKFLOW_STEP', label: '获取征信结果 R9005', status: 'SUCCESS', output: summary, children }] },
+    })
+
+    const nested = wrapper.find('.external-call-trace.is-compact')
+    expect(nested.exists()).toBe(true)
+    expect(nested.find('.external-call-trace-title').text()).toBe('步骤内调用过程')
+    expect(nested.findAll('.external-call-trace-step-title span').map(item => item.text())).toEqual(children.map(step => step.label))
+    expect(nested.findAll('.external-call-trace-status').map(item => item.text())).toEqual(['成功', '成功', '成功', '已发送', '成功', '成功'])
+    expect(nested.findAll('.external-call-trace-index').map(item => item.text())).toEqual(['1', '2', '3', '4', '5', '6'])
+    expect(JSON.parse(wrapper.find('.external-call-trace-values pre').text())).toEqual(summary)
+    wrapper.unmount()
+  })
 })

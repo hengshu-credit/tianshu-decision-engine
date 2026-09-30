@@ -480,15 +480,15 @@ export default {
   height: 28px;
   flex: none;
   padding: 0;
-  border: 1px solid #cbd6e4;
+  border: 1px solid var(--tianshu-border);
   border-radius: 5px;
   background: var(--tianshu-bg-surface);
-  color: #607089;
+  color: var(--tianshu-text-secondary);
   cursor: pointer;
 }
 .manual-back-button:hover {
-  border-color: var(--el-color-primary);
-  color: var(--el-color-primary);
+  border-color: var(--tianshu-info-text);
+  color: var(--tianshu-info-text);
 }
 .operand-path-candidates {
   position: absolute;
@@ -497,7 +497,7 @@ export default {
   right: 35px;
   left: 0;
   padding: 6px;
-  border: 1px solid #d7e3f2;
+  border: 1px solid var(--tianshu-border-subtle);
   border-radius: 6px;
   background: var(--tianshu-bg-surface);
   box-shadow: 0 8px 20px rgba(35, 55, 80, 0.14);
@@ -510,15 +510,15 @@ export default {
   padding: 7px 8px;
   border: 0;
   background: transparent;
-  color: #26364d;
+  color: var(--tianshu-text-primary);
   cursor: pointer;
   text-align: left;
 }
 .operand-path-candidates button:hover {
-  background: #edf5ff;
+  background: var(--tianshu-info-bg);
 }
 .operand-path-candidates code {
-  color: #718096;
+  color: var(--tianshu-text-tertiary);
   overflow-wrap: anywhere;
 }
 .expression-button {
@@ -526,7 +526,7 @@ export default {
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 1px solid #cbd6e4;
+  border: 1px solid var(--tianshu-border);
   border-radius: 5px;
   background: var(--tianshu-bg-surface);
   color: var(--el-color-primary);
@@ -536,7 +536,7 @@ export default {
   cursor: pointer;
 }
 .expression-button:hover {
-  border-color: var(--el-color-primary);
-  background: #edf5ff;
+  border-color: var(--tianshu-info-text);
+  background: var(--tianshu-info-bg);
 }
 </style>

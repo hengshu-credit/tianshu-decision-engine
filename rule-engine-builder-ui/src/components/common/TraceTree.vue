@@ -4440,7 +4440,7 @@ export default {
   display: grid;
   gap: 6px;
   padding: 14px 16px;
-  border: 1px solid var(--tianshu-warning-border, #e6a23c);
+  border: 1px solid var(--tianshu-warning-border, var(--tianshu-warning-text));
   border-radius: 6px;
   background: var(--tianshu-warning-bg, #fdf6ec);
   color: var(--tianshu-text-secondary, #606266);
@@ -4475,7 +4475,7 @@ export default {
 .experiment-rule-execution {
   margin-top: 14px;
   padding-top: 12px;
-  border-top: 1px solid rgba(228, 231, 237, 0.9);
+  border-top: 1px solid var(--tianshu-border-subtle);
 }
 .rule-trace-head {
   display: flex;
@@ -4497,8 +4497,8 @@ export default {
   flex-shrink: 0;
   padding: 3px 8px;
   border-radius: 4px;
-  background: var(--el-color-primary-light-9);
-  color: #1677d2;
+  background: var(--tianshu-info-bg);
+  color: var(--tianshu-info-text);
   font-size: 11px;
   font-weight: 700;
 }
@@ -4524,15 +4524,15 @@ export default {
 }
 .rule-trace-status.is-success,
 .rule-trace-module-status.is-success {
-  color: #529b2e;
+  color: var(--tianshu-success-text);
 }
 .rule-trace-status.is-failed,
 .rule-trace-module-status.is-failed {
-  color: #c45656;
+  color: var(--tianshu-danger-text);
 }
 .rule-trace-status.is-running,
 .rule-trace-module-status.is-running {
-  color: #e6a23c;
+  color: var(--tianshu-warning-text);
 }
 .rule-trace-id {
   margin-top: 8px;
@@ -4556,16 +4556,16 @@ export default {
 .rule-trace-children {
   margin-top: 14px;
   padding-top: 12px;
-  border-top: 1px solid rgba(228, 231, 237, 0.9);
+  border-top: 1px solid var(--tianshu-border-subtle);
 }
 .rule-trace-module {
   flex-wrap: wrap;
   gap: 8px;
   min-height: 32px;
   padding: 5px 8px;
-  border: 1px solid rgba(228, 231, 237, 0.9);
+  border: 1px solid var(--tianshu-border-subtle);
   border-radius: 5px;
-  background: rgba(250, 250, 250, 0.72);
+  background: var(--tianshu-bg-soft);
   font-size: 11px;
 }
 .rule-trace-module + .rule-trace-module {
@@ -4588,7 +4588,7 @@ export default {
   gap: 6px;
   margin: 4px 0 2px 0;
   padding-top: 8px;
-  border-top: 1px dashed rgba(148, 163, 184, 0.45);
+  border-top: 1px dashed var(--tianshu-border);
 }
 .rule-trace-module-steps-title {
   color: var(--tianshu-text-secondary);
@@ -4611,8 +4611,8 @@ export default {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
+  background: var(--tianshu-info-bg);
+  color: var(--tianshu-info-text);
   font-size: 10px;
   font-weight: 700;
 }
@@ -4624,7 +4624,7 @@ export default {
   color: var(--tianshu-text-primary);
   font-size: 11px;
 }
-.rule-trace-module-step-head span { color: var(--el-color-primary); }
+.rule-trace-module-step-head span { color: var(--tianshu-info-text); }
 .rule-trace-module-step-head span.is-failed { color: var(--el-color-danger); }
 .rule-trace-module-step-head span.is-skipped { color: var(--tianshu-text-tertiary); }
 .rule-trace-module-step-values {
@@ -4677,7 +4677,7 @@ export default {
 .trace-count {
   padding: 1px 8px;
   border-radius: 10px;
-  background: #f2f6fc;
+  background: var(--tianshu-bg-muted);
   color: var(--tianshu-text-secondary);
   font-size: 11px;
   font-weight: 500;
@@ -4692,7 +4692,7 @@ export default {
   align-items: center;
   min-height: 30px;
   padding: 0 10px;
-  background: #f6f8fb;
+  background: var(--tianshu-bg-soft);
   border: 1px solid var(--tianshu-border-subtle);
   border-radius: 6px;
   font-size: 12px;
@@ -4705,13 +4705,13 @@ export default {
   font-weight: 600;
 }
 .var-v.is-true {
-  color: #67c23a;
+  color: var(--tianshu-success-text);
 }
 .var-v.is-false {
-  color: #f76e6c;
+  color: var(--tianshu-danger-text);
 }
 .var-v.is-val {
-  color: var(--el-color-primary);
+  color: var(--tianshu-info-text);
 }
 .trace-step-list {
   display: flex;
@@ -4729,9 +4729,9 @@ export default {
   height: 32px;
   margin-top: 10px;
   border-radius: 50%;
-  background: var(--el-color-primary-light-9);
-  border: 1px solid #b3d8ff;
-  color: #1677d2;
+  background: var(--tianshu-info-bg);
+  border: 1px solid var(--tianshu-info-border);
+  color: var(--tianshu-info-text);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4739,17 +4739,17 @@ export default {
   font-weight: 700;
 }
 .trace-step.is-true .trace-step-index {
-  background: #f0f9eb;
-  border-color: #c2e7b0;
-  color: #529b2e;
+  background: var(--tianshu-success-bg);
+  border-color: var(--tianshu-success-border);
+  color: var(--tianshu-success-text);
 }
 .trace-step.is-false .trace-step-index {
-  background: #fef0f0;
-  border-color: #fbc4c4;
-  color: #c45656;
+  background: var(--tianshu-danger-bg);
+  border-color: var(--tianshu-danger-border);
+  color: var(--tianshu-danger-text);
 }
 .trace-step.is-skipped .trace-step-index {
-  background: #f4f4f5;
+  background: var(--tianshu-bg-muted);
   border-color: var(--tianshu-border);
   color: var(--tianshu-text-tertiary);
 }
@@ -4767,8 +4767,8 @@ export default {
   align-items: flex-start;
   gap: 16px;
   padding: 10px 14px;
-  border-bottom: 1px solid #eef2f7;
-  background: #fafbfc;
+  border-bottom: 1px solid var(--tianshu-border-subtle);
+  background: var(--tianshu-bg-soft);
 }
 .trace-step-title {
   color: var(--tianshu-text-primary);
@@ -4785,8 +4785,8 @@ export default {
   max-width: 45%;
   padding: 2px 8px;
   border-radius: 4px;
-  background: #f2f6fc;
-  color: var(--el-color-primary);
+  background: var(--tianshu-bg-muted);
+  color: var(--tianshu-info-text);
   font-size: 12px;
   font-weight: 700;
   line-height: 20px;
@@ -4795,12 +4795,12 @@ export default {
   text-align: right;
 }
 .trace-step-result.is-true {
-  background: #f0f9eb;
-  color: #529b2e;
+  background: var(--tianshu-success-bg);
+  color: var(--tianshu-success-text);
 }
 .trace-step-result.is-false {
-  background: #fef0f0;
-  color: #c45656;
+  background: var(--tianshu-danger-bg);
+  color: var(--tianshu-danger-text);
 }
 .tree-viewport {
   overflow-x: auto;
@@ -4828,13 +4828,13 @@ export default {
   min-width: 0;
 }
 .result-val.is-true {
-  color: #67c23a;
+  color: var(--tianshu-success-text);
 }
 .result-val.is-false {
-  color: #f76e6c;
+  color: var(--tianshu-danger-text);
 }
 .result-val.is-val {
-  color: var(--el-color-primary);
+  color: var(--tianshu-info-text);
 }
 .t-empty {
   text-align: center;
@@ -4849,7 +4849,7 @@ export default {
   color: var(--tianshu-text-tertiary);
 }
 .fullscreen-btn:hover {
-  color: var(--el-color-primary);
+  color: var(--tianshu-info-text);
 }
 .fs-mask {
   position: fixed;
@@ -4897,7 +4897,7 @@ export default {
   flex: 1;
   overflow: auto;
   padding: 24px;
-  background: #f6f8fb;
+  background: var(--tianshu-bg-soft);
 }
 .trace-step-list--fullscreen .trace-step-main {
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
@@ -4915,7 +4915,7 @@ export default {
 .fc-conn-line {
   width: 2px;
   height: 20px;
-  background: #e4e7ed;
+  background: var(--tianshu-border);
 }
 .fc-step-row {
   display: flex;
@@ -4931,24 +4931,29 @@ export default {
   justify-content: center;
   font-size: 14px;
   font-weight: 700;
-  color: #fff;
+  color: var(--tianshu-brand-foreground);
   flex-shrink: 0;
   margin-top: 8px;
 }
 .fc-icon--decision {
-  background: #fa8c16;
+  background: var(--tianshu-warning-bg);
+  color: var(--tianshu-warning-text);
 }
 .fc-icon--calculation {
-  background: var(--el-color-primary);
+  background: var(--tianshu-info-bg);
+  color: var(--tianshu-info-text);
 }
 .fc-icon--assign {
-  background: #13c2c2;
+  background: var(--tianshu-info-bg);
+  color: var(--tianshu-info-text);
 }
 .fc-icon--function {
-  background: #722ed1;
+  background: var(--tianshu-info-bg);
+  color: var(--tianshu-info-text);
 }
 .fc-icon--end {
-  background: #52c41a;
+  background: var(--tianshu-success-bg);
+  color: var(--tianshu-success-text);
 }
 .fc-card {
   flex: 1;
@@ -4961,20 +4966,20 @@ export default {
   border-left: 3px solid var(--tianshu-border-subtle);
 }
 .fc-card--decision {
-  border-left-color: #fa8c16;
+  border-left-color: var(--tianshu-warning-text);
 }
 .fc-card--calculation {
-  border-left-color: var(--el-color-primary);
+  border-left-color: var(--tianshu-info-text);
 }
 .fc-card--assign {
-  border-left-color: #13c2c2;
+  border-left-color: var(--tianshu-info-text);
 }
 .fc-card--function {
-  border-left-color: #722ed1;
+  border-left-color: var(--tianshu-info-text);
 }
 .fc-card--end {
-  border-left-color: #52c41a;
-  background: #f6ffed;
+  border-left-color: var(--tianshu-success-text);
+  background: var(--tianshu-success-bg);
 }
 .fc-card-head {
   display: flex;
@@ -5001,20 +5006,20 @@ export default {
   white-space: nowrap;
 }
 .fc-badge--hit {
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
+  background: var(--tianshu-info-bg);
+  color: var(--tianshu-info-text);
 }
 .fc-badge--miss {
-  background: #fff2e8;
-  color: #fa541c;
+  background: var(--tianshu-warning-bg);
+  color: var(--tianshu-warning-text);
 }
 .fc-badge--done {
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
+  background: var(--tianshu-info-bg);
+  color: var(--tianshu-info-text);
 }
 .fc-badge--end {
-  background: #f6ffed;
-  color: #52c41a;
+  background: var(--tianshu-success-bg);
+  color: var(--tianshu-success-text);
 }
 .fc-card-body {
   padding: 12px 16px;
@@ -5029,8 +5034,8 @@ export default {
 }
 .fc-cond-var {
   font-family: 'Consolas', 'Monaco', monospace;
-  color: var(--el-color-primary);
-  background: #f0f7ff;
+  color: var(--tianshu-info-text);
+  background: var(--tianshu-info-bg);
   padding: 1px 6px;
   border-radius: 3px;
 }
@@ -5041,7 +5046,7 @@ export default {
 }
 .fc-cond-val {
   font-family: 'Consolas', 'Monaco', monospace;
-  color: #595959;
+  color: var(--tianshu-text-secondary);
 }
 .fc-cond-check {
   font-size: 12px;
@@ -5050,10 +5055,10 @@ export default {
   white-space: nowrap;
 }
 .fc-cond-check.is-true {
-  color: #52c41a;
+  color: var(--tianshu-success-text);
 }
 .fc-cond-check.is-false {
-  color: #ff4d4f;
+  color: var(--tianshu-danger-text);
 }
 .fc-action-bar {
   display: flex;
@@ -5061,17 +5066,17 @@ export default {
   gap: 4px;
   margin-top: 8px;
   padding: 8px 12px;
-  border-left: 3px solid #52c41a;
-  background: #f6ffed;
+  border-left: 3px solid var(--tianshu-success-text);
+  background: var(--tianshu-success-bg);
   border-radius: 0 4px 4px 0;
   font-size: 13px;
 }
 .fc-action-bar--else {
-  border-left-color: #fa8c16;
-  background: #fff7e6;
+  border-left-color: var(--tianshu-warning-text);
+  background: var(--tianshu-warning-bg);
 }
 .fc-action-prefix {
-  color: #8c8c8c;
+  color: var(--tianshu-text-tertiary);
   font-size: 12px;
 }
 .fc-action-text {
@@ -5090,22 +5095,22 @@ export default {
   gap: 6px;
   font-size: 14px;
   font-weight: 600;
-  color: #531dab;
+  color: var(--tianshu-info-text);
 }
 .fc-func-name code {
   min-width: 0;
   overflow-wrap: anywhere;
   font-family: 'Consolas', 'Monaco', monospace;
-  background: #f9f0ff;
+  background: var(--tianshu-info-bg);
   padding: 1px 8px;
   border-radius: 3px;
-  border: 1px solid #d3adf7;
+  border: 1px solid var(--tianshu-info-border);
 }
 .fc-func-icon {
   font-weight: 700;
   font-size: 15px;
   font-style: italic;
-  color: #722ed1;
+  color: var(--tianshu-info-text);
 }
 .fc-func-args {
   display: flex;
@@ -5116,7 +5121,7 @@ export default {
   padding-left: 2px;
 }
 .fc-func-args-label {
-  color: #8c8c8c;
+  color: var(--tianshu-text-tertiary);
 }
 .fc-func-arg {
   display: inline-flex;
@@ -5131,7 +5136,7 @@ export default {
   border-radius: 3px;
 }
 .fc-func-arg-name {
-  color: #595959;
+  color: var(--tianshu-text-secondary);
   font-weight: 500;
   flex-shrink: 0;
   max-width: 160px;
@@ -5143,7 +5148,7 @@ export default {
 }
 .fc-func-arg-val {
   font-family: 'Consolas', 'Monaco', monospace;
-  color: var(--el-color-primary);
+  color: var(--tianshu-info-text);
   min-width: 0;
   max-height: 96px;
   overflow: auto;
@@ -5193,12 +5198,12 @@ export default {
 }
 .fc-expr-result {
   font-weight: 500;
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
+  color: var(--tianshu-info-text);
+  background: var(--tianshu-info-bg);
 }
 .fc-expr-result.is-end {
-  color: #52c41a;
-  background: #f6ffed;
+  color: var(--tianshu-success-text);
+  background: var(--tianshu-success-bg);
 }
 .fc-expr-row--result-only {
   grid-template-columns: minmax(0, 1fr);
@@ -5216,14 +5221,14 @@ export default {
   flex-wrap: wrap;
   gap: 4px;
   padding: 10px 14px;
-  background: #f6ffed;
-  border: 1px solid #b7eb8f;
+  background: var(--tianshu-success-bg);
+  border: 1px solid var(--tianshu-success-border);
   border-radius: 6px;
   margin-bottom: 16px;
   font-size: 13px;
 }
 .dt-path-label {
-  color: #389e0d;
+  color: var(--tianshu-success-text);
   font-weight: 600;
   margin-right: 4px;
 }
@@ -5233,11 +5238,11 @@ export default {
   gap: 4px;
 }
 .dt-path-arrow {
-  color: #b7eb8f;
+  color: var(--tianshu-success-border);
   font-size: 14px;
 }
 .dt-path-text {
-  color: #237804;
+  color: var(--tianshu-success-text);
   font-weight: 500;
 }
 .dt-body {
@@ -5254,7 +5259,7 @@ export default {
   background: var(--tianshu-bg-muted);
   border-radius: 4px;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--tianshu-text-tertiary);
 }
 .dt-legend-item {
   display: inline-flex;
@@ -5268,13 +5273,13 @@ export default {
   border-radius: 50%;
 }
 .dt-legend-dot--hit {
-  background: #52c41a;
+  background: var(--tianshu-success-text);
 }
 .dt-legend-dot--blocked {
-  background: #ff4d4f;
+  background: var(--tianshu-danger-text);
 }
 .dt-legend-dot--skipped {
-  background: #d9d9d9;
+  background: var(--tianshu-border);
 }
 .mv-score {
   padding: 12px 0;
@@ -5298,10 +5303,10 @@ export default {
   color: var(--tianshu-text-primary);
 }
 .sc-table tr.sc-hit td {
-  background: #f0f9eb;
+  background: var(--tianshu-success-bg);
 }
 .sc-table tr.sc-result td {
-  background: #f0f9eb;
+  background: var(--tianshu-success-bg);
   font-weight: 600;
 }
 .sc-table tr.sc-skipped td {
@@ -5312,10 +5317,10 @@ export default {
   background: var(--tianshu-bg-surface);
 }
 .sc-table .is-pos {
-  color: #67c23a;
+  color: var(--tianshu-success-text);
 }
 .sc-table .is-neg {
-  color: #f76e6c;
+  color: var(--tianshu-danger-text);
 }
 .sc-status {
   font-size: 11px;
@@ -5323,10 +5328,10 @@ export default {
   white-space: nowrap;
 }
 .sc-status--hit {
-  color: #67c23a;
+  color: var(--tianshu-success-text);
 }
 .sc-status--miss {
-  color: #e6a23c;
+  color: var(--tianshu-warning-text);
 }
 .sc-status--skipped {
   color: var(--tianshu-text-tertiary);
@@ -5353,7 +5358,7 @@ export default {
   font-size: 13px;
 }
 .trace-corner-cell {
-  background: #f5f5f5;
+  background: var(--tianshu-bg-muted);
   position: relative;
   min-width: 100px;
   min-height: 56px;
@@ -5369,14 +5374,14 @@ export default {
   bottom: 6px;
   left: 8px;
   font-size: 11px;
-  color: #888;
+  color: var(--tianshu-text-tertiary);
 }
 .trace-corner-col {
   position: absolute;
   top: 6px;
   right: 8px;
   font-size: 11px;
-  color: #888;
+  color: var(--tianshu-text-tertiary);
 }
 .trace-corner-divider {
   position: absolute;
@@ -5387,7 +5392,7 @@ export default {
   background: linear-gradient(
     to bottom right,
     transparent calc(50% - 0.5px),
-    #d0d0d0,
+    var(--tianshu-border-strong),
     transparent calc(50% + 0.5px)
   );
   pointer-events: none;
@@ -5397,19 +5402,19 @@ export default {
   color: var(--tianshu-text-primary);
 }
 .trace-cross-matrix--simple .trace-col-header {
-  background: #e8f3ff;
+  background: var(--tianshu-info-bg);
 }
 .trace-cross-matrix--adv .trace-col-header {
-  background: #daeeff;
+  background: var(--tianshu-info-bg);
 }
 .trace-row-header {
-  background: #f0fff4;
+  background: var(--tianshu-success-bg);
   font-weight: 500;
   color: var(--tianshu-text-primary);
   white-space: nowrap;
 }
 .trace-cross-matrix--adv .trace-row-header {
-  background: #e0f5e9;
+  background: var(--tianshu-success-bg);
 }
 .trace-data-cell {
   background: var(--tianshu-bg-surface);
@@ -5420,13 +5425,13 @@ export default {
   font-weight: 500;
 }
 .trace-cross-cell--hit {
-  background: #d9f7be !important;
-  box-shadow: inset 0 0 0 2px #52c41a;
+  background: var(--tianshu-success-bg) !important;
+  box-shadow: inset 0 0 0 2px var(--tianshu-success-text);
   border-radius: 4px;
 }
 .trace-cross-axis--hit {
-  background: #b7eb8f !important;
-  box-shadow: inset 0 0 0 1px #73d13d;
+  background: var(--tianshu-success-border) !important;
+  box-shadow: inset 0 0 0 1px var(--tianshu-success-text);
 }
 .trace-cross-legend {
   margin-top: 10px;
@@ -5440,8 +5445,8 @@ export default {
   width: 12px;
   height: 12px;
   border-radius: 3px;
-  background: #d9f7be;
-  border: 2px solid #52c41a;
+  background: var(--tianshu-success-bg);
+  border: 2px solid var(--tianshu-success-text);
   flex-shrink: 0;
 }
 .mv-ruleset {
@@ -5454,9 +5459,9 @@ export default {
   gap: 8px;
   margin-bottom: 12px;
   padding: 10px 12px;
-  border: 1px solid #d9ecff;
+  border: 1px solid var(--tianshu-info-border);
   border-radius: 8px;
-  background: #f5faff;
+  background: var(--tianshu-info-bg);
 }
 .rs-trace-summary.is-empty {
   border-color: var(--tianshu-border-subtle);
@@ -5473,9 +5478,9 @@ export default {
   min-height: 24px;
   padding: 0 10px;
   border-radius: 12px;
-  background: #f0f9eb;
-  border: 1px solid #c2e7b0;
-  color: #529b2e;
+  background: var(--tianshu-success-bg);
+  border: 1px solid var(--tianshu-success-border);
+  color: var(--tianshu-success-text);
   font-size: 12px;
   font-weight: 700;
 }
@@ -5524,7 +5529,7 @@ export default {
   width: 28px;
   height: 20px;
   border-radius: 10px;
-  background: #f2f6fc;
+  background: var(--tianshu-bg-muted);
   color: var(--tianshu-text-secondary);
   display: inline-flex;
   align-items: center;
@@ -5543,12 +5548,12 @@ export default {
   background: var(--tianshu-bg-surface);
 }
 .rs-cond-line.is-pass {
-  border-color: #d9f2ce;
-  background: #fbfff8;
+  border-color: var(--tianshu-success-border);
+  background: var(--tianshu-success-bg);
 }
 .rs-cond-line.is-fail {
-  border-color: #fde2e2;
-  background: #fff9f9;
+  border-color: var(--tianshu-danger-border);
+  background: var(--tianshu-danger-bg);
 }
 .rs-cond-var {
   display: inline-flex;
@@ -5560,8 +5565,8 @@ export default {
 .rs-action-line code {
   padding: 1px 6px;
   border-radius: 4px;
-  background: #f2f6fc;
-  color: #1f6fbf;
+  background: var(--tianshu-bg-muted);
+  color: var(--tianshu-info-text);
   font-family: Consolas, Monaco, monospace;
   font-size: 12px;
 }
@@ -5587,18 +5592,18 @@ export default {
   margin-left: auto;
   padding: 1px 8px;
   border-radius: 10px;
-  background: #f4f4f5;
+  background: var(--tianshu-bg-muted);
   color: var(--tianshu-text-tertiary);
   font-size: 11px;
   font-weight: 700;
 }
 .rs-cond-result.is-pass {
-  background: #f0f9eb;
-  color: #529b2e;
+  background: var(--tianshu-success-bg);
+  color: var(--tianshu-success-text);
 }
 .rs-cond-result.is-fail {
-  background: #fef0f0;
-  color: #c45656;
+  background: var(--tianshu-danger-bg);
+  color: var(--tianshu-danger-text);
 }
 .rs-action-list {
   display: flex;
@@ -5630,15 +5635,15 @@ export default {
   font-weight: 700;
 }
 .rs-status--hit {
-  background: #f0f9eb;
-  color: #529b2e;
+  background: var(--tianshu-success-bg);
+  color: var(--tianshu-success-text);
 }
 .rs-status--miss {
-  background: #fef0f0;
-  color: #c45656;
+  background: var(--tianshu-danger-bg);
+  color: var(--tianshu-danger-text);
 }
 .rs-status--skipped {
-  background: #f4f4f5;
+  background: var(--tianshu-bg-muted);
   color: var(--tianshu-text-tertiary);
 }
 .rs-row-skipped td {
@@ -5669,7 +5674,7 @@ export default {
   color: var(--tianshu-text-primary);
 }
 .rt-table tr.rt-hit {
-  background: #f0f9eb;
+  background: var(--tianshu-success-bg);
 }
 .rt-table tr.rt-hit td {
   font-weight: 600;
@@ -5678,7 +5683,7 @@ export default {
   background: var(--tianshu-bg-soft);
 }
 .rt-badge {
-  color: #67c23a;
+  color: var(--tianshu-success-text);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -5686,7 +5691,7 @@ export default {
   color: var(--tianshu-text-tertiary);
 }
 .rt-badge--skipped {
-  color: #946200;
+  color: var(--tianshu-warning-text);
 }
 .rt-footer {
   text-align: center;

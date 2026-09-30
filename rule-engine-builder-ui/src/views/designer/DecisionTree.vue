@@ -22,6 +22,7 @@
     />
     <!-- 顶部工具栏 -->
     <div class="tree-toolbar">
+      <div class="toolbar-row toolbar-row-primary">
       <div class="toolbar-left">
         <el-button
           link
@@ -40,29 +41,80 @@
           >ID: {{ definitionId }}</span
         >
       </div>
-      <div class="toolbar-center">
+      <div class="toolbar-center toolbar-context">
+        <rule-designer-version-select
+          v-if="canEditDraft && designerSourceOptions.length"
+          :options="designerSourceOptions"
+          :model-value="selectedDesignerSource"
+          :loading="designerSourcesLoading"
+          @change="switchDesignerSource"
+          @delete="deleteDesignerSource"
+          :disabled="designerBusy"
+        />
+        <graph-designer-navigator
+          v-model:target="graphNavigationTarget"
+          :options="graphNavigationOptions"
+          :issues="graphConfigurationIssues"
+          check-label="检查"
+          :show-check="false"
+          :show-mini-map="false"
+          @search="searchGraphElements"
+          @locate="locateGraphNavigationItem"
+          @locate-issue="locateGraphElement"
+          @check="checkGraphConfiguration"
+        />
+        <el-select
+          v-model="globalEdgeLineType"
+          class="toolbar-edge-select"
+          size="small"
+          aria-label="连线类型"
+          @change="onGlobalEdgeLineTypeChange"
+        >
+          <el-option label="折线" value="polyline" />
+          <el-option label="直线" value="line" />
+          <el-option label="弧线" value="bezier" />
+        </el-select>
+        <canvas-background-settings
+          :grid-visible="gridVisible"
+          :snap-grid-enabled="snapGridEnabled"
+          :grid-size="gridSize"
+          :grid-type="gridType"
+          :grid-thickness="gridThickness"
+          :grid-color="gridColor"
+          :background-opacity="backgroundOpacity"
+          :background-color="backgroundColor"
+          :background-enabled="backgroundEnabled"
+          :edge-animation-enabled="edgeAnimationEnabled"
+          @change="onCanvasSettingsChange"
+        />
+      </div>
+      </div>
+      <div class="toolbar-row toolbar-row-actions">
+      <div class="toolbar-center toolbar-node-actions">
         <span class="toolbar-label">添加节点：</span>
         <el-button
           size="small"
+          class="toolbar-node-button"
           :disabled="startNodeExists"
           @click="addNode('start-event')"
         >
           <span class="node-dot" style="background: #52c41a" />开始
         </el-button>
-        <el-button size="small" @click="addNode('exclusive-gateway')">
+        <el-button size="small" class="toolbar-node-button" @click="addNode('exclusive-gateway')">
           <span class="node-dot" style="background: #fa8c16" />条件判断
         </el-button>
         <el-button
           size="small"
-          class="btn-script-task"
+          class="toolbar-node-button btn-script-task"
           @click="addNode('script-task')"
         >
           <span class="node-dot" />执行动作
         </el-button>
-        <el-button size="small" @click="addNode('end-event')">
+        <el-button size="small" class="toolbar-node-button" @click="addNode('end-event')">
           <span class="node-dot" style="background: #ff4d4f" />结束
         </el-button>
-        <el-divider direction="vertical" />
+      </div>
+      <div class="toolbar-edit-actions">
         <el-button-group>
           <el-button
             size="small"
@@ -79,7 +131,6 @@
             >重做</el-button
           >
         </el-button-group>
-        <el-divider direction="vertical" />
         <el-button-group>
           <el-button
             size="small"
@@ -106,7 +157,6 @@
             >小地图</el-button
           >
         </el-button-group>
-        <el-divider direction="vertical" />
         <el-button-group>
           <el-button
             size="small"
@@ -130,44 +180,22 @@
             @click="resetZoom"
           />
         </el-button-group>
-        <span class="zoom-text">{{ zoomPercent }}%</span>
-        <el-divider direction="vertical" />
-        <graph-designer-navigator
-          v-model:target="graphNavigationTarget"
-          :options="graphNavigationOptions"
-          :issues="graphConfigurationIssues"
-          :show-mini-map="false"
-          @search="searchGraphElements"
-          @locate="locateGraphNavigationItem"
-          @locate-issue="locateGraphElement"
-          @check="checkGraphConfiguration"
-        />
-        <el-divider direction="vertical" />
-        <span class="toolbar-label">连线：</span>
         <el-select
-          v-model="globalEdgeLineType"
+          v-model="zoomInput"
+          class="zoom-input"
           size="small"
-          style="width: 110px"
-          @change="onGlobalEdgeLineTypeChange"
+          filterable
+          allow-create
+          default-first-option
+          aria-label="画布缩放比例"
+          @change="onZoomInputChange"
+          @keyup.enter="onZoomInputChange"
         >
-          <el-option label="折线" value="polyline" />
-          <el-option label="直线" value="line" />
-          <el-option label="弧线" value="bezier" />
+          <el-option v-for="preset in zoomPresets" :key="preset" :label="`${preset}%`" :value="`${preset}%`" />
         </el-select>
       </div>
       <div class="toolbar-right">
-        <rule-designer-version-select
-          v-if="canEditDraft && designerSourceOptions.length"
-          :options="designerSourceOptions"
-          :model-value="selectedDesignerSource"
-          :loading="designerSourcesLoading"
-          @change="switchDesignerSource"
-          @delete="deleteDesignerSource"
-          :disabled="designerBusy"
-        />
-        <el-button size="small" :icon="ElIconCircleCheck" @click="handleValidate"
-          >验证</el-button
-        >
+        <el-button class="toolbar-check-button" size="small" :icon="ElIconCircleCheck" @click="checkGraphConfiguration">检查</el-button>
         <rule-designer-action-bar
           @locate="locateDesignerIssue"
           :issue-context="incomingValidationIssue"
@@ -184,6 +212,7 @@
             @restore="restoreDesignerRecovery"
             @discard-recovery="discardDesignerRecovery"
           />
+      </div>
       </div>
     </div>
 
@@ -442,11 +471,9 @@ import {
   ZoomOut as ElIconZoomOut,
   Rank as ElIconRank,
   CircleCheck as ElIconCircleCheck,
-  Document as ElIconDocument,
-  Cpu as ElIconCpu,
-  VideoPlay as ElIconVideoPlay,
 } from '@element-plus/icons-vue'
-import LogicFlow from '@logicflow/core'
+import { createGraphCanvas } from '@/components/flow/graphCanvas'
+import CanvasBackgroundSettings from '@/components/flow/CanvasBackgroundSettings.vue'
 import {
   SelectionSelect,
   Menu,
@@ -455,11 +482,8 @@ import {
   MiniMap,
 } from '@logicflow/extension'
 import { Dagre } from '@logicflow/layout'
-import '@logicflow/core/es/index.css'
-import '../../styles/logicflow-extension.css'
 
 import {
-  registerCustomNodes,
   getDefaultFlowData,
 } from '@/components/flow/nodes'
 import FlowNodeAddMenu from '@/components/flow/FlowNodeAddMenu.vue'
@@ -552,6 +576,19 @@ export default {
       pendingConnectedNode: null,
       anchorGesture: null,
       zoomPercent: 100,
+      zoomInput: '100%',
+      zoomPresets: [50, 75, 100, 125, 150, 200],
+      gridVisible: true,
+      snapGridEnabled: true,
+      gridSize: 20,
+      gridType: 'dot',
+      gridThickness: 1,
+      gridColor: '',
+      backgroundOpacity: 1,
+      backgroundColor: '',
+      backgroundEnabled: false,
+      edgeAnimationEnabled: true,
+      animatedEdgeIds: [],
       nodeProps: {},
       edgeProps: {},
       nodeCondMode: 'visual',
@@ -606,9 +643,6 @@ export default {
       ElIconZoomOut: markRaw(ElIconZoomOut),
       ElIconRank: markRaw(ElIconRank),
       ElIconCircleCheck: markRaw(ElIconCircleCheck),
-      ElIconDocument: markRaw(ElIconDocument),
-      ElIconCpu: markRaw(ElIconCpu),
-      ElIconVideoPlay: markRaw(ElIconVideoPlay),
     }
   },
   components: {
@@ -623,6 +657,7 @@ export default {
     EdgePropertiesEditor,
     GatewayBranchEditor,
     GraphDesignerNavigator,
+      CanvasBackgroundSettings,
     ElIconSetUp,
     ElIconClose,
     ElIconInfo,
@@ -679,6 +714,7 @@ export default {
   },
   beforeUnmount() {
     this.stopPropertyResize()
+    this.clearSelectedEdgeAnimation()
     if (this.lf) this.lf.destroy()
     this.lf = null
   },
@@ -768,6 +804,7 @@ export default {
       this.activeElement = null
       this.hasSelection = false
       this.selectedBusinessNodeCount = 0
+      this.clearSelectedEdgeAnimation()
     },
     onDesignerMouseDown(event) {
       if (isDesignerInteractiveTarget(event && event.target)) return
@@ -904,7 +941,7 @@ export default {
       return changed
     },
     initLogicFlow() {
-      this.lf = new LogicFlow({
+      this.lf = createGraphCanvas({
         container: this.$refs.canvasContainer,
         plugins: [
           SelectionSelect,
@@ -930,13 +967,6 @@ export default {
             bottomPosition: 16,
           },
         },
-        grid: {
-          size: 20,
-          visible: true,
-          type: 'dot',
-          config: { color: 'var(--tianshu-border-strong)', thickness: 1 },
-        },
-        snapGrid: true,
         keyboard: {
           enabled: true,
           shortcuts: [
@@ -953,45 +983,15 @@ export default {
         snapline: true,
         history: true,
         style: {
-          nodeText: { overflowMode: 'ellipsis', fontSize: 12 },
-          edgeText: { fontSize: 12, background: { fill: 'var(--tianshu-bg-surface)' } },
-          polyline: {
-            stroke: FLOW_THEME_COLOR,
-            hoverStroke: FLOW_THEME_COLOR,
-            selectedStroke: FLOW_THEME_COLOR,
-            strokeWidth: 1.5,
-          },
-          line: {
-            stroke: FLOW_THEME_COLOR,
-            hoverStroke: FLOW_THEME_COLOR,
-            selectedStroke: FLOW_THEME_COLOR,
-            strokeWidth: 1.5,
-          },
-          bezier: {
-            stroke: FLOW_THEME_COLOR,
-            hoverStroke: FLOW_THEME_COLOR,
-            selectedStroke: FLOW_THEME_COLOR,
-            strokeWidth: 1.5,
-          },
           arrow: { stroke: FLOW_THEME_COLOR, fill: FLOW_THEME_COLOR },
-          anchor: {
-            stroke: FLOW_THEME_COLOR,
-            fill: 'var(--tianshu-bg-surface)',
-            r: 4,
-          },
-          anchorHover: {
-            stroke: FLOW_THEME_COLOR,
-            fill: FLOW_THEME_COLOR,
-            r: 5,
-          },
-          anchorLine: { stroke: FLOW_THEME_COLOR },
         },
         guards: { beforeClone: () => true, beforeDelete: () => true },
       })
 
-      registerCustomNodes(this.lf)
+      this.applyCanvasSettings()
       this.setupContextMenu()
       this.bindEvents()
+      this.lf.on('graph:transform', ({ transform }) => this.updateZoom(transform))
     },
 
     setupContextMenu() {
@@ -1228,6 +1228,7 @@ export default {
         this.currentActionData = this.activeElement.properties.actionData || []
         this.actionMode = 'visual'
       }
+      this.syncSelectedEdgeAnimation()
     },
 
     selectEdgeData(data) {
@@ -1280,6 +1281,7 @@ export default {
           ? 'script'
           : 'visual'
       this.hasSelection = true
+      this.syncSelectedEdgeAnimation()
     },
 
     selectEdgeById(edgeId) {
@@ -1542,6 +1544,59 @@ export default {
       else this.lf.extension.miniMap.hide()
     },
 
+    onCanvasSettingsChange(patch) {
+      Object.assign(this, patch || {})
+      if (patch && patch.backgroundEnabled && !this.backgroundColor) {
+        this.backgroundColor = this.getThemeCanvasColor()
+      }
+      this.applyCanvasSettings()
+      this.syncSelectedEdgeAnimation()
+    },
+
+    getThemeCanvasColor() {
+      return getComputedStyle(document.documentElement).getPropertyValue('--tianshu-bg-workspace').trim() || '#0f1629'
+    },
+
+    applyCanvasSettings() {
+      if (!this.lf) return
+      this.lf.graphModel?.updateGridOptions?.({
+        visible: this.gridVisible,
+        size: this.gridSize,
+        type: this.gridType,
+        config: {
+          ...(this.lf.graphModel.grid?.config || {}),
+          color: this.gridColor || getComputedStyle(document.documentElement).getPropertyValue('--tianshu-border-strong').trim(),
+          thickness: this.gridThickness,
+        },
+      })
+      this.lf.updateEditConfig?.({ snapGrid: this.snapGridEnabled })
+      this.lf.graphModel?.updateBackgroundOptions?.({
+        backgroundColor: this.backgroundEnabled ? (this.backgroundColor || this.getThemeCanvasColor()) : this.getThemeCanvasColor(),
+        opacity: this.backgroundEnabled ? this.backgroundOpacity : 1,
+      })
+    },
+
+    syncSelectedEdgeAnimation() {
+      if (!this.lf) return
+      this.animatedEdgeIds.forEach((edgeId) => this.lf.closeEdgeAnimation?.(edgeId))
+      this.animatedEdgeIds = []
+      if (!this.edgeAnimationEnabled || !this.activeElement) return
+      const graph = this.lf.getGraphData?.() || { edges: [] }
+      const edgeIds = this.activeElement.baseType === 'edge'
+        ? [this.activeElement.id]
+        : (graph.edges || [])
+            .filter((edge) => edge.sourceNodeId === this.activeElement.id || edge.targetNodeId === this.activeElement.id)
+            .map((edge) => edge.id)
+      edgeIds.forEach((edgeId) => this.lf.openEdgeAnimation?.(edgeId))
+      this.animatedEdgeIds = edgeIds
+    },
+
+    clearSelectedEdgeAnimation() {
+      if (!this.lf) return
+      this.animatedEdgeIds.forEach((edgeId) => this.lf.closeEdgeAnimation?.(edgeId))
+      this.animatedEdgeIds = []
+    },
+
     zoomIn() {
       this.lf.zoom(true)
       this.updateZoom()
@@ -1555,15 +1610,27 @@ export default {
       this.lf.resetTranslate()
       this.updateZoom()
     },
-    updateZoom() {
-      this.$nextTick(() => {
+    updateZoom(transform) {
+      const apply = () => {
         try {
-          const t = this.lf.getTransform()
+          const t = transform || this.lf.getTransform()
           this.zoomPercent = Math.round((t.SCALE_X || 1) * 100)
+          this.zoomInput = `${this.zoomPercent}%`
         } catch (e) {
           this.zoomPercent = 100
+          this.zoomInput = '100%'
         }
-      })
+      }
+      if (transform) apply()
+      else this.$nextTick(apply)
+    },
+    onZoomInputChange() {
+      const requested = Number.parseFloat(String(this.zoomInput).replace('%', ''))
+      const nextPercent = Number.isFinite(requested)
+        ? Math.min(400, Math.max(25, requested))
+        : this.zoomPercent
+      this.lf?.zoom?.(nextPercent / 100)
+      this.updateZoom()
     },
     undo() {
       this.lf.undo()
@@ -2129,17 +2196,115 @@ export default {
 }
 .tree-toolbar {
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 7px 14px;
+  --designer-toolbar-foreground: var(--tianshu-brand-foreground);
+  --designer-toolbar-control-background: color-mix(
+    in srgb,
+    var(--designer-toolbar-foreground) 10%,
+    transparent
+  );
+  --designer-toolbar-control-border: color-mix(
+    in srgb,
+    var(--designer-toolbar-foreground) 42%,
+    transparent
+  );
+  --designer-toolbar-control-hover-background: color-mix(
+    in srgb,
+    var(--designer-toolbar-foreground) 20%,
+    transparent
+  );
+  --designer-toolbar-control-disabled-foreground: color-mix(
+    in srgb,
+    var(--designer-toolbar-foreground) 55%,
+    transparent
+  );
+  --designer-toolbar-control-disabled-border: color-mix(
+    in srgb,
+    var(--designer-toolbar-foreground) 24%,
+    transparent
+  );
+  background: var(--tianshu-brand-background);
+  border-bottom: 1px solid var(--designer-toolbar-control-border);
+  color: var(--designer-toolbar-foreground);
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.toolbar-row-primary,
+.toolbar-row-actions {
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.toolbar-context {
+  flex: 0 0 auto;
+  min-width: 0;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+.toolbar-node-actions,
+.toolbar-edit-actions,
+.toolbar-right {
+  min-width: 0;
+}
+.toolbar-row-actions > .toolbar-right {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  padding-left: 8px;
+  background: transparent;
+}
+.toolbar-node-actions {
+  flex: 0 0 auto;
+}
+.toolbar-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+.toolbar-node-button {
+  width: 90px;
+  min-width: 90px;
+}
+.toolbar-edge-select,
+.toolbar-context :deep(.rule-designer-version-select .el-select) {
+  width: 190px !important;
+}
+.toolbar-canvas-settings {
+  min-width: 100px;
+}
+.toolbar-check-button {
+  width: 78px;
+  min-width: 78px !important;
+}
+.grid-config-panel {
+  display: grid;
+  gap: 12px;
+  color: var(--tianshu-text-primary);
+}
+.grid-config-row {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 14px;
-  background: var(--tianshu-brand-background);
-  color: #fff;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  gap: 6px;
+  gap: 12px;
 }
 .toolbar-back {
-  color: #fff !important;
+  color: var(--designer-toolbar-foreground) !important;
 }
 .toolbar-icon {
   font-size: 18px;
@@ -2162,28 +2327,55 @@ export default {
   gap: 6px;
   flex-wrap: wrap;
 }
+.toolbar-left {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.toolbar-context :deep(.graph-tools) {
+  min-width: 0;
+}
+.toolbar-context :deep(.graph-tools > .el-select) {
+  width: 190px;
+}
+.toolbar-context :deep(.toolbar-action) {
+  width: 78px;
+  min-width: 78px;
+}
+.zoom-input {
+  width: 92px;
+  flex: 0 0 92px;
+}
 .toolbar-label {
   font-size: 12px;
   opacity: 0.85;
 }
 .toolbar-right .el-button,
 .toolbar-center .el-button {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.1);
+  color: var(--designer-toolbar-foreground) !important;
+  border-color: var(--designer-toolbar-control-border);
+  background: var(--designer-toolbar-control-background);
   min-height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   white-space: nowrap;
   &:hover {
-    background: rgba(255, 255, 255, 0.2);
-    border-color: rgba(255, 255, 255, 0.7);
+    background: var(--designer-toolbar-control-hover-background) !important;
+    border-color: var(--tianshu-designer-toolbar-accent) !important;
+    color: var(--designer-toolbar-foreground) !important;
   }
   &.is-tool-active {
     background: var(--tianshu-bg-surface);
-    border-color: var(--tianshu-brand-foreground);
-    color: var(--el-color-primary);
+    border-color: var(--tianshu-designer-toolbar-accent) !important;
+    color: var(--tianshu-designer-toolbar-accent) !important;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--tianshu-designer-toolbar-accent) 22%, transparent);
+  }
+  &.is-tool-active:hover,
+  &.is-tool-active:focus-visible {
+    background: var(--tianshu-bg-surface) !important;
+    border-color: var(--tianshu-designer-toolbar-accent) !important;
+    color: var(--tianshu-designer-toolbar-accent) !important;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--tianshu-designer-toolbar-accent) 28%, transparent) !important;
   }
   &.el-button--primary {
     background: var(--tianshu-brand-background);
@@ -2209,33 +2401,34 @@ export default {
   }
   &.el-button--warning {
     background: #b45309;
-    color: #fff;
+    color: var(--tianshu-text-primary);
     border-color: #b45309;
 
     &:hover,
     &:focus {
-      background: #92400e;
-      border-color: #92400e;
+      background: var(--tianshu-warning-bg) !important;
+      color: var(--tianshu-warning-text) !important;
+      border-color: var(--tianshu-warning-border) !important;
     }
   }
   &.is-disabled,
   &.is-disabled:hover {
-    color: rgba(255, 255, 255, 0.55);
-    border-color: rgba(255, 255, 255, 0.24);
-    background: rgba(255, 255, 255, 0.08);
+    color: var(--designer-toolbar-control-disabled-foreground) !important;
+    border-color: var(--designer-toolbar-control-disabled-border) !important;
+    background: var(--designer-toolbar-control-background) !important;
   }
 }
 .toolbar-right .el-button {
   min-width: 88px;
 }
 .toolbar-center .btn-script-task {
-  color: #ffffff;
+  color: var(--designer-toolbar-foreground) !important;
   font-weight: 600;
   &:hover {
     border-color: var(--el-color-primary-light-3);
   }
   .node-dot {
-    background: var(--tianshu-brand-background);
+    background: var(--el-color-primary);
   }
 }
 .delete-current-node {
@@ -2413,7 +2606,7 @@ export default {
   font-weight: bold;
   padding: 1px 8px;
   border-radius: 3px;
-  color: #fff;
+  color: var(--tianshu-text-primary);
   &.tag-if {
     background: var(--el-color-primary);
   }
@@ -2462,7 +2655,46 @@ export default {
 }
 
 .tree-toolbar :deep(.rule-designer-version-select) {
-  color: #fff;
+  color: var(--designer-toolbar-foreground);
+}
+.tree-toolbar :deep(.rule-designer-version-select .el-select__wrapper) {
+  min-height: 32px;
+  color: var(--designer-toolbar-foreground);
+  background: var(--designer-toolbar-control-background);
+  border: 1px solid var(--designer-toolbar-control-border);
+  box-shadow: none;
+}
+.tree-toolbar :deep(.rule-designer-version-select .el-select__wrapper:hover),
+.tree-toolbar :deep(.rule-designer-version-select .el-select__wrapper.is-focused) {
+  border-color: var(--tianshu-designer-toolbar-accent) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tianshu-designer-toolbar-accent) 22%, transparent) !important;
+}
+.tree-toolbar :deep(.rule-designer-version-select .el-select__selected-item),
+.tree-toolbar :deep(.rule-designer-version-select .el-select__placeholder),
+.tree-toolbar :deep(.rule-designer-version-select .el-select__caret) {
+  color: var(--designer-toolbar-foreground) !important;
+}
+.tree-toolbar :deep(.toolbar-action:hover),
+.tree-toolbar :deep(.toolbar-action:focus-visible) {
+  border-color: var(--tianshu-designer-toolbar-accent) !important;
+  background: var(--tianshu-bg-surface) !important;
+  color: var(--tianshu-designer-toolbar-accent) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tianshu-designer-toolbar-accent) 22%, transparent) !important;
+}
+.tree-toolbar :deep(.rule-designer-actions__button:not(.rule-designer-actions__publish)) {
+  border-color: var(--designer-toolbar-control-border);
+  background: var(--designer-toolbar-control-background);
+  color: var(--designer-toolbar-foreground);
+}
+.tree-toolbar :deep(.rule-designer-actions__button:hover:not(:disabled):not(.rule-designer-actions__publish)) {
+  border-color: var(--tianshu-designer-toolbar-accent);
+  background: var(--designer-toolbar-control-hover-background);
+  color: var(--designer-toolbar-foreground);
+}
+.tree-toolbar :deep(.rule-designer-actions__button:disabled) {
+  border-color: var(--designer-toolbar-control-disabled-border);
+  background: var(--designer-toolbar-control-background);
+  color: var(--designer-toolbar-control-disabled-foreground);
 }
 .hint-box {
   font-size: 12px;
@@ -2507,6 +2739,33 @@ export default {
 @media (max-width: 1200px) {
   .tree-property {
     max-width: 60%;
+  }
+}
+@media (max-width: 1400px) {
+  .toolbar-context :deep(.rule-designer-version-select .el-select),
+  .toolbar-context :deep(.graph-tools > .el-select),
+  .toolbar-edge-select {
+    width: 160px !important;
+    flex: 0 0 160px;
+  }
+  .toolbar-node-button {
+    width: 74px;
+    min-width: 74px;
+  }
+  .toolbar-edit-actions {
+    gap: 4px;
+  }
+  .toolbar-right :deep(.rule-designer-actions__button) {
+    width: 68px;
+    padding-inline: 4px;
+  }
+  .toolbar-context :deep(.toolbar-action) {
+    width: 68px;
+    min-width: 68px;
+  }
+  .toolbar-check-button {
+    width: 68px;
+    min-width: 68px !important;
   }
 }
 .test-hint {

@@ -94,6 +94,11 @@ describe('dashboard filters', () => {
 
   test('地图视角默认展示中国并只在当前会话保存', () => {
     expect(dashboardSession.defaultDashboardMapView).toBeTypeOf('function')
+    expect(dashboardSession.defaultDashboardGlobalMapView()).toEqual({
+      longitude: 0,
+      latitude: 0,
+      zoom: 1
+    })
     const storage = {
       getItem: vi.fn(() => null),
       setItem: vi.fn()

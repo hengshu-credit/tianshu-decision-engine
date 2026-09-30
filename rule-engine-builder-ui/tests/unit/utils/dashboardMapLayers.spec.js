@@ -1,6 +1,7 @@
 import {
   dashboardCountryBounds,
   dashboardCountryOptions,
+  dashboardMapView,
   dashboardPointsInGeoJson,
   dashboardRegionNames,
   dashboardWorldCountries,
@@ -115,5 +116,20 @@ describe('dashboard administrative map layers', () => {
       { longitude: 2, latitude: 2, count: 3 },
       { longitude: 'bad', latitude: 0, count: 4 }
     ], geoJson)).toEqual([{ longitude: 0.2, latitude: 0.2, count: 2 }])
+  })
+
+  test('当前层级边界生成居中且带适量留白的地图视角', () => {
+    const view = dashboardMapView({ features: [
+      { ...region('region-1', '区域一'), geometry: {
+        type: 'Polygon', coordinates: [[[10, 20], [20, 20], [20, 30], [10, 30], [10, 20]]]
+      } },
+      { ...region('outline', '全国'), properties: { shapeID: 'outline', shapeName: '全国', mapRole: 'outline' }, geometry: {
+        type: 'Polygon', coordinates: [[[-180, -90], [180, -90], [180, 90], [-180, 90], [-180, -90]]]
+      } }
+    ] }, [[0, 10], [30, 0]])
+
+    expect(view.bounds).toEqual([[9.2, 30.8], [20.8, 19.2]])
+    expect(view.center).toEqual([15, 25])
+    expect(view.zoom).toBe(1)
   })
 })

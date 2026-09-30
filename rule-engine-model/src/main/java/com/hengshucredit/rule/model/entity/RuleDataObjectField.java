@@ -25,6 +25,9 @@ public class RuleDataObjectField {
     /** API 响应或数据库首行结果中的字段取值路径。为空时使用字段编码。 */
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String sourcePath;
+    /** 对象子字段独立覆盖 API 开放入参的配置。 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String sourceConfig;
     private Boolean recordResult;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String refObjectCode;

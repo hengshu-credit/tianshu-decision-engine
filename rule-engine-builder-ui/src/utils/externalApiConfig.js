@@ -1,5 +1,18 @@
 export const ASYNC_REQUEST_KEYS = ['headerConfig', 'queryConfig', 'requestMapping', 'contentType', 'requestScript', 'responseScript']
 
+export function retryConfigurationError(config) {
+  if (String(config.exceptionStrategy || '').trim().toUpperCase() !== 'RETRY') return ''
+  if (Number(config.retryCount || 0) > 0) return ''
+  let execution
+  try {
+    execution = config.executionConfig ? JSON.parse(config.executionConfig) : null
+  } catch {
+    return '请求与响应链路配置不是合法 JSON，请检查后重试。'
+  }
+  if (Array.isArray(execution?.retryBranches) && execution.retryBranches.some(branch => Number(branch?.retryCount || 0) > 0)) return ''
+  return '已选择“异常重试”，请将重试次数设为至少 1 次，或在“稳定性策略 → 重试条件”中设置次数。'
+}
+
 const PAYLOAD_CAPTURE_SOURCES = ['ORIGINAL', 'PROCESSED']
 const PAYLOAD_CAPTURE_DECRYPT_MODES = ['BASE64', 'TRIPLE_DES_BASE64']
 export const MAX_PAYLOAD_CAPTURE_FIELD_BYTES = 50 * 1024 * 1024
@@ -7,8 +20,8 @@ const PAYLOAD_CAPTURE_PATH_PATTERN = /^\$(?:(?:\.[^.[\]\s]+)|(?:\[(?:\d+|\*)\])|
 
 export function emptyPayloadCaptureConfig() {
   return {
-    request: { source: 'ORIGINAL', saveOriginal: true, excludePaths: [], maxFieldBytes: 0, decrypt: { enabled: false, mode: 'BASE64', path: '$', keyVariable: '' } },
-    response: { source: 'ORIGINAL', saveOriginal: true, excludePaths: [], maxFieldBytes: 0, decrypt: { enabled: false, mode: 'BASE64', path: '$', keyVariable: '' } },
+    request: { source: 'ORIGINAL', saveOriginal: true, excludePaths: [], maxFieldBytes: 0, oversizedFields: [], decrypt: { enabled: false, mode: 'BASE64', path: '$', keyVariable: '' } },
+    response: { source: 'ORIGINAL', saveOriginal: true, excludePaths: [], maxFieldBytes: 0, oversizedFields: [], decrypt: { enabled: false, mode: 'BASE64', path: '$', keyVariable: '' } },
   }
 }
 
@@ -37,6 +50,17 @@ function normalizePayloadCaptureSide(value, label) {
   if (!Number.isSafeInteger(rawMaxFieldBytes) || rawMaxFieldBytes < 0 || rawMaxFieldBytes > MAX_PAYLOAD_CAPTURE_FIELD_BYTES) {
     throw new Error(label + '单字段上限必须在 0 到 52428800 字节之间')
   }
+  const rawOversizedFields = side.oversizedFields == null ? [] : side.oversizedFields
+  if (!Array.isArray(rawOversizedFields)) throw new Error(label + '超长字段策略必须是数组')
+  const oversizedFields = []
+  rawOversizedFields.forEach((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error(label + '超长字段策略格式不正确')
+    const path = String(item.path == null ? '' : item.path).trim()
+    if (!path || path === '$' || !isPayloadCapturePath(path)) throw new Error(label + '超长字段路径格式不合法：' + path)
+    if (oversizedFields.some((entry) => entry.path === path)) throw new Error(label + '超长字段路径不能重复：' + path)
+    if (item.store != null && typeof item.store !== 'boolean') throw new Error(label + '超长字段保存标记必须是布尔值')
+    oversizedFields.push({ path, store: item.store !== false })
+  })
   if (side.saveOriginal != null && typeof side.saveOriginal !== 'boolean') throw new Error(label + '保留原文必须是布尔值')
   const saveOriginal = side.saveOriginal !== false
   const rawDecrypt = side.decrypt && typeof side.decrypt === 'object' && !Array.isArray(side.decrypt)
@@ -51,7 +75,7 @@ function normalizePayloadCaptureSide(value, label) {
   if (!PAYLOAD_CAPTURE_DECRYPT_MODES.includes(decrypt.mode)) throw new Error(label + '解密模式不受支持')
   if (!isPayloadCapturePath(decrypt.path)) throw new Error(label + '解密路径格式不合法：' + decrypt.path)
   if (decrypt.enabled && decrypt.mode === 'TRIPLE_DES_BASE64' && !decrypt.keyVariable) throw new Error(label + '3DES解密必须填写密钥变量名')
-  const result = { source, saveOriginal, excludePaths, maxFieldBytes: rawMaxFieldBytes }
+  const result = { source, saveOriginal, excludePaths, maxFieldBytes: rawMaxFieldBytes, oversizedFields }
   if (decrypt.enabled || decrypt.keyVariable || decrypt.path !== '$' || decrypt.mode !== 'BASE64') result.decrypt = decrypt
   return result
 }

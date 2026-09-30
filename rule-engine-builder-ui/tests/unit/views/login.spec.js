@@ -28,6 +28,17 @@ function declarationBlock(selector) {
 }
 
 describe('Login Element Plus 输入框契约', () => {
+  test('登录页背景使用主题表面和当前配色 RGB，不保留固定日夜渐变', () => {
+    const background = Array.from(loginCss.matchAll(/([^{}]+)\{([^}]*)\}/g))
+      .find(match => match[1].includes('.login-bg'))?.[2] || ''
+
+    expect(background).toContain('var(--tianshu-bg-page)')
+    expect(background).toContain('var(--tianshu-bg-workspace)')
+    expect(background).toContain('var(--el-color-primary-rgb)')
+    expect(background).toContain('var(--tianshu-color-secondary-rgb)')
+    expect(loginSource).not.toContain("[data-theme='dark'] .login-bg")
+  })
+
   test('账号和密码使用 Element 内置清空与密码显隐能力', () => {
     const template = descriptor.template.content
 

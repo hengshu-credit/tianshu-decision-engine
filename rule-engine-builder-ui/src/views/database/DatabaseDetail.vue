@@ -35,42 +35,17 @@
       </div>
     </div>
 
-    <section
-      class="connection-setup-guide"
-      data-testid="database-config-progress"
+    <config-layer-guide
+      title="配置检查"
+      description="按作用范围、连接参数、连接测试、保存送审的顺序完成；高级连接池参数通常保持默认值。"
       aria-label="数据库数据源配置进度"
-    >
-      <div class="guide-heading">
-        <div>
-          <div class="panel-title">配置检查</div>
-          <div class="panel-subtitle">
-            按作用范围、连接参数、连接测试、保存送审的顺序完成；高级连接池参数通常保持默认值。
-          </div>
-        </div>
-        <span class="guide-progress">
-          {{ readyChecklistCount }} / {{ configurationChecklist.length }} 已就绪
-        </span>
-      </div>
-      <div class="checklist-grid">
-        <button
-          v-for="item in configurationChecklist"
-          :key="item.key"
-          :data-testid="`database-config-check-${item.key}`"
-          type="button"
-          class="checklist-item"
-          :class="`is-${item.status.toLowerCase()}`"
-          @click="goToChecklistItem(item)"
-        >
-          <span class="checklist-state">
-            {{ item.status === 'READY' ? '✓' : item.order }}
-          </span>
-          <span>
-            <strong>{{ item.label }}</strong>
-            <small>{{ item.help }}</small>
-          </span>
-        </button>
-      </div>
-    </section>
+      test-id="database-config-progress"
+      item-test-id-prefix="database-config-check"
+      :items="configurationChecklist"
+      show-progress
+      interactive
+      @select="goToChecklistItem"
+    />
 
     <resource-preflight-panel
       resource-type="DATABASE"
@@ -395,6 +370,7 @@
 </template>
 
 <script>
+import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import {
   createDbDatasource,
@@ -410,7 +386,7 @@ import { normalizeProjectId } from '@/utils/projectContext'
 export default {
   name: 'DatabaseDetail',
   mixins: [workspaceTabTitleMixin(vm => vm.form.datasourceName)],
-  components: { MonacoEditor, ResourcePreflightPanel },
+  components: { MonacoEditor, ResourcePreflightPanel, ConfigLayerGuide },
   data() {
     return {
       projects: [],
@@ -828,7 +804,7 @@ export default {
   .detail-title {
     font-size: 20px;
     font-weight: 700;
-    color: #1f2937;
+    color: var(--tianshu-text-primary);
   }
   .detail-meta {
     color: var(--tianshu-text-tertiary);
@@ -840,14 +816,13 @@ export default {
     align-items: center;
     gap: 8px;
   }
-  .connection-setup-guide,
   .connection-test-status {
     margin-bottom: 12px;
   }
   .advanced-settings {
     margin: 4px 0 14px;
-    border-top: 1px solid #e5e7eb;
-    border-bottom: 1px solid #e5e7eb;
+    border-top: 1px solid var(--tianshu-border-subtle);
+    border-bottom: 1px solid var(--tianshu-border-subtle);
   }
   .field-help {
     margin-top: 4px;
@@ -857,7 +832,7 @@ export default {
   }
   .detail-form {
     background: var(--tianshu-bg-surface);
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--tianshu-border-subtle);
     border-radius: 4px;
     padding: 16px;
   }
@@ -865,13 +840,13 @@ export default {
     margin-top: 6px;
   }
   .form-section {
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--tianshu-border-subtle);
     border-radius: 4px;
     padding: 12px 12px 0;
     margin-bottom: 12px;
   }
   .section-title {
-    color: #334155;
+    color: var(--tianshu-text-secondary);
     font-weight: 700;
     margin-bottom: 10px;
   }

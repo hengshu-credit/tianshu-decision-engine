@@ -5,17 +5,20 @@ const requireUi = createRequire(path.resolve(__dirname, '../rule-engine-builder-
 const { chromium, expect } = requireUi('@playwright/test')
 const { installDistRoutes } = require('../rule-engine-builder-ui/tests/e2e/support/distRoutes.cjs')
 const { createDocsApiData } = require('../rule-engine-builder-ui/tests/e2e/support/docsFixtures.cjs')
+const { screenshotRoot, screenshotViewport, referencedScreenshots } = require('./docs/screenshot-files.cjs')
+const publishedScreenshots = referencedScreenshots()
 
 async function main() {
   const browser = await chromium.launch()
   try {
-    const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } })
+    const page = await browser.newPage({ viewport: screenshotViewport, deviceScaleFactor: 1 })
     const routing = await installDistRoutes(page, { apiData: createDocsApiData() })
     const shot = async name => {
+      if (!publishedScreenshots.has(`${name}.png`)) return
       await expect(page.locator('.el-loading-mask:visible')).toHaveCount(0)
       await expect(page.locator('.el-message:visible')).toHaveCount(0)
       await page.waitForTimeout(800)
-      await page.screenshot({ path: path.resolve(__dirname, `../docs/project-usage/${name}.png`), animations: 'disabled' })
+      await page.screenshot({ path: path.join(screenshotRoot, `${name}.png`), animations: 'disabled' })
     }
     const openTheme = async () => {
       await page.locator('.layout-account-trigger').click()
@@ -55,7 +58,7 @@ async function main() {
     await page.getByRole('tab', { name: '数据对象', exact: true }).click()
     await page.getByRole('row').filter({ hasText: 'FaceVerifyRequest' }).locator('.el-table__expand-icon').click()
     await expect(page.getByText('deviceId', { exact: true }).first()).toBeVisible()
-    await shot('project-usage-20-object-fields')
+    await shot('project-usage-03-data-object')
     routing.assertClean()
     console.log('PASS: six screenshots; theme preview cancellation, custom gradient save/reload, flat top navigation, default restoration and object fields; no unmatched API or browser errors.')
   } finally {

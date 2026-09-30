@@ -126,6 +126,21 @@ describe('themeRuntime — 全局主题应用和本地降级', () => {
     expect(palette.dangerBorder).toBe('rgba(31, 166, 150, 0.6)')
   })
 
+  test('设计器工具栏边框根据品牌前景明暗选择同色阶对比色', () => {
+    applyTheme({ ...DEFAULT_THEME_CONFIG, accentPreset: 'LIQUID_PURPLE' })
+    const lightForegroundAccent = document.documentElement.style
+      .getPropertyValue('--tianshu-designer-toolbar-accent')
+    expect(document.documentElement.style.getPropertyValue('--tianshu-brand-foreground'))
+      .toBe('#FFFFFF')
+    expect(lightForegroundAccent).not.toBe('#873FF2')
+
+    applyTheme({ ...DEFAULT_THEME_CONFIG, accentPreset: 'PEACH_PINK' })
+    expect(document.documentElement.style.getPropertyValue('--tianshu-brand-foreground'))
+      .toBe('#19103B')
+    expect(document.documentElement.style.getPropertyValue('--tianshu-designer-toolbar-accent'))
+      .toBe('#CC567E')
+  })
+
   test('管理列表操作色随主题切换且编辑使用当前主题色', () => {
     applyTheme(DEFAULT_THEME_CONFIG)
     const blueActions = readAppliedActions()

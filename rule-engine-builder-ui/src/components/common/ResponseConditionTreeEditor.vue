@@ -35,10 +35,15 @@
         :group="child"
         :path-options="pathOptions"
         :depth="depth + 1"
+        :operand-mode="operandMode"
+        :vars="vars"
+        :functions="functions"
         @remove="removeChild(index)"
       />
       <div v-else class="condition-row">
+        <api-value-editor v-if="operandMode" :value="child.left || pathOperand(child.path)" :vars="vars" :functions="functions" :modules="pathOptions" @update:value="child.left = $event" />
         <el-select
+          v-else
           v-model="child.path"
           filterable
           allow-create
@@ -65,8 +70,9 @@
             :value="item.value"
           />
         </el-select>
+        <api-value-editor v-if="operandMode && !operatorHasNoValue(child.operator)" :value="child.right || literalOperand(child.value)" :vars="vars" :functions="functions" :modules="pathOptions" @update:value="child.right = $event" />
         <el-select
-          v-if="isMultiValue(child.operator)"
+          v-else-if="!operatorHasNoValue(child.operator) && isMultiValue(child.operator)"
           v-model="child.values"
           multiple
           filterable
@@ -76,7 +82,7 @@
           placeholder="输入一个或多个值"
         />
         <el-input
-          v-else
+          v-else-if="!operatorHasNoValue(child.operator)"
           v-model="child.value"
           size="small"
           :placeholder="valuePlaceholder(child.operator)"
@@ -99,18 +105,34 @@
 </template>
 
 <script>
+import ApiValueEditor from './ApiValueEditor.vue'
 export default {
   name: 'ResponseConditionTreeEditor',
+  components: { ApiValueEditor },
   props: {
     group: { type: Object, required: true },
     pathOptions: { type: Array, default: () => [] },
     depth: { type: Number, default: 0 },
+    operandMode: Boolean,
+    vars: { type: Array, default: () => [] },
+    functions: { type: Array, default: () => [] },
   },
   data() {
     return {
       operatorOptions: [
         { label: '字符串等于', value: '==' },
         { label: '字符串不等于', value: '!=' },
+        { label: '大于', value: '>' },
+        { label: '大于等于', value: '>=' },
+        { label: '小于', value: '<' },
+        { label: '小于等于', value: '<=' },
+        { label: '为空', value: 'is_null' },
+        { label: '路径缺失', value: 'missing', noValue: true },
+        { label: '存在', value: 'exists' },
+        { label: '为空字符串/空集合', value: 'is_empty', noValue: true },
+        { label: '非空', value: 'not_empty', noValue: true },
+        { label: '类型等于', value: 'type_is' },
+        { label: '类型变化/不等于', value: 'type_changed' },
         { label: '以…开头', value: 'starts_with' },
         { label: '不以…开头', value: 'not_starts_with' },
         { label: '在列表内', value: 'in' },
@@ -125,6 +147,8 @@ export default {
     }
   },
   methods: {
+    pathOperand(path) { return path ? { kind: 'PATH', value: path, protocolPath: true, resolved: true } : null },
+    literalOperand(value) { return value == null ? null : { kind: 'LITERAL', valueType: 'STRING', value: String(value) } },
     setOperator(operator) {
       this.group['operator'] = operator
     },
@@ -152,13 +176,20 @@ export default {
       return operator === 'in' || operator === 'not_in'
     },
     onOperatorChange(condition) {
-      if (this.isMultiValue(condition.operator)) {
+      if (this.operatorHasNoValue(condition.operator)) {
+        delete condition.value
+        delete condition.values
+        delete condition.right
+      } else if (this.isMultiValue(condition.operator)) {
         if (!Array.isArray(condition.values)) condition['values'] = []
         delete condition.value
       } else {
         if (condition.value == null) condition['value'] = ''
         delete condition.values
       }
+    },
+    operatorHasNoValue(operator) {
+      return ['missing', 'exists', 'is_null', 'is_empty', 'not_empty'].includes(operator)
     },
     valuePlaceholder(operator) {
       return operator === 'regex' || operator === 'not_regex'
@@ -172,7 +203,7 @@ export default {
 
 <style scoped>
 .response-condition-tree {
-  border-left: 2px solid #dbe3ef;
+  border-left: 2px solid var(--el-border-color);
   padding-left: 12px;
 }
 .response-condition-tree.nested {
@@ -195,7 +226,7 @@ export default {
   gap: 8px;
 }
 .danger {
-  color: #dc2626;
+  color: var(--el-color-danger);
 }
 @media (max-width: 900px) {
   .condition-row {

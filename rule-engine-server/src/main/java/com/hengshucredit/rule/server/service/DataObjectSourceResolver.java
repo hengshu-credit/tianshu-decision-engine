@@ -6,6 +6,8 @@ import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectMapper;
+import com.hengshucredit.rule.server.artifact.CanonicalJson;
+import com.hengshucredit.rule.server.artifact.Sha256Digests;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 
@@ -22,6 +24,7 @@ import java.util.Set;
 /** 将 API 或数据库来源装载到数据对象，显式传入的对象字段优先。 */
 @Service
 public class DataObjectSourceResolver {
+    private final ThreadLocal<Set<Long>> resolving = ThreadLocal.withInitial(LinkedHashSet::new);
 
     @Resource
     private RuleDataObjectFieldMapper fieldMapper;
@@ -29,6 +32,8 @@ public class DataObjectSourceResolver {
     private RuleDataObjectMapper objectMapper;
     @Resource
     private ExternalApiInvokeService externalApiInvokeService;
+    @Resource private ExternalApiConsumerService externalApiConsumerService;
+    @Resource private VariableSourceResolver variableSourceResolver;
     @Resource
     private DBConnectPools dbConnectPools;
 
@@ -43,40 +48,101 @@ public class DataObjectSourceResolver {
                         List<RuleDataObjectField> snapshotFields) {
         if (values == null || directFields == null || directFields.isEmpty()) return;
         VariableResolveOptions effective = options == null ? VariableResolveOptions.defaults() : options;
+        effective.setExecutionProjectId(projectId);
+        if (effective.isOfflineReplay()) return;
         if (effective.getInvocationCache() == null) {
             effective.setInvocationCache(new VariableResolutionInvocationCache());
         }
-        Map<Long, ObjectBinding> bindings = new LinkedHashMap<>();
+        Map<String, ObjectBinding> bindings = new LinkedHashMap<>();
         for (RuleDefinitionInputField direct : directFields) {
             if (!isDataObject(direct) || direct.getVarId() == null) continue;
+            Set<String> required = effective.getRequiredScriptNames();
+            String target = pathOf(direct);
+            if (required != null && required.stream().noneMatch(path -> target != null && path != null
+                    && (target.equals(path) || target.startsWith(path + ".") || path.startsWith(target + ".")))) continue;
             RuleDataObjectField field = findField(direct.getVarId(), snapshotFields);
             if (field == null) continue;
-            ObjectBinding binding = bindings.computeIfAbsent(field.getObjectId(), ignored -> new ObjectBinding());
-            if (binding.owner == null) binding.owner = owner(field);
+            String key = field.getObjectId() + ":" + (field.getSourceConfig() == null ? "" : field.getSourceConfig());
+            ObjectBinding binding = bindings.computeIfAbsent(key, ignored -> new ObjectBinding());
+            if (binding.owner == null) {
+                binding.owner = owner(field);
+                if (binding.owner != null && field.getSourceConfig() != null && !field.getSourceConfig().isBlank()) {
+                    Map<String, Object> config = new LinkedHashMap<>(binding.owner.config);
+                    Map<String, Object> child = parseJson(field.getSourceConfig());
+                    Map<String, Object> overrides = new LinkedHashMap<>();
+                    if (config.get("requestOverrides") instanceof Map<?, ?> rootOverrides) rootOverrides.forEach((id, value) -> overrides.put(String.valueOf(id), value));
+                    if (child.get("requestOverrides") instanceof Map<?, ?> childOverrides) childOverrides.forEach((id, value) -> overrides.put(String.valueOf(id), value));
+                    config.putAll(child);
+                    config.put("requestOverrides", overrides);
+                    config.put("bindingMode", "FIELDS");
+                    binding.owner = new SourceOwner(binding.owner.id, binding.owner.sourceType, binding.owner.sourceContent,
+                            binding.owner.scriptName, binding.owner.objectCode, binding.owner.objectLabel, config);
+                }
+            }
             binding.fields.add(new FieldBinding(field, pathOf(direct)));
         }
         for (ObjectBinding binding : bindings.values()) {
             if (binding.owner == null || !supportsSource(binding.owner.sourceType)) continue;
+            if (effective.isSkipApiSources() && "API".equalsIgnoreCase(binding.owner.sourceType)) continue;
             if (binding.fields.stream().noneMatch(item -> !present(values, item.targetPath))) continue;
-            Map<String, Object> response = load(binding.owner, values, effective);
+            Set<Long> active = resolving.get();
+            if (!active.add(binding.owner.id)) throw new IllegalArgumentException("数据对象外数依赖存在循环，对象 ID=" + binding.owner.id);
+            try {
+            if (variableSourceResolver != null && "API".equalsIgnoreCase(binding.owner.sourceType)) {
+                variableSourceResolver.resolveApiDependencies(projectId, binding.owner.config, values, effective);
+            }
+            Map<String, Object> response = load(projectId, binding.owner, values, effective);
+            binding.fields.forEach(item -> ExternalApiConsumerService.recordStatus(response, effective, "DATA_OBJECT", item.field.getId()));
             Object payload = payload(binding.owner, response);
-            if (payload == null) continue;
             String mode = upper(binding.owner.config.get("bindingMode"));
+            if (payload == null && !"FIELDS".equals(mode)) continue;
+            Set<String> provided = new LinkedHashSet<>();
+            binding.fields.forEach(item -> { if (present(values, item.targetPath)) provided.add(item.targetPath); });
             if (!"FIELDS".equals(mode)) {
                 String root = firstText(binding.owner.scriptName, binding.owner.objectCode);
                 if (root != null) mergePath(values, root, payload);
-            } else {
+            }
                 for (FieldBinding item : binding.fields) {
-                    if (item.targetPath == null || present(values, item.targetPath)) continue;
+                    if (item.targetPath == null || provided.contains(item.targetPath)) continue;
+                    if (!"FIELDS".equals(mode) && (item.field.getSourcePath() == null || item.field.getSourcePath().isBlank())) continue;
                     String sourcePath = firstText(item.field.getSourcePath(), item.field.getVarCode());
-                    Object value = readPath(payload, sourcePath);
-                    if (value == null && response != payload) value = readPath(response, sourcePath);
-                    if (value != null || containsPath(payload, sourcePath) || containsPath(response, sourcePath)) {
+                    boolean absolute = item.field.getSourcePath() != null && sourcePath != null
+                            && (sourcePath.startsWith("$") || sourcePath.matches("(?:body|response|request|authentication|steps|status)(?:[.\\[].*)?"));
+                    Object origin = absolute ? response : payload;
+                    Object value = readPath(origin, sourcePath);
+                    if (value != null || containsPath(origin, sourcePath)) {
                         setPath(values, item.targetPath, value);
                     }
                 }
-            }
+            } catch (RuntimeException error) {
+                boolean waiting = error instanceof ExternalApiWaitingException
+                        || error instanceof com.hengshucredit.rule.core.engine.RuleSuspensionSignal
+                        || (error instanceof ExternalApiInvokeService.ApiInvokeException api
+                        && "WAIT".equalsIgnoreCase(api.getExceptionStrategy()));
+                binding.fields.forEach(item -> {
+                    effective.recordSourceState("DATA_OBJECT", item.field.getId(), "OUTCOME",
+                            waiting ? "WAITING_EXTERNAL" : "ERROR");
+                    effective.recordSourceState("DATA_OBJECT", item.field.getId(), "EXCEPTION", "TRUE");
+                });
+                if (waiting) {
+                    if (error instanceof com.hengshucredit.rule.core.engine.RuleSuspensionSignal) throw error;
+                    throw new ExternalApiWaitingException("数据对象外数等待恢复", error);
+                }
+                if (binding.fields.stream().noneMatch(item -> effective.requiresSourceStatus("DATA_OBJECT", item.field.getId()))) throw error;
+            } finally { active.remove(binding.owner.id); if (active.isEmpty()) resolving.remove(); }
         }
+    }
+
+    void resolveReferencedPaths(Long projectId, Set<String> requiredPaths, Map<String, Object> values, VariableResolveOptions options) {
+        List<RuleDefinitionInputField> references = new ArrayList<>();
+        options.getDerivedReferencePaths().forEach((key, path) -> {
+            if (!key.startsWith("DATA_OBJECT:") || present(values, path)) return;
+            if (requiredPaths.stream().noneMatch(required -> required.equals(path) || required.startsWith(path + ".") || path.startsWith(required + "."))) return;
+            RuleDefinitionInputField direct = new RuleDefinitionInputField();
+            direct.setVarId(Long.valueOf(key.substring("DATA_OBJECT:".length()))); direct.setRefType("DATA_OBJECT"); direct.setScriptName(path);
+            references.add(direct);
+        });
+        resolve(projectId, references, values, options, options.getRuntimeSnapshot() == null ? null : options.getRuntimeSnapshot().getDataObjectFields());
     }
 
     private RuleDataObjectField findField(Long id, List<RuleDataObjectField> snapshotFields) {
@@ -84,6 +150,7 @@ public class DataObjectSourceResolver {
             for (RuleDataObjectField field : snapshotFields) {
                 if (field != null && id.equals(field.getId())) return field;
             }
+            return null;
         }
         return fieldMapper == null ? null : fieldMapper.selectById(id);
     }
@@ -92,31 +159,50 @@ public class DataObjectSourceResolver {
         if (field.getObjectSourceType() != null || field.getObjectSourceContent() != null) {
             return new SourceOwner(field.getObjectId(), field.getObjectSourceType(),
                     field.getObjectSourceContent(), field.getObjectScriptName(), field.getObjectCode(), null,
-                    parseJson(field.getObjectSourceContent()));
+                    supportsSource(field.getObjectSourceType()) ? parseJson(field.getObjectSourceContent()) : Map.of());
         }
         RuleDataObject object = field.getObjectId() == null || objectMapper == null
                 ? null : objectMapper.selectById(field.getObjectId());
         if (object == null) return null;
         return new SourceOwner(object.getId(), object.getSourceType(), object.getSourceContent(),
                 firstText(object.getScriptName(), object.getObjectCode()), object.getObjectCode(),
-                object.getObjectLabel(), parseJson(object.getSourceContent()));
+                object.getObjectLabel(), supportsSource(object.getSourceType()) ? parseJson(object.getSourceContent()) : Map.of());
     }
 
-    private Map<String, Object> load(SourceOwner owner, Map<String, Object> values,
+    private Map<String, Object> load(Long projectId, SourceOwner owner, Map<String, Object> values,
                                      VariableResolveOptions options) {
-        String key = "DATA_OBJECT_SOURCE:" + owner.id;
+        if ("API".equalsIgnoreCase(owner.sourceType) && externalApiConsumerService != null) {
+            Long apiId = longValue(owner.config.get("apiConfigId"));
+            if (apiId == null) throw new IllegalArgumentException("数据对象 API 来源缺少 apiConfigId");
+            Map<String, Object> mapped = mappedParams(owner.config.get("paramMapping"), values);
+            return externalApiConsumerService.resolve(projectId, apiId, owner.config, mapped, options);
+        }
+        Long datasourceId = longValue(firstNonNull(owner.config.get("dbDatasourceId"), owner.config.get("datasourceId")));
+        String sql = text(owner.config.get("sql"));
+        List<Object> params = "DB".equalsIgnoreCase(owner.sourceType)
+                || "DATABASE".equalsIgnoreCase(owner.sourceType)
+                ? queryParams(owner.config.get("params"), values) : List.of();
+        DatabaseQueryOptions queryOptions = DatabaseQueryOptions.from(owner.config, 1);
+        Map<String, Object> cacheIdentity = new LinkedHashMap<>();
+        cacheIdentity.put("projectId", projectId);
+        cacheIdentity.put("ownerId", owner.id);
+        cacheIdentity.put("sourceType", owner.sourceType);
+        cacheIdentity.put("sourceConfig", owner.config);
+        cacheIdentity.put("datasourceId", datasourceId);
+        cacheIdentity.put("sql", sql);
+        cacheIdentity.put("params", params);
+        cacheIdentity.put("maxRows", queryOptions.maxRows());
+        cacheIdentity.put("queryTimeoutSeconds", queryOptions.queryTimeoutSeconds());
+        String key = "DATA_OBJECT_SOURCE:" + owner.id + ":"
+                + Sha256Digests.text(CanonicalJson.write(cacheIdentity));
         return options.getInvocationCache().resolve(key, () -> {
             if ("API".equalsIgnoreCase(owner.sourceType)) {
                 Long apiId = longValue(owner.config.get("apiConfigId"));
                 if (apiId == null) throw new IllegalArgumentException("数据对象 API 来源缺少 apiConfigId");
                 return externalApiInvokeService.invoke(apiId, mappedParams(owner.config.get("paramMapping"), values));
             }
-            Long datasourceId = longValue(firstNonNull(owner.config.get("dbDatasourceId"), owner.config.get("datasourceId")));
-            String sql = text(owner.config.get("sql"));
             if (datasourceId == null) throw new IllegalArgumentException("数据对象数据库来源缺少 datasourceId");
             if (sql == null) throw new IllegalArgumentException("数据对象数据库来源缺少查询 SQL");
-            List<Object> params = queryParams(owner.config.get("params"), values);
-            DatabaseQueryOptions queryOptions = DatabaseQueryOptions.from(owner.config, 1);
             List<Map<String, Object>> rows;
             try {
                 rows = dbConnectPools.query(datasourceId, sql, params,
@@ -139,11 +225,11 @@ public class DataObjectSourceResolver {
             return response;
         }
         String path = firstText(text(owner.config.get("resultPath")), "body");
-        return readPath(response, path);
+        return ExternalApiConsumerService.select(response, path);
     }
 
     private Map<String, Object> mappedParams(Object rawMapping, Map<String, Object> values) {
-        if (!(rawMapping instanceof Map<?, ?> mapping)) return Collections.emptyMap();
+        if (!(rawMapping instanceof Map<?, ?> mapping) || mapping.isEmpty()) return new LinkedHashMap<>(values);
         Map<String, Object> result = new LinkedHashMap<>();
         mapping.forEach((key, raw) -> {
             if (key == null) return;
@@ -214,27 +300,14 @@ public class DataObjectSourceResolver {
         return result;
     }
 
-    private boolean present(Map<String, Object> values, String path) { return containsPath(values, path); }
+    private boolean present(Map<String, Object> values, String path) {
+        return com.hengshucredit.rule.server.derived.HistoryFieldValues.present(values, path);
+    }
     private boolean containsPath(Object root, String path) {
-        if (root == null || text(path) == null) return false;
-        Object current = root;
-        for (String part : stripTemplate(path).split("\\.")) {
-            if (current instanceof Map<?, ?> map && map.containsKey(part)) current = map.get(part);
-            else if (current instanceof List<?> list && index(part) != null && index(part) < list.size()) current = list.get(index(part));
-            else return false;
-        }
-        return true;
+        return ExternalApiRequestPlan.present(root, path);
     }
     private Object readPath(Object root, String path) {
-        if (root == null || text(path) == null) return root;
-        Object current = root;
-        for (String part : stripTemplate(path).split("\\.")) {
-            if (current instanceof Map<?, ?> map) current = map.get(part);
-            else if (current instanceof List<?> list && index(part) != null && index(part) < list.size()) current = list.get(index(part));
-            else if (current != null && current.getClass().isArray() && index(part) != null && index(part) < Array.getLength(current)) current = Array.get(current, index(part));
-            else return null;
-        }
-        return current;
+        return ExternalApiRequestPlan.read(root, path);
     }
     private Integer index(String value) { try { return Integer.valueOf(value); } catch (Exception e) { return null; } }
     @SuppressWarnings("unchecked")
@@ -242,7 +315,7 @@ public class DataObjectSourceResolver {
         if (!containsPath(values, path)) { setPath(values, path, copy(payload)); return; }
         Object current = readPath(values, path);
         if (current instanceof Map<?, ?> currentMap && payload instanceof Map<?, ?> payloadMap) {
-            mergeMap((Map<String, Object>) currentMap, payloadMap);
+            setPath(values, path, ExternalApiConsumerService.merge(currentMap, payloadMap));
         }
     }
     @SuppressWarnings("unchecked")

@@ -133,8 +133,8 @@ export function distributionPieOption(items = [], options = {}) {
 export function geoHeatmapOption(points = [], options = {}) {
   const palette = createDashboardPalette(options.root)
   const max = Math.max(1, ...points.map(point => point.count || 0))
-  const center = options.fitRegion ? undefined : (Array.isArray(options.center) ? options.center : [104, 35])
-  const zoom = options.fitRegion ? 1 : (Number.isFinite(options.zoom) ? options.zoom : 1.5)
+  const center = Array.isArray(options.center) ? options.center : [104, 35]
+  const zoom = Number.isFinite(options.zoom) ? options.zoom : (options.fitRegion ? 1 : 1.5)
   const regionLabel = params => options.regionNames?.[params.name] || params.name || ''
   return {
     tooltip: {

@@ -66,6 +66,18 @@ public class RuleDraftService {
 
     @Transactional
     public RuleDraftSaveResponse save(RuleDraftSaveRequest request) {
+        return saveInternal(request, null);
+    }
+
+    @Transactional
+    public RuleDraftSaveResponse saveWithCompileResult(
+            RuleDraftSaveRequest request, CompileResult precompiled) {
+        return saveInternal(request, precompiled);
+    }
+
+    @Transactional
+    protected RuleDraftSaveResponse saveInternal(
+            RuleDraftSaveRequest request, CompileResult precompiled) {
         requireSaveContract(request);
         RuleDefinition definition = loadDefinition(request.getDefinitionId());
         if (definition == null) {
@@ -98,8 +110,8 @@ public class RuleDraftService {
             issues.add(issue);
         }
 
-        CompileResult compileResult =
-                compile(definition, request.getModelJson());
+        CompileResult compileResult = precompiled == null
+                ? compile(definition, request.getModelJson()) : precompiled;
         if (!compileResult.isSuccess()) {
             issues.add(compileIssue(compileResult.getErrorMessage(),
                     request.getRevisionId()));

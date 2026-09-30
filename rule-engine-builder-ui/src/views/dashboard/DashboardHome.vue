@@ -337,6 +337,7 @@ import {
   DASHBOARD_REGION_MAP_NAME,
   dashboardCountryBounds,
   dashboardCountryOptions,
+  dashboardMapView,
   dashboardPointsInGeoJson,
   dashboardRegionNames,
   dashboardWorldCountries,
@@ -344,8 +345,10 @@ import {
   prioritizeChinaBoundary
 } from '@/utils/dashboardMapLayers'
 import {
+  DASHBOARD_MAP_VIEW_KEY,
   dashboardQuickRange,
   defaultDashboardFilters,
+  defaultDashboardGlobalMapView,
   readDashboardMapView,
   readDashboardFilters,
   validateDashboardRange,
@@ -364,6 +367,7 @@ export default {
   },
   data() {
     const filters = readDashboardFilters(window.sessionStorage)
+    const mapView = readDashboardMapView(window.sessionStorage)
     return {
       filters,
       dateRange: [filters.startTime, filters.endTime],
@@ -389,7 +393,8 @@ export default {
       worldCountries: {},
       worldCountryBounds: {},
       adminLevelLabels: ADMIN_LEVEL_LABELS,
-      mapView: readDashboardMapView(window.sessionStorage),
+      mapView,
+      mapViewConfigured: Boolean(window.sessionStorage.getItem(DASHBOARD_MAP_VIEW_KEY)),
       mapViewVersion: 0,
       themeVersion: 0,
       sections: {
@@ -425,13 +430,26 @@ export default {
     geoOption() {
       void this.themeVersion
       const points = dashboardPointsInGeoJson((this.applications.geo || {}).points || [], this.mapGeoJson)
+      const fallbackBounds = this.mapCountry === 'CHN'
+        ? CHINA_MAP_BOUNDS
+        : this.worldCountryBounds[this.mapCountry]
+      const globalMapView = this.mapViewConfigured
+        ? this.mapView
+        : defaultDashboardGlobalMapView()
+      const mapView = this.mapCountry
+        ? dashboardMapView(this.mapGeoJson, fallbackBounds)
+        : {
+            bounds: undefined,
+            center: [globalMapView.longitude, globalMapView.latitude],
+            zoom: globalMapView.zoom
+          }
       return geoHeatmapOption(points, {
-        center: [this.mapView.longitude, this.mapView.latitude],
-        zoom: this.mapView.zoom,
+        center: mapView.center,
+        zoom: mapView.zoom,
         mapName: this.mapCountry ? DASHBOARD_REGION_MAP_NAME : undefined,
         nameProperty: this.mapCountry ? 'shapeID' : 'NAME_ZH',
         regionNames: this.mapRegionNames,
-        bounds: this.mapCountry === 'CHN' ? CHINA_MAP_BOUNDS : this.worldCountryBounds[this.mapCountry],
+        bounds: mapView.bounds,
         decorations: this.mapDecorations,
         fitRegion: Boolean(this.mapCountry)
       })
@@ -494,6 +512,7 @@ export default {
   methods: {
     resetMapView() {
       this.mapView = readDashboardMapView(window.sessionStorage)
+      this.mapViewConfigured = Boolean(window.sessionStorage.getItem(DASHBOARD_MAP_VIEW_KEY))
       this.mapViewVersion += 1
     },
     async loadProjects() {

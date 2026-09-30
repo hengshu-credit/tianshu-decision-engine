@@ -314,6 +314,21 @@ describe('ProjectList — 项目操作', () => {
     expect(projectApi.createProject).toHaveBeenCalled()
   })
 
+  test('handleSubmit 正在提交时忽略重复点击', async () => {
+    projectApi.createProject.mockImplementation(() => new Promise(resolve => {
+      setTimeout(() => resolve({ code: 200, data: { id: 9 } }), 30)
+    }))
+    wrapper.vm.form = { id: null, projectCode: 'new_project', projectName: '新项目', status: 1 }
+    withFormRef(wrapper)
+
+    const first = wrapper.vm.handleSubmit()
+    const second = wrapper.vm.handleSubmit()
+    await Promise.all([first, second])
+
+    expect(projectApi.createProject).toHaveBeenCalledTimes(1)
+    expect(wrapper.vm.submitting).toBe(false)
+  })
+
   test('handleSubmit 编辑项目时调用 updateProject', async () => {
     projectApi.updateProject.mockResolvedValue({ code: 200, data: true })
     wrapper.vm.form = { id: 1, projectCode: 'project_a', projectName: '项目A已更新', description: '', status: 1 }

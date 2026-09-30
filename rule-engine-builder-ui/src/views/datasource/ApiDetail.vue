@@ -37,37 +37,15 @@
       size="small"
       class="detail-form"
     >
-      <section class="configuration-guide" aria-label="外数 API 配置进度">
-        <div class="guide-heading">
-          <div>
-            <div class="panel-title">配置检查</div>
-            <div class="panel-subtitle">
-              按基础信息、数据映射、请求预览、审批生效的顺序完成；高级参数已有安全默认值。
-            </div>
-          </div>
-          <span class="guide-progress">
-            {{ readyChecklistCount }} / {{ configurationChecklist.length }} 已就绪
-          </span>
-        </div>
-        <div class="checklist-grid">
-          <button
-            v-for="item in configurationChecklist"
-            :key="item.key"
-            type="button"
-            class="checklist-item"
-            :class="`is-${item.status.toLowerCase()}`"
-            @click="goToChecklistItem(item)"
-          >
-            <span class="checklist-state">
-              {{ item.status === 'READY' ? '✓' : item.order }}
-            </span>
-            <span>
-              <strong>{{ item.label }}</strong>
-              <small>{{ item.help }}</small>
-            </span>
-          </button>
-        </div>
-      </section>
+      <config-layer-guide
+        title="配置检查"
+        description="按基础信息、数据映射、请求预览、审批生效的顺序完成；高级参数已有安全默认值。"
+        aria-label="外数 API 配置进度"
+        :items="configurationChecklist"
+        show-progress
+        interactive
+        @select="goToChecklistItem"
+      />
 
       <resource-preflight-panel
         resource-type="EXTERNAL_API"
@@ -178,7 +156,7 @@
             </el-form-item>
           </el-col>
           <el-col :lg="8" :md="24">
-            <el-form-item label="请求对象">
+            <el-form-item v-if="!form.executionConfig" label="请求对象">
               <el-select
                 v-model="form.requestObjectId"
                 clearable
@@ -197,7 +175,7 @@
             </el-form-item>
           </el-col>
           <el-col :lg="8" :md="24">
-            <el-form-item label="响应对象">
+            <el-form-item v-if="!form.executionConfig" label="响应对象">
               <el-select
                 v-model="form.responseObjectId"
                 clearable
@@ -229,19 +207,12 @@
       </div>
 
       <section class="config-group-bar" aria-label="配置能力分组">
-        <button
-          v-for="group in configGroups"
-          :key="group.name"
-          type="button"
-          :class="{ 'is-active': activeConfigGroup === group.name }"
-          @click="switchConfigGroup(group.name)"
-        >
-          <strong>{{ group.label }}</strong>
-          <small>{{ group.help }}</small>
+        <button v-for="group in configGroups" :key="group.name" type="button" :class="{ 'is-active': activeConfigGroup === group.name }" @click="switchConfigGroup(group.name)">
+          <strong>{{ group.label }}</strong><small>{{ group.help }}</small>
         </button>
       </section>
 
-      <el-tabs v-model="activeConfigTab" class="config-tabs">
+      <el-tabs v-model="activeConfigTab" lazy class="config-tabs" @tab-change="syncConfigGroupForTab">
         <el-tab-pane
           v-if="isConfigTabVisible('auth')"
           label="接口鉴权"
@@ -532,6 +503,14 @@
           </div>
         </el-tab-pane>
 
+        <template v-if="form.executionConfig && activeConfigGroup === 'business'">
+          <el-tab-pane v-for="item in executionTabs" :key="item.name" :label="item.label" :name="`execution.${item.name}`">
+            <api-execution-editor v-model:value="form.executionConfig" :active-tab="item.editorTab || item.name" :active-policy="item.policy || ''" embedded-tabs
+              :api-config="form" :project-id="resolveDatasourceProjectId(form.datasourceId) || contextProjectId || 0" :async-mode="form.requestMode === 'ASYNC'"
+              @select-mode="form.requestMode = $event" @select-sample="invokeParamsText = JSON.stringify($event, null, 2); goToConfigTab('test')" />
+          </el-tab-pane>
+        </template>
+
         <el-tab-pane
           v-if="isConfigTabVisible('connection')"
           label="连接&流控"
@@ -619,7 +598,7 @@
                   ><el-form-item label="QPS"
                     ><el-input-number
                       v-model="form.qpsLimit"
-                      :min="0"
+                      :min="1"
                       :max="100000"
                       :precision="2"
                       :step="1"
@@ -1294,7 +1273,7 @@
           name="async"
         >
           <div class="tab-section">
-            <el-alert title="规则会在 API 总超时内等待最终结果，再将结果交给 API 变量。提交、轮询或回调共用该时间；超时走异常策略。" type="info" :closable="false" />
+            <el-alert title="规则会在异步等待预算内等待最终结果，再将结果交给 API 变量。最大次数填 0 表示持续轮询；同步请求超时单独配置。" type="info" :closable="false" />
             <el-row :gutter="12">
               <el-col :lg="8" :md="24">
                 <el-form-item label="结果获取方式">
@@ -1305,10 +1284,22 @@
                 </el-form-item>
               </el-col>
               <el-col :lg="8" :md="12">
+                <el-form-item label="异步等待超时毫秒">
+                  <el-input-number
+                    v-model="form.asyncTimeoutMs"
+                    :min="1000"
+                    :max="86400000"
+                    :step="5000"
+                    style="width: 100%"
+                  />
+                  <div class="field-help">提交后轮询或等待回调的总预算；同步请求超时单独配置。</div>
+                </el-form-item>
+              </el-col>
+              <el-col :lg="8" :md="12">
                 <el-form-item label="提交任务号路径">
-                  <el-input
+                    <el-input
                     v-model="asyncShared.taskIdPath"
-                    placeholder="如 body.taskId"
+                      placeholder="如 body.taskId 或 body.trace_id"
                   />
                 </el-form-item>
               </el-col>
@@ -1358,10 +1349,20 @@
                   </el-form-item>
                 </el-col>
                 <el-col :lg="4" :md="8">
+                  <el-form-item label="退避倍数">
+                    <el-input-number v-model="asyncPollConfig.backoffMultiplier" :min="1" :max="10" :step="0.5" style="width: 100%" />
+                  </el-form-item>
+                </el-col>
+                <el-col :lg="4" :md="8">
+                  <el-form-item label="最大间隔毫秒">
+                    <el-input-number v-model="asyncPollConfig.maxIntervalMs" :min="1" :max="86400000" :step="1000" style="width: 100%" />
+                  </el-form-item>
+                </el-col>
+                <el-col :lg="4" :md="8">
                   <el-form-item label="最大次数">
                     <el-input-number
                       v-model="asyncPollConfig.maxAttempts"
-                      :min="1"
+                      :min="0"
                       :max="2147483647"
                       style="width: 100%"
                     />
@@ -1397,9 +1398,15 @@
               <el-form-item label="失败状态值">
                 <el-input v-model="asyncPollConfig.failureValue" placeholder="如 FAILED；命中后立即执行异常策略" />
               </el-form-item>
+              <el-form-item label="失败处理方式">
+                <el-select v-model="asyncPollConfig.failureMode" style="width: 220px">
+                  <el-option label="命中后继续轮询" value="CONTINUE" />
+                  <el-option label="命中后结束并报错" value="TERMINATE" />
+                </el-select>
+              </el-form-item>
               <el-form-item label="轮询请求配置">
                 <monaco-editor v-model:value="asyncPollRequestText" language="json" height="180px" />
-                <div class="field-help">可配置 headerConfig、queryConfig、requestMapping、contentType、requestScript、responseScript。使用 $.taskId 或 ${taskId} 引用提交任务号；$.submission.body 可读取提交响应。</div>
+                <div class="field-help">可配置 headerConfig、queryConfig、requestMapping、contentType、requestScript、responseScript。使用 $.taskId / $.traceId 或 ${taskId} / ${traceId} 查询中间结果；$.submission.body 可读取提交响应。</div>
               </el-form-item>
             </div>
             <div v-else>
@@ -1424,6 +1431,12 @@
                   </el-form-item>
                 </el-col>
               </el-row>
+              <el-form-item label="失败处理方式">
+                <el-select v-model="asyncCallbackConfig.failureMode" style="width: 220px">
+                  <el-option label="收到失败回调后继续等待" value="CONTINUE" />
+                  <el-option label="收到失败回调后结束" value="TERMINATE" />
+                </el-select>
+              </el-form-item>
               <el-row :gutter="12">
                 <el-col :lg="8" :md="24">
                   <el-form-item label="回调状态路径">
@@ -1529,6 +1542,19 @@
                 </el-form-item>
               </el-col>
             </el-row>
+            <div v-if="retryConfigurationMessage" class="field-help strategy-warning" role="alert">
+              {{ retryConfigurationMessage }}
+            </div>
+            <div class="config-card">
+              <div class="section-title">接口异常条件树</div>
+              <div class="field-help">
+                命中后按异常策略处理。可判断路径缺失、字段为空、字段类型是否为 STRING/NUMBER/BOOLEAN/OBJECT/ARRAY 等。
+              </div>
+              <response-condition-tree-editor
+                :group="exceptionConditionRoot"
+                :path-options="responsePathOptions"
+              />
+            </div>
             <div class="config-card">
               <div class="section-title">业务成功条件</div>
               <div class="field-help">
@@ -1843,6 +1869,20 @@
           </div>
         </el-tab-pane>
 
+        <template v-if="form.executionConfig && activeConfigGroup === 'reliability'">
+          <el-tab-pane v-for="item in executionPolicyTabs" :key="item.name" :label="item.label" :name="`execution.${item.name}`">
+            <api-execution-editor
+              v-model:value="form.executionConfig"
+              :active-tab="item.editorTab"
+              :active-policy="item.policy"
+              embedded-tabs
+              :api-config="form"
+              :project-id="resolveDatasourceProjectId(form.datasourceId) || contextProjectId || 0"
+              :async-mode="form.requestMode === 'ASYNC'"
+            />
+          </el-tab-pane>
+        </template>
+
         <el-tab-pane
           v-if="isConfigTabVisible('payloadCapture')"
           label="报文留存"
@@ -1929,6 +1969,17 @@
                     />
                     <div class="field-help">超过该值自动省略；填写 0 关闭限制，最大 50 MiB。</div>
                   </el-form-item>
+                  <el-form-item label="超长字段策略">
+                    <div class="payload-path-list">
+                      <div v-for="(policy, index) in payloadCapture.request.oversizedFields" :key="`request-long-${index}`" class="payload-path-row oversized-field-row">
+                        <el-input v-model="policy.path" placeholder="字段路径，如 $.authorizationFile" />
+                        <el-switch v-model="policy.store" active-text="保存" inactive-text="省略" />
+                        <el-button link size="small" class="btn-delete" @click="removePayloadCapturePolicy('request', index)">删除</el-button>
+                      </div>
+                      <el-button size="small" @click="addPayloadCapturePolicy('request')">添加超长字段</el-button>
+                      <div class="field-help">未配置的字段默认保存；“省略”表示该路径即使内容不大也不写入留存副本。适用于预判会很大的图片、文件、Base64 和密文。</div>
+                    </div>
+                  </el-form-item>
                 </div>
               </el-col>
               <el-col :lg="12" :md="24">
@@ -1993,6 +2044,17 @@
                     />
                     <div class="field-help">超过该值自动省略；填写 0 关闭限制，最大 50 MiB。</div>
                   </el-form-item>
+                  <el-form-item label="超长字段策略">
+                    <div class="payload-path-list">
+                      <div v-for="(policy, index) in payloadCapture.response.oversizedFields" :key="`response-long-${index}`" class="payload-path-row oversized-field-row">
+                        <el-input v-model="policy.path" placeholder="字段路径，如 $.reportFile" />
+                        <el-switch v-model="policy.store" active-text="保存" inactive-text="省略" />
+                        <el-button link size="small" class="btn-delete" @click="removePayloadCapturePolicy('response', index)">删除</el-button>
+                      </div>
+                      <el-button size="small" @click="addPayloadCapturePolicy('response')">添加超长字段</el-button>
+                      <div class="field-help">未配置的字段默认保存；“省略”表示该路径即使内容不大也不写入留存副本。适用于预判会很大的图片、文件、Base64 和密文。</div>
+                    </div>
+                  </el-form-item>
                 </div>
               </el-col>
             </el-row>
@@ -2008,7 +2070,8 @@
             <div class="section-toolbar">
               <div>
                 <div class="section-title">API 调用测试</div>
-                <div class="field-help">
+                <div v-if="form.executionConfig" class="field-help">可保存多份具名样例，选择样例后预览或测试；预览不会请求鉴权及外数。</div>
+                <div v-else class="field-help">
                   每个 API 只保存一份测试样例；生成测试 JSON
                   会根据请求对象字段类型创建空字符串、0、false、{}、[]
                   等默认值。
@@ -2023,7 +2086,7 @@
                 >
                 <el-button
                   size="small"
-                  :disabled="!form.id"
+                  :disabled="!form.id && !form.executionConfig"
                   @click="saveCurrentSample"
                   >保存样例</el-button
                 >
@@ -2045,6 +2108,11 @@
                 >
               </div>
             </div>
+            <el-form-item v-if="form.executionConfig" label="选择测试样例">
+              <el-select v-model="selectedSampleId" clearable filterable placeholder="选择已保存样例" @change="selectExecutionSample">
+                <el-option v-for="sample in executionSamples" :key="sample.id" :value="sample.id" :label="sample.name" />
+              </el-select>
+            </el-form-item>
             <el-alert
               class="invoke-risk-notice"
               type="warning"
@@ -2091,6 +2159,7 @@
                 read-only
               />
             </el-form-item>
+            <external-call-trace v-if="invokeResultText" :steps="JSON.parse(invokeResultText).traceSteps || []" title="完整外数调用链" />
             <div v-if="!form.id" class="empty-state">
               首次配置可先生成请求预览；审批通过并生成正式接口后才能执行真实调用。
             </div>
@@ -2102,7 +2171,11 @@
 </template>
 
 <script>
+import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
+import ApiExecutionEditor from './components/ApiExecutionEditor.vue'
+import ExternalCallTrace from '@/components/common/ExternalCallTrace.vue'
+import { emptyExecution, newApiId, validateExecution } from '@/utils/apiExecution'
 import {
   ASYNC_REQUEST_KEYS,
   emptyPayloadCaptureConfig,
@@ -2111,6 +2184,7 @@ import {
   parsePayloadCaptureConfig,
   stringifyPayloadCaptureConfig,
   validateAsyncApi,
+  retryConfigurationError,
 } from '@/utils/externalApiConfig'
 import { markRaw } from 'vue'
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
@@ -2153,6 +2227,7 @@ export default {
       previewLoading: false,
       previewToken: '',
       invokeParamsText: '{}',
+      selectedSampleId: '',
       invokeResultText: '',
       requestPreviewText: '',
       form: this.emptyForm(),
@@ -2176,6 +2251,7 @@ export default {
         },
       ],
       configTabs: [
+        { name: 'execution', group: 'business' },
         { name: 'auth', group: 'business' },
         { name: 'headers', group: 'business' },
         { name: 'query', group: 'business' },
@@ -2237,6 +2313,7 @@ export default {
         'starts_with',
         '2'
       ),
+      exceptionConditionRoot: this.emptyApiConditionRoot(),
       retryConditionRoot: this.emptyApiConditionRoot(),
       tokenFailureMode: 'DEFAULT',
       tokenFailureConditionRoot: this.emptyApiConditionRoot('body.code', '==', 'TOKEN_EXPIRED'),
@@ -2279,6 +2356,10 @@ export default {
       ],
       exceptionStrategyOptions: [
         { label: '快速失败', value: 'FAIL_FAST' },
+        { label: '异常跳过（继续规则）', value: 'SKIP' },
+        { label: '异常跳出（结束规则）', value: 'BREAK' },
+        { label: '异常等待（按 trace 恢复）', value: 'WAIT' },
+        { label: '异常重试', value: 'RETRY' },
         { label: '返回默认值', value: 'RETURN_DEFAULT' },
         { label: '忽略异常', value: 'IGNORE' },
         { label: '使用缓存', value: 'USE_CACHE' },
@@ -2289,12 +2370,17 @@ export default {
   name: 'ApiDetail',
   mixins: [workspaceTabTitleMixin(vm => vm.form.apiName)],
   components: {
+    ConfigLayerGuide,
+    ApiExecutionEditor,
+    ExternalCallTrace,
     ConditionGroupEditor,
     MonacoEditor,
     ResponseConditionTreeEditor,
     ResourcePreflightPanel,
   },
   computed: {
+    retryConfigurationMessage() { return retryConfigurationError(this.form) },
+    executionSamples() { return this.form.executionConfig ? JSON.parse(this.form.executionConfig).samples || [] : [] },
     isCreateMode() {
       return !this.$route.params.id || this.$route.params.id === 'new'
     },
@@ -2397,9 +2483,32 @@ export default {
     },
     visibleConfigTabs() {
       return this.configTabs.filter((item) => {
+        if (item.name === 'execution') return false
+        if (this.form.executionConfig && ['headers', 'query', 'request', 'response', 'async'].includes(item.name)) return false
         if (item.group !== this.activeConfigGroup) return false
         return !item.asyncOnly || this.form.requestMode === 'ASYNC'
       })
+    },
+    executionTabs() {
+      const tabs = [
+        { name: 'request', label: '请求字段' },
+        { name: 'response', label: '响应结构' },
+        { name: 'samples', label: '多份测试样例' },
+      ]
+      if (this.form.requestMode === 'ASYNC') tabs.splice(2, 0, { name: 'steps', label: '多步链路' })
+      return tabs
+    },
+    executionPolicyTabs() {
+      return [
+        { name: 'exception-policy', label: '异常条件', editorTab: 'policies', policy: 'exceptionBranches' },
+        { name: 'retry-policy', label: '重试条件', editorTab: 'policies', policy: 'retryBranches' },
+        { name: 'billing-policy', label: '计费条件', editorTab: 'policies', policy: 'billingBranches' },
+      ]
+    },
+    visibleExecutionTabNames() {
+      if (!this.form.executionConfig) return []
+      const tabs = this.activeConfigGroup === 'reliability' ? this.executionPolicyTabs : this.executionTabs
+      return tabs.map(item => `execution.${item.name}`)
     },
     configurationChecklist() {
       const basicReady = Boolean(
@@ -2408,12 +2517,13 @@ export default {
           String(this.form.apiName || '').trim() &&
           String(this.form.endpointUrl || '').trim()
       )
-      const requestReady =
+      const unified = this.form.executionConfig ? JSON.parse(this.form.executionConfig) : null
+      const requestReady = unified ||
         ['GET', 'DELETE'].includes(this.form.requestMethod) ||
         Boolean(this.form.requestObjectId) ||
         this.hasConfiguredRow(this.queryRows, ['name']) ||
         this.hasConfiguredRow(this.requestMappingRows, ['targetPath'])
-      const responseReady =
+      const responseReady = (unified && (unified.responseBranches || []).length > 0) ||
         Boolean(this.form.responseObjectId) ||
         this.hasConfiguredRow(this.responseMappingRows, ['outputField']) ||
         this.responseConditionRows.length > 0
@@ -2431,7 +2541,7 @@ export default {
           key: 'request',
           order: 2,
           label: '请求数据',
-          tab: 'request',
+          tab: unified ? 'execution' : 'request',
           status: requestReady ? 'READY' : 'ATTENTION',
           help: requestReady ? '已有请求结构' : '按接口文档配置参数或请求体',
         },
@@ -2439,7 +2549,7 @@ export default {
           key: 'response',
           order: 3,
           label: '响应数据',
-          tab: 'response',
+          tab: unified ? 'execution' : 'response',
           status: responseReady ? 'READY' : 'ATTENTION',
           help: responseReady ? '已有输出映射' : '建议配置业务需要的输出字段',
         },
@@ -2474,7 +2584,7 @@ export default {
       if (value === 'ASYNC' && !this.form.asyncResultMode) {
         this.form.asyncResultMode = 'POLL'
       }
-      if (value !== 'ASYNC' && this.activeConfigTab === 'async') {
+      if (value !== 'ASYNC' && (this.activeConfigTab === 'async' || this.activeConfigTab === 'execution.steps')) {
         this.activeConfigTab = 'retry'
       }
     },
@@ -2526,21 +2636,30 @@ export default {
     isConfigTabVisible(name) {
       return this.visibleConfigTabs.some((item) => item.name === name)
     },
+    syncConfigGroupForTab(name) {
+      if (String(name).startsWith('execution.')) {
+        this.activeConfigGroup = this.executionPolicyTabs.some(item => `execution.${item.name}` === name)
+          ? 'reliability'
+          : 'business'
+        return
+      }
+      const item = this.configTabs.find((tab) => tab.name === name || name.startsWith(`${tab.name}.`))
+      if (item) this.activeConfigGroup = item.group
+    },
     switchConfigGroup(group) {
       this.activeConfigGroup = group
-      const tabs = this.configTabs.filter((item) => {
-        if (item.group !== group) return false
-        return !item.asyncOnly || this.form.requestMode === 'ASYNC'
-      })
-      if (!tabs.some((item) => item.name === this.activeConfigTab)) {
-        this.activeConfigTab = tabs.length ? tabs[0].name : 'auth'
+      const tabs = this.visibleConfigTabs
+      const executionNames = Array.isArray(this.visibleExecutionTabNames) ? this.visibleExecutionTabNames : []
+      const available = [...tabs.map(item => item.name), ...executionNames]
+      if (!available.includes(this.activeConfigTab)) {
+        this.activeConfigTab = available[0] || 'auth'
       }
     },
     goToConfigTab(name) {
       const tab = this.configTabs.find((item) => item.name === name)
       if (!tab) return
       this.activeConfigGroup = tab.group
-      this.activeConfigTab = tab.name
+      this.activeConfigTab = name === 'execution' ? 'execution.request' : tab.name
     },
     goToChecklistItem(item) {
       if (item && item.tab) {
@@ -2566,6 +2685,7 @@ export default {
         this.requestPreviewText = ''
         this.previewToken = ''
         if (this.isCreateMode) {
+          this.form.executionConfig = JSON.stringify(emptyExecution())
           if (this.$route.query.datasourceId) {
             this.form.datasourceId = Number(this.$route.query.datasourceId)
             await this.loadDataObjectOptions(
@@ -2609,6 +2729,7 @@ export default {
         authApiConfig: '',
         tokenCacheSeconds: 0,
         timeoutMs: 3000,
+        asyncTimeoutMs: 30000,
         retryCount: 0,
         retryNonIdempotent: 0,
         maxConnections: 100,
@@ -2645,6 +2766,7 @@ export default {
         staleCacheSeconds: 0,
         cacheKeyConfig: '',
         successCondition: '',
+        exceptionCondition: '',
         retryCondition: '',
         exceptionStrategy: 'FAIL_FAST',
         fallbackValue: '',
@@ -2758,6 +2880,9 @@ export default {
         successValue: 'SUCCESS',
         resultPath: 'body.data',
         failureValue: 'FAILED',
+        backoffMultiplier: 1,
+        maxIntervalMs: 60000,
+        failureMode: 'TERMINATE',
       }
     },
     emptyAsyncCallbackConfig() {
@@ -2769,6 +2894,7 @@ export default {
         signatureHeader: '',
         signatureSecret: '',
         failureValue: 'FAILED',
+        failureMode: 'TERMINATE',
       }
     },
     async loadDatasourceOptions() {
@@ -2782,8 +2908,13 @@ export default {
       this.datasourceOptions = (res.data && res.data.records) || []
     },
     async loadDataObjectOptions(projectId) {
+      if (!projectId || Number(projectId) <= 0) {
+        this.dataObjectOptions = []
+        this.dataObjectTree = []
+        return
+      }
       try {
-        const res = await listDataObjects(projectId || 0)
+        const res = await listDataObjects(projectId)
         this.dataObjectOptions = Array.isArray(res.data)
           ? res.data
           : Array.isArray(res)
@@ -2793,7 +2924,7 @@ export default {
         this.dataObjectOptions = []
       }
       try {
-        const treeRes = await getVariableTree(projectId || 0)
+        const treeRes = await getVariableTree(projectId)
         const treeData = treeRes && treeRes.data ? treeRes.data : treeRes
         this.dataObjectTree = Array.isArray(treeData)
           ? treeData
@@ -2878,6 +3009,7 @@ export default {
       this.syncAsyncConfigFromForm()
       this.syncCacheKeyConfigFromForm()
       this.syncSuccessConditionFromForm()
+      this.syncExceptionConditionFromForm()
       this.syncRetryConditionFromForm()
       this.tokenFailureMode = this.form.tokenFailureCondition ? 'CUSTOM' : 'DEFAULT'
       this.tokenFailureConditionRoot = this.normalizeApiConditionRoot(this.parseConfigForTemplate(this.form.tokenFailureCondition), 'body.code', '==', 'TOKEN_EXPIRED')
@@ -2968,6 +3100,10 @@ export default {
     syncPayloadCaptureFromForm() {
       try {
         this.payloadCapture = parsePayloadCaptureConfig(this.form.payloadCaptureConfig)
+        const defaults = emptyPayloadCaptureConfig()
+        for (const side of ['request', 'response']) {
+          this.payloadCapture[side].decrypt = { ...defaults[side].decrypt, ...this.payloadCapture[side].decrypt }
+        }
         this.payloadCaptureError = ''
       } catch (error) {
         this.payloadCapture = emptyPayloadCaptureConfig()
@@ -2985,6 +3121,15 @@ export default {
       const target = this.payloadCapture[side]
       if (!target || !Array.isArray(target.excludePaths)) return
       target.excludePaths.splice(index, 1)
+    },
+    addPayloadCapturePolicy(side) {
+      if (!this.payloadCapture[side]) this.payloadCapture[side] = emptyPayloadCaptureConfig()[side]
+      this.payloadCapture[side].oversizedFields.push({ path: '', store: false })
+    },
+    removePayloadCapturePolicy(side, index) {
+      const target = this.payloadCapture[side]
+      if (!target || !Array.isArray(target.oversizedFields)) return
+      target.oversizedFields.splice(index, 1)
     },
     syncCacheKeyConfigFromForm() {
       const parsed = this.parseConfigForTemplate(this.form.cacheKeyConfig)
@@ -3007,6 +3152,10 @@ export default {
         'starts_with',
         '2'
       )
+    },
+    syncExceptionConditionFromForm() {
+      const parsed = this.parseConfigForTemplate(this.form.exceptionCondition)
+      this.exceptionConditionRoot = this.normalizeApiConditionRoot(parsed, '', 'missing', '')
     },
     syncRetryConditionFromForm() {
       const parsed = this.parseConfigForTemplate(this.form.retryCondition)
@@ -3242,6 +3391,9 @@ export default {
       this.form.successCondition = this.jsonTextOrBlank(
         this.buildSuccessConditionConfig()
       )
+      this.form.exceptionCondition = this.jsonTextOrBlank(
+        this.buildExceptionConditionConfig()
+      )
       this.form.retryCondition = this.jsonTextOrBlank(
         this.buildRetryConditionConfig()
       )
@@ -3461,6 +3613,10 @@ export default {
     },
     buildSuccessConditionConfig() {
       return this.sanitizeApiConditionTree(this.successConditionRoot)
+    },
+    buildExceptionConditionConfig() {
+      const condition = this.sanitizeApiConditionTree(this.exceptionConditionRoot)
+      return this.apiConditionTreeHasPath(condition) ? condition : {}
     },
     buildRetryConditionConfig() {
       const condition = this.sanitizeApiConditionTree(this.retryConditionRoot)
@@ -3698,9 +3854,22 @@ export default {
     normalizeForm(form) {
       this.syncStructuredConfigToForm()
       const data = { ...form }
+      const retryError = retryConfigurationError(data)
+      if (retryError) throw new Error(retryError)
+      if (data.executionConfig) {
+        const error = validateExecution(JSON.parse(data.executionConfig), data.requestMode)
+        if (error) throw new Error(error)
+        data.requestObjectId = null
+        data.responseObjectId = null
+        data.responseMapping = null
+      }
       const successCondition = this.buildSuccessConditionConfig()
       if (this.tokenFailureMode === 'CUSTOM') this.validateApiConditionTree(this.tokenFailureConditionRoot, 'Token鉴权失败条件')
       this.validateApiConditionTree(successCondition, '请求成功条件')
+      const exceptionCondition = this.buildExceptionConditionConfig()
+      if (Object.keys(exceptionCondition).length) {
+        this.validateApiConditionTree(exceptionCondition, '接口异常条件')
+      }
       const retryCondition = this.buildRetryConditionConfig()
       if (Object.keys(retryCondition).length) {
         this.validateApiConditionTree(retryCondition, '业务响应重试条件')
@@ -3724,6 +3893,7 @@ export default {
         asyncCallbackConfig: '异步回调配置',
         cacheKeyConfig: '缓存键配置',
         successCondition: '请求成功条件',
+        exceptionCondition: '接口异常条件',
         retryCondition: '业务响应重试条件',
         tokenFailureCondition: 'Token鉴权失败条件',
         billingCondition: '计费条件',
@@ -3737,7 +3907,7 @@ export default {
       })
       data.requestScript = this.blankToNull(data.requestScript)
       data.responseScript = this.blankToNull(data.responseScript)
-      validateAsyncApi(data)
+      if (!data.executionConfig) validateAsyncApi(data)
       return data
     },
     handleBack() {
@@ -3930,6 +4100,7 @@ export default {
       this.invokeParamsText = this.buildApiInvokeParamTemplate(this.form)
     },
     loadSavedSample() {
+      if (this.form.executionConfig) { this.selectExecutionSample(); return }
       if (this.form.testSampleParams) {
         this.invokeParamsText = this.stringifyJson(
           this.parseConfigForTemplate(this.form.testSampleParams) || {}
@@ -3938,11 +4109,25 @@ export default {
       }
       this.regenerateTestParams()
     },
+    selectExecutionSample() {
+      const sample = this.executionSamples.find(item => item.id === this.selectedSampleId)
+      if (sample) this.invokeParamsText = JSON.stringify(sample.params, null, 2)
+    },
     async saveCurrentSample() {
       try {
         const parsed = this.invokeParamsText
           ? JSON.parse(this.invokeParamsText)
           : {}
+        if (this.form.executionConfig) {
+          const spec = JSON.parse(this.form.executionConfig)
+          if (!spec.samples) spec.samples = []
+          const existing = spec.samples.find(sample => sample.id === this.selectedSampleId)
+          if (existing) existing.params = parsed
+          else { const sample = { id: newApiId(), name: `样例 ${spec.samples.length + 1}`, params: parsed }; spec.samples.push(sample); this.selectedSampleId = sample.id }
+          this.form.executionConfig = JSON.stringify(spec)
+          this.$message.success('样例已加入当前配置，请保存审批草稿后生效')
+          return
+        }
         this.form.testSampleParams = this.stringifyJson(parsed)
         if (!this.form.id) {
           this.$message.warning('新接口需要先保存后才能保存测试样例')
@@ -4195,81 +4380,6 @@ export default {
     border-radius: 4px;
     padding: 16px;
   }
-  .configuration-guide {
-    margin: -16px -16px 18px;
-    padding: 18px 20px;
-    border-bottom: 1px solid var(--tianshu-info-border);
-    background: var(--tianshu-info-bg);
-  }
-  .guide-heading {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 14px;
-  }
-  .guide-progress {
-    padding: 5px 9px;
-    border-radius: 999px;
-    background: var(--tianshu-bg-surface);
-    color: var(--tianshu-info-text);
-    font-size: 12px;
-    font-weight: 700;
-  }
-  .checklist-grid {
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 8px;
-  }
-  .checklist-item {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 9px;
-    padding: 10px;
-    border: 1px solid var(--tianshu-border-subtle);
-    border-radius: 8px;
-    background: var(--tianshu-bg-surface);
-    color: var(--tianshu-text-secondary);
-    cursor: pointer;
-    text-align: left;
-  }
-  .checklist-item:hover {
-    border-color: var(--tianshu-info-border);
-  }
-  .checklist-item > span:last-child {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-  }
-  .checklist-item strong {
-    color: var(--tianshu-text-primary);
-    font-size: 13px;
-  }
-  .checklist-item small {
-    margin-top: 3px;
-    overflow: hidden;
-    color: var(--tianshu-text-tertiary);
-    font-size: 11px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .checklist-state {
-    display: grid;
-    width: 24px;
-    height: 24px;
-    flex: 0 0 24px;
-    place-items: center;
-    border-radius: 50%;
-    background: var(--tianshu-warning-bg);
-    color: var(--tianshu-warning-text);
-    font-size: 12px;
-    font-weight: 700;
-  }
-  .checklist-item.is-ready .checklist-state {
-    background: var(--tianshu-success-bg);
-    color: var(--tianshu-success-text);
-  }
   .token-header-name-item :deep(.el-form-item__label) {
     white-space: nowrap;
   }
@@ -4346,14 +4456,19 @@ export default {
   .mapping-layout {
     display: flex;
     gap: 12px;
+    min-width: 0;
     align-items: flex-start;
   }
   .mapping-main {
     flex: 1;
     min-width: 0;
+    overflow: hidden;
   }
   .field-reference {
-    width: 360px;
+    width: clamp(260px, 30%, 360px);
+    min-width: 0;
+    max-height: min(52vh, 560px);
+    overflow: auto;
     border: 1px solid var(--tianshu-border-subtle);
     border-radius: 4px;
     padding: 10px;
@@ -4466,9 +4581,6 @@ export default {
 }
 @media (max-width: 1100px) {
   .api-detail-page {
-    .checklist-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
     .mapping-layout {
       display: block;
     }

@@ -12,6 +12,53 @@ import static org.junit.Assert.*;
 
 public class RuleDesignerServiceTest {
     @Test
+    public void compileCanRunInBackgroundAndExposeCompletedResult() throws Exception {
+        Fixture service = new Fixture();
+        try {
+            RuleDesignerCompileTaskResponse submitted = service.submitCompile(30L, compileRequest("r1"));
+            assertNotNull(submitted.getTaskId());
+            assertTrue(List.of("PENDING", "RUNNING", "SUCCEEDED").contains(submitted.getStatus()));
+
+            RuleDesignerCompileTaskResponse completed = submitted;
+            long deadline = System.currentTimeMillis() + 2000;
+            while (System.currentTimeMillis() < deadline
+                    && !List.of("SUCCEEDED", "FAILED").contains(completed.getStatus())) {
+                Thread.sleep(10);
+                completed = service.getCompileTask(30L, submitted.getTaskId());
+            }
+            assertEquals("SUCCEEDED", completed.getStatus());
+            assertTrue(completed.getResult().isCompileSuccess());
+            assertEquals("return 42;", completed.getResult().getCompiledScript());
+        } finally {
+            service.closeCompileExecutor();
+        }
+    }
+
+    @Test
+    public void saveReusesMatchingCompletedCompileTask() throws Exception {
+        Fixture service = new Fixture();
+        try {
+            RuleDesignerCompileTaskResponse submitted = service.submitCompile(30L, compileRequest("r1"));
+            RuleDesignerCompileTaskResponse completed = submitted;
+            long deadline = System.currentTimeMillis() + 2000;
+            while (System.currentTimeMillis() < deadline
+                    && !"SUCCEEDED".equals(completed.getStatus())) {
+                Thread.sleep(10);
+                completed = service.getCompileTask(30L, submitted.getTaskId());
+            }
+            assertEquals("SUCCEEDED", completed.getStatus());
+
+            RuleDesignerDraftRequest save = request("reuse");
+            save.setCompileTaskId(submitted.getTaskId());
+            RuleDraftSaveResponse response = service.save(30L, save);
+            assertTrue(response.isCompileSuccess());
+            assertEquals(1, service.saves);
+        } finally {
+            service.closeCompileExecutor();
+        }
+    }
+
+    @Test
     public void pureCompileReturnsScriptAndPreflightWithoutWrites() {
         Fixture service = new Fixture();
         service.governanceFailure = true;
@@ -89,6 +136,12 @@ public class RuleDesignerServiceTest {
         return request;
     }
 
+    private static RuleDesignerCompileRequest compileRequest(String key) {
+        RuleDesignerCompileRequest request = new RuleDesignerCompileRequest();
+        request.setModelJson("{\"script\":\"return 42;\"}");
+        return request;
+    }
+
     private static class Fixture extends RuleDesignerService {
         final Map<Long, RuleRevision> revisions = new LinkedHashMap<>();
         final Map<String, RuleDesignerSaveOperation> operations = new HashMap<>();
@@ -142,6 +195,10 @@ public class RuleDesignerServiceTest {
             if (!compiled.isSuccess()) response.setIssues(List.of(
                     RuleValidationIssue.error("COMPILE_FAILED", "$.script", compiled.getErrorMessage())));
             return response;
+        }
+        @Override protected RuleDraftSaveResponse saveDraft(RuleDraftSaveRequest request,
+                                                             CompileResult precompiled) {
+            return saveDraft(request);
         }
         @Override protected void recordSave(RuleRevision revision, String mode) { }
         private RuleRevision copy(RuleRevision revision) { return JSON.parseObject(JSON.toJSONString(revision), RuleRevision.class); }

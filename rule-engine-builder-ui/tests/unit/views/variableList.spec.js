@@ -1001,6 +1001,18 @@ describe('VariableList — 变量操作', () => {
     expect(columns[0].find('.db-sample-fields').exists()).toBe(false)
   })
 
+  test('变量弹窗按业务顺序展示默认值、发布设置和取值验证', async () => {
+    await wrapper.setData({
+      dialogVisible: true,
+      form: { ...wrapper.vm.initForm(), varSource: 'API' },
+    })
+    await nextTick()
+
+    const html = wrapper.html()
+    expect(html.lastIndexOf('label="默认值"')).toBeLessThan(html.lastIndexOf('label="取值方式"'))
+    expect(html.indexOf('更多说明与发布设置')).toBeLessThan(html.indexOf('保存前验证取值'))
+  })
+
   test('新增变量弹窗启用宽高拖拽，关闭时传递清理状态', async () => {
     wrapper.vm.handleCreate()
     await nextTick()

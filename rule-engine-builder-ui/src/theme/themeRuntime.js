@@ -41,6 +41,13 @@ export function applyTheme(config, root = document.documentElement) {
     preset.kind === 'gradient' ? preset.background : 'none'
   )
   setProperty(root, '--tianshu-brand-foreground', preset.foreground)
+  // 工具栏铺在主题背景上，边框需要使用与当前主题明暗相反的同色阶，
+  // 否则浅色主题的主题色会融入浅色背景，深色主题又会显得过暗。
+  setProperty(
+    root,
+    '--tianshu-designer-toolbar-accent',
+    preset.foreground === '#FFFFFF' ? scale.light3 : scale.dark2
+  )
   applyColorScale(root, '--el-color-primary', scale)
   applyColorScale(root, '--tianshu-color-secondary', secondaryScale)
   applyColorScale(root, '--el-color-info', hintPalette.info.scale)
@@ -57,6 +64,7 @@ export function applyTheme(config, root = document.documentElement) {
     setProperty(root, `--tianshu-action-${role}`, tone.color)
     setProperty(root, `--tianshu-action-${role}-rgb`, tone.rgb)
   }
+  applySemanticStatusPalette(root, normalized.colorScheme)
   setProperty(root, '--tianshu-focus-ring', `rgba(${scale.rgb}, 0.18)`)
   setProperty(root, '--tianshu-primary-shadow', `rgba(${scale.rgb}, 0.16)`)
   setProperty(
@@ -132,6 +140,30 @@ function applyColorScale(root, prefix, scale) {
   }
   setProperty(root, `${prefix}-dark-1`, scale.dark1)
   setProperty(root, `${prefix}-dark-2`, scale.dark2)
+}
+
+function applySemanticStatusPalette(root, colorScheme) {
+  const dark = colorScheme === 'DARK'
+  const palette = dark
+    ? {
+      success: ['rgba(52, 211, 153, 0.18)', 'rgba(52, 211, 153, 0.42)', '#A7F3D0', '#34D399', '#052E16'],
+      warning: ['rgba(245, 158, 11, 0.18)', 'rgba(245, 158, 11, 0.42)', '#FED7AA', '#F59E0B', '#451A03'],
+      danger: ['rgba(248, 113, 113, 0.2)', 'rgba(248, 113, 113, 0.5)', '#FECCCA', '#F87171', '#450A0A'],
+    }
+    : {
+      success: ['#ECFDF3', '#A7F3D0', '#166534', '#15803D', '#FFFFFF'],
+      warning: ['#FFF7ED', '#FED7AA', '#9A3412', '#D97706', '#FFFFFF'],
+      danger: ['#FEF3F2', '#FECDCA', '#B42318', '#DC2626', '#FFFFFF'],
+    }
+
+  for (const [type, values] of Object.entries(palette)) {
+    const [background, border, text, solid, foreground] = values
+    setProperty(root, `--tianshu-status-${type}-bg`, background)
+    setProperty(root, `--tianshu-status-${type}-border`, border)
+    setProperty(root, `--tianshu-status-${type}-text`, text)
+    setProperty(root, `--tianshu-status-${type}-solid`, solid)
+    setProperty(root, `--tianshu-status-${type}-solid-foreground`, foreground)
+  }
 }
 
 function createHintPalette(primary, secondary, colorScheme) {

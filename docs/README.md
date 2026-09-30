@@ -1,6 +1,6 @@
 # 天枢决策引擎前端操作手册
 
-`index.html` 是面向业务配置人员的前端控制台操作手册，复用 `docs/project-usage/` 下的真实页面截图，不依赖外部 CDN。
+`index.html` 是面向业务配置人员的前端控制台操作手册，复用 `docs/project-usage/` 下的真实页面截图，不依赖外部 CDN。当前页面按 17 个一级入口整理，重点展示九类规则的设计器与表达式追踪树、外数供应商/API/调用追踪、分流实验/分流追踪树，以及审批、离线迁移和账户权限。功能演示图统一按 2560 × 1440（2K）视口采集。
 
 ## 本地预览
 
@@ -21,3 +21,5 @@ python -m http.server 4173 --directory docs
 部署参数与教程见 [部署教程](deployment.html)；Java SDK 接入见 [Java 服务接入](java-service-integration.html)，HTTP-only SDK 和离线示例见 [HTTP 接入示例](http-sdk-example.html)。首页的接入卡片会跳转到对应 HTML 页面。
 
 工作流使用 GitHub Actions 作为 Pages 构建来源，不需要额外安装 Node.js 或文档生成器。
+
+截图可重复生成：`npm --prefix rule-engine-builder-ui run build` 后执行 `npm --prefix rule-engine-builder-ui run docs:screenshots`，会更新 `docs/project-usage/`；README 图库按 [README 图库维护说明](../scripts/docs/README.md) 执行，会更新 `docs/project-usage/` 与 `capture-manifest.json`。两套脚本都使用固定文档 API 样例并在结束时检查未匹配请求和浏览器错误。

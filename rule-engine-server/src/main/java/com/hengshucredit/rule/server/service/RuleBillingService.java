@@ -40,6 +40,27 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
     private static final String TARGET_ENGINE = "ENGINE";
     private static final String TARGET_API = "API";
 
+    /** API 审批应用时同步其专属计费项，条件仍由 API 快照执行。 */
+    @Transactional
+    public void syncApiBilling(RuleExternalApiConfig api, RuleExternalDatasource datasource) {
+        if (api.getExecutionConfig() == null || datasource == null) return;
+        RuleBillingConfig existing = getOne(new LambdaQueryWrapper<RuleBillingConfig>()
+                .eq(RuleBillingConfig::getBillingTarget, TARGET_API).eq(RuleBillingConfig::getTargetRefId, api.getId())
+                .eq(RuleBillingConfig::getBillingCode, "API_" + api.getId()));
+        var specification = ExternalApiRequestPlan.specification(api);
+        boolean enabled = hasText(api.getBillingCondition()) || specification != null && specification.getJSONArray("billingBranches") != null
+                && !specification.getJSONArray("billingBranches").isEmpty();
+        if (!enabled && existing == null) return;
+        RuleBillingConfig config = existing == null ? new RuleBillingConfig() : existing;
+        config.setScope(datasource.getScope()); config.setProjectId(datasource.getProjectId());
+        config.setBillingTarget(TARGET_API); config.setTargetRefId(api.getId());
+        config.setBillingCode("API_" + api.getId()); config.setBillingName(api.getApiName());
+        config.setChargeType("COUNT"); config.setCurrency("CNY"); config.setUnitPrice(nullToZero(api.getUnitPrice()));
+        config.setDescription("由 API 条件计费配置自动同步，API ID=" + api.getId());
+        config.setStatus(enabled && Integer.valueOf(1).equals(api.getStatus()) ? 1 : 0);
+        if (existing == null) save(config); else updateById(config);
+    }
+
     @Resource
     private RuleBillingRecordMapper recordMapper;
 
@@ -304,10 +325,10 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         return definitionMapper.selectCount(projectRuleWrapper(ruleCode, projectId)) > 0;
     }
 
-    public void recordApiExecution(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,
+    public boolean recordApiExecution(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,
                                    boolean success, Long costTimeMs, String errorMessage) {
         if (apiConfig == null || datasource == null) {
-            return;
+            return false;
         }
         LocalDateTime now = LocalDateTime.now();
         LambdaQueryWrapper<RuleBillingConfig> wrapper = new LambdaQueryWrapper<>();
@@ -326,16 +347,20 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
                 .and(w -> w.isNull(RuleBillingConfig::getExpireTime)
                         .or()
                         .ge(RuleBillingConfig::getExpireTime, now));
+        if (apiConfig.getExecutionConfig() != null) wrapper.eq(RuleBillingConfig::getTargetRefId, apiConfig.getId())
+                .eq(RuleBillingConfig::getBillingCode, "API_" + apiConfig.getId());
         List<RuleBillingConfig> configs = list(wrapper);
         if (configs.isEmpty() && !hasText(apiConfig.getBillingItemCode())) {
-            return;
+            return false;
         }
-        RuleProject project = datasource.getProjectId() == null ? null : projectMapper.selectById(datasource.getProjectId());
+        Object callingProject = com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext().rootRule().get("projectId");
+        Long projectId = callingProject instanceof Number number ? number.longValue() : datasource.getProjectId();
+        RuleProject project = projectId == null ? null : findProject(projectId);
         if (configs.isEmpty()) {
             RuleBillingRecord record = buildApiRecord(apiConfig, datasource, project, apiConfig.getBillingItemCode(),
                     apiConfig.getApiName(), apiConfig.getUnitPrice(), "CNY", success, costTimeMs, errorMessage, now, null);
-            recordMapper.insert(record);
-            return;
+            persistApiBillingRecord(record);
+            return true;
         }
         for (RuleBillingConfig config : configs) {
             RuleBillingRecord record = buildApiRecord(apiConfig, datasource, project, config.getBillingCode(),
@@ -343,7 +368,16 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
                     errorMessage, now, config.getTargetRefId());
             record.setQuantity(resolveQuantity(config.getChargeType(), success, costTimeMs));
             record.setAmount(record.getQuantity().multiply(record.getUnitPrice()).setScale(6, RoundingMode.HALF_UP));
-            recordMapper.insert(record);
+            persistApiBillingRecord(record);
+        }
+        return true;
+    }
+
+    private void persistApiBillingRecord(RuleBillingRecord record) {
+        try {
+            insertRecord(record);
+        } catch (DuplicateKeyException duplicate) {
+            if (!hasText(record.getBillingDedupKey()) || findByBillingDedupKey(record.getBillingDedupKey()) == null) throw duplicate;
         }
     }
 
@@ -352,7 +386,7 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
                                              BigDecimal unitPrice, String currency, boolean success, Long costTimeMs,
                                              String errorMessage, LocalDateTime occurTime, Long targetRefId) {
         RuleBillingRecord record = new RuleBillingRecord();
-        record.setProjectId(datasource.getProjectId());
+        record.setProjectId(project == null ? datasource.getProjectId() : project.getId());
         record.setProjectCode(project == null ? null : project.getProjectCode());
         record.setBillingCode(billingCode);
         record.setBillingName(billingName);
@@ -360,6 +394,12 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         record.setTargetRefId(targetRefId == null ? apiConfig.getId() : targetRefId);
         record.setApiCode(apiConfig.getApiCode());
         record.setDatasourceCode(datasource.getDatasourceCode());
+        Object traceId = com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext().rootRule().get("traceId");
+        record.setRootTraceId(traceId == null ? null : String.valueOf(traceId));
+        if (hasText(apiConfig.getExecutionCallId())) {
+            record.setBillingDedupKey(com.hengshucredit.rule.server.artifact.Sha256Digests.text(
+                    "API:" + apiConfig.getExecutionCallId() + ":" + billingCode));
+        }
         record.setSuccess(success ? 1 : 0);
         record.setCostTimeMs(costTimeMs);
         record.setErrorMessage(errorMessage);

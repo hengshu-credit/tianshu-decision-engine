@@ -174,14 +174,14 @@ export default {
   align-items: center;
   gap: 8px;
   padding: 6px 14px;
-  background: #f0f5ff;
-  border: 1px solid #adc6ff;
+  background: var(--tianshu-info-bg);
+  border: 1px solid var(--tianshu-info-border);
   border-radius: 6px;
   margin-bottom: 4px;
 }
 .dtt-decision--root {
-  background: #e6f0ff;
-  border-color: #85a5ff;
+  background: var(--tianshu-info-bg);
+  border-color: var(--tianshu-info-border);
 }
 .dtt-decision-icon {
   display: inline-flex;
@@ -190,8 +190,8 @@ export default {
   width: 22px;
   height: 22px;
   border-radius: 4px;
-  background: #597ef7;
-  color: #fff;
+  background: var(--tianshu-info-bg);
+  color: var(--tianshu-info-text);
   font-size: 12px;
   font-weight: 700;
   flex-shrink: 0;
@@ -199,7 +199,7 @@ export default {
 .dtt-decision-label {
   font-weight: 600;
   font-size: 13px;
-  color: #1d39c4;
+  color: var(--tianshu-info-text);
 }
 .dtt-decision--root .dtt-decision-label {
   font-size: 14px;
@@ -223,14 +223,14 @@ export default {
   border-top: 2px solid var(--tianshu-border-subtle);
 }
 .dtt-branch--hit::before {
-  border-top-color: #52c41a;
+  border-top-color: var(--tianshu-success-text);
   border-top-width: 2px;
 }
 .dtt-branch--hit {
   border-left: none;
 }
 .dtt-branches:has(> .dtt-branch--hit) {
-  border-left-color: #52c41a;
+  border-left-color: var(--tianshu-success-text);
 }
 .dtt-branch-head {
   display: inline-flex;
@@ -254,15 +254,15 @@ export default {
   border: 2px solid;
 }
 .dtt-dot--hit {
-  background: #52c41a;
-  border-color: #52c41a;
+  background: var(--tianshu-success-text);
+  border-color: var(--tianshu-success-text);
 }
 .dtt-dot--blocked {
-  background: #ff4d4f;
-  border-color: #ff4d4f;
+  background: var(--tianshu-danger-text);
+  border-color: var(--tianshu-danger-text);
 }
 .dtt-dot--skipped {
-  background: #d9d9d9;
+  background: var(--tianshu-border);
   border-color: var(--tianshu-border);
 }
 .dtt-branch-label {
@@ -271,11 +271,11 @@ export default {
   color: var(--tianshu-text-primary);
 }
 .dtt-branch--hit > .dtt-branch-head > .dtt-branch-label {
-  color: #389e0d;
+  color: var(--tianshu-success-text);
 }
 .dtt-cond {
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--tianshu-text-tertiary);
   font-family: 'Consolas', 'Monaco', monospace;
 }
 .dtt-status-tag {
@@ -286,14 +286,14 @@ export default {
   white-space: nowrap;
 }
 .dtt-tag--hit {
-  background: #f6ffed;
-  color: #52c41a;
-  border: 1px solid #b7eb8f;
+  background: var(--tianshu-success-bg);
+  color: var(--tianshu-success-text);
+  border: 1px solid var(--tianshu-success-border);
 }
 .dtt-tag--blocked {
-  background: #fff2f0;
-  color: #ff4d4f;
-  border: 1px solid #ffccc7;
+  background: var(--tianshu-danger-bg);
+  color: var(--tianshu-danger-text);
+  border: 1px solid var(--tianshu-danger-border);
 }
 .dtt-tag--skipped {
   background: var(--tianshu-bg-muted);
@@ -323,12 +323,12 @@ export default {
   font-size: 12px;
   background: var(--tianshu-bg-muted);
   border: 1px solid var(--tianshu-border-subtle);
-  color: #595959;
+  color: var(--tianshu-text-secondary);
 }
 .dtt-leaf--hit {
-  background: #f6ffed;
-  border-color: #b7eb8f;
-  color: #389e0d;
+  background: var(--tianshu-success-bg);
+  border-color: var(--tianshu-success-border);
+  color: var(--tianshu-success-text);
   font-weight: 600;
 }
 .dtt-leaf-icon {
@@ -336,21 +336,21 @@ export default {
   flex-shrink: 0;
 }
 .dtt-leaf-task {
-  color: #595959;
+  color: var(--tianshu-text-secondary);
   font-weight: 500;
 }
 .dtt-leaf--hit .dtt-leaf-task {
-  color: #389e0d;
+  color: var(--tianshu-success-text);
 }
 .dtt-leaf-var {
-  color: #8c8c8c;
+  color: var(--tianshu-text-tertiary);
   font-family: 'Consolas', 'Monaco', monospace;
 }
 .dtt-leaf-val {
   font-family: 'Consolas', 'Monaco', monospace;
 }
 .dtt-leaf--hit .dtt-leaf-val {
-  color: #237804;
+  color: var(--tianshu-success-text);
 }
 .dtt-func-calls {
   margin-top: 4px;
@@ -364,24 +364,24 @@ export default {
   margin: 2px 0;
   border-radius: 4px;
   font-size: 11px;
-  background: #f9f0ff;
-  border: 1px solid #d3adf7;
-  color: #531dab;
+  background: var(--tianshu-info-bg);
+  border: 1px solid var(--tianshu-info-border);
+  color: var(--tianshu-info-text);
 }
 .dtt-func-item--hit {
-  background: #f0f5ff;
-  border-color: #adc6ff;
-  color: #1d39c4;
+  background: var(--tianshu-info-bg);
+  border-color: var(--tianshu-info-border);
+  color: var(--tianshu-info-text);
 }
 .dtt-func-icon {
   font-weight: 700;
   font-size: 13px;
   font-style: italic;
-  color: #722ed1;
+  color: var(--tianshu-info-text);
   flex-shrink: 0;
 }
 .dtt-func-item--hit .dtt-func-icon {
-  color: #2f54eb;
+  color: var(--tianshu-info-text);
 }
 .dtt-func-name {
   font-weight: 600;
@@ -389,14 +389,14 @@ export default {
 }
 .dtt-func-expr {
   font-family: 'Consolas', 'Monaco', monospace;
-  color: #8c8c8c;
+  color: var(--tianshu-text-tertiary);
 }
 .dtt-func-item--hit .dtt-func-expr {
-  color: #597ef7;
+  color: var(--tianshu-info-text);
 }
 .dtt-func-result {
   font-weight: 600;
-  color: #389e0d;
+  color: var(--tianshu-success-text);
   margin-left: 4px;
 }
 </style>

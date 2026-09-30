@@ -50,6 +50,8 @@ import java.util.regex.PatternSyntaxException;
 
 @Service
 public class ExternalApiInvokeService {
+    @Resource private RuleVariableService apiVariableService;
+    private final ThreadLocal<List<Map<String, Object>>> authenticationCalls = new ThreadLocal<>();
 
     @Resource
     private RuleExternalApiConfigMapper apiConfigMapper;
@@ -109,22 +111,80 @@ public class ExternalApiInvokeService {
         if (apiConfig.getStatus() != null && !Integer.valueOf(1).equals(apiConfig.getStatus())) {
             throw new IllegalArgumentException("外数API接口未启用");
         }
+        if (ExternalApiRequestPlan.specification(apiConfig) != null) return invoke(apiConfig, params);
         return invoke(apiConfig, params, true);
     }
 
     /** 使用页面当前配置执行测试，不要求先覆盖数据库中的已保存配置。 */
     public Map<String, Object> invoke(RuleExternalApiConfig apiConfig, Map<String, Object> params) {
+        if (apiConfig.getExecutionConfig() != null && !apiConfig.getExecutionConfig().isBlank()) {
+            RuleExternalDatasource owner = datasourceMapper.selectById(apiConfig.getDatasourceId());
+            Map<String, String> paths = apiVariableService == null ? Map.of() : apiVariableService.buildRefScriptNameMap(owner.getProjectId());
+            return invokePlanned(ExternalApiRequestPlan.prepare(selectRequestBranch(apiConfig, params), params, Map.of(), paths));
+        }
         return invoke(apiConfig, params, false);
+    }
+
+    Map<String, Object> invokePlanned(ExternalApiRequestPlan plan) {
+        return invoke(plan.config(), plan.params(), false);
+    }
+
+    /**
+     * 恢复已经提交过的异步外数。pending 中只保存任务关联信息，恢复时禁止重新发起提交请求。
+     */
+    Map<String, Object> invokePending(ExternalApiRequestPlan plan, Map<String, Object> pending) {
+        if (plan == null || pending == null || pending.isEmpty()) {
+            throw new IllegalArgumentException("异步外数恢复信息不能为空");
+        }
+        Object pendingApiId = pending.get("apiConfigId");
+        if (pendingApiId != null && plan.config().getId() != null
+                && !String.valueOf(plan.config().getId()).equals(String.valueOf(pendingApiId))) {
+            throw new IllegalArgumentException("异步外数恢复信息与当前接口不匹配");
+        }
+        boolean workflowPending = "WORKFLOW".equalsIgnoreCase(String.valueOf(pending.get("kind")));
+        if (!workflowPending && (pending.get("taskId") == null || String.valueOf(pending.get("taskId")).isBlank())) {
+            throw new IllegalArgumentException("异步外数恢复信息缺少任务号");
+        }
+        return invoke(plan.config(), plan.params(), false, pending);
+    }
+
+    RuleExternalApiConfig selectRequestBranch(RuleExternalApiConfig source, Map<String, Object> values) {
+        JSONObject spec = ExternalApiRequestPlan.specification(source);
+        if (spec == null || spec.getJSONArray("requestBranches") == null) return source;
+        Map<String, Object> context = new LinkedHashMap<>(values);
+        context.put("input", values);
+        for (Object raw : spec.getJSONArray("requestBranches")) {
+            JSONObject branch = JSON.parseObject(JSON.toJSONString(raw));
+            RuleExternalDatasource owner = datasourceMapper == null ? null : datasourceMapper.selectById(source.getDatasourceId());
+            Map<String, String> paths = apiVariableService == null || owner == null ? Map.of() : apiVariableService.buildRefScriptNameMap(owner.getProjectId());
+            if (responseConditionMatches(branch.get("condition"), context, context.get("body"), paths)) {
+                RuleExternalApiConfig selected = JSON.parseObject(JSON.toJSONString(source), RuleExternalApiConfig.class);
+                if (branch.containsKey("requestFields")) spec.put("requestFields", branch.get("requestFields"));
+                selected.setExecutionConfig(spec.toJSONString());
+                return selected;
+            }
+        }
+        return source;
     }
 
     private Map<String, Object> invoke(RuleExternalApiConfig apiConfig, Map<String, Object> params,
                                        boolean useResponseCache) {
+        return invoke(apiConfig, params, useResponseCache, null);
+    }
+
+    private Map<String, Object> invoke(RuleExternalApiConfig apiConfig, Map<String, Object> params,
+                                       boolean useResponseCache, Map<String, Object> pendingAsync) {
         if (apiConfig == null) {
             throw new IllegalArgumentException("API接口配置不能为空");
         }
         ExternalApiConfigValidator.validate(apiConfig);
-        int totalTimeoutMs = apiConfig.getTimeoutMs() == null ? 3000 : Math.max(1, apiConfig.getTimeoutMs());
-        try (RequestDeadlineContext.Scope ignored = RequestDeadlineContext.limit(totalTimeoutMs)) {
+        String requestMode = apiConfig.getRequestMode() == null ? "SYNC"
+                : apiConfig.getRequestMode().trim().toUpperCase(java.util.Locale.ROOT);
+        int totalTimeoutMs = "ASYNC".equals(requestMode)
+                ? (apiConfig.getAsyncTimeoutMs() == null ? 30_000 : Math.max(0, apiConfig.getAsyncTimeoutMs()))
+                : (apiConfig.getTimeoutMs() == null ? 3000 : Math.max(1, apiConfig.getTimeoutMs()));
+        try (AuthCapture capture = new AuthCapture();
+             RequestDeadlineContext.Scope ignored = RequestDeadlineContext.limit(totalTimeoutMs)) {
         RuleExternalDatasource datasource = datasourceMapper.selectById(apiConfig.getDatasourceId());
         if (datasource == null) {
             throw new IllegalArgumentException("外数数据源不存在");
@@ -132,7 +192,7 @@ public class ExternalApiInvokeService {
         if (datasource.getStatus() != null && !Integer.valueOf(1).equals(datasource.getStatus())) {
             throw new IllegalArgumentException("外数数据源未启用");
         }
-        int retryCount = apiConfig.getRetryCount() == null ? 0 : Math.max(apiConfig.getRetryCount(), 0);
+        int retryCount = configuredRetryLimit(apiConfig);
         int retryIntervalMs = apiConfig.getRetryIntervalMs() == null ? 0 : Math.max(apiConfig.getRetryIntervalMs(), 0);
         int responseCacheSeconds = useResponseCache && apiConfig.getResponseCacheSeconds() != null
                 ? Math.max(apiConfig.getResponseCacheSeconds(), 0) : 0;
@@ -143,8 +203,23 @@ public class ExternalApiInvokeService {
                 ? null : externalApiResponseCache.get(apiConfig, responseCacheKey);
         long start = System.currentTimeMillis();
         InvokeTrace trace = new InvokeTrace();
-        trace.callId = UUID.randomUUID().toString();
+        trace.pendingAsync = pendingAsync == null ? null : new LinkedHashMap<>(pendingAsync);
+        if (pendingAsync != null && "WORKFLOW".equalsIgnoreCase(String.valueOf(pendingAsync.get("kind")))) {
+            trace.workflowResume = new LinkedHashMap<>(pendingAsync);
+        }
+        Object resumedCallId = pendingAsync == null ? null : pendingAsync.get("callId");
+        trace.callId = resumedCallId == null || String.valueOf(resumedCallId).isBlank()
+                ? UUID.randomUUID().toString() : String.valueOf(resumedCallId);
+        trace.apiConfigId = apiConfig.getId();
+        trace.resumed = pendingAsync != null;
+        apiConfig.setExecutionCallId(trace.callId);
         trace.requestParams = invokeParams;
+        if (apiConfig.isBillingSuppressed()) {
+            Map<String, Object> loggedParams = new LinkedHashMap<>();
+            loggedParams.put("fields", invokeParams.get("__apiFields"));
+            if (invokeParams.get("steps") instanceof Map<?, ?> earlier) loggedParams.put("priorStepIds", new ArrayList<>(earlier.keySet()));
+            trace.requestParams = loggedParams;
+        }
         trace.rootInput = com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext().rootInput();
         trace.cacheKey = responseCacheKey;
         trace.cacheStatus = responseCacheSeconds <= 0 ? "DISABLED"
@@ -167,8 +242,15 @@ public class ExternalApiInvokeService {
             return cached;
         }
         Exception lastError = null;
+        boolean filesPrepared = false;
         for (int i = 0; i <= retryCount; i++) {
             try {
+                if (!filesPrepared) {
+                    var fileInputs = ExternalApiFileInputs.prepare(apiConfig, invokeParams, false);
+                    invokeParams.putAll(fileInputs.params());
+                    filesPrepared = true;
+                    if (!fileInputs.files().isEmpty()) recordTraceStep(trace, "FILE_INPUT", "请求文件校验与编码", "SUCCESS", null, fileInputs.files(), apiConfig.getId());
+                }
                 Map<String, Object> result;
                 if (responseCacheSeconds > 0 && responseCacheKey != null) {
                     ExternalApiResponseCache.LoadResult loaded = externalApiResponseCache.singleFlight(
@@ -193,14 +275,24 @@ public class ExternalApiInvokeService {
                         && (!result.containsKey("success") || booleanValue(result.get("success")))) {
                     externalApiResponseCache.put(apiConfig, responseCacheKey, result);
                 }
-                if (shouldRecordSuccessBilling(apiConfig, result)) {
-                    billingService.recordApiExecution(apiConfig, datasource, true, cost, null);
+                if (!apiConfig.isBillingSuppressed() && billingService != null && shouldRecordSuccessBilling(apiConfig, result)) {
+                    trace.billed = billingService.recordApiExecution(apiConfig, datasource, true, cost, null);
+                }
+                attachExternalCall(result, trace);
+                if (ExternalApiRequestPlan.specification(apiConfig) != null) {
+                    result = assembleResponse(apiConfig, result, invokeParams);
+                    recordTraceStep(trace, "RESPONSE_MAPPING", "组装响应结果", "SUCCESS", null, result.get("body"), apiConfig.getId());
                 }
                 logDatasourceCall(apiConfig, datasource, trace, true, result, null, cost);
                 return result;
             } catch (Exception e) {
                 if (e instanceof RuleRuntimeCallLogService.HistoryLogWriteException historyFailure) throw historyFailure;
                 lastError = e;
+                if (e instanceof ExternalApiFileInputs.FileInputException) {
+                    recordTraceStep(trace, "FILE_INPUT", "请求文件校验与编码", "FAILED", null, Map.of("errorMessage", e.getMessage()), apiConfig.getId());
+                    break;
+                }
+                RuleExternalApiConfig retryPolicy = retryPolicy(apiConfig, trace, e);
                 if (e instanceof TokenRefreshRejectedException
                         || e instanceof ExternalApiGuardRegistry.RejectedException
                         || e instanceof ExternalApiCircuitBreakerRegistry.OpenException
@@ -208,11 +300,13 @@ public class ExternalApiInvokeService {
                     break;
                 }
                 if ("ASYNC".equals(apiConfig.getRequestMode())
-                        || !retryAllowedForMethod(apiConfig)
-                        || i >= retryCount || !shouldRetry(apiConfig, e)) {
+                        || !retryAllowedForMethod(retryPolicy)
+                        || i >= (retryPolicy.getRetryCount() == null ? 0 : retryPolicy.getRetryCount())
+                        || retryPolicy == apiConfig && !shouldRetry(retryPolicy, e)) {
                     break;
                 }
-                int retryDelayMs = retryDelayMs(apiConfig, retryIntervalMs, i);
+                int retryDelayMs = retryDelayMs(retryPolicy,
+                        retryPolicy.getRetryIntervalMs() == null ? retryIntervalMs : retryPolicy.getRetryIntervalMs(), i);
                 if (retryDelayMs > 0) {
                     try {
                         int remaining = RequestDeadlineContext.remainingMillis();
@@ -239,8 +333,8 @@ public class ExternalApiInvokeService {
             logDatasourceCall(apiConfig, datasource, trace, true, cached, message, cost);
             return cached;
         }
-        if (shouldRecordFailedBilling(apiConfig, trace)) {
-            billingService.recordApiExecution(apiConfig, datasource, false, cost, message);
+        if (!apiConfig.isBillingSuppressed() && billingService != null && shouldRecordFailedBilling(apiConfig, trace)) {
+            trace.billed = billingService.recordApiExecution(apiConfig, datasource, false, cost, message);
         }
         if ("RETURN_DEFAULT".equals(apiConfig.getExceptionStrategy())) {
             Map<String, Object> fallback = new LinkedHashMap<>();
@@ -257,9 +351,24 @@ public class ExternalApiInvokeService {
             logDatasourceCall(apiConfig, datasource, trace, false, fallback, message, cost);
             return fallback;
         }
+        if (ExternalApiRequestPlan.specification(apiConfig) != null
+                && !"WAIT".equalsIgnoreCase(apiConfig.getExceptionStrategy())) {
+            Map<String, Object> failed = new LinkedHashMap<>();
+            failed.put("success", false);
+            failed.put("errorMessage", message);
+            failed.put("sourceOutcome", failureOutcome(lastError));
+            failed.put("exceptionStrategy", apiConfig.getExceptionStrategy());
+            failed.put("costTimeMs", cost);
+            failed.put("body", null);
+            attachExternalCall(failed, trace);
+            applyExceptionBranch(apiConfig, failed);
+            logDatasourceCall(apiConfig, datasource, trace, false, failed, message, cost);
+            return failed;
+        }
         logDatasourceCall(apiConfig, datasource, trace, false, null, message, cost);
         throw new ApiInvokeException(message, lastError, responseCacheSeconds > 0, trace.cacheStatus,
-                trace.requestIssued && trace.responseStatus == null);
+                trace.requestIssued && trace.responseStatus == null, trace.pendingAsyncSnapshot(),
+                apiConfig.getExceptionStrategy());
         }
     }
 
@@ -323,7 +432,52 @@ public class ExternalApiInvokeService {
             throw new IllegalArgumentException("外数数据源不存在");
         }
         Map<String, Object> input = params == null ? new LinkedHashMap<>() : params;
+        if (ExternalApiRequestPlan.specification(apiConfig) != null) {
+            Map<String, String> paths = apiVariableService == null ? Map.of() : apiVariableService.buildRefScriptNameMap(datasource.getProjectId());
+            ExternalApiRequestPlan plan = ExternalApiRequestPlan.prepare(selectRequestBranch(apiConfig, input), input, Map.of(), paths);
+            apiConfig = plan.config();
+            input = plan.params();
+        }
         Map<String, Object> result = new LinkedHashMap<>();
+        var fileInputs = ExternalApiFileInputs.prepare(apiConfig, input, true);
+        input = fileInputs.params();
+        if (!fileInputs.files().isEmpty()) result.put("fileInputs", fileInputs.files());
+        JSONObject workflow = ExternalApiRequestPlan.specification(apiConfig);
+        if (workflow != null && workflow.getJSONArray("steps") != null && !workflow.getJSONArray("steps").isEmpty()) {
+            Map<String, Object> context = new LinkedHashMap<>(input);
+            context.put("input", input);
+            Map<String, Object> steps = new LinkedHashMap<>();
+            Map<String, Object> callbacks = new LinkedHashMap<>();
+            context.put("steps", steps);
+            context.put("callbacks", callbacks);
+            for (Object raw : workflow.getJSONArray("steps")) {
+                JSONObject step = JSON.parseObject(JSON.toJSONString(raw));
+                if ("CALLBACK".equals(step.getString("type"))) callbacks.put(step.getString("id"), Map.of("url", step.getJSONObject("callback").getString("url").replace("${invocationId}", "PREVIEW_ONLY")));
+            }
+            for (Object raw : workflow.getJSONArray("steps")) {
+                JSONObject step = JSON.parseObject(JSON.toJSONString(raw));
+                Map<String, Object> preview = new LinkedHashMap<>();
+                preview.put("type", step.getString("type"));
+                preview.put("networkCalled", false);
+                if ("HTTP".equals(step.getString("type"))) {
+                    try {
+                        ExternalApiRequestPlan plan = prepareWorkflowStep(apiConfig, step, context);
+                        preview.put("request", previewRequest(plan.config(), plan.params(), previewToken));
+                    } catch (IllegalArgumentException missingSample) {
+                        preview.put("validationError", missingSample.getMessage());
+                    }
+                } else preview.put("callback", callbacks.get(step.getString("id")));
+                Object sample = step.get("sample");
+                if (sample == null && step.getJSONArray("responseBranches") != null && !step.getJSONArray("responseBranches").isEmpty()) sample = step.getJSONArray("responseBranches").getJSONObject(0).get("sample");
+                preview.put("body", sample);
+                preview.put("response", Map.of("body", sample == null ? Map.of() : sample));
+                preview.put("sampleOnly", true);
+                steps.put(step.getString("id"), preview);
+            }
+            result.put("steps", steps);
+            result.put("networkCalled", false);
+            return result;
+        }
         if (isRuleEngineDatasource(datasource)) {
             Map<String, Object> state = new LinkedHashMap<>();
             Map<String, Object> mapping = parseJsonMap(apiConfig.getRequestMapping());
@@ -607,6 +761,43 @@ public class ExternalApiInvokeService {
 
     private Map<String, Object> doInvoke(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,
                                          Map<String, Object> params, InvokeTrace trace) throws Exception {
+        JSONObject execution = ExternalApiRequestPlan.specification(apiConfig);
+        if (execution != null && execution.getJSONArray("steps") != null && !execution.getJSONArray("steps").isEmpty()) {
+            trace.workflow = true;
+            try {
+                Map<String, Object> result = ExternalApiWorkflow.execute(execution, params,
+                        (step, context) -> invokeWorkflowStep(apiConfig, step, context, trace), callbackStore,
+                        (condition, context) -> matchesResponseCondition(JSON.toJSONString(condition), context),
+                        (step, response) -> {
+                            if ("CALLBACK".equals(step.getString("type"))) {
+                                trace.workflowResults.put(step.getString("id"), response);
+                                recordTraceStep(trace, "WORKFLOW_CALLBACK", step.getString("name"),
+                                        Boolean.FALSE.equals(response.get("success")) ? "FAILED" : "SUCCESS",
+                                        Map.of("stepId", step.getString("id")), response, apiConfig.getId());
+                            }
+                        }, trace.workflowResume);
+                result.put("authentication", new ArrayList<>(authenticationCalls.get()));
+                if (hasText(apiConfig.getExceptionCondition())
+                        && matchesResponseCondition(apiConfig.getExceptionCondition(), result)) {
+                    result.put("exceptionConditionMatched", true);
+                    recordTraceStep(trace, "EXCEPTION_CONDITION", "接口异常条件命中", "FAILED",
+                            apiConfig.getExceptionCondition(), result, apiConfig.getId());
+                    boolean retryable = hasText(apiConfig.getRetryCondition())
+                            && matchesResponseCondition(apiConfig.getRetryCondition(), result);
+                    throw new BusinessResponseException("接口异常条件命中", retryable);
+                }
+                if (!matchesResponseCondition(apiConfig.getSuccessCondition(), result)) {
+                    result.put("success", false);
+                    boolean retryable = hasText(apiConfig.getRetryCondition())
+                            && matchesResponseCondition(apiConfig.getRetryCondition(), result);
+                    throw new BusinessResponseException(businessResponseMessage(result), retryable);
+                }
+                return result;
+            } catch (ExternalApiWorkflow.PendingException pending) {
+                trace.workflowPending = pending.toMap();
+                throw pending;
+            }
+        }
         try (ExternalApiGuardRegistry.Permit ignored = externalApiGuardRegistry.acquire(apiConfig)) {
             ExternalApiCircuitBreakerRegistry.CircuitPermit circuitPermit;
             try {
@@ -627,18 +818,247 @@ public class ExternalApiInvokeService {
         }
     }
 
+    private Map<String, Object> invokeWorkflowStep(RuleExternalApiConfig root, JSONObject step,
+                                                    Map<String, Object> context, InvokeTrace trace) {
+        ExternalApiRequestPlan plan = prepareWorkflowStep(root, step, context);
+        Map<String, Object> result = invokePlanned(plan);
+        if (result.get("authentication") instanceof Iterable<?> calls) {
+            for (Object call : calls) authenticationCalls.get().add(parseNestedMap(call));
+        }
+        trace.requestIssued |= Boolean.TRUE.equals(ExternalApiRequestPlan.read(result, "status.requestIssued"));
+        if (Boolean.TRUE.equals(ExternalApiRequestPlan.read(result, "status.circuitOpen"))) trace.circuitState = "OPEN";
+        Object retries = ((Map<?, ?>) result.getOrDefault("status", Map.of())).get("retryCount");
+        int retryCount = retries instanceof Number count ? count.intValue() : 0;
+        trace.workflowRetryCount += retryCount;
+        trace.providerAttemptNo += 1 + retryCount;
+        Object httpStatus = ExternalApiRequestPlan.read(result, "status.httpStatus");
+        trace.responseStatus = httpStatus instanceof Number number ? number.intValue() : null;
+        trace.requestDetails = parseNestedMap(result.get("request"));
+        trace.responseDetails = parseNestedMap(result.get("response"));
+        trace.workflowResults.put(step.getString("id"), result);
+        recordTraceStep(trace, "WORKFLOW_STEP", step.getString("name") == null ? step.getString("id") : step.getString("name"),
+                Boolean.FALSE.equals(result.get("success")) ? "FAILED" : "SUCCESS", Map.of("stepId", step.getString("id")), result, plan.config().getId());
+        if (Boolean.FALSE.equals(result.get("success"))) throw new IllegalStateException("外数步骤 " + step.getString("id") + " 失败: " + result.get("errorMessage"));
+        return result;
+    }
+
+    private ExternalApiRequestPlan prepareWorkflowStep(RuleExternalApiConfig root, JSONObject step, Map<String, Object> context) {
+        Long linkedId = step.getLong("apiConfigId");
+        RuleExternalApiConfig template = linkedId == null ? root : apiConfigMapper.selectById(linkedId);
+        if (template == null || template.getStatus() != null && template.getStatus() != 1) throw new IllegalArgumentException("步骤 API 不存在或已停用");
+        RuleExternalDatasource rootSource = datasourceMapper.selectById(root.getDatasourceId());
+        RuleExternalDatasource linkedSource = datasourceMapper.selectById(template.getDatasourceId());
+        if (linkedSource == null || linkedSource.getStatus() != null && linkedSource.getStatus() != 1
+                || !"GLOBAL".equals(linkedSource.getScope()) && !java.util.Objects.equals(linkedSource.getProjectId(), rootSource.getProjectId())) {
+            throw new IllegalArgumentException("步骤 API 不属于当前可用范围");
+        }
+        JSONObject config = JSON.parseObject(JSON.toJSONString(template));
+        for (String key : new String[]{"endpointUrl", "requestMethod", "contentType", "headerConfig", "queryConfig", "requestMapping",
+                "bodyTemplate", "requestScript", "responseScript", "successCondition", "exceptionCondition", "retryCondition", "retryCount", "retryIntervalMs",
+                "retryBackoffMultiplier", "retryMaxIntervalMs", "retryNonIdempotent", "retryStatusCodes", "retryOnTimeout", "retryOnConnectionError",
+                "authMode", "authApiConfig", "timeoutMs"}) {
+            if (step.containsKey(key)) config.put(key, step.get(key));
+        }
+        if ("API".equals(step.getString("authMode")) && step.getLong("authApiConfigId") != null) {
+            RuleExternalApiConfig auth = apiConfigMapper.selectById(step.getLong("authApiConfigId"));
+            if (auth == null || auth.getStatus() != null && auth.getStatus() != 1) throw new IllegalArgumentException("关联鉴权 API 不可用");
+            RuleExternalDatasource authSource = datasourceMapper.selectById(auth.getDatasourceId());
+            if (authSource == null || !"GLOBAL".equals(authSource.getScope()) && !java.util.Objects.equals(authSource.getProjectId(), rootSource.getProjectId())) throw new IllegalArgumentException("鉴权 API 不属于当前可用范围");
+            boolean inherit = auth.getAuthMode() == null || "INHERIT".equals(auth.getAuthMode());
+            config.put("authMode", inherit ? authSource.getAuthType() : auth.getAuthMode());
+            config.put("authApiConfig", inherit ? authSource.getAuthConfig() : auth.getAuthApiConfig());
+            JSONObject authSettings = config.getString("authApiConfig") == null ? new JSONObject() : JSON.parseObject(config.getString("authApiConfig"));
+            if (authSettings.getString("tokenUrl") != null) authSettings.put("tokenUrl", buildTokenUrl(authSource, authSettings.getString("tokenUrl")));
+            config.put("authApiConfig", authSettings.toJSONString());
+        } else if ("INHERIT".equals(step.getString("authMode"))) {
+            boolean inherited = root.getAuthMode() == null || "INHERIT".equals(root.getAuthMode());
+            config.put("authMode", inherited ? rootSource.getAuthType() : root.getAuthMode());
+            config.put("authApiConfig", inherited ? rootSource.getAuthConfig() : root.getAuthApiConfig());
+            JSONObject settings = config.getString("authApiConfig") == null ? new JSONObject() : JSON.parseObject(config.getString("authApiConfig"));
+            if (settings.getString("tokenUrl") != null) settings.put("tokenUrl", buildTokenUrl(rootSource, settings.getString("tokenUrl")));
+            config.put("authApiConfig", settings.toJSONString());
+        }
+        config.put("requestMode", "SYNC");
+        if (step.getJSONObject("successConditionTree") != null && !step.getJSONObject("successConditionTree").getJSONArray("children").isEmpty()) config.put("successCondition", step.getJSONObject("successConditionTree").toJSONString());
+        if (step.getJSONObject("exceptionConditionTree") != null && !step.getJSONObject("exceptionConditionTree").getJSONArray("children").isEmpty()) config.put("exceptionCondition", step.getJSONObject("exceptionConditionTree").toJSONString());
+        if (step.getJSONObject("retryConditionTree") != null && !step.getJSONObject("retryConditionTree").getJSONArray("children").isEmpty()) config.put("retryCondition", step.getJSONObject("retryConditionTree").toJSONString());
+        config.put("billingSuppressed", true);
+        config.put("responseMapping", null);
+        JSONObject stageSpec = new JSONObject();
+        stageSpec.put("version", 2);
+        JSONObject linkedSpec = ExternalApiRequestPlan.specification(template);
+        if (linkedId != null && linkedSpec != null) stageSpec.putAll(linkedSpec);
+        stageSpec.remove("steps");
+        if (step.getJSONArray("requestFields") != null && (!step.getJSONArray("requestFields").isEmpty() || linkedId == null)) stageSpec.put("requestFields", step.get("requestFields"));
+        if (step.containsKey("responseBranches")) stageSpec.put("responseBranches", step.get("responseBranches"));
+        config.put("executionConfig", stageSpec.toJSONString());
+        RuleExternalApiConfig stage = config.toJavaObject(RuleExternalApiConfig.class);
+        Map<String, String> paths = apiVariableService == null ? Map.of()
+                : apiVariableService.buildRefScriptNameMap(datasourceMapper.selectById(root.getDatasourceId()).getProjectId());
+        return ExternalApiRequestPlan.prepare(selectRequestBranch(stage, context), context, Map.of(), paths);
+    }
+
+    Map<String, Object> assembleResponse(RuleExternalApiConfig api, Map<String, Object> response) {
+        return assembleResponse(api, response, Map.of());
+    }
+
+    private Map<String, Object> assembleResponse(RuleExternalApiConfig api, Map<String, Object> response, Map<String, Object> input) {
+        JSONObject spec = ExternalApiRequestPlan.specification(api);
+        if (spec == null) return applyResponseMapping(api, response);
+        Map<String, Object> context = new LinkedHashMap<>(response);
+        context.put("input", input.getOrDefault("input", input));
+        if (api.isBillingSuppressed() && input.get("steps") instanceof Map<?, ?> prior) context.put("steps", prior);
+        if (input.get("callbacks") != null) context.put("callbacks", input.get("callbacks"));
+        if (spec.getJSONArray("responseBranches") != null) {
+            for (Object raw : spec.getJSONArray("responseBranches")) {
+                JSONObject branch = JSON.parseObject(JSON.toJSONString(raw));
+                if (!matchesResponseCondition(JSON.toJSONString(branch.get("condition")), context)) continue;
+                Object assembled = ExternalApiRequestPlan.evaluate(branch.get("value"), context, Map.of());
+                if (!"VALUE".equals(branch.getString("mode")) && branch.getJSONArray("outputFields") != null) {
+                    Map<String, Object> fields = new LinkedHashMap<>();
+                    for (Object rawField : branch.getJSONArray("outputFields")) {
+                        JSONObject field = JSON.parseObject(JSON.toJSONString(rawField));
+                        ExternalApiRequestPlan.write(fields, field.getString("path"), ExternalApiRequestPlan.evaluate(field.get("value"), context, Map.of()));
+                    }
+                    assembled = fields;
+                }
+                response.put("body", assembled);
+                response.put("responseBranchId", branch.getString("id"));
+                break;
+            }
+        }
+        return response;
+    }
+
+    private int configuredRetryLimit(RuleExternalApiConfig api) {
+        int limit = api.getRetryCount() == null ? 0 : api.getRetryCount();
+        JSONObject spec = ExternalApiRequestPlan.specification(api);
+        if (spec != null && spec.getJSONArray("retryBranches") != null) {
+            for (Object raw : spec.getJSONArray("retryBranches")) {
+                JSONObject branch = JSON.parseObject(JSON.toJSONString(raw));
+                limit = Math.max(limit, branch.getIntValue("retryCount"));
+            }
+        }
+        return Math.min(10, limit);
+    }
+
+    private RuleExternalApiConfig retryPolicy(RuleExternalApiConfig api, InvokeTrace trace, Exception error) {
+        JSONObject spec = ExternalApiRequestPlan.specification(api);
+        if (spec == null || spec.getJSONArray("retryBranches") == null) return api;
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("response", trace.responseDetails);
+        context.put("httpStatus", trace.responseStatus);
+        context.put("body", trace.responseBody);
+        context.put("errorMessage", error.getMessage());
+        for (Object raw : spec.getJSONArray("retryBranches")) {
+            JSONObject branch = JSON.parseObject(JSON.toJSONString(raw));
+            if (!matchesResponseCondition(JSON.toJSONString(branch.get("condition")), context)) continue;
+            JSONObject selected = JSON.parseObject(JSON.toJSONString(api));
+            for (String key : new String[]{"retryCount", "retryIntervalMs", "retryBackoffMultiplier", "retryMaxIntervalMs", "retryOnTimeout", "retryOnConnectionError", "retryStatusCodes", "retryNonIdempotent"}) {
+                if (branch.containsKey(key)) selected.put(key, branch.get(key));
+            }
+            return selected.toJavaObject(RuleExternalApiConfig.class);
+        }
+        return api;
+    }
+
+    private void applyExceptionBranch(RuleExternalApiConfig api, Map<String, Object> response) {
+        JSONObject spec = ExternalApiRequestPlan.specification(api);
+        if (spec == null || spec.getJSONArray("exceptionBranches") == null) return;
+        for (Object raw : spec.getJSONArray("exceptionBranches")) {
+            JSONObject branch = JSON.parseObject(JSON.toJSONString(raw));
+            if (!matchesResponseCondition(JSON.toJSONString(branch.get("condition")), response)) continue;
+            response.put("body", ExternalApiRequestPlan.evaluate(branch.get("value"), response, Map.of()));
+            response.put("fallback", true);
+            response.put("exceptionBranchId", branch.getString("id"));
+            break;
+        }
+    }
+
+    public Map<String, Object> previewResponse(RuleExternalApiConfig api, Map<String, Object> sample) {
+        ExternalApiConfigValidator.validate(api);
+        Map<String, Object> result = JSON.parseObject(JSON.toJSONString(sample));
+        if (!result.containsKey("response")) {
+            Map<String, Object> original = new LinkedHashMap<>(result);
+            result.put("response", original);
+        }
+        result = assembleResponse(api, result);
+        result.put("networkCalled", false);
+        return result;
+    }
+
+    private Map<String, Object> runtimeRequest(PreparedHttpRequest request) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("url", request.finalUrl);
+        result.put("method", request.method.name());
+        result.put("headers", headersForScript(request.headers));
+        result.put("query", request.query);
+        result.put("body", request.scriptBody);
+        MediaType contentType = request.headers.getContentType();
+        result.put("contentType", contentType == null ? null : contentType.toString());
+        result.put("form", contentType != null && (MediaType.APPLICATION_FORM_URLENCODED.includes(contentType)
+                || MediaType.MULTIPART_FORM_DATA.includes(contentType)) ? request.scriptBody : null);
+        result.put("json", contentType != null && MediaType.APPLICATION_JSON.includes(contentType) ? request.scriptBody : null);
+        return result;
+    }
+
+    private final class AuthCapture implements AutoCloseable {
+        private final List<Map<String, Object>> previous = authenticationCalls.get();
+        private AuthCapture() { authenticationCalls.set(new ArrayList<>()); }
+        @Override public void close() {
+            if (previous == null) authenticationCalls.remove();
+            else authenticationCalls.set(previous);
+        }
+    }
+
     private Map<String, Object> doInvokeGuarded(RuleExternalApiConfig apiConfig,
                                                 RuleExternalDatasource datasource,
                                                 Map<String, Object> params, InvokeTrace trace) throws Exception {
+        String requestMode = apiConfig.getRequestMode() == null ? "SYNC"
+                : apiConfig.getRequestMode().trim().toUpperCase(java.util.Locale.ROOT);
         if (isRuleEngineDatasource(datasource)) {
-            if ("ASYNC".equals(apiConfig.getRequestMode())) {
+            if ("ASYNC".equals(requestMode)) {
                 throw new IllegalArgumentException("内部规则数据源不支持异步外数协议");
             }
-            return doInvokeRuleEngine(apiConfig, datasource, params, trace);
+            Map<String, Object> result = doInvokeRuleEngine(apiConfig, datasource, params, trace);
+            if (hasText(apiConfig.getExceptionCondition())
+                    && matchesResponseCondition(apiConfig.getExceptionCondition(), result)) {
+                result.put("exceptionConditionMatched", true);
+                recordTraceStep(trace, "EXCEPTION_CONDITION", "接口异常条件命中", "FAILED",
+                        apiConfig.getExceptionCondition(), result, apiConfig.getId());
+                boolean retryable = hasText(apiConfig.getRetryCondition())
+                        && matchesResponseCondition(apiConfig.getRetryCondition(), result);
+                throw new BusinessResponseException("接口异常条件命中", retryable);
+            }
+            return result;
         }
-        Map<String, Object> result = "ASYNC".equals(apiConfig.getRequestMode())
-                ? invokeAsync(apiConfig, datasource, params, trace)
-                : invokeHttp(apiConfig, datasource, params, trace);
+        Map<String, Object> result;
+        try {
+            result = "ASYNC".equals(requestMode)
+                    ? invokeAsync(apiConfig, datasource, params, trace)
+                    : invokeHttp(apiConfig, datasource, params, trace);
+        } catch (HttpStatusCodeException httpError) {
+            Map<String, Object> errorResponse = errorResponse(httpError, trace);
+            if (hasText(apiConfig.getExceptionCondition())
+                    && matchesResponseCondition(apiConfig.getExceptionCondition(), errorResponse)) {
+                errorResponse.put("exceptionConditionMatched", true);
+                recordTraceStep(trace, "EXCEPTION_CONDITION", "接口异常条件命中", "FAILED",
+                        apiConfig.getExceptionCondition(), errorResponse, apiConfig.getId());
+                boolean retryable = hasText(apiConfig.getRetryCondition())
+                        && matchesResponseCondition(apiConfig.getRetryCondition(), errorResponse);
+                throw new BusinessResponseException("接口异常条件命中", retryable);
+            }
+            throw httpError;
+        }
+        if (hasText(apiConfig.getExceptionCondition())
+                && matchesResponseCondition(apiConfig.getExceptionCondition(), result)) {
+            result.put("exceptionConditionMatched", true);
+            recordTraceStep(trace, "EXCEPTION_CONDITION", "接口异常条件命中", "FAILED",
+                    apiConfig.getExceptionCondition(), result, apiConfig.getId());
+            boolean retryable = hasText(apiConfig.getRetryCondition())
+                    && matchesResponseCondition(apiConfig.getRetryCondition(), result);
+            throw new BusinessResponseException("接口异常条件命中", retryable);
+        }
         if (!matchesResponseCondition(apiConfig.getSuccessCondition(), result)) {
             result.put("success", false);
             boolean retryable = hasText(apiConfig.getRetryCondition())
@@ -646,9 +1066,22 @@ public class ExternalApiInvokeService {
             throw new BusinessResponseException(businessResponseMessage(result), retryable);
         }
         Map<String, Object> beforeMapping = copyResponse(result);
-        Map<String, Object> mapped = applyResponseMapping(apiConfig, result);
+        Map<String, Object> mapped = ExternalApiRequestPlan.specification(apiConfig) == null
+                ? applyResponseMapping(apiConfig, result) : attachExternalCall(result, trace);
         recordResponseMappingTrace(apiConfig, trace, beforeMapping, mapped);
         return mapped;
+    }
+
+    private Map<String, Object> errorResponse(HttpStatusCodeException error, InvokeTrace trace) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("success", false);
+        result.put("httpStatus", error.getStatusCode().value());
+        result.put("body", parseJsonOrRaw(error.getResponseBodyAsString()));
+        result.put("response", trace == null || trace.responseDetails == null
+                ? Map.of("httpStatus", error.getStatusCode().value(),
+                "body", parseJsonOrRaw(error.getResponseBodyAsString())) : trace.responseDetails);
+        result.put("errorMessage", error.getMessage());
+        return result;
     }
 
     private Map<String, Object> invokeHttp(RuleExternalApiConfig config, RuleExternalDatasource datasource,
@@ -657,6 +1090,7 @@ public class ExternalApiInvokeService {
         while (true) {
             RequestDeadlineContext.check();
             PreparedHttpRequest prepared = prepareHttpRequest(config, datasource, params, false, null, refresh);
+            trace.requestDetails = runtimeRequest(prepared);
             updateRequestTrace(config, trace, prepared);
             ResponseEntity<String> response;
             HttpStatusCodeException httpError = null;
@@ -677,6 +1111,15 @@ public class ExternalApiInvokeService {
             envelope.put("httpStatus", response.getStatusCode().value());
             envelope.put("headers", headersForScript(response.getHeaders()));
             envelope.put("body", MissingValueSemantics.normalize(parseJsonOrRaw(response.getBody())));
+            Map<String, Object> providerResponse = new LinkedHashMap<>();
+            providerResponse.put("httpStatus", response.getStatusCode().value());
+            providerResponse.put("headers", headersForScript(response.getHeaders()));
+            providerResponse.put("body", parseJsonOrRaw(response.getBody()));
+            providerResponse.put("text", response.getBody());
+            trace.responseDetails = providerResponse;
+            trace.requestDetails = runtimeRequest(prepared);
+            envelope.put("response", providerResponse);
+            envelope.put("request", trace.requestDetails);
             if (prepared.tokenCacheKey != null && shouldRefreshToken(config, envelope)) {
                 if (trace.tokenRefreshAttempted || !retryAllowedForMethod(config)) {
                     throw new TokenRefreshRejectedException(httpError);
@@ -718,21 +1161,60 @@ public class ExternalApiInvokeService {
 
     private Map<String, Object> invokeAsync(RuleExternalApiConfig config, RuleExternalDatasource datasource,
                                            Map<String, Object> params, InvokeTrace trace) throws Exception {
+        boolean resumed = trace.pendingAsync != null && !trace.pendingAsync.isEmpty();
         boolean callback = "CALLBACK".equals(config.getAsyncResultMode());
-        JSONObject protocol = JSON.parseObject(callback ? config.getAsyncCallbackConfig() : config.getAsyncPollConfig());
-        String invocationId = callback ? callbackStore.register(protocol) : null;
-        Map<String, Object> input = new LinkedHashMap<>(params);
-        if (callback) input.put("callbackUrl", config.getAsyncCallbackUrl().replace("${invocationId}", invocationId));
+        JSONObject protocol = resumed && trace.pendingAsync.get("protocol") != null
+                ? JSON.parseObject(JSON.toJSONString(trace.pendingAsync.get("protocol")))
+                : JSON.parseObject(callback ? config.getAsyncCallbackConfig() : config.getAsyncPollConfig());
+        String invocationId = resumed ? textValue(trace.pendingAsync.get("invocationId"))
+                : callback ? callbackStore.register(protocol) : null;
+        trace.asyncProtocol = protocol;
+        trace.asyncResultMode = config.getAsyncResultMode();
+        trace.asyncInvocationId = invocationId;
+        trace.asyncPending = resumed;
+        Map<String, Object> input = resumed && trace.pendingAsync.get("pollParams") instanceof Map<?, ?> saved
+                ? copyMap(saved) : new LinkedHashMap<>(params);
+        if (resumed) {
+            Object taskId = trace.pendingAsync.get("taskId");
+            if (taskId != null) {
+                input.put("taskId", taskId);
+                input.put("traceId", trace.pendingAsync.getOrDefault("traceId", taskId));
+            }
+            if (trace.pendingAsync.get("submission") instanceof Map<?, ?> submission) {
+                input.put("submission", copyMap(submission));
+            }
+        } else if (callback) {
+            input.put("callbackUrl", config.getAsyncCallbackUrl().replace("${invocationId}", invocationId));
+        }
         try {
-            Map<String, Object> receipt = invokeHttp(config, datasource, input, trace);
-            String taskPath = callback ? firstText(protocol.get("submissionTaskIdPath"), protocol.get("taskIdPath"))
-                    : protocol.getString("taskIdPath");
-            Object taskId = readPath(receipt, taskPath);
-            if (taskId == null || String.valueOf(taskId).isBlank()) {
-                throw new IllegalStateException("异步提交响应缺少任务号：" + taskPath);
+            Map<String, Object> receipt;
+            Object taskId;
+            if (resumed) {
+                receipt = trace.pendingAsync.get("submission") instanceof Map<?, ?> submission
+                        ? copyMap(submission) : new LinkedHashMap<>();
+                taskId = trace.pendingAsync.get("taskId");
+                if (taskId == null || String.valueOf(taskId).isBlank()) {
+                    throw new IllegalStateException("异步恢复信息缺少任务号");
+                }
+            } else {
+                receipt = invokeHttp(config, datasource, input, trace);
+                String taskPath = firstText(protocol.get("submissionTaskIdPath"), protocol.get("taskIdPath"), protocol.get("traceIdPath"));
+                taskId = readPath(receipt, taskPath);
+                if (taskId == null || String.valueOf(taskId).isBlank()) {
+                    throw new IllegalStateException("异步提交响应缺少任务号：" + taskPath);
+                }
+                trace.asyncTaskId = String.valueOf(taskId);
+                trace.asyncTraceId = String.valueOf(taskId);
+                trace.asyncSubmission = copyMap(receipt);
+                trace.asyncPending = true;
             }
             input.put("taskId", taskId);
+            input.put("traceId", taskId);
             input.put("submission", receipt);
+            trace.asyncPollParams = copyMap(input);
+            trace.asyncTaskId = String.valueOf(taskId);
+            trace.asyncTraceId = String.valueOf(taskId);
+            trace.asyncSubmission = copyMap(receipt);
             Map<String, Object> completed = callback
                     ? awaitCallback(invocationId, protocol, taskId)
                     : pollAsync(config, datasource, protocol, input, trace);
@@ -755,9 +1237,10 @@ public class ExternalApiInvokeService {
             trace.rawResponseMetadata = finalCapture.metadata();
             trace.originalResponseBody = ExternalApiPayloadCapturePolicy.originalBody(
                     config.getPayloadCaptureConfig(), "response", originalResponseBody, finalCapture);
+            trace.asyncPending = false;
             return response;
         } finally {
-            if (invocationId != null) callbackStore.close(invocationId);
+            if (invocationId != null && !trace.asyncPending) callbackStore.close(invocationId);
         }
     }
 
@@ -774,23 +1257,29 @@ public class ExternalApiInvokeService {
         poll.setBodyTemplate("{}");
         poll.setRequestScript(protocol.getString("requestScript"));
         poll.setResponseScript(protocol.getString("responseScript"));
-        int attempts = ExternalApiConfigValidator.positive(protocol, "maxAttempts", 20);
+        int attempts = ExternalApiConfigValidator.nonNegative(protocol, "maxAttempts", 20);
         int interval = ExternalApiConfigValidator.positive(protocol, "intervalMs", 3000);
+        double backoff = protocol.get("backoffMultiplier") == null ? 1 : protocol.getDoubleValue("backoffMultiplier");
+        long maxInterval = protocol.get("maxIntervalMs") == null ? 60000 : protocol.getLongValue("maxIntervalMs");
+        boolean continueOnFailure = "CONTINUE".equalsIgnoreCase(protocol.getString("failureMode"));
         int failures = 0;
         int retries = config.getRetryCount() == null ? 0 : Math.max(0, config.getRetryCount());
-        for (int i = 0; i < attempts; i++) {
-            if (i > 0) waitWithinDeadline(interval);
+        int currentInterval = interval;
+        for (int i = 0; attempts == 0 || i < attempts; i++) {
+            if (i > 0) waitWithinDeadline(currentInterval);
             Map<String, Object> result;
             try {
                 result = invokeHttp(poll, datasource, params, trace);
             } catch (Exception error) {
                 if (error instanceof TokenRefreshRejectedException || !retryAllowedForMethod(poll)
-                        || failures++ >= retries
-                        || !shouldRetry(config, error) || i + 1 == attempts) throw error;
+                        || failures++ >= retries || !shouldRetry(config, error)
+                        || (attempts > 0 && i + 1 == attempts)) throw error;
+                if (continueOnFailure) currentInterval = (int) Math.min(maxInterval, Math.max(currentInterval, Math.round(currentInterval * backoff)));
                 continue;
             }
             failures = 0;
-            if (asyncCompleted(protocol, result)) return result;
+            if (asyncCompleted(protocol, result, continueOnFailure)) return result;
+            currentInterval = (int) Math.min(maxInterval, Math.max(currentInterval, Math.round(currentInterval * backoff)));
         }
         throw new TimeoutException("异步轮询达到最大次数，仍未取得最终结果");
     }
@@ -800,18 +1289,23 @@ public class ExternalApiInvokeService {
             RequestDeadlineContext.check();
             Map<String, Object> result = callbackStore.result(invocationId);
             if (result != null) {
-                Object callbackTaskId = readPath(result, protocol.getString("taskIdPath"));
+                Object callbackTaskId = readPath(result,
+                        firstText(protocol.get("taskIdPath"), protocol.get("traceIdPath")));
                 if (!valuesEqual(taskId, callbackTaskId)) throw new IllegalStateException("回调任务号与提交任务号不一致");
-                if (asyncCompleted(protocol, result)) return result;
+                if (asyncCompleted(protocol, result, "CONTINUE".equalsIgnoreCase(protocol.getString("failureMode")))) return result;
             }
             waitWithinDeadline(100);
         }
     }
 
-    private boolean asyncCompleted(JSONObject protocol, Map<String, Object> response) {
+    private boolean asyncCompleted(JSONObject protocol, Map<String, Object> response, boolean continueOnFailure) {
         Object status = readPath(response, protocol.getString("statusPath"));
         if (status == null) throw new IllegalStateException("异步响应缺少状态字段：" + protocol.getString("statusPath"));
-        if (hasText(protocol.getString("failureValue")) && valuesEqual(status, protocol.get("failureValue"))) {
+        boolean failure = hasText(protocol.getString("failureValue")) && valuesEqual(status, protocol.get("failureValue"));
+        if (!failure && ExternalApiWorkflow.hasCondition(protocol.get("failureCondition"))) {
+            failure = matchesResponseCondition(JSON.toJSONString(protocol.get("failureCondition")), response);
+        }
+        if (failure && !continueOnFailure) {
             throw new IllegalStateException("异步外数任务执行失败，状态：" + status);
         }
         return valuesEqual(status, protocol.get("successValue"));
@@ -938,7 +1432,17 @@ public class ExternalApiInvokeService {
             step.put("attemptNo", ((Map<?, ?>) input).get("attemptNo"));
         }
         if (input != null) step.put("input", traceSnapshot(maskSensitiveForLog(input)));
-        if (output != null) step.put("output", traceSnapshot(maskSensitiveForLog(output)));
+        if (output != null) {
+            Object maskedOutput = maskSensitiveForLog(output);
+            Object snapshot = traceSnapshot(maskedOutput);
+            step.put("output", snapshot);
+            if ("WORKFLOW_STEP".equals(type) && snapshot instanceof Map<?, ?> summary
+                    && Boolean.TRUE.equals(summary.get("truncated")) && maskedOutput instanceof Map<?, ?> response
+                    && response.get("externalCall") instanceof Map<?, ?> call && call.get("traceSteps") instanceof List<?> children) {
+                // 报文可以摘要，已逐阶段脱敏和限长的内部步骤必须保留。
+                step.put("children", children);
+            }
+        }
         trace.traceSteps.add(step);
         syncTraceSteps(trace);
     }
@@ -1503,6 +2007,9 @@ public class ExternalApiInvokeService {
             method = HttpMethod.POST;
         }
         ResponseEntity<String> response = null;
+        Map<String, Object> authentication = new LinkedHashMap<>();
+        authentication.put("request", Map.of("url", tokenUrl, "method", method.name(), "headers", headersForScript(headers),
+                "body", body == null ? Map.of() : body));
         try {
             ApiHttpClientRegistry.ClientSettings settings =
                     ApiHttpClientRegistry.ClientSettings.from(apiConfig, timeoutMs);
@@ -1512,6 +2019,8 @@ public class ExternalApiInvokeService {
                         new HttpEntity<>(body, headers), String.class);
             }
             Object parsed = parseJsonOrRaw(response.getBody());
+            authentication.put("response", Map.of("httpStatus", response.getStatusCode().value(),
+                    "headers", headersForScript(response.getHeaders()), "body", parsed == null ? "" : parsed));
             parsed = executeTokenResponseScript(config, params, response, parsed);
             Object token = readToken(response, parsed, stringValue(config.get("tokenPath")));
             String tokenText = token == null ? "" : stripBearerPrefix(String.valueOf(token));
@@ -1534,11 +2043,16 @@ public class ExternalApiInvokeService {
             Integer status = response == null ? null : response.getStatusCode().value();
             HttpStatusCodeException statusError = findCause(e, HttpStatusCodeException.class);
             if (statusError != null) status = statusError.getStatusCode().value();
+            authentication.put("errorMessage", e.getMessage());
+            if (statusError != null) authentication.put("response", Map.of("httpStatus", statusError.getStatusCode().value(),
+                    "headers", headersForScript(statusError.getResponseHeaders()), "body", statusError.getResponseBodyAsString()));
             logTokenCall(datasource, apiConfig, forceRefresh, cacheKey, method, tokenUrl,
                     headers, body, status, false, null, e.getMessage(),
                     statusError == null ? null : statusError.getResponseBodyAsString(),
                     System.currentTimeMillis() - start);
             throw e;
+        } finally {
+            if (authenticationCalls.get() != null) authenticationCalls.get().add(authentication);
         }
     }
 
@@ -1657,6 +2171,11 @@ public class ExternalApiInvokeService {
     }
 
     Object buildHttpRequestBody(Object body, MediaType contentType) {
+        if (body instanceof Map<?, ?> map && contentType != null && MediaType.MULTIPART_FORM_DATA.includes(contentType)) {
+            MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
+            map.forEach((key, value) -> { if (value != null) form.add(String.valueOf(key), value); });
+            return form;
+        }
         if (!(body instanceof Map) || contentType == null
                 || !MediaType.APPLICATION_FORM_URLENCODED.includes(contentType)) {
             return body;
@@ -1924,13 +2443,17 @@ public class ExternalApiInvokeService {
     private boolean containsPath(Object root, String path) {
         if (root == null || path == null || path.trim().isEmpty()) return false;
         Object current = root;
-        for (String part : path.split("\\.")) {
+        for (String part : pathSegments(normalizePath(path))) {
             if (current instanceof Map<?, ?> map && map.containsKey(part)) {
                 current = map.get(part);
             } else if (current instanceof List<?> list) {
                 Integer index = parseIndex(part);
                 if (index == null || index < 0 || index >= list.size()) return false;
                 current = list.get(index);
+            } else if (current != null && current.getClass().isArray()) {
+                Integer index = parseIndex(part);
+                if (index == null || index < 0 || index >= Array.getLength(current)) return false;
+                current = Array.get(current, index);
             } else {
                 return false;
             }
@@ -2232,6 +2755,10 @@ public class ExternalApiInvokeService {
     }
 
     private boolean responseConditionMatches(Object conditionObject, Map<String, Object> response, Object body) {
+        return responseConditionMatches(conditionObject, response, body, Map.of());
+    }
+
+    private boolean responseConditionMatches(Object conditionObject, Map<String, Object> response, Object body, Map<String, String> paths) {
         if (conditionObject == null) {
             return true;
         }
@@ -2247,7 +2774,7 @@ public class ExternalApiInvokeService {
             if ("OR".equalsIgnoreCase(op)) {
                 for (Object child : (Iterable<?>) childrenObject) {
                     hasChild = true;
-                    if (responseConditionMatches(child, response, body)) {
+                    if (responseConditionMatches(child, response, body, paths)) {
                         return true;
                     }
                 }
@@ -2255,28 +2782,51 @@ public class ExternalApiInvokeService {
             }
             for (Object child : (Iterable<?>) childrenObject) {
                 hasChild = true;
-                if (!responseConditionMatches(child, response, body)) {
+                if (!responseConditionMatches(child, response, body, paths)) {
                     return false;
                 }
             }
             return true;
         }
         String path = firstText(condition.get("varCode"), condition.get("path"), condition.get("field"));
-        if (!hasText(path)) {
+        if (!hasText(path) && !condition.containsKey("left")) {
             return true;
         }
         ResponseMappedValue actualRead = readMappedPathValue(response, body, path);
-        Object actual = actualRead.value;
-        boolean actualPresent = actualRead.present;
+        String operator = firstText(condition.get("operator"), "==").toLowerCase();
+        Object actual = condition.containsKey("left") ? ExternalApiRequestPlan.evaluate(condition.get("left"), response, paths) : actualRead.value;
+        boolean actualPresent = condition.containsKey("left")
+                ? conditionOperandPresent(condition.get("left"), response, body, paths)
+                : actualRead.present;
         Object expected = condition.containsKey("values") ? condition.get("values") : condition.get("value");
         boolean expectedPresent = true;
+        boolean noValueOperator = Set.of("missing", "not_exists", "absent", "exists", "present", "is_null", "not_null", "is_empty", "blank", "not_empty", "not_blank").contains(operator);
+        if (condition.containsKey("right") && !noValueOperator) {
+            expected = ExternalApiRequestPlan.evaluate(condition.get("right"), response, paths);
+            expectedPresent = conditionOperandPresent(condition.get("right"), response, body, paths);
+        }
         if ("VAR".equalsIgnoreCase(firstText(condition.get("valueKind")))) {
             ResponseMappedValue expectedRead = readMappedPathValue(response, body, stringValue(expected));
             expected = expectedRead.value;
             expectedPresent = expectedRead.present;
         }
-        String operator = firstText(condition.get("operator"), "==").toLowerCase();
         return compareConditionValue(actual, expected, operator, actualPresent, expectedPresent);
+    }
+
+    private boolean conditionOperandPresent(Object operand, Map<String, Object> response,
+                                            Object body, Map<String, String> paths) {
+        Map<String, Object> value = parseNestedMap(operand);
+        String kind = firstText(value.get("kind"));
+        if ("PATH".equalsIgnoreCase(kind) && value.get("refId") == null) {
+            return readMappedPathValue(response, body, stringValue(value.get("value"))).present;
+        }
+        if (("PATH".equalsIgnoreCase(kind) || "REFERENCE".equalsIgnoreCase(kind))
+                && value.get("refId") != null) {
+            String reference = firstText(value.get("refType"), "") + ":" + value.get("refId");
+            String path = paths == null ? null : paths.get(reference);
+            return path == null || readMappedPathValue(response, body, path).present;
+        }
+        return true;
     }
 
     private boolean compareConditionValue(Object actual, Object expected, String operator) {
@@ -2289,8 +2839,16 @@ public class ExternalApiInvokeService {
         if ("*".equals(op)) return true;
         if ("is_null".equals(op)) return actualPresent && actual == null;
         if ("not_null".equals(op)) return actualPresent && actual != null;
-        if ("is_empty".equals(op)) return isEmptyValue(actual);
-        if ("not_empty".equals(op)) return !isEmptyValue(actual);
+        if ("exists".equals(op) || "present".equals(op)) return actualPresent;
+        if ("missing".equals(op) || "not_exists".equals(op) || "absent".equals(op)) return !actualPresent;
+        if ("is_empty".equals(op) || "blank".equals(op)) return actualPresent && isEmptyValue(actual);
+        if ("not_empty".equals(op) || "not_blank".equals(op)) return actualPresent && !isEmptyValue(actual);
+        if ("type_is".equals(op) || "type_not".equals(op) || "type_changed".equals(op)) {
+            String actualType = valueType(actualPresent, actual);
+            String expectedType = normalizeValueType(expected);
+            boolean same = expectedType.equals(actualType);
+            return "type_is".equals(op) ? same : !same;
+        }
         if ("is_true".equals(op)) return actual != null && booleanValue(actual);
         if ("is_false".equals(op)) return actual != null && !booleanValue(actual);
 
@@ -2376,6 +2934,30 @@ public class ExternalApiInvokeService {
         return false;
     }
 
+    private String valueType(boolean present, Object value) {
+        if (!present) return "MISSING";
+        if (value == null) return "NULL";
+        if (value instanceof Boolean) return "BOOLEAN";
+        if (value instanceof Number) return "NUMBER";
+        if (value instanceof CharSequence || value instanceof Character) return "STRING";
+        if (value instanceof Map) return "OBJECT";
+        if (value instanceof Iterable || value.getClass().isArray()) return "ARRAY";
+        return "OBJECT";
+    }
+
+    private String normalizeValueType(Object value) {
+        String type = value == null ? "" : String.valueOf(value).trim().toUpperCase(Locale.ROOT);
+        return switch (type) {
+            case "TEXT", "CHAR", "STRING" -> "STRING";
+            case "BOOL", "BOOLEAN" -> "BOOLEAN";
+            case "INT", "INTEGER", "LONG", "FLOAT", "DOUBLE", "DECIMAL", "NUMBER" -> "NUMBER";
+            case "LIST", "ARRAY", "SET", "COLLECTION" -> "ARRAY";
+            case "MAP", "OBJECT", "JSON" -> "OBJECT";
+            case "NULL", "MISSING" -> type;
+            default -> type;
+        };
+    }
+
     private boolean containsValue(Object actual, Object expected) {
         if (actual == null) return false;
         if (actual instanceof Map) return ((Map<?, ?>) actual).containsKey(String.valueOf(expected));
@@ -2435,12 +3017,27 @@ public class ExternalApiInvokeService {
     }
 
     private boolean shouldRecordSuccessBilling(RuleExternalApiConfig apiConfig, Map<String, Object> result) {
+        JSONObject spec = ExternalApiRequestPlan.specification(apiConfig);
+        if (spec != null && spec.getJSONArray("billingBranches") != null) {
+            for (Object raw : spec.getJSONArray("billingBranches")) {
+                JSONObject branch = JSON.parseObject(JSON.toJSONString(raw));
+                if (matchesResponseCondition(JSON.toJSONString(branch.get("condition")), result)) return branch.getBooleanValue("bill");
+            }
+            return false;
+        }
         return matchesBillingCondition(apiConfig.getBillingCondition(), result);
     }
 
     private boolean shouldRecordFailedBilling(RuleExternalApiConfig apiConfig, InvokeTrace trace) {
         if (trace == null || !trace.requestIssued) {
             return false;
+        }
+        if (ExternalApiRequestPlan.specification(apiConfig) != null) {
+            Map<String, Object> failed = new LinkedHashMap<>();
+            failed.put("success", false);
+            failed.put("body", trace.responseBody);
+            attachExternalCall(failed, trace);
+            return shouldRecordSuccessBilling(apiConfig, failed);
         }
         Map<String, Object> condition = parseJsonMap(apiConfig.getBillingCondition());
         String mode = firstText(condition.get("mode"), condition.get("billingMode"));
@@ -2524,10 +3121,9 @@ public class ExternalApiInvokeService {
         if (root == null || path == null || path.trim().isEmpty()) {
             return root;
         }
-        String normalized = path.startsWith("$.") ? path.substring(2) : path;
+        String normalized = normalizePath(path);
         Object current = root;
-        String[] parts = normalized.split("\\.");
-        for (String part : parts) {
+        for (String part : pathSegments(normalized)) {
             if (current instanceof JSONObject) {
                 current = ((JSONObject) current).get(part);
             } else if (current instanceof Map) {
@@ -2554,7 +3150,7 @@ public class ExternalApiInvokeService {
     private PathRead readPathValue(Object root, String path) {
         if (root == null) return new PathRead(false, null);
         if (path == null || path.trim().isEmpty()) return new PathRead(true, root);
-        String normalized = path.startsWith("$.") ? path.substring(2) : path;
+        String normalized = normalizePath(path);
         PathRead value = readPathParts(root, normalized);
         return !value.present && normalized.startsWith("body.")
                 ? readPathParts(root, normalized.substring("body.".length())) : value;
@@ -2571,7 +3167,7 @@ public class ExternalApiInvokeService {
     private PathRead readPathParts(Object root, String path) {
         if (path == null || path.isEmpty()) return new PathRead(true, root);
         Object current = root;
-        for (String part : path.split("\\.")) {
+        for (String part : pathSegments(path)) {
             if (current instanceof Map<?, ?> map) {
                 if (!map.containsKey(part)) return new PathRead(false, null);
                 current = map.get(part);
@@ -2590,12 +3186,64 @@ public class ExternalApiInvokeService {
         return new PathRead(true, current);
     }
 
+    private String normalizePath(String path) {
+        String value = path == null ? "" : path.trim();
+        if (value.startsWith("$.")) return value.substring(2);
+        if (value.startsWith("$")) return value.substring(1);
+        return value;
+    }
+
+    private List<String> pathSegments(String path) {
+        List<String> result = new ArrayList<>();
+        StringBuilder token = new StringBuilder();
+        for (int i = 0; i < path.length(); i++) {
+            char current = path.charAt(i);
+            if (current == '.') {
+                if (token.length() > 0) { result.add(token.toString()); token.setLength(0); }
+                continue;
+            }
+            if (current == '[') {
+                if (token.length() > 0) { result.add(token.toString()); token.setLength(0); }
+                int close = path.indexOf(']', i + 1);
+                if (close < 0) { token.append(path.substring(i)); break; }
+                String part = path.substring(i + 1, close).trim();
+                if (part.length() >= 2 && ((part.startsWith("'") && part.endsWith("'"))
+                        || (part.startsWith("\"") && part.endsWith("\"")))) {
+                    part = part.substring(1, part.length() - 1);
+                }
+                if (!part.isEmpty()) result.add(part);
+                i = close;
+                continue;
+            }
+            token.append(current);
+        }
+        if (token.length() > 0) result.add(token.toString());
+        return result;
+    }
+
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
     }
 
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> copyMap(Map<?, ?> source) {
+        if (source == null) return new LinkedHashMap<>();
+        Object copy = JSON.parse(JSON.toJSONString(source));
+        if (copy instanceof Map<?, ?> map) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            map.forEach((key, value) -> result.put(String.valueOf(key), value));
+            return result;
+        }
+        return new LinkedHashMap<>();
+    }
+
     private String stringValue(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    private String textValue(Object value) {
+        String text = stringValue(value).trim();
+        return text.isEmpty() ? null : text;
     }
 
     private String firstText(Object... values) {
@@ -2946,6 +3594,20 @@ public class ExternalApiInvokeService {
     private Map<String, Object> attachExternalCall(Map<String, Object> result, InvokeTrace trace) {
         if (result == null) result = new LinkedHashMap<>();
         if (trace == null) return result;
+        result.putIfAbsent("request", trace.requestDetails == null ? new LinkedHashMap<>() : trace.requestDetails);
+        result.putIfAbsent("response", trace.responseDetails == null ? new LinkedHashMap<>() : trace.responseDetails);
+        result.putIfAbsent("authentication", authenticationCalls.get() == null ? List.of() : new ArrayList<>(authenticationCalls.get()));
+        result.putIfAbsent("steps", trace.workflowResults);
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("outcome", result.getOrDefault("sourceOutcome", Boolean.FALSE.equals(result.get("success")) ? "ERROR" : "SUCCESS"));
+        status.put("httpStatus", trace.responseStatus == null ? result.get("httpStatus") : trace.responseStatus);
+        status.put("billed", trace.billed);
+        status.put("requestIssued", trace.requestIssued);
+        status.put("attemptCount", trace.providerAttemptNo);
+        status.put("retryCount", trace.workflow ? trace.workflowRetryCount : Math.max(0, trace.providerAttemptNo - 1));
+        status.put("circuitOpen", "OPEN".equals(trace.circuitState));
+        status.put("exception", Boolean.FALSE.equals(result.get("success")));
+        result.put("status", status);
         Map<String, Object> externalCall = new LinkedHashMap<>();
         externalCall.put("callId", trace.callId);
         externalCall.put("traceId", trace.runtimeTrace == null ? null : trace.runtimeTrace.getTraceId());
@@ -3162,6 +3824,9 @@ public class ExternalApiInvokeService {
     }
 
     private static class InvokeTrace {
+        private Map<String, Object> requestDetails;
+        private Map<String, Object> responseDetails;
+        private boolean billed;
         private String callId;
         private boolean tokenRefreshAttempted;
         private RuntimeTraceService.ModuleTrace runtimeTrace;
@@ -3185,23 +3850,67 @@ public class ExternalApiInvokeService {
         private String cacheStatus;
         private String cacheKey;
         private int providerAttemptNo;
+        private boolean workflow;
+        private int workflowRetryCount;
+        private final Map<String, Object> workflowResults = new LinkedHashMap<>();
         private String circuitState;
         private String tokenCacheStatus;
         private String authMode;
+        private Long apiConfigId;
+        private Map<String, Object> pendingAsync;
+        private Map<String, Object> workflowResume;
+        private Map<String, Object> workflowPending;
+        private boolean asyncPending;
+        private boolean resumed;
+        private String asyncTaskId;
+        private String asyncTraceId;
+        private String asyncResultMode;
+        private String asyncInvocationId;
+        private JSONObject asyncProtocol;
+        private Map<String, Object> asyncPollParams;
+        private Map<String, Object> asyncSubmission;
         private final List<Map<String, Object>> traceSteps = new ArrayList<>();
+
+        private Map<String, Object> pendingAsyncSnapshot() {
+            if (workflowPending != null && !workflowPending.isEmpty()) {
+                Map<String, Object> result = new LinkedHashMap<>(workflowPending);
+                result.put("callId", callId);
+                result.put("apiConfigId", apiConfigId);
+                if (workflowPending.get("results") instanceof Map<?, ?> results) {
+                    result.put("completedStepIds", new ArrayList<>(results.keySet()));
+                }
+                return result;
+            }
+            if (!asyncPending || asyncTaskId == null || asyncTaskId.isBlank()) return null;
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("apiConfigId", apiConfigId);
+            result.put("callId", callId);
+            result.put("taskId", asyncTaskId);
+            result.put("traceId", asyncTraceId == null ? asyncTaskId : asyncTraceId);
+            result.put("resultMode", asyncResultMode);
+            result.put("invocationId", asyncInvocationId);
+            result.put("protocol", asyncProtocol == null ? null : JSON.parse(JSON.toJSONString(asyncProtocol)));
+            result.put("pollParams", asyncPollParams);
+            result.put("submission", asyncSubmission);
+            return result;
+        }
     }
 
     static class ApiInvokeException extends IllegalStateException {
         private final boolean cacheConfigured;
         private final String cacheStatus;
         private final boolean unknown;
+        private final Map<String, Object> pendingAsync;
+        private final String exceptionStrategy;
 
         ApiInvokeException(String message, Throwable cause, boolean cacheConfigured, String cacheStatus,
-                           boolean unknown) {
+                           boolean unknown, Map<String, Object> pendingAsync, String exceptionStrategy) {
             super(message, cause);
             this.cacheConfigured = cacheConfigured;
             this.cacheStatus = cacheStatus;
             this.unknown = unknown;
+            this.pendingAsync = pendingAsync == null ? null : new LinkedHashMap<>(pendingAsync);
+            this.exceptionStrategy = exceptionStrategy;
         }
 
         boolean isCacheConfigured() {
@@ -3214,6 +3923,14 @@ public class ExternalApiInvokeService {
 
         boolean isUnknown() {
             return unknown;
+        }
+
+        Map<String, Object> getPendingAsync() {
+            return pendingAsync == null ? null : new LinkedHashMap<>(pendingAsync);
+        }
+
+        String getExceptionStrategy() {
+            return exceptionStrategy;
         }
     }
 

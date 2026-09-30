@@ -24,6 +24,8 @@ public class ExternalApiCallbackStore {
     private static final String PREFIX = "rule:external-callback:";
     private final StringRedisTemplate redis;
     private final CredentialCipher cipher;
+    @jakarta.annotation.Resource @org.springframework.context.annotation.Lazy
+    private ExternalApiInvokeService invokeService;
 
     public ExternalApiCallbackStore(StringRedisTemplate redis, CredentialCipher cipher) {
         this.redis = redis;
@@ -50,14 +52,30 @@ public class ExternalApiCallbackStore {
         Map<String, Object> envelope = new java.util.LinkedHashMap<>();
         envelope.put("httpStatus", 200);
         envelope.put("body", parsed);
+        envelope.put("headers", headers);
+        envelope.put("response", Map.of("httpStatus", 200, "headers", headers, "body", parsed));
         Object status = path(envelope, config.getString("statusPath"));
-        if (status == null) throw new IllegalArgumentException("回调缺少状态字段");
-        if (!String.valueOf(status).equals(config.getString("successValue"))
-                && !String.valueOf(status).equals(config.getString("failureValue"))) return;
+        boolean continueOnFailure = "CONTINUE".equalsIgnoreCase(config.getString("failureMode"));
+        boolean tree = ExternalApiWorkflow.hasCondition(config.get("successCondition"));
+        boolean failure = false;
+        if (tree) {
+            boolean success = invokeService.matchesResponseCondition(JSON.toJSONString(config.get("successCondition")), envelope);
+            failure = ExternalApiWorkflow.hasCondition(config.get("failureCondition"))
+                    && invokeService.matchesResponseCondition(JSON.toJSONString(config.get("failureCondition")), envelope);
+            if (!success && !failure) return;
+        } else {
+            if (status == null) throw new IllegalArgumentException("回调缺少状态字段");
+            boolean success = String.valueOf(status).equals(config.getString("successValue"));
+            failure = String.valueOf(status).equals(config.getString("failureValue"));
+            if (!success && !failure) return;
+        }
         Long ttl = redis.getExpire(PREFIX + id, TimeUnit.MILLISECONDS);
         if (ttl == null || ttl <= 0) throw new IllegalArgumentException("回调等待已结束");
-        redis.opsForValue().setIfAbsent(PREFIX + id + ":result", cipher.encrypt(JSON.toJSONString(envelope)),
-                ttl, TimeUnit.MILLISECONDS);
+        String encoded = cipher.encrypt(JSON.toJSONString(envelope));
+        redis.opsForValue().set(PREFIX + id + ":latest", encoded, ttl, TimeUnit.MILLISECONDS);
+        if (!failure || !continueOnFailure) {
+            redis.opsForValue().setIfAbsent(PREFIX + id + ":result", encoded, ttl, TimeUnit.MILLISECONDS);
+        }
     }
 
     public Map<String, Object> result(String id) {
@@ -65,8 +83,14 @@ public class ExternalApiCallbackStore {
         return value == null ? null : JSON.parseObject(cipher.decrypt(value));
     }
 
+    /** 最近一次未达终态的回调，仅供追踪/诊断，不会驱动后续规则继续执行。 */
+    public Map<String, Object> latest(String id) {
+        String value = redis.opsForValue().get(PREFIX + id + ":latest");
+        return value == null ? null : JSON.parseObject(cipher.decrypt(value));
+    }
+
     public void close(String id) {
-        redis.delete(List.of(PREFIX + id, PREFIX + id + ":result"));
+        redis.delete(List.of(PREFIX + id, PREFIX + id + ":result", PREFIX + id + ":latest"));
     }
 
     static Object path(Object root, String path) {

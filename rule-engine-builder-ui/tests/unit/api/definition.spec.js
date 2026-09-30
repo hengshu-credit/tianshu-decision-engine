@@ -3,6 +3,8 @@ vi.unmock('@/api/definition')
 import request from '@/api/request'
 import {
   executeRule,
+  compileDesignerModel,
+  getDesignerCompileTask,
   approveRuleRevision,
   createDraftRevision,
   createDraftFromSource,
@@ -87,6 +89,20 @@ describe('definition API', () => {
       method: 'post',
       data,
       timeout: 90000
+    })
+  })
+
+  test('设计器编译提交后台任务并按任务 ID 查询状态', async () => {
+    const payload = { modelJson: '{"nodes":[]}', sourceType: 'VERSION', sourceId: '6' }
+
+    await compileDesignerModel(16, payload)
+    await getDesignerCompileTask(16, 'task-1')
+
+    expect(request).toHaveBeenNthCalledWith(1, {
+      url: '/rule/definition/16/designer/compile', method: 'post', data: payload
+    })
+    expect(request).toHaveBeenNthCalledWith(2, {
+      url: '/rule/definition/16/designer/compile/task-1', method: 'get'
     })
   })
 

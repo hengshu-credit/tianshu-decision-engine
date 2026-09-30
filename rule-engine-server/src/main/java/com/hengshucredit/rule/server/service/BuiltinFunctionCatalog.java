@@ -26,6 +26,9 @@ final class BuiltinFunctionCatalog {
 
     static List<RuleFunction> definitions() {
         List<RuleFunction> list = new ArrayList<>();
+        list.add(fn("sourceStatusValue", "外数字段调用状态", "按字段引用类型和 ID 读取 HTTP_STATUS、RETRY_COUNT、BILLED、CIRCUIT_OPEN、OUTCOME 等状态；不发起额外调用", params(
+                p("refType", "STRING", "引用类型", "VARIABLE"), p("refId", "STRING", "字段ID", "1"),
+                p("dimension", "STRING", "状态维度", "HTTP_STATUS")), "OBJECT", RUNTIME_CONTEXT_CLASS, "sourceStatusValue"));
 
         list.add(fn("sum", "序列求和", "对列表、数组或 JSONPath 结果中的有效数字求和", p("data", "OBJECT", "序列", Arrays.asList(1, 2, 3)), "NUMBER", AGGREGATE_CLASS, "sum"));
         list.add(fn("count", "序列计数", "返回列表、数组或 JSONPath 结果的元素数量", p("data", "OBJECT", "序列", Arrays.asList("A", "B", "C")), "NUMBER", AGGREGATE_CLASS, "count"));

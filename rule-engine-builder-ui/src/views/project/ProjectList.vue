@@ -50,6 +50,11 @@
       </el-form>
       <div class="uiue-btn-bar">
         <div class="btn-right">
+          <table-column-settings
+            v-model="projectColumnOrder"
+            :columns="projectColumns"
+            storage-key="tianshu:table-columns:project-list"
+          />
           <el-button
             v-permission="'project:edit'"
             type="primary"
@@ -69,31 +74,25 @@
       style="width: 100%"
     >
       <el-table-column
-        prop="projectCode"
-        label="项目编码"
-        min-width="140"
+        v-for="column in visibleProjectColumns"
+        :key="column.key"
+        :prop="column.key"
+        :label="column.label"
+        :min-width="column.minWidth"
+        :align="column.align"
         show-overflow-tooltip
-      />
-      <el-table-column
-        prop="projectName"
-        label="项目名称"
-        min-width="180"
-        show-overflow-tooltip
-      />
-      <el-table-column
-        prop="description"
-        label="描述"
-        min-width="200"
-        show-overflow-tooltip
-      />
-      <el-table-column prop="status" label="状态" min-width="70" align="center">
-        <template v-slot="{ row }">
-          <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{
-            row.status === 1 ? '启用' : '停用'
-          }}</el-tag>
+      >
+        <template #default="{ row }">
+          <el-tag
+            v-if="column.key === 'status'"
+            :type="row.status === 1 ? 'success' : 'info'"
+            size="small"
+          >
+            {{ row.status === 1 ? '启用' : '停用' }}
+          </el-tag>
+          <span v-else>{{ projectCellValue(row, column.key) }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="createTime" label="创建时间" min-width="160" />
       <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="380" align="center" fixed="right">
         <template v-slot="{ row }">
           <div class="table-operation-group project-action-links">
@@ -153,11 +152,15 @@
       :title="form.id ? '编辑项目' : '新建项目'"
       v-model="dialogVisible"
       width="500px"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!submitting"
+      :show-close="!submitting"
     >
       <el-form
         ref="form"
         :model="form"
         :rules="rules"
+        :disabled="submitting"
         label-width="100px"
         size="small"
       >
@@ -181,10 +184,10 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" @click="dialogVisible = false"
+          <el-button size="small" :disabled="submitting" @click="dialogVisible = false"
             >取消</el-button
           >
-          <el-button v-permission="'project:edit'" size="small" type="primary" @click="handleSubmit"
+          <el-button v-permission="'project:edit'" size="small" type="primary" :loading="submitting" :disabled="submitting" @click="handleSubmit"
             >确定</el-button
           >
         </div>
@@ -215,6 +218,7 @@ import {
 import { generateApiDocHtml } from '@/utils/apiDoc'
 import { readLocalTheme } from '@/theme/themeRuntime'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import ProjectAuthDialog from './ProjectAuthDialog.vue'
 export default {
   data() {
@@ -236,7 +240,22 @@ export default {
       allProjectNames: [],
       filteredProjectCodes: [],
       filteredProjectNames: [],
+      projectColumns: [
+        { key: 'projectCode', label: '项目编码', minWidth: 140, required: true },
+        { key: 'projectName', label: '项目名称', minWidth: 180 },
+        { key: 'description', label: '描述', minWidth: 200 },
+        { key: 'status', label: '状态', minWidth: 70, align: 'center' },
+        { key: 'createTime', label: '创建时间', minWidth: 160 },
+      ],
+      projectColumnOrder: [
+        'projectCode',
+        'projectName',
+        'description',
+        'status',
+        'createTime',
+      ],
       dialogVisible: false,
+      submitting: false,
       authDialogVisible: false,
       currentAuthProject: {},
       form: {
@@ -257,8 +276,15 @@ export default {
       ElIconPlus: markRaw(ElIconPlus),
     }
   },
+  computed: {
+    visibleProjectColumns() {
+      return this.projectColumnOrder
+        .map(key => this.projectColumns.find(column => column.key === key))
+        .filter(Boolean)
+    },
+  },
   name: 'ProjectList',
-  components: { ProjectFilterSelect, ProjectAuthDialog },
+  components: { ProjectFilterSelect, ProjectAuthDialog, TableColumnSettings },
   created() {
     this.restoreCachedState()
     this.loadData()
@@ -336,6 +362,10 @@ export default {
       clearPageState('ProjectList')
       this.handleQuery()
     },
+    projectCellValue(row, key) {
+      const value = row && row[key]
+      return value === null || value === undefined || value === '' ? '—' : value
+    },
     onCreateTimeChange(val) {
       this.qp.createBeginTime = val ? val[0] : ''
       this.qp.createEndTime = val ? val[1] : ''
@@ -356,14 +386,16 @@ export default {
       this.dialogVisible = true
     },
     async handleSubmit() {
-      this.$refs.form.validate(async (v) => {
-        if (!v) return
+      if (this.submitting) return
+      this.submitting = true
+      try {
+        const valid = await new Promise(resolve => this.$refs.form.validate(resolve))
+        if (!valid) return
         if (this.form.id) {
           const res = await updateProject(this.form)
           this.$message.success('审批草稿已创建')
           this.dialogVisible = false
-          if (res.data && res.data.id)
-            this.$router.push('/approval/' + res.data.id)
+          if (res.data && res.data.id) this.$router.push('/approval/' + res.data.id)
         } else {
           const res = await createProject(this.form)
           if (res.code === 200 && res.data) {
@@ -372,7 +404,9 @@ export default {
             this.$router.push('/approval/' + res.data.id)
           }
         }
-      })
+      } finally {
+        this.submitting = false
+      }
     },
     handleDelete(row) {
       this.$confirm('确定删除项目「' + row.projectName + '」?', '确认', {

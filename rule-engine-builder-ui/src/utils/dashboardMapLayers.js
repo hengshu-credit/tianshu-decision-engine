@@ -121,6 +121,40 @@ export function dashboardPointsInGeoJson(points = [], geoJson) {
   })
 }
 
+/**
+ * 根据当前已加载的行政区边界计算地图视角。
+ *
+ * 下钻后的 GeoJSON 只包含当前层级（或当前父级）边界，使用它计算
+ * boundingCoords 才能避免继续沿用国家级范围，导致地图偏小或不在中心。
+ */
+export function dashboardMapView(geoJson, fallbackBounds) {
+  const coordinates = (geoJson?.features || [])
+    .filter(feature => !feature.properties?.mapRole && feature.geometry?.coordinates)
+    .map(feature => feature.geometry.coordinates)
+  const rawBounds = coordinates.reduce((bounds, value) => geometryBounds(value, bounds),
+    [Infinity, Infinity, -Infinity, -Infinity])
+  const hasBounds = rawBounds.every(Number.isFinite) && rawBounds[2] > rawBounds[0] && rawBounds[3] > rawBounds[1]
+  const bounds = hasBounds ? paddedBounds(rawBounds) : fallbackBounds
+  if (!bounds) return { bounds: undefined, center: undefined, zoom: 1 }
+  return {
+    bounds,
+    center: [
+      (bounds[0][0] + bounds[1][0]) / 2,
+      (bounds[0][1] + bounds[1][1]) / 2
+    ],
+    zoom: 1
+  }
+}
+
+function paddedBounds([west, south, east, north]) {
+  const paddingX = (east - west) * 0.08
+  const paddingY = (north - south) * 0.08
+  return [
+    [Math.max(-180, west - paddingX), Math.min(90, north + paddingY)],
+    [Math.min(180, east + paddingX), Math.max(-90, south - paddingY)]
+  ]
+}
+
 function geometryBounds(coordinates, bounds = [Infinity, Infinity, -Infinity, -Infinity]) {
   if (typeof coordinates[0] === 'number') {
     bounds[0] = Math.min(bounds[0], coordinates[0])

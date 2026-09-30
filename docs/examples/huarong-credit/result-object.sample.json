@@ -1,0 +1,10 @@
+{
+  "code": "0000",
+  "message": "本地模拟结果",
+  "requestNo": "HR_LOCAL_NORMAL_20260930",
+  "securityComputingResult": {
+    "QYBASINF_X2": 0,
+    "QYRULE001": false
+  },
+  "ErrorInfo": ""
+}

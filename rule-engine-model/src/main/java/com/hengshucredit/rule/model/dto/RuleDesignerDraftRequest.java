@@ -10,6 +10,7 @@ public class RuleDesignerDraftRequest extends RuleDesignerCompileRequest {
     private Long revisionId;
     private Integer lockVersion;
     private String requestId;
+    private String compileTaskId;
     private String openApiConfigJson;
     private Boolean updateOpenApiConfig;
 }

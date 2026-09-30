@@ -7,7 +7,7 @@ import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** 供决策流显式调用已配置外数接口，沿用统一鉴权、超时和调用日志。 */
+/** 旧 Bean 名保留迁移诊断；规则只允许通过外数变量或对象触发调用。 */
 @Service("externalApiFunctions")
 public class ExternalApiFunctions {
     private final ExternalApiInvokeService externalApiInvokeService;
@@ -34,6 +34,6 @@ public class ExternalApiFunctions {
             }
             request.put(key, entry.getValue());
         }
-        return externalApiInvokeService.invoke(id, request);
+        throw new IllegalStateException("外数显式函数调用已停用，请引用 API 外数变量或数据对象，以统一请求校验和调用次数");
     }
 }

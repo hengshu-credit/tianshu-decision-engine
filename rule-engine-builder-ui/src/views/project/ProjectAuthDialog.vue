@@ -1146,10 +1146,10 @@ export default {
   gap: 24px;
   padding: 12px 16px;
   margin-bottom: 16px;
-  border: 1px solid #dbeafe;
+  border: 1px solid var(--tianshu-info-border);
   border-left: 4px solid var(--el-color-primary);
   border-radius: 4px;
-  background: #eff6ff;
+  background: var(--tianshu-info-bg);
 }
 .project-name,
 .section-title,
@@ -1194,8 +1194,8 @@ code {
   margin-left: 8px;
   padding: 2px 6px;
   border-radius: 3px;
-  color: #1e40af;
-  background: #eff6ff;
+  color: var(--tianshu-info-text);
+  background: var(--tianshu-info-bg);
 }
 .dialog-pagination {
   margin-top: 16px;
@@ -1229,7 +1229,7 @@ code {
   align-items: start;
   gap: 12px;
   padding: 12px 0;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--tianshu-border-subtle);
 }
 .secret-label {
   color: var(--tianshu-text-tertiary);

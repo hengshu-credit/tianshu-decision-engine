@@ -17,6 +17,7 @@ import okhttp3.Response;
 
 import java.io.IOException;
 import java.util.Collections;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -150,6 +151,33 @@ public final class RuleHttpClient implements AutoCloseable {
             return envelope.getJSONObject("data").toJavaObject(RuleExecutionStatus.class);
         } catch (IOException e) {
             throw new RuleHttpException("执行状态查询失败；状态可能未知，请稍后重试", 0, null,
+                    "UNKNOWN", traceId, null);
+        }
+    }
+
+    /** 使用原订单入参（可为空，服务端优先读取检查点）恢复等待中的规则。 */
+    public RuleResult resumeExecution(String traceId, Map<String, Object> params) {
+        if (closed) throw new IllegalStateException("客户端已关闭");
+        required(traceId, "traceId");
+        HttpUrl url = baseUrl.newBuilder().addPathSegment("api").addPathSegment("rule")
+                .addPathSegment("runtime").addPathSegment("executions")
+                .addPathSegment(traceId).addPathSegment("resume").build();
+        Request request = new Request.Builder().url(url)
+                .post(RequestBody.create(params == null ? new byte[0] : JSON.toJSONBytes(params), JSON_TYPE))
+                .build();
+        try {
+            request = authenticator.authenticate(request);
+        } catch (IOException e) {
+            throw new RuleHttpException("项目鉴权失败，请检查凭据、Token 服务及网络", 0, null);
+        }
+        try (Response response = http.newCall(request).execute()) {
+            JSONObject envelope = parseEnvelope(response);
+            int code = envelope.getIntValue("code");
+            if (!response.isSuccessful() || code != 200) throw platformError(response, envelope, code);
+            if (!(envelope.get("data") instanceof JSONObject)) throw invalidResponse(response.code());
+            return envelope.getJSONObject("data").toJavaObject(RuleResult.class);
+        } catch (IOException e) {
+            throw new RuleHttpException("恢复规则执行失败；请继续使用 trace 查询状态", 0, null,
                     "UNKNOWN", traceId, null);
         }
     }

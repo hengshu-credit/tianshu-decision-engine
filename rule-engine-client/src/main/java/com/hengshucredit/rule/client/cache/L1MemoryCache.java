@@ -41,21 +41,44 @@ public class L1MemoryCache {
     }
 
     public void put(CachedRule rule) {
+        putAndGet(rule);
+    }
+
+    /** 返回比较修订后应执行的对象；未获缓存槽位的固定版本仍可用于本次执行。 */
+    public CachedRule putAndGet(CachedRule rule) {
         prepareRule.accept(rule);
         synchronized (cacheLock) {
             String key = key(rule);
             CacheEntry old = cache.get(key);
-            if (old != null && older(rule, old.rule)) return;
+            if (old != null && older(rule, old.rule)) return old.rule;
             if (cache.size() >= maxSize && !cache.containsKey(key)) {
-                String toEvict = cache.entrySet().stream()
-                        .min(Comparator.comparingLong(entry -> entry.getValue().lastAccess))
-                        .orElseThrow().getKey();
+                String toEvict;
+                if (rule.isFixedVersion()) {
+                    // 固定版本不能挤掉按最新版执行的规则；固定版本未占用槽位时直接放弃缓存，
+                    // 调用方仍会使用本次回源得到的对象，不影响指定版本语义。
+                    toEvict = cache.entrySet().stream()
+                            .filter(entry -> entry.getValue().rule.isFixedVersion())
+                            .min(Comparator.comparingLong(entry -> entry.getValue().lastAccess))
+                            .map(Map.Entry::getKey)
+                            .orElse(null);
+                    if (toEvict == null) {
+                        log.debug("L1 cache is full of latest rules; fixed version is not admitted: {}", key);
+                        return rule;
+                    }
+                } else {
+                    // 新的最新版优先回收固定版本，只有没有固定版本时才回收最新版冷项。
+                    toEvict = cache.entrySet().stream()
+                            .min(Comparator.comparing((Map.Entry<String, CacheEntry> entry) -> entry.getValue().rule.isFixedVersion() ? 0 : 1)
+                                    .thenComparingLong(entry -> entry.getValue().lastAccess))
+                            .orElseThrow().getKey();
+                }
                 cache.remove(toEvict);
                 latestById.values().removeIf(toEvict::equals);
                 log.debug("L1 cache evicted: {}", toEvict);
             }
             cache.put(key, new CacheEntry(rule, accessSequence.incrementAndGet()));
             if (!rule.isFixedVersion() && rule.getDefinitionId() != null) latestById.put(rule.getDefinitionId(), key);
+            return rule;
         }
     }
 

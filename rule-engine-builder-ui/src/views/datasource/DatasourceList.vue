@@ -1381,15 +1381,15 @@ export default {
       apiGuideTemplates: [
         {
           title: 'HTTP 外数模板',
-          text: '先建数据源基础地址，再建接口；headerConfig/queryConfig 配公共参数，requestMapping 用 $.字段 取进件值，responseMapping 裁剪接口 body。',
+          text: '先配置数据源地址与鉴权，再定义 API 请求字段、条件分支和响应结构。异步接口可编排多步请求、轮询与回调。',
         },
         {
           title: '内部规则模板',
           text: '协议选择内部规则引擎，endpointUrl 填已发布 ruleCode；requestMapping.params 传入下游规则需要的字段。',
         },
         {
-          title: '接口变量读取',
-          text: '变量来源选择 API 后，在 sourceConfig 写 apiConfigId、paramMapping 和 resultPath，例如 body.score。',
+          title: '变量与对象取值',
+          text: '变量或数据对象选择 API，按结果路径取值；只需覆盖接口开放的入参。大响应可整体绑定，无需逐字段重复映射。',
         },
       ],
       activeTab: 'datasource',
@@ -1518,6 +1518,10 @@ export default {
       ],
       exceptionStrategyOptions: [
         { label: '快速失败', value: 'FAIL_FAST' },
+        { label: '异常跳过（继续规则）', value: 'SKIP' },
+        { label: '异常跳出（结束规则）', value: 'BREAK' },
+        { label: '异常等待（按 trace 恢复）', value: 'WAIT' },
+        { label: '异常重试', value: 'RETRY' },
         { label: '返回默认值', value: 'RETURN_DEFAULT' },
         { label: '忽略异常', value: 'IGNORE' },
         { label: '使用缓存', value: 'USE_CACHE' },

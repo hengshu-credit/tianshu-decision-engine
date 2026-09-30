@@ -5,6 +5,15 @@ import * as definitionApi from '@/api/definition'
 const TraceTree = (await vi.importActual('../../../src/components/common/TraceTree.vue')).default
 
 describe('DesignerTestDialog unified schema', () => {
+  test('全局规则不向执行接口传入项目零值', async () => {
+    definitionApi.getRuleTestSchema.mockResolvedValue({ data: { sampleParams: {} } })
+    definitionApi.executeRule.mockResolvedValue({ data: { success: true } })
+    const wrapper = shallowMount(DesignerTestDialog, { props: { definitionId: 45, projectId: 0, modelType: 'SCRIPT' } })
+    await wrapper.vm.open()
+    await wrapper.vm.execute()
+    expect(definitionApi.executeRule.mock.calls[0][0].projectId).toBeUndefined()
+    wrapper.unmount()
+  })
   test('测试弹窗接入尺寸拖拽，显示状态传给拖拽控件', async () => {
     const wrapper = shallowMount(DesignerTestDialog, { props: { visible: true } })
     const resize = wrapper.findComponent({ name: 'DialogResizeHandle' })

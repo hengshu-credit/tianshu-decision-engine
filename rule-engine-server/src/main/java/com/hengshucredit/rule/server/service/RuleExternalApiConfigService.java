@@ -263,7 +263,7 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
             config.setExceptionStrategy("FAIL_FAST");
         } else {
             config.setExceptionStrategy(config.getExceptionStrategy().trim().toUpperCase(java.util.Locale.ROOT));
-            if (!java.util.Set.of("FAIL_FAST", "RETURN_DEFAULT", "IGNORE", "USE_CACHE").contains(config.getExceptionStrategy())) {
+            if (!java.util.Set.of("FAIL_FAST", "RETURN_DEFAULT", "IGNORE", "USE_CACHE", "SKIP", "BREAK", "WAIT", "RETRY").contains(config.getExceptionStrategy())) {
                 throw new IllegalArgumentException("异常处理策略不受支持: " + config.getExceptionStrategy());
             }
         }

@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.core.compiler.ConstantValueCodec;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
+import com.hengshucredit.rule.core.engine.RuleTerminationSignal;
 import com.hengshucredit.rule.core.function.BuiltinFunctionInvoker;
 import com.hengshucredit.rule.core.util.MissingValueSemantics;
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
@@ -46,6 +47,8 @@ import java.util.concurrent.TimeoutException;
 
 @Service
 public class VariableSourceResolver {
+    @Resource private ExternalApiConsumerService externalApiConsumerService;
+    @Resource @org.springframework.context.annotation.Lazy private DataObjectSourceResolver dataObjectSourceResolver;
 
     @Resource
     private RuleVariableService variableService;
@@ -126,6 +129,7 @@ public class VariableSourceResolver {
                                             VariableResolveOptions options, RuleModel explicitModel) {
         VariableResolveOptions effectiveOptions = options == null ? VariableResolveOptions.defaults() : options;
         Map<String, Object> resolvedParams = target == null ? new LinkedHashMap<String, Object>() : target;
+        effectiveOptions.setExecutionProjectId(projectId);
         List<RuleVariable> variables = variableService.listByProject(projectId, null);
         if (variables == null) variables = Collections.emptyList();
         effectiveOptions.setVariableReferencePaths(variableReferencePaths(variables));
@@ -154,6 +158,7 @@ public class VariableSourceResolver {
                 ? com.hengshucredit.rule.server.derived.HistoricalFieldDefinition.build(variables, List.of(), models, paths)
                 : derivedVariableService.historyDefinitions(variables, models, paths));
         registerHistoryFields(effectiveOptions);
+        resolveObjectDependencies(requiredScriptNames, resolvedParams, effectiveOptions);
         resolveVariablesAndModels(variables, models, requiredScriptNames, resolvedParams,
                 effectiveOptions, invocationCache, Collections.emptyMap());
         return resolvedParams;
@@ -205,6 +210,7 @@ public class VariableSourceResolver {
                     frozenVariables, List.of(), frozenModels, effectiveOptions.getDerivedReferencePaths()));
         }
         registerHistoryFields(effectiveOptions);
+        resolveObjectDependencies(requiredScriptNames, resolvedParams, effectiveOptions);
         resolveVariablesAndModels(frozenVariables, frozenModels, requiredScriptNames,
                 resolvedParams, effectiveOptions, invocationCache, functionMap);
         return resolvedParams;
@@ -217,6 +223,15 @@ public class VariableSourceResolver {
                 RuntimeContextBridge.currentContext().registerExternalField(field.apiId(), field.key(), field.apiResultPath());
             }
         }
+    }
+
+    private void resolveObjectDependencies(Set<String> names, Map<String, Object> values, VariableResolveOptions options) {
+        if (dataObjectSourceResolver == null || names == null || names.isEmpty() || options.getDerivedReferencePaths() == null) return;
+        Set<String> original = options.getRequiredScriptNames();
+        try {
+            options.setRequiredScriptNames(names);
+            dataObjectSourceResolver.resolveReferencedPaths(options.getExecutionProjectId(), names, values, options);
+        } finally { options.setRequiredScriptNames(original); }
     }
 
     private void refreshCheckpointSources(VariableResolutionInvocationCache cache,
@@ -615,6 +630,8 @@ public class VariableSourceResolver {
         copy.setDerivedFunctions(source.getDerivedFunctions());
         copy.setDataObjectReferencePaths(source.getDataObjectReferencePaths());
         copy.setInvocationCache(source.getInvocationCache());
+        copy.setRuntimeSnapshot(source.getRuntimeSnapshot());
+        copy.setExecutionProjectId(source.getExecutionProjectId());
         copy.setHistoryFieldDefinitions(source.getHistoryFieldDefinitions());
         copy.setListMatchTime(source.getListMatchTime());
         copy.setRequiredScriptNames(source.getRequiredScriptNames() == null
@@ -651,7 +668,10 @@ public class VariableSourceResolver {
             if (!shouldResolveVariable(variable, scriptName, requiredScriptNames)) {
                 continue;
             }
-            if (options.getInvocationCache().completedStep(variableCacheKey(variable)) != null
+            VariableResolutionInvocationCache.SourceStep checkpointStep =
+                    options.getInvocationCache().completedStep(variableCacheKey(variable));
+            if (checkpointStep != null
+                    && !"WAITING_EXTERNAL".equalsIgnoreCase(checkpointStep.getStatus())
                     && !isVariableStepReusable(variable, resolvedParams, options)) {
                 options.getInvocationCache().invalidateStep(variableCacheKey(variable));
             }
@@ -748,6 +768,18 @@ public class VariableSourceResolver {
             return new SourceResolutionResult(0, scriptName, values.containsKey(scriptName), values.get(scriptName),
                     options.getSourceStates(), List.of(), failure);
         });
+        if (externalApiConsumerService == null && result.getFailure() != null) {
+            Map<String, Object> pending = pendingExternalCall(result.getFailure());
+            if (pending != null && !pending.isEmpty()) {
+                Map<String, Object> metadata = new LinkedHashMap<>(pending);
+                metadata.put("scriptName", scriptName);
+                metadata.put("variableId", variable.getId());
+                invocationCache.completeStep(new VariableResolutionInvocationCache.SourceStep(
+                        sourceKey, "VARIABLE", digests.configDigest(), digests.inputDigest(),
+                        digests.dependencyDigest(), "WAITING_EXTERNAL", null, null,
+                        result.getSourceStates(), metadata));
+            }
+        }
         applyVariableResult(variable, scriptName, resolvedParams, effectiveOptions, result);
         if (!hadResult && result.getFailure() == null && result.isResolved()
                 && !effectiveOptions.isSkipApiSources()) {
@@ -764,6 +796,17 @@ public class VariableSourceResolver {
         return "VARIABLE:" + (variable.getId() == null ? "DRAFT:" + resolveScriptName(variable) : variable.getId());
     }
 
+    private Map<String, Object> pendingExternalCall(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof ExternalApiInvokeService.ApiInvokeException apiError) {
+                return apiError.getPendingAsync();
+            }
+            current = current.getCause();
+        }
+        return null;
+    }
+
     private String fingerprintKey(RuleVariable variable) {
         if (variable != null && "CONSTANT".equalsIgnoreCase(variable.getVarSource())
                 && variable.getId() != null) {
@@ -778,6 +821,8 @@ public class VariableSourceResolver {
         values.remove(scriptName);
         if (result.getFailure() != null) {
             if (result.getFailure() instanceof RuleRuntimeCallLogService.HistoryLogWriteException) throw result.getFailure();
+            if (result.getFailure() instanceof ExternalApiWaitingException
+                    || result.getFailure() instanceof RuleTerminationSignal) throw result.getFailure();
             if (!options.requiresSourceStatus("VARIABLE", variable.getId())) throw result.getFailure();
             values.put(scriptName, parseDefaultValue(variable));
         } else if (result.isResolved()) {
@@ -813,6 +858,10 @@ public class VariableSourceResolver {
             resolvedParams.put(scriptName, normalizeSourceValue(variable, value, effectiveOptions));
         } catch (Exception e) {
             if (e instanceof RuleRuntimeCallLogService.HistoryLogWriteException failure) throw failure;
+            if (e instanceof ExternalApiWaitingException waiting) {
+                effectiveOptions.recordSourceState("VARIABLE", variable.getId(), "OUTCOME", "WAITING_EXTERNAL");
+                throw waiting;
+            }
             boolean tracksStatus = effectiveOptions.requiresSourceStatus("VARIABLE", variable.getId());
             if ("API".equals(variable.getVarSource())) {
                 recordApiFailureState(variable, e, effectiveOptions);
@@ -1085,6 +1134,11 @@ public class VariableSourceResolver {
             Object mapping = config.get("paramMapping");
             collectDependencyValues(mapping, dependencies);
             collectApiConfigDependencies(config.get("apiConfigId"), dependencies);
+            Map<String, String> paths = options != null ? options.getDerivedReferencePaths() : null;
+            if (paths == null && variableService != null) paths = variableService.buildRefScriptNameMap(variable.getProjectId());
+            collectApiOperandDependencies(config.get("requestOverrides"), paths, dependencies);
+            RuleExternalApiConfig api = apiConfigMapper == null ? null : apiConfigMapper.selectById(longValue(config.get("apiConfigId")));
+            if (api != null) collectApiOperandDependencies(effectiveApiInputs(ExternalApiRequestPlan.specification(api), config.get("requestOverrides")), paths, dependencies);
         } else if ("DB".equals(varSource)) {
             Object configured = config.get("params");
             if (configured instanceof Iterable<?> values) {
@@ -1261,6 +1315,36 @@ public class VariableSourceResolver {
                     options.getSourceStates(), metadata));
         }
         checkpoint(options, resolvedParams);
+    }
+
+    private void collectApiOperandDependencies(Object node, Map<String, String> paths, Set<String> dependencies) {
+        if (node instanceof Map<?, ?> map) {
+            if (("REFERENCE".equals(map.get("kind")) || "PATH".equals(map.get("kind"))) && map.get("refId") != null && map.get("refType") != null) {
+                String key = map.get("refType") + ":" + map.get("refId");
+                String path = paths == null ? null : paths.get(key);
+                if (path == null) throw new IllegalArgumentException("外数入参引用无法解析: " + key);
+                dependencies.add(path);
+            }
+            map.values().forEach(value -> collectApiOperandDependencies(value, paths, dependencies));
+        } else if (node instanceof Iterable<?> list) {
+            list.forEach(value -> collectApiOperandDependencies(value, paths, dependencies));
+        }
+    }
+
+    private Object effectiveApiInputs(Object node, Object rawOverrides) {
+        Map<?, ?> overrides = rawOverrides instanceof Map<?, ?> map ? map : Map.of();
+        if (node instanceof Map<?, ?> map) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            map.forEach((key, value) -> {
+                if (!Set.of("sample", "samples", "responseBranches", "exceptionBranches").contains(String.valueOf(key))) result.put(String.valueOf(key), effectiveApiInputs(value, overrides));
+            });
+            if (map.get("id") != null && map.containsKey("location") && overrides.containsKey(String.valueOf(map.get("id")))) {
+                result.put("value", overrides.get(String.valueOf(map.get("id")))); result.remove("defaultValue");
+            }
+            return result;
+        }
+        if (node instanceof List<?> list) return list.stream().map(value -> effectiveApiInputs(value, overrides)).toList();
+        return node;
     }
 
     private void collectDependencyValues(Object value, Set<String> dependencies) {
@@ -1537,6 +1621,7 @@ public class VariableSourceResolver {
         result.put("inputParams", params);
         result.put("resolvedValue", resolved.get(scriptName));
         result.put("resolvedParams", resolved);
+        if (options.getInvocationCache() != null) result.put("externalCalls", options.getInvocationCache().completedApiCalls());
         return result;
     }
 
@@ -1558,6 +1643,7 @@ public class VariableSourceResolver {
         VariableResolveOptions options = VariableResolveOptions.defaults();
         options.setForceRefreshSource(true);
         options.setCaptureDatabasePreview(true);
+        options.setInvocationCache(new VariableResolutionInvocationCache());
         Map<String, Object> params = inputParams == null
                 ? new LinkedHashMap<>()
                 : new LinkedHashMap<>(inputParams);
@@ -1569,7 +1655,7 @@ public class VariableSourceResolver {
         }
         resolveOneSourceVariable(variable, scriptName,
                 parseJsonMap(variable.getSourceConfig()), resolved,
-                options, new VariableResolutionInvocationCache());
+                options, options.getInvocationCache());
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("variableId", variable.getId());
         result.put("varCode", variable.getVarCode());
@@ -1578,6 +1664,7 @@ public class VariableSourceResolver {
         result.put("inputParams", params);
         result.put("resolvedValue", resolved.get(scriptName));
         result.put("resolvedParams", resolved);
+        result.put("externalCalls", options.getInvocationCache().completedApiCalls());
         if ("DB".equals(varSource)) result.put("databaseRows", options.getDatabasePreviewRows());
         return result;
     }
@@ -1590,15 +1677,51 @@ public class VariableSourceResolver {
             throw new IllegalArgumentException("API变量缺少 apiConfigId");
         }
         Map<String, Object> requestParams = buildMappedParams(config.get("paramMapping"), params);
-        String cacheKey = externalApiInvokeService.invocationCacheKey(apiConfigId, requestParams);
-        invocationCache.associateResponse(variableCacheKey(variable), cacheKey);
-        Map<String, Object> response = invocationCache.resolve(cacheKey,
-                () -> externalApiInvokeService.invoke(apiConfigId, requestParams));
+        Map<String, Object> response;
+        if (externalApiConsumerService != null) {
+            response = externalApiConsumerService.resolve(variable.getProjectId(), apiConfigId, config, requestParams,
+                    options, variableCacheKey(variable));
+        } else {
+            String cacheKey = externalApiInvokeService.invocationCacheKey(apiConfigId, requestParams);
+            invocationCache.associateResponse(variableCacheKey(variable), cacheKey);
+            response = invocationCache.resolve(cacheKey, () -> externalApiInvokeService.invoke(apiConfigId, requestParams));
+        }
         recordApiState(variable, response, options);
+        ExternalApiConsumerService.recordStatus(response, options, "VARIABLE", variable.getId());
+        if (Boolean.FALSE.equals(response.get("success")) && !Boolean.TRUE.equals(response.get("fallback"))) {
+            if (response.get("exceptionStrategy") != null
+                    && !hasText(stringValue(config.get("exceptionStrategy")))) {
+                config.put("exceptionStrategy", response.get("exceptionStrategy"));
+            }
+            throw new IllegalStateException("外数调用失败: " + response.getOrDefault("errorMessage", response.get("sourceOutcome")));
+        }
         String resultPath = stringValue(config.get("resultPath"));
-        Object value = hasText(resultPath) ? readPath(response, resultPath) : response.get("body");
+        Object value = ExternalApiConsumerService.select(response, resultPath);
+        String scriptName = resolveScriptName(variable);
+        if (("OBJECT".equals(variable.getVarType()) || "MAP".equals(variable.getVarType())) && params.get(scriptName) instanceof Map<?, ?>) {
+            value = ExternalApiConsumerService.merge(params.get(scriptName), value);
+        }
         logApiAssignment(variable, apiConfigId, resultPath, value, response);
         return value;
+    }
+
+    void resolveApiDependencies(Long projectId, Map<String, Object> binding, Map<String, Object> values,
+                                VariableResolveOptions options) {
+        RuleVariable source = new RuleVariable();
+        source.setProjectId(projectId);
+        source.setVarSource("API");
+        source.setSourceConfig(JSON.toJSONString(binding));
+        Set<String> dependencies = collectVariableDependencies(source, options);
+        if (dependencies.isEmpty()) return;
+        Set<String> original = options.getRequiredScriptNames();
+        try {
+            options.setRequiredScriptNames(dependencies);
+            var snapshot = options.getRuntimeSnapshot();
+            if (snapshot == null) resolveInto(projectId, values, options);
+            else resolveIntoSnapshot(snapshot.getVariables(), snapshot.getModels(), snapshot.getFunctions(), values, options);
+        } finally {
+            options.setRequiredScriptNames(original);
+        }
     }
 
     /** 在变量真正写入 resolvedParams 前记录 API 返回到变量/对象的赋值结果。 */
@@ -2020,11 +2143,18 @@ public class VariableSourceResolver {
                                            Map<String, Object> resolvedParams, Exception e,
                                            boolean continueForStatus) {
         String strategy = stringValue(config.get("exceptionStrategy"));
+        if (!hasText(strategy)) strategy = apiExceptionStrategy(e);
         if (!hasText(strategy)) {
             strategy = "ERROR";
         }
         if ("SKIP".equals(strategy)) {
             return false;
+        }
+        if ("BREAK".equals(strategy)) {
+            throw new RuleTerminationSignal();
+        }
+        if ("WAIT".equals(strategy)) {
+            throw new ExternalApiWaitingException("外数异常已按 WAIT 策略暂停订单，请使用 root trace 查询或恢复", e);
         }
         if ("RETURN_DEFAULT".equals(strategy)) {
             Object fallback = config.containsKey("fallbackValue")
@@ -2038,6 +2168,17 @@ public class VariableSourceResolver {
             return false;
         }
         throw new IllegalStateException("变量[" + variable.getVarCode() + "]外部取数失败：" + e.getMessage(), e);
+    }
+
+    private String apiExceptionStrategy(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof ExternalApiInvokeService.ApiInvokeException api) {
+                return api.getExceptionStrategy();
+            }
+            current = current.getCause();
+        }
+        return null;
     }
 
     private void recordApiState(RuleVariable variable, Map<String, Object> response,

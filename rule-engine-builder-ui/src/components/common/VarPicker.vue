@@ -1723,7 +1723,7 @@ export default {
 .mode-switch {
   flex-shrink: 0;
   cursor: pointer;
-  color: var(--el-color-primary);
+  color: var(--tianshu-info-text);
   font-size: 14px;
   padding: 2px;
   border-radius: 3px;
@@ -1733,7 +1733,7 @@ export default {
   justify-content: center;
 }
 .mode-switch:hover {
-  background: var(--el-color-primary-light-9);
+  background: var(--tianshu-info-bg);
   color: var(--el-color-primary-dark-2);
 }
 .vp-arrow-btn,
@@ -1743,7 +1743,7 @@ export default {
 }
 .vp-arrow-btn:hover,
 .vp-clear-btn:hover {
-  color: var(--el-color-primary);
+  color: var(--tianshu-info-text);
 }
 .vp-arrow-btn {
   flex-shrink: 0;
@@ -1751,7 +1751,7 @@ export default {
 .var-empty {
   padding: 8px 12px;
   font-size: 12px;
-  color: #bbb;
+  color: var(--tianshu-text-disabled);
   text-align: center;
 }
 
@@ -1782,7 +1782,7 @@ export default {
   color: var(--tianshu-text-secondary);
   cursor: pointer;
   transition: background 0.15s;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid var(--tianshu-border-subtle);
   white-space: nowrap;
 }
 .vp-cat-label {
@@ -1795,8 +1795,8 @@ export default {
   background: var(--tianshu-bg-muted);
 }
 .vp-cat-item--active {
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
+  background: var(--tianshu-info-bg);
+  color: var(--tianshu-info-text);
   font-weight: 600;
   border-right: 2px solid var(--el-color-primary);
 }
@@ -1807,13 +1807,13 @@ export default {
   text-align: center;
   font-size: 10px;
   color: var(--tianshu-text-tertiary);
-  background: #f0f2f5;
+  background: var(--tianshu-bg-muted);
   padding: 1px 5px;
   border-radius: 8px;
 }
 .vp-cat-item--active .vp-cat-count {
-  background: var(--el-color-primary-light-7);
-  color: var(--el-color-primary);
+  background: var(--tianshu-info-bg);
+  color: var(--tianshu-info-text);
 }
 .vp-manual {
   padding: 20px;
@@ -1845,7 +1845,7 @@ export default {
 }
 .vp-manual-type i {
   grid-row: 1 / 3;
-  color: var(--el-color-primary);
+  color: var(--tianshu-info-text);
   font-size: 20px;
   align-self: center;
 }
@@ -1857,8 +1857,8 @@ export default {
   line-height: 1.4;
 }
 .vp-manual-type:hover {
-  border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
+  border-color: var(--tianshu-info-text);
+  background: var(--tianshu-info-bg);
 }
 .vp-right {
   flex: 1;
@@ -1915,14 +1915,14 @@ export default {
   background: var(--tianshu-bg-muted);
 }
 .vp-row--selected {
-  background: var(--el-color-primary-light-9);
+  background: var(--tianshu-info-bg);
 }
 .vp-row--selected:hover {
-  background: var(--el-color-primary-light-8);
+  background: var(--tianshu-bg-hover);
 }
 .vp-td {
   padding: 7px 10px;
-  border-bottom: 1px solid #f5f5f5;
+  border-bottom: 1px solid var(--tianshu-border-subtle);
   color: var(--tianshu-text-primary);
 }
 .vp-td--type {
@@ -1950,7 +1950,7 @@ export default {
   color: var(--tianshu-text-tertiary);
 }
 .vp-children-row {
-  background: #f9fafc;
+  background: var(--tianshu-bg-soft);
 }
 .vp-children-td {
   padding: 6px 12px;
@@ -1981,10 +1981,10 @@ export default {
   transition: background 0.1s;
 }
 .vp-child-item:hover {
-  background: var(--el-color-primary-light-9);
+  background: var(--tianshu-info-bg);
 }
 .vp-child-item--selected {
-  background: var(--el-color-primary-light-8);
+  background: var(--tianshu-bg-hover);
 }
 .vp-child-path {
   font-family: 'Consolas', 'Monaco', monospace;
@@ -2033,11 +2033,11 @@ export default {
   bottom: 3px;
   width: 8px;
   height: 8px;
-  border-right: 2px solid #c0c4cc;
-  border-bottom: 2px solid #c0c4cc;
+  border-right: 2px solid var(--tianshu-border-strong);
+  border-bottom: 2px solid var(--tianshu-border-strong);
 }
 .vp-resize-handle:hover::after {
-  border-color: var(--el-color-primary);
+  border-color: var(--tianshu-info-text);
 }
 
 /* ── 类型单字符标识 ── */

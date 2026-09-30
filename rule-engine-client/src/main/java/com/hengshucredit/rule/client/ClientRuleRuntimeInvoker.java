@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 
 class ClientRuleRuntimeInvoker {
 
@@ -34,15 +35,23 @@ class ClientRuleRuntimeInvoker {
     private final HttpSyncClient httpSyncClient;
     private final QLExpressEngine engine;
     private final RuleEngineClientConfig config;
+    private final Function<String, CachedRule> codeRuleLoader;
     private final AtomicBoolean registered = new AtomicBoolean(false);
     private final ThreadLocal<ExecutionFrame> currentFrame = new ThreadLocal<>();
 
     ClientRuleRuntimeInvoker(L1MemoryCache l1Cache, HttpSyncClient httpSyncClient,
                              QLExpressEngine engine, RuleEngineClientConfig config) {
+        this(l1Cache, httpSyncClient, engine, config, null);
+    }
+
+    ClientRuleRuntimeInvoker(L1MemoryCache l1Cache, HttpSyncClient httpSyncClient,
+                             QLExpressEngine engine, RuleEngineClientConfig config,
+                             Function<String, CachedRule> codeRuleLoader) {
         this.l1Cache = l1Cache;
         this.httpSyncClient = httpSyncClient;
         this.engine = engine;
         this.config = config;
+        this.codeRuleLoader = codeRuleLoader;
     }
 
     void register(Express4Runner runner) {
@@ -152,7 +161,7 @@ class ClientRuleRuntimeInvoker {
                 rule = httpSyncClient.fetchRuleById(id, binding);
                 if (rule == null || !id.equals(rule.getDefinitionId()) || (binding != null && !binding.equals(rule.getVersionBindingId())))
                     throw new IllegalArgumentException("指定规则版本不存在或不可访问: " + key);
-                l1Cache.put(rule);
+                rule = l1Cache.putAndGet(rule);
             }
             frame.resolvedRules.put(key, rule);
         }
@@ -319,11 +328,12 @@ class ClientRuleRuntimeInvoker {
     }
 
     private CachedRule getCachedRule(String ruleCode) {
+        if (codeRuleLoader != null) return codeRuleLoader.apply(ruleCode);
         CachedRule cached = l1Cache.get(ruleCode);
         if (cached == null) {
             cached = httpSyncClient.fetchRule(ruleCode);
             if (cached != null) {
-                l1Cache.put(cached);
+                cached = l1Cache.putAndGet(cached);
             }
         }
         return cached;

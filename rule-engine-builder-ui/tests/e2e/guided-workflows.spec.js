@@ -140,6 +140,10 @@ function workflowFixtures() {
       projectId: 1
     }]
   })
+  routes.set('/api/rule/datasource/api-config/22/binding-contract', {
+    requestFields: [],
+    resultFields: [{ value: 'body.score', label: '评分 score', type: 'NUMBER' }]
+  })
   routes.set('POST /api/rule/variable/preview', {
     varCode: 'riskScore',
     varSource: 'API',
@@ -278,25 +282,81 @@ test('审批详情血缘复用统一血缘图并展示解析后的引用内容',
   assertClean()
 })
 
-test('外数 API 按业务、稳定性和高级能力分层且保留完整配置入口', async ({
+test('外数 API 配置入口收敛为单层主页签且保留完整配置入口', async ({
   page
 }) => {
   const { assertClean } = await installDistRoutes(page, {
     apiData: workflowFixtures()
   })
 
-  await page.goto('http://tianshu.local/index.html#/datasource/api/new?projectId=1')
+  await page.goto('http://tianshu.local/index.html#/datasource/api/22?projectId=1')
 
   await expect(page.getByText('配置检查', { exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: /业务配置/ })).toBeVisible()
+  const configTab = (name) => page.locator('.config-tabs > .el-tabs__header .el-tabs__item').filter({ hasText: name })
+  await expect(configTab('接口鉴权')).toBeVisible()
   await expect(page.getByText('接口鉴权', { exact: true }).last()).toBeVisible()
   await page.getByRole('button', { name: /稳定性策略/ }).click()
+  await configTab('连接&流控').click()
   await expect(page.getByText('连接&流控', { exact: true })).toBeVisible()
   await expect(page.getByText('异常&重试', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: /高级能力/ }).click()
+  await configTab('脚本处理').click()
   await expect(page.getByText('脚本处理', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '生成审批草稿', exact: true }))
     .toBeVisible()
+  assertClean()
+})
+
+test('外数异常重试提示随条件分支次数变化，不阻碍不重试配置', async ({ page }) => {
+  const apiData = workflowFixtures()
+  const detail = apiData.get('/api/rule/datasource/api-config/22')
+  apiData.set('/api/rule/datasource/api-config/22', { ...detail, retryCount: 0, executionConfig: JSON.stringify({ version: 2, requestFields: [], responseBranches: [], retryBranches: [], steps: [], samples: [] }) })
+  const { assertClean } = await installDistRoutes(page, { apiData })
+  await page.goto('http://tianshu.local/index.html#/datasource/api/22?projectId=1')
+  const configTab = (name) => page.locator('.config-tabs > .el-tabs__header .el-tabs__item').filter({ hasText: name })
+  const openRetry = async () => {
+    await page.getByRole('button', { name: /稳定性策略/ }).click()
+    await configTab('异常&重试').click()
+  }
+  const openBranches = async () => {
+    await page.getByRole('button', { name: /稳定性策略/ }).click()
+    await configTab('重试条件').click()
+  }
+  await page.getByRole('button', { name: /业务配置/ }).click()
+  await expect(configTab('接口鉴权')).toBeVisible()
+  await expect(configTab('请求字段')).toBeVisible()
+  await expect(configTab('响应结构')).toBeVisible()
+  expect(await page.locator('.config-tabs > .el-tabs__header .el-tabs__item').allTextContents()).toEqual([
+    '接口鉴权', '请求字段', '响应结构', '多份测试样例', '报文留存', '接口测试'
+  ])
+  const strategy = page.locator('.el-form-item').filter({ hasText: '异常策略' }).locator('.el-select')
+  await openRetry()
+  expect(await page.locator('.config-tabs > .el-tabs__header .el-tabs__item').allTextContents()).toEqual([
+    '连接&流控', '异常&重试', '缓存&计费', '异常条件', '重试条件', '计费条件'
+  ])
+  await strategy.click()
+  await page.getByRole('option', { name: '异常重试', exact: true }).click()
+  await expect(page.locator('.strategy-warning')).toContainText('至少 1 次')
+  await expect(page.locator('.strategy-warning')).not.toContainText('retryBranches')
+  await openBranches()
+  const activeExecutionEditor = page.locator('.api-execution-editor:visible')
+  await activeExecutionEditor.getByRole('button', { name: '添加条件分支', exact: true }).click()
+  const retryPane = activeExecutionEditor.locator('#pane-retryBranches')
+  await expect(retryPane).toContainText('重试次数')
+  const branchRetryCount = retryPane.locator('.el-form-item').filter({ hasText: '重试次数' }).locator('input').first()
+  await branchRetryCount.fill('2')
+  await branchRetryCount.press('Tab')
+  await openRetry()
+  await expect(page.locator('.strategy-warning')).toHaveCount(0)
+  await openBranches()
+  await branchRetryCount.fill('0')
+  await branchRetryCount.press('Tab')
+  await openRetry()
+  await expect(page.locator('.strategy-warning')).toBeVisible()
+  await strategy.click()
+  await page.getByRole('option', { name: '快速失败', exact: true }).click()
+  await expect(page.locator('.strategy-warning')).toHaveCount(0)
+  await expect(page.getByLabel('重试次数', { exact: true }).filter({ visible: true })).toHaveValue('0')
   assertClean()
 })
 
@@ -327,7 +387,7 @@ test('新建字段按业务取值方式引导并可在送审前预览外数结�
   await page.getByText('征信查询 / credit_query', { exact: true }).last().click()
 
   await expect(dialog.getByText('3 / 4 已就绪', { exact: true })).toBeVisible()
-  await dialog.getByRole('button', { name: '预览取值', exact: true }).click()
+  await dialog.getByRole('button', { name: /预览取值|真实调用测试/, exact: true }).click()
   await expect(dialog.getByText('4 / 4 已就绪', { exact: true })).toBeVisible()
   await expect(dialog.locator('.draft-preview-result')).toContainText('88')
   await expect(dialog.getByRole('button', {

@@ -164,26 +164,54 @@ function EndEventFactory(CircleNode, CircleNodeModel) {
   return { type: 'end-event', view: EndEventView, model: EndEventModel }
 }
 
+// 矩形节点的尺寸、圆角、主题和文本行为由同一基类维护。
+function createFlowRectModel(width, height) {
+  return class FlowRectModel extends RectNodeModel {
+    initNodeData(data) {
+      super.initNodeData(data)
+      this.width = width
+      this.height = height
+      this.radius = 6
+      this.text.editable = false
+    }
+    setAttributes() {
+      this.text.value = ''
+    }
+    getNodeStyle() {
+      return {
+        ...super.getNodeStyle(),
+        stroke: 'var(--tianshu-flow-node-border)',
+        fill: 'var(--tianshu-flow-node-bg)',
+        strokeWidth: 2,
+        radius: 6,
+      }
+    }
+  }
+}
+
+function renderFlowRect(model) {
+  const { x, y, width, height, radius } = model
+  return h('rect', {
+    ...model.getNodeStyle(),
+    x: x - width / 2,
+    y: y - height / 2,
+    width,
+    height,
+    rx: radius,
+    ry: radius,
+  })
+}
+
 // ============================================================
 // 3. 脚本任务 - 主题浅色圆角矩形
 // ============================================================
-function ScriptTaskFactory(RectNode, RectNodeModel) {
+function ScriptTaskFactory(RectNode) {
   class ScriptTaskView extends RectNode {
     getShape() {
-      const { x, y, width, height, radius, properties } = this.props.model
+      const { x, y, properties } = this.props.model
       const name = properties.nodeName || '脚本任务'
       return h('g', {}, [
-        h('rect', {
-          x: x - width / 2,
-          y: y - height / 2,
-          width,
-          height,
-          rx: radius,
-          ry: radius,
-          fill: 'var(--tianshu-flow-node-bg)',
-          stroke: 'var(--tianshu-flow-node-border)',
-          strokeWidth: 2
-        }),
+        renderFlowRect(this.props.model),
         h('text', {
           x,
           y: y + 1,
@@ -197,13 +225,9 @@ function ScriptTaskFactory(RectNode, RectNodeModel) {
     }
   }
 
-  class ScriptTaskModel extends RectNodeModel {
+  class ScriptTaskModel extends createFlowRectModel(160, 42) {
     initNodeData(data) {
       super.initNodeData(data)
-      this.width = 160
-      this.height = 42
-      this.radius = 6
-      this.text.editable = false
       if (!data.properties) data.properties = {}
       if (!data.properties.nodeName) data.properties.nodeName = '脚本任务'
       if (!data.properties.nodeCode) data.properties.nodeCode = 'TASK_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4).toUpperCase()
@@ -212,16 +236,6 @@ function ScriptTaskFactory(RectNode, RectNodeModel) {
       if (!data.properties.asyncExec) data.properties.asyncExec = false
       if (!data.properties.scriptContent) data.properties.scriptContent = ''
       if (!data.properties.actions) data.properties.actions = []
-    }
-    setAttributes() {
-      this.text.value = ''
-    }
-    getNodeStyle() {
-      const style = super.getNodeStyle()
-      style.stroke = 'var(--tianshu-flow-node-border)'
-      style.fill = 'var(--tianshu-flow-node-bg)'
-      style.radius = 6
-      return style
     }
     getConnectedSourceRules() {
       const rules = super.getConnectedSourceRules()
@@ -364,6 +378,147 @@ function JoinGatewayFactory(DiamondNode, DiamondNodeModel) {
 }
 
 // ============================================================
+// 6. 血缘节点 - 与设计器复用 LogicFlow 画布和节点基类
+// ============================================================
+export const LINEAGE_NODE_WIDTH = 200
+export const LINEAGE_NODE_HEIGHT = 88
+export const LINEAGE_NODE_COLORS = {
+  PROJECT: '#2563EB',
+  VARIABLE: '#059669',
+  RULE: '#DC2626',
+  MODEL: '#7C3AED',
+  API: '#EA580C',
+  DB: '#0F766E',
+  LIST: '#C026D3',
+  DATASOURCE: '#64748B',
+  DATA_FIELD: '#0891B2',
+  DATA_OBJECT: '#0284C7',
+}
+
+const LINEAGE_ICON_PATHS = {
+  PROJECT: 'M3 5h7l2 2h9v12H3z',
+  VARIABLE: 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5',
+  DATA_OBJECT: 'M4 6h16v12H4z M4 10h16 M9 6v12 M15 6v12',
+  DATA_FIELD: 'M4 5h16v14H4z M4 10h16 M4 15h16 M10 5v14 M15 5v14',
+  RULE: 'M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z M8 12l2.5 2.5L16 9',
+  MODEL: 'M12 3l8 4.5v9L12 21l-8-4.5v-9z M12 12l8-4.5 M12 12v9 M12 12L4 7.5',
+  API: 'M8 5v5 M16 5v5 M6 10h12v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4z M12 18v3',
+  DB: 'M4 6c0-2 16-2 16 0v12c0 2-16 2-16 0z M4 6c0 2 16 2 16 0 M4 12c0 2 16 2 16 0',
+  LIST: 'M5 5h14 M5 12h14 M5 19h14 M2 5h.01 M2 12h.01 M2 19h.01',
+  DATASOURCE: 'M5 18h13a4 4 0 0 0 .5-8A6 6 0 0 0 7 8a5 5 0 0 0-2 10z',
+}
+
+function renderLineageIcon(type, color) {
+  const path = LINEAGE_ICON_PATHS[type] || LINEAGE_ICON_PATHS.VARIABLE
+  return h('svg', {
+    class: 'node-icon',
+    viewBox: '0 0 24 24',
+    width: 16,
+    height: 16,
+    'aria-hidden': 'true',
+  }, [h('path', {
+    d: path,
+    fill: 'none',
+    stroke: color,
+    strokeWidth: 1.8,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+  })])
+}
+
+function LineageNodeFactory(RectNode) {
+  class LineageNodeView extends RectNode {
+    getShape() {
+      const model = this.props.model
+      const { x, y, width, height, properties = {} } = model
+      const color = properties.color || LINEAGE_NODE_COLORS[properties.nodeType] || '#64748B'
+      const left = x - width / 2
+      const top = y - height / 2
+      const title = properties.nodeLabel || properties.nodeCode || '未命名节点'
+      const code = properties.nodeCode || '-'
+      const typeLabel = properties.nodeTypeLabel || properties.nodeType || '节点'
+      const badge = properties.current ? '当前' : properties.cycle ? '循环引用' : ''
+      const nodeClass = [
+        'lineage-lf-node',
+        properties.current ? 'current-node' : 'branch-node',
+        properties.side === 'UPSTREAM' ? 'is-upstream' : 'is-downstream',
+        properties.cycle ? 'is-cycle' : '',
+      ].filter(Boolean).join(' ')
+      const toggle = properties.toggleable
+        ? h('button', {
+          type: 'button',
+          class: 'branch-toggle',
+          'data-lineage-toggle': properties.toggleKind || 'branch',
+          'aria-label': properties.toggleLabel,
+          disabled: properties.loading,
+          onPointerDown: event => event.stopPropagation(),
+          onClick: event => {
+            event.stopPropagation()
+            model.graphModel.eventCenter.emit('lineage:toggle', { data: model.getData() })
+          },
+        }, properties.toggleText || '+')
+        : null
+      return h('g', {}, [
+        renderFlowRect(model),
+        h('foreignObject', { x: left, y: top, width, height, style: { overflow: 'visible' } },
+          h('div', {
+            class: nodeClass,
+            'data-node-id': properties.nodeId,
+            'data-lineage-model-id': model.id,
+            tabindex: 0,
+            'aria-label': `${typeLabel}：${title}`,
+            onKeyDown: event => {
+              if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return
+              event.preventDefault()
+              model.graphModel.selectNodeById(model.id)
+              model.graphModel.eventCenter.emit('node:click', { data: model.getData() })
+            },
+            style: {
+              '--lineage-node-color': color,
+              left: `${left}px`,
+              top: `${top}px`,
+              transform: `translate(${-left}px, ${-top}px)`,
+            },
+          }, [
+            h('div', {
+              class: 'node-color-strip',
+              style: { background: color },
+              'aria-hidden': 'true',
+            }),
+            toggle,
+            h('div', { class: 'node-head' }, [
+              h('span', { class: 'node-type-wrap' }, [renderLineageIcon(properties.nodeType, color), h('span', { class: 'node-type' }, typeLabel)]),
+              badge ? h('span', { class: 'node-badge' }, badge) : null,
+            ]),
+            h('div', {
+              class: 'node-label',
+              title,
+            }, title),
+            h('div', {
+              class: 'node-code',
+              title: code,
+            }, code),
+          ])),
+      ])
+    }
+  }
+
+  class LineageNodeModel extends createFlowRectModel(LINEAGE_NODE_WIDTH, LINEAGE_NODE_HEIGHT) {
+    getNodeStyle() {
+      return {
+        ...super.getNodeStyle(),
+        stroke: this.properties.color || LINEAGE_NODE_COLORS[this.properties.nodeType] || '#64748B',
+        fill: 'var(--tianshu-bg-surface)',
+        ...(this.properties.current ? { strokeWidth: 3 } : {}),
+        ...(this.properties.cycle ? { strokeDasharray: '6 4' } : {}),
+      }
+    }
+  }
+
+  return { type: 'lineage-node', view: LineageNodeView, model: LineageNodeModel }
+}
+
+// ============================================================
 // 注册所有自定义节点
 // ============================================================
 export function registerCustomNodes(lf) {
@@ -372,7 +527,8 @@ export function registerCustomNodes(lf) {
     EndEventFactory(CircleNode, CircleNodeModel),
     ScriptTaskFactory(RectNode, RectNodeModel),
     ExclusiveGatewayFactory(DiamondNode, DiamondNodeModel),
-    JoinGatewayFactory(DiamondNode, DiamondNodeModel)
+    JoinGatewayFactory(DiamondNode, DiamondNodeModel),
+    LineageNodeFactory(RectNode, RectNodeModel)
   ]
 
   nodes.forEach(n => {

@@ -109,8 +109,8 @@ describe('dashboard charts', () => {
       zoom: 2.4
     })
     expect(option.geo.nameProperty).toBe('shapeID')
-    expect(option.geo.center).toBeUndefined()
-    expect(option.geo.zoom).toBe(1)
+    expect(option.geo.center).toEqual([104, 35])
+    expect(option.geo.zoom).toBe(2.4)
     expect(option.geo.map).toBe('dashboard-administrative-region')
     expect(option.tooltip.formatter({ componentType: 'geo', name: 'county-2' })).toBe('Washington')
     expect(option.geo.tooltip.formatter({ componentType: 'geo', name: 'county-2' })).toBe('Washington')

@@ -43,6 +43,7 @@ public class RuleEngineClient {
     private final boolean ownsLogReporter;
     private final ClientFunctionRegistrar functionRegistrar;
     private final ClientRuleRuntimeInvoker runtimeRuleInvoker;
+    private final ConcurrentHashMap<String, CompletableFuture<CachedRule>> ruleLoads = new ConcurrentHashMap<>();
     private final Object lifecycleLock = new Object();
     private LifecycleState lifecycleState = LifecycleState.STOPPED;
     private ScheduledExecutorService scheduler;
@@ -59,7 +60,8 @@ public class RuleEngineClient {
         this.redisSubscriber = connectionFactory == null ? null
                 : new RedisSubscriber(l1Cache, connectionFactory, resolvePushSubscriptionKey(config),
                 httpSyncClient::fetchRule);
-        this.runtimeRuleInvoker = new ClientRuleRuntimeInvoker(l1Cache, httpSyncClient, engine, config);
+        this.runtimeRuleInvoker = new ClientRuleRuntimeInvoker(l1Cache, httpSyncClient, engine, config,
+                this::getOrLoadRule);
         this.runtimeRuleInvoker.register(engine.getRunner());
         this.functionRegistrar = new ClientFunctionRegistrar(engine, applicationContext, config.getProjectCode());
 
@@ -159,6 +161,14 @@ public class RuleEngineClient {
         return httpSyncClient.getExecutionStatus(traceId);
     }
 
+    /** 恢复服务端等待中的订单；完成后仍可通过 getExecutionStatus 读取同一 trace 的最终结果。 */
+    public RuleResult resumeExecution(String traceId, Map<String, Object> params) {
+        if (!config.isServerSideExecution()) {
+            throw new IllegalStateException("本地纯计算模式没有服务端恢复状态");
+        }
+        return httpSyncClient.resumeExecution(traceId, params);
+    }
+
     /**
      * 执行规则，支持传入 Java 对象（DTO / Model / POJO）作为参数。
      * 对象的字段会通过 Fastjson 自动转换为 Map&lt;String, Object&gt; 后注入表达式上下文。
@@ -183,13 +193,7 @@ public class RuleEngineClient {
         }
         long start = System.currentTimeMillis();
 
-        CachedRule cached = l1Cache.get(ruleCode);
-        if (cached == null) {
-            cached = httpSyncClient.fetchRule(ruleCode);
-            if (cached != null) {
-                l1Cache.put(cached);
-            }
-        }
+        CachedRule cached = getOrLoadRule(ruleCode);
         if (cached == null) {
             RuleResult r = new RuleResult();
             r.setSuccess(false);
@@ -223,13 +227,7 @@ public class RuleEngineClient {
         }
         long start = System.currentTimeMillis();
 
-        CachedRule cached = l1Cache.get(ruleCode);
-        if (cached == null) {
-            cached = httpSyncClient.fetchRule(ruleCode);
-            if (cached != null) {
-                l1Cache.put(cached);
-            }
-        }
+        CachedRule cached = getOrLoadRule(ruleCode);
         if (cached == null) {
             RuleResult r = new RuleResult();
             r.setSuccess(false);
@@ -283,6 +281,44 @@ public class RuleEngineClient {
         } catch (Exception e) {
             log.debug("Log report failed: {}", e.getMessage());
         }
+    }
+
+    /** 冷启动或缓存淘汰时，同一规则只允许一个线程回源，其余线程共享加载结果。 */
+    private CachedRule getOrLoadRule(String ruleCode) {
+        CachedRule cached = l1Cache.get(ruleCode);
+        if (cached != null) return cached;
+        CompletableFuture<CachedRule> created = new CompletableFuture<>();
+        CompletableFuture<CachedRule> existing = ruleLoads.putIfAbsent(ruleCode, created);
+        if (existing != null) return awaitRuleLoad(existing);
+        try {
+            // 首次读取后可能已有上一批加载完成，取得加载槽位后必须再次确认。
+            CachedRule loaded = l1Cache.get(ruleCode);
+            if (loaded == null) {
+                loaded = httpSyncClient.fetchRule(ruleCode);
+                if (loaded != null) loaded = l1Cache.putAndGet(loaded);
+            }
+            created.complete(loaded);
+            return loaded;
+        } catch (Throwable error) {
+            created.completeExceptionally(error);
+            throw rethrowRuleLoad(error);
+        } finally {
+            ruleLoads.remove(ruleCode, created);
+        }
+    }
+
+    private CachedRule awaitRuleLoad(CompletableFuture<CachedRule> future) {
+        try {
+            return future.join();
+        } catch (CompletionException error) {
+            throw rethrowRuleLoad(error.getCause() == null ? error : error.getCause());
+        }
+    }
+
+    private RuntimeException rethrowRuleLoad(Throwable error) {
+        if (error instanceof RuntimeException runtime) return runtime;
+        if (error instanceof Error fatal) throw fatal;
+        return new IllegalStateException("规则回源加载失败", error);
     }
 
     private String toJsonSafely(Object value) {

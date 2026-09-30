@@ -34,6 +34,7 @@ describe('external API payload capture config', () => {
       saveOriginal: true,
       excludePaths: ['$.items[*].Base64', "$['含点.字段']"],
       maxFieldBytes: 4096,
+      oversizedFields: [],
     })
     expect(JSON.parse(stringifyPayloadCaptureConfig(value))).toEqual(value)
   })
@@ -72,5 +73,21 @@ describe('external API payload capture config', () => {
     })).toThrow('3DES解密')
     expect(parsePayloadCaptureConfig({ request: { saveOriginal: false } }).request.saveOriginal).toBe(false)
     expect(() => parsePayloadCaptureConfig({ request: { saveOriginal: 'false' } })).toThrow('保留原文')
+  })
+
+  test('超长字段策略按字段意图保存或省略，不按运行时长度二次判断', () => {
+    const value = parsePayloadCaptureConfig({
+      response: {
+        oversizedFields: [
+          { path: '$.image', store: false },
+          { path: '$.encrypted', store: true },
+        ],
+      },
+    })
+    expect(value.response.oversizedFields).toEqual([
+      { path: '$.image', store: false },
+      { path: '$.encrypted', store: true },
+    ])
+    expect(() => parsePayloadCaptureConfig({ response: { oversizedFields: [{ path: '$.image' }, { path: '$.image' }] } })).toThrow('不能重复')
   })
 })

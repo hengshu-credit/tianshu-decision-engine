@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.governance;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.TypeReference;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
@@ -26,6 +27,7 @@ public class DataObjectGovernedResourceAdapter
     private final RuleDataObjectFieldMapper fieldMapper;
     private final RuleDataObjectFieldOptionMapper optionMapper;
     private final DataObjectFieldReferenceValidator referenceValidator;
+    @jakarta.annotation.Resource private VariableSourceReferenceValidator sourceValidator;
     @jakarta.annotation.Resource private DataObjectUpdateReferenceGuard updateReferenceGuard;
 
     @Override
@@ -223,6 +225,18 @@ public class DataObjectGovernedResourceAdapter
         List<FieldDraft> fields = parseDrafts(snapshot);
         RuleDataObject owner = JSON.parseObject(CanonicalJson.write(snapshot), RuleDataObject.class);
         validateObjectSource(snapshot, owner, issues);
+        if ("API".equals(owner.getSourceType()) && sourceValidator != null) {
+            var source = new com.hengshucredit.rule.model.entity.RuleVariable();
+            source.setProjectId(owner.getProjectId()); source.setScope(owner.getScope());
+            source.setVarCode(owner.getObjectCode()); source.setVarSource("API"); source.setSourceConfig(owner.getSourceContent());
+            issues.addAll(sourceValidator.validate(source));
+            for (FieldDraft field : fields) if (field.field().getSourceConfig() != null) {
+                var config = JSON.parseObject(owner.getSourceContent());
+                config.putAll(JSON.parseObject(field.field().getSourceConfig()));
+                source.setSourceConfig(config.toJSONString());
+                issues.addAll(sourceValidator.validate(source));
+            }
+        }
         List<RuleDataObjectField> referenceFields = fields.stream().map(FieldDraft::field).toList();
         Set<Long> ids = new HashSet<>();
         for (FieldDraft draft : fields) {
@@ -268,7 +282,8 @@ public class DataObjectGovernedResourceAdapter
         String content = owner.getSourceContent();
         Map<String, Object> config;
         try {
-            config = JSON.parseObject(content, Map.class);
+            config = JSON.parseObject(content,
+                    new TypeReference<Map<String, Object>>() { });
         } catch (RuntimeException e) {
             issues.add(GovernanceIssue.error("DATA_OBJECT_SOURCE_INVALID",
                     "数据对象来源配置不是合法 JSON", GovernanceResourceTypes.DATA_OBJECT,

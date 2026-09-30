@@ -28,6 +28,14 @@ public class RuleExternalApiConfig {
     private String queryConfig;
     private String requestMapping;
     private String responseMapping;
+    /** V2 请求字段、响应分支、多步协议及测试样例；旧配置为空时沿用原协议。 */
+    @TableField(updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
+    private String executionConfig;
+    /** 链路步骤只计入父调用，避免重复生成账单。 */
+    @TableField(exist = false)
+    private boolean billingSuppressed;
+    @TableField(exist = false)
+    private String executionCallId;
     private String bodyTemplate;
     private String requestScript;
     private String responseScript;
@@ -39,7 +47,11 @@ public class RuleExternalApiConfig {
     private Integer responseCacheSeconds;
     private String cacheKeyConfig;
     private String successCondition;
+    /** 响应异常判断条件树；命中后按 exceptionStrategy 处理。 */
+    private String exceptionCondition;
     private Integer timeoutMs;
+    /** 异步提交后轮询/回调等待预算；为空时使用服务端默认 30 秒。 */
+    private Integer asyncTimeoutMs;
     private Integer maxConnections;
     private Integer maxConnectionsPerRoute;
     private Integer connectionRequestTimeoutMs;

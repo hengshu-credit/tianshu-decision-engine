@@ -75,9 +75,43 @@ function createFaceTrace() {
         moduleType: 'EXTERNAL_API',
         resourceCode: 'face_liveness_check',
         resourceName: '人脸活体检测',
+        callId: 'call-face-liveness-001',
         traceId: 'FACE-API-001',
         status: 'SUCCESS',
-        durationMs: 46
+        durationMs: 46,
+        traceSteps: [
+          {
+            type: 'REQUEST_PREPARE',
+            label: '拼装供应商请求',
+            status: 'READY',
+            callId: 'call-face-liveness-001',
+            input: { image_url: 'https://example.test/face/demo.jpg', id_number: '110101199001011234' }
+          },
+          {
+            type: 'AUTH',
+            label: '供应商鉴权',
+            status: 'SUCCESS',
+            callId: 'call-face-liveness-001',
+            targetPath: 'Authorization: Bearer ******'
+          },
+          {
+            type: 'HTTP_REQUEST',
+            label: '调用人脸服务商 API',
+            status: 'SUCCESS',
+            callId: 'call-face-liveness-001',
+            refType: 'API',
+            refId: 22,
+            targetPath: 'POST https://face.example.com/v3/face/verify'
+          },
+          {
+            type: 'RESPONSE_MAP',
+            label: '映射供应商响应',
+            status: 'SUCCESS',
+            callId: 'call-face-liveness-001',
+            output: { livenessScore: 0.982, faceSimilarity: 0.936 },
+            resultPath: 'body.data'
+          }
+        ]
       },
       {
         type: 'MODULE_CALL',
@@ -1008,6 +1042,45 @@ function createDocsApiData() {
   }
   routes.set('/api/rule/experiment/list', { records: [experiment], total: 1 })
   routes.set('/api/rule/experiment/61', experiment)
+  const experimentTrace = {
+    schemaVersion: 2,
+    traceKind: 'EXPERIMENT_GROUP',
+    experimentTraceId: 'EXP202607240931150000000000000001',
+    childTraceId: faceTrace.traceId,
+    experimentCode: experiment.experimentCode,
+    stage: 'PRODUCTION',
+    status: 'SUCCESS',
+    durationMs: 131,
+    routingTrace: [
+      { type: 'ROUTING_START', stage: 'PRODUCTION', routingMode: 'RATIO' },
+      { type: 'RANDOM_VALUE', value: 0.36 },
+      { type: 'GROUP_SELECTED', groupCode: 'champion', reason: '随机值 0.36 命中冠军组 90%' }
+    ],
+    ruleExecution: { trace: faceTrace }
+  }
+  routes.set('/api/rule/experiment/logs', {
+    records: [{
+      id: 6201,
+      experimentId: 61,
+      experimentCode: experiment.experimentCode,
+      requestKey: 'REQ-FACE-20260724093115-001',
+      stage: 'PRODUCTION',
+      groupCode: 'champion',
+      groupName: 'V2 稳定策略',
+      groupType: 'CHAMPION',
+      ruleCode: definition.ruleCode,
+      experimentTraceId: experimentTrace.experimentTraceId,
+      childTraceId: faceTrace.traceId,
+      routeReason: '随机值 0.36 命中冠军组 90%',
+      success: 1,
+      executeTimeMs: 131,
+      inputParams: JSON.stringify({ requestId: 'REQ-FACE-20260724093115-001', livenessScore: 0.982 }),
+      outputResult: JSON.stringify({ verified: true, riskLevel: 'LOW' }),
+      traceInfo: JSON.stringify(experimentTrace),
+      createTime: '2026-07-24 09:31:15'
+    }],
+    total: 1
+  })
 
   routes.set('/api/rule/billing/config/list', {
     records: [
@@ -1079,6 +1152,62 @@ function createDocsApiData() {
       avgCostTimeMs: 128
     }],
     total: 1
+  })
+
+  routes.set('/api/rule/console/accounts', [
+    {
+      id: 1,
+      username: 'strategy_editor',
+      displayName: '策略配置员',
+      roleCodes: ['STRATEGY_EDITOR'],
+      effectivePermissions: ['rule:view', 'rule:edit', 'field:view'],
+      status: 1
+    },
+    {
+      id: 2,
+      username: 'risk_reviewer',
+      displayName: '风险审核员',
+      roleCodes: ['RISK_REVIEWER'],
+      effectivePermissions: ['rule:view', 'approval:view', 'approval:approve'],
+      status: 1
+    }
+  ])
+  routes.set('/api/rule/console/roles', [
+    {
+      id: 1,
+      roleCode: 'STRATEGY_EDITOR',
+      roleName: '策略配置',
+      permissions: ['rule:view', 'rule:edit', 'field:view'],
+      status: 1
+    },
+    {
+      id: 2,
+      roleCode: 'RISK_REVIEWER',
+      roleName: '风险审核',
+      permissions: ['rule:view', 'approval:view', 'approval:approve'],
+      status: 1
+    }
+  ])
+  routes.set('/api/rule/console/permissions', [])
+  routes.set('/api/rule/governance/requests', {
+    records: [{
+      id: 1,
+      resourceId: 101,
+      requestNo: 'DEMO-20260930-001',
+      resourceType: 'RULE',
+      action: 'UPDATE',
+      status: 'PENDING',
+      applicant: 'strategy_editor',
+      submitTime: '2026-09-30 10:00:00',
+      submittedSnapshotJson: JSON.stringify({ ruleName: '人脸阈值决策表', ruleCode: 'face_threshold_table' })
+    }],
+    total: 1
+  })
+  routes.set('/api/rule/governance/requests/summary', {
+    pendingCount: 1,
+    myDraftCount: 0,
+    myRequestCount: 1,
+    completedCount: 0
   })
 
   let revisionState = 'DRAFT'
@@ -1497,6 +1626,8 @@ function createDocsApiData() {
     }),
     scriptMode: 'script'
   })
+
+  routes.set('/api/rule/transfer/logs', { records: [], total: 0 })
 
   return routes
 }

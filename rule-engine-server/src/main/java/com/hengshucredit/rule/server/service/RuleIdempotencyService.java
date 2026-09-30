@@ -92,6 +92,46 @@ public class RuleIdempotencyService {
 
     public Decision current() { return current.get(); }
 
+    /** 记录原始订单入参，支持仅凭 trace_id 跨节点恢复；不改变幂等摘要。 */
+    public void recordRequestParams(Decision decision, Map<String, Object> params) {
+        if (decision == null || !decision.claimed) return;
+        decision.requestParams = params == null ? new LinkedHashMap<>() : new LinkedHashMap<>(params);
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> requestParams(RuleExecutionStateService.State state) {
+        if (state == null || state.checkpointJson() == null || state.checkpointJson().isBlank()) return null;
+        JSONObject checkpoint = JSON.parseObject(state.checkpointJson());
+        Map<String, Object> params = checkpoint.getObject("requestParams", Map.class);
+        return params == null ? null : new LinkedHashMap<>(params);
+    }
+
+    /** 按已持久化的 root trace 恢复一次可重试执行，要求入参摘要与原订单一致。 */
+    public Decision resumeByTrace(RuleExecutionStateService.State state,
+                                  RulePublished published,
+                                  Map<String, Object> params) {
+        if (state == null || published == null) throw new IllegalArgumentException("订单执行状态或规则版本不存在");
+        if (params == null) params = requestParams(state);
+        if (params == null) throw new IllegalArgumentException("订单检查点未保存原始入参，无法仅凭 trace_id 恢复");
+        String requestHash = sha256(CanonicalJson.write(params == null ? Map.of() : params));
+        if (!Objects.equals(requestHash, state.requestDigest())) {
+            throw new IllegalArgumentException("恢复入参与原订单不一致，拒绝重复或串单执行");
+        }
+        OpenApiContract.IdempotencyConfig config = config(published);
+        int ttlSeconds = config == null ? 86400 : config.getTtlSeconds();
+        String owner = UUID.randomUUID().toString();
+        int leaseSeconds = executionLeaseSeconds();
+        if (!stateService.claim(state.id(), owner, leaseSeconds, ttlSeconds,
+                published.getRevisionId(), published.getArtifactDigest())) {
+            return Decision.inProgress(state);
+        }
+        RuleExecutionStateService.State claimed = stateService.find(state.projectId(), state.definitionId(), state.keyHash());
+        Decision decision = Decision.claimed(claimed == null ? state : claimed, owner, ttlSeconds,
+                leaseSeconds, published.getRevisionId(), published.getArtifactDigest());
+        current.set(decision);
+        return decision;
+    }
+
     public <T> T withDecision(Decision decision, Callable<T> task) {
         if (task == null) throw new IllegalArgumentException("执行任务不能为空");
         Decision previous = current.get();
@@ -194,6 +234,10 @@ public class RuleIdempotencyService {
         checkpoint.put("steps", cache == null ? Map.of() : cache.snapshotCompletedSteps());
         checkpoint.put("randomValues", com.hengshucredit.rule.core.engine.RuntimeContextBridge.randomSnapshot());
         checkpoint.put("sourceStates", sourceStates == null ? Map.of() : sourceStates);
+        Decision decision = current.get();
+        if (decision != null && decision.requestParams != null) {
+            checkpoint.put("requestParams", new LinkedHashMap<>(decision.requestParams));
+        }
         return CanonicalJson.write(checkpoint);
     }
 
@@ -203,6 +247,8 @@ public class RuleIdempotencyService {
             return;
         }
         String status = result != null && result.isSuccess() ? "SUCCEEDED"
+                : result != null && "WAITING_EXTERNAL".equals(result.getExecutionStatus())
+                ? "WAITING_EXTERNAL"
                 : result != null && "UNKNOWN".equals(result.getExecutionStatus())
                 ? "UNKNOWN_RETRYABLE" : "FAILED_RETRYABLE";
         String effectiveCheckpoint = checkpointJson == null ? decision.checkpointJson : checkpointJson;
@@ -306,6 +352,7 @@ public class RuleIdempotencyService {
         private final Long currentRevisionId;
         private final String currentArtifactDigest;
         private String checkpointJson;
+        private Map<String, Object> requestParams;
 
         private Decision(boolean claimed, RuleExecutionStateService.State state, String owner,
                          RuleResult result, Status status, int ttlSeconds, int leaseSeconds,

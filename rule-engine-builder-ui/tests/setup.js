@@ -51,6 +51,7 @@ vi.mock('element-plus', () => ({
   ElLoading: {
     service: vi.fn(() => ({ close: vi.fn() }))
   },
+  ElColorPicker: { name: 'ElColorPicker', template: '<button type="button" class="color-picker-stub" />' },
   default: { install: vi.fn() }
 }))
 
@@ -154,6 +155,7 @@ vi.mock('@/api/definition', () => ({
   createDraftFromSource: vi.fn(),
   saveTemporaryDraft: vi.fn(),
   compileDesignerModel: vi.fn(),
+  getDesignerCompileTask: vi.fn(),
   saveDesignerDraft: vi.fn(),
   deleteDesignerDraft: vi.fn(),
   listPublishedVersions: vi.fn(),

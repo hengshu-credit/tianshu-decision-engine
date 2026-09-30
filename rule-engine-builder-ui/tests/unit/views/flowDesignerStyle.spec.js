@@ -16,7 +16,7 @@ describe('flow designer style regressions', () => {
     expect(source).toContain("fill: 'var(--tianshu-flow-node-text)'")
   })
 
-  test('决策树和决策流工具栏主按钮在深色栏内保持可读', () => {
+  test('决策树和决策流工具栏跟随主题渐变并保持操作按钮可读', () => {
     const tree = readSource('src/views/designer/DecisionTree.vue')
     const flow = readSource('src/views/designer/DecisionFlow.vue')
 
@@ -24,12 +24,23 @@ describe('flow designer style regressions', () => {
       expect(source).toContain('&.el-button--primary {')
       expect(source).toContain('background: var(--tianshu-brand-background);')
       expect(source).toContain('color: var(--tianshu-brand-foreground) !important;')
-      expect(source).toContain('border-color: var(--el-color-primary) !important;')
+      expect(source).toContain('border-color: var(--tianshu-designer-toolbar-accent) !important;')
       expect(source).toContain('min-width: 88px;')
       expect(source).toContain('&.el-button--primary:hover,')
       expect(source).toContain('&.el-button--primary:focus {')
       expect(source).toContain('filter: brightness(1.08);')
       expect(source).toContain('&.el-button--primary:active {')
+      expect(source).toContain('background: var(--tianshu-brand-background);')
+      expect(source).toContain('color: var(--designer-toolbar-foreground) !important;')
+      expect(source).toContain('border-color: var(--el-color-primary) !important;')
+      expect(source).toContain('--designer-toolbar-control-background: color-mix(')
+      expect(source).toContain('--designer-toolbar-control-border: color-mix(')
+      expect(source).toContain('background: var(--designer-toolbar-control-hover-background) !important;')
+      expect(source).toContain('box-shadow: 0 0 0 1px color-mix(in srgb, var(--tianshu-designer-toolbar-accent) 22%, transparent);')
+      expect(source).toContain('&.is-tool-active:hover,')
+      expect(source).toContain('box-shadow: 0 0 0 2px color-mix(in srgb, var(--tianshu-designer-toolbar-accent) 28%, transparent) !important;')
+      expect(source).toContain(':deep(.toolbar-action:hover)')
+      expect(source).toContain(':deep(.rule-designer-actions__button:not(.rule-designer-actions__publish))')
     })
   })
 
@@ -141,5 +152,68 @@ describe('flow designer style regressions', () => {
       expect(source).toContain('getPersistableGraphData(this.lf)')
       expect(source).toContain('getBusinessGraphData(canvasGraph)')
     })
+  })
+
+  test('动态分组的容器和标题使用主题语义变量', () => {
+    const graph = readSource('src/components/flow/flowDesignerGraph.js')
+
+    expect(graph).toContain("fill: 'var(--tianshu-designer-accent-bg)'")
+    expect(graph).toContain("stroke: 'var(--tianshu-designer-accent-border)'")
+    expect(graph).toContain("color: 'var(--tianshu-text-primary)'")
+    expect(graph).toContain('style: { ...DYNAMIC_GROUP_STYLE }')
+    expect(graph).toContain('textStyle: { ...DYNAMIC_GROUP_TEXT_STYLE }')
+  })
+
+  test('设计器节点引用按钮使用外层工具栏的主题变量', () => {
+    const source = readSource('src/components/flow/GraphDesignerNavigator.vue')
+
+    expect(source).toContain('var(--designer-toolbar-control-border, var(--tianshu-border))')
+    expect(source).toContain('var(--designer-toolbar-control-background, var(--tianshu-bg-surface))')
+    expect(source).toContain('var(--designer-toolbar-foreground, var(--tianshu-text-primary))')
+    expect(source).toContain('border-color: var(--tianshu-designer-toolbar-accent, var(--el-color-primary));')
+  })
+
+  test('决策树和决策流工具栏拆成上下两行并提供网格、比例和统一控件', () => {
+    ;['DecisionTree.vue', 'DecisionFlow.vue'].forEach(file => {
+      const source = readSource('src/views/designer/' + file)
+      expect(source).toContain('toolbar-row-primary')
+      expect(source).toContain('toolbar-row-actions')
+      expect(source).toContain('check-label="检查"')
+      expect(source).toContain(':show-check="false"')
+      expect(source).toContain('toolbar-check-button')
+      expect(source).toContain('toolbar-node-button')
+      expect(source).toContain('toolbar-edge-select')
+      expect(source).toContain('gridVisible')
+      expect(source).toContain('snapGridEnabled')
+      expect(source).toContain('onZoomInputChange')
+      expect(source).toContain('zoomPresets')
+      expect(source).toContain('updateGridOptions')
+    })
+
+    const actionBar = readSource('src/components/rule/RuleDesignerActionBar.vue')
+    expect(actionBar).toContain('rule-designer-actions__icon')
+    expect(actionBar).toContain('DocumentChecked as ElIconDocumentChecked')
+    expect(actionBar).toContain('Promotion as ElIconPromotion')
+  })
+
+  test('画布背景设置与选中边动画复用 LogicFlow 能力', () => {
+    const canvas = readSource('src/components/flow/CanvasBackgroundSettings.vue')
+    const graphCanvas = readSource('src/components/flow/graphCanvas.js')
+    const tree = readSource('src/views/designer/DecisionTree.vue')
+    const flow = readSource('src/views/designer/DecisionFlow.vue')
+
+    ;[tree, flow].forEach(source => {
+      expect(source).toContain('<canvas-background-settings')
+      expect(source).toContain('edgeAnimationEnabled')
+      expect(source).toContain('openEdgeAnimation')
+      expect(source).toContain('closeEdgeAnimation')
+      expect(source).toContain('updateBackgroundOptions')
+    })
+    expect(canvas).toContain('网格吸附')
+    expect(canvas).toContain('网格类型')
+    expect(canvas).toContain('背景透明度')
+    expect(canvas).toContain('背景颜色')
+    expect(graphCanvas).toContain('edgeAnimation:')
+    expect(graphCanvas).toContain('backgroundColor:')
   })
 })

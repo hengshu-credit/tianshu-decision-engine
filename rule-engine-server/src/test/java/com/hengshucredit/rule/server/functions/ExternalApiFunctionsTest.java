@@ -32,7 +32,7 @@ public class ExternalApiFunctionsTest {
     }
 
     @Test
-    public void configuredBeanCallsExistingServiceOnlyWhenFlowBranchIsReached() {
+    public void legacyExplicitBeanCannotBypassUnifiedFieldInvocation() {
         RecordingService service = new RecordingService();
         try (StaticApplicationContext beans = new StaticApplicationContext()) {
             beans.getBeanFactory().registerSingleton("externalApiFunctions", new ExternalApiFunctions(service));
@@ -57,11 +57,9 @@ public class ExternalApiFunctionsTest {
                 RuleResult result = engine.execute(engine.prepare(
                         "return queryConfiguredApi(9, {\"name\": \"合成客户\"});"),
                         Collections.emptyMap(), false, request);
-                assertTrue(result.getErrorMessage(), result.isSuccess());
-                assertEquals(Map.of("body", Map.of("found", true)), result.getResult());
-                assertEquals(1, service.calls);
-                assertEquals(Long.valueOf(9), service.id);
-                assertEquals(Map.of("name", "合成客户"), service.params);
+                assertFalse(result.isSuccess());
+                assertTrue(result.getErrorMessage().contains("queryConfiguredApi"));
+                assertEquals(0, service.calls);
             }
         }
     }
@@ -79,12 +77,12 @@ public class ExternalApiFunctionsTest {
     }
 
     @Test
-    public void propagatesProviderFailureWithoutInventingFallbackData() {
+    public void directsExistingFunctionUsersToVariableOrObjectBindings() {
         IllegalStateException failure = new IllegalStateException("provider unavailable");
         ExternalApiFunctions functions = new ExternalApiFunctions(new ExternalApiInvokeService() {
             @Override
             public Map<String, Object> invoke(Long id, Map<String, Object> params) { throw failure; }
         });
-        assertSame(failure, assertThrows(IllegalStateException.class, () -> functions.invoke(9, Map.of())));
+        assertTrue(assertThrows(IllegalStateException.class, () -> functions.invoke(9, Map.of())).getMessage().contains("数据对象"));
     }
 }

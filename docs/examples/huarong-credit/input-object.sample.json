@@ -1,0 +1,15 @@
+{
+  "hrCreditInput": {
+    "requestNo": "HR_LOCAL_NORMAL_20260930",
+    "queryName": "本地模拟用户",
+    "queryIdNo": "TEST_IDENTITY_ONLY",
+    "queryPhone": "13000000000",
+    "veriFaceTime": "2026-09-30 10:00:00",
+    "authTime": "2026-09-30 10:01:00",
+    "queryDate": "20260930",
+    "caFileUrl": "http://127.0.0.1:28082/files/authorization.pdf",
+    "idCardFileUrl": "http://127.0.0.1:28082/files/idcard.png",
+    "otherAuthFileUrl": "http://127.0.0.1:28082/files/face.png",
+    "otherFileUrl": "http://127.0.0.1:28082/files/application.pdf"
+  }
+}

@@ -169,6 +169,7 @@ public class RuleExecuteService {
         VariableResolveOptions resolveOptions = withInputFields(
                 VariableResolveOptions.defaults(), inputFields, modelJson, directFields);
         includeReferenceSources(resolveOptions, referencePlan);
+        resolveOptions.setExecutionProjectId(executionProjectId);
         Map<String, Object> executeParams = bindInputs(
                 referencePlan.mergeBindingFields(inputFields), params, resolveOptions);
         Map<String, Object> originalInput = snapshotMap(executeParams);
@@ -206,6 +207,7 @@ public class RuleExecuteService {
             result.setSuccess(false);
             result.setErrorMessage(e.getMessage());
             if (isCapacityRejectedExternalFailure(e)) result.setExecutionStatus("THROTTLED");
+            else if (isWaitingExternalFailure(e)) result.setExecutionStatus("WAITING_EXTERNAL");
             else if (isUnknownExternalFailure(e)) result.setExecutionStatus("UNKNOWN");
         } finally {
             result.setExecuteTimeMs(System.currentTimeMillis() - executionStart);
@@ -400,6 +402,7 @@ public class RuleExecuteService {
         runtimeRuleInvoker.setOfflineReplay(effectiveOptions.isOfflineReplay());
         if (idempotencyService != null && idempotencyService.current() != null) {
             var checkpointDecision = idempotencyService.current();
+            idempotencyService.recordRequestParams(checkpointDecision, originalInput);
             effectiveOptions.getInvocationCache().setSourceStepListener(step ->
                     idempotencyService.persistStep(checkpointDecision, step));
             idempotencyService.restoreCheckpoint(idempotencyService.current(),
@@ -418,6 +421,8 @@ public class RuleExecuteService {
             bindHistoryDefaults(executionProjectId, effectiveOptions);
             try (var context = RuleVariableExecutionContext.prepare(runtimeModelType, executeParams,
                     effectiveOptions, referencePlan, explicitReferenceTargets, () -> {
+                        effectiveOptions.setRuntimeSnapshot(runtimeSnapshot);
+                        effectiveOptions.setExecutionProjectId(executionProjectId);
                         if (dataObjectSourceResolver != null) {
                             dataObjectSourceResolver.resolve(executionProjectId, directFields,
                                     executeParams, effectiveOptions,
@@ -440,6 +445,7 @@ public class RuleExecuteService {
             result.setSuccess(false);
             result.setErrorMessage(e.getMessage());
             if (isCapacityRejectedExternalFailure(e)) result.setExecutionStatus("THROTTLED");
+            else if (isWaitingExternalFailure(e)) result.setExecutionStatus("WAITING_EXTERNAL");
             else if (isUnknownExternalFailure(e)) result.setExecutionStatus("UNKNOWN");
         } finally {
             result.setExecuteTimeMs(System.currentTimeMillis() - executionStart);
@@ -524,6 +530,15 @@ public class RuleExecuteService {
         while (current != null) {
             if (current instanceof ExternalApiInvokeService.ApiInvokeException api
                     && api.isUnknown()) return true;
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean isWaitingExternalFailure(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof ExternalApiWaitingException) return true;
             current = current.getCause();
         }
         return false;

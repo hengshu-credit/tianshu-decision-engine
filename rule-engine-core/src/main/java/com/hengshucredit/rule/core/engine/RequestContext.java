@@ -345,6 +345,14 @@ public final class RequestContext {
         return actual != null && String.valueOf(actual).equalsIgnoreCase(expected.trim());
     }
 
+    public Object sourceStatusValue(String refType, String refId, String dimension) {
+        if (empty(refType) || empty(refId) || empty(dimension)) return null;
+        String key = sourceStateKey(refType, refId);
+        if (sourceStateResolver != null) sourceStateResolver.accept(key);
+        Map<String, Object> state = sourceStates == null ? null : sourceStates.get(key);
+        return state == null ? null : state.get(dimension.trim().toUpperCase());
+    }
+
     private static String sourceStateKey(String refType, String refId) {
         return refType.trim().toUpperCase() + ":" + refId.trim();
     }

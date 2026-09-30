@@ -64,6 +64,8 @@ export default {
       designerLeaveUnregister: null,
       designerLeaveApproved: false,
       designerBusy: false,
+      designerCompilePollToken: 0,
+      designerCompileTaskId: '',
       designerChoice: null,
       designerChoiceResolve: null,
       designerSaveRequest: null,
@@ -189,6 +191,7 @@ export default {
   beforeUnmount() {
     this.resolveDesignerChoice({ action: 'cancel' })
     this.viewRefreshToken++
+    this.designerCompilePollToken++
     if (typeof window !== 'undefined') {
       window.removeEventListener('keydown', this.handleDesignerSaveShortcut)
       window.removeEventListener('beforeunload', this.handleDesignerBeforeUnload)
@@ -292,6 +295,7 @@ export default {
       this.designerCheckedFingerprint = ''
       this.designerValidationReport = null
       this.designerCompileResult = null
+      this.designerCompileTaskId = ''
       this.designerActionState = 'CLEAN'
       this.designerDraftTrackingReady = true
       this.designerRecoveryCandidate = null
@@ -355,6 +359,7 @@ export default {
       this.designerCheckedFingerprint = ''
       this.designerValidationReport = null
       this.designerCompileResult = null
+      this.designerCompileTaskId = ''
       // 普通编辑只更新内存状态，不自动创建服务端或浏览器草稿。
     },
     markDesignerDraftSaved(modelJson) {
@@ -364,6 +369,7 @@ export default {
       this.designerCheckedFingerprint = ''
       this.designerValidationReport = null
       this.designerCompileResult = null
+      this.designerCompileTaskId = ''
       this.designerDraftTrackingReady = true
       this.designerActionState = this.designerCurrentFingerprint === fingerprint ? 'SAVED_UNCHECKED' : 'DIRTY'
       clearDraftRecovery(
@@ -509,6 +515,7 @@ export default {
       const source = this.requestedSource
       const requestedSourceKey = sourceKey(source)
       const refreshToken = ++this.viewRefreshToken
+      this.designerCompilePollToken++
       this.draftGuardLoaded = false
       this.draftRevision = null
       this.viewRevision = null
@@ -685,6 +692,26 @@ export default {
     designerConfigurationMatches(action, modelJson) {
       return this.isCurrentViewAction(action) && createDraftFingerprint(this.serializeDesignerDraft()) === createDraftFingerprint(modelJson)
     },
+    async waitForDesignerCompile(definitionId, submitted, action) {
+      const taskId = submitted?.taskId
+      if (!taskId) return submitted
+      const terminalStatuses = new Set(['SUCCEEDED', 'FAILED'])
+      let task = submitted
+      const pollToken = ++this.designerCompilePollToken
+      const deadline = Date.now() + 30 * 60 * 1000
+      while (!terminalStatuses.has(String(task?.status || '').toUpperCase())) {
+        if (Date.now() >= deadline) throw new Error('编译任务等待超时，请稍后重新打开页面查看')
+        await new Promise(resolve => window.setTimeout(resolve, 800))
+        if (pollToken !== this.designerCompilePollToken || !this.isCurrentViewAction(action)) return false
+        task = unwrap(await definitionApi.getDesignerCompileTask(definitionId, taskId))
+      }
+      if (pollToken !== this.designerCompilePollToken || !this.isCurrentViewAction(action)) return false
+      if (task.result) return task.result
+      if (String(task.status).toUpperCase() === 'FAILED') {
+        throw new Error(task.errorMessage || '后台编译失败')
+      }
+      return task
+    },
     switchDesignerSource(value) {
       return this.runDesignerAction(async () => {
         const match = /^(REVISION|VERSION):([1-9]\d*)$/.exec(String(value || ''))
@@ -734,6 +761,9 @@ export default {
       }
       if (!['NEW', 'OVERWRITE'].includes(saveMode)) throw new Error('请选择保存方式')
       const body = { modelJson, saveMode, ...this.designerSourcePayload() }
+      if (this.designerCompileTaskId && createDraftFingerprint(modelJson) === this.designerCheckedFingerprint) {
+        body.compileTaskId = this.designerCompileTaskId
+      }
       if (saveMode === 'OVERWRITE') {
         if (!currentDraft) throw new Error('只有当前草稿可以覆盖')
         body.revisionId = body.sourceId
@@ -787,16 +817,26 @@ export default {
       if (!this.canEditDraft) throw new Error('当前内容不可编译或没有编辑权限')
       const action = this.designerActionSnapshot()
       const modelJson = this.serializeDesignerDraft()
-      const result = unwrap(await definitionApi.compileDesignerModel(String(this.definitionId || this.$route.params.id), { modelJson, ...this.designerSourcePayload() }))
-      this.captureDesignerDraftState()
-      if (!this.designerConfigurationMatches(action, modelJson)) return false
-      this.designerCompileResult = result
-      this.designerValidationReport = result?.preflightReport || null
-      this.designerCheckedFingerprint = result?.compileSuccess ? createDraftFingerprint(modelJson) : ''
-      this.designerActionState = result?.compileSuccess && result?.preflightReport?.valid ? 'READY_TO_TEST' : 'CHECK_FAILED'
-      if (this.designerActionState === 'READY_TO_TEST') this.$message.success('编译与发布前检查通过')
-      else if (!this.designerValidationReport) this.$message.error(result?.compileMessage || '编译失败')
-      return result
+      const definitionId = String(this.definitionId || this.$route.params.id)
+      this.designerActionState = 'COMPILING'
+      try {
+        const submitted = unwrap(await definitionApi.compileDesignerModel(definitionId, { modelJson, ...this.designerSourcePayload() }))
+        this.designerCompileTaskId = submitted?.taskId || ''
+        const result = await this.waitForDesignerCompile(definitionId, submitted, action)
+        if (result === false) return false
+        this.captureDesignerDraftState()
+        if (!this.designerConfigurationMatches(action, modelJson)) return false
+        this.designerCompileResult = result
+        this.designerValidationReport = result?.preflightReport || null
+        this.designerCheckedFingerprint = result?.compileSuccess ? createDraftFingerprint(modelJson) : ''
+        this.designerActionState = result?.compileSuccess && result?.preflightReport?.valid ? 'READY_TO_TEST' : 'CHECK_FAILED'
+        if (this.designerActionState === 'READY_TO_TEST') this.$message.success('编译完成，发布前检查通过')
+        else if (!this.designerValidationReport) this.$message.error(result?.compileMessage || '编译失败')
+        return result
+      } catch (error) {
+        if (this.isCurrentViewAction(action)) this.designerActionState = 'CHECK_FAILED'
+        throw error
+      }
     },
     executeDesignerPreview(params, modelType) {
       return this.runDesignerAction(() => definitionApi.executeRule({

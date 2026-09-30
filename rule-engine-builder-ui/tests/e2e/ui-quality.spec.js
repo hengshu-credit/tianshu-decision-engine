@@ -324,7 +324,6 @@ test('列表操作使用稳定且可区分的主题提示色', async ({
         ['编辑', 'warning'],
         ['详情', 'primary'],
         ['测试', 'success'],
-        ['转全局', 'primary'],
         ['删除', 'danger'],
       ],
     },
@@ -342,7 +341,7 @@ test('列表操作使用稳定且可区分的主题提示色', async ({
       actions: [
         ['详情', 'primary'],
         ['查看', 'info'],
-        ['申请删除规则', 'danger'],
+        ['删除', 'danger'],
       ],
     },
     {

@@ -133,8 +133,9 @@ $info-color: #475569;
 
   &:disabled,
   &.is-disabled {
-    background-color: var(--el-color-primary-light-5) !important;
-    border-color: var(--el-color-primary-light-5) !important;
+    /* 保留禁用态层次，同时保证白色文字仍达到可读对比度。 */
+    background-color: var(--el-color-primary-light-2) !important;
+    border-color: var(--el-color-primary-light-2) !important;
     cursor: not-allowed;
   }
 }
@@ -628,8 +629,8 @@ $info-color: #475569;
 
     &:disabled,
     &.is-disabled {
-      background-color: var(--el-color-primary-light-5) !important;
-      border-color: var(--el-color-primary-light-5) !important;
+      background-color: var(--el-color-primary-light-2) !important;
+      border-color: var(--el-color-primary-light-2) !important;
       cursor: not-allowed;
     }
   }
@@ -685,6 +686,27 @@ $info-color: #475569;
   justify-content: center;
   padding: 16px;
   overflow: hidden;
+}
+
+/* 弹窗宽高以视口为上限，窄屏时自动铺满可用空间；可调整弹窗继续由
+ * DialogResizeHandle 提供更细粒度的尺寸控制。 */
+@media (max-width: 600px) {
+  .el-overlay-dialog {
+    padding: 8px;
+  }
+
+  .el-dialog:not(.is-fullscreen) {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+
+    .el-dialog__header,
+    .el-dialog__body,
+    .el-dialog__footer {
+      padding-right: 16px;
+      padding-left: 16px;
+    }
+  }
 }
 
 .el-dialog__header,

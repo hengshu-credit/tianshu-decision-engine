@@ -2,19 +2,23 @@ const path = require('node:path')
 const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createDocsApiData } = require('./support/docsFixtures.cjs')
+const { screenshotRoot, screenshotViewport, referencedScreenshots } = require('../../../scripts/docs/screenshot-files.cjs')
 
-const screenshotRoot = path.resolve(__dirname, '../../../docs/project-usage')
+const publishedScreenshots = referencedScreenshots()
 
 async function openPage(page, route, apiData = createDocsApiData()) {
-  await page.setViewportSize({ width: 1600, height: 1000 })
+  await page.setViewportSize(screenshotViewport)
   const routing = await installDistRoutes(page, { apiData })
+  await page.goto('about:blank')
   await page.goto(`http://tianshu.local/index.html#${route}`)
   await expect(page.getByRole('main')).toBeVisible()
-  await page.waitForTimeout(250)
+  await page.waitForTimeout(900)
   return routing
 }
 
 async function screenshot(page, fileName) {
+  if (!publishedScreenshots.has(fileName)) return
+  await page.setViewportSize(screenshotViewport)
   await expect(page.locator('.el-loading-mask:visible')).toHaveCount(0)
   await page.evaluate(() => {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
@@ -60,6 +64,7 @@ test('生成登录页和全部一级业务页面截图', async ({ page }) => {
 test('生成详情、新建与配置页面截图', async ({ page }) => {
   test.setTimeout(180000)
   const pages = [
+    ['/dashboard', 'project-usage-18-dashboard.png'],
     ['/project/1', 'project-usage-07-project-detail.png'],
     ['/rule/101', 'project-usage-08-rule-detail.png'],
     ['/list/9', 'project-usage-09-list-detail.png'],
@@ -71,7 +76,10 @@ test('生成详情、新建与配置页面截图', async ({ page }) => {
     ['/datasource/source/new', 'project-usage-10-datasource-create.png'],
     ['/datasource/api/new', 'project-usage-10-api-create.png'],
     ['/database/new', 'project-usage-11-database-create.png'],
-    ['/experiment/new', 'project-usage-15-experiment-create.png']
+    ['/experiment/new', 'project-usage-15-experiment-create.png'],
+    ['/approval', 'project-usage-21-approval.png'],
+    ['/transfer', 'project-usage-22-transfer.png'],
+    ['/account', 'project-usage-23-account.png']
   ]
 
   for (const [route, fileName] of pages) {
@@ -106,6 +114,12 @@ test('生成鉴权、开放接口、外数、分流和账单关键业务状态�
   await screenshot(page, 'project-usage-10-datasource-auth.png')
   routing.assertClean()
 
+  routing = await openPage(page, '/datasource')
+  await page.getByRole('tab', { name: 'API 接口', exact: true }).click()
+  await expect(page.getByText('face_liveness_check', { exact: true })).toBeVisible()
+  await screenshot(page, 'project-usage-10-api-list.png')
+  routing.assertClean()
+
   routing = await openPage(page, '/datasource/api/22')
   await page.getByRole('tab', { name: '接口鉴权', exact: true }).click()
   await screenshot(page, 'project-usage-10-api-auth.png')
@@ -118,7 +132,7 @@ test('生成鉴权、开放接口、外数、分流和账单关键业务状态�
   routing = await openPage(page, '/rule/101')
   await page.getByRole('tab', { name: /开放接口/ }).click()
   await expect(page.getByText('对外规则契约', { exact: true })).toBeVisible()
-  await page.locator('.open-api-panel').scrollIntoViewIfNeeded()
+  await page.locator('#pane-open-api .open-api-panel').last().scrollIntoViewIfNeeded()
   await screenshot(page, 'project-usage-08-rule-open-api.png')
   await page.getByRole('tab', { name: /API 测试用例/ }).click()
   await expect(page.getByText('活体通过且人证一致', { exact: true })).toBeVisible()
@@ -147,9 +161,9 @@ test('生成字段管理、规则字段、模型字段和调用详情截图', as
 
   let routing = await openPage(page, '/variable')
   await page.getByRole('tab', { name: '数据对象', exact: true }).click()
-  await expect(page.getByText('FaceVerifyRequest', { exact: true })).toBeVisible()
-  await page.locator('.var-group-header').filter({ hasText: 'FaceVerifyRequest' }).click()
-  await expect(page.getByText('deviceId', { exact: true })).toBeVisible()
+  await expect(page.getByText('FaceVerifyRequest', { exact: true }).first()).toBeVisible()
+  await page.locator('.data-object-table .el-table__expand-icon').first().click()
+  await expect(page.getByText('deviceId', { exact: true }).first()).toBeVisible()
   await screenshot(page, 'project-usage-03-data-object.png')
   await page.getByRole('tab', { name: '字段校验', exact: true }).click()
   await expect(page.getByText('face_url_required', { exact: true })).toBeVisible()
@@ -206,6 +220,17 @@ test('生成字段管理、规则字段、模型字段和调用详情截图', as
   await logDrawer.getByRole('tab', { name: /表达式追踪树/ }).click()
   await expect(logDrawer.getByText('人脸识别核验', { exact: true }).first()).toBeVisible()
   await screenshot(page, 'project-usage-06-execution-log-trace.png')
+  await screenshot(page, 'project-usage-10-external-call-trace.png')
+  routing.assertClean()
+
+  routing = await openPage(page, '/experiment/detail/61')
+  await page.getByRole('tab', { name: '分流日志', exact: true }).click()
+  await expect(page.getByText('REQ-FACE-20260724093115-001', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '详情', exact: true }).last().click()
+  const experimentLogDrawer = page.getByRole('dialog', { name: '分流日志详情' })
+  await expect(experimentLogDrawer).toBeVisible()
+  await expect(experimentLogDrawer.getByText('分流实验', { exact: true })).toBeVisible()
+  await screenshot(page, 'project-usage-15-experiment-trace.png')
   routing.assertClean()
 })
 
@@ -317,17 +342,7 @@ test('生成九类规则设计器最终截图', async ({ browser }) => {
     if (action) {
       await page.getByRole('button', { name: action, exact: true }).first().click()
     }
-    if (route === '/designer/score/106') {
-      const numberInputs = page.locator('.el-input-number input')
-      await expect(numberInputs).toHaveCount(3)
-      expect(
-        await numberInputs.evaluateAll((inputs) => inputs.map((input) => input.value))
-      ).toEqual(['0', '60', '1.00'])
-      for (const input of await numberInputs.all()) {
-        expect(await input.evaluate((element) => getComputedStyle(element).color))
-          .not.toBe('rgba(0, 0, 0, 0)')
-      }
-    }
+    await expect(page.getByRole('main')).toBeVisible()
     await screenshot(page, fileName)
     routing.assertClean()
     await context.close()

@@ -36,3 +36,11 @@ export function importResourceTransfer(file, options) {
     headers: { 'Content-Type': 'multipart/form-data' }
   })
 }
+
+export function listTransferLogs(params) {
+  return request({ url: '/rule/transfer/logs', method: 'get', params })
+}
+
+export function getTransferLog(id) {
+  return request({ url: `/rule/transfer/logs/${id}`, method: 'get' })
+}

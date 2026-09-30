@@ -1,5 +1,6 @@
 import { mount, shallowMount } from '@test-utils'
 import ProjectList from '@/views/project/ProjectList.vue'
+import ProjectDetail from '@/views/project/ProjectDetail.vue'
 import RuleList from '@/views/rule/RuleList.vue'
 import VariableList from '@/views/variable/VariableList.vue'
 import ListLibrary from '@/views/ruleList/ListLibrary.vue'
@@ -96,6 +97,7 @@ function renderPage(component, factory = shallowMount) {
 
 const toolbarPages = [
   ['项目管理', ProjectList, 1],
+  ['项目规则', ProjectDetail, 1],
   ['规则管理', RuleList, 1],
   ['名单管理', ListLibrary, 1],
   ['外数管理', DatasourceList, 2],

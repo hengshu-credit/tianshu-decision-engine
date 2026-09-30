@@ -69,6 +69,22 @@ public class ExternalApiCallbackStoreTest {
         assertFalse(ExternalApiCallbackStore.validSignature("test-secret", body, "bad-hex"));
     }
 
+    @Test
+    public void continueFailureDoesNotConsumeLaterSuccessfulCallback() throws Exception {
+        ExternalApiCallbackStore store = store();
+        JSONObject config = protocol();
+        config.put("failureMode", "CONTINUE");
+        String id = store.register(config);
+        byte[] failed = "{\"job\":\"t1\",\"status\":\"FAILED\",\"report\":{\"reason\":\"MAINTENANCE\"}}".getBytes(StandardCharsets.UTF_8);
+        store.accept(id, signature(failed), failed);
+        assertNull(store.result(id));
+        assertEquals("FAILED", ExternalApiCallbackStore.path(store.latest(id), "body.status"));
+
+        byte[] success = "{\"job\":\"t1\",\"status\":\"DONE\",\"report\":{\"score\":730}}".getBytes(StandardCharsets.UTF_8);
+        store.accept(id, signature(success), success);
+        assertEquals(730, ExternalApiCallbackStore.path(store.result(id), "body.report.score"));
+    }
+
     private static class MemoryRedis extends StringRedisTemplate {
         private final Map<String, String> values = new ConcurrentHashMap<>();
         @Override

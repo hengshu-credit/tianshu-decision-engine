@@ -119,8 +119,14 @@ public class DBConnectPools implements DisposableBean {
     public List<Map<String, Object>> query(Long datasourceId, String sql, List<Object> params,
                                            int maxRows, int queryTimeoutSeconds) throws Exception {
         DatabaseQueryOptions options = new DatabaseQueryOptions(maxRows, queryTimeoutSeconds);
+        SqlQuerySupport.Analysis analysis = SqlQuerySupport.analyze(sql);
         if (!isReadOnlySelectSql(sql)) {
             throw new IllegalArgumentException("只允许执行 SELECT 查询");
+        }
+        int actualParams = params == null ? 0 : params.size();
+        if (analysis.placeholderCount() != actualParams) {
+            throw new IllegalArgumentException("SQL 需要 " + analysis.placeholderCount()
+                    + " 个参数，当前配置了 " + actualParams + " 个，请核对参数顺序和数量");
         }
         HikariDataSource dataSource = getDataSource(datasourceId);
         try (Connection connection = dataSource.getConnection();

@@ -13,6 +13,7 @@ body {
 
 .uiue-list-page {
   width: 100%;
+  min-width: 0;
   background: var(--tianshu-bg-surface);
   border-radius: 4px;
   padding: 20px;
@@ -82,7 +83,7 @@ body {
   align-items: center;
 
   .btn-left { flex: 0 0 auto; }
-  .btn-right { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center;
+  .btn-right { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center; flex-wrap: wrap;
     > *:not(:last-child) { margin-right: 8px; }
   }
 }
@@ -113,4 +114,61 @@ body {
   margin-top: 16px;
   text-align: right;
   padding: 4px 0;
+}
+
+/* 管理列表在窄视口下使用同一套收缩规则，避免每个页面重复维护断点。 */
+@media (max-width: 768px) {
+  .layout-main {
+    padding: 12px;
+  }
+
+  .uiue-list-page {
+    padding: 14px;
+  }
+
+  .management-list-page {
+    .uiue-search-container.uiue-filter-toolbar {
+      gap: 8px;
+
+      > .el-form,
+      > .uiue-btn-bar {
+        width: 100%;
+      }
+
+      > .uiue-btn-bar {
+        justify-content: flex-end;
+      }
+    }
+
+    .uiue-btn-bar {
+      margin-top: 8px;
+      margin-bottom: 12px;
+    }
+  }
+}
+
+@media (max-width: 560px) {
+  .uiue-list-page {
+    padding: 10px;
+    border-radius: 0;
+  }
+
+  .management-list-page {
+    .uiue-search-container .el-form {
+      width: 100%;
+    }
+
+    .uiue-search-container .el-form-item,
+    .uiue-search-container .el-form-item__content,
+    .uiue-search-container .el-input,
+    .uiue-search-container .el-select,
+    .uiue-search-container .el-date-editor {
+      width: 100% !important;
+    }
+
+    .uiue-btn-bar .btn-right {
+      width: 100%;
+      justify-content: flex-end;
+    }
+  }
 }

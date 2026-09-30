@@ -52,6 +52,10 @@ public final class AggregateBuiltinFunctionRegistry {
      * @param runner QLExpress 执行器
      */
     public static void register(Express4Runner runner) {
+        register(runner, true);
+    }
+
+    public static void register(Express4Runner runner, boolean includeNetworkFunctions) {
         if (runner == null) {
             return;
         }
@@ -100,7 +104,7 @@ public final class AggregateBuiltinFunctionRegistry {
         runner.addFunctionOfServiceMethod("cosineSimilarity", DECISION_DELEGATE, "cosineSimilarity", TWO_OBJECTS);
         runner.addFunctionOfServiceMethod("facenoxLiveness", DECISION_DELEGATE, "facenoxLiveness", OBJECT_DOUBLE);
         runner.addFunctionOfServiceMethod("facenoxLivenessList", DECISION_DELEGATE, "facenoxLivenessList", OBJECT_DOUBLE);
-        runner.addFunctionOfServiceMethod("imageToBase64", IMAGE_DELEGATE, "imageToBase64", STRING_DOUBLE);
+        if (includeNetworkFunctions) runner.addFunctionOfServiceMethod("imageToBase64", IMAGE_DELEGATE, "imageToBase64", STRING_DOUBLE);
         runner.addFunctionOfServiceMethod("numRoundInteger", DECISION_DELEGATE, "numRoundInteger", new Class<?>[]{double.class});
         runner.addFunctionOfServiceMethod("randomInt", RANDOM_DELEGATE, "randomInt", OBJECT_VARARGS);
         runner.addFunctionOfServiceMethod("randomDecimal", RANDOM_DELEGATE, "randomDecimal", OBJECT_VARARGS);
@@ -225,6 +229,7 @@ public final class AggregateBuiltinFunctionRegistry {
         runner.addFunctionOfServiceMethod("currentRuleName", RUNTIME_CONTEXT_DELEGATE, "currentRuleName", NO_ARGS);
         runner.addFunctionOfServiceMethod("currentMatchedConditions", RUNTIME_CONTEXT_DELEGATE, "currentMatchedConditions", NO_ARGS);
         runner.addFunctionOfServiceMethod("sourceStatus", RUNTIME_CONTEXT_DELEGATE, "sourceStatus", FOUR_STRINGS);
+        runner.addFunctionOfServiceMethod("sourceStatusValue", RUNTIME_CONTEXT_DELEGATE, "sourceStatusValue", THREE_STRINGS);
         runner.addFunctionOfServiceMethod("recordRuleSetItem", RUNTIME_CONTEXT_DELEGATE, "recordRuleSetItem", TWO_STRINGS_OBJECT);
         runner.addFunctionOfServiceMethod("recordRuleSetSummary", RUNTIME_CONTEXT_DELEGATE, "recordRuleSetSummary", SINGLE_OBJECT);
     }

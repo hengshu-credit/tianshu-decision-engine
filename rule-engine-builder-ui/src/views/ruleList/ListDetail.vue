@@ -36,19 +36,15 @@
       </div>
     </div>
 
-    <div class="workflow-guide" role="note">
-      <div class="workflow-guide-title">名单内容变更流程</div>
-      <div class="workflow-steps" aria-label="名单内容变更流程">
-        <span class="workflow-step is-current">1 填写或导入</span>
-        <span class="workflow-arrow">→</span>
-        <span class="workflow-step">2 提交审批</span>
-        <span class="workflow-arrow">→</span>
-        <span class="workflow-step">3 审批通过后生效</span>
-      </div>
-      <div class="workflow-guide-text">
-        审批通过前，当前有效记录和变更日志都不会改变；重复数据会自动跳过，错误行会明确提示。
-      </div>
-    </div>
+    <config-layer-guide
+      title="名单内容变更流程"
+      description="审批通过前，当前有效记录和变更日志都不会改变；重复数据会自动跳过，错误行会明确提示。"
+      :items="[
+        { label: '填写或导入', detail: '准备新增、修改或删除的记录' },
+        { label: '提交审批', detail: '核对变更内容并提交审批' },
+        { label: '审批通过后生效', detail: '生效后可查看有效记录与变更日志' },
+      ]"
+    />
 
     <div
       v-if="batchFeedback && !dialogVisible"
@@ -405,6 +401,7 @@
 </template>
 
 <script>
+import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import { markRaw } from 'vue'
 import {
@@ -432,7 +429,7 @@ function emptyLogQuery(pageSize = 10) {
 }
 
 export default {
-  components: { RemoteFilterSelect },
+  components: { ConfigLayerGuide, RemoteFilterSelect },
   data() {
     return {
       listId: this.$route.params.id,
@@ -767,45 +764,6 @@ export default {
 }
 .hidden-file {
   display: none;
-}
-.workflow-guide {
-  margin-bottom: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--tianshu-info-border);
-  border-radius: 6px;
-  background: var(--tianshu-info-bg);
-}
-.workflow-guide-title {
-  color: var(--tianshu-info-text);
-  font-size: 13px;
-  font-weight: 600;
-}
-.workflow-steps {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-.workflow-step {
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: var(--tianshu-bg-surface);
-  color: var(--tianshu-text-secondary);
-  font-size: 12px;
-}
-.workflow-step.is-current {
-  background: var(--el-color-primary);
-  color: var(--tianshu-brand-foreground);
-}
-.workflow-arrow {
-  color: var(--tianshu-text-tertiary);
-}
-.workflow-guide-text {
-  margin-top: 8px;
-  color: var(--tianshu-text-secondary);
-  font-size: 12px;
-  line-height: 1.6;
 }
 .batch-feedback {
   margin-bottom: 12px;

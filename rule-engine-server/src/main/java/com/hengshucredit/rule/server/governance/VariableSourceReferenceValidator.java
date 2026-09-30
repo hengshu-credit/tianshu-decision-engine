@@ -39,6 +39,7 @@ public class VariableSourceReferenceValidator {
 
     @Resource
     private com.hengshucredit.rule.server.derived.DerivedVariableValidator derivedVariableValidator;
+    @Resource private com.hengshucredit.rule.server.service.RuleVariableService variableService;
 
     public VariableSourceCatalog catalog(String scope, Long projectId) {
         String normalizedScope = normalizeScope(scope, projectId);
@@ -177,6 +178,21 @@ public class VariableSourceReferenceValidator {
                     "所选外数 API 已停用",
                     "$.sourceConfig.apiConfigId"));
             return;
+        }
+        if (config.getJSONObject("requestOverrides") != null) {
+            try {
+                var definition = com.hengshucredit.rule.server.service.ExternalApiRequestPlan.specification(api);
+                var fields = com.hengshucredit.rule.server.service.ExternalApiRequestPlan.fields(definition);
+                if (definition != null && definition.getJSONArray("requestBranches") != null) {
+                    for (Object branch : definition.getJSONArray("requestBranches")) fields.addAll(com.hengshucredit.rule.server.service.ExternalApiRequestPlan.fields(JSON.parseObject(JSON.toJSONString(branch))));
+                }
+                for (String key : config.getJSONObject("requestOverrides").keySet()) {
+                    if (fields.stream().noneMatch(field -> key.equals(field.getString("id")) && field.getBooleanValue("overridable"))) throw new IllegalArgumentException("API 参数不允许覆盖或已被删除: " + key);
+                }
+                if (variableService != null) com.hengshucredit.rule.server.service.ExternalApiExecutionConfig.bindReferences(config.get("requestOverrides"), variableService.buildRefScriptNameMap(variable.getProjectId()));
+            } catch (IllegalArgumentException exception) {
+                issues.add(issue(variable, "API_PARAMETER_OVERRIDE_INVALID", exception.getMessage(), "$.sourceConfig.requestOverrides"));
+            }
         }
         RuleExternalDatasource source = externalDatasourceMapper
                 .selectById(api.getDatasourceId());

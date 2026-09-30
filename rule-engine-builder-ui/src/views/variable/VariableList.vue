@@ -1181,35 +1181,15 @@
       :close-on-click-modal="false"
     >
       <dialog-resize-handle :visible="dialogVisible" :min-width="720" :min-height="520" />
-      <section
+      <config-layer-guide
         v-if="!isObjectField"
         class="variable-config-guide"
+        title="按业务取值方式完成字段配置"
+        description="先确定字段归属和含义，再选择数据从哪里来。"
         aria-label="字段配置进度"
-      >
-        <div class="variable-config-guide__heading">
-          <div>
-            <strong>按业务取值方式完成字段配置</strong>
-            <span>先确定字段归属和含义，再选择数据从哪里来。</span>
-          </div>
-          <el-tag type="primary">
-            {{ variableConfigurationReadyCount }} / 4 已就绪
-          </el-tag>
-        </div>
-        <div class="variable-config-checklist">
-          <div
-            v-for="(item, index) in variableConfigurationChecklist"
-            :key="item.label"
-            class="variable-config-check"
-            :class="{ 'is-ready': item.ready }"
-          >
-            <span>{{ item.ready ? '✓' : index + 1 }}</span>
-            <div>
-              <strong>{{ item.label }}</strong>
-              <small>{{ item.help }}</small>
-            </div>
-          </div>
-        </div>
-      </section>
+        :items="variableConfigurationChecklist"
+        show-progress
+      />
       <resource-preflight-panel
         v-if="!isObjectField"
         resource-type="VARIABLE"
@@ -1308,6 +1288,15 @@
           />
           <div class="field-help">从对象来源返回结果中读取该字段；API 路径相对于对象结果路径，数据库默认使用查询结果列名。</div>
         </el-form-item>
+        <el-form-item v-if="!isObjectField" label="默认值">
+          <el-input
+            v-model="form.defaultValue"
+            :placeholder="form.varSource === 'CONSTANT' ? '常量必填' : '可选'"
+          />
+        </el-form-item>
+        <el-form-item v-if="isObjectField && objectFieldApiId" class="api-source-form-item" label="覆盖 API 入参">
+          <api-source-binding :api-id="objectFieldApiId" v-model:value="form.apiRequestOverrides" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="form.sourcePath = $event" />
+        </el-form-item>
         <el-form-item v-if="!isObjectField" label="取值方式">
           <variable-source-selector
             v-model="form.varSource"
@@ -1328,7 +1317,7 @@
           <el-switch v-model="form.recordResult" aria-label="记录字段结果" />
           <div class="field-help">开启后在根规则日志中按字段 ID 保存本次结果，供后续历史衍生统计；请求入参与三方调用结果默认可回溯。已发布规则需重新发布以更新快照，不回填旧日志。</div>
         </el-form-item>
-        <el-form-item v-if="isObjectField && !form.refObjectId" label="引用用途">
+        <el-form-item v-if="isObjectField && !objectHasExternalSource && !form.refObjectId" label="引用用途">
           <el-select v-model="form.referenceMode" style="width: 100%">
             <el-option label="引用取值：仅在当前子字段缺失时补取" value="VALUE" />
             <el-option label="仅复用结构：不执行被引用字段的来源" value="STRUCTURE" />
@@ -1345,6 +1334,7 @@
           @type-change="form.varType = $event"
         />
         <template v-if="!isObjectField && form.varSource === 'API'">
+          <el-form-item class="api-source-form-item" label="覆盖 API 入参"><api-source-binding :api-id="form.apiConfigId" v-model:value="form.apiRequestOverrides" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="form.apiResultPath = $event" /></el-form-item>
           <el-form-item label="接口配置">
             <el-select
               v-model="form.apiConfigId"
@@ -1380,6 +1370,9 @@
               <el-option label="抛出异常" value="ERROR" />
               <el-option label="返回默认值" value="RETURN_DEFAULT" />
               <el-option label="跳过补值" value="SKIP" />
+              <el-option label="异常跳出" value="BREAK" />
+              <el-option label="异常等待（按 trace 恢复）" value="WAIT" />
+              <el-option label="异常重试" value="RETRY" />
             </el-select>
             <span class="form-tip" style="margin-left: 12px">同一根规则（含子规则）复用首次外数结果；接口内部失败重试仍按外数配置执行。</span>
           </el-form-item>
@@ -1558,84 +1551,12 @@
             </div>
           </el-form-item>
         </template>
-        <section
-          v-if="!isObjectField && ['API', 'DB', 'LIST', 'DERIVED'].includes(form.varSource)"
-          class="draft-preview-panel"
-        >
-          <div class="draft-preview-panel__heading">
-            <div>
-              <strong>保存前验证取值</strong>
-              <span>输入一组业务样例，确认来源配置能得到预期结果。</span>
-            </div>
-            <el-button v-if="form.varSource === 'DERIVED'" @click="generateDerivedSample">生成上游入参</el-button>
-            <el-button
-              type="primary"
-              :loading="draftPreviewing"
-              @click="previewDraftVariable"
-            >
-              预览取值
-            </el-button>
-          </div>
-          <el-alert
-            v-if="form.varSource === 'API' || form.varSource === 'DB'"
-            type="warning"
-            :closable="false"
-            show-icon
-            title="预览会真实访问所选数据源，请使用安全的测试参数。"
-          />
-          <el-alert
-            v-if="draftPreviewError"
-            type="error"
-            :closable="false"
-            show-icon
-            :title="draftPreviewError"
-          />
-          <div v-if="form.varSource === 'DB'" class="db-sample-fields">
-            <label v-for="field in dbSampleFields" :key="field.key">
-              {{ field.label }}
-              <el-input :model-value="dbSampleValue(field)" :aria-label="'样例 ' + field.label" @update:model-value="setDbSampleValue(field, $event)" />
-            </label>
-            <p v-if="!dbSampleFields.length" class="field-help">固定值参数可直接预览；业务字段参数选择后可在这里填写样例。</p>
-          </div>
-          <div class="draft-preview-panel__body">
-            <div class="draft-preview-column">
-              <label>样例参数（JSON 对象）</label>
-              <monaco-editor
-                v-model:value="draftPreviewParamsText"
-                language="json"
-                height="120px"
-              />
-            </div>
-            <div class="draft-preview-column">
-              <label>预览结果</label>
-              <pre v-if="draftPreviewResult !== null" class="draft-preview-result">{{
-                formatJson(draftPreviewResult)
-              }}</pre>
-              <div v-else class="draft-preview-empty">尚未预览</div>
-            </div>
-          </div>
-          <div v-if="form.varSource === 'DB' && draftDatabaseRows" class="db-preview-rows">
-            <strong>查询返回 {{ draftDatabaseRows.length }} 行</strong>
-            <el-select v-if="dbResultChoices.length" :model-value="form.dbResultPath" aria-label="选择查询结果" placeholder="选择一行或一个字段作为变量结果" @update:model-value="form.dbResultPath = $event">
-              <el-option v-for="choice in dbResultChoices" :key="choice.path" :label="choice.label" :value="choice.path" />
-            </el-select>
-            <el-table :data="draftDatabaseRows" size="small" max-height="180" empty-text="查询成功，没有匹配记录">
-              <el-table-column v-for="column in Object.keys(draftDatabaseRows[0] || {})" :key="column" :prop="column" :label="column" min-width="120" show-overflow-tooltip />
-            </el-table>
-          </div>
-        </section>
-        <el-form-item v-if="!isObjectField" label="默认值">
-          <el-input
-            v-model="form.defaultValue"
-            :placeholder="form.varSource === 'CONSTANT' ? '常量必填' : '可选'"
-          />
-        </el-form-item>
         <el-form-item v-if="isObjectField && ['LIST', 'ARRAY', 'SET'].includes(form.varType)" label="元素类型">
           <el-select v-model="form.genericType" clearable placeholder="请选择列表元素类型" @change="onObjectFieldTypeChange">
             <el-option v-for="item in varTypeFormOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="isObjectField" label="引用变量" :error="objectFieldReferenceError">
+        <el-form-item v-if="isObjectField && !objectHasExternalSource" label="引用变量" :error="objectFieldReferenceError">
           <el-select
             :model-value="objectFieldReferenceValue"
             clearable
@@ -1707,6 +1628,74 @@
             />
           </el-form-item>
         </template>
+        <section
+          v-if="!isObjectField && ['API', 'DB', 'LIST', 'DERIVED'].includes(form.varSource)"
+          class="draft-preview-panel"
+        >
+          <div class="draft-preview-panel__heading">
+            <div>
+              <strong>保存前验证取值</strong>
+              <span>输入一组业务样例，确认来源配置能得到预期结果。</span>
+            </div>
+            <el-button v-if="form.varSource === 'DERIVED'" @click="generateDerivedSample">生成上游入参</el-button>
+            <el-button
+              type="primary"
+              :loading="draftPreviewing"
+              @click="previewDraftVariable"
+            >
+              {{ form.varSource === 'API' ? '真实调用测试' : '预览取值' }}
+            </el-button>
+          </div>
+          <el-alert
+            v-if="form.varSource === 'API' || form.varSource === 'DB'"
+            type="warning"
+            :closable="false"
+            show-icon
+            title="预览会真实访问所选数据源，请使用安全的测试参数。"
+          />
+          <el-alert
+            v-if="draftPreviewError"
+            type="error"
+            :closable="false"
+            show-icon
+            :title="draftPreviewError"
+          />
+          <div v-if="form.varSource === 'DB'" class="db-sample-fields">
+            <label v-for="field in dbSampleFields" :key="field.key">
+              {{ field.label }}
+              <el-input :model-value="dbSampleValue(field)" :aria-label="'样例 ' + field.label" @update:model-value="setDbSampleValue(field, $event)" />
+            </label>
+            <p v-if="!dbSampleFields.length" class="field-help">固定值参数可直接预览；业务字段参数选择后可在这里填写样例。</p>
+          </div>
+          <div class="draft-preview-panel__body">
+            <div class="draft-preview-column">
+              <label>样例参数（JSON 对象）</label>
+              <monaco-editor
+                v-model:value="draftPreviewParamsText"
+                language="json"
+                height="120px"
+              />
+            </div>
+            <div class="draft-preview-column">
+              <label>预览结果</label>
+              <pre v-if="draftPreviewResult !== null" class="draft-preview-result">{{
+                formatJson(draftPreviewResult)
+              }}</pre>
+              <div v-else class="draft-preview-empty">尚未预览</div>
+            </div>
+          </div>
+          <external-call-trace v-for="call in draftPreviewResult?.externalCalls || []" :key="call.callId" :steps="call.traceSteps || call.externalCall?.traceSteps || []" />
+          <div v-if="form.varSource === 'DB' && draftDatabaseRows" class="db-preview-rows">
+            <strong>查询返回 {{ draftDatabaseRows.length }} 行</strong>
+            <el-select v-if="dbResultChoices.length" :model-value="form.dbResultPath" aria-label="选择查询结果" placeholder="选择一行或一个字段作为变量结果" @update:model-value="form.dbResultPath = $event">
+              <el-option v-for="choice in dbResultChoices" :key="choice.path" :label="choice.label" :value="choice.path" />
+            </el-select>
+            <el-table :data="draftDatabaseRows" size="small" max-height="180" empty-text="查询成功，没有匹配记录">
+              <el-table-column v-for="column in Object.keys(draftDatabaseRows[0] || {})" :key="column" :prop="column" :label="column" min-width="120" show-overflow-tooltip />
+            </el-table>
+          </div>
+        </section>
+
       </el-form>
       <template v-slot:footer>
         <div>
@@ -1729,31 +1718,14 @@
       :close-on-click-modal="false"
     >
       <dialog-resize-handle :visible="objectDialogVisible" :min-width="720" :min-height="520" />
-      <section class="variable-config-guide object-config-guide" aria-label="对象配置进度">
-        <div class="variable-config-guide__heading">
-          <div>
-            <strong>按业务对象完成基础配置</strong>
-            <span>先确定对象归属和定义，再设置来源与引用加载方式。</span>
-          </div>
-          <el-tag type="primary">
-            {{ objectConfigurationReadyCount }} / 3 已就绪
-          </el-tag>
-        </div>
-        <div class="variable-config-checklist">
-          <div
-            v-for="(item, index) in objectConfigurationChecklist"
-            :key="item.label"
-            class="variable-config-check"
-            :class="{ 'is-ready': item.ready }"
-          >
-            <span>{{ item.ready ? '✓' : index + 1 }}</span>
-            <div>
-              <strong>{{ item.label }}</strong>
-              <small>{{ item.help }}</small>
-            </div>
-          </div>
-        </div>
-      </section>
+      <config-layer-guide
+        class="variable-config-guide object-config-guide"
+        title="按业务对象完成基础配置"
+        description="先确定对象归属和定义，再设置来源与引用加载方式。"
+        aria-label="对象配置进度"
+        :items="objectConfigurationChecklist"
+        show-progress
+      />
       <el-form
         ref="objForm"
         :model="objectForm"
@@ -1857,8 +1829,8 @@
                 <el-input v-model="objectForm.resultPath" placeholder="body.data；默认 body" />
                 <div class="field-help">整体结果模式从此路径绑定对象；字段模式下各字段路径相对于此结果填写。</div>
               </el-form-item>
-              <el-form-item label="请求参数映射">
-                <el-input v-model="objectForm.paramMapping" type="textarea" :rows="3" placeholder='例如 {"customerId":"customerId"}' />
+              <el-form-item class="api-source-form-item" label="覆盖请求入参">
+                <api-source-binding :api-id="objectForm.apiConfigId" v-model:value="objectForm.apiRequestOverrides" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="objectForm.resultPath = $event" />
               </el-form-item>
             </template>
             <template v-if="objectForm.sourceType === 'DB'">
@@ -2011,6 +1983,7 @@
       <div v-if="variableTestResult" class="test-result-block">
         <div class="test-result-title">测试结果</div>
         <pre class="test-result-pre">{{ formatJson(variableTestResult) }}</pre>
+        <external-call-trace v-for="call in variableTestResult?.externalCalls || []" :key="call.callId" :steps="call.traceSteps || call.externalCall?.traceSteps || []" />
       </div>
       <template v-slot:footer>
         <div>
@@ -2611,6 +2584,8 @@
 
 <script>
 import SqlParameterEditor from '@/components/common/SqlParameterEditor.vue'
+import ExternalCallTrace from '@/components/common/ExternalCallTrace.vue'
+import ApiSourceBinding from '@/components/common/ApiSourceBinding.vue'
 import DerivedVariableEditor from './components/DerivedVariableEditor.vue'
 import { createDerivedConfig, validateDerivedConfig, derivedCurrentInputs } from '@/utils/derivedVariable'
 import { validateReadOnlyQuery } from '@/utils/sqlQuery'
@@ -2863,6 +2838,7 @@ export default {
       objectDialogVisible: false,
       objectAdvancedSections: [],
       objectForm: {
+        apiRequestOverrides: {},
         lazyLoadReferences: false,
         id: null,
         objectCode: '',
@@ -2972,6 +2948,8 @@ export default {
     }
   },
   components: {
+    ApiSourceBinding,
+    ExternalCallTrace,
     DerivedVariableEditor,
     SqlParameterEditor,
     MonacoEditor,
@@ -3008,6 +2986,8 @@ export default {
     if (this.activeTab === 'validations') this.loadFieldValidations()
   },
   watch: {
+    'objectForm.scope'() { if (this.objectDialogVisible) this.loadObjectSourceOptions() },
+    'objectForm.projectId'() { if (this.objectDialogVisible) this.loadObjectSourceOptions() },
     form: {
       deep: true,
       handler() {
@@ -3136,6 +3116,10 @@ export default {
     },
     objectHasExternalSource() {
       return ['API', 'DB'].includes(String(this.objectFieldOwner?.sourceType || '').toUpperCase())
+    },
+    objectFieldApiId() {
+      if (this.objectFieldOwner?.sourceType !== 'API') return null
+      return this.parseJsonSafe(this.objectFieldOwner.sourceContent, {}).apiConfigId
     },
     sourceCatalogCounts() {
       return {
@@ -3369,6 +3353,7 @@ export default {
         recordResult: false,
         derivedConfig: createDerivedConfig(),
         apiConfigId: '',
+        apiRequestOverrides: {},
         apiParamMapping: '{}',
         apiResultPath: 'body',
         apiForceRefresh: false,
@@ -3414,6 +3399,7 @@ export default {
       }
     },
     async onVarSourceChange(source) {
+      if (source === 'API') await this.loadListExpressionOptions(true)
       this.resetDraftPreview()
       if (source === 'LIST')
         this.onListReturnModeChange(this.form.listReturnMode)
@@ -3421,6 +3407,7 @@ export default {
       if (['LIST', 'DB', 'DERIVED'].includes(source)) await this.loadListExpressionOptions()
     },
     async onVariableProjectChange() {
+      if (this.form.varSource === 'API') await this.loadListExpressionOptions(true)
       this.listReferenceProjectId = null
       this.resetDraftPreview()
       await this.loadVariableSourceCatalog(true)
@@ -3620,8 +3607,8 @@ export default {
       if (Array.isArray(data)) return data
       return data && Array.isArray(data.records) ? data.records : []
     },
-    async loadListExpressionOptions(force = false) {
-      const projectId = this.form.scope === 'GLOBAL' ? 0 : this.form.projectId
+    async loadListExpressionOptions(force = false, owner = this.form) {
+      const projectId = owner.scope === 'GLOBAL' ? 0 : owner.projectId
       if (projectId === '' || projectId == null) {
         this.listReferenceOptions = []
         this.listFunctionOptions = []
@@ -3672,6 +3659,7 @@ export default {
       if (this.form.varSource === 'DERIVED') {
         this.form.derivedConfig = { ...createDerivedConfig(), ...config }
       } else if (this.form.varSource === 'API') {
+        this.form.apiRequestOverrides = config.requestOverrides || {}
         this.form.apiConfigId = config.apiConfigId || ''
         this.form.apiParamMapping = this.stringifyConfig(
           config.paramMapping || {}
@@ -3735,6 +3723,7 @@ export default {
         }
         payload.sourceConfig = JSON.stringify({
           apiConfigId: payload.apiConfigId,
+          requestOverrides: payload.apiRequestOverrides || {},
           resultPath: payload.apiResultPath || 'body',
           forceRefresh: payload.apiForceRefresh === true,
           exceptionStrategy: payload.apiExceptionStrategy || 'ERROR',
@@ -3820,6 +3809,7 @@ export default {
       const sourceFormFields = [
         'derivedConfig',
         'apiConfigId',
+        'apiRequestOverrides',
         'apiParamMapping',
         'apiResultPath',
         'apiForceRefresh',
@@ -4412,6 +4402,7 @@ export default {
     /** 新建数据对象（从工具栏按钮） */
     handleCreateObject() {
       this.objectForm = {
+        apiRequestOverrides: {},
         lazyLoadReferences: false,
         id: null,
         objectCode: '',
@@ -4430,8 +4421,7 @@ export default {
         params: '[]',
         description: '',
       }
-      this.loadVariableSourceOptions('API')
-      this.loadVariableSourceOptions('DB')
+      this.loadObjectSourceOptions()
       this.objectAdvancedSections = []
       this.objectDialogVisible = true
       this.$nextTick(() => {
@@ -4442,6 +4432,7 @@ export default {
     handleEditObject(obj) {
       const sourceConfig = this.parseJsonSafe(obj.sourceContent, {})
       this.objectForm = {
+        apiRequestOverrides: sourceConfig.requestOverrides || {},
         lazyLoadReferences: obj.lazyLoadReferences === true,
         id: obj.id,
         objectCode: obj.objectCode,
@@ -4461,8 +4452,8 @@ export default {
         params: this.stringifyConfig(sourceConfig.params || []),
         description: obj.description || '',
       }
-      this.loadVariableSourceOptions('API')
-      this.loadVariableSourceOptions('DB')
+      this.loadObjectSourceOptions()
+      if (obj.sourceType === 'API') this.loadListExpressionOptions(true, this.objectForm)
       this.objectAdvancedSections = []
       this.objectDialogVisible = true
       this.$nextTick(() => {
@@ -4471,13 +4462,25 @@ export default {
     },
     /** 切换数据对象作用范围时保留项目归属，提交全局时统一归一化为 0 */
     onObjScopeChange() {
+      if (this.objectForm.sourceType === 'API') this.loadListExpressionOptions(true, this.objectForm)
       this.$nextTick(() => {
         if (this.$refs.objForm) this.$refs.objForm.clearValidate('projectId')
       })
     },
+    async loadObjectSourceOptions() {
+      const scope = this.objectForm.scope
+      const projectId = scope === 'GLOBAL' ? 0 : this.objectForm.projectId
+      if (!scope || (scope === 'PROJECT' && !projectId)) { this.apiConfigOptions = []; this.dbDatasourceOptions = []; return }
+      try {
+        const response = await getVariableSourceOptions({ scope, projectId })
+        if (scope !== this.objectForm.scope || String(projectId) !== String(scope === 'GLOBAL' ? 0 : this.objectForm.projectId)) return
+        this.apiConfigOptions = (response.data?.apiOptions || []).map(item => ({ ...item, apiName: item.name, apiCode: item.code }))
+        this.dbDatasourceOptions = (response.data?.databaseOptions || []).map(item => ({ ...item, datasourceName: item.name, datasourceCode: item.code }))
+      } catch (error) { this.$message.error(error.message || '对象来源加载失败') }
+    },
     onObjectSourceTypeChange(source) {
-      if (source === 'API') this.loadVariableSourceOptions('API')
-      if (source === 'DB') this.loadVariableSourceOptions('DB')
+      this.loadListExpressionOptions(true, this.objectForm)
+      if (['API', 'DB'].includes(source)) this.loadObjectSourceOptions()
     },
     /** 提交数据对象表单 */
     handleObjectSubmit() {
@@ -4502,6 +4505,7 @@ export default {
           if (paramMapping == null || Array.isArray(paramMapping) || typeof paramMapping !== 'object') return
           sourceContent = JSON.stringify({
             apiConfigId: this.objectForm.apiConfigId,
+            requestOverrides: this.objectForm.apiRequestOverrides || {},
             bindingMode: this.objectForm.bindingMode || 'OBJECT',
             resultPath: this.objectForm.resultPath || 'body',
             paramMapping,
@@ -4561,6 +4565,7 @@ export default {
       this.objectFieldOwner = obj
       this.objectFieldNode = node
       this.form = {
+        apiRequestOverrides: {},
         id: null,
         projectId: obj.projectId,
         varCode: '',
@@ -4576,6 +4581,7 @@ export default {
         status: 1,
       }
       this.loadObjectFieldReferenceVariables(obj)
+      if (obj.sourceType === 'API') this.loadListExpressionOptions(true, obj)
       this.dialogVisible = true
       this.$nextTick(() => {
         if (this.$refs.form) this.$refs.form.clearValidate()
@@ -4591,6 +4597,7 @@ export default {
       this.objectFieldOwner = node.object
       this.objectFieldNode = node
       this.form = {
+        apiRequestOverrides: this.parseJsonSafe(row.sourceConfig, {}).requestOverrides || {},
         id: row.id,
         projectId: row.projectId,
         varCode: row.varCode,
@@ -4609,6 +4616,7 @@ export default {
         status: row.status != null ? row.status : 1,
       }
       this.loadObjectFieldReferenceVariables(node.object)
+      if (node.object.sourceType === 'API') this.loadListExpressionOptions(true, node.object)
       this.dialogVisible = true
       this.$nextTick(() => {
         if (this.$refs.form) this.$refs.form.clearValidate()
@@ -4937,6 +4945,7 @@ export default {
       this.resetDraftPreview()
       this.draftPreviewParamsText = this.buildTestParamTemplate(row)
       this.loadVariableSourceCatalog(true)
+      if (this.form.varSource === 'API') this.loadListExpressionOptions(true)
       if (['LIST', 'DB', 'DERIVED'].includes(this.form.varSource)) this.loadListExpressionOptions(true)
       this.dialogVisible = true
       this.$nextTick(() => {
@@ -4961,6 +4970,8 @@ export default {
             scriptName: this.form.scriptName,
             varType: this.form.varType,
             sourcePath: this.form.sourcePath || null,
+            sourceConfig: Object.keys(this.form.apiRequestOverrides || {}).length
+              ? JSON.stringify({ requestOverrides: this.form.apiRequestOverrides }) : null,
             refObjectCode: this.form.refObjectCode || null,
             refObjectId: this.form.refObjectId || null,
             refVariableId: this.form.refVariableId || null,
@@ -5365,6 +5376,10 @@ export default {
           ERROR: '失败时报错',
           RETURN_DEFAULT: '失败时返回默认值',
           RETURN_NULL: '失败时返回空值',
+          SKIP: '异常跳过（继续规则）',
+          BREAK: '异常跳出（结束规则）',
+          WAIT: '异常等待（按 trace 恢复）',
+          RETRY: '异常重试',
         }[value || 'ERROR'] ||
         value ||
         '失败时报错'
@@ -5933,7 +5948,7 @@ export default {
   flex-wrap: wrap;
 }
 .const-group-header:hover {
-  background: #f0f2f5;
+  background: var(--tianshu-bg-muted);
 }
 .const-group-code {
   font-weight: bold;
@@ -5993,7 +6008,7 @@ export default {
 }
 .test-result-title {
   font-weight: 700;
-  color: #334155;
+  color: var(--tianshu-text-secondary);
   margin-bottom: 6px;
 }
 .test-result-pre {
@@ -6012,18 +6027,18 @@ export default {
 }
 .source-detail-title {
   font-weight: 700;
-  color: #334155;
+  color: var(--tianshu-text-secondary);
   margin-bottom: 8px;
 }
 .source-summary-card {
   margin-top: 14px;
   padding: 14px;
-  border: 1px solid #dbeafe;
-  background: #f8fbff;
+  border: 1px solid var(--tianshu-info-border);
+  background: var(--tianshu-info-bg);
   border-radius: 6px;
 }
 .source-summary-title {
-  color: #1e3a8a;
+  color: var(--tianshu-info-text);
   font-weight: 700;
   margin-bottom: 4px;
 }
@@ -6060,92 +6075,35 @@ export default {
 .source-tech-collapse {
   margin-top: 14px;
 }
-.variable-config-guide {
-  margin-bottom: 18px;
-  padding: 15px 16px;
-  border: 1px solid var(--tianshu-info-border);
-  border-radius: 10px;
-  background: var(--tianshu-info-bg);
-}
-.variable-config-guide__heading,
 .draft-preview-panel__heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
 }
-.variable-config-guide__heading strong,
 .draft-preview-panel__heading strong {
   display: block;
   color: var(--tianshu-text-primary);
   font-size: 14px;
 }
-.variable-config-guide__heading span,
 .draft-preview-panel__heading span {
   display: block;
   margin-top: 3px;
   color: var(--tianshu-text-secondary);
   font-size: 12px;
 }
-.variable-config-checklist {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 13px;
-}
-.variable-config-check {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-  padding: 9px;
-  border: 1px solid var(--tianshu-border-subtle);
-  border-radius: 7px;
-  background: var(--tianshu-bg-surface);
-}
-.variable-config-check > span {
-  display: inline-flex;
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--tianshu-bg-muted);
-  color: var(--tianshu-text-tertiary);
-  font-size: 11px;
-  font-weight: 700;
-}
-.variable-config-check strong,
-.variable-config-check small {
-  display: block;
-}
-.variable-config-check strong {
-  color: var(--tianshu-text-primary);
-  font-size: 12px;
-}
-.variable-config-check small {
-  margin-top: 2px;
-  color: var(--tianshu-text-tertiary);
-  font-size: 10px;
-  line-height: 1.35;
-}
-.variable-config-check.is-ready {
-  border-color: var(--tianshu-success-border);
-  background: var(--tianshu-success-bg);
-}
-.variable-config-check.is-ready > span {
-  background: var(--tianshu-success-border);
-  color: var(--tianshu-success-text);
-}
 .source-catalog-help {
   margin-top: 7px;
 }
 .variable-advanced-collapse {
-  width: calc(100% - 120px);
-  margin: 2px auto 16px;
+  width: 100%;
+  margin: 2px 0 16px;
+  box-sizing: border-box;
   border: 1px solid var(--tianshu-info-border);
   border-radius: 7px;
+}
+.api-source-form-item :deep(.el-form-item__content) {
+  min-width: 0;
 }
 .variable-advanced-collapse :deep(.el-collapse-item__header) {
   height: auto;
@@ -6237,9 +6195,6 @@ export default {
   font-size: 12px;
 }
 @media (max-width: 900px) {
-  .variable-config-checklist {
-    grid-template-columns: 1fr 1fr;
-  }
   .draft-preview-panel__body {
     grid-template-columns: 1fr;
   }

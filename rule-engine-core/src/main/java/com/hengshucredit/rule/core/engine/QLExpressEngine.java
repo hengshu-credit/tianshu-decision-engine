@@ -234,6 +234,7 @@ public class QLExpressEngine {
             if (current instanceof RuleTerminationSignal) {
                 throw (RuleTerminationSignal) current;
             }
+            if (current instanceof RuleSuspensionSignal suspension) throw suspension;
             current = current.getCause();
         }
     }

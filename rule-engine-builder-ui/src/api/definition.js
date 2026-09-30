@@ -4,6 +4,10 @@ export function compileDesignerModel(id, data) {
   return request({ url: `/rule/definition/${id}/designer/compile`, method: 'post', data })
 }
 
+export function getDesignerCompileTask(id, taskId) {
+  return request({ url: `/rule/definition/${id}/designer/compile/${encodeURIComponent(taskId)}`, method: 'get' })
+}
+
 export function saveDesignerDraft(id, data) {
   return request({ url: `/rule/definition/${id}/designer/drafts`, method: 'post', data })
 }

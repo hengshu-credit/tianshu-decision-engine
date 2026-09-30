@@ -112,14 +112,35 @@ test('变量新建和编辑弹窗的高级设置居中且数字输入框无加�
   await page.setViewportSize({ width: 1280, height: 900 })
   const apiData = createManagementApiData()
   apiData.set('/api/rule/variable/source-options', {
-    apiOptions: [],
+    apiOptions: [{ id: 22, name: '征信查询', code: 'credit_query' }],
     dbOptions: [],
     listOptions: []
   })
+  apiData.set('/api/rule/datasource/api-config/22/binding-contract', {
+    requestFields: [
+      {
+        id: 'body.userId',
+        location: 'body',
+        path: 'userId',
+        value: { kind: 'LITERAL', value: 'u-1', label: 'u-1' },
+        overridable: true
+      }
+    ],
+    resultFields: [{ value: 'body.risk', label: '风险结果' }]
+  })
+  apiData.set('/api/rule/project/1', {
+    id: 1,
+    projectCode: 'e2e_project',
+    projectName: 'E2E 项目',
+    status: 1
+  })
+  apiData.set('/api/rule/dataobject/tree/1', { tree: [] })
+  apiData.set('/api/rule/function/project/1/all', [])
+  apiData.set('/api/rule/model/project/1/all', [])
   const { assertClean } = await installDistRoutes(page, {
     apiData
   })
-  await page.goto('http://tianshu.local/index.html#/variable')
+  await page.goto('http://tianshu.local/index.html#/variable?projectId=1')
 
   for (const action of ['新建字段', '编辑']) {
     await page.getByRole('button', { name: action, exact: true }).first().click()
@@ -142,7 +163,32 @@ test('变量新建和编辑弹窗的高级设置居中且数字输入框无加�
     await expect(collapse.locator('.el-input-number__decrease:visible')).toHaveCount(0)
     await expect(collapse.locator('.el-input-number__increase:visible')).toHaveCount(0)
 
-    await page.keyboard.press('Escape')
+    await dialog.getByRole('button', { name: /外数接口/ }).click()
+    await dialog.locator('.el-form-item').filter({ hasText: '接口配置' }).first().getByRole('combobox').click()
+    await page.locator('.el-select-dropdown:visible').getByText('征信查询 / credit_query', { exact: true }).click()
+    const binding = dialog.locator('.api-source-binding')
+    await expect(binding).toBeVisible()
+    const [bindingBox, tableBox, formBox, previewBox, advancedBox] = await Promise.all([
+      binding.boundingBox(),
+      binding.locator('.api-binding-table-wrap').boundingBox(),
+      form.boundingBox(),
+      dialog.locator('.draft-preview-panel').boundingBox(),
+      collapse.boundingBox()
+    ])
+    expect(bindingBox.width).toBeGreaterThan(400)
+    expect(tableBox.width).toBeGreaterThan(400)
+    expect(Math.abs(formBox.width - previewBox.width)).toBeLessThanOrEqual(2)
+    expect(previewBox.y).toBeGreaterThan(advancedBox.y + advancedBox.height)
+
+    const positions = await form.locator('.el-form-item').evaluateAll(items => items.map(item => ({
+      label: item.querySelector('.el-form-item__label')?.textContent?.trim(),
+      top: item.getBoundingClientRect().top
+    })))
+    const defaultTop = positions.find(item => item.label === '默认值')?.top
+    const sourceTop = positions.find(item => item.label === '取值方式')?.top
+    expect(defaultTop).toBeLessThan(sourceTop)
+
+    await dialog.locator('.el-dialog__headerbtn').click()
     await expect(dialog).toBeHidden()
   }
 

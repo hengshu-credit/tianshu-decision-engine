@@ -80,6 +80,7 @@ public class SchemaSyncService {
             ensureApiDocScenarioSchema();
             ensureOpenApiContractColumns();
             ensureExternalApiCacheColumns();
+            ensureExternalApiJsonColumns();
             ensureDbDatasourceConnectionColumns();
             ensureModelRuntimeColumns();
             ensureModelScopeConsistency();
@@ -880,6 +881,7 @@ public class SchemaSyncService {
     private void ensureExternalApiCacheColumns() {
         String table = "rule_external_api_config";
         if (!tableExists(table)) return;
+        addColumnIfMissing(table, "execution_config", "`execution_config` JSON DEFAULT NULL COMMENT '统一外数请求响应与多步链路配置'");
         addColumnIfMissing(table, "payload_capture_config",
                 "`payload_capture_config` JSON DEFAULT NULL COMMENT '请求/响应诊断报文留存策略JSON' AFTER `request_script`");
         addColumnIfMissing(table, "response_cache_seconds",
@@ -894,6 +896,8 @@ public class SchemaSyncService {
                 "`stale_cache_seconds` INT NOT NULL DEFAULT 0 COMMENT '允许使用过期缓存的秒数' AFTER `response_cache_redis_enabled`");
         addColumnIfMissing(table, "max_connections",
                 "`max_connections` INT NOT NULL DEFAULT 100 COMMENT '该API最大连接数' AFTER `timeout_ms`");
+        addColumnIfMissing(table, "async_timeout_ms",
+                "`async_timeout_ms` INT NOT NULL DEFAULT 30000 COMMENT '异步提交后轮询/回调等待预算毫秒' AFTER `timeout_ms`");
         addColumnIfMissing(table, "max_connections_per_route",
                 "`max_connections_per_route` INT NOT NULL DEFAULT 100 COMMENT '单路由最大连接数' AFTER `max_connections`");
         addColumnIfMissing(table, "connection_request_timeout_ms",
@@ -957,6 +961,8 @@ public class SchemaSyncService {
                 "`cache_key_config` JSON DEFAULT NULL COMMENT '缓存键组件配置JSON，组件按顺序且必须全部有值' AFTER `response_cache_seconds`");
         addColumnIfMissing(table, "success_condition",
                 "`success_condition` JSON DEFAULT NULL COMMENT '请求成功响应条件树JSON' AFTER `cache_key_config`");
+        addColumnIfMissing(table, "exception_condition",
+                "`exception_condition` JSON DEFAULT NULL COMMENT '接口异常响应条件树JSON' AFTER `success_condition`");
         addColumnIfMissing(table, "request_script",
                 "`request_script` LONGTEXT DEFAULT NULL COMMENT '请求发送前QLExpress处理脚本' AFTER `body_template`");
         addColumnIfMissing(table, "response_script",
@@ -970,7 +976,22 @@ public class SchemaSyncService {
         addColumnIfMissing(table, "async_callback_config",
                 "`async_callback_config` JSON DEFAULT NULL COMMENT '异步回调配置JSON' AFTER `async_poll_config`");
         addColumnIfMissing(table, "test_sample_params",
-                "`test_sample_params` LONGTEXT DEFAULT NULL COMMENT 'API调用测试样例JSON' AFTER `description`");
+                "`test_sample_params` JSON DEFAULT NULL COMMENT 'API调用测试样例JSON' AFTER `description`");
+    }
+
+    /** 结构化外数配置保留 JSON 类型，便于按路径查询；脚本和纯文本请求体仍使用 LONGTEXT。 */
+    private void ensureExternalApiJsonColumns() {
+        ensureJsonColumn("rule_external_datasource", "auth_config", "默认鉴权配置JSON");
+        String table = "rule_external_api_config";
+        if (!tableExists(table)) return;
+        for (String column : new String[]{
+                "execution_config", "header_config", "query_config", "request_mapping", "response_mapping",
+                "payload_capture_config", "auth_api_config", "cache_key_config",
+                "success_condition", "exception_condition", "token_failure_condition", "retry_condition",
+                "async_poll_config", "async_callback_config", "billing_condition",
+                "fallback_value", "test_sample_params"}) {
+            ensureJsonColumn(table, column, "外数配置JSON");
+        }
     }
 
     private void ensureModelFieldForeignKeysRemoved() {
@@ -1012,6 +1033,8 @@ public class SchemaSyncService {
     private void ensureDataObjectFieldReferenceSchema() {
         String table = "rule_data_object_field";
         if (!tableExists(table)) return;
+        addColumnIfMissing(table, "source_path", "`source_path` VARCHAR(512) DEFAULT NULL COMMENT '外数响应字段取值路径'");
+        addColumnIfMissing(table, "source_config", "`source_config` LONGTEXT DEFAULT NULL COMMENT '对象子字段外数入参覆盖'");
         addColumnIfMissing(table, "ref_variable_id",
                 "`ref_variable_id` BIGINT DEFAULT NULL COMMENT '字段值直接引用的变量ID' AFTER `ref_object_id`");
         addIndexIfMissing(table, "idx_ref_variable_id", "`ref_variable_id`");
@@ -1079,6 +1102,21 @@ public class SchemaSyncService {
                     + "` LONGTEXT " + (nullable ? "DEFAULT NULL" : "NOT NULL")
                     + " COMMENT '" + comment + "'");
         }
+    }
+
+    private void ensureJsonColumn(String tableName, String columnName, String comment) {
+        if (!columnExists(tableName, columnName) || columnHasDataType(tableName, columnName, "json")) return;
+        Integer invalid = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM `" + tableName + "` WHERE `" + columnName
+                        + "` IS NOT NULL AND JSON_VALID(`" + columnName + "`) = 0",
+                Integer.class);
+        if (invalid != null && invalid > 0) {
+            log.warn("外数配置列 {}.{} 存在 {} 条非法 JSON，保留原列类型并跳过 JSON 转换",
+                    tableName, columnName, invalid);
+            return;
+        }
+        jdbcTemplate.execute("ALTER TABLE `" + tableName + "` MODIFY COLUMN `" + columnName
+                + "` JSON DEFAULT NULL COMMENT '" + comment + "'");
     }
 
     private void addColumnIfMissing(String tableName, String columnName, String definition) {

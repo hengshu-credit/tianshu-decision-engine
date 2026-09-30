@@ -15,6 +15,7 @@ public final class OpenApiStatuses {
     public static final String QPS_CONCURRENCY_EXCEEDED = "400001";
     public static final String REQUEST_TOO_FREQUENT = "400002";
     public static final String REQUEST_TIMEOUT = "400003";
+    public static final String WAITING_EXTERNAL = "400006";
     public static final String PRODUCT_UNAUTHORIZED = "500001";
     public static final String DAILY_QUOTA_EXCEEDED = "500002";
     public static final String MONTHLY_QUOTA_EXCEEDED = "500003";
@@ -70,6 +71,10 @@ public final class OpenApiStatuses {
 
     public static OpenApiStatus requestTimeout() {
         return status(false, REQUEST_TIMEOUT, "请求处理超时", 504);
+    }
+
+    public static OpenApiStatus waitingExternal() {
+        return status(false, WAITING_EXTERNAL, "外数结果尚未就绪，请按 trace_id 查询状态或恢复执行", 202);
     }
 
     public static OpenApiStatus productUnauthorized() {

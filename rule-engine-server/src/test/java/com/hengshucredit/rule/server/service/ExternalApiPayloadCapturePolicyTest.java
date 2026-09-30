@@ -73,6 +73,47 @@ public class ExternalApiPayloadCapturePolicyTest {
     }
 
     @Test
+    public void oversizedFieldPolicyOmitsConfiguredPathEvenWhenValueIsShort() {
+        Map<String, Object> body = new LinkedHashMap<>(Map.of(
+                "image", "small",
+                "name", "keep"));
+        ExternalApiPayloadCapturePolicy.Capture capture = ExternalApiPayloadCapturePolicy.capture(
+                "{\"response\":{\"source\":\"PROCESSED\",\"oversizedFields\":[{\"path\":\"$.image\",\"store\":false}]}}",
+                "response", null, body);
+
+        Assert.assertFalse(capture.capturedBody().contains("image"));
+        Assert.assertTrue(capture.capturedBody().contains("name"));
+        Assert.assertEquals("FILTERED", capture.metadata().get("status"));
+    }
+
+    @Test
+    public void oversizedFieldPolicyStoreProtectsConfiguredPathFromGlobalLimit() {
+        Map<String, Object> body = new LinkedHashMap<>(Map.of(
+                "encrypted", "123456789",
+                "other", "123456789"));
+        ExternalApiPayloadCapturePolicy.Capture capture = ExternalApiPayloadCapturePolicy.capture(
+                "{\"response\":{\"source\":\"PROCESSED\",\"maxFieldBytes\":4,\"oversizedFields\":[{\"path\":\"$.encrypted\",\"store\":true}]}}",
+                "response", null, body);
+
+        Assert.assertTrue(capture.capturedBody().contains("encrypted"));
+        Assert.assertFalse(capture.capturedBody().contains("other"));
+    }
+
+    @Test
+    public void oversizedFieldPolicyAlsoAppliesToSavedOriginalBody() {
+        String original = "{\"image\":\"small\",\"name\":\"keep\"}";
+        ExternalApiPayloadCapturePolicy.Capture capture = ExternalApiPayloadCapturePolicy.capture(
+                "{\"response\":{\"source\":\"ORIGINAL\",\"oversizedFields\":[{\"path\":\"$.image\",\"store\":false}]}}",
+                "response", original, null);
+
+        String saved = ExternalApiPayloadCapturePolicy.originalBody(
+                "{\"response\":{\"source\":\"ORIGINAL\",\"oversizedFields\":[{\"path\":\"$.image\",\"store\":false}]}}",
+                "response", original, capture);
+        Assert.assertFalse(saved.contains("image"));
+        Assert.assertTrue(saved.contains("name"));
+    }
+
+    @Test
     public void optionalOriginalRetentionCanDropLargeRawBody() {
         String original = "{\"base64\":\"very-large\"}";
         ExternalApiPayloadCapturePolicy.Capture capture = ExternalApiPayloadCapturePolicy.capture(

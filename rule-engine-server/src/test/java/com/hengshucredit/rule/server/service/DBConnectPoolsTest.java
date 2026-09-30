@@ -121,6 +121,20 @@ public class DBConnectPoolsTest {
     }
 
     @Test
+    public void queryRejectsParameterCountMismatchBeforeOpeningPool() {
+        DBConnectPools pools = new DBConnectPools() {
+            @Override
+            public com.zaxxer.hikari.HikariDataSource getDataSource(Long id) {
+                throw new AssertionError("参数数量错误时不应打开连接池");
+            }
+        };
+
+        org.junit.Assert.assertThrows(IllegalArgumentException.class,
+                () -> pools.query(1L, "select * from risk_result where id = ? and code = ?",
+                        java.util.List.of(1), 10));
+    }
+
+    @Test
     public void validationQueryRejectsWriteStatementsBeforeOpeningConnection() {
         assertEquals("select 1", DBConnectPools.validationSql(" select 1; "));
         org.junit.Assert.assertThrows(IllegalArgumentException.class,

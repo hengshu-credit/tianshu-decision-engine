@@ -298,6 +298,33 @@ public class HttpSyncClient {
         }
     }
 
+    /** 使用原订单入参按 trace 恢复等待中的规则；服务端会校验入参摘要并复用已完成检查点。 */
+    public RuleResult resumeExecution(String traceId, Object params) {
+        if (traceId == null || traceId.trim().isEmpty()) throw new IllegalArgumentException("traceId 不能为空");
+        try {
+            Request request = authenticate(new Request.Builder()
+                    .url(baseUrl.newBuilder().addPathSegment("api").addPathSegment("rule")
+                            .addPathSegment("runtime").addPathSegment("executions")
+                            .addPathSegment(traceId).addPathSegment("resume").build())
+                    .post(RequestBody.create(params == null ? new byte[0] : JSON.toJSONBytes(params), JSON_MEDIA_TYPE))
+                    .build());
+            try (Response response = httpClient.newCall(request).execute()) {
+                throwIfAuthenticationFailure(response);
+                if (response.body() == null) throw new IllegalStateException("恢复响应为空");
+                JSONObject json = JSON.parseObject(response.body().string());
+                if (!response.isSuccessful() || json == null || json.getIntValue("code") != 200
+                        || json.get("data") == null) {
+                    throw new IllegalStateException(json == null ? "恢复执行失败" : json.getString("message"));
+                }
+                return json.getJSONObject("data").toJavaObject(RuleResult.class);
+            }
+        } catch (ProjectClientAuthenticationException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException("恢复规则执行失败；请继续使用 trace 查询状态", e);
+        }
+    }
+
     private String ruleUrl(String ruleCode, Long bindingId) {
         HttpUrl.Builder builder = baseUrl.newBuilder().addPathSegment("api").addPathSegment("rule")
                 .addPathSegment("sync").addPathSegment(ruleCode);

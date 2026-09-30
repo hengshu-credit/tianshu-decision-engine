@@ -93,6 +93,30 @@ public class ExternalDatasourceController {
         return R.ok(apiConfigService.getById(id));
     }
 
+    @GetMapping("/api-config/{id:\\d+}/binding-contract")
+    public R<Map<String, Object>> bindingContract(@PathVariable Long id) {
+        RuleExternalApiConfig api = apiConfigService.getById(id);
+        if (api == null || !Integer.valueOf(1).equals(api.getStatus())) return R.fail("外数 API 不存在或未启用");
+        var specification = com.hengshucredit.rule.server.service.ExternalApiRequestPlan.specification(api);
+        var fields = new java.util.ArrayList<>(com.hengshucredit.rule.server.service.ExternalApiRequestPlan.fields(specification));
+        if (specification != null && specification.getJSONArray("requestBranches") != null) {
+            for (Object raw : specification.getJSONArray("requestBranches")) fields.addAll(
+                    com.hengshucredit.rule.server.service.ExternalApiRequestPlan.fields(JSON.parseObject(JSON.toJSONString(raw))));
+        }
+        var resultFields = com.hengshucredit.rule.server.service.ExternalApiResponseSchema.catalog(specification);
+        return R.ok(Map.of("apiConfigId", id, "requestFields", fields.stream().filter(field -> !"HEADER".equals(field.getString("location"))).toList(), "resultFields", resultFields));
+    }
+
+    @PostMapping("/api-config/{id:\\d+}/response-preview")
+    public R<Map<String, Object>> previewResponse(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        try {
+            RuleExternalApiConfig api = JSON.parseObject(JSON.toJSONString(body.get("config")), RuleExternalApiConfig.class);
+            api.setId(id);
+            Map<String, Object> sample = JSON.parseObject(JSON.toJSONString(body.get("sample")));
+            return R.ok(externalApiInvokeService.previewResponse(api, sample == null ? Map.of() : sample));
+        } catch (IllegalArgumentException e) { return R.fail(e.getMessage()); }
+    }
+
     @PostMapping("/api-config")
     @GovernedProjectionMutation
     public R<RuleExternalApiConfig> createApiConfig(@RequestBody RuleExternalApiConfig config) {

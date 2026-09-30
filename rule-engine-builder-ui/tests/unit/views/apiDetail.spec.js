@@ -47,6 +47,32 @@ function createContext(overrides = {}) {
 }
 
 describe('ApiDetail helpers', () => {
+  test('条件分支已配置重试时不再提示必须增加默认次数', async () => {
+    const wrapper = mount(ApiDetail, { mocks: { $route: { params: {}, query: {} } } })
+    await flushPromises()
+    wrapper.vm.goToConfigTab('retry')
+    await wrapper.setData({ form: { ...wrapper.vm.form, exceptionStrategy: 'RETRY', retryCount: 0 } })
+    expect(wrapper.find('.strategy-warning').exists()).toBe(true)
+    await wrapper.setData({ form: { ...wrapper.vm.form, executionConfig: JSON.stringify({ version: 2, retryBranches: [{ id: 'maintenance', retryCount: 2 }] }) } })
+    expect(wrapper.find('.strategy-warning').exists()).toBe(false)
+    await wrapper.setData({ form: { ...wrapper.vm.form, executionConfig: JSON.stringify({ version: 2, retryBranches: [{ id: 'maintenance', retryCount: 0 }] }) } })
+    expect(wrapper.find('.strategy-warning').exists()).toBe(true)
+    await wrapper.setData({ form: { ...wrapper.vm.form, exceptionStrategy: 'FAIL_FAST' } })
+    expect(wrapper.find('.strategy-warning').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  test('异常重试缺少次数时在本地阻止提交，有分支次数时保留原配置', () => {
+    const ctx = createContext()
+    ctx.form.exceptionStrategy = 'RETRY'
+    expect(() => ctx.normalizeForm(ctx.form)).toThrow('至少 1 次')
+    ctx.form.executionConfig = JSON.stringify({ version: 2, retryBranches: [{ id: 'retry', retryCount: 1 }] })
+    expect(ctx.normalizeForm(ctx.form).retryCount).toBe(0)
+    ctx.form.executionConfig = ''
+    ctx.form.exceptionStrategy = 'FAIL_FAST'
+    expect(ctx.normalizeForm(ctx.form).retryCount).toBe(0)
+  })
+
   test('接口配置加载完成前不暴露可编辑的空表单，避免迟到响应覆盖输入', async () => {
     let finish
     datasourceApi.listDatasources.mockResolvedValue({ data: { records: [] } })
@@ -443,12 +469,14 @@ describe('ApiDetail helpers', () => {
         request: {
           source: 'PROCESSED',
           excludePaths: ['$.items[*].Base64'],
-          maxFieldBytes: 4096
+          maxFieldBytes: 4096,
+          oversizedFields: []
         },
         response: {
           source: 'ORIGINAL',
           excludePaths: ["$['含点.字段']"],
-          maxFieldBytes: 0
+          maxFieldBytes: 0,
+          oversizedFields: []
         }
       }
     })
@@ -463,6 +491,8 @@ describe('ApiDetail helpers', () => {
     expect(ctx.payloadCapture.request.source).toBe('PROCESSED')
     expect(ctx.payloadCapture.request.excludePaths).toEqual(['$.items[*].Base64'])
     expect(ctx.payloadCapture.response.excludePaths).toEqual(["$['含点.字段']"])
+    expect(ctx.payloadCapture.request.decrypt).toEqual({ enabled: false, mode: 'BASE64', path: '$', keyVariable: '' })
+    expect(ctx.payloadCapture.response.decrypt.enabled).toBe(false)
   })
 
   test('报文留存路径和大小校验阻止错误配置保存', () => {
@@ -670,8 +700,8 @@ describe('ApiDetail helpers', () => {
       form: { ...ApiDetail.methods.emptyForm(), id: 8, datasourceId: 2 },
       invokeParamsText: '{"mobile":"13800138000"}',
       payloadCapture: {
-        request: { source: 'PROCESSED', excludePaths: ['$.secret'], maxFieldBytes: 1024 },
-        response: { source: 'ORIGINAL', excludePaths: [], maxFieldBytes: 0 }
+        request: { source: 'PROCESSED', excludePaths: ['$.secret'], maxFieldBytes: 1024, oversizedFields: [] },
+        response: { source: 'ORIGINAL', excludePaths: [], maxFieldBytes: 0, oversizedFields: [] }
       },
       $router: { push: vi.fn() },
       $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() }

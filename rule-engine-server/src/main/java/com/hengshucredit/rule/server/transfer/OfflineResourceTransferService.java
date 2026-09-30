@@ -146,6 +146,13 @@ public class OfflineResourceTransferService {
             item.put("scope", resource.configuration().get("scope"));
             item.put("sourceProjectId", resource.configuration().get("projectId"));
             item.put("referenceCount", resource.references().size());
+            item.put("references", resource.references().stream().map(reference -> {
+                Map<String, Object> edge = new LinkedHashMap<>();
+                edge.put("targetKey", reference.targetKey());
+                edge.put("path", reference.path());
+                edge.put("childPath", reference.childPath());
+                return edge;
+            }).toList());
             item.put("requiredEnvironmentFields", resource.requiredEnvironmentFields());
             item.put("configurationOnly", DATA_FREE_TYPES.contains(key.type()));
             resources.add(item);

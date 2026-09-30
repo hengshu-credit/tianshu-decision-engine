@@ -35,7 +35,7 @@
       @click="$emit('toggle-minimap')"
       >{{ miniMapVisible ? '关闭缩略图' : '缩略图' }}</el-button
     >
-    <el-popover placement="bottom-end" width="360" trigger="click">
+    <el-popover v-if="showIssues && showCheck" placement="bottom-end" width="360" trigger="click">
       <div v-if="issues.length === 0" class="issue-empty">未发现未配置项</div>
       <div v-else class="issue-list">
         <button
@@ -54,7 +54,7 @@
           :icon="ElIconWarningOutline"
           @click="$emit('check')"
         >
-          未配置项<span v-if="issues.length">（{{ issues.length }}）</span>
+          {{ checkLabel }}<span v-if="issues.length">（{{ issues.length }}）</span>
         </el-button>
       </template>
     </el-popover>
@@ -84,8 +84,11 @@ export default {
     target: { type: String, default: '' },
     options: { type: Array, default: () => [] },
     issues: { type: Array, default: () => [] },
+    checkLabel: { type: String, default: '未配置项' },
+    showCheck: { type: Boolean, default: true },
     miniMapVisible: { type: Boolean, default: false },
     showMiniMap: { type: Boolean, default: true },
+    showIssues: { type: Boolean, default: true },
   },
   methods: {
     onRemoteSearch(keyword) {
@@ -121,23 +124,23 @@ export default {
   width: 190px;
 }
 .toolbar-action {
-  border-color: rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.1);
-  color: #ffffff;
+  border-color: var(--designer-toolbar-control-border, var(--tianshu-border));
+  background: var(--designer-toolbar-control-background, var(--tianshu-bg-surface));
+  color: var(--designer-toolbar-foreground, var(--tianshu-text-primary));
   transition: background-color 0.15s ease, border-color 0.15s ease,
     color 0.15s ease;
 }
 .toolbar-action:hover,
 .toolbar-action:focus {
-  border-color: #ffffff;
+  border-color: var(--tianshu-designer-toolbar-accent, var(--el-color-primary));
   background: var(--tianshu-bg-surface);
-  color: var(--el-color-primary);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.22);
+  color: var(--tianshu-designer-toolbar-accent, var(--el-color-primary));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tianshu-designer-toolbar-accent, var(--el-color-primary)) 22%, transparent);
 }
 .toolbar-action:active {
-  border-color: var(--tianshu-designer-accent-border);
+  border-color: var(--tianshu-designer-toolbar-accent, var(--el-color-primary));
   background: var(--tianshu-designer-accent-bg);
-  color: var(--el-color-primary);
+  color: var(--tianshu-designer-toolbar-accent, var(--el-color-primary));
   box-shadow: none;
 }
 .graph-tools small {

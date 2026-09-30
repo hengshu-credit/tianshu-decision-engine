@@ -70,6 +70,7 @@ public class RuleDependencyClosureService {
     private RuleDataObjectFieldMapper dataObjectFieldMapper;
     @Resource
     private RuleDataObjectMapper dataObjectMapper;
+    @Resource private com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper apiConfigMapper;
     @Resource
     private RulePublishedMapper publishedMapper;
     @Resource private com.hengshucredit.rule.server.service.RuleVersionBindingService versionBindingService;
@@ -85,7 +86,7 @@ public class RuleDependencyClosureService {
             "executeRule", "executeRuleById", "executeRuleField", "executeRuleFieldById",
             "executeRuleVersionById", "executeRuleVersionFieldById", "terminateAllRules",
             "setRuntimeValue", "currentRule", "currentRuleName", "currentMatchedConditions",
-            "sourceStatus", "recordRuleSetItem", "recordRuleSetSummary",
+            "sourceStatus", "sourceStatusValue", "recordRuleSetItem", "recordRuleSetSummary",
             "isInLists", "isInListsNumber", "listMatch", "listMatchNumber");
 
     public DependencyClosure resolve(Long definitionId, Long revisionId) {
@@ -388,6 +389,13 @@ public class RuleDependencyClosureService {
         if ("API".equals(source) || "EXTERNAL".equals(source)) {
             addExternalBinding(variable, actualType, "EXTERNAL_API", config.getLong("apiConfigId"),
                     path, dependencies, issues);
+            collectStructuredReferences(JSON.toJSONString(config.get("requestOverrides")), variable.getProjectId(), dependencies,
+                    issues, new LinkedHashSet<>(), new LinkedHashSet<>());
+            if (apiConfigMapper != null && config.getLong("apiConfigId") != null) {
+                var api = apiConfigMapper.selectById(config.getLong("apiConfigId"));
+                if (api != null && api.getExecutionConfig() != null) collectStructuredReferences(api.getExecutionConfig(), variable.getProjectId(), dependencies,
+                        issues, new LinkedHashSet<>(), new LinkedHashSet<>());
+            }
         } else if ("DB".equals(source) || "DATABASE".equals(source)) {
             addExternalBinding(variable, actualType, "DB_DATASOURCE",
                     config.containsKey("dbDatasourceId") ? config.getLong("dbDatasourceId") : config.getLong("datasourceId"),
@@ -622,6 +630,7 @@ public class RuleDependencyClosureService {
         snapshot.put("scriptName", field.getScriptName());
         snapshot.put("varType", field.getVarType());
         snapshot.put("sourcePath", field.getSourcePath());
+        snapshot.put("sourceConfig", field.getSourceConfig());
         snapshot.put("genericType", field.getGenericType());
         snapshot.put("refObjectId", field.getRefObjectId());
         snapshot.put("refVariableId", field.getRefVariableId());
@@ -644,6 +653,14 @@ public class RuleDependencyClosureService {
         snapshot.put("referencePath", fieldPath);
         addJsonDependency("DATA_OBJECT:" + fieldId, "DATA_OBJECT", fieldId, null,
                 "data-object-fields/" + fieldId + ".json", "EMBEDDED", snapshot, dependencies);
+        if (owner != null && "API".equals(owner.getSourceType())) {
+            RuleVariable sourceVariable = new RuleVariable();
+            sourceVariable.setId(fieldId); sourceVariable.setProjectId(projectId); sourceVariable.setVarSource("API");
+            JSONObject config = owner.getSourceContent() == null ? new JSONObject() : JSON.parseObject(owner.getSourceContent());
+            if (field.getSourceConfig() != null) config.putAll(JSON.parseObject(field.getSourceConfig()));
+            sourceVariable.setSourceConfig(config.toJSONString());
+            addExternalSourceBindings(sourceVariable, "DATA_OBJECT", path, dependencies, issues);
+        }
         if (field.getParentFieldId() != null) {
             addDataObjectField(field.getParentFieldId(), projectId, path + ".parentFieldId", dependencies, issues, ancestors);
         }

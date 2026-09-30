@@ -14,6 +14,11 @@ final class SourceStatusOperators {
         put(values, "source_success", "OUTCOME", "SUCCESS");
         put(values, "source_error", "OUTCOME", "ERROR");
         put(values, "source_timeout", "OUTCOME", "TIMEOUT");
+        put(values, "source_billed", "BILLED", "TRUE");
+        put(values, "source_not_billed", "BILLED", "FALSE");
+        put(values, "source_retried", "RETRIED", "TRUE");
+        put(values, "source_circuit_open", "CIRCUIT_OPEN", "TRUE");
+        put(values, "source_exception", "EXCEPTION", "TRUE");
         put(values, "source_fallback", "FALLBACK_USED", "TRUE");
         put(values, "source_cache_enabled", "CACHE_CONFIGURED", "TRUE");
         put(values, "source_cache_disabled", "CACHE_CONFIGURED", "FALSE");

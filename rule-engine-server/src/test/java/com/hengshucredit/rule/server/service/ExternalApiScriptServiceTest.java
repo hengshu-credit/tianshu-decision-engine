@@ -13,6 +13,11 @@ public class ExternalApiScriptServiceTest {
 
     private final ExternalApiScriptService service = new ExternalApiScriptService();
 
+    @Test public void apiScriptsCannotStartHiddenNetworkCalls() {
+        org.junit.Assert.assertThrows(IllegalArgumentException.class, () -> service.executeRequest(
+                "imageToBase64(\"http://127.0.0.1:1/must-not-request\", 1000)", context()));
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     public void requestScriptCanMutateBodyHeadersAndQuery() {

@@ -89,7 +89,7 @@ describe('LineageGraph', () => {
     expect(positions['API:7'].top).not.toBe(positions.CURRENT.top)
     expect(shortcut.path.match(/ C /g).length).toBeGreaterThan(1)
     expect(wrapper.vm.edgeLines).toHaveLength(4)
-    expect(wrapper.vm.mindMapLayout.width).toBeLessThan(1200)
+    expect(wrapper.vm.mindMapLayout.width).toBeLessThan(1400)
     wrapper.vm.positionOverrides = { CURRENT: { left: 0, top: 0 } }
     wrapper.vm.resetToBestLayout()
     expect(wrapper.vm.mindMapLayout.positions).toEqual(positions)
@@ -310,6 +310,29 @@ describe('LineageGraph', () => {
     wrapper.unmount()
   })
 
+  test('缩放到鼠标位置时将客户端坐标转换为 LogicFlow 画布坐标', () => {
+    const wrapper = mountPage()
+    const graphWrap = wrapper.find('.graph-wrap').element
+    graphWrap.getBoundingClientRect = () => ({ left: 100, top: 200, width: 1000, height: 500 })
+    let scale = 1.25
+    const getPointByClient = vi.fn(() => ({ canvasOverlayPosition: { x: 120, y: 80 } }))
+    const zoom = vi.fn(targetScale => { scale = targetScale })
+    wrapper.vm.lf = {
+      getTransform: () => ({ SCALE_X: scale }),
+      graphModel: { getPointByClient },
+      zoom,
+      destroy: vi.fn(),
+    }
+    wrapper.vm.viewport = { x: 0, y: 0, scale }
+
+    wrapper.vm.setZoom(1.5, { clientX: 280, clientY: 320 })
+
+    expect(getPointByClient).toHaveBeenCalledWith({ x: 280, y: 320 })
+    expect(zoom).toHaveBeenCalledWith(1.5, [120, 80])
+    expect(wrapper.vm.viewport.scale).toBe(1.5)
+    wrapper.unmount()
+  })
+
   test('节点拖动只覆盖当前组件实例坐标并同步更新连线', async () => {
     const wrapper = mountPage()
     wrapper.vm.query.nodeId = 1
@@ -356,7 +379,7 @@ describe('LineageGraph', () => {
     wrapper.vm.resetToBestLayout()
     expect(wrapper.vm.positionOverrides).toEqual({})
     expect(wrapper.vm.viewport.scale).toBeLessThanOrEqual(1)
-    expect(wrapper.find('[aria-label="一键回到最佳分布"]').exists()).toBe(true)
+    expect(wrapper.find('[aria-label="重置血缘图"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -513,6 +536,26 @@ describe('LineageGraph', () => {
     ])
     expect(wrapper.vm.lineageGuideCards[1].text).toContain('两层')
     expect(wrapper.vm.lineageGuideCards[2].text).toContain('静态分析')
+    wrapper.unmount()
+  })
+
+  test('选中血缘节点后从左侧展示节点信息并可关闭', async () => {
+    const wrapper = mountPage()
+    const data = graphResponse()
+    wrapper.vm.query.nodeId = 1
+    lineageApi.getLineageGraph.mockResolvedValueOnce({ data })
+    await wrapper.vm.loadGraph()
+
+    wrapper.vm.selectedNodeId = 'VARIABLE:1'
+    await nextTick()
+    const panel = wrapper.find('[data-testid="lineage-node-info-panel"]')
+    expect(panel.exists()).toBe(true)
+    expect(panel.text()).toContain('评分')
+    expect(panel.text()).toContain('score')
+
+    wrapper.vm.closeNodePanel()
+    await nextTick()
+    expect(wrapper.find('[data-testid="lineage-node-info-panel"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

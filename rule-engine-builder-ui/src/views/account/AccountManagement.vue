@@ -576,7 +576,7 @@ export default {
 
   h1 {
     margin: 4px 0 0;
-    color: #111827;
+    color: var(--tianshu-text-primary);
     font-size: 24px;
     font-weight: 650;
     line-height: 32px;
@@ -598,7 +598,7 @@ export default {
 .content-card {
   padding: 16px 20px 24px;
   background: var(--tianshu-bg-surface);
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--tianshu-border-subtle);
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
@@ -614,7 +614,7 @@ export default {
   }
 
   strong {
-    color: #1f2937;
+    color: var(--tianshu-text-primary);
     font-weight: 600;
     line-height: 20px;
   }
@@ -630,9 +630,9 @@ export default {
   height: 32px;
   align-items: center;
   justify-content: center;
-  color: #334155;
+  color: var(--tianshu-text-secondary);
   font-weight: 600;
-  background: #eef2ff;
+  background: var(--tianshu-info-bg);
   border-radius: 50%;
 }
 .tag-list {
@@ -648,7 +648,7 @@ export default {
   display: grid;
   margin-bottom: 16px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--tianshu-border-subtle);
   border-radius: 8px;
 
   > div {
@@ -657,7 +657,7 @@ export default {
     padding: 12px 16px;
     flex-direction: column;
     justify-content: center;
-    border-right: 1px solid #e5e7eb;
+    border-right: 1px solid var(--tianshu-border-subtle);
 
     &:last-child {
       border-right: 0;
@@ -671,7 +671,7 @@ export default {
 
   strong {
     margin-top: 4px;
-    color: #1f2937;
+    color: var(--tianshu-text-primary);
     font-size: 20px;
   }
 }
@@ -691,13 +691,13 @@ export default {
 .permission-group {
   padding: 16px;
   background: var(--tianshu-bg-soft);
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--tianshu-border-subtle);
   border-radius: 8px;
 
   > strong {
     display: block;
     margin-bottom: 12px;
-    color: #334155;
+    color: var(--tianshu-text-secondary);
   }
 }
 .form-grid {
@@ -717,7 +717,7 @@ export default {
 
   .permission-summary > div {
     border-right: 0;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--tianshu-border-subtle);
 
     &:last-child {
       border-bottom: 0;

@@ -306,9 +306,10 @@ describe('DatasourceList helpers', () => {
     expect(ctx.apiGuideTemplates.map(item => item.title)).toEqual([
       'HTTP 外数模板',
       '内部规则模板',
-      '接口变量读取'
+      '变量与对象取值'
     ])
-    expect(ctx.apiGuideTemplates[0].text).toContain('requestMapping')
-    expect(ctx.apiGuideTemplates[2].text).toContain('resultPath')
+    expect(ctx.apiGuideTemplates[0].text).toContain('多步请求、轮询与回调')
+    expect(ctx.apiGuideTemplates[2].text).toContain('整体绑定')
+    expect(ctx.apiGuideTemplates[2].text).toContain('无需逐字段重复映射')
   })
 })

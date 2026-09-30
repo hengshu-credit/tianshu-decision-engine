@@ -75,170 +75,88 @@
       </el-form>
     </div>
 
-    <div class="legend-row">
-      <span
-        v-for="item in nodeTypeOptions"
-        :key="item.value"
-        class="legend-item"
-      >
-        <i :style="{ background: nodeColor(item.value) }" />{{ item.label }}
-      </span>
+    <div class="lineage-canvas-header">
+      <div class="legend-row">
+        <span
+          v-for="item in nodeTypeOptions"
+          :key="item.value"
+          class="legend-item"
+        >
+          <i :style="{ background: nodeColor(item.value) }" />{{ item.label }}
+        </span>
+      </div>
+      <div v-if="startNode" class="graph-toolbar" @pointerdown.stop>
+        <el-button size="small" :icon="ElIconMagicStick" @click="resetToBestLayout">一键美化</el-button>
+        <el-button size="small" :icon="ElIconMapLocation" :class="{ 'is-tool-active': miniMapVisible }" @click="toggleMiniMap">小地图</el-button>
+        <el-button-group size="small">
+          <el-button :icon="ElIconZoomIn" aria-label="放大血缘图" title="放大" @click="zoomIn" />
+          <el-button :icon="ElIconZoomOut" aria-label="缩小血缘图" title="缩小" @click="zoomOut" />
+          <el-button :icon="ElIconRank" aria-label="适配血缘图" title="适配画布" @click="fitGraph" />
+        </el-button-group>
+        <span class="zoom-percent">{{ zoomPercent }}%</span>
+        <graph-designer-navigator
+          v-model:target="graphNavigationTarget"
+          :options="graphNavigationOptions"
+          :issues="[]"
+          :show-mini-map="false"
+          :show-issues="false"
+          @search="searchGraphElements"
+          @locate="locateGraphNavigationItem"
+        />
+        <el-select v-model="globalEdgeLineType" size="small" style="width: 88px" aria-label="连线类型" @change="onGlobalEdgeLineTypeChange">
+          <el-option label="折线" value="polyline" />
+          <el-option label="直线" value="line" />
+          <el-option label="弧线" value="bezier" />
+        </el-select>
+        <el-button size="small" :icon="ElIconRefreshLeft" aria-label="重置血缘图" @click="resetView">重置</el-button>
+      </div>
     </div>
 
-    <div
-      ref="graphWrap"
-      class="graph-wrap"
-      :style="{ height: graphHeight + 'px' }"
-      :class="{ 'is-interacting': pointerInteraction }"
-      v-loading="loading"
-      @pointerdown="beginCanvasPan"
-      @pointermove="onPointerMove"
-      @pointerup="endPointerInteraction"
-      @pointercancel="endPointerInteraction"
-    >
-      <div v-if="!startNode" class="empty-graph">请选择起点后生成血缘图</div>
-      <div v-else class="graph-toolbar" @pointerdown.stop>
-        <button type="button" aria-label="缩小血缘图" title="缩小" @click="zoomOut">
-          −
-        </button>
-        <span class="zoom-percent">{{ zoomPercent }}%</span>
-        <button type="button" aria-label="放大血缘图" title="放大" @click="zoomIn">
-          +
-        </button>
-        <button
-          type="button"
-          class="best-layout-button"
-          aria-label="一键回到最佳分布"
-          title="清除手工位置并适配画布"
-          @click="resetToBestLayout"
-        >
-          最佳分布
-        </button>
-      </div>
+    <div class="lineage-graph-layout">
+      <transition name="panel-slide">
+        <aside v-if="selectedNode" class="lineage-node-panel" data-testid="lineage-node-info-panel">
+          <div class="lineage-node-panel__header">
+            <span>节点信息</span>
+            <button type="button" aria-label="关闭节点信息" @click="closeNodePanel">×</button>
+          </div>
+          <div class="lineage-node-panel__type" :style="{ color: nodeColor(selectedNode.type) }">
+            {{ nodeTypeLabel(selectedNode.type) }}
+          </div>
+          <dl class="lineage-node-panel__details">
+            <div><dt>名称</dt><dd>{{ selectedNode.label || selectedNode.code || '-' }}</dd></div>
+            <div><dt>编码</dt><dd class="is-code">{{ selectedNode.code || '-' }}</dd></div>
+            <div><dt>节点 ID</dt><dd class="is-code">{{ selectedNode.id || '-' }}</dd></div>
+            <div><dt>业务 ID</dt><dd>{{ selectedNode.refId ?? '-' }}</dd></div>
+            <div><dt>关系方向</dt><dd>{{ selectedNodeMeta.direction }}</dd></div>
+            <div><dt>上游节点</dt><dd>{{ selectedNodeMeta.upstreamCount }}</dd></div>
+            <div><dt>下游节点</dt><dd>{{ selectedNodeMeta.downstreamCount }}</dd></div>
+            <div v-if="selectedNode.dataObject"><dt>所属对象</dt><dd>{{ selectedNode.dataObject.label || selectedNode.dataObject.code }}</dd></div>
+            <div v-if="selectedNode.projectCode"><dt>所属项目</dt><dd>{{ selectedNode.projectCode }}</dd></div>
+          </dl>
+          <div v-if="selectedNode.description || selectedNode.nodeDesc" class="lineage-node-panel__section">
+            <div class="lineage-node-panel__section-title">节点说明</div>
+            <p>{{ selectedNode.description || selectedNode.nodeDesc }}</p>
+          </div>
+          <div v-if="selectedNodeMeta.relatedLabels.length" class="lineage-node-panel__section">
+            <div class="lineage-node-panel__section-title">直接关联</div>
+            <ul class="lineage-node-panel__related">
+              <li v-for="item in selectedNodeMeta.relatedLabels" :key="item.id">
+                <span>{{ item.direction === 'UPSTREAM' ? '上游' : '下游' }}</span>{{ item.label }}
+              </li>
+            </ul>
+          </div>
+          <div class="lineage-node-panel__hint">点击画布空白处可关闭面板</div>
+        </aside>
+      </transition>
+
       <div
-        v-if="startNode"
-        class="graph-canvas"
-        :style="{
-          width: canvasSize.width + 'px',
-          height: canvasSize.height + 'px',
-          ...viewportTransformStyle,
-        }"
+        ref="graphWrap"
+        class="graph-wrap"
+        :style="{ height: graphHeight + 'px' }"
+        v-loading="loading"
       >
-        <div v-if="showUpstream" class="side-caption is-upstream">
-          {{ upstreamRoots.length ? '上游' : '暂无上游' }}
-        </div>
-        <div class="side-caption is-current" :style="{ left: mindMapLayout.currentCenterX + 'px' }">当前节点</div>
-        <div v-if="showDownstream" class="side-caption is-downstream">
-          {{ downstreamRoots.length ? '下游' : '暂无下游' }}
-        </div>
-
-        <svg
-          class="edge-layer"
-          :width="canvasSize.width"
-          :height="canvasSize.height"
-        >
-          <g v-for="edge in edgeLines" :key="edge.key">
-            <path :d="edge.path" class="edge-path" marker-end="url(#arrow)" />
-            <text :x="edge.labelX" :y="edge.labelY" class="edge-label">
-              {{ edge.label }}
-            </text>
-          </g>
-          <defs>
-            <marker
-              id="arrow"
-              markerWidth="8"
-              markerHeight="8"
-              refX="6"
-              refY="3"
-              orient="auto"
-              markerUnits="strokeWidth"
-            >
-              <path
-                d="M0,0 L0,6 L7,3 z"
-                fill="var(--tianshu-border-strong)"
-              />
-            </marker>
-          </defs>
-        </svg>
-
-        <div
-          class="graph-node current-node"
-          :style="currentNodeStyle"
-          @pointerdown.stop="beginNodeDrag($event, 'CURRENT')"
-        >
-          <button
-            v-if="startNode.type === 'DATA_OBJECT'"
-            type="button"
-            class="branch-toggle object-toggle"
-            :aria-label="expandedObjects[startNode.id] ? '收起字段' : '展开字段'"
-            @pointerdown.stop
-            @click.stop="toggleObject(startNode.id)"
-          >{{ expandedObjects[startNode.id] ? '−' : '+' }}</button>
-          <div class="node-head">
-            <span
-              class="node-type"
-              :style="{ color: nodeColor(startNode.type) }"
-              >{{ nodeTypeLabel(startNode.type) }}</span
-            >
-            <span class="current-badge">当前</span>
-          </div>
-          <div class="node-label" :title="startNode.label || startNode.code">
-            {{ startNode.label || startNode.code }}
-          </div>
-          <div class="node-code" :title="startNode.code">
-            {{ startNode.code }}
-          </div>
-        </div>
-
-        <div
-          v-for="item in visibleBranches"
-          :key="item.branch.instanceId"
-          class="graph-node branch-node"
-          :class="[
-            item.side === 'UPSTREAM' ? 'is-upstream' : 'is-downstream',
-            { 'is-cycle': item.branch.cycle },
-          ]"
-          :style="branchStyle(item)"
-          :data-node-id="item.branch.node.id"
-          @pointerdown.stop="beginNodeDrag($event, item.branch.instanceId)"
-        >
-          <button
-            v-if="canToggle(item.branch)"
-            type="button"
-            class="branch-toggle"
-            :aria-label="item.branch.objectGroup ? (item.branch.expanded ? '收起字段' : '展开字段') : (item.branch.expanded ? '收起节点' : '展开节点')"
-            @pointerdown.stop
-            @click.stop="toggleBranch(item.branch)"
-          >
-            <app-icon
-              :name="
-                item.branch.loading
-                  ? 'Loading'
-                  : item.branch.expanded
-                  ? 'Minus'
-                  : 'Plus'
-              "
-              :class="{ 'is-loading': item.branch.loading }"
-            />
-          </button>
-          <div class="node-head">
-            <span
-              class="node-type"
-              :style="{ color: nodeColor(item.branch.node.type) }"
-              >{{ nodeTypeLabel(item.branch.node.type) }}</span
-            >
-            <span v-if="item.branch.cycle" class="cycle-badge">循环引用</span>
-          </div>
-          <div
-            class="node-label"
-            :title="item.branch.node.label || item.branch.node.code"
-          >
-            {{ item.branch.node.label || item.branch.node.code }}
-          </div>
-          <div class="node-code" :title="item.branch.node.code">
-            {{ item.branch.node.code }}
-          </div>
-        </div>
+        <div v-if="!startNode" class="empty-graph">请选择起点后生成血缘图</div>
+        <div ref="graphContainer" class="graph-canvas" :class="{ 'is-hidden': !startNode }" aria-label="血缘关系图" />
       </div>
     </div>
   </div>
@@ -246,22 +164,30 @@
 
 <script>
 import { markRaw } from 'vue'
-import { Share as ElIconShare } from '@element-plus/icons-vue'
+import {
+  Share as ElIconShare,
+  MagicStick as ElIconMagicStick,
+  MapLocation as ElIconMapLocation,
+  ZoomIn as ElIconZoomIn,
+  ZoomOut as ElIconZoomOut,
+  Rank as ElIconRank,
+  RefreshLeft as ElIconRefreshLeft,
+} from '@element-plus/icons-vue'
+import { createGraphCanvas } from '@/components/flow/graphCanvas'
+import { MiniMap } from '@logicflow/extension'
 import { getLineageGraph, listLineageOptions } from '@/api/lineage'
 import { lineageLayout } from '@/utils/lineageLayers'
+import { LINEAGE_NODE_COLORS, LINEAGE_NODE_WIDTH as CARD_W, LINEAGE_NODE_HEIGHT as CARD_H } from '@/components/flow/nodes'
+import GraphDesignerNavigator from '@/components/flow/GraphDesignerNavigator.vue'
 
-const CARD_W = 200
-const CARD_H = 88
-const LEVEL_STEP = 264
-const ROW_STEP = 112
+const LEVEL_STEP = 320
+const ROW_STEP = 144
 const PADDING_X = 48
 const PADDING_Y = 48
 const MIN_CANVAS_W = 960
 const MIN_CANVAS_H = 440
 const MIN_SCALE = 0.4
 const MAX_SCALE = 2
-const ZOOM_STEP = 0.1
-const VIEWPORT_PADDING = 32
 
 export default {
   props: {
@@ -269,6 +195,7 @@ export default {
     initialNodeType: { type: String, default: '' },
     initialNodeId: { type: [String, Number], default: '' },
     initialDirection: { type: String, default: 'ALL' },
+    initialGraph: { type: Object, default: null },
   },
   data() {
     return {
@@ -302,7 +229,20 @@ export default {
       graphHeight: 440,
       viewport: { x: 0, y: 0, scale: 1 },
       positionOverrides: {},
+      skipGraphRender: false,
       pointerInteraction: null,
+      lf: null,
+      selectedNodeId: null,
+      miniMapVisible: true,
+      globalEdgeLineType: 'polyline',
+      graphNavigationTarget: '',
+      graphNavigationKeyword: '',
+      ElIconMagicStick: markRaw(ElIconMagicStick),
+      ElIconMapLocation: markRaw(ElIconMapLocation),
+      ElIconZoomIn: markRaw(ElIconZoomIn),
+      ElIconZoomOut: markRaw(ElIconZoomOut),
+      ElIconRank: markRaw(ElIconRank),
+      ElIconRefreshLeft: markRaw(ElIconRefreshLeft),
       query: { nodeType: 'VARIABLE', nodeId: '', direction: 'ALL' },
       nodeTypeOptions: [
         { label: '项目', value: 'PROJECT' },
@@ -319,36 +259,67 @@ export default {
     }
   },
   name: 'LineageGraph',
+  components: { GraphDesignerNavigator },
   watch: {
+    initialGraph: {
+      deep: true,
+      handler(graph) {
+        if (graph) this.loadInitialGraph(graph)
+      },
+    },
     startNode: {
       flush: 'post',
       handler(node) {
         const graphWrap = this.$refs.graphWrap
         if (!graphWrap) return
         graphWrap.removeEventListener('wheel', this.onCanvasWheel)
-        // 画布缩放必须阻止页面同时滚动；空画布无需注册监听。
         if (node) graphWrap.addEventListener('wheel', this.onCanvasWheel, { passive: false })
       },
     },
+    graphData: {
+      flush: 'post',
+      handler() {
+        if (this.skipGraphRender) {
+          this.skipGraphRender = false
+          return
+        }
+        this.renderLineageGraph()
+      },
+    },
+    selectedNodeId() {
+      this.$nextTick(() => {
+        this.resizeCanvas()
+        this.fitGraph()
+      })
+    },
   },
   beforeUnmount() {
-    this.$refs.graphWrap.removeEventListener('wheel', this.onCanvasWheel)
+    this.$refs.graphWrap?.removeEventListener('wheel', this.onCanvasWheel)
     this.resizeObserver?.disconnect()
     window.removeEventListener('resize', this.resizeGraph)
+    this.lf?.destroy()
+    this.lf = null
   },
   mounted() {
+    this.initLogicFlow()
     this.resizeGraph()
     window.addEventListener('resize', this.resizeGraph)
     if (typeof ResizeObserver !== 'undefined') {
-      this.resizeObserver = new ResizeObserver(() => this.resizeGraph())
-      this.resizeObserver.observe(this.$el)
+      this.resizeObserver = new ResizeObserver(() => {
+        this.resizeGraph()
+        this.resizeCanvas()
+      })
+      this.resizeObserver.observe(this.$refs.graphWrap)
     }
+    this.renderLineageGraph()
   },
   created() {
     if (this.initialNodeType) this.query.nodeType = this.initialNodeType
     if (this.initialNodeId) this.query.nodeId = this.initialNodeId
     if (this.initialDirection) this.query.direction = this.initialDirection
-    if (this.embedded && this.query.nodeId) {
+    if (this.initialGraph) {
+      this.loadInitialGraph(this.initialGraph)
+    } else if (this.embedded && this.query.nodeId) {
       this.loadGraph()
     } else {
       this.loadOptions('')
@@ -497,59 +468,297 @@ export default {
       return { width, height, positions, routes, currentCenterX: positions.CURRENT.left + CARD_W / 2 }
     },
     canvasSize() {
-      return {
-        width: this.mindMapLayout.width,
-        height: this.mindMapLayout.height,
-      }
+      return { width: this.mindMapLayout.width, height: this.mindMapLayout.height }
     },
     viewportTransformStyle() {
-      return {
-        transform: `translate(${this.viewport.x}px, ${this.viewport.y}px) scale(${this.viewport.scale})`,
-      }
+      return { transform: `translate(${this.viewport.x}px, ${this.viewport.y}px) scale(${this.viewport.scale})` }
     },
     zoomPercent() {
       return Math.round(this.viewport.scale * 100)
     },
     edgeLines() {
-      return this.visibleGraph.edges
-        .map((edge) => {
-          const from = this.nodePosition(edge.fromId)
-          const to = this.nodePosition(edge.toId)
-          const sameLayer = from.left === to.left
-          const forward = from.left < to.left
-          const x1 = from.left + (forward || sameLayer ? CARD_W : 0)
-          const y1 = from.top + CARD_H / 2
-          const x2 = to.left + (forward ? 0 : CARD_W)
-          const y2 = to.top + CARD_H / 2
-          const midX = sameLayer ? x1 + 48 : (x1 + x2) / 2
-          const route = this.mindMapLayout.routes[edge.key] || []
-          const points = [{ x: x1, y: y1 }, ...route.map(point => ({ x: point.left + CARD_W / 2, y: point.top + CARD_H / 2 })), { x: x2, y: y2 }]
-          const path = points.slice(1).reduce((path, point, index) => {
-            const previous = points[index]
-            const controlX = sameLayer ? midX : (previous.x + point.x) / 2
-            return `${path} C ${controlX} ${previous.y}, ${controlX} ${point.y}, ${point.x} ${point.y}`
-          }, `M ${x1} ${y1}`)
-          const labelPoint = route.length ? points[Math.floor(points.length / 2)] : { x: midX, y: (y1 + y2) / 2 }
-          return {
-            ...edge,
-            path,
-            labelX: labelPoint.x,
-            labelY: labelPoint.y - 8,
-          }
-        })
-        .filter(Boolean)
+      return this.visibleGraph.edges.map(edge => {
+        const from = this.nodePosition(edge.fromId)
+        const to = this.nodePosition(edge.toId)
+        const forward = from.left < to.left
+        const x1 = from.left + (forward ? CARD_W : 0)
+        const y1 = from.top + CARD_H / 2
+        const x2 = to.left + (forward ? 0 : CARD_W)
+        const y2 = to.top + CARD_H / 2
+        const route = this.mindMapLayout.routes[edge.key] || []
+        const points = [{ x: x1, y: y1 }, ...route.map(point => ({ x: point.left + CARD_W / 2, y: point.top + CARD_H / 2 })), { x: x2, y: y2 }]
+        const path = points.slice(1).reduce((value, point, index) => {
+          const previous = points[index]
+          const controlX = (previous.x + point.x) / 2
+          return `${value} C ${controlX} ${previous.y}, ${controlX} ${point.y}, ${point.x} ${point.y}`
+        }, `M ${x1} ${y1}`)
+        return { ...edge, path, labelX: (x1 + x2) / 2, labelY: (y1 + y2) / 2 - 8 }
+      })
     },
-    currentNodeStyle() {
-      const pos = this.nodePosition('CURRENT')
+    selectedNode() {
+      if (!this.selectedNodeId) return null
+      return this.selectedNodeId === this.startNode?.id
+        ? this.startNode : this.knownNodes[this.selectedNodeId] || null
+    },
+    selectedNodeMeta() {
+      const node = this.selectedNode
+      if (!node) return { direction: '-', upstreamCount: 0, downstreamCount: 0, relatedLabels: [] }
+      const incoming = this.knownEdges.filter(edge => edge.to === node.id)
+      const outgoing = this.knownEdges.filter(edge => edge.from === node.id)
+      const branch = this.findBranch(node.id)
+      const related = [
+        ...incoming.map(edge => ({ id: `up-${edge.from}`, direction: 'UPSTREAM', label: this.knownNodes[edge.from]?.label || this.knownNodes[edge.from]?.code || edge.from })),
+        ...outgoing.map(edge => ({ id: `down-${edge.to}`, direction: 'DOWNSTREAM', label: this.knownNodes[edge.to]?.label || this.knownNodes[edge.to]?.code || edge.to })),
+      ]
       return {
-        left: pos.left + 'px',
-        top: pos.top + 'px',
-        borderColor: this.nodeColor(this.startNode.type),
-        boxShadow: 'inset 4px 0 0 ' + this.nodeColor(this.startNode.type),
+        direction: node.id === this.startNode?.id ? '当前节点' : branch?.direction === 'UPSTREAM' ? '上游' : '下游',
+        upstreamCount: incoming.length,
+        downstreamCount: outgoing.length,
+        relatedLabels: related.slice(0, 8),
       }
+    },
+    graphNavigationOptions() {
+      const keyword = this.graphNavigationKeyword.trim().toLowerCase()
+      const nodes = this.graphData.nodes.map(node => ({
+        key: node.id,
+        kind: 'NODE',
+        label: `${node.properties.nodeLabel || node.properties.nodeCode} (${node.properties.nodeCode || '-'})`,
+        refType: node.properties.nodeType,
+        refId: node.properties.nodeId,
+      }))
+      if (!keyword) return nodes
+      return nodes.filter(item => `${item.label} ${item.refType} ${item.refId}`.toLowerCase().includes(keyword))
+    },
+    graphData() {
+      if (!this.startNode) return { nodes: [], edges: [] }
+      const nodes = [
+        this.toGraphNode('CURRENT', this.startNode, {
+          current: true,
+          toggleable: this.startNode.type === 'DATA_OBJECT',
+          toggleLabel: this.expandedObjects[this.startNode.id] ? '收起字段' : '展开字段',
+          expanded: this.expandedObjects[this.startNode.id],
+          loading: this.hierarchyLoading[this.startNode.id],
+        }),
+        ...this.visibleBranches.map(({ branch, side }) => this.toGraphNode(branch.instanceId, branch.node, {
+          cycle: branch.cycle,
+          side,
+          toggleable: this.canToggle(branch),
+          toggleLabel: branch.objectGroup
+            ? (branch.expanded ? '收起字段' : '展开字段')
+            : (branch.expanded ? '收起节点' : '展开节点'),
+          expanded: branch.expanded,
+          loading: branch.loading,
+        })),
+      ]
+      const edges = this.visibleGraph.edges.map(edge => {
+        const source = this.nodePosition(edge.fromId)
+        const target = this.nodePosition(edge.toId)
+        const forward = source.left < target.left
+        const route = this.mindMapLayout.routes[edge.key] || []
+        const startPoint = { x: source.left + CARD_W, y: source.top + CARD_H / 2 }
+        const endPoint = { x: target.left, y: target.top + CARD_H / 2 }
+        // 共享依赖的跨层通道仅提供布局点，绘制、拖动后的重算和箭头均交给 LogicFlow。
+        const geometry = {}
+        if (forward && route.length && !this.positionOverrides[edge.fromId] && !this.positionOverrides[edge.toId]) {
+          const pointsList = [startPoint]
+          const waypoints = [...route.map(point => ({ x: point.left + CARD_W / 2, y: point.top + CARD_H / 2 })), endPoint]
+          waypoints.forEach(point => {
+            const previous = pointsList.at(-1)
+            const midX = (previous.x + point.x) / 2
+            pointsList.push({ x: midX, y: previous.y }, { x: midX, y: point.y }, point)
+          })
+          Object.assign(geometry, { startPoint, endPoint, pointsList })
+        }
+        return {
+          id: edge.key,
+          type: this.globalEdgeLineType,
+          sourceNodeId: edge.fromId,
+          targetNodeId: edge.toId,
+          ...(forward ? { sourceAnchorId: `${edge.fromId}_1`, targetAnchorId: `${edge.toId}_3` } : {}),
+          text: edge.label || '',
+          ...geometry,
+        }
+      })
+      return { nodes, edges }
     },
   },
   methods: {
+    initLogicFlow() {
+      this.lf = createGraphCanvas({
+        container: this.$refs.graphContainer,
+        plugins: [MiniMap],
+        pluginsOptions: {
+          miniMap: {
+            width: 180,
+            height: 120,
+            showEdge: true,
+            isShowHeader: false,
+            isShowCloseIcon: false,
+            rightPosition: 16,
+            bottomPosition: 16,
+          },
+        },
+        edgeType: 'polyline',
+        keyboard: { enabled: false },
+        history: false,
+        adjustEdge: false,
+        adjustEdgeStartAndEnd: false,
+        adjustNodePosition: true,
+        stopMoveGraph: false,
+        stopZoomGraph: true,
+        hideAnchors: true,
+        nodeTextEdit: false,
+        edgeTextEdit: false,
+        stopScrollGraph: true,
+        snapGrid: true,
+      })
+      if (!this.lf) return
+      this.lf.setZoomMiniSize(MIN_SCALE)
+      this.lf.setZoomMaxSize(MAX_SCALE)
+      this.lf.on('node:click', ({ data }) => {
+        this.selectedNodeId = data.properties.nodeId
+      })
+      this.lf.on('blank:click', this.closeNodePanel)
+      this.lf.on('graph:transform', this.updateZoom)
+      this.lf.on('graph:rendered', this.onGraphRendered)
+      this.lf.on('node:drop', ({ data }) => {
+        const left = data.x - CARD_W / 2
+        const top = data.y - CARD_H / 2
+        this.skipGraphRender = true
+        this.positionOverrides = {
+          ...this.positionOverrides,
+          [data.id]: { left, top },
+        }
+        const element = this.$refs.graphContainer?.querySelector(`[data-lineage-model-id="${data.id}"]`)
+        if (element) {
+          element.style.left = `${left}px`
+          element.style.top = `${top}px`
+          element.style.transform = `translate(${-left}px, ${-top}px)`
+        }
+      })
+      this.lf.on('lineage:toggle', ({ data }) => {
+        if (data.id === 'CURRENT') {
+          this.toggleObject(this.startNode.id)
+          return
+        }
+        const branch = this.visibleBranches.find(item => item.branch.instanceId === data.id)?.branch
+        if (branch) this.toggleBranch(branch)
+      })
+    },
+    onGraphRendered() {
+      const miniMap = this.lf?.extension?.miniMap
+      if (!miniMap) return
+      if (this.miniMapVisible) miniMap.show()
+      else miniMap.hide()
+    },
+    toggleMiniMap() {
+      this.miniMapVisible = !this.miniMapVisible
+      this.onGraphRendered()
+    },
+    resetView() {
+      this.positionOverrides = {}
+      this.viewport = { x: 0, y: 0, scale: 1 }
+      this.lf?.resetZoom()
+      this.blurToolbarFocus()
+      this.$nextTick(() => this.fitGraph())
+    },
+    onGlobalEdgeLineTypeChange() {
+      this.renderLineageGraph()
+    },
+    searchGraphElements(keyword) {
+      this.graphNavigationKeyword = keyword || ''
+    },
+    locateGraphNavigationItem(key) {
+      if (!key) return
+      const node = this.graphData.nodes.find(item => item.id === key)
+      if (!node) return
+      this.selectedNodeId = node.properties.nodeId
+      this.lf?.selectElementById(node.id)
+    },
+    closeNodePanel() {
+      this.selectedNodeId = null
+      this.lf?.clearSelectElements()
+    },
+    resizeCanvas() {
+      if (!this.lf) return
+      const container = this.$refs.graphContainer
+      if (container?.clientWidth && container.clientHeight) this.lf.resize(container.clientWidth, container.clientHeight)
+    },
+    renderLineageGraph() {
+      if (!this.lf) return
+      const data = this.graphData
+      // LogicFlow 会规范化输入文本对象，避免反写 Vue 的 computed 结果。
+      this.lf.render(JSON.parse(JSON.stringify(data)))
+      this.$nextTick(() => {
+        this.$refs.graphContainer?.querySelectorAll('.lf-edge').forEach(edge => {
+          edge.querySelector('path, polyline')?.classList.add('edge-path')
+        })
+        this.bindLineageNodeDrag()
+      })
+      const selected = data.nodes.find(node => node.properties.nodeId === this.selectedNodeId)
+      if (selected) this.lf.selectElementById(selected.id)
+      else this.selectedNodeId = null
+      this.resizeCanvas()
+      this.fitGraph()
+    },
+    bindLineageNodeDrag() {
+      const container = this.$refs.graphContainer
+      if (!container || !this.lf) return
+      container.querySelectorAll('.lineage-lf-node').forEach(element => {
+        if (element.dataset.lineageDragBound) return
+        element.dataset.lineageDragBound = 'true'
+        element.addEventListener('mousedown', event => {
+          if (event.button !== 0 || event.target?.closest?.('button')) return
+          const modelId = element.getAttribute('data-lineage-model-id')
+          const model = modelId && this.lf.getNodeModelById(modelId)
+          if (!model) return
+          event.preventDefault()
+          event.stopPropagation()
+          const startX = event.clientX
+          const startY = event.clientY
+          const originX = model.x
+          const originY = model.y
+          const onMove = moveEvent => {
+            const scale = this.lf.getTransform().SCALE_X || 1
+            const x = Math.round((originX + (moveEvent.clientX - startX) / scale) / 20) * 20
+            const y = Math.round((originY + (moveEvent.clientY - startY) / scale) / 20) * 20
+            this.lf.graphModel.moveNode2Coordinate(modelId, x, y)
+          }
+          const onUp = () => {
+            document.removeEventListener('mousemove', onMove)
+            document.removeEventListener('mouseup', onUp)
+            const current = this.lf.getNodeModelById(modelId)
+            if (current) {
+              this.positionOverrides = {
+                ...this.positionOverrides,
+                [modelId]: { left: current.x - CARD_W / 2, top: current.y - CARD_H / 2 },
+              }
+            }
+          }
+          document.addEventListener('mousemove', onMove)
+          document.addEventListener('mouseup', onUp, { once: true })
+        })
+      })
+    },
+    toGraphNode(id, node, properties) {
+      const position = this.nodePosition(id)
+      return {
+        id,
+        type: 'lineage-node',
+        x: position.left + CARD_W / 2,
+        y: position.top + CARD_H / 2,
+        properties: {
+          nodeId: node.id,
+          nodeType: node.type,
+          nodeTypeLabel: this.nodeTypeLabel(node.type),
+          nodeLabel: node.label || node.code,
+          nodeCode: node.code,
+          color: this.nodeColor(node.type),
+          ...properties,
+          toggleText: properties.loading ? '…' : properties.expanded ? '−' : '+',
+        },
+      }
+    },
     mergeGraph(data) {
       ;[...(data.nodes || []), data.startNode].filter(Boolean).forEach(node => {
         ;[node.dataObject, ...(node.ancestorFields || []), node].filter(Boolean).forEach(item => {
@@ -628,104 +837,92 @@ export default {
       this.positionOverrides = {}
       this.pointerInteraction = null
       this.viewport = { x: 0, y: 0, scale: 1 }
+      this.selectedNodeId = null
+    },
+    loadInitialGraph(data) {
+      if (!data || !data.startNode) return
+      this.resetGraph()
+      this.query.direction = 'ALL'
+      this.startNode = data.startNode
+      this.mergeGraph(data)
+      this.upstreamRoots = this.buildBranches(data, 'UPSTREAM', Number.MAX_SAFE_INTEGER)
+      this.downstreamRoots = this.buildBranches(data, 'DOWNSTREAM', Number.MAX_SAFE_INTEGER)
+      this.loadedDirections = { UPSTREAM: true, DOWNSTREAM: true }
+      this.$nextTick(() => this.fitGraph())
     },
     fitGraph() {
-      const graphWrap = this.$refs.graphWrap
-      if (!graphWrap) return
-      const width = graphWrap.clientWidth
-      const height = graphWrap.clientHeight
-      if (!width || !height) return
-      const availableWidth = Math.max(1, width - VIEWPORT_PADDING * 2)
-      const availableHeight = Math.max(1, height - VIEWPORT_PADDING * 2)
-      const scale = Math.max(
-        MIN_SCALE,
-        Math.min(
-          1,
-          availableWidth / this.canvasSize.width,
-          availableHeight / this.canvasSize.height
-        )
-      )
-      this.viewport = {
-        x: (width - this.canvasSize.width * scale) / 2,
-        y: (height - this.canvasSize.height * scale) / 2,
-        scale,
+      if (!this.lf || !this.startNode) return
+      this.lf.fitView(80, 80)
+      if (this.lf.getTransform().SCALE_X > 1) {
+        this.lf.zoom(1)
+        this.lf.translateCenter()
       }
+      this.updateZoom()
     },
     resetToBestLayout() {
       this.positionOverrides = {}
-      this.$nextTick(() => this.fitGraph())
+      this.lf?.resetZoom()
+      this.blurToolbarFocus()
+      this.$nextTick(() => {
+        this.renderLineageGraph()
+        this.fitGraph()
+      })
+    },
+    updateZoom() {
+      if (this.lf) {
+        this.viewport = { ...this.viewport, scale: this.lf.getTransform().SCALE_X || this.viewport.scale }
+      }
+    },
+    blurToolbarFocus() {
+      const active = typeof document !== 'undefined' ? document.activeElement : null
+      if (active?.closest?.('.graph-toolbar')) active.blur()
+    },
+    zoomIn() {
+      this.setZoom(this.viewport.scale + 0.1)
+    },
+    zoomOut() {
+      this.setZoom(this.viewport.scale - 0.1)
     },
     setZoom(nextScale, clientPoint) {
       const graphWrap = this.$refs.graphWrap
       if (!graphWrap) return
       const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, nextScale))
       const rect = graphWrap.getBoundingClientRect()
-      const focusX = clientPoint
-        ? clientPoint.clientX - rect.left
-        : graphWrap.clientWidth / 2
-      const focusY = clientPoint
-        ? clientPoint.clientY - rect.top
-        : graphWrap.clientHeight / 2
+      const focusX = clientPoint ? clientPoint.clientX - rect.left : graphWrap.clientWidth / 2
+      const focusY = clientPoint ? clientPoint.clientY - rect.top : graphWrap.clientHeight / 2
       const contentX = (focusX - this.viewport.x) / this.viewport.scale
       const contentY = (focusY - this.viewport.y) / this.viewport.scale
-      this.viewport = {
-        x: focusX - contentX * scale,
-        y: focusY - contentY * scale,
-        scale,
+      this.viewport = { x: focusX - contentX * scale, y: focusY - contentY * scale, scale }
+      if (this.lf) {
+        const point = this.getZoomPoint(clientPoint, graphWrap)
+        this.lf.zoom(scale, point)
+        this.updateZoom()
       }
     },
-    zoomIn() {
-      this.setZoom(this.viewport.scale + ZOOM_STEP)
-    },
-    zoomOut() {
-      this.setZoom(this.viewport.scale - ZOOM_STEP)
+    getZoomPoint(clientPoint, graphWrap) {
+      const graphModel = this.lf?.graphModel
+      if (!graphModel?.getPointByClient) return undefined
+      const container = this.$refs.graphContainer || graphWrap
+      const rect = container.getBoundingClientRect()
+      const x = clientPoint?.clientX ?? rect.left + (container.clientWidth || graphWrap.clientWidth) / 2
+      const y = clientPoint?.clientY ?? rect.top + (container.clientHeight || graphWrap.clientHeight) / 2
+      const point = graphModel.getPointByClient({ x, y })?.canvasOverlayPosition
+      return point ? [point.x, point.y] : undefined
     },
     onCanvasWheel(event) {
       if (!this.startNode) return
       event.preventDefault()
-      const direction = event.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP
-      this.setZoom(this.viewport.scale + direction, event)
+      this.setZoom(this.viewport.scale + (event.deltaY > 0 ? -0.1 : 0.1), event)
     },
     beginCanvasPan(event) {
-      if (!this.startNode || (event.button != null && event.button !== 0))
-        return
-      if (
-        event.target &&
-        event.target.closest &&
-        event.target.closest('.graph-node, .graph-toolbar')
-      )
-        return
-      if (event.currentTarget && event.currentTarget.setPointerCapture) {
-        event.currentTarget.setPointerCapture(event.pointerId)
-      }
-      this.pointerInteraction = {
-        type: 'pan',
-        startX: event.clientX,
-        startY: event.clientY,
-        originX: this.viewport.x,
-        originY: this.viewport.y,
-      }
+      if (!this.startNode || (event.button != null && event.button !== 0)) return
+      if (event.target?.closest?.('.graph-toolbar, .lf-graph')) return
+      this.pointerInteraction = { type: 'pan', startX: event.clientX, startY: event.clientY, originX: this.viewport.x, originY: this.viewport.y }
     },
     beginNodeDrag(event, instanceId) {
       if (event.button != null && event.button !== 0) return
-      if (
-        event.target &&
-        event.target.closest &&
-        event.target.closest('.node-label, .node-code')
-      )
-        return
-      if (event.currentTarget && event.currentTarget.setPointerCapture) {
-        event.currentTarget.setPointerCapture(event.pointerId)
-      }
       const position = this.nodePosition(instanceId)
-      this.pointerInteraction = {
-        type: 'node',
-        instanceId,
-        startX: event.clientX,
-        startY: event.clientY,
-        originLeft: position.left,
-        originTop: position.top,
-      }
+      this.pointerInteraction = { type: 'node', instanceId, startX: event.clientX, startY: event.clientY, originLeft: position.left, originTop: position.top }
     },
     onPointerMove(event) {
       const interaction = this.pointerInteraction
@@ -733,11 +930,7 @@ export default {
       const deltaX = event.clientX - interaction.startX
       const deltaY = event.clientY - interaction.startY
       if (interaction.type === 'pan') {
-        this.viewport = {
-          ...this.viewport,
-          x: interaction.originX + deltaX,
-          y: interaction.originY + deltaY,
-        }
+        this.viewport = { ...this.viewport, x: interaction.originX + deltaX, y: interaction.originY + deltaY }
         return
       }
       this.positionOverrides[interaction.instanceId] = {
@@ -929,30 +1122,17 @@ export default {
         branch && (branch.objectGroup || (!branch.cycle && (branch.hasMore || branch.children.length)))
       )
     },
-    branchStyle(item) {
-      const pos = this.nodePosition(item.branch.instanceId)
-      return {
-        left: pos.left + 'px',
-        top: pos.top + 'px',
-        borderColor: this.nodeColor(item.branch.node.type),
-        boxShadow: 'inset 4px 0 0 ' + this.nodeColor(item.branch.node.type),
-      }
-    },
     nodeColor(type) {
-      return (
-        {
-          PROJECT: '#2563EB',
-          VARIABLE: '#059669',
-          RULE: '#DC2626',
-          MODEL: '#7C3AED',
-          API: '#EA580C',
-          DB: '#0F766E',
-          LIST: '#C026D3',
-          DATASOURCE: '#64748B',
-          DATA_FIELD: '#0891B2',
-          DATA_OBJECT: '#0284C7',
-        }[type] || '#64748B'
-      )
+      return LINEAGE_NODE_COLORS[type] || '#64748B'
+    },
+    findBranch(nodeId) {
+      const queue = [...this.upstreamRoots, ...this.downstreamRoots]
+      while (queue.length) {
+        const branch = queue.shift()
+        if (branch.node?.id === nodeId) return branch
+        queue.push(...(branch.children || []))
+      }
+      return null
     },
     nodeTypeLabel(type) {
       const found = this.nodeTypeOptions.find((item) => item.value === type)
@@ -1023,10 +1203,22 @@ export default {
   }
   .legend-row {
     display: flex;
+    flex: 0 1 auto;
     gap: 12px;
     flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
     color: var(--tianshu-text-secondary);
     font-size: 12px;
+    margin: 0;
+  }
+  .lineage-canvas-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px 16px;
+    min-width: 0;
     margin-bottom: 12px;
   }
   .legend-item {
@@ -1039,13 +1231,126 @@ export default {
     height: 10px;
     border-radius: 2px;
   }
+  .lineage-graph-layout {
+    position: relative;
+    min-width: 0;
+  }
+  .lineage-node-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 8;
+    max-height: none;
+    overflow-y: auto;
+    width: min(380px, 38vw);
+    padding: 16px;
+    box-sizing: border-box;
+    background: var(--tianshu-bg-surface);
+    border: 1px solid var(--tianshu-border-subtle);
+    border-radius: 6px 0 0 6px;
+    box-shadow: var(--tianshu-shadow-large, 0 12px 32px rgba(0, 0, 0, 0.24));
+  }
+  .lineage-node-panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--tianshu-border-subtle);
+    color: var(--tianshu-text-primary);
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .lineage-node-panel__header button {
+    width: 24px;
+    height: 24px;
+    border: 0;
+    color: var(--tianshu-text-tertiary);
+    background: transparent;
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+  }
+  .lineage-node-panel__header button:hover {
+    color: var(--tianshu-text-primary);
+  }
+  .lineage-node-panel__type {
+    margin: 16px 0 12px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .lineage-node-panel__details {
+    margin: 0;
+  }
+  .lineage-node-panel__details > div {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr);
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--tianshu-border-subtle);
+  }
+  .lineage-node-panel__details dt {
+    color: var(--tianshu-text-tertiary);
+    font-size: 12px;
+  }
+  .lineage-node-panel__details dd {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+    color: var(--tianshu-text-primary);
+    font-size: 12px;
+  }
+  .lineage-node-panel__details dd.is-code {
+    font-family: Menlo, Monaco, Consolas, monospace;
+  }
+  .lineage-node-panel__hint {
+    margin-top: 16px;
+    color: var(--tianshu-text-tertiary);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .lineage-node-panel__section {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--tianshu-border-subtle);
+  }
+  .lineage-node-panel__section-title {
+    margin-bottom: 8px;
+    color: var(--tianshu-text-primary);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .lineage-node-panel__section p {
+    margin: 0;
+    color: var(--tianshu-text-secondary);
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+  .lineage-node-panel__related {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .lineage-node-panel__related li {
+    overflow: hidden;
+    color: var(--tianshu-text-secondary);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lineage-node-panel__related span {
+    display: inline-block;
+    min-width: 42px;
+    margin-right: 6px;
+    color: var(--el-color-primary);
+  }
   .graph-wrap {
+    width: 100%;
+    min-width: 0;
     background-color: var(--tianshu-bg-soft);
-    background-image: radial-gradient(
-      var(--tianshu-border-strong) 0.8px,
-      transparent 0.8px
-    );
-    background-size: 16px 16px;
     border: 1px solid var(--tianshu-border-subtle);
     border-radius: 4px;
     min-height: 440px;
@@ -1055,32 +1360,36 @@ export default {
     cursor: grab;
     user-select: none;
   }
-  .graph-wrap.is-interacting {
-    cursor: grabbing;
-  }
   .empty-graph {
     color: var(--tianshu-text-tertiary);
     text-align: center;
     padding: 128px 0;
   }
   .graph-canvas {
-    position: relative;
-    transform-origin: 0 0;
-    will-change: transform;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .graph-canvas.is-hidden {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  :deep(.lf-graph) {
+    width: 100%;
+    height: 100%;
   }
   .graph-toolbar {
-    position: absolute;
-    top: 12px;
-    right: 12px;
     display: flex;
     align-items: center;
-    gap: 4px;
+    justify-content: center;
+    gap: 6px;
     padding: 4px;
     border: 1px solid var(--tianshu-border-subtle);
     border-radius: 6px;
     background: var(--tianshu-bg-surface);
     box-shadow: var(--tianshu-shadow-medium);
-    z-index: 6;
+    z-index: 2;
   }
   .graph-toolbar button {
     min-width: 30px;
@@ -1099,6 +1408,25 @@ export default {
     background: var(--el-color-primary-light-9);
     outline: none;
   }
+  .graph-toolbar :deep(.el-button),
+  .graph-toolbar :deep(.el-select .el-input__wrapper) {
+    border-color: var(--tianshu-border);
+    background: var(--tianshu-bg-surface);
+    color: var(--tianshu-text-primary);
+  }
+  .graph-toolbar :deep(.el-button:hover),
+  .graph-toolbar :deep(.el-button:focus-visible),
+  .graph-toolbar :deep(.is-tool-active) {
+    border-color: var(--el-color-primary);
+    color: var(--el-color-primary);
+    background: var(--tianshu-designer-accent-bg);
+  }
+  .graph-toolbar :deep(.el-button:focus:not(:focus-visible)) {
+    border-color: var(--tianshu-border);
+    color: var(--tianshu-text-primary);
+    background: var(--tianshu-bg-surface);
+    box-shadow: none;
+  }
   .graph-toolbar .best-layout-button {
     margin-left: 4px;
     color: var(--tianshu-brand-foreground);
@@ -1116,150 +1444,27 @@ export default {
     font-size: 12px;
     text-align: center;
   }
-  .side-caption {
-    position: absolute;
-    top: 16px;
-    color: var(--tianshu-text-tertiary);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    z-index: 2;
-  }
-  .side-caption.is-upstream {
-    left: 24px;
-  }
-  .side-caption.is-current {
-    left: 50%;
-    transform: translateX(-50%);
-  }
-  .side-caption.is-downstream {
-    right: 24px;
-  }
-  .edge-layer {
-    position: absolute;
-    left: 0;
-    top: 0;
-    // 节点可拖出初始布局范围；连线只由外层画布裁剪。
-    overflow: visible;
-    pointer-events: none;
-  }
-  .edge-path {
-    fill: none;
-    stroke: var(--tianshu-border-strong);
-    stroke-width: 1.5;
-  }
-  .edge-label {
-    fill: var(--tianshu-text-secondary);
-    font-size: 12px;
-    text-anchor: middle;
-    paint-order: stroke;
-    stroke: var(--tianshu-bg-soft);
-    stroke-width: 4px;
-  }
-  .graph-node {
-    position: absolute;
-    width: 200px;
-    height: 88px;
-    background: var(--tianshu-bg-surface);
-    border: 1px solid var(--tianshu-border);
-    border-radius: 6px;
-    padding: 12px;
-    box-sizing: border-box;
-    cursor: move;
-    z-index: 3;
-  }
-  .branch-node {
-    box-shadow: var(--tianshu-shadow-small);
-  }
-  .current-node {
-    background: var(--tianshu-warning-bg);
-    border-width: 2px;
-    box-shadow: var(--tianshu-shadow-medium);
-  }
-  .graph-node.is-cycle {
-    background: var(--tianshu-warning-bg);
-    border-style: dashed;
-  }
-  .node-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 4px;
-  }
-  .node-type {
-    font-size: 12px;
-    font-weight: 700;
-  }
-  .current-badge,
-  .cycle-badge {
-    border-radius: 12px;
-    padding: 2px 8px;
-    font-size: 12px;
-    font-weight: 700;
-  }
-  .current-badge {
-    color: var(--tianshu-warning-text);
-    background: var(--tianshu-warning-bg);
-  }
-  .cycle-badge {
-    color: var(--tianshu-warning-text);
-    background: var(--tianshu-warning-bg);
-  }
-  .node-label {
-    color: var(--tianshu-text-primary);
-    font-weight: 700;
-    cursor: text;
-    user-select: text;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .node-code {
-    color: var(--tianshu-text-tertiary);
-    cursor: text;
-    font-family: Menlo, Monaco, Consolas, monospace;
-    font-size: 12px;
-    margin-top: 4px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    user-select: text;
-  }
-  .branch-toggle {
-    position: absolute;
-    top: 50%;
-    width: 26px;
-    height: 26px;
-    margin-top: -13px;
-    padding: 0;
-    border: 1px solid var(--tianshu-border);
-    border-radius: 50%;
-    color: var(--tianshu-text-secondary);
-    background: var(--tianshu-bg-surface);
-    box-shadow: var(--tianshu-shadow-small);
-    cursor: pointer;
-    z-index: 4;
-  }
-  .branch-toggle:hover,
-  .branch-toggle:focus {
-    color: var(--el-color-primary);
-    border-color: var(--el-color-primary);
-    outline: none;
-  }
-  .branch-node.is-upstream .branch-toggle {
-    left: -13px;
-  }
-  .branch-node.is-downstream .branch-toggle {
-    right: -13px;
-  }
-  .object-toggle {
-    right: -13px;
-  }
   @media (max-width: 1200px) {
     .usage-guide {
       grid-template-columns: repeat(1, minmax(0, 1fr));
     }
+  }
+  @media (max-width: 800px) {
+    .lineage-node-panel {
+      right: 0;
+      z-index: 8;
+      width: min(380px, 88vw);
+    }
+  }
+
+  .panel-slide-enter-active,
+  .panel-slide-leave-active {
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+  .panel-slide-enter-from,
+  .panel-slide-leave-to {
+    transform: translateX(100%);
+    opacity: 0;
   }
 }
 </style>

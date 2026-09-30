@@ -97,6 +97,49 @@ public class L1MemoryCacheTest {
     }
 
     @Test
+    public void fixedVersionAdmissionNeverEvictsLatestRules() {
+        L1MemoryCache cache = new L1MemoryCache(2);
+        CachedRule latestA = rule("latest-a", 3);
+        latestA.setDefinitionId(11L);
+        CachedRule latestB = rule("latest-b", 4);
+        latestB.setDefinitionId(12L);
+        cache.put(latestA);
+        cache.put(latestB);
+
+        CachedRule fixed = rule("fixed-a", 1);
+        fixed.setDefinitionId(11L);
+        fixed.setVersionBindingId(101L);
+        fixed.setFixedVersion(true);
+        cache.put(fixed);
+
+        assertEquals("latest-a", cache.get("latest-a").getRuleCode());
+        assertEquals("latest-b", cache.get("latest-b").getRuleCode());
+        assertNull(cache.getById(11L, 101L));
+        assertEquals(2, cache.size());
+    }
+
+    @Test
+    public void latestAdmissionEvictsFixedVersionBeforeLatestRule() {
+        L1MemoryCache cache = new L1MemoryCache(2);
+        CachedRule fixed = rule("same", 1);
+        fixed.setDefinitionId(21L);
+        fixed.setVersionBindingId(201L);
+        fixed.setFixedVersion(true);
+        CachedRule latest = rule("latest", 2);
+        latest.setDefinitionId(22L);
+        cache.put(fixed);
+        cache.put(latest);
+
+        CachedRule incoming = rule("incoming", 3);
+        incoming.setDefinitionId(23L);
+        cache.put(incoming);
+
+        assertNull(cache.getById(21L, 201L));
+        assertEquals("latest", cache.get("latest").getRuleCode());
+        assertEquals("incoming", cache.get("incoming").getRuleCode());
+    }
+
+    @Test
     public void repeatedColdInsertionsDoNotEvictContinuouslyUsedRule() {
         L1MemoryCache cache = new L1MemoryCache(8);
         cache.put(rule("a"));

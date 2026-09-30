@@ -203,15 +203,15 @@
       section.hidden = Boolean(normalized && !section.dataset.search.toLowerCase().includes(normalized) && !hasVisibleChild)
     })
   }
-  search.addEventListener('input', event => filterSections(event.target.value))
+  search?.addEventListener('input', event => filterSections(event.target.value))
   document.addEventListener('keydown', event => {
-    if (event.key === '/' && document.activeElement !== search) {
+    if (search && event.key === '/' && document.activeElement !== search) {
       event.preventDefault()
       search.focus()
     }
     if (event.key === 'Escape') {
       if (!modal.hidden) closeModal()
-      else if (document.activeElement === search) { search.value = ''; filterSections(''); search.blur() }
+      else if (search && document.activeElement === search) { search.value = ''; filterSections(''); search.blur() }
     }
   })
 

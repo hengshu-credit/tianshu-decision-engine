@@ -126,10 +126,18 @@ $login-muted: var(--tianshu-text-tertiary);
   position: fixed;
   inset: 0;
   z-index: 0;
-  background: linear-gradient(145deg, #edf2ff 0%, #f7f5ff 52%, #eef5ff 100%);
-}
-:global([data-theme='dark']) .login-bg {
-  background: linear-gradient(145deg, #11172a 0%, #0b1020 52%, #131127 100%);
+  background:
+    radial-gradient(
+      circle at 8% 12%,
+      rgba(var(--el-color-primary-rgb), 0.14),
+      transparent 38%
+    ),
+    radial-gradient(
+      circle at 92% 88%,
+      rgba(var(--tianshu-color-secondary-rgb), 0.1),
+      transparent 42%
+    ),
+    linear-gradient(145deg, var(--tianshu-bg-page), var(--tianshu-bg-workspace));
 }
 .login-bg__mesh {
   position: absolute;

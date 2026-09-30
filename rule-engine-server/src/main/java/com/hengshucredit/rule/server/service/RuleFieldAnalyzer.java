@@ -462,6 +462,8 @@ public class RuleFieldAnalyzer {
                     "API 所属外部数据源未启用或不属于当前项目");
             return ObjectShapeIndex.open();
         }
+        JSONObject execution = ExternalApiRequestPlan.specification(apiConfig);
+        if (execution != null) return loadApiExecutionShape(execution, variable.getSourceConfig());
         if (apiConfig.getResponseObjectId() == null) {
             addApiChainDiagnostic(diagnostics, "REFERENCE_NOT_FOUND",
                     "$.apiConfig." + apiConfigId,
@@ -470,6 +472,45 @@ public class RuleFieldAnalyzer {
         }
         return loadObjectShape(apiConfig.getResponseObjectId(), projectId,
                 scriptRoot, diagnostics);
+    }
+
+    @SuppressWarnings("unchecked")
+    private ObjectShapeIndex loadApiExecutionShape(JSONObject execution, String binding) {
+        Map<String, Object> sampleResult = new LinkedHashMap<>();
+        if (execution.getJSONArray("responseBranches") != null) {
+            for (Object raw : execution.getJSONArray("responseBranches")) {
+                JSONObject branch = JSON.parseObject(JSON.toJSONString(raw));
+                Object sample = branch.get("sample");
+                Map<String, Object> envelope = new LinkedHashMap<>();
+                envelope.put("response", Map.of("body", sample == null ? Map.of() : sample));
+                envelope.put("body", sample);
+                Object assembled = ExternalApiResponseSchema.sampleValue(branch);
+                Map<String, Object> mapped = new LinkedHashMap<>(envelope);
+                mapped.put("body", assembled);
+                String path = parseObject(binding).getString("resultPath");
+                Object selected = ExternalApiConsumerService.select(mapped, path);
+                if (selected instanceof Map<?, ?> fields) fields.forEach((key, value) -> sampleResult.putIfAbsent(String.valueOf(key), value));
+            }
+        }
+        Map<String, Object> schema = apiSampleSchema(sampleResult);
+        Map<String, Map<String, Object>> indexed = new LinkedHashMap<>();
+        Map<String, String> types = new LinkedHashMap<>();
+        ((Map<String, Object>) schema.get("properties")).forEach((name, field) -> indexStableSchema(name, (Map<String, Object>) field, indexed, types));
+        return new ObjectShapeIndex(schema, indexed, types);
+    }
+
+    private Map<String, Object> apiSampleSchema(Object sample) {
+        if (sample instanceof Map<?, ?> fields) {
+            Map<String, Object> schema = propertySchema("OBJECT");
+            Map<String, Object> properties = new LinkedHashMap<>();
+            fields.forEach((key, value) -> properties.put(String.valueOf(key), apiSampleSchema(value)));
+            schema.put("properties", properties); schema.put("additionalProperties", false); return schema;
+        }
+        if (sample instanceof List<?> items) {
+            Map<String, Object> schema = propertySchema("LIST");
+            schema.put("items", items.isEmpty() ? Map.of() : apiSampleSchema(items.get(0))); return schema;
+        }
+        return propertySchema(sample instanceof Number ? "NUMBER" : sample instanceof Boolean ? "BOOLEAN" : "STRING");
     }
 
     private ObjectShapeIndex loadObjectShape(

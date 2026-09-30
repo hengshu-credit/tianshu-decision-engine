@@ -1,0 +1,103 @@
+  .lineage-lf-node {
+    position: relative;
+    width: 200px;
+    height: 88px;
+    box-sizing: border-box;
+    padding: 12px;
+    overflow: visible;
+    border: 1px solid var(--lineage-node-color, var(--tianshu-border));
+    border-left-width: 4px;
+    border-radius: 6px;
+    background: var(--tianshu-flow-node-bg, var(--tianshu-bg-surface));
+    box-shadow: var(--tianshu-shadow-small);
+    user-select: none;
+  }
+  .lineage-lf-node.current-node {
+    box-shadow: var(--tianshu-shadow-medium);
+  }
+  .lineage-lf-node.is-cycle {
+    border-style: dashed;
+    background: var(--tianshu-warning-bg);
+  }
+  .lineage-lf-node .node-color-strip {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -4px;
+    width: 4px;
+    border-radius: 6px 0 0 6px;
+    pointer-events: none;
+  }
+  .lineage-lf-node .node-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .lineage-lf-node .node-type-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .lineage-lf-node .node-icon {
+    flex: 0 0 16px;
+  }
+  .lineage-lf-node .node-type {
+    color: var(--lineage-node-color, var(--tianshu-text-secondary));
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .lineage-lf-node .node-badge {
+    color: var(--tianshu-warning-text);
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .lineage-lf-node .node-label {
+    overflow: hidden;
+    color: var(--tianshu-text-primary);
+    font-weight: 700;
+    text-overflow: ellipsis;
+    user-select: text;
+    white-space: nowrap;
+  }
+  .lineage-lf-node .node-code {
+    margin-top: 4px;
+    overflow: hidden;
+    color: var(--tianshu-text-tertiary);
+    font-family: Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    text-overflow: ellipsis;
+    user-select: text;
+    white-space: nowrap;
+  }
+  .lineage-lf-node .branch-toggle {
+    position: absolute;
+    top: 50%;
+    z-index: 2;
+    width: 26px;
+    height: 26px;
+    margin-top: -13px;
+    padding: 0;
+    border: 1px solid var(--tianshu-border);
+    border-radius: 50%;
+    color: var(--tianshu-text-secondary);
+    background: var(--tianshu-bg-surface);
+    box-shadow: var(--tianshu-shadow-small);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 22px;
+  }
+  .lineage-lf-node.is-upstream .branch-toggle {
+    left: -13px;
+  }
+  .lineage-lf-node.is-downstream .branch-toggle,
+  .lineage-lf-node.current-node .branch-toggle {
+    right: -13px;
+  }
+  .lineage-lf-node .branch-toggle:hover,
+  .lineage-lf-node .branch-toggle:focus-visible {
+    color: var(--el-color-primary);
+    border-color: var(--el-color-primary);
+    outline: none;
+  }

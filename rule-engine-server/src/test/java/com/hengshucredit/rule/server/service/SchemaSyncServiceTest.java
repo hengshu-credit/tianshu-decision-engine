@@ -103,7 +103,7 @@ public class SchemaSyncServiceTest {
                 jdbcTemplate.sqlList.get(4));
         assertEquals("ALTER TABLE `rule_external_api_config` ADD COLUMN `async_callback_config` JSON DEFAULT NULL COMMENT '异步回调配置JSON' AFTER `async_poll_config`",
                 jdbcTemplate.sqlList.get(5));
-        assertEquals("ALTER TABLE `rule_external_api_config` ADD COLUMN `test_sample_params` LONGTEXT DEFAULT NULL COMMENT 'API调用测试样例JSON' AFTER `description`",
+        assertEquals("ALTER TABLE `rule_external_api_config` ADD COLUMN `test_sample_params` JSON DEFAULT NULL COMMENT 'API调用测试样例JSON' AFTER `description`",
                 jdbcTemplate.sqlList.get(6));
     }
 

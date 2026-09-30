@@ -229,7 +229,7 @@ export default {
         const response = await getRuleTestSchema({
           targetType: this.targetType || 'RULE',
           targetId: this.definitionId,
-          projectId: this.projectId,
+          projectId: Number(this.projectId) > 0 ? this.projectId : undefined,
           modelType: this.modelType || undefined,
           modelJson,
         })
@@ -292,7 +292,7 @@ export default {
         const res = await executeRule(
           {
             definitionId: this.definitionId,
-            projectId: this.projectId,
+            projectId: Number(this.projectId) > 0 ? this.projectId : undefined,
             modelType: this.modelType || undefined,
             modelJson: this.currentModelJson(),
             params,

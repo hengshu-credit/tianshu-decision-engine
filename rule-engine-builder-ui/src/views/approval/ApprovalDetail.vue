@@ -168,8 +168,12 @@
             height="400px"
           />
           <div v-if="isRequestComparison && changedFields.length" class="diff-list">
+            <div v-if="changedFields.length > 50" class="diff-list-toolbar">
+              <span>共 {{ changedFields.length }} 项变更，当前匹配 {{ filteredChangedFields.length }} 项</span>
+              <el-input v-model="fieldQuery" clearable placeholder="搜索变更字段路径" @input="fieldPage = 1" />
+            </div>
             <article
-              v-for="field in changedFields"
+              v-for="field in visibleChangedFields"
               :key="field.key"
               class="diff-row"
               :class="`is-${String(field.changeType || '').toLowerCase()}`"
@@ -188,6 +192,8 @@
                 <pre>{{ displayValue(field.rightValue, field.sensitive) }}</pre>
               </div>
             </article>
+            <div v-if="!filteredChangedFields.length" class="no-diff">未找到匹配的变更字段</div>
+            <el-pagination v-if="filteredChangedFields.length > 50" v-model:current-page="fieldPage" :page-size="50" :total="filteredChangedFields.length" layout="total, prev, pager, next" />
           </div>
           <div v-else-if="isRequestComparison && !changedFields.length" class="no-diff">
             基准版本与提交内容一致
@@ -393,7 +399,9 @@ export default {
       compareRightKey: 'CURRENT',
       versionPreviewVisible: false,
       versionPreviewTitle: '',
-      versionPreviewSnapshot: ''
+      versionPreviewSnapshot: '',
+      fieldQuery: '',
+      fieldPage: 1
     }
   },
   computed: {
@@ -405,6 +413,13 @@ export default {
     },
     changedFields() {
       return (this.diff.fields || []).filter(field => field.changed)
+    },
+    filteredChangedFields() {
+      const query = this.fieldQuery.trim().toLowerCase()
+      return this.changedFields.filter(field => !query || String(field.key || '').toLowerCase().includes(query))
+    },
+    visibleChangedFields() {
+      return this.filteredChangedFields.slice((this.fieldPage - 1) * 50, this.fieldPage * 50)
     },
     compareOptions() {
       const currentLabel = this.request && this.request.status === 'EDITING'
@@ -496,7 +511,7 @@ export default {
         return `${value.listName || '名单'} · ${count} 条内容变更`
       }
       return value.ruleName || value.modelName || value.funcName ||
-        value.datasourceName || value.projectName || value.varLabel ||
+        value.apiName || value.datasourceName || value.projectName || value.varLabel ||
         value.objectLabel || value.experimentName || value.listName ||
         value.validationName || value.billingName ||
         `${this.resourceTypeLabel(this.request.resourceType)} #${this.request.resourceId}`
@@ -554,6 +569,7 @@ export default {
   created() {
     this.loadDetail()
   },
+  watch: { detail() { this.fieldPage = 1 }, fieldQuery() { this.fieldPage = 1 } },
   methods: {
     dependencyReferenceLabel(dependency) {
       const path = dependency && dependency.referencePath
@@ -1094,6 +1110,8 @@ export default {
   flex-direction: column;
   gap: 9px;
 }
+.diff-list-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; color: var(--el-text-color-secondary); font-size: 12px; }
+.diff-list-toolbar .el-input { width: 300px; margin-left: auto; }
 
 .diff-row {
   overflow: hidden;

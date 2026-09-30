@@ -89,6 +89,8 @@ public class OpenRuleController {
                         executionContract.getContract().isRecordTrace()));
                 if (hasText(result.getTraceId())) traceId = result.getTraceId();
                 OpenApiStatus status = result.isSuccess() ? OpenApiStatuses.success()
+                        : "WAITING_EXTERNAL".equals(result.getExecutionStatus())
+                        ? OpenApiStatuses.waitingExternal()
                         : "THROTTLED".equals(result.getExecutionStatus())
                         ? OpenApiStatuses.qpsConcurrencyExceeded()
                         : OpenApiStatuses.resultError(safeMessage(result.getErrorMessage(), "结果处理异常"));
@@ -99,6 +101,8 @@ public class OpenRuleController {
                 RuleResult cached = idempotency.getResult();
                 if (hasText(cached.getTraceId())) traceId = cached.getTraceId();
                 OpenApiStatus cachedStatus = cached.isSuccess() ? OpenApiStatuses.success()
+                        : "WAITING_EXTERNAL".equals(cached.getExecutionStatus())
+                        ? OpenApiStatuses.waitingExternal()
                         : "THROTTLED".equals(cached.getExecutionStatus())
                         ? OpenApiStatuses.qpsConcurrencyExceeded()
                         : OpenApiStatuses.resultError(safeMessage(cached.getErrorMessage(), "结果处理异常"));
@@ -128,6 +132,9 @@ public class OpenRuleController {
             activeIdempotency = null;
             if (!result.isSuccess()) {
                 Map<String, Object> values = errorValues(result.getErrorMessage());
+                if ("WAITING_EXTERNAL".equals(result.getExecutionStatus())) {
+                    return render(resolved.getContract(), OpenApiStatuses.waitingExternal(), traceId, values);
+                }
                 if ("THROTTLED".equals(result.getExecutionStatus())) {
                     return render(resolved.getContract(), OpenApiStatuses.qpsConcurrencyExceeded(),
                             traceId, values);

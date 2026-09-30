@@ -103,6 +103,10 @@ export function defaultDashboardMapView() {
   return { longitude: 104, latitude: 35, zoom: 1.5 }
 }
 
+export function defaultDashboardGlobalMapView() {
+  return { longitude: 0, latitude: 0, zoom: 1 }
+}
+
 function normalizeDashboardMapView(view) {
   const value = view || {}
   const number = raw => raw === null || raw === undefined ||

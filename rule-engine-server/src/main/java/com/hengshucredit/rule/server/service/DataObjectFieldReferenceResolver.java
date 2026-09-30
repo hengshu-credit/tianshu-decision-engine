@@ -45,6 +45,7 @@ public class DataObjectFieldReferenceResolver {
                 continue;
             }
             var owner = dataObjectMapper == null || field.getObjectId() == null ? null : dataObjectMapper.selectById(field.getObjectId());
+            if (owner != null && Set.of("API", "DB", "DATABASE").contains(owner.getSourceType() == null ? "" : owner.getSourceType())) continue;
             field.setLazyReference(owner != null && Boolean.TRUE.equals(owner.getLazyLoadReferences()));
             RuleVariable variable = ruleVariableMapper.selectById(field.getRefVariableId());
             if (variable != null) {
@@ -88,6 +89,7 @@ public class DataObjectFieldReferenceResolver {
             if (mappedField == null || !mappedField.referencesValue()) {
                 continue;
             }
+            if (Set.of("API", "DB", "DATABASE").contains(mappedField.getObjectSourceType() == null ? "" : mappedField.getObjectSourceType())) continue;
             RuleVariable source = variables.get(mappedField.getRefVariableId());
             String targetPath = pathOf(direct);
             String sourcePath = source == null ? null : firstText(source.getScriptName(), source.getVarCode());

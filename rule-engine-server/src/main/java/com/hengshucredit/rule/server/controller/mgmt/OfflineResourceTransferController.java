@@ -8,6 +8,8 @@ import com.hengshucredit.rule.server.transfer.TransferImportOptions;
 import com.hengshucredit.rule.server.transfer.OfflineResourceImportService;
 import com.hengshucredit.rule.server.service.ConsoleOperatorResolver;
 import com.hengshucredit.rule.server.service.RuleLineageService;
+import com.hengshucredit.rule.server.service.OfflineTransferLogService;
+import com.hengshucredit.rule.model.entity.OfflineTransferLog;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.alibaba.fastjson.JSON;
 import jakarta.annotation.Resource;
@@ -28,6 +30,7 @@ public class OfflineResourceTransferController {
     @Resource private OfflineResourceImportService importService;
     @Resource private ConsoleOperatorResolver operatorResolver;
     @Resource private RuleLineageService lineageService;
+    @Resource private OfflineTransferLogService logService;
 
     @GetMapping("/resources")
     @RequirePermission("rule:view")
@@ -46,13 +49,20 @@ public class OfflineResourceTransferController {
     @PostMapping(value = "/export", produces = "application/zip")
     @RequirePermission("rule:view")
     public ResponseEntity<byte[]> export(@RequestBody List<TransferRootRequest> roots) {
-        byte[] bytes = service.export(roots);
-        return ResponseEntity.ok()
+        String operator = operatorResolver == null ? ConsoleOperatorResolver.SYSTEM_CONSOLE : operatorResolver.resolve();
+        try {
+            byte[] bytes = service.export(roots);
+            if (logService != null) logService.recordExport(roots, bytes, operator);
+            return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=tianshu-resource-transfer.zip")
                 .header("X-Transfer-Package", "TIANSHU_RESOURCE_TRANSFER")
                 .contentType(MediaType.parseMediaType("application/zip"))
                 .contentLength(bytes.length)
                 .body(bytes);
+        } catch (RuntimeException error) {
+            if (logService != null) logService.recordFailure("EXPORT", roots, operator, error.getMessage());
+            throw error;
+        }
     }
 
     @PostMapping(value = "/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -92,14 +102,43 @@ public class OfflineResourceTransferController {
         try {
             if (file == null || file.isEmpty()) return R.fail(422, "离线迁移包不能为空");
             TransferImportOptions parsed = JSON.parseObject(options, TransferImportOptions.class);
-            return R.ok(importService.apply(file.getBytes(), parsed,
-                    operatorResolver == null ? ConsoleOperatorResolver.SYSTEM_CONSOLE : operatorResolver.resolve()));
+            String operator = operatorResolver == null ? ConsoleOperatorResolver.SYSTEM_CONSOLE : operatorResolver.resolve();
+            Map<String, Object> result = importService.apply(file.getBytes(), parsed, operator);
+            result.put("options", parsed);
+            if (logService != null) logService.recordImport(file.getBytes(), result, operator, null);
+            return R.ok(result);
         } catch (IllegalArgumentException error) {
+            if (logService != null && file != null) {
+                try { logService.recordImport(file.getBytes(), Map.of(), ConsoleOperatorResolver.SYSTEM_CONSOLE, error.getMessage()); } catch (Exception ignored) { }
+            }
             return R.fail(422, error.getMessage());
         } catch (IllegalStateException error) {
+            if (logService != null && file != null) {
+                try { logService.recordImport(file.getBytes(), Map.of(), ConsoleOperatorResolver.SYSTEM_CONSOLE, error.getMessage()); } catch (Exception ignored) { }
+            }
             return R.fail(409, error.getMessage());
         } catch (Exception error) {
+            if (logService != null && file != null) {
+                try { logService.recordImport(file.getBytes(), Map.of(),
+                        ConsoleOperatorResolver.SYSTEM_CONSOLE, error.getMessage()); } catch (Exception ignored) { }
+            }
             return R.fail(500, "导入离线配置失败: " + error.getMessage());
         }
+    }
+
+    @GetMapping("/logs")
+    @RequirePermission("rule:view")
+    public R<com.baomidou.mybatisplus.core.metadata.IPage<OfflineTransferLog>> logs(
+            @RequestParam(defaultValue = "1") int pageNum,
+            @RequestParam(defaultValue = "20") int pageSize,
+            @RequestParam(required = false) String operationType) {
+        return R.ok(logService.page(pageNum, pageSize, operationType));
+    }
+
+    @GetMapping("/logs/{id}")
+    @RequirePermission("rule:view")
+    public R<OfflineTransferLog> logDetail(@PathVariable Long id) {
+        OfflineTransferLog log = logService.getById(id);
+        return log == null ? R.fail(404, "迁移日志不存在") : R.ok(log);
     }
 }

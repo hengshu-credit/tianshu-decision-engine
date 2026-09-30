@@ -7,7 +7,7 @@
   margin: 0 0 0 10px;
   padding: 6px;
   background: var(--tianshu-bg-surface);
-  border: 1px solid #efefee;
+  border: 1px solid var(--tianshu-border-subtle);
   border-radius: 8px;
 }
 
@@ -30,14 +30,14 @@
 }
 
 .lf-menu-item__disabled {
-  color: #aaa;
+  color: var(--tianshu-text-disabled);
   cursor: not-allowed !important;
   opacity: 0.88;
 }
 
 .lf-selection-select {
   position: absolute;
-  border: 2px dashed #2639E9;
+  border: 2px dashed var(--el-color-primary);
 }
 
 .lf-mini-map {
@@ -45,10 +45,10 @@
   padding: 8px;
   padding-top: 28px;
   overflow: hidden;
-  background: #fefefe;
-  border: 1px solid #D9E0F2;
+  background: var(--tianshu-bg-elevated);
+  border: 1px solid var(--tianshu-border);
   border-radius: 8px;
-  box-shadow: 0 0 10px 1px rgba(38, 57, 233, 0.14);
+  box-shadow: var(--tianshu-shadow-medium);
 }
 
 .lf-mini-map .lf-graph {
@@ -66,8 +66,8 @@
   position: absolute;
   top: 0;
   left: 0;
-  background-color: rgba(38, 57, 233, 0.16);
-  border: 1px solid rgba(38, 57, 233, 0.45);
+  background-color: var(--tianshu-designer-accent-bg);
+  border: 1px solid var(--tianshu-designer-accent-border);
   border-radius: 2px;
   cursor: grab;
 }

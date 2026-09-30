@@ -133,7 +133,6 @@ public class ArtifactRuntimeSnapshotService {
         if (target == null) return;
         field.setObjectSourceType(target.getSourceType());
         field.setObjectSourceContent(target.getSourceContent());
-        field.setObjectScriptName(target.getScriptName());
     }
 
     private DecisionArtifactPackageCodec.DecodedPackage decodeVerified(DecisionArtifact artifact) {

@@ -373,6 +373,7 @@ public final class OperandValueResolver {
 
     private static Object literal(Object value, String valueType) {
         String type = valueType == null ? "STRING" : valueType.trim().toUpperCase();
+        if ("NULL".equals(type)) return null;
         String text = value == null ? "" : String.valueOf(value);
         if ("BOOLEAN".equals(type) || "BOOL".equals(type)) return Boolean.valueOf(text);
         if ("INTEGER".equals(type) || "INT".equals(type) || "LONG".equals(type) || isDecimal(type)) return new BigDecimal(text);

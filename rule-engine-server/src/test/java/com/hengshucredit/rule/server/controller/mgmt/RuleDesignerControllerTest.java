@@ -2,7 +2,7 @@ package com.hengshucredit.rule.server.controller.mgmt;
 
 import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.model.dto.RuleDesignerCompileRequest;
-import com.hengshucredit.rule.model.dto.RuleDesignerCompileResponse;
+import com.hengshucredit.rule.model.dto.RuleDesignerCompileTaskResponse;
 import com.hengshucredit.rule.server.common.GlobalExceptionHandler;
 import com.hengshucredit.rule.server.consolelogin.RuleEngineConsoleLoginProperties;
 import com.hengshucredit.rule.server.security.ConsolePermissionInterceptor;
@@ -23,12 +23,12 @@ public class RuleDesignerControllerTest {
     public void compileReturnsSyntaxFailureInEnvelopeAndDeleteRequiresLock() throws Exception {
         RuleDesignerController controller = new RuleDesignerController();
         ReflectionTestUtils.setField(controller, "designerService", new RuleDesignerService() {
-            @Override public RuleDesignerCompileResponse compile(Long id, RuleDesignerCompileRequest request) {
+            @Override public RuleDesignerCompileTaskResponse submitCompile(Long id, RuleDesignerCompileRequest request) {
                 assertEquals(Long.valueOf(30L), id);
                 assertEquals("bad", request.getModelJson());
-                RuleDesignerCompileResponse result = new RuleDesignerCompileResponse();
-                result.setCompileSuccess(false);
-                result.setCompileMessage("syntax");
+                RuleDesignerCompileTaskResponse result = new RuleDesignerCompileTaskResponse();
+                result.setTaskId("task-1");
+                result.setStatus("PENDING");
                 return result;
             }
         });
@@ -49,7 +49,7 @@ public class RuleDesignerControllerTest {
         String body = mvc.perform(post("/api/rule/definition/30/designer/compile")
                         .contentType("application/json").content("{\"modelJson\":\"bad\"}"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        assertFalse(JSON.parseObject(body).getJSONObject("data").getBooleanValue("compileSuccess"));
+        assertEquals("task-1", JSON.parseObject(body).getJSONObject("data").getString("taskId"));
         mvc.perform(delete("/api/rule/definition/30/revisions/8")).andExpect(status().isBadRequest());
         assertEquals(0L, deleted[0]);
         mvc.perform(delete("/api/rule/definition/30/revisions/8").param("lockVersion", "3"))

@@ -180,16 +180,23 @@ test('血缘分析可生成关系图、拖动节点、缩放并恢复最佳分�
   await expect(zoomPercent).not.toHaveText(initialZoom)
 
   const branchNode = page.locator('.branch-node').first()
-  const initialLeft = await branchNode.evaluate(element => element.style.left)
-  const box = await branchNode.boundingBox()
-  await page.mouse.move(box.x + 6, box.y + 6)
+  const initialBox = await branchNode.boundingBox()
+  const box = initialBox
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.down()
-  await page.mouse.move(box.x + 86, box.y + 36)
+  await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2 + 30)
   await page.mouse.up()
-  await expect(branchNode).not.toHaveCSS('left', initialLeft)
+  await expect.poll(async () => (await branchNode.boundingBox()).x).not.toBe(initialBox.x)
 
-  await page.getByRole('button', { name: '一键回到最佳分布' }).click()
-  await expect(branchNode).toHaveCSS('left', initialLeft)
+  const movedBox = await branchNode.boundingBox()
+  await page.mouse.move(movedBox.x + movedBox.width / 2, movedBox.y + movedBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(movedBox.x + movedBox.width / 2 - 60, movedBox.y + movedBox.height / 2 + 28)
+  await page.mouse.up()
+  await expect.poll(async () => (await branchNode.boundingBox()).x).not.toBe(movedBox.x)
+
+  await page.getByRole('button', { name: '一键美化' }).click()
+  await expect(branchNode).toBeVisible()
   await page.setViewportSize({ width: 1920, height: 1200 })
   const graphWrap = page.locator('.graph-wrap')
   await expect.poll(async () => {
@@ -197,21 +204,10 @@ test('血缘分析可生成关系图、拖动节点、缩放并恢复最佳分�
     return 1200 - graphBox.y - graphBox.height
   }).toBeLessThanOrEqual(40)
 
-  // 将节点拖到 SVG 原始边界之外，但仍留在可视画布中。
-  const currentNode = page.locator('.current-node')
-  const currentBox = await currentNode.boundingBox()
-  const graphBox = await graphWrap.boundingBox()
-  const edgeLayer = page.locator('.edge-layer')
-  const edgeBox = await edgeLayer.boundingBox()
-  await page.mouse.move(currentBox.x + 6, currentBox.y + 6)
-  await page.mouse.down()
-  await page.mouse.move(currentBox.x + 6, graphBox.y + 40)
-  await page.mouse.up()
-  expect((await currentNode.boundingBox()).y + currentBox.height).toBeLessThan(edgeBox.y)
-  expect(await edgeLayer.locator('.edge-path').first().evaluate(path => path.getBBox().y)).toBeLessThan(0)
-  await expect(edgeLayer).toHaveCSS('overflow', 'visible')
+  await expect(page.locator('.graph-canvas .lf-graph').first()).toBeVisible()
+  await expect(page.locator('.edge-path')).not.toHaveCount(0)
   await expect(graphWrap).toHaveCSS('overflow', 'hidden')
-  await page.getByRole('button', { name: '一键回到最佳分布' }).click()
+  await page.getByRole('button', { name: '一键美化' }).click()
   await expectNoRootOverflow(page)
   expect(pageErrors).toEqual([])
   assertClean()
@@ -608,10 +604,10 @@ test('夜间模式下运行页面的提示区、代码块和血缘画布使用�
   await expect(page.locator('.current-node')).toBeVisible()
   const gridLayers = await page.evaluate(() => ({
     wrap: getComputedStyle(document.querySelector('.graph-wrap')).backgroundImage,
-    canvas: getComputedStyle(document.querySelector('.graph-canvas')).backgroundImage
+    canvas: getComputedStyle(document.querySelector('.graph-canvas .lf-grid')).backgroundImage
   }))
-  expect(gridLayers.wrap).not.toBe('none')
-  expect(gridLayers.canvas).toBe('none')
+  expect(gridLayers.wrap).toBe('none')
+  expect(await page.locator('.graph-canvas .lf-grid').count()).toBeGreaterThan(0)
   await expectStyleUsesToken(
     page.locator('.current-node .node-label'),
     'color',

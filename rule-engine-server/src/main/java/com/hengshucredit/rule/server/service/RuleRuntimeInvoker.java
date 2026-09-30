@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.core.engine.RuleTerminationResultCollector;
 import com.hengshucredit.rule.core.engine.RuleTerminationSignal;
+import com.hengshucredit.rule.core.engine.RuleSuspensionSignal;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.core.trace.TraceIdGenerator;
 import com.hengshucredit.rule.model.dto.RuleResult;
@@ -258,7 +259,8 @@ public class RuleRuntimeInvoker {
         RuleTraceFrame rootTrace = session.getRootTrace();
         rootTrace.setExpressionTrace(result.getTraces() == null
                 ? Collections.<Object>emptyList() : result.getTraces());
-        rootTrace.setStatus(result.isSuccess() ? "SUCCESS" : "FAILED");
+        rootTrace.setStatus(result.isSuccess() ? "SUCCESS"
+                : "WAITING_EXTERNAL".equals(result.getExecutionStatus()) ? "WAITING_EXTERNAL" : "FAILED");
         rootTrace.setDurationMs(result.getExecuteTimeMs());
         result.setTraceId(rootTrace.getTraceId());
         result.setTraces(session.isTraceEnabled() ? Collections.<Object>singletonList(rootTrace) : null);
@@ -484,6 +486,8 @@ public class RuleRuntimeInvoker {
             try (var context = RuleVariableExecutionContext.prepare(
                     runtimeSnapshot == null ? published.getModelType() : runtimeSnapshot.getModelType(),
                     session.getValues(), options, referencePlan, explicitReferenceTargets, () -> {
+                        options.setRuntimeSnapshot(runtimeSnapshot);
+                        options.setExecutionProjectId(projectId);
                         if (dataObjectSourceResolver != null) {
                             dataObjectSourceResolver.resolve(projectId, directFields, session.getValues(), options,
                                     runtimeSnapshot == null ? null : runtimeSnapshot.getDataObjectFields());
@@ -507,6 +511,9 @@ public class RuleRuntimeInvoker {
             return result.getResult();
         } catch (RuleTerminationSignal e) {
             childTrace.setStatus("SUCCESS");
+            throw e;
+        } catch (RuleSuspensionSignal e) {
+            childTrace.setStatus("WAITING_EXTERNAL");
             throw e;
         } catch (RuntimeException e) {
             childTrace.setStatus("FAILED");

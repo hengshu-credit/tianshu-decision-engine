@@ -67,10 +67,10 @@ export default {
   margin-top: 8px;
 }
 .rs-trace-group.is-pass {
-  border-left-color: #67c23a;
+  border-left-color: var(--tianshu-success-text);
 }
 .rs-trace-group.is-fail {
-  border-left-color: #f56c6c;
+  border-left-color: var(--tianshu-danger-text);
 }
 .rs-trace-group-head {
   display: flex;
@@ -86,8 +86,8 @@ export default {
   width: 28px;
   height: 20px;
   border-radius: 10px;
-  background: var(--el-color-primary-light-9);
-  color: #1677d2;
+  background: var(--tianshu-info-bg);
+  color: var(--tianshu-info-text);
   font-size: 11px;
   font-weight: 700;
 }
@@ -96,10 +96,10 @@ export default {
   font-size: 11px;
 }
 .rs-trace-group.is-pass > .rs-trace-group-head .rs-trace-group-result {
-  color: #529b2e;
+  color: var(--tianshu-success-text);
 }
 .rs-trace-group.is-fail > .rs-trace-group-head .rs-trace-group-result {
-  color: #c45656;
+  color: var(--tianshu-danger-text);
 }
 .rs-trace-group-body {
   min-width: 0;
@@ -115,12 +115,12 @@ export default {
   background: var(--tianshu-bg-surface);
 }
 .rs-trace-leaf.is-pass {
-  border-color: #d9f2ce;
-  background: #fbfff8;
+  border-color: var(--tianshu-success-border);
+  background: var(--tianshu-success-bg);
 }
 .rs-trace-leaf.is-fail {
-  border-color: #fde2e2;
-  background: #fff9f9;
+  border-color: var(--tianshu-danger-border);
+  background: var(--tianshu-danger-bg);
 }
 .rs-trace-leaf-var {
   display: inline-flex;
@@ -131,8 +131,8 @@ export default {
 .rs-trace-leaf-var code {
   padding: 1px 6px;
   border-radius: 4px;
-  background: #f2f6fc;
-  color: #1f6fbf;
+  background: var(--tianshu-bg-muted);
+  color: var(--tianshu-info-text);
   font-family: Consolas, Monaco, monospace;
   font-size: 12px;
 }
@@ -151,17 +151,17 @@ export default {
   margin-left: auto;
   padding: 1px 8px;
   border-radius: 10px;
-  background: #f4f4f5;
+  background: var(--tianshu-bg-muted);
   color: var(--tianshu-text-tertiary);
   font-size: 11px;
   font-weight: 700;
 }
 .rs-trace-leaf.is-pass .rs-trace-leaf-result {
-  background: #f0f9eb;
-  color: #529b2e;
+  background: var(--tianshu-success-bg);
+  color: var(--tianshu-success-text);
 }
 .rs-trace-leaf.is-fail .rs-trace-leaf-result {
-  background: #fef0f0;
-  color: #c45656;
+  background: var(--tianshu-danger-bg);
+  color: var(--tianshu-danger-text);
 }
 </style>

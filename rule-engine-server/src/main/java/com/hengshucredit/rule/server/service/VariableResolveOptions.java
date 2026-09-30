@@ -33,6 +33,8 @@ public class VariableResolveOptions {
     private Map<String, com.hengshucredit.rule.server.derived.HistoricalFieldDefinition> historyFieldDefinitions;
     private boolean captureDatabasePreview;
     private java.util.List<Map<String, Object>> databasePreviewRows;
+    private com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot;
+    private Long executionProjectId;
 
     public boolean requiresSourceStatus(String refType, Long refId) {
         return refId != null && refType != null && statusReferenceKeys != null

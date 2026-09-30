@@ -37,7 +37,7 @@
     </div>
 
     <!-- 筛选条件 -->
-    <div class="uiue-search-container">
+    <div class="uiue-search-container uiue-filter-toolbar">
       <el-form :inline="true" size="small" @keyup.enter="handleQuery">
         <el-form-item label="作用范围">
           <el-select v-model="qp.scope" clearable style="width: 120px">
@@ -105,27 +105,26 @@
           ><el-button @click="resetQuery">重置</el-button></el-form-item
         >
       </el-form>
-    </div>
-
-    <!-- 操作按钮栏 -->
-    <div class="uiue-btn-bar">
-      <div class="btn-right">
-        <el-button
-          v-permission="'rule:edit'"
-          type="primary"
-          size="small"
-          :icon="ElIconPlus"
-          @click="openAddRuleDialog"
-          >添加规则</el-button
-        >
-        <el-button
-          v-permission="'rule:edit'"
-          type="primary"
-          size="small"
-          :icon="ElIconDocumentAdd"
-          @click="dlgVis = true"
-          >新建规则</el-button
-        >
+      <!-- 操作按钮栏 -->
+      <div class="uiue-btn-bar">
+        <div class="btn-right">
+          <el-button
+            v-permission="'rule:edit'"
+            type="primary"
+            size="small"
+            :icon="ElIconPlus"
+            @click="openAddRuleDialog"
+            >添加规则</el-button
+          >
+          <el-button
+            v-permission="'rule:edit'"
+            type="primary"
+            size="small"
+            :icon="ElIconDocumentAdd"
+            @click="dlgVis = true"
+            >新建规则</el-button
+          >
+        </div>
       </div>
     </div>
 
@@ -243,7 +242,7 @@
               type="danger"
               class="btn-delete"
               @click="del(row)"
-              >{{ row.scope === 'GLOBAL' ? '移出项目' : '申请删除规则' }}</el-button
+              >{{ row.scope === 'GLOBAL' ? '移出项目' : '删除' }}</el-button
             >
           </div>
         </template>
