@@ -64,6 +64,9 @@ public class RuleExecuteService {
     private VariableSourceResolver variableSourceResolver;
 
     @Resource
+    private ExternalApiConsumerService externalApiConsumerService;
+
+    @Resource
     private RuleRuntimeInvoker runtimeRuleInvoker;
 
     @Resource
@@ -186,7 +189,8 @@ public class RuleExecuteService {
         long executionStart = System.currentTimeMillis();
         java.time.LocalDateTime historyStartedAt = RuntimeContextBridge.currentContext().startedAt();
         RuleResult result = new RuleResult();
-        try (var ignored = RuntimeContextBridge.currentContext().bindFunctions(functionBindings)) {
+        try (var ignored = RuntimeContextBridge.currentContext().bindFunctions(functionBindings);
+             var externalValues = bindExternalApiValues(executionProjectId, executeParams, resolveOptions, null)) {
             bindHistoryDefaults(executionProjectId, resolveOptions);
             try (var context = RuleVariableExecutionContext.prepare(modelType, executeParams,
                     resolveOptions, referencePlan, explicitReferenceTargets,
@@ -417,7 +421,8 @@ public class RuleExecuteService {
         long executionStart = System.currentTimeMillis();
         java.time.LocalDateTime historyStartedAt = RuntimeContextBridge.currentContext().startedAt();
         RuleResult result = new RuleResult();
-        try (var ignored = RuntimeContextBridge.currentContext().bindFunctions(functionBindings)) {
+        try (var ignored = RuntimeContextBridge.currentContext().bindFunctions(functionBindings);
+             var externalValues = bindExternalApiValues(executionProjectId, executeParams, effectiveOptions, runtimeSnapshot)) {
             bindHistoryDefaults(executionProjectId, effectiveOptions);
             try (var context = RuleVariableExecutionContext.prepare(runtimeModelType, executeParams,
                     effectiveOptions, referencePlan, explicitReferenceTargets, () -> {
@@ -623,6 +628,22 @@ public class RuleExecuteService {
         } else if (options.getInvocationCache() == null) {
             options.setInvocationCache(new VariableResolutionInvocationCache());
         }
+    }
+
+    private com.hengshucredit.rule.core.engine.RequestContext.ExternalValueScope bindExternalApiValues(
+            Long executionProjectId, Map<String, Object> values, VariableResolveOptions options,
+            ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot) {
+        return RuntimeContextBridge.bindExternalValueResolver((apiId, path) -> {
+            Long effectiveApiId = apiId;
+            if (runtimeSnapshot != null) {
+                Long bound = runtimeSnapshot.getBindings().get("BINDING:EXTERNAL_API:" + apiId);
+                if (bound != null) effectiveApiId = bound;
+            }
+            Map<String, Object> response = externalApiConsumerService.resolve(
+                    executionProjectId, effectiveApiId, Map.of(), values, options,
+                    "DIRECT_EXTERNAL_API:" + effectiveApiId);
+            return ExternalApiConsumerService.select(response, path);
+        });
     }
 
     private void bindHistoryDefaults(Long projectId, VariableResolveOptions options) {

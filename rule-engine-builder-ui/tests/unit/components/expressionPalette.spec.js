@@ -73,7 +73,7 @@ describe('ExpressionPalette', () => {
       functions: [{ id: 7, funcCode: 'numMax', funcName: '最大值' }]
     })
 
-    expect(wrapper.findAll('.palette-category')).toHaveLength(9)
+    expect(wrapper.findAll('.palette-category')).toHaveLength(10)
     expect(wrapper.find('.palette-category--active').text()).toContain('普通变量')
     expect(wrapper.vm.categories.find(item => item.key === 'standalone').count).toBe(1)
 

@@ -31,6 +31,12 @@ public class OperandCompilerTest {
     }
 
     @Test
+    public void compilesExternalApiContextReferenceToRuntimeLookup() {
+        JSONObject operand = JSON.parseObject("{\"kind\":\"REFERENCE\",\"code\":\"response.httpStatus\",\"refId\":31,\"refType\":\"EXTERNAL_API\"}");
+        Assert.assertEquals("externalApiValue(31, \"response.httpStatus\")", OperandCompiler.compile(operand, new VarContext(Collections.emptyMap())));
+    }
+
+    @Test
     public void compilesConstantReferenceByStableId() {
         Map<Long, String> constants = new HashMap<>();
         constants.put(7L, "1.0 / 0.0");

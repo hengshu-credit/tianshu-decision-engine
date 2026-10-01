@@ -29,7 +29,7 @@ try {
     $summary['readiness'] = 'PASS'
 
     node scripts/quality-gates/run-capacity-gate.mjs `
-        --url "$BaseUrl/api/rule/open/execute/RISK_RULE" `
+        --url "$BaseUrl/api/rule/openapi/RISK_RULE" `
         --request-file $RequestFile `
         --concurrency $Concurrency `
         --warmup-seconds $WarmupSeconds `

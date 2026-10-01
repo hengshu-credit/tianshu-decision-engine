@@ -88,7 +88,7 @@ public class RuleDependencyClosureService {
             "executeRule", "executeRuleById", "executeRuleField", "executeRuleFieldById",
             "executeRuleVersionById", "executeRuleVersionFieldById", "terminateAllRules",
             "setRuntimeValue", "currentRule", "currentRuleName", "currentMatchedConditions",
-            "sourceStatus", "sourceStatusValue", "recordRuleSetItem", "recordRuleSetSummary",
+            "sourceStatus", "sourceStatusValue", "externalApiValue", "recordRuleSetItem", "recordRuleSetSummary",
             "isInLists", "isInListsNumber", "listMatch", "listMatchNumber");
 
     public DependencyClosure resolve(Long definitionId, Long revisionId) {
@@ -321,9 +321,34 @@ public class RuleDependencyClosureService {
             case "MODEL" -> addModel(refId, projectId, path, dependencies, issues);
             case "MODEL_OUTPUT" -> addModelOutput(refId, projectId, path, dependencies, issues);
             case "DATA_OBJECT" -> addDataObjectField(refId, projectId, path, dependencies, issues);
+            case "EXTERNAL_API" -> addDirectExternalApi(refId, projectId, path, dependencies, issues);
             default -> issues.add(RuleValidationIssue.error("UNSUPPORTED_REFERENCE_TYPE", path,
                     type, refId, "不支持的引用类型: " + type));
         }
+    }
+
+    private void addDirectExternalApi(Long apiId, Long projectId, String path,
+                                      Map<String, ArtifactDependency> dependencies,
+                                      List<RuleValidationIssue> issues) {
+        var api = apiConfigMapper == null ? null : apiConfigMapper.selectById(apiId);
+        if (api == null || !active(api.getStatus())) {
+            issues.add(RuleValidationIssue.error("DEPENDENCY_NOT_FOUND", path, "EXTERNAL_API", apiId,
+                    "外数 API 不存在或已停用"));
+            return;
+        }
+        if (api.getDatasourceId() == null) {
+            issues.add(RuleValidationIssue.error("EXTERNAL_BINDING_SOURCE_ID_MISSING", path,
+                    "外数 API 缺少数据源绑定"));
+            return;
+        }
+        Map<String, Object> binding = new LinkedHashMap<>();
+        binding.put("sourceComponentId", "EXTERNAL_API:" + apiId);
+        binding.put("sourceType", "EXTERNAL_API");
+        binding.put("sourceResourceId", apiId);
+        binding.put("targetResourceType", "EXTERNAL_API");
+        addSourceIdentity("EXTERNAL_API", apiId, binding);
+        addJsonDependency("BINDING:EXTERNAL_API:" + apiId, "BINDING", apiId, null,
+                "bindings/resources/external_api/" + apiId + ".json", "EXPLICIT_BINDING", binding, dependencies);
     }
 
     private void addVariable(String refType, Long variableId, Long projectId, String path,

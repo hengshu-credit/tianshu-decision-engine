@@ -13,7 +13,7 @@
 - 所有引用仍通过稳定 ID 关联，禁止按变量名或模型名回溯。
 - 历史结束节点没有 `terminationScope` 时必须按 `CURRENT_RULE` 处理。
 - 不新增数据库列，不增加第三方依赖。
-- 服务端执行和 `rule-engine-client` 本地执行必须具有相同终止语义。
+- 服务端执行和 `rule-engine-client-sdk` 本地执行必须具有相同终止语义。
 - 现有未跟踪的 `rule-engine-mysql/logs/` 不得修改或提交。
 - 每个行为变更必须先写失败测试并确认按预期失败，再写最小实现。
 
@@ -143,12 +143,12 @@ git commit -m "feat: propagate controlled rule termination"
 **Files:**
 - Modify: `rule-engine-model/src/main/java/com/hengshucredit/rule/model/entity/RulePublished.java`
 - Modify: `rule-engine-model/src/main/java/com/hengshucredit/rule/model/dto/RulePushMessage.java`
-- Modify: `rule-engine-client/src/main/java/com/hengshucredit/rule/client/cache/CachedRule.java`
+- Modify: `rule-engine-client-sdk/src/main/java/com/hengshucredit/rule/client/cache/CachedRule.java`
 - Modify: `rule-engine-server/src/main/java/com/hengshucredit/rule/server/controller/sync/RuleSyncController.java`
 - Modify: `rule-engine-server/src/main/java/com/hengshucredit/rule/server/service/RulePublishService.java`
-- Modify: `rule-engine-client/src/main/java/com/hengshucredit/rule/client/sync/HttpSyncClient.java`
-- Modify: `rule-engine-client/src/main/java/com/hengshucredit/rule/client/sync/RedisSubscriber.java`
-- Modify: corresponding tests under `rule-engine-server/src/test/.../RuleSyncControllerTest.java`, `rule-engine-client/src/test/.../sync/HttpSyncClientTest.java`, and `RedisSubscriberTest.java`.
+- Modify: `rule-engine-client-sdk/src/main/java/com/hengshucredit/rule/client/sync/HttpSyncClient.java`
+- Modify: `rule-engine-client-sdk/src/main/java/com/hengshucredit/rule/client/sync/RedisSubscriber.java`
+- Modify: corresponding tests under `rule-engine-server/src/test/.../RuleSyncControllerTest.java`, `rule-engine-client-sdk/src/test/.../sync/HttpSyncClientTest.java`, and `RedisSubscriberTest.java`.
 
 **Interfaces:**
 - Produces: ordered `List<String> outputScriptNames` on published/sync/cache payloads.
@@ -161,7 +161,7 @@ Assert HTTP JSON mapping and Redis push mapping preserve `outputScriptNames=["de
 - [ ] **Step 2: Run tests and verify RED**
 
 ```powershell
-mvn -pl rule-engine-client,rule-engine-server -am -Dtest=HttpSyncClientTest,RedisSubscriberTest,RuleSyncControllerTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn -pl rule-engine-client-sdk,rule-engine-server -am -Dtest=HttpSyncClientTest,RedisSubscriberTest,RuleSyncControllerTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 Expected: failures show missing getters/setters and missing mapping.
@@ -177,7 +177,7 @@ Run Step 2 command. Expected: all selected tests pass.
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add rule-engine-model rule-engine-server rule-engine-client
+git add rule-engine-model rule-engine-server rule-engine-client-sdk
 git commit -m "feat: sync published rule output metadata"
 ```
 
@@ -189,9 +189,9 @@ git commit -m "feat: sync published rule output metadata"
 - Modify: `rule-engine-server/src/main/java/com/hengshucredit/rule/server/service/RuleExecuteService.java`
 - Modify: `rule-engine-server/src/test/java/com/hengshucredit/rule/server/service/RuleRuntimeInvokerTest.java`
 - Modify: `rule-engine-server/src/test/java/com/hengshucredit/rule/server/service/RuleExecuteServiceTest.java`
-- Modify: `rule-engine-client/src/main/java/com/hengshucredit/rule/client/ClientRuleRuntimeInvoker.java`
-- Modify: `rule-engine-client/src/main/java/com/hengshucredit/rule/client/RuleEngineClient.java`
-- Modify: `rule-engine-client/src/test/java/com/hengshucredit/rule/client/ClientRuleRuntimeInvokerTest.java`
+- Modify: `rule-engine-client-sdk/src/main/java/com/hengshucredit/rule/client/ClientRuleRuntimeInvoker.java`
+- Modify: `rule-engine-client-sdk/src/main/java/com/hengshucredit/rule/client/RuleEngineClient.java`
+- Modify: `rule-engine-client-sdk/src/test/java/com/hengshucredit/rule/client/ClientRuleRuntimeInvokerTest.java`
 
 **Interfaces:**
 - Consumes: `outputScriptNames`, `RuleTerminationResultBuilder`, `RuleTerminationSignal`.
@@ -204,7 +204,7 @@ Create parent scripts shaped as `before = 1; executeRule("CHILD"); after = 2; af
 - [ ] **Step 2: Run tests and verify RED**
 
 ```powershell
-mvn -pl rule-engine-server,rule-engine-client -am -Dtest=RuleRuntimeInvokerTest,RuleExecuteServiceTest,ClientRuleRuntimeInvokerTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn -pl rule-engine-server,rule-engine-client-sdk -am -Dtest=RuleRuntimeInvokerTest,RuleExecuteServiceTest,ClientRuleRuntimeInvokerTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 Expected: QLExpress reports unknown `terminateAllRules` or returns a failed result.
@@ -224,7 +224,7 @@ Run Step 2 command. Expected: all server/client nested execution tests pass.
 - [ ] **Step 6: Commit**
 
 ```powershell
-git add rule-engine-server rule-engine-client
+git add rule-engine-server rule-engine-client-sdk
 git commit -m "feat: terminate nested rule chains on demand"
 ```
 
@@ -340,3 +340,4 @@ git status --short
 ```
 
 Expected: no whitespace errors and only intended feature files plus the pre-existing untracked MySQL logs are present.
+

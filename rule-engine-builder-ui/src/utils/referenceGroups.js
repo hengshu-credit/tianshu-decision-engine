@@ -8,6 +8,12 @@ function sourceMeta(item, category) {
       label: ref.modelLabel || ref.modelName || item.modelLabel || item.modelName || ''
     }
   }
+  if (category === 'external') {
+    return {
+      code: ref.apiCode || item.apiCode || firstPathSegment(item),
+      label: ref.apiLabel || ref.apiName || item.apiLabel || item.apiName || ''
+    }
+  }
   return {
     code: ref.objectCode || ref.objectScriptName || item.objectCode || firstPathSegment(item),
     label: ref.objectLabel || item.objectLabel || ''
@@ -56,7 +62,7 @@ export function referenceChildDisplayName(item, category) {
 }
 
 export function groupReferenceOptions(options = [], category) {
-  if (!['object', 'model'].includes(category)) return []
+  if (!['object', 'model', 'external'].includes(category)) return []
   const groups = {}
   ;(options || []).forEach(item => {
     if (pickerReferenceCategory(item) !== category) return

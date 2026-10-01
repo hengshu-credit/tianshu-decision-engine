@@ -77,6 +77,7 @@ export function createReferenceOperand(option) {
     valueType: option.varType || option.valueType || '',
     refId,
     refType,
+    relativePath: option.relativePath || (option._ref && option._ref.relativePath) || '',
     sourceType: option.sourceType || (option._ref && option._ref.sourceType) || '',
     varSource: option.varSource || (option._ref && option._ref.varSource) || (option.varObj && option.varObj.varSource) || '',
     resolved: refId != null && !!refType
@@ -636,7 +637,7 @@ function quoteString(value) {
 
 function referenceKey(reference) {
   if (reference && reference.refId != null && reference.refType) {
-    return reference.refType + ':' + reference.refId
+    return reference.refType + ':' + reference.refId + ':' + (reference.relativePath || '')
   }
   return 'PATH:' + ((reference && (reference.path || reference.value || reference.code)) || '')
 }
@@ -646,6 +647,7 @@ function referenceTypeMeta(refType) {
   if (type === 'CONSTANT') return { label: '常量', tone: 'constant' }
   if (type === 'DATA_OBJECT' || type === 'DATA_FIELD') return { label: '数据对象', tone: 'object' }
   if (type === 'MODEL' || type === 'MODEL_OUTPUT') return { label: '模型', tone: 'model' }
+  if (type === 'EXTERNAL_API') return { label: '外数 API', tone: 'external' }
   if (type === 'VARIABLE') return { label: '变量', tone: 'variable' }
   return { label: '', tone: 'reference' }
 }

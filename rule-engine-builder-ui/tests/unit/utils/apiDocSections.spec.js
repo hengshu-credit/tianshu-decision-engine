@@ -86,4 +86,18 @@ describe('API 文档内容区块', () => {
     expect(html).toContain('--field-depth:2')
     expect(html).toContain('实际执行制品摘要')
   })
+
+  test('启用 OpenAPI 时保留普通执行区块并追加 OpenAPI 区块', () => {
+    const html = renderRuleEndpoint({
+      ruleCode: 'OPEN_RULE',
+      openApiEnabled: true,
+      requestFields: [{ path: 'params.age', type: 'INTEGER' }],
+      openApiRequestFields: [{ path: 'customer.age', type: 'INTEGER', required: true }],
+      responseFields: []
+    }, [])
+
+    expect(html).toContain('/api/rule/sync/execute/OPEN_RULE')
+    expect(html).toContain('/api/rule/openapi/OPEN_RULE')
+    expect(html).toContain('OpenAPI 契约执行入口')
+  })
 })

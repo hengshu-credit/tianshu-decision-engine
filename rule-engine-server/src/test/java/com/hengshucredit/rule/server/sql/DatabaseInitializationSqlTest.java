@@ -269,16 +269,15 @@ public class DatabaseInitializationSqlTest {
     @Test
     public void dockerFreshInitializationLoadsSchemaBeforeSnapshot() throws Exception {
         Path root = repositoryRoot();
-        String rootCompose = read(root.resolve("docker-compose.yaml"));
-        String mysqlCompose = read(root.resolve("rule-engine-mysql/docker-compose.yaml"));
-        assertFreshInitMounts(rootCompose,
-                "./rule-engine-server/src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro",
-                "./rule-engine-server/src/main/resources/sql/export_202607161151.sql:/docker-entrypoint-initdb.d/02-export.sql:ro");
+        String rootCompose = read(root.resolve("docker/docker-compose.yml"));
+        String mysqlCompose = read(root.resolve("docker/docker-compose.mysql.yml"));
         assertFreshInitMounts(mysqlCompose,
                 "../rule-engine-server/src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro",
                 "../rule-engine-server/src/main/resources/sql/export_202607161151.sql:/docker-entrypoint-initdb.d/02-export.sql:ro");
-        Assert.assertFalse("mysql-init must not replay destructive export",
-                rootCompose.contains("export_202607161151.sql:/data.sql"));
+        Assert.assertTrue("main compose must run schema initialization before application services",
+                rootCompose.contains("mysql-init:") && rootCompose.contains("condition: service_completed_successfully"));
+        Assert.assertTrue("snapshot loading must be opt-in for an existing database",
+                rootCompose.contains("MYSQL_INIT_LOAD_SNAPSHOT") && rootCompose.contains("/init/export.sql"));
     }
 
     @Test

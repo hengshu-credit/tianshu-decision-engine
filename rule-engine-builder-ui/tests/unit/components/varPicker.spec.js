@@ -158,6 +158,19 @@ describe('VarPicker', () => {
     expect(wrapper.vm.rightItems[0]._objectGroup).toBe(true)
   })
 
+  test('reference valueKey 使用 refType:id 输出混合引用且可回显', async () => {
+    const vars = [
+      { id: 1, varCode: 'amount', varLabel: '申请金额', _varId: 1, _refType: 'VARIABLE', _ref: { category: 'standalone' } },
+      { id: 3, varCode: 'MAX_SCORE', varLabel: '最高分', _varId: 3, _refType: 'CONSTANT', _ref: { category: 'constant' } },
+    ]
+    const wrapper = mountPicker({ valueKey: 'reference', allowCustom: false, value: 'CONSTANT:3', vars })
+    expect(wrapper.vm.displayValue).toContain('最高分')
+    wrapper.vm.onItemClick(vars[0])
+    expect(wrapper.emitted().input.at(-1)[0]).toBe('VARIABLE:1')
+    await wrapper.setProps({ value: 'CONSTANT:3' })
+    expect(wrapper.vm.displayValue).toContain('最高分')
+  })
+
   test('点击对象分组只展开，点击子字段才选择字段', async () => {
     const wrapper = mountPicker({ vars: objectFieldOptions() })
     await nextTick()

@@ -23,6 +23,13 @@ public final class OperandCompiler {
                     && (operand.getLong("refId") == null || empty(operand.getString("refType")))) {
                 throw new IllegalArgumentException("受管字段引用缺少 ID 或引用类型");
             }
+            if ("EXTERNAL_API".equalsIgnoreCase(operand.getString("refType"))) {
+                String path = code;
+                String relativePath = operand.getString("relativePath");
+                if (!empty(relativePath)) path += relativePath;
+                return "externalApiValue(" + operand.getLong("refId") + ", "
+                        + compileLiteral(path, "STRING") + ")";
+            }
             if (varContext == null) return code;
             if ("REFERENCE".equals(kind) && "CONSTANT".equalsIgnoreCase(operand.getString("refType"))) {
                 return varContext.resolveConstant(operand.getLong("refId"));

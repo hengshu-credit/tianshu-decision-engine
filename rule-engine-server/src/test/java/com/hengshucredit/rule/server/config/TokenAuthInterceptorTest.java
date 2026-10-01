@@ -31,12 +31,15 @@ public class TokenAuthInterceptorTest {
         assertTrue(TokenAuthInterceptor.isProtectedPath("/api/rule/sync/functions/1"));
         assertTrue(TokenAuthInterceptor.isProtectedPath("/api/rule/log/report"));
         assertTrue(TokenAuthInterceptor.isProtectedPath("/api/rule/auth/token"));
-        assertTrue(TokenAuthInterceptor.isProtectedPath("/api/rule/open/execute/RISK"));
+        assertTrue(TokenAuthInterceptor.isProtectedPath("/api/rule/openapi/RISK"));
+        assertFalse(TokenAuthInterceptor.isProtectedPath("/api/rule/open/execute/RISK"));
     }
 
     @Test
     public void onlyRuntimeExecutionConsumesProjectExecutionPermit() {
         assertTrue(TokenAuthInterceptor.isExecutionPath("/api/rule/runtime/experiment/execute/exp"));
+        assertTrue(TokenAuthInterceptor.isExecutionPath("/api/rule/openapi/RISK"));
+        assertFalse(TokenAuthInterceptor.isExecutionPath("/api/rule/open/execute/RISK"));
         assertFalse(TokenAuthInterceptor.isExecutionPath("/api/rule/runtime/executions/TRACE"));
         assertFalse(TokenAuthInterceptor.isExecutionPath("/api/rule/runtime/external-calls/CALL"));
     }
@@ -151,7 +154,7 @@ public class TokenAuthInterceptorTest {
         ProjectAuthContext context = ProjectAuthContext.direct(7L, "credit", 9L,
                 "BASIC_MAIN", ProjectAuthType.BASIC, policy);
         TokenAuthInterceptor interceptor = interceptor(service(context));
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/rule/open/execute/RISK");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/rule/openapi/RISK");
         request.setRemoteAddr("203.0.113.9");
         request.addHeader("Host", "api.example.com");
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -169,8 +172,8 @@ public class TokenAuthInterceptorTest {
         ProjectAuthContext context = ProjectAuthContext.direct(7L, "credit", 9L,
                 "BASIC_MAIN", ProjectAuthType.BASIC, policy);
         TokenAuthInterceptor interceptor = interceptor(service(context));
-        MockHttpServletRequest first = new MockHttpServletRequest("POST", "/api/rule/open/execute/RISK");
-        MockHttpServletRequest second = new MockHttpServletRequest("POST", "/api/rule/open/execute/RISK");
+        MockHttpServletRequest first = new MockHttpServletRequest("POST", "/api/rule/openapi/RISK");
+        MockHttpServletRequest second = new MockHttpServletRequest("POST", "/api/rule/openapi/RISK");
 
         assertTrue(interceptor.preHandle(first, new MockHttpServletResponse(), new Object()));
         MockHttpServletResponse limited = new MockHttpServletResponse();
@@ -214,7 +217,7 @@ public class TokenAuthInterceptorTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         assertFalse(interceptor.preHandle(
-                new MockHttpServletRequest("POST", "/api/rule/open/execute/RISK"),
+                new MockHttpServletRequest("POST", "/api/rule/openapi/RISK"),
                 response, new Object()));
         assertEquals(429, response.getStatus());
         assertTrue(response.getContentAsString().contains("\"code\":\"400001\""));

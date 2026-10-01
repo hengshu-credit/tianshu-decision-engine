@@ -224,24 +224,20 @@ export function generateOpenApiDocument(doc) {
   const security = openApiSecurity(normalized.authentications)
   const paths = {}
   normalized.rules.forEach(rule => {
-    const pathPrefix = rule.openApiEnabled ? '/api/rule/open/execute/' : '/api/rule/sync/execute/'
-    const path = `${pathPrefix}${encodeURIComponent(rule.ruleCode)}`
+    const path = `/api/rule/sync/execute/${encodeURIComponent(rule.ruleCode)}`
     const schemaNote = rule.schemaTrust === 'UNVERIFIED'
       ? `字段契约未通过已发布制品校验：${(rule.schemaDiagnostics || []).join('；') || '请重新发布后再使用此文档。'}`
       : ''
-    const requestSchema = fieldsSchema(rule.requestFields, '')
     paths[path] = { post: {
       operationId: `execute_${rule.ruleCode}`,
       summary: rule.ruleName || rule.ruleCode,
       description: [rule.description || '执行已发布规则并返回统一平台响应。', schemaNote].filter(Boolean).join('\n\n'),
       'x-rule-schema-trust': rule.schemaTrust || 'UNKNOWN',
       'x-rule-schema-diagnostics': rule.schemaDiagnostics || [],
-      'x-open-api-contract-enabled': rule.openApiEnabled,
-      'x-open-api-contract': rule.openApiEnabled ? rule.openApiContract : undefined,
+      'x-open-api-contract-enabled': false,
+      'x-open-api-contract': undefined,
       security: security.alternatives,
-      requestBody: { required: true, content: { 'application/json': { schema: rule.openApiEnabled
-        ? requestSchema
-        : { type: 'object', properties: {
+      requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties: {
             clientAppName: { type: 'string' }, traceEnabled: { type: 'boolean', default: true }, params: fieldsSchema(rule.requestFields, 'params')
           }, required: ['params'] }
       } } },
@@ -254,6 +250,15 @@ export function generateOpenApiDocument(doc) {
         '400': { description: '请求参数或规则执行失败' }, '401': { description: '鉴权失败' }, '404': { description: '规则不存在' }, '409': { description: '幂等请求冲突或执行中' }, '429': { description: '限流或并发超过限制' }
       }
     } }
+    if (rule.openApiEnabled) {
+      const openPath = `/api/rule/openapi/${encodeURIComponent(rule.ruleCode)}`
+      const openOperation = JSON.parse(JSON.stringify(paths[path].post))
+      openOperation.operationId = `execute_openapi_${rule.ruleCode}`
+      openOperation['x-open-api-contract-enabled'] = true
+      openOperation['x-open-api-contract'] = rule.openApiContract
+      openOperation.requestBody.content['application/json'].schema = fieldsSchema(rule.openApiRequestFields || [], '')
+      paths[openPath] = { post: openOperation }
+    }
   })
   return {
     openapi: '3.1.0',

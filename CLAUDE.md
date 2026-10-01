@@ -54,11 +54,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `rule-engine-model` | 公共实体与 DTO | - |
 | `rule-engine-core` | 规则编译与执行核心 | - |
 | `rule-engine-server` | 管理端 REST API | 8080 |
-| `rule-engine-client` | 客户端 SDK | - |
-| `rule-engine-example` | 集成示例服务 | 7070 |
+| `rule-engine-client-sdk` | 完整 Java SDK，本地缓存与执行 | - |
+| `rule-engine-client-http` | HTTP-only Java SDK，远程调用服务端执行 | - |
+| `rule-engine-runtime` | 可独立部署的 HTTP/SDK 执行运行时 | 7070 / 7071 |
 | `rule-engine-builder-ui` | Vue 3 前端控制台（独立部署） | 9090（dev）|
-| `rule-engine-mysql` | MySQL docker-compose 配置 | - |
-| `rule-engine-redis` | Redis docker-compose 配置 | - |
+| `docker/rule-engine-mysql` | MySQL 配置、数据和日志（docker/ 独立 Compose） | - |
+| `docker/rule-engine-redis` | Redis 配置、数据和日志（docker/ 独立 Compose） | - |
 
 ### 部署架构
 
@@ -69,7 +70,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
       ↙              ↘
    MySQL           Redis（Pub/Sub 规则推送）
                        ↓
-            业务应用（rule-engine-client SDK）
+            业务应用（rule-engine-client-sdk SDK）
 ```
 
 - **前后端分离**：`rule-engine-server/pom.xml` 中 `skip.ui.build` 默认为 `true`，前端 `npm run build` 产物在 `dist/` 独立部署，不混入后端目录
@@ -92,9 +93,6 @@ mvn test -Dtest=ClassName#methodName        # 运行单个测试方法
 
 # 启动 rule-engine-server（端口 8080）
 cd rule-engine-server && mvn spring-boot:run
-
-# 启动 rule-engine-example（端口 7070）
-cd rule-engine-example && mvn spring-boot:run
 
 # 完整构建（跳过前端）
 mvn clean package -DskipTests
@@ -119,13 +117,13 @@ npm run test:e2e:full # 设置 E2E_BASE_URL 后执行真实前后端联调
 ### 基础设施
 
 ```bash
-# 根目录 docker-compose 已包含 mysql + redis + 初始化（空数据卷依次执行 schema 与 export）
+# docker/docker-compose.mysql.yml / docker/docker-compose.redis.yml 分别启动 MySQL、Redis；docker/docker-compose.yml 负责初始化并启动前后端与运行时。
 cp .env.example .env  # PowerShell 使用 Copy-Item .env.example .env
 # 替换 .env 中全部占位值
-docker compose --env-file .env up -d
-# 单独启动：
-cd rule-engine-mysql && docker-compose up -d   # MySQL（仅 compose 文件，无 dockerfile）
-cd rule-engine-redis && docker-compose up -d    # Redis
+docker compose --env-file .env -f docker/docker-compose.mysql.yml up -d
+docker compose --env-file .env -f docker/docker-compose.redis.yml up -d
+docker compose --env-file .env -f docker/docker-compose.yml up -d
+# 线上拆分部署时只启动对应的独立 Compose 文件，主 Compose 的 MYSQL_SERVICE_HOST/REDIS_SERVICE_HOST 指向生产地址。
 ```
 
 ### 数据库初始化
@@ -195,7 +193,7 @@ Vitest 配置（`vitest.config.mjs`）关键点：
 
 ## 后端测试框架 (JUnit 4)
 
-后端 `rule-engine-core`、`rule-engine-client`、`rule-engine-server` 三个模块均含测试。覆盖编译器（各 `*CompilerTest`）、执行引擎、内置函数、服务端控制器（`RuleSyncControllerTest`、`LogReportControllerTest`）、鉴权拦截器、`VariableSourceResolver`、各 `*ServiceTest` 等。
+后端 `rule-engine-core`、`rule-engine-client-sdk`、`rule-engine-server` 三个模块均含测试。覆盖编译器（各 `*CompilerTest`）、执行引擎、内置函数、服务端控制器（`RuleSyncControllerTest`、`LogReportControllerTest`）、鉴权拦截器、`VariableSourceResolver`、各 `*ServiceTest` 等。
 
 ## 核心设计约束
 
@@ -400,3 +398,4 @@ These are the patterns I see most often. If you catch yourself doing any of thes
 **The Runaway Refactor.** You start fixing one thing. It touches another thing. That touches another. Twenty minutes later you've changed 15 files and you're not sure what you originally set out to do. If a fix is cascading, stop. Tell the user what's happening. Get buy-in before continuing.
 ---
 These guidelines work when they produce fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+

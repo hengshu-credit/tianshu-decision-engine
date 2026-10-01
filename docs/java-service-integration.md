@@ -1,8 +1,8 @@
 # Java 业务服务接入决策引擎
 
-对外公司或无需引擎源码/Maven 私服的接入，请优先使用 [HTTP-only SDK 与离线交付指南](http-sdk-example.html)：默认使用纯 HTTP 的 `rule-engine-client-http`，提供 tar.gz、全部运行依赖和可离线重编译的业务服务示例，不需要 Redis。
+对外公司或无需本地规则缓存执行的接入，可直接使用纯 HTTP 的 `rule-engine-client-http`，或部署 `rule-engine-runtime` 的 `http` profile；该方式不需要 Redis。
 
-以下第 1–5、7 节描述原有完整 SDK `rule-engine-client`，适用于需要本地规则缓存执行的内部系统；它仍依赖 Redis，会同步规则，不应与 HTTP-only SDK 的交付边界混淆。
+以下第 1–5、7 节描述原有完整 SDK `rule-engine-client-sdk`，适用于需要本地规则缓存执行的内部系统；它仍依赖 Redis，会同步规则，不应与 HTTP-only SDK 的交付边界混淆。
 
 ## 1. 确定规则范围与执行位置
 
@@ -22,7 +22,7 @@
 ```xml
 <dependency>
     <groupId>com.hengshucredit.rule</groupId>
-    <artifactId>rule-engine-client</artifactId>
+    <artifactId>rule-engine-client-sdk</artifactId>
     <version>1.0.0-SNAPSHOT</version>
 </dependency>
 <dependency>
@@ -128,11 +128,9 @@ GET /api/rule/runtime/external-calls/{callId}
 
 本地上报默认使用有界 HTTP 异步队列。启用上报且有自定义 `ExecutionLogReporter` 时使用自定义实现，否则存在 `KafkaTemplate` 时自动选择 Kafka。日志上报失败不应改变决策结果。程序化 Builder 支持 `.traceEnabled(false).logReportEnabled(false)`；即使显式传入 reporter，关闭上报仍然生效。
 
-## 6. 运行现成示例
+## 6. HTTP-only 接入
 
-当前默认示例已改为 HTTP-only，配置 `RULE_SERVER_URL`、`PROJECT_ACCESS_TOKEN`、`RULE_ALLOWED_CODES` 即可接入，不再使用 `RULE_PROJECT_ID`、`RULE_PROJECT_CODE` 或 Redis。表达式追踪使用 `RULE_TRACE_ENABLED`，默认关闭；没有本地日志上报。
-
-在根目录运行 `node scripts/package-java-offline.mjs` 生成对外 tar.gz。解压后复制配置模板，执行 `start.ps1` 或 `sh start.sh`，访问默认 7070 端口的联调页。完整使用方法见 [HTTP 接入示例](http-sdk-example.html)。原本依赖预置 SQL 和本地 Java/Bean 函数的示例保留在 `rule-engine-example/legacy/`，不随对外包交付。
+配置 `RULE_SERVER_URL`、项目凭据和 `RULE_ALLOWED_CODES` 即可使用 HTTP-only SDK，不需要 `RULE_PROJECT_ID`、`RULE_PROJECT_CODE` 或 Redis。表达式追踪使用 `RULE_TRACE_ENABLED`，默认关闭；没有本地日志上报。也可以直接部署 `rule-engine-runtime` 的 `http` profile，对外提供 `/api/rule/execute/{ruleCode}`。
 
 ## 7. 一个 Java 服务连接多个项目
 
@@ -157,3 +155,4 @@ RuleEngineClient creditRuleClient(RedisConnectionFactory redis, Environment env)
 ```
 
 该方法放入 `@Configuration` 类，导入 `org.springframework.context.annotation.Bean`、`org.springframework.core.env.Environment`、`org.springframework.data.redis.connection.RedisConnectionFactory` 和 SDK 类。手动声明客户端后自动配置不会再创建默认客户端。每个实例有独立缓存、函数和订阅；若连接不同引擎部署，应分别注入对应的 Redis 连接工厂。
+

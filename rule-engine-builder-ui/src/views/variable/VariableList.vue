@@ -1052,37 +1052,15 @@
       :close-on-click-modal="false"
     >
       <el-form :model="validationForm" label-width="110px" size="small">
-        <el-form-item label="作用范围" required>
-          <el-select
-            v-model="validationForm.scope"
-            style="width: 100%"
-            :disabled="!!validationForm.id"
-            @change="onFieldValidationScopeChange"
-          >
-            <el-option label="全局（所有项目可用）" value="GLOBAL" />
-            <el-option label="项目级" value="PROJECT" />
-          </el-select>
-        </el-form-item>
-        <el-form-item
-          v-if="validationForm.scope === 'PROJECT'"
-          label="所属项目"
-          required
-        >
-          <el-select
-            v-model="validationForm.projectId"
-            filterable
-            :disabled="!!validationForm.id"
-            placeholder="请选择项目"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="p in projects"
-              :key="p.id"
-              :label="p.projectName"
-              :value="p.id"
-            />
-          </el-select>
-        </el-form-item>
+        <scope-project-fields
+          v-model:scope="validationForm.scope"
+          v-model:project-id="validationForm.projectId"
+          :projects="projects"
+          :scope-disabled="!!validationForm.id"
+          :project-disabled="!!validationForm.id"
+          project-label="所属项目"
+          @scope-change="onFieldValidationScopeChange"
+        />
         <el-form-item label="校验编码" required
           ><el-input
             v-model="validationForm.validationCode"
@@ -1157,18 +1135,11 @@
         /></el-form-item>
       </el-form>
       <template v-slot:footer>
-        <div>
-          <el-button size="small" @click="validationDialogVisible = false"
-            >取消</el-button
-          >
-          <el-button
-            size="small"
-            type="primary"
-            :loading="validationSaving"
-            @click="saveFieldValidation"
-            >生成审批草稿</el-button
-          >
-        </div>
+        <managed-dialog-footer
+          :loading="validationSaving"
+          @cancel="validationDialogVisible = false"
+          @submit="saveFieldValidation"
+        />
       </template>
     </el-dialog>
 
@@ -1211,42 +1182,15 @@
             getObjectCode(objectFieldParentId)
           }}</span>
         </el-form-item>
-        <el-form-item
+        <scope-project-fields
           v-if="!isObjectField"
-          label="作用范围"
-          prop="scope"
-        >
-          <el-select
-            v-model="form.scope"
-            placeholder="选择作用范围"
-            style="width: 100%"
-            @change="onVarScopeChange"
-          >
-            <el-option label="🌐 全局（所有项目可用）" value="GLOBAL" />
-            <el-option label="📁 项目级" value="PROJECT" />
-          </el-select>
-        </el-form-item>
-        <el-form-item
-          v-if="!isObjectField && form.scope === 'PROJECT'"
-          label="项目名称"
-          prop="projectId"
-        >
-          <el-select
-            v-model="form.projectId"
-            placeholder="请选择项目"
-            style="width: 100%"
-            filterable
-            clearable
-            @change="onVariableProjectChange"
-          >
-            <el-option
-              v-for="p in projects"
-              :key="p.id"
-              :label="p.projectName"
-              :value="p.id"
-            />
-          </el-select>
-        </el-form-item>
+          v-model:scope="form.scope"
+          v-model:project-id="form.projectId"
+          :projects="projects"
+          project-label="项目名称"
+          @scope-change="onVarScopeChange"
+          @project-change="onVariableProjectChange"
+        />
         <el-form-item label="字段编码" prop="varCode">
           <el-input
             v-model="form.varCode"
@@ -1557,25 +1501,19 @@
           </el-select>
         </el-form-item>
         <el-form-item v-if="isObjectField && !objectHasExternalSource" label="引用变量" :error="objectFieldReferenceError">
-          <el-select
-            :model-value="objectFieldReferenceValue"
-            clearable
-            filterable
+          <var-picker
+            :value="objectFieldReferenceValue"
+            :vars="objectFieldReferencePickerOptions"
+            value-key="reference"
+            :allow-custom="false"
             :loading="objectFieldReferenceLoading || objectFieldReferenceValidating"
+            :placeholder="objectFieldReferenceValue ? objectFieldReferenceLabel(form) : '选择变量、常量或数据对象结构'"
             :disabled="objectFieldReferenceLoading || objectFieldReferenceValidating || objectFieldSubmitting"
-            placeholder="可选：选择变量、常量或数据对象"
-            style="width: 100%"
-            @update:model-value="changeObjectFieldReference"
-          >
-            <el-option-group v-for="group in objectFieldReferenceGroups" :key="group.label" :label="group.label">
-              <el-option v-for="item in group.options" :key="referenceOptionKey(item)" :label="referenceVariableOptionLabel(item)" :value="referenceOptionKey(item)" />
-            </el-option-group>
-            <el-option v-if="objectFieldReferenceValue && !objectFieldReferenceOptions.some(item => referenceOptionKey(item) === objectFieldReferenceValue)"
-              :value="objectFieldReferenceValue" :label="'当前引用不可用：' + objectFieldReferenceLabel(form)" disabled />
-          </el-select>
+            @update:value="changeObjectFieldReference"
+          />
           <div class="field-help">
             <span v-if="objectFieldReferenceMessage" class="reference-validation-success">{{ objectFieldReferenceMessage }}</span>
-            <span>仅显示类型和项目范围兼容的已启用资源，校验通过后才会绑定。变量、常量在当前字段未传值时提供取值；数据对象用于复用字段结构。</span>
+            <span>使用统一字段选择器引用已启用资源，按稳定 ID 绑定。变量、常量在当前字段未传值时提供取值；数据对象用于复用字段结构。</span>
             <span v-if="objectFieldReferenceBlockedReason">{{ objectFieldReferenceBlockedReason }}</span>
           </div>
         </el-form-item>
@@ -1698,14 +1636,13 @@
 
       </el-form>
       <template v-slot:footer>
-        <div>
-          <el-button size="small" @click="dialogVisible = false"
-            >取消</el-button
-          >
-          <el-button size="small" type="primary" :loading="isObjectField && (objectFieldReferenceValidating || objectFieldSubmitting)" :disabled="isObjectField && (objectFieldReferenceLoading || objectFieldReferenceValidating || objectFieldSubmitting)" @click="handleSubmit"
-            >{{ isObjectField ? '确定' : '生成审批草稿' }}</el-button
-          >
-        </div>
+        <managed-dialog-footer
+          :loading="isObjectField && (objectFieldReferenceValidating || objectFieldSubmitting)"
+          :disabled="isObjectField && (objectFieldReferenceLoading || objectFieldReferenceValidating || objectFieldSubmitting)"
+          :submit-text="isObjectField ? '确定' : '生成审批草稿'"
+          @cancel="dialogVisible = false"
+          @submit="handleSubmit"
+        />
       </template>
     </el-dialog>
 
@@ -1733,37 +1670,13 @@
         label-width="120px"
         size="small"
       >
-        <el-form-item label="作用范围" prop="scope">
-          <el-select
-            v-model="objectForm.scope"
-            placeholder="选择作用范围"
-            style="width: 100%"
-            @change="onObjScopeChange"
-          >
-            <el-option label="🌐 全局（所有项目可用）" value="GLOBAL" />
-            <el-option label="📁 项目级" value="PROJECT" />
-          </el-select>
-        </el-form-item>
-        <el-form-item
-          v-if="objectForm.scope === 'PROJECT'"
-          label="项目名称"
-          prop="projectId"
-        >
-          <el-select
-            v-model="objectForm.projectId"
-            placeholder="请选择项目"
-            style="width: 100%"
-            filterable
-            clearable
-          >
-            <el-option
-              v-for="p in projects"
-              :key="p.id"
-              :label="p.projectName"
-              :value="p.id"
-            />
-          </el-select>
-        </el-form-item>
+        <scope-project-fields
+          v-model:scope="objectForm.scope"
+          v-model:project-id="objectForm.projectId"
+          :projects="projects"
+          project-label="项目名称"
+          @scope-change="onObjScopeChange"
+        />
         <el-form-item label="对象编码" prop="objectCode">
           <el-input
             v-model="objectForm.objectCode"
@@ -1873,14 +1786,11 @@
         </el-collapse>
       </el-form>
       <template v-slot:footer>
-        <div>
-          <el-button size="small" @click="objectDialogVisible = false"
-            >取消</el-button
-          >
-          <el-button size="small" type="primary" @click="handleObjectSubmit"
-            >生成审批草稿</el-button
-          >
-        </div>
+        <managed-dialog-footer
+          :loading="objectSubmitting"
+          @cancel="objectDialogVisible = false"
+          @submit="handleObjectSubmit"
+        />
       </template>
     </el-dialog>
 
@@ -2689,9 +2599,12 @@ import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import OperandPicker from '@/components/common/OperandPicker.vue'
+import VarPicker from '@/components/common/VarPicker.vue'
 import DialogResizeHandle from '@/components/common/DialogResizeHandle.vue'
 import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
 import ResourcePreflightPanel from '@/components/common/ResourcePreflightPanel.vue'
+import ScopeProjectFields from '@/components/common/ScopeProjectFields.vue'
+import ManagedDialogFooter from '@/components/common/ManagedDialogFooter.vue'
 import VariableSourceSelector from './components/VariableSourceSelector.vue'
 import VariableToolbarActions from './components/VariableToolbarActions.vue'
 import VariableImportHelp from './components/VariableImportHelp.vue'
@@ -2836,6 +2749,7 @@ export default {
       optionTargetIsField: false,
       // Data Object Dialog
       objectDialogVisible: false,
+      objectSubmitting: false,
       objectAdvancedSections: [],
       objectForm: {
         apiRequestOverrides: {},
@@ -2954,6 +2868,7 @@ export default {
     SqlParameterEditor,
     MonacoEditor,
     OperandPicker,
+    VarPicker,
     RemoteFilterSelect,
     ProjectFilterSelect,
     VariableSourceSelector,
@@ -2962,6 +2877,8 @@ export default {
     DialogResizeHandle,
     ConfigLayerGuide,
     ResourcePreflightPanel,
+    ScopeProjectFields,
+    ManagedDialogFooter,
     ElIconInfo,
     ElIconSuccess,
   },
@@ -3163,6 +3080,26 @@ export default {
         .filter(item => available(item) && Number(item.id) !== Number(owner.id))
         .map(item => ({ ...item, _referenceType: 'OBJECT' })) : []
       return [...variables, ...objects]
+    },
+    objectFieldReferencePickerOptions() {
+      return this.objectFieldReferenceOptions.map(item => {
+        const isObject = item._referenceType === 'OBJECT'
+        const code = item.objectCode || item.scriptName || item.varCode || ''
+        const label = item.objectLabel || item.varLabel || code
+        return {
+          ...item,
+          _varId: item.id,
+          _refType: isObject ? 'OBJECT' : 'VARIABLE',
+          varCode: code,
+          varLabel: label,
+          varLabelText: label,
+          _ref: {
+            category: isObject ? 'object' : item._referenceType === 'CONSTANT' ? 'constant' : 'standalone',
+            objectCode: item.objectCode,
+            objectLabel: item.objectLabel,
+          },
+        }
+      })
     },
     objectFieldReferenceBlockedReason() {
       if (this.form.referenceMode === 'STRUCTURE') return ''
@@ -4484,6 +4421,7 @@ export default {
     },
     /** 提交数据对象表单 */
     handleObjectSubmit() {
+      if (this.objectSubmitting) return
       this.$refs.objForm.validate(async (valid) => {
         if (!valid) return
         if (!this.objectForm.scope) {
@@ -4534,6 +4472,7 @@ export default {
           })
         }
         try {
+          this.objectSubmitting = true
           const payload = {
             ...this.objectForm,
             sourceType,
@@ -4549,6 +4488,8 @@ export default {
           this.objectDialogVisible = false
         } catch (e) {
           this.$message.error('保存失败: ' + (e.message || ''))
+        } finally {
+          this.objectSubmitting = false
         }
       })
     },

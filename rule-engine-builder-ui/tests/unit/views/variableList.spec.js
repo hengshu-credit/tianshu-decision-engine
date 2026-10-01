@@ -632,6 +632,8 @@ describe('VariableList — 变量操作', () => {
 
     expect(wrapper.vm.objectFieldReferenceOptions.map(item => item.id)).toEqual([1, 3, 5])
     expect(wrapper.vm.objectFieldReferenceGroups.map(item => item.label)).toEqual(['变量', '常量'])
+    expect(wrapper.vm.objectFieldReferencePickerOptions.map(item => item._refType)).toEqual(['VARIABLE', 'VARIABLE', 'VARIABLE'])
+    expect(wrapper.vm.objectFieldReferencePickerOptions[1]._ref.category).toBe('constant')
   })
 
   test('编辑对象字段保留 refVariableId 供直接引用变量', () => {

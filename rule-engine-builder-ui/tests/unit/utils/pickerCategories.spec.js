@@ -10,7 +10,8 @@ describe('pickerCategories', () => {
       { key: 'standalone', label: '普通变量' },
       { key: 'constant', label: '常量' },
       { key: 'object', label: '数据对象' },
-      { key: 'model', label: '模型' }
+      { key: 'model', label: '模型' },
+      { key: 'external', label: '外数 API' }
     ])
     expect(pickerCategoryLabel('constant')).toBe('常量')
   })

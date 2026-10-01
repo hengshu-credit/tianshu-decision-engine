@@ -196,6 +196,21 @@ describe('flow designer style regressions', () => {
     expect(actionBar).toContain('Promotion as ElIconPromotion')
   })
 
+  test('决策树和决策流工具栏空间不足时允许按钮分组换行', () => {
+    ;['DecisionTree.vue', 'DecisionFlow.vue'].forEach(file => {
+      const source = readSource('src/views/designer/' + file)
+
+      expect(source).toMatch(
+        /\.toolbar-row-primary,\s*\.toolbar-row-actions\s*\{[\s\S]*?flex-wrap:\s*wrap;[\s\S]*?overflow:\s*visible;/,
+      )
+      expect(source).toMatch(
+        /\.toolbar-edit-actions\s*\{[\s\S]*?flex-wrap:\s*wrap;/,
+      )
+      expect(source).toMatch(/\.toolbar-right\s*\{[\s\S]*?flex-wrap:\s*wrap;/)
+      expect(source).toContain('.toolbar-row-actions > .toolbar-right {\n  position: static;')
+    })
+  })
+
   test('画布背景设置与选中边动画复用 LogicFlow 能力', () => {
     const canvas = readSource('src/components/flow/CanvasBackgroundSettings.vue')
     const graphCanvas = readSource('src/components/flow/graphCanvas.js')

@@ -1,6 +1,6 @@
 <template>
   <div class="rule-designer-info" data-testid="designer-info">
-    <span class="rule-designer-info__fields">{{ loading ? '正在加载变量库…' : `已加载 ${fieldCount} 个变量/常量/对象字段` }}</span>
+    <span class="rule-designer-info__fields">{{ loading ? '正在加载变量库…' : `已加载 ${fieldCount} 个可选引用` }}</span>
     <span class="rule-designer-info__status" role="status">{{ label }}<span v-if="sourceLabel"> · {{ sourceLabel }}</span></span>
   </div>
 </template>

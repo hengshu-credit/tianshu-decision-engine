@@ -6,6 +6,7 @@
         <el-input
           v-model="localCustomValue"
           :size="size"
+          :disabled="disabled"
           :placeholder="placeholder || '输入变量编码'"
           clearable
           @update:model-value="onCustomInput"
@@ -220,6 +221,7 @@
               class="vp-reference"
               :class="{ 'vp-reference--readonly': operandMode }"
               :size="size"
+              :disabled="disabled"
               :placeholder="placeholder || '选择变量/常量/对象字段'"
               :model-value="referenceInputValue"
               :readonly="operandMode"
@@ -268,6 +270,7 @@
           v-else
           v-model="localCustomValue"
           :size="size"
+          :disabled="disabled"
           :placeholder="placeholder || '输入变量编码'"
           clearable
           @focus="onInputFocus"
@@ -378,12 +381,14 @@ export default {
     grouped: { type: Boolean, default: false },
     groupedByCategory: { type: Boolean, default: true },
     loading: { type: Boolean, default: false },
+    disabled: { type: Boolean, default: false },
     /** 是否允许手动输入自定义变量（不在变量管理中的） */
     allowCustom: { type: Boolean, default: true },
     /**
      * 指定 value 字段类型：
      * - 'code'（默认）：使用 varCode 作为 option value
      * - 'id'：使用 var.id 作为 option value（用于模型出入参关联变量）
+     * - 'reference'：使用 refType:id 作为 option value（用于混合引用选择）
      */
     valueKey: { type: String, default: 'code' },
     /**
@@ -505,6 +510,14 @@ export default {
           ? operandOption.varCode
           : this.value.code || this.value.value || null
       }
+      if (this.valueKey === 'reference') {
+        var referenceParts = String(this.value).split(':')
+        var referenceOption = this.findOptionByIdentity(
+          referenceParts.slice(1).join(':'),
+          referenceParts[0]
+        )
+        return referenceOption ? referenceOption.varCode : null
+      }
       if (this.valueKey === 'id') {
         var found = this.vars.find(
           function (v) {
@@ -519,7 +532,9 @@ export default {
     displayValue() {
       if (!this.value) return ''
       var v =
-        this.valueKey === 'id'
+        this.valueKey === 'reference'
+          ? this.findOptionByReferenceValue(this.value)
+          : this.valueKey === 'id'
           ? this.vars.find(
               function (item) {
                 return String(item.id) === String(this.value)
@@ -643,6 +658,17 @@ export default {
     },
   },
   methods: {
+    referenceValue(item) {
+      if (!item) return ''
+      const id = item._varId != null ? item._varId : item.id
+      const refType = item._refType || item.refType || (item._ref && item._ref.refType) || 'REF'
+      return id == null || id === '' ? '' : `${refType}:${id}`
+    },
+    findOptionByReferenceValue(value) {
+      if (!value) return null
+      const parts = String(value).split(':')
+      return this.findOptionByIdentity(parts.slice(1).join(':'), parts[0])
+    },
     categoryItems(category) {
       var self = this
       if (category === 'manual') return []
@@ -672,7 +698,7 @@ export default {
       return category === 'standalone' || category === 'object'
     },
     isGroupedFieldCategory(category) {
-      return category === 'object' || category === 'model'
+      return category === 'object' || category === 'model' || category === 'external'
     },
     groupFieldItems(list, category) {
       return groupReferenceOptions(list, category).map(
@@ -693,6 +719,10 @@ export default {
             first._modelGroup = true
             first._modelGroupKey = group.groupCode
             first.varType = 'MODEL'
+          } else if (category === 'external') {
+            first._externalGroup = true
+            first._externalGroupKey = group.groupCode
+            first.varType = 'OBJECT'
           }
           return first
         }.bind(this)
@@ -720,11 +750,13 @@ export default {
     },
     fieldGroupCodeByCategory(item, category) {
       if (category === 'model') return this.modelGroupCode(item)
+      if (category === 'external') return this.externalGroupCode(item)
       return this.objectGroupCode(item)
     },
     fieldGroupLabel(item) {
       var category = this.fieldGroupCategory(item)
       if (category === 'model') return this.modelGroupLabel(item)
+      if (category === 'external') return this.externalGroupLabel(item)
       return this.objectGroupLabel(item)
     },
     fieldGroupCategory(item) {
@@ -778,6 +810,14 @@ export default {
         (item && item.modelLabel) ||
         this.modelGroupCode(item)
       )
+    },
+    externalGroupCode(item) {
+      var ref = (item && item._ref) || {}
+      return ref.apiCode || (item && item.apiCode) || String((item && (item.varCode || item.refCode)) || '').split('.')[0]
+    },
+    externalGroupLabel(item) {
+      var ref = (item && item._ref) || {}
+      return ref.apiLabel || ref.apiName || (item && item.apiLabel) || this.externalGroupCode(item)
     },
     objectFieldPath(item) {
       if (!item) return ''
@@ -870,10 +910,11 @@ export default {
       )
       return matches.length === 1 ? matches[0] : null
     },
-    findOptionByIdentity(id, refType) {
+    findOptionByIdentity(id, refType, relativePath = '') {
       if (id == null || id === '' || !refType) return null
       return (
-        this.vars.find(v => this.optionIdentityKey(v) === refType + ':' + id) || null
+        this.vars.find(v => this.optionIdentityKey(v) === `${refType}:${id}:${relativePath || ''}`
+          || (this.optionIdentityKey(v) === `${refType}:${id}` && !relativePath)) || null
       )
     },
     isCurrentOption(item) {
@@ -884,8 +925,11 @@ export default {
           return item._function && this.value.functionId != null &&
             String(fn.functionId != null ? fn.functionId : fn.id) === String(this.value.functionId)
         }
+        const expectedKey = this.value.refType === 'EXTERNAL_API'
+          ? `${this.value.refType}:${this.value.refId}:${this.value.relativePath || ''}`
+          : `${this.value.refType}:${this.value.refId}`
         return this.value.refId != null && !!this.value.refType &&
-          this.optionIdentityKey(item) === this.value.refType + ':' + this.value.refId
+          this.optionIdentityKey(item) === expectedKey
       }
       return this.valueKey === 'id' ? String(item.id) === String(this.value) : item.varCode === this.value
     },
@@ -923,7 +967,12 @@ export default {
           item.refType ||
           (item.varObj && item.varObj.refType) ||
           (item._ref && item._ref.refType))
-      if (id != null && id !== '') return (refType || 'REF') + ':' + id
+      if (id != null && id !== '') {
+        const relativePath = refType === 'EXTERNAL_API' ? (item.relativePath || '') : ''
+        return refType === 'EXTERNAL_API'
+          ? `${refType}:${id}:${relativePath}`
+          : `${refType || 'REF'}:${id}`
+      }
       var cat = (item && item._ref && item._ref.category) || ''
       return cat + ':' + (item && item.varCode ? item.varCode : '')
     },
@@ -1083,7 +1132,11 @@ export default {
         this.closePopover()
         return
       }
-      var val = this.valueKey === 'id' ? item.id : item.varCode
+      var val = this.valueKey === 'reference'
+        ? this.referenceValue(item)
+        : this.valueKey === 'id'
+          ? item.id
+          : item.varCode
       $emit(this, 'update:value', val)
       $emit(this, 'select', item)
       this.closePopover()
@@ -1160,6 +1213,7 @@ export default {
     },
     /** 获取选项的实际值（varCode 或 id） */
     getOptionValue(v) {
+      if (this.valueKey === 'reference') return this.referenceValue(v)
       return this.valueKey === 'id' ? v.id : v.varCode || v.varLabel
     },
     /** 统一变量展示文本 */
@@ -1218,6 +1272,7 @@ export default {
       this.openPopover()
     },
     openPopover(options = {}) {
+      if (this.disabled) return
       if (this.groupedByCategory && (this.hasVarOptions || this.operandMode)) {
         var wasVisible = this.popoverVisible
         this.setPickerInert(false)
@@ -1252,7 +1307,9 @@ export default {
         option = this.findOptionByIdentity(this.value.refId, this.value.refType)
       } else {
         option =
-          this.valueKey === 'id'
+          this.valueKey === 'reference'
+            ? this.findOptionByReferenceValue(this.value)
+            : this.valueKey === 'id'
             ? this.vars.find(
                 function (v) {
                   return String(v.id) === String(this.value)
@@ -1489,7 +1546,9 @@ export default {
         return
       }
       var varObj =
-        this.valueKey === 'id'
+        this.valueKey === 'reference'
+          ? this.findOptionByReferenceValue(val)
+          : this.valueKey === 'id'
           ? this.vars.find(function (v) {
               return String(v.id) === String(val)
             }) || null
@@ -1519,7 +1578,9 @@ export default {
         return
       if (!this.hasVarOptions) return
       var found
-      if (this.valueKey === 'id') {
+      if (this.valueKey === 'reference') {
+        found = !!this.findOptionByReferenceValue(this.value)
+      } else if (this.valueKey === 'id') {
         found = this.vars.some(
           function (v) {
             return String(v.id) === String(this.value)

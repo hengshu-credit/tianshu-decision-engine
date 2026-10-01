@@ -1,0 +1,8 @@
+server:
+  port: ${SERVER_PORT:7071}
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: readinessState,sdkRules,redis

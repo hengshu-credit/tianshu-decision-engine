@@ -38,6 +38,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
       # 无密码时留空或删除本行
       password: ${REDIS_PASSWORD:}
       connect-timeout: 2000ms
@@ -49,6 +50,11 @@ spring:
           min-idle: 0
           max-wait: 1000ms
         shutdown-timeout: 200ms
+  session:
+    store-type: redis
+    timeout: ${SESSION_TIMEOUT:60m}
+    redis:
+      namespace: ${SESSION_REDIS_NAMESPACE:tianshu:session}
 
 rule-engine:
   log-retention:
@@ -101,7 +107,7 @@ rule-engine:
       - /api/auth/**
       - /api/rule/auth/token
       - /api/rule/sync/**
-      - /api/rule/open/**
+      - /api/rule/openapi/**
       - /api/rule/log/report
     session-username-attribute: RULE_CONSOLE_USERNAME
     # 未自定义 ConsoleLoginAuthenticator Bean 时使用以下账号登录；生产环境请改为环境变量或 BCrypt

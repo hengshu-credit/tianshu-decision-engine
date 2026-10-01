@@ -20,9 +20,15 @@
           <el-option label="业务字段" value="REFERENCE" />
           <el-option v-if="typeOf(row) === 'LEGACY'" label="原有表达式" value="LEGACY" />
         </el-select>
-        <el-select v-if="typeOf(row) === 'REFERENCE'" :model-value="referenceKey(row)" filterable :aria-label="`参数 ${index + 1} 字段`" @update:model-value="selectReference(index, $event)">
-          <el-option v-for="option in fieldOptions" :key="optionKey(option)" :label="option.displayName || option.refName || option.varLabel || option.refCode || option.varCode" :value="optionKey(option)" />
-        </el-select>
+        <operand-picker
+          v-if="typeOf(row) === 'REFERENCE'"
+          :value="row"
+          :vars="fieldOptions"
+          :allowed-kinds="['REFERENCE']"
+          :placeholder="`选择参数 ${index + 1} 的字段引用`"
+          :aria-label="`参数 ${index + 1} 字段`"
+          @input="selectReference(index, $event)"
+        />
         <el-select v-else-if="typeOf(row) === 'BOOLEAN'" :model-value="rowValue(row)" :aria-label="`参数 ${index + 1} 值`" @update:model-value="changeValue(index, 'BOOLEAN', $event)">
           <el-option label="是（true）" :value="true" />
           <el-option label="否（false）" :value="false" />
@@ -42,13 +48,14 @@
 
 <script>
 import MonacoEditor from '@/components/MonacoEditor.vue'
+import OperandPicker from '@/components/common/OperandPicker.vue'
 import { createReferenceOperand } from '@/utils/operand'
 import { analyzeSqlQuery } from '@/utils/sqlQuery'
 import { parseSqlParameters, sqlParameterType, validateSqlParameters } from '@/utils/sqlParameters'
 
 export default {
   name: 'SqlParameterEditor',
-  components: { MonacoEditor },
+  components: { MonacoEditor, OperandPicker },
   props: {
     value: { type: String, default: '[]' },
     sql: { type: String, default: '' },
@@ -61,12 +68,11 @@ export default {
     parseError() { try { parseSqlParameters(this.value); return '' } catch (e) { return 'SQL 参数 JSON 无法解析，请切换 JSON 修正；原内容已保留' } },
     expectedCount() { return analyzeSqlQuery(this.sql).placeholderCount },
     error() { return this.parseError || validateSqlParameters(this.sql, this.rows) },
-    fieldOptions() { return this.variables.filter(option => ['VARIABLE', 'CONSTANT'].includes(option._refType)) },
+    fieldOptions() { return this.variables.filter(option => option && option._varId != null && option._refType) },
   },
   methods: {
     typeOf: sqlParameterType,
     optionKey(option) { return `${option._refType}:${option._varId}` },
-    referenceKey(row) { return row.refId ? `${row.refType}:${row.refId}` : '' },
     rowValue(row) { return row && row.kind === 'LITERAL' ? row.value : row },
     displayValue(row) { const value = this.rowValue(row); return value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value) },
     write(rows) { this.$emit('update:value', JSON.stringify(rows, null, 2)) },
@@ -79,7 +85,14 @@ export default {
       // 数值由后端按声明类型解析，保留输入文本，避免 JavaScript 浮点转换损失精度。
       this.patch(index, { kind: 'LITERAL', valueType: type, value })
     },
-    selectReference(index, key) { const option = this.fieldOptions.find(item => this.optionKey(item) === key); if (option) this.patch(index, createReferenceOperand(option)) },
+    selectReference(index, operand) {
+      if (typeof operand === 'string') {
+        const option = this.fieldOptions.find(item => this.optionKey(item) === operand)
+        if (option) this.patch(index, createReferenceOperand(option))
+        return
+      }
+      if (operand && operand.kind === 'REFERENCE') this.patch(index, operand)
+    },
     append() { this.write([...this.rows, { kind: 'LITERAL', valueType: 'STRING', value: '' }]) },
     fillMissing() { const rows = this.rows.slice(); while (rows.length < this.expectedCount) rows.push({ kind: 'LITERAL', valueType: 'STRING', value: '' }); this.write(rows) },
     remove(index) { this.write(this.rows.filter((_, i) => i !== index)) },

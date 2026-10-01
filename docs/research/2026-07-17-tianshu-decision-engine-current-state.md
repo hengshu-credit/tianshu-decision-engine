@@ -59,7 +59,7 @@
 | 数据与资源 | 变量、数据对象、名单、外数 API、外部数据库、模型、函数 | 对应 Controller/Service 和变量来源解析器 |
 | 决策建模 | 决策表、决策树、决策流、规则集、交叉表、评分卡、复杂交叉表、复杂评分卡、QL 脚本 | `views/designer/*` 与九类 `RuleCompiler` |
 | 生命周期 | 保存、字段刷新、编译、测试、发布、版本、对比、回滚、下线 | `RuleDefinitionController`、`RuleCompileService`、`RulePublishService` |
-| 运行交付 | Server 执行、SDK 同步、L1 缓存、Redis 推送、HTTP/Kafka 日志上报 | `RuleSyncController`、`rule-engine-client` |
+| 运行交付 | Server 执行、SDK 同步、L1 缓存、Redis 推送、HTTP/Kafka 日志上报 | `RuleSyncController`、`rule-engine-client-sdk` |
 | 治理反馈 | 追踪树、执行日志、调用日志、血缘、实验、计费 | `TraceTree.vue`、日志/血缘/实验/计费模块 |
 
 产品形态更接近“决策资产管理与执行平台”：设计器只是入口，真正的核心是资源引用、编译产物、发布版本和可追踪执行之间的闭环。
@@ -388,3 +388,4 @@ flowchart TD
 天枢决策引擎的功能骨架和运行闭环已经成立：资源管理、九类建模、编译发布、SDK 交付、追踪日志、实验血缘和计费都能在代码中找到相互连接的实现。当前最需要解决的不是功能数量，而是让这些能力在生产环境中“引用不会漂移、状态能够一致、资源有明确上界、失败对用户可见、决策可以解释和回归”。
 
 建议以安全与引用一致性为第一优先级，以缓存和错误可见性为第二优先级，再建设规则资产 CI/CD、影子执行和时态影响分析。这样能够在保留现有功能广度的同时，显著提高规则变更的可控性和运行可信度。
+

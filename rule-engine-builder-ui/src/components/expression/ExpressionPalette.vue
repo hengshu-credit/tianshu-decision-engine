@@ -361,7 +361,7 @@ export default {
       )
     },
     isGroupedReferenceCategory() {
-      return this.activeCategory === 'object' || this.activeCategory === 'model'
+      return ['object', 'model', 'external'].includes(this.activeCategory)
     },
     manualItems() {
       const items = []

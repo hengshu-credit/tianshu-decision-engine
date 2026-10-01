@@ -6,7 +6,7 @@
 
 ```powershell
 node scripts/quality-gates/run-capacity-gate.mjs `
-  --url http://127.0.0.1:8080/api/rule/open/execute/RISK_RULE `
+  --url http://127.0.0.1:8080/api/rule/openapi/RISK_RULE `
   --request-file scripts/quality-gates/fixtures/request.example.json `
   --concurrency 20 `
   --warmup-seconds 10 `
@@ -21,7 +21,7 @@ node scripts/quality-gates/run-capacity-gate.mjs `
 
 ```powershell
 node scripts/quality-gates/run-capacity-gate.mjs `
-  --urls https://engine-1.example.com/api/rule/open/execute/RISK_RULE,https://engine-2.example.com/api/rule/open/execute/RISK_RULE `
+  --urls https://engine-1.example.com/api/rule/openapi/RISK_RULE,https://engine-2.example.com/api/rule/openapi/RISK_RULE `
   --request-file scripts/quality-gates/fixtures/request.local.json `
   --concurrency 20 `
   --warmup-seconds 10 `

@@ -55,7 +55,12 @@ public class OpenApiErrorResponder {
     }
 
     private String ruleCode(String uri) {
-        String prefix = "/api/rule/open/execute/";
-        return uri != null && uri.startsWith(prefix) ? uri.substring(prefix.length()) : "";
+        String[] prefixes = {"/api/rule/openapi/"};
+        if (uri != null) {
+            for (String prefix : prefixes) {
+                if (uri.startsWith(prefix)) return uri.substring(prefix.length());
+            }
+        }
+        return "";
     }
 }

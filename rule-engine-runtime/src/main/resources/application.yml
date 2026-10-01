@@ -1,0 +1,23 @@
+server:
+  port: ${SERVER_PORT:7070}
+  shutdown: graceful
+spring:
+  application:
+    name: rule-engine-runtime
+  profiles:
+    default: http
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:120s}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+      group:
+        readiness:
+          include: readinessState,upstream

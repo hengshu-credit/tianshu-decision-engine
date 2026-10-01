@@ -76,7 +76,8 @@
   --tianshu-status-warning-border: #fed7aa;
   --tianshu-status-warning-text: #9a3412;
   --tianshu-status-warning-solid: #d97706;
-  --tianshu-status-warning-solid-foreground: #ffffff;
+  // 橙色警告实心按钮使用深色文字，避免在浅色主题下出现低对比度。
+  --tianshu-status-warning-solid-foreground: #451a03;
   --tianshu-status-danger-bg: #fef3f2;
   --tianshu-status-danger-border: #fecdca;
   --tianshu-status-danger-text: #b42318;

@@ -1,6 +1,6 @@
 -- ============================================================
 -- 示例数据初始化脚本（actionData JSON 架构）
--- 为 rule-engine-example 客户端示例创建完整的服务端数据（信贷 / 交易风控演示域）
+-- 为 HTTP/SDK 客户端接入示例创建完整的服务端数据（信贷 / 交易风控演示域）
 -- 包含：1个项目 + 30个变量 + 函数管理(SCRIPT/JAVA/BEAN) + 数据对象 + 11条规则（含对象传入、JAVA/BEAN 函数、复杂交叉表 / 复杂评分卡 / QL 脚本等多模型示例）
 -- 交叉表 RC_RATE_MATRIX、复杂交叉表 RC_MULTI_DIM_RATE 的 model_json 与构建器界面示例对齐：客商类型×产品总线→风险定价费率（2×4）；业务类型×结算方式 × 客户类型×纳税人资格（8×6，ICT 后付一般纳税人 0.13）
 -- compiled_script 与当前 rule-engine-core 编译器一致：多输出时末尾为 `_result = { "varCode": var, ... }` + `_result`（QLExpress JSON 对象字面量）；执行日志 outputResult 为 JSON 对象时可多键展示。

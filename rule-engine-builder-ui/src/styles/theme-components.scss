@@ -532,6 +532,11 @@ body,
   --tianshu-status-solid-foreground: var(--tianshu-status-danger-solid-foreground);
 }
 
+// 警告实心按钮直接绑定语义前景色，避免 Element Plus 的默认白字覆盖主题令牌。
+.el-button--warning:not(.is-link):not(.is-text):not(.is-plain) {
+  color: #451a03 !important;
+}
+
 .el-button[data-action]:is(.is-link, .is-text) {
   color: var(--tianshu-action-color) !important;
   transition: color 160ms ease, background-color 160ms ease;

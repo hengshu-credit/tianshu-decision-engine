@@ -10,12 +10,17 @@ test('决策表字段选择器可加载并选择普通变量和对象字段', as
     if (message.type() === 'error') consoleErrors.push(message.text())
   })
 
+  const designerData = createDesignerApiData()
+  designerData.set('/api/rule/datasource/api-config/list', {
+    records: [{ id: 31, apiCode: 'credit_api', apiName: '征信接口', status: 1 }],
+    total: 1,
+  })
   const { requests, assertClean } = await installDistRoutes(page, {
-    apiData: createDesignerApiData()
+    apiData: designerData
   })
   await page.goto('http://tianshu.local/index.html#/designer/table/101')
 
-  await expect(page.locator('.rule-designer-info__fields')).toContainText('已加载 5 个变量/常量/对象字段')
+  await expect(page.locator('.rule-designer-info__fields')).toContainText(/已加载 \d+ 个可选引用/)
   await page.getByRole('button', { name: '添加行' }).click()
 
   const targetField = page.getByPlaceholder('选择目标字段')
@@ -98,6 +103,16 @@ test('决策表字段选择器可加载并选择普通变量和对象字段', as
     compactFieldMetrics.clientWidth
   )
 
+  await leftField.click()
+  await expect(leftPopover).toBeVisible()
+  const externalCategory = leftPopover.locator('.vp-cat-item').filter({ hasText: '外数 API' })
+  await externalCategory.click()
+  const externalGroup = leftPopover.locator('.vp-row').filter({ hasText: 'credit_api' })
+  await expect(externalGroup).toBeVisible()
+  await externalGroup.click()
+  await leftPopover.locator('.vp-child-item').filter({ hasText: 'HTTP 状态码' }).click()
+  await expect(leftField).toHaveValue(/response\.httpStatus/)
+
   await targetField.click()
   await expect(popover).toBeVisible()
   const objectCategory = popover
@@ -131,7 +146,8 @@ test('决策表字段选择器可加载并选择普通变量和对象字段', as
     '/api/rule/dataobject/tree/1',
     '/api/rule/function/project/1/all',
     '/api/rule/model/project/1/all',
-    '/api/rule/list/library'
+    '/api/rule/list/library',
+    '/api/rule/datasource/api-config/list'
   ]))
   expect(pageErrors).toEqual([])
   expect(consoleErrors).toEqual([])

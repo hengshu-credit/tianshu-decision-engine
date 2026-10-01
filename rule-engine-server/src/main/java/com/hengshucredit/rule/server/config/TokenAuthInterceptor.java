@@ -44,7 +44,7 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
         "/api/sync",
         "/api/rule/sync",
         "/api/rule/runtime",
-        "/api/rule/open",
+        "/api/rule/openapi",
         "/api/rule/log/report",
         "/api/rule/auth/token"
     };
@@ -130,7 +130,7 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
 
     private void writeError(HttpServletRequest request, HttpServletResponse response,
                             OpenApiStatus status) throws java.io.IOException {
-        if (request.getRequestURI() != null && request.getRequestURI().startsWith("/api/rule/open/")
+        if (request.getRequestURI() != null && request.getRequestURI().startsWith("/api/rule/openapi/")
                 && openApiErrorResponder != null) {
             openApiErrorResponder.write(request, response, status);
             return;
@@ -157,7 +157,7 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
     }
 
     static boolean isExecutionPath(String uri) {
-        return uri != null && (uri.startsWith("/api/rule/open/execute/")
+        return uri != null && (uri.startsWith("/api/rule/openapi/")
                 || uri.startsWith("/api/rule/sync/execute/")
                 || uri.startsWith("/api/rule/runtime/experiment/execute/"));
     }

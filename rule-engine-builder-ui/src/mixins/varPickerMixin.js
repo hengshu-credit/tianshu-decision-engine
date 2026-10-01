@@ -22,6 +22,8 @@ import { getVariableTree, getDataObjectFieldOptions } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
 import { listAllModelsByProject } from '@/api/model'
 import { listLibraries } from '@/api/ruleList'
+import { listApiConfigs } from '@/api/datasource'
+import { API_MODULE_FIELDS } from '@/utils/apiExecution'
 import { varTypeTagColor, varTypeLabel as _varTypeLabel } from '@/constants/varTypes'
 import { makeRefLabel } from '@/utils/varDisplay'
 import { buildPickerOptions, buildReferenceCatalog } from '@/utils/referenceCatalog'
@@ -36,6 +38,7 @@ export default {
       projectRefs: [],
       projectFunctions: [],
       projectLists: [],
+      projectApis: [],
       loadingVars: false,
       /** 变量加载是否失败 */
       varsLoadError: false,
@@ -167,6 +170,30 @@ export default {
         })
       })
     },
+    appendExternalApiRefs(refs, apis) {
+      ;(apis || []).forEach(api => {
+        const apiId = api && api.id
+        if (apiId == null) return
+        const apiCode = api.apiCode || api.code || `api_${apiId}`
+        const apiLabel = api.apiName || api.name || apiCode
+        API_MODULE_FIELDS.forEach(field => {
+          const refCode = `${apiCode}.${field.value}`
+          refs.push({
+            id: apiId,
+            refCode,
+            refLabel: { label: `${apiLabel} · ${field.label}`, code: refCode },
+            varType: field.type || 'OBJECT',
+            category: 'external',
+            refType: 'EXTERNAL_API',
+            apiId,
+            apiCode,
+            apiLabel,
+            relativePath: field.value,
+            varObj: { id: apiId, apiCode, apiName: apiLabel, refType: 'EXTERNAL_API', relativePath: field.value },
+          })
+        })
+      })
+    },
 
     /**
      * 根据定义 ID 拉取项目下变量树、常量、对象字段与函数列表，并组装 projectRefs。
@@ -191,15 +218,17 @@ export default {
         const pid = def.projectId
 
         // request 拦截器已返回 res.data，无需再访问 .data
-        const [varRes, objRes, funcRes, modelRes, listRes] = await Promise.all([
+        const [varRes, objRes, funcRes, modelRes, listRes, apiRes] = await Promise.all([
           listVariablesByProject(pid).catch(() => []),
           getVariableTree(pid).catch(() => []),
           listAllFunctionsByProject(pid).catch(() => []),
           listAllModelsByProject(pid).catch(() => []),
-          Promise.resolve(listLibraries({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(() => [])
+          Promise.resolve(listLibraries({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(() => []),
+          Promise.resolve(listApiConfigs({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(() => [])
         ])
         this.projectFunctions = this.normalizeListResponse(funcRes)
         this.projectLists = this.normalizeListResponse(listRes)
+        this.projectApis = this.normalizeListResponse(apiRes)
 
         // request 拦截器已返回 res.data，varRes 直接是数组，无需 .data
         const allVars = this.normalizeListResponse(varRes)
@@ -221,6 +250,7 @@ export default {
         })
 
         const refs = buildReferenceCatalog(allVars, objectTree, models).refs
+        this.appendExternalApiRefs(refs, this.projectApis)
 
         // 1. 普通变量（排除常量）
         // 2. 常量：单段 scriptName（或 varCode）
@@ -235,6 +265,7 @@ export default {
         this.projectVars = []
         this.projectRefs = []
         this.projectLists = []
+        this.projectApis = []
         this.varsLoadError = true
       } finally {
         this.loadingVars = false
@@ -267,16 +298,18 @@ export default {
       this.varsLoadError = false
       try {
         const pid = this.projectIdForRefs
-        const [varRes, objRes, funcRes, modelRes, listRes] = await Promise.all([
+        const [varRes, objRes, funcRes, modelRes, listRes, apiRes] = await Promise.all([
           listVariablesByProject(pid).catch(() => []),
           getVariableTree(pid).catch(() => []),
           listAllFunctionsByProject(pid).catch(() => []),
           listAllModelsByProject(pid).catch(() => []),
-          Promise.resolve(listLibraries({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(() => [])
+          Promise.resolve(listLibraries({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(() => []),
+          Promise.resolve(listApiConfigs({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(() => [])
         ])
         // request 拦截器已返回 res.data，直接使用
         this.projectFunctions = this.normalizeListResponse(funcRes)
         this.projectLists = this.normalizeListResponse(listRes)
+        this.projectApis = this.normalizeListResponse(apiRes)
 
         const allVars = this.normalizeListResponse(varRes)
 
@@ -297,11 +330,13 @@ export default {
         })
 
         const refs = buildReferenceCatalog(allVars, objectTree, models).refs
+        this.appendExternalApiRefs(refs, this.projectApis)
         this.projectRefs = refs
         this._trySyncModelVarRefs()
         const enumRefs = refs.filter(r => r.varType === 'ENUM')
         await Promise.all(enumRefs.map(r => this.loadVarOptionsForRef(r.refCode, r.varObj)))
       } catch (e) {
+        this.projectApis = []
         this.varsLoadError = true
       } finally {
         this.loadingVars = false

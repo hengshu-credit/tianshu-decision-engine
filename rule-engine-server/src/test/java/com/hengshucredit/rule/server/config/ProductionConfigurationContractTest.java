@@ -40,21 +40,42 @@ public class ProductionConfigurationContractTest {
     @Test
     public void containerConfigurationRequiresExternalPasswords() throws Exception {
         Path root = repositoryRoot();
-        String rootCompose = read(root.resolve("docker-compose.yaml"));
-        String mysqlCompose = read(root.resolve("rule-engine-mysql/docker-compose.yaml"));
-        String redisCompose = read(root.resolve("rule-engine-redis/docker-compose.yml"));
-        String redisConfig = read(root.resolve("rule-engine-redis/redis.conf"));
+        String rootCompose = read(root.resolve("docker/docker-compose.yml"));
+        String mysqlCompose = read(root.resolve("docker/docker-compose.mysql.yml"));
+        String redisCompose = read(root.resolve("docker/docker-compose.redis.yml"));
 
         Assert.assertFalse(rootCompose.contains(LEGACY_SHARED_PASSWORD));
         Assert.assertFalse(mysqlCompose.contains(LEGACY_SHARED_PASSWORD));
         Assert.assertFalse(redisCompose.contains(LEGACY_SHARED_PASSWORD));
-        Assert.assertFalse(redisConfig.contains(LEGACY_SHARED_PASSWORD));
-        Assert.assertTrue(rootCompose.contains("${MYSQL_ROOT_PASSWORD:?"));
-        Assert.assertTrue(rootCompose.contains("MYSQL_USER: \"${MYSQL_USERNAME:?"));
-        Assert.assertTrue(rootCompose.contains("MYSQL_PASSWORD: \"${MYSQL_PASSWORD:?"));
-        Assert.assertTrue(mysqlCompose.contains("MYSQL_USER=${MYSQL_USERNAME:?"));
-        Assert.assertTrue(mysqlCompose.contains("MYSQL_PASSWORD=${MYSQL_PASSWORD:?"));
+        Assert.assertTrue(rootCompose.contains("mysql-init:"));
+        Assert.assertTrue(rootCompose.contains("MYSQL_SERVICE_HOST"));
+        Assert.assertTrue(rootCompose.contains("condition: service_completed_successfully"));
+        Assert.assertTrue(rootCompose.contains("runtime-http:"));
+        Assert.assertTrue(rootCompose.contains("runtime-sdk:"));
+        Assert.assertTrue(rootCompose.contains("./tianshu-decision-engine-runtime"));
+        Assert.assertTrue(mysqlCompose.contains("MYSQL_ROOT_PASSWORD: \"${MYSQL_ROOT_PASSWORD:?"));
+        Assert.assertTrue(mysqlCompose.contains("MYSQL_USER: \"${MYSQL_USERNAME:?"));
+        Assert.assertTrue(mysqlCompose.contains("MYSQL_PASSWORD: \"${MYSQL_PASSWORD:?"));
+        Assert.assertTrue(redisCompose.contains("${REDIS_PASSWORD:?"));
         Assert.assertTrue(rootCompose.contains("${REDIS_PASSWORD:?"));
+    }
+
+    @Test
+    public void infrastructureBindsDataUnderDockerWithoutDuplicateComposeFiles() throws Exception {
+        Path root = repositoryRoot();
+        String mysql = read(root.resolve("docker/docker-compose.mysql.yml"));
+        String redis = read(root.resolve("docker/docker-compose.redis.yml"));
+        Assert.assertTrue(mysql.contains("./rule-engine-mysql/data:/var/lib/mysql"));
+        Assert.assertTrue(mysql.contains("./rule-engine-mysql/logs:/var/log/mysql"));
+        Assert.assertTrue(mysql.contains("./rule-engine-mysql/conf.d:/etc/mysql/conf.d:ro"));
+        Assert.assertTrue(redis.contains("./rule-engine-redis/data:/data"));
+        Assert.assertTrue(redis.contains("./rule-engine-redis/redis.conf:/usr/local/etc/redis/redis.conf:ro"));
+        Assert.assertFalse(mysql.contains("mysql-data:/var/lib/mysql"));
+        Assert.assertFalse(redis.contains("redis-data:/data"));
+        Assert.assertTrue(Files.isRegularFile(root.resolve("docker/rule-engine-mysql/conf.d/itlubber.cnf")));
+        Assert.assertTrue(Files.isRegularFile(root.resolve("docker/rule-engine-redis/redis.conf")));
+        Assert.assertFalse(Files.exists(root.resolve("docker/rule-engine-mysql/docker-compose.yaml")));
+        Assert.assertFalse(Files.exists(root.resolve("docker/rule-engine-redis/docker-compose.yml")));
     }
 
     private static Path repositoryRoot() {

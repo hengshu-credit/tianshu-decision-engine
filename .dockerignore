@@ -1,0 +1,17 @@
+.git
+.gitignore
+.codex
+.codex-*
+.codex-run-logs
+.worktrees
+**/target
+rule-engine-builder-ui/node_modules
+rule-engine-builder-ui/dist
+rule-engine-builder-ui/test-results
+docker/rule-engine-mysql/data
+docker/rule-engine-redis/data
+docker/tianshu-decision-engine-runtime
+**/logs
+*.log
+*.tmp
+.env

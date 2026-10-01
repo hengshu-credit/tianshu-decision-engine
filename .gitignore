@@ -20,8 +20,10 @@ rule-engine-builder-ui/node_modules/
 .harness
 rule_examples
 常用命令.txt
-rule-engine-mysql/data
-rule-engine-redis/data
+/docker/rule-engine-mysql/data/
+/docker/rule-engine-mysql/logs/
+/docker/rule-engine-redis/data/
+/docker/rule-engine-redis/logs/
 .worktrees/
 docs/superpowers/*
 .npm-cache-temp
@@ -39,3 +41,7 @@ scripts/quality-gates/fixtures/request.local.json
 /.codex-validation/
 /.playwright-cli/
 /output/
+
+/**/target/
+/docker/tianshu-decision-engine-runtime/*.jar
+/docker/tianshu-decision-engine-runtime/dist/

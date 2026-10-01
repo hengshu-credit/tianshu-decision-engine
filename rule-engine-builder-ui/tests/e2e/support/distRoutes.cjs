@@ -80,6 +80,7 @@ const apiData = new Map([
     ruleWarmup: { state: 'READY', targetCount: 0, preparedCount: 0, failureCount: 0 }
   }],
   ['/api/rule/model/list', { records: [], total: 0 }],
+  ['/api/rule/datasource/api-config/list', { records: [], total: 0 }],
   ['/api/rule/model/health', { healthy: true }],
   ['/api/rule/model/runtimeCapabilities', { availableProviders: ['CPUExecutionProvider'] }]
 ])

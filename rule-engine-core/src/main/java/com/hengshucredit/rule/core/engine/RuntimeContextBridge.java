@@ -4,6 +4,7 @@ import com.alibaba.qlexpress4.runtime.trace.ExpressionTrace;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -75,6 +76,14 @@ public final class RuntimeContextBridge {
 
     public static void bindCheckpointListener(Runnable listener) {
         currentContext().bindCheckpointListener(listener);
+    }
+
+    public static RequestContext.ExternalValueScope bindExternalValueResolver(BiFunction<Long, String, Object> resolver) {
+        return currentContext().bindExternalValueResolver(resolver);
+    }
+
+    public static Object externalApiValue(Long apiId, String path) {
+        return currentContext().externalApiValue(apiId, path);
     }
 
     public static Object randomValue(String function, Object argumentsKey, Supplier<Object> generator) {

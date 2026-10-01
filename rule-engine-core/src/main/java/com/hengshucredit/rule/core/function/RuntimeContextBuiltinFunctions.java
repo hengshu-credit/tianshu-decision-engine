@@ -38,6 +38,19 @@ public class RuntimeContextBuiltinFunctions {
         return RuntimeContextBridge.currentContext().sourceStatusValue(refType, refId, dimension);
     }
 
+    public Object externalApiValue(Object apiId, String path) {
+        if (apiId == null) return null;
+        final long id;
+        try {
+            id = apiId instanceof Number number
+                    ? number.longValue() : Long.parseLong(String.valueOf(apiId));
+        } catch (NumberFormatException error) {
+            throw new IllegalArgumentException("外数 API ID 必须是正整数", error);
+        }
+        if (id <= 0) throw new IllegalArgumentException("外数 API ID 必须是正整数");
+        return RuntimeContextBridge.externalApiValue(id, path);
+    }
+
     public Object recordRuleSetItem(String ruleCode, String ruleName, Object hit) {
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("type", "RULE_SET_ITEM");

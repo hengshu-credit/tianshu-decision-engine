@@ -162,11 +162,9 @@ function renderCodeTabs(rule, authentications, endpoint) {
 }
 
 export function renderRuleEndpoint(rule, authentications, active = false) {
-  const pathPrefix = rule.openApiEnabled ? '/api/rule/open/execute/' : '/api/rule/sync/execute/'
-  const path = `${pathPrefix}${encodeURIComponent(rule.ruleCode)}`
-  const body = prettyJson(rule.openApiEnabled
-    ? buildExampleBody(rule.requestFields || [])
-    : { clientAppName: 'api-doc-example', params: buildExampleBody(rule.requestFields || []).params || {} })
+  const path = '/api/rule/sync/execute/' + encodeURIComponent(rule.ruleCode)
+  const normalFields = [{ path: 'clientAppName', type: 'STRING', required: false, label: '调用方应用名', exampleValue: 'api-doc-example' }, { path: 'traceEnabled', type: 'BOOLEAN', required: false, label: '是否采集表达式追踪，默认 true；false 不关闭服务端基础日志与审计', exampleValue: false }, ...(rule.requestFields || [])]
+  const body = prettyJson({ clientAppName: 'api-doc-example', params: buildExampleBody(rule.requestFields || []).params || {} })
   const responseFields = [{ path: 'code', type: 'INTEGER', required: true, label: '平台响应码', exampleValue: 200 }, { path: 'message', type: 'STRING', required: true, label: '平台响应信息', exampleValue: 'success' }, { path: 'data.success', type: 'BOOLEAN', required: true, label: '规则执行状态', exampleValue: true }, { path: 'data.revisionId', type: 'INTEGER', required: false, label: '实际执行修订 ID', exampleValue: 12 }, { path: 'data.artifactDigest', type: 'STRING', required: false, label: '实际执行制品摘要', exampleValue: 'sha256-example' }, { path: 'data.errorMessage', type: 'STRING', required: false, label: '规则执行失败原因', exampleValue: null }, ...(rule.responseFields || [])]
   const endpoint = { method: 'POST', path, baseUrl: 'https://api.example.com', body }
   const schemaNotice = rule.schemaTrust === 'UNVERIFIED'
@@ -174,13 +172,29 @@ export function renderRuleEndpoint(rule, authentications, active = false) {
     : ''
   return `<section id="endpoint-${escapeAttribute(rule.ruleCode)}" class="panel endpoint-panel${active ? ' active' : ''}" data-endpoint-id="${escapeAttribute(rule.ruleCode)}" data-endpoint-value="${escapeAttribute(rule.id || rule.ruleCode)}">
     <div class="endpoint-head"><span class="method">POST</span><code class="path">${escapeHtml(path)}</code><span class="badge">${escapeHtml(rule.ruleName || rule.ruleCode)}</span></div>
-    <p class="lead">${escapeHtml(rule.description || '执行已发布规则并返回统一平台响应。')}</p>${rule.openApiEnabled ? '<div class="notice">该规则已启用开放接口契约，调用时按本页映射和响应模板传参。</div>' : ''}${schemaNotice}
+    <p class="lead">${escapeHtml(rule.description || '执行已发布规则并返回统一平台响应。')}</p>${rule.openApiEnabled ? '<div class="notice">该规则同时提供普通同步执行和 OpenAPI 契约执行两种入口。</div>' : ''}${schemaNotice}
     <h3>请求头 Header</h3><div class="table-wrap"><table><thead><tr><th>名称</th><th>必填</th><th>说明</th></tr></thead><tbody><tr><td><code>Content-Type</code></td><td>是</td><td><code>application/json</code></td></tr><tr><td>鉴权字段</td><td>是</td><td>按“认证鉴权”页当前 Tab 传递</td></tr>${rule.openApiEnabled ? '<tr><td>开放接口映射 Header</td><td>按映射</td><td>契约中的 HEADER 来源字段</td></tr>' : ''}</tbody></table></div>
-    ${renderFields('请求体 Body', rule.openApiEnabled ? (rule.requestFields || []) : [{ path: 'clientAppName', type: 'STRING', required: false, label: '调用方应用名', exampleValue: 'api-doc-example' }, { path: 'traceEnabled', type: 'BOOLEAN', required: false, label: '是否采集表达式追踪，默认 true；false 不关闭服务端基础日志与审计', exampleValue: false }, ...(rule.requestFields || [])])}
+    ${renderFields('请求体 Body', normalFields)}
     <h3>参数结构</h3><pre><code>${escapeHtml(body)}</code></pre>
     <h3>响应头 Header</h3><div class="table-wrap"><table><thead><tr><th>名称</th><th>说明</th></tr></thead><tbody><tr><td><code>Content-Type</code></td><td><code>application/json</code></td></tr></tbody></table></div>
     ${renderFields('响应体 Body', responseFields)}
     ${renderScenarioTabs(rule)}
-    <h3>代码示例</h3>${renderCodeTabs(rule, authentications || [], endpoint)}
+    <h3>代码示例</h3>${renderCodeTabs(rule, authentications || [], endpoint)}${rule.openApiEnabled ? renderOpenApiEndpoint(rule, authentications, responseFields) : ''}
   </section>`
+}
+
+function renderOpenApiEndpoint(rule, authentications, responseFields) {
+  const path = '/api/rule/openapi/' + encodeURIComponent(rule.ruleCode)
+  const fields = rule.openApiRequestFields || []
+  const body = prettyJson(buildExampleBody(fields))
+  const endpoint = { method: 'POST', path, baseUrl: 'https://api.example.com', body }
+  return '<div class="open-api-documentation">' +
+    '<h2>OpenAPI 契约执行入口</h2>' +
+    '<div class="notice">仅在规则已启用 OpenAPI 服务时生成。该入口使用已发布契约的请求映射、响应模板、幂等和错误码。</div>' +
+    '<div class="endpoint-head"><span class="method">POST</span><code class="path">' + escapeHtml(path) + '</code><span class="badge">OpenAPI</span></div>' +
+    renderFields('Body 映射字段', fields) +
+    '<pre><code>' + escapeHtml(body) + '</code></pre>' +
+    renderFields('OpenAPI 响应体', responseFields) +
+    '<h3>OpenAPI 代码示例</h3>' + renderCodeTabs(rule, authentications || [], endpoint) +
+    '</div>'
 }

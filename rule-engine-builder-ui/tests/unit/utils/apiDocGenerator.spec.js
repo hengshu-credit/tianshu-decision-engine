@@ -49,7 +49,8 @@ describe('完整 API 文档生成器', () => {
       }]
     })
 
-    const operation = openApi.paths['/api/rule/open/execute/OPEN_RULE'].post
+    expect(openApi.paths['/api/rule/sync/execute/OPEN_RULE']).toBeTruthy()
+    const operation = openApi.paths['/api/rule/openapi/OPEN_RULE'].post
     expect(operation['x-open-api-contract-enabled']).toBe(true)
     expect(operation['x-rule-schema-trust']).toBe('VERIFIED')
     expect(operation['x-open-api-contract'].responseMappings[0].targetField).toBe('decision')

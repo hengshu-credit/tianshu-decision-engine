@@ -14,8 +14,8 @@
         <module>rule-engine-core</module>
         <module>rule-engine-server</module>
         <module>rule-engine-client-http</module>
-        <module>rule-engine-client</module>
-        <module>rule-engine-example</module>
+        <module>rule-engine-client-sdk</module>
+        <module>rule-engine-runtime</module>
     </modules>
 
     <properties>
@@ -62,7 +62,7 @@
             </dependency>
             <dependency>
                 <groupId>com.hengshucredit.rule</groupId>
-                <artifactId>rule-engine-client</artifactId>
+                <artifactId>rule-engine-client-sdk</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

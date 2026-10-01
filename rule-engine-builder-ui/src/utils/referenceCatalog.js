@@ -202,6 +202,10 @@ export function buildPickerOptions(catalog) {
     varSource: ref.varSource,
     recordResult: ref.recordResult,
     constantValue: ref.constantValue,
+    relativePath: ref.relativePath,
+    apiId: ref.apiId,
+    apiCode: ref.apiCode,
+    apiLabel: ref.apiLabel,
     _varId: ref.id,
     _refType: ref.refType,
     _ref: Object.assign({}, ref, {

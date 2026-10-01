@@ -2244,37 +2244,44 @@ export default {
 .toolbar-row-primary,
 .toolbar-row-actions {
   justify-content: space-between;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: thin;
+  flex-wrap: wrap;
+  overflow: visible;
+  row-gap: 8px;
 }
 .toolbar-context {
-  flex: 0 0 auto;
+  flex: 1 1 520px;
   min-width: 0;
   justify-content: flex-end;
-  flex-wrap: nowrap;
-  overflow-x: auto;
+  flex-wrap: wrap;
+  overflow: visible;
 }
 .toolbar-node-actions,
 .toolbar-edit-actions,
 .toolbar-right {
   min-width: 0;
 }
+.toolbar-right {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
 .toolbar-row-actions > .toolbar-right {
-  position: sticky;
-  right: 0;
-  z-index: 2;
+  position: static;
   padding-left: 8px;
   background: transparent;
 }
 .toolbar-node-actions {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
 }
 .toolbar-edit-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
   justify-content: flex-end;
 }
 .toolbar-node-button {

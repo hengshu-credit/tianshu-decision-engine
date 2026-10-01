@@ -37,6 +37,12 @@ public class RuleReferenceIntegrityService {
     private RuleFunctionService functionService;
 
     @Resource
+    private com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper externalApiMapper;
+
+    @Resource
+    private com.hengshucredit.rule.server.mapper.RuleExternalDatasourceMapper externalDatasourceMapper;
+
+    @Resource
     private RuleFieldAnalyzer fieldAnalyzer;
 
     public AuditReport scan(Long definitionId) {
@@ -89,7 +95,23 @@ public class RuleReferenceIntegrityService {
         if (functionService != null) {
             functionService.buildFunctionCodeMap(projectId).forEach((id, code) -> catalog.put("FUNCTION:" + id, code));
         }
+        if (externalApiMapper != null) {
+            externalApiMapper.selectList(null).stream()
+                    .filter(api -> api != null && Integer.valueOf(1).equals(api.getStatus())
+                            && externalApiAvailable(api, projectId))
+                    .forEach(api -> catalog.put("EXTERNAL_API:" + api.getId(),
+                            api.getApiCode() == null ? String.valueOf(api.getId()) : api.getApiCode()));
+        }
         return catalog;
+    }
+
+    private boolean externalApiAvailable(com.hengshucredit.rule.model.entity.RuleExternalApiConfig api,
+                                         Long projectId) {
+        if (api == null || api.getDatasourceId() == null || externalDatasourceMapper == null) return false;
+        var datasource = externalDatasourceMapper.selectById(api.getDatasourceId());
+        if (datasource == null || !Integer.valueOf(1).equals(datasource.getStatus())) return false;
+        return "GLOBAL".equals(datasource.getScope())
+                || projectId != null && projectId.equals(datasource.getProjectId());
     }
 
     private AuditReport auditWithCatalog(Long definitionId, String modelJson, Map<String, String> validRefs) {

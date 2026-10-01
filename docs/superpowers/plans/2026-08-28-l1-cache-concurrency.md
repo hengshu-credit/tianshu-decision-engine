@@ -22,7 +22,7 @@
 ### Task 1: 用确定性测试复现读操作被快照写锁阻塞
 
 **Files:**
-- Modify: `rule-engine-client/src/test/java/com/hengshucredit/rule/client/cache/L1MemoryCacheTest.java`
+- Modify: `rule-engine-client-sdk/src/test/java/com/hengshucredit/rule/client/cache/L1MemoryCacheTest.java`
 
 - [ ] **Step 1: 增加构造参数校验测试**
 
@@ -42,14 +42,14 @@
 
 - [ ] **Step 5: 运行测试确认旧实现失败**
 
-Run: `mvn -pl rule-engine-client -am -Dtest=L1MemoryCacheTest -Dsurefire.failIfNoSpecifiedTests=false test`
+Run: `mvn -pl rule-engine-client-sdk -am -Dtest=L1MemoryCacheTest -Dsurefire.failIfNoSpecifiedTests=false test`
 
 Expected: FAIL，快照锁未释放前读取线程无法完成；容量校验测试也失败。
 
 ### Task 2: 实现 volatile 快照和无锁读取
 
 **Files:**
-- Modify: `rule-engine-client/src/main/java/com/hengshucredit/rule/client/cache/L1MemoryCache.java`
+- Modify: `rule-engine-client-sdk/src/main/java/com/hengshucredit/rule/client/cache/L1MemoryCache.java`
 
 - [ ] **Step 1: 校验容量并安全初始化**
 
@@ -96,18 +96,18 @@ public Map<String, Integer> getVersions() {
 
 - [ ] **Step 5: 运行定向测试确认通过**
 
-Run: `mvn -pl rule-engine-client -am -Dtest=L1MemoryCacheTest -Dsurefire.failIfNoSpecifiedTests=false test`
+Run: `mvn -pl rule-engine-client-sdk -am -Dtest=L1MemoryCacheTest -Dsurefire.failIfNoSpecifiedTests=false test`
 
 Expected: PASS。
 
 ### Task 3: 并发回归与后端完整门禁
 
 **Files:**
-- Test: `rule-engine-client/src/test/java/com/hengshucredit/rule/client/cache/L1MemoryCacheTest.java`
+- Test: `rule-engine-client-sdk/src/test/java/com/hengshucredit/rule/client/cache/L1MemoryCacheTest.java`
 
 - [ ] **Step 1: 重复执行并发测试排除偶发通过**
 
-Run: `1..20 | ForEach-Object { mvn -q -pl rule-engine-client -am -Dtest=L1MemoryCacheTest -Dsurefire.failIfNoSpecifiedTests=false test; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }`
+Run: `1..20 | ForEach-Object { mvn -q -pl rule-engine-client-sdk -am -Dtest=L1MemoryCacheTest -Dsurefire.failIfNoSpecifiedTests=false test; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }`
 
 Expected: 20 次全部 PASS，进程不悬挂。
 
@@ -133,6 +133,7 @@ Expected: 0 failures、0 errors；仅允许仓库已声明的外部 ONNX/CUDA �
 
 Run: `git diff --check`
 
-Run: `git diff -- rule-engine-client/src/main/java/com/hengshucredit/rule/client/cache/L1MemoryCache.java rule-engine-client/src/test/java/com/hengshucredit/rule/client/cache/L1MemoryCacheTest.java`
+Run: `git diff -- rule-engine-client-sdk/src/main/java/com/hengshucredit/rule/client/cache/L1MemoryCache.java rule-engine-client-sdk/src/test/java/com/hengshucredit/rule/client/cache/L1MemoryCacheTest.java`
 
 确认所有读路径均无 `cacheLock`，所有写路径仍共享同一锁，且没有引入额外依赖。
+

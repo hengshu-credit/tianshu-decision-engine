@@ -100,4 +100,12 @@ public class RuntimeContextBuiltinFunctionsTest {
         RuntimeContextBridge.clear();
         assertFalse(functions.sourceStatus("VARIABLE", "7", "CACHE_STATE", "HIT"));
     }
+
+    @Test
+    public void externalApiValueUsesRequestScopedResolver() {
+        RuntimeContextBridge.bindExternalValueResolver((apiId, path) -> apiId + ":" + path);
+
+        assertEquals("31:response.headers.X-Request-Id",
+                functions.externalApiValue(31L, "response.headers.X-Request-Id"));
+    }
 }

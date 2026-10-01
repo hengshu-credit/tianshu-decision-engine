@@ -32,7 +32,7 @@ Copy-Item scripts/quality-gates/fixtures/request.example.json `
 
 ```powershell
 node scripts/quality-gates/run-capacity-gate.mjs `
-  --url http://127.0.0.1:8080/api/rule/open/execute `
+  --url http://127.0.0.1:8080/api/rule/openapi `
   --request-file scripts/quality-gates/fixtures/request.local.json `
   --concurrency 16 `
   --warmup-seconds 10 `

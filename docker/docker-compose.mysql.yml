@@ -1,0 +1,46 @@
+# MySQL 独立 Compose；数据和配置集中在 docker/rule-engine-mysql。
+name: ${DEPLOY_PROJECT:-tianshu}
+
+services:
+  mysql:
+    image: ${MYSQL_IMAGE:-mysql:8.4.6}
+    container_name: rule-engine-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}"
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-rule_engine}"
+      MYSQL_USER: "${MYSQL_USERNAME:?Set MYSQL_USERNAME}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}"
+      TZ: Asia/Shanghai
+    command:
+      - --max-connections=${MYSQL_MAX_CONNECTIONS:-300}
+      - --innodb-buffer-pool-size=${MYSQL_BUFFER_POOL_SIZE:-1G}
+      - --max-allowed-packet=512M
+      - --character-set-server=utf8mb4
+      - --mysql-native-password=ON
+    ports:
+      - "${MYSQL_HOST_PORT:-3306}:3306"
+    volumes:
+      - ./rule-engine-mysql/data:/var/lib/mysql
+      - ./rule-engine-mysql/logs:/var/log/mysql
+      - ./rule-engine-mysql/conf.d:/etc/mysql/conf.d:ro
+      - ../rule-engine-server/src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ../rule-engine-server/src/main/resources/sql/export_202607161151.sql:/docker-entrypoint-initdb.d/02-export.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_ROOT_PASSWORD}\" mysqladmin ping -h127.0.0.1 -uroot --silent"]
+      interval: 10s
+      timeout: 10s
+      retries: 60
+      start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
+        max-file: "${DOCKER_LOG_MAX_FILES:-5}"
+    networks: [rule-engine]
+
+networks:
+  rule-engine:
+    name: ${ENGINE_NETWORK:-${DEPLOY_PROJECT:-tianshu}-engine}
+    driver: bridge

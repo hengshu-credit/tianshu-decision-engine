@@ -33,7 +33,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/rule/open")
+@RequestMapping("/api/rule/openapi")
 public class OpenRuleController {
 
     @Resource
@@ -57,7 +57,7 @@ public class OpenRuleController {
     @Resource
     private RuleIdempotencyService idempotencyService;
 
-    @PostMapping("/execute/{ruleCode}")
+    @PostMapping("/{ruleCode}")
     public ResponseEntity<Object> execute(@PathVariable String ruleCode,
                                           @RequestBody(required = false) Object body,
                                           @RequestHeader HttpHeaders headers,

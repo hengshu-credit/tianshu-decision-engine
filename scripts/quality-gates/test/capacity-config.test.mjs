@@ -12,7 +12,7 @@ import {
 } from '../lib/capacity-config.mjs'
 
 const validArgs = [
-  '--url', 'http://127.0.0.1:8080/api/rule/open/execute?token=secret',
+  '--url', 'http://127.0.0.1:8080/api/rule/openapi/RISK_RULE?token=secret',
   '--request-file', 'request.json',
   '--concurrency', '4',
   '--warmup-seconds', '1',

@@ -1,0 +1,41 @@
+# Redis 独立 Compose；数据和配置集中在 docker/rule-engine-redis。
+name: ${DEPLOY_PROJECT:-tianshu}
+
+services:
+  redis:
+    image: ${REDIS_IMAGE:-redis:8.2.1}
+    container_name: rule-engine-redis
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-512mb}
+      TZ: Asia/Shanghai
+    command:
+      - sh
+      - -ec
+      - |
+        exec redis-server /usr/local/etc/redis/redis.conf --maxmemory "$${REDIS_MAXMEMORY}" --requirepass "$${REDIS_PASSWORD}"
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - ./rule-engine-redis/data:/data
+      - ./rule-engine-redis/logs:/logs
+      - ./rule-engine-redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    logging:
+      driver: json-file
+      options:
+        max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
+        max-file: "${DOCKER_LOG_MAX_FILES:-5}"
+    networks: [rule-engine]
+
+networks:
+  rule-engine:
+    name: ${ENGINE_NETWORK:-${DEPLOY_PROJECT:-tianshu}-engine}
+    driver: bridge
+
+

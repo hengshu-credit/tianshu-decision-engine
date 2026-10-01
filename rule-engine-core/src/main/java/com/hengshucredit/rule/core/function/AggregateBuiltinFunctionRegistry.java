@@ -230,6 +230,7 @@ public final class AggregateBuiltinFunctionRegistry {
         runner.addFunctionOfServiceMethod("currentMatchedConditions", RUNTIME_CONTEXT_DELEGATE, "currentMatchedConditions", NO_ARGS);
         runner.addFunctionOfServiceMethod("sourceStatus", RUNTIME_CONTEXT_DELEGATE, "sourceStatus", FOUR_STRINGS);
         runner.addFunctionOfServiceMethod("sourceStatusValue", RUNTIME_CONTEXT_DELEGATE, "sourceStatusValue", THREE_STRINGS);
+        runner.addFunctionOfServiceMethod("externalApiValue", RUNTIME_CONTEXT_DELEGATE, "externalApiValue", OBJECT_STRING);
         runner.addFunctionOfServiceMethod("recordRuleSetItem", RUNTIME_CONTEXT_DELEGATE, "recordRuleSetItem", TWO_STRINGS_OBJECT);
         runner.addFunctionOfServiceMethod("recordRuleSetSummary", RUNTIME_CONTEXT_DELEGATE, "recordRuleSetSummary", SINGLE_OBJECT);
     }

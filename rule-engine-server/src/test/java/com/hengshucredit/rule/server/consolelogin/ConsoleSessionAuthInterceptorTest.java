@@ -32,7 +32,7 @@ public class ConsoleSessionAuthInterceptorTest {
         ConsoleSessionAuthInterceptor interceptor = new ConsoleSessionAuthInterceptor(properties);
 
         boolean allowed = interceptor.preHandle(
-                new MockHttpServletRequest("POST", "/api/rule/open/execute/RISK_SCORE"),
+                new MockHttpServletRequest("POST", "/api/rule/openapi/RISK_SCORE"),
                 new MockHttpServletResponse(), new Object());
 
         assertTrue(allowed);

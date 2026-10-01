@@ -195,7 +195,8 @@ function normalizeRule(rule) {
     outputSchema: rule && rule.outputSchema ? rule.outputSchema : {},
     status: rule && rule.status,
     statusLabel: text(rule && rule.statusLabel),
-    requestFields: openApiEnabled ? openApiRequestFields(openApiContract) : flattenRequestFields(rule),
+    requestFields: flattenRequestFields(rule),
+    openApiRequestFields: openApiEnabled ? openApiRequestFields(openApiContract) : [],
     responseFields: flattenResponseFields(rule),
     scenarios: documentedScenarios(rule)
   }

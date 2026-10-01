@@ -163,6 +163,10 @@ public class RuleCompileService {
             if (refId == null || refType == null || refType.trim().isEmpty()) {
                 throw new IllegalArgumentException("受管字段引用缺少 ID 或引用类型");
             }
+            if ("EXTERNAL_API".equalsIgnoreCase(refType)) {
+                if (refId <= 0) throw new IllegalArgumentException("外数 API 引用 ID 必须是正整数");
+                return;
+            }
             if ("CONSTANT".equalsIgnoreCase(refType)) {
                 if (!constantIdToExpression.containsKey(refId)) {
                     throw new IllegalArgumentException("常量引用不存在、已停用或值不合法，ID=" + refId);

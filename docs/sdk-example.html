@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>天枢 SDK 本地执行示例</title>
+  <style>
+    body{font:15px/1.6 system-ui,"Microsoft YaHei",sans-serif;max-width:900px;margin:32px auto;padding:0 20px;color:#172033;background:#f6f8fb}
+    section{background:#fff;border:1px solid #d9e0eb;border-radius:12px;padding:20px;margin:16px 0}label{display:block;font-weight:600;margin:12px 0 4px}
+    input,textarea,button{font:inherit;width:100%;box-sizing:border-box;padding:9px;border:1px solid #aeb8ca;border-radius:6px}textarea{min-height:150px;font-family:Consolas,monospace}
+    button{margin-top:16px;background:#3048c8;color:#fff;border:0;cursor:pointer}pre{background:#101828;color:#d0d5dd;padding:14px;overflow:auto;white-space:pre-wrap}
+    small{color:#667085}.status{font-weight:600}
+  </style>
+</head>
+<body>
+<h1>SDK 本地执行示例</h1>
+<p>本页面适合发布到 GitHub Pages；浏览器请求本机 SDK runtime，规则由 SDK 从服务端同步到 L1 缓存后在本地执行。</p>
+<section>
+  <label for="base">SDK Runtime 地址</label>
+  <input id="base" value="http://127.0.0.1:7071" autocomplete="url">
+  <label for="token">Runtime 接入令牌</label>
+  <input id="token" type="password" autocomplete="off">
+  <label for="rule">规则编码</label>
+  <input id="rule" value="" autocomplete="off">
+  <label for="params">规则入参 JSON</label>
+  <textarea id="params">{}</textarea>
+  <button id="run">本地 SDK 执行</button>
+  <p class="status" id="status">令牌只保留在当前页面内存，不写入 GitHub Pages。</p>
+</section>
+<section><h2>响应</h2><pre id="result">尚未执行</pre></section>
+<script>
+  const el = id => document.getElementById(id)
+  el('run').addEventListener('click', async () => {
+    const base = el('base').value.trim().replace(/\/+$/, '')
+    const rule = el('rule').value.trim()
+    const token = el('token').value
+    let params
+    try { params = JSON.parse(el('params').value); if (!params || Array.isArray(params)) throw new Error('必须是 JSON 对象') } catch (e) { el('status').textContent = e.message; return }
+    if (!base || !rule || !token) { el('status').textContent = '请填写地址、令牌和规则编码'; return }
+    el('status').textContent = '执行中…'
+    try {
+      const response = await fetch(`${base}/api/rule/execute/${encodeURIComponent(rule)}`, {
+        method: 'POST', headers: {Authorization: `Bearer ${token}`, 'Content-Type': 'application/json'},
+        body: JSON.stringify({params})
+      })
+      const body = await response.json()
+      el('result').textContent = JSON.stringify(body, null, 2)
+      el('status').textContent = response.ok ? '完成：结果来自 SDK 本地执行' : `请求失败：HTTP ${response.status}`
+    } catch (error) { el('status').textContent = `网络/CORS 失败：${error.message}` }
+  })
+</script>
+</body>
+</html>

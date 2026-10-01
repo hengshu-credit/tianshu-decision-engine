@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.Set;
@@ -140,6 +141,29 @@ public final class RequestContext {
     private Map<Long, Map<String, String>> externalFieldPaths = new java.util.concurrent.ConcurrentHashMap<>();
     private Map<Long, Map<String, String>> externalDefaultPaths = new java.util.concurrent.ConcurrentHashMap<>();
     private Map<Long, Map<String, String>> externalDefaultAliases = new java.util.concurrent.ConcurrentHashMap<>();
+    private BiFunction<Long, String, Object> externalValueResolver;
+
+    public ExternalValueScope bindExternalValueResolver(BiFunction<Long, String, Object> resolver) {
+        ExternalValueScope scope = new ExternalValueScope(externalValueResolver);
+        externalValueResolver = resolver;
+        return scope;
+    }
+
+    public Object externalApiValue(Long apiId, String path) {
+        if (apiId == null || path == null || path.isBlank()) return null;
+        BiFunction<Long, String, Object> resolver = externalValueResolver;
+        if (resolver == null) throw new IllegalStateException("当前执行上下文未绑定外数读取器");
+        return resolver.apply(apiId, path);
+    }
+
+    public final class ExternalValueScope implements AutoCloseable {
+        private final BiFunction<Long, String, Object> previous;
+        private boolean closed;
+        private ExternalValueScope(BiFunction<Long, String, Object> previous) { this.previous = previous; }
+        @Override public void close() {
+            if (!closed) { externalValueResolver = previous; closed = true; }
+        }
+    }
 
     public void registerExternalDefaultField(Long apiId, String key, String path, String sourceKey) {
         if (apiId == null || key == null || path == null) return;
@@ -251,6 +275,7 @@ public final class RequestContext {
         child.externalFieldPaths = externalFieldPaths;
         child.externalDefaultPaths = externalDefaultPaths;
         child.externalDefaultAliases = externalDefaultAliases;
+        child.externalValueResolver = externalValueResolver;
         child.checkpointListener = checkpointListener;
         child.randomValues = randomValues;
         child.randomSequence = randomSequence;

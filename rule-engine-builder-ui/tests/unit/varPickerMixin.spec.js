@@ -18,6 +18,8 @@ import * as dataObjectApi from '@/api/dataObject'
 import * as functionApi from '@/api/function'
 import * as modelApi from '@/api/model'
 import * as ruleListApi from '@/api/ruleList'
+import * as datasourceApi from '@/api/datasource'
+import { API_MODULE_FIELDS } from '@/utils/apiExecution'
 
 // ─── Mock 数据（传原始数组，由 axios 拦截器包成 { data: ... }） ─────
 const mockDefs = { id: 1, projectId: 1, scope: 'PROJECT' }
@@ -69,6 +71,7 @@ describe('varPickerMixin', () => {
     functionApi.listAllFunctionsByProject.mockResolvedValue([])
     modelApi.listAllModelsByProject.mockResolvedValue(mockModels)
     ruleListApi.listLibraries.mockResolvedValue({ records: [{ id: 9, listCode: 'mobile_black', listName: '手机号黑名单' }] })
+    datasourceApi.listApiConfigs.mockResolvedValue({ records: [{ id: 31, apiCode: 'credit_api', apiName: '征信接口', status: 1 }] })
     dataObjectApi.getDataObjectFieldOptions.mockResolvedValue([])
   })
 
@@ -130,6 +133,7 @@ describe('varPickerMixin', () => {
     expect(functionApi.listAllFunctionsByProject).toHaveBeenCalledWith(1)
     expect(modelApi.listAllModelsByProject).toHaveBeenCalledWith(1)
     expect(ruleListApi.listLibraries).toHaveBeenCalledWith({ pageNum: 1, pageSize: 1000, projectId: 1, status: 1 })
+    expect(datasourceApi.listApiConfigs).toHaveBeenCalledWith({ pageNum: 1, pageSize: 1000, projectId: 1, status: 1 })
     expect(vm.projectLists).toEqual([{ id: 9, listCode: 'mobile_black', listName: '手机号黑名单' }])
   })
 
@@ -143,6 +147,14 @@ describe('varPickerMixin', () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
     expect(vm.projectRefs.length).toBeGreaterThan(0)
+  })
+
+  test('projectRefs 包含外数 API 上下文字段', async () => {
+    const vm = createMixinVM()
+    await vm.loadProjectVars(1)
+    const external = vm.projectRefs.filter(ref => ref.category === 'external')
+    expect(external.some(ref => ref.refType === 'EXTERNAL_API' && ref.relativePath === 'response.httpStatus')).toBe(true)
+    expect(external.some(ref => ref.relativePath === 'response.headers')).toBe(true)
   })
 
   test('缓存设计器重新激活时刷新项目字段引用', async () => {
@@ -294,7 +306,7 @@ describe('varPickerMixin', () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
     const options = vm.varPickerOptions
-    expect(options.length).toBe(6) // 3 standalone + 1 constant + 1 object + 1 model
+    expect(options.length).toBe(6 + API_MODULE_FIELDS.length) // 变量/对象/模型 + 外数模块字段
     const ageOpt = options.find(o => o.varCode === 'age')
     expect(ageOpt).toBeDefined()
     expect(ageOpt.varLabel).toMatch(/年龄.*age/)
@@ -381,7 +393,7 @@ describe('varPickerMixin', () => {
   })
 
   // ─── 空数据边界测试 ─────────────────────────────────────
-  test('空变量列表时 projectRefs 为空', async () => {
+  test('空变量列表时仍保留可直接引用的外数模块字段', async () => {
     // beforeEach 已 mock getDefinition，此处只需覆盖返回空数组
     variableApi.listVariablesByProject.mockResolvedValue([])
     dataObjectApi.getVariableTree.mockResolvedValue([])
@@ -389,7 +401,7 @@ describe('varPickerMixin', () => {
 
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
-    expect(vm.projectRefs).toEqual([])
+    expect(vm.projectRefs.filter(ref => ref.category === 'external')).toHaveLength(API_MODULE_FIELDS.length)
     expect(vm.inputVars).toEqual([])
   })
 })

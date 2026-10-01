@@ -681,7 +681,7 @@
               <div class="open-api-title">对外规则契约</div>
               <div class="open-api-help">
                 调用地址
-                <code>POST /api/rule/open/execute/{{ rule.ruleCode }}</code
+                <code>POST /api/rule/openapi/{{ rule.ruleCode }}</code
                 >，业务 JSON 直接作为请求体，并携带项目鉴权与
                 <code>X-Auth-Code</code>。
               </div>

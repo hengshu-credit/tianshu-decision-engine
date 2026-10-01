@@ -73,7 +73,7 @@ export function renderOnlineRunnerScript() {
   function currentEndpoint() { return doc.rules.find(function (rule) { return text(rule.id || rule.ruleCode) === state.endpointId; }) || doc.rules[0]; }
   function currentAuth() { var index = Number(elements.auth.value); return doc.authentications[index] || null; }
   function endpointPath(rule) {
-    const prefix = rule && rule.openApiEnabled ? '/api/rule/open/execute/' : '/api/rule/sync/execute/'
+    const prefix = rule && rule.openApiEnabled ? '/api/rule/openapi/' : '/api/rule/sync/execute/'
     return prefix + encodeURIComponent(rule.ruleCode)
   }
   function inputValue(name) { var input = byId('credential-' + name); return input ? input.value : ''; }
@@ -90,14 +90,16 @@ export function renderOnlineRunnerScript() {
   }
   function buildBody(rule) {
     var value = rule && rule.openApiEnabled ? {} : { clientAppName: 'api-doc-example', params: {} };
-    (rule.requestFields || []).forEach(function (field) { setPath(value, field.path, exampleValue(field)); });
+    var fields = rule && rule.openApiEnabled ? (rule.openApiRequestFields || []) : (rule.requestFields || []);
+    fields.forEach(function (field) { setPath(value, field.path, exampleValue(field)); });
     return value;
   }
   function newFormRow(field) {
     return { id: state.nextFormRowId++, enabled: true, name: field ? field.path : '', type: 'TEXT', value: field ? formValue(exampleValue(field)) : '', description: field ? (field.label || field.description || '') : '', file: null };
   }
   function resetFormRows(rule) {
-    state.formRows = [newFormRow({ path: 'clientAppName', exampleValue: 'api-doc-example', label: '调用方应用名' })].concat((rule.requestFields || []).map(newFormRow));
+    var fields = rule && rule.openApiEnabled ? (rule.openApiRequestFields || []) : (rule.requestFields || []);
+    state.formRows = (rule && rule.openApiEnabled ? [] : [newFormRow({ path: 'clientAppName', exampleValue: 'api-doc-example', label: '调用方应用名' })]).concat(fields.map(newFormRow));
     renderFormRows();
   }
   function renderFormRows() {
