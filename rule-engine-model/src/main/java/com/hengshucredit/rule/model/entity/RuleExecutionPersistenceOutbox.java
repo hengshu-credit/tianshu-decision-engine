@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 
 /** 规则执行日志/计费部分失败后的可恢复事件。 */
 @Data
-@TableName("rule_engine.rule_execution_persistence_outbox")
+@TableName("rule_execution_persistence_outbox")
 public class RuleExecutionPersistenceOutbox {
     @TableId(type = IdType.AUTO)
     private Long id;

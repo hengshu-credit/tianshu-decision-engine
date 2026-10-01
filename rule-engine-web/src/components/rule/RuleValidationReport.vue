@@ -28,7 +28,7 @@
         </div>
       </div>
     </div>
-    <div v-if="warnings.length" class="issue-group">
+    <div v-if="warnings.length" class="issue-group issue-group--warning">
       <div class="issue-title">提醒</div>
       <div v-for="(issue, index) in warnings" :key="`warning-${index}`" class="issue-row">
         <strong>{{ issueTitle(issue, '校验提醒') }}</strong>
@@ -78,11 +78,12 @@ export default {
 .validation-report { display: grid; gap: 12px; }
 .validation-summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .validation-summary > div { display: grid; gap: 4px; }
-.summary-label, .issue-title { color: #6b7280; font-size: 12px; font-weight: 600; letter-spacing: .04em; }
-.issue-group { border-left: 4px solid #d6a23a; background: #fffbeb; padding: 12px 16px; }
-.issue-group--error { border-left-color: #d34a4a; background: #fff2f2; }
+.summary-label, .issue-title { color: var(--tianshu-text-tertiary); font-size: 12px; font-weight: 600; letter-spacing: .04em; }
+.issue-group { border: 1px solid var(--tianshu-status-warning-border); border-left-width: 4px; border-radius: 4px; background: var(--tianshu-status-warning-bg); padding: 12px 16px; color: var(--tianshu-text-primary); }
+.issue-group--warning { border-left-color: var(--tianshu-status-warning-solid); }
+.issue-group--error { border-color: var(--tianshu-status-danger-border); border-left-color: var(--tianshu-status-danger-solid); background: var(--tianshu-status-danger-bg); }
 .issue-row { display: grid; grid-template-columns: minmax(140px, auto) 1fr auto; gap: 12px; margin-top: 8px; font-size: 13px; line-height: 1.5; }
-.issue-row code { color: #6b7280; }
+.issue-row code { color: var(--tianshu-text-tertiary); }
 .issue-repair { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; color: var(--tianshu-text-secondary); }
 .issue-repair > span { flex: 1; min-width: 200px; }
 </style>

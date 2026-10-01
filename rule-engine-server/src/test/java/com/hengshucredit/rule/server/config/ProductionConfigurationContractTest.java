@@ -40,24 +40,32 @@ public class ProductionConfigurationContractTest {
     @Test
     public void containerConfigurationRequiresExternalPasswords() throws Exception {
         Path root = repositoryRoot();
-        String rootCompose = read(root.resolve("docker/docker-compose.yml"));
+        String appCompose = read(root.resolve("docker/docker-compose.yml"));
+        String fullCompose = read(root.resolve("docker/docker-compose.full.yml"));
         String mysqlCompose = read(root.resolve("docker/docker-compose.mysql.yml"));
         String redisCompose = read(root.resolve("docker/docker-compose.redis.yml"));
 
-        Assert.assertFalse(rootCompose.contains(LEGACY_SHARED_PASSWORD));
+        Assert.assertFalse(appCompose.contains(LEGACY_SHARED_PASSWORD));
+        Assert.assertFalse(fullCompose.contains(LEGACY_SHARED_PASSWORD));
         Assert.assertFalse(mysqlCompose.contains(LEGACY_SHARED_PASSWORD));
         Assert.assertFalse(redisCompose.contains(LEGACY_SHARED_PASSWORD));
-        Assert.assertTrue(rootCompose.contains("mysql-init:"));
-        Assert.assertTrue(rootCompose.contains("MYSQL_SERVICE_HOST"));
-        Assert.assertTrue(rootCompose.contains("condition: service_completed_successfully"));
-        Assert.assertTrue(rootCompose.contains("runtime-http:"));
-        Assert.assertTrue(rootCompose.contains("runtime-sdk:"));
-        Assert.assertTrue(rootCompose.contains("./tianshu-decision-engine-runtime"));
+        Assert.assertFalse(appCompose.contains("mysql-init:"));
+        Assert.assertTrue(appCompose.contains("MYSQL_SERVICE_HOST:-host.docker.internal"));
+        Assert.assertTrue(appCompose.contains("REDIS_SERVICE_HOST:-host.docker.internal"));
+        Assert.assertTrue(appCompose.contains("runtime-http:"));
+        Assert.assertTrue(appCompose.contains("runtime-sdk:"));
+        Assert.assertTrue(appCompose.contains("./tianshu-decision-engine-runtime"));
+        Assert.assertTrue(fullCompose.contains("mysql:"));
+        Assert.assertTrue(fullCompose.contains("redis:"));
+        Assert.assertTrue(fullCompose.contains("mysql-init:"));
+        Assert.assertTrue(fullCompose.contains("condition: service_completed_successfully"));
+        Assert.assertTrue(fullCompose.contains("  http:"));
+        Assert.assertTrue(fullCompose.contains("  sdk:"));
         Assert.assertTrue(mysqlCompose.contains("MYSQL_ROOT_PASSWORD: \"${MYSQL_ROOT_PASSWORD:?"));
         Assert.assertTrue(mysqlCompose.contains("MYSQL_USER: \"${MYSQL_USERNAME:?"));
         Assert.assertTrue(mysqlCompose.contains("MYSQL_PASSWORD: \"${MYSQL_PASSWORD:?"));
         Assert.assertTrue(redisCompose.contains("${REDIS_PASSWORD:?"));
-        Assert.assertTrue(rootCompose.contains("${REDIS_PASSWORD:?"));
+        Assert.assertTrue(appCompose.contains("${REDIS_PASSWORD:?"));
     }
 
     @Test

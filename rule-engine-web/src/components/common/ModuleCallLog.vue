@@ -5,6 +5,7 @@
         <div class="log-title">{{ title || profile.title }}</div>
         <div class="log-subtitle">{{ profile.subtitle }}</div>
       </div>
+      <table-column-settings :columns="moduleColumns" :storage-key="`tianshu:table-columns:module-log-${moduleType.toLowerCase()}`" />
       <el-button size="small" :icon="ElIconRefresh" @click="load"
         >刷新</el-button
       >
@@ -427,6 +428,7 @@
 <script>
 import { markRaw } from 'vue'
 import { Refresh as ElIconRefresh } from '@element-plus/icons-vue'
+import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import { ElMessage } from 'element-plus'
 import { plantRenderPara } from '../../utils/gogocodeTransfer'
 import * as Vue from 'vue'
@@ -530,6 +532,7 @@ export default {
   },
   name: 'ModuleCallLog',
   components: {
+    TableColumnSettings,
     RemoteFilterSelect,
     ProjectFilterSelect,
     ExternalCallTrace,
@@ -559,6 +562,24 @@ export default {
     title: { type: String, default: '' },
   },
   computed: {
+    moduleColumns() {
+      const columns = [
+        { key: 'actionType', label: '动作' },
+        { key: 'targetCode', label: this.profile.targetLabel },
+        { key: 'targetName', label: '名称' },
+        { key: 'traceId', label: '模块 trace' },
+      ]
+      if (this.profile.showMethod) columns.push({ key: 'requestMethod', label: this.profile.methodLabel })
+      if (this.profile.showResource) columns.push({ key: 'requestUrl', label: this.profile.resourceLabel })
+      if (this.profile.showProject) columns.push({ key: 'projectCode', label: '项目编码' })
+      columns.push(
+        { key: 'summary', label: this.profile.summaryLabel },
+        { key: 'success', label: '结果' },
+        { key: 'costTimeMs', label: '耗时(ms)' },
+        { key: 'createTime', label: '时间' },
+      )
+      return columns
+    },
     profile() {
       return PROFILES[this.moduleType] || PROFILES.DATASOURCE
     },

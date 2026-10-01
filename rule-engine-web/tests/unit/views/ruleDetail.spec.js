@@ -158,6 +158,16 @@ describe('RuleDetail 生命周期治理', () => {
     wrapper.unmount()
   })
 
+  test.each([
+    ['DECISION_TREE', 'DecisionTree'],
+    ['DECISION_FLOW', 'DecisionFlow'],
+  ])('normalizes legacy model type %s before entering the designer', async (modelType, routeName) => {
+    const wrapper = await mountAndWait()
+
+    expect(wrapper.vm.designerRouteName(modelType)).toBe(routeName)
+    wrapper.unmount()
+  })
+
   test('opens a revision designer using the stable revision ID', async () => {
     const wrapper = await mountAndWait()
     const revision = { id: 91, revisionNo: 7 }

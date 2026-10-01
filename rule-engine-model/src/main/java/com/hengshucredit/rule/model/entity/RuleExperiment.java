@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @Data
-@TableName("rule_engine.rule_experiment")
+@TableName("rule_experiment")
 public class RuleExperiment {
     @TableId(type = IdType.AUTO)
     private Long id;

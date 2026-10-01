@@ -1,0 +1,312 @@
+# 一键完整 Compose：MySQL + Redis + server + HTTP + SDK + web。
+name: ${DEPLOY_PROJECT:-tianshu}
+
+x-java: &java
+  image: ${JAVA_IMAGE:-eclipse-temurin:17-jre-jammy}
+  restart: unless-stopped
+  init: true
+  working_dir: /app
+  environment: &java-env
+    TZ: Asia/Shanghai
+    SERVER_SHUTDOWN: graceful
+    SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: ${SHUTDOWN_TIMEOUT:-120s}
+    LOGGING_FILE_NAME: /data/logs/application.log
+  stop_grace_period: 180s
+  logging:
+    driver: json-file
+    options:
+      max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
+      max-file: "${DOCKER_LOG_MAX_FILES:-5}"
+  networks: [rule-engine]
+  extra_hosts:
+    - host.docker.internal:host-gateway
+
+x-runtime: &runtime
+  <<: *java
+  volumes:
+    - type: bind
+      source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/runtime.jar
+      target: /app/app.jar
+      read_only: true
+      bind:
+        create_host_path: false
+
+services:
+  mysql:
+    image: ${MYSQL_IMAGE:-mysql:8.4.6}
+    container_name: rule-engine-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}"
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-rule_engine}"
+      MYSQL_USER: "${MYSQL_USERNAME:?Set MYSQL_USERNAME}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}"
+      TZ: Asia/Shanghai
+    command:
+      - --max-connections=${MYSQL_MAX_CONNECTIONS:-300}
+      - --innodb-buffer-pool-size=${MYSQL_BUFFER_POOL_SIZE:-1G}
+      - --max-allowed-packet=512M
+      - --character-set-server=utf8mb4
+      - --mysql-native-password=ON
+      - --bind-address=${MYSQL_BIND_ADDRESS:-0.0.0.0}
+    ports:
+      - "${MYSQL_HOST_PORT:-3306}:3306"
+    volumes:
+      - ./rule-engine-mysql/data:/var/lib/mysql
+      - ./rule-engine-mysql/logs:/var/log/mysql
+      - ./rule-engine-mysql/conf.d:/etc/mysql/conf.d:ro
+      - ../rule-engine-server/src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ../rule-engine-server/src/main/resources/sql/data.sql:/docker-entrypoint-initdb.d/02-data.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_ROOT_PASSWORD}\" mysqladmin ping -h127.0.0.1 -uroot --silent"]
+      interval: 10s
+      timeout: 10s
+      retries: 60
+      start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
+        max-file: "${DOCKER_LOG_MAX_FILES:-5}"
+    networks: [rule-engine]
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:8.2.1}
+    container_name: rule-engine-redis
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-512mb}
+      TZ: Asia/Shanghai
+    command:
+      - sh
+      - -ec
+      - |
+        exec redis-server /usr/local/etc/redis/redis.conf --maxmemory "$${REDIS_MAXMEMORY}" --requirepass "$${REDIS_PASSWORD}"
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - ./rule-engine-redis/data:/data
+      - ./rule-engine-redis/logs:/logs
+      - ./rule-engine-redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    logging:
+      driver: json-file
+      options:
+        max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
+        max-file: "${DOCKER_LOG_MAX_FILES:-5}"
+    networks: [rule-engine]
+
+  mysql-init:
+    image: ${MYSQL_IMAGE:-mysql:8.4.6}
+    restart: "no"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-rule_engine}
+      MYSQL_INIT_USERNAME: ${MYSQL_INIT_USERNAME:-root}
+      MYSQL_INIT_PASSWORD: "${MYSQL_INIT_PASSWORD:-${MYSQL_ROOT_PASSWORD:-}}"
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-}"
+      MYSQL_INIT_SKIP: ${MYSQL_INIT_SKIP:-false}
+      MYSQL_INIT_LOAD_SNAPSHOT: ${MYSQL_INIT_LOAD_SNAPSHOT:-false}
+    volumes:
+      - ../rule-engine-server/src/main/resources/sql/schema.sql:/init/schema.sql:ro
+      - ../rule-engine-server/src/main/resources/sql/data.sql:/init/data.sql:ro
+    command:
+      - sh
+      - -ec
+      - |
+        if [ "$${MYSQL_INIT_SKIP}" = "true" ]; then exit 0; fi
+        password="$${MYSQL_INIT_PASSWORD:-$${MYSQL_ROOT_PASSWORD}}"
+        test -n "$${password}" || { echo 'MYSQL_INIT_PASSWORD or MYSQL_ROOT_PASSWORD is required' >&2; exit 1; }
+        until MYSQL_PWD="$${password}" mysqladmin ping --protocol=tcp -hmysql -P3306 -u"$${MYSQL_INIT_USERNAME}" --silent; do sleep 2; done
+        MYSQL_PWD="$${password}" mysql --protocol=tcp -hmysql -P3306 -u"$${MYSQL_INIT_USERNAME}" -e "CREATE DATABASE IF NOT EXISTS \\`$${MYSQL_DATABASE}\\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
+        MYSQL_PWD="$${password}" mysql --protocol=tcp -hmysql -P3306 -u"$${MYSQL_INIT_USERNAME}" "$${MYSQL_DATABASE}" < /init/schema.sql
+        if [ "$${MYSQL_INIT_LOAD_SNAPSHOT}" = "true" ]; then MYSQL_PWD="$${password}" mysql --protocol=tcp -hmysql -P3306 -u"$${MYSQL_INIT_USERNAME}" "$${MYSQL_DATABASE}" < /init/data.sql; fi
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [rule-engine]
+
+  server:
+    <<: *java
+    depends_on:
+      mysql-init:
+        condition: service_completed_successfully
+    environment:
+      <<: *java-env
+      SERVER_PORT: 8080
+      MYSQL_HOST: mysql
+      MYSQL_PORT: ${MYSQL_SERVICE_PORT:-3306}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-rule_engine}
+      MYSQL_USERNAME: "${MYSQL_USERNAME:?Set MYSQL_USERNAME}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}"
+      REDIS_HOST: redis
+      REDIS_PORT: ${REDIS_SERVICE_PORT:-6379}
+      REDIS_DATABASE: ${REDIS_DATABASE:-0}
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
+      SPRING_SQL_INIT_MODE: never
+      RULE_AUTH_MASTER_KEY: "${RULE_AUTH_MASTER_KEY:?Set RULE_AUTH_MASTER_KEY}"
+      RULE_AUTH_ACTIVE_KEY_ID: ${RULE_AUTH_ACTIVE_KEY_ID:-v2}
+      RULE_AUTH_LEGACY_MASTER_KEY: ${RULE_AUTH_LEGACY_MASTER_KEY:-}
+      RULE_AUTH_LEGACY_V2_MASTER_KEY: ${RULE_AUTH_LEGACY_V2_MASTER_KEY:-}
+      CONSOLE_USERNAME: "${CONSOLE_USERNAME:?Set CONSOLE_USERNAME}"
+      CONSOLE_PASSWORD: "${CONSOLE_PASSWORD:?Set CONSOLE_PASSWORD}"
+      CONSOLE_PASSWORD_ENCODING: ${CONSOLE_PASSWORD_ENCODING:-BCRYPT}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+      SESSION_REDIS_NAMESPACE: ${SESSION_REDIS_NAMESPACE:-tianshu:session}
+      CORS_ALLOWED_ORIGIN_PATTERNS: "${CORS_ALLOWED_ORIGIN_PATTERNS:?Set CORS_ALLOWED_ORIGIN_PATTERNS}"
+      JAVA_TOOL_OPTIONS: ${SERVER_JAVA_TOOL_OPTIONS:--Xms256m -Xmx1536m -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:+ExitOnOutOfMemoryError}
+      LOGGING_LEVEL_ROOT: ${SERVER_LOG_LEVEL:-INFO}
+      RULE_EXECUTION_PERSISTENCE_JOURNAL_DIR: /data/logs/execution-persistence-journal
+    volumes:
+      - type: bind
+        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/server.jar
+        target: /app/app.jar
+        read_only: true
+        bind:
+          create_host_path: false
+      - server-logs:/data/logs
+    command: ["java", "-jar", "/app/app.jar"]
+    ports:
+      - "${SERVER_PUBLIC_PORT:-8080}:8080"
+    expose: ["8080"]
+
+  http:
+    <<: *runtime
+    depends_on:
+      server:
+        condition: service_started
+    environment:
+      <<: *java-env
+      SPRING_PROFILES_ACTIVE: http
+      SERVER_PORT: 7070
+      RULE_SERVER_URL: ${RUNTIME_RULE_SERVER_URL:-http://server:8080}
+      PROJECT_ACCESS_TOKEN: "${RUNTIME_PROJECT_ACCESS_TOKEN:?Set RUNTIME_PROJECT_ACCESS_TOKEN}"
+      RULE_ALLOWED_CODES: "${HTTP_RULE_ALLOWED_CODES:?Set HTTP_RULE_ALLOWED_CODES}"
+      RULE_TRACE_ENABLED: ${RUNTIME_TRACE_ENABLED:-true}
+      RULE_HTTP_TIMEOUT_MS: ${RULE_HTTP_TIMEOUT_MS:-30000}
+      RUNTIME_ACCESS_TOKEN: "${HTTP_ACCESS_TOKEN:?Set HTTP_ACCESS_TOKEN}"
+      RUNTIME_APP_NAME: ${RUNTIME_HTTP_APP_NAME:-runtime-http}
+      RUNTIME_CORS_ALLOWED_ORIGINS: "${RUNTIME_CORS_ALLOWED_ORIGINS:?Set RUNTIME_CORS_ALLOWED_ORIGINS}"
+      JAVA_TOOL_OPTIONS: ${RUNTIME_HTTP_JAVA_TOOL_OPTIONS:--Xms128m -Xmx512m -XX:MaxMetaspaceSize=128m -XX:MaxDirectMemorySize=128m -XX:+ExitOnOutOfMemoryError}
+      LOGGING_LEVEL_ROOT: ${RUNTIME_LOG_LEVEL:-INFO}
+    volumes:
+      - type: bind
+        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/runtime.jar
+        target: /app/app.jar
+        read_only: true
+        bind:
+          create_host_path: false
+      - runtime-http-logs:/data/logs
+    command: ["java", "-jar", "/app/app.jar"]
+    ports:
+      - "${RUNTIME_HTTP_PORT:-7070}:7070"
+    expose: ["7070"]
+
+  sdk:
+    <<: *runtime
+    depends_on:
+      server:
+        condition: service_started
+    environment:
+      <<: *java-env
+      SPRING_PROFILES_ACTIVE: sdk
+      SERVER_PORT: 7071
+      RULE_SERVER_URL: ${RUNTIME_RULE_SERVER_URL:-http://server:8080}
+      PROJECT_ACCESS_TOKEN: "${RUNTIME_PROJECT_ACCESS_TOKEN:?Set RUNTIME_PROJECT_ACCESS_TOKEN}"
+      RULE_ALLOWED_CODES: "${SDK_RULE_ALLOWED_CODES:?Set SDK_RULE_ALLOWED_CODES}"
+      RULE_TRACE_ENABLED: ${RUNTIME_TRACE_ENABLED:-true}
+      RULE_HTTP_TIMEOUT_MS: ${RULE_HTTP_TIMEOUT_MS:-30000}
+      RUNTIME_ACCESS_TOKEN: "${SDK_ACCESS_TOKEN:?Set SDK_ACCESS_TOKEN}"
+      RUNTIME_APP_NAME: ${RUNTIME_SDK_APP_NAME:-runtime-sdk}
+      RUNTIME_CORS_ALLOWED_ORIGINS: "${RUNTIME_CORS_ALLOWED_ORIGINS:?Set RUNTIME_CORS_ALLOWED_ORIGINS}"
+      RULE_PROJECT_CODE: "${RUNTIME_RULE_PROJECT_CODE:?Set RUNTIME_RULE_PROJECT_CODE}"
+      RULE_PROJECT_ID: "${RUNTIME_RULE_PROJECT_ID:?Set RUNTIME_RULE_PROJECT_ID}"
+      SDK_CACHE_MAX_SIZE: ${SDK_CACHE_MAX_SIZE:-1000}
+      SDK_LOG_REPORT_ENABLED: ${SDK_LOG_REPORT_ENABLED:-true}
+      REDIS_HOST: redis
+      REDIS_PORT: ${REDIS_SERVICE_PORT:-6379}
+      REDIS_DATABASE: ${REDIS_DATABASE:-0}
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: ${REDIS_SERVICE_PORT:-6379}
+      SPRING_DATA_REDIS_DATABASE: ${REDIS_DATABASE:-0}
+      SPRING_DATA_REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
+      JAVA_TOOL_OPTIONS: ${RUNTIME_SDK_JAVA_TOOL_OPTIONS:--Xms128m -Xmx768m -XX:MaxMetaspaceSize=160m -XX:MaxDirectMemorySize=160m -XX:+ExitOnOutOfMemoryError}
+      LOGGING_LEVEL_ROOT: ${RUNTIME_LOG_LEVEL:-INFO}
+    volumes:
+      - type: bind
+        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/runtime.jar
+        target: /app/app.jar
+        read_only: true
+        bind:
+          create_host_path: false
+      - runtime-sdk-logs:/data/logs
+    command: ["java", "-jar", "/app/app.jar"]
+    ports:
+      - "${RUNTIME_SDK_PORT:-7071}:7071"
+    expose: ["7071"]
+
+  web:
+    image: ${NGINX_IMAGE:-nginx:1.29.1-alpine}
+    restart: unless-stopped
+    init: true
+    depends_on:
+      server:
+        condition: service_started
+    volumes:
+      - type: bind
+        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/dist
+        target: /usr/share/nginx/html
+        read_only: true
+        bind:
+          create_host_path: false
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        cat > /etc/nginx/conf.d/default.conf <<'EOF'
+        server {
+          listen 80;
+          root /usr/share/nginx/html;
+          index index.html;
+          client_max_body_size 512m;
+          location /api/ {
+            proxy_pass http://server:8080;
+            proxy_set_header Host $$host;
+            proxy_set_header X-Real-IP $$remote_addr;
+            proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $$scheme;
+          }
+          location / {
+            try_files $$uri $$uri/ /index.html;
+          }
+        }
+        EOF
+        exec nginx -g 'daemon off;'
+    ports:
+      - "${FRONTEND_PORT:-9090}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/index.html >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [rule-engine]
+
+volumes:
+  server-logs:
+  runtime-http-logs:
+  runtime-sdk-logs:
+
+networks:
+  rule-engine:
+    name: ${ENGINE_NETWORK:-${DEPLOY_PROJECT:-tianshu}-engine}
+    driver: bridge

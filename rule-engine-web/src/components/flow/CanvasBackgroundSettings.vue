@@ -16,7 +16,7 @@
         <label><span>背景透明度</span><el-slider :disabled="!backgroundEnabled" :model-value="backgroundOpacity" :min="0" :max="1" :step="0.05" @change="change({ backgroundOpacity: $event })" /></label>
         <label><span>背景颜色</span><el-color-picker :disabled="!backgroundEnabled" :model-value="backgroundColor || '#0f1629'" show-alpha @change="change({ backgroundColor: $event || '' })" /></label>
       </div>
-      <div class="canvas-settings__section">
+      <div v-if="showEdgeAnimation" class="canvas-settings__section">
         <strong>选中动画</strong>
         <label><span>节点/边选中后开启边动画</span><el-switch :model-value="edgeAnimationEnabled" @change="change({ edgeAnimationEnabled: $event })" /></label>
       </div>
@@ -46,6 +46,7 @@ export default {
     backgroundColor: { type: String, default: '' },
     backgroundEnabled: { type: Boolean, default: false },
     edgeAnimationEnabled: { type: Boolean, default: true },
+    showEdgeAnimation: { type: Boolean, default: true },
   },
   emits: ['change'],
   data: () => ({ ElIconGrid: markRaw(ElIconGrid) }),

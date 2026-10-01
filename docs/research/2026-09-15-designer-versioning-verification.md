@@ -19,8 +19,8 @@
 
 已有数据库需要依次执行：
 
-1. `rule-engine-server/src/main/resources/sql/migrate-designer-drafts-20260914.sql`
-2. `rule-engine-server/src/main/resources/sql/migrate-rule-business-versions-20260915.sql`
+1. `rule-engine-server/src/main/resources/sql/schema.sql`
+2. `rule-engine-server/src/main/resources/sql/data.sql`
 
 本地 Docker 数据库已执行；两份迁移各重复执行两遍验证幂等。迁移前后的规则修订、审批、历史版本快照数量不变。新增绑定表与元数据列，不重放初始化 export，不覆盖已有业务数据。
 

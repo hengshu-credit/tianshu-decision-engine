@@ -110,6 +110,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
+              <table-column-settings :columns="datasourceColumns" storage-key="tianshu:table-columns:datasource-list" />
               <el-button
                 v-permission="'datasource:edit'"
                 type="primary"
@@ -336,6 +337,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
+              <table-column-settings :columns="apiColumns" storage-key="tianshu:table-columns:api-list" />
               <el-button
                 v-permission="'datasource:edit'"
                 type="primary"
@@ -1373,11 +1375,23 @@ import ExternalApiMonitor from '@/components/common/ExternalApiMonitor.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import { routeProjectId } from '@/utils/projectContext'
 
 export default {
   data() {
     return {
+      datasourceColumns: [
+        { key: 'scope', label: '作用范围' }, { key: 'projectName', label: '项目名称' },
+        { key: 'datasourceCode', label: '数据源编码' }, { key: 'datasourceName', label: '数据源名称' },
+        { key: 'providerName', label: '提供方' }, { key: 'protocol', label: '协议' },
+        { key: 'baseUrl', label: '基础地址' }, { key: 'authType', label: '鉴权方式' }, { key: 'status', label: '状态' },
+      ],
+      apiColumns: [
+        { key: 'apiCode', label: '接口编码' }, { key: 'apiName', label: '接口名称' },
+        { key: 'request', label: '请求' }, { key: 'mode', label: '模式' }, { key: 'auth', label: '鉴权' },
+        { key: 'timeout', label: '超时/重试' }, { key: 'cache', label: '响应缓存' }, { key: 'status', label: '状态' },
+      ],
       apiGuideTemplates: [
         {
           title: 'HTTP 外数模板',
@@ -1536,6 +1550,7 @@ export default {
   },
   name: 'DatasourceList',
   components: {
+    TableColumnSettings,
     ModuleCallLog,
     ExternalApiMonitor,
     MonacoEditor,

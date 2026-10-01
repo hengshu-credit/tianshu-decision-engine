@@ -88,6 +88,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
+              <table-column-settings :columns="listColumns" storage-key="tianshu:table-columns:list-library" />
               <el-button
                 v-permission="'field:edit'"
                 type="primary"
@@ -333,10 +334,17 @@ import {
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 
 export default {
   data() {
     return {
+      listColumns: [
+        { key: 'scope', label: '作用范围' }, { key: 'projectName', label: '项目名称' },
+        { key: 'listCode', label: '名单编码' }, { key: 'listName', label: '名单名称' },
+        { key: 'listType', label: '名单类型' }, { key: 'recordCount', label: '有效记录' },
+        { key: 'description', label: '说明' }, { key: 'status', label: '状态' },
+      ],
       loading: false,
       activeTab: 'list',
       tableData: [],
@@ -372,7 +380,7 @@ export default {
     }
   },
   name: 'ListLibrary',
-  components: { ModuleCallLog, RemoteFilterSelect, ProjectFilterSelect },
+  components: { ModuleCallLog, RemoteFilterSelect, ProjectFilterSelect, TableColumnSettings },
   created() {
     this.loadProjects()
     this.loadData()

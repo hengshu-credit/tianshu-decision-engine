@@ -21,5 +21,6 @@ describe('RuleValidationReport', () => {
     expect(wrapper.text()).toContain('MODEL_MISSING')
     expect(wrapper.text()).toContain('删除输出字段')
     expect(wrapper.find('el-alert-stub').attributes('title')).toContain('风险接受原因')
+    expect(wrapper.find('.issue-group--warning').exists()).toBe(true)
   })
 })

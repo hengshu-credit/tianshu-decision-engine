@@ -19,6 +19,7 @@ services:
       - --max-allowed-packet=512M
       - --character-set-server=utf8mb4
       - --mysql-native-password=ON
+      - --bind-address=${MYSQL_BIND_ADDRESS:-0.0.0.0}
     ports:
       - "${MYSQL_HOST_PORT:-3306}:3306"
     volumes:
@@ -26,7 +27,7 @@ services:
       - ./rule-engine-mysql/logs:/var/log/mysql
       - ./rule-engine-mysql/conf.d:/etc/mysql/conf.d:ro
       - ../rule-engine-server/src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-      - ../rule-engine-server/src/main/resources/sql/export_202607161151.sql:/docker-entrypoint-initdb.d/02-export.sql:ro
+      - ../rule-engine-server/src/main/resources/sql/data.sql:/docker-entrypoint-initdb.d/02-data.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_ROOT_PASSWORD}\" mysqladmin ping -h127.0.0.1 -uroot --silent"]
       interval: 10s

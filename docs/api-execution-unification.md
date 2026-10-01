@@ -67,7 +67,7 @@ API 返回 `body`（组装结果）、`response`（原始状态码、响应头�
 
 新配置保存为 `executionConfig.version=2`。原有未升级配置继续使用原协议解析，通过统一消费入口复用结果。直接外数调用函数已停用，需改用 API 变量或数据对象引用。
 
-新增数据库字段为 `rule_external_api_config.execution_config`、`rule_data_object_field.source_config`；字段来源路径沿用 `source_path`。新库 schema、启动同步和幂等迁移脚本 `migrate-external-api-execution-20260930.sql` 已覆盖。
+新增数据库字段为 `rule_external_api_config.execution_config`、`rule_data_object_field.source_config`；字段来源路径沿用 `source_path`。新库 `schema.sql` 已直接包含最终字段，存量库升级由应用启动同步负责。
 
 ## 验收记录（2026-09-30）
 
@@ -82,7 +82,7 @@ API 返回 `body`（组装结果）、`response`（原始状态码、响应头�
 
 ## 大字段留存与配置存储
 
-外数配置中的鉴权、Header、Query、请求/响应映射、统一执行链路、轮询、回调、计费、报文留存和测试样例由应用层校验 JSON，数据库优先使用原生 `JSON` 列，便于后续按路径查询；请求体模板、请求脚本和响应脚本等非结构化内容继续使用 `LONGTEXT`。启动同步和 `migrate-external-api-json-config-20260930.sql` 会将历史配置列转换回 JSON，发现非法旧 JSON 时只告警并保留原列，避免静默丢失。
+外数配置中的鉴权、Header、Query、请求/响应映射、统一执行链路、轮询、回调、计费、报文留存和测试样例由应用层校验 JSON，数据库优先使用原生 `JSON` 列，便于后续按路径查询；请求体模板、请求脚本和响应脚本等非结构化内容继续使用 `LONGTEXT`。应用启动同步会将历史配置列转换回 JSON，发现非法旧 JSON 时只告警并保留原列，避免静默丢失。
 
 报文留存默认保存原文和全部字段。可在请求或响应侧按 JSONPath 添加“超长字段策略”：未配置或标记“保存”的路径继续保存，标记“省略”的路径始终从诊断副本移除，不根据本次实际内容长度临时改变意图；规则实际请求和响应不受该诊断策略影响。
 

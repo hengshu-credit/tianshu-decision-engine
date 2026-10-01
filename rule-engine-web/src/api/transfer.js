@@ -52,3 +52,7 @@ export function listTransferLogs(params) {
 export function getTransferLog(id) {
   return request({ url: `/rule/transfer/logs/${id}`, method: 'get' })
 }
+
+export function getTransferLogLineage(id) {
+  return request({ url: `/rule/transfer/logs/${id}/lineage`, method: 'get' })
+}

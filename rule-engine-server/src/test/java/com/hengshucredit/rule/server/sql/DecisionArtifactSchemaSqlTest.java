@@ -48,16 +48,18 @@ public class DecisionArtifactSchemaSqlTest {
     }
 
     @Test
-    public void existingTablesUpgradeWithRevisionArtifactAndModelDigestColumns() throws Exception {
+    public void canonicalTablesContainRevisionArtifactAndModelDigestColumns() throws Exception {
         String sql = readSchema();
 
-        Assert.assertTrue(sql.contains("ADD COLUMN `revision_id` BIGINT"));
-        Assert.assertTrue(sql.contains("ADD COLUMN `artifact_digest` CHAR(64)"));
-        Assert.assertTrue(sql.contains("ADD COLUMN `model_digest` CHAR(64)"));
-        Assert.assertTrue(sql.contains("ADD COLUMN `input_schema_json` LONGTEXT"));
-        Assert.assertTrue(sql.contains("ADD COLUMN `output_schema_json` LONGTEXT"));
-        Assert.assertTrue(sql.contains("ADD COLUMN `validation_report_json` LONGTEXT"));
-        Assert.assertTrue(sql.contains("ADD COLUMN `runtime_constraints_json` LONGTEXT"));
+        Assert.assertTrue(sql.contains("`revision_id`"));
+        Assert.assertTrue(sql.contains("`artifact_digest`"));
+        Assert.assertTrue(sql.contains("`model_digest`"));
+        Assert.assertTrue(sql.contains("`input_schema_json`"));
+        Assert.assertTrue(sql.contains("`output_schema_json`"));
+        Assert.assertTrue(sql.contains("`validation_report_json`"));
+        Assert.assertTrue(sql.contains("`runtime_constraints_json`"));
+        Assert.assertFalse(sql.contains("ALTER TABLE"));
+        Assert.assertFalse(sql.contains("CREATE PROCEDURE"));
     }
 
     private static String readSchema() throws Exception {

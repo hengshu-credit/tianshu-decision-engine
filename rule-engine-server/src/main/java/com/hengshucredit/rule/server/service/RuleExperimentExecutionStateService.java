@@ -33,7 +33,7 @@ public class RuleExperimentExecutionStateService {
             String rootTrace = traceId == null || traceId.isBlank() ? com.hengshucredit.rule.core.trace.TraceIdGenerator.generate(
                     com.hengshucredit.rule.core.trace.TraceIdGenerator.moduleTypeCode("EXPERIMENT"), "P",
                     com.hengshucredit.rule.core.trace.TraceIdGenerator.projectScopeCode(projectId)) : traceId;
-            int inserted = jdbcTemplate.update("INSERT IGNORE INTO rule_engine.rule_experiment_execution_state "
+            int inserted = jdbcTemplate.update("INSERT IGNORE INTO rule_experiment_execution_state "
                             + "(project_id, experiment_id, experiment_code, request_key_hash, request_digest, "
                             + "experiment_trace_id, config_digest, status, attempt_no, lease_owner, lease_until, expire_time) "
                             + "VALUES (?, ?, ?, ?, ?, ?, ?, 'RUNNING', 1, ?, DATE_ADD(NOW(6), INTERVAL 120 SECOND), "
@@ -47,7 +47,7 @@ public class RuleExperimentExecutionStateService {
             return Decision.completed(state, JSON.parseObject(state.resultJson(), RuleExperimentExecuteResult.class));
         }
         String owner = UUID.randomUUID().toString();
-        boolean claimed = jdbcTemplate.update("UPDATE rule_engine.rule_experiment_execution_state SET lease_owner=?, "
+        boolean claimed = jdbcTemplate.update("UPDATE rule_experiment_execution_state SET lease_owner=?, "
                         + "lease_until=DATE_ADD(NOW(6), INTERVAL 120 SECOND), expire_time=DATE_ADD(NOW(6), INTERVAL 86400 SECOND), "
                         + "attempt_no=attempt_no+1, config_digest=?, status='RUNNING', result_json=NULL, finish_time=NULL "
                         + "WHERE id=? AND (lease_until IS NULL OR lease_until<NOW(6) OR lease_owner=?)",
@@ -58,7 +58,7 @@ public class RuleExperimentExecutionStateService {
 
     public void complete(Decision decision, RuleExperimentExecuteResult result) {
         if (decision == null || !decision.claimed) return;
-        jdbcTemplate.update("UPDATE rule_engine.rule_experiment_execution_state SET status=?, result_json=?, "
+        jdbcTemplate.update("UPDATE rule_experiment_execution_state SET status=?, result_json=?, "
                         + "error_message=?, lease_owner=NULL, lease_until=NULL, finish_time=NOW(6) "
                         + "WHERE id=? AND lease_owner=? AND lease_until>NOW(6)",
                 result != null && result.isSuccess() ? "SUCCEEDED" : "FAILED_RETRYABLE",
@@ -68,7 +68,7 @@ public class RuleExperimentExecutionStateService {
 
     public void release(Decision decision, String errorMessage) {
         if (decision == null || !decision.claimed) return;
-        jdbcTemplate.update("UPDATE rule_engine.rule_experiment_execution_state SET status='FAILED_RETRYABLE', "
+        jdbcTemplate.update("UPDATE rule_experiment_execution_state SET status='FAILED_RETRYABLE', "
                         + "error_message=?, lease_owner=NULL, lease_until=NULL, finish_time=NOW(6) "
                         + "WHERE id=? AND lease_owner=? AND lease_until>NOW(6)",
                 errorMessage, decision.state.id(), decision.owner);
@@ -77,7 +77,7 @@ public class RuleExperimentExecutionStateService {
     public State find(Long projectId, Long experimentId, String keyHash) {
         return jdbcTemplate.query("SELECT id, project_id, experiment_id, experiment_code, request_key_hash, request_digest, "
                         + "experiment_trace_id, config_digest, status, attempt_no, result_json, error_message, lease_owner, lease_until, expire_time "
-                        + "FROM rule_engine.rule_experiment_execution_state WHERE project_id=? AND experiment_id=? AND request_key_hash=? LIMIT 1",
+                        + "FROM rule_experiment_execution_state WHERE project_id=? AND experiment_id=? AND request_key_hash=? LIMIT 1",
                 (rs, row) -> new State(rs.getLong("id"), rs.getLong("project_id"), rs.getLong("experiment_id"),
                         rs.getString("experiment_code"), rs.getString("request_key_hash"), rs.getString("request_digest"),
                         rs.getString("experiment_trace_id"), rs.getString("config_digest"), rs.getString("status"),
@@ -88,7 +88,7 @@ public class RuleExperimentExecutionStateService {
     }
 
     private void deleteExpired(Long projectId, Long experimentId, String keyHash) {
-        jdbcTemplate.update("DELETE FROM rule_engine.rule_experiment_execution_state WHERE project_id=? AND experiment_id=? "
+        jdbcTemplate.update("DELETE FROM rule_experiment_execution_state WHERE project_id=? AND experiment_id=? "
                         + "AND request_key_hash=? AND expire_time<=NOW(6) AND status<>'RUNNING' "
                         + "AND (lease_until IS NULL OR lease_until<=NOW(6))", projectId, experimentId, keyHash);
     }

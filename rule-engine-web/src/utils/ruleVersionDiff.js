@@ -532,16 +532,22 @@ function scoreItemNode(item, index) {
     : legacyReference(score))
   const conditionValue = score.condValue !== undefined ? score.condValue : score.value
   const right = score.rightOperand || literalOperand(conditionValue, score.condVarType || score.varType)
-  return semanticNode('score-item', score.label || score.varLabel || '评分项 ' + (index + 1), {
+  const hasStructuredCondition = Boolean(
+    left || score.operator || score.condOperator || score.condValue !== undefined || score.value !== undefined
+  )
+  const fields = hasStructuredCondition
+    ? [
+        referenceField('leftOperand', '评分字段', left),
+        field('operator', '判断关系', score.operator || score.condOperator || ''),
+        referenceField('rightOperand', '比较值', right)
+      ]
+    : [field('condition', '评分条件', score.condition || '未配置')]
+  fields.push(field('score', '分值', score.score))
+  fields.push(field('weight', '权重', score.weight))
+  return semanticNode('score-item', score.conditionLabel || score.label || score.varLabel || '评分项 ' + (index + 1), {
     identity: score.id != null ? 'score:' + score.id : '',
     matchKey: 'score:' + (referenceKey(left) || index),
-    fields: [
-      referenceField('leftOperand', '评分字段', left),
-      field('operator', '判断关系', score.operator || score.condOperator || ''),
-      referenceField('rightOperand', '比较值', right),
-      field('score', '分值', score.score),
-      field('weight', '权重', score.weight)
-    ]
+    fields
   })
 }
 

@@ -24,7 +24,7 @@ public class RuleExecutionStateService {
                 "SELECT id, project_id, definition_id, rule_code, idempotency_key_hash, request_digest, "
                         + "root_trace_id, status, attempt_no, initial_revision_id, current_revision_id, "
                         + "current_artifact_digest, checkpoint_json, result_json, lease_owner, lease_until, error_message, expire_time "
-                        + "FROM rule_engine.rule_execution_state WHERE project_id = ? AND definition_id = ? "
+                        + "FROM rule_execution_state WHERE project_id = ? AND definition_id = ? "
                         + "AND idempotency_key_hash = ? LIMIT 1",
                 stateRowMapper(),
                 projectId, definitionId, keyHash);
@@ -37,7 +37,7 @@ public class RuleExecutionStateService {
                 "SELECT id, project_id, definition_id, rule_code, idempotency_key_hash, request_digest, "
                         + "root_trace_id, status, attempt_no, initial_revision_id, current_revision_id, "
                         + "current_artifact_digest, checkpoint_json, result_json, lease_owner, lease_until, error_message, expire_time "
-                        + "FROM rule_engine.rule_execution_state WHERE root_trace_id = ? LIMIT 1",
+                        + "FROM rule_execution_state WHERE root_trace_id = ? LIMIT 1",
                 stateRowMapper(), rootTraceId);
         return rows.isEmpty() ? null : rows.get(0);
     }
@@ -65,7 +65,7 @@ public class RuleExecutionStateService {
                         String requestDigest, String rootTraceId, Long revisionId, String artifactDigest,
                         String owner, int leaseSeconds, int retentionSeconds) {
         int inserted = jdbcTemplate.update(
-                    "INSERT IGNORE INTO rule_engine.rule_execution_state "
+                    "INSERT IGNORE INTO rule_execution_state "
                             + "(project_id, definition_id, rule_code, idempotency_key_hash, request_digest, "
                             + "root_trace_id, status, attempt_no, initial_revision_id, current_revision_id, "
                             + "current_artifact_digest, lease_owner, lease_until, expire_time, create_time, update_time) "
@@ -79,7 +79,7 @@ public class RuleExecutionStateService {
     }
 
     public void deleteExpired(Long projectId, Long definitionId, String keyHash) {
-        jdbcTemplate.update("DELETE FROM rule_engine.rule_execution_state WHERE project_id = ? "
+        jdbcTemplate.update("DELETE FROM rule_execution_state WHERE project_id = ? "
                         + "AND definition_id = ? AND idempotency_key_hash = ? AND expire_time IS NOT NULL "
                         + "AND expire_time <= NOW(6) AND status <> 'RUNNING' "
                         + "AND (lease_until IS NULL OR lease_until <= NOW(6))", projectId, definitionId, keyHash);
@@ -97,7 +97,7 @@ public class RuleExecutionStateService {
     public boolean claim(Long id, String owner, int leaseSeconds, int retentionSeconds,
                          Long currentRevisionId, String currentArtifactDigest) {
         return jdbcTemplate.update(
-                "UPDATE rule_engine.rule_execution_state SET lease_owner = ?, lease_until = DATE_ADD(NOW(6), INTERVAL ? SECOND), "
+                "UPDATE rule_execution_state SET lease_owner = ?, lease_until = DATE_ADD(NOW(6), INTERVAL ? SECOND), "
                         + "attempt_no = attempt_no + 1, status = 'RUNNING', "
                         + "current_revision_id = COALESCE(?, current_revision_id), "
                         + "current_artifact_digest = COALESCE(?, current_artifact_digest), "
@@ -118,7 +118,7 @@ public class RuleExecutionStateService {
                            int leaseSeconds) {
         int effectiveLeaseSeconds = Math.max(30, Math.min(3600, leaseSeconds));
         jdbcTemplate.update(
-                "UPDATE rule_engine.rule_execution_state SET status = ?, checkpoint_json = ?, "
+                "UPDATE rule_execution_state SET status = ?, checkpoint_json = ?, "
                         + "current_revision_id = ?, current_artifact_digest = ?, error_message = ?, update_time = NOW(6) "
                         + ", lease_until = DATE_ADD(NOW(6), INTERVAL ? SECOND) "
                         + "WHERE id = ? AND lease_owner = ? AND lease_until > NOW(6)",
@@ -130,7 +130,7 @@ public class RuleExecutionStateService {
                                   Long revisionId, String artifactDigest, String status) {
         if (rootTraceId == null || rootTraceId.isBlank()) return;
         jdbcTemplate.update(
-                "INSERT INTO rule_engine.rule_execution_checkpoint "
+                "INSERT INTO rule_execution_checkpoint "
                         + "(root_trace_id, step_id, step_type, step_status, source_revision_id, "
                         + "source_artifact_digest, resolved_value, update_time, create_time) "
                         + "VALUES (?, '__ROOT__', 'ROOT', ?, ?, ?, ?, NOW(6), NOW(6)) "
@@ -145,7 +145,7 @@ public class RuleExecutionStateService {
                                   Long revisionId, String artifactDigest) {
         if (rootTraceId == null || step == null || step.getSourceKey() == null) return;
         jdbcTemplate.update(
-                "INSERT INTO rule_engine.rule_execution_checkpoint "
+                "INSERT INTO rule_execution_checkpoint "
                         + "(root_trace_id, step_id, step_type, step_status, input_digest, dependency_digest, "
                         + "source_revision_id, source_artifact_digest, resolved_value, external_result, attempt_history, update_time, create_time) "
                         + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6), NOW(6)) "
@@ -163,7 +163,7 @@ public class RuleExecutionStateService {
     public void finish(Long id, String owner, String status, String checkpointJson, String resultJson,
                        String errorMessage) {
         jdbcTemplate.update(
-                "UPDATE rule_engine.rule_execution_state SET status = ?, checkpoint_json = ?, result_json = ?, error_message = ?, "
+                "UPDATE rule_execution_state SET status = ?, checkpoint_json = ?, result_json = ?, error_message = ?, "
                         + "lease_owner = NULL, lease_until = NULL, finish_time = NOW(6), update_time = NOW(6) "
                         + "WHERE id = ? AND lease_owner = ? AND lease_until > NOW(6)",
                 status, checkpointJson, resultJson, errorMessage, id, owner);

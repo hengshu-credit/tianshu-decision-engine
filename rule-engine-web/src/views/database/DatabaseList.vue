@@ -103,6 +103,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
+              <table-column-settings :columns="databaseColumns" storage-key="tianshu:table-columns:database-list" />
               <el-button
                 v-permission="'database:edit'"
                 type="primary"
@@ -762,11 +763,19 @@ import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import { routeProjectId } from '@/utils/projectContext'
 
 export default {
   data() {
     return {
+      databaseColumns: [
+        { key: 'scope', label: '作用范围' }, { key: 'projectName', label: '项目名称' },
+        { key: 'datasourceCode', label: '数据源编码' }, { key: 'datasourceName', label: '数据源名称' },
+        { key: 'dbType', label: '类型' }, { key: 'connectionMode', label: '连接方式' },
+        { key: 'address', label: '数据库地址' }, { key: 'jdbcUrl', label: 'JDBC URL' },
+        { key: 'ssh', label: 'SSH隧道' }, { key: 'pool', label: '连接池' }, { key: 'status', label: '状态' },
+      ],
       databaseGuideCards: [
         {
           title: '只读连接',
@@ -878,6 +887,7 @@ export default {
   },
   name: 'DatabaseList',
   components: {
+    TableColumnSettings,
     ModuleCallLog,
     MonacoEditor,
     RemoteFilterSelect,

@@ -204,6 +204,54 @@ describe('统一审批详情', () => {
     expect(wrapper.vm.compareModified).toBe('{"host":"db-new","port":3306}')
   })
 
+  test('规则审批将评分卡按业务配置并排渲染并保留技术差异', async() => {
+    const wrapper = shallowMount(ApprovalDetail, {
+      global: { directives: { permission: {} } }
+    })
+    await flushPromises()
+    const oldModel = {
+      initialScore: 100,
+      resultVar: { varCode: 'totalScore' },
+      scoreItems: [{ id: 'age', conditionLabel: '年龄', varCode: 'age', operator: '>=', value: 18, score: 10, weight: 1 }],
+      thresholds: []
+    }
+    const newModel = {
+      ...oldModel,
+      scoreItems: [{ ...oldModel.scoreItems[0], score: 20 }]
+    }
+    wrapper.vm.detail = {
+      request: {
+        id: 20,
+        resourceType: 'RULE',
+        resourceId: 8,
+        status: 'PENDING',
+        baseVersionNo: 2,
+        submittedSnapshotJson: JSON.stringify({
+          modelType: 'SCORE',
+          content: { modelJson: JSON.stringify(newModel) }
+        })
+      },
+      versions: [{
+        id: 3,
+        versionNo: 2,
+        snapshotJson: JSON.stringify({
+          modelType: 'SCORE',
+          content: { modelJson: JSON.stringify(oldModel) }
+        })
+      }],
+      diff: { fields: [] }
+    }
+    await wrapper.vm.$nextTick()
+
+    const businessDiff = wrapper.findComponent({ name: 'RuleVersionDiff' })
+    expect(businessDiff.exists()).toBe(true)
+    expect(businessDiff.props('modelType')).toBe('SCORE')
+    expect(JSON.parse(businessDiff.props('leftVersion').modelJson).scoreItems[0].score).toBe(10)
+    expect(JSON.parse(businessDiff.props('rightVersion').modelJson).scoreItems[0].score).toBe(20)
+    expect(wrapper.find('[data-testid="business-config-diff"]').exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'JsonVersionDiff' }).exists()).toBe(true)
+  })
+
   test('配置差异不重复渲染左右版本标题条', async() => {
     const wrapper = shallowMount(ApprovalDetail, {
       global: { directives: { permission: {} } }

@@ -7,7 +7,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.rule_designer_save_operation")
+@TableName("rule_designer_save_operation")
 public class RuleDesignerSaveOperation {
     @TableId(type = IdType.AUTO)
     private Long id;

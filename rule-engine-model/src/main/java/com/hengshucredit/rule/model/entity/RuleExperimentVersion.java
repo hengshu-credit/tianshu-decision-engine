@@ -10,7 +10,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.rule_experiment_version")
+@TableName("rule_experiment_version")
 public class RuleExperimentVersion {
     @TableId(type = IdType.AUTO)
     private Long id;

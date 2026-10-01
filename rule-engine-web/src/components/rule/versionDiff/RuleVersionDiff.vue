@@ -3,14 +3,14 @@
     <div class="rule-version-head-grid">
       <div class="rule-version-side rule-version-side--left">
         <span class="rule-version-side-label">基准版本</span>
-        <strong>v{{ leftVersion.version }}</strong>
+        <strong>{{ formatVersionLabel(leftVersion) }}</strong>
         <span>{{ formatVersionTime(leftVersion.publishTime) }}</span>
         <span>{{ leftVersion.publishBy || '-' }}</span>
         <p>{{ leftVersion.changeLog || '无变更说明' }}</p>
       </div>
       <div class="rule-version-side rule-version-side--right">
         <span class="rule-version-side-label">对比版本</span>
-        <strong>v{{ rightVersion.version }}</strong>
+        <strong>{{ formatVersionLabel(rightVersion) }}</strong>
         <span>{{ formatVersionTime(rightVersion.publishTime) }}</span>
         <span>{{ rightVersion.publishBy || '-' }}</span>
         <p>{{ rightVersion.changeLog || '无变更说明' }}</p>
@@ -151,6 +151,12 @@ export default {
     },
   },
   methods: {
+    formatVersionLabel(version) {
+      if (version && version.versionLabel) return version.versionLabel
+      return version && version.version !== undefined
+        ? `v${version.version}`
+        : '—'
+    },
     formatVersionTime(value) {
       return value ? String(value).replace('T', ' ') : '-'
     },

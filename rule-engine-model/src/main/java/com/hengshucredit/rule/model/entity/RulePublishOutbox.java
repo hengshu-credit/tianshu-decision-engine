@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.rule_publish_outbox")
+@TableName("rule_publish_outbox")
 public class RulePublishOutbox {
     @TableId(type = IdType.AUTO)
     private Long id;

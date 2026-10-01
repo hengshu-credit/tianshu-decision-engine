@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.resource_impact_analysis")
+@TableName("resource_impact_analysis")
 public class ResourceImpactAnalysis {
     @TableId(type = IdType.AUTO)
     private Long id;

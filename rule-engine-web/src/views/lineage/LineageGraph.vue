@@ -93,6 +93,19 @@
           <el-button :icon="ElIconZoomOut" aria-label="缩小血缘图" title="缩小" @click="zoomOut" />
           <el-button :icon="ElIconRank" aria-label="适配血缘图" title="适配画布" @click="fitGraph" />
         </el-button-group>
+        <el-select
+          v-model="zoomInput"
+          class="zoom-input"
+          size="small"
+          filterable
+          allow-create
+          default-first-option
+          aria-label="血缘图缩放比例"
+          @change="onZoomInputChange"
+          @keyup.enter="onZoomInputChange"
+        >
+          <el-option v-for="preset in zoomPresets" :key="preset" :label="`${preset}%`" :value="`${preset}%`" />
+        </el-select>
         <span class="zoom-percent">{{ zoomPercent }}%</span>
         <graph-designer-navigator
           v-model:target="graphNavigationTarget"
@@ -103,11 +116,25 @@
           @search="searchGraphElements"
           @locate="locateGraphNavigationItem"
         />
-        <el-select v-model="globalEdgeLineType" size="small" style="width: 88px" aria-label="连线类型" @change="onGlobalEdgeLineTypeChange">
+        <el-select v-model="globalEdgeLineType" class="toolbar-edge-select" size="small" aria-label="连线类型" @change="onGlobalEdgeLineTypeChange">
           <el-option label="折线" value="polyline" />
           <el-option label="直线" value="line" />
           <el-option label="弧线" value="bezier" />
         </el-select>
+        <canvas-background-settings
+          :grid-visible="gridVisible"
+          :snap-grid-enabled="snapGridEnabled"
+          :grid-size="gridSize"
+          :grid-type="gridType"
+          :grid-thickness="gridThickness"
+          :grid-color="gridColor"
+          :background-opacity="backgroundOpacity"
+          :background-color="backgroundColor"
+          :background-enabled="backgroundEnabled"
+          :edge-animation-enabled="edgeAnimationEnabled"
+          :show-edge-animation="false"
+          @change="onCanvasSettingsChange"
+        />
         <el-button size="small" :icon="ElIconRefreshLeft" aria-label="重置血缘图" @click="resetView">重置</el-button>
       </div>
     </div>
@@ -153,8 +180,8 @@
         ref="graphWrap"
         class="graph-wrap"
         :style="{ height: graphHeight + 'px' }"
-        v-loading="loading"
       >
+        <div v-if="loading" class="graph-loading-mask" aria-hidden="true">加载中…</div>
         <div v-if="!startNode" class="empty-graph">请选择起点后生成血缘图</div>
         <div ref="graphContainer" class="graph-canvas" :class="{ 'is-hidden': !startNode }" aria-label="血缘关系图" />
       </div>
@@ -179,9 +206,10 @@ import { getLineageGraph, listLineageOptions } from '@/api/lineage'
 import { lineageLayout } from '@/utils/lineageLayers'
 import { LINEAGE_NODE_COLORS, LINEAGE_NODE_WIDTH as CARD_W, LINEAGE_NODE_HEIGHT as CARD_H } from '@/components/flow/nodes'
 import GraphDesignerNavigator from '@/components/flow/GraphDesignerNavigator.vue'
+import CanvasBackgroundSettings from '@/components/flow/CanvasBackgroundSettings.vue'
 
-const LEVEL_STEP = 320
-const ROW_STEP = 144
+const LEVEL_STEP = 360
+const ROW_STEP = 104
 const PADDING_X = 48
 const PADDING_Y = 48
 const MIN_CANVAS_W = 960
@@ -235,6 +263,18 @@ export default {
       selectedNodeId: null,
       miniMapVisible: true,
       globalEdgeLineType: 'polyline',
+      zoomInput: '100%',
+      zoomPresets: [50, 75, 100, 125, 150, 200],
+      gridVisible: true,
+      snapGridEnabled: true,
+      gridSize: 20,
+      gridType: 'dot',
+      gridThickness: 1,
+      gridColor: '',
+      backgroundOpacity: 1,
+      backgroundColor: '',
+      backgroundEnabled: false,
+      edgeAnimationEnabled: false,
       graphNavigationTarget: '',
       graphNavigationKeyword: '',
       ElIconMagicStick: markRaw(ElIconMagicStick),
@@ -259,7 +299,7 @@ export default {
     }
   },
   name: 'LineageGraph',
-  components: { GraphDesignerNavigator },
+  components: { GraphDesignerNavigator, CanvasBackgroundSettings },
   watch: {
     initialGraph: {
       deep: true,
@@ -289,7 +329,6 @@ export default {
     selectedNodeId() {
       this.$nextTick(() => {
         this.resizeCanvas()
-        this.fitGraph()
       })
     },
   },
@@ -603,7 +642,7 @@ export default {
         history: false,
         adjustEdge: false,
         adjustEdgeStartAndEnd: false,
-        adjustNodePosition: true,
+        adjustNodePosition: false,
         stopMoveGraph: false,
         stopZoomGraph: true,
         hideAnchors: true,
@@ -613,6 +652,7 @@ export default {
         snapGrid: true,
       })
       if (!this.lf) return
+      this.applyCanvasSettings()
       this.lf.setZoomMiniSize(MIN_SCALE)
       this.lf.setZoomMaxSize(MAX_SCALE)
       this.lf.on('node:click', ({ data }) => {
@@ -621,6 +661,7 @@ export default {
       this.lf.on('blank:click', this.closeNodePanel)
       this.lf.on('graph:transform', this.updateZoom)
       this.lf.on('graph:rendered', this.onGraphRendered)
+      this.lf.on('lineage:dragstart', ({ data, e }) => this.beginLogicFlowNodeDrag(data.id, e))
       this.lf.on('node:drop', ({ data }) => {
         const left = data.x - CARD_W / 2
         const top = data.y - CARD_H / 2
@@ -665,6 +706,34 @@ export default {
     onGlobalEdgeLineTypeChange() {
       this.renderLineageGraph()
     },
+    onCanvasSettingsChange(patch) {
+      Object.assign(this, patch || {})
+      if (patch?.backgroundEnabled && !this.backgroundColor) {
+        this.backgroundColor = this.getThemeCanvasColor()
+      }
+      this.applyCanvasSettings()
+    },
+    getThemeCanvasColor() {
+      return getComputedStyle(document.documentElement).getPropertyValue('--tianshu-bg-workspace').trim() || '#0f1629'
+    },
+    applyCanvasSettings() {
+      if (!this.lf) return
+      this.lf.graphModel?.updateGridOptions?.({
+        visible: this.gridVisible,
+        size: this.gridSize,
+        type: this.gridType,
+        config: {
+          ...(this.lf.graphModel.grid?.config || {}),
+          color: this.gridColor || getComputedStyle(document.documentElement).getPropertyValue('--tianshu-border-strong').trim(),
+          thickness: this.gridThickness,
+        },
+      })
+      this.lf.updateEditConfig?.({ snapGrid: this.snapGridEnabled })
+      this.lf.graphModel?.updateBackgroundOptions?.({
+        backgroundColor: this.backgroundEnabled ? (this.backgroundColor || this.getThemeCanvasColor()) : this.getThemeCanvasColor(),
+        opacity: this.backgroundEnabled ? this.backgroundOpacity : 1,
+      })
+    },
     searchGraphElements(keyword) {
       this.graphNavigationKeyword = keyword || ''
     },
@@ -693,7 +762,6 @@ export default {
         this.$refs.graphContainer?.querySelectorAll('.lf-edge').forEach(edge => {
           edge.querySelector('path, polyline')?.classList.add('edge-path')
         })
-        this.bindLineageNodeDrag()
       })
       const selected = data.nodes.find(node => node.properties.nodeId === this.selectedNodeId)
       if (selected) this.lf.selectElementById(selected.id)
@@ -701,44 +769,34 @@ export default {
       this.resizeCanvas()
       this.fitGraph()
     },
-    bindLineageNodeDrag() {
-      const container = this.$refs.graphContainer
-      if (!container || !this.lf) return
-      container.querySelectorAll('.lineage-lf-node').forEach(element => {
-        if (element.dataset.lineageDragBound) return
-        element.dataset.lineageDragBound = 'true'
-        element.addEventListener('mousedown', event => {
-          if (event.button !== 0 || event.target?.closest?.('button')) return
-          const modelId = element.getAttribute('data-lineage-model-id')
-          const model = modelId && this.lf.getNodeModelById(modelId)
-          if (!model) return
-          event.preventDefault()
-          event.stopPropagation()
-          const startX = event.clientX
-          const startY = event.clientY
-          const originX = model.x
-          const originY = model.y
-          const onMove = moveEvent => {
-            const scale = this.lf.getTransform().SCALE_X || 1
-            const x = Math.round((originX + (moveEvent.clientX - startX) / scale) / 20) * 20
-            const y = Math.round((originY + (moveEvent.clientY - startY) / scale) / 20) * 20
-            this.lf.graphModel.moveNode2Coordinate(modelId, x, y)
+    beginLogicFlowNodeDrag(modelId, event) {
+      if (!this.lf || !modelId || !event || event.button !== 0) return
+      const model = this.lf.getNodeModelById(modelId)
+      if (!model) return
+      const startX = event.clientX
+      const startY = event.clientY
+      const originX = model.x
+      const originY = model.y
+      const onMove = moveEvent => {
+        moveEvent.preventDefault()
+        const scale = this.lf.getTransform().SCALE_X || 1
+        const x = Math.round((originX + (moveEvent.clientX - startX) / scale) / 20) * 20
+        const y = Math.round((originY + (moveEvent.clientY - startY) / scale) / 20) * 20
+        this.lf.graphModel.moveNode2Coordinate(modelId, x, y, true)
+      }
+      const onUp = () => {
+        document.removeEventListener('pointermove', onMove)
+        document.removeEventListener('pointerup', onUp)
+        const current = this.lf.getNodeModelById(modelId)
+        if (current) {
+          this.positionOverrides = {
+            ...this.positionOverrides,
+            [modelId]: { left: current.x - CARD_W / 2, top: current.y - CARD_H / 2 },
           }
-          const onUp = () => {
-            document.removeEventListener('mousemove', onMove)
-            document.removeEventListener('mouseup', onUp)
-            const current = this.lf.getNodeModelById(modelId)
-            if (current) {
-              this.positionOverrides = {
-                ...this.positionOverrides,
-                [modelId]: { left: current.x - CARD_W / 2, top: current.y - CARD_H / 2 },
-              }
-            }
-          }
-          document.addEventListener('mousemove', onMove)
-          document.addEventListener('mouseup', onUp, { once: true })
-        })
-      })
+        }
+      }
+      document.addEventListener('pointermove', onMove)
+      document.addEventListener('pointerup', onUp, { once: true })
     },
     toGraphNode(id, node, properties) {
       const position = this.nodePosition(id)
@@ -868,9 +926,13 @@ export default {
         this.fitGraph()
       })
     },
-    updateZoom() {
+    updateZoom(transform) {
       if (this.lf) {
-        this.viewport = { ...this.viewport, scale: this.lf.getTransform().SCALE_X || this.viewport.scale }
+        const current = transform || this.lf.getTransform()
+        const scale = current.SCALE_X || this.viewport.scale
+        this.viewport = { ...this.viewport, scale }
+        this.zoomPercent = Math.round(scale * 100)
+        this.zoomInput = `${this.zoomPercent}%`
       }
     },
     blurToolbarFocus() {
@@ -882,6 +944,14 @@ export default {
     },
     zoomOut() {
       this.setZoom(this.viewport.scale - 0.1)
+    },
+    onZoomInputChange() {
+      const requested = Number.parseFloat(String(this.zoomInput).replace('%', ''))
+      const nextPercent = Number.isFinite(requested)
+        ? Math.min(400, Math.max(25, requested))
+        : this.zoomPercent
+      this.lf?.zoom?.(nextPercent / 100)
+      this.updateZoom()
     },
     setZoom(nextScale, clientPoint) {
       const graphWrap = this.$refs.graphWrap
@@ -1214,12 +1284,22 @@ export default {
   }
   .lineage-canvas-header {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
+    flex-wrap: nowrap;
     align-items: center;
     justify-content: center;
-    gap: 10px 16px;
+    gap: 6px;
     min-width: 0;
     margin-bottom: 12px;
+  }
+  .lineage-canvas-header .legend-row {
+    width: 100%;
+    justify-content: center;
+  }
+  .lineage-canvas-header .graph-toolbar {
+    align-self: center;
+    justify-content: center;
+    flex-wrap: wrap;
   }
   .legend-item {
     display: inline-flex;
@@ -1360,6 +1440,16 @@ export default {
     cursor: grab;
     user-select: none;
   }
+  .graph-loading-mask {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: grid;
+    place-items: center;
+    color: var(--tianshu-text-secondary);
+    background: color-mix(in srgb, var(--tianshu-bg-soft) 76%, transparent);
+    pointer-events: all;
+  }
   .empty-graph {
     color: var(--tianshu-text-tertiary);
     text-align: center;
@@ -1380,51 +1470,56 @@ export default {
     height: 100%;
   }
   .graph-toolbar {
+    --designer-toolbar-foreground: var(--tianshu-brand-foreground);
+    --designer-toolbar-control-background: color-mix(in srgb, var(--designer-toolbar-foreground) 10%, transparent);
+    --designer-toolbar-control-border: color-mix(in srgb, var(--designer-toolbar-foreground) 42%, transparent);
+    --designer-toolbar-control-hover-background: color-mix(in srgb, var(--designer-toolbar-foreground) 20%, transparent);
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
-    padding: 4px;
-    border: 1px solid var(--tianshu-border-subtle);
+    padding: 6px 8px;
+    border: 1px solid var(--designer-toolbar-control-border);
     border-radius: 6px;
-    background: var(--tianshu-bg-surface);
+    background: var(--tianshu-brand-background);
     box-shadow: var(--tianshu-shadow-medium);
+    color: var(--designer-toolbar-foreground);
     z-index: 2;
   }
   .graph-toolbar button {
     min-width: 30px;
     height: 30px;
     padding: 0 8px;
-    border: 1px solid transparent;
+    border: 1px solid var(--designer-toolbar-control-border);
     border-radius: 4px;
-    color: var(--tianshu-text-primary);
-    background: transparent;
+    color: var(--designer-toolbar-foreground);
+    background: var(--designer-toolbar-control-background);
     cursor: pointer;
   }
   .graph-toolbar button:hover,
   .graph-toolbar button:focus-visible {
-    color: var(--el-color-primary);
-    border-color: var(--el-color-primary-light-5);
-    background: var(--el-color-primary-light-9);
+    color: var(--designer-toolbar-foreground);
+    border-color: var(--tianshu-designer-toolbar-accent);
+    background: var(--designer-toolbar-control-hover-background);
     outline: none;
   }
   .graph-toolbar :deep(.el-button),
   .graph-toolbar :deep(.el-select .el-input__wrapper) {
-    border-color: var(--tianshu-border);
-    background: var(--tianshu-bg-surface);
-    color: var(--tianshu-text-primary);
+    border-color: var(--designer-toolbar-control-border);
+    background: var(--designer-toolbar-control-background);
+    color: var(--designer-toolbar-foreground);
   }
   .graph-toolbar :deep(.el-button:hover),
   .graph-toolbar :deep(.el-button:focus-visible),
   .graph-toolbar :deep(.is-tool-active) {
-    border-color: var(--el-color-primary);
-    color: var(--el-color-primary);
-    background: var(--tianshu-designer-accent-bg);
+    border-color: var(--tianshu-designer-toolbar-accent);
+    color: var(--designer-toolbar-foreground);
+    background: var(--designer-toolbar-control-hover-background);
   }
   .graph-toolbar :deep(.el-button:focus:not(:focus-visible)) {
-    border-color: var(--tianshu-border);
-    color: var(--tianshu-text-primary);
-    background: var(--tianshu-bg-surface);
+    border-color: var(--designer-toolbar-control-border);
+    color: var(--designer-toolbar-foreground);
+    background: var(--designer-toolbar-control-background);
     box-shadow: none;
   }
   .graph-toolbar .best-layout-button {
@@ -1438,9 +1533,19 @@ export default {
     border-color: var(--el-color-primary-dark-2);
     background: var(--el-color-primary-dark-2);
   }
+  .graph-toolbar :deep(.toolbar-edge-select) {
+    width: 120px;
+  }
+  .graph-toolbar :deep(.zoom-input) {
+    width: 92px;
+    flex: 0 0 92px;
+  }
+  .graph-toolbar :deep(.toolbar-canvas-settings) {
+    min-width: 100px;
+  }
   .zoom-percent {
     min-width: 44px;
-    color: var(--tianshu-text-secondary);
+    color: var(--designer-toolbar-foreground);
     font-size: 12px;
     text-align: center;
   }

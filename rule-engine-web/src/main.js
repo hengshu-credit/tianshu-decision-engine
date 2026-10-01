@@ -21,19 +21,27 @@ import { bootstrapLocalTheme } from '@/theme/themeRuntime'
 bootstrapLocalTheme(window.localStorage, document.documentElement)
 
 // Monaco Editor 通过 AMD loader 方式加载，Vite 在开发和生产阶段统一提供 vs/ 资源。
+// 统一解析成当前页面下的绝对同源地址，避免相对路径在详情路由、反向代理或静态子目录下被解析到错误位置。
 const base = import.meta.env.BASE_URL || './'
+const monacoBaseUrl = new URL(base, document.baseURI)
+const monacoVsUrl = new URL('vs/', monacoBaseUrl)
+const monacoWorkerUrl = new URL('base/worker/workerMain.js', monacoVsUrl).href
 window.MonacoEnvironment = {
+  // AMD 版本的 monaco-editor 使用统一 workerMain 入口，不能指向 ESM worker 文件。
   getWorkerUrl: function () {
-    // AMD 版本的 monaco-editor 使用统一 workerMain 入口，不能指向 ESM worker 文件。
-    return base + 'vs/base/worker/workerMain.js'
-  }
+    return monacoWorkerUrl
+  },
+  // 显式创建同源 Worker，绕过 AMD 默认工厂对相对 URL 和跨目录部署的二次解析。
+  getWorker: function (_moduleId, label) {
+    return new Worker(monacoWorkerUrl, { name: label || 'monaco' })
+  },
 }
 
 // 动态加载 monaco-editor 并挂载到 window.monaco，供组件使用
 const loaderScript = document.createElement('script')
-loaderScript.src = base + 'vs/loader.js'
+loaderScript.src = new URL('loader.js', monacoVsUrl).href
 loaderScript.onload = () => {
-  window.require.config({ paths: { vs: base + 'vs' } })
+  window.require.config({ paths: { vs: monacoVsUrl.href.replace(/\/$/, '') } })
   window.require(['vs/editor/editor.main'], () => {
     console.log('[MonacoEditor] Monaco Editor loaded successfully')
   })

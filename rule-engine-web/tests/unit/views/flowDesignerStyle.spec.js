@@ -211,6 +211,28 @@ describe('flow designer style regressions', () => {
     })
   })
 
+  test('血缘图图例和画布工具栏分成居中的上下两行，层级间距横向更宽且纵向更紧', () => {
+    const lineage = readSource('src/views/lineage/LineageGraph.vue')
+
+    expect(lineage).toContain('const LEVEL_STEP = 360')
+    expect(lineage).toContain('const ROW_STEP = 104')
+    expect(lineage).toContain('CanvasBackgroundSettings')
+    expect(lineage).toContain('v-model="zoomInput"')
+    expect(lineage).toContain('zoomPresets')
+    expect(lineage).toContain('toolbar-edge-select')
+    expect(lineage).toContain('class="graph-loading-mask"')
+    expect(lineage).not.toContain('v-loading="loading"')
+    expect(lineage).toMatch(
+      /\.lineage-canvas-header\s*\{[\s\S]*?flex-direction:\s*column;[\s\S]*?align-items:\s*center;/
+    )
+    expect(lineage).toMatch(
+      /\.lineage-canvas-header\s+\.legend-row\s*\{[\s\S]*?width:\s*100%;[\s\S]*?justify-content:\s*center;/
+    )
+    expect(lineage).toMatch(
+      /\.lineage-canvas-header\s+\.graph-toolbar\s*\{[\s\S]*?justify-content:\s*center;/
+    )
+  })
+
   test('画布背景设置与选中边动画复用 LogicFlow 能力', () => {
     const canvas = readSource('src/components/flow/CanvasBackgroundSettings.vue')
     const graphCanvas = readSource('src/components/flow/graphCanvas.js')

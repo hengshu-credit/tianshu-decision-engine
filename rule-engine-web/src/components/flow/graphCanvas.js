@@ -9,7 +9,20 @@ const PRIMARY = 'var(--el-color-primary)'
 
 // 决策树、决策流、血缘图共享网格、连线主题与节点注册；业务交互由调用方配置。
 export function createGraphCanvas(options) {
-  if (typeof LogicFlow !== 'function') return null
+  // @logicflow/core 在 CJS/ESM 互操作场景下可能把构造函数挂在 default.default；
+  // 统一取出构造函数，避免生产构建中画布被误判为不可用。
+  const LogicFlowConstructor = typeof LogicFlow === 'function'
+    ? LogicFlow
+    : LogicFlow && typeof LogicFlow.default === 'function'
+    ? LogicFlow.default
+    : LogicFlow && LogicFlow.default && typeof LogicFlow.default.default === 'function'
+    ? LogicFlow.default.default
+    : LogicFlow && LogicFlow.default && typeof LogicFlow.default.LogicFlow === 'function'
+    ? LogicFlow.default.LogicFlow
+    : LogicFlow && typeof LogicFlow.LogicFlow === 'function'
+    ? LogicFlow.LogicFlow
+    : null
+  if (!LogicFlowConstructor) return null
   const edgeStyle = () => ({
     stroke: PRIMARY,
     hoverStroke: PRIMARY,
@@ -59,7 +72,7 @@ export function createGraphCanvas(options) {
     bezier: { ...defaults.style.bezier, ...(customStyle.bezier || {}) },
     arrow: { ...defaults.style.arrow, ...(customStyle.arrow || {}) },
   }
-  const lf = markRaw(new LogicFlow({ ...defaults, ...customOptions, style }))
+  const lf = markRaw(new LogicFlowConstructor({ ...defaults, ...customOptions, style }))
   registerCustomNodes(lf)
   return lf
 }

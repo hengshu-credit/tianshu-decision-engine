@@ -12,7 +12,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.rule_billing_summary")
+@TableName("rule_billing_summary")
 public class RuleBillingSummary {
     @TableId(type = IdType.AUTO)
     private Long id;

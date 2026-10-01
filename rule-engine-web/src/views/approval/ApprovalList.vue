@@ -87,6 +87,11 @@
         <el-button type="primary" @click="search">查询</el-button>
         <el-button @click="resetFilters">重置</el-button>
       </div>
+      <div class="uiue-btn-bar">
+        <div class="btn-right">
+          <table-column-settings :columns="approvalColumns" storage-key="tianshu:table-columns:approval-list" />
+        </div>
+      </div>
 
       <el-table show-overflow-tooltip
         v-loading="loading"
@@ -166,6 +171,7 @@ import {
 } from '@/api/governance'
 import { routeProjectId } from '@/utils/projectContext'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 
 const STATUS_OPTIONS = [
   { value: 'EDITING', label: '编辑中' },
@@ -212,9 +218,14 @@ const RESOURCE_OPTIONS = [
 
 export default {
   name: 'ApprovalList',
-  components: { RemoteFilterSelect },
+  components: { RemoteFilterSelect, TableColumnSettings },
   data() {
     return {
+      approvalColumns: [
+        { key: 'request', label: '审批申请' }, { key: 'type', label: '类型' },
+        { key: 'action', label: '动作' }, { key: 'status', label: '状态' },
+        { key: 'applicant', label: '申请人' }, { key: 'submitTime', label: '提交时间' },
+      ],
       taskScopes: [
         { name: 'PENDING', label: '待处理' },
         { name: 'MINE', label: '我的申请' },

@@ -23,7 +23,7 @@ public class ConsoleRbacEntityMappingTest {
                 "com.hengshucredit.rule.model.entity." + simpleName);
         TableName annotation = entityClass.getAnnotation(TableName.class);
         Assert.assertNotNull(simpleName + " missing @TableName", annotation);
-        Assert.assertEquals("rule_engine." + tableName, annotation.value());
+        Assert.assertEquals(tableName, annotation.value());
 
         Class<?> mapperClass = Class.forName(
                 "com.hengshucredit.rule.server.mapper." + simpleName + "Mapper");

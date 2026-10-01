@@ -83,6 +83,7 @@
       </el-form>
       <div class="uiue-btn-bar">
         <div class="btn-right">
+          <table-column-settings :columns="functionColumns" storage-key="tianshu:table-columns:function-list" />
           <el-button
             v-permission="'function:edit'"
             size="small"
@@ -571,10 +572,17 @@ import MonacoEditor from '@/components/MonacoEditor'
 import JsonVersionDiff from '@/components/common/JsonVersionDiff.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 
 export default {
   data() {
     return {
+      functionColumns: [
+        { key: 'scope', label: '作用范围' }, { key: 'projectName', label: '项目名称' },
+        { key: 'funcCode', label: '函数编码' }, { key: 'funcName', label: '函数名称' },
+        { key: 'returnType', label: '返回类型' }, { key: 'implType', label: '实现方式' },
+        { key: 'params', label: '参数' }, { key: 'updateTime', label: '更新时间' }, { key: 'status', label: '状态' },
+      ],
       projects: [],
       currentProjectId: null,
       projectLoadError: '',
@@ -634,6 +642,7 @@ export default {
     }
   },
   components: {
+    TableColumnSettings,
     MonacoEditor,
     JsonVersionDiff,
     RemoteFilterSelect,

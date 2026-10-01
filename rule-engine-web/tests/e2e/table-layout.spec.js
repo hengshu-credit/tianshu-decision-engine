@@ -33,6 +33,9 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
       await expect(header).toHaveCSS('position', 'sticky')
       await expect(header).toHaveCSS('right', '0px')
       await expect(header.locator('.cell')).toHaveCSS('text-align', 'left')
+      if (route === 'project') {
+        expect((await header.boundingBox()).width).toBeLessThanOrEqual(280)
+      }
       await expect(table.locator('td.table-operation-column').first().locator('.cell')).toHaveCSS('text-align', 'left')
       const before = await header.boundingBox()
       const scrollWrap = table.locator('.el-scrollbar__wrap').first()

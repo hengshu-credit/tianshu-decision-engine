@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.rule_revision")
+@TableName("rule_revision")
 public class RuleRevision {
     @TableId(type = IdType.AUTO)
     private Long id;

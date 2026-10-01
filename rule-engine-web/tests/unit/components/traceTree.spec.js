@@ -516,6 +516,58 @@ describe('TraceTree', () => {
     wrapper.unmount()
   })
 
+  test('表达式变量节点缺少追踪值时回填执行输入快照', () => {
+    const expression = {
+      type: 'OPERATOR',
+      token: '+',
+      evaluated: true,
+      value: 22,
+      children: [
+        variableNode('age', undefined),
+        valueNode(2)
+      ]
+    }
+    const wrapper = mountTraceTree({
+      modelType: 'SCRIPT',
+      inputParams: JSON.stringify({ age: 20 }),
+      traceInfo: JSON.stringify([{
+        type: 'OPERATOR',
+        token: '=',
+        evaluated: true,
+        value: 22,
+        children: [variableNode('score', undefined), expression]
+      }])
+    })
+
+    expect(wrapper.vm.flowCards[0].expression).toContain('age (20)')
+    wrapper.unmount()
+  })
+
+  test('表达式字段节点展示追踪中的实际值', () => {
+    const wrapper = mountTraceTree({
+      modelType: 'SCRIPT',
+      traceInfo: JSON.stringify([{
+        type: 'OPERATOR',
+        token: '=',
+        evaluated: true,
+        value: 2000,
+        children: [
+          variableNode('score', undefined),
+          {
+            type: 'FIELD',
+            token: 'age',
+            evaluated: true,
+            value: 20,
+            children: []
+          }
+        ]
+      }])
+    })
+
+    expect(wrapper.vm.flowCards[0].expression).toContain('age (20)')
+    wrapper.unmount()
+  })
+
   test('规则集追踪按规则独立成行并展示命中摘要', () => {
     const hitInfo = { ruleCode: 'R0001', ruleName: '黑名单规则', priority: 10, order: 1 }
     const wrapper = mountTraceTree({

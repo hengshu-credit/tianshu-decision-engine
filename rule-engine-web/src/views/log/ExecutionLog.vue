@@ -135,6 +135,11 @@
           </el-form-item>
         </el-form>
       </div>
+      <div class="uiue-btn-bar">
+        <div class="btn-right">
+          <table-column-settings :columns="logColumns" storage-key="tianshu:table-columns:execution-log" />
+        </div>
+      </div>
       <el-table class="management-table" show-overflow-tooltip
         :data="list"
         border
@@ -252,7 +257,7 @@
         <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="130" align="center" fixed="right">
           <template v-slot="{ row }">
             <el-button link size="small" type="primary" @click="handleViewDetail(row)">详情</el-button>
-            <el-button link size="small" type="warning" :loading="replayLoadingId === row.id" @click="handleReplay(row)">回溯</el-button>
+            <el-button v-if="!row.traceInfo" link size="small" type="warning" :loading="replayLoadingId === row.id" @click="handleReplay(row)">回溯</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -333,6 +338,11 @@
             <el-button @click="resetQuery">重置</el-button>
           </el-form-item>
         </el-form>
+        <div class="uiue-btn-bar">
+          <div class="btn-right">
+            <table-column-settings :columns="ruleSetStatsColumns" storage-key="tianshu:table-columns:execution-log-rule-set" />
+          </div>
+        </div>
       </div>
 
       <el-alert
@@ -387,7 +397,7 @@
           :data="ruleSetStats.ruleSets"
           border
           size="small"
-          class="rule-set-table"
+          class="rule-set-table management-table"
         >
           <el-table-column type="expand">
             <template v-slot="{ row }">
@@ -581,6 +591,7 @@ import TraceTree from '@/components/common/TraceTree.vue'
 import AsyncState from '@/components/common/AsyncState.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import {
   clearPageState,
   restorePageState,
@@ -590,6 +601,7 @@ import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
 
 export default {
   components: {
+    TableColumnSettings,
     TraceTree,
 AsyncState,
 ProjectFilterSelect,
@@ -599,6 +611,18 @@ RemoteFilterSelect,
   data() {
 
 return {
+logColumns: [
+{ key: 'project', label: '项目' }, { key: 'rule', label: '规则' },
+{ key: 'model', label: '模型类型' }, { key: 'source', label: '来源' },
+{ key: 'authType', label: '鉴权方式' }, { key: 'authCode', label: '鉴权编码' },
+{ key: 'tokenCode', label: 'Token 编码' }, { key: 'traceId', label: 'Trace ID' },
+{ key: 'createTime', label: '执行时间' }, { key: 'trace', label: '追踪' },
+],
+ruleSetStatsColumns: [
+{ key: 'ruleCode', label: '规则集编码' }, { key: 'ruleName', label: '规则集名称' },
+{ key: 'evaluationCount', label: '执行次数' }, { key: 'hitCount', label: '命中次数' },
+{ key: 'hitRate', label: '命中率' }, { key: 'failureRate', label: '失败率' }, { key: 'avgCostTimeMs', label: '平均耗时' },
+],
   activeView: 'logs',
 loading: false,
 list: [],

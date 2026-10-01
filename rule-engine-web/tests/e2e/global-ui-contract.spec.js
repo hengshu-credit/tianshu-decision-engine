@@ -54,6 +54,26 @@ test('看板地图可切换到市级和县级行政层级', async ({ page }) => 
   assertClean()
 })
 
+test('期数和金额占比都无数据时隐藏占比整行但保留地图', async ({ page }) => {
+  const { assertClean } = await installDistRoutes(page, {
+    apiData: new Map([
+      ['/api/rule/dashboard/applications', {
+        visible: true,
+        summary: { applicationCount: 0 },
+        periods: { items: [], validCount: 0, excludedCount: 0 },
+        amounts: { items: [], validCount: 0, excludedCount: 0 },
+        geo: { points: [], validCount: 0, excludedCount: 0 },
+        mappingIssues: []
+      }]
+    ])
+  })
+  await page.goto('http://tianshu.local/index.html#/dashboard')
+
+  await expect(page.locator('.dashboard-distribution-grid')).toHaveCount(0)
+  await expect(page.locator('.dashboard-chart-card--wide')).toBeVisible()
+  assertClean()
+})
+
 test('全局字体、业务文本选择和关键按钮语义可用', async ({ page }) => {
   const fontResponses = []
   page.on('response', response => {

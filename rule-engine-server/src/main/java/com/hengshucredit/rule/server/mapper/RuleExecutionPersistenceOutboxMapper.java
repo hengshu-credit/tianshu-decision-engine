@@ -8,7 +8,7 @@ import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface RuleExecutionPersistenceOutboxMapper extends BaseMapper<RuleExecutionPersistenceOutbox> {
-    @Update("UPDATE rule_engine.rule_execution_persistence_outbox "
+    @Update("UPDATE rule_execution_persistence_outbox "
             + "SET delivery_status = 'PROCESSING', claim_token = #{claimToken}, "
             + "lease_until = DATE_ADD(CURRENT_TIMESTAMP, INTERVAL #{leaseSeconds} SECOND), update_time = CURRENT_TIMESTAMP "
             + "WHERE id = #{id} AND delivery_status = 'PENDING' "
@@ -16,13 +16,13 @@ public interface RuleExecutionPersistenceOutboxMapper extends BaseMapper<RuleExe
     int claimPending(@Param("id") Long id, @Param("claimToken") String claimToken,
                      @Param("leaseSeconds") int leaseSeconds);
 
-    @Update("UPDATE rule_engine.rule_execution_persistence_outbox "
+    @Update("UPDATE rule_execution_persistence_outbox "
             + "SET delivery_status = 'PENDING', claim_token = NULL, lease_until = NULL, update_time = CURRENT_TIMESTAMP "
             + "WHERE delivery_status = 'PROCESSING' "
             + "AND (lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP)")
     int releaseExpiredClaims(@Param("leaseSeconds") int leaseSeconds);
 
-    @Update("UPDATE rule_engine.rule_execution_persistence_outbox "
+    @Update("UPDATE rule_execution_persistence_outbox "
             + "SET log_pending = #{logPending}, billing_pending = #{billingPending}, "
             + "delivery_status = #{deliveryStatus}, retry_count = #{retryCount}, "
             + "next_retry_time = #{nextRetryTime}, last_error = #{lastError}, "

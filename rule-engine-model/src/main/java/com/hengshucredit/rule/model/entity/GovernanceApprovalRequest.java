@@ -12,7 +12,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.governance_approval_request")
+@TableName("governance_approval_request")
 public class GovernanceApprovalRequest {
     @TableId(type = IdType.AUTO)
     private Long id;

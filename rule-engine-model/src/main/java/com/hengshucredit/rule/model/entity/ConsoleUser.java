@@ -10,7 +10,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.console_user")
+@TableName("console_user")
 public class ConsoleUser {
     @TableId(type = IdType.AUTO)
     private Long id;

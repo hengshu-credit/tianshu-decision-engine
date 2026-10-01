@@ -1485,6 +1485,7 @@ import OperandPicker from '@/components/common/OperandPicker.vue'
 import { OPERAND_KINDS, collectOperandReferences, validateOperand } from '@/utils/operand'
 import { formatExpressionFormula } from '@/utils/expressionDisplay'
 import * as artifactApi from '@/api/artifact'
+import { resolveDesignerRouteName } from '@/utils/ruleDesignerNavigation'
 
 const IDEMPOTENCY_PURE_FUNCTIONS = [
   ['strTrim', '去除首尾空白', [{ name: 'text', type: 'STRING', example: '  A  ' }]],
@@ -1532,18 +1533,6 @@ const MODEL_TYPE_LABELS = {
   CROSS_ADV: '复杂交叉表',
   SCORE_ADV: '复杂评分卡',
   SCRIPT: 'QL 脚本',
-}
-
-const DESIGNER_ROUTE_BY_MODEL_TYPE = {
-  TABLE: 'DecisionTable',
-  TREE: 'DecisionTree',
-  FLOW: 'DecisionFlow',
-  RULE_SET: 'RuleSet',
-  CROSS: 'CrossTable',
-  SCORE: 'Scorecard',
-  CROSS_ADV: 'AdvancedCrossTable',
-  SCORE_ADV: 'AdvancedScorecard',
-  SCRIPT: 'ScriptEditor',
 }
 
 const LIFECYCLE_ACTIONS_BY_STATE = {
@@ -2233,7 +2222,7 @@ export default {
       }
     },
     designerRouteName(modelType) {
-      return DESIGNER_ROUTE_BY_MODEL_TYPE[modelType] || null
+      return resolveDesignerRouteName(modelType)
     },
     async openRevisionDesigner(revision, invalidatePendingFork = true) {
       if (!revision || revision.id === undefined || revision.id === null) return

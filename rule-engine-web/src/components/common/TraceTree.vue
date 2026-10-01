@@ -172,6 +172,17 @@
       <!-- 执行日志详情：统一不展示各模型顶部标题横幅（规则名/耗时/版本/结果） -->
       <!-- SCRIPT：在能解析出 flowCards 时与 FLOW 共用同一时间线卡片；否则回退下方树形追踪 -->
       <div v-if="showFlowCardTrace" class="fc-wrap">
+        <flow-trace-graph
+          v-if="effectiveType === 'FLOW' && modelData && modelData.nodes && modelData.nodes.length"
+          :model-data="modelData"
+          :cards="flowCards"
+        />
+        <div
+          v-if="effectiveType === 'FLOW' && modelData && modelData.nodes && modelData.nodes.length"
+          class="rule-trace-section-title flow-card-detail-title"
+        >
+          表达式执行明细
+        </div>
         <!-- 步骤卡片列表 -->
         <div class="fc-steps">
           <div v-for="(card, idx) in flowCards" :key="idx" class="fc-step">
@@ -834,7 +845,11 @@
                 </div>
                 <div class="tree-viewport">
                   <div class="tree-canvas">
-                    <trace-node :node="item.node" :var-map="varMap" />
+                      <trace-node
+                        :node="item.node"
+                        :var-map="varMap"
+                        :input-params="parsedInput"
+                      />
                   </div>
                 </div>
               </div>
@@ -878,7 +893,11 @@
                     </div>
                     <div class="tree-viewport">
                       <div class="tree-canvas">
-                        <trace-node :node="item.node" :var-map="varMap" />
+                        <trace-node
+                          :node="item.node"
+                          :var-map="varMap"
+                          :input-params="parsedInput"
+                        />
                       </div>
                     </div>
                   </div>
@@ -909,6 +928,7 @@ import TraceNode from './TraceNode.vue'
 import DecisionTreeTraceNode from './DecisionTreeTraceNode.vue'
 import RuleSetConditionTraceNode from './RuleSetConditionTraceNode.vue'
 import ExternalCallTrace from './ExternalCallTrace.vue'
+import FlowTraceGraph from './FlowTraceGraph.vue'
 import { compileOperand, operandDisplay } from '@/utils/operand'
 import { resolveTraceReferences } from '@/utils/traceReference'
 
@@ -964,6 +984,7 @@ export default {
     DecisionTreeTraceNode,
     RuleSetConditionTraceNode,
     ExternalCallTrace,
+    FlowTraceGraph,
     ElIconFullScreen,
     ElIconClose,
     ElIconInfo,
@@ -2445,6 +2466,11 @@ export default {
         return resolved === undefined ? undefined : resolved
       }
       return node.value
+    },
+    _traceNodeValue: function (node) {
+      if (!node) return undefined
+      if (node.value !== undefined) return node.value
+      return node.type === 'VARIABLE' ? this.getInputValue(node.token) : undefined
     },
     _traceNodeTitle: function (node) {
       if (!node) return '表达式'
@@ -4165,9 +4191,17 @@ export default {
       if (!node) return '?'
       if (node.type === 'VARIABLE') {
         var label = this.varMap[node.token] || node.token
-        if (node.value !== undefined)
-          return label + ' (' + this._fv(node.value) + ')'
+        var value = this._traceNodeValue(node)
+        if (value !== undefined)
+          return label + ' (' + this._fv(value) + ')'
         return label
+      }
+      if (node.type === 'FIELD') {
+        var fieldLabel = this.varMap[node.token] || node.token
+        var fieldValue = this._traceNodeValue(node)
+        if (fieldValue !== undefined)
+          return fieldLabel + ' (' + this._fv(fieldValue) + ')'
+        return fieldLabel || '?'
       }
       if (node.type === 'VALUE' || node.type === 'PRIMARY') {
         return this._fv(node.value !== undefined ? node.value : node.token)
@@ -4341,7 +4375,7 @@ export default {
         if (c.children && c.children[0] && c.value === false) {
           var vn = c.children[0].token
           var label = this.varMap[vn] || vn
-          parts.push(label + ' 实际值："' + this._fv(c.children[0].value) + '"')
+          parts.push(label + ' 实际值："' + this._fv(this._traceNodeValue(c.children[0])) + '"')
         }
       }
       return parts.join('，')
@@ -4369,7 +4403,8 @@ export default {
       return funcNode.children.map(function (c) {
         var name = c.token || '?'
         var label = c.type === 'VARIABLE' ? self.varMap[name] || name : name
-        var val = c.value !== undefined ? self._fv(c.value) : '?'
+        var traceValue = self._traceNodeValue(c)
+        var val = traceValue !== undefined ? self._fv(traceValue) : '?'
         return {
           name: name,
           label: label,
@@ -4400,8 +4435,9 @@ export default {
       var args = (funcNode.children || []).map(function (c) {
         if (c.type === 'VARIABLE') {
           var label = self.varMap[c.token] || c.token
-          return c.value !== undefined
-            ? label + '(' + self._fv(c.value) + ')'
+          var traceValue = self._traceNodeValue(c)
+          return traceValue !== undefined
+            ? label + '(' + self._fv(traceValue) + ')'
             : label
         }
         return self._fv(c.value !== undefined ? c.value : c.token)
@@ -4903,6 +4939,11 @@ export default {
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
 }
 .fc-wrap {
+}
+.flow-card-detail-title {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--tianshu-border-subtle);
 }
 .fc-steps {
   padding: 0 4px;

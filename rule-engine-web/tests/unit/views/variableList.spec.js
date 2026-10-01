@@ -596,6 +596,17 @@ describe('VariableList — 变量操作', () => {
     expect(constantTable).not.toContain('转为全局')
   })
 
+  test('变量列表使用字段按钮替代额外列复选框，验证规则保持亮色主操作', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/variable/VariableList.vue'), 'utf8')
+    const toolbar = source.slice(source.indexOf('<variable-toolbar-actions'), source.indexOf('<!-- 1. 普通变量'))
+    expect(toolbar).toContain(':column-settings-columns="variableColumns"')
+    expect(toolbar).toContain(':column-settings-model-value="variableColumnOrder"')
+    expect(source).not.toContain('显示脚本名称、默认值和取值范围')
+    const actions = fs.readFileSync(path.resolve(process.cwd(), 'src/views/variable/components/VariableToolbarActions.vue'), 'utf8')
+    expect(actions).toContain('class="variable-validate-button"')
+    expect(actions.indexOf('table-column-settings')).toBeLessThan(actions.indexOf('批量导入'))
+  })
+
   test('数据对象仅为项目级记录显示转为全局入口', () => {
     const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/variable/VariableList.vue'), 'utf8')
     const objectPanel = source.slice(source.indexOf('<el-tab-pane label="数据对象"'), source.indexOf('</el-tab-pane>', source.indexOf('<el-tab-pane label="数据对象"')))

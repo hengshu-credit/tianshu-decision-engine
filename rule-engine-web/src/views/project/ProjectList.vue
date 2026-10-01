@@ -93,7 +93,7 @@
           <span v-else>{{ projectCellValue(row, column.key) }}</span>
         </template>
       </el-table-column>
-      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="380" align="center" fixed="right">
+      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '进入', '鉴权', 'API', '删除'])" align="center" fixed="right">
         <template v-slot="{ row }">
           <div class="table-operation-group project-action-links">
             <el-button v-permission="'project:edit'" link data-action="edit" size="small" type="primary" @click="handleEdit(row)"
@@ -219,6 +219,7 @@ import { generateApiDocHtml } from '@/utils/apiDoc'
 import { readLocalTheme } from '@/theme/themeRuntime'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import ProjectAuthDialog from './ProjectAuthDialog.vue'
 export default {
   data() {
@@ -290,6 +291,9 @@ export default {
     this.loadData()
   },
   methods: {
+    operationColumnWidth(labels) {
+      return getOperationColumnWidth(labels)
+    },
     restoreCachedState() {
       const state = restorePageState('ProjectList')
       if (state.qp) this.qp = { ...this.qp, ...state.qp }

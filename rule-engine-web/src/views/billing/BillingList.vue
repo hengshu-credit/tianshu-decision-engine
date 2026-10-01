@@ -92,6 +92,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
+              <table-column-settings :columns="billingColumns" storage-key="tianshu:table-columns:billing-list" />
               <el-button
                 v-permission="'project:edit'"
                 type="primary"
@@ -305,6 +306,11 @@
               <el-button @click="resetRecordQuery">重置</el-button>
             </el-form-item>
           </el-form>
+          <div class="uiue-btn-bar">
+            <div class="btn-right">
+              <table-column-settings :columns="recordColumns" storage-key="tianshu:table-columns:billing-records" />
+            </div>
+          </div>
         </div>
 
         <el-table class="management-table" show-overflow-tooltip
@@ -510,6 +516,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
+              <table-column-settings :columns="summaryColumns" storage-key="tianshu:table-columns:billing-summary" />
               <el-date-picker
                 v-model="refreshDate"
                 size="small"
@@ -851,10 +858,31 @@ import { listApiConfigs } from '@/api/datasource'
 import { listDbDatasources } from '@/api/database'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 
 export default {
   data() {
     return {
+      billingColumns: [
+        { key: 'scope', label: '作用范围' }, { key: 'projectName', label: '项目名称' },
+        { key: 'billingCode', label: '计费编码' }, { key: 'billingName', label: '计费名称' },
+        { key: 'billingTarget', label: '对象' }, { key: 'chargeType', label: '方式' },
+        { key: 'unitPrice', label: '单价' }, { key: 'status', label: '状态' },
+      ],
+      summaryColumns: [
+        { key: 'summaryDate', label: '汇总日期' }, { key: 'projectCode', label: '项目编码' },
+        { key: 'authCode', label: '鉴权编码' }, { key: 'totalCount', label: '调用次数' },
+        { key: 'successCount', label: '成功次数' }, { key: 'amount', label: '金额' },
+      ],
+      recordColumns: [
+        { key: 'occurTime', label: '发生时间' }, { key: 'projectCode', label: '项目编码' },
+        { key: 'authCode', label: '鉴权编码' }, { key: 'authType', label: '鉴权方式' },
+        { key: 'tokenCode', label: 'Token 编码' }, { key: 'billingCode', label: '计费编码' },
+        { key: 'billingTarget', label: '对象' }, { key: 'ruleCode', label: '规则编码' },
+        { key: 'apiCode', label: '接口编码' }, { key: 'errorMessage', label: '错误信息' },
+        { key: 'success', label: '结果' }, { key: 'quantity', label: '数量' },
+        { key: 'amount', label: '金额' }, { key: 'costTimeMs', label: '耗时(ms)' },
+      ],
       activeTab: 'config',
       projects: [],
       targetOptions: [],
@@ -955,7 +983,7 @@ export default {
     }
   },
   name: 'BillingList',
-  components: { ProjectFilterSelect, RemoteFilterSelect },
+  components: { ProjectFilterSelect, RemoteFilterSelect, TableColumnSettings },
   created() {
     this.loadProjects()
     this.loadConfigs()

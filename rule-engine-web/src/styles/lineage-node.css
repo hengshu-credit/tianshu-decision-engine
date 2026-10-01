@@ -10,6 +10,7 @@
     border-radius: 6px;
     background: var(--tianshu-flow-node-bg, var(--tianshu-bg-surface));
     box-shadow: var(--tianshu-shadow-small);
+    cursor: move;
     user-select: none;
   }
   .lineage-lf-node.current-node {

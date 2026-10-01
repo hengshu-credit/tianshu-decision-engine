@@ -6,7 +6,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @Data
-@TableName("rule_engine.rule_model")
+@TableName("rule_model")
 public class RuleModel {
     @TableId(type = IdType.AUTO)
     private Long id;

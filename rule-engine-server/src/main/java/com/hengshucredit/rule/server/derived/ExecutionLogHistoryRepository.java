@@ -38,7 +38,7 @@ public class ExecutionLogHistoryRepository {
             Map<String, HistoricalFieldDefinition> definitions) {
         StringBuilder sql = new StringBuilder(
                 "SELECT l.id, l.trace_id, l.started_at, l.history_fields "
-                        + "FROM rule_engine.rule_execution_log l "
+                        + "FROM rule_execution_log l "
                         + "WHERE l.started_at >= ? AND l.started_at < ? AND l.success = 1 "
                         + "AND l.source = 'CLIENT_SERVER' AND l.history_fields IS NOT NULL ");
         List<Object> parameters = new ArrayList<>();
@@ -105,7 +105,7 @@ public class ExecutionLogHistoryRepository {
         for (int offset = 0; offset < traces.size(); offset += 500) {
             if (System.nanoTime() >= deadline) throw new IllegalStateException("历史外数结果查询超时");
             List<String> batch = traces.subList(offset, Math.min(offset + 500, traces.size()));
-            String sql = "SELECT root_trace_id, target_ref_id, history_fields FROM rule_engine.rule_runtime_call_log "
+            String sql = "SELECT root_trace_id, target_ref_id, history_fields FROM rule_runtime_call_log "
                     + "WHERE action_type = 'API_INVOKE' AND module_type = 'DATASOURCE' AND root_trace_id IN ("
                     + String.join(",", java.util.Collections.nCopies(batch.size(), "?")) + ") ORDER BY id";
             jdbc.query(connection -> {

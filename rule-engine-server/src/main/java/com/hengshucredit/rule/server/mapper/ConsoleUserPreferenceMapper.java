@@ -13,13 +13,13 @@ public interface ConsoleUserPreferenceMapper
         extends BaseMapper<ConsoleUserPreference> {
 
     @Select("SELECT preference_value "
-            + "FROM rule_engine.console_user_preference "
+            + "FROM console_user_preference "
             + "WHERE user_id = #{userId} AND preference_key = #{preferenceKey} "
             + "LIMIT 1")
     String findValue(@Param("userId") Long userId,
                      @Param("preferenceKey") String preferenceKey);
 
-    @Insert("INSERT INTO rule_engine.console_user_preference "
+    @Insert("INSERT INTO console_user_preference "
             + "(user_id, preference_key, preference_value, create_by, update_by) "
             + "VALUES (#{userId}, #{preferenceKey}, #{preferenceValue}, "
             + "#{operator}, #{operator}) "
@@ -31,7 +31,7 @@ public interface ConsoleUserPreferenceMapper
                     @Param("preferenceValue") String preferenceValue,
                     @Param("operator") String operator);
 
-    @Delete("DELETE FROM rule_engine.console_user_preference "
+    @Delete("DELETE FROM console_user_preference "
             + "WHERE user_id = #{userId} AND preference_key = #{preferenceKey}")
     int deleteValue(@Param("userId") Long userId,
                     @Param("preferenceKey") String preferenceKey);

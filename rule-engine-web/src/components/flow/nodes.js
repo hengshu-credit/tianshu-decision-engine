@@ -33,20 +33,35 @@ function createDagSourceRule() {
   }
 }
 
+const TRACE_NODE_STYLES = {
+  hit: { fill: '#f0fdf4', stroke: '#16a34a', text: '#166534' },
+  done: { fill: '#eff6ff', stroke: '#2563eb', text: '#1d4ed8' },
+  miss: { fill: '#fef2f2', stroke: '#dc2626', text: '#b91c1c' },
+  skipped: { fill: '#f8fafc', stroke: '#94a3b8', text: '#64748b' },
+  pending: { fill: '#ffffff', stroke: '#cbd5e1', text: '#64748b' },
+}
+
+function traceStyle(properties, fallback) {
+  const status = properties && properties.traceStatus
+  const statusStyle = TRACE_NODE_STYLES[status]
+  return statusStyle ? { ...fallback, ...statusStyle } : fallback
+}
+
 // ============================================================
 // 1. 开始事件 - 绿色圆形
 // ============================================================
 function StartEventFactory(CircleNode, CircleNodeModel) {
   class StartEventView extends CircleNode {
     getShape() {
-      const { x, y, r } = this.props.model
+      const { x, y, r, properties } = this.props.model
+      const colors = traceStyle(properties, { fill: '#52c41a', stroke: '#389e0d', text: '#fff' })
       return h('g', {}, [
         h('circle', {
           cx: x,
           cy: y,
           r,
-          fill: '#52c41a',
-          stroke: '#389e0d',
+          fill: colors.fill,
+          stroke: colors.stroke,
           strokeWidth: 2
         }),
         h('text', {
@@ -54,7 +69,7 @@ function StartEventFactory(CircleNode, CircleNodeModel) {
           y: y + 1,
           textAnchor: 'middle',
           dominantBaseline: 'central',
-          fill: '#fff',
+          fill: colors.text,
           fontSize: 12,
           fontWeight: 'bold'
         }, '开始')
@@ -73,8 +88,9 @@ function StartEventFactory(CircleNode, CircleNodeModel) {
     }
     getNodeStyle() {
       const style = super.getNodeStyle()
-      style.stroke = '#389e0d'
-      style.fill = '#52c41a'
+      const colors = traceStyle(this.properties, { fill: '#52c41a', stroke: '#389e0d' })
+      style.stroke = colors.stroke
+      style.fill = colors.fill
       return style
     }
     getConnectedSourceRules() {
@@ -108,13 +124,14 @@ function EndEventFactory(CircleNode, CircleNodeModel) {
     getShape() {
       const { x, y, r, properties } = this.props.model
       const appearance = getEndNodeAppearance(properties && properties.terminationScope)
+      const colors = traceStyle(properties, { fill: appearance.fill, stroke: appearance.stroke, text: '#fff' })
       return h('g', {}, [
         h('circle', {
           cx: x,
           cy: y,
           r,
-          fill: appearance.fill,
-          stroke: appearance.stroke,
+          fill: colors.fill,
+          stroke: colors.stroke,
           strokeWidth: 2
         }),
         h('text', {
@@ -122,7 +139,7 @@ function EndEventFactory(CircleNode, CircleNodeModel) {
           y: y + 1,
           textAnchor: 'middle',
           dominantBaseline: 'central',
-          fill: '#fff',
+          fill: colors.text,
           fontSize: 12,
           fontWeight: 'bold'
         }, appearance.text)
@@ -147,8 +164,9 @@ function EndEventFactory(CircleNode, CircleNodeModel) {
     getNodeStyle() {
       const style = super.getNodeStyle()
       const appearance = getEndNodeAppearance(this.properties && this.properties.terminationScope)
-      style.stroke = appearance.stroke
-      style.fill = appearance.fill
+      const colors = traceStyle(this.properties, { fill: appearance.fill, stroke: appearance.stroke })
+      style.stroke = colors.stroke
+      style.fill = colors.fill
       return style
     }
     getConnectedSourceRules() {
@@ -178,12 +196,15 @@ function createFlowRectModel(width, height) {
       this.text.value = ''
     }
     getNodeStyle() {
+      const properties = this.properties || {}
+      const colors = traceStyle(properties, { fill: 'var(--tianshu-flow-node-bg)', stroke: 'var(--tianshu-flow-node-border)' })
       return {
         ...super.getNodeStyle(),
-        stroke: 'var(--tianshu-flow-node-border)',
-        fill: 'var(--tianshu-flow-node-bg)',
+        stroke: colors.stroke,
+        fill: colors.fill,
         strokeWidth: 2,
         radius: 6,
+        ...(properties.style || {}),
       }
     }
   }
@@ -210,6 +231,7 @@ function ScriptTaskFactory(RectNode) {
     getShape() {
       const { x, y, properties } = this.props.model
       const name = properties.nodeName || '脚本任务'
+      const colors = traceStyle(properties, { text: 'var(--tianshu-flow-node-text)' })
       return h('g', {}, [
         renderFlowRect(this.props.model),
         h('text', {
@@ -218,9 +240,20 @@ function ScriptTaskFactory(RectNode) {
           textAnchor: 'middle',
           dominantBaseline: 'central',
           fill: 'var(--tianshu-flow-node-text)',
+          ...(colors.text !== 'var(--tianshu-flow-node-text)' ? { fill: colors.text } : {}),
           fontSize: 13,
           fontWeight: 'bold'
-        }, name.length > 10 ? name.substr(0, 10) + '...' : name)
+        }, name.length > 10 ? name.substr(0, 10) + '...' : name),
+        properties.traceStatus && properties.traceStatus !== 'pending'
+          ? h('text', {
+            x,
+            y: y + 15,
+            textAnchor: 'middle',
+            dominantBaseline: 'central',
+            fill: colors.text,
+            fontSize: 9,
+          }, properties.traceStatusText || '')
+          : null
       ])
     }
   }
@@ -262,11 +295,12 @@ function ExclusiveGatewayFactory(DiamondNode, DiamondNodeModel) {
         [x - rx, y]
       ].map(p => p.join(',')).join(' ')
       const shortName = nodeName.length > 4 ? nodeName.substr(0, 4) : nodeName
+      const colors = traceStyle(properties, { fill: '#fa8c16', stroke: '#d46b08', text: '#fff' })
       return h('g', {}, [
         h('polygon', {
           points,
-          fill: '#fa8c16',
-          stroke: '#d46b08',
+          fill: colors.fill,
+          stroke: colors.stroke,
           strokeWidth: 2
         }),
         h('text', {
@@ -274,7 +308,7 @@ function ExclusiveGatewayFactory(DiamondNode, DiamondNodeModel) {
           y: y + 1,
           textAnchor: 'middle',
           dominantBaseline: 'central',
-          fill: '#fff',
+          fill: colors.text,
           fontSize: 11,
           fontWeight: 'bold'
         }, shortName)
@@ -300,8 +334,10 @@ function ExclusiveGatewayFactory(DiamondNode, DiamondNodeModel) {
     }
     getNodeStyle() {
       const style = super.getNodeStyle()
-      style.stroke = '#d46b08'
-      style.fill = '#fa8c16'
+      const colors = traceStyle(this.properties, { fill: '#fa8c16', stroke: '#d46b08' })
+      style.stroke = colors.stroke
+      style.fill = colors.fill
+      Object.assign(style, this.properties && this.properties.style ? this.properties.style : {})
       return style
     }
     getConnectedSourceRules() {
@@ -320,7 +356,8 @@ function ExclusiveGatewayFactory(DiamondNode, DiamondNodeModel) {
 function JoinGatewayFactory(DiamondNode, DiamondNodeModel) {
   class JoinGatewayView extends DiamondNode {
     getShape() {
-      const { x, y, rx, ry } = this.props.model
+      const { x, y, rx, ry, properties } = this.props.model
+      const colors = traceStyle(properties, { fill: '#8c8c8c', stroke: '#595959', text: '#fff' })
       const points = [
         [x, y - ry],
         [x + rx, y],
@@ -330,8 +367,8 @@ function JoinGatewayFactory(DiamondNode, DiamondNodeModel) {
       return h('g', {}, [
         h('polygon', {
           points,
-          fill: '#8c8c8c',
-          stroke: '#595959',
+          fill: colors.fill,
+          stroke: colors.stroke,
           strokeWidth: 2
         }),
         h('text', {
@@ -339,7 +376,7 @@ function JoinGatewayFactory(DiamondNode, DiamondNodeModel) {
           y: y + 1,
           textAnchor: 'middle',
           dominantBaseline: 'central',
-          fill: '#fff',
+          fill: colors.text,
           fontSize: 12,
           fontWeight: 'bold'
         }, '聚合')
@@ -363,8 +400,10 @@ function JoinGatewayFactory(DiamondNode, DiamondNodeModel) {
     }
     getNodeStyle() {
       const style = super.getNodeStyle()
-      style.stroke = '#595959'
-      style.fill = '#8c8c8c'
+      const colors = traceStyle(this.properties, { fill: '#8c8c8c', stroke: '#595959' })
+      style.stroke = colors.stroke
+      style.fill = colors.fill
+      Object.assign(style, this.properties && this.properties.style ? this.properties.style : {})
       return style
     }
     getConnectedSourceRules() {
@@ -458,9 +497,15 @@ function LineageNodeFactory(RectNode) {
           },
         }, properties.toggleText || '+')
         : null
-      return h('g', {}, [
+      const handleDragStart = event => {
+        if (event.button !== 0 || event.target?.closest?.('button')) return
+        event.preventDefault()
+        event.stopPropagation()
+        model.graphModel.eventCenter.emit('lineage:dragstart', { data: model.getData(), e: event })
+      }
+      return h('g', { onPointerDown: handleDragStart, onMouseDown: handleDragStart }, [
         renderFlowRect(model),
-        h('foreignObject', { x: left, y: top, width, height, style: { overflow: 'visible' } },
+        h('foreignObject', { x: left, y: top, width, height, style: { overflow: 'visible' }, onPointerDown: handleDragStart, onMouseDown: handleDragStart },
           h('div', {
             class: nodeClass,
             'data-node-id': properties.nodeId,

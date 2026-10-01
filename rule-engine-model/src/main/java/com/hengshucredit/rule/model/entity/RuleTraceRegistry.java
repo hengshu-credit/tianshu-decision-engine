@@ -9,7 +9,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.rule_trace_registry")
+@TableName("rule_trace_registry")
 public class RuleTraceRegistry {
     @TableId
     private String traceId;

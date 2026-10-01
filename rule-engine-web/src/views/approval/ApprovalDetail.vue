@@ -159,6 +159,25 @@
               />
             </el-select>
           </div>
+          <div
+            v-if="businessRuleComparison"
+            class="business-diff-panel"
+            data-testid="business-config-diff"
+          >
+            <div class="business-diff-heading">
+              <div>
+                <span class="section-kicker">BUSINESS CONFIGURATION</span>
+                <h3>业务配置差异</h3>
+              </div>
+              <span>按实际引擎配置渲染，变更项已高亮</span>
+            </div>
+            <rule-version-diff
+              :model-type="businessRuleComparison.modelType"
+              :left-version="businessRuleComparison.leftVersion"
+              :right-version="businessRuleComparison.rightVersion"
+            />
+          </div>
+          <div class="technical-diff-heading">技术内容（原始配置 JSON / 字段差异）</div>
           <json-version-diff
             :original="compareOriginal"
             :modified="compareModified"
@@ -375,12 +394,13 @@ import { listRuleRevisions } from '@/api/definition'
 import { getCurrentUser } from '@/security/permissionState'
 import { resolveDesignerRouteName } from '@/utils/ruleDesignerNavigation'
 import JsonVersionDiff from '@/components/common/JsonVersionDiff.vue'
+import RuleVersionDiff from '@/components/rule/versionDiff/RuleVersionDiff.vue'
 import LineageGraph from '@/views/lineage/LineageGraph.vue'
 
 export default {
   name: 'ApprovalDetail',
   mixins: [workspaceTabTitleMixin(vm => vm.request ? vm.resourceTitle : '')],
-  components: { JsonVersionDiff, LineageGraph },
+  components: { JsonVersionDiff, RuleVersionDiff, LineageGraph },
   setup() {
     return {
       route: useRoute(),
@@ -450,6 +470,16 @@ export default {
         this.prettySnapshot(this.compareModified)
         ? '内容一致'
         : '内容有差异'
+    },
+    businessRuleComparison() {
+      if (!this.request || this.request.resourceType !== 'RULE') return null
+      const modelType = this.ruleModelType()
+      if (!modelType) return null
+      return {
+        modelType,
+        leftVersion: this.ruleComparisonVersion(this.compareLeftKey, modelType),
+        rightVersion: this.ruleComparisonVersion(this.compareRightKey, modelType)
+      }
     },
     isRequestComparison() {
       const base = (this.detail.versions || []).find(version =>
@@ -731,6 +761,59 @@ export default {
     comparisonLabel(key) {
       const option = this.compareOptions.find(item => item.value === key)
       return option ? option.label : '空配置'
+    },
+    parseSnapshot(snapshot) {
+      if (!snapshot) return {}
+      if (typeof snapshot === 'object') return snapshot
+      try {
+        const parsed = JSON.parse(snapshot)
+        return parsed && typeof parsed === 'object' ? parsed : {}
+      } catch (error) {
+        return {}
+      }
+    },
+    ruleModelType() {
+      const current = this.parseSnapshot(this.comparisonSnapshot('CURRENT'))
+      if (current.modelType) return current.modelType
+      for (const version of this.detail.versions || []) {
+        const modelType = this.parseSnapshot(version.snapshotJson).modelType
+        if (modelType) return modelType
+      }
+      return ''
+    },
+    ruleModelJson(snapshot, modelType) {
+      const value = this.parseSnapshot(snapshot)
+      const content = value.content && typeof value.content === 'object'
+        ? value.content
+        : this.parseSnapshot(value.content)
+      const model = content.modelJson !== undefined
+        ? content.modelJson
+        : value.modelJson
+      if (model !== undefined && model !== null && model !== '') {
+        return typeof model === 'string' ? model : JSON.stringify(model)
+      }
+      if (modelType === 'SCRIPT' && value.script) {
+        return JSON.stringify({ script: value.script })
+      }
+      return '{}'
+    },
+    ruleComparisonVersion(key, modelType) {
+      const snapshot = this.comparisonSnapshot(key)
+      const versionId = Number(String(key || '').replace('VERSION:', ''))
+      const source = (this.detail.versions || []).find(item => item.id === versionId)
+      const current = key === 'CURRENT'
+      return {
+        version: source ? source.versionNo : '',
+        versionLabel: current
+          ? this.comparisonLabel(key)
+          : source
+            ? `历史生效 V${source.versionNo}`
+            : '空配置',
+        publishTime: source && source.createTime,
+        publishBy: source && source.createBy,
+        changeLog: source && source.changeSummary,
+        modelJson: this.ruleModelJson(snapshot, modelType)
+      }
     },
     prettySnapshot(snapshot) {
       if (!snapshot) return '{}'
@@ -1084,6 +1167,40 @@ export default {
   color: var(--tianshu-text-secondary);
   font-size: 13px;
   white-space: nowrap;
+}
+
+.business-diff-panel {
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid var(--tianshu-border-subtle);
+  border-radius: 6px;
+  background: var(--tianshu-bg-soft);
+}
+
+.business-diff-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.business-diff-heading h3 {
+  margin: 4px 0 0;
+  color: var(--tianshu-text-primary);
+  font-size: 16px;
+}
+
+.business-diff-heading > span {
+  color: var(--tianshu-text-secondary);
+  font-size: 12px;
+}
+
+.technical-diff-heading {
+  margin: 4px 0 10px;
+  color: var(--tianshu-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .dependency-details {

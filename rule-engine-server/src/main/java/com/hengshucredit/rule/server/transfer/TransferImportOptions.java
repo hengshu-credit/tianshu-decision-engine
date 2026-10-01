@@ -21,7 +21,8 @@ public record TransferImportOptions(Long targetProjectId,
                                     Boolean publishRules,
                                     List<String> selectedResourceKeys,
                                     Map<String, Long> resourceBindings,
-                                    Map<String, Long> fieldBindings) {
+                                    Map<String, Long> fieldBindings,
+                                    Map<String, String> resourceActions) {
     public TransferImportOptions(Long targetProjectId, String targetScope,
                                  String variablePolicy, String resourcePolicy,
                                  String suffix, Boolean createProject,
@@ -29,7 +30,7 @@ public record TransferImportOptions(Long targetProjectId,
                                  Map<String, Long> projectBindings) {
         this(targetProjectId, targetScope, variablePolicy, resourcePolicy, suffix,
                 createProject, projectCode, projectName, projectBindings, false,
-                List.of(), Map.of(), Map.of());
+                List.of(), Map.of(), Map.of(), Map.of());
     }
 
     public TransferImportOptions(Long targetProjectId, String targetScope,
@@ -40,7 +41,7 @@ public record TransferImportOptions(Long targetProjectId,
                                  Boolean publishRules) {
         this(targetProjectId, targetScope, variablePolicy, resourcePolicy, suffix,
                 createProject, projectCode, projectName, projectBindings, publishRules,
-                List.of(), Map.of(), Map.of());
+                List.of(), Map.of(), Map.of(), Map.of());
     }
     public String normalizedScope() {
         return "GLOBAL".equalsIgnoreCase(targetScope) ? "GLOBAL" : "PROJECT";
@@ -67,5 +68,18 @@ public record TransferImportOptions(Long targetProjectId,
 
     public Map<String, Long> normalizedFieldBindings() {
         return fieldBindings == null ? Map.of() : Map.copyOf(fieldBindings);
+    }
+
+    public Map<String, String> normalizedResourceActions() {
+        if (resourceActions == null || resourceActions.isEmpty()) return Map.of();
+        java.util.Map<String, String> result = new java.util.LinkedHashMap<>();
+        resourceActions.forEach((key, value) -> {
+            if (key == null || value == null) return;
+            String normalized = value.trim().toUpperCase();
+            if ("REUSE".equals(normalized) || "OVERWRITE".equals(normalized) || "SUFFIX".equals(normalized)) {
+                result.put(key, normalized);
+            }
+        });
+        return java.util.Map.copyOf(result);
     }
 }

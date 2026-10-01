@@ -102,6 +102,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
+              <table-column-settings :columns="modelColumns" storage-key="tianshu:table-columns:model-list" />
               <el-button
                 v-permission="'model:edit'"
                 size="small"
@@ -249,7 +250,7 @@
               ></template
             >
           </el-table-column>
-          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="360" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['详情', '编辑', '发布', '下线', '转为全局', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 link
@@ -836,6 +837,8 @@ import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import ModelImpactDialog from '@/components/model/ModelImpactDialog.vue'
 import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
 import {
@@ -893,6 +896,13 @@ const createEditForm = () => ({
 export default {
   data() {
     return {
+      modelColumns: [
+        { key: 'scope', label: '作用范围' }, { key: 'projectName', label: '项目名称' },
+        { key: 'modelCode', label: '模型编码' }, { key: 'modelName', label: '模型名称' },
+        { key: 'modelType', label: '模型大类' }, { key: 'modelFormat', label: '模型格式' },
+        { key: 'provider', label: '配置设备' }, { key: 'runtime', label: '实际运行状态' },
+        { key: 'preload', label: '启动预加载' }, { key: 'timeout', label: '执行超时' }, { key: 'fieldCount', label: '字段数' },
+      ],
       loading: false,
       pendingModel: {},
       pendingImpactAction: 'DELETE',
@@ -1042,6 +1052,7 @@ export default {
     }
   },
   components: {
+    TableColumnSettings,
     ModuleCallLog,
     MonacoEditor,
     RemoteFilterSelect,
@@ -1117,6 +1128,9 @@ export default {
     this.load()
   },
   methods: {
+    operationColumnWidth(labels) {
+      return getOperationColumnWidth(labels)
+    },
     restoreCachedState() {
       const state = restorePageState(projectPageStateKey('ModelList', this.contextProjectId))
       if (state.qp) this.qp = { ...this.qp, ...state.qp }

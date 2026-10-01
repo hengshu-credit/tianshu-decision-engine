@@ -10,7 +10,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.rule_list_change_batch")
+@TableName("rule_list_change_batch")
 public class RuleListChangeBatch {
     @TableId(type = IdType.AUTO)
     private Long id;

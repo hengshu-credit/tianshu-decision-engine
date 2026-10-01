@@ -6,7 +6,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.rule_model_input_field")
+@TableName("rule_model_input_field")
 public class RuleModelInputField {
     @TableId(type = IdType.AUTO)
     private Long id;

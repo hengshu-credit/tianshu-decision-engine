@@ -1,11 +1,11 @@
+SET NAMES utf8mb4;
+SET character_set_connection = utf8mb4;
+
 -- 三方外数 API 配置模板（2026-07-16）
 -- 说明：本文件可重复执行，会覆盖相同 datasource_code 的模板配置。
 -- 所有数据源和 API 默认停用；REPLACE_BEFORE_ENABLE_* 必须在启用前替换。
 -- 本文件不调用任何供应商接口，姓名/身份证/手机号/请求号统一取全局 code：
 -- name / idcard_no / mobile_no / request_id。
-
-USE rule_engine;
-
 DELETE api
 FROM rule_external_api_config api
 JOIN rule_external_datasource ds ON ds.id = api.datasource_id

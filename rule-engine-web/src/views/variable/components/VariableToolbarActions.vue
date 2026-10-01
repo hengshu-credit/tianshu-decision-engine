@@ -1,6 +1,13 @@
 <template>
   <div class="uiue-btn-bar variable-toolbar-actions">
     <div class="btn-right">
+      <table-column-settings
+        v-if="columnSettingsColumns.length"
+        :model-value="columnSettingsModelValue"
+        :columns="columnSettingsColumns"
+        :storage-key="columnSettingsStorageKey"
+        @update:model-value="$emit('update:columnSettingsModelValue', $event)"
+      />
       <el-dropdown
         v-if="showBatchActions"
         v-permission="'approval:submit'"
@@ -43,7 +50,8 @@
         v-permission="'field:edit'"
         size="small"
         :icon="ElIconVideoPlay"
-        type="warning"
+        type="primary"
+        class="variable-validate-button"
         :loading="validating"
         @click="$emit('validate')"
         >验证规则</el-button
@@ -65,10 +73,11 @@ import {
   Upload as ElIconUpload2,
   VideoPlay as ElIconVideoPlay,
 } from '@element-plus/icons-vue'
+import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 
 export default {
   name: 'VariableToolbarActions',
-  components: { ElIconArrowDown },
+  components: { ElIconArrowDown, TableColumnSettings },
   props: {
     primaryCreateLabel: {
       type: String,
@@ -82,8 +91,20 @@ export default {
       type: Boolean,
       default: false,
     },
+    columnSettingsColumns: {
+      type: Array,
+      default: () => [],
+    },
+    columnSettingsModelValue: {
+      type: Array,
+      default: () => [],
+    },
+    columnSettingsStorageKey: {
+      type: String,
+      default: 'tianshu:table-columns:variable-list',
+    },
   },
-  emits: ['import', 'create', 'validate'],
+  emits: ['import', 'create', 'validate', 'update:columnSettingsModelValue'],
   data() {
     return {
       ElIconUpload2: markRaw(ElIconUpload2),
@@ -103,5 +124,16 @@ export default {
 .variable-toolbar-actions {
   flex: 0 0 auto;
   margin: 0 0 0 auto;
+}
+
+.variable-validate-button {
+  color: var(--tianshu-brand-foreground) !important;
+  font-weight: 600;
+  background: var(--el-color-primary) !important;
+  border-color: var(--el-color-primary) !important;
+
+  :deep(.el-icon) {
+    color: currentColor;
+  }
 }
 </style>

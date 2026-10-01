@@ -58,8 +58,8 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 | `rule-engine-client-http` | HTTP-only Java SDK，远程调用服务端执行 | - |
 | `rule-engine-runtime` | 可独立部署的 HTTP/SDK 执行运行时 | 7070 / 7071 |
 | `rule-engine-web` | Vue 3 前端控制台（独立部署） | 9090（dev）|
-| `docker/rule-engine-mysql` | MySQL 配置、数据和日志（docker/ 独立 Compose） | - |
-| `docker/rule-engine-redis` | Redis 配置、数据和日志（docker/ 独立 Compose） | - |
+| `docker/rule-engine-mysql` | MySQL 配置、数据和日志（独立 Compose，可远程访问） | - |
+| `docker/rule-engine-redis` | Redis 配置、数据和日志（独立 Compose，可远程访问） | - |
 
 ### 部署架构
 
@@ -117,20 +117,24 @@ npm run test:e2e:full # 设置 E2E_BASE_URL 后执行真实前后端联调
 ### 基础设施
 
 ```bash
-# docker/docker-compose.mysql.yml / docker/docker-compose.redis.yml 分别启动 MySQL、Redis；docker/docker-compose.yml 负责初始化并启动前后端与运行时。
+# docker/docker-compose.mysql.yml / docker/docker-compose.redis.yml 可独立启动并远程提供 MySQL、Redis；
+# docker/docker-compose.yml 启动连接外部数据库的 server、web、HTTP、SDK；
+# docker/docker-compose.full.yml 一键启动 MySQL、Redis、server、web、HTTP、SDK。
 cp .env.example .env  # PowerShell 使用 Copy-Item .env.example .env
 # 替换 .env 中全部占位值
 docker compose --env-file .env -f docker/docker-compose.mysql.yml up -d
 docker compose --env-file .env -f docker/docker-compose.redis.yml up -d
-docker compose --env-file .env -f docker/docker-compose.yml up -d
-# 线上拆分部署时只启动对应的独立 Compose 文件，主 Compose 的 MYSQL_SERVICE_HOST/REDIS_SERVICE_HOST 指向生产地址。
+# 外部数据库模式：把 MYSQL_SERVICE_HOST/REDIS_SERVICE_HOST 配成容器可访问的远程地址，再执行：
+# docker compose --env-file .env -f docker/docker-compose.yml up -d
+# 完整单机模式不需要先启动上面两个文件，直接执行：
+# docker compose --env-file .env -f docker/docker-compose.full.yml up -d
 ```
 
 ### 数据库初始化
 
-- `schema.sql` 只包含数据库、表和索引等结构 DDL；`export_202607161151.sql` 是当前唯一的初始数据快照，不生产 `data-system.sql`
-- 空 Docker 数据卷首次启动依次执行 `01-schema.sql` 和 `02-export.sql`；根编排的 `mysql-init` 对已有数据卷只重复执行 schema，不自动重放会覆盖数据的 export
-- 手工完整恢复顺序：删除 `rule_engine` 数据库、执行 `schema.sql`、执行 `export_202607161151.sql`；export 会清空其覆盖的全部数据表
+- `schema.sql` 只包含数据库、表和索引等结构 DDL；`data.sql` 是当前唯一的基础数据快照；结构和数据脚本均使用当前连接的数据库，不写死数据库名
+- 空 Docker 数据卷首次启动依次执行 `01-schema.sql` 和 `02-data.sql`；只有 `docker/docker-compose.full.yml` 包含 `mysql-init`，对已有数据卷只重复执行 schema，不自动重放会覆盖数据的 data.sql
+- 手工完整恢复顺序：删除 `MYSQL_DATABASE` 指定的数据库，先执行 `schema.sql`，再执行 `data.sql`；data.sql 会清空其覆盖的全部数据表
 - `data-example.sql` / `data-tianshu-example.sql` 仅作为可选示例数据脚本手动导入，不属于系统初始数据来源
 - 仅在 README 的 12 节「实现边界」中保留的已知限制（如血缘仅静态识别脚本引用）才是真实待修缮项
 - Compose 不提供共享默认密码；全新数据卷根据 `MYSQL_USERNAME` / `MYSQL_PASSWORD` 创建应用账号，已有数据卷需由数据库管理员预先创建或更新最小权限账号

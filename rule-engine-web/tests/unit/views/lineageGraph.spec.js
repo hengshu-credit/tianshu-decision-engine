@@ -310,6 +310,24 @@ describe('LineageGraph', () => {
     wrapper.unmount()
   })
 
+  test('缩放比例输入按目标比例更新画布', () => {
+    const wrapper = mountPage()
+    let scale = 1
+    wrapper.vm.lf = {
+      getTransform: () => ({ SCALE_X: scale }),
+      zoom: vi.fn(targetScale => { scale = targetScale }),
+      destroy: vi.fn(),
+    }
+    wrapper.vm.zoomInput = '125%'
+
+    wrapper.vm.onZoomInputChange()
+
+    expect(wrapper.vm.lf.zoom).toHaveBeenCalledWith(1.25)
+    expect(wrapper.vm.zoomPercent).toBe(125)
+    expect(wrapper.vm.zoomInput).toBe('125%')
+    wrapper.unmount()
+  })
+
   test('缩放到鼠标位置时将客户端坐标转换为 LogicFlow 画布坐标', () => {
     const wrapper = mountPage()
     const graphWrap = wrapper.find('.graph-wrap').element
@@ -356,6 +374,32 @@ describe('LineageGraph', () => {
     const anotherWrapper = mountPage()
     expect(anotherWrapper.vm.positionOverrides).toEqual({})
     anotherWrapper.unmount()
+    wrapper.unmount()
+  })
+
+  test('LogicFlow 节点拖拽按画布坐标更新模型并保存当前位置', () => {
+    const wrapper = mountPage()
+    const model = { id: 'RULE:9', x: 100, y: 100 }
+    wrapper.vm.lf = {
+      getNodeModelById: id => id === model.id ? model : null,
+      getTransform: () => ({ SCALE_X: 2 }),
+      graphModel: {
+        moveNode2Coordinate: vi.fn((id, x, y) => {
+          if (id === model.id) Object.assign(model, { x, y })
+        }),
+      },
+      destroy: vi.fn(),
+    }
+
+    wrapper.vm.beginLogicFlowNodeDrag(model.id, { button: 0, clientX: 100, clientY: 100 })
+    document.dispatchEvent(new MouseEvent('pointermove', { clientX: 180, clientY: 140 }))
+    document.dispatchEvent(new MouseEvent('pointerup', { clientX: 180, clientY: 140 }))
+
+    expect(wrapper.vm.lf.graphModel.moveNode2Coordinate).toHaveBeenCalledWith(model.id, 140, 120, true)
+    expect(wrapper.vm.positionOverrides[model.id]).toEqual({
+      left: model.x - 100,
+      top: model.y - 44,
+    })
     wrapper.unmount()
   })
 
@@ -556,6 +600,22 @@ describe('LineageGraph', () => {
     wrapper.vm.closeNodePanel()
     await nextTick()
     expect(wrapper.find('[data-testid="lineage-node-info-panel"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  test('点击血缘节点打开信息面板时不重新适配画布视角', async () => {
+    const wrapper = mountPage()
+    const data = graphResponse()
+    wrapper.vm.query.nodeId = 1
+    lineageApi.getLineageGraph.mockResolvedValueOnce({ data })
+    await wrapper.vm.loadGraph()
+    await nextTick()
+
+    const fitGraph = vi.spyOn(wrapper.vm, 'fitGraph')
+    wrapper.vm.selectedNodeId = 'VARIABLE:1'
+    await nextTick()
+
+    expect(fitGraph).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })

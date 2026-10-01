@@ -10,7 +10,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.offline_transfer_log")
+@TableName("offline_transfer_log")
 public class OfflineTransferLog {
     @TableId(type = IdType.AUTO)
     private Long id;

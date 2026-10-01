@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.artifact_resource_binding")
+@TableName("artifact_resource_binding")
 public class ArtifactResourceBinding {
     @TableId(type = IdType.AUTO)
     private Long id;

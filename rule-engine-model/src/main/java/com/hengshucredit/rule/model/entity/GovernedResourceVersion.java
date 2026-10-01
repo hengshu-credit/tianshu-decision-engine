@@ -10,7 +10,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.governed_resource_version")
+@TableName("governed_resource_version")
 public class GovernedResourceVersion {
     @TableId(type = IdType.AUTO)
     private Long id;

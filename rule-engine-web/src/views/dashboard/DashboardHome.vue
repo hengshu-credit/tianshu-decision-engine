@@ -117,20 +117,22 @@
             <metric-card label="未分类数" :value="number(summary.unclassifiedCount)" tone="muted" />
           </div>
           <div class="dashboard-chart-grid">
-            <chart-card title="期数占比" :note="distributionNote(applications.periods)">
-              <dashboard-chart
-                aria-label="期数占比柱状图"
-                :empty="emptyDistribution(applications.periods)"
-                :option="periodOption"
-              />
-            </chart-card>
-            <chart-card title="金额占比" :note="distributionNote(applications.amounts)">
-              <dashboard-chart
-                aria-label="金额占比柱状图"
-                :empty="emptyDistribution(applications.amounts)"
-                :option="amountOption"
-              />
-            </chart-card>
+            <div v-if="hasDistributionData" class="dashboard-distribution-grid">
+              <chart-card title="期数占比" :note="distributionNote(applications.periods)">
+                <dashboard-chart
+                  aria-label="期数占比柱状图"
+                  :empty="emptyDistribution(applications.periods)"
+                  :option="periodOption"
+                />
+              </chart-card>
+              <chart-card title="金额占比" :note="distributionNote(applications.amounts)">
+                <dashboard-chart
+                  aria-label="金额占比柱状图"
+                  :empty="emptyDistribution(applications.amounts)"
+                  :option="amountOption"
+                />
+              </chart-card>
+            </div>
             <chart-card class="dashboard-chart-card--wide" title="进件地图热力图" :note="geoNote">
               <template #actions>
                 <el-button
@@ -412,6 +414,11 @@ export default {
     hasOperations() {
       return ['ruleExecution', 'database', 'lists', 'datasource',
         'downstreamRules', 'billing'].some(key => this.operations[key] && this.operations[key].visible)
+    },
+    hasDistributionData() {
+      return ['periods', 'amounts'].some(key =>
+        !this.emptyDistribution(this.applications[key])
+      )
     },
     hasGovernance() {
       return Boolean(
@@ -881,6 +888,13 @@ export default {
   gap: 14px;
 }
 
+.dashboard-distribution-grid {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
 .dashboard-operation-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -1021,7 +1035,8 @@ export default {
 @media (max-width: 760px) {
   .dashboard-metrics,
   .dashboard-chart-grid,
-  .dashboard-operation-grid { grid-template-columns: 1fr; }
+  .dashboard-operation-grid,
+  .dashboard-distribution-grid { grid-template-columns: 1fr; }
   .dashboard-chart-card--wide { grid-column: auto; }
 }
 </style>

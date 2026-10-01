@@ -6,6 +6,10 @@
         <h1>账户管理</h1>
         <p>通过角色批量授权，并可对单个账户设置额外允许或明确拒绝。</p>
       </div>
+      <table-column-settings
+        :columns="activeTab === 'accounts' ? accountColumns : roleColumns"
+        storage-key="tianshu:table-columns:account-management"
+      />
       <el-button
         v-if="activeTab === 'accounts'"
         v-permission="'account:manage'"
@@ -330,6 +334,7 @@
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
+import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import {
   changeConsoleAccountStatus,
   changeConsoleRoleStatus,
@@ -365,9 +370,18 @@ function emptyRoleForm() {
 }
 
 export default {
+  components: { TableColumnSettings },
   name: 'AccountManagement',
   data() {
     return {
+      accountColumns: [
+        { key: 'account', label: '账户' }, { key: 'roles', label: '角色' },
+        { key: 'permissions', label: '最终权限' }, { key: 'status', label: '状态' },
+      ],
+      roleColumns: [
+        { key: 'roleName', label: '角色名称' }, { key: 'roleCode', label: '角色编码' },
+        { key: 'authorized', label: '已授权' }, { key: 'memberCount', label: '成员' }, { key: 'status', label: '状态' },
+      ],
       activeTab: 'accounts',
       loading: false,
       accounts: [],

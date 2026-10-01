@@ -9,4 +9,15 @@ describe('Vite AMD 兼容配置', () => {
       viteConfig.optimizeDeps?.rolldownOptions?.transform?.define
     ).toEqual({ 'define.amd': 'false' })
   })
+
+  it('开发模式会一起预构建 LogicFlow 依赖并刷新过期缓存', () => {
+    const viteConfig = createViteConfig({ mode: 'development', command: 'serve' })
+
+    expect(viteConfig.optimizeDeps?.force).toBe(true)
+    expect(viteConfig.optimizeDeps?.include).toEqual([
+      '@logicflow/core',
+      '@logicflow/extension',
+      '@logicflow/layout',
+    ])
+  })
 })

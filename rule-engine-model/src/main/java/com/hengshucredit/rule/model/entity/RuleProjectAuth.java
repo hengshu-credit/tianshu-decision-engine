@@ -10,7 +10,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.rule_project_auth")
+@TableName("rule_project_auth")
 public class RuleProjectAuth {
     @TableId(type = IdType.AUTO)
     private Long id;

@@ -10,7 +10,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.rule_runtime_call_log")
+@TableName("rule_runtime_call_log")
 public class RuleRuntimeCallLog {
     @TableId(type = IdType.AUTO)
     private Long id;

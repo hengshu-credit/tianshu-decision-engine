@@ -169,4 +169,11 @@ public class OfflineResourceTransferController {
         OfflineTransferLog log = logService.getById(id);
         return log == null ? R.fail(404, "迁移日志不存在") : R.ok(log);
     }
+
+    @GetMapping("/logs/{id}/lineage")
+    @RequirePermission("rule:view")
+    public R<Map<String, Object>> logLineage(@PathVariable Long id) {
+        if (logService.getById(id) == null) return R.fail(404, "迁移日志不存在");
+        return R.ok(logService.lineage(id));
+    }
 }

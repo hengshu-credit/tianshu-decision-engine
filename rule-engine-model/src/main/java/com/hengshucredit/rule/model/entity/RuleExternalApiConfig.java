@@ -11,7 +11,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.rule_external_api_config")
+@TableName("rule_external_api_config")
 public class RuleExternalApiConfig {
     @TableId(type = IdType.AUTO)
     private Long id;

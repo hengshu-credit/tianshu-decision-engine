@@ -11,7 +11,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.rule_experiment_group")
+@TableName("rule_experiment_group")
 public class RuleExperimentGroup {
     @TableId(type = IdType.AUTO)
     private Long id;

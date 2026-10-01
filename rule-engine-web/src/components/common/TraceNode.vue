@@ -32,6 +32,7 @@
           :key="i"
           :node="c"
           :var-map="varMap"
+          :input-params="inputParams"
         />
       </div>
     </template>
@@ -80,6 +81,12 @@ export default {
         return {}
       },
     },
+    inputParams: {
+      type: Object,
+      default: function () {
+        return {}
+      },
+    },
   },
   computed: {
     isSkipType: function () {
@@ -95,7 +102,7 @@ export default {
       var c = this.node.children[0]
       if (c.type === 'VARIABLE') {
         var l = this.varMap[c.token] || c.token
-        return l + '(' + fv(c.value) + ')'
+        return l + '(' + fv(this.valueFor(c)) + ')'
       }
       return fv(c.value !== undefined ? c.value : c.token)
     },
@@ -103,7 +110,7 @@ export default {
       var c = this.node.children[1]
       if (c.type === 'VARIABLE') {
         var l = this.varMap[c.token] || c.token
-        return l + '(' + fv(c.value) + ')'
+        return l + '(' + fv(this.valueFor(c)) + ')'
       }
       return fv(c.value !== undefined ? c.value : c.token)
     },
@@ -120,7 +127,7 @@ export default {
       if (type === 'FUNCTION' || type === 'METHOD') return token + '()'
       if (type === 'VARIABLE') {
         var lbl = this.varMap[token] || token
-        return this.node.evaluated ? lbl + ' = ' + fv(this.node.value) : lbl
+        return this.node.evaluated ? lbl + ' = ' + fv(this.valueFor(this.node)) : lbl
       }
       if (type === 'VALUE' || type === 'PRIMARY')
         return fv(this.node.value !== undefined ? this.node.value : token)
@@ -165,6 +172,27 @@ export default {
         }
       }
       return r
+    },
+  },
+  methods: {
+    inputValue: function (key) {
+      if (!key || !this.inputParams) return undefined
+      if (Object.prototype.hasOwnProperty.call(this.inputParams, key))
+        return this.inputParams[key]
+      if (key.indexOf('.') < 0) return undefined
+      var current = this.inputParams
+      var parts = key.split('.').filter(Boolean)
+      for (var i = 0; i < parts.length; i++) {
+        if (current === null || current === undefined || typeof current !== 'object')
+          return undefined
+        if (!Object.prototype.hasOwnProperty.call(current, parts[i])) return undefined
+        current = current[parts[i]]
+      }
+      return current
+    },
+    valueFor: function (node) {
+      if (!node) return undefined
+      return node.value !== undefined ? node.value : this.inputValue(node.token)
     },
   },
 }

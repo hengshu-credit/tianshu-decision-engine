@@ -1,6 +1,8 @@
 // tests/unit/views/executionLog.spec.js
 import { shallowMount } from '@test-utils'
 import { h, nextTick } from 'vue'
+import fs from 'fs'
+import path from 'path'
 
 import * as projectApi from '@/api/project'
 import * as definitionApi from '@/api/definition'
@@ -400,6 +402,15 @@ describe('ExecutionLog — 筛选与分页', () => {
       '数据库变量 dbScore 缺少历史查询日志，已使用 null。',
     ])
   })
+})
+
+test('已有表达式追踪树时操作列不再显示回溯按钮', () => {
+  const source = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/views/log/ExecutionLog.vue'),
+    'utf8'
+  )
+  expect(source).toContain('<el-button v-if="!row.traceInfo"')
+  expect(source).toContain('回溯</el-button>')
 })
 
 describe('ExecutionLog — computed 属性', () => {

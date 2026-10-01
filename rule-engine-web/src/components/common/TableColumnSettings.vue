@@ -88,17 +88,19 @@
     </div>
 
     <template #reference>
-      <el-button
-        class="table-column-settings__trigger"
-        size="small"
-        plain
-        :aria-expanded="open"
-        aria-label="设置表格显示字段"
-        title="设置表格显示字段和顺序"
-      >
-        <span aria-hidden="true">☷</span>
-        字段
-      </el-button>
+      <span class="table-column-settings__anchor" :data-table-column-settings="storageKey">
+        <el-button
+          class="table-column-settings__trigger"
+          size="small"
+          plain
+          :aria-expanded="open"
+          aria-label="设置表格显示字段"
+          title="设置表格显示字段和顺序"
+        >
+          <span aria-hidden="true">☷</span>
+          字段
+        </el-button>
+      </span>
     </template>
   </el-popover>
 </template>
@@ -143,6 +145,7 @@ export default {
       const normalized = this.normalizeVisibleKeys(saved)
       this.$emit('update:modelValue', normalized)
       this.$emit('change', normalized)
+      this.$nextTick(() => this.applyDomVisibility(normalized))
     }
   },
   methods: {
@@ -214,7 +217,38 @@ export default {
       this.$emit('update:modelValue', keys)
       this.$emit('change', keys)
       this.persist(keys)
+      this.$nextTick(() => this.applyDomVisibility(keys))
       this.open = false
+    },
+    applyDomVisibility(keys) {
+      if (typeof document === 'undefined') return
+      const anchor = this.$el.querySelector?.('.table-column-settings__anchor')
+      const page = anchor?.closest('.management-list-page')
+      if (!page) return
+      const tables = [...page.querySelectorAll('.management-table')]
+        .filter(table => table.offsetParent !== null || table.getClientRects().length > 0)
+      const table = tables[0]
+      if (!table) return
+      const visible = new Set(this.normalizeVisibleKeys(keys))
+      const headers = [...table.querySelectorAll('.el-table__header-wrapper thead th')]
+      const labels = headers.map(header => header.textContent.trim())
+      const hiddenIndexes = this.columns
+        .filter(column => !visible.has(column.key))
+        .map(column => labels.indexOf(column.label))
+        .filter(index => index >= 0)
+      const cells = table.querySelectorAll(
+        '.el-table__header-wrapper th, .el-table__body-wrapper td, .el-table__fixed th, .el-table__fixed td'
+      )
+      cells.forEach(cell => {
+        const index = cell.cellIndex
+        cell.style.display = hiddenIndexes.includes(index) ? 'none' : ''
+      })
+      const cols = table.querySelectorAll(
+        '.el-table__header-wrapper colgroup col, .el-table__body-wrapper colgroup col, .el-table__fixed colgroup col'
+      )
+      cols.forEach((col, index) => {
+        col.style.display = hiddenIndexes.includes(index) ? 'none' : ''
+      })
     },
     persist(keys) {
       if (typeof window === 'undefined' || !window.localStorage) return
@@ -231,6 +265,10 @@ export default {
 <style lang="scss" scoped>
 .table-column-settings__trigger {
   gap: 5px;
+}
+
+.table-column-settings__anchor {
+  display: inline-flex;
 }
 
 .table-column-settings__panel {

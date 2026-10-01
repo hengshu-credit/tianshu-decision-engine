@@ -59,6 +59,7 @@
       </el-form>
       <div class="uiue-btn-bar">
         <div class="btn-right">
+          <table-column-settings :columns="experimentColumns" storage-key="tianshu:table-columns:experiment-list" />
           <el-button
             v-permission="'experiment:edit'"
             size="small"
@@ -774,6 +775,7 @@ import RuleExecutionSelector from '@/components/common/RuleExecutionSelector.vue
 import MonacoEditor from '@/components/MonacoEditor'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import {
   createEmptyGroup,
   createEmptyLeaf,
@@ -796,6 +798,12 @@ import { routeProjectId } from '@/utils/projectContext'
 export default {
   data() {
     return {
+      experimentColumns: [
+        { key: 'projectName', label: '项目名称' }, { key: 'experimentCode', label: '实验编码' },
+        { key: 'experimentName', label: '实验名称' }, { key: 'champion', label: '冠军挑战' },
+        { key: 'testRouting', label: '测试分流' }, { key: 'production', label: '生产组' },
+        { key: 'test', label: '测试组' }, { key: 'status', label: '状态' },
+      ],
       loading: false,
       experiments: [],
       total: 0,
@@ -849,6 +857,7 @@ export default {
   },
   name: 'ExperimentList',
   components: {
+    TableColumnSettings,
     ConditionGroupEditor,
     RuleExecutionSelector,
     MonacoEditor,

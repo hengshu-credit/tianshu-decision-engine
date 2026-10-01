@@ -1,12 +1,9 @@
-CREATE DATABASE IF NOT EXISTS `rule_engine` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
-USE `rule_engine`;
-
 SET NAMES utf8mb4;
 SET character_set_connection = utf8mb4;
 
--- ============================================================
--- 1. rule_project - 规则项目表
--- ============================================================
+-- 天枢决策引擎完整数据库结构。
+-- 本文件只依赖当前连接的数据库，不创建或切换数据库；请使用 MYSQL_DATABASE 选择目标库。
+
 CREATE TABLE IF NOT EXISTS `rule_project` (
   `id`           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_code` VARCHAR(64)  NOT NULL                COMMENT '项目编码',
@@ -25,9 +22,6 @@ CREATE TABLE IF NOT EXISTS `rule_project` (
   UNIQUE KEY `uk_access_token` (`access_token`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则项目表';
 
--- ============================================================
--- 1.1 rule_project_auth - 项目鉴权配置表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_project_auth` (
   `id`                    BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`            BIGINT       NOT NULL                COMMENT '所属项目ID',
@@ -52,9 +46,6 @@ CREATE TABLE IF NOT EXISTS `rule_project_auth` (
   KEY `idx_project_auth_type` (`auth_type`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目鉴权配置表';
 
--- ============================================================
--- 1.2 rule_project_auth_token - 项目临时访问Token表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_project_auth_token` (
   `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`        BIGINT       NOT NULL                COMMENT '所属项目ID',
@@ -77,9 +68,6 @@ CREATE TABLE IF NOT EXISTS `rule_project_auth_token` (
   KEY `idx_project_auth_token_project` (`project_id`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目临时访问Token表';
 
--- ============================================================
--- 1.3 rule_auth_access_log - 项目鉴权访问日志表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_auth_access_log` (
   `id`             BIGINT        NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`     BIGINT        DEFAULT NULL            COMMENT '项目ID',
@@ -104,9 +92,6 @@ CREATE TABLE IF NOT EXISTS `rule_auth_access_log` (
   KEY `idx_auth_access_success_time` (`success`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目鉴权访问日志表';
 
--- ============================================================
--- 1.4 console_user - 控制台账户
--- ============================================================
 CREATE TABLE IF NOT EXISTS `console_user` (
   `id`                 BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `username`           VARCHAR(64)  NOT NULL                COMMENT '登录用户名',
@@ -124,9 +109,6 @@ CREATE TABLE IF NOT EXISTS `console_user` (
   KEY `idx_console_user_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台账户表';
 
--- ============================================================
--- 1.4.1 console_user_preference - 控制台用户偏好
--- ============================================================
 CREATE TABLE IF NOT EXISTS `console_user_preference` (
   `id`               BIGINT      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id`          BIGINT      NOT NULL                COMMENT '控制台用户ID',
@@ -141,9 +123,6 @@ CREATE TABLE IF NOT EXISTS `console_user_preference` (
   KEY `idx_console_user_preference_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台用户偏好表';
 
--- ============================================================
--- 1.5 console_role - 控制台角色
--- ============================================================
 CREATE TABLE IF NOT EXISTS `console_role` (
   `id`          BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `role_code`   VARCHAR(64)  NOT NULL                COMMENT '角色编码',
@@ -160,9 +139,6 @@ CREATE TABLE IF NOT EXISTS `console_role` (
   KEY `idx_console_role_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台角色表';
 
--- ============================================================
--- 1.6 console_permission - 控制台功能权限
--- ============================================================
 CREATE TABLE IF NOT EXISTS `console_permission` (
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `permission_code`  VARCHAR(128) NOT NULL                COMMENT '权限编码',
@@ -179,9 +155,6 @@ CREATE TABLE IF NOT EXISTS `console_permission` (
   KEY `idx_console_permission_group` (`permission_group`, `permission_type`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台功能权限表';
 
--- ============================================================
--- 1.7 console_user_role - 账户角色关系
--- ============================================================
 CREATE TABLE IF NOT EXISTS `console_user_role` (
   `id`          BIGINT      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id`     BIGINT      NOT NULL                COMMENT '账户ID',
@@ -193,9 +166,6 @@ CREATE TABLE IF NOT EXISTS `console_user_role` (
   KEY `idx_console_user_role_role` (`role_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台账户角色关系表';
 
--- ============================================================
--- 1.8 console_role_permission - 角色权限关系
--- ============================================================
 CREATE TABLE IF NOT EXISTS `console_role_permission` (
   `id`            BIGINT      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `role_id`       BIGINT      NOT NULL                COMMENT '角色ID',
@@ -207,9 +177,6 @@ CREATE TABLE IF NOT EXISTS `console_role_permission` (
   KEY `idx_console_role_permission_permission` (`permission_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台角色权限关系表';
 
--- ============================================================
--- 1.9 console_user_permission_override - 账户权限覆盖
--- ============================================================
 CREATE TABLE IF NOT EXISTS `console_user_permission_override` (
   `id`            BIGINT      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id`       BIGINT      NOT NULL                COMMENT '账户ID',
@@ -224,9 +191,6 @@ CREATE TABLE IF NOT EXISTS `console_user_permission_override` (
   KEY `idx_console_user_permission_override_permission` (`permission_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台账户权限覆盖表';
 
--- ============================================================
--- 1.10 console_security_audit_log - 控制台安全审计
--- ============================================================
 CREATE TABLE IF NOT EXISTS `console_security_audit_log` (
   `id`           BIGINT        NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id`      BIGINT        DEFAULT NULL            COMMENT '账户ID',
@@ -242,9 +206,6 @@ CREATE TABLE IF NOT EXISTS `console_security_audit_log` (
   KEY `idx_console_audit_action_time` (`action`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台安全审计日志表';
 
--- ============================================================
--- 1.11 governed_resource - 统一治理资源
--- ============================================================
 CREATE TABLE IF NOT EXISTS `governed_resource` (
   `id`                   BIGINT      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `resource_type`        VARCHAR(32) NOT NULL                COMMENT '资源类型',
@@ -261,9 +222,6 @@ CREATE TABLE IF NOT EXISTS `governed_resource` (
   KEY `idx_governed_resource_project` (`project_id`, `resource_type`, `effective_status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一治理资源表';
 
--- ============================================================
--- 1.12 governed_resource_version - 不可变资源版本
--- ============================================================
 CREATE TABLE IF NOT EXISTS `governed_resource_version` (
   `id`                        BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `governed_resource_id`      BIGINT       NOT NULL                COMMENT '治理资源ID',
@@ -288,9 +246,6 @@ CREATE TABLE IF NOT EXISTS `governed_resource_version` (
   KEY `idx_governed_version_resource` (`resource_type`, `resource_id`, `version_no`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一治理不可变版本表';
 
--- ============================================================
--- 1.13 governance_approval_request - 生命周期审批单
--- ============================================================
 CREATE TABLE IF NOT EXISTS `governance_approval_request` (
   `id`                        BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `request_no`                VARCHAR(64)  NOT NULL                COMMENT '审批单号',
@@ -327,9 +282,6 @@ CREATE TABLE IF NOT EXISTS `governance_approval_request` (
   KEY `idx_governance_request_project` (`project_id`, `status`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一生命周期审批单';
 
--- ============================================================
--- 1.14 governance_approval_event - 审批历史事件
--- ============================================================
 CREATE TABLE IF NOT EXISTS `governance_approval_event` (
   `id`           BIGINT        NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `request_id`   BIGINT        NOT NULL                COMMENT '审批单ID',
@@ -344,9 +296,6 @@ CREATE TABLE IF NOT EXISTS `governance_approval_event` (
   KEY `idx_governance_event_request` (`request_id`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一生命周期审批历史事件';
 
--- ============================================================
--- 1.15 governance_dependency_snapshot - 审批依赖快照
--- ============================================================
 CREATE TABLE IF NOT EXISTS `governance_dependency_snapshot` (
   `id`                     BIGINT        NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `request_id`             BIGINT        NOT NULL                COMMENT '审批单ID',
@@ -370,9 +319,6 @@ CREATE TABLE IF NOT EXISTS `governance_dependency_snapshot` (
   KEY `idx_governance_dependency_target` (`target_resource_type`, `target_resource_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一生命周期审批依赖快照';
 
--- ============================================================
--- 2. rule_definition - 规则定义表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_definition` (
   `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`        BIGINT       NOT NULL                COMMENT '所属项目ID',
@@ -400,9 +346,6 @@ CREATE TABLE IF NOT EXISTS `rule_definition` (
   KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则定义表';
 
--- ============================================================
--- 2.1 rule_definition_input_field - 规则输入字段表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_definition_input_field` (
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `definition_id`    BIGINT       NOT NULL                COMMENT '所属规则ID',
@@ -429,9 +372,6 @@ CREATE TABLE IF NOT EXISTS `rule_definition_input_field` (
   KEY `idx_ref_type_var_id` (`ref_type`, `var_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则输入字段表';
 
--- ============================================================
--- 2.2 rule_definition_output_field - 规则输出字段表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_definition_output_field` (
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `definition_id`    BIGINT       NOT NULL                COMMENT '所属规则ID',
@@ -454,9 +394,6 @@ CREATE TABLE IF NOT EXISTS `rule_definition_output_field` (
   KEY `idx_ref_type_var_id` (`ref_type`, `var_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则输出字段表';
 
--- ============================================================
--- 2.3 rule_api_doc_scenario - 规则 API 文档测试场景
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_api_doc_scenario` (
   `id`                 BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `definition_id`      BIGINT       NOT NULL                COMMENT '规则定义ID',
@@ -482,9 +419,6 @@ CREATE TABLE IF NOT EXISTS `rule_api_doc_scenario` (
   KEY `idx_api_doc_scenario_revision` (`definition_id`, `revision_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则 API 文档测试场景';
 
--- ============================================================
--- 3. rule_definition_content - 规则内容表（设计态）
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_definition_content` (
   `id`              BIGINT   NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `definition_id`   BIGINT   NOT NULL                COMMENT '规则定义ID',
@@ -501,9 +435,6 @@ CREATE TABLE IF NOT EXISTS `rule_definition_content` (
   UNIQUE KEY `uk_definition_id` (`definition_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则内容表（设计态数据和编译产物）';
 
--- ============================================================
--- 4. rule_definition_ref - 规则关联表（项目关联全局规则）
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_definition_ref` (
   `id`              BIGINT   NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `definition_id`   BIGINT   NOT NULL                COMMENT '全局规则定义ID',
@@ -514,9 +445,6 @@ CREATE TABLE IF NOT EXISTS `rule_definition_ref` (
   KEY `idx_project_id` (`project_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则关联表（用于项目关联全局规则）';
 
--- ============================================================
--- 4. rule_definition_version - 规则版本历史表（HASH分区）
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_definition_version` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `definition_id`   BIGINT       NOT NULL                COMMENT '规则定义ID',
@@ -528,14 +456,17 @@ CREATE TABLE IF NOT EXISTS `rule_definition_version` (
   `change_log`      VARCHAR(512) DEFAULT NULL             COMMENT '变更说明（中文）',
   `publish_by`      VARCHAR(64)  DEFAULT NULL             COMMENT '发布人',
   `publish_time`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发布时间',
+  `business_version`     INT          DEFAULT NULL COMMENT '业务版本号',
+  `version_binding_id`   BIGINT       DEFAULT NULL COMMENT '业务版本绑定ID',
+  `binding_generation`    BIGINT       DEFAULT NULL COMMENT '业务版本绑定代数',
+  `revision_id`           BIGINT       DEFAULT NULL COMMENT '关联规则修订ID',
+  `artifact_id`           BIGINT       DEFAULT NULL COMMENT '关联决策制品ID',
+  `artifact_digest`       CHAR(64)     DEFAULT NULL COMMENT '关联决策制品摘要',
   PRIMARY KEY (`id`, `definition_id`),
   UNIQUE KEY `uk_def_version` (`definition_id`, `version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则版本历史表'
 PARTITION BY HASH(`definition_id`) PARTITIONS 8;
 
--- ============================================================
--- 5. rule_published - 已发布规则表（Client SDK同步数据源）
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_published` (
   `revision_id`     BIGINT       DEFAULT NULL             COMMENT 'Published rule revision ID',
   `artifact_id`     BIGINT       DEFAULT NULL             COMMENT 'Published decision artifact ID',
@@ -560,9 +491,6 @@ CREATE TABLE IF NOT EXISTS `rule_published` (
   KEY `idx_definition_id` (`definition_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='已发布规则表（Client SDK同步数据源）';
 
--- ============================================================
--- 6. rule_data_object - 数据对象定义表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_revision` (
   `id`                       BIGINT        NOT NULL AUTO_INCREMENT,
   `definition_id`            BIGINT        NOT NULL,
@@ -582,6 +510,9 @@ CREATE TABLE IF NOT EXISTS `rule_revision` (
   `validation_report_digest` CHAR(64)      DEFAULT NULL,
   `artifact_id`              BIGINT        DEFAULT NULL,
   `governance_request_id`    BIGINT        DEFAULT NULL,
+  `publish_mode`             VARCHAR(16)   DEFAULT NULL,
+  `target_version_id`        BIGINT        DEFAULT NULL,
+  `target_generation`        BIGINT        DEFAULT NULL,
   `force_publish_reason`     VARCHAR(1024) DEFAULT NULL,
   `lock_version`             INT           NOT NULL DEFAULT 0,
   `create_by`                VARCHAR(64)   NOT NULL,
@@ -769,9 +700,6 @@ CREATE TABLE IF NOT EXISTS `rule_data_object` (
   KEY `idx_project_id` (`project_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据对象定义表（Java实体类/JSON对象）';
 
--- ============================================================
--- 7. rule_data_object_field - 数据对象字段表（与 rule_variable 解耦）
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_data_object_field` (
   `reference_mode` VARCHAR(16) NOT NULL DEFAULT 'VALUE' COMMENT 'VALUE缺失时引用取值，STRUCTURE仅复用定义',
   `record_result`    TINYINT NOT NULL DEFAULT 0 COMMENT '显式记录字段结果供历史统计',
@@ -802,21 +730,6 @@ CREATE TABLE IF NOT EXISTS `rule_data_object_field` (
   KEY `idx_ref_variable_id` (`ref_variable_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据对象字段表';
 
--- 兼容已存在数据库：补齐 API/数据库对象字段来源路径列
-SET @exist_data_object_source_path := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-                                        WHERE TABLE_SCHEMA = DATABASE()
-                                          AND TABLE_NAME = 'rule_data_object_field'
-                                          AND COLUMN_NAME = 'source_path');
-SET @sql_data_object_source_path := IF(@exist_data_object_source_path = 0,
-    'ALTER TABLE `rule_data_object_field` ADD COLUMN `source_path` VARCHAR(512) DEFAULT NULL COMMENT ''API响应或数据库首行结果中的字段取值路径'' AFTER `var_type`',
-    'SELECT 1');
-PREPARE stmt_data_object_source_path FROM @sql_data_object_source_path;
-EXECUTE stmt_data_object_source_path;
-DEALLOCATE PREPARE stmt_data_object_source_path;
-
--- ============================================================
--- 8. rule_data_object_field_option - 对象字段枚举选项
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_data_object_field_option` (
   `id`           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `field_id`     BIGINT       NOT NULL                COMMENT '所属对象字段ID',
@@ -827,9 +740,6 @@ CREATE TABLE IF NOT EXISTS `rule_data_object_field_option` (
   KEY `idx_field_id` (`field_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据对象字段枚举选项';
 
--- ============================================================
--- 9. rule_variable - 规则变量表（普通变量与常量，var_source=CONSTANT 时须配置 default_value）
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_variable` (
   `record_result`    TINYINT NOT NULL DEFAULT 0 COMMENT '显式记录字段结果供历史统计',
   `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -855,9 +765,6 @@ CREATE TABLE IF NOT EXISTS `rule_variable` (
   KEY `idx_var_source` (`var_source`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则变量表（普通变量与常量）';
 
--- ============================================================
--- 9.1 rule_field_validation - 字段校验规则库
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_field_validation` (
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`       BIGINT       NOT NULL DEFAULT 0       COMMENT '所属项目ID，0表示全局',
@@ -877,9 +784,6 @@ CREATE TABLE IF NOT EXISTS `rule_field_validation` (
   KEY `idx_field_validation_type_status` (`validation_type`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='字段校验规则库';
 
--- ============================================================
--- 10. rule_variable_option - 规则变量选项表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_variable_option` (
   `id`           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `variable_id`  BIGINT       NOT NULL                COMMENT '所属变量ID',
@@ -890,9 +794,6 @@ CREATE TABLE IF NOT EXISTS `rule_variable_option` (
   KEY `idx_variable_id` (`variable_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则变量选项表（枚举变量的可选值）';
 
--- ============================================================
--- 10.1 rule_list_library - 名单库配置表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_list_library` (
   `id`           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`   BIGINT       NOT NULL DEFAULT 0       COMMENT '所属项目ID，0 表示全局',
@@ -910,9 +811,6 @@ CREATE TABLE IF NOT EXISTS `rule_list_library` (
   KEY `idx_list_type_status` (`list_type`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单库配置表';
 
--- ============================================================
--- 10.2 rule_list_record - 名单当前记录表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_list_record` (
   `id`             BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `list_id`        BIGINT       NOT NULL                COMMENT '名单库ID',
@@ -932,9 +830,6 @@ CREATE TABLE IF NOT EXISTS `rule_list_record` (
   KEY `idx_list_record_effective` (`effective_time`, `expire_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单当前记录表';
 
--- ============================================================
--- 10.3 rule_list_record_log - 名单变更日志表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_list_record_log` (
   `id`             BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `list_id`        BIGINT       NOT NULL                COMMENT '名单库ID',
@@ -954,9 +849,6 @@ CREATE TABLE IF NOT EXISTS `rule_list_record_log` (
   KEY `idx_list_log_time` (`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单变更日志表';
 
--- ============================================================
--- 10.4 rule_list_change_batch - 名单变更暂存批次
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_list_change_batch` (
   `id`                  BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `list_id`             BIGINT       NOT NULL                COMMENT '名单库ID',
@@ -981,9 +873,6 @@ CREATE TABLE IF NOT EXISTS `rule_list_change_batch` (
   KEY `idx_list_change_batch_approval` (`approval_request_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单变更暂存批次';
 
--- ============================================================
--- 10.5 rule_list_change_item - 名单变更暂存明细
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_list_change_item` (
   `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `batch_id`          BIGINT       NOT NULL                COMMENT '变更批次ID',
@@ -1007,9 +896,6 @@ CREATE TABLE IF NOT EXISTS `rule_list_change_item` (
   KEY `idx_list_change_item_target` (`target_record_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单变更暂存明细';
 
--- ============================================================
--- 11. rule_function - 自定义函数定义表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_function` (
   `id`            BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`    BIGINT       NOT NULL                COMMENT '所属项目ID',
@@ -1045,11 +931,6 @@ CREATE TABLE IF NOT EXISTS `rule_function_version` (
   KEY `idx_function_version_time` (`function_id`, `publish_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='function version history';
 
--- ============================================================
--- 12. rule_execution_log - 规则执行日志表（按月RANGE分区）
--- ============================================================
--- 先删除原有分区（如果是修改现有表）
--- ALTER TABLE rule_execution_log REMOVE PARTITIONING;
 CREATE TABLE IF NOT EXISTS `rule_execution_log` (
   `root_rule_id` BIGINT DEFAULT NULL COMMENT '根规则ID快照',
   `execution_project_id` BIGINT DEFAULT NULL COMMENT '执行项目ID快照',
@@ -1173,10 +1054,6 @@ CREATE TABLE IF NOT EXISTS `rule_execution_log` (
         PARTITION p_future VALUES LESS THAN MAXVALUE              COMMENT '兜底分区'
         );
 
--- ============================================================
--- 13. rule_model - 统一模型主表
--- 支持多种模型格式（PMML/ONNX/TENSORFLOW/LIGHTGBM/PICKLE等），格式特有配置存入 model_config（JSON）
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_model` (
   `model_digest`            CHAR(64)     DEFAULT NULL       COMMENT 'Raw model SHA-256',
   `input_schema_json`       LONGTEXT     DEFAULT NULL       COMMENT 'Exact model input schema',
@@ -1219,9 +1096,6 @@ CREATE TABLE IF NOT EXISTS `rule_model` (
   KEY `idx_model_type` (`model_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一模型主表';
 
--- ============================================================
--- 14. rule_model_input_field - 统一模型输入字段表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_model_input_field` (
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `model_id`         BIGINT       NOT NULL                COMMENT '所属模型ID',
@@ -1249,9 +1123,6 @@ CREATE TABLE IF NOT EXISTS `rule_model_input_field` (
   KEY `idx_ref_type_var_id` (`ref_type`, `var_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一模型输入字段表';
 
--- ============================================================
--- 15. rule_model_output_field - 统一模型输出字段表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_model_output_field` (
   `record_result`    TINYINT NOT NULL DEFAULT 0 COMMENT '显式记录模型输出供历史统计',
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -1276,9 +1147,6 @@ CREATE TABLE IF NOT EXISTS `rule_model_output_field` (
   KEY `idx_ref_type_var_id` (`ref_type`, `var_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一模型输出字段表';
 
--- ============================================================
--- 16. rule_model_version - 模型版本历史表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_model_version` (
   `model_format`             VARCHAR(32)  DEFAULT NULL,
   `model_file_name`          VARCHAR(256) DEFAULT NULL,
@@ -1302,9 +1170,6 @@ CREATE TABLE IF NOT EXISTS `rule_model_version` (
   UNIQUE KEY `uk_model_version` (`model_id`, `version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型版本历史表';
 
--- ============================================================
--- 17. rule_model_ref - 模型关联表（项目关联全局模型）
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_model_ref` (
   `id`         BIGINT   NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `model_id`   BIGINT   NOT NULL                COMMENT '全局模型ID',
@@ -1315,9 +1180,6 @@ CREATE TABLE IF NOT EXISTS `rule_model_ref` (
   KEY `idx_project_id` (`project_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型关联表（用于项目关联全局模型）';
 
--- ============================================================
--- 18. rule_external_datasource - 外部 API 数据源定义表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_external_datasource` (
   `id`                  BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`          BIGINT       NOT NULL DEFAULT 0      COMMENT '所属项目ID，0表示全局',
@@ -1340,9 +1202,6 @@ CREATE TABLE IF NOT EXISTS `rule_external_datasource` (
   KEY `idx_ext_ds_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部API数据源定义表';
 
--- ============================================================
--- 19. rule_external_api_config - 外部 API 接口配置表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
   `execution_config` JSON DEFAULT NULL COMMENT '统一外数请求响应与多步链路配置',
   `id`                   BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -1428,9 +1287,6 @@ CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
   KEY `idx_ext_api_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部API接口配置表';
 
--- ============================================================
--- 19.1 rule_runtime_call_log - 运行时调用诊断日志表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
   `root_trace_id` CHAR(36) DEFAULT NULL COMMENT '根请求Trace ID',
   `history_fields` LONGTEXT DEFAULT NULL COMMENT '逻辑外数调用的受管字段ID结果快照',
@@ -1483,9 +1339,6 @@ CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
   KEY `idx_runtime_log_success` (`success`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='运行时调用诊断日志表';
 
--- ============================================================
--- 19.2 rule_experiment - 分流实验定义表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_experiment` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`      BIGINT       DEFAULT NULL            COMMENT '所属项目ID',
@@ -1588,9 +1441,6 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_execution_state` (
   KEY `idx_experiment_execution_state_expire` (`expire_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='实验幂等执行状态';
 
--- ============================================================
--- 19.3 rule_trace_registry - 全局Trace编号注册表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_trace_registry` (
   `trace_id`        CHAR(36)     NOT NULL                COMMENT '全局唯一Trace ID',
   `trace_type`      CHAR(2)      NOT NULL                COMMENT '两位执行类型码',
@@ -1607,9 +1457,6 @@ CREATE TABLE IF NOT EXISTS `rule_trace_registry` (
   KEY `idx_trace_resource` (`resource_type`, `resource_id`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='全局Trace编号注册表';
 
--- ============================================================
--- 19.4 rule_experiment_version - 分流实验版本历史表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_experiment_version` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT 'primary id',
   `experiment_id`   BIGINT       NOT NULL                COMMENT 'experiment id',
@@ -1624,9 +1471,6 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_version` (
   KEY `idx_experiment_version_time` (`experiment_id`, `publish_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='experiment version history';
 
--- ============================================================
--- 20. rule_db_datasource - 外部数据库数据源定义表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_db_datasource` (
   `id`                    BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`            BIGINT       NOT NULL DEFAULT 0      COMMENT '所属项目ID，0表示全局',
@@ -1665,9 +1509,6 @@ CREATE TABLE IF NOT EXISTS `rule_db_datasource` (
   KEY `idx_db_ds_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部数据库数据源定义表';
 
--- ============================================================
--- 21. rule_billing_config - 计费配置表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_billing_config` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`      BIGINT       NOT NULL DEFAULT 0      COMMENT '所属项目ID，0表示全局',
@@ -1691,9 +1532,6 @@ CREATE TABLE IF NOT EXISTS `rule_billing_config` (
   KEY `idx_billing_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费配置表';
 
--- ============================================================
--- 22. rule_billing_record - 计费明细表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_billing_record` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`      BIGINT       DEFAULT NULL            COMMENT '项目ID',
@@ -1734,9 +1572,6 @@ CREATE TABLE IF NOT EXISTS `rule_billing_record` (
   KEY `idx_billing_record_auth` (`auth_id`, `token_id`, `occur_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费明细表';
 
--- ============================================================
--- 23. rule_billing_summary - 计费汇总表
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_billing_summary` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `summary_date`    DATE         NOT NULL                COMMENT '汇总日期',
@@ -1764,9 +1599,6 @@ CREATE TABLE IF NOT EXISTS `rule_billing_summary` (
   KEY `idx_billing_summary_auth` (`auth_id`, `summary_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费汇总表';
 
--- ============================================================
--- 24. rule_execution_state - 跨请求断点恢复状态（非日志）
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_execution_state` (
   `id`                    BIGINT       NOT NULL AUTO_INCREMENT,
   `project_id`            BIGINT       DEFAULT NULL,
@@ -1797,9 +1629,6 @@ CREATE TABLE IF NOT EXISTS `rule_execution_state` (
   KEY `idx_execution_state_rule_time` (`rule_code`, `update_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则断点恢复状态，不作为执行日志';
 
--- ============================================================
--- 25. rule_execution_persistence_outbox - 执行日志与计费失败恢复事件
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_execution_persistence_outbox` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT,
   `event_id`        CHAR(36)     NOT NULL,
@@ -1833,9 +1662,6 @@ CREATE TABLE IF NOT EXISTS `rule_execution_persistence_outbox` (
   KEY `idx_execution_persistence_create` (`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则执行日志和计费失败恢复事件';
 
--- ============================================================
--- 26. rule_execution_checkpoint - 可重放步骤检查点
--- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_execution_checkpoint` (
   `id`                    BIGINT       NOT NULL AUTO_INCREMENT,
   `root_trace_id`         CHAR(36)     NOT NULL,
@@ -1860,224 +1686,7 @@ CREATE TABLE IF NOT EXISTS `rule_execution_checkpoint` (
   KEY `idx_execution_checkpoint_module` (`module_trace_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则断点恢复步骤检查点';
 
--- 未发布阶段的增量结构同步：mysql-init 每次启动都会执行，已有开发数据卷也能补齐 Operand 列。
-DROP PROCEDURE IF EXISTS `rule_engine`.`ensure_operand_columns`;
-DELIMITER $$
-CREATE PROCEDURE `rule_engine`.`ensure_operand_columns`()
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_input_field' AND COLUMN_NAME = 'source_operand'
-  ) THEN
-    ALTER TABLE `rule_engine`.`rule_model_input_field`
-      ADD COLUMN `source_operand` JSON DEFAULT NULL COMMENT '模型输入来源 Operand' AFTER `default_value`;
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_input_field' AND COLUMN_NAME = 'default_operand'
-  ) THEN
-    ALTER TABLE `rule_engine`.`rule_model_input_field`
-      ADD COLUMN `default_operand` JSON DEFAULT NULL COMMENT '模型输入默认值 Operand' AFTER `source_operand`;
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_output_field' AND COLUMN_NAME = 'target_operand'
-  ) THEN
-    ALTER TABLE `rule_engine`.`rule_model_output_field`
-      ADD COLUMN `target_operand` JSON DEFAULT NULL COMMENT '模型输出目标 Operand' AFTER `target_field`;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_input_field' AND COLUMN_NAME = 'missing_value'
-  ) THEN
-    ALTER TABLE `rule_engine`.`rule_model_input_field`
-      DROP COLUMN `missing_value`;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_output_field' AND COLUMN_NAME = 'transform_type'
-  ) THEN
-    ALTER TABLE `rule_engine`.`rule_model_output_field`
-      DROP COLUMN `transform_type`;
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_output_field' AND COLUMN_NAME = 'transform_operand'
-  ) THEN
-    ALTER TABLE `rule_engine`.`rule_model_output_field`
-      ADD COLUMN `transform_operand` JSON DEFAULT NULL COMMENT '模型输出函数转换 Operand' AFTER `feature_name`;
-  END IF;
-END$$
-DELIMITER ;
-CALL `rule_engine`.`ensure_operand_columns`();
-DROP PROCEDURE `rule_engine`.`ensure_operand_columns`;
-
--- ONNX 图像入参与原始输出可能超过 TEXT 的 64 KiB 上限；已有数据卷也需幂等升级。
-DROP PROCEDURE IF EXISTS `rule_engine`.`ensure_execution_log_payload_columns`;
-DELIMITER $$
-CREATE PROCEDURE `rule_engine`.`ensure_execution_log_payload_columns`()
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_execution_log'
-      AND COLUMN_NAME = 'input_params' AND DATA_TYPE <> 'longtext'
-  ) THEN
-    ALTER TABLE `rule_engine`.`rule_execution_log`
-      MODIFY COLUMN `input_params` LONGTEXT DEFAULT NULL COMMENT '输入参数（JSON）';
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_execution_log'
-      AND COLUMN_NAME = 'output_result' AND DATA_TYPE <> 'longtext'
-  ) THEN
-    ALTER TABLE `rule_engine`.`rule_execution_log`
-      MODIFY COLUMN `output_result` LONGTEXT DEFAULT NULL COMMENT '输出结果（JSON）';
-  END IF;
-END$$
-DELIMITER ;
-CALL `rule_engine`.`ensure_execution_log_payload_columns`();
-DROP PROCEDURE `rule_engine`.`ensure_execution_log_payload_columns`;
-
--- API 文档场景需原样保存可能超过 MySQL JSON 最大深度的请求和响应追踪树。
-DROP PROCEDURE IF EXISTS `rule_engine`.`ensure_api_doc_scenario_payload_columns`;
-DELIMITER $$
-CREATE PROCEDURE `rule_engine`.`ensure_api_doc_scenario_payload_columns`()
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_api_doc_scenario'
-      AND COLUMN_NAME = 'request_json' AND DATA_TYPE <> 'longtext'
-  ) THEN
-    ALTER TABLE `rule_engine`.`rule_api_doc_scenario`
-      MODIFY COLUMN `request_json` LONGTEXT NOT NULL COMMENT '完整请求报文';
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_api_doc_scenario'
-      AND COLUMN_NAME = 'response_json' AND DATA_TYPE <> 'longtext'
-  ) THEN
-    ALTER TABLE `rule_engine`.`rule_api_doc_scenario`
-      MODIFY COLUMN `response_json` LONGTEXT NOT NULL COMMENT '完整响应报文';
-  END IF;
-END$$
-DELIMITER ;
-CALL `rule_engine`.`ensure_api_doc_scenario_payload_columns`();
-DROP PROCEDURE `rule_engine`.`ensure_api_doc_scenario_payload_columns`;
-
--- Lifecycle and immutable artifact columns for existing data volumes.
-DROP PROCEDURE IF EXISTS `rule_engine`.`ensure_decision_artifact_columns`;
-DELIMITER $$
-CREATE PROCEDURE `rule_engine`.`ensure_decision_artifact_columns`()
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_published' AND COLUMN_NAME = 'revision_id') THEN
-    ALTER TABLE `rule_engine`.`rule_published` ADD COLUMN `revision_id` BIGINT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_published' AND COLUMN_NAME = 'artifact_id') THEN
-    ALTER TABLE `rule_engine`.`rule_published` ADD COLUMN `artifact_id` BIGINT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_published' AND COLUMN_NAME = 'artifact_digest') THEN
-    ALTER TABLE `rule_engine`.`rule_published` ADD COLUMN `artifact_digest` CHAR(64) DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_execution_log' AND COLUMN_NAME = 'revision_id') THEN
-    ALTER TABLE `rule_engine`.`rule_execution_log` ADD COLUMN `revision_id` BIGINT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_execution_log' AND COLUMN_NAME = 'artifact_digest') THEN
-    ALTER TABLE `rule_engine`.`rule_execution_log` ADD COLUMN `artifact_digest` CHAR(64) DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model' AND COLUMN_NAME = 'model_digest') THEN
-    ALTER TABLE `rule_engine`.`rule_model` ADD COLUMN `model_digest` CHAR(64) DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model' AND COLUMN_NAME = 'input_schema_json') THEN
-    ALTER TABLE `rule_engine`.`rule_model` ADD COLUMN `input_schema_json` LONGTEXT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model' AND COLUMN_NAME = 'output_schema_json') THEN
-    ALTER TABLE `rule_engine`.`rule_model` ADD COLUMN `output_schema_json` LONGTEXT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model' AND COLUMN_NAME = 'validation_report_json') THEN
-    ALTER TABLE `rule_engine`.`rule_model` ADD COLUMN `validation_report_json` LONGTEXT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model' AND COLUMN_NAME = 'runtime_constraints_json') THEN
-    ALTER TABLE `rule_engine`.`rule_model` ADD COLUMN `runtime_constraints_json` LONGTEXT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'model_format') THEN
-    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `model_format` VARCHAR(32) DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'model_file_name') THEN
-    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `model_file_name` VARCHAR(256) DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'model_file_size') THEN
-    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `model_file_size` BIGINT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'model_digest') THEN
-    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `model_digest` CHAR(64) DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'input_schema_json') THEN
-    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `input_schema_json` LONGTEXT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'output_schema_json') THEN
-    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `output_schema_json` LONGTEXT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'validation_report_json') THEN
-    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `validation_report_json` LONGTEXT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'runtime_constraints_json') THEN
-    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `runtime_constraints_json` LONGTEXT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'sample_status') THEN
-    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `sample_status` VARCHAR(32) DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'status') THEN
-    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `status` TINYINT NOT NULL DEFAULT 1;
-  END IF;
-END$$
-DELIMITER ;
-CALL `rule_engine`.`ensure_decision_artifact_columns`();
-DROP PROCEDURE `rule_engine`.`ensure_decision_artifact_columns`;
-
-DELIMITER $$
-CREATE PROCEDURE `rule_engine`.`ensure_designer_draft_columns`()
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_revision' AND COLUMN_NAME = 'source_type') THEN
-    ALTER TABLE `rule_engine`.`rule_revision` ADD COLUMN `source_type` VARCHAR(16) DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_revision' AND COLUMN_NAME = 'source_id') THEN
-    ALTER TABLE `rule_engine`.`rule_revision` ADD COLUMN `source_id` BIGINT DEFAULT NULL;
-  END IF;
-END$$
-DELIMITER ;
-CALL `rule_engine`.`ensure_designer_draft_columns`();
-DROP PROCEDURE `rule_engine`.`ensure_designer_draft_columns`;
--- Additive business-version migration; historical scripts and IDs are unchanged.
-CREATE TABLE IF NOT EXISTS `rule_engine`.`rule_version_binding` (
+CREATE TABLE IF NOT EXISTS `rule_version_binding` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,
   `definition_id` BIGINT NOT NULL,
   `version_no` INT NOT NULL,
@@ -2089,43 +1698,6 @@ CREATE TABLE IF NOT EXISTS `rule_engine`.`rule_version_binding` (
   UNIQUE KEY `uk_rule_business_version` (`definition_id`, `version_no`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-DROP PROCEDURE IF EXISTS `rule_engine`.`ensure_rule_business_versions`;
-DELIMITER $$
-CREATE PROCEDURE `rule_engine`.`ensure_rule_business_versions`()
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_revision' AND COLUMN_NAME='publish_mode') THEN
-    ALTER TABLE `rule_engine`.`rule_revision` ADD COLUMN `publish_mode` VARCHAR(16) DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_revision' AND COLUMN_NAME='target_version_id') THEN
-    ALTER TABLE `rule_engine`.`rule_revision` ADD COLUMN `target_version_id` BIGINT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_revision' AND COLUMN_NAME='target_generation') THEN
-    ALTER TABLE `rule_engine`.`rule_revision` ADD COLUMN `target_generation` BIGINT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_definition_version' AND COLUMN_NAME='business_version') THEN
-    ALTER TABLE `rule_engine`.`rule_definition_version` ADD COLUMN `business_version` INT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_definition_version' AND COLUMN_NAME='version_binding_id') THEN
-    ALTER TABLE `rule_engine`.`rule_definition_version` ADD COLUMN `version_binding_id` BIGINT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_definition_version' AND COLUMN_NAME='binding_generation') THEN
-    ALTER TABLE `rule_engine`.`rule_definition_version` ADD COLUMN `binding_generation` BIGINT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_definition_version' AND COLUMN_NAME='revision_id') THEN
-    ALTER TABLE `rule_engine`.`rule_definition_version` ADD COLUMN `revision_id` BIGINT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_definition_version' AND COLUMN_NAME='artifact_id') THEN
-    ALTER TABLE `rule_engine`.`rule_definition_version` ADD COLUMN `artifact_id` BIGINT DEFAULT NULL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_definition_version' AND COLUMN_NAME='artifact_digest') THEN
-    ALTER TABLE `rule_engine`.`rule_definition_version` ADD COLUMN `artifact_digest` CHAR(64) DEFAULT NULL;
-  END IF;
-END$$
-DELIMITER ;
-CALL `rule_engine`.`ensure_rule_business_versions`();
-DROP PROCEDURE `rule_engine`.`ensure_rule_business_versions`;
-
--- 正式进件历史：只由最外层对外规则写入，字段值以 refType:ID 固定关联。
 CREATE TABLE IF NOT EXISTS `rule_application_history` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,
   `project_id` BIGINT DEFAULT NULL,
@@ -2140,8 +1712,7 @@ CREATE TABLE IF NOT EXISTS `rule_application_history` (
   KEY `idx_application_rule_time` (`root_rule_id`, `project_id`, `occurred_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Offline resource transfer operation audit; configuration packages never contain these logs.
-CREATE TABLE IF NOT EXISTS `rule_engine`.`offline_transfer_log` (
+CREATE TABLE IF NOT EXISTS `offline_transfer_log` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,
   `operation_type` VARCHAR(16) NOT NULL,
   `status` VARCHAR(16) NOT NULL,

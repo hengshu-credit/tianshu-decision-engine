@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.decision_artifact_component")
+@TableName("decision_artifact_component")
 public class DecisionArtifactComponent {
     @TableId(type = IdType.AUTO)
     private Long id;

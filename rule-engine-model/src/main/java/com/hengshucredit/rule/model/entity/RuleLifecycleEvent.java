@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.rule_lifecycle_event")
+@TableName("rule_lifecycle_event")
 public class RuleLifecycleEvent {
     @TableId(type = IdType.AUTO)
     private Long id;

@@ -20,6 +20,10 @@ export default defineConfig(({ mode }) => {
       'define.amd': 'false'
     },
     optimizeDeps: {
+      // LogicFlow 由血缘、决策树和决策流路由懒加载；依赖图变化后强制刷新
+      // 预构建缓存，避免浏览器拿到旧的 @logicflow/core 入口而返回 504。
+      force: mode === 'development',
+      include: ['@logicflow/core', '@logicflow/extension', '@logicflow/layout'],
       rolldownOptions: {
         transform: {
           define: { 'define.amd': 'false' }

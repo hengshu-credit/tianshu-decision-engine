@@ -10,6 +10,6 @@ import java.time.LocalDateTime;
 
 @Mapper
 public interface RuleProjectAuthTokenMapper extends BaseMapper<RuleProjectAuthToken> {
-    @Update("UPDATE rule_engine.rule_project_auth_token SET last_used_time = #{lastUsedTime} WHERE id = #{id}")
+    @Update("UPDATE rule_project_auth_token SET last_used_time = #{lastUsedTime} WHERE id = #{id}")
     int updateLastUsedTime(@Param("id") Long id, @Param("lastUsedTime") LocalDateTime lastUsedTime);
 }

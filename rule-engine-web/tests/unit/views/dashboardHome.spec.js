@@ -66,6 +66,27 @@ describe('DashboardHome', () => {
     wrapper.unmount()
   })
 
+  test('期数和金额都没有有效数据时隐藏占比整行，有任一数据时恢复', async () => {
+    const wrapper = mount(DashboardHome, {
+      global: { stubs: { DashboardChart: true } }
+    })
+    await flushPromises()
+
+    expect(wrapper.vm.hasDistributionData).toBe(false)
+    expect(wrapper.find('.dashboard-distribution-grid').exists()).toBe(false)
+
+    wrapper.vm.sections.applications.data.periods = {
+      items: [{ key: '12', label: '12期', count: 2, rate: 1 }],
+      validCount: 1,
+      excludedCount: 0
+    }
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.hasDistributionData).toBe(true)
+    expect(wrapper.find('.dashboard-distribution-grid').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   test('生产构建使用的运行时可以实际渲染核心指标组件', async () => {
     const runtimeSafeComponents = ['MetricCard', 'ChartCard', 'ResourceCard']
     runtimeSafeComponents.forEach(name => {

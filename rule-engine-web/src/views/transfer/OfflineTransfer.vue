@@ -50,6 +50,16 @@
           <el-button size="small" :disabled="exporting" @click="addRoot">添加根资源</el-button>
           <el-button type="primary" :loading="exporting" @click="exportPackage">生成并下载配置包</el-button>
         </div>
+        <section v-if="exportLineageRoots.length" class="inline-lineage-panel">
+          <div class="inline-lineage-toolbar">
+            <strong>导出内容血缘</strong>
+            <el-select v-model="selectedExportRootKey" size="small" aria-label="选择导出内容血缘" style="width: 250px">
+              <el-option v-for="item in exportLineageRoots" :key="item.key" :label="item.label" :value="item.key" />
+            </el-select>
+          </div>
+          <lineage-graph v-if="exportLineageGraph" embedded :initial-graph="exportLineageGraph" />
+          <el-empty v-else-if="!exportLineageLoading" description="该内容暂无可用血缘" />
+        </section>
       </article>
 
       <article class="transfer-card">
@@ -145,11 +155,24 @@
           <strong>选择要导入的内容</strong>
           <span>取消勾选的资源会转为外部关联，导入时需要在下方选择目标内容。</span>
         </div>
-        <el-checkbox-group v-model="selectedResourceKeysDraft" class="selected-resource-list__items">
-          <el-checkbox v-for="item in preview.resources" :key="item.key" :label="item.key">
-            {{ item.resourceCode || item.key }} · {{ item.resourceType }}
-          </el-checkbox>
-        </el-checkbox-group>
+        <div class="selected-resource-list__items">
+          <div v-for="item in preview.resources" :key="item.key" class="resource-review-row">
+            <el-checkbox v-model="selectedResourceKeysDraft" :value="item.key">
+              {{ item.resourceCode || item.key }} · {{ item.resourceType }}
+            </el-checkbox>
+            <el-tag v-if="item.recommendedAction === 'REUSE'" size="small" type="success">系统建议复用</el-tag>
+            <span v-if="item.existingResourceKey" class="resource-reuse-target">目标候选：{{ item.existingResourceKey }}</span>
+            <el-select
+              v-if="item.reviewable"
+              v-model="resourceActionsDraft[item.key]"
+              size="small"
+              class="resource-action-select"
+              aria-label="迁移处理方式"
+            >
+              <el-option v-for="action in resourceActionOptions(item)" :key="action.value" :label="action.label" :value="action.value" />
+            </el-select>
+          </div>
+        </div>
       </div>
       <div v-if="previewLineageRoots.length" class="offline-lineage-panel">
         <div class="offline-lineage-toolbar">
@@ -222,12 +245,22 @@
       </el-alert>
       <pre class="result-json">{{ JSON.stringify(importResult, null, 2) }}</pre>
     </el-dialog>
+    <el-dialog v-model="logDetailVisible" title="迁移日志详情" width="900px">
+      <el-alert v-if="logDetail" :type="logDetail.status === 'SUCCESS' ? 'success' : 'warning'" :closable="false" :title="`${logDetail.operationType === 'EXPORT' ? '导出' : '导入'} · ${logDetail.status}`" />
+      <pre v-if="logDetail" class="result-json">{{ logDetail.contentJson || '{}' }}</pre>
+      <section class="log-lineage-section">
+        <div class="inline-lineage-toolbar"><strong>本次迁移血缘</strong><span v-if="!logLineageLoading && !logLineage?.nodes?.length">日志中没有可用血缘，缺失内容已跳过。</span></div>
+        <lineage-graph v-if="logLineage?.nodes?.length" embedded :initial-graph="logLineage" />
+        <div v-else-if="logLineageLoading" class="lineage-loading">正在生成血缘图…</div>
+      </section>
+    </el-dialog>
   </div>
 </template>
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { exportResourceTransfer, importResourceTransfer, previewResourceTransfer, listTransferResources, listTransferResourceFields, listTransferLogs, getTransferLog } from '@/api/transfer'
+import { exportResourceTransfer, importResourceTransfer, previewResourceTransfer, listTransferResources, listTransferResourceFields, listTransferLogs, getTransferLog, getTransferLogLineage } from '@/api/transfer'
+import { getLineageGraph } from '@/api/lineage'
 import { listProjects } from '@/api/project'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import LineageGraph from '@/views/lineage/LineageGraph.vue'
@@ -276,7 +309,13 @@ export default {
       activeTab: 'transfer',
       logs: [], logsLoading: false, logTotal: 0, logPageNum: 1, logPageSize: 20,
       logDetail: null,
+      logDetailVisible: false,
+      logLineage: null,
+      logLineageLoading: false,
       selectedLineageRoot: '',
+      selectedExportRootKey: '',
+      exportLineageGraphs: {},
+      exportLineageLoading: false,
       options: {
         targetScope: 'PROJECT', targetProjectId: '', createProject: false,
         projectCode: '', projectName: '', publishRules: false,
@@ -284,6 +323,7 @@ export default {
         selectedResourceKeys: [], resourceBindings: {}, fieldBindings: {}
       },
       selectedResourceKeysDraft: [],
+      resourceActionsDraft: {},
       resourceBindingsDraft: {},
       fieldBindingsDraft: {},
     }
@@ -296,10 +336,16 @@ export default {
     },
     previewLineageRoots() {
       const resources = this.preview?.resources || []
-      return (this.preview?.roots || []).map(key => {
-        const item = resources.find(resource => resource.key === key)
-        return { key, label: item ? `${item.resourceCode || key} · ${item.resourceType}` : key }
-      })
+      return resources.map(item => ({ key: item.key, label: `${item.resourceCode || item.key} · ${item.resourceType}` }))
+    },
+    exportLineageRoots() {
+      return this.roots.filter(item => item.resourceId).map(item => ({
+        key: item.key,
+        label: `${item.resourceType} · ${item.resourceId}`,
+      }))
+    },
+    exportLineageGraph() {
+      return this.exportLineageGraphs[this.selectedExportRootKey] || null
     },
     offlineLineageGraph() {
       if (!this.preview || !this.selectedLineageRoot) return null
@@ -324,7 +370,12 @@ export default {
           if (edge.to === current && !related.has(edge.from)) { related.add(edge.from); queue.push(edge.from) }
         })
       }
-      return { startNode: nodeMap.get(selected.key), nodes: [...related].map(key => nodeMap.get(key)).filter(Boolean), edges: edges.filter(edge => related.has(edge.from) && related.has(edge.to)) }
+      return {
+        startNode: nodeMap.get(selected.key),
+        nodes: [...related].map(key => nodeMap.get(key)).filter(Boolean),
+        edges: edges.filter(edge => related.has(edge.from) && related.has(edge.to)
+          && nodeMap.has(edge.from) && nodeMap.has(edge.to)),
+      }
     }
   },
   watch: {
@@ -347,9 +398,18 @@ export default {
       } finally { this.logsLoading = false }
     },
     async openLogDetail(row) {
-      const response = await getTransferLog(row.id)
-      this.logDetail = response.data || null
-      if (this.logDetail) this.$alert(this.logDetail.contentJson || '{}', '迁移内容详情', { confirmButtonText: '关闭', callback: () => {} })
+      this.logDetailVisible = true
+      this.logLineageLoading = true
+      try {
+        const [detail, lineage] = await Promise.all([getTransferLog(row.id), getTransferLogLineage(row.id)])
+        this.logDetail = detail.data || null
+        this.logLineage = lineage.data || null
+      } catch (error) {
+        this.logDetail = null
+        this.logLineage = null
+      } finally {
+        this.logLineageLoading = false
+      }
     },
     addRoot() { this.roots.push(newRoot(this.nextRootKey++, this.fetchRootOptionsByKey)) },
     removeRoot(index) { this.roots.splice(index, 1) },
@@ -366,6 +426,25 @@ export default {
         && String(other.resourceId) === String(root.resourceId))) {
         root.resourceId = ''
         ElMessage.warning('该资源已添加，请选择其他资源')
+      }
+      this.selectedExportRootKey = root.key
+      this.loadExportLineage(root)
+    },
+    async loadExportLineage(root) {
+      if (!root || !root.resourceId) return
+      this.exportLineageLoading = true
+      try {
+        const response = await getLineageGraph({
+          nodeType: LINEAGE_TYPES[root.resourceType] || root.resourceType,
+          nodeId: Number(root.resourceId),
+          direction: 'ALL',
+          maxDepth: 2,
+        })
+        this.exportLineageGraphs = { ...this.exportLineageGraphs, [root.key]: response.data || null }
+      } catch (error) {
+        this.exportLineageGraphs = { ...this.exportLineageGraphs, [root.key]: null }
+      } finally {
+        this.exportLineageLoading = false
       }
     },
     fetchRootOptionsByKey(key, params) {
@@ -406,6 +485,7 @@ export default {
       this.importFile = upload?.raw || null
       this.selectedLineageRoot = ''
       this.selectedResourceKeysDraft = []
+      this.resourceActionsDraft = {}
       this.resourceBindingsDraft = {}
       this.fieldBindingsDraft = {}
       this.invalidatePreview()
@@ -469,9 +549,15 @@ export default {
         this.preview = response.data
         this.selectedResourceKeysDraft = (response.data.selectedResourceKeys
           || (response.data.resources || []).map((item) => item.key)).slice()
+        this.resourceActionsDraft = { ...this.resourceActionsDraft }
+        const previewResources = response.data.resources || []
+        previewResources.forEach((item) => {
+          if (item.selectedAction) this.resourceActionsDraft[item.key] = item.selectedAction
+        })
         this.resourceBindingsDraft = { ...(this.options.resourceBindings || {}), ...this.resourceBindingsDraft }
         this.fieldBindingsDraft = { ...(this.options.fieldBindings || {}), ...this.fieldBindingsDraft }
-        this.selectedLineageRoot = response.data.roots?.[0] || ''
+        this.selectedLineageRoot = response.data.roots?.[0]
+          || response.data.resources?.[0]?.key || ''
         this.previewFile = file
         this.previewOptionsSignature = signature
       } catch (error) {
@@ -528,6 +614,7 @@ export default {
         projectBindings: {},
         publishRules: Boolean(this.options.publishRules),
         selectedResourceKeys: this.selectedResourceKeysDraft.slice(),
+        resourceActions: { ...this.resourceActionsDraft },
         resourceBindings: { ...this.resourceBindingsDraft },
         fieldBindings: { ...this.fieldBindingsDraft },
       }
@@ -561,6 +648,16 @@ export default {
       } catch (error) {
         ElMessage.error(error.message || '加载关联候选失败')
       }
+    },
+    resourceActionOptions(item) {
+      const options = [
+        { value: 'REUSE', label: '复用现有内容' },
+        { value: 'SUFFIX', label: '新建并追加后缀' },
+      ]
+      if (item.resourceType !== 'VARIABLE' && item.resourceType !== 'PROJECT') {
+        options.splice(1, 0, { value: 'OVERWRITE', label: '覆盖现有内容' })
+      }
+      return options
     },
     validateTargetOptions() {
       if (this.options.targetScope === 'PROJECT' && !this.options.createProject
@@ -615,7 +712,13 @@ export default {
 .selected-resource-list { margin-top: 16px; padding: 12px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--el-bg-color); }
 .selected-resource-list__heading { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
 .selected-resource-list__heading span { color: var(--el-text-color-secondary); font-size: 12px; }
-.selected-resource-list__items { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; }
+.selected-resource-list__items { display: grid; gap: 8px; margin-top: 8px; }
+.resource-review-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.resource-action-select { width: 150px; }
+.resource-reuse-target { color: var(--el-text-color-secondary); font-size: 12px; }
+.inline-lineage-panel, .log-lineage-section { margin-top: 16px; padding: 12px; border: 1px solid var(--el-border-color-light); border-radius: 10px; background: var(--el-fill-color-extra-light); }
+.inline-lineage-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; color: var(--el-text-color-secondary); font-size: 12px; }
+.inline-lineage-toolbar strong { color: var(--el-text-color-primary); font-size: 13px; }
 .offline-lineage-panel { margin: 2px 0 18px; padding: 12px; border: 1px solid var(--el-border-color-light); border-radius: 10px; background: var(--el-fill-color-extra-light); }
 .offline-lineage-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 10px; }
 .offline-lineage-toolbar > div { display: grid; gap: 3px; min-width: 0; }

@@ -6,7 +6,7 @@ import java.time.LocalDateTime;
 
 /** Stable business version, pointing at an immutable publication snapshot. */
 @Data
-@TableName("rule_engine.rule_version_binding")
+@TableName("rule_version_binding")
 public class RuleVersionBinding {
     @TableId(type = IdType.AUTO)
     private Long id;

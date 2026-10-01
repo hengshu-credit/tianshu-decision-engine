@@ -74,6 +74,40 @@ describe('rule version visual renderers', () => {
     expect(wrapper.find('.rule-diff-lane').exists()).toBe(true)
   })
 
+  test('评分卡兼容旧模型的条件字符串并显示业务名称', () => {
+    const wrapper = mount(RuleScoreVisualDiff, {
+      props: {
+        modelType: 'SCORE',
+        sections: sections('SCORE', {
+          scoreItems: [{ conditionLabel: '信用等级 A', condition: 'creditLevel == "A"', score: 30, weight: 1 }],
+          thresholds: []
+        })
+      }
+    })
+
+    expect(wrapper.text()).toContain('信用等级 A')
+    expect(wrapper.text()).toContain('creditLevel == "A"')
+    expect(wrapper.text()).toContain('规则条件')
+  })
+
+  test('评分卡左右各自展示完整配置并在对应字段单独高亮', () => {
+    const wrapper = mount(RuleScoreVisualDiff, {
+      props: {
+        modelType: 'SCORE',
+        sections: sections(
+          'SCORE',
+          { scoreItems: [{ id: 'score-1', conditionLabel: '年龄', condition: 'age >= 18', score: 10, weight: 1 }], thresholds: [] },
+          { scoreItems: [{ id: 'score-1', conditionLabel: '年龄', condition: 'age >= 18', score: 20, weight: 1 }], thresholds: [] }
+        )
+      }
+    })
+
+    expect(wrapper.findAll('.rule-score-column')).toHaveLength(2)
+    expect(wrapper.findAll('.rule-score-result-table')).toHaveLength(6)
+    expect(wrapper.findAll('.rule-score-result-row')).toHaveLength(6)
+    expect(wrapper.findAll('.rule-score-result-row td.is-modified')).toHaveLength(2)
+  })
+
   test('规则中间新增后可视化仍按三个共享行展示', () => {
     const left = { hitPolicy: 'FIRST', rules: [{ id: 'r1' }, { id: 'r2' }] }
     const right = { hitPolicy: 'FIRST', rules: [{ id: 'r1' }, { id: 'new' }, { id: 'r2' }] }

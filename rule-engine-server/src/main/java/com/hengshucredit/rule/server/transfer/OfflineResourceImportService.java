@@ -160,8 +160,9 @@ public class OfflineResourceImportService {
             ExistingResource existing = findExisting(sourceKey.type(), configuration, resourceTargetProjectId);
             Long existingId = existing == null ? null : existing.id();
             rewriteReferences(configuration, resource, byKey, idMap, childMap, options.normalizedFieldBindings());
-            String policy = sourceKey.type() == TransferResourceType.VARIABLE
+            String defaultPolicy = sourceKey.type() == TransferResourceType.VARIABLE
                     ? options.normalizedVariablePolicy() : options.normalizedResourcePolicy();
+            String policy = options.normalizedResourceActions().getOrDefault(resource.key(), defaultPolicy);
             if (sourceKey.type() == TransferResourceType.RULE && ruleDefinitionMapper != null) {
                 RuleDefinition occupied = ruleDefinitionMapper.selectOne(new LambdaQueryWrapper<RuleDefinition>()
                         .eq(RuleDefinition::getRuleCode, configuration.get("ruleCode")));

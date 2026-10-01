@@ -15,14 +15,14 @@
 | `VITE_DEV_PROXY` | 空 | Vite 开发服务器 `/api` 代理目标；设置后优先于 `SERVER_PORT` 推导出的后端地址。 |
 | `MYSQL_HOST` | `localhost` | MySQL 主机名。后端在 Compose 网络中运行时填 `mysql`，不能填容器内的 `127.0.0.1`。 |
 | `MYSQL_PORT` | `3306` | MySQL 端口。 |
-| `MYSQL_DATABASE` | `rule_engine` | 后端连接的数据库名；根 Compose 的初始化容器固定创建 `rule_engine`，修改此值前必须同步改编排和初始化脚本。 |
+| `MYSQL_DATABASE` | `rule_engine` | 后端连接的数据库名；完整 Compose 的初始化容器按 `MYSQL_DATABASE` 创建和初始化，修改该值会同时作用于 Docker、Spring 和基础数据脚本。 |
 | `MYSQL_USERNAME` | 空 | 后端连接 MySQL 的应用账号；应只授予 `rule_engine` 所需权限。 |
 | `MYSQL_PASSWORD` | 空 | 后端应用账号密码。 |
 | `MYSQL_ROOT_PASSWORD` | 无 | 仅由 MySQL 容器初始化和 `mysql-init` 使用的 root 密码；不能替代 `MYSQL_PASSWORD`。 |
 | `MYSQL_ALLOW_MULTI_QUERIES` | `false` | 是否在 JDBC URL 中开启多语句；只有确认 SQL 来源可信且确实需要时才开启。 |
 | `REDIS_HOST` | `localhost` | Redis 主机名。多节点必须指向同一个 Redis 实例或同一高可用服务。 |
 | `REDIS_PORT` | `6379` | Redis 端口。 |
-| `REDIS_PASSWORD` | 空 | Redis 认证密码；根 Compose 会强制要求非空。 |
+| `REDIS_PASSWORD` | 空 | Redis 认证密码；所有 Docker Compose 运行模式都会强制要求非空。 |
 
 ### 1.2 鉴权、控制台与安全参数
 
@@ -56,13 +56,13 @@ Compose 还会使用 `MYSQL_PUBLIC_PORT`、`REDIS_PUBLIC_PORT`、`CONSOLE_PUBLIC
 | 模块 | 适用场景 | 本模块直接交付的内容 |
 |---|---|---|
 | [Docker 运行时部署](#二docker-运行时部署) | 已有 MySQL/Redis，希望用容器运行 JAR 和后管 | 两个运行时容器，JAR 与 `dist` 均从宿主机目录挂载，更新文件后重启对应容器。 |
-| [Docker Compose 部署](#三docker-compose-一体化部署) | 希望分离管理 MySQL、Redis，同时用 Compose 运行 JAR 和后管 | MySQL、Redis 独立 Compose + 主 Compose，数据库目录挂载到 docker/，应用按初始化成功后启动。 |
+| [Docker Compose 部署](#三docker-compose-一体化部署) | 希望分别使用外部依赖或单机一键启动 | 独立 MySQL/Redis Compose、外部数据库应用 Compose 和完整单机 Compose，全部数据目录挂载到 docker/。 |
 | [后管 + JAR 包部署](#四后管静态文件--jar-包部署) | 不运行应用容器，使用 Nginx/Java 进程或 systemd | `dist` 由 Nginx 提供，JAR 由 `java -jar` 或 systemd 启动。 |
 | [多节点横向扩容](#五多节点横向扩容) | 需要提高吞吐或故障切换能力 | 多个相同 JAR 节点置于负载均衡器后，共享 MySQL/Redis，按 readiness 滚动发布。 |
 
 **Docker 更新约定：**后管 `dist` 和服务端 JAR 都通过宿主机目录挂载到容器内，不把它们写死在运行时镜像中。更新时先替换容器外的 `dist` 或 JAR，再对后管执行 Nginx reload、对 JAR 容器执行 restart；这样可以在不重建镜像的情况下发布和回滚。
 
-以上模块都依赖可访问的 MySQL 8 和 Redis；如果没有现成依赖，请先按对应模块中的基础设施步骤启动。MySQL 和 Redis 应使用本页三种 Compose 文件中的独立文件启动，主 Compose 不会重复创建基础设施容器。
+以上模块都依赖可访问的 MySQL 8 和 Redis；如果没有现成依赖，请选择第 0 步的独立依赖 Compose 或第 1.4 节的完整单机 Compose。第 1.3 节应用 Compose 只连接外部数据库，不会创建依赖容器。
 
 ## 环境要求
 
@@ -82,7 +82,10 @@ cp .env.example .env
 # 编辑 .env，替换全部 replace-with-* 占位值
 docker compose --env-file .env -f docker/docker-compose.mysql.yml up -d
 docker compose --env-file .env -f docker/docker-compose.redis.yml up -d
-docker compose --env-file .env -f docker/docker-compose.yml up -d
+# 选择外部数据库应用模式时单独执行：
+# docker compose --env-file .env -f docker/docker-compose.yml up -d
+# 选择完整单机模式时改为一条命令：
+# docker compose --env-file .env -f docker/docker-compose.full.yml up -d
 ```
 
 PowerShell 可使用 `Copy-Item .env.example .env`。Compose 不再提供 MySQL/Redis 共享默认密码；全新数据卷会根据 `MYSQL_USERNAME`、`MYSQL_PASSWORD` 创建应用账号。已有数据卷升级时，需由数据库管理员按最小权限原则预先创建或更新该账号。
@@ -123,9 +126,9 @@ mvn spring-boot:run
 
 `MYSQL_HOST`、`MYSQL_PORT` 由 `application.yml` 读取；Redis 已通过 `REDIS_HOST`、`REDIS_PORT` 读取。不要在 `.env` 中写入 Spring 风格的 `${NAME:default}` 表达式，因为 Docker Compose 会把它解析为非法模板；`.env` 中应使用已经展开的实际值。
 
-`schema.sql` 只包含数据库、表和索引等结构 DDL，不创建用户、不修改 root 账号、也不执行全局授权；`export_202607161151.sql` 是当前唯一的初始数据快照。空 Docker 数据卷首次启动时会依次执行 `01-schema.sql` 和 `02-export.sql`。根编排中的 `mysql-init` 对已有数据卷只重复执行结构 DDL，不会自动重放会覆盖业务数据的 export。项目鉴权、临时 Token 及其访问审计数据与部署主密钥绑定，不写入初始快照；服务启动后会把项目表中的兼容访问令牌按当前主密钥迁移为默认鉴权记录。
+`schema.sql` 只包含数据库、表和索引等结构 DDL，不创建用户、不修改 root 账号、也不执行全局授权；`data.sql` 是当前唯一的初始数据快照。空 Docker 数据卷首次启动时会依次执行 `01-schema.sql` 和 `02-data.sql`。只有完整 Compose 中的 `mysql-init` 会对已有数据卷重复执行结构 DDL，不会自动重放会覆盖业务数据的 data.sql。项目鉴权、临时 Token 及其访问审计数据与部署主密钥绑定，不写入初始快照；服务启动后会把项目表中的兼容访问令牌按当前主密钥迁移为默认鉴权记录。
 
-需要手工完整恢复时，固定顺序为：删除 `rule_engine` 数据库，执行 `schema.sql`，再执行 `export_202607161151.sql`。export 会清空并重建其覆盖的全部数据表，因此不得直接用于需要保留现有业务数据的数据库。
+需要手工完整恢复时，固定顺序为：删除 `MYSQL_DATABASE` 指定的数据库，执行 `schema.sql`，再执行 `data.sql`。data.sql 会清空并重建其覆盖的全部数据表，因此不得直接用于需要保留现有业务数据的数据库。
 
 ### 后端
 
@@ -339,13 +342,14 @@ docker logs --tail 200 tianshu-server
 
 ## 三、Docker Compose 一体化部署
 
-部署制品统一放在 docker/tianshu-decision-engine-runtime：server.jar、runtime.jar 和前端 dist/。MySQL、Redis 使用 docker/ 下的独立 Compose，配置、数据与日志分别放在 docker/rule-engine-mysql/、docker/rule-engine-redis/；子目录不再保留重复的 Compose。主 Compose 负责初始化数据库并启动服务端、SDK、HTTP 运行时和前端，线上可以把 MySQL、Redis 替换成已有生产实例。
+部署制品统一放在 docker/tianshu-decision-engine-runtime：server.jar、runtime.jar 和前端 dist/。MySQL、Redis 配置、数据与日志分别放在 docker/rule-engine-mysql/、docker/rule-engine-redis/；子目录不再保留重复的 Compose。外部数据库 Compose 只启动应用，完整 Compose 负责初始化数据库并启动全部服务。
 
 ```text
 docker/
 ├── docker-compose.yml
 ├── docker-compose.mysql.yml
 ├── docker-compose.redis.yml
+├── docker-compose.full.yml
 ├── rule-engine-mysql/                 # conf.d/、data/、logs/
 ├── rule-engine-redis/                 # redis.conf、data/、logs/
 └── tianshu-decision-engine-runtime/   # server.jar、runtime.jar、dist/
@@ -353,7 +357,59 @@ docker/
 
 以下命令从仓库根目录执行，`.env` 仍保留在仓库根目录。Compose 的相对挂载路径以 `docker/` 为基准，因此 `RUNTIME_DIR` 默认填 `./tianshu-decision-engine-runtime`，也可改为宿主机绝对路径。
 
-### 3.1 构建制品
+### 3.1 启动方式
+
+四种方式彼此独立，按部署环境选择一种即可：
+
+**0. 只启动 MySQL/Redis。** 可以使用本项目提供的独立 Compose，也可以使用已有远程实例。独立容器默认发布到宿主机全部网卡，使用 `MYSQL_HOST_PORT`、`REDIS_HOST_PORT` 调整端口，防火墙只放行可信网段；应用连接远程实例时把 `MYSQL_SERVICE_HOST`、`REDIS_SERVICE_HOST` 改成容器可以访问的域名或 IP。
+
+```powershell
+docker compose --env-file .env -f docker/docker-compose.mysql.yml up -d
+docker compose --env-file .env -f docker/docker-compose.redis.yml up -d
+```
+
+**1.1 源码启动 server + web + SDK + HTTP。** 先完成第 0 步，再在一个终端运行统一启动脚本：
+
+```powershell
+node scripts/start-source.mjs
+```
+
+脚本会先执行 Maven 编译，再启动 server、HTTP profile、SDK profile 和 Vite web；按 Ctrl+C 会停止本次启动的全部进程。SDK/HTTP 的项目凭证、规则白名单、Redis 地址和运行时令牌仍从 `.env` 或系统环境变量读取；源码启动时默认使用 `http://127.0.0.1:8080`，不要把 Compose 服务名 `server` 带到宿主机进程。
+
+**1.2 JAR + Nginx。** 编译后将三个 JAR/前端产物分别启动；SDK 与 HTTP 使用各自端口和 profile，前端由 Nginx 指向 `dist/`。
+
+```powershell
+mvn clean package -DskipTests
+cd rule-engine-web; npm ci; npm run build
+Copy-Item rule-engine-server/target/rule-engine-server-*.jar docker/tianshu-decision-engine-runtime/server.jar
+Copy-Item rule-engine-runtime/target/rule-engine-runtime-*.jar docker/tianshu-decision-engine-runtime/runtime.jar
+New-Item -ItemType Directory -Force docker/tianshu-decision-engine-runtime/dist | Out-Null
+Copy-Item rule-engine-web/dist/* docker/tianshu-decision-engine-runtime/dist -Recurse -Force
+# 分别在三个终端执行：
+java -jar docker/tianshu-decision-engine-runtime/server.jar
+java -Dspring.profiles.active=http -Dserver.port=7070 -DRULE_SERVER_URL=http://127.0.0.1:8080 -jar docker/tianshu-decision-engine-runtime/runtime.jar
+java -Dspring.profiles.active=sdk -Dserver.port=7071 -DRULE_SERVER_URL=http://127.0.0.1:8080 -jar docker/tianshu-decision-engine-runtime/runtime.jar
+```
+
+Nginx 的 `root` 指向 `rule-engine-web/dist`，`/api/` 反向代理到 `http://127.0.0.1:8080`；JAR 更新采用临时文件原子替换后逐个重启，避免读取半写入文件。
+
+**1.3 Docker 应用 + 外部 MySQL/Redis。** 只需要准备 JAR/dist 和一份 `.env`，将 `MYSQL_SERVICE_HOST`、`REDIS_SERVICE_HOST` 配置为远程地址；本文件不创建或依赖 MySQL/Redis Compose 服务。
+
+```powershell
+docker compose --env-file .env -f docker/docker-compose.yml up -d
+docker compose --env-file .env -f docker/docker-compose.yml ps
+```
+
+**1.4 Docker 全量单机。** 这个文件自包含 MySQL、Redis、server、HTTP、SDK 和 web，一条命令即可启动，不需要先启动另外三个 Compose 文件。
+
+```powershell
+docker compose --env-file .env -f docker/docker-compose.full.yml up -d
+docker compose --env-file .env -f docker/docker-compose.full.yml ps
+```
+
+完整模式首次使用空数据目录时由 `mysql-init` 依次执行 schema 和可选快照；已有数据目录保持 `MYSQL_INIT_LOAD_SNAPSHOT=false`。完整模式与第 0 步的独立 MySQL/Redis 不要同时占用相同端口和容器名。
+
+### 3.2 构建制品
 
 ```powershell
 mvn clean package -DskipTests
@@ -365,23 +421,23 @@ Copy-Item rule-engine-runtime/target/rule-engine-runtime-*.jar docker/tianshu-de
 Copy-Item rule-engine-web/dist/* docker/tianshu-decision-engine-runtime/dist -Recurse -Force
 ```
 
-### 3.2 启动
+### 3.3 启动与更新
 
 ```powershell
 Copy-Item .env.example .env
 # 编辑 .env，替换全部 replace-with-* 占位值和数据库密码
-docker compose --env-file .env -f docker/docker-compose.mysql.yml up -d
-docker compose --env-file .env -f docker/docker-compose.redis.yml up -d
+# 选择 1.3 或 1.4 其中一种，不要同时启动
 docker compose --env-file .env -f docker/docker-compose.yml up -d
+# 或：docker compose --env-file .env -f docker/docker-compose.full.yml up -d
 ```
 
-MySQL 数据目录为 docker/rule-engine-mysql/data，Redis 数据目录为 docker/rule-engine-redis/data；均通过宿主机目录挂载持久化，停止或删除容器不会删除这些文件。数据与日志目录已排除在 Git 和镜像构建上下文之外。主 Compose 的 mysql-init 会等待数据库可连接、幂等执行 schema，然后服务端、SDK、HTTP 服务才会启动。空 MySQL 数据目录首次启动时自动导入 schema 和快照；迁移已有数据目录只需重新创建 mysql/redis 容器，保持 MYSQL_INIT_LOAD_SNAPSHOT=false，不重放快照。
+MySQL 数据目录为 docker/rule-engine-mysql/data，Redis 数据目录为 docker/rule-engine-redis/data；均通过宿主机目录挂载持久化，停止或删除容器不会删除这些文件。只有全量 Compose 包含 `mysql-init`；外部数据库模式要求数据库已经完成 schema 初始化。数据与日志目录已排除在 Git 和镜像构建上下文之外。
 
 迁移已有部署时保留原 DEPLOY_PROJECT；若需沿用旧 Docker 网络，在 .env 设置 ENGINE_NETWORK 为原网络名。移动数据前应停止对应容器，完成停机备份和文件校验后再启动；不要对仍在写入的数据目录直接复制或移动。MySQL/Redis 的监听端口仍由 MYSQL_HOST_PORT、REDIS_HOST_PORT 配置。
 
 使用生产托管数据库时，把 MYSQL_SERVICE_HOST、MYSQL_SERVICE_PORT、REDIS_SERVICE_HOST、REDIS_SERVICE_PORT 改为生产地址，并配置 MYSQL_INIT_USERNAME / MYSQL_INIT_PASSWORD；如果生产库已完成结构初始化，可设置 MYSQL_INIT_SKIP=true。应用账号仍通过 MYSQL_USERNAME / MYSQL_PASSWORD 配置，Redis 密码通过 REDIS_PASSWORD 配置。
 
-默认入口为前端 http://localhost:9090、管理端 API http://localhost:8080、HTTP 运行时 http://localhost:7070、SDK 运行时 http://localhost:7071。主 Compose 不构建镜像，也不挂载源码，升级时替换运行目录中的 JAR/dist 后执行：
+默认入口为前端 http://localhost:9090、管理端 API http://localhost:8080、HTTP 运行时 http://localhost:7070、SDK 运行时 http://localhost:7071。Docker Compose 不构建镜像，也不挂载源码，升级时替换运行目录中的 JAR/dist 后执行：
 
 ```powershell
 docker compose --env-file .env -f docker/docker-compose.yml up -d
@@ -389,12 +445,18 @@ docker compose --env-file .env -f docker/docker-compose.yml ps
 docker compose --env-file .env -f docker/docker-compose.yml logs --tail 200 server runtime-http runtime-sdk
 ```
 
+全量模式对应命令为：
+
+```powershell
+docker compose --env-file .env -f docker/docker-compose.full.yml up -d
+docker compose --env-file .env -f docker/docker-compose.full.yml logs --tail 200 server http sdk web
+```
+
 停止应用与基础设施分别执行：
 
 ```powershell
 docker compose --env-file .env -f docker/docker-compose.yml down
-docker compose --env-file .env -f docker/docker-compose.redis.yml down
-docker compose --env-file .env -f docker/docker-compose.mysql.yml down
+docker compose --env-file .env -f docker/docker-compose.full.yml down
 ```
 
 ## 四、后管静态文件 + JAR 包部署

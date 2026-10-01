@@ -10,7 +10,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.rule_field_validation")
+@TableName("rule_field_validation")
 public class RuleFieldValidation {
     @TableId(type = IdType.AUTO)
     private Long id;

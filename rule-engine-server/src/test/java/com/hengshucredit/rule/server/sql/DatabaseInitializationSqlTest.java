@@ -9,7 +9,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -125,6 +124,20 @@ public class DatabaseInitializationSqlTest {
         Assert.assertFalse(schema.contains("CREATE USER"));
         Assert.assertFalse(schema.contains("ALTER USER"));
         Assert.assertFalse(schema.contains("GRANT ALL PRIVILEGES"));
+    }
+
+    @Test
+    public void schemaIsCanonicalAndUsesTheSelectedDatabase() throws Exception {
+        String schema = read(sqlDirectory().resolve("schema.sql"));
+        Assert.assertTrue(schema.startsWith(
+                "SET NAMES utf8mb4;\nSET character_set_connection = utf8mb4;"));
+        Assert.assertFalse("canonical schema must not contain compatibility patches",
+                schema.contains("ALTER TABLE") || schema.contains("CREATE PROCEDURE")
+                        || schema.contains("DELIMITER"));
+        Assert.assertFalse("schema must not force the default database",
+                schema.contains("CREATE DATABASE") || schema.matches("(?is).*\\nUSE\\s+.*"));
+        Assert.assertFalse("schema objects must use the connection database",
+                schema.contains("rule_engine."));
     }
 
     @Test
@@ -269,15 +282,21 @@ public class DatabaseInitializationSqlTest {
     @Test
     public void dockerFreshInitializationLoadsSchemaBeforeSnapshot() throws Exception {
         Path root = repositoryRoot();
-        String rootCompose = read(root.resolve("docker/docker-compose.yml"));
+        String rootCompose = read(root.resolve("docker/docker-compose.full.yml"));
         String mysqlCompose = read(root.resolve("docker/docker-compose.mysql.yml"));
         assertFreshInitMounts(mysqlCompose,
                 "../rule-engine-server/src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro",
-                "../rule-engine-server/src/main/resources/sql/export_202607161151.sql:/docker-entrypoint-initdb.d/02-export.sql:ro");
-        Assert.assertTrue("main compose must run schema initialization before application services",
+                "../rule-engine-server/src/main/resources/sql/data.sql:/docker-entrypoint-initdb.d/02-data.sql:ro");
+        Assert.assertTrue("full compose must run schema initialization before application services",
                 rootCompose.contains("mysql-init:") && rootCompose.contains("condition: service_completed_successfully"));
         Assert.assertTrue("snapshot loading must be opt-in for an existing database",
-                rootCompose.contains("MYSQL_INIT_LOAD_SNAPSHOT") && rootCompose.contains("/init/export.sql"));
+                rootCompose.contains("MYSQL_INIT_LOAD_SNAPSHOT") && rootCompose.contains("/init/data.sql"));
+        Assert.assertTrue("full compose must include both infrastructure services",
+                rootCompose.contains("  mysql:")
+                        && rootCompose.contains("  redis:")
+                        && rootCompose.contains("image: ${MYSQL_IMAGE")
+                        && rootCompose.contains("image: ${REDIS_IMAGE")
+                        && !rootCompose.contains("extends:"));
     }
 
     @Test
@@ -313,9 +332,9 @@ public class DatabaseInitializationSqlTest {
                 "KEY `idx_console_user_preference_user` (`user_id`)"));
         String export = read(latestExport());
         Assert.assertTrue(export.contains(
-                "TRUNCATE TABLE rule_engine.console_user_preference;"));
+                "TRUNCATE TABLE console_user_preference;"));
         Assert.assertFalse(export.contains(
-                "INSERT INTO rule_engine.`console_user_preference`"));
+                "INSERT INTO `console_user_preference`"));
     }
 
     @Test
@@ -333,8 +352,8 @@ public class DatabaseInitializationSqlTest {
         Assert.assertNotNull("rule_execution_log table missing", tableBody);
         Assert.assertTrue(tableBody.matches("(?is).*`input_params`\\s+LONGTEXT.*"));
         Assert.assertTrue(tableBody.matches("(?is).*`output_result`\\s+LONGTEXT.*"));
-        Assert.assertTrue(schema.contains("MODIFY COLUMN `input_params` LONGTEXT"));
-        Assert.assertTrue(schema.contains("MODIFY COLUMN `output_result` LONGTEXT"));
+        Assert.assertFalse(schema.contains("MODIFY COLUMN `input_params`"));
+        Assert.assertFalse(schema.contains("MODIFY COLUMN `output_result`"));
     }
 
     @Test
@@ -356,15 +375,15 @@ public class DatabaseInitializationSqlTest {
                 "UNIQUE KEY `uk_api_doc_scenario_name` (`definition_id`, `scenario_name`)"));
         Assert.assertTrue(schema.contains(
                 "KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`)"));
-        Assert.assertTrue(schema.contains("MODIFY COLUMN `request_json` LONGTEXT NOT NULL"));
-        Assert.assertTrue(schema.contains("MODIFY COLUMN `response_json` LONGTEXT NOT NULL"));
+        Assert.assertFalse(schema.contains("MODIFY COLUMN `request_json`"));
+        Assert.assertFalse(schema.contains("MODIFY COLUMN `response_json`"));
     }
 
-    private static void assertFreshInitMounts(String compose, String schemaMount, String exportMount) {
+    private static void assertFreshInitMounts(String compose, String schemaMount, String dataMount) {
         Assert.assertTrue("missing schema init mount", compose.contains(schemaMount));
-        Assert.assertTrue("missing export init mount", compose.contains(exportMount));
-        Assert.assertTrue("schema must be mounted before export",
-                compose.indexOf(schemaMount) < compose.indexOf(exportMount));
+        Assert.assertTrue("missing data init mount", compose.contains(dataMount));
+        Assert.assertTrue("schema must be mounted before data",
+                compose.indexOf(schemaMount) < compose.indexOf(dataMount));
     }
 
     private static void assertVariableId(String export, long id, String code) {
@@ -490,9 +509,9 @@ public class DatabaseInitializationSqlTest {
     private static Path latestExport() throws Exception {
         try (Stream<Path> paths = Files.list(sqlDirectory())) {
             return paths
-                    .filter(path -> path.getFileName().toString().matches("export_\\d{12}\\.sql"))
-                    .max(Comparator.comparing(path -> path.getFileName().toString()))
-                    .orElseThrow(() -> new AssertionError("No timestamped export SQL found"));
+                    .filter(path -> path.getFileName().toString().equals("data.sql"))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("No canonical data SQL found"));
         }
     }
 

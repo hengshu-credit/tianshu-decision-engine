@@ -1,4 +1,5 @@
-# 主应用 Compose。MySQL 和 Redis 由同目录下的独立 Compose 文件启动，三者共享 engine 网络。
+# 应用 Compose（外部 MySQL/Redis）。数据库地址通过 MYSQL_SERVICE_HOST、REDIS_SERVICE_HOST 配置，
+# 本文件不依赖或创建其它 Compose 项目。
 name: ${DEPLOY_PROJECT:-tianshu}
 
 x-java: &java
@@ -18,6 +19,8 @@ x-java: &java
       max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
       max-file: "${DOCKER_LOG_MAX_FILES:-5}"
   networks: [rule-engine]
+  extra_hosts:
+    - host.docker.internal:host-gateway
 
 x-runtime: &runtime
   <<: *java
@@ -30,55 +33,17 @@ x-runtime: &runtime
         create_host_path: false
 
 services:
-  # 对独立 MySQL 或生产托管 MySQL 执行幂等结构初始化；快照导入必须显式开启。
-  mysql-init:
-    image: ${MYSQL_IMAGE:-mysql:8.4.6}
-    restart: "no"
-    environment:
-      MYSQL_HOST: ${MYSQL_SERVICE_HOST:-mysql}
-      MYSQL_PORT: ${MYSQL_SERVICE_PORT:-3306}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-rule_engine}
-      MYSQL_INIT_USERNAME: ${MYSQL_INIT_USERNAME:-root}
-      MYSQL_INIT_PASSWORD: "${MYSQL_INIT_PASSWORD:-${MYSQL_ROOT_PASSWORD:-}}"
-      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-}"
-      MYSQL_INIT_SKIP: ${MYSQL_INIT_SKIP:-false}
-      MYSQL_INIT_LOAD_SNAPSHOT: ${MYSQL_INIT_LOAD_SNAPSHOT:-false}
-    volumes:
-      - ../rule-engine-server/src/main/resources/sql/schema.sql:/init/schema.sql:ro
-      - ../rule-engine-server/src/main/resources/sql/export_202607161151.sql:/init/export.sql:ro
-    command:
-      - sh
-      - -ec
-      - |
-        if [ "$${MYSQL_INIT_SKIP}" = "true" ]; then
-          exit 0
-        fi
-        password="$${MYSQL_INIT_PASSWORD:-$${MYSQL_ROOT_PASSWORD}}"
-        test -n "$${password}" || { echo 'MYSQL_INIT_PASSWORD or MYSQL_ROOT_PASSWORD is required' >&2; exit 1; }
-        until MYSQL_PWD="$${password}" mysqladmin ping --protocol=tcp -h"$${MYSQL_HOST}" -P"$${MYSQL_PORT}" -u"$${MYSQL_INIT_USERNAME}" --silent; do
-          sleep 2
-        done
-        MYSQL_PWD="$${password}" mysql --protocol=tcp -h"$${MYSQL_HOST}" -P"$${MYSQL_PORT}" -u"$${MYSQL_INIT_USERNAME}" -e "CREATE DATABASE IF NOT EXISTS \`$${MYSQL_DATABASE}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
-        MYSQL_PWD="$${password}" mysql --protocol=tcp -h"$${MYSQL_HOST}" -P"$${MYSQL_PORT}" -u"$${MYSQL_INIT_USERNAME}" "$${MYSQL_DATABASE}" < /init/schema.sql
-        if [ "$${MYSQL_INIT_LOAD_SNAPSHOT}" = "true" ]; then
-          MYSQL_PWD="$${password}" mysql --protocol=tcp -h"$${MYSQL_HOST}" -P"$${MYSQL_PORT}" -u"$${MYSQL_INIT_USERNAME}" "$${MYSQL_DATABASE}" < /init/export.sql
-        fi
-    networks: [rule-engine]
-
   server:
     <<: *java
-    depends_on:
-      mysql-init:
-        condition: service_completed_successfully
     environment:
       <<: *java-env
       SERVER_PORT: 8080
-      MYSQL_HOST: ${MYSQL_SERVICE_HOST:-mysql}
+      MYSQL_HOST: ${MYSQL_SERVICE_HOST:-host.docker.internal}
       MYSQL_PORT: ${MYSQL_SERVICE_PORT:-3306}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-rule_engine}
       MYSQL_USERNAME: "${MYSQL_USERNAME:?Set MYSQL_USERNAME}"
       MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}"
-      REDIS_HOST: ${REDIS_SERVICE_HOST:-redis}
+      REDIS_HOST: ${REDIS_SERVICE_HOST:-host.docker.internal}
       REDIS_PORT: ${REDIS_SERVICE_PORT:-6379}
       REDIS_DATABASE: ${REDIS_DATABASE:-0}
       REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
@@ -162,11 +127,11 @@ services:
       RULE_PROJECT_ID: "${RUNTIME_RULE_PROJECT_ID:?Set RUNTIME_RULE_PROJECT_ID}"
       SDK_CACHE_MAX_SIZE: ${SDK_CACHE_MAX_SIZE:-1000}
       SDK_LOG_REPORT_ENABLED: ${SDK_LOG_REPORT_ENABLED:-true}
-      REDIS_HOST: ${REDIS_SERVICE_HOST:-redis}
+      REDIS_HOST: ${REDIS_SERVICE_HOST:-host.docker.internal}
       REDIS_PORT: ${REDIS_SERVICE_PORT:-6379}
       REDIS_DATABASE: ${REDIS_DATABASE:-0}
       REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
-      SPRING_DATA_REDIS_HOST: ${REDIS_SERVICE_HOST:-redis}
+      SPRING_DATA_REDIS_HOST: ${REDIS_SERVICE_HOST:-host.docker.internal}
       SPRING_DATA_REDIS_PORT: ${REDIS_SERVICE_PORT:-6379}
       SPRING_DATA_REDIS_DATABASE: ${REDIS_DATABASE:-0}
       SPRING_DATA_REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
@@ -185,7 +150,7 @@ services:
       - "${RUNTIME_SDK_PORT:-7071}:7071"
     expose: ["7071"]
 
-  frontend:
+  web:
     image: ${NGINX_IMAGE:-nginx:1.29.1-alpine}
     restart: unless-stopped
     init: true

@@ -170,7 +170,17 @@ public class OfflineResourceTransferService {
             item.put("selected", true);
             resources.add(item);
             TransferConflict conflict = findConflict(resource, key, options, targets);
-            if (conflict != null) conflicts.add(conflict);
+            if (conflict != null) {
+                conflicts.add(conflict);
+                item.put("conflictType", conflict.conflictType());
+                item.put("recommendedAction", conflict.recommendedAction());
+                item.put("selectedAction", options.normalizedResourceActions()
+                        .getOrDefault(resource.key(), conflict.recommendedAction()));
+                item.put("existingResourceKey", conflict.existingResourceKey());
+                item.put("reviewable", "REUSE".equals(conflict.recommendedAction())
+                        || "OVERWRITE".equals(conflict.recommendedAction())
+                        || "SUFFIX".equals(conflict.recommendedAction()));
+            }
             for (TransferBundle.Reference reference : resource.references()) {
                 if (reference.external()) {
                     associations.add(buildAssociation(resource, reference, options));
@@ -198,6 +208,7 @@ public class OfflineResourceTransferService {
         result.put("variablePolicy", options.normalizedVariablePolicy());
         result.put("resourcePolicy", options.normalizedResourcePolicy());
         result.put("suffix", options.normalizedSuffix());
+        result.put("resourceActions", options.normalizedResourceActions());
         result.put("conflicts", conflicts);
         result.put("conflictCount", conflicts.size());
         result.put("requiresTargetProjectSelection", resources.stream().anyMatch(item ->
@@ -535,8 +546,9 @@ public class OfflineResourceTransferService {
             }
             Map<String, Object> incoming = previewConfiguration(resource, targets);
             String conflictType = TransferResourceComparison.conflict(key.type(), incoming, current, candidate.getEffectiveStatus());
-            String action = key.type() == TransferResourceType.VARIABLE
+            String defaultAction = key.type() == TransferResourceType.VARIABLE
                     ? options.normalizedVariablePolicy() : options.normalizedResourcePolicy();
+            String action = options.normalizedResourceActions().getOrDefault(resource.key(), defaultAction);
             boolean canReuse = TransferResourceComparison.reusable(key.type(), incoming, current, candidate.getEffectiveStatus());
             if (("REUSE".equals(action) && canReuse) || "OVERWRITE".equals(action)) {
                 boolean reused = "REUSE".equals(action) && canReuse;

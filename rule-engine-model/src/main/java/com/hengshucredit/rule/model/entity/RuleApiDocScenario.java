@@ -10,7 +10,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.rule_api_doc_scenario")
+@TableName("rule_api_doc_scenario")
 public class RuleApiDocScenario {
     @TableId(type = IdType.AUTO)
     private Long id;

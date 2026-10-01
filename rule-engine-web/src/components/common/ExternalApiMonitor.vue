@@ -8,6 +8,7 @@
           外数调用日志表统计；缓存命中只计算缓存期内命中的数据。
         </div>
       </div>
+      <table-column-settings :columns="providerColumns" storage-key="tianshu:table-columns:external-api-monitor" />
       <el-button size="small" :icon="ElIconRefresh" @click="loadStats"
         >刷新指标</el-button
       >
@@ -267,16 +268,24 @@ import { markRaw } from 'vue'
 import { Refresh as ElIconRefresh } from '@element-plus/icons-vue'
 import { getExternalApiStats } from '@/api/runtimeLog'
 import AsyncState from '@/components/common/AsyncState.vue'
+import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 
 export default {
   name: 'ExternalApiMonitor',
-  components: { AsyncState },
+  components: { AsyncState, TableColumnSettings },
   data() {
     return {
       statsLoading: false,
       statsError: '',
       externalStats: { overview: {}, providers: [] },
       ElIconRefresh: markRaw(ElIconRefresh),
+      providerColumns: [
+        { key: 'targetCode', label: '接口编码' }, { key: 'targetName', label: '接口名称' },
+        { key: 'queryCount', label: '查询次数' }, { key: 'requestSuccessRate', label: '成功率' },
+        { key: 'failureRate', label: '失败率' }, { key: 'foundRate', label: '查得率' },
+        { key: 'cacheHitRate', label: '缓存命中率' }, { key: 'p95CostTimeMs', label: 'P95(ms)' },
+        { key: 'p99CostTimeMs', label: 'P99(ms)' },
+      ],
     }
   },
   computed: {

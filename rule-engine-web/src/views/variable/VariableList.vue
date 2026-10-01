@@ -112,17 +112,17 @@
           <variable-toolbar-actions
             :primary-create-label="primaryCreateLabel"
             :validating="validating"
+            :column-settings-columns="variableColumns"
+            :column-settings-model-value="variableColumnOrder"
             @import="handleImportCmd"
             @create="handlePrimaryCreate"
             @validate="handleBatchValidate"
+            @update:column-settings-model-value="variableColumnOrder = $event"
           />
         </div>
 
         <!-- 1. 普通变量（系统新增） -->
         <div v-if="standaloneVars.length > 0" class="var-list-section management-table-region">
-          <div class="variable-column-options">
-            <el-checkbox v-model="showExtraVariableColumns" @change="saveCachedState">显示脚本名称、默认值和取值范围</el-checkbox>
-          </div>
           <el-table class="management-table" show-overflow-tooltip
             :data="standaloneVars"
             border
@@ -130,7 +130,7 @@
             v-loading="loading"
             style="width: 100%"
           >
-            <el-table-column label="作用范围" width="90" align="center">
+            <el-table-column v-if="isVariableColumnVisible('scope')" label="作用范围" width="90" align="center">
               <template v-slot="{ row }">
                 <el-tag
                   :class="
@@ -141,7 +141,7 @@
                 >
               </template>
             </el-table-column>
-            <el-table-column
+            <el-table-column v-if="isVariableColumnVisible('projectName')"
               label="项目名称"
               min-width="120"
               show-overflow-tooltip
@@ -150,19 +150,19 @@
                 row.projectName || (row.scope === 'GLOBAL' ? '—' : '—')
               }}</template>
             </el-table-column>
-            <el-table-column
+            <el-table-column v-if="isVariableColumnVisible('varCode')"
               prop="varCode"
               label="变量编码"
               min-width="130"
               show-overflow-tooltip
             />
-            <el-table-column
+            <el-table-column v-if="isVariableColumnVisible('varLabel')"
               prop="varLabel"
               label="变量名称"
               min-width="120"
               show-overflow-tooltip
             />
-            <el-table-column v-if="showExtraVariableColumns" label="脚本名称" min-width="130">
+            <el-table-column v-if="isVariableColumnVisible('scriptName')" label="脚本名称" min-width="130">
               <template v-slot="{ row }">
                 <code class="script-name-code">{{
                   row.scriptName || '—'
@@ -170,6 +170,7 @@
               </template>
             </el-table-column>
             <el-table-column
+              v-if="isVariableColumnVisible('varType')"
               prop="varType"
               label="类型"
               min-width="80"
@@ -182,6 +183,7 @@
               >
             </el-table-column>
             <el-table-column
+              v-if="isVariableColumnVisible('varSource')"
               prop="varSource"
               label="来源"
               min-width="80"
@@ -195,14 +197,14 @@
             </el-table-column>
             <el-table-column
               prop="defaultValue"
-              v-if="showExtraVariableColumns"
+              v-if="isVariableColumnVisible('defaultValue')"
               label="默认值"
               min-width="90"
               show-overflow-tooltip
             />
             <el-table-column
               prop="valueRange"
-              v-if="showExtraVariableColumns"
+              v-if="isVariableColumnVisible('valueRange')"
               label="取值范围"
               min-width="120"
               show-overflow-tooltip
@@ -370,9 +372,12 @@
           <variable-toolbar-actions
             :primary-create-label="primaryCreateLabel"
             :validating="validating"
+            :column-settings-columns="objectColumns"
+            :column-settings-model-value="objectColumnOrder"
             @import="handleImportCmd"
             @create="handlePrimaryCreate"
             @validate="handleBatchValidate"
+            @update:column-settings-model-value="objectColumnOrder = $event"
           />
         </div>
         <div
@@ -702,9 +707,12 @@
           <variable-toolbar-actions
             :primary-create-label="primaryCreateLabel"
             :validating="validating"
+            :column-settings-columns="constantColumns"
+            :column-settings-model-value="constantColumnOrder"
             @import="handleImportCmd"
             @create="handlePrimaryCreate"
             @validate="handleBatchValidate"
+            @update:column-settings-model-value="constantColumnOrder = $event"
           />
         </div>
         <el-table class="management-table" show-overflow-tooltip
@@ -907,7 +915,10 @@
           <variable-toolbar-actions
             :primary-create-label="primaryCreateLabel"
             :show-batch-actions="false"
+            :column-settings-columns="validationColumns"
+            :column-settings-model-value="validationColumnOrder"
             @create="handlePrimaryCreate"
+            @update:column-settings-model-value="validationColumnOrder = $event"
           />
         </div>
         <el-table class="management-table" show-overflow-tooltip
@@ -2655,7 +2666,52 @@ export default {
       allObjectNames: [],
       filteredObjectNames: [],
       dialogVisible: false,
-      showExtraVariableColumns: false,
+      variableColumns: [
+        { key: 'scope', label: '作用范围', required: true },
+        { key: 'projectName', label: '项目名称' },
+        { key: 'varCode', label: '变量编码', required: true },
+        { key: 'varLabel', label: '变量名称' },
+        { key: 'scriptName', label: '脚本名称' },
+        { key: 'varType', label: '类型' },
+        { key: 'varSource', label: '来源' },
+        { key: 'defaultValue', label: '默认值' },
+        { key: 'valueRange', label: '取值范围' },
+      ],
+      variableColumnOrder: [
+        'scope', 'projectName', 'varCode', 'varLabel', 'scriptName',
+        'varType', 'varSource', 'defaultValue', 'valueRange',
+      ],
+      objectColumns: [
+        { key: 'objectCode', label: '对象编码' }, { key: 'objectLabel', label: '对象名称' },
+        { key: 'scriptName', label: '脚本名称' }, { key: 'scope', label: '作用范围' },
+        { key: 'projectName', label: '项目名称' }, { key: 'objectType', label: '对象类型' },
+        { key: 'source', label: '来源' }, { key: 'fieldCount', label: '字段数' }, { key: 'updateTime', label: '更新时间' },
+      ],
+      objectColumnOrder: [
+        'objectCode', 'objectLabel', 'scriptName', 'scope', 'projectName',
+        'objectType', 'source', 'fieldCount', 'updateTime',
+      ],
+      constantColumns: [
+        { key: 'scope', label: '作用范围' }, { key: 'projectName', label: '项目名称' },
+        { key: 'varCode', label: '常量编码' }, { key: 'varLabel', label: '常量名称' },
+        { key: 'scriptName', label: '脚本名称' }, { key: 'varType', label: '类型' },
+        { key: 'defaultValue', label: '常量值（默认）' }, { key: 'updateTime', label: '更新时间' }, { key: 'status', label: '状态' },
+      ],
+      constantColumnOrder: [
+        'scope', 'projectName', 'varCode', 'varLabel', 'scriptName',
+        'varType', 'defaultValue', 'updateTime', 'status',
+      ],
+      validationColumns: [
+        { key: 'scope', label: '作用范围' }, { key: 'projectName', label: '项目名称' },
+        { key: 'validationCode', label: '校验编码' }, { key: 'validationName', label: '校验名称' },
+        { key: 'property', label: '属性' }, { key: 'validationType', label: '校验类型' },
+        { key: 'validationValue', label: '校验值' }, { key: 'errorMessage', label: '失败提示' },
+        { key: 'status', label: '状态' }, { key: 'updateTime', label: '更新时间' },
+      ],
+      validationColumnOrder: [
+        'scope', 'projectName', 'validationCode', 'validationName', 'property',
+        'validationType', 'validationValue', 'errorMessage', 'status', 'updateTime',
+      ],
       form: this.initForm(),
       apiConfigOptions: [],
       dbDatasourceOptions: [],
@@ -3217,6 +3273,9 @@ export default {
     },
   },
   methods: {
+    isVariableColumnVisible(key) {
+      return this.variableColumnOrder.includes(key)
+    },
     handleVariableRowCommand(command, row) {
       if (!hasPermission('field:edit')) { this.$message.warning('当前账号没有字段编辑权限'); return }
       if (command === 'options') return this.handleOptions(row)
@@ -3251,7 +3310,6 @@ export default {
     },
     restoreCachedState() {
       const state = restorePageState(projectPageStateKey('VariableList', this.currentProjectId))
-      this.showExtraVariableColumns = state.showExtraVariableColumns === true
       if (state.activeTab) this.activeTab = state.activeTab
       if (state.qp) this.qp = { ...this.qp, ...state.qp }
       if (state.constQp) this.constQp = { ...this.constQp, ...state.constQp }
@@ -3265,7 +3323,6 @@ export default {
     },
     saveCachedState() {
       savePageState(projectPageStateKey('VariableList', this.currentProjectId), {
-        showExtraVariableColumns: this.showExtraVariableColumns,
         activeTab: this.activeTab,
         qp: this.qp,
         constQp: this.constQp,

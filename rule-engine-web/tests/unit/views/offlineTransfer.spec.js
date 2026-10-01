@@ -9,9 +9,15 @@ vi.mock('@/api/transfer', () => ({
   importResourceTransfer: vi.fn(),
   listTransferLogs: vi.fn(),
   getTransferLog: vi.fn(),
+  getTransferLogLineage: vi.fn(),
+}))
+
+vi.mock('@/api/lineage', () => ({
+  getLineageGraph: vi.fn(),
 }))
 
 import * as transferApi from '@/api/transfer'
+import * as lineageApi from '@/api/lineage'
 import { listProjects } from '@/api/project'
 import OfflineTransfer from '@/views/transfer/OfflineTransfer.vue'
 
@@ -25,6 +31,8 @@ describe('OfflineTransfer', () => {
     transferApi.importResourceTransfer.mockReset().mockResolvedValue({ data: { status: 'APPLIED' } })
     transferApi.listTransferLogs.mockReset().mockResolvedValue({ data: { records: [], total: 0 } })
     transferApi.getTransferLog.mockReset().mockResolvedValue({ data: null })
+    transferApi.getTransferLogLineage.mockReset().mockResolvedValue({ data: { nodes: [], edges: [] } })
+    lineageApi.getLineageGraph.mockReset().mockResolvedValue({ data: { nodes: [], edges: [] } })
     ElMessageBox.confirm.mockReset().mockResolvedValue('confirm')
   })
 
@@ -150,6 +158,17 @@ describe('OfflineTransfer', () => {
       [{ resourceType: 'RULE', resourceId: 101 }],
       { includeDependencies: false },
     )
+    wrapper.unmount()
+  })
+
+  test('选择导出根资源后按稳定 ID 请求血缘图', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    wrapper.vm.roots[0].resourceType = 'RULE'
+    wrapper.vm.roots[0].resourceId = 101
+    await wrapper.vm.onRootSelectionChange(wrapper.vm.roots[0])
+    expect(lineageApi.getLineageGraph).toHaveBeenCalledWith({
+      nodeType: 'RULE', nodeId: 101, direction: 'ALL', maxDepth: 2,
+    })
     wrapper.unmount()
   })
 
@@ -330,6 +349,33 @@ describe('OfflineTransfer', () => {
     const options = wrapper.vm.normalizedOptions()
     expect(options.resourceBindings).toEqual({ 'DATA_OBJECT:7': 101 })
     expect(options.fieldBindings).toEqual({ 'RULE:1|/content/@json/field|DATA_OBJECT:7|/fields/0/id': 501 })
+    wrapper.unmount()
+  })
+
+  test('同码复用建议会进入逐项可编辑的资源动作', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    wrapper.vm.selectFile({ raw: new File(['zip'], 'transfer.zip') })
+    wrapper.vm.options.targetScope = 'GLOBAL'
+    transferApi.previewResourceTransfer.mockResolvedValueOnce({ data: {
+      packageDigest: 'digest-reuse',
+      resources: [{ key: 'VARIABLE:1', resourceCode: 'score', resourceType: 'VARIABLE',
+        recommendedAction: 'REUSE', selectedAction: 'REUSE', reviewable: true }],
+      selectedResourceKeys: ['VARIABLE:1'], roots: ['VARIABLE:1'], associations: [],
+    } })
+    await wrapper.vm.previewPackage()
+    expect(wrapper.vm.resourceActionsDraft).toEqual({ 'VARIABLE:1': 'REUSE' })
+    wrapper.vm.resourceActionsDraft['VARIABLE:1'] = 'SUFFIX'
+    expect(wrapper.vm.normalizedOptions().resourceActions).toEqual({ 'VARIABLE:1': 'SUFFIX' })
+    wrapper.unmount()
+  })
+
+  test('查看迁移日志会同时请求实时血缘图', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    transferApi.getTransferLog.mockResolvedValueOnce({ data: { id: 8, status: 'SUCCESS', contentJson: '{}' } })
+    transferApi.getTransferLogLineage.mockResolvedValueOnce({ data: { nodes: [{ id: 'RULE:1' }], edges: [] } })
+    await wrapper.vm.openLogDetail({ id: 8 })
+    expect(transferApi.getTransferLogLineage).toHaveBeenCalledWith(8)
+    expect(wrapper.vm.logLineage.nodes).toHaveLength(1)
     wrapper.unmount()
   })
 

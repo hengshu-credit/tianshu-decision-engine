@@ -10,7 +10,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.governance_dependency_snapshot")
+@TableName("governance_dependency_snapshot")
 public class GovernanceDependencySnapshot {
     @TableId(type = IdType.AUTO)
     private Long id;
