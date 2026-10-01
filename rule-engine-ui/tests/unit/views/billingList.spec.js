@@ -1,0 +1,224 @@
+import BillingList from '@/views/billing/BillingList.vue'
+import { nextTick } from 'vue'
+import { shallowMount } from '@test-utils'
+import * as billingApi from '@/api/billing'
+import { listDefinitions } from '@/api/definition'
+import { listApiConfigs } from '@/api/datasource'
+import { listDbDatasources } from '@/api/database'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+
+function createContext(overrides = {}) {
+  const ctx = {
+    targetOptions: [],
+    targetLoading: false,
+    configOriginalStatus: null,
+    configDialogVisible: false,
+    configSaving: false,
+    configForm: {
+      id: null,
+      scope: 'PROJECT',
+      projectId: 7,
+      billingCode: 'Engine_Count',
+      billingName: '规则计费',
+      billingTarget: 'ENGINE',
+      targetRefId: 9,
+      chargeType: 'COUNT',
+      unitPrice: 0,
+      currency: 'CNY',
+      effectiveTime: '',
+      expireTime: '',
+      status: 1
+    },
+    $refs: { configForm: { validate: callback => callback(true) } },
+    $router: { push: vi.fn() },
+    $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+    $confirm: vi.fn().mockResolvedValue(true),
+    ...overrides
+  }
+  Object.keys(BillingList.methods).forEach(name => {
+    ctx[name] = BillingList.methods[name].bind(ctx)
+  })
+  return ctx
+}
+
+describe('BillingList target selector', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  test('计费配置和刷新汇总入口受项目编辑权限控制', async () => {
+    billingApi.listBillingConfigs.mockResolvedValue({
+      data: { records: [], total: 0 }
+    })
+    const permissions = []
+    const wrapper = shallowMount(BillingList, {
+      mocks: { $message: { error: vi.fn() } },
+      directives: {
+        permission: {
+          mounted: (_element, binding) => permissions.push(binding.value)
+        }
+      }
+    })
+    await nextTick()
+
+    expect(permissions).toContain('project:edit')
+    wrapper.unmount()
+  })
+
+  test('uses project code and name fuzzy filters in all list queries', () => {
+    const data = BillingList.data.call({ emptyConfigForm: BillingList.methods.emptyConfigForm })
+
+    expect(BillingList.components.ProjectFilterSelect).toBe(ProjectFilterSelect)
+    expect(data.configQuery).toEqual(expect.objectContaining({ projectCode: '', projectName: '' }))
+    expect(data.recordQuery).toEqual(expect.objectContaining({ projectCode: '', projectName: '' }))
+    expect(data.summaryQuery).toEqual(expect.objectContaining({ projectCode: '', projectName: '' }))
+  })
+
+  test('loadTargetOptions loads rule definitions for ENGINE target', async () => {
+    listDefinitions.mockResolvedValue({ data: { records: [{ id: 11, ruleName: 'Rule A', ruleCode: 'rule_a' }] } })
+    const ctx = createContext()
+
+    await ctx.loadTargetOptions()
+
+    expect(listDefinitions).toHaveBeenCalledWith({ pageNum: 1, pageSize: 500, status: 1, projectId: 7 })
+    expect(ctx.targetOptions).toEqual([{ id: 11, ruleName: 'Rule A', ruleCode: 'rule_a' }])
+    expect(ctx.targetLoading).toBe(false)
+  })
+
+  test('loadTargetOptions loads API configs for API target', async () => {
+    listApiConfigs.mockResolvedValue({ data: { records: [{ id: 21, apiName: 'Credit API', apiCode: 'credit_api' }] } })
+    const ctx = createContext({ configForm: { scope: 'PROJECT', projectId: 7, billingTarget: 'API', targetRefId: null } })
+
+    await ctx.loadTargetOptions()
+
+    expect(listApiConfigs).toHaveBeenCalledWith({ pageNum: 1, pageSize: 500, status: 1 })
+    expect(ctx.targetOptions[0].id).toBe(21)
+  })
+
+  test('loadTargetOptions loads DB datasources for DB target', async () => {
+    listDbDatasources.mockResolvedValue({ data: { records: [{ id: 31, datasourceName: 'Risk DB', datasourceCode: 'risk_db' }] } })
+    const ctx = createContext({ configForm: { scope: 'PROJECT', projectId: 7, billingTarget: 'DB', targetRefId: null } })
+
+    await ctx.loadTargetOptions()
+
+    expect(listDbDatasources).toHaveBeenCalledWith({ pageNum: 1, pageSize: 500, status: 1, projectId: 7 })
+    expect(ctx.targetOptions[0].id).toBe(31)
+  })
+
+  test('target change clears selected reference before reloading options', () => {
+    const ctx = createContext()
+    ctx.loadTargetOptions = vi.fn()
+
+    ctx.onBillingTargetChange()
+
+    expect(ctx.configForm.targetRefId).toBeNull()
+    expect(ctx.loadTargetOptions).toHaveBeenCalled()
+  })
+
+  test('normalizeConfig clears global project and blank optional fields', () => {
+    const ctx = createContext()
+    const data = ctx.normalizeConfig({
+      scope: 'GLOBAL',
+      projectId: 7,
+      targetRefId: null,
+      effectiveTime: '',
+      expireTime: ''
+    })
+
+    expect(data.projectId).toBe(0)
+    expect(data.targetRefId).toBeNull()
+    expect(data.effectiveTime).toBeNull()
+    expect(data.expireTime).toBeNull()
+  })
+
+  test('targetOptionLabel renders a readable name and code', () => {
+    const ctx = createContext()
+
+    expect(ctx.targetOptionLabel({ id: 1, apiName: 'Credit API', apiCode: 'credit_api' })).toBe('Credit API / credit_api')
+  })
+
+  test('billing detail keeps authentication and token filters', async () => {
+    billingApi.listBillingRecords.mockResolvedValue({ data: { records: [], total: 0 } })
+    const ctx = createContext({
+      recordLoading: false,
+      recordList: [],
+      recordTotal: 0,
+      recordQuery: {
+        pageNum: 1, pageSize: 10, authType: 'BASIC', authCode: 'BASIC_MAIN', tokenCode: 'TOKEN_A'
+      }
+    })
+
+    await ctx.loadRecords()
+
+    expect(billingApi.listBillingRecords).toHaveBeenCalledWith(expect.objectContaining({
+      authType: 'BASIC', authCode: 'BASIC_MAIN', tokenCode: 'TOKEN_A'
+    }))
+  })
+
+  test('billing summary groups and filters by authentication but not token', async () => {
+    billingApi.listBillingSummaries.mockResolvedValue({ data: { records: [], total: 0 } })
+    const ctx = createContext({
+      summaryLoading: false,
+      summaryList: [],
+      summaryTotal: 0,
+      summaryQuery: { pageNum: 1, pageSize: 10, authType: 'API_KEY', authCode: 'PARTNER_API' }
+    })
+
+    await ctx.loadSummaries()
+
+    expect(billingApi.listBillingSummaries).toHaveBeenCalledWith(expect.objectContaining({
+      authType: 'API_KEY', authCode: 'PARTNER_API'
+    }))
+    expect(billingApi.listBillingSummaries.mock.calls[0][0].tokenCode).toBeUndefined()
+  })
+
+  test('tab click uses Element Plus paneName and loads the selected tab', async () => {
+    const ctx = createContext({ activeTab: 'config' })
+    ctx.loadConfigs = vi.fn()
+    ctx.loadRecords = vi.fn()
+    ctx.loadSummaries = vi.fn()
+
+    await ctx.onTabChange({ paneName: 'record' })
+
+    expect(ctx.activeTab).toBe('record')
+    expect(ctx.loadRecords).toHaveBeenCalledTimes(1)
+    expect(ctx.loadConfigs).not.toHaveBeenCalled()
+  })
+
+  test('creating billing config generates approval draft and opens it', async () => {
+    billingApi.createBillingConfigDraft.mockResolvedValue({
+      data: { id: 72 }
+    })
+    const ctx = createContext()
+
+    ctx.handleSaveConfig()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(billingApi.createBillingConfigDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ billingCode: 'Engine_Count' })
+    )
+    expect(ctx.$router.push).toHaveBeenCalledWith('/approval/72')
+  })
+
+  test('status change uses explicit disable lifecycle action', async () => {
+    billingApi.changeBillingConfigStatusDraft.mockResolvedValue({
+      data: { id: 73 }
+    })
+    const ctx = createContext({
+      configOriginalStatus: 1,
+      configForm: {
+        ...createContext().configForm,
+        id: 21,
+        status: 0
+      }
+    })
+
+    ctx.handleSaveConfig()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(billingApi.changeBillingConfigStatusDraft)
+      .toHaveBeenCalledWith(expect.objectContaining({ id: 21 }), 0)
+    expect(billingApi.updateBillingConfigDraft).not.toHaveBeenCalled()
+    expect(ctx.$router.push).toHaveBeenCalledWith('/approval/73')
+  })
+})

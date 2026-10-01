@@ -333,7 +333,7 @@ API 配置中的“报文留存”可分别设置 `request` / `response`：`sour
 
 | 组件 | 职责 | 默认端口 |
 |------|------|----------|
-| `rule-engine-builder-ui` | Vue 控制台，独立构建部署 | 9090（开发） |
+| `rule-engine-ui` | Vue 控制台，独立构建部署 | 9090（开发） |
 | `rule-engine-server` | 管理、同步、执行与日志 API | 8080 |
 | `rule-engine-core` / `rule-engine-model` | 规则编译执行、公共实体与 DTO | — |
 | `rule-engine-client-sdk` | Java SDK，规则同步、缓存和执行 | — |
@@ -365,4 +365,5 @@ SDK 通过 HTTP 同步规则与函数，并订阅 Redis 变更通知。`project-
 项目许可证见 [LICENSE](LICENSE)，第三方组件与交付要求见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。包含 JPMML 的制品或网络服务按 AGPL-3.0 要求提供对应源代码、许可证和重建材料。
 
 相关项目：[QLExpress](https://github.com/alibaba/QLExpress) · [qlexpress-rule](https://github.com/xiachongbu/qlexpress-rule)
+
 

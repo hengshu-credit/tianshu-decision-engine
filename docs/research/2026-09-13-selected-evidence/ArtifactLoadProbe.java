@@ -37,3 +37,4 @@ public class ArtifactLoadProbe {
         System.out.printf(Locale.ROOT, "package_bytes=%d samples=%d mean_ms=%.3f p50_ms=%.3f p95_ms=%.3f%n", content.length, times.length, mean, times[99]/1e6, times[189]/1e6);
     }
 }
+

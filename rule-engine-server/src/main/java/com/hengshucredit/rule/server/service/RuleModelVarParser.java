@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 
 /**
  * 规则模型变量解析器
- * 参考 rule-engine-builder-ui/src/views/test/RuleTest.vue 中 collectVarCodes 系列方法
+ * 参考 rule-engine-ui/src/views/test/RuleTest.vue 中 collectVarCodes 系列方法
  */
 @Component
 public class RuleModelVarParser {
@@ -728,3 +728,4 @@ public class RuleModelVarParser {
         return -1;
     }
 }
+

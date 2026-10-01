@@ -80,3 +80,4 @@ Redis 已承载回调、响应缓存、外数流控和熔断状态；Redis 不�
 - `mvn -pl rule-engine-server -am -DskipTests compile` 通过。
 - `RuleDesignerServiceTest` 6 项全部通过。
 - 真实浏览器模型测试流程通过；数据库流程被当前数据源的 root 权限错误阻断，页面已显示具体修复方向。
+

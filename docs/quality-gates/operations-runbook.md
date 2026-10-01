@@ -84,7 +84,7 @@ $env:MYSQL_DATABASE = 'rule_engine'
 
 ```powershell
 $env:E2E_BASE_URL = 'https://staging-engine.example.com'
-cd rule-engine-builder-ui
+cd rule-engine-ui
 npm run test:e2e:full
 ```
 
@@ -100,3 +100,4 @@ npm run test:e2e:full
 - `/api/rule/ops/execution-metrics` 快照；
 - `target/quality-gates/staging-gate-summary.json` 组合门禁结果；
 - 当前发布制品摘要和规则/实验版本对比。
+

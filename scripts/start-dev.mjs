@@ -107,7 +107,7 @@ async function main() {
   }
   const launched = []
   const front = await start(frontend, `
-Set-Location -LiteralPath ${psQuote(path.join(root, 'rule-engine-builder-ui'))}
+Set-Location -LiteralPath ${psQuote(path.join(root, 'rule-engine-ui'))}
 if (-not (Test-Path -LiteralPath 'node_modules')) {
   & npm.cmd ci
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -176,3 +176,4 @@ main().catch(error => {
   console.error(error.message)
   process.exitCode = 1
 })
+

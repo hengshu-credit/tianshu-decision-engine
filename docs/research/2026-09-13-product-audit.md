@@ -63,7 +63,7 @@ flowchart LR
 | `rule-engine-server` | 管理 API、审批、发布、变量解析、运行日志 | 资源可用性判断、跨模块流程、制品加载和统计查询 |
 | `rule-engine-client-sdk` | 同步、进程内规则缓存、执行与日志上报 | 同步收敛、缓存压力、日志积压的可观测性 |
 | `rule-engine-runtime` | HTTP/SDK 接入运行时 | 作为真实 HTTP 与本地 SDK 联调链路的一部分 |
-| `rule-engine-builder-ui` | Vue 控制台、设计器、可视化配置和测试 | 术语、状态、配置引导、异常恢复及密度 |
+| `rule-engine-ui` | Vue 控制台、设计器、可视化配置和测试 | 术语、状态、配置引导、异常恢复及密度 |
 
 前后端独立构建，管理端通过 API 与服务端交互；客户端不直接访问管理数据库。规则执行需要同时理解设计态、已发布态和被冻结的依赖。优化应沿现有服务与组件职责实施，不应另建一套绕过生命周期的快捷发布流程。[^S2][^S3]
 
@@ -189,26 +189,27 @@ Redis Pub/Sub 本身是至多一次交付，断连期间可能丢失通知；当
 代码来源均为本地仓库当前版本，访问日期 2026-09-13；行号为本轮编辑后位置。外部资料仅用于交互原则和运行机制校对，不作为天枢功能存在与否的依据。
 
 [^S1]: [README 功能总览](E:/workspace/tianshu-decision-engine/README.md:24)。
-[^S2]: [Maven 模块与依赖](E:/workspace/tianshu-decision-engine/pom.xml:13)；[九类编译器注册](E:/workspace/tianshu-decision-engine/rule-engine-server/src/main/java/com/hengshucredit/rule/server/service/RuleCompileService.java)；[前端导航](E:/workspace/tianshu-decision-engine/rule-engine-builder-ui/src/layout/layoutState.js:7)。
+[^S2]: [Maven 模块与依赖](E:/workspace/tianshu-decision-engine/pom.xml:13)；[九类编译器注册](E:/workspace/tianshu-decision-engine/rule-engine-server/src/main/java/com/hengshucredit/rule/server/service/RuleCompileService.java)；[前端导航](E:/workspace/tianshu-decision-engine/rule-engine-ui/src/layout/layoutState.js:7)。
 [^S3]: [发布态执行链路](E:/workspace/tianshu-decision-engine/rule-engine-server/src/main/java/com/hengshucredit/rule/server/service/RuleExecuteService.java:239)。
-[^S4]: [规则创建入口](E:/workspace/tianshu-decision-engine/rule-engine-builder-ui/src/views/rule/RuleList.vue:246)；[统一类型帮助](E:/workspace/tianshu-decision-engine/rule-engine-builder-ui/src/components/rule/RuleModelTypeHelp.vue)；[评分卡编译](E:/workspace/tianshu-decision-engine/rule-engine-core/src/main/java/com/hengshucredit/rule/core/compiler/ScorecardCompiler.java:29)。
-[^S5]: [工作台状态与动作](E:/workspace/tianshu-decision-engine/rule-engine-builder-ui/src/components/ProjectWorkbenchOverview.vue:185)；[状态回归测试](E:/workspace/tianshu-decision-engine/rule-engine-builder-ui/tests/unit/components/projectWorkbenchOverview.spec.js)。
-[^S6]: [项目详情加载与跳转](E:/workspace/tianshu-decision-engine/rule-engine-builder-ui/src/views/project/ProjectDetail.vue:526)；[刷新回归测试](E:/workspace/tianshu-decision-engine/rule-engine-builder-ui/tests/unit/views/projectDetail.spec.js)。
+[^S4]: [规则创建入口](E:/workspace/tianshu-decision-engine/rule-engine-ui/src/views/rule/RuleList.vue:246)；[统一类型帮助](E:/workspace/tianshu-decision-engine/rule-engine-ui/src/components/rule/RuleModelTypeHelp.vue)；[评分卡编译](E:/workspace/tianshu-decision-engine/rule-engine-core/src/main/java/com/hengshucredit/rule/core/compiler/ScorecardCompiler.java:29)。
+[^S5]: [工作台状态与动作](E:/workspace/tianshu-decision-engine/rule-engine-ui/src/components/ProjectWorkbenchOverview.vue:185)；[状态回归测试](E:/workspace/tianshu-decision-engine/rule-engine-ui/tests/unit/components/projectWorkbenchOverview.spec.js)。
+[^S6]: [项目详情加载与跳转](E:/workspace/tianshu-decision-engine/rule-engine-ui/src/views/project/ProjectDetail.vue:526)；[刷新回归测试](E:/workspace/tianshu-decision-engine/rule-engine-ui/tests/unit/views/projectDetail.spec.js)。
 [^S7]: [工作台后端统计与检查](E:/workspace/tianshu-decision-engine/rule-engine-server/src/main/java/com/hengshucredit/rule/server/service/ProjectWorkbenchService.java:55)；[后端回归测试](E:/workspace/tianshu-decision-engine/rule-engine-server/src/test/java/com/hengshucredit/rule/server/service/ProjectWorkbenchServiceTest.java)。
-[^S8]: [发布前校验报告](E:/workspace/tianshu-decision-engine/rule-engine-builder-ui/src/components/rule/RuleValidationReport.vue:1)。
-[^S9]: [路由权限与无权限跳转](E:/workspace/tianshu-decision-engine/rule-engine-builder-ui/src/router/authGuard.js:65)。
-[^S10]: [变量管理与来源配置](E:/workspace/tianshu-decision-engine/rule-engine-builder-ui/src/views/variable/VariableList.vue:1500)；[来源选择器](E:/workspace/tianshu-decision-engine/rule-engine-builder-ui/src/views/variable/components/VariableSourceSelector.vue)。
-[^S11]: [数据库查询参数与只读前置检查](E:/workspace/tianshu-decision-engine/rule-engine-builder-ui/src/views/database/DatabaseList.vue:1253)。
-[^S12]: [规则测试与批量执行](E:/workspace/tianshu-decision-engine/rule-engine-builder-ui/src/views/test/RuleTest.vue:965)。
+[^S8]: [发布前校验报告](E:/workspace/tianshu-decision-engine/rule-engine-ui/src/components/rule/RuleValidationReport.vue:1)。
+[^S9]: [路由权限与无权限跳转](E:/workspace/tianshu-decision-engine/rule-engine-ui/src/router/authGuard.js:65)。
+[^S10]: [变量管理与来源配置](E:/workspace/tianshu-decision-engine/rule-engine-ui/src/views/variable/VariableList.vue:1500)；[来源选择器](E:/workspace/tianshu-decision-engine/rule-engine-ui/src/views/variable/components/VariableSourceSelector.vue)。
+[^S11]: [数据库查询参数与只读前置检查](E:/workspace/tianshu-decision-engine/rule-engine-ui/src/views/database/DatabaseList.vue:1253)。
+[^S12]: [规则测试与批量执行](E:/workspace/tianshu-decision-engine/rule-engine-ui/src/views/test/RuleTest.vue:965)。
 [^S13]: [冻结制品加载与解码](E:/workspace/tianshu-decision-engine/rule-engine-server/src/main/java/com/hengshucredit/rule/server/artifact/ArtifactRuntimeSnapshotService.java:46)。
 [^S14]: [SDK 缓存与快照替换](E:/workspace/tianshu-decision-engine/rule-engine-client-sdk/src/main/java/com/hengshucredit/rule/client/cache/L1MemoryCache.java:31)。
-[^S15]: [API 配置与检查清单](E:/workspace/tianshu-decision-engine/rule-engine-builder-ui/src/views/datasource/ApiDetail.vue:37)。
+[^S15]: [API 配置与检查清单](E:/workspace/tianshu-decision-engine/rule-engine-ui/src/views/datasource/ApiDetail.vue:37)。
 [^S16]: [QLExpress 缓存与追踪选项](E:/workspace/tianshu-decision-engine/rule-engine-core/src/main/java/com/hengshucredit/rule/core/engine/QLExpressEngine.java:38)。
 [^S17]: [来源解析依赖波次](E:/workspace/tianshu-decision-engine/rule-engine-server/src/main/java/com/hengshucredit/rule/server/service/VariableSourceResolver.java:131)；[有界执行器](E:/workspace/tianshu-decision-engine/rule-engine-server/src/main/java/com/hengshucredit/rule/server/service/SourceResolutionExecutor.java:22)。
 [^S18]: [HTTP 日志缓冲与状态计数](E:/workspace/tianshu-decision-engine/rule-engine-client-sdk/src/main/java/com/hengshucredit/rule/client/log/HttpLogReporter.java:40)。
 [^S19]: [SDK 定时全量同步](E:/workspace/tianshu-decision-engine/rule-engine-client-sdk/src/main/java/com/hengshucredit/rule/client/RuleEngineClient.java:95)。
-[^S20]: [容量测试入口](E:/workspace/tianshu-decision-engine/scripts/quality-gates/run-capacity-gate.mjs)；[引导流程浏览器回归](E:/workspace/tianshu-decision-engine/rule-engine-builder-ui/tests/e2e/guided-workflows.spec.js)。
+[^S20]: [容量测试入口](E:/workspace/tianshu-decision-engine/scripts/quality-gates/run-capacity-gate.mjs)；[引导流程浏览器回归](E:/workspace/tianshu-decision-engine/rule-engine-ui/tests/e2e/guided-workflows.spec.js)。
 [^W1]: W3C WAI，[Understanding SC 4.1.3: Status Messages](https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html)，访问于 2026-09-13。
 [^W2]: W3C WAI，[Understanding SC 3.3.3: Error Suggestion](https://www.w3.org/WAI/WCAG22/Understanding/error-suggestion.html)，访问于 2026-09-13。
 [^W3]: Redis，[Redis Pub/sub](https://redis.io/docs/latest/develop/pubsub/)，交付语义与断连行为，访问于 2026-09-13。
+
 

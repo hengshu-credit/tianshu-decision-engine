@@ -190,7 +190,7 @@ ONNX 神经网络模型可在“模型管理”中逐个选择 CPU 或 CUDA，�
 ### 前端
 
 ```bash
-cd rule-engine-builder-ui
+cd rule-engine-ui
 npm ci
 npm run dev
 ```
@@ -229,7 +229,7 @@ mvn clean package -DskipTests
 cp rule-engine-server/target/rule-engine-server-*.jar /opt/tianshu/server/rule-engine-server.jar
 
 # 构建后管
-cd rule-engine-builder-ui
+cd rule-engine-ui
 npm ci
 npm run build
 rm -rf /opt/tianshu/console/dist/*
@@ -357,12 +357,12 @@ docker/
 
 ```powershell
 mvn clean package -DskipTests
-npm --prefix rule-engine-builder-ui ci
-npm --prefix rule-engine-builder-ui run build
+npm --prefix rule-engine-ui ci
+npm --prefix rule-engine-ui run build
 New-Item -ItemType Directory -Force docker/tianshu-decision-engine-runtime/dist | Out-Null
 Copy-Item rule-engine-server/target/rule-engine-server-*.jar docker/tianshu-decision-engine-runtime/server.jar
 Copy-Item rule-engine-runtime/target/rule-engine-runtime-*.jar docker/tianshu-decision-engine-runtime/runtime.jar
-Copy-Item rule-engine-builder-ui/dist/* docker/tianshu-decision-engine-runtime/dist -Recurse -Force
+Copy-Item rule-engine-ui/dist/* docker/tianshu-decision-engine-runtime/dist -Recurse -Force
 ```
 
 ### 3.2 启动
@@ -411,7 +411,7 @@ docker compose --env-file .env -f docker/docker-compose.redis.yml up -d
 ### 4.1 构建并发布后管
 
 ```bash
-cd rule-engine-builder-ui
+cd rule-engine-ui
 npm ci
 npm run build
 sudo mkdir -p /var/www/tianshu
@@ -635,4 +635,5 @@ SDK 行为：
 - `log-report-enabled=false` 禁止 SDK 本地日志上报，包括自定义、HTTP 和 Kafka reporter；不关闭服务端基础日志、鉴权审计或计费。开启上报时 Spring 容器中的自定义 `ExecutionLogReporter` 优先；存在 `KafkaTemplate` 且没有自定义 reporter 时自动创建 Kafka reporter，默认主题为 `rule-execution-log`。鉴权类型不会强制覆盖该 reporter 选择。
 
 项目鉴权配置、长期凭证和短期 Token 均可在控制台再次查看完整值。长期凭证在数据库中使用 AES-GCM 可逆加密存储；启动服务前必须通过 `RULE_AUTH_MASTER_KEY` 配置至少 32 位的独立主密钥并妥善保管，未配置或使用公开开发密钥时服务会拒绝启动。新密文默认使用 `v2` 密钥；升级前若已有旧 `v1` 密文，需通过 `RULE_AUTH_LEGACY_MASTER_KEY` 保留原主密钥；若历史版本曾在更换密钥材料时继续复用 `v2` 标识，还需通过 `RULE_AUTH_LEGACY_V2_MASTER_KEY` 配置当时的材料。解密会优先使用密文标识对应的密钥，再尝试已配置的历史密钥；待旧凭证全部修改或重置后应移除历史密钥。可通过 `RULE_AUTH_ACTIVE_KEY_ID` 显式选择活动密钥版本，后续轮换必须使用新的 key ID。访问审计记录所有受保护接口调用；只有实际规则执行进入计费，计费明细可区分 `authCode` 和 `tokenCode`，按日汇总到鉴权配置维度。
+
 

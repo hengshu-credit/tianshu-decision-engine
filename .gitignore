@@ -14,8 +14,8 @@
 *.log
 *.tmp
 .vscode/
-rule-engine-builder-ui/public/vs/
-rule-engine-builder-ui/node_modules/
+rule-engine-ui/public/vs/
+rule-engine-ui/node_modules/
 .claude/*
 .harness
 rule_examples
@@ -45,3 +45,4 @@ scripts/quality-gates/fixtures/request.local.json
 /**/target/
 /docker/tianshu-decision-engine-runtime/*.jar
 /docker/tianshu-decision-engine-runtime/dist/
+

@@ -20,3 +20,4 @@
 2. 已补充来源解析、开放执行线程池、外数响应缓存/熔断器和数据库连接池指标；
 3. 已提供 `scripts/quality-gates/run-staging-gate.ps1` 串联 readiness、容量、备份和真实浏览器 E2E，并生成 `staging-gate-summary.json`；在真实 staging 环境执行并将报告归档到发布制品；
 4. 将审批差异从通用 JSON 扩展为字段级、依赖级和运行影响级结构化对比。
+

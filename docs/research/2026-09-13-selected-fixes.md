@@ -67,3 +67,4 @@ A17 使用容量为 8 的缓存，持续读取同一热规则并插入 1000 个�
 ![校验报告定位规则行](E:/workspace/tianshu-decision-engine/docs/research/2026-09-13-selected-evidence/validation-location.png)
 
 页面截图使用测试夹具，不含真实业务数据。原始运行日志保存在未纳入 Git 的 `.codex-run-logs` 目录。
+

@@ -44,14 +44,14 @@ jobs:
     timeout-minutes: 45
     defaults:
       run:
-        working-directory: rule-engine-builder-ui
+        working-directory: rule-engine-ui
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: rule-engine-builder-ui/package-lock.json
+          cache-dependency-path: rule-engine-ui/package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Run unit tests
@@ -64,3 +64,4 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Run dist E2E
         run: npm run test:e2e:dist
+

@@ -63,7 +63,7 @@ flowchart LR
 | `rule-engine-server` | 管理 API、同步 API、业务服务、数据访问、鉴权与日志 | 功能完整，但部分服务类过大 |
 | `rule-engine-client-sdk` | 规则同步、L1 缓存、本地执行、日志上报 | 适合作为在线业务接入层 |
 | `rule-engine-client-http` / `rule-engine-runtime` | HTTP SDK 与执行运行时 | 作为外部接入和本地 SDK 运行入口继续加强 |
-| `rule-engine-builder-ui` | Vue 3 管理控制台和九类设计器 | 产品覆盖完整，但部分 SFC 体积过大 |
+| `rule-engine-ui` | Vue 3 管理控制台和九类设计器 | 产品覆盖完整，但部分 SFC 体积过大 |
 | MySQL/Redis 编排 | 元数据、初始化、发布订阅 | 已移除仓库内共享密码，仍需生产密钥系统承接 |
 
 ### 3.3 功能覆盖
@@ -322,4 +322,5 @@ stateDiagram-v2
 ## 13. 最终建议
 
 下一步不宜继续横向堆叠功能。优先顺序应为：**关闭合规与安全门禁 → 建立真实 E2E/CI/容量证据 → 完成发布治理与可观测性 → 再做平台化和大型重构**。这样能够保留现有功能投入，同时把“功能可用”转化为“可稳定、可审计、可回滚地交付”。
+
 

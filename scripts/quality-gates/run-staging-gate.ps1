@@ -57,7 +57,7 @@ try {
         $summary['backup'] = 'PASS'
     }
 
-    Push-Location rule-engine-builder-ui
+    Push-Location rule-engine-ui
     try {
         $env:E2E_BASE_URL = $BaseUrl
         npm run test:e2e:full
@@ -75,3 +75,4 @@ try {
     $summary | ConvertTo-Json | Set-Content -Path 'target/quality-gates/staging-gate-summary.json' -Encoding UTF8
     Pop-Location
 }
+

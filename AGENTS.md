@@ -57,14 +57,14 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 | `rule-engine-client-sdk` | 完整 Java SDK，本地缓存与执行 | - |
 | `rule-engine-client-http` | HTTP-only Java SDK，远程调用服务端执行 | - |
 | `rule-engine-runtime` | 可独立部署的 HTTP/SDK 执行运行时 | 7070 / 7071 |
-| `rule-engine-builder-ui` | Vue 3 前端控制台（独立部署） | 9090（dev）|
+| `rule-engine-ui` | Vue 3 前端控制台（独立部署） | 9090（dev）|
 | `docker/rule-engine-mysql` | MySQL 配置、数据和日志（docker/ 独立 Compose） | - |
 | `docker/rule-engine-redis` | Redis 配置、数据和日志（docker/ 独立 Compose） | - |
 
 ### 部署架构
 
 ```
-浏览器 ←→ rule-engine-builder-ui（前端，dist/ 独立部署）
+浏览器 ←→ rule-engine-ui（前端，dist/ 独立部署）
          ↓
       rule-engine-server（后端 API，8080）
       ↙              ↘
@@ -101,7 +101,7 @@ mvn clean package -DskipTests
 ### 前端 (Vue 3)
 
 ```bash
-cd rule-engine-builder-ui
+cd rule-engine-ui
 
 npm ci
 npm run dev      # 开发模式（9090，/api 代理到后端 8080）
@@ -407,4 +407,5 @@ These are the patterns I see most often. If you catch yourself doing any of thes
 **The Runaway Refactor.** You start fixing one thing. It touches another thing. That touches another. Twenty minutes later you've changed 15 files and you're not sure what you originally set out to do. If a fix is cascading, stop. Tell the user what's happening. Get buy-in before continuing.
 ---
 These guidelines work when they produce fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
 

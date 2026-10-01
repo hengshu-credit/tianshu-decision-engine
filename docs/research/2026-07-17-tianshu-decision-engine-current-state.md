@@ -241,7 +241,7 @@ flowchart TD
 
 证据：
 
-- `rule-engine-builder-ui/src/mixins/varPickerMixin.js:492-535` 在 `_varId` 和 `varCode` 未匹配时，会用唯一 `varLabel` 回溯并改写引用。
+- `rule-engine-ui/src/mixins/varPickerMixin.js:492-535` 在 `_varId` 和 `varCode` 未匹配时，会用唯一 `varLabel` 回溯并改写引用。
 - `rule-engine-core/src/main/java/com/hengshucredit/rule/core/compiler/VarContext.java:192-208` 在 ID 未解析时继续按 `varCode` 解析，最后直接返回原编码。
 - `rule-engine-server/src/main/java/com/hengshucredit/rule/server/service/RuleCompileService.java:72-74` 和 `RuleVariableService.java:251-284` 构造了编码回退映射。
 
@@ -388,4 +388,5 @@ flowchart TD
 天枢决策引擎的功能骨架和运行闭环已经成立：资源管理、九类建模、编译发布、SDK 交付、追踪日志、实验血缘和计费都能在代码中找到相互连接的实现。当前最需要解决的不是功能数量，而是让这些能力在生产环境中“引用不会漂移、状态能够一致、资源有明确上界、失败对用户可见、决策可以解释和回归”。
 
 建议以安全与引用一致性为第一优先级，以缓存和错误可见性为第二优先级，再建设规则资产 CI/CD、影子执行和时态影响分析。这样能够在保留现有功能广度的同时，显著提高规则变更的可控性和运行可信度。
+
 
