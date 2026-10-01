@@ -57,7 +57,7 @@ try {
         $summary['backup'] = 'PASS'
     }
 
-    Push-Location rule-engine-ui
+    Push-Location rule-engine-web
     try {
         $env:E2E_BASE_URL = $BaseUrl
         npm run test:e2e:full

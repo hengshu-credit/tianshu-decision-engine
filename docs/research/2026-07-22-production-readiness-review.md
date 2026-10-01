@@ -63,7 +63,7 @@ flowchart LR
 | `rule-engine-server` | 管理 API、同步 API、业务服务、数据访问、鉴权与日志 | 功能完整，但部分服务类过大 |
 | `rule-engine-client-sdk` | 规则同步、L1 缓存、本地执行、日志上报 | 适合作为在线业务接入层 |
 | `rule-engine-client-http` / `rule-engine-runtime` | HTTP SDK 与执行运行时 | 作为外部接入和本地 SDK 运行入口继续加强 |
-| `rule-engine-ui` | Vue 3 管理控制台和九类设计器 | 产品覆盖完整，但部分 SFC 体积过大 |
+| `rule-engine-web` | Vue 3 管理控制台和九类设计器 | 产品覆盖完整，但部分 SFC 体积过大 |
 | MySQL/Redis 编排 | 元数据、初始化、发布订阅 | 已移除仓库内共享密码，仍需生产密钥系统承接 |
 
 ### 3.3 功能覆盖

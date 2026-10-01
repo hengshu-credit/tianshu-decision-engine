@@ -7,7 +7,7 @@ README 引用 `docs/project-usage/` 中的当前界面截图。截图使用真�
 ```powershell
 mvn -q -pl rule-engine-core -am compile
 mvn -q -pl rule-engine-core dependency:build-classpath "-Dmdep.outputFile=target/docs-classpath.txt"
-npm --prefix rule-engine-ui run build
+npm --prefix rule-engine-web run build
 node scripts/docs/prepare-examples.cjs
 $docsCp = 'rule-engine-core/target/classes;rule-engine-model/target/classes;' + (Get-Content rule-engine-core/target/docs-classpath.txt -Raw).Trim()
 java --class-path $docsCp scripts/docs/CompileExamples.java rule-engine-core/target/docs/examples.json rule-engine-core/target/docs/executed-examples.json

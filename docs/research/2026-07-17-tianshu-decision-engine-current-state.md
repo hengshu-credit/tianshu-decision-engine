@@ -23,7 +23,7 @@
 
 本次覆盖：
 
-- Maven 多模块结构和 Vue 2 前端结构；
+- Maven 多模块结构和 Vue 3 `rule-engine-web` 前端结构；
 - 39 张数据库表、20 个后端 Controller、37 个前端路由；
 - 九类模型编译器、QLExpress 执行、规则发布和客户端同步；
 - 变量、名单、外数 API、数据库、模型和函数的运行时调用；
@@ -68,7 +68,7 @@
 
 ```mermaid
 flowchart LR
-  UI["Vue 2 管理控制台"] --> API["Spring Boot 管理与同步 API"]
+  UI["Vue 3 rule-engine-web 管理控制台"] --> API["Spring Boot 管理与同步 API"]
   API --> DB["MySQL 规则与配置资产"]
   API --> CORE["规则编译与 QLExpress 执行核心"]
   API --> REDIS["Redis 发布通知"]
@@ -166,7 +166,7 @@ flowchart TD
 
 ## 7. 前端 UI 与业务操作路径
 
-前端采用 Vue 2、Element UI、Vue Router、Monaco Editor 和 LogicFlow。控制台有 13 个一级菜单，覆盖项目、规则、变量、名单、外数、数据库、模型、函数、测试、血缘、实验、日志和账单；37 个路由还包含各类详情、设计器和辅助页面。
+前端采用 Vue 3、Element Plus、Vue Router、Monaco Editor 和 LogicFlow，源码目录为 `rule-engine-web/`。控制台有 13 个一级菜单，覆盖项目、规则、变量、名单、外数、数据库、模型、函数、测试、血缘、实验、日志和账单；37 个路由还包含各类详情、设计器和辅助页面。
 
 ### 7.1 主路径
 
@@ -241,7 +241,7 @@ flowchart TD
 
 证据：
 
-- `rule-engine-ui/src/mixins/varPickerMixin.js:492-535` 在 `_varId` 和 `varCode` 未匹配时，会用唯一 `varLabel` 回溯并改写引用。
+- `rule-engine-web/src/mixins/varPickerMixin.js:492-535` 在 `_varId` 和 `varCode` 未匹配时，会用唯一 `varLabel` 回溯并改写引用。
 - `rule-engine-core/src/main/java/com/hengshucredit/rule/core/compiler/VarContext.java:192-208` 在 ID 未解析时继续按 `varCode` 解析，最后直接返回原编码。
 - `rule-engine-server/src/main/java/com/hengshucredit/rule/server/service/RuleCompileService.java:72-74` 和 `RuleVariableService.java:251-284` 构造了编码回退映射。
 

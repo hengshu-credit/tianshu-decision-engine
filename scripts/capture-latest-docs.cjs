@@ -1,10 +1,10 @@
-// Run after building rule-engine-ui. Uses the existing documentation fixtures.
+// Run after building rule-engine-web. Uses the existing documentation fixtures.
 const path = require('node:path')
 const { createRequire } = require('node:module')
-const requireUi = createRequire(path.resolve(__dirname, '../rule-engine-ui/package.json'))
+const requireUi = createRequire(path.resolve(__dirname, '../rule-engine-web/package.json'))
 const { chromium, expect } = requireUi('@playwright/test')
-const { installDistRoutes } = require('../rule-engine-ui/tests/e2e/support/distRoutes.cjs')
-const { createDocsApiData } = require('../rule-engine-ui/tests/e2e/support/docsFixtures.cjs')
+const { installDistRoutes } = require('../rule-engine-web/tests/e2e/support/distRoutes.cjs')
+const { createDocsApiData } = require('../rule-engine-web/tests/e2e/support/docsFixtures.cjs')
 const { screenshotRoot, screenshotViewport, referencedScreenshots } = require('./docs/screenshot-files.cjs')
 const publishedScreenshots = referencedScreenshots()
 

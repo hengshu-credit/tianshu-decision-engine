@@ -22,5 +22,5 @@ python -m http.server 4173 --directory docs
 
 工作流使用 GitHub Actions 作为 Pages 构建来源，不需要额外安装 Node.js 或文档生成器。
 
-截图可重复生成：`npm --prefix rule-engine-ui run build` 后执行 `npm --prefix rule-engine-ui run docs:screenshots`，会更新 `docs/project-usage/`；README 图库按 [README 图库维护说明](../scripts/docs/README.md) 执行，会更新 `docs/project-usage/` 与 `capture-manifest.json`。两套脚本都使用固定文档 API 样例并在结束时检查未匹配请求和浏览器错误。
+截图可重复生成：`npm --prefix rule-engine-web run build` 后执行 `npm --prefix rule-engine-web run docs:screenshots`，会更新 `docs/project-usage/`；README 图库按 [README 图库维护说明](../scripts/docs/README.md) 执行，会更新 `docs/project-usage/` 与 `capture-manifest.json`。两套脚本都使用固定文档 API 样例并在结束时检查未匹配请求和浏览器错误。
 

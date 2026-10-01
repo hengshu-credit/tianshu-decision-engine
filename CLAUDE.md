@@ -57,14 +57,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `rule-engine-client-sdk` | 完整 Java SDK，本地缓存与执行 | - |
 | `rule-engine-client-http` | HTTP-only Java SDK，远程调用服务端执行 | - |
 | `rule-engine-runtime` | 可独立部署的 HTTP/SDK 执行运行时 | 7070 / 7071 |
-| `rule-engine-ui` | Vue 3 前端控制台（独立部署） | 9090（dev）|
+| `rule-engine-web` | Vue 3 前端控制台（独立部署） | 9090（dev）|
 | `docker/rule-engine-mysql` | MySQL 配置、数据和日志（docker/ 独立 Compose） | - |
 | `docker/rule-engine-redis` | Redis 配置、数据和日志（docker/ 独立 Compose） | - |
 
 ### 部署架构
 
 ```
-浏览器 ←→ rule-engine-ui（前端，dist/ 独立部署）
+浏览器 ←→ rule-engine-web（前端，dist/ 独立部署）
          ↓
       rule-engine-server（后端 API，8080）
       ↙              ↘
@@ -101,7 +101,7 @@ mvn clean package -DskipTests
 ### 前端 (Vue 3)
 
 ```bash
-cd rule-engine-ui
+cd rule-engine-web
 
 npm ci
 npm run dev      # 开发模式（9090，/api 代理到后端 8080）

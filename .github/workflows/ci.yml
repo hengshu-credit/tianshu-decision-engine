@@ -44,14 +44,14 @@ jobs:
     timeout-minutes: 45
     defaults:
       run:
-        working-directory: rule-engine-ui
+        working-directory: rule-engine-web
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: rule-engine-ui/package-lock.json
+          cache-dependency-path: rule-engine-web/package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Run unit tests

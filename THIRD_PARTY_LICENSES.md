@@ -33,12 +33,12 @@ mvn clean package -DskipTests
 前端需使用 Node.js 20.19+ 单独构建：
 
 ```bash
-cd rule-engine-ui
+cd rule-engine-web
 npm ci
 npm run build
 ```
 
-精确依赖版本由根 `pom.xml`、各模块 `pom.xml` 以及 `rule-engine-ui/package-lock.json` 共同锁定。
+精确依赖版本由根 `pom.xml`、各模块 `pom.xml` 以及 `rule-engine-web/package-lock.json` 共同锁定。
 
 ## ONNX Runtime 1.26.0
 
@@ -53,5 +53,5 @@ ONNX Runtime 与 JPMML 的许可证不同；启用 `onnx-gpu` Maven profile 时�
 - `polygon-clipping` 0.15.7：MIT，https://github.com/mfogel/polygon-clipping ，用于避免境外地图数据覆盖国内来源的中国边界。
 - 中国全图/省界：DataV GeoAtlas 公开下载数据；市县数据采用标注天地图来源的固定整理版本，保留整理者 MIT 声明。
 - 境外行政区：geoBoundaries gbOpen，CC BY 4.0，页面保留来源链接。
-- 具体版本、上游链接、处理方式及地图审核边界见 [地图来源说明](rule-engine-ui/public/maps/README.md)；整理数据许可证见 [chinese-geodata-LICENSE.txt](rule-engine-ui/public/maps/chinese-geodata-LICENSE.txt)。
+- 具体版本、上游链接、处理方式及地图审核边界见 [地图来源说明](rule-engine-web/public/maps/README.md)；整理数据许可证见 [chinese-geodata-LICENSE.txt](rule-engine-web/public/maps/chinese-geodata-LICENSE.txt)。
 

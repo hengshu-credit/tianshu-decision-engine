@@ -84,7 +84,7 @@ $env:MYSQL_DATABASE = 'rule_engine'
 
 ```powershell
 $env:E2E_BASE_URL = 'https://staging-engine.example.com'
-cd rule-engine-ui
+cd rule-engine-web
 npm run test:e2e:full
 ```
 

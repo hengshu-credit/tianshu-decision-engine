@@ -190,7 +190,7 @@ ONNX 神经网络模型可在“模型管理”中逐个选择 CPU 或 CUDA，�
 ### 前端
 
 ```bash
-cd rule-engine-ui
+cd rule-engine-web
 npm ci
 npm run dev
 ```
@@ -229,7 +229,7 @@ mvn clean package -DskipTests
 cp rule-engine-server/target/rule-engine-server-*.jar /opt/tianshu/server/rule-engine-server.jar
 
 # 构建后管
-cd rule-engine-ui
+cd rule-engine-web
 npm ci
 npm run build
 rm -rf /opt/tianshu/console/dist/*
@@ -357,12 +357,12 @@ docker/
 
 ```powershell
 mvn clean package -DskipTests
-npm --prefix rule-engine-ui ci
-npm --prefix rule-engine-ui run build
+npm --prefix rule-engine-web ci
+npm --prefix rule-engine-web run build
 New-Item -ItemType Directory -Force docker/tianshu-decision-engine-runtime/dist | Out-Null
 Copy-Item rule-engine-server/target/rule-engine-server-*.jar docker/tianshu-decision-engine-runtime/server.jar
 Copy-Item rule-engine-runtime/target/rule-engine-runtime-*.jar docker/tianshu-decision-engine-runtime/runtime.jar
-Copy-Item rule-engine-ui/dist/* docker/tianshu-decision-engine-runtime/dist -Recurse -Force
+Copy-Item rule-engine-web/dist/* docker/tianshu-decision-engine-runtime/dist -Recurse -Force
 ```
 
 ### 3.2 启动
@@ -411,7 +411,7 @@ docker compose --env-file .env -f docker/docker-compose.redis.yml up -d
 ### 4.1 构建并发布后管
 
 ```bash
-cd rule-engine-ui
+cd rule-engine-web
 npm ci
 npm run build
 sudo mkdir -p /var/www/tianshu

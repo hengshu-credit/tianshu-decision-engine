@@ -333,7 +333,7 @@ API 配置中的“报文留存”可分别设置 `request` / `response`：`sour
 
 | 组件 | 职责 | 默认端口 |
 |------|------|----------|
-| `rule-engine-ui` | Vue 控制台，独立构建部署 | 9090（开发） |
+| `rule-engine-web` | Vue 控制台，独立构建部署 | 9090（开发） |
 | `rule-engine-server` | 管理、同步、执行与日志 API | 8080 |
 | `rule-engine-core` / `rule-engine-model` | 规则编译执行、公共实体与 DTO | — |
 | `rule-engine-client-sdk` | Java SDK，规则同步、缓存和执行 | — |

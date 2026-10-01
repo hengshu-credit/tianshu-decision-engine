@@ -1,6 +1,6 @@
 const fs = require('node:fs')
 const path = require('node:path')
-const { createDocsApiData } = require('../../rule-engine-ui/tests/e2e/support/docsFixtures.cjs')
+const { createDocsApiData } = require('../../rule-engine-web/tests/e2e/support/docsFixtures.cjs')
 const routes = createDocsApiData()
 const slugs = ['table', 'tree', 'flow', 'ruleset', 'cross', 'score', 'cross-adv', 'score-adv', 'script']
 const examples = slugs.map((slug, index) => {

@@ -14,8 +14,8 @@
 *.log
 *.tmp
 .vscode/
-rule-engine-ui/public/vs/
-rule-engine-ui/node_modules/
+rule-engine-web/public/vs/
+rule-engine-web/node_modules/
 .claude/*
 .harness
 rule_examples

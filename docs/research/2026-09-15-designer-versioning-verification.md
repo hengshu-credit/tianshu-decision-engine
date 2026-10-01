@@ -33,7 +33,7 @@
 - 真实浏览器 UI 从登录、新建规则开始执行，没有通过后台写入数据跳过配置步骤：编译无草稿写入；草稿覆盖；测试；发布审批；新增 v2；覆盖 v1；默认仍为 v2；固定引用和最新引用共同执行得到预期值；删除最后草稿并刷新仍为空白。两个真实用例通过，未捕获 pageerror/console error。
 - 回归使用带 `designer_check_` / `designer_caller_` 前缀的独立验证规则。实际发布产生的审批及快照保留供追溯，最后草稿删除为软删除；未批准或改写原有业务审批。
 
-主要日志为 `.codex-run-logs/designer-version-backend-release-check.log`、`designer-version-ui-all-final2.log`、`designer-version-dist-final2.log`、`designer-version-real-ui-final2.log`。真实 UI 用例为 `rule-engine-ui/tests/e2e/designer-live.spec.js`，只有显式设置 `E2E_DESIGNER_LIVE=1` 才会创建验证规则。凭据仅从本地环境加载，不写入测试代码。
+主要日志为 `.codex-run-logs/designer-version-backend-release-check.log`、`designer-version-ui-all-final2.log`、`designer-version-dist-final2.log`、`designer-version-real-ui-final2.log`。真实 UI 用例为 `rule-engine-web/tests/e2e/designer-live.spec.js`，只有显式设置 `E2E_DESIGNER_LIVE=1` 才会创建验证规则。凭据仅从本地环境加载，不写入测试代码。
 
 真实验证规则 ID 为 38、39、40、41、42、43，其中 41、43 的最后草稿已按 UI 流程软删除，规则本身保留空白设计。验证审批为 38～47，全部属于上述验证规则；用户原有审批 37 未变更。
 

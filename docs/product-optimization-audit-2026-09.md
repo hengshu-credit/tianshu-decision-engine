@@ -4,7 +4,7 @@
 
 本次审计独立于仓库中已有规划，按实际代码、控制器、测试、页面模板和执行链路重新梳理：
 
-- 前端：`rule-engine-ui/src/views`、路由、布局、API 封装、单元测试；
+- 前端：`rule-engine-web/src/views`、路由、布局、API 封装、单元测试；
 - 后端：`rule-engine-server` 管理控制器、规则编译/执行、变量来源解析、数据库连接池、日志与计费；
 - 核心：`rule-engine-core` 的 QLExpress 预编译缓存和执行上下文；
 - 操作验证：前端单元测试、Vite 构建、ESLint、数据库连接池回归测试、Vite 页面启动检查。

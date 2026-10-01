@@ -5,9 +5,9 @@
 .codex-run-logs
 .worktrees
 **/target
-rule-engine-ui/node_modules
-rule-engine-ui/dist
-rule-engine-ui/test-results
+rule-engine-web/node_modules
+rule-engine-web/dist
+rule-engine-web/test-results
 docker/rule-engine-mysql/data
 docker/rule-engine-redis/data
 docker/tianshu-decision-engine-runtime
