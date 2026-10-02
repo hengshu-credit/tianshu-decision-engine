@@ -1,5 +1,7 @@
 # 应用 Compose（外部 MySQL/Redis）。数据库地址通过 MYSQL_SERVICE_HOST、REDIS_SERVICE_HOST 配置，
 # 本文件不依赖或创建其它 Compose 项目。
+# 资源硬上限：server 4G/0.80C、runtime-http 1G/0.10C、runtime-sdk 1G/0.20C、web 256M/0.05C；
+# 本文件合计不超过 6.25G 内存、1.15C CPU。full/mysql/redis Compose 使用同一预算表，整体不超过 10G/1.95C。
 name: ${DEPLOY_PROJECT:-tianshu}
 
 x-java: &java
@@ -35,6 +37,13 @@ x-runtime: &runtime
 services:
   server:
     <<: *java
+    cpus: "0.80"
+    mem_limit: 4g
+    deploy:
+      resources:
+        limits:
+          cpus: "0.80"
+          memory: 4G
     environment:
       <<: *java-env
       SERVER_PORT: 8080
@@ -76,6 +85,13 @@ services:
 
   runtime-http:
     <<: *runtime
+    cpus: "0.10"
+    mem_limit: 1g
+    deploy:
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: 1G
     depends_on:
       server:
         condition: service_started
@@ -108,6 +124,13 @@ services:
 
   runtime-sdk:
     <<: *runtime
+    cpus: "0.20"
+    mem_limit: 1g
+    deploy:
+      resources:
+        limits:
+          cpus: "0.20"
+          memory: 1G
     depends_on:
       server:
         condition: service_started
@@ -152,6 +175,13 @@ services:
 
   web:
     image: ${NGINX_IMAGE:-nginx:1.29.1-alpine}
+    cpus: "0.05"
+    mem_limit: 256m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.05"
+          memory: 256M
     restart: unless-stopped
     init: true
     depends_on:

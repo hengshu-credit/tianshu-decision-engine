@@ -342,7 +342,7 @@ docker logs --tail 200 tianshu-server
 
 ## 三、Docker Compose 一体化部署
 
-部署制品统一放在 docker/tianshu-decision-engine-runtime：server.jar、runtime.jar 和前端 dist/。MySQL、Redis 配置、数据与日志分别放在 docker/rule-engine-mysql/、docker/rule-engine-redis/；子目录不再保留重复的 Compose。外部数据库 Compose 只启动应用，完整 Compose 负责初始化数据库并启动全部服务。
+部署制品统一放在 docker/tianshu-decision-engine-runtime：server.jar、runtime.jar、前端 dist/、schema.sql 和 data.sql。MySQL、Redis 配置、数据与日志分别放在 docker/rule-engine-mysql/、docker/rule-engine-redis/；子目录不再保留重复的 Compose。外部数据库 Compose 只启动应用，完整 Compose 负责初始化数据库并启动全部服务。
 
 ```text
 docker/
@@ -352,7 +352,7 @@ docker/
 ├── docker-compose.full.yml
 ├── rule-engine-mysql/                 # conf.d/、data/、logs/
 ├── rule-engine-redis/                 # redis.conf、data/、logs/
-└── tianshu-decision-engine-runtime/   # server.jar、runtime.jar、dist/
+└── tianshu-decision-engine-runtime/   # server.jar、runtime.jar、dist/、schema.sql、data.sql
 ```
 
 以下命令从仓库根目录执行，`.env` 仍保留在仓库根目录。Compose 的相对挂载路径以 `docker/` 为基准，因此 `RUNTIME_DIR` 默认填 `./tianshu-decision-engine-runtime`，也可改为宿主机绝对路径。
@@ -409,17 +409,15 @@ docker compose --env-file .env -f docker/docker-compose.full.yml ps
 
 完整模式首次使用空数据目录时由 `mysql-init` 依次执行 schema 和可选快照；已有数据目录保持 `MYSQL_INIT_LOAD_SNAPSHOT=false`。完整模式与第 0 步的独立 MySQL/Redis 不要同时占用相同端口和容器名。
 
+所有 Compose 文件都设置了固定容器资源上限。完整模式中 MySQL/Redis/mysql-init/server/HTTP/SDK/web 的限额合计为 10G 内存、1.95C CPU；外部数据库模式合计为 6.25G 内存、1.15C CPU。`docker-compose.mysql.yml` 和 `docker-compose.redis.yml` 使用相同的数据库限额，因此按第 0 步拆分启动时总量仍不超过 10G/1.95C。
+
 ### 3.2 构建制品
 
 ```powershell
-mvn clean package -DskipTests
-npm --prefix rule-engine-web ci
-npm --prefix rule-engine-web run build
-New-Item -ItemType Directory -Force docker/tianshu-decision-engine-runtime/dist | Out-Null
-Copy-Item rule-engine-server/target/rule-engine-server-*.jar docker/tianshu-decision-engine-runtime/server.jar
-Copy-Item rule-engine-runtime/target/rule-engine-runtime-*.jar docker/tianshu-decision-engine-runtime/runtime.jar
-Copy-Item rule-engine-web/dist/* docker/tianshu-decision-engine-runtime/dist -Recurse -Force
+node scripts/package-runtime.mjs
 ```
+
+脚本会构建后端和前端，并清理后重新生成 `docker/tianshu-decision-engine-runtime`。复制到服务器时至少带上 `docker/docker-compose*.yml`、该运行时目录和填写完成的 `.env`；全量或独立 MySQL Compose 会从运行时目录读取 `schema.sql`、`data.sql`，不再依赖源码目录。
 
 ### 3.3 启动与更新
 

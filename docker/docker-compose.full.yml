@@ -1,4 +1,6 @@
 # 一键完整 Compose：MySQL + Redis + server + HTTP + SDK + web。
+# 资源硬上限：mysql 3G/0.60C、redis 512M/0.15C、mysql-init 256M/0.05C、server 4G/0.80C、
+# http 1G/0.10C、sdk 1G/0.20C、web 256M/0.05C；全部服务限额合计不超过 10G 内存、1.95C CPU。
 name: ${DEPLOY_PROJECT:-tianshu}
 
 x-java: &java
@@ -34,6 +36,13 @@ x-runtime: &runtime
 services:
   mysql:
     image: ${MYSQL_IMAGE:-mysql:8.4.6}
+    cpus: "0.60"
+    mem_limit: 3g
+    deploy:
+      resources:
+        limits:
+          cpus: "0.60"
+          memory: 3G
     container_name: rule-engine-mysql
     restart: unless-stopped
     environment:
@@ -56,8 +65,18 @@ services:
       - ./rule-engine-mysql/data:/var/lib/mysql
       - ./rule-engine-mysql/logs:/var/log/mysql
       - ./rule-engine-mysql/conf.d:/etc/mysql/conf.d:ro
-      - ../rule-engine-server/src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-      - ../rule-engine-server/src/main/resources/sql/data.sql:/docker-entrypoint-initdb.d/02-data.sql:ro
+      - type: bind
+        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/schema.sql
+        target: /docker-entrypoint-initdb.d/01-schema.sql
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/data.sql
+        target: /docker-entrypoint-initdb.d/02-data.sql
+        read_only: true
+        bind:
+          create_host_path: false
     healthcheck:
       test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_ROOT_PASSWORD}\" mysqladmin ping -h127.0.0.1 -uroot --silent"]
       interval: 10s
@@ -73,6 +92,13 @@ services:
 
   redis:
     image: ${REDIS_IMAGE:-redis:8.2.1}
+    cpus: "0.15"
+    mem_limit: 512m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.15"
+          memory: 512M
     container_name: rule-engine-redis
     restart: unless-stopped
     environment:
@@ -104,6 +130,13 @@ services:
 
   mysql-init:
     image: ${MYSQL_IMAGE:-mysql:8.4.6}
+    cpus: "0.05"
+    mem_limit: 256m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.05"
+          memory: 256M
     restart: "no"
     environment:
       MYSQL_HOST: mysql
@@ -115,8 +148,18 @@ services:
       MYSQL_INIT_SKIP: ${MYSQL_INIT_SKIP:-false}
       MYSQL_INIT_LOAD_SNAPSHOT: ${MYSQL_INIT_LOAD_SNAPSHOT:-false}
     volumes:
-      - ../rule-engine-server/src/main/resources/sql/schema.sql:/init/schema.sql:ro
-      - ../rule-engine-server/src/main/resources/sql/data.sql:/init/data.sql:ro
+      - type: bind
+        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/schema.sql
+        target: /init/schema.sql
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/data.sql
+        target: /init/data.sql
+        read_only: true
+        bind:
+          create_host_path: false
     command:
       - sh
       - -ec
@@ -137,6 +180,13 @@ services:
 
   server:
     <<: *java
+    cpus: "0.80"
+    mem_limit: 4g
+    deploy:
+      resources:
+        limits:
+          cpus: "0.80"
+          memory: 4G
     depends_on:
       mysql-init:
         condition: service_completed_successfully
@@ -181,6 +231,13 @@ services:
 
   http:
     <<: *runtime
+    cpus: "0.10"
+    mem_limit: 1g
+    deploy:
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: 1G
     depends_on:
       server:
         condition: service_started
@@ -213,6 +270,13 @@ services:
 
   sdk:
     <<: *runtime
+    cpus: "0.20"
+    mem_limit: 1g
+    deploy:
+      resources:
+        limits:
+          cpus: "0.20"
+          memory: 1G
     depends_on:
       server:
         condition: service_started
@@ -257,6 +321,13 @@ services:
 
   web:
     image: ${NGINX_IMAGE:-nginx:1.29.1-alpine}
+    cpus: "0.05"
+    mem_limit: 256m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.05"
+          memory: 256M
     restart: unless-stopped
     init: true
     depends_on:

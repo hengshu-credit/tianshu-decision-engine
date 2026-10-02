@@ -45,4 +45,6 @@ scripts/quality-gates/fixtures/request.local.json
 /**/target/
 /docker/tianshu-decision-engine-runtime/*.jar
 /docker/tianshu-decision-engine-runtime/dist/
+/docker/tianshu-decision-engine-runtime/schema.sql
+/docker/tianshu-decision-engine-runtime/data.sql
 
