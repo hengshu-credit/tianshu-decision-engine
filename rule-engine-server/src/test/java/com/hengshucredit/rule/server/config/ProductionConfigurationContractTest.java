@@ -2,11 +2,15 @@ package com.hengshucredit.rule.server.config;
 
 import org.junit.Assert;
 import org.junit.Test;
+import org.springframework.beans.factory.config.YamlPropertiesFactoryBean;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.mock.env.MockEnvironment;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Properties;
 
 public class ProductionConfigurationContractTest {
 
@@ -38,6 +42,28 @@ public class ProductionConfigurationContractTest {
     }
 
     @Test
+    public void serverInitializesPackagedSchemaByDefaultWithoutImportingData() {
+        Path resources = repositoryRoot().resolve("rule-engine-server/src/main/resources");
+        YamlPropertiesFactoryBean yaml = new YamlPropertiesFactoryBean();
+        yaml.setResources(new FileSystemResource(resources.resolve("application.yml")));
+        Properties properties = yaml.getObject();
+        MockEnvironment environment = new MockEnvironment();
+        String mode = properties.getProperty("spring.sql.init.mode");
+
+        Assert.assertEquals("always", environment.resolveRequiredPlaceholders(mode));
+        Assert.assertEquals("classpath:sql/schema.sql", properties.getProperty("spring.sql.init.schema-locations"));
+        Assert.assertEquals("false", environment.resolveRequiredPlaceholders(
+                properties.getProperty("spring.sql.init.continue-on-error")));
+        Assert.assertNull(properties.getProperty("spring.sql.init.data-locations"));
+        Assert.assertFalse(Files.exists(resources.resolve("data.sql")));
+        Assert.assertFalse(Files.exists(resources.resolve("sql/data-tianshu-example.sql")));
+        Assert.assertTrue(Files.isRegularFile(repositoryRoot().resolve(
+                "docker/rule-engine-mysql/data-tianshu-example.sql")));
+        environment.setProperty("SPRING_SQL_INIT_MODE", "never");
+        Assert.assertEquals("never", environment.resolveRequiredPlaceholders(mode));
+    }
+
+    @Test
     public void containerConfigurationRequiresExternalPasswords() throws Exception {
         Path root = repositoryRoot();
         String appCompose = read(root.resolve("docker/docker-compose.yml"));
@@ -57,8 +83,8 @@ public class ProductionConfigurationContractTest {
         Assert.assertTrue(appCompose.contains("./tianshu-decision-engine-runtime"));
         Assert.assertTrue(fullCompose.contains("mysql:"));
         Assert.assertTrue(fullCompose.contains("redis:"));
-        Assert.assertTrue(fullCompose.contains("mysql-init:"));
-        Assert.assertTrue(fullCompose.contains("condition: service_completed_successfully"));
+        Assert.assertFalse(fullCompose.contains("mysql-init:"));
+        Assert.assertTrue(fullCompose.contains("condition: service_healthy"));
         Assert.assertTrue(fullCompose.contains("  http:"));
         Assert.assertTrue(fullCompose.contains("  sdk:"));
         Assert.assertTrue(mysqlCompose.contains("MYSQL_ROOT_PASSWORD: \"${MYSQL_ROOT_PASSWORD:?"));

@@ -32,7 +32,7 @@ spring:
     init:
       schema-locations: classpath:sql/schema.sql
       encoding: UTF-8
-      mode: ${SPRING_SQL_INIT_MODE:${SPRING_DATASOURCE_INITIALIZATION_MODE:never}}
+      mode: ${SPRING_SQL_INIT_MODE:${SPRING_DATASOURCE_INITIALIZATION_MODE:always}}
       continue-on-error: ${SPRING_SQL_INIT_CONTINUE_ON_ERROR:false}
   data:
     redis:

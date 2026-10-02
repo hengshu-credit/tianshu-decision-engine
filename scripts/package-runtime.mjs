@@ -53,11 +53,9 @@ try {
   cpSync(serverJar, path.join(outputRoot, 'server.jar'))
   cpSync(runtimeJar, path.join(outputRoot, 'runtime.jar'))
   cpSync(frontendDist, path.join(outputRoot, 'dist'), { recursive: true })
-  cpSync(path.join(root, 'rule-engine-server', 'src', 'main', 'resources', 'sql', 'schema.sql'), path.join(outputRoot, 'schema.sql'))
-  cpSync(path.join(root, 'rule-engine-server', 'src', 'main', 'resources', 'sql', 'data.sql'), path.join(outputRoot, 'data.sql'))
 
   console.log('\n运行时制品已生成：')
-  for (const file of ['server.jar', 'runtime.jar', 'schema.sql', 'data.sql']) {
+  for (const file of ['server.jar', 'runtime.jar']) {
     const fullPath = path.join(outputRoot, file)
     console.log(`- ${file}: ${(statSync(fullPath).size / 1024 / 1024).toFixed(1)} MiB`)
   }

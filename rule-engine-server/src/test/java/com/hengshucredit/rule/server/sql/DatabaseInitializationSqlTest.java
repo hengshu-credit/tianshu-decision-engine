@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.sql;
 
 import org.junit.Assert;
 import org.junit.Test;
+import org.yaml.snakeyaml.Yaml;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -280,23 +281,28 @@ public class DatabaseInitializationSqlTest {
     }
 
     @Test
-    public void dockerFreshInitializationLoadsSchemaBeforeSnapshot() throws Exception {
+    public void dockerDelegatesSchemaToServerWithoutAutomaticDataImport() throws Exception {
         Path root = repositoryRoot();
-        String rootCompose = read(root.resolve("docker/docker-compose.full.yml"));
-        String mysqlCompose = read(root.resolve("docker/docker-compose.mysql.yml"));
-        assertFreshInitMounts(mysqlCompose,
-                "../rule-engine-server/src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro",
-                "../rule-engine-server/src/main/resources/sql/data.sql:/docker-entrypoint-initdb.d/02-data.sql:ro");
-        Assert.assertTrue("full compose must run schema initialization before application services",
-                rootCompose.contains("mysql-init:") && rootCompose.contains("condition: service_completed_successfully"));
-        Assert.assertTrue("snapshot loading must be opt-in for an existing database",
-                rootCompose.contains("MYSQL_INIT_LOAD_SNAPSHOT") && rootCompose.contains("/init/data.sql"));
-        Assert.assertTrue("full compose must include both infrastructure services",
-                rootCompose.contains("  mysql:")
-                        && rootCompose.contains("  redis:")
-                        && rootCompose.contains("image: ${MYSQL_IMAGE")
-                        && rootCompose.contains("image: ${REDIS_IMAGE")
-                        && !rootCompose.contains("extends:"));
+        for (String file : Arrays.asList("docker-compose.yml", "docker-compose.full.yml", "docker-compose.mysql.yml")) {
+            String compose = read(root.resolve("docker").resolve(file));
+            Assert.assertFalse(file + " must not execute SQL in MySQL entrypoint", compose.contains("/docker-entrypoint-initdb.d/"));
+            Assert.assertFalse(file + " must not use a separate SQL initializer", compose.contains("mysql-init:"));
+            Assert.assertFalse(file + " must not replay snapshots", compose.contains("MYSQL_INIT_LOAD_SNAPSHOT"));
+            Map<?, ?> configuration = new Yaml().load(compose);
+            Map<?, ?> services = (Map<?, ?>) configuration.get("services");
+            if (!file.equals("docker-compose.mysql.yml")) {
+                Map<?, ?> server = (Map<?, ?>) services.get("server");
+                Map<?, ?> environment = (Map<?, ?>) server.get("environment");
+                Assert.assertEquals("${SPRING_SQL_INIT_MODE:-always}", environment.get("SPRING_SQL_INIT_MODE"));
+                if (file.equals("docker-compose.full.yml")) {
+                    Map<?, ?> dependencies = (Map<?, ?>) server.get("depends_on");
+                    for (String service : Arrays.asList("mysql", "redis")) {
+                        Assert.assertTrue(services.containsKey(service));
+                        Assert.assertEquals("service_healthy", ((Map<?, ?>) dependencies.get(service)).get("condition"));
+                    }
+                }
+            }
+        }
     }
 
     @Test
@@ -377,13 +383,6 @@ public class DatabaseInitializationSqlTest {
                 "KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`)"));
         Assert.assertFalse(schema.contains("MODIFY COLUMN `request_json`"));
         Assert.assertFalse(schema.contains("MODIFY COLUMN `response_json`"));
-    }
-
-    private static void assertFreshInitMounts(String compose, String schemaMount, String dataMount) {
-        Assert.assertTrue("missing schema init mount", compose.contains(schemaMount));
-        Assert.assertTrue("missing data init mount", compose.contains(dataMount));
-        Assert.assertTrue("schema must be mounted before data",
-                compose.indexOf(schemaMount) < compose.indexOf(dataMount));
     }
 
     private static void assertVariableId(String export, long id, String code) {

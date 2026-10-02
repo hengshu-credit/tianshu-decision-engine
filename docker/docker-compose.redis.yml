@@ -1,5 +1,5 @@
 # Redis 独立 Compose；数据和配置集中在 docker/rule-engine-redis。
-# 固定上限：512M 内存、0.15C CPU；与应用/MySQL Compose 同时运行时仍保持总预算不超过 10G/1.95C。
+# 固定上限：512M 内存、0.15C CPU；与应用/MySQL Compose 同时运行时仍保持总预算不超过 9.75G/1.90C。
 name: ${DEPLOY_PROJECT:-tianshu}
 
 services:

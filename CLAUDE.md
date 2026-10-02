@@ -132,10 +132,10 @@ docker compose --env-file .env -f docker/docker-compose.redis.yml up -d
 
 ### 数据库初始化
 
-- `schema.sql` 只包含数据库、表和索引等结构 DDL；`data.sql` 是当前唯一的基础数据快照；结构和数据脚本均使用当前连接的数据库，不写死数据库名
-- 空 Docker 数据卷首次启动依次执行 `01-schema.sql` 和 `02-data.sql`；只有 `docker/docker-compose.full.yml` 包含 `mysql-init`，对已有数据卷只重复执行 schema，不自动重放会覆盖数据的 data.sql
-- 手工完整恢复顺序：删除 `MYSQL_DATABASE` 指定的数据库，先执行 `schema.sql`，再执行 `data.sql`；data.sql 会清空其覆盖的全部数据表
-- `data-example.sql` / `data-tianshu-example.sql` 仅作为可选示例数据脚本手动导入，不属于系统初始数据来源
+- `schema.sql` 只包含数据库、表和索引等结构 DDL；服务端启动时默认自动执行，脚本使用当前连接的数据库，不写死数据库名
+- Docker Compose 只负责启动 MySQL、Redis 和应用服务，不自动导入业务数据；示例数据脚本 `docker/rule-engine-mysql/data-tianshu-example.sql` 需在服务端就绪后手动导入
+- 手工完整恢复顺序：删除 `MYSQL_DATABASE` 指定的数据库，启动服务自动执行 `schema.sql`，再按需导入 `docker/rule-engine-mysql/data-tianshu-example.sql`
+- `data.sql` / `data-example.sql` / `data-third-party-api.sql` 仅作为可选快照、示例或模板数据脚本手动导入，不属于系统初始数据来源
 - 仅在 README 的 12 节「实现边界」中保留的已知限制（如血缘仅静态识别脚本引用）才是真实待修缮项
 - Compose 不提供共享默认密码；全新数据卷根据 `MYSQL_USERNAME` / `MYSQL_PASSWORD` 创建应用账号，已有数据卷需由数据库管理员预先创建或更新最小权限账号
 - Maven/JAR 启动时会自动读取当前目录或上级目录的 `.env`；系统环境变量和命令行参数优先覆盖文件值，生产仍应通过 Secret/KMS 注入 MySQL、Redis、控制台和 `RULE_AUTH_MASTER_KEY` 等真实凭据

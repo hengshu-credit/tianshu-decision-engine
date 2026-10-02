@@ -1,5 +1,5 @@
 # MySQL 独立 Compose；数据和配置集中在 docker/rule-engine-mysql。
-# 固定上限：3G 内存、0.60C CPU；与应用/Redis Compose 同时运行时仍保持总预算不超过 10G/1.95C。
+# 固定上限：3G 内存、0.60C CPU；与应用/Redis Compose 同时运行时仍保持总预算不超过 9.75G/1.90C。
 name: ${DEPLOY_PROJECT:-tianshu}
 
 services:
@@ -34,18 +34,6 @@ services:
       - ./rule-engine-mysql/data:/var/lib/mysql
       - ./rule-engine-mysql/logs:/var/log/mysql
       - ./rule-engine-mysql/conf.d:/etc/mysql/conf.d:ro
-      - type: bind
-        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/schema.sql
-        target: /docker-entrypoint-initdb.d/01-schema.sql
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/data.sql
-        target: /docker-entrypoint-initdb.d/02-data.sql
-        read_only: true
-        bind:
-          create_host_path: false
     healthcheck:
       test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_ROOT_PASSWORD}\" mysqladmin ping -h127.0.0.1 -uroot --silent"]
       interval: 10s

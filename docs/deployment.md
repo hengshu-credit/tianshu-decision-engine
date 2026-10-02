@@ -18,7 +18,7 @@
 | `MYSQL_DATABASE` | `rule_engine` | 后端连接的数据库名；完整 Compose 的初始化容器按 `MYSQL_DATABASE` 创建和初始化，修改该值会同时作用于 Docker、Spring 和基础数据脚本。 |
 | `MYSQL_USERNAME` | 空 | 后端连接 MySQL 的应用账号；应只授予 `rule_engine` 所需权限。 |
 | `MYSQL_PASSWORD` | 空 | 后端应用账号密码。 |
-| `MYSQL_ROOT_PASSWORD` | 无 | 仅由 MySQL 容器初始化和 `mysql-init` 使用的 root 密码；不能替代 `MYSQL_PASSWORD`。 |
+| `MYSQL_ROOT_PASSWORD` | 无 | 仅由 MySQL 容器初始化使用的 root 密码；不能替代 `MYSQL_PASSWORD`。 |
 | `MYSQL_ALLOW_MULTI_QUERIES` | `false` | 是否在 JDBC URL 中开启多语句；只有确认 SQL 来源可信且确实需要时才开启。 |
 | `REDIS_HOST` | `localhost` | Redis 主机名。多节点必须指向同一个 Redis 实例或同一高可用服务。 |
 | `REDIS_PORT` | `6379` | Redis 端口。 |
@@ -42,7 +42,7 @@
 
 | 参数名 | 默认值 | 含义与具体作用 |
 |---|---:|---|
-| `SPRING_SQL_INIT_MODE` | `never` | Spring 启动时是否执行 `schema.sql`；生产已有数据库保持 `never`，不要让每个应用节点重复初始化。 |
+| `SPRING_SQL_INIT_MODE` | `always` | Spring 启动时是否执行 `schema.sql`；默认自动建表，已有数据库可临时设为 `never`。 |
 | `SPRING_DATASOURCE_INITIALIZATION_MODE` | 空 | Spring Boot 旧版本兼容别名，仅在迁移旧部署时使用；优先使用 `SPRING_SQL_INIT_MODE`。 |
 | `SPRING_SQL_INIT_CONTINUE_ON_ERROR` | `false` | 初始化 SQL 出错时是否继续；生产保持 `false`，让错误阻止启动。 |
 | `RULE_TRACE_MAX_PERSIST_BYTES` | `1048576` | 单条持久化追踪 JSON 的最大字节数（默认 1 MiB）；超出时只截断持久化副本，不截断本次请求结果。 |
@@ -126,9 +126,9 @@ mvn spring-boot:run
 
 `MYSQL_HOST`、`MYSQL_PORT` 由 `application.yml` 读取；Redis 已通过 `REDIS_HOST`、`REDIS_PORT` 读取。不要在 `.env` 中写入 Spring 风格的 `${NAME:default}` 表达式，因为 Docker Compose 会把它解析为非法模板；`.env` 中应使用已经展开的实际值。
 
-`schema.sql` 只包含数据库、表和索引等结构 DDL，不创建用户、不修改 root 账号、也不执行全局授权；`data.sql` 是当前唯一的初始数据快照。空 Docker 数据卷首次启动时会依次执行 `01-schema.sql` 和 `02-data.sql`。只有完整 Compose 中的 `mysql-init` 会对已有数据卷重复执行结构 DDL，不会自动重放会覆盖业务数据的 data.sql。项目鉴权、临时 Token 及其访问审计数据与部署主密钥绑定，不写入初始快照；服务启动后会把项目表中的兼容访问令牌按当前主密钥迁移为默认鉴权记录。
+`schema.sql` 只包含数据库、表和索引等结构 DDL，不创建用户、不修改 root 账号、也不执行全局授权；服务端启动时默认由 Spring 执行 classpath 中的 `schema.sql`。示例数据脚本 `data-tianshu-example.sql` 放在 `docker/rule-engine-mysql/`，只在需要演示数据时手工导入，不随服务端启动自动导入。项目鉴权、临时 Token 及其访问审计数据与部署主密钥绑定，不写入示例数据；服务启动后会把项目表中的兼容访问令牌按当前主密钥迁移为默认鉴权记录。
 
-需要手工完整恢复时，固定顺序为：删除 `MYSQL_DATABASE` 指定的数据库，执行 `schema.sql`，再执行 `data.sql`。data.sql 会清空并重建其覆盖的全部数据表，因此不得直接用于需要保留现有业务数据的数据库。
+需要手工完整恢复时，固定顺序为：删除 `MYSQL_DATABASE` 指定的数据库，启动服务自动执行 `schema.sql`，再按需执行 `docker/rule-engine-mysql/data-tianshu-example.sql`。示例数据脚本会写入演示数据，因此不得直接用于需要保留现有业务数据的数据库。
 
 ### 后端
 
@@ -342,7 +342,7 @@ docker logs --tail 200 tianshu-server
 
 ## 三、Docker Compose 一体化部署
 
-部署制品统一放在 docker/tianshu-decision-engine-runtime：server.jar、runtime.jar、前端 dist/、schema.sql 和 data.sql。MySQL、Redis 配置、数据与日志分别放在 docker/rule-engine-mysql/、docker/rule-engine-redis/；子目录不再保留重复的 Compose。外部数据库 Compose 只启动应用，完整 Compose 负责初始化数据库并启动全部服务。
+部署制品统一放在 docker/tianshu-decision-engine-runtime：server.jar、runtime.jar 和前端 dist/。MySQL、Redis 配置、数据、日志和示例数据脚本分别放在 docker/rule-engine-mysql/、docker/rule-engine-redis/；子目录不再保留重复的 Compose。外部数据库 Compose 只启动应用，完整 Compose 启动全部服务，schema.sql 由 server 启动时自动执行。
 
 ```text
 docker/
@@ -352,7 +352,7 @@ docker/
 ├── docker-compose.full.yml
 ├── rule-engine-mysql/                 # conf.d/、data/、logs/
 ├── rule-engine-redis/                 # redis.conf、data/、logs/
-└── tianshu-decision-engine-runtime/   # server.jar、runtime.jar、dist/、schema.sql、data.sql
+└── tianshu-decision-engine-runtime/   # server.jar、runtime.jar、dist/
 ```
 
 以下命令从仓库根目录执行，`.env` 仍保留在仓库根目录。Compose 的相对挂载路径以 `docker/` 为基准，因此 `RUNTIME_DIR` 默认填 `./tianshu-decision-engine-runtime`，也可改为宿主机绝对路径。
@@ -407,9 +407,9 @@ docker compose --env-file .env -f docker/docker-compose.full.yml up -d
 docker compose --env-file .env -f docker/docker-compose.full.yml ps
 ```
 
-完整模式首次使用空数据目录时由 `mysql-init` 依次执行 schema 和可选快照；已有数据目录保持 `MYSQL_INIT_LOAD_SNAPSHOT=false`。完整模式与第 0 步的独立 MySQL/Redis 不要同时占用相同端口和容器名。
+完整模式启动 MySQL 和 Redis 后直接启动 server；server 默认自动执行 `schema.sql`。需要演示数据时，在服务端就绪后手工执行 `docker/rule-engine-mysql/data-tianshu-example.sql`。完整模式与第 0 步的独立 MySQL/Redis 不要同时占用相同端口和容器名。
 
-所有 Compose 文件都设置了固定容器资源上限。完整模式中 MySQL/Redis/mysql-init/server/HTTP/SDK/web 的限额合计为 10G 内存、1.95C CPU；外部数据库模式合计为 6.25G 内存、1.15C CPU。`docker-compose.mysql.yml` 和 `docker-compose.redis.yml` 使用相同的数据库限额，因此按第 0 步拆分启动时总量仍不超过 10G/1.95C。
+所有 Compose 文件都设置了固定容器资源上限。完整模式中 MySQL/Redis/server/HTTP/SDK/web 的限额合计为 9.75G 内存、1.90C CPU；外部数据库模式合计为 6.25G 内存、1.15C CPU。`docker-compose.mysql.yml` 和 `docker-compose.redis.yml` 使用相同的数据库限额，因此按第 0 步拆分启动时总量仍不超过 9.75G/1.90C。
 
 ### 3.2 构建制品
 
@@ -417,7 +417,7 @@ docker compose --env-file .env -f docker/docker-compose.full.yml ps
 node scripts/package-runtime.mjs
 ```
 
-脚本会构建后端和前端，并清理后重新生成 `docker/tianshu-decision-engine-runtime`。复制到服务器时至少带上 `docker/docker-compose*.yml`、该运行时目录和填写完成的 `.env`；全量或独立 MySQL Compose 会从运行时目录读取 `schema.sql`、`data.sql`，不再依赖源码目录。
+脚本会构建后端和前端，并清理后重新生成 `docker/tianshu-decision-engine-runtime`。复制到服务器时至少带上 `docker/docker-compose*.yml`、该运行时目录、`docker/rule-engine-mysql/data-tianshu-example.sql` 和填写完成的 `.env`；server 会从 JAR 内读取 `schema.sql`，不再依赖源码目录。
 
 ### 3.3 启动与更新
 
@@ -429,11 +429,11 @@ docker compose --env-file .env -f docker/docker-compose.yml up -d
 # 或：docker compose --env-file .env -f docker/docker-compose.full.yml up -d
 ```
 
-MySQL 数据目录为 docker/rule-engine-mysql/data，Redis 数据目录为 docker/rule-engine-redis/data；均通过宿主机目录挂载持久化，停止或删除容器不会删除这些文件。只有全量 Compose 包含 `mysql-init`；外部数据库模式要求数据库已经完成 schema 初始化。数据与日志目录已排除在 Git 和镜像构建上下文之外。
+MySQL 数据目录为 docker/rule-engine-mysql/data，Redis 数据目录为 docker/rule-engine-redis/data；均通过宿主机目录挂载持久化，停止或删除容器不会删除这些文件。外部数据库模式要求服务端账号具备执行 `schema.sql` 的建表权限。数据与日志目录已排除在 Git 和镜像构建上下文之外。
 
 迁移已有部署时保留原 DEPLOY_PROJECT；若需沿用旧 Docker 网络，在 .env 设置 ENGINE_NETWORK 为原网络名。移动数据前应停止对应容器，完成停机备份和文件校验后再启动；不要对仍在写入的数据目录直接复制或移动。MySQL/Redis 的监听端口仍由 MYSQL_HOST_PORT、REDIS_HOST_PORT 配置。
 
-使用生产托管数据库时，把 MYSQL_SERVICE_HOST、MYSQL_SERVICE_PORT、REDIS_SERVICE_HOST、REDIS_SERVICE_PORT 改为生产地址，并配置 MYSQL_INIT_USERNAME / MYSQL_INIT_PASSWORD；如果生产库已完成结构初始化，可设置 MYSQL_INIT_SKIP=true。应用账号仍通过 MYSQL_USERNAME / MYSQL_PASSWORD 配置，Redis 密码通过 REDIS_PASSWORD 配置。
+使用生产托管数据库时，把 MYSQL_SERVICE_HOST、MYSQL_SERVICE_PORT、REDIS_SERVICE_HOST、REDIS_SERVICE_PORT 改为生产地址，并确保服务端账号具备执行 `schema.sql` 的建表权限；如需跳过启动建表，可设置 `SPRING_SQL_INIT_MODE=never`。应用账号仍通过 MYSQL_USERNAME / MYSQL_PASSWORD 配置，Redis 密码通过 REDIS_PASSWORD 配置。
 
 默认入口为前端 http://localhost:9090、管理端 API http://localhost:8080、HTTP 运行时 http://localhost:7070、SDK 运行时 http://localhost:7071。Docker Compose 不构建镜像，也不挂载源码，升级时替换运行目录中的 JAR/dist 后执行：
 

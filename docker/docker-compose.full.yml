@@ -1,6 +1,6 @@
 # 一键完整 Compose：MySQL + Redis + server + HTTP + SDK + web。
-# 资源硬上限：mysql 3G/0.60C、redis 512M/0.15C、mysql-init 256M/0.05C、server 4G/0.80C、
-# http 1G/0.10C、sdk 1G/0.20C、web 256M/0.05C；全部服务限额合计不超过 10G 内存、1.95C CPU。
+# 资源硬上限：mysql 3G/0.60C、redis 512M/0.15C、server 4G/0.80C、
+# http 1G/0.10C、sdk 1G/0.20C、web 256M/0.05C；全部服务限额合计不超过 9.75G 内存、1.90C CPU。
 name: ${DEPLOY_PROJECT:-tianshu}
 
 x-java: &java
@@ -65,18 +65,6 @@ services:
       - ./rule-engine-mysql/data:/var/lib/mysql
       - ./rule-engine-mysql/logs:/var/log/mysql
       - ./rule-engine-mysql/conf.d:/etc/mysql/conf.d:ro
-      - type: bind
-        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/schema.sql
-        target: /docker-entrypoint-initdb.d/01-schema.sql
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/data.sql
-        target: /docker-entrypoint-initdb.d/02-data.sql
-        read_only: true
-        bind:
-          create_host_path: false
     healthcheck:
       test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_ROOT_PASSWORD}\" mysqladmin ping -h127.0.0.1 -uroot --silent"]
       interval: 10s
@@ -128,56 +116,6 @@ services:
         max-file: "${DOCKER_LOG_MAX_FILES:-5}"
     networks: [rule-engine]
 
-  mysql-init:
-    image: ${MYSQL_IMAGE:-mysql:8.4.6}
-    cpus: "0.05"
-    mem_limit: 256m
-    deploy:
-      resources:
-        limits:
-          cpus: "0.05"
-          memory: 256M
-    restart: "no"
-    environment:
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-rule_engine}
-      MYSQL_INIT_USERNAME: ${MYSQL_INIT_USERNAME:-root}
-      MYSQL_INIT_PASSWORD: "${MYSQL_INIT_PASSWORD:-${MYSQL_ROOT_PASSWORD:-}}"
-      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-}"
-      MYSQL_INIT_SKIP: ${MYSQL_INIT_SKIP:-false}
-      MYSQL_INIT_LOAD_SNAPSHOT: ${MYSQL_INIT_LOAD_SNAPSHOT:-false}
-    volumes:
-      - type: bind
-        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/schema.sql
-        target: /init/schema.sql
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/data.sql
-        target: /init/data.sql
-        read_only: true
-        bind:
-          create_host_path: false
-    command:
-      - sh
-      - -ec
-      - |
-        if [ "$${MYSQL_INIT_SKIP}" = "true" ]; then exit 0; fi
-        password="$${MYSQL_INIT_PASSWORD:-$${MYSQL_ROOT_PASSWORD}}"
-        test -n "$${password}" || { echo 'MYSQL_INIT_PASSWORD or MYSQL_ROOT_PASSWORD is required' >&2; exit 1; }
-        until MYSQL_PWD="$${password}" mysqladmin ping --protocol=tcp -hmysql -P3306 -u"$${MYSQL_INIT_USERNAME}" --silent; do sleep 2; done
-        MYSQL_PWD="$${password}" mysql --protocol=tcp -hmysql -P3306 -u"$${MYSQL_INIT_USERNAME}" -e "CREATE DATABASE IF NOT EXISTS \\`$${MYSQL_DATABASE}\\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
-        MYSQL_PWD="$${password}" mysql --protocol=tcp -hmysql -P3306 -u"$${MYSQL_INIT_USERNAME}" "$${MYSQL_DATABASE}" < /init/schema.sql
-        if [ "$${MYSQL_INIT_LOAD_SNAPSHOT}" = "true" ]; then MYSQL_PWD="$${password}" mysql --protocol=tcp -hmysql -P3306 -u"$${MYSQL_INIT_USERNAME}" "$${MYSQL_DATABASE}" < /init/data.sql; fi
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks: [rule-engine]
-
   server:
     <<: *java
     cpus: "0.80"
@@ -188,8 +126,10 @@ services:
           cpus: "0.80"
           memory: 4G
     depends_on:
-      mysql-init:
-        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       <<: *java-env
       SERVER_PORT: 8080
@@ -202,7 +142,7 @@ services:
       REDIS_PORT: ${REDIS_SERVICE_PORT:-6379}
       REDIS_DATABASE: ${REDIS_DATABASE:-0}
       REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
-      SPRING_SQL_INIT_MODE: never
+      SPRING_SQL_INIT_MODE: ${SPRING_SQL_INIT_MODE:-always}
       RULE_AUTH_MASTER_KEY: "${RULE_AUTH_MASTER_KEY:?Set RULE_AUTH_MASTER_KEY}"
       RULE_AUTH_ACTIVE_KEY_ID: ${RULE_AUTH_ACTIVE_KEY_ID:-v2}
       RULE_AUTH_LEGACY_MASTER_KEY: ${RULE_AUTH_LEGACY_MASTER_KEY:-}

@@ -6,6 +6,9 @@ import org.junit.Test;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -13,7 +16,7 @@ import java.util.regex.Pattern;
 public class BuiltInConstantSqlTest {
 
     private static final List<String> SQL_RESOURCES = Arrays.asList(
-            "sql/data-example.sql", "sql/data-tianshu-example.sql");
+            "sql/data-example.sql", "docker/rule-engine-mysql/data-tianshu-example.sql");
     private static final List<String> CONSTANT_CODES = Arrays.asList(
             "NULL_VALUE", "EMPTY_STRING", "EMPTY_LIST", "EMPTY_MAP",
             "TRUE_VALUE", "FALSE_VALUE", "ZERO", "ONE", "NEGATIVE_ONE",
@@ -42,6 +45,11 @@ public class BuiltInConstantSqlTest {
     }
 
     private String readResource(String name) throws Exception {
+        if (name.startsWith("docker/")) {
+            Path cwd = Paths.get("").toAbsolutePath().normalize();
+            Path root = Files.isDirectory(cwd.resolve("rule-engine-server")) ? cwd : cwd.getParent();
+            return Files.readString(root.resolve(name), StandardCharsets.UTF_8);
+        }
         InputStream input = Thread.currentThread().getContextClassLoader().getResourceAsStream(name);
         Assert.assertNotNull("Missing SQL resource " + name, input);
         try (InputStream stream = input; ByteArrayOutputStream output = new ByteArrayOutputStream()) {

@@ -2,9 +2,10 @@ package com.hengshucredit.rule.server.service;
 
 import org.junit.Test;
 
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -13,7 +14,10 @@ public class TianshuExampleSqlTest {
 
     @Test
     public void blackUserCountDbVariableUsesJdbcPlaceholder() throws Exception {
-        String fixture = readResource("sql/data-tianshu-example.sql");
+        Path cwd = Paths.get("").toAbsolutePath().normalize();
+        Path root = Files.isDirectory(cwd.resolve("rule-engine-server")) ? cwd : cwd.getParent();
+        String fixture = Files.readString(root.resolve("docker/rule-engine-mysql/data-tianshu-example.sql"),
+                StandardCharsets.UTF_8);
         String sourceConfig = extractBlackUserCountSourceConfig(fixture);
 
         assertTrue(sourceConfig.contains("item_content = ?"));
@@ -31,16 +35,4 @@ public class TianshuExampleSqlTest {
         return fixture.substring(configStart, configEnd);
     }
 
-    private String readResource(String path) throws Exception {
-        InputStream input = Thread.currentThread().getContextClassLoader().getResourceAsStream(path);
-        assertTrue("未找到资源: " + path, input != null);
-        try (InputStream in = input; ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[4096];
-            int n;
-            while ((n = in.read(buffer)) >= 0) {
-                out.write(buffer, 0, n);
-            }
-            return new String(out.toByteArray(), StandardCharsets.UTF_8);
-        }
-    }
 }
