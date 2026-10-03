@@ -407,9 +407,9 @@ docker compose --env-file .env -f docker/docker-compose.full.yml up -d
 docker compose --env-file .env -f docker/docker-compose.full.yml ps
 ```
 
-完整模式启动 MySQL 和 Redis 后直接启动 server；server 默认自动执行 `schema.sql`。需要演示数据时，在服务端就绪后手工执行 `docker/rule-engine-mysql/data-tianshu-example.sql`。完整模式与第 0 步的独立 MySQL/Redis 不要同时占用相同端口和容器名。
+完整模式启动 MySQL 和 Redis 后直接启动 server；server 默认自动执行 `schema.sql`。需要演示数据时，默认不导入；启动时增加 `--profile example-data` 会等待 schema 完成后只执行插入。完整模式与第 0 步的独立 MySQL/Redis 不要同时占用相同端口和容器名。
 
-所有 Compose 文件都设置了固定容器资源上限。完整模式中 MySQL/Redis/server/HTTP/SDK/web 的限额合计为 9.75G 内存、1.90C CPU；外部数据库模式合计为 6.25G 内存、1.15C CPU。`docker-compose.mysql.yml` 和 `docker-compose.redis.yml` 使用相同的数据库限额，因此按第 0 步拆分启动时总量仍不超过 9.75G/1.90C。
+所有 Compose 文件都设置了固定容器资源上限。完整模式基础服务中 MySQL/Redis/server/HTTP/SDK/web 的限额合计为 9.75G 内存、1.90C CPU；启用 `example-data` profile 时额外增加 256M/0.05C，仍不超过 10G/1.95C。外部数据库模式合计为 6.25G/1.15C；`docker-compose.mysql.yml` 启用 profile 后为 3.25G/0.65C。
 
 ### 3.2 构建制品
 
@@ -418,6 +418,15 @@ node scripts/package-runtime.mjs
 ```
 
 脚本会构建后端和前端，并清理后重新生成 `docker/tianshu-decision-engine-runtime`。复制到服务器时至少带上 `docker/docker-compose*.yml`、该运行时目录、`docker/rule-engine-mysql/data-tianshu-example.sql` 和填写完成的 `.env`；server 会从 JAR 内读取 `schema.sql`，不再依赖源码目录。
+
+默认启动不导入示例数据；需要导入时使用：
+
+```powershell
+docker compose --profile example-data --env-file .env -f docker/docker-compose.full.yml up -d
+```
+
+该导入脚本在最前面设置 `utf8mb4` 编码，只使用 `INSERT IGNORE`，不会删除数据、更新已有记录或重建表。
+如果只启动独立 MySQL Compose，则在 server 已完成 schema 初始化后使用同一 profile 命令，并将文件替换为 `docker/docker-compose.mysql.yml`。
 
 ### 3.3 启动与更新
 

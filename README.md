@@ -353,7 +353,7 @@ SDK 通过 HTTP 同步规则与函数，并订阅 Redis 变更通知。`project-
 
 完整环境变量、Docker Compose 启动命令、ONNX CPU/CUDA 配置和 SDK 接入示例见 [部署与接入说明](https://hengshu-credit.github.io/tianshu-decision-engine/deployment.html)；生产 JAR/dist 制品位于 `docker/tianshu-decision-engine-runtime`。
 
-项目启动方式彼此独立：源码模式先启动 MySQL/Redis，再分别运行 server、web、HTTP 和 SDK；服务端默认在启动时自动执行 `schema.sql`，执行 `node scripts/package-runtime.mjs` 可把后端 JAR 和前端 `dist/` 统一生成到 `docker/tianshu-decision-engine-runtime`；示例数据 `data-tianshu-example.sql` 位于 `docker/rule-engine-mysql`，按需手工导入；外部数据库 Docker 模式执行 `docker compose --env-file .env -f docker/docker-compose.yml up -d`；完整单机模式执行 `docker compose --env-file .env -f docker/docker-compose.full.yml up -d`，该文件自包含 MySQL、Redis、server、HTTP、SDK 和 web。所有 Compose 文件都设置了固定资源上限，完整模式总和不超过 9.75G 内存、1.90C CPU；外部数据库模式必须把 `MYSQL_SERVICE_HOST`、`REDIS_SERVICE_HOST` 配置为容器可访问的远程地址。
+项目启动方式彼此独立：源码模式先启动 MySQL/Redis，再分别运行 server、web、HTTP 和 SDK；服务端默认在启动时自动执行 `schema.sql`，执行 `node scripts/package-runtime.mjs` 可把后端 JAR 和前端 `dist/` 统一生成到 `docker/tianshu-decision-engine-runtime`；示例数据 `data-tianshu-example.sql` 位于 `docker/rule-engine-mysql`，默认不导入，需要时通过 `--profile example-data` 启用只插入导入；外部数据库 Docker 模式执行 `docker compose --env-file .env -f docker/docker-compose.yml up -d`；完整单机模式执行 `docker compose --env-file .env -f docker/docker-compose.full.yml up -d`，该文件自包含 MySQL、Redis、server、HTTP、SDK 和 web。所有 Compose 文件都设置了固定资源上限，完整模式基础服务总和不超过 9.75G 内存、1.90C CPU；启用导入 profile 后仍不超过 10G/1.95C；外部数据库模式必须把 `MYSQL_SERVICE_HOST`、`REDIS_SERVICE_HOST` 配置为容器可访问的远程地址。
 
 外部公司接入可直接引入 `rule-engine-client-http`，或部署 `rule-engine-runtime` 的 `http` profile；该方式不需要 Redis，不在客户进程内同步或执行规则。
 

@@ -133,7 +133,7 @@ docker compose --env-file .env -f docker/docker-compose.redis.yml up -d
 ### 数据库初始化
 
 - `schema.sql` 只包含数据库、表和索引等结构 DDL；服务端启动时默认自动执行，脚本使用当前连接的数据库，不写死数据库名
-- Docker Compose 只负责启动 MySQL、Redis 和应用服务，不自动导入业务数据；示例数据脚本 `docker/rule-engine-mysql/data-tianshu-example.sql` 需在服务端就绪后手动导入
+- Docker Compose 默认只启动 MySQL、Redis 和应用服务，不导入业务数据；启用 `example-data` profile 后等待 schema 完成并以 `INSERT IGNORE` 导入 `docker/rule-engine-mysql/data-tianshu-example.sql`
 - 手工完整恢复顺序：删除 `MYSQL_DATABASE` 指定的数据库，启动服务自动执行 `schema.sql`，再按需导入 `docker/rule-engine-mysql/data-tianshu-example.sql`
 - `data.sql` / `data-example.sql` / `data-third-party-api.sql` 仅作为可选快照、示例或模板数据脚本手动导入，不属于系统初始数据来源
 - 仅在 README 的 12 节「实现边界」中保留的已知限制（如血缘仅静态识别脚本引用）才是真实待修缮项

@@ -1,6 +1,7 @@
 # 一键完整 Compose：MySQL + Redis + server + HTTP + SDK + web。
 # 资源硬上限：mysql 3G/0.60C、redis 512M/0.15C、server 4G/0.80C、
-# http 1G/0.10C、sdk 1G/0.20C、web 256M/0.05C；全部服务限额合计不超过 9.75G 内存、1.90C CPU。
+# http 1G/0.10C、sdk 1G/0.20C、web 256M/0.05C；基础服务限额合计不超过 9.75G 内存、1.90C CPU，
+# 启用 example-data profile 时额外增加 256M/0.05C，仍不超过 10G/1.95C。
 name: ${DEPLOY_PROJECT:-tianshu}
 
 x-java: &java
@@ -76,6 +77,41 @@ services:
       options:
         max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
         max-file: "${DOCKER_LOG_MAX_FILES:-5}"
+    networks: [rule-engine]
+
+  example-data-import:
+    image: ${MYSQL_IMAGE:-mysql:8.4.6}
+    profiles: [example-data]
+    cpus: "0.05"
+    mem_limit: 256m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.05"
+          memory: 256M
+    restart: "no"
+    environment:
+      MYSQL_USERNAME: "${MYSQL_USERNAME:?Set MYSQL_USERNAME}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}"
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-rule_engine}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      server:
+        condition: service_started
+    volumes:
+      - type: bind
+        source: ./rule-engine-mysql/data-tianshu-example.sql
+        target: /init/data-tianshu-example.sql
+        read_only: true
+        bind:
+          create_host_path: false
+    command:
+      - sh
+      - -ec
+      - |
+        until MYSQL_PWD="$${MYSQL_PASSWORD}" mysql --protocol=tcp -hmysql -P3306 -u"$${MYSQL_USERNAME}" -Nse "SELECT 1 FROM information_schema.tables WHERE table_schema='$${MYSQL_DATABASE}' AND table_name='offline_transfer_log' LIMIT 1" | grep -q 1; do sleep 2; done
+        MYSQL_PWD="$${MYSQL_PASSWORD}" mysql --protocol=tcp -hmysql -P3306 -u"$${MYSQL_USERNAME}" "$${MYSQL_DATABASE}" < /init/data-tianshu-example.sql
     networks: [rule-engine]
 
   redis:

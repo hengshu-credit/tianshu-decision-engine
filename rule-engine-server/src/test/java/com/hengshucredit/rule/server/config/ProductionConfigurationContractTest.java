@@ -87,6 +87,10 @@ public class ProductionConfigurationContractTest {
         Assert.assertTrue(fullCompose.contains("condition: service_healthy"));
         Assert.assertTrue(fullCompose.contains("  http:"));
         Assert.assertTrue(fullCompose.contains("  sdk:"));
+        Assert.assertTrue(fullCompose.contains("example-data-import:"));
+        Assert.assertTrue(fullCompose.contains("profiles: [example-data]"));
+        Assert.assertTrue(mysqlCompose.contains("example-data-import:"));
+        Assert.assertTrue(mysqlCompose.contains("profiles: [example-data]"));
         Assert.assertTrue(mysqlCompose.contains("MYSQL_ROOT_PASSWORD: \"${MYSQL_ROOT_PASSWORD:?"));
         Assert.assertTrue(mysqlCompose.contains("MYSQL_USER: \"${MYSQL_USERNAME:?"));
         Assert.assertTrue(mysqlCompose.contains("MYSQL_PASSWORD: \"${MYSQL_PASSWORD:?"));

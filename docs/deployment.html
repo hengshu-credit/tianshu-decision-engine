@@ -624,12 +624,16 @@ docker compose --env-file .env -f docker/docker-compose.yml ps
 <pre><code class="language-powershell">docker compose --env-file .env -f docker/docker-compose.full.yml up -d
 docker compose --env-file .env -f docker/docker-compose.full.yml ps
 </code></pre>
-<p>完整模式启动 MySQL 和 Redis 后直接启动 server；server 默认自动执行 <code>schema.sql</code>。需要演示数据时，在服务端就绪后手工执行 <code>docker/rule-engine-mysql/data-tianshu-example.sql</code>。完整模式与第 0 步的独立 MySQL/Redis 不要同时占用相同端口和容器名。</p>
-<p>所有 Compose 文件都设置了固定容器资源上限。完整模式中 MySQL/Redis/server/HTTP/SDK/web 的限额合计为 9.75G 内存、1.90C CPU；外部数据库模式合计为 6.25G 内存、1.15C CPU。<code>docker-compose.mysql.yml</code> 和 <code>docker-compose.redis.yml</code> 使用相同的数据库限额，因此按第 0 步拆分启动时总量仍不超过 9.75G/1.90C。</p>
+<p>完整模式启动 MySQL 和 Redis 后直接启动 server；server 默认自动执行 <code>schema.sql</code>。需要演示数据时默认不导入，增加 <code>--profile example-data</code> 会等待 schema 完成后只执行插入。完整模式与第 0 步的独立 MySQL/Redis 不要同时占用相同端口和容器名。</p>
+<p>所有 Compose 文件都设置了固定容器资源上限。完整模式基础服务中 MySQL/Redis/server/HTTP/SDK/web 的限额合计为 9.75G 内存、1.90C CPU；启用 <code>example-data</code> profile 时额外增加 256M/0.05C，仍不超过 10G/1.95C。外部数据库模式合计为 6.25G/1.15C；<code>docker-compose.mysql.yml</code> 启用 profile 后为 3.25G/0.65C。</p>
 <h3>3.2 构建制品</h3>
 <pre><code class="language-powershell">node scripts/package-runtime.mjs
 </code></pre>
 <p>脚本会构建后端和前端，并清理后重新生成 <code>docker/tianshu-decision-engine-runtime</code>。复制到服务器时至少带上 <code>docker/docker-compose*.yml</code>、该运行时目录、<code>docker/rule-engine-mysql/data-tianshu-example.sql</code> 和填写完成的 <code>.env</code>；server 会从 JAR 内读取 <code>schema.sql</code>，不再依赖源码目录。</p>
+<pre><code class="language-powershell">docker compose --profile example-data --env-file .env -f docker/docker-compose.full.yml up -d
+</code></pre>
+<p>示例数据脚本在最前面设置 <code>utf8mb4</code> 编码，只使用 <code>INSERT IGNORE</code>，不会删除数据、更新已有记录或重建表。</p>
+<p>如果只启动独立 MySQL Compose，则在 server 已完成 schema 初始化后使用同一 profile 命令，并将文件替换为 <code>docker/docker-compose.mysql.yml</code>。</p>
 <h3>3.3 启动与更新</h3>
 <pre><code class="language-powershell">Copy-Item .env.example .env
 # 编辑 .env，替换全部 replace-with-* 占位值和数据库密码

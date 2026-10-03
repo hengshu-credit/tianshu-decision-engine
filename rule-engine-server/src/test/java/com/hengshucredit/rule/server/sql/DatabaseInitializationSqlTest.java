@@ -300,7 +300,14 @@ public class DatabaseInitializationSqlTest {
                         Assert.assertTrue(services.containsKey(service));
                         Assert.assertEquals("service_healthy", ((Map<?, ?>) dependencies.get(service)).get("condition"));
                     }
+                    Assert.assertTrue(compose.contains("example-data-import:"));
+                    Assert.assertTrue(compose.contains("profiles: [example-data]"));
+                    Assert.assertTrue(compose.contains("/init/data-tianshu-example.sql"));
                 }
+            } else {
+                Assert.assertTrue(compose.contains("example-data-import:"));
+                Assert.assertTrue(compose.contains("profiles: [example-data]"));
+                Assert.assertTrue(compose.contains("/init/data-tianshu-example.sql"));
             }
         }
     }

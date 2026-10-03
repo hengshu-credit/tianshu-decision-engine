@@ -7,4 +7,4 @@ mysql -h"$MYSQL_HOST" -P"$MYSQL_PORT" -u"$MYSQL_USERNAME" -p "$MYSQL_DATABASE" <
 mysql -h"$MYSQL_HOST" -P"$MYSQL_PORT" -u"$MYSQL_USERNAME" -p "$MYSQL_DATABASE" < docker/rule-engine-mysql/data-tianshu-example.sql
 ```
 
-`data.sql`、`data-example.sql` 和 `data-third-party-api.sql` 是可选快照、示例或模板数据。`data-tianshu-example.sql` 已移到 `docker/rule-engine-mysql/`，需在服务端启动完成并确认目标数据库后单独导入；Docker Compose 不再自动导入任何业务数据。
+`data.sql`、`data-example.sql` 和 `data-third-party-api.sql` 是可选快照、示例或模板数据。`data-tianshu-example.sql` 已移到 `docker/rule-engine-mysql/`，需在服务端启动完成并确认目标数据库后单独导入；Docker Compose 默认不导入，启用 `example-data` profile 后才会执行只插入的导入。
