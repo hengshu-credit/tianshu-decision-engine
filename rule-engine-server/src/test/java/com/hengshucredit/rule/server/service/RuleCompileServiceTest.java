@@ -87,7 +87,17 @@ public class RuleCompileServiceTest {
         assertFalse(expressionService(false).compileExpression(7L, reference(9L, "VARIABLE", "age")).isSuccess());
     }
 
+    @Test public void nativeFunctionExpressionRetainsSelectedIdWithoutRewritingDisplayCode() {
+        var result = expressionService(true, true).compileExpression(7L, function(31L, "oldProjectRisk", reference(9L, "VARIABLE", "age")));
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals("invokeFunctionById(\"31\", current_age)", result.getCompiledScript());
+    }
+
     private RuleCompileService expressionService(final boolean definitionExists) {
+        return expressionService(definitionExists, false);
+    }
+
+    private RuleCompileService expressionService(final boolean definitionExists, boolean nativeFunctions) {
         RuleCompileService service = new RuleCompileService();
         ReflectionTestUtils.setField(service, "definitionService", new RuleDefinitionService() {
             @Override
@@ -127,6 +137,9 @@ public class RuleCompileServiceTest {
             @Override
             public Map<Long, Integer> buildFunctionArityMap(Long projectId) {
                 return Collections.singletonMap(31L, 1);
+            }
+            @Override public java.util.Set<Long> buildNativeFunctionIds(Long projectId) {
+                return nativeFunctions ? java.util.Set.of(31L) : java.util.Set.of();
             }
         });
         return service;

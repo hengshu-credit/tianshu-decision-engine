@@ -43,3 +43,11 @@ export function changeConsoleRoleStatus(id, status) {
 export function listConsolePermissions() {
   return request.get('/rule/console/permissions')
 }
+
+export function listConsoleOperationLogs(params) {
+  return request.get('/rule/console/operation-logs', { params })
+}
+
+export function getConsoleOperationLog(id) {
+  return request.get(`/rule/console/operation-logs/${id}`)
+}

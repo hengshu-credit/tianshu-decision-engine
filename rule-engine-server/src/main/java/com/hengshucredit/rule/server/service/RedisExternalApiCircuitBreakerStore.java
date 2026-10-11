@@ -58,6 +58,11 @@ public class RedisExternalApiCircuitBreakerStore implements ExternalApiCircuitBr
         return "rule:external-api:circuit:{" + id + "}:" + kind;
     }
 
+    @Override public void invalidateTrial(Long id) {
+        if (id == null || id >= 0) throw new IllegalArgumentException("只允许清理试运行内部身份");
+        redisTemplate.delete(Arrays.asList(key(id, "state"), key(id, "outcomes")));
+    }
+
     private static <T> DefaultRedisScript<T> script(String location, Class<T> resultType) {
         DefaultRedisScript<T> script = new DefaultRedisScript<>();
         script.setLocation(new ClassPathResource(location));

@@ -1,6 +1,8 @@
 import { buildPickerOptions, buildReferenceCatalog } from '@/utils/referenceCatalog'
 
 export const API_MODULE_FIELDS = [
+  ['$', '完整调用结果', 'OBJECT'],
+  ['request', '请求', 'OBJECT'], ['response', '响应', 'OBJECT'], ['status', '调用状态', 'OBJECT'],
   ['request.url', '请求 · URL', 'STRING'], ['request.method', '请求 · 方法', 'STRING'],
   ['request.headers', '请求 · Header', 'OBJECT'], ['request.query', '请求 · Query', 'OBJECT'],
   ['request.form', '请求 · 表单', 'OBJECT'], ['request.json', '请求 · JSON', 'OBJECT'],
@@ -8,8 +10,11 @@ export const API_MODULE_FIELDS = [
   ['response.headers', '响应 · Header', 'OBJECT'], ['response.body', '响应 · 原始响应体', 'OBJECT'],
   ['body', '响应 · 组装结果', 'OBJECT'], ['authentication', '鉴权 · 完整调用记录', 'LIST'],
   ['authentication.0.request', '鉴权 · 请求', 'OBJECT'], ['authentication.0.response', '鉴权 · 返回', 'OBJECT'],
+  ['authentication.0.request.headers', '鉴权 · 请求头', 'MAP'], ['authentication.0.request.body', '鉴权 · 请求体', 'OBJECT'],
+  ['authentication.0.response.httpStatus', '鉴权 · HTTP 状态码', 'INTEGER'], ['authentication.0.response.headers', '鉴权 · 响应头', 'MAP'], ['authentication.0.response.body', '鉴权 · 响应体', 'OBJECT'],
   ['status.outcome', '状态 · 调用结果', 'STRING'], ['status.httpStatus', '状态 · HTTP 状态', 'INTEGER'],
   ['status.billed', '状态 · 是否计费', 'BOOLEAN'], ['status.retryCount', '状态 · 重试次数', 'INTEGER'],
+  ['status.requestIssued', '状态 · 是否已发出请求', 'BOOLEAN'], ['status.attemptCount', '状态 · 请求次数', 'INTEGER'],
   ['status.circuitOpen', '状态 · 是否熔断', 'BOOLEAN'], ['status.exception', '状态 · 是否异常', 'BOOLEAN'],
   ['callId', '追踪 · 调用 ID', 'STRING'], ['costTimeMs', '追踪 · 耗时毫秒', 'NUMBER'],
 ].map(([value, label, type]) => ({ value, label, type }))

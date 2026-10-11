@@ -104,6 +104,7 @@
                   size="small"
                   type="primary"
                   @click="viewFullAuth(row)"
+                  v-permission="'project:edit'"
                   >完整值</el-button
                 >
                 <el-button
@@ -212,6 +213,7 @@
                 size="small"
                 type="primary"
                 @click="viewFullToken(row)"
+                v-permission="'project:edit'"
                 >完整值</el-button
               >
               <el-button

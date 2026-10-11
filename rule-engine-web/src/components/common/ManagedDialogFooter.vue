@@ -22,7 +22,7 @@ export default {
     loading: { type: Boolean, default: false },
     disabled: { type: Boolean, default: false },
     cancelText: { type: String, default: '取消' },
-    submitText: { type: String, default: '生成审批草稿' },
+    submitText: { type: String, default: '保存草稿' },
   },
   emits: ['cancel', 'submit'],
 }

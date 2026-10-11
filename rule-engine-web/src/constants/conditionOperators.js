@@ -1,3 +1,5 @@
+import { ConditionRangeError, isRangeOperator, requireRangeBounds } from '@/utils/conditionRange'
+
 const COMMON_OPERATORS = [
   { label: '等于', value: '==' },
   { label: '不等于', value: '!=' },
@@ -236,6 +238,8 @@ export function isSourceStatusOperator(operator) {
 export function compileSourceStatusExpression(operand, operator) {
   const option = SOURCE_STATUS_OPERATORS.find(item => item.value === operator)
   if (!option || !operand || operand.refId == null || !operand.refType) return 'true'
+  if (operand.versionMode === 'FIXED') return 'resourceVersionStatus(' + escapeString(operand.refType) + ', ' + escapeString(operand.refId) + ', ' +
+    escapeString((operand.versionSource ? operand.versionSource + ':' : '') + String(operand.versionId)) + ', ' + escapeString(option.dimension) + ', ' + escapeString(option.expected) + ')'
   return 'sourceStatus(' + escapeString(operand.refType) + ', ' + escapeString(operand.refId) + ', ' +
     escapeString(option.dimension) + ', ' + escapeString(option.expected) + ')'
 }
@@ -252,6 +256,10 @@ export function conditionOperatorRequiresValue(operator, varType, sourceContext)
 export function conditionOperatorAllowsVarValue(operator, varType, sourceContext) {
   const option = findConditionOperator(operator, varType, sourceContext)
   return !!option && !option.noValue && !option.noVarValue
+}
+
+export function conditionLiteralOperandKinds(operator) {
+  return operator === 'in' || operator === 'not_in' ? ['LITERAL', 'ARRAY'] : ['LITERAL']
 }
 
 export function normalizeConditionOperator(operator, varType, sourceContext) {
@@ -304,9 +312,8 @@ function formatList(varType, value) {
   return '[' + values.map(item => type === 'NUMBER' ? item : formatSmartConstant(item)).join(', ') + ']'
 }
 
-function formatBetweenParts(varType, value) {
-  const values = splitValues(value)
-  if (values.length < 2) return null
+function formatBetweenParts(varType, value, valueKind) {
+  const values = requireRangeBounds(value, varType, valueKind)
   return [
     formatConditionConstant(varType, values[0]),
     formatConditionConstant(varType, values[1])
@@ -314,6 +321,12 @@ function formatBetweenParts(varType, value) {
 }
 
 export function compileConditionExpression(left, varType, operator, value, valueKind) {
+  if (isRangeOperator(operator)) {
+    const parts = formatBetweenParts(varType, value, valueKind)
+    if (!left) throw new ConditionRangeError('区间条件必须选择比较字段')
+    const expr = '(' + left + ' >= ' + parts[0] + ' && ' + left + ' <= ' + parts[1] + ')'
+    return operator === 'between' ? expr : '!' + expr
+  }
   if (!left) return 'true'
   const op = operator || '=='
   if (op === '*') return 'true'
@@ -342,12 +355,6 @@ export function compileConditionExpression(left, varType, operator, value, value
   if (op === 'not_in_list') return '!isInLists(' + left + ', ' + rhs + ')'
   if (op === 'in') return left + ' in ' + formatList(varType, value)
   if (op === 'not_in') return '!' + '(' + left + ' in ' + formatList(varType, value) + ')'
-  if (op === 'between' || op === 'not_between') {
-    const parts = formatBetweenParts(varType, value)
-    if (!parts) return 'true'
-    const expr = '(' + left + ' >= ' + parts[0] + ' && ' + left + ' <= ' + parts[1] + ')'
-    return op === 'between' ? expr : '!' + expr
-  }
   if (op === 'contains_any' || op === 'contains_all') {
     if (!splitValues(value).length) return 'true'
     return (op === 'contains_any' ? 'containsAnyValue(' : 'containsAllValues(') + left + ', ' + formatList(null, value) + ')'

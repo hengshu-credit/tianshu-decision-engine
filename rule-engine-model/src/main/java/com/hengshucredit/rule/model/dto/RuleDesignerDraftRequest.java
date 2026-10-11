@@ -7,6 +7,7 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(callSuper = true)
 public class RuleDesignerDraftRequest extends RuleDesignerCompileRequest {
     private String saveMode;
+    private String restoreMode;
     private Long revisionId;
     private Integer lockVersion;
     private String requestId;

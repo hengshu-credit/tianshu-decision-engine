@@ -1,5 +1,6 @@
 import request from './request'
 import { createResourceDraft } from './governance'
+import { hasPermission } from '@/security/permissionState'
 
 /** 健康检查，验证变量管理接口可用性 */
 export function checkVariableHealth() {
@@ -11,6 +12,7 @@ export function listVariables(params) {
 }
 
 export function listVariablesByProject(projectId) {
+  if (!hasPermission('field:view')) return Promise.resolve({ data: [] })
   return request({ url: `/rule/variable/project/${projectId}`, method: 'get' })
 }
 

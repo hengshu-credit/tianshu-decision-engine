@@ -66,6 +66,15 @@ describe('generateScript', () => {
     }])).toContain('if (true) {')
   })
 
+  test('三元动作未选目标时也不能跳过显式残缺区间，普通空动作仍可暂存', () => {
+    expect(() => generateScript([{
+      type: 'ternary', targetOperand: null, leftOperand: ref('age', 'NUMBER'),
+      operator: 'between', rightOperand: literal('18,', 'NUMBER'),
+      trueOperand: literal('1', 'NUMBER'), falseOperand: literal('0', 'NUMBER'),
+    }])).toThrow(/区间/)
+    expect(generateScript([{ type: 'ternary', targetOperand: null, leftOperand: null, operator: '==' }])).toBe('')
+  })
+
   test('动作条件的名单配置生成可执行服务端名单函数', () => {
     const script = generateScript([{
       type: 'if-block',
@@ -354,8 +363,9 @@ describe('newBlock', () => {
 })
 
 describe('BLOCK_TYPES', () => {
-  test('保留全部九种动作类型和展示元信息', () => {
-    expect(BLOCK_TYPES).toHaveLength(9)
+  test('保留原有九种动作并新增外数与名单动作', () => {
+    expect(BLOCK_TYPES.map(item => item.type)).toEqual(expect.arrayContaining(['assign', 'if-block', 'switch-block', 'func-call', 'foreach', 'ternary', 'in-check', 'template-str', 'rule-call', 'api-call', 'list-write']))
+    expect(BLOCK_TYPES).toHaveLength(11)
     BLOCK_TYPES.forEach(item => {
       expect(item.label).toBeTruthy()
       expect(item.color).toMatch(/^#/)

@@ -24,6 +24,9 @@ $summary = [ordered]@{
 }
 Push-Location $repoRoot
 try {
+    if (-not (Test-Path 'scripts/quality-gates/node_modules/jsonc-parser/package.json')) {
+        throw '请先执行 npm ci --prefix scripts/quality-gates --ignore-scripts 安装锁定的门禁依赖'
+    }
     node scripts/quality-gates/wait-for-readiness.mjs --base-url $BaseUrl --timeout-seconds 180 --interval-ms 1000
     if ($LASTEXITCODE -ne 0) { throw 'staging readiness gate failed' }
     $summary['readiness'] = 'PASS'

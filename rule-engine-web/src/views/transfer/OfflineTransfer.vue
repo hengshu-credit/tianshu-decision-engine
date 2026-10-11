@@ -40,6 +40,7 @@
             />
             <p v-if="root.loadError" class="root-error" role="alert">{{ root.loadError }}</p>
           </div>
+          <resource-version-select v-if="root.resourceId" :resource-type="root.resourceType" :resource-id="root.resourceId" v-model="root.versionSelection" :disabled="exporting" />
           <el-button v-if="roots.length > 1" link type="danger" :disabled="exporting" :aria-label="`移除第 ${index + 1} 项资源`" @click="removeRoot(index)">移除</el-button>
         </div>
         <el-alert v-if="exportError" :title="exportError" type="error" :closable="false" />
@@ -48,7 +49,7 @@
         </el-checkbox>
         <div class="card-actions">
           <el-button size="small" :disabled="exporting" @click="addRoot">添加根资源</el-button>
-          <el-button type="primary" :loading="exporting" @click="exportPackage">生成并下载配置包</el-button>
+          <el-button v-permission="'transfer:export'" type="primary" :loading="exporting" @click="exportPackage">生成并下载配置包</el-button>
         </div>
         <section v-if="exportLineageRoots.length" class="inline-lineage-panel">
           <div class="inline-lineage-toolbar">
@@ -112,7 +113,7 @@
             <span v-show="!(options.targetScope === 'PROJECT' && options.createProject)" class="project-create-fields__placeholder">开启“导入时新建项目”后，在此填写目标项目编码和名称。</span>
           </div>
           <div class="import-options__policies">
-            <el-checkbox v-model="options.publishRules">导入并发布规则（重建固定版本）</el-checkbox>
+            <el-checkbox v-model="options.publishRules">导入并发布规则</el-checkbox>
             <el-select v-model="options.variablePolicy" aria-label="变量同码策略" placeholder="变量同码策略">
               <el-option label="同编码同类型复用" value="REUSE" />
               <el-option label="新建并追加后缀" value="SUFFIX" />
@@ -128,8 +129,8 @@
         <p class="import-hint">项目级导入请选择目标项目，或勾选“导入时新建项目”；全局导入会把项目级资源转换为全局范围。修改文件或选项后需重新预览冲突。</p>
         <el-alert v-if="previewError" :title="previewError" type="error" :closable="false" />
         <div class="card-actions">
-          <el-button :disabled="!importFile || applying" :loading="previewing" @click="previewPackage">预览冲突</el-button>
-          <el-button type="primary" :disabled="!hasCurrentPreview || applying" :loading="applying" @click="applyPackage">确认导入</el-button>
+          <el-button v-permission="'transfer:import'" :disabled="!importFile || applying" :loading="previewing" @click="previewPackage">预览冲突</el-button>
+          <el-button v-permission="'transfer:import'" type="primary" :disabled="!hasCurrentPreview || applying" :loading="applying" @click="applyPackage">确认导入</el-button>
         </div>
       </article>
     </section>
@@ -155,9 +156,9 @@
           <strong>选择要导入的内容</strong>
           <span>取消勾选的资源会转为外部关联，导入时需要在下方选择目标内容。</span>
         </div>
-        <div class="selected-resource-list__items">
+        <el-checkbox-group v-model="selectedResourceKeysDraft" class="selected-resource-list__items">
           <div v-for="item in preview.resources" :key="item.key" class="resource-review-row">
-            <el-checkbox v-model="selectedResourceKeysDraft" :value="item.key">
+            <el-checkbox :value="item.key">
               {{ item.resourceCode || item.key }} · {{ item.resourceType }}
             </el-checkbox>
             <el-tag v-if="item.recommendedAction === 'REUSE'" size="small" type="success">系统建议复用</el-tag>
@@ -172,7 +173,7 @@
               <el-option v-for="action in resourceActionOptions(item)" :key="action.value" :label="action.label" :value="action.value" />
             </el-select>
           </div>
-        </div>
+        </el-checkbox-group>
       </div>
       <div v-if="previewLineageRoots.length" class="offline-lineage-panel">
         <div class="offline-lineage-toolbar">
@@ -194,6 +195,11 @@
         @update:field-bindings="fieldBindingsDraft = $event"
         @search="searchAssociationCandidates"
       />
+      <section v-if="preview.versionAssociations?.length" class="version-associations">
+        <h3>版本依赖映射</h3>
+        <p>逐项选择目标环境已有的已发布版本及字段。版本号和数字 ID 相同不代表同一内容；选择后需重新预检。导入不会覆盖所选目标版本。</p>
+        <transfer-version-binding-row v-for="source in preview.versionAssociations" :key="source.referenceKey" :source="source" :model-value="versionBindingsDraft[source.referenceKey] || {}" :disabled="applying || previewing" @update:model-value="versionBindingsDraft[source.referenceKey] = $event" />
+      </section>
       <el-table :data="preview.conflicts || []" size="small" class="transfer-table">
         <el-table-column prop="resourceType" label="资源类型" width="150" />
         <el-table-column prop="resourceCode" label="编码" min-width="180" />
@@ -258,6 +264,8 @@
 </template>
 
 <script>
+import TransferVersionBindingRow from '@/components/transfer/TransferVersionBindingRow.vue'
+import ResourceVersionSelect from '@/components/common/ResourceVersionSelect.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { exportResourceTransfer, importResourceTransfer, previewResourceTransfer, listTransferResources, listTransferResourceFields, listTransferLogs, getTransferLog, getTransferLogLineage } from '@/api/transfer'
 import { getLineageGraph } from '@/api/lineage'
@@ -265,6 +273,8 @@ import { listProjects } from '@/api/project'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import LineageGraph from '@/views/lineage/LineageGraph.vue'
 import TransferAssociationPanel from '@/components/transfer/TransferAssociationPanel.vue'
+import { hasPermission } from '@/security/permissionState'
+import { resourceViewPermission } from '@/security/pickerAccess'
 
 const RESOURCE_TYPES = [
   { value: 'PROJECT', label: '项目' },
@@ -282,14 +292,13 @@ const RESOURCE_TYPES = [
 
 const LINEAGE_TYPES = { DATABASE: 'DB', EXTERNAL_DATASOURCE: 'DATASOURCE', EXTERNAL_API: 'API', LIST_LIBRARY: 'LIST' }
 
-const newRoot = (key, fetch) => ({ key, resourceType: 'RULE', resourceId: '', loadError: '', requestId: 0, fetchOptions: params => fetch(key, params) })
+const newRoot = (key, fetch) => ({ key, resourceType: 'RULE', resourceId: '', versionSelection: { versionMode: 'LATEST', versionId: null }, loadError: '', requestId: 0, fetchOptions: params => fetch(key, params) })
 
 export default {
   name: 'OfflineTransfer',
-  components: { RemoteFilterSelect, LineageGraph, TransferAssociationPanel },
+  components: { RemoteFilterSelect, LineageGraph, TransferAssociationPanel, TransferVersionBindingRow, ResourceVersionSelect },
   data() {
     return {
-      resourceTypes: RESOURCE_TYPES,
       roots: [newRoot(1, this.fetchRootOptionsByKey)],
       nextRootKey: 2,
       exporting: false,
@@ -326,13 +335,15 @@ export default {
       resourceActionsDraft: {},
       resourceBindingsDraft: {},
       fieldBindingsDraft: {},
+      versionBindingsDraft: {},
     }
   },
   computed: {
+    resourceTypes() { return RESOURCE_TYPES.filter(item => hasPermission(resourceViewPermission(item.value))) },
     optionsSignature() { return JSON.stringify(this.normalizedOptions()) },
     hasCurrentPreview() {
       return Boolean(this.preview && !this.previewing && this.importFile === this.previewFile
-        && this.optionsSignature === this.previewOptionsSignature)
+        && this.optionsSignature === this.previewOptionsSignature && (this.preview.versionAssociations || []).every(row => row.valid))
     },
     previewLineageRoots() {
       const resources = this.preview?.resources || []
@@ -414,12 +425,14 @@ export default {
     addRoot() { this.roots.push(newRoot(this.nextRootKey++, this.fetchRootOptionsByKey)) },
     removeRoot(index) { this.roots.splice(index, 1) },
     onRootTypeChange(root) {
+      root.versionSelection = { versionMode: 'LATEST', versionId: null }
       root.resourceId = ''
       root.loadError = ''
       root.requestId += 1
       this.exportError = ''
     },
     onRootSelectionChange(root) {
+      root.versionSelection = { versionMode: 'LATEST', versionId: null }
       this.exportError = ''
       if (!root.resourceId) return
       if (this.roots.some(other => other !== root && other.resourceType === root.resourceType
@@ -488,6 +501,7 @@ export default {
       this.resourceActionsDraft = {}
       this.resourceBindingsDraft = {}
       this.fieldBindingsDraft = {}
+      this.versionBindingsDraft = {}
       this.invalidatePreview()
     },
     async fetchTargetProjects({ query, pageNum, pageSize }) {
@@ -507,8 +521,8 @@ export default {
     async exportPackage() {
       if (this.exporting) return
       this.exportError = ''
-      const roots = this.roots.map(item => ({ resourceType: item.resourceType, resourceId: Number(item.resourceId) }))
-      if (!roots.length || roots.some(item => !Number.isSafeInteger(item.resourceId) || item.resourceId <= 0)) {
+      const roots = this.roots.map(item => ({ resourceType: item.resourceType, resourceId: item.resourceId, ...(item.versionSelection?.versionMode === 'FIXED' ? item.versionSelection : {}) }))
+      if (!roots.length || roots.some(item => !/^[1-9]\d*$/.test(String(item.resourceId)) || BigInt(item.resourceId) > 9223372036854775807n)) {
         ElMessage.warning('请为每一行选择要导出的资源')
         return
       }
@@ -559,7 +573,8 @@ export default {
         this.selectedLineageRoot = response.data.roots?.[0]
           || response.data.resources?.[0]?.key || ''
         this.previewFile = file
-        this.previewOptionsSignature = signature
+        // 服务端回填的资源选择和处理策略属于本次预检结果；后续手工修改仍使签名失效。
+        this.previewOptionsSignature = this.optionsSignature
       } catch (error) {
         if (requestId === this.previewRequestId) this.previewError = error.message || '预检失败，请重新预览冲突'
       } finally {
@@ -582,7 +597,7 @@ export default {
       const requestId = this.previewRequestId
       const projectHint = options.targetScope === 'GLOBAL' ? '全局范围'
         : options.createProject ? `新项目「${options.projectName || options.projectCode}」` : '所选项目'
-      const ruleHint = options.publishRules ? '规则将按选项发布并重建固定版本' : '规则只创建目标环境草稿'
+      const ruleHint = options.publishRules ? '规则将按选项发布，固定依赖使用预检确认的目标版本' : '规则只创建目标环境草稿'
       this.applying = true
       try {
         await ElMessageBox.confirm(`确认导入到${projectHint}？普通资源将通过治理流程导入生效，${ruleHint}。`, '确认导入', { type: 'warning' })
@@ -608,7 +623,7 @@ export default {
         ...this.options,
         createProject,
         targetProjectId: this.options.targetScope === 'PROJECT' && !createProject && this.options.targetProjectId
-          ? Number(this.options.targetProjectId) : null,
+          ? this.options.targetProjectId : null,
         projectCode: createProject ? this.options.projectCode.trim() : null,
         projectName: createProject ? this.options.projectName.trim() : null,
         projectBindings: {},
@@ -617,6 +632,7 @@ export default {
         resourceActions: { ...this.resourceActionsDraft },
         resourceBindings: { ...this.resourceBindingsDraft },
         fieldBindings: { ...this.fieldBindingsDraft },
+        versionBindings: { ...this.versionBindingsDraft },
       }
     },
     async searchAssociationCandidates(association) {

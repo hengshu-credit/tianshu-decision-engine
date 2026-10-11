@@ -80,6 +80,14 @@ function mountPage(current = session(), options = {}) {
 afterEach(() => vi.clearAllMocks())
 
 describe('ExpressionEditorPage', () => {
+  test('管理配置检查后回填原配置，不请求仅支持规则上下文的编译接口', async () => {
+    const { wrapper, dispatch, push } = mountPage(session({ ruleId: null, returnRoute: { name: 'VariableList', params: {}, query: { projectId: '1' } } }))
+    await wrapper.vm.saveAndCompile()
+    expect(expressionApi.compileExpression).not.toHaveBeenCalled()
+    expect(dispatch).toHaveBeenCalledWith('expressionSessions/saveCompiled', { sessionId: 'session-1', operand: draft, compiledScript: '' })
+    expect(push).toHaveBeenCalledWith({ name: 'VariableList', params: {}, query: { projectId: '1' } })
+    wrapper.unmount()
+  })
   test('保存表达式入口受规则编辑权限控制', () => {
     const permissions = []
     const { wrapper } = mountPage(session(), {

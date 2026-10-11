@@ -33,7 +33,7 @@ const pages = [
     path: '/list',
     rowText: 'mobile_black',
     createButton: '新建名单库',
-    dialogTitle: '新建名单库审批',
+    dialogTitle: '新建名单库',
     listApi: '/api/rule/list/library'
   },
   {

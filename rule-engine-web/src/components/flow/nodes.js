@@ -503,7 +503,15 @@ function LineageNodeFactory(RectNode) {
         event.stopPropagation()
         model.graphModel.eventCenter.emit('lineage:dragstart', { data: model.getData(), e: event })
       }
-      return h('g', { onPointerDown: handleDragStart, onMouseDown: handleDragStart }, [
+      return h('g', {
+        style: {
+          '--lineage-node-color': color,
+          '--lineage-node-border': 'color-mix(in srgb, var(--lineage-node-color) 68%, var(--el-color-primary) 32%)',
+          '--lineage-node-fill': 'color-mix(in srgb, var(--lineage-node-color) 7%, var(--tianshu-bg-surface))',
+        },
+        onPointerDown: handleDragStart,
+        onMouseDown: handleDragStart,
+      }, [
         renderFlowRect(model),
         h('foreignObject', { x: left, y: top, width, height, style: { overflow: 'visible' }, onPointerDown: handleDragStart, onMouseDown: handleDragStart },
           h('div', {
@@ -525,11 +533,6 @@ function LineageNodeFactory(RectNode) {
               transform: `translate(${-left}px, ${-top}px)`,
             },
           }, [
-            h('div', {
-              class: 'node-color-strip',
-              style: { background: color },
-              'aria-hidden': 'true',
-            }),
             toggle,
             h('div', { class: 'node-head' }, [
               h('span', { class: 'node-type-wrap' }, [renderLineageIcon(properties.nodeType, color), h('span', { class: 'node-type' }, typeLabel)]),
@@ -552,9 +555,10 @@ function LineageNodeFactory(RectNode) {
     getNodeStyle() {
       return {
         ...super.getNodeStyle(),
-        stroke: this.properties.color || LINEAGE_NODE_COLORS[this.properties.nodeType] || '#64748B',
-        fill: 'var(--tianshu-bg-surface)',
-        ...(this.properties.current ? { strokeWidth: 3 } : {}),
+        // 外层 SVG 仅用于 LogicFlow 的节点命中区域，实际边框由 foreignObject 内的卡片绘制，避免双层描边。
+        stroke: 'transparent',
+        fill: 'transparent',
+        strokeWidth: 0,
         ...(this.properties.cycle ? { strokeDasharray: '6 4' } : {}),
       }
     }

@@ -4,5 +4,6 @@ import lombok.Data;
 
 @Data
 public class GovernanceSubmitRequest {
+    private String expectedSnapshotDigest;
     private String comment;
 }

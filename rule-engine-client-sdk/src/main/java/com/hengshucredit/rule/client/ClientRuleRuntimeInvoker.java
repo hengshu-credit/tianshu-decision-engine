@@ -93,6 +93,7 @@ class ClientRuleRuntimeInvoker {
         }
         currentFrame.set(frame);
         frame.contextScope = RuntimeContextBridge.install(frame.requestContext);
+        frame.functionScope = frame.requestContext.bindFunctions(rule == null ? null : rule.getPreparedFunctions());
         RuntimeContextBridge.bind(this::writeRuntimeValue);
         RuntimeContextBridge.bindTraceEventListener(event -> {
             RuleTraceFrame currentTrace = frame.traceStack.peekLast();
@@ -108,12 +109,13 @@ class ClientRuleRuntimeInvoker {
         if (frame == null || result == null) {
             return;
         }
+        // 执行身份与表达式追踪开关独立，日志补报复用同一次执行的 traceId。
+        result.setTraceId(frame.rootTrace.getTraceId());
         if (config.isTraceEnabled()) {
             frame.rootTrace.setExpressionTrace(result.getTraces() == null
                     ? Collections.<Object>emptyList() : result.getTraces());
             frame.rootTrace.setStatus(result.isSuccess() ? "SUCCESS" : "FAILED");
             frame.rootTrace.setDurationMs(result.getExecuteTimeMs());
-            result.setTraceId(frame.rootTrace.getTraceId());
             result.setTraces(Collections.<Object>singletonList(frame.rootTrace));
         } else {
             result.setTraces(null);
@@ -126,7 +128,10 @@ class ClientRuleRuntimeInvoker {
 
     void exit() {
         ExecutionFrame frame = currentFrame.get();
-        if (frame != null) frame.contextScope.close();
+        if (frame != null) {
+            frame.functionScope.close();
+            frame.contextScope.close();
+        }
         currentFrame.remove();
     }
 
@@ -242,7 +247,7 @@ class ClientRuleRuntimeInvoker {
         frame.stack.addLast(ruleCode);
         long childStart = System.currentTimeMillis();
         CachedRule caller = frame.currentRule;
-        try {
+        try (var ignored = frame.requestContext.bindFunctions(cached.getPreparedFunctions())) {
             frame.currentRule = cached;
             setRuleContext(cached, childTrace.getTraceId());
             RuleResult result = engine.execute(engine.prepare(cached.getCompiledScript()), frame.context, config.isTraceEnabled(), frame.requestContext);
@@ -364,6 +369,7 @@ class ClientRuleRuntimeInvoker {
         private final com.hengshucredit.rule.core.engine.RequestContext requestContext =
                 new com.hengshucredit.rule.core.engine.RequestContext();
         private RuntimeContextBridge.ContextScope contextScope;
+        private com.hengshucredit.rule.core.engine.RequestContext.FunctionScope functionScope;
         private CachedRule currentRule;
         private final Map<String, CachedRule> resolvedRules = new LinkedHashMap<>();
         private Object context;

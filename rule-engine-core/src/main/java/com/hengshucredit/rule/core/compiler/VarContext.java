@@ -4,6 +4,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
+import com.hengshucredit.rule.core.function.ManagedFunctionInvoker;
 
 /**
  * 变量上下文：通过 refType:id 提供稳定引用到 scriptName 的可靠映射。
@@ -28,6 +30,7 @@ public class VarContext {
 
     /** 函数 ID → 固定参数数量映射 */
     private final Map<Long, Integer> functionIdToArity;
+    private final Set<Long> nativeFunctionIds;
 
     /**
      * 兼容旧调用签名；裸 ID 映射不参与受管字段解析。
@@ -73,10 +76,21 @@ public class VarContext {
                       Map<Long, String> constantIdToExpression,
                       Map<Long, String> functionIdToCode,
                       Map<Long, Integer> functionIdToArity) {
+        this(varIdToScriptName, ignoredVarCodeToScriptName, refIdToScriptName, constantIdToExpression,
+                functionIdToCode, functionIdToArity, Collections.emptySet());
+    }
+
+    public VarContext(Map<Long, String> varIdToScriptName,
+                      Map<String, String> ignoredVarCodeToScriptName,
+                      Map<String, String> refIdToScriptName,
+                      Map<Long, String> constantIdToExpression,
+                      Map<Long, String> functionIdToCode,
+                      Map<Long, Integer> functionIdToArity, Set<Long> nativeFunctionIds) {
         this.refIdToScriptName = refIdToScriptName != null ? refIdToScriptName : Collections.emptyMap();
         this.constantIdToExpression = constantIdToExpression != null ? constantIdToExpression : Collections.emptyMap();
         this.functionIdToCode = functionIdToCode != null ? functionIdToCode : Collections.emptyMap();
         this.functionIdToArity = functionIdToArity != null ? functionIdToArity : Collections.emptyMap();
+        this.nativeFunctionIds = nativeFunctionIds == null ? Collections.emptySet() : Set.copyOf(nativeFunctionIds);
     }
 
     /**
@@ -114,6 +128,8 @@ public class VarContext {
         return code;
     }
 
+    public boolean usesNativeFunctionId(Long functionId) { return nativeFunctionIds.contains(functionId); }
+
     /** 是否为空（无任何映射） */
     public boolean isEmpty() {
         return refIdToScriptName.isEmpty() && constantIdToExpression.isEmpty()
@@ -128,6 +144,10 @@ public class VarContext {
         reserved.addAll(refIdToScriptName.values());
         reserved.addAll(constantIdToExpression.values());
         reserved.addAll(functionIdToCode.values());
+        reserved.add(ManagedFunctionInvoker.NAME);
+        reserved.add(com.hengshucredit.rule.core.function.ResourceVersionFunctions.VALUE);
+        reserved.add(com.hengshucredit.rule.core.function.ResourceVersionFunctions.FUNCTION);
+        reserved.add(com.hengshucredit.rule.core.function.ResourceVersionFunctions.STATUS);
         return reserved;
     }
 

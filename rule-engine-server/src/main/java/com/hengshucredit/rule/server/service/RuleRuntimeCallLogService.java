@@ -62,7 +62,8 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
         }
         if (hasText(traceId)) {
             wrapper.and(w -> w.eq(RuleRuntimeCallLog::getTraceId, traceId)
-                    .or().eq(RuleRuntimeCallLog::getRuleTraceId, traceId));
+                    .or().eq(RuleRuntimeCallLog::getRuleTraceId, traceId)
+                    .or().eq(RuleRuntimeCallLog::getRootTraceId, traceId));
         }
         if (hasText(callId)) {
             wrapper.eq(RuleRuntimeCallLog::getCallId, callId);
@@ -108,10 +109,21 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
 
     /** 按一次逻辑调用 ID 取报文；projectId 非空时同时做项目隔离。 */
     public Map<String, Object> payloadByCallId(String callId, Long projectId) {
+        return payloadByCallId(callId, projectId, false);
+    }
+
+    /** 控制台可以审阅独立试运行；业务令牌调用保留正式执行范围。 */
+    public Map<String, Object> managementPayloadByCallId(String callId, Long projectId) {
+        return payloadByCallId(callId, projectId, true);
+    }
+
+    private Map<String, Object> payloadByCallId(String callId, Long projectId, boolean includeTrial) {
         if (!hasText(callId)) return Collections.emptyMap();
-        List<RuleRuntimeCallLog> logs = payloadLogsByCallId(callId, projectId, "API_INVOKE");
+        List<RuleRuntimeCallLog> logs = payloadLogsByCallId(callId, projectId, includeTrial
+                ? new String[]{"API_INVOKE", "API_DRAFT_INVOKE"} : new String[]{"API_INVOKE"});
         if (logs.isEmpty()) {
-            logs = payloadLogsByCallId(callId, projectId, "API_ATTEMPT");
+            logs = payloadLogsByCallId(callId, projectId, includeTrial
+                    ? new String[]{"API_ATTEMPT", "API_DRAFT_ATTEMPT"} : new String[]{"API_ATTEMPT"});
         }
         return payloadWithAssignments(logs.isEmpty() ? null : logs.get(0));
     }
@@ -132,11 +144,11 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
         return result;
     }
 
-    private List<RuleRuntimeCallLog> payloadLogsByCallId(String callId, Long projectId, String actionType) {
+    private List<RuleRuntimeCallLog> payloadLogsByCallId(String callId, Long projectId, String... actionTypes) {
         LambdaQueryWrapper<RuleRuntimeCallLog> wrapper = new LambdaQueryWrapper<RuleRuntimeCallLog>()
                 .eq(RuleRuntimeCallLog::getCallId, callId)
                 .eq(RuleRuntimeCallLog::getModuleType, "DATASOURCE")
-                .eq(RuleRuntimeCallLog::getActionType, actionType)
+                .in(RuleRuntimeCallLog::getActionType, (Object[]) actionTypes)
                 .orderByDesc(RuleRuntimeCallLog::getCreateTime)
                 .orderByDesc(RuleRuntimeCallLog::getId)
                 .last("LIMIT 1");
@@ -175,14 +187,14 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
                         .or().eq(RuleRuntimeCallLog::getRuleTraceId, rootTraceId)
                         .or().eq(RuleRuntimeCallLog::getTraceId, rootTraceId))
                 .eq(RuleRuntimeCallLog::getModuleType, "DATASOURCE")
-                .eq(RuleRuntimeCallLog::getActionType, "API_INVOKE")
+                .in(RuleRuntimeCallLog::getActionType, "API_INVOKE", "API_DRAFT_INVOKE")
                 .orderByAsc(RuleRuntimeCallLog::getCreateTime)
                 .orderByAsc(RuleRuntimeCallLog::getId);
         if (projectId != null) {
             wrapper.eq(RuleRuntimeCallLog::getProjectId, projectId);
         }
         List<RuleRuntimeCallLog> summaries = list(wrapper);
-        List<String> callIds = summaries.stream().map(RuleRuntimeCallLog::getCallId)
+        List<String> callIds = summaries.stream().filter(log -> "API_INVOKE".equals(log.getActionType())).map(RuleRuntimeCallLog::getCallId)
                 .filter(this::hasText).distinct().toList();
         Map<String, List<RuleRuntimeCallLog>> assignmentsByCallId = new LinkedHashMap<>();
         if (!callIds.isEmpty()) {

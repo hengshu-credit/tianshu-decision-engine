@@ -277,7 +277,7 @@ export default {
   methods: {
     routeTab(route) {
       const tab = routeToTab(route)
-      if (!route || route.name !== 'ExpressionEditor') return tab
+      if (!route || !['ExpressionEditor', 'ConfigurationExpressionEditor'].includes(route.name)) return tab
       const getter = this.$store.getters['expressionSessions/sessionById']
       const session =
         typeof getter === 'function' ? getter(route.params.sessionId) : null
@@ -647,7 +647,7 @@ export default {
   }
 
   &.is-active {
-    color: var(--tianshu-sidebar-text-active);
+    color: var(--tianshu-sidebar-active-foreground);
     font-weight: 600;
     background: var(--tianshu-sidebar-bg-active);
     box-shadow: inset 0 0 0 1px rgba(var(--el-color-primary-rgb), 0.22);

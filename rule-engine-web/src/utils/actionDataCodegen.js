@@ -2,6 +2,8 @@ import { compileOperand, createLiteralOperand, createPathOperand, OPERAND_KINDS 
 import { compileConditionOperands } from '@/utils/conditionOperand'
 import { isRuleOutputMappingEnabled } from '@/utils/ruleCallConfig'
 import { ExpressionParseError, parseExpressionScript } from '@/utils/expressionParser'
+import { ConditionRangeError, isRangeOperator } from '@/utils/conditionRange'
+import { ConditionCollectionError, isTypedCollection } from '@/utils/conditionCollection'
 
 function quoteString(value) {
   return '"' + String(value == null ? '' : value).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
@@ -28,6 +30,22 @@ function generateBlock(block, indent) {
   if (!block || !block.type) return ''
 
   switch (block.type) {
+    case 'api-call': {
+      if (!block.apiId) return ''
+      const call = 'externalApiValue(' + quoteId(block.apiId) + ', "$"' + ')'
+      const target = compileOperand(block.targetOperand)
+      return target ? pad + target + ' = ' + call : pad + call
+    }
+    case 'list-write': {
+      if (!block.listIds?.length || !block.entries?.length || block.entries.some(entry => !entry.valueOperand)) return ''
+      const config = {}
+      for (const key of ['listIds', 'operation', 'expiryMode', 'duration', 'durationUnit', 'expireTime']) {
+        if (block[key] !== undefined) config[key] = block[key]
+      }
+      config.listIds.forEach(quoteId)
+      config.itemTypes = block.entries.map(entry => entry.itemType)
+      return pad + 'writeRuleList(' + quoteString(JSON.stringify(config)) + ', [' + block.entries.map(entry => compileOperand(entry.valueOperand)).join(', ') + '])'
+    }
     case 'assign':
       return generateAssignment(block, indent)
 
@@ -95,11 +113,13 @@ function generateBlock(block, indent) {
     }
 
     case 'ternary': {
+      const checkedCondition = isRangeOperator(block.operator) || isTypedCollection(block.operator, block.rightOperand)
+        ? compileCondition(block.leftOperand, block.operator, block.rightOperand) : null
       const target = compileOperand(block.targetOperand)
       const truthy = compileOperand(block.trueOperand)
       const falsy = compileOperand(block.falseOperand)
       if (!target || !compileOperand(block.leftOperand) || !truthy || !falsy) return ''
-      return pad + target + ' = ' + compileCondition(block.leftOperand, block.operator, block.rightOperand) + ' ? ' + truthy + ' : ' + falsy
+      return pad + target + ' = ' + (checkedCondition || compileCondition(block.leftOperand, block.operator, block.rightOperand)) + ' ? ' + truthy + ' : ' + falsy
     }
 
     case 'in-check': {
@@ -149,9 +169,23 @@ function generateBlock(block, indent) {
   }
 }
 
+function quoteId(value) {
+  if (!/^[1-9]\d*$/.test(String(value))) throw new Error('动作资源 ID 必须是正整数')
+  return String(value)
+}
+
 export function generateScript(actionData) {
   if (!Array.isArray(actionData) || !actionData.length) return ''
   return actionData.map(block => generateBlock(block, 0)).filter(Boolean).join('\n')
+}
+
+export function generateScriptPreview(actionData) {
+  try {
+    return generateScript(actionData)
+  } catch (error) {
+    if (!(error instanceof ConditionRangeError) && !(error instanceof ConditionCollectionError)) throw error
+    return '配置未完成：' + error.message
+  }
 }
 
 export function actionDataToBlocks(actionData, options = {}) {
@@ -306,6 +340,10 @@ function newAssignment() {
 
 export function newBlock(type) {
   switch (type) {
+    case 'api-call':
+      return { type: 'api-call', apiId: null, targetOperand: null }
+    case 'list-write':
+      return { type: 'list-write', listIds: [], operation: 'MERGE', expiryMode: 'DURATION', duration: 30, durationUnit: 'DAYS', entries: [{ itemType: 'MOBILE', valueOperand: null }] }
     case 'assign':
       return newAssignment()
     case 'if-block':
@@ -330,6 +368,8 @@ export function newBlock(type) {
 }
 
 export const BLOCK_TYPES = [
+  { type: 'api-call', label: '调用外数', icon: 'Connection', color: '#13c2c2' },
+  { type: 'list-write', label: '名单落库', icon: 'Tickets', color: '#52c41a' },
   { type: 'assign', label: '赋值', icon: 'Edit', color: '#2639E9' },
   { type: 'if-block', label: '条件分支', icon: 'Operation', color: '#fa8c16' },
   { type: 'switch-block', label: 'Switch 匹配', icon: 'Menu', color: '#722ed1' },

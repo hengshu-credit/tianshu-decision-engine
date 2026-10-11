@@ -50,6 +50,11 @@ const definition = {
 
 function createDetailApiData() {
   const routes = createOperationsApiData()
+  routes.set('/api/rule/variable/project/0', [])
+  routes.set('/api/rule/function/project/0/all', [])
+  routes.set('/api/rule/model/project/0/all', [])
+  routes.set('/api/rule/variable/source-options', { apiOptions: [], databaseOptions: [], listOptions: [] })
+  routes.set('/api/rule/datasource/api-config/trials', [])
 
   routes.set('/api/rule/project/1', project)
   routes.set('/api/rule/definition/project-list/1', {
@@ -90,6 +95,17 @@ function createDetailApiData() {
   })
   routes.set('/api/rule/field-validation/available', [])
   routes.set('/api/rule/definition/101', definition)
+  routes.set('/api/rule/definition/101/reference-catalog', ({ url }) => {
+    const sourceType = url.searchParams.get('sourceType')
+    const sourceId = url.searchParams.get('sourceId')
+    return {
+      status: 'AVAILABLE', referenceNamespace: sourceType === 'REVISION' && sourceId === '42' ? 'LOCAL' : 'ARTIFACT_SOURCE',
+      imported: false, selectedArtifactImported: false, localEditingAllowed: true,
+      executionIdentity: { definitionId: '101', sourceType, sourceId },
+      variables: routes.get('/api/rule/variable/project/1'), objectTree: [], models: [],
+      functions: [], rules: [], apis: [], lists: [], diagnostics: [],
+    }
+  })
   routes.set('/api/rule/definition/101/revisions', [
     {
       id: 41,

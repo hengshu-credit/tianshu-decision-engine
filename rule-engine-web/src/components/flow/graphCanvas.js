@@ -4,6 +4,7 @@ import '@logicflow/core/es/index.css'
 import '@/styles/logicflow-extension.css'
 import '@/styles/lineage-node.css'
 import { registerCustomNodes } from './nodes'
+import { createGroupMiniMap, registerThemedDynamicGroup } from './dynamicGroupNode'
 
 const PRIMARY = 'var(--el-color-primary)'
 
@@ -64,6 +65,11 @@ export function createGraphCanvas(options) {
     },
   }
   const { style: customStyle = {}, ...customOptions } = options || {}
+  if (customOptions.plugins?.some(plugin => plugin.pluginName === 'dynamicGroup')) {
+    customOptions.plugins = customOptions.plugins.map(plugin =>
+      plugin.pluginName === 'miniMap' ? createGroupMiniMap(plugin) : plugin
+    )
+  }
   const style = {
     ...defaults.style,
     ...customStyle,
@@ -74,5 +80,6 @@ export function createGraphCanvas(options) {
   }
   const lf = markRaw(new LogicFlowConstructor({ ...defaults, ...customOptions, style }))
   registerCustomNodes(lf)
+  registerThemedDynamicGroup(lf)
   return lf
 }

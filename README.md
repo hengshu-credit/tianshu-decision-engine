@@ -90,6 +90,8 @@
 
 ### 名单管理
 
+规则集、决策树及决策流支持“调用外数”和“名单落库”动作：完整外数结果可赋值给变量/对象，名单支持多库多字段、合并/覆盖有效期、仅新增与剔除；名单写入采用独立连接池、持久化恢复队列和幂等重试，详见 [规则外数与名单动作](docs/rule-side-effect-actions.md)。
+
 维护名单库和记录，支持导入、导出与匹配日志，可用于风险名单、准入名单及业务标签判断。
 
 ![名单管理](docs/project-usage/project-usage-09-list.png)
@@ -159,15 +161,25 @@ API 配置中的“报文留存”可分别设置 `request` / `response`：`sour
 
 数据库日志和计费写入、数据库恢复 outbox 同时不可用时，服务会把未完成事件 fsync 到本地 NDJSON 写前日志，数据库恢复后自动重放。生产应将 `RULE_EXECUTION_PERSISTENCE_JOURNAL_DIR` 指向独立持久化盘，限制目录访问权限并纳入备份、磁盘容量告警、断电和节点重启演练；日志目录不是跨节点共享复制，也不能替代备份。可通过 `RULE_EXECUTION_PERSISTENCE_JOURNAL_ENABLED`、`RULE_EXECUTION_PERSISTENCE_JOURNAL_MAX_ENTRY_BYTES` 和 `RULE_EXECUTION_PERSISTENCE_JOURNAL_REPLAY_DELAY_MS` 调整策略。
 
+新增journal记录含版本与载荷摘要；单条字节上限包含JSON封装和换行。旧NDJSON仍可恢复，但没有逐条摘要可供核对，运行指标中的`integritySampleStatus`只描述本次有界采样。目录由单进程独占，损坏或写入失败后停止继续确认新记录，保留故障位置与未恢复字节；不要将采样通过或进程重启验证等同于断电零丢失保证。
+
 ![规则执行日志](docs/project-usage/project-usage-06-execution-log.png)
 
 账单管理支持引擎执行、API 调用和数据库调用的计费配置、明细与聚合汇总。
+
+服务端引擎在接受执行事件时冻结计费项ID、价格、数量、金额和发生时间，恢复期间改价、停用或新增计费项不会重算该事件。读取价格失败与“当时无计费项”分开保存：前者保留待处理事件及原因，需要核对原始计费依据。旧无快照事件标注`LEGACY_REPLAY`，客户端日志接收及其他直接计费标注`CURRENT_CONFIG`，二者不能用来证明执行当时的价格。
+
+有计费项ID的引擎明细按根Trace与计费项ID去重，全局和项目的同编码计费项互不覆盖。同一根Trace若已有缺计费项ID的历史引擎账单，新事件会保留待核对状态，不按编码猜测归属或重复收费；旧节点并发写入的升级过程仍需单独演练。
 
 ![账单管理](docs/project-usage/project-usage-16-billing.png)
 
 ### 审批、账户与离线迁移
 
 审批管理覆盖规则、模型、函数和实验的变更申请、依赖预检、评审、批准、发布与历史版本恢复；账户管理按角色和单项权限计算最终权限，明确拒绝优先。离线迁移按资源血缘导出配置包，目标环境先预检资源冲突，再选择复用、追加后缀或覆盖策略导入；名单记录、执行日志和账单不会进入配置包。
+
+账户权限按模块和操作授权，不提供项目级数据隔离。名单、执行日志、账单、血缘和迁移有独立权限；审批草稿和提交还需目标资源的编辑、提交权限，迁移逐项检查包内资源及引用的查看权限，实际写入需对应编辑权限，自动生效还需审批权限。字段选择器只加载、展示当前账户有权查看的资源。新增权限仅自动补充给系统超级管理员角色，已有自定义角色需管理员按需授权。
+
+账户管理的「操作日志」标签页需要 `account:audit` 权限，可按账号、模块、操作、结果、对象、页面路径、摘要和时间查询。日志记录对象名称与 ID、版本、页面路径及简短操作摘要，区分规则详情页、各设计页和调试页，以及新增、修改、删除、发布、调试、编译、审批等操作。路径只保留对象、版本、修订和页面焦点等定位参数；发布审批申请与实际发布在摘要中分别说明。仍不采集请求正文、响应内容、完整资源快照或变更前后对比。缓存页面及页签访问由前端呈报，对象身份由路径中的 ID 关联，未提交的输入不记为已修改。日志从功能启用后开始积累，不补造历史操作；没有可确认版本的操作显示「—」。
 
 ![审批管理](docs/project-usage/project-usage-21-approval.png)
 
@@ -350,6 +362,8 @@ RuleResult result = ruleEngineClient.execute("face_threshold_table", requestMap)
 ```
 
 SDK 通过 HTTP 同步规则与函数，并订阅 Redis 变更通知。`project-code` 用于项目路由，需与服务端项目编码一致；`app-name` 标识调用应用。规则依赖 API、数据库或名单取数时，使用服务端执行配置。
+
+SDK 本地执行日志默认通过 HTTP 上报；需要 Kafka 时显式启用，并在服务端按主题绑定项目 ID。配置、失败补报、死信处理和旧版迁移见 [Kafka 执行日志上报](docs/kafka-execution-logs.md)。
 
 完整环境变量、Docker Compose 启动命令、ONNX CPU/CUDA 配置和 SDK 接入示例见 [部署与接入说明](https://hengshu-credit.github.io/tianshu-decision-engine/deployment.html)；生产 JAR/dist 制品位于 `docker/tianshu-decision-engine-runtime`。
 

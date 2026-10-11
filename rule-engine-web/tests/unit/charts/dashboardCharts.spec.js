@@ -126,6 +126,6 @@ describe('dashboard charts', () => {
     expect(option.series[0].data).toEqual([5])
     expect(option.tooltip.renderMode).toBe('richText')
     expect(option.tooltip.formatter([{ dataIndex: 0 }]))
-      .toBe('规则一\n进件数：20\n命中数：5\n命中率：25.00%')
+      .toBe('规则一\n执行次数：20\n命中次数：5\n命中率：25.00%')
   })
 })

@@ -1,16 +1,31 @@
 <template>
   <div class="uiue-list-page">
+    <div v-if="loading" data-testid="rule-detail-loading" role="status">正在加载规则详情与版本，请稍候…</div>
+    <el-alert v-else-if="loadError" data-testid="rule-detail-error" title="规则详情加载失败" type="error" :closable="false" show-icon>
+      <span>{{ loadError }}</span>
+      <el-button size="small" @click="load">重新加载</el-button>
+    </el-alert>
+    <div data-testid="rule-detail-content" :inert="loading || !!loadError" :aria-busy="loading">
     <!-- 页面头部 -->
     <div
       style="
         margin-bottom: 16px;
         display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
         align-items: center;
         justify-content: space-between;
       "
     >
       <h2 style="margin: 0">{{ rule.ruleName || '规则详情' }}</h2>
-      <div>
+      <div class="rule-detail-actions">
+        <el-button
+          size="small"
+          :icon="ElIconBack"
+          @click="$router.push('/rule')"
+          >返回</el-button
+        >
+        <el-button v-if="hasEditableWorkspace && !canEditDraft" size="small" @click="showWorkspaceFields">返回工作区草稿</el-button>
         <el-button
           v-permission="'rule:edit'"
           size="small"
@@ -27,15 +42,7 @@
           @click="openTestDialog"
           >规则测试</el-button
         >
-        <el-button size="small" :icon="ElIconTime" @click="openVersionDialog"
-          >版本历史</el-button
-        >
-        <el-button
-          size="small"
-          :icon="ElIconBack"
-          @click="$router.push('/rule')"
-          >返回</el-button
-        >
+        <resource-version-manager resource-type="RULE" :resource-id="$route.params.id" has-legacy @legacy="openVersionDialog" />
       </div>
     </div>
 
@@ -85,11 +92,20 @@
       </div>
     </el-card>
 
-    <el-card shadow="never" class="release-progress-card" data-testid="rule-release-progress">
+    <el-card v-if="selectedRevisionReadonly" shadow="never" class="release-progress-card" data-testid="rule-revision-status">
+      <div class="release-progress-header">
+        <div><strong>{{ lifecycleRevision.id ? lifecycleStateLabel(lifecycleRevision.state) + '修订' : '历史发布记录' }}</strong>
+          <span class="release-progress-summary">{{ lifecycleRevision.id ? revisionOptionLabel(lifecycleRevision) : '没有对应的修订制品记录' }}</span>
+        </div>
+        <el-button v-if="lifecycleRevision.id" size="small" @click="showRevisionFields">查看修订字段</el-button>
+      </div>
+      <p class="revision-scope-note">发布与审批状态来自版本记录。当前页面的管理测试不作为该修订的测试证据。</p>
+    </el-card>
+    <el-card v-else shadow="never" class="release-progress-card" data-testid="rule-release-progress">
       <div class="release-progress-header">
         <div>
           <span class="section-kicker">RELEASE READINESS</span>
-          <strong>发布进度</strong>
+          <strong>工作区发布准备</strong>
           <span class="release-progress-summary">{{ releaseProgressSummary }}</span>
         </div>
         <el-tag :type="releaseProgressCompleted === releaseChecklist.length ? 'success' : 'warning'" size="small">
@@ -169,7 +185,6 @@
         v-model="lifecycleRevisionId"
         data-testid="lifecycle-revision-selector"
         size="small"
-        @change="preflightReport = null"
       >
         <el-option
           v-for="item in revisions"
@@ -263,6 +278,16 @@
             ><el-icon><el-icon-arrow-down /></el-icon> 输入字段</span
           >
         </template>
+        <rule-revision-fields-panel
+          v-if="fieldViewMode === 'revision' && activeDetailTab === 'inputs' && !loading && !loadError"
+          v-model="lifecycleRevisionId" :definition-id="$route.params.id" :revisions="revisions" direction="input"
+          :workspace-available="hasEditableWorkspace" @workspace="showWorkspaceFields"
+        />
+        <template v-if="fieldViewMode === 'workspace'">
+        <div class="field-workspace-notice">
+          <span>{{ revisions.length ? '当前工作区字段配置；修订快照可单独只读查看。' : '当前管理字段；此历史规则没有可核对的修订快照。' }}</span>
+          <el-button v-if="revisions.length" size="small" @click="showRevisionFields">查看修订字段</el-button>
+        </div>
         <div
           style="
             margin-bottom: 10px;
@@ -447,6 +472,7 @@
         >
           暂无输入字段
         </div>
+        </template>
       </el-tab-pane>
 
       <!-- 输出字段 tab -->
@@ -456,6 +482,16 @@
             ><el-icon><el-icon-arrow-up /></el-icon> 输出字段</span
           >
         </template>
+        <rule-revision-fields-panel
+          v-if="fieldViewMode === 'revision' && activeDetailTab === 'outputs' && !loading && !loadError"
+          v-model="lifecycleRevisionId" :definition-id="$route.params.id" :revisions="revisions" direction="output"
+          :workspace-available="hasEditableWorkspace" @workspace="showWorkspaceFields"
+        />
+        <template v-if="fieldViewMode === 'workspace'">
+        <div class="field-workspace-notice">
+          <span>{{ revisions.length ? '当前工作区字段配置；修订快照可单独只读查看。' : '当前管理字段；此历史规则没有可核对的修订快照。' }}</span>
+          <el-button v-if="revisions.length" size="small" @click="showRevisionFields">查看修订字段</el-button>
+        </div>
         <div
           style="
             margin-bottom: 10px;
@@ -581,6 +617,7 @@
         >
           暂无输出字段
         </div>
+        </template>
       </el-tab-pane>
 
     <el-tab-pane name="execution">
@@ -588,6 +625,12 @@
         <span><el-icon><el-icon-setting /></el-icon> 执行配置</span>
       </template>
       <div class="open-api-panel execution-policy-panel">
+        <p class="field-workspace-notice" data-testid="workspace-config-scope">
+          当前工作区配置，不是所选修订的冻结配置。
+          <span v-if="canEditDraft">修改后仅保存到工作区草稿。</span>
+          <span v-else-if="hasEditableWorkspace">当前只读；请返回工作区草稿后编辑。</span>
+          <span v-else>当前没有可编辑草稿，仅供查看。</span>
+        </p>
         <div class="open-api-toolbar">
           <div>
             <div class="open-api-title">规则执行策略</div>
@@ -612,7 +655,7 @@
                 每个组件独立计算；空值组件会跳过。至少配置一个稳定的客户入参字段，不能只用固定常量。
               </div>
             </div>
-            <el-switch
+            <el-switch :disabled="!canEditDraft"
               v-model="openApiForm.idempotency.enabled"
               active-text="启用幂等"
               @change="onIdempotencyEnabledChange"
@@ -626,6 +669,7 @@
             >
               <span class="idempotency-component-index">{{ index + 1 }}</span>
               <operand-picker
+                v-if="canEditDraft"
                 :value="component.operand"
                 :vars="openIdempotencyOptions"
                 :functions="idempotencyFunctions"
@@ -634,17 +678,18 @@
                 expected-type="STRING"
                 placeholder="选择字段或配置组合表达式"
                 editor-title="配置幂等键组件"
-                @input="component.operand = $event || null"
+                @input="updateIdempotencyOperand(component, $event)"
               />
+              <code v-else class="idempotency-readonly-formula">{{ idempotencyFormulaPreview[index]?.formula || '未配置' }}</code>
               <el-button
                 link
                 type="danger"
-                :disabled="openApiForm.idempotency.components.length <= 1"
+                :disabled="!canEditDraft || openApiForm.idempotency.components.length <= 1"
                 @click="removeIdempotencyComponent(index)"
                 >删除</el-button
               >
             </div>
-            <el-button size="small" :icon="ElIconPlus" @click="addIdempotencyComponent">
+            <el-button :disabled="!canEditDraft" size="small" :icon="ElIconPlus" @click="addIdempotencyComponent">
               添加字段组件
             </el-button>
             <el-alert
@@ -662,7 +707,7 @@
           </div>
           <el-empty v-else description="幂等未启用" :image-size="50" />
           <el-form-item label="保留时间" label-width="110px">
-            <el-input-number v-model="openApiForm.idempotency.ttlSeconds" :min="60" :max="604800" :step="60" />
+            <el-input-number :key="canEditDraft ? 'editable' : 'readonly'" :disabled="!canEditDraft" v-model="openApiForm.idempotency.ttlSeconds" :min="60" :max="604800" :step="60" />
             <span class="open-api-help" style="margin-left: 8px">秒</span>
           </el-form-item>
         </div>
@@ -676,6 +721,12 @@
           >
         </template>
         <div class="open-api-panel">
+        <p class="field-workspace-notice" data-testid="workspace-config-scope">
+          当前工作区配置，不是所选修订的冻结配置。
+          <span v-if="canEditDraft">修改后仅保存到工作区草稿。</span>
+          <span v-else-if="hasEditableWorkspace">当前只读；请返回工作区草稿后编辑。</span>
+          <span v-else>当前没有可编辑草稿，仅供查看。</span>
+        </p>
           <div class="open-api-toolbar">
             <div>
               <div class="open-api-title">对外规则契约</div>
@@ -687,7 +738,7 @@
               </div>
             </div>
             <div class="open-api-actions">
-              <el-switch
+              <el-switch :disabled="!canEditDraft"
                 v-model="openApiForm.enabled"
                 active-text="启用开放接口"
               />
@@ -723,7 +774,7 @@
                   Header 名称。
                 </div>
               </div>
-              <el-button
+              <el-button :disabled="!canEditDraft"
                 size="small"
                 :icon="ElIconPlus"
                 @click="addOpenRequestMapping"
@@ -747,7 +798,7 @@
             >
               <el-table-column label="规则入参" min-width="280">
                 <template v-slot="{ row }">
-                  <el-select
+                  <el-select :disabled="!canEditDraft"
                     v-model="row.targetKey"
                     filterable
                     placeholder="选择稳定引用"
@@ -775,7 +826,7 @@
               </el-table-column>
               <el-table-column label="来源" width="110">
                 <template v-slot="{ row }"
-                  ><el-select v-model="row.sourceType" style="width: 100%"
+                  ><el-select :disabled="!canEditDraft" v-model="row.sourceType" style="width: 100%"
                     ><el-option label="请求体" value="BODY" /><el-option
                       label="请求头"
                       value="HEADER" /></el-select
@@ -783,7 +834,7 @@
               </el-table-column>
               <el-table-column label="来源路径 / Header" min-width="220">
                 <template v-slot="{ row }"
-                  ><el-input
+                  ><el-input :disabled="!canEditDraft"
                     v-model="row.sourcePath"
                     :placeholder="
                       row.sourceType === 'HEADER'
@@ -794,7 +845,7 @@
               </el-table-column>
               <el-table-column label="目标类型" width="120">
                 <template v-slot="{ row }"
-                  ><el-select v-model="row.targetType" style="width: 100%"
+                  ><el-select :disabled="!canEditDraft" v-model="row.targetType" style="width: 100%"
                     ><el-option
                       v-for="type in openTargetTypes"
                       :key="type"
@@ -804,15 +855,15 @@
               </el-table-column>
               <el-table-column label="必填" width="70" align="center"
                 ><template v-slot="{ row }"
-                  ><el-switch v-model="row.required" /></template
+                  ><el-switch :disabled="!canEditDraft" v-model="row.required" /></template
               ></el-table-column>
               <el-table-column label="默认值" min-width="120"
                 ><template v-slot="{ row }"
-                  ><el-input v-model="row.defaultValue" /></template
+                  ><el-input :disabled="!canEditDraft" v-model="row.defaultValue" /></template
               ></el-table-column>
               <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="70" align="center"
                 ><template v-slot="{ $index }"
-                  ><el-button
+                  ><el-button :disabled="!canEditDraft"
                     link
                     size="small"
                     type="danger"
@@ -835,10 +886,10 @@
                 </div>
               </div>
               <div>
-                <el-button size="small" @click="resetOpenResponseMappings"
+                <el-button :disabled="!canEditDraft" size="small" @click="resetOpenResponseMappings"
                   >恢复默认映射</el-button
                 >
-                <el-button
+                <el-button :disabled="!canEditDraft"
                   size="small"
                   :icon="ElIconPlus"
                   @click="addOpenResponseMapping"
@@ -863,7 +914,7 @@
             >
               <el-table-column label="引擎内部输出字段" min-width="300">
                 <template v-slot="{ row }">
-                  <el-select
+                  <el-select :disabled="!canEditDraft"
                     v-model="row.sourceKey"
                     filterable
                     placeholder="选择稳定引用"
@@ -892,14 +943,14 @@
               </el-table-column>
               <el-table-column label="对外 API 字段" min-width="220">
                 <template v-slot="{ row }"
-                  ><el-input
+                  ><el-input :disabled="!canEditDraft"
                     v-model="row.targetField"
                     placeholder="如 credit_score_v1"
                 /></template>
               </el-table-column>
               <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="70" align="center"
                 ><template v-slot="{ $index }"
-                  ><el-button
+                  ><el-button :disabled="!canEditDraft"
                     link
                     size="small"
                     type="danger"
@@ -928,20 +979,24 @@
                 <el-col :lg="12" :md="24">
                   <el-form-item label="外层响应 JSON"
                     ><monaco-editor
-                      v-model:value="openEnvelopeText"
+                      :value="openEnvelopeText"
+                      :read-only="!canEditDraft"
+                      @update:value="updateOpenApiEditor('openEnvelopeText', $event)"
                       language="json"
                       height="230px"
                   /></el-form-item>
                 </el-col>
                 <el-col :lg="12" :md="24">
                   <el-form-item label="data JSONPath"
-                    ><el-input
+                    ><el-input :disabled="!canEditDraft"
                       v-model="openApiForm.dataPath"
                       placeholder="$.data"
                   /></el-form-item>
                   <el-form-item label="响应 Header JSON"
                     ><monaco-editor
-                      v-model:value="openResponseHeadersText"
+                      :value="openResponseHeadersText"
+                      :read-only="!canEditDraft"
+                      @update:value="updateOpenApiEditor('openResponseHeadersText', $event)"
                       language="json"
                       height="168px"
                   /></el-form-item>
@@ -961,14 +1016,18 @@
                 <el-col :lg="12" :md="24"
                   ><el-form-item label="成功 data JSON"
                     ><monaco-editor
-                      v-model:value="openSuccessDataText"
+                      :value="openSuccessDataText"
+                      :read-only="!canEditDraft"
+                      @update:value="updateOpenApiEditor('openSuccessDataText', $event)"
                       language="json"
                       height="220px" /></el-form-item
                 ></el-col>
                 <el-col :lg="12" :md="24"
                   ><el-form-item label="异常 data JSON"
                     ><monaco-editor
-                      v-model:value="openErrorDataText"
+                      :value="openErrorDataText"
+                      :read-only="!canEditDraft"
+                      @update:value="updateOpenApiEditor('openErrorDataText', $event)"
                       language="json"
                       height="220px" /></el-form-item
                 ></el-col>
@@ -977,11 +1036,11 @@
           </div>
 
           <div class="open-api-section open-api-switches">
-            <el-switch
+            <el-switch :disabled="!canEditDraft"
               v-model="openApiForm.recordTrace"
               active-text="记录调用链"
             />
-            <el-switch
+            <el-switch :disabled="!canEditDraft"
               v-model="openApiForm.returnTrace"
               active-text="允许响应模板引用 trace"
             />
@@ -1026,7 +1085,7 @@
             ><el-icon><el-icon-document-checked /></el-icon> API 测试用例</span
           >
         </template>
-        <api-scenario-panel v-if="rule.id" :rule="rule" />
+        <api-scenario-panel v-if="rule.id" :rule="rule" :execution-source="selectedTestExecutionSource" :execution-source-name="lifecycleRevision.id ? revisionOptionLabel(lifecycleRevision) : ''" />
       </el-tab-pane>
     </el-tabs>
 
@@ -1071,8 +1130,12 @@
       width="900px"
       :close-on-click-modal="false"
     >
+      <el-alert v-if="testExecutionSource" :title="executionSourceLabel(testExecutionSource, testExecutionLabel || testSchemaIdentity)" type="info" :closable="false" show-icon style="margin-bottom: 12px" />
+      <el-alert v-if="testSourceError" :title="testSourceError" type="error" :closable="false" show-icon>
+        <el-button size="small" @click="openTestDialog">重新加载测试字段</el-button>
+      </el-alert>
       <div
-        v-if="!testReady"
+        v-else-if="!testReady"
         style="padding: 40px; text-align: center; color: var(--tianshu-text-tertiary)"
       >
         正在加载...
@@ -1219,6 +1282,7 @@
         </div>
 
         <div v-if="testResult" style="margin-top: 16px">
+          <el-alert v-if="testResultInputChanged" title="输入已修改，以下结果来自上次提交的参数，请重新测试当前输入。" type="warning" :closable="false" show-icon style="margin-bottom: 8px" />
           <el-divider content-position="left">执行结果</el-divider>
           <el-alert
             :title="testResult.success ? '执行成功' : '执行失败'"
@@ -1280,8 +1344,8 @@
         v-loading="versionLoading"
         max-height="240"
       >
-        <el-table-column prop="version" label="版本" width="80" align="center">
-          <template v-slot="{ row }">v{{ row.version }}</template>
+        <el-table-column prop="version" label="版本" width="140" align="center">
+          <template v-slot="{ row }">{{ versionDisplayLabel(row) }}</template>
         </el-table-column>
         <el-table-column prop="changeLog" label="变更说明" min-width="180">
           <template v-slot="{ row }">{{ row.changeLog || '-' }}</template>
@@ -1310,8 +1374,8 @@
               type="warning"
               :loading="forkingDesignerSource"
               :disabled="forkingDesignerSource"
-              @click="forkDesignerSource('VERSION', row.id)"
-              >基于此版本编辑</el-button
+              @click="restoreHistoricalVersion(row)"
+              >恢复并编辑</el-button
             >
             <el-button
               link
@@ -1334,7 +1398,7 @@
           <el-option
             v-for="item in versions"
             :key="'left-' + item.version"
-            :label="'v' + item.version"
+            :label="versionDisplayLabel(item)"
             :value="item.version"
             :disabled="item.version === rightVersionNumber"
           />
@@ -1355,7 +1419,7 @@
           <el-option
             v-for="item in versions"
             :key="'right-' + item.version"
-            :label="'v' + item.version"
+            :label="versionDisplayLabel(item)"
             :value="item.version"
             :disabled="item.version === leftVersionNumber"
           />
@@ -1429,10 +1493,13 @@
       :binding-component-ids="importedArtifact.requiredBindingComponentIds || []"
       @deploy="handleArtifactDeploy"
     />
+    </div>
   </div>
 </template>
 
 <script>
+import ResourceVersionManager from '@/components/common/ResourceVersionManager.vue'
+import { chooseVersionRestore, versionDisplayLabel } from '@/utils/versionRestore'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import { markRaw } from 'vue'
 import {
@@ -1442,7 +1509,6 @@ import {
   Connection as ElIconConnection,
   DocumentChecked as ElIconDocumentChecked,
   VideoPlay as ElIconVideoPlay,
-  Clock as ElIconTime,
   Back as ElIconBack,
   Refresh as ElIconRefresh,
   View as ElIconView,
@@ -1468,6 +1534,7 @@ import {
   resolveDetailReference,
 } from '@/utils/referenceCatalog'
 import { formatTestOutput, normalizeTestResult } from '@/utils/testResult'
+import { revisionTestSource, executionSourceKey, executionSourceLabel, requireExecutionIdentity } from '@/utils/ruleTestExecutionSource'
 import {
   normalizeTestSchema,
   schemaFieldsToTestFields,
@@ -1479,6 +1546,7 @@ import RuleLifecyclePanel from '@/components/rule/RuleLifecyclePanel.vue'
 import RuleValidationReport from '@/components/rule/RuleValidationReport.vue'
 import RuleLifecycleTimeline from '@/components/rule/RuleLifecycleTimeline.vue'
 import RuleFieldHierarchyDisplay from '@/components/rule/RuleFieldHierarchyDisplay.vue'
+import RuleRevisionFieldsPanel from '@/components/rule/RuleRevisionFieldsPanel.vue'
 import FieldReferenceDisplay from '@/components/common/FieldReferenceDisplay.vue'
 import ArtifactDeploymentDialog from '@/components/artifact/ArtifactDeploymentDialog.vue'
 import OperandPicker from '@/components/common/OperandPicker.vue'
@@ -1672,14 +1740,20 @@ export default {
   data() {
     return {
       loading: false,
+      loadError: '',
+      detailLoadRequestId: 0,
+      detailActive: true,
+      detailRoutePath: '',
       rule: {},
       ruleContent: {},
       activeDetailTab: 'lifecycle',
+      fieldViewMode: 'workspace',
       revisions: [],
       activeRevision: {},
       lifecycleRevisionId: null,
       publishedRevision: {},
       preflightReport: null,
+      preflightRequestId: 0,
       lifecycleEvents: [],
       repairPreview: {},
       repairPreviewLoading: false,
@@ -1738,6 +1812,13 @@ export default {
       // 测试相关
       testVisible: false,
       testReady: false,
+      testSourceError: '',
+      testExecutionSource: null,
+      testSchemaIdentity: null,
+      testExecutionLabel: '',
+      testExecutedInputJson: '',
+      testSchemaRequestId: 0,
+      testExecutionRequestId: 0,
       testMode: 'manual',
       testFields: [],
       testParams: {},
@@ -1759,7 +1840,6 @@ export default {
       versionCompareRequestId: 0,
       ElIconEdit: markRaw(ElIconEdit),
       ElIconVideoPlay: markRaw(ElIconVideoPlay),
-      ElIconTime: markRaw(ElIconTime),
       ElIconBack: markRaw(ElIconBack),
       ElIconRefresh: markRaw(ElIconRefresh),
       ElIconView: markRaw(ElIconView),
@@ -1770,12 +1850,14 @@ export default {
     }
   },
   components: {
+    ResourceVersionManager,
     ApiScenarioPanel,
     RuleVersionDiff,
     RuleLifecyclePanel,
     RuleValidationReport,
     RuleLifecycleTimeline,
     RuleFieldHierarchyDisplay,
+    RuleRevisionFieldsPanel,
     FieldReferenceDisplay,
     ArtifactDeploymentDialog,
     OperandPicker,
@@ -1788,18 +1870,55 @@ export default {
   },
   name: 'RuleDetail',
   mixins: [workspaceTabTitleMixin(vm => vm.rule.ruleName)],
+  activated() {
+    const resuming = !this.detailActive
+    this.detailActive = true
+    if (resuming) this.syncDetailTabFromRoute()
+    if (resuming && this.loading) this.load()
+  },
+  deactivated() {
+    this.detailActive = false
+    this.detailLoadRequestId++
+    this.preflightRequestId++
+    this.invalidateTestRequests()
+  },
   beforeUnmount() {
+    this.detailActive = false
+    this.detailLoadRequestId++
+    this.preflightRequestId++
     this.designerForkActive = false
     this.designerForkRequestId++
+    this.invalidateTestRequests()
   },
   computed: {
+    selectedTestExecutionSource() {
+      return revisionTestSource(this.lifecycleRevision) || { sourceType: 'WORKSPACE' }
+    },
+    testSelectionKey() {
+      return JSON.stringify([this.rule.id, executionSourceKey(this.selectedTestExecutionSource)])
+    },
+    testResultInputChanged() {
+      if (!this.testResult || !this.testExecutedInputJson) return false
+      try {
+        const current = this.testMode === 'json' ? JSON.parse(this.testJsonStr) : this.buildNestedTestParams(this.testFields, this.testParams)
+        return JSON.stringify(current) !== this.testExecutedInputJson
+      } catch { return true }
+    },
     lifecycleRevision() {
       return (
-        this.revisions.find((item) => item.id === this.lifecycleRevisionId) || {}
+        this.revisions.find((item) => String(item.id) === String(this.lifecycleRevisionId)) || {}
       )
     },
+    selectedRevisionReadonly() {
+      return this.lifecycleRevision.id
+        ? this.lifecycleRevision.state !== 'DRAFT' || String(this.lifecycleRevision.id) !== String(this.activeRevision.id)
+        : this.rule.status === 1
+    },
+    hasEditableWorkspace() {
+      return !this.loading && !this.loadError && Boolean(this.activeRevision.id && this.activeRevision.state === 'DRAFT')
+    },
     canEditDraft() {
-      return Boolean(this.activeRevision.id && this.activeRevision.state === 'DRAFT')
+      return this.hasEditableWorkspace && String(this.lifecycleRevisionId) === String(this.activeRevision.id)
     },
     inputFieldsTotal() {
       return this.rule && this.rule.inputFieldsJson
@@ -1850,6 +1969,7 @@ export default {
           const varId = field.varId
           return {
             value: varId ? refType + ':' + varId : '',
+            refId: varId,
             label: this.openApiFieldOptionLabel(field),
             ...this.openApiFieldDisplay(field),
             scriptName: field.scriptName || '',
@@ -1866,7 +1986,7 @@ export default {
     openIdempotencyOptions() {
       return this.openInputOptions.map((item) => ({
         ...item,
-        id: Number(String(item.value).split(':').pop()),
+        id: item.refId,
         refType: String(item.value).split(':')[0],
         varCode: item.scriptName,
         varLabel: item.label,
@@ -1928,8 +2048,15 @@ export default {
         (this.activeRevision && this.activeRevision.modelJson)
         || (this.ruleContent && this.ruleContent.modelJson)
       )
-      const preflightPassed = Boolean(this.preflightReport && this.preflightReport.valid)
-      const testPassed = Boolean(this.testResult && this.testResult.success)
+      const preflightPassed = Boolean(this.activeRevision.id && this.activeRevision.state === 'DRAFT'
+        && this.preflightReport?.valid && String(this.preflightReport.revisionId) === String(this.activeRevision.id)
+        && this.preflightReport.lockVersion != null && this.activeRevision.lockVersion != null
+        && String(this.preflightReport.lockVersion) === String(this.activeRevision.lockVersion))
+      const tested = this.testResult?.executionIdentity
+      const testPassed = Boolean(this.testResult?.success && tested?.sourceType === 'REVISION'
+        && String(tested.definitionId) === String(this.rule.id)
+        && String(tested.sourceId) === String(this.activeRevision.id)
+        && tested.lockVersion != null && String(tested.lockVersion) === String(this.activeRevision.lockVersion))
       const published = this.lifecycleRevision && this.lifecycleRevision.state === 'PUBLISHED'
       const steps = [
         { key: 'base', label: '基础信息', done: Boolean(this.rule.id && this.rule.ruleCode && this.rule.ruleName), detail: '规则编码、名称和模型类型' },
@@ -1950,22 +2077,53 @@ export default {
     },
   },
   created() {
+    this.detailRoutePath = this.$route.path || ''
     this.syncDetailTabFromRoute()
     this.load()
   },
   watch: {
+    testSelectionKey() {
+      this.invalidateTestRequests()
+      this.testResult = null
+      if (this.testVisible) this.openTestDialog()
+    },
+    testVisible(visible) {
+      if (!visible) this.invalidateTestRequests()
+    },
     '$route.params.id'(id, oldId) {
-      if (id && id !== oldId) {
+      if (this.ownsDetailRoute() && id && id !== oldId) {
         this.inputFieldPage = 1
         this.outputFieldPage = 1
         this.load()
       }
     },
     '$route.query.focus'() {
-      this.syncDetailTabFromRoute()
+      if (this.ownsDetailRoute()) this.syncDetailTabFromRoute()
+    },
+    lifecycleRevisionId() {
+      this.preflightRequestId++
+      this.preflightReport = null
+      if (this.lifecycleRevision.id && this.selectedRevisionReadonly) this.fieldViewMode = 'revision'
     },
   },
   methods: {
+    versionDisplayLabel,
+    executionSourceLabel,
+    invalidateTestRequests() {
+      this.testSchemaRequestId++
+      this.testExecutionRequestId++
+      this.testExecuting = false
+    },
+    showRevisionFields() {
+      if (!this.lifecycleRevisionId) this.lifecycleRevisionId = this.activeRevision.id || this.revisions[0]?.id || null
+      this.fieldViewMode = 'revision'
+      if (!['inputs', 'outputs'].includes(this.activeDetailTab)) this.activeDetailTab = 'inputs'
+    },
+    showWorkspaceFields() {
+      if (!this.hasEditableWorkspace) return
+      this.lifecycleRevisionId = this.activeRevision.id
+      this.fieldViewMode = 'workspace'
+    },
     async locatePreflightIssue(issue) {
       const revisionId = (this.preflightReport && this.preflightReport.revisionId) || this.lifecycleRevision.id
       if (!revisionId || (issue.revisionId && String(issue.revisionId) !== String(revisionId))) {
@@ -2003,13 +2161,25 @@ export default {
     openApiFieldOption(options, value) {
       return (options || []).find((item) => item.value === value) || null
     },
+    ownsDetailRoute() {
+      return this.detailActive && (!this.detailRoutePath || this.detailRoutePath === this.$route.path)
+    },
+    isCurrentDetailLoad(requestId, definitionId = this.$route.params.id) {
+      return this.ownsDetailRoute() && requestId === this.detailLoadRequestId && String(definitionId) === String(this.$route.params.id)
+    },
     async load() {
       const id = this.$route.params.id
-      if (!id) return
+      if (!id || !this.ownsDetailRoute()) return
+      const requestId = ++this.detailLoadRequestId
+      this.preflightRequestId++
+      this.preflightReport = null
+      this.testResult = null
       this.loading = true
+      this.loadError = ''
       try {
         // 注意：request 拦截器已展开 R.data，生产环境 res 是对象本身；测试环境 mock 返回 {data: {...}} 需要 .data
         const res = await api.getDefinitionDetail(id)
+        if (!this.isCurrentDetailLoad(requestId, id)) return
         const nextRule = (res.data !== undefined ? res.data : res) || {}
         if (nextRule.inputFieldsJson) {
           nextRule.inputFieldsJson.forEach((f) => {
@@ -2026,25 +2196,34 @@ export default {
         }
         this.rule = nextRule
         const contentRes = await api.getContent(id)
+        if (!this.isCurrentDetailLoad(requestId, id)) return
         this.ruleContent =
           (contentRes && contentRes.data !== undefined
             ? contentRes.data
             : contentRes) || {}
         this.loadOpenApiConfig(this.ruleContent.openApiConfigJson)
         this.normalizeFieldPages()
-        await Promise.all([this.loadVars(), this.loadFieldValidationOptions()])
-        await this.loadLifecycle(id)
+        await this.loadLifecycle(id, requestId)
+        if (!this.isCurrentDetailLoad(requestId, id)) return
+        if (this.activeRevision.state === 'DRAFT' || !this.revisions.length) {
+          await Promise.all([this.loadVars(requestId), this.loadFieldValidationOptions(requestId)])
+        } else {
+          this.varMap = {}
+          this.varPickerGroups.splice(0)
+          this.fieldValidationOptions = []
+        }
       } catch (e) {
-        this.$message.error(e.message || '加载规则详情失败')
+        if (this.isCurrentDetailLoad(requestId, id)) this.loadError = e.message || '加载规则详情失败'
       } finally {
-        this.loading = false
+        if (this.isCurrentDetailLoad(requestId, id)) this.loading = false
       }
     },
-    async loadLifecycle(definitionId) {
+    async loadLifecycle(definitionId, requestId = this.detailLoadRequestId) {
       const [revisionsResponse, timelineResponse] = await Promise.all([
         api.listRuleRevisions(definitionId),
         api.getRuleLifecycleTimeline(definitionId),
       ])
+      if (!this.isCurrentDetailLoad(requestId, definitionId)) return
       const revisionData = this.unwrapData(revisionsResponse)
       const revisions = Array.isArray(revisionData)
         ? revisionData.filter(Boolean)
@@ -2056,8 +2235,10 @@ export default {
         revisions.find((item) => item.state === 'APPROVED') ||
         revisions.find((item) => item.state === 'PUBLISHED') ||
         revisions.find((item) => item.state === 'OFFLINE') ||
+        revisions[0] ||
         {}
       this.lifecycleRevisionId = this.activeRevision.id || null
+      this.fieldViewMode = this.activeRevision.id && this.activeRevision.state !== 'DRAFT' ? 'revision' : 'workspace'
       this.publishedRevision =
         revisions.find((item) => item.state === 'PUBLISHED') || {}
       this.lifecycleEvents = this.unwrapData(timelineResponse) || []
@@ -2133,12 +2314,27 @@ export default {
     async runPreflight() {
       const revision = this.lifecycleRevision
       if (!revision.id) return
+      const requestId = ++this.preflightRequestId
+      this.preflightReport = null
+      const definitionId = this.rule.id, revisionId = revision.id, lockVersion = revision.lockVersion
+      const current = () => this.detailActive && requestId === this.preflightRequestId
+        && String(this.rule.id) === String(definitionId) && String(this.lifecycleRevisionId) === String(revisionId)
+        && this.lifecycleRevision.lockVersion === lockVersion
+      const accept = report => {
+        if (report?.revisionId == null || String(report.revisionId) !== String(revisionId)
+          || report.lockVersion == null || String(report.lockVersion) !== String(lockVersion)) throw new Error('校验结果与所选修订或锁版本不一致，请刷新后重试')
+        this.preflightReport = report
+      }
       try {
-        const response = await api.preflightRuleRevision(this.rule.id, revision.id)
-        this.preflightReport = this.unwrapData(response)
+        const response = await api.preflightRuleRevision(definitionId, revisionId)
+        if (!current()) return
+        const report = this.unwrapData(response)
+        accept(report)
       } catch (error) {
+        if (!current()) return
         if (error && error.response && error.response.data && error.response.data.data) {
-          this.preflightReport = error.response.data.data
+          const report = error.response.data.data
+          accept(report)
         } else {
           throw error
         }
@@ -2232,7 +2428,11 @@ export default {
       if (!version || version.id === undefined || version.id === null) return
       return this.openDesignerSource('VERSION', version.id, invalidatePendingFork)
     },
-    async openDesignerSource(sourceType, sourceId, invalidatePendingFork = true) {
+    async restoreHistoricalVersion(row) {
+      const mode = await chooseVersionRestore(row.businessVersion || row.version)
+      if (mode) await this.openDesignerSource('VERSION', row.id, true, mode)
+    },
+    async openDesignerSource(sourceType, sourceId, invalidatePendingFork = true, restoreMode) {
       if (invalidatePendingFork) {
         this.designerForkRequestId++
         this.forkingDesignerSource = false
@@ -2245,8 +2445,9 @@ export default {
       await this.$router.push({
         name: routeName,
         params: { id: String(this.rule.id) },
-        query: { sourceType, sourceId: String(sourceId) },
+        query: { sourceType, sourceId: String(sourceId), ...(restoreMode ? { restoreMode } : {}) },
       })
+      this.versionVisible = false
     },
     async forkDesignerSource(sourceType, sourceId) {
       // 进入编辑只切换到所选版本，暂存由设计页显式触发。
@@ -2432,6 +2633,7 @@ export default {
       }
     },
     addOpenRequestMapping() {
+      if (!this.canEditDraft) return
       if (!this.openInputOptions.length) {
         this.$message.warning(
           '当前规则没有可映射的入参，请先进入规则设计器引用并保存变量'
@@ -2448,18 +2650,30 @@ export default {
       })
     },
     removeOpenRequestMapping(index) {
+      if (!this.canEditDraft) return
       this.openApiForm.requestMappings.splice(index, 1)
     },
+    updateIdempotencyOperand(component, value) {
+      if (!this.canEditDraft || !this.openApiForm.idempotency.components.includes(component)) return
+      component.operand = value || null
+    },
+    updateOpenApiEditor(field, value) {
+      if (!this.canEditDraft) return
+      this[field] = value
+    },
     addIdempotencyComponent() {
+      if (!this.canEditDraft) return
       this.openApiForm.idempotency.components.push(createIdempotencyComponent())
     },
     onIdempotencyEnabledChange(enabled) {
+      if (!this.canEditDraft) return
       // 开启后立即给出一个可编辑组件，避免用户看到空白配置而不知道下一步。
       if (enabled && !this.openApiForm.idempotency.components.length) {
         this.addIdempotencyComponent()
       }
     },
     removeIdempotencyComponent(index) {
+      if (!this.canEditDraft) return
       if (this.openApiForm.idempotency.components.length <= 1) return
       this.openApiForm.idempotency.components.splice(index, 1)
     },
@@ -2492,9 +2706,11 @@ export default {
       return this.openTargetTypes.includes(type) ? type : 'OBJECT'
     },
     resetOpenResponseMappings() {
+      if (!this.canEditDraft) return
       this.openApiForm['responseMappings'] = this.defaultOpenResponseMappings()
     },
     addOpenResponseMapping() {
+      if (!this.canEditDraft) return
       if (!this.openOutputOptions.length) {
         this.$message.warning(
           '当前规则没有可映射的输出，请先进入规则设计器配置并保存输出字段'
@@ -2513,9 +2729,11 @@ export default {
       })
     },
     removeOpenResponseMapping(index) {
+      if (!this.canEditDraft) return
       this.openApiForm.responseMappings.splice(index, 1)
     },
     onOpenResponseSourceChange(row) {
+      if (!this.canEditDraft) return
       if (String(row.targetField || '').trim()) return
       const option = this.openOutputOptions.find(
         (item) => item.value === row.sourceKey
@@ -2790,6 +3008,7 @@ export default {
           lockVersion: this.activeRevision.lockVersion,
           modelJson: this.ruleContent.modelJson || '{}',
           openApiConfigJson,
+          updateOpenApiConfig: true,
         })
         const saveResult = this.unwrapData(saved) || {}
         this.activateDraftRevision(saveResult.revision, false)
@@ -2815,6 +3034,10 @@ export default {
     },
     requireEditableDraft() {
       if (this.canEditDraft) return true
+      if (this.hasEditableWorkspace) {
+        this.$message.warning('当前查看的是只读修订，请返回工作区草稿后编辑')
+        return false
+      }
       this.$message.warning('当前没有可编辑草稿，请先创建或退回草稿')
       return false
     },
@@ -2852,15 +3075,15 @@ export default {
         this.baseSaving = false
       }
     },
-    async loadVars() {
+    async loadVars(requestId = this.detailLoadRequestId) {
       const projectId = this.rule.projectId
       if (projectId && projectId > 0) {
-        await this.loadVarsByProject(projectId)
+        await this.loadVarsByProject(projectId, requestId)
       } else {
-        await this.loadGlobalVars()
+        await this.loadGlobalVars(requestId)
       }
     },
-    async loadVarsByProject(projectId) {
+    async loadVarsByProject(projectId, requestId = this.detailLoadRequestId) {
       try {
         const [varsRes, constRes, treeRes, modelRes] = await Promise.all([
           listVariablesByProject(projectId),
@@ -2873,6 +3096,7 @@ export default {
           getVariableTree(projectId),
           listAllModelsByProject(projectId),
         ])
+        if (!this.isCurrentDetailLoad(requestId)) return
         const vars = Array.isArray(varsRes.data) ? varsRes.data : []
         const consts =
           constRes.data && Array.isArray(constRes.data.records)
@@ -2884,6 +3108,7 @@ export default {
         const models = this.normalizeListResponse(modelRes)
         this.buildVarOptions([...vars, ...consts], tree, models)
       } catch (e) {
+        if (!this.isCurrentDetailLoad(requestId)) return
         this.varMap = {}
         this.varPickerGroups.splice(
           0,
@@ -2897,7 +3122,7 @@ export default {
         )
       }
     },
-    async loadGlobalVars() {
+    async loadGlobalVars(requestId = this.detailLoadRequestId) {
       try {
         const [varsRes, constRes, treeRes, modelRes] = await Promise.all([
           listVariables({ scope: 'GLOBAL', pageNum: 1, pageSize: 5000 }),
@@ -2910,6 +3135,7 @@ export default {
           getVariableTree(0),
           listAllModelsByProject(0),
         ])
+        if (!this.isCurrentDetailLoad(requestId)) return
         const vars =
           varsRes.data && Array.isArray(varsRes.data.records)
             ? varsRes.data.records
@@ -2926,6 +3152,7 @@ export default {
         const models = this.normalizeListResponse(modelRes)
         this.buildVarOptions([...vars, ...consts], tree, models)
       } catch (e) {
+        if (!this.isCurrentDetailLoad(requestId)) return
         this.varMap = {}
         this.varPickerGroups.splice(
           0,
@@ -3374,12 +3601,14 @@ export default {
         this.versionLoading = false
       }
     },
-    async loadFieldValidationOptions() {
+    async loadFieldValidationOptions(requestId = this.detailLoadRequestId) {
       try {
         const res = await listAvailableFieldValidations(this.rule.projectId)
+        if (!this.isCurrentDetailLoad(requestId)) return
         const data = res && res.data !== undefined ? res.data : res
         this.fieldValidationOptions = Array.isArray(data) ? data : []
       } catch (e) {
+        if (!this.isCurrentDetailLoad(requestId)) return
         this.fieldValidationOptions = []
         this.$message.error('加载字段校验规则失败: ' + (e.message || e))
       }
@@ -3480,35 +3709,47 @@ export default {
       }
     },
     async openTestDialog() {
+      this.invalidateTestRequests()
+      const requestId = ++this.testSchemaRequestId
+      const definitionId = this.rule.id
+      const context = this.testSelectionKey
+      const source = { ...this.selectedTestExecutionSource }
+      const current = () => this.detailActive && this.testVisible && requestId === this.testSchemaRequestId && context === this.testSelectionKey
       this.testVisible = true
       this.testReady = false
+      this.testSourceError = ''
+      this.testExecutedInputJson = ''
+      this.testExecutionSource = source
+      this.testExecutionLabel = this.lifecycleRevision.id ? this.revisionOptionLabel(this.lifecycleRevision) : ''
+      this.testSchemaIdentity = null
       this.testResult = null
       this.testMode = 'manual'
       this.jsonEdited = false
       this.jsonError = ''
       this.testDialogKey++
 
-      let freshRule = this.rule
-      try {
-        const res = await api.getDefinitionDetail(this.rule.id)
-        freshRule = (res.data !== undefined ? res.data : res) || freshRule
-      } catch (e) {
-        /* fallback */
-      }
+      const freshRule = this.rule
       let schema = null
       try {
         schema = normalizeTestSchema(
           await api.getRuleTestSchema({
             targetType: 'RULE',
-            targetId: this.rule.id,
+            targetId: definitionId,
+            executionSource: source,
           })
         )
+        if (!current()) return
+        requireExecutionIdentity(schema.executionIdentity, definitionId, source)
+        this.testSchemaIdentity = schema.executionIdentity
       } catch (e) {
-        /* compatibility fallback for older servers */
+        if (!current()) return
+        if (source.sourceType !== 'WORKSPACE') {
+          this.testSourceError = e.message || '所选版本的测试字段读取失败'
+          return
+        }
       }
-      const hasSchema =
-        schema &&
-        (schema.inputs.length || Object.keys(schema.sampleParams).length)
+      if (!current()) return
+      const hasSchema = Boolean(schema)
       this.testFieldKeyMap = {}
       const testFields = hasSchema
         ? schemaFieldsToTestFields(schema.inputs)
@@ -3577,6 +3818,12 @@ export default {
       }
     },
     async doTest() {
+      if (!this.testReady || this.testSourceError || this.testExecuting) return
+      const requestId = ++this.testExecutionRequestId
+      const definitionId = this.rule.id
+      const source = { ...this.testExecutionSource }
+      const context = this.testSelectionKey
+      const current = () => this.detailActive && this.testVisible && requestId === this.testExecutionRequestId && context === this.testSelectionKey
       this.testResult = null
       this.testExecuting = true
       let params
@@ -3591,20 +3838,21 @@ export default {
       } else {
         params = this.buildNestedTestParams(this.testFields, this.testParams)
       }
+      const inputSnapshot = JSON.stringify(params)
+      this.testExecutedInputJson = inputSnapshot
       try {
         const res = await api.executeRule(
-          { definitionId: this.rule.id, params },
+          { definitionId, executionSource: source, params },
           this.requestTimeoutMs
         )
-        this.testResult = normalizeTestResult(res)
-        if (this.testResult.success) {
-          this.testJsonStr = JSON.stringify(params, null, 2)
-          this.jsonEdited = true
-        }
+        if (!current()) return
+        const result = normalizeTestResult(res)
+        requireExecutionIdentity(result.executionIdentity, definitionId, source)
+        this.testResult = result
       } catch (e) {
-        this.testResult = { success: false, error: e.message || '测试执行失败' }
+        if (current()) this.testResult = { success: false, error: e.message || '测试执行失败' }
       } finally {
-        this.testExecuting = false
+        if (current()) this.testExecuting = false
       }
     },
     handleClearParams() {
@@ -3770,6 +4018,11 @@ export default {
 </script>
 
 <style scoped>
+.rule-detail-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.rule-detail-actions :deep(.el-button + .el-button) { margin-left: 0; }
+.field-workspace-notice { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; color: var(--tianshu-text-secondary); line-height: 1.6; }
+.idempotency-readonly-formula { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tianshu-text-secondary); }
+.revision-scope-note { margin: 12px 0 0; color: var(--tianshu-text-secondary); line-height: 1.6; }
 .release-progress-card { margin-bottom: 16px; }
 .release-progress-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .release-progress-header > div { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }

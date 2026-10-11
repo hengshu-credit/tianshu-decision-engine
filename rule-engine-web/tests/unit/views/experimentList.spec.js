@@ -248,7 +248,7 @@ describe('ExperimentList', () => {
 
     await ctx.loadRules(7)
 
-    expect(listProjectDefinitions).toHaveBeenCalledWith(7, { pageNum: 1, pageSize: 1000, status: 1 })
+    expect(listProjectDefinitions).toHaveBeenCalledWith(7, { pageNum: 1, pageSize: 200, status: 1 })
     expect(ctx.rulesForProject[0].id).toBe(11)
     expect(ctx.rulesForProject[0].ruleCode).toBe('rule_a')
     expect(ctx.rulesForProject[0].inputFields[0].scriptName).toBe('amount')
@@ -330,7 +330,7 @@ describe('ExperimentList', () => {
     } })
     await opening
 
-    expect(getRuleTestSchema).toHaveBeenCalledWith({ targetType: 'EXPERIMENT', targetId: 9 })
+    expect(getRuleTestSchema).toHaveBeenCalledWith({ targetType: 'EXPERIMENT', targetId: 9, versionMode: 'LATEST', versionId: null })
     expect(ctx.testLoadStatus).toBe('READY')
     expect(ctx.testReady).toBe(true)
     expect(ctx.testParamSource).toBe('SCHEMA_SAMPLE')
@@ -356,6 +356,7 @@ describe('ExperimentList', () => {
 
     expect(ctx.testMode).toBe('json')
     expect(executeExperiment).toHaveBeenCalledWith('EXP_JSON_EDIT', {
+      versionMode: 'LATEST', versionId: null,
       params: { profile: { age: 37 } },
       requestKey: '',
       requestTime: null

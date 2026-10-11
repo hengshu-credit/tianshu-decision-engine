@@ -102,6 +102,7 @@ export function buildReferenceCatalog(variables = [], objectTree = [], models = 
           varSource: source?.varSource || 'INPUT',
           recordResult: field.recordResult === true || source?.recordResult === true,
           objectCode,
+          objectId: object.id,
           objectRawCode: object.objectCode || '',
           objectLabel
         }
@@ -131,7 +132,7 @@ export function buildReferenceCatalog(variables = [], objectTree = [], models = 
           modelName: modelLabel,
           modelInputFields: inputFields
         }),
-        extra: { sourceType: 'model', varSource: 'MODEL', recordResult: field.recordResult === true, modelCode, modelId: model.id, modelLabel, modelInputFields: inputFields }
+        extra: { sourceType: 'model', varSource: 'MODEL', recordResult: field.recordResult === true, modelCode, modelId: model.id, modelVersion: model.currentVersion ?? model.version, modelLabel, modelInputFields: inputFields }
       })
       addRef(entry, 'model')
     })
@@ -203,6 +204,7 @@ export function buildPickerOptions(catalog) {
     recordResult: ref.recordResult,
     constantValue: ref.constantValue,
     relativePath: ref.relativePath,
+    objectId: ref.objectId,
     apiId: ref.apiId,
     apiCode: ref.apiCode,
     apiLabel: ref.apiLabel,

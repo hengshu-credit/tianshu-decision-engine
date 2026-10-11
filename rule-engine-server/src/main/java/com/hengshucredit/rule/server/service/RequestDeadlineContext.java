@@ -51,7 +51,16 @@ public final class RequestDeadlineContext {
     }
 
     public static void check() throws TimeoutException {
-        if (remainingMillis() == 0) throw new TimeoutException("项目请求总超时");
+        if (remainingMillis() == 0) throw new DeadlineTimeoutException();
+    }
+
+    static boolean isDeadlineExceeded(Throwable failure) {
+        if (remainingMillis() != 0) return false;
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof DeadlineTimeoutException) return true;
+            if (current == current.getCause()) break;
+        }
+        return false;
     }
 
     public static void clear() {
@@ -64,6 +73,11 @@ public final class RequestDeadlineContext {
 
     static void resetNanoTimeSource() {
         nanoTime = System::nanoTime;
+    }
+
+    /** 本地请求预算耗尽；与供应商套接字超时区分。 */
+    public static final class DeadlineTimeoutException extends TimeoutException {
+        DeadlineTimeoutException() { super("项目请求总超时"); }
     }
 
     public static final class Scope implements AutoCloseable {

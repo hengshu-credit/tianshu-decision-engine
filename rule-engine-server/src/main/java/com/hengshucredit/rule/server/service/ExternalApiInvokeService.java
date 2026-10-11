@@ -50,6 +50,7 @@ import java.util.regex.PatternSyntaxException;
 
 @Service
 public class ExternalApiInvokeService {
+    @Resource @org.springframework.context.annotation.Lazy private ResourceVersionService resourceVersions;
     @Resource private RuleVariableService apiVariableService;
     private final ThreadLocal<List<Map<String, Object>>> authenticationCalls = new ThreadLocal<>();
 
@@ -103,6 +104,80 @@ public class ExternalApiInvokeService {
     private ExternalApiResponseCache externalApiResponseCache = new ExternalApiResponseCache(
             new ExternalCallProperties(), null, System::currentTimeMillis);
 
+    Map<String, Object> invokeTrial(RuleExternalApiConfig config, Map<String, Object> params,
+                                    Map<String, Object> pending) {
+        ExternalApiTrialContext.check();
+        Map<String, String> paths = new LinkedHashMap<>();
+        JSONObject savedPaths = ExternalApiTrialContext.current().snapshot.getJSONObject("paths");
+        if (savedPaths != null) savedPaths.forEach((key, value) -> paths.put(key, String.valueOf(value)));
+        ExternalApiRequestPlan plan = ExternalApiRequestPlan.prepare(selectRequestBranch(config, params), params, Map.of(), paths);
+        return pending == null || pending.isEmpty() ? invokePlanned(plan) : invokePending(plan, pending);
+    }
+
+    private RuleExternalDatasource invocationDatasource(Long id) {
+        ExternalApiTrialContext trial = ExternalApiTrialContext.current();
+        RuleExternalDatasource frozen = trial == null ? null : trial.datasource(id);
+        if (trial != null && frozen == null) throw new IllegalArgumentException("数据源未包含在试运行冻结快照中");
+        return trial == null ? datasourceMapper.selectById(id) : frozen;
+    }
+
+    private RuleExternalApiConfig invocationApi(Long id) {
+        ExternalApiTrialContext trial = ExternalApiTrialContext.current();
+        RuleExternalApiConfig frozen = trial == null ? null : trial.api(id);
+        if (trial != null && frozen == null) throw new IllegalArgumentException("API 未包含在试运行冻结快照中");
+        return trial == null ? apiConfigMapper.selectById(id) : frozen;
+    }
+
+    private Map<String, String> invocationPaths(Long projectId) {
+        ExternalApiTrialContext trial = ExternalApiTrialContext.current();
+        if (trial == null) return apiVariableService == null ? Map.of() : apiVariableService.buildRefScriptNameMap(projectId);
+        Map<String, String> paths = new LinkedHashMap<>();
+        JSONObject saved = trial.snapshot.getJSONObject("paths");
+        if (saved != null) saved.forEach((key, value) -> paths.put(key, String.valueOf(value)));
+        return paths;
+    }
+
+    private BillingPersistenceException billingFailure(RuleExternalApiConfig config, RuleExternalDatasource source,
+                                                        InvokeTrace trace, Map<String, Object> observed,
+                                                        RuntimeException cause, long cost) {
+        Map<String, Object> response = observed == null ? new LinkedHashMap<>() : copyResponse(observed);
+        response.putIfAbsent("body", trace.responseBody);
+        response.putIfAbsent("httpStatus", trace.responseStatus);
+        response.put("success", false);
+        response.put("sourceOutcome", "UNKNOWN");
+        response.put("errorPhase", "BILLING");
+        response.put("errorMessage", "调用计费结果未确认，已停止重新发送外部请求");
+        attachExternalCall(response, trace);
+        @SuppressWarnings("unchecked") Map<String, Object> status = (Map<String, Object>) response.get("status");
+        status.put("billingState", "UNKNOWN");
+        logDatasourceCall(config, source, trace, false, response, String.valueOf(response.get("errorMessage")), cost);
+        return new BillingPersistenceException(String.valueOf(response.get("errorMessage")), cause, response);
+    }
+
+    private boolean recordInvocationBilling(RuleExternalApiConfig config, RuleExternalDatasource source,
+                                             boolean success, long cost, String message) {
+        ExternalApiTrialContext trial = ExternalApiTrialContext.current();
+        return trial == null ? billingService.recordApiExecution(config, source, success, cost, message)
+                : billingService.recordApiTrialExecution(trial.trialId, config, source, success, cost, message);
+    }
+
+    void cleanTrialResources(long rowId, JSONObject snapshot, Map<String, Object> saved) {
+        long root = -Math.multiplyExact(rowId, 65536L);
+        List<Long> ids = new ArrayList<>();
+        ids.add(root);
+        JSONObject indexes = snapshot.getJSONObject("stepIndexes");
+        if (indexes != null) indexes.values().forEach(value -> ids.add(root - ((Number) value).longValue()));
+        for (Long id : ids) {
+            apiHttpClientRegistry.invalidate("api:" + id);
+            externalApiGuardRegistry.invalidateTrial(id);
+            circuitBreakerRegistry.invalidateTrial(id);
+        }
+        if (saved != null) {
+            if (saved.get("callbackIds") instanceof Iterable<?> callbacks) callbacks.forEach(id -> callbackStore.close(String.valueOf(id)));
+            if (saved.get("tokenKeys") instanceof Iterable<?> tokens) tokens.forEach(key -> externalTokenCache.invalidate(String.valueOf(key)));
+        }
+    }
+
     public Map<String, Object> invoke(Long apiConfigId, Map<String, Object> params) {
         RuleExternalApiConfig apiConfig = apiConfigMapper.selectById(apiConfigId);
         if (apiConfig == null) {
@@ -117,12 +192,25 @@ public class ExternalApiInvokeService {
 
     /** 使用页面当前配置执行测试，不要求先覆盖数据库中的已保存配置。 */
     public Map<String, Object> invoke(RuleExternalApiConfig apiConfig, Map<String, Object> params) {
+        try (var versions = bindResourceVersions(apiConfig, params)) {
         if (apiConfig.getExecutionConfig() != null && !apiConfig.getExecutionConfig().isBlank()) {
             RuleExternalDatasource owner = datasourceMapper.selectById(apiConfig.getDatasourceId());
             Map<String, String> paths = apiVariableService == null ? Map.of() : apiVariableService.buildRefScriptNameMap(owner.getProjectId());
             return invokePlanned(ExternalApiRequestPlan.prepare(selectRequestBranch(apiConfig, params), params, Map.of(), paths));
         }
         return invoke(apiConfig, params, false);
+        }
+    }
+
+    private com.hengshucredit.rule.core.engine.RequestContext.ResourceVersionScope bindResourceVersions(RuleExternalApiConfig api, Map<String, Object> params) {
+        if (resourceVersions == null || api == null) return null;
+        RuleExternalDatasource owner = invocationDatasource(api.getDatasourceId());
+        Long projectId = owner == null ? null : owner.getProjectId();
+        Object rootProject = com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext().rootRule().get("projectId");
+        if (rootProject instanceof Number number) projectId = number.longValue();
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setApiExpression(true);
+        return resourceVersions.bind(projectId, params == null ? Map.of() : params, options);
     }
 
     Map<String, Object> invokePlanned(ExternalApiRequestPlan plan) {
@@ -155,8 +243,8 @@ public class ExternalApiInvokeService {
         context.put("input", values);
         for (Object raw : spec.getJSONArray("requestBranches")) {
             JSONObject branch = JSON.parseObject(JSON.toJSONString(raw));
-            RuleExternalDatasource owner = datasourceMapper == null ? null : datasourceMapper.selectById(source.getDatasourceId());
-            Map<String, String> paths = apiVariableService == null || owner == null ? Map.of() : apiVariableService.buildRefScriptNameMap(owner.getProjectId());
+            RuleExternalDatasource owner = datasourceMapper == null ? null : invocationDatasource(source.getDatasourceId());
+            Map<String, String> paths = owner == null ? Map.of() : invocationPaths(owner.getProjectId());
             if (responseConditionMatches(branch.get("condition"), context, context.get("body"), paths)) {
                 RuleExternalApiConfig selected = JSON.parseObject(JSON.toJSONString(source), RuleExternalApiConfig.class);
                 if (branch.containsKey("requestFields")) spec.put("requestFields", branch.get("requestFields"));
@@ -174,6 +262,13 @@ public class ExternalApiInvokeService {
 
     private Map<String, Object> invoke(RuleExternalApiConfig apiConfig, Map<String, Object> params,
                                        boolean useResponseCache, Map<String, Object> pendingAsync) {
+        try (var versions = bindResourceVersions(apiConfig, params)) {
+            return invokeSelected(apiConfig, params, useResponseCache, pendingAsync);
+        }
+    }
+
+    private Map<String, Object> invokeSelected(RuleExternalApiConfig apiConfig, Map<String, Object> params,
+                                               boolean useResponseCache, Map<String, Object> pendingAsync) {
         if (apiConfig == null) {
             throw new IllegalArgumentException("API接口配置不能为空");
         }
@@ -185,7 +280,7 @@ public class ExternalApiInvokeService {
                 : (apiConfig.getTimeoutMs() == null ? 3000 : Math.max(1, apiConfig.getTimeoutMs()));
         try (AuthCapture capture = new AuthCapture();
              RequestDeadlineContext.Scope ignored = RequestDeadlineContext.limit(totalTimeoutMs)) {
-        RuleExternalDatasource datasource = datasourceMapper.selectById(apiConfig.getDatasourceId());
+        RuleExternalDatasource datasource = invocationDatasource(apiConfig.getDatasourceId());
         if (datasource == null) {
             throw new IllegalArgumentException("外数数据源不存在");
         }
@@ -210,6 +305,7 @@ public class ExternalApiInvokeService {
         Object resumedCallId = pendingAsync == null ? null : pendingAsync.get("callId");
         trace.callId = resumedCallId == null || String.valueOf(resumedCallId).isBlank()
                 ? UUID.randomUUID().toString() : String.valueOf(resumedCallId);
+        if (ExternalApiTrialContext.current() != null) trace.callId = ExternalApiTrialContext.current().callId(apiConfig.getId());
         trace.apiConfigId = apiConfig.getId();
         trace.resumed = pendingAsync != null;
         apiConfig.setExecutionCallId(trace.callId);
@@ -226,7 +322,7 @@ public class ExternalApiInvokeService {
                 : responseCacheKey == null ? "CACHE_KEY_INCOMPLETE" : "MISS";
         if (runtimeTraceService != null) {
             trace.runtimeTrace = runtimeTraceService.startModule(
-                    "DATASOURCE", datasource.getProjectId(), apiConfig.getId(), apiConfig.getApiCode());
+                    "DATASOURCE", datasource.getProjectId(), ExternalApiTrialContext.resourceId(apiConfig.getId()), apiConfig.getApiCode());
         }
         Map<String, Object> rootInputStep = new LinkedHashMap<>();
         rootInputStep.put("rootRequestBody", trace.rootInput);
@@ -271,12 +367,13 @@ public class ExternalApiInvokeService {
                 result.put("sourceOutcome", !result.containsKey("success") || booleanValue(result.get("success"))
                         ? "SUCCESS" : "ERROR");
                 attachExternalCall(result, trace);
+                if (!apiConfig.isBillingSuppressed() && billingService != null && shouldRecordSuccessBilling(apiConfig, result)) {
+                    try { trace.billed = recordInvocationBilling(apiConfig, datasource, true, cost, null); }
+                    catch (RuntimeException failure) { throw billingFailure(apiConfig, datasource, trace, result, failure, cost); }
+                }
                 if (responseCacheSeconds > 0 && responseCacheKey != null
                         && (!result.containsKey("success") || booleanValue(result.get("success")))) {
                     externalApiResponseCache.put(apiConfig, responseCacheKey, result);
-                }
-                if (!apiConfig.isBillingSuppressed() && billingService != null && shouldRecordSuccessBilling(apiConfig, result)) {
-                    trace.billed = billingService.recordApiExecution(apiConfig, datasource, true, cost, null);
                 }
                 attachExternalCall(result, trace);
                 if (ExternalApiRequestPlan.specification(apiConfig) != null) {
@@ -286,6 +383,8 @@ public class ExternalApiInvokeService {
                 logDatasourceCall(apiConfig, datasource, trace, true, result, null, cost);
                 return result;
             } catch (Exception e) {
+                if (e instanceof BillingPersistenceException billingFailure) throw billingFailure;
+                if (e instanceof ExternalApiTrialContext.Stopped stopped) throw stopped;
                 if (e instanceof RuleRuntimeCallLogService.HistoryLogWriteException historyFailure) throw historyFailure;
                 lastError = e;
                 if (e instanceof ExternalApiFileInputs.FileInputException) {
@@ -323,6 +422,18 @@ public class ExternalApiInvokeService {
         }
         long cost = System.currentTimeMillis() - start;
         String message = lastError == null ? "调用失败" : lastError.getMessage();
+        // 子步骤尚未发送时的本地预算耗尽交给工作流保存检查点，不能被业务异常策略吞成失败结果。
+        if (ExternalApiTrialContext.current() != null && !trace.workflow
+                && !java.util.Objects.equals(apiConfig.getId(), ExternalApiTrialContext.current().rootIdentity)
+                && RequestDeadlineContext.isDeadlineExceeded(lastError)) {
+            ApiInvokeException deadlineFailure = new ApiInvokeException(message, lastError,
+                    responseCacheSeconds > 0, trace.cacheStatus, trace.requestIssued && trace.responseStatus == null,
+                    null, apiConfig.getExceptionStrategy(), trace.requestIssued);
+            if (Boolean.FALSE.equals(deadlineFailure.getRequestIssued()) && !deadlineFailure.isUnknown()) {
+                logDatasourceCall(apiConfig, datasource, trace, false, null, message, cost);
+                throw deadlineFailure;
+            }
+        }
         if ("USE_CACHE".equals(apiConfig.getExceptionStrategy()) && cachedResponse != null) {
             trace.cacheStatus = "STALE";
             Map<String, Object> cached = copyCachedResponse(cachedResponse.getResponse(), true, true, cost);
@@ -334,7 +445,14 @@ public class ExternalApiInvokeService {
             return cached;
         }
         if (!apiConfig.isBillingSuppressed() && billingService != null && shouldRecordFailedBilling(apiConfig, trace)) {
-            trace.billed = billingService.recordApiExecution(apiConfig, datasource, false, cost, message);
+            try { trace.billed = recordInvocationBilling(apiConfig, datasource, false, cost, message); }
+            catch (RuntimeException failure) { throw billingFailure(apiConfig, datasource, trace, null, failure, cost); }
+        }
+        if (ExternalApiTrialContext.current() != null && trace.pendingAsyncSnapshot() != null) {
+            ExternalApiTrialContext.checkpoint(trace.pendingAsyncSnapshot());
+            logDatasourceCall(apiConfig, datasource, trace, false, null, message, cost);
+            throw new ApiInvokeException(message, lastError, false, trace.cacheStatus,
+                    false, trace.pendingAsyncSnapshot(), apiConfig.getExceptionStrategy(), trace.requestIssued);
         }
         if ("RETURN_DEFAULT".equals(apiConfig.getExceptionStrategy())) {
             Map<String, Object> fallback = new LinkedHashMap<>();
@@ -368,7 +486,7 @@ public class ExternalApiInvokeService {
         logDatasourceCall(apiConfig, datasource, trace, false, null, message, cost);
         throw new ApiInvokeException(message, lastError, responseCacheSeconds > 0, trace.cacheStatus,
                 trace.requestIssued && trace.responseStatus == null, trace.pendingAsyncSnapshot(),
-                apiConfig.getExceptionStrategy());
+                apiConfig.getExceptionStrategy(), trace.requestIssued);
         }
     }
 
@@ -756,11 +874,12 @@ public class ExternalApiInvokeService {
         if (response == null) {
             return new LinkedHashMap<>();
         }
-        return JSON.parseObject(JSON.toJSONString(response), LinkedHashMap.class);
+        return JSON.parseObject(com.hengshucredit.rule.server.artifact.CanonicalJson.write(response), LinkedHashMap.class);
     }
 
     private Map<String, Object> doInvoke(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,
                                          Map<String, Object> params, InvokeTrace trace) throws Exception {
+        ExternalApiTrialContext.check();
         JSONObject execution = ExternalApiRequestPlan.specification(apiConfig);
         if (execution != null && execution.getJSONArray("steps") != null && !execution.getJSONArray("steps").isEmpty()) {
             trace.workflow = true;
@@ -844,10 +963,10 @@ public class ExternalApiInvokeService {
 
     private ExternalApiRequestPlan prepareWorkflowStep(RuleExternalApiConfig root, JSONObject step, Map<String, Object> context) {
         Long linkedId = step.getLong("apiConfigId");
-        RuleExternalApiConfig template = linkedId == null ? root : apiConfigMapper.selectById(linkedId);
+        RuleExternalApiConfig template = linkedId == null ? root : invocationApi(linkedId);
         if (template == null || template.getStatus() != null && template.getStatus() != 1) throw new IllegalArgumentException("步骤 API 不存在或已停用");
-        RuleExternalDatasource rootSource = datasourceMapper.selectById(root.getDatasourceId());
-        RuleExternalDatasource linkedSource = datasourceMapper.selectById(template.getDatasourceId());
+        RuleExternalDatasource rootSource = invocationDatasource(root.getDatasourceId());
+        RuleExternalDatasource linkedSource = invocationDatasource(template.getDatasourceId());
         if (linkedSource == null || linkedSource.getStatus() != null && linkedSource.getStatus() != 1
                 || !"GLOBAL".equals(linkedSource.getScope()) && !java.util.Objects.equals(linkedSource.getProjectId(), rootSource.getProjectId())) {
             throw new IllegalArgumentException("步骤 API 不属于当前可用范围");
@@ -860,9 +979,9 @@ public class ExternalApiInvokeService {
             if (step.containsKey(key)) config.put(key, step.get(key));
         }
         if ("API".equals(step.getString("authMode")) && step.getLong("authApiConfigId") != null) {
-            RuleExternalApiConfig auth = apiConfigMapper.selectById(step.getLong("authApiConfigId"));
+            RuleExternalApiConfig auth = invocationApi(step.getLong("authApiConfigId"));
             if (auth == null || auth.getStatus() != null && auth.getStatus() != 1) throw new IllegalArgumentException("关联鉴权 API 不可用");
-            RuleExternalDatasource authSource = datasourceMapper.selectById(auth.getDatasourceId());
+            RuleExternalDatasource authSource = invocationDatasource(auth.getDatasourceId());
             if (authSource == null || !"GLOBAL".equals(authSource.getScope()) && !java.util.Objects.equals(authSource.getProjectId(), rootSource.getProjectId())) throw new IllegalArgumentException("鉴权 API 不属于当前可用范围");
             boolean inherit = auth.getAuthMode() == null || "INHERIT".equals(auth.getAuthMode());
             config.put("authMode", inherit ? authSource.getAuthType() : auth.getAuthMode());
@@ -893,8 +1012,8 @@ public class ExternalApiInvokeService {
         if (step.containsKey("responseBranches")) stageSpec.put("responseBranches", step.get("responseBranches"));
         config.put("executionConfig", stageSpec.toJSONString());
         RuleExternalApiConfig stage = config.toJavaObject(RuleExternalApiConfig.class);
-        Map<String, String> paths = apiVariableService == null ? Map.of()
-                : apiVariableService.buildRefScriptNameMap(datasourceMapper.selectById(root.getDatasourceId()).getProjectId());
+        if (ExternalApiTrialContext.current() != null) stage.setId(ExternalApiTrialContext.current().stepIdentity(step.getString("id")));
+        Map<String, String> paths = invocationPaths(invocationDatasource(root.getDatasourceId()).getProjectId());
         return ExternalApiRequestPlan.prepare(selectRequestBranch(stage, context), context, Map.of(), paths);
     }
 
@@ -1088,8 +1207,10 @@ public class ExternalApiInvokeService {
                                           Map<String, Object> params, InvokeTrace trace) throws Exception {
         boolean refresh = false;
         while (true) {
+            ExternalApiTrialContext.check();
             RequestDeadlineContext.check();
             PreparedHttpRequest prepared = prepareHttpRequest(config, datasource, params, false, null, refresh);
+            ExternalApiTrialContext.check();
             trace.requestDetails = runtimeRequest(prepared);
             updateRequestTrace(config, trace, prepared);
             ResponseEntity<String> response;
@@ -1197,7 +1318,8 @@ public class ExternalApiInvokeService {
                     throw new IllegalStateException("异步恢复信息缺少任务号");
                 }
             } else {
-                receipt = invokeHttp(config, datasource, input, trace);
+                // 随后会把 receipt 放入查询上下文；提交请求必须独立，避免 request.body 反向引用自身。
+                receipt = invokeHttp(config, datasource, copyMap(input), trace);
                 String taskPath = firstText(protocol.get("submissionTaskIdPath"), protocol.get("taskIdPath"), protocol.get("traceIdPath"));
                 taskId = readPath(receipt, taskPath);
                 if (taskId == null || String.valueOf(taskId).isBlank()) {
@@ -1215,6 +1337,7 @@ public class ExternalApiInvokeService {
             trace.asyncTaskId = String.valueOf(taskId);
             trace.asyncTraceId = String.valueOf(taskId);
             trace.asyncSubmission = copyMap(receipt);
+            ExternalApiTrialContext.checkpoint(trace.pendingAsyncSnapshot());
             Map<String, Object> completed = callback
                     ? awaitCallback(invocationId, protocol, taskId)
                     : pollAsync(config, datasource, protocol, input, trace);
@@ -1286,6 +1409,7 @@ public class ExternalApiInvokeService {
 
     private Map<String, Object> awaitCallback(String invocationId, JSONObject protocol, Object taskId) throws Exception {
         while (true) {
+            ExternalApiTrialContext.check();
             RequestDeadlineContext.check();
             Map<String, Object> result = callbackStore.result(invocationId);
             if (result != null) {
@@ -1312,6 +1436,7 @@ public class ExternalApiInvokeService {
     }
 
     private void waitWithinDeadline(int millis) throws Exception {
+        ExternalApiTrialContext.check();
         RequestDeadlineContext.check();
         try {
             Thread.sleep(Math.min(millis, RequestDeadlineContext.remainingMillis()));
@@ -1355,10 +1480,22 @@ public class ExternalApiInvokeService {
         try {
             ResponseEntity<String> response;
             try (ApiHttpClientRegistry.ClientLease lease = apiHttpClientRegistry.acquire(clientKey, settings)) {
+                ExternalApiTrialContext.check();
+                effectiveTimeout(timeout);
+                // 累计发送事实不能因重试清零；仅清理本次响应，避免前次 503/401 掩盖本次未知结果。
+                trace.responseStatus = null;
+                trace.responseDetails = null;
+                trace.responseBody = null;
+                trace.processedResponseBody = null;
+                trace.rawResponseBody = null;
+                trace.originalResponseBody = null;
+                trace.rawResponseMetadata = null;
+                trace.requestIssued = true;
                 recordTraceStep(trace, "EXTERNAL_REQUEST", "发起外部请求", "SENT",
                         externalRequestStep(prepared), null, apiConfig.getId());
                 response = lease.getRestTemplate().exchange(prepared.finalUrl, prepared.method,
                         new HttpEntity<>(prepared.requestBody, prepared.headers), String.class);
+                trace.responseStatus = response.getStatusCode().value();
             }
             Map<String, Object> responseInput = responseStepInput(response.getStatusCode().value());
             responseInput.put("attemptNo", attemptNo);
@@ -1403,7 +1540,6 @@ public class ExternalApiInvokeService {
         trace.originalRequestBody = ExternalApiPayloadCapturePolicy.originalBody(
                 config.getPayloadCaptureConfig(), "request", originalRequestBody, capture);
         trace.tokenCacheStatus = prepared.tokenCacheStatus;
-        trace.requestIssued = true;
         recordTraceStep(trace, "API_REQUEST", "API请求报文拼装", "SUCCESS",
                 requestStepInput(trace), maskSensitiveForLog(trace.requestBody), config.getId());
         recordTraceStep(trace, "AUTHENTICATION", "外数鉴权（已脱敏）", "SUCCESS",
@@ -1427,7 +1563,8 @@ public class ExternalApiInvokeService {
         step.put("status", status);
         step.put("callId", trace.callId);
         if (trace.runtimeTrace != null) step.put("traceId", trace.runtimeTrace.getTraceId());
-        if (resourceId != null) step.put("resourceId", resourceId);
+        if (ExternalApiTrialContext.resourceId(resourceId) != null) step.put("resourceId", resourceId);
+        if (ExternalApiTrialContext.current() != null) step.put("trialId", ExternalApiTrialContext.current().trialId);
         if (input instanceof Map && ((Map<?, ?>) input).get("attemptNo") != null) {
             step.put("attemptNo", ((Map<?, ?>) input).get("attemptNo"));
         }
@@ -1587,8 +1724,11 @@ public class ExternalApiInvokeService {
                 apiConfig.getPayloadCaptureConfig(), "request", rawPayload(ruleParams), requestCapture);
         trace.rawRequestBody = requestCapture.capturedBody();
         trace.rawRequestMetadata = requestCapture.metadata();
+        ExternalApiTrialContext.check();
         trace.requestIssued = true;
-        RuleResult result = ruleExecuteService.executePublished(published, ruleParams, datasource.getProjectId(), "RULE_ENGINE_DATASOURCE");
+        Map<String, Object> executionParams = ruleParams;
+        RuleResult result = ExternalApiTrialContext.outside(() -> ruleExecuteService.executePublished(
+                published, executionParams, datasource.getProjectId(), "RULE_ENGINE_DATASOURCE"));
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("success", result.isSuccess());
         Object responseBody = executeResponseScript(apiConfig, params, result.getResult(),
@@ -1951,6 +2091,8 @@ public class ExternalApiInvokeService {
         if (tokenUrl.isEmpty()) {
             throw new IllegalArgumentException("Token接口地址不能为空");
         }
+        ExternalApiTrialContext.check();
+        if (ExternalApiTrialContext.current() != null) ExternalApiTrialContext.current().token(cacheKey);
         if (forceRefresh) {
             logTokenCacheEvent(datasource, apiConfig, "TOKEN_INVALIDATE", cacheKey,
                     "INVALIDATED", true);
@@ -2015,6 +2157,7 @@ public class ExternalApiInvokeService {
                     ApiHttpClientRegistry.ClientSettings.from(apiConfig, timeoutMs);
             try (ApiHttpClientRegistry.ClientLease lease = apiHttpClientRegistry.acquire(
                     "api:" + String.valueOf(apiConfig.getId()), settings)) {
+                ExternalApiTrialContext.check();
                 response = lease.getRestTemplate().exchange(tokenUrl, method,
                         new HttpEntity<>(body, headers), String.class);
             }
@@ -2135,7 +2278,7 @@ public class ExternalApiInvokeService {
         int configured = configuredTimeoutMs == null ? 3000 : Math.max(1, configuredTimeoutMs);
         int remaining = RequestDeadlineContext.remainingMillis();
         if (remaining == 0) {
-            throw new IllegalStateException("项目请求总超时", new TimeoutException("项目请求总超时"));
+            throw new IllegalStateException("项目请求总超时", new RequestDeadlineContext.DeadlineTimeoutException());
         }
         return Math.min(configured, remaining);
     }
@@ -3228,7 +3371,7 @@ public class ExternalApiInvokeService {
     @SuppressWarnings("unchecked")
     private Map<String, Object> copyMap(Map<?, ?> source) {
         if (source == null) return new LinkedHashMap<>();
-        Object copy = JSON.parse(JSON.toJSONString(source));
+        Object copy = JSON.parse(com.hengshucredit.rule.server.artifact.CanonicalJson.write(source));
         if (copy instanceof Map<?, ?> map) {
             Map<String, Object> result = new LinkedHashMap<>();
             map.forEach((key, value) -> result.put(String.valueOf(key), value));
@@ -3269,7 +3412,8 @@ public class ExternalApiInvokeService {
         log.setActionType(actionType);
         log.setProjectId(resolveRuntimeProjectId(datasource));
         log.setDatasourceId(datasource.getId());
-        log.setTargetRefId(apiConfig.getId());
+        log.setTargetRefId(ExternalApiTrialContext.resourceId(apiConfig.getId()));
+        if (ExternalApiTrialContext.current() != null) log.setRootTraceId(ExternalApiTrialContext.current().trialId);
         log.setTargetCode(apiConfig.getApiCode());
         log.setTargetName(apiConfig.getApiName());
         log.setSuccess(success ? 1 : 0);
@@ -3293,7 +3437,8 @@ public class ExternalApiInvokeService {
         log.setActionType(success ? (refresh ? "TOKEN_REFRESH" : "TOKEN_FETCH") : "TOKEN_FETCH_FAILED");
         log.setProjectId(resolveRuntimeProjectId(datasource));
         log.setDatasourceId(datasource.getId());
-        log.setTargetRefId(apiConfig.getId());
+        log.setTargetRefId(ExternalApiTrialContext.resourceId(apiConfig.getId()));
+        if (ExternalApiTrialContext.current() != null) log.setRootTraceId(ExternalApiTrialContext.current().trialId);
         log.setTargetCode(apiConfig.getApiCode());
         log.setTargetName(apiConfig.getApiName());
         log.setSuccess(success ? 1 : 0);
@@ -3343,12 +3488,13 @@ public class ExternalApiInvokeService {
             log.setRuleTraceId(trace.runtimeTrace.getRuleTraceId());
         }
         log.setModuleType("DATASOURCE");
-        log.setActionType("API_ATTEMPT");
+        log.setActionType(ExternalApiTrialContext.current() == null ? "API_ATTEMPT" : "API_DRAFT_ATTEMPT");
         log.setProjectId(resolveRuntimeProjectId(datasource));
         log.setDatasourceId(datasource.getId());
         log.setRequestId(prepared.headers.getFirst("X-Request-Id"));
         log.setCallId(trace.callId);
-        log.setTargetRefId(apiConfig.getId());
+        log.setTargetRefId(ExternalApiTrialContext.resourceId(apiConfig.getId()));
+        if (ExternalApiTrialContext.current() != null) log.setRootTraceId(ExternalApiTrialContext.current().trialId);
         log.setTargetCode(apiConfig.getApiCode());
         log.setTargetName(apiConfig.getApiName());
         log.setSuccess(error == null ? 1 : 0);
@@ -3505,7 +3651,7 @@ public class ExternalApiInvokeService {
         }
         if (trace != null) log.setCallId(trace.callId);
         log.setModuleType("DATASOURCE");
-        log.setActionType("API_INVOKE");
+        log.setActionType(ExternalApiTrialContext.current() == null ? "API_INVOKE" : "API_DRAFT_INVOKE");
         var context = com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext();
         Object rootTraceId = context.rootRule().get("traceId");
         if (rootTraceId != null) {
@@ -3517,7 +3663,8 @@ public class ExternalApiInvokeService {
         }
         log.setProjectId(resolveRuntimeProjectId(datasource));
         log.setDatasourceId(datasource.getId());
-        log.setTargetRefId(apiConfig.getId());
+        log.setTargetRefId(ExternalApiTrialContext.resourceId(apiConfig.getId()));
+        if (ExternalApiTrialContext.current() != null) log.setRootTraceId(ExternalApiTrialContext.current().trialId);
         log.setTargetCode(apiConfig.getApiCode());
         log.setTargetName(apiConfig.getApiName());
         log.setSuccess(success ? 1 : 0);
@@ -3590,6 +3737,12 @@ public class ExternalApiInvokeService {
         return result;
     }
 
+    private Object invocationRootTraceId() {
+        ExternalApiTrialContext trial = ExternalApiTrialContext.current();
+        return trial == null ? com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext()
+                .rootRule().get("traceId") : trial.trialId;
+    }
+
     /** 将一次逻辑外数调用的原始报文和关联键放入统一返回槽位，避免下游判断映射配置。 */
     private Map<String, Object> attachExternalCall(Map<String, Object> result, InvokeTrace trace) {
         if (result == null) result = new LinkedHashMap<>();
@@ -3611,8 +3764,7 @@ public class ExternalApiInvokeService {
         Map<String, Object> externalCall = new LinkedHashMap<>();
         externalCall.put("callId", trace.callId);
         externalCall.put("traceId", trace.runtimeTrace == null ? null : trace.runtimeTrace.getTraceId());
-        externalCall.put("rootTraceId", com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext()
-                .rootRule().get("traceId"));
+        externalCall.put("rootTraceId", invocationRootTraceId());
         externalCall.put("requestId", trace.requestHeaders == null ? null : trace.requestHeaders.get("X-Request-Id"));
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("method", trace.requestMethod);
@@ -3636,8 +3788,7 @@ public class ExternalApiInvokeService {
         externalCall.put("originalResponseAvailable", trace.originalResponseBody != null);
         result.put("externalCall", externalCall);
         result.put("callId", trace.callId);
-        result.put("rootTraceId", com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext()
-                .rootRule().get("traceId"));
+        result.put("rootTraceId", invocationRootTraceId());
         result.put("rawRequestAvailable", trace.rawRequestBody != null);
         result.put("originalRequestAvailable", trace.originalRequestBody != null);
         result.put("rawRequestBody", trace.rawRequestBody);
@@ -3896,19 +4047,48 @@ public class ExternalApiInvokeService {
         }
     }
 
+    public static final class BillingPersistenceException extends ApiInvokeException {
+        private final Map<String, Object> observedResponse;
+        public BillingPersistenceException(String message, Throwable cause, Map<String, Object> observedResponse) {
+            super(message, cause, false, "UNAVAILABLE", true, null, "FAIL_FAST");
+            this.observedResponse = new LinkedHashMap<>(observedResponse);
+        }
+        public Map<String, Object> getObservedResponse() { return new LinkedHashMap<>(observedResponse); }
+    }
+
     static class ApiInvokeException extends IllegalStateException {
         private final boolean cacheConfigured;
         private final String cacheStatus;
         private final boolean unknown;
+        private final Boolean requestIssued;
         private final Map<String, Object> pendingAsync;
         private final String exceptionStrategy;
 
         ApiInvokeException(String message, Throwable cause, boolean cacheConfigured, String cacheStatus,
                            boolean unknown, Map<String, Object> pendingAsync, String exceptionStrategy) {
+            this(message, cause, cacheConfigured, cacheStatus, unknown, pendingAsync, exceptionStrategy, null);
+        }
+
+        ApiInvokeException(String message, Throwable cause, boolean cacheConfigured, String cacheStatus,
+                           boolean unknown, Map<String, Object> pendingAsync, String exceptionStrategy, Boolean requestIssued) {
             super(message, cause);
             this.cacheConfigured = cacheConfigured;
             this.cacheStatus = cacheStatus;
-            this.unknown = unknown;
+            boolean mergedUnknown = unknown;
+            Boolean mergedIssued = requestIssued;
+            for (Throwable current = cause; current != null; current = current.getCause()) {
+                if (current instanceof ApiInvokeException nested) {
+                    mergedUnknown |= nested.isUnknown();
+                    if (Boolean.TRUE.equals(mergedIssued) || Boolean.TRUE.equals(nested.getRequestIssued())) {
+                        mergedIssued = Boolean.TRUE;
+                    } else if (mergedIssued == null || nested.getRequestIssued() == null) {
+                        mergedIssued = null;
+                    }
+                }
+                if (current == current.getCause()) break;
+            }
+            this.unknown = mergedUnknown;
+            this.requestIssued = mergedIssued;
             this.pendingAsync = pendingAsync == null ? null : new LinkedHashMap<>(pendingAsync);
             this.exceptionStrategy = exceptionStrategy;
         }
@@ -3924,6 +4104,8 @@ public class ExternalApiInvokeService {
         boolean isUnknown() {
             return unknown;
         }
+
+        Boolean getRequestIssued() { return requestIssued; }
 
         Map<String, Object> getPendingAsync() {
             return pendingAsync == null ? null : new LinkedHashMap<>(pendingAsync);

@@ -14,6 +14,13 @@ public final class ExternalApiExecutionConfig {
                     "com.hengshucredit.rule.core.function.DecisionBuiltinFunctions", "com.hengshucredit.rule.core.function.DigestBuiltinFunctions").contains(function.getImplClass()))
             .map(com.hengshucredit.rule.model.entity.RuleFunction::getFuncCode).collect(java.util.stream.Collectors.toUnmodifiableSet());
     private ExternalApiExecutionConfig() { }
+    static void validateVersionFunction(com.hengshucredit.rule.model.entity.RuleFunction function) {
+        if (!PURE_FUNCTIONS.contains(function.getFuncCode()) || !Set.of(
+                "com.hengshucredit.rule.core.function.AggregateBuiltinFunctions",
+                "com.hengshucredit.rule.core.function.DecisionBuiltinFunctions",
+                "com.hengshucredit.rule.core.function.DigestBuiltinFunctions").contains(function.getImplClass() == null ? "" : function.getImplClass()))
+            throw new IllegalArgumentException("外数配置仅支持无副作用的内置计算函数版本");
+    }
     static void validateFunction(JSONObject operand) {
         if ("FUNCTION".equals(operand.getString("kind")) && !PURE_FUNCTIONS.contains(operand.getString("functionCode"))) {
             throw new IllegalArgumentException("外数配置表达式只支持无副作用的内置计算函数: " + operand.getString("functionCode"));
@@ -23,13 +30,18 @@ public final class ExternalApiExecutionConfig {
         if (node instanceof JSONObject value) {
             validateFunction(value);
             String kind = value.getString("kind");
+            if ("LITERAL".equals(kind)) return;
+            if (com.hengshucredit.rule.core.compiler.OperandVersion.fixedVersionId(value) != null) {
+                if ("FUNCTION".equals(kind)) bindReferences(value.get("args"), paths);
+                return;
+            }
             if ("REFERENCE".equals(kind) || "PATH".equals(kind)) {
                 if (value.get("refId") != null && value.get("refType") != null) {
                     String key = value.getString("refType") + ":" + value.getString("refId");
                     if (!paths.containsKey(key)) throw new IllegalArgumentException("外数参数引用不属于可用字段: " + key);
                 } else {
                     String path = value.getString("value");
-                    boolean protocol = path != null && path.matches("(?:response|request|authentication|steps|callbacks|status|body)(?:\\..+)?|input\\.__apiFields\\..+|callId|costTimeMs");
+                    boolean protocol = path != null && path.matches("(?:response|request|authentication|steps|callbacks|status|body|headers|rawBody)(?:[.\\[].+)?|input\\.__apiFields\\..+|httpStatus|callId|costTimeMs|errorMessage");
                     if (!protocol) {
                         var matches = paths.entrySet().stream().filter(entry -> java.util.Objects.equals(path, entry.getValue())).toList();
                         if (matches.size() != 1) throw new IllegalArgumentException("字段路径无法唯一反解，请选择字段: " + path);

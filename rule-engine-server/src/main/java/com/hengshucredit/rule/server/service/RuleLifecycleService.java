@@ -35,11 +35,14 @@ import com.hengshucredit.rule.server.mapper.RuleLifecycleEventMapper;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import com.hengshucredit.rule.server.mapper.RulePublishOutboxMapper;
 import com.hengshucredit.rule.server.mapper.RuleRevisionMapper;
+import com.hengshucredit.rule.server.publish.RulePushService;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -64,10 +67,13 @@ public class RuleLifecycleService {
     @Resource
     private RulePublishOutboxMapper outboxMapper;
     @Resource
+    private RulePushService pushService;
+    @Resource
     private RuleDefinitionVersionMapper versionMapper;
     @Resource
     private RuleVersionBindingService versionBindingService;
     @Resource private RulePublicationValidator publicationValidator;
+    @Resource private RuleReferenceNamespaceGuard referenceNamespaceGuard;
     @Resource
     private RuleDefinitionService definitionService;
     @Resource
@@ -93,7 +99,8 @@ public class RuleLifecycleService {
 
     /** 只读取来源并复制内存快照，供纯编译和显式新增保存使用。 */
     public RuleRevision prepareDesignerDraft(Long definitionId, RuleDraftSourceType sourceType, Long sourceId) {
-        if (loadDefinition(definitionId) == null) {
+        RuleDefinition definition = loadDefinition(definitionId);
+        if (definition == null) {
             throw governance(400, "DEFINITION_NOT_FOUND", "规则定义不存在");
         }
         if ((sourceType == null) != (sourceId == null)) {
@@ -111,11 +118,13 @@ public class RuleLifecycleService {
             copyVersionSource(definitionId, sourceId, draft);
         } else {
             RuleDefinitionContent content = loadContent(definitionId);
+            requireLocalWorkspace(definition, content);
             if (content != null) {
                 draft.setModelJson(content.getModelJson());
                 draft.setOpenApiConfigJson(content.getOpenApiConfigJson());
             }
         }
+        requireLocalNamespace(definition, draft);
         return draft;
     }
 
@@ -165,6 +174,12 @@ public class RuleLifecycleService {
         if (definition == null) {
             throw new IllegalArgumentException("规则定义不存在");
         }
+        if (baseRevisionId == null) requireLocalWorkspace(definition, loadContent(definitionId));
+        else {
+            RuleRevision explicitBase = loadRevision(baseRevisionId);
+            validateDraftBase(definitionId, baseRevisionId, explicitBase);
+            requireLocalNamespace(definition, explicitBase);
+        }
         ensureGovernanceBaseline(definitionId);
         RuleDefinitionContent content = loadContent(definitionId);
         RuleRevision base = baseRevisionId == null
@@ -192,6 +207,7 @@ public class RuleLifecycleService {
         draft.setInputSchemaJson(base == null ? null : base.getInputSchemaJson());
         draft.setOutputSchemaJson(base == null ? null : base.getOutputSchemaJson());
         draft.setLockVersion(0);
+        requireLocalNamespace(definition, draft);
         draft.setCreateBy(actor());
         draft.setCreateTime(LocalDateTime.now());
         draft.setUpdateBy(actor());
@@ -245,7 +261,6 @@ public class RuleLifecycleService {
         if (definition == null) {
             throw governance(400, "DEFINITION_NOT_FOUND", "规则定义不存在");
         }
-        ensureGovernanceBaseline(definitionId);
         if (request == null || request.getSourceType() == null
                 || request.getSourceId() == null) {
             throw governance(400, "SOURCE_NOT_FOUND", "来源不存在或不属于当前规则");
@@ -254,7 +269,6 @@ public class RuleLifecycleService {
 
         RuleRevision draft = new RuleRevision();
         draft.setDefinitionId(definitionId);
-        draft.setRevisionNo(nextRevisionNo(definitionId));
         draft.setState(RuleRevisionState.DRAFT.name());
         draft.setLockVersion(0);
         draft.setSourceType(request.getSourceType().name());
@@ -273,6 +287,9 @@ public class RuleLifecycleService {
         }
 
         if (request.getModelJson() != null) draft.setModelJson(request.getModelJson());
+        requireLocalNamespace(definition, draft);
+        ensureGovernanceBaseline(definitionId);
+        draft.setRevisionNo(nextRevisionNo(definitionId));
 
         try {
             insertRevision(draft);
@@ -306,6 +323,7 @@ public class RuleLifecycleService {
         RuleRevision revision = requireState(revisionId, RuleRevisionState.DRAFT);
         lockDefinition(revision.getDefinitionId());
         revision = requireState(revisionId, RuleRevisionState.DRAFT);
+        requireLocalNamespace(loadDefinition(revision.getDefinitionId()), revision);
         RuleRevision pending = findPendingRevision(revision.getDefinitionId());
         if (pending != null) {
             throw governance(409, "REVIEW_ALREADY_EXISTS", "规则已有待审批修订，请等待审批结束");
@@ -339,6 +357,9 @@ public class RuleLifecycleService {
     @Transactional
     public RuleRevision approve(Long revisionId, RuleLifecycleActionRequest request) {
         RuleRevision revision = requireState(revisionId, RuleRevisionState.REVIEW);
+        if (lockDefinition(revision.getDefinitionId()) == null) throw new IllegalArgumentException("规则不存在或已删除");
+        revision = requireState(revisionId, RuleRevisionState.REVIEW);
+        requireLocalNamespace(loadDefinition(revision.getDefinitionId()), revision);
         RulePreflightReport report = preflight(revisionId);
         assertPreflightValid(report);
         if (revision.getContentDigest() == null
@@ -415,6 +436,14 @@ public class RuleLifecycleService {
                 .orderByDesc(RuleRevision::getRevisionNo));
     }
 
+    public Integer publishedBusinessVersion(Long definitionId, Long revisionId) {
+        RuleDefinitionVersion snapshot = versionMapper.selectOne(new LambdaQueryWrapper<RuleDefinitionVersion>()
+                .eq(RuleDefinitionVersion::getDefinitionId, definitionId).eq(RuleDefinitionVersion::getRevisionId, revisionId)
+                .orderByDesc(RuleDefinitionVersion::getVersion).last("LIMIT 1"));
+        if (snapshot == null) throw new IllegalStateException("已发布修订缺少业务版本快照");
+        return RuleVersionBindingService.businessVersion(snapshot);
+    }
+
     public RuleRevision getRevision(Long definitionId, Long revisionId) {
         RuleRevision revision = loadRevision(revisionId);
         if (revision == null || !definitionId.equals(revision.getDefinitionId())) {
@@ -460,7 +489,8 @@ public class RuleLifecycleService {
     }
 
     public RulePreflightReport preflightReport(Long definitionId, Long revisionId) {
-        getRevision(definitionId, revisionId);
+        RuleRevision revision = getRevision(definitionId, revisionId);
+        requireLocalNamespace(loadDefinition(definitionId), revision);
         return preflight(revisionId);
     }
 
@@ -484,13 +514,68 @@ public class RuleLifecycleService {
         return offline(published.getId(), request);
     }
 
+    /** 删除可用于从未发布的规则；已有运行时发布必须先撤销，不能为删除而创建或发布修订。 */
+    @Transactional
+    public RuleRevision offlineForDeletion(Long definitionId, RuleLifecycleActionRequest request) {
+        RuleDefinition definition = lockDefinition(definitionId);
+        if (definition == null) throw governance(400, "DEFINITION_NOT_FOUND", "规则定义不存在");
+        RuleRevision revision = findPublishedRevision(definitionId);
+        RuleRevision retired = revision == null ? null : offline(revision.getId(), request);
+
+        // 旧版按 ruleCode 发布，规则改码后可能留下同一 definitionId 的多个运行时投影。
+        // 当前正式修订下线后也要继续清理，不能遗留仍生效的旧编码别名。
+        List<RulePublished> remaining = publishedMapper.selectList(new LambdaQueryWrapper<RulePublished>()
+                .eq(RulePublished::getDefinitionId, definitionId)
+                .eq(RulePublished::getStatus, 1).orderByAsc(RulePublished::getId).last("FOR UPDATE"));
+        for (RulePublished publication : remaining) {
+            RuleRevision linked = publication.getRevisionId() == null ? null : loadRevision(publication.getRevisionId());
+            if (publication.getRevisionId() != null && (linked == null
+                    || !definitionId.equals(linked.getDefinitionId()) || linked.getArtifactId() == null)) {
+                throw governance(409, "FROZEN_REVISION_WRITE_REJECTED", "运行时发布关联的修订或制品不存在，无法安全删除规则");
+            }
+            publication.setStatus(0);
+            publication.setOfflineTime(LocalDateTime.now());
+            if (publishedMapper.updateById(publication) != 1) throw new IllegalStateException("规则发布投影下线未生效");
+            RulePushMessage message = new RulePushMessage();
+            message.setRuleCode(publication.getRuleCode());
+            message.setDefinitionId(definitionId);
+            message.setProjectCode(publication.getProjectCode());
+            message.setRevisionId(publication.getRevisionId());
+            message.setArtifactDigest(publication.getArtifactDigest());
+            message.setAction("UNPUBLISH");
+            message.setPublishTime(System.currentTimeMillis());
+            if (linked != null) insertOutbox(definition, linked, null, message);
+            else pushLegacyAfterCommit(message);
+        }
+        return retired;
+    }
+
+    private void pushLegacyAfterCommit(RulePushMessage message) {
+        // 旧发布没有修订/制品 ID，保持兼容推送通道，不伪造发布 outbox 所需的关联 ID。
+        // 推送必须等整个删除审批提交后发生；回滚时不得让客户端提前删除缓存。
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { pushService.push(message); }
+            });
+        } else {
+            pushService.push(message);
+        }
+    }
+
     @Transactional
     public RuleRevision activateImportedArtifact(Long artifactId, Long definitionId, String importActor) {
         DecisionArtifact artifact = artifactService.getById(artifactId);
         if (artifact == null) throw new IllegalArgumentException("导入制品不存在");
         DecisionArtifactService.RuntimeProjection projection =
                 artifactService.loadRuntimeProjection(artifactId);
-        RuleRevision draft = ensureDraft(definitionId);
+        // Imported packages execute their approved snapshot. Never copy an older target's foreign
+        // configuration into a local draft or recompile source-environment IDs during deployment.
+        if (lockDefinition(definitionId) == null) throw new IllegalArgumentException("规则定义不存在");
+        ensureGovernanceBaseline(definitionId);
+        RuleRevision draft = new RuleRevision();
+        draft.setDefinitionId(definitionId);
+        draft.setState(RuleRevisionState.DRAFT.name());
+        draft.setLockVersion(0);
         draft.setModelJson(projection.getModelJson());
         draft.setCompiledScript(projection.getCompiledScript());
         draft.setCompiledType("QLEXPRESS");
@@ -502,6 +587,7 @@ public class RuleLifecycleService {
         draft.setApproveBy(importActor);
         draft.setApproveTime(LocalDateTime.now());
         draft.setForcePublishReason("跨环境导入已批准决策制品");
+        insertDesignerDraft(draft);
         if (!compareAndSetState(draft, RuleRevisionState.DRAFT.name(),
                 RuleRevisionState.APPROVED.name())) {
             throw new IllegalStateException("目标规则草稿已被其他会话修改");
@@ -688,13 +774,23 @@ public class RuleLifecycleService {
     }
 
     protected RuleDefinition loadDefinition(Long definitionId) {
-        return definitionService.getById(definitionId);
+        RuleDefinition definition = definitionService.getById(definitionId);
+        return definition != null && Integer.valueOf(-1).equals(definition.getStatus()) ? null : definition;
+    }
+
+    protected void requireLocalNamespace(RuleDefinition definition, RuleRevision revision) {
+        referenceNamespaceGuard.requireLocalNamespace(definition, revision);
+    }
+
+    protected void requireLocalWorkspace(RuleDefinition definition, RuleDefinitionContent content) {
+        referenceNamespaceGuard.requireLocalWorkspace(definition, content);
     }
 
     protected RuleDefinition lockDefinition(Long definitionId) {
         return definitionMapper.selectOne(
                 new LambdaQueryWrapper<RuleDefinition>()
                         .eq(RuleDefinition::getId, definitionId)
+                        .ne(RuleDefinition::getStatus, -1)
                         .last("FOR UPDATE"));
     }
 
@@ -709,6 +805,20 @@ public class RuleLifecycleService {
     protected RuleDefinitionVersion loadVersion(
             Long definitionId, Long versionId) {
         return definitionService.getVersionById(definitionId, versionId);
+    }
+
+    public void configureRestoreVersion(RuleRevision draft, Long sourceVersionId) {
+        RuleDefinitionVersion source = loadVersion(draft.getDefinitionId(), sourceVersionId);
+        if (source == null) throw new IllegalArgumentException("恢复来源版本不属于当前规则");
+        configureRestoreBusinessVersion(draft, RuleVersionBindingService.businessVersion(source));
+    }
+
+    public void configureRestoreBusinessVersion(RuleRevision draft, Integer businessVersion) {
+        if (!RuleRevisionState.DRAFT.name().equals(draft.getState())) throw new IllegalArgumentException("只有草稿可以选择恢复版本号");
+        versionBindingService.ensureLegacyBindings(draft.getDefinitionId());
+        var binding = versionBindingService.requireBusinessVersion(draft.getDefinitionId(), businessVersion);
+        draft.setPublishMode("OVERWRITE"); draft.setTargetVersionId(binding.getId()); draft.setTargetGeneration(binding.getGeneration());
+        if (draft.getId() != null) persistRevisionSnapshot(draft);
     }
 
     protected RuleDraftSaveResponse saveDraft(

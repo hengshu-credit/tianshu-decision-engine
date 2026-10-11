@@ -26,6 +26,67 @@ import java.util.List;
 import java.util.Map;
 
 public class RuleDependencyClosureServiceTest {
+    @Test public void staticResourceVersionCallsInScriptsFreezeTheirExactVersionDependencies() {
+        FixtureService service = new FixtureService();
+        String script = "// resourceVersionValue('VARIABLE','999','999','')\nreturn resourceVersionValue('CONSTANT','7','BUSINESS_VERSION:91','') + invokeFunctionVersionById('13','FUNCTION_HISTORY:92',1);";
+        service.revision.setModelJson(CanonicalJson.write(Map.of("script", script)));
+        ReflectionTestUtils.setField(service, "resourceVersions", new com.hengshucredit.rule.server.service.ResourceVersionService() {
+            @Override public com.alibaba.fastjson.JSONObject snapshot(com.hengshucredit.rule.core.engine.ResourceVersionCall call, Long projectId) {
+                var snapshot = new com.alibaba.fastjson.JSONObject(); snapshot.put("key", call.bindingKey()); snapshot.put("version", 2);
+                snapshot.put("payload", Map.of("id", call.refId(), "varSource", "CONSTANT", "defaultValue", "42")); return snapshot;
+            }
+        });
+        var closure = service.resolve(100L, 200L);
+        Assert.assertFalse(closure.getIssues().toString(), closure.hasErrors());
+        var ids = closure.getDependencies().stream().map(ArtifactDependency::getComponentId).toList();
+        Assert.assertTrue(ids.toString(), ids.contains("RESOURCE_VERSION:CONSTANT:7@BUSINESS_VERSION:91"));
+        Assert.assertTrue(ids.toString(), ids.contains("RESOURCE_VERSION:FUNCTION:13@FUNCTION_HISTORY:92"));
+        Assert.assertTrue(ids.stream().noneMatch(id -> id.contains("999")));
+    }
+    @Test public void explicitApiActionFreezesStableRequestFieldDependencies() {
+        FixtureService service = new FixtureService();
+        service.revision.setModelJson("{\"actions\":[{\"type\":\"api-call\",\"apiId\":21}]}");
+        var api = new com.hengshucredit.rule.model.entity.RuleExternalApiConfig();
+        api.setId(21L); api.setStatus(1); api.setDatasourceId(22L);
+        api.setExecutionConfig("{\"version\":2,\"requestFields\":[{\"value\":{\"kind\":\"REFERENCE\",\"refId\":7,\"refType\":\"VARIABLE\",\"code\":\"oldName\"}}]}");
+        ReflectionTestUtils.setField(service, "apiConfigMapper", java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper.class}, (proxy, method, args) -> api));
+        service.variables.put(7L, variable(7L, 1));
+        var closure = service.resolve(100L, 200L);
+        Assert.assertFalse(closure.getIssues().toString(), closure.hasErrors());
+        Assert.assertTrue(closure.getDependencies().stream().map(ArtifactDependency::getComponentId).toList()
+                .containsAll(List.of("BINDING:EXTERNAL_API:21", "VARIABLE:7")));
+    }
+    @Test
+    public void modelWithConfigurationButNoPublicationCannotBeReferenced() {
+        FixtureService service = new FixtureService();
+        service.revision.setModelJson("{\"modelId\":11}");
+        service.inputs = List.of(field("MODEL", 11L));
+        RuleModel model = model(11L, 3, 1, digest('a'));
+        model.setPublishedVersion(null);
+        service.models.put(11L, model);
+        service.versions.put("11:3", version(11L, 3, digest('a')));
+        var closure = service.resolve(100L, 200L);
+        Assert.assertTrue(closure.getIssues().stream().anyMatch(issue -> "MODEL_VERSION_MISSING".equals(issue.getCode())));
+        Assert.assertTrue(closure.getDependencies().stream().noneMatch(item -> "MODEL".equals(item.getResourceType())));
+    }
+
+    @Test
+    public void latestModelReferenceUsesPublishedVersionInsteadOfNewerDraftConfiguration() {
+        FixtureService service = new FixtureService();
+        service.revision.setModelJson("{\"modelId\":11}");
+        service.inputs = List.of(field("MODEL", 11L));
+        RuleModel model = model(11L, 4, 1, digest('b'));
+        model.setPublishedVersion(3);
+        service.models.put(11L, model);
+        service.versions.put("11:3", version(11L, 3, digest('a')));
+        service.versions.put("11:4", version(11L, 4, digest('b')));
+        var closure = service.resolve(100L, 200L);
+        Assert.assertFalse(closure.getIssues().toString(), closure.hasErrors());
+        var frozen = closure.getDependencies().stream().filter(item -> "MODEL".equals(item.getResourceType())).findFirst().orElseThrow();
+        Assert.assertEquals(Integer.valueOf(3), frozen.getVersion());
+        Assert.assertEquals(digest('a'), frozen.getContentDigest());
+    }
     @Test
     public void modelInputRuntimeVariableAndFunctionAreFrozenBeyondPublicInputProjection() {
         FixtureService service = new FixtureService();
@@ -576,6 +637,7 @@ public class RuleDependencyClosureServiceTest {
         RuleModel model = new RuleModel();
         model.setId(id);
         model.setCurrentVersion(version);
+        model.setPublishedVersion(version);
         model.setStatus(status);
         model.setModelFormat("PMML");
         model.setModelDigest(digest);

@@ -30,7 +30,7 @@ final class TransferSelection {
                             ? reference : reference.asExternal())
                     .toList();
             result.add(new TransferBundle.Resource(resource.key(), resource.configuration(), references,
-                    resource.requiredEnvironmentFields()));
+                    resource.requiredEnvironmentFields(), resource.versionReferences()));
         }
         return result;
     }

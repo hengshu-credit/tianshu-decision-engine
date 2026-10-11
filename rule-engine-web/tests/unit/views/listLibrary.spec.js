@@ -3,6 +3,7 @@ import { nextTick } from 'vue'
 import * as projectApi from '@/api/project'
 import * as ruleListApi from '@/api/ruleList'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import ListLibrary from '@/views/ruleList/ListLibrary.vue'
 
 const FormStub = {
@@ -77,21 +78,22 @@ describe('ListLibrary governed changes', () => {
 
   test('uses unified fuzzy filters and loads effective libraries', () => {
     expect(ListLibrary.components.ProjectFilterSelect).toBe(ProjectFilterSelect)
-    expect(projectApi.listProjects).toHaveBeenCalled()
+    expect(ListLibrary.components.ProjectResourceSelect).toBe(ProjectResourceSelect)
+    expect(projectApi.listProjects).not.toHaveBeenCalled()
     expect(ruleListApi.listLibraries).toHaveBeenCalled()
     expect(wrapper.vm.tableData[0].listCode).toBe('mobile_black')
     expect(wrapper.vm.activeTab).toBe('list')
   })
 
-  test('名单库变更入口受字段编辑权限控制', async () => {
+  test('名单库变更入口受名单编辑权限控制', async () => {
     wrapper.unmount()
     const permissions = []
     wrapper = await mountPage(permissions)
 
-    expect(permissions).toContain('field:edit')
+    expect(permissions).toContain('list:edit')
   })
 
-  test('new library creates an approval draft and opens it', async () => {
+  test('new library saves an editable workspace without submitting approval', async () => {
     ruleListApi.createLibraryDraft.mockResolvedValue({ data: { id: 81 } })
     wrapper.vm.handleCreate()
     wrapper.vm.form.projectId = 1
@@ -108,7 +110,8 @@ describe('ListLibrary governed changes', () => {
         listName: 'ID blacklist'
       })
     )
-    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/approval/81')
+    expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith(expect.stringContaining('草稿已保存'))
   })
 
   test('status change creates approval and restores effective switch state', async () => {
@@ -125,7 +128,7 @@ describe('ListLibrary governed changes', () => {
   })
 
   test('delete creates approval instead of removing effective library', async () => {
-    ruleListApi.deleteLibraryDraft.mockResolvedValue({ data: { id: 83 } })
+    ruleListApi.deleteLibraryDraft.mockResolvedValue({ data: { id: 83, action: 'DELETE', deleted: false } })
 
     wrapper.vm.handleDelete(wrapper.vm.tableData[0])
     await flush()

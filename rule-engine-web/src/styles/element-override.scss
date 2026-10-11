@@ -115,29 +115,22 @@ $info-color: #475569;
 }
 
 /* ── 主要按钮 ── */
-.el-button--primary:not(.is-link):not(.is-text):not(.is-plain) {
+.el-button--primary:not(.is-link):not(.is-text):not(.is-plain):where(:not(.is-disabled):not(:disabled:not(.is-loading))) {
   background-color: var(--el-color-primary) !important;
   border-color: var(--el-color-primary) !important;
 
-  &:hover,
-  &:focus {
+  &:hover:where(:not(:disabled)),
+  &:focus:where(:not(:disabled)) {
     background-color: var(--el-color-primary-dark-1) !important;
     border-color: var(--el-color-primary-dark-1) !important;
   }
 
-  &:active,
-  &.is-active {
+  &:active:where(:not(:disabled)),
+  &.is-active:where(:not(:disabled)) {
     background-color: var(--el-color-primary-dark-2) !important;
     border-color: var(--el-color-primary-dark-2) !important;
   }
 
-  &:disabled,
-  &.is-disabled {
-    /* 保留禁用态层次，同时保证白色文字仍达到可读对比度。 */
-    background-color: var(--el-color-primary-light-2) !important;
-    border-color: var(--el-color-primary-light-2) !important;
-    cursor: not-allowed;
-  }
 }
 
 /* ── 文字链接按钮 ── */
@@ -283,11 +276,11 @@ $info-color: #475569;
   border-color: transparent !important;
   border-radius: 4px;
 
-  &.el-button--primary {
+  &.el-button--primary:where(:not(.is-disabled):not(:disabled:not(.is-loading))) {
     color: var(--el-color-primary) !important;
 
-    &:hover,
-    &:focus {
+    &:hover:where(:not(:disabled)),
+    &:focus:where(:not(:disabled)) {
       color: var(--el-color-primary-dark-1) !important;
       background-color: var(--el-color-primary-light-9) !important;
     }
@@ -611,28 +604,22 @@ $info-color: #475569;
 /* ── 弹窗底部按钮：统一确认按钮样式 ── */
 .el-dialog__footer,
 .el-message-box__btns {
-  .el-button--primary:not(.is-link):not(.is-text):not(.is-plain) {
+  .el-button--primary:not(.is-link):not(.is-text):not(.is-plain):where(:not(.is-disabled):not(:disabled:not(.is-loading))) {
     background-color: var(--el-color-primary) !important;
     border-color: var(--el-color-primary) !important;
     color: var(--tianshu-brand-foreground) !important;
 
-    &:hover,
-    &:focus {
+    &:hover:where(:not(:disabled)),
+    &:focus:where(:not(:disabled)) {
       background-color: var(--el-color-primary-dark-1) !important;
       border-color: var(--el-color-primary-dark-1) !important;
     }
 
-    &:active {
+    &:active:where(:not(:disabled)) {
       background-color: var(--el-color-primary-dark-2) !important;
       border-color: var(--el-color-primary-dark-2) !important;
     }
 
-    &:disabled,
-    &.is-disabled {
-      background-color: var(--el-color-primary-light-2) !important;
-      border-color: var(--el-color-primary-light-2) !important;
-      cursor: not-allowed;
-    }
   }
 
   .el-button {
@@ -837,7 +824,7 @@ $info-color: #475569;
 }
 
 /* 实心操作按钮使用高对比文字；链接和朴素按钮保留浅色背景。 */
-.el-button--primary:not(.is-link):not(.is-text):not(.is-plain) {
+.el-button--primary:not(.is-link):not(.is-text):not(.is-plain):where(:not(.is-disabled):not(:disabled:not(.is-loading))) {
   color: var(--tianshu-brand-foreground) !important;
 }
 
@@ -864,8 +851,8 @@ $info-color: #475569;
   box-shadow: none !important;
 }
 
-.el-button--primary.is-link,
-.el-button--primary.is-text {
+.el-button--primary.is-link:where(:not(.is-disabled):not(:disabled:not(.is-loading))),
+.el-button--primary.is-text:where(:not(.is-disabled):not(:disabled:not(.is-loading))) {
   color: var(--el-color-primary) !important;
 }
 

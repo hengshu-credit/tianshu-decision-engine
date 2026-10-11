@@ -1,9 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONArray;
-import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
@@ -12,14 +10,13 @@ import com.hengshucredit.rule.server.mapper.RuleExecutionLogMapper;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.annotation.Resource;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Collection;
@@ -34,6 +31,8 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
     private ProjectFilterService projectFilterService;
     @Resource
     private RulePublishedMapper publishedMapper;
+    @Resource
+    private RuleSetStatisticsStore statisticsStore;
 
     public void applyPublishedAttribution(RuleExecutionLog log, String authenticatedProjectCode) {
         if (log == null || !hasText(log.getRuleCode())) return;
@@ -46,45 +45,103 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
     }
 
     /**
-     * 按根 trace 覆盖同一逻辑执行的日志。幂等重试可能跨节点，状态表保证同一时刻只有一个执行者；
-     * 这里用数据库现有索引查找后更新，兼容按 create_time 分区的历史表结构。
+     * 不分区的 trace 身份行负责并发互斥，日志仍保留在原 create_time 分区中。
+     * 已存在的历史重复记录不删除；首次使用时绑定最高尝试的代表行。
      */
+    @Transactional
     public void saveLogical(RuleExecutionLog log) {
+        if (log != null) {
+            RuleSetTraceSummary summary = RuleSetTraceSummary.fromTrace(log.getTraceInfo());
+            log.setRuleSetStatsJson(summary.json());
+            log.setRuleSetStatsStatus(summary.status());
+            log.setRuleSetStatsVersion(RuleSetStatisticsStore.FORMAT_VERSION);
+        }
         if (log == null || !hasText(log.getTraceId())) {
-            if (log != null) save(log);
+            if (log != null) log.setId(null);
+            if (log != null && !save(log)) {
+                throw new IllegalStateException("执行日志未写入");
+            }
+            if (log != null && statisticsStore != null) {
+                log.setCreateTime(baseMapper.selectPhysicalCreateTime(log.getId()));
+                persistStatistics(log);
+            }
             return;
         }
         // 单元测试和无持久化的预览执行可能通过子类覆盖 save；不要强制调用
         // MyBatis-Plus 的 lambdaQuery（其 baseMapper 尚未注入）。
         if (baseMapper == null) {
-            save(log);
+            if (!save(log)) {
+                throw new IllegalStateException("执行日志未写入");
+            }
             return;
         }
-        RuleExecutionLog existing = lambdaQuery()
-                .eq(RuleExecutionLog::getTraceId, log.getTraceId())
-                .orderByDesc(RuleExecutionLog::getCreateTime)
-                .last("LIMIT 1")
-                .one();
-        if (existing == null) {
-            save(log);
-            return;
+        baseMapper.lockLogicalIdentity(log.getTraceId());
+        RuleExecutionLogMapper.LogicalIdentity identity = baseMapper.selectLogicalIdentity(log.getTraceId());
+        if (identity == null) throw new IllegalStateException("无法锁定逻辑执行日志身份");
+        RuleExecutionLog existing;
+        if (identity.logId() == null) {
+            existing = baseMapper.selectLegacyLogicalRecord(log.getTraceId());
+            boolean created = existing == null;
+            if (created) {
+                // 物理主键由数据库分配，不复用客户端或旧恢复载荷携带的行 ID。
+                log.setId(null);
+                if (!save(log)) throw new IllegalStateException("执行日志未写入");
+                LocalDateTime storedTime = baseMapper.selectInsertedCreateTime(log.getId(), log.getTraceId());
+                if (storedTime == null) throw new IllegalStateException("无法确认新执行日志的物理位置");
+                log.setCreateTime(storedTime);
+                existing = log;
+            }
+            if (baseMapper.bindLogicalIdentity(log.getTraceId(), existing.getId(), existing.getCreateTime()) != 1) {
+                throw new IllegalStateException("逻辑执行日志身份未绑定");
+            }
+            if (created) {
+                log.setCreateTime(existing.getCreateTime());
+                persistStatistics(log);
+                return;
+            }
+        } else {
+            existing = baseMapper.selectLogicalRecord(identity.logId(), identity.logCreateTime());
+            if (existing == null) throw new IllegalStateException("逻辑执行日志关联的审计记录不存在");
         }
-        if (existing.getAttemptNo() != null && log.getAttemptNo() != null
-                && existing.getAttemptNo() > log.getAttemptNo()) {
-            return;
-        }
+        if (attempt(existing) > attempt(log)) return;
         log.setId(existing.getId());
-        if (log.getCreateTime() == null) log.setCreateTime(existing.getCreateTime());
-        updateById(log);
+        log.setCreateTime(existing.getCreateTime());
+        LambdaUpdateWrapper<RuleExecutionLog> update = new LambdaUpdateWrapper<RuleExecutionLog>()
+                .eq(RuleExecutionLog::getId, existing.getId())
+                .eq(RuleExecutionLog::getCreateTime, existing.getCreateTime())
+                .eq(RuleExecutionLog::getTraceId, log.getTraceId())
+                .apply("COALESCE(attempt_no, 1) <= {0}", attempt(log))
+                .set(log.getOutputResult() == null, RuleExecutionLog::getOutputResult, null)
+                .set(log.getTraceInfo() == null, RuleExecutionLog::getTraceInfo, null)
+                .set(log.getErrorMessage() == null, RuleExecutionLog::getErrorMessage, null);
+        if (baseMapper.update(log, update) != 1) {
+            RuleExecutionLog current = baseMapper.selectLogicalRecord(existing.getId(), existing.getCreateTime());
+            if (current != null && attempt(current) > attempt(log)) return;
+            throw new IllegalStateException("执行日志更新未生效");
+        }
+        persistStatistics(log);
     }
 
+    private void persistStatistics(RuleExecutionLog log) {
+        if (statisticsStore != null) statisticsStore.persist(log.getId(), log.getCreateTime(), log.getRuleSetStatsJson(), log.getRuleSetStatsStatus());
+    }
+
+    private static int attempt(RuleExecutionLog log) {
+        return log.getAttemptNo() == null ? 1 : log.getAttemptNo();
+    }
+
+    @Transactional
     public void saveLogicalBatch(Collection<RuleExecutionLog> logs) {
         if (logs == null || logs.isEmpty()) return;
         if (baseMapper == null) {
-            saveBatch(logs);
+            if (!saveBatch(logs)) throw new IllegalStateException("执行日志批量写入未生效");
             return;
         }
-        for (RuleExecutionLog log : logs) saveLogical(log);
+        List<RuleExecutionLog> ordered = new ArrayList<>(logs);
+        ordered.removeIf(java.util.Objects::isNull);
+        ordered.sort(Comparator.comparing(RuleExecutionLog::getTraceId,
+                Comparator.nullsFirst(String.CASE_INSENSITIVE_ORDER)));
+        for (RuleExecutionLog log : ordered) saveLogical(log);
     }
 
     protected RulePublished findPublished(String ruleCode, String projectCode) {
@@ -108,11 +165,27 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
                                             String projectCode, String projectName, String ruleCode,
                                             String traceId, String authType, String authCode, String tokenCode,
                                             LocalDateTime startTime, LocalDateTime endTime) {
+        return pageList(pageNum, pageSize, modelType, source, projectCode, projectName, ruleCode, traceId, authType, authCode, tokenCode, startTime, endTime, null);
+    }
+
+    @jakarta.annotation.Resource private ExecutionVersionFilter executionVersionFilter;
+
+    public IPage<RuleExecutionLog> pageList(int pageNum, int pageSize, String modelType, String source,
+                                            String projectCode, String projectName, String ruleCode,
+                                            String traceId, String authType, String authCode, String tokenCode,
+                                            LocalDateTime startTime, LocalDateTime endTime,
+                                            com.hengshucredit.rule.model.dto.ExecutionVersionQuery versionQuery) {
         ProjectFilterService.ProjectMatches projectMatches = projectFilterService.resolve(null, projectName);
         if (projectMatches.isActive() && projectMatches.isEmpty()) {
             return new Page<>(pageNum, pageSize);
         }
         LambdaQueryWrapper<RuleExecutionLog> wrapper = new LambdaQueryWrapper<>();
+        if (versionQuery != null) {
+            Integer number = executionVersionFilter.resolve(versionQuery);
+            wrapper.eq(versionQuery.getRuleId() != null, RuleExecutionLog::getRootRuleId, versionQuery.getRuleId());
+            wrapper.eq(number != null, RuleExecutionLog::getRuleVersion, number);
+            wrapper.eq(versionQuery.getRevisionId() != null, RuleExecutionLog::getRevisionId, versionQuery.getRevisionId());
+        }
         if (hasText(modelType)) wrapper.eq(RuleExecutionLog::getModelType, modelType);
         if (hasText(source)) wrapper.eq(RuleExecutionLog::getSource, source);
         if (hasText(projectCode)) wrapper.like(RuleExecutionLog::getProjectCode, projectCode);
@@ -127,216 +200,17 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
         if (startTime != null) wrapper.ge(RuleExecutionLog::getCreateTime, startTime);
         if (endTime != null) wrapper.le(RuleExecutionLog::getCreateTime, endTime);
         wrapper.orderByDesc(RuleExecutionLog::getCreateTime);
-        return page(new Page<>(pageNum, pageSize), wrapper);
+        return baseMapper.selectLogicalPage(new Page<>(pageNum, pageSize), wrapper);
     }
+
+    @Resource
+    private RuleSetStatisticsQuery statistics;
 
     public Map<String, Object> ruleSetStats(String projectCode, String projectName, String ruleCode,
                                             LocalDateTime startTime, LocalDateTime endTime) {
-        ProjectFilterService.ProjectMatches projectMatches = projectFilterService.resolve(null, projectName);
-        if (projectMatches.isActive() && projectMatches.isEmpty()) {
-            return buildRuleSetStats(Collections.emptyList(), ruleCode);
-        }
-        LambdaQueryWrapper<RuleExecutionLog> wrapper = new LambdaQueryWrapper<RuleExecutionLog>()
-                .isNotNull(RuleExecutionLog::getTraceInfo);
-        if (hasText(projectCode)) wrapper.like(RuleExecutionLog::getProjectCode, projectCode);
-        if (projectMatches.isActive()) {
-            wrapper.in(RuleExecutionLog::getProjectCode, projectMatches.getProjectCodes());
-        }
-        if (startTime != null) wrapper.ge(RuleExecutionLog::getCreateTime, startTime);
-        if (endTime != null) wrapper.le(RuleExecutionLog::getCreateTime, endTime);
-        wrapper.orderByAsc(RuleExecutionLog::getCreateTime);
-        return buildRuleSetStats(list(wrapper), ruleCode);
-    }
-
-    Map<String, Object> buildRuleSetStats(List<RuleExecutionLog> logs, String ruleCodeFilter) {
-        Map<String, RuleSetAccumulator> accumulators = new LinkedHashMap<>();
-        OverallAccumulator overview = new OverallAccumulator();
-        for (RuleExecutionLog log : logs == null ? Collections.<RuleExecutionLog>emptyList() : logs) {
-            if (log == null || !hasText(log.getTraceInfo())) continue;
-            try {
-                Object parsed = JSON.parse(log.getTraceInfo());
-                if (parsed instanceof JSONArray) {
-                    for (Object item : (JSONArray) parsed) collectFrame(asObject(item), ruleCodeFilter, accumulators, overview);
-                } else {
-                    collectFrame(asObject(parsed), ruleCodeFilter, accumulators, overview);
-                }
-            } catch (Exception ignored) {
-                // 单条历史追踪数据损坏不应阻断整个统计看板。
-            }
-        }
-        List<Map<String, Object>> ruleSets = new ArrayList<>();
-        for (RuleSetAccumulator accumulator : accumulators.values()) ruleSets.add(accumulator.toMap());
-        ruleSets.sort(Comparator.comparing(item -> String.valueOf(item.get("ruleCode"))));
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("overview", overview.toMap());
-        result.put("ruleSets", ruleSets);
-        return result;
-    }
-
-    private void collectFrame(JSONObject frame, String ruleCodeFilter,
-                              Map<String, RuleSetAccumulator> accumulators,
-                              OverallAccumulator overview) {
-        if (frame == null) return;
-        if ("RULE_SET".equalsIgnoreCase(frame.getString("modelType"))
-                && (!hasText(ruleCodeFilter) || ruleCodeFilter.equals(frame.getString("ruleCode")))) {
-            JSONArray events = frame.getJSONArray("events");
-            boolean observed = false;
-            Boolean summaryHit = null;
-            boolean anyItemHit = false;
-            List<JSONObject> itemEvents = new ArrayList<>();
-            if (events != null) {
-                for (Object eventObject : events) {
-                    JSONObject event = asObject(eventObject);
-                    if (event == null || !event.getBooleanValue("evaluated")) continue;
-                    if ("RULE_SET_SUMMARY".equals(event.getString("type"))) {
-                        observed = true;
-                        summaryHit = event.getBooleanValue("hit");
-                    } else if ("RULE_SET_ITEM".equals(event.getString("type"))) {
-                        observed = true;
-                        itemEvents.add(event);
-                        if (event.getBooleanValue("hit")) anyItemHit = true;
-                    }
-                }
-            }
-            if (observed) {
-                String key = frame.getLong("ruleId") == null
-                        ? "CODE:" + frame.getString("ruleCode") : "ID:" + frame.getLong("ruleId");
-                RuleSetAccumulator accumulator = accumulators.computeIfAbsent(key, ignored -> new RuleSetAccumulator());
-                boolean hit = summaryHit == null ? anyItemHit : summaryHit;
-                accumulator.addFrame(frame, hit, itemEvents);
-                overview.add(frame, hit);
-            }
-        }
-        JSONArray children = frame.getJSONArray("children");
-        if (children != null) {
-            for (Object child : children) collectFrame(asObject(child), ruleCodeFilter, accumulators, overview);
-        }
-    }
-
-    private JSONObject asObject(Object value) {
-        if (value instanceof JSONObject) return (JSONObject) value;
-        if (value instanceof Map<?, ?> raw) {
-            JSONObject result = new JSONObject();
-            raw.forEach((key, item) -> {
-                if (key != null) result.put(String.valueOf(key), item);
-            });
-            return result;
-        }
-        return null;
-    }
-
-    private static class OverallAccumulator {
-        private long evaluationCount;
-        private long hitCount;
-        private long failureCount;
-        private long totalCost;
-        private final List<Long> costs = new ArrayList<>();
-
-        private void add(JSONObject frame, boolean hit) {
-            evaluationCount++;
-            if (hit) hitCount++;
-            if ("FAILED".equalsIgnoreCase(frame.getString("status"))) failureCount++;
-            long cost = Math.max(frame.getLongValue("durationMs"), 0L);
-            costs.add(cost);
-            totalCost += cost;
-        }
-
-        private Map<String, Object> toMap() {
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("evaluationCount", evaluationCount);
-            result.put("hitCount", hitCount);
-            result.put("failureCount", failureCount);
-            result.put("hitRate", rate(hitCount, evaluationCount));
-            result.put("failureRate", rate(failureCount, evaluationCount));
-            result.put("avgCostTimeMs", costs.isEmpty() ? 0D : (double) totalCost / costs.size());
-            result.put("p95CostTimeMs", percentile(costs, 0.95D));
-            result.put("p99CostTimeMs", percentile(costs, 0.99D));
-            return result;
-        }
-    }
-
-    private static class RuleSetAccumulator {
-        private Long ruleId;
-        private String ruleCode;
-        private String ruleName;
-        private long evaluationCount;
-        private long hitCount;
-        private long failureCount;
-        private long totalCost;
-        private final List<Long> costs = new ArrayList<>();
-        private final Map<String, ItemAccumulator> items = new LinkedHashMap<>();
-
-        private void addFrame(JSONObject frame, boolean hit, List<JSONObject> itemEvents) {
-            if (ruleId == null) ruleId = frame.getLong("ruleId");
-            if (ruleCode == null) ruleCode = frame.getString("ruleCode");
-            if (ruleName == null) ruleName = frame.getString("ruleName");
-            evaluationCount++;
-            if (hit) hitCount++;
-            if ("FAILED".equalsIgnoreCase(frame.getString("status"))) failureCount++;
-            long cost = Math.max(frame.getLongValue("durationMs"), 0L);
-            costs.add(cost);
-            totalCost += cost;
-            for (JSONObject event : itemEvents) {
-                String itemCode = event.getString("ruleCode");
-                String key = hasText(itemCode) ? itemCode : "NAME:" + event.getString("ruleName");
-                items.computeIfAbsent(key, ignored -> new ItemAccumulator()).add(event);
-            }
-        }
-
-        private Map<String, Object> toMap() {
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("ruleId", ruleId);
-            result.put("ruleCode", ruleCode);
-            result.put("ruleName", ruleName);
-            result.put("evaluationCount", evaluationCount);
-            result.put("hitCount", hitCount);
-            result.put("failureCount", failureCount);
-            result.put("hitRate", rate(hitCount, evaluationCount));
-            result.put("failureRate", rate(failureCount, evaluationCount));
-            result.put("avgCostTimeMs", costs.isEmpty() ? 0D : (double) totalCost / costs.size());
-            result.put("p95CostTimeMs", percentile(costs, 0.95D));
-            result.put("p99CostTimeMs", percentile(costs, 0.99D));
-            List<Map<String, Object>> itemRows = new ArrayList<>();
-            for (ItemAccumulator item : items.values()) itemRows.add(item.toMap());
-            itemRows.sort(Comparator.comparing(item -> String.valueOf(item.get("ruleCode"))));
-            result.put("items", itemRows);
-            return result;
-        }
-    }
-
-    private static class ItemAccumulator {
-        private String ruleCode;
-        private String ruleName;
-        private long evaluationCount;
-        private long hitCount;
-
-        private void add(JSONObject event) {
-            if (ruleCode == null) ruleCode = event.getString("ruleCode");
-            if (ruleName == null) ruleName = event.getString("ruleName");
-            evaluationCount++;
-            if (event.getBooleanValue("hit")) hitCount++;
-        }
-
-        private Map<String, Object> toMap() {
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("ruleCode", ruleCode);
-            result.put("ruleName", ruleName);
-            result.put("evaluationCount", evaluationCount);
-            result.put("hitCount", hitCount);
-            result.put("hitRate", rate(hitCount, evaluationCount));
-            return result;
-        }
-    }
-
-    private static double rate(long numerator, long denominator) {
-        return denominator <= 0 ? 0D : (double) numerator / denominator;
-    }
-
-    private static long percentile(List<Long> values, double percentile) {
-        if (values == null || values.isEmpty()) return 0L;
-        List<Long> sorted = new ArrayList<>(values);
-        Collections.sort(sorted);
-        return sorted.get(Math.max(0, (int) Math.ceil(percentile * sorted.size()) - 1));
+        ProjectFilterService.ProjectMatches projects = projectFilterService.resolve(null, projectName);
+        return statistics.query(projectCode, projects.isActive() ? projects.getProjectCodes() : null,
+                ruleCode, startTime, endTime);
     }
 
     private static boolean hasText(String value) {

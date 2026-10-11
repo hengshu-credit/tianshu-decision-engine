@@ -1,4 +1,5 @@
 import {
+  compileSourceStatusExpression,
   compileConditionExpression,
   conditionOperatorRequiresValue,
   findConditionOperator,
@@ -10,6 +11,10 @@ import {
 } from '@/constants/conditionOperators'
 
 describe('conditionOperators', () => {
+  test('状态条件保留固定业务版本来源', () => {
+    expect(compileSourceStatusExpression({ refType: 'VARIABLE', refId: '3', versionMode: 'FIXED', versionId: '8', versionSource: 'BUSINESS_VERSION' }, 'source_cache_hit'))
+      .toBe('resourceVersionStatus("VARIABLE", "3", "BUSINESS_VERSION:8", "CACHE_STATE", "HIT")')
+  })
   test('不同字段类型返回不同操作符集合', () => {
     const numberOps = getConditionOperatorOptions('NUMBER').map(item => item.value)
     const stringOps = getConditionOperatorOptions('STRING').map(item => item.value)
@@ -107,6 +112,42 @@ describe('conditionOperators', () => {
       .toBe('containsValue(name, "VIP")')
     expect(compileConditionExpression('age', 'NUMBER', 'between', '18,60', 'CONST'))
       .toBe('(age >= 18 && age <= 60)')
+  })
+
+  test.each(['between', 'not_between'])('%s残缺或非法区间必须明确报错，不生成常量条件', operator => {
+    for (const value of [null, '', '18', '18,', ',60', '18,,60', '18,60,90', '60,18', 'NaN,60', '18,Infinity', 'foo(),60']) {
+      expect(() => compileConditionExpression('age', 'NUMBER', operator, value, 'CONST'), String(value)).toThrow(/区间/)
+    }
+  })
+
+  test('区间比较不丢失高精度数值，合法闭区间相等边界可用', () => {
+    expect(compileConditionExpression('age', 'NUMBER', 'between', '18,18', 'CONST')).toBe('(age >= 18 && age <= 18)')
+    expect(() => compileConditionExpression('amount', 'BIGDECIMAL', 'between', '9007199254740993.123456790,9007199254740993.123456789', 'CONST')).toThrow(/区间/)
+  })
+
+  test('日期区间拒绝非法日期和倒序，保留已有日期写法', () => {
+    for (const value of ['2026-02-30,2026-03-01', '2026-12-31,2026-01-01', 'not-a-date,2026-01-01']) {
+      expect(() => compileConditionExpression('date', 'DATE', 'between', value, 'CONST')).toThrow(/区间/)
+    }
+    expect(compileConditionExpression('date', 'DATE', 'between', '2026/01/01,2026/12/31', 'CONST')).toContain('2026/01/01')
+  })
+
+  test('小数和指数上下界按精确十进制比较', () => {
+    for (const value of ['-3,-2', '-0.001,0', '1e-10,.0000000002', '+18.0,18.00', '0018,19']) {
+      expect(() => compileConditionExpression('number', 'NUMBER', 'between', value, 'CONST')).not.toThrow()
+    }
+    for (const value of ['-2,-3', '2e-10,.0000000001', '1e2147483648,2e2147483648']) {
+      expect(() => compileConditionExpression('number', 'NUMBER', 'between', value, 'CONST')).toThrow(/区间/)
+    }
+  })
+
+  test('日期毫秒和紧凑日期保持运行时解释，错误日历值被阻断', () => {
+    for (const value of ['20260101,20261231', '1700000000000,1700000000001', '20260101000000,20261231000000', '2026-01-01T12:30:00.001,2026-01-01T12:30:00.002']) {
+      expect(() => compileConditionExpression('date', 'DATE', 'between', value, 'CONST')).not.toThrow()
+    }
+    for (const value of ['20250229,20250301', '2026-01-01 25:00:00,2026-01-02', '9223372036854775808,9223372036854775809']) {
+      expect(() => compileConditionExpression('date', 'DATE', 'between', value, 'CONST')).toThrow(/区间/)
+    }
   })
 
   test('生成正则、数组元素、字典值和集合长度表达式', () => {

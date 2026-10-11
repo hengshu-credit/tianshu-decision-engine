@@ -16,6 +16,78 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class SchemaSyncServiceTest {
+    @Test public void experimentRuleVersionMigrationIncludesColumnNames() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbc = new FakeJdbcTemplate("version_mode", "version_binding_id");
+        setField(service, "jdbcTemplate", jdbc);
+        Method migration = SchemaSyncService.class.getDeclaredMethod("ensureExperimentTables"); migration.setAccessible(true); migration.invoke(service);
+        assertTrue(containsSql(jdbc.sqlList, "ADD COLUMN `version_mode` VARCHAR(16)"));
+        assertTrue(containsSql(jdbc.sqlList, "ADD COLUMN `version_binding_id` BIGINT"));
+    }
+    @Test public void operationLogUpgradeOnlyAddsShortMetadataColumnsAndIsIdempotent() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbc = new FakeJdbcTemplate("target_version", "change_summary");
+        setField(service, "jdbcTemplate", jdbc);
+        Method method = SchemaSyncService.class.getDeclaredMethod("ensureConsoleOperationLogSchema"); method.setAccessible(true);
+        method.invoke(service);
+        assertEquals(2, jdbc.sqlList.size());
+        assertTrue(containsSql(jdbc.sqlList, "`target_version` VARCHAR(64)"));
+        assertTrue(containsSql(jdbc.sqlList, "`change_summary` VARCHAR(160)"));
+        jdbc.missingColumns.clear(); jdbc.sqlList.clear();
+        method.invoke(service);
+        assertTrue(jdbc.sqlList.isEmpty());
+    }
+
+    @Test public void externalTrialStateTableIsCreatedWithIndependentIdentityWhenMissing() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbc = new FakeJdbcTemplate(); jdbc.missingTables.add("rule_external_api_trial");
+        setField(service, "jdbcTemplate", jdbc);
+        Method migration = SchemaSyncService.class.getDeclaredMethod("ensureExternalApiTrialSchema"); migration.setAccessible(true);
+        migration.invoke(service);
+        assertEquals(1, jdbc.sqlList.size());
+        assertTrue(containsSql(jdbc.sqlList, "CREATE TABLE `rule_external_api_trial`"));
+        assertTrue(containsSql(jdbc.sqlList, "`owner`              VARBINARY(512)"));
+        assertTrue(containsSql(jdbc.sqlList, "UNIQUE KEY `uk_external_api_trial_request` (`owner`, `request_key`)"));
+    }
+
+    @Test public void externalTrialStateCreationFailureStopsStartupRatherThanAcceptingUnsafeTrials() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbc = new FakeJdbcTemplate() {
+            @Override public void execute(String sql) {
+                if (sql.startsWith("CREATE TABLE `rule_external_api_trial`")) throw new IllegalStateException("trial table unavailable");
+                super.execute(sql);
+            }
+        };
+        jdbc.missingTables.add("rule_external_api_trial"); setField(service, "jdbcTemplate", jdbc);
+        var failure = org.junit.Assert.assertThrows(IllegalStateException.class, service::ensureRuntimeSchema);
+        assertEquals("trial table unavailable", failure.getMessage());
+    }
+
+    @Test
+    public void scenarioExpectationMigrationAddsOnlyNullableConfigurationWithoutRewritingOldSnapshots() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate("expectation_json");
+        setField(service, "jdbcTemplate", jdbcTemplate);
+        Method migration = SchemaSyncService.class.getDeclaredMethod("ensureApiScenarioExpectationSchema");
+        migration.setAccessible(true);
+        migration.invoke(service);
+        assertEquals(1, jdbcTemplate.sqlList.size());
+        assertTrue(containsSql(jdbcTemplate.sqlList, "ADD COLUMN `expectation_json` LONGTEXT DEFAULT NULL"));
+    }
+
+    @Test
+    public void billingSnapshotMigrationAddsTransportAndRecordAttribution() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate("billing_snapshot_json", "billing_config_id", "billing_basis");
+        setField(service, "jdbcTemplate", jdbcTemplate);
+        Method migration = SchemaSyncService.class.getDeclaredMethod("ensureExecutionBillingSnapshotSchema");
+        migration.setAccessible(true);
+        migration.invoke(service);
+        assertEquals(3, jdbcTemplate.sqlList.size());
+        assertTrue(containsSql(jdbcTemplate.sqlList, "ALTER TABLE `rule_execution_persistence_outbox` ADD COLUMN `billing_snapshot_json`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList, "ALTER TABLE `rule_billing_record` ADD COLUMN `billing_config_id`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList, "ALTER TABLE `rule_billing_record` ADD COLUMN `billing_basis`"));
+    }
 
     @Test
     public void schemaResourceHasNoFilesystemOverrideOrWritebackEntryPoint() {
@@ -146,7 +218,7 @@ public class SchemaSyncServiceTest {
         assertTrue(containsSql(jdbcTemplate.sqlList,
                 "ALTER TABLE `rule_billing_summary` DROP INDEX `uk_billing_summary_key`"));
         assertTrue(containsSql(jdbcTemplate.sqlList,
-                "ADD UNIQUE KEY `uk_billing_summary_key` (`summary_date`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`, `auth_id`)"));
+                "ADD UNIQUE KEY `uk_billing_summary_key` (`summary_date`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`, `auth_id`, `currency`)"));
     }
 
     @Test
@@ -222,6 +294,19 @@ public class SchemaSyncServiceTest {
                 "CREATE TABLE `governance_approval_event`"));
         assertTrue(containsSql(jdbcTemplate.sqlList,
                 "CREATE TABLE `governance_dependency_snapshot`"));
+    }
+
+    @Test
+    public void existingGovernanceDependenciesGainVersionSelectionOnce() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbc = new FakeJdbcTemplate("version_selection_json");
+        setField(service, "jdbcTemplate", jdbc);
+        Method method = SchemaSyncService.class.getDeclaredMethod("ensureGovernanceSchema"); method.setAccessible(true);
+        method.invoke(service);
+        assertTrue(containsSql(jdbc.sqlList, "ALTER TABLE `governance_dependency_snapshot` ADD COLUMN `version_selection_json` LONGTEXT"));
+        jdbc.missingColumns.clear(); jdbc.sqlList.clear();
+        method.invoke(service);
+        assertTrue(jdbc.sqlList.isEmpty());
     }
 
     @Test
@@ -350,6 +435,62 @@ public class SchemaSyncServiceTest {
                 "ALTER TABLE `rule_experiment_execution_log` ADD COLUMN `experiment_trace_id`"));
         assertTrue(containsSql(jdbcTemplate.sqlList,
                 "ALTER TABLE `rule_experiment_execution_log` ADD COLUMN `child_trace_id`"));
+    }
+
+    @Test
+    public void logicalLogSchemaAddsIdentityAndReadViewWithoutChangingPartitionedAuditRows() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate();
+        jdbcTemplate.missingTables.add("rule_execution_log_identity");
+        setField(service, "jdbcTemplate", jdbcTemplate);
+        Method method = SchemaSyncService.class.getDeclaredMethod("ensureLogicalExecutionLogSchema");
+        method.setAccessible(true);
+
+        method.invoke(service);
+
+        assertTrue(containsSql(jdbcTemplate.sqlList, "CREATE TABLE `rule_execution_log_identity`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList, "PRIMARY KEY (`trace_id`)"));
+        assertTrue(containsSql(jdbcTemplate.sqlList, "CREATE OR REPLACE SQL SECURITY INVOKER VIEW `rule_execution_log_current`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList, "COALESCE(newer.attempt_no, 1)"));
+        assertFalse(jdbcTemplate.sqlList.stream().anyMatch(sql -> sql.matches("(?is).*\\b(?:DELETE|UPDATE|ALTER|DROP|TRUNCATE)\\s+(?:TABLE\\s+)?`?rule_execution_log`?\\b.*")));
+    }
+
+    @Test
+    public void logicalLogReadViewIsCreatedOnlyAfterRequiredLegacyColumns() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate("trace_id", "attempt_no");
+        setField(service, "jdbcTemplate", jdbcTemplate);
+        Method method = SchemaSyncService.class.getDeclaredMethod("ensureLogicalExecutionLogSchema");
+        method.setAccessible(true);
+        method.invoke(service);
+        int trace = -1;
+        int attempt = -1;
+        int view = -1;
+        for (int index = 0; index < jdbcTemplate.sqlList.size(); index++) {
+            String sql = jdbcTemplate.sqlList.get(index);
+            if (sql.contains("ADD COLUMN `trace_id`")) trace = index;
+            if (sql.contains("ADD COLUMN `attempt_no`")) attempt = index;
+            if (sql.contains("CREATE OR REPLACE SQL SECURITY INVOKER VIEW")) view = index;
+        }
+        assertTrue(trace >= 0);
+        assertTrue(attempt >= 0);
+        assertTrue(view > trace && view > attempt);
+    }
+
+    @Test
+    public void requiredLogicalLogViewFailureIsNotSwallowedByBestEffortMigrations() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate() {
+            @Override public void execute(String sql) {
+                if (sql.contains("CREATE OR REPLACE SQL SECURITY INVOKER VIEW")) {
+                    throw new IllegalStateException("controlled view creation failure");
+                }
+                super.execute(sql);
+            }
+        };
+        setField(service, "jdbcTemplate", jdbcTemplate);
+        IllegalStateException failure = org.junit.Assert.assertThrows(IllegalStateException.class, service::ensureRuntimeSchema);
+        assertEquals("controlled view creation failure", failure.getMessage());
     }
 
     @Test

@@ -56,8 +56,8 @@ public class DashboardOperationsServiceTest {
                 new DashboardOperationsService(repository);
 
         DashboardResponses.Operations result = service.analyze(criteria,
-                access("rule:view", "database:view", "field:view",
-                        "datasource:view", "project:view"));
+                access("rule:view", "database:view", "list:view",
+                        "datasource:view", "billing:view"));
 
         assertEquals(100L, result.ruleExecution().timing().sampleCount());
         assertEquals(95D, result.ruleExecution().timing().p95Ms(), 0D);

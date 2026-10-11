@@ -6,7 +6,9 @@ export function normalizeTestSchema(response) {
     inputs: Array.isArray(schema.inputs) ? schema.inputs : [],
     outputs: Array.isArray(schema.outputs) ? schema.outputs : [],
     sampleParams: schema.sampleParams && typeof schema.sampleParams === 'object' ? schema.sampleParams : {},
-    diagnostics: Array.isArray(schema.diagnostics) ? schema.diagnostics : []
+    diagnostics: Array.isArray(schema.diagnostics) ? schema.diagnostics : [],
+    ...(schema.executionIdentity ? { executionIdentity: schema.executionIdentity } : {}),
+    ...(typeof schema.sampleParamsJson === 'string' ? { sampleParamsJson: schema.sampleParamsJson } : {})
   }
 }
 
@@ -30,7 +32,7 @@ export function schemaFieldsToTestFields(inputs) {
 }
 
 export function flattenSchemaSample(fields, sampleParams) {
-  const flat = {}
+  const flat = Object.create(null)
   ;(fields || []).forEach(field => {
     const path = field.scriptName || field.fieldName
     const value = readParamPath(sampleParams, path)
@@ -52,7 +54,7 @@ export function readParamPath(target, path) {
   const parts = String(path || '').split('.').filter(Boolean)
   let current = target
   for (let i = 0; i < parts.length; i++) {
-    if (!current || typeof current !== 'object' || !(parts[i] in current)) return undefined
+    if (!current || typeof current !== 'object' || !Object.hasOwn(current, parts[i])) return undefined
     current = current[parts[i]]
   }
   return current

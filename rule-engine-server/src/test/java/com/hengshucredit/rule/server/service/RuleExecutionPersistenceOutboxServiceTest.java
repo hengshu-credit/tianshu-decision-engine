@@ -67,7 +67,7 @@ public class RuleExecutionPersistenceOutboxServiceTest {
         ReflectionTestUtils.setField(service, "mapper", replayMapper(row, updated));
         ReflectionTestUtils.setField(service, "logService", new RuleExecutionLogService());
         ReflectionTestUtils.setField(service, "billingService", new RuleBillingService() {
-            @Override public void recordEngineExecution(RuleDefinition definition, boolean success,
+            @Override public void recordLegacyEngineExecution(RuleDefinition definition, boolean success,
                                                          Long costTimeMs, String errorMessage,
                                                          ProjectAuthContext authContext) {
                 throw new IllegalStateException("billing unavailable");
@@ -99,6 +99,42 @@ public class RuleExecutionPersistenceOutboxServiceTest {
         Assert.assertEquals("DEAD_LETTER", updated.get().getDeliveryStatus());
     }
 
+    @Test
+    public void claimReloadsCurrentProgressInsteadOfReplayingTheListedSnapshot() {
+        AtomicReference<RuleExecutionPersistenceOutbox> updated = new AtomicReference<>();
+        AtomicInteger logs = new AtomicInteger();
+        RuleExecutionPersistenceOutbox stale = row(true, true);
+        RuleExecutionPersistenceOutbox current = row(false, true);
+        current.setRetryCount(5);
+        RuleExecutionPersistenceOutboxService service = new RuleExecutionPersistenceOutboxService();
+        ReflectionTestUtils.setField(service, "mapper", replayMapper(stale, current, updated, 1));
+        ReflectionTestUtils.setField(service, "logService", new RuleExecutionLogService() {
+            @Override public void saveLogical(RuleExecutionLog entity) { logs.incrementAndGet(); }
+        });
+        ReflectionTestUtils.setField(service, "billingService", new RuleBillingService() {
+            @Override public void recordLegacyEngineExecution(RuleDefinition definition, boolean success,
+                    Long cost, String error, ProjectAuthContext auth) { throw new IllegalStateException("billing down"); }
+        });
+        service.replayPending();
+        Assert.assertEquals(0, logs.get());
+        Assert.assertEquals(Integer.valueOf(0), updated.get().getLogPending());
+        Assert.assertEquals(Integer.valueOf(6), updated.get().getRetryCount());
+    }
+
+    @Test
+    public void losingTheClaimCannotBeReportedAsAcknowledgedDelivery() {
+        RuleExecutionPersistenceOutbox stored = row(true, false);
+        RuleExecutionPersistenceOutboxService service = new RuleExecutionPersistenceOutboxService();
+        ReflectionTestUtils.setField(service, "mapper", replayMapper(stored, stored, new AtomicReference<>(), 0));
+        ReflectionTestUtils.setField(service, "logService", new RuleExecutionLogService() {
+            @Override public void saveLogical(RuleExecutionLog entity) { }
+        });
+        ReflectionTestUtils.setField(service, "billingService", new RuleBillingService());
+        Assert.assertThrows(IllegalStateException.class, service::replayPending);
+        Assert.assertEquals("PROCESSING", stored.getDeliveryStatus());
+        Assert.assertNotNull(stored.getLogJson());
+    }
+
     private static RuleExecutionPersistenceOutbox row(boolean logPending, boolean billingPending) {
         RuleExecutionLog log = new RuleExecutionLog();
         log.setTraceId("trace-replay");
@@ -119,13 +155,34 @@ public class RuleExecutionPersistenceOutboxServiceTest {
     @SuppressWarnings("unchecked")
     private static RuleExecutionPersistenceOutboxMapper replayMapper(
             RuleExecutionPersistenceOutbox row, AtomicReference<RuleExecutionPersistenceOutbox> updated) {
+        return replayMapper(row, row, updated, 1);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static RuleExecutionPersistenceOutboxMapper replayMapper(RuleExecutionPersistenceOutbox row,
+            RuleExecutionPersistenceOutbox current, AtomicReference<RuleExecutionPersistenceOutbox> updated, int acknowledged) {
         return (RuleExecutionPersistenceOutboxMapper) Proxy.newProxyInstance(
                 RuleExecutionPersistenceOutboxMapper.class.getClassLoader(),
                 new Class<?>[]{RuleExecutionPersistenceOutboxMapper.class},
                 (proxy, method, args) -> {
                     if ("selectList".equals(method.getName())) return Collections.singletonList(row);
-                    if ("claimPending".equals(method.getName())) return 1;
-                    if ("updateClaimed".equals(method.getName())) { updated.set((RuleExecutionPersistenceOutbox) args[0]); return 1; }
+                    if ("claimPending".equals(method.getName())) {
+                        current.setDeliveryStatus("PROCESSING");
+                        current.setClaimToken((String) args[1]);
+                        return 1;
+                    }
+                    if ("selectClaimed".equals(method.getName())) return com.alibaba.fastjson.JSON.parseObject(
+                            com.alibaba.fastjson.JSON.toJSONString(current), RuleExecutionPersistenceOutbox.class);
+                    if ("updateClaimed".equals(method.getName())) {
+                        RuleExecutionPersistenceOutbox change = (RuleExecutionPersistenceOutbox) args[0];
+                        updated.set(change);
+                        if (acknowledged == 1) {
+                            org.springframework.beans.BeanUtils.copyProperties(change, current);
+                            current.setClaimToken(null);
+                            current.setLeaseUntil(null);
+                        }
+                        return acknowledged;
+                    }
                     if (method.getReturnType().isPrimitive()) return method.getReturnType() == boolean.class ? false : 0;
                     return null;
                 });

@@ -1,6 +1,8 @@
 import {
   applyPermissionVisibility
 } from '@/directives/permission'
+import permissionDirective from '@/directives/permission'
+import { nextTick } from 'vue'
 import {
   clearCurrentUser,
   setPermissionEnforcement,
@@ -8,6 +10,29 @@ import {
 } from '@/security/permissionState'
 
 describe('操作按钮权限指令', () => {
+  test('其他渲染指令改写样式后仍保持无权限按钮隐藏', () => {
+    setCurrentUser({ permissions: [] })
+    const button = document.createElement('button')
+    permissionDirective.mounted(button, { value: 'rule:edit' })
+    button.style.display = 'inline-flex'
+    permissionDirective.updated(button, { value: 'rule:edit' })
+    expect(button.style.display).toBe('none')
+    permissionDirective.unmounted(button)
+  })
+  test('会话权限撤回后立即隐藏已挂载按钮，样式优先级不会覆盖隐藏', async() => {
+    setCurrentUser({ permissions: ['rule:edit'] })
+    const button = document.createElement('button')
+    button.style.display = 'inline-flex'
+    permissionDirective.mounted(button, { value: 'rule:edit' })
+    setCurrentUser({ permissions: [] })
+    await nextTick()
+    expect(button.style.display).toBe('none')
+    expect(button.style.getPropertyPriority('display')).toBe('important')
+    setCurrentUser({ permissions: ['rule:edit'] })
+    await nextTick()
+    expect(button.style.display).toBe('inline-flex')
+    permissionDirective.unmounted(button)
+  })
   afterEach(() => {
     clearCurrentUser()
     setPermissionEnforcement(false)

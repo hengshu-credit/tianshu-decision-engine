@@ -126,7 +126,7 @@ GET /api/rule/runtime/external-calls/{callId}
 
 两个开关独立：关闭追踪但保留上报时，可保留基础执行日志；开启追踪但关闭上报时，可在 Java 服务读取追踪而不从 SDK 上报。服务端执行不重复从客户端上报日志。服务端基础执行日志、鉴权审计、外数日志及计费不受 `log-report-enabled` 控制；两个开关都关闭不等于平台不留任何日志。
 
-本地上报默认使用有界 HTTP 异步队列。启用上报且有自定义 `ExecutionLogReporter` 时使用自定义实现，否则存在 `KafkaTemplate` 时自动选择 Kafka。日志上报失败不应改变决策结果。程序化 Builder 支持 `.traceEnabled(false).logReportEnabled(false)`；即使显式传入 reporter，关闭上报仍然生效。
+本地上报默认使用有界 HTTP 异步队列。启用上报且有自定义 `ExecutionLogReporter` 时使用自定义实现；使用内置 Kafka 通道必须显式配置 `log-report-transport: KAFKA`，不会因宿主存在 `KafkaTemplate` 自动切换。Kafka 配置、项目隔离、失败补报与旧版迁移见 [Kafka 执行日志上报](kafka-execution-logs.md)。日志上报失败不应改变决策结果。程序化 Builder 支持 `.traceEnabled(false).logReportEnabled(false)`；即使显式传入 reporter，关闭上报仍然生效。
 
 ## 6. HTTP-only 接入
 

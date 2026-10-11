@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.controller.mgmt;
 
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleFunctionVersion;
+import com.hengshucredit.rule.model.dto.FunctionMethodCatalog;
 import com.hengshucredit.rule.server.common.Result;
 import com.hengshucredit.rule.server.governance.GovernanceRequestView;
 import com.hengshucredit.rule.server.governance.GovernedProjectionMutation;
@@ -10,6 +11,7 @@ import com.hengshucredit.rule.server.publish.RuleFunctionPushService;
 import com.hengshucredit.rule.server.security.RequirePermission;
 import com.hengshucredit.rule.server.service.ConsoleOperatorResolver;
 import com.hengshucredit.rule.server.service.RuleFunctionService;
+import com.hengshucredit.rule.server.service.FunctionMethodCatalogService;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import org.springframework.web.bind.annotation.*;
 
@@ -32,6 +34,15 @@ public class RuleFunctionController {
 
     @Resource
     private ConsoleOperatorResolver operatorResolver;
+
+    @Resource
+    private FunctionMethodCatalogService methodCatalogService;
+
+    @PostMapping("/methods")
+    @RequirePermission("function:view")
+    public Result<FunctionMethodCatalog> inspectMethods(@RequestBody RuleFunction function) {
+        return Result.ok(methodCatalogService.inspect(function));
+    }
 
     /**
      * 按项目分页查询函数列表（管理页面）
@@ -147,14 +158,15 @@ public class RuleFunctionController {
     }
 
     @PostMapping("/rollback/{functionId}/{version}")
-    @RequirePermission("approval:submit")
+    @RequirePermission("function:edit")
     public Result<GovernanceRequestView> rollback(
             @PathVariable Long functionId,
-            @PathVariable Integer version) {
+            @PathVariable Integer version,
+            @RequestParam(defaultValue = "NEW") String restoreMode) {
         try {
             return Result.ok(GovernanceRequestView.from(
                     legacyRestoreService.restoreFunction(
-                            functionId, version,
+                            functionId, version, restoreMode,
                             operatorResolver.resolve())));
         } catch (IllegalArgumentException e) {
             return Result.fail(e.getMessage());

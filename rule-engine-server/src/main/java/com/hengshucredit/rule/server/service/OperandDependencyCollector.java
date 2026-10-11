@@ -18,7 +18,10 @@ public final class OperandDependencyCollector {
     static void collect(JSONObject operand, Set<String> paths) {
         if (operand == null || paths == null) return;
         String kind = operand.getString("kind");
+        if ("FIXED".equals(operand.getString("versionMode")) && ("PATH".equals(kind) || "REFERENCE".equals(kind))) return;
         if ("PATH".equals(kind) || "REFERENCE".equals(kind)) {
+            // API 结果由运行时获取，不应投影成调用方必须提交的入参。
+            if ("EXTERNAL_API".equalsIgnoreCase(operand.getString("refType"))) return;
             String path = firstText(operand.getString("code"), operand.getString("value"));
             if (path != null) paths.add(path);
             return;
@@ -63,6 +66,17 @@ public final class OperandDependencyCollector {
     private static void collectReferencesFromTree(Object node, String path, List<Reference> result) {
         if (node instanceof JSONObject object) {
             String kind = object.getString("kind");
+            if ("LITERAL".equals(kind)) return;
+            if ("FIXED".equals(object.getString("versionMode")) && Set.of("REFERENCE", "PATH", "FUNCTION").contains(kind == null ? "" : kind)) {
+                Long versionId = com.hengshucredit.rule.core.compiler.OperandVersion.fixedVersionId(object);
+                boolean function = "FUNCTION".equals(kind);
+                Reference pinned = new Reference(function ? "FUNCTION" : object.getString("refType"),
+                        object.getLong(function ? "functionId" : "refId"), object.getString(function ? "functionCode" : "code"),
+                        path, "FIXED", null, versionId);
+                pinned.versionSource = object.getString("versionSource"); result.add(pinned);
+                if (function) collectReferencesFromTree(object.get("args"), path + ".args", result);
+                return;
+            }
             if ("REFERENCE".equals(kind) || "PATH".equals(kind)) {
                 String refType = object.getString("refType");
                 Long refId = object.getLong("refId");
@@ -99,6 +113,11 @@ public final class OperandDependencyCollector {
 
     private static void collectPersistedIdReferences(JSONObject object, String path,
                                                      List<Reference> result) {
+        if ("api-call".equals(object.getString("type"))) addFixedType(object, path, result, "apiId", "EXTERNAL_API", null);
+        if ("list-write".equals(object.getString("type"))) {
+            JSONArray ids = object.getJSONArray("listIds");
+            if (ids != null) for (int i = 0; i < ids.size(); i++) addUnique(result, new Reference("LIST_LIBRARY", ids.getLong(i), null, path + ".listIds[" + i + "]"));
+        }
         addPair(object, path, result, "_varId",
                 firstText(object.getString("_refType"), object.getString("refType")),
                 firstText(object.getString("varCode"), object.getString("refCode"),
@@ -139,6 +158,22 @@ public final class OperandDependencyCollector {
                         Long bindingId = !fixed || args.size() < 2 ? null : literalId(args.get(1).getText());
                         if (id != null) result.add(new Reference("RULE", id, null, path, fixed ? "FIXED" : "LATEST", bindingId));
                     }
+                    if (Set.of("resourceVersionValue", "resourceVersionStatus", "invokeFunctionVersionById").contains(name) && call.argumentList() != null) {
+                        var args = call.argumentList().expression();
+                        boolean function = "invokeFunctionVersionById".equals(name);
+                        int idIndex = function ? 0 : 1, versionIndex = idIndex + 1;
+                        if (args.size() > versionIndex) {
+                            String type = function ? "FUNCTION" : literalString(args.get(0).getText());
+                            Long id = literalId(args.get(idIndex).getText());
+                            String token = literalString(args.get(versionIndex).getText());
+                            String source = token != null && token.contains(":") ? token.substring(0, token.indexOf(':')) : null;
+                            Long versionId = literalId(source == null ? token : token.substring(source.length() + 1));
+                            if (type != null && id != null && versionId != null) {
+                                Reference reference = new Reference(type, id, null, path + "@" + call.getStart().getStartIndex(), "FIXED", null, versionId);
+                                reference.versionSource = source; result.add(reference);
+                            }
+                        }
+                    }
                     return super.visitVarIdExpr(call);
                 }
             });
@@ -150,6 +185,11 @@ public final class OperandDependencyCollector {
         if (value == null || !value.matches("(?:[1-9][0-9]*|'[1-9][0-9]*'|\"[1-9][0-9]*\")")) return null;
         try { return Long.valueOf(value.replace("'", "").replace("\"", "")); }
         catch (NumberFormatException invalid) { return null; }
+    }
+    private static String literalString(String value) {
+        if (value == null || value.length() < 2) return null;
+        return value.startsWith("\"") && value.endsWith("\"") || value.startsWith("'") && value.endsWith("'")
+                ? value.substring(1, value.length() - 1) : null;
     }
 
     private static void addPair(JSONObject object, String path, List<Reference> result,
@@ -214,18 +254,26 @@ public final class OperandDependencyCollector {
         private final String path;
         private final String versionMode;
         private final Long versionBindingId;
+        private final Long versionId;
+        private String versionSource;
+        public String getVersionSource() { return versionSource; }
 
         private Reference(String refType, Long refId, String displayCode, String path) {
             this(refType, refId, displayCode, path, null, null);
         }
         private Reference(String refType, Long refId, String displayCode, String path, String mode, Long bindingId) {
+            this(refType, refId, displayCode, path, mode, bindingId, null);
+        }
+        private Reference(String refType, Long refId, String displayCode, String path, String mode, Long bindingId, Long versionId) {
             this.refType = refType;
             this.refId = refId;
             this.displayCode = displayCode;
             this.path = path;
             this.versionMode = mode;
             this.versionBindingId = bindingId;
+            this.versionId = versionId;
         }
+        public Long getVersionId() { return versionId; }
         public String getVersionMode() { return versionMode; }
         public Long getVersionBindingId() { return versionBindingId; }
 

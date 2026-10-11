@@ -1,6 +1,10 @@
 import { readFile } from 'node:fs/promises'
+import { capacityJsonNode, capacityJsonText, parseCapacityJson } from './capacity-json.mjs'
 
 const SECRET_KEY = /(authorization|cookie|token|password|secret|api[-_]?key|(^|[-_])key$)/i
+const ARGUMENTS = new Set(['--url', '--urls', '--request-file', '--concurrency', '--warmup-seconds',
+  '--duration-seconds', '--max-error-rate', '--max-p95-ms', '--min-throughput', '--report-dir',
+  '--arrival-rate', '--max-schedule-lag-ms'])
 
 export function parseCapacityConfig(args) {
   const values = parseArgs(args)
@@ -25,9 +29,18 @@ export function parseCapacityConfig(args) {
     maxP95Ms: positiveNumber(values, '--max-p95-ms'),
     minThroughput: positiveNumber(values, '--min-throughput'),
     reportDir: values.get('--report-dir') || 'target/quality-gates',
+    arrivalRate: values.has('--arrival-rate') ? positiveNumber(values, '--arrival-rate') : null,
+    maxScheduleLagMs: values.has('--max-schedule-lag-ms') ? positiveNumber(values, '--max-schedule-lag-ms') : 100,
   }
   if (config.maxErrorRate > 1) {
     throw new Error('--max-error-rate must be between 0 and 1')
+  }
+  if (values.has('--max-schedule-lag-ms') && config.arrivalRate === null) {
+    throw new Error('--max-schedule-lag-ms requires --arrival-rate')
+  }
+  if (config.arrivalRate !== null && !Number.isSafeInteger(Math.ceil(config.arrivalRate
+      * Math.max(config.warmupSeconds, config.durationSeconds)))) {
+    throw new Error('arrival-rate and duration produce an unsafe scheduled request count')
   }
   return config
 }
@@ -56,8 +69,11 @@ export function sanitizeTarget(value) {
 
 export async function loadRequestDefinition(path) {
   let definition
+  let document
   try {
-    definition = JSON.parse(await readFile(path, 'utf8'))
+    const text = await readFile(path, 'utf8')
+    document = parseCapacityJson(text)
+    definition = JSON.parse(text)
   } catch (error) {
     throw new Error(`failed to read request definition: ${error.message}`)
   }
@@ -78,11 +94,31 @@ export async function loadRequestDefinition(path) {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error('request timeoutMs must be greater than zero')
   }
+  const expectedResponse = definition.expectedResponse === undefined
+    ? { success: true }
+    : definition.expectedResponse
+  if (!expectedResponse || typeof expectedResponse !== 'object'
+      || Array.isArray(expectedResponse) || Object.keys(expectedResponse).length === 0
+      || Object.entries(expectedResponse).some(([path, value]) =>
+        path.split('.').some(part => !part.trim())
+        || (value !== null && !['string', 'boolean', 'number'].includes(typeof value)))) {
+    throw new Error('request expectedResponse must contain dotted field paths and scalar expected values')
+  }
+  const expectedResponseNumberText = Object.create(null)
+  for (const [key, value] of Object.entries(expectedResponse)) {
+    if (typeof value !== 'number') continue
+    const node = capacityJsonNode(document, ['expectedResponse', key])
+    if (node?.type === 'number') expectedResponseNumberText[key] = capacityJsonText(document, node)
+  }
+  const bodyNode = capacityJsonNode(document, ['body'])
   return {
     method,
     headers,
     ...(definition.body === undefined ? {} : { body: definition.body }),
+    ...(bodyNode && bodyNode.type !== 'string' ? { rawBody: capacityJsonText(document, bodyNode) } : {}),
     timeoutMs,
+    expectedResponse,
+    ...(Object.keys(expectedResponseNumberText).length ? { expectedResponseNumberText } : {}),
   }
 }
 
@@ -94,6 +130,7 @@ function parseArgs(args) {
     if (!key?.startsWith('--') || value === undefined || value.startsWith('--')) {
       throw new Error(`invalid argument near ${key || '<empty>'}`)
     }
+    if (!ARGUMENTS.has(key)) throw new Error(`unknown argument: ${key}`)
     values.set(key, value)
   }
   return values

@@ -8,6 +8,7 @@ const ActionAssignmentRow = (await vi.importActual('@/components/flow/ActionAssi
 function createEditorContext(blocks, extra = {}) {
   const ctx = {
     blocks,
+    ruleSelectionRequestId: 0,
     vars: extra.vars || [],
     selectedVars: extra.selectedVars || [],
     functions: extra.functions || [],
@@ -36,6 +37,55 @@ function createEditorContext(blocks, extra = {}) {
 }
 
 describe('ActionBlockEditor', () => {
+  test('冻结包同号子规则不是当前环境自身，当前目录仍保留自身调用保护', async () => {
+    const child = { id: '8', ruleCode: 'SourceChild', modelType: 'SCORE', inputFields: [], outputFields: [] }
+    const wrapper = shallowMount(ActionBlockEditor, {
+      props: { actionData: [{ type: 'rule-call', ruleId: '8', ruleCode: 'SourceChild' }], currentRuleId: 8, rules: [child] },
+      provide: { getRuleCallCatalog: () => ({ mode: 'FROZEN', key: 'source:81' }) }
+    })
+    try {
+      expect(wrapper.vm.isCurrentRule(child)).toBe(false)
+      expect(wrapper.findComponent({ name: 'RuleExecutionSelector' }).props('currentRuleId')).toBeNull()
+      const live = createEditorContext([], { currentRuleId: 8 })
+      expect(live.isCurrentRule(child)).toBe(true)
+    } finally { wrapper.unmount() }
+  })
+  test('较早选择的环路错误晚到时不撤销用户后来选中的规则', async () => {
+    let resolveOld
+    const validateRuleCallCycle = vi.fn().mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve })).mockResolvedValueOnce(true)
+    const block = { type: 'rule-call', ruleId: 1 }
+    const rules = [{ id: 2, ruleCode: 'first' }, { id: 3, ruleCode: 'second' }]
+    const ctx = createEditorContext([block], { rules, validateRuleCallCycle })
+    ctx.rememberRuleCallSnapshot(block, true)
+    const old = ctx.onRuleSelect(block, rules[0])
+    ctx.rememberRuleCallSnapshot(block, true)
+    await ctx.onRuleSelect(block, rules[1])
+    resolveOld('旧选择存在环路')
+    await old
+    expect(block.ruleId).toBe(3)
+    expect(ctx.emitted.at(-1).payload[0].ruleId).toBe(3)
+    expect(ctx.$message.warning).not.toHaveBeenCalled()
+  })
+  test('同一调用规则重新选择且发布字段仍在加载时不清除用户映射', async () => {
+    const block = { type: 'rule-call', ruleId: 8, outputField: 'published_score', targetOperand: { kind: 'REFERENCE', refId: 9 } }
+    const rule = { id: 8, ruleCode: 'child', modelType: 'SCORE', outputFields: [{ scriptName: 'draft_score' }] }
+    const ctx = createEditorContext([block], { rules: [rule] })
+    await ctx.onRuleSelect(block, rule)
+    expect(block.outputField).toBe('published_score')
+    expect(block.targetOperand).toEqual({ kind: 'REFERENCE', refId: 9 })
+  })
+  test('调用结果选项只来自相应发布版本，不能回退当前工作区字段', () => {
+    const rule = { id: '8', outputFields: [{ scriptName: 'draft_score' }], executionVersions: [
+      { bindingId: '81', version: 1, available: true, outputFields: [{ scriptName: 'old_score' }] },
+      { bindingId: '82', version: 2, available: true, outputFields: [{ scriptName: 'published_score' }] }
+    ] }
+    const ctx = createEditorContext([], { rules: [rule] })
+    ctx.ruleVersionFields = {}
+    expect(ctx.ruleOutputFields({ ruleId: '8' })).toEqual([{ scriptName: 'published_score' }])
+    expect(ctx.ruleOutputFields({ ruleId: '8', versionMode: 'FIXED', versionBindingId: '81' })).toEqual([{ scriptName: 'old_score' }])
+    delete rule.executionVersions
+    expect(ctx.ruleOutputFields({ ruleId: '8' })).toEqual([])
+  })
   test('赋值右值默认类型跟随数字目标字段', () => {
     const targetOperand = {
       kind: 'REFERENCE', code: 'amount', valueType: 'NUMBER',

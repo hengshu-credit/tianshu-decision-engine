@@ -9,11 +9,13 @@ import {
   getExpressionNode,
   indentExpressionTerm,
   insertExpressionOperation,
+  appendExpressionRow,
   moveExpressionNode,
   moveExpressionSibling,
   outdentExpressionOperation,
   removeExpressionNode,
   removeExpressionSelection,
+  removeExpressionAtCursor,
   replaceExpressionOperator,
   setExpressionNode,
   wrapExpressionNode
@@ -22,6 +24,51 @@ import { createLiteralOperand, createOperationOperand } from '@/utils/operand'
 import { compileOperand } from '@/utils/operand'
 
 describe('expressionTree', () => {
+  test('通用 Object 参数的示例按实际值构建阈值类型', () => {
+    const node = createFunctionTemplate({ id: 1, funcCode: 'toNumberValue', params: [{ name: 'value', type: 'OBJECT', example: '12.5' }] })
+    expect(node.parameterTypes).toEqual(['OBJECT'])
+    expect(node.args[0]).toMatchObject({ value: '12.5', valueType: 'STRING' })
+  })
+  test('追加运算项只修改对应缩进块，保留字段 ID、函数参数数量和原对象', () => {
+    const field = { kind: 'REFERENCE', refType: 'VARIABLE', refId: '9007199254740993', code: 'amount', valueType: 'NUMBER' }
+    const source = { kind: 'FUNCTION', functionId: 8, args: [field, createLiteralOperand(2, 'NUMBER')] }
+    const result = appendExpressionRow(source, ['args', 0])
+    expect(result.selectedPath).toEqual(['args', 0, 'terms', 1, 'operand'])
+    expect(result.root.args).toHaveLength(2)
+    expect(result.root.args[0].terms).toEqual([{ operand: field }, { operator: '+', operand: null }])
+    const filled = setExpressionNode(result.root, result.selectedPath, createLiteralOperand(3, 'NUMBER'))
+    const next = appendExpressionRow(filled, ['args', 0])
+    expect(next.root.args[0].terms).toHaveLength(3)
+    expect(next.selectedPath).toEqual(['args', 0, 'terms', 2, 'operand'])
+    expect(source.args[0]).toBe(field)
+  })
+  test('列表追加不插入运算符，布尔表达式使用逻辑连接符', () => {
+    const list = appendExpressionRow({ kind: 'ARRAY', items: [] })
+    expect(list.root).toEqual({ kind: 'ARRAY', items: [null] })
+    expect(list.selectedPath).toEqual(['items', 0])
+    const comparison = createOperationOperand([{ operand: createLiteralOperand(1, 'NUMBER') }, { operator: '>', operand: createLiteralOperand(0, 'NUMBER') }])
+    expect(appendExpressionRow(comparison).root.terms.at(-1)).toEqual({ operator: '&&', operand: null })
+    expect(appendExpressionRow(null)).toMatchObject({ root: null, selectedPath: [], changed: false })
+  })
+  test('列表删除元素会收紧元素顺序，函数删除参数仍保留必填参数位', () => {
+    const item = createLiteralOperand(1, 'NUMBER')
+    expect(removeExpressionSelection({ kind: 'ARRAY', items: [item, null] }, ['items', 1]).root.items).toEqual([item])
+    expect(removeExpressionSelection({ kind: 'FUNCTION', args: [item, item] }, ['args', 0]).root.args).toEqual([null, item])
+  })
+  test('Backspace 删除当前项，Delete 删除后一项；边界和稳定 ID 不变', () => {
+    const fields = ['a', 'b', 'c'].map((code, index) => ({ kind: 'REFERENCE', refId: String(index + 1), refType: 'VARIABLE', code }))
+    const source = createOperationOperand(fields.map((operand, index) => ({ operand, ...(index ? { operator: '+' } : {}) })))
+    const middle = ['terms', 1, 'operand']
+    const forward = removeExpressionAtCursor(source, middle, 'Delete')
+    expect(forward.root.terms.map(term => term.operand.refId)).toEqual(['1', '2'])
+    expect(forward.selectedPath).toEqual(middle)
+    const back = removeExpressionAtCursor(source, middle, 'Backspace')
+    expect(back.root.terms.map(term => term.operand.refId)).toEqual(['1', '3'])
+    expect(removeExpressionAtCursor(source, ['terms', 2, 'operand'], 'Delete').changed).toBe(false)
+    expect(removeExpressionAtCursor(source, middle, 'Delete', true).root.terms.map(term => term.operand.refId)).toEqual(['1', '3'])
+    expect(removeExpressionAtCursor(source, middle, 'Backspace', true).root.terms.map(term => term.operand.refId)).toEqual(['2', '3'])
+    expect(source.terms).toHaveLength(3)
+  })
   test('删除嵌套空运算项时移除连接符，剩余单项回到原参数位置', () => {
     const field = { kind: 'REFERENCE', refType: 'VARIABLE', refId: 17, code: 'amount' }
     const source = { kind: 'FUNCTION', functionCode: 'max', args: [createOperationOperand([

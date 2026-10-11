@@ -8,7 +8,6 @@ import com.alibaba.qlexpress4.QLOptions;
 import com.alibaba.qlexpress4.QLResult;
 import com.alibaba.qlexpress4.api.parsecache.LoadedParseCache;
 import com.alibaba.qlexpress4.runtime.context.ExpressContext;
-import com.alibaba.qlexpress4.runtime.context.MapExpressContext;
 import com.alibaba.qlexpress4.runtime.context.ObjectFieldExpressContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,6 +40,10 @@ public class QLExpressEngine {
             .traceExpression(true)
             .avoidNullPointer(false)
             .build();
+    private static final QLOptions MAP_NORMAL_OPTIONS = QLOptions.builder()
+            .polluteUserContext(true).traceExpression(false).avoidNullPointer(false).build();
+    private static final QLOptions MAP_TRACE_OPTIONS = QLOptions.builder()
+            .polluteUserContext(true).traceExpression(true).avoidNullPointer(false).build();
     private final Express4Runner runner;
     private final Map<String, PreparedEntry> preparedScripts = new ConcurrentHashMap<>();
     // Guarded by preparedScripts; cache hits only set the entry's second-chance bit.
@@ -144,19 +147,19 @@ public class QLExpressEngine {
         RuleResult ruleResult = new RuleResult();
         long start = System.currentTimeMillis();
         boolean protectConstants = request.containsRegisteredConstants(context);
-        int runtimeWriteMarker = request.beginRuntimeWriteScope();
+        RequestMapExpressContext mapContext = context == null || context instanceof Map
+                ? new RequestMapExpressContext(context == null ? Collections.emptyMap() : (Map<String, Object>) context, request)
+                : null;
         try (RuntimeContextBridge.ContextScope ignored = RuntimeContextBridge.install(request);
-             RequestContext.ExecutionContextScope executionScope = request.bindExecutionContext(context)) {
+             RequestContext.ExecutionContextScope executionScope = request.bindExecutionContext(mapContext == null ? context : mapContext)) {
             if (prepared == null) prepared = prepare(source);
             if (prepared.owner != this) throw new IllegalArgumentException("预编译脚本不能跨执行器复用");
             // Runtime policy check against precomputed targets; no source scanning on execution.
             ScriptStaticChecks.assertDoesNotAssignConstants(prepared.assignmentRoots, request.constantNames());
-            ExpressContext expressContext = context == null || context instanceof Map
-                    ? new MapExpressContext(context == null ? Collections.emptyMap() : (Map<String, Object>) context)
-                    : new ObjectFieldExpressContext(context, runner);
-            QLResult result = runner.execute(prepared.loaded, expressContext, trace ? TRACE_OPTIONS : NORMAL_OPTIONS);
-            request.syncTraceAssignments(result.getExpressionTraces(), context);
-            request.replayRuntimeWrites(runtimeWriteMarker, context);
+            ExpressContext expressContext = mapContext == null ? new ObjectFieldExpressContext(context, runner) : mapContext;
+            QLOptions options = mapContext == null ? (trace ? TRACE_OPTIONS : NORMAL_OPTIONS)
+                    : (trace ? MAP_TRACE_OPTIONS : MAP_NORMAL_OPTIONS);
+            QLResult result = runner.execute(prepared.loaded, expressContext, options);
             if (protectConstants) request.assertConstantsUnchanged(context);
             ruleResult.setResult(result.getResult());
             ruleResult.setSuccess(true);
@@ -169,13 +172,17 @@ public class QLExpressEngine {
             ruleResult.setSuccess(false);
             ruleResult.setErrorMessage("QLExpress execution failed: StackOverflowError");
         } catch (Exception e) {
+            ExecutionCapacityException capacity = ExecutionCapacityException.find(e);
+            if (capacity != null) {
+                if (protectConstants) request.restoreConstants(context);
+                throw capacity;
+            }
             rethrowControlledTermination(e);
             if (protectConstants) request.restoreConstants(context);
             log.error("QLExpress execution error: {}", e.getMessage(), e);
             ruleResult.setSuccess(false);
             ruleResult.setErrorMessage(e.getMessage());
         } finally {
-            request.endRuntimeWriteScope();
             ruleResult.setExecuteTimeMs(System.currentTimeMillis() - start);
         }
         return ruleResult;

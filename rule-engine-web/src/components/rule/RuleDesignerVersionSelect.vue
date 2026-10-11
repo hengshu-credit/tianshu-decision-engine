@@ -11,19 +11,16 @@
       placeholder="选择规则版本"
       @change="$emit('change', $event)"
     >
-      <el-option-group v-if="versionOptions.length" label="已发布版本">
-        <el-option v-for="item in versionOptions" :key="item.value" :label="item.label" :value="item.value" />
-      </el-option-group>
-      <el-option-group v-if="revisionOptions.length" label="暂存与评审记录">
+      <el-option-group v-for="group in optionGroups" :key="group.label" :label="group.label">
         <el-option
-          v-for="item in revisionOptions"
+          v-for="item in group.options"
           :key="item.value"
           :label="item.label"
           :value="item.value"
         >
           <div class="version-option">
             <span class="version-option__label" :title="item.sourceLabel || item.label">{{ item.label }}</span>
-            <button v-if="item.state === 'DRAFT'" v-permission="'rule:edit'" type="button" class="delete-draft" :aria-label="`删除${item.label}`" :disabled="disabled" @click.stop="$emit('delete', item)">删除</button>
+            <button v-if="allowDelete && item.state === 'DRAFT'" v-permission="'rule:edit'" type="button" class="delete-draft" :aria-label="`删除${item.label}`" :disabled="disabled" @click.stop="$emit('delete', item)">删除</button>
           </div>
         </el-option>
       </el-option-group>
@@ -39,6 +36,7 @@ export default {
     modelValue: { type: String, default: '' },
     loading: { type: Boolean, default: false },
     disabled: { type: Boolean, default: false },
+    allowDelete: { type: Boolean, default: true },
   },
   emits: ['change', 'delete'],
   computed: {
@@ -47,6 +45,12 @@ export default {
     },
     versionOptions() {
       return this.options.filter((item) => item.group === 'VERSION')
+    },
+    optionGroups() {
+      return [
+        { label: '生产版本', options: this.versionOptions },
+        { label: '草稿与评审记录', options: this.revisionOptions },
+      ].filter(group => group.options.length)
     },
   },
 }
@@ -66,7 +70,7 @@ export default {
   width: 184px;
 }
 .version-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 100%; }
-.version-option__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.version-option__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .delete-draft { flex: none; padding: 2px 8px; line-height: 20px; color: var(--tianshu-text-primary); background: var(--tianshu-bg-surface); border: 1px solid var(--tianshu-border-subtle); border-radius: 4px; cursor: pointer; }
 .delete-draft:focus-visible { outline: 2px solid var(--el-color-primary); }
 </style>

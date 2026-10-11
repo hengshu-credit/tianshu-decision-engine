@@ -8,6 +8,18 @@ import java.util.Map;
 import static org.junit.Assert.*;
 
 public class ExternalApiResponseSchemaTest {
+    @Test public void catalogDescribesOutputsAndStepsWithoutExecutingExpressions() {
+        var spec = JSON.parseObject("""
+                {"responseBranches":[{"mode":"FIELDS","outputFields":[
+                  {"path":"risk.score","value":{"kind":"FUNCTION","functionCode":"must_not_execute","valueType":"NUMBER","args":[]}}
+                ]}],"steps":[{"id":"first","responseBranches":[{"mode":"VALUE","sample":{"items":[{"code":"ok"}]},
+                  "value":{"kind":"PATH","value":"response.body.items"}}]}]}
+                """);
+        var fields = ExternalApiResponseSchema.catalog(spec);
+        assertTrue(fields.stream().anyMatch(field -> "body.risk.score".equals(field.get("value")) && "NUMBER".equals(field.get("type"))));
+        assertTrue(fields.stream().anyMatch(field -> "steps.first.body[0].code".equals(field.get("value")) && "STRING".equals(field.get("type"))));
+        assertTrue(fields.stream().anyMatch(field -> "steps.first.response.body.items[0].code".equals(field.get("value"))));
+    }
     @Test public void wholeCompanyDataRetainsAllFeatureFieldsAndTheirTypes() {
         Map<String, Object> features = new LinkedHashMap<>();
         for (int i = 0; i < 9937; i++) features.put("QY_FIELD_" + i, i);

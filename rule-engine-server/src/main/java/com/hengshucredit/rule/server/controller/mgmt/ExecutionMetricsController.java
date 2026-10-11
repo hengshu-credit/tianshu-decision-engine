@@ -26,6 +26,7 @@ import java.lang.management.ManagementFactory;
 @RestController
 @RequestMapping("/api/rule/ops")
 public class ExecutionMetricsController {
+    @Resource private com.hengshucredit.rule.server.service.AsyncListActionService listActions;
     @Resource
     private DecisionExecutionPersistence executionPersistence;
     @Resource
@@ -52,12 +53,13 @@ public class ExecutionMetricsController {
     private String configuredInstanceId;
 
     @GetMapping("/execution-metrics")
-    @RequirePermission("rule:view")
+    @RequirePermission("log:view")
     public R<Map<String, Object>> executionMetrics() {
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("instanceId", instanceId());
         result.put("observedAt", java.time.Instant.now());
         result.put("persistence", executionPersistence.snapshot());
+        result.put("listActions", listActions == null ? java.util.Collections.emptyMap() : listActions.snapshot());
         result.put("sourceResolution", sourceResolutionExecutor.snapshot());
         result.put("openExecution", openRuleExecutionExecutor.snapshot());
         result.put("externalResponseCache", externalApiResponseCache.snapshot());

@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
+
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import org.junit.Test;
@@ -12,6 +14,29 @@ import java.util.Map;
 import static org.junit.Assert.assertEquals;
 
 public class DataObjectSourceResolverTest {
+    @Test
+    public void modelCapacityInApiDependenciesCannotBecomeAnObjectStatusFallback() {
+        DataObjectSourceResolver resolver = new DataObjectSourceResolver();
+        RuleDataObjectField name = field(10L, "name", null);
+        configureOwner(name, "{\"apiConfigId\":9,\"bindingMode\":\"OBJECT\"}");
+        CountingApi api = new CountingApi(Map.of());
+        ReflectionTestUtils.setField(resolver, "externalApiInvokeService", api);
+        ExecutionCapacityException capacity = new ExecutionCapacityException(
+                ExecutionCapacityException.Resource.PMML_MODEL_LOADING, "model capacity unavailable");
+        ReflectionTestUtils.setField(resolver, "variableSourceResolver", new VariableSourceResolver() {
+            @Override void resolveApiDependencies(Long project, Map<String, Object> binding,
+                                                  Map<String, Object> values, VariableResolveOptions options) {
+                throw new IllegalStateException("dependency", capacity);
+            }
+        });
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setStatusReferenceKeys(java.util.Set.of("DATA_OBJECT:10"));
+        ExecutionCapacityException failure = org.junit.Assert.assertThrows(ExecutionCapacityException.class,
+                () -> resolver.resolve(null, List.of(direct(10L, "request.name")), new LinkedHashMap<>(), options, List.of(name)));
+        org.junit.Assert.assertSame(capacity, failure);
+        assertEquals(0, api.calls);
+    }
+
     @Test public void assembledResultModulePathIsAbsoluteEvenWithAnObjectSubRoot() {
         DataObjectSourceResolver resolver = new DataObjectSourceResolver();
         ReflectionTestUtils.setField(resolver, "externalApiInvokeService", new CountingApi(Map.of("body", Map.of("data", Map.of("score", 92)))));

@@ -14,6 +14,12 @@ import com.hengshucredit.rule.server.governance.GovernanceApprovalService;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(com.hengshucredit.rule.server.security.ConsoleAccessDeniedException.class)
+    public ResponseEntity<Result<Void>> handleConsoleAccessDenied(
+            com.hengshucredit.rule.server.security.ConsoleAccessDeniedException e) {
+        return ResponseEntity.status(403).body(Result.fail(403, e.getMessage()));
+    }
+
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<Result<Void>> handleNoResourceFound(
             NoResourceFoundException ignored) {

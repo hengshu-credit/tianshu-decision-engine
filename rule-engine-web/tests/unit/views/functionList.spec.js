@@ -346,6 +346,32 @@ describe('FunctionList — 函数操作', () => {
     expect(wrapper.vm.dialogVisible).toBe(true)
   })
 
+  test('损坏的旧参数JSON不能在编辑后静默保存为零参函数', async () => {
+    wrapper.vm.handleEdit({ id: 9, scope: 'GLOBAL', funcCode: 'bad', funcName: '参数损坏', implType: 'SCRIPT', paramsJson: 'not-json' })
+    await wrapper.vm.handleSave()
+    expect(functionApi.updateFunction).not.toHaveBeenCalled()
+    expect(wrapper.vm.dialogVisible).toBe(true)
+  })
+
+  test('只填了类型或中文名的参数不能被过滤成零参', async () => {
+    wrapper.vm.handleCreate()
+    wrapper.vm.editForm.funcCode = 'probe'; wrapper.vm.editForm.funcName = '金额函数'
+    wrapper.vm.editParams = [{ name: '', type: 'NUMBER', label: '金额' }]
+    await wrapper.vm.handleSave()
+    expect(functionApi.createFunction).not.toHaveBeenCalled()
+    expect(wrapper.vm.dialogVisible).toBe(true)
+  })
+
+  test('已部署实现不存在所选精确签名时不生成审批草稿', async () => {
+    wrapper.vm.handleCreate()
+    Object.assign(wrapper.vm.editForm, { funcCode: 'probe', funcName: '金额函数', implType: 'JAVA', implClass: 'example.Methods', implMethod: 'choose' })
+    wrapper.vm.editParams = [{ name: 'amount', type: 'NUMBER', javaType: 'long', label: '金额' }]
+    functionApi.inspectFunctionMethods.mockResolvedValueOnce({ data: { status: 'AVAILABLE', valid: false, message: '不存在 choose(long)', methods: [] } })
+    await wrapper.vm.handleSave()
+    expect(functionApi.createFunction).not.toHaveBeenCalled()
+    expect(wrapper.vm.dialogVisible).toBe(true)
+  })
+
   test('保存失败优先保留后端响应错误信息', async () => {
     wrapper.vm.handleCreate()
     wrapper.vm.editForm.funcCode = 'referencedFunction'
@@ -508,5 +534,137 @@ describe('FunctionList — 边界情况', () => {
     await new Promise(r => setTimeout(r, 100))
     expect(wrapper.vm.funcList).toEqual([])
     wrapper.unmount()
+  })
+})
+
+describe('FunctionList — 精确方法签名', () => {
+  let wrapper
+  const method = (javaType = 'double') => ({
+    signature: `choose(${javaType})`, name: 'choose', displaySignature: `choose(${javaType}) → java.lang.String`,
+    available: true, parameters: [{ name: 'amount', javaType, suggestedType: 'NUMBER' }],
+  })
+  const catalog = (signature = 'choose(double)', extra = {}) => ({
+    status: 'AVAILABLE', valid: true, signature, message: '方法已核对', legacySignature: false,
+    methods: [method(), method('java.lang.Object')], ...extra,
+  })
+  beforeEach(async () => {
+    functionApi.inspectFunctionMethods.mockReset()
+    wrapper = await mountAndWait()
+    wrapper.vm.handleCreate()
+    Object.assign(wrapper.vm.editForm, { funcCode: 'probe', funcName: '金额函数', implType: 'JAVA', implClass: 'example.Methods' })
+  })
+  afterEach(() => { wrapper.unmount() })
+
+  test('选择实际重载带出精确类型，保存保留业务参数名和说明', async () => {
+    functionApi.inspectFunctionMethods.mockResolvedValueOnce({ data: catalog(null, { valid: false }) })
+    await wrapper.vm.loadFunctionMethods()
+    wrapper.vm.selectFunctionMethod('choose(double)')
+    expect(wrapper.vm.editParams).toEqual([{ name: 'amount', label: '', type: 'NUMBER', javaType: 'double' }])
+    wrapper.vm.editParams[0].name = 'Loan_Amount'
+    wrapper.vm.editParams[0].label = '贷款金额'
+    expect(wrapper.vm.nativeMethodChoices).toHaveLength(2)
+    functionApi.inspectFunctionMethods.mockResolvedValueOnce({ data: catalog() })
+    functionApi.createFunction.mockResolvedValueOnce({ data: { id: 91 } })
+    await wrapper.vm.handleSave()
+    expect(JSON.parse(functionApi.createFunction.mock.calls[0][0].paramsJson)).toEqual([
+      { name: 'Loan_Amount', label: '贷款金额', type: 'NUMBER', javaType: 'double' },
+    ])
+    expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith(expect.stringContaining('草稿已保存'))
+  })
+
+  test('实现未提供参数名时仍显示已选签名，不虚构参数名或当作零参', async () => {
+    const selected = { signature: 'max(int,int)', name: 'max', displaySignature: 'max(int, int) → int', available: true,
+      parameters: [{ name: null, javaType: 'int', suggestedType: 'NUMBER' }, { name: null, javaType: 'int', suggestedType: 'NUMBER' }] }
+    functionApi.inspectFunctionMethods.mockResolvedValueOnce({ data: catalog(null, { valid: false, methods: [selected] }) })
+    await wrapper.vm.loadFunctionMethods(); wrapper.vm.selectFunctionMethod(selected.signature)
+    expect(wrapper.vm.editParams.map(param => param.name)).toEqual(['', ''])
+    expect(wrapper.vm.selectedNativeSignature).toBe('max(int,int)')
+    await wrapper.vm.handleSave()
+    expect(functionApi.createFunction).not.toHaveBeenCalled()
+  })
+
+  test('旧DOUBLE绑定Object明确展示且改说明时不自动迁移重载', async () => {
+    const params = [{ name: 'amount', type: 'DOUBLE', label: '金额' }]
+    wrapper.vm.handleEdit({ id: 9, scope: 'GLOBAL', implType: 'JAVA', implClass: 'example.Methods', implMethod: 'choose', funcCode: 'old', funcName: '旧函数', paramsJson: JSON.stringify(params) })
+    const legacy = catalog('choose(java.lang.Object)', { legacySignature: true })
+    functionApi.inspectFunctionMethods.mockResolvedValue({ data: legacy })
+    await wrapper.vm.loadFunctionMethods()
+    expect(wrapper.vm.selectedNativeSignature).toBe('choose(java.lang.Object)')
+    expect(wrapper.vm.methodParameterType(0)).toBe('java.lang.Object')
+    wrapper.vm.editParams[0].label = '修改后的业务说明'
+    functionApi.updateFunction.mockResolvedValueOnce({ data: { id: 92 } })
+    await wrapper.vm.handleSave()
+    expect(JSON.parse(functionApi.updateFunction.mock.calls[0][0].paramsJson)).toEqual([{ ...params[0], label: '修改后的业务说明' }])
+  })
+
+  test('新参数只给业务DOUBLE不能被默认映射到Object后送审', async () => {
+    wrapper.vm.editForm.implMethod = 'choose'
+    wrapper.vm.editParams = [{ name: 'amount', type: 'DOUBLE', label: '金额' }]
+    await wrapper.vm.handleSave()
+    expect(functionApi.createFunction).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.error).toHaveBeenCalledWith(expect.stringContaining('实际方法类型'))
+  })
+
+  test('旧零参函数改编码时必须明确方法，不能跟着编码静默换实现', async () => {
+    wrapper.vm.handleEdit({ id: 9, scope: 'GLOBAL', implType: 'JAVA', implClass: 'example.Methods', implMethod: '', funcCode: 'first', funcName: '旧函数', paramsJson: '[]' })
+    wrapper.vm.editForm.funcCode = 'second'
+    functionApi.inspectFunctionMethods.mockResolvedValueOnce({ data: catalog('second()', { methods: [] }) })
+    functionApi.updateFunction.mockResolvedValueOnce({ data: { id: 94 } })
+    await wrapper.vm.handleSave()
+    expect(functionApi.updateFunction).not.toHaveBeenCalled()
+  })
+
+  test('上一实现的迟到方法目录不会覆盖后选实现', async () => {
+    let finishA
+    functionApi.inspectFunctionMethods.mockReturnValueOnce(new Promise(resolve => { finishA = resolve }))
+    const a = wrapper.vm.loadFunctionMethods()
+    wrapper.vm.editForm.implClass = 'example.Second'
+    functionApi.inspectFunctionMethods.mockResolvedValueOnce({ data: catalog('other()', { methods: [{ signature: 'other()', name: 'other', available: true, parameters: [] }] }) })
+    await wrapper.vm.loadFunctionMethods()
+    finishA({ data: catalog() }); await a
+    expect(wrapper.vm.nativeMethodChoices.map(item => item.signature)).toEqual(['other()'])
+  })
+
+  test('签名核对期间项目或内容改变不把旧配置送审', async () => {
+    wrapper.vm.editForm.implMethod = 'choose'
+    wrapper.vm.editParams = [{ name: 'amount', type: 'NUMBER', javaType: 'double' }]
+    let finish
+    functionApi.inspectFunctionMethods.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const save = wrapper.vm.handleSave()
+    wrapper.vm.editForm.scope = 'PROJECT'; wrapper.vm.editForm.projectId = 7
+    finish({ data: catalog() }); await save
+    expect(functionApi.createFunction).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.warning).toHaveBeenCalledWith(expect.stringContaining('配置已变化'))
+    expect(wrapper.vm.editForm.projectId).toBe(7)
+  })
+
+  test('核对响应的签名不同于选择时保持编辑并拒绝提交', async () => {
+    wrapper.vm.editForm.implMethod = 'choose'
+    wrapper.vm.editParams = [{ name: 'amount', type: 'NUMBER', javaType: 'double' }]
+    functionApi.inspectFunctionMethods.mockResolvedValueOnce({ data: catalog('choose(java.lang.Object)') })
+    await wrapper.vm.handleSave()
+    expect(functionApi.createFunction).not.toHaveBeenCalled()
+    expect(wrapper.vm.dialogVisible).toBe(true)
+  })
+
+  test('目标运行端专有实现保留明确未验证状态与完整手工签名', async () => {
+    wrapper.vm.editForm.implClass = 'sdk.only.Methods'; wrapper.vm.editForm.implMethod = 'choose'
+    wrapper.vm.editParams = [{ name: 'amount', type: 'NUMBER', javaType: 'double', example: 12 }]
+    const unverified = { status: 'UNAVAILABLE', valid: false, signature: null, message: '目标运行端尚未验证', methods: [] }
+    functionApi.inspectFunctionMethods.mockResolvedValueOnce({ data: unverified })
+    functionApi.createFunction.mockResolvedValueOnce({ data: { id: 93 } })
+    await wrapper.vm.handleSave()
+    expect(JSON.parse(functionApi.createFunction.mock.calls[0][0].paramsJson)[0]).toMatchObject({ javaType: 'double', example: 12 })
+    expect(wrapper.vm.methodCatalog.valid).toBe(false)
+  })
+
+  test('方法目录请求失败不伪装成无参数且保留原配置', async () => {
+    wrapper.vm.editParams = [{ name: 'amount', type: 'NUMBER', javaType: 'double' }]
+    functionApi.inspectFunctionMethods.mockRejectedValueOnce(new Error('服务暂不可用'))
+    await wrapper.vm.loadFunctionMethods()
+    expect(wrapper.vm.currentMethodCatalog.status).toBe('ERROR')
+    expect(wrapper.vm.currentMethodCatalog.message).toContain('服务暂不可用')
+    expect(wrapper.vm.editParams[0].javaType).toBe('double')
   })
 })

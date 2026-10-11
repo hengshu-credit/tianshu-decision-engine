@@ -48,6 +48,13 @@ npm run build
 
 ONNX Runtime 与 JPMML 的许可证不同；启用 `onnx-gpu` Maven profile 时还必须单独核对 CUDA、cuDNN 和运行环境许可。
 
+## 精确 JSON 测试配置与容量断言
+
+- `jsonc-parser` 3.3.1：MIT，Microsoft维护的JSON AST解析器，上游源码：https://github.com/microsoft/node-jsonc-parser 。本项目启用严格JSON选项，未修改上游代码。
+- 用于测试配置保留原始数字、普通业务键和字段结构，以及容量门禁按原文数字验证响应；不替换全局HTTP客户端的JSON行为。
+- 版本分别锁定于`rule-engine-web/package-lock.json`和`scripts/quality-gates/package-lock.json`，容量工具可独立安装其一个依赖，无需安装前端。
+- 许可证全文随前端独立部署产物复制：[jsonc-parser-MIT.txt](rule-engine-web/public/licenses/jsonc-parser-MIT.txt)。源码交付也包含该文件。
+
 ## 数据看板地图与几何处理
 
 - `polygon-clipping` 0.15.7：MIT，https://github.com/mfogel/polygon-clipping ，用于避免境外地图数据覆盖国内来源的中国边界。

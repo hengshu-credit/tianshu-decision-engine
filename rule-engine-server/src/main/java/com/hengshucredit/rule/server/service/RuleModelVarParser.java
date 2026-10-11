@@ -3,6 +3,7 @@ package com.hengshucredit.rule.server.service;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.hengshucredit.rule.core.compiler.ScorecardLevelCompiler;
 import lombok.Data;
 import org.springframework.stereotype.Component;
 
@@ -336,7 +337,7 @@ public class RuleModelVarParser {
         if (resultVar != null && resultVar.containsKey("varCode") && !resultVar.getString("varCode").isEmpty()) {
             result.getOutputCodes().add(resultVar.getString("varCode"));
         }
-        collectThresholdOperands(model.getJSONArray("thresholds"), result.getInputCodes());
+        collectScorecardLevel(model, result);
     }
 
     // ==================== 复杂评分卡 ====================
@@ -381,7 +382,7 @@ public class RuleModelVarParser {
         if (resultVar != null && resultVar.containsKey("varCode") && !resultVar.getString("varCode").isEmpty()) {
             result.getOutputCodes().add(resultVar.getString("varCode"));
         }
-        collectThresholdOperands(model.getJSONArray("thresholds"), result.getInputCodes());
+        collectScorecardLevel(model, result);
     }
 
     private void collectAdvancedCrossDimensionOperands(JSONObject dim, Set<String> inputs) {
@@ -396,10 +397,15 @@ public class RuleModelVarParser {
         }
     }
 
-    private void collectThresholdOperands(JSONArray thresholds, Set<String> inputs) {
-        if (thresholds == null) return;
+    private void collectScorecardLevel(JSONObject model, ParseResult result) {
+        if (!ScorecardLevelCompiler.isEnabled(model)) return;
+        JSONObject target = ScorecardLevelCompiler.getTarget(model);
+        JSONObject operand = target.getJSONObject("operand");
+        if (operand != null) OperandDependencyCollector.collect(operand, result.getOutputCodes());
+        else if (target.getString("varCode") != null) result.getOutputCodes().add(target.getString("varCode"));
+        JSONArray thresholds = model.getJSONArray("thresholds");
         for (int i = 0; i < thresholds.size(); i++) {
-            OperandDependencyCollector.collect(thresholds.getJSONObject(i).getJSONObject("resultOperand"), inputs);
+            OperandDependencyCollector.collect(thresholds.getJSONObject(i).getJSONObject("resultOperand"), result.getInputCodes());
         }
     }
 

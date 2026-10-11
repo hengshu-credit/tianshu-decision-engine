@@ -10,6 +10,8 @@ import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
+import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
+import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
@@ -25,6 +27,8 @@ import com.hengshucredit.rule.server.mapper.RuleDataObjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleDbDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionInputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionMapper;
+import com.hengshucredit.rule.server.mapper.RuleDefinitionContentMapper;
+import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionOutputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalDatasourceMapper;
@@ -51,10 +55,16 @@ import java.util.Set;
 
 @Service
 public class RuleLineageService {
+    @Resource private com.hengshucredit.rule.server.mapper.RuleVersionBindingMapper ruleVersionBindings;
+    @Resource private com.hengshucredit.rule.server.mapper.RuleDefinitionVersionMapper ruleVersionSnapshots;
+    @Resource
+    private com.hengshucredit.rule.server.security.ConsoleAccessGuard accessGuard;
 
     @Resource private RuleProjectMapper projectMapper;
     @Resource private RuleVariableMapper variableMapper;
     @Resource private RuleDefinitionMapper definitionMapper;
+    @Resource private RuleDefinitionContentMapper definitionContentMapper;
+    @Resource private RulePublishedMapper publishedMapper;
     @Resource private RuleDefinitionInputFieldMapper definitionInputFieldMapper;
     @Resource private RuleDefinitionOutputFieldMapper definitionOutputFieldMapper;
     @Resource private RuleModelMapper modelMapper;
@@ -79,6 +89,7 @@ public class RuleLineageService {
             throw new IllegalArgumentException("候选分页参数无效：页码需大于 0，每页数量需为 1 至 100");
         }
         String type = normalizeType(nodeType);
+        if (accessGuard != null) accessGuard.requireResource(type, "view");
         OptionSource source = switch (type) {
             case "PROJECT" -> new OptionSource(projectMapper, "project_code", "project_name", false, "id");
             case "RULE" -> new OptionSource(definitionMapper, "rule_code", "rule_name", true, "project_id");
@@ -106,6 +117,7 @@ public class RuleLineageService {
                 source.labelColumn() + " AS label", source.ownerColumn() + ("API".equals(type) ? " AS datasourceId" : " AS projectId")));
         if (source.scoped()) columns.add("scope");
         query.select(columns).orderByDesc("id");
+        query.and(w -> w.isNull("status").or().ne("status", -1));
         if (keyword != null && !keyword.trim().isEmpty()) {
             String search = keyword.trim().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
             query.and(w -> w.like(source.codeColumn(), search).or().like(source.labelColumn(), search));
@@ -181,6 +193,77 @@ public class RuleLineageService {
             traverse(full, startKey, "DOWNSTREAM", depth, selectedNodes, selectedEdges);
         }
         return graphResult(full, startKey, selectedNodes, selectedEdges);
+    }
+
+    /** 治理按配置中持有的稳定ID判断消费者，与页面展示的数据流方向相互独立。 */
+    public List<Map<String, Object>> directReferenceConsumers(String nodeType, Long nodeId) {
+        FullGraph full = buildFullGraph();
+        String type = normalizeType(nodeType);
+        String target = nodeKey(type, nodeId);
+        if (!full.nodes.containsKey(target)) return List.of();
+        if (Set.of("RULE", "VARIABLE", "FUNCTION", "MODEL", "API", "DATA_FIELD").contains(type)) addRuleCallReferences(full);
+        List<Map<String, Object>> consumers = new ArrayList<>();
+        for (String key : full.referenceConsumers.getOrDefault(target, Collections.emptySet())) {
+            Map<String, Object> node = full.nodes.get(key);
+            if (node != null) consumers.add(nodeWithRelations(full, key, node));
+        }
+        return consumers;
+    }
+
+    private void addRuleCallReferences(FullGraph graph) {
+        Set<Long> definitionIds = new LinkedHashSet<>();
+        for (Map<String, Object> node : graph.nodes.values()) {
+            if ("RULE".equals(node.get("type"))) definitionIds.add((Long) node.get("refId"));
+        }
+        if (definitionIds.isEmpty()) return;
+        // 只在治理依赖保护查询中加载静态引用所需JSON，不给普通血缘图加载整份脚本。
+        for (RuleDefinitionContent content : definitionContentMapper.selectList(new LambdaQueryWrapper<RuleDefinitionContent>()
+                .select(RuleDefinitionContent::getDefinitionId, RuleDefinitionContent::getModelJson)
+                .in(RuleDefinitionContent::getDefinitionId, definitionIds))) {
+            if (definitionIds.contains(content.getDefinitionId())) {
+                addRuleCallReferences(graph, content.getDefinitionId(), content.getModelJson());
+            }
+        }
+        for (RulePublished published : publishedMapper.selectList(new LambdaQueryWrapper<RulePublished>()
+                .select(RulePublished::getDefinitionId, RulePublished::getModelJson, RulePublished::getStatus)
+                .in(RulePublished::getDefinitionId, definitionIds).eq(RulePublished::getStatus, 1))) {
+            // 当前草稿移除调用，不代表仍在线的已发布版本已移除调用。
+            if (Integer.valueOf(1).equals(published.getStatus()) && definitionIds.contains(published.getDefinitionId())) {
+                addRuleCallReferences(graph, published.getDefinitionId(), published.getModelJson());
+            }
+        }
+        if (ruleVersionBindings != null && ruleVersionSnapshots != null) {
+            List<Long> snapshotIds = ruleVersionBindings.selectList(new LambdaQueryWrapper<com.hengshucredit.rule.model.entity.RuleVersionBinding>()
+                    .select(com.hengshucredit.rule.model.entity.RuleVersionBinding::getSnapshotId, com.hengshucredit.rule.model.entity.RuleVersionBinding::getDefinitionId,
+                            com.hengshucredit.rule.model.entity.RuleVersionBinding::getStatus)
+                    .in(com.hengshucredit.rule.model.entity.RuleVersionBinding::getDefinitionId, definitionIds)
+                    .eq(com.hengshucredit.rule.model.entity.RuleVersionBinding::getStatus, 1)).stream()
+                    .filter(binding -> Integer.valueOf(1).equals(binding.getStatus()) && definitionIds.contains(binding.getDefinitionId()))
+                    .map(com.hengshucredit.rule.model.entity.RuleVersionBinding::getSnapshotId).filter(java.util.Objects::nonNull).distinct().toList();
+            if (!snapshotIds.isEmpty()) for (var snapshot : ruleVersionSnapshots.selectList(new LambdaQueryWrapper<com.hengshucredit.rule.model.entity.RuleDefinitionVersion>()
+                    .select(com.hengshucredit.rule.model.entity.RuleDefinitionVersion::getDefinitionId, com.hengshucredit.rule.model.entity.RuleDefinitionVersion::getModelJson)
+                    .in(com.hengshucredit.rule.model.entity.RuleDefinitionVersion::getId, snapshotIds))) {
+                if (definitionIds.contains(snapshot.getDefinitionId())) addRuleCallReferences(graph, snapshot.getDefinitionId(), snapshot.getModelJson());
+            }
+        }
+    }
+
+    private void addRuleCallReferences(FullGraph graph, Long ownerId, String modelJson) {
+        if (!hasText(modelJson)) return;
+        List<OperandDependencyCollector.Reference> references;
+        try {
+            references = OperandDependencyCollector.collectReferences(JSON.parse(modelJson));
+        } catch (RuntimeException invalidHistoricalJson) {
+            // 不用可变编码猜测格式错误或动态脚本的关联，编译阶段负责对应诊断。
+            return;
+        }
+        for (OperandDependencyCollector.Reference reference : references) {
+            String type = normalizeType(reference.getRefType());
+            if (reference.getRefId() == null) continue;
+            String target = Set.of("RULE", "FUNCTION").contains(type) ? nodeKey(type, reference.getRefId())
+                    : "EXTERNAL_API".equals(type) ? nodeKey("API", reference.getRefId()) : refNodeKey(type, reference.getRefId());
+            addReference(graph, target, nodeKey("RULE", ownerId));
+        }
     }
 
     private void traverse(FullGraph full, String startKey, String direction, int maxDepth,
@@ -289,18 +372,28 @@ public class RuleLineageService {
         FullGraph graph = new FullGraph();
         List<RuleProject> projects = projectMapper.selectList(new LambdaQueryWrapper<RuleProject>());
         for (RuleProject item : projects) {
+            if (Integer.valueOf(-1).equals(item.getStatus())) continue;
             addNode(graph, "PROJECT", item.getId(), item.getProjectCode(), item.getProjectName());
         }
         for (RuleVariable item : variableMapper.selectList(new LambdaQueryWrapper<RuleVariable>())) {
+            if (Integer.valueOf(-1).equals(item.getStatus())) continue;
             addNode(graph, "VARIABLE", item.getId(), item.getVarCode(), item.getVarLabel());
             addProjectEdge(graph, item.getProjectId(), nodeKey("VARIABLE", item.getId()));
             addVariableSourceEdges(graph, item);
         }
+        Set<Long> deletedObjectIds = new LinkedHashSet<>();
         for (RuleDataObject item : dataObjectMapper.selectList(new LambdaQueryWrapper<RuleDataObject>())) {
+            if (Integer.valueOf(-1).equals(item.getStatus())) {
+                deletedObjectIds.add(item.getId());
+                continue;
+            }
             addNode(graph, "DATA_OBJECT", item.getId(), item.getObjectCode(), item.getObjectLabel());
             addProjectEdge(graph, item.getProjectId(), nodeKey("DATA_OBJECT", item.getId()));
         }
-        List<RuleDataObjectField> objectFields = dataObjectFieldMapper.selectList(new LambdaQueryWrapper<RuleDataObjectField>());
+        // 对象整体删除后，其历史字段不能以独立项目字段的身份重新进入当前引用图。
+        List<RuleDataObjectField> objectFields = dataObjectFieldMapper.selectList(new LambdaQueryWrapper<RuleDataObjectField>())
+                .stream().filter(item -> !Integer.valueOf(-1).equals(item.getStatus())
+                        && !deletedObjectIds.contains(item.getObjectId())).toList();
         for (RuleDataObjectField item : objectFields) {
             addNode(graph, "DATA_FIELD", item.getId(), item.getScriptName() != null ? item.getScriptName() : item.getVarCode(), item.getVarLabel());
             String objectKey = nodeKey("DATA_OBJECT", item.getObjectId());
@@ -325,28 +418,34 @@ public class RuleLineageService {
             }
         }
         for (RuleDefinition item : definitionMapper.selectList(new LambdaQueryWrapper<RuleDefinition>())) {
+            if (Integer.valueOf(-1).equals(item.getStatus())) continue;
             addNode(graph, "RULE", item.getId(), item.getRuleCode(), item.getRuleName());
             addProjectEdge(graph, item.getProjectId(), nodeKey("RULE", item.getId()));
         }
         for (RuleModel item : modelMapper.selectList(withoutModelContent())) {
+            if (Integer.valueOf(-1).equals(item.getStatus())) continue;
             addNode(graph, "MODEL", item.getId(), item.getModelCode(), item.getModelName());
             addProjectEdge(graph, item.getProjectId(), nodeKey("MODEL", item.getId()));
         }
         for (RuleExternalDatasource item : externalDatasourceMapper.selectList(new LambdaQueryWrapper<RuleExternalDatasource>())) {
+            if (Integer.valueOf(-1).equals(item.getStatus())) continue;
             addNode(graph, "DATASOURCE", item.getId(), item.getDatasourceCode(), item.getDatasourceName());
             addProjectEdge(graph, item.getProjectId(), nodeKey("DATASOURCE", item.getId()));
         }
         for (RuleExternalApiConfig item : externalApiConfigMapper.selectList(new LambdaQueryWrapper<RuleExternalApiConfig>())) {
+            if (Integer.valueOf(-1).equals(item.getStatus())) continue;
             addNode(graph, "API", item.getId(), item.getApiCode(), item.getApiName());
             if (item.getDatasourceId() != null) {
                 addEdge(graph, nodeKey("DATASOURCE", item.getDatasourceId()), nodeKey("API", item.getId()), "包含API");
             }
         }
         for (RuleDbDatasource item : dbDatasourceMapper.selectList(new LambdaQueryWrapper<RuleDbDatasource>())) {
+            if (Integer.valueOf(-1).equals(item.getStatus())) continue;
             addNode(graph, "DB", item.getId(), item.getDatasourceCode(), item.getDatasourceName());
             addProjectEdge(graph, item.getProjectId(), nodeKey("DB", item.getId()));
         }
         for (RuleListLibrary item : listLibraryMapper.selectList(new LambdaQueryWrapper<RuleListLibrary>())) {
+            if (Integer.valueOf(-1).equals(item.getStatus())) continue;
             addNode(graph, "LIST", item.getId(), item.getListCode(), item.getListName());
             addProjectEdge(graph, item.getProjectId(), nodeKey("LIST", item.getId()));
         }
@@ -388,7 +487,7 @@ public class RuleLineageService {
         for (RuleDefinitionOutputField field : definitionOutputFieldMapper.selectList(new LambdaQueryWrapper<RuleDefinitionOutputField>())) {
             String from = nodeKey("RULE", field.getDefinitionId());
             String to = refNodeKey(field.getRefType(), field.getVarId());
-            if (to != null) addEdge(graph, from, to, "规则输出");
+            if (to != null) addEdge(graph, from, to, "规则输出", true);
         }
     }
 
@@ -423,7 +522,7 @@ public class RuleLineageService {
         for (RuleModelOutputField field : outputFields) {
             String from = nodeKey("MODEL", field.getModelId());
             String to = refNodeKey(field.getRefType(), field.getVarId());
-            if (to != null) addEdge(graph, from, to, "模型输出");
+            if (to != null) addEdge(graph, from, to, "模型输出", true);
         }
     }
 
@@ -488,6 +587,10 @@ public class RuleLineageService {
     }
 
     private void addEdge(FullGraph graph, String from, String to, String label) {
+        addEdge(graph, from, to, label, false);
+    }
+
+    private void addEdge(FullGraph graph, String from, String to, String label, boolean outputReference) {
         if (from == null || to == null || from.equals(to)) return;
         Map<String, Object> edge = new LinkedHashMap<>();
         edge.put("from", from);
@@ -496,6 +599,13 @@ public class RuleLineageService {
         graph.edges.add(edge);
         graph.outgoingEdges.computeIfAbsent(from, key -> new ArrayList<>()).add(edge);
         graph.incomingEdges.computeIfAbsent(to, key -> new ArrayList<>()).add(edge);
+        // 输出数据流是所有者→目标，而配置引用是目标ID被所有者持有。
+        addReference(graph, outputReference ? to : from, outputReference ? from : to);
+    }
+
+    private void addReference(FullGraph graph, String target, String consumer) {
+        if (target == null || consumer == null || target.equals(consumer)) return;
+        graph.referenceConsumers.computeIfAbsent(target, key -> new LinkedHashSet<>()).add(consumer);
     }
 
     private JSONObject parseObject(String json) {
@@ -524,6 +634,7 @@ public class RuleLineageService {
         private final List<Map<String, Object>> edges = new ArrayList<>();
         private final Map<String, List<Map<String, Object>>> outgoingEdges = new LinkedHashMap<>();
         private final Map<String, List<Map<String, Object>>> incomingEdges = new LinkedHashMap<>();
+        private final Map<String, Set<String>> referenceConsumers = new LinkedHashMap<>();
     }
 
     private static class TraversalStep {

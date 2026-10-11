@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.core.trace.TraceIdGenerator;
 import com.hengshucredit.rule.model.dto.RuleTraceFrame;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
+import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleTraceRegistry;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.auth.ProjectAuthType;
@@ -11,6 +12,7 @@ import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.RuleBillingService;
 import com.hengshucredit.rule.server.service.RuleExecutionLogService;
 import com.hengshucredit.rule.server.service.RuleTraceRegistryService;
+import com.hengshucredit.rule.server.service.ClientExecutionLogIngestionService;
 import org.junit.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 
@@ -21,8 +23,37 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 
 public class LogReportControllerTest {
+
+    @Test
+    public void cannotForgeServerOriginOrPersistenceIdentity() {
+        CapturingLogService logService = new CapturingLogService();
+        LogReportController controller = newController(logService, new CapturingBillingService());
+        RuleExecutionLog log = new RuleExecutionLog();
+        log.setRuleCode("RC_TEST");
+        log.setSource("SERVER");
+        log.setId(987L);
+        log.setCreateTime(java.time.LocalDateTime.of(2000, 1, 1, 0, 0));
+        log.setRootRuleId(123L);
+        log.setExecutionProjectId(456L);
+        log.setStartedAt(java.time.LocalDateTime.now());
+        log.setHistoryFields("forged-fields");
+        MockHttpServletRequest request = requestWithProject("RISK_DEMO");
+        ProjectAuthContext.direct(1L, "RISK_DEMO", 11L, "BASIC_MAIN", ProjectAuthType.BASIC).attach(request);
+
+        assertEquals(200, controller.report(List.of(log), request).getCode());
+
+        RuleExecutionLog saved = logService.saved.get(0);
+        assertEquals("CLIENT", saved.getSource());
+        assertNull(saved.getId());
+        assertNull(saved.getCreateTime());
+        assertNull(saved.getRootRuleId());
+        assertNull(saved.getExecutionProjectId());
+        assertNull(saved.getStartedAt());
+        assertNull(saved.getHistoryFields());
+    }
 
     @Test
     public void rejectsReportWithoutProjectScope() {
@@ -121,8 +152,9 @@ public class LogReportControllerTest {
 
         assertEquals(200, result.getCode());
         assertEquals(2, traceRegistryService.saved.size());
-        assertEquals(root.getTraceId(), traceRegistryService.saved.get(0).getTraceId());
-        assertEquals(root.getTraceId(), traceRegistryService.saved.get(1).getParentTraceId());
+        assertEquals(1, traceRegistryService.saved.stream().filter(row -> root.getTraceId().equals(row.getTraceId())).count());
+        assertEquals(root.getTraceId(), traceRegistryService.saved.stream()
+                .filter(row -> child.getTraceId().equals(row.getTraceId())).findFirst().orElseThrow().getParentTraceId());
     }
 
     @Test
@@ -173,9 +205,11 @@ public class LogReportControllerTest {
                                                      RuleBillingService billingService,
                                                      RuleTraceRegistryService traceRegistryService) {
         LogReportController controller = new LogReportController();
-        setField(controller, "logService", logService);
-        setField(controller, "billingService", billingService);
-        setField(controller, "traceRegistryService", traceRegistryService);
+        ClientExecutionLogIngestionService ingestion = new ClientExecutionLogIngestionService();
+        setField(ingestion, "logService", logService);
+        setField(ingestion, "billingService", billingService);
+        setField(ingestion, "traceRegistryService", traceRegistryService);
+        setField(controller, "ingestionService", ingestion);
         return controller;
     }
 
@@ -217,6 +251,16 @@ public class LogReportControllerTest {
         }
 
         @Override
+        protected RuleDefinition findDefinitionByRuleCode(String code, Long projectId) {
+            RuleDefinition rule = new RuleDefinition();
+            rule.setId("RC_CHILD".equals(code) ? 2L : 1L);
+            rule.setRuleCode(code);
+            rule.setScope("PROJECT");
+            rule.setModelType("RC_CHILD".equals(code) ? "RULE_SET" : "SCRIPT");
+            return rule;
+        }
+
+        @Override
         public void recordEngineExecutionLog(RuleExecutionLog log, ProjectAuthContext context) {
             billed.add(log);
             authContext = context;
@@ -227,8 +271,9 @@ public class LogReportControllerTest {
         private final List<RuleTraceRegistry> saved = new ArrayList<>();
 
         @Override
-        public void registerExisting(RuleTraceRegistry registry) {
+        public boolean registerClientTrace(RuleTraceRegistry registry) {
             saved.add(registry);
+            return true;
         }
     }
 }

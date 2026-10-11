@@ -41,6 +41,41 @@ import java.util.List;
 import java.util.Map;
 
 public class AggregateGovernedResourceAdapterTest {
+    @Test
+    public void modelMissingFieldBindingsIsRejectedBeforeSubmissionInsteadOfFailingDuringApproval() {
+        var adapter = new ModelGovernedResourceAdapter(null, null, null, codec());
+        org.springframework.test.util.ReflectionTestUtils.setField(adapter, "modelService", new com.hengshucredit.rule.server.service.RuleModelService());
+        var model = new RuleModel(); model.setModelCode("sample"); model.setModelName("模型"); model.setModelType("LR"); model.setModelFormat("PMML");
+        var input = new RuleModelInputField(); input.setFieldName("Age"); input.setFieldType("DOUBLE");
+        var output = new com.hengshucredit.rule.model.entity.RuleModelOutputField(); output.setFieldName("prediction"); output.setFieldType("DOUBLE");
+        model.setInputFields(List.of(input)); model.setOutputFields(List.of(output));
+        var incomplete = ResourceSnapshot.ofJson(CanonicalJson.write(model));
+        Assert.assertTrue(adapter.validate(incomplete, "CREATE").stream().anyMatch(issue -> "MODEL_PUBLICATION_INVALID".equals(issue.code())
+                && issue.message().contains("Age") && issue.message().contains("prediction")));
+        Assert.assertTrue("删除不要求补齐待删除内容的输入输出", adapter.validate(incomplete, "DELETE").isEmpty());
+        input.setSourceOperand("{\"kind\":\"PATH\",\"value\":\"Age\"}");
+        output.setTargetOperand("{\"kind\":\"PATH\",\"value\":\"Decision.score\"}");
+        Assert.assertTrue(adapter.validate(ResourceSnapshot.ofJson(CanonicalJson.write(model)), "CREATE").isEmpty());
+    }
+
+    @Test
+    public void deletingOrDisablingAnAggregateNeverRewritesItsChildConfiguration() {
+        for (String action : List.of("DRAFT_DELETE", "DELETE", "DISABLE")) {
+            java.util.concurrent.atomic.AtomicReference<RuleVariable> stored = new java.util.concurrent.atomic.AtomicReference<>(variable());
+            var options = (RuleVariableOptionMapper) Proxy.newProxyInstance(RuleVariableOptionMapper.class.getClassLoader(),
+                    new Class<?>[]{RuleVariableOptionMapper.class}, (proxy, method, args) -> {
+                        throw new AssertionError("删除和停用不能重建选项或要求草稿子配置完整：" + method.getName());
+                    });
+            var adapter = new VariableGovernedResourceAdapter(new SimpleEntityGovernedResourceAdapter.EntityStore<RuleVariable>() {
+                public RuleVariable load(Long id) { return stored.get(); }
+                public void insert(RuleVariable value) { Assert.fail("不能新建根资源"); }
+                public void update(RuleVariable value) { stored.set(value); }
+            }, options, codec());
+            adapter.apply(new ApprovalApplyContext(1L, 7L, 1, action,
+                    ResourceSnapshot.ofJson("{\"id\":7,\"options\":[{\"id\":9,\"optionValue\":\"A\"}]}"), "owner", null));
+            Assert.assertEquals(Integer.valueOf("DISABLE".equals(action) ? 0 : -1), stored.get().getStatus());
+        }
+    }
 
     @Test
     public void restoringLegacyObjectSnapshotExplicitlyRestoresDefaultLoadingPolicy() {
@@ -344,6 +379,18 @@ public class AggregateGovernedResourceAdapterTest {
                 new ModelGovernedResourceAdapter(
                         store(model, RuleModel::setId),
                         inputMapper, outputMapper, codec());
+        java.util.concurrent.atomic.AtomicInteger modelSnapshots = new java.util.concurrent.atomic.AtomicInteger();
+        org.springframework.test.util.ReflectionTestUtils.setField(adapter, "modelService",
+                new com.hengshucredit.rule.server.service.RuleModelService() {
+                    @Override public Integer publishedBusinessVersion(Long id) { Assert.assertEquals(Long.valueOf(5), id); return 2; }
+                    @Override public void publish(Long id, String summary, String actor) {
+                        Assert.assertEquals(Long.valueOf(5L), id);
+                        Assert.assertTrue(String.valueOf(CanonicalJson.readMap(adapter.loadEffective(id).snapshotJson())
+                                .get("modelConfig")).contains("35"));
+                        Assert.assertEquals(Long.valueOf(10L), input.getId());
+                        modelSnapshots.incrementAndGet();
+                    }
+                });
 
         ResourceSnapshot snapshot = adapter.loadEffective(5L);
         Map<String, Object> publicValue =
@@ -370,12 +417,33 @@ public class AggregateGovernedResourceAdapterTest {
                 "tester", null));
         Map<String, Object> applied = CanonicalJson.readMap(
                 adapter.loadEffective(5L).snapshotJson());
+        Assert.assertEquals("字段和配置生效后才创建模型版本", 1, modelSnapshots.get());
 
         Assert.assertEquals(
                 "{\"executionProvider\":\"CPU\","
                         + "\"testParams\":\"{\\\"age\\\":35}\","
                         + "\"testParamsSource\":\"SAVED\"}",
                 applied.get("modelConfig"));
+    }
+
+    @Test
+    public void modelOverwriteUsesTargetBusinessLineInsteadOfSnapshotNativeRevision() {
+        RuleModel model = new RuleModel(); model.setId(5L);
+        ModelGovernedResourceAdapter adapter = new ModelGovernedResourceAdapter(store(model, RuleModel::setId),
+                mapper(RuleModelInputFieldMapper.class, Map.of(), new ArrayList<>()),
+                mapper(RuleModelOutputFieldMapper.class, Map.of(), new ArrayList<>()), codec());
+        var source = new com.hengshucredit.rule.model.entity.GovernedResourceVersion();
+        source.setId(90L); source.setResourceType("MODEL"); source.setResourceId(5L);
+        source.setBusinessVersion(2); source.setSnapshotJson("{\"id\":5,\"currentVersion\":7}");
+        org.springframework.test.util.ReflectionTestUtils.setField(adapter, "governanceVersions",
+                mapper(com.hengshucredit.rule.server.mapper.GovernedResourceVersionMapper.class, Map.of("selectById", source), new ArrayList<>()));
+        org.springframework.test.util.ReflectionTestUtils.setField(adapter, "modelService", new com.hengshucredit.rule.server.service.RuleModelService() {
+            @Override public void publishReusingVersion(Long id, Integer version, String summary, String actor) { Assert.assertEquals(Integer.valueOf(2), version); }
+            @Override public Integer publishedBusinessVersion(Long id) { return 2; }
+        });
+        AppliedResource result = adapter.afterAggregateApplied(new ApprovalApplyContext(1L, 5L, 2, "RESTORE",
+                ResourceSnapshot.ofJson(source.getSnapshotJson()), "admin", 90L, "REUSE"), new AppliedResource(5L, 2, "ACTIVE", null));
+        Assert.assertEquals(Integer.valueOf(2), result.versionNo());
     }
 
     @Test
@@ -414,6 +482,16 @@ public class AggregateGovernedResourceAdapterTest {
                         && Long.valueOf(6L).equals(
                         ref.targetResourceId())));
         Assert.assertTrue(adapter.validate(snapshot).isEmpty());
+    }
+
+    @Test
+    public void experimentWithoutAnExecutionRuleCannotPassPublicationValidation() {
+        var adapter = new ExperimentGovernedResourceAdapter(null, null, codec());
+        var draft = ResourceSnapshot.ofJson("{\"experimentCode\":\"draft\",\"experimentName\":\"未完成配置\",\"routingMode\":\"RATIO\","
+                + "\"groups\":[{\"groupCode\":\"champion\",\"groupType\":\"CHAMPION\",\"status\":1,\"trafficRatio\":100}]}");
+        var errors = adapter.validate(draft);
+        Assert.assertTrue(errors.stream().anyMatch(error -> "EXPERIMENT_RULE_REQUIRED".equals(error.code())
+                && "$.groups[0].ruleId".equals(error.referencePath())));
     }
 
     @Test
@@ -636,8 +714,8 @@ public class AggregateGovernedResourceAdapterTest {
                                 Map.of("selectList", List.of()),
                                 new ArrayList<>()));
 
-        List<GovernanceIssue> issues = adapter.validate(
-                adapter.loadEffective(9L), "UPDATE");
+        var submitted = CanonicalJson.readMap(adapter.loadEffective(9L).snapshotJson()); submitted.put("_ruleRevisionId", 8L);
+        List<GovernanceIssue> issues = adapter.validate(ResourceSnapshot.ofJson(CanonicalJson.write(submitted)), "UPDATE");
 
         Assert.assertTrue(issues.stream().anyMatch(issue ->
                 "RULE_REVIEW_PREFLIGHT_CHANGED".equals(issue.code())));
@@ -657,6 +735,7 @@ public class AggregateGovernedResourceAdapterTest {
         approved.setState("APPROVED");
         approved.setArtifactId(99L);
         RuleLifecycleService lifecycle = new RuleLifecycleService() {
+            @Override public Integer publishedBusinessVersion(Long id, Long revisionId) { return 6; }
             @Override
             public List<RuleRevision> listRevisions(Long definitionId) {
                 return List.of(approved);
@@ -690,11 +769,20 @@ public class AggregateGovernedResourceAdapterTest {
                 new AppliedResource(9L, 1, "DISABLED", null));
 
         Assert.assertEquals("ACTIVE", result.effectiveStatus());
+        Assert.assertEquals(Integer.valueOf(6), result.versionNo());
         Assert.assertEquals(Long.valueOf(99L), result.artifactId());
     }
 
     @Test
     public void ruleRestoreBuildsNewRevisionFromHistoricalSnapshot() {
+        assertRuleRestore("NEW");
+    }
+
+    @Test public void ruleOverwriteUsesSharedBusinessLineEvenWhenSourceProjectionHasAnotherProductionNumber() {
+        assertRuleRestore("REUSE");
+    }
+
+    private void assertRuleRestore(String restoreMode) {
         RuleDefinition definition = new RuleDefinition();
         definition.setId(9L);
         definition.setRuleCode("R001");
@@ -728,8 +816,11 @@ public class AggregateGovernedResourceAdapterTest {
         draft.setState("DRAFT");
         draft.setLockVersion(0);
         Long[] selectedBase = {null};
+        Integer[] overwriteTarget = {null};
         RuleLifecycleService lifecycle =
                 new RuleLifecycleService() {
+                    @Override public Integer publishedBusinessVersion(Long id, Long revisionId) { return 3; }
+                    @Override public void configureRestoreBusinessVersion(RuleRevision revision, Integer businessVersion) { overwriteTarget[0] = businessVersion; }
                     @Override
                     public List<RuleRevision> listRevisions(
                             Long definitionId) {
@@ -787,6 +878,11 @@ public class AggregateGovernedResourceAdapterTest {
                         store(definition, RuleDefinition::setId),
                         codec(), lifecycle, draftService,
                         contentMapper, inputMapper, outputMapper);
+        var source = new com.hengshucredit.rule.model.entity.GovernedResourceVersion();
+        source.setResourceType("RULE"); source.setResourceId(9L); source.setBusinessVersion(3);
+        source.setSnapshotJson("{\"id\":9,\"publishedVersion\":8}");
+        org.springframework.test.util.ReflectionTestUtils.setField(adapter, "governanceVersions",
+                mapper(com.hengshucredit.rule.server.mapper.GovernedResourceVersionMapper.class, Map.of("selectById", source), new ArrayList<>()));
         ResourceSnapshot historical =
                 ResourceSnapshot.ofJson(
                         "{\"id\":9,\"ruleCode\":\"R001\","
@@ -801,7 +897,7 @@ public class AggregateGovernedResourceAdapterTest {
         AppliedResource applied = adapter.apply(
                 new ApprovalApplyContext(
                         41L, 9L, 3, "RESTORE",
-                        historical, "alice", 1L));
+                        historical, "alice", 1L, restoreMode));
 
         Assert.assertEquals(Long.valueOf(6L), selectedBase[0]);
         Assert.assertEquals("{\"script\":\"historical = 1\"}",
@@ -809,6 +905,8 @@ public class AggregateGovernedResourceAdapterTest {
         Assert.assertEquals("PUBLISHED", draft.getState());
         Assert.assertEquals(Long.valueOf(99L),
                 applied.artifactId());
+        if ("REUSE".equals(restoreMode)) Assert.assertEquals(Integer.valueOf(3), overwriteTarget[0]);
+        Assert.assertEquals(3, ((Number) CanonicalJson.readMap(adapter.loadApplied(applied).snapshotJson()).get("publishedVersion")).intValue());
     }
 
     private RuleVariable variable() {

@@ -1,6 +1,7 @@
 vi.unmock('@/api/ruleList')
 
 import request from '@/api/request'
+import { metadataResponse } from '@/utils/metadataResponse'
 import {
   changeLibraryStatusDraft,
   createLibraryDraft,
@@ -33,7 +34,7 @@ describe('governed rule list API', () => {
         resourceType: 'LIST_LIBRARY',
         action: 'CREATE',
         projectId: 7
-      })
+      }), metadataResponse
     )
     expect(request).toHaveBeenNthCalledWith(
       2,
@@ -42,7 +43,7 @@ describe('governed rule list API', () => {
         resourceType: 'LIST_LIBRARY',
         resourceId: 9,
         action: 'UPDATE'
-      })
+      }), metadataResponse
     )
     expect(request).toHaveBeenNthCalledWith(
       3,
@@ -52,18 +53,9 @@ describe('governed rule list API', () => {
         resourceId: 9,
         action: 'DISABLE',
         snapshotJson: null
-      })
+      }), metadataResponse
     )
-    expect(request).toHaveBeenNthCalledWith(
-      4,
-      '/rule/governance/drafts',
-      expect.objectContaining({
-        resourceType: 'LIST_LIBRARY',
-        resourceId: 9,
-        action: 'DELETE',
-        snapshotJson: null
-      })
-    )
+    expect(request).toHaveBeenNthCalledWith(4, '/rule/governance/resources/LIST_LIBRARY/9/delete', undefined, metadataResponse)
   })
 
   test('record writes expose only the staged change batch endpoint', async () => {

@@ -49,6 +49,9 @@ import java.util.Set;
 
 @Service
 public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, RuleExperiment> {
+    @Resource private RuleVersionBindingService versionBindings;
+    @Resource private com.hengshucredit.rule.server.artifact.PublishedRuleFieldSnapshotResolver publishedFields;
+    @Resource private ResourceVersionService resourceVersions;
 
     private static final String ROUTING_RATIO = "RATIO";
     private static final String ROUTING_CONDITION = "CONDITION";
@@ -143,6 +146,10 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
 
     public List<Long> listReferencedDefinitionIds(Long experimentId) {
         RuleExperiment experiment = getDetail(experimentId);
+        return listReferencedDefinitionIds(experiment);
+    }
+
+    private List<Long> listReferencedDefinitionIds(RuleExperiment experiment) {
         if (experiment == null) return Collections.emptyList();
         Set<String> ruleCodes = new LinkedHashSet<>();
         Set<Long> definitionIds = new LinkedHashSet<>();
@@ -175,9 +182,32 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         if (experiment == null) {
             throw new IllegalArgumentException("分流实验不存在: " + experimentId);
         }
+        return resolveTestFields(experiment, listReferencedDefinitionIds(experimentId));
+    }
+
+    private RuleFieldAnalyzer.ResolvedFields resolveTestFields(RuleExperiment experiment) {
+        return resolveTestFields(experiment, listReferencedDefinitionIds(experiment));
+    }
+
+    private RuleFieldAnalyzer.ResolvedFields resolveTestFields(RuleExperiment experiment, List<Long> definitionIds) {
         List<RuleDefinitionInputField> inputs = new ArrayList<>();
         List<RuleDefinitionOutputField> outputs = new ArrayList<>();
-        for (Long definitionId : listReferencedDefinitionIds(experimentId)) {
+        if (publishedFields != null) {
+            Set<String> identities = new LinkedHashSet<>();
+            for (RuleExperimentGroup group : experiment.getGroups() == null ? Collections.<RuleExperimentGroup>emptyList() : experiment.getGroups()) {
+                if (!Integer.valueOf(1).equals(group.getStatus())) continue;
+                RulePublished published = findPublishedRule(experiment, group);
+                if (!identities.add(published.getDefinitionId() + ":" + published.getRevisionId())) continue;
+                var fields = publishedFields.resolve(published);
+                if (fields.getDiagnostics().stream().anyMatch(issue -> "ERROR".equals(issue.getSeverity()))) throw new IllegalArgumentException("实验组规则版本字段快照不可用");
+                inputs.addAll(fields.getInputFields()); outputs.addAll(fields.getOutputFields());
+            }
+            if (hasText(experiment.getConditionRuleCode())) {
+                var fields = publishedFields.resolve(findPublishedRule(experiment, experiment.getConditionRuleCode()));
+                if (fields.getDiagnostics().stream().anyMatch(issue -> "ERROR".equals(issue.getSeverity()))) throw new IllegalArgumentException("分流条件规则字段快照不可用");
+                inputs.addAll(fields.getInputFields()); outputs.addAll(fields.getOutputFields());
+            }
+        } else for (Long definitionId : definitionIds) {
             RuleDefinition definition = definitionService.getById(definitionId);
             RuleDefinitionContent content = definitionService.getContent(definitionId);
             List<RuleDefinitionInputField> ruleInputs;
@@ -233,6 +263,12 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         return new RuleFieldAnalyzer.ResolvedFields(
                 deduplicateInputs(inputs), deduplicateOutputs(outputs));
+    }
+
+    public RuleFieldAnalyzer.ResolvedFields resolveVersionTestFields(Long id, Long versionId) {
+        if (versionId == null) throw new IllegalArgumentException("请选择实验版本");
+        var version = resourceVersions.configurationVersion("EXPERIMENT", id, versionId);
+        return resolveTestFields(JSON.parseObject(version.getSnapshotJson(), RuleExperiment.class));
     }
 
     public IPage<RuleExperimentExecutionLog> pageExecutionLogs(int pageNum, int pageSize, Long experimentId,
@@ -312,6 +348,19 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             throw new IllegalArgumentException("分流实验不存在或未启用: " + experimentCode);
         }
         List<RuleExperimentGroup> groups = listGroups(experiment.getId());
+        com.hengshucredit.rule.model.entity.GovernedResourceVersion selectedVersion = null;
+        if (request != null && request.getVersionMode() != null && !Set.of("LATEST", "FIXED").contains(request.getVersionMode()))
+            throw new IllegalArgumentException("实验版本方式必须为 LATEST 或 FIXED");
+        if (request != null && "FIXED".equals(request.getVersionMode())) {
+            if (request.getVersionId() == null) throw new IllegalArgumentException("请选择实验版本");
+            selectedVersion = resourceVersions.configurationVersion("EXPERIMENT", experiment.getId(), request.getVersionId());
+            RuleExperiment selected = JSON.parseObject(selectedVersion.getSnapshotJson(), RuleExperiment.class);
+            if (!java.util.Objects.equals(experiment.getProjectId(), selected.getProjectId()))
+                throw new IllegalArgumentException("实验历史版本不属于当前项目");
+            experiment = selected;
+            groups = selected.getGroups() == null ? List.of() : selected.getGroups();
+        }
+        experiment.setGroups(groups);
         validateRuntimeGroups(experiment, groups);
         String configDigest = configDigest(experiment, groups);
         String experimentTraceId = hasText(forcedExperimentTraceId)
@@ -320,8 +369,10 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         Map<String, Object> params = request == null || request.getParams() == null
                 ? Collections.emptyMap()
                 : request.getParams();
-        params = bindExperimentParams(experiment, params);
+        params = selectedVersion == null ? bindExperimentParams(experiment, params)
+                : executionParameterBinder.bindRuleInputsPreservingMissing(resolveTestFields(experiment).getInputFields(), params);
         params = resolveRoutingParams(experiment, groups, params);
+        try (var versions = resourceVersions == null ? null : resourceVersions.bind(experiment.getProjectId(), params, VariableResolveOptions.defaults())) {
         String requestKey = resolveRequestKey(experiment, request, params);
         LocalDateTime requestTime = resolveRequestTime(request, params);
         String clientAppName = request == null ? null : request.getClientAppName();
@@ -330,6 +381,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         result.setExperimentTraceId(experimentTraceId);
         result.setExperimentCode(experiment.getExperimentCode());
         result.setExperimentName(experiment.getExperimentName());
+        if (selectedVersion != null) { result.setVersionId(selectedVersion.getId()); result.setVersion(selectedVersion.getDisplayVersion()); }
         result.setRequestKey(requestKey);
 
         RouteChoice productionChoice = chooseProductionGroup(experiment, groups, params, requestKey, clientAppName);
@@ -359,6 +411,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         result.setErrorMessage(productionResult.getErrorMessage());
         result.setExecuteTimeMs(System.currentTimeMillis() - start);
         return result;
+        }
     }
 
     /** 项目运行入口使用项目鉴权上下文限定实验范围，不能复用控制台管理执行入口。 */
@@ -476,6 +529,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                         ruleFieldAnalyzer.resolveFields(null, JSON.toJSONString(model), "FLOW",
                                 experiment.getProjectId()).getInputFields());
                 for (var reference : OperandDependencyCollector.collectReferences(JSON.toJSON(model))) {
+                    if (reference.getVersionId() != null) continue;
                     String path = referencePaths.get(reference.getRefType() + ":" + reference.getRefId());
                     if (hasText(path)) required.add(path);
                 }
@@ -485,6 +539,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
 
         if (hasText(experiment.getRequestKeyPath())) {
             for (JSONObject operand : OperandValueResolver.collectReferences(experiment.getRequestKeyPath())) {
+                if ("FIXED".equals(operand.getString("versionMode"))) continue;
                 String refType = firstNonBlank(operand.getString("refType"), "VARIABLE");
                 Long refId = operand.getLong("refId");
                 String stablePath = refId == null ? null : referencePaths.get(refType.toUpperCase() + ":" + refId);
@@ -847,6 +902,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         if (group == null) {
             throw new IllegalArgumentException("实验组不能为空");
         }
+        validateGroupVersion(group);
         if (group.getRuleId() == null) {
             return findPublishedRule(experiment, group.getRuleCode());
         }
@@ -858,7 +914,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             throw new IllegalArgumentException("已发布规则不存在或未启用: " + group.getRuleId());
         }
         ensurePublishedRuleAvailable(experiment, published);
-        return published;
+        return "FIXED".equals(group.getVersionMode()) ? versionBindings.resolvePublished(published, group.getVersionBindingId()) : published;
     }
 
     private void ensurePublishedRuleAvailable(RuleExperiment experiment, RulePublished published) {
@@ -888,6 +944,18 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         group.setRuleId(definition.getId());
         group.setRuleCode(definition.getRuleCode());
+        validateGroupVersion(group);
+    }
+
+    public void validateGroupVersion(RuleExperimentGroup group) {
+        if (group.getVersionMode() == null) group.setVersionMode("LATEST");
+        if ("LATEST".equals(group.getVersionMode())) {
+            if (group.getVersionBindingId() != null) throw new IllegalArgumentException("最新版策略不能携带固定版本 ID");
+        } else if ("FIXED".equals(group.getVersionMode())) {
+            if (group.getRuleId() == null || group.getVersionBindingId() == null) throw new IllegalArgumentException("请选择实验组的规则和指定版本");
+            var version = versionBindings.resolveSnapshot(group.getRuleId(), group.getVersionBindingId());
+            if (version.getArtifactId() == null || version.getRevisionId() == null) throw new IllegalArgumentException("实验组指定规则版本缺少执行制品");
+        } else throw new IllegalArgumentException("未知实验组规则版本策略");
     }
 
     private void validateExperiment(RuleExperiment experiment) {
@@ -1256,18 +1324,27 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     }
 
     private void saveVersionSnapshot(Long experimentId, String changeLog) {
-        if (experimentId == null) return;
+        recordAppliedVersion(experimentId, null, changeLog, null);
+    }
+
+    public int recordAppliedVersion(Long experimentId, Integer reusedVersion, String changeLog, String actor) {
+        if (experimentId == null) throw new IllegalArgumentException("实验 ID 不能为空");
         RuleExperiment experiment = getById(experimentId);
-        if (experiment == null) return;
+        if (experiment == null) throw new IllegalArgumentException("实验不存在");
+        int businessVersion = reusedVersion == null ? listVersions(experimentId).stream()
+                .mapToInt(RuleExperimentVersion::getDisplayVersion).max().orElse(0) + 1 : reusedVersion;
         List<RuleExperimentGroup> groups = listGroups(experimentId);
         RuleExperimentVersion version = new RuleExperimentVersion();
         version.setExperimentId(experimentId);
         version.setVersion(nextVersion(experimentId));
+        version.setBusinessVersion(businessVersion);
         version.setExperimentJson(JSON.toJSONString(experiment));
         version.setGroupsJson(JSON.toJSONString(groups));
         version.setChangeLog(changeLog);
         version.setPublishTime(LocalDateTime.now());
-        experimentVersionMapper.insert(version);
+        version.setPublishBy(actor);
+        if (experimentVersionMapper.insert(version) != 1) throw new IllegalStateException("实验版本写入失败");
+        return businessVersion;
     }
 
     private int nextVersion(Long experimentId) {

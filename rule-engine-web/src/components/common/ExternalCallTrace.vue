@@ -32,7 +32,7 @@
               <span>{{ step.label || step.type || '过程步骤' }}</span>
               <code v-if="step.type && step.label">{{ step.type }}</code>
             </div>
-            <span class="external-call-trace-status" :class="statusClass(step.status)">
+            <span class="external-call-trace-status" :class="statusClass(step.status)" :title="executionStatusHint(step.status)">
               {{ statusLabel(step.status) }}
             </span>
           </div>
@@ -60,6 +60,9 @@
 </template>
 
 <script>
+import { executionStatusLabel, executionStatusHint } from '@/utils/executionStatus'
+import { selectTraceSteps } from '@/utils/externalCallTrace'
+
 const VALUE_FIELDS = [
   ['input', '输入'],
   ['output', '输出'],
@@ -106,7 +109,7 @@ export default {
     },
   },
   methods: {
-    nestedSteps(step) { return step.output?.externalCall?.traceSteps || step.children || [] },
+    nestedSteps(step) { return selectTraceSteps(step.output?.externalCall?.traceSteps, step.children, step.output?.traceSteps) },
     hasOwn(step, key) {
       return Object.prototype.hasOwnProperty.call(step, key) && step[key] !== undefined
     },
@@ -138,15 +141,9 @@ export default {
       return this.displayValue(value).length > 360
     },
     statusLabel(status) {
-      return {
-        SUCCESS: '成功',
-        FAILED: '失败',
-        READY: '已准备',
-        SENT: '已发送',
-        SKIPPED: '已跳过',
-        RUNNING: '执行中',
-      }[status] || status || '处理中'
+      return executionStatusLabel(status, '处理中')
     },
+    executionStatusHint,
     statusClass(status) {
       return `is-${String(status || 'running').toLowerCase()}`
     },
@@ -211,6 +208,7 @@ export default {
 .external-call-trace-step-title code { margin-left: 5px; color: var(--tianshu-text-tertiary); font-size: 10px; font-weight: 400; }
 .external-call-trace-status { color: var(--el-color-primary); font-size: 11px; font-weight: 600; }
 .external-call-trace-status.is-failed { color: var(--el-color-danger); }
+.external-call-trace-status.is-throttled { color: var(--tianshu-warning-text); }
 .external-call-trace-status.is-skipped { color: var(--tianshu-text-tertiary); }
 .external-call-trace-meta { display: flex; flex-wrap: wrap; gap: 3px 10px; margin: 6px 0 0; font-size: 11px; }
 .external-call-trace-meta dt { color: var(--tianshu-text-tertiary); }

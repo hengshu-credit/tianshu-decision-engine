@@ -90,15 +90,16 @@ export default {
     candidateLabel(candidate, association) {
       const code = candidate.code ? ` · ${candidate.code}` : ''
       const scope = candidate.projectId ? ` · 项目 ${candidate.projectId}` : ''
-      const recommendation = Number(candidate.id) === Number(association.suggestedTargetId) ? '（推荐）' : ''
+      const recommendation = association.suggestedTargetId != null && String(candidate.id) === String(association.suggestedTargetId) ? '（推荐）' : ''
       return `${candidate.name || candidate.code || candidate.id}${code}${scope}${recommendation}`
     },
     fieldLabel(field) {
       return `${field.name || field.code || field.id}${field.code ? ` · ${field.code}` : ''}${field.type ? ` · ${field.type}` : ''}`
     },
     fieldsFor(association) {
-      const selected = Number(this.resourceBindings[association.targetKey] || association.selectedTargetId)
-      const candidate = (association.candidates || []).find((item) => Number(item.id) === selected)
+      const selected = this.resourceBindings[association.targetKey] || association.selectedTargetId
+      const candidate = selected != null && selected !== ''
+        ? (association.candidates || []).find((item) => String(item.id) === String(selected)) : null
       return (candidate && candidate.fields) || association.fieldCandidates || []
     },
     openCandidates(association, open) {
@@ -107,9 +108,9 @@ export default {
     selectResource(association, value) {
       const next = { ...this.resourceBindings }
       if (value == null || value === '') delete next[association.targetKey]
-      else next[association.targetKey] = Number(value)
+      else next[association.targetKey] = value
       this.$emit('update:resourceBindings', next)
-      this.$emit('search', { ...association, targetResourceId: value == null ? null : Number(value) })
+      this.$emit('search', { ...association, targetResourceId: value == null || value === '' ? null : value })
       if (association.childPath) {
         const fields = { ...this.fieldBindings }
         delete fields[association.referenceKey]
@@ -119,7 +120,7 @@ export default {
     selectField(association, value) {
       const next = { ...this.fieldBindings }
       if (value == null || value === '') delete next[association.referenceKey]
-      else next[association.referenceKey] = Number(value)
+      else next[association.referenceKey] = value
       this.$emit('update:fieldBindings', next)
     },
   },

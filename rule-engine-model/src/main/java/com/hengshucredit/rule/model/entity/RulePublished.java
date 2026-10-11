@@ -35,6 +35,9 @@ public class RulePublished {
     /** 仅用于同步给客户端，不映射数据库字段 */
     @TableField(exist = false)
     private List<String> outputScriptNames;
+    /** 客户端本地执行使用的制品函数定义；空集合表示已验证无外部函数，null表示旧同步协议。 */
+    @TableField(exist = false)
+    private List<RuleFunction> frozenFunctions;
     @TableField(exist = false)
     private boolean requiresServerExecution;
     @TableField(exist = false)

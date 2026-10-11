@@ -1,12 +1,12 @@
 package com.hengshucredit.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONArray;
-import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.function.FunctionParameterContract;
+import com.hengshucredit.rule.core.function.ManagedFunctionInvoker;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleFunctionVersion;
@@ -18,7 +18,6 @@ import org.springframework.stereotype.Service;
 
 import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -130,6 +129,12 @@ public class RuleFunctionService {
                 .filter(function -> function.getId() != null)
                 .collect(Collectors.toMap(RuleFunction::getId,
                         function -> parseParamNames(function.getParamsJson()).size(), (left, right) -> left));
+    }
+
+    public java.util.Set<Long> buildNativeFunctionIds(Long projectId) {
+        return listByProject(projectId).stream().filter(function -> function.getId() != null
+                        && ("JAVA".equals(function.getImplType()) || "BEAN".equals(function.getImplType())))
+                .map(RuleFunction::getId).collect(Collectors.toSet());
     }
 
     /**
@@ -368,16 +373,25 @@ public class RuleFunctionService {
     }
 
     private void saveVersionSnapshot(Long functionId, String changeLog) {
-        if (functionId == null) return;
+        recordAppliedVersion(functionId, null, changeLog, null);
+    }
+
+    public int recordAppliedVersion(Long functionId, Integer reusedVersion, String changeLog, String actor) {
+        if (functionId == null) throw new IllegalArgumentException("函数 ID 不能为空");
         RuleFunction function = functionMapper.selectById(functionId);
-        if (function == null) return;
+        if (function == null) throw new IllegalArgumentException("函数不存在");
+        int businessVersion = reusedVersion == null ? listVersions(functionId).stream()
+                .mapToInt(RuleFunctionVersion::getDisplayVersion).max().orElse(0) + 1 : reusedVersion;
         RuleFunctionVersion version = new RuleFunctionVersion();
         version.setFunctionId(functionId);
         version.setVersion(nextVersion(functionId));
+        version.setBusinessVersion(businessVersion);
         version.setFunctionJson(JSON.toJSONString(function));
         version.setChangeLog(changeLog);
         version.setPublishTime(LocalDateTime.now());
-        functionVersionMapper.insert(version);
+        version.setPublishBy(actor);
+        if (functionVersionMapper.insert(version) != 1) throw new IllegalStateException("函数版本写入失败");
+        return businessVersion;
     }
 
     private int nextVersion(Long functionId) {
@@ -399,36 +413,22 @@ public class RuleFunctionService {
         if ("SCRIPT".equals(implType)) {
             script.append(functionRegistrar.buildScriptFunctionPrefix(Collections.singletonList(function)));
         }
+        boolean managedNative = function.getId() != null && ("JAVA".equals(implType) || "BEAN".equals(implType));
         script.append("__function_test_result = ")
-                .append(functionCode)
-                .append("(")
-                .append(String.join(", ", paramNames))
+                .append(managedNative ? ManagedFunctionInvoker.NAME : functionCode)
+                .append("(");
+        if (managedNative) {
+            script.append('"').append(function.getId()).append('"');
+            if (!paramNames.isEmpty()) script.append(", ");
+        }
+        script.append(String.join(", ", paramNames))
                 .append(");\n");
         script.append("__function_test_result");
         return script.toString();
     }
 
     private List<String> parseParamNames(String paramsJson) {
-        List<String> names = new ArrayList<>();
-        if (paramsJson == null || paramsJson.trim().isEmpty()) {
-            return names;
-        }
-        try {
-            JSONArray array = JSON.parseArray(paramsJson);
-            for (int i = 0; i < array.size(); i++) {
-                JSONObject item = array.getJSONObject(i);
-                if (item == null) continue;
-                String name = item.getString("name");
-                if (name != null && !name.trim().isEmpty()) {
-                    names.add(requireIdentifier(name.trim(), "函数参数名"));
-                }
-            }
-            return names;
-        } catch (IllegalArgumentException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new IllegalArgumentException("函数参数配置不是合法 JSON");
-        }
+        return FunctionParameterContract.names(paramsJson);
     }
 
     private String requireIdentifier(String value, String label) {

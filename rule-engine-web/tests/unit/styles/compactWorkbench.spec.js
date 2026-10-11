@@ -98,7 +98,7 @@ describe('compact workbench styles', () => {
     expect(picker).not.toContain('--vp-prefix-offset')
     expect(picker).toMatch(/\.vp-reference :deep\(\.el-input__wrapper\)\s*\{[\s\S]*?padding-left:\s*4px;[\s\S]*?padding-right:\s*4px;/)
     expect(picker).toMatch(/\.el-input__prefix-inner > :last-child\)\s*\{[\s\S]*?margin-right:\s*4px;/)
-    expect(picker).toContain('v-if="!value || !allowCustom"')
+    expect(picker).toContain('v-if="!value || !clearable"')
     expect(conditionEditor).toMatch(/\.cg-field--op\s*\{\s*width:\s*96px;\s*\}/)
     expect(advancedCross).toMatch(/\.seg-op\s*\{\s*flex:\s*0 0 96px;\s*width:\s*96px;\s*\}/)
   })

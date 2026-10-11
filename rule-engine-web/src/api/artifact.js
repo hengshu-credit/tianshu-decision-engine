@@ -1,4 +1,5 @@
 import request from './request'
+import { metadataResponse } from '@/utils/metadataResponse'
 
 export function getArtifactDetail(artifactId) {
   return request({ url: `/rule/artifact/${artifactId}`, method: 'get' })
@@ -14,9 +15,10 @@ export function listDeploymentBindings(deploymentId) {
 
 export function getArtifactDeploymentOptions(artifactId, targetProjectId) {
   return request({
+    ...metadataResponse,
     url: `/rule/artifact/${artifactId}/deployment-options`,
     method: 'get',
-    params: targetProjectId ? { targetProjectId } : {},
+    params: targetProjectId != null ? { targetProjectId } : {},
   })
 }
 
@@ -45,6 +47,7 @@ export function importArtifact(file, expectedPackageDigest) {
   const data = new FormData()
   data.append('file', file)
   return request({
+    ...metadataResponse,
     url: '/rule/artifact/import',
     method: 'post',
     data,
@@ -55,5 +58,5 @@ export function importArtifact(file, expectedPackageDigest) {
 }
 
 export function deployArtifact(data) {
-  return request({ url: '/rule/artifact/deploy', method: 'post', data })
+  return request({ ...metadataResponse, url: '/rule/artifact/deploy', method: 'post', data })
 }

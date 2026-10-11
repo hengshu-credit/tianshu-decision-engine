@@ -219,8 +219,8 @@ public class ConsoleAccountManagementService {
         if (request.getPermissionCodes() != null) {
             replaceRolePermissions(role.getId(),
                     request.getPermissionCodes(), operator);
-            bumpRoleMemberPermissionVersions(role.getId(), operator);
         }
+        bumpRoleMemberPermissionVersions(role.getId(), operator);
         ensureAtLeastOneAdministrator();
         appendAudit(null, operator,
                 request.getId() == null ? "ROLE_CREATE" : "ROLE_UPDATE",

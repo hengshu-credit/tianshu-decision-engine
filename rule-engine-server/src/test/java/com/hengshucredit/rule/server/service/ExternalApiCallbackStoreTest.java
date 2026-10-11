@@ -85,15 +85,42 @@ public class ExternalApiCallbackStoreTest {
         assertEquals(730, ExternalApiCallbackStore.path(store.result(id), "body.report.score"));
     }
 
+    @Test public void trialCallbackLifetimeOutlivesOneHttpSliceAndRegistrationIsDurableBeforeReturn() {
+        MemoryRedis redis = new MemoryRedis();
+        ProjectAuthProperties properties = new ProjectAuthProperties();
+        properties.setMasterKeys(Map.of("v1", "unit-test-encryption-key-0123456789abcdef"));
+        ExternalApiCallbackStore callbacks = new ExternalApiCallbackStore(redis, new CredentialCipher(properties));
+        java.util.concurrent.atomic.AtomicReference<Map<String, Object>> saved = new java.util.concurrent.atomic.AtomicReference<>();
+        try (ExternalApiTrialContext trial = new ExternalApiTrialContext("trial", 1, System.currentTimeMillis() + 1800000,
+                new JSONObject(), Map.of(), () -> { }, saved::set); RequestDeadlineContext.Scope deadline = RequestDeadlineContext.limit(10)) {
+            String id = callbacks.register(protocol());
+            assertTrue(redis.lastTtl > 1700000);
+            assertEquals(java.util.List.of(id), saved.get().get("callbackIds"));
+        }
+    }
+
+    @Test public void unconfirmedCallbackRegistrationIsClosedBeforeAnySupplierCanReceiveIt() {
+        MemoryRedis redis = new MemoryRedis();
+        ProjectAuthProperties properties = new ProjectAuthProperties();
+        properties.setMasterKeys(Map.of("v1", "unit-test-encryption-key-0123456789abcdef"));
+        ExternalApiCallbackStore callbacks = new ExternalApiCallbackStore(redis, new CredentialCipher(properties));
+        try (ExternalApiTrialContext trial = new ExternalApiTrialContext("trial", 1, System.currentTimeMillis() + 60000,
+                new JSONObject(), Map.of(), () -> { }, state -> { throw new ExternalApiTrialContext.Stopped("checkpoint rejected"); })) {
+            assertThrows(ExternalApiTrialContext.Stopped.class, () -> callbacks.register(protocol()));
+            assertTrue(redis.values.isEmpty());
+        }
+    }
+
     private static class MemoryRedis extends StringRedisTemplate {
         private final Map<String, String> values = new ConcurrentHashMap<>();
+        private long lastTtl;
         @Override
         @SuppressWarnings("unchecked")
         public ValueOperations<String, String> opsForValue() {
             return (ValueOperations<String, String>) Proxy.newProxyInstance(ValueOperations.class.getClassLoader(),
                     new Class[]{ValueOperations.class}, (proxy, method, args) -> switch (method.getName()) {
                         case "get" -> values.get(args[0]);
-                        case "set" -> { values.put((String) args[0], (String) args[1]); yield null; }
+                        case "set" -> { values.put((String) args[0], (String) args[1]); if (args.length == 4) lastTtl = ((TimeUnit) args[3]).toMillis(((Number) args[2]).longValue()); yield null; }
                         case "setIfAbsent" -> values.putIfAbsent((String) args[0], (String) args[1]) == null;
                         default -> throw new UnsupportedOperationException(method.getName());
                     });

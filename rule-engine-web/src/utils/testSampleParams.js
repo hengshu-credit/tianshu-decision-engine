@@ -82,10 +82,13 @@ export function collectActionDataInputCodes(actionData, projectRefs, out) {
   }
   if (typeof actionData !== 'object') return s
   const block = actionData
-  const addOperand = operand => collectOperandReferences(operand).forEach(reference => addCode(s, reference.code || reference.path))
+  const addOperand = operand => collectOperandReferences(operand).forEach(reference => {
+    if (reference.refType !== 'EXTERNAL_API') addCode(s, reference.code || reference.path)
+  })
   ;['valueOperand', 'leftOperand', 'rightOperand', 'matchOperand', 'listOperand', 'checkOperand', 'trueOperand', 'falseOperand'].forEach(field => addOperand(block[field]))
   ;(block.args || []).forEach(arg => { if (arg && typeof arg === 'object') addOperand(arg) })
   ;(block.inOperands || []).forEach(addOperand)
+  ;(block.entries || []).forEach(entry => addOperand(entry.valueOperand))
   ;(block.parts || []).forEach(part => addOperand(part && part.operand))
   ;(block.branches || []).forEach(branch => {
     addOperand(branch.leftOperand)

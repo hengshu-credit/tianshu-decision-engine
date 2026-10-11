@@ -9,6 +9,7 @@ import com.hengshucredit.rule.client.function.ClientFunctionRegistrar;
 import com.hengshucredit.rule.client.log.ExecutionLogReporter;
 import com.hengshucredit.rule.client.log.HttpLogReporter;
 import com.hengshucredit.rule.client.log.NoOpLogReporter;
+import com.hengshucredit.rule.client.log.LogReportTransport;
 import com.hengshucredit.rule.client.sync.HttpSyncClient;
 import com.hengshucredit.rule.client.sync.RedisSubscriber;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
@@ -52,8 +53,20 @@ public class RuleEngineClient {
                              ExecutionLogReporter externalReporter, ApplicationContext applicationContext) {
         this.config = config;
         this.engine = new QLExpressEngine();
+        this.functionRegistrar = new ClientFunctionRegistrar(engine, applicationContext, config.getProjectCode());
         this.l1Cache = new L1MemoryCache(config.getL1CacheMaxSize(),
-                rule -> rule.setPreparedScript(engine.prepare(rule.getCompiledScript())));
+                rule -> {
+                    if (rule.isRequiresServerExecution()) {
+                        // 仅缓存能力描述；调用时已有明确本地门禁，不能让服务端Bean阻断其它规则刷新。
+                        rule.setPreparedFunctions(null);
+                        rule.setPreparedScript(null);
+                        return;
+                    }
+                    boolean frozen = rule.getFrozenFunctions() != null
+                            || rule.getArtifactDigest() != null && !rule.getArtifactDigest().isBlank();
+                    rule.setPreparedFunctions(frozen ? functionRegistrar.prepareFrozen(rule.getFrozenFunctions()) : null);
+                    rule.setPreparedScript(engine.prepare(rule.getCompiledScript()));
+                });
         ClientRequestAuthenticator authenticator = new ClientRequestAuthenticator(
                 config.getServerUrl(), config.getHttpTimeoutMs(), resolveAuthConfig(config));
         this.httpSyncClient = new HttpSyncClient(config.getServerUrl(), config.getHttpTimeoutMs(), authenticator);
@@ -63,7 +76,6 @@ public class RuleEngineClient {
         this.runtimeRuleInvoker = new ClientRuleRuntimeInvoker(l1Cache, httpSyncClient, engine, config,
                 this::getOrLoadRule);
         this.runtimeRuleInvoker.register(engine.getRunner());
-        this.functionRegistrar = new ClientFunctionRegistrar(engine, applicationContext, config.getProjectCode());
 
         if (config.isServerSideExecution() || !config.isLogReportEnabled()) {
             this.logReporter = new NoOpLogReporter();
@@ -72,6 +84,10 @@ public class RuleEngineClient {
             this.logReporter = externalReporter;
             this.ownsLogReporter = false;
         } else {
+            if (config.getLogReportTransport() == LogReportTransport.KAFKA) {
+                throw new IllegalStateException("Kafka 日志上报需要 spring-kafka 依赖和 KafkaTemplate Bean；"
+                        + "手工创建客户端时请提供 KafkaLogReporter");
+            }
             this.logReporter = new HttpLogReporter(config.getServerUrl(), config.getHttpTimeoutMs(), authenticator,
                     config.getLogBufferSize(), config.getLogBatchSize(), config.getLogFlushIntervalMs());
             this.ownsLogReporter = true;
@@ -262,7 +278,7 @@ public class RuleEngineClient {
             RuleExecutionLog entry = new RuleExecutionLog();
             entry.setTraceId(result.getTraceId());
             entry.setRuleCode(ruleCode);
-            entry.setProjectCode(cached.getProjectCode());
+            entry.setProjectCode(config.getProjectCode());
             entry.setRuleVersion(cached.getVersion());
             entry.setRevisionId(cached.getRevisionId());
             entry.setArtifactDigest(cached.getArtifactDigest());
@@ -479,6 +495,7 @@ public class RuleEngineClient {
         public Builder l1CacheMaxSize(int size) { config.setL1CacheMaxSize(size); return this; }
         public Builder httpTimeoutMs(int ms) { config.setHttpTimeoutMs(ms); return this; }
         public Builder logReportEnabled(boolean enabled) { config.setLogReportEnabled(enabled); return this; }
+        public Builder logReportTransport(LogReportTransport transport) { config.setLogReportTransport(transport); return this; }
         public Builder logBufferSize(int size) { config.setLogBufferSize(size); return this; }
         public Builder logBatchSize(int size) { config.setLogBatchSize(size); return this; }
         public Builder logFlushIntervalMs(int ms) { config.setLogFlushIntervalMs(ms); return this; }

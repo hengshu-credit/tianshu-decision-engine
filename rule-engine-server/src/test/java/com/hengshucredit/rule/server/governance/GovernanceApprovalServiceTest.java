@@ -18,6 +18,89 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class GovernanceApprovalServiceTest {
+    @Test public void overwriteApprovalConflictsWhenTargetRevisionChanged() {
+        var target = new GovernedResourceVersion(); target.setId(2L); target.setVersionNo(2); target.setBusinessVersion(1);
+        TestService service = new TestService() {
+            @Override public GovernedResourceVersion versionHead(String type, Long id, Long anchor) { return target; }
+        };
+        service.resource.setId(5L); service.resource.setResourceType("VARIABLE"); service.resource.setResourceId(7L);
+        service.resource.setEffectiveVersionId(3L); service.resource.setEffectiveVersionNo(2);
+        service.request.setId(12L); service.request.setResourceType("VARIABLE"); service.request.setResourceId(7L);
+        service.request.setAction("RESTORE"); service.request.setStatus("PENDING"); service.request.setPublishMode("OVERWRITE");
+        service.request.setTargetVersionId(1L); service.request.setExpectedTargetSnapshotId(1L);
+        service.request.setSubmittedSnapshotJson("{\"id\":7}");
+        service.approve(12L, new GovernanceReviewRequest(), "reviewer");
+        Assert.assertEquals("CONFLICT", service.request.getStatus()); Assert.assertTrue(service.versions.isEmpty());
+        Assert.assertEquals(Long.valueOf(3), service.resource.getEffectiveVersionId());
+    }
+
+    @Test
+    public void independentVersionDraftCanCoexistWithPendingApplication() {
+        TestService service = new TestService();
+        service.resource.setId(5L); service.resource.setResourceType("VARIABLE"); service.resource.setResourceId(7L);
+        service.resource.setEffectiveVersionId(3L); service.resource.setEffectiveVersionNo(3);
+        service.request.setId(9L); service.request.setResourceType("VARIABLE"); service.request.setResourceId(7L);
+        service.request.setActiveResourceKey("VARIABLE:7"); service.request.setStatus("PENDING");
+        var draft = new GovernanceDraftRequest(); draft.setResourceType("VARIABLE"); draft.setResourceId(7L);
+        draft.setAction("UPDATE"); draft.setSnapshotJson("{\"id\":7,\"name\":\"next\"}"); draft.setPublishMode("NEW");
+        var created = service.createDraft(draft, "owner");
+        Assert.assertEquals("EDITING", created.getStatus());
+        Assert.assertNotEquals(Long.valueOf(9), created.getId());
+        Assert.assertTrue(created.getActiveResourceKey().startsWith("VARIABLE:7:VERSION:"));
+        Assert.assertEquals("NEW", created.getPublishMode());
+    }
+
+    @Test
+    public void newVersionApprovalSurvivesUnrelatedVersionPublication() {
+        TestService service = new TestService();
+        service.resource.setId(5L); service.resource.setResourceType("VARIABLE"); service.resource.setResourceId(7L);
+        service.resource.setEffectiveVersionId(4L); service.resource.setEffectiveVersionNo(4);
+        service.request.setId(12L); service.request.setResourceType("VARIABLE"); service.request.setResourceId(7L);
+        service.request.setAction("UPDATE"); service.request.setStatus("PENDING"); service.request.setPublishMode("NEW");
+        service.request.setBaseVersionId(3L); service.request.setSubmittedSnapshotJson("{\"id\":7}");
+        service.request.setDependencyDigest("dep-digest");
+        service.approve(12L, new GovernanceReviewRequest(), "reviewer");
+        Assert.assertEquals("APPROVED", service.request.getStatus());
+        Assert.assertEquals(Integer.valueOf(5), service.versions.get(0).getDisplayVersion());
+    }
+
+    @Test
+    public void staleDraftSaveCannotOverwriteAnotherEdit() {
+        TestService service = new TestService();
+        service.request.setId(12L); service.request.setResourceType("VARIABLE"); service.request.setStatus("EDITING");
+        service.request.setApplicant("owner"); service.request.setSnapshotDigest("new-digest");
+        service.request.setDraftSnapshotJson("{\"value\":2}");
+        var edit = new GovernanceDraftRequest(); edit.setSnapshotJson("{\"value\":1}"); edit.setExpectedSnapshotDigest("old-digest");
+        Assert.assertThrows(GovernanceApprovalService.GovernanceStateException.class, () -> service.saveDraft(12L, edit, "owner"));
+        Assert.assertEquals("{\"value\":2}", service.request.getDraftSnapshotJson());
+    }
+
+    @Test
+    public void reusedOldBusinessVersionMustNotReplaceLatestProductionPointer() {
+        assertIsolatedVersionPublication(1, 2);
+    }
+
+    @Test
+    public void overwriteMustPreserveExplicitProductionPointerEvenWhenItsNumberIsLower() {
+        assertIsolatedVersionPublication(3, 2);
+    }
+
+    private void assertIsolatedVersionPublication(int target, int latest) {
+        TestService service = new TestService();
+        service.resource.setId(5L); service.resource.setResourceType("VARIABLE"); service.resource.setResourceId(7L);
+        service.resource.setEffectiveVersionId(3L); service.resource.setEffectiveVersionNo(latest);
+        service.oldVersion.setId(1L); service.oldVersion.setResourceType("VARIABLE"); service.oldVersion.setResourceId(7L);
+        service.oldVersion.setVersionNo(1); service.oldVersion.setBusinessVersion(target); service.oldVersion.setEffectiveStatus("ACTIVE");
+        service.request.setId(12L); service.request.setResourceType("VARIABLE"); service.request.setResourceId(7L);
+        service.request.setStatus("PENDING"); service.request.setAction("RESTORE"); service.request.setRestoreMode("REUSE");
+        service.request.setSourceVersionId(1L); service.request.setBaseVersionId(3L);
+        service.request.setSubmittedSnapshotJson("{\"id\":7,\"value\":1}"); service.request.setDependencyDigest("dep-digest");
+        service.approve(12L, new GovernanceReviewRequest(), "reviewer");
+        Assert.assertEquals("APPROVED", service.request.getStatus());
+        Assert.assertEquals(Long.valueOf(3L), service.resource.getEffectiveVersionId());
+        Assert.assertEquals(Integer.valueOf(latest), service.resource.getEffectiveVersionNo());
+        Assert.assertEquals(Integer.valueOf(target), service.versions.get(0).getDisplayVersion());
+    }
 
     @Test
     public void preflightPassesLifecycleActionToAdapterValidation() {
@@ -596,6 +679,49 @@ public class GovernanceApprovalServiceTest {
         Assert.assertEquals(Long.valueOf(3L), restore.getBaseVersionId());
     }
 
+    @Test public void deletedHistoricalVersionCannotBeRestoredThroughTheApprovalEndpoint() {
+        TestService service = new TestService();
+        service.resource.setId(5L); service.resource.setResourceType("FUNCTION"); service.resource.setResourceId(7L); service.resource.setEffectiveVersionId(3L);
+        service.oldVersion.setId(1L); service.oldVersion.setResourceType("FUNCTION"); service.oldVersion.setResourceId(7L); service.oldVersion.setVersionNo(1);
+        service.oldVersion.setEffectiveStatus("ACTIVE"); service.oldVersion.setSnapshotJson("{\"id\":7}"); service.oldVersion.setDeleted(true);
+        for (String mode : List.of("NEW", "REUSE")) Assert.assertThrows(IllegalArgumentException.class,
+                () -> service.createRestoreDraft("FUNCTION", 7L, 1L, mode, "owner"));
+        Assert.assertEquals(0, service.insertRequestCalls);
+    }
+
+    @Test
+    public void reusedHistoryCanBeEditedAndPublishedUnderOriginalNumberWithoutChangingOldSnapshot() {
+        TestService service = new TestService();
+        service.resource.setId(5L);
+        service.resource.setResourceType("PROJECT");
+        service.resource.setResourceId(7L);
+        service.resource.setEffectiveVersionId(3L);
+        service.resource.setEffectiveVersionNo(3);
+        service.oldVersion.setId(1L);
+        service.oldVersion.setResourceType("PROJECT");
+        service.oldVersion.setResourceId(7L);
+        service.oldVersion.setVersionNo(1);
+        service.oldVersion.setEffectiveStatus("ACTIVE");
+        service.oldVersion.setSnapshotJson("{\"id\":7,\"name\":\"original\"}");
+        service.oldVersion.setApprovalRequestId(20L);
+        var restore = service.createRestoreDraft("PROJECT", 7L, 1L, "REUSE", "owner");
+        Assert.assertEquals("REUSE", restore.getRestoreMode());
+        service.saveDraftSnapshot(restore.getId(), "{\"id\":7,\"name\":\"changed\"}", "owner");
+        service.effectiveSnapshot = ResourceSnapshot.ofJson("{\"id\":7,\"name\":\"changed\"}");
+        service.submit(restore.getId(), new GovernanceSubmitRequest(), "owner");
+        var approved = service.approve(restore.getId(), new GovernanceReviewRequest(), "reviewer");
+        Assert.assertEquals("APPROVED", approved.getStatus());
+        Assert.assertEquals(Long.valueOf(3), service.resource.getEffectiveVersionId());
+        Assert.assertEquals(Integer.valueOf(3), service.resource.getEffectiveVersionNo());
+        Assert.assertEquals(Long.valueOf(20), service.oldVersion.getApprovalRequestId());
+        Assert.assertEquals("{\"id\":7,\"name\":\"original\"}", service.oldVersion.getSnapshotJson());
+        Assert.assertEquals(1, service.versions.size());
+        Assert.assertEquals(Integer.valueOf(4), service.versions.get(0).getVersionNo());
+        Assert.assertEquals(Integer.valueOf(1), service.versions.get(0).getDisplayVersion());
+        Assert.assertEquals("{\"id\":7,\"name\":\"changed\"}", service.versions.get(0).getSnapshotJson());
+        Assert.assertEquals("APPROVE", service.events.get(service.events.size() - 1).getAction());
+    }
+
     @Test
     public void updateUsesStatusFromFrozenSnapshot() {
         TestService service = new TestService();
@@ -1010,6 +1136,10 @@ public class GovernanceApprovalServiceTest {
             request.setBaseVersionId(value.getBaseVersionId());
             request.setBaseVersionNo(value.getBaseVersionNo());
             request.setSourceVersionId(value.getSourceVersionId());
+            request.setRestoreMode(value.getRestoreMode());
+            request.setPublishMode(value.getPublishMode());
+            request.setTargetVersionId(value.getTargetVersionId());
+            request.setExpectedTargetSnapshotId(value.getExpectedTargetSnapshotId());
             request.setDraftSnapshotJson(value.getDraftSnapshotJson());
             request.setSnapshotDigest(value.getSnapshotDigest());
             request.setSecretPayloadCiphertext(

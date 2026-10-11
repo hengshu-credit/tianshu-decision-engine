@@ -28,6 +28,7 @@ import java.util.Map;
  */
 @Service
 public class FieldDependencyResolver {
+    @Resource @org.springframework.context.annotation.Lazy private ResourceVersionService resourceVersions;
 
     @Resource
     private RuleDefinitionService definitionService;
@@ -121,6 +122,21 @@ public class FieldDependencyResolver {
         return plan;
     }
 
+    public ResolutionPlan resolveModelSnapshot(RuleModel model,
+            com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot) {
+        ResolutionPlan plan = resolveRuleFields(ruleFieldAnalyzer.resolveFrozenModelInputFields(model, snapshot),
+                List.of(), snapshot.getVariables());
+        List<ResolvedField> outputs = new ArrayList<>();
+        for (RuleModelOutputField output : model.getOutputFields()) {
+            ResolvedField field = toResolved(output);
+            field.setRefId(output.getId()); field.setRefType("MODEL_OUTPUT");
+            field.setScriptName(firstText(output.getFieldName(), output.getFeatureName(), output.getScriptName()));
+            outputs.add(field);
+        }
+        plan.setOutputs(outputs);
+        return plan;
+    }
+
     private ResolutionPlan resolveVariable(RuleTestSchemaRequest request) {
         Long variableId = request.getTargetId();
         requireTargetId(variableId);
@@ -153,7 +169,9 @@ public class FieldDependencyResolver {
     private ResolutionPlan resolveExperiment(RuleTestSchemaRequest request) {
         Long experimentId = request.getTargetId();
         requireTargetId(experimentId);
-        RuleFieldAnalyzer.ResolvedFields fields = experimentService.resolveTestFields(experimentId);
+        RuleFieldAnalyzer.ResolvedFields fields = "FIXED".equals(request.getVersionMode())
+                ? experimentService.resolveVersionTestFields(experimentId, request.getVersionId())
+                : experimentService.resolveTestFields(experimentId);
         return planFromRuleFields(fields.getInputFields(), fields.getOutputFields());
     }
 
@@ -167,6 +185,7 @@ public class FieldDependencyResolver {
         Map<String, String> paths = variableService.buildRefScriptNameMap(variable.getProjectId());
         for (JSONObject operand : com.hengshucredit.rule.server.derived.DerivedVariableConfig.currentInputs(config)) {
             for (var reference : OperandDependencyCollector.collectReferences(operand)) {
+                if (reference.getVersionId() != null) continue;
                 if ("FUNCTION".equals(reference.getRefType())) continue;
                 String path = paths.get(reference.getRefType() + ":" + reference.getRefId());
                 if (path == null) throw new IllegalArgumentException("衍生上游引用字段不可用");
@@ -176,16 +195,26 @@ public class FieldDependencyResolver {
                 inputs.add(field);
             }
         }
-        return planFromRuleFields(ruleFieldAnalyzer.resolveInputFields(inputs, variable.getProjectId()), List.of());
+        ResolutionPlan plan = planFromRuleFields(ruleFieldAnalyzer.resolveInputFields(inputs, variable.getProjectId()), List.of());
+        if (resourceVersions != null) for (RuleDefinitionInputField field : resourceVersions.inputs(config, variable.getProjectId()))
+            plan.getExternalInputs().add(toResolved(field));
+        return plan;
     }
 
     private ResolutionPlan planFromRuleFields(List<RuleDefinitionInputField> inputs,
                                                List<RuleDefinitionOutputField> outputs) {
+        return resolveRuleFields(inputs, outputs, null);
+    }
+
+    /** A non-null frozen variable list is a closed namespace, including an empty list. */
+    public ResolutionPlan resolveRuleFields(List<RuleDefinitionInputField> inputs,
+                                            List<RuleDefinitionOutputField> outputs,
+                                            List<RuleVariable> frozenVariables) {
         ResolutionPlan plan = new ResolutionPlan();
         List<RuleDefinitionInputField> externalInputs = new ArrayList<>();
         List<ResolvedField> runtimeNodes = new ArrayList<>();
         for (RuleDefinitionInputField field : safe(inputs)) {
-            RuleVariable variable = runtimeSourceVariable(field);
+            RuleVariable variable = runtimeSourceVariable(field, frozenVariables);
             if (variable == null) {
                 externalInputs.add(field);
                 continue;
@@ -205,14 +234,15 @@ public class FieldDependencyResolver {
     }
 
     private RuleVariable runtimeSourceVariable(
-            RuleDefinitionInputField field) {
+            RuleDefinitionInputField field, List<RuleVariable> frozenVariables) {
         if (field == null || field.getVarId() == null
                 || (!"VARIABLE".equalsIgnoreCase(field.getRefType())
                 && !"CONSTANT".equalsIgnoreCase(field.getRefType()))
-                || variableService == null) {
+                || (frozenVariables == null && variableService == null)) {
             return null;
         }
-        RuleVariable variable = variableService.getById(field.getVarId());
+        RuleVariable variable = frozenVariables == null ? variableService.getById(field.getVarId())
+                : frozenVariables.stream().filter(item -> field.getVarId().equals(item.getId())).findFirst().orElse(null);
         if (variable == null || !hasText(variable.getVarSource())) {
             return null;
         }
@@ -296,6 +326,7 @@ public class FieldDependencyResolver {
         }
         List<RuleDefinitionInputField> dependencies = new ArrayList<>();
         for (JSONObject operand : OperandValueResolver.collectReferences(source.getSourceOperand())) {
+            if ("FIXED".equals(operand.getString("versionMode"))) continue;
             String refType = firstText(operand.getString("refType"), "VARIABLE");
             if ("CONSTANT".equalsIgnoreCase(refType)) continue;
             String path = firstText(operand.getString("value"), operand.getString("code"));
@@ -310,6 +341,7 @@ public class FieldDependencyResolver {
             dependency.setStatus(1);
             dependencies.add(dependency);
         }
+        if (resourceVersions != null) dependencies.addAll(resourceVersions.inputs(com.alibaba.fastjson.JSON.parse(source.getSourceOperand()), null));
         return dependencies;
     }
 

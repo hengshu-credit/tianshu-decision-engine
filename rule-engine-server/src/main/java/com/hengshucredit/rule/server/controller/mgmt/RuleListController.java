@@ -16,6 +16,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -111,10 +112,15 @@ public class RuleListController {
     }
 
     @GetMapping("/{listId:\\d+}/export")
-    public ResponseEntity<byte[]> export(@PathVariable Long listId) throws Exception {
+    public ResponseEntity<StreamingResponseBody> export(@PathVariable Long listId) {
         RuleListLibrary library = listService.getById(listId);
         String prefix = library != null && library.getListCode() != null ? library.getListCode() : "list";
-        return workbookResponse(listService.exportRecords(listId), prefix + "-名单内容.xlsx");
+        String encoded = URLEncoder.encode(prefix + "-名单内容.xlsx", StandardCharsets.UTF_8).replace("+", "%20");
+        StreamingResponseBody body = output -> listService.writeRecordsExport(listId, output);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(body);
     }
 
     @PostMapping("/{listId:\\d+}/import")

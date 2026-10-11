@@ -3,6 +3,7 @@ package com.hengshucredit.rule.server.service;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.parser.Feature;
 import com.hengshucredit.rule.model.dto.ResolutionPlan;
 import com.hengshucredit.rule.model.dto.ResolvedField;
 import com.hengshucredit.rule.model.dto.RuleTestSchema;
@@ -15,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.math.BigDecimal;
 
 /** 根据统一依赖计划生成测试字段和嵌套样例参数。 */
 @Service
@@ -22,9 +24,32 @@ public class RuleTestSchemaService {
 
     @Resource
     private FieldDependencyResolver fieldDependencyResolver;
+    @Resource
+    private RuleTestTargetResolver testTargetResolver;
 
     public RuleTestSchema build(RuleTestSchemaRequest request) {
+        if (request != null && "RULE".equalsIgnoreCase(request.getTargetType()) && request.getExecutionSource() != null) {
+            return build(testTargetResolver.resolve(request.getTargetId(), request.getExecutionSource(), request.getModelJson(), request.getModelType(), request.getProjectId()));
+        }
         return build(fieldDependencyResolver.resolve(request));
+    }
+
+    public RuleTestSchema buildModelSnapshot(com.hengshucredit.rule.model.entity.RuleModel model,
+            com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot) {
+        return build(fieldDependencyResolver.resolveModelSnapshot(model, snapshot));
+    }
+
+    public RuleTestSchema build(RuleTestTargetResolver.Target target) {
+        RuleTestSchema schema = build(fieldDependencyResolver.resolveRuleFields(
+                target.fields().getInputFields(), target.fields().getOutputFields(),
+                target.snapshot() == null ? null : target.snapshot().getVariables()));
+        schema.setExecutionIdentity(target.identity());
+        return schema;
+    }
+
+    /** Validation needs the already resolved output contract, never a new lookup of runtime inputs. */
+    public List<ResolvedField> outputFields(RuleTestTargetResolver.Target target) {
+        return fieldDependencyResolver.resolveRuleFields(List.of(), target.fields().getOutputFields(), List.of()).getOutputs();
     }
 
     public RuleTestSchema buildDerivedDraft(com.hengshucredit.rule.model.entity.RuleVariable variable) {
@@ -77,15 +102,15 @@ public class RuleTestSchemaService {
                     || "DECIMAL".equals(type) || "PROBABILITY".equals(type)) {
                 if ("Infinity".equals(raw)) return Double.POSITIVE_INFINITY;
                 if ("-Infinity".equals(raw)) return Double.NEGATIVE_INFINITY;
-                return Double.valueOf(raw);
+                return new BigDecimal(raw);
             }
             if ("BOOLEAN".equals(type) || "BOOL".equals(type)) return Boolean.valueOf(raw);
             if ("ARRAY".equals(type) || "LIST".equals(type) || "VECTOR".equals(type)) {
-                Object parsed = JSON.parse(raw);
+                Object parsed = JSON.parse(raw, Feature.DisableSpecialKeyDetect, Feature.UseBigDecimal);
                 return parsed instanceof JSONArray ? parsed : raw;
             }
             if ("OBJECT".equals(type) || "MAP".equals(type)) {
-                Object parsed = JSON.parse(raw);
+                Object parsed = JSON.parse(raw, Feature.DisableSpecialKeyDetect, Feature.UseBigDecimal);
                 return parsed instanceof JSONObject ? parsed : raw;
             }
         } catch (Exception ignored) {

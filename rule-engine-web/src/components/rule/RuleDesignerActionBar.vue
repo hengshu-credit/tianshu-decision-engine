@@ -8,16 +8,12 @@
         :aria-busy="busy" :title="action.key === 'test' ? '使用当前页面配置测试' : action.label"
         @click="$emit(action.key)"><el-icon class="rule-designer-actions__icon"><component :is="action.icon" /></el-icon><span>{{ action.label }}</span></button>
     </div>
-    <button v-if="report && (report.errors?.length || report.warnings?.length)" type="button"
-      class="rule-designer-actions__button" data-action="show-report" @click="reportVisible = true">
-      {{ report.errors?.length ? '查看待修复问题' : `查看提醒（${report.warnings.length}）` }}
-    </button>
     <div v-if="issueContext" class="issue-context">
       <span>校验定位 · {{ pathLabel(issueContext.path) }}：{{ issueContext.message }}</span>
       <button type="button" :disabled="issueContext.stale" @click="$emit('locate', issueContext)">定位问题</button>
     </div>
   </section>
-  <el-dialog v-model="reportVisible" title="编译检查结果" width="880px" append-to-body :close-on-click-modal="false">
+  <el-dialog v-model="reportVisible" title="校验报告" width="880px" append-to-body :close-on-click-modal="false">
     <rule-validation-report v-if="report" class="rule-designer-validation" :report="report" locatable @locate="locateIssue" />
     <template #footer>
       <el-button data-action="close-report" @click="reportVisible = false">关闭</el-button>
@@ -32,6 +28,7 @@ import {
   DocumentChecked as ElIconDocumentChecked,
   Promotion as ElIconPromotion,
   VideoPlay as ElIconVideoPlay,
+  CircleCheck as ElIconCircleCheck,
 } from '@element-plus/icons-vue'
 import RuleValidationReport from '@/components/rule/RuleValidationReport.vue'
 import { validationPathLabel } from '@/utils/validationIssueLocation'
@@ -45,8 +42,9 @@ export default {
     issueContext: { type: Object, default: null },
     recovery: { type: Object, default: null },
   },
-  emits: ['compile', 'save', 'publish', 'test', 'locate', 'restore', 'discard-recovery'],
+  emits: ['check', 'compile', 'save', 'publish', 'test', 'locate', 'restore', 'discard-recovery'],
   data: () => ({ reportVisible: false, actions: [
+    { key: 'check', label: '检查', icon: markRaw(ElIconCircleCheck) },
     { key: 'compile', label: '编译', icon: markRaw(ElIconCpu) },
     { key: 'save', label: '保存', icon: markRaw(ElIconDocumentChecked) },
     { key: 'publish', label: '发布', icon: markRaw(ElIconPromotion) },
@@ -56,7 +54,10 @@ export default {
     report: {
       immediate: true,
       handler(report) {
-        this.reportVisible = Boolean(report && report.autoOpen !== false && (!report.valid || report.errors?.length))
+        if (!report) { this.reportVisible = false; return }
+        const hasErrors = !report.valid || Boolean(report.errors?.length)
+        const hasWarnings = Boolean(report.warnings?.length)
+        this.reportVisible = report.autoOpen === true || hasErrors || hasWarnings
       },
     },
   },
@@ -76,9 +77,10 @@ export default {
 .rule-designer-actions__button { min-height: 32px; width: 78px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--tianshu-border-subtle); border-radius: 6px; background: var(--tianshu-bg-surface); color: var(--tianshu-text-primary); font: inherit; cursor: pointer; }
 .rule-designer-actions__icon { flex: none; font-size: 14px; }
 .rule-designer-actions__button:hover:not(:disabled) { background: var(--tianshu-bg-muted); color: var(--tianshu-text-primary); }
-.rule-designer-actions__publish { border-color: var(--el-color-primary); background-color: var(--el-color-primary); background-image: var(--tianshu-brand-gradient); color: var(--tianshu-brand-foreground); }
-.rule-designer-actions__publish:hover:not(:disabled) { background-color: var(--el-color-primary-dark-1); background-image: var(--tianshu-brand-gradient); color: var(--tianshu-brand-foreground); }
-.rule-designer-actions__publish:active:not(:disabled) { background-color: var(--el-color-primary-dark-2); }
+.rule-designer-actions__publish { border-color: var(--el-color-primary); background-color: var(--el-color-primary); background-image: var(--tianshu-brand-gradient); color: var(--tianshu-brand-foreground); transition: filter 160ms ease, border-color 160ms ease, box-shadow 160ms ease; }
+.rule-designer-actions__publish:hover:not(:disabled),
+.rule-designer-actions__publish:focus-visible:not(:disabled) { background-color: var(--el-color-primary-dark-1); background-image: var(--tianshu-brand-gradient); color: var(--tianshu-brand-foreground); border-color: var(--el-color-primary-light-3); filter: brightness(1.12); box-shadow: 0 2px 6px color-mix(in srgb, var(--el-color-primary) 28%, transparent); }
+.rule-designer-actions__publish:active:not(:disabled) { background-color: var(--el-color-primary-dark-2); filter: brightness(0.96); box-shadow: inset 0 1px 2px color-mix(in srgb, var(--el-color-primary) 28%, transparent); }
 .rule-designer-actions__button:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
 .rule-designer-actions__button:disabled { background: var(--tianshu-bg-muted); color: var(--tianshu-text-secondary); border-color: var(--tianshu-border-subtle); cursor: not-allowed; }
 .rule-designer-actions__button[aria-busy="true"] { cursor: progress; }

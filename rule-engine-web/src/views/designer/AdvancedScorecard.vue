@@ -1,22 +1,5 @@
 <template>
   <div class="asc-designer uiue-compact-workbench uiue-compact-designer">
-    <rule-draft-read-only
-      :visible="!canEditDraft"
-      :loading="!draftGuardLoaded"
-      :load-error="Boolean(draftGuardError)"
-      :revision-label="viewRevisionLabel"
-      :revision-state="viewRevision ? viewRevision.state : ''"
-      :can-fork="canForkViewRevision"
-      :has-editable-draft="hasPendingDraft"
-      :source-options="designerSourceOptions"
-      :selected-source="selectedDesignerSource"
-      :source-loading="designerSourcesLoading"
-      @go-back="$router.back()"
-      @retry="startViewedRevisionRefresh(true)"
-      @go-lifecycle="goRuleLifecycle"
-      @fork="forkViewRevision"
-      @change-source="switchDesignerSource"
-    />
     <!-- 顶部工具栏 -->
     <div class="asc-header">
       <div class="asc-title-area">
@@ -24,6 +7,7 @@
           link
           :icon="ElIconBack"
           aria-label="返回"
+          data-designer-back
           title="返回"
           @click="$router.back()"
           style="color: var(--tianshu-text-secondary)"
@@ -34,21 +18,36 @@
           >{{ totalDimensions }} 个评分维度</el-tag
         >
       </div>
-      <div class="asc-toolbar">
-        <rule-designer-version-select
-          v-if="canEditDraft && designerSourceOptions.length"
-          :options="designerSourceOptions"
-          :model-value="selectedDesignerSource"
-          :loading="designerSourcesLoading"
-          @change="switchDesignerSource"
-          @delete="deleteDesignerSource"
+      <div class="asc-toolbar designer-version-toolbar">
+        <rule-draft-read-only
+          :visible="!canEditDraft"
+          :loading="!draftGuardLoaded"
+          :load-error="Boolean(draftGuardError) || varsLoadError"
+          :revision-label="viewRevisionLabel"
+          :revision-state="viewRevision ? viewRevision.state : ''"
+          :can-fork="canForkViewRevision"
+          :has-editable-draft="hasPendingDraft"
+          :source-options="designerSourceOptions"
+          :selected-source="selectedDesignerSource"
+          :source-loading="designerSourcesLoading"
           :disabled="designerBusy"
+          :read-only-reason="designerReadOnlyReason"
+          :can-test-frozen="designerCanTest && referenceCatalogMode === 'FROZEN'"
+          :migration-required="draftGuardLoaded && frozenReferenceCatalog?.localEditingAllowed === false"
+          @test-frozen="handleTest"
+          @open-migration="$router.push('/transfer')"
+          @retry="startViewedRevisionRefresh(true)"
+          @go-lifecycle="goRuleLifecycle"
+          @fork="forkViewRevision"
+          @change-source="switchDesignerSource"
+          @delete-source="deleteDesignerSource"
         />
         <el-button size="small" :icon="ElIconPlus" @click="addGroup"
           >添加维度组</el-button
         >
         <el-divider direction="vertical" />
         <rule-designer-action-bar
+          @check="handleCheck"
           @locate="locateDesignerIssue"
           :issue-context="incomingValidationIssue"
           :can-edit="canEditDraft"
@@ -67,7 +66,7 @@
       </div>
     </div>
 
-    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" />
+    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" :reference-mode="referenceCatalogMode" :can-use-current-resources="canEnterDesignerLivePreview" @use-current="runDesignerAction(enterDesignerLivePreview)" />
     <rule-designer-dialogs :choice="designerChoice" @resolve="resolveDesignerChoice" />
 
 
@@ -89,7 +88,7 @@
           />
         </div>
         <div class="base-config-item">
-          <span class="base-config-label">结果变量</span>
+          <span class="base-config-label">评分赋值字段</span>
           <div class="result-var-picker">
             <operand-picker
               :vars="varPickerOptions"
@@ -109,7 +108,22 @@
             model.resultVar.varLabel
           }}</span>
         </div>
+        <div class="base-config-item">
+          <span class="base-config-label">等级赋值字段（可选）</span>
+          <operand-picker
+            data-testid="scorecard-level-target"
+            :vars="varPickerOptions"
+            :selected-vars="selectedVarPickerOptions"
+            :value="model.levelVar?.operand"
+            :allowed-kinds="writeOperandKinds"
+            writable-only
+            placeholder="不选则仅输出分数"
+            width="220px"
+            @input="setLevelOperand"
+          />
+        </div>
       </div>
+      <div class="level-config-hint">未选择等级赋值字段或未配置等级区间时，仅输出分数。</div>
     </div>
 
     <!-- 维度组列表 -->
@@ -138,7 +152,6 @@
               :min="0"
               :max="2"
               :step="0.1"
-              :precision="2"
               size="small"
               controls-position="right"
               style="width: 100px"
@@ -190,7 +203,6 @@
                 :min="0"
                 :max="2"
                 :step="0.05"
-                :precision="2"
                 size="small"
                 controls-position="right"
                 style="width: 90px"
@@ -263,6 +275,7 @@
                     <operand-picker
                       v-if="conditionRequiresValue(cond)"
                       :value="cond.rightOperand"
+                      :condition-operator="cond.operator"
                       :vars="varPickerOptions"
                       :functions="projectFunctions"
                       :selected-vars="selectedVarPickerOptions"
@@ -360,7 +373,7 @@
               }}</span>
               <template v-if="group.weight != null && group.weight !== 1">
                 <span class="op"> × </span>
-                <code>{{ (group.weight || 0).toFixed(2) }}</code>
+                <code>{{ group.weight }}</code>
               </template>
               <span class="formula-dims">
                 (
@@ -372,7 +385,7 @@
                     {{ dim.varLabel || dim.varCode || '维度' + (di + 1) }}
                     <template v-if="dim.weight != null && dim.weight !== 1">
                       <span class="op">×</span
-                      >{{ (dim.weight || 0).toFixed(2) }}
+                      >{{ dim.weight }}
                     </template>
                   </span>
                   <span
@@ -400,7 +413,7 @@
           ><el-icon><el-icon-s-check /></el-icon> 权重汇总</span
         >
         <div class="weight-summary">
-          <span class="weight-label-sm">总权重：</span>
+          <span class="weight-label-sm">总权重（约）：</span>
           <el-progress
             :percentage="totalWeightPercent"
             :color="totalWeightColor"
@@ -408,7 +421,7 @@
             style="width: 150px; display: inline-block; vertical-align: middle"
           />
           <span class="weight-value" :style="{ color: totalWeightColor }">{{
-            totalWeight.toFixed(2)
+            totalWeightDisplay
           }}</span>
         </div>
       </div>
@@ -422,14 +435,14 @@
             group.groupLabel || '维度组' + (gi + 1)
           }}</span>
           <span class="weight-detail-val"
-            >组权重 {{ (group.weight || 1).toFixed(2) }}</span
+            >组权重 {{ group.weight == null ? 1 : group.weight }}</span
           >
           <span class="weight-detail-dims">
             × (
             <template v-for="(dim, di) in group.dimensions || []" :key="di">
               <span
                 >{{ dim.varLabel || '维度' }}:{{
-                  (dim.weight || 1).toFixed(2)
+                  dim.weight == null ? 1 : dim.weight
                 }}</span
               >
               <span v-if="di < (group.dimensions || []).length - 1">, </span>
@@ -444,7 +457,7 @@
     <div class="asc-card">
       <div class="asc-card-title asc-card-title-row">
         <span
-          ><el-icon><el-icon-medal /></el-icon> 分数等级配置</span
+          ><el-icon><el-icon-medal /></el-icon> 分数等级配置（可选）</span
         >
         <el-button size="small" :icon="ElIconPlus" @click="addThreshold"
           >添加等级</el-button
@@ -520,6 +533,8 @@
     <!-- 测试弹窗 -->
     <designer-test-dialog
       v-model:visible="testVisible"
+      :execution-source="designerTestExecutionSource"
+      :execution-source-name="viewRevisionLabel"
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="SCORE_ADV"
@@ -530,6 +545,7 @@
 </template>
 
 <script>
+import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { markRaw } from 'vue'
 import {
   DataLine as ElIconDataLine,
@@ -548,11 +564,11 @@ import {
 } from '@element-plus/icons-vue'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ruleDraftMixin from '@/mixins/ruleDraftMixin'
+import { levelVarFromOperand, normalizeScorecardLevelVar } from '@/utils/scorecardLevel'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import RuleDraftReadOnly from '@/components/rule/RuleDraftReadOnly.vue'
-import RuleDesignerVersionSelect from '@/components/rule/RuleDesignerVersionSelect.vue'
 import RuleDesignerActionBar from '@/components/rule/RuleDesignerActionBar.vue'
 import {
   addCode,
@@ -570,6 +586,7 @@ import {
 import { getExpressionContext } from '@/constants/expressionContexts'
 import {
   conditionOperatorAllowsVarValue,
+  conditionLiteralOperandKinds,
   conditionOperatorRequiresValue,
   findConditionOperator,
   getConditionOperatorGroups,
@@ -598,6 +615,7 @@ export default {
       model: {
         initialScore: 100,
         resultVar: { varCode: '', varLabel: '', _varId: null },
+        levelVar: levelVarFromOperand(null),
         dimensionGroups: [],
         thresholds: [],
       },
@@ -620,7 +638,6 @@ export default {
   components: {
     RuleDesignerActionBar,
     RuleDraftReadOnly,
-    RuleDesignerVersionSelect,
     DesignerTestDialog,
     OperandPicker,
     ScriptPanel,
@@ -654,6 +671,10 @@ export default {
     totalWeightPercent() {
       return Math.min(100, Math.round(this.totalWeight * 100))
     },
+    totalWeightDisplay() {
+      // 汇总仅供阅读，避免二进制小数噪声；配置值和实际计算保持原样。
+      return Number.isFinite(this.totalWeight) ? String(Number(this.totalWeight.toPrecision(15))) : '无法计算'
+    },
     totalWeightColor() {
       const w = this.totalWeight
       if (Math.abs(w - 1.0) < 0.05) return '#087a5d'
@@ -678,6 +699,7 @@ export default {
           })
         )
       add(this.model.resultVar && this.model.resultVar.operand)
+      add(this.model.levelVar && this.model.levelVar.operand)
       const groups = this.model.dimensionGroups || []
       groups.forEach((group) => {
         const dimensions = group.dimensions || []
@@ -700,7 +722,7 @@ export default {
         if (this.draftGuardPromise) await this.draftGuardPromise
         const content = this.viewRevision
         if (content && content.modelJson) {
-          this.model = JSON.parse(content.modelJson)
+          this.model = parseDesignerModelJson(content.modelJson)
         }
       } catch (e) {
         this.$message.error('加载内容失败: ' + (e.message || '未知错误'))
@@ -714,6 +736,7 @@ export default {
       }
     },
     normalizeModel() {
+      this.model['levelVar'] = normalizeScorecardLevelVar(this.model)
       if (this.model.initialScore == null) this.model['initialScore'] = 100
       if (!this.model.resultVar)
         this.model['resultVar'] = { varCode: '', varLabel: '', _varId: null }
@@ -850,7 +873,7 @@ export default {
         condition && condition.leftOperand
       )
         ? getExpressionContext(context).allowedKinds
-        : ['LITERAL']
+        : conditionLiteralOperandKinds(condition && condition.operator)
     },
     onConditionOperatorChange(condition) {
       const type = conditionOperandType(condition)
@@ -867,6 +890,9 @@ export default {
         condition.value = ''
       }
     },
+    setLevelOperand(operand) {
+      this.model['levelVar'] = levelVarFromOperand(operand)
+    },
     setThresholdOperand(threshold, value) {
       threshold['resultOperand'] = value
       threshold.result = compileOperand(value)
@@ -881,6 +907,10 @@ export default {
         if (result.changed) this.setFieldOperand(holder, field, result.operand)
       }
       sync(this.model.resultVar, 'operand')
+      if (this.model.levelVar) {
+        const level = syncOperandReference(this.model.levelVar.operand, this.varPickerOptions)
+        if (level.changed) this.setLevelOperand(level.operand)
+      }
       ;(this.model.dimensionGroups || []).forEach((group) =>
         (group.dimensions || []).forEach((dim) => {
           sync(dim, 'operand')
@@ -1142,6 +1172,12 @@ export default {
 .asc-card-title-row {
   justify-content: space-between;
 }
+.level-config-hint {
+  margin-top: 8px;
+  color: var(--tianshu-text-secondary);
+  font-size: 12px;
+}
+
 .base-config-row {
   display: flex;
   gap: 24px;
@@ -1384,7 +1420,7 @@ export default {
   color: var(--tianshu-text-secondary);
 }
 .formula-term {
-  color: var(--el-color-primary);
+  color: var(--tianshu-primary-text);
   font-weight: 500;
 }
 .weight-summary {

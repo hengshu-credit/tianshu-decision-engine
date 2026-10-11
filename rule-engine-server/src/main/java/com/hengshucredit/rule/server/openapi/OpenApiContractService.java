@@ -9,7 +9,9 @@ import com.hengshucredit.rule.model.entity.RuleProjectAuth;
 import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.server.mapper.RuleProjectAuthMapper;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
+import com.hengshucredit.rule.server.artifact.PublishedRuleFieldSnapshotResolver;
 import com.hengshucredit.rule.server.service.RuleDefinitionService;
+import com.hengshucredit.rule.server.service.RuleFieldAnalyzer;
 import com.hengshucredit.rule.server.service.RuleProjectService;
 import org.springframework.stereotype.Service;
 
@@ -32,6 +34,9 @@ public class OpenApiContractService {
 
     @Resource
     private RuleDefinitionService definitionService;
+
+    @Resource
+    private PublishedRuleFieldSnapshotResolver publishedFieldSnapshotResolver;
 
     public ResolvedContract resolve(Long authenticatedAuthId, String authCode, String ruleCode) {
         if (authenticatedAuthId == null) {
@@ -60,12 +65,22 @@ public class OpenApiContractService {
             throw new OpenApiException(OpenApiStatuses.requestProductUnauthorized());
         }
         new OpenResponseRenderer().validate(contract);
-        RulePublished published = publishedMapper.selectOne(new LambdaQueryWrapper<RulePublished>()
-                .eq(RulePublished::getDefinitionId, projection.getDefinitionId())
-                .eq(RulePublished::getStatus, 1));
-        if (published == null) throw new OpenApiException(OpenApiStatuses.requestProductUnauthorized());
-        return new ResolvedContract(auth, project, published, contract,
-                inputReferences(projection.getDefinitionId()), outputReferences(projection.getDefinitionId()));
+        List<RuleDefinitionInputField> inputs;
+        List<RuleDefinitionOutputField> outputs;
+        if (projection.getArtifactId() != null || projection.getRevisionId() != null) {
+            RuleFieldAnalyzer.ResolvedFields fields = publishedFieldSnapshotResolver.resolve(projection);
+            if (fields.getDiagnostics().stream().anyMatch(issue -> "ERROR".equals(issue.getSeverity()))) {
+                throw new OpenApiException(OpenApiStatuses.systemError());
+            }
+            inputs = fields.getInputFields();
+            outputs = fields.getOutputFields();
+        } else {
+            // 仅无制品的历史发布沿用原字段解析；坏制品不得退回当前工作草稿。
+            inputs = definitionService.listInputFields(projection.getDefinitionId());
+            outputs = definitionService.listOutputFields(projection.getDefinitionId());
+        }
+        return new ResolvedContract(auth, project, projection, contract,
+                inputs, inputReferences(inputs), outputReferences(outputs));
     }
 
     public OpenApiContract defaultContract() {
@@ -78,23 +93,22 @@ public class OpenApiContractService {
         return contract;
     }
 
-    private Map<String, String> inputReferences(Long definitionId) {
+    private Map<String, String> inputReferences(List<RuleDefinitionInputField> fields) {
         Map<String, String> result = new LinkedHashMap<>();
-        List<RuleDefinitionInputField> fields = definitionService.listInputFields(definitionId);
         if (fields == null) return result;
         for (RuleDefinitionInputField field : fields) {
-            if (Integer.valueOf(0).equals(field.getStatus())) continue;
+            if (field.getStatus() != null && !Integer.valueOf(1).equals(field.getStatus())) continue;
             String key = OpenRequestMapper.referenceKey(field.getRefType(), field.getVarId());
             if (key != null && hasText(field.getScriptName())) result.put(key, field.getScriptName().trim());
         }
         return result;
     }
 
-    private Map<String, String> outputReferences(Long definitionId) {
+    private Map<String, String> outputReferences(List<RuleDefinitionOutputField> fields) {
         Map<String, String> result = new LinkedHashMap<>();
-        List<RuleDefinitionOutputField> fields = definitionService.listOutputFields(definitionId);
         if (fields == null) return result;
         for (RuleDefinitionOutputField field : fields) {
+            if (field.getStatus() != null && !Integer.valueOf(1).equals(field.getStatus())) continue;
             String key = OpenRequestMapper.referenceKey(field.getRefType(), field.getVarId());
             if (key != null && hasText(field.getScriptName())) result.put(key, field.getScriptName().trim());
         }
@@ -110,16 +124,19 @@ public class OpenApiContractService {
         private final RuleProject project;
         private final RulePublished published;
         private final OpenApiContract contract;
+        private final List<RuleDefinitionInputField> inputFields;
         private final Map<String, String> inputReferences;
         private final Map<String, String> outputReferences;
 
         public ResolvedContract(RuleProjectAuth auth, RuleProject project, RulePublished published,
-                                OpenApiContract contract, Map<String, String> inputReferences,
+                                OpenApiContract contract, List<RuleDefinitionInputField> inputFields,
+                                Map<String, String> inputReferences,
                                 Map<String, String> outputReferences) {
             this.auth = auth;
             this.project = project;
             this.published = published;
             this.contract = contract;
+            this.inputFields = inputFields == null ? List.of() : List.copyOf(inputFields);
             this.inputReferences = inputReferences;
             this.outputReferences = outputReferences;
         }
@@ -128,6 +145,7 @@ public class OpenApiContractService {
         public RuleProject getProject() { return project; }
         public RulePublished getPublished() { return published; }
         public OpenApiContract getContract() { return contract; }
+        public List<RuleDefinitionInputField> getInputFields() { return inputFields; }
         public Map<String, String> getInputReferences() { return inputReferences; }
         public Map<String, String> getOutputReferences() { return outputReferences; }
     }

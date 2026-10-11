@@ -152,6 +152,10 @@ public class RuleFieldValidationService extends ServiceImpl<RuleFieldValidationM
                                 .or().eq(RuleDefinitionInputField::getStatus, 1))
                         .orderByAsc(RuleDefinitionInputField::getSortOrder)
                         .orderByAsc(RuleDefinitionInputField::getId));
+        validateInputFields(fields, params);
+    }
+
+    public void validateInputFields(List<RuleDefinitionInputField> fields, Map<String, Object> params) {
         LinkedHashSet<Long> ids = new LinkedHashSet<>();
         for (RuleDefinitionInputField field : fields == null
                 ? Collections.<RuleDefinitionInputField>emptyList() : fields) {

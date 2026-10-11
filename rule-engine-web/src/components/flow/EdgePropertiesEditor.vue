@@ -55,7 +55,8 @@
       <el-button type="primary" size="small" :icon="Check" class="generate-condition" @click="$emit('generate')">
         生成表达式
       </el-button>
-      <div v-if="modelValue.conditionExpr" class="generated-expr"><code>{{ modelValue.conditionExpr }}</code></div>
+      <div v-if="conditionRoot?.children?.length || conditionRoot?.type === 'leaf'" class="generated-expr">{{ conditionSummary }}</div>
+      <details v-if="modelValue.conditionExpr" class="generated-expr"><summary>查看生成表达式</summary><code>{{ modelValue.conditionExpr }}</code></details>
     </div>
     <el-input
       v-else
@@ -66,7 +67,7 @@
       class="mono-input"
       @update:model-value="updateProperty('conditionExpr', $event)"
     />
-    <div class="hint-box condition-hint">条件为空表示默认分支（else）</div>
+    <div class="hint-box condition-hint">清空整个条件组时为默认分支；未完成的条件不会视为默认分支。</div>
   </div>
 </template>
 
@@ -74,6 +75,7 @@
 import { markRaw } from 'vue'
 import { Check } from '@element-plus/icons-vue'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
+import { formatConditionTreeDescription } from '@/utils/expressionDisplay'
 
 export default {
   name: 'EdgePropertiesEditor',
@@ -91,6 +93,9 @@ export default {
   emits: ['update:modelValue', 'update:mode', 'condition-change', 'generate'],
   data() {
     return { Check: markRaw(Check) }
+  },
+  computed: {
+    conditionSummary() { return formatConditionTreeDescription(this.conditionRoot) },
   },
   methods: {
     updateProperty(field, value) {

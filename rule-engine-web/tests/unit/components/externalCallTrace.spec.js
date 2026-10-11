@@ -2,6 +2,33 @@ import { mount } from '@vue/test-utils'
 import ExternalCallTrace from '@/components/common/ExternalCallTrace.vue'
 
 describe('ExternalCallTrace', () => {
+  test.each([{ value: { $ref: '$.externalCall.traceSteps' } }, { value: [] }])('嵌套阶段的无效或空首选值$value不遮蔽完整children', ({ value: traceSteps }) => {
+    const children = [{ label: '子请求已发送', status: 'SENT' }, { label: '子响应已接收', status: 'SUCCESS' }]
+    const steps = [{ label: '工作流步骤', output: { externalCall: { traceSteps }, body: { $ref: '供应商原文字段' } }, children }]
+    const original = JSON.stringify(steps)
+    const wrapper = mount(ExternalCallTrace, { props: { steps } })
+    try {
+      const nested = wrapper.find('.external-call-trace.is-compact')
+      expect(nested.exists()).toBe(true)
+      expect(nested.findAll('.external-call-trace-step-title span').map(item => item.text())).toEqual(children.map(item => item.label))
+      expect(wrapper.text()).toContain('供应商原文字段')
+      expect(JSON.stringify(steps)).toBe(original)
+    } finally { wrapper.unmount() }
+  })
+
+  test('容量受限阶段及嵌套阶段显示中文与重试说明', () => {
+    const wrapper = mount(ExternalCallTrace, { props: { steps: [{
+      label: '模型资源检查', status: 'THROTTLED', children: [{ label: '加载会话', status: 'THROTTLED' }],
+    }] } })
+    try {
+      expect(wrapper.findAll('.external-call-trace-status').map(status => status.text())).toEqual(['容量受限', '容量受限'])
+      expect(wrapper.find('.external-call-trace-status').classes()).toContain('is-throttled')
+      expect(wrapper.find('.external-call-trace-status').attributes('title')).toContain('稍后重试')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   test('连续编号并保留 null、false、0 以及赋值引用元数据', () => {
     const wrapper = mount(ExternalCallTrace, {
       props: {

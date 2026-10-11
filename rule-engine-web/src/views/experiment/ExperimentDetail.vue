@@ -14,9 +14,6 @@
         <el-button size="small" @click="$router.push('/experiment')"
           >返回</el-button
         >
-        <el-button v-if="form.id" size="small" @click="openVersionDialog"
-          >版本</el-button
-        >
         <el-button
           v-permission="'experiment:edit'"
           size="small"
@@ -25,6 +22,7 @@
           @click="handleSave"
           >保存</el-button
         >
+        <resource-version-manager v-if="form.id" resource-type="EXPERIMENT" :resource-id="form.id" has-legacy @legacy="openVersionDialog" />
       </div>
     </div>
 
@@ -43,14 +41,14 @@
       <div>
         <span class="section-kicker">VERSION &amp; TRAFFIC</span>
         <strong>版本与分流关系</strong>
-        <small>每次保存形成实验版本；线上只按已生效版本路由，TEST 组只记录结果。</small>
+        <small>保存为草稿，发布审批通过后形成生效版本；TEST 组只记录结果。</small>
       </div>
       <div class="experiment-release-map__stats">
         <span><b>{{ productionFormGroups.length }}</b> 个生产组</span>
         <span><b>{{ testFormGroups.length }}</b> 个测试组</span>
         <span><b>{{ ratioTotal }}%</b> 生产流量</span>
       </div>
-      <el-button v-if="form.id" size="small" @click="openVersionDialog">查看版本与回滚</el-button>
+      <resource-version-manager v-if="form.id" resource-type="EXPERIMENT" :resource-id="form.id" has-legacy @legacy="openVersionDialog" />
     </section>
 
     <el-form
@@ -64,20 +62,12 @@
       <el-row :gutter="12">
         <el-col :span="5">
           <el-form-item label="项目" prop="projectId">
-            <el-select
-              v-model="form.projectId"
-              filterable
-              placeholder="选择项目"
+            <project-resource-select
+              v-model:value="form.projectId"
               style="width: 100%"
               @change="onProjectChange"
-            >
-              <el-option
-                v-for="p in projects"
-                :key="p.id"
-                :label="p.projectName"
-                :value="p.id"
-              />
-            </el-select>
+              @select="onProjectSelected"
+            />
           </el-form-item>
         </el-col>
         <el-col :span="5">
@@ -209,6 +199,7 @@
             <group-action-form
               :row="row"
               :rules-for-project="rulesForProject"
+              @version-fields="onGroupVersionFields"
               :show-type="true"
               :show-ratio="false"
               :show-invoke="false"
@@ -250,6 +241,7 @@
               <group-action-form
                 :row="row"
                 :rules-for-project="rulesForProject"
+              @version-fields="onGroupVersionFields"
                 :show-type="true"
                 :show-ratio="false"
                 :show-invoke="false"
@@ -359,6 +351,7 @@
             <group-action-form
               :row="row"
               :rules-for-project="rulesForProject"
+              @version-fields="onGroupVersionFields"
               :show-type="false"
               :show-ratio="false"
               :show-invoke="true"
@@ -396,6 +389,7 @@
               <group-action-form
                 :row="row"
                 :rules-for-project="rulesForProject"
+              @version-fields="onGroupVersionFields"
                 :show-type="false"
                 :show-ratio="false"
                 :show-invoke="true"
@@ -738,11 +732,11 @@
     >
       <el-table show-overflow-tooltip :data="versionList" border size="small" style="width: 100%">
         <el-table-column
-          prop="version"
+          prop="displayVersion"
           label="版本"
-          width="80"
+          width="140"
           align="center"
-        />
+        ><template #default="{ row }">{{ versionDisplayLabel(row) }}</template></el-table-column>
         <el-table-column
           prop="changeLog"
           label="变更说明"
@@ -767,7 +761,7 @@
               @click="compareWithNext(row, $index)"
               >对比</el-button
             >
-            <el-button
+            <el-button v-permission="['experiment:edit', 'approval:submit']"
               link
               size="small"
               type="warning"
@@ -806,10 +800,14 @@
 </template>
 
 <script>
+import ResourceVersionManager from '@/components/common/ResourceVersionManager.vue'
+import { hasPermission } from '@/security/permissionState'
+import { editableResource } from '@/api/governance'
+import { completeResourceChange } from '@/utils/governanceWorkspace'
+import { chooseVersionRestore, versionDisplayLabel } from '@/utils/versionRestore'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import { markRaw } from 'vue'
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
-import { listProjects } from '@/api/project'
 import { listProjectDefinitions } from '@/api/definition'
 import {
   getExperiment,
@@ -822,6 +820,7 @@ import {
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
 import OperandPicker from '@/components/common/OperandPicker.vue'
+import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import GroupActionForm from './GroupActionForm.vue'
 import TraceTree from '@/components/common/TraceTree.vue'
@@ -860,15 +859,15 @@ export default {
         },
         {
           title: '版本回滚',
-          text: '保存会形成版本；上线前可对比配置差异，异常时通过版本回滚恢复历史配置。',
+          text: '保存后可继续编辑草稿；发布时审批并形成版本，历史恢复也支持修改后重新审批。',
         },
       ],
       activeTab: 'champion',
       saving: false,
       contentLoaded: true,
-      projects: [],
       rulesForProject: [],
       ruleFieldMap: {},
+      ruleVersionFields: {},
       form: this.emptyForm(),
       rules: {
         projectId: [
@@ -906,8 +905,10 @@ export default {
   },
   name: 'ExperimentDetail',
   components: {
+    ResourceVersionManager,
     ConditionGroupEditor,
     OperandPicker,
+    ProjectResourceSelect,
     MonacoEditor,
     GroupActionForm,
     TraceTree,
@@ -1016,7 +1017,6 @@ export default {
     },
   },
   async created() {
-    await this.loadProjects()
     if (this.isCreateMode) {
       this.form = this.emptyForm()
       const projectId = routeProjectId(
@@ -1030,11 +1030,10 @@ export default {
     await this.loadLogs()
   },
   methods: {
+    versionDisplayLabel,
     async applyProjectContext(projectId) {
       const id = Number(projectId)
-      const project = this.projects.find(
-        (item) => Number(item.id) === id
-      )
+      const project = (this.projects || []).find(item => Number(item.id) === id)
       this.form.projectId = id
       this.form.projectCode = project ? project.projectCode || '' : ''
       await this.loadRules(id)
@@ -1118,12 +1117,9 @@ export default {
         return null
       }
     },
-    async loadProjects() {
-      const res = await listProjects({ pageNum: 1, pageSize: 500, status: 1 })
-      this.projects = (res.data && res.data.records) || []
-    },
     async loadDetail() {
       const res = await getExperiment(this.experimentId)
+        if (res.data?.id && hasPermission('experiment:edit')) res.data = await editableResource('EXPERIMENT', res.data.id, res.data)
       const data = res.data || {}
       this.form = {
         ...this.emptyForm(),
@@ -1140,13 +1136,18 @@ export default {
         this.ruleFieldMap = {}
         return
       }
-      const res = await listProjectDefinitions(projectId, {
-        pageNum: 1,
-        pageSize: 1000,
-        status: 1,
-      })
-      const page = res && res.data ? res.data : res
-      const rows = Array.isArray(page) ? page : (page && page.records) || []
+      const rows = []
+      let pageNum = 1
+      const pageSize = 200
+      while (true) {
+        const res = await listProjectDefinitions(projectId, { pageNum, pageSize, status: 1 })
+        const page = res && res.data ? res.data : res
+        const records = Array.isArray(page) ? page : (page && page.records) || []
+        rows.push(...records)
+        const total = Number(page && !Array.isArray(page) ? page.total || 0 : 0)
+        if (records.length < pageSize || (total > 0 && rows.length >= total)) break
+        pageNum += 1
+      }
       this.rulesForProject = normalizeRuleOptions(rows)
       this.loadRuleFieldMap()
       this.repairLegacyGroupRuleRefs()
@@ -1194,7 +1195,8 @@ export default {
     },
     ruleFieldsForGroup(group, direction) {
       if (!group || group.ruleId == null) return []
-      const entry = this.ruleFieldMap[group.ruleId] || {}
+      const version = group.versionMode === 'FIXED' ? (this.ruleVersionFields[group.ruleId] || []).find(item => String(item.bindingId) === String(group.versionBindingId)) : null
+      const entry = group.versionMode === 'FIXED' ? { input: version?.inputFields || [], output: version?.outputFields || [] } : this.ruleFieldMap[group.ruleId] || {}
       return ((entry && entry[direction]) || []).map((field) =>
         this.normalizeExperimentField({
           source: direction === 'input' ? '执行规则' : '执行规则',
@@ -1206,6 +1208,7 @@ export default {
         })
       )
     },
+    onGroupVersionFields({ ruleId, versions }) { this.ruleVersionFields[ruleId] = versions || [] },
     normalizeExperimentField(field) {
       return {
         source: field.source || '-',
@@ -1217,14 +1220,15 @@ export default {
       }
     },
     onProjectChange(projectId) {
-      const project = this.projects.find((p) => p.id === projectId)
-      this.form.projectCode = project ? project.projectCode : ''
       this.form.groups.forEach((g) => {
         g.ruleId = null
         g.ruleCode = ''
       })
       this.loadRules(projectId)
       this.loadExperimentRefs(projectId)
+    },
+    onProjectSelected(project) {
+      this.form.projectCode = project?.projectCode || ''
     },
     async loadExperimentRefs(projectId) {
       if (!projectId) {
@@ -1343,11 +1347,6 @@ export default {
       return new Promise((resolve) => {
         this.$refs.form.validate(async (valid) => {
           if (!valid) return resolve(false)
-          const error = this.validateGroups()
-          if (error) {
-            this.$message.error(error)
-            return resolve(false)
-          }
           if (this.form.requestKeyOperand) {
             const operandErrors = validateOperand(this.form.requestKeyOperand, {
               allowedKinds: this.requestKeyKinds,
@@ -1365,9 +1364,11 @@ export default {
               : ''
             delete data.requestKeyOperand
             const res = await saveExperiment(data)
-            this.$message.success('审批草稿已创建')
-            if (res.data && res.data.id)
-              this.$router.push('/approval/' + res.data.id)
+            await completeResourceChange(this, res)
+            if (!this.form.id && res.data?.resourceId) {
+              this.form.id = res.data.resourceId
+              await this.$router.replace('/experiment/detail/' + this.form.id)
+            }
             resolve(true)
           } finally {
             this.saving = false
@@ -1555,14 +1556,11 @@ export default {
     },
     async rollbackExperimentVersion(row) {
       if (!this.form.id || !row) return
-      await this.$confirm('确认回滚到 v' + row.version + '？', '提示', {
-        type: 'warning',
-      })
-      const response = await rollbackVersion(this.form.id, row.version)
-      this.$message.success('已创建历史版本恢复审批')
+      const mode = await chooseVersionRestore(row.displayVersion || row.businessVersion || row.version)
+      if (!mode) return
+      const response = await rollbackVersion(this.form.id, row.version, mode)
       this.versionVisible = false
-      if (response.data && response.data.id)
-        this.$router.push('/approval/' + response.data.id)
+      await completeResourceChange(this, response, () => this.loadDetail())
     },
     prettyVersionJson(value) {
       if (!value) return ''

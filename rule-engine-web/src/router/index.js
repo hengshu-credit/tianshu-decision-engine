@@ -75,7 +75,7 @@ const routes = [
         path: 'rule/:id',
         name: 'RuleDetail',
         component: () => import('@/views/rule/RuleDetail.vue'),
-        meta: { title: '规则详情' }
+        meta: { title: '规则详情', keepAlive: true }
       },
       {
         path: 'project/:id',
@@ -144,10 +144,16 @@ const routes = [
         meta: { title: '配置表达式', keepAlive: true, menu: '/rule' }
       },
       {
+        path: 'expression/:sessionId',
+        name: 'ConfigurationExpressionEditor',
+        component: () => import('@/views/expression/ExpressionEditorPage.vue'),
+        meta: { title: '配置表达式', keepAlive: true }
+      },
+      {
         path: 'variable',
         name: 'VariableList',
         component: () => import('@/views/variable/VariableList.vue'),
-        meta: { title: '变量管理' }
+        meta: { title: '变量管理', keepAlive: true }
       },
       {
         path: 'list',
@@ -183,13 +189,13 @@ const routes = [
         path: 'datasource/api/new',
         name: 'ApiCreate',
         component: () => import('@/views/datasource/ApiDetail.vue'),
-        meta: { title: '新建外数 API' }
+        meta: { title: '新建外数 API', keepAlive: true }
       },
       {
         path: 'datasource/api/:id',
         name: 'ApiDetail',
         component: () => import('@/views/datasource/ApiDetail.vue'),
-        meta: { title: '外数 API 详情' }
+        meta: { title: '外数 API 详情', keepAlive: true }
       },
       {
         path: 'database',
@@ -219,7 +225,7 @@ const routes = [
         path: 'model/:id',
         name: 'ModelDetail',
         component: () => import('@/views/model/ModelDetail.vue'),
-        meta: { title: '模型详情' }
+        meta: { title: '模型详情', keepAlive: true }
       },
       {
         path: 'function',
@@ -249,13 +255,13 @@ const routes = [
         path: 'experiment/new',
         name: 'ExperimentCreate',
         component: () => import('@/views/experiment/ExperimentDetail.vue'),
-        meta: { title: '新建分流实验' }
+        meta: { title: '新建分流实验', keepAlive: true }
       },
       {
         path: 'experiment/detail/:experimentId',
         name: 'ExperimentDetail',
         component: () => import('@/views/experiment/ExperimentDetail.vue'),
-        meta: { title: '分流实验详情' }
+        meta: { title: '分流实验详情', keepAlive: true }
       },
       {
         path: 'log',
@@ -279,7 +285,7 @@ const routes = [
         path: 'transfer',
         name: 'OfflineTransfer',
         component: () => import('@/views/transfer/OfflineTransfer.vue'),
-        meta: { title: '离线迁移', permission: 'rule:view' }
+        meta: { title: '离线迁移', permission: 'transfer:view' }
       },
       {
         path: 'approval/:id',
@@ -291,7 +297,7 @@ const routes = [
         path: 'account',
         name: 'AccountManagement',
         component: () => import('@/views/account/AccountManagement.vue'),
-        meta: { title: '账户管理', permission: 'account:view' }
+        meta: { title: '账户管理', permission: ['account:view', 'role:view', 'role:manage', 'account:audit'] }
       }
     ]
   }
@@ -299,15 +305,19 @@ const routes = [
 
 function inferRoutePermission(path) {
   const value = String(path || '')
-  if (value.startsWith('project') || value.startsWith('billing')) return 'project:view'
+  if (value.startsWith('project')) return 'project:view'
+  if (value.startsWith('billing')) return 'billing:view'
+  if (value.startsWith('log')) return 'log:view'
+  if (value.startsWith('list')) return 'list:view'
+  if (value.startsWith('lineage')) return 'lineage:view'
   if (value.startsWith('rule') || value.startsWith('designer') ||
-      value.startsWith('test') || value.startsWith('log')) return 'rule:view'
-  if (value.startsWith('variable') || value.startsWith('list')) return 'field:view'
+      value.startsWith('test')) return 'rule:view'
+  if (value.startsWith('variable')) return 'field:view'
   if (value.startsWith('datasource')) return 'datasource:view'
   if (value.startsWith('database')) return 'database:view'
   if (value.startsWith('model')) return 'model:view'
   if (value.startsWith('function')) return 'function:view'
-  if (value.startsWith('lineage') || value.startsWith('approval')) return 'approval:view'
+  if (value.startsWith('approval')) return 'approval:view'
   if (value.startsWith('experiment')) return 'experiment:view'
   if (value.startsWith('account')) return 'account:view'
   return null
@@ -332,5 +342,12 @@ const router = createRouter({
  * 未启用时与改造前行为一致。
  */
 router.beforeEach(createConsoleAuthGuard(fetchConsoleConfig, fetchMe))
+router.afterEach((to, from, failure) => {
+  if (!failure && to.path !== '/login') {
+    import('@/security/operationActivity').then(({ recordPageVisit }) => {
+      recordPageVisit(to)
+    })
+  }
+})
 
 export default router

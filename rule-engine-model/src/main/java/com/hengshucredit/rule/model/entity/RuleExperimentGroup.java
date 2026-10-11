@@ -20,6 +20,8 @@ public class RuleExperimentGroup {
     private String groupName;
     private String groupType;
     private Long ruleId;
+    private String versionMode;
+    private Long versionBindingId;
     private String ruleCode;
     private BigDecimal trafficRatio;
     private String conditionValue;

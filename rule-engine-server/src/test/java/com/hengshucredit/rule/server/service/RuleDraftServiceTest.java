@@ -38,6 +38,70 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertNull;
 
 public class RuleDraftServiceTest {
+    @Test public void importedEffectiveProjectionRestoresContentWithoutResolvingOrPersistingForeignReferences() {
+        RuleRevision effective = importedEffective();
+        byte[] artifactBefore = fixture.restoreGuard.artifacts.get(effective.getArtifactId()).getPackageContent().clone();
+        service.restoreEffectiveProjection(effective);
+        assertEquals(0, fixture.fieldResolutions);
+        assertTrue(fixture.databaseFields.isEmpty()); assertTrue(fixture.databaseOutputFields.isEmpty());
+        assertEquals(effective.getModelJson(), fixture.databaseContent.getModelJson());
+        assertEquals(effective.getCompiledScript(), fixture.databaseContent.getCompiledScript());
+        assertEquals(effective.getOpenApiConfigJson(), fixture.databaseContent.getOpenApiConfigJson());
+        assertEquals(Long.valueOf(107), effective.getArtifactId());
+        org.junit.Assert.assertArrayEquals(artifactBefore, fixture.restoreGuard.artifacts.get(107L).getPackageContent());
+        assertEquals(List.of("content", "fields", "designVersion"), fixture.writeOrder);
+    }
+
+    @Test public void rejectionCanRestoreVerifiedImportedEffectiveRevisionWithoutMigrationOrLiveFieldWrites() {
+        RuleRevision effective = importedEffective();
+        RuleRevision review = copy(fixture.databaseRevision); review.setState("REVIEW");
+        List<String> events = new ArrayList<>();
+        RuleLifecycleService lifecycle = new RuleLifecycleService() {
+            @Override protected RuleDefinition lockDefinition(Long id) { return fixture.definition; }
+            @Override protected RuleRevision loadRevision(Long id) { return review.getId().equals(id) ? review : effective; }
+            @Override protected RuleRevision findPublishedRevision(Long id) { return effective; }
+            @Override protected boolean compareAndSetState(RuleRevision revision, String expected, String target) { return expected.equals(revision.getState()); }
+            @Override protected String actor() { return "reviewer"; }
+            @Override protected void persistRevisionSnapshot(RuleRevision revision) { }
+            @Override protected void insertEvent(com.hengshucredit.rule.model.entity.RuleLifecycleEvent event) { events.add(event.getAction()); }
+        };
+        ReflectionTestUtils.setField(lifecycle, "ruleDraftService", service);
+        com.hengshucredit.rule.model.dto.RuleLifecycleActionRequest request = new com.hengshucredit.rule.model.dto.RuleLifecycleActionRequest();
+        request.setComment("退回不适用的变更，保留原导入版本");
+        assertEquals("REJECTED", lifecycle.returnToDraft(6L, request).getState());
+        assertEquals(List.of("REJECT"), events);
+        assertEquals(0, fixture.fieldResolutions);
+        assertTrue(fixture.databaseFields.isEmpty()); assertTrue(fixture.databaseOutputFields.isEmpty());
+        assertEquals(effective.getCompiledScript(), fixture.databaseContent.getCompiledScript());
+        assertEquals("PUBLISHED", effective.getState());
+    }
+
+    @Test public void unverifiedEffectiveArtifactCannotReplaceTheCurrentProjection() {
+        RuleRevision effective = importedEffective();
+        fixture.restoreGuard.artifacts.get(effective.getArtifactId()).getPackageContent()[0] ^= 1;
+        assertEquals("REFERENCE_NAMESPACE_UNVERIFIABLE", assertThrows(RuleGovernanceException.class,
+                () -> service.restoreEffectiveProjection(effective)).getCode());
+        assertEquals(0, fixture.fieldResolutions); assertTrue(fixture.writeOrder.isEmpty());
+        assertEquals(beforeContent, fixture.databaseContent);
+    }
+
+    private RuleRevision importedEffective() {
+        fixture.restoreGuard = new RuleReferenceNamespaceGuardTest.Fixture();
+        RuleRevision effective = fixture.restoreGuard.artifactRevision(7L, true);
+        effective.setCompiledScript("return Frozen_A;"); effective.setCompiledType("QLEXPRESS");
+        effective.setOpenApiConfigJson("{\"enabled\":true}");
+        return effective;
+    }
+
+    @Test public void unsafeDraftCannotSaveEvenWithPrecompiledResult() {
+        fixture.namespaceRejected = true;
+        for (boolean precompiled : new boolean[]{false, true}) {
+            assertEquals("REFERENCE_NAMESPACE_MIGRATION_REQUIRED", assertThrows(RuleGovernanceException.class,
+                    () -> { if (precompiled) service.saveWithCompileResult(request(30L, 6L, 0, modelJson()), CompileResult.ok("return true;", "QLEXPRESS"));
+                        else service.save(request(30L, 6L, 0, modelJson())); }).getCode());
+            assertTrue(fixture.writeOrder.isEmpty()); assertEquals(beforeRevision, fixture.databaseRevision);
+        }
+    }
 
     private FixtureService fixture;
     private RuleDraftService service;
@@ -444,6 +508,15 @@ public class RuleDraftServiceTest {
     }
 
     static class FixtureService extends RuleDraftService {
+        boolean namespaceRejected;
+        RuleReferenceNamespaceGuardTest.Fixture restoreGuard;
+        int fieldResolutions;
+        protected boolean usesImportedReferenceNamespace(RuleDefinition definition, RuleRevision revision) {
+            return restoreGuard != null && restoreGuard.inspectNamespace(definition, revision).imported();
+        }
+        protected void requireLocalNamespace(RuleDefinition definition, RuleRevision revision) {
+            if (namespaceRejected) throw new RuleGovernanceException(409, "REFERENCE_NAMESPACE_MIGRATION_REQUIRED", "请使用离线配置迁移", List.of());
+        }
         private final RuleDefinition definition = new RuleDefinition();
         private RuleRevision databaseRevision = new RuleRevision();
         private RuleDefinitionContent databaseContent =
@@ -519,6 +592,7 @@ public class RuleDraftServiceTest {
         @Override
         protected RuleFieldAnalyzer.ResolvedFields resolveFields(
                 RuleDefinition definition, String modelJson) {
+            fieldResolutions++;
             return resolvedFields;
         }
 

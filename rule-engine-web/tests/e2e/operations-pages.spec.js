@@ -2,6 +2,7 @@ const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createOperationsApiData } = require('./support/operationsFixtures.cjs')
 const { createDetailApiData } = require('./support/detailFixtures.cjs')
+const { withTestExecutionIdentity } = require('./support/testExecutionFixtures.cjs')
 
 async function expectNoRootOverflow(page) {
   const metrics = await page.evaluate(() => ({
@@ -148,6 +149,186 @@ test('规则测试可选择规则、加载字段并展示执行结果', async ({
   await expectTextSelectable(result, await result.innerText())
   await expectNoRootOverflow(page)
   expect(pageErrors).toEqual([])
+  assertClean()
+})
+
+test('规则测试长表单可滚动到底并点击执行，窄屏底部也可达', async ({ page }) => {
+  const { assertClean } = await installDistRoutes(page, { apiData: createOperationsApiData() })
+  await page.setViewportSize({ width: 1440, height: 720 })
+  await page.goto('http://tianshu.local/index.html#/test')
+  await page.locator('.test-left .el-form-item').filter({ hasText: '规则' }).locator('.el-select').click()
+  await page.getByRole('option', { name: /age_rule/ }).click()
+  await expect(page.getByText('测试输入已就绪', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '综合风控样例', exact: true }).click()
+  const left = page.locator('.test-left')
+  const execute = page.getByRole('button', { name: '执行测试', exact: true })
+  await expect(execute).toBeInViewport({ ratio: 1 })
+  const actionTop = (await page.locator('.test-actions').boundingBox()).y
+  await left.hover()
+  await page.mouse.wheel(0, 10000)
+  await expect(execute).toBeInViewport({ ratio: 1 })
+  await expect.poll(async () => Math.abs((await page.locator('.test-actions').boundingBox()).y - actionTop)).toBeLessThanOrEqual(1)
+  const bounds = await left.boundingBox()
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(720)
+  await execute.click()
+  await expect(page.getByText('执行成功', { exact: true })).toBeVisible()
+  await page.setViewportSize({ width: 800, height: 720 })
+  await execute.scrollIntoViewIfNeeded()
+  await expect(execute).toBeInViewport({ ratio: 1 })
+  await execute.click()
+  await expectNoRootOverflow(page)
+  await page.setViewportSize({ width: 1440, height: 1400 })
+  await page.getByRole('button', { name: '生成样例', exact: true }).click()
+  const shortLayout = await page.locator('.test-actions').evaluate(element => ({
+    top: element.getBoundingClientRect().top,
+    previousBottom: element.previousElementSibling.getBoundingClientRect().bottom,
+    bottom: element.getBoundingClientRect().bottom,
+    parentBottom: element.parentElement.getBoundingClientRect().bottom,
+  }))
+  expect(shortLayout.top - shortLayout.previousBottom).toBeCloseTo(16, 0)
+  expect(shortLayout.parentBottom - shortLayout.bottom).toBeGreaterThan(50)
+  assertClean()
+})
+
+test('规则测试在表单与 JSON 间同步输入、生成样例并校验执行参数', async ({ page }, testInfo) => {
+  const fixtures = createOperationsApiData()
+  let submitted
+  const execute = fixtures.get('POST /api/rule/definition/101/api-scenarios/execute-validated')
+  fixtures.set('POST /api/rule/definition/101/api-scenarios/execute-validated', context => {
+    submitted = context.request.postDataJSON()
+    return execute(context)
+  })
+  const { assertClean } = await installDistRoutes(page, { apiData: fixtures })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('http://tianshu.local/index.html#/test')
+  await page.locator('.test-left .el-form-item').filter({ hasText: '规则' }).locator('.el-select').click()
+  await page.getByRole('option', { name: /age_rule/ }).click()
+  await expect(page.locator('.param-value input')).toHaveValue('18')
+  await page.locator('.param-value input').fill('27')
+  await page.getByText('JSON 编辑', { exact: true }).click()
+  const editor = page.getByTestId('rule-test-input-json')
+  await expect(editor.locator('.view-lines')).toContainText('27')
+  const input = editor.locator('textarea')
+  const editJson = async text => {
+    await input.click()
+    await input.press('ControlOrMeta+A')
+    await input.press('Backspace')
+    await input.pressSequentially(text)
+    await input.press('Escape')
+  }
+  await editJson('{"age":21,"profile":{"vip":false},"ids":[9007199254740993],"empty":{}}')
+  await page.getByText('表单填写', { exact: true }).click()
+  await expect(page.locator('.param-row')).toHaveCount(4)
+  await page.getByText('JSON 编辑', { exact: true }).click()
+  await page.getByRole('button', { name: '执行测试', exact: true }).click()
+  await expect(page.getByText('执行成功', { exact: true })).toBeVisible()
+  expect(submitted.requestJson).toContain('"params":{"age":21,"profile":{"vip":false},"ids":[9007199254740993],"empty":{}}')
+  submitted = null
+  await editJson('[]')
+  await expect(editor.getByRole('alert')).toHaveText('输入参数必须是 JSON 对象')
+  await page.getByRole('button', { name: '执行测试', exact: true }).click()
+  expect(submitted).toBeNull()
+  await page.getByRole('button', { name: '生成样例', exact: true }).click()
+  await expect(editor.getByRole('alert')).toHaveCount(0)
+  await expect(editor.locator('.view-lines')).toContainText('18')
+  await page.getByRole('button', { name: '执行测试', exact: true }).click()
+  await expect(page.getByText('执行成功', { exact: true })).toBeVisible()
+  expect(JSON.parse(submitted.requestJson).params).toEqual({ age: 18 })
+  await page.screenshot({ path: testInfo.outputPath('rule-test-json.png') })
+  assertClean()
+})
+
+test('血缘默认隐藏小地图、使用直线且可独立调节背景透明度', async ({ page }, testInfo) => {
+  const { assertClean } = await installDistRoutes(page, { apiData: createOperationsApiData() })
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto('http://tianshu.local/index.html#/lineage')
+  await page.getByRole('combobox', { name: '起点', exact: true }).click()
+  await page.getByRole('option', { name: '年龄 (age)', exact: true }).click()
+  await page.getByRole('button', { name: '生成血缘图', exact: true }).click()
+  await expect(page.locator('.current-node')).toBeVisible()
+  await expect(page.locator('.toolbar-edge-select')).toContainText('直线')
+  await expect(page.locator('.graph-canvas .lf-edge line')).toHaveCount(1)
+  await expect(page.locator('.graph-canvas .lf-mini-map:visible')).toHaveCount(0)
+  await page.getByRole('button', { name: '小地图', exact: true }).click()
+  await expect(page.locator('.graph-canvas .lf-mini-map:visible')).toHaveCount(1)
+  await page.getByRole('button', { name: '小地图', exact: true }).click()
+  await expect(page.locator('.graph-canvas .lf-mini-map:visible')).toHaveCount(0)
+  const node = page.locator('.current-node')
+  const originalBox = await node.boundingBox()
+  await page.getByRole('button', { name: '画布背景', exact: true }).click()
+  const slider = page.getByRole('slider', { name: '背景透明度' })
+  await expect(slider).toBeEnabled()
+  await slider.press('Home')
+  await expect(page.locator('.graph-canvas .lf-background-area')).toHaveCSS('opacity', '0')
+  await slider.press('ArrowRight')
+  await expect(page.locator('.graph-canvas .lf-background-area')).toHaveCSS('opacity', '0.05')
+  await slider.press('End')
+  await expect(page.locator('.graph-canvas .lf-background-area')).toHaveCSS('opacity', '1')
+  expect(await node.boundingBox()).toEqual(originalBox)
+  await page.screenshot({ path: testInfo.outputPath('lineage-default-settings.png') })
+  assertClean()
+})
+
+test('血缘网格实时跟随主题色且夜间背景层不被遮挡', async ({ page }, testInfo) => {
+  const { assertClean } = await installDistRoutes(page, { apiData: createOperationsApiData() })
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto('http://tianshu.local/index.html#/lineage')
+  await page.getByRole('combobox', { name: '起点', exact: true }).click()
+  await page.getByRole('option', { name: '年龄 (age)', exact: true }).click()
+  await page.getByRole('button', { name: '生成血缘图', exact: true }).click()
+  const grid = page.locator('.graph-canvas .lf-grid pattern circle').first()
+  const nodeCard = page.locator('.graph-canvas .lineage-lf-node').first()
+  await expect(grid).toBeAttached()
+  await expect(nodeCard).toBeVisible()
+  const currentNodeBorder = await nodeCard.evaluate(element => {
+    const style = getComputedStyle(element)
+    return {
+      colors: [style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor],
+      widths: [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth],
+    }
+  })
+  expect(new Set(currentNodeBorder.colors).size).toBe(1)
+  expect(new Set(currentNodeBorder.widths).size).toBe(1)
+  const initialNodeBorder = await nodeCard.evaluate(element => getComputedStyle(element).borderTopColor)
+  const expectThemeGrid = () => expect.poll(() => grid.evaluate(element =>
+    element.parentElement.getAttribute('fill') === getComputedStyle(document.documentElement).getPropertyValue('--el-color-primary-light-7').trim()
+  )).toBe(true)
+  await expectThemeGrid()
+  const oldColor = await grid.evaluate(element => getComputedStyle(element).fill)
+  await page.getByRole('button', { name: '本地用户的账户菜单' }).click()
+  await page.getByRole('menuitem', { name: '主题设置' }).click()
+  await page.getByRole('button', { name: '凝液紫', exact: true }).click()
+  await expect.poll(() => grid.evaluate(element => getComputedStyle(element).fill)).not.toBe(oldColor)
+  await expect.poll(() => nodeCard.evaluate(element => getComputedStyle(element).borderTopColor)).not.toBe(initialNodeBorder)
+  await page.getByRole('button', { name: '夜间模式', exact: true }).click()
+  await page.getByRole('button', { name: '保存设置', exact: true }).click()
+  await expectThemeGrid()
+  await page.getByRole('button', { name: '画布背景', exact: true }).click()
+  const slider = page.getByRole('slider', { name: '背景透明度' })
+  await slider.press('Home')
+  await expect(page.locator('.graph-canvas .lf-background-area')).toHaveCSS('opacity', '0')
+  for (const selector of ['.lf-base', '.lf-canvas-overlay']) {
+    await expect(page.locator('.graph-canvas ' + selector).first()).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  }
+  const settings = page.locator('.canvas-settings:visible')
+  await settings.locator('label').filter({ hasText: '启用自定义背景' }).locator('.el-switch').click()
+  await settings.locator('label').filter({ hasText: /^背景颜色/ }).getByRole('button').click()
+  const colorPanel = page.getByRole('dialog').filter({ has: page.getByRole('button', { name: '清空', exact: true }) })
+  await colorPanel.getByRole('textbox').fill('#FF6600')
+  await colorPanel.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(colorPanel).toBeHidden()
+  await page.getByRole('button', { name: '画布背景', exact: true }).click()
+  await expect(settings).toBeVisible()
+  await slider.press('ArrowRight')
+  const background = page.locator('.graph-canvas .lf-background-area')
+  await expect(background).toHaveCSS('opacity', '0.05')
+  await expect(background).toHaveCSS('background-color', 'rgb(255, 102, 0)')
+  await slider.press('End')
+  await expect(background).toHaveCSS('opacity', '1')
+  await slider.press('Home')
+  for (let step = 0; step < 7; step++) await slider.press('ArrowRight')
+  await expect(background).toHaveCSS('opacity', '0.35')
+  await page.screenshot({ path: testInfo.outputPath('lineage-theme-settings.png') })
   assertClean()
 })
 
@@ -338,9 +519,11 @@ test('登录鉴权开启后隐藏无编辑权限的名单操作', async ({ page 
   fixtures.set('/api/auth/console/config', { loginEnabled: true })
   fixtures.set('/api/auth/console/me', {
     username: 'field-viewer',
-    permissions: ['field:view']
+    permissions: ['field:view', 'list:view']
   })
   fixtures.set('/api/auth/console/preferences/theme', null)
+  fixtures.set('POST /api/rule/console/activity', true)
+  fixtures.set('/api/rule/project/options', [{ id: 1, projectCode: 'e2e_project', projectName: 'E2E 项目', status: 1 }])
   const { assertClean } = await installDistRoutes(page, { apiData: fixtures })
 
   await page.goto('http://tianshu.local/index.html#/list')
@@ -411,7 +594,9 @@ test('分流实验验证执行加载 Schema 表单并提交嵌套参数', async 
   const schemaRequest = await schemaRequestPromise
   expect(schemaRequest.postDataJSON()).toEqual({
     targetType: 'EXPERIMENT',
-    targetId: 61
+    targetId: 61,
+    versionMode: 'LATEST',
+    versionId: null
   })
 
   const dialog = page.getByRole('dialog', { name: '验证执行分流实验' })
@@ -448,7 +633,9 @@ test('分流实验验证执行加载 Schema 表单并提交嵌套参数', async 
       }
     },
     requestKey: 'REQ-E2E-20260804',
-    requestTime: '2026-08-04T10:30:00'
+    requestTime: '2026-08-04T10:30:00',
+    versionMode: 'LATEST',
+    versionId: null
   })
 
   await expect(dialog.getByText('冠军组', { exact: true })).toBeVisible()
@@ -504,7 +691,7 @@ test('账单配置、明细、汇总及新建弹窗可用', async ({ page }) => 
   await expect(configCode).toBeVisible()
   await expectTextSelectable(configCode, 'engine_call')
   await page.getByRole('button', { name: '新建计费项' }).click()
-  const dialog = page.getByRole('dialog', { name: '新建计费配置审批' })
+  const dialog = page.getByRole('dialog', { name: '新建计费配置' })
   await expectDialogInsideViewport(page, dialog)
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
@@ -536,12 +723,12 @@ test('夜间模式下运行页面的提示区、代码块和血缘画布使用�
     }))
   })
   const fixtures = createDetailApiData()
-  fixtures.set('POST /api/rule/definition/execute', {
+  fixtures.set('POST /api/rule/definition/execute', withTestExecutionIdentity({
     success: false,
     errorMessage: '规则执行失败：测试异常',
     executeTimeMs: 6,
     traces: []
-  })
+  }))
   const logList = fixtures.get('/api/rule/log/list')
   fixtures.set('/api/rule/log/list', {
     ...logList,
@@ -574,6 +761,11 @@ test('夜间模式下运行页面的提示区、代码块和血缘画布使用�
   await ruleSelect.click()
   await page.getByRole('option', { name: /age_rule/ }).click()
   const inputReady = page.locator('.input-load-state.is-ready')
+  await expectStyleUsesToken(
+    page.locator('.expected-output-editor .el-radio-button:not(.is-active) .el-radio-button__inner').first(),
+    'color',
+    '--tianshu-text-secondary'
+  )
   await expectStyleUsesToken(
     inputReady,
     'backgroundColor',
@@ -779,7 +971,8 @@ test('夜间模式下审批与版本历史区域使用主题表面色', async ({
   )
 
   await page.goto('http://tianshu.local/index.html#/rule/101')
-  await page.getByRole('button', { name: '版本历史', exact: true }).click()
+  await page.getByRole('button', { name: '版本', exact: true }).click()
+  await page.getByRole('button', { name: '早期历史快照', exact: true }).click()
   const versionDialog = page.locator('.el-dialog').filter({ hasText: '版本历史' })
   await expectStyleUsesToken(
     versionDialog.locator('.version-compare-toolbar'),
@@ -791,5 +984,55 @@ test('夜间模式下审批与版本历史区域使用主题表面色', async ({
     'backgroundColor',
     '--tianshu-bg-soft'
   )
+  assertClean()
+})
+
+test('固定用例标题与三项操作在桌面和窄屏内完整可见', async ({ page }) => {
+  const fixtures = createOperationsApiData()
+  fixtures.set('/api/rule/definition/101/api-scenarios', [{ id: 71, scenarioName: '标题布局用例', requestJson: '{"params":{"age":18}}', responseJson: '{}', expectationJson: '{"version":1,"mode":"NONE"}' }])
+  const { assertClean } = await installDistRoutes(page, { apiData: fixtures })
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto('http://tianshu.local/index.html#/test')
+  await page.locator('.test-left .el-form-item').filter({ hasText: '规则' }).locator('.el-select').click()
+  await page.getByRole('option', { name: /age_rule/ }).click()
+  await page.locator('.fixed-case-row').getByRole('button', { name: '载入', exact: true }).click()
+  await expect(page.getByRole('button', { name: '保存当前用例', exact: true })).toBeVisible()
+  for (const width of [1440, 768]) {
+    await page.setViewportSize({ width, height: 1000 })
+    const title = page.locator('.fixed-cases-title > span').first()
+    await expect.poll(() => title.evaluate(element => {
+      const range = document.createRange(); range.selectNodeContents(element)
+      return new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size
+    })).toBe(1)
+    const card = await page.locator('.fixed-cases-card').boundingBox()
+    for (const name of ['保存为新用例', '保存当前用例', '批量执行']) {
+      const box = await page.getByRole('button', { name, exact: true }).boundingBox()
+      expect(box.x).toBeGreaterThanOrEqual(card.x)
+      expect(box.x + box.width).toBeLessThanOrEqual(card.x + card.width)
+    }
+  }
+  assertClean()
+})
+
+test('预期模式按钮在明暗实时预览后仍使用可读文字色', async ({ page }) => {
+  const { assertClean } = await installDistRoutes(page, { apiData: createOperationsApiData() })
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto('http://tianshu.local/index.html#/test')
+  await page.locator('.test-left .el-form-item').filter({ hasText: '规则' }).locator('.el-select').click()
+  await page.getByRole('option', { name: /age_rule/ }).click()
+  await page.getByTestId('expectation-mode').getByText('按输出字段校验', { exact: true }).click()
+  await page.locator('.layout-account-trigger').click()
+  await page.locator('[data-account-command="theme"]').click()
+  const drawer = page.locator('.theme-settings-drawer')
+  for (const scheme of ['DARK', 'LIGHT']) {
+    await drawer.locator(`[data-theme-scheme="${scheme}"]`).click()
+    await expect.poll(() => page.locator('.expected-output-editor .el-radio-button:not(.is-active) .el-radio-button__inner').first().evaluate(element => {
+      const probe = document.createElement('span'); probe.style.color = 'var(--tianshu-text-secondary)'
+      element.appendChild(probe)
+      const matches = getComputedStyle(element).color === getComputedStyle(probe).color
+      probe.remove(); return matches
+    })).toBe(true)
+  }
+  await drawer.getByRole('button', { name: '取消', exact: true }).click()
   assertClean()
 })

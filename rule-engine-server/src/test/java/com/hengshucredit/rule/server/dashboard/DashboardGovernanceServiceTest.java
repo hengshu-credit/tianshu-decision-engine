@@ -95,6 +95,17 @@ public class DashboardGovernanceServiceTest {
         return Map.of("ruleSets", rows);
     }
 
+    @Test
+    public void ruleSetSectionKeepsCoverageFromExecutionStatistics() {
+        FakeLogService logs = new FakeLogService();
+        Map<String, Object> coverage = Map.of("pendingCount", 5L, "invalidCount", 2L);
+        logs.result = Map.of("ruleSets", List.of(), "coverage", coverage);
+        DashboardResponses.Governance result = new DashboardGovernanceService(new FakeRepository(), logs)
+                .analyze(criteria, access("rule:view"));
+        assertEquals(coverage, result.ruleSetHits().coverage());
+        assertTrue(result.ruleSetHits().items().isEmpty());
+    }
+
     private DashboardAccessContext access(String... permissions) {
         return new DashboardAccessContext(false, 7L, "tester",
                 Set.of(permissions));

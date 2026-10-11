@@ -41,6 +41,7 @@ public class RuleApiDocScenarioServiceTest {
 
         scenarioHandler = new RecordingScenarioMapper();
         service = new RuleApiDocScenarioService();
+        ReflectionTestUtils.setField(service, "expectationService", new RuleTestExpectationService());
         ReflectionTestUtils.setField(service, "scenarioMapper",
                 mapper(RuleApiDocScenarioMapper.class, scenarioHandler));
         ReflectionTestUtils.setField(service, "definitionMapper",
@@ -102,6 +103,49 @@ public class RuleApiDocScenarioServiceTest {
 
         assertNull(saved.getBusinessCodePath());
         assertNull(saved.getBusinessCode());
+    }
+
+    @Test
+    public void expectationConfigurationSurvivesUpdateCopyAndExplicitNoneWhileLegacyStaysNull() {
+        ApiDocScenarioSaveRequest request = request("精确预期", "{\"params\":{\"n\":9007199254740993}}", "{}");
+        String config = "{\"version\":1,\"mode\":\"FIELDS\",\"checks\":[{\"refId\":\"19\",\"refType\":\"VARIABLE\",\"valueType\":\"NUMBER\",\"operator\":\"==\",\"expected\":{\"kind\":\"LITERAL\",\"valueType\":\"NUMBER\",\"value\":\"9007199254740993\"}}]}";
+        request.setExpectationJson(config);
+        RuleApiDocScenario saved = service.create(7L, request);
+        assertEquals(config, saved.getExpectationJson());
+        assertEquals(config, service.copy(7L, saved.getId(), "复制预期").getExpectationJson());
+        ApiDocScenarioSaveRequest metadataOnly = request("修改说明", request.getRequestJson(), "{}");
+        assertEquals(config, service.update(7L, saved.getId(), metadataOnly).getExpectationJson());
+        metadataOnly.setExpectationJson("{\"version\":1,\"mode\":\"NONE\"}");
+        assertEquals(metadataOnly.getExpectationJson(), service.update(7L, saved.getId(), metadataOnly).getExpectationJson());
+        assertNull(service.create(7L, request("历史JSON模式", "{}", "{\"data\":{\"result\":1}}")).getExpectationJson());
+    }
+
+    @Test
+    public void rawScenarioJsonPreservesSpecialKeysAndRejectsDuplicateKeys() {
+        String requestJson = "{\"@type\":\"customer\",\"params\":{\"$ref\":\"$.other\",\"n\":9007199254740993}}";
+        String responseJson = "{\"data\":{\"result\":{\"@type\":\"business\",\"$ref\":\"literal\"}}}";
+        RuleApiDocScenario saved = service.create(7L, request("保留特殊键", requestJson, responseJson));
+        assertEquals(requestJson, saved.getRequestJson());
+        assertEquals(responseJson, saved.getResponseJson());
+        org.junit.Assert.assertThrows(IllegalArgumentException.class,
+                () -> service.create(7L, request("重复键", "{\"params\":{\"n\":1,\"n\":1}}", "{}")));
+    }
+
+    @Test
+    public void largeOutputReferenceRemainsExactAcrossSaveReloadAndExecutionBinding() {
+        String config = "{\"version\":1,\"mode\":\"FIELDS\",\"checks\":[{\"refId\":\"9007199254740993\",\"refType\":\"VARIABLE\",\"valueType\":\"NUMBER\",\"operator\":\"==\",\"expected\":{\"kind\":\"LITERAL\",\"valueType\":\"NUMBER\",\"value\":\"9007199254740993\"}}]}";
+        ApiDocScenarioSaveRequest request = request("大ID输出预期", "{\"params\":{}}", "{}"); request.setExpectationJson(config);
+        RuleApiDocScenario created = service.create(7L, request);
+        RuleApiDocScenario loaded = service.getForExecution(7L, created.getId());
+        assertEquals(config, loaded.getExpectationJson());
+        var output = new com.hengshucredit.rule.model.dto.ResolvedField(); output.setRefId(9007199254740993L);
+        output.setRefType("VARIABLE"); output.setScriptName("renamedAmount"); output.setValueType("NUMBER");
+        var comparator = new RuleTestExpectationService();
+        String actual = "{\"data\":{\"success\":true,\"result\":{\"renamedAmount\":9007199254740993}}}";
+        var passed = comparator.evaluate(loaded.getExpectationJson(), loaded.getResponseJson(), actual, List.of(output));
+        assertEquals("PASSED", passed.getStatus()); assertEquals("9007199254740993", passed.getChecks().get(0).refId());
+        output.setRefId(9007199254740992L);
+        assertEquals("INVALID", comparator.evaluate(loaded.getExpectationJson(), loaded.getResponseJson(), actual, List.of(output)).getStatus());
     }
 
     @Test(expected = IllegalArgumentException.class)

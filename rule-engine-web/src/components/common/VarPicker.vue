@@ -26,196 +26,42 @@
 
     <!-- 选择模式 -->
     <template v-else>
-      <div class="select-input-row">
+      <div :class="{ 'select-input-row': !virtualRef }">
         <el-popover
-          v-if="groupedByCategory && (hasVarOptions || operandMode)"
+          v-if="groupedByCategory && (hasVarOptions || operandMode || !allowCustom)"
           ref="popover"
           :visible="popoverVisible"
+          :virtual-ref="virtualRef"
+          :virtual-triggering="!!virtualRef"
           placement="bottom-start"
           :width="popoverWidth"
           popper-class="var-picker-popover"
+          :show-arrow="false"
+          :popper-style="panelPositionStyle"
+          :popper-options="{ strategy: 'fixed', modifiers: [{ name: 'computeStyles', options: { gpuAcceleration: false } }] }"
         >
-          <div class="vp-panel" :style="panelStyle" @mousedown.stop @click.stop>
-            <!-- 左侧：变量类型分类列表 -->
-            <div class="vp-left">
-              <div
-                v-for="cat in categoryList"
-                :key="cat.key"
-                class="vp-cat-item"
-                :class="{ 'vp-cat-item--active': activeCategory === cat.key }"
-                @click="onCategoryClick(cat.key)"
-              >
-                <span class="vp-cat-label">{{ cat.label }}</span>
-                <span class="vp-cat-count">{{ cat.count }}</span>
-              </div>
-            </div>
-            <div v-if="activeCategory === 'manual'" class="vp-right vp-manual">
-              <div class="vp-manual-title">请选择手动输入类型</div>
-              <div class="vp-manual-types">
-                <button
-                  v-if="allowsOperandKind('LITERAL')"
-                  type="button"
-                  class="vp-manual-type"
-                  @click="requestManualEdit('LITERAL')"
-                >
-                  <el-icon><el-icon-edit-outline /></el-icon>
-                  <span>手输阈值</span>
-                  <small>直接输入数值、文本、布尔值或日期</small>
-                </button>
-                <button
-                  v-if="allowsOperandKind('PATH')"
-                  type="button"
-                  class="vp-manual-type"
-                  @click="requestManualEdit('PATH')"
-                >
-                  <el-icon><el-icon-link /></el-icon>
-                  <span>手输路径</span>
-                  <small>输入运行时字段路径并自动识别引用</small>
-                </button>
-              </div>
-            </div>
-            <!-- 右侧：字段表格 + 搜索 -->
-            <div v-else class="vp-right">
-              <div class="vp-search" v-if="showSearch">
-                <el-input
-                  v-model="searchText"
-                  size="small"
-                  placeholder="搜索变量编码或名称..."
-                  clearable
-                  :prefix-icon="ElIconSearch"
-                />
-              </div>
-              <div class="vp-table-wrap">
-                <table class="vp-table">
-                  <thead>
-                    <tr>
-                      <th class="vp-th vp-th--type">类型</th>
-                      <th class="vp-th vp-th--code">{{ codeColumnLabel() }}</th>
-                      <th class="vp-th vp-th--name">{{ nameColumnLabel() }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <template
-                      v-for="v in pagedRightItems"
-                      :key="fieldGroupKey(v) || optionIdentityKey(v)"
-                    >
-                      <tr
-                        class="vp-row"
-                        :class="{
-                          'vp-row--selected':
-                            !isFieldGroup(v) && isCurrentOption(v),
-                        }"
-                        :tabindex="isCurrentOption(v) ? 0 : -1"
-                        @click="onItemClick(v)"
-                        @keydown.enter.prevent.stop="onItemClick(v)"
-                      >
-                        <td class="vp-td vp-td--type">
-                          <span
-                            class="vp-type-badge"
-                            :class="'vp-type-badge--' + typeChar(v.varType)"
-                            :title="typeLabel(v.varType)"
-                            >{{ typeChar(v.varType) }}</span
-                          >
-                        </td>
-                        <td class="vp-td vp-td--code">
-                          {{ isFieldGroup(v) ? fieldGroupCode(v) : v.varCode }}
-                        </td>
-                        <td class="vp-td vp-td--name">
-                          {{
-                            isFieldGroup(v)
-                              ? fieldGroupLabel(v)
-                              : v.varLabel || v.varCode
-                          }}
-                        </td>
-                      </tr>
-                      <!-- 数据对象/模型嵌套行：点击分组展开，点击子字段才选择 -->
-                      <tr
-                        v-if="v.children && expandedObject === fieldGroupKey(v)"
-                        class="vp-children-row"
-                      >
-                        <td colspan="3" class="vp-children-td">
-                          <div class="vp-children-wrap">
-                            <div class="vp-children-title">
-                              <el-icon><el-icon-document /></el-icon>
-                              {{ fieldGroupLabel(v) }} 字段列表
-                            </div>
-                            <div class="vp-children-list">
-                              <div
-                                v-for="child in pagedObjectChildren(v)"
-                                :key="
-                                  (fieldGroupKey(v) || optionIdentityKey(v)) +
-                                  '.' +
-                                  optionIdentityKey(child)
-                                "
-                                class="vp-child-item"
-                                :class="{
-                                  'vp-child-item--selected':
-                                    isCurrentOption(child),
-                                }"
-                                :tabindex="isCurrentOption(child) ? 0 : -1"
-                                @click.stop="onItemClick(child)"
-                                @keydown.enter.prevent.stop="onItemClick(child)"
-                              >
-                                <span class="vp-child-path">{{
-                                  fieldChildRelativePath(child)
-                                }}</span>
-                                <span
-                                  class="vp-type-badge vp-type-badge--sm"
-                                  :class="
-                                    'vp-type-badge--' + typeChar(child.varType)
-                                  "
-                                  :title="typeLabel(child.varType)"
-                                  >{{ typeChar(child.varType) }}</span
-                                >
-                                <span class="vp-child-name">{{
-                                  fieldChildDisplayName(child)
-                                }}</span>
-                              </div>
-                            </div>
-                            <el-pagination
-                              v-if="objectChildNeedsPaging(v)"
-                              class="vp-mini-pager"
-                              size="small"
-                              layout="prev,pager,next"
-                              :current-page="objectChildPage(v)"
-                              :page-size="fieldPageSize"
-                              :total="v.children.length"
-                              @current-change="
-                                (p) => onObjectChildPageChange(v, p)
-                              "
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    </template>
-                    <tr v-if="filteredRightItems.length === 0">
-                      <td colspan="3" class="vp-empty">
-                        <el-icon><el-icon-warning-outline /></el-icon>
-                        {{ loading ? '加载中...' : '暂无数据' }}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <el-pagination
-                v-if="rightNeedsPaging"
-                class="vp-pager"
-                size="small"
-                layout="total,prev,pager,next"
-                :current-page="rightPage"
-                :page-size="fieldPageSize"
-                :total="filteredRightItems.length"
-                @current-change="onRightPageChange"
-              />
-            </div>
-            <div
-              class="vp-resize-handle"
-              title="拖拽调整面板大小"
-              @mousedown.prevent.stop="startPanelResize"
-              @touchstart.prevent.stop="startPanelTouchResize"
-            />
-          </div>
-          <template v-slot:reference>
+          <field-picker-panel
+            ref="fieldPanel" :items="panelItems" :selected-key="panelSelectedKey" :visible="popoverVisible"
+            :selected-keys="panelSelectedKeys" :recent-keys="panelRecentKeys"
+            :query="searchText" :category="panelCategory" :loading="loading"
+            :expected-type="typeFilter || (operandMode ? expectedType : '')"
+            :visible-tags="visibleTags" :selectable-tags="selectableTags"
+            :width="panelWidth" :height="panelHeight" :initial-page-size="resolvedPageSize"
+            :editor-mode="editorMode"
+            :editor-kind="editorKind"
+            :manual-kinds="operandMode ? allowedKinds.filter(kind => ['LITERAL', 'PATH'].includes(kind) && canUseAction(kind)) : []"
+            :expression="allowExpression && operandMode && !writableOnly && canUseAction('EXPRESSION') && allowedKinds.some(kind => ['FUNCTION', 'OPERATION', 'ACCESS', 'CAST', 'ARRAY', 'LIST_QUERY'].includes(kind))"
+            @category="panelCategory = $event" @search="searchText = $event" @select="onItemClick"
+            @manual="requestManualEdit" @expression="requestExpression" @close="closePopover"
+            @back="$emit('editor-back')"
+            @move="panelPosition = $event" @resize="resizePanel" @page-size="onPageSizeChange"
+          ><template #editor><slot name="editor" :visible="popoverVisible && editorMode" /></template>
+          <template #editor-actions><slot name="editor-actions" /></template>
+          <template v-if="$slots.version || operandMode && !writableOnly" #version="scope">
+            <slot v-if="$slots.version" name="version" v-bind="scope" />
+            <field-version-select v-else :item="scope.item" :selection="fieldVersionSelection(scope.item)" @change="changeFieldVersion(scope.item, $event)" @loading="scope.item && (pendingVersions[pendingVersionKey(scope.item)] = $event)" />
+          </template></field-picker-panel>
+          <template v-if="!virtualRef" v-slot:reference>
             <el-input
               ref="reference"
               class="vp-reference"
@@ -224,6 +70,7 @@
               :disabled="disabled"
               :placeholder="placeholder || '选择变量/常量/对象字段'"
               :model-value="referenceInputValue"
+              :title="operandMode ? referenceInputValue : undefined"
               :readonly="operandMode"
               aria-label="打开字段与表达式选择器"
               aria-haspopup="dialog"
@@ -244,8 +91,9 @@
                 >
               </template>
               <template v-slot:suffix>
+                <span v-if="inputVersion" class="vp-input-version" :title="(versionSelection || value)?.versionMode === 'FIXED' ? '固定版本 ' + inputVersion : '跟随' + inputVersion">{{ inputVersion }}</span>
                 <el-icon
-                  v-if="!value || !allowCustom"
+                  v-if="!value || !clearable"
                   class="el-input__icon vp-arrow-btn"
                   @mousedown.prevent
                   @click.stop="openPopover"
@@ -253,7 +101,7 @@
                   <el-icon-arrow-down />
                 </el-icon>
                 <el-icon
-                  v-if="value && allowCustom"
+                  v-if="value && clearable"
                   class="el-input__icon vp-clear-btn"
                   @mousedown.stop
                   @click.stop="onClearValue"
@@ -294,12 +142,16 @@
 
 <script>
 import { markRaw } from 'vue'
+import FieldPickerPanel from './FieldPickerPanel.vue'
+import FieldVersionSelect from './FieldVersionSelect.vue'
+import { versionFields, compactVersion, resourceVersionIdentity } from '@/utils/resourceVersion'
+import { getFieldVersionFields } from '@/api/fieldPickerVersion'
+import { fieldIdentity, pickerTypeMatches } from '@/utils/fieldPicker'
+import { recentFieldKeys, rememberField, selectedFieldKeys } from '@/utils/fieldPickerHistory'
+import { preferredFieldPageSize, normalizeFieldPageSize, setPreferredFieldPageSize } from '@/utils/fieldPickerPreferences'
+import { canUsePickerAction, fieldPickerTags, matchesFieldTags } from '@/utils/fieldPickerPolicy'
 import {
   Collection as ElIconCollection,
-  EditPen as ElIconEditOutline,
-  Link as ElIconLink,
-  Document as ElIconDocument,
-  Warning as ElIconWarningOutline,
   ArrowDown as ElIconArrowDown,
   Close as ElIconClose,
   Edit as ElIconEdit,
@@ -308,6 +160,7 @@ import {
 import { $emit } from '../../utils/gogocodeTransfer'
 import { varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
 import { formatVarDisplay } from '@/utils/varDisplay'
+import { formatExpressionFormula } from '@/utils/expressionDisplay'
 import { REFERENCE_PICKER_CATEGORIES } from '@/utils/pickerCategories'
 import {
   groupReferenceOptions,
@@ -316,9 +169,13 @@ import {
 import {
   createFunctionOperand,
   createReferenceOperand,
+  createOperationOperand,
+  OPERATION_OPERATORS,
   operandDisplay,
   operandKindMeta,
 } from '@/utils/operand'
+
+const openPickers = []
 
 export default {
   data() {
@@ -342,8 +199,10 @@ export default {
       rightPage: 1,
       objectChildPages: {},
       /** 弹窗尺寸，可通过右下角拖拽调整 */
-      panelWidth: 560,
-      panelHeight: 360,
+      panelWidth: 780,
+      panelHeight: 500,
+      panelCategory: 'all',
+      panelPosition: null,
       maxPanelWidth: 1440,
       maxPanelHeight: 960,
       resizingPanel: false,
@@ -353,15 +212,17 @@ export default {
       pointerFocusPending: false,
       focusOpenTimer: null,
       pendingValuePosition: false,
+      stagedVersions: {},
+      groupVersions: {},
+      pendingVersions: {},
+      groupRestoreRequests: {},
       ElIconSearch: markRaw(ElIconSearch),
     }
   },
   components: {
+    FieldPickerPanel,
+    FieldVersionSelect,
     ElIconCollection,
-    ElIconEditOutline,
-    ElIconLink,
-    ElIconDocument,
-    ElIconWarningOutline,
     ElIconArrowDown,
     ElIconClose,
     ElIconEdit,
@@ -382,8 +243,11 @@ export default {
     groupedByCategory: { type: Boolean, default: true },
     loading: { type: Boolean, default: false },
     disabled: { type: Boolean, default: false },
+    virtualRef: { type: Object, default: null },
     /** 是否允许手动输入自定义变量（不在变量管理中的） */
     allowCustom: { type: Boolean, default: true },
+    editOnInput: { type: Boolean, default: false },
+    clearable: { type: Boolean, default: true },
     /**
      * 指定 value 字段类型：
      * - 'code'（默认）：使用 varCode 作为 option value
@@ -407,9 +271,19 @@ export default {
       type: Array,
       default: () => ['LITERAL', 'PATH', 'REFERENCE'],
     },
-    expectedType: { type: String, default: 'STRING' },
+    expectedType: { type: String, default: '' },
     writableOnly: { type: Boolean, default: false },
+    visibleTags: { type: [Array, Object], default: null },
+    selectableTags: { type: [Array, Object], default: null },
     functions: { type: Array, default: () => [] },
+    pageSize: { type: Number, default: null },
+    versionSelection: { type: Object, default: null },
+    editorMode: Boolean,
+    editorKind: { type: String, default: 'EXPRESSION' },
+    manualInPanel: Boolean,
+    allowExpression: { type: Boolean, default: true },
+    dismissOnOutside: { type: Boolean, default: true },
+    restoreManualOnOpen: { type: Boolean, default: true },
   },
   watch: {
     vars() {
@@ -419,6 +293,7 @@ export default {
         this._autoSwitchIfUnmatched()
       }
       this.restorePendingPosition()
+      if (this.popoverVisible) this.restoreVersionGroup()
     },
     functions() { this.restorePendingPosition() },
     categoryList: {
@@ -455,10 +330,11 @@ export default {
       },
     },
     popoverVisible(val) {
+      if (val) { this.stagedVersions = {}; this.restoreVersionGroup() }
+      this.$emit('visible-change', val)
       this.updateDocumentListener(val)
       this.setPickerInert(!val)
       if (!val) {
-        this.searchText = ''
         this.referenceKeyword = ''
         this.stopPanelResize()
       }
@@ -473,6 +349,54 @@ export default {
     if (this.focusOpenTimer) clearTimeout(this.focusOpenTimer)
   },
   computed: {
+    resolvedPageSize() { return this.pageSize == null ? preferredFieldPageSize.value : normalizeFieldPageSize(this.pageSize) },
+    panelRecentKeys() { return recentFieldKeys.value },
+    panelSelectedKeys() { return [...new Set([this.panelSelectedKey, ...selectedFieldKeys(this.value, this.panelItems, this.selectedItems)].filter(Boolean))] },
+    basePanelItems() {
+      const expected = this.typeFilter || (this.operandMode ? this.expectedType : '')
+      const fields = (!this.operandMode || this.allowsOperandKind('REFERENCE'))
+        ? this.vars.filter(item => this.isWritableOption(item)) : []
+      const functions = this.operandMode && !this.writableOnly && this.allowsOperandKind('FUNCTION')
+        ? this.functions.filter(fn => pickerTypeMatches(fn.returnType, expected) || this.value?.kind === 'FUNCTION' && this.value.versionMode === 'FIXED' && String(fn.id ?? fn.functionId) === String(this.value.functionId)).map(fn => ({
+          _function: true, function: fn, varCode: fn.functionCode || fn.funcCode || fn.functionName || fn.name || '',
+          varLabel: fn.functionLabel || fn.funcName || fn.functionName || fn.label || '', varType: fn.returnType || 'FUNCTION',
+        })) : []
+      if (this.operandMode && !this.writableOnly && this.allowsOperandKind('FUNCTION') && this.value?.kind === 'FUNCTION' && this.value.versionMode === 'FIXED'
+        && !functions.some(item => String(item.function.id ?? item.function.functionId) === String(this.value.functionId))) functions.push({
+        _function: true, function: { ...this.value, id: this.value.functionId, returnType: this.value.valueType }, varCode: this.value.functionCode,
+        varLabel: this.value.label, varType: this.value.valueType,
+      })
+      const operators = this.operandMode && !this.writableOnly && !expected && this.allowsOperandKind('OPERATION')
+        ? OPERATION_OPERATORS.map(operator => ({ _operation: operator, _varId: operator, _refType: 'OPERATOR', _ref: { category: 'operator' }, varCode: operator, varType: 'OPERATOR', varLabel: ({ '+': '加', '-': '减', '*': '乘', '/': '除', '%': '取余', '==': '等于', '!=': '不等于', '>': '大于', '>=': '大于等于', '<': '小于', '<=': '小于等于', '&&': '且', '||': '或' })[operator] })) : []
+      return [...fields, ...functions, ...operators]
+    },
+    panelItems() {
+      let items = this.basePanelItems
+      for (const [key, group] of Object.entries(this.groupVersions)) {
+        if (group.versionMode !== 'FIXED') continue
+        const sample = items.find(item => this.versionGroupKey(item) === key)
+        const category = key.startsWith('model:') ? 'model' : 'object'
+        const prefix = category === 'model' ? 'model' : 'object'
+        items = items.filter(item => this.versionGroupKey(item) !== key).concat((group.fields || []).map(field => ({
+          ...field, ...versionFields(group), _groupVersion: versionFields(group), id: field.refId, _varId: field.refId, _refType: field.refType,
+          varCode: field.code, varLabel: field.label, varType: field.valueType,
+          _ref: { ...sample?._ref, category, [`${prefix}Id`]: group.versionOwnerId, [`${prefix}Code`]: group.ownerCode, [`${prefix}Label`]: group.ownerLabel },
+        })))
+      }
+      return items.map(item => this.versionedItem(item, this.fieldVersionSelection(item)))
+    },
+    inputVersion() { return compactVersion(this.versionSelection || this.value) },
+    panelSelectedKey() {
+      if (this.operandMode && this.value?.kind === 'PATH' && this.value.protocolPath) {
+        const item = this.vars.find(item => item._refType === 'API_CONTEXT' && item.varCode === this.value.value)
+        return item ? fieldIdentity(item) : ''
+      }
+      const selected = this.panelItems.find(item => this.isCurrentOption(item))
+      return selected ? fieldIdentity(selected) : ''
+    },
+    panelPositionStyle() {
+      return this.panelPosition ? { left: this.panelPosition.left + 'px !important', top: this.panelPosition.top + 'px !important', position: 'fixed', transform: 'none' } : {}
+    },
     /** 是否有可选的变量选项 */
     hasVarOptions() {
       return this.vars.length > 0
@@ -492,7 +416,11 @@ export default {
       return true
     },
     referenceInputValue() {
-      if (this.operandMode) return operandDisplay(this.value)
+      if (this.operandMode) {
+        return ['LITERAL', 'PATH', 'REFERENCE'].includes(this.value && this.value.kind)
+          ? operandDisplay(this.value)
+          : formatExpressionFormula(this.value, { humanReadable: true })
+      }
       return this.referenceKeyword || this.displayValue
     },
     operandKindMetaValue() {
@@ -658,6 +586,83 @@ export default {
     },
   },
   methods: {
+    pendingVersionKey(item) { return item._versionGroup ? 'group:' + this.versionGroupKey(item) : fieldIdentity(item) },
+    versionGroupKey(item) { const id = resourceVersionIdentity(item); return id && ['model', 'dataobject'].includes(id.module) ? `${id.module}:${id.ownerId}` : '' },
+    async restoreVersionGroup() {
+      const selected = this.value
+      if (!this.vars.length || this.vars.every(item => item.catalogMode === 'FROZEN' || item.catalogMode === 'UNAVAILABLE')) return
+      if (!this.operandMode || selected?.versionMode !== 'FIXED' || !selected.versionOwnerId || !['MODEL_OUTPUT', 'DATA_OBJECT'].includes(selected.refType)) return
+      const module = selected.refType === 'MODEL_OUTPUT' ? 'model' : 'dataobject'
+      const key = `${module}:${selected.versionOwnerId}`
+      const cached = this.groupVersions[key]
+      if (selected.versionSource !== 'BUSINESS_VERSION' && String(cached?.versionId) === String(selected.versionId) && cached?.versionSource === selected.versionSource) return
+      const request = (this.groupRestoreRequests[key] || 0) + 1
+      this.groupRestoreRequests[key] = request
+      this.pendingVersions['group:' + key] = true
+      try {
+        const response = await getFieldVersionFields({ module, ownerId: selected.versionOwnerId }, selected.versionId, selected.versionSource)
+        if (this.groupRestoreRequests[key] !== request || this.value !== selected || !this.popoverVisible) return
+        this.groupVersions[key] = { ...response.data, versionMode: 'FIXED' }
+        this.$nextTick(() => this.$refs.fieldPanel?.locateSelected?.())
+      } catch (error) { if (this.groupRestoreRequests[key] === request && this.value === selected && this.popoverVisible) this.$message?.error(error.message || '历史字段加载失败') }
+      finally { if (this.groupRestoreRequests[key] === request) this.pendingVersions['group:' + key] = false }
+    },
+    fieldVersionSelection(item) {
+      if (!item) return {}
+      if (item._versionGroup) return this.groupVersions[this.versionGroupKey(item)] || versionFields(item)
+      return this.stagedVersions[fieldIdentity(item)] || (this.operandMode && this.isCurrentOption(item) ? this.value : versionFields(item)) || {}
+    },
+    versionedItem(item, selection) {
+      if (!selection?.versionMode) return item
+      const result = { ...item, ...versionFields(selection) }
+      if (selection.versionMode !== 'FIXED') return result
+      if (item._function) {
+        const code = selection.funcCode || selection.functionCode
+        const label = selection.funcName || selection.label
+        result.function = { ...item.function, ...selection, id: item.function.id ?? item.function.functionId,
+          funcCode: code, functionCode: code, funcName: label, functionLabel: label,
+          returnType: selection.returnType || selection.valueType || item.function.returnType }
+        result.varCode = result.function.funcCode; result.varLabel = result.function.funcName; result.varType = result.function.returnType
+      }
+      else {
+        if (selection.code) result.varCode = selection.code
+        if (selection.label) { result.varLabel = selection.label; result.varLabelText = selection.label }
+        if (selection.valueType) result.varType = selection.valueType
+        if (Object.hasOwn(selection, 'constantValue')) result.constantValue = selection.constantValue
+      }
+      return result
+    },
+    changeFieldVersion(item, selection) {
+      if (!item) return
+      if (item._versionGroup) {
+        this.groupVersions[this.versionGroupKey(item)] = selection
+        this.stagedVersions = {}
+        return
+      }
+      const current = this.basePanelItems.find(candidate => fieldIdentity(candidate) === fieldIdentity(item))
+      if (selection.versionMode === 'LATEST' && !current) { this.$message?.warning('最新版中没有此字段，请在父级切换最新版后重新选择'); return }
+      const base = current || item
+      this.stagedVersions[fieldIdentity(item)] = selection
+      if (!this.isCurrentOption(item)) return
+      const updated = this.versionedItem(base, selection)
+      if (!pickerTypeMatches(updated.varType, this.typeFilter || this.expectedType)) {
+        this.$message?.warning('此版本的字段类型不符合当前位置要求，请重新选择字段')
+        return
+      }
+      const operand = updated._function ? createFunctionOperand(updated.function, this.value?.args || []) : createReferenceOperand(updated)
+      if (this.value?.kind === 'PATH') Object.assign(operand, { kind: 'PATH', relativePath: this.value.relativePath,
+        code: operand.code + (this.value.relativePath || ''), value: operand.value + (this.value.relativePath || '') })
+      $emit(this, 'update:value', operand)
+      $emit(this, 'select', operand)
+    },
+    canUseAction(kind) { return canUsePickerAction(kind, this.visibleTags, this.selectableTags) },
+    onPageSizeChange(value) {
+      const size = setPreferredFieldPageSize(value)
+      this.$emit('update:pageSize', size)
+      this.$emit('page-size', size)
+    },
+    requestExpression() { this.$emit('expression') },
+    resizePanel(size) { this.panelWidth = size.width; this.panelHeight = size.height },
     referenceValue(item) {
       if (!item) return ''
       const id = item._varId != null ? item._varId : item.id
@@ -931,7 +936,7 @@ export default {
         return this.value.refId != null && !!this.value.refType &&
           this.optionIdentityKey(item) === expectedKey
       }
-      return this.valueKey === 'id' ? String(item.id) === String(this.value) : item.varCode === this.value
+      return this.valueKey === 'reference' ? this.referenceValue(item) === String(this.value) : this.valueKey === 'id' ? String(item.id) === String(this.value) : item.varCode === this.value
     },
     resolveSelectedOption(item) {
       if (item == null || item === '') return null
@@ -1111,6 +1116,16 @@ export default {
     },
     /** 行点击：字段分组展开嵌套，其他直接选中 */
     onItemClick(item) {
+      if (this.pendingVersions[this.pendingVersionKey(item)] || this.pendingVersions['group:' + this.versionGroupKey(item)]) return
+      if (item.disabled) return
+      const tags = fieldPickerTags(item)
+      if (!matchesFieldTags(tags, this.visibleTags) || !matchesFieldTags(tags, this.selectableTags)) return
+      if (!this.isFieldGroup(item)) rememberField(item)
+      if (item._operation) {
+        if (!this.allowExpression) this.closePopover()
+        this.$emit('expression', createOperationOperand([{ operand: null }, { operator: item._operation, operand: null }]))
+        return
+      }
       this.pendingValuePosition = false
       if (this.isFieldGroup(item)) {
         var groupKey = this.fieldGroupKey(item) || item.varCode
@@ -1141,9 +1156,10 @@ export default {
       $emit(this, 'select', item)
       this.closePopover()
     },
-    closePopover() {
+    closePopover({ restoreFocus = true } = {}) {
       this.suppressFocusOpen = true
-      this.moveFocusBeforeClose()
+      if (restoreFocus) this.moveFocusBeforeClose()
+      else if (this.getPopoverElement()?.contains(document.activeElement)) document.activeElement.blur()
       this.popoverVisible = false
       var popover = this.$refs.popover
       if (popover && typeof popover.hide === 'function') popover.hide()
@@ -1183,6 +1199,7 @@ export default {
       return null
     },
     getReferenceElement() {
+      if (this.virtualRef) return this.virtualRef
       var reference = this.$refs.reference
       return reference && reference.$el ? reference.$el : reference || null
     },
@@ -1247,6 +1264,7 @@ export default {
     },
     onReferenceInput(value) {
       if (this.operandMode) return
+      if (this.editOnInput) $emit(this, 'update:value', value)
       this.referenceKeyword = value || ''
       this.searchText = value || ''
       this.openPopover()
@@ -1273,12 +1291,18 @@ export default {
     },
     openPopover(options = {}) {
       if (this.disabled) return
-      if (this.groupedByCategory && (this.hasVarOptions || this.operandMode)) {
+      if (this.groupedByCategory && (this.hasVarOptions || this.operandMode || !this.allowCustom)) {
         var wasVisible = this.popoverVisible
+        if (!wasVisible) {
+          // 当前引用框位于另一个选择器面板内时，它是该面板的子选择器。
+          // 切换单元格则关闭旧分支，草稿仍由各 OperandPicker 自己保留。
+          for (const picker of [...openPickers]) {
+            if (picker !== this && !picker.getPopoverElement()?.contains(this.$el)) picker.closePopover({ restoreFocus: false })
+          }
+        }
         this.setPickerInert(false)
         this.popoverVisible = true
-        if (!this.referenceKeyword) this.searchText = ''
-        if (!wasVisible && !this.referenceKeyword && this.value != null && this.value !== '') {
+        if (!this.editorMode && !wasVisible && !this.referenceKeyword && this.value != null && this.value !== '') {
           this.pendingValuePosition = !this.focusCurrentValueInPicker(options)
         }
       }
@@ -1291,9 +1315,9 @@ export default {
     focusCurrentValueInPicker(options = {}) {
       var option
       if (this.operandMode && this.value && typeof this.value === 'object') {
-        if (this.value.kind === 'LITERAL' || this.value.kind === 'PATH') {
+        if (this.value.kind === 'LITERAL' || (this.value.kind === 'PATH' && !this.value.protocolPath)) {
           this.positionPickerCategory('manual')
-          if (options.restoreManual !== false && this.allowsOperandKind(this.value.kind)) this.requestManualEdit(this.value.kind)
+          if (options.restoreManual !== false && this.restoreManualOnOpen && this.allowsOperandKind(this.value.kind)) this.requestManualEdit(this.value.kind)
           return true
         }
         if (this.value.kind === 'FUNCTION') {
@@ -1447,18 +1471,26 @@ export default {
     },
     updateDocumentListener(visible) {
       if (typeof document === 'undefined') return
+      const index = openPickers.indexOf(this)
+      if (index >= 0) openPickers.splice(index, 1)
+      if (visible) openPickers.push(this)
       var method = visible ? 'addEventListener' : 'removeEventListener'
-      document[method]('mousedown', this.onDocumentMouseDown, true)
+      document[method]('pointerdown', this.onDocumentPointerDown, true)
       document[method]('keydown', this.onDocumentKeyDown, true)
     },
     onDocumentKeyDown(event) {
       if (!this.popoverVisible || !event || event.key !== 'Escape') return
+      if (openPickers.at(-1) !== this) return
+      const active = event.target
+      if (this.editorMode && this.editorKind === 'EXPRESSION' && active?.closest?.('input, textarea, [contenteditable="true"], [role="combobox"]')) return
+      if (active?.closest?.('.monaco-editor, [role="combobox"][aria-expanded="true"]')) return
       event.preventDefault()
       event.stopPropagation()
+      event.stopImmediatePropagation?.()
       this.closePopover()
     },
-    onDocumentMouseDown(event) {
-      if (!this.popoverVisible) return
+    onDocumentPointerDown(event) {
+      if (!this.popoverVisible || !this.dismissOnOutside) return
       var target = event.target
       var root = this.$el
       var popper = this.getPopoverElement()
@@ -1472,7 +1504,19 @@ export default {
       ) {
         return
       }
-      this.closePopover()
+      // 子选择器和下拉菜单会传送到 body，沿 ARIA 关联识别整条浮层分支。
+      const popups = new Set(popper ? [popper] : [])
+      for (const popup of popups) {
+        for (const control of popup.querySelectorAll('[aria-controls], [aria-owns], [aria-describedby]')) {
+          const ids = ['aria-controls', 'aria-owns', 'aria-describedby'].map(name => control.getAttribute(name) || '').join(' ').trim().split(/\s+/)
+          for (const id of ids) {
+            const owned = id && document.getElementById(id)
+            if (owned?.contains(target)) return
+            if (owned) popups.add(owned)
+          }
+        }
+      }
+      this.closePopover({ restoreFocus: false })
     },
     startPanelResize(event) {
       this.beginPanelResize(
@@ -1598,9 +1642,9 @@ export default {
       return (this.allowedKinds || []).includes(kind)
     },
     requestManualEdit(kind) {
-      if (!this.allowsOperandKind(kind)) return
+      if (!this.allowsOperandKind(kind) || !this.canUseAction(kind)) return
       $emit(this, 'manual-edit', kind)
-      this.closePopover()
+      if (!this.manualInPanel) this.closePopover()
     },
     emitOperand(operand) {
       $emit(this, 'update:value', operand)
@@ -1663,7 +1707,7 @@ export default {
       return map[varType] || '?'
     },
   },
-  emits: ['input', 'update:value', 'select', 'manual-edit', 'clear'],
+  emits: ['input', 'update:value', 'select', 'manual-edit', 'expression', 'editor-back', 'page-size', 'update:pageSize', 'clear', 'visible-change'],
 }
 </script>
 
@@ -1671,10 +1715,13 @@ export default {
 .var-picker-popover {
   box-sizing: content-box !important;
   padding: 0 !important;
+  border-radius: 0 !important;
+  max-width: calc(100vw - 8px);
 }
 </style>
 
 <style scoped>
+.vp-input-version { color:var(--el-color-primary); background:var(--tianshu-info-bg); padding:1px 4px; margin-right:3px; font-size:11px; white-space:nowrap; }
 .var-picker-wrap {
   display: flex;
   flex: 1 1 auto;
@@ -1816,349 +1863,4 @@ export default {
   text-align: center;
 }
 
-/* ── 两列弹窗面板 ── */
-.vp-panel {
-  display: flex;
-  user-select: none;
-  position: relative;
-  box-sizing: border-box;
-  overflow: hidden;
-  min-width: 520px;
-  min-height: 300px;
-  max-width: 1440px;
-  max-height: 960px;
-}
-.vp-left {
-  width: 132px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--tianshu-border-subtle);
-  overflow-y: auto;
-}
-.vp-cat-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  font-size: 12px;
-  color: var(--tianshu-text-secondary);
-  cursor: pointer;
-  transition: background 0.15s;
-  border-bottom: 1px solid var(--tianshu-border-subtle);
-  white-space: nowrap;
-}
-.vp-cat-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.vp-cat-item:hover {
-  background: var(--tianshu-bg-muted);
-}
-.vp-cat-item--active {
-  background: var(--tianshu-info-bg);
-  color: var(--tianshu-info-text);
-  font-weight: 600;
-  border-right: 2px solid var(--el-color-primary);
-}
-.vp-cat-count {
-  flex: none;
-  min-width: 24px;
-  box-sizing: border-box;
-  text-align: center;
-  font-size: 10px;
-  color: var(--tianshu-text-tertiary);
-  background: var(--tianshu-bg-muted);
-  padding: 1px 5px;
-  border-radius: 8px;
-}
-.vp-cat-item--active .vp-cat-count {
-  background: var(--tianshu-info-bg);
-  color: var(--tianshu-info-text);
-}
-.vp-manual {
-  padding: 20px;
-  box-sizing: border-box;
-  overflow-y: auto;
-}
-.vp-manual-title {
-  color: var(--tianshu-text-primary);
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 12px;
-}
-.vp-manual-types {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-.vp-manual-type {
-  display: grid;
-  grid-template-columns: 26px 1fr;
-  gap: 3px 8px;
-  padding: 14px;
-  border: 1px solid var(--tianshu-border);
-  border-radius: 6px;
-  background: var(--tianshu-bg-surface);
-  color: var(--tianshu-text-primary);
-  cursor: pointer;
-  text-align: left;
-}
-.vp-manual-type i {
-  grid-row: 1 / 3;
-  color: var(--tianshu-info-text);
-  font-size: 20px;
-  align-self: center;
-}
-.vp-manual-type span {
-  font-weight: 600;
-}
-.vp-manual-type small {
-  color: var(--tianshu-text-tertiary);
-  line-height: 1.4;
-}
-.vp-manual-type:hover {
-  border-color: var(--tianshu-info-text);
-  background: var(--tianshu-info-bg);
-}
-.vp-right {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.vp-search {
-  padding: 8px 10px 6px;
-  border-bottom: 1px solid var(--tianshu-border-subtle);
-  flex-shrink: 0;
-}
-.vp-search .el-input {
-  width: 100%;
-}
-.vp-table-wrap {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-}
-.vp-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-.vp-th {
-  background: var(--tianshu-bg-muted);
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--tianshu-border-subtle);
-  font-weight: 600;
-  color: var(--tianshu-text-secondary);
-  text-align: left;
-  white-space: nowrap;
-  position: sticky;
-  top: 0;
-  z-index: 1;
-}
-.vp-th--type {
-  width: 72px;
-  text-align: center;
-  padding: 8px 4px;
-}
-.vp-th--code {
-  width: 130px;
-}
-.vp-th--name {
-  min-width: 80px;
-}
-.vp-row {
-  cursor: pointer;
-  transition: background 0.1s;
-}
-.vp-row:hover {
-  background: var(--tianshu-bg-muted);
-}
-.vp-row--selected {
-  background: var(--tianshu-info-bg);
-}
-.vp-row--selected:hover {
-  background: var(--tianshu-bg-hover);
-}
-.vp-td {
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--tianshu-border-subtle);
-  color: var(--tianshu-text-primary);
-}
-.vp-td--type {
-  text-align: center;
-  padding: 7px 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-}
-.vp-td--code {
-  font-family: 'Consolas', 'Monaco', monospace;
-  font-size: 11px;
-  color: var(--tianshu-text-tertiary);
-}
-.vp-td--name {
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.vp-empty {
-  text-align: center;
-  padding: 30px 0;
-  color: var(--tianshu-text-tertiary);
-}
-.vp-children-row {
-  background: var(--tianshu-bg-soft);
-}
-.vp-children-td {
-  padding: 6px 12px;
-}
-.vp-children-wrap {
-  border: 1px solid var(--tianshu-border-subtle);
-  border-radius: 4px;
-  overflow: hidden;
-}
-.vp-children-title {
-  background: var(--tianshu-bg-muted);
-  padding: 4px 10px;
-  font-size: 11px;
-  color: var(--tianshu-text-tertiary);
-  border-bottom: 1px solid var(--tianshu-border-subtle);
-}
-.vp-children-list {
-  max-height: 160px;
-  overflow-y: auto;
-}
-.vp-child-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-.vp-child-item:hover {
-  background: var(--tianshu-info-bg);
-}
-.vp-child-item--selected {
-  background: var(--tianshu-bg-hover);
-}
-.vp-child-path {
-  font-family: 'Consolas', 'Monaco', monospace;
-  font-size: 11px;
-  color: var(--tianshu-text-tertiary);
-  flex-shrink: 0;
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.vp-child-name {
-  color: var(--tianshu-text-primary);
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.vp-pager {
-  flex-shrink: 0;
-  padding: 6px 8px;
-  border-top: 1px solid var(--tianshu-border-subtle);
-  text-align: right;
-  background: var(--tianshu-bg-surface);
-}
-.vp-mini-pager {
-  padding: 4px 8px 6px;
-  text-align: right;
-  border-top: 1px solid var(--tianshu-border-subtle);
-  background: var(--tianshu-bg-surface);
-}
-.vp-resize-handle {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 18px;
-  height: 18px;
-  cursor: nwse-resize;
-  touch-action: none;
-  z-index: 5;
-}
-.vp-resize-handle::after {
-  content: '';
-  position: absolute;
-  right: 3px;
-  bottom: 3px;
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid var(--tianshu-border-strong);
-  border-bottom: 2px solid var(--tianshu-border-strong);
-}
-.vp-resize-handle:hover::after {
-  border-color: var(--tianshu-info-text);
-}
-
-/* ── 类型单字符标识 ── */
-.vp-type-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: 'Consolas', 'Monaco', monospace;
-  color: #fff;
-  flex-shrink: 0;
-}
-.vp-type-badge--sm {
-  width: 16px;
-  height: 16px;
-  font-size: 10px;
-  border-radius: 3px;
-}
-/* 字符串 s - 蓝色 */
-.vp-type-badge--s {
-  background: var(--el-color-primary);
-}
-/* 整数 i - 橙色 */
-.vp-type-badge--i {
-  background: #e6a23c;
-}
-/* 布尔 b - 绿色 */
-.vp-type-badge--b {
-  background: #67c23a;
-}
-/* 日期 d - 紫色 */
-.vp-type-badge--d {
-  background: #9c27b0;
-}
-/* 枚举 e - 红色 */
-.vp-type-badge--e {
-  background: #f56c6c;
-}
-/* 对象 o - 青色 */
-.vp-type-badge--o {
-  background: #00bcd4;
-}
-/* 列表 l - 黄色 */
-.vp-type-badge--l {
-  background: #ff9800;
-}
-/* 映射 m - 灰色 */
-.vp-type-badge--m {
-  background: #64748b;
-}
-/* 模型 M - 绿色 */
-.vp-type-badge--M {
-  background: #13c2c2;
-}
-/* 默认 ? - 浅灰 */
-.vp-type-badge--\? {
-  background: #64748b;
-}
 </style>

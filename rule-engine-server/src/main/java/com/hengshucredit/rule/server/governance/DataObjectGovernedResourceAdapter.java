@@ -145,6 +145,16 @@ public class DataObjectGovernedResourceAdapter
 
     private Map<Long, Long> applyFields(Long resourceId,
                                       Map<String, Object> snapshot) {
+        return applyFields(resourceId, snapshot, false);
+    }
+
+    @Override
+    protected AppliedResource applyAggregateWithResult(ApprovalApplyContext context, AppliedResource applied, Map<String, Object> snapshot) {
+        Map<Long, Long> fields = applyFields(applied.resourceId(), snapshot, context.reuseVersion());
+        return new AppliedResource(applied.resourceId(), applied.versionNo(), applied.effectiveStatus(), applied.artifactId(), fields);
+    }
+
+    private Map<Long, Long> applyFields(Long resourceId, Map<String, Object> snapshot, boolean reuse) {
         List<RuleDataObjectField> existing = fieldMapper.selectList(
                 new LambdaQueryWrapper<RuleDataObjectField>()
                         .eq(RuleDataObjectField::getObjectId, resourceId));
@@ -201,13 +211,15 @@ public class DataObjectGovernedResourceAdapter
                         && existingById.containsKey(clientId)) {
                     fieldMapper.updateById(field);
                 } else {
-                    field.setId(null);
+                    if (reuse && clientId != null && fieldMapper.selectById(clientId) != null)
+                        throw new IllegalArgumentException("历史字段 ID 已被其他对象占用，不能复用原版本");
+                    if (!reuse) field.setId(null);
                     fieldMapper.insert(field);
                 }
                 if (clientId != null) {
                     remappedIds.put(clientId, field.getId());
                 }
-                replaceOptions(field.getId(), draft.options());
+                replaceOptions(field.getId(), draft.options(), reuse);
                 pending.remove(index);
                 progressed = true;
             }
@@ -337,13 +349,15 @@ public class DataObjectGovernedResourceAdapter
     }
 
     private void replaceOptions(
-            Long fieldId, List<RuleDataObjectFieldOption> options) {
+            Long fieldId, List<RuleDataObjectFieldOption> options, boolean reuse) {
         optionMapper.delete(new LambdaQueryWrapper<
                         RuleDataObjectFieldOption>()
                 .eq(RuleDataObjectFieldOption::getFieldId, fieldId));
         for (int index = 0; index < options.size(); index++) {
             RuleDataObjectFieldOption option = options.get(index);
-            option.setId(null);
+            if (reuse && option.getId() != null && optionMapper.selectById(option.getId()) != null)
+                throw new IllegalArgumentException("历史选项 ID 已被其他字段占用，不能复用原版本");
+            if (!reuse) option.setId(null);
             option.setFieldId(fieldId);
             option.setSortOrder(index);
             optionMapper.insert(option);

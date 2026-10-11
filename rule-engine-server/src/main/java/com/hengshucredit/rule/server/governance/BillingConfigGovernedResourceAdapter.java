@@ -248,20 +248,24 @@ public class BillingConfigGovernedResourceAdapter
     }
 
     @Override
+    public boolean supportsDraftWorkspace() { return true; }
+
+    @Override
     public AppliedResource apply(ApprovalApplyContext context) {
         RuleBillingConfig config = JSON.parseObject(
                 context.snapshot().snapshotJson(),
                 RuleBillingConfig.class);
         String action = upper(context.action(), "UPDATE");
         String status = switch (action) {
+            case "DRAFT_CREATE", "DRAFT_UPDATE" -> "DRAFT";
             case "CREATE", "ENABLE", "RESTORE" -> "ACTIVE";
             case "DISABLE" -> "DISABLED";
-            case "DELETE" -> "DELETED";
+            case "DELETE", "DRAFT_DELETE" -> "DELETED";
             default -> effectiveStatus(config.getStatus());
         };
         config.setStatus("ACTIVE".equals(status) ? 1
                 : "DELETED".equals(status) ? -1 : 0);
-        if ("CREATE".equals(action)) {
+        if (context.insertRoot()) {
             config.setId(null);
             if (billingMapper.insert(config) != 1
                     || config.getId() == null) {

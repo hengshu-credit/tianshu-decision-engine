@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
+
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.core.compiler.ConstantValueCodec;
@@ -43,10 +45,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
 @Service
 public class VariableSourceResolver {
+    @Resource @Lazy private ResourceVersionService resourceVersions;
     @Resource private ExternalApiConsumerService externalApiConsumerService;
     @Resource @org.springframework.context.annotation.Lazy private DataObjectSourceResolver dataObjectSourceResolver;
 
@@ -116,6 +120,38 @@ public class VariableSourceResolver {
         return resolveInto(projectId, target, options, null);
     }
 
+    /** 固定版本只替换选定的变量配置；输入值仍取本次请求，来源调用遵守原有离线/跳过策略。 */
+    public Object resolveVersion(RuleVariable variable, Map<String, Object> values, VariableResolveOptions options) {
+        String path = resolveScriptName(variable);
+        Map<String, Object> resolved = new LinkedHashMap<>(values);
+        if ("INPUT".equals(variable.getVarSource()) || variable.getVarSource() == null) return resolved.get(path);
+        var snapshot = options.getRuntimeSnapshot();
+        List<RuleVariable> variables = new ArrayList<>(snapshot == null
+                ? variableService.listByProject(options.getExecutionProjectId(), null) : snapshot.getVariables());
+        variables.removeIf(item -> java.util.Objects.equals(item.getId(), variable.getId()));
+        variable.setProjectId(options.getExecutionProjectId());
+        variables.add(variable);
+        options.setRequiredScriptNames(Set.of(path));
+        resolved.remove(path);
+        resolveIntoSnapshot(variables, snapshot == null ? loadProjectModels(options.getExecutionProjectId()) : snapshot.getModels(),
+                snapshot == null ? new ArrayList<>(options.getDerivedFunctions() == null ? List.of() : options.getDerivedFunctions().values()) : snapshot.getFunctions(), resolved, options);
+        return resolved.get(path);
+    }
+
+    public Object resolveReferencedVariable(Long id, Map<String, Object> values, VariableResolveOptions options) {
+        var snapshot = options.getRuntimeSnapshot();
+        RuleVariable variable = snapshot == null ? variableService.getById(id) : snapshot.getVariables().stream()
+                .filter(item -> id.equals(item.getId())).findFirst().orElse(null);
+        if (variable == null) throw new IllegalArgumentException("历史对象依赖的变量不存在：" + id);
+        return resolveVersion(variable, values, options);
+    }
+
+    Set<String> versionDependencies(RuleVariable variable, Long projectId) {
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setDerivedReferencePaths(variableService.buildRefScriptNameMap(projectId));
+        return collectVariableDependencies(variable, options);
+    }
+
     public Map<String, Object> executeModel(RuleModel model, Map<String, Object> input, Long projectId) {
         VariableResolveOptions options = VariableResolveOptions.defaults();
         options.setRequiredScriptNames(Set.of(model.getModelCode()));
@@ -127,6 +163,13 @@ public class VariableSourceResolver {
 
     private Map<String, Object> resolveInto(Long projectId, Map<String, Object> target,
                                             VariableResolveOptions options, RuleModel explicitModel) {
+        try (var versions = resourceVersions == null ? null : resourceVersions.bind(projectId, target, options)) {
+            return resolveIntoCurrent(projectId, target, options, explicitModel);
+        }
+    }
+
+    private Map<String, Object> resolveIntoCurrent(Long projectId, Map<String, Object> target,
+                                                   VariableResolveOptions options, RuleModel explicitModel) {
         VariableResolveOptions effectiveOptions = options == null ? VariableResolveOptions.defaults() : options;
         Map<String, Object> resolvedParams = target == null ? new LinkedHashMap<String, Object>() : target;
         effectiveOptions.setExecutionProjectId(projectId);
@@ -169,6 +212,13 @@ public class VariableSourceResolver {
                                                    List<RuleFunction> functions,
                                                    Map<String, Object> target,
                                                    VariableResolveOptions options) {
+        try (var versions = resourceVersions == null ? null : resourceVersions.bind(options == null ? null : options.getExecutionProjectId(), target, options)) {
+            return resolveSnapshot(variables, models, functions, target, options);
+        }
+    }
+
+    private Map<String, Object> resolveSnapshot(List<RuleVariable> variables, List<RuleModel> models,
+                                               List<RuleFunction> functions, Map<String, Object> target, VariableResolveOptions options) {
         VariableResolveOptions effectiveOptions = options == null
                 ? VariableResolveOptions.defaults() : options;
         List<RuleVariable> frozenVariables = variables == null ? Collections.emptyList() : variables;
@@ -571,6 +621,10 @@ public class VariableSourceResolver {
             try {
                 results.add(joinResolution(future));
             } catch (RuntimeException | Error e) {
+                if (Thread.currentThread().isInterrupted()) {
+                    futures.forEach(pending -> pending.cancel(true));
+                    throw e;
+                }
                 if (firstFailure == null) {
                     firstFailure = e;
                 }
@@ -644,8 +698,11 @@ public class VariableSourceResolver {
     private SourceResolutionResult joinResolution(
             CompletableFuture<SourceResolutionResult> future) {
         try {
-            return future.join();
-        } catch (CompletionException e) {
+            return future.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("变量来源解析被中断", e);
+        } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             if (cause instanceof RuntimeException) {
                 throw (RuntimeException) cause;
@@ -653,7 +710,7 @@ public class VariableSourceResolver {
             if (cause instanceof Error) {
                 throw (Error) cause;
             }
-            throw e;
+            throw new CompletionException(cause);
         }
     }
 
@@ -820,6 +877,8 @@ public class VariableSourceResolver {
         options.mergeSourceStates(result.getSourceStates());
         values.remove(scriptName);
         if (result.getFailure() != null) {
+            ExecutionCapacityException capacity = ExecutionCapacityException.find(result.getFailure());
+            if (capacity != null) throw capacity;
             if (result.getFailure() instanceof RuleRuntimeCallLogService.HistoryLogWriteException) throw result.getFailure();
             if (result.getFailure() instanceof ExternalApiWaitingException
                     || result.getFailure() instanceof RuleTerminationSignal) throw result.getFailure();
@@ -857,6 +916,8 @@ public class VariableSourceResolver {
             }
             resolvedParams.put(scriptName, normalizeSourceValue(variable, value, effectiveOptions));
         } catch (Exception e) {
+            ExecutionCapacityException capacity = ExecutionCapacityException.find(e);
+            if (capacity != null) throw capacity;
             if (e instanceof RuleRuntimeCallLogService.HistoryLogWriteException failure) throw failure;
             if (e instanceof ExternalApiWaitingException waiting) {
                 effectiveOptions.recordSourceState("VARIABLE", variable.getId(), "OUTCOME", "WAITING_EXTERNAL");
@@ -1137,6 +1198,7 @@ public class VariableSourceResolver {
             Map<String, String> paths = options != null ? options.getDerivedReferencePaths() : null;
             if (paths == null && variableService != null) paths = variableService.buildRefScriptNameMap(variable.getProjectId());
             collectApiOperandDependencies(config.get("requestOverrides"), paths, dependencies);
+            collectApiOperandDependencies(config.get("inputOverrides"), paths, dependencies);
             RuleExternalApiConfig api = apiConfigMapper == null ? null : apiConfigMapper.selectById(longValue(config.get("apiConfigId")));
             if (api != null) collectApiOperandDependencies(effectiveApiInputs(ExternalApiRequestPlan.specification(api), config.get("requestOverrides")), paths, dependencies);
         } else if ("DB".equals(varSource)) {
@@ -1155,6 +1217,7 @@ public class VariableSourceResolver {
             if (queryOperands instanceof Iterable) {
                 for (Object operand : (Iterable<?>) queryOperands) {
                     for (JSONObject reference : OperandValueResolver.collectReferences(JSON.toJSONString(operand))) {
+                        if ("FIXED".equals(reference.getString("versionMode"))) continue;
                         String path = options == null || options.getDerivedReferencePaths() == null ? null
                                 : options.getDerivedReferencePaths().get(reference.getString("refType") + ":" + reference.getLong("refId"));
                         dependencies.add(path == null
@@ -1234,6 +1297,7 @@ public class VariableSourceResolver {
     private Set<String> modelOperandDependencies(String operand, VariableResolveOptions options) {
         Set<String> names = new LinkedHashSet<>();
         for (JSONObject reference : OperandValueResolver.collectReferences(operand)) {
+            if ("FIXED".equals(reference.getString("versionMode"))) continue;
             String path = options == null || options.getDerivedReferencePaths() == null ? null
                     : options.getDerivedReferencePaths().get(reference.getString("refType") + ":" + reference.getLong("refId"));
             if (path == null) path = firstText(reference.getString("value"), reference.getString("code"));
@@ -1270,6 +1334,12 @@ public class VariableSourceResolver {
                             ? ruleModelService.execute(model.getId(), modelParams)
                             : ruleModelService.executeSnapshot(model, modelParams, functions);
                     if (!modelSucceeded(result)) {
+                        ExecutionCapacityException.Resource resource = result == null ? null
+                                : ExecutionCapacityException.Resource.fromCode(result.get("capacityResource"));
+                        if (resource != null && "THROTTLED".equals(result.get("executionStatus"))) {
+                            throw new ExecutionCapacityException(resource,
+                                    "模型[" + modelCode + "]执行未受理：" + modelError(result));
+                        }
                         throw new IllegalStateException("模型[" + modelCode + "]执行失败：" + modelError(result));
                     }
                     completeRuntimeTrace(runtimeTrace, true, null, System.currentTimeMillis() - start);
@@ -1282,6 +1352,8 @@ public class VariableSourceResolver {
                 }
             });
         } catch (RuntimeException e) {
+            ExecutionCapacityException capacity = ExecutionCapacityException.find(e);
+            if (capacity != null) throw capacity;
             if (!requiresModelOutputStatus(detail, options)) throw e;
             recordModelOutcome(detail, options, isTimeout(e) ? "TIMEOUT" : "ERROR", null);
             resolvedParams.put(modelCode, new LinkedHashMap<String, Object>());
@@ -1627,6 +1699,13 @@ public class VariableSourceResolver {
 
     public Map<String, Object> previewVariable(
             RuleVariable variable, Map<String, Object> inputParams) {
+        try (var versions = resourceVersions == null ? null : resourceVersions.bind(variable == null ? null : variable.getProjectId(),
+                inputParams == null ? Map.of() : inputParams, VariableResolveOptions.defaults())) {
+            return previewVersionedVariable(variable, inputParams);
+        }
+    }
+
+    private Map<String, Object> previewVersionedVariable(RuleVariable variable, Map<String, Object> inputParams) {
         if (variable == null) {
             throw new IllegalArgumentException("字段草稿不能为空");
         }
@@ -1680,7 +1759,7 @@ public class VariableSourceResolver {
         Map<String, Object> response;
         if (externalApiConsumerService != null) {
             response = externalApiConsumerService.resolve(variable.getProjectId(), apiConfigId, config, requestParams,
-                    options, variableCacheKey(variable));
+                    options, variableCacheKey(variable), params);
         } else {
             String cacheKey = externalApiInvokeService.invocationCacheKey(apiConfigId, requestParams);
             invocationCache.associateResponse(variableCacheKey(variable), cacheKey);

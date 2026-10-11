@@ -94,6 +94,7 @@ public class ConsoleAuthControllerTest {
         MockHttpSession session = new MockHttpSession();
         session.setAttribute(properties.getSessionUserIdAttribute(), 9L);
         session.setAttribute(properties.getSessionUsernameAttribute(), "reviewer");
+        session.setAttribute(properties.getSessionPermissionVersionAttribute(), 4L);
 
         JSONObject data = response(mockMvc.perform(
                         get("/api/auth/console/me").session(session))
@@ -104,6 +105,19 @@ public class ConsoleAuthControllerTest {
         assertEquals("reviewer", data.getString("displayName"));
         assertTrue(data.getJSONArray("roleCodes").contains("REVIEWER"));
         assertTrue(data.getJSONArray("permissions").contains("approval:view"));
+    }
+
+    @Test
+    public void currentUserRejectsStalePermissionVersionWithoutDestroyingConcurrentSessionStorage() throws Exception {
+        RuleEngineConsoleLoginProperties properties = properties(true);
+        MockHttpSession session = new MockHttpSession();
+        session.setAttribute(properties.getSessionUsernameAttribute(), "reviewer");
+        session.setAttribute(properties.getSessionUserIdAttribute(), 9L);
+        session.setAttribute(properties.getSessionPermissionVersionAttribute(), 3L);
+        JSONObject body = response(mockMvc(properties, accountService()).perform(get("/api/auth/console/me").session(session)).andReturn());
+        assertEquals(401, body.getIntValue("code"));
+        assertFalse(session.isInvalid());
+        org.junit.Assert.assertNull(session.getAttribute(properties.getSessionUsernameAttribute()));
     }
 
     private static MockMvc mockMvc(boolean loginEnabled) {

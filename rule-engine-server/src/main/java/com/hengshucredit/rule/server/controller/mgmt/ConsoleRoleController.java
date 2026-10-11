@@ -28,7 +28,7 @@ public class ConsoleRoleController {
     private ConsoleOperatorResolver operatorResolver;
 
     @GetMapping("/roles")
-    @RequirePermission("role:view")
+    @RequirePermission(value = "role:view", anyOf = {"account:manage", "role:manage"})
     public Result<List<ConsoleAccountManagementService.ConsoleRoleDetail>> roles() {
         return Result.ok(accountService.listRoles());
     }
@@ -50,7 +50,7 @@ public class ConsoleRoleController {
     }
 
     @GetMapping("/permissions")
-    @RequirePermission("role:view")
+    @RequirePermission(value = "role:view", anyOf = {"account:manage", "role:manage"})
     public Result<List<ConsolePermission>> permissions() {
         return Result.ok(accountService.listPermissions());
     }

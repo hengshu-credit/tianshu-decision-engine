@@ -5,29 +5,30 @@
     box-sizing: border-box;
     padding: 12px;
     overflow: visible;
-    border: 1px solid var(--lineage-node-color, var(--tianshu-border));
-    border-left-width: 4px;
-    border-radius: 6px;
-    background: var(--tianshu-flow-node-bg, var(--tianshu-bg-surface));
-    box-shadow: var(--tianshu-shadow-small);
+    border: 1px solid var(--lineage-node-border, var(--tianshu-border));
+    border-left: 3px solid var(--lineage-node-color, var(--tianshu-border));
+    border-radius: 8px;
+    background: var(--lineage-node-fill, var(--tianshu-bg-surface));
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--tianshu-shadow-color) 82%, transparent),
+      inset 0 0 0 1px color-mix(in srgb, var(--lineage-node-color, var(--tianshu-border)) 12%, transparent);
     cursor: move;
     user-select: none;
   }
   .lineage-lf-node.current-node {
-    box-shadow: var(--tianshu-shadow-medium);
+    border-left: 1px solid var(--el-color-primary);
+    border-top-color: var(--el-color-primary);
+    border-right-color: var(--el-color-primary);
+    border-bottom-color: var(--el-color-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--el-color-primary) 24%, transparent),
+      var(--tianshu-shadow-medium);
   }
   .lineage-lf-node.is-cycle {
+    border-left: 1px dashed var(--tianshu-warning-border);
+    border-top-color: var(--tianshu-warning-border);
+    border-right-color: var(--tianshu-warning-border);
+    border-bottom-color: var(--tianshu-warning-border);
     border-style: dashed;
     background: var(--tianshu-warning-bg);
-  }
-  .lineage-lf-node .node-color-strip {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: -4px;
-    width: 4px;
-    border-radius: 6px 0 0 6px;
-    pointer-events: none;
   }
   .lineage-lf-node .node-head {
     display: flex;

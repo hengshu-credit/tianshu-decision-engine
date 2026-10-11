@@ -29,6 +29,64 @@ function mountEditor(propsData = {}) {
 }
 
 describe('ExpressionEditorDialog', () => {
+  test('转换函数的通用参数不误过滤数值或文本字段', () => {
+    const wrapper = mountEditor({ value: { kind: 'FUNCTION', functionCode: 'toNumberValue', parameterTypes: ['OBJECT'], args: [null] } })
+    expect(wrapper.vm.selectedExpectedType).toBe('')
+    wrapper.unmount()
+  })
+  test('行内选择器回填完整表达式，不重复包裹已有取值节点或丢失参数', () => {
+    const wrapper = mountEditor({ compact: true, value: { kind: 'ACCESS', target: null, accessor: null } })
+    const operand = { kind: 'ACCESS', accessType: 'KEY', target: { kind: 'REFERENCE', refId: 7, refType: 'VARIABLE', code: 'request' }, accessor: { kind: 'LITERAL', valueType: 'STRING', value: 'age' } }
+    wrapper.vm.insertPicked(operand)
+    expect(wrapper.vm.draft).toEqual(operand)
+    wrapper.vm.undo()
+    expect(wrapper.vm.draft.target).toBeNull()
+    wrapper.unmount()
+  })
+  test('内嵌模式选中取值或列表节点也不挂载右侧配置面板', () => {
+    const wrapper = mountEditor({ compact: true, value: { kind: 'ACCESS', accessType: 'KEY', target: null, accessor: null } })
+    expect(wrapper.findComponent({ name: 'ExpressionNodeInspector' }).exists()).toBe(false)
+    wrapper.vm.insertTemplate({ kind: 'ARRAY', items: [null] })
+    expect(wrapper.findComponent({ name: 'ExpressionNodeInspector' }).exists()).toBe(false)
+    wrapper.unmount()
+  })
+  test('路径失焦的重复解析不增加历史，调序后撤销一次即可还原', () => {
+    const value = createOperationOperand([{ operand: { kind: 'PATH', value: 'age', code: 'age' } }, { operator: '+', operand: { kind: 'LITERAL', value: 1, valueType: 'NUMBER' } }])
+    const wrapper = mountEditor({ value })
+    wrapper.vm.movePath({ path: ['terms', 0, 'operand'], offset: 1 })
+    wrapper.vm.commit(JSON.parse(JSON.stringify(wrapper.vm.draft)))
+    wrapper.vm.undo()
+    expect(wrapper.vm.draft).toEqual(value)
+    wrapper.unmount()
+  })
+  test('JSON 草稿可暂存，但类型错误或尚未写完时不能应用', () => {
+    const wrapper = mountEditor({ compact: true, preserveDraft: true, value: { kind: 'LITERAL', valueType: 'LIST', value: '[1,' } })
+    wrapper.vm.apply()
+    expect(wrapper.emitted('apply')).toBeUndefined()
+    expect(wrapper.vm.validationErrors[0].message).toContain('JSON 数组')
+    wrapper.vm.insertTemplate({ kind: 'LITERAL', valueType: 'LIST', value: '{}' })
+    wrapper.vm.apply()
+    expect(wrapper.emitted('apply')).toBeUndefined()
+    wrapper.vm.insertTemplate({ kind: 'LITERAL', valueType: 'LIST', value: '[1,2]' })
+    wrapper.vm.apply()
+    expect(wrapper.emitted('apply')[0][0].value).toBe('[1,2]')
+    wrapper.unmount()
+  })
+  test('内嵌草稿关闭重开保留公式、选择位置和撤销历史，未应用不改父值', async () => {
+    const original = { kind: 'LITERAL', value: '1', valueType: 'NUMBER' }
+    const wrapper = mountEditor({ value: original, compact: true, embedded: true, preserveDraft: true })
+    wrapper.vm.insertTemplate({ kind: 'LITERAL', value: '2', valueType: 'NUMBER' })
+    const preview = wrapper.findComponent({ name: 'ExpressionFormulaPreview' }).vm
+    await wrapper.setProps({ visible: false })
+    await wrapper.setProps({ visible: true })
+    expect(wrapper.vm.draft.value).toBe('2')
+    expect(wrapper.findComponent({ name: 'ExpressionFormulaPreview' }).vm).toBe(preview)
+    wrapper.vm.undo()
+    expect(wrapper.vm.draft.value).toBe('1')
+    expect(original.value).toBe('1')
+    expect(wrapper.emitted('apply')).toBeUndefined()
+    wrapper.unmount()
+  })
   test('画布空项删除与操作符替换可以撤销重做且不改变原始引用', async () => {
     const field = { kind: 'REFERENCE', refType: 'VARIABLE', refId: 17, code: 'amount' }
     const value = createOperationOperand([{ operand: field }, { operator: '+', operand: null }])

@@ -10,14 +10,16 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Uses the effective lineage graph to block lifecycle actions that would leave
- * active downstream consumers pointing at a disabled or deleted resource.
+ * Protects configuration references from undeleted consuming resources.
+ * Disabled consumers retain their references; deleted consumers no longer block changes.
  */
 @Service
 public class GovernanceImpactService {
 
     private final RuleLineageService lineageService;
     @jakarta.annotation.Resource private DataObjectUpdateReferenceGuard dataObjectUpdateGuard;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.mapper.GovernanceDependencySnapshotMapper dependencySnapshotMapper;
 
     public GovernanceImpactService(RuleLineageService lineageService) {
         this.lineageService = lineageService;
@@ -37,6 +39,12 @@ public class GovernanceImpactService {
             return List.of();
         }
         List<GovernanceIssue> issues = new ArrayList<>();
+        if (dependencySnapshotMapper != null) {
+            List<String> consumers = dependencySnapshotMapper.activeConsumers(normalize(resourceType), resourceId);
+            if (!consumers.isEmpty()) issues.add(GovernanceIssue.error("DOWNSTREAM_DRAFT_DEPENDENCY",
+                    "仍有未发布草稿或待审批内容引用当前资源，请先删除下游内容：" + String.join("、", consumers),
+                    resourceType, resourceId, "$"));
+        }
         if (GovernanceResourceTypes.DATA_OBJECT.equals(
                 normalize(resourceType))) {
             analyzeDataObject(resourceId, snapshot, issues);
@@ -79,17 +87,7 @@ public class GovernanceImpactService {
             Long lineageId,
             String referencePath,
             List<GovernanceIssue> issues) {
-        Map<String, Object> graph;
-        try {
-            graph = lineageService.graph(
-                    lineageType, lineageId, "DOWNSTREAM", 1);
-        } catch (IllegalArgumentException notInLegacyGraph) {
-            return;
-        }
-        Object raw = graph.get("nodes");
-        if (!(raw instanceof List<?> nodes) || nodes.size() <= 1) {
-            return;
-        }
+        List<Map<String, Object>> nodes = lineageService.directReferenceConsumers(lineageType, lineageId);
         List<String> consumers = nodes.stream()
                 .filter(Map.class::isInstance)
                 .map(Map.class::cast)
@@ -105,7 +103,7 @@ public class GovernanceImpactService {
         if (!consumers.isEmpty()) {
             issues.add(GovernanceIssue.error(
                     "DOWNSTREAM_DEPENDENCY_ACTIVE",
-                    "仍有生效的下游资源依赖当前内容："
+                    "仍有未删除的资源引用当前内容："
                             + String.join("、", consumers),
                     resourceType, resourceId, referencePath));
         }
@@ -137,6 +135,8 @@ public class GovernanceImpactService {
             case GovernanceResourceTypes.EXTERNAL_API -> "API";
             case GovernanceResourceTypes.DATABASE -> "DB";
             case GovernanceResourceTypes.RULE -> "RULE";
+            case GovernanceResourceTypes.FUNCTION -> "FUNCTION";
+            case GovernanceResourceTypes.EXPERIMENT -> "EXPERIMENT";
             case GovernanceResourceTypes.LIST_LIBRARY -> "LIST";
             default -> null;
         };

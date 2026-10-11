@@ -11,7 +11,7 @@
       <header class="expression-editor-page__toolbar">
         <div>
           <strong>{{ activeSession.title || '配置表达式' }}</strong>
-          <span v-if="activeSession.savedAt">草稿已临时保存</span>
+          <span>{{ activeSession.savedAt ? `草稿已暂存，尚未应用到${destinationLabel}` : `暂存仅保留当前草稿；应用后才会回填${destinationLabel}` }}</span>
         </div>
         <div class="expression-editor-page__actions">
           <el-button size="small" :icon="ElIconBack" @click="goBack"
@@ -19,24 +19,24 @@
           >
           <el-button size="small" @click="undo">撤销</el-button>
           <el-button size="small" @click="redo">重做</el-button>
-          <el-button size="small" :icon="ElIconVideoPlay" @click="openTest"
+          <el-button v-if="activeSession.ruleId != null" size="small" :icon="ElIconVideoPlay" @click="openTest"
             >测试</el-button
           >
           <el-button
-            v-permission="'rule:edit'"
+            v-permission="activeSession.ruleId == null ? [] : 'rule:edit'"
             size="small"
             :icon="ElIconDocument"
             @click="saveDraft"
-            >临时保存</el-button
+            >暂存草稿</el-button
           >
           <el-button
-            v-permission="'rule:edit'"
+            v-permission="activeSession.ruleId == null ? [] : 'rule:edit'"
             type="primary"
             size="small"
             :icon="ElIconCpu"
             :loading="compiling"
             @click="saveAndCompile"
-            >保存并编译</el-button
+            >{{ activeSession.ruleId == null ? '应用到配置' : '应用到规则' }}</el-button
           >
         </div>
       </header>
@@ -210,6 +210,7 @@ export default {
     this.persistDraft()
   },
   computed: {
+    destinationLabel() { return this.activeSession?.ruleId == null ? '配置' : '规则' },
     session() {
       const getter = this.$store.getters['expressionSessions/sessionById']
       return typeof getter === 'function'
@@ -260,8 +261,7 @@ export default {
       const value = this.activeSession
         ? this.activeSession.ruleId
         : this.$route.params.ruleId
-      const numeric = Number(value)
-      return Number.isNaN(numeric) ? value : numeric
+      return value
     },
     persistDraft() {
       if (!this.activeSession) return
@@ -273,7 +273,7 @@ export default {
     async saveDraft() {
       if (!this.activeSession) return
       await this.persistDraft()
-      this.$message.success('表达式草稿已临时保存')
+      this.$message.success(`草稿已暂存；点击“应用到${this.destinationLabel}”才能回填${this.destinationLabel}`)
     },
     async saveAndCompile() {
       if (!this.activeSession || this.compiling) return
@@ -282,6 +282,12 @@ export default {
       this.compiling = true
       try {
         const operand = this.currentDraft()
+        if (this.activeSession.ruleId == null) {
+          await this.$store.dispatch('expressionSessions/saveCompiled', { sessionId: this.activeSession.sessionId, operand, compiledScript: '' })
+          this.$message.success('表达式检查通过，已回填配置；保存配置后生效')
+          this.goBack()
+          return
+        }
         const response = await compileExpression({
           ruleId: this.normalizedRuleId(),
           resolutionMode: 'CURRENT',
@@ -301,7 +307,7 @@ export default {
           operand,
           compiledScript: result.compiledScript || '',
         })
-        this.$message.success('表达式保存并编译成功')
+        this.$message.success('表达式检查通过，已回填规则；请继续保存或发布规则')
         this.goBack()
       } finally {
         this.compiling = false

@@ -15,6 +15,7 @@ import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleListLibrary;
 import com.hengshucredit.rule.model.entity.RuleModel;
+import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.mapper.ArtifactDeploymentMapper;
 import com.hengshucredit.rule.server.mapper.ArtifactResourceBindingMapper;
@@ -27,6 +28,7 @@ import com.hengshucredit.rule.server.mapper.RuleExternalDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RuleFunctionMapper;
 import com.hengshucredit.rule.server.mapper.RuleListLibraryMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelMapper;
+import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
 import com.hengshucredit.rule.server.service.RuleDefinitionService;
 import com.hengshucredit.rule.server.service.RuleLifecycleService;
@@ -42,11 +44,14 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
 @Service
 public class ArtifactDeploymentService {
+    private static final Set<String> MODEL_TYPES = Set.of(
+            "TABLE", "TREE", "FLOW", "RULE_SET", "CROSS", "CROSS_ADV", "SCORE", "SCORE_ADV", "SCRIPT");
     @Resource
     private DecisionArtifactMapper artifactMapper;
     @Resource
@@ -59,6 +64,8 @@ public class ArtifactDeploymentService {
     private RuntimeCompatibilityService compatibilityService;
     @Resource
     private RuleDefinitionService definitionService;
+    @Resource
+    private RuleProjectMapper projectMapper;
     @Resource
     private RuleLifecycleService lifecycleService;
     @Resource private com.hengshucredit.rule.server.mapper.RuleVersionBindingMapper versionBindingMapper;
@@ -90,6 +97,7 @@ public class ArtifactDeploymentService {
                 && !expectedPackageDigest.equals(decoded.getPackageDigest())) {
             throw new IllegalArgumentException("制品包摘要与上传声明不一致");
         }
+        packageModelType(decoded.getArtifactPackage());
         RuntimeCompatibilityService.CompatibilityReport compatibility =
                 compatibility(decoded.getArtifactPackage());
         if (!compatibility.isCompatible()) {
@@ -146,10 +154,10 @@ public class ArtifactDeploymentService {
         validateRequest(request);
         DecisionArtifact artifact = loadArtifact(request.getArtifactId());
         if (artifact == null) throw new IllegalArgumentException("决策制品不存在");
-        DecisionArtifactPackageCodec.DecodedPackage decoded = codec.decode(artifact.getPackageContent());
-        if (!artifact.getArtifactDigest().equals(decoded.getArtifactDigest())
-                || !artifact.getPackageDigest().equals(decoded.getPackageDigest())) {
-            throw new IllegalArgumentException("数据库中的决策制品摘要校验失败");
+        DecisionArtifactPackageCodec.DecodedPackage decoded = decodeStoredArtifact(artifact);
+        String modelType = packageModelType(decoded.getArtifactPackage());
+        if (!blank(request.getTargetModelType()) && !modelType.equals(normalizeModelType(request.getTargetModelType()))) {
+            throw new IllegalArgumentException("目标模型类型必须与制品一致，请使用制品提供的类型");
         }
         RuntimeCompatibilityService.CompatibilityReport compatibility =
                 compatibility(decoded.getArtifactPackage());
@@ -160,13 +168,26 @@ public class ArtifactDeploymentService {
         Long definitionId;
         Long targetProjectId;
         if (Boolean.TRUE.equals(request.getCreateRule())) {
-            definitionId = createTargetDefinition(request);
             targetProjectId = request.getTargetProjectId();
+            validateTargetProject(targetProjectId);
+            ArtifactDeployRequest derived = new ArtifactDeployRequest();
+            org.springframework.beans.BeanUtils.copyProperties(request, derived);
+            derived.setTargetModelType(modelType);
+            definitionId = createTargetDefinition(derived);
         } else {
             RuleDefinition target = loadDefinition(request.getTargetDefinitionId());
             if (target == null) throw new IllegalArgumentException("显式指定的目标规则不存在");
+            if (Integer.valueOf(-1).equals(target.getStatus())) throw new IllegalArgumentException("目标规则已删除，不能部署制品");
+            if (!modelType.equals(normalizeModelType(target.getModelType()))) {
+                throw new IllegalArgumentException("目标规则类型与制品不一致，请选择相同类型的规则或创建目标规则");
+            }
             definitionId = target.getId();
             targetProjectId = target.getProjectId();
+            if (targetProjectId == null && "GLOBAL".equalsIgnoreCase(target.getScope())) targetProjectId = 0L;
+            if (request.getTargetProjectId() != null && !request.getTargetProjectId().equals(targetProjectId)) {
+                throw new IllegalArgumentException("目标规则不属于所选择的目标项目");
+            }
+            validateTargetProject(targetProjectId);
         }
 
         Map<String, String> requirements = bindingRequirements(decoded.getArtifactPackage());
@@ -281,7 +302,8 @@ public class ArtifactDeploymentService {
     public Map<String, Object> deploymentOptions(Long artifactId, Long targetProjectId) {
         DecisionArtifact artifact = loadArtifact(artifactId);
         if (artifact == null) throw new IllegalArgumentException("决策制品不存在");
-        DecisionArtifactPackage artifactPackage = codec.decode(artifact.getPackageContent()).getArtifactPackage();
+        DecisionArtifactPackage artifactPackage = decodeStoredArtifact(artifact).getArtifactPackage();
+        String modelType = packageModelType(artifactPackage);
         List<Map<String, Object>> requirements = new ArrayList<>();
         for (Map.Entry<String, String> requirement : bindingRequirements(artifactPackage).entrySet()) {
             Map<String, Object> item = new LinkedHashMap<>();
@@ -307,6 +329,7 @@ public class ArtifactDeploymentService {
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("artifactId", artifactId);
+        result.put("modelType", modelType);
         result.put("requirements", requirements);
         return result;
     }
@@ -356,6 +379,7 @@ public class ArtifactDeploymentService {
         result.setArtifactId(artifact.getId());
         result.setArtifactDigest(artifact.getArtifactDigest());
         result.setPackageDigest(artifact.getPackageDigest());
+        result.setModelType(packageModelType(artifactPackage));
         result.setDuplicate(duplicate);
         result.setCompatible(compatibility.isCompatible());
         result.setCompatibilityReportJson(CanonicalJson.write(compatibility));
@@ -372,10 +396,39 @@ public class ArtifactDeploymentService {
             throw new IllegalArgumentException("必须且只能选择 createRule=true 或显式 targetDefinitionId");
         }
         if (create && (blank(request.getTargetRuleCode()) || blank(request.getTargetRuleName())
-                || blank(request.getTargetModelType()) || request.getTargetProjectId() == null)) {
-            throw new IllegalArgumentException("新建目标规则必须显式提供项目、规则编码、名称和模型类型");
+                || request.getTargetProjectId() == null)) {
+            throw new IllegalArgumentException("新建目标规则必须显式提供项目、规则编码和名称");
         }
     }
+
+    private void validateTargetProject(Long projectId) {
+        if (projectId == null || projectId < 0) throw new IllegalArgumentException("目标项目无效，请明确选择项目或全局作用范围");
+        if (projectId == 0) return;
+        RuleProject project = loadProject(projectId);
+        if (project == null || Integer.valueOf(-1).equals(project.getStatus())) {
+            throw new IllegalArgumentException("目标项目不存在或已删除");
+        }
+    }
+
+    private DecisionArtifactPackageCodec.DecodedPackage decodeStoredArtifact(DecisionArtifact artifact) {
+        DecisionArtifactPackageCodec.DecodedPackage decoded = codec.decode(artifact.getPackageContent());
+        if (!java.util.Objects.equals(artifact.getArtifactDigest(), decoded.getArtifactDigest())
+                || !java.util.Objects.equals(artifact.getPackageDigest(), decoded.getPackageDigest())) {
+            throw new IllegalArgumentException("数据库中的决策制品摘要校验失败");
+        }
+        return decoded;
+    }
+
+    private String packageModelType(DecisionArtifactPackage artifactPackage) {
+        Object raw = artifactPackage.getMetadata().get("modelType");
+        String type = raw instanceof String value ? value : "";
+        if (!MODEL_TYPES.contains(type)) {
+            throw new IllegalArgumentException("制品缺少受支持的规范模型类型，请从原环境重新导出");
+        }
+        return type;
+    }
+
+    private String normalizeModelType(String value) { return value == null ? "" : value.trim().toUpperCase(Locale.ROOT); }
 
     private Map<String, String> bindingRequirements(DecisionArtifactPackage artifactPackage) {
         Map<String, String> result = new java.util.TreeMap<>();
@@ -468,7 +521,13 @@ public class ArtifactDeploymentService {
     }
 
     protected RuleDefinition loadDefinition(Long definitionId) {
-        return definitionService.getById(definitionId);
+        return definitionService.getOne(new LambdaQueryWrapper<RuleDefinition>()
+                .eq(RuleDefinition::getId, definitionId).last("FOR UPDATE"));
+    }
+
+    protected RuleProject loadProject(Long projectId) {
+        return projectMapper.selectOne(new LambdaQueryWrapper<RuleProject>()
+                .eq(RuleProject::getId, projectId).last("FOR UPDATE"));
     }
 
     protected Long createTargetDefinition(ArtifactDeployRequest request) {

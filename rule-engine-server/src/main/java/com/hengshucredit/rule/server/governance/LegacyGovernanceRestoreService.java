@@ -1,7 +1,6 @@
 package com.hengshucredit.rule.server.governance;
 
 import com.alibaba.fastjson.JSON;
-import com.hengshucredit.rule.model.dto.GovernanceDraftRequest;
 import com.hengshucredit.rule.model.entity.GovernanceApprovalRequest;
 import com.hengshucredit.rule.model.entity.RuleExperiment;
 import com.hengshucredit.rule.model.entity.RuleExperimentGroup;
@@ -35,16 +34,24 @@ public class LegacyGovernanceRestoreService {
     public GovernanceApprovalRequest restoreModel(Long modelId,
                                                   Integer version,
                                                   String actor) {
+        return restoreModel(modelId, version, "NEW", actor);
+    }
+
+    public GovernanceApprovalRequest restoreModel(Long modelId, Integer version, String mode, String actor) {
         RuleModel snapshot = modelService.buildRestoreSnapshot(
-                modelId, version);
-        return createDraft(GovernanceResourceTypes.MODEL, modelId,
-                snapshot.getProjectId(), snapshot,
-                "恢复模型历史版本 v" + version, actor);
+                modelId, version, true);
+        var source = modelService.getVersion(modelId, version);
+        return approvalService.createLegacyRestoreDraft(GovernanceResourceTypes.MODEL, modelId, "MODEL_VERSION", source.getId(),
+                source.getDisplayVersion(), ResourceSnapshot.ofJson(JSON.toJSONString(snapshot)), mode, actor);
     }
 
     public GovernanceApprovalRequest restoreFunction(Long functionId,
                                                      Integer version,
                                                      String actor) {
+        return restoreFunction(functionId, version, "NEW", actor);
+    }
+
+    public GovernanceApprovalRequest restoreFunction(Long functionId, Integer version, String mode, String actor) {
         RuleFunctionVersion source = functionService.getVersion(
                 functionId, version);
         if (source == null) {
@@ -56,13 +63,16 @@ public class LegacyGovernanceRestoreService {
             throw new IllegalArgumentException("历史函数快照无效");
         }
         snapshot.setId(functionId);
-        return createDraft(GovernanceResourceTypes.FUNCTION,
-                functionId, snapshot.getProjectId(), snapshot,
-                "恢复函数历史版本 v" + version, actor);
+        return approvalService.createLegacyRestoreDraft(GovernanceResourceTypes.FUNCTION, functionId, "FUNCTION_VERSION", source.getId(),
+                source.getDisplayVersion(), ResourceSnapshot.ofJson(JSON.toJSONString(snapshot)), mode, actor);
     }
 
     public GovernanceApprovalRequest restoreExperiment(
             Long experimentId, Integer version, String actor) {
+        return restoreExperiment(experimentId, version, "NEW", actor);
+    }
+
+    public GovernanceApprovalRequest restoreExperiment(Long experimentId, Integer version, String mode, String actor) {
         RuleExperimentVersion source = experimentService.getVersion(
                 experimentId, version);
         if (source == null) {
@@ -77,21 +87,7 @@ public class LegacyGovernanceRestoreService {
                 source.getGroupsJson(), RuleExperimentGroup.class);
         snapshot.setId(experimentId);
         snapshot.setGroups(groups == null ? List.of() : groups);
-        return createDraft(GovernanceResourceTypes.EXPERIMENT,
-                experimentId, snapshot.getProjectId(), snapshot,
-                "恢复分流实验历史版本 v" + version, actor);
-    }
-
-    private GovernanceApprovalRequest createDraft(
-            String resourceType, Long resourceId, Long projectId,
-            Object snapshot, String changeSummary, String actor) {
-        GovernanceDraftRequest request = new GovernanceDraftRequest();
-        request.setResourceType(resourceType);
-        request.setResourceId(resourceId);
-        request.setProjectId(projectId);
-        request.setAction("RESTORE");
-        request.setSnapshotJson(JSON.toJSONString(snapshot));
-        request.setChangeSummary(changeSummary);
-        return approvalService.createDraft(request, actor);
+        return approvalService.createLegacyRestoreDraft(GovernanceResourceTypes.EXPERIMENT, experimentId, "EXPERIMENT_VERSION", source.getId(),
+                source.getDisplayVersion(), ResourceSnapshot.ofJson(JSON.toJSONString(snapshot)), mode, actor);
     }
 }

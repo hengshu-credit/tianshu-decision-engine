@@ -7,6 +7,7 @@ import router from './router'
 import store from './store'
 import ElementTabFocusGuard from '@/plugins/elementTabFocusGuard'
 import permissionDirective from '@/directives/permission'
+import { recordTabVisit } from '@/security/operationActivity'
 import './styles/index.scss'
 
 // 覆盖 Element Plus 主题色为主色 #2639E9
@@ -56,6 +57,7 @@ const app = createApp(App)
 app.component('MonacoEditor', MonacoEditor)
 app.component('AppIcon', AppIcon)
 app.directive('permission', permissionDirective)
+document.addEventListener('click', event => recordTabVisit(event, router.currentRoute.value))
 app.use(store)
 app.use(router)
 app.use(ElementPlus, { size: 'small', locale: zhCn })

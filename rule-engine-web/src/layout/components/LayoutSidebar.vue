@@ -226,7 +226,7 @@ export default {
   }
 
   &.is-active {
-    color: var(--tianshu-sidebar-text-active, #ffffff);
+    color: var(--tianshu-sidebar-active-foreground, #ffffff);
     font-weight: 600;
     background: var(--tianshu-sidebar-bg-active, rgba($--color-primary, 0.28));
 

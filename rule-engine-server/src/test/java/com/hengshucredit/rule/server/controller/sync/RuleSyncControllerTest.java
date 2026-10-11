@@ -19,6 +19,32 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class RuleSyncControllerTest {
+    @Test public void syncPayloadCarriesArtifactFunctionDefinitionsIncludingKnownEmptySnapshot() {
+        RuleSyncController controller = new RuleSyncController();
+        var definition = new com.hengshucredit.rule.model.entity.RuleDefinition();
+        definition.setId(10L); definition.setProjectId(1L);
+        ReflectionTestUtils.setField(controller, "definitionService", new RuleDefinitionService() {
+            @Override public com.hengshucredit.rule.model.entity.RuleDefinition getById(java.io.Serializable id) { return definition; }
+        });
+        var snapshot = new com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService.RuntimeSnapshot();
+        var frozen = new com.hengshucredit.rule.model.entity.RuleFunction();
+        frozen.setId(7L); frozen.setFuncCode("frozenScore"); frozen.setImplType("JAVA"); frozen.setImplMethod("oldVersion");
+        snapshot.getFunctions().add(frozen);
+        ReflectionTestUtils.setField(controller, "artifactSnapshotService", new com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService() {
+            @Override public RuntimeSnapshot load(Long artifactId, Long definitionId, Long projectId) { return snapshot; }
+        });
+        RulePublished published = new RulePublished(); published.setDefinitionId(10L); published.setArtifactId(20L);
+        published.setRevisionId(30L); published.setArtifactDigest("selected-artifact");
+        RulePublished enriched = ReflectionTestUtils.invokeMethod(controller, "withOutputScriptNames", published);
+        com.alibaba.fastjson.JSONObject payload = com.alibaba.fastjson.JSON.parseObject(com.alibaba.fastjson.JSON.toJSONString(enriched));
+        assertTrue("规则同步必须携带选定制品的函数定义", payload.get("frozenFunctions") instanceof List<?>);
+        assertEquals("oldVersion", payload.getJSONArray("frozenFunctions").getJSONObject(0).getString("implMethod"));
+        snapshot.getFunctions().clear();
+        enriched = ReflectionTestUtils.invokeMethod(controller, "withOutputScriptNames", published);
+        payload = com.alibaba.fastjson.JSON.parseObject(com.alibaba.fastjson.JSON.toJSONString(enriched));
+        assertEquals("冻结空函数集不能退回实时函数", List.of(), payload.get("frozenFunctions"));
+    }
+
 
     @Test
     public void executionHonorsTraceChoiceAndKeepsDefaultEnabled() {

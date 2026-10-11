@@ -91,7 +91,7 @@ test('变量管理四类业务页签的数据、复制、按钮和弹框均可�
       tab: '字段校验',
       text: 'mobile_required',
       button: '新建校验规则',
-      dialogTitle: '新建字段校验审批'
+      dialogTitle: '新建字段校验'
     }
   ]
 
@@ -164,21 +164,24 @@ test('变量新建和编辑弹窗的高级设置居中且数字输入框无加�
     await expect(collapse.locator('.el-input-number__increase:visible')).toHaveCount(0)
 
     await dialog.getByRole('button', { name: /外数接口/ }).click()
-    await dialog.locator('.el-form-item').filter({ hasText: '接口配置' }).first().getByRole('combobox').click()
-    await page.locator('.el-select-dropdown:visible').getByText('征信查询 / credit_query', { exact: true }).click()
+    await dialog.locator('.el-form-item').filter({ hasText: '接口配置' }).first().getByRole('textbox').click()
+    await page.locator('.fp-panel:visible .fp-row').filter({ hasText: 'credit_query' }).dblclick()
     const binding = dialog.locator('.api-source-binding')
     await expect(binding).toBeVisible()
-    const [bindingBox, tableBox, formBox, previewBox, advancedBox] = await Promise.all([
+    const [bindingBox, tableBox, formBox, previewBox] = await Promise.all([
       binding.boundingBox(),
       binding.locator('.api-binding-table-wrap').boundingBox(),
       form.boundingBox(),
-      dialog.locator('.draft-preview-panel').boundingBox(),
-      collapse.boundingBox()
+      dialog.locator('.draft-preview-panel').boundingBox()
     ])
     expect(bindingBox.width).toBeGreaterThan(400)
     expect(tableBox.width).toBeGreaterThan(400)
     expect(Math.abs(formBox.width - previewBox.width)).toBeLessThanOrEqual(2)
-    expect(previewBox.y).toBeGreaterThan(advancedBox.y + advancedBox.height)
+    await expect.poll(() => dialog.evaluate(element => {
+      const preview = element.querySelector('.draft-preview-panel').getBoundingClientRect()
+      const advanced = element.querySelector('.variable-advanced-collapse').getBoundingClientRect()
+      return preview.top - advanced.bottom
+    })).toBeGreaterThan(0)
 
     const positions = await form.locator('.el-form-item').evaluateAll(items => items.map(item => ({
       label: item.querySelector('.el-form-item__label')?.textContent?.trim(),

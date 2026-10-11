@@ -105,6 +105,7 @@
       </el-form>
       <div class="uiue-btn-bar">
         <div class="btn-right">
+          <governance-workspace-toolbar resource-type="RULE" />
           <table-column-settings
             v-model="ruleColumnOrder"
             :columns="ruleColumns"
@@ -148,20 +149,16 @@
           <el-tag v-else-if="column.key === 'modelType'" size="small">
             {{ modelTypeLabel(row.modelType) }}
           </el-tag>
-          <el-tag
-            v-else-if="column.key === 'status'"
-            :type="statusTagType(effectiveStatus(row))"
-            size="small"
-          >
-            {{ statusLabel(effectiveStatus(row)) }}
-          </el-tag>
+          <governance-resource-status v-else-if="column.key === 'status'" resource-type="RULE" :resource-id="row.id" :status="effectiveStatus(row)">
+            <el-tag :type="statusTagType(effectiveStatus(row))" size="small">{{ statusLabel(effectiveStatus(row)) }}</el-tag>
+          </governance-resource-status>
           <span v-else-if="column.key === 'publishedVersion'">
             {{ publishedVersionLabel(row) }}
           </span>
           <span v-else>{{ ruleCellValue(row, column.key) }}</span>
         </template>
       </el-table-column>
-      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="190" align="center" fixed="right">
+      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="325" align="center" fixed="right">
         <template v-slot="{ row }">
           <div class="table-operation-group">
             <el-button
@@ -181,6 +178,7 @@
               @click="handleView(row)"
               >查看</el-button
             >
+            <governance-publish-action resource-type="RULE" :resource-id="row.id" />
             <el-button
               v-permission="'rule:edit'"
               link
@@ -313,6 +311,9 @@
 </template>
 
 <script>
+import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
+import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
+import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
 import { markRaw } from 'vue'
 import { Search as ElIconSearch, Plus as ElIconPlus } from '@element-plus/icons-vue'
 import {
@@ -350,7 +351,7 @@ export default {
         { key: 'ruleCode', label: '规则编码', minWidth: 150 },
         { key: 'ruleName', label: '规则名称', minWidth: 140 },
         { key: 'modelType', label: '模型类型', minWidth: 90, align: 'center' },
-        { key: 'status', label: '发布状态', minWidth: 80, align: 'center' },
+        { key: 'status', label: '发布状态', minWidth: 160, align: 'center' },
         { key: 'currentVersion', label: '设计版本', minWidth: 80, align: 'center' },
         { key: 'publishedVersion', label: '发布版本', minWidth: 80, align: 'center' },
         { key: 'description', label: '描述', minWidth: 140 },
@@ -417,7 +418,7 @@ export default {
     },
   },
   name: 'RuleList',
-  components: {
+  components: { GovernanceResourceStatus, GovernancePublishAction, GovernanceWorkspaceToolbar,
     RemoteFilterSelect,
     ProjectFilterSelect,
     RuleModelTypeHelp,
@@ -455,7 +456,7 @@ export default {
         return
       }
       try {
-        const res = await listProjects({ pageNum: 1, pageSize: 50 })
+        const res = await listProjects({ pageNum: 1, pageSize: 50, status: 1 })
         if (res.data) {
           const list = res.data.records || res.data || []
           this.projectList = list
@@ -653,14 +654,19 @@ export default {
       this.$router.push(`/rule/${row.definitionId || row.id}`)
     },
     handleDelete(row) {
-      this.$confirm('确定删除规则「' + row.ruleName + '」？', '确认', {
+      return this.$confirm('确定删除规则「' + row.ruleName + '」？未审批通过且从未发布的新增规则将直接删除，其他规则将生成删除审批草稿。', '确认', {
         type: 'warning',
       })
         .then(async () => {
           const response = await deleteDefinition(row.id)
+          if (response.data?.deleted) {
+            this.$message.success('规则已删除，无需审批')
+            await this.loadData()
+            return
+          }
           this.$message.success('删除审批草稿已创建')
-          if (response.data && response.data.id) {
-            this.$router.push(`/approval/${response.data.id}`)
+          if (response.data?.approvalRequestId) {
+            this.$router.push(`/approval/${response.data.approvalRequestId}`)
           }
         })
         .catch(() => {})

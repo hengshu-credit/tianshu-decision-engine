@@ -18,6 +18,21 @@ import static org.junit.Assert.assertTrue;
 public class RuleTestSchemaServiceTest {
 
     @Test
+    public void configuredSampleNumbersAndSpecialObjectKeysRemainExactBeforeSerialization() {
+        ResolvedField amount = field("amount", "NUMBER", "INPUT"); amount.setExampleValue("9007199254740993");
+        ResolvedField rate = field("rate", "DECIMAL", "INPUT"); rate.setDefaultValue("0.123456789012345678901");
+        ResolvedField object = field("object", "OBJECT", "INPUT");
+        object.setDefaultValue("{\"@type\":\"customer\",\"$ref\":\"literal\",\"n\":9007199254740993}");
+        ResolutionPlan plan = new ResolutionPlan(); plan.setExternalInputs(Arrays.asList(amount, rate, object));
+        RuleTestSchema schema = new RuleTestSchemaService().build(plan);
+        assertEquals(new java.math.BigDecimal("9007199254740993"), schema.getSampleParams().get("amount"));
+        assertEquals(new java.math.BigDecimal("0.123456789012345678901"), schema.getSampleParams().get("rate"));
+        Map<?, ?> sample = (Map<?, ?>) schema.getSampleParams().get("object");
+        assertEquals("customer", sample.get("@type")); assertEquals("literal", sample.get("$ref"));
+        assertEquals("9007199254740993", sample.get("n").toString());
+    }
+
+    @Test
     public void buildsNestedSamplesFromResolvedExternalInputsOnly() {
         ResolutionPlan plan = new ResolutionPlan();
         plan.setExternalInputs(Arrays.asList(

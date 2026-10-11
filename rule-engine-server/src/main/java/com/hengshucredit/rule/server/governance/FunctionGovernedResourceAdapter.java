@@ -1,10 +1,13 @@
 package com.hengshucredit.rule.server.governance;
 
 import com.alibaba.fastjson.JSON;
+import com.hengshucredit.rule.core.function.FunctionParameterContract;
 import com.hengshucredit.rule.model.dto.RulePushMessage;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.server.publish.RuleFunctionPushService;
+import com.hengshucredit.rule.server.service.FunctionMethodCatalogService;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -13,12 +16,16 @@ public class FunctionGovernedResourceAdapter
 
     private final SimpleEntityGovernedResourceAdapter<RuleFunction> delegate;
     private final RuleFunctionPushService functionPushService;
+    private final FunctionMethodCatalogService methodCatalogService;
+    @jakarta.annotation.Resource @org.springframework.context.annotation.Lazy
+    private com.hengshucredit.rule.server.service.RuleFunctionService functionService;
 
     public FunctionGovernedResourceAdapter(
             SimpleEntityGovernedResourceAdapter.EntityStore<RuleFunction>
                     store,
             GovernanceSecretCodec secretCodec,
-            RuleFunctionPushService functionPushService) {
+            RuleFunctionPushService functionPushService,
+            FunctionMethodCatalogService methodCatalogService) {
         this.delegate = new SimpleEntityGovernedResourceAdapter<>(
                 GovernanceResourceTypes.FUNCTION,
                 RuleFunction.class,
@@ -30,6 +37,7 @@ public class FunctionGovernedResourceAdapter
                 Set.of("funcCode", "funcName", "implType"),
                 Set.of(), secretCodec);
         this.functionPushService = functionPushService;
+        this.methodCatalogService = methodCatalogService;
     }
 
     @Override
@@ -51,7 +59,33 @@ public class FunctionGovernedResourceAdapter
 
     @Override
     public List<GovernanceIssue> validate(ResourceSnapshot draft) {
-        return delegate.validate(draft);
+        List<GovernanceIssue> issues = new ArrayList<>(delegate.validate(draft));
+        issues.addAll(bindingIssues(function(draft)));
+        return issues;
+    }
+
+    private List<GovernanceIssue> bindingIssues(RuleFunction function) {
+        try {
+            FunctionParameterContract.parse(function.getParamsJson());
+            if (!"JAVA".equals(function.getImplType()) && !"BEAN".equals(function.getImplType())) return List.of();
+            var catalog = methodCatalogService.inspect(function);
+            if ("UNAVAILABLE".equals(catalog.status())) {
+                return List.of(new GovernanceIssue("WARNING", "FUNCTION_TARGET_UNVERIFIED", catalog.message(),
+                        resourceType(), function.getId(), "$.implMethod", null,
+                        "目标运行端方法尚未验证", "在目标运行端部署相同实现并验证精确签名后再使用"));
+            }
+            if (!catalog.valid()) throw new IllegalArgumentException(catalog.message());
+            if (catalog.legacySignature()) {
+                return List.of(new GovernanceIssue("WARNING", "FUNCTION_LEGACY_SIGNATURE",
+                        "当前按旧类型映射绑定 " + catalog.signature() + "；选择具体方法后可保存精确签名",
+                        resourceType(), function.getId(), "$.paramsJson", null,
+                        "沿用旧方法参数映射", "核对实际签名，不会自动变更历史绑定"));
+            }
+            return List.of();
+        } catch (IllegalArgumentException error) {
+            return List.of(GovernanceIssue.error("FUNCTION_METHOD_SIGNATURE_INVALID", error.getMessage(),
+                    resourceType(), function.getId(), "$.paramsJson"));
+        }
     }
 
     @Override
@@ -68,7 +102,15 @@ public class FunctionGovernedResourceAdapter
 
     @Override
     public AppliedResource apply(ApprovalApplyContext context) {
+        if (context.draftWrite() || context.projectionOnly()) return delegate.apply(context);
         RuleFunction function = function(context.snapshot());
+        if (java.util.Set.of("CREATE", "ENABLE", "RESTORE").contains(context.action())) function.setStatus(1);
+        else if ("DISABLE".equals(context.action())) function.setStatus(0);
+        else if ("DELETE".equals(context.action())) function.setStatus(-1);
+        if (!"DELETE".equalsIgnoreCase(context.action()) && !"DISABLE".equalsIgnoreCase(context.action())) {
+            var error = bindingIssues(function).stream().filter(GovernanceIssue::isError).findFirst();
+            if (error.isPresent()) throw new IllegalArgumentException(error.get().message());
+        }
         String action = "DELETE".equalsIgnoreCase(context.action())
                 ? "FUNC_DELETE" : "FUNC_UPDATE";
         RulePushMessage message = functionPushService.prepare(function,
@@ -79,9 +121,17 @@ public class FunctionGovernedResourceAdapter
                 context.requestId(), context.resourceId(),
                 context.nextVersionNo(), context.action(), normalized,
                 context.actor(), context.sourceVersionId()));
-        functionPushService.push(message);
+        if (!context.isolatedPublication()) functionPushService.push(message);
+        if (functionService != null) {
+            int number = functionService.recordAppliedVersion(applied.resourceId(), context.reuseVersion() ? context.nextVersionNo() : null,
+                    "审批 " + context.requestId(), context.actor());
+            return new AppliedResource(applied.resourceId(), number, applied.effectiveStatus(), applied.artifactId());
+        }
         return applied;
     }
+
+    @Override
+    public boolean supportsDraftWorkspace() { return true; }
 
     private RuleFunction function(ResourceSnapshot snapshot) {
         RuleFunction function = JSON.parseObject(snapshot.snapshotJson(),

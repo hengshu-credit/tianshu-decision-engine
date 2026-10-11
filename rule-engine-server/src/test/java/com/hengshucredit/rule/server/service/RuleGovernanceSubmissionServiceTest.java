@@ -57,6 +57,8 @@ public class RuleGovernanceSubmissionServiceTest {
                 approval.createdDraft.getProjectId());
         Assert.assertEquals("UPDATE",
                 approval.createdDraft.getAction());
+        Assert.assertEquals("NEW", approval.createdDraft.getPublishMode());
+        Assert.assertEquals(Long.valueOf(6), com.alibaba.fastjson.JSON.parseObject(approval.createdDraft.getSnapshotJson()).getLong("_ruleRevisionId"));
         Assert.assertEquals("alice", approval.submitActor);
         Assert.assertEquals("提交规则审批",
                 approval.submittedComment);

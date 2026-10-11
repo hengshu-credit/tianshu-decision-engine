@@ -10,7 +10,7 @@
     <div class="approval-guide" role="note">
       <div class="approval-guide-title">变更先审批，再生效</div>
       <div class="approval-guide-text">
-        新建、修改、启停和删除名单库都会先生成审批草稿。审批通过前，线上名单库保持不变。
+        保存后为草稿，发布时提交审批。新增草稿无下游引用可直接删除；待审批的新增内容须先驳回。
       </div>
     </div>
 
@@ -88,9 +88,10 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
+          <governance-workspace-toolbar resource-type="LIST_LIBRARY" />
               <table-column-settings :columns="listColumns" storage-key="tianshu:table-columns:list-library" />
               <el-button
-                v-permission="'field:edit'"
+                v-permission="'list:edit'"
                 type="primary"
                 size="small"
                 :icon="ElIconPlus"
@@ -156,18 +157,20 @@
             min-width="180"
             show-overflow-tooltip
           />
-          <el-table-column label="状态" width="80" align="center">
+          <el-table-column label="状态" width="160" align="center">
             <template v-slot="{ row }">
+              <governance-resource-status resource-type="LIST_LIBRARY" :resource-id="row.id" :status="row.status">
               <el-switch
-                v-permission="'field:edit'"
+                v-permission="'list:edit'"
                 v-model="row.status"
                 :active-value="1"
                 :inactive-value="0"
                 @change="toggleStatus(row, $event)"
               />
+              </governance-resource-status>
             </template>
           </el-table-column>
-          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="170" align="center">
+          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="305" align="center">
             <template v-slot="{ row }">
               <el-button
               link
@@ -178,16 +181,17 @@
                 >详情</el-button
               >
               <el-button
-                v-permission="'field:edit'"
+                v-permission="'list:edit'"
                 link
                 data-action="edit"
                 size="small"
                 type="warning"
-                @click="handleEdit(row)"
+                @click="editWorkspace('LIST_LIBRARY', row, handleEdit)"
                 >编辑</el-button
               >
+              <governance-publish-action resource-type="LIST_LIBRARY" :resource-id="row.id" />
               <el-button
-                v-permission="'field:edit'"
+                v-permission="'list:edit'"
                 link
                 data-action="delete"
                 size="small"
@@ -226,7 +230,7 @@
     </el-tabs>
 
     <el-dialog
-      :title="form.id ? '修改名单库审批' : '新建名单库审批'"
+      :title="form.id ? '修改名单库' : '新建名单库'"
       v-model="dialogVisible"
       width="640px"
       append-to-body
@@ -253,20 +257,10 @@
           </el-col>
           <el-col :span="12">
             <el-form-item v-if="form.scope === 'PROJECT'" label="所属项目">
-              <el-select
-                v-model="form.projectId"
-                filterable
-                clearable
-                placeholder="请选择项目"
+              <project-resource-select
+                v-model:value="form.projectId"
                 style="width: 100%"
-              >
-                <el-option
-                  v-for="project in projects"
-                  :key="project.id"
-                  :label="project.projectName"
-                  :value="project.id"
-                />
-              </el-select>
+              />
             </el-form-item>
           </el-col>
         </el-row>
@@ -311,8 +305,8 @@
       <template v-slot:footer>
         <div>
           <el-button @click="dialogVisible = false">取消</el-button>
-          <el-button v-permission="'field:edit'" type="primary" @click="submit"
-            >生成审批草稿</el-button
+          <el-button v-permission="'list:edit'" type="primary" @click="submit"
+            >保存草稿</el-button
           >
         </div>
       </template>
@@ -321,9 +315,13 @@
 </template>
 
 <script>
+import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
+import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
+import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
+import governanceWorkspaceMixin from '@/mixins/governanceWorkspaceMixin'
+import { completeResourceChange } from '@/utils/governanceWorkspace'
 import { markRaw } from 'vue'
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
-import { listProjects } from '@/api/project'
 import {
   listLibraries,
   createLibraryDraft,
@@ -334,9 +332,11 @@ import {
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 
 export default {
+  mixins: [governanceWorkspaceMixin],
   data() {
     return {
       listColumns: [
@@ -349,7 +349,6 @@ export default {
       activeTab: 'list',
       tableData: [],
       total: 0,
-      projects: [],
       query: {
         pageNum: 1,
         pageSize: 10,
@@ -380,9 +379,8 @@ export default {
     }
   },
   name: 'ListLibrary',
-  components: { ModuleCallLog, RemoteFilterSelect, ProjectFilterSelect, TableColumnSettings },
+  components: { GovernancePublishAction, GovernanceWorkspaceToolbar,  GovernanceResourceStatus, ModuleCallLog, RemoteFilterSelect, ProjectFilterSelect, ProjectResourceSelect, TableColumnSettings },
   created() {
-    this.loadProjects()
     this.loadData()
   },
   methods: {
@@ -396,14 +394,6 @@ export default {
         listType: 'BLACK',
         description: '',
         status: 1,
-      }
-    },
-    async loadProjects() {
-      try {
-        const res = await listProjects({ pageNum: 1, pageSize: 1000 })
-        this.projects = (res.data && res.data.records) || []
-      } catch (e) {
-        this.projects = []
       }
     },
     async loadData() {
@@ -466,11 +456,8 @@ export default {
         const response = payload.id
           ? await updateLibraryDraft(payload)
           : await createLibraryDraft(payload)
-        this.$message.success('审批草稿已生成，请检查后提交')
         this.dialogVisible = false
-        if (response.data && response.data.id) {
-          this.$router.push('/approval/' + response.data.id)
-        }
+        await completeResourceChange(this, response, () => this.loadData())
       })
     },
     async toggleStatus(row, requestedStatus) {
@@ -493,16 +480,13 @@ export default {
     },
     handleDelete(row) {
       this.$confirm(
-        `将为名单库「${row.listName}」生成删除审批。审批通过前，名单库和记录仍可正常使用。`,
-        '发起删除审批',
+        `确定删除名单库「${row.listName}」？待审批的新增草稿须先驳回；已生效内容需要删除审批。`,
+        '确认删除',
         { type: 'warning' }
       )
         .then(async () => {
           const response = await deleteLibraryDraft(row)
-          this.$message.success('删除审批草稿已生成')
-          if (response.data && response.data.id) {
-            this.$router.push('/approval/' + response.data.id)
-          }
+          await completeResourceChange(this, response, () => this.loadData())
         })
         .catch(() => {})
     },

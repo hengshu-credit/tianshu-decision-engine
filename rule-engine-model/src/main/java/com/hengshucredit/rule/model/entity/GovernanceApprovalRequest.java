@@ -27,6 +27,10 @@ public class GovernanceApprovalRequest {
     private Long baseVersionId;
     private Integer baseVersionNo;
     private Long sourceVersionId;
+    private String restoreMode;
+    private String publishMode;
+    private Long targetVersionId;
+    private Long expectedTargetSnapshotId;
     private String draftSnapshotJson;
     private String submittedSnapshotJson;
     private String snapshotDigest;

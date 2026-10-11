@@ -102,6 +102,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
+          <governance-workspace-toolbar resource-type="MODEL" />
               <table-column-settings :columns="modelColumns" storage-key="tianshu:table-columns:model-list" />
               <el-button
                 v-permission="'model:edit'"
@@ -239,18 +240,18 @@
           <el-table-column
             prop="status"
             label="状态"
-            min-width="60"
+            min-width="160"
             align="center"
           >
             <template v-slot="{ row }"
-              ><el-tag
+              ><governance-resource-status resource-type="MODEL" :resource-id="row.id" :status="row.status"><el-tag
                 :type="row.status === 1 ? 'success' : 'info'"
                 size="small"
                 >{{ row.status === 1 ? '启用' : '停用' }}</el-tag
-              ></template
+              ></governance-resource-status></template
             >
           </el-table-column>
-          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['详情', '编辑', '发布', '下线', '转为全局', '删除'])" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['详情', '编辑', '版本', '发布', '转为全局', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 link
@@ -260,33 +261,16 @@
                 @click="$router.push('/model/' + row.id)"
                 >详情</el-button
               >
-              <el-button
+              <el-button v-permission="'model:edit'"
                 link
                 data-action="edit"
                 size="small"
                 type="warning"
-                @click="handleEdit(row)"
+                @click="editWorkspace('MODEL', row, handleEdit)"
                 >编辑</el-button
               >
-              <el-button
-                link
-                data-action="publish"
-                size="small"
-                type="success"
-                @click="handlePublish(row)"
-                >{{
-                row.publishedVersion ? '重新发布' : '发布'
-              }}</el-button>
-              <el-button
-                v-if="row.publishedVersion"
-                link
-                data-action="disable"
-                size="small"
-                type="warning"
-                @click="openImpact(row, 'OFFLINE')"
-                >下线</el-button
-              >
-              <el-button
+              <governance-publish-action resource-type="MODEL" :resource-id="row.id" />
+              <el-button v-permission="'model:edit'"
                 v-if="row.scope === 'PROJECT'"
                 link
                 data-action="global"
@@ -295,7 +279,7 @@
                 @click="handleToGlobal(row)"
                 >转为全局</el-button
               >
-              <el-button
+              <el-button v-permission="'model:edit'"
                 link
                 data-action="delete"
                 size="small"
@@ -610,7 +594,7 @@
           <el-button size="small" @click="uploadVisible = false"
             >取消</el-button
           >
-          <el-button
+          <el-button v-permission="'model:edit'"
             size="small"
             type="primary"
             @click="handleDoUpload"
@@ -653,7 +637,7 @@
           <el-button size="small" @click="toGlobalVisible = false"
             >取消</el-button
           >
-          <el-button
+          <el-button v-permission="'model:edit'"
             size="small"
             type="primary"
             @click="handleDoToGlobal"
@@ -800,7 +784,7 @@
       <template v-slot:footer>
         <div>
           <el-button size="small" @click="editVisible = false">取消</el-button>
-          <el-button
+          <el-button v-permission="'model:edit'"
             size="small"
             type="primary"
             @click="handleDoEdit"
@@ -821,6 +805,11 @@
 </template>
 
 <script>
+import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
+import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
+import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
+import governanceWorkspaceMixin from '@/mixins/governanceWorkspaceMixin'
+import { completeResourceChange } from '@/utils/governanceWorkspace'
 import { markRaw } from 'vue'
 import {
   InfoFilled as ElIconInfo,
@@ -894,6 +883,7 @@ const createEditForm = () => ({
 })
 
 export default {
+  mixins: [governanceWorkspaceMixin],
   data() {
     return {
       modelColumns: [
@@ -1051,7 +1041,8 @@ export default {
       ElIconUpload2: markRaw(ElIconUpload2),
     }
   },
-  components: {
+  components: { GovernancePublishAction, GovernanceWorkspaceToolbar,
+    GovernanceResourceStatus,
     TableColumnSettings,
     ModuleCallLog,
     MonacoEditor,
@@ -1140,7 +1131,7 @@ export default {
     },
     async loadProjects() {
       try {
-        const res = await listProjects({ pageNum: 1, pageSize: 1000 })
+        const res = await listProjects({ pageNum: 1, pageSize: 1000, status: 1 })
         const list = res.data && res.data.records ? res.data.records : []
         this.projects = list
         this.projectList = list
@@ -1449,10 +1440,8 @@ export default {
                 (event.loaded * 100) / event.total
               )
           })
-          this.$message.success('模型已校验，审批通过后创建')
           this.uploadVisible = false
-          if (response.data && response.data.id)
-            this.$router.push('/approval/' + response.data.id)
+          await completeResourceChange(this, response, () => this.load())
         } catch (e) {
           this.$message.error(e.message || '上传失败')
         } finally {
@@ -1461,17 +1450,6 @@ export default {
       })
     },
 
-    async handlePublish(row) {
-      try {
-        await this.$confirm('确定发布模型「' + row.modelName + '」？')
-        const response = await api.publishModel(row.id)
-        this.$message.success('已创建模型启用审批')
-        if (response.data && response.data.id)
-          this.$router.push('/approval/' + response.data.id)
-      } catch (e) {
-        if (e !== 'cancel') this.$message.error(e.message || '发布失败')
-      }
-    },
     handleDelete(row) {
       this.openImpact(row, 'DELETE')
     },
@@ -1480,24 +1458,11 @@ export default {
       this.pendingImpactAction = action
       this.impactVisible = true
     },
-    async handleImpactConfirmed({ action, impactToken }) {
+    async handleImpactConfirmed({ impactToken }) {
       try {
-        let response
-        if (action === 'DELETE')
-          response = await api.deleteModel(this.pendingModel.id, impactToken)
-        else if (action === 'OFFLINE')
-          response = await api.unpublishModel(
-            this.pendingModel.id,
-            impactToken
-          )
+        const response = await api.deleteModel(this.pendingModel.id, impactToken)
         this.impactVisible = false
-        this.$message.success(
-          action === 'DELETE'
-            ? '已创建模型删除审批'
-            : '已创建模型停用审批'
-        )
-        if (response && response.data && response.data.id)
-          this.$router.push('/approval/' + response.data.id)
+        await completeResourceChange(this, response, () => this.load())
       } catch (error) {
         this.$message.error(error.message || '模型操作失败')
       }
@@ -1548,10 +1513,8 @@ export default {
             })
           }
           const response = await api.updateModel(payload)
-          this.$message.success('模型配置变更已送审')
           this.editVisible = false
-          if (response.data && response.data.id)
-            this.$router.push('/approval/' + response.data.id)
+          await completeResourceChange(this, response, () => this.load())
         } catch (e) {
           this.$message.error(e.message || '保存失败')
         } finally {

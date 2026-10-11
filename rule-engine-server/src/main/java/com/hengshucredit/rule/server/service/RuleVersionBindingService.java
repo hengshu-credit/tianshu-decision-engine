@@ -77,6 +77,11 @@ public class RuleVersionBindingService {
         return bindings(definitionId).stream().mapToInt(RuleVersionBinding::getVersionNo).max().orElse(0);
     }
 
+    public RuleVersionBinding requireBusinessVersion(Long definitionId, Integer versionNo) {
+        return bindings(definitionId).stream().filter(value -> Objects.equals(value.getVersionNo(), versionNo))
+                .findFirst().orElseThrow(() -> new IllegalArgumentException("原规则版本号不存在"));
+    }
+
     public RuleVersionBinding requireBinding(Long definitionId, Long bindingId) {
         RuleVersionBinding binding = bindings(definitionId).stream().filter(item -> Objects.equals(bindingId, item.getId()))
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("指定规则版本不存在"));
@@ -108,6 +113,7 @@ public class RuleVersionBindingService {
             result.setVersion(binding.getVersionNo()); result.setVersionBindingId(binding.getId()); result.setBindingGeneration(binding.getGeneration());
             result.setRevisionId(snapshot.getRevisionId()); result.setArtifactId(snapshot.getArtifactId()); result.setArtifactDigest(snapshot.getArtifactDigest());
             result.setModelJson(snapshot.getModelJson()); result.setCompiledScript(snapshot.getCompiledScript()); result.setCompiledType(snapshot.getCompiledType());
+            result.setOpenApiConfigJson(snapshot.getOpenApiConfigJson());
             if (snapshot.getCompiledScript() == null || snapshot.getCompiledScript().isBlank()) throw new IllegalStateException("指定版本没有可执行脚本");
         } else {
             bindings(latest.getDefinitionId()).stream().filter(binding -> Objects.equals(binding.getVersionNo(), latest.getVersion()))
@@ -144,6 +150,7 @@ public class RuleVersionBindingService {
                 published.setDefinitionId(definitionId); published.setRevisionId(snapshot.getRevisionId());
                 published.setArtifactId(snapshot.getArtifactId()); published.setArtifactDigest(snapshot.getArtifactDigest());
                 var fields = fieldSnapshotResolver.resolve(published);
+                row.put("inputFields", fields.getInputFields());
                 row.put("outputFields", fields.getOutputFields());
                 if (fields.getDiagnostics().stream().anyMatch(issue -> "ERROR".equals(issue.getSeverity()))) row.put("available", false);
             }

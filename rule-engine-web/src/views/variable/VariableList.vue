@@ -209,37 +209,25 @@
               min-width="120"
               show-overflow-tooltip
             />
+            <el-table-column prop="updateTime" label="更新时间" min-width="165" align="center">
+              <template #default="{ row }">{{ formatUpdateTime(row.updateTime) }}</template>
+            </el-table-column>
             <el-table-column
-              label="状态 / 更新"
-              width="118"
+              label="状态"
+              width="160"
               align="center"
               fixed="right"
             >
               <template v-slot="{ row }">
-                <el-tag
+                <governance-resource-status resource-type="VARIABLE" :resource-id="row.id" :status="row.status"><el-tag
                   :type="row.status === 1 ? 'success' : 'info'"
                   size="small"
                   >{{ row.status === 1 ? '启用' : '停用' }}</el-tag
-                >
-                <div
-                  class="table-secondary-time"
-                  :title="formatUpdateTime(row.updateTime)"
-                >
-                  {{ formatUpdateTime(row.updateTime).slice(0, 10) }}
-                </div>
+                ></governance-resource-status>
               </template>
             </el-table-column>
-            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="320" align="center" fixed="right">
+            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="455" align="center" fixed="right">
               <template v-slot="{ row }">
-                <el-button
-                  v-permission="'field:edit'"
-                  link
-                  data-action="edit"
-                  size="small"
-                  type="warning"
-                  @click="handleEdit(row)"
-                  >编辑</el-button
-                >
                 <el-button
                   v-if="isTestableSource(row)"
                   link
@@ -250,6 +238,15 @@
                   >详情</el-button
                 >
                 <el-button
+                  v-permission="'field:edit'"
+                  link
+                  data-action="edit"
+                  size="small"
+                  type="warning"
+                  @click="editWorkspace('VARIABLE', row, handleEdit)"
+                  >编辑</el-button
+                >
+                <el-button v-permission="'field:edit'"
                   v-if="isTestableSource(row)"
                   link
                   data-action="execute"
@@ -258,6 +255,7 @@
                   @click="handleTestVariable(row)"
                   >测试</el-button
                 >
+                <governance-publish-action resource-type="VARIABLE" :resource-id="row.id" />
                 <el-button
                   v-if="row.varType === 'ENUM'"
                   v-permission="'field:edit'"
@@ -590,7 +588,12 @@
                 }}</span>
               </template>
             </el-table-column>
-            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="300" align="center" fixed="right">
+            <el-table-column label="状态" min-width="160" align="center">
+              <template #default="{ row: node }">
+                <governance-resource-status v-if="node && node.object" resource-type="DATA_OBJECT" :resource-id="node.object.id" :status="node.object.status" />
+              </template>
+            </el-table-column>
+            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="435" align="center" fixed="right">
               <template v-slot="{ row: node }">
                 <template v-if="node && node.object">
                   <el-button
@@ -599,9 +602,10 @@
                     data-action="edit"
                     size="small"
                     :icon="ElIconEdit"
-                    @click.stop="handleEditObject(node.object)"
+                    @click.stop="editWorkspace('DATA_OBJECT', node.object, handleEditObject)"
                     >编辑</el-button
                   >
+                  <governance-publish-action v-if="node && node.object" resource-type="DATA_OBJECT" :resource-id="node.object.id" />
                   <el-button
                     v-permission="'field:edit'"
                     link
@@ -788,18 +792,18 @@
           <el-table-column
             prop="status"
             label="状态"
-            min-width="60"
+            min-width="160"
             align="center"
           >
             <template v-slot="{ row }"
-              ><el-tag
+              ><governance-resource-status resource-type="VARIABLE" :resource-id="row.id" :status="row.status"><el-tag
                 :type="row.status === 1 ? 'success' : 'info'"
                 size="small"
                 >{{ row.status === 1 ? '启用' : '停用' }}</el-tag
-              ></template
+              ></governance-resource-status></template
             >
           </el-table-column>
-          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="180" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="315" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 v-permission="'field:edit'"
@@ -807,9 +811,10 @@
                 data-action="edit"
                 size="small"
                 type="warning"
-                @click="handleEdit(row)"
+                @click="editWorkspace('VARIABLE', row, handleEdit)"
                 >编辑</el-button
               >
+              <governance-publish-action resource-type="VARIABLE" :resource-id="row.id" />
               <el-button
                 v-permission="'field:edit'"
                 link
@@ -848,7 +853,7 @@
 
       <el-tab-pane label="字段校验" name="validations" class="management-table-region">
         <el-alert
-          title="字段校验规则可在规则输入字段中复用。新建、修改、启停和删除会先生成审批草稿，审批通过前线上规则不变。"
+          title="字段校验保存为草稿，发布审批通过后才能引用。新增草稿无下游引用可直接删除；待审批时须先驳回。"
           type="info"
           :closable="false"
           show-icon
@@ -987,13 +992,13 @@
             min-width="180"
             show-overflow-tooltip
           />
-          <el-table-column label="状态" width="70" align="center">
+          <el-table-column label="状态" width="160" align="center">
             <template v-slot="{ row }"
-              ><el-tag
+              ><governance-resource-status resource-type="FIELD_VALIDATION" :resource-id="row.id" :status="row.status"><el-tag
                 :type="row.status === 1 ? 'success' : 'info'"
                 size="small"
                 >{{ row.status === 1 ? '启用' : '停用' }}</el-tag
-              ></template
+              ></governance-resource-status></template
             >
           </el-table-column>
           <el-table-column label="更新时间" min-width="165" align="center">
@@ -1003,7 +1008,7 @@
           </el-table-column>
           <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false"
             label="操作"
-            width="120"
+            width="255"
             align="center"
             fixed="right"
           >
@@ -1015,9 +1020,10 @@
                 data-action="edit"
                 size="small"
                 type="warning"
-                @click="editFieldValidation(row)"
+                @click="editWorkspace('FIELD_VALIDATION', row, editFieldValidation)"
                 >编辑</el-button
               >
+              <governance-publish-action v-if="!row.builtIn" resource-type="FIELD_VALIDATION" :resource-id="row.id" />
               <el-button
                 v-if="!row.builtIn"
                 v-permission="'field:edit'"
@@ -1057,7 +1063,7 @@
     </el-tabs>
 
     <el-dialog
-      :title="validationForm.id ? '编辑字段校验审批' : '新建字段校验审批'"
+      :title="validationForm.id ? '编辑字段校验' : '新建字段校验'"
       v-model="validationDialogVisible"
       width="600px"
       :close-on-click-modal="false"
@@ -1236,7 +1242,7 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="isObjectField && objectHasExternalSource" label="来源路径">
+        <el-form-item v-if="isObjectField && objectHasExternalSource && !objectFieldApiId" label="来源路径">
           <el-input
             v-model="form.sourcePath"
             placeholder="例如 data.customer.name；留空使用字段编码"
@@ -1250,7 +1256,7 @@
           />
         </el-form-item>
         <el-form-item v-if="isObjectField && objectFieldApiId" class="api-source-form-item" label="覆盖 API 入参">
-          <api-source-binding :api-id="objectFieldApiId" v-model:value="form.apiRequestOverrides" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="form.sourcePath = $event" />
+          <api-source-binding :api-id="objectFieldApiId" v-model:value="form.apiRequestOverrides" v-model:input-overrides="form.apiInputOverrides" :result-path="form.sourcePath" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="form.sourcePath = $event" />
         </el-form-item>
         <el-form-item v-if="!isObjectField" label="取值方式">
           <variable-source-selector
@@ -1289,37 +1295,13 @@
           @type-change="form.varType = $event"
         />
         <template v-if="!isObjectField && form.varSource === 'API'">
-          <el-form-item class="api-source-form-item" label="覆盖 API 入参"><api-source-binding :api-id="form.apiConfigId" v-model:value="form.apiRequestOverrides" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="form.apiResultPath = $event" /></el-form-item>
           <el-form-item label="接口配置">
-            <el-select
-              v-model="form.apiConfigId"
-              filterable
-              clearable
-              placeholder="选择接口"
-              style="width: 100%"
-            >
-              <el-option
-                v-for="api in sourceCatalog.apiOptions"
-                :key="api.id"
-                :label="api.name ? api.name + ' / ' + api.code : api.code"
-                :value="api.id"
-              />
-            </el-select>
+            <resource-picker :value="form.apiConfigId" :resources="sourceCatalog.apiOptions" placeholder="选择接口" @update:value="changeVariableApi" />
             <div class="field-help">
-              接口入参由外数 API 的“请求参数/请求体”统一配置，这里只选择要调用的
-              API。
+              选择 API 后，可覆盖已开放的调用入参，并选择要提取的结果字段。
             </div>
           </el-form-item>
-          <el-form-item label="结果路径">
-            <el-input
-              v-model="form.apiResultPath"
-              placeholder="body.data.score"
-            />
-            <div class="field-help">
-              从 API 映射后的返回中读取，例如
-              <code>body.score</code>；读取全部映射结果可填 <code>body</code>。
-            </div>
-          </el-form-item>
+          <el-form-item class="api-source-form-item" label="API 取值配置"><api-source-binding :api-id="form.apiConfigId" v-model:value="form.apiRequestOverrides" v-model:input-overrides="form.apiInputOverrides" :result-path="form.apiResultPath" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="form.apiResultPath = $event" /></el-form-item>
           <el-form-item label="异常策略">
             <el-select v-model="form.apiExceptionStrategy" style="width: 180px">
               <el-option label="抛出异常" value="ERROR" />
@@ -1403,8 +1385,8 @@
           <el-form-item label="名单库（多选）">
             <el-select
               v-model="form.listIds"
+              class="list-multi-select"
               multiple
-              collapse-tags
               filterable
               clearable
               placeholder="选择一个或多个名单库"
@@ -1418,7 +1400,7 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="查询表达式">
+          <el-form-item label="待匹配内容">
             <div
               v-for="(operand, index) in form.listQueryOperands"
               :key="index"
@@ -1431,8 +1413,8 @@
                 :list-options="compatibleListOptions"
                 :allowed-kinds="listQueryOperandKinds"
                 context="LIST_QUERY_VALUE"
-                :placeholder="'选择第 ' + (index + 1) + ' 个查询字段或表达式'"
-                editor-title="配置名单查询表达式"
+                :placeholder="'选择第 ' + (index + 1) + ' 项待匹配内容，如手机号字段'"
+                editor-title="配置待匹配内容"
                 @input="(value) => setListQueryOperand(index, value)"
               />
               <el-button
@@ -1447,10 +1429,10 @@
               link
               :icon="ElIconPlus"
               @click="addListQueryOperand"
-              >增加查询表达式</el-button
+              >添加待匹配内容</el-button
             >
-            <div class="field-help">
-              每一项都可组合字段、函数、阈值和运算符；引用按字段 ID 保存。
+            <div class="field-help list-query-help">
+              选择要拿去匹配名单的字段，例如手机号、身份证号；也可在字段选择器中选择“fx 组合表达式”，使用计算结果匹配。多项内容按下方组合模式判断是否命中。
             </div>
           </el-form-item>
           <el-form-item label="组合模式">
@@ -1477,9 +1459,9 @@
           <el-form-item label="内容类型">
             <el-select
               v-model="form.listItemTypes"
+              class="list-multi-select"
               multiple
               clearable
-              collapse-tags
               placeholder="不选表示任意类型"
               style="width: 100%"
             >
@@ -1587,7 +1569,7 @@
               <span>输入一组业务样例，确认来源配置能得到预期结果。</span>
             </div>
             <el-button v-if="form.varSource === 'DERIVED'" @click="generateDerivedSample">生成上游入参</el-button>
-            <el-button
+            <el-button v-permission="'field:edit'"
               type="primary"
               :loading="draftPreviewing"
               @click="previewDraftVariable"
@@ -1650,7 +1632,7 @@
         <managed-dialog-footer
           :loading="isObjectField && (objectFieldReferenceValidating || objectFieldSubmitting)"
           :disabled="isObjectField && (objectFieldReferenceLoading || objectFieldReferenceValidating || objectFieldSubmitting)"
-          :submit-text="isObjectField ? '确定' : '生成审批草稿'"
+          :submit-text="isObjectField ? '确定' : '保存草稿'"
           @cancel="dialogVisible = false"
           @submit="handleSubmit"
         />
@@ -1734,14 +1716,7 @@
             </el-form-item>
             <template v-if="objectForm.sourceType === 'API'">
               <el-form-item label="API 配置">
-                <el-select v-model="objectForm.apiConfigId" filterable clearable placeholder="选择 API 配置" style="width: 100%">
-                  <el-option
-                    v-for="api in apiConfigOptions"
-                    :key="api.id"
-                    :label="(api.apiName || api.name || api.apiCode || api.code) + (api.apiCode || api.code ? ' / ' + (api.apiCode || api.code) : '')"
-                    :value="api.id"
-                  />
-                </el-select>
+                <resource-picker :value="objectForm.apiConfigId" :resources="apiConfigOptions" placeholder="选择 API 配置" @update:value="changeObjectApi" />
               </el-form-item>
               <el-form-item label="绑定方式">
                 <el-radio-group v-model="objectForm.bindingMode">
@@ -1749,12 +1724,9 @@
                   <el-radio value="FIELDS">按字段路径</el-radio>
                 </el-radio-group>
               </el-form-item>
-              <el-form-item label="对象结果路径">
-                <el-input v-model="objectForm.resultPath" placeholder="body.data；默认 body" />
-                <div class="field-help">整体结果模式从此路径绑定对象；字段模式下各字段路径相对于此结果填写。</div>
-              </el-form-item>
-              <el-form-item class="api-source-form-item" label="覆盖请求入参">
-                <api-source-binding :api-id="objectForm.apiConfigId" v-model:value="objectForm.apiRequestOverrides" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="objectForm.resultPath = $event" />
+              <el-form-item class="api-source-form-item" label="API 取值配置">
+                <api-source-binding :api-id="objectForm.apiConfigId" v-model:value="objectForm.apiRequestOverrides" v-model:input-overrides="objectForm.apiInputOverrides" :result-path="objectForm.resultPath" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="objectForm.resultPath = $event" />
+                <div class="field-help">整体结果模式从结果路径绑定对象；字段模式下各字段路径相对于此结果填写。</div>
               </el-form-item>
             </template>
             <template v-if="objectForm.sourceType === 'DB'">
@@ -1869,7 +1841,7 @@
           <el-button size="small" @click="optionDialogVisible = false"
             >取消</el-button
           >
-          <el-button size="small" type="primary" @click="handleSaveOptions"
+          <el-button v-permission="'field:edit'" size="small" type="primary" @click="handleSaveOptions"
             >保存选项</el-button
           >
         </div>
@@ -1911,7 +1883,7 @@
           <el-button size="small" @click="variableTestVisible = false"
             >关闭</el-button
           >
-          <el-button
+          <el-button v-permission="'field:edit'"
             size="small"
             type="primary"
             :loading="variableTesting"
@@ -2079,7 +2051,7 @@
           <el-button size="small" :disabled="importing" @click="importJavaEntityVisible = false"
             >取消</el-button
           >
-          <el-button
+          <el-button v-permission="['field:edit', 'approval:submit']"
             size="small"
             type="primary"
             :loading="importing"
@@ -2151,7 +2123,7 @@
           <el-button size="small" :disabled="importing" @click="importJsonObjectVisible = false"
             >取消</el-button
           >
-          <el-button
+          <el-button v-permission="['field:edit', 'approval:submit']"
             size="small"
             type="primary"
             :loading="importing"
@@ -2218,7 +2190,7 @@
           <el-button size="small" :disabled="importing" @click="importDdlVisible = false"
             >取消</el-button
           >
-          <el-button
+          <el-button v-permission="['field:edit', 'approval:submit']"
             size="small"
             type="primary"
             :loading="importing"
@@ -2290,7 +2262,7 @@
           <el-button size="small" :disabled="importing" @click="importJavaConstVisible = false"
             >取消</el-button
           >
-          <el-button
+          <el-button v-permission="['field:edit', 'approval:submit']"
             size="small"
             type="primary"
             :loading="importing"
@@ -2350,7 +2322,7 @@
           <el-button size="small" :disabled="importing" @click="importJsonConstVisible = false"
             >取消</el-button
           >
-          <el-button
+          <el-button v-permission="['field:edit', 'approval:submit']"
             size="small"
             type="primary"
             :loading="importing"
@@ -2447,7 +2419,7 @@
           <el-button size="small" @click="validateDialogVisible = false"
             >取消</el-button
           >
-          <el-button
+          <el-button v-permission="'field:edit'"
             size="small"
             type="primary"
             :loading="validating"
@@ -2504,9 +2476,14 @@
 </template>
 
 <script>
+import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
+import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
+import governanceWorkspaceMixin from '@/mixins/governanceWorkspaceMixin'
+import { completeResourceChange } from '@/utils/governanceWorkspace'
 import SqlParameterEditor from '@/components/common/SqlParameterEditor.vue'
 import ExternalCallTrace from '@/components/common/ExternalCallTrace.vue'
 import ApiSourceBinding from '@/components/common/ApiSourceBinding.vue'
+import ResourcePicker from '@/components/common/ResourcePicker.vue'
 import DerivedVariableEditor from './components/DerivedVariableEditor.vue'
 import { createDerivedConfig, validateDerivedConfig, derivedCurrentInputs } from '@/utils/derivedVariable'
 import { validateReadOnlyQuery } from '@/utils/sqlQuery'
@@ -2622,6 +2599,7 @@ import VariableImportHelp from './components/VariableImportHelp.vue'
 import { hasPermission } from '@/security/permissionState'
 
 export default {
+  mixins: [governanceWorkspaceMixin],
   data() {
     return {
       activeTab: 'list',
@@ -2685,11 +2663,11 @@ export default {
         { key: 'objectCode', label: '对象编码' }, { key: 'objectLabel', label: '对象名称' },
         { key: 'scriptName', label: '脚本名称' }, { key: 'scope', label: '作用范围' },
         { key: 'projectName', label: '项目名称' }, { key: 'objectType', label: '对象类型' },
-        { key: 'source', label: '来源' }, { key: 'fieldCount', label: '字段数' }, { key: 'updateTime', label: '更新时间' },
+        { key: 'source', label: '来源' }, { key: 'fieldCount', label: '字段数' }, { key: 'updateTime', label: '更新时间' }, { key: 'status', label: '状态' },
       ],
       objectColumnOrder: [
         'objectCode', 'objectLabel', 'scriptName', 'scope', 'projectName',
-        'objectType', 'source', 'fieldCount', 'updateTime',
+        'objectType', 'source', 'fieldCount', 'updateTime', 'status',
       ],
       constantColumns: [
         { key: 'scope', label: '作用范围' }, { key: 'projectName', label: '项目名称' },
@@ -2809,6 +2787,7 @@ export default {
       objectAdvancedSections: [],
       objectForm: {
         apiRequestOverrides: {},
+        apiInputOverrides: {},
         lazyLoadReferences: false,
         id: null,
         objectCode: '',
@@ -2917,8 +2896,10 @@ export default {
       canEditFields: hasPermission('field:edit'),
     }
   },
-  components: {
+  components: { GovernancePublishAction,
+    GovernanceResourceStatus,
     ApiSourceBinding,
+    ResourcePicker,
     ExternalCallTrace,
     DerivedVariableEditor,
     SqlParameterEditor,
@@ -3273,6 +3254,15 @@ export default {
     },
   },
   methods: {
+    changeVariableApi(id) {
+      if (String(id || '') === String(this.form.apiConfigId || '')) return
+      Object.assign(this.form, { apiConfigId: id || '', apiRequestOverrides: {}, apiInputOverrides: {}, apiParamMapping: '{}', apiResultPath: 'body' })
+      this.resetDraftPreview()
+    },
+    changeObjectApi(id) {
+      if (String(id || '') === String(this.objectForm.apiConfigId || '')) return
+      Object.assign(this.objectForm, { apiConfigId: id || '', apiRequestOverrides: {}, apiInputOverrides: {}, paramMapping: '{}', resultPath: 'body' })
+    },
     isVariableColumnVisible(key) {
       return this.variableColumnOrder.includes(key)
     },
@@ -3348,6 +3338,7 @@ export default {
         derivedConfig: createDerivedConfig(),
         apiConfigId: '',
         apiRequestOverrides: {},
+        apiInputOverrides: {},
         apiParamMapping: '{}',
         apiResultPath: 'body',
         apiForceRefresh: false,
@@ -3555,7 +3546,7 @@ export default {
       }
     },
     async loadVariableSourceOptions(source) {
-      if (source === 'API' && !this.sourceOptionsLoaded.API) {
+      if (source === 'API' && hasPermission('datasource:view') && !this.sourceOptionsLoaded.API) {
         try {
           const res = await listApiConfigs({
             pageNum: 1,
@@ -3568,7 +3559,7 @@ export default {
           this.apiConfigOptions = []
         }
       }
-      if (source === 'DB' && !this.sourceOptionsLoaded.DB) {
+      if (source === 'DB' && hasPermission('database:view') && !this.sourceOptionsLoaded.DB) {
         try {
           const res = await listDbDatasources({
             pageNum: 1,
@@ -3581,7 +3572,7 @@ export default {
           this.dbDatasourceOptions = []
         }
       }
-      if (source === 'LIST' && !this.sourceOptionsLoaded.LIST) {
+      if (source === 'LIST' && hasPermission('list:view') && !this.sourceOptionsLoaded.LIST) {
         try {
           const res = await listLibraries({
             pageNum: 1,
@@ -3654,6 +3645,7 @@ export default {
         this.form.derivedConfig = { ...createDerivedConfig(), ...config }
       } else if (this.form.varSource === 'API') {
         this.form.apiRequestOverrides = config.requestOverrides || {}
+        this.form.apiInputOverrides = config.inputOverrides || {}
         this.form.apiConfigId = config.apiConfigId || ''
         this.form.apiParamMapping = this.stringifyConfig(
           config.paramMapping || {}
@@ -3715,9 +3707,13 @@ export default {
           this.$message.warning('请选择接口配置')
           return null
         }
+        const paramMapping = this.parseSourceJson(payload.apiParamMapping || '{}', '请求参数映射', {})
+        if (!paramMapping || Array.isArray(paramMapping) || typeof paramMapping !== 'object') return null
         payload.sourceConfig = JSON.stringify({
           apiConfigId: payload.apiConfigId,
           requestOverrides: payload.apiRequestOverrides || {},
+          inputOverrides: payload.apiInputOverrides || {},
+          ...(Object.keys(paramMapping).length ? { paramMapping } : {}),
           resultPath: payload.apiResultPath || 'body',
           forceRefresh: payload.apiForceRefresh === true,
           exceptionStrategy: payload.apiExceptionStrategy || 'ERROR',
@@ -3760,7 +3756,7 @@ export default {
           !Array.isArray(payload.listQueryOperands) ||
           !payload.listQueryOperands.length
         ) {
-          this.$message.warning('请至少配置一个名单查询表达式')
+          this.$message.warning('请至少配置一项待匹配内容')
           return null
         }
         for (let index = 0; index < payload.listQueryOperands.length; index++) {
@@ -3769,7 +3765,7 @@ export default {
           })
           if (errors.length) {
             this.$message.warning(
-              '第 ' + (index + 1) + ' 个名单查询表达式：' + errors[0].message
+              '第 ' + (index + 1) + ' 项待匹配内容：' + errors[0].message
             )
             return null
           }
@@ -3804,6 +3800,7 @@ export default {
         'derivedConfig',
         'apiConfigId',
         'apiRequestOverrides',
+        'apiInputOverrides',
         'apiParamMapping',
         'apiResultPath',
         'apiForceRefresh',
@@ -3844,7 +3841,7 @@ export default {
     },
     async loadProjects() {
       try {
-        const res = await listProjects({ pageNum: 1, pageSize: 1000 })
+        const res = await listProjects({ pageNum: 1, pageSize: 1000, status: 1 })
         const list = res.data && res.data.records ? res.data.records : []
         this.projects = list
         this.projectList = list
@@ -4386,7 +4383,7 @@ export default {
     },
     async handleDeleteObject(obj) {
       await this.$confirm(
-        `确定删除对象「${obj.objectCode}」及其所有变量？`,
+        `确定删除对象「${obj.objectCode}」及其字段？如有外部引用，请先删除下游内容。`,
         '确认删除',
         { type: 'warning' }
       )
@@ -4397,6 +4394,7 @@ export default {
     handleCreateObject() {
       this.objectForm = {
         apiRequestOverrides: {},
+        apiInputOverrides: {},
         lazyLoadReferences: false,
         id: null,
         objectCode: '',
@@ -4427,6 +4425,7 @@ export default {
       const sourceConfig = this.parseJsonSafe(obj.sourceContent, {})
       this.objectForm = {
         apiRequestOverrides: sourceConfig.requestOverrides || {},
+        apiInputOverrides: sourceConfig.inputOverrides || {},
         lazyLoadReferences: obj.lazyLoadReferences === true,
         id: obj.id,
         objectCode: obj.objectCode,
@@ -4501,6 +4500,7 @@ export default {
           sourceContent = JSON.stringify({
             apiConfigId: this.objectForm.apiConfigId,
             requestOverrides: this.objectForm.apiRequestOverrides || {},
+            inputOverrides: this.objectForm.apiInputOverrides || {},
             bindingMode: this.objectForm.bindingMode || 'OBJECT',
             resultPath: this.objectForm.resultPath || 'body',
             paramMapping,
@@ -4564,6 +4564,7 @@ export default {
       this.objectFieldNode = node
       this.form = {
         apiRequestOverrides: {},
+        apiInputOverrides: {},
         id: null,
         projectId: obj.projectId,
         varCode: '',
@@ -4596,6 +4597,7 @@ export default {
       this.objectFieldNode = node
       this.form = {
         apiRequestOverrides: this.parseJsonSafe(row.sourceConfig, {}).requestOverrides || {},
+        apiInputOverrides: this.parseJsonSafe(row.sourceConfig, {}).inputOverrides || {},
         id: row.id,
         projectId: row.projectId,
         varCode: row.varCode,
@@ -4875,13 +4877,10 @@ export default {
         } else {
           response = await updateFieldValidationDraft(payload)
         }
-        this.$message.success('审批草稿已生成，请检查后提交')
         this.validationDialogVisible = false
-        if (response.data && response.data.id) {
-          this.$router.push('/approval/' + response.data.id)
-        }
+        await completeResourceChange(this, response, () => this.loadFieldValidations())
       } catch (e) {
-        this.$message.error('生成审批草稿失败: ' + (e.message || e))
+        this.$message.error('保存草稿失败: ' + (e.message || e))
       } finally {
         this.validationSaving = false
       }
@@ -4892,16 +4891,13 @@ export default {
         return
       }
       this.$confirm(
-        `将为字段校验「${row.validationName}」生成删除审批。审批通过前，当前规则仍可正常使用。`,
-        '发起删除审批',
+        `确定删除字段校验「${row.validationName}」？待审批的新增草稿须先驳回；已生效内容需要删除审批。`,
+        '确认删除',
         { type: 'warning' }
       )
         .then(async () => {
           const response = await deleteFieldValidationDraft(row)
-          this.$message.success('删除审批草稿已生成')
-          if (response.data && response.data.id) {
-            this.$router.push('/approval/' + response.data.id)
-          }
+          await completeResourceChange(this, response, () => this.loadFieldValidations())
         })
         .catch(() => {})
     },
@@ -4968,8 +4964,8 @@ export default {
             scriptName: this.form.scriptName,
             varType: this.form.varType,
             sourcePath: this.form.sourcePath || null,
-            sourceConfig: Object.keys(this.form.apiRequestOverrides || {}).length
-              ? JSON.stringify({ requestOverrides: this.form.apiRequestOverrides }) : null,
+            sourceConfig: Object.keys(this.form.apiRequestOverrides || {}).length || Object.keys(this.form.apiInputOverrides || {}).length
+              ? JSON.stringify({ requestOverrides: this.form.apiRequestOverrides || {}, inputOverrides: this.form.apiInputOverrides || {} }) : null,
             refObjectCode: this.form.refObjectCode || null,
             refObjectId: this.form.refObjectId || null,
             refVariableId: this.form.refVariableId || null,
@@ -5099,7 +5095,7 @@ export default {
             field: refs.length
               ? refs.map((ref) => ref.code || ref.path).join(', ')
               : '无字段依赖',
-            usage: '名单查询表达式 #' + (index + 1),
+            usage: '待匹配内容 #' + (index + 1),
             expression: operandDisplay(operand),
           })
         })
@@ -5278,7 +5274,7 @@ export default {
         return '执行规则时按配置的查询条件读取数据库结果，再将结果写入当前变量。'
       }
       if (row && row.varSource === 'LIST') {
-        return '执行规则时计算一个或多个查询表达式，并按所选组合模式到一个或多个名单库中匹配。'
+        return '执行规则时获取待匹配内容的字段值或表达式结果，再按所选组合模式到名单库中匹配。'
       }
       return '当前变量使用普通输入或计算方式。'
     },
@@ -5344,7 +5340,7 @@ export default {
             value: listNames.length ? listNames.join('、') : '未配置',
           },
           {
-            label: '查询表达式',
+            label: '待匹配内容',
             value:
               (config.queryOperands || []).map(operandDisplay).join('；') ||
               '未配置',
@@ -5480,10 +5476,8 @@ export default {
       this.openApproval(response, '字段选项变更已送审')
       this.optionDialogVisible = false
     },
-    openApproval(response, message) {
-      this.$message.success(message)
-      if (response && response.data && response.data.id)
-        this.$router.push('/approval/' + response.data.id)
+    openApproval(response) {
+      return completeResourceChange(this, response, () => Promise.all([this.loadData(), this.loadObjectTree(), this.loadFieldValidations()]))
     },
 
     // ── Import ──
@@ -5783,13 +5777,6 @@ export default {
   color: var(--tianshu-text-tertiary);
   font-size: 13px;
 }
-.table-secondary-time {
-  margin-top: 3px;
-  color: var(--tianshu-text-tertiary);
-  font-size: 11px;
-  line-height: 1;
-  white-space: nowrap;
-}
 .field-help {
   color: var(--tianshu-text-tertiary);
   font-size: 12px;
@@ -5804,6 +5791,7 @@ export default {
 }
 .list-query-row {
   display: flex;
+  width: 100%;
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
@@ -5815,6 +5803,17 @@ export default {
 .list-query-remove {
   flex: none;
   color: #ef6b73 !important;
+}
+.list-query-help {
+  width: 100%;
+}
+.list-multi-select :deep(.el-tag) {
+  height: auto;
+  max-width: 100%;
+}
+.list-multi-select :deep(.el-select__tags-text) {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .var-list-section {
   margin-bottom: 24px;

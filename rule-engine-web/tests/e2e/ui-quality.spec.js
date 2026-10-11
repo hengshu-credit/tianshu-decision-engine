@@ -61,9 +61,10 @@ test('全部业务页面在密集桌面宽度下保持可读、可操作且无�
 
   for (const route of businessRoutes) {
     await page.goto(`http://tianshu.local/index.html#${route}`)
+    await expect(page.locator(`.workspace-tab[data-tab="${route}"]`)).toHaveClass(/is-active/)
     await expect(page.getByRole('main')).toBeVisible()
 
-    const audit = await page.evaluate(() => {
+    const inspect = () => page.evaluate(() => {
       const isVisible = (element) => {
         const style = getComputedStyle(element)
         const rect = element.getBoundingClientRect()
@@ -210,22 +211,15 @@ test('全部业务页面在密集桌面宽度下保持可读、可操作且无�
       }
     })
 
-    expect(audit.rootOverflow, `${route} 出现页面级横向溢出`).toBeLessThanOrEqual(
-      1
-    )
-    expect(audit.collapsedControls, `${route} 存在被压扁的输入控件`).toEqual([])
-    expect(
-      audit.unnamedIconButtons,
-      `${route} 存在无名称的图标按钮`
-    ).toEqual([])
-    expect(
-      audit.undersizedLinkButtons,
-      `${route} 存在点击热区过小的文字按钮`
-    ).toEqual([])
-    expect(
-      audit.lowContrastSemanticControls,
-      `${route} 存在对比度不足的语义控件`
-    ).toEqual([])
+    // 接口返回后禁用态到可操作态存在颜色过渡；检查稳定后的同一组严格标准。
+    await expect(async () => {
+      const audit = await inspect()
+      expect(audit.rootOverflow, `${route} 出现页面级横向溢出`).toBeLessThanOrEqual(1)
+      expect(audit.collapsedControls, `${route} 存在被压扁的输入控件`).toEqual([])
+      expect(audit.unnamedIconButtons, `${route} 存在无名称的图标按钮`).toEqual([])
+      expect(audit.undersizedLinkButtons, `${route} 存在点击热区过小的文字按钮`).toEqual([])
+      expect(audit.lowContrastSemanticControls, `${route} 存在对比度不足的语义控件`).toEqual([])
+    }).toPass({ timeout: 2000, intervals: [50, 100, 200] })
   }
 
   assertClean()
@@ -314,8 +308,10 @@ test('列表操作使用稳定且可区分的主题提示色', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1600, height: 1000 })
+  const apiData = createDocsApiData()
+  apiData.set('/api/rule/governance/workspaces/states', ({ url }) => url.searchParams.get('ids').split(',').map(resourceId => ({ resourceId, effectiveStatus: 'ACTIVE', requestStatus: 'EDITING', action: 'UPDATE', owned: true })))
   const { assertClean } = await installDistRoutes(page, {
-    apiData: createDocsApiData(),
+    apiData,
   })
   const pages = [
     {
@@ -324,6 +320,7 @@ test('列表操作使用稳定且可区分的主题提示色', async ({
         ['编辑', 'warning'],
         ['详情', 'primary'],
         ['测试', 'success'],
+        ['版本', 'primary'],
         ['删除', 'danger'],
       ],
     },
@@ -332,6 +329,7 @@ test('列表操作使用稳定且可区分的主题提示色', async ({
       actions: [
         ['详情', 'primary'],
         ['查看', 'info'],
+        ['版本', 'primary'],
         ['删除', 'danger'],
       ],
     },
@@ -341,6 +339,7 @@ test('列表操作使用稳定且可区分的主题提示色', async ({
       actions: [
         ['详情', 'primary'],
         ['查看', 'info'],
+        ['版本', 'primary'],
         ['删除', 'danger'],
       ],
     },
@@ -349,6 +348,7 @@ test('列表操作使用稳定且可区分的主题提示色', async ({
       actions: [
         ['编辑', 'warning'],
         ['测试', 'success'],
+        ['版本', 'primary'],
         ['加接口', 'primary'],
         ['删除', 'danger'],
       ],
@@ -359,6 +359,7 @@ test('列表操作使用稳定且可区分的主题提示色', async ({
         ['编辑', 'warning'],
         ['测试', 'success'],
         ['查询', 'primary'],
+        ['版本', 'primary'],
         ['删除', 'danger'],
       ],
     },
@@ -367,8 +368,9 @@ test('列表操作使用稳定且可区分的主题提示色', async ({
       actions: [
         ['详情', 'primary'],
         ['编辑', 'warning'],
-        ['重新发布', 'success'],
-        ['下线', 'warning'],
+        ['版本', 'primary'],
+        ['发布', 'success'],
+        ['转为全局', 'success'],
         ['删除', 'danger'],
       ],
     },
@@ -377,7 +379,7 @@ test('列表操作使用稳定且可区分的主题提示色', async ({
       actions: [
         ['测试', 'success'],
         ['编辑', 'warning'],
-        ['版本', 'info'],
+        ['版本', 'primary'],
         ['删除', 'danger'],
       ],
     },
@@ -385,6 +387,7 @@ test('列表操作使用稳定且可区分的主题提示色', async ({
 
   for (const item of pages) {
     await page.goto(`http://tianshu.local/index.html#${item.route}`)
+    await expect(page.locator(`.workspace-tab[data-tab="${item.route}"]`)).toHaveClass(/is-active/)
     await expect(page.getByRole('main')).toBeVisible()
     if (item.tab) {
       const tab = page.getByRole('tab', { name: item.tab, exact: true })
@@ -395,6 +398,7 @@ test('列表操作使用稳定且可区分的主题提示色', async ({
       '.el-table__body .el-button.is-link:visible'
     )
     await expect(visibleActions.first()).toBeVisible()
+    await expect(page.getByRole('button', { name: '发布', exact: true }).filter({ visible: true }).first()).toBeEnabled()
 
     for (const [label, type] of item.actions) {
       const button = page
@@ -406,6 +410,11 @@ test('列表操作使用稳定且可区分的主题提示色', async ({
       )
     }
 
+    // 状态批量返回后发布按钮从禁用切换到可用，等待真实颜色过渡完成再比较语义色。
+    await visibleActions.evaluateAll(async buttons => {
+      await new Promise(requestAnimationFrame)
+      await Promise.all(buttons.flatMap(button => button.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {}))))
+    })
     const colors = await visibleActions.evaluateAll((buttons) => {
       const visible = buttons.filter(
         button => button.getClientRects().length > 0
@@ -416,6 +425,8 @@ test('列表操作使用稳定且可区分的主题提示色', async ({
           .map(button => ({
             action: button.dataset.action,
             color: getComputedStyle(button).color,
+            roleColor: getComputedStyle(button).getPropertyValue('--tianshu-action-color'),
+            disabled: button.disabled,
           })),
         danger: visible
           .filter(button => button.classList.contains('el-button--danger'))
@@ -435,7 +446,7 @@ test('列表操作使用稳定且可区分的主题提示色', async ({
         normalActionColors.set(action.action, action.color)
       }
     }
-    expect(new Set(normalActionColors.values()).size, `${item.route} 的不同操作颜色未区分`)
+    expect(new Set(normalActionColors.values()).size, `${item.route} 的不同操作颜色未区分: ${JSON.stringify(colors.normal)}`)
       .toBe(normalActionColors.size)
     expect(new Set(colors.danger.map(action => action.color)).size,
       `${item.route} 的危险操作颜色不稳定`).toBe(1)

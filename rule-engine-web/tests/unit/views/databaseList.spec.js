@@ -147,7 +147,7 @@ describe('DatabaseList — JDBC URL 生成', () => {
       '数据库变量'
     ])
     expect(wrapper.vm.databaseGuideCards[0].text).toContain('只读账号')
-    expect(wrapper.vm.databaseGuideCards[2].text).toContain('sourceConfig')
+    expect(wrapper.vm.databaseGuideCards[2].text).toContain('数据库查询')
   })
 
   test('SQL 占位符统计会忽略字符串和注释中的问号', () => {

@@ -9,19 +9,19 @@ export const SIDEBAR_MENUS = [
   { index: '/project', label: '项目管理', icon: 'FolderOpened', permission: 'project:view' },
   { index: '/rule', label: '规则管理', icon: 'Operation', permission: 'rule:view' },
   { index: '/variable', label: '变量管理', icon: 'Collection', permission: 'field:view' },
-  { index: '/list', label: '名单管理', icon: 'Notebook', permission: 'field:view' },
+  { index: '/list', label: '名单管理', icon: 'Notebook', permission: 'list:view' },
   { index: '/datasource', label: '外数管理', icon: 'Connection', permission: 'datasource:view' },
   { index: '/database', label: '数据库管理', icon: 'Coin', permission: 'database:view' },
   { index: '/model', label: '模型管理', icon: 'Cpu', permission: 'model:view' },
   { index: '/function', label: '函数管理', icon: 'ScaleToOriginal', permission: 'function:view' },
   { index: '/test', label: '规则测试', icon: 'VideoPlay', permission: 'rule:view' },
-  { index: '/lineage', label: '血缘分析', icon: 'Share', permission: 'approval:view' },
+  { index: '/lineage', label: '血缘分析', icon: 'Share', permission: 'lineage:view' },
   { index: '/experiment', label: '分流实验', icon: 'Flag', permission: 'experiment:view' },
-  { index: '/log', label: '执行日志', icon: 'DocumentChecked', permission: 'rule:view' },
-  { index: '/billing', label: '账单管理', icon: 'Wallet', permission: 'project:view' },
+  { index: '/log', label: '执行日志', icon: 'DocumentChecked', permission: 'log:view' },
+  { index: '/billing', label: '账单管理', icon: 'Wallet', permission: 'billing:view' },
   { index: '/approval', label: '审批管理', icon: 'Stamp', permission: 'approval:view' },
-  { index: '/transfer', label: '离线迁移', icon: 'Upload', permission: 'rule:view' },
-  { index: '/account', label: '账户管理', icon: 'User', permission: 'account:view' }
+  { index: '/transfer', label: '离线迁移', icon: 'Upload', permission: 'transfer:view' },
+  { index: '/account', label: '账户管理', icon: 'User', permission: ['account:view', 'role:view', 'role:manage', 'account:audit'] }
 ]
 
 const MENU_PREFIXES = [

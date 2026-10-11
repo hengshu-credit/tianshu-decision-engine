@@ -1,7 +1,8 @@
 import request from './request'
+import { metadataResponse } from '@/utils/metadataResponse'
 
 export function listTransferResources(params) {
-  return request({ url: '/rule/transfer/resources', method: 'get', params })
+  return request({ ...metadataResponse, url: '/rule/transfer/resources', method: 'get', params })
 }
 
 export function exportResourceTransfer(roots, options = null) {
@@ -15,10 +16,15 @@ export function exportResourceTransfer(roots, options = null) {
 
 export function listTransferResourceFields(resourceType, resourceId) {
   return request({
+    ...metadataResponse,
     url: '/rule/transfer/resource-fields',
     method: 'get',
     params: { resourceType, resourceId },
   })
+}
+
+export function listTransferVersionCandidates(refType, resourceId) {
+  return request({ ...metadataResponse, url: '/rule/transfer/version-candidates', method: 'get', params: { refType, resourceId } })
 }
 
 export function previewResourceTransfer(file, options = null) {
@@ -26,6 +32,7 @@ export function previewResourceTransfer(file, options = null) {
   form.append('file', file)
   if (options) form.append('options', JSON.stringify(options))
   return request({
+    ...metadataResponse,
     url: options ? '/rule/transfer/preview/options' : '/rule/transfer/preview',
     method: 'post',
     data: form,
@@ -38,6 +45,7 @@ export function importResourceTransfer(file, options) {
   form.append('file', file)
   form.append('options', JSON.stringify(options || {}))
   return request({
+    ...metadataResponse,
     url: '/rule/transfer/import',
     method: 'post',
     data: form,
@@ -46,13 +54,13 @@ export function importResourceTransfer(file, options) {
 }
 
 export function listTransferLogs(params) {
-  return request({ url: '/rule/transfer/logs', method: 'get', params })
+  return request({ ...metadataResponse, url: '/rule/transfer/logs', method: 'get', params })
 }
 
 export function getTransferLog(id) {
-  return request({ url: `/rule/transfer/logs/${id}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/transfer/logs/${id}`, method: 'get' })
 }
 
 export function getTransferLogLineage(id) {
-  return request({ url: `/rule/transfer/logs/${id}/lineage`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/transfer/logs/${id}/lineage`, method: 'get' })
 }

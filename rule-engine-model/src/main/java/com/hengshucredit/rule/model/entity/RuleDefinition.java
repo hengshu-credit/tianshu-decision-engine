@@ -50,4 +50,10 @@ public class RuleDefinition {
     private String executionTraceId;
     @TableField(exist = false)
     private Integer executionAttemptNo;
+    @TableField(exist = false)
+    private Integer executionVersion;
+    @TableField(exist = false)
+    private Long executionRevisionId;
+    @TableField(exist = false)
+    private String executionArtifactDigest;
 }

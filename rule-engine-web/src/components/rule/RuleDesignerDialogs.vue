@@ -50,7 +50,7 @@ export default {
   watch: {
     choice: {
       immediate: true,
-      handler(choice) { this.saveMode = choice?.canOverwrite ? 'OVERWRITE' : 'NEW'; this.publishMode = 'NEW'; this.targetVersionId = ''; this.comment = '' },
+      handler(choice) { this.saveMode = choice?.canOverwrite ? 'OVERWRITE' : 'NEW'; this.publishMode = choice?.publishMode || 'NEW'; this.targetVersionId = choice?.targetVersionId || ''; this.comment = '' },
     },
   },
   methods: {

@@ -16,6 +16,7 @@ public class RuleExecutionPersistenceOutbox {
     private String eventId;
     private String logJson;
     private String definitionJson;
+    private String billingSnapshotJson;
     private Integer success;
     private Long costTimeMs;
     private String errorMessage;

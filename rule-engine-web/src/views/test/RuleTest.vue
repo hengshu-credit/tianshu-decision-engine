@@ -67,7 +67,16 @@
                 />
               </el-select>
             </el-form-item>
+            <el-form-item v-if="selectedRuleId" label="测试版本">
+              <el-select v-model="selectedTestSourceValue" :loading="testSourcesLoading" :disabled="testSourcesLoading" style="width: 100%" data-testid="rule-test-source" @change="onTestSourceChange">
+                <el-option v-for="item in testSourceOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+            </el-form-item>
           </el-form>
+          <el-alert v-if="testSourcesError" :title="testSourcesError" type="error" :closable="false" show-icon>
+            <el-button link @click="reloadTestSources">重新加载测试版本</el-button>
+          </el-alert>
+          <el-alert v-else-if="selectedExecutionSource" :title="executionSourceLabel(selectedExecutionSource, selectedTestSourceLabel || inputExecutionIdentity)" type="info" :closable="false" show-icon />
           <div
             v-if="ruleScope === 'PROJECT' && projectsError"
             class="test-setup-state is-error"
@@ -111,10 +120,10 @@
               <el-descriptions-item label="模型类型">
                 <el-tag size="small">{{ mtl(selectedRule.modelType) }}</el-tag>
               </el-descriptions-item>
-              <el-descriptions-item label="当前版本"
-                >v{{ selectedRule.currentVersion }}</el-descriptions-item
+              <el-descriptions-item label="测试版本"
+                >{{ selectedTestSourceLabel || '尚未选择' }}</el-descriptions-item
               >
-              <el-descriptions-item label="状态">
+              <el-descriptions-item label="规则上线状态">
                 <el-tag
                   :type="
                     { 0: 'info', 1: 'success', 2: 'warning' }[
@@ -138,8 +147,9 @@
         <div
           class="uiue-card input-parameters-card"
           style="margin-top: 12px"
+          :inert="testCaseLoading"
         >
-          <div class="uiue-card-title">
+          <div class="uiue-card-title input-parameters-title">
             输入参数
             <el-button
               link
@@ -155,6 +165,7 @@
               size="small"
               style="margin-left: 8px"
               @click="addParam"
+              v-if="inputMode === 'form'"
             >
               <el-icon><el-icon-plus /></el-icon> 手动添加
             </el-button>
@@ -166,6 +177,13 @@
             >
               <el-icon><el-icon-magic-stick /></el-icon> 综合风控样例
             </el-button>
+          </div>
+          <div class="input-mode-toolbar">
+            <el-radio-group :model-value="inputMode" size="small" aria-label="输入方式" @update:model-value="switchInputMode">
+              <el-radio-button value="form">表单填写</el-radio-button>
+              <el-radio-button value="json">JSON 编辑</el-radio-button>
+            </el-radio-group>
+            <el-button link size="small" :disabled="inputSampleJson === null || inputLoadState === 'LOADING' || inputLoadState === 'ERROR'" @click="generateInputSample">生成样例</el-button>
           </div>
           <div
             v-if="selectedRule && inputLoadState !== 'IDLE'"
@@ -190,8 +208,12 @@
               {{ warning }}
             </li>
           </ul>
+          <div v-if="inputMode === 'json'" class="input-json-editor" data-testid="rule-test-input-json">
+            <monaco-editor :key="inputEditorKey" v-model:value="paramsJson" language="json" height="300px" />
+            <div v-if="inputJsonError" class="input-json-error" role="alert">{{ inputJsonError }}</div>
+          </div>
           <div
-            v-if="params.length === 0 && inputLoadState !== 'LOADING'"
+            v-else-if="params.length === 0 && (selectedRule ? inputLoadState === 'EMPTY' : inputLoadState === 'IDLE')"
             style="color: var(--tianshu-text-tertiary); padding: 12px 0; text-align: center"
           >
             {{
@@ -259,6 +281,16 @@
           </el-form>
         </div>
 
+        <div v-if="selectedRule" class="uiue-card">
+          <expected-output-editor
+            ref="expectationEditor"
+            v-model="expectationJson"
+            v-model:snapshot-json="expectedSnapshotJson"
+            :outputs="testOutputFields"
+            :actual-response-json="lastRawResponseJson"
+          />
+        </div>
+
         <div
           v-if="selectedRule"
           class="uiue-card fixed-cases-card"
@@ -270,16 +302,18 @@
           <div class="uiue-card-title fixed-cases-title">
             <span>固定测试用例收藏</span>
             <span>
-              <el-button link size="small" @click="saveCurrentTestCase"
+              <el-button v-permission="'rule:edit'" link size="small" :disabled="testCaseLoading" @click="saveCurrentTestCase"
                 ><el-icon><el-icon-star-off /></el-icon>
-                收藏当前输入与结果</el-button
+                保存为新用例</el-button
               >
+              <el-button v-if="loadedTestCase" v-permission="'rule:edit'" link size="small" :disabled="testCaseLoading" :loading="testCaseSaving" @click="saveCurrentTestCase('UPDATE')">保存当前用例</el-button>
               <el-button
                 link
                 size="small"
                 :loading="batchExecuting"
                 :disabled="selectedTestCaseIds.length === 0"
                 @click="executeSelectedTestCases"
+                v-permission="'rule:edit'"
                 ><el-icon><el-icon-video-play /></el-icon> 批量执行</el-button
               >
             </span>
@@ -332,49 +366,52 @@
             <el-table-column label="执行结果" min-width="90">
               <template v-slot="{ row }"
                 ><el-tag
-                  :type="row.success ? 'success' : 'danger'"
+                  :type="row.executionStatus === 'THROTTLED' ? 'warning' : row.success ? 'success' : 'danger'"
                   size="small"
-                  >{{ row.success ? '成功' : '失败' }}</el-tag
+                  >{{ row.executionStatus === 'THROTTLED' ? executionStatusLabel(row.executionStatus) : row.success ? '成功' : '失败' }}</el-tag
                 ></template
               >
             </el-table-column>
-            <el-table-column label="结果 Diff" min-width="220">
+            <el-table-column label="预期校验" min-width="110">
+              <template #default="{ row }"><el-tag :type="validationTagType(row.validationStatus)">{{ validationLabel(row.validationStatus) }}</el-tag></template>
+            </el-table-column>
+            <el-table-column label="校验详情" min-width="220">
               <template v-slot="{ row }">
-                <span v-if="row.diffs.length === 0" class="diff-pass"
-                  >与收藏结果一致</span
-                >
-                <div v-else class="diff-lines">
+                <span>{{ row.validationMessage }}</span>
+                <div v-if="row.diffs.length" class="diff-lines">
                   <div v-for="(diff, index) in row.diffs" :key="index">
                     <code>{{ diff.path }}</code
-                    >：{{ formatJson(diff.expected) }} →
-                    {{ formatJson(diff.actual) }}
+                    >：{{ diff.expectedMissing ? '字段不存在' : diff.expectedJson }} →
+                    {{ diff.actualMissing ? '字段不存在' : diff.actualJson }}
                   </div>
                 </div>
+                <div v-for="(check, index) in row.checks" :key="index">{{ check.label }}：{{ check.message }}<span v-if="check.status === 'FAILED'">；预期 {{ check.expectedJson }}，实际 {{ check.actualMissing ? '字段不存在' : check.actualJson }}</span></div>
               </template>
             </el-table-column>
           </el-table>
         </div>
 
-        <div style="margin-top: 16px; text-align: center">
-          <span style="margin-right: 6px; color: var(--tianshu-text-secondary)">页面请求超时</span>
+        <div class="test-actions">
+          <span class="test-timeout-label">页面请求超时</span>
           <el-input-number
             v-model="requestTimeoutMs"
             :min="1000"
             :max="1800000"
             :step="1000"
             size="small"
-            style="width: 150px; margin-right: 6px"
+            class="test-timeout-input"
           />
-          <span style="margin-right: 12px; color: var(--tianshu-text-tertiary)">毫秒</span>
+          <span class="test-timeout-unit">毫秒</span>
           <el-button
             type="primary"
             :loading="executing"
-            :disabled="!selectedRuleId"
+            :disabled="!selectedRuleId || testCaseLoading || testSourcesLoading || !!testSourcesError || (!!selectedExecutionSource && inputLoadState === 'ERROR')"
             @click="handleExecute"
+            v-permission="'rule:edit'"
           >
             <el-icon><el-icon-video-play /></el-icon> 执行测试
           </el-button>
-          <el-button @click="handleClear">清空</el-button>
+          <el-button :disabled="testCaseLoading" @click="handleClear">清空</el-button>
         </div>
       </div>
 
@@ -402,23 +439,33 @@
           </div>
           <div v-else class="test-result-content">
             <el-alert
-              :title="result.success ? '执行成功' : '执行失败'"
-              :type="result.success ? 'success' : 'error'"
+              :title="resultThrottled ? executionStatusLabel(result.executionStatus) : result.success ? '执行成功' : '执行失败'"
+              :type="resultThrottled ? 'warning' : result.success ? 'success' : 'error'"
               :closable="false"
               show-icon
               style="margin-bottom: 16px"
             >
+              <span v-if="resultThrottled">{{ executionStatusHint(result.executionStatus) }} </span>
               <span>耗时 {{ result.executeTimeMs }} ms</span>
             </el-alert>
 
+            <div class="test-validation-result" data-testid="test-validation-result">
+              <el-tag :type="validationStale ? 'info' : validationTagType(testValidation.status)">{{ validationStale ? '待重新校验' : validationLabel(testValidation.status) }}</el-tag>
+              <span>{{ validationStale ? '输入或预期已修改，请重新执行后查看校验结果' : testValidation.message }}</span>
+              <template v-if="!validationStale">
+                <div v-for="(check, index) in testValidation.checks || []" :key="index">{{ check.label }}：{{ check.message }}<span v-if="check.status === 'FAILED'">；预期 {{ check.expectedJson }}，实际 {{ check.actualMissing ? '字段不存在' : check.actualJson }}</span></div>
+                <div v-for="(diff, index) in testValidation.diffs || []" :key="index"><code>{{ diff.path }}</code>：{{ diff.expectedMissing ? '字段不存在' : diff.expectedJson }} → {{ diff.actualMissing ? '字段不存在' : diff.actualJson }}</div>
+              </template>
+            </div>
+
             <div v-if="result.errorMessage" style="margin-bottom: 16px">
-              <div class="result-section-title is-error">错误信息</div>
-              <pre class="result-pre is-error">{{ result.errorMessage }}</pre>
+              <div class="result-section-title" :class="resultThrottled ? 'is-throttled' : 'is-error'">{{ resultThrottled ? '容量提示' : '错误信息' }}</div>
+              <pre class="result-pre" :class="resultThrottled ? 'is-throttled' : 'is-error'">{{ result.errorMessage }}</pre>
             </div>
 
             <div style="margin-bottom: 16px">
               <div class="result-section-title">返回结果</div>
-              <pre class="result-pre">{{ formatJson(result.output) }}</pre>
+              <pre class="result-pre">{{ exactOutputDisplay }}</pre>
             </div>
 
             <div
@@ -435,6 +482,7 @@
                   <el-option label="全部状态" value="ALL" />
                   <el-option label="成功" value="SUCCESS" />
                   <el-option label="失败" value="FAILED" />
+                  <el-option :label="executionStatusLabel('THROTTLED')" value="THROTTLED" />
                   <el-option label="命中" value="HIT" />
                   <el-option label="未命中" value="MISS" />
                 </el-select>
@@ -508,13 +556,17 @@ import { listProjects } from '@/api/project'
 import {
   listDefinitions,
   listProjectDefinitions,
-  executeRule,
   getContent,
+  listRuleRevisions,
+  listPublishedVersions,
+  getRuleRevision,
+  getVersionById,
   listInputFields,
   getRuleTestSchema,
   listApiScenarios,
   createApiScenario,
-  executeApiScenario,
+  updateApiScenario,
+  executeApiScenarioValidated,
 } from '@/api/definition'
 import { getVariableOptions } from '@/api/variable'
 import { getDataObjectFieldOptions } from '@/api/dataObject'
@@ -523,16 +575,21 @@ import { getModel } from '@/api/model'
 import TraceTree from '@/components/common/TraceTree.vue'
 import AsyncState from '@/components/common/AsyncState.vue'
 import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
+import ExpectedOutputEditor from '@/components/test/ExpectedOutputEditor.vue'
+import MonacoEditor from '@/components/MonacoEditor'
+import { cloneExactJson, createExactNumber, exactNumberText, isExactNumber, parseExactJson, parseExecutionSnapshotJson, stringifyExactJson } from '@/utils/exactJson'
 import { sampleValueForVarType } from '@/utils/testParamTemplate'
 import { normalizeTestResult } from '@/utils/testResult'
+import { executionStatusLabel, executionStatusHint } from '@/utils/executionStatus'
+import { revisionTestSource, executionSourceLabel, requireExecutionIdentity } from '@/utils/ruleTestExecutionSource'
 import { routeProjectId } from '@/utils/projectContext'
 import {
   normalizeTestSchema,
   schemaFieldsToTestFields,
   flattenSchemaSample,
+  buildNestedSchemaParams,
 } from '@/utils/testSchema'
 import {
-  diffTestResults,
   filterTraceTree,
   scenarioParams,
 } from '@/utils/testCaseTools'
@@ -542,6 +599,8 @@ export default {
     TraceTree,
     AsyncState,
     ConfigLayerGuide,
+    ExpectedOutputEditor,
+    MonacoEditor,
     ElIconStarOff,
     ElIconVideoPlay,
     ElIconRefresh,
@@ -566,18 +625,41 @@ export default {
       selectedProjectId: null,
       selectedRuleId: null,
       selectedRule: null,
+      testSourceOptions: [],
+      selectedTestSourceValue: '',
+      testSourcesLoading: false,
+      testSourcesError: '',
+      testSourcesRequestId: 0,
       params: [],
+      inputMode: 'form',
+      paramsJson: '{}',
+      inputEditorKey: 0,
+      inputSampleJson: null,
       inputLoadState: 'IDLE',
       inputLoadError: '',
       inputLoadSource: '',
       inputLoadWarnings: [],
       inputLoadRequestId: 0,
+      inputExecutionIdentity: null,
       ruleContextRequestId: 0,
       executionRequestId: 0,
       contextWarnings: [],
       executing: false,
       result: null,
       lastRawResponse: null,
+      lastRawResponseJson: '',
+      expectationJson: '{"version":1,"mode":"NONE","checks":[]}',
+      expectedSnapshotJson: '',
+      executedExpectationJson: null,
+      executedExpectedSnapshotJson: '',
+      testOutputFields: [],
+      testValidation: { status: 'NOT_EVALUATED', message: '执行后查看预期校验', checks: [], diffs: [] },
+      loadedTestCase: null,
+      loadedRequestJson: '',
+      loadedInputParamsJson: '',
+      testCaseEditSession: 0,
+      testCaseSaving: false,
+      testCaseLoading: false,
       executedInputParamsJson: '',
       traceTab: 'tree',
       traceStatusFilter: 'ALL',
@@ -609,7 +691,31 @@ export default {
     this.loadVarMap()
     this.loadFunctionNameMap()
   },
+  beforeUnmount() {
+    this.testSourcesRequestId++
+    this.ruleContextRequestId++
+    this.inputLoadRequestId++
+    this.executionRequestId++
+    this.batchExecutionRequestId++
+    this.testCasesRequestId++
+    this.testCaseEditSession++
+    this.projectsRequestId++
+    this.ruleListRequestId++
+  },
   computed: {
+    inputJsonError() {
+      if (this.inputMode !== 'json') return ''
+      try { this.parseInputJson(); return '' } catch (error) { return error.message }
+    },
+    selectedExecutionSource() {
+      return this.testSourceOptions.find(item => item.value === this.selectedTestSourceValue)?.source || null
+    },
+    selectedTestSourceLabel() {
+      return this.testSourceOptions.find(item => item.value === this.selectedTestSourceValue)?.label || ''
+    },
+    resultThrottled() {
+      return Boolean(this.result && this.result.executionStatus === 'THROTTLED')
+    },
     traceInfoJson: function () {
       if (
         !this.result ||
@@ -625,11 +731,20 @@ export default {
     },
     inputParamsJson: function () {
       // 执行结果必须绑定执行时快照；用户在结果页编辑输入不应改写历史追踪。
-      return this.executedInputParamsJson || JSON.stringify(this.buildParamMap())
+      if (this.executedInputParamsJson) return this.executedInputParamsJson
+      try { return stringifyExactJson(this.buildParamMap()) } catch { return '' }
     },
     outputResultJson: function () {
       if (!this.result || !this.result.hasOutput) return ''
-      return JSON.stringify(this.result.output)
+      return this.rawOutputJson() || JSON.stringify(this.result.output)
+    },
+    exactOutputDisplay() { return this.rawOutputJson(2) || this.formatJson(this.result && this.result.output) },
+    validationStale() {
+      if (!this.result) return false
+      try {
+        return stringifyExactJson(this.buildParamMap()) !== this.executedInputParamsJson ||
+          this.expectationJson !== this.executedExpectationJson || this.expectedSnapshotJson !== this.executedExpectedSnapshotJson
+      } catch { return true }
     },
     inputLoadStateTitle: function () {
       return {
@@ -659,6 +774,113 @@ export default {
     },
   },
   methods: {
+    executionSourceLabel,
+    resetTestSources() {
+      this.testSourcesRequestId++
+      this.testSourceOptions = []
+      this.selectedTestSourceValue = ''
+      this.testSourcesLoading = false
+      this.testSourcesError = ''
+    },
+    async loadExecutionSources() {
+      const ruleId = this.selectedRuleId, requestId = ++this.testSourcesRequestId
+      this.resetExecutionState()
+      this.resetInputLoadState()
+      this.batchExecutionRequestId++
+      this.batchExecuting = false
+      this.batchResults = []
+      this.testSourcesLoading = true
+      this.testSourcesError = ''
+      this.testSourceOptions = []
+      this.selectedTestSourceValue = ''
+      if (!ruleId) { this.testSourcesLoading = false; return false }
+      try {
+        const [revisionResponse, versionResponse] = await Promise.all([listRuleRevisions(ruleId), listPublishedVersions(ruleId)])
+        if (requestId !== this.testSourcesRequestId || String(ruleId) !== String(this.selectedRuleId)) return false
+        const revisions = this.unwrapResponse(revisionResponse), versions = this.unwrapResponse(versionResponse)
+        if (!Array.isArray(revisions) || !Array.isArray(versions)) throw new Error('测试版本列表响应不完整，请重新加载')
+        const ordered = (Array.isArray(revisions) ? [...revisions] : []).filter(item => item.state !== 'DELETED')
+          .sort((left, right) => (right.revisionNo || 0) - (left.revisionNo || 0))
+        const revisionOptions = ordered.map(item => ({
+          value: `REVISION:${item.id}`, source: revisionTestSource(item),
+          label: `${item.state === 'DRAFT' ? '草稿' : '修订'} ${item.revisionNo || item.id} · ${{ DRAFT: '未发布', REVIEW: '评审中', APPROVED: '已批准', PUBLISHED: '已发布', OFFLINE: '已下线', REJECTED: '已驳回' }[item.state] || item.state}`,
+        })).filter(item => item.source)
+        const versionOptions = (Array.isArray(versions) ? versions : []).map(item => ({
+          value: `VERSION:${item.id}`, source: { sourceType: 'VERSION', sourceId: String(item.id) },
+          label: `发布版本 v${item.version}${item.generation > 1 ? ` · 第 ${item.generation} 次发布` : ''}${item.available === false ? ' · 缺少可验证制品' : ''}`,
+        }))
+        const businessOptions = versions.filter(item => item.bindingId != null && item.available !== false).map(item => ({
+          value: `BUSINESS_VERSION:${item.bindingId}`, source: { sourceType: 'BUSINESS_VERSION', sourceId: String(item.bindingId) }, label: `指定业务版本 v${item.version}（跟随覆盖发布）`,
+        }))
+        this.testSourceOptions = [...(businessOptions.length ? [{ value: 'LATEST', source: { sourceType: 'LATEST' }, label: '最新版（当前生产）' }] : []),
+          ...businessOptions, ...revisionOptions.filter(item => item.source.lockVersion != null), ...versionOptions,
+          ...revisionOptions.filter(item => item.source.lockVersion == null)]
+        if (!this.testSourceOptions.length) this.testSourceOptions = [{ value: 'WORKSPACE', source: { sourceType: 'WORKSPACE' }, label: '旧版工作区（没有修订记录）' }]
+        this.selectedTestSourceValue = this.testSourceOptions[0].value
+        return true
+      } catch (error) {
+        if (requestId === this.testSourcesRequestId) this.testSourcesError = this.requestErrorMessage(error, '测试版本读取失败，请重试')
+        return false
+      } finally {
+        if (requestId === this.testSourcesRequestId) this.testSourcesLoading = false
+      }
+    },
+    async reloadTestSources() {
+      if (await this.loadExecutionSources()) await this.onTestSourceChange()
+    },
+    async onTestSourceChange() {
+      const contextRequestId = ++this.ruleContextRequestId
+      this.resetExecutionState()
+      this.resetInputLoadState()
+      this.batchExecutionRequestId++
+      this.batchExecuting = false
+      this.batchResults = []
+      await Promise.all([this.loadModelJson(contextRequestId), this.loadFunctionNameMap(contextRequestId), this.loadVarMap(contextRequestId), this.loadVariables()])
+    },
+    executionStatusLabel,
+    executionStatusHint,
+    validationLabel(status) {
+      return { PASSED: '校验通过', FAILED: '预期不符', NOT_CONFIGURED: '未设置预期', INVALID: '预期配置无效', NOT_EVALUATED: '未校验' }[status] || '未校验'
+    },
+    validationTagType(status) { return status === 'PASSED' ? 'success' : ['FAILED', 'INVALID'].includes(status) ? 'danger' : status === 'NOT_EVALUATED' ? 'warning' : 'info' },
+    resetExpectationContext() {
+      this.testCaseEditSession++
+      this.testCaseSaving = false
+      this.testCaseLoading = false
+      this.expectationJson = '{"version":1,"mode":"NONE","checks":[]}'
+      this.expectedSnapshotJson = ''
+      this.testOutputFields = []
+      this.loadedTestCase = null
+      this.loadedRequestJson = ''
+      this.loadedInputParamsJson = ''
+    },
+    unwrapValidatedResponse(response) {
+      const payload = this.unwrapResponse(response)
+      if (!payload || !payload.execution || typeof payload.responseJson !== 'string') throw new Error('测试服务未返回有效的执行结果')
+      parseExecutionSnapshotJson(payload.responseJson)
+      const allowed = ['PASSED', 'FAILED', 'NOT_CONFIGURED', 'INVALID', 'NOT_EVALUATED']
+      const validation = payload.validation && allowed.includes(payload.validation.status)
+        ? { ...payload.validation, checks: payload.validation.checks || [], diffs: payload.validation.diffs || [] }
+        : { status: 'NOT_EVALUATED', message: '服务端未返回可识别的预期校验结果', checks: [], diffs: [] }
+      return { ...payload, validation }
+    },
+    rawOutputJson(space = 0) {
+      if (!this.lastRawResponseJson) return ''
+      try {
+        const root = parseExecutionSnapshotJson(this.lastRawResponseJson)
+        const value = root && root.data && typeof root.data === 'object' ? root.data : root
+        for (const key of ['result', 'outputs', 'value', 'resolvedValue']) if (value && Object.hasOwn(value, key)) return stringifyExactJson(value[key], space)
+      } catch { /* 原始快照由执行响应校验；无可用快照时沿用原展示。 */ }
+      return ''
+    },
+    buildRequestJson() {
+      const params = this.buildParamMap()
+      const paramsJson = stringifyExactJson(params)
+      if (this.loadedRequestJson && paramsJson === this.loadedInputParamsJson) return this.loadedRequestJson
+      const request = this.loadedRequestJson ? parseExactJson(this.loadedRequestJson) : { clientAppName: 'rule-test' }
+      Object.defineProperty(request, 'params', { value: params, writable: true, configurable: true, enumerable: true })
+      return stringifyExactJson(request)
+    },
     async applyProjectContext(projectId) {
       this.contextProjectId = Number(projectId)
       this.ruleScope = 'PROJECT'
@@ -704,6 +926,7 @@ export default {
     },
     async loadVarMap(contextRequestId) {
       this.varMap = {}
+      if (this.selectedExecutionSource && this.selectedExecutionSource.sourceType !== 'WORKSPACE') return
       if (!this.selectedRuleId) return
       const ruleId = this.selectedRuleId
       try {
@@ -728,6 +951,7 @@ export default {
     },
     async loadFunctionNameMap(contextRequestId) {
       this.functionNameMap = {}
+      if (this.selectedExecutionSource && this.selectedExecutionSource.sourceType !== 'WORKSPACE') return
       if (!this.selectedRule) return
       const ruleId = this.selectedRuleId
       var pid = this.selectedRule.projectId
@@ -761,7 +985,9 @@ export default {
       if (!this.selectedRuleId || !this.selectedRule) return
       const ruleId = this.selectedRuleId
       try {
-        var r = await getContent(ruleId)
+        const source = this.selectedExecutionSource
+        var r = source?.sourceType === 'VERSION' ? await getVersionById(ruleId, source.sourceId)
+          : source?.sourceType === 'REVISION' ? await getRuleRevision(ruleId, source.sourceId) : await getContent(ruleId)
         if (!this.isActiveRuleContext(contextRequestId, ruleId)) return
         var content = r && r.data ? r.data : r
         if (content && content.modelJson) {
@@ -780,12 +1006,15 @@ export default {
       }
     },
     async onScopeChange() {
+      this.resetTestSources()
       ++this.ruleContextRequestId
       this.selectedRuleId = null
       this.selectedRule = null
       this.rules = []
       this.params = []
+      this.updateInputJson('{}')
       this.resetExecutionState()
+      this.resetExpectationContext()
       this.contextWarnings = []
       this.resetInputLoadState()
       this.resetTestCases()
@@ -806,12 +1035,15 @@ export default {
       )
     },
     async onProjectChange() {
+      this.resetTestSources()
       ++this.ruleContextRequestId
       this.selectedRuleId = null
       this.selectedRule = null
       this.rules = []
       this.params = []
+      this.updateInputJson('{}')
       this.resetExecutionState()
+      this.resetExpectationContext()
       this.contextWarnings = []
       this.resetInputLoadState()
       this.resetTestCases()
@@ -826,11 +1058,14 @@ export default {
     async onRuleChange() {
       const contextRequestId = ++this.ruleContextRequestId
       this.selectedRule =
-        this.rules.find((r) => r.id === this.selectedRuleId) || null
+        this.rules.find((r) => String(r.id) === String(this.selectedRuleId)) || null
       this.params = []
+      this.updateInputJson('{}')
       this.resetExecutionState()
+      this.resetExpectationContext()
       this.contextWarnings = []
       this.resetInputLoadState()
+      if (!await this.loadExecutionSources() || !this.isActiveRuleContext(contextRequestId, this.selectedRuleId)) return
       await Promise.all([
         this.loadModelJson(contextRequestId),
         this.loadFunctionNameMap(contextRequestId),
@@ -905,109 +1140,120 @@ export default {
         }
       }
     },
-    async saveCurrentTestCase() {
-      if (!this.selectedRuleId) return
-      let promptResult
+    async saveCurrentTestCase(mode = 'NEW') {
+      if (!this.selectedRuleId || this.testCaseSaving || this.testCaseLoading) return
+      const ruleId = this.selectedRuleId
+      const contextRequestId = this.ruleContextRequestId
+      const session = this.testCaseEditSession
+      const editorCheck = this.$refs.expectationEditor?.validate?.()
+      if (editorCheck && !editorCheck.valid) { this.notifyWarning(editorCheck.errors[0]); return }
+      let paramsJson, requestJson, expectationMode
+      const config = this.expectationJson
       try {
-        promptResult = await this.$prompt(
-          '请输入固定用例名称',
-          '收藏测试用例',
-          {
-            inputValidator: (value) => Boolean(value && value.trim()),
-            inputErrorMessage: '用例名称不能为空',
-          }
-        )
-      } catch (e) {
+        paramsJson = stringifyExactJson(this.buildParamMap()); requestJson = this.buildRequestJson()
+        expectationMode = config == null ? 'SNAPSHOT' : parseExactJson(config).mode
+      }
+      catch (error) { this.notifyWarning(error.message); return }
+      const executedResponse = this.lastRawResponse
+      if (executedResponse && paramsJson !== this.executedInputParamsJson) {
+        this.notifyWarning('输入参数已修改，请重新执行后再收藏输入与结果')
         return
       }
-      const params = this.buildParamMap()
-      const response = this.lastRawResponse || {
-        code: 200,
-        data: { success: false, result: null, errorMessage: '尚未执行' },
+      const responseJson = expectationMode === 'SNAPSHOT' ? this.expectedSnapshotJson || '{}'
+        : this.lastRawResponseJson || (this.loadedInputParamsJson === paramsJson ? this.loadedTestCase?.responseJson : null) || '{}'
+      const existing = mode === 'UPDATE' ? this.loadedTestCase : null
+      const saveRequest = {
+        scenarioName: existing?.scenarioName || '',
+        description: existing?.description || '规则测试页保存的固定测试用例',
+        requestJson, responseJson, expectationJson: config,
+        responseSource: executedResponse && responseJson === this.lastRawResponseJson ? 'EXECUTED' : 'MANUAL',
+        businessCodePath: existing?.businessCodePath || '', includeInDoc: existing?.includeInDoc || 0,
+        sortOrder: existing?.sortOrder, status: existing?.status ?? 1,
       }
-      await createApiScenario(this.selectedRuleId, {
-        scenarioName: promptResult.value.trim(),
-        description: '规则测试页收藏的固定测试用例',
-        requestJson: JSON.stringify({
-          clientAppName: 'rule-test',
-          params: params,
-        }),
-        responseJson: JSON.stringify(response),
-        responseSource: this.lastRawResponse ? 'EXECUTED' : 'MANUAL',
-        businessCodePath: '',
-        includeInDoc: 0,
-        status: 1,
-      })
-      await this.loadTestCases()
-      this.notifySuccess('固定测试用例已收藏')
+      this.testCaseSaving = true
+      try {
+        if (!existing) {
+          const promptResult = await this.$prompt('请输入固定用例名称', '收藏测试用例', {
+            inputValidator: (value) => Boolean(value && value.trim()), inputErrorMessage: '用例名称不能为空',
+          })
+          saveRequest.scenarioName = promptResult.value.trim()
+        }
+        if (!this.isActiveRuleContext(contextRequestId, ruleId) || session !== this.testCaseEditSession) return
+        const response = existing ? await updateApiScenario(ruleId, existing.id, saveRequest) : await createApiScenario(ruleId, saveRequest)
+        if (!this.isActiveRuleContext(contextRequestId, ruleId) || session !== this.testCaseEditSession) return
+        const saved = this.unwrapResponse(response)
+        if (saved?.id) this.loadedTestCase = { ...saveRequest, ...saved }
+        this.loadedRequestJson = requestJson
+        this.loadedInputParamsJson = paramsJson
+        await this.loadTestCases()
+        this.notifySuccess(existing ? '测试用例已更新' : '固定测试用例已收藏')
+      } catch (error) {
+        if (error && typeof error === 'object' && error.message) this.notifyWarning(error.message)
+      } finally {
+        if (session === this.testCaseEditSession) this.testCaseSaving = false
+      }
     },
     async applyTestCase(testCase) {
       const ruleId = this.selectedRuleId
+      const session = ++this.testCaseEditSession
+      this.testCaseSaving = false
       const values = scenarioParams(testCase && testCase.requestJson)
-      await this.loadVariables()
-      if (String(ruleId) !== String(this.selectedRuleId)) return
-      const existing = {}
-      this.params.forEach((param) => {
-        existing[param.key] = param
-      })
-      const flattened = this.flattenCaseParams(values)
-      Object.keys(flattened).forEach((key) => {
-        if (existing[key]) {
-          existing[key].value = flattened[key]
-        } else {
-          this.params.push({
-            key: key,
-            label: '',
-            value: flattened[key],
-            type: this.valueType(flattened[key]),
-            example: '',
-            fromVar: false,
-            options: [],
-          })
-        }
-      })
+      this.testCaseLoading = true
+      this.expectationJson = testCase.expectationJson ?? null
+      this.expectedSnapshotJson = testCase.responseJson || ''
       this.resetExecutionState()
+      try {
+        const loading = this.loadVariables()
+        const inputRequestId = this.inputLoadRequestId
+        await loading
+        if (!this.isActiveInputRequest(inputRequestId, ruleId) || session !== this.testCaseEditSession) return
+        this.replaceParamsFromValues(values)
+        this.updateInputJson(stringifyExactJson(values, 2))
+        this.loadedTestCase = { ...testCase }
+        this.loadedRequestJson = testCase.requestJson
+        this.loadedInputParamsJson = stringifyExactJson(values)
+      } finally {
+        if (session === this.testCaseEditSession) this.testCaseLoading = false
+      }
     },
     async executeSelectedTestCases() {
+      if (this.testSourcesLoading || this.testSourcesError || (this.selectedExecutionSource && this.inputLoadState === 'ERROR')) return
       const selected = this.testCases.filter(
         (testCase) => this.selectedTestCaseIds.indexOf(testCase.id) >= 0
-      )
+      ).map(testCase => ({ ...testCase }))
       if (selected.length === 0) return
       const ruleId = this.selectedRuleId
+      const projectId = this.selectedProjectId
+      const source = this.selectedExecutionSource ? { ...this.selectedExecutionSource } : null
       const requestId = ++this.batchExecutionRequestId
       this.batchExecuting = true
       this.batchResults = []
       try {
         for (const testCase of selected) {
           try {
-            const request = JSON.parse(testCase.requestJson || '{}')
-            if (this.selectedProjectId) {
-              request.projectId = this.selectedProjectId
-            }
-            const actual = await executeApiScenario(
+            const actual = await executeApiScenarioValidated(
               ruleId,
-              request,
+              { ...(source ? { executionSource: source } : {}), scenarioId: testCase.id, projectId: projectId || undefined, requestJson: testCase.requestJson || '{}',
+                expectationJson: testCase.expectationJson ?? '{"version":1,"mode":"SNAPSHOT"}', expectedResponseJson: testCase.responseJson || '{}' },
               this.requestTimeoutMs
             )
             if (!this.isActiveBatchExecution(requestId, ruleId)) return
-            const expected = JSON.parse(testCase.responseJson || '{}')
+            const payload = this.unwrapValidatedResponse(actual)
+            requireExecutionIdentity(payload.execution.executionIdentity, ruleId, source)
+            const normalized = normalizeTestResult(payload.execution)
             this.batchResults.push({
               scenarioName: testCase.scenarioName,
-              success: true,
-              diffs: diffTestResults(expected, actual),
+              success: normalized.success === true,
+              executionStatus: normalized.executionStatus || '',
+              validationStatus: payload.validation.status, validationMessage: payload.validation.message,
+              checks: payload.validation.checks, diffs: payload.validation.diffs,
             })
           } catch (e) {
             if (!this.isActiveBatchExecution(requestId, ruleId)) return
             this.batchResults.push({
               scenarioName: testCase.scenarioName,
               success: false,
-              diffs: [
-                {
-                  path: '$',
-                  expected: '成功执行',
-                  actual: e.message || '执行失败',
-                },
-              ],
+              validationStatus: 'NOT_EVALUATED', validationMessage: e.message || '执行请求失败，未进行预期校验', checks: [], diffs: [],
             })
           }
         }
@@ -1018,12 +1264,12 @@ export default {
       }
     },
     flattenCaseParams(value, prefix, target) {
-      const output = target || {}
+      const output = target || Object.create(null)
       const currentPrefix = prefix || ''
       Object.keys(value || {}).forEach((key) => {
         const path = currentPrefix ? currentPrefix + '.' + key : key
         const item = value[key]
-        if (item && typeof item === 'object' && !Array.isArray(item))
+        if (item && typeof item === 'object' && !isExactNumber(item) && !Array.isArray(item) && Object.keys(item).length > 0)
           this.flattenCaseParams(item, path, output)
         else output[path] = item
       })
@@ -1031,16 +1277,44 @@ export default {
     },
     valueType(value) {
       if (typeof value === 'boolean') return 'BOOLEAN'
-      if (typeof value === 'number') return 'NUMBER'
+      if (typeof value === 'number' || isExactNumber(value)) return 'NUMBER'
+      if (Array.isArray(value)) return 'LIST'
+      if (value && typeof value === 'object') return 'OBJECT'
       return 'STRING'
     },
+    caseDisplayValue(value) {
+      if (isExactNumber(value)) return exactNumberText(value)
+      return value && typeof value === 'object' ? stringifyExactJson(value) : value
+    },
+    flattenCaseParamEntries(value, path = [], entries = []) {
+      for (const key of Object.keys(value || {})) {
+        const item = value[key], segments = [...path, key]
+        if (item && typeof item === 'object' && !isExactNumber(item) && !Array.isArray(item) && Object.keys(item).length) this.flattenCaseParamEntries(item, segments, entries)
+        else entries.push({ key: segments.join('.'), value: item, path: segments })
+      }
+      return entries
+    },
     async loadVariables() {
+      const ruleId = this.selectedRuleId
+      const jsonAtStart = this.paramsJson
+      const validJson = !this.inputJsonError
+      if (this.inputMode === 'json' && validJson) this.replaceParamsFromValues(this.parseInputJson())
+      const loading = this.loadInputVariables()
+      const requestId = this.inputLoadRequestId
+      await loading
+      if (!this.isActiveInputRequest(requestId, ruleId)) return
+      if (this.inputMode === 'json' && validJson && this.paramsJson === jsonAtStart && this.inputLoadState !== 'ERROR') {
+        this.updateInputJson(stringifyExactJson(this.buildFormParamMap(), 2))
+      }
+    },
+    async loadInputVariables() {
       if (!this.selectedRule || !this.selectedRuleId) {
         this.resetInputLoadState()
         return
       }
       const ruleId = this.selectedRuleId
       const requestId = ++this.inputLoadRequestId
+      const source = this.selectedExecutionSource ? { ...this.selectedExecutionSource } : null
       const previousParams = this.params.map((param) => ({ ...param }))
       const previousValues = new Map(
         previousParams
@@ -1059,24 +1333,35 @@ export default {
           await getRuleTestSchema({
             targetType: 'RULE',
             targetId: ruleId,
+            ...(source ? { executionSource: source } : {}),
+            ...(source && this.selectedProjectId ? { projectId: this.selectedProjectId } : {}),
           })
         )
         if (!this.isActiveInputRequest(requestId, ruleId)) return
+        if (source?.sourceType !== 'WORKSPACE' || schema.executionIdentity) requireExecutionIdentity(schema.executionIdentity, ruleId, source)
+        this.inputExecutionIdentity = schema.executionIdentity || null
         schemaSucceeded = true
+        if (source && source.sourceType !== 'WORKSPACE') this.varMap = Object.fromEntries(schema.inputs.map(field => [field.scriptName || field.code, field.label || field.code || field.scriptName]))
+        this.testOutputFields = schema.outputs || []
+        if (schema.sampleParamsJson) schema.sampleParams = parseExactJson(schema.sampleParamsJson)
         this.appendWarnings(warnings, schema.diagnostics)
         var schemaFields = schemaFieldsToTestFields(schema.inputs)
+        // 与规则详情测试弹窗共用 Schema、字段转换和嵌套样例生成逻辑。
+        this.inputSampleJson = stringifyExactJson(Object.keys(schema.sampleParams).length
+          ? schema.sampleParams
+          : buildNestedSchemaParams(schemaFields, flattenSchemaSample(schemaFields, schema.sampleParams)), 2)
         if (schemaFields.length > 0) {
           var schemaValues = flattenSchemaSample(
             schemaFields,
             schema.sampleParams
           )
-          var schemaParams = schemaFields.map(function (field) {
+          var schemaParams = schemaFields.map((field) => {
             return {
               key: field.fieldName,
               label: field.fieldLabel,
               value: previousValues.has(field.fieldName)
                 ? previousValues.get(field.fieldName)
-                : schemaValues[field.fieldName],
+                : this.caseDisplayValue(schemaValues[field.fieldName]),
               type: field.fieldType,
               refType: field.refType || '',
               example: field.exampleValue || '',
@@ -1100,7 +1385,7 @@ export default {
             label: '',
             value: previousValues.has(key)
               ? previousValues.get(key)
-              : flattenedSample[key],
+              : this.caseDisplayValue(flattenedSample[key]),
             type: this.valueType(flattenedSample[key]),
             refType: '',
             example: '',
@@ -1116,8 +1401,17 @@ export default {
           )
           return
         }
+        if (source && source.sourceType !== 'WORKSPACE') {
+          this.commitInputLoad(requestId, ruleId, manualParams, 'SCHEMA', warnings)
+          return
+        }
       } catch (e) {
         if (!this.isActiveInputRequest(requestId, ruleId)) return
+        if (source && source.sourceType !== 'WORKSPACE') {
+          this.inputLoadState = 'ERROR'
+          this.inputLoadError = this.requestErrorMessage(e, '所选版本的测试字段读取失败')
+          return
+        }
         warnings.push(
           '统一测试结构加载失败：' +
             this.requestErrorMessage(e, '服务暂时不可用')
@@ -1134,6 +1428,9 @@ export default {
             warnings
           )
           if (!this.isActiveInputRequest(requestId, ruleId)) return
+          this.inputSampleJson = stringifyExactJson(this.buildFormParamMap(fallbackParams.map((param) => ({
+            ...param, value: this.sampleValueForInputField(fields.find(field => (field.scriptName || field.fieldName) === param.key), param.type),
+          }))), 2)
           this.commitInputLoad(
             requestId,
             ruleId,
@@ -1288,6 +1585,40 @@ export default {
         options: [],
       })
     },
+    parseInputJson() {
+      const value = parseExactJson(this.paramsJson)
+      if (!value || typeof value !== 'object' || Array.isArray(value) || isExactNumber(value)) throw new Error('输入参数必须是 JSON 对象')
+      return value
+    },
+    updateInputJson(value) {
+      this.paramsJson = value
+      // 与测试弹窗一样，主动替换内容时重建编辑器，避免沿用上次输入事件的编辑状态。
+      this.inputEditorKey++
+    },
+    replaceParamsFromValues(values) {
+      const existing = Object.create(null)
+      this.params.forEach((param) => { existing[param.key] = param })
+      this.params = this.flattenCaseParamEntries(values).map(({ key, value, path }) => {
+        const display = this.caseDisplayValue(value)
+        return { key, label: '', type: this.valueType(value), example: '', fromVar: false, options: [],
+          ...existing[key], value: display, caseValue: value, caseDisplay: display, caseKey: key, casePath: path, fromCase: true }
+      })
+    },
+    switchInputMode(mode) {
+      if (mode === this.inputMode) return
+      try {
+        if (mode === 'json') this.updateInputJson(stringifyExactJson(this.buildFormParamMap(), 2))
+        else this.replaceParamsFromValues(this.parseInputJson())
+        this.inputMode = mode
+      } catch (error) { this.notifyWarning(error.message) }
+    },
+    generateInputSample() {
+      if (this.inputSampleJson === null || ['LOADING', 'ERROR'].includes(this.inputLoadState)) return
+      const values = parseExactJson(this.inputSampleJson)
+      this.replaceParamsFromValues(values)
+      this.updateInputJson(stringifyExactJson(values, 2))
+      this.resetExecutionState()
+    },
     applyRiskDemoParams() {
       const demoParams = [
         {
@@ -1430,35 +1761,56 @@ export default {
         fromVar: false,
         options: [],
       }))
+      this.updateInputJson(stringifyExactJson(this.buildFormParamMap(), 2))
       this.resetExecutionState()
     },
     async handleExecute() {
-      if (!this.selectedRuleId) return
+      if (!this.selectedRuleId || this.testCaseLoading) return
+      if (this.testSourcesLoading || this.testSourcesError || (this.selectedExecutionSource && this.inputLoadState === 'ERROR')) return
+      const editorCheck = this.$refs.expectationEditor?.validate?.()
+      if (editorCheck && !editorCheck.valid) { this.notifyWarning(editorCheck.errors[0]); return }
       const ruleId = this.selectedRuleId
       const projectId = this.selectedProjectId
+      const source = this.selectedExecutionSource ? { ...this.selectedExecutionSource } : null
       const requestId = ++this.executionRequestId
-      const paramMap = this.buildParamMap()
-      this.executedInputParamsJson = JSON.stringify(paramMap)
+      let requestJson
+      try {
+        requestJson = this.buildRequestJson()
+        this.executedInputParamsJson = stringifyExactJson(this.buildParamMap())
+      } catch (error) { this.notifyWarning(error.message); return }
+      const expectationJson = this.expectationJson ?? '{"version":1,"mode":"SNAPSHOT"}'
+      const expectedResponseJson = this.expectedSnapshotJson
+      const configuredExpectation = this.expectationJson
       this.executing = true
       this.result = null
       this.lastRawResponse = null
+      this.lastRawResponseJson = ''
       try {
-        const request = { definitionId: ruleId, params: paramMap }
+        const request = { requestJson, expectationJson, expectedResponseJson, ...(source ? { executionSource: source } : {}) }
         if (projectId) {
           request.projectId = projectId
         }
-        const res = await executeRule(
+        const res = await executeApiScenarioValidated(
+          ruleId,
           request,
           this.requestTimeoutMs
         )
         if (!this.isActiveExecution(requestId, ruleId, projectId)) return
-        this.lastRawResponse = res
-        this.result = normalizeTestResult(res)
+        const payload = this.unwrapValidatedResponse(res)
+        requireExecutionIdentity(payload.execution.executionIdentity, ruleId, source)
+        this.lastRawResponse = { data: payload.execution }
+        this.lastRawResponseJson = payload.responseJson
+        this.result = normalizeTestResult(payload.execution)
+        this.testValidation = payload.validation
+        this.executedExpectationJson = configuredExpectation
+        this.executedExpectedSnapshotJson = expectedResponseJson
         // 执行完成后切换到追踪树标签页
         this.traceTab = 'tree'
       } catch (e) {
         if (!this.isActiveExecution(requestId, ruleId, projectId)) return
         this.lastRawResponse = null
+        this.lastRawResponseJson = ''
+        this.testValidation = { status: 'NOT_EVALUATED', message: '执行请求未完成，未进行预期校验', checks: [], diffs: [] }
         this.result = {
           success: false,
           errorMessage: e.message || '执行异常',
@@ -1472,11 +1824,11 @@ export default {
     },
     handleClear() {
       this.params = []
+      this.updateInputJson('{}')
       this.resetExecutionState()
     },
     handleClearParams() {
-      this.params = []
-      this.resetExecutionState()
+      this.handleClear()
     },
     unwrapResponse(res) {
       if (res && Object.prototype.hasOwnProperty.call(res, 'data'))
@@ -1484,6 +1836,8 @@ export default {
       return res
     },
     resetInputLoadState() {
+      this.inputSampleJson = null
+      this.inputExecutionIdentity = null
       ++this.inputLoadRequestId
       this.inputLoadState = 'IDLE'
       this.inputLoadError = ''
@@ -1495,6 +1849,8 @@ export default {
       this.executing = false
       this.result = null
       this.lastRawResponse = null
+      this.lastRawResponseJson = ''
+      this.testValidation = { status: 'NOT_EVALUATED', message: '执行后查看预期校验', checks: [], diffs: [] }
       this.executedInputParamsJson = ''
     },
     isActiveInputRequest(requestId, ruleId) {
@@ -1589,16 +1945,23 @@ export default {
       if (this.$message && this.$message.success) this.$message.success(message)
     },
     buildParamMap() {
-      const paramMap = {}
-      for (const p of this.params) {
-        if (!p.key) continue
+      return this.inputMode === 'json' ? this.parseInputJson() : this.buildFormParamMap()
+    },
+    buildFormParamMap(params = this.params) {
+      const paramMap = Object.create(null)
+      for (const p of params) {
+        if (!p.key && !p.fromCase) continue
         let val = p.value
-        if (this.isNumberType(p.type) && val !== '' && val !== null) {
-          val = Number(val)
-        } else if (p.type === 'BOOLEAN') {
+        if (p.fromCase && p.key === p.caseKey && Object.is(val, p.caseDisplay)) {
+          val = val === undefined ? undefined : cloneExactJson(p.caseValue)
+        } else if (this.isNumberType(p.type) && val !== '' && val != null) {
+          val = isExactNumber(val) ? val : createExactNumber(typeof val === 'number' ? exactNumberText(val) : String(val))
+        } else if (p.type === 'BOOLEAN' && val !== '' && val != null) {
           val = val === true || val === 'true'
+        } else if (['LIST', 'ARRAY', 'OBJECT', 'MAP'].includes(p.type) && typeof val === 'string' && val !== '') {
+          val = parseExactJson(val)
         }
-        this.setParamValue(paramMap, p.key, val)
+        this.setParamValue(paramMap, p.key, val, p.fromCase && p.key === p.caseKey ? p.casePath : null)
       }
       return paramMap
     },
@@ -1612,28 +1975,33 @@ export default {
           'DECIMAL',
           'LONG',
           'PROBABILITY',
+          'BIGDECIMAL',
+          'BYTE',
+          'SHORT',
+          'INT',
         ].indexOf(type) >= 0
       )
     },
-    setParamValue(target, key, value) {
-      if (!key || key.indexOf('.') < 0) {
-        target[key] = value
+    setParamValue(target, key, value, sourcePath = null) {
+      const set = (object, name, data) => Object.defineProperty(object, name, { value: data, writable: true, enumerable: true, configurable: true })
+      if (!sourcePath && (!key || key.indexOf('.') < 0)) {
+        set(target, key, value)
         return
       }
-      var parts = key.split('.').filter(Boolean)
+      var parts = sourcePath || key.split('.').filter(Boolean)
       if (parts.length === 0) return
       var cur = target
       for (var i = 0; i < parts.length - 1; i++) {
         if (
-          !cur[parts[i]] ||
+          !Object.hasOwn(cur, parts[i]) || !cur[parts[i]] ||
           typeof cur[parts[i]] !== 'object' ||
           Array.isArray(cur[parts[i]])
         ) {
-          cur[parts[i]] = {}
+          set(cur, parts[i], Object.create(null))
         }
         cur = cur[parts[i]]
       }
-      cur[parts[parts.length - 1]] = value
+      set(cur, parts[parts.length - 1], value)
     },
     ruleOptionLabel(rule) {
       if (!rule) return ''
@@ -1683,13 +2051,19 @@ export default {
 
 <style lang="scss" scoped>
 .rule-test-page {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
+
+  > :deep(.config-layer-guide) {
+    flex: 0 0 auto;
+  }
 }
 .test-layout {
   display: flex;
+  flex: 1;
   gap: 16px;
-  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
@@ -1697,8 +2071,54 @@ export default {
   flex: 0 0 480px;
   min-width: 380px;
   min-height: 0;
+  padding-bottom: 8px;
   overflow-x: hidden;
   overflow-y: auto;
+}
+.input-parameters-title,
+.input-mode-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.input-mode-toolbar {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.input-json-editor {
+  margin-top: 12px;
+}
+.input-json-error {
+  margin-top: 8px;
+  color: var(--tianshu-danger-text);
+  font-size: 12px;
+}
+.test-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 12px 8px;
+  background: var(--tianshu-bg-surface);
+
+  .el-button + .el-button {
+    margin-left: 0;
+  }
+}
+.test-timeout-label {
+  color: var(--tianshu-text-secondary);
+}
+.test-timeout-unit {
+  color: var(--tianshu-text-tertiary);
+}
+.test-timeout-input {
+  width: 150px;
 }
 .fixed-cases-card {
   margin-top: 12px;
@@ -1716,6 +2136,22 @@ export default {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+
+  > span:first-child {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  > span:last-child {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px 8px;
+
+    .el-button + .el-button {
+      margin-left: 0;
+    }
+  }
 }
 .case-state {
   padding: 12px 0;
@@ -1738,6 +2174,23 @@ export default {
 }
 .batch-result-table {
   margin-top: 12px;
+}
+.test-validation-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--tianshu-border-subtle);
+  border-radius: 8px;
+  color: var(--tianshu-text-secondary);
+  background: var(--tianshu-bg-soft);
+  overflow-wrap: anywhere;
+
+  > div {
+    flex-basis: 100%;
+  }
 }
 .diff-pass {
   color: var(--tianshu-success-text);
@@ -1907,6 +2360,9 @@ export default {
 .result-section-title.is-error {
   color: var(--tianshu-danger-text);
 }
+.result-section-title.is-throttled {
+  color: var(--tianshu-warning-text);
+}
 .result-pre {
   background: var(--tianshu-bg-muted);
   border: 1px solid var(--tianshu-border-subtle);
@@ -1925,6 +2381,11 @@ export default {
   background: var(--tianshu-danger-bg);
   color: var(--tianshu-danger-text);
 }
+.result-pre.is-throttled {
+  border-color: var(--tianshu-warning-border);
+  background: var(--tianshu-warning-bg);
+  color: var(--tianshu-warning-text);
+}
 .trace-tree-wrap {
   min-height: 100%;
   padding: 8px 0;
@@ -1941,6 +2402,7 @@ export default {
     height: auto;
   }
   .test-layout {
+    flex: none;
     flex-direction: column;
     overflow: visible;
   }

@@ -26,14 +26,14 @@
           </el-button>
           <el-button
             v-if="request.status === 'EDITING' && canManageDraft"
-            v-permission="'approval:submit'"
+            v-permission="resourceEditPermission"
             @click="runPreflight"
           >
             依赖预检
           </el-button>
           <el-button
             v-if="request.status === 'EDITING' && canManageDraft"
-            v-permission="'approval:submit'"
+            v-permission="['approval:submit', resourceSubmitPermission]"
             type="primary"
             @click="openAction('submit')"
           >
@@ -57,11 +57,11 @@
             驳回
           </el-button>
           <el-button
-            v-if="['EDITING', 'PENDING'].includes(request.status) && canManageDraft"
-            v-permission="'approval:submit'"
+            v-if="['EDITING', 'PENDING'].includes(request.status) && canManageDraft && !pendingNewContent"
+            v-permission="resourceEditPermission"
             @click="openAction('cancel')"
           >
-            取消申请
+            {{ cancelLabel }}
           </el-button>
         </div>
       </div>
@@ -69,6 +69,12 @@
 
     <main v-loading="loading" class="detail-content">
       <template v-if="request">
+        <el-alert v-if="pendingNewContent"
+          title="新增内容正在待审批，须先由审批人驳回，才能删除草稿。审批通过前不会投入生产。"
+          type="info" :closable="false" show-icon />
+        <el-alert v-else-if="request.action === 'CREATE' && request.status === 'EDITING'"
+          title="新增内容尚未提交审批；无下游引用时可直接删除草稿。投入生产前仍须审批通过。"
+          type="info" :closable="false" show-icon />
         <section class="overview-grid">
           <article>
             <span>基准版本</span>
@@ -241,8 +247,14 @@
                 :key="`${issue.code}-${issue.referencePath}`"
                 class="issue-item"
               >
-                <strong>{{ issue.message }}</strong>
-                <code>{{ issue.referencePath || issue.code }}</code>
+                <strong>{{ issue.title || '依赖校验未通过' }}</strong>
+                <span class="issue-message">{{ issue.message }}</span>
+                <span class="issue-context">
+                  {{ resourceTypeLabel(issue.resourceType) }} #{{ issue.resourceId || '—' }} ·
+                  {{ dependencyReferenceLabel(issue) }}
+                </span>
+                <span class="issue-next-action">下一步：{{ issue.nextAction || '修复后重新执行依赖预检' }}</span>
+                <code v-if="issue.fixPath || issue.referencePath">技术定位：{{ issue.fixPath || issue.referencePath }}</code>
               </div>
             </div>
             <lineage-graph
@@ -258,11 +270,21 @@
                 依赖明细
               </div>
               <el-table show-overflow-tooltip :data="detail.dependencies" size="small">
-                <el-table-column prop="targetResourceType" label="依赖类型" width="130" />
-                <el-table-column prop="targetResourceId" label="资源 ID" width="100" />
+                <el-table-column label="依赖资源" min-width="170">
+                  <template #default="{ row }">
+                    {{ resourceTypeLabel(row.targetResourceType) }} #{{ row.targetResourceId || '—' }}
+                  </template>
+                </el-table-column>
                 <el-table-column label="生效版本" width="100">
                   <template #default="{ row }">
                     {{ row.targetVersionNo ? `V${row.targetVersionNo}` : '—' }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="状态" width="110">
+                  <template #default="{ row }">
+                    <el-tag size="small" :type="dependencyStatusType(row.resolutionStatus)">
+                      {{ dependencyStatusLabel(row.resolutionStatus) }}
+                    </el-tag>
                   </template>
                 </el-table-column>
                 <el-table-column label="引用位置" min-width="240">
@@ -273,6 +295,11 @@
                     >
                       {{ dependencyReferenceLabel(row) }}
                     </span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="处理建议" min-width="190">
+                  <template #default="{ row }">
+                    {{ dependencyNextAction(row) }}
                   </template>
                 </el-table-column>
               </el-table>
@@ -313,14 +340,14 @@
               <span class="section-kicker">IMMUTABLE VERSIONS</span>
               <h2>历史生效版本</h2>
             </div>
-            <span>恢复历史内容时会新增版本，已有历史不会被覆盖。</span>
+            <span>可新增或复用版本号，恢复后可继续编辑；历史快照和审批记录保留。</span>
           </div>
           <el-table show-overflow-tooltip :data="detail.versions || []" row-key="id">
             <el-table-column label="版本" width="90">
-              <template #default="{ row }"><strong>V{{ row.versionNo }}</strong></template>
+              <template #default="{ row }"><strong>V{{ row.versionNo }}</strong><small v-if="row.revisionNo"> · 记录 {{ row.revisionNo }}</small></template>
             </el-table-column>
             <el-table-column prop="changeSummary" label="变更说明" min-width="240" />
-            <el-table-column prop="effectiveStatus" label="版本状态" width="110" />
+            <el-table-column label="版本状态" width="110"><template #default="{ row }">{{ row.deleted ? '已删除' : row.effectiveStatus }}</template></el-table-column>
             <el-table-column prop="createBy" label="生效人" width="130" />
             <el-table-column label="生效时间" width="175">
               <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
@@ -337,7 +364,7 @@
                   v-permission="'approval:submit'"
                   link
                   type="primary"
-                  :disabled="['EDITING', 'PENDING'].includes(request.status)"
+                  :disabled="row.deleted || ['EDITING', 'PENDING'].includes(request.status)"
                   @click="restoreVersion(row)"
                 >
                   恢复此版本
@@ -379,7 +406,9 @@
 
 <script>
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { chooseVersionRestore } from '@/utils/versionRestore'
+import { isNewContentRequest } from '@/utils/governanceWorkspace'
 import { useRoute, useRouter } from 'vue-router'
 import {
   approveGovernanceRequest,
@@ -391,7 +420,8 @@ import {
   submitGovernanceRequest
 } from '@/api/governance'
 import { listRuleRevisions } from '@/api/definition'
-import { getCurrentUser } from '@/security/permissionState'
+import { getCurrentUser, hasPermission } from '@/security/permissionState'
+import { resourceActionPermission } from '@/security/pickerAccess'
 import { resolveDesignerRouteName } from '@/utils/ruleDesignerNavigation'
 import JsonVersionDiff from '@/components/common/JsonVersionDiff.vue'
 import RuleVersionDiff from '@/components/rule/versionDiff/RuleVersionDiff.vue'
@@ -483,7 +513,7 @@ export default {
     },
     isRequestComparison() {
       const base = (this.detail.versions || []).find(version =>
-        version.versionNo === this.request?.baseVersionNo
+        String(version.id) === String(this.request?.baseVersionId)
       )
       return this.compareRightKey === 'CURRENT' &&
         (!base || this.compareLeftKey === `VERSION:${base.id}`)
@@ -553,14 +583,21 @@ export default {
     canManageDraft() {
       if (!this.request) return false
       const user = getCurrentUser()
-      return !user || user.username === this.request.applicant
+      return (!user || user.username === this.request.applicant) && hasPermission(resourceActionPermission(this.request.resourceType, 'edit'))
+    },
+    resourceSubmitPermission() { return resourceActionPermission(this.request?.resourceType, 'submit') },
+    resourceEditPermission() { return resourceActionPermission(this.request?.resourceType, 'edit') },
+    pendingNewContent() { return this.request?.status === 'PENDING' && isNewContentRequest(this.request) },
+    cancelLabel() {
+      if (this.request?.action !== 'CREATE') return '取消申请'
+      return this.request.status === 'EDITING' ? '删除新增草稿' : '撤回新增申请'
     },
     actionDialogTitle() {
       return {
         submit: '提交审批',
         approve: '通过并立即生效',
         reject: '驳回申请',
-        cancel: '取消申请'
+        cancel: this.cancelLabel
       }[this.activeAction] || '确认操作'
     },
     actionPlaceholder() {
@@ -591,7 +628,10 @@ export default {
         {
           label: '生效条件',
           value: status === 'PENDING' ? '批准后生效' : status === 'EDITING' ? '提交审批后生效' : '按当前状态继续',
-          detail: '批准不会覆盖其他已发布版本，发布后才会进入线上执行链路',
+          detail: this.request?.publishMode === 'OVERWRITE'
+            ? `审批通过后覆盖指定业务版本（目标记录 #${this.request.expectedTargetSnapshotId}），历史修订保留；覆盖旧版不会倒退最新版`
+            : this.request?.publishMode === 'NEW' ? '审批通过后新增业务版本；其他版本的草稿和审批继续保留'
+            : '审批通过后按所选发布方式生效，历史快照和变更记录保留',
         },
       ]
     }
@@ -625,6 +665,36 @@ export default {
         ? ''
         : ` = ${this.formatDependencyValue(value)}`
       return `${labels.join(' · ')}${suffix}`
+    },
+    dependencyStatusLabel(status) {
+      return {
+        RESOLVED: '已就绪',
+        INACTIVE: '未发布/已停用',
+        MISSING: '资源缺失',
+        VERSION_MISSING: '版本缺失',
+        VERSION_UNAVAILABLE: '版本不可用',
+        TYPE_MISMATCH: '类型不匹配',
+        SELF_REFERENCE: '自引用',
+      }[status] || status || '待确认'
+    },
+    dependencyStatusType(status) {
+      return status === 'RESOLVED'
+        ? 'success'
+        : ['INACTIVE', 'MISSING', 'VERSION_MISSING', 'VERSION_UNAVAILABLE', 'TYPE_MISMATCH', 'SELF_REFERENCE'].includes(status)
+          ? 'danger'
+          : 'warning'
+    },
+    dependencyNextAction(dependency) {
+      if (!dependency || dependency.resolutionStatus === 'RESOLVED') return '无需处理；审批时固定使用该版本'
+      if (dependency.issueMessage) return dependency.issueMessage
+      return {
+        INACTIVE: '先发布并启用上游资源，再重新预检',
+        MISSING: '检查上游资源是否已删除或引用 ID 是否正确',
+        VERSION_MISSING: '恢复上游生效版本后重新预检',
+        VERSION_UNAVAILABLE: '重新选择可用的已发布版本',
+        TYPE_MISMATCH: '修正引用类型后重新保存配置',
+        SELF_REFERENCE: '移除对当前资源的引用',
+      }[dependency.resolutionStatus] || '修复依赖后重新执行预检'
     },
     goBack() {
       this.navigation.back()
@@ -662,7 +732,7 @@ export default {
         const response = await getGovernanceRequest(this.route.params.id)
         this.detail = response.data || {}
         const base = (this.detail.versions || []).find(version =>
-          version.versionNo === this.detail.request?.baseVersionNo
+          String(version.id) === String(this.detail.request?.baseVersionId)
         ) || (this.detail.versions || [])[0]
         this.compareLeftKey = base ? `VERSION:${base.id}` : 'CURRENT'
         this.compareRightKey = 'CURRENT'
@@ -699,7 +769,7 @@ export default {
       this.actionLoading = true
       try {
         const response = await actions[this.activeAction](
-          this.request.id, this.actionComment.trim()
+          this.request.id, this.actionComment.trim(), this.activeAction === 'submit' ? this.request.snapshotDigest : undefined
         )
         this.actionDialogVisible = false
         if (response.data && response.data.status === 'CONFLICT') {
@@ -707,7 +777,7 @@ export default {
             '审批内容或依赖已变化，已生成可编辑草稿，请重新提交审批'
           )
         } else if (this.activeAction === 'reject') {
-          ElMessage.success('已驳回，资源继续使用当前生效版本')
+          ElMessage.success(isNewContentRequest(this.request) ? '已驳回，新增草稿可继续编辑或删除' : '已驳回，资源继续使用当前生效版本')
         } else {
           ElMessage.success('操作成功')
         }
@@ -719,15 +789,13 @@ export default {
       }
     },
     async restoreVersion(version) {
-      await ElMessageBox.confirm(
-        `将以 V${version.versionNo} 的内容新增审批草稿，已有版本不会被覆盖。`,
-        '恢复历史版本',
-        { type: 'warning' }
-      )
+      if (version.deleted) return
+      const mode = await chooseVersionRestore(version.versionNo)
+      if (!mode) return
       const response = await restoreGovernanceVersion(
         this.request.resourceType,
         this.request.resourceId,
-        version.id
+        version.id, mode
       )
       ElMessage.success('已生成历史恢复草稿')
       const projectId = Number(this.route.query && this.route.query.projectId)
@@ -913,15 +981,21 @@ export default {
     resourceTypeLabel(type) {
       return {
         VARIABLE: '字段',
+        CONSTANT: '常量',
         DATA_OBJECT: '数据对象',
+        OBJECT: '数据对象',
         MODEL: '模型',
+        MODEL_OUTPUT: '模型输出',
+        API: '外数 API',
         EXTERNAL_DATASOURCE: '外数源',
         EXTERNAL_API: '外数 API',
         DATABASE: '数据库',
+        DB: '数据库',
         FUNCTION: '函数',
         RULE: '规则',
         RULE_PROJECT_BINDING: '项目规则关联',
         LIST_LIBRARY: '名单库',
+        LIST: '名单库',
         LIST_RECORD_BATCH: '名单内容批次',
         FIELD_VALIDATION: '字段校验',
         BILLING_CONFIG: '计费配置',
@@ -941,11 +1015,11 @@ export default {
     },
     statusLabel(status) {
       return {
-        EDITING: '编辑中',
-        PENDING: '待审批',
+        EDITING: '草稿',
+        PENDING: '审批中',
         APPROVED: '已通过',
         REJECTED: '已驳回',
-        CONFLICT: '存在冲突',
+        CONFLICT: '审批冲突',
         CANCELLED: '已取消'
       }[status] || status
     },
@@ -1325,6 +1399,19 @@ export default {
 .issue-item strong {
   color: #a52727;
   font-size: 13px;
+}
+
+.issue-message,
+.issue-context,
+.issue-next-action {
+  color: var(--tianshu-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.issue-next-action {
+  color: var(--tianshu-danger-text);
+  font-weight: 600;
 }
 
 .issue-item code {

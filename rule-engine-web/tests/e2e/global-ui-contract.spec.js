@@ -1,6 +1,245 @@
 const { expect, test } = require('@playwright/test')
+const fs = require('node:fs/promises')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createManagementApiData } = require('./support/managementFixtures.cjs')
+const { createDetailApiData } = require('./support/detailFixtures.cjs')
+const { createDesignerApiData } = require('./support/designerFixtures.cjs')
+
+for (const accentPreset of ['THEME_BLUE', 'LIQUID_PURPLE_GRADIENT']) {
+  test(`深色 ${accentPreset} 复杂评分卡的维度权重公式可读`, async ({ page }) => {
+    await page.addInitScript(preset => {
+      localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify({ schemaVersion: 1, colorScheme: 'DARK',
+        accentPreset: preset, sidebarTheme: 'DARK', contentWidth: 'FLUID', fixedSidebar: true, colorWeak: false }))
+    }, accentPreset)
+    const { assertClean } = await installDistRoutes(page, { apiData: createDesignerApiData() })
+    await page.goto('http://tianshu.local/index.html#/designer/score-adv/108')
+    await page.getByRole('button', { name: '添加维度组', exact: true }).click()
+    await page.getByRole('button', { name: '添加维度', exact: true }).click()
+    const term = page.locator('.formula-term').first()
+    await expect(term).toBeVisible()
+    expect((await controlContrast(term)).ratio).toBeGreaterThanOrEqual(4.5)
+    await page.locator('.asc-formula').screenshot({ path: test.info().outputPath('scorecard-formula-' + accentPreset + '.png') })
+    assertClean()
+  })
+}
+
+for (const colorScheme of ['LIGHT', 'DARK']) {
+  test(`${colorScheme} 禁用主按钮可辨且悬停不增亮，plain/link/text保留各自外观`, async ({ page }) => {
+    await page.addInitScript(scheme => {
+      localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify({ schemaVersion: 1, colorScheme: scheme,
+        accentPreset: 'LIQUID_PURPLE_GRADIENT', sidebarTheme: 'DARK', contentWidth: 'FLUID', fixedSidebar: true, colorWeak: false }))
+    }, colorScheme)
+    const fixtures = createDetailApiData()
+    const waiting = { trialId: '11111111-1111-4111-8111-111111111111', apiName: '可继续主题样例', status: 'WAITING', canResume: true, canCancel: true, createdAt: Date.now(), expiresAt: Date.now() + 60000 }
+    const cancelled = { ...waiting, trialId: '22222222-2222-4222-8222-222222222222', apiName: '已取消主题样例', status: 'CANCELLED', canResume: false, canCancel: false }
+    fixtures.set('/api/rule/datasource/api-config/trials', [waiting, cancelled])
+    for (const trial of [waiting, cancelled]) fixtures.set('/api/rule/datasource/api-config/trials/' + trial.trialId, trial)
+    const { assertClean } = await installDistRoutes(page, { apiData: fixtures })
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await page.goto('http://tianshu.local/index.html#/datasource/api/new')
+    await page.getByRole('tab', { name: '接口测试', exact: true }).click()
+    const select = async name => {
+      await page.getByTestId('api-trial-select').click()
+      await page.getByRole('option').filter({ hasText: name }).click()
+    }
+    const appearance = locator => locator.evaluate(element => {
+      const css = getComputedStyle(element)
+      return { color: css.color, backgroundColor: css.backgroundColor, backgroundImage: css.backgroundImage,
+        borderColor: css.borderTopColor, filter: css.filter, opacity: css.opacity }
+    })
+    const settle = locator => locator.evaluate(async element => {
+      await new Promise(requestAnimationFrame)
+      await Promise.all(element.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {})))
+    })
+    await select(waiting.apiName)
+    const resume = page.getByTestId('api-trial-resume')
+    await expect(resume).toBeEnabled(); await page.mouse.move(0, 0); await settle(resume)
+    const enabled = await appearance(resume)
+    expect(enabled.backgroundImage).toContain('gradient')
+    await select(cancelled.apiName)
+    await expect(resume).toBeDisabled(); await page.mouse.move(0, 0); await settle(resume)
+    const disabled = await appearance(resume)
+    expect.soft(disabled.backgroundImage).toBe('none')
+    expect.soft(disabled.backgroundColor).not.toBe(enabled.backgroundColor)
+    expect.soft(disabled.color).not.toBe(enabled.color)
+    const readability = await controlContrast(resume)
+    const contrastValues = [{ variant: 'solid', ...readability }]
+    expect.soft(readability.ratio).toBeGreaterThanOrEqual(4.5)
+    expect.soft(readability.opacity).toBe(1)
+    await resume.hover(); await settle(resume)
+    expect.soft(await appearance(resume)).toEqual(disabled)
+    expect.soft((await appearance(resume)).filter).toBe('none')
+    await page.mouse.move(0, 0)
+    await page.screenshot({ path: test.info().outputPath('cancelled-trial-' + colorScheme + '.png'), fullPage: true })
+
+    const variants = ['plain', 'link', 'text', 'table-link', 'table-text', 'table-edit-link', 'table-delete-text', 'edit-link', 'dialog-solid', 'message-solid']
+    // 复用页面已加载的真实Element/主题CSS，同时覆盖表格和语义操作的级联规则。
+    // 探针仅用于浏览器样式测试，没有业务事件或配置请求。
+    await resume.evaluate((button, variants) => {
+      const holder = document.createElement('div'); holder.dataset.testid = 'primary-variant-probes'
+      for (const variant of variants) for (const disabled of [false, true]) {
+        const probe = button.cloneNode(true), style = variant.split('-').at(-1)
+        probe.className = 'el-button el-button--primary is-' + style + (disabled ? ' is-disabled' : '')
+        probe.disabled = disabled; probe.removeAttribute('aria-disabled'); probe.dataset.testid = `${variant}-${disabled ? 'disabled' : 'enabled'}`
+        if (variant.includes('edit')) probe.dataset.action = 'edit'
+        if (variant.includes('delete')) probe.dataset.action = 'delete'
+        probe.textContent = `${variant} ${disabled ? '禁用' : '启用'}`
+        const row = document.createElement('div')
+        if (variant.startsWith('table-')) row.className = 'el-table'
+        if (variant.startsWith('dialog-')) row.className = 'el-dialog__footer'
+        if (variant.startsWith('message-')) row.className = 'el-message-box__btns'
+        row.appendChild(probe); holder.appendChild(row)
+      }
+      button.parentElement.appendChild(holder)
+    }, variants)
+    for (const variant of variants) {
+      const active = page.getByTestId(variant + '-enabled'), inactive = page.getByTestId(variant + '-disabled')
+      await page.mouse.move(0, 0); await settle(inactive)
+      const activeStyle = await appearance(active), inactiveStyle = await appearance(inactive)
+      expect.soft(inactiveStyle.color, variant).not.toBe(activeStyle.color)
+      expect.soft(inactiveStyle.color, variant).toBe(disabled.color)
+      expect.soft(inactiveStyle.backgroundImage, variant).toBe('none')
+      const readability = await controlContrast(inactive)
+      contrastValues.push({ variant, ...readability })
+      expect.soft(readability.ratio, variant).toBeGreaterThanOrEqual(4.5)
+      expect.soft(readability.opacity, variant).toBe(1)
+      if (variant === 'plain' || variant.endsWith('-solid')) {
+        expect.soft(inactiveStyle.backgroundColor).not.toBe(activeStyle.backgroundColor)
+        expect.soft(inactiveStyle.backgroundColor, variant).toBe(disabled.backgroundColor)
+      }
+      else {
+        expect.soft(activeStyle.backgroundColor, variant).toBe('rgba(0, 0, 0, 0)')
+        expect.soft(inactiveStyle.backgroundColor, variant).toBe('rgba(0, 0, 0, 0)')
+      }
+      await inactive.hover(); await settle(inactive)
+      expect.soft(await appearance(inactive), variant).toEqual(inactiveStyle)
+      await inactive.evaluate(element => element.classList.add('is-loading'))
+      await settle(inactive)
+      expect.soft(await appearance(inactive), `${variant} 业务禁用同时加载`).toEqual(inactiveStyle)
+      await inactive.evaluate(element => element.classList.remove('is-loading', 'is-disabled'))
+      await settle(inactive)
+      expect.soft(await appearance(inactive), `${variant} 原生禁用`).toEqual(inactiveStyle)
+      await inactive.evaluate(element => element.classList.add('is-disabled'))
+    }
+    await page.mouse.move(0, 0)
+    const screenshotPath = test.info().outputPath('disabled-primary-' + colorScheme + '.png')
+    await page.screenshot({ path: screenshotPath, fullPage: true })
+    await test.info().attach('disabled-primary-' + colorScheme, { path: screenshotPath, contentType: 'image/png' })
+    await test.info().attach('primary-button-states', { body: JSON.stringify({ colorScheme, enabled, disabled }, null, 2), contentType: 'application/json' })
+    await fs.writeFile(test.info().outputPath('contrast-values.json'), JSON.stringify({ colorScheme, contrastValues }, null, 2))
+    assertClean()
+  })
+}
+
+async function controlContrast(locator) {
+  return locator.evaluate(element => {
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 1
+    const context = canvas.getContext('2d')
+    const rgba = color => {
+      context.clearRect(0, 0, 1, 1)
+      context.fillStyle = color
+      context.fillRect(0, 0, 1, 1)
+      return Array.from(context.getImageData(0, 0, 1, 1).data)
+    }
+    const composite = (front, back) => {
+      const frontAlpha = front[3] / 255, backAlpha = back[3] / 255
+      const alpha = frontAlpha + backAlpha * (1 - frontAlpha)
+      if (alpha === 0) return [0, 0, 0, 0]
+      return [...front.slice(0, 3).map((value, index) =>
+        (value * frontAlpha + back[index] * backAlpha * (1 - frontAlpha)) / alpha), alpha * 255]
+    }
+    let foreground = rgba(getComputedStyle(element).color)
+    let background = [0, 0, 0, 0]
+    let opacity = 1
+    for (let current = element; current; current = current.parentElement) {
+      const style = getComputedStyle(current)
+      const layer = rgba(style.backgroundColor), layerOpacity = Number(style.opacity)
+      foreground = composite(foreground, layer)
+      background = composite(background, layer)
+      foreground[3] *= layerOpacity
+      background[3] *= layerOpacity
+      opacity *= layerOpacity
+    }
+    foreground = composite(foreground, [255, 255, 255, 255])
+    background = composite(background, [255, 255, 255, 255])
+    const luminance = color => color.slice(0, 3).map(value => value / 255)
+      .map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+      .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0)
+    const foregroundLuminance = luminance(foreground)
+    const backgroundLuminance = luminance(background)
+    return {
+      ratio: (Math.max(foregroundLuminance, backgroundLuminance) + 0.05) / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05),
+      backgroundLuminance,
+      opacity,
+    }
+  })
+}
+
+for (const accentPreset of ['MIDNIGHT_PURPLE', 'PEACH_PINK_GRADIENT']) {
+  test(`深色 ${accentPreset} 的来源标签、通用操作及输入附加按钮可读`, async ({ page }) => {
+    await page.addInitScript(preset => {
+      localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify({
+        schemaVersion: 1, colorScheme: 'DARK', accentPreset: preset,
+        sidebarTheme: 'DARK', contentWidth: 'FLUID', fixedSidebar: true, colorWeak: false,
+      }))
+    }, accentPreset)
+    const { assertClean } = await installDistRoutes(page, { apiData: createDetailApiData() })
+    await page.goto('http://tianshu.local/index.html#/log')
+    const sourceTag = page.locator('.el-table .el-tag').filter({ hasText: '服务端' }).first()
+    const detail = page.locator('.el-table').getByRole('button', { name: '详情', exact: true }).first()
+    for (const control of [sourceTag, detail]) {
+      await expect(control).toBeVisible()
+      await expect.poll(async () => (await controlContrast(control)).ratio).toBeGreaterThanOrEqual(4.5)
+    }
+    await detail.hover()
+    await expect.poll(async () => (await controlContrast(detail)).ratio).toBeGreaterThanOrEqual(4.5)
+    await page.goto('http://tianshu.local/index.html#/database/31')
+    const generate = page.getByRole('button', { name: '生成', exact: true })
+    await expect(generate).toBeVisible()
+    await expect.poll(async () => (await controlContrast(generate)).ratio).toBeGreaterThanOrEqual(4.5)
+    const testConnection = page.getByRole('button', { name: '测试连接', exact: true })
+    await testConnection.hover()
+    await expect.poll(async () => (await controlContrast(testConnection)).ratio).toBeGreaterThanOrEqual(4.5)
+    await expect.poll(async () => (await controlContrast(testConnection)).backgroundLuminance).toBeLessThan(0.2)
+    assertClean()
+  })
+}
+
+for (const sidebarTheme of ['LIGHT', 'DARK']) {
+  for (const navigationLayout of ['LEFT', 'TOP']) {
+    test(`夜间桃粉主题的 ${sidebarTheme}/${navigationLayout} 活动导航保持清晰`, async ({ page }) => {
+      await page.addInitScript(appearance => {
+        localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify({
+          schemaVersion: 2, colorScheme: 'DARK', accentMode: 'PRESET', accentPreset: 'PEACH_PINK',
+          customSolidColor: '#2639E9', customGradientColors: ['#2639E9', '#873FF2'],
+          customGradientType: 'LINEAR', customGradientAngle: 135,
+          contentWidth: 'FLUID', fixedSidebar: true, colorWeak: false, ...appearance,
+        }))
+      }, { sidebarTheme, navigationLayout })
+      const { assertClean } = await installDistRoutes(page, { apiData: createManagementApiData() })
+      await page.goto('http://tianshu.local/index.html#/database')
+      const menu = page.locator('.sidebar-menu__item.is-active, .top-navigation__item.is-active')
+      await expect(menu).toBeVisible()
+      const ratio = await menu.evaluate(element => {
+        const style = getComputedStyle(element)
+        const luminance = color => {
+          const channels = color.match(/[\d.]+/g).slice(0, 3).map(Number).map(channel => {
+            const value = channel / 255
+            return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+          })
+          return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+        }
+        const foreground = luminance(style.color)
+        const background = luminance(style.backgroundColor)
+        return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05)
+      })
+      expect(ratio).toBeGreaterThanOrEqual(4.5)
+      await expect(page.getByRole('tab', { name: '数据源配置', exact: true })).toBeVisible()
+      assertClean()
+    })
+  }
+}
 
 test('看板初始加载不拉伸说明区，查询保留图表和页面布局', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1400 })
@@ -242,6 +481,8 @@ test('登录按钮加载时保留主题背景并仅轻微淡化', async ({ page 
         return { username: 'e2e' }
       }],
       ['/api/auth/console/preferences/theme', null],
+      ['/api/rule/project/options', []],
+      ['POST /api/rule/console/activity', true],
     ])
   })
   await page.goto('http://tianshu.local/index.html#/login')
@@ -262,18 +503,27 @@ test('登录按钮加载时保留主题背景并仅轻微淡化', async ({ page 
     colorProbe.style.color = themeBackground
     document.body.appendChild(colorProbe)
     const resolvedThemeBackground = getComputedStyle(colorProbe).color
+    colorProbe.style.color = 'var(--tianshu-brand-foreground)'
+    const resolvedThemeForeground = getComputedStyle(colorProbe).color
     colorProbe.remove()
     return {
+      color: buttonStyle.color,
       backgroundColor: buttonStyle.backgroundColor,
       maskBackgroundColor: maskStyle.backgroundColor,
       opacity: Number(buttonStyle.opacity),
       resolvedThemeBackground,
+      resolvedThemeForeground,
       spinnerVisible: Boolean(button.querySelector('.el-icon.is-loading')),
       text: button.textContent.trim(),
     }
   })
 
   expect(visual.backgroundColor).toBe(visual.resolvedThemeBackground)
+  expect(visual.color).toBe(visual.resolvedThemeForeground)
+  const loadingReadability = await controlContrast(loginButton)
+  expect(loadingReadability.ratio).toBeGreaterThanOrEqual(4.5)
+  await fs.mkdir(test.info().outputDir, { recursive: true })
+  await fs.writeFile(test.info().outputPath('contrast-values.json'), JSON.stringify({ loadingReadability }, null, 2))
   expect(visual.maskBackgroundColor).toBe('rgba(0, 0, 0, 0)')
   expect(visual.opacity).toBeGreaterThanOrEqual(0.85)
   expect(visual.opacity).toBeLessThan(1)
@@ -466,6 +716,7 @@ test('右上角账户头像和名字视觉边界对齐且侧栏不再显示账�
         username: 'admin',
         permissions: ['project:view'],
       }],
+      ['POST /api/rule/console/activity', true],
       ['/api/auth/console/preferences/theme', {
         schemaVersion: 1,
         colorScheme: 'LIGHT',
@@ -628,19 +879,28 @@ test('表头、状态、作用范围和普通操作随主题色切换', async ({
 })
 
 test('项目列表同一行操作使用互不重复且语义稳定的主题色', async ({ page }) => {
+  const apiData = createManagementApiData()
+  apiData.set('/api/rule/governance/workspaces/states', ({ url }) => url.searchParams.get('ids').split(',').map(resourceId => ({ resourceId, effectiveStatus: 'ACTIVE', requestStatus: 'EDITING', action: 'UPDATE', owned: true })))
   const { assertClean } = await installDistRoutes(page, {
-    apiData: createManagementApiData()
+    apiData
   })
   await page.goto('http://tianshu.local/index.html#/project')
   const row = page.getByRole('row').filter({ hasText: 'E2E 项目' })
   const actions = row.locator('button[data-action]')
-  await expect(actions).toHaveCount(5)
+  await expect(actions).toHaveCount(7)
+  await expect(row.getByRole('button', { name: '发布', exact: true })).toBeEnabled()
+  await actions.evaluateAll(async buttons => {
+    await new Promise(requestAnimationFrame)
+    await Promise.all(buttons.flatMap(button => button.getAnimations().filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {}))))
+  })
 
   const appearance = await actions.evaluateAll(buttons => buttons.map(button => ({
     action: button.dataset.action,
     color: getComputedStyle(button).color,
   })))
   expect(appearance.map(item => item.action)).toEqual([
+    'version',
+    'publish',
     'edit',
     'detail',
     'configure',

@@ -24,6 +24,8 @@ vi.mock('@/api/project', () => ({
 
 import * as modelApi from '@/api/model'
 import * as projectApi from '@/api/project'
+import * as governanceApi from '@/api/governance'
+import { setCurrentUser, clearCurrentUser } from '@/security/permissionState'
 import ModelList from '@/views/model/ModelList.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import fs from 'fs'
@@ -118,6 +120,19 @@ async function mountAndWait(routeQuery = {}) {
   await new Promise(r => setTimeout(r, 100))
   return wrapper
 }
+
+test('模型发布按钮提交所见草稿审批，不能只停留在编辑中申请', async () => {
+  setCurrentUser({ permissions: ['model:edit', 'model:submit', 'approval:submit'] })
+  const submit = vi.spyOn(governanceApi, 'submitGovernanceRequest').mockResolvedValue({ data: { status: 'PENDING' } })
+  const draft = vi.spyOn(governanceApi, 'getWorkspaceDraft').mockResolvedValue({ data: { id: 91, resourceId: 2, status: 'EDITING', action: 'UPDATE', snapshotDigest: 'shown' } })
+  const wrapper = mount(ModelList.components.GovernancePublishAction, { props: { resourceType: 'MODEL', resourceId: 2 } })
+  try {
+    await wrapper.setData({ state: { ready: true, owned: true, requestStatus: 'EDITING', action: 'UPDATE' } })
+    await wrapper.vm.publish()
+    expect(draft).toHaveBeenCalledWith('MODEL', 2)
+    expect(submit).toHaveBeenCalledWith(91, '从列表提交发布审批', 'shown')
+  } finally { wrapper.unmount(); draft.mockRestore(); submit.mockRestore(); clearCurrentUser() }
+})
 
 test('模型退出项目范围后清除自动项目筛选并从第一页加载', async () => {
   sessionStorage.clear()

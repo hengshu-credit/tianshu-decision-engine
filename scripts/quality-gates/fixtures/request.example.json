@@ -9,5 +9,9 @@
       "requestId": "capacity-gate-example"
     }
   },
-  "timeoutMs": 10000
+  "timeoutMs": 10000,
+  "expectedResponse": {
+    "success": true,
+    "code": "000000"
+  }
 }

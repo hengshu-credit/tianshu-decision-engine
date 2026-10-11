@@ -55,6 +55,8 @@ vi.mock('@logicflow/core', () => {
     Menu: class {},
     Snapshot: class {},
     DynamicGroup: class {},
+    DynamicGroupNode: class {},
+    DynamicGroupNodeModel: class {},
     MiniMap: class {},
     Dagre: class {},
   }
@@ -267,9 +269,120 @@ describe('九类设计器草稿保护', () => {
     configureQueryApis()
   })
 
+  test('历史评分卡原始JSON的相邻大整数引用ID不串绑，固定值不是引用', async () => {
+    const inputId = '9007199254740992'
+    const outputId = '9007199254740993'
+    const modelJson = `{"initialScore":0,"resultVar":{"operand":{"kind":"REFERENCE","refId":${outputId},"refType":"VARIABLE","code":"SavedScore","valueType":"NUMBER"}},"scoreItems":[{"leftOperand":{"kind":"REFERENCE","refId":${inputId},"refType":"VARIABLE","code":"SavedAge","valueType":"NUMBER"},"rightOperand":{"kind":"LITERAL","valueType":"OBJECT","value":{"refId":${outputId}}},"condOperator":"==","score":5,"weight":1}],"thresholds":[]}`
+    definitionApi.listRuleRevisions.mockResolvedValueOnce({ data: [] })
+    definitionApi.listPublishedVersions.mockResolvedValueOnce({ data: [] })
+    definitionApi.getVersionById.mockResolvedValueOnce({ data: { id: 81, definitionId: 30, version: 1, modelJson } })
+    definitionApi.getRuleReferenceCatalog.mockResolvedValueOnce({ data: {
+      status: 'AVAILABLE', referenceNamespace: 'ARTIFACT_SOURCE', imported: false, localEditingAllowed: true,
+      executionIdentity: { definitionId: '30', sourceType: 'VERSION', sourceId: '81' },
+      variables: [{ id: inputId, varCode: 'SavedAge', scriptName: 'SavedAge', varLabel: '历史年龄', varType: 'NUMBER', varSource: 'INPUT' },
+        { id: outputId, varCode: 'SavedScore', scriptName: 'SavedScore', varLabel: '历史评分', varType: 'NUMBER', varSource: 'OUTPUT' }],
+      objectTree: [], models: [], functions: [], rules: [], apis: [], lists: [], diagnostics: []
+    } })
+    const wrapper = mountDesigner(Scorecard, { sourceType: 'VERSION', sourceId: '81' })
+    try {
+      await flushPromises()
+      expect(wrapper.vm.model.resultVar.operand.refId).toBe(outputId)
+      expect(wrapper.vm.model.resultVar.operand.code).toBe('SavedScore')
+      expect(wrapper.vm.model.scoreItems[0].leftOperand.refId).toBe(inputId)
+      expect(typeof wrapper.vm.model.scoreItems[0].rightOperand.value.refId).toBe('number')
+      expect(definitionApi.saveDesignerDraft).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+  })
+
+  test.each([
+    ['发布后变量改名', 'Renamed_Age', '改名后的年龄', 'NUMBER'],
+    ['导入来源ID与本地同号字段碰撞', 'Local_Debt', '本地债务说明', 'STRING'],
+  ])('历史评分卡查看保留冻结引用：%s', async (_case, liveCode, liveLabel, liveType) => {
+    const frozenInput = { kind: 'REFERENCE', refId: '7', refType: 'VARIABLE', code: 'Frozen_Age', value: 'Frozen_Age', label: '发布时年龄', valueType: 'NUMBER', resolved: true }
+    const model = {
+      initialScore: 0, resultVar: { operand: { kind: 'REFERENCE', refId: '8', refType: 'VARIABLE', code: 'Frozen_Score', label: '发布时评分', valueType: 'NUMBER' } },
+      scoreItems: [{ leftOperand: frozenInput, condOperator: '>=', rightOperand: { kind: 'LITERAL', valueType: 'NUMBER', value: '18' }, score: 5, weight: 1 }], thresholds: [],
+    }
+    definitionApi.getDefinition.mockResolvedValue({ data: { id: 30, projectId: 1, scope: 'PROJECT' } })
+    definitionApi.listRuleRevisions.mockResolvedValue({ data: [] })
+    definitionApi.listPublishedVersions.mockResolvedValue({ data: [{ id: 81, version: 1, revisionId: 41 }] })
+    definitionApi.getVersionById.mockResolvedValue({ data: { id: 81, definitionId: 30, version: 1, revisionId: 41, artifactId: 601, modelJson: JSON.stringify(model) } })
+    definitionApi.getRuleReferenceCatalog.mockResolvedValueOnce({ data: {
+      status: 'AVAILABLE', referenceNamespace: 'ARTIFACT_SOURCE', imported: liveCode === 'Local_Debt', localEditingAllowed: liveCode !== 'Local_Debt',
+      executionIdentity: { definitionId: '30', sourceType: 'VERSION', sourceId: '81', revisionId: '41', artifactId: '601' },
+      variables: [{ id: '7', varCode: 'Frozen_Age', scriptName: 'Frozen_Age', varLabel: '发布时年龄', varType: 'NUMBER', varSource: 'INPUT' },
+        { id: '8', varCode: 'Frozen_Score', scriptName: 'Frozen_Score', varLabel: '发布时评分', varType: 'NUMBER', varSource: 'OUTPUT' }],
+      objectTree: [], models: [], functions: [], rules: [], apis: [], lists: [], diagnostics: []
+    } })
+    variableApi.listVariablesByProject.mockResolvedValue({ data: [{ id: 7, varCode: liveCode, scriptName: liveCode, varLabel: liveLabel, varType: liveType, varSource: 'INPUT', status: 1 }] })
+    const wrapper = mountDesigner(Scorecard, { sourceType: 'VERSION', sourceId: '81' })
+    try {
+      await flushPromises()
+      expect(wrapper.vm.viewRevision.state).toBe('VERSION')
+      expect(String(wrapper.vm.model.scoreItems[0].leftOperand.refId)).toBe('7')
+      expect(wrapper.vm.model.scoreItems[0].leftOperand.code).toBe('Frozen_Age')
+      expect(wrapper.vm.model.scoreItems[0].leftOperand.valueType).toBe('NUMBER')
+      expect(wrapper.find('.formula-cond').text()).toContain('发布时年龄')
+      expect(wrapper.find('.formula-cond').text()).not.toContain(liveLabel)
+      expect(definitionApi.saveDesignerDraft).not.toHaveBeenCalled()
+      expect(variableApi.listVariablesByProject).not.toHaveBeenCalled()
+      expect(dataObjectApi.getVariableTree).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+  })
+
+  test.each(['真实编辑', '明确使用当前资源'])('本地历史%s后切当前目录与带基线PREVIEW，保留真实dirty状态', async action => {
+    definitionApi.getDefinition.mockResolvedValue({ data: { id: 30, projectId: 1 } })
+    definitionApi.listRuleRevisions.mockResolvedValueOnce({ data: [] })
+    definitionApi.listPublishedVersions.mockResolvedValueOnce({ data: [] })
+    definitionApi.getVersionById.mockResolvedValueOnce({ data: { id: 81, definitionId: 30, version: 1, modelJson: '{"initialScore":0,"scoreItems":[],"thresholds":[]}' } })
+    const wrapper = mountDesigner(Scorecard, { sourceType: 'VERSION', sourceId: '81' })
+    try {
+      await flushPromises()
+      expect(wrapper.vm.referenceCatalogMode).toBe('FROZEN')
+      expect(wrapper.vm.designerTestExecutionSource).toEqual({ sourceType: 'VERSION', sourceId: '81' })
+      if (action === '真实编辑') {
+        wrapper.vm.model.initialScore = 9
+        wrapper.vm.captureDesignerDraftState()
+      } else await wrapper.get('[data-testid="designer-use-current-references"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.vm.referenceCatalogMode).toBe('LIVE')
+      expect(variableApi.listVariablesByProject).toHaveBeenCalledWith(1)
+      expect(wrapper.vm.designerTestExecutionSource).toEqual({ sourceType: 'PREVIEW', baseSourceType: 'VERSION', baseSourceId: '81' })
+      expect(wrapper.vm.designerHasUnsavedChanges).toBe(action === '真实编辑')
+      expect(definitionApi.saveDesignerDraft).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+  })
+
+  test('导入历史保留冻结测试与迁移入口，禁止当前资源编辑且切换来源立即关旧测试框', async () => {
+    definitionApi.listRuleRevisions.mockResolvedValueOnce({ data: [] })
+    definitionApi.listPublishedVersions.mockResolvedValueOnce({ data: [] })
+    definitionApi.getVersionById.mockResolvedValueOnce({ data: { id: 81, definitionId: 30, version: 1, modelJson: '{"initialScore":0,"scoreItems":[],"thresholds":[]}' } })
+    definitionApi.getRuleReferenceCatalog.mockResolvedValueOnce({ data: {
+      status: 'AVAILABLE', referenceNamespace: 'ARTIFACT_SOURCE', imported: true, localEditingAllowed: false,
+      executionIdentity: { definitionId: '30', sourceType: 'VERSION', sourceId: '81' },
+      variables: [], objectTree: [], models: [], functions: [], rules: [], apis: [], lists: [], diagnostics: []
+    } })
+    const wrapper = mountDesigner(Scorecard, { sourceType: 'VERSION', sourceId: '81' })
+    try {
+      await flushPromises()
+      expect(wrapper.vm.canEditDraft).toBe(false)
+      expect(wrapper.get('[data-testid="draft-read-only"]').text()).toContain('离线迁移')
+      expect(wrapper.get('[data-testid="draft-read-only"]').text()).not.toContain('没有规则编辑权限')
+      expect(wrapper.find('[data-testid="designer-use-current-references"]').exists()).toBe(false)
+      await wrapper.get('[data-testid="designer-frozen-test"]').trigger('click')
+      expect(wrapper.vm.testVisible).toBe(true)
+      expect(wrapper.vm.designerTestExecutionSource).toEqual({ sourceType: 'VERSION', sourceId: '81' })
+      await expect(wrapper.vm.enterDesignerLivePreview()).rejects.toThrow('离线迁移')
+      expect(variableApi.listVariablesByProject).not.toHaveBeenCalled()
+      const reload = wrapper.vm.startViewedRevisionRefresh(false)
+      expect(wrapper.vm.testVisible).toBe(false)
+      await reload
+    } finally { wrapper.unmount() }
+  })
+
   test.each(explicitRevisionSources)('$name 加载失败可原地重试精确版本，成功前不能保存', async ({ component, model, assertLoaded }) => {
     definitionApi.listRuleRevisions.mockResolvedValue({ data: [] })
-    definitionApi.listPublishedVersions.mockResolvedValue({ data: [] })
+    definitionApi.listPublishedVersions.mockResolvedValue({ data: [] }).mockResolvedValueOnce({ data: [{ id: 81, version: 2 }] })
     let resolveRetry
     definitionApi.getVersionById
       .mockRejectedValueOnce(new Error('读取失败'))
@@ -279,6 +392,11 @@ describe('九类设计器草稿保护', () => {
 
     expect(wrapper.get('[data-action="save"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('[role="dialog"][aria-modal="true"]').exists()).toBe(false)
+    const toolbar = wrapper.get(designerToolbars.find(([, candidate]) => candidate === component)[2])
+    expect(toolbar.get('[data-testid="draft-read-only"]').text()).toContain('当前版本加载失败')
+    expect(toolbar.findAll('[data-testid="designer-version-control"]')).toHaveLength(1)
+    expect(toolbar.get('[data-testid="designer-version-control"]').element.closest('[inert]')).toBeNull()
+    expect(wrapper.get('[data-action="save"]').element.closest('[inert]')).not.toBeNull()
     await wrapper.get('[data-testid="designer-source-retry"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-action="save"]').attributes('disabled')).toBeDefined()
@@ -291,13 +409,15 @@ describe('九类设计器草稿保护', () => {
     assertLoaded(wrapper.vm)
     expect(wrapper.get('[data-action="save"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('[data-testid="draft-read-only"]').exists()).toBe(false)
+    expect(toolbar.findAll('[data-testid="designer-version-control"]')).toHaveLength(1)
+    expect(wrapper.get('[data-action="save"]').element.closest('[inert]')).toBeNull()
     expect(definitionApi.saveDesignerDraft).not.toHaveBeenCalled()
     expect(definitionApi.saveContent).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
   test.each(designerToolbars)(
-    '%s 使用统一四动作操作栏',
+    '%s 使用统一五动作操作栏',
     async (_name, component, toolbarSelector) => {
       definitionApi.listRuleRevisions.mockResolvedValueOnce({ data: [] })
       definitionApi.getContent.mockResolvedValueOnce({
@@ -310,7 +430,8 @@ describe('九类设计器草稿保护', () => {
       expect(
         toolbar.findComponent({ name: 'RuleDesignerActionBar' }).exists()
       ).toBe(true)
-      expect(toolbar.findAll('.rule-designer-actions [data-action]').map(button => button.attributes('data-action'))).toEqual(['compile', 'save', 'publish', 'test'])
+      expect(toolbar.findAll('.rule-designer-actions__buttons [data-action]').map(button => button.attributes('data-action'))).toEqual(['check', 'compile', 'save', 'publish', 'test'])
+      expect(toolbar.find('[data-action="show-report"]').exists()).toBe(false)
       expect(toolbar.text()).not.toContain('临时保存配置')
       expect(toolbar.text()).not.toContain('编译后测试')
       wrapper.unmount()
@@ -1070,7 +1191,7 @@ describe('九类设计器草稿保护', () => {
     const wrapper = mountDesigner(DecisionFlow)
     await flushPromises()
 
-    wrapper.vm.handleValidate()
+    await wrapper.vm.handleValidate()
 
     expect(wrapper.vm.$alert).toHaveBeenCalledWith(
       expect.stringMatching(/结束节点|出边/),
@@ -1100,7 +1221,7 @@ describe('九类设计器草稿保护', () => {
       ],
     }
 
-    wrapper.vm.handleValidate()
+    await wrapper.vm.handleValidate()
 
     expect(wrapper.vm.$alert).toHaveBeenCalledWith(
       expect.stringContaining('默认分支'),
@@ -1140,6 +1261,45 @@ describe('九类设计器草稿保护', () => {
     )
     expect(wrapper.vm.$alert.mock.calls[0][0]).toContain('不可达')
     wrapper.unmount()
+  })
+
+  test('DecisionFlow 等待调用规则发布字段，期间画布变化不得给新画布验证通过', async () => {
+    definitionApi.listRuleRevisions.mockResolvedValueOnce({ data: [{ id: 7, definitionId: 30, revisionNo: 3, state: 'DRAFT', lockVersion: 2, modelJson: '{}' }] })
+    const wrapper = mountDesigner(DecisionFlow)
+    await flushPromises()
+    wrapper.vm.lf.graph = {
+      nodes: [{ id: 'start', type: 'start-event', properties: {} }, { id: 'end', type: 'end-event', properties: {} }],
+      edges: [{ id: 'edge', sourceNodeId: 'start', targetNodeId: 'end', properties: {} }],
+    }
+    let finish
+    const loading = new Promise(resolve => { finish = resolve })
+    vi.spyOn(wrapper.vm, 'loadRuleCallPublishedVersions').mockReturnValue(loading)
+    try {
+      const validating = wrapper.vm.handleValidate()
+      expect(wrapper.vm.loadRuleCallPublishedVersions).toHaveBeenCalledOnce()
+      expect(wrapper.vm.$message.success).not.toHaveBeenCalledWith('验证通过！')
+      wrapper.vm.lf.graph.nodes[1].properties.nodeName = '已修改结束节点'
+      finish()
+      await validating
+      expect(wrapper.vm.$message.success).not.toHaveBeenCalledWith('验证通过！')
+      expect(wrapper.vm.$message.warning).toHaveBeenCalledWith(expect.stringContaining('重新验证'))
+    } finally { finish(); wrapper.unmount() }
+  })
+
+  test('DecisionFlow 发布字段读取失败不能显示验证通过', async () => {
+    definitionApi.listRuleRevisions.mockResolvedValueOnce({ data: [{ id: 7, definitionId: 30, revisionNo: 3, state: 'DRAFT', lockVersion: 2, modelJson: '{}' }] })
+    const wrapper = mountDesigner(DecisionFlow)
+    await flushPromises()
+    wrapper.vm.lf.graph = {
+      nodes: [{ id: 'start', type: 'start-event', properties: {} }, { id: 'end', type: 'end-event', properties: {} }],
+      edges: [{ id: 'edge', sourceNodeId: 'start', targetNodeId: 'end', properties: {} }],
+    }
+    vi.spyOn(wrapper.vm, 'loadRuleCallPublishedVersions').mockRejectedValueOnce(new Error('发布字段读取失败'))
+    try {
+      await wrapper.vm.handleValidate()
+      expect(wrapper.vm.$message.success).not.toHaveBeenCalledWith('验证通过！')
+      expect(wrapper.vm.$message.error).toHaveBeenCalledWith(expect.stringContaining('发布字段读取失败'))
+    } finally { wrapper.unmount() }
   })
 
   test('AdvancedCrossTable 从非空 DRAFT 保留维度 ID 与单元格结构', async () => {

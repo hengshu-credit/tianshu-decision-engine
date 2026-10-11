@@ -16,9 +16,10 @@
     >
       <el-tab-pane label="执行明细" name="logs" />
       <el-tab-pane label="规则集命中统计" name="ruleSetStats" />
+      <el-tab-pane v-if="canViewRuntime" label="运行状态" name="runtime" />
     </el-tabs>
     <div class="management-table-region" v-if="activeView === 'logs'">
-      <div class="uiue-search-container">
+      <div class="uiue-search-container uiue-filter-toolbar">
         <el-form :inline="true" size="small" @keyup.enter="handleQuery">
           <el-form-item label="来源" style="width: 150px">
             <el-select
@@ -98,6 +99,7 @@
               placeholder="如 TOKEN_..."
               style="width: 160px"
           /></el-form-item>
+          <execution-version-filter v-model="qp" />
           <el-form-item label="Trace ID"
             ><el-input
               v-model="qp.traceId"
@@ -134,17 +136,18 @@
             <el-button @click="resetQuery">重置</el-button>
           </el-form-item>
         </el-form>
-      </div>
       <div class="uiue-btn-bar">
         <div class="btn-right">
           <table-column-settings :columns="logColumns" storage-key="tianshu:table-columns:execution-log" />
         </div>
+      </div>
       </div>
       <el-table class="management-table" show-overflow-tooltip
         :data="list"
         border
         size="small"
         v-loading="loading"
+        :empty-text="loadError || '暂无数据'"
         style="width: 100%"
       >
         <el-table-column
@@ -263,6 +266,8 @@
       </el-table>
       <el-pagination
         style="margin-top: 16px; text-align: right"
+        v-show="!loadError"
+        :disabled="loading"
         :current-page="qp.pageNum"
         :page-size="qp.pageSize"
         :total="total"
@@ -283,8 +288,8 @@
         "
       />
     </div>
-    <div v-else class="rule-set-stats">
-      <div class="uiue-search-container">
+    <div v-else-if="activeView === 'ruleSetStats'" class="rule-set-stats management-table-region">
+      <div class="uiue-search-container uiue-filter-toolbar">
         <el-form :inline="true" size="small" @keyup.enter="loadRuleSetStats">
           <el-form-item label="项目编码">
             <project-filter-select
@@ -351,7 +356,12 @@
         show-icon
         :closable="false"
       />
+      <el-alert v-if="ruleSetCoverageHint(ruleSetStats.coverage)"
+        :title="ruleSetCoverageHint(ruleSetStats.coverage)" type="warning" :closable="false" show-icon
+        class="rule-set-coverage" data-testid="rule-set-coverage" />
+      <p v-if="ruleSetStats.coverage?.queriedAt" class="rule-set-query-time">统计查询于 {{ formatTime(ruleSetStats.coverage.queriedAt) }}；新日志或历史补齐完成后，可重新查询。</p>
       <async-state
+        class="management-table-region"
         :loading="ruleSetStatsLoading"
         :error="ruleSetStatsError"
         :empty="!ruleSetStats.ruleSets.length"
@@ -479,6 +489,13 @@
         </el-table>
       </async-state>
     </div>
+    <section v-else-if="activeView === 'runtime' && canViewRuntime" class="execution-runtime-view">
+      <p class="module-hint" data-testid="execution-runtime-scope">
+        运行状态不受项目、规则或时间筛选影响。进程内指标与本地恢复日志属于当前响应节点，数据库恢复队列和发布队列为共享存储汇总。
+        多节点部署时，请核对面板中的当前节点；项目筛选仅用于执行明细和规则集命中统计。
+      </p>
+      <execution-metrics-panel />
+    </section>
     <el-drawer title="日志详情" v-model="detailVis" size="84%">
       <div style="padding: 16px" v-if="detail">
         <el-tabs v-model="detailTab">
@@ -577,6 +594,7 @@
 </template>
 
 <script>
+import ExecutionVersionFilter from '@/components/common/ExecutionVersionFilter.vue'
 import { View as ElIconView, Connection as ElIconConnection } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import request from '@/api/request'
@@ -592,16 +610,20 @@ import AsyncState from '@/components/common/AsyncState.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
+import ExecutionMetricsPanel from '@/components/dashboard/ExecutionMetricsPanel.vue'
+import { hasPermission } from '@/security/permissionState'
 import {
   clearPageState,
   restorePageState,
   savePageState,
 } from '@/utils/pageStateCache'
 import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
+import { ruleSetCoverageHint } from '@/utils/ruleSetStatistics'
 
 export default {
-  components: {
+  components: { ExecutionVersionFilter,
     TableColumnSettings,
+    ExecutionMetricsPanel,
     TraceTree,
 AsyncState,
 ProjectFilterSelect,
@@ -625,6 +647,8 @@ ruleSetStatsColumns: [
 ],
   activeView: 'logs',
 loading: false,
+loadRequestId: 0,
+loadError: '',
 list: [],
 total: 0,
 qp: {
@@ -710,6 +734,7 @@ contextProjectId: null,
 contextProjectCode: '',
 contextError: '',
 ruleSetStatsLoading: false,
+ruleSetStatsRequestId: 0,
 ruleSetStatsError: '',
 ruleSetStats: {
 overview: {},
@@ -737,6 +762,9 @@ functionNameMap: {},
 },
 name: 'ExecutionLog',
 computed: {
+canViewRuntime: function () {
+return hasPermission('log:view')
+},
 filteredRules: function () {
 if (!this.qp.projectCode) return this.ruleList
 var pc = this.qp.projectCode
@@ -792,7 +820,12 @@ if (contextId) {
 }
 this.load()
 },
+beforeUnmount() {
+this.loadRequestId++
+this.ruleSetStatsRequestId++
+},
 methods: {
+ruleSetCoverageHint,
 applyProjectContext: function (project) {
 if (!project || !project.id) return
 this.contextProjectId = Number(project.id)
@@ -804,11 +837,17 @@ this.mergeProjects([project])
 async handleViewChange(tab) {
 var paneName = tab && (tab.paneName ?? tab.name ?? (tab.props && tab.props.name))
 this.activeView = paneName && paneName.value !== undefined ? paneName.value : (paneName || this.activeView)
+if (this.activeView === 'runtime' && !this.canViewRuntime) {
+  this.activeView = 'logs'
+  return
+}
 if (this.activeView === 'ruleSetStats') await this.loadRuleSetStats()
 },
 async loadRuleSetStats() {
+var requestId = ++this.ruleSetStatsRequestId
 this.ruleSetStatsLoading = true
 this.ruleSetStatsError = ''
+this.ruleSetStats = { overview: {}, ruleSets: [] }
 try {
   var params = {
     projectCode: this.qp.projectCode || '',
@@ -819,15 +858,17 @@ try {
     endTime: this.timeRange && this.timeRange[1] ? this.timeRange[1] : '',
   }
   var result = await getRuleSetStats(params)
+  if (requestId !== this.ruleSetStatsRequestId) return
   var data = result && result.data ? result.data : {}
   this.ruleSetStats = {
     overview: data.overview || {},
     ruleSets: data.ruleSets || [],
+    coverage: data.coverage || null,
   }
 } catch (e) {
-  this.ruleSetStatsError = '规则集命中统计加载失败'
+  if (requestId === this.ruleSetStatsRequestId) this.ruleSetStatsError = '规则集命中统计加载失败'
 } finally {
-  this.ruleSetStatsLoading = false
+  if (requestId === this.ruleSetStatsRequestId) this.ruleSetStatsLoading = false
 }
 },
 ratePercent: function (value) {
@@ -858,7 +899,10 @@ savePageState(projectPageStateKey('ExecutionLog', this.contextProjectId), {
 })
 },
 async load() {
+var requestId = ++this.loadRequestId
 this.loading = true
+this.loadError = ''
+this.list = []
 try {
   this.normalizePagination()
   this.saveCachedState()
@@ -872,10 +916,13 @@ try {
     method: 'get',
     params: params,
   })
+  if (requestId !== this.loadRequestId) return
   this.list = r.data.records
   this.total = r.data.total
+} catch {
+  if (requestId === this.loadRequestId) this.loadError = '执行日志加载失败，请重新查询'
 } finally {
-  this.loading = false
+  if (requestId === this.loadRequestId) this.loading = false
 }
 },
 async loadProjects(keyword) {
@@ -1212,6 +1259,9 @@ this.qp.pageNum = 1
 this.load()
 },
 resetQuery: function () {
+this.qp.ruleId = null
+this.qp.versionMode = 'ALL'
+this.qp.ruleVersion = null
 this.qp.source = ''
 this.qp.projectCode = this.contextProjectCode || ''
 this.qp.projectName = ''
@@ -1316,6 +1366,8 @@ emits: ['pick']
 .rule-set-stats {
   min-height: 260px;
 }
+.rule-set-coverage { margin-top: 12px; }
+.rule-set-query-time { margin: 12px 0; color: var(--tianshu-text-secondary); font-size: 12px; line-height: 1.6; }
 .stats-cards {
   display: grid;
   grid-template-columns: repeat(6, minmax(130px, 1fr));

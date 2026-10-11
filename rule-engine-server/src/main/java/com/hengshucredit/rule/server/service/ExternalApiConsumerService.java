@@ -26,12 +26,29 @@ public class ExternalApiConsumerService {
     public Map<String, Object> resolve(Long projectId, Long apiId, Map<String, Object> binding,
                                        Map<String, Object> values, VariableResolveOptions options,
                                        String sourceKey) {
+        return resolve(projectId, apiId, binding, values, options, sourceKey, values);
+    }
+
+    public Map<String, Object> resolve(Long projectId, Long apiId, Map<String, Object> binding,
+                                       Map<String, Object> values, VariableResolveOptions options, String sourceKey,
+                                       Map<String, Object> sourceValues) {
+        return resolveSelected(projectId, apiId, null, binding, values, options, sourceKey, sourceValues);
+    }
+
+    public Map<String, Object> resolveVersion(Long projectId, RuleExternalApiConfig snapshot,
+                                              Map<String, Object> values, VariableResolveOptions options, String sourceKey) {
+        return resolveSelected(projectId, snapshot.getId(), snapshot, Map.of(), values, options, sourceKey, values);
+    }
+
+    private Map<String, Object> resolveSelected(Long projectId, Long apiId, RuleExternalApiConfig snapshot,
+                                               Map<String, Object> binding, Map<String, Object> values,
+                                               VariableResolveOptions options, String sourceKey, Map<String, Object> sourceValues) {
         if (options.getInvocationCache() == null) options.setInvocationCache(new VariableResolutionInvocationCache());
         if (options.isOfflineReplay() || options.isSkipApiSources()) {
             options.getInvocationCache().recordReplayMissing("EXTERNAL_API", "API:" + apiId, String.valueOf(apiId));
             return Map.of("success", false, "status", Map.of("outcome", "NOT_EXECUTED"));
         }
-        RuleExternalApiConfig api = apiConfigMapper.selectById(apiId);
+        RuleExternalApiConfig api = snapshot == null ? apiConfigMapper.selectById(apiId) : snapshot;
         if (api == null || api.getStatus() != null && api.getStatus() != 1) throw new IllegalArgumentException("外数 API 不存在或已停用: " + apiId);
         if (datasourceMapper != null) {
             var datasource = datasourceMapper.selectById(api.getDatasourceId());
@@ -40,6 +57,7 @@ public class ExternalApiConsumerService {
         }
         Map<String, String> paths = options.getDerivedReferencePaths();
         if (paths == null) paths = variableService.buildRefScriptNameMap(projectId);
+        values = ExternalApiRequestPlan.overrideInputs(api, values, sourceValues, binding.get("inputOverrides"), paths);
         Map<String, Object> overrides = binding.get("requestOverrides") instanceof Map<?, ?> raw
                 ? JSON.parseObject(JSON.toJSONString(raw)) : Map.of();
         RuleExternalApiConfig selected = invokeService.selectRequestBranch(api, values);

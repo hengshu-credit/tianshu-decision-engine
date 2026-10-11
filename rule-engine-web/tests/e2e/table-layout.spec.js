@@ -34,7 +34,8 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
       await expect(header).toHaveCSS('right', '0px')
       await expect(header.locator('.cell')).toHaveCSS('text-align', 'left')
       if (route === 'project') {
-        expect((await header.boundingBox()).width).toBeLessThanOrEqual(280)
+        // 七个入口包含版本与条件发布；仍逐按钮验证无裁剪、无换行。
+        expect((await header.boundingBox()).width).toBeLessThanOrEqual(410)
       }
       await expect(table.locator('td.table-operation-column').first().locator('.cell')).toHaveCSS('text-align', 'left')
       const before = await header.boundingBox()

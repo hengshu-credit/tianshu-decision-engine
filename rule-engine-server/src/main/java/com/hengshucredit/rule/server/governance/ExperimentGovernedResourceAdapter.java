@@ -15,6 +15,16 @@ public class ExperimentGovernedResourceAdapter
         extends AggregateEntityGovernedResourceAdapter<RuleExperiment> {
 
     private final RuleExperimentGroupMapper groupMapper;
+    @jakarta.annotation.Resource @org.springframework.context.annotation.Lazy
+    private com.hengshucredit.rule.server.service.RuleExperimentService experimentService;
+
+    @Override
+    protected AppliedResource afterAggregateApplied(ApprovalApplyContext context, AppliedResource applied) {
+        if (experimentService == null) return applied;
+        int number = experimentService.recordAppliedVersion(applied.resourceId(), context.reuseVersion() ? context.nextVersionNo() : null,
+                "审批 " + context.requestId(), context.actor());
+        return new AppliedResource(applied.resourceId(), number, applied.effectiveStatus(), applied.artifactId());
+    }
 
     public ExperimentGovernedResourceAdapter(
             SimpleEntityGovernedResourceAdapter.EntityStore<RuleExperiment>
@@ -57,12 +67,24 @@ public class ExperimentGovernedResourceAdapter
     @Override
     protected void applyAggregate(Long resourceId,
                                   Map<String, Object> snapshot) {
+        applyGroups(resourceId, snapshot, false);
+    }
+
+    @Override
+    protected AppliedResource applyAggregateWithResult(ApprovalApplyContext context, AppliedResource applied, Map<String, Object> snapshot) {
+        applyGroups(applied.resourceId(), snapshot, context.reuseVersion());
+        return applied;
+    }
+
+    private void applyGroups(Long resourceId, Map<String, Object> snapshot, boolean reuse) {
         groupMapper.delete(new LambdaQueryWrapper<RuleExperimentGroup>()
                 .eq(RuleExperimentGroup::getExperimentId, resourceId));
         List<RuleExperimentGroup> groups = groups(snapshot);
         for (int index = 0; index < groups.size(); index++) {
             RuleExperimentGroup group = groups.get(index);
-            group.setId(null);
+            if (reuse && group.getId() != null && groupMapper.selectById(group.getId()) != null)
+                throw new IllegalArgumentException("历史分组 ID 已被其他实验占用，不能复用原版本");
+            if (!reuse) group.setId(null);
             group.setExperimentId(resourceId);
             group.setSortOrder(index);
             groupMapper.insert(group);
@@ -73,6 +95,20 @@ public class ExperimentGovernedResourceAdapter
     protected void validateAggregate(Map<String, Object> snapshot,
                                      List<GovernanceIssue> issues) {
         List<RuleExperimentGroup> groups = groups(snapshot);
+        for (int index = 0; index < groups.size(); index++) {
+            RuleExperimentGroup group = groups.get(index);
+            if (group.getRuleId() == null || group.getRuleId() <= 0) {
+                issues.add(GovernanceIssue.error("EXPERIMENT_RULE_REQUIRED",
+                        "实验组尚未选择执行规则，请选择已发布的规则后再发布实验",
+                        GovernanceResourceTypes.EXPERIMENT, longValue(snapshot.get("id")),
+                        "$.groups[" + index + "].ruleId"));
+            }
+            if (experimentService != null) {
+                try { experimentService.validateGroupVersion(group); }
+                catch (IllegalArgumentException | IllegalStateException error) { issues.add(GovernanceIssue.error("EXPERIMENT_RULE_VERSION_INVALID", error.getMessage(),
+                        GovernanceResourceTypes.EXPERIMENT, longValue(snapshot.get("id")), "$.groups[" + index + "].versionBindingId")); }
+            }
+        }
         long champions = groups.stream()
                 .filter(group -> Integer.valueOf(1).equals(
                         group.getStatus()))

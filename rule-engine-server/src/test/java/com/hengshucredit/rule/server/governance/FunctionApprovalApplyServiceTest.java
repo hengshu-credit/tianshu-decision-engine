@@ -130,7 +130,7 @@ public class FunctionApprovalApplyServiceTest {
         ReflectionTestUtils.setField(functionPush, "pushService", redisPush);
         return new FunctionGovernedResourceAdapter(
                 new RecordingStore(recorder), new GovernanceSecretCodec(null),
-                functionPush);
+                functionPush, new com.hengshucredit.rule.server.service.FunctionMethodCatalogService());
     }
 
     private static RuleProjectService projectService(Long id,
@@ -289,17 +289,20 @@ public class FunctionApprovalApplyServiceTest {
     private static class RecordingStore implements
             SimpleEntityGovernedResourceAdapter.EntityStore<RuleFunction> {
         private final EventRecorder recorder;
+        private RuleFunction stored;
 
         private RecordingStore(EventRecorder recorder) { this.recorder = recorder; }
 
-        @Override public RuleFunction load(Long id) { return null; }
+        @Override public RuleFunction load(Long id) { return stored != null && id.equals(stored.getId()) ? stored : null; }
 
         @Override public void insert(RuleFunction entity) {
             entity.setId(31L);
+            stored = entity;
             recorder.events.add("INSERT:" + entity.getFuncCode());
         }
 
         @Override public void update(RuleFunction entity) {
+            stored = entity;
             recorder.events.add("UPDATE:" + entity.getFuncCode());
         }
     }

@@ -1,12 +1,14 @@
 import request from './request'
+import { metadataResponse } from '@/utils/metadataResponse'
 import { createResourceDraft } from './governance'
+import { hasPermission } from '@/security/permissionState'
 
 export function listProjects(params) {
-  return request({ url: '/rule/project/list', method: 'get', params })
+  return request({ ...metadataResponse, url: hasPermission('project:view') ? '/rule/project/list' : '/rule/project/options', method: 'get', params })
 }
 
 export function getProject(id) {
-  return request({ url: `/rule/project/${id}`, method: 'get' })
+  return request({ url: hasPermission('project:view') ? `/rule/project/${id}` : `/rule/project/options/${id}`, method: 'get' })
 }
 
 export function getProjectWorkbench(id) {

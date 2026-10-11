@@ -291,7 +291,10 @@
         @retry="loadGovernance"
       >
         <div v-if="hasGovernance" class="dashboard-chart-grid">
-          <chart-card v-if="governance.ruleSetHits && governance.ruleSetHits.visible" title="规则集命中规则 TOP" note="进件数 / 命中数 / 命中率">
+          <chart-card v-if="governance.ruleSetHits && governance.ruleSetHits.visible" title="规则集命中规则 TOP" note="执行次数 / 命中次数 / 命中率">
+            <el-alert v-if="ruleSetCoverageHint(governance.ruleSetHits.coverage)"
+              :title="ruleSetCoverageHint(governance.ruleSetHits.coverage)" type="warning" :closable="false" show-icon
+              data-testid="rule-set-coverage" />
             <dashboard-chart
               aria-label="规则集命中规则 TOP"
               :empty="!governance.ruleSetHits.items.length"
@@ -313,6 +316,7 @@
 </template>
 
 <script>
+import { ruleSetCoverageHint } from '@/utils/ruleSetStatistics'
 import {
   getDashboardApplications,
   getDashboardGovernance,
@@ -517,6 +521,7 @@ export default {
     window.removeEventListener('tianshu-theme-change', this.handleThemeChange)
   },
   methods: {
+    ruleSetCoverageHint,
     resetMapView() {
       this.mapView = readDashboardMapView(window.sessionStorage)
       this.mapViewConfigured = Boolean(window.sessionStorage.getItem(DASHBOARD_MAP_VIEW_KEY))

@@ -7,6 +7,10 @@ import {
 } from '@/utils/referenceCatalog'
 
 describe('referenceCatalog', () => {
+  test('模型字段使用实际 currentVersion 显示当前版本，并保持输出字段 ID', () => {
+    const catalog = buildReferenceCatalog([], [], [{ id: '9007199254740993', modelCode: 'model', currentVersion: 4, outputFields: [{ id: 7, fieldName: 'score' }] }])
+    expect(buildPickerOptions(catalog)[0]).toMatchObject({ _varId: 7, _refType: 'MODEL_OUTPUT', _ref: { modelId: '9007199254740993', modelVersion: 4 } })
+  })
   test('模型输出引用实际返回字段，不误用回填变量名称', () => {
     const catalog = buildReferenceCatalog([], [], [{ id: 2, modelCode: 'model', outputFields: [
       { id: 7, fieldName: 'score', scriptName: 'decisionScore', targetOperand: '{"kind":"PATH","value":"decisionScore"}' },

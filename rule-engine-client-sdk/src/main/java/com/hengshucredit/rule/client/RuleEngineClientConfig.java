@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.client;
 
 import com.hengshucredit.rule.client.auth.ClientAuthConfig;
+import com.hengshucredit.rule.client.log.LogReportTransport;
 import lombok.Data;
 
 /**
@@ -23,6 +24,7 @@ public class RuleEngineClientConfig {
     private int httpTimeoutMs = 3000;
     private int heartbeatIntervalMs = 300000;
     private boolean logReportEnabled = true;
+    private LogReportTransport logReportTransport = LogReportTransport.HTTP;
     /** 项目 ID，用于从服务端同步函数定义（0 表示不同步函数） */
     private long projectId = 0;
     /** 是否开启表达式追踪，默认 true；关闭可提升执行性能 */
@@ -32,4 +34,5 @@ public class RuleEngineClientConfig {
     private int logBatchSize = 50;
     private int logFlushIntervalMs = 5000;
     private String kafkaLogTopic = "rule-execution-log";
+    private boolean kafkaHttpFallbackEnabled = true;
 }

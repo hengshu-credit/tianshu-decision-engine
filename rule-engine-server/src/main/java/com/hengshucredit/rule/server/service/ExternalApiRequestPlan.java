@@ -104,6 +104,36 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
         }
     }
 
+    /** 旧接口的调用入参是协议路径，不是引擎资源身份；覆盖值仍使用带 ID 的 Operand。 */
+    public static Set<String> legacyInputPaths(RuleExternalApiConfig api) {
+        Set<String> paths = new LinkedHashSet<>();
+        for (String template : new String[]{api.getQueryConfig(), api.getRequestMapping(), api.getBodyTemplate()}) {
+            if (template == null) continue;
+            var matcher = java.util.regex.Pattern.compile("\\$\\.([A-Za-z0-9_.\\[\\]-]+)|\\$\\{([^}]+)}").matcher(template);
+            while (matcher.find()) paths.add(matcher.group(1) == null ? matcher.group(2).trim() : matcher.group(1));
+        }
+        paths.removeIf(path -> path.isBlank() || path.equals("callbackUrl") || path.startsWith("__apiFields."));
+        return paths;
+    }
+
+    public static void validateInputOverrides(RuleExternalApiConfig api, Map<?, ?> overrides) {
+        if (overrides == null || overrides.isEmpty()) return;
+        if (specification(api) != null) throw new IllegalArgumentException("接口已采用请求字段配置，请重新选择允许覆盖的请求字段");
+        Set<String> paths = legacyInputPaths(api);
+        for (Object path : overrides.keySet()) if (!paths.contains(String.valueOf(path)))
+            throw new IllegalArgumentException("API 没有声明此调用入参：" + path);
+    }
+
+    public static Map<String, Object> overrideInputs(RuleExternalApiConfig api, Map<String, Object> values,
+                                                    Map<String, Object> sourceValues, Object raw, Map<String, String> paths) {
+        if (!(raw instanceof Map<?, ?> overrides) || overrides.isEmpty()) return values;
+        validateInputOverrides(api, overrides);
+        // 路径写入只修改本次调用副本；不能污染其它变量或子规则共享的输入对象。
+        Map<String, Object> result = JSON.parseObject(JSON.toJSONString(values == null ? Map.of() : values));
+        overrides.forEach((path, operand) -> write(result, String.valueOf(path), evaluate(operand, sourceValues, paths)));
+        return result;
+    }
+
     private static void collectStepInputs(Object node, Map<String, Object> context, Map<String, String> paths, Map<String, Object> values) {
         if (node instanceof Map<?, ?> map) {
             if (map.get("refId") != null && map.get("refType") != null) {
@@ -160,12 +190,17 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
             JSONObject node = JSON.parseObject(JSON.toJSONString(raw));
             ExternalApiExecutionConfig.validateFunction(node);
             String kind = node.getString("kind");
+            if ("LITERAL".equals(kind)) return;
+            if (com.hengshucredit.rule.core.compiler.OperandVersion.fixedVersionId(node) != null) {
+                if ("FUNCTION".equals(kind)) validateReferences(node.get("args"), context, paths);
+                return;
+            }
             if ("REFERENCE".equals(kind) || "PATH".equals(kind) && node.get("refId") != null) {
                 String key = node.getString("refType") + ":" + node.getString("refId");
                 if (!paths.containsKey(key)) throw new IllegalArgumentException("API 引用字段无法按 ID 解析: " + key);
             } else if ("PATH".equals(kind)) {
                 String path = required(node.getString("value"), "字段路径");
-                boolean protocol = path.matches("(?:request|response|authentication|steps|callbacks|status|body)(?:\\..+)?|input\\.__apiFields\\..+|callId|costTimeMs");
+                boolean protocol = path.matches("(?:request|response|authentication|steps|callbacks|status|body|headers|rawBody)(?:[.\\[].+)?|input\\.__apiFields\\..+|httpStatus|callId|costTimeMs|errorMessage");
                 if (!protocol && !present(context, path) && !paths.containsValue(path)) {
                     throw new IllegalArgumentException("API 字段路径无法解析: " + path);
                 }

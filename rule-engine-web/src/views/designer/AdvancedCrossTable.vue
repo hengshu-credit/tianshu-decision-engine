@@ -1,22 +1,5 @@
 <template>
   <div class="act-designer uiue-compact-workbench uiue-compact-designer">
-    <rule-draft-read-only
-      :visible="!canEditDraft"
-      :loading="!draftGuardLoaded"
-      :load-error="Boolean(draftGuardError)"
-      :revision-label="viewRevisionLabel"
-      :revision-state="viewRevision ? viewRevision.state : ''"
-      :can-fork="canForkViewRevision"
-      :has-editable-draft="hasPendingDraft"
-      :source-options="designerSourceOptions"
-      :selected-source="selectedDesignerSource"
-      :source-loading="designerSourcesLoading"
-      @go-back="$router.back()"
-      @retry="startViewedRevisionRefresh(true)"
-      @go-lifecycle="goRuleLifecycle"
-      @fork="forkViewRevision"
-      @change-source="switchDesignerSource"
-    />
     <!-- 顶部工具栏 -->
     <div class="act-header">
       <div class="act-title-area">
@@ -24,6 +7,7 @@
           link
           :icon="ElIconBack"
           aria-label="返回"
+          data-designer-back
           title="返回"
           @click="$router.back()"
           style="color: var(--tianshu-text-secondary)"
@@ -34,17 +18,32 @@
           {{ totalRowCount }} 行 × {{ totalColCount }} 列
         </el-tag>
       </div>
-      <div class="act-toolbar">
-        <rule-designer-version-select
-          v-if="canEditDraft && designerSourceOptions.length"
-          :options="designerSourceOptions"
-          :model-value="selectedDesignerSource"
-          :loading="designerSourcesLoading"
-          @change="switchDesignerSource"
-          @delete="deleteDesignerSource"
+      <div class="act-toolbar designer-version-toolbar">
+        <rule-draft-read-only
+          :visible="!canEditDraft"
+          :loading="!draftGuardLoaded"
+          :load-error="Boolean(draftGuardError) || varsLoadError"
+          :revision-label="viewRevisionLabel"
+          :revision-state="viewRevision ? viewRevision.state : ''"
+          :can-fork="canForkViewRevision"
+          :has-editable-draft="hasPendingDraft"
+          :source-options="designerSourceOptions"
+          :selected-source="selectedDesignerSource"
+          :source-loading="designerSourcesLoading"
           :disabled="designerBusy"
+          :read-only-reason="designerReadOnlyReason"
+          :can-test-frozen="designerCanTest && referenceCatalogMode === 'FROZEN'"
+          :migration-required="draftGuardLoaded && frozenReferenceCatalog?.localEditingAllowed === false"
+          @test-frozen="handleTest"
+          @open-migration="$router.push('/transfer')"
+          @retry="startViewedRevisionRefresh(true)"
+          @go-lifecycle="goRuleLifecycle"
+          @fork="forkViewRevision"
+          @change-source="switchDesignerSource"
+          @delete-source="deleteDesignerSource"
         />
         <rule-designer-action-bar
+          @check="handleCheck"
           @locate="locateDesignerIssue"
           :issue-context="incomingValidationIssue"
             :can-edit="canEditDraft"
@@ -63,7 +62,7 @@
       </div>
     </div>
 
-    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" />
+    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" :reference-mode="referenceCatalogMode" :can-use-current-resources="canEnterDesignerLivePreview" @use-current="runDesignerAction(enterDesignerLivePreview)" />
     <rule-designer-dialogs :choice="designerChoice" @resolve="resolveDesignerChoice" />
 
 
@@ -191,6 +190,7 @@
               <operand-picker
                 v-else-if="segmentRequiresValue(seg, dim)"
                 :value="seg.valueOperand"
+                :condition-operator="seg.operator"
                 :vars="varPickerOptions"
                 :functions="projectFunctions"
                 :selected-vars="selectedVarPickerOptions"
@@ -350,6 +350,7 @@
               <operand-picker
                 v-else-if="segmentRequiresValue(seg, dim)"
                 :value="seg.valueOperand"
+                :condition-operator="seg.operator"
                 :vars="varPickerOptions"
                 :functions="projectFunctions"
                 :selected-vars="selectedVarPickerOptions"
@@ -513,6 +514,8 @@
     <!-- 测试弹窗 -->
     <designer-test-dialog
       v-model:visible="testVisible"
+      :execution-source="designerTestExecutionSource"
+      :execution-source-name="viewRevisionLabel"
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="CROSS_ADV"
@@ -523,6 +526,7 @@
 </template>
 
 <script>
+import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { markRaw } from 'vue'
 import {
   DataAnalysis as ElIconDataAnalysis,
@@ -545,7 +549,6 @@ import OperandPicker from '@/components/common/OperandPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import RuleDraftReadOnly from '@/components/rule/RuleDraftReadOnly.vue'
-import RuleDesignerVersionSelect from '@/components/rule/RuleDesignerVersionSelect.vue'
 import RuleDesignerActionBar from '@/components/rule/RuleDesignerActionBar.vue'
 import {
   addCode,
@@ -559,19 +562,20 @@ import {
   compileOperand,
   createLiteralOperand,
   inferOperandType,
-  operandDisplay,
   operandFromReferenceFields,
   syncOperandReference,
 } from '@/utils/operand'
 import { getExpressionContext } from '@/constants/expressionContexts'
 import {
   conditionOperatorAllowsVarValue,
+  conditionLiteralOperandKinds,
   conditionOperatorRequiresValue,
   findConditionOperator,
   getConditionOperatorGroups,
   normalizeConditionOperator,
   normalizeVarType,
 } from '@/constants/conditionOperators'
+import { formatConditionDescription } from '@/utils/expressionDisplay'
 
 const RANGE_BOUNDARIES = ['[)', '()', '[]', '(]']
 
@@ -619,7 +623,6 @@ export default {
   components: {
     RuleDesignerActionBar,
     RuleDraftReadOnly,
-    RuleDesignerVersionSelect,
     DesignerTestDialog,
     OperandPicker,
     ScriptPanel,
@@ -692,7 +695,7 @@ export default {
         for (let r = 0; r < repeat; r++) {
           for (const seg of segs) {
             cells.push({
-              label: seg.label || operandDisplay(seg.valueOperand) || '-',
+              label: this.segmentSummary(dims[level], seg),
               colspan,
             })
           }
@@ -722,9 +725,7 @@ export default {
             cells.push({
               label:
                 combo && combo[level]
-                  ? combo[level].label ||
-                    operandDisplay(combo[level].valueOperand) ||
-                    '-'
+                  ? this.segmentSummary(dims[level], combo[level])
                   : '-',
               rowspan,
               level,
@@ -749,6 +750,25 @@ export default {
     this.loadContent()
   },
   methods: {
+    segmentSummary(dim, segment) {
+      const leftOperand = dim.operand || operandFromReferenceFields(dim)
+      const right = (field, legacy) => segment[field] || createLiteralOperand(segment[legacy], dimensionType(dim))
+      const describe = (operator, rightOperand) => formatConditionDescription({ leftOperand, operator, rightOperand }, { includeLeft: false })
+      let summary
+      if (segment.operator === 'range') {
+        const min = right('minOperand', 'min'), max = right('maxOperand', 'max')
+        const missing = operand => operand.kind === 'LITERAL' && (operand.value == null || String(operand.value).trim() === '')
+        if (missing(min) || missing(max)) {
+          summary = '条件未完成：请填写区间' + (missing(min) ? '下界' : '上界')
+        } else {
+          const boundary = RANGE_BOUNDARIES.includes(segment.rangeBoundary) ? segment.rangeBoundary : '[)'
+          summary = describe(boundary.startsWith('[') ? '>=' : '>', min) + ' 且 ' + describe(boundary.endsWith(']') ? '<=' : '<', max)
+        }
+      } else {
+        summary = describe(segment.operator, right('valueOperand', 'value'))
+      }
+      return segment.label ? `${segment.label}（${summary}）` : summary
+    },
     collectSelectedVarItems() {
       const items = []
       const add = (operand) =>
@@ -820,7 +840,7 @@ export default {
         if (this.draftGuardPromise) await this.draftGuardPromise
         const content = this.viewRevision
         if (content && content.modelJson) {
-          const parsed = JSON.parse(content.modelJson)
+          const parsed = parseDesignerModelJson(content.modelJson)
           this.model = parsed
             this.cellData = parsed.cells ? this.flattenCells(parsed.cells) : []
         }
@@ -999,7 +1019,7 @@ export default {
         dim && dim.operand
       )
         ? getExpressionContext(context).allowedKinds
-        : ['LITERAL']
+        : conditionLiteralOperandKinds(segment && segment.operator)
     },
     onSegmentOperatorChange(segment, dim) {
       if (segment.operator === 'range') {

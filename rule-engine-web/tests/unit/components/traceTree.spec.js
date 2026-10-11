@@ -20,6 +20,39 @@ function mountTraceTree(propsData) {
   })
 }
 
+test('容量受限的根、子规则和模块使用相同中文状态并说明可重试', () => {
+  const child = { schemaVersion: 2, traceKind: 'RULE', traceId: 'child', ruleName: '模型子规则', status: 'THROTTLED', children: [], events: [] }
+  const root = mountTraceTree({ traceInfo: JSON.stringify({
+    schemaVersion: 2, traceKind: 'RULE', traceId: 'root', ruleName: '审批规则', status: 'THROTTLED',
+    children: [child], events: [{ type: 'MODULE_CALL', traceId: 'model', moduleType: 'MODEL', status: 'THROTTLED' }],
+  }) })
+  const nested = mountTraceTree({ traceInfo: JSON.stringify(child), nested: true })
+  try {
+    expect(root.find('.rule-trace-status').text()).toBe('容量受限')
+    expect(nested.find('.rule-trace-status').text()).toBe('容量受限')
+    expect(root.find('.rule-trace-module-status').text()).toContain('容量受限')
+    expect(root.find('.rule-trace-status').attributes('title')).toContain('稍后重试')
+    expect(root.find('.rule-trace-status').classes()).toContain('is-throttled')
+  } finally {
+    root.unmount()
+    nested.unmount()
+  }
+})
+
+test('运行状态不根据错误文案猜测容量，已有SUCCESS和DONE保持区别', () => {
+  const wrapper = mountTraceTree({ traceInfo: JSON.stringify({
+    schemaVersion: 2, traceKind: 'RULE', traceId: 'root', status: 'FAILED',
+    errorMessage: 'THROTTLED 容量不足', children: [], events: [],
+  }) })
+  try {
+    expect(wrapper.find('.rule-trace-status').text()).toBe('失败')
+    expect(wrapper.vm.ruleTraceStatusLabel('SUCCESS')).toBe('成功')
+    expect(wrapper.vm.ruleTraceStatusLabel('DONE')).toBe('DONE')
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 function assignNode(target, value, evaluated = true, rhsValue = value) {
   return {
     type: 'OPERATOR',

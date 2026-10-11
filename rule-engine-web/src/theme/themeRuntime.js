@@ -13,11 +13,7 @@ export function applyTheme(config, root = document.documentElement) {
   const preset = resolveThemeAccent(normalized)
   const scale = createPrimaryScale(preset.primary)
   const secondaryScale = createPrimaryScale(preset.secondary)
-  const hintPalette = createHintPalette(
-    preset.primary,
-    preset.secondary,
-    normalized.colorScheme
-  )
+  const infoTone = createHintTone(scale, normalized.colorScheme === 'DARK')
   const actionPalette = createActionPalette(
     preset.primary,
     normalized.colorScheme
@@ -41,6 +37,13 @@ export function applyTheme(config, root = document.documentElement) {
     preset.kind === 'gradient' ? preset.background : 'none'
   )
   setProperty(root, '--tianshu-brand-foreground', preset.foreground)
+  const sidebarText = normalized.sidebarTheme === 'LIGHT'
+    ? ensureActionContrast(preset.primary, false, [scale.light9])
+    : '#FFFFFF'
+  setProperty(root, '--tianshu-sidebar-text-active', sidebarText)
+  setProperty(root, '--tianshu-sidebar-active-foreground', normalized.sidebarTheme === 'LIGHT'
+    ? sidebarText
+    : preset.foreground)
   // 工具栏铺在主题背景上，边框需要使用与当前主题明暗相反的同色阶，
   // 否则浅色主题的主题色会融入浅色背景，深色主题又会显得过暗。
   setProperty(
@@ -50,20 +53,17 @@ export function applyTheme(config, root = document.documentElement) {
   )
   applyColorScale(root, '--el-color-primary', scale)
   applyColorScale(root, '--tianshu-color-secondary', secondaryScale)
-  applyColorScale(root, '--el-color-info', hintPalette.info.scale)
-  applyColorScale(root, '--el-color-success', hintPalette.success.scale)
-  applyColorScale(root, '--el-color-warning', hintPalette.warning.scale)
-  applyColorScale(root, '--el-color-danger', hintPalette.danger.scale)
-  for (const [type, tone] of Object.entries(hintPalette)) {
-    setProperty(root, `--tianshu-${type}-bg`, tone.bg)
-    setProperty(root, `--tianshu-${type}-border`, tone.border)
-    setProperty(root, `--tianshu-${type}-text`, tone.text)
-    setProperty(root, `--tianshu-${type}-foreground`, tone.foreground)
+  applyColorScale(root, '--el-color-info', scale)
+  for (const [name, value] of Object.entries(infoTone)) {
+    setProperty(root, `--tianshu-info-${name}`, value)
   }
   for (const [role, tone] of Object.entries(actionPalette)) {
     setProperty(root, `--tianshu-action-${role}`, tone.color)
     setProperty(root, `--tianshu-action-${role}-rgb`, tone.rgb)
   }
+  const dark = normalized.colorScheme === 'DARK'
+  const activeSurface = mixThemeColors(dark ? '#151D31' : '#FFFFFF', preset.primary, dark ? 0.2 : 0.1)
+  setProperty(root, '--tianshu-primary-text', ensureActionContrast(preset.primary, dark, [activeSurface]))
   applySemanticStatusPalette(root, normalized.colorScheme)
   setProperty(root, '--tianshu-focus-ring', `rgba(${scale.rgb}, 0.18)`)
   setProperty(root, '--tianshu-primary-shadow', `rgba(${scale.rgb}, 0.16)`)
@@ -152,7 +152,7 @@ function applySemanticStatusPalette(root, colorScheme) {
     }
     : {
       success: ['#ECFDF3', '#A7F3D0', '#166534', '#15803D', '#FFFFFF'],
-      warning: ['#FFF7ED', '#FED7AA', '#9A3412', '#D97706', '#FFFFFF'],
+      warning: ['#FFF7ED', '#FED7AA', '#9A3412', '#D97706', '#451A03'],
       danger: ['#FEF3F2', '#FECDCA', '#B42318', '#DC2626', '#FFFFFF'],
     }
 
@@ -163,44 +163,34 @@ function applySemanticStatusPalette(root, colorScheme) {
     setProperty(root, `--tianshu-status-${type}-text`, text)
     setProperty(root, `--tianshu-status-${type}-solid`, solid)
     setProperty(root, `--tianshu-status-${type}-solid-foreground`, foreground)
+    // Element Plus 的消息、通知、表单校验，以及页面内提示共用同一套业务语义。
+    setProperty(root, `--tianshu-${type}-bg`, background)
+    setProperty(root, `--tianshu-${type}-border`, border)
+    setProperty(root, `--tianshu-${type}-text`, text)
+    setProperty(root, `--tianshu-${type}-foreground`, foreground)
+    const scale = createPrimaryScale(solid)
+    if (dark) {
+      for (let index = 1; index <= 9; index += 1) {
+        scale[`light${index}`] = mixThemeColors(solid, '#151D31', index / 10)
+      }
+    }
+    applyColorScale(root, `--el-color-${type}`, scale)
+    if (type === 'danger') applyColorScale(root, '--el-color-error', scale)
   }
 }
 
-function createHintPalette(primary, secondary, colorScheme) {
-  const info = createPrimaryScale(primary)
-  const success = createPrimaryScale(secondary)
-  const warning = createPrimaryScale(mixThemeColors(primary, secondary, 0.5))
-  const danger = createPrimaryScale(mixThemeColors(secondary, '#000000', 0.1))
-  const dark = colorScheme === 'DARK'
-
-  return {
-    info: createHintTone(info, dark, 'soft'),
-    success: createHintTone(success, dark, 'soft'),
-    warning: createHintTone(warning, dark, 'medium'),
-    danger: createHintTone(danger, dark, 'strong'),
-  }
-}
-
-function createHintTone(scale, dark, strength) {
-  const alpha = {
-    soft: { bg: 0.18, border: 0.42 },
-    medium: { bg: 0.22, border: 0.48 },
-    strong: { bg: 0.28, border: 0.6 },
-  }[strength]
-
+function createHintTone(scale, dark) {
   if (dark) {
     return {
-      scale,
-      bg: `rgba(${scale.rgb}, ${alpha.bg})`,
-      border: `rgba(${scale.rgb}, ${alpha.border})`,
+      bg: `rgba(${scale.rgb}, 0.18)`,
+      border: `rgba(${scale.rgb}, 0.42)`,
       text: mixThemeColors(scale.primary, '#FFFFFF', 0.7),
       foreground: readableForeground(scale.primary),
     }
   }
   return {
-    scale,
-    bg: strength === 'strong' ? scale.light8 : scale.light9,
-    border: strength === 'soft' ? scale.light7 : scale.light6,
+    bg: scale.light9,
+    border: scale.light7,
     text: mixThemeColors(scale.primary, '#111827', 0.55),
     foreground: readableForeground(scale.primary),
   }
@@ -242,8 +232,8 @@ function createActionPalette(primary, colorScheme) {
   }))
 }
 
-function ensureActionContrast(color, dark) {
-  if (hasReadableActionContrast(color, dark)) return color
+function ensureActionContrast(color, dark, extraSurfaces = []) {
+  if (hasReadableActionContrast(color, dark, extraSurfaces)) return color
 
   let lowerWeight = 0
   let upperWeight = 1
@@ -251,7 +241,7 @@ function ensureActionContrast(color, dark) {
   for (let iteration = 0; iteration < 16; iteration += 1) {
     const weight = (lowerWeight + upperWeight) / 2
     const candidate = adjustActionLightness(color, dark, weight)
-    if (hasReadableActionContrast(candidate, dark)) {
+    if (hasReadableActionContrast(candidate, dark, extraSurfaces)) {
       readableColor = candidate
       upperWeight = weight
     } else {
@@ -318,6 +308,11 @@ const actionCandidateBases = [
   '#F00024',
   '#FF3600',
   '#FF6500',
+  // 发布加入多个操作组合后，补充明度不同的蓝紫候选，保留既有对比度和色差门槛。
+  '#9BC9FF',
+  '#D8B4FF',
+  // 版本入口出现在更多列表组合中，补充浅粉候选以保持同列操作的色差。
+  '#FFC9DD',
 ]
 
 const preferredActionCandidateIndex = {
@@ -341,21 +336,21 @@ const coexistingActionGroups = [
   ['edit', 'configure', 'reset', 'disable'],
   ['configure', 'publish'],
   ['configure', 'disable'],
-  ['edit', 'delete'],
-  ['execute', 'detail', 'delete'],
-  ['execute', 'edit', 'version', 'delete'],
+  ['version', 'edit', 'publish', 'delete'],
+  ['version', 'execute', 'detail', 'publish', 'delete'],
+  ['execute', 'edit', 'version', 'publish', 'delete'],
   ['inspect', 'compare', 'rollback'],
-  ['detail', 'edit', 'publish', 'global', 'delete'],
+  ['version', 'detail', 'edit', 'publish', 'global', 'delete'],
   ['detail', 'edit', 'disable', 'global', 'delete'],
-  ['edit', 'execute', 'inspect', 'delete'],
-  ['edit', 'execute', 'add', 'delete'],
-  ['edit', 'execute', 'delete'],
-  ['detail', 'edit', 'delete'],
-  ['edit', 'detail', 'execute', 'configure', 'global', 'delete'],
-  ['edit', 'configure', 'delete'],
-  ['edit', 'global', 'delete'],
-  ['detail', 'inspect', 'delete'],
-  ['edit', 'detail', 'configure', 'docs', 'delete'],
+  ['version', 'edit', 'execute', 'inspect', 'publish', 'delete'],
+  ['version', 'edit', 'execute', 'add', 'publish', 'delete'],
+  ['version', 'edit', 'execute', 'publish', 'delete'],
+  ['version', 'detail', 'edit', 'publish', 'delete'],
+  ['version', 'edit', 'detail', 'execute', 'configure', 'global', 'publish', 'delete'],
+  ['version', 'edit', 'configure', 'publish', 'delete'],
+  ['version', 'edit', 'global', 'publish', 'delete'],
+  ['version', 'detail', 'inspect', 'publish', 'delete'],
+  ['version', 'edit', 'detail', 'configure', 'docs', 'publish', 'delete'],
 ]
 
 function preferredActionCandidates(role) {
@@ -390,7 +385,7 @@ function selectActionColor(role, candidates, selectedColors, dark) {
   }, { color: readableCandidates[0], distance: -1 }).color
 }
 
-function hasReadableActionContrast(color, dark) {
+function hasReadableActionContrast(color, dark, extraSurfaces) {
   const surface = dark ? '#151D31' : '#FFFFFF'
   const rowHoverSurface = dark ? '#26324D' : '#EEF2F7'
   const interactionSurfaces = [
@@ -398,6 +393,7 @@ function hasReadableActionContrast(color, dark) {
     rowHoverSurface,
     mixThemeColors(rowHoverSurface, color, 0.08),
     mixThemeColors(rowHoverSurface, color, 0.12),
+    ...extraSurfaces,
   ]
   return interactionSurfaces.every(background =>
     contrastRatio(color, background) >= 4.5

@@ -407,6 +407,8 @@ public class HttpSyncClient {
         rule.setVersion(obj.getIntValue("version"));
         rule.setRevisionId(obj.getLong("revisionId"));
         rule.setArtifactDigest(obj.getString("artifactDigest"));
+        JSONArray frozenFunctions = obj.getJSONArray("frozenFunctions");
+        if (frozenFunctions != null) rule.setFrozenFunctions(frozenFunctions.toJavaList(JSONObject.class));
         rule.setModelType(obj.getString("modelType"));
         rule.setCompiledScript(obj.getString("compiledScript"));
         rule.setCompiledType(obj.getString("compiledType"));

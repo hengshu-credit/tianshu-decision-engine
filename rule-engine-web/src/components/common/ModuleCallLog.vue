@@ -517,6 +517,8 @@ export default {
       detailRequestSeq: 0,
       actionMap: {
         API_INVOKE: 'API调用',
+        API_DRAFT_INVOKE: '草稿试运行',
+        API_DRAFT_ATTEMPT: '试运行请求',
         AUTH_TEST: '鉴权测试',
         QUERY: '只读查询',
         TEST_CONNECTION: '连接测试',
@@ -604,6 +606,8 @@ export default {
     actionOptions() {
       const datasource = [
         { label: 'API调用', value: 'API_INVOKE' },
+        { label: '草稿试运行', value: 'API_DRAFT_INVOKE' },
+        { label: '试运行请求', value: 'API_DRAFT_ATTEMPT' },
         { label: '鉴权测试', value: 'AUTH_TEST' },
       ]
       const database = [

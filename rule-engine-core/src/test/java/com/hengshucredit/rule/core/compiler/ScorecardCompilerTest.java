@@ -94,6 +94,7 @@ public class ScorecardCompilerTest {
                 + "\"condOperator\":\">=\","
                 + "\"rightOperand\":{\"kind\":\"REFERENCE\",\"refId\":1,\"refType\":\"VARIABLE\",\"value\":\"adultAge\",\"code\":\"adultAge\",\"valueType\":\"NUMBER\"},"
                 + "\"score\":10,\"weight\":1}],"
+                + "\"levelVar\":{\"varCode\":\"riskLevel\"},"
                 + "\"thresholds\":[{\"min\":10,\"max\":20,\"resultOperand\":{\"kind\":\"REFERENCE\",\"refId\":2,\"refType\":\"VARIABLE\",\"value\":\"passLevel\",\"code\":\"passLevel\"}}]}"
         );
 

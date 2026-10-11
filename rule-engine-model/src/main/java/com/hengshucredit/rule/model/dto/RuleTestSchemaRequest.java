@@ -11,4 +11,7 @@ public class RuleTestSchemaRequest {
     private Long projectId;
     private String modelType;
     private String modelJson;
+    private RuleTestExecutionSource executionSource;
+    private String versionMode;
+    private Long versionId;
 }

@@ -11,25 +11,23 @@
     >
       <h2 style="margin: 0">{{ model.modelName || '模型详情' }}</h2>
       <div>
-        <el-button v-permission="'model:edit'" size="small" @click="openImpact('REPLACE')">替换模型文件</el-button>
-        <el-button v-if="model.publishedVersion" v-permission="'model:submit'" size="small" @click="openImpact('OFFLINE')">下线</el-button>
-        <el-button v-permission="'model:edit'" size="small" @click="openImpact('DELETE')">删除</el-button>
-        <el-button size="small" :icon="ElIconTime" @click="openVersionDialog"
-          >版本历史</el-button
-        >
-        <el-button
-          size="small"
-          type="primary"
-          :icon="ElIconVideoPlay"
-          @click="openTestDialog"
-          >模型测试</el-button
-        >
         <el-button
           size="small"
           :icon="ElIconBack"
           @click="$router.push('/model')"
           >返回</el-button
         >
+        <el-button v-permission="'model:edit'"
+          size="small"
+          type="primary"
+          :icon="ElIconVideoPlay"
+          :disabled="loading || !model.id"
+          data-testid="model-open-test"
+          @click="openTestDialog"
+          >模型测试</el-button
+        >
+        <resource-version-manager v-if="model.id" resource-type="MODEL" :resource-id="model.id" has-legacy @legacy="openVersionDialog" />
+        <el-button v-permission="'model:edit'" size="small" @click="openImpact('REPLACE')">替换模型文件</el-button>
       </div>
       <input ref="replaceFile" type="file" :accept="model.modelFormat === 'PMML' ? '.pmml' : '.onnx'" hidden @change="handleReplaceFile" />
     </div>
@@ -71,10 +69,10 @@
       </el-descriptions-item>
       <el-descriptions-item label="样例校验">{{ modelSampleStatus }}</el-descriptions-item>
       <el-descriptions-item label="设计版本">{{
-        model.currentVersion
+        model.businessVersion || model.currentVersion
       }}</el-descriptions-item>
       <el-descriptions-item label="发布版本">{{
-        model.publishedVersion || '-'
+        model.publishedVersion ? (model.businessVersion || model.publishedVersion) : '-'
       }}</el-descriptions-item>
       <el-descriptions-item
         v-if="model.modelFormat === 'ONNX'"
@@ -230,7 +228,7 @@
                       onFieldOperandSelect(row, 'defaultOperand', operand)
                   "
                 />
-                <el-button
+                <el-button v-permission="'model:edit'"
                   v-if="row.defaultOperand"
                   link
                   size="small"
@@ -265,7 +263,7 @@
           >
             <template v-slot="{ row, $index }">
               <template v-if="row._editing">
-                <el-button
+                <el-button v-permission="'model:edit'"
                   link
                   size="small"
                   type="success"
@@ -281,7 +279,7 @@
                   >取消</el-button
                 >
               </template>
-              <el-button
+              <el-button v-permission="'model:edit'"
                 v-else
                 link
                 size="small"
@@ -403,24 +401,14 @@
           <el-table-column label="转换方法" min-width="420">
             <template v-slot="{ row }">
               <div v-if="row._editing" class="transform-editor">
-                <el-select
-                  :model-value="transformFunctionId(row)"
-                  size="small"
-                  style="width: 100%"
-                  filterable
-                  clearable
+                <resource-picker
+                  :value="transformFunctionId(row)"
+                  :resources="projectFunctions"
+                  :version-selection="row.transformOperand || {}"
+                  category="function"
                   placeholder="选择转换函数"
-                  @change="
-                    (functionId) => onTransformFunctionSelect(row, functionId)
-                  "
-                >
-                  <el-option
-                    v-for="fn in projectFunctions"
-                    :key="fn.id"
-                    :label="functionLabel(fn)"
-                    :value="fn.id"
-                  />
-                </el-select>
+                  @select="fn => onTransformResourceSelect(row, fn)"
+                />
                 <div
                   v-for="(param, paramIndex) in transformFunctionParams(row)"
                   :key="param.name || paramIndex"
@@ -465,7 +453,7 @@
           >
             <template v-slot="{ row, $index }">
               <template v-if="row._editing">
-                <el-button
+                <el-button v-permission="'model:edit'"
                   link
                   size="small"
                   type="success"
@@ -481,7 +469,7 @@
                   >取消</el-button
                 >
               </template>
-              <el-button
+              <el-button v-permission="'model:edit'"
                 v-else
                 link
                 size="small"
@@ -522,7 +510,7 @@
           <el-option
             v-for="item in versionList"
             :key="`left-${item.version}`"
-            :label="`v${item.version}`"
+            :label="versionDisplayLabel(item)"
             :value="item.version"
           />
         </el-select>
@@ -531,7 +519,7 @@
           <el-option
             v-for="item in versionList"
             :key="`right-${item.version}`"
-            :label="`v${item.version}`"
+            :label="versionDisplayLabel(item)"
             :value="item.version"
           />
         </el-select>
@@ -551,7 +539,7 @@
         style="width: 100%"
       >
         <el-table-column prop="version" label="版本" width="80" align="center">
-          <template v-slot="{ row }">v{{ row.version }}</template>
+          <template v-slot="{ row }">{{ versionDisplayLabel(row) }}</template>
         </el-table-column>
         <el-table-column
           prop="changeLog"
@@ -575,7 +563,7 @@
               @click="compareWithNext(row, $index)"
               >对比上一版</el-button
             >
-            <el-button
+            <el-button v-permission="['model:edit', 'approval:submit']"
               link
               size="small"
               type="warning"
@@ -622,12 +610,20 @@
       :close-on-click-modal="false"
       @closed="closeTestDialog"
     >
+      <div class="version-compare-toolbar model-test-version-toolbar" data-testid="model-test-version-toolbar">
+        <span>测试版本</span>
+        <el-select :model-value="testVersion" :disabled="testSaving" data-testid="model-test-version" @change="openTestDialog">
+          <el-option v-for="item in testVersionOptions" :key="item.version" :value="item.version"
+            :label="modelTestVersionLabel(item.version)" />
+        </el-select>
+        <span v-if="isHistoricalModelTest" class="field-help">历史版本仅供测试，参数不会覆盖当前配置。</span>
+      </div>
       <div
         v-if="testLoadStatus === 'LOADING'"
         class="test-load-state"
       >
         <strong>正在准备模型测试</strong>
-        <span>加载最新输入字段、测试 Schema 与已保存参数...</span>
+        <span>加载选定版本的输入字段、样例与执行快照...</span>
       </div>
       <div
         v-else-if="testLoadStatus === 'ERROR'"
@@ -635,7 +631,7 @@
       >
         <strong>模型测试配置加载失败</strong>
         <span>{{ testLoadError }}</span>
-        <el-button size="small" type="primary" @click="openTestDialog"
+        <el-button v-permission="'model:edit'" size="small" type="primary" @click="openTestDialog(testVersion)"
           >重新加载</el-button
         >
       </div>
@@ -653,11 +649,11 @@
                 }}</span
               >
             </div>
-            <el-button
+            <el-button v-permission="'model:edit'"
               v-if="testLoadStatus === 'DEGRADED'"
               link
               type="primary"
-              @click="openTestDialog"
+              @click="openTestDialog(testVersion)"
               >重新加载测试配置</el-button
             >
           </div>
@@ -671,20 +667,20 @@
         <div
           class="test-toolbar"
         >
-          <el-button
+          <el-button v-permission="'model:edit'"
             size="small"
             type="primary"
             :icon="ElIconVideoPlay"
             :loading="testExecuting"
-            :disabled="!supportsOnlineExecution"
+            :disabled="!testReady"
             @click="doTest"
             >执行测试</el-button
           >
-          <el-button
+          <el-button v-permission="'model:edit'"
             size="small"
             :icon="ElIconDocument"
             :loading="testSaving"
-            :disabled="testSaving"
+            :disabled="testSaving || isHistoricalModelTest"
             @click="handleSaveParams"
             >保存测试参数</el-button
           >
@@ -743,17 +739,16 @@
               <div class="test-field-label">
                 {{ field.fieldLabel || field.fieldName }}
               </div>
-              <el-input-number
+              <el-input
                 v-if="
                   field.fieldType === 'NUMBER' ||
                   field.fieldType === 'DOUBLE' ||
                   field.fieldType === 'INTEGER'
                 "
-                v-model="testParams[field.fieldName]"
+                :model-value="testNumericText(testParams[field.fieldName])"
+                @update:model-value="testParams[field.fieldName] = $event"
                 placeholder="输入值"
-                controls-position="right"
-                :precision="field.fieldType === 'INTEGER' ? 0 : undefined"
-                :step="field.fieldType === 'INTEGER' ? 1 : 0.01"
+                inputmode="decimal"
                 clearable
                 style="width: 100%"
               />
@@ -896,6 +891,12 @@
 </template>
 
 <script>
+import ResourceVersionManager from '@/components/common/ResourceVersionManager.vue'
+import { hasPermission } from '@/security/permissionState'
+import { editableResource } from '@/api/governance'
+import { completeResourceChange } from '@/utils/governanceWorkspace'
+import { chooseVersionRestore, versionDisplayLabel } from '@/utils/versionRestore'
+import ResourcePicker from '@/components/common/ResourcePicker.vue'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import { markRaw } from 'vue'
 import {
@@ -903,17 +904,16 @@ import {
   InfoFilled as ElIconInfo,
   Edit as ElIconEdit,
   ArrowUp as ElIconArrowUp,
-  Clock as ElIconTime,
   VideoPlay as ElIconVideoPlay,
   Back as ElIconBack,
   Refresh as ElIconRefresh,
   Document as ElIconDocument,
   Delete as ElIconDelete,
 } from '@element-plus/icons-vue'
+import { createExactNumber, exactNumberText, isExactNumber, parseExactJson, stringifyExactJson } from '@/utils/exactJson'
 import * as api from '@/api/model'
 import { isRequestErrorNotified } from '@/api/request'
 import { getOnnxTaskLabel } from '@/constants/onnxTasks'
-import { getRuleTestSchema } from '@/api/definition'
 import { listVariablesByProject, listVariables } from '@/api/variable'
 import { getVariableTree } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
@@ -964,6 +964,7 @@ export default {
   data() {
     return {
       loading: false,
+      detailActivated: false,
       model: {},
       impactVisible: false,
       impactAction: 'REPLACE',
@@ -989,10 +990,14 @@ export default {
       testLoadWarnings: [],
       testParamSource: 'DEFAULTS',
       testSetupRequestId: 0,
+      testVersion: null,
+      testVersionContext: null,
+      testVersionOptions: [],
       testMode: 'manual',
       testFields: [],
       testParams: {},
       testJsonStr: '{}',
+      testInputBaseJson: '{}',
       testJsonSkeleton: '{}',
       jsonEdited: false,
       jsonError: '',
@@ -1011,7 +1016,6 @@ export default {
       versionCompareLeft: null,
       versionCompareRight: null,
       versionCompare: null,
-      ElIconTime: markRaw(ElIconTime),
       ElIconVideoPlay: markRaw(ElIconVideoPlay),
       ElIconBack: markRaw(ElIconBack),
       ElIconRefresh: markRaw(ElIconRefresh),
@@ -1020,6 +1024,8 @@ export default {
     }
   },
   components: {
+    ResourceVersionManager,
+    ResourcePicker,
     OperandPicker,
     OperandValueDisplay,
     ModelImpactDialog,
@@ -1105,7 +1111,10 @@ export default {
       )
     },
     modelRequestTimeoutMs() {
-      return (this.model.executionTimeoutMs || 120000) + 5000
+      return (this.testVersionContext?.model?.executionTimeoutMs || this.model.executionTimeoutMs || 120000) + 5000
+    },
+    isHistoricalModelTest() {
+      return Boolean(this.testVersionContext && String(this.testVersion) !== String(this.testVersionContext.currentVersion))
     },
     testLoadStatusTitle() {
       return this.testLoadStatus === 'DEGRADED'
@@ -1199,35 +1208,21 @@ export default {
   created() {
     this.load()
   },
+  activated() {
+    if (!this.detailActivated) { this.detailActivated = true; return }
+    if (this.loading || this.testVisible || [...(this.model.inputFields || []), ...(this.model.outputFields || [])].some(field => field._editing)) return
+    this.load()
+  },
   methods: {
+    versionDisplayLabel,
     openImpact(action) {
       this.impactAction = action
       this.impactVisible = true
     },
-    async handleImpactConfirmed({ action, impactToken }) {
-      if (action === 'REPLACE') {
-        this.replaceImpactToken = impactToken
-        this.impactVisible = false
-        this.$refs.replaceFile.click()
-        return
-      }
-      try {
-        let response
-        if (action === 'OFFLINE')
-          response = await api.unpublishModel(this.model.id, impactToken)
-        else if (action === 'DELETE')
-          response = await api.deleteModel(this.model.id, impactToken)
-        this.impactVisible = false
-        this.$message.success(
-          action === 'DELETE'
-            ? '已创建模型删除审批'
-            : '已创建模型停用审批'
-        )
-        if (response && response.data && response.data.id)
-          this.$router.push('/approval/' + response.data.id)
-      } catch (error) {
-        this.$message.error(error.message || '模型操作失败')
-      }
+    handleImpactConfirmed({ impactToken }) {
+      this.replaceImpactToken = impactToken
+      this.impactVisible = false
+      this.$refs.replaceFile.click()
     },
     async handleReplaceFile(event) {
       const file = event.target.files && event.target.files[0]
@@ -1246,11 +1241,9 @@ export default {
           formData,
           this.replaceImpactToken
         )
-        this.$message.success('模型替换已送审')
         this.replaceImpactToken = ''
         event.target.value = ''
-        if (response.data && response.data.id)
-          this.$router.push('/approval/' + response.data.id)
+        await completeResourceChange(this, response, () => this.load())
       } catch (error) {
         this.$message.error(error.message || '模型替换失败')
       }
@@ -1293,12 +1286,6 @@ export default {
         ? row.transformOperand.functionId
         : null
     },
-    functionLabel(fn) {
-      if (!fn) return ''
-      const code = fn.funcCode || fn.functionCode || ''
-      const name = fn.funcName || fn.functionName || code
-      return code && code !== name ? name + ' (' + code + ')' : name
-    },
     parseFunctionParams(fn) {
       if (!fn || !fn.paramsJson) return []
       try {
@@ -1310,6 +1297,7 @@ export default {
     },
     transformFunctionParams(row) {
       if (!row || !row.transformOperand) return []
+      if (row.transformOperand.versionMode === 'FIXED') return row.transformOperand.parameters || []
       const fn = this.projectFunctions.find(
         (item) => String(item.id) === String(row.transformOperand.functionId)
       )
@@ -1334,6 +1322,12 @@ export default {
       const args = this.parseFunctionParams(fn).map(() => null)
       row['transformOperand'] = createFunctionOperand(fn, args)
     },
+    onTransformResourceSelect(row, fn) {
+      if (!fn) { row.transformOperand = null; return }
+      const selected = createFunctionOperand(fn, this.parseFunctionParams(fn).map(() => null))
+      if (String(row.transformOperand?.functionId) === String(fn.id) && JSON.stringify(selected.parameterTypes) === JSON.stringify(row.transformOperand?.parameterTypes)) selected.args = row.transformOperand.args
+      row.transformOperand = selected
+    },
     onTransformArgSelect(row, index, operand) {
       if (!row || !row.transformOperand) return
       if (!Array.isArray(row.transformOperand.args))
@@ -1351,6 +1345,7 @@ export default {
       this.loading = true
       try {
         const res = await api.getModel(id)
+        if (res.data?.id && hasPermission('model:edit')) res.data = await editableResource('MODEL', res.data.id, res.data)
         this.model = res.data || {}
         // 初始化 _editing 标志
         if (this.model.inputFields) {
@@ -1818,9 +1813,7 @@ export default {
         )
         row['_editing'] = false
         row['_saving'] = false
-        this.$message.success('模型输入字段变更已送审')
-        if (response.data && response.data.id)
-          this.$router.push('/approval/' + response.data.id)
+        await completeResourceChange(this, response, () => this.load())
       } catch (e) {
         row['_saving'] = false
         if (!isRequestErrorNotified(e)) {
@@ -1886,9 +1879,7 @@ export default {
         )
         row['_editing'] = false
         row['_saving'] = false
-        this.$message.success('模型输出字段变更已送审')
-        if (response.data && response.data.id)
-          this.$router.push('/approval/' + response.data.id)
+        await completeResourceChange(this, response, () => this.load())
       } catch (e) {
         row['_saving'] = false
         if (!isRequestErrorNotified(e)) {
@@ -1956,21 +1947,14 @@ export default {
     async rollbackVersion(row) {
       if (!row) return
       try {
-        await this.$confirm(
-          '确定回滚模型到 v' +
-            row.version +
-            ' 吗？当前模型内容会被该版本快照覆盖。',
-          '确认回滚',
-          { type: 'warning' }
-        )
+        const mode = await chooseVersionRestore(row.displayVersion || row.businessVersion || row.version)
+        if (!mode) return
         const response = await api.rollbackVersion(
           this.model.id,
-          row.version
+          row.version, mode
         )
-        this.$message.success('已创建历史版本恢复审批')
         this.versionVisible = false
-        if (response.data && response.data.id)
-          this.$router.push('/approval/' + response.data.id)
+        await completeResourceChange(this, response, () => this.load())
       } catch (e) {
         if (e !== 'cancel') this.$message.error(e.message || '回滚失败')
       }
@@ -1985,9 +1969,14 @@ export default {
     },
 
     // ========== 模型测试 ==========
-    async openTestDialog() {
+    async openTestDialog(selectedVersion) {
+      if (this.loading || !this.model.id) return
       const requestId = ++this.testSetupRequestId
       const modelId = this.model.id
+      const version = typeof selectedVersion === 'number' || typeof selectedVersion === 'string'
+        ? selectedVersion : this.model.currentVersion
+      this.testVersion = version
+      this.testVersionContext = null
       this.testExecutionRequestId++
       this.testSaveRequestId++
       this.testVisible = true
@@ -2009,53 +1998,30 @@ export default {
 
       try {
         const warnings = []
-        let freshModel = this.model
-        try {
-          const res = await api.getModel(modelId)
-          if (res.data) freshModel = res.data
-        } catch (error) {
-          warnings.push(
-            '最新模型信息加载失败，当前使用页面缓存：' +
-              this.testRequestErrorMessage(error, '服务暂不可用')
-          )
-        }
+        if (!/^[1-9]\d*$/.test(String(version || ''))) throw new Error('模型尚无可测试的配置版本，请先保存并审批模型配置')
+        this.testVersionOptions = this.versionList.length ? [...this.versionList] : [{ version }]
+        api.listVersions(modelId).then((response) => {
+          if (!this.isActiveTestSetup(requestId, modelId)) return
+          const versions = response.data || []
+          if (Array.isArray(versions) && versions.length) this.testVersionOptions = versions
+        }).catch(() => {
+          // 版本目录加载失败不改变用户已经选定的版本；执行上下文仍必须独立验证成功。
+        })
+        const response = await api.getModelVersionTestContext(modelId, version)
         if (!this.isActiveTestSetup(requestId, modelId)) return
-
-        let schema = null
-        try {
-          schema = normalizeTestSchema(
-            await getRuleTestSchema({
-              targetType: 'MODEL',
-              targetId: modelId,
-            })
-          )
-        } catch (error) {
-          warnings.push(
-            '测试 Schema 加载失败，当前使用模型输入字段：' +
-              this.testRequestErrorMessage(error, '服务暂不可用')
-          )
+        const context = response.data
+        if (!context || String(context.modelId) !== String(modelId) || String(context.version) !== String(version)
+          || !/^[1-9]\d*$/.test(String(context.currentVersion || ''))
+          || !context.configurationDigest || !context.modelDigest || !context.model
+          || String(context.model.id) !== String(modelId) || String(context.model.currentVersion) !== String(version)
+          || !Array.isArray(context.schema?.inputs) || !Array.isArray(context.schema?.outputs)) {
+          throw new Error('模型版本执行快照不完整或与选定版本不一致')
         }
-        if (!this.isActiveTestSetup(requestId, modelId)) return
-        const hasSchema =
-          schema &&
-          (schema.inputs.length || Object.keys(schema.sampleParams).length)
-
-        const testFields = hasSchema
-          ? schemaFieldsToTestFields(schema.inputs)
-          : (freshModel.inputFields || [])
-              .filter((field) => field.status !== 0)
-              .map((field) => {
-                let validValues = field.validValues || []
-                if (typeof validValues === 'string') {
-                  try {
-                    const parsed = JSON.parse(validValues)
-                    validValues = Array.isArray(parsed) ? parsed : []
-                  } catch {
-                    validValues = []
-                  }
-                }
-                return { ...field, validValues }
-              })
+        const freshModel = context.model
+        const schema = normalizeTestSchema({ data: context.schema })
+        if (schema.sampleParamsJson) schema.sampleParams = parseExactJson(schema.sampleParamsJson)
+        const testFields = schemaFieldsToTestFields(schema.inputs)
+        this.testVersionContext = context
 
         let configParams = null
         let configParamSource = 'CONFIG_SAMPLE'
@@ -2075,7 +2041,7 @@ export default {
           ) {
             const parsed =
               typeof config.testParams === 'string'
-                ? JSON.parse(config.testParams)
+                ? parseExactJson(config.testParams)
                 : config.testParams
             if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
               throw new Error('参数内容不是 JSON 对象')
@@ -2099,7 +2065,6 @@ export default {
           initObj = configParams
           paramSource = configParamSource
         } else if (
-          hasSchema &&
           schema.sampleParams &&
           Object.keys(schema.sampleParams).length
         ) {
@@ -2108,12 +2073,14 @@ export default {
         }
 
         const testParams = flattenSchemaSample(testFields, initObj)
-        const jsonObj = buildNestedSchemaParams(testFields, testParams)
+        const jsonObj = Object.keys(initObj).length ? initObj : buildNestedSchemaParams(testFields, testParams)
+        Object.keys(testParams).forEach(key => { testParams[key] = this.testFormValue(testParams[key]) })
         if (!this.isActiveTestSetup(requestId, modelId)) return
 
         this.testFields = testFields
         this.testParams = testParams
-        this.testJsonStr = JSON.stringify(jsonObj, null, 2)
+        this.testInputBaseJson = stringifyExactJson(jsonObj)
+        this.testJsonStr = stringifyExactJson(jsonObj, 2)
         this.testJsonSkeleton = JSON.stringify({}, null, 2)
         this.testParamSource = paramSource
         this.testLoadWarnings = warnings
@@ -2121,6 +2088,7 @@ export default {
         this.testReady = true
       } catch (error) {
         if (!this.isActiveTestSetup(requestId, modelId)) return
+        this.testVersionContext = null
         this.testLoadStatus = 'ERROR'
         this.testLoadError = this.testRequestErrorMessage(
           error,
@@ -2153,8 +2121,14 @@ export default {
         status: snapshot.status,
       }
     },
+    modelTestVersionLabel(version) {
+      const current = this.testVersionContext?.currentVersion
+      const entry = this.testVersionOptions.find(item => String(item.version) === String(version)) || { version }
+      return `${versionDisplayLabel(entry)}${current == null ? '' : String(version) === String(current) ? ' · 载入时现行版本' : ' · 历史配置'}`
+    },
     closeTestDialog() {
       this.testVisible = false
+      this.testVersionContext = null
       this.testSetupRequestId++
       this.testExecutionRequestId++
       this.testSaveRequestId++
@@ -2202,36 +2176,52 @@ export default {
       this.testMode = 'manual'
       this.syncJsonToParams()
     },
-    syncParamsToJson() {
-      const flat = {}
-      this.testFields.forEach((f) => {
-        const val = this.testParams[f.fieldName]
-        if (val !== '' && val !== null) {
-          flat[f.fieldName] = val
-        } else {
-          flat[f.fieldName] = null
+    testNumericText(value) {
+      return isExactNumber(value) ? exactNumberText(value) : value == null ? '' : String(value)
+    },
+    testFormValue(value) {
+      if (!isExactNumber(value)) return value
+      const text = exactNumberText(value)
+      const number = Number(text)
+      return String(number) === text && (Number.isSafeInteger(number) || !Number.isInteger(number)) ? number : value
+    },
+    buildModelTestParams() {
+      const values = parseExactJson(this.testInputBaseJson || '{}')
+      for (const field of this.testFields) {
+        const path = field.fieldName
+        let value = this.testParams[path]
+        if (value === undefined) continue
+        if (['NUMBER', 'DOUBLE', 'INTEGER', 'LONG', 'DECIMAL', 'FLOAT'].includes(field.fieldType) && value !== null && value !== '') {
+          value = createExactNumber(this.testNumericText(value))
         }
-      })
-      const obj = buildNestedSchemaParams(this.testFields, flat)
-      this.testJsonStr = JSON.stringify(obj, null, 2)
-      this.jsonEdited = false
-      this.jsonError = ''
+        const parts = Object.hasOwn(values, path) ? [path] : path.split('.')
+        let target = values
+        for (const key of parts.slice(0, -1)) {
+          if (!Object.hasOwn(target, key)) Object.defineProperty(target, key, { value: Object.create(null), enumerable: true, configurable: true, writable: true })
+          if (!target[key] || typeof target[key] !== 'object' || Array.isArray(target[key]) || isExactNumber(target[key])) {
+            throw new Error(`参数 ${path} 的父字段不是对象，请在 JSON 中核对`)
+          }
+          target = target[key]
+        }
+        Object.defineProperty(target, parts.at(-1), { value, enumerable: true, configurable: true, writable: true })
+      }
+      return values
+    },
+    syncParamsToJson() {
+      try {
+        this.testJsonStr = stringifyExactJson(this.buildModelTestParams(), 2)
+        this.jsonEdited = false
+        this.jsonError = ''
+      } catch (error) { this.jsonError = error.message }
     },
     buildJsonStr() {
-      const flat = {}
-      Object.keys(this.testParams).forEach((k) => {
-        const val = this.testParams[k]
-        if (val !== '' && val !== null) flat[k] = val
-        else flat[k] = null
-      })
-      const obj = buildNestedSchemaParams(this.testFields, flat)
-      return JSON.stringify(obj, null, 2)
+      return stringifyExactJson(this.buildModelTestParams(), 2)
     },
     onJsonInput() {
       this.jsonEdited = true
       this.jsonError = ''
       try {
-        JSON.parse(this.testJsonStr)
+        parseExactJson(this.testJsonStr)
       } catch (e) {
         this.jsonError = 'JSON 格式错误: ' + e.message
       }
@@ -2242,21 +2232,30 @@ export default {
      */
     syncJsonToParams() {
       try {
-        const obj = JSON.parse(this.testJsonStr)
+        const obj = parseExactJson(this.testJsonStr)
+        if (!obj || typeof obj !== 'object' || Array.isArray(obj) || isExactNumber(obj)) throw new Error('模型参数必须是 JSON 对象')
+        this.testInputBaseJson = this.testJsonStr
         this.testFields.forEach((field) => {
-          const value = readParamPath(obj, field.fieldName)
-          if (value !== undefined) this.testParams[field.fieldName] = value
+          const value = Object.hasOwn(obj, field.fieldName) ? obj[field.fieldName] : readParamPath(obj, field.fieldName)
+          this.testParams[field.fieldName] = this.testFormValue(value)
         })
         this.jsonError = ''
       } catch (e) {
         this.jsonError = 'JSON 格式错误: ' + e.message
       }
     },
+    readModelTestParams() {
+      const params = this.testMode === 'json' ? parseExactJson(this.testJsonStr) : this.buildModelTestParams()
+      if (!params || typeof params !== 'object' || Array.isArray(params) || isExactNumber(params)) throw new Error('模型参数必须是 JSON 对象')
+      return params
+    },
     async doTest() {
       const requestId = ++this.testExecutionRequestId
       const modelId = this.model.id
+      const context = this.testVersionContext
+      if (!this.testReady || !context) return
       this.testResult = null
-      if (!this.supportsOnlineExecution) {
+      if (!['PMML', 'ONNX'].includes(context.model.modelFormat)) {
         this.testResult = {
           success: false,
           error: '当前仅支持 PMML 和 ONNX 模型在线执行',
@@ -2264,27 +2263,24 @@ export default {
         return
       }
       let params
-      if (this.testMode === 'json') {
-        try {
-          params = JSON.parse(this.testJsonStr)
-        } catch (e) {
-          this.$message.error('JSON 格式错误: ' + e.message)
-          return
-        }
-      } else {
-        params = buildNestedSchemaParams(this.testFields, this.testParams)
-      }
+      try { params = this.readModelTestParams() }
+      catch (error) { this.$message.error('测试参数无效: ' + error.message); return }
       this.testExecuting = true
       try {
         const res = await api.executeModel(
           modelId,
-          params,
-          this.modelRequestTimeoutMs
+          stringifyExactJson(params),
+          this.modelRequestTimeoutMs,
+          context.version
         )
         if (!this.isActiveTestExecution(requestId, modelId)) return
+        if (String(res.data?.version) !== String(context.version)
+          || res.data?.configurationDigest !== context.configurationDigest || res.data?.modelDigest !== context.modelDigest) {
+          throw new Error('执行结果与选定模型版本不一致，请重新载入后测试')
+        }
         this.testResult = normalizeTestResult(res)
         if (this.testResult.success) {
-          this.testJsonStr = JSON.stringify(params, null, 2)
+          this.testJsonStr = stringifyExactJson(params, 2)
           this.jsonEdited = true
         }
       } catch (e) {
@@ -2306,31 +2302,25 @@ export default {
       )
     },
     async handleSaveParams() {
-      if (this.testSaving) return
+      if (this.testSaving || !this.testReady || !this.testVersionContext) return
+      if (this.isHistoricalModelTest) {
+        this.$message.error('历史版本的测试参数不能覆盖当前模型配置')
+        return
+      }
       const requestId = ++this.testSaveRequestId
       const modelId = this.model.id
       let params
-      if (this.testMode === 'json') {
-        try {
-          params = JSON.parse(this.testJsonStr)
-        } catch (e) {
-          this.$message.error('JSON 格式错误: ' + e.message)
-          return
-        }
-      } else {
-        params = buildNestedSchemaParams(this.testFields, this.testParams)
-      }
+      try { params = this.readModelTestParams() }
+      catch (error) { this.$message.error('测试参数无效: ' + error.message); return }
       this.testSaving = true
       try {
         const response = await api.saveTestParams(
           modelId,
-          JSON.stringify(params)
+          stringifyExactJson(params),
+          this.testVersionContext.version
         )
         if (!this.isActiveTestSave(requestId, modelId)) return
-        this.$message.success('测试参数变更已创建审批草稿')
-        if (response.data && response.data.id) {
-          this.$router.push('/approval/' + response.data.id)
-        }
+        await completeResourceChange(this, response, () => this.load())
       } catch (e) {
         if (this.isActiveTestSave(requestId, modelId)) {
           this.$message.error('保存失败: ' + (e.message || e))
@@ -2352,6 +2342,7 @@ export default {
      * 清空参数：数字字段重置为 0，布尔重置为 false，字符串重置为空
      */
     handleClearParams() {
+      this.testInputBaseJson = '{}'
       this.testParams = {}
       this.testFields.forEach((f) => {
         if (f.fieldType === 'BOOLEAN') this.testParams[f.fieldName] = false
@@ -2477,6 +2468,14 @@ export default {
 }
 .version-compare-toolbar .el-select {
   width: 150px;
+}
+.model-test-version-toolbar {
+  flex-wrap: wrap;
+}
+.model-test-version-toolbar .el-select {
+  width: 320px;
+  max-width: 100%;
+  flex-shrink: 0;
 }
 :deep(.editing-row) {
   background-color: #f0f9eb;

@@ -23,6 +23,62 @@ import static org.junit.Assert.assertTrue;
 
 public class QLExpressEngineTest {
 
+    public static class CapacityDelegate {
+        public Object capacityFailure() {
+            throw new ExecutionCapacityException(ExecutionCapacityException.Resource.ONNX_SESSION_CACHE, "capacity rejected");
+        }
+
+        public Object ordinaryFailure() {
+            throw new java.util.concurrent.RejectedExecutionException("capacity rejected");
+        }
+    }
+
+    @Test
+    public void typedCapacityFailureEscapesScriptWithoutBecomingOrdinaryError() {
+        QLExpressEngine engine = new QLExpressEngine();
+        engine.getRunner().addFunctionOfServiceMethod("capacityFailure", new CapacityDelegate(),
+                "capacityFailure", new Class<?>[]{});
+        ExecutionCapacityException failure = org.junit.Assert.assertThrows(ExecutionCapacityException.class,
+                () -> engine.execute("return capacityFailure();", new HashMap<>()));
+        assertEquals(ExecutionCapacityException.Resource.ONNX_SESSION_CACHE, failure.getResource());
+    }
+
+    @Test
+    public void untypedRejectionStillProducesOrdinaryScriptFailure() {
+        QLExpressEngine engine = new QLExpressEngine();
+        engine.getRunner().addFunctionOfServiceMethod("ordinaryFailure", new CapacityDelegate(),
+                "ordinaryFailure", new Class<?>[]{});
+        RuleResult result = engine.execute("return ordinaryFailure();", new HashMap<>());
+        assertFalse(result.isSuccess());
+        org.junit.Assert.assertNull(result.getExecutionStatus());
+        org.junit.Assert.assertNull(result.getCapacityResource());
+    }
+
+    public static class CapacityMutationDelegate {
+        private final Map<String, Object> values;
+        public CapacityMutationDelegate(Map<String, Object> values) { this.values = values; }
+        public Object mutateAndReject() {
+            values.put("LIMIT", 0);
+            throw new ExecutionCapacityException(ExecutionCapacityException.Resource.PMML_MODEL_LOADING, "capacity rejected");
+        }
+    }
+
+    @Test
+    public void capacityPropagationStillRestoresProtectedConstants() {
+        Map<String, Object> values = new HashMap<>(Map.of("LIMIT", 5000));
+        QLExpressEngine engine = new QLExpressEngine();
+        engine.getRunner().addFunctionOfServiceMethod("mutateAndReject", new CapacityMutationDelegate(values),
+                "mutateAndReject", new Class<?>[]{});
+        RuntimeContextBridge.registerConstant("LIMIT", 5000);
+        try {
+            org.junit.Assert.assertThrows(ExecutionCapacityException.class,
+                    () -> engine.execute("return mutateAndReject();", values));
+            assertEquals(5000, values.get("LIMIT"));
+        } finally {
+            RuntimeContextBridge.clear();
+        }
+    }
+
     @Test
     public void preparedScriptIsReusedAndBoundToItsEngine() {
         QLExpressEngine engine = new QLExpressEngine();

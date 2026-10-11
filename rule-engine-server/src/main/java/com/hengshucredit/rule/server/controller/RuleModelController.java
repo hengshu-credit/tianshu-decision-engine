@@ -85,7 +85,7 @@ public class RuleModelController {
      * 上传并解析模型文件
      */
     @PostMapping("/upload")
-    @RequirePermission("approval:submit")
+    @RequirePermission("model:edit")
     public R<GovernanceRequestView> upload(
             @RequestParam("file") MultipartFile file,
             @RequestParam(required = false) Long projectId,
@@ -212,7 +212,7 @@ public class RuleModelController {
     }
 
     @PostMapping("/replace/{id}")
-    @RequirePermission("approval:submit")
+    @RequirePermission("model:edit")
     public R<GovernanceRequestView> replace(@PathVariable Long id,
                                 @RequestParam("file") MultipartFile file,
                                 @RequestParam String impactToken,
@@ -255,12 +255,13 @@ public class RuleModelController {
     }
 
     @PostMapping("/rollback/{modelId}/{version}")
-    @RequirePermission("approval:submit")
+    @RequirePermission("model:edit")
     public R<GovernanceRequestView> rollback(@PathVariable Long modelId,
-                                             @PathVariable Integer version) {
+                                             @PathVariable Integer version,
+                                             @RequestParam(defaultValue = "NEW") String restoreMode) {
         try {
             return R.ok(GovernanceRequestView.from(
-                    legacyRestoreService.restoreModel(modelId, version,
+                    legacyRestoreService.restoreModel(modelId, version, restoreMode,
                             operatorResolver.resolve())));
         } catch (IllegalArgumentException e) {
             return R.fail(e.getMessage());
@@ -278,25 +279,55 @@ public class RuleModelController {
     /**
      * 执行模型测试
      * @param id 模型ID
-     * @param params 输入参数（Map<String, Object>）
+     * @param requestJson 原始输入参数，保留大整数和十进制精度
      */
     @PostMapping("/execute/{id}")
-    public R<Map<String, Object>> execute(@PathVariable Long id, @RequestBody Map<String, Object> params) {
+    public R<Map<String, Object>> execute(@PathVariable Long id, @RequestBody String requestJson,
+                                          @RequestParam(required = false) Integer version) {
         long start = System.currentTimeMillis();
-        RuleModel model = modelService.getDetail(id);
+        RuleModel model = version == null ? modelService.getDetail(id) : new RuleModel();
+        if (version != null) model.setId(id);
+        Map<String, Object> params = Map.of();
         try {
-            Map<String, Object> result = modelService.execute(id, params);
-            logModelExecute(model, params, result, null, System.currentTimeMillis() - start);
+            params = new com.hengshucredit.rule.server.service.RuleTestExpectationService().readJsonObject(requestJson, "模型测试参数");
+            Map<String, Object> result = version == null ? modelService.execute(id, params)
+                    : modelService.executeVersion(id, version, params);
+            if (version != null) {
+                model.setModelCode((String) result.get("modelCode"));
+                model.setModelName((String) result.get("modelName"));
+                model.setProjectCode((String) result.get("projectCode"));
+                if (result.get("projectId") != null) model.setProjectId(Long.valueOf(String.valueOf(result.get("projectId"))));
+            }
+            logModelExecute(model, modelTestLogRequest(id, version, params), result, null, System.currentTimeMillis() - start);
             return R.ok(result);
         } catch (IllegalArgumentException e) {
-            logModelExecute(model, params, null, e.getMessage(), System.currentTimeMillis() - start);
+            logModelExecute(model, modelTestLogRequest(id, version, params), null, e.getMessage(), System.currentTimeMillis() - start);
             return R.fail(e.getMessage());
         } catch (RuntimeException e) {
             String msg = e.getMessage();
             if (msg == null || msg.isEmpty()) msg = e.toString();
-            logModelExecute(model, params, null, "模型执行失败: " + msg, System.currentTimeMillis() - start);
+            logModelExecute(model, modelTestLogRequest(id, version, params), null, "模型执行失败: " + msg, System.currentTimeMillis() - start);
             return R.fail("模型执行失败: " + msg);
         }
+    }
+
+    private Map<String, Object> modelTestLogRequest(Long id, Integer version, Map<String, Object> params) {
+        return version == null ? params : Map.of("modelId", String.valueOf(id), "version", version, "params", params);
+    }
+
+    @GetMapping("/version/{id}/{version}/test-context")
+    public R<Map<String, Object>> versionTestContext(@PathVariable Long id, @PathVariable Integer version) {
+        try { return R.ok(modelService.versionTestContext(id, version)); }
+        catch (IllegalArgumentException error) { return R.fail(error.getMessage()); }
+    }
+
+    @PostMapping("/version/{id}/{version}/testParams")
+    @RequirePermission("model:edit")
+    @org.springframework.transaction.annotation.Transactional
+    public R<GovernanceRequestView> saveVersionTestParams(@PathVariable Long id, @PathVariable Integer version,
+                                                         @RequestBody Map<String, String> body) {
+        RuleModel draft = modelService.prepareVersionSampleDraft(id, version, body.get("testParams"));
+        return R.ok(createModelDraft(draft, "UPDATE", "修改模型 v" + version + " 的测试参数"));
     }
 
     /**
@@ -359,7 +390,7 @@ public class RuleModelController {
      * @param newModelCode 新的全局编码（用户重新填写）
      */
     @PostMapping("/toGlobal/{id:\\d+}")
-    @RequirePermission("approval:submit")
+    @RequirePermission("model:edit")
     public R<GovernanceRequestView> toGlobal(
             @PathVariable Long id,
             @RequestBody Map<String, String> body) {

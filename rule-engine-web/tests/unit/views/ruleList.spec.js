@@ -428,6 +428,17 @@ describe('RuleList — 规则操作', () => {
     expect(definitionApi.deleteDefinition).toHaveBeenCalledWith(1)
   })
 
+  test('未生效的新规则直接删除后刷新列表，不跳转审批', async () => {
+    definitionApi.deleteDefinition.mockResolvedValue({ data: { deleted: true, approvalRequestId: null } })
+    wrapper.vm.$confirm.mockResolvedValueOnce()
+    const reload = vi.spyOn(wrapper.vm, 'loadData').mockResolvedValue()
+    await wrapper.vm.handleDelete({ id: 1, ruleName: '未配置规则' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('规则已删除，无需审批')
+    expect(reload).toHaveBeenCalledOnce()
+    expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
+  })
+
 })
 
 describe('RuleList — 边界情况', () => {

@@ -108,6 +108,16 @@ public class VariableGovernedResourceAdapter
     @Override
     protected void applyAggregate(Long resourceId,
                                   Map<String, Object> snapshot) {
+        applyOptions(resourceId, snapshot, false);
+    }
+
+    @Override
+    protected AppliedResource applyAggregateWithResult(ApprovalApplyContext context, AppliedResource applied, Map<String, Object> snapshot) {
+        applyOptions(applied.resourceId(), snapshot, context.reuseVersion());
+        return applied;
+    }
+
+    private void applyOptions(Long resourceId, Map<String, Object> snapshot, boolean reuse) {
         optionMapper.delete(new LambdaQueryWrapper<RuleVariableOption>()
                 .eq(RuleVariableOption::getVariableId, resourceId));
         List<RuleVariableOption> options = JSON.parseArray(
@@ -118,7 +128,9 @@ public class VariableGovernedResourceAdapter
         }
         for (int index = 0; index < options.size(); index++) {
             RuleVariableOption option = options.get(index);
-            option.setId(null);
+            if (reuse && option.getId() != null && optionMapper.selectById(option.getId()) != null)
+                throw new IllegalArgumentException("历史选项 ID 已被其他变量占用，不能复用原版本");
+            if (!reuse) option.setId(null);
             option.setVariableId(resourceId);
             option.setSortOrder(index);
             optionMapper.insert(option);

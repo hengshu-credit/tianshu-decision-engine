@@ -16,6 +16,20 @@ import java.util.List;
 import java.util.Map;
 
 public class FieldValidationGovernedResourceAdapterTest {
+    @Test
+    public void directDraftDeletionStillRequiresRemovingDownstreamReferencesFirst() {
+        FakeRepository repository = validRepository();
+        RuleDefinitionInputField input = new RuleDefinitionInputField();
+        input.setDefinitionId(31L); input.setValidationRuleIds("[17]");
+        repository.inputFields = List.of(input);
+        var context = new ApprovalApplyContext(null, 17L, 0, "DRAFT_DELETE",
+                ResourceSnapshot.ofJson("{\"id\":17}"), "owner", null);
+        Assert.assertThrows(IllegalArgumentException.class, () -> adapter(repository).apply(context));
+        Assert.assertTrue(repository.updates.isEmpty());
+        repository.inputFields = List.of();
+        Assert.assertEquals("DELETED", adapter(repository).apply(context).effectiveStatus());
+        Assert.assertEquals(Integer.valueOf(-1), repository.updates.get(0).getStatus());
+    }
 
     @Test
     public void normalizationPreservesBusinessValuesAndProjectDependency() {

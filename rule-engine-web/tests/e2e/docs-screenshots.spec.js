@@ -264,7 +264,9 @@ test('生成人脸识别追踪树、血缘和表达式配置截图', async ({ pa
 
   routing = await openPage(page, '/designer/table/101')
   await page.getByRole('button', { name: '添加行', exact: true }).click()
-  await page.getByRole('button', { name: '配置组合表达式' }).first().click()
+  await page.getByPlaceholder('选择左操作数...').first().click()
+  await page.locator('.fp-panel:visible').getByRole('button', { name: 'ƒx 组合表达式', exact: true }).click()
+  await page.locator('.fp-panel:visible').getByRole('button', { name: '展开页面', exact: true }).click()
   await expect(page).toHaveURL(/#\/designer\/expression\/101\//)
   const faceField = page.getByText('livenessScore', { exact: true }).first()
   await expect(faceField).toBeVisible()

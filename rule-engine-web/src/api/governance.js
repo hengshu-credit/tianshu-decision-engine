@@ -1,7 +1,24 @@
 import request from './request'
+import { notifyDraftChange } from '@/utils/governanceWorkspace'
+import { metadataResponse, parseMetadataResponse } from '@/utils/metadataResponse'
+export { notifyDraftChange } from '@/utils/governanceWorkspace'
 
 export function listGovernanceRequests(params) {
-  return request.get('/rule/governance/requests', { params })
+  return request.get('/rule/governance/requests', { ...metadataResponse, params })
+}
+
+export function listWorkspaceDrafts(params) {
+  return request.get('/rule/governance/workspaces', { ...metadataResponse, params })
+}
+
+export function getWorkspaceDraft(type, id) {
+  return request.get(`/rule/governance/workspaces/${type}/${id}`, metadataResponse)
+}
+
+export async function editableResource(type, id, fallback) {
+  const response = await getWorkspaceDraft(type, id)
+  const json = response?.data?.draftSnapshotJson
+  return json ? parseMetadataResponse(json) : fallback
 }
 
 export function getGovernanceSummary(params) {
@@ -9,16 +26,19 @@ export function getGovernanceSummary(params) {
 }
 
 export function getGovernanceRequest(id) {
-  return request.get(`/rule/governance/requests/${id}`)
+  return request.get(`/rule/governance/requests/${id}`, metadataResponse)
 }
 
-export function createGovernanceDraft(data) {
-  return request.post('/rule/governance/drafts', data)
+export async function createGovernanceDraft(data) {
+  const response = await request.post('/rule/governance/drafts', data, metadataResponse)
+  notifyDraftChange()
+  return response
 }
 
 export function createResourceDraft(resourceType, resource, action, options = {}) {
   const resourceId =
     options.resourceId == null ? resource && resource.id : options.resourceId
+  if (action === 'DELETE') return deleteResource(resourceType, resourceId)
   return createGovernanceDraft({
     resourceType,
     resourceId: resourceId == null ? null : resourceId,
@@ -32,38 +52,50 @@ export function createResourceDraft(resourceType, resource, action, options = {}
   })
 }
 
+export async function deleteResource(type, id) {
+  const response = await request.post(`/rule/governance/resources/${type}/${id}/delete`, undefined, metadataResponse)
+  notifyDraftChange()
+  return { ...response, data: { ...response.data, id: response.data?.approvalRequestId, action: 'DELETE' } }
+}
+
 export function saveGovernanceDraft(id, data) {
-  return request.put(`/rule/governance/requests/${id}/draft`, data)
+  return changed(request.put(`/rule/governance/requests/${id}/draft`, data, metadataResponse))
 }
 
 export function preflightGovernanceRequest(id) {
-  return request.post(`/rule/governance/requests/${id}/preflight`)
+  return request.post(`/rule/governance/requests/${id}/preflight`, undefined, metadataResponse)
 }
 
-export function submitGovernanceRequest(id, comment) {
-  return request.post(`/rule/governance/requests/${id}/submit`, { comment })
+export function submitGovernanceRequest(id, comment, expectedSnapshotDigest) {
+  return changed(request.post(`/rule/governance/requests/${id}/submit`, { comment, ...(expectedSnapshotDigest ? { expectedSnapshotDigest } : {}) }, metadataResponse))
 }
 
 export function approveGovernanceRequest(id, comment) {
-  return request.post(`/rule/governance/requests/${id}/approve`, { comment })
+  return changed(request.post(`/rule/governance/requests/${id}/approve`, { comment }, metadataResponse))
 }
 
 export function rejectGovernanceRequest(id, comment) {
-  return request.post(`/rule/governance/requests/${id}/reject`, { comment })
+  return changed(request.post(`/rule/governance/requests/${id}/reject`, { comment }, metadataResponse))
 }
 
 export function cancelGovernanceRequest(id, comment) {
-  return request.post(`/rule/governance/requests/${id}/cancel`, { comment })
+  return changed(request.post(`/rule/governance/requests/${id}/cancel`, { comment }, metadataResponse))
+}
+
+async function changed(pending) {
+  const response = await pending
+  notifyDraftChange()
+  return response
 }
 
 export function listGovernanceVersions(type, id) {
-  return request.get(`/rule/governance/resources/${type}/${id}/versions`)
+  return request.get(`/rule/governance/resources/${type}/${id}/versions`, metadataResponse)
 }
 
-export function restoreGovernanceVersion(type, id, sourceVersionId) {
+export function restoreGovernanceVersion(type, id, sourceVersionId, restoreMode = 'NEW') {
   return request.post(`/rule/governance/resources/${type}/${id}/restore`, {
-    sourceVersionId
-  })
+    sourceVersionId, restoreMode
+  }, metadataResponse)
 }
 
 function lifecycleSummary(action) {

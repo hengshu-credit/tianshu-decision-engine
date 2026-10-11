@@ -1,10 +1,55 @@
 import { shallowMount } from '@test-utils'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import * as definitionApi from '@/api/definition'
+import { ElAlert } from 'element-plus/es/components/alert/index.mjs'
 
 const TraceTree = (await vi.importActual('../../../src/components/common/TraceTree.vue')).default
 
 describe('DesignerTestDialog unified schema', () => {
+  test('来源提示复用业务版本标签，不把大ID或锁版本当成版本号', () => {
+    const wrapper = shallowMount(DesignerTestDialog, { props: {
+      definitionId: '7', executionSource: { sourceType: 'REVISION', sourceId: '9007199254740993', lockVersion: 7 },
+      executionSourceName: '草稿 3',
+    }, stubs: { 'el-dialog': { template: '<div><slot /></div>' }, 'el-alert': ElAlert } })
+    try {
+      expect(wrapper.find('.el-alert--info').text()).toContain('草稿 3（按已保存配置和当前依赖执行）')
+      expect(wrapper.find('.el-alert--info').text()).not.toContain('9007199254740993')
+      expect(wrapper.find('.el-alert--info').text()).not.toContain('锁版本')
+    } finally { wrapper.unmount() }
+  })
+  test('历史版本测试使用不可变快照ID，不把当前画布重新编译伪装成历史执行', async () => {
+    const source = { sourceType: 'VERSION', sourceId: '81' }
+    definitionApi.getRuleTestSchema.mockResolvedValue({ data: { sampleParams: { frozenAge: 25 }, executionIdentity: { ...source, definitionId: '7' } } })
+    definitionApi.executeRule.mockResolvedValue({ data: { success: true, result: 5, executionIdentity: { ...source, definitionId: '7' } } })
+    const wrapper = shallowMount(DesignerTestDialog, { props: {
+      definitionId: 7, executionSource: source, modelType: 'SCORE', modelJsonProvider: () => '{"currentCanvas":9}',
+    } })
+    try {
+      await wrapper.vm.open()
+      expect(definitionApi.getRuleTestSchema).toHaveBeenLastCalledWith(expect.objectContaining({ executionSource: source }))
+      expect(definitionApi.getRuleTestSchema.mock.lastCall[0].modelJson).toBeUndefined()
+      await wrapper.vm.execute()
+      expect(definitionApi.executeRule).toHaveBeenLastCalledWith(expect.objectContaining({ executionSource: source, params: { frozenAge: 25 } }), 180000)
+      expect(definitionApi.executeRule.mock.lastCall[0].modelJson).toBeUndefined()
+      expect(wrapper.vm.result.output).toBe(5)
+    } finally { wrapper.unmount() }
+  })
+
+  test('同一规则改选来源后迟到执行不能污染新来源', async () => {
+    let finish
+    definitionApi.getRuleTestSchema.mockResolvedValue({ data: { sampleParams: {}, executionIdentity: { sourceType: 'VERSION', sourceId: '81', definitionId: '7' } } })
+    definitionApi.executeRule.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = shallowMount(DesignerTestDialog, { props: { definitionId: 7, executionSource: { sourceType: 'VERSION', sourceId: '81' } } })
+    try {
+      await wrapper.vm.open()
+      const executing = wrapper.vm.execute()
+      await wrapper.setProps({ executionSource: { sourceType: 'VERSION', sourceId: '82' } })
+      finish({ data: { success: true, result: 5, executionIdentity: { sourceType: 'VERSION', sourceId: '81' } } })
+      await executing
+      expect(wrapper.vm.result).toBeNull()
+    } finally { wrapper.unmount() }
+  })
+
   test('全局规则不向执行接口传入项目零值', async () => {
     definitionApi.getRuleTestSchema.mockResolvedValue({ data: { sampleParams: {} } })
     definitionApi.executeRule.mockResolvedValue({ data: { success: true } })
@@ -172,6 +217,37 @@ describe('DesignerTestDialog expression trace', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  test('容量拒绝在真实Alert正文说明稍后重试，普通失败与成功仍保持原语义', async () => {
+    const wrapper = shallowMount(DesignerTestDialog, {
+      props: { definitionId: 7 },
+      stubs: { 'el-alert': ElAlert },
+    })
+    try {
+      definitionApi.executeRule.mockResolvedValueOnce({ data: {
+        success: false, executionStatus: 'THROTTLED', errorMessage: '模型会话已满', executeTimeMs: 1,
+      } })
+      await wrapper.vm.execute()
+      expect(wrapper.find('.el-alert--warning').text()).toContain('容量受限')
+      expect(wrapper.find('.el-alert__description').text()).toContain('执行资源暂时不足，本次未完成决策，请稍后重试。')
+      expect(wrapper.find('[name="error"]').attributes('label')).toBe('容量提示')
+      expect(wrapper.find('.capacity-pre').text()).toBe('模型会话已满')
+      expect(wrapper.find('.error-pre').exists()).toBe(false)
+
+      definitionApi.executeRule.mockResolvedValueOnce({ data: { success: false, errorMessage: 'THROTTLED仅是错误文案' } })
+      await wrapper.vm.execute()
+      expect(wrapper.find('.el-alert--error').text()).toContain('执行失败')
+      expect(wrapper.find('[name="error"]').attributes('label')).toBe('错误信息')
+      expect(wrapper.find('.error-pre').text()).toBe('THROTTLED仅是错误文案')
+      expect(wrapper.find('.capacity-pre').exists()).toBe(false)
+
+      definitionApi.executeRule.mockResolvedValueOnce({ data: { success: true, result: 165 } })
+      await wrapper.vm.execute()
+      expect(wrapper.find('.el-alert--success').text()).toContain('执行成功')
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   test('测试后展示追踪树，并保持本次执行的输入和模型快照', async () => {

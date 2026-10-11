@@ -8,6 +8,8 @@ async function installTransferRoutes(page) {
   const imports = []
   const exports = []
   const searches = []
+  const logRequests = []
+  const lineages = []
   let delayNextPreview = null
   let failNextSearch = false
   const parseOptions = request => {
@@ -37,7 +39,19 @@ async function installTransferRoutes(page) {
         ? [{ id: 101, displayName: '授信评分 (score)', scope: 'GLOBAL' }]
         : [{ id: 101, displayName: '授信判断 (risk_rule)', scope: 'PROJECT', projectId: 7, projectName: '授信项目', projectCode: 'credit' }], total: 1 }
     }
-    else if (pathname === '/api/rule/transfer/export') {
+    else if (pathname === '/api/rule/transfer/logs' && request.method() === 'GET') {
+      logRequests.push(Object.fromEntries(new URL(request.url()).searchParams))
+      data = { records: [], total: 0 }
+    }
+    else if (pathname === '/api/rule/lineage/graph' && request.method() === 'GET') {
+      const params = Object.fromEntries(new URL(request.url()).searchParams)
+      lineages.push(params)
+      const startNode = { id: `${params.nodeType}:${params.nodeId}`, type: params.nodeType,
+        refId: Number(params.nodeId), code: params.nodeType === 'MODEL' ? 'score' : 'risk_rule',
+        label: params.nodeType === 'MODEL' ? '授信评分' : '授信判断' }
+      data = { startNode, nodes: [startNode], edges: [] }
+    }
+    else if (pathname === '/api/rule/transfer/export/options' && request.method() === 'POST') {
       exports.push(request.postDataJSON())
       await route.fulfill({ contentType: 'application/zip', body: Buffer.from('transfer-test-package') })
       return
@@ -56,7 +70,7 @@ async function installTransferRoutes(page) {
     }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, message: 'success', data }) })
   })
-  return { assertClean, previews, imports, exports, searches, delayPreview(wait) { delayNextPreview = wait }, failSearch() { failNextSearch = true } }
+  return { assertClean, previews, imports, exports, searches, logRequests, lineages, delayPreview(wait) { delayNextPreview = wait }, failSearch() { failNextSearch = true } }
 }
 
 async function exportAndUpload(page, testInfo) {
@@ -75,7 +89,7 @@ async function chooseScope(page, label) {
 }
 
 test('离线迁移页面展示导出、目标范围和冲突策略流程', async ({ page }) => {
-  const { assertClean } = await installTransferRoutes(page)
+  const { assertClean, logRequests } = await installTransferRoutes(page)
   await page.goto(`${baseUrl}#/transfer`)
 
   await expect(page.getByRole('heading', { name: '离线配置迁移' })).toBeVisible()
@@ -87,10 +101,11 @@ test('离线迁移页面展示导出、目标范围和冲突策略流程', async
   await page.getByText('导入时新建项目', { exact: true }).click()
   await expect(page.getByPlaceholder('新项目编码（可覆盖源编码）')).toBeVisible()
   await expect(page.getByPlaceholder('新项目名称（可覆盖源名称）')).toBeVisible()
-  await expect(page.getByText('导入并发布规则（重建固定版本）', { exact: true })).toBeVisible()
+  await expect(page.getByText('导入并发布规则', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '预览冲突' })).toBeDisabled()
   await expect(page.getByRole('button', { name: '确认导入' })).toBeDisabled()
   await expect(page.locator('.menu-label', { hasText: '离线迁移' })).toBeVisible()
+  expect(logRequests).toEqual([{ pageNum: '1', pageSize: '20' }])
   await assertClean()
 })
 
@@ -118,7 +133,8 @@ test('离线迁移从下载到绑定项目导入始终使用当前预检选项',
   await confirm.getByRole('button', { name: '确定', exact: true }).click()
   await expect(confirm).toBeHidden()
   await expect(page.getByRole('dialog', { name: '导入结果' })).toBeVisible()
-  expect(fixture.exports).toEqual([[{ resourceType: 'RULE', resourceId: 101 }]])
+  expect(fixture.exports).toEqual([{ roots: [{ resourceType: 'RULE', resourceId: 101 }], includeDependencies: true }])
+  expect(fixture.lineages).toContainEqual({ nodeType: 'RULE', nodeId: '101', direction: 'ALL', maxDepth: '2' })
   expect(fixture.previews).toHaveLength(2)
   expect(fixture.imports).toEqual([fixture.previews[1]])
   expect(fixture.imports[0]).toMatchObject({ targetProjectId: 7, targetScope: 'PROJECT', resourcePolicy: 'OVERWRITE' })
@@ -145,7 +161,10 @@ test('新建项目切换全局后迟到预检不能恢复导入按钮', async ({
   await oldResponse
   const apply = page.getByRole('button', { name: '确认导入', exact: true })
   await expect(apply).toBeDisabled()
-  await expect(page.getByPlaceholder('新项目编码（可覆盖源编码）')).toHaveCount(0)
+  await expect(page.getByPlaceholder('新项目编码（可覆盖源编码）')).toBeHidden()
+  await expect(page.getByPlaceholder('新项目名称（可覆盖源名称）')).toBeHidden()
+  await expect(page.getByPlaceholder('新项目编码（可覆盖源编码）')).toHaveValue('')
+  await expect(page.getByPlaceholder('新项目名称（可覆盖源名称）')).toHaveValue('')
   await page.getByRole('button', { name: '预览冲突' }).click()
   await expect(apply).toBeEnabled()
   await apply.click()
@@ -169,7 +188,7 @@ test('新建项目与发布策略显示和发送一致', async ({ page }, testIn
   await page.getByText('导入时新建项目', { exact: true }).click()
   await page.getByPlaceholder('新项目编码（可覆盖源编码）').fill('new_credit')
   await page.getByPlaceholder('新项目名称（可覆盖源名称）').fill('新授信项目')
-  await page.getByText('导入并发布规则（重建固定版本）', { exact: true }).click()
+  await page.getByText('导入并发布规则', { exact: true }).click()
   await page.getByRole('button', { name: '预览冲突' }).click()
   await page.getByRole('button', { name: '确认导入', exact: true }).click()
   const confirm = page.getByRole('dialog', { name: '确认导入' })
@@ -201,10 +220,14 @@ test('导出按名称选择，重复提示，切换类型后重新选择并提�
   expect(fixture.exports).toEqual([])
   await second.fill('score')
   await page.getByRole('option', { name: '授信评分 (score) · 全局', exact: true }).click()
+  await page.getByText('只迁移所选内容，不带出上游依赖', { exact: true }).click()
+  await expect(page.getByRole('checkbox', { name: '只迁移所选内容，不带出上游依赖', exact: true })).toBeChecked()
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: '生成并下载配置包', exact: true }).click()
   await (await download).saveAs(testInfo.outputPath('multiple-resources.zip'))
-  expect(fixture.exports).toEqual([[{ resourceType: 'RULE', resourceId: 101 }, { resourceType: 'MODEL', resourceId: 101 }]])
+  expect(fixture.exports).toEqual([{ roots: [{ resourceType: 'RULE', resourceId: 101 }, { resourceType: 'MODEL', resourceId: 101 }], includeDependencies: false }])
+  expect(fixture.lineages).toContainEqual({ nodeType: 'RULE', nodeId: '101', direction: 'ALL', maxDepth: '2' })
+  expect(fixture.lineages).toContainEqual({ nodeType: 'MODEL', nodeId: '101', direction: 'ALL', maxDepth: '2' })
   expect(fixture.searches).toContainEqual(expect.objectContaining({ nodeType: 'RULE', keyword: 'risk_rule', pageNum: '1', pageSize: '20' }))
   expect(fixture.searches).toContainEqual(expect.objectContaining({ nodeType: 'MODEL', keyword: 'score' }))
   await page.getByRole('button', { name: '移除第 1 项资源', exact: true }).click()

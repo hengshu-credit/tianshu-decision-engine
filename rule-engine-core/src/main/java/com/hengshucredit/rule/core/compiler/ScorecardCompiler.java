@@ -31,8 +31,6 @@ public class ScorecardCompiler implements RuleCompiler {
             double initialScore = model.getDoubleValue("initialScore");
             JSONObject resultVar = model.getJSONObject("resultVar");
             JSONArray scoreItems = model.getJSONArray("scoreItems");
-            JSONArray thresholds = model.getJSONArray("thresholds");
-            IntervalValidator.validateThresholds(thresholds);
 
             Long resVarId = resultVar != null && resultVar.containsKey("_varId") ? resultVar.getLong("_varId") : null;
             String resRefType = resultVar != null ? resultVar.getString("_refType") : null;
@@ -63,47 +61,12 @@ public class ScorecardCompiler implements RuleCompiler {
                 }
             }
 
-            // 等级阈值判定（thresholds）
-            String levelVar = "riskLevel";
-            if (thresholds != null && !thresholds.isEmpty()) {
-                JSONObject firstTh = thresholds.getJSONObject(0);
-                if (firstTh != null && firstTh.containsKey("resultVar")) {
-                    String rv = firstTh.getString("resultVar");
-                    if (rv != null && !rv.isEmpty()) {
-                        levelVar = rv;
-                    }
-                }
-                script.append("\n").append(levelVar).append(" = \"未知\";\n");
-                for (int i = 0; i < thresholds.size(); i++) {
-                    JSONObject th = thresholds.getJSONObject(i);
-                    double min = th.getDoubleValue("min");
-                    double max = th.getDoubleValue("max");
-                    JSONObject resultOperandValue = th.getJSONObject("resultOperand");
-
-                    script.append(i == 0 ? "if (" : " else if (");
-                    script.append(resolvedResultVar).append(" >= ").append(min).append(" && ")
-                          .append(resolvedResultVar).append(" < ").append(max).append(") {\n");
-                    script.append("    ").append(levelVar).append(" = ");
-                    if (resultOperandValue != null) {
-                        script.append(OperandCompiler.compile(resultOperandValue, varContext));
-                    } else {
-                        script.append("\"").append(escapeForQlDoubleQuotedString(th.getString("result"))).append("\"");
-                    }
-                    script.append("\n}");
-                }
-                script.append("\n");
-
-                LinkedHashSet<String> outVars = new LinkedHashSet<>();
-                outVars.add(resolvedResultVar);
-                outVars.add(levelVar);
-                RuleScriptResultCollector.prependOutputNullInits(script, outVars);
-                RuleScriptResultCollector.appendResultMapReturn(script, outVars);
-            } else {
-                LinkedHashSet<String> outVars = new LinkedHashSet<>();
-                outVars.add(resolvedResultVar);
-                RuleScriptResultCollector.prependOutputNullInits(script, outVars);
-                RuleScriptResultCollector.appendResultMapReturn(script, outVars);
-            }
+            String levelVar = ScorecardLevelCompiler.append(script, model, resolvedResultVar, varContext);
+            LinkedHashSet<String> outVars = new LinkedHashSet<>();
+            outVars.add(resolvedResultVar);
+            if (levelVar != null) outVars.add(levelVar);
+            RuleScriptResultCollector.prependOutputNullInits(script, outVars);
+            RuleScriptResultCollector.appendResultMapReturn(script, outVars);
 
             return CompileResult.ok(script.toString(), "QLEXPRESS");
         } catch (Exception e) {
@@ -135,7 +98,7 @@ public class ScorecardCompiler implements RuleCompiler {
         String condVar = item.getString("condVar");
         String condOp = item.getString("condOperator");
         String condValue = item.getString("condValue");
-        if (condVar != null && !condVar.trim().isEmpty() && condValue != null) {
+        if (ConditionExpressionBuilder.isRangeOperator(condOp) || (condVar != null && !condVar.trim().isEmpty() && condValue != null)) {
             if (condOp == null || condOp.trim().isEmpty()) condOp = "==";
             Long varId = item.containsKey("_varId") ? item.getLong("_varId") : null;
             String refType = item.getString("_refType");
@@ -150,8 +113,5 @@ public class ScorecardCompiler implements RuleCompiler {
         return ConditionExpressionBuilder.formatConstant(varType, value);
     }
 
-    private static String escapeForQlDoubleQuotedString(String value) {
-        if (value == null) return "";
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
+
 }

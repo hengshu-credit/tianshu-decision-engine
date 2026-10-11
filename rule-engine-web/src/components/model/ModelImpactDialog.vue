@@ -23,7 +23,7 @@ export default {
   name: 'ModelImpactDialog',
   props: {
     modelValue: { type: Boolean, default: false },
-    modelId: { type: Number, required: true },
+    modelId: { type: [String, Number], required: true },
     action: { type: String, required: true }
   },
   emits: ['update:modelValue', 'confirmed'],

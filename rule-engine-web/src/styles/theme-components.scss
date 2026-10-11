@@ -43,44 +43,44 @@ body,
   background: var(--tianshu-selection-bg);
 }
 
-.el-button--primary:not(.is-link):not(.is-text):not(.is-plain),
-.drawer-button--primary {
+.el-button--primary:not(.is-link):not(.is-text):not(.is-plain):where(:not(.is-disabled):not(:disabled:not(.is-loading))),
+.drawer-button--primary:where(:not(:disabled)) {
   color: var(--tianshu-brand-foreground) !important;
   background-color: var(--el-color-primary) !important;
   background-image: var(--tianshu-brand-gradient) !important;
   border-color: var(--el-color-primary) !important;
 }
 
-.el-button--primary:not(.is-link):not(.is-text):not(.is-plain):hover,
-.el-button--primary:not(.is-link):not(.is-text):not(.is-plain):focus {
+.el-button--primary:not(.is-link):not(.is-text):not(.is-plain):where(:not(.is-disabled):not(:disabled)):hover,
+.el-button--primary:not(.is-link):not(.is-text):not(.is-plain):where(:not(.is-disabled):not(:disabled)):focus {
   background-color: var(--el-color-primary-dark-1) !important;
   background-image: var(--tianshu-brand-gradient) !important;
   filter: brightness(1.08);
 }
 
-.el-button--primary:not(.is-link):not(.is-text):not(.is-plain):active {
+.el-button--primary:not(.is-link):not(.is-text):not(.is-plain):where(:not(.is-disabled):not(:disabled)):active {
   background-color: var(--el-color-primary-dark-2) !important;
   background-image: var(--tianshu-brand-gradient) !important;
   filter: brightness(0.96);
 }
 
-.el-button--primary.is-plain {
+.el-button--primary.is-plain:where(:not(.is-disabled):not(:disabled:not(.is-loading))) {
   color: var(--tianshu-text-primary) !important;
-  background-color: var(--el-color-primary-light-9) !important;
+  background-color: var(--tianshu-primary-soft-bg) !important;
   border-color: var(--el-color-primary-light-5) !important;
   background-image: none !important;
 }
 
-.el-button--primary.is-plain:hover,
-.el-button--primary.is-plain:focus {
+.el-button--primary.is-plain:where(:not(.is-disabled):not(:disabled)):hover,
+.el-button--primary.is-plain:where(:not(.is-disabled):not(:disabled)):focus {
   color: var(--tianshu-text-primary) !important;
-  background-color: var(--el-color-primary-light-8) !important;
+  background-color: var(--tianshu-primary-soft-hover-bg) !important;
   border-color: var(--el-color-primary) !important;
 }
 
-.el-button--primary.is-plain:active,
-.el-button--primary.is-plain.is-active {
-  background-color: var(--el-color-primary-light-7) !important;
+.el-button--primary.is-plain:where(:not(.is-disabled):not(:disabled)):active,
+.el-button--primary.is-plain:where(:not(.is-disabled):not(:disabled)).is-active {
+  background-color: var(--tianshu-primary-soft-active-bg) !important;
   border-color: var(--el-color-primary-dark-1) !important;
 }
 
@@ -96,7 +96,7 @@ body,
 .el-select-dropdown__item.selected,
 .el-cascader-node.is-active,
 .el-cascader-node.in-active-path {
-  color: var(--el-color-primary) !important;
+  color: var(--tianshu-primary-text) !important;
   background: var(--tianshu-bg-active) !important;
 }
 
@@ -104,7 +104,7 @@ body,
 .el-menu-item.is-active,
 .el-pager li.is-active,
 .el-pager li.active {
-  color: var(--el-color-primary) !important;
+  color: var(--tianshu-primary-text) !important;
 }
 
 .el-pager li.is-active,
@@ -123,8 +123,51 @@ body,
 }
 
 .el-tree-node.is-current > .el-tree-node__content {
-  color: var(--el-color-primary) !important;
+  color: var(--tianshu-primary-text) !important;
   background: var(--tianshu-bg-active) !important;
+}
+
+.el-button--primary.is-link:where(:not(.is-disabled):not(:disabled:not(.is-loading))),
+.el-button--primary.is-text:where(:not(.is-disabled):not(:disabled:not(.is-loading))) {
+  color: var(--tianshu-primary-text) !important;
+}
+
+// 业务禁用统一灰底灰字；仅因加载产生的原生disabled保留品牌样式。
+.el-button--primary:is(.is-disabled, :disabled:where(:not(.is-loading))):not(.is-link):not(.is-text):not(.is-plain),
+.el-button--primary:is(.is-disabled, :disabled:where(:not(.is-loading))):is(.is-plain, .is-link, .is-text),
+.drawer-button--primary:disabled {
+  color: var(--tianshu-text-secondary) !important;
+  background-image: none !important;
+  filter: none !important;
+  cursor: not-allowed;
+}
+
+.el-button--primary:is(.is-disabled, :disabled:where(:not(.is-loading))):not(.is-link):not(.is-text):not(.is-plain),
+.el-button--primary.is-plain:is(.is-disabled, :disabled:where(:not(.is-loading))),
+.drawer-button--primary:disabled {
+  background-color: var(--tianshu-bg-muted) !important;
+  border-color: var(--tianshu-border-subtle) !important;
+}
+
+.el-button--primary:is(.is-disabled, :disabled:where(:not(.is-loading))):is(.is-link, .is-text) {
+  background-color: transparent !important;
+  border-color: transparent !important;
+}
+
+.el-tag--primary {
+  color: var(--tianshu-primary-text) !important;
+}
+
+.el-input-group__append,
+.el-input-group__prepend {
+  color: var(--tianshu-primary-text);
+}
+
+.el-button:not(.el-button--primary, .el-button--success, .el-button--warning, .el-button--danger, .el-button--info) {
+  --el-button-hover-text-color: var(--tianshu-primary-text);
+  --el-button-hover-bg-color: var(--tianshu-primary-soft-hover-bg);
+  --el-button-active-text-color: var(--tianshu-primary-text);
+  --el-button-active-bg-color: var(--tianshu-primary-soft-active-bg);
 }
 
 .el-radio-button__original-radio:checked + .el-radio-button__inner,
@@ -230,28 +273,28 @@ body,
   border-color: var(--tianshu-table-scope-global-border) !important;
 }
 
-.el-table .el-button:is(.is-link, .is-text):not(.el-button--danger):not([data-action]) {
+.el-table .el-button:is(.is-link, .is-text):not(.el-button--danger):not([data-action]):where(:not(.is-disabled):not(:disabled)) {
   color: var(--tianshu-table-accent) !important;
 }
 
-.el-table .el-button:is(.is-link, .is-text):not(.el-button--danger):not([data-action]):hover,
-.el-table .el-button:is(.is-link, .is-text):not(.el-button--danger):not([data-action]):focus-visible {
+.el-table .el-button:is(.is-link, .is-text):not(.el-button--danger):not([data-action]):where(:not(.is-disabled):not(:disabled)):hover,
+.el-table .el-button:is(.is-link, .is-text):not(.el-button--danger):not([data-action]):where(:not(.is-disabled):not(:disabled)):focus-visible {
   color: var(--tianshu-table-accent) !important;
   background: var(--tianshu-bg-active) !important;
 }
 
-.el-table .el-button[data-action]:is(.is-link, .is-text) {
+.el-table .el-button[data-action]:is(.is-link, .is-text):where(:not(.is-disabled):not(:disabled)) {
   color: var(--tianshu-action-color) !important;
   transition: color 0.15s ease, background-color 0.15s ease;
 }
 
-.el-table .el-button[data-action]:is(.is-link, .is-text):hover,
-.el-table .el-button[data-action]:is(.is-link, .is-text):focus-visible {
+.el-table .el-button[data-action]:is(.is-link, .is-text):where(:not(.is-disabled):not(:disabled)):hover,
+.el-table .el-button[data-action]:is(.is-link, .is-text):where(:not(.is-disabled):not(:disabled)):focus-visible {
   color: var(--tianshu-action-color) !important;
   background: rgba(var(--tianshu-action-rgb), 0.08) !important;
 }
 
-.el-table .el-button[data-action]:is(.is-link, .is-text):active {
+.el-table .el-button[data-action]:is(.is-link, .is-text):where(:not(.is-disabled):not(:disabled)):active {
   background: rgba(var(--tianshu-action-rgb), 0.12) !important;
 }
 
@@ -389,10 +432,14 @@ body,
   border-color: var(--tianshu-border-subtle);
 }
 
-[data-theme='dark'] .lf-graph,
+[data-theme='dark'] .lf-graph {
+  background-color: var(--tianshu-bg-surface) !important;
+}
+
+/* 节点和网格层保持透明，由 lf-background-area 负责画布背景颜色及透明度。 */
 [data-theme='dark'] .lf-canvas-overlay,
 [data-theme='dark'] .lf-base {
-  background-color: var(--tianshu-bg-workspace) !important;
+  background-color: transparent !important;
 }
 
 [data-theme='dark'] :where(.lf-node-content, .lf-node-text, .lf-html-overlay) {
@@ -537,13 +584,13 @@ body,
   color: #451a03 !important;
 }
 
-.el-button[data-action]:is(.is-link, .is-text) {
+.el-button[data-action]:is(.is-link, .is-text):where(:not(.is-disabled):not(:disabled)) {
   color: var(--tianshu-action-color) !important;
   transition: color 160ms ease, background-color 160ms ease;
 }
 
-.el-button[data-action]:is(.is-link, .is-text):hover,
-.el-button[data-action]:is(.is-link, .is-text):focus-visible {
+.el-button[data-action]:is(.is-link, .is-text):where(:not(.is-disabled):not(:disabled)):hover,
+.el-button[data-action]:is(.is-link, .is-text):where(:not(.is-disabled):not(:disabled)):focus-visible {
   color: var(--tianshu-action-color) !important;
   background: rgba(var(--tianshu-action-rgb), 0.08) !important;
 }

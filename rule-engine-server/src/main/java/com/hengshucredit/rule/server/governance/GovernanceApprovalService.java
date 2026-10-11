@@ -32,10 +32,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
 public class GovernanceApprovalService {
+
+    @Autowired
+    private com.hengshucredit.rule.server.security.ConsoleAccessGuard accessGuard;
 
     @Autowired(required = false)
     private GovernanceApprovalRequestMapper requestMapper;
@@ -53,6 +58,154 @@ public class GovernanceApprovalService {
     private GovernanceResourceBootstrapService bootstrapService;
     @Autowired(required = false)
     private GovernanceImpactService impactService;
+    @Autowired(required = false)
+    private RuleDraftDeletionService ruleDraftDeletionService;
+    @Autowired(required = false)
+    private com.hengshucredit.rule.server.mapper.RuleRevisionMapper ruleRevisionMapper;
+
+    public List<GovernanceResourceState> resourceStates(String type, List<Long> ids, String actor) {
+        String resourceType = normalizeType(type);
+        requireResourcePermission(resourceType, "view");
+        if (ids == null || ids.isEmpty()) return List.of();
+        if (ids.size() > 100 || ids.stream().anyMatch(id -> id == null || id <= 0)) {
+            throw new IllegalArgumentException("单次最多查询100个有效资源ID");
+        }
+        List<Long> uniqueIds = ids.stream().distinct().toList();
+        Map<Long, GovernedResource> resources = new LinkedHashMap<>();
+        resourceMapper.selectList(new LambdaQueryWrapper<GovernedResource>()
+                .eq(GovernedResource::getResourceType, resourceType).in(GovernedResource::getResourceId, uniqueIds))
+                .forEach(resource -> resources.put(resource.getResourceId(), resource));
+        Map<Long, GovernanceApprovalRequest> requests = new LinkedHashMap<>();
+        requestMapper.selectLatestResourceRequests(resourceType, uniqueIds)
+                .forEach(request -> requests.put(request.getResourceId(), request));
+        Set<Long> ruleDrafts = new java.util.HashSet<>();
+        Set<Long> approvedRules = new java.util.HashSet<>();
+        if ("RULE".equals(resourceType)) {
+            ruleRevisionMapper.selectList(new LambdaQueryWrapper<com.hengshucredit.rule.model.entity.RuleRevision>()
+                    .select(com.hengshucredit.rule.model.entity.RuleRevision::getDefinitionId,
+                            com.hengshucredit.rule.model.entity.RuleRevision::getState)
+                    .in(com.hengshucredit.rule.model.entity.RuleRevision::getDefinitionId, uniqueIds)
+                    .in(com.hengshucredit.rule.model.entity.RuleRevision::getState, "DRAFT", "APPROVED")
+                    .groupBy(com.hengshucredit.rule.model.entity.RuleRevision::getDefinitionId,
+                            com.hengshucredit.rule.model.entity.RuleRevision::getState))
+                    .forEach(revision -> {
+                        if ("DRAFT".equals(revision.getState())) ruleDrafts.add(revision.getDefinitionId());
+                        if ("APPROVED".equals(revision.getState())) approvedRules.add(revision.getDefinitionId());
+                    });
+        }
+        return uniqueIds.stream().map(id -> {
+            GovernedResource resource = resources.get(id);
+            GovernanceApprovalRequest request = requests.get(id);
+            return new GovernanceResourceState(id, resource == null ? null : resource.getEffectiveStatus(),
+                    resource != null && resource.getEffectiveVersionId() != null,
+                    request == null ? null : request.getId(), request == null ? null : request.getStatus(),
+                    request == null ? null : request.getAction(), request == null ? null : request.getApplicant(),
+                    request != null && Objects.equals(actor, request.getApplicant()), ruleDrafts.contains(id), approvedRules.contains(id));
+        }).toList();
+    }
+
+    public List<Long> draftResourceIds(String type, List<Long> ids) {
+        String resourceType = normalizeType(type);
+        requireResourcePermission(resourceType, "view");
+        if (ids == null || ids.isEmpty()) return List.of();
+        if (ids.size() > 100) throw new IllegalArgumentException("单次最多查询 100 个资源状态");
+        return resourceMapper.selectList(new LambdaQueryWrapper<GovernedResource>()
+                .eq(GovernedResource::getResourceType, resourceType)
+                .eq(GovernedResource::getEffectiveStatus, "DRAFT")
+                .isNull(GovernedResource::getEffectiveVersionId)
+                .in(GovernedResource::getResourceId, ids)).stream().map(GovernedResource::getResourceId).toList();
+    }
+
+    public GovernanceRequestView editableWorkspace(String type, Long id, String actor) {
+        String resourceType = normalizeType(type);
+        requireResourcePermission(resourceType, "edit");
+        GovernanceApprovalRequest request = findActiveRequest(resourceType + ":" + id);
+        if (request == null || isTerminalRequest(request)) return null;
+        if (!Objects.equals(actor, request.getApplicant()) || !GovernanceRequestStatus.EDITING.name().equals(request.getStatus())) return null;
+        return GovernanceRequestView.from(request);
+    }
+
+    @Transactional
+    public GovernanceDeletionResult deleteResource(String type, Long id, String actor) {
+        String resourceType = normalizeType(type);
+        if (GovernanceResourceTypes.RULE.equals(resourceType)) return deleteRule(id, actor);
+        String operator = requireActor(actor);
+        requireResourcePermission(resourceType, "edit");
+        GovernedResource resource = findResource(resourceType, id);
+        if (resource == null || "DELETED".equals(resource.getEffectiveStatus())) throw new IllegalArgumentException("资源不存在或已删除");
+        var adapter = requireAdapter(resourceType);
+        ResourceSnapshot snapshot = adapter.loadEffective(id);
+        var issues = impactService.analyze(resourceType, id, "DELETE", snapshot);
+        if (!issues.isEmpty()) throw new GovernanceStateException("GOVERNANCE_PREFLIGHT_FAILED", issues.get(0).message());
+        if (isWorkspace(resource)) {
+            GovernanceApprovalRequest active = findActiveRequest(resourceType + ":" + id);
+            if (active != null && !isTerminalRequest(active)) cancelForDeletion(active, operator);
+            adapter.apply(new ApprovalApplyContext(null, id, 0, "DRAFT_DELETE", snapshot, operator, null));
+            resource.setEffectiveStatus("DELETED");
+            persistResource(resource);
+            return new GovernanceDeletionResult(true, null);
+        }
+        if (accessGuard != null) accessGuard.require("approval:submit");
+        GovernanceDraftRequest draft = new GovernanceDraftRequest();
+        draft.setResourceType(resourceType); draft.setResourceId(id); draft.setProjectId(resource.getProjectId());
+        draft.setAction("DELETE"); draft.setChangeSummary("删除资源");
+        return new GovernanceDeletionResult(false, createDraft(draft, operator).getId());
+    }
+
+    private void cancelForDeletion(GovernanceApprovalRequest active, String actor) {
+        requireApplicant(active, actor);
+        requireNotPendingNewContent(active);
+        requireTransition(active, GovernanceRequestStatus.CANCELLED);
+        String from = active.getStatus();
+        active.setStatus(GovernanceRequestStatus.CANCELLED.name());
+        active.setActiveResourceKey(null);
+        active.setReviewComment("删除未发布草稿，撤回关联申请");
+        active.setReviewTime(LocalDateTime.now());
+        persistRequest(active);
+        appendEvent(active, "CANCEL", from, actor, active.getReviewComment(), null);
+    }
+
+    @Transactional
+    public GovernanceDeletionResult deleteRule(Long definitionId, String actor) {
+        requireResourcePermission(GovernanceResourceTypes.RULE, "edit");
+        String operator = requireActor(actor);
+        var definition = ruleDraftDeletionService.lock(definitionId);
+        if (!ruleDraftDeletionService.isUnapproved(definition)) {
+            if (accessGuard != null) accessGuard.require("approval:submit");
+            GovernanceDraftRequest draft = new GovernanceDraftRequest();
+            draft.setResourceType(GovernanceResourceTypes.RULE);
+            draft.setResourceId(definitionId);
+            draft.setProjectId(definition.getProjectId());
+            draft.setAction("DELETE");
+            draft.setChangeSummary("删除规则");
+            return new GovernanceDeletionResult(false, createDraft(draft, operator).getId());
+        }
+        ResourceSnapshot snapshot = requireAdapter(GovernanceResourceTypes.RULE).loadEffective(definitionId);
+        // Discarding unfinished content does not require it to compile or have valid outbound references.
+        List<GovernanceIssue> issues = impactService.analyze("RULE", definitionId, "DELETE", snapshot);
+        if (!issues.isEmpty()) throw new GovernanceStateException("GOVERNANCE_PREFLIGHT_FAILED", issues.get(0).message());
+        GovernanceApprovalRequest active = findActiveRequest("RULE:" + definitionId);
+        if (active != null && !isTerminalRequest(active)) {
+            requireApplicant(active, operator);
+            requireNotPendingNewContent(active);
+            requireTransition(active, GovernanceRequestStatus.CANCELLED);
+            String from = active.getStatus();
+            active.setStatus(GovernanceRequestStatus.CANCELLED.name());
+            active.setActiveResourceKey(null);
+            active.setReviewComment("新增规则未生效，删除时撤回申请");
+            active.setReviewTime(LocalDateTime.now());
+            persistRequest(active);
+            appendEvent(active, "CANCEL", from, operator, active.getReviewComment(), null);
+        }
+        ruleDraftDeletionService.discard(definition, operator);
+        GovernedResource resource = resourceMapper.selectOne(new LambdaQueryWrapper<GovernedResource>()
+                .eq(GovernedResource::getResourceType, "RULE").eq(GovernedResource::getResourceId, definitionId));
+        if (resource != null) {
+            resource.setEffectiveStatus("DELETED");
+            persistResource(resource);
+        }
+        return new GovernanceDeletionResult(true, null);
+    }
 
     @Transactional
     public GovernanceApprovalRequest createDraft(GovernanceDraftRequest draft,
@@ -62,14 +215,45 @@ public class GovernanceApprovalService {
         }
         String applicant = requireActor(actor);
         String resourceType = normalizeType(draft.getResourceType());
+        requireResourcePermission(resourceType, "edit");
+        lockRule(resourceType, draft.getResourceId());
         GovernanceAction action = normalizeAction(draft.getAction());
+        String restoreMode = normalizeRestoreMode(draft.getRestoreMode());
+        if ("REUSE".equals(restoreMode) && action != GovernanceAction.RESTORE) {
+            throw new IllegalArgumentException("复用历史版本仅适用于恢复操作");
+        }
+        if ("REUSE".equals(restoreMode)) {
+            GovernedResourceVersion source = requireRestoreVersion(resourceType, draft.getResourceId(), draft.getSourceVersionId());
+            // 来源必须由服务端读取，不能接受调用者篡改的历史内容。
+            draft.setSnapshotJson(source.getSnapshotJson());
+            draft.setSecretPayloadCiphertext(source.getSecretPayloadCiphertext());
+            draft.setSecretDigest(source.getSecretDigest());
+            draft.setEffectiveStatus(source.getEffectiveStatus());
+        }
         GovernedResourceAdapter adapter = requireAdapter(resourceType);
         GovernedResource resource = draft.getResourceId() == null
                 ? null : findResource(resourceType, draft.getResourceId());
+        if (isWorkspace(resource) && (action == GovernanceAction.UPDATE || action == GovernanceAction.ENABLE)) {
+            action = GovernanceAction.CREATE;
+        }
         validateDraftTarget(action, draft.getResourceId(), resource);
+        String publishMode = draft.getPublishMode();
+        if (publishMode != null && !Set.of("NEW", "OVERWRITE").contains(publishMode))
+            throw new IllegalArgumentException("发布方式必须为 NEW 或 OVERWRITE");
+        if (publishMode != null && (resource == null || resource.getEffectiveVersionId() == null))
+            throw new IllegalArgumentException("请先完成资源首次发布，再创建并行版本草稿");
+        if (publishMode != null && !Set.of(GovernanceAction.UPDATE, GovernanceAction.RESTORE).contains(action))
+            throw new IllegalArgumentException("并行版本草稿只支持配置编辑");
+        if ("OVERWRITE".equals(publishMode)) {
+            GovernedResourceVersion target = versionHead(resourceType, draft.getResourceId(), draft.getTargetVersionId());
+            if (!ResourceVersionLines.published(target)) throw new IllegalArgumentException("只能覆盖已发布的业务版本");
+            if (!Objects.equals(target.getId(), draft.getExpectedTargetSnapshotId()))
+                throw new GovernanceStateException("VERSION_TARGET_CHANGED", "覆盖目标已变化，请刷新后重试");
+        }
 
         String activeResourceKey = resource == null
                 ? null : resourceType + ":" + resource.getResourceId();
+        if (publishMode != null) activeResourceKey += ":VERSION:" + UUID.randomUUID();
         GovernanceApprovalRequest active = activeResourceKey == null
                 ? null : findActiveRequest(activeResourceKey);
         ResourceSnapshot effective = resource == null
@@ -125,6 +309,11 @@ public class GovernanceApprovalService {
         }
         if (active != null) {
             requireApplicant(active, applicant);
+            // 模块编辑页继续保存历史恢复草稿，保留其来源和发布方式。
+            if (action == GovernanceAction.UPDATE && "RESTORE".equals(active.getAction())) action = GovernanceAction.RESTORE;
+            if (draft.getRestoreMode() != null && ("RESTORE".equals(active.getAction()) || action == GovernanceAction.RESTORE)) {
+                throw new GovernanceStateException("RESTORE_DRAFT_EXISTS", "当前资源已有草稿，请继续编辑，或取消后重新恢复历史版本");
+            }
         }
         if (active != null
                 && !action.name().equals(active.getAction())) {
@@ -133,6 +322,7 @@ public class GovernanceApprovalService {
                     "当前资源已有其他生命周期动作的编辑中申请，请先取消该申请");
         }
         if (active != null) {
+            normalized = saveWorkspace(active, normalized, applicant);
             active.setDraftSnapshotJson(normalized.snapshotJson());
             active.setSnapshotDigest(
                     Sha256Digests.text(normalized.snapshotJson()));
@@ -141,6 +331,7 @@ public class GovernanceApprovalService {
             active.setSecretDigest(normalized.secretDigest());
             active.setChangeSummary(draft.getChangeSummary());
             persistRequest(active);
+            saveDraftDependencies(active, normalized);
             appendEvent(active, "SAVE_DRAFT", active.getStatus(),
                     actor, draft.getChangeSummary(), null);
             return active;
@@ -159,6 +350,14 @@ public class GovernanceApprovalService {
         request.setBaseVersionNo(resource == null
                 ? null : resource.getEffectiveVersionNo());
         request.setSourceVersionId(draft.getSourceVersionId());
+        request.setPublishMode(publishMode);
+        request.setTargetVersionId(draft.getTargetVersionId());
+        request.setExpectedTargetSnapshotId(draft.getExpectedTargetSnapshotId());
+        if ("OVERWRITE".equals(publishMode)) {
+            var target = versionHead(resourceType, draft.getResourceId(), draft.getTargetVersionId());
+            request.setBaseVersionId(target.getId()); request.setBaseVersionNo(target.getDisplayVersion());
+        }
+        request.setRestoreMode(action == GovernanceAction.RESTORE ? restoreMode : null);
         request.setDraftSnapshotJson(normalized.snapshotJson());
         request.setSnapshotDigest(
                 Sha256Digests.text(normalized.snapshotJson()));
@@ -167,7 +366,13 @@ public class GovernanceApprovalService {
         request.setSecretDigest(normalized.secretDigest());
         request.setChangeSummary(draft.getChangeSummary());
         request.setApplicant(applicant);
+        normalized = saveWorkspace(request, normalized, applicant);
+        request.setDraftSnapshotJson(normalized.snapshotJson());
+        request.setSnapshotDigest(Sha256Digests.text(normalized.snapshotJson()));
+        request.setSecretPayloadCiphertext(normalized.secretPayloadCiphertext());
+        request.setSecretDigest(normalized.secretDigest());
         insertRequest(request);
+        saveDraftDependencies(request, normalized);
         appendEvent(request, "CREATE_DRAFT", null, actor,
                 draft.getChangeSummary(), null);
         return request;
@@ -177,10 +382,13 @@ public class GovernanceApprovalService {
     public GovernanceApprovalRequest saveDraft(Long requestId,
                                                GovernanceDraftRequest draft,
                                                String actor) {
-        GovernanceApprovalRequest request = requireRequest(requestId);
+        GovernanceApprovalRequest request = requireMutableRequest(requestId);
         requireStatus(request, GovernanceRequestStatus.EDITING);
         requireApplicant(request, actor);
+        requireResourcePermission(request.getResourceType(), "edit");
         String snapshotJson = draft.getSnapshotJson();
+        if (draft.getExpectedSnapshotDigest() != null && !Objects.equals(draft.getExpectedSnapshotDigest(), request.getSnapshotDigest()))
+            throw new GovernanceStateException("GOVERNANCE_DRAFT_CHANGED", "草稿已被修改，请刷新后重新保存");
         if (snapshotJson == null || snapshotJson.isBlank()) {
             snapshotJson = request.getDraftSnapshotJson();
         }
@@ -193,6 +401,7 @@ public class GovernanceApprovalService {
                                 request.getSecretPayloadCiphertext()),
                         firstNotBlank(draft.getSecretDigest(),
                                 request.getSecretDigest())));
+        normalized = saveWorkspace(request, normalized, actor);
         request.setDraftSnapshotJson(normalized.snapshotJson());
         request.setSnapshotDigest(
                 Sha256Digests.text(normalized.snapshotJson()));
@@ -201,6 +410,7 @@ public class GovernanceApprovalService {
         request.setSecretDigest(normalized.secretDigest());
         request.setChangeSummary(draft.getChangeSummary());
         persistRequest(request);
+        saveDraftDependencies(request, normalized);
         appendEvent(request, "SAVE_DRAFT", request.getStatus(), actor,
                 draft.getChangeSummary(), null);
         return request;
@@ -210,10 +420,12 @@ public class GovernanceApprovalService {
     public GovernanceApprovalRequest saveDraftSnapshot(Long requestId,
                                                        String snapshotJson,
                                                        String actor) {
-        GovernanceApprovalRequest request = requireRequest(requestId);
+        GovernanceApprovalRequest request = requireMutableRequest(requestId);
         requireStatus(request, GovernanceRequestStatus.EDITING);
         requireApplicant(request, actor);
+        requireResourcePermission(request.getResourceType(), "edit");
         ResourceSnapshot normalized = normalize(request, snapshotJson);
+        normalized = saveWorkspace(request, normalized, actor);
         request.setDraftSnapshotJson(normalized.snapshotJson());
         request.setSecretPayloadCiphertext(
                 normalized.secretPayloadCiphertext());
@@ -221,6 +433,7 @@ public class GovernanceApprovalService {
         request.setSnapshotDigest(
                 Sha256Digests.text(normalized.snapshotJson()));
         persistRequest(request);
+        saveDraftDependencies(request, normalized);
         appendEvent(request, "SAVE_DRAFT", request.getStatus(), actor,
                 null, null);
         return request;
@@ -229,9 +442,10 @@ public class GovernanceApprovalService {
     @Transactional
     public GovernancePreflightReport preflight(Long requestId,
                                                String actor) {
-        GovernanceApprovalRequest request = requireRequest(requestId);
+        GovernanceApprovalRequest request = requireMutableRequest(requestId);
         requireStatus(request, GovernanceRequestStatus.EDITING);
         requireApplicant(request, actor);
+        requireResourcePermission(request.getResourceType(), "edit");
         ResourceSnapshot snapshot = requestSnapshot(request);
         GovernancePreflightReport report = evaluate(request, snapshot);
         request.setValidationReportJson(reportJson(report));
@@ -245,11 +459,20 @@ public class GovernanceApprovalService {
     public GovernanceApprovalRequest submit(Long requestId,
                                             GovernanceSubmitRequest submit,
                                             String actor) {
-        GovernanceApprovalRequest request = requireRequest(requestId);
+        GovernanceApprovalRequest request = requireMutableRequest(requestId);
+        requireResourcePermission(request.getResourceType(), "submit");
         requireStatus(request, GovernanceRequestStatus.EDITING);
         requireApplicant(request, actor);
+        requireResourcePermission(request.getResourceType(), "edit");
+        if (submit != null && submit.getExpectedSnapshotDigest() != null
+                && !submit.getExpectedSnapshotDigest().equals(request.getSnapshotDigest())) {
+            throw new GovernanceStateException("GOVERNANCE_DRAFT_CHANGED", "草稿已更新，请刷新并确认内容后重新提交发布");
+        }
         ResourceSnapshot normalized = normalize(request,
                 request.getDraftSnapshotJson());
+        if ("CREATE".equals(request.getAction()) && (request.getResourceId() == null || request.getResourceId() <= 0)) {
+            normalized = saveWorkspace(request, normalized, actor);
+        }
         GovernancePreflightReport report = evaluate(request, normalized);
         if (!report.valid()) {
             throw new GovernanceStateException(
@@ -291,7 +514,9 @@ public class GovernanceApprovalService {
                                              GovernanceReviewRequest review,
                                              String actor,
                                              java.util.function.Consumer<AppliedResource> appliedConsumer) {
-        GovernanceApprovalRequest request = requireRequest(requestId);
+        GovernanceApprovalRequest request = requireMutableRequest(requestId);
+        requireResourcePermission(request.getResourceType(), "view");
+        if (accessGuard != null) accessGuard.require("approval:approve");
         requireTransition(request, GovernanceRequestStatus.APPROVED);
         if (!canReview(request, actor)) {
             throw new GovernanceStateException(
@@ -304,8 +529,10 @@ public class GovernanceApprovalService {
                     "BASE_VERSION_CHANGED", "当前生效版本已变化，请重新发起审批");
         }
 
+        boolean deleting = GovernanceAction.DELETE == normalizeAction(request.getAction());
+        // 删除不再使用自身的出站引用；旧版待审批删除也不能被上游停用或改版锁住。
         List<GovernancePreflightReport.ResolvedDependency> submitted =
-                loadDependencies(requestId);
+                deleting ? List.of() : loadDependencies(requestId);
         GovernancePreflightReport dependencyReport =
                 revalidateDependencies(submitted);
         if (!dependencyReport.valid()) {
@@ -317,8 +544,8 @@ public class GovernanceApprovalService {
                 request.getSubmittedSnapshotJson());
         GovernancePreflightReport currentReport = evaluate(request, snapshot);
         if (!currentReport.valid()
-                || !safeEquals(request.getDependencyDigest(),
-                currentReport.dependencyDigest())) {
+                || (!deleting && !safeEquals(request.getDependencyDigest(),
+                currentReport.dependencyDigest()))) {
             return markConflict(request, actor, review,
                     "PREFLIGHT_CHANGED",
                     currentReport.valid()
@@ -326,8 +553,14 @@ public class GovernanceApprovalService {
                             : firstErrorMessage(currentReport));
         }
 
-        int nextVersionNo = resource == null
-                ? 1 : defaultVersionNo(resource) + 1;
+        GovernedResourceVersion reusedVersion = "OVERWRITE".equals(request.getPublishMode())
+                ? versionHead(request.getResourceType(), request.getResourceId(), request.getTargetVersionId()) : "REUSE".equals(request.getRestoreMode())
+                ? requireRestoreVersion(request.getResourceType(), request.getResourceId(), request.getSourceVersionId()) : null;
+        int nextVersionNo = nextVersionNumber(request.getResourceType(), request.getResourceId(), resource);
+        int businessVersion = reusedVersion != null ? reusedVersion.getDisplayVersion()
+                : nextBusinessVersion(request.getResourceType(), request.getResourceId(), resource);
+        boolean keepLatest = reusedVersion != null && resource != null && businessVersion != defaultVersionNo(resource);
+        ResourceSnapshot previousLatest = keepLatest ? requireAdapter(request.getResourceType()).loadEffective(request.getResourceId()) : null;
         AppliedResource applied;
         try {
             applied = requireAdapter(
@@ -336,17 +569,19 @@ public class GovernanceApprovalService {
                             request.getId(),
                             isCreateRequest(request)
                                     ? null : request.getResourceId(),
-                            nextVersionNo,
-                            request.getAction(),
+                            businessVersion,
+                            reusedVersion != null ? "RESTORE" : request.getAction(),
                             snapshot,
                             actor,
-                            request.getSourceVersionId()));
+                            reusedVersion != null ? reusedVersion.getId() : request.getSourceVersionId(),
+                            reusedVersion != null ? "REUSE" : request.getRestoreMode(), keepLatest));
         } catch (DuplicateKeyException collision) {
             // A participating resource transaction may already be rollback-only.
             // Preserve the original failure and roll back the entire approval atomically.
             throw collision;
         }
         Long appliedResourceId = requireAppliedResourceId(applied);
+        if (applied.versionNo() != null) businessVersion = applied.versionNo();
 
         if (resource == null) {
             resource = new GovernedResource();
@@ -368,13 +603,13 @@ public class GovernanceApprovalService {
         }
 
         // 审批申请保留提交内容；生效版本必须使用目标环境实际落库的字段及父子 ID。
-        ResourceSnapshot effectiveSnapshot = GovernanceResourceTypes.DATA_OBJECT.equals(request.getResourceType())
-                ? requireAdapter(request.getResourceType()).loadEffective(appliedResourceId) : snapshot;
+        ResourceSnapshot effectiveSnapshot = requireAdapter(request.getResourceType()).loadApplied(applied);
         GovernedResourceVersion version = new GovernedResourceVersion();
         version.setGovernedResourceId(resource.getId());
         version.setResourceType(request.getResourceType());
         version.setResourceId(appliedResourceId);
         version.setVersionNo(nextVersionNo);
+        version.setBusinessVersion(businessVersion);
         version.setSourceVersionId(request.getSourceVersionId());
         version.setApprovalRequestId(request.getId());
         version.setSnapshotJson(effectiveSnapshot.snapshotJson());
@@ -389,10 +624,14 @@ public class GovernanceApprovalService {
         version.setCreateBy(actor);
         persistVersion(version);
 
-        resource.setEffectiveVersionId(version.getId());
-        resource.setEffectiveVersionNo(nextVersionNo);
-        resource.setEffectiveStatus(version.getEffectiveStatus());
-        persistResource(resource);
+        if (keepLatest) {
+            requireAdapter(request.getResourceType()).restoreLatest(appliedResourceId, previousLatest, actor);
+        } else {
+            resource.setEffectiveVersionId(version.getId());
+            resource.setEffectiveVersionNo(businessVersion);
+            resource.setEffectiveStatus(version.getEffectiveStatus());
+            persistResource(resource);
+        }
         bindDependencyVersion(requestId, version.getId());
 
         String fromStatus = request.getStatus();
@@ -405,8 +644,11 @@ public class GovernanceApprovalService {
         persistRequest(request);
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("versionId", version.getId());
-        details.put("versionNo", version.getVersionNo());
+        details.put("versionNo", version.getDisplayVersion());
+        details.put("revisionNo", version.getVersionNo());
         details.put("sourceVersionId", version.getSourceVersionId());
+        details.put("restoreMode", request.getRestoreMode());
+        details.put("restoredVersionId", request.getSourceVersionId());
         details.put("artifactId", applied.artifactId());
         appendEvent(request, "APPROVE", fromStatus, actor,
                 request.getReviewComment(), JSON.toJSONString(details));
@@ -418,7 +660,9 @@ public class GovernanceApprovalService {
     public GovernanceApprovalRequest reject(Long requestId,
                                             GovernanceReviewRequest review,
                                             String actor) {
-        GovernanceApprovalRequest request = requireRequest(requestId);
+        GovernanceApprovalRequest request = requireMutableRequest(requestId);
+        requireResourcePermission(request.getResourceType(), "view");
+        if (accessGuard != null) accessGuard.require("approval:approve");
         requireTransition(request, GovernanceRequestStatus.REJECTED);
         if (!canReview(request, actor)) {
             throw new GovernanceStateException(
@@ -444,9 +688,19 @@ public class GovernanceApprovalService {
     public GovernanceApprovalRequest cancel(Long requestId,
                                             GovernanceReviewRequest reason,
                                             String actor) {
-        GovernanceApprovalRequest request = requireRequest(requestId);
+        GovernanceApprovalRequest request = requireMutableRequest(requestId);
         requireTransition(request, GovernanceRequestStatus.CANCELLED);
         requireApplicant(request, actor);
+        requireResourcePermission(request.getResourceType(), "edit");
+        if (GovernanceRequestStatus.PENDING.name().equals(request.getStatus()) && isUnapprovedNewContent(request)) {
+            requireNotPendingNewContent(request);
+        }
+        if (GovernanceRequestStatus.EDITING.name().equals(request.getStatus())
+                && "CREATE".equals(request.getAction()) && request.getResourceId() != null && request.getResourceId() > 0
+                && isWorkspace(findResource(request.getResourceType(), request.getResourceId()))) {
+            deleteResource(request.getResourceType(), request.getResourceId(), actor);
+            return requireRequest(requestId);
+        }
         terminateAdapterWorkflow(request, actor,
                 reason == null ? null : reason.getComment(),
                 GovernanceRequestStatus.CANCELLED.name());
@@ -462,12 +716,31 @@ public class GovernanceApprovalService {
         return request;
     }
 
+    private void requireNotPendingNewContent(GovernanceApprovalRequest request) {
+        if (GovernanceRequestStatus.PENDING.name().equals(request.getStatus())) throw new GovernanceStateException(
+                "NEW_CONTENT_REJECTION_REQUIRED", "新增内容正在待审批，请先由审批人驳回，再删除草稿");
+    }
+
+    private boolean isUnapprovedNewContent(GovernanceApprovalRequest request) {
+        if (isCreateRequest(request)) return true;
+        if ("RULE".equals(request.getResourceType()) && ruleDraftDeletionService != null)
+            return ruleDraftDeletionService.isUnapproved(ruleDraftDeletionService.lock(request.getResourceId()));
+        return isWorkspace(findResource(request.getResourceType(), request.getResourceId()));
+    }
+
     @Transactional
     public GovernanceApprovalRequest createRestoreDraft(
             String resourceType,
             Long resourceId,
             Long sourceVersionId,
             String actor) {
+        return createRestoreDraft(resourceType, resourceId, sourceVersionId, "NEW", actor);
+    }
+
+    @Transactional
+    public GovernanceApprovalRequest createRestoreDraft(String resourceType, Long resourceId, Long sourceVersionId,
+                                                         String restoreMode, String actor) {
+        requireResourcePermission(resourceType, "edit");
         GovernedResource resource = findResource(
                 normalizeType(resourceType), resourceId);
         if (resource == null || resource.getEffectiveVersionId() == null) {
@@ -480,6 +753,7 @@ public class GovernanceApprovalService {
                 || !resourceId.equals(source.getResourceId())) {
             throw new IllegalArgumentException("待恢复的历史版本不存在");
         }
+        if (Boolean.TRUE.equals(source.getDeleted())) throw new IllegalArgumentException("已删除版本不能恢复，请选择有效版本");
         GovernanceDraftRequest draft = new GovernanceDraftRequest();
         draft.setResourceType(resourceType);
         draft.setResourceId(resourceId);
@@ -491,8 +765,67 @@ public class GovernanceApprovalService {
                 source.getSecretPayloadCiphertext());
         draft.setSecretDigest(source.getSecretDigest());
         draft.setSourceVersionId(sourceVersionId);
-        draft.setChangeSummary("恢复至历史版本 V" + source.getVersionNo());
+        draft.setRestoreMode(normalizeRestoreMode(restoreMode));
+        draft.setChangeSummary(("REUSE".equals(draft.getRestoreMode()) ? "恢复内容并复用版本号 V" : "从历史版本新增 V") + source.getDisplayVersion());
         return createDraft(draft, actor);
+    }
+
+    private String normalizeRestoreMode(String mode) {
+        if (mode == null || mode.isBlank()) return "NEW";
+        if (!"NEW".equals(mode) && !"REUSE".equals(mode)) throw new IllegalArgumentException("恢复方式必须为 NEW 或 REUSE");
+        return mode;
+    }
+
+    /** 接入旧模块历史时保留明确的表类型与快照 ID，业务版本号和不可变记录序号分开。 */
+    @Transactional
+    public GovernanceApprovalRequest createLegacyRestoreDraft(String type, Long resourceId, String legacyType, Long legacyId,
+                                                               Integer businessVersion, ResourceSnapshot snapshot, String mode, String actor) {
+        requireResourcePermission(type, "edit");
+        lockRule(type, resourceId);
+        GovernedResource resource = findResource(type, resourceId);
+        if (resource == null) throw new IllegalArgumentException("待恢复资源不存在");
+        if (ResourceVersionLines.heads(versions(type, resourceId)).stream().anyMatch(version -> Objects.equals(businessVersion, version.getDisplayVersion()) && Boolean.TRUE.equals(version.getDeleted())))
+            throw new IllegalArgumentException("所属业务版本已删除，不能从早期历史入口重新接入");
+        GovernedResourceVersion source = versionMapper.selectOne(new LambdaQueryWrapper<GovernedResourceVersion>()
+                .eq(GovernedResourceVersion::getLegacySourceType, legacyType).eq(GovernedResourceVersion::getLegacySourceId, legacyId));
+        if (source == null) {
+            ResourceSnapshot normalized = requireAdapter(type).normalizeDraft(snapshot);
+            source = new GovernedResourceVersion();
+            source.setGovernedResourceId(resource.getId()); source.setResourceType(type); source.setResourceId(resourceId);
+            source.setVersionNo(nextVersionNumber(type, resourceId, resource)); source.setBusinessVersion(businessVersion);
+            source.setLegacySourceType(legacyType); source.setLegacySourceId(legacyId);
+            source.setSnapshotJson(normalized.snapshotJson()); source.setSnapshotDigest(Sha256Digests.text(normalized.snapshotJson()));
+            source.setSecretPayloadCiphertext(normalized.secretPayloadCiphertext()); source.setSecretDigest(normalized.secretDigest());
+            source.setEffectiveStatus(normalized.effectiveStatus()); source.setCreateBy(actor);
+            source.setChangeSummary("接入历史版本 V" + businessVersion);
+            persistVersion(source);
+        }
+        return createRestoreDraft(type, resourceId, source.getId(), mode, actor);
+    }
+
+    private GovernedResourceVersion requireRestoreVersion(String type, Long resourceId, Long versionId) {
+        GovernedResourceVersion source = findVersion(versionId);
+        if (source == null || !normalizeType(type).equals(source.getResourceType()) || !java.util.Objects.equals(resourceId, source.getResourceId()))
+            throw new IllegalArgumentException("待恢复的历史版本不存在或不属于当前资源");
+        if (!ResourceVersionLines.published(source))
+            throw new IllegalArgumentException("仅已发布的历史版本可以复用原版本号");
+        return source;
+    }
+
+    protected int nextVersionNumber(String type, Long resourceId, GovernedResource resource) {
+        int maximum = resource == null ? 0 : defaultVersionNo(resource);
+        if (versionMapper != null && resourceId != null && resourceId > 0) {
+            GovernedResourceVersion latest = versionMapper.selectOne(new LambdaQueryWrapper<GovernedResourceVersion>()
+                    .eq(GovernedResourceVersion::getResourceType, type).eq(GovernedResourceVersion::getResourceId, resourceId)
+                    .orderByDesc(GovernedResourceVersion::getVersionNo).last("LIMIT 1"));
+            if (latest != null) maximum = Math.max(maximum, latest.getVersionNo());
+        }
+        return Math.addExact(maximum, 1);
+    }
+
+    protected int nextBusinessVersion(String type, Long resourceId, GovernedResource resource) {
+        Integer maximum = versionMapper == null ? null : versionMapper.maxBusinessVersion(type, resourceId);
+        return Math.addExact(maximum == null ? (resource == null ? 0 : defaultVersionNo(resource)) : maximum, 1);
     }
 
     public boolean canReview(GovernanceApprovalRequest request, String actor) {
@@ -505,11 +838,13 @@ public class GovernanceApprovalService {
 
     public List<GovernedResourceVersion> versions(String resourceType,
                                                   Long resourceId) {
+        requireResourcePermission(resourceType, "view");
         if (versionMapper == null) {
             return List.of();
         }
         return versionMapper.selectList(new LambdaQueryWrapper<
                         GovernedResourceVersion>()
+                        .select(GovernedResourceVersion.class, field -> !"secretPayloadCiphertext".equals(field.getProperty()))
                         .eq(GovernedResourceVersion::getResourceType,
                                 normalizeType(resourceType))
                         .eq(GovernedResourceVersion::getResourceId,
@@ -532,6 +867,7 @@ public class GovernanceApprovalService {
                 Math.max(1, safeQuery.getPageSize()));
         LambdaQueryWrapper<GovernanceApprovalRequest> wrapper =
                 new LambdaQueryWrapper<>();
+        restrictVisibleResources(wrapper);
         String taskScope = hasText(safeQuery.getTaskScope())
                 ? safeQuery.getTaskScope().trim()
                 .toUpperCase(Locale.ROOT) : "ALL";
@@ -640,7 +976,24 @@ public class GovernanceApprovalService {
             }
             wrapper.eq(GovernanceApprovalRequest::getProjectId, projectId);
         }
+        restrictVisibleResources(wrapper);
         return wrapper;
+    }
+
+    private void requireResourcePermission(String type, String action) {
+        if (accessGuard != null) {
+            accessGuard.requireResource(type, "view");
+            if (!"view".equals(action)) accessGuard.requireResource(type, action);
+        }
+    }
+
+    private void restrictVisibleResources(LambdaQueryWrapper<GovernanceApprovalRequest> query) {
+        if (accessGuard == null) return;
+        List<String> types = List.of("VARIABLE", "DATA_OBJECT", "FIELD_VALIDATION", "MODEL", "EXTERNAL_DATASOURCE", "EXTERNAL_API", "DATABASE", "FUNCTION", "RULE", "RULE_PROJECT_BINDING", "LIST_LIBRARY", "LIST_RECORD_BATCH", "BILLING_CONFIG", "EXPERIMENT", "PROJECT");
+        List<String> visible = types.stream().filter(type -> accessGuard.can(
+                com.hengshucredit.rule.server.security.ConsoleAccessGuard.resourceModule(type) + ":view")).toList();
+        if (visible.isEmpty()) query.eq(GovernanceApprovalRequest::getId, -1L);
+        else query.in(GovernanceApprovalRequest::getResourceType, visible);
     }
 
     private long safeCount(
@@ -652,6 +1005,7 @@ public class GovernanceApprovalService {
     public GovernanceRequestDetail detail(Long requestId) {
         GovernanceApprovalRequest request =
                 requireRequest(requestId);
+        requireResourcePermission(request.getResourceType(), "view");
         GovernedResourceVersion base =
                 findVersion(request.getBaseVersionId());
         ResourceSnapshot left = base == null
@@ -708,6 +1062,21 @@ public class GovernanceApprovalService {
             throw new IllegalArgumentException("审批申请不存在: " + requestId);
         }
         return request;
+    }
+
+    private void lockRule(String type, Long id) {
+        if (ruleDraftDeletionService != null && GovernanceResourceTypes.RULE.equals(type) && id != null && id > 0) {
+            ruleDraftDeletionService.lock(id);
+        }
+    }
+
+    private GovernanceApprovalRequest requireMutableRequest(Long requestId) {
+        GovernanceApprovalRequest request = requireRequest(requestId);
+        lockRule(request.getResourceType(), request.getResourceId());
+        if (request.getResourceId() != null && request.getResourceId() > 0) findResource(request.getResourceType(), request.getResourceId());
+        // A current read after the rule lock observes a deletion/approval that committed while waiting.
+        return requestMapper == null ? request : requestMapper.selectOne(new LambdaQueryWrapper<GovernanceApprovalRequest>()
+                .eq(GovernanceApprovalRequest::getId, requestId).last("FOR UPDATE"));
     }
 
     protected GovernanceApprovalRequest insertRequest(
@@ -775,12 +1144,13 @@ public class GovernanceApprovalService {
             issues.addAll(impactService.analyze(
                     request.getResourceType(),
                     request.getResourceId(),
-                    request.getAction(),
+                    "RESTORE".equals(request.getAction()) ? "UPDATE" : request.getAction(),
                     snapshot));
         }
         return requireDependencyService().preflight(
                 request.getResourceType(), request.getResourceId(),
-                adapter.collectDependencies(snapshot),
+                GovernanceAction.DELETE == normalizeAction(request.getAction())
+                        ? List.of() : adapter.collectDependencies(snapshot),
                 issues);
     }
 
@@ -800,7 +1170,7 @@ public class GovernanceApprovalService {
                         .eq(GovernedResource::getResourceType,
                                 normalizeType(resourceType))
                         .eq(GovernedResource::getResourceId, resourceId)
-                        .last("LIMIT 1"));
+                        .last("LIMIT 1 FOR UPDATE"));
         if (resource == null && bootstrapService != null
                 && resourceId > 0) {
             try {
@@ -827,7 +1197,7 @@ public class GovernanceApprovalService {
                         GovernanceApprovalRequest>()
                 .eq(GovernanceApprovalRequest::getActiveResourceKey,
                         activeResourceKey)
-                .last("LIMIT 1"));
+                .last("LIMIT 1 FOR UPDATE"));
     }
 
     protected GovernedResourceVersion persistVersion(
@@ -914,7 +1284,7 @@ public class GovernanceApprovalService {
             String actor,
             String comment,
             String terminalStatus) {
-        if (request == null) {
+        if (request == null || request.getPublishMode() != null && !"RULE".equals(request.getResourceType())) {
             return;
         }
         if (isCreateRequest(request)) {
@@ -949,11 +1319,19 @@ public class GovernanceApprovalService {
         requireAdapter(request.getResourceType())
                 .onApprovalTerminated(request.getResourceId(),
                         effectiveSnapshot,
-                        requireActor(actor), comment, terminalStatus);
+                        requireActor(actor), comment, terminalStatus, request.getId());
     }
 
     private boolean hasBaseConflict(GovernanceApprovalRequest request,
                                     GovernedResource resource) {
+        if (request.getPublishMode() != null) {
+            if (resource == null || "DELETED".equals(resource.getEffectiveStatus())) return true;
+            if ("NEW".equals(request.getPublishMode())) return false;
+            try {
+                return !Objects.equals(request.getExpectedTargetSnapshotId(),
+                        versionHead(request.getResourceType(), request.getResourceId(), request.getTargetVersionId()).getId());
+            } catch (IllegalArgumentException deleted) { return true; }
+        }
         if (isCreateRequest(request)) {
             return resource != null;
         }
@@ -965,6 +1343,18 @@ public class GovernanceApprovalService {
     private boolean isCreateRequest(GovernanceApprovalRequest request) {
         return GovernanceAction.CREATE.name().equals(request.getAction())
                 && Long.valueOf(0L).equals(request.getResourceId());
+    }
+
+    public GovernedResourceVersion versionHead(String type, Long resourceId, Long anchorId) {
+        GovernedResourceVersion anchor = findVersion(anchorId);
+        if (anchor == null || !normalizeType(type).equals(anchor.getResourceType()) || !Objects.equals(resourceId, anchor.getResourceId()))
+            throw new IllegalArgumentException("指定版本不存在或不属于当前资源");
+        List<GovernedResourceVersion> history = versionMapper == null ? versions(type, resourceId)
+                : versionMapper.selectList(new LambdaQueryWrapper<GovernedResourceVersion>()
+                        .select(GovernedResourceVersion.class, field -> !"secretPayloadCiphertext".equals(field.getProperty()))
+                        .eq(GovernedResourceVersion::getResourceType, normalizeType(type))
+                        .eq(GovernedResourceVersion::getResourceId, resourceId).last("FOR UPDATE"));
+        return ResourceVersionLines.head(history, anchor);
     }
 
     private boolean isTerminalRequest(GovernanceApprovalRequest request) {
@@ -1039,7 +1429,7 @@ public class GovernanceApprovalService {
                                      Long resourceId,
                                      GovernedResource resource) {
         if (action == GovernanceAction.CREATE) {
-            if (resource != null) {
+            if (resource != null && !isWorkspace(resource)) {
                 throw new IllegalArgumentException("待创建资源已存在");
             }
             return;
@@ -1049,6 +1439,53 @@ public class GovernanceApprovalService {
             throw new IllegalArgumentException(
                     "生命周期操作要求资源存在且已有生效版本");
         }
+    }
+
+    private boolean isWorkspace(GovernedResource resource) {
+        return resource != null && resource.getEffectiveVersionId() == null && "DRAFT".equals(resource.getEffectiveStatus());
+    }
+
+    private ResourceSnapshot saveWorkspace(GovernanceApprovalRequest request, ResourceSnapshot snapshot, String actor) {
+        GovernedResourceAdapter adapter = requireAdapter(request.getResourceType());
+        if (!"CREATE".equals(request.getAction()) || !adapter.supportsDraftWorkspace()) return snapshot;
+        Long id = request.getResourceId();
+        boolean create = id == null || id <= 0;
+        GovernedResource resource = create ? null : findResource(request.getResourceType(), id);
+        if (!create && !isWorkspace(resource)) return snapshot;
+        checkDraftDependencies(request, snapshot);
+        AppliedResource applied = adapter.apply(new ApprovalApplyContext(request.getId(), create ? null : id, 0,
+                create ? "DRAFT_CREATE" : "DRAFT_UPDATE", snapshot, actor, null));
+        if (create) {
+            resource = new GovernedResource();
+            resource.setResourceType(request.getResourceType());
+            resource.setResourceId(requireAppliedResourceId(applied));
+            resource.setProjectId("PROJECT".equals(request.getResourceType()) ? applied.resourceId() : request.getProjectId());
+            resource.setEffectiveStatus("DRAFT");
+            resource.setEffectiveVersionNo(0);
+            insertResource(resource);
+            request.setResourceId(applied.resourceId());
+            request.setActiveResourceKey(request.getResourceType() + ":" + applied.resourceId());
+        }
+        ResourceSnapshot stored = adapter.loadEffective(applied.resourceId());
+        Map<String, Object> saved = CanonicalJson.readMap(stored.snapshotJson());
+        Map<String, Object> submitted = CanonicalJson.readMap(snapshot.snapshotJson());
+        // status=0 isolates the workspace projection; the approval must still show the requested configuration.
+        if (submitted.containsKey("status")) saved.put("status", submitted.get("status"));
+        return new ResourceSnapshot(CanonicalJson.write(saved), snapshot.effectiveStatus(),
+                stored.secretPayloadCiphertext(), stored.secretDigest());
+    }
+
+    private GovernancePreflightReport checkDraftDependencies(GovernanceApprovalRequest request, ResourceSnapshot snapshot) {
+        if (dependencyService == null || Set.of("DELETE", "DISABLE").contains(request.getAction())) return null;
+        GovernancePreflightReport report = dependencyService.preflight(request.getResourceType(), request.getResourceId(),
+                requireAdapter(request.getResourceType()).collectDependencies(snapshot), List.of());
+        if (!report.valid()) throw new GovernanceStateException("GOVERNANCE_DEPENDENCY_NOT_PUBLISHED", firstErrorMessage(report));
+        return report;
+    }
+
+    private void saveDraftDependencies(GovernanceApprovalRequest request, ResourceSnapshot snapshot) {
+        GovernancePreflightReport report = checkDraftDependencies(request, snapshot);
+        if (report != null) persistDependencies(request, report, null);
     }
 
     private int defaultVersionNo(GovernedResource resource) {

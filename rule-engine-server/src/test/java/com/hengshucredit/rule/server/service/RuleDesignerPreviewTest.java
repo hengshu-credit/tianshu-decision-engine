@@ -42,7 +42,9 @@ public class RuleDesignerPreviewTest {
             @Override protected RuleFunction loadFunction(Long id) { return null; }
         };
         ReflectionTestUtils.setField(preflight, "dependencyClosureService", dependencies);
-        RuleDesignerService service = new RuleDesignerService();
+        RuleDesignerService service = new RuleDesignerService() {
+            @Override protected void requireLocalNamespace(RuleRevision revision) { }
+        };
         ReflectionTestUtils.setField(service, "preflightService", preflight);
         ReflectionTestUtils.setField(service, "lifecycleService", new RuleLifecycleService() {
             @Override public RuleRevision prepareDesignerDraft(Long id, RuleDraftSourceType sourceType, Long sourceId) {

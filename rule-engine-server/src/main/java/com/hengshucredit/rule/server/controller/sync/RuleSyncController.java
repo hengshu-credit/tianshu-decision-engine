@@ -4,6 +4,8 @@ import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RulePublished;
+import com.hengshucredit.rule.model.entity.RuleVariable;
+import com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService;
 import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
@@ -27,6 +29,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 @RestController
@@ -259,10 +262,13 @@ public class RuleSyncController {
         }
         if (versionBindingService != null && published.getVersionBindingId() == null) published = versionBindingService.resolvePublished(published, null);
         List<RuleDefinitionOutputField> fields;
+        ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot = null;
         if (published.getArtifactId() != null && artifactSnapshotService != null) {
-            var snapshot = artifactSnapshotService.load(published.getArtifactId(), published.getDefinitionId(),
+            snapshot = artifactSnapshotService.load(published.getArtifactId(), published.getDefinitionId(),
                     definitionService.getById(published.getDefinitionId()).getProjectId());
             fields = snapshot.getOutputFields();
+            published.setFrozenFunctions(List.copyOf(snapshot.getFunctions()));
+            published.setOpenApiConfigJson(snapshot.getOpenApiConfigJson());
             published.setImported(snapshot.isImported());
             published.setImportBindings(new LinkedHashMap<>(snapshot.getBindings()));
         } else {
@@ -275,7 +281,7 @@ public class RuleSyncController {
                     .map(String::trim)
                     .collect(Collectors.toList()));
         }
-        markServerExecutionRequirement(published);
+        markServerExecutionRequirement(published, snapshot);
         return published;
     }
 
@@ -288,27 +294,54 @@ public class RuleSyncController {
         return result;
     }
 
-    private void markServerExecutionRequirement(RulePublished published) {
-        var definition = safeDefinition(published.getDefinitionId());
-        if (definition != null && variableService != null) {
-            for (var variable : variableService.listByProject(definition.getProjectId(), null)) {
-                String source = variable == null || variable.getVarSource() == null ? ""
-                        : variable.getVarSource().trim().toUpperCase();
-                if ("API".equals(source) || "DB".equals(source)
-                        || "LIST".equals(source) || "DERIVED".equals(source)) {
-                    published.setRequiresServerExecution(true);
-                    published.setServerExecutionReason("包含" + source + "变量来源");
-                    return;
-                }
+    private void markServerExecutionRequirement(RulePublished published,
+                                                ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot) {
+        published.setRequiresServerExecution(false);
+        published.setServerExecutionReason(null);
+        var script = published.getCompiledScript();
+        if (script != null && (script.contains("externalApiValue(") || script.contains("writeRuleList("))) {
+            published.setRequiresServerExecution(true);
+            published.setServerExecutionReason("包含外数调用或异步名单写入");
+            return;
+        }
+        List<RuleVariable> variables;
+        if (snapshot != null) {
+            if (!snapshot.getResourceVersions().isEmpty()) {
+                published.setRequiresServerExecution(true);
+                published.setServerExecutionReason("包含资源固定版本执行");
+                return;
+            }
+            variables = snapshot.getVariables();
+        } else {
+            // 没有制品的旧协议无法证明依赖闭包，保留原先按项目当前配置的保守门禁。
+            var definition = safeDefinition(published.getDefinitionId());
+            variables = definition == null || variableService == null ? List.of()
+                    : variableService.listByProject(definition.getProjectId(), null);
+        }
+        for (var variable : variables) {
+            String source = variable == null || variable.getVarSource() == null ? ""
+                    : variable.getVarSource().trim().toUpperCase(Locale.ROOT);
+            if ("API".equals(source) || "DB".equals(source)
+                    || "LIST".equals(source) || "DERIVED".equals(source)) {
+                published.setRequiresServerExecution(true);
+                published.setServerExecutionReason("包含" + source + "变量来源");
+                return;
             }
         }
-        if (published.getArtifactId() != null && artifactSnapshotService != null && definition != null) {
-            var snapshot = artifactSnapshotService.load(published.getArtifactId(), published.getDefinitionId(),
-                    definition.getProjectId());
-            if (snapshot != null && snapshot.getModels() != null && !snapshot.getModels().isEmpty()) {
+        if (snapshot != null) {
+            if (!snapshot.getModels().isEmpty()) {
                 published.setRequiresServerExecution(true);
                 published.setServerExecutionReason("包含模型执行");
                 return;
+            }
+            for (var field : snapshot.getDataObjectFields()) {
+                String source = field == null || field.getObjectSourceType() == null ? ""
+                        : field.getObjectSourceType().trim().toUpperCase(Locale.ROOT);
+                if ("API".equals(source) || "DB".equals(source) || "DATABASE".equals(source)) {
+                    published.setRequiresServerExecution(true);
+                    published.setServerExecutionReason("包含" + source + "数据对象来源");
+                    return;
+                }
             }
         }
         OpenApiContract contract = OpenApiContractCodec.parse(published.getOpenApiConfigJson());

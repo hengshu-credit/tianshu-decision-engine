@@ -1,13 +1,13 @@
 <template>
   <transition name="expression-fade">
     <div
-      v-if="visible"
+      v-show="visible"
       class="expression-editor"
-      :class="{ 'expression-editor--embedded': embedded }"
+      :class="{ 'expression-editor--embedded': embedded, 'expression-editor--compact': compact }"
       role="dialog"
       :aria-modal="embedded ? null : 'true'"
       :aria-label="title"
-      @keydown.esc.stop.prevent="cancel"
+      @keydown.esc.stop.prevent="!compact && cancel()"
     >
       <header v-if="!embedded" class="expression-editor__header">
         <div>
@@ -37,6 +37,7 @@
 
       <main class="expression-editor__body">
         <expression-palette
+          v-if="!compact"
           :vars="vars"
           :functions="functions"
           :list-options="listOptions"
@@ -45,8 +46,9 @@
           @insert="insertTemplate"
         />
         <section class="expression-workspace">
+          <component :is="nodePickerComponent" v-if="compact && pickerAnchor && nodePickerComponent" :key="pathKey(pickerPath)" ref="fieldPicker" :virtual-ref="pickerAnchor" :value="pickerNode" :vars="vars" :functions="functions" :list-options="listOptions" :allowed-kinds="effectiveAllowedKinds" :expected-type="selectedExpectedType" :visible-tags="visibleTags" :selectable-tags="selectableTags" dismiss-on-outside @input="insertPicked" />
           <div class="workspace-tools">
-            <span>选中卡片后：Tab 缩进，Shift+Tab 取消缩进，Delete 删除，输入运算符添加或调整。输入框内按 Esc 返回卡片。</span>
+            <span title="↑/↓ 选择节点；Alt+↑/↓ 调整顺序；Tab / Shift+Tab 调整缩进；Backspace 删除当前项，Del 删除后一项；Ctrl/Cmd+Z 撤销，Ctrl/Cmd+Shift+Z 重做；Enter 编辑节点。输入框内保留文本快捷键，Esc 返回节点。">↑↓ 选择 · Alt+↑↓ 调序 · Tab 缩进 · Backspace 删当前 · Del 删后一项</span>
             <div>
               <el-button size="small" @click="collapseToOverview"
                 >折叠到两层</el-button
@@ -69,6 +71,11 @@
               :expected-type="expectedType || contextMeta.expectedType"
               :path-candidates="pathCandidates"
               :candidate-path-key="candidatePathKey"
+              :field-picker-enabled="compact"
+              :allow-operations="effectiveAllowedKinds.includes('OPERATION')"
+              :list-options="listOptions"
+              @requestField="openFieldPicker"
+              @appendRow="appendRow"
               @select="selectPath"
               @toggleCollapse="toggleCollapse"
               @patchNode="patchCanvasNode"
@@ -78,6 +85,8 @@
               @indent="indentPath"
               @outdent="outdentPath"
               @move="movePath"
+              @navigate="navigatePath"
+              @deleteKey="deleteAtCursor"
               @moveNode="moveNode"
               @remove="removePath"
               @replaceOperator="replaceOperator"
@@ -86,6 +95,7 @@
           </div>
         </section>
         <expression-node-inspector
+          v-if="!compact"
           :node="selectedNode"
           :list-options="listOptions"
           @input="updateSelected"
@@ -101,13 +111,12 @@
         @confirm="replaceDraftFromScript"
       />
 
-      <footer v-if="!embedded" class="expression-editor__footer">
+      <footer v-if="!embedded || compact" class="expression-editor__footer">
         <span
-          >提示：支持多层函数、字段、阈值、四则运算、取 Key / Index
-          和类型转换。</span
+          >{{ compact ? '关闭后保留草稿，应用后才回填输入框。' : '支持多层函数、字段、阈值、四则运算、取 Key / Index 和类型转换。' }}</span
         >
         <div>
-          <el-button @click="cancel">取消</el-button
+          <el-button @click="cancel">{{ compact ? '暂存并关闭' : '取消' }}</el-button
           ><el-button type="primary" @click="apply">应用公式</el-button>
         </div>
       </footer>
@@ -116,6 +125,7 @@
 </template>
 
 <script>
+import { markRaw } from 'vue'
 import { Close as ElIconClose } from '@element-plus/icons-vue'
 import { $emit } from '../../utils/gogocodeTransfer'
 import ExpressionCanvas from './ExpressionCanvas.vue'
@@ -127,6 +137,7 @@ import {
   createPathOperand,
   resolvePathOperand,
   validateOperand,
+  functionArgumentExpectedType,
 } from '@/utils/operand'
 import { getExpressionContext } from '@/constants/expressionContexts'
 import {
@@ -139,11 +150,13 @@ import {
   firstEditablePath,
   getExpressionNode,
   insertExpressionOperation,
+  appendExpressionRow,
   indentExpressionTerm,
   moveExpressionNode,
   moveExpressionSibling,
   outdentExpressionOperation,
   removeExpressionSelection,
+  removeExpressionAtCursor,
   replaceExpressionOperator,
   setExpressionNode,
   wrapExpressionNode,
@@ -169,6 +182,10 @@ export default {
     expectedType: { type: String, default: '' },
     title: { type: String, default: '配置表达式' },
     embedded: { type: Boolean, default: false },
+    compact: Boolean,
+    preserveDraft: Boolean,
+    visibleTags: { type: [Array, Object], default: null },
+    selectableTags: { type: [Array, Object], default: null },
   },
   data() {
     return {
@@ -181,6 +198,10 @@ export default {
       pathCandidates: [],
       candidatePathKey: '',
       previousFocus: null,
+      initialized: false,
+      nodePickerComponent: null,
+      pickerAnchor: null,
+      pickerPath: [],
     }
   },
   computed: {
@@ -195,6 +216,7 @@ export default {
     selectedNode() {
       return getExpressionNode(this.draft, this.selectedPath)
     },
+    pickerNode() { return getExpressionNode(this.draft, this.pickerPath) },
     canUndo() {
       return this.historyIndex > 0
     },
@@ -202,6 +224,11 @@ export default {
       return (
         this.historyIndex >= 0 && this.historyIndex < this.history.length - 1
       )
+    },
+    selectedExpectedType() {
+      const path = this.selectedPath
+      if (path.at(-2) === 'args') return functionArgumentExpectedType(getExpressionNode(this.draft, path.slice(0, -2)), path.at(-1))
+      return ''
     },
   },
   watch: {
@@ -211,12 +238,13 @@ export default {
 
       handler(value) {
         if (value) this.open()
+        else this.$refs.fieldPicker?.$refs.varPicker?.closePopover?.({ restoreFocus: false })
       },
     },
     value: {
       deep: true,
       handler(value) {
-        if (this.visible && this.historyIndex <= 0) this.reset(value)
+        if (this.preserveDraft || this.visible && this.historyIndex <= 0) this.reset(value)
       },
     },
   },
@@ -227,17 +255,19 @@ export default {
     document.removeEventListener('keydown', this.onKeydown)
   },
   methods: {
+    pathKey: expressionPathKey,
     functionTemplate(fn) {
       return createFunctionTemplate(fn)
     },
     open() {
       this.previousFocus = document.activeElement
-      this.reset(this.value)
+      if (!this.preserveDraft || !this.initialized) this.reset(this.value)
       this.$nextTick(() => {
         if (this.$refs.closeButton) this.$refs.closeButton.focus()
       })
     },
     reset(value) {
+      this.initialized = true
       this.draft = cloneOperand(value)
       this.selectedPath = firstEditablePath(this.draft)
       this.collapsedPathKeys = collapsedExpressionPaths(this.draft, 2)
@@ -246,6 +276,29 @@ export default {
       this.historyIndex = 0
       this.validationErrors = []
       this.clearPathCandidates()
+    },
+    async openFieldPicker(path) {
+      this.selectPath(path)
+      this.pickerPath = path.slice()
+      // 延迟加载以复用完整选择器，并避开 OperandPicker 与表达式编辑器的循环依赖。
+      if (!this.nodePickerComponent) this.nodePickerComponent = markRaw((await import('@/components/common/OperandPicker.vue')).default)
+      if (!this.visible) return
+      await this.$nextTick()
+      this.pickerAnchor = [...(this.$refs.canvasScroll?.querySelectorAll('.canvas-node') || [])].find(element => element.dataset.expressionPath === expressionPathKey(this.pickerPath)) || null
+      await this.$nextTick()
+      if (this.visible) this.$refs.fieldPicker?.$refs.varPicker?.openPopover?.()
+    },
+    insertPicked(operand) {
+      this.commit(setExpressionNode(this.draft, this.pickerPath, operand))
+      this.selectedPath = firstEditablePath(operand, this.pickerPath)
+      this.revealPath(this.selectedPath)
+      this.clearPathCandidates()
+      this.validationErrors = []
+    },
+    appendRow(path) {
+      const result = appendExpressionRow(this.draft, path)
+      this.applyTreeResult(result)
+      this.openFieldPicker(result.selectedPath)
     },
     selectPath(path) {
       this.selectedPath = (path || []).slice()
@@ -301,6 +354,21 @@ export default {
     removePath(path) {
       this.applyTreeResult(removeExpressionSelection(this.draft, path))
     },
+    deleteAtCursor({ path, key, operator }) {
+      this.applyTreeResult(removeExpressionAtCursor(this.draft, path, key, operator))
+    },
+    navigatePath({ path, offset }) {
+      const paths = []
+      const visit = (node, current = []) => {
+        if (current.length || node?.kind !== 'OPERATION') paths.push(current)
+        if (!this.collapsedPathKeys.includes(expressionPathKey(current))) expressionChildEntries(node, current).forEach(entry => visit(entry.value, entry.path))
+      }
+      visit(this.draft)
+      const index = paths.findIndex(item => expressionPathKey(item) === expressionPathKey(path))
+      if (!paths[index + offset]) return
+      this.selectPath(paths[index + offset])
+      this.focusCanvasSelection()
+    },
     replaceOperator({ path, operator }) {
       this.applyTreeResult(replaceExpressionOperator(this.draft, path, operator))
     },
@@ -327,7 +395,9 @@ export default {
       this.selectedPath = path.slice()
     },
     updateManualPath({ path, value }) {
-      this.commit(setExpressionNode(this.draft, path, createPathOperand(value)))
+      const current = getExpressionNode(this.draft, path)
+      const result = resolvePathOperand(current?.versionMode === 'FIXED' ? { ...current, value } : createPathOperand(value), this.vars)
+      this.commit(setExpressionNode(this.draft, path, result.operand))
       this.selectedPath = path.slice()
       this.clearPathCandidates()
     },
@@ -380,6 +450,17 @@ export default {
       this.validationErrors = validateOperand(this.draft, {
         allowedKinds: this.effectiveAllowedKinds,
       })
+      const validateJson = (node, path = []) => {
+        if (node?.kind === 'LITERAL' && ['LIST', 'MAP', 'OBJECT'].includes(node.valueType)) {
+          try {
+            const value = typeof node.value === 'string' ? JSON.parse(node.value) : node.value
+            const valid = node.valueType === 'LIST' ? Array.isArray(value) : value && typeof value === 'object' && !Array.isArray(value)
+            if (!valid) throw new Error()
+          } catch { this.validationErrors.push({ path: expressionPathKey(path), message: node.valueType === 'LIST' ? '请输入合法的 JSON 数组' : '请输入合法的 JSON 对象' }) }
+        }
+        expressionChildEntries(node, path).forEach(entry => validateJson(entry.value, entry.path))
+      }
+      validateJson(this.draft)
       return this.validationErrors.slice()
     },
     indentPath(path) {
@@ -421,6 +502,7 @@ export default {
     },
     commit(value) {
       const snapshot = cloneOperand(value)
+      if (JSON.stringify(snapshot) === JSON.stringify(this.draft)) return
       this.history = this.history
         .slice(0, this.historyIndex + 1)
         .concat([snapshot])
@@ -512,7 +594,17 @@ export default {
       })
     },
     onKeydown(event) {
-      if (this.visible && event.key === 'Escape') this.cancel()
+      if (!this.visible || !this.$el?.contains?.(event.target)) return
+      const editingText = event.target?.closest?.('input, textarea, select, [contenteditable="true"], [role="combobox"]')
+      if (!editingText && !event.isComposing && (event.ctrlKey || event.metaKey) && ['z', 'y'].includes(event.key.toLowerCase())) {
+        event.preventDefault()
+        event.stopPropagation()
+        if (event.shiftKey || event.key.toLowerCase() === 'y') this.redo()
+        else this.undo()
+        this.focusCanvasSelection()
+        return
+      }
+      if (!this.compact && this.visible && event.key === 'Escape') this.cancel()
     },
   },
   emits: ['input', 'update:value', 'apply', 'update:visible', 'cancel'],
@@ -525,7 +617,8 @@ export default {
   z-index: 3200;
   inset: 0;
   display: grid;
-  grid-template-rows: 68px minmax(0, 1fr) auto 64px;
+  grid-template-rows: 68px minmax(180px, 1fr) auto 64px;
+  overflow: auto;
   background: var(--tianshu-bg-surface);
   color: var(--tianshu-text-primary);
 }
@@ -536,12 +629,21 @@ export default {
   width: 100%;
   height: 100%;
   min-height: 0;
-  grid-template-rows: minmax(0, 1fr) auto;
-  overflow: hidden;
+  grid-template-rows: minmax(180px, 1fr) auto;
+  overflow: auto;
   border: 1px solid var(--tianshu-border-subtle);
   border-radius: 8px;
   container-type: inline-size;
 }
+.expression-editor--compact { display: flex; flex-direction: column; border: 0; border-radius: 0; }
+.expression-editor--compact > .expression-editor__body { flex: 1 0 180px; }
+.expression-editor--compact > .expression-editor__preview { flex: none; }
+.expression-editor--compact .expression-workspace { min-width: 0; padding: 10px; }
+.expression-editor--compact .expression-editor__footer { flex: none; min-height: 48px; padding: 8px 12px; gap: 8px; flex-wrap: wrap; }
+.expression-editor--compact .expression-editor__footer > div { display: flex; gap: 8px; margin-left: auto; }
+.expression-editor--compact .canvas-scroll { padding: 4px 0 20px; }
+.expression-editor--compact :deep(.canvas-node), .expression-editor--compact :deep(.canvas-kind), .expression-editor--compact :deep(.canvas-node-actions button) { border-radius: 0; }
+.expression-editor--compact .workspace-tools { gap: 4px; font-size: 11px; }
 .expression-editor__header,
 .expression-editor__footer {
   display: flex;
@@ -583,9 +685,8 @@ export default {
   overflow: auto;
 }
 .expression-editor__preview {
-  min-height: 0;
-  max-height: 50vh;
-  overflow: auto;
+  min-height: min-content;
+  overflow: visible;
 }
 .expression-workspace {
   display: flex;

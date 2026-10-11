@@ -50,6 +50,7 @@
       </el-form>
       <div class="uiue-btn-bar">
         <div class="btn-right">
+          <governance-workspace-toolbar resource-type="PROJECT" />
           <table-column-settings
             v-model="projectColumnOrder"
             :columns="projectColumns"
@@ -83,22 +84,19 @@
         show-overflow-tooltip
       >
         <template #default="{ row }">
-          <el-tag
-            v-if="column.key === 'status'"
+          <governance-resource-status v-if="column.key === 'status'" resource-type="PROJECT" :resource-id="row.id" :status="row.status"><el-tag
+
             :type="row.status === 1 ? 'success' : 'info'"
             size="small"
           >
             {{ row.status === 1 ? '启用' : '停用' }}
-          </el-tag>
+          </el-tag></governance-resource-status>
           <span v-else>{{ projectCellValue(row, column.key) }}</span>
         </template>
       </el-table-column>
-      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '进入', '鉴权', 'API', '删除'])" align="center" fixed="right">
+      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['进入', '编辑', '版本', '发布', '鉴权', 'API', '删除'])" align="center" fixed="right">
         <template v-slot="{ row }">
           <div class="table-operation-group project-action-links">
-            <el-button v-permission="'project:edit'" link data-action="edit" size="small" type="primary" @click="handleEdit(row)"
-              >编辑</el-button
-            >
             <el-button
               link
               data-action="detail"
@@ -107,6 +105,10 @@
               @click="$router.push('/project/' + row.id)"
               >进入</el-button
             >
+            <el-button v-permission="'project:edit'" link data-action="edit" size="small" type="primary" @click="editWorkspace('PROJECT', row, handleEdit)"
+              >编辑</el-button
+            >
+            <governance-publish-action resource-type="PROJECT" :resource-id="row.id" />
             <el-button link data-action="configure" size="small" type="warning" @click="handleAuth(row)"
               >鉴权</el-button
             >
@@ -201,6 +203,11 @@
 </template>
 
 <script>
+import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
+import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
+import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
+import governanceWorkspaceMixin from '@/mixins/governanceWorkspaceMixin'
+import { completeResourceChange } from '@/utils/governanceWorkspace'
 import { markRaw } from 'vue'
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
 import {
@@ -222,6 +229,7 @@ import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import ProjectAuthDialog from './ProjectAuthDialog.vue'
 export default {
+  mixins: [governanceWorkspaceMixin],
   data() {
     return {
       loading: false,
@@ -245,7 +253,7 @@ export default {
         { key: 'projectCode', label: '项目编码', minWidth: 140, required: true },
         { key: 'projectName', label: '项目名称', minWidth: 180 },
         { key: 'description', label: '描述', minWidth: 200 },
-        { key: 'status', label: '状态', minWidth: 70, align: 'center' },
+        { key: 'status', label: '发布状态', minWidth: 160, align: 'center' },
         { key: 'createTime', label: '创建时间', minWidth: 160 },
       ],
       projectColumnOrder: [
@@ -285,7 +293,8 @@ export default {
     },
   },
   name: 'ProjectList',
-  components: { ProjectFilterSelect, ProjectAuthDialog, TableColumnSettings },
+  components: { GovernancePublishAction, GovernanceWorkspaceToolbar,
+    GovernanceResourceStatus, ProjectFilterSelect, ProjectAuthDialog, TableColumnSettings },
   created() {
     this.restoreCachedState()
     this.loadData()
@@ -397,15 +406,13 @@ export default {
         if (!valid) return
         if (this.form.id) {
           const res = await updateProject(this.form)
-          this.$message.success('审批草稿已创建')
           this.dialogVisible = false
-          if (res.data && res.data.id) this.$router.push('/approval/' + res.data.id)
+          await completeResourceChange(this, res, () => this.loadData())
         } else {
           const res = await createProject(this.form)
           if (res.code === 200 && res.data) {
-            this.$message.success('审批草稿已创建')
             this.dialogVisible = false
-            this.$router.push('/approval/' + res.data.id)
+            await completeResourceChange(this, res, () => this.loadData())
           }
         }
       } finally {
@@ -418,9 +425,7 @@ export default {
       })
         .then(async () => {
           const res = await deleteProject(row.id)
-          this.$message.success('删除申请已创建')
-          if (res.data && res.data.id)
-            this.$router.push('/approval/' + res.data.id)
+          await completeResourceChange(this, res, () => this.loadData())
         })
         .catch(() => {})
     },

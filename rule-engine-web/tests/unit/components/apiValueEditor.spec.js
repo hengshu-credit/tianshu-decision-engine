@@ -17,4 +17,13 @@ describe('API operand binding', () => {
     expect(wrapper.emitted('update:value')[0][0].protocolPath).toBe(true)
     wrapper.unmount()
   })
+  test('嵌套表达式和已标记的协议路径也不能引用当前阶段尚不可用的步骤', () => {
+    const wrapper = shallowMount(ApiValueEditor, { props: { modules: [{ value: 'steps.first.body', label: '第一步结果', type: 'OBJECT' }] } })
+    wrapper.vm.update({ kind: 'FUNCTION', functionCode: 'nvl', args: [{ kind: 'PATH', value: 'steps.future.body.score', protocolPath: true }] })
+    expect(wrapper.emitted('update:value')).toBeUndefined()
+    expect(wrapper.vm.error).toContain('当前')
+    wrapper.vm.update({ kind: 'REFERENCE', refType: 'API_CONTEXT', refId: 'steps.first.body.score', value: 'steps.first.body.score' })
+    expect(wrapper.emitted('update:value')[0][0]).toMatchObject({ kind: 'PATH', value: 'steps.first.body.score', protocolPath: true })
+    wrapper.unmount()
+  })
 })

@@ -105,6 +105,9 @@ function createDesignerApiData() {
     { id: 108, modelType: 'SCORE_ADV', ruleCode: 'advanced_scorecard' },
     { id: 109, modelType: 'SCRIPT', ruleCode: 'ql_script' }
   ]
+  for (const [module, ids] of [['variable', [1, 2, 3]], ['dataobject', [10]], ['model', [20]]]) {
+    for (const id of ids) routes.set(`/api/rule/${module}/picker-versions/${id}`, [{ versionId: id + 500, version: 1, ownerId: id }])
+  }
   for (const definition of definitions) {
     const initialModelJson = definition.modelType === 'SCORE_ADV'
       ? JSON.stringify({ initialScore: 0, resultVar: { varCode: 'score' }, dimensionGroups: [], thresholds: [] })
@@ -146,6 +149,21 @@ function createDesignerApiData() {
   }
 
   for (const definition of definitions) {
+    // 每个来源有明确的目录身份；历史画布不能靠未匹配接口的空分页结果继续编辑。
+    routes.set(`/api/rule/definition/${definition.id}/reference-catalog`, ({ url }) => {
+      const sourceType = url.searchParams.get('sourceType')
+      const sourceId = url.searchParams.get('sourceId')
+      return {
+        status: 'AVAILABLE', referenceNamespace: sourceType === 'VERSION' ? 'ARTIFACT_SOURCE' : 'LOCAL',
+        imported: false, selectedArtifactImported: false, localEditingAllowed: true,
+        executionIdentity: { definitionId: String(definition.id), sourceType, sourceId },
+        variables: routes.get('/api/rule/variable/project/1'),
+        objectTree: routes.get('/api/rule/dataobject/tree/1'),
+        functions: routes.get('/api/rule/function/project/1/all'),
+        models: routes.get('/api/rule/model/project/1/all'),
+        rules: [], apis: [], lists: [], diagnostics: [],
+      }
+    })
     routes.set(`/api/rule/definition/${definition.id}/published-versions`, routes.get(`/api/rule/definition/versions/${definition.id}`))
     routes.set(`POST /api/rule/definition/${definition.id}/designer/compile`, {
       compileSuccess: true, compiledScript: 'return 1;', preflightReport: { valid: true, errors: [], warnings: [] }

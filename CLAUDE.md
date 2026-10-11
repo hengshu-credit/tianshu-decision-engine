@@ -76,7 +76,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **前后端分离**：`rule-engine-server/pom.xml` 中 `skip.ui.build` 默认为 `true`，前端 `npm run build` 产物在 `dist/` 独立部署，不混入后端目录
 - **客户端不直连 MySQL**：通过 HTTP 拉取服务端已编译规则，缓存在进程内 L1 内存
 - **Redis 必须与 server 同一实例**：项目规则/函数变更向 `rule:push:{projectCode}` 发布，GLOBAL 变更向 `rule:push:broadcast` 发布；客户端必须用真实 `projectCode` 订阅项目频道，`appName` 不参与项目路由
-- **执行日志**：默认 HTTP 上报；classpath 中存在 `KafkaTemplate` Bean 时自动切换为 Kafka（主题 `rule-execution-log`）
+- **执行日志**：默认 HTTP 上报；通过 `rule-engine.client.log-report-transport=KAFKA` 显式启用 Kafka，主题必须在服务端绑定真实项目 ID；发送失败可使用已鉴权 HTTP 补报，配置与迁移见 `docs/kafka-execution-logs.md`。
 
 ## 开发命令
 

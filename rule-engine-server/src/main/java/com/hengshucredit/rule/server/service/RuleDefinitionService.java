@@ -3,6 +3,8 @@ package com.hengshucredit.rule.server.service;
 import com.hengshucredit.rule.model.entity.*;
 import com.hengshucredit.rule.model.dto.RuleDraftSaveRequest;
 import com.hengshucredit.rule.model.dto.RuleDraftSaveResponse;
+import com.hengshucredit.rule.model.dto.RuleDraftSourceRequest;
+import com.hengshucredit.rule.model.enums.RuleDraftSourceType;
 import com.hengshucredit.rule.model.dto.RuleValidationIssue;
 import com.hengshucredit.rule.model.dto.RuleQueryDTO;
 import com.hengshucredit.rule.server.common.RuleGovernanceException;
@@ -140,6 +142,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
             definition.setScope("PROJECT");
             // 填充项目编码和名称
             RuleProject project = projectService.getById(definition.getProjectId());
+            if (project == null || !Integer.valueOf(1).equals(project.getStatus())) {
+                throw new IllegalArgumentException("所属项目尚未发布或已停用，请先发布项目");
+            }
             if (project != null) {
                 definition.setProjectCode(project.getProjectCode());
                 definition.setProjectName(project.getProjectName());
@@ -278,15 +283,15 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         if (definition == null) {
             throw new IllegalArgumentException("Rule not found");
         }
-        RuleRevision draft = lifecycleService.createDraft(definitionId, null);
         RuleDefinitionVersion snapshot = getVersion(definitionId, version);
         if (snapshot == null) {
             throw new IllegalArgumentException("Version not found");
         }
 
-        ruleDraftService.save(draftRequest(
-                draft, snapshot.getModelJson(),
-                snapshot.getOpenApiConfigJson(), true));
+        RuleDraftSourceRequest source = new RuleDraftSourceRequest();
+        source.setSourceType(RuleDraftSourceType.VERSION);
+        source.setSourceId(snapshot.getId());
+        lifecycleService.createDraftFromSource(definitionId, source);
         RuleDefinitionContent saved = getContent(definitionId);
         if (saved != null) {
             saved.setCompileMessage("rollback to v" + version);

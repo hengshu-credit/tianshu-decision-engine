@@ -17,6 +17,9 @@ public class RuleBillingRecord {
     private Long id;
     private Long projectId;
     private String projectCode;
+    private Long billingConfigId;
+    /** EXECUTION_SNAPSHOT / CURRENT_CONFIG / LEGACY_REPLAY；历史行可为空。 */
+    private String billingBasis;
     private String billingCode;
     private String billingName;
     private String billingTarget;
@@ -30,6 +33,10 @@ public class RuleBillingRecord {
     private Integer attemptNo;
     private String requestId;
     private String ruleCode;
+    private Long ruleId;
+    private Integer ruleVersion;
+    private Long revisionId;
+    private String artifactDigest;
     private String apiCode;
     private String datasourceCode;
     private Long authId;

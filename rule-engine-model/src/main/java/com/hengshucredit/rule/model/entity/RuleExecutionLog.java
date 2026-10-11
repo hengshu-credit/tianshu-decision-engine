@@ -34,6 +34,10 @@ public class RuleExecutionLog {
     private String inputParams;
     private String outputResult;
     private String traceInfo;
+    @TableField(exist = false)
+    private String ruleSetStatsJson;
+    private String ruleSetStatsStatus;
+    private Integer ruleSetStatsVersion;
     private Integer success;
     private String errorMessage;
     private Long executeTimeMs;

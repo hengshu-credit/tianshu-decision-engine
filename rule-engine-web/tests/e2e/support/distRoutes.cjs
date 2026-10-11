@@ -4,6 +4,10 @@ const path = require('node:path')
 const distRoot = path.resolve(__dirname, '../../../dist')
 
 const apiData = new Map([
+  ['/api/rule/governance/workspaces/states', ({ url }) => (url.searchParams.get('ids') || '').split(',').filter(Boolean).map(resourceId => ({ resourceId, effectiveStatus: null, hasEffectiveVersion: false, requestId: null, requestStatus: null, owned: false, hasRuleDraft: false }))],
+  ['/api/rule/governance/workspaces/draft-ids', []],
+  ['/api/rule/billing/summary/refresh', null],
+  ['/api/rule/governance/workspaces', { records: [], total: 0 }],
   ['/api/auth/console/config', { loginEnabled: false }],
   ['/api/auth/console/me', { username: 'e2e' }],
   ['/api/rule/project/list', {
@@ -98,21 +102,27 @@ const contentTypes = {
   '.woff2': 'font/woff2'
 }
 
-function resolveApiFixture(routeApiData, pathname) {
-  const direct = routeApiData.get(pathname)
+function resolveApiFixture(routeApiData, pathname, method = 'GET') {
+  const direct = routeApiData.get(`${method} ${pathname}`)
   if (direct) return direct
+  // 同一路径可配置多个方法；方法不匹配时仍保留期望方法用于严格错误报告。
+  const otherMethod = [...routeApiData].find(([key]) => key.endsWith(` ${pathname}`))?.[1]
+  if (otherMethod) return otherMethod
+  if (/^\/api\/rule\/governance\/workspaces\/[A-Z_]+\/\d+$/.test(pathname)) return { data: null, expectedMethod: 'GET' }
+  if (/^\/api\/rule\/resource-versions\/[A-Z_]+\/\d+$/.test(pathname)) return { data: { versions: [], history: [], drafts: [], actor: 'e2e' }, expectedMethod: 'GET' }
+  if (/^\/api\/rule\/resource-versions\/[A-Z_]+\/\d+\/events$/.test(pathname)) return { data: [], expectedMethod: 'GET' }
   return null
 }
 
 async function apiResponse(url, request, routeApiData) {
-  const configuredData = resolveApiFixture(routeApiData, url.pathname)?.data
+  const configuredData = resolveApiFixture(routeApiData, url.pathname, request.method())?.data
   const data = typeof configuredData === 'function'
     ? await configuredData({ url, request })
     : configuredData
   return {
     code: 200,
     message: 'success',
-    data: data ?? { records: [], total: 0 }
+    data: data === undefined ? { records: [], total: 0 } : data
   }
 }
 
@@ -121,7 +131,7 @@ function addApiFixtures(target, fixtures) {
     const methodMatch = /^([A-Z]+)\s+(\/api\/.*)$/.exec(key)
     const expectedMethod = methodMatch?.[1] || 'GET'
     const pathname = methodMatch?.[2] || key
-    target.set(pathname, { data, expectedMethod })
+    target.set(`${expectedMethod} ${pathname}`, { data, expectedMethod })
   }
 }
 
@@ -164,7 +174,7 @@ async function installDistRoutes(page, options = {}) {
     const url = new URL(route.request().url())
     if (url.pathname.startsWith('/api/')) {
       const method = route.request().method()
-      const fixture = resolveApiFixture(routeApiData, url.pathname)
+      const fixture = resolveApiFixture(routeApiData, url.pathname, method)
       requests.push({ method, url: route.request().url() })
       if (!fixture || fixture.expectedMethod !== method) {
         unmatchedRequests.push({

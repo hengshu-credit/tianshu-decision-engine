@@ -32,9 +32,13 @@ public class VariableResolveOptions {
     private VariableResolutionInvocationCache invocationCache;
     private Map<String, com.hengshucredit.rule.server.derived.HistoricalFieldDefinition> historyFieldDefinitions;
     private boolean captureDatabasePreview;
+    /** 外数请求配置沿用无副作用函数限制，固定版本也不能绕过。 */
+    private boolean apiExpression;
     private java.util.List<Map<String, Object>> databasePreviewRows;
     private com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot;
     private Long executionProjectId;
+    /** Freeze business-version heads for one execution, including nested resource resolutions. */
+    private Map<String, com.hengshucredit.rule.model.entity.GovernedResourceVersion> businessVersionHeads = new java.util.concurrent.ConcurrentHashMap<>();
 
     public boolean requiresSourceStatus(String refType, Long refId) {
         return refId != null && refType != null && statusReferenceKeys != null

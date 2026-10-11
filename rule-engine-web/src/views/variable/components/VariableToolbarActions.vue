@@ -1,6 +1,7 @@
 <template>
   <div class="uiue-btn-bar variable-toolbar-actions">
     <div class="btn-right">
+      <governance-workspace-toolbar />
       <table-column-settings
         v-if="columnSettingsColumns.length"
         :model-value="columnSettingsModelValue"
@@ -73,11 +74,12 @@ import {
   Upload as ElIconUpload2,
   VideoPlay as ElIconVideoPlay,
 } from '@element-plus/icons-vue'
+import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 
 export default {
   name: 'VariableToolbarActions',
-  components: { ElIconArrowDown, TableColumnSettings },
+  components: { GovernanceWorkspaceToolbar, ElIconArrowDown, TableColumnSettings },
   props: {
     primaryCreateLabel: {
       type: String,

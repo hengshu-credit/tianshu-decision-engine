@@ -10,6 +10,8 @@ public class RuleExperimentExecuteResult {
     private String experimentTraceId;
     private String experimentCode;
     private String experimentName;
+    private Long versionId;
+    private Integer version;
     private String requestKey;
     private boolean success;
     private String errorMessage;

@@ -102,7 +102,7 @@ export function ruleSetHitOption(items = [], options = {}) {
       const applications = Number(item.applicationCount || 0)
       const hits = Number(item.hitCount || 0)
       const rate = (Number(item.hitRate || 0) * 100).toFixed(2)
-      return `${label}\n进件数：${applications}\n命中数：${hits}\n命中率：${rate}%`
+      return `${label}\n执行次数：${applications}\n命中次数：${hits}\n命中率：${rate}%`
     }
   }
   return option

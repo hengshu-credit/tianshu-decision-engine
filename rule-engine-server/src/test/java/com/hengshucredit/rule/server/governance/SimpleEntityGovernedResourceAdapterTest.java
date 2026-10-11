@@ -10,6 +10,116 @@ import java.util.Map;
 import java.util.Set;
 
 public class SimpleEntityGovernedResourceAdapterTest {
+    @Test
+    public void serializedModelInputOperandKeepsItsMirrorOnTheSameFixedVersion() {
+        String operand = "{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":7,\"versionMode\":\"FIXED\",\"versionId\":81,\"versionSource\":\"BUSINESS_VERSION\"}";
+        var references = adapter(new TestStore()).collectDependencies(ResourceSnapshot.ofJson(
+                com.hengshucredit.rule.server.artifact.CanonicalJson.write(Map.of("varId", 7, "refType", "VARIABLE", "sourceOperand", operand))));
+        Assert.assertEquals(2, references.size());
+        Assert.assertTrue("模型入参的镜像 ID 不能变成最新版依赖", references.stream().allMatch(ref -> ref.versionSelection() != null
+                && Long.valueOf(81).equals(ref.versionSelection().versionId())));
+    }
+    @Test
+    public void fixedOperandAndItsMirroredIdKeepTheSelectedVersion() {
+        var references = adapter(new TestStore()).collectDependencies(ResourceSnapshot.ofJson("""
+                {"_varId":7,"_refType":"VARIABLE","leftOperand":{"kind":"REFERENCE","refType":"VARIABLE",
+                "refId":7,"versionMode":"FIXED","versionId":81,"versionSource":"BUSINESS_VERSION"},
+                "rightOperand":{"kind":"REFERENCE","refType":"VARIABLE","refId":7}}
+                """));
+        Assert.assertEquals(3, references.size());
+        for (var reference : references) {
+            var json = com.hengshucredit.rule.server.artifact.CanonicalJson.readMap(
+                    com.hengshucredit.rule.server.artifact.CanonicalJson.write(reference));
+            if (reference.referencePath().startsWith("$.rightOperand")) Assert.assertNull(json.get("versionSelection"));
+            else {
+                Assert.assertTrue("固定引用及其镜像不能退回最新版", json.get("versionSelection") instanceof Map);
+                Map<?, ?> selection = (Map<?, ?>) json.get("versionSelection");
+                Assert.assertEquals("81", String.valueOf(selection.get("versionId")));
+                Assert.assertEquals("BUSINESS_VERSION", selection.get("versionSource"));
+            }
+        }
+    }
+
+    @Test
+    public void staticScriptVersionCallsBecomeGovernanceDependencies() {
+        var references = adapter(new TestStore()).collectDependencies(ResourceSnapshot.ofJson("""
+                {"script":"return resourceVersionValue('VARIABLE', 7, 'BUSINESS_VERSION:81', '');"}
+                """));
+        Assert.assertEquals("脚本固定版本不能遗漏审批依赖", 1, references.size());
+        Assert.assertEquals("VARIABLE", references.get(0).targetResourceType());
+        Assert.assertEquals(Long.valueOf(7), references.get(0).targetResourceId());
+    }
+
+    @Test
+    public void serializedConfigurationDoesNotHideInvalidFixedReferences() {
+        var draft = ResourceSnapshot.ofJson(com.hengshucredit.rule.server.artifact.CanonicalJson.write(Map.of("modelJson",
+                "{\"operand\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":7,\"versionMode\":\"FIXED\"}}")));
+        Assert.assertThrows(IllegalArgumentException.class, () -> adapter(new TestStore()).collectDependencies(draft));
+    }
+
+    @Test
+    public void validationAndLegacyListReferencesAreNotLostInsideSerializedIdArrays() {
+        var references = adapter(new TestStore()).collectDependencies(ResourceSnapshot.ofJson(
+                "{\"inputFieldsJson\":[{\"validationRuleIds\":\"[71,72]\"}],\"sourceConfig\":\"{\\\"listLibraryId\\\":9}\"}"));
+        Assert.assertEquals(3, references.size());
+        Assert.assertTrue(references.stream().anyMatch(ref -> "FIELD_VALIDATION".equals(ref.targetResourceType()) && Long.valueOf(71).equals(ref.targetResourceId())));
+        Assert.assertTrue(references.stream().anyMatch(ref -> "FIELD_VALIDATION".equals(ref.targetResourceType()) && Long.valueOf(72).equals(ref.targetResourceId())));
+        Assert.assertTrue(references.stream().anyMatch(ref -> "LIST_LIBRARY".equals(ref.targetResourceType()) && Long.valueOf(9).equals(ref.targetResourceId())));
+    }
+
+    @Test
+    public void literalBusinessValuesAndTestSamplesDoNotCreatePhantomDependencies() {
+        var references = adapter(new TestStore()).collectDependencies(ResourceSnapshot.ofJson(
+                "{\"projectId\":3,\"valueOperand\":{\"kind\":\"LITERAL\",\"value\":{\"variableId\":77}},"
+                        + "\"modelConfig\":\"{\\\"testParams\\\":\\\"{\\\\\\\"projectId\\\\\\\":99}\\\"}\","
+                        + "\"defaultValue\":\"{\\\"modelId\\\":81}\"}"));
+        Assert.assertEquals(1, references.size());
+        Assert.assertEquals("PROJECT", references.get(0).targetResourceType());
+        Assert.assertEquals(Long.valueOf(3), references.get(0).targetResourceId());
+    }
+    @Test
+    public void modelOutputReferenceDoesNotBecomeAnUnrelatedVariableId() {
+        var references = adapter(new TestStore()).collectDependencies(ResourceSnapshot.ofJson(
+                "{\"sourceOperand\":{\"kind\":\"REFERENCE\",\"refType\":\"MODEL_OUTPUT\",\"refId\":12}}"));
+        Assert.assertEquals("MODEL_OUTPUT", references.get(0).targetResourceType());
+        Assert.assertEquals(Long.valueOf(12), references.get(0).targetResourceId());
+    }
+
+    @Test
+    public void savingNewWorkspaceIsInactiveAndApprovalKeepsItsReservedId() {
+        TestStore store = new TestStore();
+        var adapter = adapter(store);
+        var snapshot = ResourceSnapshot.ofJson("{\"name\":\"草稿\",\"status\":1}");
+        AppliedResource draft = adapter.apply(new ApprovalApplyContext(null, null, 0,
+                "DRAFT_CREATE", snapshot, "editor", null));
+        Assert.assertEquals("DRAFT", draft.effectiveStatus());
+        Assert.assertEquals(Integer.valueOf(0), store.value.getStatus());
+        AppliedResource published = adapter.apply(new ApprovalApplyContext(12L, draft.resourceId(), 1,
+                "CREATE", snapshot, "reviewer", null));
+        Assert.assertEquals(draft.resourceId(), published.resourceId());
+        Assert.assertEquals(Integer.valueOf(1), store.value.getStatus());
+        Assert.assertEquals(1, store.updateCalls);
+    }
+
+    @Test
+    public void designerPersistedIdsKeepTheirExplicitReferenceTypes() {
+        String model = """
+                {"conditions":[{"_varId":7,"_refType":"VARIABLE"},
+                {"leftVarId":8,"leftRefType":"DATA_OBJECT","rightVarId":9,"rightRefType":"MODEL"}],
+                "actionData":{"_targetVarId":10,"_targetRefType":"VARIABLE","_rightVarId":11,"_rightRefType":"DATA_OBJECT"}}
+                """;
+        var dependencies = adapter(new TestStore()).collectDependencies(ResourceSnapshot.ofJson(
+                com.hengshucredit.rule.server.artifact.CanonicalJson.write(Map.of("modelJson", model))));
+        Assert.assertEquals(5, dependencies.size());
+        Assert.assertTrue(dependencies.stream().anyMatch(ref -> "VARIABLE".equals(ref.targetResourceType())
+                && Long.valueOf(7).equals(ref.targetResourceId()) && ref.referencePath().endsWith("._varId")));
+        Assert.assertTrue(dependencies.stream().anyMatch(ref -> "DATA_OBJECT".equals(ref.targetResourceType())
+                && Long.valueOf(8).equals(ref.targetResourceId())));
+        Assert.assertTrue(dependencies.stream().anyMatch(ref -> "MODEL".equals(ref.targetResourceType())
+                && Long.valueOf(9).equals(ref.targetResourceId())));
+        Assert.assertTrue(dependencies.stream().anyMatch(ref -> "DATA_OBJECT".equals(ref.targetResourceType())
+                && Long.valueOf(11).equals(ref.targetResourceId())));
+    }
 
     @Test
     public void scriptFunctionIdIsNotMisclassifiedAsVariableId() {

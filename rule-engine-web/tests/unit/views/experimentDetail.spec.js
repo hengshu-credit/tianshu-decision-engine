@@ -195,8 +195,8 @@ describe('ExperimentDetail', () => {
     expect(payload.requestKeyOperand).toBeUndefined()
   })
 
-  test('新建保存成功后跳转到统一审批详情', async () => {
-    saveExperiment.mockResolvedValue({ data: { id: 12 } })
+  test('新建保存后进入同一资源的草稿编辑页，发布前不进入审批', async () => {
+    saveExperiment.mockResolvedValue({ data: { id: 12, resourceId: 23, status: 'EDITING' } })
     const ctx = createContext()
     ctx.form.projectId = 1
     ctx.form.experimentCode = 'EXP_A'
@@ -208,7 +208,10 @@ describe('ExperimentDetail', () => {
     await ctx.handleSave()
 
     expect(saveExperiment).toHaveBeenCalled()
-    expect(ctx.$router.push).toHaveBeenCalledWith('/approval/12')
+    expect(ctx.$router.push).not.toHaveBeenCalled()
+    expect(ctx.$router.replace).toHaveBeenCalledWith('/experiment/detail/23')
+    expect(ctx.form.id).toBe(23)
+    expect(ctx.$message.success).toHaveBeenCalledWith(expect.stringContaining('草稿已保存'))
   })
 
   test('openVersionDialog loads versions and compareWithNext compares adjacent versions', async () => {
@@ -242,7 +245,7 @@ describe('ExperimentDetail', () => {
 
     await ctx.loadRules(1)
 
-    expect(listProjectDefinitions).toHaveBeenCalledWith(1, { pageNum: 1, pageSize: 1000, status: 1 })
+    expect(listProjectDefinitions).toHaveBeenCalledWith(1, { pageNum: 1, pageSize: 200, status: 1 })
     expect(ctx.form.groups[0].ruleId).toBe(8)
     expect(ctx.ruleFieldMap[8].input[0].scriptName).toBe('CREDIT_AMOUNT')
     expect(ctx.ruleFieldMap[8].output[0].scriptName).toBe('score')

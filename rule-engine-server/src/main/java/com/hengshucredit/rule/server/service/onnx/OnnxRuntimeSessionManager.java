@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.service.onnx;
 
+import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
+
 import ai.onnxruntime.NodeInfo;
 import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtException;
@@ -9,6 +11,8 @@ import ai.onnxruntime.TensorInfo;
 import ai.onnxruntime.providers.OrtCUDAProviderOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PreDestroy;
@@ -16,27 +20,53 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 @Service
 public class OnnxRuntimeSessionManager {
 
     private static final Logger log = LoggerFactory.getLogger(OnnxRuntimeSessionManager.class);
+    // 8 种任务各保留 CPU 检查和一种运行配置；这是数量护栏，不代表 native/显存字节预算。
+    private static final int DEFAULT_MAX_SESSIONS = 16;
     private final EnvironmentLoader environmentLoader;
+    private final int maxSessions;
     private volatile OrtEnvironment environment;
     private volatile Throwable environmentFailure;
-    private final Map<String, CachedSession> sessions = new ConcurrentHashMap<>();
-    private final Map<String, String> cpuFallbacks = new ConcurrentHashMap<>();
+    private final Map<String, CachedSession> sessions = new LinkedHashMap<>(16, 0.75F, true);
+    private final Set<CachedSession> retiredSessions = new HashSet<>();
+    private final Map<String, LoadingSession> loadingSessions = new LinkedHashMap<>();
+    private final Set<LoadingSession> pendingLoads = new HashSet<>();
+    private final Map<String, String> cpuFallbacks = new LinkedHashMap<>(16, 0.75F, true);
+    private long capacityRejections;
+    private long evictions;
+    private boolean closed;
+    private boolean jvmShutdown;
 
     public OnnxRuntimeSessionManager() {
-        this(() -> OrtEnvironment.getEnvironment());
+        this(DEFAULT_MAX_SESSIONS);
+    }
+
+    @Autowired
+    public OnnxRuntimeSessionManager(
+            @Value("${rule-engine.onnx.session-cache-max-entries:16}") int maxSessions) {
+        this(() -> OrtEnvironment.getEnvironment(), maxSessions);
     }
 
     OnnxRuntimeSessionManager(EnvironmentLoader environmentLoader) {
+        this(environmentLoader, DEFAULT_MAX_SESSIONS);
+    }
+
+    OnnxRuntimeSessionManager(EnvironmentLoader environmentLoader, int maxSessions) {
+        if (maxSessions <= 0) throw new IllegalArgumentException("ONNX 会话缓存数量上限必须大于 0");
         this.environmentLoader = environmentLoader;
+        this.maxSessions = maxSessions;
     }
 
     @FunctionalInterface
@@ -57,6 +87,7 @@ public class OnnxRuntimeSessionManager {
         return session(modelBytes, OnnxRuntimeConfig.cpu());
     }
 
+    /** 兼容预热入口；推理和元数据读取必须使用租约，不能长期持有这个裸会话。 */
     public OrtSession session(byte[] modelBytes, OnnxRuntimeConfig runtimeConfig) {
         return withCpuFallback(modelBytes, runtimeConfig,
                 config -> sessionExact(modelBytes, config));
@@ -68,23 +99,34 @@ public class OnnxRuntimeSessionManager {
             throw new IllegalArgumentException("ONNX 模型内容为空");
         }
         OnnxRuntimeConfig effectiveConfig = runtimeConfig == null ? OnnxRuntimeConfig.cpu() : runtimeConfig;
+        synchronized (sessions) {
+            ensureOpen();
+        }
         if (!effectiveConfig.isCuda()) return operation.execute(effectiveConfig);
         String fallbackKey = sha256(modelBytes) + ':' + effectiveConfig.cacheKey();
-        if (cpuFallbacks.containsKey(fallbackKey)) return operation.execute(OnnxRuntimeConfig.cpu());
+        if (cpuFallbackReason(fallbackKey) != null) return operation.execute(OnnxRuntimeConfig.cpu());
         try {
             T cudaResult = operation.execute(effectiveConfig);
-            if (cpuFallbacks.containsKey(fallbackKey)) retireSession(modelBytes, effectiveConfig);
+            if (cpuFallbackReason(fallbackKey) != null) retireSession(modelBytes, effectiveConfig);
             return cudaResult;
+        } catch (ExecutionCapacityException | SessionWaitInterruptedException controlFailure) {
+            throw controlFailure;
         } catch (RuntimeException | LinkageError cudaFailure) {
+            synchronized (sessions) {
+                if (closed || Thread.currentThread().isInterrupted()) throw cudaFailure;
+            }
+            retireSession(modelBytes, effectiveConfig);
             try {
                 T cpuResult = operation.execute(OnnxRuntimeConfig.cpu());
                 String reason = failureMessage(cudaFailure);
-                boolean newFallback = cpuFallbacks.putIfAbsent(fallbackKey, reason) == null;
-                retireSession(modelBytes, effectiveConfig);
+                boolean newFallback = rememberCpuFallback(fallbackKey, reason);
                 if (newFallback) {
-                    log.warn("ONNX CUDA 执行失败，已自动回退 CPU；修复 GPU 环境后请重启服务。原因: {}", reason);
+                    log.warn("ONNX CUDA 执行失败，已自动回退 CPU；回退记录按会话缓存上限保留。原因: {}", reason);
                 }
                 return cpuResult;
+            } catch (ExecutionCapacityException | SessionWaitInterruptedException controlFailure) {
+                controlFailure.addSuppressed(cudaFailure);
+                throw controlFailure;
             } catch (RuntimeException | LinkageError cpuFailure) {
                 IllegalArgumentException combined = new IllegalArgumentException(
                         "ONNX CUDA 执行失败且 CPU 自动回退也失败；CUDA: " + failureMessage(cudaFailure)
@@ -95,56 +137,227 @@ public class OnnxRuntimeSessionManager {
         }
     }
 
+    private String cpuFallbackReason(String key) {
+        synchronized (sessions) {
+            return cpuFallbacks.get(key);
+        }
+    }
+
+    private boolean rememberCpuFallback(String key, String reason) {
+        synchronized (sessions) {
+            if (closed) return false;
+            boolean added = cpuFallbacks.putIfAbsent(key, reason) == null;
+            while (cpuFallbacks.size() > maxSessions) {
+                Iterator<String> oldest = cpuFallbacks.keySet().iterator();
+                oldest.next();
+                oldest.remove();
+            }
+            return added;
+        }
+    }
+
     SessionLease acquireSession(byte[] modelBytes, OnnxRuntimeConfig runtimeConfig) {
         if (modelBytes == null || modelBytes.length == 0) {
             throw new IllegalArgumentException("ONNX 模型内容为空");
         }
         OnnxRuntimeConfig effectiveConfig = runtimeConfig == null ? OnnxRuntimeConfig.cpu() : runtimeConfig;
         String key = sha256(modelBytes) + ':' + effectiveConfig.cacheKey();
+        while (true) {
+            LoadingSession loading;
+            CachedSession evicted = null;
+            boolean startsLoading = false;
+            synchronized (sessions) {
+                ensureOpen();
+                CachedSession cached = sessions.get(key);
+                if (cached != null) return cached.acquire();
+                loading = loadingSessions.get(key);
+                if (loading == null) {
+                    retiredSessions.removeIf(CachedSession::isClosed);
+                    if (loadedSessionCount() >= maxSessions) {
+                        evicted = detachIdleSession();
+                    } else {
+                        loading = new LoadingSession(key);
+                        loadingSessions.put(key, loading);
+                        pendingLoads.add(loading);
+                        startsLoading = true;
+                    }
+                }
+                if (loading != null) loading.waiters++;
+            }
+            if (evicted != null) {
+                // native 关闭期间仍保留退役名额，其他热 key 可以继续获取租约。
+                evicted.retire();
+                continue;
+            }
+            if (startsLoading) createAndPublish(loading, modelBytes, effectiveConfig);
+            return awaitLease(loading);
+        }
+    }
+
+    private void createAndPublish(LoadingSession loading, byte[] bytes, OnnxRuntimeConfig config) {
+        CachedSession created;
+        try {
+            created = createCachedSession(bytes, config);
+        } catch (Throwable failure) {
+            synchronized (sessions) {
+                pendingLoads.remove(loading);
+                loadingSessions.remove(loading.key, loading);
+                loading.future.completeExceptionally(failure);
+            }
+            return;
+        }
+        boolean retire;
+        boolean skipNativeClose;
         synchronized (sessions) {
-            sessionExact(modelBytes, effectiveConfig);
-            CachedSession cached = sessions.get(key);
-            if (cached == null) throw new IllegalStateException("ONNX 会话缓存状态异常");
-            return cached.acquire();
+            pendingLoads.remove(loading);
+            retire = closed || loading.retired || loadingSessions.get(loading.key) != loading;
+            skipNativeClose = jvmShutdown;
+            loadingSessions.remove(loading.key, loading);
+            if (retire) {
+                if (!skipNativeClose) retiredSessions.add(created);
+                loading.future.completeExceptionally(new IllegalStateException("ONNX 会话创建完成前已退役或关闭"));
+            } else {
+                sessions.put(loading.key, created);
+                // 发布与各等待者取得真实租约之间，临时租约阻止空闲淘汰。
+                loading.pin = created.acquire();
+                loading.future.complete(created);
+            }
+        }
+        if (retire && !skipNativeClose) created.retire();
+    }
+
+    private SessionLease awaitLease(LoadingSession loading) {
+        try {
+            if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
+            CachedSession cached = loading.future.get();
+            synchronized (sessions) {
+                if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
+                ensureOpen();
+                if (loading.retired || sessions.get(loading.key) != cached) {
+                    throw new IllegalStateException("ONNX 会话已退役，请重新获取");
+                }
+                return cached.acquire();
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new SessionWaitInterruptedException(interrupted);
+        } catch (ExecutionException failure) {
+            Throwable cause = failure.getCause();
+            if (cause instanceof RuntimeException runtime) throw runtime;
+            if (cause instanceof Error error) throw error;
+            throw new IllegalStateException("ONNX 会话创建失败", cause);
+        } finally {
+            SessionLease pin = null;
+            synchronized (sessions) {
+                loading.waiters--;
+                if (loading.waiters == 0) {
+                    pin = loading.pin;
+                    loading.pin = null;
+                }
+            }
+            if (pin != null) pin.close();
         }
     }
 
     void retireSession(byte[] modelBytes, OnnxRuntimeConfig runtimeConfig) {
         if (modelBytes == null || modelBytes.length == 0 || runtimeConfig == null || !runtimeConfig.isCuda()) return;
         String key = sha256(modelBytes) + ':' + runtimeConfig.cacheKey();
+        CachedSession cached;
         synchronized (sessions) {
-            CachedSession cached = sessions.remove(key);
-            if (cached != null) cached.retire();
+            cached = sessions.remove(key);
+            if (cached != null) retiredSessions.add(cached);
+            LoadingSession loading = loadingSessions.remove(key);
+            if (loading != null) loading.retire();
         }
+        if (cached != null) cached.retire();
     }
 
     OrtSession sessionExact(byte[] modelBytes, OnnxRuntimeConfig runtimeConfig) {
-        if (modelBytes == null || modelBytes.length == 0) {
-            throw new IllegalArgumentException("ONNX 模型内容为空");
+        try (SessionLease lease = acquireSession(modelBytes, runtimeConfig)) {
+            return lease.session();
         }
-        OnnxRuntimeConfig effectiveConfig = runtimeConfig == null ? OnnxRuntimeConfig.cpu() : runtimeConfig;
-        String key = sha256(modelBytes) + ':' + effectiveConfig.cacheKey();
-        CachedSession existing = sessions.get(key);
-        if (existing != null) return existing.session;
+    }
+
+    private void ensureOpen() {
+        if (closed) throw new IllegalStateException("ONNX 会话管理器已关闭");
+    }
+
+    private int loadedSessionCount() {
+        return sessions.size() + retiredSessions.size() + pendingLoads.size();
+    }
+
+    private CachedSession detachIdleSession() {
+        Iterator<CachedSession> candidates = sessions.values().iterator();
+        while (candidates.hasNext()) {
+            CachedSession candidate = candidates.next();
+            if (!candidate.isIdle()) continue;
+            candidates.remove();
+            retiredSessions.add(candidate);
+            evictions++;
+            return candidate;
+        }
+        capacityRejections++;
+        throw new SessionCapacityException(maxSessions);
+    }
+
+    public Map<String, Object> sessionCacheMetrics() {
         synchronized (sessions) {
-            existing = sessions.get(key);
-            if (existing != null) return existing.session;
-            SessionResources resources = null;
-            try {
-                resources = createOptions(effectiveConfig);
-                OrtSession created = environment().createSession(modelBytes, resources.options);
-                sessions.put(key, new CachedSession(created, resources.options, resources.cudaOptions));
-                return created;
-            } catch (OrtException | LinkageError e) {
-                if (resources != null) resources.close();
-                String prefix = effectiveConfig.isCuda()
-                        ? "无法使用 CUDA 加载 ONNX 模型，请检查 CUDA、cuDNN 与 ONNX Runtime 版本: "
-                        : "无法加载 ONNX 模型: ";
-                throw new IllegalArgumentException(prefix + e.getMessage(), e);
-            } catch (RuntimeException e) {
-                if (resources != null) resources.close();
-                throw e;
-            }
+            retiredSessions.removeIf(CachedSession::isClosed);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("maxEntries", maxSessions);
+            result.put("cachedSessions", sessions.size());
+            result.put("retiredSessions", retiredSessions.size());
+            result.put("loadingSessions", pendingLoads.size());
+            result.put("loadedSessions", loadedSessionCount());
+            result.put("evictions", evictions);
+            result.put("capacityRejections", capacityRejections);
+            return result;
+        }
+    }
+
+    public static final class SessionCapacityException extends ExecutionCapacityException {
+        private SessionCapacityException(int maximum) {
+            super(Resource.ONNX_SESSION_CACHE, "ONNX 会话数量已达上限（" + maximum
+                    + "），当前会话正在加载、使用或等待释放，请稍后重试或调整 rule-engine.onnx.session-cache-max-entries");
+        }
+    }
+
+    private static final class SessionWaitInterruptedException extends IllegalStateException {
+        private SessionWaitInterruptedException(InterruptedException cause) {
+            super("等待 ONNX 会话创建被中断", cause);
+        }
+    }
+
+    private static final class LoadingSession {
+        private final String key;
+        private final CompletableFuture<CachedSession> future = new CompletableFuture<>();
+        private int waiters;
+        private SessionLease pin;
+        private boolean retired;
+
+        private LoadingSession(String key) { this.key = key; }
+
+        private void retire() {
+            retired = true;
+            future.completeExceptionally(new IllegalStateException("ONNX 会话创建任务已退役或关闭"));
+        }
+    }
+
+    CachedSession createCachedSession(byte[] modelBytes, OnnxRuntimeConfig config) {
+        SessionResources resources = null;
+        try {
+            resources = createOptions(config);
+            OrtSession created = environment().createSession(modelBytes, resources.options);
+            return new CachedSession(created, resources.options, resources.cudaOptions);
+        } catch (OrtException | LinkageError e) {
+            if (resources != null) resources.close();
+            String prefix = config.isCuda()
+                    ? "无法使用 CUDA 加载 ONNX 模型，请检查 CUDA、cuDNN 与 ONNX Runtime 版本: "
+                    : "无法加载 ONNX 模型: ";
+            throw new IllegalArgumentException(prefix + e.getMessage(), e);
+        } catch (RuntimeException e) {
+            if (resources != null) resources.close();
+            throw e;
         }
     }
 
@@ -181,6 +394,7 @@ public class OnnxRuntimeSessionManager {
 
     public Map<String, Object> runtimeCapabilities() {
         Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sessionCache", sessionCacheMetrics());
         EnumSet<OrtProvider> providers;
         try {
             result.put("onnxRuntimeVersion", environment().getVersion());
@@ -191,7 +405,7 @@ public class OnnxRuntimeSessionManager {
             result.put("cudaAvailable", false);
             result.put("cudaError", failureMessage(e));
             result.put("cpuFallbackEnabled", true);
-            result.put("activeCpuFallbackCount", cpuFallbacks.size());
+            result.put("activeCpuFallbackCount", getActiveCpuFallbackCount());
             return result;
         }
         List<String> providerNames = new ArrayList<>();
@@ -214,7 +428,7 @@ public class OnnxRuntimeSessionManager {
         result.put("cudaAvailable", cudaAvailable);
         result.put("cudaError", cudaError);
         result.put("cpuFallbackEnabled", true);
-        result.put("activeCpuFallbackCount", cpuFallbacks.size());
+        result.put("activeCpuFallbackCount", getActiveCpuFallbackCount());
         return result;
     }
 
@@ -237,18 +451,20 @@ public class OnnxRuntimeSessionManager {
             return result;
         }
         String key = modelDigest.trim() + ':' + runtimeConfig.cacheKey();
-        String fallbackReason = cpuFallbacks.get(key);
+        String fallbackReason = cpuFallbackReason(key);
         if (fallbackReason != null) {
             result.put("state", "CPU_FALLBACK");
             result.put("effectiveProvider", OnnxRuntimeConfig.CPU);
             result.put("reason", fallbackReason);
             return result;
         }
-        if (sessions.containsKey(key)) {
-            result.put("state", "CUDA");
-            result.put("effectiveProvider", OnnxRuntimeConfig.CUDA);
-            result.put("reason", null);
-            return result;
+        synchronized (sessions) {
+            if (sessions.containsKey(key)) {
+                result.put("state", "CUDA");
+                result.put("effectiveProvider", OnnxRuntimeConfig.CUDA);
+                result.put("reason", null);
+                return result;
+            }
         }
         result.put("state", "NOT_INITIALIZED");
         result.put("effectiveProvider", null);
@@ -308,11 +524,15 @@ public class OnnxRuntimeSessionManager {
     }
 
     public int getCachedSessionCount() {
-        return sessions.size();
+        synchronized (sessions) {
+            return sessions.size();
+        }
     }
 
     int getActiveCpuFallbackCount() {
-        return cpuFallbacks.size();
+        synchronized (sessions) {
+            return cpuFallbacks.size();
+        }
     }
 
     boolean usesCpuFallback(byte[] modelBytes, OnnxRuntimeConfig runtimeConfig) {
@@ -321,7 +541,7 @@ public class OnnxRuntimeSessionManager {
             return false;
         }
         String key = sha256(modelBytes) + ':' + runtimeConfig.cacheKey();
-        return cpuFallbacks.containsKey(key);
+        return cpuFallbackReason(key) != null;
     }
 
     private String failureMessage(Throwable failure) {
@@ -347,20 +567,29 @@ public class OnnxRuntimeSessionManager {
     }
 
     void close(boolean jvmShutdownInProgress) {
+        List<CachedSession> toRetire;
         synchronized (sessions) {
+            closed = true;
+            jvmShutdown |= jvmShutdownInProgress;
+            for (LoadingSession loading : loadingSessions.values()) loading.retire();
+            loadingSessions.clear();
             if (jvmShutdownInProgress) {
                 // OrtEnvironment 会注册独立的 JVM shutdown hook。Java 不保证多个 hook 的执行顺序，
                 // 此时主动关闭 CUDA session 可能与环境释放并发并触发原生访问冲突；进程退出时交由 OS 回收。
+                for (CachedSession session : sessions.values()) session.abandonNativeClose();
+                for (CachedSession session : retiredSessions) session.abandonNativeClose();
                 sessions.clear();
+                retiredSessions.clear();
                 cpuFallbacks.clear();
                 return;
             }
-            for (CachedSession session : sessions.values()) {
-                session.retire();
-            }
+            retiredSessions.addAll(sessions.values());
+            toRetire = new ArrayList<>(retiredSessions);
             sessions.clear();
             cpuFallbacks.clear();
         }
+        for (CachedSession session : toRetire) session.retire();
+        synchronized (sessions) { retiredSessions.removeIf(CachedSession::isClosed); }
     }
 
     private boolean isJvmShutdownInProgress() {
@@ -416,7 +645,9 @@ public class OnnxRuntimeSessionManager {
         private final Runnable closeAction;
         private int activeUsers;
         private boolean retired;
-        private boolean closed;
+        private boolean closing;
+        private boolean abandoned;
+        private volatile boolean closed;
 
         private CachedSession(OrtSession session, OrtSession.SessionOptions options,
                               OrtCUDAProviderOptions cudaOptions) {
@@ -439,27 +670,49 @@ public class OnnxRuntimeSessionManager {
             return new SessionLease(this);
         }
 
-        synchronized void release() {
-            if (activeUsers > 0) activeUsers--;
-            closeIfUnused();
+        void release() {
+            boolean shouldClose;
+            synchronized (this) {
+                if (activeUsers > 0) activeUsers--;
+                shouldClose = markForClose();
+            }
+            if (shouldClose) closeResources();
         }
 
-        synchronized void retire() {
-            retired = true;
-            closeIfUnused();
+        void retire() {
+            boolean shouldClose;
+            synchronized (this) {
+                retired = true;
+                shouldClose = markForClose();
+            }
+            if (shouldClose) closeResources();
         }
 
-        synchronized boolean isClosed() {
+        boolean isClosed() {
             return closed;
         }
 
-        private void closeIfUnused() {
-            if (!retired || activeUsers > 0 || closed) return;
-            closed = true;
+        synchronized boolean isIdle() {
+            return activeUsers == 0 && !retired && !closing && !abandoned;
+        }
+
+        synchronized void abandonNativeClose() {
+            abandoned = true;
+        }
+
+        private boolean markForClose() {
+            if (!retired || activeUsers > 0 || closed || closing || abandoned) return false;
+            closing = true;
+            return true;
+        }
+
+        private void closeResources() {
             try {
                 closeAction.run();
             } catch (RuntimeException | LinkageError e) {
                 log.warn("释放 ONNX 会话资源失败: {}", failureMessageOf(e));
+            } finally {
+                closed = true;
             }
         }
 

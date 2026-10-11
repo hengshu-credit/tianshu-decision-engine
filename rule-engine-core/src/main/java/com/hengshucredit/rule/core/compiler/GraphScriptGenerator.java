@@ -336,6 +336,9 @@ public class GraphScriptGenerator {
             }
             if (ConditionOperandCompiler.supports(node)) return ConditionOperandCompiler.hasUsableCondition(node);
             String op = node.getString("operator");
+            if (ConditionExpressionBuilder.isRangeOperator(op)) {
+                ConditionExpressionBuilder.rangeBounds(node.getString("varType"), node.getString("value"), "VAR".equals(node.getString("valueKind")));
+            }
             if (op == null || op.trim().isEmpty()) op = "==";
             if ("*".equals(op)) return false;
             String left = node.getString("varCode");
@@ -395,6 +398,10 @@ public class GraphScriptGenerator {
         Long leftId = getLongAny(leaf, "_varId", "varId", "leftVarId");
         String leftRefType = firstNotEmpty(leaf.getString("_refType"), leaf.getString("refType"), leaf.getString("leftRefType"));
         String left = resolveVar(leftId, leftRefType, leftCode, varContext);
+
+        if (ConditionExpressionBuilder.isRangeOperator(op)) {
+            return ConditionExpressionBuilder.build(left, leaf.getString("varType"), op, leaf.getString("value"), "VAR".equals(leaf.getString("valueKind")));
+        }
 
         String right;
         if ("VAR".equals(leaf.getString("valueKind"))) {

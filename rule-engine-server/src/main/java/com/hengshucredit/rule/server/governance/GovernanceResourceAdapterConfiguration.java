@@ -3,7 +3,6 @@ package com.hengshucredit.rule.server.governance;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.server.mapper.RuleBillingConfigMapper;
-import com.hengshucredit.rule.model.entity.RuleDbDatasource;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleExperiment;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
@@ -34,6 +33,8 @@ import com.hengshucredit.rule.server.mapper.RuleListLibraryMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
 import com.hengshucredit.rule.server.service.RuleExternalApiConfigService;
+import com.hengshucredit.rule.server.service.FunctionMethodCatalogService;
+import com.hengshucredit.rule.server.service.DBConnectPools;
 import com.hengshucredit.rule.server.mapper.RuleVariableOptionMapper;
 import com.hengshucredit.rule.server.service.RuleLifecycleService;
 import com.hengshucredit.rule.server.service.RuleDraftService;
@@ -104,25 +105,19 @@ public class GovernanceResourceAdapterConfiguration {
     @Bean
     public GovernedResourceAdapter databaseGovernanceAdapter(
             RuleDbDatasourceMapper mapper,
-            GovernanceSecretCodec secretCodec) {
-        return adapter(GovernanceResourceTypes.DATABASE,
-                RuleDbDatasource.class, mapper,
-                RuleDbDatasource::getId, RuleDbDatasource::setId,
-                RuleDbDatasource::getStatus,
-                RuleDbDatasource::setStatus,
-                Set.of("datasourceCode", "datasourceName", "dbType"),
-                Set.of("password", "sshPassword", "sshPrivateKey",
-                        "sshPassphrase"),
-                secretCodec);
+            GovernanceSecretCodec secretCodec,
+            DBConnectPools pools) {
+        return new DatabaseGovernedResourceAdapter(store(mapper), secretCodec, pools);
     }
 
     @Bean
     public GovernedResourceAdapter functionGovernanceAdapter(
             RuleFunctionMapper mapper,
             GovernanceSecretCodec secretCodec,
-            RuleFunctionPushService functionPushService) {
+            RuleFunctionPushService functionPushService,
+            FunctionMethodCatalogService methodCatalogService) {
         return new FunctionGovernedResourceAdapter(
-                store(mapper), secretCodec, functionPushService);
+                store(mapper), secretCodec, functionPushService, methodCatalogService);
     }
 
     @Bean
@@ -250,6 +245,21 @@ public class GovernanceResourceAdapterConfiguration {
                     throw new IllegalStateException(
                             "资源不存在或已被并发修改");
                 }
+            }
+
+            @Override
+            public void restore(T entity) {
+                // Immutable snapshots are complete: nulls must clear values written by another version.
+                var table = com.baomidou.mybatisplus.core.metadata.TableInfoHelper.getTableInfo(entity.getClass());
+                var bean = new org.springframework.beans.BeanWrapperImpl(entity);
+                var update = new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<T>()
+                        .eq(table.getKeyColumn(), bean.getPropertyValue(table.getKeyProperty()));
+                for (var field : table.getFieldList()) {
+                    if (entity instanceof RuleModel && "modelContent".equals(field.getProperty()) && bean.getPropertyValue("modelContent") == null) continue;
+                    if (!Set.of("createTime", "updateTime", "accessToken").contains(field.getProperty()))
+                        update.set(field.getColumn(), bean.getPropertyValue(field.getProperty()));
+                }
+                if (mapper.update(null, update) != 1) throw new IllegalStateException("生产版本投影恢复失败");
             }
         };
     }

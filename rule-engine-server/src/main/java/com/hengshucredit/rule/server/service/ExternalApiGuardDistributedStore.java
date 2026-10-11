@@ -15,6 +15,8 @@ public interface ExternalApiGuardDistributedStore {
 
     void release(Long apiConfigId, String permitId);
 
+    default void invalidateTrial(Long apiConfigId) { }
+
     enum AcquireResult {
         ACQUIRED,
         RATE_LIMITED,

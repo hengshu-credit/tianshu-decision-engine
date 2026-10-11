@@ -72,6 +72,19 @@ function visitRuleCalls(value, callback, visited = new Set()) {
   Object.keys(value).forEach(key => visitRuleCalls(value[key], callback, visited))
 }
 
+export function collectRuleCallsInModel(model) {
+  const calls = []
+  visitRuleCalls(model, call => calls.push(call))
+  return calls
+}
+
+export function selectedRuleCallVersion(versions, call) {
+  if (!Array.isArray(versions)) return null
+  if (call.versionMode === 'FIXED') return versions.find(item => String(item.bindingId) === String(call.versionBindingId)) || null
+  return versions.reduce((latest, item) => Number.isSafeInteger(item.version) && item.version > 0
+    && (!latest || item.version > latest.version) ? item : latest, null)
+}
+
 export function repairLegacyRuleCallRefs(model, rules) {
   let repaired = 0
   visitRuleCalls(model, call => {
@@ -108,9 +121,13 @@ export function validateRuleCallBlock(call, context = {}) {
     const hasOutput = !!call.outputField
     const hasTarget = !!call.targetOperand
     if (!hasTarget) return '启用结果映射后必须配置目标字段'
-    if (hasOutput && call.versionMode !== 'FIXED' && !(rule.outputFields || rule.outputFieldsJson || []).some(field =>
-      String(field.scriptName || field.fieldName) === String(call.outputField))) {
-      return '映射的输出字段已不存在，请重新选择'
+    if (hasOutput) {
+      if (!Array.isArray(rule.executionVersions)) return '所选规则的发布字段尚未读取，请重新校验或展开调用配置重试'
+      const version = selectedRuleCallVersion(rule.executionVersions, call)
+      if (!version || version.available === false || !Array.isArray(version.outputFields)) return '所选规则版本没有可验证的发布字段，请检查版本是否可用'
+      if (!version.outputFields.some(field => String(field.scriptName || field.fieldName) === String(call.outputField))) {
+        return '映射的输出字段不属于所选发布版本，请重新选择'
+      }
     }
   }
   return ''

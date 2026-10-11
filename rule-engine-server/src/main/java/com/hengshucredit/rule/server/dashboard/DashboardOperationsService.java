@@ -47,7 +47,7 @@ public class DashboardOperationsService {
         }
 
         DashboardQueryRepository.ResourceCounts resources = null;
-        if (access.can("database:view") || access.can("field:view")
+        if (access.can("database:view") || access.can("list:view")
                 || access.can("datasource:view")) {
             resources = repository.resourceCounts(criteria);
         }
@@ -56,7 +56,7 @@ public class DashboardOperationsService {
                     resources.databaseCount(), calls(repository.runtimeCalls(
                     criteria, "DATABASE"), false));
         }
-        if (access.can("field:view")) {
+        if (access.can("list:view")) {
             lists = new DashboardResponses.ListSection(true,
                     resources.listCount(), categories(
                     resources.listCategories(), resources.listCount()),
@@ -67,7 +67,7 @@ public class DashboardOperationsService {
                     resources.apiCount(), calls(repository.runtimeCalls(
                     criteria, "DATASOURCE"), true));
         }
-        if (access.can("project:view")) {
+        if (access.can("billing:view")) {
             List<DashboardResponses.CurrencyAmount> amounts = repository
                     .billingByCurrency(criteria).stream()
                     .map(value -> new DashboardResponses.CurrencyAmount(

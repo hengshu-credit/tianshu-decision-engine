@@ -42,6 +42,35 @@ import static org.junit.Assert.assertTrue;
 
 public class ExternalApiInvokeServiceTest {
 
+    @Test public void retriedRequestWithoutResponseIsUnknownDespiteEarlierHttpError() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var secondArrived = new java.util.concurrent.CountDownLatch(1);
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/retry-unknown", exchange -> {
+            if (requests.incrementAndGet() == 1) {
+                byte[] body = "{\"error\":\"temporary\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(503, body.length); exchange.getResponseBody().write(body);
+            } else {
+                secondArrived.countDown();
+                try { release.await(5, java.util.concurrent.TimeUnit.SECONDS); }
+                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            }
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalApiConfig config = basicApiConfig(9901L, 1L, "/retry-unknown");
+            config.setRetryCount(1); config.setRetryStatusCodes("503"); config.setReadTimeoutMs(100);
+            var failure = org.junit.Assert.assertThrows(ExternalApiInvokeService.ApiInvokeException.class,
+                    () -> configuredService(config, httpDatasource(server)).invoke(config, Map.of()));
+            assertTrue(secondArrived.await(1, java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals("已配置的供应商重试仍应执行一次", 2, requests.get());
+            assertTrue("上一轮503不能伪装本轮已收到响应", failure.isUnknown());
+            assertEquals(Boolean.TRUE, failure.getRequestIssued());
+        } finally { release.countDown(); server.stop(0); }
+    }
+
     @Test public void creditPendingCodesOnlyRepeatStatusQueryAndPreserveWholeLargeData() throws Exception {
         AtomicInteger authorizations = new AtomicInteger(); AtomicInteger polls = new AtomicInteger(); AtomicInteger reports = new AtomicInteger();
         Map<String, Object> features = new LinkedHashMap<>();

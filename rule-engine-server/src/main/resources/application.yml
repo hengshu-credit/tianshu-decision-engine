@@ -21,7 +21,6 @@ spring:
     multipart:
       max-file-size: 512MB
       max-request-size: 512MB
-  # 未配置 Kafka 时排除自动装配，避免启动期连接失败；需要日志入 Kafka 时请配置 spring.kafka
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     # 含数据库名，${MYSQL_DATABASE} 可通过环境变量或配置文件注入
@@ -72,14 +71,21 @@ rule-engine:
     mask-paths: ${RULE_TRACE_MASK_PATHS:}
   source-resolution:
     parallelism: ${SOURCE_RESOLUTION_PARALLELISM:4}
+  onnx:
+    # 8 种任务各保留 CPU 检查与一种运行配置；仅限制会话数量，不等于 native/显存字节预算。
+    # 满额优先释放最久未用的空闲会话，全部在用时明确拒绝新的模型/运行配置。
+    session-cache-max-entries: ${ONNX_SESSION_CACHE_MAX_ENTRIES:16}
   execution-persistence:
     queue-capacity: ${RULE_EXECUTION_PERSISTENCE_QUEUE_CAPACITY:5000}
-    # 数据库日志和恢复 outbox 同时不可写时的本地写前日志；目录应放在独立持久化盘。
+    # 请求先提交恢复 outbox；不可写时改用本地写前日志，目录应放在独立持久化盘。
     journal-enabled: ${RULE_EXECUTION_PERSISTENCE_JOURNAL_ENABLED:true}
     journal-dir: ${RULE_EXECUTION_PERSISTENCE_JOURNAL_DIR:./logs/execution-persistence-journal}
+    # 含版本/摘要封装和行尾换行的实际UTF-8字节数，不只是内部Entry载荷。
     journal-max-entry-bytes: ${RULE_EXECUTION_PERSISTENCE_JOURNAL_MAX_ENTRY_BYTES:10485760}
     journal-replay-delay-ms: ${RULE_EXECUTION_PERSISTENCE_JOURNAL_REPLAY_DELAY_MS:5000}
     journal-replay-batch-size: ${RULE_EXECUTION_PERSISTENCE_JOURNAL_REPLAY_BATCH_SIZE:1000}
+  list-actions:
+    journal-dir: ${RULE_LIST_ACTION_JOURNAL_DIR:./logs/list-action-journal}
   cors:
     # 生产环境必须通过环境变量配置为实际控制台域名，多个来源使用英文逗号分隔
     allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:${VITE_PORT:9090},http://127.0.0.1:${VITE_PORT:9090}}
@@ -93,9 +99,13 @@ rule-engine:
     token-failure-limit: 10
     token-failure-window-seconds: 300
     token-lock-seconds: 900
-  # 启用 Kafka 消费执行日志时，与 spring.kafka 一并配置；参见 README
+  # Kafka 日志消费默认关闭；显式配置 broker 和主题到项目 ID 的绑定，参见 docs/kafka-execution-logs.md。
   kafka:
-    log-topic: rule-execution-log
+    enabled: ${RULE_KAFKA_ENABLED:false}
+    group-id: ${RULE_KAFKA_GROUP_ID:rule-engine-server}
+    topic-projects: {}
+    max-retries: 2
+    retry-interval-ms: 1000
   # 管理端（Vue 控制台）用户名密码登录；false 时不校验会话，与改造前行为一致
   console-login:
     enabled: true

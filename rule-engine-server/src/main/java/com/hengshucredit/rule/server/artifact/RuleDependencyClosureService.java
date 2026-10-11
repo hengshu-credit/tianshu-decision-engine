@@ -50,6 +50,8 @@ import java.util.TreeMap;
 
 @Service
 public class RuleDependencyClosureService {
+    @jakarta.annotation.Resource @org.springframework.context.annotation.Lazy
+    private com.hengshucredit.rule.server.service.ResourceVersionService resourceVersions;
     @Resource
     private RuleDefinitionService definitionService;
     @Resource
@@ -108,8 +110,12 @@ public class RuleDependencyClosureService {
             issues.add(RuleValidationIssue.error("REVISION_DEFINITION_MISMATCH", "$", "修订不属于指定规则"));
             return DependencyClosure.of(Collections.emptyList(), issues);
         }
+        try {
         collectDefinition(definitionId, revision, rootFields, false, null, dependencies, issues,
                 new LinkedHashSet<>(), new LinkedHashSet<>());
+        } catch (DependencySnapshotConflict error) {
+            issues.add(RuleValidationIssue.error("DEPENDENCY_SNAPSHOT_CONFLICT", "$", error.getMessage()));
+        }
         return DependencyClosure.of(new ArrayList<>(dependencies.values()), issues);
     }
 
@@ -118,8 +124,57 @@ public class RuleDependencyClosureService {
                                             RuleFieldAnalyzer.ResolvedFields fields) {
         List<RuleValidationIssue> issues = new ArrayList<>();
         Map<String, ArtifactDependency> dependencies = new TreeMap<>();
+        try {
         collectDefinition(revision.getDefinitionId(), revision, fields, false, null,
                 dependencies, issues, new LinkedHashSet<>(), new LinkedHashSet<>());
+        } catch (DependencySnapshotConflict error) {
+            issues.add(RuleValidationIssue.error("DEPENDENCY_SNAPSHOT_CONFLICT", "$", error.getMessage()));
+        }
+        return DependencyClosure.of(new ArrayList<>(dependencies.values()), issues);
+    }
+
+    /** 模型审批完成后的实际聚合是根，禁止再次按当前模型ID替换这个根。 */
+    public DependencyClosure resolveModelSnapshot(RuleModel model) {
+        List<RuleValidationIssue> issues = new ArrayList<>();
+        Map<String, ArtifactDependency> dependencies = new TreeMap<>();
+        if (model == null || model.getId() == null || model.getCurrentVersion() == null
+                || model.getInputFields() == null || model.getOutputFields() == null) {
+            throw new IllegalArgumentException("模型版本必须包含实际落库的模型与输入输出字段");
+        }
+        byte[] bytes = decodeModelContent(model.getModelContent());
+        String digest = Sha256Digests.bytes(bytes);
+        if (validDigest(model.getModelDigest()) && !digest.equals(model.getModelDigest())) {
+            throw new IllegalArgumentException("模型文件与保存摘要不一致");
+        }
+        model.setModelDigest(digest);
+        Map<String, Object> root = CanonicalJson.readMap(CanonicalJson.write(model));
+        root.remove("modelContent");
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("model", root);
+        metadata.put("modelFormat", model.getModelFormat());
+        metadata.put("inputFields", beanMaps(model.getInputFields()));
+        metadata.put("outputFields", beanMaps(model.getOutputFields()));
+        String componentId = "MODEL:" + model.getId() + ":" + model.getCurrentVersion();
+        dependencies.put(componentId, new ArtifactDependency(componentId, "MODEL", model.getId(), model.getCurrentVersion(),
+                "models/" + model.getId() + "/" + model.getCurrentVersion() + "." + model.getModelFormat().toLowerCase(Locale.ROOT),
+                "application/octet-stream", "EMBEDDED", digest, bytes, metadata));
+        try {
+        for (RuleModelInputField field : model.getInputFields()) {
+            if (field.getStatus() != null && field.getStatus() == 0) continue;
+            if (field.getVarId() != null) collectFieldReference(field.getRefType(), field.getVarId(), model.getProjectId(),
+                    "input." + field.getFieldName(), dependencies, issues);
+            collectModelOperand(field.getSourceOperand(), model.getProjectId(), dependencies, issues);
+            collectModelOperand(field.getDefaultOperand(), model.getProjectId(), dependencies, issues);
+        }
+        for (RuleModelOutputField field : model.getOutputFields()) {
+            if (field.getVarId() != null) collectFieldReference(field.getRefType(), field.getVarId(), model.getProjectId(),
+                    "output." + field.getFieldName(), dependencies, issues);
+            collectModelOperand(field.getTargetOperand(), model.getProjectId(), dependencies, issues);
+            collectModelOperand(field.getTransformOperand(), model.getProjectId(), dependencies, issues);
+        }
+        } catch (DependencySnapshotConflict error) {
+            issues.add(RuleValidationIssue.error("DEPENDENCY_SNAPSHOT_CONFLICT", "$", error.getMessage()));
+        }
         return DependencyClosure.of(new ArrayList<>(dependencies.values()), issues);
     }
 
@@ -270,6 +325,26 @@ public class RuleDependencyClosureService {
         for (OperandDependencyCollector.Reference reference
                 : OperandDependencyCollector.collectReferences(root)) {
             String type = normalize(reference.getRefType());
+            if (reference.getVersionId() != null) {
+                try {
+                    var call = new com.hengshucredit.rule.core.engine.ResourceVersionCall(type, reference.getRefId(), reference.getVersionId(), "", List.of(), null, null, reference.getVersionSource());
+                    JSONObject snapshot = resourceVersions.snapshot(call, projectId);
+                    byte[] bytes = CanonicalJson.writeBytes(snapshot);
+                    String key = "RESOURCE_VERSION:" + call.bindingKey();
+                    ArtifactDependency previous = dependencies.putIfAbsent(key, new ArtifactDependency(key, "RESOURCE_VERSION", reference.getRefId(), snapshot.getInteger("version"),
+                            "resources/versions/" + type + "-" + reference.getRefId() + "-" + call.versionToken().replace(':', '-') + ".json",
+                            "application/json", "EMBEDDED", Sha256Digests.bytes(bytes), bytes, Map.of("versionId", reference.getVersionId())));
+                    if (previous == null && ("VARIABLE".equals(type) || "CONSTANT".equals(type))) {
+                        RuleVariable variable = snapshot.getJSONObject("payload").toJavaObject(RuleVariable.class);
+                        if ("DERIVED".equals(variable.getVarSource())) collectStructuredReferences(variable.getSourceConfig(), projectId,
+                                dependencies, issues, visitingRules, visitedRules);
+                        if (externalSource(variable.getVarSource())) addExternalSourceBindings(variable, type, reference.getPath(), dependencies, issues);
+                    }
+                } catch (RuntimeException error) {
+                    issues.add(RuleValidationIssue.error("RESOURCE_VERSION_INVALID", reference.getPath(), error.getMessage()));
+                }
+                continue;
+            }
             if ("FUNCTION".equals(type)) {
                 if (reference.getRefId() == null) {
                     if (reference.getDisplayCode() == null || reference.getDisplayCode().isBlank()) {
@@ -322,6 +397,7 @@ public class RuleDependencyClosureService {
             case "MODEL_OUTPUT" -> addModelOutput(refId, projectId, path, dependencies, issues);
             case "DATA_OBJECT" -> addDataObjectField(refId, projectId, path, dependencies, issues);
             case "EXTERNAL_API" -> addDirectExternalApi(refId, projectId, path, dependencies, issues);
+            case "LIST_LIBRARY" -> addDirectList(refId, projectId, path, dependencies, issues);
             default -> issues.add(RuleValidationIssue.error("UNSUPPORTED_REFERENCE_TYPE", path,
                     type, refId, "不支持的引用类型: " + type));
         }
@@ -347,8 +423,26 @@ public class RuleDependencyClosureService {
         binding.put("sourceResourceId", apiId);
         binding.put("targetResourceType", "EXTERNAL_API");
         addSourceIdentity("EXTERNAL_API", apiId, binding);
-        addJsonDependency("BINDING:EXTERNAL_API:" + apiId, "BINDING", apiId, null,
+        boolean added = addJsonDependency("BINDING:EXTERNAL_API:" + apiId, "BINDING", apiId, null,
                 "bindings/resources/external_api/" + apiId + ".json", "EXPLICIT_BINDING", binding, dependencies);
+        if (added && api.getExecutionConfig() != null) collectStructuredReferences(api.getExecutionConfig(), projectId,
+                dependencies, issues, new LinkedHashSet<>(), new LinkedHashSet<>());
+    }
+
+    private void addDirectList(Long listId, Long projectId, String path,
+                              Map<String, ArtifactDependency> dependencies, List<RuleValidationIssue> issues) {
+        var library = listLibraryMapper == null ? null : listLibraryMapper.selectById(listId);
+        if (library == null || !active(library.getStatus()) || !available(library.getScope(), library.getProjectId(), projectId)) {
+            issues.add(RuleValidationIssue.error("DEPENDENCY_NOT_FOUND", path, "LIST_LIBRARY", listId, "名单不存在、已停用或不属于当前项目"));
+            return;
+        }
+        Map<String, Object> binding = new LinkedHashMap<>();
+        binding.put("sourceComponentId", "LIST_LIBRARY:" + listId);
+        binding.put("sourceType", "LIST_LIBRARY"); binding.put("sourceResourceId", listId);
+        binding.put("targetResourceType", "LIST_LIBRARY");
+        addSourceIdentity("LIST_LIBRARY", listId, binding);
+        addJsonDependency("BINDING:LIST_LIBRARY:" + listId, "BINDING", listId, null,
+                "bindings/resources/list_library/" + listId + ".json", "EXPLICIT_BINDING", binding, dependencies);
     }
 
     private void addVariable(String refType, Long variableId, Long projectId, String path,
@@ -371,7 +465,6 @@ public class RuleDependencyClosureService {
                     "引用类型与资源类型不一致"));
             return;
         }
-        if (dependencies.containsKey(actualType + ":" + variableId)) return;
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("id", variable.getId());
         snapshot.put("projectId", variable.getProjectId());
@@ -389,8 +482,8 @@ public class RuleDependencyClosureService {
         snapshot.put("description", variable.getDescription());
         snapshot.put("sortOrder", variable.getSortOrder());
         snapshot.put("status", variable.getStatus());
-        addJsonDependency(actualType + ":" + variableId, actualType, variableId, null,
-                "variables/" + variableId + ".json", "EMBEDDED", snapshot, dependencies);
+        if (!addJsonDependency(actualType + ":" + variableId, actualType, variableId, null,
+                "variables/" + variableId + ".json", "EMBEDDED", snapshot, dependencies)) return;
         if ("DERIVED".equals(variable.getVarSource())) {
             collectStructuredReferences(variable.getSourceConfig(), projectId, dependencies,
                     issues, new LinkedHashSet<>(), new LinkedHashSet<>());
@@ -417,6 +510,8 @@ public class RuleDependencyClosureService {
             addExternalBinding(variable, actualType, "EXTERNAL_API", config.getLong("apiConfigId"),
                     path, dependencies, issues);
             collectStructuredReferences(JSON.toJSONString(config.get("requestOverrides")), variable.getProjectId(), dependencies,
+                    issues, new LinkedHashSet<>(), new LinkedHashSet<>());
+            collectStructuredReferences(JSON.toJSONString(config.get("inputOverrides")), variable.getProjectId(), dependencies,
                     issues, new LinkedHashSet<>(), new LinkedHashSet<>());
             if (apiConfigMapper != null && config.getLong("apiConfigId") != null) {
                 var api = apiConfigMapper.selectById(config.getLong("apiConfigId"));
@@ -508,7 +603,6 @@ public class RuleDependencyClosureService {
     private void addModel(Long modelId, Long projectId, String path,
                           Map<String, ArtifactDependency> dependencies,
                           List<RuleValidationIssue> issues) {
-        if (dependencies.keySet().stream().anyMatch(key -> key.startsWith("MODEL:" + modelId + ":"))) return;
         RuleModel model = loadModel(modelId);
         if (model == null) {
             issues.add(RuleValidationIssue.error("DEPENDENCY_NOT_FOUND", path, "MODEL", modelId,
@@ -520,10 +614,19 @@ public class RuleDependencyClosureService {
                     "模型已停用或不属于当前项目"));
             return;
         }
-        Integer version = model.getCurrentVersion();
+        Integer version = model.getPublishedVersion();
         if (version == null || version <= 0) {
             issues.add(RuleValidationIssue.error("MODEL_VERSION_MISSING", path, "MODEL", modelId,
-                    "模型没有可固定的版本"));
+                    "模型尚未发布，请先发布上游模型"));
+            return;
+        }
+        ArtifactDependency existing = dependencies.values().stream()
+                .filter(item -> "MODEL".equals(item.getResourceType()) && modelId.equals(item.getResourceId())).findFirst().orElse(null);
+        if (existing != null) {
+            if (!version.equals(existing.getVersion())) {
+                issues.add(RuleValidationIssue.error("MODEL_VERSION_CONFLICT", path, "MODEL", modelId,
+                        "同一模型依赖出现不同版本: " + modelId));
+            }
             return;
         }
         RuleModelVersion snapshot = loadModelVersion(modelId, version);
@@ -535,6 +638,10 @@ public class RuleDependencyClosureService {
         if (snapshot.getStatus() != null && !active(snapshot.getStatus())) {
             issues.add(RuleValidationIssue.error("INACTIVE_DEPENDENCY", path, "MODEL", modelId,
                     "模型版本已停用: " + version));
+            return;
+        }
+        if (snapshot.getExecutionSnapshotJson() != null && !snapshot.getExecutionSnapshotJson().isBlank()) {
+            addFrozenModelVersion(snapshot, path, dependencies, issues);
             return;
         }
         byte[] content = decodeModelContent(snapshot.getModelContent() == null
@@ -589,6 +696,50 @@ public class RuleDependencyClosureService {
                     path + ".output." + field.getFieldName(), dependencies, issues);
             collectModelOperand(field.getTargetOperand(), projectId, dependencies, issues);
             collectModelOperand(field.getTransformOperand(), projectId, dependencies, issues);
+        }
+    }
+
+    /** 完整模型版本自身已经封装闭包；不能重新收集它的当前字段或当前上游配置。 */
+    private void addFrozenModelVersion(RuleModelVersion version, String path,
+            Map<String, ArtifactDependency> dependencies, List<RuleValidationIssue> issues) {
+        try {
+            if (!Sha256Digests.text(version.getExecutionSnapshotJson()).equals(version.getExecutionSnapshotDigest())) {
+                throw new IllegalArgumentException("模型版本快照摘要不匹配");
+            }
+            Map<String, Object> snapshot = new com.hengshucredit.rule.server.service.RuleTestExpectationService()
+                    .readJsonObject(version.getExecutionSnapshotJson(), "模型版本");
+            if (!(snapshot.get("model") instanceof Map<?, ?> model)
+                    || !String.valueOf(version.getModelId()).equals(String.valueOf(model.get("id")))
+                    || !String.valueOf(version.getVersion()).equals(String.valueOf(model.get("currentVersion")))) {
+                throw new IllegalArgumentException("模型版本快照归属不匹配");
+            }
+            if (snapshot.get("unavailableReasons") instanceof List<?> reasons && !reasons.isEmpty()) {
+                throw new IllegalArgumentException("模型版本依赖未完整冻结: " + reasons);
+            }
+            var decoded = new DecisionArtifactPackageCodec().decode(Base64.getDecoder().decode(String.valueOf(snapshot.get("packageContent"))));
+            if (!decoded.getArtifactDigest().equals(snapshot.get("artifactDigest"))
+                    || !decoded.getPackageDigest().equals(snapshot.get("packageDigest"))) {
+                throw new IllegalArgumentException("模型版本制品摘要不匹配");
+            }
+            for (DecisionArtifactPackage.Component component : decoded.getArtifactPackage().getComponents().values()) {
+                Map<String, Object> metadata = new LinkedHashMap<>(component.getMetadata());
+                String type = String.valueOf(metadata.get("resourceType"));
+                String key = String.valueOf(metadata.get("componentId"));
+                Long id = metadata.get("resourceId") == null ? null : Long.valueOf(String.valueOf(metadata.get("resourceId")));
+                Integer number = metadata.get("version") == null ? null : Integer.valueOf(String.valueOf(metadata.get("version")));
+                if ("MODEL".equals(type)) {
+                    if (version.getModelId().equals(id)) metadata.put("configurationDigest", version.getExecutionSnapshotDigest());
+                    if (dependencies.values().stream().anyMatch(item -> "MODEL".equals(item.getResourceType())
+                            && java.util.Objects.equals(id, item.getResourceId()) && !key.equals(item.getComponentId()))) {
+                        throw new IllegalArgumentException("同一模型依赖出现不同版本: " + id);
+                    }
+                }
+                ArtifactDependency frozen = new ArtifactDependency(key, type, id, number, component.getPath(), component.getMediaType(),
+                        String.valueOf(metadata.get("embeddingMode")), Sha256Digests.bytes(component.getContent()), component.getContent(), metadata);
+                mergeDependency(frozen, dependencies);
+            }
+        } catch (RuntimeException error) {
+            issues.add(RuleValidationIssue.error("MODEL_VERSION_SNAPSHOT_INVALID", path, "MODEL", version.getModelId(), error.getMessage()));
         }
     }
 
@@ -658,7 +809,6 @@ public class RuleDependencyClosureService {
             issues.add(RuleValidationIssue.error("DATA_OBJECT_PARENT_CYCLE", path, "数据对象父级字段存在循环"));
             return;
         }
-        if (dependencies.containsKey("DATA_OBJECT:" + fieldId)) return;
         RuleDataObjectField field = loadDataObjectField(fieldId);
         if (field == null) {
             issues.add(RuleValidationIssue.error("DEPENDENCY_NOT_FOUND", path,
@@ -698,8 +848,8 @@ public class RuleDependencyClosureService {
             fieldPath = objectPath + "." + fieldPath;
         }
         snapshot.put("referencePath", fieldPath);
-        addJsonDependency("DATA_OBJECT:" + fieldId, "DATA_OBJECT", fieldId, null,
-                "data-object-fields/" + fieldId + ".json", "EMBEDDED", snapshot, dependencies);
+        if (!addJsonDependency("DATA_OBJECT:" + fieldId, "DATA_OBJECT", fieldId, null,
+                "data-object-fields/" + fieldId + ".json", "EMBEDDED", snapshot, dependencies)) return;
         if (owner != null && "API".equals(owner.getSourceType())) {
             RuleVariable sourceVariable = new RuleVariable();
             sourceVariable.setId(fieldId); sourceVariable.setProjectId(projectId); sourceVariable.setVarSource("API");
@@ -760,7 +910,7 @@ public class RuleDependencyClosureService {
                 "rules/" + definition.getId() + "/" + (version == null ? 0 : version) + ".json", "EMBEDDED", snapshot, dependencies);
     }
 
-    private void addJsonDependency(String componentId, String type, Long id, Integer version,
+    private boolean addJsonDependency(String componentId, String type, Long id, Integer version,
                                    String path, String mode, Map<String, Object> snapshot,
                                    Map<String, ArtifactDependency> dependencies) {
         byte[] content = CanonicalJson.writeBytes(snapshot);
@@ -769,7 +919,35 @@ public class RuleDependencyClosureService {
         ArtifactDependency dependency = new ArtifactDependency(componentId, type, id, version,
                 path, "application/json", mode, Sha256Digests.bytes(content), content,
                 metadata);
-        dependencies.putIfAbsent(componentId, dependency);
+        return mergeDependency(dependency, dependencies);
+    }
+
+    private boolean mergeDependency(ArtifactDependency incoming, Map<String, ArtifactDependency> dependencies) {
+        if (Set.of("VARIABLE", "CONSTANT").contains(incoming.getResourceType())
+                && dependencies.values().stream().anyMatch(item -> Set.of("VARIABLE", "CONSTANT").contains(item.getResourceType())
+                && java.util.Objects.equals(item.getResourceId(), incoming.getResourceId())
+                && !item.getComponentId().equals(incoming.getComponentId()))) {
+            throw new DependencySnapshotConflict("同一变量身份存在不同来源类型的冻结配置冲突: " + incoming.getResourceId());
+        }
+        ArtifactDependency existing = dependencies.putIfAbsent(incoming.getComponentId(), incoming);
+        if (existing == null) return true;
+        // 多个来源可以绑定同一个环境资源；sourceComponentId是引用归因，不是另一份资源配置。
+        if ("BINDING".equals(incoming.getResourceType())) return false;
+        if (!existing.getContentDigest().equals(incoming.getContentDigest())
+                || !semanticMetadata(existing).equals(semanticMetadata(incoming))) {
+            throw new DependencySnapshotConflict("同一依赖身份的冻结配置冲突: " + incoming.getComponentId());
+        }
+        return false;
+    }
+
+    private String semanticMetadata(ArtifactDependency dependency) {
+        Map<String, Object> metadata = new LinkedHashMap<>(dependency.getMetadata());
+        for (String key : List.of("resourceType", "resourceId", "componentId", "version", "embeddingMode", "configurationDigest")) metadata.remove(key);
+        return CanonicalJson.write(metadata);
+    }
+
+    private static final class DependencySnapshotConflict extends IllegalArgumentException {
+        private DependencySnapshotConflict(String message) { super(message); }
     }
 
     @SuppressWarnings("unchecked")

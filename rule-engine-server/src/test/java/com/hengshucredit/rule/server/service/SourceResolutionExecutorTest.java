@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -15,6 +17,51 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 public class SourceResolutionExecutorTest {
+
+    @Test
+    public void submittingAfterCloseCompletesExceptionallyForInlineAndParallelModes() {
+        for (int parallelism : new int[]{1, 2}) {
+            SourceResolutionExecutor executor = new SourceResolutionExecutor(parallelism);
+            executor.close();
+            AtomicInteger invoked = new AtomicInteger();
+            CompletableFuture<Integer> rejected = executor.submit(invoked::incrementAndGet);
+
+            assertTrue("closed executor must not leave a future pending", rejected.isCompletedExceptionally());
+            CompletionException failure = assertThrows(CompletionException.class, rejected::join);
+            assertTrue(failure.getCause() instanceof RejectedExecutionException);
+            assertEquals(0, invoked.get());
+        }
+    }
+
+    @Test
+    public void forcedShutdownCompletesDiscardedQueuedFutures() throws Exception {
+        SourceResolutionExecutor executor = new SourceResolutionExecutor(2);
+        CountDownLatch entered = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+        try {
+            for (int i = 0; i < 2; i++) {
+                executor.submit(() -> {
+                    entered.countDown();
+                    release.await(2, TimeUnit.SECONDS);
+                    return "running";
+                });
+            }
+            assertTrue(entered.await(1, TimeUnit.SECONDS));
+            CompletableFuture<String> queued = executor.submit(() -> "must-not-run");
+            Thread closing = new Thread(() -> {
+                Thread.currentThread().interrupt();
+                executor.close();
+            });
+            closing.start();
+            closing.join(1000);
+
+            assertTrue("discarded task must reach a terminal state", queued.isDone());
+            assertTrue(queued.isCancelled());
+        } finally {
+            release.countDown();
+            executor.close();
+        }
+    }
 
     @Test
     public void parallelSourcesInheritDeadlineAndDoNotLeakItToNextRequest() throws Exception {

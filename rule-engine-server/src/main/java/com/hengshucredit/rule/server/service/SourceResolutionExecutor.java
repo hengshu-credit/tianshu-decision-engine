@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -24,6 +25,7 @@ public class SourceResolutionExecutor implements AutoCloseable {
     private final AtomicLong submitted = new AtomicLong();
     private final AtomicLong completed = new AtomicLong();
     private final AtomicLong failed = new AtomicLong();
+    private volatile boolean closed;
 
     public SourceResolutionExecutor(
             @Value("${rule-engine.source-resolution.parallelism:1}") int parallelism) {
@@ -38,7 +40,10 @@ public class SourceResolutionExecutor implements AutoCloseable {
                 TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(parallelism * 4),
                 new SourceResolutionThreadFactory(),
-                new ThreadPoolExecutor.CallerRunsPolicy());
+                (task, pool) -> {
+                    if (pool.isShutdown()) throw new RejectedExecutionException("Source resolution executor is closed");
+                    task.run();
+                });
     }
 
     public int getParallelism() {
@@ -50,18 +55,24 @@ public class SourceResolutionExecutor implements AutoCloseable {
             throw new IllegalArgumentException("Source resolution task must not be null");
         }
         submitted.incrementAndGet();
+        if (closed) {
+            CompletableFuture<T> rejected = CompletableFuture.failedFuture(
+                    new RejectedExecutionException("Source resolution executor is closed"));
+            observe(rejected);
+            return rejected;
+        }
         if (executor == null) {
             CompletableFuture<T> inline = callInline(task);
             observe(inline);
             return inline;
         }
-        Long deadline = RequestDeadlineContext.capture();
-        CompletableFuture<T> future = CompletableFuture.supplyAsync(() -> {
-            try (RequestDeadlineContext.Scope ignored = RequestDeadlineContext.install(deadline)) {
-                return call(task);
-            }
-        }, executor);
+        SourceResolutionTask<T> future = new SourceResolutionTask<>(task, RequestDeadlineContext.capture());
         observe(future);
+        try {
+            executor.execute(future);
+        } catch (RejectedExecutionException rejected) {
+            future.completeExceptionally(rejected);
+        }
         return future;
     }
 
@@ -80,6 +91,9 @@ public class SourceResolutionExecutor implements AutoCloseable {
         future.whenComplete((value, error) -> {
             if (error == null) completed.incrementAndGet();
             else failed.incrementAndGet();
+            if (future.isCancelled() && future instanceof Runnable queued && executor != null) {
+                executor.remove(queued);
+            }
         });
     }
 
@@ -93,7 +107,7 @@ public class SourceResolutionExecutor implements AutoCloseable {
         }
     }
 
-    private <T> T call(Callable<T> task) {
+    private static <T> T call(Callable<T> task) {
         try {
             return task.call();
         } catch (RuntimeException e) {
@@ -106,17 +120,47 @@ public class SourceResolutionExecutor implements AutoCloseable {
     @Override
     @PreDestroy
     public void close() {
+        closed = true;
         if (executor == null) {
             return;
         }
         executor.shutdown();
         try {
             if (!executor.awaitTermination(SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS)) {
-                executor.shutdownNow();
+                cancelQueuedTasks();
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            executor.shutdownNow();
+            cancelQueuedTasks();
+        }
+    }
+
+    private void cancelQueuedTasks() {
+        for (Runnable task : executor.shutdownNow()) {
+            if (task instanceof SourceResolutionTask<?> queued) queued.cancel(false);
+        }
+    }
+
+    private static final class SourceResolutionTask<T> extends CompletableFuture<T> implements Runnable {
+        private final Callable<T> task;
+        private final Long deadline;
+
+        private SourceResolutionTask(Callable<T> task, Long deadline) {
+            this.task = task;
+            this.deadline = deadline;
+        }
+
+        @Override
+        public void run() {
+            if (isDone()) return;
+            T value;
+            try (RequestDeadlineContext.Scope ignored = RequestDeadlineContext.install(deadline)) {
+                value = call(task);
+            } catch (Throwable failure) {
+                completeExceptionally(failure);
+                return;
+            }
+            complete(value);
         }
     }
 

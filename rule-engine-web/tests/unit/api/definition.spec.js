@@ -1,6 +1,7 @@
 vi.unmock('@/api/definition')
 
 import request from '@/api/request'
+import { metadataResponse } from '@/utils/metadataResponse'
 import {
   executeRule,
   compileDesignerModel,
@@ -34,16 +35,20 @@ describe('definition API', () => {
     await publishRuleRevision(16, 3, { comment: '发布' })
 
     expect(request).toHaveBeenNthCalledWith(1, {
+      ...metadataResponse,
       url: '/rule/definition/16/revisions/draft', method: 'post'
     })
     expect(request).toHaveBeenNthCalledWith(2, {
+      ...metadataResponse,
       url: '/rule/definition/16/revisions/3/preflight', method: 'post'
     })
     expect(request).toHaveBeenNthCalledWith(3, {
+      ...metadataResponse,
       url: '/rule/definition/16/revisions/3/approve', method: 'post',
       data: { forcePublishReason: '兼容窗口已通知' }
     })
     expect(request).toHaveBeenNthCalledWith(4, {
+      ...metadataResponse,
       url: '/rule/definition/16/revisions/3/publish', method: 'post',
       data: { comment: '发布' }
     })
@@ -53,6 +58,7 @@ describe('definition API', () => {
     await createDraftRevision(16, 3)
 
     expect(request).toHaveBeenCalledWith({
+      ...metadataResponse,
       url: '/rule/definition/16/revisions/draft',
       method: 'post',
       data: { baseRevisionId: 3 },
@@ -69,10 +75,12 @@ describe('definition API', () => {
     await repairRuleRevision(16, repair)
 
     expect(request).toHaveBeenNthCalledWith(1, {
+      ...metadataResponse,
       url: '/rule/definition/16/revisions/repair-preview',
       method: 'get',
     })
     expect(request).toHaveBeenNthCalledWith(2, {
+      ...metadataResponse,
       url: '/rule/definition/16/revisions/repair',
       method: 'post',
       data: repair,
@@ -157,19 +165,9 @@ describe('definition API', () => {
         action: 'CREATE',
         snapshotJson: '{"definitionId":30,"projectId":9}',
         changeSummary: '将全局规则加入项目',
-      }
+      }, metadataResponse
     )
-    expect(request).toHaveBeenNthCalledWith(2,
-      '/rule/governance/drafts',
-      {
-        resourceType: 'RULE_PROJECT_BINDING',
-        resourceId: 15,
-        projectId: 9,
-        action: 'DELETE',
-        snapshotJson: null,
-        changeSummary: '将全局规则移出项目',
-      }
-    )
+    expect(request).toHaveBeenNthCalledWith(2, '/rule/governance/resources/RULE_PROJECT_BINDING/15/delete', undefined, metadataResponse)
   })
 })
 
@@ -182,6 +180,7 @@ describe('definition source API', () => {
     await getVersionById(16, 9)
 
     expect(request).toHaveBeenCalledWith({
+      ...metadataResponse,
       url: '/rule/definition/16/versions/9',
       method: 'get',
     })
@@ -191,6 +190,7 @@ describe('definition source API', () => {
     await createDraftFromSource(16, { sourceType: 'VERSION', sourceId: 9 })
 
     expect(request).toHaveBeenCalledWith({
+      ...metadataResponse,
       url: '/rule/definition/16/revisions/draft/from-source',
       method: 'post',
       data: { sourceType: 'VERSION', sourceId: 9 },
@@ -204,10 +204,12 @@ describe('definition source API', () => {
     await createDraftFromSource(16, { sourceType: 'VERSION', sourceId })
 
     expect(request).toHaveBeenNthCalledWith(1, {
+      ...metadataResponse,
       url: '/rule/definition/16/versions/9007199254740993',
       method: 'get',
     })
     expect(request).toHaveBeenNthCalledWith(2, {
+      ...metadataResponse,
       url: '/rule/definition/16/revisions/draft/from-source',
       method: 'post',
       data: { sourceType: 'VERSION', sourceId: '9007199254740993' },

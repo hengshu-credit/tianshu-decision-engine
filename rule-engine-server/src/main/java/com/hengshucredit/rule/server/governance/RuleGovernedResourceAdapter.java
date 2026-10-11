@@ -21,6 +21,7 @@ import com.hengshucredit.rule.server.mapper.RuleDefinitionOutputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
 import com.hengshucredit.rule.server.service.RuleLifecycleService;
 import com.hengshucredit.rule.server.service.RuleDraftService;
+import jakarta.annotation.Resource;
 
 import java.util.List;
 import java.util.Map;
@@ -37,6 +38,7 @@ public class RuleGovernedResourceAdapter
     private final RuleDefinitionOutputFieldMapper outputMapper;
     private final RuleDraftService draftService;
     private final RuleDataObjectFieldMapper dataObjectFieldMapper;
+    @Resource private com.hengshucredit.rule.server.mapper.GovernedResourceVersionMapper governanceVersions;
 
     public RuleGovernedResourceAdapter(
             SimpleEntityGovernedResourceAdapter.EntityStore<RuleDefinition>
@@ -81,6 +83,16 @@ public class RuleGovernedResourceAdapter
     }
 
     @Override
+    public ResourceSnapshot loadApplied(AppliedResource applied) {
+        ResourceSnapshot snapshot = loadEffective(applied.resourceId());
+        if (!"ACTIVE".equals(applied.effectiveStatus()) || applied.artifactId() == null) return snapshot;
+        Map<String, Object> value = CanonicalJson.readMap(snapshot.snapshotJson());
+        // The native publisher preserves the latest production row when another business line is covered.
+        value.put("publishedVersion", applied.versionNo());
+        return new ResourceSnapshot(CanonicalJson.write(value), snapshot.effectiveStatus(), snapshot.secretPayloadCiphertext(), snapshot.secretDigest());
+    }
+
+    @Override
     public List<ResourceDependencyRef> collectDependencies(
             ResourceSnapshot draft) {
         List<ResourceDependencyRef> resolved = new ArrayList<>();
@@ -102,13 +114,14 @@ public class RuleGovernedResourceAdapter
         Map<String, Object> snapshot = CanonicalJson.readMap(
                 draft.snapshotJson());
         Long definitionId = longValue(snapshot.get("id"));
-        if (definitionId == null) {
+        Long revisionId = longValue(snapshot.get("_ruleRevisionId"));
+        if (definitionId == null || revisionId == null) {
             return issues;
         }
         RuleRevision review = lifecycleService.listRevisions(definitionId)
                 .stream()
                 .filter(revision -> RuleRevisionState.REVIEW.name()
-                        .equals(revision.getState()))
+                        .equals(revision.getState()) && revisionId.equals(revision.getId()))
                 .findFirst()
                 .orElse(null);
         if (review == null) {
@@ -144,10 +157,10 @@ public class RuleGovernedResourceAdapter
 
     private ResourceDependencyRef resolveGovernedRoot(
             ResourceDependencyRef dependency) {
-        if (dataObjectFieldMapper == null
+        if (dependency.versionSelection() != null || dataObjectFieldMapper == null
                 || !GovernanceResourceTypes.DATA_OBJECT.equals(
                 dependency.targetResourceType())
-                || !isFieldReferencePath(dependency.referencePath())) {
+                || !DataObjectGovernanceReferences.isFieldReferencePath(dependency.referencePath())) {
             return dependency;
         }
         RuleDataObjectField field = dataObjectFieldMapper.selectById(
@@ -160,11 +173,6 @@ public class RuleGovernedResourceAdapter
                 field.getObjectId(), GovernanceResourceTypes.DATA_OBJECT,
                 dependency.referencePath(), dependency.relationType(),
                 dependency.required());
-    }
-
-    private boolean isFieldReferencePath(String path) {
-        return path != null
-                && (path.endsWith(".refId") || path.endsWith(".varId"));
     }
 
     @Override
@@ -259,10 +267,21 @@ public class RuleGovernedResourceAdapter
     }
 
     @Override
+    public AppliedResource apply(ApprovalApplyContext context) {
+        if (!"DELETE".equals(context.action())) return super.apply(context);
+        // 下线先于删除投影，避免下线把 status=-1 重写成 status=2。
+        RuleRevision retired = lifecycleService.offlineForDeletion(context.resourceId(),
+                lifecycleAction(context.actor()));
+        AppliedResource deleted = super.apply(context);
+        return new AppliedResource(deleted.resourceId(), deleted.versionNo(),
+                deleted.effectiveStatus(), retired == null ? null : retired.getArtifactId());
+    }
+
+    @Override
     protected AppliedResource afterAggregateApplied(
             ApprovalApplyContext context, AppliedResource applied) {
-        if ("DELETE".equals(context.action())
-                || "DISABLE".equals(context.action())) {
+        if ("DELETE".equals(context.action())) return applied;
+        if ("DISABLE".equals(context.action())) {
             Long artifactId = offlinePublished(applied.resourceId());
             return new AppliedResource(applied.resourceId(),
                     applied.versionNo(), applied.effectiveStatus(),
@@ -270,13 +289,13 @@ public class RuleGovernedResourceAdapter
         }
         RuleRevision published = approveAndPublish(
                 applied.resourceId(), context.snapshot(),
-                context.actor(), context.requestId());
+                context.actor(), context.requestId(), context);
         String effectiveStatus = published != null
                 && RuleRevisionState.PUBLISHED.name()
                 .equals(published.getState())
                 ? "ACTIVE" : applied.effectiveStatus();
         return new AppliedResource(applied.resourceId(),
-                applied.versionNo(), effectiveStatus,
+                published == null ? applied.versionNo() : lifecycleService.publishedBusinessVersion(applied.resourceId(), published.getId()), effectiveStatus,
                 published == null ? null : published.getArtifactId());
     }
 
@@ -286,10 +305,16 @@ public class RuleGovernedResourceAdapter
                                      String actor,
                                      String comment,
                                      String terminalStatus) {
+        onApprovalTerminated(resourceId, effectiveSnapshot, actor, comment, terminalStatus, null);
+    }
+
+    @Override
+    public void onApprovalTerminated(Long resourceId, ResourceSnapshot effectiveSnapshot,
+                                     String actor, String comment, String terminalStatus, Long requestId) {
         RuleRevision review = lifecycleService.listRevisions(resourceId)
                 .stream()
                 .filter(revision -> RuleRevisionState.REVIEW.name()
-                        .equals(revision.getState()))
+                        .equals(revision.getState()) && (requestId == null || requestId.equals(revision.getGovernanceRequestId())))
                 .findFirst()
                 .orElse(null);
         if (review != null) {
@@ -306,13 +331,13 @@ public class RuleGovernedResourceAdapter
             lifecycleService.createDraftFromSource(resourceId, source);
             return;
         }
-        restoreProjection(resourceId, effectiveSnapshot);
+        if (requestId == null) restoreProjection(resourceId, effectiveSnapshot);
     }
 
     private RuleRevision approveAndPublish(
                                            Long definitionId,
                                            ResourceSnapshot snapshot,
-                                           String actor, Long requestId) {
+                                           String actor, Long requestId, ApprovalApplyContext context) {
         RuleLifecycleActionRequest action =
                 lifecycleAction(actor);
         List<RuleRevision> revisions =
@@ -320,7 +345,7 @@ public class RuleGovernedResourceAdapter
         RuleRevision revision = requestId == null ? null : revisions.stream()
                 .filter(item -> requestId.equals(item.getGovernanceRequestId()))
                 .findFirst().orElse(null);
-        if (revision == null) revision = latestTransient(revisions);
+        if (revision == null && context.sourceVersionId() == null) revision = latestTransient(revisions);
         if (revision == null) {
             RuleRevision base = latestStable(revisions);
             revision = lifecycleService.createDraft(
@@ -330,6 +355,12 @@ public class RuleGovernedResourceAdapter
                 .equals(revision.getState())) {
             revision = synchronizeDraft(
                     definitionId, revision, snapshot);
+            if (context.reuseVersion()) {
+                var source = governanceVersions.selectById(context.sourceVersionId());
+                if (source == null || !"RULE".equals(source.getResourceType()) || !definitionId.equals(source.getResourceId()))
+                    throw new IllegalArgumentException("规则恢复来源不匹配");
+                lifecycleService.configureRestoreBusinessVersion(revision, context.nextVersionNo());
+            }
         }
         if (RuleRevisionState.DRAFT.name()
                 .equals(revision.getState())) {

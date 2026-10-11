@@ -6,9 +6,7 @@ import {
   sanitizeTarget,
 } from './lib/capacity-config.mjs'
 import {
-  buildCapacityReport,
-  aggregateCapacityReports,
-  runCapacityScenario,
+  runCapacityTargets,
   writeMultiCapacityReports,
   writeCapacityReports,
 } from './lib/capacity-runner.mjs'
@@ -16,12 +14,7 @@ import {
 try {
   const config = parseCapacityConfig(process.argv.slice(2))
   const request = await loadRequestDefinition(config.requestFile)
-  const nodeReports = await Promise.all(config.urls.map(async url => {
-    const nodeConfig = { ...config, url }
-    const { summary, evaluation } = await runCapacityScenario(nodeConfig, request)
-    return buildCapacityReport(nodeConfig, request, summary, evaluation)
-  }))
-  const { summary, evaluation } = aggregateCapacityReports(nodeReports, config)
+  const { nodes: nodeReports, summary, evaluation } = await runCapacityTargets(config, request)
   if (nodeReports.length === 1) {
     await writeCapacityReports(nodeReports[0], config.reportDir)
   } else {

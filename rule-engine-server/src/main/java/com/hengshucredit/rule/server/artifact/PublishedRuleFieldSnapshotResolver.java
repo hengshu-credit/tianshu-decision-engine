@@ -7,11 +7,15 @@ import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hengshucredit.rule.model.dto.RuleValidationIssue;
 import com.hengshucredit.rule.model.entity.DecisionArtifact;
+import com.hengshucredit.rule.model.entity.ArtifactDeployment;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RulePublished;
+import com.hengshucredit.rule.model.entity.RuleRevision;
+import com.hengshucredit.rule.server.mapper.ArtifactDeploymentMapper;
 import com.hengshucredit.rule.server.mapper.DecisionArtifactMapper;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
+import com.hengshucredit.rule.server.mapper.RuleRevisionMapper;
 import com.hengshucredit.rule.server.service.RuleFieldAnalyzer;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
@@ -38,10 +42,15 @@ public class PublishedRuleFieldSnapshotResolver {
     @Resource
     private DecisionArtifactMapper artifactMapper;
     @Resource
+    private ArtifactDeploymentMapper deploymentMapper;
+    @Resource
+    private RuleRevisionMapper revisionMapper;
+    @Resource
     @org.springframework.context.annotation.Lazy
     private com.hengshucredit.rule.server.service.RuleVersionBindingService versionService;
 
-    private final DecisionArtifactPackageCodec codec = new DecisionArtifactPackageCodec();
+    @Resource
+    private ArtifactRuntimeSnapshotService runtimeSnapshots = new ArtifactRuntimeSnapshotService();
 
     public RuleFieldAnalyzer.ResolvedFields resolve(Long definitionId) {
         RulePublished published = loadPublishedRule(definitionId);
@@ -63,28 +72,44 @@ public class PublishedRuleFieldSnapshotResolver {
     }
 
     public RuleFieldAnalyzer.ResolvedFields resolve(RulePublished published) {
+        return resolve(published, published == null || published.getDefinitionId() == null
+                || published.getRevisionId() == null || published.getArtifactId() == null
+                ? null : loadArtifact(published.getArtifactId()), null);
+    }
+
+    /** 精确修订读取，不通过当前已发布规则替换历史修订身份。 */
+    public RuleFieldAnalyzer.ResolvedFields resolveRevision(RuleRevision revision, DecisionArtifact artifact) {
+        if (revision == null) return missing(null, null, "规则修订不存在");
+        RulePublished binding = new RulePublished();
+        binding.setDefinitionId(revision.getDefinitionId());
+        binding.setRevisionId(revision.getId());
+        binding.setArtifactId(revision.getArtifactId());
+        binding.setArtifactDigest(artifact == null ? null : artifact.getArtifactDigest());
+        return resolve(binding, artifact, revision);
+    }
+
+    private RuleFieldAnalyzer.ResolvedFields resolve(RulePublished published, DecisionArtifact artifact,
+                                                      RuleRevision revision) {
         if (published == null || published.getDefinitionId() == null
                 || published.getRevisionId() == null || published.getArtifactId() == null) {
             return missing(published == null ? null : published.getDefinitionId(),
                     published == null ? null : published.getRevisionId(),
                     "已发布规则未绑定完整的修订与制品标识");
         }
-        DecisionArtifact artifact = loadArtifact(published.getArtifactId());
         if (artifact == null || artifact.getPackageContent() == null
                 || artifact.getPackageContent().length == 0) {
             return missing(published.getDefinitionId(), published.getRevisionId(),
                     "已发布规则绑定的字段快照制品不存在");
         }
-        if (artifact.getId() == null || !published.getArtifactId().equals(artifact.getId())
-                || !published.getDefinitionId().equals(artifact.getDefinitionId())
-                || !published.getRevisionId().equals(artifact.getRevisionId())) {
-            return invalid(published, "制品实体与已发布规则的 definitionId/revisionId 不一致");
+        if (artifact.getId() == null || !published.getArtifactId().equals(artifact.getId())) {
+            return invalid(published, "制品实体与已发布规则的 artifactId 不一致");
         }
 
         DecisionArtifactPackageCodec.DecodedPackage decoded;
         try {
-            decoded = codec.decode(artifact.getPackageContent());
-        } catch (IllegalArgumentException e) {
+            // 复用执行路径已有的有界解包缓存；仍核对本次实际字节，字段对象在下方重新解析。
+            decoded = runtimeSnapshots.decodeVerified(artifact);
+        } catch (IllegalArgumentException | IllegalStateException e) {
             return invalid(published, "字段快照制品包校验失败");
         }
         if (!same(decoded.getArtifactDigest(), artifact.getArtifactDigest())
@@ -94,11 +119,28 @@ public class PublishedRuleFieldSnapshotResolver {
         }
 
         DecisionArtifactPackage artifactPackage = decoded.getArtifactPackage();
-        if (!metadataId(artifactPackage.getMetadata(), "definitionId",
-                published.getDefinitionId())
-                || !metadataId(artifactPackage.getMetadata(), "revisionId",
-                published.getRevisionId())) {
-            return invalid(published, "制品清单与已发布规则的 definitionId/revisionId 不一致");
+        Long sourceDefinition = metadataId(artifactPackage.getMetadata(), "definitionId");
+        Long sourceRevision = metadataId(artifactPackage.getMetadata(), "revisionId");
+        if (sourceDefinition == null || sourceRevision == null) {
+            return invalid(published, "制品清单缺少有效的源 definitionId/revisionId");
+        }
+        boolean localEntity = artifact.getDefinitionId() != null || artifact.getRevisionId() != null;
+        if (localEntity && (!sourceDefinition.equals(artifact.getDefinitionId())
+                || !sourceRevision.equals(artifact.getRevisionId()))) {
+            return invalid(published, "制品实体与清单的源 definitionId/revisionId 不一致");
+        }
+        boolean directPublication = localEntity && sourceDefinition.equals(published.getDefinitionId())
+                && sourceRevision.equals(published.getRevisionId());
+        if (!directPublication && !matchesImportedTarget(published, artifact)) {
+            return invalid(published, "字段快照制品缺少匹配的目标部署与修订绑定");
+        }
+        if (revision != null) {
+            Object contentDigest = artifactPackage.getMetadata().get("contentDigest");
+            String expectedDigest = directPublication && contentDigest instanceof String digest
+                    ? digest : directPublication ? null : artifact.getArtifactDigest();
+            if (!same(expectedDigest, revision.getContentDigest())) {
+                return invalid(published, "修订内容摘要与字段快照制品的来源不一致");
+            }
         }
         String snapshotModelType;
         try {
@@ -143,6 +185,31 @@ public class PublishedRuleFieldSnapshotResolver {
     protected DecisionArtifact loadArtifact(Long artifactId) {
         return artifactMapper == null || artifactId == null ? null
                 : artifactMapper.selectById(artifactId);
+    }
+
+    private boolean matchesImportedTarget(RulePublished published, DecisionArtifact artifact) {
+        ArtifactDeployment deployment = loadDeployment(artifact.getId(), published.getDefinitionId());
+        if (deployment == null || deployment.getId() == null || !"DEPLOYED".equals(deployment.getStatus())
+                || !artifact.getId().equals(deployment.getArtifactId())
+                || !published.getDefinitionId().equals(deployment.getTargetDefinitionId())) return false;
+        RuleRevision target = loadTargetRevision(published.getRevisionId());
+        return target != null && published.getRevisionId().equals(target.getId())
+                && published.getDefinitionId().equals(target.getDefinitionId())
+                && artifact.getId().equals(target.getArtifactId())
+                && same(artifact.getArtifactDigest(), target.getContentDigest());
+    }
+
+    protected ArtifactDeployment loadDeployment(Long artifactId, Long definitionId) {
+        return deploymentMapper == null ? null : deploymentMapper.selectOne(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ArtifactDeployment>()
+                        .eq(ArtifactDeployment::getArtifactId, artifactId)
+                        .eq(ArtifactDeployment::getTargetDefinitionId, definitionId)
+                        .eq(ArtifactDeployment::getStatus, "DEPLOYED")
+                        .orderByDesc(ArtifactDeployment::getId).last("LIMIT 1"));
+    }
+
+    protected RuleRevision loadTargetRevision(Long revisionId) {
+        return revisionMapper == null ? null : revisionMapper.selectById(revisionId);
     }
 
     private <T> List<T> parseArray(DecisionArtifactPackage.Component component, Class<T> type) {
@@ -267,16 +334,16 @@ public class PublishedRuleFieldSnapshotResolver {
         return text.trim().toUpperCase(Locale.ROOT);
     }
 
-    private boolean metadataId(Map<String, Object> metadata, String key, Long expected) {
+    private Long metadataId(Map<String, Object> metadata, String key) {
         Object value = metadata.get(key);
-        if (!(value instanceof Number number) || expected == null) {
-            return false;
+        if (!(value instanceof Number number)) {
+            return null;
         }
         try {
-            return new BigDecimal(number.toString()).longValueExact()
-                    == expected.longValue();
+            long id = new BigDecimal(number.toString()).longValueExact();
+            return id > 0 ? id : null;
         } catch (ArithmeticException | NumberFormatException ignored) {
-            return false;
+            return null;
         }
     }
 

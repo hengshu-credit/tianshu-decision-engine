@@ -83,6 +83,12 @@
   padding: 16px;
 }
 
+.uiue-compact-designer .designer-version-toolbar {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
 @media (max-width: 1200px) {
   .uiue-list-page.uiue-compact-workbench {
     padding: 12px;

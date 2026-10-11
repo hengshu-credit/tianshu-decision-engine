@@ -1,16 +1,18 @@
-var currentUser = null
-var permissionEnforcementEnabled = false
+import { shallowRef } from 'vue'
+
+var currentUser = shallowRef(null)
+var permissionEnforcementEnabled = shallowRef(false)
 
 export function setPermissionEnforcement(enabled) {
-  permissionEnforcementEnabled = Boolean(enabled)
+  permissionEnforcementEnabled.value = Boolean(enabled)
 }
 
 export function setCurrentUser(user) {
   if (!user) {
-    currentUser = null
+    currentUser.value = null
     return
   }
-  currentUser = {
+  currentUser.value = {
     ...user,
     roleCodes: Array.isArray(user.roleCodes) ? user.roleCodes.slice() : [],
     permissions: Array.isArray(user.permissions)
@@ -20,22 +22,23 @@ export function setCurrentUser(user) {
 }
 
 export function clearCurrentUser() {
-  currentUser = null
+  currentUser.value = null
 }
 
 export function getCurrentUser() {
-  if (!currentUser) return null
+  if (!currentUser.value) return null
   return {
-    ...currentUser,
-    roleCodes: currentUser.roleCodes.slice(),
-    permissions: currentUser.permissions.slice()
+    ...currentUser.value,
+    roleCodes: currentUser.value.roleCodes.slice(),
+    permissions: currentUser.value.permissions.slice()
   }
 }
 
 export function hasPermission(permissionCode) {
   if (!permissionCode) return true
-  if (!currentUser) return !permissionEnforcementEnabled
-  return currentUser.permissions.includes(permissionCode)
+  if (Array.isArray(permissionCode)) return permissionCode.some(hasPermission)
+  if (!currentUser.value) return !permissionEnforcementEnabled.value
+  return currentUser.value.permissions.includes(permissionCode)
 }
 
 export function filterMenus(menus) {

@@ -58,6 +58,8 @@ public class GovernanceResourceBootstrapService {
         version.setResourceType(type);
         version.setResourceId(resourceId);
         version.setVersionNo(1);
+        Object businessVersion = CanonicalJson.readMap(snapshot.snapshotJson()).get("businessVersion");
+        if (businessVersion instanceof Number number && number.intValue() > 0) version.setBusinessVersion(number.intValue());
         version.setSnapshotJson(snapshot.snapshotJson());
         version.setSnapshotDigest(
                 Sha256Digests.text(snapshot.snapshotJson()));
@@ -72,7 +74,7 @@ public class GovernanceResourceBootstrapService {
         versionMapper.insert(version);
 
         resource.setEffectiveVersionId(version.getId());
-        resource.setEffectiveVersionNo(1);
+        resource.setEffectiveVersionNo(version.getDisplayVersion());
         resourceMapper.updateById(resource);
         return resource;
     }

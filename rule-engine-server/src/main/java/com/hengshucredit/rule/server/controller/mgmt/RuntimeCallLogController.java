@@ -58,7 +58,7 @@ public class RuntimeCallLogController {
     @GetMapping("/payload/by-call-id")
     public R<Map<String, Object>> payloadByCallId(@RequestParam String callId,
                                                    @RequestParam(required = false) Long projectId) {
-        return R.ok(logService.payloadByCallId(callId, projectId));
+        return R.ok(logService.managementPayloadByCallId(callId, projectId));
     }
 
     @GetMapping("/payload/by-root-trace-id")

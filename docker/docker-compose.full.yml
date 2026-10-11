@@ -192,6 +192,7 @@ services:
       JAVA_TOOL_OPTIONS: ${SERVER_JAVA_TOOL_OPTIONS:--Xms256m -Xmx1536m -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:+ExitOnOutOfMemoryError}
       LOGGING_LEVEL_ROOT: ${SERVER_LOG_LEVEL:-INFO}
       RULE_EXECUTION_PERSISTENCE_JOURNAL_DIR: /data/logs/execution-persistence-journal
+      RULE_LIST_ACTION_JOURNAL_DIR: /data/logs/list-action-journal
     volumes:
       - type: bind
         source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/server.jar
@@ -272,6 +273,10 @@ services:
       RULE_PROJECT_ID: "${RUNTIME_RULE_PROJECT_ID:?Set RUNTIME_RULE_PROJECT_ID}"
       SDK_CACHE_MAX_SIZE: ${SDK_CACHE_MAX_SIZE:-1000}
       SDK_LOG_REPORT_ENABLED: ${SDK_LOG_REPORT_ENABLED:-true}
+      SDK_LOG_REPORT_TRANSPORT: ${SDK_LOG_REPORT_TRANSPORT:-HTTP}
+      SDK_KAFKA_LOG_TOPIC: ${SDK_KAFKA_LOG_TOPIC:-rule-execution-log}
+      SDK_KAFKA_HTTP_FALLBACK_ENABLED: ${SDK_KAFKA_HTTP_FALLBACK_ENABLED:-true}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-}
       REDIS_HOST: redis
       REDIS_PORT: ${REDIS_SERVICE_PORT:-6379}
       REDIS_DATABASE: ${REDIS_DATABASE:-0}

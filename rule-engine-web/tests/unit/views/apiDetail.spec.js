@@ -2,10 +2,14 @@ import ApiDetail from '@/views/datasource/ApiDetail.vue'
 import { mount, flushPromises } from '@test-utils'
 import * as dataObjectApi from '@/api/dataObject'
 import * as datasourceApi from '@/api/datasource'
+import { ElButton } from 'element-plus/es/components/button/index.mjs'
+import { ElAlert } from 'element-plus/es/components/alert/index.mjs'
 
 vi.mock('@/api/datasource', () => ({
   createApiConfig: vi.fn(), getApiConfig: vi.fn(), updateApiConfig: vi.fn(),
-  invokeApiConfigPreview: vi.fn(), previewApiConfigRequest: vi.fn(),
+  invokeApiConfigPreview: vi.fn(), createApiConfigTrial: vi.fn(), previewApiConfigRequest: vi.fn(),
+  getApiConfigTrial: vi.fn(), resumeApiConfigTrial: vi.fn(), cancelApiConfigTrial: vi.fn(),
+  listApiConfigTrials: vi.fn().mockResolvedValue({ data: [] }),
   listDatasources: vi.fn().mockResolvedValue({ data: { records: [] } }),
 }))
 
@@ -47,6 +51,67 @@ function createContext(overrides = {}) {
 }
 
 describe('ApiDetail helpers', () => {
+  test('缓存接口详情不将其他页面的 ID 当作 API ID 加载', async () => {
+    datasourceApi.listDatasources.mockResolvedValue({ data: { records: [] } })
+    datasourceApi.getApiConfig.mockResolvedValue({ data: { id: 20, apiCode: 'ORIGINAL' } })
+    const route = { name: 'ApiDetail', path: '/datasource/api/20', fullPath: '/datasource/api/20', params: { id: '20' }, query: {} }
+    const wrapper = mount(ApiDetail, { mocks: { $route: route } })
+    await flushPromises()
+    datasourceApi.getApiConfig.mockClear()
+    try {
+      route.path = '/designer/ruleset/104'
+      route.fullPath = route.path
+      route.params.id = '104'
+      await ApiDetail.watch['$route.fullPath'].call(wrapper.vm, route.fullPath, '/datasource/api/20')
+      expect(datasourceApi.getApiConfig).not.toHaveBeenCalled()
+      expect(wrapper.vm.form.apiCode).toBe('ORIGINAL')
+    } finally { wrapper.unmount() }
+  })
+
+  test('接口详情离开页面后迟到结果不覆盖原表单', async () => {
+    const ctx = createContext({
+      initializationId: 1, detailRoutePath: '/datasource/api/20', routeActive: true,
+      $route: { path: '/datasource/api/20', params: { id: '20' }, query: {} },
+    })
+    ctx.form.apiCode = 'ORIGINAL'
+    let finish
+    datasourceApi.getApiConfig.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const pending = ctx.loadDetail(1)
+    ctx.$route.path = '/rule/20'
+    finish({ data: { id: 20, apiCode: 'LATE' } })
+    await pending
+    expect(ctx.form.apiCode).toBe('ORIGINAL')
+  })
+
+  test('旧试运行顶层阶段为引用对象时保留externalCall中的真实阶段数组且不触发Array警告', async () => {
+    const wrapper = mount(ApiDetail, { mocks: { $route: { params: {}, query: {} } } })
+    await flushPromises()
+    console.warn.mockClear()
+    const response = {
+      traceSteps: { $ref: '$.externalCall.traceSteps' },
+      externalCall: { traceSteps: [{ type: 'REQUEST_INPUT', label: '真实请求入参', status: 'SUCCESS' }, { type: 'EXTERNAL_RESPONSE', label: '真实外数响应', status: 'SUCCESS', output: { $ref: '业务普通字段原文' } }] },
+    }
+    const original = JSON.stringify(response)
+    try {
+      await wrapper.setData({ invokeResultText: original })
+      expect(wrapper.findAll('.external-call-trace-step-title span').map(item => item.text())).toEqual(['真实请求入参', '真实外数响应'])
+      expect(wrapper.find('.external-call-trace').text()).toContain('业务普通字段原文')
+      expect(wrapper.vm.invokeResultText).toBe(original)
+      expect(console.warn.mock.calls.filter(args => args.join(' ').includes('prop "steps"'))).toHaveLength(0)
+    } finally { wrapper.unmount() }
+  })
+
+  test('空顶层阶段不能遮蔽实际阶段数组，缺失阶段仍显示可解释空态', async () => {
+    const wrapper = mount(ApiDetail, { mocks: { $route: { params: {}, query: {} } } })
+    await flushPromises()
+    try {
+      await wrapper.setData({ invokeResultText: JSON.stringify({ traceSteps: [], externalCall: { traceSteps: [{ label: '已保存阶段', status: 'SUCCESS' }] } }) })
+      expect(wrapper.find('.external-call-trace').text()).toContain('已保存阶段')
+      await wrapper.setData({ invokeResultText: JSON.stringify({ traceSteps: null, externalCall: { traceSteps: null } }) })
+      expect(wrapper.find('.external-call-trace-empty').text()).toContain('历史记录未保存')
+    } finally { wrapper.unmount() }
+  })
+
   test('条件分支已配置重试时不再提示必须增加默认次数', async () => {
     const wrapper = mount(ApiDetail, { mocks: { $route: { params: {}, query: {} } } })
     await flushPromises()
@@ -202,15 +267,15 @@ describe('ApiDetail helpers', () => {
     })
   })
 
-  test('loadDatasourceOptions includes disabled datasources for configuration', async () => {
-    const disabledDatasource = { id: 2, datasourceCode: 'icekredit_qingyun', status: 0 }
-    datasourceApi.listDatasources.mockResolvedValue({ data: { records: [disabledDatasource] } })
+  test('loadDatasourceOptions only requests published active datasources for configuration', async () => {
+    const publishedDatasource = { id: 2, datasourceCode: 'icekredit_qingyun', status: 1 }
+    datasourceApi.listDatasources.mockResolvedValue({ data: { records: [publishedDatasource] } })
     const ctx = createContext()
 
     await ctx.loadDatasourceOptions()
 
-    expect(datasourceApi.listDatasources).toHaveBeenCalledWith({ pageNum: 1, pageSize: 500 })
-    expect(ctx.datasourceOptions).toEqual([disabledDatasource])
+    expect(datasourceApi.listDatasources).toHaveBeenCalledWith({ pageNum: 1, pageSize: 500, status: 1 })
+    expect(ctx.datasourceOptions).toEqual([publishedDatasource])
   })
 
   test('applyTemplate fills rule engine mapping template', () => {
@@ -711,6 +776,252 @@ describe('ApiDetail helpers', () => {
       params: { customer: { idNo: 'A001' } }
     })
     expect(ctx.invokeResultText).toContain('"success": true')
+  })
+
+  test('新接口在没有正式ID时可试运行当前完整草稿，且不创建资源或审批', async () => {
+    const ctx = createContext({
+      form: { ...ApiDetail.methods.emptyForm(), datasourceId: 2, apiCode: 'Exact_API_Code', apiName: '待测试接口', endpointUrl: '/draft-score' },
+      invokeParamsText: '{"客户":{"idNo":"A001"}}', invokeResultText: '', initializationId: 1,
+      $refs: { form: { validate: vi.fn().mockImplementation(callback => { callback?.(true); return Promise.resolve(true) }) } },
+      $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+    })
+    datasourceApi.createApiConfigTrial.mockResolvedValueOnce({ data: { trialId: 'trial-a', testMode: 'DRAFT', status: 'SUCCEEDED', result: { success: true, traceSteps: [] } } })
+    await ctx.runInvokeApi()
+    expect(datasourceApi.createApiConfigTrial).toHaveBeenCalledWith({
+      requestKey: expect.any(String),
+      config: expect.objectContaining({ datasourceId: 2, apiCode: 'Exact_API_Code', apiName: '待测试接口', endpointUrl: '/draft-score' }),
+      params: { 客户: { idNo: 'A001' } },
+    })
+    expect(datasourceApi.invokeApiConfigPreview).not.toHaveBeenCalled()
+    expect(datasourceApi.createApiConfig).not.toHaveBeenCalled()
+    expect(datasourceApi.updateApiConfig).not.toHaveBeenCalled()
+    expect(ctx.form.id).toBeNull()
+    expect(ctx.trial.trialId).toBe('trial-a')
+    expect(ctx.invokeResultText).toContain('"success": true')
+  })
+
+  test.each(['[]', '123', 'null'])('测试参数必须为JSON对象，%s不能被服务端静默当空参数', async invokeParamsText => {
+    const ctx = createContext({
+      form: { ...ApiDetail.methods.emptyForm(), id: 8, datasourceId: 2, endpointUrl: '/score' },
+      invokeParamsText, invokeResultText: '',
+      $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+    })
+    datasourceApi.invokeApiConfigPreview.mockResolvedValue({ data: { success: true } })
+    await ctx.runInvokeApi()
+    expect(datasourceApi.invokeApiConfigPreview).not.toHaveBeenCalled()
+    expect(ctx.$message.error).toHaveBeenCalledWith(expect.stringContaining('JSON 对象'))
+  })
+
+  test('请求预览未返回时切换接口，旧预览不能覆盖新配置的结果', async () => {
+    let finish
+    const ctx = createContext({
+      form: { ...ApiDetail.methods.emptyForm(), id: 8, datasourceId: 2, endpointUrl: '/before' },
+      invokeParamsText: '{}', requestPreviewText: '', previewLoading: false, initializationId: 1,
+      $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+    })
+    datasourceApi.previewApiConfigRequest.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const pending = ctx.runRequestPreview()
+    ctx.initializationId++
+    ctx.form = { ...ctx.form, id: 9, endpointUrl: '/after' }
+    ctx.requestPreviewText = '{"url":"new-preview"}'
+    finish({ data: { url: 'old-preview', networkCalled: false } })
+    await pending
+    expect(ctx.requestPreviewText).toBe('{"url":"new-preview"}')
+  })
+
+  test('试运行期间修改参数，迟到响应不得作为当前输入的结果显示', async () => {
+    let finish
+    const ctx = createContext({
+      form: { ...ApiDetail.methods.emptyForm(), id: 8, datasourceId: 2, endpointUrl: '/score' },
+      invokeParamsText: '{"amount":1}', invokeResultText: '', initializationId: 1,
+      $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+    })
+    datasourceApi.invokeApiConfigPreview.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const pending = ctx.runInvokeApi()
+    ctx.invokeParamsText = '{"amount":2}'
+    finish({ data: { success: true, body: { result: 'FOR_AMOUNT_1' } } })
+    await pending
+    expect(ctx.invokeResultText).not.toContain('FOR_AMOUNT_1')
+  })
+
+  test('新建试运行网络不确定后重试沿用requestKey，不自动发起第二份供应商调用', async () => {
+    const ctx = createContext({
+      form: { ...ApiDetail.methods.emptyForm(), datasourceId: 2, apiCode: 'Draft', apiName: '草稿', endpointUrl: '/score' },
+      invokeParamsText: '{}', initializationId: 1,
+      $refs: { form: { validate: vi.fn().mockImplementation(callback => { callback?.(true); return Promise.resolve(true) }) } },
+      $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+    })
+    datasourceApi.createApiConfigTrial.mockRejectedValueOnce(new Error('网络中断')).mockResolvedValueOnce({ data: {
+      trialId: 'trial-uncertain', status: 'WAITING', canResume: true, canCancel: true, result: null,
+    } })
+    await ctx.runInvokeApi()
+    const key = datasourceApi.createApiConfigTrial.mock.calls[0][0].requestKey
+    expect(key).toBeTruthy()
+    await ctx.runInvokeApi()
+    expect(datasourceApi.createApiConfigTrial.mock.calls[1][0].requestKey).toBe(key)
+    expect(ctx.trial.trialId).toBe('trial-uncertain')
+    expect(ctx.form.id).toBeNull()
+  })
+
+  test('继续等待中的会话只按trialId恢复原快照，不发送当前修改后的配置', async () => {
+    const ctx = createContext({
+      form: { ...ApiDetail.methods.emptyForm(), datasourceId: 2, apiCode: '已经改名', endpointUrl: '/changed' },
+      initializationId: 1, trial: { trialId: 'trial-wait', status: 'WAITING', canResume: true, canCancel: true },
+    })
+    datasourceApi.resumeApiConfigTrial.mockResolvedValueOnce({ data: { trialId: 'trial-wait', status: 'SUCCEEDED', canResume: false, canCancel: false, result: { success: true, body: 'original-snapshot' } } })
+    await ctx.resumeTrial()
+    expect(datasourceApi.resumeApiConfigTrial).toHaveBeenCalledWith('trial-wait')
+    expect(datasourceApi.createApiConfigTrial).not.toHaveBeenCalled()
+    expect(ctx.form.apiCode).toBe('已经改名')
+    expect(ctx.trial.status).toBe('SUCCEEDED')
+  })
+
+  test('最近会话只恢复结果和控制权，不回填当前编辑配置或正式ID', async () => {
+    const ctx = createContext({ form: { ...ApiDetail.methods.emptyForm(), apiCode: 'Current_API' }, initializationId: 1 })
+    datasourceApi.getApiConfigTrial.mockResolvedValueOnce({ data: { trialId: 'trial-old', apiName: '旧快照', status: 'WAITING', canResume: true, canCancel: true, result: { body: 'old-snapshot' } } })
+    await ctx.selectTrial('trial-old')
+    expect(ctx.form.apiCode).toBe('Current_API')
+    expect(ctx.form.id).toBeNull()
+    expect(ctx.trialRecovered).toBe(true)
+    expect(ctx.trial.trialId).toBe('trial-old')
+  })
+
+  test('UNKNOWN会话不可恢复，取消按服务端终态停止后续操作', async () => {
+    const ctx = createContext({ initializationId: 1, trial: { trialId: 'trial-unknown', status: 'UNKNOWN', canResume: false, canCancel: true } })
+    await ctx.resumeTrial()
+    expect(datasourceApi.resumeApiConfigTrial).not.toHaveBeenCalled()
+    datasourceApi.cancelApiConfigTrial.mockResolvedValueOnce({ data: { trialId: 'trial-unknown', status: 'CANCELLED', canResume: false, canCancel: false } })
+    await ctx.cancelTrial()
+    expect(datasourceApi.cancelApiConfigTrial).toHaveBeenCalledWith('trial-unknown')
+    expect(ctx.trial.status).toBe('CANCELLED')
+    expect(ctx.trial.canResume).toBe(false)
+  })
+
+  test('表单异步校验期间切换页面，旧按钮动作不能在新配置上开始试运行', async () => {
+    let finishValidation
+    const ctx = createContext({
+      form: { ...ApiDetail.methods.emptyForm(), datasourceId: 2, apiCode: 'Before', apiName: '原配置', endpointUrl: '/before' },
+      invokeParamsText: '{}', initializationId: 1,
+      $refs: { form: { validate: vi.fn().mockReturnValue(new Promise(resolve => { finishValidation = resolve })) } },
+      $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+    })
+    datasourceApi.createApiConfigTrial.mockResolvedValue({ data: { trialId: 'unexpected', status: 'SUCCEEDED' } })
+    const running = ctx.runInvokeApi()
+    ctx.initializationId++
+    ctx.form = { ...ctx.form, apiCode: 'After', apiName: '新配置', endpointUrl: '/after' }
+    finishValidation(true)
+    await running
+    expect(datasourceApi.createApiConfigTrial).not.toHaveBeenCalled()
+  })
+
+  test('真实按钮允许审批前试运行，找回UNKNOWN会话显示原快照提示并禁用恢复', async () => {
+    const wrapper = mount(ApiDetail, { global: {
+      mocks: { $route: { params: {}, query: {} } },
+      stubs: { 'el-button': ElButton, 'el-alert': ElAlert },
+    } })
+    try {
+      await flushPromises()
+      await wrapper.setData({ form: { ...wrapper.vm.form, datasourceId: 2, apiCode: 'Trial_Code', apiName: '待审批', endpointUrl: '/score' } })
+      wrapper.vm.goToConfigTab('test')
+      await flushPromises()
+      const start = wrapper.findAll('button').find(button => button.text() === '草稿试运行')
+      expect(start.exists()).toBe(true)
+      expect(start.element.disabled).toBe(false)
+      await wrapper.setData({ trial: { trialId: 'unknown-ui', status: 'UNKNOWN', canResume: false, canCancel: true }, trialRecovered: true })
+      expect(wrapper.find('[data-testid="api-trial-state"]').text()).toContain('状态待核实')
+      expect(wrapper.find('[data-testid="api-trial-resume"]').element.disabled).toBe(true)
+      expect(wrapper.findAll('.el-alert').some(alert => alert.text().includes('找回会话不会改写当前编辑表单'))).toBe(true)
+      expect(wrapper.find('[data-testid="api-trial-state"]').text()).toContain('不会自动重发')
+    } finally { wrapper.unmount() }
+  })
+
+  test.each(['CANCELLED', 'FAILED', 'UNKNOWN'])('真实Alert按%s状态区分取消前历史提示与当前错误，保留后台原文', async status => {
+    const errorMessage = '外数链路等待超时，待恢复步骤：callback_step'
+    const wrapper = mount(ApiDetail, { global: {
+      mocks: { $route: { params: {}, query: {} } },
+      stubs: { 'el-button': ElButton, 'el-alert': ElAlert },
+    } })
+    try {
+      await flushPromises()
+      wrapper.vm.goToConfigTab('test')
+      await wrapper.setData({ trial: { trialId: 'history-hint', status, errorMessage, canResume: false, canCancel: false }, trialRecovered: true })
+      const diagnostic = wrapper.findAll('.el-alert').find(alert => alert.text().includes(errorMessage))
+      expect(diagnostic).toBeDefined()
+      expect(diagnostic.classes()).toContain(status === 'CANCELLED' ? 'el-alert--info' : 'el-alert--warning')
+      expect(wrapper.vm.trial.errorMessage).toBe(errorMessage)
+      expect(wrapper.find('[data-testid="api-trial-resume"]').element.disabled).toBe(true)
+      if (status === 'CANCELLED') {
+        expect(diagnostic.text()).toContain('取消前的提示（仅供查看）')
+        expect(wrapper.find('[data-testid="api-trial-state"]').text()).not.toContain('继续操作仍使用')
+      } else expect(diagnostic.text()).not.toContain('取消前的提示')
+    } finally { wrapper.unmount() }
+  })
+
+  test('执行中只定时GET状态，变为UNKNOWN后停止查询且不自动恢复或重发', async () => {
+    vi.useFakeTimers()
+    const ctx = createContext({ initializationId: 1, trial: { trialId: 'running', status: 'RUNNING' } })
+    try {
+      datasourceApi.getApiConfigTrial.mockResolvedValueOnce({ data: { trialId: 'running', status: 'RUNNING', canResume: false } })
+        .mockResolvedValueOnce({ data: { trialId: 'running', status: 'UNKNOWN', canResume: false, canCancel: false } })
+      await ctx.refreshTrial()
+      expect(datasourceApi.getApiConfigTrial).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1500)
+      expect(ctx.trial.status).toBe('UNKNOWN')
+      await vi.advanceTimersByTimeAsync(4500)
+      expect(datasourceApi.getApiConfigTrial).toHaveBeenCalledTimes(2)
+      expect(datasourceApi.createApiConfigTrial).not.toHaveBeenCalled()
+      expect(datasourceApi.resumeApiConfigTrial).not.toHaveBeenCalled()
+    } finally { ctx.stopTrialPolling(); vi.useRealTimers() }
+  })
+
+  test('离开原编辑上下文后迟到查询不覆盖新会话或重启轮询', async () => {
+    let finish
+    const ctx = createContext({ initializationId: 1, trial: { trialId: 'old', status: 'RUNNING' } })
+    datasourceApi.getApiConfigTrial.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const old = ctx.refreshTrial()
+    ctx.initializationId++
+    ctx.invalidateTestRequests()
+    ctx.trial = { trialId: 'new', status: 'WAITING', canResume: true }
+    finish({ data: { trialId: 'old', status: 'RUNNING' } })
+    await old
+    expect(ctx.trial.trialId).toBe('new')
+    expect(ctx.trialPollTimer).toBeNull()
+    expect(ctx.trialLoading).toBe(false)
+  })
+
+  test('最近列表加载失败不会被当前会话的成功查询静默清除', async () => {
+    const ctx = createContext({ initializationId: 1, trial: { trialId: 'current', status: 'WAITING' } })
+    datasourceApi.listApiConfigTrials.mockRejectedValueOnce(new Error('历史列表暂不可用'))
+    await ctx.loadTrialHistory()
+    datasourceApi.getApiConfigTrial.mockResolvedValueOnce({ data: { trialId: 'current', status: 'WAITING', canResume: true } })
+    await ctx.refreshTrial()
+    expect(ctx.trialHistoryError).toBe('历史列表暂不可用')
+    expect(ctx.trialError).toBe('')
+  })
+
+  test('试运行创建与到期时间以本地年月日时分秒展示，协议毫秒原值保持不变', async () => {
+    const createdAt = new Date(2026, 9, 9, 2, 34, 56).getTime()
+    const expiresAt = new Date(2026, 9, 9, 3, 4, 56).getTime()
+    const trial = { trialId: 'dated-trial', apiName: '日期可读', status: 'SUCCEEDED', createdAt, expiresAt, canResume: false, canCancel: false }
+    const wrapper = mount(ApiDetail, { global: { mocks: { $route: { params: {}, query: {} } } } })
+    try {
+      await flushPromises()
+      wrapper.vm.goToConfigTab('test')
+      await wrapper.setData({ trial, trialHistory: [trial] })
+      expect(wrapper.vm.trialHistoryLabel(trial)).toContain('2026-10-09 02:34:56')
+      expect(wrapper.find('[data-testid="api-trial-state"]').text()).toContain('有效期至 2026-10-09 03:04:56')
+      expect(wrapper.find('[data-testid="api-trial-state"]').text()).not.toContain(String(expiresAt))
+      expect(wrapper.vm.trial.createdAt).toBe(createdAt)
+      expect(wrapper.vm.trial.expiresAt).toBe(expiresAt)
+    } finally { wrapper.unmount() }
+  })
+
+  test('试运行非法或缺失时间使用空占位，毫秒字符串和epoch零值仍能显示', () => {
+    const ctx = createContext()
+    for (const value of [undefined, null, '', 'not-a-time', Infinity, {}]) expect(ctx.formatTrialTime(value)).toBe('—')
+    const time = new Date(2026, 9, 9, 2, 34, 56).getTime()
+    expect(ctx.formatTrialTime(String(time))).toBe('2026-10-09 02:34:56')
+    expect(ctx.formatTrialTime(0)).not.toBe('—')
   })
 
   test('保存测试样例送审时携带报文留存配置', async () => {

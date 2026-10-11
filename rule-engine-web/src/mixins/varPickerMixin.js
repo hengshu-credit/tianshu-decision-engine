@@ -15,7 +15,7 @@
  *   - getVarOptions(refCode)       — ENUM 选项
  */
 
-import { getDefinition } from '@/api/definition'
+import { getDefinition, getRuleReferenceCatalog } from '@/api/definition'
 import { syncWorkspaceTabTitle } from '@/mixins/workspaceTabTitleMixin'
 import { listVariablesByProject, getVariableOptions } from '@/api/variable'
 import { getVariableTree, getDataObjectFieldOptions } from '@/api/dataObject'
@@ -28,6 +28,17 @@ import { varTypeTagColor, varTypeLabel as _varTypeLabel } from '@/constants/varT
 import { makeRefLabel } from '@/utils/varDisplay'
 import { buildPickerOptions, buildReferenceCatalog } from '@/utils/referenceCatalog'
 import { collectOperandReferences, syncOperandReference } from '@/utils/operand'
+import { requireExecutionIdentity } from '@/utils/ruleTestExecutionSource'
+import { hasPermission } from '@/security/permissionState'
+
+function designerCatalogRequest(view, definitionId, refreshToken) {
+  const source = view?.state === 'VERSION'
+    ? { sourceType: 'VERSION', sourceId: String(view.sourceId || view.id) }
+    : view?.state === 'LEGACY' || view?.sourceType === 'LEGACY_CONTENT'
+      ? { sourceType: 'WORKSPACE', sourceId: String(definitionId) }
+      : { sourceType: 'REVISION', sourceId: String(view?.id || '') }
+  return { source, key: `${definitionId}:${source.sourceType}:${source.sourceId}:${refreshToken}` }
+}
 
 // 变量选择 Mixin
 
@@ -43,14 +54,20 @@ export default {
       /** 变量加载是否失败 */
       varsLoadError: false,
       varOptionsByCode: {},
-      projectIdForRefs: null
+      projectIdForRefs: null,
+      referenceCatalogMode: 'LIVE',
+      frozenReferenceCatalog: null,
+      referenceCatalogPromise: null,
+      referenceCatalogKey: '',
+      referenceCatalogRequestId: 0,
+      referenceCatalogError: '',
     }
   },
 
   computed: {
     /** VarPicker 使用的选项列表（分层：普通变量 / 常量 / 对象字段） */
     varPickerOptions() {
-      return buildPickerOptions({ refs: this.projectRefs })
+      return buildPickerOptions({ refs: this.projectRefs }).map(item => ({ ...item, catalogMode: this.referenceCatalogMode }))
     },
     selectedVarPickerOptions() {
       if (typeof this.collectSelectedVarItems !== 'function') return []
@@ -78,7 +95,9 @@ export default {
   },
 
   created() {
-    if (this.$route && this.$route.params && this.$route.params.id) {
+    if (this.usesDesignerReferenceCatalog) {
+      this.referenceCatalogMode = 'UNAVAILABLE'
+    } else if (this.$route && this.$route.params && this.$route.params.id) {
       this.loadProjectVars(this.$route.params.id)
     }
     // 监听 contentLoaded 变化，确保竞态条件下也能触发同步
@@ -90,12 +109,118 @@ export default {
   activated() {
     // 工作区页签会缓存设计器组件；字段或数据对象在审批中心生效后，
     // 回到旧页签必须重新拉取引用，避免仍显示审批前的字段库。
-    if (this.projectIdForRefs != null) {
+    if (this.usesDesignerReferenceCatalog) {
+      if (this.draftGuardLoaded && this.viewRevision) return this.refreshProjectRefs()
+    } else if (this.projectIdForRefs != null) {
       return this.refreshProjectRefs()
     }
   },
+  beforeUnmount() { this.referenceCatalogRequestId++ },
 
   methods: {
+    clearReferenceCatalog() {
+      this.referenceCatalogRequestId++
+      this.projectVars = []; this.projectRefs = []; this.projectFunctions = []
+      this.projectLists = []; this.projectApis = []; this.varOptionsByCode = {}
+      this.projectIdForRefs = null
+      this.referenceCatalogMode = 'UNAVAILABLE'; this.frozenReferenceCatalog = null
+      this.referenceCatalogError = ''; this.referenceCatalogKey = ''
+      if (typeof this.invalidateRuleCallOptions === 'function') this.invalidateRuleCallOptions()
+    },
+    referenceRequestCurrent(requestId) {
+      return requestId === this.referenceCatalogRequestId && (!this.usesDesignerReferenceCatalog || this.draftGuardActive)
+    },
+    loadDesignerDefinitionMetadata(definitionId, requestId) {
+      const route = this.$route
+      const pending = Promise.resolve().then(() => getDefinition(definitionId))
+      pending.then(response => {
+        if (!this.referenceRequestCurrent(requestId)) return
+        const definition = response?.data || response
+        if (/^\/designer\/(?!expression\/)/.test(route?.path || '') &&
+            String(route.params.id) === String(definitionId) &&
+            String(definition?.id) === String(definitionId) && definition.ruleName) {
+          syncWorkspaceTabTitle(this.$store, route, definition.ruleName)
+        }
+      }).catch(() => { /* 标题读取失败不影响已验证的冻结引用；LIVE加载仍等待同一请求并处理失败。 */ })
+      return pending
+    },
+    loadDesignerReferenceCatalog(view, { livePreview = false } = {}) {
+      const definitionId = String(this.definitionId || this.$route?.params?.id || '')
+      const { source, key } = designerCatalogRequest(view, definitionId, this.viewRefreshToken)
+      const previous = this.frozenReferenceCatalog
+      const previousKey = this.referenceCatalogKey
+      this.clearReferenceCatalog()
+      const requestId = this.referenceCatalogRequestId
+      this.referenceCatalogKey = key
+      this.loadingVars = true; this.varsLoadError = false
+      const definitionPromise = this.loadDesignerDefinitionMetadata(definitionId, requestId)
+      const load = async () => {
+        try {
+          const response = livePreview && previousKey === key && previous?.localEditingAllowed === true
+            ? { data: previous } : await getRuleReferenceCatalog(definitionId, source)
+          if (!this.referenceRequestCurrent(requestId)) return null
+          const catalog = response?.data
+          requireExecutionIdentity(catalog?.executionIdentity, definitionId, source)
+          if (!catalog || !['LOCAL', 'ARTIFACT_SOURCE'].includes(catalog.referenceNamespace)
+              || !['variables', 'objectTree', 'models', 'functions', 'rules', 'apis', 'lists'].every(field => Array.isArray(catalog[field]))) {
+            throw new Error('所选版本引用目录不完整，不能使用当前环境目录替代')
+          }
+          this.frozenReferenceCatalog = catalog
+          if (catalog.status !== 'AVAILABLE') throw new Error((catalog.diagnostics || []).join('；') || '所选版本没有可验证的引用目录')
+          const localDraft = ['DRAFT', 'LEGACY'].includes(view?.state) || view?.sourceType === 'LEGACY_CONTENT'
+          const live = livePreview || catalog.referenceNamespace === 'LOCAL' || localDraft
+          if (live && catalog.localEditingAllowed !== true) throw new Error('该来源尚未建立可验证的本地引用，请先通过离线迁移处理')
+          if (live) {
+            this.referenceCatalogMode = 'LIVE'
+            await this.loadProjectVars(definitionId, { requestId, managed: true, definitionPromise })
+            if (this.referenceRequestCurrent(requestId) && typeof this.loadRuleCallOptions === 'function') {
+              await this.loadRuleCallOptions(definitionId, { catalogReady: true })
+            }
+          } else {
+            this.referenceCatalogMode = 'FROZEN'
+            this.applyReferenceCatalog(catalog.variables, catalog.objectTree, catalog.models, catalog.functions, catalog.apis, catalog.lists)
+            this.projectFunctions = this.projectFunctions.map(fn => ({ ...fn, catalogMode: 'FROZEN' }))
+            for (const ref of this.projectRefs) {
+              const label = catalog.displayLabels?.[`${ref.refType}:${ref.id}`]
+              if (typeof label !== 'string' || !label) continue
+              ref.refLabel = { ...ref.refLabel, label }
+              ref.displayName = [label, ref.refCode].filter(Boolean).join(' ')
+            }
+            if (typeof this.applyFrozenRuleCallOptions === 'function') this.applyFrozenRuleCallOptions(catalog.rules, definitionId)
+            for (const ref of this.projectRefs.filter(item => item.varType === 'ENUM')) {
+              const raw = ref.varObj?.validValues || ref.varObj?.valueRange || []
+              let options = []
+              try { options = typeof raw === 'string' ? JSON.parse(raw) : raw } catch { /* 缺少冻结枚举时保留空目录，不查询当前ID。 */ }
+              this.varOptionsByCode[ref.refCode] = Array.isArray(options) ? options.map(value => typeof value === 'object' && value !== null
+                ? { optionValue: value.optionValue ?? value.value, optionLabel: value.optionLabel ?? value.label }
+                : { optionValue: value, optionLabel: String(value) }) : []
+            }
+          }
+          if (!this.referenceRequestCurrent(requestId)) return null
+          return catalog
+        } catch (error) {
+          if (!this.referenceRequestCurrent(requestId)) return null
+          this.projectVars = []; this.projectRefs = []; this.projectFunctions = []; this.projectApis = []; this.projectLists = []
+          this.referenceCatalogMode = 'UNAVAILABLE'; this.varsLoadError = true
+          this.referenceCatalogError = error.message || '引用目录读取失败'
+          return null
+        } finally {
+          if (this.referenceRequestCurrent(requestId)) this.loadingVars = false
+        }
+      }
+      this.referenceCatalogPromise = load()
+      return this.referenceCatalogPromise
+    },
+    applyReferenceCatalog(variables, objectTree, models, functions, apis, lists) {
+      this.projectFunctions = functions; this.projectApis = apis; this.projectLists = lists
+      this.projectVars = variables.map(variable => {
+        const label = makeRefLabel(variable, variable.varSource === 'CONSTANT' ? 'constant' : 'variable', '')
+        return { ...variable, varCode: variable.scriptName || variable.varCode, varLabel: label.label + ' ' + label.code,
+          varLabelText: label.label, varCodeText: label.code }
+      })
+      this.projectRefs = buildReferenceCatalog(variables, objectTree, models).refs
+      this.appendExternalApiRefs(this.projectRefs, apis)
+    },
     normalizeObjectFieldScriptName(field, objScriptName) {
       const raw = (field && (field.scriptName || field.varCode)) || ''
       return this.stripObjectPrefix(raw, objScriptName)
@@ -165,6 +290,7 @@ export default {
             modelCode,
             modelId: m.id,
             modelLabel,
+            modelVersion: m.currentVersion ?? m.version,
             modelInputFields: inputFields
           })
         })
@@ -177,7 +303,7 @@ export default {
         const apiCode = api.apiCode || api.code || `api_${apiId}`
         const apiLabel = api.apiName || api.name || apiCode
         API_MODULE_FIELDS.forEach(field => {
-          const refCode = `${apiCode}.${field.value}`
+          const refCode = field.value === '$' ? apiCode : `${apiCode}.${field.value}`
           refs.push({
             id: apiId,
             refCode,
@@ -198,14 +324,26 @@ export default {
     /**
      * 根据定义 ID 拉取项目下变量树、常量、对象字段与函数列表，并组装 projectRefs。
      */
-    async loadProjectVars(definitionId) {
+    async loadProjectVars(definitionId, options = {}) {
+      if (this.usesDesignerReferenceCatalog && !options.managed) {
+        const guard = this.draftGuardPromise
+        if (guard) await guard
+        if (guard !== this.draftGuardPromise) return null
+        const { key } = designerCatalogRequest(this.viewRevision, definitionId, this.viewRefreshToken)
+        // The guard already loads this source before the page initializes dirty tracking.
+        // Clearing it again here would temporarily disable editing and lose that initialization.
+        if (key === this.referenceCatalogKey && this.referenceCatalogPromise) return this.referenceCatalogPromise
+        return this.viewRevision ? this.loadDesignerReferenceCatalog(this.viewRevision, { livePreview: this.designerReferencePreview }) : null
+      }
+      const requestId = options.requestId ?? ++this.referenceCatalogRequestId
       const route = this.$route
       this.loadingVars = true
       this.varsLoadError = false
       try {
-        const defRes = await getDefinition(definitionId)
+        const defRes = await (options.definitionPromise || getDefinition(definitionId))
+        if (!this.referenceRequestCurrent(requestId)) return
         const def = defRes && defRes.data ? defRes.data : defRes
-        if (/^\/designer\/(?!expression\/)/.test(route?.path || '') &&
+        if (!options.definitionPromise && /^\/designer\/(?!expression\/)/.test(route?.path || '') &&
             String(route.params.id) === String(definitionId) && def?.ruleName) {
           syncWorkspaceTabTitle(this.$store, route, def.ruleName)
         }
@@ -216,16 +354,21 @@ export default {
         }
         this.projectIdForRefs = def.projectId
         const pid = def.projectId
+        const optionalDirectory = error => {
+          if (options.managed) throw error
+          return []
+        }
 
         // request 拦截器已返回 res.data，无需再访问 .data
         const [varRes, objRes, funcRes, modelRes, listRes, apiRes] = await Promise.all([
-          listVariablesByProject(pid).catch(() => []),
-          getVariableTree(pid).catch(() => []),
-          listAllFunctionsByProject(pid).catch(() => []),
-          listAllModelsByProject(pid).catch(() => []),
-          Promise.resolve(listLibraries({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(() => []),
-          Promise.resolve(listApiConfigs({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(() => [])
+          hasPermission('field:view') ? listVariablesByProject(pid).catch(optionalDirectory) : [],
+          hasPermission('field:view') ? getVariableTree(pid).catch(optionalDirectory) : [],
+          hasPermission('function:view') ? listAllFunctionsByProject(pid).catch(optionalDirectory) : [],
+          hasPermission('model:view') ? listAllModelsByProject(pid).catch(optionalDirectory) : [],
+          hasPermission('list:view') ? Promise.resolve(listLibraries({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(optionalDirectory) : [],
+          hasPermission('datasource:view') ? Promise.resolve(listApiConfigs({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(optionalDirectory) : []
         ])
+        if (!this.referenceRequestCurrent(requestId)) return
         this.projectFunctions = this.normalizeListResponse(funcRes)
         this.projectLists = this.normalizeListResponse(listRes)
         this.projectApis = this.normalizeListResponse(apiRes)
@@ -260,30 +403,35 @@ export default {
         this._trySyncModelVarRefs()
 
         const enumRefs = refs.filter(r => r.varType === 'ENUM')
-        await Promise.all(enumRefs.map(r => this.loadVarOptionsForRef(r.refCode, r.varObj)))
+        await Promise.all(enumRefs.map(r => this.loadVarOptionsForRef(r.refCode, r.varObj, requestId)))
       } catch (e) {
+        if (!this.referenceRequestCurrent(requestId)) return
+        if (options.managed) throw e
         this.projectVars = []
         this.projectRefs = []
         this.projectLists = []
         this.projectApis = []
         this.varsLoadError = true
       } finally {
-        this.loadingVars = false
+        if (this.referenceRequestCurrent(requestId)) this.loadingVars = false
       }
     },
 
     /**
      * 拉取枚举选项：变量 ENUM 走 variable；数据对象字段 ENUM 走 dataobject field。
      */
-    async loadVarOptionsForRef(refCode, varObj) {
+    async loadVarOptionsForRef(refCode, varObj, requestId = this.referenceCatalogRequestId) {
+      if (this.referenceCatalogMode !== 'LIVE') return
       if (!varObj || !varObj.id) return
       try {
         const api = varObj.objectField ? getDataObjectFieldOptions : getVariableOptions
         const res = await api(varObj.id)
+        if (!this.referenceRequestCurrent(requestId) || this.referenceCatalogMode !== 'LIVE') return
         // request 拦截器已返回 res.data，直接使用
         const opts = res || []
         this.varOptionsByCode[refCode] = opts
       } catch (e) {
+        if (!this.referenceRequestCurrent(requestId)) return
         this.varOptionsByCode[refCode] = []
       }
     },
@@ -293,6 +441,8 @@ export default {
      * 重新拉取当前项目下的所有数据，更新 projectVars、projectRefs、projectFunctions。
      */
     async refreshProjectRefs() {
+      if (this.usesDesignerReferenceCatalog) return this.viewRevision
+        ? this.loadDesignerReferenceCatalog(this.viewRevision, { livePreview: this.designerReferencePreview }) : null
       if (this.projectIdForRefs == null) return
       this.loadingVars = true
       this.varsLoadError = false
@@ -303,8 +453,8 @@ export default {
           getVariableTree(pid).catch(() => []),
           listAllFunctionsByProject(pid).catch(() => []),
           listAllModelsByProject(pid).catch(() => []),
-          Promise.resolve(listLibraries({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(() => []),
-          Promise.resolve(listApiConfigs({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(() => [])
+          hasPermission('list:view') ? Promise.resolve(listLibraries({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(() => []) : [],
+          hasPermission('datasource:view') ? Promise.resolve(listApiConfigs({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(() => []) : []
         ])
         // request 拦截器已返回 res.data，直接使用
         this.projectFunctions = this.normalizeListResponse(funcRes)
@@ -412,6 +562,7 @@ export default {
           ;(action.args || []).forEach(pushOperand)
           ;(action.inOperands || []).forEach(pushOperand)
           ;(action.parts || []).forEach(part => pushOperand(part.operand))
+          ;(action.entries || []).forEach(entry => pushOperand(entry.valueOperand))
           pushField(action, 'target')
           pushField(action, 'condVar')
           pushField(action, 'matchVar')
@@ -483,6 +634,7 @@ export default {
           syncOperandArray(action.args)
           syncOperandArray(action.inOperands)
           ;(action.parts || []).forEach(part => syncOperand(part, 'operand'))
+          ;(action.entries || []).forEach(entry => syncOperand(entry, 'valueOperand'))
           syncField(action, 'target')
           syncField(action, 'condVar')
           syncField(action, 'matchVar')
@@ -527,6 +679,7 @@ export default {
      * 各设计器可实现 _syncModelVarRefs() 来定义自身的同步逻辑。
      */
     _trySyncModelVarRefs() {
+      if (this.usesDesignerReferenceCatalog && (this.loadingVars || this.referenceCatalogMode === 'UNAVAILABLE')) return
       if (this.projectRefs && this.projectRefs.length > 0 && this.contentLoaded && typeof this._syncModelVarRefs === 'function') {
         if (typeof this.syncDesignerReferenceMetadata === 'function') {
           this.syncDesignerReferenceMetadata(() => this._syncModelVarRefs())

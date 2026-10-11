@@ -11,4 +11,6 @@ public class RuleExperimentExecuteRequest {
     private String requestKey;
     private LocalDateTime requestTime;
     private String clientAppName;
+    private String versionMode;
+    private Long versionId;
 }

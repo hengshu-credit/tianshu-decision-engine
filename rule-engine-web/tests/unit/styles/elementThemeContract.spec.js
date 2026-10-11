@@ -115,14 +115,14 @@ test('字段选择器和表达式控件显式读取统一主题变量', () => {
 
 test('主按钮变体保持背景和文字的可读性契约', () => {
   const solid = themeRuleBlock(
-    '.el-button--primary:not(.is-link):not(.is-text):not(.is-plain)'
+    '.el-button--primary:not(.is-link):not(.is-text):not(.is-plain):where(:not(.is-disabled):not(:disabled:not(.is-loading)))'
   )
-  const plain = themeRuleBlock('.el-button--primary.is-plain')
+  const plain = themeRuleBlock('.el-button--primary.is-plain:where(:not(.is-disabled):not(:disabled:not(.is-loading)))')
 
   expect(solid).toContain('color: var(--tianshu-brand-foreground)')
   expect(solid).toContain('background-color: var(--el-color-primary)')
   expect(plain).toContain('color: var(--tianshu-text-primary)')
-  expect(plain).toContain('background-color: var(--el-color-primary-light-9)')
+  expect(plain).toContain('background-color: var(--tianshu-primary-soft-bg)')
   expect(themeCss).not.toMatch(
     /\.el-button--primary\s*\{[^}]*background-color:\s*var\(--el-color-primary\)/
   )
@@ -143,9 +143,10 @@ test('文字拖选和组件选中态统一读取当前主题色', () => {
   expect(themeCss).toContain('--tianshu-selection-foreground:')
   expect(selection).toContain('background: var(--tianshu-selection-bg)')
   expect(selection).toContain('color: var(--tianshu-selection-foreground)')
-  for (const block of [option, tab, tableRow, treeNode]) {
-    expect(block).toContain('var(--el-color-primary)')
+  for (const block of [option, tab, treeNode]) {
+    expect(block).toContain('var(--tianshu-primary-text)')
   }
+  expect(tableRow).toContain('var(--el-color-primary)')
 })
 
 test('页面提示容器统一读取当前主题衍生提示色', () => {

@@ -216,20 +216,27 @@ public class FieldValidationGovernedResourceAdapter
     }
 
     @Override
+    public boolean supportsDraftWorkspace() { return true; }
+
+    @Override
     public AppliedResource apply(ApprovalApplyContext context) {
         RuleFieldValidation rule = JSON.parseObject(
                 context.snapshot().snapshotJson(),
                 RuleFieldValidation.class);
         String action = upper(context.action(), "UPDATE");
+        if (("DELETE".equals(action) || "DRAFT_DELETE".equals(action)) && context.resourceId() != null && referenced(context.resourceId())) {
+            throw new IllegalArgumentException("字段校验规则仍被下游规则引用，请先删除下游规则");
+        }
         String status = switch (action) {
+            case "DRAFT_CREATE", "DRAFT_UPDATE" -> "DRAFT";
             case "CREATE", "ENABLE", "RESTORE" -> "ACTIVE";
             case "DISABLE" -> "DISABLED";
-            case "DELETE" -> "DELETED";
+            case "DELETE", "DRAFT_DELETE" -> "DELETED";
             default -> effectiveStatus(rule.getStatus());
         };
         rule.setStatus("ACTIVE".equals(status) ? 1
                 : "DELETED".equals(status) ? -1 : 0);
-        if ("CREATE".equals(action)) {
+        if (context.insertRoot()) {
             rule.setId(null);
             if (validationMapper.insert(rule) != 1
                     || rule.getId() == null) {
@@ -253,6 +260,8 @@ public class FieldValidationGovernedResourceAdapter
     private boolean referenced(Long id) {
         List<RuleDefinitionInputField> fields = inputFieldMapper.selectList(
                 new LambdaQueryWrapper<RuleDefinitionInputField>()
+                        .inSql(RuleDefinitionInputField::getDefinitionId,
+                                "SELECT id FROM rule_definition WHERE status <> -1")
                         .isNotNull(RuleDefinitionInputField
                                 ::getValidationRuleIds));
         for (RuleDefinitionInputField field : fields == null

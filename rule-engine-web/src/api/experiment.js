@@ -45,6 +45,6 @@ export function compareVersions(experimentId, leftVersion, rightVersion) {
   return request({ url: `/rule/experiment/versionCompare/${experimentId}`, method: 'get', params: { leftVersion, rightVersion } })
 }
 
-export function rollbackVersion(experimentId, version) {
-  return request({ url: `/rule/experiment/rollback/${experimentId}/${version}`, method: 'post' })
+export function rollbackVersion(experimentId, version, restoreMode = 'NEW') {
+  return request({ url: `/rule/experiment/rollback/${experimentId}/${version}`, method: 'post', params: { restoreMode } })
 }

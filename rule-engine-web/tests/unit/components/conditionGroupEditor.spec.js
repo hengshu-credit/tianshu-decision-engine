@@ -100,6 +100,19 @@ describe('ConditionGroupEditor', () => {
     expect(wrapper.vm.rightAllowedKinds(leaf)).toEqual(['LITERAL'])
   })
 
+  test('在列表中与不在列表中切换时保留逐项ARRAY和字段ID', () => {
+    const values = { kind: 'ARRAY', valueType: 'LIST', items: [{ kind: 'LITERAL', valueType: 'STRING', value: 'A,B' }] }
+    const wrapper = mountEditor({ operator: 'in', rightOperand: values })
+    const leaf = wrapper.props('group').children[0]
+    wrapper.vm.onOpChange(leaf)
+    expect(leaf.rightOperand).toEqual(values)
+    leaf.operator = 'not_in'
+    wrapper.vm.onOpChange(leaf)
+    expect(leaf.rightOperand).toEqual(values)
+    expect(leaf.leftOperand.refId).toBe(1)
+    wrapper.unmount()
+  })
+
   test('在名单内只允许名单配置并透传名单选项', async () => {
     const wrapper = mountEditor({ operator: 'in_list', rightOperand: null })
     const leaf = wrapper.props('group').children[0]

@@ -19,6 +19,15 @@ async function openDetailPage(page, path, apiData = createDetailApiData()) {
   return { pageErrors, consoleErrors, assertClean }
 }
 
+function createEditableDetailApiData() {
+  const apiData = createDetailApiData()
+  const revisions = apiData.get('/api/rule/definition/101/revisions')
+  const draft = { ...revisions[0], id: 42, revisionNo: 8, state: 'DRAFT', baseRevisionId: 41 }
+  apiData.set('/api/rule/definition/101/revisions', [draft, ...revisions])
+  apiData.set('/api/rule/definition/101/revisions/42', draft)
+  return apiData
+}
+
 async function expectNoRootOverflow(page) {
   const metrics = await page.evaluate(() => ({
     viewport: window.innerWidth,
@@ -92,8 +101,8 @@ test('项目详情加载项目规则并保持内容可复制', async ({ page }) 
   errors.assertClean()
 })
 
-test('规则详情加载输入输出字段且页签可操作', async ({ page }) => {
-  const errors = await openDetailPage(page, '/rule/101')
+test('规则工作区详情加载输入输出字段且页签可操作', async ({ page }) => {
+  const errors = await openDetailPage(page, '/rule/101', createEditableDetailApiData())
   await expect(page.getByText('age_rule', { exact: true }).first()).toBeVisible()
   const inputTab = page.getByRole('tab', { name: /输入字段/ })
   await inputTab.click()
@@ -115,8 +124,57 @@ test('规则详情加载输入输出字段且页签可操作', async ({ page }) 
   errors.assertClean()
 })
 
-test('规则输入和输出的数据对象字段按对象父层和字段子层显示', async ({ page }) => {
-  const apiData = createDetailApiData()
+for (const colorScheme of ['LIGHT', 'DARK']) {
+  test(`${colorScheme} 冻结修订字段选择器展示完整标签且紧凑侧栏窄屏可操作`, async ({ page }) => {
+    const theme = {
+      schemaVersion: 1, colorScheme, accentPreset: 'LIQUID_PURPLE',
+      sidebarTheme: 'DARK', contentWidth: 'FLUID', fixedSidebar: true, colorWeak: false
+    }
+    await page.addInitScript(value => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify(value)), theme)
+    const apiData = createDetailApiData()
+    apiData.set('/api/auth/console/preferences/theme', theme)
+    apiData.set('/api/rule/definition/101/revisions', [
+      { id: 41, definitionId: 101, revisionNo: 2, state: 'PUBLISHED', lockVersion: 0, artifactId: 10 }
+    ])
+    apiData.set('/api/rule/definition/101/revisions/41/fields', {
+      definitionId: '101', revisionId: '41', status: 'AVAILABLE', source: 'FROZEN_ARTIFACT', readOnly: true,
+      referenceNamespace: 'ARTIFACT_SOURCE', validationSource: 'FROZEN_REFERENCE_IDS',
+      inputFields: [{ varId: '1', refType: 'VARIABLE', fieldLabel: '冻结年龄', scriptName: 'age', fieldType: 'INTEGER' }],
+      outputFields: [], diagnostics: [], localOutputNames: []
+    })
+    const errors = await openDetailPage(page, '/rule/101', apiData)
+    await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme.toLowerCase())
+    await page.getByRole('tab', { name: /输入字段/ }).click()
+    const panel = page.getByTestId('revision-fields-panel')
+    const selector = panel.getByTestId('field-revision-select')
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      if (width === 390) {
+        const grip = await page.getByRole('button', { name: '调整侧边栏宽度' }).boundingBox()
+        await page.mouse.move(grip.x + grip.width / 2, grip.y + 100)
+        await page.mouse.down()
+        await page.mouse.move(64, grip.y + 100, { steps: 8 })
+        await page.mouse.up()
+        await expect(page.locator('.layout-sidebar')).toHaveClass(/is-compact/)
+      }
+      await expect(selector).toBeVisible()
+      await expect(selector).toContainText('修订 2 · 已发布')
+      await expect.poll(async () => (await selector.boundingBox()).width).toBeGreaterThan(180)
+      await selector.click()
+      await expect(page.getByRole('option', { name: '修订 2 · 已发布', exact: true })).toBeVisible()
+      await page.getByRole('option', { name: '修订 2 · 已发布', exact: true }).click()
+      await panel.getByRole('button', { name: '刷新字段视图' }).click()
+      await expect(panel).toContainText('冻结年龄')
+      await expectNoRootOverflow(page)
+    }
+    expect(errors.pageErrors).toEqual([])
+    expect(errors.consoleErrors).toEqual([])
+    errors.assertClean()
+  })
+}
+
+test('规则工作区输入和输出的数据对象字段按对象父层和字段子层显示', async ({ page }) => {
+  const apiData = createEditableDetailApiData()
   const detail = apiData.get('/api/rule/definition/detail/101')
   const object = {
     id: 20,
@@ -182,7 +240,7 @@ test('规则输入和输出的数据对象字段按对象父层和字段子层�
 })
 
 test('开放接口字段选择器按规则设计样式展示类型、编码和名称', async ({ page }) => {
-  const errors = await openDetailPage(page, '/rule/101')
+  const errors = await openDetailPage(page, '/rule/101', createEditableDetailApiData())
   const openApiTab = page.getByRole('tab', { name: /开放接口/ })
   await openApiTab.click()
   await expect(openApiTab).toHaveAttribute('aria-selected', 'true')
@@ -316,7 +374,7 @@ const editableDetails = [
     path: '/datasource/api/22',
     label: '接口编码',
     value: 'credit_query',
-    primaryAction: '生成审批草稿'
+    primaryAction: '保存草稿'
   },
   {
     name: '数据库详情',
@@ -378,11 +436,45 @@ test('模型详情加载输入输出字段且字段内容可复制', async ({ pa
   errors.assertClean()
 })
 
+test('模型转换方法及类型参数使用分页字段选择器，取消保留原配置', async ({ page }) => {
+  const errors = await openDetailPage(page, '/model/41')
+  await page.getByRole('tab', { name: /输出字段/ }).click()
+  const row = page.getByRole('row').filter({ hasText: 'riskScore' })
+  await row.getByRole('button', { name: '编辑', exact: true }).click()
+  await page.getByPlaceholder('选择转换函数', { exact: true }).click()
+  const panel = page.locator('.fp-panel:visible')
+  await panel.getByRole('combobox', { name: '每页字段数' }).selectOption('25')
+  await panel.locator('.fp-row').filter({ hasText: 'calcRisk' }).dblclick()
+  await expect(panel).toHaveCount(0)
+  await expect(page.getByPlaceholder('选择转换函数', { exact: true })).toHaveValue(/calcRisk/)
+  await page.getByPlaceholder('选择参数', { exact: true }).click()
+  await expect(panel.getByRole('combobox', { name: '每页字段数' })).toHaveValue('25')
+  await panel.getByRole('gridcell', { name: 'age', exact: true }).dblclick()
+  await expect(panel).toHaveCount(0)
+  await expect(row.locator('.transform-formula')).toContainText('age')
+  await row.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(row.locator('.transform-formula')).toHaveText('-')
+  errors.assertClean()
+})
+
 test('新建外数接口页面字段与主操作正常显示', async ({ page }) => {
-  const errors = await openDetailPage(page, '/datasource/api/new')
+  const apiData = createDetailApiData()
+  apiData.set('/api/rule/variable/project/0', [])
+  apiData.set('/api/rule/function/project/0/all', [])
+  apiData.set('/api/rule/variable/source-options', { apiOptions: [], databaseOptions: [], listOptions: [] })
+  const errors = await openDetailPage(page, '/datasource/api/new', apiData)
   await expect(page.getByText('新建外数 API 接口', { exact: true }).first()).toBeVisible()
-  await expectPrimaryActions(page, ['返回', '生成审批草稿'])
+  await expectPrimaryActions(page, ['返回', '保存草稿'])
   await expect(page.locator('.el-form-item:visible').first()).toBeVisible()
+  const field = label => page.locator('.el-form-item').filter({ has: page.locator('.el-form-item__label').filter({ hasText: new RegExp(`^${label}$`) }) })
+  await field('所属数据源').locator('.el-select').click()
+  await page.getByRole('option', { name: '征信供应商 / credit_vendor', exact: true }).click()
+  await field('接口编码').locator('input').fill('New_Draft_API')
+  await field('接口名称').locator('input').fill('审批前试运行接口')
+  await field('接口地址').locator('input').fill('/test-score')
+  await page.getByRole('tab', { name: '接口测试', exact: true }).click()
+  await expect(page.getByRole('button', { name: '草稿试运行', exact: true })).toBeEnabled()
+  await expect(page.getByTestId('api-trial-panel')).toContainText('不会创建正式接口或自动提交审批')
   await expectNoRootOverflow(page)
   expect(errors.pageErrors).toEqual([])
   expect(errors.consoleErrors).toEqual([])
@@ -398,7 +490,8 @@ test('规则生命周期和版本历史按稳定 ID 打开对应脚本内容', a
 
   await page.goto('http://tianshu.local/index.html#/rule/101')
   await expect(page.getByRole('main')).toBeVisible()
-  await page.getByRole('button', { name: '版本历史', exact: true }).click()
+  await page.getByRole('button', { name: '版本', exact: true }).click()
+  await page.getByRole('button', { name: '早期历史快照', exact: true }).click()
   const versionDialog = page.locator('.el-dialog').filter({ hasText: '版本历史' })
   await expect(versionDialog).toBeVisible()
   await versionDialog.getByRole('button', { name: '查看设计', exact: true }).click()

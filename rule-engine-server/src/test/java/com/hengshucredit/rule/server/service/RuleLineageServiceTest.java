@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
+import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
+import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleModel;
@@ -17,6 +19,8 @@ import com.hengshucredit.rule.server.mapper.RuleDataObjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleDbDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionInputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionMapper;
+import com.hengshucredit.rule.server.mapper.RuleDefinitionContentMapper;
+import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionOutputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalDatasourceMapper;
@@ -31,6 +35,9 @@ import org.apache.ibatis.session.Configuration;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
+import com.hengshucredit.rule.server.governance.GovernanceImpactService;
+import com.hengshucredit.rule.server.governance.GovernanceIssue;
+import com.hengshucredit.rule.server.governance.ResourceSnapshot;
 
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
@@ -48,9 +55,185 @@ import static org.junit.Assert.assertTrue;
 
 public class RuleLineageServiceTest {
 
+    @Test
+    public void deletingRuleDoesNotTreatItsOutputTargetAsAConsumerOrReverseTheVisualGraph() {
+        RuleLineageService service = serviceWithProjectBranch(false);
+        Map<String, Object> visual = service.graph("RULE", 10L, "DOWNSTREAM", 1);
+        assertTrue(nodeIds(visual).contains("VARIABLE:3"));
+        assertTrue(edges(visual).stream().anyMatch(edge -> "RULE:10".equals(edge.get("from"))
+                && "VARIABLE:3".equals(edge.get("to")) && "规则输出".equals(edge.get("label"))));
+
+        assertTrue("规则持有输出变量ID，不是输出变量持有规则ID", impact(service, "RULE", 10L).isEmpty());
+    }
+
+    @Test
+    public void deletingAVariableWrittenByARuleRemainsBlocked() {
+        RuleLineageService service = serviceWithProjectBranch(false);
+        List<GovernanceIssue> issues = impact(service, "VARIABLE", 3L);
+        assertEquals(1, issues.size());
+        assertTrue(issues.get(0).message().contains("RULE"));
+    }
+
+    @Test
+    public void deletingModelDoesNotTreatItsOutputVariableAsAConsumer() {
+        RuleLineageService service = serviceWithModelOutput();
+        assertTrue(nodeIds(service.graph("MODEL", 11L, "DOWNSTREAM", 1)).contains("VARIABLE:3"));
+        assertTrue(impact(service, "MODEL", 11L).isEmpty());
+    }
+
+    @Test
+    public void deletingAVariableWrittenByAModelRemainsBlocked() {
+        List<GovernanceIssue> issues = impact(serviceWithModelOutput(), "VARIABLE", 3L);
+        assertEquals(1, issues.size());
+        assertTrue(issues.get(0).message().contains("MODEL"));
+    }
+
+    @Test
+    public void outputReferencesUseRefTypeAndNeverGuessFromEqualNumericIds() {
+        RuleLineageService service = serviceWithProjectBranch(false);
+        setMapper(service, "modelMapper", RuleModelMapper.class, List.of(model(3L, "referenced-model")));
+        RuleDefinitionOutputField output = new RuleDefinitionOutputField();
+        output.setDefinitionId(10L); output.setVarId(3L); output.setRefType("MODEL");
+        setMapper(service, "definitionOutputFieldMapper", RuleDefinitionOutputFieldMapper.class, List.of(output));
+        assertFalse(impact(service, "MODEL", 3L).isEmpty());
+        assertTrue("同值变量ID不能与模型引用混淆", impact(service, "VARIABLE", 3L).isEmpty());
+        assertTrue(impact(service, "RULE", 10L).isEmpty());
+    }
+
+    @Test
+    public void disabledAndOfflineOutputWritersRemainConsumersButDeletedWritersDoNot() {
+        for (Integer status : List.of(0, 2, -1)) {
+            RuleLineageService service = serviceWithProjectBranch(false);
+            RuleDefinition rule = new RuleDefinition(); rule.setId(10L); rule.setStatus(status);
+            setMapper(service, "definitionMapper", RuleDefinitionMapper.class, List.of(rule));
+            assertEquals("仅status=-1释放引用", status == -1, impact(service, "VARIABLE", 3L).isEmpty());
+        }
+    }
+
+    @Test
+    public void aCurrentChildRuleCallBlocksDeletingTheReferencedRule() {
+        RuleLineageService service = serviceWithRuleCaller(1, true, false, 0);
+        List<GovernanceIssue> issues = impact(service, "RULE", 10L);
+        assertEquals(1, issues.size());
+        assertTrue("必须保护实际调用者，而非误报输出目标", issues.get(0).message().contains("parent-rule"));
+        assertFalse(issues.get(0).message().contains("output"));
+    }
+
+    @Test public void staticVersionCallsRemainDeletionBlockersAfterDraftRemovesThem() {
+        RuleLineageService service = serviceWithRuleCaller(1, false, false, 1);
+        setMapper(service, "definitionInputFieldMapper", RuleDefinitionInputFieldMapper.class, List.of());
+        setMapper(service, "definitionOutputFieldMapper", RuleDefinitionOutputFieldMapper.class, List.of());
+        RulePublished published = new RulePublished(); published.setDefinitionId(11L); published.setStatus(1);
+        published.setModelJson("{\"script\":\"return resourceVersionValue('CONSTANT','3','BUSINESS_VERSION:91','');\"}");
+        setMapper(service, "publishedMapper", RulePublishedMapper.class, List.of(published));
+        var issues = impact(service, "VARIABLE", 3L);
+        assertTrue(issues.toString(), issues.stream().anyMatch(issue -> issue.message().contains("parent-rule")));
+    }
+
+    @Test public void callableOlderBusinessLinesRemainConsumersWhenLatestNoLongerReferencesResource() {
+        for (Class<?> type : List.of(com.hengshucredit.rule.model.entity.RuleVersionBinding.class, com.hengshucredit.rule.model.entity.RuleDefinitionVersion.class))
+            TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), "version-consumers"), type);
+        RuleLineageService service = serviceWithRuleCaller(1, false, false, 0);
+        setMapper(service, "definitionInputFieldMapper", RuleDefinitionInputFieldMapper.class, List.of());
+        setMapper(service, "definitionOutputFieldMapper", RuleDefinitionOutputFieldMapper.class, List.of());
+        var binding = new com.hengshucredit.rule.model.entity.RuleVersionBinding(); binding.setDefinitionId(11L); binding.setSnapshotId(77L); binding.setStatus(1);
+        var historical = new com.hengshucredit.rule.model.entity.RuleDefinitionVersion(); historical.setId(77L); historical.setDefinitionId(11L);
+        historical.setModelJson("{\"script\":\"return resourceVersionValue('CONSTANT','3','BUSINESS_VERSION:91','');\"}");
+        setMapper(service, "ruleVersionBindings", com.hengshucredit.rule.server.mapper.RuleVersionBindingMapper.class, List.of(binding));
+        setMapper(service, "ruleVersionSnapshots", com.hengshucredit.rule.server.mapper.RuleDefinitionVersionMapper.class, List.of(historical));
+        assertTrue(impact(service, "VARIABLE", 3L).stream().anyMatch(issue -> issue.message().contains("parent-rule")));
+        binding.setStatus(0);
+        assertTrue(impact(service, "VARIABLE", 3L).isEmpty());
+    }
+
+    @Test
+    public void anOnlinePublishedCallRemainsProtectedAfterItsDraftRemovesTheCall() {
+        RuleLineageService service = serviceWithRuleCaller(1, false, true, 1);
+        List<GovernanceIssue> issues = impact(service, "RULE", 10L);
+        assertEquals(1, issues.size());
+        assertTrue(issues.get(0).message().contains("parent-rule"));
+    }
+
+    @Test
+    public void deletedCallersAndOfflineOnlyPublishedCallsDoNotCreateFalseConsumers() {
+        assertTrue(impact(serviceWithRuleCaller(-1, true, true, 1), "RULE", 10L).isEmpty());
+        assertTrue(impact(serviceWithRuleCaller(1, false, true, 0), "RULE", 10L).isEmpty());
+    }
+
+    private static List<GovernanceIssue> impact(RuleLineageService service, String type, Long id) {
+        return new GovernanceImpactService(service).analyze(type, id, "DELETE",
+                ResourceSnapshot.ofJson("{\"id\":" + id + "}"));
+    }
+
+    private RuleLineageService serviceWithModelOutput() {
+        RuleLineageService service = serviceWithProjectBranch(false);
+        setMapper(service, "definitionMapper", RuleDefinitionMapper.class, List.of());
+        setMapper(service, "modelMapper", RuleModelMapper.class, List.of(model(11L, "writer")));
+        RuleModelOutputField output = new RuleModelOutputField();
+        output.setModelId(11L); output.setRefType("VARIABLE"); output.setVarId(3L);
+        setMapper(service, "modelOutputFieldMapper", RuleModelOutputFieldMapper.class, List.of(output));
+        return service;
+    }
+
+    private RuleLineageService serviceWithRuleCaller(int status, boolean currentCall, boolean publishedCall, int publishedStatus) {
+        RuleLineageService service = serviceWithProjectBranch(false);
+        RuleDefinition child = new RuleDefinition(); child.setId(10L); child.setRuleName("child-rule");
+        RuleDefinition parent = new RuleDefinition(); parent.setId(11L); parent.setRuleName("parent-rule"); parent.setStatus(status);
+        setMapper(service, "definitionMapper", RuleDefinitionMapper.class, List.of(child, parent));
+        String call = "{\"nodes\":[{\"type\":\"rule-call\",\"ruleId\":10}]}";
+        RuleDefinitionContent content = new RuleDefinitionContent(); content.setDefinitionId(11L);
+        content.setModelJson(currentCall ? call : "{\"nodes\":[]}");
+        setMapper(service, "definitionContentMapper", RuleDefinitionContentMapper.class, List.of(content));
+        RulePublished published = new RulePublished(); published.setDefinitionId(11L); published.setStatus(publishedStatus);
+        published.setModelJson(publishedCall ? call : "{\"nodes\":[]}");
+        setMapper(service, "publishedMapper", RulePublishedMapper.class, List.of(published));
+        return service;
+    }
+
+    @Test
+    public void deletedRulesAndVariablesDoNotBlockProjectDeletion() {
+        RuleLineageService service = serviceWithProjectBranch(false);
+        RuleVariable input = variable(1L, "removed-input"); input.setStatus(-1);
+        RuleVariable output = variable(3L, "removed-output"); output.setStatus(-1);
+        RuleDefinition rule = new RuleDefinition(); rule.setId(10L); rule.setProjectId(1L); rule.setStatus(-1);
+        setMapper(service, "variableMapper", RuleVariableMapper.class, List.of(input, output));
+        setMapper(service, "definitionMapper", RuleDefinitionMapper.class, List.of(rule));
+
+        assertEquals(Set.of("PROJECT:1"), nodeIds(service.graph("PROJECT", 1L, "DOWNSTREAM", 1)));
+        assertTrue(new com.hengshucredit.rule.server.governance.GovernanceImpactService(service).analyze(
+                "PROJECT", 1L, "DELETE", com.hengshucredit.rule.server.governance.ResourceSnapshot.ofJson("{\"id\":1}")).isEmpty());
+    }
+
+    @Test
+    public void disabledConsumersRemainVisibleAndProtectTheirReferences() {
+        RuleLineageService service = serviceWithProjectBranch(false);
+        RuleVariable disabled = variable(1L, "disabled-input"); disabled.setStatus(0);
+        RuleDefinition offline = new RuleDefinition(); offline.setId(10L); offline.setProjectId(1L); offline.setStatus(2);
+        setMapper(service, "variableMapper", RuleVariableMapper.class, List.of(disabled));
+        setMapper(service, "definitionMapper", RuleDefinitionMapper.class, List.of(offline));
+        assertTrue(nodeIds(service.graph("PROJECT", 1L, "DOWNSTREAM", 1)).containsAll(Set.of("VARIABLE:1", "RULE:10")));
+        assertFalse(new com.hengshucredit.rule.server.governance.GovernanceImpactService(service).analyze(
+                "PROJECT", 1L, "DELETE", com.hengshucredit.rule.server.governance.ResourceSnapshot.ofJson("{\"id\":1}")).isEmpty());
+    }
+
+    @Test
+    public void fieldsOfDeletedObjectCannotReappearAsIndependentProjectConsumers() {
+        RuleLineageService service = serviceWithProjectBranch(false);
+        setMapper(service, "variableMapper", RuleVariableMapper.class, List.of());
+        setMapper(service, "definitionMapper", RuleDefinitionMapper.class, List.of());
+        RuleDataObject object = new RuleDataObject(); object.setId(30L); object.setProjectId(1L); object.setStatus(-1);
+        RuleDataObjectField field = dataField(24L, "removed-field"); field.setObjectId(30L); field.setProjectId(1L);
+        setMapper(service, "dataObjectMapper", RuleDataObjectMapper.class, List.of(object));
+        setMapper(service, "dataObjectFieldMapper", RuleDataObjectFieldMapper.class, List.of(field));
+        assertEquals(Set.of("PROJECT:1"), nodeIds(service.graph("PROJECT", 1L, "DOWNSTREAM", 2)));
+        org.junit.Assert.assertThrows(IllegalArgumentException.class, () -> service.graph("DATA_FIELD", 24L, "ALL", 1));
+    }
+
     @BeforeClass
     public static void initTableInfo() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleModel.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleDefinitionContent.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RulePublished.class);
     }
 
     @Test
@@ -184,6 +367,8 @@ public class RuleLineageServiceTest {
                         null, 1));
 
         RuleLineageService service = new RuleLineageService();
+        setMapper(service, "definitionContentMapper", RuleDefinitionContentMapper.class, Collections.emptyList());
+        setMapper(service, "publishedMapper", RulePublishedMapper.class, Collections.emptyList());
         setMapper(service, "dataObjectMapper", RuleDataObjectMapper.class, Collections.emptyList());
         setMapper(service, "projectMapper", RuleProjectMapper.class, Collections.emptyList());
         setMapper(service, "variableMapper", RuleVariableMapper.class, Collections.emptyList());
@@ -240,6 +425,8 @@ public class RuleLineageServiceTest {
         ruleOutput.setRefType("VARIABLE");
 
         RuleLineageService service = new RuleLineageService();
+        setMapper(service, "definitionContentMapper", RuleDefinitionContentMapper.class, Collections.emptyList());
+        setMapper(service, "publishedMapper", RulePublishedMapper.class, Collections.emptyList());
         setMapper(service, "dataObjectMapper", RuleDataObjectMapper.class, Collections.emptyList());
         setMapper(service, "projectMapper", RuleProjectMapper.class, Collections.singletonList(project));
         setMapper(service, "variableMapper", RuleVariableMapper.class, Arrays.asList(start, sibling, output));

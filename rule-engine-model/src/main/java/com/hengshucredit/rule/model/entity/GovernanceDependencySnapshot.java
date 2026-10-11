@@ -22,6 +22,7 @@ public class GovernanceDependencySnapshot {
     private Long targetResourceId;
     private Long targetVersionId;
     private Integer targetVersionNo;
+    private String versionSelectionJson;
     private String referencePath;
     private String relationType;
     private Integer required;

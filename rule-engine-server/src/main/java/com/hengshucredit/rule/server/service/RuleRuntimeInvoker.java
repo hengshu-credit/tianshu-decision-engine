@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
+
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.qlexpress4.Express4Runner;
 import com.alibaba.qlexpress4.runtime.function.CustomFunction;
@@ -37,6 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 public class RuleRuntimeInvoker {
+    @Resource private RuleActionRuntimeService ruleActions;
 
     private static final Logger log = LoggerFactory.getLogger(RuleRuntimeInvoker.class);
     private static final Class<?>[] ONE_STRING = new Class<?>[]{String.class};
@@ -166,6 +169,13 @@ public class RuleRuntimeInvoker {
                         ? Collections.emptyList() : runtimeSnapshot.getOutputFields()), runtimeSnapshot, null);
     }
 
+    public void enterTest(RuleDefinition definition, Long executionProjectId, String projectCode,
+                          Map<String, Object> values, Map<String, Object> originalInput, String modelJson,
+                          List<RuleDefinitionOutputField> outputFields) {
+        enterInternal(definition, executionProjectId, projectCode, values, originalInput,
+                true, modelJson, resolveOutputScriptNames(outputFields), null, null);
+    }
+
     public void enterArtifact(RuleDefinition definition, Long executionProjectId, String projectCode,
                               Map<String, Object> values, Map<String, Object> originalInput,
                               boolean testMode, String modelJson,
@@ -234,6 +244,9 @@ public class RuleRuntimeInvoker {
         ruleContext.put("projectCode", projectCode);
         ruleContext.put("traceId", rootTrace.getTraceId());
         ruleContext.put("modelType", definition.getModelType());
+        ruleContext.put("version", definition.getExecutionVersion());
+        ruleContext.put("revisionId", definition.getExecutionRevisionId());
+        ruleContext.put("artifactDigest", definition.getExecutionArtifactDigest());
         RuntimeContextBridge.setRuleContext(ruleContext, Collections.<String>emptyList());
     }
 
@@ -260,7 +273,8 @@ public class RuleRuntimeInvoker {
         rootTrace.setExpressionTrace(result.getTraces() == null
                 ? Collections.<Object>emptyList() : result.getTraces());
         rootTrace.setStatus(result.isSuccess() ? "SUCCESS"
-                : "WAITING_EXTERNAL".equals(result.getExecutionStatus()) ? "WAITING_EXTERNAL" : "FAILED");
+                : "WAITING_EXTERNAL".equals(result.getExecutionStatus()) ? "WAITING_EXTERNAL"
+                : "THROTTLED".equals(result.getExecutionStatus()) ? "THROTTLED" : "FAILED");
         rootTrace.setDurationMs(result.getExecuteTimeMs());
         result.setTraceId(rootTrace.getTraceId());
         result.setTraces(session.isTraceEnabled() ? Collections.<Object>singletonList(rootTrace) : null);
@@ -483,7 +497,9 @@ public class RuleRuntimeInvoker {
                     referencePlan.mergeBindingFields(childFields),
                     session.getValues(), options);
             RuleResult result;
-            try (var context = RuleVariableExecutionContext.prepare(
+            try (var external = ruleActions == null ? null : ruleActions.bindExternalValues(projectId, session.getValues(), options, runtimeSnapshot);
+                 var listWrites = ruleActions == null ? null : ruleActions.bindListWrites(projectId, options, runtimeSnapshot);
+                 var context = RuleVariableExecutionContext.prepare(
                     runtimeSnapshot == null ? published.getModelType() : runtimeSnapshot.getModelType(),
                     session.getValues(), options, referencePlan, explicitReferenceTargets, () -> {
                         options.setRuntimeSnapshot(runtimeSnapshot);
@@ -516,6 +532,11 @@ public class RuleRuntimeInvoker {
             childTrace.setStatus("WAITING_EXTERNAL");
             throw e;
         } catch (RuntimeException e) {
+            ExecutionCapacityException capacity = ExecutionCapacityException.find(e);
+            if (capacity != null) {
+                childTrace.setStatus("THROTTLED");
+                throw capacity;
+            }
             childTrace.setStatus("FAILED");
             throw e;
         } finally {

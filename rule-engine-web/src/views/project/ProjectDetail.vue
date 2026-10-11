@@ -108,6 +108,7 @@
       <!-- 操作按钮栏 -->
       <div class="uiue-btn-bar">
         <div class="btn-right">
+          <governance-workspace-toolbar resource-type="RULE" :project-id="$route.params.id" />
           <el-button
             v-permission="'rule:edit'"
             type="primary"
@@ -173,13 +174,13 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="status" label="状态" min-width="70" align="center">
+      <el-table-column prop="status" label="发布状态" min-width="160" align="center">
         <template v-slot="{ row }"
-          ><el-tag
+          ><governance-resource-status resource-type="RULE" :resource-id="row.definitionId || row.id" :status="row.status"><el-tag
             :type="{ 0: 'info', 1: 'success', 2: 'warning' }[row.status]"
             size="small"
             >{{ ['未发布', '已发布', '已下线'][row.status] }}</el-tag
-          ></template
+          ></governance-resource-status></template
         >
       </el-table-column>
       <el-table-column
@@ -214,7 +215,7 @@
           row.updateTime ? formatDateTime(row.updateTime) : '-'
         }}</template>
       </el-table-column>
-      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="250" align="center" fixed="right">
+      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="385" align="center" fixed="right">
         <template v-slot="{ row }">
           <div class="table-operation-group">
             <el-button
@@ -234,6 +235,7 @@
               @click="viewRule(row)"
               >查看</el-button
             >
+            <governance-publish-action resource-type="RULE" :resource-id="row.definitionId || row.id" />
             <el-button
               v-permission="'rule:edit'"
               link
@@ -402,7 +404,7 @@
         <el-table-column
           prop="status"
           label="状态"
-          min-width="70"
+          min-width="160"
           align="center"
         >
           <template v-slot="{ row }"
@@ -452,6 +454,9 @@
 </template>
 
 <script>
+import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
+import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
+import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import { markRaw } from 'vue'
 import {
@@ -477,7 +482,7 @@ import { canUseWorkbenchAction, workbenchActionRoute } from '@/utils/workbenchAc
 export default {
   name: 'ProjectDetail',
   mixins: [workspaceTabTitleMixin(vm => vm.project?.projectName)],
-  components: { ProjectWorkbenchOverview, RuleModelTypeHelp, RemoteFilterSelect },
+  components: { GovernanceWorkspaceToolbar, GovernancePublishAction, GovernanceResourceStatus, ProjectWorkbenchOverview, RuleModelTypeHelp, RemoteFilterSelect },
   data() {
     return {
       pid: null,
@@ -731,12 +736,17 @@ export default {
         return
       }
       await this.$confirm(
-        `确定为项目规则“${r.ruleName}”发起删除审批吗？审批通过后规则才会删除。`
+        `确定删除项目规则“${r.ruleName}”吗？未审批通过且从未发布的新增规则将直接删除，其他规则将生成删除审批草稿。`
       )
       const response = await deleteDefinition(r.id)
+      if (response.data?.deleted) {
+        this.$message.success('规则已删除，无需审批')
+        await this.load()
+        return
+      }
       this.$message.success('已生成规则删除审批草稿')
-      if (response.data && response.data.id) {
-        this.$router.push('/approval/' + response.data.id)
+      if (response.data?.approvalRequestId) {
+        this.$router.push('/approval/' + response.data.approvalRequestId)
       }
     },
     async submit(continueEditing = false) {

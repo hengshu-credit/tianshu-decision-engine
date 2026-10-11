@@ -62,7 +62,7 @@ public class ConsoleSessionAuthInterceptor implements HandlerInterceptor {
         }
         if (databaseAccountService != null
                 && !databaseSessionIsCurrent(session)) {
-            session.invalidate();
+            clearIdentity(session, properties);
             return writeUnauthorized(response, "会话权限已变更，请重新登录");
         }
         return true;
@@ -78,6 +78,13 @@ public class ConsoleSessionAuthInterceptor implements HandlerInterceptor {
         Object sessionVersion = session.getAttribute(
                 properties.getSessionPermissionVersionAttribute());
         return Objects.equals(current.permissionVersion(), sessionVersion);
+    }
+
+    /** 撤销身份但保留会话容器，避免 Redis 并发请求因物理会话已删除而无法提交响应。 */
+    static void clearIdentity(HttpSession session, RuleEngineConsoleLoginProperties properties) {
+        session.removeAttribute(properties.getSessionUsernameAttribute());
+        session.removeAttribute(properties.getSessionUserIdAttribute());
+        session.removeAttribute(properties.getSessionPermissionVersionAttribute());
     }
 
     /**

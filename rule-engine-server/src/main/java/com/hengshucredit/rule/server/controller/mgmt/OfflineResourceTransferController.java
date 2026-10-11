@@ -27,6 +27,13 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/rule/transfer")
 public class OfflineResourceTransferController {
+    @Resource private com.hengshucredit.rule.server.transfer.TransferVersionService versionTransfers;
+
+    @GetMapping("/version-candidates")
+    @RequirePermission("transfer:view")
+    public R<List<Map<String, Object>>> versionCandidates(@RequestParam String refType, @RequestParam Long resourceId) {
+        return R.ok(versionTransfers.candidates(refType, resourceId));
+    }
     @Resource private OfflineResourceTransferService service;
     @Resource private OfflineResourceImportService importService;
     @Resource private ConsoleOperatorResolver operatorResolver;
@@ -34,7 +41,7 @@ public class OfflineResourceTransferController {
     @Resource private OfflineTransferLogService logService;
 
     @GetMapping("/resources")
-    @RequirePermission("rule:view")
+    @RequirePermission("transfer:view")
     public R<Page<Map<String, Object>>> resources(@RequestParam String nodeType,
                                                  @RequestParam(required = false) String keyword,
                                                  @RequestParam(required = false) Long projectId,
@@ -42,13 +49,15 @@ public class OfflineResourceTransferController {
                                                  @RequestParam(defaultValue = "20") int pageSize) {
         try {
             return R.ok(lineageService.pageOptions(nodeType, keyword, projectId, pageNum, pageSize));
+        } catch (com.hengshucredit.rule.server.security.ConsoleAccessDeniedException denied) {
+            throw denied;
         } catch (IllegalArgumentException error) {
             return R.fail(422, error.getMessage());
         }
     }
 
     @PostMapping(value = "/export", produces = "application/zip")
-    @RequirePermission("rule:view")
+    @RequirePermission("transfer:export")
     public ResponseEntity<byte[]> export(@RequestBody List<TransferRootRequest> roots) {
         String operator = operatorResolver == null ? ConsoleOperatorResolver.SYSTEM_CONSOLE : operatorResolver.resolve();
         try {
@@ -67,7 +76,7 @@ public class OfflineResourceTransferController {
     }
 
     @PostMapping(value = "/export/options", produces = "application/zip")
-    @RequirePermission("rule:view")
+    @RequirePermission("transfer:export")
     public ResponseEntity<byte[]> exportWithOptions(@RequestBody TransferExportRequest request) {
         String operator = operatorResolver == null ? ConsoleOperatorResolver.SYSTEM_CONSOLE : operatorResolver.resolve();
         List<TransferRootRequest> roots = request == null ? List.of() : request.roots();
@@ -87,11 +96,13 @@ public class OfflineResourceTransferController {
     }
 
     @PostMapping(value = "/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @RequirePermission("rule:view")
+    @RequirePermission("transfer:import")
     public R<Map<String, Object>> preview(@RequestPart("file") MultipartFile file) {
         try {
             if (file == null || file.isEmpty()) return R.fail(422, "离线迁移包不能为空");
             return R.ok(service.preview(file.getBytes()));
+        } catch (com.hengshucredit.rule.server.security.ConsoleAccessDeniedException denied) {
+            throw denied;
         } catch (IllegalArgumentException error) {
             return R.fail(422, error.getMessage());
         } catch (Exception error) {
@@ -100,7 +111,7 @@ public class OfflineResourceTransferController {
     }
 
     @PostMapping(value = "/preview/options", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @RequirePermission("rule:view")
+    @RequirePermission("transfer:import")
     public R<Map<String, Object>> previewWithOptions(@RequestPart("file") MultipartFile file,
                                                      @RequestPart(value = "options", required = false) String options) {
         try {
@@ -109,6 +120,8 @@ public class OfflineResourceTransferController {
                     ? new TransferImportOptions(null, "PROJECT", "REUSE", "SUFFIX", "_imported", false, null, null, Map.of())
                     : JSON.parseObject(options, TransferImportOptions.class);
             return R.ok(service.preview(file.getBytes(), parsed));
+        } catch (com.hengshucredit.rule.server.security.ConsoleAccessDeniedException denied) {
+            throw denied;
         } catch (IllegalArgumentException error) {
             return R.fail(422, error.getMessage());
         } catch (Exception error) {
@@ -117,14 +130,14 @@ public class OfflineResourceTransferController {
     }
 
     @GetMapping("/resource-fields")
-    @RequirePermission("rule:view")
+    @RequirePermission("transfer:view")
     public R<List<Map<String, Object>>> resourceFields(@RequestParam String resourceType,
                                                         @RequestParam Long resourceId) {
         return R.ok(service.resourceFields(resourceType, resourceId));
     }
 
     @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @RequirePermission("rule:edit")
+    @RequirePermission("transfer:import")
     public R<Map<String, Object>> importPackage(@RequestPart("file") MultipartFile file,
                                                 @RequestPart("options") String options) {
         try {
@@ -135,6 +148,8 @@ public class OfflineResourceTransferController {
             result.put("options", parsed);
             if (logService != null) logService.recordImport(file.getBytes(), result, operator, null);
             return R.ok(result);
+        } catch (com.hengshucredit.rule.server.security.ConsoleAccessDeniedException denied) {
+            throw denied;
         } catch (IllegalArgumentException error) {
             if (logService != null && file != null) {
                 try { logService.recordImport(file.getBytes(), Map.of(), ConsoleOperatorResolver.SYSTEM_CONSOLE, error.getMessage()); } catch (Exception ignored) { }
@@ -155,7 +170,7 @@ public class OfflineResourceTransferController {
     }
 
     @GetMapping("/logs")
-    @RequirePermission("rule:view")
+    @RequirePermission("transfer:view")
     public R<com.baomidou.mybatisplus.core.metadata.IPage<OfflineTransferLog>> logs(
             @RequestParam(defaultValue = "1") int pageNum,
             @RequestParam(defaultValue = "20") int pageSize,
@@ -164,14 +179,14 @@ public class OfflineResourceTransferController {
     }
 
     @GetMapping("/logs/{id}")
-    @RequirePermission("rule:view")
+    @RequirePermission("transfer:view")
     public R<OfflineTransferLog> logDetail(@PathVariable Long id) {
         OfflineTransferLog log = logService.getById(id);
         return log == null ? R.fail(404, "迁移日志不存在") : R.ok(log);
     }
 
     @GetMapping("/logs/{id}/lineage")
-    @RequirePermission("rule:view")
+    @RequirePermission("transfer:view")
     public R<Map<String, Object>> logLineage(@PathVariable Long id) {
         if (logService.getById(id) == null) return R.fail(404, "迁移日志不存在");
         return R.ok(logService.lineage(id));

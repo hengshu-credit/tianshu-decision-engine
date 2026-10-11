@@ -1,22 +1,5 @@
 <template>
   <div class="se-designer uiue-compact-workbench uiue-compact-designer">
-    <rule-draft-read-only
-      :visible="!canEditDraft"
-      :loading="!draftGuardLoaded"
-      :load-error="Boolean(draftGuardError)"
-      :revision-label="viewRevisionLabel"
-      :revision-state="viewRevision ? viewRevision.state : ''"
-      :can-fork="canForkViewRevision"
-      :has-editable-draft="hasPendingDraft"
-      :source-options="designerSourceOptions"
-      :selected-source="selectedDesignerSource"
-      :source-loading="designerSourcesLoading"
-      @go-back="$router.back()"
-      @retry="startViewedRevisionRefresh(true)"
-      @go-lifecycle="goRuleLifecycle"
-      @fork="forkViewRevision"
-      @change-source="switchDesignerSource"
-    />
     <!-- 顶部工具栏 -->
     <div class="se-header">
       <div class="se-title-area">
@@ -24,6 +7,7 @@
           link
           :icon="ElIconBack"
           aria-label="返回"
+          data-designer-back
           title="返回"
           @click="$router.back()"
           style="color: var(--tianshu-text-secondary)"
@@ -34,17 +18,32 @@
           >{{ lineCount }} 行</el-tag
         >
       </div>
-      <div class="se-toolbar">
-        <rule-designer-version-select
-          v-if="canEditDraft && designerSourceOptions.length"
-          :options="designerSourceOptions"
-          :model-value="selectedDesignerSource"
-          :loading="designerSourcesLoading"
-          @change="switchDesignerSource"
-          @delete="deleteDesignerSource"
+      <div class="se-toolbar designer-version-toolbar">
+        <rule-draft-read-only
+          :visible="!canEditDraft"
+          :loading="!draftGuardLoaded"
+          :load-error="Boolean(draftGuardError) || varsLoadError"
+          :revision-label="viewRevisionLabel"
+          :revision-state="viewRevision ? viewRevision.state : ''"
+          :can-fork="canForkViewRevision"
+          :has-editable-draft="hasPendingDraft"
+          :source-options="designerSourceOptions"
+          :selected-source="selectedDesignerSource"
+          :source-loading="designerSourcesLoading"
           :disabled="designerBusy"
+          :read-only-reason="designerReadOnlyReason"
+          :can-test-frozen="designerCanTest && referenceCatalogMode === 'FROZEN'"
+          :migration-required="draftGuardLoaded && frozenReferenceCatalog?.localEditingAllowed === false"
+          @test-frozen="handleTest"
+          @open-migration="$router.push('/transfer')"
+          @retry="startViewedRevisionRefresh(true)"
+          @go-lifecycle="goRuleLifecycle"
+          @fork="forkViewRevision"
+          @change-source="switchDesignerSource"
+          @delete-source="deleteDesignerSource"
         />
         <rule-designer-action-bar
+          @check="handleCheck"
           @locate="locateDesignerIssue"
           :issue-context="incomingValidationIssue"
           :can-edit="canEditDraft"
@@ -63,7 +62,7 @@
       </div>
     </div>
 
-    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" />
+    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" :reference-mode="referenceCatalogMode" :can-use-current-resources="canEnterDesignerLivePreview" @use-current="runDesignerAction(enterDesignerLivePreview)" />
     <rule-designer-dialogs :choice="designerChoice" @resolve="resolveDesignerChoice" />
 
 
@@ -255,6 +254,14 @@
       <div class="se-editor-area">
         <!-- 状态栏 -->
         <div class="se-statusbar">
+          <el-switch
+            v-model="showEngineReferences"
+            size="small"
+            active-text="显示引用名称与版本"
+            aria-label="显示引用名称与版本"
+          />
+          <span v-if="showEngineReferences" class="se-line-info">{{ scriptReferences.length }} 处引用</span>
+          <span class="se-statusbar-spacer" />
           <span v-if="compileStatus === 1" class="se-status-item status-ok">
             <el-icon><el-icon-success /></el-icon> 脚本有效
           </span>
@@ -268,7 +275,6 @@
           <span v-else class="se-status-item">
             <el-icon><el-icon-info /></el-icon> 未验证
           </span>
-          <span class="se-statusbar-spacer" />
           <span class="se-line-info"
             >{{ lineCount }} 行 / {{ script.length }} 字符</span
           >
@@ -289,8 +295,7 @@
         <!-- 底部提示 -->
         <div class="se-footer">
           <span class="se-footer-tip">
-            <el-icon><el-icon-edit-outline /></el-icon> 直接编写 QLExpress
-            脚本，保存后即可用于规则执行
+            <el-icon><el-icon-edit-outline /></el-icon> 双击左侧字段插入引用，也可直接编辑代码；名称和版本仅用于展示，复制与保存仍为原始脚本
           </span>
         </div>
       </div>
@@ -299,6 +304,8 @@
     <!-- 测试弹窗 -->
     <designer-test-dialog
       v-model:visible="testVisible"
+      :execution-source="designerTestExecutionSource"
+      :execution-source-name="viewRevisionLabel"
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="SCRIPT"
@@ -309,6 +316,7 @@
 </template>
 
 <script>
+import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { markRaw } from 'vue'
 import {
   EditPen as ElIconEditOutline,
@@ -328,9 +336,15 @@ import {
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ruleDraftMixin from '@/mixins/ruleDraftMixin'
 import MonacoEditor from '@/components/MonacoEditor'
+import { listFieldVersions } from '@/api/fieldPickerVersion'
+import {
+  collectQlScriptReferences,
+  buildQlReferenceDecorations,
+  qlReferenceVersionIdentity,
+  qlReferenceVersionKey,
+} from '@/utils/qlScriptReferences'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import RuleDraftReadOnly from '@/components/rule/RuleDraftReadOnly.vue'
-import RuleDesignerVersionSelect from '@/components/rule/RuleDesignerVersionSelect.vue'
 import RuleDesignerActionBar from '@/components/rule/RuleDesignerActionBar.vue'
 import {
   buildSampleParamsFromCodes,
@@ -365,6 +379,10 @@ export default {
       testResult: null,
       monacoEditor: null,
       qlProviderDisposables: [],
+      showEngineReferences: true,
+      referenceDecorationIds: [],
+      referenceVersions: {},
+      referenceVersionRequest: 0,
       pendingVarInsertions: [],
       varPanelWidth: DEFAULT_VAR_PANEL_WIDTH,
       varPanelMinWidth: 220,
@@ -385,7 +403,6 @@ export default {
   components: {
     RuleDesignerActionBar,
     RuleDraftReadOnly,
-    RuleDesignerVersionSelect,
     DesignerTestDialog,
     MonacoEditor,
     ElIconEditOutline,
@@ -400,6 +417,9 @@ export default {
   name: 'ScriptEditor',
   mixins: [varPickerMixin, ruleDraftMixin],
   computed: {
+    scriptReferences() {
+      return collectQlScriptReferences(this.script, this.varPickerOptions, this.projectFunctions, this.scriptVarRefs)
+    },
     varPanelStyle() {
       if (this.varPanelCollapsed) return {}
       return {
@@ -411,6 +431,7 @@ export default {
     editorOptions() {
       return {
         fontSize: 13,
+        lineHeight: 22,
         fontFamily: "'Courier New', Consolas, monospace",
         lineNumbers: 'on',
         minimap: { enabled: false },
@@ -543,6 +564,25 @@ export default {
     },
   },
   watch: {
+    scriptReferences: {
+      flush: 'post',
+      handler() { this.refreshReferenceDecorations(); this.loadReferenceVersions() },
+    },
+    referenceVersions: {
+      deep: true,
+      flush: 'post',
+      handler() { this.refreshReferenceDecorations() },
+    },
+    showEngineReferences() {
+      this.referenceVersionRequest++
+      this.referenceVersions = {}
+      this.refreshReferenceDecorations()
+      this.loadReferenceVersions()
+    },
+    referenceCatalogKey() { this.resetReferenceVersions() },
+    referenceCatalogMode() { this.resetReferenceVersions() },
+    projectRefs() { this.resetReferenceVersions() },
+    projectFunctions() { this.resetReferenceVersions() },
     varSearchKey() {
       this.scriptVarPages = {}
     },
@@ -576,10 +616,45 @@ export default {
     this.restoreVarPanelWidth()
   },
   beforeUnmount() {
+    this.referenceVersionRequest++
+    this.monacoEditor?.deltaDecorations(this.referenceDecorationIds, [])
     this.stopVarPanelResize()
     this.disposeQlProviders()
   },
   methods: {
+    refreshReferenceDecorations() {
+      const editor = this.monacoEditor
+      const model = editor?.getModel()
+      if (!model) return
+      const decorations = this.showEngineReferences
+        ? buildQlReferenceDecorations(this.scriptReferences, model, this.referenceVersions, this.referenceCatalogMode) : []
+      this.referenceDecorationIds = editor.deltaDecorations(this.referenceDecorationIds, decorations)
+    },
+    resetReferenceVersions() {
+      this.referenceVersionRequest++
+      this.referenceVersions = {}
+      this.$nextTick(() => { this.refreshReferenceDecorations(); this.loadReferenceVersions() })
+    },
+    async loadReferenceVersions() {
+      if (!this.showEngineReferences || this.referenceCatalogMode !== 'LIVE') return
+      const request = this.referenceVersionRequest
+      const pending = []
+      for (const reference of this.scriptReferences) {
+        const key = qlReferenceVersionKey(reference, this.referenceCatalogMode)
+        if (!key || this.referenceVersions[key]) continue
+        this.referenceVersions[key] = { loading: true }
+        pending.push((async () => {
+          try {
+            const response = await listFieldVersions(qlReferenceVersionIdentity(reference, this.referenceCatalogMode))
+            if (request !== this.referenceVersionRequest) return
+            this.referenceVersions[key] = { version: response.data?.[0]?.version }
+          } catch {
+            if (request === this.referenceVersionRequest) this.referenceVersions[key] = { error: true }
+          }
+        })())
+      }
+      await Promise.all(pending)
+    },
     restoreVarPanelWidth() {
       try {
         const saved = Number(
@@ -716,7 +791,7 @@ export default {
           this.scriptVarRefs = []
           if (content.modelJson && content.modelJson !== '{}') {
             try {
-              const model = JSON.parse(content.modelJson)
+              const model = parseDesignerModelJson(content.modelJson)
               if (model.script) this.script = model.script
               // 加载脚本变量引用映射（用于通过 varId 同步变量编码变更）
               if (Array.isArray(model.scriptVarRefs)) {
@@ -846,6 +921,7 @@ export default {
     },
     onEditorReady(editor) {
       this.monacoEditor = editor
+      this.$nextTick(() => this.refreshReferenceDecorations?.())
       if (typeof this.registerQlProviders === 'function') {
         this.registerQlProviders()
       }
@@ -1285,6 +1361,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
   padding: 6px 12px;
   flex-shrink: 0;
   background: var(--tianshu-bg-muted);
@@ -1323,6 +1400,24 @@ export default {
   inset: 0;
   border: none;
   border-radius: 0;
+}
+.se-editor-container :deep(.se-reference-code),
+.se-editor-container :deep(.se-reference-name),
+.se-editor-container :deep(.se-reference-version) {
+  border: none;
+  border-radius: 0;
+}
+.se-editor-container :deep(.se-reference-code) {
+  background: var(--tianshu-border);
+  color: var(--tianshu-info-text);
+}
+.se-editor-container :deep(.se-reference-name) {
+  background: var(--tianshu-bg-hover);
+  color: var(--tianshu-text-secondary);
+}
+.se-editor-container :deep(.se-reference-version) {
+  background: var(--tianshu-bg-muted);
+  color: var(--tianshu-text-tertiary);
 }
 .se-footer {
   display: flex;

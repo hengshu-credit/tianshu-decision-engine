@@ -14,6 +14,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
     
     @Autowired
     private TokenAuthInterceptor tokenAuthInterceptor;
+
+    @Autowired
+    private com.hengshucredit.rule.server.audit.ConsoleOperationAudit consoleOperationAudit;
     
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
@@ -21,5 +24,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .addPathPatterns("/api/**");
         registry.addInterceptor(new GovernedProjectionMutationInterceptor())
                 .addPathPatterns("/api/rule/**");
+        registry.addInterceptor(consoleOperationAudit)
+                .addPathPatterns("/api/rule/**").order(100);
     }
 }

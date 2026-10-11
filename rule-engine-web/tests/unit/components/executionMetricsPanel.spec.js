@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@test-utils'
 import * as runtimeLogApi from '@/api/runtimeLog'
 import ExecutionMetricsPanel from '@/components/dashboard/ExecutionMetricsPanel.vue'
+import { ElAlert } from 'element-plus/es/components/alert/index.mjs'
 
 const snapshot = {
   instanceId: 'node-a',
@@ -124,6 +125,8 @@ describe('ExecutionMetricsPanel', () => {
     expect(wrapper.vm.warningTone(undefined)).toBe('info')
     expect(wrapper.vm.formatMs(null)).toBe('未知')
     expect(wrapper.vm.overflowStrategyLabel('SYNC_FALLBACK')).toBe('同步回退')
+    expect(wrapper.vm.overflowStrategyLabel('DURABLE_OUTBOX_REPLAY')).toBe('持久化队列重放')
+    expect(wrapper.vm.overflowStrategyLabel('JOURNAL_THEN_SYNC_FALLBACK')).toBe('本地写前日志后同步回退')
     expect(wrapper.vm.persistenceDetail).toContain('溢出策略 未知')
     wrapper.unmount()
   })
@@ -156,6 +159,52 @@ describe('ExecutionMetricsPanel', () => {
     expect(runtimeLogApi.retryRuleWarmup).toHaveBeenCalledOnce()
     expect(wrapper.vm.ruleWarmup.state).toBe('READY')
     expect(wrapper.vm.warmupRetrying).toBe(false)
+    wrapper.unmount()
+  })
+
+  test.each([
+    ['WRITE_FAILED', '写入失败', '已有文件已保留'],
+    ['RECOVERY_REQUIRED', '需要恢复', '不要删除'],
+    ['OWNERSHIP_CONFLICT', '目录被占用', '独立的本地目录'],
+  ])('本地恢复日志%s不会因待恢复数为0误报正常', async (status, label, advice) => {
+    runtimeLogApi.getExecutionMetrics.mockResolvedValueOnce({ data: {
+      ...snapshot,
+      persistence: { ...snapshot.persistence, journal: { enabled: true, status, available: false, pending: 0, bytes: 2048 } },
+    } })
+    const wrapper = mount(ExecutionMetricsPanel, { stubs: { 'el-alert': ElAlert } })
+    await flushPromises()
+    const journal = wrapper.find('[data-testid="execution-metrics-journal"]')
+    expect(journal.exists()).toBe(true)
+    expect(journal.find('.el-alert--warning').text()).toContain(label)
+    expect(journal.find('.el-alert--warning').text()).toContain(advice)
+    expect(journal.find('[data-testid="journal-pending"]').text()).toContain('未知')
+    wrapper.unmount()
+  })
+
+  test('本地恢复日志区分就绪下界、停用与缺失快照', async () => {
+    runtimeLogApi.getExecutionMetrics.mockResolvedValueOnce({ data: {
+      ...snapshot,
+      persistence: { ...snapshot.persistence, journal: { status: 'READY', available: true, pending: 10000, pendingTruncated: true, bytes: 2048 } },
+    } })
+    const wrapper = mount(ExecutionMetricsPanel)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="journal-pending"]').text()).toContain('至少 10,000')
+    expect(wrapper.vm.journalStatusLabel).toBe('可写入')
+    expect(wrapper.vm.journalStatusType).toBe('success')
+    runtimeLogApi.getExecutionMetrics.mockResolvedValueOnce({ data: {
+      ...snapshot, persistence: { journal: { status: 'READY', available: true, pending: 0, pendingTruncated: true } },
+    } })
+    await wrapper.vm.loadMetrics()
+    expect(wrapper.find('[data-testid="journal-pending"]').text()).toContain('未知')
+    runtimeLogApi.getExecutionMetrics.mockResolvedValueOnce({ data: { ...snapshot, persistence: { journal: { enabled: false, status: 'DISABLED' } } } })
+    await wrapper.vm.loadMetrics()
+    expect(wrapper.vm.journalStatusLabel).toBe('未启用')
+    expect(wrapper.vm.journalStatusType).toBe('info')
+    expect(wrapper.find('[data-testid="journal-pending"]').text()).toContain('未知')
+    runtimeLogApi.getExecutionMetrics.mockResolvedValueOnce({ data: snapshot })
+    await wrapper.vm.loadMetrics()
+    expect(wrapper.vm.journalStatusLabel).toBe('未知')
+    expect(wrapper.vm.journalStatusType).toBe('info')
     wrapper.unmount()
   })
 })

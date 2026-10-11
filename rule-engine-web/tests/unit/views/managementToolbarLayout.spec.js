@@ -105,7 +105,7 @@ const toolbarPages = [
   ['模型管理', ModelList, 1],
   ['函数管理', FunctionList, 1],
   ['分流实验', ExperimentList, 1],
-  ['账单管理', BillingList, 2],
+  ['账单管理', BillingList, 3],
 ]
 
 describe('管理页面筛选工具栏布局', () => {

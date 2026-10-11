@@ -49,6 +49,8 @@ public class ActionDataCompiler {
             case "in-check": return compileInCheck(block, indent, varContext);
             case "template-str": return compileTemplateStr(block, indent, varContext);
             case "rule-call": return compileRuleCall(block, indent, varContext);
+            case "api-call": return compileApiCall(block, indent, varContext);
+            case "list-write": return compileListWrite(block, indent, varContext);
             default: return "";
         }
     }
@@ -73,6 +75,32 @@ public class ActionDataCompiler {
         sb.append(pad(indent)).append(resolvedTarget).append(" = ").append(value);
         appendRounding(sb, b, resolvedTarget, indent);
         return appendRuntimeSync(sb.toString(), resolvedTarget, indent);
+    }
+
+    private static String compileApiCall(JSONObject block, int indent, VarContext context) {
+        long apiId = com.hengshucredit.rule.core.action.ListWriteConfig.positiveLong(block.get("apiId"), "外数 API ID");
+        String call = "externalApiValue(" + apiId + ", \"$\")";
+        JSONObject operand = block.getJSONObject("targetOperand");
+        if (operand == null) return pad(indent) + call;
+        if (!java.util.Set.of("REFERENCE", "PATH").contains(operand.getString("kind"))
+                || "CONSTANT".equals(operand.getString("refType")) || "EXTERNAL_API".equals(operand.getString("refType"))) {
+            throw new IllegalArgumentException("外数结果请选择可写入的变量或对象");
+        }
+        String valueType = operand.getString("valueType");
+        if (!empty(valueType) && !java.util.Set.of("OBJECT", "MAP").contains(valueType)) throw new IllegalArgumentException("外数完整结果只能赋值给对象或 MAP 类型字段");
+        String target = OperandCompiler.compile(operand, context);
+        return appendRuntimeSync(pad(indent) + target + " = " + call, target, indent);
+    }
+
+    private static String compileListWrite(JSONObject block, int indent, VarContext context) {
+        JSONObject config = com.hengshucredit.rule.core.action.ListWriteConfig.fromAction(block);
+        JSONArray entries = block.getJSONArray("entries");
+        StringBuilder values = new StringBuilder();
+        for (int i = 0; i < entries.size(); i++) {
+            if (i > 0) values.append(", ");
+            values.append(OperandCompiler.compile(entries.getJSONObject(i).getJSONObject("valueOperand"), context));
+        }
+        return pad(indent) + "writeRuleList(" + quoteString(config.toJSONString()) + ", [" + values + "])";
     }
 
     private static String compileIfBlock(JSONObject b, int indent, VarContext varContext) {
@@ -127,18 +155,28 @@ public class ActionDataCompiler {
     }
 
     private static String compileFuncCall(JSONObject b, int indent, VarContext varContext) {
-        if (b.containsKey("functionCode")) {
+        if (b.containsKey("functionCode") || b.containsKey("functionId")) {
             String functionCode = b.getString("functionCode");
-            if (empty(functionCode)) return "";
+            boolean managedReference = b.get("functionId") != null;
+            if (!managedReference && empty(functionCode)) return "";
             JSONArray operands = b.getJSONArray("args");
-            StringBuilder args = new StringBuilder();
-            if (operands != null) {
-                for (int i = 0; i < operands.size(); i++) {
-                    if (i > 0) args.append(", ");
-                    args.append(OperandCompiler.compile(operands.getJSONObject(i), varContext));
+            String call;
+            if (managedReference) {
+                JSONObject operand = new JSONObject();
+                operand.put("kind", "FUNCTION"); operand.put("functionId", b.get("functionId"));
+                operand.put("functionCode", functionCode); operand.put("args", operands);
+                call = OperandCompiler.compile(operand, varContext);
+            } else {
+                // 旧版未携带资源ID的调用保留原协议；受管调用统一走 OperandCompiler。
+                StringBuilder args = new StringBuilder();
+                if (operands != null) {
+                    for (int i = 0; i < operands.size(); i++) {
+                        if (i > 0) args.append(", ");
+                        args.append(OperandCompiler.compile(operands.getJSONObject(i), varContext));
+                    }
                 }
+                call = functionCode + "(" + args + ")";
             }
-            String call = functionCode + "(" + args + ")";
             JSONObject targetOperand = b.getJSONObject("targetOperand");
             String target = targetOperand == null ? "" : OperandCompiler.compile(targetOperand, varContext);
             return empty(target) ? pad(indent) + call : appendRuntimeSync(pad(indent) + target + " = " + call, target, indent);
@@ -195,9 +233,18 @@ public class ActionDataCompiler {
     }
 
     private static String compileTernary(JSONObject b, int indent, VarContext varContext) {
+        boolean structuredCondition = b.containsKey("leftOperand") || b.containsKey("rightOperand") || b.containsKey("operator");
+        String conditionOperator = b.getString(structuredCondition ? "operator" : "condOp");
+        String checkedCondition = null;
+        if (ConditionExpressionBuilder.isRangeOperator(conditionOperator) || ConditionOperandCompiler.typedCollection(b) != null) {
+            checkedCondition = structuredCondition
+                    ? buildOperandCondition(b.getJSONObject("leftOperand"), conditionOperator, b.getJSONObject("rightOperand"), varContext)
+                    : ConditionExpressionBuilder.build(resolveVar(fieldVarId(b, "condVar"), fieldRefType(b, "condVar"), b.getString("condVar"), varContext),
+                            b.getString("condVarType"), conditionOperator, b.getString("condValue"), false);
+        }
         if (b.getJSONObject("targetOperand") != null) {
             String target = OperandCompiler.compile(b.getJSONObject("targetOperand"), varContext);
-            String condition = buildOperandCondition(b.getJSONObject("leftOperand"), b.getString("operator"), b.getJSONObject("rightOperand"), varContext);
+            String condition = checkedCondition != null ? checkedCondition : buildOperandCondition(b.getJSONObject("leftOperand"), b.getString("operator"), b.getJSONObject("rightOperand"), varContext);
             String trueValue = OperandCompiler.compile(b.getJSONObject("trueOperand"), varContext);
             String falseValue = OperandCompiler.compile(b.getJSONObject("falseOperand"), varContext);
             if (empty(target) || empty(trueValue) || empty(falseValue)) return "";
@@ -212,7 +259,7 @@ public class ActionDataCompiler {
         String condRefType = fieldRefType(b, "condVar");
         String op = b.getString("condOp");
         if (empty(op)) op = "==";
-        String cond = ConditionExpressionBuilder.build(resolveVar(condVarId, condRefType, condVar, varContext),
+        String cond = checkedCondition != null ? checkedCondition : ConditionExpressionBuilder.build(resolveVar(condVarId, condRefType, condVar, varContext),
                 b.getString("condVarType"), op, b.getString("condValue"), false);
         String tv = b.getString("trueValue");
         String fv = b.getString("falseValue");
@@ -346,6 +393,10 @@ public class ActionDataCompiler {
         Long varId = fieldVarId(branch, "condVar");
         String refType = fieldRefType(branch, "condVar");
         String v = branch.getString("condVar");
+        if (ConditionExpressionBuilder.isRangeOperator(branch.getString("condOp"))) {
+            return ConditionExpressionBuilder.build(resolveVar(varId, refType, v, varContext), branch.getString("condVarType"),
+                    branch.getString("condOp"), branch.getString("condValue"), false);
+        }
         if (empty(v)) return "true";
         String op = branch.getString("condOp");
         if (empty(op)) op = "==";

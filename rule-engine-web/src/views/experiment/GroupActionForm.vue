@@ -39,6 +39,7 @@
         />
       </el-col>
     </el-row>
+    <rule-call-version-select :rule-id="row.ruleId" :version-mode="row.versionMode || 'LATEST'" :version-binding-id="row.versionBindingId" @change="onVersionSelect" @fields="$emit('version-fields', $event)" />
     <div class="action-footer">
       <el-switch
         v-if="showInvoke"
@@ -61,10 +62,11 @@
 
 <script>
 import RuleExecutionSelector from '@/components/common/RuleExecutionSelector.vue'
+import RuleCallVersionSelect from '@/components/flow/RuleCallVersionSelect.vue'
 
 export default {
   name: 'GroupActionForm',
-  components: { RuleExecutionSelector },
+  components: { RuleExecutionSelector, RuleCallVersionSelect },
   props: {
     row: { type: Object, required: true },
     rulesForProject: { type: Array, default: () => [] },
@@ -74,11 +76,13 @@ export default {
   },
   methods: {
     onRuleSelect(rule) {
+      if (String(this.row.ruleId) !== String(rule?.id)) { this.row['versionMode'] = 'LATEST'; this.row['versionBindingId'] = null }
       this.row['ruleId'] = rule ? rule.id : null
       this.row['ruleCode'] = rule ? rule.ruleCode : ''
     },
+    onVersionSelect(selection) { Object.assign(this.row, selection) },
   },
-  emits: ['remove'],
+  emits: ['remove', 'version-fields'],
 }
 </script>
 

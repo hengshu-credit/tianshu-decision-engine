@@ -19,7 +19,7 @@
           :loading="saving"
           :disabled="initializing || Boolean(initializationError)"
           @click="handleSave"
-          >生成审批草稿</el-button
+          >保存草稿</el-button
         >
       </div>
     </div>
@@ -39,7 +39,7 @@
     >
       <config-layer-guide
         title="配置检查"
-        description="按基础信息、数据映射、请求预览、审批生效的顺序完成；高级参数已有安全默认值。"
+        description="按基础信息、数据映射、请求预览、草稿试运行、审批生效的顺序完成；高级参数已有安全默认值。"
         aria-label="外数 API 配置进度"
         :items="configurationChecklist"
         show-progress
@@ -157,39 +157,13 @@
           </el-col>
           <el-col :lg="8" :md="24">
             <el-form-item v-if="!form.executionConfig" label="请求对象">
-              <el-select
-                v-model="form.requestObjectId"
-                clearable
-                filterable
-                placeholder="选择请求数据对象"
-                style="width: 100%"
-              >
-                <el-option
-                  v-for="item in dataObjectOptions"
-                  :key="item.id"
-                  :label="dataObjectLabel(item)"
-                  :value="item.id"
-                />
-              </el-select>
+              <resource-picker v-model:value="form.requestObjectId" :resources="dataObjectOptions" category="object" placeholder="选择请求数据对象" />
               <div class="field-help">用于生成请求字段参照和测试 JSON。</div>
             </el-form-item>
           </el-col>
           <el-col :lg="8" :md="24">
             <el-form-item v-if="!form.executionConfig" label="响应对象">
-              <el-select
-                v-model="form.responseObjectId"
-                clearable
-                filterable
-                placeholder="选择响应数据对象"
-                style="width: 100%"
-              >
-                <el-option
-                  v-for="item in dataObjectOptions"
-                  :key="item.id"
-                  :label="dataObjectLabel(item)"
-                  :value="item.id"
-                />
-              </el-select>
+              <resource-picker v-model:value="form.responseObjectId" :resources="dataObjectOptions" category="object" placeholder="选择响应数据对象" />
               <div class="field-help">
                 用于生成响应字段参照，接口变量读取映射后的 body。
               </div>
@@ -444,16 +418,14 @@
               <el-row :gutter="12">
                 <el-col :lg="12" :md="24">
                   <el-form-item label="Token路径">
-                    <el-input
-                      v-model="apiAuthConfig.tokenPath"
+                    <protocol-path-picker v-model:value="apiAuthConfig.tokenPath"
                       placeholder="如 body.access_token 或 headers.Authorization"
                     />
                   </el-form-item>
                 </el-col>
                 <el-col :lg="12" :md="24">
                   <el-form-item label="过期秒路径">
-                    <el-input
-                      v-model="apiAuthConfig.expiresInPath"
+                    <protocol-path-picker v-model:value="apiAuthConfig.expiresInPath"
                       placeholder="如 body.expires_in，可为空"
                     />
                   </el-form-item>
@@ -1092,10 +1064,7 @@
                   </el-table-column>
                   <el-table-column label="来源路径" min-width="240">
                     <template v-slot="{ row }">
-                      <el-input
-                        v-model="row.sourcePath"
-                        placeholder="如 body.data.score"
-                      />
+                      <protocol-path-picker v-model:value="row.sourcePath" :paths="responsePathOptions" context-label="当前外数 API · HTTP 响应" placeholder="如 body.data.score" />
                     </template>
                   </el-table-column>
                   <el-table-column label="默认值" min-width="150">
@@ -1297,16 +1266,14 @@
               </el-col>
               <el-col :lg="8" :md="12">
                 <el-form-item label="提交任务号路径">
-                    <el-input
-                    v-model="asyncShared.taskIdPath"
+                    <protocol-path-picker :paths="responsePathOptions" context-label="当前外数 API · HTTP 响应" v-model:value="asyncShared.taskIdPath"
                       placeholder="如 body.taskId 或 body.trace_id"
                   />
                 </el-form-item>
               </el-col>
               <el-col :lg="8" :md="12">
                 <el-form-item label="最终结果路径">
-                  <el-input
-                    v-model="form.asyncResultPath"
+                  <protocol-path-picker :paths="responsePathOptions" context-label="当前外数 API · HTTP 响应" v-model:value="form.asyncResultPath"
                     placeholder="如 body.data.result"
                   />
                 </el-form-item>
@@ -1372,8 +1339,7 @@
               <el-row :gutter="12">
                 <el-col :lg="8" :md="24">
                   <el-form-item label="状态路径">
-                    <el-input
-                      v-model="asyncPollConfig.statusPath"
+                    <protocol-path-picker :paths="responsePathOptions" context-label="当前外数 API · HTTP 响应" v-model:value="asyncPollConfig.statusPath"
                       placeholder="如 body.status"
                     />
                   </el-form-item>
@@ -1388,8 +1354,7 @@
                 </el-col>
                 <el-col :lg="8" :md="24">
                   <el-form-item label="结果路径">
-                    <el-input
-                      v-model="asyncPollConfig.resultPath"
+                    <protocol-path-picker :paths="responsePathOptions" context-label="当前外数 API · HTTP 响应" v-model:value="asyncPollConfig.resultPath"
                       placeholder="如 body.data"
                     />
                   </el-form-item>
@@ -1424,8 +1389,7 @@
                 </el-col>
                 <el-col :lg="12" :md="24">
                   <el-form-item label="回调任务号路径">
-                    <el-input
-                      v-model="asyncCallbackConfig.taskIdPath"
+                    <protocol-path-picker :paths="responsePathOptions" context-label="当前外数 API · HTTP 响应" v-model:value="asyncCallbackConfig.taskIdPath"
                       placeholder="如 body.taskId"
                     />
                   </el-form-item>
@@ -1440,8 +1404,7 @@
               <el-row :gutter="12">
                 <el-col :lg="8" :md="24">
                   <el-form-item label="回调状态路径">
-                    <el-input
-                      v-model="asyncCallbackConfig.statusPath"
+                    <protocol-path-picker :paths="responsePathOptions" context-label="当前外数 API · HTTP 响应" v-model:value="asyncCallbackConfig.statusPath"
                       placeholder="如 body.status"
                     />
                   </el-form-item>
@@ -1456,8 +1419,7 @@
                 </el-col>
                 <el-col :lg="8" :md="24">
                   <el-form-item label="回调结果路径">
-                    <el-input
-                      v-model="asyncCallbackConfig.resultPath"
+                    <protocol-path-picker :paths="responsePathOptions" context-label="当前外数 API · HTTP 响应" v-model:value="asyncCallbackConfig.resultPath"
                       placeholder="如 body.data"
                     />
                   </el-form-item>
@@ -1807,22 +1769,7 @@
                 class="cache-key-row"
               >
                 <span class="cache-key-order">{{ index + 1 }}</span>
-                <el-select
-                  v-model="row.path"
-                  filterable
-                  allow-create
-                  default-first-option
-                  size="small"
-                  placeholder="如 customer.name"
-                  style="width: 100%"
-                >
-                  <el-option
-                    v-for="item in requestPathOptions"
-                    :key="item.value"
-                    :label="item.label"
-                    :value="item.value"
-                  />
-                </el-select>
+                <protocol-path-picker v-model:value="row.path" :paths="requestPathOptions" context-label="当前外数 API · 请求字段" placeholder="如 customer.name" />
                 <el-button
                   link
                   size="small"
@@ -2084,13 +2031,13 @@
                 <el-button size="small" @click="loadSavedSample"
                   >加载已存样例</el-button
                 >
-                <el-button
+                <el-button v-permission="'datasource:edit'"
                   size="small"
                   :disabled="!form.id && !form.executionConfig"
                   @click="saveCurrentSample"
                   >保存样例</el-button
                 >
-                <el-button
+                <el-button v-permission="'datasource:edit'"
                   size="small"
                   type="success"
                   :disabled="!form.datasourceId"
@@ -2098,16 +2045,42 @@
                   @click="runRequestPreview"
                   >生成请求预览</el-button
                 >
-                <el-button
+                <el-button v-permission="'datasource:edit'"
                   size="small"
                   type="primary"
-                  :disabled="!form.id"
+                  :disabled="!form.datasourceId || initializing || Boolean(initializationError) || trialLoading"
                   :loading="invokeLoading"
                   @click="runInvokeApi"
-                  >执行测试</el-button
+                  >{{ form.id ? '执行测试' : trialRequestKey ? '重试草稿试运行' : trial ? '开始新试运行' : '草稿试运行' }}</el-button
                 >
               </div>
             </div>
+            <section v-if="!form.id" class="api-trial-panel" data-testid="api-trial-panel">
+              <div class="section-toolbar">
+                <div><strong>草稿试运行会话</strong><div class="field-help">不会创建正式接口或自动提交审批。离开页面后，可从最近会话找回结果并继续处理。</div></div>
+                <el-button size="small" :loading="trialHistoryLoading" @click="loadTrialHistory">刷新最近会话</el-button>
+              </div>
+              <el-select :model-value="trial && trial.trialId" :disabled="trialLoading || invokeLoading" filterable placeholder="选择本人最近的试运行" data-testid="api-trial-select" @change="selectTrial">
+                <el-option v-for="item in trialHistory" :key="item.trialId" :value="item.trialId" :label="trialHistoryLabel(item)" />
+              </el-select>
+              <el-alert v-if="trialHistoryError" type="warning" :closable="false" show-icon>{{ trialHistoryError }}</el-alert>
+              <el-alert v-if="trialError" type="warning" :closable="false" show-icon>{{ trialError }}</el-alert>
+              <p v-if="trialRequestKey" class="field-help">上次创建尚未确认。重试会沿用同一请求标识；也可刷新最近会话查找已建立的试运行。</p>
+              <div v-if="trial" class="api-trial-state" data-testid="api-trial-state">
+                <div class="api-trial-heading"><el-tag :type="trialStatusType(trial.status)">{{ trialStatusLabel(trial.status) }}</el-tag><strong>{{ trial.apiName || '本次草稿' }}</strong><span>会话 {{ trial.trialId }}</span></div>
+                <div class="field-help">{{ trialStatusHelp(trial.status) }}<span v-if="trial.expiresAt != null && trial.expiresAt !== ''"> 有效期至 {{ formatTrialTime(trial.expiresAt) }}。</span></div>
+                <el-alert v-if="trialRecovered || trialSnapshotChanged" :type="trial.status === 'CANCELLED' ? 'info' : 'warning'" :closable="false" show-icon>{{ trial.status === 'CANCELLED' ? '当前展示的是已取消会话的历史快照，仅供查看，不会改写当前编辑表单，也不能继续恢复。' : trialRecovered ? '当前展示的是已保存的试运行快照；找回会话不会改写当前编辑表单。继续操作仍使用该会话原配置与参数。' : '配置或参数已修改；当前会话仍按开始时的配置运行，结果不能作为当前配置的测试结论。' }}</el-alert>
+                <el-alert v-if="trial.errorMessage" :type="trial.status === 'CANCELLED' ? 'info' : 'warning'" :closable="false" show-icon>
+                  <strong v-if="trial.status === 'CANCELLED'">取消前的提示（仅供查看）：</strong>{{ trial.errorMessage }}
+                </el-alert>
+                <div class="api-trial-actions">
+                  <el-button size="small" :loading="trialLoading" data-testid="api-trial-refresh" @click="refreshTrial">查询状态</el-button>
+                  <el-button v-permission="'datasource:edit'" size="small" type="primary" :disabled="trial.canResume !== true || trialLoading" data-testid="api-trial-resume" @click="resumeTrial">继续试运行</el-button>
+                  <el-button v-permission="'datasource:edit'" size="small" type="danger" plain :disabled="trial.canCancel !== true || trialLoading" data-testid="api-trial-cancel" @click="cancelTrial">取消试运行</el-button>
+                </div>
+                <div class="field-help">取消仅停止后续步骤，已经发出的供应商请求及已产生的费用不会撤销。</div>
+              </div>
+            </section>
             <el-form-item v-if="form.executionConfig" label="选择测试样例">
               <el-select v-model="selectedSampleId" clearable filterable placeholder="选择已保存样例" @change="selectExecutionSample">
                 <el-option v-for="sample in executionSamples" :key="sample.id" :value="sample.id" :label="sample.name" />
@@ -2130,6 +2103,9 @@
                 placeholder="Token/OAuth接口预览可填占位值；不会请求Token地址"
               />
             </el-form-item>
+            <el-alert v-if="testFeedback" type="warning" :closable="false" show-icon>{{ testFeedback }}</el-alert>
+            <el-alert v-if="requestPreviewText && previewSnapshotChanged" type="warning" :closable="false" show-icon>配置或参数已变化，下面是此前的请求预览，请重新生成。</el-alert>
+            <el-alert v-if="form.id && invokeResultText && invokeSnapshotChanged" type="warning" :closable="false" show-icon>配置或参数已变化，下面是此前的调用结果，请重新测试。</el-alert>
             <el-row :gutter="12">
               <el-col :lg="12" :md="24">
                 <el-form-item label="测试参数">
@@ -2159,9 +2135,9 @@
                 read-only
               />
             </el-form-item>
-            <external-call-trace v-if="invokeResultText" :steps="JSON.parse(invokeResultText).traceSteps || []" title="完整外数调用链" />
+            <external-call-trace v-if="invokeResultText" :steps="invokeTraceSteps" title="完整外数调用链" />
             <div v-if="!form.id" class="empty-state">
-              首次配置可先生成请求预览；审批通过并生成正式接口后才能执行真实调用。
+              新接口可先保存草稿、预览和试运行；点击发布并审批通过后才会生效。
             </div>
           </div>
         </el-tab-pane>
@@ -2171,10 +2147,16 @@
 </template>
 
 <script>
+import { hasPermission } from '@/security/permissionState'
+import { editableResource } from '@/api/governance'
+import { completeResourceChange } from '@/utils/governanceWorkspace'
+import ProtocolPathPicker from '@/components/common/ProtocolPathPicker.vue'
+import ResourcePicker from '@/components/common/ResourcePicker.vue'
 import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import ApiExecutionEditor from './components/ApiExecutionEditor.vue'
 import ExternalCallTrace from '@/components/common/ExternalCallTrace.vue'
+import { selectTraceSteps } from '@/utils/externalCallTrace'
 import { emptyExecution, newApiId, validateExecution } from '@/utils/apiExecution'
 import {
   ASYNC_REQUEST_KEYS,
@@ -2192,6 +2174,11 @@ import {
   createApiConfig,
   getApiConfig,
   invokeApiConfigPreview,
+  createApiConfigTrial,
+  listApiConfigTrials,
+  getApiConfigTrial,
+  resumeApiConfigTrial,
+  cancelApiConfigTrial,
   listDatasources,
   previewApiConfigRequest,
   updateApiConfig,
@@ -2212,6 +2199,7 @@ import {
   setPathValue,
 } from '@/utils/testParamTemplate'
 import { routeProjectId } from '@/utils/projectContext'
+import { trialStatusLabel, trialStatusType } from '@/utils/apiTrialStatus'
 
 export default {
   data() {
@@ -2220,6 +2208,8 @@ export default {
       initializing: true,
       initializationError: '',
       initializationId: 0,
+      detailRoutePath: '',
+      routeActive: true,
       contextProjectId: null,
       dataObjectOptions: [],
       dataObjectTree: [],
@@ -2231,6 +2221,23 @@ export default {
       selectedSampleId: '',
       invokeResultText: '',
       requestPreviewText: '',
+      testFeedback: '',
+      invokeRequestId: 0,
+      previewRequestId: 0,
+      invokeSourceSignature: '',
+      previewSourceSignature: '',
+      trial: null,
+      trialHistory: [],
+      trialHistoryLoading: false,
+      trialHistoryError: '',
+      trialHistoryRequestId: 0,
+      trialLoading: false,
+      trialRequestId: 0,
+      trialRequestKey: '',
+      trialSourceSignature: '',
+      trialRecovered: false,
+      trialError: '',
+      trialPollTimer: null,
       form: this.emptyForm(),
       activeConfigGroup: 'business',
       activeConfigTab: 'auth',
@@ -2371,6 +2378,8 @@ export default {
   name: 'ApiDetail',
   mixins: [workspaceTabTitleMixin(vm => vm.form.apiName)],
   components: {
+    ResourcePicker,
+    ProtocolPathPicker,
     ConfigLayerGuide,
     ApiExecutionEditor,
     ExternalCallTrace,
@@ -2380,6 +2389,15 @@ export default {
     ResourcePreflightPanel,
   },
   computed: {
+    invokeTraceSteps() {
+      try {
+        const result = JSON.parse(this.invokeResultText)
+        return selectTraceSteps(result?.traceSteps, result?.externalCall?.traceSteps)
+      } catch (error) { return [] }
+    },
+    previewSnapshotChanged() { return this.previewSourceSignature !== this.capturePreviewSignature() },
+    invokeSnapshotChanged() { return this.invokeSourceSignature !== this.captureTestSignature() },
+    trialSnapshotChanged() { return Boolean(this.trialSourceSignature && this.trialSourceSignature !== this.captureTestSignature()) },
     retryConfigurationMessage() { return retryConfigurationError(this.form) },
     executionSamples() { return this.form.executionConfig ? JSON.parse(this.form.executionConfig).samples || [] : [] },
     isCreateMode() {
@@ -2450,6 +2468,7 @@ export default {
           return {
             label: this.fieldDisplayName(field) + ' ' + path,
             value: path,
+            type: field.varType || 'STRING',
           }
         })
         .filter((item) => item.value)
@@ -2457,7 +2476,9 @@ export default {
     },
     responsePathOptions() {
       const common = [
-        { label: 'HTTP 状态码', value: 'httpStatus' },
+        { label: 'HTTP 状态码', value: 'httpStatus', type: 'INTEGER' },
+        { label: '响应体', value: 'body', type: 'OBJECT' },
+        { label: '响应头', value: 'headers', type: 'MAP' },
         { label: '供应商响应编码 response_code', value: 'body.response_code' },
         { label: '供应商响应消息 response_msg', value: 'body.response_msg' },
         { label: '供应商追踪号 trace_id', value: 'body.trace_id' },
@@ -2474,6 +2495,7 @@ export default {
           return {
             label: this.fieldDisplayName(field) + ' body.' + path,
             value: path ? 'body.' + path : '',
+            type: field.varType || 'STRING',
           }
         })
         .filter((item) => item.value)
@@ -2528,7 +2550,8 @@ export default {
         Boolean(this.form.responseObjectId) ||
         this.hasConfiguredRow(this.responseMappingRows, ['outputField']) ||
         this.responseConditionRows.length > 0
-      const previewReady = Boolean(this.requestPreviewText)
+      const previewReady = Boolean(this.requestPreviewText && !this.previewSnapshotChanged)
+      const trialReady = Boolean(this.trial?.status === 'SUCCEEDED' && this.trial.result?.success !== false && !this.trialRecovered && this.trialSourceSignature === this.captureTestSignature())
       const effectiveReady = Boolean(this.form.id)
       return [
         {
@@ -2562,9 +2585,14 @@ export default {
           status: previewReady ? 'READY' : 'ATTENTION',
           help: previewReady ? '本次已生成预览' : '先预览，不访问外部服务',
         },
+        ...(!this.form.id ? [{
+          key: 'trial', order: 5, label: '草稿试运行（可选）', tab: 'test',
+          status: trialReady ? 'READY' : 'ATTENTION',
+          help: trialReady ? '已按当前配置完成试运行' : '可先保存草稿，再验证真实返回',
+        }] : []),
         {
           key: 'effective',
-          order: 5,
+          order: this.form.id ? 5 : 6,
           label: '审批生效',
           status: effectiveReady ? 'READY' : 'ATTENTION',
           help: effectiveReady ? '正式接口已存在' : '生成草稿并完成审批后生效',
@@ -2619,11 +2647,27 @@ export default {
     },
   },
   async created() {
+    this.detailRoutePath = this.$route.path || ''
     this.contextProjectId = routeProjectId(
       this.$route,
       this.$store && this.$store.state.currentProject
     )
     await this.initializeRoute()
+  },
+  activated() {
+    const resuming = !this.routeActive
+    this.routeActive = true
+    if (resuming && this.initializing) this.initializeRoute()
+  },
+  deactivated() {
+    this.routeActive = false
+    this.initializationId++
+    this.invalidateTestRequests()
+  },
+  beforeUnmount() {
+    this.routeActive = false
+    this.initializationId++
+    this.invalidateTestRequests()
   },
   methods: {
     emptyPayloadCaptureConfig() {
@@ -2672,13 +2716,21 @@ export default {
         panel.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }
     },
+    ownsDetailRoute() {
+      return this.routeActive !== false && (!this.detailRoutePath || this.detailRoutePath === this.$route.path)
+    },
+    isCurrentInitialization(requestId) {
+      return this.ownsDetailRoute() && requestId === this.initializationId
+    },
     async initializeRoute() {
+      if (!this.ownsDetailRoute()) return
       const requestId = this.initializationId = (this.initializationId || 0) + 1
+      this.invalidateTestRequests()
       this.initializing = true
       this.initializationError = ''
       try {
         await this.loadDatasourceOptions()
-        if (requestId !== this.initializationId) return
+        if (!this.isCurrentInitialization(requestId)) return
         this.form = this.emptyForm()
         this.activeConfigGroup = 'business'
         this.activeConfigTab = 'auth'
@@ -2695,16 +2747,17 @@ export default {
           } else {
             await this.loadDataObjectOptions(0)
           }
-          if (requestId !== this.initializationId) return
+          if (!this.isCurrentInitialization(requestId)) return
           this.syncEditableRowsFromForm()
           this.regenerateTestParams()
+          this.loadTrialHistory()
           return
         }
         await this.loadDetail(requestId)
       } catch (error) {
-        if (requestId === this.initializationId) this.initializationError = error.message || '无法读取接口配置，请重试'
+        if (this.isCurrentInitialization(requestId)) this.initializationError = error.message || '无法读取接口配置，请重试'
       } finally {
-        if (requestId === this.initializationId) this.initializing = false
+        if (this.isCurrentInitialization(requestId)) this.initializing = false
       }
     },
     emptyForm() {
@@ -2902,6 +2955,7 @@ export default {
       const res = await listDatasources({
         pageNum: 1,
         pageSize: 500,
+        status: 1,
         ...(this.contextProjectId
           ? { projectId: this.contextProjectId }
           : {}),
@@ -2938,13 +2992,15 @@ export default {
     },
     async loadDetail(requestId = this.initializationId) {
       const res = await getApiConfig(this.$route.params.id)
-      if (requestId !== this.initializationId) return
+      if (!this.isCurrentInitialization(requestId)) return
+      if (res.data?.id && hasPermission('datasource:edit')) res.data = await editableResource('EXTERNAL_API', res.data.id, res.data)
+      if (!this.isCurrentInitialization(requestId)) return
       const data = res && res.data ? res.data : res
       this.form = { ...this.emptyForm(), ...data }
       await this.loadDataObjectOptions(
         this.resolveDatasourceProjectId(this.form.datasourceId)
       )
-      if (requestId !== this.initializationId) return
+      if (!this.isCurrentInitialization(requestId)) return
       this.syncEditableRowsFromForm()
       this.loadSavedSample()
     },
@@ -3938,19 +3994,13 @@ export default {
           let res
           if (data.id) {
             res = await updateApiConfig(data)
-            this.$message.success('审批草稿已创建')
           } else {
             res = await createApiConfig(data)
-            this.$message.success('审批草稿已创建')
           }
-          const saved = res && res.data ? res.data : null
-          if (saved && saved.id) {
-            this.$router.push({
-              path: '/approval/' + saved.id,
-              query: this.contextProjectId
-                ? { projectId: this.contextProjectId }
-                : {},
-            })
+          await completeResourceChange(this, res)
+          if (!this.form.id && res.data?.resourceId) {
+            this.form.id = res.data.resourceId
+            await this.$router.replace('/datasource/api/' + this.form.id)
           }
         } finally {
           this.saving = false
@@ -4023,12 +4073,6 @@ export default {
       return this.isRuleEngineDatasource()
         ? '内部规则引擎接口会按规则编码查找已发布版本，不发起外部 HTTP 请求。'
         : 'HTTP 接口可填写相对路径或完整 URL；完整 URL 会覆盖数据源基础地址。支持 ${appId}、${vars.appId} 和 ${input.channel} 占位。'
-    },
-    dataObjectLabel(item) {
-      const code = item.scriptName || item.objectCode || ''
-      const name = item.objectName || item.objectLabel || ''
-      const type = item.objectType ? '[' + item.objectType + '] ' : ''
-      return type + (name || code) + (code && name !== code ? ' / ' + code : '')
     },
     fieldsForObject(objectId) {
       if (!objectId) return []
@@ -4136,16 +4180,7 @@ export default {
         }
         const data = this.normalizeForm(this.form)
         const res = await updateApiConfig(data)
-        const saved = res && res.data ? res.data : res
-        if (saved && saved.id) {
-          this.$router.push({
-            path: '/approval/' + saved.id,
-            query: this.contextProjectId
-              ? { projectId: this.contextProjectId }
-              : {},
-          })
-        }
-        this.$message.success('测试样例变更已送审')
+        await completeResourceChange(this, res)
       } catch (e) {
         this.$message.error(e.message || '测试参数不是合法 JSON')
       }
@@ -4264,51 +4299,210 @@ export default {
       })
       return result
     },
-    async runRequestPreview() {
+    captureTestSignature() {
+      return JSON.stringify([
+        this.form, this.invokeParamsText, this.headerRows, this.queryRows,
+        this.requestBodyMode, this.requestMappingRows, this.requestMappingJsonText,
+        this.requestNullPolicy, this.nonJsonNullPolicy, this.responseMappingMode,
+        this.responseMappingRows, this.responseConditionRows, this.responseMappingJsonText,
+        this.apiAuthConfig, this.scriptVariableRows, this.cacheKeyRows,
+        this.successConditionRoot, this.exceptionConditionRoot, this.retryConditionRoot,
+        this.tokenFailureMode, this.tokenFailureConditionRoot, this.billingConfig,
+        this.payloadCapture, this.asyncShared, this.asyncPollConfig,
+        this.asyncPollRequestText, this.asyncCallbackConfig,
+      ])
+    },
+    capturePreviewSignature() { return JSON.stringify([this.captureTestSignature(), this.previewToken || '']) },
+    parseTestParams() {
       let params
+      try { params = this.invokeParamsText?.trim() ? JSON.parse(this.invokeParamsText) : {} }
+      catch { throw new Error('测试参数不是合法 JSON') }
+      if (!params || typeof params !== 'object' || Array.isArray(params)) throw new Error('测试参数必须是 JSON 对象')
+      return params
+    },
+    stopTrialPolling() {
+      if (this.trialPollTimer) clearTimeout(this.trialPollTimer)
+      this.trialPollTimer = null
+    },
+    invalidateTestRequests() {
+      this.stopTrialPolling()
+      this.invokeRequestId = (this.invokeRequestId || 0) + 1
+      this.previewRequestId = (this.previewRequestId || 0) + 1
+      this.trialRequestId = (this.trialRequestId || 0) + 1
+      this.trialHistoryRequestId = (this.trialHistoryRequestId || 0) + 1
+      this.invokeLoading = false
+      this.previewLoading = false
+      this.trialLoading = false
+      this.trialHistoryLoading = false
+      this.trialHistoryError = ''
+      this.trial = null
+      this.trialHistory = []
+      this.trialRequestKey = ''
+      this.trialSourceSignature = ''
+      this.trialRecovered = false
+      this.trialError = ''
+      this.testFeedback = ''
+      this.invokeSourceSignature = ''
+      this.previewSourceSignature = ''
+    },
+    trialStatusLabel,
+    trialStatusType,
+    trialStatusHelp(status) {
+      if (status === 'UNKNOWN') return '无法确定上次请求是否已完成，系统不会自动重发；请先核对供应商记录。'
+      if (status === 'WAITING') return '会话正在等待后续结果，可继续试运行读取新结果或执行剩余步骤。'
+      if (status === 'RUNNING') return '正在执行原配置，页面会自动查询状态；离开页面不会重复发起调用。'
+      if (status === 'EXPIRED') return '本次会话已超过有效期，不能继续；原有记录仍会保留。'
+      if (status === 'CANCELLED') return '已停止本次会话的后续处理，原有调用记录仍会保留。'
+      return '本次结果来自开始时的配置和参数，不会自动保存或审批接口。'
+    },
+    formatTrialTime(value) {
+      if (!['string', 'number'].includes(typeof value) || String(value).trim() === '') return '—'
+      const raw = typeof value === 'string' && /^[+-]?\d+$/.test(value.trim()) ? Number(value) : value
+      const date = new Date(raw)
+      if (!Number.isFinite(date.getTime())) return '—'
+      const parts = Object.fromEntries(new Intl.DateTimeFormat('zh-CN', {
+        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+      }).formatToParts(date).map(part => [part.type, part.value]))
+      return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`
+    },
+    trialHistoryLabel(item) { return `${item.apiName || '未命名接口'} · ${this.trialStatusLabel(item.status)} · ${this.formatTrialTime(item.createdAt)}` },
+    async loadTrialHistory() {
+      const context = this.initializationId
+      const requestId = this.trialHistoryRequestId = (this.trialHistoryRequestId || 0) + 1
+      this.trialHistoryLoading = true
+      this.trialHistoryError = ''
       try {
-        params = this.invokeParamsText ? JSON.parse(this.invokeParamsText) : {}
-      } catch (e) {
-        this.$message.error('测试参数不是合法 JSON')
-        return
+        const res = await listApiConfigTrials()
+        if (context !== this.initializationId || requestId !== this.trialHistoryRequestId) return
+        this.trialHistory = Array.isArray(res?.data) ? res.data : []
+      } catch (error) {
+        if (context === this.initializationId && requestId === this.trialHistoryRequestId) this.trialHistoryError = error.message || '最近试运行加载失败，请重试'
+      } finally {
+        if (context === this.initializationId && requestId === this.trialHistoryRequestId) this.trialHistoryLoading = false
       }
+    },
+    async runTrialRequest(loader, sourceSignature = this.trialSourceSignature, recovered = this.trialRecovered) {
+      if (this.trialLoading) return null
+      const context = this.initializationId
+      const requestId = this.trialRequestId = (this.trialRequestId || 0) + 1
+      this.stopTrialPolling()
+      this.trialLoading = true
+      this.trialError = ''
+      try {
+        const res = await loader()
+        if (context !== this.initializationId || requestId !== this.trialRequestId) return null
+        if (!res?.data?.trialId) throw new Error('服务端未返回试运行会话，请从最近会话查找或沿用原请求重试')
+        this.trial = res.data
+        this.trialSourceSignature = sourceSignature || ''
+        this.trialRecovered = Boolean(recovered)
+        this.invokeResultText = this.trial.result == null ? '' : JSON.stringify(this.trial.result, null, 2)
+        return this.trial
+      } catch (error) {
+        if (context === this.initializationId && requestId === this.trialRequestId) this.trialError = error.message || '试运行请求未完成，请查询状态后重试'
+        return null
+      } finally {
+        if (context === this.initializationId && requestId === this.trialRequestId) {
+          this.trialLoading = false
+          if (!this.trialError && this.trial?.status === 'RUNNING') {
+            this.trialPollTimer = setTimeout(() => { this.trialPollTimer = null; this.refreshTrial() }, 1500)
+          }
+        }
+      }
+    },
+    async selectTrial(trialId) {
+      if (!trialId) return
+      const sameTrial = this.trial?.trialId === trialId
+      const selected = await this.runTrialRequest(() => getApiConfigTrial(trialId), sameTrial ? this.trialSourceSignature : '', sameTrial ? this.trialRecovered : true)
+      if (selected && selected.requestKey === this.trialRequestKey) this.trialRequestKey = ''
+    },
+    refreshTrial() { return this.trial?.trialId ? this.runTrialRequest(() => getApiConfigTrial(this.trial.trialId)) : Promise.resolve(null) },
+    async resumeTrial() {
+      if (this.trial?.canResume !== true) return
+      const id = this.trial.trialId
+      const result = await this.runTrialRequest(() => resumeApiConfigTrial(id))
+      if (result) this.loadTrialHistory()
+    },
+    async cancelTrial() {
+      if (this.trial?.canCancel !== true) return
+      const id = this.trial.trialId
+      const result = await this.runTrialRequest(() => cancelApiConfigTrial(id))
+      if (result) this.loadTrialHistory()
+    },
+    async runRequestPreview() {
+      if (this.previewLoading || this.initializing || this.initializationError) return
+      let params, config
+      try { params = this.parseTestParams(); config = this.normalizeForm(this.form) }
+      catch (error) { this.$message.error(error.message); return }
+      const context = this.initializationId
+      const requestId = this.previewRequestId = (this.previewRequestId || 0) + 1
+      const signature = this.capturePreviewSignature()
+      this.testFeedback = ''
       this.previewLoading = true
       try {
-        const config = this.normalizeForm(this.form)
         const res = await previewApiConfigRequest(this.form.id || 0, {
           config,
           params,
           previewToken: this.previewToken || '',
         })
+        if (context !== this.initializationId || requestId !== this.previewRequestId) return
+        if (signature !== this.capturePreviewSignature()) { this.testFeedback = '配置或参数已变化，已忽略此前的预览，请重新生成'; return }
         this.requestPreviewText = JSON.stringify(res.data || {}, null, 2)
+        this.previewSourceSignature = signature
         this.$message.success('请求预览已生成，未访问外部地址')
+      } catch (error) {
+        if (context === this.initializationId && requestId === this.previewRequestId) this.testFeedback = error.message || '请求预览失败，请重试'
       } finally {
-        this.previewLoading = false
+        if (context === this.initializationId && requestId === this.previewRequestId) this.previewLoading = false
       }
     },
     async runInvokeApi() {
+      if (this.invokeLoading || this.trialLoading || this.initializing || this.initializationError) return
+      const requestedContext = this.initializationId
+      const requestedForm = this.form
       if (!this.form.id) {
-        this.$message.warning('请先保存接口后再执行测试')
-        return
+        if (this.$refs?.form?.validate) {
+          try { if (await this.$refs.form.validate() === false) return } catch { return }
+        }
+        if (requestedContext !== this.initializationId || requestedForm !== this.form || this.invokeLoading || this.trialLoading) return
+        if (!this.form.datasourceId || !String(this.form.apiCode || '').trim() || !String(this.form.apiName || '').trim() || !String(this.form.endpointUrl || '').trim()) {
+          this.$message.error('请先填写数据源、接口编码、接口名称和接口地址')
+          return
+        }
       }
-      let params
+      let params, config
       try {
-        params = this.invokeParamsText ? JSON.parse(this.invokeParamsText) : {}
-      } catch (e) {
-        this.$message.error('测试参数不是合法 JSON')
-        return
-      }
+        params = this.parseTestParams()
+        config = this.normalizeForm(this.form)
+      } catch (error) { this.$message.error(error.message); return }
+      const context = this.initializationId
+      const requestId = this.invokeRequestId = (this.invokeRequestId || 0) + 1
+      const signature = this.captureTestSignature()
+      this.testFeedback = ''
       this.invokeLoading = true
       try {
-        const config = this.normalizeForm(this.form)
+        if (!this.form.id) {
+          this.trialRequestKey = this.trialRequestKey || newApiId()
+          const requestKey = this.trialRequestKey
+          const trial = await this.runTrialRequest(() => createApiConfigTrial({ requestKey, config, params }), signature, false)
+          if (trial && context === this.initializationId && requestId === this.invokeRequestId) {
+            this.trialRequestKey = ''
+            this.loadTrialHistory()
+          }
+          return
+        }
         const res = await invokeApiConfigPreview(this.form.id, {
           config,
           params,
         })
+        if (context !== this.initializationId || requestId !== this.invokeRequestId) return
+        if (signature !== this.captureTestSignature()) { this.testFeedback = '配置或参数已变化，已忽略此前的调用结果，请重新测试'; return }
         this.invokeResultText = JSON.stringify(res.data || {}, null, 2)
+        this.invokeSourceSignature = signature
         this.$message.success('调用完成')
+      } catch (error) {
+        if (context === this.initializationId && requestId === this.invokeRequestId) this.testFeedback = error.message || '调用失败，请检查后重试'
       } finally {
-        this.invokeLoading = false
+        if (context === this.initializationId && requestId === this.invokeRequestId) this.invokeLoading = false
       }
     },
     parseConfigForTemplate(value) {
@@ -4583,6 +4777,11 @@ export default {
     padding-top: 14px;
     margin-top: 8px;
   }
+  .api-trial-panel { padding: 12px; margin-bottom: 16px; border: 1px solid var(--tianshu-border-subtle); border-radius: 6px; background: var(--tianshu-bg-soft); }
+  .api-trial-panel > .el-select { width: min(100%, 640px); margin-bottom: 8px; }
+  .api-trial-panel .el-alert { margin: 8px 0; }
+  .api-trial-heading, .api-trial-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+  .api-trial-heading > span { color: var(--tianshu-text-secondary); overflow-wrap: anywhere; }
   .btn-delete {
     color: var(--tianshu-danger-text);
   }

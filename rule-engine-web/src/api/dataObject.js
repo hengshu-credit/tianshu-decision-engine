@@ -1,5 +1,6 @@
 import request from './request'
-import { createResourceDraft } from './governance'
+import { createResourceDraft, editableResource } from './governance'
+import { hasPermission } from '@/security/permissionState'
 
 export function importJavaEntity(projectId, objectType, javaSource, scope = 'PROJECT') {
   return request({ url: '/rule/dataobject/import/java', method: 'post', data: { projectId, objectType, javaSource, scope } })
@@ -35,6 +36,7 @@ export function validateDataObjectFieldReference(objectId, field) {
 }
 
 export function getVariableTree(projectId) {
+  if (!hasPermission('field:view')) return Promise.resolve({ data: { tree: [], objectIdMap: {} } })
   return request({ url: `/rule/dataobject/tree/${projectId}`, method: 'get' })
 }
 
@@ -164,5 +166,5 @@ async function loadDataObjectAggregate(objectId) {
       return { ...field, options: optionResponse.data || [] }
     })
   )
-  return { ...object, fields: enriched }
+  return editableResource('DATA_OBJECT', objectId, { ...object, fields: enriched })
 }

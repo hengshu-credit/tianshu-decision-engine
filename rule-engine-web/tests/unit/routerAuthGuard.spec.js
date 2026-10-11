@@ -101,7 +101,7 @@ describe('router console auth guard', () => {
     const fetchConfig = vi.fn().mockResolvedValue({ code: 200, data: { loginEnabled: true } })
     const fetchMe = vi.fn().mockResolvedValue({
       code: 200,
-      data: { username: 'field-viewer', permissions: ['field:view'] }
+      data: { username: 'list-viewer', permissions: ['list:view'] }
     })
     const next = vi.fn()
 

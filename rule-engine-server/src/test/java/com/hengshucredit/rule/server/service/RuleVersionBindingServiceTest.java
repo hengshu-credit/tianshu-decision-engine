@@ -13,6 +13,25 @@ import static org.junit.Assert.*;
 
 public class RuleVersionBindingServiceTest {
     @Test
+    public void fixedVersionMustNotInheritTheLatestExecutionContract() {
+        for (String contract : new String[]{"{\"idempotency\":{\"enabled\":false}}", null}) {
+            Fixture service = new Fixture();
+            RuleDefinitionVersion old = snapshot(18, 1, "fixed-v1");
+            old.setRevisionId(29L); old.setArtifactId(201L); old.setOpenApiConfigJson(contract);
+            service.history.add(old);
+            RuleVersionBinding binding = new RuleVersionBinding();
+            binding.setId(81L); binding.setDefinitionId(22L); binding.setVersionNo(1);
+            binding.setGeneration(1L); binding.setSnapshotId(18L); binding.setStatus(1);
+            service.bindings.add(binding);
+            RulePublished latest = new RulePublished();
+            latest.setDefinitionId(22L); latest.setVersion(2); latest.setCompiledScript("latest-v2");
+            latest.setOpenApiConfigJson("{\"idempotency\":{\"enabled\":true}}");
+            RulePublished selected = service.resolvePublished(latest, 81L);
+            assertEquals(contract, selected.getOpenApiConfigJson());
+            assertEquals("{\"idempotency\":{\"enabled\":true}}", latest.getOpenApiConfigJson());
+        }
+    }
+    @Test
     public void olderPublishedReadMustNotBorrowNewOverwriteGeneration() {
         Fixture service = new Fixture();
         RuleDefinitionVersion old = snapshot(18, 1, "old"); old.setRevisionId(29L);

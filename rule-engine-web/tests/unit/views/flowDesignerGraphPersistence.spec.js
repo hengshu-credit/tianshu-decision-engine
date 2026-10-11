@@ -27,6 +27,66 @@ function createHorizontalGraph() {
 }
 
 describe.each(DESIGNERS)('%s画布持久化', (name, designer) => {
+  test('切换主题立即更新默认画布，缓存页恢复时补齐主题且离开后不残留监听', () => {
+    const root = document.documentElement
+    const originalStyle = root.getAttribute('style')
+    const grid = vi.fn()
+    const background = vi.fn()
+    const context = {
+      lf: {
+        graphModel: { updateGridOptions: grid, updateBackgroundOptions: background },
+        destroy: vi.fn(),
+      },
+      gridColor: '', backgroundEnabled: false, backgroundColor: '',
+      backgroundOpacity: 1,
+      gridVisible: true, gridSize: 20, gridType: 'dot', gridThickness: 1,
+      loadRuleCallOptions: vi.fn(), loadContent: vi.fn(),
+      stopPropertyResize: vi.fn(), clearSelectedEdgeAnimation: vi.fn(),
+    }
+    context.getThemeCanvasColor = designer.methods.getThemeCanvasColor.bind(context)
+    context.applyCanvasSettings = designer.methods.applyCanvasSettings.bind(context)
+    context.initLogicFlow = context.applyCanvasSettings
+    const switchTheme = (surface, border) => {
+      root.style.setProperty('--tianshu-bg-workspace', surface)
+      root.style.setProperty('--tianshu-border-strong', border)
+      window.dispatchEvent(new CustomEvent('tianshu-theme-change'))
+    }
+    try {
+      switchTheme('#f6f8fc', '#94a3b8')
+      designer.mounted.call(context)
+      switchTheme('#0f1629', '#53617d')
+      expect(background).toHaveBeenLastCalledWith({ backgroundColor: '#0f1629', opacity: 1 })
+      expect(grid.mock.lastCall[0].config.color).toBe('#53617d')
+
+      designer.deactivated.call(context)
+      background.mockClear()
+      switchTheme('#f6f8fc', '#94a3b8')
+      expect(background).not.toHaveBeenCalled()
+      designer.activated.call(context)
+      expect(background).toHaveBeenLastCalledWith({ backgroundColor: '#f6f8fc', opacity: 1 })
+      expect(grid.mock.lastCall[0].config.color).toBe('#94a3b8')
+
+      context.backgroundOpacity = 0
+      context.applyCanvasSettings()
+      expect(background).toHaveBeenLastCalledWith({ backgroundColor: '#f6f8fc', opacity: 0 })
+
+      context.gridColor = '#123456'
+      context.backgroundEnabled = true
+      context.backgroundColor = '#456789'
+      context.backgroundOpacity = 0.6
+      switchTheme('#0f1629', '#53617d')
+      expect(background).toHaveBeenLastCalledWith({ backgroundColor: '#456789', opacity: 0.6 })
+      expect(grid.mock.lastCall[0].config.color).toBe('#123456')
+    } finally {
+      designer.beforeUnmount.call(context)
+      background.mockClear()
+      switchTheme('#f6f8fc', '#94a3b8')
+      expect(background).not.toHaveBeenCalled()
+      if (originalStyle === null) root.removeAttribute('style')
+      else root.setAttribute('style', originalStyle)
+    }
+  })
+
   test('加载时按ID同步连线引用，通过画布属性API保留条件和连线配置', () => {
     const conditionConfig = { type: 'group', children: [] }
     const properties = { leftVarId: 19, leftRefType: 'VARIABLE', leftVarLabel: '旧名称', conditionConfig, priority: 4 }

@@ -11,6 +11,52 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.Assert.*;
 
 public class ExternalApiConsumerServiceTest {
+    @Test public void legacyInputOverridesResolveStableReferencesAndPreserveOtherInputs() {
+        var consumer = service(new AtomicInteger(), false);
+        RuleExternalApiConfig legacy = new RuleExternalApiConfig(); legacy.setId(9L); legacy.setStatus(1);
+        legacy.setQueryConfig("{\"phone\":\"$.customer.mobile\",\"limit\":\"$.limit\"}");
+        ReflectionTestUtils.setField(consumer, "apiConfigMapper", Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{RuleExternalApiConfigMapper.class}, (p,m,a) -> legacy));
+        ReflectionTestUtils.setField(consumer, "invokeService", new ExternalApiInvokeService() {
+            @Override Map<String,Object> invokePlanned(ExternalApiRequestPlan plan) { return Map.of("body", plan.params()); }
+        });
+        Map<String,Object> input = Map.of("customer", Map.of("mobile", "old"), "limit", 0, "currentPhone", "new");
+        var options = options(); options.setDerivedReferencePaths(Map.of("VARIABLE:99", "currentPhone"));
+        var override = Map.of("inputOverrides", Map.of("customer.mobile", Map.of("kind", "REFERENCE", "refType", "VARIABLE", "refId", 99, "code", "stalePhone")));
+        var result = consumer.resolve(1L, 9L, new java.util.LinkedHashMap<>(override), input, options);
+        assertEquals("new", ExternalApiConsumerService.select(result, "body.customer.mobile"));
+        assertEquals(0, ExternalApiConsumerService.select(result, "body.limit"));
+        assertEquals("old", ((Map<?,?>) input.get("customer")).get("mobile"));
+        // 旧 paramMapping 处理后的参数没有引擎变量，覆盖表达式仍从原始已解析变量按 ID 取值。
+        var mapped = Map.<String,Object>of("customer", Map.of("mobile", "mapped"), "limit", 0);
+        var mappedResult = consumer.resolve(1L, 9L, new java.util.LinkedHashMap<>(override), mapped, options, "VARIABLE:8",
+                Map.of("currentPhone", "from-original"));
+        assertEquals("from-original", ExternalApiConsumerService.select(mappedResult, "body.customer.mobile"));
+        assertEquals(0, ExternalApiConsumerService.select(mappedResult, "body.limit"));
+        assertNull(ExternalApiConsumerService.select(mappedResult, "body.currentPhone"));
+        assertThrows(IllegalArgumentException.class, () -> consumer.resolve(1L, 9L, Map.of("inputOverrides", Map.of("unknown", Map.of("kind", "LITERAL", "value", "x", "valueType", "STRING"))), input, options));
+    }
+    @Test public void historicalApiConfigUsesDistinctRequestIdentityAndPreservesReplayPolicy() {
+        AtomicInteger calls = new AtomicInteger();
+        ExternalApiConsumerService consumer = service(calls, false);
+        ReflectionTestUtils.setField(consumer, "invokeService", new ExternalApiInvokeService() {
+            @Override Map<String, Object> invokePlanned(ExternalApiRequestPlan plan) {
+                calls.incrementAndGet();
+                return Map.of("body", plan.config().getEndpointUrl());
+            }
+        });
+        RuleExternalApiConfig old = api(); old.setEndpointUrl("https://example.invalid/v1");
+        RuleExternalApiConfig current = api(); current.setEndpointUrl("https://example.invalid/v2");
+        var options = options();
+        assertEquals(old.getEndpointUrl(), consumer.resolveVersion(1L, old, Map.of("applicant", "111"), options, "v1").get("body"));
+        assertEquals(current.getEndpointUrl(), consumer.resolveVersion(1L, current, Map.of("applicant", "111"), options, "v2").get("body"));
+        consumer.resolveVersion(1L, old, Map.of("applicant", "111"), options, "v1");
+        assertEquals(2, calls.get());
+        options.setOfflineReplay(true);
+        assertEquals(false, consumer.resolveVersion(1L, old, Map.of(), options, "v1").get("success"));
+        options.setOfflineReplay(false); options.setSkipApiSources(true);
+        assertEquals(false, consumer.resolveVersion(1L, current, Map.of(), options, "v2").get("success"));
+        assertEquals(2, calls.get());
+    }
     private RuleExternalApiConfig api() {
         RuleExternalApiConfig value = new RuleExternalApiConfig(); value.setId(9L); value.setStatus(1);
         value.setExecutionConfig("{\"version\":2,\"requestFields\":[{\"id\":\"phone\",\"location\":\"JSON\",\"path\":\"phone\",\"required\":true,\"overridable\":true,\"value\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":1}}]}");

@@ -2,6 +2,24 @@ import { ACCENT_PRESETS, DEFAULT_THEME_CONFIG } from '@/theme/themeConfig'
 import { applyTheme } from '@/theme/themeRuntime'
 
 describe('主题状态色的业务含义', () => {
+  test.each(['LIGHT', 'DARK'])('%s 的校验、通知、提示及按钮共享语义状态，品牌色不能改变结果含义', colorScheme => {
+    const root = document.documentElement
+    for (const preset of ACCENT_PRESETS) {
+      applyTheme({ ...DEFAULT_THEME_CONFIG, colorScheme, accentPreset: preset.id }, root)
+      for (const type of ['success', 'warning', 'danger']) {
+        const value = name => root.style.getPropertyValue(name)
+        expect(value(`--el-color-${type}`), `${preset.id} / ${type}`)
+          .toBe(value(`--tianshu-status-${type}-solid`))
+        for (const field of ['bg', 'border', 'text']) {
+          expect(value(`--tianshu-${type}-${field}`), `${preset.id} / ${type} / ${field}`)
+            .toBe(value(`--tianshu-status-${type}-${field}`))
+        }
+      }
+      expect(root.style.getPropertyValue('--el-color-error'))
+        .toBe(root.style.getPropertyValue('--el-color-danger'))
+    }
+  })
+
   test.each(['LIGHT', 'DARK'])('%s 下切换任意主题仍保持成功绿、警告橙、危险红', colorScheme => {
     for (const preset of ACCENT_PRESETS) {
       const root = document.documentElement

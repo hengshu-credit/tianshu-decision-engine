@@ -71,6 +71,7 @@ public final class ExternalApiWorkflow {
                 callbackUrls.put(id, Map.of("url", callback.getString("url").replace("${invocationId}", invocationId)));
             }
             for (Object raw : specification.getJSONArray("steps")) {
+                ExternalApiTrialContext.check();
                 JSONObject step = JSON.parseObject(JSON.toJSONString(raw));
                 String id = step.getString("id");
                 currentStepId = id;
@@ -93,6 +94,7 @@ public final class ExternalApiWorkflow {
                 if ("CALLBACK".equals(step.getString("type"))) {
                     String invocationId = registrations.get(id);
                     do {
+                        ExternalApiTrialContext.check();
                         RequestDeadlineContext.check();
                         response = callbacks.result(invocationId);
                         if (response == null) pause(100);
@@ -111,6 +113,7 @@ public final class ExternalApiWorkflow {
                     int limit = poll == null ? 1 : ExternalApiConfigValidator.nonNegative(poll, "maxAttempts", 20);
                     boolean continueOnFailure = poll != null && "CONTINUE".equalsIgnoreCase(poll.getString("failureMode"));
                     while (true) {
+                        ExternalApiTrialContext.check();
                         RequestDeadlineContext.check();
                         response = transport.request(step, context);
                         attempts++;
@@ -132,6 +135,13 @@ public final class ExternalApiWorkflow {
                 stored.put("stepId", id);
                 stored.put("pollAttempts", attempts);
                 results.put(id, stored);
+                Map<String, Object> checkpoint = new LinkedHashMap<>();
+                checkpoint.put("kind", "WORKFLOW");
+                checkpoint.put("stepId", "__NEXT__");
+                checkpoint.put("results", results);
+                checkpoint.put("registrations", registrations);
+                checkpoint.put("callbacks", callbackUrls);
+                ExternalApiTrialContext.checkpoint(checkpoint);
                 observer.accept(step, stored);
                 last = response;
             }
@@ -140,11 +150,18 @@ public final class ExternalApiWorkflow {
             result.put("success", !Boolean.FALSE.equals(last.get("success")));
             return result;
         } catch (java.util.concurrent.TimeoutException timeout) {
-            if (currentStepId != null) {
+            if (currentStepId != null && RequestDeadlineContext.isDeadlineExceeded(timeout)) {
                 pending = true;
                 throw new PendingException(currentStepId, results, registrations, callbackUrls, timeout);
             }
             throw timeout;
+        } catch (ExternalApiInvokeService.ApiInvokeException failure) {
+            if (currentStepId != null && Boolean.FALSE.equals(failure.getRequestIssued())
+                    && !failure.isUnknown() && RequestDeadlineContext.isDeadlineExceeded(failure)) {
+                pending = true;
+                throw new PendingException(currentStepId, results, registrations, callbackUrls, failure);
+            }
+            throw failure;
         } finally {
             if (!pending) for (String registration : registrations.values()) callbacks.close(registration);
         }

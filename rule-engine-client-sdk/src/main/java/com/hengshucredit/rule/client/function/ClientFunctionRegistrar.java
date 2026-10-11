@@ -1,21 +1,25 @@
 package com.hengshucredit.rule.client.function;
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.qlexpress4.runtime.function.CustomFunction;
 import com.alibaba.qlexpress4.runtime.function.QMethodFunction;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.core.function.AggregateBuiltinFunctionRegistry;
+import com.hengshucredit.rule.core.function.FunctionParameterContract;
+import com.hengshucredit.rule.core.function.ManagedFunctionInvoker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContext;
 
 import java.lang.reflect.Method;
-import java.util.ArrayList;
+import java.lang.reflect.Modifier;
 import java.util.HashMap;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -38,6 +42,8 @@ public class ClientFunctionRegistrar {
     private final Map<String, CustomFunction> manualFunctions = new ConcurrentHashMap<>();
     private final Map<String, CustomFunction> dispatchFunctions = new ConcurrentHashMap<>();
     private volatile Map<RemoteFunctionKey, CustomFunction> remoteFunctions = new ConcurrentHashMap<>();
+    private static final int MAX_FROZEN_TARGETS = 1024;
+    private final Map<FrozenFunctionKey, CustomFunction> frozenTargets = new LinkedHashMap<>(16, 0.75f, true);
 
     public ClientFunctionRegistrar(QLExpressEngine engine, ApplicationContext applicationContext) {
         this(engine, applicationContext, null);
@@ -49,6 +55,64 @@ public class ClientFunctionRegistrar {
         this.applicationContext = applicationContext;
         this.configuredProjectCode = trimToNull(projectCode);
     }
+
+    /** 仅准备本地类/Bean的冻结定义，不替换远端当前函数，也不发起服务端执行。 */
+    public Map<String, CustomFunction> prepareFrozen(List<JSONObject> definitions) {
+        Map<String, CustomFunction> bindings = new LinkedHashMap<>();
+        Map<String, FrozenFunctionKey> identities = new LinkedHashMap<>();
+        Map<String, FrozenFunctionKey> legacyCodes = new LinkedHashMap<>();
+        Set<String> ambiguousCodes = new HashSet<>();
+        for (JSONObject definition : definitions == null ? List.<JSONObject>of() : definitions) {
+            if (definition == null) throw new IllegalStateException("制品冻结函数定义缺失");
+            String code = trimToNull(definition.getString("funcCode"));
+            String type = trimToNull(definition.getString("implType"));
+            if (code == null) throw new IllegalStateException("制品冻结函数缺少编码");
+            // SCRIPT函数已经作为函数定义嵌入该规则的compiledScript。
+            if ("SCRIPT".equals(type)) continue;
+            if (!"JAVA".equals(type) && !"BEAN".equals(type)) throw new IllegalStateException("不支持的冻结函数类型: " + type);
+            FrozenFunctionKey key = new FrozenFunctionKey(definition.getLong("id"), code, type,
+                    definition.getString("implScript"), definition.getString("implClass"),
+                    definition.getString("implBeanName"), definition.getString("implMethod"), definition.getString("paramsJson"));
+            String identity = key.id() == null ? "CODE:" + code : ManagedFunctionInvoker.bindingKey(key.id());
+            FrozenFunctionKey previous = identities.putIfAbsent(identity, key);
+            if (previous != null && !previous.equals(key)) throw new IllegalStateException("同一冻结函数 ID 对应多个定义: " + identity);
+            FrozenFunctionKey sameCode = legacyCodes.putIfAbsent(code, key);
+            if (sameCode != null && !sameCode.equals(key)) ambiguousCodes.add(code);
+            boolean platformBuiltin = isPlatformBuiltin(definition);
+            synchronized (functionLock) {
+                if (!platformBuiltin && !ensureDispatcher(code)) throw new IllegalStateException("冻结函数编码与已有本地函数冲突: " + code);
+            }
+            CustomFunction target = frozenTarget(key, definition);
+            if (key.id() != null) bindings.put(ManagedFunctionInvoker.bindingKey(key.id()), target);
+            if (!platformBuiltin) bindings.put(code, target);
+        }
+        ambiguousCodes.forEach(bindings::remove);
+        return Map.copyOf(bindings);
+    }
+
+    private CustomFunction frozenTarget(FrozenFunctionKey key, JSONObject definition) {
+        synchronized (frozenTargets) {
+            CustomFunction cached = frozenTargets.get(key);
+            if (cached != null) return cached;
+        }
+        CustomFunction prepared;
+        try {
+            prepared = buildFunction(definition);
+            if (prepared == null) throw new IllegalStateException("客户端没有对应实现类或Bean");
+        } catch (Exception error) {
+            throw new IllegalStateException("无法准备制品冻结函数 " + key.code() + "，请核对客户端本地实现", error);
+        }
+        synchronized (frozenTargets) {
+            CustomFunction existing = frozenTargets.get(key);
+            if (existing != null) return existing;
+            if (frozenTargets.size() >= MAX_FROZEN_TARGETS) frozenTargets.remove(frozenTargets.keySet().iterator().next());
+            frozenTargets.put(key, prepared);
+        }
+        return prepared;
+    }
+
+    private record FrozenFunctionKey(Long id, String code, String type, String script,
+                                     String className, String beanName, String method, String params) { }
 
     /** 兼容原有手工批量注册语义；不会替换远端函数快照。 */
     public void registerAll(List<JSONObject> functions) {
@@ -89,6 +153,7 @@ public class ClientFunctionRegistrar {
             throw new IllegalArgumentException("Remote function snapshot must not be null");
         }
         Map<RemoteFunctionKey, CustomFunction> snapshot = new ConcurrentHashMap<>();
+        Set<RemoteFunctionKey> platformBuiltins = new HashSet<>();
         for (JSONObject function : functions) {
             if (function == null) {
                 continue;
@@ -106,6 +171,7 @@ public class ClientFunctionRegistrar {
                 CustomFunction target = buildFunction(function);
                 if (target != null) {
                     snapshot.put(key, target);
+                    if (isPlatformBuiltin(function)) platformBuiltins.add(key); else platformBuiltins.remove(key);
                 }
             } catch (Exception e) {
                 throw new IllegalStateException("Failed to prepare remote function " + funcCode, e);
@@ -113,7 +179,7 @@ public class ClientFunctionRegistrar {
         }
         synchronized (functionLock) {
             for (RemoteFunctionKey key : snapshot.keySet()) {
-                if (!ensureDispatcher(key.funcCode)) {
+                if (!platformBuiltins.contains(key) && !ensureDispatcher(key.funcCode)) {
                     throw new IllegalStateException("Function code conflicts with a non-client registration: "
                             + key.funcCode);
                 }
@@ -157,7 +223,7 @@ public class ClientFunctionRegistrar {
                 return false;
             }
             synchronized (functionLock) {
-                if (!ensureDispatcher(key.funcCode)) {
+                if (!isPlatformBuiltin(function) && !ensureDispatcher(key.funcCode)) {
                     log.warn("[ClientFuncReg] 函数 {} 与非客户端注册冲突，忽略远端更新", key.funcCode);
                     return false;
                 }
@@ -187,6 +253,14 @@ public class ClientFunctionRegistrar {
             current = current.getCause();
         }
         return false;
+    }
+
+    private boolean isPlatformBuiltin(JSONObject function) {
+        try {
+            return function != null && "JAVA".equals(function.getString("implType"))
+                    && AggregateBuiltinFunctionRegistry.matchesManagementMethod(function.getString("funcCode"), function.getString("implClass"),
+                    function.getString("implMethod"), function.getString("paramsJson"));
+        } catch (IllegalArgumentException error) { throw new IllegalStateException("内置函数声明的签名无效", error); }
     }
 
     /**
@@ -263,6 +337,12 @@ public class ClientFunctionRegistrar {
     }
 
     private CustomFunction resolveTarget(String funcCode) {
+        var request = RuntimeContextBridge.currentContext();
+        if (request.hasFunctionBindings()) {
+            CustomFunction frozen = request.function(funcCode);
+            if (frozen == null) throw new IllegalStateException("调用函数不在当前规则的冻结快照中: " + funcCode);
+            return frozen;
+        }
         Map<RemoteFunctionKey, CustomFunction> remoteSnapshot = remoteFunctions;
         if (configuredProjectCode != null) {
             CustomFunction project = remoteSnapshot.get(new RemoteFunctionKey(PROJECT, configuredProjectCode, funcCode));
@@ -297,7 +377,7 @@ public class ClientFunctionRegistrar {
         if (script == null) {
             return null;
         }
-        List<String> paramNames = extractParamNames(function.getString("paramsJson"));
+        List<String> paramNames = FunctionParameterContract.names(function.getString("paramsJson"));
         QLExpressEngine.PreparedScript prepared = engine.prepare(script);
         return (context, parameters) -> {
             Map<String, Object> scriptContext = new HashMap<>();
@@ -321,8 +401,9 @@ public class ClientFunctionRegistrar {
         if (methodName == null) {
             methodName = funcCode;
         }
-        Object instance = Class.forName(className).getDeclaredConstructor().newInstance();
-        Method method = instance.getClass().getMethod(methodName, resolveParamTypes(function.getString("paramsJson")));
+        Class<?> implementation = Class.forName(className, false, getClass().getClassLoader());
+        Method method = FunctionParameterContract.resolveMethod(implementation, methodName, funcCode, function.getString("paramsJson"));
+        Object instance = Modifier.isStatic(method.getModifiers()) ? null : implementation.getDeclaredConstructor().newInstance();
         return new QMethodFunction(instance, method);
     }
 
@@ -337,8 +418,9 @@ public class ClientFunctionRegistrar {
         if (methodName == null) {
             methodName = funcCode;
         }
+        FunctionParameterContract.parse(function.getString("paramsJson"));
         Object bean = applicationContext.getBean(beanName);
-        Method method = bean.getClass().getMethod(methodName, resolveParamTypes(function.getString("paramsJson")));
+        Method method = FunctionParameterContract.resolveMethod(bean.getClass(), methodName, funcCode, function.getString("paramsJson"));
         return new QMethodFunction(bean, method);
     }
 
@@ -372,45 +454,6 @@ public class ClientFunctionRegistrar {
         }
         log.warn("[ClientFuncReg] 未知函数 scope: {}", normalizedScope);
         return null;
-    }
-
-    private List<String> extractParamNames(String paramsJson) {
-        List<String> names = new ArrayList<>();
-        if (paramsJson == null || paramsJson.trim().isEmpty()) return names;
-        try {
-            JSONArray arr = JSON.parseArray(paramsJson);
-            for (int i = 0; i < arr.size(); i++) {
-                String name = arr.getJSONObject(i).getString("name");
-                if (name != null && !name.trim().isEmpty()) names.add(name.trim());
-            }
-        } catch (Exception e) {
-            log.warn("[ClientFuncReg] 解析 paramsJson 失败: {}", e.getMessage());
-        }
-        return names;
-    }
-
-    private Class<?>[] resolveParamTypes(String paramsJson) {
-        if (paramsJson == null || paramsJson.trim().isEmpty()) return new Class<?>[0];
-        try {
-            JSONArray arr = JSON.parseArray(paramsJson);
-            Class<?>[] types = new Class<?>[arr.size()];
-            for (int i = 0; i < arr.size(); i++) {
-                types[i] = mapParamType(arr.getJSONObject(i).getString("type"));
-            }
-            return types;
-        } catch (Exception e) {
-            return new Class<?>[0];
-        }
-    }
-
-    private Class<?> mapParamType(String type) {
-        if (type == null) return Object.class;
-        switch (type.toUpperCase()) {
-            case "NUMBER": return double.class;
-            case "STRING": return String.class;
-            case "BOOLEAN": return boolean.class;
-            default: return Object.class;
-        }
     }
 
     private static String trimToNull(String value) {

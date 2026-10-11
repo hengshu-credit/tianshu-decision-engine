@@ -1,59 +1,69 @@
 package com.hengshucredit.rule.server.consumer;
 
-import cn.hutool.core.collection.CollUtil;
-import com.hengshucredit.rule.model.entity.RuleExecutionLog;
-import com.hengshucredit.rule.server.service.RuleExecutionLogService;
-import com.hengshucredit.rule.server.service.RuleBillingService;
 import com.alibaba.fastjson.JSON;
+import com.hengshucredit.rule.model.entity.RuleExecutionLog;
+import com.hengshucredit.rule.server.service.ClientExecutionLogIngestionService;
+import com.hengshucredit.rule.server.service.ClientLogValidationException;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.kafka.common.header.Header;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.Resource;
-import java.util.ArrayList;
-import java.util.List;
+import java.nio.charset.StandardCharsets;
 
-/**
- * Kafka 批量消费规则执行日志（适配全局 listener.type=batch 配置）。
- * 仅当配置了 {@code spring.kafka.bootstrap-servers} 时启用；默认示例工程不配置 Kafka，避免误连外网集群。
- */
+/** 每条日志独立完成项目校验与数据库事务，成功或死信确认之后才能推进消费位置。 */
 @Component
-@ConditionalOnProperty(name = "spring.kafka.bootstrap-servers")
+@ConditionalOnProperty(prefix = "rule-engine.kafka", name = "enabled", havingValue = "true")
 public class KafkaLogConsumer {
+    public static final String PROJECT_ID_HEADER = "X-Rule-Project-Id";
 
-    private static final Logger log = LoggerFactory.getLogger(KafkaLogConsumer.class);
+    private final ClientExecutionLogIngestionService ingestionService;
+    private final RuleKafkaLogProperties properties;
+    private final KafkaLogMetrics metrics;
 
-    @Resource
-    private RuleExecutionLogService logService;
+    public KafkaLogConsumer(ClientExecutionLogIngestionService ingestionService,
+                            RuleKafkaLogProperties properties, KafkaLogMetrics metrics) {
+        this.ingestionService = ingestionService;
+        this.properties = properties;
+        this.metrics = metrics;
+    }
 
-    @Resource
-    private RuleBillingService billingService;
-
-    @KafkaListener(topics = "${rule-engine.kafka.log-topic:rule-execution-log}",
-                   groupId = "${spring.kafka.consumer.group-id:rule-engine-server}")
-    public void onMessage(List<ConsumerRecord<String, String>> records) {
-        List<RuleExecutionLog> list = new ArrayList<>();
-        for (ConsumerRecord<String, String> record : records) {
+    @KafkaListener(topics = "#{@kafkaLogProperties.topics()}",
+            groupId = "#{@kafkaLogProperties.groupId}", containerFactory = "kafkaLogListenerContainerFactory")
+    public void onMessage(ConsumerRecord<String, String> record) {
+        try {
+            Long projectId = projectId(record);
+            RuleExecutionLog entry;
             try {
-                RuleExecutionLog entry = JSON.parseObject(record.value(), RuleExecutionLog.class);
-                if (entry == null) {
-                    log.warn("Kafka log message deserialized to null, offset={}", record.offset());
-                    continue;
-                }
-                list.add(entry);
-            } catch (Exception e) {
-                log.error("Failed to parse kafka log, offset={}, error={}", record.offset(), e.getMessage(), e);
+                entry = JSON.parseObject(record.value(), RuleExecutionLog.class);
+            } catch (RuntimeException parseFailure) {
+                // JSON 异常可能含原始输入，不将其作为 cause 传播到应用日志。
+                throw new ClientLogValidationException(400, "Kafka log JSON is invalid");
             }
+            if (entry == null) throw new ClientLogValidationException(400, "Kafka log must be a JSON object");
+            int inserted = ingestionService.ingestKafka(entry, projectId);
+            metrics.increment(inserted == 0 ? "duplicate" : "accepted");
+        } catch (ClientLogValidationException rejected) {
+            metrics.increment("rejected");
+            throw rejected;
+        } catch (RuntimeException failure) {
+            metrics.increment("failed");
+            throw failure;
         }
-        if (CollUtil.isNotEmpty(list)) {
-            for (RuleExecutionLog entry : list) {
-                logService.saveLogical(entry);
-                if (billingService != null) billingService.recordEngineExecutionLog(entry);
-            }
-            log.debug("Kafka log batch inserted, size={}", list.size());
+    }
+
+    private Long projectId(ConsumerRecord<String, String> record) {
+        Long boundId = properties.getTopicProjects().get(record.topic());
+        Header project = null;
+        for (Header header : record.headers().headers(PROJECT_ID_HEADER)) {
+            if (project != null) throw new ClientLogValidationException(403, "Duplicate Kafka project header");
+            project = header;
         }
+        if (boundId == null || project == null || project.value() == null
+                || !boundId.toString().equals(new String(project.value(), StandardCharsets.UTF_8))) {
+            throw new ClientLogValidationException(403, "Kafka log project header does not match topic binding");
+        }
+        return boundId;
     }
 }

@@ -20,6 +20,7 @@ import java.util.Map;
 
 @Service
 public class RuleCompileService {
+    @Resource private ResourceVersionService resourceVersions;
 
     private final Map<String, RuleCompiler> compilers = new HashMap<>();
 
@@ -37,6 +38,8 @@ public class RuleCompileService {
 
     @Resource
     private RuleCallCycleService ruleCallCycleService;
+    @Resource
+    private RuleReferenceNamespaceGuard referenceNamespaceGuard;
 
     public RuleCompileService() {
         compilers.put("TABLE", new DecisionTableCompiler());
@@ -60,6 +63,7 @@ public class RuleCompileService {
         if (content == null) {
             return CompileResult.fail("规则内容不存在");
         }
+        requireLocalWorkspace(definition, content);
 
         RuleCompiler compiler = compilers.get(definition.getModelType());
         if (compiler == null) {
@@ -72,6 +76,8 @@ public class RuleCompileService {
         }
 
         // 构建变量上下文：受管字段只通过 refType:id 查询正确的 scriptName。
+        try { if (resourceVersions != null) resourceVersions.validate(JSON.parse(content.getModelJson()), definition.getProjectId()); }
+        catch (IllegalArgumentException error) { return CompileResult.fail(error.getMessage()); }
         VarContext varContext = buildVarContext(definition.getProjectId());
 
         CompileResult result = compiler.compile(content.getModelJson(), varContext);
@@ -87,6 +93,10 @@ public class RuleCompileService {
         contentMapper.updateById(content);
 
         return result;
+    }
+
+    protected void requireLocalWorkspace(RuleDefinition definition, RuleDefinitionContent content) {
+        referenceNamespaceGuard.requireLocalWorkspace(definition, content);
     }
 
     /** 编译设计器当前草稿，不覆盖已保存内容或编译状态。 */
@@ -125,6 +135,8 @@ public class RuleCompileService {
         if (cycleError != null) {
             return CompileResult.fail(cycleError);
         }
+        try { if (resourceVersions != null) resourceVersions.validate(JSON.parse(modelJson), definition.getProjectId()); }
+        catch (IllegalArgumentException error) { return CompileResult.fail(error.getMessage()); }
         return compiler.compile(modelJson, buildVarContext(definition.getProjectId()));
     }
 
@@ -143,8 +155,10 @@ public class RuleCompileService {
             VarContext context = new VarContext(Collections.<Long, String>emptyMap(), Collections.<String, String>emptyMap(),
                     refIdToScriptName, constantIdToExpression,
                     functionService.buildFunctionCodeMap(definition.getProjectId()),
-                    functionService.buildFunctionArityMap(definition.getProjectId()));
+                    functionService.buildFunctionArityMap(definition.getProjectId()),
+                    functionService.buildNativeFunctionIds(definition.getProjectId()));
             JSONObject json = (JSONObject) JSON.toJSON(operand);
+            if (resourceVersions != null) resourceVersions.validate(json, definition.getProjectId());
             validateExpressionReferences(json, refIdToScriptName, constantIdToExpression);
             return CompileResult.ok(OperandCompiler.compile(json, context), "QLEXPRESS");
         } catch (RuntimeException e) {
@@ -157,6 +171,7 @@ public class RuleCompileService {
                                               Map<Long, String> constantIdToExpression) {
         if (operand == null) return;
         String kind = operand.getString("kind");
+        if (OperandVersion.fixedVersionId(operand) != null && !"FUNCTION".equals(kind)) return;
         if ("REFERENCE".equals(kind)) {
             Long refId = operand.getLong("refId");
             String refType = operand.getString("refType");
@@ -214,7 +229,8 @@ public class RuleCompileService {
         return new VarContext(Collections.<Long, String>emptyMap(), Collections.<String, String>emptyMap(),
                 refIdToScriptName, constantIdToExpression,
                 functionService.buildFunctionCodeMap(projectId),
-                functionService.buildFunctionArityMap(projectId));
+                functionService.buildFunctionArityMap(projectId),
+                functionService.buildNativeFunctionIds(projectId));
     }
 
     /**

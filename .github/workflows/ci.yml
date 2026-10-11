@@ -22,7 +22,9 @@ jobs:
         with:
           node-version: '22'
       - name: Test runtime quality-gate scripts
-        run: node --test scripts/quality-gates/test/*.test.mjs
+        run: |
+          npm ci --prefix scripts/quality-gates --ignore-scripts
+          npm test --prefix scripts/quality-gates
 
   backend:
     name: Backend (JDK 17)

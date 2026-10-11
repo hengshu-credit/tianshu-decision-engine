@@ -49,7 +49,7 @@ public class DashboardQueryRepository {
                 .append(period).append(" AS period_value, ")
                 .append(amount).append(" AS amount_value, ")
                 .append(decision).append(" AS decision_value ")
-                .append(" FROM rule_execution_log execution ")
+                .append(" FROM rule_execution_log_current execution ")
                 .append(" WHERE create_time >= ? AND create_time <= ? ");
         parameters.add(criteria.startTime());
         parameters.add(criteria.endTime());
@@ -82,7 +82,7 @@ public class DashboardQueryRepository {
         List<Object> parameters = new ArrayList<>();
         StringBuilder sql = new StringBuilder(
                 "SELECT execution.execute_time_ms "
-                        + "FROM rule_execution_log execution "
+                        + "FROM rule_execution_log_current execution "
                         + "WHERE execution.create_time >= ? "
                         + "AND execution.create_time <= ? "
                         + "AND execution.execute_time_ms IS NOT NULL "

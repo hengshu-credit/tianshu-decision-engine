@@ -1,30 +1,21 @@
 <template>
   <div class="rule-execution-selector">
-    <el-select
-      :model-value="selectedId"
-      filterable
-      clearable
+    <var-picker
+      :value="selectedId"
+      :vars="pickerRules" value-key="id" :allow-custom="false"
+      :visible-tags="['rule']" :selectable-tags="['rule']"
+      :version-selection="inputVersion"
       size="small"
       class="rule-select"
       placeholder="选择要执行的规则"
       @visible-change="$emit('visible-change', $event)"
-      @change="onChange"
+      @input="onChange"
     >
-      <el-option-group
-        v-for="group in ruleGroups"
-        :key="group.key"
-        :label="group.label"
-        class="rule-scope-group"
-      >
-        <el-option
-          v-for="rule in group.rules"
-          :key="rule.id"
-          :label="ruleLabel(rule)"
-          :value="rule.id"
-          :disabled="isRuleDisabled(rule)"
-        />
-      </el-option-group>
-    </el-select>
+      <template #version="{ item, active }">
+        <rule-call-version-select v-if="item && active && versioned" compact :rule-id="item.id" :version-mode="versionFor(item.id).versionMode" :version-binding-id="versionFor(item.id).versionBindingId" :catalog-mode="catalogMode" :catalog-key="catalogKey" :frozen-versions="item.rule.executionVersions || []" @change="onVersionChange(item.id, $event)" @fields="onVersionFields" />
+        <span v-else :title="versioned ? '单击该行选择版本，双击确认' : '使用规则当前发布版本'">{{ versionLabel(item) }}</span>
+      </template>
+    </var-picker>
 
     <el-alert
       v-if="hasMissingReference"
@@ -87,23 +78,42 @@
 <script>
 import { $emit } from '../../utils/gogocodeTransfer'
 import { RULE_MODEL_LABELS } from '@/utils/ruleCallConfig'
+import VarPicker from './VarPicker.vue'
+import RuleCallVersionSelect from '@/components/flow/RuleCallVersionSelect.vue'
 
 export default {
   name: 'RuleExecutionSelector',
+  components: { VarPicker, RuleCallVersionSelect },
+  data: () => ({ draftVersions: {}, knownVersions: {} }),
   props: {
     ruleId: { type: [String, Number], default: null },
     ruleCode: { type: String, default: '' },
     rules: { type: Array, default: () => [] },
     currentRuleId: { type: [String, Number], default: null },
     currentRuleCode: { type: String, default: '' },
+    versioned: Boolean,
+    versionMode: { type: String, default: 'LATEST' },
+    versionBindingId: { type: [String, Number], default: null },
+    catalogMode: { type: String, default: 'LIVE' },
+    catalogKey: { type: String, default: '' },
   },
   computed: {
+    inputVersion() {
+      if (!this.versioned || !this.ruleId) return null
+      const versions = this.knownVersions[String(this.ruleId)] || this.selectedRule?.executionVersions || []
+      const selected = this.versionFor(this.ruleId)
+      const version = selected.versionMode === 'FIXED' ? versions.find(item => String(item.bindingId) === String(selected.versionBindingId))?.version
+        : versions.reduce((result, item) => Math.max(result, Number(item.version) || 0), 0) || this.selectedRule?.publishedVersion
+      return { versionMode: selected.versionMode, version }
+    },
+    selectionContext() { return `${this.catalogMode}:${this.catalogKey}:${this.ruleId}:${this.versionMode}:${this.versionBindingId}` },
+    pickerRules() { return this.rules.map(rule => ({ id: rule.id, _varId: rule.id, _refType: 'RULE', varCode: rule.ruleCode, varLabel: rule.ruleName, varType: 'RULE', _ref: { category: 'rule' }, disabled: this.isRuleDisabled(rule), rule })) },
     selectedRule() {
       if (this.ruleId != null) {
         const byId = this.rules.find(
           (rule) => String(rule.id) === String(this.ruleId)
         )
-        if (byId) return byId
+        return byId || null
       }
       if (!this.ruleCode) return null
       const matches = this.rules.filter(
@@ -126,12 +136,25 @@ export default {
       ].filter((group) => group.rules.length)
     },
   },
+  watch: { selectionContext() { this.draftVersions = {} } },
   methods: {
+    onVersionFields(payload) { if (payload.versions) this.knownVersions[payload.ruleId] = payload.versions; this.$emit('fields', payload) },
+    onVersionChange(id, version) { this.draftVersions[String(id)] = version; if (String(id) === String(this.ruleId)) this.onChange(id) },
+    versionFor(id) { return this.draftVersions[String(id)] || (String(id) === String(this.ruleId) ? { versionMode: this.versionMode, versionBindingId: this.versionBindingId } : { versionMode: 'LATEST', versionBindingId: null }) },
+    versionLabel(item) {
+      if (!item) return '—'
+      const versions = this.knownVersions[String(item.id)] || item.rule.executionVersions || []
+      const selected = this.versionFor(item.id)
+      if (selected.versionMode === 'FIXED') return `v${versions.find(version => String(version.bindingId) === String(selected.versionBindingId))?.version ?? '（指定）'}`
+      const latest = versions.reduce((result, version) => Number(version.version) > Number(result?.version || 0) ? version : result, null)
+      const current = latest?.version ?? item.rule.publishedVersion
+      return current != null && Number(current) > 0 ? `最新 · v${current}` : '最新版'
+    },
     onChange(ruleId) {
       const rule =
         this.rules.find((item) => String(item.id) === String(ruleId)) || null
       $emit(this, 'update:value', rule ? rule.id : null)
-      $emit(this, 'select', rule)
+      $emit(this, 'select', rule && this.versioned ? { ...rule, pickerVersion: this.versionFor(rule.id) } : rule)
     },
     isRuleDisabled(rule) {
       const sameId =
@@ -165,7 +188,7 @@ export default {
       return field.id || field.scriptName || field.fieldName
     },
   },
-  emits: ['input', 'visible-change', 'update:value', 'select'],
+  emits: ['input', 'visible-change', 'update:value', 'select', 'fields'],
 }
 </script>
 

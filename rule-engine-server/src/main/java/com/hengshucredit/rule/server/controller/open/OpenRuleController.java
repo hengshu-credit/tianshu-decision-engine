@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.controller.open;
 
 import com.hengshucredit.rule.core.trace.TraceIdGenerator;
+import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.openapi.OpenApiContract;
@@ -74,8 +75,7 @@ public class OpenRuleController {
             traceId = traceId(resolved);
             Map<String, Object> params = requestMapper.map(resolved.getContract(), body,
                     firstHeaders(headers), resolved.getInputReferences());
-            fieldValidationService.validateDefinitionInput(
-                    resolved.getPublished().getDefinitionId(), params);
+            fieldValidationService.validateInputFields(resolved.getInputFields(), params);
             RuleIdempotencyService.Decision idempotency = idempotencyService == null ? null
                     : idempotencyService.begin(resolved.getPublished(), resolved.getProject().getId(), params);
             activeIdempotency = idempotency != null && idempotency.isClaimed() ? idempotency : null;
@@ -88,26 +88,16 @@ public class OpenRuleController {
                                 || executionContract.getContract().isReturnTrace(),
                         executionContract.getContract().isRecordTrace()));
                 if (hasText(result.getTraceId())) traceId = result.getTraceId();
-                OpenApiStatus status = result.isSuccess() ? OpenApiStatuses.success()
-                        : "WAITING_EXTERNAL".equals(result.getExecutionStatus())
-                        ? OpenApiStatuses.waitingExternal()
-                        : "THROTTLED".equals(result.getExecutionStatus())
-                        ? OpenApiStatuses.qpsConcurrencyExceeded()
-                        : OpenApiStatuses.resultError(safeMessage(result.getErrorMessage(), "结果处理异常"));
+                OpenApiStatus status = statusForResult(result);
                 return render(resolved.getContract(), status,
-                        traceId, result.isSuccess() ? outputValues(resolved, result) : errorValues(result.getErrorMessage()));
+                        traceId, result.isSuccess() ? outputValues(resolved, result) : errorValues(result));
             }
             if (idempotency.getStatus() == RuleIdempotencyService.Status.COMPLETED) {
                 RuleResult cached = idempotency.getResult();
                 if (hasText(cached.getTraceId())) traceId = cached.getTraceId();
-                OpenApiStatus cachedStatus = cached.isSuccess() ? OpenApiStatuses.success()
-                        : "WAITING_EXTERNAL".equals(cached.getExecutionStatus())
-                        ? OpenApiStatuses.waitingExternal()
-                        : "THROTTLED".equals(cached.getExecutionStatus())
-                        ? OpenApiStatuses.qpsConcurrencyExceeded()
-                        : OpenApiStatuses.resultError(safeMessage(cached.getErrorMessage(), "结果处理异常"));
+                OpenApiStatus cachedStatus = statusForResult(cached);
                 return render(resolved.getContract(), cachedStatus,
-                        traceId, cached.isSuccess() ? outputValues(resolved, cached) : errorValues(cached.getErrorMessage()));
+                        traceId, cached.isSuccess() ? outputValues(resolved, cached) : errorValues(cached));
             }
             if (idempotency.getStatus() == RuleIdempotencyService.Status.CONFLICT) {
                 return render(resolved.getContract(), new OpenApiStatus(false, "400004",
@@ -131,17 +121,7 @@ public class OpenRuleController {
             idempotencyService.complete(idempotency, result, null);
             activeIdempotency = null;
             if (!result.isSuccess()) {
-                Map<String, Object> values = errorValues(result.getErrorMessage());
-                if ("WAITING_EXTERNAL".equals(result.getExecutionStatus())) {
-                    return render(resolved.getContract(), OpenApiStatuses.waitingExternal(), traceId, values);
-                }
-                if ("THROTTLED".equals(result.getExecutionStatus())) {
-                    return render(resolved.getContract(), OpenApiStatuses.qpsConcurrencyExceeded(),
-                            traceId, values);
-                }
-                return render(resolved.getContract(), OpenApiStatuses.resultError(
-                        safeMessage(result.getErrorMessage(), "结果处理异常")),
-                        traceId, values);
+                return render(resolved.getContract(), statusForResult(result), traceId, errorValues(result));
             }
             return render(resolved.getContract(), OpenApiStatuses.success(),
                     traceId, outputValues(resolved, result));
@@ -160,12 +140,16 @@ public class OpenRuleController {
             releaseIdempotency(activeIdempotency, e.getMessage());
             return renderSafely(resolved, OpenApiStatuses.parameterValidation(e.getMessage()),
                     traceId, validationErrorValues(e));
-        } catch (IllegalArgumentException e) {
-            releaseIdempotency(activeIdempotency, e.getMessage());
-            return renderSafely(resolved, OpenApiStatuses.parameterValidation(
-                    safeMessage(e.getMessage(), "入参校验失败")), traceId, errorValues(e.getMessage()));
         } catch (RuntimeException e) {
             releaseIdempotency(activeIdempotency, e.getMessage());
+            ExecutionCapacityException capacity = ExecutionCapacityException.find(e);
+            if (capacity != null) {
+                return renderSafely(resolved, capacityStatus(capacity.getMessage()), traceId, errorValues(capacity));
+            }
+            if (e instanceof IllegalArgumentException) {
+                return renderSafely(resolved, OpenApiStatuses.parameterValidation(
+                        safeMessage(e.getMessage(), "入参校验失败")), traceId, errorValues(e.getMessage()));
+            }
             return renderSafely(resolved, OpenApiStatuses.systemError(),
                     traceId, errorValues("系统执行异常"));
         }
@@ -175,6 +159,21 @@ public class OpenRuleController {
         if (decision != null && idempotencyService != null) {
             idempotencyService.release(decision, hasText(message) ? message : "规则执行异常");
         }
+    }
+
+    private OpenApiStatus statusForResult(RuleResult result) {
+        if (result.isSuccess()) return OpenApiStatuses.success();
+        if ("WAITING_EXTERNAL".equals(result.getExecutionStatus())) return OpenApiStatuses.waitingExternal();
+        if ("THROTTLED".equals(result.getExecutionStatus())) {
+            return ExecutionCapacityException.Resource.fromCode(result.getCapacityResource()) == null
+                    ? OpenApiStatuses.qpsConcurrencyExceeded() : capacityStatus(result.getErrorMessage());
+        }
+        return OpenApiStatuses.resultError(safeMessage(result.getErrorMessage(), "结果处理异常"));
+    }
+
+    private OpenApiStatus capacityStatus(String message) {
+        return new OpenApiStatus(false, OpenApiStatuses.QPS_CONCURRENCY_EXCEEDED,
+                safeMessage(message, "执行资源容量不足，请稍后重试"), 429);
     }
 
     private ResponseEntity<Object> renderSafely(OpenApiContractService.ResolvedContract resolved,
@@ -195,12 +194,22 @@ public class OpenRuleController {
         HttpHeaders responseHeaders = new HttpHeaders();
         rendered.getHeaders().forEach(responseHeaders::set);
         if (status.getHttpStatus() == 429) {
-            responseHeaders.set("Retry-After", "1");
-            responseHeaders.set("X-Rule-Queue-Depth", String.valueOf(
-                    executionExecutor.snapshot().getOrDefault("queueDepth", 0)));
-            responseHeaders.set("X-Rule-Limit-Name",
-                    OpenApiStatuses.QPS_CONCURRENCY_EXCEEDED.equals(status.getCode())
-                            ? "open-execution-queue" : "project-quota");
+            Object retryAfter = values.get("error.retryAfterMs");
+            long retryAfterMs = retryAfter instanceof Number number && number.longValue() > 0
+                    ? number.longValue() : ExecutionCapacityException.RETRY_AFTER_MS;
+            responseHeaders.set("Retry-After", String.valueOf((retryAfterMs - 1) / 1000 + 1));
+            ExecutionCapacityException.Resource capacity = ExecutionCapacityException.Resource.fromCode(
+                    values.get("error.capacityResource"));
+            if (capacity != null) {
+                responseHeaders.set("X-Rule-Limit-Name", capacity.getLimitName());
+                responseHeaders.remove("X-Rule-Queue-Depth");
+            } else {
+                responseHeaders.set("X-Rule-Queue-Depth", String.valueOf(
+                        executionExecutor.snapshot().getOrDefault("queueDepth", 0)));
+                responseHeaders.set("X-Rule-Limit-Name",
+                        OpenApiStatuses.QPS_CONCURRENCY_EXCEEDED.equals(status.getCode())
+                                ? "open-execution-queue" : "project-quota");
+            }
         }
         return ResponseEntity.status(rendered.getHttpStatus()).headers(responseHeaders).body(rendered.getBody());
     }
@@ -245,6 +254,20 @@ public class OpenRuleController {
     private Map<String, Object> errorValues(String message) {
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("error.message", message);
+        return values;
+    }
+
+    private Map<String, Object> errorValues(RuleResult result) {
+        Map<String, Object> values = errorValues(result.getErrorMessage());
+        values.put("error.capacityResource", result.getCapacityResource());
+        values.put("error.retryAfterMs", result.getRetryAfterMs());
+        return values;
+    }
+
+    private Map<String, Object> errorValues(ExecutionCapacityException capacity) {
+        Map<String, Object> values = errorValues(capacity.getMessage());
+        values.put("error.capacityResource", capacity.getResource().name());
+        values.put("error.retryAfterMs", ExecutionCapacityException.RETRY_AFTER_MS);
         return values;
     }
 

@@ -51,6 +51,7 @@ vi.mock('@/api/consoleAccount', () => ({
 import { flushPromises, shallowMount } from '@test-utils'
 import * as accountApi from '@/api/consoleAccount'
 import AccountManagement from '@/views/account/AccountManagement.vue'
+import { setCurrentUser, clearCurrentUser } from '@/security/permissionState'
 
 function mountPage() {
   return shallowMount(AccountManagement, {
@@ -63,6 +64,30 @@ function mountPage() {
 }
 
 describe('账户与角色管理页面', () => {
+  afterEach(() => clearCurrentUser())
+
+  test('只有账户查看权限时不请求无权查看的角色和权限目录', async() => {
+    vi.clearAllMocks()
+    setCurrentUser({ permissions: ['account:view'] })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.vm.accounts[0].username).toBe('reviewer')
+    expect(accountApi.listConsoleRoles).not.toHaveBeenCalled()
+    expect(accountApi.listConsolePermissions).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('仅日志审计权限可进入日志标签，不读取账户和角色目录', async() => {
+    vi.clearAllMocks()
+    setCurrentUser({ permissions: ['account:audit'] })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.vm.activeTab).toBe('logs')
+    expect(wrapper.vm.canViewAccounts).toBe(false)
+    expect(accountApi.listConsoleAccounts).not.toHaveBeenCalled()
+    expect(accountApi.listConsoleRoles).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   test('进入页面同时加载账户、角色和权限目录', async() => {
     const wrapper = mountPage()
     await flushPromises()

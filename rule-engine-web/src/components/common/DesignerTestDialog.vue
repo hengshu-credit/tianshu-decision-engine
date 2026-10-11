@@ -8,6 +8,7 @@
     :close-on-click-modal="false"
   >
     <div class="designer-test-dialog">
+      <el-alert v-if="executionSource" :title="executionSourceLabel(executionSource, executionSourceName || resolvedIdentity)" type="info" :closable="false" show-icon style="margin-bottom: 10px" />
       <div
         style="
           margin-bottom: 10px;
@@ -48,8 +49,9 @@
 
       <div v-if="result" class="test-result">
         <el-alert
-          :title="result.success ? '执行成功' : '执行失败'"
-          :type="result.success ? 'success' : 'error'"
+          :title="resultThrottled ? executionStatusLabel(result.executionStatus) : result.success ? '执行成功' : '执行失败'"
+          :type="resultThrottled ? 'warning' : result.success ? 'success' : 'error'"
+          :description="executionStatusHint(result.executionStatus)"
           :closable="false"
           show-icon
         />
@@ -71,8 +73,8 @@
               />
             </div>
           </el-tab-pane>
-          <el-tab-pane v-if="result.errorMessage" label="错误信息" name="error">
-            <pre class="result-pre error-pre">{{ result.errorMessage }}</pre>
+          <el-tab-pane v-if="result.errorMessage" :label="resultThrottled ? '容量提示' : '错误信息'" name="error">
+            <pre class="result-pre" :class="resultThrottled ? 'capacity-pre' : 'error-pre'">{{ result.errorMessage }}</pre>
           </el-tab-pane>
         </el-tabs>
         <div class="result-meta">耗时 {{ result.executeTimeMs || 0 }} ms</div>
@@ -104,6 +106,8 @@ import MonacoEditor from '@/components/MonacoEditor'
 import TraceTree from '@/components/common/TraceTree.vue'
 import DialogResizeHandle from '@/components/common/DialogResizeHandle.vue'
 import { normalizeTestResult, formatTestOutput } from '@/utils/testResult'
+import { executionStatusLabel, executionStatusHint } from '@/utils/executionStatus'
+import { executionSourceKey, executionSourceLabel, requireExecutionIdentity } from '@/utils/ruleTestExecutionSource'
 
 export default {
   data() {
@@ -116,8 +120,10 @@ export default {
       editorKey: 1,
       activeTab: 'output',
       resolvedTemplate: null,
+      resolvedIdentity: null,
       schemaDiagnostics: [],
       schemaLoading: false,
+      schemaSourceError: '',
       schemaRequestId: 0,
       executionRequestId: 0,
       sampleOwnerKey: '',
@@ -137,6 +143,8 @@ export default {
       type: [String, Number],
       default: null,
     },
+    executionSource: { type: Object, default: null },
+    executionSourceName: { type: String, default: '' },
     targetType: {
       type: String,
       default: 'RULE',
@@ -163,6 +171,9 @@ export default {
     },
   },
   computed: {
+    resultThrottled() {
+      return Boolean(this.result && this.result.executionStatus === 'THROTTLED')
+    },
     traceInfoJson() {
       return this.result && this.result.traces
         ? JSON.stringify(this.result.traces)
@@ -183,6 +194,9 @@ export default {
     },
   },
   watch: {
+    executionSource: { deep: true, handler() { this.executionContextChanged() } },
+    definitionId() { this.executionContextChanged() },
+    projectId() { this.executionContextChanged() },
     visible(value) {
       if (value) this.open()
       else this.invalidateRequests()
@@ -196,6 +210,27 @@ export default {
   },
   beforeUnmount() { this.invalidateRequests() },
   methods: {
+    executionStatusLabel,
+    executionStatusHint,
+    executionSourceLabel,
+    executionContextChanged() {
+      this.invalidateRequests()
+      this.result = null
+      this.lastInput = null
+      if (this.visible) this.open()
+    },
+    executionContextKey() {
+      return JSON.stringify([this.definitionId, this.projectId, executionSourceKey(this.executionSource),
+        this.executionSource && this.executionSource.sourceType !== 'PREVIEW' ? null : this.currentModelJson()])
+    },
+    executionSourcePayload() {
+      if (this.executionSource && this.executionSource.sourceType !== 'PREVIEW') return { executionSource: { ...this.executionSource } }
+      return {
+        ...(this.executionSource ? { executionSource: { ...this.executionSource } } : {}),
+        modelType: this.modelType || undefined,
+        modelJson: this.currentModelJson(),
+      }
+    },
     async open() {
       this.executionRequestId++
       this.executing = false
@@ -203,8 +238,10 @@ export default {
       this.lastInput = null
       this.activeTab = 'output'
       this.resolvedTemplate = null
+      this.resolvedIdentity = null
       this.schemaDiagnostics = []
-      const owner = `${this.targetType}:${this.definitionId}:${this.projectId}`
+      this.schemaSourceError = ''
+      const owner = `${this.targetType}:${this.definitionId}:${this.projectId}:${executionSourceKey(this.executionSource)}`
       if (owner !== this.sampleOwnerKey) {
         this.sampleOwnerKey = owner
         this.resetParams()
@@ -225,23 +262,30 @@ export default {
       const modelJson = this.currentModelJson()
       if (!this.definitionId && !modelJson) return
       this.schemaLoading = true
+      const context = this.executionContextKey()
+      const definitionId = this.definitionId
+      const source = this.executionSource ? { ...this.executionSource } : null
       try {
         const response = await getRuleTestSchema({
           targetType: this.targetType || 'RULE',
           targetId: this.definitionId,
           projectId: Number(this.projectId) > 0 ? this.projectId : undefined,
-          modelType: this.modelType || undefined,
-          modelJson,
+          ...this.executionSourcePayload(),
         })
         const schema =
           response && response.data !== undefined ? response.data : response
-        if (requestId !== this.schemaRequestId) return
+        if (requestId !== this.schemaRequestId || context !== this.executionContextKey()) return
+        requireExecutionIdentity(schema?.executionIdentity, definitionId, source)
+        this.resolvedIdentity = schema?.executionIdentity || null
         if (schema && schema.sampleParams)
           this.resolvedTemplate = schema.sampleParams
         this.schemaDiagnostics =
           schema && Array.isArray(schema.diagnostics) ? schema.diagnostics : []
       } catch (e) {
-        if (requestId === this.schemaRequestId) this.schemaDiagnostics = [e.message || '测试字段解析失败']
+        if (requestId === this.schemaRequestId && context === this.executionContextKey()) {
+          this.schemaSourceError = e.message || '测试字段解析失败'
+          this.schemaDiagnostics = [this.schemaSourceError]
+        }
       } finally {
         if (requestId === this.schemaRequestId) this.schemaLoading = false
       }
@@ -273,6 +317,10 @@ export default {
     },
     async execute() {
       if (this.schemaLoading || this.executing) return
+      if (this.executionSource && this.schemaSourceError) {
+        this.$message.error(this.schemaSourceError)
+        return
+      }
       if (this.jsonError) {
         this.$message.error('请先修正 JSON 格式错误')
         return
@@ -286,6 +334,9 @@ export default {
       }
       this.executing = true
       const requestId = ++this.executionRequestId
+      const context = this.executionContextKey()
+      const definitionId = this.definitionId
+      const source = this.executionSource ? { ...this.executionSource } : null
       this.result = null
       this.lastInput = params
       try {
@@ -293,14 +344,15 @@ export default {
           {
             definitionId: this.definitionId,
             projectId: Number(this.projectId) > 0 ? this.projectId : undefined,
-            modelType: this.modelType || undefined,
-            modelJson: this.currentModelJson(),
+            ...this.executionSourcePayload(),
             params,
           },
           this.requestTimeoutMs
         )
-        if (requestId !== this.executionRequestId) return
-        this.result = normalizeTestResult(res)
+        if (requestId !== this.executionRequestId || context !== this.executionContextKey()) return
+        const result = normalizeTestResult(res)
+        requireExecutionIdentity(result.executionIdentity, definitionId, source)
+        this.result = result
         this.activeTab =
           this.result && this.result.errorMessage ? 'error' : 'output'
       } catch (e) {
@@ -398,6 +450,11 @@ export default {
   background: #fff2f0;
   border-color: #ffccc7;
   color: #cf1322;
+}
+.capacity-pre {
+  background: var(--tianshu-warning-bg);
+  border-color: var(--tianshu-warning-border);
+  color: var(--tianshu-warning-text);
 }
 .result-meta {
   color: var(--tianshu-text-tertiary);

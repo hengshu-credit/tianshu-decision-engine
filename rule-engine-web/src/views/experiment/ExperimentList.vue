@@ -59,6 +59,7 @@
       </el-form>
       <div class="uiue-btn-bar">
         <div class="btn-right">
+          <governance-workspace-toolbar resource-type="EXPERIMENT" />
           <table-column-settings :columns="experimentColumns" storage-key="tianshu:table-columns:experiment-list" />
           <el-button
             v-permission="'experiment:edit'"
@@ -133,24 +134,15 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="80" align="center">
+      <el-table-column label="状态" width="160" align="center">
         <template v-slot="{ row }">
-          <el-tag size="small" :type="row.status === 1 ? 'success' : 'info'">{{
+          <governance-resource-status resource-type="EXPERIMENT" :resource-id="row.id" :status="row.status"><el-tag size="small" :type="row.status === 1 ? 'success' : 'info'">{{
             row.status === 1 ? '启用' : '停用'
-          }}</el-tag>
+          }}</el-tag></governance-resource-status>
         </template>
       </el-table-column>
-      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="190" align="center" fixed="right">
+      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="325" align="center" fixed="right">
         <template v-slot="{ row }">
-          <el-button
-            v-permission="'experiment:edit'"
-            link
-            data-action="execute"
-            size="small"
-            type="success"
-            @click="handleTest(row)"
-            >验证执行</el-button
-          >
           <el-button
             v-permission="'experiment:edit'"
             link
@@ -161,6 +153,16 @@
             >详情</el-button
           >
           <el-button
+            v-permission="'experiment:edit'"
+            link
+            data-action="execute"
+            size="small"
+            type="success"
+            @click="handleTest(row)"
+            >验证执行</el-button
+          >
+          <governance-publish-action resource-type="EXPERIMENT" :resource-id="row.id" />
+          <el-button v-permission="'experiment:edit'"
             link
             data-action="delete"
             size="small"
@@ -210,20 +212,12 @@
         <el-row :gutter="12">
           <el-col :span="8">
             <el-form-item label="项目" prop="projectId">
-              <el-select
-                v-model="form.projectId"
-                filterable
-                placeholder="选择项目"
+            <project-resource-select
+              v-model:value="form.projectId"
                 style="width: 100%"
                 @change="onProjectChange"
-              >
-                <el-option
-                  v-for="p in projects"
-                  :key="p.id"
-                  :label="p.projectName"
-                  :value="p.id"
-                />
-              </el-select>
+              @select="onProjectSelected"
+            />
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -509,6 +503,7 @@
           <span class="execution-kicker">实验验证</span>
           <strong>{{ testExperiment && testExperiment.experimentName }}</strong>
           <span>{{ testExperiment && testExperiment.experimentCode }}</span>
+          <resource-version-select v-if="testExperiment" resource-type="EXPERIMENT" :resource-id="testExperiment.id" v-model="testVersion" :disabled="testing" @change="handleTest(testExperiment, $event)" />
         </div>
         <span>本次仅验证分流结果，不会改变线上流量配置。</span>
       </div>
@@ -524,7 +519,7 @@
       >
         <strong>实验验证初始化失败</strong>
         <span>{{ testLoadError }}</span>
-        <el-button size="small" type="primary" @click="handleTest(testExperiment)">重新加载</el-button>
+        <el-button v-permission="'experiment:edit'" size="small" type="primary" @click="handleTest(testExperiment)">重新加载</el-button>
       </div>
 
       <template v-else-if="testReady">
@@ -543,7 +538,7 @@
               }}。</span
             >
           </div>
-          <el-button
+          <el-button v-permission="'experiment:edit'"
             v-if="testLoadStatus === 'DEGRADED'"
             link
             size="small"
@@ -744,7 +739,7 @@
       <template v-slot:footer>
         <div class="execution-dialog-footer">
           <el-button size="small" @click="closeTestDialog">关闭</el-button>
-          <el-button
+          <el-button v-permission="'experiment:edit'"
             size="small"
             type="primary"
             :loading="testing"
@@ -759,9 +754,14 @@
 </template>
 
 <script>
+import ResourceVersionSelect from '@/components/common/ResourceVersionSelect.vue'
+import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
+import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
+import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
+import { completeResourceChange } from '@/utils/governanceWorkspace'
 import { markRaw } from 'vue'
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
-import { listProjects } from '@/api/project'
+import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import { getRuleTestSchema, listProjectDefinitions } from '@/api/definition'
 import {
   deleteExperiment,
@@ -807,7 +807,6 @@ export default {
       loading: false,
       experiments: [],
       total: 0,
-      projects: [],
       contextProjectId: null,
       rulesForProject: [],
       contentLoaded: true,
@@ -836,6 +835,7 @@ export default {
       testVisible: false,
       testing: false,
       testExperiment: null,
+      testVersion: { versionMode: 'LATEST', versionId: null },
       testReady: false,
       testLoadStatus: 'IDLE',
       testLoadError: '',
@@ -856,10 +856,12 @@ export default {
     }
   },
   name: 'ExperimentList',
-  components: {
+  components: { ResourceVersionSelect, GovernancePublishAction, GovernanceWorkspaceToolbar,
+    GovernanceResourceStatus,
     TableColumnSettings,
     ConditionGroupEditor,
     RuleExecutionSelector,
+    ProjectResourceSelect,
     MonacoEditor,
     ProjectFilterSelect,
     RemoteFilterSelect,
@@ -895,7 +897,6 @@ export default {
       this.$store && this.$store.state.currentProject
     )
     if (this.contextProjectId) this.query.projectId = this.contextProjectId
-    this.loadProjects()
     this.loadExperiments()
   },
   methods: {
@@ -969,22 +970,23 @@ export default {
         return null
       }
     },
-    async loadProjects() {
-      const res = await listProjects({ pageNum: 1, pageSize: 500, status: 1 })
-      this.projects = (res.data && res.data.records) || []
-    },
     async loadRules(projectId) {
       if (!projectId) {
         this.rulesForProject = []
         return
       }
-      const res = await listProjectDefinitions(projectId, {
-        pageNum: 1,
-        pageSize: 1000,
-        status: 1,
-      })
-      const page = res && res.data ? res.data : res
-      const rows = Array.isArray(page) ? page : (page && page.records) || []
+      const rows = []
+      let pageNum = 1
+      const pageSize = 200
+      while (true) {
+        const res = await listProjectDefinitions(projectId, { pageNum, pageSize, status: 1 })
+        const page = res && res.data ? res.data : res
+        const records = Array.isArray(page) ? page : (page && page.records) || []
+        rows.push(...records)
+        const total = Number(page && !Array.isArray(page) ? page.total || 0 : 0)
+        if (records.length < pageSize || (total > 0 && rows.length >= total)) break
+        pageNum += 1
+      }
       this.rulesForProject = normalizeRuleOptions(rows)
       this.repairLegacyGroupRuleRefs()
     },
@@ -1038,19 +1040,18 @@ export default {
         type: 'warning',
       })
       const response = await deleteExperiment(row.id)
-      this.$message.success('分流实验删除已送审')
-      if (response.data && response.data.id)
-        this.$router.push('/approval/' + response.data.id)
+      await completeResourceChange(this, response, () => this.loadExperiments())
     },
     onProjectChange(projectId) {
-      const project = this.projects.find((p) => p.id === projectId)
-      this.form.projectCode = project ? project.projectCode : ''
       this.form.groups.forEach((g) => {
         g.ruleId = null
         g.ruleCode = ''
       })
       this.loadRules(projectId)
       this.loadExperimentRefs(projectId)
+    },
+    onProjectSelected(project) {
+      this.form.projectCode = project?.projectCode || ''
     },
     onGroupRuleSelect(group, rule) {
       group['ruleId'] = rule ? rule.id : null
@@ -1173,17 +1174,10 @@ export default {
       return new Promise((resolve) => {
         this.$refs.form.validate(async (valid) => {
           if (!valid) return resolve(false)
-          const error = this.validateGroups()
-          if (error) {
-            this.$message.error(error)
-            return resolve(false)
-          }
           const data = { ...this.form, groups: this.prepareGroupsForSave() }
           const response = await saveExperiment(data)
-          this.$message.success('分流实验变更已送审')
           this.formVisible = false
-          if (response.data && response.data.id)
-            this.$router.push('/approval/' + response.data.id)
+          await completeResourceChange(this, response, () => this.loadExperiments())
           resolve(true)
         })
       })
@@ -1319,10 +1313,11 @@ export default {
       })
       if (changed) this.$forceUpdate()
     },
-    async handleTest(row) {
+    async handleTest(row, versionSelection) {
       const setupRequestId = ++this.testSetupRequestId
       ++this.testExecutionRequestId
       this.testExperiment = row
+      this.testVersion = versionSelection || { versionMode: 'LATEST', versionId: null }
       this.testResult = null
       this.testRequest = { requestKey: '', requestTime: '' }
       this.testVisible = true
@@ -1344,6 +1339,7 @@ export default {
           await getRuleTestSchema({
             targetType: 'EXPERIMENT',
             targetId: row.id,
+            ...this.testVersion,
           })
         )
         if (!this.isCurrentTestSetup(setupRequestId)) return
@@ -1609,6 +1605,7 @@ export default {
       this.testResult = null
       try {
         const res = await executeExperiment(this.testExperiment.experimentCode, {
+          ...this.testVersion,
           params,
           requestKey: this.testRequest.requestKey || '',
           requestTime: this.testRequest.requestTime || null,

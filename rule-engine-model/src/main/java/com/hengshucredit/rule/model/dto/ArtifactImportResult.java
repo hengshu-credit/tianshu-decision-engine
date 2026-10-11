@@ -10,6 +10,7 @@ public class ArtifactImportResult {
     private Long artifactId;
     private String artifactDigest;
     private String packageDigest;
+    private String modelType;
     private boolean duplicate;
     private boolean compatible;
     private String compatibilityReportJson;

@@ -38,6 +38,7 @@
       </div>
 
       <div class="block-body">
+        <action-side-effect-editor v-if="['api-call', 'list-write'].includes(block.type)" :block="block" />
         <template v-if="block.type === 'assign'">
           <assignment-row :action="block" />
           <div class="rounding-row">
@@ -128,6 +129,7 @@
               <operand-picker
                 v-if="operatorRequiresValue(branch)"
                 :value="branch.rightOperand"
+                :condition-operator="branch.operator"
                 :vars="vars"
                 :functions="functions"
                 :list-options="listOptions"
@@ -141,28 +143,7 @@
               />
             </div>
             <div class="nested-body">
-              <div
-                v-for="(action, actionIndex) in branch.actions"
-                :key="actionIndex"
-                class="assignment-with-delete"
-              >
-                <assignment-row :action="action" />
-                <el-button
-                  v-if="branch.actions.length > 1"
-                  link
-                  size="small"
-                  :icon="ElIconDelete"
-                  class="danger"
-                  @click="removeAssignment(branch.actions, actionIndex)"
-                />
-              </div>
-              <el-button
-                size="small"
-                :icon="ElIconPlus"
-                class="wide-button"
-                @click="addAssignment(branch.actions)"
-                >添加赋值</el-button
-              >
+              <action-block-editor v-bind="nestedEditorProps" :action-data="branch.actions" @update="value => replaceNestedActions(branch.actions, value)" />
             </div>
           </div>
           <div class="button-row">
@@ -222,35 +203,13 @@
               >
             </div>
             <div class="nested-body">
-              <assignment-row
-                v-for="(action, actionIndex) in item.actions"
-                :key="actionIndex"
-                :action="action"
-              />
-              <el-button
-                size="small"
-                :icon="ElIconPlus"
-                class="wide-button"
-                @click="addAssignment(item.actions)"
-                >添加赋值</el-button
-              >
+              <action-block-editor v-bind="nestedEditorProps" :action-data="item.actions" @update="value => replaceNestedActions(item.actions, value)" />
             </div>
           </div>
           <div class="nested-card default-card">
             <div class="nested-head"><span>DEFAULT</span></div>
             <div class="nested-body">
-              <assignment-row
-                v-for="(action, actionIndex) in block.defaultActions"
-                :key="actionIndex"
-                :action="action"
-              />
-              <el-button
-                size="small"
-                :icon="ElIconPlus"
-                class="wide-button"
-                @click="addAssignment(block.defaultActions)"
-                >添加赋值</el-button
-              >
+              <action-block-editor v-bind="nestedEditorProps" :action-data="block.defaultActions" @update="value => replaceNestedActions(block.defaultActions, value)" />
             </div>
           </div>
           <el-button
@@ -330,11 +289,13 @@
 
         <template v-else-if="block.type === 'rule-call'">
           <rule-execution-selector
+            versioned :version-mode="block.versionMode || 'LATEST'" :version-binding-id="block.versionBindingId"
+            :catalog-mode="ruleCallCatalog.mode" :catalog-key="ruleCallCatalog.key" @fields="acceptRuleCallVersions"
             :rule-id="block.ruleId"
             :rule-code="block.ruleCode"
             :rules="rules"
-            :current-rule-id="currentRuleId"
-            :current-rule-code="currentRuleCode"
+            :current-rule-id="ruleCallCatalog.mode === 'LIVE' ? currentRuleId : null"
+            :current-rule-code="ruleCallCatalog.mode === 'LIVE' ? currentRuleCode : ''"
             @visible-change="
               (visible) => rememberRuleCallSnapshot(block, visible)
             "
@@ -342,7 +303,8 @@
           />
           <div class="shared-context-hint">
             <rule-call-version-select :rule-id="block.ruleId" :version-mode="block.versionMode || 'LATEST'" :version-binding-id="block.versionBindingId"
-              @change="value => changeRuleVersion(block, value)" @fields="value => ruleVersionFields[value.bindingId] = value.outputFields" />
+              :catalog-mode="ruleCallCatalog.mode" :catalog-key="ruleCallCatalog.key" :frozen-versions="frozenRuleCallVersions(block)"
+              @change="value => changeRuleVersion(block, value)" @fields="acceptRuleCallVersions" />
             <el-icon><el-icon-info /></el-icon>
             子规则全部输出会写入当前共享上下文，后续动作可直接引用最新值
           </div>
@@ -423,19 +385,8 @@
             />
           </div>
           <div class="nested-body">
-            <assignment-row
-              v-for="(action, actionIndex) in block.actions"
-              :key="actionIndex"
-              :action="action"
-            />
-            <el-button
-              size="small"
-              :icon="ElIconPlus"
-              class="wide-button"
-              @click="addAssignment(block.actions)"
-              >添加赋值</el-button
-            >
-          </div>
+              <action-block-editor v-bind="nestedEditorProps" :action-data="block.actions" @update="value => replaceNestedActions(block.actions, value)" />
+            </div>
         </template>
 
         <template v-else-if="block.type === 'ternary'">
@@ -474,6 +425,7 @@
             <operand-picker
               v-if="operatorRequiresValue(block)"
               :value="block.rightOperand"
+              :condition-operator="block.operator"
               :vars="vars"
               :functions="functions"
               :list-options="listOptions"
@@ -658,6 +610,7 @@
 
 <script>
 import RuleCallVersionSelect from './RuleCallVersionSelect.vue'
+import ActionSideEffectEditor from './ActionSideEffectEditor.vue'
 import { markRaw } from 'vue'
 import {
   InfoFilled as ElIconInfo,
@@ -675,12 +628,13 @@ import {
   actionDataToBlocks,
   BLOCK_TYPES,
   blocksToActionData,
-  generateScript,
+  generateScriptPreview,
   newBlock,
 } from '@/utils/actionDataCodegen'
 import { getExpressionContext } from '@/constants/expressionContexts'
 import {
   conditionOperatorAllowsVarValue,
+  conditionLiteralOperandKinds,
   conditionOperatorRequiresValue,
   findConditionOperator,
   getConditionOperatorGroups,
@@ -688,13 +642,17 @@ import {
   normalizeConditionOperator,
 } from '@/constants/conditionOperators'
 import { inferOperandType } from '@/utils/operand'
-import { isRuleOutputMappingEnabled } from '@/utils/ruleCallConfig'
+import { isRuleOutputMappingEnabled, selectedRuleCallVersion } from '@/utils/ruleCallConfig'
+const EMPTY_RULE_VERSIONS = Object.freeze([])
 
 export default {
+  inject: { publishRuleCallVersions: { from: 'registerRuleCallPublishedVersions', default: null },
+    getRuleCallCatalog: { default: null } },
   data() {
     return {
       blocks: [],
       ruleVersionFields: {},
+      ruleSelectionRequestId: 0,
       blockTypes: BLOCK_TYPES,
       literalKinds: ['LITERAL'],
       readKinds: getExpressionContext('READ_EXPRESSION').allowedKinds,
@@ -707,6 +665,7 @@ export default {
     }
   },
   components: {
+    ActionSideEffectEditor,
     RuleCallVersionSelect,
     AssignmentRow,
     AssignmentTarget,
@@ -715,6 +674,7 @@ export default {
     ElIconInfo,
   },
   name: 'ActionBlockEditor',
+  beforeUnmount() { this.ruleSelectionRequestId++ },
   provide() {
     return { actionEditor: this }
   },
@@ -724,14 +684,17 @@ export default {
     selectedVars: { type: Array, default: () => [] },
     functions: { type: Array, default: () => [] },
     listOptions: { type: Array, default: () => [] },
+    apiOptions: { type: Array, default: () => [] },
     rules: { type: Array, default: () => [] },
     currentRuleId: { type: [String, Number], default: null },
     currentRuleCode: { type: String, default: '' },
     validateRuleCallCycle: { type: Function, default: null },
   },
   computed: {
+    nestedEditorProps() { const props = { ...this.$props }; delete props.actionData; return props },
+    ruleCallCatalog() { return this.getRuleCallCatalog?.() || { mode: 'LIVE', key: '' } },
     scriptPreview() {
-      return generateScript(blocksToActionData(this.blocks))
+      return generateScriptPreview(blocksToActionData(this.blocks))
     },
   },
   watch: {
@@ -744,11 +707,20 @@ export default {
     },
   },
   methods: {
+    replaceNestedActions(actions, value) { actions.splice(0, actions.length, ...value); this.sync() },
+    acceptRuleCallVersions(payload) {
+      if (payload.catalogKey != null && payload.catalogKey !== this.ruleCallCatalog.key) return
+      this.ruleVersionFields[String(payload.ruleId)] = payload.versions
+      if (typeof this.publishRuleCallVersions === 'function') this.publishRuleCallVersions(payload)
+    },
     changeRuleVersion(block, value) {
+      if (this.ruleCallCatalog.mode !== 'LIVE') return
       block.versionMode = value.versionMode
       if (value.versionBindingId) block.versionBindingId = value.versionBindingId
       else delete block.versionBindingId
-      if (block.outputField && !this.ruleOutputFields(block).some(field => (field.scriptName || field.fieldName) === block.outputField)) {
+      const version = this.ruleCallVersion(block)
+      if (version && version.available !== false && block.outputField
+        && !this.ruleOutputFields(block).some(field => (field.scriptName || field.fieldName) === block.outputField)) {
         block.outputField = ''; block.targetOperand = null
       }
       this.sync()
@@ -823,7 +795,7 @@ export default {
         holder && holder.leftOperand
       )
         ? getExpressionContext(context).allowedKinds
-        : ['LITERAL']
+        : conditionLiteralOperandKinds(holder && holder.operator)
     },
     setConditionLeftOperand(holder, value) {
       holder['leftOperand'] = value || null
@@ -1007,6 +979,9 @@ export default {
       this.sync()
     },
     async onRuleSelect(block, selectedRule) {
+      const requestId = ++this.ruleSelectionRequestId
+      const index = this.blocks.indexOf(block)
+      const previous = block.__ruleCallSnapshot
       const rule =
         selectedRule && typeof selectedRule === 'object'
           ? selectedRule
@@ -1033,13 +1008,19 @@ export default {
         this.sync()
         return
       }
-      if (String(block.ruleId) !== String(rule.id)) { block.versionMode = 'LATEST'; delete block.versionBindingId }
+      const ruleChanged = String(block.ruleId) !== String(rule.id)
+      if (ruleChanged) { block.versionMode = 'LATEST'; delete block.versionBindingId }
+      if (rule.pickerVersion && this.ruleCallCatalog.mode === 'LIVE') {
+        block.versionMode = rule.pickerVersion.versionMode
+        if (rule.pickerVersion.versionBindingId) block.versionBindingId = rule.pickerVersion.versionBindingId
+        else delete block.versionBindingId
+      }
       block['ruleId'] = rule.id || null
       block['ruleCode'] = rule.ruleCode || ''
       block['ruleName'] = rule.ruleName || ''
       block['modelType'] = rule.modelType || ''
       if (
-        !this.ruleOutputFields(block).some(
+        (ruleChanged || this.ruleCallVersion(block)) && !this.ruleOutputFields(block).some(
           (field) => (field.scriptName || field.fieldName) === block.outputField
         )
       ) {
@@ -1047,16 +1028,22 @@ export default {
         block['targetOperand'] = null
       }
       this.sync()
+      const selectedState = JSON.stringify(blocksToActionData(this.blocks))
       const validation = await this.validateSelectedRuleCall(block)
+      if (requestId !== this.ruleSelectionRequestId || selectedState !== JSON.stringify(blocksToActionData(this.blocks))) return
+      const current = this.blocks[index]
+      if (!current) return
       if (validation !== true) {
         if (this.$message) this.$message.warning(validation)
-        this.restoreRuleCallSnapshot(block)
+        Object.defineProperty(current, '__ruleCallSnapshot', { value: previous, configurable: true, enumerable: false, writable: true })
+        this.restoreRuleCallSnapshot(current)
         this.sync()
         return
       }
-      this.clearRuleCallSnapshot(block)
+      this.clearRuleCallSnapshot(current)
     },
     isCurrentRule(rule) {
+      if (this.ruleCallCatalog && this.ruleCallCatalog.mode !== 'LIVE') return false
       if (
         this.currentRuleId != null &&
         String(rule.id) === String(this.currentRuleId)
@@ -1075,15 +1062,24 @@ export default {
           : ''
       return name + code + (rule.modelType ? ' - ' + rule.modelType : '')
     },
-    ruleOutputFields(block) {
-      if (block.versionMode === 'FIXED') return this.ruleVersionFields[String(block.versionBindingId)] || []
+    ruleCallVersion(block) {
       const rule = (this.rules || []).find(
         (item) =>
           (block.ruleId != null && String(item.id) === String(block.ruleId)) ||
           (block.ruleId == null &&
             String(item.ruleCode) === String(block.ruleCode))
       )
-      return rule ? rule.outputFields || rule.outputFieldsJson || [] : []
+      const versions = rule && Object.hasOwn(rule, 'executionVersions')
+        ? rule.executionVersions : this.ruleVersionFields?.[String(block.ruleId)]
+      return selectedRuleCallVersion(versions, block)
+    },
+    frozenRuleCallVersions(block) {
+      return this.ruleCallCatalog.mode === 'FROZEN'
+        ? this.rules.find(rule => String(rule.id) === String(block.ruleId))?.executionVersions || EMPTY_RULE_VERSIONS : EMPTY_RULE_VERSIONS
+    },
+    ruleOutputFields(block) {
+      const version = this.ruleCallVersion(block)
+      return version && version.available !== false && Array.isArray(version.outputFields) ? version.outputFields : []
     },
     fieldLabel(field) {
       const name = field.fieldLabel || field.fieldName || field.scriptName || ''

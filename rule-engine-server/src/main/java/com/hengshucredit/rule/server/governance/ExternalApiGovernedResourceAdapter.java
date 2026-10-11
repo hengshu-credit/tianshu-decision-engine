@@ -83,10 +83,11 @@ public class ExternalApiGovernedResourceAdapter extends SimpleEntityGovernedReso
     @Override
     public AppliedResource apply(ApprovalApplyContext context) {
         AppliedResource applied = super.apply(context);
+        if (context.draftWrite() || context.projectionOnly()) return applied;
         RuleExternalApiConfig api = JSON.parseObject(JSON.toJSONString(secrets.restore(context.snapshot())), RuleExternalApiConfig.class);
         api.setId(applied.resourceId());
         api.setStatus("ACTIVE".equals(applied.effectiveStatus()) ? 1 : 0);
-        if (billingService != null) billingService.syncApiBilling(api, datasourceMapper.selectById(api.getDatasourceId()));
+        if (billingService != null && !context.isolatedPublication()) billingService.syncApiBilling(api, datasourceMapper.selectById(api.getDatasourceId()));
         return applied;
     }
 }

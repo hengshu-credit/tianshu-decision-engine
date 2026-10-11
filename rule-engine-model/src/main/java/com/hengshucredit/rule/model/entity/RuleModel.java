@@ -57,6 +57,8 @@ public class RuleModel {
     /** 版本 */
     private String modelVersion;
     private Integer currentVersion;
+    /** 控制台业务版本号；currentVersion/publishedVersion 仍定位不可变执行快照。 */
+    private Integer businessVersion;
     private Integer publishedVersion;
 
     /** 状态 */

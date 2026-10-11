@@ -19,6 +19,7 @@ public class RuleApiDocScenario {
     private String description;
     private String requestJson;
     private String responseJson;
+    private String expectationJson;
     private String responseSource;
     private Integer outerCode;
     private String businessCodePath;

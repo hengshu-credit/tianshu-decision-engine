@@ -14,6 +14,44 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class ClientFunctionRegistrarTest {
+    @Test public void frozenTargetsUseCompleteDefinitionsAndBoundedCacheWithoutRetiringActiveBindings() throws Exception {
+        QLExpressEngine engine = new QLExpressEngine();
+        ClientFunctionRegistrar registrar = new ClientFunctionRegistrar(engine, null, "project-a");
+        var old = registrar.prepareFrozen(Collections.singletonList(nativeFunction(1L, "first")));
+        var same = registrar.prepareFrozen(Collections.singletonList(nativeFunction(1L, "first")));
+        var newer = registrar.prepareFrozen(Collections.singletonList(nativeFunction(1L, "second")));
+        org.junit.Assert.assertSame("热快照复用已准备目标，不重复反射", old.get("score"), same.get("score"));
+        org.junit.Assert.assertNotSame("同ID/code但方法不同必须各自绑定", old.get("score"), newer.get("score"));
+        for (long id = 2; id <= 1100; id++) registrar.prepareFrozen(Collections.singletonList(nativeFunction(id, "first")));
+        var field = ClientFunctionRegistrar.class.getDeclaredField("frozenTargets"); field.setAccessible(true);
+        assertTrue("冷版本目标缓存必须有界", ((java.util.Map<?, ?>) field.get(registrar)).size() <= 1024);
+        org.junit.Assert.assertNotSame("超过预算的冷条目已被回收", old.get("score"), registrar.prepareFrozen(Collections.singletonList(nativeFunction(1L, "first"))).get("score"));
+        var request = new com.hengshucredit.rule.core.engine.RequestContext();
+        try (var installed = com.hengshucredit.rule.core.engine.RuntimeContextBridge.install(request)) {
+            try (var bound = request.bindFunctions(old)) { assertResult(engine, "score()", 1); }
+            try (var bound = request.bindFunctions(newer)) { assertResult(engine, "score()", 2); }
+        }
+    }
+
+    @Test public void frozenBeanWithoutLocalContainerFailsExplicitly() {
+        ClientFunctionRegistrar registrar = new ClientFunctionRegistrar(new QLExpressEngine(), null, "project-a");
+        JSONObject function = nativeFunction(1L, "first");
+        function.put("implType", "BEAN"); function.put("implBeanName", "missingBean");
+        org.junit.Assert.assertThrows(IllegalStateException.class, () -> registrar.prepareFrozen(Collections.singletonList(function)));
+    }
+
+    private static JSONObject nativeFunction(Long id, String method) {
+        JSONObject function = new JSONObject(); function.put("id", id); function.put("funcCode", "score");
+        function.put("implType", "JAVA"); function.put("implClass", FrozenFunctions.class.getName());
+        function.put("implMethod", method); function.put("paramsJson", "[]");
+        return function;
+    }
+
+    public static final class FrozenFunctions {
+        public int first() { return 1; }
+        public int second() { return 2; }
+    }
+
 
     @Test
     public void projectFunctionOverridesGlobalThenDeletionFallsBackAndReadditionWins() {

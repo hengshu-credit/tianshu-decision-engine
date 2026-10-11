@@ -26,6 +26,7 @@ import java.util.Set;
 /** 只针对当前结构化表达式生成测试字段并执行，不读取或执行规则内容。 */
 @Service
 public class RuleExpressionTestService {
+    @Resource private ResourceVersionService resourceVersions;
 
     private static final String MODE_CURRENT = "CURRENT";
     private static final String MODE_DEEP = "DEEP";
@@ -60,6 +61,9 @@ public class RuleExpressionTestService {
         ResolutionPlan plan = MODE_DEEP.equals(context.mode)
                 ? deepPlan(context) : currentPlan(context);
         appendListQueryPlan(plan, context);
+        if (resourceVersions != null) for (RuleDefinitionInputField field : resourceVersions.inputs(context.operand, context.definition.getProjectId()))
+            if (plan.getExternalInputs().stream().noneMatch(existing -> java.util.Objects.equals(existing.getScriptName(), field.getScriptName())))
+                plan.getExternalInputs().add(toResolved(field));
         return testSchemaService.build(plan);
     }
 
@@ -70,6 +74,8 @@ public class RuleExpressionTestService {
             ExpressionContext context = context(request);
             Map<String, Object> values = new LinkedHashMap<>();
             if (request.getParams() != null) values.putAll(request.getParams());
+            VariableResolveOptions versionOptions = VariableResolveOptions.defaults();
+            try (var versions = resourceVersions == null ? null : resourceVersions.bind(context.definition.getProjectId(), values, versionOptions)) {
             if (MODE_DEEP.equals(context.mode)) {
                 VariableResolveOptions options = VariableResolveOptions.defaults();
                 options.setForceRefreshSource(true);
@@ -88,6 +94,7 @@ public class RuleExpressionTestService {
             }
             result.setSuccess(true);
             result.setResult(value);
+            }
         } catch (RuntimeException e) {
             result.setSuccess(false);
             result.setErrorMessage(e.getMessage() == null ? "表达式测试失败" : e.getMessage());
@@ -171,6 +178,16 @@ public class RuleExpressionTestService {
 
     private ResolvedField directField(JSONObject reference, ExpressionContext context) {
         if (reference == null) return null;
+        if (com.hengshucredit.rule.core.compiler.OperandVersion.fixedVersionId(reference) != null) {
+            if (resourceVersions != null) resourceVersions.validate(reference, context.definition.getProjectId());
+            // 固定版本来源由专门执行器解析，不能把当前同 ID 来源加入执行计划。
+            if (!"INPUT".equals(reference.getString("varSource")) && !"PATH".equals(reference.getString("kind"))) return null;
+            ResolvedField historical = new ResolvedField();
+            historical.setRefType("PATH"); historical.setCode(reference.getString("code"));
+            historical.setScriptName(reference.getString("code")); historical.setLabel(reference.getString("label"));
+            historical.setValueType(reference.getString("valueType")); historical.setSourceType("INPUT");
+            return historical;
+        }
         String kind = reference.getString("kind");
         ResolvedField field = new ResolvedField();
         field.setCode(firstText(reference.getString("code"), reference.getString("value")));
@@ -234,6 +251,7 @@ public class RuleExpressionTestService {
         Set<String> names = new LinkedHashSet<>();
         for (JSONObject reference : context.references) {
             if (!"REFERENCE".equals(reference.getString("kind"))) continue;
+            if ("FIXED".equals(reference.getString("versionMode"))) continue;
             String refType = upper(reference.getString("refType"));
             Long refId = reference.getLong("refId");
             if (refType == null || refId == null || "CONSTANT".equals(refType)) continue;
@@ -303,6 +321,11 @@ public class RuleExpressionTestService {
     private void validateManagedNodes(JSONObject operand, ExpressionContext context) {
         if (operand == null) return;
         String kind = operand.getString("kind");
+        if (com.hengshucredit.rule.core.compiler.OperandVersion.fixedVersionId(operand) != null) {
+            if (resourceVersions != null) resourceVersions.validate(operand, context.definition.getProjectId());
+            if ("FUNCTION".equals(kind)) validateChildren(operand.getJSONArray("args"), context);
+            return;
+        }
         if ("FUNCTION".equals(kind)) {
             Long functionId = operand.getLong("functionId");
             if (functionId == null) throw new IllegalArgumentException("受管方法引用缺少 ID");

@@ -1,15 +1,23 @@
 package com.hengshucredit.rule.runtime;
 
 import com.hengshucredit.rule.client.RuleEngineClient;
+import com.hengshucredit.rule.client.RuleEngineClientConfig;
+import com.hengshucredit.rule.client.log.ExecutionLogReporter;
+import com.hengshucredit.rule.client.log.KafkaLogReporter;
+import com.hengshucredit.rule.client.log.LogReportTransport;
 import com.hengshucredit.rule.model.dto.RuleResult;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.kafka.core.KafkaTemplate;
 
 import java.util.Map;
 import java.util.function.BiFunction;
@@ -19,11 +27,13 @@ import java.util.function.BiFunction;
 @Profile("sdk")
 public class SdkRuntimeConfiguration {
     @Bean(destroyMethod = "close")
-    public RuleEngineClient sdkClient(Environment env, RedisConnectionFactory redis, ApplicationContext context) {
+    public RuleEngineClient sdkClient(Environment env, RedisConnectionFactory redis, ApplicationContext context,
+                                      ObjectProvider<ExecutionLogReporter> reporterProvider) {
         long projectId = env.getRequiredProperty("RULE_PROJECT_ID", Long.class);
         if (projectId <= 0) throw new IllegalArgumentException("RULE_PROJECT_ID 必须为真实项目 ID");
         var codes = RuntimeConfiguration.allowedCodes(env);
-        RuleEngineClient client = RuleEngineClient.builder()
+        boolean logReportEnabled = env.getProperty("SDK_LOG_REPORT_ENABLED", Boolean.class, false);
+        RuleEngineClient.Builder builder = RuleEngineClient.builder()
                 .serverUrl(RuntimeConfiguration.required(env, "RULE_SERVER_URL"))
                 .authConfig(RuntimeConfiguration.projectAuth(env))
                 .projectCode(RuntimeConfiguration.required(env, "RULE_PROJECT_CODE")).projectId(projectId)
@@ -31,9 +41,13 @@ public class SdkRuntimeConfiguration {
                 .httpTimeoutMs(env.getProperty("RULE_HTTP_TIMEOUT_MS", Integer.class, 30000))
                 .l1CacheMaxSize(env.getProperty("SDK_CACHE_MAX_SIZE", Integer.class, 1000))
                 .traceEnabled(env.getProperty("RULE_TRACE_ENABLED", Boolean.class, true))
-                .logReportEnabled(env.getProperty("SDK_LOG_REPORT_ENABLED", Boolean.class, false))
+                .logReportEnabled(logReportEnabled)
+                .logReportTransport(env.getProperty("SDK_LOG_REPORT_TRANSPORT", LogReportTransport.class,
+                        LogReportTransport.HTTP))
                 .connectionFactory(redis).applicationContext(context)
-                .serverSideExecution(false).build();
+                .serverSideExecution(false);
+        if (logReportEnabled) builder.logReporter(reporterProvider.getIfAvailable());
+        RuleEngineClient client = builder.build();
         try {
             // 最小样例只按白名单逐条 HTTP 拉取规则，不启动函数同步、定时全量同步或 Redis 推送订阅。
             // 这样可以明确展示“服务端规则 -> SDK L1 缓存 -> 本地执行”的链路。
@@ -47,6 +61,25 @@ public class SdkRuntimeConfiguration {
         } catch (RuntimeException error) {
             client.close();
             throw error;
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @Profile("sdk")
+    @ConditionalOnProperty(name = "SDK_LOG_REPORT_TRANSPORT", havingValue = "KAFKA")
+    static class KafkaLogConfiguration {
+        @Bean(destroyMethod = "close")
+        @ConditionalOnMissingBean(ExecutionLogReporter.class)
+        @ConditionalOnProperty(name = "SDK_LOG_REPORT_ENABLED", havingValue = "true")
+        public ExecutionLogReporter sdkKafkaLogReporter(Environment env, KafkaTemplate<String, String> template) {
+            RuleEngineClientConfig config = new RuleEngineClientConfig();
+            config.setServerUrl(RuntimeConfiguration.required(env, "RULE_SERVER_URL"));
+            config.setAuthConfig(RuntimeConfiguration.projectAuth(env));
+            config.setHttpTimeoutMs(env.getProperty("RULE_HTTP_TIMEOUT_MS", Integer.class, 30000));
+            config.setProjectId(env.getRequiredProperty("RULE_PROJECT_ID", Long.class));
+            config.setKafkaLogTopic(env.getProperty("SDK_KAFKA_LOG_TOPIC", "rule-execution-log"));
+            config.setKafkaHttpFallbackEnabled(env.getProperty("SDK_KAFKA_HTTP_FALLBACK_ENABLED", Boolean.class, true));
+            return new KafkaLogReporter(template, config);
         }
     }
 

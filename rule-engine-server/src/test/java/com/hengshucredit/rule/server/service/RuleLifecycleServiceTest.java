@@ -25,6 +25,62 @@ import java.util.List;
 import java.util.Map;
 
 public class RuleLifecycleServiceTest {
+    @Test public void foreignReferenceSourceCannotPrepareOrCreateEditableDraft() {
+        for (int mode = 0; mode < 3; mode++) {
+            FixtureService service = new FixtureService();
+            RuleRevision source = revision(7L, 100L, "PUBLISHED", 1);
+            service.revisions.put(7L, source); service.activeRevisionId = 7L;
+            service.namespaceRejected = true;
+            final int action = mode;
+            Assert.assertEquals("REFERENCE_NAMESPACE_MIGRATION_REQUIRED", Assert.assertThrows(RuleGovernanceException.class, () -> {
+                if (action == 0) service.prepareDesignerDraft(100L, RuleDraftSourceType.REVISION, 7L);
+                else if (action == 1) service.createDraft(100L, 7L);
+                else service.createDraftFromSource(100L, sourceRequest(RuleDraftSourceType.REVISION, 7L));
+            }).getCode());
+            Assert.assertEquals(0, service.insertCount);
+            Assert.assertNull(service.savedRequest);
+        }
+    }
+
+    @Test public void unsafeExistingDraftCannotSubmitOrRunPreflight() {
+        for (boolean submit : new boolean[]{false, true}) {
+            FixtureService service = new FixtureService();
+            RuleRevision draft = revision(7L, 100L, "DRAFT", 1); service.revisions.put(7L, draft);
+            service.namespaceRejected = true;
+            Assert.assertEquals("REFERENCE_NAMESPACE_MIGRATION_REQUIRED", Assert.assertThrows(RuleGovernanceException.class,
+                    () -> { if (submit) service.submit(7L, request("submit", null)); else service.preflightReport(100L, 7L); }).getCode());
+            Assert.assertEquals("DRAFT", draft.getState()); Assert.assertTrue(service.events.isEmpty());
+        }
+    }
+
+    @Test public void importingApprovedArtifactCreatesTargetRevisionWithoutRewritingSourceIdentity() {
+        FixtureService service = new FixtureService();
+        service.namespaceRejected = true; // Import activation uses the approved package, never the local compiler.
+        DecisionArtifact source = new DecisionArtifact();
+        source.setId(800L); source.setDefinitionId(17L); source.setRevisionId(18L); source.setArtifactDigest("a".repeat(64));
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "artifactService",
+                new com.hengshucredit.rule.server.artifact.DecisionArtifactService() {
+                    @Override public DecisionArtifact getById(Long id) { return Long.valueOf(800L).equals(id) ? source : null; }
+                    @Override public RuntimeProjection loadRuntimeProjection(Long id) {
+                        return new RuntimeProjection("{}", "return true;", "{}", "{}", "{}");
+                    }
+                });
+        RuleRevision target = service.activateImportedArtifact(800L, 100L, "importer");
+        Assert.assertEquals("PUBLISHED", target.getState());
+        Assert.assertEquals(Long.valueOf(100L), target.getDefinitionId());
+        Assert.assertNotEquals(source.getRevisionId(), target.getId());
+        Assert.assertEquals(source.getId(), target.getArtifactId());
+        Assert.assertEquals(source.getArtifactDigest(), target.getContentDigest());
+        Assert.assertEquals(target.getId(), service.activeRevisionId);
+        Assert.assertEquals(Long.valueOf(17L), source.getDefinitionId());
+        Assert.assertEquals(Long.valueOf(18L), source.getRevisionId());
+        RuleRevision nextTarget = service.activateImportedArtifact(800L, 100L, "importer-again");
+        Assert.assertEquals("PUBLISHED", nextTarget.getState());
+        Assert.assertNotEquals(target.getId(), nextTarget.getId());
+        Assert.assertNull(nextTarget.getBaseRevisionId());
+        Assert.assertNull(nextTarget.getBaseArtifactId());
+        Assert.assertEquals(source.getId(), nextTarget.getArtifactId());
+    }
     @Test
     public void deletingLastDraftClearsInitialProjectionWithoutDeletingAudit() {
         FixtureService service = new FixtureService();
@@ -646,6 +702,12 @@ public class RuleLifecycleServiceTest {
     }
 
     private static final class FixtureService extends RuleLifecycleService {
+        private boolean namespaceRejected;
+        protected void requireLocalNamespace(RuleDefinition definition, RuleRevision revision) { rejectNamespace(); }
+        @Override protected void requireLocalWorkspace(RuleDefinition definition, RuleDefinitionContent content) { rejectNamespace(); }
+        private void rejectNamespace() {
+            if (namespaceRejected) throw new RuleGovernanceException(409, "REFERENCE_NAMESPACE_MIGRATION_REQUIRED", "请使用离线配置迁移", List.of());
+        }
         private final RuleDefinition definition = new RuleDefinition();
         private final RuleDefinitionContent content = new RuleDefinitionContent();
         private final Map<Long, RuleRevision> revisions = new HashMap<>();

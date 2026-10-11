@@ -19,9 +19,59 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 public class RuleRuntimeCallLogServiceTest {
+    @Test public void managementCallPayloadIncludesDraftSummaryAndDraftAttemptFallback() {
+        RuleRuntimeCallLog summary = traceLog("draft-call", "API_DRAFT_INVOKE", "[]");
+        QueryService service = new QueryService(null, List.of(summary));
+        assertEquals("draft-call", service.managementPayloadByCallId("draft-call", 5L).get("callId"));
+        assertTrue(service.queries.get(0).getParamNameValuePairs().containsValue("API_DRAFT_INVOKE"));
+        assertTrue(service.queries.get(0).getParamNameValuePairs().containsValue("API_INVOKE"));
+        assertTrue(service.queries.get(0).getParamNameValuePairs().containsValue(5L));
+
+        RuleRuntimeCallLog attempt = traceLog("draft-call", "API_DRAFT_ATTEMPT", "[]");
+        QueryService fallback = new QueryService(null, List.of(), List.of(attempt));
+        assertEquals("draft-call", fallback.managementPayloadByCallId("draft-call", 5L).get("callId"));
+        assertTrue(fallback.queries.get(1).getParamNameValuePairs().containsValue("API_DRAFT_ATTEMPT"));
+    }
+
+    @Test public void managementRootPayloadIncludesDraft() {
+        RuleRuntimeCallLog draft = traceLog("draft-call", "API_DRAFT_INVOKE", "[]"); draft.setRootTraceId("trial");
+        QueryService management = new QueryService(null, List.of(draft), List.of());
+        assertEquals(1, management.payloadsByRootTraceId("trial", 5L).size());
+        assertTrue(management.queries.get(0).getParamNameValuePairs().containsValue("API_DRAFT_INVOKE"));
+    }
+
+    @Test public void ruleReplayAndProjectTokenPayloadQueriesStillExcludeTrials() {
+        QueryService replay = new QueryService(null, List.of());
+        assertTrue(replay.sourceLogsByRootTraceId("trial", 5L).isEmpty());
+        assertTrue(replay.queries.get(0).getParamNameValuePairs().containsValue("API_INVOKE"));
+        org.junit.Assert.assertFalse(replay.queries.get(0).getParamNameValuePairs().containsValue("API_DRAFT_INVOKE"));
+        org.junit.Assert.assertFalse(replay.queries.get(0).getParamNameValuePairs().containsValue("API_DRAFT_ATTEMPT"));
+        assertTrue(replay.queries.get(0).getParamNameValuePairs().containsValue(5L));
+        QueryService runtime = new QueryService(null, List.of(), List.of());
+        assertTrue(runtime.payloadByCallId("trial-call", 5L).isEmpty());
+        assertEquals(2, runtime.queries.size());
+        for (var query : runtime.queries) {
+            org.junit.Assert.assertFalse(query.getParamNameValuePairs().containsValue("API_DRAFT_INVOKE"));
+            org.junit.Assert.assertFalse(query.getParamNameValuePairs().containsValue("API_DRAFT_ATTEMPT"));
+            assertTrue(query.getParamNameValuePairs().containsValue(5L));
+        }
+    }
+
+    @Test public void traceSearchIncludesRootIdentityWithinProjectFilter() {
+        QueryService service = new QueryService(null);
+        service.pageList(1, 20, "DATASOURCE", null, null, "trial-root", null, 5L, null, null, null);
+        String sql = service.queries.get(0).getSqlSegment();
+        assertTrue(sql, sql.contains("root_trace_id"));
+        assertTrue(sql, sql.contains("trace_id") && sql.contains("rule_trace_id"));
+        assertTrue(sql, sql.contains(") AND project_id"));
+        assertTrue(service.queries.get(0).getParamNameValuePairs().containsValue("trial-root"));
+        assertTrue(service.queries.get(0).getParamNameValuePairs().containsValue(5L));
+    }
     @BeforeClass
     public static void initializeMapping() {
-        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""),
+        Configuration configuration = new Configuration();
+        configuration.setMapUnderscoreToCamelCase(true);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""),
                 RuleRuntimeCallLog.class);
     }
 
@@ -120,6 +170,11 @@ public class RuleRuntimeCallLogServiceTest {
             wrapper.getSqlSegment();
             queries.add(wrapper);
             return results.removeFirst();
+        }
+
+        @Override public <E extends com.baomidou.mybatisplus.core.metadata.IPage<RuleRuntimeCallLog>> E page(E page, Wrapper<RuleRuntimeCallLog> query) {
+            LambdaQueryWrapper<RuleRuntimeCallLog> wrapper = (LambdaQueryWrapper<RuleRuntimeCallLog>) query;
+            wrapper.getSqlSegment(); queries.add(wrapper); return page;
         }
     }
 

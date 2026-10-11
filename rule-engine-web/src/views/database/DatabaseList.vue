@@ -3,7 +3,7 @@
     <div class="module-hint">
       <div class="hint-title">数据库管理</div>
       <div class="hint-text">
-        统一维护外部数据库连接池，供数据查询变量（var_source=DB）通过后端访问外部库。
+        统一维护可复用的数据库连接，在变量管理中选择“数据库查询”来获取业务数据。
       </div>
     </div>
     <div class="usage-guide">
@@ -103,6 +103,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
+          <governance-workspace-toolbar resource-type="DATABASE" />
               <table-column-settings :columns="databaseColumns" storage-key="tianshu:table-columns:database-list" />
               <el-button
                 v-permission="'database:edit'"
@@ -198,17 +199,25 @@
               >{{ row.minIdle || 1 }} / {{ row.maxPoolSize || 5 }}</template
             >
           </el-table-column>
-          <el-table-column prop="status" label="状态" width="70" align="center">
+          <el-table-column prop="status" label="状态" width="160" align="center">
             <template v-slot="{ row }">
-              <el-tag
+              <governance-resource-status resource-type="DATABASE" :resource-id="row.id" :status="row.status"><el-tag
                 :type="row.status === 1 ? 'success' : 'info'"
                 size="small"
                 >{{ row.status === 1 ? '启用' : '停用' }}</el-tag
-              >
+              ></governance-resource-status>
             </template>
           </el-table-column>
-          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="220" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="355" align="center" fixed="right">
             <template v-slot="{ row }">
+              <el-button v-permission="'database:edit'"
+                link
+                data-action="inspect"
+                size="small"
+                type="primary"
+                @click="openQuery(row)"
+                >查询</el-button
+              >
               <el-button
                 v-permission="'database:edit'"
                 link
@@ -218,7 +227,7 @@
                 @click="handleEdit(row)"
                 >编辑</el-button
               >
-              <el-button
+              <el-button v-permission="'database:edit'"
                 link
                 data-action="execute"
                 size="small"
@@ -226,14 +235,7 @@
                 @click="handleTest(row)"
                 >测试</el-button
               >
-              <el-button
-                link
-                data-action="inspect"
-                size="small"
-                type="primary"
-                @click="openQuery(row)"
-                >查询</el-button
-              >
+              <governance-publish-action resource-type="DATABASE" :resource-id="row.id" />
               <el-button
                 v-permission="'database:edit'"
                 link
@@ -306,19 +308,10 @@
               label="所属项目"
               prop="projectId"
             >
-              <el-select
-                v-model="form.projectId"
-                filterable
-                placeholder="请选择项目"
+              <project-resource-select
+                v-model:value="form.projectId"
                 style="width: 100%"
-              >
-                <el-option
-                  v-for="project in projects"
-                  :key="project.id"
-                  :label="project.projectName"
-                  :value="project.id"
-                />
-              </el-select>
+              />
             </el-form-item>
           </el-col>
         </el-row>
@@ -582,7 +575,7 @@
           <el-button size="small" @click="dialogVisible = false"
             >取消</el-button
           >
-          <el-button size="small" @click="handleTestDraft">测试连接</el-button>
+          <el-button v-permission="'database:edit'" size="small" @click="handleTestDraft">测试连接</el-button>
           <el-button v-permission="'database:edit'" size="small" type="primary" @click="handleSubmit"
             >保存</el-button
           >
@@ -732,7 +725,7 @@
           <el-button size="small" @click="closeQuery"
             >关闭</el-button
           >
-          <el-button
+          <el-button v-permission="'database:edit'"
             size="small"
             type="primary"
             :loading="queryLoading"
@@ -746,6 +739,10 @@
 </template>
 
 <script>
+import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
+import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
+import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
+import { completeResourceChange } from '@/utils/governanceWorkspace'
 import { analyzeSqlQuery, validateReadOnlyQuery } from '@/utils/sqlQuery'
 import { markRaw } from 'vue'
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
@@ -758,11 +755,11 @@ import {
   testDbDatasourceDraft,
   updateDbDatasource,
 } from '@/api/database'
-import { listProjects } from '@/api/project'
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import { routeProjectId } from '@/utils/projectContext'
 
@@ -779,18 +776,17 @@ export default {
       databaseGuideCards: [
         {
           title: '只读连接',
-          text: '生产建议配置只读账号，连接池只用于查询类 SQL；测试连接前确认网络、SSH 隧道和 validationQuery。',
+          text: '使用只读账号，先测试数据库地址、账号和校验 SQL；通过 SSH 访问时，同时检查隧道设置。',
         },
         {
           title: '查询模板',
-          text: '在线查询建议使用 SELECT 和参数占位，先限制 maxRows，再把稳定 SQL 配到数据库变量。',
+          text: '先在“查询”中验证 SELECT SQL 和参数，设置返回行数与超时，再用于变量取值。',
         },
         {
           title: '数据库变量',
-          text: '变量来源选择 DB 后，在 sourceConfig 中配置 datasourceId、sql、params 和 resultPath，返回字段名保持数据库原样。',
+          text: '在变量管理中选择“数据库查询”，依次选择连接、填写 SQL 与参数，再选择需要返回的字段；字段名保持数据库原样。',
         },
       ],
-      projects: [],
       contextProjectId: null,
       activeTab: 'datasource',
       tableData: [],
@@ -886,12 +882,14 @@ export default {
     }
   },
   name: 'DatabaseList',
-  components: {
+  components: { GovernancePublishAction, GovernanceWorkspaceToolbar,
+    GovernanceResourceStatus,
     TableColumnSettings,
     ModuleCallLog,
     MonacoEditor,
     RemoteFilterSelect,
     ProjectFilterSelect,
+    ProjectResourceSelect,
   },
   created() {
     this.contextProjectId = routeProjectId(
@@ -901,7 +899,6 @@ export default {
     if (this.contextProjectId) {
       this.qp.projectId = this.contextProjectId
     }
-    this.loadProjects()
     this.loadData()
   },
   computed: {
@@ -962,14 +959,6 @@ export default {
         validationQuery: 'SELECT 1',
         description: '',
         status: 1,
-      }
-    },
-    async loadProjects() {
-      try {
-        const res = await listProjects({ pageNum: 1, pageSize: 500, status: 1 })
-        this.projects = (res.data && res.data.records) || []
-      } catch (e) {
-        this.projects = []
       }
     },
     async loadData() {
@@ -1039,10 +1028,8 @@ export default {
         const response = data.id
           ? await updateDbDatasource(data)
           : await createDbDatasource(data)
-        this.$message.success('数据库连接变更已送审')
         this.dialogVisible = false
-        if (response.data && response.data.id)
-          this.$router.push('/approval/' + response.data.id)
+        await completeResourceChange(this, response, () => this.loadData())
       })
     },
     handleDelete(row) {
@@ -1053,9 +1040,7 @@ export default {
       )
         .then(async () => {
           const response = await deleteDbDatasource(row.id)
-          this.$message.success('数据库连接删除已送审')
-          if (response.data && response.data.id)
-            this.$router.push('/approval/' + response.data.id)
+          await completeResourceChange(this, response, () => this.loadData())
         })
         .catch(() => {})
     },

@@ -13,12 +13,17 @@ public record TransferBundle(List<String> roots, List<Resource> resources, List<
     }
 
     public record Resource(String key, Map<String, Object> configuration, List<Reference> references,
-                           List<String> requiredEnvironmentFields) {
+                           List<String> requiredEnvironmentFields, List<Map<String, Object>> versionReferences) {
+        public Resource(String key, Map<String, Object> configuration, List<Reference> references, List<String> requiredEnvironmentFields) {
+            this(key, configuration, references, requiredEnvironmentFields, List.of());
+        }
         public Resource {
             TransferKey.parse(key);
             configuration = CanonicalJson.readMap(CanonicalJson.write(configuration));
             references = List.copyOf(references);
             requiredEnvironmentFields = List.copyOf(requiredEnvironmentFields);
+            versionReferences = versionReferences == null ? List.of() : versionReferences.stream()
+                    .map(value -> CanonicalJson.readMap(CanonicalJson.write(value))).toList();
         }
     }
 

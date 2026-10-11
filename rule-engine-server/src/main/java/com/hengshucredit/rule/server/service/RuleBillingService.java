@@ -21,6 +21,8 @@ import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Propagation;
 
 import jakarta.annotation.Resource;
 import java.math.BigDecimal;
@@ -30,7 +32,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -113,11 +114,26 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
     public IPage<RuleBillingRecord> pageRecords(int pageNum, int pageSize, String billingTarget, String billingCode,
                                                 String projectCode, String projectName, String authType, String authCode,
                                                 String tokenCode, String beginTime, String endTime) {
+        return pageRecords(pageNum, pageSize, billingTarget, billingCode, projectCode, projectName, authType, authCode, tokenCode, beginTime, endTime, null);
+    }
+
+    @Resource private ExecutionVersionFilter executionVersionFilter;
+
+    public IPage<RuleBillingRecord> pageRecords(int pageNum, int pageSize, String billingTarget, String billingCode,
+                                                String projectCode, String projectName, String authType, String authCode,
+                                                String tokenCode, String beginTime, String endTime,
+                                                com.hengshucredit.rule.model.dto.ExecutionVersionQuery versionQuery) {
         ProjectFilterService.ProjectMatches projectMatches = projectFilterService.resolve(null, projectName);
         if (projectMatches.isActive() && projectMatches.isEmpty()) {
             return new Page<>(pageNum, pageSize);
         }
         LambdaQueryWrapper<RuleBillingRecord> wrapper = new LambdaQueryWrapper<>();
+        if (versionQuery != null) {
+            Integer number = executionVersionFilter.resolve(versionQuery);
+            wrapper.eq(versionQuery.getRuleId() != null, RuleBillingRecord::getRuleId, versionQuery.getRuleId());
+            wrapper.eq(number != null, RuleBillingRecord::getRuleVersion, number);
+            wrapper.eq(versionQuery.getRevisionId() != null, RuleBillingRecord::getRevisionId, versionQuery.getRevisionId());
+        }
         if (hasText(billingTarget)) {
             wrapper.eq(RuleBillingRecord::getBillingTarget, billingTarget);
         }
@@ -198,59 +214,21 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         updateById(config);
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     public int refreshSummary(LocalDate summaryDate) {
+        return rebuildSummary(summaryDate);
+    }
+
+    /** 由后台任务在同一READ_COMMITTED事务中调用，结果与任务完成状态一起提交。 */
+    int rebuildSummary(LocalDate summaryDate) {
         if (summaryDate == null) {
             summaryDate = LocalDate.now();
         }
         LocalDateTime begin = summaryDate.atStartOfDay();
         LocalDateTime end = summaryDate.plusDays(1).atStartOfDay();
+        summaryMapper.lockDate(summaryDate);
         deleteSummaries(summaryDate);
-        List<RuleBillingRecord> records = findRecords(begin, end);
-        Map<String, RuleBillingSummary> summaryMap = new LinkedHashMap<>();
-        for (RuleBillingRecord record : records) {
-            String key = record.getProjectId() + "|" + record.getProjectCode() + "|" + record.getBillingCode()
-                    + "|" + record.getBillingTarget() + "|" + record.getTargetRefId()
-                    + "|" + record.getAuthId();
-            RuleBillingSummary summary = summaryMap.get(key);
-            if (summary == null) {
-                summary = new RuleBillingSummary();
-                summary.setSummaryDate(summaryDate);
-                summary.setProjectId(record.getProjectId());
-                summary.setProjectCode(record.getProjectCode());
-                summary.setBillingCode(record.getBillingCode());
-                summary.setBillingTarget(record.getBillingTarget());
-                summary.setTargetRefId(record.getTargetRefId());
-                summary.setAuthId(record.getAuthId());
-                summary.setAuthCode(record.getAuthCode());
-                summary.setAuthType(record.getAuthType());
-                summary.setCurrency(record.getCurrency());
-                summary.setTotalCount(0L);
-                summary.setSuccessCount(0L);
-                summary.setFailCount(0L);
-                summary.setTotalQuantity(BigDecimal.ZERO);
-                summary.setTotalAmount(BigDecimal.ZERO);
-                summary.setAvgCostTimeMs(BigDecimal.ZERO);
-                summaryMap.put(key, summary);
-            }
-            summary.setTotalCount(summary.getTotalCount() + 1);
-            if (record.getSuccess() != null && record.getSuccess() == 1) {
-                summary.setSuccessCount(summary.getSuccessCount() + 1);
-            } else {
-                summary.setFailCount(summary.getFailCount() + 1);
-            }
-            summary.setTotalQuantity(summary.getTotalQuantity().add(nullToZero(record.getQuantity())));
-            summary.setTotalAmount(summary.getTotalAmount().add(nullToZero(record.getAmount())));
-            summary.setAvgCostTimeMs(summary.getAvgCostTimeMs().add(new BigDecimal(record.getCostTimeMs() == null ? 0L : record.getCostTimeMs())));
-        }
-        for (RuleBillingSummary summary : summaryMap.values()) {
-            if (summary.getTotalCount() > 0) {
-                summary.setAvgCostTimeMs(summary.getAvgCostTimeMs()
-                        .divide(new BigDecimal(summary.getTotalCount()), 2, RoundingMode.HALF_UP));
-            }
-            insertSummary(summary);
-        }
-        return summaryMap.size();
+        return summaryMapper.aggregateDate(summaryDate, begin, end);
     }
 
     public void recordEngineExecution(RuleDefinition definition, boolean success, Long costTimeMs, String errorMessage) {
@@ -259,20 +237,83 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
 
     public void recordEngineExecution(RuleDefinition definition, boolean success, Long costTimeMs,
                                       String errorMessage, ProjectAuthContext authContext) {
-        if (definition == null) {
-            return;
+        recordEngineExecutionWithBasis(definition, success, costTimeMs, errorMessage, authContext, "CURRENT_CONFIG");
+    }
+
+    public void recordLegacyEngineExecution(RuleDefinition definition, boolean success, Long costTimeMs,
+                                             String errorMessage, ProjectAuthContext authContext) {
+        recordEngineExecutionWithBasis(definition, success, costTimeMs, errorMessage, authContext, "LEGACY_REPLAY");
+    }
+
+    private void recordEngineExecutionWithBasis(RuleDefinition definition, boolean success, Long costTimeMs,
+                                                String errorMessage, ProjectAuthContext authContext, String basis) {
+        for (RuleBillingRecord record : buildEngineExecutionRecords(definition, success, costTimeMs,
+                errorMessage, authContext, LocalDateTime.now(), basis)) {
+            persistEngineBillingRecord(record);
         }
-        LocalDateTime now = LocalDateTime.now();
+    }
+
+    /** 在接受执行事件之前冻结；失败也形成可恢复的明确异常事实，禁止重放时重新定价。 */
+    public String captureEngineExecutionBilling(RuleDefinition definition, boolean success, Long costTimeMs,
+                                                 String errorMessage, ProjectAuthContext authContext) {
+        LocalDateTime capturedAt = LocalDateTime.now();
+        EngineBillingSnapshot snapshot;
+        try {
+            List<RuleBillingRecord> records = buildEngineExecutionRecords(definition, success, costTimeMs,
+                    errorMessage, authContext, capturedAt, "EXECUTION_SNAPSHOT");
+            snapshot = new EngineBillingSnapshot(1, capturedAt, records, null);
+        } catch (RuntimeException unavailable) {
+            String reason = unavailable.getMessage() == null ? unavailable.getClass().getSimpleName() : unavailable.getMessage();
+            snapshot = new EngineBillingSnapshot(1, capturedAt, null,
+                    reason.substring(0, Math.min(reason.length(), 512)));
+        }
+        return com.alibaba.fastjson.JSON.toJSONString(snapshot);
+    }
+
+    public void recordEngineExecutionSnapshot(String snapshotJson) {
+        EngineBillingSnapshot snapshot = com.alibaba.fastjson.JSON.parseObject(snapshotJson, EngineBillingSnapshot.class);
+        if (snapshot == null || snapshot.version() != 1 || snapshot.capturedAt() == null) {
+            throw new IllegalStateException("计费快照格式无效，不能按当前价格补算");
+        }
+        if (snapshot.captureError() != null) {
+            throw new IllegalStateException("执行时计费依据读取失败，需要核对原始计费依据: " + snapshot.captureError());
+        }
+        if (snapshot.records() == null) throw new IllegalStateException("计费快照缺少明细，不能推断为无计费项");
+        // 先校验完整批次，再写入，避免格式错误导致部分明细已经入库。
+        for (RuleBillingRecord record : snapshot.records()) {
+            if (record == null || !"EXECUTION_SNAPSHOT".equals(record.getBillingBasis())
+                    || record.getBillingConfigId() == null
+                    || !snapshot.capturedAt().equals(record.getOccurTime())
+                    || record.getQuantity() == null || record.getUnitPrice() == null || record.getAmount() == null
+                    || record.getQuantity().multiply(record.getUnitPrice()).setScale(6, RoundingMode.HALF_UP)
+                            .compareTo(record.getAmount()) != 0) {
+                throw new IllegalStateException("计费快照明细不完整或金额不一致");
+            }
+        }
+        for (RuleBillingRecord record : snapshot.records()) persistEngineBillingRecord(record);
+    }
+
+    private List<RuleBillingRecord> buildEngineExecutionRecords(RuleDefinition definition, boolean success,
+            Long costTimeMs, String errorMessage, ProjectAuthContext authContext, LocalDateTime now, String basis) {
+        if (definition == null) {
+            return List.of();
+        }
         Long executionProjectId = authContext != null && authContext.getProjectId() != null
                 ? authContext.getProjectId()
                 : definition.getProjectId();
         List<RuleBillingConfig> configs = findActiveEngineConfigs(definition, now, executionProjectId);
         if (configs.isEmpty()) {
-            return;
+            return List.of();
         }
         RuleProject project = executionProjectId == null ? null : findProject(executionProjectId);
+        List<RuleBillingRecord> records = new java.util.ArrayList<>();
         for (RuleBillingConfig config : configs) {
+            if ("EXECUTION_SNAPSHOT".equals(basis) && config.getId() == null) {
+                throw new IllegalStateException("计费项缺少ID，无法冻结计费依据");
+            }
             RuleBillingRecord record = new RuleBillingRecord();
+            record.setBillingConfigId(config.getId());
+            record.setBillingBasis(basis);
             record.setProjectId(executionProjectId);
             record.setProjectCode(project == null
                     ? authContext == null ? definition.getProjectCode() : authContext.getProjectCode()
@@ -285,6 +326,10 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
             record.setBillingDedupKey(buildEngineBillingDedupKey(record));
             record.setAttemptNo(definition.getExecutionAttemptNo());
             record.setRuleCode(definition.getRuleCode());
+            record.setRuleId(definition.getId());
+            record.setRuleVersion(definition.getExecutionVersion());
+            record.setRevisionId(definition.getExecutionRevisionId());
+            record.setArtifactDigest(definition.getExecutionArtifactDigest());
             record.setSuccess(success ? 1 : 0);
             record.setCostTimeMs(costTimeMs);
             record.setErrorMessage(errorMessage);
@@ -294,8 +339,9 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
             record.setQuantity(resolveQuantity(config.getChargeType(), success, costTimeMs));
             record.setAmount(record.getQuantity().multiply(record.getUnitPrice()).setScale(6, RoundingMode.HALF_UP));
             applyAuthAttribution(record, authContext);
-            persistEngineBillingRecord(record);
+            records.add(record);
         }
+        return records;
     }
 
     public void recordEngineExecutionLog(RuleExecutionLog log) {
@@ -314,6 +360,9 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         }
         definition.setExecutionTraceId(log.getTraceId());
         definition.setExecutionAttemptNo(log.getAttemptNo());
+        definition.setExecutionVersion(log.getRuleVersion());
+        definition.setExecutionRevisionId(log.getRevisionId());
+        definition.setExecutionArtifactDigest(log.getArtifactDigest());
         boolean success = log.getSuccess() != null && log.getSuccess() == 1;
         recordEngineExecution(definition, success, log.getExecuteTimeMs(), log.getErrorMessage(), authContext);
     }
@@ -373,6 +422,24 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         return true;
     }
 
+    public boolean recordApiTrialExecution(String trialId, RuleExternalApiConfig apiConfig,
+                                            RuleExternalDatasource datasource, boolean success,
+                                            Long costTimeMs, String errorMessage) {
+        if (!hasText(trialId) || apiConfig == null || !hasText(apiConfig.getExecutionCallId()) || datasource == null) {
+            throw new IllegalArgumentException("试运行计费必须有会话和实际调用标识");
+        }
+        String code = hasText(apiConfig.getBillingItemCode()) ? apiConfig.getBillingItemCode() : "API_TRIAL";
+        RuleProject project = datasource.getProjectId() == null ? null : findProject(datasource.getProjectId());
+        RuleBillingRecord record = buildApiRecord(apiConfig, datasource, project, code,
+                apiConfig.getApiName(), apiConfig.getUnitPrice(), "CNY", success, costTimeMs,
+                errorMessage, LocalDateTime.now(), null);
+        record.setTargetRefId(null);
+        record.setRootTraceId(trialId);
+        record.setBillingBasis("DRAFT_TRIAL");
+        persistApiBillingRecord(record);
+        return true;
+    }
+
     private void persistApiBillingRecord(RuleBillingRecord record) {
         try {
             insertRecord(record);
@@ -394,6 +461,12 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         record.setTargetRefId(targetRefId == null ? apiConfig.getId() : targetRefId);
         record.setApiCode(apiConfig.getApiCode());
         record.setDatasourceCode(datasource.getDatasourceCode());
+        Map<String, Object> executedRule = com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext().rootRule();
+        if (executedRule.get("id") instanceof Number id) record.setRuleId(id.longValue());
+        if (executedRule.get("version") instanceof Number version) record.setRuleVersion(version.intValue());
+        if (executedRule.get("revisionId") instanceof Number revision) record.setRevisionId(revision.longValue());
+        if (executedRule.get("artifactDigest") instanceof String digest) record.setArtifactDigest(digest);
+        if (executedRule.get("code") instanceof String code) record.setRuleCode(code);
         Object traceId = com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext().rootRule().get("traceId");
         record.setRootTraceId(traceId == null ? null : String.valueOf(traceId));
         if (hasText(apiConfig.getExecutionCallId())) {
@@ -454,7 +527,9 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
     }
 
     protected void insertRecord(RuleBillingRecord record) {
-        recordMapper.insert(record);
+        if (recordMapper.insert(record) != 1) {
+            throw new IllegalStateException("计费明细未写入");
+        }
     }
 
     /**
@@ -464,6 +539,13 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
      * therefore converted into an update of the already-owned row.
      */
     protected void persistEngineBillingRecord(RuleBillingRecord record) {
+        if (record.getBillingConfigId() != null) {
+            // 已保存快照也可能携带旧版编码key；真实配置ID才是计费项身份。
+            record.setBillingDedupKey(buildEngineBillingDedupKey(record));
+            if (hasText(record.getRootTraceId()) && hasLegacyEngineRecord(record.getRootTraceId())) {
+                throw new IllegalStateException("同一执行存在缺少计费配置ID的历史账单，需要核对后恢复，不能按编码关联或重复计费");
+            }
+        }
         if (!hasText(record.getBillingDedupKey())) {
             insertRecord(record);
             return;
@@ -475,8 +557,7 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
             if (existing == null || existing.getId() == null) {
                 throw duplicate;
             }
-            if (existing.getAttemptNo() != null && record.getAttemptNo() != null
-                    && existing.getAttemptNo() > record.getAttemptNo()) {
+            if (attempt(existing) > attempt(record)) {
                 return;
             }
             record.setId(existing.getId());
@@ -487,16 +568,40 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
     protected RuleBillingRecord findByBillingDedupKey(String billingDedupKey) {
         return recordMapper.selectOne(new LambdaQueryWrapper<RuleBillingRecord>()
                 .eq(RuleBillingRecord::getBillingDedupKey, billingDedupKey)
-                .last("LIMIT 1"));
+                .last("LIMIT 1 FOR UPDATE"));
+    }
+
+    /** 升级保护：只识别同一执行的未归属历史账单，不按可复用业务编码推断配置ID。 */
+    protected boolean hasLegacyEngineRecord(String rootTraceId) {
+        return recordMapper.selectOne(new LambdaQueryWrapper<RuleBillingRecord>()
+                .select(RuleBillingRecord::getId)
+                .eq(RuleBillingRecord::getRootTraceId, rootTraceId)
+                .eq(RuleBillingRecord::getBillingTarget, TARGET_ENGINE)
+                .isNull(RuleBillingRecord::getBillingConfigId)
+                .last("LIMIT 1")) != null;
     }
 
     protected void updateRecord(RuleBillingRecord record) {
-        recordMapper.updateById(record);
+        int updated = recordMapper.updateIfNoNewerAttempt(record);
+        if (updated == 1) return;
+        if (updated == 0) {
+            RuleBillingRecordMapper.WriteState current = recordMapper.selectWriteState(record);
+            if (current != null && (current.attemptNo() > attempt(record)
+                    || current.attemptNo() == attempt(record) && current.matchesFacts())) return;
+        }
+        throw new IllegalStateException("计费明细更新未生效");
+    }
+
+    private static int attempt(RuleBillingRecord record) {
+        return record.getAttemptNo() == null ? 1 : record.getAttemptNo();
     }
 
     private String buildEngineBillingDedupKey(RuleBillingRecord record) {
         if (!hasText(record.getRootTraceId())) {
             return null;
+        }
+        if (record.getBillingConfigId() != null) {
+            return sha256("ENGINE_CONFIG_V1|" + record.getRootTraceId() + '|' + record.getBillingConfigId());
         }
         String identity = String.join("|",
                 record.getRootTraceId(),
@@ -523,16 +628,6 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
     protected void deleteSummaries(LocalDate summaryDate) {
         summaryMapper.delete(new LambdaQueryWrapper<RuleBillingSummary>()
                 .eq(RuleBillingSummary::getSummaryDate, summaryDate));
-    }
-
-    protected List<RuleBillingRecord> findRecords(LocalDateTime begin, LocalDateTime end) {
-        return recordMapper.selectList(new LambdaQueryWrapper<RuleBillingRecord>()
-                .ge(RuleBillingRecord::getOccurTime, begin)
-                .lt(RuleBillingRecord::getOccurTime, end));
-    }
-
-    protected void insertSummary(RuleBillingSummary summary) {
-        summaryMapper.insert(summary);
     }
 
     private void applyAuthAttribution(RuleBillingRecord record, ProjectAuthContext authContext) {

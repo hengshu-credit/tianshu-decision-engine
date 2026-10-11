@@ -17,10 +17,14 @@ public class RuleResult {
     private int reusedCount;
     private int reexecutedCount;
     private String executionStatus;
+    /** THROTTLED 时的平台容量资源编码，不以错误文案推断资源类型。 */
+    private String capacityResource;
     /** 平台错误码；执行成功时为空。 */
     private Integer platformCode;
     /** 服务端建议重试等待时间（毫秒）。 */
     private Long retryAfterMs;
     private Long revisionId;
     private String artifactDigest;
+    /** Present only for an explicitly selected management-test source. */
+    private RuleTestExecutionIdentity executionIdentity;
 }

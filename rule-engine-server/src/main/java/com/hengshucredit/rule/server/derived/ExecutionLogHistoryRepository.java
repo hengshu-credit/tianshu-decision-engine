@@ -38,7 +38,7 @@ public class ExecutionLogHistoryRepository {
             Map<String, HistoricalFieldDefinition> definitions) {
         StringBuilder sql = new StringBuilder(
                 "SELECT l.id, l.trace_id, l.started_at, l.history_fields "
-                        + "FROM rule_execution_log l "
+                        + "FROM rule_execution_log_current l "
                         + "WHERE l.started_at >= ? AND l.started_at < ? AND l.success = 1 "
                         + "AND l.source = 'CLIENT_SERVER' AND l.history_fields IS NOT NULL ");
         List<Object> parameters = new ArrayList<>();

@@ -68,6 +68,40 @@
         </div>
       </section>
 
+      <section class="execution-metrics-group" data-testid="execution-metrics-journal">
+        <div class="execution-metrics-group__heading">
+          <div>
+            <h3>本地恢复日志</h3>
+            <p>数据库不可写时保存恢复事件，数据库恢复后继续补写。</p>
+          </div>
+          <el-tag size="small" :type="journalStatusType">{{ journalStatusLabel }}</el-tag>
+        </div>
+        <el-alert
+          v-if="journalStatusType === 'warning'"
+          :title="`本地恢复日志${journalStatusLabel}`"
+          :description="journalStatusHint"
+          type="warning"
+          :closable="false"
+          show-icon
+        />
+        <div class="execution-metrics-grid">
+          <metric-item
+            data-testid="journal-pending"
+            label="待恢复事件"
+            :value="journalPendingLabel"
+            :detail="journal.pendingTruncated ? '统计达到扫描上限，总数尚未确定；有已识别记录时显示数量下界。' : ''"
+          />
+          <metric-item label="文件大小" :value="formatBytes(journal.bytes)" />
+        </div>
+        <details v-if="journalStatusType === 'warning' && (journal.path || journal.failureReason)" class="execution-metrics-journal-details">
+          <summary>查看故障定位信息</summary>
+          <p v-if="journal.path">目录或文件：{{ journal.path }}</p>
+          <p v-if="journal.failureReason">原因：{{ journal.failureReason }}</p>
+          <p v-if="hasMetricValue(journal.failureOffset)">故障位置（字节）：{{ formatNumber(journal.failureOffset) }}</p>
+          <p v-if="hasMetricValue(journal.replayedBytes)">已确认前缀（字节）：{{ formatNumber(journal.replayedBytes) }}</p>
+        </details>
+      </section>
+
       <section class="execution-metrics-group" data-testid="execution-metrics-executors">
         <div class="execution-metrics-group__heading">
           <div>
@@ -129,6 +163,7 @@
             </el-tag>
             <el-button
               v-if="ruleWarmup.state === 'FAILED' || Number(ruleWarmup.failureCount) > 0"
+              v-permission="'rule:submit'"
               data-testid="execution-metrics-warmup-retry"
               size="small"
               :loading="warmupRetrying"
@@ -175,6 +210,39 @@ export default {
   },
   computed: {
     persistence() { return this.metrics.persistence || {} },
+    journal() { return this.persistence.journal || {} },
+    journalStatusLabel() {
+      if (this.journal.status === 'READY') return this.journal.available === true ? '可写入' : '不可用'
+      return {
+        NOT_INITIALIZED: '未初始化',
+        DISABLED: '未启用',
+        OWNERSHIP_CONFLICT: '目录被占用',
+        INITIALIZATION_FAILED: '初始化失败',
+        RECOVERY_REQUIRED: '需要恢复',
+        WRITE_FAILED: '写入失败',
+        REPLACEMENT_FAILED: '恢复进度保存失败',
+        CLOSED: '已关闭',
+      }[this.journal.status] || '未知'
+    },
+    journalStatusType() {
+      if (this.journal.status === 'READY' && this.journal.available === true) return 'success'
+      if (['OWNERSHIP_CONFLICT', 'INITIALIZATION_FAILED', 'RECOVERY_REQUIRED', 'WRITE_FAILED', 'REPLACEMENT_FAILED', 'READY'].includes(this.journal.status)) return 'warning'
+      return 'info'
+    },
+    journalStatusHint() {
+      return {
+        OWNERSHIP_CONFLICT: '此目录已被其他实例占用。请为每个节点配置独立的本地目录，不要删除正在使用的锁文件。',
+        INITIALIZATION_FAILED: '本地恢复存储暂不可用。请检查目录权限、磁盘空间和挂载状态，并保留已有文件。',
+        RECOVERY_REQUIRED: '无法确认本地日志或恢复进度的完整性。不要删除已有文件，请保留现场并检查恢复状态；待恢复总数暂无法确认。',
+        WRITE_FAILED: '本地写入未能确认完成，已停止继续追加。已有文件已保留，请检查磁盘和目录状态，由运维排障后重启当前节点；待恢复总数暂无法确认。',
+        REPLACEMENT_FAILED: '恢复进度未能安全保存，已有文件已保留。请检查磁盘和文件系统状态，由运维排障后重启当前节点，不要手工清空日志。',
+      }[this.journal.status] || '本地恢复日志暂不可写，请检查当前节点的运行状态。'
+    },
+    journalPendingLabel() {
+      if (this.journal.status !== 'READY' || this.journal.available !== true || !this.hasMetricValue(this.journal.pending)) return '未知'
+      if (this.journal.pendingTruncated && Number(this.journal.pending) === 0) return '未知'
+      return `${this.journal.pendingTruncated ? '至少 ' : ''}${this.formatNumber(this.journal.pending)}`
+    },
     instanceLabel() { return this.metrics.instanceId || '' },
     sourceResolution() { return this.metrics.sourceResolution || {} },
     openExecution() { return this.metrics.openExecution || {} },
@@ -282,6 +350,17 @@ export default {
       if (!Number.isFinite(number)) return '未知'
       return `${number.toFixed(number < 10 ? 2 : 0)} ms`
     },
+    formatBytes(value) {
+      if (!this.hasMetricValue(value) || Number(value) < 0) return '未知'
+      let size = Number(value)
+      const units = ['B', 'KB', 'MB', 'GB', 'TB']
+      let unit = 0
+      while (size >= 1024 && unit < units.length - 1) {
+        size /= 1024
+        unit++
+      }
+      return `${unit ? size.toFixed(1) : size} ${units[unit]}`
+    },
     queueValue(pool) {
       if (!this.hasMetricValue(pool.queueDepth) || !this.hasMetricValue(pool.queueCapacity)) return '未知'
       return `${this.formatNumber(pool.queueDepth)} / ${this.formatNumber(pool.queueCapacity)}`
@@ -322,7 +401,11 @@ export default {
     },
     overflowStrategyLabel(strategy) {
       if (!this.hasValue(strategy)) return '未知'
-      return strategy === 'SYNC_FALLBACK' ? '同步回退' : '未知'
+      return {
+        SYNC_FALLBACK: '同步回退',
+        JOURNAL_THEN_SYNC_FALLBACK: '本地写前日志后同步回退',
+        DURABLE_OUTBOX_REPLAY: '持久化队列重放'
+      }[strategy] || '未知'
     },
     warmupType(state) {
       if (state === 'FAILED' || state === 'WARMING') return 'warning'
@@ -397,6 +480,13 @@ export default {
 }
 
 .execution-metrics-panel__error { margin-bottom: 14px; }
+
+.execution-metrics-journal-details {
+  margin-top: 12px;
+  color: var(--el-text-color-secondary);
+  overflow-wrap: anywhere;
+}
+.execution-metrics-journal-details summary { cursor: pointer; }
 
 .execution-metrics-panel__state {
   display: grid;

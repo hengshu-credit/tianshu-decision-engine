@@ -112,10 +112,9 @@ public class GovernanceImpactServiceTest {
             List<Map<String, Object>> nodes) {
         return new RuleLineageService() {
             @Override
-            public Map<String, Object> graph(
-                    String nodeType, Long nodeId,
-                    String direction, Integer maxDepth) {
-                return Map.of("nodes", nodes);
+            public List<Map<String, Object>> directReferenceConsumers(String nodeType, Long nodeId) {
+                return nodes.stream().filter(node -> !(nodeType.equals(node.get("type"))
+                        && nodeId.equals(node.get("refId")))).toList();
             }
         };
     }

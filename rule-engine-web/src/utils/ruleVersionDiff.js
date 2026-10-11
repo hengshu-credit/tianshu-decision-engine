@@ -716,7 +716,8 @@ function buildSideSections(modelType, model) {
     return [
       section('settings', '评分卡配置', 'settings', [semanticNode('settings', '评分卡配置', { fields: [
         field('initialScore', '初始分', source.initialScore == null ? 0 : source.initialScore),
-        referenceField('resultVar', '结果字段', source.resultVar && (source.resultVar.operand || legacyReference(source.resultVar)))
+        referenceField('resultVar', '结果字段', source.resultVar && (source.resultVar.operand || legacyReference(source.resultVar))),
+        ...(source.levelVar ? [referenceField('levelVar', '等级赋值字段', source.levelVar.operand || legacyReference(source.levelVar))] : [])
       ] })]),
       section('scoreItems', '评分项', 'score', (source.scoreItems || []).map(scoreItemNode)),
       section('thresholds', '结果阈值', 'thresholds', (source.thresholds || []).map(thresholdNode))
@@ -726,7 +727,8 @@ function buildSideSections(modelType, model) {
     return [
       section('settings', '复杂评分卡配置', 'settings', [semanticNode('settings', '评分卡配置', { fields: [
         field('initialScore', '初始分', source.initialScore == null ? 100 : source.initialScore),
-        referenceField('resultVar', '结果字段', source.resultVar && (source.resultVar.operand || legacyReference(source.resultVar)))
+        referenceField('resultVar', '结果字段', source.resultVar && (source.resultVar.operand || legacyReference(source.resultVar))),
+        ...(source.levelVar ? [referenceField('levelVar', '等级赋值字段', source.levelVar.operand || legacyReference(source.levelVar))] : [])
       ] })]),
       section('dimensionGroups', '维度组', 'score-groups', (source.dimensionGroups || []).map(advancedScoreGroupNode)),
       section('thresholds', '结果阈值', 'thresholds', (source.thresholds || []).map(thresholdNode))

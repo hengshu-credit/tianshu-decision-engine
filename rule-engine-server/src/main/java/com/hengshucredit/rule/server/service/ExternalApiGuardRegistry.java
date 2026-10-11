@@ -120,6 +120,12 @@ public class ExternalApiGuardRegistry {
         }
     }
 
+    void invalidateTrial(Long id) {
+        if (id == null || id >= 0) throw new IllegalArgumentException("只允许清理试运行内部身份");
+        invalidate(id);
+        if (distributedStore != null) distributedStore.invalidateTrial(id);
+    }
+
     private synchronized GuardState state(RuleExternalApiConfig config) {
         GuardSettings settings = GuardSettings.from(config);
         GuardState existing = states.get(config.getId());

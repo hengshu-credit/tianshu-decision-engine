@@ -13,6 +13,33 @@ function createContext() {
 }
 
 describe('ruleCallMixin', () => {
+  test('旧发布字段校验请求晚到不能覆盖较新的字段快照', async () => {
+    const ctx = createContext()
+    ctx.projectRules = [{ id: 8 }]
+    let resolveOld
+    definitionApi.listPublishedVersions.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
+    const model = { actions: [{ type: 'rule-call', ruleId: 8 }] }
+    const old = ctx.loadRuleCallPublishedVersions(model)
+    const stale = expect(old).rejects.toThrow('已变化')
+    const current = [{ bindingId: '81', version: 2, outputFields: [{ scriptName: 'current_score' }] }]
+    definitionApi.listPublishedVersions.mockResolvedValueOnce({ data: current })
+    await ctx.loadRuleCallPublishedVersions(model)
+    resolveOld({ data: [{ bindingId: '81', version: 1, outputFields: [{ scriptName: 'old_score' }] }] })
+    await stale
+    expect(ctx.projectRules[0].executionVersions).toEqual(current)
+  })
+  test('只读取模型实际调用的发布版本字段并去重，不改草稿字段投影', async () => {
+    const ctx = createContext()
+    ctx.projectRules = [{ id: 8, outputFields: [{ scriptName: 'draft_score' }] }, { id: 9 }, { id: 10 }]
+    const published = [{ bindingId: '81', version: 1, available: true, outputFields: [{ scriptName: 'published_score' }] }]
+    definitionApi.listPublishedVersions.mockResolvedValue({ data: published })
+    await ctx.loadRuleCallPublishedVersions({ nodes: [{ actions: [{ type: 'rule-call', ruleId: 8 }, { type: 'rule-call', ruleId: '8' }] }] })
+    expect(definitionApi.listPublishedVersions).toHaveBeenCalledTimes(1)
+    expect(definitionApi.listPublishedVersions).toHaveBeenCalledWith('8')
+    expect(ctx.projectRules[0].executionVersions).toEqual(published)
+    expect(ctx.projectRules[0].outputFields).toEqual([{ scriptName: 'draft_score' }])
+    expect(ctx.projectRules[1].executionVersions).toBeUndefined()
+  })
   test('返回缓存设计器时刷新已发布规则状态，保留当前模型', async () => {
     const ctx = createContext()
     ctx.$route = { path: '/designer/flow/7', params: { id: '7' } }

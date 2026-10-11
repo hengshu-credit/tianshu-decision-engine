@@ -2,15 +2,133 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import com.hengshucredit.rule.model.entity.RulePublished;
+import com.hengshucredit.rule.server.mapper.RuleExecutionLogMapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.Before;
 import org.junit.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.lang.reflect.Proxy;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
 
 public class RuleExecutionLogServiceTest {
+    @Test
+    public void emptyTraceDoesNotReuseAnExternalPhysicalRowId() {
+        RuleExecutionLogService service = new RuleExecutionLogService() {
+            @Override public boolean save(RuleExecutionLog value) {
+                assertEquals(null, value.getId());
+                return true;
+            }
+        };
+        RuleExecutionLog value = new RuleExecutionLog(); value.setId(99L); value.setTraceId("");
+        service.saveLogical(value);
+    }
+
+    @Before
+    public void initializeLogMetadata() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), RuleExecutionLog.class);
+    }
+
+    @Test
+    public void batchUsesConsistentTraceLockOrderWithoutChangingTraceValues() {
+        List<String> writes = new java.util.ArrayList<>();
+        RuleExecutionLogService service = new RuleExecutionLogService() {
+            @Override public void saveLogical(RuleExecutionLog log) { writes.add(log.getTraceId()); }
+        };
+        ReflectionTestUtils.setField(service, "baseMapper", writeMapper(null, new AtomicInteger()));
+        List<RuleExecutionLog> logs = new java.util.ArrayList<>();
+        for (String trace : List.of("b", "A", "a", "B")) {
+            RuleExecutionLog log = new RuleExecutionLog();
+            log.setTraceId(trace);
+            logs.add(log);
+        }
+        service.saveLogicalBatch(logs);
+        assertEquals(List.of("A", "a", "b", "B"), writes);
+        assertEquals("调用方原始批次顺序不应被原地修改", "b", logs.get(0).getTraceId());
+    }
+
+    @Test
+    public void rejectsUnconfirmedInsertWithOrWithoutTraceIdentity() {
+        for (String trace : Arrays.asList(null, "trace-new")) {
+            RuleExecutionLogService service = new RuleExecutionLogService();
+            ReflectionTestUtils.setField(service, "baseMapper", writeMapper(null, new AtomicInteger()));
+            ReflectionTestUtils.setField(service, "entityClass", RuleExecutionLog.class);
+            RuleExecutionLog log = new RuleExecutionLog();
+            log.setTraceId(trace);
+            log.setRuleCode("risk-rule");
+            assertThrows("insert返回0不能当成日志已持久化", IllegalStateException.class,
+                    () -> service.saveLogical(log));
+        }
+    }
+
+    @Test
+    public void rejectsUnconfirmedLogicalLogUpdate() {
+        RuleExecutionLog existing = new RuleExecutionLog();
+        existing.setId(7L);
+        existing.setTraceId("trace-update");
+        existing.setAttemptNo(1);
+        existing.setCreateTime(java.time.LocalDateTime.of(2026, 10, 8, 12, 0));
+        RuleExecutionLogService service = new RuleExecutionLogService();
+        AtomicInteger writes = new AtomicInteger();
+        ReflectionTestUtils.setField(service, "baseMapper", writeMapper(existing, writes));
+        ReflectionTestUtils.setField(service, "entityClass", RuleExecutionLog.class);
+        RuleExecutionLog next = new RuleExecutionLog();
+        next.setTraceId(existing.getTraceId());
+        next.setAttemptNo(2);
+        next.setSuccess(1);
+
+        IllegalStateException failure = assertThrows("update返回0不能确认新的执行结果", IllegalStateException.class,
+                () -> service.saveLogical(next));
+        assertEquals("执行日志更新未生效", failure.getMessage());
+        assertEquals(1, writes.get());
+    }
+
+    @Test
+    public void persistedNewerAttemptRemainsALegitimateNoOp() {
+        RuleExecutionLog existing = new RuleExecutionLog();
+        existing.setId(7L);
+        existing.setTraceId("trace-newer");
+        existing.setAttemptNo(3);
+        existing.setCreateTime(java.time.LocalDateTime.of(2026, 10, 8, 12, 0));
+        RuleExecutionLogService service = new RuleExecutionLogService();
+        AtomicInteger writes = new AtomicInteger();
+        ReflectionTestUtils.setField(service, "baseMapper", writeMapper(existing, writes));
+        ReflectionTestUtils.setField(service, "entityClass", RuleExecutionLog.class);
+        RuleExecutionLog older = new RuleExecutionLog();
+        older.setTraceId(existing.getTraceId());
+        older.setAttemptNo(2);
+
+        service.saveLogical(older);
+
+        assertEquals("旧尝试重放不应覆盖数据库中更高尝试的结果", 0, writes.get());
+    }
+
+    private static RuleExecutionLogMapper writeMapper(RuleExecutionLog existing, AtomicInteger writes) {
+        return (RuleExecutionLogMapper) Proxy.newProxyInstance(RuleExecutionLogMapper.class.getClassLoader(),
+                new Class<?>[]{RuleExecutionLogMapper.class}, (proxy, method, args) -> {
+                    if ("selectOne".equals(method.getName())) return existing;
+                    if ("lockLogicalIdentity".equals(method.getName())) return 1;
+                    if ("selectLogicalIdentity".equals(method.getName())) {
+                        return new RuleExecutionLogMapper.LogicalIdentity((String) args[0],
+                                existing == null ? null : existing.getId(), existing == null ? null : existing.getCreateTime());
+                    }
+                    if ("selectLegacyLogicalRecord".equals(method.getName()) || "selectLogicalRecord".equals(method.getName())) return existing;
+                    if ("insert".equals(method.getName()) || "updateById".equals(method.getName()) || "update".equals(method.getName())) {
+                        writes.incrementAndGet();
+                        return 0;
+                    }
+                    if (method.getReturnType() == boolean.class) return false;
+                    if (method.getReturnType().isPrimitive()) return 0;
+                    return null;
+                });
+    }
 
     @Test
     public void keepsClientArtifactAttributionWhenAsyncReportArrivesAfterNewPublish() {
@@ -37,48 +155,5 @@ public class RuleExecutionLogServiceTest {
         assertEquals("executed-digest", log.getArtifactDigest());
     }
 
-    @Test
-    @SuppressWarnings("unchecked")
-    public void ruleSetStatsIncludeRootNestedSetsAndEveryActuallyEvaluatedRuleOnly() {
-        RuleExecutionLog first = log("[{\"modelType\":\"FLOW\",\"children\":["
-                + "{\"ruleId\":10,\"ruleCode\":\"RS-A\",\"ruleName\":\"准入规则集\",\"modelType\":\"RULE_SET\",\"status\":\"SUCCESS\",\"durationMs\":100,\"events\":["
-                + "{\"type\":\"RULE_SET_ITEM\",\"ruleCode\":\"A-1\",\"ruleName\":\"年龄准入\",\"evaluated\":true,\"hit\":true},"
-                + "{\"type\":\"RULE_SET_ITEM\",\"ruleCode\":\"A-2\",\"ruleName\":\"评分准入\",\"evaluated\":true,\"hit\":false},"
-                + "{\"type\":\"RULE_SET_SUMMARY\",\"evaluated\":true,\"hit\":true}],\"children\":["
-                + "{\"ruleId\":11,\"ruleCode\":\"RS-B\",\"ruleName\":\"子规则集\",\"modelType\":\"RULE_SET\",\"status\":\"SUCCESS\",\"durationMs\":50,\"events\":["
-                + "{\"type\":\"RULE_SET_ITEM\",\"ruleCode\":\"B-1\",\"ruleName\":\"名单规则\",\"evaluated\":true,\"hit\":false},"
-                + "{\"type\":\"RULE_SET_SUMMARY\",\"evaluated\":true,\"hit\":false}]}]},"
-                + "{\"modelType\":\"TABLE\",\"events\":[{\"type\":\"RULE_SET_ITEM\",\"hit\":true}]}]}]");
-        RuleExecutionLog second = log("[{\"ruleId\":10,\"ruleCode\":\"RS-A\",\"ruleName\":\"准入规则集\",\"modelType\":\"RULE_SET\",\"status\":\"FAILED\",\"durationMs\":200,\"events\":["
-                + "{\"type\":\"RULE_SET_ITEM\",\"ruleCode\":\"A-1\",\"ruleName\":\"年龄准入\",\"evaluated\":true,\"hit\":false},"
-                + "{\"type\":\"RULE_SET_SUMMARY\",\"evaluated\":true,\"hit\":false}]}]");
 
-        Map<String, Object> result = new RuleExecutionLogService().buildRuleSetStats(Arrays.asList(first, second), null);
-        Map<String, Object> overview = (Map<String, Object>) result.get("overview");
-        List<Map<String, Object>> ruleSets = (List<Map<String, Object>>) result.get("ruleSets");
-        Map<String, Object> setA = ruleSets.get(0);
-        List<Map<String, Object>> items = (List<Map<String, Object>>) setA.get("items");
-
-        assertEquals(3L, overview.get("evaluationCount"));
-        assertEquals(1L, overview.get("hitCount"));
-        assertEquals(1L, overview.get("failureCount"));
-        assertEquals(2, ruleSets.size());
-        assertEquals("RS-A", setA.get("ruleCode"));
-        assertEquals(2L, setA.get("evaluationCount"));
-        assertEquals(1L, setA.get("hitCount"));
-        assertEquals(0.5D, (Double) setA.get("hitRate"), 0.0001D);
-        assertEquals(0.5D, (Double) setA.get("failureRate"), 0.0001D);
-        assertEquals(200L, setA.get("p95CostTimeMs"));
-        assertEquals(2, items.size());
-        assertEquals("A-1", items.get(0).get("ruleCode"));
-        assertEquals(2L, items.get(0).get("evaluationCount"));
-        assertEquals(1L, items.get(0).get("hitCount"));
-        assertEquals(1L, items.get(1).get("evaluationCount"));
-    }
-
-    private RuleExecutionLog log(String traceInfo) {
-        RuleExecutionLog log = new RuleExecutionLog();
-        log.setTraceInfo(traceInfo);
-        return log;
-    }
 }

@@ -8,6 +8,9 @@ import java.util.List;
 public class CachedRule {
     @com.alibaba.fastjson.annotation.JSONField(serialize = false, deserialize = false)
     private transient com.hengshucredit.rule.core.engine.QLExpressEngine.PreparedScript preparedScript;
+    @com.alibaba.fastjson.annotation.JSONField(serialize = false, deserialize = false)
+    private transient java.util.Map<String, com.alibaba.qlexpress4.runtime.function.CustomFunction> preparedFunctions;
+    private List<com.alibaba.fastjson.JSONObject> frozenFunctions;
     private String ruleCode;
     private Long definitionId;
     private Long versionBindingId;

@@ -8,6 +8,8 @@ import com.hengshucredit.rule.model.entity.RuleModelVersion;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
+import com.hengshucredit.rule.core.pmml.PMMLModelExecutor;
 import com.hengshucredit.rule.server.model.ModelArtifactValidator;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelInputFieldMapper;
@@ -47,6 +49,50 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class RuleModelServiceTest {
+
+    @Test
+    public void modelExecutionResultsRetainTypedCapacityResource() {
+        for (ExecutionCapacityException.Resource resource : ExecutionCapacityException.Resource.values()) {
+            Map<String, Object> result = executeWithModelFailure(resource,
+                    new ExecutionCapacityException(resource, "capacity unavailable"));
+            assertEquals(false, result.get("success"));
+            assertEquals("THROTTLED", result.get("executionStatus"));
+            assertEquals(resource.name(), result.get("capacityResource"));
+            assertTrue(String.valueOf(result.get("error")).contains("capacity unavailable"));
+        }
+    }
+
+    @Test
+    public void untypedModelRejectionTextIsNotClassifiedAsCapacity() {
+        for (ExecutionCapacityException.Resource resource : ExecutionCapacityException.Resource.values()) {
+            Map<String, Object> result = executeWithModelFailure(resource,
+                    new java.util.concurrent.RejectedExecutionException("ONNX 会话数量已达上限"));
+            assertEquals(false, result.get("success"));
+            assertNull(result.get("executionStatus"));
+            assertNull(result.get("capacityResource"));
+        }
+    }
+
+    private Map<String, Object> executeWithModelFailure(ExecutionCapacityException.Resource resource,
+                                                       RuntimeException failure) {
+        RuleModelService service = new RuleModelService();
+        RuleModel model = model();
+        model.setModelContent("AQID");
+        if (resource == ExecutionCapacityException.Resource.ONNX_SESSION_CACHE) {
+            ReflectionTestUtils.setField(service, "onnxModelExecutionService", new OnnxModelExecutionService(null) {
+                @Override public Map<String, Object> execute(byte[] bytes, String config, Map<String, Object> params) {
+                    throw failure;
+                }
+            });
+            return ReflectionTestUtils.invokeMethod(service, "executeOnnx", model, Map.of(), Map.of(), Map.of());
+        }
+        ReflectionTestUtils.setField(service, "pmmlExecutor", new PMMLModelExecutor() {
+            @Override public Map<String, Object> evaluate(String content, Map<String, Object> params) {
+                throw failure;
+            }
+        });
+        return ReflectionTestUtils.invokeMethod(service, "executePmml", model, Map.of(), Map.of(), Map.of());
+    }
 
     @Test
     @SuppressWarnings("unchecked")
@@ -375,14 +421,26 @@ public class RuleModelServiceTest {
         }));
         ReflectionTestUtils.setField(service, "inputFieldMapper", mapper(RuleModelInputFieldMapper.class, (proxy, method, args) -> {
             if ("insert".equals(method.getName())) inputs.add((RuleModelInputField) args[0]);
+            if ("selectList".equals(method.getName())) return new ArrayList<>(inputs);
             return defaultValue(method.getReturnType());
         }));
         ReflectionTestUtils.setField(service, "outputFieldMapper", mapper(RuleModelOutputFieldMapper.class, (proxy, method, args) -> {
             if ("insert".equals(method.getName())) outputs.add((RuleModelOutputField) args[0]);
+            if ("selectList".equals(method.getName())) return new ArrayList<>(outputs);
             return defaultValue(method.getReturnType());
         }));
         ReflectionTestUtils.setField(service, "versionMapper", mapper(RuleModelVersionMapper.class,
-                (proxy, method, args) -> defaultValue(method.getReturnType())));
+                (proxy, method, args) -> "insert".equals(method.getName()) ? 1 : defaultValue(method.getReturnType())));
+        ModelVersionTestService versionTests = new ModelVersionTestService();
+        ReflectionTestUtils.setField(versionTests, "dependencyClosure", new com.hengshucredit.rule.server.artifact.RuleDependencyClosureService());
+        ReflectionTestUtils.setField(versionTests, "runtimeSnapshots", new com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService());
+        ReflectionTestUtils.setField(versionTests, "schemas", new RuleTestSchemaService() {
+            @Override public com.hengshucredit.rule.model.dto.RuleTestSchema buildModelSnapshot(RuleModel model,
+                    com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot) {
+                return new com.hengshucredit.rule.model.dto.RuleTestSchema();
+            }
+        });
+        ReflectionTestUtils.setField(service, "modelVersionTests", versionTests);
 
         MockMultipartFile upload = new MockMultipartFile(
                 "file", "anti-spoof-mn3.onnx",
@@ -494,7 +552,7 @@ public class RuleModelServiceTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    public void frontendVersionResponsesExcludeContentButRollbackStillUsesIt() {
+    public void frontendVersionResponsesExcludeContentAndDirectRollbackRequiresGovernance() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleModelVersion.class);
         List<String> selectedColumns = new ArrayList<>();
         AtomicInteger selectOneCalls = new AtomicInteger();
@@ -533,14 +591,16 @@ public class RuleModelServiceTest {
         List<RuleModelVersion> versions = service.listVersions(1L);
         RuleModelVersion detail = service.getVersion(1L, 1);
         Map<String, Object> comparison = service.compareVersions(1L, 1, 2);
-        service.rollbackToVersion(1L, 1);
+        IllegalArgumentException denied = org.junit.Assert.assertThrows(IllegalArgumentException.class,
+                () -> service.rollbackToVersion(1L, 1));
+        assertTrue(denied.getMessage().contains("审批"));
 
         assertEquals(null, versions.get(0).getModelContent());
         assertEquals(null, detail.getModelContent());
         assertEquals(true, comparison.get("modelContentChanged"));
         assertEquals(null, ((RuleModelVersion) comparison.get("left")).getModelContent());
         assertEquals(null, ((RuleModelVersion) comparison.get("right")).getModelContent());
-        assertEquals("rollback-content", updatedModel.get().getModelContent());
+        assertNull("直接恢复不能混写历史文件与当前字段", updatedModel.get());
         assertEquals(2, selectedColumns.size());
         for (String selection : selectedColumns) {
             assertTrue(selection != null && !selection.isEmpty());

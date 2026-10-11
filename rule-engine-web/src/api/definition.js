@@ -1,4 +1,5 @@
 import request from './request'
+import { metadataResponse } from '@/utils/metadataResponse'
 
 export function compileDesignerModel(id, data) {
   return request({ url: `/rule/definition/${id}/designer/compile`, method: 'post', data })
@@ -9,7 +10,7 @@ export function getDesignerCompileTask(id, taskId) {
 }
 
 export function saveDesignerDraft(id, data) {
-  return request({ url: `/rule/definition/${id}/designer/drafts`, method: 'post', data })
+  return request({ ...metadataResponse, url: `/rule/definition/${id}/designer/drafts`, method: 'post', data })
 }
 
 export function deleteDesignerDraft(id, revisionId, lockVersion) {
@@ -17,32 +18,36 @@ export function deleteDesignerDraft(id, revisionId, lockVersion) {
 }
 
 export function listPublishedVersions(id) {
-  return request({ url: `/rule/definition/${id}/published-versions`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/definition/${id}/published-versions`, method: 'get' })
 }
 
 export function publishDesignerDraft(id, data) {
-  return request({ url: `/rule/definition/${id}/designer/publish`, method: 'post', data })
+  return request({ ...metadataResponse, url: `/rule/definition/${id}/designer/publish`, method: 'post', data })
 }
 import { createResourceDraft } from './governance'
 
 export function listDefinitions(params) {
-  return request({ url: '/rule/definition/list', method: 'get', params })
+  return request({ ...metadataResponse, url: '/rule/definition/list', method: 'get', params })
 }
 
 export function listProjectDefinitions(projectId, params) {
-  return request({ url: `/rule/definition/project-list/${projectId}`, method: 'get', params })
+  return request({ ...metadataResponse, url: `/rule/definition/project-list/${projectId}`, method: 'get', params })
 }
 
 export function getDefinition(id) {
-  return request({ url: `/rule/definition/${id}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/definition/${id}`, method: 'get' })
+}
+
+export function getRuleReferenceCatalog(id, source) {
+  return request({ url: `/rule/definition/${id}/reference-catalog`, method: 'get', params: source })
 }
 
 export function getContent(definitionId) {
-  return request({ url: `/rule/definition/content/${definitionId}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/definition/content/${definitionId}`, method: 'get' })
 }
 
 export function createDefinition(data) {
-  return request({ url: '/rule/definition', method: 'post', data })
+  return request({ ...metadataResponse, url: '/rule/definition', method: 'post', data })
 }
 
 export function updateDefinition(data) {
@@ -50,10 +55,7 @@ export function updateDefinition(data) {
 }
 
 export function deleteDefinition(id) {
-  return createResourceDraft('RULE', null, 'DELETE', {
-    resourceId: id,
-    changeSummary: '删除规则'
-  })
+  return request({ ...metadataResponse, url: `/rule/governance/rules/${id}/delete`, method: 'post' })
 }
 
 export function createProjectBinding(definitionId, projectId) {
@@ -77,11 +79,11 @@ export function deleteProjectBinding(bindingId, projectId) {
 }
 
 export function saveContent(data) {
-  return request({ url: '/rule/definition/save', method: 'post', data })
+  return request({ ...metadataResponse, url: '/rule/definition/save', method: 'post', data })
 }
 
 export function saveTemporaryDraft(definitionId, data) {
-  return request({ url: `/rule/definition/${definitionId}/revisions/temporary-draft`, method: 'post', data })
+  return request({ ...metadataResponse, url: `/rule/definition/${definitionId}/revisions/temporary-draft`, method: 'post', data })
 }
 
 export function refreshFields(definitionId, modelJson) {
@@ -94,15 +96,15 @@ export function refreshFields(definitionId, modelJson) {
 }
 
 export function getDetail(id) {
-  return request({ url: `/rule/definition/detail/${id}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/definition/detail/${id}`, method: 'get' })
 }
 
 export function inputFields(definitionId) {
-  return request({ url: `/rule/definition/inputFields/${definitionId}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/definition/inputFields/${definitionId}`, method: 'get' })
 }
 
 export function outputFields(definitionId) {
-  return request({ url: `/rule/definition/outputFields/${definitionId}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/definition/outputFields/${definitionId}`, method: 'get' })
 }
 
 export function publish(id) {
@@ -143,11 +145,12 @@ export function unpublishRule(id) {
 }
 
 export function ensureDraftRevision(definitionId) {
-  return request({ url: `/rule/definition/${definitionId}/revisions/draft`, method: 'post' })
+  return request({ ...metadataResponse, url: `/rule/definition/${definitionId}/revisions/draft`, method: 'post' })
 }
 
 export function createDraftRevision(definitionId, baseRevisionId) {
   return request({
+    ...metadataResponse,
     url: `/rule/definition/${definitionId}/revisions/draft`,
     method: 'post',
     data: baseRevisionId ? { baseRevisionId } : {}
@@ -156,6 +159,7 @@ export function createDraftRevision(definitionId, baseRevisionId) {
 
 export function getRuleRevisionRepairPreview(definitionId) {
   return request({
+    ...metadataResponse,
     url: `/rule/definition/${definitionId}/revisions/repair-preview`,
     method: 'get'
   })
@@ -163,6 +167,7 @@ export function getRuleRevisionRepairPreview(definitionId) {
 
 export function repairRuleRevision(definitionId, data) {
   return request({
+    ...metadataResponse,
     url: `/rule/definition/${definitionId}/revisions/repair`,
     method: 'post',
     data
@@ -170,19 +175,19 @@ export function repairRuleRevision(definitionId, data) {
 }
 
 export function listRuleRevisions(definitionId) {
-  return request({ url: `/rule/definition/${definitionId}/revisions`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/definition/${definitionId}/revisions`, method: 'get' })
 }
 
 export function getRuleRevision(definitionId, revisionId) {
-  return request({ url: `/rule/definition/${definitionId}/revisions/${revisionId}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/definition/${definitionId}/revisions/${revisionId}`, method: 'get' })
 }
 
 export function getCurrentDraftRevision(definitionId) {
-  return request({ url: `/rule/definition/${definitionId}/revisions/current-draft`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/definition/${definitionId}/revisions/current-draft`, method: 'get' })
 }
 
 export function preflightRuleRevision(definitionId, revisionId) {
-  return request({ url: `/rule/definition/${definitionId}/revisions/${revisionId}/preflight`, method: 'post' })
+  return request({ ...metadataResponse, url: `/rule/definition/${definitionId}/revisions/${revisionId}/preflight`, method: 'post' })
 }
 
 export function submitRuleRevision(definitionId, revisionId, data) {
@@ -209,11 +214,12 @@ export function offlineRuleRevision(definitionId, _revisionId, data) {
 }
 
 export function getRuleLifecycleTimeline(definitionId) {
-  return request({ url: `/rule/definition/${definitionId}/revisions/timeline`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/definition/${definitionId}/revisions/timeline`, method: 'get' })
 }
 
 function lifecycleAction(definitionId, revisionId, action, data) {
   return request({
+    ...metadataResponse,
     url: `/rule/definition/${definitionId}/revisions/${revisionId}/${action}`,
     method: 'post',
     data
@@ -221,19 +227,20 @@ function lifecycleAction(definitionId, revisionId, action, data) {
 }
 
 export function listVersions(definitionId) {
-  return request({ url: `/rule/definition/versions/${definitionId}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/definition/versions/${definitionId}`, method: 'get' })
 }
 
 export function getVersion(definitionId, version) {
-  return request({ url: `/rule/definition/version/${definitionId}/${version}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/definition/version/${definitionId}/${version}`, method: 'get' })
 }
 
 export function getVersionById(definitionId, versionId) {
-  return request({ url: `/rule/definition/${definitionId}/versions/${versionId}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/definition/${definitionId}/versions/${versionId}`, method: 'get' })
 }
 
 export function createDraftFromSource(definitionId, data) {
   return request({
+    ...metadataResponse,
     url: `/rule/definition/${definitionId}/revisions/draft/from-source`,
     method: 'post',
     data,
@@ -287,17 +294,21 @@ export function validateScript(definitionId, script) {
 
 /** 获取规则详情（含输入输出字段） */
 export function getDefinitionDetail(id) {
-  return request({ url: `/rule/definition/detail/${id}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/definition/detail/${id}`, method: 'get' })
+}
+
+export function getRuleRevisionFieldView(definitionId, revisionId) {
+  return request({ ...metadataResponse, url: `/rule/definition/${definitionId}/revisions/${revisionId}/fields`, method: 'get' })
 }
 
 /** 获取规则输入字段列表 */
 export function listInputFields(definitionId) {
-  return request({ url: `/rule/definition/inputFields/${definitionId}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/definition/inputFields/${definitionId}`, method: 'get' })
 }
 
 /** 获取规则输出字段列表 */
 export function listOutputFields(definitionId) {
-  return request({ url: `/rule/definition/outputFields/${definitionId}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/definition/outputFields/${definitionId}`, method: 'get' })
 }
 
 /** 更新规则输入字段 */
@@ -345,6 +356,16 @@ export function sortApiScenarios(definitionId, scenarioIds) {
 export function executeApiScenario(definitionId, data, timeout = DEFAULT_RULE_REQUEST_TIMEOUT_MS) {
   return request({
     url: `/rule/definition/${definitionId}/api-scenarios/execute`,
+    method: 'post',
+    data,
+    timeout
+  })
+}
+
+/** 测试专用精确JSON执行与预期校验；requestJson/expectationJson始终以字符串传递。 */
+export function executeApiScenarioValidated(definitionId, data, timeout = DEFAULT_RULE_REQUEST_TIMEOUT_MS) {
+  return request({
+    url: `/rule/definition/${definitionId}/api-scenarios/execute-validated`,
     method: 'post',
     data,
     timeout

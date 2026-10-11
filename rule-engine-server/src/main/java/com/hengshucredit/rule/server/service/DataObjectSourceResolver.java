@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
+
 import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
@@ -74,6 +76,10 @@ public class DataObjectSourceResolver {
                     if (child.get("requestOverrides") instanceof Map<?, ?> childOverrides) childOverrides.forEach((id, value) -> overrides.put(String.valueOf(id), value));
                     config.putAll(child);
                     config.put("requestOverrides", overrides);
+                    Map<String, Object> inputOverrides = new LinkedHashMap<>();
+                    if (binding.owner.config.get("inputOverrides") instanceof Map<?, ?> rootInputs) rootInputs.forEach((id, value) -> inputOverrides.put(String.valueOf(id), value));
+                    if (child.get("inputOverrides") instanceof Map<?, ?> childInputs) childInputs.forEach((id, value) -> inputOverrides.put(String.valueOf(id), value));
+                    config.put("inputOverrides", inputOverrides);
                     config.put("bindingMode", "FIELDS");
                     binding.owner = new SourceOwner(binding.owner.id, binding.owner.sourceType, binding.owner.sourceContent,
                             binding.owner.scriptName, binding.owner.objectCode, binding.owner.objectLabel, config);
@@ -115,6 +121,8 @@ public class DataObjectSourceResolver {
                     }
                 }
             } catch (RuntimeException error) {
+                ExecutionCapacityException capacity = ExecutionCapacityException.find(error);
+                if (capacity != null) throw capacity;
                 boolean waiting = error instanceof ExternalApiWaitingException
                         || error instanceof com.hengshucredit.rule.core.engine.RuleSuspensionSignal
                         || (error instanceof ExternalApiInvokeService.ApiInvokeException api
@@ -175,7 +183,9 @@ public class DataObjectSourceResolver {
             Long apiId = longValue(owner.config.get("apiConfigId"));
             if (apiId == null) throw new IllegalArgumentException("数据对象 API 来源缺少 apiConfigId");
             Map<String, Object> mapped = mappedParams(owner.config.get("paramMapping"), values);
-            return externalApiConsumerService.resolve(projectId, apiId, owner.config, mapped, options);
+            if (!(owner.config.get("inputOverrides") instanceof Map<?, ?> overrides) || overrides.isEmpty())
+                return externalApiConsumerService.resolve(projectId, apiId, owner.config, mapped, options);
+            return externalApiConsumerService.resolve(projectId, apiId, owner.config, mapped, options, null, values);
         }
         Long datasourceId = longValue(firstNonNull(owner.config.get("dbDatasourceId"), owner.config.get("datasourceId")));
         String sql = text(owner.config.get("sql"));

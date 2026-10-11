@@ -60,6 +60,17 @@ public final class OperandValueResolver {
         if (operand == null) throw new IllegalArgumentException("表达式参数不能为空");
         String kind = operand.getString("kind");
         if (kind == null || kind.trim().isEmpty()) throw new IllegalArgumentException("表达式节点类型不能为空");
+        Long versionId = com.hengshucredit.rule.core.compiler.OperandVersion.fixedVersionId(operand);
+        if (versionId != null) {
+            List<Object> args = new ArrayList<>();
+            boolean function = "FUNCTION".equals(kind);
+            JSONArray source = function ? operand.getJSONArray("args") : null;
+            if (source != null) for (int index = 0; index < source.size(); index++)
+                args.add(resolve(source.getJSONObject(index), values, referenceValues, functionInvoker));
+            return com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext().resourceVersionValue(
+                    new com.hengshucredit.rule.core.engine.ResourceVersionCall(function ? "FUNCTION" : operand.getString("refType"),
+                            operand.getLong(function ? "functionId" : "refId"), versionId, operand.getString("relativePath"), args, null, null, operand.getString("versionSource")));
+        }
         if ("LITERAL".equals(kind)) return literal(operand.get("value"), operand.getString("valueType"));
         if ("PATH".equals(kind) || "REFERENCE".equals(kind)) {
             if ("REFERENCE".equals(kind)

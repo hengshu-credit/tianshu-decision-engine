@@ -1,4 +1,5 @@
 const { createManagementApiData } = require('./managementFixtures.cjs')
+const { withTestExecutionIdentity } = require('./testExecutionFixtures.cjs')
 
 function createOperationsApiData() {
   const routes = createManagementApiData()
@@ -81,6 +82,10 @@ function createOperationsApiData() {
     modelJson: '{}',
     scriptMode: 'visual'
   })
+  const revision = { id: 41, definitionId: 101, revisionNo: 1, state: 'DRAFT', lockVersion: 0, modelJson: '{}' }
+  routes.set('/api/rule/definition/101/revisions', [revision])
+  routes.set('/api/rule/definition/101/revisions/41', revision)
+  routes.set('/api/rule/definition/101/published-versions', [])
   routes.set('/api/rule/definition/inputFields/101', [
     {
       id: 1001,
@@ -95,7 +100,7 @@ function createOperationsApiData() {
     }
   ])
   routes.set('POST /api/rule/definition/refreshFields/101', {})
-  routes.set('POST /api/rule/test-schema', ({ request }) => {
+  routes.set('POST /api/rule/test-schema', withTestExecutionIdentity(({ request }) => {
     const payload = request.postDataJSON()
     if (payload.targetType === 'EXPERIMENT' && payload.targetId === 61) {
       return {
@@ -156,13 +161,22 @@ function createOperationsApiData() {
       sampleParams: { age: 18 },
       diagnostics: []
     }
-  })
+  }))
   routes.set('/api/rule/definition/101/api-scenarios', [])
-  routes.set('POST /api/rule/definition/execute', {
+  routes.set('POST /api/rule/definition/execute', withTestExecutionIdentity({
     success: true,
     result: { approved: true, score: 88 },
     executeTimeMs: 6,
     traces: []
+  }))
+  routes.set('POST /api/rule/definition/101/api-scenarios/execute-validated', async context => {
+    const configured = routes.get('POST /api/rule/definition/execute')
+    const execution = typeof configured === 'function' ? await configured(context) : configured
+    return {
+      execution,
+      responseJson: JSON.stringify({ code: 200, data: execution }),
+      validation: { status: 'NOT_CONFIGURED', message: '未设置预期，不判断用例是否通过', checks: [], diffs: [] }
+    }
   })
 
   routes.set('/api/rule/lineage/options', [

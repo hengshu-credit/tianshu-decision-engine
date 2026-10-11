@@ -104,7 +104,7 @@ public class RuleLineageOptionsTest {
     }
 
     @Test
-    public void transferCandidatesUseTheSameQueryAndTheExportPermission() throws Exception {
+    public void transferCandidatesUseTheSameQueryAndTheTransferViewPermission() throws Exception {
         Fixture fixture = new Fixture("FUNCTION", List.of(Map.of("id", 7L, "code", "tax", "label", "税额", "projectId", 0L)));
         OfflineResourceTransferController controller = new OfflineResourceTransferController();
         ReflectionTestUtils.setField(controller, "lineageService", fixture.service);
@@ -112,7 +112,7 @@ public class RuleLineageOptionsTest {
         assertEquals(422, controller.resources("FUNCTION", "tax", null, 0, 20).getCode());
         RuleEngineConsoleLoginProperties properties = new RuleEngineConsoleLoginProperties();
         ConsolePermissionService permissions = new ConsolePermissionService() {
-            @Override public boolean hasPermission(Long userId, String permissionCode) { return "rule:view".equals(permissionCode); }
+            @Override public boolean hasPermission(Long userId, String permissionCode) { return "transfer:view".equals(permissionCode); }
         };
         ConsolePermissionInterceptor interceptor = new ConsolePermissionInterceptor(properties, permissions);
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/rule/transfer/resources");

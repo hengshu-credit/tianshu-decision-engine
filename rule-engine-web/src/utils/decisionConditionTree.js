@@ -1,5 +1,7 @@
 import { isSourceStatusOperator, normalizeConditionOperator } from '@/constants/conditionOperators'
 import { compileConditionOperands } from '@/utils/conditionOperand'
+import { ConditionRangeError, isRangeOperator } from '@/utils/conditionRange'
+import { ConditionCollectionError, isTypedCollection } from '@/utils/conditionCollection'
 import {
   collectOperandReferences,
   compileOperand,
@@ -130,7 +132,16 @@ export function compileConditionTreeExpression(node) {
   return 'true'
 }
 
+export function previewConditionTreeExpression(node) {
+  try {
+    return { expression: compileConditionTreeExpression(node), error: '' }
+  } catch (error) {
+    if (!(error instanceof ConditionRangeError) && !(error instanceof ConditionCollectionError)) throw error
+    return { expression: '', error: error.message }
+  }
+}
+
 function compileConditionLeafExpression(leaf) {
-  if (!leaf || !leaf.leftOperand) return 'true'
+  if (!leaf || (!leaf.leftOperand && !isRangeOperator(leaf.operator) && !isTypedCollection(leaf.operator, leaf.rightOperand))) return 'true'
   return compileConditionOperands(leaf.leftOperand, leaf.operator, leaf.rightOperand)
 }

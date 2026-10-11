@@ -22,6 +22,11 @@ import {
 } from '@/utils/operand'
 
 describe('operand', () => {
+  test('指定业务版本生成脚本时保留版本来源，与不可变历史快照区分', () => {
+    const operand = { kind: 'REFERENCE', refType: 'VARIABLE', refId: '3', versionMode: 'FIXED', versionId: '8', versionSource: 'BUSINESS_VERSION' }
+    expect(compileOperand(operand)).toBe('resourceVersionValue("VARIABLE", "3", "BUSINESS_VERSION:8", "")')
+    expect(compileOperand({ ...operand, versionSource: null })).toBe('resourceVersionValue("VARIABLE", "3", "8", "")')
+  })
   const references = [
     {
       varCode: 'request.customer.age',

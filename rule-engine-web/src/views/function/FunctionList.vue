@@ -2,8 +2,7 @@
   <div class="uiue-list-page management-list-page">
     <div class="linkage-hint">
       <el-icon><el-icon-info /></el-icon>
-      自定义函数可在决策流/决策树的脚本任务中调用。支持 QLExpress 脚本、Java
-      类或 Spring Bean 实现。
+      自定义函数可在规则设计器的函数选择器中使用，无需手写调用表达式。支持脚本、Java 类或 Spring Bean 实现。
     </div>
 
     <div v-if="projectLoadError" class="function-page-error" role="alert">
@@ -83,6 +82,7 @@
       </el-form>
       <div class="uiue-btn-bar">
         <div class="btn-right">
+          <governance-workspace-toolbar resource-type="FUNCTION" />
           <table-column-settings :columns="functionColumns" storage-key="tianshu:table-columns:function-list" />
           <el-button
             v-permission="'function:edit'"
@@ -170,16 +170,25 @@
           formatUpdateTime(row.updateTime)
         }}</template>
       </el-table-column>
-      <el-table-column prop="status" label="状态" width="60" align="center">
+      <el-table-column prop="status" label="状态" width="160" align="center">
         <template v-slot="{ row }">
-          <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{
+          <governance-resource-status resource-type="FUNCTION" :resource-id="row.id" :status="row.status"><el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{
             row.status === 1 ? '启用' : '停用'
-          }}</el-tag>
+          }}</el-tag></governance-resource-status>
         </template>
       </el-table-column>
-      <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="230" align="center">
+      <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="285" align="center">
         <template v-slot="{ row }">
           <el-button
+            v-permission="'function:edit'"
+            link
+            data-action="edit"
+            size="small"
+            type="warning"
+            @click="editWorkspace('FUNCTION', row, handleEdit)"
+            >编辑</el-button
+          >
+          <el-button v-permission="'function:edit'"
             link
             data-action="execute"
             size="small"
@@ -187,23 +196,8 @@
             @click="handleTestFunction(row)"
             >测试</el-button
           >
-          <el-button
-            v-permission="'function:edit'"
-            link
-            data-action="edit"
-            size="small"
-            type="warning"
-            @click="handleEdit(row)"
-            >编辑</el-button
-          >
-          <el-button
-            link
-            data-action="version"
-            size="small"
-            type="info"
-            @click="openVersionDialog(row)"
-            >版本</el-button
-          >
+          <resource-version-manager v-if="row.id" data-action="version" resource-type="FUNCTION" :resource-id="row.id" has-legacy @legacy="openVersionDialog(row)" />
+          <governance-publish-action resource-type="FUNCTION" :resource-id="row.id" :show-versions="false" />
           <el-button
             v-permission="'function:edit'"
             link
@@ -248,10 +242,10 @@
     <el-dialog
       :title="editForm.id ? '编辑函数' : '新建函数'"
       v-model="dialogVisible"
-      width="600px"
+      width="760px"
       append-to-body
     >
-      <el-form :model="editForm" label-width="90px" size="small">
+      <el-form :model="editForm" label-width="90px" size="small" :disabled="functionSaving">
         <el-form-item label="作用范围">
           <el-select
             v-model="editForm.scope"
@@ -315,22 +309,57 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="实现方式">
+          <el-radio-group v-model="editForm.implType" @change="onImplementationChange">
+            <el-radio value="SCRIPT">QLExpress 脚本</el-radio>
+            <el-radio value="JAVA">Java 类</el-radio>
+            <el-radio value="BEAN">Spring Bean</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <template v-if="isNativeFunction">
+          <el-form-item :label="editForm.implType === 'JAVA' ? 'Java类名' : 'Bean名称'" required>
+            <div class="function-method-target">
+              <el-input v-if="editForm.implType === 'JAVA'" v-model="editForm.implClass" placeholder="已部署的 Java 类全名" />
+              <el-input v-else v-model="editForm.implBeanName" placeholder="已部署的 Spring Bean 名称" />
+              <el-button :loading="methodLoading" @click="loadFunctionMethods">读取方法</el-button>
+            </div>
+          </el-form-item>
+          <el-form-item label="实际方法">
+            <div class="function-method-selection">
+              <el-select v-if="!nativeManual" :model-value="selectedNativeSignature" filterable style="width: 100%" placeholder="先读取方法，再选择实际签名" data-testid="function-method-select" @change="selectFunctionMethod">
+                <el-option v-for="method in nativeMethodChoices" :key="method.signature" :value="method.signature" :label="method.displaySignature" :disabled="!method.available" :title="method.unavailableReason || method.displaySignature" />
+              </el-select>
+              <el-input v-else v-model="editForm.implMethod" placeholder="实际方法名（不包含括号和参数）" data-testid="function-method-name" />
+              <div class="function-method-help">
+                <span v-if="editForm.implMethod">已配置方法：{{ editForm.implMethod }}</span>
+                <el-button link @click="nativeManual = !nativeManual">{{ nativeManual ? '返回方法选择' : '手工填写目标签名' }}</el-button>
+              </div>
+              <el-alert v-if="currentMethodCatalog" :title="currentMethodCatalog.message" :type="currentMethodCatalog.valid && !currentMethodCatalog.legacySignature ? 'success' : 'warning'" :closable="false" show-icon />
+              <div v-else class="function-method-help">选择方法会带出实际参数类型；业务名称和参数说明保持可编辑，保存前会再次核对。</div>
+              <div v-if="nativeManual" class="function-method-help">用于目标运行端尚未安装的实现。请明确填写方法名和每个参数的实际类型；未验证状态会保留在审批预检中。</div>
+            </div>
+          </el-form-item>
+        </template>
         <el-form-item label="参数列表">
+          <el-alert v-if="parameterConfigError" :title="parameterConfigError" type="error" :closable="false" show-icon>
+            <el-button link @click="resetFunctionParameters">重新配置参数</el-button>
+          </el-alert>
+          <div class="function-parameters">
           <div
             v-for="(p, pi) in editParams"
             :key="pi"
-            style="display: flex; gap: 4px; margin-bottom: 4px"
+            class="function-parameter-row"
           >
             <el-input
               v-model="p.name"
               size="small"
               placeholder="参数名"
-              style="width: 100px"
+              :aria-label="`参数 ${pi + 1} 名称`"
             />
             <el-select
               v-model="p.type"
               size="small"
-              style="width: 150px"
+              :aria-label="`参数 ${pi + 1} 业务类型`"
             >
               <el-option
                 v-for="opt in varTypeFormOptions"
@@ -343,29 +372,34 @@
               v-model="p.label"
               size="small"
               placeholder="中文名"
-              style="flex: 1"
+              :aria-label="`参数 ${pi + 1} 显示名称`"
             />
             <el-button
               link
               size="small"
               :icon="ElIconDelete"
               class="btn-delete"
+              :aria-label="`删除参数 ${pi + 1}`"
+              :disabled="isNativeFunction && !nativeManual"
               @click="editParams.splice(pi, 1)"
             />
+            <div v-if="isNativeFunction" class="function-parameter-java-type">
+              <span>实际方法类型</span>
+              <el-select v-if="nativeManual" v-model="p.javaType" filterable allow-create default-first-option :aria-label="`参数 ${pi + 1} 实际方法类型`" placeholder="选择或填写精确 Java 类型">
+                <el-option v-for="type in functionJavaTypes" :key="type" :value="type" :label="type" />
+              </el-select>
+              <code v-else>{{ methodParameterType(pi) }}</code>
+            </div>
           </div>
+          <div v-if="!editParams.length && !parameterConfigError" class="function-method-help">无参数</div>
           <el-button
             size="small"
             :icon="ElIconPlus"
-            @click="editParams.push({ name: '', type: 'STRING', label: '' })"
+            :disabled="isNativeFunction && !nativeManual"
+            @click="editParams.push({ name: '', type: 'STRING', label: '', ...(isNativeFunction ? { javaType: '' } : {}) })"
             >添加参数</el-button
           >
-        </el-form-item>
-        <el-form-item label="实现方式">
-          <el-radio-group v-model="editForm.implType">
-            <el-radio value="SCRIPT">QLExpress 脚本</el-radio>
-            <el-radio value="JAVA">Java 类</el-radio>
-            <el-radio value="BEAN">Spring Bean</el-radio>
-          </el-radio-group>
+          </div>
         </el-form-item>
         <el-form-item label="实现脚本" v-if="editForm.implType === 'SCRIPT'">
           <monaco-editor
@@ -374,34 +408,10 @@
             height="180px"
           />
         </el-form-item>
-        <el-form-item label="Java类名" v-if="editForm.implType === 'JAVA'">
-          <el-input
-            v-model="editForm.implClass"
-            placeholder="如 com.hengshucredit.rule.example.functions.TaxFunctions"
-          />
-        </el-form-item>
-        <el-form-item label="方法名" v-if="editForm.implType === 'JAVA'">
-          <el-input
-            v-model="editForm.implMethod"
-            placeholder="Java 方法名，如 calculateVAT（不填则默认使用函数编码）"
-          />
-        </el-form-item>
-        <el-form-item label="Bean名称" v-if="editForm.implType === 'BEAN'">
-          <el-input
-            v-model="editForm.implBeanName"
-            placeholder="Spring Bean 名称，如 taxFunctions"
-          />
-        </el-form-item>
-        <el-form-item label="方法名" v-if="editForm.implType === 'BEAN'">
-          <el-input
-            v-model="editForm.implMethod"
-            placeholder="Bean 上的方法名，如 calculateVAT（不填则默认使用函数编码）"
-          />
-        </el-form-item>
       </el-form>
       <template v-slot:footer>
         <el-button size="small" @click="dialogVisible = false">取消</el-button>
-        <el-button v-permission="'function:edit'" size="small" type="primary" @click="handleSave"
+        <el-button v-permission="'function:edit'" size="small" type="primary" :loading="functionSaving" @click="handleSave"
           >保存</el-button
         >
       </template>
@@ -439,7 +449,7 @@
           <el-button size="small" @click="functionTestVisible = false"
             >关闭</el-button
           >
-          <el-button
+          <el-button v-permission="'function:edit'"
             size="small"
             type="primary"
             :loading="functionTesting"
@@ -461,7 +471,7 @@
           <el-option
             v-for="item in versionList"
             :key="`left-${item.version}`"
-            :label="`v${item.version}`"
+            :label="versionDisplayLabel(item)"
             :value="item.version"
           />
         </el-select>
@@ -470,7 +480,7 @@
           <el-option
             v-for="item in versionList"
             :key="`right-${item.version}`"
-            :label="`v${item.version}`"
+            :label="versionDisplayLabel(item)"
             :value="item.version"
           />
         </el-select>
@@ -484,11 +494,11 @@
       </div>
       <el-table show-overflow-tooltip :data="versionList" border size="small" style="width: 100%">
         <el-table-column
-          prop="version"
+          prop="displayVersion"
           label="版本"
-          width="80"
+          width="140"
           align="center"
-        />
+        ><template #default="{ row }">{{ versionDisplayLabel(row) }}</template></el-table-column>
         <el-table-column
           prop="changeLog"
           label="变更说明"
@@ -515,7 +525,7 @@
               @click="compareWithNext(row, $index)"
               >对比</el-button
             >
-            <el-button
+            <el-button v-permission="['function:edit', 'approval:submit']"
               link
               data-action="rollback"
               size="small"
@@ -543,6 +553,13 @@
 </template>
 
 <script>
+import ResourceVersionManager from '@/components/common/ResourceVersionManager.vue'
+import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
+import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
+import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
+import governanceWorkspaceMixin from '@/mixins/governanceWorkspaceMixin'
+import { completeResourceChange } from '@/utils/governanceWorkspace'
+import { chooseVersionRestore, versionDisplayLabel } from '@/utils/versionRestore'
 import { markRaw } from 'vue'
 import {
   InfoFilled as ElIconInfo,
@@ -558,6 +575,7 @@ import {
   compareVersions,
   rollbackVersion,
   testFunction,
+  inspectFunctionMethods,
 } from '@/api/function'
 import { listProjects } from '@/api/project'
 import { isRequestErrorNotified } from '@/api/request'
@@ -568,6 +586,7 @@ import {
   savePageState,
 } from '@/utils/pageStateCache'
 import { sampleValueForVarType } from '@/utils/testParamTemplate'
+import { parseFunctionParameters, validatedFunctionParameters, explicitFunctionSignature, FUNCTION_JAVA_TYPES } from '@/utils/functionParameters'
 import MonacoEditor from '@/components/MonacoEditor'
 import JsonVersionDiff from '@/components/common/JsonVersionDiff.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
@@ -575,6 +594,7 @@ import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 
 export default {
+  mixins: [governanceWorkspaceMixin],
   data() {
     return {
       functionColumns: [
@@ -624,6 +644,17 @@ export default {
         status: 1,
       },
       editParams: [],
+      parameterConfigError: '',
+      methodCatalog: null,
+      methodCatalogKey: '',
+      methodCatalogTargetKey: '',
+      methodLoading: false,
+      methodRequestId: 0,
+      editSessionId: 0,
+      originalBindingKey: '',
+      nativeManual: false,
+      functionSaving: false,
+      functionJavaTypes: FUNCTION_JAVA_TYPES,
       functionTestVisible: false,
       functionTesting: false,
       functionTestTarget: {},
@@ -641,7 +672,8 @@ export default {
       ElIconDelete: markRaw(ElIconDelete),
     }
   },
-  components: {
+  components: { ResourceVersionManager, GovernancePublishAction, GovernanceWorkspaceToolbar,
+    GovernanceResourceStatus,
     TableColumnSettings,
     MonacoEditor,
     JsonVersionDiff,
@@ -651,6 +683,15 @@ export default {
   },
   name: 'FunctionList',
   computed: {
+    isNativeFunction() { return ['JAVA', 'BEAN'].includes(this.editForm.implType) },
+    nativeBindingKey() { return this.functionBindingKey() },
+    nativeTargetKey() { return JSON.stringify([this.editForm.implType, this.editForm.implClass, this.editForm.implBeanName]) },
+    currentMethodCatalog() { return this.methodCatalogKey === this.nativeBindingKey ? this.methodCatalog : null },
+    nativeMethodChoices() { return this.methodCatalogTargetKey === this.nativeTargetKey ? this.methodCatalog?.methods || [] : [] },
+    selectedNativeSignature() {
+      try { return explicitFunctionSignature(this.editForm, this.editParams) || this.currentMethodCatalog?.signature || '' }
+      catch { return '' }
+    },
     hasActiveFunctionFilters() {
       return [
         'scope',
@@ -666,7 +707,78 @@ export default {
     this.restoreCachedState()
     this.loadProjects().then(() => this.loadFunctions())
   },
+  watch: {
+    dialogVisible(visible) { if (!visible) { this.methodRequestId++; this.editSessionId++; this.methodLoading = false } },
+  },
+  beforeUnmount() { this.methodRequestId++; this.editSessionId++ },
   methods: {
+    versionDisplayLabel,
+    functionBindingKey(form = this.editForm, params = this.editParams) {
+      return JSON.stringify([form.implType, form.implClass, form.implBeanName, form.implMethod, form.funcCode, params])
+    },
+    functionDeclarationKey() {
+      return JSON.stringify([this.nativeTargetKey, this.editForm.implMethod?.trim() || this.editForm.funcCode,
+        this.editParams.map(param => [param.type, param.javaType])])
+    },
+    resetMethodEditor() {
+      this.editSessionId++; this.methodRequestId++; this.methodLoading = false
+      this.methodCatalog = null; this.methodCatalogKey = ''; this.methodCatalogTargetKey = ''; this.nativeManual = false
+      this.parameterConfigError = ''; this.functionSaving = false
+    },
+    onImplementationChange(type) {
+      this.methodRequestId++; this.methodLoading = false; this.methodCatalog = null; this.methodCatalogKey = ''; this.nativeManual = false
+      if (type === 'SCRIPT') this.editParams = this.editParams.map(param => {
+        const copy = { ...param }; delete copy.javaType; return copy
+      })
+      else if (this.editParams.length === 1 && !this.editParams[0].name && !this.editParams[0].label
+        && this.editParams[0].type === 'STRING' && Object.keys(this.editParams[0]).every(key => ['name', 'type', 'label'].includes(key))) {
+        this.editParams = []
+      }
+    },
+    resetFunctionParameters() {
+      this.editParams = []; this.parameterConfigError = ''
+      this.methodCatalog = null; this.methodCatalogKey = ''
+    },
+    async loadFunctionMethods() {
+      const requestId = ++this.methodRequestId
+      const session = this.editSessionId
+      const key = this.nativeBindingKey
+      const targetKey = this.nativeTargetKey
+      const payload = { ...this.editForm, paramsJson: JSON.stringify(this.editParams) }
+      this.methodLoading = true; this.methodCatalog = null; this.methodCatalogKey = ''
+      try {
+        const response = await inspectFunctionMethods(payload)
+        if (requestId !== this.methodRequestId || session !== this.editSessionId || targetKey !== this.nativeTargetKey || !this.dialogVisible) return
+        if (!response?.data || !Array.isArray(response.data.methods) || !['AVAILABLE', 'UNAVAILABLE', 'INVALID'].includes(response.data.status)) {
+          throw new Error('返回的方法目录不完整，请重新读取')
+        }
+        this.methodCatalog = response.data; this.methodCatalogKey = key; this.methodCatalogTargetKey = targetKey
+      } catch (error) {
+        if (requestId !== this.methodRequestId || session !== this.editSessionId || key !== this.nativeBindingKey || !this.dialogVisible) return
+        this.methodCatalog = { status: 'ERROR', valid: false, methods: [], message: this.errorMessage(error, '读取方法失败，请重试') }
+        this.methodCatalogKey = key
+      } finally { if (requestId === this.methodRequestId && session === this.editSessionId) this.methodLoading = false }
+    },
+    selectFunctionMethod(signature) {
+      const selected = this.nativeMethodChoices.find(method => method.signature === signature && method.available)
+      if (!selected) return
+      const catalog = this.methodCatalog
+      this.editForm.implMethod = selected.name
+      this.editParams = selected.parameters.map((parameter, index) => {
+        const previous = this.editParams[index]
+        const untouched = previous && !previous.name && !previous.label && previous.type === 'STRING' && !previous.javaType
+        return { ...previous, name: previous?.name || parameter.name || '', label: previous?.label || '',
+          type: !previous || untouched ? parameter.suggestedType : previous.type, javaType: parameter.javaType }
+      })
+      this.parameterConfigError = ''; this.nativeManual = false
+      this.methodCatalog = { ...catalog, signature, legacySignature: false, valid: true, message: '已选择实际方法；保存前将再次核对完整参数配置' }
+      this.methodCatalogKey = this.nativeBindingKey
+    },
+    methodParameterType(index) {
+      const explicit = this.editParams[index]?.javaType
+      if (explicit) return explicit
+      return this.currentMethodCatalog?.methods?.find(method => method.signature === this.currentMethodCatalog.signature)?.parameters?.[index]?.javaType || '旧映射，读取方法后确认'
+    },
     restoreCachedState() {
       const state = restorePageState('FunctionList')
       if (state.qp) this.qp = { ...this.qp, ...state.qp }
@@ -677,7 +789,7 @@ export default {
     async loadProjects() {
       this.projectLoadError = ''
       try {
-        const res = await listProjects({ pageNum: 1, pageSize: 200 })
+        const res = await listProjects({ pageNum: 1, pageSize: 200, status: 1 })
         const list =
           (res && res.data && res.data.records) || (res && res.data) || []
         this.projects = list
@@ -815,6 +927,7 @@ export default {
       return { SCRIPT: '', JAVA: 'warning', BEAN: 'success' }[type] || 'info'
     },
     handleCreate() {
+      this.resetMethodEditor()
       this.editForm = {
         funcCode: '',
         funcName: '',
@@ -830,13 +943,17 @@ export default {
         scope: this.currentProjectId ? 'PROJECT' : 'GLOBAL',
       }
       this.editParams = [{ name: '', type: 'STRING', label: '' }]
+      this.originalBindingKey = this.functionDeclarationKey()
       this.dialogVisible = true
     },
     handleEdit(row) {
+      this.resetMethodEditor()
       this.editForm = { ...row, scope: row.scope || 'PROJECT' }
-      this.editParams = this.parseParams(row.paramsJson || '[]')
-      if (this.editParams.length === 0)
+      try { this.editParams = parseFunctionParameters(row.paramsJson) }
+      catch (error) { this.editParams = []; this.parameterConfigError = error.message }
+      if (this.editParams.length === 0 && !this.isNativeFunction)
         this.editParams = [{ name: '', type: 'STRING', label: '' }]
+      this.originalBindingKey = this.functionDeclarationKey()
       this.dialogVisible = true
     },
     handleTestFunction(row) {
@@ -926,6 +1043,7 @@ export default {
       }
     },
     async handleSave() {
+      if (this.functionSaving) return
       if (!this.editForm.funcCode || !this.editForm.funcName) {
         this.$message.warning('请填写函数编码和名称')
         return
@@ -934,24 +1052,46 @@ export default {
         this.$message.warning('请选择所属项目')
         return
       }
-      // 全局函数 projectId 设为 0
-      if (this.editForm.scope === 'GLOBAL') {
-        this.editForm.projectId = 0
-      }
-      this.editForm.paramsJson = JSON.stringify(
-        this.editParams.filter((p) => p.name)
-      )
+      const session = this.editSessionId
+      const key = this.nativeBindingKey
+      const snapshotKey = JSON.stringify([this.editForm, this.editParams])
+      let params
       try {
-        const response = this.editForm.id
-          ? await updateFunction(this.editForm)
-          : await createFunction(this.editForm)
-        this.$message.success('函数变更已送审')
+        if (this.parameterConfigError) throw new Error(this.parameterConfigError)
+        params = validatedFunctionParameters(this.editParams)
+      } catch (error) { this.$message.warning(error.message); return }
+      const payload = { ...this.editForm, projectId: this.editForm.scope === 'GLOBAL' ? 0 : this.editForm.projectId, paramsJson: JSON.stringify(params) }
+      this.functionSaving = true
+      try {
+        if (this.isNativeFunction) {
+          const unchangedLegacyBinding = this.editForm.id && this.functionDeclarationKey() === this.originalBindingKey
+          if (!unchangedLegacyBinding && (!payload.implMethod?.trim() || params.some(param => !param.javaType)))
+            throw new Error('请选择实际方法，或明确填写方法名及每个参数的实际方法类型')
+          const inspected = await inspectFunctionMethods(payload)
+          if (session !== this.editSessionId || !this.dialogVisible) return
+          if (snapshotKey !== JSON.stringify([this.editForm, this.editParams])) {
+            this.$message.warning('配置已变化，请再次保存以核对新配置'); return
+          }
+          const catalog = inspected.data
+          this.methodCatalog = catalog; this.methodCatalogKey = key; this.methodCatalogTargetKey = this.nativeTargetKey
+          if (!catalog || !Array.isArray(catalog.methods) || !['AVAILABLE', 'UNAVAILABLE'].includes(catalog.status)) {
+            throw new Error(catalog?.message || '方法签名尚未核对，请重新读取方法')
+          }
+          if (catalog.status === 'AVAILABLE' && (catalog.valid !== true || !catalog.signature)) throw new Error(catalog.message || '实际方法签名不匹配')
+          const declared = explicitFunctionSignature(payload, params)
+          if (catalog.status === 'AVAILABLE' && declared && catalog.signature !== declared) throw new Error('返回的方法签名与当前选择不一致，请重新读取方法')
+          if (catalog.status === 'UNAVAILABLE' && !unchangedLegacyBinding
+            && (!payload.implMethod?.trim() || params.some(param => !param.javaType))) {
+            throw new Error('目标运行端尚未安装此实现，请填写方法名及每个参数的实际类型后再送审')
+          }
+        }
+        const response = payload.id ? await updateFunction(payload) : await createFunction(payload)
+        if (session !== this.editSessionId || !this.dialogVisible) return
         this.dialogVisible = false
-        if (response.data && response.data.id)
-          this.$router.push('/approval/' + response.data.id)
+        await completeResourceChange(this, response, () => this.loadFunctions())
       } catch (e) {
-        this.notifyOperationError(e, '保存函数失败')
-      }
+        if (session === this.editSessionId && this.dialogVisible) this.notifyOperationError(e, '保存函数失败')
+      } finally { if (session === this.editSessionId) this.functionSaving = false }
     },
     async openVersionDialog(row) {
       this.versionRow = row
@@ -991,17 +1131,15 @@ export default {
     },
     async rollbackFunctionVersion(row) {
       if (!this.versionRow || !row) return
-      await this.$confirm('确认回滚到 v' + row.version + '？', '提示', {
-        type: 'warning',
-      })
+      const mode = await chooseVersionRestore(row.displayVersion || row.businessVersion || row.version)
+      if (!mode) return
       const response = await rollbackVersion(
         this.versionRow.id,
-        row.version
+        row.version, mode
       )
-      this.$message.success('已创建历史版本恢复审批')
       this.versionVisible = false
-      if (response.data && response.data.id)
-        this.$router.push('/approval/' + response.data.id)
+      await completeResourceChange(this, response, () => this.loadFunctions())
+      await this.editWorkspace('FUNCTION', this.versionRow, this.handleEdit)
     },
     prettyVersionJson(text) {
       if (!text) return ''
@@ -1017,9 +1155,7 @@ export default {
           type: 'warning',
         })
         const response = await deleteFunction(row.id)
-        this.$message.success('函数删除已送审')
-        if (response.data && response.data.id)
-          this.$router.push('/approval/' + response.data.id)
+        await completeResourceChange(this, response, () => this.loadFunctions())
       } catch (e) {
         if (!this.isDialogCancelled(e)) {
           this.notifyOperationError(e, '删除函数失败')
@@ -1045,10 +1181,10 @@ export default {
 .function-page-error {
   padding: 8px 12px;
   margin-bottom: 12px;
-  color: #b42318;
+  color: var(--el-color-error);
   font-size: 13px;
-  background: #fff4f2;
-  border: 1px solid #fecdca;
+  background: var(--el-color-error-light-9);
+  border: 1px solid var(--el-color-error-light-7);
   border-radius: 4px;
 }
 .function-empty {
@@ -1064,6 +1200,21 @@ export default {
   margin-bottom: 12px;
   color: var(--tianshu-text-secondary);
   font-size: 13px;
+}
+.function-method-target { display: flex; gap: 8px; width: 100%; }
+.function-method-target .el-input { min-width: 0; flex: 1; }
+.function-method-selection, .function-parameters { width: 100%; min-width: 0; }
+.function-method-help { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--tianshu-text-secondary); font-size: 12px; line-height: 1.6; margin-top: 6px; overflow-wrap: anywhere; }
+.function-parameter-row { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(130px, 1fr) minmax(90px, 1fr) 28px; gap: 6px; margin-bottom: 10px; }
+.function-parameter-row > * { min-width: 0; }
+.function-parameter-java-type { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--tianshu-text-secondary); font-size: 12px; }
+.function-parameter-java-type code { overflow-wrap: anywhere; }
+.function-parameter-java-type .el-select { flex: 1; min-width: 180px; }
+@media (max-width: 640px) {
+  .function-parameter-row { grid-template-columns: minmax(0, 1fr) 28px; }
+  .function-parameter-row > .el-input, .function-parameter-row > .el-select { grid-column: 1; }
+  .function-parameter-row > .el-button { grid-column: 2; grid-row: 1; }
+  .function-parameter-java-type .el-select { width: 100%; min-width: 0; flex-basis: 100%; }
 }
 .version-compare {
   margin-top: 10px;

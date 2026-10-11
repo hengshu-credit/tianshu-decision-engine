@@ -116,12 +116,12 @@ describe('ListDetail governed record changes', () => {
       .toBe('2026-07-01 00:00:00 \u81f3 2026-12-31 23:59:59')
   })
 
-  test('名单内容变更与导入入口受字段编辑权限控制', async () => {
+  test('名单内容变更与导入入口受名单编辑权限控制', async () => {
     wrapper.unmount()
     const permissions = []
     wrapper = await mountPage(permissions)
 
-    expect(permissions).toContain('field:edit')
+    expect(permissions).toContain('list:edit')
   })
 
   test('日志组合筛选和翻页保留条件，重置回到第一页', async () => {

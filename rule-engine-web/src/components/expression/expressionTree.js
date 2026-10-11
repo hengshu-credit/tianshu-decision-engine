@@ -47,8 +47,32 @@ export function removeExpressionSelection(root, path = []) {
       changed: true
     }
   }
+  if (path.at(-2) === 'items' && Number.isInteger(path.at(-1))) {
+    const parentPath = path.slice(0, -2), parent = getExpressionNode(root, parentPath)
+    if (parent?.kind === 'ARRAY' && path.at(-1) >= 0 && path.at(-1) < parent.items.length) {
+      const items = cloneOperand(parent.items)
+      items.splice(path.at(-1), 1)
+      return { root: setExpressionNode(root, parentPath, { ...parent, items }), selectedPath: items.length ? parentPath.concat(['items', Math.min(path.at(-1), items.length - 1)]) : parentPath, changed: true }
+    }
+  }
   if (!getExpressionNode(root, path)) return unchanged(root, path)
   return { root: setExpressionNode(root, path, null), selectedPath: path.slice(), changed: true }
+}
+
+export function removeExpressionAtCursor(root, path = [], key = 'Backspace', operator = false) {
+  const offset = key === 'Delete' ? (operator ? 0 : 1) : (operator ? -1 : 0)
+  let target = path
+  if (offset) {
+    const operation = operationTermLocation(root, path)
+    const parentPath = operation ? operation.parentPath : path.slice(0, Number.isInteger(path.at(-1)) ? -2 : -1)
+    const entries = path.length ? expressionChildEntries(getExpressionNode(root, parentPath), parentPath) : []
+    const index = entries.findIndex(entry => pathsEqual(entry.path, path))
+    target = entries[index + offset]?.path
+    if (index < 0 || !target) return unchanged(root, path)
+  }
+  const result = removeExpressionSelection(root, target)
+  if (offset > 0 && getExpressionNode(result.root, path)) result.selectedPath = path.slice()
+  return result
 }
 
 export function replaceExpressionOperator(root, path, operator) {
@@ -148,7 +172,10 @@ function functionExampleOperand(param) {
   if (example && typeof example === 'object') {
     return createLiteralOperand(JSON.stringify(example), type === 'OBJECT' ? 'MAP' : type)
   }
-  return createLiteralOperand(example == null ? '' : example, type)
+  const valueType = ['OBJECT', 'ANY'].includes(type)
+    ? typeof example === 'number' ? 'NUMBER' : typeof example === 'boolean' ? 'BOOLEAN' : 'STRING'
+    : type
+  return createLiteralOperand(example == null ? '' : example, valueType)
 }
 
 export function functionParameters(fn) {
@@ -221,6 +248,21 @@ export function wrapExpressionNode(current, template) {
     source.operand = cloneOperand(current)
   }
   return source
+}
+
+export function appendExpressionRow(root, path = []) {
+  const node = getExpressionNode(root, path)
+  if (!node) return unchanged(root, path)
+  if (node.kind === 'ARRAY') {
+    const items = [...cloneOperand(node.items || []), null]
+    return { root: setExpressionNode(root, path, { ...node, items }), selectedPath: path.concat(['items', items.length - 1]), changed: true }
+  }
+  const terms = node.kind === 'OPERATION' ? cloneOperand(node.terms || []) : [{ operand: cloneOperand(node) }]
+  const previous = terms.at(-1)
+  const operator = ['&&', '||'].includes(previous?.operator) ? previous.operator : inferOperandType(node) === 'BOOLEAN' ? '&&' : '+'
+  terms.push(terms.length ? { operator, operand: null } : { operand: null })
+  const next = node.kind === 'OPERATION' ? { ...node, terms } : createOperationOperand(terms, inferOperandType(node))
+  return { root: setExpressionNode(root, path, next), selectedPath: path.concat(['terms', terms.length - 1, 'operand']), changed: true }
 }
 
 function operationTermLocation(root, path) {

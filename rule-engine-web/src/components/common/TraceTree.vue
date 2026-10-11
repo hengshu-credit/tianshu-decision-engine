@@ -87,6 +87,7 @@
           <span
             class="rule-trace-status"
             :class="'is-' + String(ruleTraceFrame.status || '').toLowerCase()"
+            :title="executionStatusHint(ruleTraceFrame.status)"
           >
             {{ ruleTraceStatusLabel(ruleTraceFrame.status) }}
           </span>
@@ -115,6 +116,7 @@
           <span
             class="rule-trace-module-status"
             :class="'is-' + String(event.status || '').toLowerCase()"
+            :title="executionStatusHint(event.status)"
           >
             {{ ruleTraceStatusLabel(event.status) }} ·
             {{ event.durationMs || 0 }} ms
@@ -931,6 +933,8 @@ import ExternalCallTrace from './ExternalCallTrace.vue'
 import FlowTraceGraph from './FlowTraceGraph.vue'
 import { compileOperand, operandDisplay } from '@/utils/operand'
 import { resolveTraceReferences } from '@/utils/traceReference'
+import { executionStatusLabel, executionStatusHint } from '@/utils/executionStatus'
+import { formatConditionDescription, formatConditionTreeDescription, formatExpressionFormula } from '@/utils/expressionDisplay'
 
 /** 运算符中文映射 */
 var OP_CN = {
@@ -1363,6 +1367,7 @@ export default {
           configuredConditionText:
             configured.configuredConditionText || '',
           configuredHasOr: configured.configuredHasOr === true,
+          configuredNeedsSummary: configured.configuredNeedsSummary === true,
           acts: acts,
           evaluated: traced ? traced.evaluated : false,
           hit: status === 'hit',
@@ -1408,13 +1413,13 @@ export default {
       return null
     },
     /**
-     * 决策表条件中含「或」时，按变量分列会失真，改为仅展示条件摘要列。
+     * 或、重复字段与组合左值不能无损按变量分列，使用完整条件摘要。
      */
     tableUseCondSummary: function () {
       var rules = this.tableRules
       for (var i = 0; i < rules.length; i++) {
         if (
-          rules[i].configuredHasOr ||
+          rules[i].configuredHasOr || rules[i].configuredNeedsSummary ||
           this._condHasOr(rules[i].condNode)
         )
           return true
@@ -2325,8 +2330,7 @@ export default {
       return (event && event.traceId ? event.traceId : 'module') + '-' + (step && step.sequence ? step.sequence : (step && step.type ? step.type : 'step'))
     },
     moduleStepStatusLabel: function (status) {
-      var labels = { SUCCESS: '成功', FAILED: '失败', READY: '已准备', SENT: '已发送', SKIPPED: '已跳过' }
-      return labels[status] || status || '处理中'
+      return executionStatusLabel(status, '处理中')
     },
     moduleStepValue: function (value) {
       if (value === null || value === undefined) return '-'
@@ -2338,9 +2342,9 @@ export default {
       }
     },
     ruleTraceStatusLabel: function (status) {
-      var labels = { SUCCESS: '成功', FAILED: '失败', RUNNING: '执行中' }
-      return labels[status] || status || '未知'
+      return executionStatusLabel(status)
     },
+    executionStatusHint,
     /**
      * 决策流卡片等处：模板中使用的函数展示名
      */
@@ -2631,6 +2635,7 @@ export default {
             this._modelConditionText(rule.conditionRoot) ||
             this._modelLegacyConditionText(conds),
           configuredHasOr: this._modelConditionHasOr(rule.conditionRoot),
+          configuredNeedsSummary: this._modelConditionNeedsSummary(rule.conditionRoot),
           acts: this._modelActionCells(rule, model),
         })
       }
@@ -2669,10 +2674,7 @@ export default {
       }
       var code = this._modelOperandCode(node.leftOperand) || node.varCode || ''
       if (!code) return
-      var value = node.rightOperand
-        ? this._modelOperandText(node.rightOperand)
-        : node.value
-      cells[code] = this._modelConditionValue(node.operator, value)
+      cells[code] = formatConditionDescription(node, { includeLeft: false, labels: this.varMap })
     },
     _modelConditionValue: function (operator, value) {
       if (operator === '*') return '任意'
@@ -2682,23 +2684,7 @@ export default {
     },
     _modelConditionText: function (node) {
       if (!node) return ''
-      if (node.type === 'group') {
-        var children = Array.isArray(node.children) ? node.children : []
-        if (!children.length) return '默认规则'
-        var parts = []
-        for (var i = 0; i < children.length; i++) {
-          var text = this._modelConditionText(children[i])
-          if (text) parts.push(text)
-        }
-        return parts.join(node.op === 'OR' ? ' 或 ' : ' 且 ')
-      }
-      var code = this._modelOperandCode(node.leftOperand) || node.varCode || '?'
-      var label =
-        (node.leftOperand && node.leftOperand.label) || this.varMap[code] || code
-      var value = node.rightOperand
-        ? this._modelOperandText(node.rightOperand)
-        : node.value
-      return label + ' ' + this._modelConditionValue(node.operator, value)
+      return formatConditionTreeDescription(node, { labels: this.varMap })
     },
     _modelLegacyConditionText: function (cells) {
       var keys = Object.keys(cells || {})
@@ -2718,6 +2704,19 @@ export default {
         if (this._modelConditionHasOr(children[i])) return true
       }
       return false
+    },
+    _modelConditionNeedsSummary: function (node) {
+      const seen = new Set()
+      const visit = condition => {
+        if (!condition) return false
+        if (condition.type === 'group') return condition.op === 'OR' || (condition.children || []).some(visit)
+        if (condition.leftOperand && !['REFERENCE', 'PATH'].includes(condition.leftOperand.kind)) return true
+        const code = this._modelOperandCode(condition.leftOperand) || condition.varCode
+        if (!code || seen.has(code)) return true
+        seen.add(code)
+        return false
+      }
+      return visit(node)
     },
     _modelActionCells: function (rule, model) {
       var cells = {}
@@ -2747,7 +2746,7 @@ export default {
     _modelOperandText: function (operand) {
       if (!operand) return ''
       if (operand.kind === 'LITERAL') return operand.value
-      return operand.label || operand.code || operand.value || ''
+      return formatExpressionFormula(operand, { humanReadable: true })
     },
     _tableRuleStatus: function (rule) {
       if (!rule || rule.evaluated === false) return 'skipped'
@@ -3410,8 +3409,13 @@ export default {
         (node.token === '&&' || node.token === '||')
       ) {
         var ch = node.children || []
-        var a = ch[0] ? this._traceCondText(ch[0]) : ''
-        var b = ch[1] ? this._traceCondText(ch[1]) : ''
+        var describe = (child) => {
+          if (!child) return ''
+          var text = this._traceCondText(child)
+          return child.type === 'OPERATOR' && ['&&', '||'].includes(child.token) ? '(' + text + ')' : text
+        }
+        var a = describe(ch[0])
+        var b = describe(ch[1])
         var sep = node.token === '&&' ? ' 且 ' : ' 或 '
         if (!a && !b) return '-'
         return (a || '-') + sep + (b || '-')
@@ -4567,7 +4571,9 @@ export default {
   color: var(--tianshu-danger-text);
 }
 .rule-trace-status.is-running,
-.rule-trace-module-status.is-running {
+.rule-trace-module-status.is-running,
+.rule-trace-status.is-throttled,
+.rule-trace-module-status.is-throttled {
   color: var(--tianshu-warning-text);
 }
 .rule-trace-id {

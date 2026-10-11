@@ -45,6 +45,7 @@ public class HttpLogReporter implements ExecutionLogReporter {
     private final AtomicLong retryCount = new AtomicLong();
     private final AtomicLong failedBatchCount = new AtomicLong();
     private final AtomicLong failedLogCount = new AtomicLong();
+    private final AtomicLong reportedLogCount = new AtomicLong();
     private final Object lifecycleLock = new Object();
     private volatile Thread worker;
     private volatile LifecycleState lifecycleState = LifecycleState.STOPPED;
@@ -145,6 +146,10 @@ public class HttpLogReporter implements ExecutionLogReporter {
         return failedLogCount.get();
     }
 
+    public long getReportedLogCount() {
+        return reportedLogCount.get();
+    }
+
     private void runLoop(long workerGeneration) {
         try {
             while (shouldContinue(workerGeneration)) {
@@ -212,6 +217,7 @@ public class HttpLogReporter implements ExecutionLogReporter {
             attempts = attempt;
             try {
                 sendBatch(batch, workerGeneration);
+                reportedLogCount.addAndGet(batch.size());
                 clearActiveBatch(workerGeneration);
                 return;
             } catch (ShutdownAbortException e) {

@@ -12,6 +12,23 @@ import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 public class GovernanceApprovalControllerTest {
+    @Test
+    public void workspaceCanInspectRejectedAndApprovedRequestsWithoutChangingTheirStatusFilter() {
+        TrackingApprovalService service = new TrackingApprovalService();
+        GovernanceApprovalController controller = new GovernanceApprovalController();
+        ReflectionTestUtils.setField(controller, "approvalService", service);
+        ReflectionTestUtils.setField(controller, "operatorResolver", new ConsoleOperatorResolver() {
+            @Override public String resolve() { return "owner"; }
+        });
+        for (String status : java.util.List.of("REJECTED", "APPROVED", "PENDING", "EDITING", "CONFLICT", "CANCELLED")) {
+            GovernanceApprovalQuery query = new GovernanceApprovalQuery();
+            query.setStatus(status); query.setTaskScope("ALL"); query.setResourceType("BILLING_CONFIG");
+            controller.workspaces(query);
+            Assert.assertEquals(status, service.query.getStatus());
+            Assert.assertEquals("MINE", service.query.getTaskScope());
+            Assert.assertEquals("BILLING_CONFIG", service.query.getResourceType());
+        }
+    }
 
     @Test
     public void listAndSummaryUseResolvedOperatorForTaskViews() {

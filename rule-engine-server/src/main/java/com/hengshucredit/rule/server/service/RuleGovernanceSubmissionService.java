@@ -99,6 +99,8 @@ public class RuleGovernanceSubmissionService {
             value.put("content", content); value.put("inputFieldsJson", fields.getInputFields()); value.put("outputFieldsJson", fields.getOutputFields());
             snapshot = new ResourceSnapshot(CanonicalJson.write(value), snapshot.effectiveStatus(), snapshot.secretPayloadCiphertext(), snapshot.secretDigest());
         }
+        value.put("_ruleRevisionId", revision.getId());
+        snapshot = new ResourceSnapshot(CanonicalJson.write(value), snapshot.effectiveStatus(), snapshot.secretPayloadCiphertext(), snapshot.secretDigest());
 
         GovernanceDraftRequest draft =
                 new GovernanceDraftRequest();
@@ -106,6 +108,16 @@ public class RuleGovernanceSubmissionService {
         draft.setResourceId(revision.getDefinitionId());
         draft.setProjectId(longValue(value.get("projectId")));
         draft.setAction("UPDATE");
+        draft.setPublishMode("OVERWRITE".equals(revision.getPublishMode()) ? "OVERWRITE" : "NEW");
+        if ("OVERWRITE".equals(draft.getPublishMode())) {
+            RuleVersionBinding target = versionService.requireBinding(revision.getDefinitionId(), revision.getTargetVersionId());
+            var head = com.hengshucredit.rule.server.governance.ResourceVersionLines.heads(
+                    approvalService.versions("RULE", revision.getDefinitionId())).stream()
+                    .filter(item -> Objects.equals(item.getDisplayVersion(), target.getVersionNo())
+                            && com.hengshucredit.rule.server.governance.ResourceVersionLines.published(item))
+                    .findFirst().orElseThrow(() -> new IllegalStateException("目标规则版本缺少公共版本快照，请刷新后重试"));
+            draft.setTargetVersionId(head.getId()); draft.setExpectedTargetSnapshotId(head.getId());
+        }
         draft.setSnapshotJson(snapshot.snapshotJson());
         draft.setEffectiveStatus(snapshot.effectiveStatus());
         draft.setSecretPayloadCiphertext(

@@ -7,6 +7,24 @@ import {
 } from '@/utils/ruleCallConfig'
 
 describe('ruleCallConfig', () => {
+  test('最新版输出校验使用已发布字段，不用另一个未发布草稿的字段', () => {
+    const rule = { id: 8, status: 1, outputFields: [{ scriptName: 'draft_score' }], executionVersions: [
+      { bindingId: '81', version: 1, available: true, outputFields: [{ scriptName: 'old_score' }] },
+      { bindingId: '82', version: 2, available: true, outputFields: [{ scriptName: 'published_score' }] }
+    ] }
+    const call = { ruleId: 8, versionMode: 'LATEST', outputField: 'published_score', targetOperand: { kind: 'REFERENCE', refId: 9 } }
+    expect(validateRuleCallBlock(call, { rules: [rule] })).toBe('')
+    expect(validateRuleCallBlock({ ...call, outputField: 'draft_score' }, { rules: [rule] })).toContain('所选发布版本')
+    expect(validateRuleCallBlock({ ...call, versionMode: 'FIXED', versionBindingId: '81', outputField: 'published_score' }, { rules: [rule] })).toContain('所选发布版本')
+  })
+
+  test('缺少可验证发布字段不能把草稿字段当成合法的输出映射', () => {
+    const call = { ruleId: 8, outputField: 'draft_score', targetOperand: { kind: 'REFERENCE', refId: 9 } }
+    const rule = { id: 8, status: 1, outputFields: [{ scriptName: 'draft_score' }] }
+    expect(validateRuleCallBlock(call, { rules: [rule] })).toContain('发布字段')
+    rule.executionVersions = [{ bindingId: '81', version: 1, available: false, outputFields: [] }]
+    expect(validateRuleCallBlock(call, { rules: [rule] })).toContain('可验证')
+  })
   const rules = [
     { id: 8, ruleCode: 'score_card', ruleName: '评分卡', modelType: 'SCORE', status: 1 }
   ]

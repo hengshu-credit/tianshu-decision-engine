@@ -33,9 +33,16 @@ public class ExternalApiCallbackStore {
     }
 
     public String register(JSONObject config) {
+        ExternalApiTrialContext.check();
         String id = UUID.randomUUID().toString();
+        ExternalApiTrialContext trial = ExternalApiTrialContext.current();
         redis.opsForValue().set(PREFIX + id, cipher.encrypt(config.toJSONString()),
-                Math.max(1, RequestDeadlineContext.remainingMillis()) + 30000L, TimeUnit.MILLISECONDS);
+                trial == null ? Math.max(1, RequestDeadlineContext.remainingMillis()) + 30000L
+                        : Math.max(1, trial.expiresAt - System.currentTimeMillis()), TimeUnit.MILLISECONDS);
+        if (trial != null) {
+            try { trial.callback(id); }
+            catch (RuntimeException failure) { close(id); throw failure; }
+        }
         return id;
     }
 

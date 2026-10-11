@@ -11,10 +11,12 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/rule/preflight")
 public class ResourcePreflightController {
     @Resource private ResourcePreflightService service;
+    @Resource private com.hengshucredit.rule.server.security.ConsoleAccessGuard accessGuard;
 
     @GetMapping("/{resourceType}/{id:\\d+}")
-    @RequirePermission("rule:view")
+    @RequirePermission("")
     public R<ResourcePreflightReport> check(@PathVariable String resourceType, @PathVariable Long id) {
+        accessGuard.requireResource(resourceType, "view");
         try {
             ResourcePreflightReport report = switch (resourceType.trim().toUpperCase(java.util.Locale.ROOT)) {
                 case "API", "EXTERNAL_API" -> service.externalApi(id);

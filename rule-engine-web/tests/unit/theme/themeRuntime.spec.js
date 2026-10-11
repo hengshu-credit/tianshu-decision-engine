@@ -93,7 +93,7 @@ describe('themeRuntime — 全局主题应用和本地降级', () => {
     expect(style.getPropertyValue('--tianshu-scrollbar-thumb-solid')).toBe(color)
   })
 
-  test('切换主题色时同步更新辅助色和四类提示层级色', () => {
+  test('切换主题色时更新辅助色和信息提示，业务状态保持稳定', () => {
     applyTheme(DEFAULT_THEME_CONFIG)
     const bluePalette = readAppliedPalette()
 
@@ -106,7 +106,10 @@ describe('themeRuntime — 全局主题应用和本地降级', () => {
     expect(bluePalette.secondary).toBe('#F76E6C')
     expect(purplePalette.secondary).toBe('#2CC7B8')
     expect(purplePalette.infoBg).toBe('#F3ECFE')
-    expect(purplePalette.successBg).toBe('#EAF9F8')
+    expect(purplePalette.successBg).toBe('#ECFDF3')
+    for (const field of ['successBg', 'successBorder', 'successText', 'warningBg', 'warningBorder', 'warningText', 'dangerBg', 'dangerBorder', 'dangerText']) {
+      expect(purplePalette[field], field).toBe(bluePalette[field])
+    }
     expect(purplePalette).not.toEqual(bluePalette)
     expect(new Set(Object.values(purplePalette).filter(Boolean)).size)
       .toBeGreaterThanOrEqual(8)
@@ -122,8 +125,8 @@ describe('themeRuntime — 全局主题应用和本地降级', () => {
     const palette = readAppliedPalette()
     expect(palette.secondary).toBe('#22B8A7')
     expect(palette.infoBg).toBe('rgba(47, 128, 237, 0.18)')
-    expect(palette.successBg).toBe('rgba(34, 184, 167, 0.18)')
-    expect(palette.dangerBorder).toBe('rgba(31, 166, 150, 0.6)')
+    expect(palette.successBg).toBe('rgba(52, 211, 153, 0.18)')
+    expect(palette.dangerBorder).toBe('rgba(248, 113, 113, 0.5)')
   })
 
   test('设计器工具栏边框根据品牌前景明暗选择同色阶对比色', () => {
@@ -305,6 +308,23 @@ describe('themeRuntime — 全局主题应用和本地降级', () => {
     window.removeEventListener('tianshu-theme-change', listener)
   })
 
+  test.each(['LIGHT', 'DARK'])('%s 的选中项文字在所有预置及极端自定义主色下均可读', colorScheme => {
+    const cases = [
+      ...ACCENT_PRESETS.map(preset => ({ accentPreset: preset.id, primary: preset.primary })),
+      ...['#000000', '#FFFFFF', '#FFFF00'].map(primary => ({
+        accentMode: 'CUSTOM_SOLID', customSolidColor: primary, primary,
+      })),
+    ]
+    for (const { primary, ...config } of cases) {
+      applyTheme({ ...DEFAULT_THEME_CONFIG, colorScheme, ...config })
+      const foreground = document.documentElement.style.getPropertyValue('--tianshu-primary-text')
+      expect(foreground, primary).toMatch(/^#[0-9A-F]{6}$/)
+      const surface = colorScheme === 'DARK' ? '#151D31' : '#FFFFFF'
+      const background = compositeColor(surface, primary, colorScheme === 'DARK' ? 0.2 : 0.1)
+      expect(contrastRatio(foreground, background), primary).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
   test('本地配置可往返，损坏配置回退默认且存储异常不阻断', () => {
     const dark = { ...DEFAULT_THEME_CONFIG, colorScheme: 'DARK' }
     writeLocalTheme(window.localStorage, dark)
@@ -398,21 +418,21 @@ const coexistingActionGroups = [
   ['edit', 'configure', 'reset', 'disable'],
   ['configure', 'publish'],
   ['configure', 'disable'],
-  ['edit', 'delete'],
-  ['execute', 'detail', 'delete'],
-  ['execute', 'edit', 'version', 'delete'],
+  ['version', 'edit', 'publish', 'delete'],
+  ['version', 'execute', 'detail', 'publish', 'delete'],
+  ['execute', 'edit', 'version', 'publish', 'delete'],
   ['inspect', 'compare', 'rollback'],
-  ['detail', 'edit', 'publish', 'global', 'delete'],
+  ['version', 'detail', 'edit', 'publish', 'global', 'delete'],
   ['detail', 'edit', 'disable', 'global', 'delete'],
-  ['edit', 'execute', 'inspect', 'delete'],
-  ['edit', 'execute', 'add', 'delete'],
-  ['edit', 'execute', 'delete'],
-  ['detail', 'edit', 'delete'],
-  ['edit', 'detail', 'execute', 'configure', 'global', 'delete'],
-  ['edit', 'configure', 'delete'],
-  ['edit', 'global', 'delete'],
-  ['detail', 'inspect', 'delete'],
-  ['edit', 'detail', 'configure', 'docs', 'delete'],
+  ['version', 'edit', 'execute', 'inspect', 'publish', 'delete'],
+  ['version', 'edit', 'execute', 'add', 'publish', 'delete'],
+  ['version', 'edit', 'execute', 'publish', 'delete'],
+  ['version', 'detail', 'edit', 'publish', 'delete'],
+  ['version', 'edit', 'detail', 'execute', 'configure', 'global', 'publish', 'delete'],
+  ['version', 'edit', 'configure', 'publish', 'delete'],
+  ['version', 'edit', 'global', 'publish', 'delete'],
+  ['version', 'detail', 'inspect', 'publish', 'delete'],
+  ['version', 'edit', 'detail', 'configure', 'docs', 'publish', 'delete'],
 ]
 
 function readAppliedActions() {

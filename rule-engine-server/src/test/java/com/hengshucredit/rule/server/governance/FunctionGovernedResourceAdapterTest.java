@@ -17,8 +17,61 @@ import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
 public class FunctionGovernedResourceAdapterTest {
+
+    public static class NativeMethods { public double choose(double amount) { return amount; } }
+
+    @Test public void unresolvedTargetAndLegacyMappingAreVisibleWarningsNotClaimsOfExactValidation() {
+        List<String> events = new ArrayList<>();
+        var adapter = adapter(new RecordingStore(events), events, projectService(18L, "credit-app"));
+        RuleFunction function = projectFunction(18L, "riskScore");
+        function.setImplType("JAVA"); function.setImplClass("sdk.only.Methods"); function.setImplMethod("choose");
+        function.setParamsJson("[{\"name\":\"amount\",\"type\":\"NUMBER\",\"javaType\":\"double\"}]");
+        var missing = adapter.validate(ResourceSnapshot.ofJson(JSON.toJSONString(function)));
+        assertTrue(missing.stream().anyMatch(issue -> "FUNCTION_TARGET_UNVERIFIED".equals(issue.code()) && !issue.isError()));
+        function.setImplClass(NativeMethods.class.getName()); function.setParamsJson("[{\"name\":\"amount\",\"type\":\"NUMBER\"}]");
+        var legacy = adapter.validate(ResourceSnapshot.ofJson(JSON.toJSONString(function)));
+        assertTrue(legacy.stream().anyMatch(issue -> "FUNCTION_LEGACY_SIGNATURE".equals(issue.code()) && issue.message().contains("choose(double)")));
+        assertEquals(List.of(), events);
+    }
+
+    @Test public void preflightRejectsBrokenParameterJson() {
+        List<String> events = new ArrayList<>();
+        var adapter = adapter(new RecordingStore(events), events, projectService(18L, "credit-app"));
+        RuleFunction function = projectFunction(18L, "riskScore"); function.setParamsJson("not-json");
+        var issues = adapter.validate(ResourceSnapshot.ofJson(JSON.toJSONString(function)));
+        assertTrue(issues.stream().anyMatch(issue -> issue.isError() && issue.message().contains("JSON")));
+        assertEquals(List.of(), events);
+    }
+
+    @Test public void preflightRejectsAnExactSignatureThatDoesNotExist() {
+        List<String> events = new ArrayList<>();
+        var adapter = adapter(new RecordingStore(events), events, projectService(18L, "credit-app"));
+        RuleFunction function = projectFunction(18L, "riskScore");
+        function.setImplType("JAVA"); function.setImplClass(NativeMethods.class.getName()); function.setImplMethod("choose");
+        function.setParamsJson("[{\"name\":\"amount\",\"type\":\"NUMBER\",\"javaType\":\"long\"}]");
+        var issues = adapter.validate(ResourceSnapshot.ofJson(JSON.toJSONString(function)));
+        assertTrue(issues.stream().anyMatch(issue -> issue.isError() && issue.message().contains("choose(long)")));
+        assertEquals(List.of(), events);
+    }
+
+    @Test public void applyRejectsBrokenParametersBeforeAnyWriteOrPush() {
+        List<String> events = new ArrayList<>();
+        var adapter = adapter(new RecordingStore(events), events, projectService(18L, "credit-app"));
+        RuleFunction function = projectFunction(18L, "riskScore"); function.setParamsJson("[null]");
+        assertThrows(IllegalArgumentException.class, () -> adapter.apply(context(31L, "UPDATE", function)));
+        assertEquals(List.of(), events);
+    }
+
+    @Test public void deletingInvalidLegacyParametersStillRetiresTheFunction() {
+        List<String> events = new ArrayList<>();
+        var adapter = adapter(new RecordingStore(events), events, projectService(18L, "credit-app"));
+        RuleFunction function = projectFunction(18L, "riskScore"); function.setParamsJson("not-json");
+        adapter.apply(context(31L, "DELETE", function));
+        assertEquals(List.of("UPDATE:riskScore", "PUSH:rule:push:credit-app"), events);
+    }
 
     @Test
     public void projectCreateUpdateAndDeleteWriteBeforePushingOnlyToProjectChannel() {
@@ -82,7 +135,7 @@ public class FunctionGovernedResourceAdapterTest {
         ReflectionTestUtils.setField(functionPush, "projectService", projectService);
         ReflectionTestUtils.setField(functionPush, "pushService", redisPush);
         return new FunctionGovernedResourceAdapter(store,
-                new GovernanceSecretCodec(null), functionPush);
+                new GovernanceSecretCodec(null), functionPush, new com.hengshucredit.rule.server.service.FunctionMethodCatalogService());
     }
 
     private static ApprovalApplyContext context(Long resourceId,

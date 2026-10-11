@@ -167,6 +167,9 @@ public class RuleListLibraryGovernedResourceAdapter
     }
 
     @Override
+    public boolean supportsDraftWorkspace() { return true; }
+
+    @Override
     public AppliedResource apply(ApprovalApplyContext context) {
         Map<String, Object> value = CanonicalJson.readMap(
                 context.snapshot().snapshotJson());
@@ -179,14 +182,15 @@ public class RuleListLibraryGovernedResourceAdapter
         library.setDescription(stringValue(value.get("description")));
         String action = upper(context.action(), "UPDATE");
         String status = switch (action) {
+            case "DRAFT_CREATE", "DRAFT_UPDATE" -> "DRAFT";
             case "CREATE", "ENABLE", "RESTORE" -> "ACTIVE";
             case "DISABLE" -> "DISABLED";
-            case "DELETE" -> "DELETED";
+            case "DELETE", "DRAFT_DELETE" -> "DELETED";
             default -> effectiveStatus(integerValue(value.get("status")));
         };
         library.setStatus("ACTIVE".equals(status) ? 1
                 : "DELETED".equals(status) ? -1 : 0);
-        if ("CREATE".equals(action)) {
+        if (context.insertRoot()) {
             if (listMapper.insert(library) != 1
                     || library.getId() == null) {
                 throw new IllegalStateException("名单库创建失败");

@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
+import { operationPagePath } from '@/security/operationActivity'
 
 const REQUEST_ERROR_DEDUPE_MS = 1500
 const recentRequestErrors = new Map()
@@ -30,6 +31,8 @@ const service = axios.create({
 })
 
 service.interceptors.request.use(config => {
+  const pagePath = operationPagePath(router.currentRoute.value)
+  if (pagePath && pagePath !== '/login') config.headers['X-Console-Page'] = encodeURI(pagePath)
   // 过滤 params 中的 null/undefined，避免被 axios 序列化为字面量 "null" 导致后端 Long 类型转换失败
   if (config.params) {
     Object.keys(config.params).forEach(key => {
@@ -49,6 +52,7 @@ service.interceptors.response.use(
     const res = response.data
     const reqUrl = (response.config && response.config.url) || ''
     if (res.code === 401) {
+      import('@/security/permissionState').then(({ clearCurrentUser }) => clearCurrentUser())
       if (reqUrl.includes('/auth/console/login')) {
         const error = new Error(res.message || '登录失败')
         showRequestError(error.message, error)
@@ -76,6 +80,7 @@ service.interceptors.response.use(
     const data = error.response && error.response.data
     const msg = (data && data.message) || error.message || '网络异常'
     if (status === 401 && !url.includes('/auth/console/login')) {
+      import('@/security/permissionState').then(({ clearCurrentUser }) => clearCurrentUser())
       if (router.currentRoute.value.path !== '/login') {
         router.replace({ path: '/login', query: { redirect: router.currentRoute.value.fullPath } })
       }

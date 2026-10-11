@@ -140,8 +140,13 @@ public class ConsoleAuthController {
             DatabaseConsoleAccountService.ConsoleLoginResult current =
                     databaseAccountService.currentUser(number.longValue());
             if (!current.authenticated()) {
-                session.invalidate();
+                ConsoleSessionAuthInterceptor.clearIdentity(session, consoleLoginProperties);
                 return R.fail(401, "账户已停用或不存在");
+            }
+            if (!java.util.Objects.equals(current.permissionVersion(), session.getAttribute(
+                    consoleLoginProperties.getSessionPermissionVersionAttribute()))) {
+                ConsoleSessionAuthInterceptor.clearIdentity(session, consoleLoginProperties);
+                return R.fail(401, "会话权限已变更，请重新登录");
             }
             return R.ok(loginResultData(current));
         }

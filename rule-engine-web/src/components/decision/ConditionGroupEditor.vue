@@ -89,6 +89,7 @@
             >
               <operand-picker
                 :value="child.rightOperand"
+                :condition-operator="child.operator"
                 :vars="vars"
                 :functions="functions"
                 :list-options="listOptions"
@@ -132,6 +133,7 @@ import {
 } from '@/utils/decisionConditionTree'
 import {
   conditionOperatorAllowsVarValue,
+  conditionLiteralOperandKinds,
   conditionOperatorRequiresValue,
   findConditionOperator,
   getConditionOperatorGroups,
@@ -198,7 +200,7 @@ export default {
         leaf && leaf.leftOperand
       )
         ? getExpressionContext(context).allowedKinds
-        : ['LITERAL']
+        : conditionLiteralOperandKinds(leaf && leaf.operator)
     },
     rightContext(leaf) {
       const option = findConditionOperator(

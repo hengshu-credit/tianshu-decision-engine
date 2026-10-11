@@ -5,6 +5,8 @@ import com.hengshucredit.rule.model.entity.DecisionArtifact;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RulePublished;
+import com.hengshucredit.rule.model.entity.ArtifactDeployment;
+import com.hengshucredit.rule.model.entity.RuleRevision;
 import com.hengshucredit.rule.server.service.RuleFieldAnalyzer;
 import org.junit.Assert;
 import org.junit.Test;
@@ -15,6 +17,121 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 public class PublishedRuleFieldSnapshotResolverTest {
+
+    @Test public void importedPackageResolvesAgainstExplicitTargetRevisionWithoutRewritingSourceIds() {
+        FixtureResolver resolver = importedResolver(false);
+        byte[] original = resolver.artifact.getPackageContent().clone();
+        RuleFieldAnalyzer.ResolvedFields fields = resolver.resolve(resolver.published);
+        Assert.assertTrue(fields.getDiagnostics().toString(), fields.getDiagnostics().isEmpty());
+        Assert.assertEquals(Long.valueOf(7), fields.getInputFields().get(0).getVarId());
+        Assert.assertEquals("frozen_input", fields.getInputFields().get(0).getScriptName());
+        Assert.assertTrue(fields.getLocalOutputNames().contains("frozen_output"));
+        Assert.assertNull(resolver.artifact.getDefinitionId());
+        Assert.assertNull(resolver.artifact.getRevisionId());
+        Assert.assertArrayEquals(original, resolver.artifact.getPackageContent());
+    }
+
+    @Test public void deduplicatedLocalArtifactCanBeExplicitlyDeployedToAnotherDefinition() {
+        FixtureResolver resolver = importedResolver(true);
+        Assert.assertTrue(resolver.resolve(resolver.published).getDiagnostics().toString(),
+                resolver.resolve(resolver.published).getDiagnostics().isEmpty());
+        Assert.assertEquals(Long.valueOf(101), resolver.artifact.getDefinitionId());
+        Assert.assertEquals(Long.valueOf(301), resolver.artifact.getRevisionId());
+    }
+
+    @Test public void historicalImportedRevisionKeepsItsFrozenFieldContract() {
+        FixtureResolver resolver = importedResolver(false);
+        resolver.revision.setState("OFFLINE");
+        Assert.assertTrue(resolver.resolve(resolver.published).getDiagnostics().isEmpty());
+    }
+
+    @Test public void importedIdsCoincidingWithTargetStillNeedDeploymentAndRevisionProof() {
+        FixtureResolver resolver = importedResolver(false);
+        resolver.published.setDefinitionId(101L); resolver.published.setRevisionId(301L);
+        resolver.deployment.setTargetDefinitionId(101L);
+        resolver.revision.setDefinitionId(101L); resolver.revision.setId(301L);
+        Assert.assertTrue(resolver.resolve(resolver.published).getDiagnostics().isEmpty());
+        resolver.deployment = null;
+        assertInvalid(resolver.resolve(resolver.published));
+    }
+
+    @Test public void importedContractRejectsMissingOrMismatchedDeploymentAndRevision() {
+        for (int scenario = 0; scenario < 10; scenario++) {
+            FixtureResolver resolver = importedResolver(false);
+            switch (scenario) {
+                case 0 -> resolver.deployment = null;
+                case 1 -> resolver.deployment.setArtifactId(999L);
+                case 2 -> resolver.deployment.setTargetDefinitionId(999L);
+                case 3 -> resolver.deployment.setStatus("FAILED");
+                case 4 -> resolver.revision = null;
+                case 5 -> resolver.revision.setId(999L);
+                case 6 -> resolver.revision.setDefinitionId(999L);
+                case 7 -> resolver.revision.setArtifactId(999L);
+                case 8 -> resolver.revision.setContentDigest("wrong");
+                case 9 -> resolver.artifact.setRevisionId(301L);
+                default -> throw new AssertionError();
+            }
+            assertInvalid(resolver.resolve(resolver.published));
+        }
+    }
+
+    @Test public void explicitDeploymentCannotHideMismatchedSourceEntityOrInvalidSourceMetadata() {
+        FixtureResolver resolver = importedResolver(true);
+        resolver.artifact.setDefinitionId(999L);
+        assertInvalid(resolver.resolve(resolver.published));
+        FixtureResolver malformed = importedResolver(false);
+        malformed.artifact = rawArtifact(malformed.published, 101.5d, 301L, "SCRIPT", "[]", "[]", null);
+        malformed.artifact.setDefinitionId(null); malformed.artifact.setRevisionId(null);
+        malformed.revision.setContentDigest(malformed.artifact.getArtifactDigest());
+        assertInvalid(malformed.resolve(malformed.published));
+    }
+
+    @Test public void ordinaryLocalPublicationDoesNotReadDeploymentOrTargetRevision() {
+        FixtureResolver resolver = new FixtureResolver(); resolver.published = published(); resolver.artifact = artifact(resolver.published, true);
+        Assert.assertTrue(resolver.resolve(resolver.published).getDiagnostics().isEmpty());
+        Assert.assertEquals(0, resolver.deploymentReads); Assert.assertEquals(0, resolver.revisionReads);
+    }
+
+    private static FixtureResolver importedResolver(boolean reuseLocal) {
+        FixtureResolver resolver = new FixtureResolver();
+        RulePublished source = published();
+        DecisionArtifact built = artifact(source, true);
+        if (reuseLocal) resolver.artifact = built;
+        else {
+            ArtifactDeploymentService importer = new ArtifactDeploymentService() {
+                @Override protected RuntimeCompatibilityService.CompatibilityReport compatibility(DecisionArtifactPackage ignored) {
+                    return RuntimeCompatibilityService.CompatibilityReport.compatible();
+                }
+                @Override protected DecisionArtifact findArtifactByDigest(String digest) { return null; }
+                @Override protected void insertArtifact(DecisionArtifact value) { value.setId(401L); resolver.artifact = value; }
+                @Override protected void insertComponent(com.hengshucredit.rule.model.entity.DecisionArtifactComponent value) { }
+            };
+            importer.importArtifact(built.getPackageContent(), built.getPackageDigest(), "importer");
+        }
+        resolver.published = published(); resolver.published.setDefinitionId(900L); resolver.published.setRevisionId(901L);
+        resolver.published.setArtifactDigest(resolver.artifact.getArtifactDigest());
+        resolver.deployment = new ArtifactDeployment(); resolver.deployment.setId(1001L);
+        resolver.deployment.setArtifactId(401L); resolver.deployment.setTargetDefinitionId(900L); resolver.deployment.setStatus("DEPLOYED");
+        resolver.revision = new RuleRevision(); resolver.revision.setId(901L); resolver.revision.setDefinitionId(900L);
+        resolver.revision.setArtifactId(401L); resolver.revision.setContentDigest(resolver.artifact.getArtifactDigest()); resolver.revision.setState("PUBLISHED");
+        return resolver;
+    }
+
+    @Test
+    public void repeatedReadsKeepFieldObjectsIndependentAndStillVerifyActualBytes() {
+        FixtureResolver resolver = new FixtureResolver();
+        resolver.published = published();
+        resolver.artifact = artifact(resolver.published, true);
+        var first = resolver.resolve(resolver.published);
+        first.getInputFields().get(0).setFieldName("caller-mutated");
+        Assert.assertEquals("frozen_input", resolver.resolve(resolver.published).getInputFields().get(0).getFieldName());
+        String declaredDigest = resolver.artifact.getArtifactDigest();
+        resolver.artifact.setArtifactDigest("changed");
+        assertInvalid(resolver.resolve(resolver.published));
+        resolver.artifact.setArtifactDigest(declaredDigest);
+        resolver.artifact.getPackageContent()[0] ^= 1;
+        assertInvalid(resolver.resolve(resolver.published));
+    }
 
     @Test
     public void resolvesFieldsOnlyFromValidatedArtifactComponents() {
@@ -375,6 +492,13 @@ public class PublishedRuleFieldSnapshotResolverTest {
     private static final class FixtureResolver extends PublishedRuleFieldSnapshotResolver {
         private RulePublished published;
         private DecisionArtifact artifact;
+        private ArtifactDeployment deployment;
+        private RuleRevision revision;
+        private int deploymentReads;
+        private int revisionReads;
+
+        @Override protected ArtifactDeployment loadDeployment(Long artifactId, Long definitionId) { deploymentReads++; return deployment; }
+        @Override protected RuleRevision loadTargetRevision(Long revisionId) { revisionReads++; return revision; }
 
         @Override
         protected RulePublished loadPublishedRule(Long definitionId) {

@@ -42,22 +42,7 @@
       />
       <div v-else class="condition-row">
         <api-value-editor v-if="operandMode" :value="child.left || pathOperand(child.path)" :vars="vars" :functions="functions" :modules="pathOptions" @update:value="child.left = $event" />
-        <el-select
-          v-else
-          v-model="child.path"
-          filterable
-          allow-create
-          default-first-option
-          size="small"
-          placeholder="响应字段路径"
-        >
-          <el-option
-            v-for="item in pathOptions"
-            :key="item.value"
-            :label="item.label"
-            :value="item.value"
-          />
-        </el-select>
+        <protocol-path-picker v-else v-model:value="child.path" :paths="pathOptions" context-label="当前外数 API · HTTP 响应" placeholder="响应字段路径" />
         <el-select
           v-model="child.operator"
           size="small"
@@ -106,9 +91,10 @@
 
 <script>
 import ApiValueEditor from './ApiValueEditor.vue'
+import ProtocolPathPicker from './ProtocolPathPicker.vue'
 export default {
   name: 'ResponseConditionTreeEditor',
-  components: { ApiValueEditor },
+  components: { ApiValueEditor, ProtocolPathPicker },
   props: {
     group: { type: Object, required: true },
     pathOptions: { type: Array, default: () => [] },

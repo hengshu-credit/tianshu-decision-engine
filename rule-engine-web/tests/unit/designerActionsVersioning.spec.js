@@ -21,18 +21,78 @@ async function host(source = draft) {
 }
 beforeEach(() => {
   vi.clearAllMocks()
+  api.compileDesignerModel.mockReset()
+  api.getDesignerCompileTask.mockReset()
   api.compileDesignerModel.mockResolvedValue({ data: { compileSuccess: true, compiledScript: 'new;', preflightReport: { valid: true, errors: [] } } })
   api.saveDesignerDraft.mockImplementation(async (_id, data) => ({ data: { revision: { ...draft, id: data.saveMode === 'NEW' ? '88' : draft.id, lockVersion: 5, modelJson: data.modelJson }, compileSuccess: true, issues: [] } }))
 })
-test('四个独立动作按顺序显示，未保存未编译仍可测试，状态不占按钮行', async () => {
+test('五个独立动作按顺序显示，未保存未编译仍可检查和测试，状态不占按钮行', async () => {
   const wrapper = mount(RuleDesignerActionBar, { props: { canEdit: true, canTest: true, state: 'DIRTY' } })
-  expect(wrapper.findAll('[data-action]').map(button => button.attributes('data-action'))).toEqual(['compile', 'save', 'publish', 'test'])
+  expect(wrapper.findAll('.rule-designer-actions__buttons [data-action]').map(button => button.attributes('data-action'))).toEqual(['check', 'compile', 'save', 'publish', 'test'])
+  expect(wrapper.find('[data-action="show-report"]').exists()).toBe(false)
   expect(wrapper.get('[data-action="test"]').attributes('disabled')).toBeUndefined()
-  for (const action of ['compile', 'save', 'publish', 'test']) {
+  for (const action of ['check', 'compile', 'save', 'publish', 'test']) {
     await wrapper.get(`[data-action="${action}"]`).trigger('click')
     expect(wrapper.emitted(action)).toHaveLength(1)
   }
   expect(wrapper.find('[role="status"]').exists()).toBe(false)
+})
+
+test('检查当前配置直接生成校验报告，不保存、不发布、不替换脚本预览', async () => {
+  const wrapper = await host()
+  await wrapper.vm.handleCheck()
+  expect(api.compileDesignerModel).toHaveBeenCalledWith('30', { modelJson: '{"script":"new"}', sourceType: 'REVISION', sourceId: draft.id })
+  expect(wrapper.vm.designerValidationReport).toMatchObject({ valid: true, autoOpen: true, checkedModelJson: '{"script":"new"}' })
+  expect(wrapper.vm.designerCompileResult).toBeNull()
+  expect(wrapper.vm.designerActionState).toBe('CHECKED')
+  expect(wrapper.vm.designerBusy).toBe(false)
+  expect(api.saveDesignerDraft).not.toHaveBeenCalled()
+  expect(api.publishDesignerDraft).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
+test('检查失败即使没有发布前报告，也直接展示具体失败原因', async () => {
+  const wrapper = await host()
+  api.compileDesignerModel.mockResolvedValueOnce({ data: { compileSuccess: false, compileMessage: '表达式缺少右括号' } })
+  await wrapper.vm.handleCheck()
+  expect(wrapper.vm.designerValidationReport).toMatchObject({ valid: false, autoOpen: true, errors: [{ code: 'COMPILE_FAILED', message: '表达式缺少右括号' }] })
+  expect(wrapper.vm.designerCompileResult).toBeNull()
+  expect(wrapper.vm.designerActionState).toBe('CHECK_FAILED')
+  wrapper.unmount()
+})
+
+test('检查过程中再次点击不提交重复任务，晚到结果不能覆盖新配置', async () => {
+  const wrapper = await host()
+  let resolve
+  api.compileDesignerModel.mockReturnValueOnce(new Promise(done => { resolve = done }))
+  const pending = wrapper.vm.handleCheck()
+  await flushPromises()
+  expect(wrapper.vm.designerActionState).toBe('CHECKING')
+  await wrapper.vm.handleCheck()
+  expect(api.compileDesignerModel).toHaveBeenCalledOnce()
+  wrapper.vm.modelJson = '{"script":"changed"}'
+  resolve({ data: { compileSuccess: true, preflightReport: { valid: true, errors: [] } } })
+  await pending
+  expect(wrapper.vm.designerValidationReport).toBeNull()
+  expect(wrapper.vm.designerBusy).toBe(false)
+  wrapper.unmount()
+})
+
+test('当前检查报告可定位未保存节点，配置改变后拒绝旧报告定位', async () => {
+  const wrapper = await host()
+  wrapper.vm.modelJson = '{"nodes":[{"id":"new-node"}]}'
+  await wrapper.vm.handleCheck()
+  wrapper.vm.locateGraphElement = vi.fn()
+  await wrapper.vm.locateDesignerIssue({ path: '$.nodes[0]', message: '节点未配置' })
+  expect(wrapper.vm.locateGraphElement).toHaveBeenCalledWith({ elementId: 'new-node', baseType: 'node' })
+  wrapper.vm.locateGraphElement.mockClear()
+  await wrapper.vm.locateDesignerIssue({ path: '$.nodes[0]', revisionId: draft.id, message: '已保存修订的问题' })
+  expect(wrapper.vm.locateGraphElement).not.toHaveBeenCalled()
+  wrapper.vm.modelJson = '{"nodes":[{"id":"other-node"}]}'
+  await wrapper.vm.locateDesignerIssue({ path: '$.nodes[0]', message: '节点未配置' })
+  expect(wrapper.vm.locateGraphElement).not.toHaveBeenCalled()
+  expect(wrapper.vm.$message.warning).toHaveBeenCalledWith('配置已变化，请重新检查')
+  wrapper.unmount()
 })
 test('当前配置纯编译，无保存，未保存配置可测试', async () => {
   const wrapper = await host()
@@ -71,7 +131,7 @@ test('编译失败保留完整报告交给弹窗，不重复弹出错误提示',
   const report = { valid: false, errors: [{ code: 'COMPILE_FAILED', message: '语法错误', path: '$.script' }], warnings: [] }
   api.compileDesignerModel.mockResolvedValueOnce({ data: { compileSuccess: false, compileMessage: '语法错误', preflightReport: report } })
   await wrapper.vm.compileDesignerDraft()
-  expect(wrapper.vm.designerValidationReport).toEqual(report)
+  expect(wrapper.vm.designerValidationReport).toEqual({ ...report, checkedModelJson: '{"script":"new"}' })
   expect(wrapper.vm.designerActionState).toBe('CHECK_FAILED')
   expect(wrapper.vm.$message.error).not.toHaveBeenCalled()
   expect(api.saveDesignerDraft).not.toHaveBeenCalled()

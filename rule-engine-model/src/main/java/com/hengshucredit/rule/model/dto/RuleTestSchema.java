@@ -15,4 +15,5 @@ public class RuleTestSchema {
     private List<ResolvedField> outputs = new ArrayList<>();
     private Map<String, Object> sampleParams = new LinkedHashMap<>();
     private List<String> diagnostics = new ArrayList<>();
+    private RuleTestExecutionIdentity executionIdentity;
 }

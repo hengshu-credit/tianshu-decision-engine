@@ -13,6 +13,97 @@ import ExecutionLog from '@/views/log/ExecutionLog.vue'
 
 afterEach(() => { vi.clearAllMocks() })
 
+function deferred() {
+  let resolve, reject
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
+}
+
+describe('ExecutionLog 查询响应顺序', () => {
+  let wrapper
+  beforeEach(async () => {
+    sessionStorage.clear()
+    runtimeLogApi.getRuleSetStats.mockReset()
+    wrapper = await mountAndWait()
+  })
+  afterEach(() => { wrapper.unmount(); sessionStorage.clear() })
+
+  test('旧日志查询晚返回不能覆盖新项目结果与总数', async () => {
+    const oldRequest = deferred(), currentRequest = deferred()
+    requestApi.mockReturnValueOnce(oldRequest.promise).mockReturnValueOnce(currentRequest.promise)
+    wrapper.vm.qp.projectCode = 'A'
+    const first = wrapper.vm.load()
+    wrapper.vm.qp.projectCode = 'B'
+    const second = wrapper.vm.load()
+    expect(wrapper.vm.list).toEqual([])
+    currentRequest.resolve({ data: { records: [{ id: 2, projectCode: 'B' }], total: 22 } })
+    await second
+    oldRequest.resolve({ data: { records: [{ id: 1, projectCode: 'A' }], total: 11 } })
+    await first
+    expect(wrapper.vm.list).toEqual([{ id: 2, projectCode: 'B' }])
+    expect(wrapper.vm.total).toBe(22)
+  })
+
+  test('旧查询失败不结束当前加载，当前失败显示错误且可重试', async () => {
+    const oldRequest = deferred(), currentRequest = deferred()
+    requestApi.mockReturnValueOnce(oldRequest.promise).mockReturnValueOnce(currentRequest.promise)
+    const first = wrapper.vm.load(), second = wrapper.vm.load()
+    oldRequest.reject(new Error('旧查询断网'))
+    await first
+    expect(wrapper.vm.loading).toBe(true)
+    expect(wrapper.vm.loadError).toBe('')
+    currentRequest.reject(new Error('当前查询断网'))
+    await second
+    expect(wrapper.vm.loading).toBe(false)
+    expect(wrapper.vm.loadError).toContain('加载失败')
+    expect(wrapper.vm.list).toEqual([])
+    requestApi.mockResolvedValueOnce({ data: { records: [{ id: 3 }], total: 1 } })
+    await wrapper.vm.load()
+    expect(wrapper.vm.loadError).toBe('')
+    expect(wrapper.vm.list).toEqual([{ id: 3 }])
+  })
+
+  test('统计切换规则后只接收最新结果，旧错误不能隐藏当前统计', async () => {
+    const oldRequest = deferred(), currentRequest = deferred()
+    runtimeLogApi.getRuleSetStats.mockReturnValueOnce(oldRequest.promise).mockReturnValueOnce(currentRequest.promise)
+    wrapper.vm.ruleSetStats = { overview: { evaluationCount: 99 }, ruleSets: [{ ruleCode: 'OLD' }] }
+    const first = wrapper.vm.loadRuleSetStats()
+    wrapper.vm.qp.ruleCode = 'NEW'
+    const second = wrapper.vm.loadRuleSetStats()
+    expect(wrapper.vm.ruleSetStats).toEqual({ overview: {}, ruleSets: [] })
+    currentRequest.resolve({ data: { overview: { evaluationCount: 2 }, ruleSets: [{ ruleCode: 'NEW' }] } })
+    await second
+    oldRequest.reject(new Error('旧统计失败'))
+    await first
+    expect(wrapper.vm.ruleSetStatsError).toBe('')
+    expect(wrapper.vm.ruleSetStats.ruleSets).toEqual([{ ruleCode: 'NEW' }])
+  })
+
+  test('统计旧请求先完成不能提前解除新统计的加载状态', async () => {
+    const oldRequest = deferred(), currentRequest = deferred()
+    runtimeLogApi.getRuleSetStats.mockReturnValueOnce(oldRequest.promise).mockReturnValueOnce(currentRequest.promise)
+    const first = wrapper.vm.loadRuleSetStats(), second = wrapper.vm.loadRuleSetStats()
+    oldRequest.resolve({ data: { overview: { evaluationCount: 10 }, ruleSets: [{ ruleCode: 'OLD' }] } })
+    await first
+    expect(wrapper.vm.ruleSetStatsLoading).toBe(true)
+    expect(wrapper.vm.ruleSetStats).toEqual({ overview: {}, ruleSets: [] })
+    currentRequest.resolve({ data: { overview: {}, ruleSets: [{ ruleCode: 'NEW' }] } })
+    await second
+    expect(wrapper.vm.ruleSetStats.ruleSets).toEqual([{ ruleCode: 'NEW' }])
+  })
+
+  test('页面卸载后未完成日志查询不再写回结果', async () => {
+    const pending = deferred()
+    requestApi.mockReturnValueOnce(pending.promise)
+    const vm = wrapper.vm
+    const loading = vm.load()
+    wrapper.unmount()
+    pending.resolve({ data: { records: [{ id: 9 }], total: 1 } })
+    await loading
+    expect(vm.list).toEqual([])
+  })
+})
+
 // ─── Mock 数据 ───────────────────────────────────────────
 function mockLogs(overrides) {
   return [

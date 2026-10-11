@@ -2,6 +2,7 @@ vi.unmock('@/api/variable')
 vi.unmock('@/api/billing')
 
 import request from '@/api/request'
+import { metadataResponse } from '@/utils/metadataResponse'
 import {
   changeFieldValidationStatusDraft,
   createFieldValidationDraft,
@@ -40,7 +41,7 @@ describe('governed field validation and billing APIs', () => {
         resourceType: 'FIELD_VALIDATION',
         action: 'CREATE',
         projectId: 7
-      })
+      }), metadataResponse
     )
     expect(request).toHaveBeenNthCalledWith(
       2,
@@ -49,7 +50,7 @@ describe('governed field validation and billing APIs', () => {
         resourceType: 'FIELD_VALIDATION',
         resourceId: 11,
         action: 'UPDATE'
-      })
+      }), metadataResponse
     )
     expect(request).toHaveBeenNthCalledWith(
       3,
@@ -59,18 +60,9 @@ describe('governed field validation and billing APIs', () => {
         resourceId: 11,
         action: 'DISABLE',
         snapshotJson: expect.stringContaining('Mobile_Check')
-      })
+      }), metadataResponse
     )
-    expect(request).toHaveBeenNthCalledWith(
-      4,
-      '/rule/governance/drafts',
-      expect.objectContaining({
-        resourceType: 'FIELD_VALIDATION',
-        resourceId: 11,
-        action: 'DELETE',
-        snapshotJson: null
-      })
-    )
+    expect(request).toHaveBeenNthCalledWith(4, '/rule/governance/resources/FIELD_VALIDATION/11/delete', undefined, metadataResponse)
   })
 
   test('billing configuration lifecycle creates unified governance drafts', async () => {
@@ -95,7 +87,7 @@ describe('governed field validation and billing APIs', () => {
         resourceType: 'BILLING_CONFIG',
         action: 'CREATE',
         projectId: 7
-      })
+      }), metadataResponse
     )
     expect(request).toHaveBeenNthCalledWith(
       2,
@@ -104,7 +96,7 @@ describe('governed field validation and billing APIs', () => {
         resourceType: 'BILLING_CONFIG',
         resourceId: 21,
         action: 'UPDATE'
-      })
+      }), metadataResponse
     )
     expect(request).toHaveBeenNthCalledWith(
       3,
@@ -114,17 +106,8 @@ describe('governed field validation and billing APIs', () => {
         resourceId: 21,
         action: 'DISABLE',
         snapshotJson: expect.stringContaining('Engine_Count')
-      })
+      }), metadataResponse
     )
-    expect(request).toHaveBeenNthCalledWith(
-      4,
-      '/rule/governance/drafts',
-      expect.objectContaining({
-        resourceType: 'BILLING_CONFIG',
-        resourceId: 21,
-        action: 'DELETE',
-        snapshotJson: null
-      })
-    )
+    expect(request).toHaveBeenNthCalledWith(4, '/rule/governance/resources/BILLING_CONFIG/21/delete', undefined, metadataResponse)
   })
 })

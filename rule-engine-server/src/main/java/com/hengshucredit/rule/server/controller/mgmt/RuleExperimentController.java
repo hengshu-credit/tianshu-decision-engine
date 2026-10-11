@@ -111,14 +111,15 @@ public class RuleExperimentController {
     }
 
     @PostMapping("/rollback/{experimentId}/{version}")
-    @RequirePermission("approval:submit")
+    @RequirePermission("experiment:edit")
     public R<GovernanceRequestView> rollback(
             @PathVariable Long experimentId,
-            @PathVariable Integer version) {
+            @PathVariable Integer version,
+            @RequestParam(defaultValue = "NEW") String restoreMode) {
         try {
             return R.ok(GovernanceRequestView.from(
                     legacyRestoreService.restoreExperiment(
-                            experimentId, version,
+                            experimentId, version, restoreMode,
                             operatorResolver.resolve())));
         } catch (IllegalArgumentException e) {
             return R.fail(e.getMessage());

@@ -3,7 +3,7 @@ package com.hengshucredit.rule.server.service;
 import java.math.BigDecimal;
 import java.util.Map;
 
-/** 数据库变量与在线查询共用的查询限制；0 使用 JDBC 的不限制语义。 */
+/** 数据库变量与在线查询共用的查询限制；0 不设单独限制，正式执行仍服从请求总预算。 */
 public record DatabaseQueryOptions(int maxRows, int queryTimeoutSeconds) {
     public DatabaseQueryOptions {
         if (maxRows < 0 || queryTimeoutSeconds < 0) {
@@ -14,6 +14,11 @@ public record DatabaseQueryOptions(int maxRows, int queryTimeoutSeconds) {
     public static DatabaseQueryOptions from(Map<String, Object> config, int defaultRows) {
         return new DatabaseQueryOptions(integer(config.get("maxRows"), defaultRows, "最多返回行数"),
                 integer(config.get("queryTimeoutSeconds"), 5, "查询超时秒数"));
+    }
+
+    int timeoutWithinBudget(int remainingMillis) {
+        int remainingSeconds = (int) Math.max(1L, (remainingMillis + 999L) / 1000L);
+        return queryTimeoutSeconds == 0 ? remainingSeconds : Math.min(queryTimeoutSeconds, remainingSeconds);
     }
 
     private static int integer(Object value, int fallback, String label) {

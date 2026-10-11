@@ -34,9 +34,10 @@ public class ExecutionLogController {
             @RequestParam(required = false) String authCode,
             @RequestParam(required = false) String tokenCode,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
-            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime,
+            @ModelAttribute com.hengshucredit.rule.model.dto.ExecutionVersionQuery versionQuery) {
         return R.ok(logService.pageList(pageNum, pageSize, modelType, source, projectCode, projectName,
-                ruleCode, traceId, authType, authCode, tokenCode, startTime, endTime));
+                ruleCode, traceId, authType, authCode, tokenCode, startTime, endTime, versionQuery));
     }
 
     @GetMapping("/rule-set-stats")
@@ -51,7 +52,7 @@ public class ExecutionLogController {
 
     /** 仅基于历史日志离线回溯；不会写入新的执行日志、来源日志或计费记录。 */
     @PostMapping("/{id}/replay")
-    @RequirePermission("rule:view")
+    @RequirePermission("log:view")
     public R<Map<String, Object>> replay(@PathVariable Long id) {
         return R.ok(replayService.replay(id));
     }

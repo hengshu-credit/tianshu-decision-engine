@@ -1,4 +1,5 @@
 import { formatConstantValue } from '@/utils/constantValue'
+import { versionFields } from '@/utils/resourceVersion'
 
 export const OPERAND_KINDS = Object.freeze({
   LITERAL: 'LITERAL',
@@ -70,6 +71,7 @@ export function createReferenceOperand(option) {
   const refId = optionRefId(option)
   const refType = optionRefType(option)
   const operand = {
+    ...versionFields(option),
     kind: OPERAND_KINDS.REFERENCE,
     value: code,
     code,
@@ -77,6 +79,7 @@ export function createReferenceOperand(option) {
     valueType: option.varType || option.valueType || '',
     refId,
     refType,
+    ...(refType === 'EXTERNAL_API' ? { apiCode: option.apiCode || option._ref?.apiCode || '' } : {}),
     relativePath: option.relativePath || (option._ref && option._ref.relativePath) || '',
     sourceType: option.sourceType || (option._ref && option._ref.sourceType) || '',
     varSource: option.varSource || (option._ref && option._ref.varSource) || (option.varObj && option.varObj.varSource) || '',
@@ -98,12 +101,14 @@ export function createFunctionOperand(fn, args = []) {
   const hasParameterMetadata = Array.isArray(fn.params) || Array.isArray(fn.parameters) || fn.paramsJson != null
   return {
     kind: OPERAND_KINDS.FUNCTION,
+    ...versionFields(fn),
     functionId: fn.functionId != null ? fn.functionId : fn.id,
     functionCode,
     label: functionLabel,
     valueType: fn.returnType || fn.valueType || fn.varType || '',
     parameterCount: hasParameterMetadata ? parameters.length : null,
     parameterTypes: parameters.map(param => normalizeType(param.type || param.valueType || 'OBJECT')),
+    ...(fn.versionMode === 'FIXED' ? { parameters } : {}),
     args: Array.isArray(args) ? args : []
   }
 }
@@ -190,6 +195,14 @@ export function inferOperandType(operand) {
   return ''
 }
 
+export function functionArgumentExpectedType(operand, index) {
+  const declared = operand?.parameterTypes?.[index]
+  if (!declared) return ''
+  const type = normalizeType(declared)
+  // 方法参数中的 Java Object 与校验器一致，允许任意值；普通对象字段仍按对象过滤。
+  return ['OBJECT', 'ANY'].includes(type) ? '' : type
+}
+
 export function validateOperand(operand, options = {}) {
   const errors = []
   const allowedKinds = Array.isArray(options.allowedKinds) ? options.allowedKinds : null
@@ -259,6 +272,14 @@ export function resolvePathOperand(operand, options = []) {
     ? { ...operand }
     : createPathOperand(operand && operand.value)
   const value = source.value
+  if (source.versionMode === 'FIXED' && source.refId != null && source.refType) {
+    const anchor = source.anchorPath || (source.relativePath && source.code?.endsWith(source.relativePath)
+      ? source.code.slice(0, -source.relativePath.length) : source.code)
+    if (anchor && (value === anchor || value.startsWith(anchor + '.') || value.startsWith(anchor + '['))) return {
+      operand: { ...source, code: value, anchorPath: anchor, relativePath: value.slice(anchor.length), resolved: true }, candidates: [],
+    }
+    return resolvePathOperand(createPathOperand(value), options)
+  }
   const exactCandidates = (options || []).filter(option => optionPaths(option).includes(value))
   let candidates = exactCandidates
   let anchorPath = value
@@ -303,6 +324,7 @@ export function resolvePathOperand(operand, options = []) {
       valueType: match.valueType,
       refId: match.refId,
       refType: match.refType,
+      ...(match.refType === 'EXTERNAL_API' ? { apiCode: match.apiCode } : {}),
       sourceType: match.sourceType,
       varSource: match.varSource,
       anchorPath,
@@ -315,10 +337,21 @@ export function resolvePathOperand(operand, options = []) {
 
 export function compileOperand(operand) {
   if (!operand || !operand.kind) return ''
+  if (operand.versionMode === 'FIXED') {
+    if (!operand.versionId) throw new Error('请选择有效的固定版本')
+    if (operand.kind === OPERAND_KINDS.FUNCTION) return `invokeFunctionVersionById(${quoteString(String(operand.functionId))}, ${quoteString((operand.versionSource ? operand.versionSource + ':' : '') + String(operand.versionId))}${(operand.args || []).map(arg => ', ' + compileOperand(arg)).join('')})`
+    if ([OPERAND_KINDS.REFERENCE, OPERAND_KINDS.PATH].includes(operand.kind)) return `resourceVersionValue(${quoteString(operand.refType)}, ${quoteString(String(operand.refId))}, ${quoteString((operand.versionSource ? operand.versionSource + ':' : '') + String(operand.versionId))}, ${quoteString(operand.relativePath || '')})`
+  }
   if (operand.kind === OPERAND_KINDS.LITERAL) {
     return compileLiteral(operand.value, operand.valueType)
   }
   if (operand.kind === OPERAND_KINDS.PATH || operand.kind === OPERAND_KINDS.REFERENCE) {
+    if (operand.refType === 'EXTERNAL_API') {
+      const code = operand.code || operand.value || ''
+      const path = operand.kind === OPERAND_KINDS.PATH && operand.apiCode && code.startsWith(operand.apiCode + '.')
+        ? code.slice(operand.apiCode.length + 1) : operand.relativePath || code
+      return `externalApiValue(${operand.refId}, ${quoteString(path)})`
+    }
     return operand.code || operand.value || ''
   }
   if (operand.kind === OPERAND_KINDS.FUNCTION) {
@@ -396,13 +429,24 @@ export function syncOperandReference(operand, options = []) {
   if (!operand || !operand.kind) return { operand, changed: false }
   const nested = syncOperandChildren(operand, options)
   if (nested) return nested
+  if (operand.versionMode === 'FIXED') return { operand, changed: false }
   if (operand.kind !== OPERAND_KINDS.PATH && operand.kind !== OPERAND_KINDS.REFERENCE) {
     return { operand, changed: false }
   }
 
+  if (operand.kind === OPERAND_KINDS.PATH && operand.refType === 'EXTERNAL_API' && operand.apiCode) {
+    const option = options.find(item => String(optionRefId(item)) === String(operand.refId) && optionRefType(item) === 'EXTERNAL_API')
+    const apiCode = option?.apiCode || option?._ref?.apiCode
+    if (!apiCode) return { operand, changed: false }
+    const suffix = (operand.code || operand.value || '').slice(operand.apiCode.length)
+    const next = { ...operand, apiCode, code: apiCode + suffix, value: apiCode + suffix }
+    return { operand: next, changed: JSON.stringify(next) !== JSON.stringify(operand) }
+  }
+
   let match = null
   if (operand.refId != null && operand.refType) {
-    match = (options || []).find(option => String(optionRefId(option)) === String(operand.refId) && optionRefType(option) === operand.refType)
+    match = (options || []).find(option => String(optionRefId(option)) === String(operand.refId) && optionRefType(option) === operand.refType
+      && (operand.refType !== 'EXTERNAL_API' || (option.relativePath || option._ref?.relativePath || '') === (operand.relativePath || '')))
   }
   if (!match && operand.kind === OPERAND_KINDS.PATH) {
     const resolved = resolvePathOperand(operand, options)
@@ -433,7 +477,7 @@ export function operandDisplay(operand) {
   if (!operand) return ''
   if (operand.kind === OPERAND_KINDS.LITERAL) return String(operand.value == null ? '' : operand.value)
   if (operand.kind === OPERAND_KINDS.FUNCTION) {
-    return compileOperand(operand)
+    return compileOperand(JSON.parse(JSON.stringify(operand, (key, value) => key === 'versionMode' ? undefined : value)))
   }
   if ([OPERAND_KINDS.OPERATION, OPERAND_KINDS.ACCESS, OPERAND_KINDS.CAST, OPERAND_KINDS.ARRAY, OPERAND_KINDS.LIST_QUERY].includes(operand.kind)) {
     return compileOperand(operand)

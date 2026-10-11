@@ -1,6 +1,7 @@
 // tests/unit/views/modelDetail.spec.js
 import { mount } from '@test-utils'
 import { nextTick } from 'vue'
+import { flushPromises } from '@vue/test-utils'
 
 // 使用真实 Element Plus（setup.js 的 element-ui mock 没有挂载到 Vue.prototype）
 // Mock API 模块（覆盖 setup.js 的基础 vi.fn()，测试文件负责配置返回值）
@@ -9,6 +10,7 @@ vi.mock('@/api/model', () => ({
   updateModelInputField: vi.fn(),
   updateModelOutputField: vi.fn(),
   executeModel: vi.fn(),
+  getModelVersionTestContext: vi.fn(),
   getTestParams: vi.fn(),
   saveTestParams: vi.fn(),
   listAllModelsByProject: vi.fn(),
@@ -42,6 +44,15 @@ import * as dataObjectApi from '@/api/dataObject'
 import * as functionApi from '@/api/function'
 import * as definitionApi from '@/api/definition'
 import ModelDetail from '@/views/model/ModelDetail.vue'
+
+test('从审批返回模型详情刷新生效配置，但保留尚未保存的字段编辑', () => {
+  const ctx = { detailActivated: true, loading: false, testVisible: false, model: { inputFields: [], outputFields: [] }, load: vi.fn() }
+  ModelDetail.activated?.call(ctx)
+  expect(ctx.load).toHaveBeenCalledOnce()
+  ctx.model.inputFields = [{ _editing: true }]
+  ModelDetail.activated?.call(ctx)
+  expect(ctx.load).toHaveBeenCalledOnce()
+})
 
 afterEach(() => { vi.clearAllMocks() })
 
@@ -99,11 +110,26 @@ function mockObjectTree() {
   ]
 }
 
+function mockTestContext(model = mockModel(), schema) {
+  return {
+    modelId: model.id, version: model.currentVersion, currentVersion: model.currentVersion,
+    modelDigest: `file-${model.currentVersion}`,
+    configurationDigest: `configuration-${model.currentVersion}`,
+    model,
+    schema: schema || {
+      inputs: model.inputFields.map(field => ({ ...field, scriptName: field.fieldName, valueType: field.fieldType })),
+      outputs: [], sampleParams: {}, diagnostics: []
+    }
+  }
+}
+
 // ─── 测试用例 ─────────────────────────────────────────────
 
 
 async function mountAndWait(modelData = mockModel()) {
   modelApi.getModel.mockResolvedValue({ data: modelData })
+  modelApi.getModelVersionTestContext.mockReset().mockResolvedValue({ data: mockTestContext(modelData) })
+  modelApi.listVersions.mockResolvedValue({ data: [{ version: modelData.currentVersion }] })
   variableApi.listVariablesByProject.mockResolvedValue({ data: mockVars() })
   variableApi.listVariables.mockResolvedValue({ data: { records: mockConsts() } })
   dataObjectApi.getVariableTree.mockResolvedValue(mockObjectTree())
@@ -138,6 +164,148 @@ async function mountAndWait(modelData = mockModel()) {
   await new Promise(r => setTimeout(r, 100))
   return wrapper
 }
+
+describe('ModelDetail — 指定版本测试', () => {
+  let wrapper
+  const context = version => ({
+    modelId: 1,
+    version,
+    currentVersion: 2,
+    modelDigest: `file-${version}`,
+    configurationDigest: `configuration-${version}`,
+    model: { ...mockModel(), currentVersion: version },
+    schema: {
+      inputs: [{ refId: String(100 + version), refType: 'VARIABLE', scriptName: `inputV${version}`, label: `版本${version}输入`, valueType: 'INTEGER' }],
+      outputs: [],
+      sampleParams: { [`inputV${version}`]: version * 10 },
+      sampleParamsJson: JSON.stringify({ [`inputV${version}`]: version * 10 }),
+      diagnostics: []
+    }
+  })
+
+  beforeEach(async () => {
+    wrapper = await mountAndWait({ ...mockModel(), currentVersion: 2 })
+    modelApi.listVersions.mockResolvedValue({ data: [{ version: 2 }, { version: 1 }] })
+    modelApi.getModelVersionTestContext.mockImplementation((id, version) => Promise.resolve({ data: context(version) }))
+    definitionApi.getRuleTestSchema.mockResolvedValue({ data: { inputs: [], sampleParams: {} } })
+    modelApi.getTestParams.mockResolvedValue({ data: null })
+  })
+  afterEach(() => wrapper?.unmount())
+
+  test('模型详情仍在加载时不能打开测试或发出无版本请求，完成后可正常测试', async () => {
+    let complete
+    modelApi.getModel.mockReturnValueOnce(new Promise(resolve => { complete = resolve }))
+    const loading = wrapper.vm.load()
+    await nextTick()
+    expect(wrapper.vm.loading).toBe(true)
+    expect(wrapper.get('[data-testid="model-open-test"]').attributes('disabled')).toBe('true')
+    await wrapper.vm.openTestDialog()
+    expect(modelApi.getModelVersionTestContext).not.toHaveBeenCalled()
+    expect(wrapper.vm.testVisible).toBe(false)
+    complete({ data: { ...mockModel(), currentVersion: 2 } })
+    await loading
+    await nextTick()
+    expect(wrapper.get('[data-testid="model-open-test"]').attributes('disabled')).toBe('false')
+    await wrapper.vm.openTestDialog()
+    expect(modelApi.getModelVersionTestContext).toHaveBeenCalledWith(1, 2)
+    expect(wrapper.vm.testReady).toBe(true)
+  })
+
+  test('指定旧版本后字段与样例只来自该版本完整快照', async () => {
+    modelApi.getModel.mockClear()
+    await wrapper.vm.openTestDialog(1)
+
+    expect(modelApi.getModelVersionTestContext).toHaveBeenCalledWith(1, 1)
+    expect(wrapper.vm.testReady).toBe(true)
+    expect(wrapper.vm.testFields.map(field => field.fieldName)).toEqual(['inputV1'])
+    expect(JSON.parse(wrapper.vm.testJsonStr)).toEqual({ inputV1: 10 })
+    expect(modelApi.getModel).not.toHaveBeenCalled()
+    expect(definitionApi.getRuleTestSchema).not.toHaveBeenCalled()
+  })
+
+  test('旧版本快照缺失时明确阻断，不能退回当前模型字段继续执行', async () => {
+    modelApi.getModelVersionTestContext.mockRejectedValue(new Error('该历史版本缺少完整执行快照，不能执行'))
+    await wrapper.vm.openTestDialog(1)
+
+    expect(wrapper.vm.testReady).toBe(false)
+    expect(wrapper.vm.testLoadStatus).toBe('ERROR')
+    expect(wrapper.vm.testLoadError).toContain('完整执行快照')
+    expect(modelApi.executeModel).not.toHaveBeenCalled()
+  })
+
+  test('现行版本标注及保存资格以context读取结果为准，不依赖详情页旧缓存', async () => {
+    modelApi.getModelVersionTestContext.mockImplementation((id, version) => Promise.resolve({ data: { ...context(version), currentVersion: 3 } }))
+    await wrapper.vm.openTestDialog(2)
+    expect(wrapper.vm.model.currentVersion).toBe(2)
+    expect(wrapper.vm.isHistoricalModelTest).toBe(true)
+    await wrapper.vm.openTestDialog(3)
+    expect(wrapper.vm.isHistoricalModelTest).toBe(false)
+  })
+
+  test('版本归因外壳正确但模型元信息归属错误也必须拒绝', async () => {
+    const invalid = context(1)
+    invalid.model.id = 2
+    modelApi.getModelVersionTestContext.mockResolvedValue({ data: invalid })
+    await wrapper.vm.openTestDialog(1)
+    expect(wrapper.vm.testReady).toBe(false)
+    expect(wrapper.vm.testLoadError).toContain('选定版本不一致')
+  })
+
+  test('模型版本的大ID元字段与精确业务样例不互相转型，表单测试保留原始数值', async () => {
+    const selected = context(1)
+    selected.schema = {
+      inputs: [{ refId: '9007199254740993', refType: 'VARIABLE', scriptName: 'customerId', label: '客户编号', valueType: 'INTEGER' }],
+      outputs: [], sampleParams: { customerId: 9007199254740992 },
+      sampleParamsJson: '{"customerId":9007199254740993,"rate":0.1234567890123456789,"__proto__":{"keep":true}}'
+    }
+    modelApi.getModelVersionTestContext.mockResolvedValue({ data: selected })
+    modelApi.executeModel.mockResolvedValue({ data: {
+      success: true, outputs: {}, version: 1, modelDigest: 'file-1', configurationDigest: 'configuration-1'
+    } })
+    await wrapper.vm.openTestDialog(1)
+    expect(wrapper.vm.testFields[0].varId).toBe('9007199254740993')
+    expect(wrapper.vm.testJsonStr).toContain('9007199254740993')
+    await wrapper.vm.doTest()
+    const sent = modelApi.executeModel.mock.calls.at(-1)[1]
+    expect(typeof sent).toBe('string')
+    expect(sent).toContain('"customerId":9007199254740993')
+    expect(sent).toContain('"rate":0.1234567890123456789')
+    expect(sent).toContain('"__proto__":{"keep":true}')
+  })
+
+  test('实际执行请求携带已载入的版本，不随页面当前版本变化', async () => {
+    await wrapper.vm.openTestDialog(1)
+    wrapper.vm.testMode = 'json'
+    wrapper.vm.testJsonStr = '{"inputV1":25}'
+    modelApi.executeModel.mockResolvedValue({ data: {
+      success: true, outputs: { score: 5 }, version: 1,
+      modelDigest: 'file-1', configurationDigest: 'configuration-1'
+    } })
+
+    await wrapper.vm.doTest()
+
+    expect(modelApi.executeModel).toHaveBeenCalledWith(1, '{"inputV1":25}', 95000, 1)
+  })
+
+  test('返回归因与选定版本不符时不能展示成功结果', async () => {
+    await wrapper.vm.openTestDialog(1)
+    modelApi.executeModel.mockResolvedValue({ data: {
+      success: true, outputs: { score: 99 }, version: 2,
+      modelDigest: 'file-2', configurationDigest: 'configuration-2'
+    } })
+    await wrapper.vm.doTest()
+    expect(wrapper.vm.testResult.success).toBe(false)
+    expect(wrapper.vm.testResult.error).toContain('选定模型版本不一致')
+    expect(wrapper.vm.testResult.outputs).toBeUndefined()
+  })
+
+  test('查看旧版本不能把样例保存进当前配置', async () => {
+    await wrapper.vm.openTestDialog(1)
+    await wrapper.vm.handleSaveParams()
+    expect(modelApi.saveTestParams).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.error).toHaveBeenCalledWith('历史版本的测试参数不能覆盖当前模型配置')
+  })
+})
 
 describe('ModelDetail — 初始化与数据加载', () => {
   let wrapper
@@ -617,105 +785,67 @@ describe('ModelDetail — 模型测试弹窗', () => {
   beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.unmount() })
 
-  test('openTestDialog 打开弹窗并重置状态', async () => {
-    modelApi.getModel.mockResolvedValue({ data: mockModel() })
-    modelApi.getTestParams.mockResolvedValue({ data: null })
-    definitionApi.getRuleTestSchema.mockResolvedValue({ data: {
+  test('openTestDialog 打开弹窗并载入同版本冻结字段', async () => {
+    modelApi.getModelVersionTestContext.mockResolvedValue({ data: mockTestContext(mockModel(), {
       inputs: [{ refId: 200, refType: 'DATA_OBJECT', scriptName: 'TaxRequest.amount', label: '税务请求/金额', valueType: 'NUMBER' }],
-      sampleParams: { TaxRequest: { amount: 100 } }
-    } })
-    wrapper.vm.model = mockModel()
-
+      outputs: [], sampleParams: { TaxRequest: { amount: 100 } }
+    }) })
     await wrapper.vm.openTestDialog()
-
     expect(wrapper.vm.testVisible).toBe(true)
     expect(wrapper.vm.testReady).toBe(true)
     expect(wrapper.vm.testResult).toBeNull()
     expect(wrapper.vm.testMode).toBe('manual')
     expect(wrapper.vm.testLoadStatus).toBe('READY')
     expect(wrapper.vm.testParamSource).toBe('SCHEMA_SAMPLE')
-    expect(wrapper.vm.testLoadWarnings).toEqual([])
-    expect(definitionApi.getRuleTestSchema).toHaveBeenCalledWith({ targetType: 'MODEL', targetId: 1 })
+    expect(modelApi.getModelVersionTestContext).toHaveBeenCalledWith(1, 1)
     expect(JSON.parse(wrapper.vm.testJsonStr)).toEqual({ TaxRequest: { amount: 100 } })
   })
 
-  test('Schema 加载失败时使用模型字段降级并展示告警', async () => {
-    modelApi.getModel.mockResolvedValue({ data: mockModel() })
-    modelApi.getTestParams.mockResolvedValue({ data: null })
-    definitionApi.getRuleTestSchema.mockRejectedValue(new Error('Schema 服务暂不可用'))
-
+  test('版本 Schema 加载失败时阻断，不混入当前模型字段', async () => {
+    modelApi.getModelVersionTestContext.mockRejectedValue(new Error('版本 Schema 服务暂不可用'))
     await wrapper.vm.openTestDialog()
-
-    expect(wrapper.vm.testReady).toBe(true)
-    expect(wrapper.vm.testLoadStatus).toBe('DEGRADED')
-    expect(wrapper.vm.testFields.map(field => field.fieldName)).toEqual(['age', 'income'])
-    expect(wrapper.vm.testLoadWarnings).toEqual([
-      expect.stringContaining('Schema 服务暂不可用')
-    ])
+    expect(wrapper.vm.testReady).toBe(false)
+    expect(wrapper.vm.testLoadStatus).toBe('ERROR')
+    expect(wrapper.vm.testFields).toEqual([])
+    expect(wrapper.vm.testLoadError).toContain('版本 Schema 服务暂不可用')
   })
 
-  test('模型配置样例按持久化来源标记为上传样例', async () => {
-    modelApi.getModel.mockResolvedValue({ data: {
+  test('模型版本配置样例按持久化来源标记为上传样例', async () => {
+    modelApi.getModelVersionTestContext.mockResolvedValue({ data: mockTestContext({
       ...mockModel(),
-      modelConfig: JSON.stringify({
-        testParams: '{"age":35}',
-        testParamsSource: 'UPLOAD_SAMPLE'
-      })
-    } })
-    definitionApi.getRuleTestSchema.mockResolvedValue({ data: {
-      inputs: [{ refId: 10, refType: 'VARIABLE', scriptName: 'age', label: '年龄', valueType: 'INTEGER' }],
-      sampleParams: { age: 28 }
-    } })
-
+      modelConfig: JSON.stringify({ testParams: '{"age":35}', testParamsSource: 'UPLOAD_SAMPLE' })
+    }, { inputs: [{ refId: 10, refType: 'VARIABLE', scriptName: 'age', label: '年龄', valueType: 'INTEGER' }], outputs: [], sampleParams: { age: 28 } }) })
     await wrapper.vm.openTestDialog()
-
     expect(wrapper.vm.testLoadStatus).toBe('READY')
     expect(wrapper.vm.testParamSource).toBe('UPLOAD_SAMPLE')
     expect(wrapper.vm.testParams.age).toBe(35)
     expect(modelApi.getTestParams).not.toHaveBeenCalled()
   })
 
-  test('模型配置样例损坏时回退到 Schema 样例并说明参数来源', async () => {
-    modelApi.getModel.mockResolvedValue({ data: {
-      ...mockModel(),
-      modelConfig: '{invalid json'
-    } })
-    definitionApi.getRuleTestSchema.mockResolvedValue({ data: {
-      inputs: [{ refId: 10, refType: 'VARIABLE', scriptName: 'age', label: '年龄', valueType: 'INTEGER' }],
-      sampleParams: { age: 28 }
-    } })
-
+  test('版本配置样例损坏时只回退同一冻结 Schema 并说明来源', async () => {
+    modelApi.getModelVersionTestContext.mockResolvedValue({ data: mockTestContext({
+      ...mockModel(), modelConfig: '{invalid json'
+    }, { inputs: [{ refId: 10, refType: 'VARIABLE', scriptName: 'age', label: '年龄', valueType: 'INTEGER' }], outputs: [], sampleParams: { age: 28 } }) })
     await wrapper.vm.openTestDialog()
-
     expect(wrapper.vm.testLoadStatus).toBe('DEGRADED')
     expect(wrapper.vm.testParamSource).toBe('SCHEMA_SAMPLE')
-    expect(wrapper.vm.testParamSourceLabel).toBe('测试 Schema 样例')
     expect(wrapper.vm.testParams.age).toBe(28)
     expect(wrapper.vm.testLoadWarnings.join(' ')).toContain('模型配置样例')
   })
 
-  test('重复打开弹窗时迟到的旧配置不能覆盖当前配置', async () => {
-    let resolveOldModel
-    modelApi.getModel
-      .mockReturnValueOnce(new Promise(resolve => { resolveOldModel = resolve }))
-      .mockResolvedValueOnce({ data: { ...mockModel(), inputFields: [
-        { id: 3, fieldName: 'currentValue', fieldLabel: '当前值', fieldType: 'NUMBER' }
-      ] } })
-    definitionApi.getRuleTestSchema
-      .mockResolvedValueOnce({ data: { inputs: [
-        { refId: 3, refType: 'VARIABLE', scriptName: 'currentValue', label: '当前值', valueType: 'NUMBER' }
-      ], sampleParams: { currentValue: 2 } } })
-      .mockResolvedValueOnce({ data: { inputs: [
-        { refId: 1, refType: 'VARIABLE', scriptName: 'oldValue', label: '旧值', valueType: 'NUMBER' }
-      ], sampleParams: { oldValue: 1 } } })
-    modelApi.getTestParams.mockResolvedValue({ data: null })
-
-    const oldOpen = wrapper.vm.openTestDialog()
-    const currentOpen = wrapper.vm.openTestDialog()
-    await currentOpen
-    resolveOldModel({ data: mockModel() })
+  test('切换版本后迟到的旧版本配置不能覆盖当前选择', async () => {
+    let resolveOldVersion
+    const old = mockTestContext(mockModel(), { inputs: [{ scriptName: 'oldValue', valueType: 'NUMBER' }], outputs: [], sampleParams: { oldValue: 1 } })
+    const latest = mockTestContext({ ...mockModel(), currentVersion: 2 }, { inputs: [{ scriptName: 'currentValue', valueType: 'NUMBER' }], outputs: [], sampleParams: { currentValue: 2 } })
+    modelApi.getModelVersionTestContext
+      .mockReturnValueOnce(new Promise(resolve => { resolveOldVersion = resolve }))
+      .mockResolvedValueOnce({ data: latest })
+    const oldOpen = wrapper.vm.openTestDialog(1)
+    await wrapper.vm.openTestDialog(2)
+    resolveOldVersion({ data: old })
     await oldOpen
-
+    expect(wrapper.vm.testVersion).toBe(2)
+    expect(wrapper.vm.testVersionContext.version).toBe(2)
     expect(wrapper.vm.testFields.map(field => field.fieldName)).toEqual(['currentValue'])
     expect(wrapper.vm.testParams).toEqual({ currentValue: 2 })
   })
@@ -762,12 +892,13 @@ describe('ModelDetail — 模型测试弹窗', () => {
     expect(parsed.income).toBe(5000.5)
   })
 
-  test('syncParamsToJson 空值转为 null', () => {
-    wrapper.vm.testFields = [{ fieldName: 'name', fieldType: 'STRING' }]
-    wrapper.vm.testParams = { name: '' }
+  test('syncParamsToJson 保留空字符串和 null 的区别', () => {
+    wrapper.vm.testFields = [{ fieldName: 'name', fieldType: 'STRING' }, { fieldName: 'missing', fieldType: 'STRING' }]
+    wrapper.vm.testParams = { name: '', missing: null }
     wrapper.vm.syncParamsToJson()
     const parsed = JSON.parse(wrapper.vm.testJsonStr)
-    expect(parsed.name).toBeNull()
+    expect(parsed.name).toBe('')
+    expect(parsed.missing).toBeNull()
   })
 
   test('onJsonInput 检测 JSON 格式错误', () => {
@@ -800,16 +931,11 @@ describe('ModelDetail — 模型测试弹窗', () => {
 
   test('关闭弹窗会使正在加载的配置失效', async () => {
     let resolveModel
-    modelApi.getModel.mockReturnValueOnce(new Promise(resolve => { resolveModel = resolve }))
-    definitionApi.getRuleTestSchema.mockResolvedValue({ data: {
-      inputs: [{ refId: 1, refType: 'VARIABLE', scriptName: 'oldValue', valueType: 'NUMBER' }],
-      sampleParams: { oldValue: 1 }
-    } })
-    modelApi.getTestParams.mockResolvedValue({ data: null })
+    modelApi.getModelVersionTestContext.mockReturnValueOnce(new Promise(resolve => { resolveModel = resolve }))
 
     const opening = wrapper.vm.openTestDialog()
     wrapper.vm.closeTestDialog()
-    resolveModel({ data: mockModel() })
+    resolveModel({ data: mockTestContext() })
     await opening
 
     expect(wrapper.vm.testVisible).toBe(false)
@@ -834,6 +960,20 @@ describe('ModelDetail — 版本管理', () => {
 
   beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.unmount() })
+
+  test('顶部使用公共版本管理并保留早期快照入口，不提供直接下线和删除操作', async () => {
+    await wrapper.setData({ model: { ...mockModel(), currentVersion: 3, publishedVersion: 1 } })
+    const header = wrapper.find('h2').element.parentElement
+    const manager = wrapper.findComponent({ name: 'ResourceVersionManager' })
+    expect(manager.props()).toMatchObject({ resourceType: 'MODEL', resourceId: 1, hasLegacy: true })
+    const directActions = Array.from(header.querySelector('div').children).filter(element => element.tagName === 'EL-BUTTON-STUB').map(element => element.textContent)
+    expect(directActions.join('')).not.toContain('下线')
+    expect(directActions.join('')).not.toContain('删除')
+    manager.vm.$emit('legacy')
+    await flushPromises()
+    expect(wrapper.vm.versionVisible).toBe(true)
+    expect(modelApi.listVersions).toHaveBeenCalledWith(1)
+  })
 
   test('openVersionDialog 加载模型版本历史', async () => {
     modelApi.listVersions.mockResolvedValue({ data: [{ version: 2 }, { version: 1 }] })
@@ -865,9 +1005,14 @@ describe('ModelDetail — 版本管理', () => {
 
 describe('ModelDetail — 模型测试执行', () => {
   let wrapper
+  const attributedResult = result => ({ data: {
+    ...result, version: 1, modelDigest: 'file-1', configurationDigest: 'configuration-1'
+  } })
 
   beforeEach(async () => {
     wrapper = await mountAndWait()
+    await wrapper.vm.openTestDialog(1)
+    wrapper.vm.testInputBaseJson = '{}'
     wrapper.vm.testFields = [
       { fieldName: 'age', fieldType: 'INTEGER' },
       { fieldName: 'score', fieldType: 'DOUBLE' }
@@ -878,7 +1023,7 @@ describe('ModelDetail — 模型测试执行', () => {
   afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('doTest 成功执行后设置 testResult', async () => {
-    modelApi.executeModel.mockResolvedValue({ data: { success: true, outputs: { result: 100 } } })
+    modelApi.executeModel.mockResolvedValue(attributedResult({ success: true, outputs: { result: 100 } }))
     wrapper.vm.testMode = 'manual'
     wrapper.vm.testVisible = true
     await wrapper.vm.doTest()
@@ -886,11 +1031,11 @@ describe('ModelDetail — 模型测试执行', () => {
     expect(wrapper.vm.testResult.success).toBe(true)
     expect(wrapper.vm.testResult).toMatchObject({ hasOutput: true, output: { result: 100 } })
     expect(wrapper.vm.testExecuting).toBe(false)
-    expect(modelApi.executeModel).toHaveBeenCalledWith(1, { age: 30, score: 85.5 }, 95000)
+    expect(modelApi.executeModel).toHaveBeenCalledWith(1, '{"age":30,"score":85.5}', 95000, 1)
   })
 
   test('doTest JSON 模式解析参数', async () => {
-    modelApi.executeModel.mockResolvedValue({ data: { success: true, outputs: {} } })
+    modelApi.executeModel.mockResolvedValue(attributedResult({ success: true, outputs: {} }))
     wrapper.vm.testMode = 'json'
     wrapper.vm.testJsonStr = '{"age": 25}'
     await wrapper.vm.doTest()
@@ -904,6 +1049,15 @@ describe('ModelDetail — 模型测试执行', () => {
     await wrapper.vm.doTest()
     expect(wrapper.vm.testExecuting).toBe(false)
     consoleSpy.mockRestore()
+  })
+
+  test('数字表单输入无效时在页面报错且不执行也不保存', async () => {
+    wrapper.vm.testParams.age = '不是数字'
+    await expect(wrapper.vm.doTest()).resolves.toBeUndefined()
+    await expect(wrapper.vm.handleSaveParams()).resolves.toBeUndefined()
+    expect(modelApi.executeModel).not.toHaveBeenCalled()
+    expect(modelApi.saveTestParams).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.error).toHaveBeenCalledWith(expect.stringContaining('数字'))
   })
 
   test('doTest 失败时设置错误信息', async () => {
@@ -924,9 +1078,9 @@ describe('ModelDetail — 模型测试执行', () => {
     const first = wrapper.vm.doTest()
     wrapper.vm.testParams.age = 40
     const second = wrapper.vm.doTest()
-    resolveSecond({ data: { success: true, outputs: { result: 'current' } } })
+    resolveSecond(attributedResult({ success: true, outputs: { result: 'current' } }))
     await second
-    resolveFirst({ data: { success: true, outputs: { result: 'old' } } })
+    resolveFirst(attributedResult({ success: true, outputs: { result: 'old' } }))
     await first
 
     expect(wrapper.vm.testResult.output).toEqual({ result: 'current' })
@@ -941,8 +1095,9 @@ describe('ModelDetail — 模型测试执行', () => {
     await wrapper.vm.handleSaveParams()
     expect(modelApi.saveTestParams).toHaveBeenCalled()
     expect(wrapper.vm.testSaving).toBe(false)
-    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('测试参数变更已创建审批草稿')
-    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/approval/77')
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith(expect.stringContaining('草稿已保存'))
+    expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith(expect.stringContaining('草稿已保存'))
   })
 
   test('弹窗已隐藏但关闭动画未结束时迟到保存不能提示或跳转', async () => {

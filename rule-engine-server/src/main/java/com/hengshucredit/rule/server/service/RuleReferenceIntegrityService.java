@@ -255,8 +255,13 @@ public class RuleReferenceIntegrityService {
                 checkNamedField(object, path, definitionId, "target", "_targetVarId", "_targetRefType",
                         validRefs, issues, seen);
             }
-            checkNamedField(object, path, definitionId, "condVar", "_condVarId", "_condVarRefType",
-                    validRefs, issues, seen);
+            if (object.getJSONObject("leftOperand") == null) {
+                // 评分卡旧模型采用 _varId/_refType；有 Operand 时只审计实际参与编译的引用。
+                boolean scorecardItem = path.matches(".*\\.scoreItems\\[\\d+\\]");
+                checkNamedField(object, path, definitionId, "condVar",
+                        scorecardItem ? "_varId" : "_condVarId",
+                        scorecardItem ? "_refType" : "_condVarRefType", validRefs, issues, seen);
+            }
             checkNamedField(object, path, definitionId, "matchVar", "_matchVarId", "_matchVarRefType",
                     validRefs, issues, seen);
             checkNamedField(object, path, definitionId, "checkVar", "_checkVarId", "_checkVarRefType",

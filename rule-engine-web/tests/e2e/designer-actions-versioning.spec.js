@@ -1,6 +1,7 @@
 const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createDesignerApiData } = require('./support/designerFixtures.cjs')
+const { withTestExecutionIdentity } = require('./support/testExecutionFixtures.cjs')
 
 const designers = [
   ['table', 101, 'TABLE', '添加行'], ['tree', 102, 'TREE', '执行动作'],
@@ -35,11 +36,11 @@ function fixtures(id) {
     return { revision: draft, compileSuccess: true, issues: [], designVersion: 999 }
   })
   for (const revisionId of ['9001', '9002']) apiData.set(`${base}/revisions/${revisionId}`, () => drafts.get(revisionId))
-  apiData.set('POST /api/rule/test-schema', { inputs: [], runtimeNodes: [], sampleParams: {}, diagnostics: [] })
-  apiData.set('POST /api/rule/definition/execute', ({ request }) => {
+  apiData.set('POST /api/rule/test-schema', withTestExecutionIdentity({ inputs: [], runtimeNodes: [], sampleParams: {}, diagnostics: [] }))
+  apiData.set('POST /api/rule/definition/execute', withTestExecutionIdentity(({ request }) => {
     executed.push(request.postDataJSON())
     return { success: true, result: { result: 1 }, executeTimeMs: 1 }
-  })
+  }))
   apiData.set(`POST ${base}/designer/publish`, ({ request }) => {
     const body = request.postDataJSON()
     published.push(body)
@@ -57,21 +58,28 @@ async function editScript(page, text) {
 }
 
 for (const [route, id, modelType, add] of designers) {
-  test(`${modelType} 四按钮使用当前配置，编译测试零保存，保存产生独立草稿`, async ({ page }) => {
+  test(`${modelType} 五按钮使用当前配置，检查编译测试零保存，保存产生独立草稿`, async ({ page }) => {
     const data = fixtures(id)
     const harness = await installDistRoutes(page, { apiData: data.apiData })
     await page.setViewportSize({ width: 1600, height: 1000 })
     await page.goto(`http://tianshu.local/index.html#/designer/${route}/${id}?projectId=1`)
     const bar = page.locator('main .rule-designer-actions')
     await expect(bar.locator('[data-action="test"]')).toBeEnabled()
-    expect(await bar.locator('[data-action]').evaluateAll(elements => elements.map(element => element.dataset.action))).toEqual(['compile', 'save', 'publish', 'test'])
+    expect(await bar.locator('.rule-designer-actions__buttons [data-action]').evaluateAll(elements => elements.map(element => element.dataset.action))).toEqual(['check', 'compile', 'save', 'publish', 'test'])
+    await expect(bar.locator('[data-action="show-report"]')).toHaveCount(0)
+    await bar.locator('[data-action="check"]').click()
+    const checkReport = page.getByRole('dialog', { name: '校验报告' })
+    await expect(checkReport).toContainText('格式、Schema 与依赖校验均已通过')
+    expect(data.saved).toHaveLength(0)
+    expect(data.published).toHaveLength(0)
+    await checkReport.getByRole('button', { name: '关闭', exact: true }).click()
     if (add) await page.getByRole('button', { name: add, exact: true }).first().click()
     else await editScript(page, 'result = age;')
     await expect(page.getByTestId('designer-info')).toContainText('有未保存修改')
     await bar.locator('[data-action="test"]').click()
     await page.getByRole('dialog', { name: '测试执行' }).getByRole('button', { name: '执行测试', exact: true }).click()
     await expect(page.getByRole('dialog', { name: '测试执行' })).toContainText('执行成功')
-    expect(data.executed[0]).toMatchObject({ definitionId: String(id), projectId: 1, modelType, modelJson: expect.any(String) })
+    expect(data.executed[0]).toMatchObject({ definitionId: String(id), projectId: 1, executionSource: { sourceType: 'PREVIEW' }, modelType, modelJson: expect.any(String) })
     expect(data.saved).toHaveLength(0)
     await page.getByRole('dialog', { name: '测试执行' }).getByRole('button', { name: '关闭', exact: true }).click()
     await expect(page.getByRole('dialog', { name: '测试执行' })).toBeHidden()
@@ -81,8 +89,8 @@ for (const [route, id, modelType, add] of designers) {
     const afterCompile = await bar.boundingBox()
     expect(afterCompile.height).toBe(beforeCompile.height)
     expect(afterCompile.y).toBe(beforeCompile.y)
-    await expect(page.getByRole('dialog', { name: '编译检查结果' })).toHaveCount(0)
-    expect(data.compiled[0]).toMatchObject({ sourceType: 'VERSION', sourceId: '81', modelJson: data.executed[0].modelJson })
+    await expect(page.getByRole('dialog', { name: '校验报告' })).toBeHidden()
+    expect(data.compiled.at(-1)).toMatchObject({ sourceType: 'VERSION', sourceId: '81', modelJson: data.executed[0].modelJson })
     expect(data.saved).toHaveLength(0)
     await bar.locator('[data-action="save"]').click()
     await expect(page).toHaveURL(/sourceType=REVISION&sourceId=9001/)
@@ -131,7 +139,7 @@ for (const route of ['table', 'flow', 'tree', 'script']) {
     await expect(bar.locator('[data-action="compile"]')).toBeEnabled()
     const before = await bar.boundingBox()
     await bar.locator('[data-action="compile"]').click()
-    const report = page.getByRole('dialog', { name: '编译检查结果' })
+    const report = page.getByRole('dialog', { name: '校验报告' })
     await expect(report).toContainText(issue.message)
     await expect(bar.locator('.validation-report')).toHaveCount(0)
     await report.getByRole('button', { name: '关闭', exact: true }).click()
@@ -251,13 +259,13 @@ test('草稿新增与覆盖、取消切版、保存并切换、发布绑定请�
   expect(data.saved[1]).toMatchObject({ saveMode: 'OVERWRITE', revisionId: '9001', lockVersion: 1, sourceType: 'REVISION', sourceId: '9001' })
   await editScript(page, 'result = 3;')
   await page.getByTestId('designer-version-select').click()
-  await page.getByRole('option', { name: '发布版本 v1', exact: true }).click()
+  await page.getByRole('option', { name: '生产 · 1', exact: true }).click()
   const switching = page.getByRole('dialog', { name: '切换版本', exact: true })
   await switching.locator('[data-action="cancel-choice"]').click()
   await expect(page).toHaveURL(/sourceId=9001/)
   expect(data.saved).toHaveLength(2)
   await page.getByTestId('designer-version-select').click()
-  await page.getByRole('option', { name: '发布版本 v1', exact: true }).click()
+  await page.getByRole('option', { name: '生产 · 1', exact: true }).click()
   await switching.getByText('另存为新草稿', { exact: true }).click()
   await expect(switching.getByRole('radio', { name: '另存为新草稿', exact: true })).toBeChecked()
   await switching.locator('[data-action="confirm-save"]').click()

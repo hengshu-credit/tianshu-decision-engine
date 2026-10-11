@@ -68,6 +68,18 @@ public class RuleDefinitionController {
     @Resource
     private RuleRevisionRepairService revisionRepairService;
 
+    @Resource
+    private com.hengshucredit.rule.server.artifact.RuleRevisionFieldViewService revisionFieldViewService;
+    @Resource
+    private com.hengshucredit.rule.server.service.RuleReferenceCatalogService referenceCatalogService;
+
+    @GetMapping("/{definitionId}/reference-catalog")
+    @RequirePermission("rule:view")
+    public R<com.hengshucredit.rule.model.dto.RuleReferenceCatalog> referenceCatalog(
+            @PathVariable Long definitionId, @RequestParam String sourceType, @RequestParam String sourceId) {
+        return R.ok(referenceCatalogService.getCatalog(definitionId, sourceType, sourceId));
+    }
+
     @Autowired(required = false)
     private RuleGovernanceSubmissionService
             governanceSubmissionService;
@@ -234,6 +246,14 @@ public class RuleDefinitionController {
         String modelJson = body.get("modelJson") == null ? null
                 : normalizeModelJson(body.get("modelJson").toString());
         Long executionProjectId = optionalPositiveLong(body.get("projectId"));
+        com.hengshucredit.rule.model.dto.RuleTestExecutionSource source =
+                com.hengshucredit.rule.model.dto.RuleTestExecutionSource.from(body.get("executionSource"));
+        if (source != null) {
+            source.validate(modelJson);
+            String modelType = body.get("modelType") == null ? null : body.get("modelType").toString();
+            return R.ok(executeService.testExecuteTarget(executeService.resolveTestTarget(
+                    definitionId, source, modelJson, modelType, executionProjectId), params));
+        }
         if (modelJson != null && !modelJson.trim().isEmpty()) {
             String modelType = body.get("modelType") == null ? null : body.get("modelType").toString();
             return R.ok(executeService.testExecutePreview(
@@ -351,6 +371,17 @@ public class RuleDefinitionController {
             return R.ok(lifecycleService.getRevision(definitionId, revisionId));
         } catch (IllegalArgumentException e) {
             return R.fail(400, e.getMessage());
+        }
+    }
+
+    @GetMapping("/{definitionId}/revisions/{revisionId}/fields")
+    @RequirePermission("rule:view")
+    public R<com.hengshucredit.rule.model.dto.RuleRevisionFieldView> getRevisionFields(
+            @PathVariable Long definitionId, @PathVariable Long revisionId) {
+        try {
+            return R.ok(revisionFieldViewService.getFields(definitionId, revisionId));
+        } catch (IllegalArgumentException error) {
+            return R.fail(400, error.getMessage());
         }
     }
 

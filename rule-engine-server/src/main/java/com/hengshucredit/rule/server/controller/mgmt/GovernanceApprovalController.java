@@ -38,6 +38,19 @@ public class GovernanceApprovalController {
     @Resource
     private ConsoleOperatorResolver operatorResolver;
 
+    @PostMapping("/rules/{id}/delete")
+    @RequirePermission("rule:edit")
+    public Result<com.hengshucredit.rule.server.governance.GovernanceDeletionResult> deleteRule(@PathVariable Long id) {
+        return Result.ok(approvalService.deleteRule(id, operatorResolver.resolve()));
+    }
+
+    @PostMapping("/resources/{type}/{id}/delete")
+    @RequirePermission("")
+    public Result<com.hengshucredit.rule.server.governance.GovernanceDeletionResult> deleteResource(
+            @PathVariable String type, @PathVariable Long id) {
+        return Result.ok(approvalService.deleteResource(type, id, operatorResolver.resolve()));
+    }
+
     @GetMapping("/requests")
     @RequirePermission("approval:view")
     public Result<IPage<GovernanceRequestView>> requests(
@@ -62,7 +75,7 @@ public class GovernanceApprovalController {
     }
 
     @PostMapping("/drafts")
-    @RequirePermission("approval:submit")
+    @RequirePermission("")
     public Result<GovernanceRequestView> createDraft(
             @RequestBody GovernanceDraftRequest request) {
         return Result.ok(GovernanceRequestView.from(
@@ -71,7 +84,7 @@ public class GovernanceApprovalController {
     }
 
     @PutMapping("/requests/{id}/draft")
-    @RequirePermission("approval:submit")
+    @RequirePermission("")
     public Result<GovernanceRequestView> saveDraft(
             @PathVariable Long id,
             @RequestBody GovernanceDraftRequest request) {
@@ -81,7 +94,7 @@ public class GovernanceApprovalController {
     }
 
     @PostMapping("/requests/{id}/preflight")
-    @RequirePermission("approval:submit")
+    @RequirePermission("")
     public Result<GovernancePreflightReport> preflight(
             @PathVariable Long id) {
         return Result.ok(approvalService.preflight(
@@ -119,13 +132,42 @@ public class GovernanceApprovalController {
     }
 
     @PostMapping("/requests/{id}/cancel")
-    @RequirePermission("approval:submit")
+    @RequirePermission("")
     public Result<GovernanceRequestView> cancel(
             @PathVariable Long id,
             @RequestBody(required = false)
             GovernanceReviewRequest request) {
         return view(approvalService.cancel(
                 id, request, operatorResolver.resolve()));
+    }
+
+    @GetMapping("/workspaces")
+    @RequirePermission("")
+    public Result<IPage<GovernanceRequestView>> workspaces(@ModelAttribute GovernanceApprovalQuery query) {
+        query.setTaskScope("MINE");
+        String status = query.getStatus();
+        query.setStatus(status == null ? "EDITING" : "ALL".equals(status) ? null
+                : com.hengshucredit.rule.model.enums.GovernanceRequestStatus.valueOf(status).name());
+        return Result.ok(approvalService.page(query, operatorResolver.resolve()));
+    }
+
+    @GetMapping("/workspaces/{type}/{id}")
+    @RequirePermission("")
+    public Result<GovernanceRequestView> workspace(@PathVariable String type, @PathVariable Long id) {
+        return Result.ok(approvalService.editableWorkspace(type, id, operatorResolver.resolve()));
+    }
+
+    @GetMapping("/workspaces/draft-ids")
+    @RequirePermission("")
+    public Result<List<Long>> draftIds(@RequestParam String type, @RequestParam List<Long> ids) {
+        return Result.ok(approvalService.draftResourceIds(type, ids));
+    }
+
+    @GetMapping("/workspaces/states")
+    @RequirePermission("")
+    public Result<List<com.hengshucredit.rule.server.governance.GovernanceResourceState>> states(
+            @RequestParam String type, @RequestParam List<Long> ids) {
+        return Result.ok(approvalService.resourceStates(type, ids, operatorResolver.resolve()));
     }
 
     @GetMapping("/resources/{type}/{id}/versions")
@@ -140,7 +182,7 @@ public class GovernanceApprovalController {
     }
 
     @PostMapping("/resources/{type}/{id}/restore")
-    @RequirePermission("approval:submit")
+    @RequirePermission("")
     public Result<GovernanceRequestView> restore(
             @PathVariable String type,
             @PathVariable Long id,
@@ -149,7 +191,7 @@ public class GovernanceApprovalController {
             throw new IllegalArgumentException("历史版本 ID 不能为空");
         }
         return view(approvalService.createRestoreDraft(
-                type, id, request.getSourceVersionId(),
+                type, id, request.getSourceVersionId(), request.getRestoreMode(),
                 operatorResolver.resolve()));
     }
 

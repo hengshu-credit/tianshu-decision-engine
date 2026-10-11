@@ -109,6 +109,7 @@ public class DerivedVariableService {
         paths.forEach((key, path) -> references.put(key, HistoryFieldValues.read(values, path)));
         for (JSONObject input : DerivedVariableConfig.currentInputs(config)) {
             for (var reference : OperandDependencyCollector.collectReferences(input)) {
+                if (reference.getVersionId() != null) continue;
                 if ("FUNCTION".equals(reference.getRefType())) continue;
                 String key = reference.getRefType() + ":" + reference.getRefId();
                 DerivedVariableConfig.require(paths.containsKey(key), "衍生上游字段不在当前执行快照中: " + key);

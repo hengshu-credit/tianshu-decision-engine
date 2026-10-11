@@ -43,6 +43,7 @@ import java.util.Set;
 /** 将已确认的离线包写入目标环境；过程复用治理审批及规则草稿机制。 */
 @Service
 public class OfflineResourceImportService {
+    @Resource private com.hengshucredit.rule.server.security.ConsoleAccessGuard accessGuard;
     @Resource private com.hengshucredit.rule.server.governance.GovernedResourceAdapterRegistry adapterRegistry;
     @Resource private GovernanceApprovalService approvalService;
     @Resource private GovernedResourceMapper governedResourceMapper;
@@ -51,11 +52,13 @@ public class OfflineResourceImportService {
     @Resource private com.hengshucredit.rule.server.mapper.RuleDefinitionMapper ruleDefinitionMapper;
     @Resource private RuleDefinitionService definitionService;
     @Resource private RuleLifecycleService lifecycleService;
+    @Resource private com.hengshucredit.rule.server.service.RuleGovernanceSubmissionService ruleGovernanceSubmissionService;
     @Resource private RuleDraftService draftService;
     @Resource private RuleProjectService projectService;
     @Resource private GovernanceSecretCodec secretCodec;
     @Resource private com.hengshucredit.rule.server.governance.GovernanceResourceBootstrapService governanceBootstrapService;
     private final TransferBundleCodec codec = new TransferBundleCodec();
+    @Resource private TransferVersionService versionTransfers;
 
     @Transactional
     public Map<String, Object> apply(byte[] bytes, TransferImportOptions options, String actor) {
@@ -63,6 +66,16 @@ public class OfflineResourceImportService {
         if (actor == null || actor.isBlank()) actor = ConsoleOperatorResolver.SYSTEM_CONSOLE;
         TransferBundle decodedBundle = codec.decode(bytes).bundle();
         List<TransferBundle.Resource> selectedResources = TransferSelection.select(decodedBundle, options);
+        selectedResources.forEach(TransferVersionReferences::descriptors);
+        if (accessGuard != null) {
+            accessGuard.require("transfer:import");
+            for (TransferBundle.Resource resource : selectedResources) accessGuard.requireResource(TransferKey.parse(resource.key()).type().name(), "view");
+            for (String key : options.normalizedResourceBindings().keySet()) accessGuard.requireResource(TransferKey.parse(key).type().name(), "view");
+            if (Boolean.TRUE.equals(options.createProject())) accessGuard.require("project:edit", "project:submit", "approval:submit", "approval:approve");
+            if (Boolean.TRUE.equals(options.publishRules())) accessGuard.require("rule:submit", "approval:approve");
+        }
+        if (selectedResources.stream().anyMatch(resource -> resource.key().startsWith("RULE_VERSION:") || !TransferVersionReferences.scan(resource.configuration()).isEmpty()))
+            versionTransfers.validate(selectedResources, options);
         Set<String> selectedKeys = selectedResources.stream().map(TransferBundle.Resource::key)
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
         TransferBundle bundle = new TransferBundle(decodedBundle.roots().stream()
@@ -84,6 +97,7 @@ public class OfflineResourceImportService {
         List<TransferBundle.Resource> ordered = topologicalOrder(bundle.resources());
         validateProjectTargets(ordered, options, createProject);
         Map<String, Long> idMap = new LinkedHashMap<>();
+        Map<String, Object> versionMapping = new LinkedHashMap<>();
         if (options.projectBindings() != null) {
             options.projectBindings().forEach((sourceId, targetId) -> {
                 try {
@@ -124,19 +138,10 @@ public class OfflineResourceImportService {
         for (TransferBundle.Resource resource : ordered) {
             TransferKey sourceKey = TransferKey.parse(resource.key());
             if (sourceKey.type() == TransferResourceType.RULE_VERSION) {
-                if (!Boolean.TRUE.equals(options.publishRules())) {
-                    throw new IllegalArgumentException("固定版本绑定必须在目标规则发布后重新建立；确认导入时请开启“导入并发布规则”或先手工发布对应规则: " + resource.key());
-                }
-                Long targetBinding = rebindRuleVersion(resource, idMap);
+                Long targetBinding = versionTransfers.bindLegacyRule(resource, options, idMap, effectiveTargetProjectId);
                 idMap.put(resource.key(), targetBinding);
-                result.add(row(resource, targetBinding, "REBOUND", "按目标规则业务版本重建并使用最新代次"));
+                result.add(row(resource, targetBinding, "REBOUND", "使用预检确认的目标规则和版本，不按同号版本推断"));
                 continue;
-            }
-            if (sourceKey.type() == TransferResourceType.RULE
-                    && resource.references().stream().anyMatch(reference -> reference.targetKey().startsWith("RULE_VERSION:"))) {
-                if (!Boolean.TRUE.equals(options.publishRules())) {
-                    throw new IllegalArgumentException("包含固定版本引用的规则需要目标规则发布后重建版本绑定；请开启“导入并发布规则”: " + resource.key());
-                }
             }
             if (sourceKey.type() == TransferResourceType.PROJECT && "GLOBAL".equals(options.normalizedScope())) {
                 idMap.put(resource.key(), 0L);
@@ -160,6 +165,8 @@ public class OfflineResourceImportService {
             ExistingResource existing = findExisting(sourceKey.type(), configuration, resourceTargetProjectId);
             Long existingId = existing == null ? null : existing.id();
             rewriteReferences(configuration, resource, byKey, idMap, childMap, options.normalizedFieldBindings());
+            if (!TransferVersionReferences.scan(resource.configuration()).isEmpty())
+                versionMapping.putAll(versionTransfers.rewrite(configuration, resource, options, idMap, resourceTargetProjectId));
             String defaultPolicy = sourceKey.type() == TransferResourceType.VARIABLE
                     ? options.normalizedVariablePolicy() : options.normalizedResourcePolicy();
             String policy = options.normalizedResourceActions().getOrDefault(resource.key(), defaultPolicy);
@@ -192,6 +199,13 @@ public class OfflineResourceImportService {
             Map<Long, Long> importedFieldIds = sourceKey.type() == TransferResourceType.DATA_OBJECT && existingId != null
                     ? prepareObjectOverwrite(configuration, existing.configuration()) : Map.of();
             if (sourceKey.type() == TransferResourceType.DATA_OBJECT && existingId != null) configuration.put("id", existingId);
+            if (accessGuard != null) {
+                accessGuard.requireResource(sourceKey.type().name(), "edit");
+                if (sourceKey.type() != TransferResourceType.RULE) {
+                    accessGuard.requireResource(sourceKey.type().name(), "submit");
+                    accessGuard.require("approval:submit", "approval:approve");
+                }
+            }
             ResourceSnapshot snapshot = ResourceSnapshot.ofJson(CanonicalJson.write(configuration));
             Long targetId;
             if (sourceKey.type() == TransferResourceType.RULE) {
@@ -223,6 +237,7 @@ public class OfflineResourceImportService {
         response.put("status", "APPLIED");
         response.put("roots", bundle.roots());
         response.put("resourceIdMapping", idMap);
+        response.put("versionIdMapping", versionMapping);
         response.put("resources", result);
         response.put("listDataIncluded", false);
         response.put("targetProjectId", effectiveTargetProjectId);
@@ -296,33 +311,12 @@ public class OfflineResourceImportService {
             RuleRevision savedRevision = saved.getRevision();
             RuleLifecycleActionRequest action = new RuleLifecycleActionRequest();
             action.setComment("离线配置迁移按显式选项发布规则");
-            lifecycleService.submit(savedRevision.getId(), action);
-            lifecycleService.approve(savedRevision.getId(), action);
-            lifecycleService.publish(savedRevision.getId(), action);
+            RuleRevision submitted = ruleGovernanceSubmissionService.submit(savedRevision.getId(), action);
+            GovernanceReviewRequest review = new GovernanceReviewRequest(); review.setComment(action.getComment());
+            var approved = approvalService.approve(submitted.getGovernanceRequestId(), review, actor);
+            if (!"APPROVED".equals(approved.getStatus())) throw new IllegalStateException("迁移规则发布审批未通过，请重新预检：" + approved.getStatus());
         }
         return created.getId();
-    }
-
-    private Long rebindRuleVersion(TransferBundle.Resource resource, Map<String, Long> idMap) {
-        Map<String, Object> configuration = resource.configuration();
-        Long sourceDefinitionId = number(configuration.get("definitionId"));
-        Integer versionNo = integer(configuration.get("versionNo"));
-        if (sourceDefinitionId == null || versionNo == null || versionNo <= 0) {
-            throw new IllegalArgumentException("固定版本包缺少源规则或业务版本号: " + resource.key());
-        }
-        Long targetDefinitionId = idMap.get("RULE:" + sourceDefinitionId);
-        if (targetDefinitionId == null) {
-            throw new IllegalArgumentException("固定版本对应的目标规则尚未导入: " + resource.key());
-        }
-        var binding = ruleVersionBindingMapper.selectOne(new LambdaQueryWrapper<com.hengshucredit.rule.model.entity.RuleVersionBinding>()
-                .eq(com.hengshucredit.rule.model.entity.RuleVersionBinding::getDefinitionId, targetDefinitionId)
-                .eq(com.hengshucredit.rule.model.entity.RuleVersionBinding::getVersionNo, versionNo)
-                .eq(com.hengshucredit.rule.model.entity.RuleVersionBinding::getStatus, 1)
-                .last("LIMIT 1"));
-        if (binding == null) {
-            throw new IllegalStateException("目标规则尚未生成业务版本 " + versionNo + "，请先导入并发布对应版本后重试: " + resource.key());
-        }
-        return binding.getId();
     }
 
     static List<TransferBundle.Resource> topologicalOrder(List<TransferBundle.Resource> resources) {
@@ -349,6 +343,10 @@ public class OfflineResourceImportService {
                                    Map<String, Map<Long, Long>> childMap,
                                    Map<String, Long> fieldBindings) {
         for (TransferBundle.Reference reference : resource.references()) {
+            // Old format-1 manifests sometimes recorded the operand itself as the binding path.
+            // The version mapper owns that node and all of its resource/version identity fields.
+            if (TransferVersionReferences.scan(resource.configuration()).stream().anyMatch(version ->
+                    version.path().equals(reference.path()) || version.ownedPaths().contains(reference.path()))) continue;
             Long target = idMap.get(reference.targetKey());
             if (target == null) throw new IllegalArgumentException("上游资源尚未导入: " + reference.targetKey());
             if (reference.childPath() != null) {
@@ -370,6 +368,8 @@ public class OfflineResourceImportService {
                                             TransferImportOptions options) {
         for (TransferBundle.Resource resource : resources) {
             for (TransferBundle.Reference reference : resource.references()) {
+                if (TransferVersionReferences.scan(resource.configuration()).stream().anyMatch(version ->
+                        version.path().equals(reference.path()) || version.ownedPaths().contains(reference.path()))) continue;
                 if (!reference.external()) continue;
                 Long targetId = idMap.get(reference.targetKey());
                 if (targetId == null) {

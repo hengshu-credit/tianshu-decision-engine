@@ -57,6 +57,9 @@ public class ConsoleSessionAuthInterceptorTest {
 
         assertFalse(allowed);
         assertTrue(response.getContentAsString().contains("会话权限已变更"));
+        // 清除登录身份即可撤销权限，删除 Redis 会话会使并发请求在提交响应时报错。
+        assertFalse(session.isInvalid());
+        org.junit.Assert.assertNull(session.getAttribute(properties.getSessionUserIdAttribute()));
     }
 
     private static DatabaseConsoleAccountService accountService(Long version) {

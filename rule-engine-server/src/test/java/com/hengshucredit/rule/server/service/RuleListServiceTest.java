@@ -25,6 +25,7 @@ import java.lang.reflect.Proxy;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
+import java.util.ArrayList;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
@@ -48,6 +49,45 @@ public class RuleListServiceTest {
         assertEquals("手机号", sheet.getRow(1).getCell(1).getStringCellValue());
         assertTrue(validations.size() > 0);
         assertEquals("手机号", validations.get(0).getValidationConstraint().getExplicitListValues()[0]);
+    }
+
+    @Test
+    public void streamingExportReadsFixedPagesAndWritesWorkbookRows() throws Exception {
+        RuleListService service = new RuleListService();
+        FakeRecordMapper recordMapper = new FakeRecordMapper();
+        RuleListRecord first = new RuleListRecord();
+        first.setId(2L);
+        first.setListId(9L);
+        first.setItemContent("13800138000");
+        first.setItemType("MOBILE");
+        first.setLastOperation("ADD");
+        RuleListRecord second = new RuleListRecord();
+        second.setId(1L);
+        second.setListId(9L);
+        second.setItemContent("13900139000");
+        second.setItemType("MOBILE");
+        second.setLastOperation("UPDATE");
+        recordMapper.pageRecords = new ArrayList<>(List.of(first, second));
+        while (recordMapper.pageRecords.size() < 2000) {
+            RuleListRecord extra = new RuleListRecord();
+            extra.setId((long) (2000 - recordMapper.pageRecords.size()));
+            extra.setListId(9L);
+            extra.setItemContent("extra-" + extra.getId());
+            extra.setItemType("OTHER");
+            recordMapper.pageRecords.add(extra);
+        }
+        setField(service, "recordMapper", recordMapper.proxy());
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        service.writeRecordsExport(9L, output);
+
+        try (Workbook workbook = new XSSFWorkbook(new java.io.ByteArrayInputStream(output.toByteArray()))) {
+            Sheet sheet = workbook.getSheetAt(0);
+            assertEquals("13800138000", sheet.getRow(1).getCell(0).getStringCellValue());
+            assertEquals("13900139000", sheet.getRow(2).getCell(0).getStringCellValue());
+            assertEquals(2, recordMapper.pageCalls);
+            assertEquals(2000L, recordMapper.lastPageSize);
+        }
     }
 
     @Test
@@ -249,6 +289,9 @@ public class RuleListServiceTest {
         private RuleListRecord updated;
         private RuleListRecord selectedById;
         private RuleListRecord duplicate;
+        private List<RuleListRecord> pageRecords = new ArrayList<>();
+        private int pageCalls;
+        private long lastPageSize;
 
         private RuleListRecordMapper proxy() {
             return (RuleListRecordMapper) Proxy.newProxyInstance(
@@ -257,6 +300,14 @@ public class RuleListServiceTest {
                     (proxy, method, args) -> {
                         if ("selectById".equals(method.getName())) {
                             return selectedById;
+                        }
+                        if ("selectPage".equals(method.getName())) {
+                            Page<RuleListRecord> page = (Page<RuleListRecord>) args[0];
+                            pageCalls++;
+                            lastPageSize = page.getSize();
+                            page.setRecords(page.getCurrent() == 1 ? pageRecords : Collections.emptyList());
+                            page.setTotal(page.getRecords().size());
+                            return page;
                         }
                         if ("selectOne".equals(method.getName())) {
                             return duplicate;

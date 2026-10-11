@@ -7,7 +7,7 @@ import java.util.Map;
  * 只描述预览/导入选择，不在反序列化时执行任何数据库写入。
  * projectBindings 的 key 是离线包中的源项目 ID 字符串，value 是目标项目 ID；
  * 项目级导入必须使用 targetProjectId、projectBindings 或 createProject 三者之一明确给出归属。
- * publishRules 只有显式开启时才会把导入的规则发布并重建固定版本绑定，默认保持草稿。
+ * publishRules 只有显式开启时才会发布导入的规则，默认保持草稿；固定依赖由 versionBindings 明确指定。
  */
 public record TransferImportOptions(Long targetProjectId,
                                     String targetScope,
@@ -22,7 +22,16 @@ public record TransferImportOptions(Long targetProjectId,
                                     List<String> selectedResourceKeys,
                                     Map<String, Long> resourceBindings,
                                     Map<String, Long> fieldBindings,
-                                    Map<String, String> resourceActions) {
+                                    Map<String, String> resourceActions,
+                                    Map<String, TransferVersionBinding> versionBindings) {
+    public TransferImportOptions(Long targetProjectId, String targetScope, String variablePolicy, String resourcePolicy,
+                                 String suffix, Boolean createProject, String projectCode, String projectName,
+                                 Map<String, Long> projectBindings, Boolean publishRules, List<String> selectedResourceKeys,
+                                 Map<String, Long> resourceBindings, Map<String, Long> fieldBindings, Map<String, String> resourceActions) {
+        this(targetProjectId, targetScope, variablePolicy, resourcePolicy, suffix, createProject, projectCode, projectName,
+                projectBindings, publishRules, selectedResourceKeys, resourceBindings, fieldBindings, resourceActions, Map.of());
+    }
+    public Map<String, TransferVersionBinding> normalizedVersionBindings() { return versionBindings == null ? Map.of() : Map.copyOf(versionBindings); }
     public TransferImportOptions(Long targetProjectId, String targetScope,
                                  String variablePolicy, String resourcePolicy,
                                  String suffix, Boolean createProject,

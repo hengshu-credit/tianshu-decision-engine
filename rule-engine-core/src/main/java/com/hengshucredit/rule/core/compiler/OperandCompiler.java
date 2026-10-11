@@ -13,6 +13,22 @@ public final class OperandCompiler {
         if (operand == null) throw new IllegalArgumentException("表达式参数不能为空");
         String kind = operand.getString("kind");
         if (empty(kind)) throw new IllegalArgumentException("表达式节点类型不能为空");
+        Long fixedVersionId = OperandVersion.fixedVersionId(operand);
+        if (fixedVersionId != null) {
+            boolean function = "FUNCTION".equals(kind);
+            var call = new com.hengshucredit.rule.core.engine.ResourceVersionCall(function ? "FUNCTION" : operand.getString("refType"),
+                    operand.getLong(function ? "functionId" : "refId"), fixedVersionId, operand.getString("relativePath"), null, null, null, operand.getString("versionSource"));
+            String identity = ActionOperandCompiler.quoteString(String.valueOf(call.refId())) + ", "
+                    + ActionOperandCompiler.quoteString(call.versionToken());
+            if (!function) return com.hengshucredit.rule.core.function.ResourceVersionFunctions.VALUE + "("
+                    + ActionOperandCompiler.quoteString(call.refType()) + ", " + identity + ", "
+                    + ActionOperandCompiler.quoteString(call.relativePath()) + ")";
+            StringBuilder expression = new StringBuilder(com.hengshucredit.rule.core.function.ResourceVersionFunctions.FUNCTION)
+                    .append('(').append(identity);
+            JSONArray args = operand.getJSONArray("args");
+            if (args != null) for (int i = 0; i < args.size(); i++) expression.append(", ").append(compile(args.getJSONObject(i), varContext));
+            return expression.append(')').toString();
+        }
         if ("LITERAL".equals(kind)) {
             return compileLiteral(operand.get("value"), operand.getString("valueType"));
         }
@@ -26,7 +42,9 @@ public final class OperandCompiler {
             if ("EXTERNAL_API".equalsIgnoreCase(operand.getString("refType"))) {
                 String path = code;
                 String relativePath = operand.getString("relativePath");
-                if (!empty(relativePath)) path += relativePath;
+                String apiCode = operand.getString("apiCode");
+                if ("PATH".equals(kind) && !empty(apiCode) && code.startsWith(apiCode + ".")) path = code.substring(apiCode.length() + 1);
+                else if (!empty(relativePath)) path = relativePath.startsWith(".") || relativePath.startsWith("[") ? code + relativePath : relativePath;
                 return "externalApiValue(" + operand.getLong("refId") + ", "
                         + compileLiteral(path, "STRING") + ")";
             }
@@ -51,7 +69,13 @@ public final class OperandCompiler {
                     ? varContext.resolveFunction(operand.getLong("functionId"), arity)
                     : operand.getString("functionCode");
             if (empty(functionCode)) throw new IllegalArgumentException("方法编码不能为空");
-            StringBuilder result = new StringBuilder(functionCode).append('(');
+            boolean managed = varContext != null && varContext.usesNativeFunctionId(operand.getLong("functionId"));
+            StringBuilder result = new StringBuilder(managed
+                    ? com.hengshucredit.rule.core.function.ManagedFunctionInvoker.NAME : functionCode).append('(');
+            if (managed) {
+                result.append(ActionOperandCompiler.quoteString(String.valueOf(operand.getLong("functionId"))));
+                if (arity > 0) result.append(", ");
+            }
             if (args != null) {
                 for (int i = 0; i < args.size(); i++) {
                     if (i > 0) result.append(", ");
@@ -182,7 +206,7 @@ public final class OperandCompiler {
         return ActionOperandCompiler.quoteString(text);
     }
 
-    private static boolean isNumberType(String type) {
+    static boolean isNumberType(String type) {
         return "BYTE".equals(type) || "SHORT".equals(type) || "INT".equals(type)
                 || "INTEGER".equals(type) || "LONG".equals(type) || "FLOAT".equals(type)
                 || "DOUBLE".equals(type) || "DECIMAL".equals(type) || "BIGDECIMAL".equals(type)

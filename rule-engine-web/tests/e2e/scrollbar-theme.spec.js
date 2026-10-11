@@ -1,6 +1,53 @@
 const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createOperationsApiData } = require('./support/operationsFixtures.cjs')
+const { createDesignerApiData } = require('./support/designerFixtures.cjs')
+
+for (const colorScheme of ['LIGHT', 'DARK']) test(`${colorScheme} 字段选择器分类和字段区滚动条沿用全局主题`, async ({ page }, testInfo) => {
+  await page.addInitScript(scheme => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify({
+    schemaVersion: 1, colorScheme: scheme, accentPreset: 'THEME_BLUE_GRADIENT', sidebarTheme: 'DARK', contentWidth: 'FLUID', fixedSidebar: true, colorWeak: false,
+  })), colorScheme)
+  const apiData = createDesignerApiData()
+  apiData.get('/api/rule/variable/project/1').push(...Array.from({ length: 100 }, (_, index) => ({ id: 1000 + index, varCode: `value${index}`, varLabel: `字段 ${index}`, varType: 'NUMBER', varSource: 'INPUT' })))
+  apiData.set('/api/rule/function/project/1/all', [{ id: 99, funcCode: 'countItems', funcName: '计数', returnType: 'NUMBER', paramsJson: '[]' }])
+  apiData.set('/api/rule/datasource/api-config/list', { records: [{ id: 88, apiCode: 'credit_api', apiName: '征信 API' }], total: 1 })
+  const { assertClean } = await installDistRoutes(page, { apiData })
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('http://tianshu.local/index.html#/designer/table/101')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme.toLowerCase())
+  await page.getByRole('button', { name: '添加行', exact: true }).click()
+  await page.getByPlaceholder('选择左操作数...').click()
+  const panel = page.locator('.fp-panel:visible')
+  const box = await panel.boundingBox()
+  await page.mouse.move(box.x + box.width - 4, box.y + box.height - 4)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width - 4, box.y + 296, { steps: 6 })
+  await page.mouse.up()
+  for (const selector of ['.fp-categories', '.fp-viewport']) {
+    const scroll = panel.locator(selector)
+    const style = await scroll.evaluate(element => {
+      const reference = document.querySelector('.sidebar-menu')
+      const thumb = node => getComputedStyle(node, '::-webkit-scrollbar-thumb').backgroundImage
+      return { mode: getComputedStyle(element).scrollbarWidth, colorMode: getComputedStyle(element).scrollbarColor,
+        width: getComputedStyle(element, '::-webkit-scrollbar').width, height: getComputedStyle(element, '::-webkit-scrollbar').height,
+        thumb: thumb(element), themeThumb: thumb(reference), track: getComputedStyle(element, '::-webkit-scrollbar-track').backgroundColor,
+        themeTrack: getComputedStyle(reference, '::-webkit-scrollbar-track').backgroundColor, overflow: element.scrollHeight > element.clientHeight }
+    })
+    expect(style.overflow).toBe(true)
+    expect(style.mode).toBe('auto')
+    expect(style.colorMode).toBe('auto')
+    expect(style.width).toBe('4px')
+    expect(style.height).toBe('4px')
+    expect(style.thumb).toContain('linear-gradient')
+    expect(style.thumb).toBe(style.themeThumb)
+    expect(style.track).toBe(style.themeTrack)
+    await scroll.hover()
+    await page.mouse.wheel(0, 150)
+    await expect.poll(() => scroll.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+  }
+  await page.screenshot({ path: testInfo.outputPath(`field-picker-scrollbars-${colorScheme.toLowerCase()}.png`) })
+  assertClean()
+})
 
 test('原生和 Element 滚动条共用主题，切换配色及夜间模式立即生效', async ({ page }) => {
   const { assertClean } = await installDistRoutes(page)

@@ -28,12 +28,15 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.util.CellRangeAddressList;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.annotation.Resource;
 import java.io.InputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -314,29 +317,57 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
         return workbook;
     }
 
-    public Workbook exportRecords(Long listId) {
-        Workbook workbook = new XSSFWorkbook();
-        Sheet sheet = workbook.createSheet("名单内容");
-        writeHeader(workbook, sheet);
-        addItemTypeValidation(sheet);
-        List<RuleListRecord> records = recordMapper.selectList(new LambdaQueryWrapper<RuleListRecord>()
-                .eq(RuleListRecord::getListId, listId)
-                .orderByDesc(RuleListRecord::getCreateTime));
-        int rowIndex = 1;
-        CellStyle dateStyle = dateCellStyle(workbook);
-        for (RuleListRecord record : records) {
-            Row row = sheet.createRow(rowIndex++);
-            row.createCell(0).setCellValue(nullToEmpty(record.getItemContent()));
-            row.createCell(1).setCellValue(itemTypeLabel(record.getItemType()));
-            writeDateCell(row.createCell(2), record.getEffectiveTime(), dateStyle);
-            writeDateCell(row.createCell(3), record.getExpireTime(), dateStyle);
-            row.createCell(4).setCellValue(nullToEmpty(record.getReason()));
-            row.createCell(5).setCellValue(nullToEmpty(record.getRemark()));
-            row.createCell(6).setCellValue(nullToEmpty(record.getLastOperation()));
-            writeDateCell(row.createCell(7), record.getCreateTime(), dateStyle);
+    /**
+     * 以固定大小的数据库页和 SXSSF 临时行窗口导出，避免名单记录、工作簿和响应内容同时驻留堆内存。
+     * 该方法只读取已持久化记录，不改变名单审批状态。
+     */
+    public void writeRecordsExport(Long listId, OutputStream output) throws IOException {
+        if (listId == null) throw new IllegalArgumentException("名单ID不能为空");
+        final int batchSize = 2000;
+        SXSSFWorkbook workbook = new SXSSFWorkbook(100);
+        workbook.setCompressTempFiles(true);
+        try {
+            Sheet sheet = workbook.createSheet("名单内容");
+            writeHeader(workbook, sheet);
+            addItemTypeValidation(sheet);
+            setExportWidths(sheet);
+            CellStyle dateStyle = dateCellStyle(workbook);
+            int pageNumber = 1;
+            int rowIndex = 1;
+            while (true) {
+                IPage<RuleListRecord> page = recordMapper.selectPage(
+                        new Page<>(pageNumber, batchSize, false),
+                        new LambdaQueryWrapper<RuleListRecord>()
+                                .eq(RuleListRecord::getListId, listId)
+                                .orderByDesc(RuleListRecord::getCreateTime)
+                                .orderByDesc(RuleListRecord::getId));
+                for (RuleListRecord record : page.getRecords()) {
+                    Row row = sheet.createRow(rowIndex++);
+                    row.createCell(0).setCellValue(nullToEmpty(record.getItemContent()));
+                    row.createCell(1).setCellValue(itemTypeLabel(record.getItemType()));
+                    writeDateCell(row.createCell(2), record.getEffectiveTime(), dateStyle);
+                    writeDateCell(row.createCell(3), record.getExpireTime(), dateStyle);
+                    row.createCell(4).setCellValue(nullToEmpty(record.getReason()));
+                    row.createCell(5).setCellValue(nullToEmpty(record.getRemark()));
+                    row.createCell(6).setCellValue(nullToEmpty(record.getLastOperation()));
+                    writeDateCell(row.createCell(7), record.getCreateTime(), dateStyle);
+                }
+                if (page.getRecords().size() < batchSize) break;
+                pageNumber++;
+            }
+            workbook.write(output);
+            output.flush();
+        } finally {
+            workbook.dispose();
+            workbook.close();
         }
-        autosize(sheet);
-        return workbook;
+    }
+
+    private void setExportWidths(Sheet sheet) {
+        int[] widths = {28, 14, 22, 22, 24, 28, 12, 22};
+        for (int index = 0; index < widths.length; index++) {
+            sheet.setColumnWidth(index, widths[index] * 256);
+        }
     }
 
     @Transactional

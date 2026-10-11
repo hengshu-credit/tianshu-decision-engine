@@ -26,6 +26,9 @@ public abstract class AggregateEntityGovernedResourceAdapter<T>
     }
 
     @Override
+    public boolean supportsDraftWorkspace() { return true; }
+
+    @Override
     public ResourceSnapshot loadEffective(Long resourceId) {
         ResourceSnapshot root = rootAdapter.loadEffective(resourceId);
         Map<String, Object> aggregate =
@@ -70,10 +73,18 @@ public abstract class AggregateEntityGovernedResourceAdapter<T>
     @Override
     public AppliedResource apply(ApprovalApplyContext context) {
         AppliedResource applied = rootAdapter.apply(context);
-        Map<String, Object> aggregate =
-                CanonicalJson.readMap(context.snapshot().snapshotJson());
-        applied = applyAggregateWithResult(applied, aggregate);
+        // 删除、停用只改变资源状态，不重建子字段，也不要求未完成草稿的子配置可用。
+        if (!"DRAFT_DELETE".equals(context.action()) && !"DELETE".equals(context.action()) && !"DISABLE".equals(context.action())) {
+            Map<String, Object> aggregate = CanonicalJson.readMap(context.snapshot().snapshotJson());
+            applied = applyAggregateWithResult(context, applied, aggregate);
+        }
+        if (context.draftWrite() || context.projectionOnly()) return applied;
         return afterAggregateApplied(context, applied);
+    }
+
+    protected AppliedResource applyAggregateWithResult(
+            ApprovalApplyContext context, AppliedResource applied, Map<String, Object> snapshot) {
+        return applyAggregateWithResult(applied, snapshot);
     }
 
     protected AppliedResource applyAggregateWithResult(

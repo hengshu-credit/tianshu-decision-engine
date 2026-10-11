@@ -1,22 +1,5 @@
 <template>
   <div class="dt-designer uiue-compact-workbench uiue-compact-designer">
-    <rule-draft-read-only
-      :visible="!canEditDraft"
-      :loading="!draftGuardLoaded"
-      :load-error="Boolean(draftGuardError)"
-      :revision-label="viewRevisionLabel"
-      :revision-state="viewRevision ? viewRevision.state : ''"
-      :can-fork="canForkViewRevision"
-      :has-editable-draft="hasPendingDraft"
-      :source-options="designerSourceOptions"
-      :selected-source="selectedDesignerSource"
-      :source-loading="designerSourcesLoading"
-      @go-back="$router.back()"
-      @retry="startViewedRevisionRefresh(true)"
-      @go-lifecycle="goRuleLifecycle"
-      @fork="forkViewRevision"
-      @change-source="switchDesignerSource"
-    />
     <!-- 顶部工具栏 -->
     <div class="dt-header">
       <div class="dt-title-area">
@@ -24,6 +7,7 @@
           link
           :icon="ElIconBack"
           aria-label="返回"
+          data-designer-back
           title="返回"
           @click="$router.back()"
           style="color: var(--tianshu-text-secondary)"
@@ -34,21 +18,36 @@
           >共 {{ model.rules.length }} 条规则</el-tag
         >
       </div>
-      <div class="dt-toolbar">
-        <rule-designer-version-select
-          v-if="canEditDraft && designerSourceOptions.length"
-          :options="designerSourceOptions"
-          :model-value="selectedDesignerSource"
-          :loading="designerSourcesLoading"
-          @change="switchDesignerSource"
-          @delete="deleteDesignerSource"
+      <div class="dt-toolbar designer-version-toolbar">
+        <rule-draft-read-only
+          :visible="!canEditDraft"
+          :loading="!draftGuardLoaded"
+          :load-error="Boolean(draftGuardError) || varsLoadError"
+          :revision-label="viewRevisionLabel"
+          :revision-state="viewRevision ? viewRevision.state : ''"
+          :can-fork="canForkViewRevision"
+          :has-editable-draft="hasPendingDraft"
+          :source-options="designerSourceOptions"
+          :selected-source="selectedDesignerSource"
+          :source-loading="designerSourcesLoading"
           :disabled="designerBusy"
+          :read-only-reason="designerReadOnlyReason"
+          :can-test-frozen="designerCanTest && referenceCatalogMode === 'FROZEN'"
+          :migration-required="draftGuardLoaded && frozenReferenceCatalog?.localEditingAllowed === false"
+          @test-frozen="handleTest"
+          @open-migration="$router.push('/transfer')"
+          @retry="startViewedRevisionRefresh(true)"
+          @go-lifecycle="goRuleLifecycle"
+          @fork="forkViewRevision"
+          @change-source="switchDesignerSource"
+          @delete-source="deleteDesignerSource"
         />
         <el-button size="small" :icon="ElIconPlus" @click="addRule"
           >添加行</el-button
         >
         <el-divider direction="vertical" />
         <rule-designer-action-bar
+          @check="handleCheck"
           @locate="locateDesignerIssue"
           :issue-context="incomingValidationIssue"
           :can-edit="canEditDraft"
@@ -77,7 +76,7 @@
       </div>
     </div>
 
-    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" />
+    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" :reference-mode="referenceCatalogMode" :can-use-current-resources="canEnterDesignerLivePreview" @use-current="runDesignerAction(enterDesignerLivePreview)" />
     <rule-designer-dialogs :choice="designerChoice" @resolve="resolveDesignerChoice" />
 
 
@@ -125,7 +124,6 @@
                   >本条规则独立配置，可与其它行不同</span
                 >
                 <el-button
-                  style="color: #fff"
                   type="primary"
                   size="small"
                   plain
@@ -241,6 +239,8 @@
     <!-- 测试执行弹窗 -->
     <designer-test-dialog
       v-model:visible="testVisible"
+      :execution-source="designerTestExecutionSource"
+      :execution-source-name="viewRevisionLabel"
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="TABLE"
@@ -251,6 +251,7 @@
 </template>
 
 <script>
+import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { markRaw } from 'vue'
 import {
   Grid as ElIconSGrid,
@@ -269,7 +270,6 @@ import OperandPicker from '@/components/common/OperandPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import RuleDraftReadOnly from '@/components/rule/RuleDraftReadOnly.vue'
-import RuleDesignerVersionSelect from '@/components/rule/RuleDesignerVersionSelect.vue'
 import RuleDesignerActionBar from '@/components/rule/RuleDesignerActionBar.vue'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
 import {
@@ -319,7 +319,6 @@ export default {
   components: {
     RuleDesignerActionBar,
     RuleDraftReadOnly,
-    RuleDesignerVersionSelect,
     DesignerTestDialog,
     OperandPicker,
     ScriptPanel,
@@ -393,7 +392,7 @@ export default {
         if (this.draftGuardPromise) await this.draftGuardPromise
         const content = this.viewRevision
         if (content && content.modelJson) {
-          this.model = JSON.parse(content.modelJson)
+          this.model = parseDesignerModelJson(content.modelJson)
           this.normalizeModel()
         }
       } catch (e) {

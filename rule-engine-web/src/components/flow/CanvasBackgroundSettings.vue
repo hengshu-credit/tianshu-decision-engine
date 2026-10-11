@@ -13,7 +13,7 @@
       <div class="canvas-settings__section">
         <strong>画布背景</strong>
         <label><span>启用自定义背景</span><el-switch :model-value="backgroundEnabled" @change="change({ backgroundEnabled: $event })" /></label>
-        <label><span>背景透明度</span><el-slider :disabled="!backgroundEnabled" :model-value="backgroundOpacity" :min="0" :max="1" :step="0.05" @change="change({ backgroundOpacity: $event })" /></label>
+        <label><span>背景透明度</span><el-slider aria-label="背景透明度" :model-value="backgroundOpacity" :min="0" :max="1" :step="0.05" @update:model-value="change({ backgroundOpacity: $event })" /></label>
         <label><span>背景颜色</span><el-color-picker :disabled="!backgroundEnabled" :model-value="backgroundColor || '#0f1629'" show-alpha @change="change({ backgroundColor: $event || '' })" /></label>
       </div>
       <div v-if="showEdgeAnimation" class="canvas-settings__section">

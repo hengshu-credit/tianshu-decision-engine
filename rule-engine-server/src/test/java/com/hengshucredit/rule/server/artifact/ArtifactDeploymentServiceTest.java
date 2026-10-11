@@ -7,6 +7,7 @@ import com.hengshucredit.rule.model.entity.ArtifactResourceBinding;
 import com.hengshucredit.rule.model.entity.DecisionArtifact;
 import com.hengshucredit.rule.model.entity.DecisionArtifactComponent;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
+import com.hengshucredit.rule.model.entity.RuleProject;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -17,6 +18,230 @@ import java.util.List;
 import java.util.Map;
 
 public class ArtifactDeploymentServiceTest {
+
+    @Test public void deletedTargetCannotBeRevivedByArtifactDeployment() {
+        FixtureService service = importedFixture();
+        service.definitions.get(90L).setStatus(-1);
+        IllegalArgumentException error = Assert.assertThrows(IllegalArgumentException.class,
+                () -> service.deploy(existingRequest(9L), "alice"));
+        Assert.assertTrue(error.getMessage().contains("删除"));
+        assertNoDeploymentWrites(service);
+    }
+
+    @Test public void explicitProjectMustOwnTheSelectedExistingTarget() {
+        for (long requestedProject : new long[]{0L, 10L}) {
+            FixtureService service = importedFixture();
+            service.projects.put(10L, project(10L, 1));
+            IllegalArgumentException error = Assert.assertThrows(IllegalArgumentException.class,
+                    () -> service.deploy(existingRequest(requestedProject), "alice"));
+            Assert.assertTrue(error.getMessage().contains("项目"));
+            assertNoDeploymentWrites(service);
+        }
+    }
+
+    @Test public void createRejectsMissingDeletedAndNegativeProjectsBeforeCreatingRule() {
+        for (long targetProject : new long[]{99L, 9L, -1L}) {
+            FixtureService service = importedFixture();
+            service.projects.get(9L).setStatus(-1);
+            ArtifactDeployRequest request = createRequest();
+            request.setTargetProjectId(targetProject);
+            IllegalArgumentException error = Assert.assertThrows(IllegalArgumentException.class,
+                    () -> service.deploy(request, "alice"));
+            Assert.assertTrue(error.getMessage().contains("项目"));
+            assertNoDeploymentWrites(service);
+        }
+    }
+
+    @Test public void existingTargetCannotDeployIntoItsMissingOrDeletedProject() {
+        for (boolean missing : new boolean[]{true, false}) {
+            FixtureService service = importedFixture();
+            if (missing) service.projects.remove(9L); else service.projects.get(9L).setStatus(-1);
+            // 兼容旧客户端未传targetProjectId时，也必须核查规则自身归属。
+            IllegalArgumentException error = Assert.assertThrows(IllegalArgumentException.class,
+                    () -> service.deploy(existingRequest(null), "alice"));
+            Assert.assertTrue(error.getMessage().contains("项目"));
+            assertNoDeploymentWrites(service);
+        }
+    }
+
+    @Test public void existingTargetIdMustExistBeforeAnyDeploymentWrite() {
+        FixtureService service = importedFixture();
+        service.definitions.remove(90L);
+        Assert.assertThrows(IllegalArgumentException.class,
+                () -> service.deploy(existingRequest(9L), "alice"));
+        assertNoDeploymentWrites(service);
+    }
+
+    @Test public void globalZeroIsExplicitAndDoesNotRequireAProjectZeroRecord() {
+        FixtureService service = importedFixture();
+        service.projects.clear();
+        RuleDefinition target = service.definitions.get(90L);
+        target.setProjectId(0L); target.setScope("GLOBAL"); target.setStatus(0);
+        service.deploy(existingRequest(0L), "alice");
+        Assert.assertEquals(Long.valueOf(0L), service.lastBindingProjectId);
+        ArtifactDeployRequest create = createRequest(); create.setTargetProjectId(0L);
+        service.deploy(create, "alice");
+        Assert.assertEquals(Long.valueOf(0L), service.createdDefinition.getProjectId());
+        Assert.assertEquals(2, service.activationCount);
+    }
+
+    @Test public void legacyExplicitGlobalTargetWithNullProjectUsesGlobalBindingContext() {
+        FixtureService service = importedFixture();
+        service.projects.clear();
+        RuleDefinition target = service.definitions.get(90L);
+        target.setScope("GLOBAL"); target.setProjectId(null);
+        service.deploy(existingRequest(0L), "alice");
+        Assert.assertEquals(Long.valueOf(0L), service.lastBindingProjectId);
+    }
+
+    @Test public void projectScopedTargetWithoutOwnerIsNotImplicitlyGlobal() {
+        FixtureService service = importedFixture();
+        RuleDefinition target = service.definitions.get(90L);
+        target.setScope("PROJECT"); target.setProjectId(null);
+        Assert.assertThrows(IllegalArgumentException.class,
+                () -> service.deploy(existingRequest(null), "alice"));
+        assertNoDeploymentWrites(service);
+    }
+
+    @Test public void disabledProjectAndUnpublishedOrOfflineTargetRemainDeployable() {
+        FixtureService service = importedFixture();
+        service.projects.get(9L).setStatus(0);
+        service.definitions.get(90L).setStatus(0);
+        Assert.assertEquals(Long.valueOf(90L), service.deploy(existingRequest(9L), "alice").getTargetDefinitionId());
+        Assert.assertEquals(Long.valueOf(91L), service.deploy(createRequest(), "alice").getTargetDefinitionId());
+        Assert.assertEquals(2, service.activationCount);
+    }
+
+    private static void assertNoDeploymentWrites(FixtureService service) {
+        Assert.assertNull("目标校验失败不能创建规则", service.createdDefinition);
+        Assert.assertEquals("不能写入部署记录", 1L, service.deploymentId);
+        Assert.assertTrue("不能写入绑定记录", service.bindings.isEmpty());
+        Assert.assertEquals("不能激活制品", 0, service.activationCount);
+    }
+
+    private static RuleProject project(long id, int status) {
+        RuleProject project = new RuleProject(); project.setId(id); project.setStatus(status);
+        return project;
+    }
+
+    private static ArtifactDeployRequest existingRequest(Long targetProjectId) {
+        ArtifactDeployRequest request = new ArtifactDeployRequest();
+        request.setArtifactId(1L); request.setEnvironmentCode("uat"); request.setTargetDefinitionId(90L);
+        request.setTargetProjectId(targetProjectId); request.setBindings(Map.of("BINDING:VARIABLE:7", 501L));
+        return request;
+    }
+
+    @Test public void newTargetUsesPackageModelTypeWithoutRequiringTechnicalInput() {
+        FixtureService service = importedFixture();
+        ArtifactDeployRequest request = createRequest();
+        ArtifactDeployment deployment = service.deploy(request, "alice");
+        Assert.assertEquals(Long.valueOf(91L), deployment.getTargetDefinitionId());
+        Assert.assertEquals("TABLE", service.createdDefinition.getModelType());
+        Assert.assertNull("派生元数据不应修改调用方原请求", request.getTargetModelType());
+    }
+
+    @Test public void mismatchedRequestedModelTypeIsRejectedBeforeCreatingTarget() {
+        FixtureService service = importedFixture();
+        ArtifactDeployRequest request = createRequest(); request.setTargetModelType("SCORE");
+        Assert.assertThrows(IllegalArgumentException.class, () -> service.deploy(request, "alice"));
+        Assert.assertNull(service.createdDefinition); Assert.assertTrue(service.bindings.isEmpty());
+    }
+
+    @Test public void existingTargetWithDifferentModelTypeIsRejectedBeforeDeployment() {
+        FixtureService service = importedFixture(); service.definitions.get(90L).setModelType("SCORE");
+        ArtifactDeployRequest request = new ArtifactDeployRequest();
+        request.setArtifactId(1L); request.setEnvironmentCode("test"); request.setTargetDefinitionId(90L);
+        request.setBindings(Map.of("BINDING:VARIABLE:7", 501L));
+        Assert.assertThrows(IllegalArgumentException.class, () -> service.deploy(request, "alice"));
+        Assert.assertEquals(1L, service.deploymentId); Assert.assertTrue(service.bindings.isEmpty());
+    }
+
+    @Test public void importReceiptAndDeploymentOptionsExposeTheSamePackageModelType() {
+        FixtureService service = new FixtureService();
+        ArtifactImportResult result = service.importArtifact(portableArtifact(), null, "alice");
+        Assert.assertEquals("TABLE", com.alibaba.fastjson.JSON.parseObject(com.alibaba.fastjson.JSON.toJSONString(result)).getString("modelType"));
+        service.artifacts.put(result.getArtifactId(), service.insertedArtifact);
+        Assert.assertEquals("TABLE", service.deploymentOptions(result.getArtifactId(), 9L).get("modelType"));
+    }
+
+    @Test public void deploymentOptionsDoNotExposeMetadataFromMismatchedStoredPackage() {
+        FixtureService service = importedFixture();
+        service.artifacts.get(1L).setPackageDigest("changed");
+        Assert.assertThrows(IllegalArgumentException.class, () -> service.deploymentOptions(1L, 9L));
+    }
+
+    @Test public void missingOrUnsupportedPackageModelTypeCannotBeGuessedByCaller() {
+        for (String type : new String[]{null, "SCORECARD", "UNKNOWN"}) {
+            FixtureService service = importedFixture();
+            DecisionArtifact artifact = service.artifacts.get(1L);
+            byte[] content = portableArtifact(type);
+            artifact.setPackageContent(content); artifact.setPackageDigest(Sha256Digests.bytes(content));
+            artifact.setArtifactDigest(new DecisionArtifactPackageCodec().decode(content).getArtifactDigest());
+            ArtifactDeployRequest request = createRequest(); request.setTargetModelType("TABLE");
+            Assert.assertThrows(IllegalArgumentException.class, () -> service.deploy(request, "alice"));
+            Assert.assertNull(service.createdDefinition);
+        }
+    }
+
+    @Test public void nonCanonicalPackageTypesAreRejectedBeforeImportPersistence() {
+        for (String type : new String[]{" FLOW ", " SCRIPT ", "flow", "script", "Flow", "SCRIPT\n"}) {
+            byte[] content = portableArtifact(type);
+            FixtureService importer = new FixtureService();
+            Assert.assertThrows(type + " import", IllegalArgumentException.class,
+                    () -> importer.importArtifact(content, null, "alice"));
+            Assert.assertEquals("不应持久化非规范制品", 0, importer.artifactInsertCount);
+        }
+    }
+
+    @Test public void nonCanonicalPackageTypesAreRejectedByDeploymentOptions() {
+        for (String type : new String[]{" FLOW ", " SCRIPT ", "flow", "script", "Flow", "SCRIPT\n"}) {
+            FixtureService service = importedFixture();
+            DecisionArtifact artifact = service.artifacts.get(1L);
+            byte[] content = portableArtifact(type);
+            artifact.setPackageContent(content); artifact.setPackageDigest(Sha256Digests.bytes(content));
+            artifact.setArtifactDigest(new DecisionArtifactPackageCodec().decode(content).getArtifactDigest());
+            Assert.assertThrows(type + " options", IllegalArgumentException.class,
+                    () -> service.deploymentOptions(1L, 9L));
+        }
+    }
+
+    @Test public void nonCanonicalPackageTypesAreRejectedBeforeTargetCreation() {
+        for (String type : new String[]{" FLOW ", " SCRIPT ", "flow", "script", "Flow", "SCRIPT\n"}) {
+            FixtureService service = importedFixture();
+            DecisionArtifact artifact = service.artifacts.get(1L);
+            byte[] content = portableArtifact(type);
+            artifact.setPackageContent(content); artifact.setPackageDigest(Sha256Digests.bytes(content));
+            artifact.setArtifactDigest(new DecisionArtifactPackageCodec().decode(content).getArtifactDigest());
+            Assert.assertThrows(type + " deploy", IllegalArgumentException.class,
+                    () -> service.deploy(createRequest(), "alice"));
+            Assert.assertNull("部署前不得创建目标", service.createdDefinition);
+            Assert.assertEquals(1L, service.deploymentId);
+            Assert.assertTrue(service.bindings.isEmpty());
+        }
+    }
+
+    @Test public void canonicalPackageTypesRemainUnchangedThroughImportAndAutomaticDeployment() {
+        for (String type : new String[]{"FLOW", "SCRIPT"}) {
+            FixtureService service = importedFixture();
+            byte[] content = portableArtifact(type);
+            DecisionArtifact artifact = service.artifacts.get(1L);
+            artifact.setPackageContent(content); artifact.setPackageDigest(Sha256Digests.bytes(content));
+            artifact.setArtifactDigest(new DecisionArtifactPackageCodec().decode(content).getArtifactDigest());
+            Assert.assertEquals(type, service.importArtifact(content, null, "alice").getModelType());
+            Assert.assertEquals(type, service.deploymentOptions(1L, 9L).get("modelType"));
+            service.deploy(createRequest(), "alice");
+            Assert.assertEquals(type, service.createdDefinition.getModelType());
+            Assert.assertArrayEquals(content, artifact.getPackageContent());
+        }
+    }
+
+    private static ArtifactDeployRequest createRequest() {
+        ArtifactDeployRequest request = new ArtifactDeployRequest();
+        request.setArtifactId(1L); request.setEnvironmentCode("test"); request.setCreateRule(true);
+        request.setTargetProjectId(9L); request.setTargetRuleCode("Exact_User_Code"); request.setTargetRuleName("目标规则");
+        request.setBindings(Map.of("BINDING:VARIABLE:7", 501L));
+        return request;
+    }
 
     @Test
     public void importVerifiesDigestAndIsIdempotent() {
@@ -132,12 +357,19 @@ public class ArtifactDeploymentServiceTest {
         RuleDefinition target = new RuleDefinition();
         target.setId(90L);
         target.setProjectId(9L);
+        target.setModelType("TABLE");
         service.definitions.put(90L, target);
+        service.projects.put(9L, project(9L, 1));
         return service;
     }
 
     private static byte[] portableArtifact() {
+        return portableArtifact("TABLE");
+    }
+
+    private static byte[] portableArtifact(String modelType) {
         DecisionArtifactPackage artifact = new DecisionArtifactPackage();
+        if (modelType != null) artifact.putMetadata("modelType", modelType);
         artifact.putMetadata("javaMajor", 17);
         artifact.putMetadata("qlExpressVersion", "4.1.0");
         artifact.addComponent("rule/model.json", "application/json", "{}".getBytes(StandardCharsets.UTF_8));
@@ -156,6 +388,7 @@ public class ArtifactDeploymentServiceTest {
         private final Map<Long, DecisionArtifact> artifacts = new HashMap<>();
         private final Map<String, DecisionArtifact> byDigest = new HashMap<>();
         private final Map<Long, RuleDefinition> definitions = new HashMap<>();
+        private final Map<Long, RuleProject> projects = new HashMap<>();
         private final List<ArtifactResourceBinding> bindings = new ArrayList<>();
         private final List<DecisionArtifactComponent> auditComponents = new ArrayList<>();
         private final List<ArtifactDeployment> auditDeployments = new ArrayList<>();
@@ -166,6 +399,8 @@ public class ArtifactDeploymentServiceTest {
         private RuleDefinition createdDefinition;
         private int ruleCodeLookupCount;
         private long deploymentId = 1L;
+        private int activationCount;
+        private Long lastBindingProjectId;
 
         @Override
         protected RuntimeCompatibilityService.CompatibilityReport compatibility(
@@ -201,11 +436,18 @@ public class ArtifactDeploymentServiceTest {
         }
 
         @Override
+        protected RuleProject loadProject(Long projectId) {
+            return projects.get(projectId);
+        }
+
+        @Override
         protected Long createTargetDefinition(ArtifactDeployRequest request) {
             createdDefinition = new RuleDefinition();
             createdDefinition.setId(91L);
             createdDefinition.setRuleCode(request.getTargetRuleCode());
             createdDefinition.setRuleName(request.getTargetRuleName());
+            createdDefinition.setModelType(request.getTargetModelType());
+            createdDefinition.setProjectId(request.getTargetProjectId());
             definitions.put(91L, createdDefinition);
             return 91L;
         }
@@ -213,6 +455,7 @@ public class ArtifactDeploymentServiceTest {
         @Override
         protected void validateTargetBinding(String targetResourceType, Long targetResourceId,
                                              Long targetProjectId) {
+            lastBindingProjectId = targetProjectId;
             if (!Long.valueOf(501L).equals(targetResourceId)) {
                 throw new IllegalArgumentException("binding target missing");
             }
@@ -220,6 +463,7 @@ public class ArtifactDeploymentServiceTest {
 
         @Override
         protected void activateImportedArtifact(Long artifactId, Long definitionId, String actor) {
+            activationCount++;
         }
 
         @Override

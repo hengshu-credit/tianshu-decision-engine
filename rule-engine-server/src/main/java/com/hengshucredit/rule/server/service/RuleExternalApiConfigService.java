@@ -99,6 +99,16 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
         return getById(config.getId());
     }
 
+    RuleExternalApiConfig prepareTrial(RuleExternalApiConfig config) {
+        RuleExternalApiConfig copy = com.alibaba.fastjson.JSON.parseObject(
+                com.alibaba.fastjson.JSON.toJSONString(config), RuleExternalApiConfig.class);
+        fillDefaults(copy);
+        validateReferences(copy);
+        copy.setBillingSuppressed(false);
+        copy.setExecutionCallId(null);
+        return copy;
+    }
+
     public RuleExternalApiConfig updateWithDefaults(RuleExternalApiConfig config) {
         fillDefaults(config);
         validateReferences(config);

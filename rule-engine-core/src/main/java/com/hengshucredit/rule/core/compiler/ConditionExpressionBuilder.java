@@ -2,11 +2,26 @@ package com.hengshucredit.rule.core.compiler;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.math.BigDecimal;
 
 final class ConditionExpressionBuilder {
     private ConditionExpressionBuilder() {}
 
     static String build(String left, String varType, String operator, String value, boolean valueIsVariable) {
+        if (isRangeOperator(operator)) {
+            List<String> parts = rangeBounds(varType, value, valueIsVariable);
+            if (empty(left)) throw new IllegalArgumentException("区间条件必须选择比较字段");
+            String rangeLeft = left;
+            String lower = formatConstant(varType, parts.get(0));
+            String upper = formatConstant(varType, parts.get(1));
+            if (isDateType(varType)) {
+                rangeLeft = dateMillis(left);
+                lower = dateMillis(lower);
+                upper = dateMillis(upper);
+            }
+            String expr = "(" + rangeLeft + " >= " + lower + " && " + rangeLeft + " <= " + upper + ")";
+            return "between".equals(operator) ? expr : "(!isBlank(" + left + ") && !" + expr + ")";
+        }
         if (empty(left)) return "true";
         String op = empty(operator) ? "==" : operator;
         if ("*".equals(op)) return "true";
@@ -39,21 +54,6 @@ final class ConditionExpressionBuilder {
         if ("not_in_list".equals(op)) return "(!isBlank(" + left + ") && !isInLists(" + left + ", " + rhs + "))";
         if ("in".equals(op)) return left + " in " + formatList(varType, value);
         if ("not_in".equals(op)) return "(!isBlank(" + left + ") && !(" + left + " in " + formatList(varType, value) + "))";
-        if ("between".equals(op) || "not_between".equals(op)) {
-            List<String> parts = splitValues(value);
-            if (parts.size() < 2) return "true";
-            String rangeLeft = left;
-            String lower = formatConstant(varType, parts.get(0));
-            String upper = formatConstant(varType, parts.get(1));
-            if (isDateType(varType)) {
-                rangeLeft = dateMillis(left);
-                lower = dateMillis(lower);
-                upper = dateMillis(upper);
-            }
-            String expr = "(" + rangeLeft + " >= " + lower
-                    + " && " + rangeLeft + " <= " + upper + ")";
-            return "between".equals(op) ? expr : "(!isBlank(" + left + ") && !" + expr + ")";
-        }
         if ("contains_any".equals(op) || "contains_all".equals(op)) {
             List<String> parts = splitValues(value);
             if (parts.isEmpty()) return "true";
@@ -73,6 +73,37 @@ final class ConditionExpressionBuilder {
         String sizeOperator = sizeOperator(op);
         if (sizeOperator != null) return "sizeOfValue(" + left + ") " + sizeOperator + " " + rhs;
         return left + " " + op + " " + rhs;
+    }
+
+    static boolean isRangeOperator(String operator) {
+        return "between".equals(operator) || "not_between".equals(operator);
+    }
+
+    static List<String> rangeBounds(String varType, String value, boolean valueIsVariable) {
+        if (valueIsVariable) throw new IllegalArgumentException("区间条件必须分别填写上下界常量");
+        String[] parts = value == null ? new String[0] : value.split(",", -1);
+        if (parts.length != 2 || parts[0].isBlank() || parts[1].isBlank()) {
+            throw new IllegalArgumentException("区间条件必须完整填写下界和上界，且只能包含两个边界");
+        }
+        String lower = parts[0].trim();
+        String upper = parts[1].trim();
+        boolean date = isDateType(varType);
+        BigDecimal lowerValue = rangeValue(lower, date);
+        BigDecimal upperValue = rangeValue(upper, date);
+        if (lowerValue == null || upperValue == null) {
+            throw new IllegalArgumentException(date ? "区间上下界必须是有效日期或时间" : "区间上下界必须是有效数字");
+        }
+        if (lowerValue.compareTo(upperValue) > 0) throw new IllegalArgumentException("区间下界不能大于上界");
+        return List.of(lower, upper);
+    }
+
+    private static BigDecimal rangeValue(String value, boolean date) {
+        // dateToMillis 对 10 位及以上整数文本按 Long 毫秒处理，保留这一既有含义。
+        if (date && value.matches("^-?\\d{10,}$")) {
+            try { return BigDecimal.valueOf(Long.parseLong(value)); }
+            catch (NumberFormatException ignored) { return null; }
+        }
+        return IntervalValidator.comparableValue(value, date);
     }
 
     private static String sizeOperator(String operator) {

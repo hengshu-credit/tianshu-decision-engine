@@ -174,11 +174,11 @@ import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 
 const STATUS_OPTIONS = [
-  { value: 'EDITING', label: '编辑中' },
-  { value: 'PENDING', label: '待审批' },
+  { value: 'EDITING', label: '草稿' },
+  { value: 'PENDING', label: '审批中' },
   { value: 'APPROVED', label: '已通过' },
   { value: 'REJECTED', label: '已驳回' },
-  { value: 'CONFLICT', label: '存在冲突' },
+  { value: 'CONFLICT', label: '审批冲突' },
   { value: 'CANCELLED', label: '已取消' }
 ]
 

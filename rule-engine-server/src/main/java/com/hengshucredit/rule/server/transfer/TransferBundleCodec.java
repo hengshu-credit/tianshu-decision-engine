@@ -16,6 +16,7 @@ public final class TransferBundleCodec {
     private final DecisionArtifactPackageCodec zip = new DecisionArtifactPackageCodec();
 
     public byte[] encode(TransferBundle bundle) {
+        bundle.resources().forEach(TransferVersionReferences::descriptors);
         validate(bundle);
         DecisionArtifactPackage archive = new DecisionArtifactPackage();
         archive.putMetadata("packageKind", PACKAGE_KIND);
@@ -50,10 +51,12 @@ public final class TransferBundleCodec {
                         optionalText(reference.get("targetCode")), optionalText(reference.get("targetName"))));
             }
             resources.add(new TransferBundle.Resource(key, object(value.get("configuration")), references,
-                    strings(value.get("requiredEnvironmentFields"))));
+                    strings(value.get("requiredEnvironmentFields")), value.get("versionReferences") instanceof List<?> versions
+                        ? versions.stream().map(this::object).toList() : List.of()));
         }
         TransferBundle bundle = new TransferBundle(strings(archive.getMetadata().get("roots")), resources,
                 strings(archive.getMetadata().get("warnings")));
+        bundle.resources().forEach(TransferVersionReferences::descriptors);
         validate(bundle);
         return new Decoded(bundle, decoded.getPackageDigest());
     }

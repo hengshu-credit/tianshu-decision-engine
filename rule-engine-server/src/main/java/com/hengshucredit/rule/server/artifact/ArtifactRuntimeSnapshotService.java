@@ -50,6 +50,10 @@ public class ArtifactRuntimeSnapshotService {
     private static final long MAX_DECODED_BYTES = 64L * 1024 * 1024;
     private final Map<String, CachedPackage> decodedPackages = new LinkedHashMap<>(16, 0.75f, true);
     private long decodedBytes;
+    private static final int MAX_MODEL_CONTENTS = 64;
+    private static final long MAX_MODEL_CONTENT_BYTES = 32L * 1024 * 1024;
+    private final Map<ModelContentKey, String> modelContents = new LinkedHashMap<>(16, 0.75f, true);
+    private long modelContentBytes;
 
     public RuntimeSnapshot load(Long artifactId, Long definitionId, Long executionProjectId) {
         DecisionArtifact artifact = loadArtifact(artifactId);
@@ -72,17 +76,36 @@ public class ArtifactRuntimeSnapshotService {
             }
         }
 
+        return buildSnapshot(decoded, bindings, deployment != null, artifactId, artifact.getArtifactDigest(), executionProjectId);
+    }
+
+    /** 与规则制品共用有界解码缓存；模型测试没有部署重绑定或当前目录补齐。 */
+    public RuntimeSnapshot loadModelVersion(byte[] content, String artifactDigest, String packageDigest, Long projectId) {
+        DecisionArtifact artifact = new DecisionArtifact();
+        artifact.setPackageContent(content);
+        artifact.setArtifactDigest(artifactDigest);
+        artifact.setPackageDigest(packageDigest);
+        var decoded = decodeVerified(artifact);
+        return buildSnapshot(decoded, Collections.emptyMap(), false, null, artifactDigest, projectId);
+    }
+
+    private RuntimeSnapshot buildSnapshot(DecisionArtifactPackageCodec.DecodedPackage decoded,
+                                          Map<String, Long> bindings, boolean imported,
+                                          Long artifactId, String artifactDigest, Long executionProjectId) {
         RuntimeSnapshot snapshot = new RuntimeSnapshot();
-        snapshot.imported = deployment != null;
+        snapshot.imported = imported;
         snapshot.artifactId = artifactId;
-        snapshot.artifactDigest = artifact.getArtifactDigest();
+        snapshot.artifactDigest = artifactDigest;
         snapshot.modelType = text(decoded.getArtifactPackage().getMetadata().get("modelType"));
         snapshot.bindings.putAll(bindings);
+        Map<Long, RuleDataObject> boundDataObjects = new LinkedHashMap<>();
         for (DecisionArtifactPackage.Component component
                 : decoded.getArtifactPackage().getComponents().values()) {
             String resourceType = text(component.getMetadata().get("resourceType"));
             if ("rule/model.json".equals(component.getPath())) {
                 snapshot.modelJson = new String(component.getContent(), StandardCharsets.UTF_8);
+            } else if ("rule/open-api.json".equals(component.getPath())) {
+                snapshot.openApiConfigJson = new String(component.getContent(), StandardCharsets.UTF_8);
             } else if ("runtime/compiled.ql".equals(component.getPath())) {
                 snapshot.compiledScript = new String(component.getContent(), StandardCharsets.UTF_8);
             } else if ("VARIABLE".equals(resourceType) || "CONSTANT".equals(resourceType)) {
@@ -92,6 +115,9 @@ public class ArtifactRuntimeSnapshotService {
                 variable.setStatus(1);
                 applyVariableBinding(variable, bindings);
                 snapshot.variables.add(variable);
+            } else if ("RESOURCE_VERSION".equals(resourceType)) {
+                JSONObject version = JSON.parseObject(component.getContent());
+                snapshot.resourceVersions.put(version.getString("key"), version);
             } else if ("FUNCTION".equals(resourceType)) {
                 RuleFunction function = JSON.parseObject(component.getContent(), RuleFunction.class);
                 function.setProjectId(executionProjectId);
@@ -99,11 +125,12 @@ public class ArtifactRuntimeSnapshotService {
                 function.setStatus(1);
                 snapshot.functions.add(function);
             } else if ("MODEL".equals(resourceType)) {
-                snapshot.models.add(model(component, executionProjectId));
+                snapshot.models.add(model(component, executionProjectId,
+                        decoded.getPackageDigest()));
             } else if ("DATA_OBJECT".equals(resourceType)) {
                 RuleDataObjectField dataObjectField = JSON.parseObject(
                         component.getContent(), RuleDataObjectField.class);
-                applyDataObjectBinding(dataObjectField, bindings);
+                applyDataObjectBinding(dataObjectField, bindings, boundDataObjects);
                 snapshot.dataObjectFields.add(dataObjectField);
                 JSONObject field = JSON.parseObject(component.getContent());
                 if (field.getString("referencePath") != null) {
@@ -111,6 +138,12 @@ public class ArtifactRuntimeSnapshotService {
                 }
             } else if ("RULE".equals(resourceType)) {
                 snapshot.nestedRules.add(JSON.parseObject(component.getContent(), NestedRuleSnapshot.class));
+            } else if ("BINDING".equals(resourceType)) {
+                JSONObject binding = JSON.parseObject(component.getContent());
+                Map<String, Object> display = new LinkedHashMap<>();
+                for (String key : List.of("sourceResourceId", "sourceResourceCode", "sourceResourceName", "targetResourceType"))
+                    if (binding.containsKey(key)) display.put(key, binding.get(key));
+                snapshot.displayBindings.add(display);
             } else if ("rule/input-fields.json".equals(component.getPath())) {
                 snapshot.inputFields.addAll(JSON.parseArray(
                         new String(component.getContent(), StandardCharsets.UTF_8),
@@ -124,18 +157,22 @@ public class ArtifactRuntimeSnapshotService {
         return snapshot;
     }
 
-    private void applyDataObjectBinding(RuleDataObjectField field, Map<String, Long> bindings) {
+    private void applyDataObjectBinding(RuleDataObjectField field, Map<String, Long> bindings,
+                                        Map<Long, RuleDataObject> boundDataObjects) {
         if (field == null || field.getObjectId() == null || bindings == null || bindings.isEmpty()
                 || dataObjectMapper == null) return;
         Long targetId = bindings.get("BINDING:DATA_OBJECT:" + field.getObjectId());
         if (targetId == null) return;
-        RuleDataObject target = dataObjectMapper.selectById(targetId);
+        if (!boundDataObjects.containsKey(targetId)) {
+            boundDataObjects.put(targetId, dataObjectMapper.selectById(targetId));
+        }
+        RuleDataObject target = boundDataObjects.get(targetId);
         if (target == null) return;
         field.setObjectSourceType(target.getSourceType());
         field.setObjectSourceContent(target.getSourceContent());
     }
 
-    private DecisionArtifactPackageCodec.DecodedPackage decodeVerified(DecisionArtifact artifact) {
+    DecisionArtifactPackageCodec.DecodedPackage decodeVerified(DecisionArtifact artifact) {
         byte[] content = artifact.getPackageContent();
         String digest = Sha256Digests.bytes(content);
         // 每次验证实际字节，不能仅凭数据库里的摘要命中缓存而漏过内容被修改的情况。
@@ -174,7 +211,37 @@ public class ArtifactRuntimeSnapshotService {
 
     private record CachedPackage(DecisionArtifactPackageCodec.DecodedPackage decoded, long weight) { }
 
-    private RuleModel model(DecisionArtifactPackage.Component component, Long executionProjectId) {
+    private record ModelContentKey(String packageDigest, String path) { }
+
+    private String modelContent(DecisionArtifactPackage.Component component, String packageDigest) {
+        ModelContentKey key = new ModelContentKey(packageDigest, component.getPath());
+        synchronized (modelContents) {
+            String cached = modelContents.get(key);
+            if (cached != null) return cached;
+        }
+        String content = Base64.getEncoder().encodeToString(component.getContent());
+        // 独立预算避免大字符串挤掉已解压包，多模型轮转时不能退化为重复解压。
+        // 按每字符两字节保守计量，缓存只持有不可变字符串，不持有执行DTO或模型字节数组。
+        long weight = 2L * content.length();
+        if (weight <= MAX_MODEL_CONTENT_BYTES) {
+            synchronized (modelContents) {
+                String existing = modelContents.get(key);
+                if (existing != null) return existing;
+                while (!modelContents.isEmpty() && (modelContents.size() >= MAX_MODEL_CONTENTS
+                        || modelContentBytes + weight > MAX_MODEL_CONTENT_BYTES)) {
+                    var oldest = modelContents.entrySet().iterator();
+                    modelContentBytes -= 2L * oldest.next().getValue().length();
+                    oldest.remove();
+                }
+                modelContents.put(key, content);
+                modelContentBytes += weight;
+            }
+        }
+        return content;
+    }
+
+    private RuleModel model(DecisionArtifactPackage.Component component, Long executionProjectId,
+                            String packageDigest) {
         Object modelMetadata = component.getMetadata().get("model");
         if (modelMetadata == null) {
             throw new IllegalStateException("模型制品组件缺少冻结元数据: " + component.getPath());
@@ -183,7 +250,7 @@ public class ArtifactRuntimeSnapshotService {
         model.setProjectId(executionProjectId);
         model.setScope("PROJECT");
         model.setStatus(1);
-        model.setModelContent(Base64.getEncoder().encodeToString(component.getContent()));
+        model.setModelContent(modelContent(component, packageDigest));
         model.setInputFields(parseList(component.getMetadata().get("inputFields"), RuleModelInputField.class));
         model.setOutputFields(parseList(component.getMetadata().get("outputFields"), RuleModelOutputField.class));
         return model;
@@ -274,6 +341,7 @@ public class ArtifactRuntimeSnapshotService {
         private String artifactDigest;
         private String modelType;
         private String modelJson;
+        private String openApiConfigJson;
         private String compiledScript;
         private final List<RuleVariable> variables = new ArrayList<>();
         private final List<RuleModel> models = new ArrayList<>();
@@ -282,13 +350,17 @@ public class ArtifactRuntimeSnapshotService {
         private final List<RuleDefinitionOutputField> outputFields = new ArrayList<>();
         private final List<RuleDataObjectField> dataObjectFields = new ArrayList<>();
         private final List<NestedRuleSnapshot> nestedRules = new ArrayList<>();
+        private final List<Map<String, Object>> displayBindings = new ArrayList<>();
         private final Map<String, Long> bindings = new LinkedHashMap<>();
         private final Map<String, String> referencePaths = new LinkedHashMap<>();
+        private final Map<String, JSONObject> resourceVersions = new LinkedHashMap<>();
+        public Map<String, JSONObject> getResourceVersions() { return resourceVersions; }
 
         public Long getArtifactId() { return artifactId; }
         public String getArtifactDigest() { return artifactDigest; }
         public String getModelType() { return modelType; }
         public String getModelJson() { return modelJson; }
+        public String getOpenApiConfigJson() { return openApiConfigJson; }
         public String getCompiledScript() { return compiledScript; }
         public List<RuleVariable> getVariables() { return variables; }
         public List<RuleModel> getModels() { return models; }
@@ -297,6 +369,7 @@ public class ArtifactRuntimeSnapshotService {
         public List<RuleDefinitionOutputField> getOutputFields() { return outputFields; }
         public List<RuleDataObjectField> getDataObjectFields() { return dataObjectFields; }
         public List<NestedRuleSnapshot> getNestedRules() { return nestedRules; }
+        public List<Map<String, Object>> getDisplayBindings() { return displayBindings; }
         public Map<String, Long> getBindings() { return bindings; }
         public Map<String, String> getReferencePaths() { return referencePaths; }
 
@@ -315,6 +388,10 @@ public class ArtifactRuntimeSnapshotService {
         private String ruleName;
         private String modelType;
         private Integer version;
+        private Long versionBindingId;
+        private Long bindingGeneration;
+        private Long revisionId;
+        private String artifactDigest;
         private String modelJson;
         private String compiledScript;
         private String compiledType;
@@ -331,6 +408,14 @@ public class ArtifactRuntimeSnapshotService {
         public void setModelType(String modelType) { this.modelType = modelType; }
         public Integer getVersion() { return version; }
         public void setVersion(Integer version) { this.version = version; }
+        public Long getVersionBindingId() { return versionBindingId; }
+        public void setVersionBindingId(Long value) { versionBindingId = value; }
+        public Long getBindingGeneration() { return bindingGeneration; }
+        public void setBindingGeneration(Long value) { bindingGeneration = value; }
+        public Long getRevisionId() { return revisionId; }
+        public void setRevisionId(Long value) { revisionId = value; }
+        public String getArtifactDigest() { return artifactDigest; }
+        public void setArtifactDigest(String value) { artifactDigest = value; }
         public String getModelJson() { return modelJson; }
         public void setModelJson(String modelJson) { this.modelJson = modelJson; }
         public String getCompiledScript() { return compiledScript; }

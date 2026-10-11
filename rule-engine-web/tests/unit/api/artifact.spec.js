@@ -1,6 +1,7 @@
 vi.unmock('@/api/artifact')
 
 import request from '@/api/request'
+import { metadataResponse } from '@/utils/metadataResponse'
 import { deployArtifact, downloadArtifact, importArtifact } from '@/api/artifact'
 
 describe('artifact API', () => {
@@ -22,6 +23,7 @@ describe('artifact API', () => {
     expect(request.mock.calls[1][0].data.get('file').size).toBe(file.size)
     expect(request.mock.calls[1][0].params.expectedPackageDigest).toBe('package-digest')
     expect(request).toHaveBeenNthCalledWith(3, {
+      ...metadataResponse,
       url: '/rule/artifact/deploy', method: 'post',
       data: { artifactId: 7, targetDefinitionId: 16, bindings: { 'binding:DB:9': 101 } }
     })

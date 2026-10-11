@@ -9,6 +9,8 @@ public interface ExternalApiCircuitBreakerDistributedStore {
     void record(Long apiConfigId, boolean halfOpen, boolean success, int failureRate,
                 int minCalls, int windowSize, int openSeconds, int halfOpenCalls);
 
+    default void invalidateTrial(Long apiConfigId) { }
+
     enum AcquireResult {
         CLOSED,
         HALF_OPEN,

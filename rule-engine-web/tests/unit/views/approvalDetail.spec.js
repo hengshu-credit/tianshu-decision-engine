@@ -65,11 +65,40 @@ vi.mock('vue-router', () => ({
 import { flushPromises, shallowMount } from '@test-utils'
 import { ElMessage } from 'element-plus'
 import * as definitionApi from '@/api/definition'
-import { approveGovernanceRequest } from '@/api/governance'
+import { approveGovernanceRequest, restoreGovernanceVersion } from '@/api/governance'
 import { clearCurrentUser, setCurrentUser } from '@/security/permissionState'
 import ApprovalDetail from '@/views/approval/ApprovalDetail.vue'
 
 describe('统一审批详情', () => {
+  test('依赖问题优先显示业务状态和处理建议，技术路径只作辅助定位', async () => {
+    const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
+    await flushPromises()
+    expect(wrapper.vm.resourceTypeLabel('VARIABLE')).toBe('字段')
+    expect(wrapper.vm.dependencyStatusLabel('INACTIVE')).toBe('未发布/已停用')
+    expect(wrapper.vm.dependencyNextAction({ resolutionStatus: 'INACTIVE' })).toContain('先发布并启用')
+    expect(wrapper.vm.dependencyStatusType('RESOLVED')).toBe('success')
+    wrapper.unmount()
+  })
+
+  test('已删除历史版本不能从审批页面发起恢复', async () => {
+    const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
+    await flushPromises()
+    await wrapper.vm.restoreVersion({ id: 18, versionNo: 1, deleted: true })
+    expect(restoreGovernanceVersion).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+  test('新增草稿未送审可删除，待审批时必须先驳回且不显示撤回入口', async () => {
+    const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
+    await flushPromises()
+    await wrapper.setData({ detail: { request: { id: 80, resourceType: 'VARIABLE', resourceId: 8, action: 'CREATE', status: 'EDITING', draftSnapshotJson: '{}' }, diff: { fields: [] }, versions: [] } })
+    expect(wrapper.vm.pendingNewContent).toBe(false)
+    expect(wrapper.vm.cancelLabel).toBe('删除新增草稿')
+    await wrapper.setData({ detail: { ...wrapper.vm.detail, request: { ...wrapper.vm.detail.request, status: 'PENDING' } } })
+    expect(wrapper.vm.pendingNewContent).toBe(true)
+    expect(wrapper.text()).not.toContain('撤回新增申请')
+    expect(wrapper.html()).toContain('须先由审批人驳回')
+    wrapper.unmount()
+  })
   test('万字段 API 审批按页显示差异，可按路径搜索并显示接口名称', async () => {
     const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
     await flushPromises()

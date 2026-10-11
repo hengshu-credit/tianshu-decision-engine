@@ -20,6 +20,7 @@ public class ModelFieldIdentityTest {
         var adapter = new ModelGovernedResourceAdapter(null, null, null, null);
         AtomicInteger publications = new AtomicInteger();
         ReflectionTestUtils.setField(adapter, "modelService", new com.hengshucredit.rule.server.service.RuleModelService() {
+            @Override public Integer publishedBusinessVersion(Long id) { assertEquals(Long.valueOf(2), id); return 10; }
             @Override public void publish(Long id, String message, String actor) {
                 assertEquals(Long.valueOf(2), id); assertEquals("tester", actor); publications.incrementAndGet();
             }

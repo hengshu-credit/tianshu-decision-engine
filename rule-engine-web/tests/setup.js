@@ -107,6 +107,11 @@ vi.mock('@/api/request', () => ({
 // 5. mock 各 API 模块
 vi.mock('@/api/definition', () => ({
   getDefinition: vi.fn(),
+  getRuleReferenceCatalog: vi.fn((definitionId, source) => Promise.resolve({ data: {
+    status: 'AVAILABLE', referenceNamespace: source?.sourceType === 'WORKSPACE' ? 'LOCAL' : 'ARTIFACT_SOURCE', imported: false, localEditingAllowed: true,
+    executionIdentity: { definitionId, sourceType: source?.sourceType, sourceId: source?.sourceId },
+    variables: [], objectTree: [], models: [], functions: [], rules: [], apis: [], lists: [], diagnostics: []
+  } })),
   getContent: vi.fn(),
   listDefinitions: vi.fn(),
   listProjectDefinitions: vi.fn(),
@@ -137,6 +142,7 @@ vi.mock('@/api/definition', () => ({
   updateScriptMode: vi.fn(),
   validateScript: vi.fn(),
   getDefinitionDetail: vi.fn(),
+  getRuleRevisionFieldView: vi.fn(),
   listInputFields: vi.fn(),
   listOutputFields: vi.fn(),
   updateInputField: vi.fn(),
@@ -148,6 +154,7 @@ vi.mock('@/api/definition', () => ({
   copyApiScenario: vi.fn(),
   sortApiScenarios: vi.fn(),
   executeApiScenario: vi.fn(),
+  executeApiScenarioValidated: vi.fn(),
   DEFAULT_RULE_REQUEST_TIMEOUT_MS: 180000,
   migrateFields: vi.fn(),
   ensureDraftRevision: vi.fn(),
@@ -208,6 +215,7 @@ vi.mock('@/api/dataObject', () => ({
   __esModule: true
 }))
 vi.mock('@/api/function', () => ({
+  inspectFunctionMethods: vi.fn(),
   listAllFunctionsByProject: vi.fn(),
   listFunctionsByProject: vi.fn(),
   listFunctions: vi.fn(),
@@ -332,6 +340,8 @@ vi.mock('@/api/billing', () => ({
   listBillingRecords: vi.fn(),
   listBillingSummaries: vi.fn(),
   refreshBillingSummary: vi.fn(),
+    getBillingSummaryRefreshTask: vi.fn(),
+    getLatestBillingSummaryRefresh: vi.fn().mockResolvedValue({ data: null }),
   __esModule: true
 }))
 vi.mock('@/api/experiment', () => ({

@@ -1,6 +1,6 @@
 <template>
-  <div class="expression-canvas-node">
-    <div v-if="showNodeRow" class="canvas-node-row">
+  <div class="expression-canvas-node" :class="{ 'expression-canvas-node--root-operation': !path.length && node?.kind === 'OPERATION' }">
+    <div v-if="showNodeRow" class="canvas-node-row" @click.self="selectNode">
       <button
         v-if="node && children.length"
         type="button"
@@ -18,6 +18,7 @@
       <div
         type="button"
         class="canvas-node"
+        :data-expression-path="pathKey"
         :class="{
           'canvas-node--selected': isSelected(path),
           'canvas-node--empty': !node,
@@ -31,6 +32,7 @@
         @dragover.prevent
         @drop.stop.prevent="onDrop"
       >
+        <div class="canvas-node-content">
         <template v-if="node">
           <span class="canvas-kind">{{ kindName(node.kind) }}</span>
           <div v-if="editingManual" class="canvas-inline-editor" @click.stop>
@@ -38,7 +40,7 @@
               <el-select
                 :model-value="node.valueType || expectedType || 'STRING'"
                 size="small"
-                popper-class="expression-editor-select-popper"
+                :popper-class="fieldPickerEnabled ? '' : 'expression-editor-select-popper'"
                 @update:model-value="
                   $emit('patchNode', {
                     path: path.slice(),
@@ -53,7 +55,8 @@
                   :value="type.value"
                 />
               </el-select>
-              <el-input
+              <monaco-editor v-if="['LIST', 'MAP', 'OBJECT'].includes(node.valueType)" class="canvas-json-editor" :value="typeof node.value === 'string' ? node.value : JSON.stringify(node.value ?? (node.valueType === 'LIST' ? [] : {}), null, 2)" language="json" height="130px" @input="$emit('patchNode', { path: path.slice(), fields: { value: $event } })" />
+              <el-input v-else
                 ref="manualInput"
                 :model-value="node.value"
                 size="small"
@@ -101,59 +104,41 @@
               </div>
             </template>
           </div>
-          <strong v-else>{{ summary(node) }}</strong>
+          <strong v-else :title="summary(node)">{{ summary(node) }}</strong>
+          <expression-node-options v-if="fieldPickerEnabled" :node="node" :list-options="listOptions" @patch="$emit('patchNode', { path: path.slice(), fields: $event })" />
         </template>
         <template v-else
           ><el-icon><el-icon-plus /></el-icon>
-          点击此位置后从左侧添加内容</template
+          {{ fieldPickerEnabled ? '点击选择字段、阈值或方法' : '点击此位置后从左侧添加内容' }}</template
         >
-      </div>
+        </div>
       <div
-        v-if="isSelected(path)"
         class="canvas-node-actions"
         @click.stop
       >
-        <button type="button" title="上移" @click="move(-1)">
-          <el-icon><el-icon-top /></el-icon>
-        </button>
-        <button type="button" title="下移" @click="move(1)">
-          <el-icon><el-icon-bottom /></el-icon>
-        </button>
-        <button
-          type="button"
-          title="增加括号（Tab）"
-          @click="$emit('indent', path.slice())"
-        >
-          <el-icon><el-icon-right /></el-icon>
-        </button>
-        <button
-          type="button"
-          title="取消括号（Shift+Tab）"
-          @click="$emit('outdent', path.slice())"
-        >
-          <el-icon><el-icon-back /></el-icon>
-        </button>
         <button
           type="button"
           class="canvas-node-delete"
-          title="删除节点（Delete / Backspace）"
+          title="删除当前项（Backspace）"
           aria-label="删除节点"
           @click="$emit('remove', path.slice())"
         >
           <app-icon name="Delete" />
         </button>
       </div>
+      </div>
     </div>
-    <div v-if="node && children.length && !collapsed" class="canvas-children">
+    <div v-if="node && (children.length || appendChildren) && !collapsed" class="canvas-children">
       <div
         v-for="entry in children"
         :key="entry.path.join('.')"
         class="canvas-child"
+        :class="{ 'canvas-child--operation': node.kind === 'OPERATION' }"
       >
+        <div v-if="entry.operator" class="canvas-operator-row">
         <el-dropdown
-          v-if="entry.operator"
           trigger="click"
-          popper-class="expression-editor-select-popper"
+          :popper-class="fieldPickerEnabled ? '' : 'expression-editor-select-popper'"
           @command="changeOperator(entry, $event)"
         >
           <button
@@ -174,7 +159,8 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <span v-else class="canvas-edge-label">{{ entry.label }}</span>
+        </div>
+        <span v-else-if="node.kind !== 'OPERATION'" class="canvas-edge-label">{{ entry.label }}</span>
         <expression-canvas
           :node="entry.value"
           :path="entry.path"
@@ -183,6 +169,12 @@
           :expected-type="expectedType"
           :path-candidates="pathCandidates"
           :candidate-path-key="candidatePathKey"
+          :field-picker-enabled="fieldPickerEnabled"
+          :allow-operations="allowOperations"
+          :append-expression="['FUNCTION', 'ACCESS', 'CAST'].includes(node.kind)"
+          :list-options="listOptions"
+          @requestField="$emit('requestField', $event)"
+          @appendRow="$emit('appendRow', $event)"
           @select="$emit('select', $event)"
           @toggleCollapse="$emit('toggleCollapse', $event)"
           @patchNode="$emit('patchNode', $event)"
@@ -192,25 +184,25 @@
           @indent="$emit('indent', $event)"
           @outdent="$emit('outdent', $event)"
           @move="$emit('move', $event)"
+          @navigate="$emit('navigate', $event)"
+          @deleteKey="$emit('deleteKey', $event)"
           @moveNode="$emit('moveNode', $event)"
           @remove="$emit('remove', $event)"
           @replaceOperator="$emit('replaceOperator', $event)"
           @operatorKey="$emit('operatorKey', $event)"
         />
       </div>
+      <button v-if="appendChildren" type="button" class="canvas-node-append" @click.stop="$emit('appendRow', path.slice())"><el-icon><el-icon-plus /></el-icon>{{ node.kind === 'ARRAY' ? '添加元素' : '添加运算项' }}</button>
     </div>
+    <button v-if="fieldPickerEnabled && allowOperations && (!path.length || appendExpression) && node && !['OPERATION', 'ARRAY'].includes(node.kind)" type="button" class="canvas-node-append" @click.stop="$emit('appendRow', path.slice())"><el-icon><el-icon-plus /></el-icon>添加运算项</button>
   </div>
 </template>
 
 <script>
-import {
-  Plus as ElIconPlus,
-  Top as ElIconTop,
-  Bottom as ElIconBottom,
-  Right as ElIconRight,
-  Back as ElIconBack,
-} from '@element-plus/icons-vue'
+import { Plus as ElIconPlus } from '@element-plus/icons-vue'
 import { operandDisplay, OPERATION_OPERATORS } from '@/utils/operand'
+import MonacoEditor from '@/components/MonacoEditor.vue'
+import ExpressionNodeOptions from './ExpressionNodeOptions.vue'
 import {
   expressionChildEntries,
   expressionDescendantCount,
@@ -220,11 +212,9 @@ import {
 
 export default {
   components: {
+    MonacoEditor,
+    ExpressionNodeOptions,
     ElIconPlus,
-    ElIconTop,
-    ElIconBottom,
-    ElIconRight,
-    ElIconBack,
   },
   name: 'ExpressionCanvas',
   props: {
@@ -235,6 +225,10 @@ export default {
     expectedType: { type: String, default: '' },
     pathCandidates: { type: Array, default: () => [] },
     candidatePathKey: { type: String, default: '' },
+    fieldPickerEnabled: Boolean,
+    allowOperations: { type: Boolean, default: true },
+    appendExpression: Boolean,
+    listOptions: { type: Array, default: () => [] },
   },
   data() {
     return {
@@ -247,10 +241,12 @@ export default {
         { label: '日期时间', value: 'DATETIME' },
         { label: '数组', value: 'LIST' },
         { label: '字典', value: 'MAP' },
+        { label: '对象 JSON', value: 'OBJECT' },
       ],
     }
   },
   computed: {
+    appendChildren() { return this.fieldPickerEnabled && (this.node?.kind === 'ARRAY' || this.allowOperations && this.node?.kind === 'OPERATION') },
     children() {
       return expressionChildEntries(this.node, this.path)
     },
@@ -265,6 +261,7 @@ export default {
     },
     editingManual() {
       return (
+        !this.fieldPickerEnabled &&
         this.isSelected(this.path) &&
         this.node &&
         ['LITERAL', 'PATH'].includes(this.node.kind)
@@ -300,10 +297,11 @@ export default {
     selectNode(event) {
       this.$emit('select', this.path.slice())
       event.currentTarget.focus()
+      if (this.fieldPickerEnabled) this.$emit('requestField', this.path.slice())
     },
     handleNodeKeydown(event) {
-      if (!this.selected || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.repeat) return
-      if (event.target.closest('input, textarea, select, [contenteditable="true"], [role="combobox"]')) {
+      if (!this.selected || event.isComposing || event.ctrlKey || event.metaKey || event.repeat) return
+      if (event.target.closest('input, textarea, select, button, [contenteditable="true"], [role="combobox"]')) {
         if (event.key === 'Escape') {
           event.preventDefault()
           event.stopPropagation()
@@ -311,7 +309,18 @@ export default {
         }
         return
       }
-      if (event.key === 'Tab') this.handleTab(event)
+      if (['ArrowUp', 'ArrowDown'].includes(event.key)) {
+        event.preventDefault()
+        event.stopPropagation()
+        this.$emit(event.altKey ? 'move' : 'navigate', { path: this.path.slice(), offset: event.key === 'ArrowUp' ? -1 : 1 })
+      } else if (event.altKey) return
+      else if (event.key === 'Tab') this.handleTab(event)
+      else if (['Enter', 'F2'].includes(event.key)) {
+        event.preventDefault()
+        event.stopPropagation()
+        this.selectNode(event)
+        if (this.editingManual) this.focusManualInput()
+      }
       else this.handleStructureKey(event, this.path)
     },
     handleOperatorKeydown(entry, event) {
@@ -322,7 +331,7 @@ export default {
       if (['Delete', 'Backspace'].includes(event.key)) {
         event.preventDefault()
         event.stopPropagation()
-        this.$emit('remove', path.slice())
+        this.$emit('deleteKey', { path: path.slice(), key: event.key, operator: replace })
       } else if (['+', '-', '*', '/', '%', '|', '&', '=', '!', '<', '>'].includes(event.key)) {
         event.preventDefault()
         event.stopPropagation()
@@ -350,9 +359,6 @@ export default {
       event.preventDefault()
       event.stopPropagation()
       this.$emit(event.shiftKey ? 'outdent' : 'indent', this.path.slice())
-    },
-    move(offset) {
-      this.$emit('move', { path: this.path.slice(), offset })
     },
     onDragStart(event) {
       if (!this.node || !event.dataTransfer) return
@@ -416,6 +422,8 @@ export default {
     },
   },
   emits: [
+    'appendRow',
+    'requestField',
     'toggleCollapse',
     'select',
     'patchNode',
@@ -425,6 +433,8 @@ export default {
     'indent',
     'outdent',
     'move',
+    'navigate',
+    'deleteKey',
     'moveNode',
     'remove',
     'replaceOperator',
@@ -445,19 +455,20 @@ export default {
 .canvas-node {
   display: flex;
   min-width: 0;
-  min-height: 48px;
+  min-height: 36px;
   flex: 1;
-  align-items: center;
-  gap: 9px;
-  padding: 9px 12px;
+  align-items: stretch;
   border: 1px solid var(--tianshu-border);
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--tianshu-bg-surface);
   color: var(--tianshu-text-primary);
   cursor: pointer;
   text-align: left;
-  box-shadow: var(--tianshu-shadow-small);
 }
+.canvas-node-content { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1; padding: 8px 10px; }
+.canvas-node-append { display: flex; align-items: center; justify-content: center; gap: 6px; width: calc(100% - 30px); min-height: 36px; margin: 10px 0 0 30px; border: 1px dashed var(--tianshu-border); border-radius: 0; background: transparent; color: var(--tianshu-text-secondary); cursor: pointer; font: inherit; }
+.canvas-node-append:hover, .canvas-node-append:focus-visible { color: var(--el-color-primary); border-color: var(--el-color-primary); background: var(--tianshu-designer-accent-bg); }
+.expression-canvas-node--root-operation > .canvas-children { margin: 0; padding: 0; border: 0; }
 .canvas-node--selected {
   border-color: var(--el-color-primary);
   box-shadow: 0 0 0 3px rgba(var(--el-color-primary-rgb), 0.18);
@@ -497,28 +508,27 @@ export default {
   min-width: 0;
   flex: 1;
 }
+.canvas-json-editor { flex: 1; min-width: 180px; }
 .canvas-node-actions {
-  display: grid;
-  width: 58px;
+  display: flex;
+  width: 32px;
   flex: none;
-  grid-template-columns: repeat(2, 26px);
-  gap: 3px;
+  border-left: 1px solid var(--tianshu-border-subtle);
 }
 .canvas-node-actions button {
   padding: 0;
-  border: 1px solid var(--tianshu-border);
-  border-radius: 4px;
-  background: var(--tianshu-bg-surface);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--tianshu-text-secondary);
   cursor: pointer;
 }
 .canvas-node-actions button:hover {
-  border-color: var(--el-color-primary);
-  color: var(--el-color-primary);
+  background: var(--tianshu-danger-bg);
 }
 .canvas-node-actions .canvas-node-delete {
-  grid-column: 1 / -1;
-  min-height: 22px;
+  width: 100%;
+  min-height: 32px;
   color: var(--el-color-danger);
 }
 .canvas-collapse,
@@ -559,6 +569,8 @@ export default {
   position: relative;
   margin: 10px 0;
 }
+.canvas-child--operation { margin: 0; }
+.canvas-operator-row { display: flex; align-items: center; height: 32px; margin-left: 30px; }
 .canvas-edge-label {
   display: block;
   margin-bottom: 4px;
@@ -567,18 +579,21 @@ export default {
 }
 .canvas-edge-operator {
   display: inline-flex;
-  min-width: 28px;
+  box-sizing: border-box;
+  min-width: 40px;
+  height: 24px;
   justify-content: center;
   align-items: center;
-  gap: 5px;
-  margin: 0 0 5px 30px;
-  padding: 2px 7px;
-  border-radius: 4px;
-  border: 1px solid transparent;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  border-radius: 0;
+  border: 1px solid var(--tianshu-border);
   background: var(--tianshu-designer-accent-bg);
   color: var(--el-color-primary);
   font-family: Consolas, monospace;
   font-size: 12px;
+  line-height: 20px;
   font-weight: 700;
   cursor: pointer;
 }

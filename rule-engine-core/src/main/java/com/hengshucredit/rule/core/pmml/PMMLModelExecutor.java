@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.core.pmml;
 
+import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
+
 import org.jpmml.evaluator.Evaluator;
 import org.jpmml.evaluator.EvaluatorUtil;
 import org.jpmml.evaluator.InputField;
@@ -15,12 +17,16 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.HexFormat;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.Semaphore;
 
 /**
  * PMML 模型执行器，基于 JPMML-Evaluator 1.7.x 实现。
@@ -31,17 +37,24 @@ public class PMMLModelExecutor {
     private static final Logger log = LoggerFactory.getLogger(PMMLModelExecutor.class);
 
     private final Map<String, ModelContext> modelCache = new LinkedHashMap<>(16, 0.75f, true);
+    private final Map<String, FutureTask<ModelContext>> loadingModels = new HashMap<>();
     private final int maxCacheSize;
+    private final Semaphore loadingPermits;
 
     public PMMLModelExecutor() {
         this(10);
     }
 
+    /**
+     * @param maxCacheSize 已完成模型的缓存容量，同时限定不同模型的并发冷加载数量。
+     *                     满载时拒绝新的冷加载，不影响热命中或相同模型的加载等待。
+     */
     public PMMLModelExecutor(int maxCacheSize) {
         if (maxCacheSize <= 0) {
             throw new IllegalArgumentException("PMML 模型缓存容量必须大于 0");
         }
         this.maxCacheSize = maxCacheSize;
+        this.loadingPermits = new Semaphore(maxCacheSize);
     }
 
     /**
@@ -75,37 +88,78 @@ public class PMMLModelExecutor {
     }
 
     /**
-     * 清除模型缓存。
+     * 清除模型缓存。已经开始的调用仍可完成，但清理前的加载不能重新填入缓存。
      */
     public void clearCache() {
         synchronized (modelCache) {
             modelCache.clear();
+            loadingModels.clear();
         }
     }
 
     private ModelContext getOrLoadModelContext(String cacheKey, byte[] contentBytes) {
+        FutureTask<ModelContext> loading;
+        boolean startsLoading = false;
         synchronized (modelCache) {
             ModelContext cached = modelCache.get(cacheKey);
             if (cached != null) {
                 return cached;
             }
 
-            ModelContext ctx = loadModelContext(contentBytes);
-            while (modelCache.size() >= maxCacheSize) {
-                Iterator<String> iter = modelCache.keySet().iterator();
-                if (!iter.hasNext()) {
-                    break;
+            loading = loadingModels.get(cacheKey);
+            if (loading == null) {
+                if (!loadingPermits.tryAcquire()) {
+                    throw new ExecutionCapacityException(ExecutionCapacityException.Resource.PMML_MODEL_LOADING,
+                            "PMML 模型加载并发已达上限: " + maxCacheSize);
                 }
-                String oldestKey = iter.next();
-                iter.remove();
-                log.debug("缓存满，移除旧模型: {}", oldestKey);
+                loading = new FutureTask<>(() -> loadModelContext(contentBytes));
+                loadingModels.put(cacheKey, loading);
+                startsLoading = true;
             }
-            modelCache.put(cacheKey, ctx);
+        }
+
+        try {
+            // 仅登记任务的调用方负责构建；其它调用方可中断等待，不接管或取消共享加载。
+            if (startsLoading) {
+                loading.run();
+            }
+            ModelContext ctx = loading.get();
+            synchronized (modelCache) {
+                if (loadingModels.remove(cacheKey, loading)) {
+                    while (modelCache.size() >= maxCacheSize) {
+                        Iterator<String> iter = modelCache.keySet().iterator();
+                        String oldestKey = iter.next();
+                        iter.remove();
+                        log.debug("缓存满，移除旧模型: {}", oldestKey);
+                    }
+                    modelCache.put(cacheKey, ctx);
+                }
+            }
             return ctx;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("等待 PMML 模型加载被中断", interrupted);
+        } catch (ExecutionException failure) {
+            synchronized (modelCache) {
+                loadingModels.remove(cacheKey, loading);
+            }
+            Throwable cause = failure.getCause();
+            if (cause instanceof RuntimeException) {
+                throw (RuntimeException) cause;
+            }
+            if (cause instanceof Error) {
+                throw (Error) cause;
+            }
+            throw new RuntimeException("PMML 模型加载失败: " + cause.getMessage(), cause);
+        } finally {
+            if (startsLoading) {
+                // clearCache 不能释放尚未结束的加载名额；等待方中断也不能代替加载方释放。
+                loadingPermits.release();
+            }
         }
     }
 
-    private ModelContext loadModelContext(byte[] contentBytes) {
+    ModelContext loadModelContext(byte[] contentBytes) {
         try {
             Evaluator evaluator = new LoadingModelEvaluatorBuilder()
                     .load(new ByteArrayInputStream(contentBytes))
@@ -218,7 +272,7 @@ public class PMMLModelExecutor {
         return value;
     }
 
-    private static class ModelContext {
+    static class ModelContext {
         private final Evaluator evaluator;
 
         private ModelContext(Evaluator evaluator) {

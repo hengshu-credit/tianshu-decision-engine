@@ -7,6 +7,7 @@ import com.hengshucredit.rule.server.governance.GovernedResourceAdapterRegistry;
 import com.hengshucredit.rule.server.governance.ResourceDependencyRef;
 import com.hengshucredit.rule.server.governance.ResourceSnapshot;
 import com.hengshucredit.rule.server.governance.GovernanceSecretCodec;
+import com.hengshucredit.rule.server.governance.DataObjectGovernanceReferences;
 import com.hengshucredit.rule.model.entity.GovernedResource;
 import com.hengshucredit.rule.model.entity.GovernedResourceVersion;
 import com.hengshucredit.rule.server.mapper.GovernedResourceMapper;
@@ -15,7 +16,6 @@ import com.hengshucredit.rule.server.mapper.RuleVersionBindingMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionVersionMapper;
 import com.hengshucredit.rule.model.entity.RuleVersionBinding;
 import com.hengshucredit.rule.model.entity.RuleDefinitionVersion;
-import com.hengshucredit.rule.server.service.OperandDependencyCollector;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +36,8 @@ import java.util.Set;
  */
 @Service
 public class OfflineResourceTransferService {
+    @Resource
+    private com.hengshucredit.rule.server.security.ConsoleAccessGuard accessGuard;
     private static final Set<String> JSON_FIELDS = Set.of(
             "sourceConfig", "authApiConfig", "headerConfig", "queryConfig",
             "requestMapping", "responseMapping", "bodyTemplate", "asyncPollConfig",
@@ -57,7 +59,11 @@ public class OfflineResourceTransferService {
     private RuleDefinitionVersionMapper ruleDefinitionVersionMapper;
     @Resource
     private com.hengshucredit.rule.server.mapper.RuleDefinitionMapper ruleDefinitionMapper;
+    @Resource private com.hengshucredit.rule.server.mapper.RuleModelVersionMapper modelVersions;
+    @Resource
+    private com.hengshucredit.rule.server.mapper.TransferProjectResourceMapper projectResourceMapper;
     private final TransferBundleCodec codec = new TransferBundleCodec();
+    @Resource private TransferVersionService versionTransfers;
 
     @Transactional(readOnly = true)
     public byte[] export(List<TransferRootRequest> requests) {
@@ -67,12 +73,31 @@ public class OfflineResourceTransferService {
     @Transactional(readOnly = true)
     public byte[] export(List<TransferRootRequest> requests, boolean includeDependencies) {
         List<TransferKey> roots = normalizeRoots(requests);
+        Map<String, TransferRootRequest> selectedVersions = new LinkedHashMap<>();
+        for (TransferRootRequest request : requests) {
+            TransferRootRequest prior = selectedVersions.putIfAbsent(request.key().value(), request);
+            if (prior != null && (!java.util.Objects.equals(prior.versionMode(), request.versionMode())
+                    || !java.util.Objects.equals(prior.versionId(), request.versionId())))
+                throw new IllegalArgumentException("同一迁移包不能为同一资源选择不同版本，请分别导出");
+        }
+        if (accessGuard != null) for (TransferKey root : roots) accessGuard.requireResource(root.type().name(), "view");
         Map<String, TransferBundle.Resource> resources = new LinkedHashMap<>();
         List<String> warnings = new ArrayList<>();
         Deque<TransferKey> queue = new ArrayDeque<>(roots);
+        if (includeDependencies) {
+            // 项目包含关系不是上游引用，不能写成反向依赖，否则会与资源的 projectId 形成环。
+            // 只展开用户显式选择的项目；普通资源携带归属项目时不能扩散到无关资源。
+            for (TransferKey root : roots) {
+                if (root.type() == TransferResourceType.PROJECT) {
+                    projectResourceMapper.selectProjectResources(root.id()).stream()
+                            .map(TransferRootRequest::key).forEach(queue::addLast);
+                }
+            }
+        }
         Set<String> visiting = new LinkedHashSet<>();
         while (!queue.isEmpty()) {
             TransferKey key = queue.removeFirst();
+            if (accessGuard != null) accessGuard.requireResource(key.type().name(), "view");
             if (resources.containsKey(key.value())) continue;
             if (!visiting.add(key.value())) throw new IllegalArgumentException("离线导出依赖形成循环: " + key.value());
             if (key.type() == TransferResourceType.RULE_VERSION) {
@@ -81,15 +106,27 @@ public class OfflineResourceTransferService {
                 continue;
             }
             GovernedResourceAdapter adapter = adapterRegistry.require(key.type().name());
-            ResourceSnapshot snapshot = adapter.loadEffective(key.id());
+            ResourceSnapshot snapshot = exportSnapshot(key, selectedVersions.get(key.value()), adapter);
             Map<String, Object> configuration = CanonicalJson.readMap(snapshot.snapshotJson());
             // 模型文件不是凭据：还原后打入迁移包，目标治理适配器会再次加密保存。
             // 外数/数据库/鉴权敏感字段不还原，必须在目标环境重新配置。
             if (key.type() == TransferResourceType.MODEL && secretCodec != null) {
                 configuration = secretCodec.restore(snapshot);
+                Object fileVersionId = configuration.remove("_modelContentVersionId");
+                if (fileVersionId != null) {
+                    var fileVersion = modelVersions.selectOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.hengshucredit.rule.model.entity.RuleModelVersion>()
+                            .select(com.hengshucredit.rule.model.entity.RuleModelVersion::getId, com.hengshucredit.rule.model.entity.RuleModelVersion::getModelId, com.hengshucredit.rule.model.entity.RuleModelVersion::getModelContent)
+                            .eq(com.hengshucredit.rule.model.entity.RuleModelVersion::getId, Long.valueOf(String.valueOf(fileVersionId))));
+                    if (fileVersion == null || !java.util.Objects.equals(key.id(), fileVersion.getModelId())) throw new IllegalArgumentException("迁移模型文件版本归属不匹配");
+                    configuration.put("modelContent", fileVersion.getModelContent());
+                }
             }
             List<TransferBundle.Reference> references = new ArrayList<>();
+            var fixedVersions = TransferVersionReferences.scan(configuration);
+            Set<String> versionPaths = new LinkedHashSet<>(); fixedVersions.forEach(value -> versionPaths.addAll(value.ownedPaths()));
+            List<Map<String, Object>> versionReferences = fixedVersions.isEmpty() ? List.of() : versionTransfers.describe(configuration);
             for (ResourceDependencyRef dependency : adapter.collectDependencies(snapshot)) {
+                if (versionPaths.contains(toPointer(dependency.referencePath()))) continue;
                 if (dependency.targetResourceType() == null || dependency.targetResourceId() == null) {
                     if (dependency.required()) throw new IllegalArgumentException("离线导出存在缺失依赖: " + key.value());
                     continue;
@@ -115,17 +152,15 @@ public class OfflineResourceTransferService {
                 }
                 referencedValue = TransferJsonPath.read(configuration, pointer);
                 String targetKey = new TransferKey(targetType, dependency.targetResourceId()).value();
-                String childPath = childPath(targetType, dependency.targetResourceId(), referencedValue);
+                String childPath = childPath(targetType, dependency.targetResourceId(), referencedValue,
+                        dependency.referencePath());
                 Map<String, String> identity = resourceIdentity(targetType, dependency.targetResourceId());
                 references.add(new TransferBundle.Reference(pointer, targetKey, childPath,
                         !includeDependencies, identity.get("code"), identity.get("name")));
                 if (includeDependencies) queue.addLast(new TransferKey(targetType, dependency.targetResourceId()));
             }
-            if (key.type() == TransferResourceType.RULE) {
-                collectFixedRuleVersions(configuration, references, queue, warnings, includeDependencies);
-            }
             resources.put(key.value(), new TransferBundle.Resource(key.value(), configuration,
-                    references, requiredEnvironmentFields(key.type(), configuration)));
+                    references, requiredEnvironmentFields(key.type(), configuration), versionReferences));
             visiting.remove(key.value());
         }
         return codec.encode(new TransferBundle(roots.stream().map(TransferKey::value).toList(),
@@ -135,6 +170,28 @@ public class OfflineResourceTransferService {
     @Transactional(readOnly = true)
     public Map<String, Object> preview(byte[] bytes) {
         return preview(bytes, new TransferImportOptions(null, "PROJECT", "REUSE", "SUFFIX", "_imported", false, null, null, Map.of()));
+    }
+
+    private ResourceSnapshot exportSnapshot(TransferKey key, TransferRootRequest selection, GovernedResourceAdapter adapter) {
+        if ((selection == null || !"FIXED".equals(selection.versionMode())) && governedResourceMapper != null) {
+            var resource = governedResourceMapper.selectOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<GovernedResource>()
+                    .eq(GovernedResource::getResourceType, key.type().name()).eq(GovernedResource::getResourceId, key.id()));
+            if (resource != null && resource.getEffectiveVersionId() != null) {
+                var production = governedResourceVersionMapper.selectById(resource.getEffectiveVersionId());
+                if (com.hengshucredit.rule.server.governance.ResourceVersionLines.published(production))
+                    return exportSnapshot(key, new TransferRootRequest(key.type().name(), key.id(), "FIXED", production.getId()), adapter);
+            }
+            if (selection != null && "LATEST".equals(selection.versionMode())) throw new IllegalArgumentException("资源尚无已发布的生产版本");
+        }
+        if (selection != null && "FIXED".equals(selection.versionMode())) {
+            GovernedResourceVersion version = governedResourceVersionMapper.selectById(selection.versionId());
+            if (version == null || !key.type().name().equals(version.getResourceType()) || !java.util.Objects.equals(key.id(), version.getResourceId())
+                    || Boolean.TRUE.equals(version.getDeleted())) throw new IllegalArgumentException("迁移版本不存在、已删除或不属于指定资源");
+            if (!java.util.Objects.equals(com.hengshucredit.rule.server.artifact.Sha256Digests.text(version.getSnapshotJson()), version.getSnapshotDigest()))
+                throw new IllegalArgumentException("迁移版本摘要不匹配");
+            return com.hengshucredit.rule.server.governance.ResourceVersionLines.snapshot(version);
+        }
+        return adapter.loadEffective(key.id());
     }
 
     @Transactional(readOnly = true)
@@ -147,6 +204,7 @@ public class OfflineResourceTransferService {
         Map<String, PreviewTarget> targets = new LinkedHashMap<>();
         for (TransferBundle.Resource resource : OfflineResourceImportService.topologicalOrder(selectedResources)) {
             TransferKey key = TransferKey.parse(resource.key());
+            if (accessGuard != null) accessGuard.requireResource(key.type().name(), "view");
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("key", resource.key());
             item.put("resourceType", key.type().name());
@@ -189,6 +247,7 @@ public class OfflineResourceTransferService {
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("packageKind", TransferBundleCodec.PACKAGE_KIND);
+        result.put("versionAssociations", versionTransfers == null ? List.of() : versionTransfers.preview(selectedResources, options));
         result.put("packageDigest", decoded.packageDigest());
         Set<String> selectedKeys = selectedResources.stream().map(TransferBundle.Resource::key)
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
@@ -288,34 +347,6 @@ public class OfflineResourceTransferService {
                 List.of("目标环境需要在规则发布后重新建立该业务版本绑定"));
     }
 
-    private void collectFixedRuleVersions(Map<String, Object> configuration,
-                                          List<TransferBundle.Reference> references,
-                                          Deque<TransferKey> queue,
-                                          List<String> warnings,
-                                          boolean includeDependencies) {
-        Map<String, Object> content = object(configuration.get("content"));
-        Object modelJson = content.get("modelJson");
-        if (!(modelJson instanceof String script) || script.isBlank()) return;
-        Object model;
-        try { model = JSON.parse(script); } catch (RuntimeException invalid) {
-            warnings.add("规则模型 JSON 无法解析，未能分析固定版本引用: " + configuration.get("ruleCode"));
-            return;
-        }
-        for (OperandDependencyCollector.Reference reference : OperandDependencyCollector.collectReferences(model)) {
-            if (!"RULE".equalsIgnoreCase(reference.getRefType())
-                    || !"FIXED".equalsIgnoreCase(reference.getVersionMode())
-                    || reference.getVersionBindingId() == null) continue;
-            String bindingKey = new TransferKey(TransferResourceType.RULE_VERSION,
-                    reference.getVersionBindingId()).value();
-            String pointer = "/content/modelJson/@json" + toPointer(reference.getPath());
-            references.add(new TransferBundle.Reference(pointer, bindingKey, null, !includeDependencies,
-                    null, null));
-            if (includeDependencies) {
-                queue.addLast(new TransferKey(TransferResourceType.RULE_VERSION, reference.getVersionBindingId()));
-            }
-        }
-    }
-
     /** 给未随包携带的引用补充安全的同码推荐信息；凭据仍不会进入包。 */
     public List<Map<String, Object>> targetCandidates(String resourceType, String code, Long projectId) {
         TransferResourceType type;
@@ -324,6 +355,7 @@ public class OfflineResourceTransferService {
         } catch (RuntimeException invalid) {
             return List.of();
         }
+        if (accessGuard != null) accessGuard.requireResource(type.name(), "view");
         if (governedResourceMapper == null || governedResourceVersionMapper == null) return List.of();
         List<GovernedResource> rows = governedResourceMapper.selectList(
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<GovernedResource>()
@@ -353,6 +385,7 @@ public class OfflineResourceTransferService {
     }
 
     public Map<String, String> sourceIdentity(String resourceType, Long resourceId) {
+        if (accessGuard != null) accessGuard.requireResource(resourceType, "view");
         if (resourceId == null) return Map.of();
         try {
             return resourceIdentity(TransferResourceType.valueOf(resourceType.trim().toUpperCase(Locale.ROOT)), resourceId);
@@ -362,6 +395,7 @@ public class OfflineResourceTransferService {
     }
 
     public List<Map<String, Object>> resourceFields(String resourceType, Long resourceId) {
+        if (accessGuard != null) accessGuard.requireResource(resourceType, "view");
         if (resourceId == null || !"DATA_OBJECT".equalsIgnoreCase(resourceType) || adapterRegistry == null) {
             return List.of();
         }
@@ -460,23 +494,24 @@ public class OfflineResourceTransferService {
         return value == null ? null : String.valueOf(value);
     }
 
-    private String childPath(TransferResourceType targetType, long targetId, Object referencedValue) {
-        if (targetType != TransferResourceType.DATA_OBJECT || !(referencedValue instanceof Number number)) return null;
-        try {
-            Map<String, Object> object = CanonicalJson.readMap(adapterRegistry.require(targetType.name())
-                    .loadEffective(targetId).snapshotJson());
-            Object fields = object.get("fields");
-            if (!(fields instanceof List<?> list)) return null;
+    private String childPath(TransferResourceType targetType, long targetId, Object referencedValue,
+                             String referencePath) {
+        if (targetType != TransferResourceType.DATA_OBJECT
+                || !DataObjectGovernanceReferences.isFieldReferencePath(referencePath)) return null;
+        Long fieldId = longValue(referencedValue);
+        Map<String, Object> object = CanonicalJson.readMap(adapterRegistry.require(targetType.name())
+                .loadEffective(targetId).snapshotJson());
+        Object fields = object.get("fields");
+        if (fieldId != null && fields instanceof List<?> list) {
             for (int index = 0; index < list.size(); index++) {
                 if (list.get(index) instanceof Map<?, ?> field
-                        && String.valueOf(field.get("id")).equals(String.valueOf(number.longValue()))) {
+                        && fieldId.equals(longValue(field.get("id")))) {
                     return "/fields/" + index + "/id";
                 }
             }
-        } catch (RuntimeException ignored) {
-            // Child ownership is advisory in the package; the root dependency remains required.
         }
-        return null;
+        throw new IllegalArgumentException("离线导出引用的数据对象字段不存在: DATA_OBJECT:" + targetId
+                + " 字段 " + referencedValue + "，引用路径 " + referencePath);
     }
 
     private TransferConflict findConflict(TransferBundle.Resource resource, TransferKey key,

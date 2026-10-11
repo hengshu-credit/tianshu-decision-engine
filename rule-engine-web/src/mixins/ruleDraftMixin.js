@@ -9,6 +9,7 @@ import {
 import { registerDesignerLeaveGuard } from '@/utils/designerLeaveGuard'
 import { hasPermission } from '@/security/permissionState'
 import { graphIssueTarget, validationPathLabel, validationRepairHint } from '@/utils/validationIssueLocation'
+import { revisionTestSource, previewTestSource } from '@/utils/ruleTestExecutionSource'
 
 function unwrap(response) {
   return response && response.data !== undefined ? response.data : response
@@ -69,9 +70,21 @@ export default {
       designerChoice: null,
       designerChoiceResolve: null,
       designerSaveRequest: null,
+      designerReferencePreview: false,
     }
   },
   computed: {
+    usesDesignerReferenceCatalog() { return true },
+    designerLocalEditingAllowed() {
+      return typeof this.loadDesignerReferenceCatalog !== 'function' || this.frozenReferenceCatalog?.localEditingAllowed === true
+    },
+    designerReadOnlyReason() {
+      if (this.draftGuardError || !this.draftGuardLoaded) return ''
+      if (this.referenceCatalogMode === 'UNAVAILABLE') return this.referenceCatalogError || '所选版本引用目录不可用，原配置保留，不会用当前目录替代。'
+      if (!this.designerLocalEditingAllowed) return '该版本尚未建立可验证的本地引用。可查看和测试原版本；如需修改，请先通过离线迁移确认本地关联。'
+      return ''
+    },
+    canEnterDesignerLivePreview() { return this.canEditDraft && this.referenceCatalogMode === 'FROZEN' },
     incomingValidationIssue() {
       const query = this.$route && this.$route.query || {}
       if (!query.validationPath || query.sourceType !== 'REVISION' || query.validationSourceId !== query.sourceId) return null
@@ -101,10 +114,11 @@ export default {
     canEditDraft() {
       return (
         this.draftGuardLoaded && !this.draftGuardError && !!this.viewRevision && this.viewRevision.state !== 'DELETED' && hasPermission('rule:edit')
+        && this.designerLocalEditingAllowed && this.referenceCatalogMode !== 'UNAVAILABLE'
       )
     },
     canForkViewRevision() {
-      return ['VERSION', 'APPROVED', 'PUBLISHED', 'OFFLINE', 'LEGACY'].includes(
+      return this.designerLocalEditingAllowed && ['VERSION', 'APPROVED', 'PUBLISHED', 'OFFLINE', 'LEGACY'].includes(
         this.viewRevision?.state
       )
     },
@@ -130,7 +144,7 @@ export default {
         .filter((item) => item && isSourceId(item.id))
         .map((item) => ({
           value: `VERSION:${String(item.id)}`,
-          label: `发布版本 v${item.version || '—'}`,
+          label: `生产 · ${item.version || '—'}${item.publishTime ? ' / ' + item.publishTime : ''}`,
           group: 'VERSION',
         }))
 
@@ -143,8 +157,10 @@ export default {
             value: selectedValue,
             label:
               group === 'VERSION'
-                ? `发布版本 v${this.viewRevision.revisionNo || '—'}`
-                : `${REVISION_STATE_LABELS[this.viewRevision.state] || '生命周期'} · ${this.viewRevision.revisionNo || this.viewRevision.id}`,
+                ? `生产 · ${this.viewRevision.revisionNo || '—'}${this.viewRevision.publishTime ? ' / ' + this.viewRevision.publishTime : ''}`
+                : this.viewRevision.state === 'DRAFT'
+                  ? `草稿 · ${this.viewRevision.revisionNo || this.viewRevision.id}${this.viewRevision.updateTime ? ' / ' + this.viewRevision.updateTime : ''}`
+                  : `${REVISION_STATE_LABELS[this.viewRevision.state] || '生命周期'} · ${this.viewRevision.revisionNo || this.viewRevision.id}`,
             group,
           })
         }
@@ -153,6 +169,11 @@ export default {
     },
     designerCanTest() {
       return this.draftGuardLoaded && !this.draftGuardError && !!this.viewRevision && this.viewRevision.state !== 'DELETED' && hasPermission('rule:edit')
+        && this.referenceCatalogMode !== 'UNAVAILABLE' && !this.loadingVars
+    },
+    designerTestExecutionSource() {
+      if (this.designerHasUnsavedChanges || this.designerReferencePreview) return previewTestSource(this.viewRevision, this.definitionId || this.$route?.params?.id)
+      return revisionTestSource(this.viewRevision)
     },
     designerHasUnsavedChanges() {
       return (
@@ -225,19 +246,35 @@ export default {
     this.draftGuardNeedsRefresh = !this.isOwnExpressionRoute()
   },
   methods: {
+    async enterDesignerLivePreview() {
+      if (!this.designerLocalEditingAllowed) throw new Error(this.designerReadOnlyReason || '该来源需要先通过离线迁移建立本地引用')
+      if (this.referenceCatalogMode === 'UNAVAILABLE') throw new Error(this.referenceCatalogError || '引用目录尚未就绪')
+      if (this.referenceCatalogMode !== 'FROZEN') return
+      const action = this.designerActionSnapshot()
+      this.designerReferencePreview = true
+      await this.loadDesignerReferenceCatalog(this.viewRevision, { livePreview: true })
+      if (!this.isCurrentViewAction(action)) throw new Error('规则来源已变化，请重新操作')
+      if (this.referenceCatalogMode !== 'LIVE') throw new Error(this.referenceCatalogError || '当前环境目录读取失败')
+      this._trySyncModelVarRefs?.()
+    },
     async locateDesignerIssue(issue) {
       if (issue && issue.stale) { this.$message.warning('校验后配置已变化，请返回生命周期重新校验'); return }
       if (issue && issue.revisionId && String(issue.revisionId) !== String(this.viewRevision && this.viewRevision.id)) {
         this.$message.warning('校验结果不属于正在查看的修订，请重新校验')
         return
       }
-      if (this.designerHasUnsavedChanges) {
+      const checkedModelJson = issue?.revisionId ? null : this.designerValidationReport?.checkedModelJson
+      if (checkedModelJson && createDraftFingerprint(this.serializeDesignerDraft()) !== createDraftFingerprint(checkedModelJson)) {
+        this.$message.warning('配置已变化，请重新检查')
+        return
+      }
+      if (this.designerHasUnsavedChanges && !checkedModelJson) {
         this.$message.warning('配置已有未保存修改，请先保存并检查，避免按旧位置定位')
         return
       }
       const path = String(issue && issue.path || '$')
       let model
-      try { model = JSON.parse(this.viewRevision && this.viewRevision.modelJson || '{}') } catch (e) { model = {} }
+      try { model = JSON.parse(checkedModelJson || this.viewRevision && this.viewRevision.modelJson || '{}') } catch (e) { model = {} }
       const graphTarget = graphIssueTarget(model, path)
       if (graphTarget && typeof this.locateGraphElement === 'function') {
         this.locateGraphElement(graphTarget)
@@ -361,6 +398,9 @@ export default {
       this.designerCompileResult = null
       this.designerCompileTaskId = ''
       // 普通编辑只更新内存状态，不自动创建服务端或浏览器草稿。
+      if (this.referenceCatalogMode === 'FROZEN' && !this.designerReferencePreview) {
+        this.enterDesignerLivePreview().catch(error => { this.referenceCatalogError = error.message })
+      }
     },
     markDesignerDraftSaved(modelJson) {
       const fingerprint = createDraftFingerprint(modelJson)
@@ -377,6 +417,7 @@ export default {
         this.designerDraftIdentity()
       )
       this.designerRecoveryCandidate = null
+      this.designerReferencePreview = false
     },
     async restoreDesignerRecovery() {
       const recovery = this.designerRecoveryCandidate
@@ -471,6 +512,7 @@ export default {
     },
     startViewedRevisionRefresh(reloadContent) {
       if (!this.isOwnDesignerRoute()) return Promise.resolve(null)
+      if (Object.hasOwn(this.$data, 'testVisible')) this.testVisible = false
       const refreshPromise = this.refreshViewedRevision()
       this.draftGuardPromise = refreshPromise
       if (reloadContent) {
@@ -515,6 +557,8 @@ export default {
       const source = this.requestedSource
       const requestedSourceKey = sourceKey(source)
       const refreshToken = ++this.viewRefreshToken
+      this.designerReferencePreview = false
+      this.clearReferenceCatalog?.()
       this.designerCompilePollToken++
       this.draftGuardLoaded = false
       this.draftRevision = null
@@ -632,7 +676,10 @@ export default {
         return null
       } finally {
         if (this.isCurrentSource(requestedSourceKey, refreshToken)) {
-          this.draftGuardLoaded = true
+          if (this.viewRevision && typeof this.loadDesignerReferenceCatalog === 'function') {
+            await this.loadDesignerReferenceCatalog(this.viewRevision)
+          }
+          if (this.isCurrentSource(requestedSourceKey, refreshToken)) this.draftGuardLoaded = true
         }
       }
     },
@@ -743,6 +790,16 @@ export default {
     async saveDraftModel(modelJson, extra = {}) {
       if (this.draftGuardPromise) await this.draftGuardPromise
       if (!this.canEditDraft) throw new Error('当前规则没有可编辑内容、已被删除或没有编辑权限')
+      const referenceAction = this.designerActionSnapshot()
+      if (this.referenceCatalogMode === 'FROZEN') {
+        await this.enterDesignerLivePreview()
+        if (!this.isCurrentViewAction(referenceAction)) throw new Error('规则来源已变化，请重新保存')
+        modelJson = this.serializeDesignerDraft?.() || modelJson
+        if (typeof this.validateRuleCallCycle === 'function') {
+          const valid = await this.validateRuleCallCycle()
+          if (valid !== true) throw new Error(valid || '当前环境规则调用校验失败')
+        }
+      }
       if (this.designerActionState === 'SAVING') throw new Error('正在保存，请稍候')
       const definitionId = String(this.definitionId || this.$route.params.id)
       const action = this.designerActionSnapshot()
@@ -761,6 +818,7 @@ export default {
       }
       if (!['NEW', 'OVERWRITE'].includes(saveMode)) throw new Error('请选择保存方式')
       const body = { modelJson, saveMode, ...this.designerSourcePayload() }
+      if (body.sourceType === 'VERSION' && ['NEW', 'REUSE'].includes(this.$route?.query?.restoreMode)) body.restoreMode = this.$route.query.restoreMode
       if (this.designerCompileTaskId && createDraftFingerprint(modelJson) === this.designerCheckedFingerprint) {
         body.compileTaskId = this.designerCompileTaskId
       }
@@ -813,12 +871,31 @@ export default {
       }
       return result
     },
-    async compileDesignerDraft() {
+    handleCheck() {
+      return this.runDesignerAction(async () => {
+        if (this.designerBusy || !this.canEditDraft) return false
+        this.captureDesignerDraftState()
+        if (typeof this.createGraphValidationReport === 'function') {
+          if (!this.lf) return false
+          const report = this.createGraphValidationReport()
+          if (!report.valid) {
+            this.designerValidationReport = report
+            this.designerActionState = 'CHECK_FAILED'
+            return report
+          }
+        }
+        this.designerBusy = true
+        try { return await this.compileDesignerDraft({ checkOnly: true }) } finally { this.designerBusy = false }
+      })
+    },
+    async compileDesignerDraft({ checkOnly = false } = {}) {
       if (!this.canEditDraft) throw new Error('当前内容不可编译或没有编辑权限')
       const action = this.designerActionSnapshot()
+      await this.enterDesignerLivePreview()
+      if (!this.isCurrentViewAction(action)) throw new Error('规则来源已变化，请重新编译')
       const modelJson = this.serializeDesignerDraft()
       const definitionId = String(this.definitionId || this.$route.params.id)
-      this.designerActionState = 'COMPILING'
+      this.designerActionState = checkOnly ? 'CHECKING' : 'COMPILING'
       try {
         const submitted = unwrap(await definitionApi.compileDesignerModel(definitionId, { modelJson, ...this.designerSourcePayload() }))
         this.designerCompileTaskId = submitted?.taskId || ''
@@ -826,10 +903,19 @@ export default {
         if (result === false) return false
         this.captureDesignerDraftState()
         if (!this.designerConfigurationMatches(action, modelJson)) return false
-        this.designerCompileResult = result
-        this.designerValidationReport = result?.preflightReport || null
+        if (!checkOnly) this.designerCompileResult = result
+        const report = result?.preflightReport || (checkOnly ? {
+          valid: false,
+          errors: [{ code: 'COMPILE_FAILED', message: result?.compileMessage || '未获取到完整校验报告，请重新检查' }],
+          warnings: [],
+        } : null)
+        this.designerValidationReport = report ? {
+          ...report,
+          checkedModelJson: modelJson,
+          ...(checkOnly ? { autoOpen: true } : {}),
+        } : null
         this.designerCheckedFingerprint = result?.compileSuccess ? createDraftFingerprint(modelJson) : ''
-        this.designerActionState = result?.compileSuccess && result?.preflightReport?.valid ? 'READY_TO_TEST' : 'CHECK_FAILED'
+        this.designerActionState = result?.compileSuccess && result?.preflightReport?.valid ? (checkOnly ? 'CHECKED' : 'READY_TO_TEST') : 'CHECK_FAILED'
         if (this.designerActionState === 'READY_TO_TEST') this.$message.success('编译完成，发布前检查通过')
         else if (!this.designerValidationReport) this.$message.error(result?.compileMessage || '编译失败')
         return result
@@ -839,11 +925,14 @@ export default {
       }
     },
     executeDesignerPreview(params, modelType) {
+      if (!this.ensureDesignerReadyForTest()) return Promise.resolve(false)
+      const executionSource = this.designerTestExecutionSource
+      if (executionSource?.sourceType === 'PREVIEW' && !this.designerLocalEditingAllowed) return Promise.resolve(false)
       return this.runDesignerAction(() => definitionApi.executeRule({
         definitionId: String(this.definitionId || this.$route.params.id),
         projectId: this.projectIdForRefs,
-        modelType,
-        modelJson: this.serializeDesignerDraft(),
+        executionSource,
+        ...(executionSource?.sourceType === 'PREVIEW' ? { modelType, modelJson: this.serializeDesignerDraft() } : {}),
         params,
       }))
     },
@@ -860,7 +949,11 @@ export default {
           this.designerVersions = this.normalizeDesignerVersions(await definitionApi.listPublishedVersions(String(this.definitionId || this.$route.params.id)))
           const action = this.designerActionSnapshot()
           const modelJson = this.serializeDesignerDraft()
-          const choice = await this.requestDesignerChoice('publish', { warnings: compiled.preflightReport?.warnings || [] })
+          const choice = await this.requestDesignerChoice('publish', {
+            warnings: compiled.preflightReport?.warnings || [],
+            publishMode: saved.revision.publishMode || 'NEW',
+            targetVersionId: saved.revision.targetVersionId ? String(saved.revision.targetVersionId) : '',
+          })
           if (choice.action !== 'publish' || !this.isCurrentViewAction(action)) return false
           if (!this.designerConfigurationMatches(action, modelJson)) {
             compiled = await this.compileDesignerDraft()

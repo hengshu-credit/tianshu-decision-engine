@@ -44,7 +44,13 @@ public class ConsolePermissionInterceptor implements HandlerInterceptor {
             }
             return authorize(request, response, implicitPermission);
         }
-        return authorize(request, response, requirement.value());
+        Long userId = resolveUserId(request.getSession(false));
+        if (userId != null) {
+            // 空权限只用于已登录用户的前端访问留痕，事件对象另行校验权限。
+            if (requirement.value().isEmpty() || permissionService.hasPermission(userId, requirement.value())) return true;
+            for (String code : requirement.anyOf()) if (permissionService.hasPermission(userId, code)) return true;
+        }
+        return deny(response, "PERMISSION_DENIED");
     }
 
     private boolean authorize(HttpServletRequest request,
@@ -76,7 +82,8 @@ public class ConsolePermissionInterceptor implements HandlerInterceptor {
 
     private boolean isDashboardPath(HttpServletRequest request) {
         String path = request.getRequestURI();
-        return path != null && path.startsWith("/api/rule/dashboard");
+        return path != null && (path.equals("/api/rule/dashboard")
+                || path.startsWith("/api/rule/dashboard/"));
     }
 
     private String resolveImplicitPermission(
@@ -88,6 +95,9 @@ public class ConsolePermissionInterceptor implements HandlerInterceptor {
         String module = modulePermission(path);
         if (module == null) {
             return null;
+        }
+        if ("project".equals(module) && path.endsWith("/full")) {
+            return "project:edit";
         }
         String method = request.getMethod();
         if ("GET".equalsIgnoreCase(method)
@@ -108,46 +118,15 @@ public class ConsolePermissionInterceptor implements HandlerInterceptor {
     }
 
     private String modulePermission(String path) {
-        if (path.startsWith("/api/rule/project")) {
-            return "project";
-        }
-        if (path.startsWith("/api/rule/definition")
-                || path.startsWith("/api/rule/expression")
-                || path.startsWith("/api/rule/artifact")) {
-            return "rule";
-        }
-        if (path.startsWith("/api/rule/variable")
-                || path.startsWith("/api/rule/dataobject")
-                || path.startsWith("/api/rule/field-validation")
-                || path.startsWith("/api/rule/list")) {
-            return "field";
-        }
-        if (path.startsWith("/api/rule/model")) {
-            return "model";
-        }
-        if (path.startsWith("/api/rule/datasource")) {
-            return "datasource";
-        }
-        if (path.startsWith("/api/rule/database")) {
-            return "database";
-        }
-        if (path.startsWith("/api/rule/function")) {
-            return "function";
-        }
-        if (path.startsWith("/api/rule/experiment")) {
-            return "experiment";
-        }
-        if (path.startsWith("/api/rule/lineage")) {
-            return "approval";
-        }
-        if (path.startsWith("/api/rule/log")
-                || path.startsWith("/api/rule/runtime-log")) {
-            return "rule";
-        }
-        if (path.startsWith("/api/rule/billing")) {
-            return "project";
-        }
-        return null;
+        String namespace = path.substring("/api/rule/".length()).split("/", 2)[0];
+        return switch (namespace) {
+            case "project", "model", "datasource", "database", "function",
+                 "experiment", "list", "billing", "lineage" -> namespace;
+            case "definition", "expression", "artifact" -> "rule";
+            case "variable", "dataobject", "field-validation" -> "field";
+            case "log", "runtime-log" -> "log";
+            default -> null;
+        };
     }
 
     private Long resolveUserId(HttpSession session) {

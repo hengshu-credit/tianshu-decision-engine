@@ -88,6 +88,9 @@ public final class ActionDataOutputVarCollector {
             case "func-call":
                 addTarget(out, block, "target", varContext);
                 break;
+            case "api-call":
+                if (block.getJSONObject("targetOperand") != null) addTarget(out, OperandCompiler.compile(block.getJSONObject("targetOperand"), varContext));
+                break;
             case "rule-call":
                 addTarget(out, block, "target", varContext);
                 break;

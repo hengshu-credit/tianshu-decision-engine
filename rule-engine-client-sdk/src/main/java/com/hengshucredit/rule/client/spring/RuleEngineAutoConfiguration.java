@@ -1,8 +1,10 @@
 package com.hengshucredit.rule.client.spring;
 
 import com.hengshucredit.rule.client.RuleEngineClient;
+import com.hengshucredit.rule.client.RuleEngineClientConfig;
 import com.hengshucredit.rule.client.log.ExecutionLogReporter;
 import com.hengshucredit.rule.client.log.KafkaLogReporter;
+import com.hengshucredit.rule.client.log.LogReportTransport;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -31,14 +33,26 @@ public class RuleEngineAutoConfiguration {
     @Configuration
     @ConditionalOnClass(KafkaTemplate.class)
     @ConditionalOnBean(KafkaTemplate.class)
+    @ConditionalOnProperty(prefix = "rule-engine.client", name = "log-report-transport", havingValue = "KAFKA")
     static class KafkaLogReporterConfiguration {
 
         @Bean
         @ConditionalOnMissingBean(ExecutionLogReporter.class)
         @ConditionalOnProperty(prefix = "rule-engine.client", name = "log-report-enabled", havingValue = "true", matchIfMissing = true)
+        @ConditionalOnProperty(prefix = "rule-engine.client", name = "server-side-execution", havingValue = "false", matchIfMissing = true)
         public ExecutionLogReporter kafkaLogReporter(KafkaTemplate<String, String> kafkaTemplate,
                                                      RuleEngineClientProperties props) {
-            return new KafkaLogReporter(kafkaTemplate, props.getKafkaLogTopic());
+            RuleEngineClientConfig config = new RuleEngineClientConfig();
+            config.setServerUrl(props.getServerUrl());
+            config.setHttpTimeoutMs(props.getHttpTimeoutMs());
+            config.setAuthConfig(props.toAuthConfig());
+            config.setProjectId(props.getProjectId());
+            config.setKafkaLogTopic(props.getKafkaLogTopic());
+            config.setKafkaHttpFallbackEnabled(props.isKafkaHttpFallbackEnabled());
+            config.setLogBufferSize(props.getLogBufferSize());
+            config.setLogBatchSize(props.getLogBatchSize());
+            config.setLogFlushIntervalMs(props.getLogFlushIntervalMs());
+            return new KafkaLogReporter(kafkaTemplate, config);
         }
     }
 
@@ -59,6 +73,7 @@ public class RuleEngineAutoConfiguration {
                 .l1CacheMaxSize(props.getL1CacheMaxSize())
                 .httpTimeoutMs(props.getHttpTimeoutMs())
                 .logReportEnabled(props.isLogReportEnabled())
+                .logReportTransport(props.getLogReportTransport())
                 .logBufferSize(props.getLogBufferSize())
                 .logBatchSize(props.getLogBatchSize())
                 .logFlushIntervalMs(props.getLogFlushIntervalMs())
@@ -68,8 +83,12 @@ public class RuleEngineAutoConfiguration {
 
         if (connectionFactory != null) builder.connectionFactory(connectionFactory);
 
-        ExecutionLogReporter reporter = logReporterProvider.getIfAvailable();
-        if (reporter != null && shouldUseExternalReporter(props)) {
+        ExecutionLogReporter reporter = shouldUseExternalReporter(props) ? logReporterProvider.getIfAvailable() : null;
+        if (reporter == null && shouldUseExternalReporter(props)
+                && props.getLogReportTransport() == LogReportTransport.KAFKA) {
+            throw new IllegalStateException("Kafka 日志上报需要 spring-kafka 依赖和 KafkaTemplate Bean");
+        }
+        if (reporter != null) {
             builder.logReporter(reporter);
         }
 
@@ -79,6 +98,6 @@ public class RuleEngineAutoConfiguration {
     }
 
     static boolean shouldUseExternalReporter(RuleEngineClientProperties properties) {
-        return properties.isLogReportEnabled();
+        return properties.isLogReportEnabled() && !properties.isServerSideExecution();
     }
 }

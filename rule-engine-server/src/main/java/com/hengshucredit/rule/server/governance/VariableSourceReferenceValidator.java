@@ -24,6 +24,8 @@ import java.util.Map;
 
 @Service
 public class VariableSourceReferenceValidator {
+    @Resource
+    private com.hengshucredit.rule.server.security.ConsoleAccessGuard accessGuard;
 
     @Resource
     private RuleExternalApiConfigMapper apiConfigMapper;
@@ -105,9 +107,9 @@ public class VariableSourceReferenceValidator {
         databaseOptions.sort(ordering);
         listOptions.sort(ordering);
         return new VariableSourceCatalog(
-                List.copyOf(apiOptions),
-                List.copyOf(databaseOptions),
-                List.copyOf(listOptions));
+                accessGuard == null || accessGuard.can("datasource:view") ? List.copyOf(apiOptions) : List.of(),
+                accessGuard == null || accessGuard.can("database:view") ? List.copyOf(databaseOptions) : List.of(),
+                accessGuard == null || accessGuard.can("list:view") ? List.copyOf(listOptions) : List.of());
     }
 
     public List<GovernanceIssue> validate(RuleVariable variable) {
@@ -192,6 +194,15 @@ public class VariableSourceReferenceValidator {
                 if (variableService != null) com.hengshucredit.rule.server.service.ExternalApiExecutionConfig.bindReferences(config.get("requestOverrides"), variableService.buildRefScriptNameMap(variable.getProjectId()));
             } catch (IllegalArgumentException exception) {
                 issues.add(issue(variable, "API_PARAMETER_OVERRIDE_INVALID", exception.getMessage(), "$.sourceConfig.requestOverrides"));
+            }
+        }
+        if (config.getJSONObject("inputOverrides") != null) {
+            try {
+                com.hengshucredit.rule.server.service.ExternalApiRequestPlan.validateInputOverrides(api, config.getJSONObject("inputOverrides"));
+                if (variableService != null) com.hengshucredit.rule.server.service.ExternalApiExecutionConfig.bindReferences(
+                        config.get("inputOverrides"), variableService.buildRefScriptNameMap(variable.getProjectId()));
+            } catch (IllegalArgumentException exception) {
+                issues.add(issue(variable, "API_INPUT_OVERRIDE_INVALID", exception.getMessage(), "$.sourceConfig.inputOverrides"));
             }
         }
         RuleExternalDatasource source = externalDatasourceMapper

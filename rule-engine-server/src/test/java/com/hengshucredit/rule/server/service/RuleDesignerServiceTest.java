@@ -11,6 +11,26 @@ import java.util.*;
 import static org.junit.Assert.*;
 
 public class RuleDesignerServiceTest {
+    @Test public void foreignNamespaceIsRejectedBeforeCompileOrDraftWrite() {
+        for (boolean save : new boolean[]{false, true}) {
+            Fixture service = new Fixture(); service.namespaceRejected = true;
+            try {
+                assertEquals("REFERENCE_NAMESPACE_MIGRATION_REQUIRED", assertThrows(RuleGovernanceException.class,
+                        () -> { if (save) service.save(30L, request("foreign")); else service.compile(30L, compileRequest("foreign")); }).getCode());
+                assertEquals(0, service.previewCalls); assertEquals(0, service.saves); assertTrue(service.revisions.isEmpty());
+            } finally { service.closeCompileExecutor(); }
+        }
+    }
+
+    @Test public void foreignNamespaceIsRejectedBeforeSchedulingBackgroundCompile() {
+        Fixture service = new Fixture(); service.namespaceRejected = true;
+        try {
+            assertEquals("REFERENCE_NAMESPACE_MIGRATION_REQUIRED", assertThrows(RuleGovernanceException.class,
+                    () -> service.submitCompile(30L, compileRequest("foreign"))).getCode());
+            assertEquals(0, service.previewCalls);
+        } finally { service.closeCompileExecutor(); }
+    }
+
     @Test
     public void compileCanRunInBackgroundAndExposeCompletedResult() throws Exception {
         Fixture service = new Fixture();
@@ -143,6 +163,11 @@ public class RuleDesignerServiceTest {
     }
 
     private static class Fixture extends RuleDesignerService {
+        boolean namespaceRejected;
+        int previewCalls;
+        protected void requireLocalNamespace(RuleRevision revision) {
+            if (namespaceRejected) throw new RuleGovernanceException(409, "REFERENCE_NAMESPACE_MIGRATION_REQUIRED", "请使用离线配置迁移", List.of());
+        }
         final Map<Long, RuleRevision> revisions = new LinkedHashMap<>();
         final Map<String, RuleDesignerSaveOperation> operations = new HashMap<>();
         boolean governanceFailure;
@@ -160,6 +185,7 @@ public class RuleDesignerServiceTest {
             return revision;
         }
         @Override protected RulePreflightReport preview(RuleRevision revision) {
+            previewCalls++;
             CompileResult result = new ScriptPassthroughCompiler().compile(revision.getModelJson());
             RulePreflightReport report = new RulePreflightReport();
             if (result.isSuccess()) {

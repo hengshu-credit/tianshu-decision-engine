@@ -1,15 +1,12 @@
 import { shallowMount } from '@test-utils'
 import ExpressionFormulaPreview from '@/components/expression/ExpressionFormulaPreview.vue'
 
-const ScriptPanel = (await vi.importActual('@/components/common/ScriptPanel.vue')).default
-
 const vars = [{ _varId: 10, _refType: 'VARIABLE', varCode: 'age', varLabel: '年龄', varType: 'NUMBER' }]
 
 function mountPreview(operand = { kind: 'PATH', value: 'request.age', code: 'request.age' }) {
   return shallowMount(ExpressionFormulaPreview, {
     props: { operand, vars, functions: [] },
     stubs: {
-      ScriptPanel,
       MonacoEditor: { name: 'MonacoEditor', template: '<textarea />' },
       'el-button': { template: '<button @click="$emit(\'click\')"><slot /></button>' }
     }
@@ -17,14 +14,13 @@ function mountPreview(operand = { kind: 'PATH', value: 'request.age', code: 'req
 }
 
 describe('ExpressionFormulaPreview', () => {
-  test('公式显示在复用的只读脚本预览上方', () => {
+  test('公式和完整只读脚本在同一面板展示，无需展开第二层面板', () => {
     const wrapper = mountPreview({ kind: 'REFERENCE', refId: 10, refType: 'VARIABLE', code: 'age', value: 'age', label: '年龄', resolved: true })
 
     expect(wrapper.find('.expression-formula-preview__business').text()).toContain('年龄 age')
-    const script = wrapper.findComponent(ScriptPanel)
-    expect(script.vm.editScript).toBe('age')
-    expect(script.find('textarea').element.readOnly).toBe(true)
-    expect(script.props('guidance')).toBe('根据当前表达式实时生成')
+    const script = wrapper.get('.expression-formula-preview__code')
+    expect(script.text()).toBe('age')
+    expect(script.element.tagName).toBe('PRE')
     const formula = wrapper.find('.expression-formula-preview__business')
     expect(formula.element.compareDocumentPosition(script.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     wrapper.unmount()
@@ -34,10 +30,9 @@ describe('ExpressionFormulaPreview', () => {
     const wrapper = mountPreview({ kind: 'LITERAL', value: '1', valueType: 'NUMBER' })
     await wrapper.setProps({ operand: { kind: 'LITERAL', value: 'false', valueType: 'BOOLEAN' } })
     expect(wrapper.find('.expression-formula-preview__business').text()).toContain('false')
-    expect(wrapper.findComponent(ScriptPanel).vm.editScript).toBe('false')
+    expect(wrapper.get('.expression-formula-preview__code').text()).toBe('false')
     await wrapper.setProps({ operand: null })
-    expect(wrapper.findComponent(ScriptPanel).vm.editScript).toBe('')
-    expect(wrapper.findComponent(ScriptPanel).props('compileResult')).toBeNull()
+    expect(wrapper.get('.expression-formula-preview__code').text()).toBe('配置表达式后生成脚本')
     wrapper.unmount()
   })
 

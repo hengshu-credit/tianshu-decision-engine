@@ -10,7 +10,10 @@
         ><code>{{ formula || '请选择中间位置并添加内容' }}</code>
         <el-button v-if="!editing" size="small" @click.stop="startEditing">编辑脚本</el-button>
       </div>
-      <small>公式随配置实时更新；双击可编辑脚本，确认后同步到公式。</small>
+      <div v-if="!editing" class="expression-formula-preview__source">
+        <span>执行脚本</span>
+        <pre class="expression-formula-preview__code" aria-label="执行脚本">{{ script || '配置表达式后生成脚本' }}</pre>
+      </div>
     </div>
     <div v-if="editing" class="expression-formula-preview__editor">
       <monaco-editor
@@ -29,21 +32,12 @@
         >
       </div>
     </div>
-    <script-panel
-      v-show="!editing"
-      class="expression-formula-preview__script"
-      :compile-result="previewResult"
-      guidance="根据当前表达式实时生成"
-      placeholder="配置表达式后生成脚本"
-      empty-message="暂无脚本，请先配置表达式"
-    />
   </section>
 </template>
 
 <script>
 import { $emit } from '../../utils/gogocodeTransfer'
 import MonacoEditor from '@/components/MonacoEditor.vue'
-import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import { compileOperand } from '@/utils/operand'
 import { formatExpressionFormula } from '@/utils/expressionDisplay'
 import {
@@ -53,7 +47,7 @@ import {
 
 export default {
   name: 'ExpressionFormulaPreview',
-  components: { MonacoEditor, ScriptPanel },
+  components: { MonacoEditor },
   props: {
     operand: { type: Object, default: null },
     vars: { type: Array, default: () => [] },
@@ -69,6 +63,7 @@ export default {
         lineNumbers: 'off',
         folding: false,
         minimap: { enabled: false },
+        wordWrap: 'on',
       },
     }
   },
@@ -82,9 +77,6 @@ export default {
       } catch (e) {
         return ''
       }
-    },
-    previewResult() {
-      return this.script ? { compileSuccess: true, compiledScript: this.script } : null
     },
   },
   methods: {
@@ -124,6 +116,7 @@ export default {
 
 <style scoped>
 .expression-formula-preview {
+  min-width: 0;
   border-top: 1px solid var(--tianshu-border-subtle);
   background: var(--tianshu-bg-surface);
 }
@@ -148,21 +141,23 @@ export default {
   font-family: Consolas, monospace;
   overflow-wrap: anywhere;
   white-space: normal;
-  max-height: 80px;
-  overflow: auto;
+  min-width: 0;
 }
-.expression-formula-preview__script {
-  margin: 0 12px 12px;
-}
-@media (max-height: 800px) {
-  .expression-formula-preview__script :deep(.sp-editor-container),
-  .expression-formula-preview__script :deep(.sp-editor) {
-    min-height: 160px;
-  }
-}
-.expression-formula-preview small {
+.expression-formula-preview__source { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: start; gap: 10px; }
+.expression-formula-preview__source > span {
   color: var(--tianshu-text-tertiary);
-  font-size: 11px;
+  font-size: 12px;
+}
+.expression-formula-preview__code {
+  min-width: 0;
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--tianshu-text-primary);
+  background: var(--tianshu-bg-muted);
+  border: 1px solid var(--tianshu-border-subtle);
+  font: 12px/1.6 Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .expression-formula-preview__editor {
   padding: 10px;

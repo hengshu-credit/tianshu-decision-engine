@@ -22,6 +22,17 @@ const validArgs = [
   '--min-throughput', '10',
 ]
 
+test('constant arrival rate and scheduling budget must be explicit and valid', () => {
+  const config = parseCapacityConfig([...validArgs, '--arrival-rate', '125.5', '--max-schedule-lag-ms', '50'])
+  assert.equal(config.arrivalRate, 125.5)
+  assert.equal(config.maxScheduleLagMs, 50)
+  for (const value of ['0', '-1', 'NaN', 'Infinity']) {
+    assert.throws(() => parseCapacityConfig([...validArgs, '--arrival-rate', value]), /arrival-rate|arrivalRate/)
+  }
+  assert.throws(() => parseCapacityConfig([...validArgs, '--arrival-rate', '10', '--max-schedule-lag-ms', '0']), /schedule-lag/)
+  assert.throws(() => parseCapacityConfig([...validArgs, '--arival-rate', '10']), /unknown argument/)
+})
+
 test('requires an explicit target, request file, and all thresholds', () => {
   assert.throws(() => parseCapacityConfig([]), /--url/)
   assert.throws(
@@ -90,7 +101,22 @@ test('loads a JSON request definition and rejects malformed shapes', async t => 
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: { requestId: 'R1' },
+    rawBody: '{"requestId":"R1"}',
     timeoutMs: 1000,
+    expectedResponse: { success: true },
   })
   await assert.rejects(() => loadRequestDefinition(invalid), /method|headers/)
+})
+
+test('loads explicit response assertions and rejects empty or ambiguous assertions', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'tianshu-response-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const file = join(directory, 'request.json')
+  const expectedResponse = { code: 200, 'data.success': true, 'data.result.score': 88 }
+  await writeFile(file, JSON.stringify({ expectedResponse }))
+  assert.deepEqual((await loadRequestDefinition(file)).expectedResponse, expectedResponse)
+  for (const invalid of [null, {}, [], { '': true }, { 'data..success': true }, { success: {} }]) {
+    await writeFile(file, JSON.stringify({ expectedResponse: invalid }))
+    await assert.rejects(() => loadRequestDefinition(file), /expectedResponse/)
+  }
 })

@@ -60,7 +60,9 @@ test('普通操作链接统一使用主题色且危险操作保留提示层级',
   expect(linkButton).toContain('min-height: 28px')
   expect(linkButton).toContain('padding: 4px 6px')
   expect(linkButton).toContain('background-color: transparent !important')
-  expect(declarationBlock('.el-button.is-link.el-button--primary').toLowerCase()).toContain(
+  expect(declarationBlock(
+    '.el-button.is-link.el-button--primary:where(:not(.is-disabled):not(:disabled:not(.is-loading)))'
+  ).toLowerCase()).toContain(
     'color: var(--el-color-primary) !important'
   )
   expect(declarationBlock('.el-button.is-link.el-button--success').toLowerCase()).toContain(

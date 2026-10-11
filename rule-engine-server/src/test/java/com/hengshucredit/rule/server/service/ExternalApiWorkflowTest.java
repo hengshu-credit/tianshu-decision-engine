@@ -9,6 +9,86 @@ import java.util.Map;
 import static org.junit.Assert.*;
 
 public class ExternalApiWorkflowTest {
+    @Test public void wrappedLocalDeadlineBeforeSendPreservesCheckpointAndCallbackUntilResume() throws Exception {
+        var now = new java.util.concurrent.atomic.AtomicLong();
+        RequestDeadlineContext.setNanoTimeSource(now::get);
+        var callbacks = ExternalApiCallbackStoreTest.store();
+        var callback = ExternalApiCallbackStoreTest.protocol();
+        callback.put("url", "http://localhost/api/external-callback/${invocationId}");
+        var spec = JSON.parseObject("{\"steps\":[{\"id\":\"submit\",\"type\":\"HTTP\"},{\"id\":\"poll\",\"type\":\"HTTP\"},{\"id\":\"notification\",\"type\":\"CALLBACK\"}]}");
+        spec.getJSONArray("steps").getJSONObject(2).put("callback", callback);
+        List<String> calls = new ArrayList<>();
+        try {
+            Map<String, Object> pending;
+            try (var ignored = RequestDeadlineContext.limit(1000)) {
+                ExternalApiWorkflow.PendingException stopped = assertThrows(ExternalApiWorkflow.PendingException.class, () ->
+                        ExternalApiWorkflow.execute(spec, Map.of(), (step, context) -> {
+                            calls.add(step.getString("id"));
+                            if ("poll".equals(step.getString("id"))) {
+                                now.addAndGet(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(1001));
+                                throw new ExternalApiInvokeService.ApiInvokeException("准备查询时切片耗尽", expiredDeadline(), false,
+                                        "DISABLED", false, null, "WAIT", Boolean.FALSE);
+                            }
+                            return Map.of("success", true, "body", Map.of("taskId", "task-1"));
+                        }, callbacks, (condition, context) -> true));
+                pending = stopped.toMap();
+            }
+            assertEquals("poll", pending.get("stepId"));
+            assertNotNull(ExternalApiRequestPlan.read(pending, "results.submit.body.taskId"));
+            String registration = String.valueOf(ExternalApiRequestPlan.read(pending, "registrations.notification"));
+            byte[] body = "{\"status\":\"DONE\",\"score\":91}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            callbacks.accept(registration, ExternalApiCallbackStoreTest.signature(body), body);
+            try (var ignored = RequestDeadlineContext.limit(1000)) {
+                var completed = ExternalApiWorkflow.execute(spec, Map.of(), (step, context) -> {
+                    calls.add(step.getString("id"));
+                    return Map.of("success", true, "body", Map.of("score", 91));
+                }, callbacks, (condition, context) -> true, (step, response) -> { }, pending);
+                assertEquals(true, completed.get("success"));
+            }
+            assertEquals(List.of("submit", "poll", "poll"), calls);
+            assertNull(callbacks.result(registration));
+        } finally { RequestDeadlineContext.clear(); RequestDeadlineContext.resetNanoTimeSource(); }
+    }
+
+    @Test public void workflowNeverTreatsUnknownIssuedOrOrdinaryTimeoutAsUnsentBudgetWait() {
+        var now = new java.util.concurrent.atomic.AtomicLong();
+        RequestDeadlineContext.setNanoTimeSource(now::get);
+        var spec = JSON.parseObject("{\"steps\":[{\"id\":\"submit\",\"type\":\"HTTP\"}]}");
+        try {
+            for (int scenario = 0; scenario < 8; scenario++) {
+                final int selected = scenario;
+                now.set(0);
+                try (var ignored = RequestDeadlineContext.limit(1000)) {
+                    var emitted = new java.util.concurrent.atomic.AtomicReference<ExternalApiInvokeService.ApiInvokeException>();
+                    RuntimeException actual = assertThrows(RuntimeException.class, () -> ExternalApiWorkflow.execute(spec, Map.of(), (step, context) -> {
+                        if (selected != 4) now.addAndGet(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(1001));
+                        Throwable cause = selected == 3 ? new java.util.concurrent.TimeoutException("项目请求总超时")
+                                : selected == 4 ? new RequestDeadlineContext.DeadlineTimeoutException() : expiredDeadline();
+                        Boolean issued = selected == 0 ? null : selected == 1 ? Boolean.TRUE : Boolean.FALSE;
+                        ExternalApiInvokeService.ApiInvokeException failure = selected == 0
+                                ? new ExternalApiInvokeService.ApiInvokeException("旧调用未记录发送事实", cause, false, "DISABLED", false, null, "WAIT")
+                                : new ExternalApiInvokeService.ApiInvokeException("调用已失败", cause, false, "DISABLED", selected == 2, null, "WAIT", issued);
+                        if (selected >= 5) {
+                            ExternalApiInvokeService.ApiInvokeException nested = selected == 6
+                                    ? new ExternalApiInvokeService.ApiInvokeException("下游旧调用未记录发送事实", cause, false, "DISABLED", false, null, "WAIT")
+                                    : new ExternalApiInvokeService.ApiInvokeException("下游调用失败", cause, false, "DISABLED", selected == 7, null, "WAIT", selected == 5);
+                            failure = new ExternalApiInvokeService.ApiInvokeException("外层自身未发送不能抹掉下游事实", nested,
+                                    false, "DISABLED", false, null, "WAIT", Boolean.FALSE);
+                        }
+                        emitted.set(failure);
+                        throw failure;
+                    }, new ExternalApiCallbackStore(null, null), (a, b) -> true));
+                    assertSame("只有typed deadline+本地耗尽+确定未发送才可等待，场景" + scenario, emitted.get(), actual);
+                }
+            }
+        } finally { RequestDeadlineContext.clear(); RequestDeadlineContext.resetNanoTimeSource(); }
+    }
+
+    private static Throwable expiredDeadline() {
+        try { RequestDeadlineContext.check(); throw new AssertionError("测试时钟必须已超过本地deadline"); }
+        catch (java.util.concurrent.TimeoutException expected) { return new IllegalStateException("内部包装", expected); }
+    }
+
     @Test public void callbackIsRegisteredBeforeSubmissionAndItsTerminalResultFeedsLaterSteps() throws Exception {
         var store = ExternalApiCallbackStoreTest.store();
         var protocol = ExternalApiCallbackStoreTest.protocol();

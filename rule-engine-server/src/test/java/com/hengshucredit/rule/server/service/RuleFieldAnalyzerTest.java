@@ -1626,12 +1626,17 @@ public class RuleFieldAnalyzerTest {
         age.setValidationRuleIds("[1,2]");
         age.setValidationOverride(1);
         RuleDefinitionInputField scoreField = inputField("HYBASE_X115", "DATA_OBJECT", "DATA_OBJECT", 25L);
-        setField(analyzer, "inputFieldMapper", inputFieldMapper(Arrays.asList(age, scoreField)));
+        setField(analyzer, "publishedFieldSnapshotResolver", new PublishedRuleFieldSnapshotResolver() {
+            @Override public RuleFieldAnalyzer.ResolvedFields resolve(Long ruleId) {
+                assertEquals(Long.valueOf(1), ruleId);
+                return new RuleFieldAnalyzer.ResolvedFields(Arrays.asList(age, scoreField), Collections.emptyList());
+            }
+        });
 
         String json = "{\"nodes\":[{\"actionData\":[{\"type\":\"rule-call\",\"ruleId\":1}]}]}";
-        Method loadRuleCallInputs = RuleFieldAnalyzer.class.getDeclaredMethod("loadRuleCallInputFields", String.class);
+        Method loadRuleCallInputs = RuleFieldAnalyzer.class.getDeclaredMethod("resolveRuleCallFields", Long.class, String.class);
         loadRuleCallInputs.setAccessible(true);
-        List<RuleDefinitionInputField> calledInputs = (List<RuleDefinitionInputField>) loadRuleCallInputs.invoke(analyzer, json);
+        List<RuleDefinitionInputField> calledInputs = ((RuleFieldAnalyzer.ResolvedFields) loadRuleCallInputs.invoke(analyzer, 30L, json)).getInputFields();
         assertTrue(names(calledInputs).contains("age"));
         assertTrue(names(calledInputs).contains("HYBASE_X115"));
         RuleDefinitionInputField inheritedAge = calledInputs.stream()
@@ -1772,13 +1777,18 @@ public class RuleFieldAnalyzerTest {
         riskFactor.setRefType("VARIABLE");
         riskFactor.setVarId(218L);
         riskFactor.setStatus(1);
-        setField(analyzer, "outputFieldMapper", outputFieldMapper(Collections.singletonList(riskFactor)));
+        setField(analyzer, "publishedFieldSnapshotResolver", new PublishedRuleFieldSnapshotResolver() {
+            @Override public RuleFieldAnalyzer.ResolvedFields resolve(Long ruleId) {
+                assertEquals(Long.valueOf(11), ruleId);
+                return new RuleFieldAnalyzer.ResolvedFields(Collections.emptyList(), Collections.singletonList(riskFactor));
+            }
+        });
 
         String json = "{\"nodes\":[{\"actionData\":[{\"type\":\"rule-call\",\"ruleId\":11}]}]}";
-        Method loadRuleCallOutputs = RuleFieldAnalyzer.class.getDeclaredMethod("loadRuleCallOutputFields", String.class);
+        Method loadRuleCallOutputs = RuleFieldAnalyzer.class.getDeclaredMethod("resolveRuleCallFields", Long.class, String.class);
         loadRuleCallOutputs.setAccessible(true);
         List<RuleDefinitionOutputField> calledOutputs =
-                (List<RuleDefinitionOutputField>) loadRuleCallOutputs.invoke(analyzer, json);
+                ((RuleFieldAnalyzer.ResolvedFields) loadRuleCallOutputs.invoke(analyzer, 30L, json)).getOutputFields();
 
         assertEquals(Collections.singletonList("risk_factor"), outputNames(calledOutputs));
         RuleDefinitionInputField intermediate = inputField("risk_factor", "VARIABLE", "INPUT", 218L);

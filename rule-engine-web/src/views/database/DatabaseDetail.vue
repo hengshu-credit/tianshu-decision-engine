@@ -14,11 +14,12 @@
         <el-button size="small" @click="goBack"
           >返回</el-button
         >
-        <el-button
+        <el-button v-permission="'database:edit'"
           size="small"
           data-testid="test-database-connection"
           data-config-anchor="connection-test"
           :loading="connectionTesting"
+          :disabled="!configurationReady || jdbcResolutionRequired"
           @click="handleTestDraft"
           >测试连接</el-button
         >
@@ -29,15 +30,49 @@
           data-testid="save-database-datasource"
           data-config-anchor="save"
           :loading="saving"
+          :disabled="!configurationReady || jdbcResolutionRequired"
           @click="handleSubmit"
           >保存</el-button
         >
       </div>
     </div>
 
+    <div v-if="detailLoading" data-testid="database-detail-loading" role="status">正在加载数据库配置，请稍候…</div>
+    <el-alert
+      v-else-if="detailError"
+      data-testid="database-detail-error"
+      title="数据库配置加载失败"
+      type="error"
+      :closable="false"
+      show-icon
+    >
+      <span>{{ detailError }}</span>
+      <el-button size="small" data-testid="retry-database-detail" @click="loadDetail">重新加载</el-button>
+    </el-alert>
+
+    <el-alert
+      v-if="configurationReady && jdbcResolutionRequired"
+      type="warning"
+      :closable="false"
+      show-icon
+      class="jdbc-resolution-alert"
+      title="连接字段已修改，当前 JDBC URL 尚未确认"
+      data-testid="jdbc-resolution-required"
+    >
+      <span>测试和保存前，请选择用当前字段生成并替换 URL，或保留自定义 URL 作为实际连接地址。</span>
+      <div class="jdbc-url-preview">当前 JDBC URL：<code>{{ form.jdbcUrl }}</code></div>
+      <div v-if="generatedJdbcUrl" class="jdbc-url-preview">按当前字段生成：<code>{{ generatedJdbcUrl }}</code></div>
+      <div v-else>当前字段还不能生成 URL，请补全主机、端口和库名，或保留自定义 URL。</div>
+      <div class="jdbc-resolution-actions">
+        <el-button size="small" data-testid="replace-jdbc-url" :disabled="!generatedJdbcUrl" @click="generateJdbcUrl(true)">生成并替换URL</el-button>
+        <el-button size="small" data-testid="keep-custom-jdbc-url" @click="keepCustomJdbcUrl">保留自定义URL</el-button>
+      </div>
+    </el-alert>
+
     <config-layer-guide
+      v-if="configurationReady"
       title="配置检查"
-      description="按作用范围、连接参数、连接测试、保存送审的顺序完成；高级连接池参数通常保持默认值。"
+      description="按作用范围、连接参数、连接测试、保存草稿的顺序完成；高级连接池参数通常保持默认值。"
       aria-label="数据库数据源配置进度"
       test-id="database-config-progress"
       item-test-id-prefix="database-config-check"
@@ -48,6 +83,7 @@
     />
 
     <resource-preflight-panel
+      v-if="configurationReady"
       resource-type="DATABASE"
       :resource-id="form.id"
       :config-signature="preflightConfigSignature"
@@ -56,14 +92,15 @@
     <el-alert
       v-if="connectionTestStatus !== 'idle'"
       class="connection-test-status"
-      :title="connectionTestStatus === 'success' ? '连接测试成功' : '连接测试失败'"
-      :description="connectionTestMessage"
-      :type="connectionTestStatus === 'success' ? 'success' : 'error'"
+      :title="connectionTestOutdated ? '连接配置已变更，请重新测试' : connectionTestStatus === 'success' ? '连接测试成功' : '连接测试失败'"
+      :description="connectionTestOutdated ? '上次测试对应修改前的配置，当前连接参数尚未验证。' : connectionTestMessage"
+      :type="connectionTestOutdated ? 'warning' : connectionTestStatus === 'success' ? 'success' : 'error'"
       :closable="false"
       show-icon
     />
 
     <el-form
+      v-if="configurationReady"
       ref="form"
       :model="form"
       :rules="rules"
@@ -197,7 +234,7 @@
         <el-input
           v-model="form.jdbcUrl"
           placeholder="jdbc:mysql://host:3306/db?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai"
-          @update:model-value="form.jdbcAutoBuild = false"
+          @update:model-value="onJdbcUrlChange"
         >
           <template v-slot:append>
             <el-button @click="generateJdbcUrl(true)">生成</el-button>
@@ -209,6 +246,7 @@
           @change="onJdbcAutoBuildChange"
           >按上方表单自动生成 JDBC URL</el-checkbox
         >
+        <div class="field-help" data-testid="jdbc-mode-hint">{{ jdbcModeHint }}</div>
       </el-form-item>
       <div v-if="form.connectionMode === 'SSH_TUNNEL'" class="form-section">
         <div class="section-title">SSH 隧道</div>
@@ -370,6 +408,9 @@
 </template>
 
 <script>
+import { hasPermission } from '@/security/permissionState'
+import { editableResource } from '@/api/governance'
+import { completeResourceChange } from '@/utils/governanceWorkspace'
 import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import {
@@ -390,6 +431,11 @@ export default {
   data() {
     return {
       projects: [],
+      detailLoading: false,
+      detailLoaded: false,
+      detailError: '',
+      jdbcConfirmedPartsSignature: '',
+      jdbcGenerationFailed: false,
       saving: false,
       connectionTesting: false,
       connectionTestStatus: 'idle',
@@ -461,9 +507,34 @@ export default {
     isCreateMode() {
       return !this.$route.params.id || this.$route.params.id === 'new'
     },
+    configurationReady() {
+      return this.isCreateMode || (this.detailLoaded && !this.detailLoading && !this.detailError)
+    },
+    generatedJdbcUrl() {
+      return this.buildJdbcUrl(this.form)
+    },
+    jdbcResolutionRequired() {
+      if (this.form.connectionMode === 'SSH_TUNNEL' || !String(this.form.jdbcUrl || '').trim()) return false
+      return this.jdbcGenerationFailed || (!this.form.jdbcAutoBuild &&
+        this.jdbcPartsSignature() !== this.jdbcConfirmedPartsSignature &&
+        this.generatedJdbcUrl !== this.form.jdbcUrl)
+    },
+    jdbcModeHint() {
+      if (this.form.connectionMode === 'SSH_TUNNEL') {
+        return 'SSH 隧道以数据库主机和端口为转发目标，优先按结构化连接参数生成隧道 URL；当前 JDBC URL 不代表最终隧道地址。'
+      }
+      if (this.form.dbType === 'OTHER') return '此数据库类型不支持自动生成，请直接填写自定义 URL；实际连接以当前 JDBC URL 为准。'
+      return this.form.jdbcAutoBuild
+        ? '根据上方数据库类型、主机、端口、库名和扩展参数自动生成 JDBC URL。'
+        : '自动生成已关闭，实际连接以当前 JDBC URL 为准；修改上方连接字段不会自动替换 URL。'
+    },
+    connectionTestOutdated() {
+      return Boolean(this.connectionTestSignature) &&
+        this.connectionTestSignature !== this.connectionConfigSignature()
+    },
     configurationChecklist() {
       const scopeReady = this.isScopeConfigured()
-      const connectionReady = this.isConnectionConfigured()
+      const connectionReady = this.isConnectionConfigured() && !this.jdbcResolutionRequired
       const testReady =
         connectionReady &&
         this.connectionTestStatus === 'success' &&
@@ -484,9 +555,11 @@ export default {
           key: 'connection',
           order: 2,
           label: '连接参数',
-          help: connectionReady
-            ? '地址、驱动和连接方式已填写'
-            : '填写数据库类型、地址、库名和驱动',
+          help: this.jdbcResolutionRequired
+            ? '连接字段已修改，请确认实际使用的 JDBC URL'
+            : connectionReady
+            ? '连接地址和连接方式已填写'
+            : '填写连接地址，SSH 模式还需完成隧道参数',
           status: connectionReady ? 'READY' : 'PENDING',
           anchor: 'connection',
         },
@@ -496,7 +569,9 @@ export default {
           label: '连接测试',
           help: testReady
             ? '连接和校验 SQL 已通过'
-            : this.connectionTestStatus === 'error'
+            : this.connectionTestOutdated
+              ? '连接配置已变更，请重新测试'
+              : this.connectionTestStatus === 'error'
               ? '上次测试失败，修改参数后重新测试'
               : '填写完成后测试连接',
           status: testReady ? 'READY' : 'PENDING',
@@ -505,8 +580,8 @@ export default {
         {
           key: 'submission',
           order: 4,
-          label: '保存送审',
-          help: submissionReady ? '当前草稿已送审' : '完成前置检查后保存并送审',
+          label: '保存草稿',
+          help: submissionReady ? '当前草稿已保存' : '完成前置检查后保存草稿',
           status: submissionReady ? 'READY' : 'PENDING',
           anchor: 'save',
         },
@@ -520,16 +595,16 @@ export default {
       return this.form.id ? this.configurationSignature() : ''
     },
   },
-  async created() {
-    await this.loadProjects()
+  created() {
     if (this.isCreateMode) {
       this.form = this.emptyForm()
       if (this.$route.query.projectId)
         this.form.projectId = Number(this.$route.query.projectId)
-      this.$nextTick(() => this.generateJdbcUrl(false))
-      return
+      this.jdbcConfirmedPartsSignature = this.jdbcPartsSignature()
+    } else {
+      this.loadDetail()
     }
-    await this.loadDetail()
+    this.loadProjects()
   },
   methods: {
     emptyForm() {
@@ -576,14 +651,13 @@ export default {
     isConnectionConfigured() {
       const form = this.form
       const jdbcUrl = String(form.jdbcUrl || this.buildJdbcUrl(form) || '').trim()
-      const driver = String(form.driverClassName || '').trim()
       const host = String(form.host || '').trim()
       const databaseName = String(form.databaseName || '').trim()
       const endpointReady =
         Boolean(jdbcUrl) &&
-        (form.dbType === 'OTHER' ||
-          (Boolean(host) && Number(form.port) > 0 && Boolean(databaseName)))
-      if (!endpointReady || !driver) return false
+        (form.connectionMode !== 'SSH_TUNNEL' ||
+          (Boolean(host) && Number(form.port) > 0 && (form.dbType === 'OTHER' || Boolean(databaseName))))
+      if (!endpointReady) return false
       if (form.connectionMode !== 'SSH_TUNNEL') return true
       return Boolean(
         String(form.sshHost || '').trim() &&
@@ -612,6 +686,10 @@ export default {
         sshPrivateKey: form.sshPrivateKey,
         sshPassphrase: form.sshPassphrase,
         sshTimeoutMs: form.sshTimeoutMs,
+        maxPoolSize: form.maxPoolSize,
+        minIdle: form.minIdle,
+        connectionTimeoutMs: form.connectionTimeoutMs,
+        idleTimeoutMs: form.idleTimeoutMs,
         validationQuery: form.validationQuery,
       })
     },
@@ -651,13 +729,28 @@ export default {
       }
     },
     async loadDetail() {
-      const res = await getDbDatasource(this.$route.params.id)
-      const data = res && res.data ? res.data : res
-      this.form = this.normalizeLoadedForm({
-        ...this.emptyForm(),
-        ...data,
-        jdbcAutoBuild: false,
-      })
+      if (this.detailLoading || this.isCreateMode) return
+      this.detailLoading = true
+      this.detailLoaded = false
+      this.detailError = ''
+      try {
+        const res = await getDbDatasource(this.$route.params.id)
+        if (res.data?.id && hasPermission('database:edit')) res.data = await editableResource('DATABASE', res.data.id, res.data)
+        const data = res && res.data ? res.data : res
+        if (!data || !data.id) throw new Error('未找到数据库配置，请返回列表确认该数据源仍然存在。')
+        this.form = this.normalizeLoadedForm({
+          ...this.emptyForm(),
+          ...data,
+          jdbcAutoBuild: false,
+        })
+        this.jdbcConfirmedPartsSignature = this.jdbcPartsSignature()
+        this.jdbcGenerationFailed = false
+        this.detailLoaded = true
+      } catch (error) {
+        this.detailError = error.message || '无法读取数据库配置，请重新加载。'
+      } finally {
+        this.detailLoading = false
+      }
     },
     onScopeChange(scope) {
       if (scope === 'GLOBAL') this.form.projectId = 0
@@ -679,6 +772,19 @@ export default {
     onJdbcPartChange() {
       if (this.form.jdbcAutoBuild) this.generateJdbcUrl(false)
     },
+    jdbcPartsSignature() {
+      const { dbType, host, port, databaseName, jdbcParams } = this.form
+      return JSON.stringify({ dbType, host, port, databaseName, jdbcParams })
+    },
+    onJdbcUrlChange() {
+      this.form.jdbcAutoBuild = false
+      this.jdbcGenerationFailed = false
+    },
+    keepCustomJdbcUrl() {
+      this.form.jdbcAutoBuild = false
+      this.jdbcConfirmedPartsSignature = this.jdbcPartsSignature()
+      this.jdbcGenerationFailed = false
+    },
     onJdbcAutoBuildChange(enabled) {
       if (enabled) this.generateJdbcUrl(true)
     },
@@ -686,10 +792,13 @@ export default {
       const jdbcUrl = this.buildJdbcUrl(this.form)
       if (jdbcUrl) {
         this.form.jdbcUrl = jdbcUrl
+        this.jdbcConfirmedPartsSignature = this.jdbcPartsSignature()
+        this.jdbcGenerationFailed = false
         return true
       }
+      this.jdbcGenerationFailed = true
       if (showWarning)
-        this.$message.warning('请先填写数据库主机、端口和库名/服务名')
+        this.$message.warning(this.form.dbType === 'OTHER' ? '此数据库类型不支持自动生成，请填写并保留自定义 JDBC URL' : '请先填写数据库主机、端口和库名/服务名')
       return false
     },
     buildJdbcUrl(form) {
@@ -725,7 +834,7 @@ export default {
         if (params) url += `;${params.replace(/^[?;]/, '')}`
         return url
       }
-      return form.jdbcUrl || ''
+      return ''
     },
     appendQuestionParams(url, params) {
       if (!params) return url
@@ -750,26 +859,31 @@ export default {
       return data
     },
     handleSubmit() {
+      if (!this.configurationReady || this.jdbcResolutionRequired) return
       this.$refs.form.validate(async (valid) => {
-        if (!valid) return
+        if (!valid || !this.configurationReady || this.jdbcResolutionRequired) return
         this.saving = true
         try {
           const data = this.normalizeForm(this.form)
-          const response = data.id
-            ? await updateDbDatasource(data)
-            : await createDbDatasource(data)
+          const response = this.isCreateMode
+            ? await createDbDatasource(data)
+            : await updateDbDatasource(data)
           this.submissionSignature = this.configurationSignature()
-          this.$message.success('数据库连接变更已送审')
-          if (response.data && response.data.id)
-            this.$router.push('/approval/' + response.data.id)
+          await completeResourceChange(this, response)
+            if (!this.form.id && response.data?.resourceId) {
+              this.form.id = response.data.resourceId
+              await this.$router.replace('/database/' + this.form.id)
+            }
         } finally {
           this.saving = false
         }
       })
     },
     handleTestDraft() {
+      if (!this.configurationReady || this.jdbcResolutionRequired) return
       this.$refs.form.validate(async (valid) => {
-        if (!valid) return
+        if (!valid || !this.configurationReady || this.jdbcResolutionRequired || this.connectionTesting) return
+        const testedSignature = this.connectionConfigSignature()
         this.connectionTesting = true
         this.connectionTestStatus = 'idle'
         this.connectionTestMessage = ''
@@ -777,11 +891,12 @@ export default {
         try {
           await testDbDatasourceDraft(this.normalizeForm(this.form))
           this.connectionTestStatus = 'success'
-          this.connectionTestSignature = this.connectionConfigSignature()
-          this.connectionTestMessage = '数据库连接和校验 SQL 均已通过，可以继续保存并送审。'
-          this.$message.success('连接成功')
+          this.connectionTestSignature = testedSignature
+          this.connectionTestMessage = '数据库连接和校验 SQL 均已通过，可以继续保存草稿。'
+          if (!this.connectionTestOutdated) this.$message.success('连接成功')
         } catch (e) {
           this.connectionTestStatus = 'error'
+          this.connectionTestSignature = testedSignature
           this.connectionTestMessage = e.message || '请检查连接地址、账号、网络或校验 SQL。'
         } finally {
           this.connectionTesting = false
@@ -818,6 +933,25 @@ export default {
   }
   .connection-test-status {
     margin-bottom: 12px;
+  }
+  .jdbc-resolution-alert {
+    margin-bottom: 12px;
+  }
+  .jdbc-url-preview {
+    margin-top: 8px;
+    code {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+  }
+  .jdbc-resolution-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+    .el-button + .el-button {
+      margin-left: 0;
+    }
   }
   .advanced-settings {
     margin: 4px 0 14px;

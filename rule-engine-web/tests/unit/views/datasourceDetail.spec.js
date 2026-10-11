@@ -1,4 +1,7 @@
 import DatasourceDetail from '@/views/datasource/DatasourceDetail.vue'
+import { getDatasource } from '@/api/datasource'
+
+vi.mock('@/api/governance', () => ({ editableResource: vi.fn(async (_type, _id, fallback) => fallback) }))
 
 function createContext() {
   const ctx = {
@@ -11,6 +14,39 @@ function createContext() {
 }
 
 describe('DatasourceDetail token config', () => {
+  test('配置读取完成前不允许保存空表单，读取完成后才进入编辑', async () => {
+    const ctx = createContext()
+    Object.assign(ctx, { form: DatasourceDetail.methods.emptyForm(), $route: { params: { id: '7' } },
+      isCreateMode: false, detailLoading: false, detailLoaded: false, detailError: '', detailLoadSequence: 0,
+      $refs: { form: { validate: vi.fn() } } })
+    Object.defineProperty(ctx, 'configurationReady', { get: () => DatasourceDetail.computed.configurationReady.call(ctx) })
+    let resolve
+    getDatasource.mockReturnValueOnce(new Promise(done => { resolve = done }))
+    const loading = ctx.loadDetail()
+    try {
+      expect(ctx.detailLoading).toBe(true)
+      ctx.handleSave()
+      expect(ctx.$refs.form.validate).not.toHaveBeenCalled()
+    } finally {
+      resolve({ data: { id: 7, datasourceCode: 'OriginalCode', datasourceName: '原内容', baseUrl: 'https://example.test' } })
+      await loading
+    }
+    expect(ctx.configurationReady).toBe(true)
+    expect(ctx.form.datasourceCode).toBe('OriginalCode')
+  })
+
+  test('已离开的数据源迟到响应不能覆盖当前表单', async () => {
+    const ctx = createContext()
+    Object.assign(ctx, { form: { datasourceName: '正在编辑B' }, $route: { params: { id: '7' } },
+      isCreateMode: false, detailLoading: false, detailLoaded: false, detailError: '', detailLoadSequence: 0 })
+    let resolve
+    getDatasource.mockReturnValueOnce(new Promise(done => { resolve = done }))
+    const loading = ctx.loadDetail()
+    ctx.$route.params.id = '8'
+    resolve({ data: { id: 7, datasourceName: '迟到A' } })
+    await loading
+    expect(ctx.form.datasourceName).toBe('正在编辑B')
+  })
   test('new datasource inherits explicit project context', () => {
     const ctx = createContext()
     ctx.form = DatasourceDetail.methods.emptyForm()

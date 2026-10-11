@@ -5,4 +5,5 @@ import lombok.Data;
 @Data
 public class GovernanceRestoreRequest {
     private Long sourceVersionId;
+    private String restoreMode = "NEW";
 }

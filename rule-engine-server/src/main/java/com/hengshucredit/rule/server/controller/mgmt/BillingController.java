@@ -4,14 +4,15 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.hengshucredit.rule.model.entity.RuleBillingConfig;
 import com.hengshucredit.rule.model.entity.RuleBillingRecord;
 import com.hengshucredit.rule.model.entity.RuleBillingSummary;
+import com.hengshucredit.rule.model.entity.RuleBillingSummaryTask;
 import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.governance.GovernedProjectionMutation;
 import com.hengshucredit.rule.server.service.RuleBillingService;
+import com.hengshucredit.rule.server.service.BillingSummaryTaskService;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.annotation.Resource;
 import java.time.LocalDate;
-import java.util.HashMap;
 import java.util.Map;
 
 @RestController
@@ -20,6 +21,11 @@ public class BillingController {
 
     @Resource
     private RuleBillingService billingService;
+
+    @Resource
+    private BillingSummaryTaskService summaryTasks;
+
+    @Resource private com.hengshucredit.rule.server.service.RuleBillingVersionSummaryService versionSummaries;
 
     @GetMapping("/config/list")
     public R<IPage<RuleBillingConfig>> listConfigs(
@@ -69,9 +75,9 @@ public class BillingController {
             @RequestParam(required = false) String authCode,
             @RequestParam(required = false) String tokenCode,
             @RequestParam(required = false) String beginTime,
-            @RequestParam(required = false) String endTime) {
+            @RequestParam(required = false) String endTime, @ModelAttribute com.hengshucredit.rule.model.dto.ExecutionVersionQuery versionQuery) {
         return R.ok(billingService.pageRecords(pageNum, pageSize, billingTarget, billingCode, projectCode, projectName,
-                authType, authCode, tokenCode, beginTime, endTime));
+                authType, authCode, tokenCode, beginTime, endTime, versionQuery));
     }
 
     @GetMapping("/summary/list")
@@ -85,19 +91,29 @@ public class BillingController {
             @RequestParam(required = false) String authType,
             @RequestParam(required = false) String authCode,
             @RequestParam(required = false) String beginDate,
-            @RequestParam(required = false) String endDate) {
+            @RequestParam(required = false) String endDate, @ModelAttribute com.hengshucredit.rule.model.dto.ExecutionVersionQuery versionQuery) {
+        if (com.hengshucredit.rule.server.service.RuleBillingVersionSummaryService.selected(versionQuery))
+            return R.ok(versionSummaries.page(pageNum, pageSize, billingTarget, billingCode, projectCode, projectName,
+                    authType, authCode, beginDate, endDate, versionQuery));
         return R.ok(billingService.pageSummaries(pageNum, pageSize, billingTarget, billingCode, projectCode, projectName,
                 authType, authCode, beginDate, endDate));
     }
 
     @PostMapping("/summary/refresh")
-    public R<Map<String, Object>> refreshSummary(@RequestBody(required = false) Map<String, String> body) {
+    public R<RuleBillingSummaryTask> refreshSummary(@RequestBody(required = false) Map<String, String> body) {
         String dateText = body == null ? null : body.get("summaryDate");
         LocalDate date = dateText == null || dateText.trim().isEmpty() ? LocalDate.now() : LocalDate.parse(dateText);
-        int count = billingService.refreshSummary(date);
-        Map<String, Object> result = new HashMap<>();
-        result.put("summaryDate", date.toString());
-        result.put("summaryCount", count);
-        return R.ok(result);
+        return R.ok(summaryTasks.submit(date));
+    }
+
+    @GetMapping("/summary/refresh/{taskId}")
+    public R<RuleBillingSummaryTask> getSummaryTask(@PathVariable String taskId) {
+        return R.ok(summaryTasks.get(taskId));
+    }
+
+    @GetMapping("/summary/refresh")
+    public R<RuleBillingSummaryTask> latestSummaryTask(@RequestParam(required = false) String summaryDate) {
+        LocalDate date = summaryDate == null || summaryDate.isBlank() ? LocalDate.now() : LocalDate.parse(summaryDate);
+        return R.ok(summaryTasks.latest(date));
     }
 }

@@ -52,12 +52,9 @@ export async function updateApiConfig(data) {
   })
 }
 
-export async function deleteApiConfig(id) {
-  const response = await getApiConfig(id)
-  const projectId = await apiProjectId(response.data || {})
+export function deleteApiConfig(id) {
   return createResourceDraft('EXTERNAL_API', null, 'DELETE', {
     resourceId: id,
-    projectId,
     changeSummary: '删除外数 API'
   })
 }
@@ -74,6 +71,26 @@ export function invokeApiConfig(id, data) {
 
 export function invokeApiConfigPreview(id, data) {
   return request({ url: `/rule/datasource/api-config/${id}/invoke-preview`, method: 'post', data, timeout: 0 })
+}
+
+export function createApiConfigTrial(data) {
+  return request({ url: '/rule/datasource/api-config/trials', method: 'post', data })
+}
+
+export function listApiConfigTrials() {
+  return request({ url: '/rule/datasource/api-config/trials', method: 'get' })
+}
+
+export function getApiConfigTrial(trialId) {
+  return request({ url: `/rule/datasource/api-config/trials/${trialId}`, method: 'get' })
+}
+
+export function resumeApiConfigTrial(trialId) {
+  return request({ url: `/rule/datasource/api-config/trials/${trialId}/resume`, method: 'post', data: {} })
+}
+
+export function cancelApiConfigTrial(trialId) {
+  return request({ url: `/rule/datasource/api-config/trials/${trialId}/cancel`, method: 'post', data: {} })
 }
 
 export function previewApiConfigRequest(id, data) {

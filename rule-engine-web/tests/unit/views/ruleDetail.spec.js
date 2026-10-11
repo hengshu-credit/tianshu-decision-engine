@@ -1,6 +1,10 @@
 // tests/unit/views/ruleDetail.spec.js
 import { shallowMount } from '@test-utils'
 import { h, nextTick } from 'vue'
+import { ElSwitch } from 'element-plus/es/components/switch/index.mjs'
+import { ElInputNumber } from 'element-plus/es/components/input-number/index.mjs'
+import { ElInput } from 'element-plus/es/components/input/index.mjs'
+import { ElButton } from 'element-plus/es/components/button/index.mjs'
 // 直接 import API 模块（不写 vi.mock，依赖 setup.js 的预置 mock）
 import * as definitionApi from '@/api/definition'
 import * as variableApi from '@/api/variable'
@@ -57,6 +61,199 @@ function mockDraftSave(revision) {
 }
 
 describe('RuleDetail 生命周期治理', () => {
+  test('TTL真实数字控件在详情加载完成后同时解除原生与ARIA禁用', async () => {
+    const wrapper = await mountAndWait(undefined, undefined, {}, undefined,
+      { 'el-input-number': ElInputNumber, 'el-input': ElInput, 'el-form-item': makeSlotStub('div') })
+    try {
+      const input = wrapper.get('.execution-policy-panel .el-input-number input')
+      expect(wrapper.vm.canEditDraft).toBe(true)
+      expect(input.element.disabled).toBe(false)
+      expect(input.attributes('aria-disabled')).toBe('false')
+      expect(input.element.value).toBe(String(wrapper.vm.openApiForm.idempotency.ttlSeconds))
+      await input.setValue('12345'); await input.trigger('change')
+      expect(wrapper.vm.openApiForm.idempotency.ttlSeconds).toBe(12345)
+    } finally { wrapper.unmount() }
+  })
+
+  test('TTL真实数字控件历史与工作区切换同步ARIA并保留未保存值', async () => {
+    const wrapper = await mountAndWait(undefined, [draftRevision(), { id: 8, definitionId: 1, state: 'PUBLISHED' }], {}, undefined,
+      { 'el-input-number': ElInputNumber, 'el-input': ElInput, 'el-form-item': makeSlotStub('div') })
+    try {
+      let input = wrapper.get('.execution-policy-panel .el-input-number input')
+      await input.setValue('12345'); await input.trigger('change')
+      expect(wrapper.vm.openApiForm.idempotency.ttlSeconds).toBe(12345)
+      await wrapper.setData({ lifecycleRevisionId: 8 })
+      input = wrapper.get('.execution-policy-panel .el-input-number input')
+      expect(input.element.disabled).toBe(true)
+      expect(input.attributes('aria-disabled')).toBe('true')
+      expect(input.element.value).toBe('12345')
+      wrapper.vm.showWorkspaceFields(); await nextTick()
+      input = wrapper.get('.execution-policy-panel .el-input-number input')
+      expect(input.element.disabled).toBe(false)
+      expect(input.attributes('aria-disabled')).toBe('false')
+      expect(input.element.value).toBe('12345')
+      await input.setValue('23456'); await input.trigger('change')
+      expect(wrapper.vm.openApiForm.idempotency.ttlSeconds).toBe(23456)
+    } finally { wrapper.unmount() }
+  })
+
+  test.each(['PUBLISHED', 'DRAFT'])('查看%s的非工作区修订时真实配置开关不能修改工作区', async state => {
+    const wrapper = await mountAndWait(undefined, [draftRevision(), { id: 8, definitionId: 1, state }], {}, undefined,
+      { 'el-switch': ElSwitch, 'el-input-number': ElInputNumber, 'el-button': ElButton })
+    try {
+      await wrapper.setData({ lifecycleRevisionId: 8 })
+      const before = JSON.stringify(wrapper.vm.openApiForm)
+      const policySwitch = wrapper.get('.execution-policy-panel [role="switch"]')
+      const publicSwitch = wrapper.get('.open-api-actions [role="switch"]')
+      await policySwitch.trigger('click'); await publicSwitch.trigger('click')
+      expect(JSON.stringify(wrapper.vm.openApiForm)).toBe(before)
+      expect(policySwitch.attributes('aria-disabled')).toBe('true')
+      expect(publicSwitch.attributes('aria-disabled')).toBe('true')
+      expect(wrapper.get('.execution-policy-panel input').element.disabled).toBe(true)
+      expect(wrapper.findAll('[data-testid="workspace-config-scope"]')).toHaveLength(2)
+      expect(wrapper.get('[data-testid="workspace-config-scope"]').text()).toContain('当前工作区')
+      expect(wrapper.get('[data-testid="workspace-config-scope"]').text()).toContain('不是所选修订')
+      wrapper.vm.showWorkspaceFields(); await nextTick()
+      expect(JSON.stringify(wrapper.vm.openApiForm)).toBe(before)
+      expect(wrapper.get('.execution-policy-panel [role="switch"]').attributes('aria-disabled')).not.toBe('true')
+    } finally { wrapper.unmount() }
+  })
+
+  test('当前工作区草稿的真实配置开关和增删入口仍可编辑', async () => {
+    const wrapper = await mountAndWait(undefined, undefined, {}, undefined,
+      { 'el-switch': ElSwitch, 'el-input-number': ElInputNumber, 'el-button': ElButton })
+    try {
+      const before = wrapper.vm.openApiForm.idempotency.enabled
+      await wrapper.get('.execution-policy-panel [role="switch"]').trigger('click')
+      expect(wrapper.vm.openApiForm.idempotency.enabled).toBe(!before)
+      const enabled = wrapper.vm.openApiForm.enabled
+      await wrapper.get('.open-api-actions [role="switch"]').trigger('click')
+      expect(wrapper.vm.openApiForm.enabled).toBe(!enabled)
+      const count = wrapper.vm.openApiForm.requestMappings.length
+      wrapper.vm.addOpenRequestMapping()
+      expect(wrapper.vm.openApiForm.requestMappings).toHaveLength(count + 1)
+    } finally { wrapper.unmount() }
+  })
+
+  test('只读修订下增删重置和迟到的表达式/JSON编辑不污染工作区', async () => {
+    const editor = { name: 'ContractEditorProbe', props: ['value', 'readOnly'], emits: ['update:value'], render() { return h('div') } }
+    const wrapper = await mountAndWait(undefined, [draftRevision(), { id: 8, definitionId: 1, state: 'PUBLISHED' }], {}, undefined,
+      { 'monaco-editor': editor, 'el-button': ElButton, 'el-form': makeSlotStub('form'), 'el-form-item': makeSlotStub('div') })
+    try {
+      wrapper.vm.openApiForm.idempotency.enabled = true
+      wrapper.vm.addIdempotencyComponent()
+      wrapper.vm.addIdempotencyComponent()
+      wrapper.vm.addOpenRequestMapping()
+      wrapper.vm.addOpenResponseMapping()
+      await nextTick()
+      const operand = wrapper.findComponent({ name: 'OperandPicker' })
+      expect(operand.exists()).toBe(true)
+      const jsonEditors = wrapper.findAllComponents({ name: 'ContractEditorProbe' }).filter(item => item.element.closest('.open-api-panel'))
+      expect(jsonEditors).toHaveLength(4)
+      await wrapper.setData({ lifecycleRevisionId: 8 })
+      const before = JSON.stringify(wrapper.vm.openApiForm), text = wrapper.vm.openEnvelopeText
+      operand.vm.$emit('input', { kind: 'LITERAL', value: 'late-expression' })
+      jsonEditors[0].vm.$emit('update:value', '{"late":true}')
+      for (const name of ['addOpenRequestMapping', 'removeOpenRequestMapping', 'addOpenResponseMapping', 'removeOpenResponseMapping', 'resetOpenResponseMappings', 'addIdempotencyComponent', 'removeIdempotencyComponent']) wrapper.vm[name](0)
+      await nextTick()
+      expect(JSON.stringify(wrapper.vm.openApiForm)).toBe(before)
+      expect(wrapper.vm.openEnvelopeText).toBe(text)
+      expect(wrapper.findComponent({ name: 'OperandPicker' }).exists()).toBe(false)
+      for (const item of jsonEditors) expect(item.props('readOnly')).toBe(true)
+      for (const button of wrapper.findAll('.open-api-panel button').filter(item => ['添加映射', '删除', '恢复默认映射', '添加字段组件'].includes(item.text()))) expect(button.element.disabled).toBe(true)
+    } finally { wrapper.unmount() }
+  })
+
+  test('已发布修订显示发布事实，不因本页尚未测试而显示未完成发布进度', async () => {
+    const wrapper = await mountAndWait(undefined, [
+      { id: 8, definitionId: 1, revisionNo: 2, state: 'PUBLISHED', artifactId: 32 },
+    ], {}, { ...mockRuleDetail(), status: 1, publishedVersion: 1, inputFieldsJson: [], outputFieldsJson: [] })
+    expect(wrapper.find('[data-testid="rule-release-progress"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="rule-revision-status"]').text()).toContain('已发布')
+    expect(wrapper.text()).not.toContain('测试已通过')
+    wrapper.unmount()
+  })
+
+  test('导入规则默认查看指定修订只读字段，不把空工作区表当成零输入输出', async () => {
+    const wrapper = await mountAndWait(undefined, [
+      { id: '9007199254740993', definitionId: 1, revisionNo: 2, state: 'PUBLISHED', artifactId: '32' },
+    ], {}, { ...mockRuleDetail(), inputFieldsJson: [], outputFieldsJson: [] })
+    await wrapper.setData({ activeDetailTab: 'inputs' })
+    const panel = wrapper.findComponent({ name: 'RuleRevisionFieldsPanel' })
+    expect(panel.exists()).toBe(true)
+    expect(panel.props('modelValue')).toBe('9007199254740993')
+    expect(panel.props('direction')).toBe('input')
+    expect(wrapper.text()).not.toContain('暂无输入字段')
+    wrapper.unmount()
+  })
+
+  test('只读冻结规则不额外查询当前环境的变量目录或字段校验名称', async () => {
+    const wrapper = await mountAndWait(undefined, [{ id: 8, definitionId: 1, state: 'PUBLISHED', artifactId: 32 }])
+    expect(variableApi.listVariablesByProject).not.toHaveBeenCalled()
+    expect(variableApi.listAvailableFieldValidations).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('只有已驳回历史修订时仍可选中查看，不伪装成无修订工作区', async () => {
+    const wrapper = await mountAndWait(undefined, [{ id: 8, definitionId: 1, revisionNo: 2, state: 'REJECTED' }])
+    expect(wrapper.vm.lifecycleRevisionId).toBe(8)
+    expect(wrapper.vm.fieldViewMode).toBe('revision')
+    expect(wrapper.get('[data-testid="rule-revision-status"]').text()).toContain('已驳回')
+    expect(definitionApi.ensureDraftRevision).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('查看发布字段后返回工作区不覆盖草稿字段或开放接口配置', async () => {
+    const wrapper = await mountAndWait(undefined, [draftRevision(), { id: 8, definitionId: 1, state: 'PUBLISHED', artifactId: 32 }])
+    const fields = JSON.stringify(wrapper.vm.rule.inputFieldsJson), config = JSON.stringify(wrapper.vm.openApiForm)
+    await wrapper.setData({ lifecycleRevisionId: 8, activeDetailTab: 'inputs' })
+    expect(wrapper.vm.fieldViewMode).toBe('revision')
+    expect(wrapper.vm.canEditDraft).toBe(false)
+    expect(wrapper.vm.hasEditableWorkspace).toBe(true)
+    wrapper.vm.showWorkspaceFields(); await nextTick()
+    expect(wrapper.vm.fieldViewMode).toBe('workspace')
+    expect(wrapper.vm.lifecycleRevisionId).toBe(5)
+    expect(wrapper.vm.canEditDraft).toBe(true)
+    expect(JSON.stringify(wrapper.vm.rule.inputFieldsJson)).toBe(fields)
+    expect(JSON.stringify(wrapper.vm.openApiForm)).toBe(config)
+    wrapper.unmount()
+  })
+
+  test('切换修订后迟到的发布前校验不能给新修订背书', async () => {
+    const wrapper = await mountAndWait(undefined, [draftRevision(),
+      { id: 8, definitionId: 1, revisionNo: 2, state: 'PUBLISHED', artifactId: 32 },
+    ])
+    let resolveReport
+    definitionApi.preflightRuleRevision.mockReturnValueOnce(new Promise(resolve => { resolveReport = resolve }))
+    const pending = wrapper.vm.runPreflight()
+    await wrapper.setData({ lifecycleRevisionId: 8 })
+    resolveReport({ data: { revisionId: 5, lockVersion: 0, valid: true, errors: [], warnings: [] } })
+    await pending
+    expect(wrapper.vm.preflightReport).toBeNull()
+    wrapper.unmount()
+  })
+
+  test('草稿B的有效预检不计入草稿A的工作区发布准备', async () => {
+    const wrapper = await mountAndWait(undefined, [draftRevision({ id: 5 }), draftRevision({ id: 6, revisionNo: 2 })])
+    await wrapper.setData({ lifecycleRevisionId: 6 })
+    definitionApi.preflightRuleRevision.mockResolvedValueOnce({ data: { revisionId: 6, lockVersion: 0, valid: true } })
+    await wrapper.vm.runPreflight()
+    expect(wrapper.find('[data-testid="rule-release-progress"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="rule-revision-status"]').text()).toContain('草稿')
+    expect(wrapper.vm.activeRevision.id).toBe(5)
+    expect(wrapper.vm.canEditDraft).toBe(false)
+    expect(wrapper.vm.releaseChecklist.find(step => step.key === 'preflight').done).toBe(false)
+    wrapper.unmount()
+  })
+
+  test.each([{ valid: true }, { revisionId: 5, lockVersion: 1, valid: true }])('缺少或不匹配锁版本的校验报告不能被采纳：%j', async report => {
+    const wrapper = await mountAndWait(undefined, [draftRevision()])
+    definitionApi.preflightRuleRevision.mockResolvedValueOnce({ data: report })
+    await expect(wrapper.vm.runPreflight()).rejects.toThrow('修订')
+    expect(wrapper.vm.preflightReport).toBeNull()
+    wrapper.unmount()
+  })
+
   test('详情页明确区分内容保存版本、生命周期修订和当前发布版本', async () => {
     const wrapper = await mountAndWait()
 
@@ -207,7 +404,9 @@ describe('RuleDetail 生命周期治理', () => {
 
   test('从版本记录进入设计时不创建草稿，直接打开指定版本', async () => {
     const wrapper = await mountAndWait()
+    wrapper.vm.versionVisible = true
     await wrapper.vm.forkDesignerSource('VERSION', 92)
+    expect(wrapper.vm.versionVisible).toBe(false)
     expect(definitionApi.createDraftFromSource).not.toHaveBeenCalled()
     expect(definitionApi.createDraftRevision).not.toHaveBeenCalled()
     expect(wrapper.vm.$router.push).toHaveBeenCalledWith(expect.objectContaining({ query: { sourceType: 'VERSION', sourceId: '92' } }))
@@ -491,25 +690,28 @@ async function mountAndWait(
     },
   ],
   routeQuery = {},
-  ruleDetail = mockRuleDetail(1)
+  ruleDetail = mockRuleDetail(1),
+  extraStubs = {}
 ) {
   definitionApi.getDefinitionDetail.mockResolvedValueOnce({ data: ruleDetail })
   definitionApi.getContent.mockResolvedValueOnce({ data: content })
   definitionApi.listRuleRevisions.mockResolvedValueOnce({ data: revisions })
   definitionApi.getRuleLifecycleTimeline.mockResolvedValueOnce({ data: [] })
-  variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
-  variableApi.listVariables.mockResolvedValueOnce({ data: { records: [] } })
-  variableApi.listAvailableFieldValidations.mockResolvedValueOnce({ data: [{
+  if (!revisions.length || revisions.some(item => item.state === 'DRAFT')) {
+    variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
+    variableApi.listVariables.mockResolvedValueOnce({ data: { records: [] } })
+    variableApi.listAvailableFieldValidations.mockResolvedValueOnce({ data: [{
     id: 11, validationCode: 'builtin_required', validationName: '必填',
     validationType: 'REQUIRED', builtIn: true
   }, {
     id: 12, validationCode: 'age_min', validationName: '最小年龄', validationType: 'MIN_VALUE'
-  }] })
+    }] })
+  }
 
   const wrapper = shallowMount(RuleDetail, {
     props: { id: '1' },
     mocks: {
-      $route: { params: { id: 1 }, query: routeQuery },
+      $route: { name: 'RuleDetail', path: '/rule/1', params: { id: 1 }, query: routeQuery },
       $router: { push: vi.fn(), replace: vi.fn() },
       $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
       $confirm: vi.fn().mockResolvedValue('confirm')
@@ -519,7 +721,7 @@ async function mountAndWait(
     },
     stubs: {
       'el-dialog': makeStub('div'),
-      'el-card': makeStub('div'),
+      'el-card': makeSlotStub('div'),
       'el-descriptions': makeSlotStub('div'),
       'el-descriptions-item': {
         props: ['label'],
@@ -550,7 +752,8 @@ async function mountAndWait(
       'el-collapse': makeStub('div'),
       'el-collapse-item': makeStub('div'),
       'el-loading': makeStub('div'),
-      'monaco-editor': makeStub('div')
+      'monaco-editor': makeStub('div'),
+      ...extraStubs
     }
   })
 
@@ -611,8 +814,10 @@ describe('RuleDetail — 初始化与数据加载', () => {
     expect(wrapper.vm.releaseProgressCompleted).toBe(3)
     expect(wrapper.vm.releaseProgressSummary).toContain('发布前校验')
 
-    wrapper.vm.preflightReport = { valid: true, errors: [], warnings: [] }
+    wrapper.vm.preflightReport = { revisionId: 5, lockVersion: 0, valid: true, errors: [], warnings: [] }
     wrapper.vm.testResult = { success: true }
+    expect(wrapper.vm.releaseChecklist.find(item => item.key === 'test').done).toBe(false)
+    wrapper.vm.testResult.executionIdentity = { sourceType: 'REVISION', sourceId: '5', definitionId: '1', lockVersion: 0 }
     expect(wrapper.vm.releaseProgressCompleted).toBe(5)
     expect(wrapper.vm.releaseProgressSummary).toContain('审批发布')
   })
@@ -706,6 +911,91 @@ describe('RuleDetail — 辅助方法', () => {
 })
 
 describe('RuleDetail — 开放接口契约', () => {
+  test.each(['/model/2', '/rule/2'])('缓存规则详情不读取其他页面 %s 的 ID', async path => {
+    const wrapper = await mountAndWait()
+    definitionApi.getDefinitionDetail.mockClear()
+    try {
+      wrapper.vm.$route.path = path
+      wrapper.vm.$route.params.id = 2
+      RuleDetail.watch['$route.params.id'].call(wrapper.vm, 2, 1)
+      await nextTick()
+      expect(definitionApi.getDefinitionDetail).not.toHaveBeenCalled()
+      expect(wrapper.vm.rule.id).toBe(1)
+    } finally { wrapper.unmount() }
+  })
+
+  test('切到其他模块的同 ID 页面后迟到规则详情不再回填', async () => {
+    const wrapper = await mountAndWait()
+    let finish
+    definitionApi.getDefinitionDetail.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const pending = wrapper.vm.load()
+    wrapper.vm.$route.path = '/model/1'
+    finish({ data: { ...mockRuleDetail(1), ruleName: '迟到内容' } })
+    await pending
+    expect(wrapper.vm.rule.ruleName).not.toBe('迟到内容')
+    wrapper.unmount()
+  })
+
+  test('版本尚未加载完时不能编辑或保存旧契约', async () => {
+    const wrapper = await mountAndWait()
+    let resolveRevision
+    const revisions = new Promise(resolve => { resolveRevision = resolve })
+    const detail = vi.spyOn(definitionApi, 'getDefinitionDetail').mockResolvedValue({ data: mockRuleDetail() })
+    const content = vi.spyOn(definitionApi, 'getContent').mockResolvedValue({ data: { modelJson: '{}' } })
+    const lifecycle = vi.spyOn(definitionApi, 'listRuleRevisions').mockReturnValue(revisions)
+    const load = wrapper.vm.load()
+    await nextTick()
+    try {
+      expect(wrapper.vm.loading).toBe(true)
+      expect(wrapper.vm.canEditDraft).toBe(false)
+      expect(wrapper.find('[data-testid="rule-detail-content"]').attributes('inert')).toBeDefined()
+      await wrapper.vm.saveOpenApiConfig()
+      expect(definitionApi.saveContent).not.toHaveBeenCalled()
+    } finally {
+      resolveRevision({ data: [draftRevision()] })
+      await load
+      detail.mockRestore(); content.mockRestore(); lifecycle.mockRestore(); wrapper.unmount()
+    }
+  })
+
+  test('详情读取失败不能沿用上次可编辑状态保存，重试成功才恢复', async () => {
+    const wrapper = await mountAndWait()
+    const detail = vi.spyOn(definitionApi, 'getDefinitionDetail').mockRejectedValueOnce(new Error('连接失败'))
+    await wrapper.vm.load()
+    try {
+      expect(wrapper.vm.loadError).toBe('连接失败')
+      expect(wrapper.vm.canEditDraft).toBe(false)
+      await wrapper.vm.saveOpenApiConfig()
+      expect(definitionApi.saveContent).not.toHaveBeenCalled()
+      detail.mockResolvedValueOnce({ data: mockRuleDetail() })
+      definitionApi.getContent.mockResolvedValueOnce({ data: { modelJson: '{}' } })
+      definitionApi.listRuleRevisions.mockResolvedValueOnce({ data: [draftRevision()] })
+      definitionApi.getRuleLifecycleTimeline.mockResolvedValueOnce({ data: [] })
+      await wrapper.vm.load()
+      expect(wrapper.vm.loadError).toBe('')
+      expect(wrapper.vm.canEditDraft).toBe(true)
+    } finally { detail.mockRestore(); wrapper.unmount() }
+  })
+
+  test('切换规则后迟到详情不能覆盖当前规则与契约', async () => {
+    const wrapper = await mountAndWait()
+    let resolveFirst
+    const first = new Promise(resolve => { resolveFirst = resolve })
+    const detail = vi.spyOn(definitionApi, 'getDefinitionDetail').mockImplementation(id => Number(id) === 1 ? first : Promise.resolve({ data: mockRuleDetail(2) }))
+    const content = vi.spyOn(definitionApi, 'getContent').mockImplementation(id => Promise.resolve({ data: { modelJson: JSON.stringify({ owner: id }) } }))
+    const lifecycle = vi.spyOn(definitionApi, 'listRuleRevisions').mockImplementation(id => Promise.resolve({ data: [draftRevision({ definitionId: Number(id), id: Number(id) + 10 })] }))
+    try {
+      const pending = wrapper.vm.load()
+      wrapper.vm.$route.params.id = 2
+      await wrapper.vm.load()
+      resolveFirst({ data: mockRuleDetail(1) })
+      await pending
+      expect(wrapper.vm.rule.id).toBe(2)
+      expect(wrapper.vm.activeRevision.definitionId).toBe(2)
+      expect(wrapper.vm.loading).toBe(false)
+    } finally { resolveFirst({ data: mockRuleDetail(1) }); detail.mockRestore(); content.mockRestore(); lifecycle.mockRestore(); wrapper.unmount() }
+  })
+
   test('启用幂等后自动创建首个组件，避免空白配置无法操作', async () => {
     const wrapper = await mountAndWait()
 
@@ -826,6 +1116,8 @@ describe('RuleDetail — 开放接口契约', () => {
 
     const payload = definitionApi.saveContent.mock.calls[0][0]
     const saved = JSON.parse(payload.openApiConfigJson)
+    // 后端只有显式标记才会更新契约；缺失时保存成功但沿用旧值。
+    expect(payload.updateOpenApiConfig).toBe(true)
     expect(payload).toEqual(expect.objectContaining({
       definitionId: 1,
       revisionId: 5,
@@ -960,11 +1252,12 @@ describe('RuleDetail — 测试弹窗', () => {
   test('openTestDialog 打开测试弹窗', async () => {
     definitionApi.getRuleTestSchema.mockResolvedValue({ data: {
       inputs: [{ refId: 9, refType: 'DATA_OBJECT', scriptName: 'bankcard.bank_card_no', label: '银行卡信息/银行卡号', valueType: 'STRING' }],
-      sampleParams: { bankcard: { bank_card_no: '6222' } }
+      sampleParams: { bankcard: { bank_card_no: '6222' } },
+      executionIdentity: { sourceType: 'REVISION', sourceId: '5', definitionId: '1', revisionId: '5', lockVersion: 0 },
     } })
     await wrapper.vm.openTestDialog()
     expect(wrapper.vm.testVisible).toBe(true)
-    expect(definitionApi.getRuleTestSchema).toHaveBeenCalledWith({ targetType: 'RULE', targetId: 1 })
+    expect(definitionApi.getRuleTestSchema).toHaveBeenCalledWith({ targetType: 'RULE', targetId: 1, executionSource: { sourceType: 'REVISION', sourceId: '5', lockVersion: 0 } })
     expect(JSON.parse(wrapper.vm.testJsonStr)).toEqual({ bankcard: { bank_card_no: '6222' } })
   })
 
@@ -1003,7 +1296,10 @@ describe('RuleDetail execute test request', () => {
   afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('doTest 按执行接口契约传递 definitionId', async () => {
-    definitionApi.executeRule.mockResolvedValueOnce({ data: { success: true, result: false } })
+    const executionIdentity = { sourceType: 'REVISION', sourceId: '5', definitionId: '1', revisionId: '5', lockVersion: 0 }
+    definitionApi.getRuleTestSchema.mockResolvedValueOnce({ data: { inputs: [], sampleParams: {}, executionIdentity } })
+    definitionApi.executeRule.mockResolvedValueOnce({ data: { success: true, result: false, executionIdentity } })
+    await wrapper.vm.openTestDialog()
     wrapper.vm.testMode = 'json'
     wrapper.vm.testJsonStr = '{"age":55}'
 
@@ -1011,6 +1307,7 @@ describe('RuleDetail execute test request', () => {
 
     expect(definitionApi.executeRule).toHaveBeenCalledWith({
       definitionId: 1,
+      executionSource: { sourceType: 'REVISION', sourceId: '5', lockVersion: 0 },
       params: { age: 55 }
     }, 180000)
     expect(wrapper.vm.testResult).toMatchObject({ hasOutput: true, output: false })
@@ -1025,6 +1322,79 @@ describe('RuleDetail execute test request', () => {
     const item = wrapper.vm.varMap['DATA_OBJECT:88']
     expect(item.varLabel).toBe('银行卡信息/银行卡号 bankcard.bank_card_no')
     expect(item.varCodeText).toBe('bankcard.bank_card_no')
+  })
+})
+
+describe('RuleDetail 测试始终绑定精确修订', () => {
+  test('同一修订执行期间编辑JSON输入，迟到成功不能覆盖用户新输入', async () => {
+    const wrapper = await mountAndWait()
+    const executionIdentity = { sourceType: 'REVISION', sourceId: '5', definitionId: '1', revisionId: '5', lockVersion: 0 }
+    try {
+      definitionApi.getRuleTestSchema.mockResolvedValueOnce({ data: { inputs: [], sampleParams: {}, executionIdentity } })
+      await wrapper.vm.openTestDialog()
+      wrapper.vm.testMode = 'json'
+      wrapper.vm.testJsonStr = '{"age":20}'
+      let finish
+      definitionApi.executeRule.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+      const executing = wrapper.vm.doTest()
+      wrapper.vm.testJsonStr = '{"age":30}'
+      finish({ data: { success: true, result: 5, executionIdentity } })
+      await executing
+      expect(definitionApi.executeRule.mock.lastCall[0].params).toEqual({ age: 20 })
+      expect(wrapper.vm.testResult.output).toBe(5)
+      expect(wrapper.vm.testJsonStr).toBe('{"age":30}')
+      expect(wrapper.vm.testResultInputChanged).toBe(true)
+    } finally { wrapper.unmount() }
+  })
+
+  test.each([
+    [{ id: 8, definitionId: 1, revisionNo: 1, state: 'PUBLISHED', artifactId: 32 }, { sourceType: 'REVISION', sourceId: '8' }],
+    [draftRevision({ id: 6, revisionNo: 2, lockVersion: 7, sourceType: 'REVISION', sourceId: 8 }), { sourceType: 'REVISION', sourceId: '6', lockVersion: 7 }],
+  ])('所选 $state 修订的样例和执行采用同一来源', async (selected, source) => {
+    const wrapper = await mountAndWait(undefined, [draftRevision({ id: 9, revisionNo: 3 }), selected])
+    try {
+      definitionApi.getRuleTestSchema.mockResolvedValueOnce({ data: {
+        inputs: [{ refId: '11', refType: 'VARIABLE', scriptName: 'selectedAge', valueType: 'NUMBER' }],
+        sampleParams: { selectedAge: 25 },
+        executionIdentity: { ...source, definitionId: '1', revisionId: String(selected.id) },
+      } })
+      wrapper.vm.lifecycleRevisionId = selected.id
+      await nextTick()
+      await wrapper.vm.openTestDialog()
+      expect(definitionApi.getRuleTestSchema).toHaveBeenLastCalledWith(expect.objectContaining({
+        targetType: 'RULE', targetId: 1, executionSource: source,
+      }))
+      definitionApi.executeRule.mockResolvedValueOnce({ data: {
+        success: true, result: { score: 5 },
+        executionIdentity: { ...source, definitionId: '1', revisionId: String(selected.id) },
+      } })
+      wrapper.vm.testMode = 'json'
+      wrapper.vm.testJsonStr = '{"selectedAge":25}'
+      await wrapper.vm.doTest()
+      expect(definitionApi.executeRule).toHaveBeenLastCalledWith(expect.objectContaining({
+        definitionId: 1, executionSource: source, params: { selectedAge: 25 },
+      }), 180000)
+      expect(wrapper.vm.testResult.output).toEqual({ score: 5 })
+    } finally { wrapper.unmount() }
+  })
+
+  test('关闭测试弹窗后旧执行结果不能给工作区准备状态背书', async () => {
+    const wrapper = await mountAndWait()
+    try {
+      definitionApi.getRuleTestSchema.mockResolvedValueOnce({ data: {
+        inputs: [], sampleParams: {}, executionIdentity: { sourceType: 'REVISION', sourceId: '5', definitionId: '1', revisionId: '5', lockVersion: 0 },
+      } })
+      await wrapper.vm.openTestDialog()
+      let finish
+      definitionApi.executeRule.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+      const executing = wrapper.vm.doTest()
+      wrapper.vm.testVisible = false
+      await nextTick()
+      finish({ data: { success: true, result: 5, executionIdentity: { sourceType: 'REVISION', sourceId: '5', definitionId: '1', revisionId: '5', lockVersion: 0 } } })
+      await executing
+      expect(wrapper.vm.testResult).toBeNull()
+      expect(wrapper.vm.releaseChecklist.find(item => item.key === 'test').done).toBe(false)
+    } finally { wrapper.unmount() }
   })
 })
 

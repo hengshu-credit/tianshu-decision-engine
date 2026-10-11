@@ -36,7 +36,7 @@ public class DashboardGovernanceService {
                     criteria.projectCode(), null, null, criteria.startTime(),
                     criteria.endTime());
             hits = new DashboardResponses.RuleSetHitSection(true,
-                    ruleSetHits(stats, criteria));
+                    ruleSetHits(stats, criteria), stats.get("coverage") instanceof Map<?, ?> coverage ? coverage : Map.of());
         }
         if (access.can("approval:view")) {
             approvals = approvals(repository.approvalCounts(criteria));

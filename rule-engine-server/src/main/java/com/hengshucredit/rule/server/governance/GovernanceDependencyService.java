@@ -22,8 +22,12 @@ import java.util.Set;
 @Service
 public class GovernanceDependencyService {
 
+    @Autowired @org.springframework.context.annotation.Lazy
+    private com.hengshucredit.rule.server.service.ResourceVersionService resourceVersions;
+    @Autowired private com.hengshucredit.rule.server.service.RuleVersionBindingService ruleVersions;
+
     private static final Set<String> EFFECTIVE_STATUSES = Set.of(
-            "ACTIVE", "ENABLED", "PUBLISHED", "APPROVED", "1");
+            "ACTIVE", "ENABLED", "PUBLISHED", "1");
 
     @Autowired(required = false)
     private GovernedResourceMapper resourceMapper;
@@ -33,6 +37,12 @@ public class GovernanceDependencyService {
     private GovernanceDependencySnapshotMapper dependencySnapshotMapper;
     @Autowired(required = false)
     private GovernanceResourceBootstrapService bootstrapService;
+    @Autowired(required = false)
+    private com.hengshucredit.rule.server.mapper.RuleDefinitionMapper definitionMapper;
+    @Autowired(required = false)
+    private com.hengshucredit.rule.server.mapper.RuleModelMapper modelMapper;
+    @Autowired(required = false)
+    private com.hengshucredit.rule.server.mapper.RuleModelOutputFieldMapper modelOutputFieldMapper;
 
     public GovernancePreflightReport preflight(
             String sourceResourceType,
@@ -68,6 +78,26 @@ public class GovernanceDependencyService {
                 new ArrayList<>();
         for (GovernancePreflightReport.ResolvedDependency previous
                 : safeResolved(submitted)) {
+            if (previous.versionSelection() != null) {
+                List<GovernanceIssue> selectedErrors = new ArrayList<>();
+                var selected = resolveFixed(new ResourceDependencyRef(previous.targetResourceType(), previous.targetResourceId(),
+                        previous.targetResourceType(), previous.referencePath(), previous.relationType(), previous.required(),
+                        previous.versionSelection()), selectedErrors);
+                errors.addAll(selectedErrors);
+                if (selectedErrors.isEmpty()) {
+                    if (!safeEquals(previous.targetVersionId(), selected.targetVersionId())
+                            || !safeEquals(previous.targetResourceType(), selected.targetResourceType())
+                            || !safeEquals(previous.targetResourceId(), selected.targetResourceId())) {
+                        errors.add(issue("DEPENDENCY_VERSION_CHANGED", "指定版本在提交后已被覆盖，请重新提交审批", previous));
+                        selected = selectedIssue(selected, "VERSION_CHANGED", "DEPENDENCY_VERSION_CHANGED", "指定版本在提交后已被覆盖，请重新提交审批");
+                    } else if (!safeEquals(previous.targetDigest(), selected.targetDigest())) {
+                        errors.add(issue("DEPENDENCY_DIGEST_CHANGED", "指定版本摘要已变化，请重新提交审批", previous));
+                        selected = selectedIssue(selected, "DIGEST_CHANGED", "DEPENDENCY_DIGEST_CHANGED", "指定版本摘要已变化，请重新提交审批");
+                    }
+                }
+                resolved.add(selected);
+                continue;
+            }
             GovernedResource target = findTarget(
                     previous.targetResourceType(),
                     previous.targetResourceId());
@@ -153,6 +183,8 @@ public class GovernanceDependencyService {
             row.setTargetResourceId(dependency.targetResourceId());
             row.setTargetVersionId(dependency.targetVersionId());
             row.setTargetVersionNo(dependency.targetVersionNo());
+            row.setVersionSelectionJson(dependency.versionSelection() == null ? null
+                    : com.hengshucredit.rule.server.artifact.CanonicalJson.write(dependency.versionSelection()));
             row.setReferencePath(dependency.referencePath());
             row.setRelationType(dependency.relationType());
             row.setRequired(dependency.required() ? 1 : 0);
@@ -187,7 +219,7 @@ public class GovernanceDependencyService {
                         row.getResolutionStatus(),
                         row.getTargetDigest(),
                         row.getIssueCode(),
-                        row.getIssueMessage()))
+                        row.getIssueMessage(), DependencyVersionSelection.read(row.getVersionSelectionJson())))
                 .toList();
     }
 
@@ -239,6 +271,25 @@ public class GovernanceDependencyService {
             ResourceDependencyRef dependency,
             List<GovernanceIssue> errors,
             List<GovernanceIssue> warnings) {
+        if (dependency.versionSelection() != null) {
+            var selected = resolveFixed(dependency, errors);
+            if (selected.targetResourceType().equals(normalizeType(sourceResourceType))
+                    && selected.targetResourceId().equals(sourceResourceId)) {
+                var issue = issue("DEPENDENCY_SELF_REFERENCE", "资源不能依赖自身", selected);
+                errors.add(issue);
+                return selectedIssue(selected, "SELF_REFERENCE", issue.code(), issue.message());
+            }
+            return selected;
+        }
+        if ("MODEL_OUTPUT".equals(normalizeType(dependency.targetResourceType()))
+                && (dependency.refType() == null || "MODEL_OUTPUT".equalsIgnoreCase(dependency.refType()))
+                && modelOutputFieldMapper != null) {
+            var field = modelOutputFieldMapper.selectById(dependency.targetResourceId());
+            if (field != null && field.getModelId() != null) {
+                dependency = new ResourceDependencyRef("MODEL", field.getModelId(), "MODEL", dependency.referencePath(),
+                        dependency.relationType(), dependency.required());
+            }
+        }
         String targetType = normalizeType(
                 dependency.targetResourceType());
         if (dependency.refType() != null
@@ -266,26 +317,16 @@ public class GovernanceDependencyService {
         GovernedResource target = findTarget(
                 targetType, dependency.targetResourceId());
         if (target == null) {
-            GovernanceIssue issue = dependency.required()
-                    ? GovernanceIssue.error("DEPENDENCY_MISSING",
+            GovernanceIssue issue = GovernanceIssue.error("DEPENDENCY_MISSING",
                     "依赖资源不存在", targetType,
-                    dependency.targetResourceId(),
-                    dependency.referencePath())
-                    : warning("DEPENDENCY_OPTIONAL_MISSING",
-                    "可选依赖资源不存在", targetType,
                     dependency.targetResourceId(),
                     dependency.referencePath());
             add(issue, errors, warnings);
             return unresolved(dependency, "MISSING", issue);
         }
         if (!isEffective(target)) {
-            GovernanceIssue issue = dependency.required()
-                    ? GovernanceIssue.error("DEPENDENCY_INACTIVE",
-                    "依赖资源当前未生效", targetType,
-                    dependency.targetResourceId(),
-                    dependency.referencePath())
-                    : warning("DEPENDENCY_OPTIONAL_INACTIVE",
-                    "可选依赖资源当前未生效", targetType,
+            GovernanceIssue issue = GovernanceIssue.error("DEPENDENCY_INACTIVE",
+                    "上游资源尚未发布或已停用，请先发布上游资源", targetType,
                     dependency.targetResourceId(),
                     dependency.referencePath());
             add(issue, errors, warnings);
@@ -309,10 +350,71 @@ public class GovernanceDependencyService {
     }
 
     private boolean isEffective(GovernedResource resource) {
+        if ("RULE".equals(resource.getResourceType()) && definitionMapper != null) {
+            var rule = definitionMapper.selectById(resource.getResourceId());
+            if (rule == null || !Integer.valueOf(1).equals(rule.getStatus())
+                    || rule.getPublishedVersion() == null || rule.getPublishedVersion() <= 0) return false;
+        }
+        if ("MODEL".equals(resource.getResourceType()) && modelMapper != null) {
+            var model = modelMapper.selectOne(new LambdaQueryWrapper<com.hengshucredit.rule.model.entity.RuleModel>()
+                    .select(com.hengshucredit.rule.model.entity.RuleModel::getId,
+                            com.hengshucredit.rule.model.entity.RuleModel::getStatus,
+                            com.hengshucredit.rule.model.entity.RuleModel::getPublishedVersion)
+                    .eq(com.hengshucredit.rule.model.entity.RuleModel::getId, resource.getResourceId()));
+            if (model == null || !Integer.valueOf(1).equals(model.getStatus())
+                    || model.getPublishedVersion() == null || model.getPublishedVersion() <= 0) return false;
+        }
         return resource.getEffectiveVersionId() != null
                 && resource.getEffectiveStatus() != null
                 && EFFECTIVE_STATUSES.contains(
                 resource.getEffectiveStatus().toUpperCase(Locale.ROOT));
+    }
+
+    private GovernancePreflightReport.ResolvedDependency resolveFixed(ResourceDependencyRef dependency, List<GovernanceIssue> errors) {
+        DependencyVersionSelection selection = dependency.versionSelection();
+        try {
+            String type;
+            Long ownerId, versionId;
+            Integer number;
+            String digest;
+            if ("RULE_BINDING".equals(selection.versionSource())) {
+                if (!"RULE".equals(selection.refType())) throw new IllegalArgumentException("规则版本引用类型不匹配");
+                var version = ruleVersions.resolveSnapshot(selection.refId(), selection.versionId());
+                if (version.getArtifactId() == null || version.getArtifactDigest() == null)
+                    throw new IllegalArgumentException("指定规则版本缺少可验证制品");
+                type = "RULE"; ownerId = selection.refId(); versionId = version.getId();
+                number = com.hengshucredit.rule.server.service.RuleVersionBindingService.businessVersion(version);
+                digest = version.getArtifactDigest();
+            } else {
+                var stored = resourceVersions.snapshot(new com.hengshucredit.rule.core.engine.ResourceVersionCall(selection.refType(),
+                        selection.refId(), selection.versionId(), "", List.of(), null, null,
+                        "SNAPSHOT".equals(selection.versionSource()) ? null : selection.versionSource()), null);
+                type = switch (selection.refType()) { case "CONSTANT" -> "VARIABLE"; case "MODEL_OUTPUT" -> "MODEL"; default -> selection.refType(); };
+                ownerId = stored.getLong("ownerId");
+                versionId = stored.getLong("resolvedVersionId") == null ? selection.versionId() : stored.getLong("resolvedVersionId");
+                number = stored.getInteger("displayVersion");
+                digest = stored.getString("digest");
+                if (digest == null) digest = Sha256Digests.text(com.hengshucredit.rule.server.artifact.CanonicalJson.write(stored.get("payload")));
+                if (stored.getString("secretDigest") != null) digest = Sha256Digests.text(digest + ":" + stored.getString("secretDigest"));
+            }
+            GovernedResource owner = findTarget(type, ownerId);
+            if (owner == null || "DELETED".equals(owner.getEffectiveStatus()) || "RULE".equals(type) && !isEffective(owner))
+                throw new IllegalArgumentException("指定版本所属资源不存在或不可用");
+            return new GovernancePreflightReport.ResolvedDependency(type, ownerId, versionId, number,
+                    dependency.referencePath(), dependency.relationType(), dependency.required(), "RESOLVED", digest, null, null, selection);
+        } catch (IllegalArgumentException | IllegalStateException unavailable) {
+            var issue = GovernanceIssue.error("DEPENDENCY_VERSION_UNAVAILABLE", unavailable.getMessage(),
+                    dependency.targetResourceType(), dependency.targetResourceId(), dependency.referencePath());
+            errors.add(issue);
+            return unresolved(dependency, "VERSION_UNAVAILABLE", issue);
+        }
+    }
+
+    private GovernancePreflightReport.ResolvedDependency selectedIssue(GovernancePreflightReport.ResolvedDependency dependency,
+                                                                       String status, String code, String message) {
+        return new GovernancePreflightReport.ResolvedDependency(dependency.targetResourceType(), dependency.targetResourceId(),
+                dependency.targetVersionId(), dependency.targetVersionNo(), dependency.referencePath(), dependency.relationType(),
+                dependency.required(), status, dependency.targetDigest(), code, message, dependency.versionSelection());
     }
 
     private GovernancePreflightReport report(
@@ -326,6 +428,7 @@ public class GovernanceDependencyService {
                     .append(dependency.targetResourceId()).append(':')
                     .append(dependency.targetVersionId()).append(':')
                     .append(dependency.targetDigest()).append(':')
+                    .append(dependency.versionSelection() == null ? "" : com.hengshucredit.rule.server.artifact.CanonicalJson.write(dependency.versionSelection()) + ':')
                     .append(dependency.referencePath()).append('|');
         }
         return new GovernancePreflightReport(errors.isEmpty(),
@@ -342,7 +445,7 @@ public class GovernanceDependencyService {
                 dependency.targetResourceId(), null, null,
                 dependency.referencePath(), dependency.relationType(),
                 dependency.required(), status, null,
-                issue.code(), issue.message());
+                issue.code(), issue.message(), dependency.versionSelection());
     }
 
     private GovernancePreflightReport.ResolvedDependency current(
@@ -402,15 +505,6 @@ public class GovernanceDependencyService {
                 dependency.targetResourceType(),
                 dependency.targetResourceId(),
                 dependency.referencePath());
-    }
-
-    private GovernanceIssue warning(String code,
-                                    String message,
-                                    String resourceType,
-                                    Long resourceId,
-                                    String referencePath) {
-        return new GovernanceIssue("WARNING", code, message,
-                resourceType, resourceId, referencePath, null);
     }
 
     private void add(GovernanceIssue issue,

@@ -1,5 +1,6 @@
 const { createDetailApiData } = require('./detailFixtures.cjs')
 const { createDesignerApiData } = require('./designerFixtures.cjs')
+const { withTestExecutionIdentity } = require('./testExecutionFixtures.cjs')
 
 function assignNode(target, value) {
   return {
@@ -872,7 +873,7 @@ function createDocsApiData() {
   })
 
   const faceTrace = createFaceTrace()
-  routes.set('POST /api/rule/test-schema', {
+  routes.set('POST /api/rule/test-schema', withTestExecutionIdentity({
     inputs: inputFields.map((field) => ({
       refId: field.varId,
       refType: field.refType,
@@ -889,8 +890,8 @@ function createDocsApiData() {
       livenessScore: 0.98
     },
     diagnostics: []
-  })
-  routes.set('POST /api/rule/definition/execute', {
+  }))
+  routes.set('POST /api/rule/definition/execute', withTestExecutionIdentity({
     success: true,
     result: {
       verified: true,
@@ -900,6 +901,15 @@ function createDocsApiData() {
     },
     executeTimeMs: 128,
     traces: [faceTrace]
+  }))
+  routes.set('POST /api/rule/definition/101/api-scenarios/execute-validated', async context => {
+    const configured = routes.get('POST /api/rule/definition/execute')
+    const execution = typeof configured === 'function' ? await configured(context) : configured
+    return {
+      execution,
+      responseJson: JSON.stringify({ code: 200, data: execution }),
+      validation: { status: 'NOT_CONFIGURED', message: '未设置预期，不判断用例是否通过', checks: [], diffs: [] }
+    }
   })
   routes.set('POST /api/rule/expression/compile', {
     success: true,

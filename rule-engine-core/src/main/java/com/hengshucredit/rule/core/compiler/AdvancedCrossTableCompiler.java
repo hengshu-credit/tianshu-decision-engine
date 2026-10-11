@@ -127,6 +127,22 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
             JSONObject dimensionOperand = dim.getJSONObject("operand");
             JSONArray segments = dim.getJSONArray("segments");
 
+            // 空单元格不生成分支，但不能因此把显式未完成的区间当作编译成功。
+            for (int s = 0; s < segments.size(); s++) {
+                JSONObject segment = segments.getJSONObject(s);
+                JSONObject valueOperand = segment.getJSONObject("valueOperand");
+                if (ConditionOperandCompiler.isTypedCollection(segment.getString("operator"), valueOperand)) {
+                    ConditionOperandCompiler.validateCollection(valueOperand);
+                    continue;
+                }
+                if (!ConditionExpressionBuilder.isRangeOperator(segment.getString("operator"))) continue;
+                String rangeType = dimensionOperand != null && dimensionOperand.getString("valueType") != null
+                        ? dimensionOperand.getString("valueType") : varType;
+                ConditionExpressionBuilder.rangeBounds(rangeType,
+                        valueOperand == null ? segment.getString("value") : valueOperand.getString("value"),
+                        valueOperand != null && !"LITERAL".equals(valueOperand.getString("kind")));
+            }
+
             List<List<SegmentInfo>> newResult = new ArrayList<>();
             for (List<SegmentInfo> existing : result) {
                 for (int s = 0; s < segments.size(); s++) {

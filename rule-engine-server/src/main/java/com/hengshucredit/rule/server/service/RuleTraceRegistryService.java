@@ -7,6 +7,8 @@ import com.hengshucredit.rule.server.mapper.RuleTraceRegistryMapper;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
+import java.util.Objects;
+
 @Service
 public class RuleTraceRegistryService extends ServiceImpl<RuleTraceRegistryMapper, RuleTraceRegistry> {
 
@@ -50,5 +52,41 @@ public class RuleTraceRegistryService extends ServiceImpl<RuleTraceRegistryMappe
 
     protected void insertRegistry(RuleTraceRegistry registry) {
         baseMapper.insert(registry);
+    }
+
+    /** 客户端传输允许同一身份重投；不能重新归属到另一项目或资源。 */
+    public boolean registerClientTrace(RuleTraceRegistry registry) {
+        if (registry == null || !TraceIdGenerator.isValid(registry.getTraceId())) {
+            throw new ClientLogValidationException(400, "Trace ID格式不合法");
+        }
+        try {
+            insertRegistry(registry);
+            return true;
+        } catch (DuplicateKeyException duplicate) {
+            validateClientTrace(registry);
+            return false;
+        }
+    }
+
+    public void validateClientTrace(RuleTraceRegistry registry) {
+        if (!sameIdentity(findRegisteredTrace(registry.getTraceId()), registry)) {
+            throw new ClientLogValidationException(409, "Trace ID已关联到不同的项目或资源");
+        }
+    }
+
+    protected RuleTraceRegistry findRegisteredTrace(String traceId) {
+        return baseMapper.selectForUpdate(traceId);
+    }
+
+    static boolean sameIdentity(RuleTraceRegistry left, RuleTraceRegistry right) {
+        return left != null && right != null
+                && Objects.equals(left.getTraceType(), right.getTraceType())
+                && Objects.equals(left.getScopeType(), right.getScopeType())
+                && Objects.equals(left.getScopeCode(), right.getScopeCode())
+                && Objects.equals(left.getProjectId(), right.getProjectId())
+                && Objects.equals(left.getResourceType(), right.getResourceType())
+                && Objects.equals(left.getResourceId(), right.getResourceId())
+                && (left.getResourceId() != null || Objects.equals(left.getResourceCode(), right.getResourceCode()))
+                && Objects.equals(left.getParentTraceId(), right.getParentTraceId());
     }
 }

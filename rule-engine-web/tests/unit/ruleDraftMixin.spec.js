@@ -85,6 +85,7 @@ describe('ruleDraftMixin', () => {
       valid: true,
       errors: [],
       warnings: [],
+      checkedModelJson: '{}',
     })
     expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
     wrapper.unmount()
@@ -853,12 +854,12 @@ describe('ruleDraftMixin stable source loading', () => {
   test('设计器同时提供生命周期修订和发布版本并可按稳定 ID 切换', async () => {
     definitionApi.listRuleRevisions.mockResolvedValueOnce({
       data: [
-        { id: 6, revisionNo: 8, state: 'DRAFT', lockVersion: 2 },
+        { id: 6, revisionNo: 8, state: 'DRAFT', lockVersion: 2, updateTime: '2026-10-10T10:30:00' },
         { id: 5, revisionNo: 7, state: 'PUBLISHED' },
       ],
     })
     definitionApi.listPublishedVersions.mockResolvedValueOnce({
-      data: [{ id: 9, version: 7 }],
+      data: [{ id: 9, version: 7, publishTime: '2026-10-09T09:00:00' }],
     })
     definitionApi.getVersionById.mockResolvedValueOnce({
       data: { id: 9, version: 7, modelJson: '{"source":"snapshot"}' },
@@ -869,7 +870,7 @@ describe('ruleDraftMixin stable source loading', () => {
     expect(wrapper.vm.designerSourceOptions).toEqual(expect.arrayContaining([
       {
         value: 'REVISION:6',
-        label: '草稿 · 8',
+        label: '草稿 · 8 / 2026-10-10T10:30:00',
         id: '6', state: 'DRAFT', lockVersion: 2, sourceLabel: '',
         group: 'REVISION',
       },
@@ -881,7 +882,7 @@ describe('ruleDraftMixin stable source loading', () => {
       },
       {
         value: 'VERSION:9',
-        label: '发布版本 v7',
+        label: '生产 · 7 / 2026-10-09T09:00:00',
         group: 'VERSION',
       },
     ]))
@@ -919,7 +920,7 @@ describe('ruleDraftMixin stable source loading', () => {
     expect(wrapper.vm.designerSourcesLoading).toBe(false)
     expect(wrapper.vm.designerSourceOptions).toContainEqual({
       value: 'VERSION:9',
-      label: '发布版本 v7',
+      label: '生产 · 7',
       group: 'VERSION',
     })
     wrapper.unmount()

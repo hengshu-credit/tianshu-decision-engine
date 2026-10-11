@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
+
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleModelInputField;
@@ -534,6 +536,30 @@ public class VariableSourceResolverTest {
     }
 
     @Test
+    public void structuredModelCapacityFailureEscapesEvenWhenOutputErrorStatusIsSelected() throws Exception {
+        for (ExecutionCapacityException.Resource resource : ExecutionCapacityException.Resource.values()) {
+            for (boolean statusSelected : new boolean[]{false, true}) {
+                FakeModelService models = new FakeModelService() {
+                    @Override public Map<String, Object> execute(Long modelId, Map<String, Object> params) {
+                        return Map.of("success", false, "error", "capacity unavailable",
+                                "executionStatus", "THROTTLED", "capacityResource", resource.name());
+                    }
+                };
+                VariableSourceResolver resolver = resolver(Collections.emptyList(),
+                        new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()),
+                        new FakeRuleListService(false), models);
+                VariableResolveOptions options = VariableResolveOptions.defaults();
+                options.setRequiredScriptNames(new LinkedHashSet<>(Collections.singletonList("score_f1.score")));
+                if (statusSelected) options.setStatusReferenceKeys(new LinkedHashSet<>(Collections.singletonList("MODEL_OUTPUT:201")));
+                ExecutionCapacityException failure = org.junit.Assert.assertThrows(ExecutionCapacityException.class,
+                        () -> resolver.resolve(1L, Collections.emptyMap(), options));
+                assertEquals(resource, failure.getResource());
+                assertTrue(failure.getMessage().contains("score_f1"));
+            }
+        }
+    }
+
+    @Test
     public void unselectedModelFailureKeepsOriginalFailFastBehavior() throws Exception {
         FakeModelService modelService = new FakeModelService() {
             @Override
@@ -1002,6 +1028,46 @@ public class VariableSourceResolverTest {
         assertEquals(rows, resolver.resolve(1L, Collections.emptyMap()).get("scores"));
         assertEquals(0, dbPools.lastMaxRows);
         assertEquals(30, dbPools.lastTimeoutSeconds);
+    }
+
+    @Test
+    public void interruptedParallelResolutionStopsWaitingBeforeSourcesFinish() throws Exception {
+        RuleVariable apiVariable = variable("apiScore", "API",
+                "{\"apiConfigId\":7,\"resultPath\":\"body.score\"}");
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch exited = new CountDownLatch(1);
+        VariableSourceResolver resolver = resolver(Collections.singletonList(apiVariable),
+                new ParallelApiService(entered, release), new FakeDbPools(Collections.emptyList()));
+        SourceResolutionExecutor executor = new SourceResolutionExecutor(2);
+        setField(resolver, "sourceResolutionExecutor", executor);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        AtomicReference<Boolean> interrupted = new AtomicReference<>();
+        Thread resolution = new Thread(() -> {
+            try {
+                resolver.resolve(1L, Collections.emptyMap());
+            } catch (Throwable e) {
+                failure.set(e);
+            } finally {
+                interrupted.set(Thread.currentThread().isInterrupted());
+                exited.countDown();
+            }
+        });
+        try {
+            resolution.start();
+            assertTrue(entered.await(1, TimeUnit.SECONDS));
+            resolution.interrupt();
+
+            assertTrue("interrupted request must not wait for external work", exited.await(1, TimeUnit.SECONDS));
+            assertTrue(failure.get() instanceof IllegalStateException);
+            assertTrue(failure.get().getCause() instanceof InterruptedException);
+            assertEquals(Boolean.TRUE, interrupted.get());
+            assertEquals("source is still blocked when caller exits", 1L, release.getCount());
+        } finally {
+            release.countDown();
+            resolution.join(2000);
+            executor.close();
+        }
     }
 
     @Test

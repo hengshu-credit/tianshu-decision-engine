@@ -131,7 +131,7 @@
           >
             <span :style="{ color: customAccent.foreground }">实时主题预览</span>
           </div>
-          <p class="custom-accent-note">辅助色会自动从主题色生成，并同步适配提示与操作状态。</p>
+          <p class="custom-accent-note">辅助色随主题生成；成功、警告和失败提示始终使用绿、橙、红色。</p>
         </div>
 
         <div v-else class="accent-editor custom-accent-panel">

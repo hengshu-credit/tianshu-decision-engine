@@ -35,6 +35,8 @@ import java.util.function.Supplier;
 @Slf4j
 @Service
 public class ProjectWorkbenchService {
+    @Resource
+    private com.hengshucredit.rule.server.security.ConsoleAccessGuard accessGuard;
 
     @Resource
     private RuleProjectMapper projectMapper;
@@ -138,13 +140,13 @@ public class ProjectWorkbenchService {
 
         LocalDateTime recentBegin = LocalDateTime.now().minusHours(24);
         metrics.setRecentExecutionCount(safeCount(result, "最近执行次数",
-                () -> executionLogMapper.selectCount(
+                () -> executionLogMapper.selectLogicalCount(
                         new LambdaQueryWrapper<RuleExecutionLog>()
                                 .eq(RuleExecutionLog::getProjectCode,
                                         project.getProjectCode())
                                 .ge(RuleExecutionLog::getCreateTime, recentBegin))));
         metrics.setRecentSuccessCount(safeCount(result, "最近成功次数",
-                () -> executionLogMapper.selectCount(
+                () -> executionLogMapper.selectLogicalCount(
                         new LambdaQueryWrapper<RuleExecutionLog>()
                                 .eq(RuleExecutionLog::getProjectCode,
                                         project.getProjectCode())
@@ -156,7 +158,7 @@ public class ProjectWorkbenchService {
 
         RuleExecutionLog latest = safeLoad(result, "最近一次执行",
                 () -> {
-                    List<RuleExecutionLog> rows = executionLogMapper.selectList(
+                    List<RuleExecutionLog> rows = executionLogMapper.selectLogicalList(
                             new LambdaQueryWrapper<RuleExecutionLog>()
                                     .eq(RuleExecutionLog::getProjectCode,
                                             project.getProjectCode())
@@ -167,7 +169,7 @@ public class ProjectWorkbenchService {
                 });
         result.setRecentExecution(toRecentExecution(latest));
         result.setChecks(buildChecks(project, metrics, latest));
-        if (ruleWarmupStatus != null) {
+        if (ruleWarmupStatus != null && (accessGuard == null || accessGuard.can("rule:view"))) {
             result.setWarmup(ruleWarmupStatus.details());
             result.getChecks().add(warmupCheck(ruleWarmupStatus.details()));
         }
@@ -449,6 +451,17 @@ public class ProjectWorkbenchService {
 
     private <T> T safeLoad(ProjectWorkbenchDTO result, String label,
                            Supplier<T> loader) {
+        String permission = switch (label) {
+            case "业务字段" -> "field:view";
+            case "外数数据源", "启用的外数数据源" -> "datasource:view";
+            case "数据库数据源", "启用的数据库数据源" -> "database:view";
+            case "模型" -> "model:view";
+            case "项目规则", "测试场景" -> "rule:view";
+            case "待审批事项" -> "approval:view";
+            case "最近执行次数", "最近成功次数", "最近一次执行" -> "log:view";
+            default -> "project:view";
+        };
+        if (accessGuard != null && !accessGuard.can(permission)) return null;
         try {
             return loader.get();
         } catch (RuntimeException error) {

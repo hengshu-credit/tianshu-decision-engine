@@ -1,8 +1,8 @@
 <template>
-  <section class="validation-report" aria-label="发布前校验报告">
+  <section class="validation-report" :aria-label="report.scope === 'GRAPH' ? '画布校验报告' : '发布前校验报告'">
     <div class="validation-summary">
       <div>
-        <span class="summary-label">校验结果</span>
+        <span class="summary-label">{{ report.scope === 'GRAPH' ? '画布配置校验' : '校验结果' }}</span>
         <strong>{{ report.valid ? '可继续' : '存在阻断项' }}</strong>
       </div>
       <el-tag :type="report.valid ? 'success' : 'danger'" size="small">
@@ -39,7 +39,7 @@
         </div>
       </div>
     </div>
-    <el-empty v-if="report.valid && !warnings.length" description="格式、Schema 与依赖校验均已通过" />
+    <el-empty v-if="report.valid && !warnings.length" :description="report.scope === 'GRAPH' ? '未发现画布配置问题' : '格式、Schema 与依赖校验均已通过'" />
   </section>
 </template>
 

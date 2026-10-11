@@ -16,6 +16,23 @@ describe('flow designer style regressions', () => {
     expect(source).toContain("fill: 'var(--tianshu-flow-node-text)'")
   })
 
+  test('血缘节点边框使用主题混合色，当前和循环状态使用主题语义色', () => {
+    const nodes = readSource('src/components/flow/nodes.js')
+    const lineageStyle = readSource('src/styles/lineage-node.css')
+
+    expect(nodes).toContain("'--lineage-node-border': 'color-mix(in srgb, var(--lineage-node-color) 68%, var(--el-color-primary) 32%)'")
+    expect(nodes).toContain("stroke: 'transparent'")
+    expect(nodes).toContain('实际边框由 foreignObject 内的卡片绘制')
+    expect(nodes).not.toContain("class: 'node-color-strip'")
+    expect(lineageStyle).toContain('border: 1px solid var(--lineage-node-border, var(--tianshu-border));')
+    expect(lineageStyle).toContain('border-left: 3px solid var(--lineage-node-color, var(--tianshu-border));')
+    expect(lineageStyle).toContain('border-left: 1px solid var(--el-color-primary);')
+    expect(lineageStyle).toContain('border-top-color: var(--el-color-primary);')
+    expect(lineageStyle).toContain('border-left: 1px dashed var(--tianshu-warning-border);')
+    expect(lineageStyle).toContain('border-top-color: var(--tianshu-warning-border);')
+    expect(lineageStyle).not.toContain('.lineage-lf-node .node-color-strip')
+  })
+
   test('决策树和决策流工具栏跟随主题渐变并保持操作按钮可读', () => {
     const tree = readSource('src/views/designer/DecisionTree.vue')
     const flow = readSource('src/views/designer/DecisionFlow.vue')
@@ -180,7 +197,7 @@ describe('flow designer style regressions', () => {
       expect(source).toContain('toolbar-row-actions')
       expect(source).toContain('check-label="检查"')
       expect(source).toContain(':show-check="false"')
-      expect(source).toContain('toolbar-check-button')
+      expect(source).toContain('@check="handleCheck"')
       expect(source).toContain('toolbar-node-button')
       expect(source).toContain('toolbar-edge-select')
       expect(source).toContain('gridVisible')

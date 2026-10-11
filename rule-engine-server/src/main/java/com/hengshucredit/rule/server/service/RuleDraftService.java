@@ -61,6 +61,8 @@ public class RuleDraftService {
     private RuleDependencyClosureService dependencyClosureService;
     @Resource
     private ConsoleOperatorResolver operatorResolver;
+    @Resource
+    private RuleReferenceNamespaceGuard referenceNamespaceGuard;
 
     private final RuleSchemaService schemaService = new RuleSchemaService();
 
@@ -94,6 +96,7 @@ public class RuleDraftService {
             throw governance(409, "FROZEN_REVISION_WRITE_REJECTED",
                     "只能保存 DRAFT 状态的规则修订");
         }
+        requireLocalNamespace(definition, revision);
 
         List<RuleValidationIssue> issues = new ArrayList<>();
         addReferenceDiagnostics(definition, request.getModelJson(),
@@ -120,6 +123,11 @@ public class RuleDraftService {
         revision.setModelJson(request.getModelJson());
         RuleDependencyClosureService.DependencyClosure dependencies =
                 resolveDependencies(definition, revision, fields);
+        for (RuleValidationIssue issue : dependencies.getIssues()) {
+            if (Set.of("INACTIVE_DEPENDENCY", "MODEL_VERSION_MISSING", "DEPENDENCY_NOT_FOUND").contains(issue.getCode())) {
+                throw governance(400, "UPSTREAM_NOT_PUBLISHED", "不能引用未发布或不可用的上游内容：" + issue.getMessage());
+            }
+        }
         for (RuleValidationIssue issue : dependencies.getIssues()) {
             if (issue.getRevisionId() == null) {
                 issue.setRevisionId(request.getRevisionId());
@@ -212,8 +220,11 @@ public class RuleDraftService {
         if (definition == null) {
             throw governance(400, "DEFINITION_NOT_FOUND", "规则定义不存在");
         }
-        RuleFieldAnalyzer.ResolvedFields fields =
-                resolveFields(definition, effective.getModelJson());
+        // Imported IDs belong to the verified package. Management field relations use local IDs;
+        // frozen revision views and execution continue to read the package's own field snapshot.
+        RuleFieldAnalyzer.ResolvedFields fields = usesImportedReferenceNamespace(definition, effective)
+                ? new RuleFieldAnalyzer.ResolvedFields(Collections.emptyList(), Collections.emptyList())
+                : resolveFields(definition, effective.getModelJson());
         RuleDefinitionContent content = loadContent(definition.getId());
         if (content == null) {
             content = new RuleDefinitionContent();
@@ -355,6 +366,14 @@ public class RuleDraftService {
 
     protected RuleDefinition loadDefinition(Long definitionId) {
         return definitionMapper.selectById(definitionId);
+    }
+
+    protected void requireLocalNamespace(RuleDefinition definition, RuleRevision revision) {
+        referenceNamespaceGuard.requireLocalNamespace(definition, revision);
+    }
+
+    protected boolean usesImportedReferenceNamespace(RuleDefinition definition, RuleRevision revision) {
+        return referenceNamespaceGuard.inspectNamespace(definition, revision).imported();
     }
 
     protected RuleRevision requireEditableDraft(

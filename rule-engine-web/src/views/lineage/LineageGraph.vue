@@ -127,9 +127,9 @@
           :grid-size="gridSize"
           :grid-type="gridType"
           :grid-thickness="gridThickness"
-          :grid-color="gridColor"
+          :grid-color="gridColor || themeGridColor"
           :background-opacity="backgroundOpacity"
-          :background-color="backgroundColor"
+          :background-color="backgroundColor || themeBackgroundColor"
           :background-enabled="backgroundEnabled"
           :edge-animation-enabled="edgeAnimationEnabled"
           :show-edge-animation="false"
@@ -261,8 +261,8 @@ export default {
       pointerInteraction: null,
       lf: null,
       selectedNodeId: null,
-      miniMapVisible: true,
-      globalEdgeLineType: 'polyline',
+      miniMapVisible: false,
+      globalEdgeLineType: 'line',
       zoomInput: '100%',
       zoomPresets: [50, 75, 100, 125, 150, 200],
       gridVisible: true,
@@ -271,6 +271,8 @@ export default {
       gridType: 'dot',
       gridThickness: 1,
       gridColor: '',
+      themeGridColor: '',
+      themeBackgroundColor: '',
       backgroundOpacity: 1,
       backgroundColor: '',
       backgroundEnabled: false,
@@ -333,6 +335,7 @@ export default {
     },
   },
   beforeUnmount() {
+    window.removeEventListener('tianshu-theme-change', this.applyCanvasSettings)
     this.$refs.graphWrap?.removeEventListener('wheel', this.onCanvasWheel)
     this.resizeObserver?.disconnect()
     window.removeEventListener('resize', this.resizeGraph)
@@ -341,6 +344,7 @@ export default {
   },
   mounted() {
     this.initLogicFlow()
+    window.addEventListener('tianshu-theme-change', this.applyCanvasSettings)
     this.resizeGraph()
     window.addEventListener('resize', this.resizeGraph)
     if (typeof ResizeObserver !== 'undefined') {
@@ -598,7 +602,7 @@ export default {
         const endPoint = { x: target.left, y: target.top + CARD_H / 2 }
         // 共享依赖的跨层通道仅提供布局点，绘制、拖动后的重算和箭头均交给 LogicFlow。
         const geometry = {}
-        if (forward && route.length && !this.positionOverrides[edge.fromId] && !this.positionOverrides[edge.toId]) {
+        if (this.globalEdgeLineType === 'polyline' && forward && route.length && !this.positionOverrides[edge.fromId] && !this.positionOverrides[edge.toId]) {
           const pointsList = [startPoint]
           const waypoints = [...route.map(point => ({ x: point.left + CARD_W / 2, y: point.top + CARD_H / 2 })), endPoint]
           waypoints.forEach(point => {
@@ -637,7 +641,7 @@ export default {
             bottomPosition: 16,
           },
         },
-        edgeType: 'polyline',
+        edgeType: this.globalEdgeLineType,
         keyboard: { enabled: false },
         history: false,
         adjustEdge: false,
@@ -717,6 +721,8 @@ export default {
       return getComputedStyle(document.documentElement).getPropertyValue('--tianshu-bg-workspace').trim() || '#0f1629'
     },
     applyCanvasSettings() {
+      this.themeGridColor = getComputedStyle(document.documentElement).getPropertyValue('--el-color-primary-light-7').trim()
+      this.themeBackgroundColor = this.getThemeCanvasColor()
       if (!this.lf) return
       this.lf.graphModel?.updateGridOptions?.({
         visible: this.gridVisible,
@@ -724,14 +730,14 @@ export default {
         type: this.gridType,
         config: {
           ...(this.lf.graphModel.grid?.config || {}),
-          color: this.gridColor || getComputedStyle(document.documentElement).getPropertyValue('--tianshu-border-strong').trim(),
+          color: this.gridColor || this.themeGridColor,
           thickness: this.gridThickness,
         },
       })
       this.lf.updateEditConfig?.({ snapGrid: this.snapGridEnabled })
       this.lf.graphModel?.updateBackgroundOptions?.({
-        backgroundColor: this.backgroundEnabled ? (this.backgroundColor || this.getThemeCanvasColor()) : this.getThemeCanvasColor(),
-        opacity: this.backgroundEnabled ? this.backgroundOpacity : 1,
+        backgroundColor: this.backgroundEnabled ? (this.backgroundColor || this.themeBackgroundColor) : this.themeBackgroundColor,
+        opacity: this.backgroundOpacity,
       })
     },
     searchGraphElements(keyword) {
@@ -928,10 +934,13 @@ export default {
     },
     updateZoom(transform) {
       if (this.lf) {
-        const current = transform || this.lf.getTransform()
+        const current = transform?.transform || transform || this.lf.getTransform()
         const scale = current.SCALE_X || this.viewport.scale
-        this.viewport = { ...this.viewport, scale }
-        this.zoomPercent = Math.round(scale * 100)
+        this.viewport = {
+          x: current.TRANSLATE_X ?? this.viewport.x,
+          y: current.TRANSLATE_Y ?? this.viewport.y,
+          scale,
+        }
         this.zoomInput = `${this.zoomPercent}%`
       }
     },
@@ -948,7 +957,7 @@ export default {
     onZoomInputChange() {
       const requested = Number.parseFloat(String(this.zoomInput).replace('%', ''))
       const nextPercent = Number.isFinite(requested)
-        ? Math.min(400, Math.max(25, requested))
+        ? Math.min(MAX_SCALE * 100, Math.max(MIN_SCALE * 100, requested))
         : this.zoomPercent
       this.lf?.zoom?.(nextPercent / 100)
       this.updateZoom()

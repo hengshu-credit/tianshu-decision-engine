@@ -31,8 +31,6 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
             double initialScore = model.getDoubleValue("initialScore");
             JSONObject resultVar = model.getJSONObject("resultVar");
             JSONArray dimensionGroups = model.getJSONArray("dimensionGroups");
-            JSONArray thresholds = model.getJSONArray("thresholds");
-            IntervalValidator.validateThresholds(thresholds);
 
             Long resVarId = resultVar != null && resultVar.containsKey("_varId") ? resultVar.getLong("_varId") : null;
             String resRefType = resultVar != null ? resultVar.getString("_refType") : null;
@@ -91,55 +89,10 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
                 }
             }
 
-            if (thresholds != null && !thresholds.isEmpty()) {
-                script.append("\n// ---- 等级判定 ----\n");
-                String levelVar = "riskLevel";
-                JSONObject firstThreshold = thresholds.getJSONObject(0);
-                if (firstThreshold.containsKey("resultVar")) {
-                    String rawLevelVar = firstThreshold.getString("resultVar");
-                    Long levelVarId = firstThreshold.containsKey("_varId") ? firstThreshold.getLong("_varId") : null;
-                    String levelRefType = firstThreshold.getString("_refType");
-                    levelVar = resolveVar(levelVarId, levelRefType, rawLevelVar, varContext);
-                }
-
-                script.append(levelVar).append(" = \"未知\";\n");
-                for (int i = 0; i < thresholds.size(); i++) {
-                    JSONObject th = thresholds.getJSONObject(i);
-                    double min = th.getDoubleValue("min");
-                    double max = th.getDoubleValue("max");
-                    JSONObject resultOperandValue = th.getJSONObject("resultOperand");
-
-                    script.append(i == 0 ? "if (" : " else if (");
-                    script.append(resCode).append(" >= ").append(min)
-                          .append(" && ").append(resCode).append(" < ").append(max);
-                    script.append(") {\n    ").append(levelVar)
-                          .append(" = ");
-                    if (resultOperandValue != null) {
-                        script.append(OperandCompiler.compile(resultOperandValue, varContext));
-                    } else {
-                        script.append("\"").append(escapeForQlDoubleQuotedString(th.getString("result"))).append("\"");
-                    }
-                    script.append("\n}");
-                }
-                script.append("\n");
-            }
-
-            // 确定等级变量名，将分数和等级组合为 Map 返回
-            String levelVarForResult = "riskLevel";
-            if (thresholds != null && !thresholds.isEmpty()) {
-                JSONObject firstTh = thresholds.getJSONObject(0);
-                if (firstTh.containsKey("resultVar")) {
-                    String rawLevelVar = firstTh.getString("resultVar");
-                    Long lvId = firstTh.containsKey("_varId") ? firstTh.getLong("_varId") : null;
-                    String levelRefType = firstTh.getString("_refType");
-                    levelVarForResult = resolveVar(lvId, levelRefType, rawLevelVar, varContext);
-                }
-            }
+            String levelVar = ScorecardLevelCompiler.append(script, model, resCode, varContext);
             LinkedHashSet<String> outVars = new LinkedHashSet<>();
             outVars.add(resCode);
-            if (thresholds != null && !thresholds.isEmpty()) {
-                outVars.add(levelVarForResult);
-            }
+            if (levelVar != null) outVars.add(levelVar);
             RuleScriptResultCollector.prependOutputNullInits(script, outVars);
             RuleScriptResultCollector.appendResultMapReturn(script, outVars);
 
@@ -149,13 +102,7 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
         }
     }
 
-    /**
-     * 将阈值档位文案转义后嵌入 QLExpress 的双引号字符串字面量，避免引号或反斜杠破坏脚本语法。
-     */
-    private static String escapeForQlDoubleQuotedString(String value) {
-        if (value == null) return "";
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
+
 
     /** 将结构化条件数组拼接为 QLExpress 表达式 */
     private void appendConditions(StringBuilder sb, JSONArray conditions, VarContext varContext) {

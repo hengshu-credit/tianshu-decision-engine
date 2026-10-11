@@ -39,16 +39,14 @@ public class OpenRuleExecutionExecutor {
     public <T> T execute(Callable<T> task) {
         int timeoutMs = RequestDeadlineContext.remainingMillis();
         if (timeoutMs == 0) throw new TimedOut();
+        Long deadline = RequestDeadlineContext.capture();
         Future<T> future;
         submitted.incrementAndGet();
         try {
             future = executor.submit(() -> {
-                if (timeoutMs == Integer.MAX_VALUE) RequestDeadlineContext.clear();
-                else RequestDeadlineContext.start(timeoutMs);
-                try {
+                try (RequestDeadlineContext.Scope ignored = RequestDeadlineContext.install(deadline)) {
+                    if (RequestDeadlineContext.remainingMillis() == 0) throw new TimedOut();
                     return task.call();
-                } finally {
-                    RequestDeadlineContext.clear();
                 }
             });
         } catch (RejectedExecutionException e) {
@@ -56,8 +54,8 @@ public class OpenRuleExecutionExecutor {
             throw new Busy(e);
         }
         try {
-            return timeoutMs == Integer.MAX_VALUE
-                    ? future.get() : future.get(timeoutMs, TimeUnit.MILLISECONDS);
+            return deadline == null
+                    ? future.get() : future.get(RequestDeadlineContext.remainingMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             timedOut.incrementAndGet();
             cancelAndRemove(future);
@@ -68,6 +66,7 @@ public class OpenRuleExecutionExecutor {
             throw new IllegalStateException("开放规则执行被中断", e);
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
+            if (cause instanceof TimedOut) timedOut.incrementAndGet();
             if (cause instanceof RuntimeException) throw (RuntimeException) cause;
             if (cause instanceof Error) throw (Error) cause;
             throw new IllegalStateException("开放规则执行失败", cause);
@@ -95,7 +94,9 @@ public class OpenRuleExecutionExecutor {
 
     @PreDestroy
     public void close() {
-        executor.shutdownNow();
+        for (Runnable task : executor.shutdownNow()) {
+            if (task instanceof Future<?> queued) queued.cancel(false);
+        }
     }
 
     public static class TimedOut extends RuntimeException {

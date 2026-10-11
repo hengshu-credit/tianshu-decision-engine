@@ -34,6 +34,7 @@ public class GovernanceSchemaSqlTest {
                 "`submitted_snapshot_json`\\s+LONGTEXT")
                 .matcher(sql).find());
         Assert.assertTrue(sql.contains("`secret_payload_ciphertext` LONGTEXT"));
+        Assert.assertTrue(Pattern.compile("`version_selection_json`\\s+LONGTEXT").matcher(sql).find());
     }
 
     @Test

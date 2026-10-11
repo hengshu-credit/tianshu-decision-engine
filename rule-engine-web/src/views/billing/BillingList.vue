@@ -92,9 +92,10 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
+          <governance-workspace-toolbar resource-type="BILLING_CONFIG" />
               <table-column-settings :columns="billingColumns" storage-key="tianshu:table-columns:billing-list" />
               <el-button
-                v-permission="'project:edit'"
+                v-permission="'billing:edit'"
                 type="primary"
                 size="small"
                 :icon="ElIconPlus"
@@ -110,6 +111,7 @@
           border
           size="small"
           v-loading="configLoading"
+          :empty-text="configError || '暂无数据'"
           style="width: 100%"
         >
           <el-table-column label="作用范围" width="90" align="center">
@@ -158,28 +160,29 @@
               >{{ row.currency || 'CNY' }} {{ row.unitPrice || 0 }}</template
             >
           </el-table-column>
-          <el-table-column prop="status" label="状态" width="70" align="center">
+          <el-table-column prop="status" label="状态" width="160" align="center">
             <template v-slot="{ row }">
-              <el-tag
+              <governance-resource-status resource-type="BILLING_CONFIG" :resource-id="row.id" :status="row.status"><el-tag
                 :type="row.status === 1 ? 'success' : 'info'"
                 size="small"
                 >{{ row.status === 1 ? '启用' : '停用' }}</el-tag
-              >
+              ></governance-resource-status>
             </template>
           </el-table-column>
-          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="120" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="255" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
-                v-permission="'project:edit'"
+                v-permission="'billing:edit'"
                 link
                 data-action="edit"
                 size="small"
                 type="warning"
-                @click="handleEditConfig(row)"
+                @click="editWorkspace('BILLING_CONFIG', row, handleEditConfig)"
                 >编辑</el-button
               >
+              <governance-publish-action resource-type="BILLING_CONFIG" :resource-id="row.id" />
               <el-button
-                v-permission="'project:edit'"
+                v-permission="'billing:edit'"
                 link
                 data-action="delete"
                 size="small"
@@ -192,6 +195,8 @@
           </el-table-column>
         </el-table>
         <el-pagination
+          v-show="!configError"
+          :disabled="configLoading"
           :current-page="configQuery.pageNum"
           :page-size="configQuery.pageSize"
           :total="configTotal"
@@ -214,7 +219,7 @@
       </el-tab-pane>
 
       <el-tab-pane class="management-table-region" label="计费明细" name="record">
-        <div class="uiue-search-container">
+        <div class="uiue-search-container uiue-filter-toolbar">
           <el-form :inline="true" size="small" @keyup.enter="handleRecordQuery">
             <el-form-item label="项目编码">
               <project-filter-select
@@ -287,6 +292,7 @@
                 placeholder="Token 编码"
                 style="width: 160px"
             /></el-form-item>
+            <execution-version-filter v-model="recordQuery" />
             <el-form-item label="发生时间">
               <el-date-picker
                 v-model="recordDateRange"
@@ -318,6 +324,7 @@
           border
           size="small"
           v-loading="recordLoading"
+          :empty-text="recordError || '暂无数据'"
           style="width: 100%"
         >
           <el-table-column prop="occurTime" label="发生时间" min-width="160" />
@@ -350,6 +357,12 @@
             min-width="130"
             show-overflow-tooltip
           />
+          <el-table-column prop="ruleVersion" label="执行版本" width="100" />
+          <el-table-column prop="revisionId" label="执行修订" width="110" />
+          <el-table-column prop="billingBasis" label="计费依据" min-width="130">
+            <template v-slot="{ row }">{{ billingBasisLabel(row.billingBasis) }}</template>
+          </el-table-column>
+          <el-table-column prop="rootTraceId" label="关联 ID" min-width="300" show-overflow-tooltip />
           <el-table-column label="对象" width="90" align="center">
             <template v-slot="{ row }">{{
               optionLabel(billingTargetOptions, row.billingTarget)
@@ -369,27 +382,40 @@
           />
           <el-table-column
             prop="errorMessage"
-            label="错误信息"
+            label="计费时提示"
             min-width="180"
             show-overflow-tooltip
           />
-          <el-table-column label="结果" width="70" align="center" fixed="right">
+          <el-table-column label="计费时执行情况" width="175" align="center">
             <template v-slot="{ row }">
               <el-tag
-                :type="row.success === 1 ? 'success' : 'danger'"
+                :type="billingOutcomeType(row)"
                 size="small"
-                >{{ row.success === 1 ? '成功' : '失败' }}</el-tag
+                >{{ billingOutcomeLabel(row) }}</el-tag
               >
             </template>
           </el-table-column>
+          <el-table-column label="当前试运行状态" width="145" fixed="right">
+            <template v-slot="{ row }">
+              <el-button
+                v-if="row.billingBasis === 'DRAFT_TRIAL' && row.rootTraceId"
+                :data-testid="`billing-trial-${row.rootTraceId}`"
+                type="primary"
+                link
+                size="small"
+                @click="openTrialDetail(row)"
+              >查看当前状态</el-button>
+              <span v-else>{{ row.billingBasis === 'DRAFT_TRIAL' ? '未记录关联 ID' : '—' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="unitPrice" label="单价" width="110" align="right" />
           <el-table-column
             prop="quantity"
             label="数量"
             width="90"
             align="right"
-            fixed="right"
           />
-          <el-table-column prop="amount" label="金额" width="110" align="right" fixed="right">
+          <el-table-column prop="amount" label="金额" width="110" align="right">
             <template v-slot="{ row }"
               >{{ row.currency || 'CNY' }} {{ row.amount || 0 }}</template
             >
@@ -399,10 +425,11 @@
             label="耗时(ms)"
             width="100"
             align="right"
-            fixed="right"
           />
         </el-table>
         <el-pagination
+          v-show="!recordError"
+          :disabled="recordLoading"
           :current-page="recordQuery.pageNum"
           :page-size="recordQuery.pageSize"
           :total="recordTotal"
@@ -425,6 +452,14 @@
       </el-tab-pane>
 
       <el-tab-pane class="management-table-region" label="计费汇总" name="summary">
+        <el-alert
+          data-testid="billing-summary-basis"
+          title="成功和未成功按计费时记录统计，不代表试运行最终成功率；后续状态请在计费明细中查看。"
+          type="info"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 12px"
+        />
         <div class="uiue-search-container uiue-filter-toolbar">
           <el-form
             :inline="true"
@@ -495,6 +530,7 @@
                 placeholder="鉴权编码"
                 style="width: 145px"
             /></el-form-item>
+            <execution-version-filter v-model="summaryQuery" />
             <el-form-item label="汇总日期">
               <el-date-picker
                 v-model="summaryDateRange"
@@ -526,10 +562,12 @@
                 style="width: 150px"
               />
               <el-button
-                v-permission="'project:edit'"
+                v-permission="'billing:edit'"
                 size="small"
                 type="primary"
                 :icon="ElIconRefresh"
+                :loading="summaryRefreshSubmitting || summaryRefreshActive"
+                :disabled="summaryRefreshSubmitting || summaryRefreshActive || !!summaryRefreshError"
                 @click="handleRefreshSummary"
                 >刷新汇总</el-button
               >
@@ -537,11 +575,21 @@
           </div>
         </div>
 
+        <el-alert v-if="summaryQuery.ruleId" title="当前按所选规则版本的执行明细实时汇总，无需刷新日汇总。" type="info" :closable="false" show-icon class="summary-refresh-status" />
+        <el-alert v-if="summaryRefreshError" type="warning" :closable="false" show-icon class="summary-refresh-status">
+          <span>{{ summaryRefreshError }}</span>
+          <el-button size="small" @click="summaryRefreshTask ? pollSummaryRefresh() : loadSummaryRefreshTask()">重试查询</el-button>
+        </el-alert>
+        <el-alert v-else-if="summaryRefreshTask" :title="summaryRefreshTitle" :description="summaryRefreshHint"
+          :type="summaryRefreshTask.status === 'FAILED' ? 'error' : summaryRefreshTask.status === 'SUCCEEDED' ? 'success' : 'info'"
+          :closable="false" show-icon class="summary-refresh-status" data-testid="summary-refresh-status" />
+
         <el-table class="management-table" show-overflow-tooltip
           :data="summaryList"
           border
           size="small"
           v-loading="summaryLoading"
+          :empty-text="summaryError || '暂无数据'"
           style="width: 100%"
         >
           <el-table-column prop="summaryDate" label="汇总日期" width="110" />
@@ -581,14 +629,14 @@
           />
           <el-table-column
             prop="successCount"
-            label="成功"
-            width="80"
+            label="计费时成功"
+            width="120"
             align="right"
           />
           <el-table-column
             prop="failCount"
-            label="失败"
-            width="80"
+            label="计费时未成功"
+            width="130"
             align="right"
           />
           <el-table-column
@@ -615,6 +663,8 @@
           />
         </el-table>
         <el-pagination
+          v-show="!summaryError"
+          :disabled="summaryLoading"
           :current-page="summaryQuery.pageNum"
           :page-size="summaryQuery.pageSize"
           :total="summaryTotal"
@@ -638,10 +688,52 @@
     </el-tabs>
 
     <el-dialog
-      :title="configForm.id ? '编辑计费配置审批' : '新建计费配置审批'"
+      v-model="trialDialogVisible"
+      title="试运行与计费记录"
+      width="min(720px, calc(100vw - 32px))"
+      append-to-body
+      @close="closeTrialDetail"
+    >
+      <div v-if="trialBillingRecord" class="billing-trial-detail" data-testid="billing-trial-detail">
+        <el-alert type="info" :closable="false" show-icon>
+          计费时记录不代表当前试运行状态。后续完成、取消或过期不会改写已发生的费用、单价和时间。
+        </el-alert>
+        <h3>计费时记录</h3>
+        <dl class="billing-trial-facts">
+          <dt>计费依据</dt><dd>草稿试运行</dd>
+          <dt>关联 ID</dt><dd class="billing-trial-id">{{ trialBillingRecord.rootTraceId }}</dd>
+          <dt>计费编码</dt><dd>{{ trialBillingRecord.billingCode || '—' }}</dd>
+          <dt>接口编码</dt><dd>{{ trialBillingRecord.apiCode || '—' }}</dd>
+          <dt>发生时间</dt><dd>{{ (trialBillingRecord.occurTime || '—').replace('T', ' ') }}</dd>
+          <dt>当时执行情况</dt><dd><el-tag :type="billingOutcomeType(trialBillingRecord)">{{ billingOutcomeLabel(trialBillingRecord) }}</el-tag></dd>
+          <dt>当时提示</dt><dd>{{ trialBillingRecord.errorMessage || '—' }}</dd>
+          <dt>单价 / 数量</dt><dd>{{ trialBillingRecord.currency || 'CNY' }} {{ trialBillingRecord.unitPrice ?? '—' }} / {{ trialBillingRecord.quantity ?? '—' }}</dd>
+          <dt>金额</dt><dd>{{ trialBillingRecord.currency || 'CNY' }} {{ trialBillingRecord.amount ?? '—' }}</dd>
+        </dl>
+        <h3>当前试运行状态</h3>
+        <p class="billing-trial-help">仅可查询本人且有外数查看权限的会话。查询不会再次调用供应商；状态以最近一次查询为准。</p>
+        <p v-if="trialStatusLoading" role="status">正在查询当前试运行状态…</p>
+        <el-alert v-else-if="trialStatusError" type="warning" :closable="false" show-icon>
+          无法查看当前试运行状态，计费记录仍有效。{{ trialStatusError }}
+        </el-alert>
+        <div v-else-if="trialCurrentStatus" class="billing-trial-current">
+          <el-tag :type="trialStatusType(trialCurrentStatus)">{{ trialStatusLabel(trialCurrentStatus) }}</el-tag>
+          <span>查询于 {{ trialStatusCheckedAt }}</span>
+        </div>
+        <p class="billing-trial-help">关联 ID 即本次试运行会话 ID，可复制到外数调用日志的 Trace ID 筛选中核对调用记录。</p>
+      </div>
+      <template #footer>
+        <el-button data-testid="billing-trial-close" @click="closeTrialDetail">关闭</el-button>
+        <el-button data-testid="billing-trial-refresh" type="primary" :loading="trialStatusLoading" @click="refreshTrialStatus">刷新当前状态</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      :title="configForm.id ? '编辑计费配置' : '新建计费配置'"
       v-model="configDialogVisible"
       width="680px"
       append-to-body
+      @close="closeConfigDialog"
     >
       <el-form
         ref="configForm"
@@ -670,21 +762,12 @@
               label="所属项目"
               prop="projectId"
             >
-              <el-select
-                v-model="configForm.projectId"
-                filterable
+              <project-resource-select
+                v-model:value="configForm.projectId"
                 :disabled="!!configForm.id"
-                placeholder="请选择项目"
                 style="width: 100%"
                 @change="onBillingProjectChange"
-              >
-                <el-option
-                  v-for="project in projects"
-                  :key="project.id"
-                  :label="project.projectName"
-                  :value="project.id"
-                />
-              </el-select>
+              />
             </el-form-item>
           </el-col>
         </el-row>
@@ -708,7 +791,7 @@
           </el-col>
         </el-row>
         <el-row :gutter="12">
-          <el-col :span="8">
+          <el-col :span="12">
             <el-form-item label="计费对象">
               <el-select
                 v-model="configForm.billingTarget"
@@ -724,13 +807,28 @@
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+          <el-col :span="12">
+            <el-form-item label="计费方式" prop="chargeType">
+              <el-select v-model="configForm.chargeType" style="width: 100%">
+                <el-option
+                  v-for="item in chargeTypeOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="12">
+          <el-col :span="24">
             <el-form-item label="指定对象">
               <el-select
                 v-model="configForm.targetRefId"
                 clearable
                 filterable
                 :loading="targetLoading"
+                :disabled="targetLoading"
                 placeholder="不选则作用于该类型全部对象"
                 style="width: 100%"
               >
@@ -741,18 +839,10 @@
                   :value="item.id"
                 />
               </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="计费方式" prop="chargeType">
-              <el-select v-model="configForm.chargeType" style="width: 100%">
-                <el-option
-                  v-for="item in chargeTypeOptions"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </el-select>
+              <div v-if="targetError" role="alert" class="target-load-error">
+                <span>{{ targetError }}</span>
+                <el-button size="small" @click="loadTargetOptions">重试</el-button>
+              </div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -823,12 +913,12 @@
             >取消</el-button
           >
           <el-button
-            v-permission="'project:edit'"
+            v-permission="'billing:edit'"
             size="small"
             type="primary"
             :loading="configSaving"
             @click="handleSaveConfig"
-            >生成审批草稿</el-button
+            >保存草稿</el-button
           >
         </div>
       </template>
@@ -837,6 +927,12 @@
 </template>
 
 <script>
+import ExecutionVersionFilter from '@/components/common/ExecutionVersionFilter.vue'
+import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
+import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
+import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
+import { completeResourceChange } from '@/utils/governanceWorkspace'
+import governanceWorkspaceMixin from '@/mixins/governanceWorkspaceMixin'
 import { markRaw } from 'vue'
 import {
   Plus as ElIconPlus,
@@ -849,18 +945,22 @@ import {
   listBillingRecords,
   listBillingSummaries,
   refreshBillingSummary,
+  getBillingSummaryRefreshTask,
+  getLatestBillingSummaryRefresh,
   updateBillingConfigDraft,
   changeBillingConfigStatusDraft,
 } from '@/api/billing'
-import { listProjects } from '@/api/project'
 import { listDefinitions } from '@/api/definition'
-import { listApiConfigs } from '@/api/datasource'
+import { listApiConfigs, getApiConfigTrial } from '@/api/datasource'
 import { listDbDatasources } from '@/api/database'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
+import { trialStatusLabel, trialStatusType } from '@/utils/apiTrialStatus'
 
 export default {
+  mixins: [governanceWorkspaceMixin],
   data() {
     return {
       billingColumns: [
@@ -872,24 +972,29 @@ export default {
       summaryColumns: [
         { key: 'summaryDate', label: '汇总日期' }, { key: 'projectCode', label: '项目编码' },
         { key: 'authCode', label: '鉴权编码' }, { key: 'totalCount', label: '调用次数' },
-        { key: 'successCount', label: '成功次数' }, { key: 'amount', label: '金额' },
+        { key: 'successCount', label: '计费时成功' }, { key: 'failCount', label: '计费时未成功' }, { key: 'amount', label: '金额' },
       ],
       recordColumns: [
         { key: 'occurTime', label: '发生时间' }, { key: 'projectCode', label: '项目编码' },
         { key: 'authCode', label: '鉴权编码' }, { key: 'authType', label: '鉴权方式' },
         { key: 'tokenCode', label: 'Token 编码' }, { key: 'billingCode', label: '计费编码' },
         { key: 'billingTarget', label: '对象' }, { key: 'ruleCode', label: '规则编码' },
-        { key: 'apiCode', label: '接口编码' }, { key: 'errorMessage', label: '错误信息' },
-        { key: 'success', label: '结果' }, { key: 'quantity', label: '数量' },
+        { key: 'billingBasis', label: '计费依据' }, { key: 'rootTraceId', label: '关联 ID' },
+        { key: 'apiCode', label: '接口编码' }, { key: 'errorMessage', label: '计费时提示' },
+        { key: 'success', label: '计费时执行情况' }, { key: 'trialStatus', label: '当前试运行状态' },
+        { key: 'unitPrice', label: '单价' }, { key: 'quantity', label: '数量' },
         { key: 'amount', label: '金额' }, { key: 'costTimeMs', label: '耗时(ms)' },
       ],
       activeTab: 'config',
-      projects: [],
       targetOptions: [],
       targetLoading: false,
+      targetRequestId: 0,
+      targetError: '',
       configList: [],
       configTotal: 0,
       configLoading: false,
+      configRequestId: 0,
+      configError: '',
       configDialogVisible: false,
       configOriginalStatus: null,
       configSaving: false,
@@ -930,6 +1035,15 @@ export default {
       recordList: [],
       recordTotal: 0,
       recordLoading: false,
+      recordRequestId: 0,
+      recordError: '',
+      trialDialogVisible: false,
+      trialBillingRecord: null,
+      trialCurrentStatus: '',
+      trialStatusCheckedAt: '',
+      trialStatusLoading: false,
+      trialStatusError: '',
+      trialStatusRequestId: 0,
       recordDateRange: [],
       recordQuery: {
         pageNum: 1,
@@ -947,6 +1061,8 @@ export default {
       summaryList: [],
       summaryTotal: 0,
       summaryLoading: false,
+      summaryRequestId: 0,
+      summaryError: '',
       summaryDateRange: [],
       summaryQuery: {
         pageNum: 1,
@@ -957,10 +1073,20 @@ export default {
         projectName: '',
         authType: '',
         authCode: '',
+        ruleId: null,
+        versionMode: 'ALL',
+        ruleVersion: null,
+        revisionId: null,
         beginDate: '',
         endDate: '',
       },
       refreshDate: '',
+      summaryRefreshTask: null,
+      summaryRefreshSubmitting: false,
+      summaryRefreshError: '',
+      summaryRefreshRequestId: 0,
+      summaryRefreshTimer: null,
+      summaryRefreshNotify: false,
       billingTargetOptions: [
         { label: '规则引擎', value: 'ENGINE' },
         { label: '外数 API', value: 'API' },
@@ -983,12 +1109,90 @@ export default {
     }
   },
   name: 'BillingList',
-  components: { ProjectFilterSelect, RemoteFilterSelect, TableColumnSettings },
+  components: { ExecutionVersionFilter, GovernancePublishAction, GovernanceWorkspaceToolbar,
+    GovernanceResourceStatus, ProjectFilterSelect, ProjectResourceSelect, RemoteFilterSelect, TableColumnSettings },
+  computed: {
+    summaryRefreshActive() { return ['PENDING', 'RUNNING'].includes(this.summaryRefreshTask?.status) },
+    summaryRefreshTitle() {
+      const task = this.summaryRefreshTask
+      const labels = { PENDING: '等待汇总', RUNNING: '汇总中', SUCCEEDED: '汇总已完成', FAILED: '汇总失败' }
+      return task ? `${task.summaryDate} · ${labels[task.status]}` : ''
+    },
+    summaryRefreshHint() {
+      const task = this.summaryRefreshTask
+      if (!task) return ''
+      if (task.status === 'FAILED') return task.errorMessage || '汇总处理失败，原汇总保留，可重新刷新'
+      if (task.status === 'SUCCEEDED') return `已汇总 ${task.recordCount ?? 0} 条明细，生成 ${task.summaryCount ?? 0} 条汇总。后续到达的明细可再次刷新。`
+      return '后台处理期间保留上次成功的汇总。离开页面后任务仍会继续，再次进入可查看进度。'
+    },
+  },
+  watch: {
+    refreshDate() { if (this.activeTab === 'summary') this.loadSummaryRefreshTask() },
+  },
   created() {
-    this.loadProjects()
     this.loadConfigs()
   },
+  beforeUnmount() {
+    this.stopSummaryRefresh()
+    this.configRequestId++
+    this.recordRequestId++
+    this.summaryRequestId++
+    this.closeConfigDialog()
+    this.closeTrialDetail()
+  },
+  deactivated() { this.stopSummaryRefresh() },
+  activated() { if (this.activeTab === 'summary') this.loadSummaryRefreshTask() },
   methods: {
+    trialStatusLabel,
+    trialStatusType,
+    billingBasisLabel(basis) {
+      return { DRAFT_TRIAL: '草稿试运行', EXECUTION_SNAPSHOT: '执行时配置', CURRENT_CONFIG: '当前计费配置', LEGACY_REPLAY: '历史重放' }[basis] || basis || '未记录'
+    },
+    billingOutcomeLabel(row) {
+      if (row.success === 1) return '成功'
+      if (row.success !== 0) return '未记录'
+      return row.billingBasis === 'DRAFT_TRIAL' ? '当时未完成或未成功' : '失败'
+    },
+    billingOutcomeType(row) {
+      if (row.success === 1) return 'success'
+      if (row.success !== 0) return 'info'
+      return row.billingBasis === 'DRAFT_TRIAL' ? 'warning' : 'danger'
+    },
+    openTrialDetail(row) {
+      if (row.billingBasis !== 'DRAFT_TRIAL' || !row.rootTraceId) return
+      this.trialBillingRecord = { ...row }
+      this.trialDialogVisible = true
+      this.refreshTrialStatus()
+    },
+    closeTrialDetail() {
+      this.trialStatusRequestId++
+      this.trialDialogVisible = false
+      this.trialBillingRecord = null
+      this.trialCurrentStatus = ''
+      this.trialStatusCheckedAt = ''
+      this.trialStatusError = ''
+      this.trialStatusLoading = false
+    },
+    async refreshTrialStatus() {
+      if (!this.trialDialogVisible || !this.trialBillingRecord?.rootTraceId) return
+      const trialId = this.trialBillingRecord.rootTraceId
+      const requestId = ++this.trialStatusRequestId
+      this.trialCurrentStatus = ''
+      this.trialStatusCheckedAt = ''
+      this.trialStatusError = ''
+      this.trialStatusLoading = true
+      try {
+        const response = await getApiConfigTrial(trialId)
+        if (requestId !== this.trialStatusRequestId) return
+        if (response?.data?.trialId !== trialId || !response.data.status) throw new Error('返回的会话信息不完整或不一致，请重试。')
+        this.trialCurrentStatus = response.data.status
+        this.trialStatusCheckedAt = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'medium', hourCycle: 'h23' }).format(new Date())
+      } catch (error) {
+        if (requestId === this.trialStatusRequestId) this.trialStatusError = '请确认会话属于本人、具有外数查看权限，或稍后重试。'
+      } finally {
+        if (requestId === this.trialStatusRequestId) this.trialStatusLoading = false
+      }
+    },
     fetchConfigCodeOptions({ query, pageNum, pageSize }) {
       return listBillingConfigs(this.cleanParams({ ...this.configQuery, billingCode: query, pageNum, pageSize }))
     },
@@ -1016,48 +1220,58 @@ export default {
         status: 1,
       }
     },
-    async loadProjects() {
-      try {
-        const res = await listProjects({ pageNum: 1, pageSize: 500, status: 1 })
-        this.projects = (res.data && res.data.records) || []
-      } catch (e) {
-        this.projects = []
-      }
-    },
     async loadConfigs() {
+      const requestId = ++this.configRequestId
       this.configLoading = true
+      this.configError = ''
+      this.configList = []
       try {
         const res = await listBillingConfigs(
           this.cleanParams({ ...this.configQuery })
         )
+        if (requestId !== this.configRequestId) return
         this.configList = (res.data && res.data.records) || []
         this.configTotal = (res.data && res.data.total) || 0
+      } catch {
+        if (requestId === this.configRequestId) this.configError = '计费配置加载失败，请重新查询'
       } finally {
-        this.configLoading = false
+        if (requestId === this.configRequestId) this.configLoading = false
       }
     },
     async loadRecords() {
+      const requestId = ++this.recordRequestId
       this.recordLoading = true
+      this.recordError = ''
+      this.recordList = []
       try {
         const res = await listBillingRecords(
           this.cleanParams({ ...this.recordQuery })
         )
+        if (requestId !== this.recordRequestId) return
         this.recordList = (res.data && res.data.records) || []
         this.recordTotal = (res.data && res.data.total) || 0
+      } catch {
+        if (requestId === this.recordRequestId) this.recordError = '计费明细加载失败，请重新查询'
       } finally {
-        this.recordLoading = false
+        if (requestId === this.recordRequestId) this.recordLoading = false
       }
     },
     async loadSummaries() {
+      const requestId = ++this.summaryRequestId
       this.summaryLoading = true
+      this.summaryError = ''
+      this.summaryList = []
       try {
         const res = await listBillingSummaries(
           this.cleanParams({ ...this.summaryQuery })
         )
+        if (requestId !== this.summaryRequestId) return
         this.summaryList = (res.data && res.data.records) || []
         this.summaryTotal = (res.data && res.data.total) || 0
+      } catch {
+        if (requestId === this.summaryRequestId) this.summaryError = '计费汇总加载失败，请重新查询'
       } finally {
-        this.summaryLoading = false
+        if (requestId === this.summaryRequestId) this.summaryLoading = false
       }
     },
     onTabChange(tab) {
@@ -1069,7 +1283,8 @@ export default {
           : paneName || this.activeTab
       if (this.activeTab === 'config') this.loadConfigs()
       if (this.activeTab === 'record') this.loadRecords()
-      if (this.activeTab === 'summary') this.loadSummaries()
+      if (this.activeTab === 'summary') { this.loadSummaries(); this.loadSummaryRefreshTask() }
+      else this.stopSummaryRefresh()
     },
     handleConfigQuery() {
       this.configQuery.pageNum = 1
@@ -1124,6 +1339,10 @@ export default {
         projectName: '',
         authType: '',
         authCode: '',
+        ruleId: null,
+        versionMode: 'ALL',
+        ruleVersion: null,
+        revisionId: null,
         beginDate: '',
         endDate: '',
       }
@@ -1165,11 +1384,8 @@ export default {
           } else {
             response = await updateBillingConfigDraft(data)
           }
-          this.$message.success('审批草稿已生成，请检查后提交')
           this.configDialogVisible = false
-          if (response.data && response.data.id) {
-            this.$router.push('/approval/' + response.data.id)
-          }
+          await completeResourceChange(this, response, () => this.loadConfigs())
         } catch (error) {
           this.$message.error(
             '生成审批草稿失败: ' + (error.message || error)
@@ -1181,24 +1397,82 @@ export default {
     },
     handleDeleteConfig(row) {
       return this.$confirm(
-        `将为计费配置「${row.billingName}」生成删除审批。审批通过前，当前计费口径保持不变。`,
-        '发起删除审批',
+        `确定删除计费配置「${row.billingName}」？待审批的新增草稿须先驳回；已生效内容需要删除审批。`,
+        '确认删除',
         { type: 'warning' }
       )
         .then(async () => {
           const response = await deleteBillingConfigDraft(row)
-          this.$message.success('删除审批草稿已生成')
-          if (response.data && response.data.id) {
-            this.$router.push('/approval/' + response.data.id)
-          }
+          await completeResourceChange(this, response, () => this.loadConfigs())
         })
         .catch(() => {})
     },
     async handleRefreshSummary() {
-      const res = await refreshBillingSummary({ summaryDate: this.refreshDate })
-      const count = res.data && res.data.summaryCount
-      this.$message.success('汇总已刷新，共生成 ' + (count || 0) + ' 条')
-      this.loadSummaries()
+      if (this.summaryRefreshSubmitting || this.summaryRefreshActive || this.summaryRefreshError) return
+      this.stopSummaryRefresh()
+      this.summaryRefreshTask = null
+      const requestId = this.summaryRefreshRequestId
+      this.summaryRefreshSubmitting = true
+      this.summaryRefreshError = ''
+      this.summaryRefreshNotify = true
+      try {
+        const res = await refreshBillingSummary({ summaryDate: this.refreshDate })
+        if (requestId !== this.summaryRefreshRequestId) return
+        await this.acceptSummaryRefreshTask(res.data, true)
+      } catch {
+        if (requestId === this.summaryRefreshRequestId) this.summaryRefreshError = '提交结果未确认，请查询刷新状态后重试'
+      } finally {
+        if (requestId === this.summaryRefreshRequestId) this.summaryRefreshSubmitting = false
+      }
+    },
+    stopSummaryRefresh() {
+      this.summaryRefreshRequestId++
+      clearTimeout(this.summaryRefreshTimer)
+      this.summaryRefreshTimer = null
+      this.summaryRefreshSubmitting = false
+    },
+    async loadSummaryRefreshTask() {
+      this.stopSummaryRefresh()
+      const requestId = this.summaryRefreshRequestId
+      this.summaryRefreshTask = null
+      this.summaryRefreshNotify = false
+      this.summaryRefreshError = ''
+      try {
+        const res = await getLatestBillingSummaryRefresh({ summaryDate: this.refreshDate })
+        if (requestId !== this.summaryRefreshRequestId) return
+        if (res?.data != null) await this.acceptSummaryRefreshTask(res.data)
+      } catch {
+        if (requestId === this.summaryRefreshRequestId) this.summaryRefreshError = '刷新进度读取失败，请重试查询'
+      }
+    },
+    async pollSummaryRefresh() {
+      clearTimeout(this.summaryRefreshTimer)
+      this.summaryRefreshTimer = null
+      const taskId = this.summaryRefreshTask?.taskId
+      if (!taskId) return this.loadSummaryRefreshTask()
+      const requestId = ++this.summaryRefreshRequestId
+      try {
+        const res = await getBillingSummaryRefreshTask(taskId)
+        if (requestId !== this.summaryRefreshRequestId) return
+        if (res.data?.taskId !== taskId) throw new Error('汇总任务不一致')
+        await this.acceptSummaryRefreshTask(res.data, true)
+      } catch {
+        if (requestId === this.summaryRefreshRequestId) this.summaryRefreshError = '刷新进度读取失败，后台任务状态尚未确认，请重试查询'
+      }
+    },
+    async acceptSummaryRefreshTask(task, refreshOnSuccess = false) {
+      if (!task?.taskId || !task.summaryDate || !['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED'].includes(task.status)) throw new Error('汇总任务信息不完整')
+      this.summaryRefreshTask = task
+      this.summaryRefreshError = ''
+      if (['PENDING', 'RUNNING'].includes(task.status)) {
+        this.summaryRefreshTimer = setTimeout(() => this.pollSummaryRefresh(), 1500)
+      } else {
+        if (task.status === 'SUCCEEDED' && refreshOnSuccess) {
+          if (this.summaryRefreshNotify) this.$message.success(`${task.summaryDate} 汇总已完成，共生成 ${task.summaryCount ?? 0} 条`)
+          await this.loadSummaries()
+        }
+        this.summaryRefreshNotify = false
+      }
     },
     onConfigScopeChange(scope) {
       if (scope === 'GLOBAL') this.configForm.projectId = 0
@@ -1215,9 +1489,18 @@ export default {
       this.configForm.targetRefId = null
       this.loadTargetOptions()
     },
+    closeConfigDialog() {
+      this.targetRequestId++
+      this.targetLoading = false
+      this.targetOptions = []
+      this.targetError = ''
+    },
     async loadTargetOptions() {
       if (!this.configForm) return
+      const requestId = ++this.targetRequestId
       this.targetLoading = true
+      this.targetOptions = []
+      this.targetError = ''
       try {
         const baseParams = { pageNum: 1, pageSize: 500, status: 1 }
         if (this.configForm.scope === 'PROJECT' && this.configForm.projectId) {
@@ -1233,11 +1516,12 @@ export default {
         } else {
           res = { data: { records: [] } }
         }
+        if (requestId !== this.targetRequestId) return
         this.targetOptions = (res.data && res.data.records) || []
-      } catch (e) {
-        this.targetOptions = []
+      } catch {
+        if (requestId === this.targetRequestId) this.targetError = '计费对象加载失败'
       } finally {
-        this.targetLoading = false
+        if (requestId === this.targetRequestId) this.targetLoading = false
       }
     },
     onRecordDateChange(val) {
@@ -1284,6 +1568,35 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.summary-refresh-status {
+  flex-shrink: 0;
+  margin-bottom: 12px;
+  .el-button { margin-left: 12px; }
+}
+.target-load-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--el-color-danger);
+}
+.billing-trial-detail {
+  color: var(--tianshu-text-primary);
+
+  h3 { margin: 20px 0 12px; font-size: 15px; }
+}
+.billing-trial-facts {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 10px 16px;
+  margin: 0;
+  line-height: 1.6;
+
+  dt { color: var(--tianshu-text-secondary); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+}
+.billing-trial-id { user-select: all; }
+.billing-trial-help { color: var(--tianshu-text-secondary); line-height: 1.6; font-size: 13px; }
+.billing-trial-current { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .billing-page {
   .module-hint {
     background: #fff7ed;

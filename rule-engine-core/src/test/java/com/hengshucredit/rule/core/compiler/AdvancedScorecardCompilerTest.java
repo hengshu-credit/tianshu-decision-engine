@@ -61,6 +61,7 @@ public class AdvancedScorecardCompilerTest {
                 + "\"dimensionGroups\":[{\"dimensions\":[{\"rules\":[{\"conditions\":[{"
                 + "\"leftOperand\":{\"kind\":\"REFERENCE\",\"refId\":2,\"refType\":\"VARIABLE\",\"code\":\"creditScore\",\"value\":\"creditScore\",\"valueType\":\"NUMBER\"},"
                 + "\"operator\":\">=\",\"rightOperand\":{\"kind\":\"LITERAL\",\"value\":\"600\",\"valueType\":\"NUMBER\"}}],\"score\":20}]}]}],"
+                + "\"levelVar\":{\"varCode\":\"riskLevel\"},"
                 + "\"thresholds\":[{\"min\":120,\"max\":200,\"resultOperand\":{\"kind\":\"LITERAL\",\"value\":\"PASS\",\"valueType\":\"STRING\"}}]}"
         );
 

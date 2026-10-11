@@ -228,6 +228,8 @@ CREATE TABLE IF NOT EXISTS `governed_resource_version` (
   `resource_type`             VARCHAR(32)  NOT NULL                COMMENT '资源类型',
   `resource_id`               BIGINT       NOT NULL                COMMENT '业务资源ID',
   `version_no`                INT          NOT NULL                COMMENT '版本号',
+  `business_version`          INT          DEFAULT NULL            COMMENT '业务版本号，可复用；version_no为快照序号',
+  `deleted`                   TINYINT      NOT NULL DEFAULT 0,
   `source_version_id`         BIGINT       DEFAULT NULL            COMMENT '历史恢复来源版本ID',
   `approval_request_id`       BIGINT       DEFAULT NULL            COMMENT '来源审批单ID',
   `snapshot_json`             LONGTEXT     NOT NULL                COMMENT '规范资源快照',
@@ -259,6 +261,10 @@ CREATE TABLE IF NOT EXISTS `governance_approval_request` (
   `base_version_no`           INT          DEFAULT NULL            COMMENT '基准版本号',
   `source_version_id`         BIGINT       DEFAULT NULL            COMMENT '恢复来源版本ID',
   `draft_snapshot_json`       LONGTEXT     NOT NULL                COMMENT '可编辑草稿快照',
+  `restore_mode`              VARCHAR(16)  DEFAULT NULL            COMMENT '历史恢复方式 NEW/REUSE',
+  `publish_mode`              VARCHAR(16)  DEFAULT NULL,
+  `target_version_id`         BIGINT       DEFAULT NULL,
+  `expected_target_snapshot_id` BIGINT     DEFAULT NULL,
   `submitted_snapshot_json`   LONGTEXT     DEFAULT NULL            COMMENT '提交后冻结快照',
   `snapshot_digest`           CHAR(64)     DEFAULT NULL            COMMENT '提交快照摘要',
   `secret_payload_ciphertext` LONGTEXT     DEFAULT NULL            COMMENT '敏感字段AES-GCM密文',
@@ -279,6 +285,7 @@ CREATE TABLE IF NOT EXISTS `governance_approval_request` (
   UNIQUE KEY `uk_governance_request_no` (`request_no`),
   UNIQUE KEY `uk_governance_active_resource` (`active_resource_key`),
   KEY `idx_governance_request_tab` (`resource_type`, `status`, `create_time`),
+  KEY `idx_governance_request_resource` (`resource_type`, `resource_id`, `id`),
   KEY `idx_governance_request_project` (`project_id`, `status`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一生命周期审批单';
 
@@ -306,6 +313,7 @@ CREATE TABLE IF NOT EXISTS `governance_dependency_snapshot` (
   `target_resource_id`     BIGINT        NOT NULL                COMMENT '依赖资源ID',
   `target_version_id`      BIGINT        DEFAULT NULL            COMMENT '依赖生效版本ID',
   `target_version_no`      INT           DEFAULT NULL            COMMENT '依赖生效版本号',
+  `version_selection_json` LONGTEXT      DEFAULT NULL            COMMENT '固定版本原始引用；NULL为最新版',
   `reference_path`         VARCHAR(512)  DEFAULT NULL            COMMENT '引用路径',
   `relation_type`          VARCHAR(32)   DEFAULT NULL            COMMENT '依赖关系类型',
   `required`               TINYINT       NOT NULL DEFAULT 1       COMMENT '是否必需',
@@ -401,6 +409,7 @@ CREATE TABLE IF NOT EXISTS `rule_api_doc_scenario` (
   `description`        VARCHAR(512) DEFAULT NULL            COMMENT '场景说明',
   `request_json`       LONGTEXT     NOT NULL                COMMENT '完整请求报文',
   `response_json`      LONGTEXT     NOT NULL                COMMENT '完整响应报文',
+  `expectation_json`   LONGTEXT     DEFAULT NULL            COMMENT '版本化测试预期；NULL保留历史JSON快照模式',
   `response_source`    VARCHAR(16)  NOT NULL DEFAULT 'MANUAL' COMMENT '响应来源：MANUAL/EXECUTED',
   `outer_code`         INT          DEFAULT NULL            COMMENT '平台外层响应码',
   `business_code_path` VARCHAR(256) DEFAULT NULL            COMMENT '内层业务码路径',
@@ -830,6 +839,14 @@ CREATE TABLE IF NOT EXISTS `rule_list_record` (
   KEY `idx_list_record_effective` (`effective_time`, `expire_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单当前记录表';
 
+CREATE TABLE IF NOT EXISTS `rule_list_action_receipt` (
+  `task_id` VARCHAR(64) NOT NULL,
+  `project_id` BIGINT DEFAULT NULL,
+  `changed_count` INT NOT NULL DEFAULT 0,
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`task_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='异步名单动作幂等回执';
+
 CREATE TABLE IF NOT EXISTS `rule_list_record_log` (
   `id`             BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `list_id`        BIGINT       NOT NULL                COMMENT '名单库ID',
@@ -919,6 +936,7 @@ CREATE TABLE IF NOT EXISTS `rule_function` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='自定义函数定义表';
 
 CREATE TABLE IF NOT EXISTS `rule_function_version` (
+  `business_version` INT DEFAULT NULL COMMENT '业务版本号',
   `id`            BIGINT       NOT NULL AUTO_INCREMENT COMMENT 'primary id',
   `function_id`   BIGINT       NOT NULL                COMMENT 'function id',
   `version`       INT          NOT NULL                COMMENT 'version',
@@ -957,6 +975,8 @@ CREATE TABLE IF NOT EXISTS `rule_execution_log` (
    `input_params`    LONGTEXT      DEFAULT NULL             COMMENT '输入参数（JSON）',
    `output_result`   LONGTEXT      DEFAULT NULL             COMMENT '输出结果（JSON）',
    `trace_info`      LONGTEXT      DEFAULT NULL             COMMENT '表达式追踪树（JSON）',
+   `rule_set_stats_status` VARCHAR(16) DEFAULT NULL COMMENT 'READY/NO_TRACE/INVALID/TRUNCATED，NULL待补齐',
+   `rule_set_stats_version` INT DEFAULT NULL COMMENT '统计提取格式版本，NULL待补齐',
    `success`         TINYINT       NOT NULL DEFAULT 1       COMMENT '执行结果：0-失败，1-成功',
    `error_message`   VARCHAR(1024) DEFAULT NULL             COMMENT '错误信息',
    `execute_time_ms` BIGINT        DEFAULT NULL             COMMENT '执行耗时（毫秒）',
@@ -968,6 +988,7 @@ CREATE TABLE IF NOT EXISTS `rule_execution_log` (
     KEY `idx_dashboard_execution_time_project` (`create_time`, `project_code`),
     KEY `idx_dashboard_execution_rule_time` (`project_code`, `rule_code`, `create_time`),
     KEY `idx_execution_trace` (`trace_id`, `create_time`),
+    KEY `idx_rule_set_stats_pending` (`rule_set_stats_version`, `id`, `create_time`),
     KEY `idx_client_app` (`client_app_name`, `create_time`),
     KEY `idx_execution_log_auth` (`auth_id`, `token_id`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -1054,6 +1075,55 @@ CREATE TABLE IF NOT EXISTS `rule_execution_log` (
         PARTITION p_future VALUES LESS THAN MAXVALUE              COMMENT '兜底分区'
         );
 
+-- 不分区的逻辑身份表负责 trace 全局唯一；原分区审计行完整保留。
+CREATE TABLE IF NOT EXISTS `rule_execution_statistics` (
+  `id` BIGINT NOT NULL,
+  `create_time` DATETIME NOT NULL,
+  `trace_id` CHAR(36) DEFAULT NULL,
+  `attempt_no` INT DEFAULT NULL,
+  `project_code` VARCHAR(128) DEFAULT NULL,
+  `rule_set_stats_json` JSON NOT NULL,
+  `rule_set_stats_status` VARCHAR(16) NOT NULL,
+  `format_version` INT NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id`,`create_time`),
+  KEY `idx_execution_statistics_time` (`create_time`,`project_code`),
+  KEY `idx_execution_statistics_project` (`project_code`,`create_time`),
+  KEY `idx_execution_statistics_trace` (`trace_id`,`create_time`),
+  KEY `idx_execution_statistics_scope` (`format_version`,`project_code`,`create_time`,`trace_id`,`rule_set_stats_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='执行日志的精简规则集统计快照';
+
+CREATE TABLE IF NOT EXISTS `rule_set_statistics_event` (
+  `log_id` BIGINT NOT NULL,
+  `create_time` DATETIME NOT NULL,
+  `frame_index` INT NOT NULL,
+  `item_index` INT NOT NULL,
+  `order_key` VARBINARY(22) GENERATED ALWAYS AS (UNHEX(CONCAT(LPAD(HEX(TO_SECONDS(`create_time`)),12,'0'),LPAD(HEX(`log_id`),16,'0'),LPAD(HEX(`frame_index`),8,'0'),LPAD(HEX(`item_index`),8,'0')))) STORED,
+  `kind` VARCHAR(8) NOT NULL,
+  `rule_key` VARCHAR(80) NOT NULL,
+  `item_key` VARCHAR(64) NOT NULL,
+  `rule_id` BIGINT DEFAULT NULL,
+  `parent_code` LONGTEXT DEFAULT NULL,
+  `rule_code` LONGTEXT DEFAULT NULL,
+  `rule_name` LONGTEXT DEFAULT NULL,
+  `cost` BIGINT NOT NULL,
+  `hit` TINYINT NOT NULL,
+  `failed` TINYINT NOT NULL,
+  PRIMARY KEY (`log_id`,`create_time`,`frame_index`,`item_index`),
+  UNIQUE KEY `uk_rule_set_event_order` (`order_key`),
+  KEY `idx_rule_set_event_time` (`create_time`,`kind`,`rule_key`,`cost`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='实际执行的规则集帧与规则项统计素材';
+
+CREATE TABLE IF NOT EXISTS `rule_execution_log_identity` (
+  `trace_id` CHAR(36) NOT NULL,
+  `log_id` BIGINT DEFAULT NULL,
+  `log_create_time` DATETIME(6) DEFAULT NULL,
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`trace_id`),
+  UNIQUE KEY `uk_execution_log_identity_row` (`log_id`, `log_create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='逻辑执行日志的稳定物理位置';
+
+-- 逻辑读取视图由 SchemaSync 补齐旧库列之后执行 logical-execution-log-view.sql 创建。
+
 CREATE TABLE IF NOT EXISTS `rule_model` (
   `model_digest`            CHAR(64)     DEFAULT NULL       COMMENT 'Raw model SHA-256',
   `input_schema_json`       LONGTEXT     DEFAULT NULL       COMMENT 'Exact model input schema',
@@ -1082,6 +1152,7 @@ CREATE TABLE IF NOT EXISTS `rule_model` (
   `model_version`      VARCHAR(64)  DEFAULT NULL             COMMENT '模型自身的版本号',
   `training_info`      JSON         DEFAULT NULL             COMMENT '训练信息（特征重要性等）',
   `current_version`     INT          NOT NULL DEFAULT 0       COMMENT '平台当前设计版本号',
+  `business_version`    INT          DEFAULT NULL             COMMENT '业务版本号',
   `published_version`   INT          DEFAULT NULL             COMMENT '平台已发布版本号',
   `status`             TINYINT      NOT NULL DEFAULT 1       COMMENT '状态：0-停用，1-启用',
   `create_by`          VARCHAR(64)  DEFAULT NULL             COMMENT '创建人',
@@ -1148,6 +1219,9 @@ CREATE TABLE IF NOT EXISTS `rule_model_output_field` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一模型输出字段表';
 
 CREATE TABLE IF NOT EXISTS `rule_model_version` (
+  `business_version`          INT DEFAULT NULL COMMENT '业务版本号',
+  `execution_snapshot_json`   LONGTEXT DEFAULT NULL COMMENT '完整模型配置与冻结执行依赖',
+  `execution_snapshot_digest` CHAR(64) DEFAULT NULL COMMENT '完整执行快照SHA256',
   `model_format`             VARCHAR(32)  DEFAULT NULL,
   `model_file_name`          VARCHAR(256) DEFAULT NULL,
   `model_file_size`          BIGINT       DEFAULT NULL,
@@ -1361,6 +1435,8 @@ CREATE TABLE IF NOT EXISTS `rule_experiment` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验定义表';
 
 CREATE TABLE IF NOT EXISTS `rule_experiment_group` (
+  `version_mode`          VARCHAR(16) DEFAULT 'LATEST' COMMENT '规则调用版本策略',
+  `version_binding_id`    BIGINT DEFAULT NULL COMMENT '规则业务版本绑定ID',
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `experiment_id`   BIGINT       NOT NULL                COMMENT '实验ID',
   `group_code`      VARCHAR(128) NOT NULL                COMMENT '组编码',
@@ -1458,6 +1534,7 @@ CREATE TABLE IF NOT EXISTS `rule_trace_registry` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='全局Trace编号注册表';
 
 CREATE TABLE IF NOT EXISTS `rule_experiment_version` (
+  `business_version` INT DEFAULT NULL COMMENT '业务版本号',
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT 'primary id',
   `experiment_id`   BIGINT       NOT NULL                COMMENT 'experiment id',
   `version`         INT          NOT NULL                COMMENT 'version',
@@ -1534,6 +1611,8 @@ CREATE TABLE IF NOT EXISTS `rule_billing_config` (
 
 CREATE TABLE IF NOT EXISTS `rule_billing_record` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `billing_config_id` BIGINT     DEFAULT NULL COMMENT '计费项ID，历史明细可为空',
+  `billing_basis`   VARCHAR(32)   DEFAULT NULL COMMENT '执行快照或当前配置及历史重放依据',
   `project_id`      BIGINT       DEFAULT NULL            COMMENT '项目ID',
   `project_code`    VARCHAR(128) DEFAULT NULL            COMMENT '项目编码',
   `billing_code`    VARCHAR(128) NOT NULL                COMMENT '计费项编码',
@@ -1541,6 +1620,10 @@ CREATE TABLE IF NOT EXISTS `rule_billing_record` (
   `billing_target`  VARCHAR(32)  NOT NULL                COMMENT '计费对象：ENGINE/API/DB',
   `target_ref_id`   BIGINT       DEFAULT NULL            COMMENT '具体计费对象ID',
   `root_trace_id`   CHAR(36)     DEFAULT NULL            COMMENT '规则根Trace ID',
+  `rule_id` BIGINT DEFAULT NULL,
+  `rule_version` INT DEFAULT NULL,
+  `revision_id` BIGINT DEFAULT NULL,
+  `artifact_digest` VARCHAR(64) DEFAULT NULL,
   `billing_dedup_key` CHAR(64)   DEFAULT NULL            COMMENT '引擎计费幂等键摘要，仅根Trace计费记录使用',
   `attempt_no`      INT          DEFAULT NULL            COMMENT '逻辑执行恢复尝试次数',
   `request_id`      VARCHAR(128) DEFAULT NULL            COMMENT '请求ID',
@@ -1572,6 +1655,29 @@ CREATE TABLE IF NOT EXISTS `rule_billing_record` (
   KEY `idx_billing_record_auth` (`auth_id`, `token_id`, `occur_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费明细表';
 
+CREATE TABLE IF NOT EXISTS `rule_billing_summary_lock` (
+  `summary_date` DATE NOT NULL COMMENT '串行化同一日期的汇总替换',
+  PRIMARY KEY (`summary_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费日汇总事务锁';
+
+CREATE TABLE IF NOT EXISTS `rule_billing_summary_task` (
+  `task_id` CHAR(36) NOT NULL,
+  `summary_date` DATE NOT NULL,
+  `status` VARCHAR(16) NOT NULL,
+  `active_date` DATE GENERATED ALWAYS AS (CASE WHEN `status` IN ('PENDING','RUNNING') THEN `summary_date` ELSE NULL END) STORED,
+  `applicant` VARCHAR(128) DEFAULT NULL,
+  `summary_count` INT DEFAULT NULL,
+  `record_count` BIGINT DEFAULT NULL,
+  `error_message` VARCHAR(512) DEFAULT NULL,
+  `requested_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `started_at` DATETIME(6) DEFAULT NULL,
+  `completed_at` DATETIME(6) DEFAULT NULL,
+  PRIMARY KEY (`task_id`),
+  UNIQUE KEY `uk_billing_summary_active_date` (`active_date`),
+  KEY `idx_billing_summary_task_pending` (`status`, `requested_at`),
+  KEY `idx_billing_summary_task_date` (`summary_date`, `requested_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费日汇总刷新任务';
+
 CREATE TABLE IF NOT EXISTS `rule_billing_summary` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `summary_date`    DATE         NOT NULL                COMMENT '汇总日期',
@@ -1593,11 +1699,37 @@ CREATE TABLE IF NOT EXISTS `rule_billing_summary` (
   `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_billing_summary_key` (`summary_date`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`, `auth_id`),
+  UNIQUE KEY `uk_billing_summary_key` (`summary_date`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`, `auth_id`, `currency`),
   KEY `idx_billing_summary_date` (`summary_date`),
   KEY `idx_billing_summary_target` (`billing_target`, `target_ref_id`),
   KEY `idx_billing_summary_auth` (`auth_id`, `summary_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费汇总表';
+
+CREATE TABLE IF NOT EXISTS `rule_external_api_trial` (
+  `id`                 BIGINT NOT NULL AUTO_INCREMENT,
+  `trial_id`           CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `owner`              VARBINARY(512) NOT NULL COMMENT '控制台用户身份，按字节精确隔离',
+  `request_key`        CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `datasource_id`      BIGINT NOT NULL,
+  `snapshot_digest`    CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `snapshot_json`      LONGTEXT NOT NULL COMMENT 'CredentialCipher加密的不可变配置及参数快照',
+  `status`             VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `attempt_no`         INT NOT NULL DEFAULT 0,
+  `lease_owner`        CHAR(36) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `lease_until_ms`     BIGINT DEFAULT NULL,
+  `expires_at_ms`      BIGINT NOT NULL,
+  `pending_json`       LONGTEXT DEFAULT NULL COMMENT 'CredentialCipher加密的异步恢复检查点',
+  `result_json`        LONGTEXT DEFAULT NULL COMMENT 'CredentialCipher加密的试运行结果',
+  `error_message`      VARCHAR(2048) DEFAULT NULL,
+  `created_at_ms`      BIGINT NOT NULL,
+  `updated_at_ms`      BIGINT NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_external_api_trial_id` (`trial_id`),
+  UNIQUE KEY `uk_external_api_trial_request` (`owner`, `request_key`),
+  KEY `idx_external_api_trial_owner_created` (`owner`, `created_at_ms`, `id`),
+  KEY `idx_external_api_trial_owner_expire` (`owner`, `status`, `expires_at_ms`),
+  KEY `idx_external_api_trial_owner_lease` (`owner`, `status`, `lease_until_ms`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外数草稿试运行状态与不可变快照';
 
 CREATE TABLE IF NOT EXISTS `rule_execution_state` (
   `id`                    BIGINT       NOT NULL AUTO_INCREMENT,
@@ -1634,6 +1766,7 @@ CREATE TABLE IF NOT EXISTS `rule_execution_persistence_outbox` (
   `event_id`        CHAR(36)     NOT NULL,
   `log_json`        LONGTEXT     DEFAULT NULL,
   `definition_json` LONGTEXT     DEFAULT NULL,
+  `billing_snapshot_json` LONGTEXT DEFAULT NULL COMMENT '接受执行事件时冻结的计费事实',
   `success`         TINYINT      NOT NULL DEFAULT 0,
   `cost_time_ms`    BIGINT       DEFAULT NULL,
   `error_message`   VARCHAR(2048) DEFAULT NULL,
@@ -1711,6 +1844,31 @@ CREATE TABLE IF NOT EXISTS `rule_application_history` (
   KEY `idx_application_project_time` (`project_id`, `occurred_at`),
   KEY `idx_application_rule_time` (`root_rule_id`, `project_id`, `occurred_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `console_operation_log` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `user_id` BIGINT DEFAULT NULL,
+  `username` VARCHAR(128) NOT NULL,
+  `module` VARCHAR(64) NOT NULL,
+  `action` VARCHAR(32) NOT NULL,
+  `request_method` VARCHAR(16) NOT NULL,
+  `request_path` VARCHAR(512) NOT NULL,
+  `page_path` VARCHAR(512) DEFAULT NULL,
+  `target_type` VARCHAR(64) DEFAULT NULL,
+  `target_id` VARCHAR(128) DEFAULT NULL,
+  `target_name` VARCHAR(255) DEFAULT NULL,
+  `outcome` VARCHAR(16) NOT NULL,
+  `result_code` INT NOT NULL,
+  `target_version` VARCHAR(64) DEFAULT NULL,
+  `change_summary` VARCHAR(160) DEFAULT NULL,
+  `client_ip` VARCHAR(64) DEFAULT NULL,
+  `duration_ms` BIGINT NOT NULL,
+  `create_time` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`id`),
+  KEY `idx_console_operation_time` (`create_time`, `id`),
+  KEY `idx_console_operation_user_time` (`username`, `create_time`),
+  KEY `idx_console_operation_module_time` (`module`, `create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='控制台账户操作记录';
 
 CREATE TABLE IF NOT EXISTS `offline_transfer_log` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,

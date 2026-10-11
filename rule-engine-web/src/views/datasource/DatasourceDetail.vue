@@ -19,13 +19,22 @@
           size="small"
           type="primary"
           :loading="saving"
+          :disabled="!configurationReady"
+          data-testid="save-external-datasource"
           @click="handleSave"
           >保存</el-button
         >
       </div>
     </div>
 
+    <div v-if="!configurationReady && !detailError" role="status">正在加载外数配置，请稍候…</div>
+    <el-alert v-if="detailError" title="外数配置加载失败" type="error" :closable="false" show-icon>
+      <span>{{ detailError }}</span>
+      <el-button @click="loadDetail">重新加载</el-button>
+    </el-alert>
     <el-form
+      v-if="configurationReady"
+      :disabled="saving"
       ref="form"
       :model="form"
       :rules="rules"
@@ -263,16 +272,14 @@
             </el-col>
             <el-col :span="8">
               <el-form-item label="Token路径">
-                <el-input
-                  v-model="authConfig.tokenPath"
+                <protocol-path-picker v-model:value="authConfig.tokenPath"
                   placeholder="body.data.access_token 或 headers.Authorization"
                 />
               </el-form-item>
             </el-col>
             <el-col :span="8">
               <el-form-item label="过期时间路径">
-                <el-input
-                  v-model="authConfig.expiresInPath"
+                <protocol-path-picker v-model:value="authConfig.expiresInPath"
                   placeholder="body.expires_in 或 headers.X-Expires-In"
                 />
               </el-form-item>
@@ -371,6 +378,10 @@
 </template>
 
 <script>
+import { hasPermission } from '@/security/permissionState'
+import { editableResource } from '@/api/governance'
+import { completeResourceChange } from '@/utils/governanceWorkspace'
+import ProtocolPathPicker from '@/components/common/ProtocolPathPicker.vue'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import {
   createDatasource,
@@ -384,11 +395,16 @@ import { routeProjectId } from '@/utils/projectContext'
 export default {
   name: 'DatasourceDetail',
   mixins: [workspaceTabTitleMixin(vm => vm.form.datasourceName)],
-  components: { MonacoEditor },
+  components: {
+    ProtocolPathPicker, MonacoEditor },
   data() {
     return {
       projects: [],
       saving: false,
+      detailLoading: false,
+      detailLoaded: false,
+      detailError: '',
+      detailLoadSequence: 0,
       form: this.emptyForm(),
       authConfig: this.emptyAuthConfig('NONE'),
       rules: {
@@ -446,12 +462,13 @@ export default {
     }
   },
   computed: {
+    configurationReady() { return this.isCreateMode || (this.detailLoaded && !this.detailLoading && !this.detailError) },
     isCreateMode() {
       return !this.$route.params.id || this.$route.params.id === 'new'
     },
   },
   async created() {
-    await this.loadProjects()
+    const projects = this.loadProjects()
     if (!this.isCreateMode) {
       await this.loadDetail()
     } else {
@@ -461,7 +478,11 @@ export default {
       )
       if (projectId) this.applyProjectContext(projectId)
     }
+    await projects
   },
+  activated() { if (!this.isCreateMode && !this.detailLoaded && !this.detailLoading) this.loadDetail() },
+  deactivated() { this.detailLoadSequence++; this.detailLoading = false },
+  beforeUnmount() { this.detailLoadSequence++ },
   methods: {
     applyProjectContext(projectId) {
       this.form.scope = 'PROJECT'
@@ -519,13 +540,24 @@ export default {
       }
     },
     async loadDetail() {
-      const res = await getDatasource(this.$route.params.id)
-      const data = res && res.data ? res.data : res
-      this.form = { ...this.emptyForm(), ...data }
-      this.authConfig = this.parseAuthConfig(
-        this.form.authConfig,
-        this.form.authType
-      )
+      if (this.isCreateMode || this.detailLoading) return
+      const id = this.$route.params.id, sequence = ++this.detailLoadSequence
+      const current = () => sequence === this.detailLoadSequence && String(this.$route.params.id) === String(id)
+      this.detailLoading = true; this.detailLoaded = false; this.detailError = ''
+      try {
+        const res = await getDatasource(id)
+        if (res.data?.id && hasPermission('datasource:edit')) res.data = await editableResource('EXTERNAL_DATASOURCE', res.data.id, res.data)
+        if (!current()) return
+        const data = res && res.data ? res.data : res
+        if (!data?.id || String(data.id) !== String(id)) throw new Error('外数配置不存在或已删除，请返回列表核对。')
+        this.form = { ...this.emptyForm(), ...data }
+        this.authConfig = this.parseAuthConfig(this.form.authConfig, this.form.authType)
+        this.detailLoaded = true
+      } catch (error) {
+        if (current()) this.detailError = error.message || '无法读取外数配置，请重新加载。'
+      } finally {
+        if (sequence === this.detailLoadSequence) this.detailLoading = false
+      }
     },
     onScopeChange(scope) {
       if (scope === 'GLOBAL') this.form.projectId = 0
@@ -604,8 +636,9 @@ export default {
       }
     },
     handleSave() {
+      if (!this.configurationReady || this.saving) return
       this.$refs.form.validate(async (valid) => {
-        if (!valid) return
+        if (!valid || !this.configurationReady) return
         let data
         try {
           data = this.normalizeForm(this.form)
@@ -618,9 +651,12 @@ export default {
           const response = data.id
             ? await updateDatasource(data)
             : await createDatasource(data)
-          this.$message.success('外数数据源变更已送审')
-          if (response.data && response.data.id)
-            this.$router.push('/approval/' + response.data.id)
+          await completeResourceChange(this, response)
+            if (!this.form.id && response.data?.resourceId) {
+              this.form.id = response.data.resourceId
+              this.detailLoaded = true
+              await this.$router.replace('/datasource/source/' + this.form.id)
+            }
         } finally {
           this.saving = false
         }
@@ -674,7 +710,7 @@ export default {
   .detail-title {
     font-size: 20px;
     font-weight: 700;
-    color: #1f2937;
+    color: var(--tianshu-text-primary);
   }
   .detail-meta,
   .field-help,
@@ -692,7 +728,7 @@ export default {
   }
   .detail-form {
     background: var(--tianshu-bg-surface);
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--tianshu-border);
     border-radius: 4px;
     padding: 16px;
   }
@@ -703,13 +739,13 @@ export default {
     margin-top: 4px;
   }
   .form-section {
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--tianshu-border);
     border-radius: 4px;
     padding: 12px 12px 0;
     margin-bottom: 12px;
   }
   .section-title {
-    color: #334155;
+    color: var(--tianshu-text-primary);
     font-weight: 700;
     margin-bottom: 6px;
   }

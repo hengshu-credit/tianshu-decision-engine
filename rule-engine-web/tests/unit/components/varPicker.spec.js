@@ -1,5 +1,6 @@
 import { shallowMount } from '@test-utils'
 import { nextTick } from 'vue'
+import { flushPromises } from '@vue/test-utils'
 
 const VarPicker = (await vi.importActual('../../../src/components/common/VarPicker.vue')).default
 
@@ -22,6 +23,8 @@ function mountPicker(propsData = {}, options = {}) {
     },
     stubs: {
       'el-popover': PopoverStub,
+      'field-picker-panel': false,
+      'field-picker-row': false,
       'el-input': {
         template: '<input />',
         props: ['value']
@@ -100,6 +103,28 @@ function standaloneOptions(count = 3) {
 }
 
 describe('VarPicker', () => {
+  test('单元格主选择器互斥，但保留当前表达式内的子选择器', async () => {
+    const first = mountPicker({ operandMode: true }, { attachTo: document.body })
+    const child = mountPicker({ operandMode: true, dismissOnOutside: true }, { attachTo: document.body })
+    const second = mountPicker({ operandMode: true }, { attachTo: document.body })
+    const popper = document.createElement('div')
+    document.body.appendChild(popper)
+    popper.appendChild(child.element)
+    vi.spyOn(first.vm, 'getPopoverElement').mockReturnValue(popper)
+    try {
+      first.vm.openPopover()
+      await nextTick()
+      child.vm.openPopover()
+      await nextTick()
+      expect(first.vm.popoverVisible).toBe(true)
+      expect(child.vm.popoverVisible).toBe(true)
+      second.vm.openPopover()
+      await nextTick()
+      expect(first.vm.popoverVisible).toBe(false)
+      expect(child.vm.popoverVisible).toBe(false)
+      expect(second.vm.popoverVisible).toBe(true)
+    } finally { first.unmount(); child.unmount(); second.unmount(); popper.remove() }
+  })
   test('操作数触发器直接使用 Element 输入框并交给前缀流式布局', () => {
     const wrapper = mountPicker({
       operandMode: true,
@@ -125,9 +150,9 @@ describe('VarPicker', () => {
     }))
 
     const wrapper = mountPicker({ vars })
-    await nextTick()
+    await nextTick(); await flushPromises()
 
-    expect(wrapper.findAll('.vp-row')).toHaveLength(2)
+    expect(wrapper.findAll('.fp-row')).toHaveLength(2)
     expect(errorSpy.mock.calls.some(args => args.join(' ').includes("Duplicate keys detected: 'amount'"))).toBe(false)
     errorSpy.mockRestore()
   })
@@ -150,7 +175,7 @@ describe('VarPicker', () => {
 
   test('只有对象字段时自动切换到对象分类', async () => {
     const wrapper = mountPicker({ vars: objectFieldOptions() })
-    await nextTick()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.categoryList.map(c => c.key)).toEqual(['object'])
     expect(wrapper.vm.activeCategory).toBe('object')
@@ -173,7 +198,7 @@ describe('VarPicker', () => {
 
   test('点击对象分组只展开，点击子字段才选择字段', async () => {
     const wrapper = mountPicker({ vars: objectFieldOptions() })
-    await nextTick()
+    await nextTick(); await flushPromises()
 
     const group = wrapper.vm.rightItems[0]
     wrapper.vm.onItemClick(group)
@@ -212,7 +237,7 @@ describe('VarPicker', () => {
         }
       ]
     })
-    await nextTick()
+    await nextTick(); await flushPromises()
 
     const child = wrapper.vm.rightItems[0].children[0]
     expect(wrapper.vm.objectFieldPath(child)).toBe('request.params.taxpayerType')
@@ -236,7 +261,7 @@ describe('VarPicker', () => {
 
   test('点击模型分组只展开，点击输出字段才选择字段', async () => {
     const wrapper = mountPicker({ vars: modelFieldOptions() })
-    await nextTick()
+    await nextTick(); await flushPromises()
 
     wrapper.vm.onCategoryClick('model')
     const group = wrapper.vm.rightItems.find(item => item._modelGroupKey === 'creditModel')
@@ -262,7 +287,7 @@ describe('VarPicker', () => {
       vars,
       selectedVars: [vars[1], 'v2', vars[2]]
     })
-    await nextTick()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.categoryList[0]).toMatchObject({ key: 'selected', label: '已选字段', count: 2 })
 
@@ -276,7 +301,7 @@ describe('VarPicker', () => {
       vars,
       selectedVars: [vars[0], { varCode: 'projectOnlyVar', varLabel: '项目变量' }]
     })
-    await nextTick()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.selectedItems.map(v => v.varCode)).toEqual(['v1'])
     expect(wrapper.vm.categoryList[0]).toMatchObject({ key: 'selected', count: 1 })
@@ -291,30 +316,92 @@ describe('VarPicker', () => {
     wrapper.vm.$refs.popover.popperElm = popper
 
     wrapper.vm.openPopover()
-    await nextTick()
+    await nextTick(); await flushPromises()
     expect(wrapper.vm.popoverVisible).toBe(true)
 
-    wrapper.vm.onDocumentMouseDown({ target: inside })
+    wrapper.vm.onDocumentPointerDown({ target: inside })
     expect(wrapper.vm.popoverVisible).toBe(true)
 
     document.body.removeChild(popper)
     wrapper.unmount()
   })
 
-  test('字段选择器打开后点击组件外部才关闭', async () => {
+  test('默认点击外部关闭并保留搜索，显式禁用时保持打开', async () => {
     const wrapper = mountPicker({ vars: objectFieldOptions() })
     const outside = document.createElement('div')
     document.body.appendChild(outside)
     const closeSpy = vi.spyOn(wrapper.vm.$refs.popover, 'doClose')
 
     wrapper.vm.openPopover()
-    await nextTick()
-    wrapper.vm.onDocumentMouseDown({ target: outside })
+    await nextTick(); await flushPromises()
+    wrapper.vm.searchText = 'amount'
+    const focusSpy = vi.spyOn(wrapper.vm, 'moveFocusBeforeClose')
+    wrapper.vm.onDocumentPointerDown({ target: outside })
 
     expect(wrapper.vm.popoverVisible).toBe(false)
+    expect(wrapper.vm.searchText).toBe('amount')
+    expect(focusSpy).not.toHaveBeenCalled()
     expect(closeSpy).toHaveBeenCalled()
+    await wrapper.setProps({ dismissOnOutside: false })
+    wrapper.vm.openPopover()
+    await nextTick()
+    wrapper.vm.onDocumentPointerDown({ target: outside })
+    expect(wrapper.vm.popoverVisible).toBe(true)
 
     document.body.removeChild(outside)
+    wrapper.unmount()
+  })
+
+  test('嵌套选择器及其浮层属于父面板，点击父面板仅关闭子选择器', async () => {
+    const parent = mountPicker({ operandMode: true }, { attachTo: document.body })
+    const child = mountPicker({ operandMode: true }, { attachTo: document.body })
+    const popper = document.createElement('div')
+    const childPopper = document.createElement('div')
+    childPopper.id = 'picker-child-popover'
+    const versionPopup = document.createElement('div')
+    versionPopup.id = 'picker-version-popup'
+    const option = document.createElement('button')
+    versionPopup.appendChild(option)
+    const versionControl = document.createElement('input')
+    versionControl.setAttribute('aria-controls', versionPopup.id)
+    childPopper.appendChild(versionControl)
+    child.element.setAttribute('aria-describedby', childPopper.id)
+    popper.appendChild(child.element)
+    document.body.append(popper, childPopper, versionPopup)
+    vi.spyOn(parent.vm, 'getPopoverElement').mockReturnValue(popper)
+    vi.spyOn(child.vm, 'getPopoverElement').mockReturnValue(childPopper)
+    try {
+      parent.vm.openPopover()
+      await nextTick()
+      child.vm.openPopover()
+      await nextTick()
+      for (const target of [childPopper, option]) {
+        target.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+        await nextTick()
+        expect(parent.vm.popoverVisible).toBe(true)
+        expect(child.vm.popoverVisible).toBe(true)
+      }
+      popper.addEventListener('pointerdown', event => event.preventDefault())
+      popper.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
+      await nextTick()
+      expect(parent.vm.popoverVisible).toBe(true)
+      expect(child.vm.popoverVisible).toBe(false)
+      child.vm.openPopover()
+      await nextTick()
+      document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+      await nextTick()
+      expect(parent.vm.popoverVisible).toBe(false)
+      expect(child.vm.popoverVisible).toBe(false)
+    } finally { parent.unmount(); child.unmount(); popper.remove(); childPopper.remove(); versionPopup.remove() }
+  })
+
+  test('表达式内子选择器打开已有阈值时不触发替换或清空', async () => {
+    const wrapper = mountPicker({ operandMode: true, value: { kind: 'LITERAL', value: 18, valueType: 'NUMBER' }, allowedKinds: ['LITERAL', 'PATH', 'REFERENCE'], restoreManualOnOpen: false })
+    wrapper.vm.openPopover()
+    await nextTick()
+    expect(wrapper.vm.popoverVisible).toBe(true)
+    expect(wrapper.emitted('manual-edit')).toBeUndefined()
+    expect(wrapper.emitted('input')).toBeUndefined()
     wrapper.unmount()
   })
 
@@ -328,8 +415,8 @@ describe('VarPicker', () => {
     wrapper.vm.$refs.popover.popperElm = document.createElement('div')
 
     wrapper.vm.openPopover()
-    await nextTick()
-    await nextTick()
+    await nextTick(); await flushPromises()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.popoverVisible).toBe(true)
     expect(wrapper.vm.activeCategory).toBe('standalone')
@@ -344,7 +431,7 @@ describe('VarPicker', () => {
         { varCode: 'scoreLevel', varLabel: '评分等级', varType: 'STRING', _ref: { category: 'standalone' } }
       ]
     })
-    await nextTick()
+    await nextTick(); await flushPromises()
 
     wrapper.vm.onReferenceInput('score')
 
@@ -359,13 +446,13 @@ describe('VarPicker', () => {
         ...modelFieldOptions().slice(0, 1)
       ]
     })
-    await nextTick()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.activeCategory).toBe('standalone')
 
     wrapper.vm.onReferenceInput('credit')
-    await nextTick()
-    await nextTick()
+    await nextTick(); await flushPromises()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.categoryList.map(c => c.key)).toEqual(['standalone', 'model'])
     expect(wrapper.vm.categoryList.map(c => c.count)).toEqual([1, 1])
@@ -389,12 +476,12 @@ describe('VarPicker', () => {
         }
       ]
     })
-    await nextTick()
+    await nextTick(); await flushPromises()
 
     wrapper.vm.onCategoryClick('object')
     wrapper.vm.onReferenceInput('am')
-    await nextTick()
-    await nextTick()
+    await nextTick(); await flushPromises()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.filteredRightItems).toHaveLength(1)
     expect(wrapper.vm.expandedObject).toBe('LoanApply')
@@ -412,12 +499,12 @@ describe('VarPicker', () => {
 
   test('200 个字段搜索前后左侧计数和面板宽度不变化', async () => {
     const wrapper = mountPicker({ vars: standaloneOptions(200) })
-    await nextTick()
+    await nextTick(); await flushPromises()
     const width = wrapper.vm.panelStyle.width
 
     expect(wrapper.vm.categoryList.find(item => item.key === 'standalone').count).toBe(200)
     wrapper.vm.onReferenceInput('v199')
-    await nextTick()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.categoryList.find(item => item.key === 'standalone').count).toBe(200)
     expect(wrapper.vm.panelStyle.width).toBe(width)
@@ -446,9 +533,9 @@ describe('VarPicker', () => {
     wrapper.vm.$refs.popover.popperElm = document.createElement('div')
 
     wrapper.vm.openPopover()
-    await nextTick()
-    await nextTick()
-    await nextTick()
+    await nextTick(); await flushPromises()
+    await nextTick(); await flushPromises()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.activeCategory).toBe('standalone')
     expect(wrapper.vm.currentValue).toBe('v99')
@@ -478,9 +565,9 @@ describe('VarPicker', () => {
     const group = wrapper.vm.filteredRightItems[0]
     wrapper.vm.onItemClick(group)
     const groupKey = wrapper.vm.fieldGroupKey(group)
-    await nextTick()
-    await nextTick()
-    await nextTick()
+    await nextTick(); await flushPromises()
+    await nextTick(); await flushPromises()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.activeCategory).toBe('object')
     expect(wrapper.vm.expandedObject).toBe(groupKey)
@@ -495,9 +582,9 @@ describe('VarPicker', () => {
       },
     })
     wrapper.vm.popoverVisible = false
-    await nextTick()
+    await nextTick(); await flushPromises()
     wrapper.vm.openPopover()
-    await nextTick()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.activeCategory).toBe('standalone')
     expect(wrapper.vm.expandedObject).toBeNull()
@@ -507,15 +594,15 @@ describe('VarPicker', () => {
     const vars = standaloneOptions(150).map(v => ({ ...v, varCode: 'sameCode' }))
     const wrapper = mountPicker({ operandMode: true, vars, value: { kind: 'REFERENCE', refId: 149, refType: 'VARIABLE', code: 'sameCode' } })
     wrapper.vm.openPopover()
-    await nextTick()
+    await nextTick(); await flushPromises()
     expect(wrapper.vm.rightPage).toBe(2)
-    expect(wrapper.findAll('.vp-row--selected')).toHaveLength(1)
-    expect(wrapper.get('.vp-row--selected').text()).toContain('变量149')
+    expect(wrapper.findAll('.fp-row--selected')).toHaveLength(1)
+    expect(wrapper.get('.fp-row--selected').text()).toContain('变量149')
     wrapper.vm.onRightPageChange(1)
     wrapper.vm.closePopover()
-    await nextTick()
+    await nextTick(); await flushPromises()
     wrapper.vm.openPopover()
-    await nextTick()
+    await nextTick(); await flushPromises()
     expect(wrapper.vm.rightPage).toBe(2)
     wrapper.unmount()
   })
@@ -525,11 +612,11 @@ describe('VarPicker', () => {
     const value = { kind: 'FUNCTION', functionId: 129, functionCode: 'old', args: [{ kind: 'LITERAL', value: '8' }] }
     const wrapper = mountPicker({ operandMode: true, allowedKinds: ['FUNCTION'], functions, value })
     wrapper.vm.openPopover()
-    await nextTick()
+    await nextTick(); await flushPromises()
     expect(wrapper.vm.activeCategory).toBe('function')
     expect(wrapper.vm.rightPage).toBe(2)
-    expect(wrapper.findAll('.vp-row--selected')).toHaveLength(1)
-    expect(wrapper.get('.vp-row--selected').text()).toContain('函数129')
+    expect(wrapper.findAll('.fp-row--selected')).toHaveLength(1)
+    expect(wrapper.get('.fp-row--selected').text()).toContain('函数129')
     expect(wrapper.emitted().input).toBeUndefined()
     expect(value.args[0].value).toBe('8')
     wrapper.unmount()
@@ -543,11 +630,11 @@ describe('VarPicker', () => {
     }))
     const wrapper = mountPicker({ operandMode: true, vars, value: { kind: 'REFERENCE', refId: 122, refType, code: 'old.name' } })
     wrapper.vm.openPopover()
-    await nextTick()
+    await nextTick(); await flushPromises()
     expect(wrapper.vm.activeCategory).toBe(category)
     expect(wrapper.vm.expandedObject).toBe(category === 'model' ? 'model:current' : 'current')
     expect(wrapper.vm.objectChildPage(wrapper.vm.rightItems[0])).toBe(2)
-    expect(wrapper.get('.vp-child-item--selected').text()).toContain('字段122')
+    expect(wrapper.get('.fp-row--selected').text()).toContain('字段122')
     wrapper.unmount()
   })
 
@@ -570,8 +657,8 @@ describe('VarPicker', () => {
   test('失效的引用 ID 不按旧编码定位到其他变量', async () => {
     const wrapper = mountPicker({ operandMode: true, vars: standaloneOptions(1), value: { kind: 'REFERENCE', refId: 999, refType: 'VARIABLE', code: 'v1' } })
     wrapper.vm.openPopover()
-    await nextTick()
-    expect(wrapper.find('.vp-row--selected').exists()).toBe(false)
+    await nextTick(); await flushPromises()
+    expect(wrapper.find('.fp-row--selected').exists()).toBe(false)
     expect(wrapper.emitted().input).toBeUndefined()
     wrapper.unmount()
   })
@@ -609,7 +696,7 @@ describe('VarPicker', () => {
       },
     })
     wrapper.vm.popoverVisible = false
-    await nextTick()
+    await nextTick(); await flushPromises()
     wrapper.vm.openPopover()
 
     expect(wrapper.vm.activeCategory).toBe('object')
@@ -702,8 +789,8 @@ describe('VarPicker', () => {
     wrapper.vm.$refs.popover.popperElm = document.createElement('div')
 
     wrapper.vm.openPopover()
-    await nextTick()
-    await nextTick()
+    await nextTick(); await flushPromises()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.activeCategory).toBe('manual')
     expect(wrapper.find('.vp-manual-editor').exists()).toBe(false)
@@ -719,7 +806,7 @@ describe('VarPicker', () => {
 
     wrapper.vm.openPopover()
     wrapper.vm.onCategoryClick('standalone')
-    await nextTick()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.activeCategory).toBe('standalone')
     expect(wrapper.vm.filteredRightItems.map((item) => item.varCode)).toEqual([
@@ -744,7 +831,7 @@ describe('VarPicker', () => {
 
     wrapper.vm.openPopover()
     wrapper.vm.onCategoryClick('object')
-    await nextTick()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.activeCategory).toBe('object')
     expect(wrapper.vm.filteredRightItems[0]._objectGroup).toBe(true)
@@ -776,7 +863,7 @@ describe('VarPicker', () => {
 
     wrapper.vm.openPopover()
     wrapper.vm.onCategoryClick('standalone')
-    await nextTick()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.activeCategory).toBe('standalone')
   })
@@ -798,7 +885,7 @@ describe('VarPicker', () => {
 
     wrapper.vm.openPopover()
     wrapper.vm.onCategoryClick('object')
-    await nextTick()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.activeCategory).toBe('object')
   })
@@ -841,7 +928,7 @@ describe('VarPicker', () => {
     expect(reference.attributes('role')).toBeUndefined()
 
     wrapper.vm.onInputFocus()
-    await nextTick()
+    await nextTick(); await flushPromises()
     expect(wrapper.vm.popoverVisible).toBe(true)
   })
 
@@ -906,7 +993,7 @@ describe('VarPicker', () => {
     document.addEventListener('keydown', parentEscapeHandler)
 
     wrapper.vm.openPopover()
-    await nextTick()
+    await nextTick(); await flushPromises()
     wrapper.element.dispatchEvent(
       new KeyboardEvent('keydown', {
         key: 'Escape',
@@ -941,7 +1028,7 @@ describe('VarPicker', () => {
         }
       ]
     })
-    await nextTick()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.customMode).toBe(false)
     expect(wrapper.vm.currentValue).toBe('taxpayerType')
@@ -954,7 +1041,7 @@ describe('VarPicker', () => {
       autoSwitchCustom: false,
       vars: standaloneOptions(1)
     })
-    await nextTick()
+    await nextTick(); await flushPromises()
 
     expect(wrapper.vm.customMode).toBe(false)
     wrapper.vm.openPopover()

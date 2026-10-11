@@ -16,6 +16,9 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
+import java.sql.SQLTimeoutException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -23,6 +26,11 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -32,37 +40,87 @@ public class DBConnectPools implements DisposableBean {
     @Resource
     private RuleDbDatasourceMapper datasourceMapper;
 
-    private final ConcurrentMap<Long, DbPoolHolder> pools = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Long, PoolSlot> pools = new ConcurrentHashMap<>();
+    private final Object poolLifecycle = new Object();
+    private volatile boolean closed;
+    private final ScheduledThreadPoolExecutor deadlineExecutor;
+
+    public DBConnectPools() {
+        deadlineExecutor = new ScheduledThreadPoolExecutor(1, runnable -> {
+            Thread thread = new Thread(runnable, "database-query-deadline");
+            thread.setDaemon(true);
+            return thread;
+        });
+        deadlineExecutor.setRemoveOnCancelPolicy(true);
+    }
 
     public HikariDataSource getDataSource(Long datasourceId) {
         if (datasourceId == null) {
             throw new IllegalArgumentException("数据源ID不能为空");
         }
-        DbPoolHolder existing = pools.get(datasourceId);
-        if (existing != null && !existing.isClosed()) {
-            return existing.dataSource;
+        while (true) {
+            ensureOpen();
+            PoolSlot slot = pools.get(datasourceId);
+            boolean initialize = false;
+            if (slot == null) {
+                // 这里只登记加载槽位；慢数据库和 SSH 初始化不持有全局锁。
+                synchronized (poolLifecycle) {
+                    ensureOpen();
+                    slot = pools.get(datasourceId);
+                    if (slot == null) {
+                        slot = new PoolSlot(datasourceId);
+                        pools.put(datasourceId, slot);
+                        initialize = true;
+                    }
+                }
+            }
+            if (initialize) initializePool(datasourceId, slot);
+            DbPoolHolder holder = slot.awaitActive();
+            if (!holder.isClosed()) return holder.dataSource;
+            if (pools.remove(datasourceId, slot)) {
+                closeQuietly(slot.retire(new IllegalStateException("数据库连接池已失效")));
+            }
         }
-        RuleDbDatasource datasource = datasourceMapper.selectById(datasourceId);
-        if (datasource == null) {
-            throw new IllegalArgumentException("数据库数据源不存在");
-        }
-        if (datasource.getStatus() == null || datasource.getStatus() != 1) {
-            throw new IllegalArgumentException("数据库数据源未启用");
-        }
-        DbPoolHolder created;
+    }
+
+    private void initializePool(Long datasourceId, PoolSlot slot) {
         try {
-            created = buildPool(datasource);
-        } catch (Exception e) {
-            throw new IllegalStateException("创建数据库连接池失败：" + e.getMessage(), e);
+            slot.ensureActive();
+            RuleDbDatasource datasource = datasourceMapper.selectById(datasourceId);
+            if (datasource == null) throw new IllegalArgumentException("数据库数据源不存在");
+            if (datasource.getStatus() == null || datasource.getStatus() != 1) {
+                throw new IllegalArgumentException("数据库数据源未启用");
+            }
+            DbPoolHolder created;
+            try {
+                slot.ensureActive();
+                created = buildPool(datasource);
+            } catch (Exception e) {
+                throw new IllegalStateException("创建数据库连接池失败：" + e.getMessage(), e);
+            }
+            if (!slot.publish(created)) {
+                closeQuietly(created);
+                throw new IllegalStateException("数据库连接池已刷新或关闭，请重试");
+            }
+        } catch (RuntimeException | Error failure) {
+            pools.remove(datasourceId, slot);
+            closeQuietly(slot.retire(failure));
+            throw failure;
         }
-        DbPoolHolder previous = pools.put(datasourceId, created);
-        closeQuietly(previous);
-        return created.dataSource;
     }
 
     public void refresh(Long datasourceId) {
-        DbPoolHolder previous = pools.remove(datasourceId);
-        closeQuietly(previous);
+        PoolSlot previous;
+        synchronized (poolLifecycle) {
+            previous = pools.remove(datasourceId);
+        }
+        if (previous != null) {
+            closeQuietly(previous.retire(new IllegalStateException("数据库连接池已刷新，请重试")));
+        }
+    }
+
+    private void ensureOpen() {
+        if (closed) throw new IllegalStateException("数据库连接池已关闭");
     }
 
     public Map<String, Object> snapshot() {
@@ -72,8 +130,8 @@ public class DBConnectPools implements DisposableBean {
         long idle = 0;
         long total = 0;
         long pending = 0;
-        for (Map.Entry<Long, DbPoolHolder> entry : pools.entrySet()) {
-            DbPoolHolder holder = entry.getValue();
+        for (Map.Entry<Long, PoolSlot> entry : pools.entrySet()) {
+            DbPoolHolder holder = entry.getValue().currentHolder();
             if (holder == null || holder.isClosed()) continue;
             var bean = holder.dataSource.getHikariPoolMXBean();
             if (bean == null) continue;
@@ -98,6 +156,7 @@ public class DBConnectPools implements DisposableBean {
     }
 
     public void testConnection(RuleDbDatasource datasource) throws Exception {
+        ensureOpen();
         String validationQuery = hasText(datasource.getValidationQuery())
                 ? datasource.getValidationQuery()
                 : "SELECT 1";
@@ -128,29 +187,123 @@ public class DBConnectPools implements DisposableBean {
             throw new IllegalArgumentException("SQL 需要 " + analysis.placeholderCount()
                     + " 个参数，当前配置了 " + actualParams + " 个，请核对参数顺序和数量");
         }
-        HikariDataSource dataSource = getDataSource(datasourceId);
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(SqlQuerySupport.executableSql(sql))) {
-            statement.setMaxRows(options.maxRows());
-            statement.setQueryTimeout(options.queryTimeoutSeconds());
-            if (params != null) {
-                for (int i = 0; i < params.size(); i++) {
-                    statement.setObject(i + 1, MissingValueSemantics.normalize(params.get(i)));
-                }
-            }
-            try (ResultSet resultSet = statement.executeQuery()) {
-                ResultSetMetaData metaData = resultSet.getMetaData();
-                int columnCount = metaData.getColumnCount();
-                List<Map<String, Object>> rows = new ArrayList<>();
-                while (resultSet.next()) {
-                    Map<String, Object> row = new LinkedHashMap<>();
-                    for (int i = 1; i <= columnCount; i++) {
-                        row.put(metaData.getColumnLabel(i), MissingValueSemantics.normalize(resultSet.getObject(i)));
+        List<Map<String, Object>> rows = new ArrayList<>();
+        try (QueryDeadline ignored = new QueryDeadline()) {
+            HikariDataSource dataSource = getDataSource(datasourceId);
+            checkQueryBudget();
+            try (Connection connection = dataSource.getConnection();
+                 NetworkTimeoutBudget network = new NetworkTimeoutBudget(connection)) {
+                network.applyRemaining();
+                try (PreparedStatement statement = connection.prepareStatement(SqlQuerySupport.executableSql(sql))) {
+                    statement.setMaxRows(options.maxRows());
+                    if (params != null) {
+                        for (int i = 0; i < params.size(); i++) {
+                            checkQueryBudget();
+                            statement.setObject(i + 1, MissingValueSemantics.normalize(params.get(i)));
+                        }
                     }
-                    rows.add(row);
+                    int remaining = checkQueryBudget();
+                    statement.setQueryTimeout(RequestDeadlineContext.capture() == null
+                            ? options.queryTimeoutSeconds() : options.timeoutWithinBudget(remaining));
+                    network.applyRemaining();
+                    try (ResultSet resultSet = statement.executeQuery()) {
+                        checkQueryBudget();
+                        ResultSetMetaData metaData = resultSet.getMetaData();
+                        int columnCount = metaData.getColumnCount();
+                        while (true) {
+                            network.applyRemaining();
+                            boolean hasNext = resultSet.next();
+                            checkQueryBudget();
+                            if (!hasNext) break;
+                            Map<String, Object> row = new LinkedHashMap<>();
+                            for (int i = 1; i <= columnCount; i++) {
+                                network.applyRemaining();
+                                row.put(metaData.getColumnLabel(i), MissingValueSemantics.normalize(resultSet.getObject(i)));
+                                checkQueryBudget();
+                            }
+                            rows.add(row);
+                        }
+                    }
                 }
-                return rows;
             }
+        } catch (Exception failure) {
+            if (RequestDeadlineContext.remainingMillis() == 0 && !(failure instanceof SQLTimeoutException)) {
+                throw new SQLTimeoutException("数据库查询超过项目请求剩余时间预算", "HYT00", failure);
+            }
+            throw failure;
+        }
+        checkQueryBudget();
+        return rows;
+    }
+
+    private static int checkQueryBudget() throws SQLException {
+        int remaining = RequestDeadlineContext.remainingMillis();
+        if (remaining == 0) throw new SQLTimeoutException("数据库查询超过项目请求剩余时间预算", "HYT00");
+        if (Thread.currentThread().isInterrupted()) throw new SQLException("数据库查询被中断", "HY008");
+        return remaining;
+    }
+
+    /** 只中断请求线程以终止 Hikari 的可中断等待，不让 JDBC cancel 阻塞调度线程。 */
+    private final class QueryDeadline implements AutoCloseable {
+        private final Thread owner = Thread.currentThread();
+        private final ScheduledFuture<?> timeoutTask;
+        private boolean closed;
+
+        private QueryDeadline() throws SQLException {
+            int remaining = checkQueryBudget();
+            timeoutTask = RequestDeadlineContext.capture() == null ? null : deadlineExecutor.schedule(() -> {
+                synchronized (this) {
+                    if (!closed) owner.interrupt();
+                }
+            }, remaining, TimeUnit.MILLISECONDS);
+        }
+
+        @Override
+        public synchronized void close() {
+            closed = true;
+            if (timeoutTask != null) timeoutTask.cancel(false);
+        }
+    }
+
+    /** JDBC 网络超时可能不被驱动支持；语句超时和总预算检查仍然生效。 */
+    private static final class NetworkTimeoutBudget implements AutoCloseable {
+        private final Connection connection;
+        private int originalTimeout;
+        private int currentTimeout;
+        private boolean supported;
+        private boolean changed;
+
+        private NetworkTimeoutBudget(Connection connection) throws SQLException {
+            this.connection = connection;
+            checkQueryBudget();
+            if (RequestDeadlineContext.capture() != null) {
+                try {
+                    originalTimeout = connection.getNetworkTimeout();
+                    currentTimeout = originalTimeout;
+                    supported = true;
+                } catch (SQLFeatureNotSupportedException ignored) {
+                    // 可选 JDBC 能力，不能因此破坏已有数据库接入。
+                }
+            }
+        }
+
+        private void applyRemaining() throws SQLException {
+            int remaining = checkQueryBudget();
+            if (!supported) return;
+            int timeout = originalTimeout > 0 ? Math.min(originalTimeout, remaining) : remaining;
+            if (timeout == currentTimeout) return;
+            try {
+                connection.setNetworkTimeout(Runnable::run, timeout);
+                currentTimeout = timeout;
+                changed = true;
+            } catch (SQLFeatureNotSupportedException ignored) {
+                supported = false;
+            }
+        }
+
+        @Override
+        public void close() throws SQLException {
+            if (changed && !connection.isClosed()) connection.setNetworkTimeout(Runnable::run, originalTimeout);
         }
     }
 
@@ -383,10 +536,73 @@ public class DBConnectPools implements DisposableBean {
 
     @Override
     public void destroy() {
-        for (DbPoolHolder holder : pools.values()) {
-            closeQuietly(holder);
+        List<PoolSlot> retired;
+        synchronized (poolLifecycle) {
+            if (closed) return;
+            closed = true;
+            retired = new ArrayList<>(pools.values());
+            pools.clear();
         }
-        pools.clear();
+        deadlineExecutor.shutdownNow();
+        List<DbPoolHolder> holders = new ArrayList<>();
+        for (PoolSlot slot : retired) {
+            holders.add(slot.retire(new IllegalStateException("数据库连接池已关闭")));
+        }
+        for (DbPoolHolder holder : holders) closeQuietly(holder);
+    }
+
+    private final class PoolSlot {
+        private final Long datasourceId;
+        private final CompletableFuture<DbPoolHolder> ready = new CompletableFuture<>();
+        private DbPoolHolder holder;
+        private boolean retired;
+
+        private PoolSlot(Long datasourceId) {
+            this.datasourceId = datasourceId;
+        }
+
+        private synchronized boolean publish(DbPoolHolder created) {
+            if (retired || closed || pools.get(datasourceId) != this) return false;
+            holder = created;
+            ready.complete(created);
+            return true;
+        }
+
+        private DbPoolHolder awaitActive() {
+            try {
+                ready.get();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("等待数据库连接池初始化时被中断", interrupted);
+            } catch (ExecutionException failed) {
+                Throwable cause = failed.getCause();
+                if (cause instanceof RuntimeException runtime) throw runtime;
+                if (cause instanceof Error error) throw error;
+                throw new IllegalStateException("创建数据库连接池失败", cause);
+            }
+            synchronized (this) {
+                ensureActive();
+                return holder;
+            }
+        }
+
+        private synchronized void ensureActive() {
+            if (retired || closed || pools.get(datasourceId) != this) {
+                throw new IllegalStateException("数据库连接池已刷新或关闭，请重试");
+            }
+        }
+
+        private synchronized DbPoolHolder currentHolder() {
+            return retired ? null : holder;
+        }
+
+        private synchronized DbPoolHolder retire(Throwable reason) {
+            retired = true;
+            ready.completeExceptionally(reason);
+            DbPoolHolder previous = holder;
+            holder = null;
+            return previous;
+        }
     }
 
     private static class DbPoolHolder {

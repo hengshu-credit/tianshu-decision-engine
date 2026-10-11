@@ -104,6 +104,74 @@ public class SchemaSyncService {
         } catch (Exception e) {
             log.warn("运行时数据库结构同步失败，请检查 sql/schema.sql 与当前数据库: {}", e.getMessage());
         }
+        // 该视图是日志、看板及历史派生的共同读模型；缺失时不能静默启动为可用状态。
+        ensureRuleSetStatisticsSchema();
+        ensureLogicalExecutionLogSchema();
+        try {
+            jdbcTemplate.execute(new ClassPathResource("sql/logical-execution-statistics-view.sql").getContentAsString(StandardCharsets.UTF_8));
+        } catch (IOException failure) { throw new IllegalStateException("无法创建规则集统计读视图", failure); }
+        // 新事件的计费事实与恢复确认依赖这些列，缺失时不能继续接受执行。
+        ensureExecutionBillingSnapshotSchema();
+        ensureApiScenarioExpectationSchema();
+        ensureExternalApiTrialSchema();
+        ensureModelVersionExecutionSchema();
+        ensureConsoleOperationLogSchema();
+        ensureTablesFromSchema(List.of("rule_billing_summary_lock", "rule_billing_summary_task"));
+    }
+
+    private void ensureRuleSetStatisticsSchema() {
+        addColumnIfMissing("rule_execution_log", "rule_set_stats_status", "`rule_set_stats_status` VARCHAR(16) DEFAULT NULL COMMENT '规则集统计处理状态'");
+        addColumnIfMissing("rule_execution_log", "rule_set_stats_version", "`rule_set_stats_version` INT DEFAULT NULL COMMENT '统计提取格式版本，NULL待补齐'");
+        String index = "idx_rule_set_stats_pending";
+        String columns = "`rule_set_stats_version`, `id`, `create_time`";
+        if (indexExists("rule_execution_log", index) && !sameColumns(indexColumns("rule_execution_log", index), List.of("rule_set_stats_version", "id", "create_time"))) {
+            jdbcTemplate.execute("ALTER TABLE `rule_execution_log` DROP INDEX `" + index + "`, ADD INDEX `" + index + "` (" + columns + ")");
+        } else addIndexIfMissing("rule_execution_log", index, columns);
+        ensureTablesFromSchema(List.of("rule_execution_statistics", "rule_set_statistics_event"));
+        addColumnIfMissing("rule_execution_statistics", "format_version", "`format_version` INT NOT NULL DEFAULT 1 COMMENT '统计提取格式版本'");
+        addIndexIfMissing("rule_execution_statistics", "idx_execution_statistics_scope", "`format_version`,`project_code`,`create_time`,`trace_id`,`rule_set_stats_status`");
+        addColumnIfMissing("rule_set_statistics_event", "order_key", "`order_key` VARBINARY(22) GENERATED ALWAYS AS (UNHEX(CONCAT(LPAD(HEX(TO_SECONDS(`create_time`)),12,'0'),LPAD(HEX(`log_id`),16,'0'),LPAD(HEX(`frame_index`),8,'0'),LPAD(HEX(`item_index`),8,'0')))) STORED");
+        if (!indexExists("rule_set_statistics_event", "uk_rule_set_event_order")) {
+            jdbcTemplate.execute("ALTER TABLE `rule_set_statistics_event` ADD UNIQUE KEY `uk_rule_set_event_order` (`order_key`)");
+        }
+    }
+
+    private void ensureConsoleOperationLogSchema() {
+        ensureTablesFromSchema(List.of("console_operation_log"));
+        addColumnIfMissing("console_operation_log", "target_version", "`target_version` VARCHAR(64) DEFAULT NULL");
+        addColumnIfMissing("console_operation_log", "change_summary", "`change_summary` VARCHAR(160) DEFAULT NULL");
+    }
+
+    private void ensureModelVersionExecutionSchema() {
+        ensureTablesFromSchema(List.of("rule_model_version"));
+        addColumnIfMissing("rule_model", "business_version", "`business_version` INT DEFAULT NULL COMMENT '业务版本号'");
+        addColumnIfMissing("rule_model_version", "business_version", "`business_version` INT DEFAULT NULL COMMENT '业务版本号'");
+        addColumnIfMissing("rule_model_version", "execution_snapshot_json",
+                "`execution_snapshot_json` LONGTEXT DEFAULT NULL COMMENT '完整模型配置与冻结执行依赖'");
+        addColumnIfMissing("rule_model_version", "execution_snapshot_digest",
+                "`execution_snapshot_digest` CHAR(64) DEFAULT NULL COMMENT '完整执行快照SHA256'");
+    }
+
+    private void ensureExternalApiTrialSchema() {
+        // 独立持久状态缺失时不得继续接受可能产生外部副作用的试运行。
+        ensureTablesFromSchema(List.of("rule_external_api_trial"));
+    }
+
+    private void ensureApiScenarioExpectationSchema() {
+        // 场景实体读取包含该列；不能在迁移失败后继续宣称测试配置可用。
+        ensureTablesFromSchema(List.of("rule_api_doc_scenario"));
+        addColumnIfMissing("rule_api_doc_scenario", "expectation_json",
+                "`expectation_json` LONGTEXT DEFAULT NULL COMMENT '版本化测试预期；NULL保留历史JSON快照模式'");
+    }
+
+    private void ensureExecutionBillingSnapshotSchema() {
+        ensureTablesFromSchema(List.of("rule_execution_persistence_outbox", "rule_billing_record"));
+        addColumnIfMissing("rule_execution_persistence_outbox", "billing_snapshot_json",
+                "`billing_snapshot_json` LONGTEXT DEFAULT NULL COMMENT '接受执行事件时冻结的计费事实'");
+        addColumnIfMissing("rule_billing_record", "billing_config_id",
+                "`billing_config_id` BIGINT DEFAULT NULL COMMENT '计费项ID，历史明细可为空'");
+        addColumnIfMissing("rule_billing_record", "billing_basis",
+                "`billing_basis` VARCHAR(32) DEFAULT NULL COMMENT '执行快照或当前配置及历史重放依据'");
     }
 
     private void ensurePublishOutboxSchema() {
@@ -126,6 +194,21 @@ public class SchemaSyncService {
                 "`lease_until` DATETIME DEFAULT NULL COMMENT '恢复租约到期时间'");
         addIndexIfMissing("rule_execution_persistence_outbox", "idx_execution_persistence_lease",
                 "`delivery_status`, `lease_until`");
+    }
+
+    private void ensureLogicalExecutionLogSchema() {
+        if (!tableExists("rule_execution_log")) throw new IllegalStateException("缺少执行日志审计表，无法建立逻辑日志读取视图");
+        addTraceColumns("rule_execution_log", false);
+        addColumnIfMissing("rule_execution_log", "attempt_no",
+                "`attempt_no` INT DEFAULT NULL COMMENT '逻辑执行恢复尝试次数'");
+        ensureTablesFromSchema(List.of("rule_execution_log_identity"));
+        try {
+            String view = new ClassPathResource("sql/logical-execution-log-view.sql")
+                    .getContentAsString(StandardCharsets.UTF_8);
+            jdbcTemplate.execute(view);
+        } catch (IOException error) {
+            throw new IllegalStateException("无法读取逻辑执行日志数据库结构", error);
+        }
     }
 
     /**
@@ -449,6 +532,8 @@ public class SchemaSyncService {
                     + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验组表'");
         }
         ensureUtf8mb4Table("rule_experiment_group");
+        addColumnIfMissing("rule_experiment_group", "version_mode", "`version_mode` VARCHAR(16) DEFAULT 'LATEST' COMMENT '规则调用版本策略'");
+        addColumnIfMissing("rule_experiment_group", "version_binding_id", "`version_binding_id` BIGINT DEFAULT NULL COMMENT '规则业务版本绑定ID'");
         addColumnIfMissing("rule_experiment_group", "condition_config",
                 "`condition_config` TEXT DEFAULT NULL COMMENT '可视化条件配置JSON' AFTER `condition_expression`");
         if (!tableExists("rule_experiment_execution_log")) {
@@ -735,6 +820,25 @@ public class SchemaSyncService {
 
     private void ensureGovernanceSchema() {
         ensureTablesFromSchema(GOVERNANCE_TABLES);
+        addColumnIfMissing("governance_dependency_snapshot", "version_selection_json",
+                "`version_selection_json` LONGTEXT DEFAULT NULL COMMENT '固定版本原始引用；NULL为最新版'");
+        addIndexIfMissing("governance_approval_request", "idx_governance_request_resource",
+                "`resource_type`, `resource_id`, `id`");
+        addColumnIfMissing("governance_approval_request", "restore_mode",
+                "`restore_mode` VARCHAR(16) DEFAULT NULL COMMENT '历史恢复方式 NEW/REUSE'");
+        addColumnIfMissing("governance_approval_request", "publish_mode", "`publish_mode` VARCHAR(16) DEFAULT NULL");
+        addColumnIfMissing("governance_approval_request", "target_version_id", "`target_version_id` BIGINT DEFAULT NULL");
+        addColumnIfMissing("governance_approval_request", "expected_target_snapshot_id", "`expected_target_snapshot_id` BIGINT DEFAULT NULL");
+        addColumnIfMissing("governed_resource_version", "deleted", "`deleted` TINYINT NOT NULL DEFAULT 0");
+        addColumnIfMissing("rule_billing_record", "rule_id", "`rule_id` BIGINT DEFAULT NULL");
+        addColumnIfMissing("rule_billing_record", "rule_version", "`rule_version` INT DEFAULT NULL");
+        addColumnIfMissing("rule_billing_record", "revision_id", "`revision_id` BIGINT DEFAULT NULL");
+        addColumnIfMissing("rule_billing_record", "artifact_digest", "`artifact_digest` VARCHAR(64) DEFAULT NULL");
+        addColumnIfMissing("governed_resource_version", "business_version",
+                "`business_version` INT DEFAULT NULL COMMENT '业务版本号，可复用；version_no为快照序号'");
+        for (String table : List.of("rule_function_version", "rule_experiment_version")) {
+            addColumnIfMissing(table, "business_version", "`business_version` INT DEFAULT NULL COMMENT '业务版本号'");
+        }
     }
 
     private void ensureTablesFromSchema(List<String> tableNames) {
@@ -837,15 +941,13 @@ public class SchemaSyncService {
         String index = "uk_billing_summary_key";
         if (!tableExists(table)) return;
         List<String> expected = Arrays.asList("summary_date", "project_code", "billing_code",
-                "billing_target", "target_ref_id", "auth_id");
-        boolean create = !indexExists(table, index);
-        if (!create && !sameColumns(indexColumns(table, index), expected)) {
-            jdbcTemplate.execute("ALTER TABLE `" + table + "` DROP INDEX `" + index + "`");
-            create = true;
-        }
-        if (create) {
-            jdbcTemplate.execute("ALTER TABLE `" + table + "` ADD UNIQUE KEY `" + index
-                    + "` (`summary_date`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`, `auth_id`)");
+                "billing_target", "target_ref_id", "auth_id", "currency");
+        String definition = "ADD UNIQUE KEY `" + index
+                + "` (`summary_date`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`, `auth_id`, `currency`)";
+        if (!indexExists(table, index)) {
+            jdbcTemplate.execute("ALTER TABLE `" + table + "` " + definition);
+        } else if (!sameColumns(indexColumns(table, index), expected)) {
+            jdbcTemplate.execute("ALTER TABLE `" + table + "` DROP INDEX `" + index + "`, " + definition);
         }
     }
 

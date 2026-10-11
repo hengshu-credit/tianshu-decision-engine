@@ -1,5 +1,7 @@
 import request from './request'
-import { createResourceDraft } from './governance'
+import { hasPermission } from '@/security/permissionState'
+import { createResourceDraft, editableResource, getWorkspaceDraft } from './governance'
+import { metadataResponse } from '@/utils/metadataResponse'
 
 /** 健康检查 */
 export function checkModelHealth() {
@@ -34,17 +36,17 @@ export function uploadModel(formData, onUploadProgress) {
 
 /** 分页查询模型列表 */
 export function listModels(params) {
-  return request({ url: '/rule/model/list', method: 'get', params })
+  return request({ ...metadataResponse, url: '/rule/model/list', method: 'get', params })
 }
 
 /** 获取模型详情（含字段信息） */
 export function getModel(id) {
-  return request({ url: `/rule/model/${id}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/model/${id}`, method: 'get' })
 }
 
 /** 更新模型 */
 export async function updateModel(data) {
-  const response = await getModel(data.id)
+  const response = await getEditableModel(data.id)
   return createResourceDraft(
     'MODEL',
     { ...(response.data || {}), ...data },
@@ -62,7 +64,12 @@ export function deleteModel(id, impactToken) {
 }
 
 /** 发布模型 */
-export function publishModel(id, changeLog) {
+export async function publishModel(id, changeLog) {
+  const current = await getWorkspaceDraft('MODEL', id)
+  if (current.data?.id) {
+    if (!['CREATE', 'UPDATE', 'RESTORE', 'ENABLE'].includes(current.data.action)) throw new Error('当前模型有删除或停用草稿，请先完成或取消该申请')
+    return current
+  }
   return createResourceDraft('MODEL', null, 'ENABLE', {
     resourceId: id,
     changeSummary: changeLog || '启用模型'
@@ -95,17 +102,28 @@ export function replaceModel(id, formData, impactToken, onUploadProgress) {
 
 /** 查询项目下所有模型（非分页） */
 export function listAllModelsByProject(projectId) {
-  return request({ url: `/rule/model/project/${projectId}/all`, method: 'get' })
+  if (!hasPermission('model:view')) return Promise.resolve({ data: [] })
+  return request({ ...metadataResponse, url: `/rule/model/project/${projectId}/all`, method: 'get' })
 }
 
 /** 执行模型测试 */
-export function executeModel(id, params, timeoutMs) {
-  return request({ url: `/rule/model/execute/${id}`, method: 'post', data: params, timeout: timeoutMs })
+export function executeModel(id, params, timeoutMs, version) {
+  return request({ url: `/rule/model/execute/${id}`, method: 'post', data: params, timeout: timeoutMs,
+    ...(typeof params === 'string' ? { headers: { 'Content-Type': 'application/json' } } : {}),
+    ...(version == null ? {} : { params: { version } }) })
+}
+
+/** 一次读取选定模型版本的冻结字段、样例与执行归因。 */
+export function getModelVersionTestContext(id, version) {
+  return request({ url: `/rule/model/version/${id}/${version}/test-context`, method: 'get' })
 }
 
 /** 保存模型测试参数（JSON） */
-export async function saveTestParams(id, testParams) {
-  const response = await getModel(id)
+export async function saveTestParams(id, testParams, version) {
+  if (version != null) {
+    return request({ url: `/rule/model/version/${id}/${version}/testParams`, method: 'post', data: { testParams } })
+  }
+  const response = await getEditableModel(id)
   const model = { ...(response.data || {}) }
   let modelConfig = {}
   if (model.modelConfig) {
@@ -142,7 +160,7 @@ export function getTestParams(id) {
 
 /** 更新模型输入字段（关联变量映射） */
 export async function updateModelInputField(id, data, modelId) {
-  const response = await getModel(modelId)
+  const response = await getEditableModel(modelId)
   const model = response.data || {}
   model.inputFields = (model.inputFields || []).map(field =>
     field.id === id ? { ...field, ...data } : field
@@ -154,7 +172,7 @@ export async function updateModelInputField(id, data, modelId) {
 
 /** 更新模型输出字段（关联变量映射） */
 export async function updateModelOutputField(id, data, modelId) {
-  const response = await getModel(modelId)
+  const response = await getEditableModel(modelId)
   const model = response.data || {}
   model.outputFields = (model.outputFields || []).map(field =>
     field.id === id ? { ...field, ...data } : field
@@ -166,7 +184,7 @@ export async function updateModelOutputField(id, data, modelId) {
 
 /** 将项目级模型转为全局模型 */
 export async function toGlobalModel(id, modelCode) {
-  const response = await getModel(id)
+  const response = await getEditableModel(id)
   return createResourceDraft(
     'MODEL',
     {
@@ -181,7 +199,7 @@ export async function toGlobalModel(id, modelCode) {
 }
 
 export function listVersions(modelId) {
-  return request({ url: `/rule/model/versions/${modelId}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/model/versions/${modelId}`, method: 'get' })
 }
 
 export function getVersion(modelId, version) {
@@ -192,6 +210,11 @@ export function compareVersions(modelId, leftVersion, rightVersion) {
   return request({ url: `/rule/model/versionCompare/${modelId}`, method: 'get', params: { leftVersion, rightVersion } })
 }
 
-export function rollbackVersion(modelId, version) {
-  return request({ url: `/rule/model/rollback/${modelId}/${version}`, method: 'post' })
+export function rollbackVersion(modelId, version, restoreMode = 'NEW') {
+  return request({ url: `/rule/model/rollback/${modelId}/${version}`, method: 'post', params: { restoreMode } })
+}
+
+async function getEditableModel(id) {
+  const response = await getModel(id)
+  return { ...response, data: await editableResource('MODEL', id, response.data) }
 }

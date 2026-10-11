@@ -138,10 +138,53 @@ public final class RequestContext {
     private List<RuntimeWrite> runtimeWrites;
     private int runtimeWriteDepth;
     private Map<String, CustomFunction> functions = Collections.emptyMap();
+    private boolean functionBindingsPresent;
     private Map<Long, Map<String, String>> externalFieldPaths = new java.util.concurrent.ConcurrentHashMap<>();
     private Map<Long, Map<String, String>> externalDefaultPaths = new java.util.concurrent.ConcurrentHashMap<>();
     private Map<Long, Map<String, String>> externalDefaultAliases = new java.util.concurrent.ConcurrentHashMap<>();
     private BiFunction<Long, String, Object> externalValueResolver;
+    private BiFunction<String, Object, Object> listWriteResolver;
+
+    public ListWriteScope bindListWriteResolver(BiFunction<String, Object, Object> resolver) {
+        ListWriteScope scope = new ListWriteScope(listWriteResolver);
+        listWriteResolver = resolver;
+        return scope;
+    }
+
+    public Object writeRuleList(String config, Object values) {
+        if (listWriteResolver == null) throw new IllegalStateException("名单落库需要服务端执行上下文");
+        return listWriteResolver.apply(config, values);
+    }
+
+    public final class ListWriteScope implements AutoCloseable {
+        private final BiFunction<String, Object, Object> previous;
+        private boolean closed;
+        private ListWriteScope(BiFunction<String, Object, Object> previous) { this.previous = previous; }
+        @Override public void close() {
+            if (!closed) { listWriteResolver = previous; closed = true; }
+        }
+    }
+    private java.util.function.Function<ResourceVersionCall, Object> resourceVersionResolver;
+
+    public ResourceVersionScope bindResourceVersions(java.util.function.Function<ResourceVersionCall, Object> resolver) {
+        ResourceVersionScope scope = new ResourceVersionScope(resourceVersionResolver);
+        resourceVersionResolver = resolver;
+        return scope;
+    }
+
+    public Object resourceVersionValue(ResourceVersionCall call) {
+        if (resourceVersionResolver == null) throw new IllegalStateException("当前执行上下文未绑定固定版本读取器");
+        return resourceVersionResolver.apply(call);
+    }
+
+    public final class ResourceVersionScope implements AutoCloseable {
+        private final java.util.function.Function<ResourceVersionCall, Object> previous;
+        private boolean closed;
+        private ResourceVersionScope(java.util.function.Function<ResourceVersionCall, Object> previous) { this.previous = previous; }
+        @Override public void close() {
+            if (!closed) { resourceVersionResolver = previous; closed = true; }
+        }
+    }
 
     public ExternalValueScope bindExternalValueResolver(BiFunction<Long, String, Object> resolver) {
         ExternalValueScope scope = new ExternalValueScope(externalValueResolver);
@@ -198,23 +241,32 @@ public final class RequestContext {
         return functions.get(code);
     }
 
+    public boolean hasFunctionBindings() { return functionBindingsPresent; }
+
     /** A rule or conversion function owns its entire binding set; missing targets never fall back to another rule. */
     public FunctionScope bindFunctions(Map<String, CustomFunction> bindings) {
-        FunctionScope scope = new FunctionScope(functions);
-        functions = Map.copyOf(bindings);
+        FunctionScope scope = new FunctionScope(functions, functionBindingsPresent);
+        // null仅用于旧客户端调用域；显式空集合仍是完整、禁止回退的冻结函数集。
+        functions = bindings == null ? Collections.emptyMap() : Map.copyOf(bindings);
+        functionBindingsPresent = bindings != null;
         return scope;
     }
 
     public final class FunctionScope implements AutoCloseable {
         private final Map<String, CustomFunction> previous;
+        private final boolean previouslyPresent;
         private boolean closed;
 
-        private FunctionScope(Map<String, CustomFunction> previous) { this.previous = previous; }
+        private FunctionScope(Map<String, CustomFunction> previous, boolean previouslyPresent) {
+            this.previous = previous;
+            this.previouslyPresent = previouslyPresent;
+        }
 
         @Override
         public void close() {
             if (!closed) {
                 functions = previous;
+                functionBindingsPresent = previouslyPresent;
                 closed = true;
             }
         }
@@ -272,10 +324,13 @@ public final class RequestContext {
         child.sourceStates = sourceStates;
         child.traceEventListener = listener;
         child.functions = functions;
+        child.functionBindingsPresent = functionBindingsPresent;
         child.externalFieldPaths = externalFieldPaths;
         child.externalDefaultPaths = externalDefaultPaths;
         child.externalDefaultAliases = externalDefaultAliases;
         child.externalValueResolver = externalValueResolver;
+        child.listWriteResolver = listWriteResolver;
+        child.resourceVersionResolver = resourceVersionResolver;
         child.checkpointListener = checkpointListener;
         child.randomValues = randomValues;
         child.randomSequence = randomSequence;

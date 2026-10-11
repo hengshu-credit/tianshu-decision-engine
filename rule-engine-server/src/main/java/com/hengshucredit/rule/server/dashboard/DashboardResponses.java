@@ -184,11 +184,15 @@ public final class DashboardResponses {
     }
 
     public record RuleSetHitSection(boolean visible,
-                                    List<RuleSetHit> items) {
+                                    List<RuleSetHit> items,
+                                    Map<?, ?> coverage) {
         public RuleSetHitSection {
             items = items == null ? Collections.emptyList()
                     : List.copyOf(items);
+            coverage = coverage == null ? Map.of() : Map.copyOf(coverage);
         }
+
+        public RuleSetHitSection(boolean visible, List<RuleSetHit> items) { this(visible, items, Map.of()); }
 
         public static RuleSetHitSection hidden() {
             return new RuleSetHitSection(false, Collections.emptyList());

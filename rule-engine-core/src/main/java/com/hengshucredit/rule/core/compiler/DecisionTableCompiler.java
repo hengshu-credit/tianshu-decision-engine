@@ -274,6 +274,10 @@ public class DecisionTableCompiler implements RuleCompiler {
         Long varId = leaf.containsKey("_varId") ? leaf.getLong("_varId") : null;
         String refType = leaf.getString("_refType");
         String varCode = leaf.getString("varCode");
+        if (ConditionExpressionBuilder.isRangeOperator(leaf.getString("operator"))) {
+            return ConditionExpressionBuilder.build(resolveVar(varId, refType, varCode, varContext), leaf.getString("varType"),
+                    leaf.getString("operator"), leaf.getString("value"), "VAR".equalsIgnoreCase(leaf.getString("valueKind")));
+        }
         if (varCode == null || varCode.trim().isEmpty()) {
             return "true";
         }
@@ -353,7 +357,7 @@ public class DecisionTableCompiler implements RuleCompiler {
             }
             String value = cond.getString("value");
 
-            if (value == null) {
+            if (value == null && !ConditionExpressionBuilder.isRangeOperator(operator)) {
                 script.append("false");
                 continue;
             }

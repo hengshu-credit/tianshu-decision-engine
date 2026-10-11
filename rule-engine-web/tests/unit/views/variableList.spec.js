@@ -381,9 +381,11 @@ describe('VariableList — 标签方法', () => {
     const objectTable = source.slice(source.indexOf('<el-tab-pane label="数据对象"'), source.indexOf('</el-tab-pane>', source.indexOf('<el-tab-pane label="数据对象"')))
     const constantTable = source.slice(source.indexOf('<el-tab-pane label="常量列表"'), source.indexOf('</el-tab-pane>', source.indexOf('<el-tab-pane label="常量列表"')))
 
-    expect(variableTable).toContain('label="状态 / 更新"')
+    expect(variableTable).toContain('label="状态"')
+    expect(variableTable).toContain('label="更新时间"')
+    expect(variableTable).not.toContain('label="状态 / 更新"')
     expect(variableTable).toContain('fixed="right"')
-    expect(variableTable).toContain('class="table-secondary-time"')
+    expect(variableTable).not.toContain('class="table-secondary-time"')
     expect(variableTable).toContain('formatUpdateTime(row.updateTime)')
     expect(objectTable).toContain('label="更新时间"')
     expect(objectTable).toContain('formatUpdateTime(node.object.updateTime)')
@@ -583,7 +585,8 @@ describe('VariableList — 变量操作', () => {
     expect(dataObjectApi.createOrUpdateDataObject).toHaveBeenCalledWith(
       expect.objectContaining({ id: 5, scope: 'GLOBAL', projectId: 0 })
     )
-    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/approval/43')
+    expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith(expect.stringContaining('草稿已保存'))
   })
 
   test('变量列表和常量列表通过编辑弹窗调整作用范围', () => {
@@ -768,7 +771,7 @@ describe('VariableList — 变量操作', () => {
       'handleEditObjectField(row, node)',
       'handleOptions(row, true)',
       'handleDeleteObjectField(row)',
-      'editFieldValidation(row)',
+      "editWorkspace('FIELD_VALIDATION', row, editFieldValidation)",
       'removeFieldValidation(row)',
       "handleVariableRowCommand('options', row)",
       "handleVariableRowCommand('delete', row)",
@@ -1060,6 +1063,21 @@ describe('VariableList — 变量操作', () => {
     expect(config.forceRefresh).toBe(true)
     expect(config.exceptionStrategy).toBe('RETURN_DEFAULT')
     expect(payload.apiConfigId).toBeUndefined()
+  })
+
+  test('编辑接口变量时保留旧请求映射，并保存按 ID 选择的新调用入参覆盖', () => {
+    wrapper.vm.form = { ...wrapper.vm.initForm(), varSource: 'API', apiConfigId: 7,
+      apiParamMapping: '{"customerId":"$.originalId"}',
+      apiInputOverrides: { customerId: { kind: 'REFERENCE', refType: 'VARIABLE', refId: '9007199254740993', code: 'currentId' } } }
+    const payload = wrapper.vm.buildVariablePayload()
+    const config = JSON.parse(payload.sourceConfig)
+    expect(config.paramMapping).toEqual({ customerId: '$.originalId' })
+    expect(config.inputOverrides.customerId.refId).toBe('9007199254740993')
+    expect(payload.apiInputOverrides).toBeUndefined()
+    wrapper.vm.changeVariableApi(8)
+    expect(wrapper.vm.form.apiInputOverrides).toEqual({})
+    expect(wrapper.vm.form.apiParamMapping).toBe('{}')
+    expect(wrapper.vm.form.apiResultPath).toBe('body')
   })
 
   test('新字段可在生成审批草稿前执行取值预览', async () => {
@@ -1366,14 +1384,15 @@ describe('VariableList — 字段校验规则库', () => {
     expect(variableApi.createFieldValidationDraft).toHaveBeenCalledWith(expect.objectContaining({
       validationCode: 'Mobile_Check', validationType: 'REGEX', projectId: 0
     }))
-    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/approval/91')
+    expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith(expect.stringContaining('草稿已保存'))
     wrapper.unmount()
   })
 
   test('编辑字段校验改变状态时生成显式停用审批', async () => {
     const wrapper = await mountAndWait()
     variableApi.changeFieldValidationStatusDraft.mockResolvedValueOnce({
-      data: { id: 92 }
+      data: { id: 92, action: 'DISABLE' }
     })
     wrapper.vm.validationOriginalStatus = 1
     wrapper.vm.validationForm = {
@@ -1388,7 +1407,8 @@ describe('VariableList — 字段校验规则库', () => {
     expect(variableApi.changeFieldValidationStatusDraft)
       .toHaveBeenCalledWith(expect.objectContaining({ id: 11 }), 0)
     expect(variableApi.updateFieldValidationDraft).not.toHaveBeenCalled()
-    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/approval/92')
+    expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith(expect.stringContaining('草稿已保存'))
     wrapper.unmount()
   })
 

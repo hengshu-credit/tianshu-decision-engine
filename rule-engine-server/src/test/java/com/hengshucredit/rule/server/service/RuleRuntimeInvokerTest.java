@@ -3,6 +3,7 @@ package com.hengshucredit.rule.server.service;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.core.engine.RuleTerminationSignal;
+import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.dto.RuleTraceFrame;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
@@ -37,6 +38,48 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 public class RuleRuntimeInvokerTest {
+
+    public static class CapacityDelegate {
+        public Object rejectModel() {
+            throw new ExecutionCapacityException(ExecutionCapacityException.Resource.PMML_MODEL_LOADING, "model capacity unavailable");
+        }
+    }
+
+    @Test
+    public void nestedModelCapacityEscapesParentAndMarksChildThrottled() {
+        RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
+        QLExpressEngine engine = new QLExpressEngine();
+        ReflectionTestUtils.setField(invoker, "definitionService", new ContextDefinitionService() {
+            @Override public RuleDefinitionContent getContent(Long id) {
+                RuleDefinitionContent content = super.getContent(id);
+                content.setCompiledScript("return rejectModel();");
+                return content;
+            }
+        });
+        ReflectionTestUtils.setField(invoker, "projectService", new GlobalProjectService());
+        ReflectionTestUtils.setField(invoker, "variableSourceResolver", new PassThroughVariableResolver());
+        ReflectionTestUtils.setField(invoker, "qlExpressEngine", engine);
+        ReflectionTestUtils.setField(invoker, "executionParameterBinder", new ExecutionParameterBinder());
+        installPublishedFixture(invoker);
+        invoker.register(engine.getRunner());
+        engine.getRunner().addFunctionOfServiceMethod("rejectModel", new CapacityDelegate(), "rejectModel", new Class<?>[]{});
+        Map<String, Object> values = new LinkedHashMap<>();
+        invoker.enter("PARENT", 0L, null, values, true);
+        try {
+            ExecutionCapacityException failure = org.junit.Assert.assertThrows(ExecutionCapacityException.class,
+                    () -> engine.execute("executeRuleById('2'); setRuntimeValue('afterChild', true);", values, true));
+            assertEquals(ExecutionCapacityException.Resource.PMML_MODEL_LOADING, failure.getResource());
+            assertFalse(values.containsKey("afterChild"));
+            assertEquals("THROTTLED", invoker.currentSession().getRootTrace().getChildren().get(0).getStatus());
+            RuleResult result = new RuleResult();
+            result.setSuccess(false);
+            result.setExecutionStatus("THROTTLED");
+            invoker.completeRoot(result);
+            assertEquals("THROTTLED", ((RuleTraceFrame) result.getTraces().get(0)).getStatus());
+        } finally {
+            invoker.exit();
+        }
+    }
 
     @Test
     public void frozenChildFunctionDoesNotReplaceParentAndFailureRestoresParent() {

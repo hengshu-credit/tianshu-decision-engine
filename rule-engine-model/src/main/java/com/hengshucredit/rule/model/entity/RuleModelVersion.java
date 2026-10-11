@@ -12,6 +12,8 @@ public class RuleModelVersion {
 
     private Long modelId;
     private Integer version;
+    private Integer businessVersion;
+    public Integer getDisplayVersion() { return businessVersion == null ? version : businessVersion; }
     private String modelContent;
     private String modelConfig;
     private String modelFormat;
@@ -22,6 +24,9 @@ public class RuleModelVersion {
     private String outputSchemaJson;
     private String validationReportJson;
     private String runtimeConstraintsJson;
+    /** 完整模型字段与冻结依赖执行包，不通过版本列表接口传输。 */
+    private String executionSnapshotJson;
+    private String executionSnapshotDigest;
     private String sampleStatus;
     private Integer status;
     private String changeLog;

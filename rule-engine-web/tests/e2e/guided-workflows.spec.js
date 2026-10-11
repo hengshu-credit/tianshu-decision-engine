@@ -3,6 +3,51 @@ const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createDetailApiData } = require('./support/detailFixtures.cjs')
 const { createManagementApiData } = require('./support/managementFixtures.cjs')
 
+for (const colorScheme of ['LIGHT', 'DARK']) test(`${colorScheme} 函数方法选择保留精确类型并在宽窄切换后保持可操作`, async ({ page }) => {
+  await page.addInitScript(scheme => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify({ schemaVersion: 1, colorScheme: scheme, accentPreset: 'LIQUID_PURPLE', sidebarTheme: 'DARK', contentWidth: 'FLUID', fixedSidebar: true, colorWeak: false })), colorScheme)
+  const params = [{ name: 'Left_Value', type: 'NUMBER', javaType: 'int', label: '左值' }, { name: 'Right_Value', type: 'NUMBER', javaType: 'int', label: '右值' }]
+  const row = { id: 901, projectId: 1, scope: 'PROJECT', status: 1, funcCode: 'e2eMath', funcName: '边界值计算', implType: 'JAVA', implClass: 'java.lang.Math', implMethod: 'max', returnType: 'NUMBER', paramsJson: JSON.stringify(params) }
+  const methods = ['max', 'min'].map(name => ({ name, signature: `${name}(int,int)`, displaySignature: `${name}(int, int) → int`, staticMethod: true, available: true, parameters: params.map(param => ({ name: null, javaType: param.javaType, suggestedType: 'NUMBER' })) }))
+  let submitted
+  const data = new Map([
+    ['/api/rule/function/list', { records: [row], total: 1 }],
+    ['POST /api/rule/function/methods', ({ request }) => ({ status: 'AVAILABLE', valid: true, signature: `${request.postDataJSON().implMethod}(int,int)`, message: '方法已核对', methods })],
+    ['POST /api/rule/governance/drafts', ({ request }) => { submitted = request.postDataJSON(); return { id: 992 } }],
+    ['/api/rule/governance/requests/992', { id: 992, resourceType: 'FUNCTION', action: 'UPDATE', status: 'DRAFT', resourceId: 901, snapshotJson: JSON.stringify(row), dependencies: [] }],
+  ])
+  const harness = await installDistRoutes(page, { apiData: data })
+  await page.addInitScript(() => { window.__nativeResizeErrors = []; window.addEventListener('error', event => window.__nativeResizeErrors.push(event.message)) })
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  await page.goto('http://tianshu.local/index.html#/function')
+  await page.getByRole('row').filter({ hasText: 'e2eMath' }).getByRole('button', { name: '编辑', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '编辑函数', exact: true })
+  await dialog.getByRole('button', { name: '读取方法', exact: true }).click()
+  await expect(dialog).toContainText('方法已核对')
+  await dialog.getByTestId('function-method-select').click()
+  await page.getByRole('option', { name: 'min(int, int) → int', exact: true }).click()
+  for (const width of [560, 1600, 560, 1600]) {
+    await page.setViewportSize({ width, height: width === 560 ? 900 : 1000 })
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    const box = await dialog.locator('.el-dialog').boundingBox()
+    expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(width + 1)
+    const body = await dialog.locator('.el-dialog__body').evaluate(element => ({ visible: element.clientWidth, full: element.scrollWidth }))
+    expect(body.full).toBeLessThanOrEqual(body.visible + 1)
+  }
+  await expect(dialog.getByTestId('function-method-select')).toContainText('min(int, int) → int')
+  await dialog.getByTestId('function-method-select').click()
+  await page.getByRole('option', { name: 'max(int, int) → int', exact: true }).click()
+  await expect(dialog.locator('.function-parameter-java-type code')).toHaveText(['int', 'int'])
+  expect(await page.evaluate(() => window.__nativeResizeErrors)).toEqual([])
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page).toHaveURL(/#\/function$/)
+  expect(submitted.action).toBe('UPDATE')
+  expect(harness.requests.filter(request => request.method === 'POST' && /\/governance\/requests\/\d+\/submit$/.test(new URL(request.url).pathname))).toEqual([])
+  const snapshot = JSON.parse(submitted.snapshotJson)
+  expect(snapshot.implMethod).toBe('max'); expect(JSON.parse(snapshot.paramsJson)).toEqual(params)
+  harness.assertClean()
+})
+
 test('项目工作台加载失败后可重试，且未取得结果时不显示已就绪', async ({ page }, testInfo) => {
   const { pageErrors } = await installDistRoutes(page, { apiData: workflowFixtures() })
   let calls = 0
@@ -302,7 +347,7 @@ test('外数 API 配置入口收敛为单层主页签且保留完整配置入口
   await page.getByRole('button', { name: /高级能力/ }).click()
   await configTab('脚本处理').click()
   await expect(page.getByText('脚本处理', { exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: '生成审批草稿', exact: true }))
+  await expect(page.getByRole('button', { name: '保存草稿', exact: true }))
     .toBeVisible()
   assertClean()
 })
@@ -383,15 +428,15 @@ test('新建字段按业务取值方式引导并可在送审前预览外数结�
   await dialog.locator('.el-form-item').filter({ hasText: '字段名称' })
     .locator('input').fill('风险分')
   await dialog.locator('.el-form-item').filter({ hasText: '接口配置' })
-    .locator('.el-select').click()
-  await page.getByText('征信查询 / credit_query', { exact: true }).last().click()
+    .locator('input').click()
+  await page.locator('.fp-panel:visible .fp-row').filter({ hasText: 'credit_query' }).locator('.fp-name').dblclick()
 
   await expect(dialog.getByText('3 / 4 已就绪', { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: /预览取值|真实调用测试/, exact: true }).click()
   await expect(dialog.getByText('4 / 4 已就绪', { exact: true })).toBeVisible()
   await expect(dialog.locator('.draft-preview-result')).toContainText('88')
   await expect(dialog.getByRole('button', {
-    name: '生成审批草稿', exact: true
+    name: '保存草稿', exact: true
   })).toBeVisible()
   expect(requests.some(request =>
     request.method === 'POST' &&
@@ -444,7 +489,7 @@ test('模型测试明确参数来源、降级原因并只发送当前表单参�
 }) => {
   let executePayload
   const fixtures = workflowFixtures()
-  fixtures.set('POST /api/rule/test-schema', {
+  const frozenSchema = {
     inputs: [{
       refId: 1,
       refType: 'VARIABLE',
@@ -452,16 +497,33 @@ test('模型测试明确参数来源、降级原因并只发送当前表单参�
       label: '年龄',
       valueType: 'INTEGER'
     }],
-    sampleParams: { age: 28 }
-  })
+    outputs: [],
+    sampleParams: { age: 28 },
+    sampleParamsJson: '{"age":28}'
+  }
   fixtures.set('/api/rule/model/41', {
     ...fixtures.get('/api/rule/model/41'),
     modelConfig: '{invalid json'
   })
+  const frozenModel = fixtures.get('/api/rule/model/41')
+  fixtures.set(`/api/rule/model/version/41/${frozenModel.currentVersion}/test-context`, {
+    modelId: 41,
+    version: frozenModel.currentVersion,
+    currentVersion: frozenModel.currentVersion,
+    modelDigest: 'model-file-version-2',
+    configurationDigest: 'model-configuration-version-2',
+    model: frozenModel,
+    schema: frozenSchema
+  })
+  fixtures.set('/api/rule/model/versions/41', [{ version: frozenModel.currentVersion }])
   fixtures.set('POST /api/rule/model/execute/41', async ({ request }) => {
+    expect(new URL(request.url()).searchParams.get('version')).toBe(String(frozenModel.currentVersion))
     executePayload = request.postDataJSON()
     return {
       success: true,
+      version: frozenModel.currentVersion,
+      modelDigest: 'model-file-version-2',
+      configurationDigest: 'model-configuration-version-2',
       outputs: { riskScore: executePayload.age * 2 },
       executeTimeMs: 12
     }
@@ -478,6 +540,12 @@ test('模型测试明确参数来源、降级原因并只发送当前表单参�
   await expect(dialog.getByText(/参数来源：测试 Schema 样例/)).toBeVisible()
   await expect(dialog.getByText(/模型配置样例解析失败/)).toBeVisible()
 
+  const versionSelect = dialog.getByTestId('model-test-version')
+  await expect(versionSelect).toContainText('载入时现行版本')
+  const versionLabel = versionSelect.locator('.el-select__selected-item').filter({ hasText: '载入时现行版本' })
+  expect(await versionSelect.evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThanOrEqual(300)
+  expect(await versionLabel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+
   const ageField = dialog.locator('.test-field-cell').filter({ hasText: '年龄' })
   await ageField.locator('input').fill('35')
   await dialog.getByRole('button', { name: '执行测试', exact: true }).click()
@@ -491,5 +559,10 @@ test('模型测试明确参数来源、降级原因并只发送当前表单参�
   expect(dialogBox.y).toBeGreaterThanOrEqual(0)
   expect(dialogBox.x + dialogBox.width).toBeLessThanOrEqual(viewport.width)
   expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(viewport.height)
+  await page.setViewportSize({ width: 560, height: 760 })
+  const narrowSelect = await versionSelect.boundingBox()
+  const narrowDialog = await dialog.locator('.el-dialog').boundingBox()
+  expect(narrowSelect.x).toBeGreaterThanOrEqual(narrowDialog.x)
+  expect(narrowSelect.x + narrowSelect.width).toBeLessThanOrEqual(narrowDialog.x + narrowDialog.width)
   assertClean()
 })

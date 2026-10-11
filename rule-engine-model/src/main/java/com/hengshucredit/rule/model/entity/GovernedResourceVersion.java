@@ -18,6 +18,11 @@ public class GovernedResourceVersion {
     private String resourceType;
     private Long resourceId;
     private Integer versionNo;
+    /** 业务版本号可复用；versionNo 始终为不可变快照序号。 */
+    private Integer businessVersion;
+    /** Logical retirement retains execution and approval evidence. */
+    private Boolean deleted;
+    public Integer getDisplayVersion() { return businessVersion == null ? versionNo : businessVersion; }
     private Long sourceVersionId;
     private Long approvalRequestId;
     private String snapshotJson;

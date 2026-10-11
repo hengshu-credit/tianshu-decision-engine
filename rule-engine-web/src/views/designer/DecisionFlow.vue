@@ -3,23 +3,6 @@
     class="flow-designer uiue-compact-workbench uiue-compact-designer"
     @mousedown.capture="onDesignerMouseDown"
   >
-    <rule-draft-read-only
-      :visible="!canEditDraft"
-      :loading="!draftGuardLoaded"
-      :load-error="Boolean(draftGuardError)"
-      :revision-label="viewRevisionLabel"
-      :revision-state="viewRevision ? viewRevision.state : ''"
-      :can-fork="canForkViewRevision"
-      :has-editable-draft="hasPendingDraft"
-      :source-options="designerSourceOptions"
-      :selected-source="selectedDesignerSource"
-      :source-loading="designerSourcesLoading"
-      @go-back="$router.back()"
-      @retry="startViewedRevisionRefresh(true)"
-      @go-lifecycle="goRuleLifecycle"
-      @fork="forkViewRevision"
-      @change-source="switchDesignerSource"
-    />
     <!-- 顶部工具栏 -->
     <div class="flow-toolbar">
       <div class="toolbar-row toolbar-row-primary">
@@ -29,6 +12,7 @@
           :icon="ElIconBack"
           class="toolbar-back"
           aria-label="返回"
+          data-designer-back
           title="返回"
           @click="$router.back()"
         />
@@ -41,15 +25,29 @@
           >ID: {{ definitionId }}</span
         >
       </div>
-      <div class="toolbar-center toolbar-context">
-        <rule-designer-version-select
-          v-if="canEditDraft && designerSourceOptions.length"
-          :options="designerSourceOptions"
-          :model-value="selectedDesignerSource"
-          :loading="designerSourcesLoading"
-          @change="switchDesignerSource"
-          @delete="deleteDesignerSource"
+      <div class="toolbar-center toolbar-context designer-version-toolbar">
+        <rule-draft-read-only
+          :visible="!canEditDraft"
+          :loading="!draftGuardLoaded"
+          :load-error="Boolean(draftGuardError) || varsLoadError"
+          :revision-label="viewRevisionLabel"
+          :revision-state="viewRevision ? viewRevision.state : ''"
+          :can-fork="canForkViewRevision"
+          :has-editable-draft="hasPendingDraft"
+          :source-options="designerSourceOptions"
+          :selected-source="selectedDesignerSource"
+          :source-loading="designerSourcesLoading"
           :disabled="designerBusy"
+          :read-only-reason="designerReadOnlyReason"
+          :can-test-frozen="designerCanTest && referenceCatalogMode === 'FROZEN'"
+          :migration-required="draftGuardLoaded && frozenReferenceCatalog?.localEditingAllowed === false"
+          @test-frozen="handleTest"
+          @open-migration="$router.push('/transfer')"
+          @retry="startViewedRevisionRefresh(true)"
+          @go-lifecycle="goRuleLifecycle"
+          @fork="forkViewRevision"
+          @change-source="switchDesignerSource"
+          @delete-source="deleteDesignerSource"
         />
         <graph-designer-navigator
           v-model:target="graphNavigationTarget"
@@ -61,7 +59,7 @@
           @search="searchGraphElements"
           @locate="locateGraphNavigationItem"
           @locate-issue="locateGraphElement"
-          @check="checkGraphConfiguration"
+          @check="handleCheck"
         />
         <el-select
           v-model="globalEdgeLineType"
@@ -198,9 +196,9 @@
         </el-select>
       </div>
       <div class="toolbar-right">
-        <el-button class="toolbar-check-button" size="small" :icon="ElIconCircleCheck" @click="checkGraphConfiguration">检查</el-button>
         <rule-designer-action-bar
-          @locate="locateDesignerIssue"
+          @check="handleCheck"
+          @locate="locateGraphValidationIssue"
           :issue-context="incomingValidationIssue"
             :can-edit="canEditDraft"
             :can-test="designerCanTest"
@@ -219,7 +217,7 @@
       </div>
     </div>
 
-    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" />
+    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" :reference-mode="referenceCatalogMode" :can-use-current-resources="canEnterDesignerLivePreview" @use-current="runDesignerAction(enterDesignerLivePreview)" />
     <rule-designer-dialogs :choice="designerChoice" @resolve="resolveDesignerChoice" />
 
 
@@ -396,6 +394,7 @@
                     :selected-vars="selectedVarPickerOptions"
                     :functions="projectFunctions"
                     :list-options="projectLists"
+                :api-options="projectApis"
                     :rules="projectRules"
                     :current-rule-id="definitionId"
                     :current-rule-code="currentRuleCode"
@@ -457,6 +456,8 @@
     <!-- 测试执行弹窗 -->
     <designer-test-dialog
       v-model:visible="testVisible"
+      :execution-source="designerTestExecutionSource"
+      :execution-source-name="viewRevisionLabel"
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="FLOW"
@@ -467,6 +468,7 @@
 </template>
 
 <script>
+import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { markRaw } from 'vue'
 import {
   Share as ElIconShare,
@@ -484,7 +486,6 @@ import {
   ZoomIn as ElIconZoomIn,
   ZoomOut as ElIconZoomOut,
   Rank as ElIconRank,
-  CircleCheck as ElIconCircleCheck,
 } from '@element-plus/icons-vue'
 import { createGraphCanvas } from '@/components/flow/graphCanvas'
 import CanvasBackgroundSettings from '@/components/flow/CanvasBackgroundSettings.vue'
@@ -527,7 +528,7 @@ import {
   mergeEdgePropertiesFromForm,
 } from '@/components/flow/edgeLineType'
 import {
-  generateScript,
+  generateScriptPreview,
   normalizeGraphActionData,
 } from '@/utils/actionDataCodegen'
 import varPickerMixin from '@/mixins/varPickerMixin'
@@ -536,7 +537,6 @@ import ruleDraftMixin from '@/mixins/ruleDraftMixin'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import RuleDraftReadOnly from '@/components/rule/RuleDraftReadOnly.vue'
-import RuleDesignerVersionSelect from '@/components/rule/RuleDesignerVersionSelect.vue'
 import RuleDesignerActionBar from '@/components/rule/RuleDesignerActionBar.vue'
 import EndNodeScopeDialog from '@/components/flow/EndNodeScopeDialog.vue'
 import ActionBlockEditor from '@/components/flow/ActionBlockEditor.vue'
@@ -547,7 +547,7 @@ import {
   createEmptyLeaf,
   collectVarCodesFromConditionTree,
   walkConditionLeaves,
-  compileConditionTreeExpression,
+  previewConditionTreeExpression,
   normalizeConditionTreeOperands,
 } from '@/utils/decisionConditionTree'
 import {
@@ -633,6 +633,7 @@ export default {
       },
       edgeConditionRoot: null,
       edgeOrderVersion: 0,
+      flowValidationRequestId: 0,
       actionMode: 'visual',
       currentActionData: [],
       scriptVarRefs: [],
@@ -658,13 +659,11 @@ export default {
       ElIconZoomIn: markRaw(ElIconZoomIn),
       ElIconZoomOut: markRaw(ElIconZoomOut),
       ElIconRank: markRaw(ElIconRank),
-      ElIconCircleCheck: markRaw(ElIconCircleCheck),
     }
   },
   components: {
     RuleDesignerActionBar,
     RuleDraftReadOnly,
-    RuleDesignerVersionSelect,
     DesignerTestDialog,
     EndNodeScopeDialog,
     FlowNodeAddMenu,
@@ -717,7 +716,7 @@ export default {
       }
     },
     scriptPreview() {
-      return generateScript(this.currentActionData)
+      return generateScriptPreview(this.currentActionData)
     },
   },
   created() {
@@ -725,10 +724,19 @@ export default {
   },
   mounted() {
     this.initLogicFlow()
+    window.addEventListener('tianshu-theme-change', this.applyCanvasSettings)
     this.loadRuleCallOptions(this.definitionId)
     this.loadContent()
   },
+  activated() {
+    window.addEventListener('tianshu-theme-change', this.applyCanvasSettings)
+    this.applyCanvasSettings()
+  },
+  deactivated() {
+    window.removeEventListener('tianshu-theme-change', this.applyCanvasSettings)
+  },
   beforeUnmount() {
+    window.removeEventListener('tianshu-theme-change', this.applyCanvasSettings)
     this.stopPropertyResize()
     this.clearSelectedEdgeAnimation()
     if (this.lf) this.lf.destroy()
@@ -787,7 +795,7 @@ export default {
       ) return
       const empty = this.edgeConditionRoot.type === 'group' && !this.edgeConditionRoot.children?.length
       if (empty && !edited && this.edgeProps.conditionExpr) return
-      this.edgeProps.conditionExpr = empty ? '' : compileConditionTreeExpression(this.edgeConditionRoot)
+      this.edgeProps.conditionExpr = empty ? '' : previewConditionTreeExpression(this.edgeConditionRoot).expression
       this.edgeProps.conditionConfig = empty ? null : JSON.parse(JSON.stringify(this.edgeConditionRoot))
       this.edgeProps.leftVarId = null
       this.edgeProps.leftRefType = null
@@ -1566,7 +1574,7 @@ export default {
       this.lf.updateEditConfig?.({ snapGrid: this.snapGridEnabled })
       this.lf.graphModel?.updateBackgroundOptions?.({
         backgroundColor: this.backgroundEnabled ? (this.backgroundColor || this.getThemeCanvasColor()) : this.getThemeCanvasColor(),
-        opacity: this.backgroundEnabled ? this.backgroundOpacity : 1,
+        opacity: this.backgroundOpacity,
       })
     },
 
@@ -1633,21 +1641,26 @@ export default {
       this.lf.redo()
     },
 
-    handleValidate() {
+    async handleValidate() {
+      const requestId = ++this.flowValidationRequestId
+      const viewToken = this.viewRefreshToken
       const canvasGraph = getPersistableGraphData(this.lf)
-      const graphData = getBusinessGraphData(canvasGraph)
-      const errors = validateDesignerGraphStructure(graphData)
-
-      errors.push(...this.validateRuleCallsInModel(this.buildBackendModel()))
-
-      if (errors.length === 0) {
-        this.$message.success('验证通过！')
-      } else {
-        this.$alert(
-          errors.map((e, i) => i + 1 + '. ' + e).join('\n'),
-          '验证失败',
-          { type: 'warning' }
-        )
+      const model = this.buildBackendModel()
+      const serialized = JSON.stringify(model)
+      try {
+        await this.loadRuleCallPublishedVersions(model)
+        if (requestId !== this.flowValidationRequestId || viewToken !== this.viewRefreshToken) return
+        if (serialized !== JSON.stringify(this.buildBackendModel())) {
+          this.$message.warning('画布已变化，请重新验证')
+          return
+        }
+        const errors = validateDesignerGraphStructure(getBusinessGraphData(canvasGraph))
+        errors.push(...this.validateRuleCallsInModel(model))
+        if (errors.length === 0) this.$message.success('验证通过！')
+        else this.$alert(errors.map((e, i) => i + 1 + '. ' + e).join('\n'), '验证失败', { type: 'warning' })
+      } catch (error) {
+        if (requestId === this.flowValidationRequestId && viewToken === this.viewRefreshToken)
+          this.$message.error(error.message || '调用规则的发布字段读取失败，请重新验证')
       }
     },
 
@@ -1658,7 +1671,7 @@ export default {
         const content = this.viewRevision
         if (content && content.modelJson && content.modelJson !== '{}') {
           const modelData = normalizeGraphActionData(
-            JSON.parse(content.modelJson)
+            parseDesignerModelJson(content.modelJson)
           )
           this.scriptVarRefs = modelData.scriptVarRefs || []
           migrateModelJsonForEdgeLineTypes(modelData)
@@ -2110,7 +2123,8 @@ export default {
         )
       }
       const empty = this.edgeConditionRoot.type === 'group' && !this.edgeConditionRoot.children?.length
-      const expr = empty ? '' : compileConditionTreeExpression(this.edgeConditionRoot)
+      const preview = empty ? { expression: '', error: '' } : previewConditionTreeExpression(this.edgeConditionRoot)
+      const expr = preview.expression
       this.edgeProps.conditionExpr = expr
       this.edgeProps.conditionConfig = empty ? null : JSON.parse(JSON.stringify(this.edgeConditionRoot))
       this.edgeProps.leftVarId = null
@@ -2122,7 +2136,8 @@ export default {
       }
       this.onEdgeChange()
 
-      this.$message.success(empty ? '已设为默认分支' : '已生成: ' + expr)
+      if (preview.error) this.$message.warning(preview.error)
+      else this.$message.success(empty ? '已设为默认分支' : '已生成: ' + expr)
     },
 
     syncCondVisualFromExpr(expr) {
@@ -2301,10 +2316,6 @@ export default {
 .toolbar-canvas-settings {
   min-width: 100px;
 }
-.toolbar-check-button {
-  width: 78px;
-  min-width: 78px !important;
-}
 .grid-config-panel {
   display: grid;
   gap: 12px;
@@ -2362,8 +2373,7 @@ export default {
   font-size: 12px;
   opacity: 0.85;
 }
-.toolbar-right .el-button,
-.toolbar-center .el-button {
+.flow-toolbar :deep(.el-button:not(.is-link)) {
   color: var(--designer-toolbar-foreground) !important;
   border-color: var(--designer-toolbar-control-border);
   background: var(--designer-toolbar-control-background);
@@ -2372,22 +2382,23 @@ export default {
   align-items: center;
   justify-content: center;
   white-space: nowrap;
-  &:hover {
+  &:hover,
+  &:focus-visible {
     background: var(--designer-toolbar-control-hover-background) !important;
     border-color: var(--tianshu-designer-toolbar-accent) !important;
     color: var(--designer-toolbar-foreground) !important;
   }
   &.is-tool-active {
-    background: var(--tianshu-bg-surface);
+    background: var(--designer-toolbar-control-hover-background);
     border-color: var(--tianshu-designer-toolbar-accent) !important;
-    color: var(--tianshu-designer-toolbar-accent) !important;
+    color: var(--designer-toolbar-foreground) !important;
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--tianshu-designer-toolbar-accent) 22%, transparent);
   }
   &.is-tool-active:hover,
   &.is-tool-active:focus-visible {
-    background: var(--tianshu-bg-surface) !important;
+    background: var(--designer-toolbar-control-hover-background) !important;
     border-color: var(--tianshu-designer-toolbar-accent) !important;
-    color: var(--tianshu-designer-toolbar-accent) !important;
+    color: var(--designer-toolbar-foreground) !important;
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--tianshu-designer-toolbar-accent) 28%, transparent) !important;
   }
   &.el-button--primary {
@@ -2411,6 +2422,21 @@ export default {
     color: var(--tianshu-brand-foreground) !important;
     filter: brightness(0.94);
     box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.16);
+  }
+  &.el-button--primary.is-plain {
+    background: var(--designer-toolbar-control-background) !important;
+    border-color: var(--designer-toolbar-control-border) !important;
+    color: var(--designer-toolbar-foreground) !important;
+    box-shadow: none;
+    filter: none;
+
+    &:hover,
+    &:focus-visible {
+      background: var(--designer-toolbar-control-hover-background) !important;
+      border-color: var(--designer-toolbar-foreground) !important;
+      color: var(--designer-toolbar-foreground) !important;
+      box-shadow: 0 0 0 1px var(--designer-toolbar-control-border);
+    }
   }
   &.el-button--warning {
     background: #b45309;
@@ -2670,28 +2696,39 @@ export default {
 .flow-toolbar :deep(.rule-designer-version-select) {
   color: var(--designer-toolbar-foreground);
 }
-.flow-toolbar :deep(.rule-designer-version-select .el-select__wrapper) {
+.flow-toolbar :deep(.el-select__wrapper) {
   min-height: 32px;
   color: var(--designer-toolbar-foreground);
   background: var(--designer-toolbar-control-background);
   border: 1px solid var(--designer-toolbar-control-border);
   box-shadow: none;
 }
-.flow-toolbar :deep(.rule-designer-version-select .el-select__wrapper:hover),
-.flow-toolbar :deep(.rule-designer-version-select .el-select__wrapper.is-focused) {
+.flow-toolbar :deep(.el-select__wrapper:hover),
+.flow-toolbar :deep(.el-select__wrapper.is-focused) {
+  background: var(--designer-toolbar-control-hover-background);
   border-color: var(--tianshu-designer-toolbar-accent) !important;
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--tianshu-designer-toolbar-accent) 22%, transparent) !important;
 }
-.flow-toolbar :deep(.rule-designer-version-select .el-select__selected-item),
-.flow-toolbar :deep(.rule-designer-version-select .el-select__placeholder),
-.flow-toolbar :deep(.rule-designer-version-select .el-select__caret) {
+.flow-toolbar :deep(.el-select__selected-item),
+.flow-toolbar :deep(.el-select__placeholder),
+.flow-toolbar :deep(.el-select__input),
+.flow-toolbar :deep(.el-select__caret) {
   color: var(--designer-toolbar-foreground) !important;
+}
+.flow-toolbar :deep(.el-select__wrapper.is-disabled) {
+  background: var(--designer-toolbar-control-background);
+  border-color: var(--designer-toolbar-control-disabled-border) !important;
+  box-shadow: none !important;
+}
+.flow-toolbar :deep(.el-select__wrapper.is-disabled .el-select__selected-item),
+.flow-toolbar :deep(.el-select__wrapper.is-disabled .el-select__caret) {
+  color: var(--designer-toolbar-control-disabled-foreground) !important;
 }
 .flow-toolbar :deep(.toolbar-action:hover),
 .flow-toolbar :deep(.toolbar-action:focus-visible) {
   border-color: var(--tianshu-designer-toolbar-accent) !important;
-  background: var(--tianshu-bg-surface) !important;
-  color: var(--tianshu-designer-toolbar-accent) !important;
+  background: var(--designer-toolbar-control-hover-background) !important;
+  color: var(--designer-toolbar-foreground) !important;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--tianshu-designer-toolbar-accent) 22%, transparent) !important;
 }
 .flow-toolbar :deep(.rule-designer-actions__button:not(.rule-designer-actions__publish)) {
@@ -2699,10 +2736,14 @@ export default {
   background: var(--designer-toolbar-control-background);
   color: var(--designer-toolbar-foreground);
 }
-.flow-toolbar :deep(.rule-designer-actions__button:hover:not(:disabled):not(.rule-designer-actions__publish)) {
+.flow-toolbar :deep(.rule-designer-actions__button:hover:not(:disabled):not(.rule-designer-actions__publish)),
+.flow-toolbar :deep(.rule-designer-actions__button:focus-visible:not(:disabled):not(.rule-designer-actions__publish)) {
   border-color: var(--tianshu-designer-toolbar-accent);
   background: var(--designer-toolbar-control-hover-background);
   color: var(--designer-toolbar-foreground);
+}
+.flow-toolbar :deep(.rule-designer-actions__button:focus-visible) {
+  outline-color: var(--designer-toolbar-foreground);
 }
 .flow-toolbar :deep(.rule-designer-actions__button:disabled) {
   border-color: var(--designer-toolbar-control-disabled-border);
@@ -2775,10 +2816,6 @@ export default {
   .toolbar-context :deep(.toolbar-action) {
     width: 68px;
     min-width: 68px;
-  }
-  .toolbar-check-button {
-    width: 68px;
-    min-width: 68px !important;
   }
 }
 .test-hint {

@@ -13,7 +13,7 @@
           >模板</el-button
         >
         <el-button
-          v-permission="'field:edit'"
+          v-permission="'list:edit'"
           size="small"
           :icon="ElIconUpload2"
           @click="$refs.fileInput.click()"
@@ -113,7 +113,7 @@
               <el-button size="small" type="primary" @click="handleQuery">查询</el-button>
               <el-button size="small" @click="resetQuery">重置</el-button>
               <el-button
-                v-permission="'field:edit'"
+                v-permission="'list:edit'"
                 type="primary"
                 size="small"
                 :icon="ElIconPlus"
@@ -180,7 +180,7 @@
           <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="执行操作" width="160" align="center">
             <template v-slot="{ row }">
               <el-button
-                v-permission="'field:edit'"
+                v-permission="'list:edit'"
                 link
                 size="small"
                 type="warning"
@@ -195,7 +195,7 @@
                 >追踪</el-button
               >
               <el-button
-                v-permission="'field:edit'"
+                v-permission="'list:edit'"
                 link
                 size="small"
                 type="danger"
@@ -391,7 +391,7 @@
       <template v-slot:footer>
         <div>
           <el-button @click="dialogVisible = false">取消</el-button>
-          <el-button v-permission="'field:edit'" type="primary" @click="submit"
+          <el-button v-permission="'list:edit'" type="primary" @click="submit"
             >生成审批草稿</el-button
           >
         </div>

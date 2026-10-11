@@ -73,6 +73,12 @@ public class ExternalApiCircuitBreakerRegistry {
         if (apiConfigId != null) states.remove(apiConfigId);
     }
 
+    void invalidateTrial(Long id) {
+        if (id == null || id >= 0) throw new IllegalArgumentException("只允许清理试运行内部身份");
+        invalidate(id);
+        if (distributedStore != null) distributedStore.invalidateTrial(id);
+    }
+
     public synchronized Map<String, Object> snapshot() {
         int open = 0;
         int halfOpen = 0;

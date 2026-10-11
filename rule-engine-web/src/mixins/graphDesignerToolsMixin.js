@@ -45,10 +45,26 @@ export default {
       if (canvas?.clientWidth && canvas?.clientHeight) this.lf.resize(canvas.clientWidth, canvas.clientHeight)
       this.lf.focusOn(item.elementId)
     },
-    checkGraphConfiguration() {
+    createGraphValidationReport() {
       const modelType = this.$options.name === 'DecisionTree' ? 'TREE' : 'FLOW'
       this.graphConfigurationIssues = collectGraphConfigurationIssues(this.graphDataForTools(), modelType)
-      if (this.graphConfigurationIssues.length === 0 && this.$message) this.$message.success('未发现未配置项')
+      return {
+        scope: 'GRAPH',
+        valid: this.graphConfigurationIssues.length === 0,
+        errors: this.graphConfigurationIssues.map(issue => ({
+          ...issue,
+          title: '画布配置问题',
+          nextAction: '请定位到对应节点或连线，补全配置后再次点击“检查”。',
+        })),
+        warnings: [],
+        autoOpen: true,
+      }
+    },
+    locateGraphValidationIssue(issue) {
+      if (this.designerValidationReport?.scope === 'GRAPH' && issue?.elementId) {
+        return this.locateGraphElement(issue)
+      }
+      return this.locateDesignerIssue(issue)
     },
     toggleGraphMiniMap() {
       const miniMap = this.lf && this.lf.extension && this.lf.extension.miniMap

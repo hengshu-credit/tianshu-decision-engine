@@ -27,6 +27,13 @@ public record GovernancePreflightReport(
             String resolutionStatus,
             String targetDigest,
             String issueCode,
-            String issueMessage) {
+            String issueMessage,
+            DependencyVersionSelection versionSelection) {
+        public ResolvedDependency(String targetResourceType, Long targetResourceId, Long targetVersionId, Integer targetVersionNo,
+                                  String referencePath, String relationType, boolean required, String resolutionStatus,
+                                  String targetDigest, String issueCode, String issueMessage) {
+            this(targetResourceType, targetResourceId, targetVersionId, targetVersionNo, referencePath, relationType,
+                    required, resolutionStatus, targetDigest, issueCode, issueMessage, null);
+        }
     }
 }

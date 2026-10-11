@@ -352,7 +352,7 @@ describe('ProjectList — 项目操作', () => {
     expect(wrapper.vm.dialogVisible).toBe(false)
   })
 
-  test('新建项目成功后跳转统一审批且不提前开放鉴权', async () => {
+  test('新建项目保存后留在模块，等待显式发布且不提前开放鉴权', async () => {
     projectApi.createProject.mockResolvedValue({
       code: 200,
       data: { id: 41 }
@@ -365,7 +365,8 @@ describe('ProjectList — 项目操作', () => {
     await nextTick()
 
     expect(wrapper.vm.authDialogVisible).toBe(false)
-    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/approval/41')
+    expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith(expect.stringContaining('草稿已保存'))
     expect(wrapper.vm).not.toHaveProperty('tokenDialogVisible')
   })
 })

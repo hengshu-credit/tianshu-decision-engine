@@ -128,7 +128,7 @@ public class SnapshotProjectFilterTest {
                     mapperType.getClassLoader(),
                     new Class[]{mapperType},
                     (proxy, method, args) -> {
-                        if ("selectPage".equals(method.getName())) {
+                        if ("selectPage".equals(method.getName()) || "selectLogicalPage".equals(method.getName())) {
                             selectPageCount++;
                             Page<?> page = (Page<?>) args[0];
                             wrapper = (LambdaQueryWrapper<?>) args[1];
@@ -136,7 +136,7 @@ public class SnapshotProjectFilterTest {
                             page.setTotal(0);
                             return page;
                         }
-                        if ("selectList".equals(method.getName())) {
+                        if ("selectList".equals(method.getName()) || "selectLogicalList".equals(method.getName())) {
                             wrapper = (LambdaQueryWrapper<?>) args[0];
                             return Collections.emptyList();
                         }

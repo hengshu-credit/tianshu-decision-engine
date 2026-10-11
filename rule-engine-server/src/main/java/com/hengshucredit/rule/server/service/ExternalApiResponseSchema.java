@@ -29,18 +29,58 @@ public final class ExternalApiResponseSchema {
 
     public static List<Map<String, Object>> catalog(JSONObject execution) {
         Map<String, Map<String, Object>> fields = new LinkedHashMap<>();
-        if (execution != null && execution.getJSONArray("responseBranches") != null) {
-            for (Object raw : execution.getJSONArray("responseBranches")) {
-                JSONObject branch = JSON.parseObject(JSON.toJSONString(raw));
-                add(fields, "body", sampleValue(branch));
-            }
+        catalogBranches(fields, execution, "");
+        if (execution != null && execution.getJSONArray("steps") != null) for (Object raw : execution.getJSONArray("steps")) {
+            JSONObject step = JSON.parseObject(JSON.toJSONString(raw));
+            catalogBranches(fields, step, "steps." + step.getString("id") + ".");
         }
         return new ArrayList<>(fields.values());
     }
 
+    public static List<Map<String, Object>> catalog(com.hengshucredit.rule.model.entity.RuleExternalApiConfig api) {
+        var execution = ExternalApiRequestPlan.specification(api);
+        List<Map<String, Object>> fields = new ArrayList<>(catalog(execution));
+        if (execution == null && api.getResponseMapping() != null && !api.getResponseMapping().isBlank()) {
+            JSONObject mapping = JSON.parseObject(api.getResponseMapping());
+            if (mapping != null) for (String name : mapping.keySet()) fields.add(Map.of("value", "body" + segment(name), "label", "组装结果 · " + name, "type", "OBJECT"));
+            fields.add(Map.of("value", "rawBody", "label", "原始响应体", "type", "OBJECT"));
+        }
+        return fields;
+    }
+
+    private static void catalogBranches(Map<String, Map<String, Object>> fields, JSONObject execution, String prefix) {
+        if (execution == null || execution.getJSONArray("responseBranches") == null) return;
+        for (Object raw : execution.getJSONArray("responseBranches")) {
+            JSONObject branch = JSON.parseObject(JSON.toJSONString(raw));
+            if (branch.containsKey("sample")) add(fields, prefix + "response.body", branch.get("sample"));
+            if ("VALUE".equals(branch.getString("mode"))) {
+                addCatalogValue(fields, prefix + "body", branch.getJSONObject("value"), branch);
+            } else if (branch.getJSONArray("outputFields") != null) for (Object entry : branch.getJSONArray("outputFields")) {
+                JSONObject field = JSON.parseObject(JSON.toJSONString(entry));
+                String path = field.getString("path");
+                if (path == null || path.isBlank()) continue;
+                addCatalogValue(fields, prefix + "body" + (path.startsWith("[") ? "" : ".") + path, field.getJSONObject("value"), branch);
+            }
+        }
+    }
+
+    private static void addCatalogValue(Map<String, Map<String, Object>> fields, String path, JSONObject operand, JSONObject branch) {
+        // 目录读取不能执行函数、固定版本调用或外数，仅从样例的静态路径识别结构。
+        if (operand != null && "PATH".equals(operand.getString("kind")) && operand.get("refId") == null && branch.containsKey("sample")) {
+            Map<String, Object> response = new LinkedHashMap<>(); response.put("body", branch.get("sample")); response.put("httpStatus", 200);
+            Map<String, Object> context = new LinkedHashMap<>(); context.put("response", response); context.put("body", branch.get("sample"));
+            Object sample = ExternalApiRequestPlan.read(context, operand.getString("value"));
+            if (sample != null) { add(fields, path, sample); return; }
+        }
+        String type = operand == null || operand.getString("valueType") == null ? "OBJECT" : operand.getString("valueType");
+        fields.putIfAbsent(path, Map.of("value", path, "label", (path.startsWith("response.") || path.contains(".response.") ? "原始响应 · " : "组装结果 · ") + path, "type", type));
+    }
+
+    private static String segment(String name) { return name.matches("[A-Za-z_][A-Za-z0-9_]*") ? "." + name : "[" + JSON.toJSONString(name) + "]"; }
+
     private static void add(Map<String, Map<String, Object>> fields, String path, Object value) {
         String type = value instanceof Map ? "OBJECT" : value instanceof List ? "LIST" : value instanceof Number ? "NUMBER" : value instanceof Boolean ? "BOOLEAN" : value == null ? "NULL" : "STRING";
-        fields.putIfAbsent(path, Map.of("value", path, "label", "组装结果 · " + path, "type", type));
+        fields.putIfAbsent(path, Map.of("value", path, "label", (path.startsWith("response.") || path.contains(".response.") ? "原始响应 · " : "组装结果 · ") + path, "type", type));
         if (value instanceof Map<?, ?> object) object.forEach((key, child) -> {
             String name = String.valueOf(key);
             String suffix = name.matches("[A-Za-z_][A-Za-z0-9_]*") ? "." + name : "[" + JSON.toJSONString(name) + "]";

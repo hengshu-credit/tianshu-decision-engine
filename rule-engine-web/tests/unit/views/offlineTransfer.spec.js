@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 vi.mock('@/api/transfer', () => ({
   exportResourceTransfer: vi.fn(),
   listTransferResources: vi.fn(),
+  listTransferVersionCandidates: vi.fn(),
   previewResourceTransfer: vi.fn(),
   importResourceTransfer: vi.fn(),
   listTransferLogs: vi.fn(),
@@ -22,6 +23,23 @@ import { listProjects } from '@/api/project'
 import OfflineTransfer from '@/views/transfer/OfflineTransfer.vue'
 
 describe('OfflineTransfer', () => {
+  test('版本映射未通过或变更后必须重新预检才能导入', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    wrapper.vm.importFile = new File(['data'], 'versions.zip')
+    wrapper.vm.previewFile = wrapper.vm.importFile
+    wrapper.vm.preview = { packageDigest: 'digest', versionAssociations: [{ referenceKey: 'RULE:1|/operand', valid: false }] }
+    wrapper.vm.previewOptionsSignature = wrapper.vm.optionsSignature
+    expect(wrapper.vm.hasCurrentPreview).toBe(false)
+    wrapper.vm.preview.versionAssociations[0].valid = true
+    await nextTick()
+    expect(wrapper.vm.hasCurrentPreview).toBe(true)
+    // A binding change invalidates the signature even if the earlier response was valid.
+    wrapper.vm.versionBindingsDraft['RULE:1|/operand'] = { resourceId: '50', versionId: '80', expectedSnapshotId: '81' }
+    await nextTick()
+    expect(wrapper.vm.hasCurrentPreview).toBe(false)
+    expect(wrapper.vm.normalizedOptions().versionBindings['RULE:1|/operand'].expectedSnapshotId).toBe('81')
+    wrapper.unmount()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     transferApi.listTransferResources.mockReset().mockResolvedValue({ data: { records: [], total: 0 } })
@@ -180,6 +198,29 @@ describe('OfflineTransfer', () => {
     await wrapper.vm.previewPackage()
     return wrapper
   }
+
+  test('首次预检带回依赖和逐项策略后即可确认导入，手工改选仍需重新预检', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    wrapper.vm.selectFile({ raw: new File(['zip'], 'transfer.zip') })
+    wrapper.vm.options.targetScope = 'GLOBAL'
+    const report = { packageDigest: 'project-with-dependencies', roots: ['RULE:1'],
+      resources: [{ key: 'VARIABLE:7', resourceType: 'VARIABLE' },
+        { key: 'RULE:1', resourceType: 'RULE', selectedAction: 'SUFFIX', reviewable: true }],
+      selectedResourceKeys: ['VARIABLE:7', 'RULE:1'] }
+    transferApi.previewResourceTransfer.mockResolvedValue({ data: report })
+    await wrapper.vm.previewPackage()
+    expect(wrapper.vm.hasCurrentPreview).toBe(true)
+    wrapper.vm.selectedResourceKeysDraft = ['RULE:1']
+    expect(wrapper.vm.hasCurrentPreview).toBe(false)
+    wrapper.vm.selectedResourceKeysDraft = ['VARIABLE:7', 'RULE:1']
+    wrapper.vm.resourceActionsDraft['RULE:1'] = 'OVERWRITE'
+    expect(wrapper.vm.hasCurrentPreview).toBe(false)
+    wrapper.vm.resourceActionsDraft['RULE:1'] = 'SUFFIX'
+    await wrapper.vm.applyPackage()
+    expect(transferApi.importResourceTransfer).toHaveBeenCalledWith(expect.any(File),
+      expect.objectContaining({ selectedResourceKeys: ['VARIABLE:7', 'RULE:1'], resourceActions: { 'RULE:1': 'SUFFIX' } }))
+    wrapper.unmount()
+  })
 
   test.each([
     ['targetScope', 'PROJECT'], ['targetProjectId', '9'], ['createProject', true],

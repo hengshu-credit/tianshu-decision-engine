@@ -11,7 +11,7 @@
       <el-button link size="small" class="edge-priority-down" :disabled="index === count - 1" @click="$emit('move', 1)">下移</el-button>
     </div>
     <div class="branch-condition-summary">
-      <span>分流条件：</span><code>{{ form.conditionExpr || '默认分支（else）' }}</code>
+      <span>分流条件：</span><span>{{ conditionSummary }}</span>
     </div>
     <div v-show="!collapsed" class="branch-editor">
       <edge-properties-editor
@@ -34,7 +34,8 @@
 
 <script>
 import EdgePropertiesEditor from './EdgePropertiesEditor.vue'
-import { compileConditionTreeExpression } from '@/utils/decisionConditionTree'
+import { previewConditionTreeExpression } from '@/utils/decisionConditionTree'
+import { formatConditionTreeDescription } from '@/utils/expressionDisplay'
 
 export default {
   name: 'GatewayBranchEditor',
@@ -55,6 +56,14 @@ export default {
   emits: ['change', 'move'],
   data() {
     return { collapsed: false, form: {}, conditionRoot: null, mode: 'visual' }
+  },
+  computed: {
+    conditionSummary() {
+      if (this.mode === 'script' && this.form.conditionExpr) return '自定义表达式：' + this.form.conditionExpr
+      const empty = !this.conditionRoot || (this.conditionRoot.type === 'group' && !this.conditionRoot.children?.length)
+      if (empty) return this.form.conditionExpr ? '自定义表达式：' + this.form.conditionExpr : '默认分支（else）'
+      return formatConditionTreeDescription(this.conditionRoot)
+    },
   },
   watch: {
     'edge.properties': {
@@ -84,7 +93,8 @@ export default {
     },
     persistCondition(generate = false) {
       const empty = this.conditionRoot.type === 'group' && !this.conditionRoot.children?.length
-      const expr = empty ? '' : compileConditionTreeExpression(this.conditionRoot)
+      const preview = empty ? { expression: '', error: '' } : previewConditionTreeExpression(this.conditionRoot)
+      const expr = preview.expression
       this.updateForm({
         ...this.form,
         conditionExpr: expr,
@@ -92,6 +102,7 @@ export default {
         conditionName: generate && !this.form.conditionName ? expr : this.form.conditionName,
         leftVarId: null, leftRefType: null, rightVarId: null, rightRefType: null,
       })
+      if (generate && preview.error) this.$message.warning(preview.error)
     },
   },
 }

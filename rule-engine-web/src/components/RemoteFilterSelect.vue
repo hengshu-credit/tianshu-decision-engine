@@ -42,6 +42,8 @@
     @change="$emit('change', $event)"
     @popup-scroll="handleDropdownScroll"
   >
+    <el-option v-if="selectedOption && String(optionValue(selectedOption)) === String(value) && !options.some(option => String(optionValue(option)) === String(value))"
+      :key="'selected:' + value" :label="optionLabel(selectedOption)" :value="value" />
     <el-option
       v-for="option in options"
       :key="optionValue(option)"
@@ -66,6 +68,7 @@ export default {
     optionLabelKey: { type: String, default: 'label' },
     optionValueKey: { type: String, default: 'value' },
     optionFields: { type: Array, default: () => [] },
+    selectedOption: { type: Object, default: null },
     pageSize: { type: Number, default: 20 },
     allowFreeInput: { type: Boolean, default: false },
   },

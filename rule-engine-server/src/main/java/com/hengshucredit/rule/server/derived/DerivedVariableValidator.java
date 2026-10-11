@@ -20,6 +20,7 @@ import static com.hengshucredit.rule.server.derived.DerivedVariableConfig.*;
 
 @Service
 public class DerivedVariableValidator {
+    @Resource private com.hengshucredit.rule.server.service.ResourceVersionService resourceVersions;
     private static final Set<String> NUMERIC = Set.of("NUMBER", "DOUBLE", "INTEGER", "LONG", "FLOAT", "DECIMAL", "PROBABILITY", "INT");
     @Resource
     private RuleVariableService variables;
@@ -32,8 +33,10 @@ public class DerivedVariableValidator {
 
     public void validate(RuleVariable variable, JSONObject config) {
         DerivedVariableConfig.validate(config);
+        if (resourceVersions != null) resourceVersions.validate(config, variable.getProjectId());
         Map<String, String> paths = variables.buildRefScriptNameMap(variable.getProjectId());
         for (var reference : OperandDependencyCollector.collectReferences(config)) {
+            if (reference.getVersionId() != null) continue;
             if ("FUNCTION".equals(reference.getRefType())) {
                 if (reference.getRefId() == null) continue; // 内置函数由 Operand 执行器校验。
                 var function = functions.selectById(reference.getRefId());

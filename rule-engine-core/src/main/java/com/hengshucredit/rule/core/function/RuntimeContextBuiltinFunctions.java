@@ -51,6 +51,10 @@ public class RuntimeContextBuiltinFunctions {
         return RuntimeContextBridge.externalApiValue(id, path);
     }
 
+    public Object writeRuleList(String config, Object values) {
+        return RuntimeContextBridge.currentContext().writeRuleList(config, values);
+    }
+
     public Object recordRuleSetItem(String ruleCode, String ruleName, Object hit) {
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("type", "RULE_SET_ITEM");

@@ -19,6 +19,44 @@ import java.util.Map;
 @RequestMapping("/api/rule/datasource")
 public class ExternalDatasourceController {
 
+    @Resource private com.hengshucredit.rule.server.service.ExternalApiTrialService trialService;
+    @Resource private com.hengshucredit.rule.server.service.ConsoleOperatorResolver operatorResolver;
+
+    @PostMapping("/api-config/trials")
+    @SuppressWarnings("unchecked")
+    public R<Map<String, Object>> createTrial(@RequestBody Map<String, Object> body) {
+        if (!(body.get("params") instanceof Map<?, ?>)) return R.fail("试运行参数必须是 JSON 对象");
+        if (!(body.get("config") instanceof Map<?, ?>)) return R.fail("API接口配置必须是 JSON 对象");
+        try {
+            RuleExternalApiConfig config = JSON.parseObject(JSON.toJSONString(body.get("config")), RuleExternalApiConfig.class);
+            return R.ok(trialService.create(operatorResolver.resolve(), (String) body.get("requestKey"),
+                    config, (Map<String, Object>) body.get("params")));
+        } catch (IllegalArgumentException error) { return R.fail(error.getMessage()); }
+    }
+
+    @GetMapping("/api-config/trials")
+    public R<java.util.List<Map<String, Object>>> listTrials() {
+        return R.ok(trialService.list(operatorResolver.resolve()));
+    }
+
+    @GetMapping("/api-config/trials/{trialId}")
+    public R<Map<String, Object>> getTrial(@PathVariable String trialId) {
+        try { return R.ok(trialService.get(operatorResolver.resolve(), trialId)); }
+        catch (IllegalArgumentException error) { return R.fail(error.getMessage()); }
+    }
+
+    @PostMapping("/api-config/trials/{trialId}/resume")
+    public R<Map<String, Object>> resumeTrial(@PathVariable String trialId) {
+        try { return R.ok(trialService.resume(operatorResolver.resolve(), trialId)); }
+        catch (IllegalArgumentException error) { return R.fail(error.getMessage()); }
+    }
+
+    @PostMapping("/api-config/trials/{trialId}/cancel")
+    public R<Map<String, Object>> cancelTrial(@PathVariable String trialId) {
+        try { return R.ok(trialService.cancel(operatorResolver.resolve(), trialId)); }
+        catch (IllegalArgumentException error) { return R.fail(error.getMessage()); }
+    }
+
     @Resource
     private RuleExternalDatasourceService datasourceService;
 
@@ -103,8 +141,22 @@ public class ExternalDatasourceController {
             for (Object raw : specification.getJSONArray("requestBranches")) fields.addAll(
                     com.hengshucredit.rule.server.service.ExternalApiRequestPlan.fields(JSON.parseObject(JSON.toJSONString(raw))));
         }
-        var resultFields = com.hengshucredit.rule.server.service.ExternalApiResponseSchema.catalog(specification);
-        return R.ok(Map.of("apiConfigId", id, "requestFields", fields.stream().filter(field -> !"HEADER".equals(field.getString("location"))).toList(), "resultFields", resultFields));
+        fields.forEach(field -> { field.put("overridable", field.getBooleanValue("overridable")); if ("HEADER".equals(field.getString("location"))) { field.remove("value"); field.remove("defaultValue"); field.put("overridable", false); } });
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("apiConfigId", String.valueOf(id)); result.put("apiName", api.getApiName()); result.put("apiCode", api.getApiCode());
+        result.put("bindingMode", specification == null ? "INPUT" : "FIELDS");
+        result.put("requestFields", fields);
+        result.put("inputFields", com.hengshucredit.rule.server.service.ExternalApiRequestPlan.legacyInputPaths(api).stream()
+                .map(path -> Map.of("id", path, "path", path, "location", "INPUT", "overridable", true)).toList());
+        result.put("resultFields", com.hengshucredit.rule.server.service.ExternalApiResponseSchema.catalog(api));
+        result.put("steps", specification == null || specification.getJSONArray("steps") == null ? java.util.List.of()
+                : specification.getJSONArray("steps").stream().map(raw -> {
+                    var step = JSON.parseObject(JSON.toJSONString(raw));
+                    Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+                    for (String key : java.util.List.of("id", "name", "type")) metadata.put(key, step.get(key));
+                    return metadata;
+                }).toList());
+        return R.ok(result);
     }
 
     @PostMapping("/api-config/{id:\\d+}/response-preview")
@@ -140,6 +192,8 @@ public class ExternalDatasourceController {
     public R<Map<String, Object>> invokeApiConfig(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> params) {
         try {
             return R.ok(externalApiInvokeService.invoke(id, params));
+        } catch (ExternalApiInvokeService.BillingPersistenceException e) {
+            return billingFailure(e);
         } catch (Exception e) {
             return R.fail("调用失败：" + e.getMessage());
         }
@@ -159,9 +213,17 @@ public class ExternalDatasourceController {
             Map<String, Object> params = body.get("params") instanceof Map
                     ? (Map<String, Object>) body.get("params") : Collections.emptyMap();
             return R.ok(externalApiInvokeService.invoke(config, params));
+        } catch (ExternalApiInvokeService.BillingPersistenceException e) {
+            return billingFailure(e);
         } catch (Exception e) {
             return R.fail("调用失败：" + e.getMessage());
         }
+    }
+
+    private R<Map<String, Object>> billingFailure(ExternalApiInvokeService.BillingPersistenceException error) {
+        R<Map<String, Object>> result = R.fail(error.getMessage());
+        result.setData(error.getObservedResponse());
+        return result;
     }
 
     @PostMapping("/api-config/{id:\\d+}/request-preview")

@@ -72,6 +72,120 @@ function sharedOutputGraph() {
 afterEach(() => vi.clearAllMocks())
 
 describe('LineageGraph', () => {
+  test('初次生成与嵌入图默认使用直线并关闭小地图，仍可手动开关', async () => {
+    const wrapper = mountPage()
+    try {
+      wrapper.vm.loadInitialGraph(graphResponse())
+      await nextTick()
+      const miniMap = { show: vi.fn(), hide: vi.fn() }
+      wrapper.vm.lf = { extension: { miniMap }, destroy: vi.fn() }
+      expect(wrapper.vm.graphData.edges.length).toBeGreaterThan(0)
+      expect(wrapper.vm.graphData.edges.every(edge => edge.type === 'line')).toBe(true)
+      wrapper.vm.onGraphRendered()
+      expect(miniMap.show).not.toHaveBeenCalled()
+      expect(miniMap.hide).toHaveBeenCalledOnce()
+      wrapper.vm.toggleMiniMap()
+      expect(miniMap.show).toHaveBeenCalledOnce()
+      wrapper.vm.toggleMiniMap()
+      expect(miniMap.hide).toHaveBeenCalledTimes(2)
+    } finally { wrapper.unmount() }
+  })
+
+  test('主题变化刷新默认网格和背景，保留自定义颜色、透明度及当前视角', async () => {
+    const root = document.documentElement
+    const originalStyle = root.getAttribute('style')
+    const wrapper = mountPage()
+    await nextTick()
+    const updateGridOptions = vi.fn()
+    const updateBackgroundOptions = vi.fn()
+    const render = vi.fn()
+    wrapper.vm.lf = {
+      graphModel: { grid: { config: {} }, updateGridOptions, updateBackgroundOptions },
+      updateEditConfig: vi.fn(), render, destroy: vi.fn(),
+    }
+    const switchTheme = (grid, background) => {
+      root.style.setProperty('--el-color-primary-light-7', grid)
+      root.style.setProperty('--tianshu-bg-workspace', background)
+      window.dispatchEvent(new CustomEvent('tianshu-theme-change'))
+    }
+    try {
+      wrapper.vm.viewport = { x: 123, y: -40, scale: 1.25 }
+      switchTheme('#c4b5fd', '#0f1629')
+      expect(updateGridOptions.mock.lastCall?.[0].config.color).toBe('#c4b5fd')
+      expect(updateBackgroundOptions).toHaveBeenLastCalledWith({ backgroundColor: '#0f1629', opacity: 1 })
+      wrapper.vm.onCanvasSettingsChange({ backgroundOpacity: 0.35 })
+      expect(updateBackgroundOptions).toHaveBeenLastCalledWith({ backgroundColor: '#0f1629', opacity: 0.35 })
+      wrapper.vm.onCanvasSettingsChange({ gridColor: '#123456', backgroundEnabled: true, backgroundColor: '#456789' })
+      switchTheme('#fbcfe8', '#f6f8fc')
+      expect(updateGridOptions.mock.lastCall[0].config.color).toBe('#123456')
+      expect(updateBackgroundOptions).toHaveBeenLastCalledWith({ backgroundColor: '#456789', opacity: 0.35 })
+      wrapper.vm.onCanvasSettingsChange({ gridColor: '', backgroundEnabled: false, backgroundOpacity: 0 })
+      expect(updateGridOptions.mock.lastCall[0].config.color).toBe('#fbcfe8')
+      expect(updateBackgroundOptions).toHaveBeenLastCalledWith({ backgroundColor: '#f6f8fc', opacity: 0 })
+      expect(wrapper.vm.viewport).toEqual({ x: 123, y: -40, scale: 1.25 })
+      expect(render).not.toHaveBeenCalled()
+    } finally {
+      const remove = vi.spyOn(window, 'removeEventListener')
+      const listener = wrapper.vm.applyCanvasSettings
+      wrapper.unmount()
+      expect(remove).toHaveBeenCalledWith('tianshu-theme-change', listener)
+      remove.mockRestore()
+      if (originalStyle === null) root.removeAttribute('style')
+      else root.setAttribute('style', originalStyle)
+    }
+  })
+
+  test('LogicFlow真实transform事件同步画布比例和平移及工具栏，不写只读计算属性', async () => {
+    const wrapper = mountPage()
+    await wrapper.setData({ startNode: graphResponse().startNode })
+    wrapper.vm.lf = { getTransform: vi.fn(), destroy: vi.fn() }
+    console.warn.mockClear()
+    try {
+      wrapper.vm.updateZoom({ type: 'zoom', transform: { SCALE_X: 1.4, TRANSLATE_X: 64, TRANSLATE_Y: -12 } })
+      await nextTick()
+      expect(wrapper.vm.viewport).toEqual({ x: 64, y: -12, scale: 1.4 })
+      expect(wrapper.find('.zoom-percent').text()).toBe('140%')
+      expect(wrapper.vm.zoomInput).toBe('140%')
+      expect(console.warn.mock.calls.filter(args => args.join(' ').includes('zoomPercent'))).toHaveLength(0)
+    } finally { wrapper.unmount() }
+  })
+
+  test('适配或重置后从画布读取实际缩放并更新两个控件，不能产生readonly警告', async () => {
+    const wrapper = mountPage()
+    await wrapper.setData({ startNode: graphResponse().startNode })
+    wrapper.vm.lf = { getTransform: () => ({ SCALE_X: 0.75, TRANSLATE_X: 20, TRANSLATE_Y: 30 }), destroy: vi.fn() }
+    console.warn.mockClear()
+    try {
+      wrapper.vm.updateZoom()
+      await nextTick()
+      expect(wrapper.vm.viewport.scale).toBe(0.75)
+      expect(wrapper.find('.zoom-percent').text()).toBe('75%')
+      expect(wrapper.vm.zoomInput).toBe('75%')
+      expect(console.warn.mock.calls.filter(args => args.join(' ').includes('zoomPercent'))).toHaveLength(0)
+    } finally { wrapper.unmount() }
+  })
+
+  test.each([['250%', 2, '200%'], ['25%', 0.4, '40%']])('输入%s与画布实际40–200%%边界一致', async (input, expected, label) => {
+    const wrapper = mountPage()
+    await wrapper.setData({ startNode: graphResponse().startNode })
+    let scale = 1
+    wrapper.vm.lf = {
+      getTransform: () => ({ SCALE_X: scale }),
+      // 与真实LogicFlow一致：越界请求被拒绝，不能用接受任意值的fake掩盖问题。
+      zoom: vi.fn(value => { if (value >= 0.4 && value <= 2) scale = value }),
+      destroy: vi.fn(),
+    }
+    try {
+      wrapper.vm.zoomInput = input
+      wrapper.vm.onZoomInputChange()
+      await nextTick()
+      expect(wrapper.vm.lf.zoom).toHaveBeenCalledWith(expected)
+      expect(scale).toBe(expected)
+      expect(wrapper.vm.zoomInput).toBe(label)
+      expect(wrapper.find('.zoom-percent').text()).toBe(label)
+    } finally { wrapper.unmount() }
+  })
+
   test('项目直达变量的跨层边避开外数源和 API，最佳布局保留全部依赖', async () => {
     const wrapper = mountPage()
     const data = graphResponse()

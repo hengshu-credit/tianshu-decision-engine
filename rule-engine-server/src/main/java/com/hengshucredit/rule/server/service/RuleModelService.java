@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -33,6 +35,10 @@ import java.util.stream.Collectors;
 
 @Service
 public class RuleModelService {
+    @Resource @org.springframework.context.annotation.Lazy private ResourceVersionService resourceVersions;
+    @Resource @org.springframework.context.annotation.Lazy
+    private ModelVersionTestService modelVersionTests;
+
 
     public static final String SCOPE_GLOBAL = "GLOBAL";
     public static final String SCOPE_PROJECT = "PROJECT";
@@ -804,13 +810,31 @@ public class RuleModelService {
     /**
      * 发布模型（创建版本快照）
      */
+    @Transactional
     public void publish(Long modelId, String changeLog, String publishBy) {
+        publishWithBusinessVersion(modelId, changeLog, publishBy, null);
+    }
+
+    @Transactional
+    public void publishReusingVersion(Long modelId, Integer businessVersion, String changeLog, String actor) {
+        RuleModelVersion anchor = listVersions(modelId).stream()
+                .filter(version -> java.util.Objects.equals(version.getDisplayVersion(), businessVersion)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("目标模型业务版本不存在"));
+        RuleModelVersion source = getVersionWithContent(modelId, anchor.getVersion());
+        // 先验证历史执行包的归属与摘要；修改后的内容另存不可变快照。
+        modelVersionTests.executableModel(source);
+        publishWithBusinessVersion(modelId, changeLog, actor, businessVersion);
+    }
+
+    private void publishWithBusinessVersion(Long modelId, String changeLog, String publishBy, Integer businessVersion) {
         RuleModel model = modelMapper.selectById(modelId);
         if (model == null) throw new IllegalArgumentException("模型不存在");
         validateSupportedFormat(model);
         validatePublishFields(modelId);
 
-        int newVersion = (model.getCurrentVersion() != null ? model.getCurrentVersion() : 0) + 1;
+        int newVersion = nextVersionNumber(modelId);
+        Integer maximum = versionMapper.maxBusinessVersion(modelId);
+        model.setBusinessVersion(businessVersion == null ? (maximum == null ? 1 : Math.addExact(maximum, 1)) : businessVersion);
         model.setPublishedVersion(newVersion);
         model.setCurrentVersion(newVersion);
         model.setStatus(1);
@@ -850,7 +874,7 @@ public class RuleModelService {
         RuleModelVersion snapshot = versionMapper.selectOne(withoutVersionContent()
                 .eq(RuleModelVersion::getModelId, modelId)
                 .eq(RuleModelVersion::getVersion, version));
-        if (snapshot != null) snapshot.setModelContent(null);
+        if (snapshot != null) { snapshot.setModelContent(null); snapshot.setExecutionSnapshotJson(null); }
         return snapshot;
     }
 
@@ -858,6 +882,74 @@ public class RuleModelService {
         return versionMapper.selectOne(new LambdaQueryWrapper<RuleModelVersion>()
                 .eq(RuleModelVersion::getModelId, modelId)
                 .eq(RuleModelVersion::getVersion, version));
+    }
+
+    /** 在治理事务内从实际落库的聚合创建版本，包含新生成的输入输出字段ID。 */
+    @Transactional
+    public void recordAppliedConfiguration(Long modelId, String changeLog, String actor) {
+        RuleModel model = modelMapper.selectOne(new LambdaQueryWrapper<RuleModel>()
+                .eq(RuleModel::getId, modelId).last("FOR UPDATE"));
+        if (model == null) throw new IllegalArgumentException("模型不存在");
+        int version = nextVersionNumber(modelId);
+        model.setCurrentVersion(version);
+        if (model.getPublishedVersion() != null) model.setPublishedVersion(version);
+        saveVersionSnapshot(model, version, changeLog, actor, sampleStatus(model.getValidationReportJson()));
+        if (modelMapper.updateById(model) != 1) throw new IllegalStateException("模型配置版本未确认写入");
+    }
+
+    private int nextVersionNumber(Long modelId) {
+        RuleModelVersion latest = versionMapper.selectOne(withoutVersionContent()
+                .eq(RuleModelVersion::getModelId, modelId).orderByDesc(RuleModelVersion::getVersion).last("LIMIT 1"));
+        return latest == null ? 1 : Math.addExact(latest.getVersion(), 1);
+    }
+
+    public Integer publishedBusinessVersion(Long modelId) {
+        RuleModel model = modelMapper.selectById(modelId);
+        return model == null ? null : model.getBusinessVersion();
+    }
+
+    public Map<String, Object> versionTestContext(Long modelId, Integer version) {
+        Map<String, Object> context = modelVersionTests.context(requireTestVersion(modelId, version));
+        RuleModel current = modelMapper.selectOne(withoutModelContent().eq(RuleModel::getId, modelId));
+        if (current == null || Integer.valueOf(-1).equals(current.getStatus())) throw new IllegalArgumentException("模型已删除，不能执行其历史版本");
+        context.put("currentVersion", current.getCurrentVersion());
+        return context;
+    }
+
+    public Map<String, Object> executeVersion(Long modelId, Integer version, Map<String, Object> params) {
+        return modelVersionTests.execute(requireTestVersion(modelId, version), params);
+    }
+
+    private RuleModelVersion requireTestVersion(Long modelId, Integer version) {
+        if (version == null || version <= 0) throw new IllegalArgumentException("请选择有效的模型版本");
+        RuleModelVersion snapshot = getVersionWithContent(modelId, version);
+        if (snapshot == null || !modelId.equals(snapshot.getModelId()) || !version.equals(snapshot.getVersion())) {
+            throw new IllegalArgumentException("模型版本不存在或不属于当前模型");
+        }
+        if (resourceVersions != null) resourceVersions.assertNativeVersionAvailable("MODEL", modelId, snapshot.getBusinessVersion(), snapshot.getId());
+        RuleModel model = modelMapper.selectOne(withoutModelContent().eq(RuleModel::getId, modelId));
+        if (model == null || Integer.valueOf(-1).equals(model.getStatus())) throw new IllegalArgumentException("模型已删除，不能执行其历史版本");
+        return snapshot;
+    }
+
+    /** 调用者与创建审批草稿保持同一事务，行锁防止把旧样例挂到新配置。 */
+    public RuleModel prepareVersionSampleDraft(Long modelId, Integer version, String testParams) {
+        RuleModel model = modelMapper.selectOne(new LambdaQueryWrapper<RuleModel>()
+                .eq(RuleModel::getId, modelId).last("FOR UPDATE"));
+        if (model == null || Integer.valueOf(-1).equals(model.getStatus())) throw new IllegalArgumentException("模型不存在或已删除");
+        if (!java.util.Objects.equals(version, model.getCurrentVersion())) {
+            throw new IllegalArgumentException("模型当前版本已变化，不能把历史版本样例覆盖到当前配置");
+        }
+        modelVersionTests.context(requireTestVersion(modelId, version));
+        new RuleTestExpectationService().readJsonObject(testParams, "测试参数");
+        com.alibaba.fastjson.JSONObject config = emptyText(model.getModelConfig())
+                ? new com.alibaba.fastjson.JSONObject() : com.alibaba.fastjson.JSON.parseObject(model.getModelConfig());
+        config.put("testParams", testParams);
+        config.put("testParamsSource", "SAVED");
+        model.setModelConfig(config.toJSONString());
+        model.setInputFields(listInputFields(modelId));
+        model.setOutputFields(listOutputFields(modelId));
+        return model;
     }
 
     public Map<String, Object> compareVersions(Long modelId, Integer leftVersion, Integer rightVersion) {
@@ -869,7 +961,9 @@ public class RuleModelService {
         Map<String, Object> result = new LinkedHashMap<>();
         boolean modelContentChanged = !equalsText(left.getModelContent(), right.getModelContent());
         left.setModelContent(null);
+        left.setExecutionSnapshotJson(null);
         right.setModelContent(null);
+        right.setExecutionSnapshotJson(null);
         result.put("left", left);
         result.put("right", right);
         result.put("modelContentChanged", modelContentChanged);
@@ -878,45 +972,23 @@ public class RuleModelService {
     }
 
     public void rollbackToVersion(Long modelId, Integer version) {
-        RuleModel model = modelMapper.selectById(modelId);
-        if (model == null) throw new IllegalArgumentException("模型不存在");
-        validateSupportedFormat(model);
-        RuleModelVersion snapshot = getVersionWithContent(modelId, version);
-        if (snapshot == null) throw new IllegalArgumentException("Version not found");
-
-        model.setModelContent(snapshot.getModelContent());
-        model.setModelConfig(snapshot.getModelConfig());
-        model.setModelFormat(snapshot.getModelFormat());
-        model.setModelFileName(snapshot.getModelFileName());
-        model.setModelFileSize(snapshot.getModelFileSize());
-        model.setModelDigest(snapshot.getModelDigest());
-        model.setInputSchemaJson(snapshot.getInputSchemaJson());
-        model.setOutputSchemaJson(snapshot.getOutputSchemaJson());
-        model.setValidationReportJson(snapshot.getValidationReportJson());
-        model.setRuntimeConstraintsJson(snapshot.getRuntimeConstraintsJson());
-        model.setCurrentVersion((model.getCurrentVersion() == null ? 0 : model.getCurrentVersion()) + 1);
-        modelMapper.updateById(model);
+        throw new IllegalArgumentException("模型版本恢复必须通过审批，不能直接覆盖当前模型");
     }
 
     /**
      * 构造历史版本恢复审批所需的完整模型快照，不修改当前业务数据。
      */
     public RuleModel buildRestoreSnapshot(Long modelId, Integer version) {
-        RuleModel model = getDetail(modelId);
-        if (model == null) throw new IllegalArgumentException("模型不存在");
+        return buildRestoreSnapshot(modelId, version, false);
+    }
+
+    public RuleModel buildRestoreSnapshot(Long modelId, Integer version, boolean preserveFieldIds) {
+        RuleModel current = modelMapper.selectOne(withoutModelContent().eq(RuleModel::getId, modelId));
+        if (current == null) throw new IllegalArgumentException("模型不存在");
         RuleModelVersion snapshot = getVersionWithContent(modelId, version);
-        if (snapshot == null) throw new IllegalArgumentException("Version not found");
-        model.setModelContent(snapshot.getModelContent());
-        model.setModelConfig(snapshot.getModelConfig());
-        model.setModelFormat(snapshot.getModelFormat());
-        model.setModelFileName(snapshot.getModelFileName());
-        model.setModelFileSize(snapshot.getModelFileSize());
-        model.setModelDigest(snapshot.getModelDigest());
-        model.setInputSchemaJson(snapshot.getInputSchemaJson());
-        model.setOutputSchemaJson(snapshot.getOutputSchemaJson());
-        model.setValidationReportJson(snapshot.getValidationReportJson());
-        model.setRuntimeConstraintsJson(snapshot.getRuntimeConstraintsJson());
-        return model;
+        if (snapshot == null || !modelId.equals(snapshot.getModelId())) throw new IllegalArgumentException("模型版本不存在或不属于当前模型");
+        if (resourceVersions != null) resourceVersions.assertNativeVersionAvailable("MODEL", modelId, snapshot.getBusinessVersion(), snapshot.getId());
+        return modelVersionTests.restoreModel(snapshot, preserveFieldIds);
     }
 
     private boolean equalsText(String left, String right) {
@@ -1024,6 +1096,7 @@ public class RuleModelService {
             wrapper.eq(RuleModel::getScope, SCOPE_GLOBAL);
         }
         wrapper.eq(RuleModel::getStatus, 1)
+               .gt(RuleModel::getPublishedVersion, 0)
                .orderByAsc(RuleModel::getModelCode);
         List<RuleModel> models = modelMapper.selectList(wrapper);
         models.forEach(this::normalizeProjectOwnership);
@@ -1040,7 +1113,8 @@ public class RuleModelService {
 
     private LambdaQueryWrapper<RuleModelVersion> withoutVersionContent() {
         return new LambdaQueryWrapper<RuleModelVersion>()
-                .select(RuleModelVersion.class, field -> !"modelContent".equals(field.getProperty()));
+                .select(RuleModelVersion.class, field -> !"modelContent".equals(field.getProperty())
+                        && !"executionSnapshotJson".equals(field.getProperty()));
     }
 
     private void clearModelContent(List<RuleModel> models) {
@@ -1053,7 +1127,10 @@ public class RuleModelService {
     private void clearVersionContent(List<RuleModelVersion> versions) {
         if (versions == null) return;
         for (RuleModelVersion version : versions) {
-            if (version != null) version.setModelContent(null);
+            if (version != null) {
+                version.setModelContent(null);
+                version.setExecutionSnapshotJson(null);
+            }
         }
     }
 
@@ -1086,9 +1163,16 @@ public class RuleModelService {
      */
     private void saveVersionSnapshot(RuleModel model, int version,
             String changeLog, String publishBy, String sampleStatus) {
+        model.setCurrentVersion(version);
+        model.setInputFields(listInputFields(model.getId()));
+        model.setOutputFields(listOutputFields(model.getId()));
+        String executionSnapshot = modelVersionTests.capture(model);
         RuleModelVersion modelVersion = new RuleModelVersion();
+        modelVersion.setExecutionSnapshotJson(executionSnapshot);
+        modelVersion.setExecutionSnapshotDigest(com.hengshucredit.rule.server.artifact.Sha256Digests.text(executionSnapshot));
         modelVersion.setModelId(model.getId());
         modelVersion.setVersion(version);
+        modelVersion.setBusinessVersion(model.getBusinessVersion() == null ? version : model.getBusinessVersion());
         modelVersion.setModelContent(model.getModelContent());
         modelVersion.setModelConfig(model.getModelConfig());
         modelVersion.setModelFormat(model.getModelFormat());
@@ -1104,7 +1188,7 @@ public class RuleModelService {
         modelVersion.setChangeLog(changeLog);
         modelVersion.setPublishBy(publishBy);
         modelVersion.setPublishTime(LocalDateTime.now());
-        versionMapper.insert(modelVersion);
+        if (versionMapper.insert(modelVersion) != 1) throw new IllegalStateException("模型版本快照未确认写入");
     }
 
     private String sampleStatus(String validationReportJson) {
@@ -1493,19 +1577,38 @@ public class RuleModelService {
             String message = e.getMessage();
             result.put("success", false);
             result.put("error", "ONNX 执行失败: " + (message == null || message.isEmpty() ? e : message));
+            markCapacityFailure(result, e);
         }
         result.put("inputParams", params);
         result.put("executeTimeMs", System.currentTimeMillis() - startTime);
         return result;
     }
 
+    private void markCapacityFailure(Map<String, Object> result, RuntimeException error) {
+        ExecutionCapacityException capacity = ExecutionCapacityException.find(error);
+        if (capacity == null) return;
+        result.put("executionStatus", "THROTTLED");
+        result.put("capacityResource", capacity.getResource().name());
+        result.put("retryAfterMs", ExecutionCapacityException.RETRY_AFTER_MS);
+    }
+
     private void validatePublishFields(Long modelId) {
-        List<String> errors = new ArrayList<>();
         RuleModel model = modelMapper.selectById(modelId);
-        List<RuleModelInputField> inputFields = inputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelInputField>()
+        model.setInputFields(inputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelInputField>()
                 .eq(RuleModelInputField::getModelId, modelId)
-                .orderByAsc(RuleModelInputField::getSortOrder));
-        for (RuleModelInputField field : inputFields) {
+                .orderByAsc(RuleModelInputField::getSortOrder)));
+        model.setOutputFields(outputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelOutputField>()
+                .eq(RuleModelOutputField::getModelId, modelId)
+                .orderByAsc(RuleModelOutputField::getSortOrder)));
+        validateDraftForPublication(model);
+    }
+
+    /** 预检使用提交快照，发布落库后也复用同一套校验，避免批准时才发现缺失绑定。 */
+    public void validateDraftForPublication(RuleModel model) {
+        if (model == null) throw new IllegalArgumentException("模型草稿不能为空");
+        validateSupportedFormat(model);
+        List<String> errors = new ArrayList<>();
+        for (RuleModelInputField field : model.getInputFields() == null ? List.<RuleModelInputField>of() : model.getInputFields()) {
             if (field.getStatus() != null && field.getStatus() == 0) {
                 continue;
             }
@@ -1513,10 +1616,7 @@ public class RuleModelService {
                     field.getFieldType(), field.getVarId(), field.getRefType(), field.getScriptName(), field.getSourceOperand(), false);
         }
 
-        List<RuleModelOutputField> outputFields = outputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelOutputField>()
-                .eq(RuleModelOutputField::getModelId, modelId)
-                .orderByAsc(RuleModelOutputField::getSortOrder));
-        for (RuleModelOutputField field : outputFields) {
+        for (RuleModelOutputField field : model.getOutputFields() == null ? List.<RuleModelOutputField>of() : model.getOutputFields()) {
             validateFieldBinding(errors, "输出字段", field.getFieldName(), field.getFieldLabel(),
                     field.getFieldType(), field.getVarId(), field.getRefType(), field.getScriptName(), field.getTargetOperand(), true);
             String transformError = validateTransformOperand(model, field.getFieldLabel(), field.getFieldName(), field.getTransformOperand());
@@ -1641,6 +1741,7 @@ public class RuleModelService {
             if (errMsg == null || errMsg.isEmpty()) errMsg = e.toString();
             result.put("success", false);
             result.put("error", "PMML 执行失败: " + errMsg);
+            markCapacityFailure(result, e);
             result.put("inputParams", params);
             result.put("executeTimeMs", System.currentTimeMillis() - startTime);
         }
@@ -1885,7 +1986,15 @@ public class RuleModelService {
         if (functionId == null) {
             return "输出字段「" + displayName + "」转换函数缺少 functionId";
         }
-        RuleFunction function = ruleFunctionService == null ? null : ruleFunctionService.getById(functionId);
+        RuleFunction function;
+        try {
+            Long versionId = com.hengshucredit.rule.core.compiler.OperandVersion.fixedVersionId(operand);
+            if (versionId != null) {
+                function = resourceVersions.snapshot(new com.hengshucredit.rule.core.engine.ResourceVersionCall("FUNCTION", functionId, versionId, "", List.of(), null, null, operand.getString("versionSource")),
+                        model == null ? null : model.getProjectId()).getJSONObject("payload").toJavaObject(RuleFunction.class);
+            } else function = ruleFunctionService == null ? null : ruleFunctionService.getById(functionId);
+            if (resourceVersions != null) resourceVersions.validate(operand, model == null ? null : model.getProjectId());
+        } catch (IllegalArgumentException error) { return error.getMessage(); }
         if (function == null) {
             return "输出字段「" + displayName + "」引用的转换函数不存在";
         }

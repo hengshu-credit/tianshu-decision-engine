@@ -19,6 +19,30 @@ describe('ModuleCallLog', () => {
     vi.clearAllMocks()
   })
 
+  test('草稿试运行与单次请求分别以中文展示并保留独立动作筛选值', async () => {
+    const wrapper = shallowMount(ModuleCallLog, {
+      props: { moduleType: 'DATASOURCE' },
+      stubs: ['el-button', 'el-form', 'el-form-item', 'el-select', 'el-option', 'el-input',
+        'el-table', 'el-table-column', 'el-tag', 'el-pagination', 'el-drawer',
+        'el-descriptions', 'el-descriptions-item', 'el-alert'],
+    })
+    try {
+      await wrapper.vm.openDetail({ id: 201, actionType: 'API_DRAFT_INVOKE', success: 1 })
+      expect(wrapper.find('.log-detail').text()).toContain('草稿试运行')
+      expect(wrapper.find('.log-detail').text()).not.toContain('API_DRAFT_INVOKE')
+      await wrapper.vm.openDetail({ id: 202, actionType: 'API_DRAFT_ATTEMPT', success: 1 })
+      expect(wrapper.find('.log-detail').text()).toContain('试运行请求')
+      expect(wrapper.vm.actionOptions).toEqual(expect.arrayContaining([
+        { label: '草稿试运行', value: 'API_DRAFT_INVOKE' },
+        { label: '试运行请求', value: 'API_DRAFT_ATTEMPT' },
+      ]))
+      wrapper.vm.query.actionType = 'API_DRAFT_ATTEMPT'
+      await wrapper.vm.load()
+      expect(listRuntimeLogs).toHaveBeenLastCalledWith(expect.objectContaining({ actionType: 'API_DRAFT_ATTEMPT' }))
+      expect(wrapper.vm.actionLabel('API_INVOKE')).toBe('API调用')
+    } finally { wrapper.unmount() }
+  })
+
   test('pretty 格式化对象和数组而不是渲染为 object Object', async () => {
     const wrapper = shallowMount(ModuleCallLog, {
       props: { moduleType: 'DATABASE' },

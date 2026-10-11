@@ -3,6 +3,16 @@ import { shallowMount } from '@test-utils'
 const GroupActionForm = (await vi.importActual('@/views/experiment/GroupActionForm.vue')).default
 
 describe('GroupActionForm', () => {
+  test('选择指定版本并在更换规则时清除旧绑定', () => {
+    const row = { ruleId: 8, ruleCode: 'score_card' }
+    const wrapper = shallowMount(GroupActionForm, { props: { row } })
+    wrapper.vm.onVersionSelect({ versionMode: 'FIXED', versionBindingId: '40' })
+    expect(row.versionBindingId).toBe('40')
+    wrapper.vm.onRuleSelect({ id: 8, ruleCode: 'renamed' })
+    expect(row.versionBindingId).toBe('40')
+    wrapper.vm.onRuleSelect({ id: 9, ruleCode: 'another' })
+    expect(row.versionMode).toBe('LATEST'); expect(row.versionBindingId).toBeNull(); wrapper.unmount()
+  })
   test('选择规则时同时写入稳定 ID 和编码快照', () => {
     const row = { ruleId: null, ruleCode: '' }
     const wrapper = shallowMount(GroupActionForm, {

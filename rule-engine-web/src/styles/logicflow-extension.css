@@ -40,6 +40,33 @@
   border: 2px dashed var(--el-color-primary);
 }
 
+.lf-group-toggle {
+  cursor: pointer;
+  outline: none;
+}
+
+.lf-group-toggle > rect {
+  fill: var(--tianshu-bg-elevated);
+  stroke: var(--tianshu-designer-accent-border);
+  stroke-width: 1;
+  transition: fill 160ms ease, stroke 160ms ease;
+}
+
+.lf-group-toggle > path {
+  stroke: var(--tianshu-primary-text);
+}
+
+.lf-group-toggle:hover > rect,
+.lf-group-toggle:focus-visible > rect {
+  fill: var(--tianshu-primary-soft-hover-bg);
+  stroke: var(--el-color-primary);
+  stroke-width: 2;
+}
+
+.lf-group-toggle:active > rect {
+  fill: var(--tianshu-primary-soft-active-bg);
+}
+
 .lf-mini-map {
   position: absolute;
   padding: 8px;

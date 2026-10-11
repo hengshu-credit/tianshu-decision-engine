@@ -1,7 +1,5 @@
 package com.hengshucredit.rule.server.service;
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.JSONPath;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.dto.ApiDocScenarioSaveRequest;
@@ -22,6 +20,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -41,6 +40,8 @@ public class RuleApiDocScenarioService {
 
     @Resource
     private DecisionArtifactMapper artifactMapper;
+    @Resource
+    private RuleTestExpectationService expectationService;
 
     public List<RuleApiDocScenario> listByDefinition(Long definitionId) {
         requireDefinition(definitionId);
@@ -48,6 +49,11 @@ public class RuleApiDocScenarioService {
                 .eq(RuleApiDocScenario::getDefinitionId, definitionId)
                 .orderByAsc(RuleApiDocScenario::getSortOrder)
                 .orderByAsc(RuleApiDocScenario::getId));
+    }
+
+    public RuleApiDocScenario getForExecution(Long definitionId, Long scenarioId) {
+        requireDefinition(definitionId);
+        return requireScenario(definitionId, scenarioId);
     }
 
     @Transactional
@@ -84,6 +90,7 @@ public class RuleApiDocScenarioService {
         copied.setDescription(source.getDescription());
         copied.setRequestJson(source.getRequestJson());
         copied.setResponseJson(source.getResponseJson());
+        copied.setExpectationJson(source.getExpectationJson());
         copied.setResponseSource(source.getResponseSource());
         copied.setOuterCode(source.getOuterCode());
         copied.setBusinessCodePath(source.getBusinessCodePath());
@@ -158,7 +165,7 @@ public class RuleApiDocScenarioService {
         }
         String scenarioName = requireName(request.getScenarioName());
         requireObject(request.getRequestJson(), "请求报文");
-        JSONObject responseObject = requireObject(request.getResponseJson(), "响应报文");
+        Map<String, Object> responseObject = requireObject(request.getResponseJson(), "响应报文");
         String businessCodePath = StringUtils.hasText(request.getBusinessCodePath())
                 ? request.getBusinessCodePath().trim() : null;
 
@@ -166,6 +173,10 @@ public class RuleApiDocScenarioService {
         scenario.setDescription(trimToLength(request.getDescription(), 512, "场景说明"));
         scenario.setRequestJson(request.getRequestJson());
         scenario.setResponseJson(request.getResponseJson());
+        if (request.getExpectationJson() != null) {
+            expectationService.validateConfiguration(request.getExpectationJson());
+            scenario.setExpectationJson(request.getExpectationJson());
+        }
         scenario.setResponseSource(normalizeResponseSource(request.getResponseSource()));
         scenario.setOuterCode(readOuterCode(responseObject));
         scenario.setBusinessCodePath(businessCodePath);
@@ -199,24 +210,14 @@ public class RuleApiDocScenarioService {
         return scenario;
     }
 
-    private JSONObject requireObject(String json, String label) {
+    private Map<String, Object> requireObject(String json, String label) {
         if (!StringUtils.hasText(json)) {
             throw new IllegalArgumentException(label + "不能为空");
         }
-        try {
-            Object parsed = JSON.parse(json);
-            if (!(parsed instanceof JSONObject)) {
-                throw new IllegalArgumentException(label + "必须是 JSON 对象");
-            }
-            return (JSONObject) parsed;
-        } catch (IllegalArgumentException e) {
-            throw e;
-        } catch (RuntimeException e) {
-            throw new IllegalArgumentException(label + "不是合法 JSON");
-        }
+        return expectationService.readJsonObject(json, label);
     }
 
-    private Object readPath(JSONObject response, String path) {
+    private Object readPath(Map<String, Object> response, String path) {
         if (!StringUtils.hasText(path)) return null;
         String normalized = path.trim().startsWith("$") ? path.trim() : "$." + path.trim();
         try {
@@ -226,7 +227,7 @@ public class RuleApiDocScenarioService {
         }
     }
 
-    private Integer readOuterCode(JSONObject response) {
+    private Integer readOuterCode(Map<String, Object> response) {
         Object value = response.get("code");
         if (value == null) return null;
         if (value instanceof Number) return ((Number) value).intValue();

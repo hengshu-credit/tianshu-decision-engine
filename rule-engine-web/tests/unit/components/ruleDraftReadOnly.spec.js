@@ -18,14 +18,14 @@ describe('RuleDraftReadOnly', () => {
     )
   })
 
-  test('信息提示保留返回操作，不要求确认', async () => {
+  test('提示区只保留带边框的迁移和重试，不重复显示返回', () => {
     const wrapper = mount(RuleDraftReadOnly, {
-      props: { visible: true, loading: true },
+      props: { visible: true, loadError: true, migrationRequired: true },
     })
-
-    await wrapper.get('[data-testid="draft-read-only-back"]').trigger('click')
-
-    expect(wrapper.emitted('go-back')).toHaveLength(1)
+    expect(wrapper.get('[data-testid="designer-reference-migration"]').attributes('link')).toBeUndefined()
+    expect(wrapper.get('[data-testid="designer-source-retry"]').attributes('link')).toBeUndefined()
+    expect(wrapper.find('[data-testid="draft-read-only-back"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   test('只读时以非模态提示说明权限，不提供创建草稿入口', async () => {
@@ -38,20 +38,27 @@ describe('RuleDraftReadOnly', () => {
     expect(wrapper.find('[data-testid="fork-view-revision"]').exists()).toBe(false)
   })
 
-  test('允许编辑时不渲染遮罩且版本选择器交由设计器工具栏承载', () => {
+  test('允许编辑时保留同一个版本选择器并隐藏只读提示', async () => {
     const wrapper = mount(RuleDraftReadOnly, {
       props: {
         visible: false,
         loading: false,
         sourceOptions: [
-          { value: 'REVISION:6', label: '待修改修订 v2', group: 'REVISION' },
+          { value: 'REVISION:6', label: '草稿 · 2', group: 'REVISION', state: 'DRAFT' },
         ],
         selectedSource: 'REVISION:6',
       },
     })
 
     expect(wrapper.find('[data-testid="draft-read-only"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="designer-version-control"]').exists()).toBe(false)
+    const selector = wrapper.get('[data-testid="designer-version-control"]')
+    expect(selector.exists()).toBe(true)
+    await selector.get('.delete-draft').trigger('click')
+    expect(wrapper.emitted('delete-source')[0][0].value).toBe('REVISION:6')
+    await wrapper.setProps({ visible: true })
+    expect(wrapper.get('[data-testid="designer-version-control"]').element).toBe(selector.element)
+    expect(wrapper.find('.delete-draft').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   test('查看模式可以直接切换指定规则版本', async () => {
@@ -96,6 +103,33 @@ describe('RuleDraftReadOnly source actions', () => {
 })
 
 describe('RuleDraftReadOnly interaction isolation', () => {
+  test('嵌入工具栏后仍保护编辑区与其他操作，版本与重试可用，已有 inert 不被清除', async () => {
+    const wrapper = mount({
+      components: { RuleDraftReadOnly },
+      data: () => ({ visible: true }),
+      template: `
+        <div class="uiue-compact-designer">
+          <header><div><button data-designer-back>返回</button><span>标题</span></div><nav>
+            <rule-draft-read-only :visible="visible" :load-error="true" />
+            <button data-testid="save">保存</button>
+          </nav></header>
+          <section data-testid="content"><input /></section>
+          <section data-testid="preexisting" inert />
+        </div>
+      `,
+    })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="designer-source-retry"]').element.closest('[inert]')).toBeNull()
+    expect(wrapper.get('[data-designer-back]').element.closest('[inert]')).toBeNull()
+    expect(wrapper.get('[data-testid="save"]').attributes('inert')).toBe('')
+    expect(wrapper.get('[data-testid="content"]').attributes('inert')).toBe('')
+    wrapper.vm.visible = false
+    await flushPromises()
+    expect(wrapper.get('[data-testid="save"]').element.closest('[inert]')).toBeNull()
+    expect(wrapper.get('[data-testid="content"]').attributes('inert')).toBeUndefined()
+    expect(wrapper.get('[data-testid="preexisting"]').attributes('inert')).toBe('')
+    wrapper.unmount()
+  })
   test('信息提示不遮挡页面，但仍隔离编辑区域且恢复后解除保护', async () => {
     const wrapper = mount({
       components: { RuleDraftReadOnly },

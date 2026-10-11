@@ -48,6 +48,7 @@ public class RuleDesignerService {
     @Resource private RulePreflightValidationService preflightService;
     @Resource private RuleDesignerSaveOperationMapper operationMapper;
     @Resource private ConsoleOperatorResolver operatorResolver;
+    @Resource private RuleReferenceNamespaceGuard referenceNamespaceGuard;
     @Autowired(required = false) private StringRedisTemplate compileTaskRedis;
 
     private final Map<String, CompileTask> compileTasks = new ConcurrentHashMap<>();
@@ -68,6 +69,7 @@ public class RuleDesignerService {
         requirePayload(request);
         pruneCompileTasks();
         RuleRevision revision = prepare(definitionId, request);
+        requireLocalNamespace(revision);
         CompileTask task = new CompileTask(UUID.randomUUID().toString(), definitionId);
         task.modelDigest = Sha256Digests.text(revision.getModelJson());
         compileTasks.put(task.taskId, task);
@@ -115,6 +117,7 @@ public class RuleDesignerService {
     }
 
     private RuleDesignerCompileResponse compile(RuleRevision revision) {
+        requireLocalNamespace(revision);
         RulePreflightReport report = preview(revision);
         boolean compiled = report.getCompiledScript() != null && report.getErrors().stream()
                 .noneMatch(issue -> "COMPILE_FAILED".equals(issue.getCode()));
@@ -164,7 +167,15 @@ public class RuleDesignerService {
             }
         } else {
             revision = prepare(definitionId, request);
+            if ("REUSE".equals(request.getRestoreMode())) {
+                if (request.getSourceType() != com.hengshucredit.rule.model.enums.RuleDraftSourceType.VERSION)
+                    throw error(400, "RESTORE_SOURCE_INVALID", "复用版本号必须选择已发布的历史版本");
+                lifecycleService.configureRestoreVersion(revision, request.getSourceId());
+            } else if (request.getRestoreMode() != null && !"NEW".equals(request.getRestoreMode())) {
+                throw error(400, "RESTORE_MODE_INVALID", "恢复方式无效");
+            }
         }
+        requireLocalNamespace(revision);
         revision.setModelJson(request.getModelJson());
         RuleDesignerCompileResponse compiled = reuseCompileTask(definitionId, request, revision);
         if (compiled == null) compiled = compile(revision);
@@ -297,6 +308,9 @@ public class RuleDesignerService {
         return revision;
     }
     protected RuleRevision editable(Long id, Long revisionId) { return lifecycleService.requireEditableDraft(id, revisionId); }
+    protected void requireLocalNamespace(RuleRevision revision) {
+        referenceNamespaceGuard.requireLocalNamespace(lifecycleService.loadDefinition(revision.getDefinitionId()), revision);
+    }
     protected RulePreflightReport preview(RuleRevision revision) { return preflightService.validatePreview(revision); }
     protected void insertDraft(RuleRevision revision) { lifecycleService.insertDesignerDraft(revision); }
     protected RuleDraftSaveResponse saveDraft(RuleDraftSaveRequest request) { return draftService.save(request); }

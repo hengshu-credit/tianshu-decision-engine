@@ -20,6 +20,11 @@ final class SourceStatusExpressionBuilder {
         if (!hasStableReference(operand)) {
             throw new IllegalArgumentException("来源状态判断必须使用带 refType 和 refId 的受管字段引用");
         }
+        Long versionId = OperandVersion.fixedVersionId(operand);
+        if (versionId != null) return com.hengshucredit.rule.core.function.ResourceVersionFunctions.STATUS + "(" + quote(operand.getString("refType")) + ", "
+                + quote(String.valueOf(operand.get("refId"))) + ", " + quote(new com.hengshucredit.rule.core.engine.ResourceVersionCall(
+                        operand.getString("refType"), operand.getLong("refId"), versionId, "", null, null, null, operand.getString("versionSource")).versionToken()) + ", "
+                + quote(expectation.dimension) + ", " + quote(expectation.expected) + ")";
         return "sourceStatus(" + quote(operand.getString("refType")) + ", "
                 + quote(String.valueOf(operand.get("refId"))) + ", "
                 + quote(expectation.dimension) + ", " + quote(expectation.expected) + ")";

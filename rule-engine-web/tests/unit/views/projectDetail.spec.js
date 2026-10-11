@@ -251,7 +251,7 @@ describe('ProjectDetail 规则生命周期入口', () => {
 
   test('项目自有规则删除只生成规则审批草稿且不宣称已删除', async () => {
     definitionApi.deleteDefinition.mockResolvedValueOnce({
-      data: { id: 83, resourceType: 'RULE' },
+      data: { deleted: false, approvalRequestId: 83 },
     })
     const { wrapper, router } = await mountPage()
 
@@ -262,13 +262,24 @@ describe('ProjectDetail 规则生命周期入口', () => {
     })
 
     expect(wrapper.vm.$confirm).toHaveBeenCalledWith(
-      '确定为项目规则“项目专属规则”发起删除审批吗？审批通过后规则才会删除。'
+      '确定删除项目规则“项目专属规则”吗？未审批通过且从未发布的新增规则将直接删除，其他规则将生成删除审批草稿。'
     )
     expect(definitionApi.deleteDefinition).toHaveBeenCalledWith(31)
     expect(wrapper.vm.$message.success).toHaveBeenCalledWith(
       '已生成规则删除审批草稿'
     )
     expect(router.push).toHaveBeenCalledWith('/approval/83')
+    wrapper.unmount()
+  })
+
+  test('项目内新增规则直接删除后刷新，不生成审批提示', async () => {
+    definitionApi.deleteDefinition.mockResolvedValueOnce({ data: { deleted: true, approvalRequestId: null } })
+    const { wrapper, router } = await mountPage()
+    const load = vi.spyOn(wrapper.vm, 'load').mockResolvedValue()
+    await wrapper.vm.del({ id: 31, scope: 'PROJECT', ruleName: '新草稿' })
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('规则已删除，无需审批')
+    expect(load).toHaveBeenCalledOnce()
+    expect(router.push).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })

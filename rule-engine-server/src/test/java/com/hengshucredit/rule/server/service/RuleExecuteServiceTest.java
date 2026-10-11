@@ -1,10 +1,12 @@
 package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.core.compiler.CompileResult;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
+import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
@@ -38,9 +40,257 @@ import static org.junit.Assert.assertTrue;
 
 public class RuleExecuteServiceTest {
 
+    @Test public void frozenGlobalTestKeepsTheSelectedProjectsBillingAttribution() {
+        RuleExecuteService service = newService();
+        RuleDefinitionService definitions = new FakeDefinitionService() {
+            @Override public RuleDefinition getById(Serializable id) {
+                RuleDefinition definition = super.getById(id);
+                definition.setScope("GLOBAL"); definition.setProjectId(null);
+                return definition;
+            }
+        };
+        RecordingLogService logs = new RecordingLogService();
+        RecordingBillingService billing = new RecordingBillingService();
+        var snapshot = new ArtifactRuntimeSnapshotService.RuntimeSnapshot();
+        ReflectionTestUtils.setField(snapshot, "modelType", "SCRIPT");
+        ReflectionTestUtils.setField(snapshot, "modelJson", "{\"script\":\"frozenScore\"}");
+        ReflectionTestUtils.setField(snapshot, "compiledScript", "frozenScore");
+        ReflectionTestUtils.setField(service, "definitionService", definitions);
+        ReflectionTestUtils.setField(service, "projectService", new FakeProjectService());
+        ReflectionTestUtils.setField(service, "qlExpressEngine", new QLExpressEngine());
+        ReflectionTestUtils.setField(service, "variableSourceResolver", new FrozenSnapshotResolver());
+        ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(service, "ruleFieldAnalyzer", new RuleFieldAnalyzer());
+        ReflectionTestUtils.setField(service, "runtimeRuleInvoker", new NoOpRuntimeInvoker());
+        ReflectionTestUtils.setField(service, "logService", logs);
+        ReflectionTestUtils.setField(service, "billingService", billing);
+        ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
+        RulePublished published = new RulePublished();
+        published.setDefinitionId(10L); published.setRevisionId(33L); published.setArtifactId(501L);
+        published.setArtifactDigest("frozen"); published.setRuleCode("RISK_RULE"); published.setProjectCode("bound_project");
+        published.setModelType("SCRIPT"); published.setModelJson(snapshot.getModelJson()); published.setCompiledScript("frozenScore");
+        var identity = new com.hengshucredit.rule.model.dto.RuleTestExecutionIdentity();
+        identity.setDefinitionId("10"); identity.setSourceType("REVISION"); identity.setSourceId("33");
+        var target = new RuleTestTargetResolver.Target(definitions.getById(10L), 7L, snapshot.getModelJson(), "SCRIPT", "frozenScore",
+                new RuleFieldAnalyzer.ResolvedFields(List.of(), List.of()), published, snapshot, identity);
+        RuleResult result = service.testExecuteTarget(target, Map.of());
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals(1, billing.count);
+        assertEquals(Long.valueOf(7L), logs.saved.getExecutionProjectId());
+        assertNotNull("关联全局规则的测试必须保留所选项目的真实计费归属", billing.authContext);
+        assertEquals(Long.valueOf(7L), billing.authContext.getProjectId());
+        assertEquals("bound_project", billing.authContext.getProjectCode());
+    }
+
+    @Test public void unsavedPreviewCollectsItsOwnOutputFieldsInsteadOfTheSavedProjection() {
+        QLExpressEngine engine = new QLExpressEngine();
+        RuleDefinitionOutputField oldOutput = new RuleDefinitionOutputField();
+        oldOutput.setScriptName("oldScore");
+        RuleDefinitionOutputField previewOutput = new RuleDefinitionOutputField();
+        previewOutput.setScriptName("newScore");
+        RuleDefinitionService definitions = new FakeDefinitionService() {
+            @Override public RuleDefinition getById(Serializable id) {
+                RuleDefinition definition = super.getById(id);
+                definition.setModelType("SCORE");
+                return definition;
+            }
+            @Override public List<RuleDefinitionOutputField> listOutputFields(Long id) {
+                return List.of(oldOutput);
+            }
+        };
+        FakeProjectService projects = new FakeProjectService();
+        PassThroughVariableResolver resolver = new PassThroughVariableResolver();
+        ExecutionParameterBinder binder = new ExecutionParameterBinder();
+        RuleRuntimeInvoker runtime = new RuleRuntimeInvoker();
+        ReflectionTestUtils.setField(runtime, "definitionService", definitions);
+        ReflectionTestUtils.setField(runtime, "projectService", projects);
+        ReflectionTestUtils.setField(runtime, "variableSourceResolver", resolver);
+        ReflectionTestUtils.setField(runtime, "qlExpressEngine", engine);
+        ReflectionTestUtils.setField(runtime, "executionParameterBinder", binder);
+        RuleExecuteService service = newService();
+        ReflectionTestUtils.setField(service, "qlExpressEngine", engine);
+        ReflectionTestUtils.setField(service, "definitionService", definitions);
+        ReflectionTestUtils.setField(service, "projectService", projects);
+        ReflectionTestUtils.setField(service, "variableSourceResolver", resolver);
+        ReflectionTestUtils.setField(service, "executionParameterBinder", binder);
+        ReflectionTestUtils.setField(service, "runtimeRuleInvoker", runtime);
+        ReflectionTestUtils.setField(service, "logService", new RecordingLogService());
+        ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+        ReflectionTestUtils.setField(service, "functionService", new FakeFunctionService());
+        ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
+        ReflectionTestUtils.setField(service, "compileService", new RuleCompileService() {
+            @Override public CompileResult compilePreview(Long id, String model, String type) {
+                return new com.hengshucredit.rule.core.compiler.ScorecardCompiler().compile(model);
+            }
+        });
+        ReflectionTestUtils.setField(service, "ruleFieldAnalyzer", new RuleFieldAnalyzer() {
+            @Override public ResolvedFields resolveFields(Long id, String model, String type, Long projectId) {
+                return new ResolvedFields(List.of(), List.of(previewOutput));
+            }
+            @Override public List<RuleDefinitionInputField> resolveDirectModelInputFields(String model, String type, Long projectId) {
+                return List.of();
+            }
+        });
+        RuleResult result = service.testExecutePreview(10L,
+                "{\"initialScore\":5,\"resultVar\":{\"varCode\":\"newScore\"},\"scoreItems\":[]}",
+                "SCORE", Map.of());
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals("未保存画布输出不能被旧输出契约覆盖", Map.of("newScore", 5.0), result.getResult());
+    }
+
+    @Test public void publishedScorecardReturnsTheSameDeclaredOutputsWithTraceEnabledOrDisabled() {
+        QLExpressEngine engine = new QLExpressEngine();
+        RuleExecuteService service = newService();
+        TerminationDefinitionService definitions = new TerminationDefinitionService();
+        FakeProjectService projects = new FakeProjectService();
+        PassThroughVariableResolver resolver = new PassThroughVariableResolver();
+        ExecutionParameterBinder binder = new ExecutionParameterBinder();
+        RuleRuntimeInvoker runtime = new RuleRuntimeInvoker();
+        ReflectionTestUtils.setField(runtime, "definitionService", definitions);
+        ReflectionTestUtils.setField(runtime, "projectService", projects);
+        ReflectionTestUtils.setField(runtime, "variableSourceResolver", resolver);
+        ReflectionTestUtils.setField(runtime, "qlExpressEngine", engine);
+        ReflectionTestUtils.setField(runtime, "executionParameterBinder", binder);
+        ReflectionTestUtils.setField(service, "qlExpressEngine", engine);
+        ReflectionTestUtils.setField(service, "definitionService", definitions);
+        ReflectionTestUtils.setField(service, "projectService", projects);
+        ReflectionTestUtils.setField(service, "variableSourceResolver", resolver);
+        ReflectionTestUtils.setField(service, "executionParameterBinder", binder);
+        ReflectionTestUtils.setField(service, "runtimeRuleInvoker", runtime);
+        ReflectionTestUtils.setField(service, "logService", new RecordingLogService());
+        ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+        ReflectionTestUtils.setField(service, "functionService", new FakeFunctionService());
+        ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
+        String model = "{\"initialScore\":0,\"resultVar\":{\"varCode\":\"decision\"},\"scoreItems\":[{\"condVar\":\"age\",\"condOperator\":\">=\",\"condValue\":\"18\",\"condVarType\":\"NUMBER\",\"score\":5}]}";
+        CompileResult compiled = new com.hengshucredit.rule.core.compiler.ScorecardCompiler().compile(model);
+        assertTrue(compiled.getErrorMessage(), compiled.isSuccess());
+        RulePublished published = new RulePublished();
+        published.setDefinitionId(10L); published.setRuleCode("RISK_RULE"); published.setProjectCode("project_a");
+        published.setVersion(1); published.setModelType("SCORECARD"); published.setModelJson(model);
+        published.setCompiledScript(compiled.getCompiledScript());
+        for (boolean trace : new boolean[]{false, true}) {
+            RuleResult result = service.executePublished(published, Map.of("age", 25), 1L, "PUBLIC_API", null, trace, trace);
+            assertTrue(result.getErrorMessage(), result.isSuccess());
+            assertEquals("公开无追踪执行不能丢失设计器评分输出", Double.valueOf(5), ((Map<?, ?>) result.getResult()).get("decision"));
+        }
+    }
+
+    @Test
+    public void deletedRuleCannotUseStoredOrUnsavedPreviewContent() {
+        for (boolean preview : new boolean[]{false, true}) {
+            int[] reads = {0};
+            RuleExecuteService service = deletionGuardService(-1, reads);
+            RuleResult result = preview ? service.testExecutePreview(10L, "{}", "SCORECARD", Map.of())
+                    : service.testExecute(10L, Map.of());
+            assertFalse(result.isSuccess());
+            assertEquals("规则已删除，无法执行测试", result.getErrorMessage());
+            assertEquals("旧页面不能继续加载内容或编译新草稿", 0, reads[0]);
+        }
+    }
+
+    @Test
+    public void deletionGuardKeepsDraftAndOfflineRuleTestingAvailable() {
+        for (Integer status : java.util.Arrays.asList(null, 0, 1, 2)) {
+            int[] reads = {0};
+            RuleExecuteService service = deletionGuardService(status, reads);
+            assertEquals("规则尚未编译成功，请先编译", service.testExecute(10L, Map.of()).getErrorMessage());
+            assertEquals(1, reads[0]);
+            assertEquals("预览编译已调用", service.testExecutePreview(10L, "{}", "SCORECARD", Map.of()).getErrorMessage());
+            assertEquals(2, reads[0]);
+        }
+    }
+
+    private RuleExecuteService deletionGuardService(Integer status, int[] contentReads) {
+        RuleExecuteService service = newService();
+        ReflectionTestUtils.setField(service, "definitionService", new RuleDefinitionService() {
+            @Override public RuleDefinition getById(Serializable id) {
+                RuleDefinition definition = new RuleDefinition();
+                definition.setId(10L); definition.setStatus(status);
+                return definition;
+            }
+            @Override public RuleDefinitionContent getContent(Long id) { contentReads[0]++; return null; }
+        });
+        ReflectionTestUtils.setField(service, "compileService", new RuleCompileService() {
+            @Override public CompileResult compilePreview(Long id, String json, String type) {
+                contentReads[0]++;
+                return CompileResult.fail("预览编译已调用");
+            }
+        });
+        return service;
+    }
+
+    @Test
+    public void testAndPublishedExecutionPreserveTypedCapacityResource() {
+        for (ExecutionCapacityException.Resource resource : ExecutionCapacityException.Resource.values()) {
+            RuleExecuteService service = capacityFailureService(new IllegalStateException("wrapped",
+                    new ExecutionCapacityException(resource, "capacity unavailable")));
+            try {
+                RuleResult tested = service.testExecute(10L, Collections.emptyMap());
+                assertFalse(tested.isSuccess());
+                assertEquals("THROTTLED", tested.getExecutionStatus());
+                assertEquals(resource.name(), tested.getCapacityResource());
+                assertEquals(Long.valueOf(1000), tested.getRetryAfterMs());
+                RuleResult published = service.executePublished(capacityPublished(), Collections.emptyMap(), 1L, "test");
+                assertFalse(published.isSuccess());
+                assertEquals("THROTTLED", published.getExecutionStatus());
+                assertEquals(resource.name(), published.getCapacityResource());
+            } finally {
+                RuntimeContextBridge.clear();
+            }
+        }
+    }
+
+    @Test
+    public void ordinaryRejectionMessageDoesNotSetThrottledExecutionStatus() {
+        RuleExecuteService service = capacityFailureService(new java.util.concurrent.RejectedExecutionException("PMML 模型加载并发已达上限"));
+        try {
+            RuleResult result = service.executePublished(capacityPublished(), Collections.emptyMap(), 1L, "test");
+            assertFalse(result.isSuccess());
+            org.junit.Assert.assertNull(result.getExecutionStatus());
+            org.junit.Assert.assertNull(result.getCapacityResource());
+        } finally {
+            RuntimeContextBridge.clear();
+        }
+    }
+
+    private RulePublished capacityPublished() {
+        RulePublished published = new RulePublished();
+        published.setDefinitionId(10L); published.setRuleCode("RISK_RULE");
+        published.setProjectCode("project_a"); published.setVersion(1);
+        published.setModelType("SCRIPT"); published.setModelJson("{}");
+        published.setCompiledScript("return externalScore;");
+        return published;
+    }
+
+    private RuleExecuteService capacityFailureService(RuntimeException failure) {
+        RuleExecuteService service = newService();
+        ReflectionTestUtils.setField(service, "qlExpressEngine", new QLExpressEngine());
+        ReflectionTestUtils.setField(service, "definitionService", new FakeDefinitionService() {
+            @Override public RuleDefinitionContent getContent(Long id) {
+                RuleDefinitionContent content = new RuleDefinitionContent();
+                content.setCompileStatus(1); content.setModelJson("{}"); content.setCompiledScript("return externalScore;");
+                return content;
+            }
+        });
+        ReflectionTestUtils.setField(service, "projectService", new FakeProjectService());
+        ReflectionTestUtils.setField(service, "functionService", new FakeFunctionService());
+        ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
+        ReflectionTestUtils.setField(service, "logService", new RecordingLogService());
+        ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+        ReflectionTestUtils.setField(service, "runtimeRuleInvoker", new NoOpRuntimeInvoker());
+        ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(service, "ruleFieldAnalyzer", new RuleFieldAnalyzer());
+        ReflectionTestUtils.setField(service, "variableSourceResolver", new VariableSourceResolver() {
+            @Override public Map<String, Object> resolveInto(Long id, Map<String, Object> target, VariableResolveOptions options) {
+                throw failure;
+            }
+        });
+        return service;
+    }
+
     @Test
     public void publishedFlowOnlyResolvesExternalSourceWhenItsBranchReadsTheValue() {
-        RuleExecuteService service = new RuleExecuteService();
+        RuleExecuteService service = newService();
         ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot = new ArtifactRuntimeSnapshotService.RuntimeSnapshot();
         ReflectionTestUtils.setField(snapshot, "compiledScript", "if (reject) { return 0; }\nreturn externalScore + externalScore;");
         ReflectionTestUtils.setField(snapshot, "modelType", "FLOW");
@@ -95,7 +345,7 @@ public class RuleExecuteServiceTest {
 
     @Test
     public void publishedScriptUsesFrozenFieldsWithoutReenteringLiveAnalysis() {
-        RuleExecuteService service = new RuleExecuteService();
+        RuleExecuteService service = newService();
         QLExpressEngine engine = new QLExpressEngine();
         String script = "return frozenScore;";
         QLExpressEngine.PreparedScript prepared = engine.prepare(script);
@@ -146,7 +396,7 @@ public class RuleExecuteServiceTest {
 
     @Test
     public void publishedExecutionAssemblesMappedObjectFieldAndKeepsExplicitTargetPriority() {
-        RuleExecuteService service = new RuleExecuteService();
+        RuleExecuteService service = newService();
         RuleDefinitionInputField age = new RuleDefinitionInputField();
         age.setVarId(9L);
         age.setRefType("VARIABLE");
@@ -237,7 +487,7 @@ public class RuleExecuteServiceTest {
 
     @Test
     public void allRulesTerminationReturnsRootOutputContractAsSuccess() {
-        RuleExecuteService service = new RuleExecuteService();
+        RuleExecuteService service = newService();
         QLExpressEngine engine = new QLExpressEngine();
         TerminationDefinitionService definitionService = new TerminationDefinitionService();
         FakeProjectService projectService = new FakeProjectService();
@@ -301,7 +551,7 @@ public class RuleExecuteServiceTest {
 
     @Test
     public void previewExecutionCompilesAndRunsCurrentDesignerModelWithCurrentFields() {
-        RuleExecuteService service = new RuleExecuteService();
+        RuleExecuteService service = newService();
         RecordingLogService logService = new RecordingLogService();
         RecordingBillingService billingService = new RecordingBillingService();
         RecordingPreviewResolver resolver = new RecordingPreviewResolver();
@@ -347,7 +597,7 @@ public class RuleExecuteServiceTest {
 
     @Test
     public void runtimeResolutionIncludesDerivedReferencesWithoutExposingThemAsInputFields() {
-        RuleExecuteService service = new RuleExecuteService();
+        RuleExecuteService service = newService();
         RuleDefinitionInputField input = new RuleDefinitionInputField();
         input.setScriptName("idcard_no");
         input.setFieldType("STRING");
@@ -364,7 +614,7 @@ public class RuleExecuteServiceTest {
 
     @Test
     public void previewUsesRequestedModelTypeWhenAnalyzingDirectFields() {
-        RuleExecuteService service = new RuleExecuteService();
+        RuleExecuteService service = newService();
         String[] analyzedType = new String[1];
         RecordingPreviewResolver resolver = new RecordingPreviewResolver();
 
@@ -408,7 +658,7 @@ public class RuleExecuteServiceTest {
 
     @Test
     public void previewExecutionWithNoInputsRequiresNoSourceVariables() {
-        RuleExecuteService service = new RuleExecuteService();
+        RuleExecuteService service = newService();
         RecordingPreviewResolver resolver = new RecordingPreviewResolver();
 
         ReflectionTestUtils.setField(service, "qlExpressEngine", new QLExpressEngine());
@@ -444,7 +694,7 @@ public class RuleExecuteServiceTest {
 
     @Test
     public void boundGlobalRulePreviewUsesSelectedProjectForRuntimeSourcesAndLogs() {
-        RuleExecuteService service = new RuleExecuteService();
+        RuleExecuteService service = newService();
         RecordingPreviewResolver resolver = new RecordingPreviewResolver();
         RecordingLogService logService = new RecordingLogService();
         RecordingBillingService billingService = new RecordingBillingService();
@@ -514,7 +764,7 @@ public class RuleExecuteServiceTest {
 
     @Test
     public void testExecutionRejectsProjectThatDoesNotOwnOrBindRule() {
-        RuleExecuteService service = new RuleExecuteService();
+        RuleExecuteService service = newService();
         ReflectionTestUtils.setField(service, "definitionService",
                 new FakeDefinitionService() {
                     @Override
@@ -533,7 +783,7 @@ public class RuleExecuteServiceTest {
 
     @Test
     public void publishedExecutionScansAndInstallsExplicitSourceStatus() {
-        RuleExecuteService service = new RuleExecuteService();
+        RuleExecuteService service = newService();
         SourceStatusResolver resolver = new SourceStatusResolver();
         RuleDefinitionService definitionService = new FakeDefinitionService() {
             @Override
@@ -586,7 +836,7 @@ public class RuleExecuteServiceTest {
 
     @Test
     public void executePublishedFlowResolvesReadSourcesAndPreservesBindingAndLogging() {
-        RuleExecuteService service = new RuleExecuteService();
+        RuleExecuteService service = newService();
         RecordingVariableSourceResolver resolver = new RecordingVariableSourceResolver();
         RecordingLogService logService = new RecordingLogService();
         RecordingBillingService billingService = new RecordingBillingService();
@@ -675,7 +925,7 @@ public class RuleExecuteServiceTest {
 
     @Test
     public void publishedArtifactExecutesOnlyFrozenInputsAndDependencies() {
-        RuleExecuteService service = new RuleExecuteService();
+        RuleExecuteService service = newService();
         FrozenSnapshotResolver resolver = new FrozenSnapshotResolver();
         ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot =
                 new ArtifactRuntimeSnapshotService.RuntimeSnapshot();
@@ -730,7 +980,21 @@ public class RuleExecuteServiceTest {
         assertSame(snapshot.getVariables(), resolver.variables);
     }
 
+    private static RuleExecuteService newService() {
+        RuleExecuteService service = new RuleExecuteService();
+        ReflectionTestUtils.setField(service, "namespaceGuard", new RuleReferenceNamespaceGuard() {
+            @Override public void requireLocalWorkspace(RuleDefinition definition, RuleDefinitionContent content) { }
+            @Override public void requireLocalNamespace(RuleDefinition definition, String sourceType, Long sourceId) { }
+        });
+        return service;
+    }
+
     private static class FakeDefinitionService extends RuleDefinitionService {
+        @Override
+        public List<RuleDefinitionOutputField> listOutputFields(Long definitionId) {
+            return Collections.emptyList();
+        }
+
         @Override
         public RuleDefinition getById(Serializable id) {
             RuleDefinition definition = new RuleDefinition();
@@ -911,6 +1175,13 @@ public class RuleExecuteServiceTest {
         private Map<String, Object> originalInput;
         private String modelJson;
         private Long executionProjectId;
+
+        @Override
+        public void enterTest(RuleDefinition definition, Long executionProjectId, String projectCode,
+                              Map<String, Object> values, Map<String, Object> originalInput, String modelJson,
+                              List<RuleDefinitionOutputField> outputFields) {
+            enter(definition, executionProjectId, projectCode, values, originalInput, true, modelJson);
+        }
 
         @Override
         public void register(com.alibaba.qlexpress4.Express4Runner runner) {

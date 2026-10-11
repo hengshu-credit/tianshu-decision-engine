@@ -15,7 +15,7 @@ import static org.junit.Assert.assertTrue;
 
 public class DecisionExecutionPersistenceTest {
     @Test
-    public void persistsLogAndBillingOffRequestThread() throws Exception {
+    public void confirmsLogAndBillingBeforeReturnWithoutRecoveryStorage() throws Exception {
         AtomicInteger logs = new AtomicInteger();
         AtomicInteger billing = new AtomicInteger();
         RuleExecutionLogService logService = new RuleExecutionLogService() {
@@ -25,11 +25,9 @@ public class DecisionExecutionPersistenceTest {
                 return true;
             }
         };
-        RuleBillingService billingService = new RuleBillingService() {
+        RuleBillingService billingService = new NoPriceBillingService() {
             @Override
-            public void recordEngineExecution(RuleDefinition definition, boolean success,
-                                               Long costTimeMs, String errorMessage,
-                                               com.hengshucredit.rule.server.auth.ProjectAuthContext authContext) {
+            public void recordEngineExecutionSnapshot(String snapshotJson) {
                 billing.incrementAndGet();
             }
         };
@@ -59,7 +57,7 @@ public class DecisionExecutionPersistenceTest {
     }
 
     @Test
-    public void fullQueueUsesJournalBeforeSynchronousDatabaseFallback() {
+    public void journalAcceptsEveryEventBeforeReturnWithoutDatabaseOutbox() {
         AtomicInteger journalWrites = new AtomicInteger();
         DurableExecutionPersistenceJournal journal = new DurableExecutionPersistenceJournal() {
             @Override
@@ -76,8 +74,9 @@ public class DecisionExecutionPersistenceTest {
         }
 
         Map<String, Object> snapshot = persistence.snapshot();
-        assertEquals(1, journalWrites.get());
-        assertEquals(1L, snapshot.get("journalQueued"));
+        assertEquals(101, journalWrites.get());
+        assertEquals(101L, snapshot.get("journalQueued"));
+        assertEquals(0, snapshot.get("queueDepth"));
         assertEquals(0L, snapshot.get("fallback"));
         assertEquals("JOURNAL_THEN_SYNC_FALLBACK", snapshot.get("overflowStrategy"));
         persistence.close();
@@ -95,7 +94,8 @@ public class DecisionExecutionPersistenceTest {
                 new DecisionExecutionPersistence(logService, new RuleBillingService(), 100);
         persistence.start();
         try {
-            persistence.offer(new RuleExecutionLog(), null, true, 12L, null, null);
+            org.junit.Assert.assertThrows(IllegalStateException.class, () ->
+                    persistence.offer(new RuleExecutionLog(), null, true, 12L, null, null));
             long deadline = System.currentTimeMillis() + 2000;
             while (System.currentTimeMillis() < deadline
                     && ((Number) persistence.snapshot().get("failed")).longValue() < 1) {
@@ -119,11 +119,9 @@ public class DecisionExecutionPersistenceTest {
                 throw new IllegalStateException("log unavailable");
             }
         };
-        RuleBillingService billingService = new RuleBillingService() {
+        RuleBillingService billingService = new NoPriceBillingService() {
             @Override
-            public void recordEngineExecution(RuleDefinition definition, boolean success,
-                                               Long costTimeMs, String errorMessage,
-                                               com.hengshucredit.rule.server.auth.ProjectAuthContext authContext) {
+            public void recordEngineExecutionSnapshot(String snapshotJson) {
                 billing.incrementAndGet();
             }
         };
@@ -131,7 +129,8 @@ public class DecisionExecutionPersistenceTest {
                 new DecisionExecutionPersistence(logService, billingService, 100);
         persistence.start();
         try {
-            persistence.offer(new RuleExecutionLog(), new RuleDefinition(), true, 12L, null, null);
+            org.junit.Assert.assertThrows(IllegalStateException.class, () ->
+                    persistence.offer(new RuleExecutionLog(), new RuleDefinition(), true, 12L, null, null));
             long deadline = System.currentTimeMillis() + 2000;
             while (System.currentTimeMillis() < deadline
                     && ((Number) persistence.snapshot().get("failed")).longValue() < 1) {
@@ -157,11 +156,9 @@ public class DecisionExecutionPersistenceTest {
                 logs.incrementAndGet();
             }
         };
-        RuleBillingService billingService = new RuleBillingService() {
+        RuleBillingService billingService = new NoPriceBillingService() {
             @Override
-            public void recordEngineExecution(RuleDefinition definition, boolean success,
-                                               Long costTimeMs, String errorMessage,
-                                               com.hengshucredit.rule.server.auth.ProjectAuthContext authContext) {
+            public void recordEngineExecutionSnapshot(String snapshotJson) {
                 billing.incrementAndGet();
                 throw new IllegalStateException("billing unavailable");
             }
@@ -170,7 +167,8 @@ public class DecisionExecutionPersistenceTest {
                 new DecisionExecutionPersistence(logService, billingService, 100);
         persistence.start();
         try {
-            persistence.offer(new RuleExecutionLog(), new RuleDefinition(), true, 12L, null, null);
+            org.junit.Assert.assertThrows(IllegalStateException.class, () ->
+                    persistence.offer(new RuleExecutionLog(), new RuleDefinition(), true, 12L, null, null));
             long deadline = System.currentTimeMillis() + 2000;
             while (System.currentTimeMillis() < deadline
                     && ((Number) persistence.snapshot().get("failed")).longValue() < 1) {
@@ -192,27 +190,28 @@ public class DecisionExecutionPersistenceTest {
         AtomicInteger recoveryLogPending = new AtomicInteger();
         AtomicInteger recoveryBillingPending = new AtomicInteger();
         RuleExecutionPersistenceOutboxService recovery = new RuleExecutionPersistenceOutboxService() {
+            private boolean first = true;
             @Override
-            public void enqueue(RuleExecutionLog log, RuleDefinition definition, boolean success,
-                                Long costTimeMs, String errorMessage,
-                                com.hengshucredit.rule.server.auth.ProjectAuthContext authContext,
-                                boolean logPending, boolean billingPending) {
+            public com.hengshucredit.rule.model.entity.RuleExecutionPersistenceOutbox accept(
+                    DurableExecutionPersistenceJournal.Entry entry) {
+                if (first) {
+                    first = false;
+                    throw new IllegalStateException("first durable accept unavailable");
+                }
                 recoveryEvents.incrementAndGet();
-                if (logPending) recoveryLogPending.incrementAndGet();
-                if (billingPending) recoveryBillingPending.incrementAndGet();
+                if (entry.logPending()) recoveryLogPending.incrementAndGet();
+                if (entry.billingPending()) recoveryBillingPending.incrementAndGet();
+                return new com.hengshucredit.rule.model.entity.RuleExecutionPersistenceOutbox();
             }
         };
         RuleExecutionLogService logService = new RuleExecutionLogService() {
             @Override public void saveLogical(RuleExecutionLog entity) { throw new IllegalStateException("log unavailable"); }
         };
-        RuleBillingService billingService = new RuleBillingService() {
-            @Override public void recordEngineExecution(RuleDefinition definition, boolean success,
-                                                        Long costTimeMs, String errorMessage,
-                                                        com.hengshucredit.rule.server.auth.ProjectAuthContext authContext) { }
+        RuleBillingService billingService = new NoPriceBillingService() {
+            @Override public void recordEngineExecutionSnapshot(String snapshotJson) { }
         };
         DecisionExecutionPersistence persistence =
                 new DecisionExecutionPersistence(logService, billingService, 100, recovery);
-        persistence.start();
         try {
             persistence.offer(new RuleExecutionLog(), new RuleDefinition(), true, 12L, null, null);
             long deadline = System.currentTimeMillis() + 2000;
@@ -237,10 +236,8 @@ public class DecisionExecutionPersistenceTest {
                 throw new IllegalStateException("database unavailable");
             }
         };
-        RuleBillingService billingService = new RuleBillingService() {
-            @Override public void recordEngineExecution(RuleDefinition definition, boolean success,
-                                                         Long costTimeMs, String errorMessage,
-                                                         com.hengshucredit.rule.server.auth.ProjectAuthContext authContext) {
+        RuleBillingService billingService = new NoPriceBillingService() {
+            @Override public void recordEngineExecutionSnapshot(String snapshotJson) {
                 throw new IllegalStateException("database unavailable");
             }
         };

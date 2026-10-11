@@ -7,6 +7,7 @@
         <p>通过角色批量授权，并可对单个账户设置额外允许或明确拒绝。</p>
       </div>
       <table-column-settings
+        v-if="activeTab !== 'logs'"
         :columns="activeTab === 'accounts' ? accountColumns : roleColumns"
         storage-key="tianshu:table-columns:account-management"
       />
@@ -19,7 +20,7 @@
         新增账户
       </el-button>
       <el-button
-        v-else
+        v-else-if="activeTab === 'roles'"
         v-permission="'role:manage'"
         type="primary"
         @click="openRoleDialog()"
@@ -30,7 +31,7 @@
 
     <section class="content-card management-table-region">
       <el-tabs class="management-table-region" v-model="activeTab">
-        <el-tab-pane class="management-table-region" label="账户" name="accounts">
+        <el-tab-pane v-if="canViewAccounts" class="management-table-region" label="账户" name="accounts">
           <el-table class="management-table" show-overflow-tooltip v-loading="loading" :data="accounts" row-key="id">
             <el-table-column label="账户" min-width="180">
               <template #default="{ row }">
@@ -117,7 +118,7 @@
           </el-table>
         </el-tab-pane>
 
-        <el-tab-pane class="management-table-region" label="角色" name="roles">
+        <el-tab-pane v-if="canViewRoles" class="management-table-region" label="角色" name="roles">
           <el-table class="management-table" show-overflow-tooltip v-loading="loading" :data="roles" row-key="id">
             <el-table-column prop="roleName" label="角色名称" min-width="180" />
             <el-table-column prop="roleCode" label="角色编码" min-width="160" />
@@ -158,6 +159,9 @@
               </template>
             </el-table-column>
           </el-table>
+        </el-tab-pane>
+        <el-tab-pane v-if="canViewLogs" class="management-table-region" label="操作日志" name="logs">
+          <operation-logs v-if="activeTab === 'logs'" />
         </el-tab-pane>
       </el-tabs>
     </section>
@@ -315,7 +319,7 @@
 
     <el-dialog v-model="passwordDialogVisible" title="重置密码" width="460px">
       <el-alert
-        title="保存后旧密码立即失效，当前用户的既有登录会话不受影响。"
+        title="保存后旧密码和既有登录会话立即失效，该账户需要重新登录。"
         type="warning"
         :closable="false"
       />
@@ -334,7 +338,9 @@
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { hasPermission } from '@/security/permissionState'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
+import OperationLogs from './OperationLogs.vue'
 import {
   changeConsoleAccountStatus,
   changeConsoleRoleStatus,
@@ -370,7 +376,7 @@ function emptyRoleForm() {
 }
 
 export default {
-  components: { TableColumnSettings },
+  components: { TableColumnSettings, OperationLogs },
   name: 'AccountManagement',
   data() {
     return {
@@ -401,6 +407,10 @@ export default {
     }
   },
   computed: {
+    canViewAccounts() { return hasPermission('account:view') },
+    canViewRoles() { return hasPermission(['role:view', 'role:manage']) },
+    canLoadRoleOptions() { return this.canViewRoles || hasPermission('account:manage') },
+    canViewLogs() { return hasPermission('account:audit') },
     enabledRoles() {
       return this.roles.filter(role => role.status === 1)
     },
@@ -454,6 +464,7 @@ export default {
     }
   },
   mounted() {
+    this.activeTab = this.canViewAccounts ? 'accounts' : this.canViewRoles ? 'roles' : 'logs'
     this.loadData()
   },
   methods: {
@@ -461,9 +472,9 @@ export default {
       this.loading = true
       try {
         const [accounts, roles, permissions] = await Promise.all([
-          listConsoleAccounts(),
-          listConsoleRoles(),
-          listConsolePermissions()
+          this.canViewAccounts ? listConsoleAccounts() : Promise.resolve({ data: [] }),
+          this.canLoadRoleOptions ? listConsoleRoles() : Promise.resolve({ data: [] }),
+          this.canLoadRoleOptions ? listConsolePermissions() : Promise.resolve({ data: [] })
         ])
         this.accounts = accounts.data || []
         this.roles = roles.data || []

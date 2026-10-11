@@ -16,6 +16,8 @@ public class RuleFunctionVersion {
     private Long id;
     private Long functionId;
     private Integer version;
+    private Integer businessVersion;
+    public Integer getDisplayVersion() { return businessVersion == null ? version : businessVersion; }
     private String functionJson;
     private String changeLog;
     private String publishBy;

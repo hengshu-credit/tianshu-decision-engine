@@ -16,6 +16,8 @@ public class RuleExperimentVersion {
     private Long id;
     private Long experimentId;
     private Integer version;
+    private Integer businessVersion;
+    public Integer getDisplayVersion() { return businessVersion == null ? version : businessVersion; }
     private String experimentJson;
     private String groupsJson;
     private String changeLog;

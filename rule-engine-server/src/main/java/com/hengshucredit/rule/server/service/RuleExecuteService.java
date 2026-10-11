@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
+
 import com.alibaba.fastjson.JSON;
 import com.alibaba.qlexpress4.runtime.function.CustomFunction;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
@@ -7,9 +9,12 @@ import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.core.engine.RuleTerminationSignal;
 import com.hengshucredit.rule.core.compiler.CompileResult;
 import com.hengshucredit.rule.model.dto.RuleResult;
+import com.hengshucredit.rule.model.dto.RuleTestExecutionIdentity;
+import com.hengshucredit.rule.model.dto.RuleTestExecutionSource;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
+import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleProject;
@@ -30,6 +35,8 @@ import java.util.Set;
 
 @Service
 public class RuleExecuteService {
+    @Resource private RuleActionRuntimeService ruleActions;
+    @Resource @org.springframework.context.annotation.Lazy private ResourceVersionService resourceVersions;
     @org.springframework.beans.factory.annotation.Value("${rule-engine.trace.max-persist-bytes:1048576}")
     private int maxPersistTraceBytes = 1048576;
 
@@ -80,6 +87,10 @@ public class RuleExecuteService {
 
     @Resource
     private ArtifactRuntimeSnapshotService artifactRuntimeSnapshotService;
+    @Resource
+    private RuleTestTargetResolver testTargetResolver;
+    @Resource
+    private RuleReferenceNamespaceGuard namespaceGuard;
 
     @Resource
     private DataObjectFieldReferenceResolver dataObjectFieldReferenceResolver;
@@ -97,6 +108,32 @@ public class RuleExecuteService {
         return testExecute(definitionId, params, null);
     }
 
+    public RuleTestTargetResolver.Target resolveTestTarget(Long definitionId, RuleTestExecutionSource source,
+                                                          String modelJson, String modelType, Long projectId) {
+        return testTargetResolver.resolve(definitionId, source, modelJson, modelType, projectId);
+    }
+
+    public RuleResult testExecuteTarget(RuleTestTargetResolver.Target target, Map<String, Object> params) {
+        RuleResult result;
+        if (target.published() != null) {
+            String projectCode = target.published().getProjectCode();
+            if (projectCode == null && target.projectId() != null) {
+                RuleProject project = projectService.getById(target.projectId());
+                if (project != null) projectCode = project.getProjectCode();
+                target.published().setProjectCode(projectCode);
+            }
+            ProjectAuthContext billingContext = target.projectId() == null ? null
+                    : ProjectAuthContext.direct(target.projectId(), projectCode, null, null, null);
+            result = executePublishedWithSnapshot(target.published(), params, target.projectId(), "CONSOLE_TEST",
+                    VariableResolveOptions.defaults(), "SERVER", billingContext, true, true, true, target.snapshot()).getResult();
+        } else {
+            result = executeTest(target.definition(), target.compiledScript(), target.modelJson(), target.modelType(),
+                    target.fields().getInputFields(), target.fields().getOutputFields(), params, target.projectId(), target.identity());
+        }
+        result.setExecutionIdentity(target.identity());
+        return result;
+    }
+
     public RuleResult testExecute(Long definitionId, Map<String, Object> params,
                                   Long executionProjectId) {
         RuleDefinition definition = definitionService.getById(definitionId);
@@ -107,11 +144,13 @@ public class RuleExecuteService {
             return r;
         }
 
+        if (Integer.valueOf(-1).equals(definition.getStatus())) return failedResult("规则已删除，无法执行测试");
         if (!isValidTestProject(definition, executionProjectId)) {
             return failedResult("当前规则未关联到所选项目，无法按该项目执行测试");
         }
 
         RuleDefinitionContent content = definitionService.getContent(definitionId);
+        namespaceGuard.requireLocalWorkspace(definition, content);
         if (content == null || content.getCompileStatus() == null || content.getCompileStatus() != 1) {
             RuleResult r = new RuleResult();
             r.setSuccess(false);
@@ -121,8 +160,8 @@ public class RuleExecuteService {
 
         return executeTest(definition, content.getCompiledScript(), content.getModelJson(),
                 definition.getModelType(),
-                definitionService.listInputFields(definitionId), params,
-                effectiveProjectId(definition, executionProjectId));
+                definitionService.listInputFields(definitionId), definitionService.listOutputFields(definitionId), params,
+                effectiveProjectId(definition, executionProjectId), null);
     }
 
     public RuleResult testExecutePreview(Long definitionId, String modelJson, String modelType,
@@ -138,11 +177,13 @@ public class RuleExecuteService {
         if (definition == null) {
             return failedResult("规则定义不存在");
         }
+        if (Integer.valueOf(-1).equals(definition.getStatus())) return failedResult("规则已删除，无法执行测试");
         if (!isValidTestProject(definition, executionProjectId)) {
             return failedResult("当前规则未关联到所选项目，无法按该项目执行测试");
         }
         Long effectiveProjectId = effectiveProjectId(
                 definition, executionProjectId);
+        namespaceGuard.requireLocalNamespace(definition, "WORKSPACE", definitionId);
         CompileResult compileResult = compileService.compilePreview(definitionId, modelJson, modelType);
         if (!compileResult.isSuccess()) {
             return failedResult(compileResult.getErrorMessage());
@@ -153,14 +194,15 @@ public class RuleExecuteService {
                 ? definition.getModelType() : modelType.trim().toUpperCase(java.util.Locale.ROOT);
         return executeTest(definition, compileResult.getCompiledScript(), modelJson,
                 effectiveModelType,
-                fields.getInputFields(), params, effectiveProjectId);
+                fields.getInputFields(), fields.getOutputFields(), params, effectiveProjectId, null);
     }
 
     private RuleResult executeTest(RuleDefinition definition, String compiledScript, String modelJson,
                                    String modelType,
                                    List<RuleDefinitionInputField> inputFields,
+                                   List<RuleDefinitionOutputField> outputFields,
                                    Map<String, Object> params,
-                                   Long executionProjectId) {
+                                   Long executionProjectId, RuleTestExecutionIdentity identity) {
         List<RuleFunction> functions = functionService.listByProject(executionProjectId);
         Map<String, CustomFunction> functionBindings = prepareFunctions(functions);
         String funcPrefix = functionRegistrar.buildScriptFunctionPrefix(functions);
@@ -183,14 +225,16 @@ public class RuleExecuteService {
                 projectCode = project.getProjectCode();
             }
         }
-        runtimeRuleInvoker.enter(definition, executionProjectId, projectCode,
-                executeParams, originalInput, true, modelJson);
+        runtimeRuleInvoker.enterTest(definition, executionProjectId, projectCode,
+                executeParams, originalInput, modelJson, outputFields);
         bindInvocationCache(resolveOptions);
         long executionStart = System.currentTimeMillis();
         java.time.LocalDateTime historyStartedAt = RuntimeContextBridge.currentContext().startedAt();
         RuleResult result = new RuleResult();
         try (var ignored = RuntimeContextBridge.currentContext().bindFunctions(functionBindings);
-             var externalValues = bindExternalApiValues(executionProjectId, executeParams, resolveOptions, null)) {
+             var externalValues = bindExternalApiValues(executionProjectId, executeParams, resolveOptions, null);
+             var listWrites = ruleActions == null ? null : ruleActions.bindListWrites(executionProjectId, resolveOptions, null);
+             var versionValues = resourceVersions == null ? null : resourceVersions.bind(executionProjectId, executeParams, resolveOptions)) {
             bindHistoryDefaults(executionProjectId, resolveOptions);
             try (var context = RuleVariableExecutionContext.prepare(modelType, executeParams,
                     resolveOptions, referencePlan, explicitReferenceTargets,
@@ -210,12 +254,10 @@ public class RuleExecuteService {
         } catch (RuntimeException e) {
             result.setSuccess(false);
             result.setErrorMessage(e.getMessage());
-            if (isCapacityRejectedExternalFailure(e)) result.setExecutionStatus("THROTTLED");
-            else if (isWaitingExternalFailure(e)) result.setExecutionStatus("WAITING_EXTERNAL");
-            else if (isUnknownExternalFailure(e)) result.setExecutionStatus("UNKNOWN");
+            setFailureStatus(result, e);
         } finally {
             result.setExecuteTimeMs(System.currentTimeMillis() - executionStart);
-            collectDeclaredOutputsIfNeeded(result, definition.getModelType());
+            collectDeclaredOutputsIfNeeded(result, modelType);
             runtimeRuleInvoker.completeRoot(result);
             runtimeRuleInvoker.exit();
         }
@@ -225,6 +267,12 @@ public class RuleExecuteService {
         log.setRuleCode(definition.getRuleCode());
         log.setProjectCode(projectCode);
         log.setRuleVersion(definition.getCurrentVersion());
+        if (identity != null) {
+            result.setExecutionIdentity(identity);
+            result.setRevisionId(identity.getRevisionId() == null ? null : Long.valueOf(identity.getRevisionId()));
+            log.setRevisionId(result.getRevisionId());
+            log.setRuleVersion(null);
+        }
         log.setModelType(definition.getModelType());
         log.setSource("SERVER");
         log.setRootRuleId(definition.getId());
@@ -334,6 +382,17 @@ public class RuleExecuteService {
                                                         ProjectAuthContext authContext,
                                                         boolean collectTrace, boolean recordTrace,
                                                         boolean persistExecution) {
+        return executePublishedWithSnapshot(published, params, projectId, clientAppName, resolveOptions, source,
+                authContext, collectTrace, recordTrace, persistExecution, null);
+    }
+
+    private ExecutionOutcome executePublishedWithSnapshot(RulePublished published, Map<String, Object> params,
+                                                        Long projectId, String clientAppName,
+                                                        VariableResolveOptions resolveOptions, String source,
+                                                        ProjectAuthContext authContext,
+                                                        boolean collectTrace, boolean recordTrace,
+                                                        boolean persistExecution,
+                                                        ArtifactRuntimeSnapshotService.RuntimeSnapshot verifiedSnapshot) {
         if (published == null) {
             RuleResult r = new RuleResult();
             r.setSuccess(false);
@@ -343,7 +402,7 @@ public class RuleExecuteService {
 
         RuleDefinition definition = definitionService.getById(published.getDefinitionId());
         Long executionProjectId = projectId != null ? projectId : (definition == null ? null : definition.getProjectId());
-        ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot = published.getArtifactId() == null
+        ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot = verifiedSnapshot != null ? verifiedSnapshot : published.getArtifactId() == null
                 ? null : artifactRuntimeSnapshotService.load(
                         published.getArtifactId(), published.getDefinitionId(), executionProjectId);
         Map<String, CustomFunction> functionBindings = prepareFunctions(runtimeSnapshot == null
@@ -386,6 +445,9 @@ public class RuleExecuteService {
         }
         RuleDefinition executionDefinition = runtimeSnapshot == null && definition != null
                 ? definition : publishedDefinition(published, executionProjectId);
+        executionDefinition.setExecutionVersion(published.getVersion());
+        executionDefinition.setExecutionRevisionId(published.getRevisionId());
+        executionDefinition.setExecutionArtifactDigest(published.getArtifactDigest());
         if (runtimeSnapshot != null) {
             executionDefinition.setModelType(runtimeModelType);
         }
@@ -422,7 +484,9 @@ public class RuleExecuteService {
         java.time.LocalDateTime historyStartedAt = RuntimeContextBridge.currentContext().startedAt();
         RuleResult result = new RuleResult();
         try (var ignored = RuntimeContextBridge.currentContext().bindFunctions(functionBindings);
-             var externalValues = bindExternalApiValues(executionProjectId, executeParams, effectiveOptions, runtimeSnapshot)) {
+             var externalValues = bindExternalApiValues(executionProjectId, executeParams, effectiveOptions, runtimeSnapshot);
+             var listWrites = ruleActions == null ? null : ruleActions.bindListWrites(executionProjectId, effectiveOptions, runtimeSnapshot);
+             var versionValues = resourceVersions == null ? null : resourceVersions.bind(executionProjectId, executeParams, effectiveOptions)) {
             bindHistoryDefaults(executionProjectId, effectiveOptions);
             try (var context = RuleVariableExecutionContext.prepare(runtimeModelType, executeParams,
                     effectiveOptions, referencePlan, explicitReferenceTargets, () -> {
@@ -449,9 +513,7 @@ public class RuleExecuteService {
         } catch (RuntimeException e) {
             result.setSuccess(false);
             result.setErrorMessage(e.getMessage());
-            if (isCapacityRejectedExternalFailure(e)) result.setExecutionStatus("THROTTLED");
-            else if (isWaitingExternalFailure(e)) result.setExecutionStatus("WAITING_EXTERNAL");
-            else if (isUnknownExternalFailure(e)) result.setExecutionStatus("UNKNOWN");
+            setFailureStatus(result, e);
         } finally {
             result.setExecuteTimeMs(System.currentTimeMillis() - executionStart);
             collectDeclaredOutputsIfNeeded(result, runtimeModelType);
@@ -549,6 +611,18 @@ public class RuleExecuteService {
         return false;
     }
 
+    private void setFailureStatus(RuleResult result, RuntimeException error) {
+        ExecutionCapacityException capacity = ExecutionCapacityException.find(error);
+        if (capacity != null) {
+            result.setExecutionStatus("THROTTLED");
+            result.setCapacityResource(capacity.getResource().name());
+            result.setRetryAfterMs(ExecutionCapacityException.RETRY_AFTER_MS);
+            result.setErrorMessage(capacity.getMessage());
+        } else if (isCapacityRejectedExternalFailure(error)) result.setExecutionStatus("THROTTLED");
+        else if (isWaitingExternalFailure(error)) result.setExecutionStatus("WAITING_EXTERNAL");
+        else if (isUnknownExternalFailure(error)) result.setExecutionStatus("UNKNOWN");
+    }
+
     private boolean isCapacityRejectedExternalFailure(Throwable error) {
         Throwable current = error;
         while (current != null) {
@@ -633,6 +707,7 @@ public class RuleExecuteService {
     private com.hengshucredit.rule.core.engine.RequestContext.ExternalValueScope bindExternalApiValues(
             Long executionProjectId, Map<String, Object> values, VariableResolveOptions options,
             ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot) {
+        if (ruleActions != null) return ruleActions.bindExternalValues(executionProjectId, values, options, runtimeSnapshot);
         return RuntimeContextBridge.bindExternalValueResolver((apiId, path) -> {
             Long effectiveApiId = apiId;
             if (runtimeSnapshot != null) {

@@ -110,6 +110,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
+          <governance-workspace-toolbar resource-type="EXTERNAL_DATASOURCE" />
               <table-column-settings :columns="datasourceColumns" storage-key="tianshu:table-columns:datasource-list" />
               <el-button
                 v-permission="'datasource:edit'"
@@ -185,16 +186,16 @@
               }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="status" label="状态" width="70" align="center">
+          <el-table-column prop="status" label="状态" width="160" align="center">
             <template v-slot="{ row }">
-              <el-tag
+              <governance-resource-status resource-type="EXTERNAL_DATASOURCE" :resource-id="row.id" :status="row.status"><el-tag
                 :type="row.status === 1 ? 'success' : 'info'"
                 size="small"
                 >{{ row.status === 1 ? '启用' : '停用' }}</el-tag
-              >
+              ></governance-resource-status>
             </template>
           </el-table-column>
-          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="230" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="365" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 v-permission="'datasource:edit'"
@@ -205,7 +206,7 @@
                 @click="handleEditDatasource(row)"
                 >编辑</el-button
               >
-              <el-button
+              <el-button v-permission="'datasource:edit'"
                 link
                 data-action="execute"
                 size="small"
@@ -213,11 +214,14 @@
                 @click="handleTestDatasource(row)"
                 >测试</el-button
               >
-              <el-button
+              <governance-publish-action resource-type="EXTERNAL_DATASOURCE" :resource-id="row.id" />
+              <el-button v-permission="'datasource:edit'"
                 link
                 data-action="add"
                 size="small"
                 type="primary"
+                :disabled="row.status !== 1"
+                :title="row.status === 1 ? '配置接口' : '请先发布数据源，再配置接口'"
                 @click="handleCreateApi(row)"
                 >加接口</el-button
               >
@@ -337,6 +341,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
+          <governance-workspace-toolbar resource-type="EXTERNAL_API" />
               <table-column-settings :columns="apiColumns" storage-key="tianshu:table-columns:api-list" />
               <el-button
                 v-permission="'datasource:edit'"
@@ -407,16 +412,16 @@
               formatCacheSeconds(row.responseCacheSeconds)
             }}</template>
           </el-table-column>
-          <el-table-column prop="status" label="状态" width="70" align="center">
+          <el-table-column prop="status" label="状态" width="160" align="center">
             <template v-slot="{ row }">
-              <el-tag
+              <governance-resource-status resource-type="EXTERNAL_API" :resource-id="row.id" :status="row.status"><el-tag
                 :type="row.status === 1 ? 'success' : 'info'"
                 size="small"
                 >{{ row.status === 1 ? '启用' : '停用' }}</el-tag
-              >
+              ></governance-resource-status>
             </template>
           </el-table-column>
-          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="180" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="315" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 v-permission="'datasource:edit'"
@@ -427,7 +432,7 @@
                 @click="handleEditApi(row)"
                 >编辑</el-button
               >
-              <el-button
+              <el-button v-permission="'datasource:edit'"
                 link
                 data-action="execute"
                 size="small"
@@ -435,6 +440,7 @@
                 @click="handleInvokeApi(row)"
                 >测试</el-button
               >
+              <governance-publish-action resource-type="EXTERNAL_API" :resource-id="row.id" />
               <el-button
                 v-permission="'datasource:edit'"
                 link
@@ -858,7 +864,7 @@
           <el-button size="small" @click="authTestDialogVisible = false"
             >关闭</el-button
           >
-          <el-button
+          <el-button v-permission="'datasource:edit'"
             size="small"
             type="primary"
             :loading="authTestLoading"
@@ -1301,7 +1307,7 @@
           <el-button size="small" @click="apiDialogVisible = false"
             >取消</el-button
           >
-          <el-button size="small" type="primary" @click="handleSaveApi"
+          <el-button v-permission="'datasource:edit'" size="small" type="primary" @click="handleSaveApi"
             >保存</el-button
           >
         </div>
@@ -1339,7 +1345,7 @@
           <el-button size="small" @click="invokeDialogVisible = false"
             >关闭</el-button
           >
-          <el-button
+          <el-button v-permission="'datasource:edit'"
             size="small"
             type="primary"
             :loading="invokeLoading"
@@ -1353,6 +1359,10 @@
 </template>
 
 <script>
+import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
+import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
+import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
+import { completeResourceChange } from '@/utils/governanceWorkspace'
 import { markRaw } from 'vue'
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
 import {
@@ -1549,7 +1559,8 @@ export default {
     }
   },
   name: 'DatasourceList',
-  components: {
+  components: { GovernancePublishAction, GovernanceWorkspaceToolbar,
+    GovernanceResourceStatus,
     TableColumnSettings,
     ModuleCallLog,
     ExternalApiMonitor,
@@ -1932,10 +1943,8 @@ export default {
         const response = data.id
           ? await updateDatasource(data)
           : await createDatasource(data)
-        this.$message.success('外数数据源变更已送审')
         this.datasourceDialogVisible = false
-        if (response.data && response.data.id)
-          this.$router.push('/approval/' + response.data.id)
+        await completeResourceChange(this, response, () => this.loadDatasources())
       })
     },
     handleSaveApi() {
@@ -1951,23 +1960,19 @@ export default {
         const response = data.id
           ? await updateApiConfig(data)
           : await createApiConfig(data)
-        this.$message.success('外数 API 变更已送审')
         this.apiDialogVisible = false
-        if (response.data && response.data.id)
-          this.$router.push('/approval/' + response.data.id)
+        await completeResourceChange(this, response, () => this.loadApiConfigs())
       })
     },
     handleDeleteDatasource(row) {
       this.$confirm(
-        '确定删除外数数据源「' + row.datasourceName + '」及其接口配置?',
+        '确定删除外数数据源「' + row.datasourceName + '」？如有下游接口，请先删除下游接口。',
         '确认',
         { type: 'warning' }
       )
         .then(async () => {
           const response = await deleteDatasource(row.id)
-          this.$message.success('外数数据源删除已送审')
-          if (response.data && response.data.id)
-            this.$router.push('/approval/' + response.data.id)
+          await completeResourceChange(this, response, () => this.loadDatasources())
         })
         .catch(() => {})
     },
@@ -1977,9 +1982,7 @@ export default {
       })
         .then(async () => {
           const response = await deleteApiConfig(row.id)
-          this.$message.success('外数 API 删除已送审')
-          if (response.data && response.data.id)
-            this.$router.push('/approval/' + response.data.id)
+          await completeResourceChange(this, response, () => this.loadApiConfigs())
         })
         .catch(() => {})
     },

@@ -4,6 +4,8 @@ import com.hengshucredit.rule.client.cache.CachedRule;
 import com.hengshucredit.rule.client.cache.L1MemoryCache;
 import com.hengshucredit.rule.client.auth.ProjectClientAuthenticationException;
 import com.hengshucredit.rule.client.sync.HttpSyncClient;
+import com.hengshucredit.rule.client.log.LogReportTransport;
+import com.hengshucredit.rule.client.log.NoOpLogReporter;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import org.junit.Test;
@@ -24,8 +26,79 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertThrows;
 
 public class RuleEngineClientTest {
+
+    @Test
+    public void explicitKafkaNeverSilentlyFallsBackToHttpAtStartup() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> RuleEngineClient.builder().connectionFactory(connectionFactory())
+                        .logReportTransport(LogReportTransport.KAFKA).build());
+        assertTrue(error.getMessage().contains("KafkaTemplate"));
+    }
+
+    @Test
+    public void customReporterOverridesTransportWhileDisabledAndRemoteModesUseNoOp() throws Exception {
+        RecordingReporter custom = new RecordingReporter();
+        RuleEngineClient local = RuleEngineClient.builder().connectionFactory(connectionFactory())
+                .logReportTransport(LogReportTransport.KAFKA).logReporter(custom).build();
+        RuleEngineClient disabled = RuleEngineClient.builder().connectionFactory(connectionFactory())
+                .logReportTransport(LogReportTransport.KAFKA).logReporter(custom).logReportEnabled(false).build();
+        RuleEngineClient remote = RuleEngineClient.builder().serverSideExecution(true)
+                .logReportTransport(LogReportTransport.KAFKA).logReporter(custom).build();
+        try {
+            assertSame(custom, getField(local, "logReporter"));
+            assertTrue(getField(disabled, "logReporter") instanceof NoOpLogReporter);
+            assertTrue(getField(remote, "logReporter") instanceof NoOpLogReporter);
+        } finally {
+            local.close();
+            disabled.close();
+            remote.close();
+        }
+    }
+
+    @Test
+    public void disablingExpressionTracePreservesExecutionIdentityInResultAndLog() throws Exception {
+        RecordingReporter reporter = new RecordingReporter();
+        RuleEngineClient client = RuleEngineClient.builder()
+                .connectionFactory(connectionFactory()).projectId(18L)
+                .projectCode("EXECUTING_PROJECT").traceEnabled(false)
+                .logReporter(reporter).build();
+        try {
+            ((L1MemoryCache) getField(client, "l1Cache")).put(rule("RULE", "SCRIPT", "1 + 1"));
+
+            RuleResult result = client.execute("RULE", new LinkedHashMap<>());
+
+            assertTrue(com.hengshucredit.rule.core.trace.TraceIdGenerator.isValid(result.getTraceId()));
+            assertEquals(result.getTraceId(), reporter.logs.get(0).getTraceId());
+            assertNull(result.getTraces());
+            assertNull(reporter.logs.get(0).getTraceInfo());
+        } finally {
+            client.close();
+        }
+    }
+
+    @Test
+    public void globalRuleLogBelongsToExecutingProject() throws Exception {
+        RecordingReporter reporter = new RecordingReporter();
+        RuleEngineClient client = RuleEngineClient.builder()
+                .connectionFactory(connectionFactory())
+                .projectCode("EXECUTING_PROJECT").projectId(18L)
+                .logReporter(reporter).build();
+        try {
+            CachedRule global = rule("GLOBAL_RULE", "SCRIPT", "1 + 1");
+            global.setProjectCode("GLOBAL");
+            ((L1MemoryCache) getField(client, "l1Cache")).put(global);
+
+            assertTrue(client.execute("GLOBAL_RULE", new LinkedHashMap<>()).isSuccess());
+
+            assertEquals("EXECUTING_PROJECT", reporter.logs.get(0).getProjectCode());
+        } finally {
+            client.close();
+        }
+    }
 
     @Test
     public void localExecutionConvertsNestedAllRulesTerminationToSuccess() throws Exception {

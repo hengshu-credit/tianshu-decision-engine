@@ -48,3 +48,11 @@ export function listBillingSummaries(params) {
 export function refreshBillingSummary(data) {
   return request({ url: '/rule/billing/summary/refresh', method: 'post', data })
 }
+
+export function getBillingSummaryRefreshTask(taskId) {
+  return request({ url: '/rule/billing/summary/refresh/' + encodeURIComponent(taskId), method: 'get' })
+}
+
+export function getLatestBillingSummaryRefresh(params) {
+  return request({ url: '/rule/billing/summary/refresh', method: 'get', params })
+}

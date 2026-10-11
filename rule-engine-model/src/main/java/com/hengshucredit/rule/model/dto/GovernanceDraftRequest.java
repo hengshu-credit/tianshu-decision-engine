@@ -14,4 +14,10 @@ public class GovernanceDraftRequest {
     private String secretDigest;
     private String changeSummary;
     private Long sourceVersionId;
+    private String restoreMode;
+    /** NEW creates an independent draft; OVERWRITE targets a business version. */
+    private String publishMode;
+    private Long targetVersionId;
+    private Long expectedTargetSnapshotId;
+    private String expectedSnapshotDigest;
 }

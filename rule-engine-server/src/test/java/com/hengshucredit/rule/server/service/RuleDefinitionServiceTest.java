@@ -287,13 +287,10 @@ public class RuleDefinitionServiceTest {
         content.setId(20L);
         content.setDefinitionId(10L);
         RuleDefinitionVersion snapshot = version(2, "{\"rules\":[]}", "return 2;");
+        snapshot.setId(72L);
+        snapshot.setDefinitionId(10L);
         snapshot.setCompiledType("QL");
         snapshot.setOpenApiConfigJson("{\"enabled\":true}");
-        RuleRevision draft = new RuleRevision();
-        draft.setId(6L);
-        draft.setDefinitionId(10L);
-        draft.setState("DRAFT");
-        draft.setLockVersion(2);
         final RuleDefinitionContent[] updatedContent = {null};
         final RuleDraftSaveRequest[] savedRequest = {null};
 
@@ -316,17 +313,20 @@ public class RuleDefinitionServiceTest {
         }));
         ReflectionTestUtils.setField(service, "lifecycleService",
                 new RuleLifecycleService() {
-                    @Override
-                    public RuleRevision createDraft(
-                            Long definitionId, Long baseRevisionId) {
-                        return draft;
+                    @Override protected RuleDefinition lockDefinition(Long id) { return definition; }
+                    @Override protected RuleDefinitionVersion loadVersion(Long id, Long versionId) {
+                        assertEquals(Long.valueOf(10L), id); assertEquals(Long.valueOf(72L), versionId);
+                        return snapshot;
                     }
-                });
-        ReflectionTestUtils.setField(service, "ruleDraftService",
-                new RuleDraftService() {
-                    @Override
-                    public RuleDraftSaveResponse save(
-                            RuleDraftSaveRequest request) {
+                    @Override protected void requireLocalNamespace(RuleDefinition owner, RuleRevision revision) {
+                        assertEquals("VERSION", revision.getSourceType());
+                        assertEquals(Long.valueOf(72L), revision.getSourceId());
+                    }
+                    @Override protected int nextRevisionNo(Long id) { return 4; }
+                    @Override protected String actor() { return "editor"; }
+                    @Override protected void insertRevision(RuleRevision revision) { revision.setId(6L); }
+                    @Override protected void insertEvent(com.hengshucredit.rule.model.entity.RuleLifecycleEvent event) { }
+                    @Override protected RuleDraftSaveResponse saveDraft(RuleDraftSaveRequest request) {
                         savedRequest[0] = request;
                         return new RuleDraftSaveResponse();
                     }
@@ -336,7 +336,7 @@ public class RuleDefinitionServiceTest {
 
         assertEquals(Long.valueOf(10L), savedRequest[0].getDefinitionId());
         assertEquals(Long.valueOf(6L), savedRequest[0].getRevisionId());
-        assertEquals(Integer.valueOf(2), savedRequest[0].getLockVersion());
+        assertEquals(Integer.valueOf(0), savedRequest[0].getLockVersion());
         assertEquals("{\"rules\":[]}", savedRequest[0].getModelJson());
         assertEquals("{\"enabled\":true}",
                 savedRequest[0].getOpenApiConfigJson());

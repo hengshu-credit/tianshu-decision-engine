@@ -1,22 +1,5 @@
 <template>
   <div class="sc-designer uiue-compact-workbench uiue-compact-designer">
-    <rule-draft-read-only
-      :visible="!canEditDraft"
-      :loading="!draftGuardLoaded"
-      :load-error="Boolean(draftGuardError)"
-      :revision-label="viewRevisionLabel"
-      :revision-state="viewRevision ? viewRevision.state : ''"
-      :can-fork="canForkViewRevision"
-      :has-editable-draft="hasPendingDraft"
-      :source-options="designerSourceOptions"
-      :selected-source="selectedDesignerSource"
-      :source-loading="designerSourcesLoading"
-      @go-back="$router.back()"
-      @retry="startViewedRevisionRefresh(true)"
-      @go-lifecycle="goRuleLifecycle"
-      @fork="forkViewRevision"
-      @change-source="switchDesignerSource"
-    />
     <!-- 顶部工具栏 -->
     <div class="sc-header">
       <div class="sc-title-area">
@@ -24,6 +7,7 @@
           link
           :icon="ElIconBack"
           aria-label="返回"
+          data-designer-back
           title="返回"
           @click="$router.back()"
           style="color: var(--tianshu-text-secondary)"
@@ -34,15 +18,29 @@
           >{{ model.scoreItems.length }} 个评分项</el-tag
         >
       </div>
-      <div class="sc-toolbar">
-        <rule-designer-version-select
-          v-if="canEditDraft && designerSourceOptions.length"
-          :options="designerSourceOptions"
-          :model-value="selectedDesignerSource"
-          :loading="designerSourcesLoading"
-          @change="switchDesignerSource"
-          @delete="deleteDesignerSource"
+      <div class="sc-toolbar designer-version-toolbar">
+        <rule-draft-read-only
+          :visible="!canEditDraft"
+          :loading="!draftGuardLoaded"
+          :load-error="Boolean(draftGuardError) || varsLoadError"
+          :revision-label="viewRevisionLabel"
+          :revision-state="viewRevision ? viewRevision.state : ''"
+          :can-fork="canForkViewRevision"
+          :has-editable-draft="hasPendingDraft"
+          :source-options="designerSourceOptions"
+          :selected-source="selectedDesignerSource"
+          :source-loading="designerSourcesLoading"
           :disabled="designerBusy"
+          :read-only-reason="designerReadOnlyReason"
+          :can-test-frozen="designerCanTest && referenceCatalogMode === 'FROZEN'"
+          :migration-required="draftGuardLoaded && frozenReferenceCatalog?.localEditingAllowed === false"
+          @test-frozen="openTestDialog"
+          @open-migration="$router.push('/transfer')"
+          @retry="startViewedRevisionRefresh(true)"
+          @go-lifecycle="goRuleLifecycle"
+          @fork="forkViewRevision"
+          @change-source="switchDesignerSource"
+          @delete-source="deleteDesignerSource"
         />
         <el-button size="small" :icon="ElIconPlus" @click="addScoreItem"
           >添加评分项</el-button
@@ -52,6 +50,7 @@
         >
         <el-divider direction="vertical" />
         <rule-designer-action-bar
+          @check="handleCheck"
           @locate="locateDesignerIssue"
           :issue-context="incomingValidationIssue"
           :can-edit="canEditDraft"
@@ -70,7 +69,7 @@
       </div>
     </div>
 
-    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" />
+    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" :reference-mode="referenceCatalogMode" :can-use-current-resources="canEnterDesignerLivePreview" @use-current="runDesignerAction(enterDesignerLivePreview)" />
     <rule-designer-dialogs :choice="designerChoice" @resolve="resolveDesignerChoice" />
 
 
@@ -92,7 +91,7 @@
           />
         </div>
         <div class="base-config-item">
-          <span class="base-config-label">结果变量</span>
+          <span class="base-config-label">评分赋值字段</span>
           <div class="result-var-picker">
             <operand-picker
               :vars="varPickerOptions"
@@ -109,7 +108,22 @@
             model.resultVar.varLabel
           }}</span>
         </div>
+        <div class="base-config-item">
+          <span class="base-config-label">等级赋值字段（可选）</span>
+          <operand-picker
+            data-testid="scorecard-level-target"
+            :vars="varPickerOptions"
+            :selected-vars="selectedVarPickerOptions"
+            :value="model.levelVar?.operand"
+            :allowed-kinds="writeOperandKinds"
+            writable-only
+            placeholder="不选则仅输出分数"
+            width="220px"
+            @input="setLevelOperand"
+          />
+        </div>
       </div>
+      <div class="level-config-hint">未选择等级赋值字段或未配置等级区间时，仅输出分数。</div>
     </div>
 
     <!-- 评分项配置 -->
@@ -195,6 +209,7 @@
                 <operand-picker
                   v-if="conditionRequiresValue(item)"
                   :value="item.rightOperand"
+                  :condition-operator="item.condOperator"
                   :vars="varPickerOptions"
                   :functions="projectFunctions"
                   :selected-vars="selectedVarPickerOptions"
@@ -270,7 +285,7 @@
       </div>
       <div class="formula-content">
         <div class="formula-text">
-          <code>{{ model.resultVar.varCode || 'score' }}</code>
+          <code>{{ scoreResultLabel }}</code>
           <span class="op"> = </span>
           <span v-if="model.initialScore !== 0">
             <code>{{ model.initialScore }}</code>
@@ -278,13 +293,7 @@
           </span>
           <template v-for="(item, idx) in model.scoreItems" :key="idx">
             <span class="formula-term">
-              <span class="formula-cond"
-                >IF({{
-                  item.conditionLabel || item.condVar || '条件' + (idx + 1)
-                }}
-                {{ item.condOperator }} {{ item.condValue }})</span
-              >
-              <span class="op"> × </span>
+              <span class="formula-cond">满足（{{ scoreConditionSummary(item) }}）时计</span>
               <code>{{ item.score }}</code>
               <template v-if="item.weight !== 1">
                 <span class="op"> × </span>
@@ -303,7 +312,7 @@
     <!-- 分数等级配置 -->
     <div class="sc-card">
       <div class="sc-card-title">
-        <el-icon><el-icon-medal /></el-icon> 分数等级配置
+        <el-icon><el-icon-medal /></el-icon> 分数等级配置（可选）
       </div>
       <div class="threshold-list">
         <div
@@ -391,6 +400,8 @@
 
     <designer-test-dialog
       v-model:visible="testVisible"
+      :execution-source="designerTestExecutionSource"
+      :execution-source-name="viewRevisionLabel"
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="SCORE"
@@ -401,6 +412,7 @@
 </template>
 
 <script>
+import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { markRaw } from 'vue'
 import {
   DataLine as ElIconDataLine,
@@ -418,11 +430,12 @@ import {
 } from '@element-plus/icons-vue'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ruleDraftMixin from '@/mixins/ruleDraftMixin'
+import { formatExpressionFormula, formatConditionDescription } from '@/utils/expressionDisplay'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
+import { levelVarFromOperand, normalizeScorecardLevelVar } from '@/utils/scorecardLevel'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import RuleDraftReadOnly from '@/components/rule/RuleDraftReadOnly.vue'
-import RuleDesignerVersionSelect from '@/components/rule/RuleDesignerVersionSelect.vue'
 import RuleDesignerActionBar from '@/components/rule/RuleDesignerActionBar.vue'
 import { addCode, buildSampleParamsFromCodes } from '@/utils/testSampleParams'
 import {
@@ -436,6 +449,7 @@ import {
 import { getExpressionContext } from '@/constants/expressionContexts'
 import {
   conditionOperatorAllowsVarValue,
+  conditionLiteralOperandKinds,
   conditionOperatorRequiresValue,
   findConditionOperator,
   getConditionOperatorGroups,
@@ -469,6 +483,7 @@ export default {
         initialScore: 0,
         scoreItems: [],
         resultVar: { varCode: '', varLabel: '' },
+        levelVar: levelVarFromOperand(null),
         thresholds: [],
         testParams: null,
       },
@@ -495,7 +510,6 @@ export default {
   components: {
     RuleDesignerActionBar,
     RuleDraftReadOnly,
-    RuleDesignerVersionSelect,
     DesignerTestDialog,
     OperandPicker,
     ScriptPanel,
@@ -509,6 +523,9 @@ export default {
   name: 'Scorecard',
   mixins: [varPickerMixin, ruleDraftMixin],
   computed: {
+    scoreResultLabel() {
+      return formatExpressionFormula(this.model.resultVar.operand, { humanReadable: true }) || this.model.resultVar.varCode || '结果分数'
+    },
     totalWeight() {
       return this.model.scoreItems.reduce(
         (sum, item) => sum + (item.weight || 0),
@@ -546,6 +563,15 @@ export default {
     this.loadContent()
   },
   methods: {
+    scoreConditionSummary(item) {
+      const unboundLegacy = !item.leftOperand || (item.leftOperand.kind === 'REFERENCE' && (item.leftOperand.refId == null || !item.leftOperand.refType))
+      if (item.condition && unboundLegacy && item._varId == null) return '自定义表达式（请查看原配置）'
+      return formatConditionDescription({
+        leftOperand: item.leftOperand,
+        varCode: item.condVar, varType: item.condVarType, _varId: item._varId, _refType: item._refType,
+        operator: item.condOperator, rightOperand: item.rightOperand, value: item.condValue,
+      })
+    },
     collectSelectedVarItems() {
       const items = []
       const add = (operand) =>
@@ -558,6 +584,7 @@ export default {
           })
         )
       add(this.model.resultVar && this.model.resultVar.operand)
+      add(this.model.levelVar && this.model.levelVar.operand)
       ;(this.model.scoreItems || []).forEach((item) => {
         add(item.leftOperand)
         add(item.rightOperand)
@@ -570,7 +597,7 @@ export default {
         if (this.draftGuardPromise) await this.draftGuardPromise
         const content = this.viewRevision
         if (content && content.modelJson) {
-          this.model = JSON.parse(content.modelJson)
+          this.model = parseDesignerModelJson(content.modelJson)
         }
       } catch (e) {
         this.$message.error('加载内容失败: ' + (e.message || '未知错误'))
@@ -597,6 +624,10 @@ export default {
         }
       }
       sync(this.model.resultVar, 'operand')
+      if (this.model.levelVar) {
+        const level = syncOperandReference(this.model.levelVar.operand, this.varPickerOptions)
+        if (level.changed) this.setLevelOperand(level.operand)
+      }
       ;(this.model.scoreItems || []).forEach((item) => {
         sync(item, 'leftOperand')
         sync(item, 'rightOperand')
@@ -607,6 +638,7 @@ export default {
       if (changed) this.$forceUpdate()
     },
     normalizeModel() {
+      this.model['levelVar'] = normalizeScorecardLevelVar(this.model)
       if (this.model.initialScore == null) this.model['initialScore'] = 0
       if (!this.model.scoreItems) this.model['scoreItems'] = []
       if (!this.model.resultVar)
@@ -772,7 +804,7 @@ export default {
         item && item.leftOperand
       )
         ? getExpressionContext(context).allowedKinds
-        : ['LITERAL']
+        : conditionLiteralOperandKinds(item && item.condOperator)
     },
     onConditionOperatorChange(item) {
       const type = scoreConditionType(item)
@@ -786,6 +818,9 @@ export default {
         item['rightOperand'] = null
         item['condValue'] = ''
       }
+    },
+    setLevelOperand(operand) {
+      this.model['levelVar'] = levelVarFromOperand(operand)
     },
     setThresholdOperand(threshold, operand) {
       threshold['resultOperand'] = operand || null
@@ -836,6 +871,10 @@ export default {
     serializeDesignerDraft() {
       const model = JSON.parse(JSON.stringify(this.model))
       ;(model.scoreItems || []).forEach((item) => {
+        if (item.leftOperand) {
+          delete item.condition
+          return
+        }
         item.condition = this.buildCondition(
           item.condVar,
           item.condOperator,
@@ -1003,6 +1042,12 @@ export default {
 .sc-card-title-row {
   justify-content: space-between;
 }
+.level-config-hint {
+  margin-top: 8px;
+  color: var(--tianshu-text-secondary);
+  font-size: 12px;
+}
+
 .base-config-row {
   display: flex;
   gap: 16px;

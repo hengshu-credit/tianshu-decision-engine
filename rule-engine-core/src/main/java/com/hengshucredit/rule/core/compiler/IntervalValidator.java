@@ -104,7 +104,7 @@ final class IntervalValidator {
         }
     }
 
-    private static BigDecimal comparableValue(String value, boolean dateInterval) {
+    static BigDecimal comparableValue(String value, boolean dateInterval) {
         return dateInterval ? dateValue(value) : numberValue(value);
     }
 
