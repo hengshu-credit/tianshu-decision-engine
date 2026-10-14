@@ -9,7 +9,7 @@ mysql -h"$MYSQL_HOST" -P"$MYSQL_PORT" -u"$MYSQL_USERNAME" -p "$MYSQL_DATABASE" \
   < docker/rule-engine-mysql/data-tianshu-example.sql
 ```
 
-该脚本会写入演示数据；已有业务数据环境请先备份并确认导入范围。
+该脚本只写入变量、对象、字段校验、模型、项目、名单、外数、数据源、分流和计费配置等业务演示数据，不写入执行日志、调用日志、实验执行日志、计费明细或名单操作日志；已有业务数据环境请先备份并确认导入范围。
 
 Compose 可选导入：
 

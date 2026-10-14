@@ -13,7 +13,7 @@ describe('变量管理工具栏权限', () => {
     setPermissionEnforcement(false)
   })
 
-  test('仅有查看权限时隐藏批量导入、新建和验证操作', () => {
+  test('仅有查看权限时隐藏批量导入和新建操作', () => {
     setPermissionEnforcement(true)
     setCurrentUser({ permissions: ['field:view'] })
     const wrapper = mount(VariableToolbarActions, {
@@ -24,7 +24,7 @@ describe('变量管理工具栏权限', () => {
     expect(wrapper.find('el-dropdown-stub').element.hidden).toBe(true)
     const buttons = wrapper.findAll('el-button-stub')
     expect(buttons.find(button => button.text().includes('新建字段')).element.hidden).toBe(true)
-    expect(buttons.find(button => button.text().includes('验证规则')).element.hidden).toBe(true)
+    expect(buttons.find(button => button.text().includes('验证规则'))).toBeUndefined()
   })
 
   test('批量导入使用审批提交权限，与字段编辑权限分离', () => {

@@ -215,7 +215,7 @@
           row.updateTime ? formatDateTime(row.updateTime) : '-'
         }}</template>
       </el-table-column>
-      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="385" align="center" fixed="right">
+      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['详情', '查看', '版本', '发布', '移出项目', '删除'])" align="center" fixed="right">
         <template v-slot="{ row }">
           <div class="table-operation-group">
             <el-button
@@ -415,7 +415,7 @@
             ></template
           >
         </el-table-column>
-        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
+        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['添加'])" align="center">
           <template v-slot="{ row }">
             <el-button
               v-permission="'rule:edit'"
@@ -479,6 +479,7 @@ import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import { ruleDesignerLocation } from '@/utils/ruleDesignerNavigation'
 import RuleModelTypeHelp from '@/components/rule/RuleModelTypeHelp.vue'
 import { canUseWorkbenchAction, workbenchActionRoute } from '@/utils/workbenchActions'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 export default {
   name: 'ProjectDetail',
   mixins: [workspaceTabTitleMixin(vm => vm.project?.projectName)],
@@ -537,6 +538,7 @@ export default {
     this.load()
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     async loadProject() {
       try {
         const response = await getProject(this.pid)

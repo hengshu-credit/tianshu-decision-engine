@@ -58,7 +58,7 @@ public class DashboardApplicationService {
         long excludedPeriods = 0L;
         long[] amounts = new long[AMOUNT_BUCKETS.size()];
         long excludedAmounts = 0L;
-        Map<GridKey, Long> grids = new TreeMap<>();
+        Map<GridKey, GridStats> grids = new TreeMap<>();
         Map<String, Long> coordinateExclusions = new LinkedHashMap<>();
 
         DashboardMapping.ResolvedMapping decisionMapping = mappings.get(
@@ -91,8 +91,9 @@ public class DashboardApplicationService {
             if (coordinate.reason != null) {
                 coordinateExclusions.merge(coordinate.reason, 1L, Long::sum);
             } else {
-                grids.merge(new GridKey(coordinate.longitude,
-                        coordinate.latitude), 1L, Long::sum);
+                grids.computeIfAbsent(new GridKey(coordinate.longitude,
+                        coordinate.latitude), key -> new GridStats())
+                        .add(classification);
             }
         }
 
@@ -187,13 +188,15 @@ public class DashboardApplicationService {
         return new DashboardResponses.Distribution(items, valid, excluded);
     }
 
-    private DashboardResponses.GeoDistribution geo(Map<GridKey, Long> grids,
+    private DashboardResponses.GeoDistribution geo(Map<GridKey, GridStats> grids,
                                                     long valid,
                                                     Map<String, Long> excluded) {
         List<DashboardResponses.GeoPoint> points = grids.entrySet().stream()
                 .map(entry -> new DashboardResponses.GeoPoint(
                         entry.getKey().longitude.doubleValue(),
-                        entry.getKey().latitude.doubleValue(), entry.getValue()))
+                        entry.getKey().latitude.doubleValue(), entry.getValue().count,
+                        entry.getValue().passCount, entry.getValue().reviewCount,
+                        entry.getValue().rejectCount))
                 .sorted(Comparator.comparingLong(
                         DashboardResponses.GeoPoint::count).reversed()
                         .thenComparingDouble(
@@ -317,6 +320,20 @@ public class DashboardApplicationService {
             int longitudeOrder = longitude.compareTo(other.longitude);
             return longitudeOrder != 0 ? longitudeOrder
                     : latitude.compareTo(other.latitude);
+        }
+    }
+
+    private static final class GridStats {
+        private long count;
+        private long passCount;
+        private long reviewCount;
+        private long rejectCount;
+
+        private void add(Decision decision) {
+            count++;
+            if (decision == Decision.PASS) passCount++;
+            if (decision == Decision.REVIEW) reviewCount++;
+            if (decision == Decision.REJECT) rejectCount++;
         }
     }
 }

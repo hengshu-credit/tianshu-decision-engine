@@ -3,6 +3,8 @@ import {
   distributionBarOption,
   distributionPieOption,
   geoHeatmapOption,
+  regionalApplicationOption,
+  regionalDecisionOption,
   ruleSetHitOption
 } from '@/charts/dashboardCharts'
 import { DEFAULT_THEME_CONFIG, mixThemeColors } from '@/theme/themeConfig'
@@ -25,9 +27,40 @@ describe('dashboard charts', () => {
 
   test('分布图保留标签、数量和主题色', () => {
     const items = [{ key: '12', label: '12期', count: 8 }]
+    const pie = distributionPieOption(items)
+    const palette = createDashboardPalette(document.documentElement)
+
     expect(distributionBarOption(items).series[0].data).toEqual([8])
-    expect(distributionPieOption(items).series[0].data)
+    expect(pie.series[0].data)
       .toEqual([{ name: '12期', value: 8 }])
+    expect(pie.color).toEqual(palette.chartColors)
+    expect(pie.color).not.toContain(palette.success)
+    expect(pie.color).not.toContain(palette.warning)
+  })
+
+  test('地区进件图同时展示数量、占比和累计占比', () => {
+    const option = regionalApplicationOption([
+      { name: '区域一', count: 6, rate: 0.6 },
+      { name: '区域二', count: 4, rate: 0.4 }
+    ])
+    expect(option.series.map(series => series.name)).toEqual(['进件数', '占比', '累计占比'])
+    expect(option.series[0].data).toEqual([6, 4])
+    expect(option.series[1].data).toEqual([60, 40])
+    expect(option.series[2].data).toEqual([60, 100])
+    expect(option.xAxis[0].type).toBe('value')
+    expect(option.yAxis.type).toBe('category')
+  })
+
+  test('地区决策图同时展示通过、拒绝和拒绝率', () => {
+    const option = regionalDecisionOption([
+      { name: '区域一', passCount: 5, rejectCount: 1, rejectRate: 1 / 6 }
+    ])
+    expect(option.series.map(series => series.name)).toEqual(['通过', '拒绝', '拒绝率'])
+    expect(option.series[0].data).toEqual([5])
+    expect(option.series[1].data).toEqual([1])
+    expect(option.series[2].data[0]).toBeCloseTo(100 / 6, 10)
+    expect(option.xAxis[0].type).toBe('value')
+    expect(option.yAxis.type).toBe('category')
   })
 
   test('地图热力图只接收服务端合法坐标点', () => {
@@ -67,15 +100,43 @@ describe('dashboard charts', () => {
     root.style.setProperty('--el-border-color-light', border)
     const option = geoHeatmapOption([{ longitude: 120, latitude: 30, count: 4 }])
 
-    expect(option.geo.itemStyle.areaColor).toBe(mixThemeColors(surface, '#873FF2', 0.1))
+    expect(option.geo.itemStyle.areaColor).toBe(mixThemeColors(surface, '#873FF2', 0.16))
     expect(option.geo.itemStyle.borderColor).toBe(mixThemeColors(border, '#873FF2', 0.25))
-    expect(option.geo.emphasis.itemStyle.areaColor).toBe(mixThemeColors(surface, '#873FF2', 0.24))
+    const palette = createDashboardPalette(root)
+    expect(option.geo.emphasis.itemStyle.areaColor).toBe(palette.chartAccent)
     expect(option.geo.emphasis.label.color).toBe(text)
     expect(option.visualMap.inRange.color).toEqual([
-      mixThemeColors(surface, '#873FF2', 0.2), '#873FF2', '#2CC7B8'
+      mixThemeColors(surface, '#873FF2', 0.2), '#873FF2',
+      palette.chartAccent
     ])
     expect(option.tooltip.backgroundColor).toBe(surface)
     expect(option.tooltip.textStyle.color).toBe(text)
+  })
+
+  test('地图高亮与饼图分类色随主题主色变化且避开状态绿黄', () => {
+    const root = document.documentElement
+    applyTheme({
+      ...DEFAULT_THEME_CONFIG,
+      colorScheme: 'DARK',
+      accentMode: 'CUSTOM_SOLID',
+      customSolidColor: '#873FF2'
+    })
+    root.style.setProperty('--el-bg-color', '#151D31')
+    root.style.setProperty('--el-text-color-primary', '#EDF2FF')
+    root.style.setProperty('--el-border-color-light', '#28344D')
+
+    const palette = createDashboardPalette(root)
+    const pie = distributionPieOption([
+      { label: '分类一', count: 3 },
+      { label: '分类二', count: 2 }
+    ])
+    const map = geoHeatmapOption([{ longitude: 120, latitude: 30, count: 3 }])
+
+    expect(pie.color).toEqual(palette.chartColors)
+    expect(pie.color).not.toContain(palette.success)
+    expect(pie.color).not.toContain(palette.warning)
+    expect(map.geo.emphasis.itemStyle.areaColor).toBe(palette.chartAccent)
+    expect(map.visualMap.inRange.color.at(-1)).toBe(palette.chartAccent)
   })
 
   test('底图悬停显示区域名称，热力点仍显示坐标和数量', () => {
@@ -115,6 +176,18 @@ describe('dashboard charts', () => {
     expect(option.tooltip.formatter({ componentType: 'geo', name: 'county-2' })).toBe('Washington')
     expect(option.geo.tooltip.formatter({ componentType: 'geo', name: 'county-2' })).toBe('Washington')
     expect(option.geo.emphasis.label.formatter({ name: 'county-1' })).toBe('Washington')
+  })
+
+  test('行政区地图按进件占比着色并保留热力点图层', () => {
+    const option = geoHeatmapOption([{ longitude: 120, latitude: 30, count: 4 }], {
+      mapName: 'dashboard-administrative-region',
+      nameProperty: 'shapeID',
+      regionData: [{ id: 'province-1', name: '区域一', count: 4, rate: 1 }]
+    })
+    expect(option.series[0].type).toBe('heatmap')
+    expect(option.series[1].type).toBe('map')
+    expect(option.series[1].data).toEqual([{ name: 'province-1', value: 4 }])
+    expect(option.visualMap.show).toBe(true)
   })
 
   test('规则集 TOP 悬浮信息包含进件、命中和命中率', () => {

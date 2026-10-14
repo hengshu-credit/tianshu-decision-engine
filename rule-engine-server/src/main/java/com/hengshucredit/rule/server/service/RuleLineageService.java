@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
+import com.hengshucredit.rule.model.entity.RuleSftpDatasource;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
 import com.hengshucredit.rule.model.entity.RulePublished;
@@ -25,6 +26,7 @@ import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleDbDatasourceMapper;
+import com.hengshucredit.rule.server.mapper.RuleSftpDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionInputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionContentMapper;
@@ -73,11 +75,13 @@ public class RuleLineageService {
     @Resource private RuleExternalDatasourceMapper externalDatasourceMapper;
     @Resource private RuleExternalApiConfigMapper externalApiConfigMapper;
     @Resource private RuleDbDatasourceMapper dbDatasourceMapper;
+    @Resource private RuleSftpDatasourceMapper sftpDatasourceMapper;
     @Resource private RuleListLibraryMapper listLibraryMapper;
     @Resource private RuleDataObjectFieldMapper dataObjectFieldMapper;
     @Resource private RuleDataObjectMapper dataObjectMapper;
     @Resource private RuleFunctionMapper functionMapper;
     @Resource private RuleExperimentMapper experimentMapper;
+    @Resource private com.hengshucredit.rule.server.mapper.GovernedResourceMapper governedResourceMapper;
 
     public List<Map<String, Object>> options(String nodeType, String keyword, Long projectId) {
         return pageOptions(nodeType, keyword, projectId, 1, 80).getRecords();
@@ -90,6 +94,9 @@ public class RuleLineageService {
         }
         String type = normalizeType(nodeType);
         if (accessGuard != null) accessGuard.requireResource(type, "view");
+        if ("SFTP".equals(type) && sftpDatasourceMapper == null) {
+            return new Page<Map<String, Object>>(pageNum, pageSize).setRecords(List.of());
+        }
         OptionSource source = switch (type) {
             case "PROJECT" -> new OptionSource(projectMapper, "project_code", "project_name", false, "id");
             case "RULE" -> new OptionSource(definitionMapper, "rule_code", "rule_name", true, "project_id");
@@ -99,6 +106,7 @@ public class RuleLineageService {
             case "MODEL" -> new OptionSource(modelMapper, "model_code", "model_name", true, "project_id");
             case "EXPERIMENT" -> new OptionSource(experimentMapper, "experiment_code", "experiment_name", false, "project_id");
             case "DB" -> new OptionSource(dbDatasourceMapper, "datasource_code", "datasource_name", true, "project_id");
+            case "SFTP" -> new OptionSource(sftpDatasourceMapper, "datasource_code", "datasource_name", true, "project_id");
             case "LIST" -> new OptionSource(listLibraryMapper, "list_code", "list_name", true, "project_id");
             case "DATASOURCE" -> new OptionSource(externalDatasourceMapper, "datasource_code", "datasource_name", true, "project_id");
             case "API" -> new OptionSource(externalApiConfigMapper, "api_code", "api_name", false, "datasource_id");
@@ -444,6 +452,13 @@ public class RuleLineageService {
             addNode(graph, "DB", item.getId(), item.getDatasourceCode(), item.getDatasourceName());
             addProjectEdge(graph, item.getProjectId(), nodeKey("DB", item.getId()));
         }
+        if (sftpDatasourceMapper != null) {
+            for (RuleSftpDatasource item : sftpDatasourceMapper.selectList(new LambdaQueryWrapper<RuleSftpDatasource>())) {
+                if (Integer.valueOf(-1).equals(item.getStatus())) continue;
+                addNode(graph, "SFTP", item.getId(), item.getDatasourceCode(), item.getDatasourceName());
+                addProjectEdge(graph, item.getProjectId(), nodeKey("SFTP", item.getId()));
+            }
+        }
         for (RuleListLibrary item : listLibraryMapper.selectList(new LambdaQueryWrapper<RuleListLibrary>())) {
             if (Integer.valueOf(-1).equals(item.getStatus())) continue;
             addNode(graph, "LIST", item.getId(), item.getListCode(), item.getListName());
@@ -451,7 +466,38 @@ public class RuleLineageService {
         }
         addRuleFieldEdges(graph);
         addModelFieldEdges(graph);
+        enrichNodeVersions(graph);
         return graph;
+    }
+
+    /** 血缘节点与当前生效治理版本保持一致，避免只显示资源名称而无法判断依赖快照。 */
+    private void enrichNodeVersions(FullGraph graph) {
+        if (governedResourceMapper == null) return;
+        for (var resource : governedResourceMapper.selectList(new LambdaQueryWrapper<com.hengshucredit.rule.model.entity.GovernedResource>()
+                .select(com.hengshucredit.rule.model.entity.GovernedResource::getResourceType,
+                        com.hengshucredit.rule.model.entity.GovernedResource::getResourceId,
+                        com.hengshucredit.rule.model.entity.GovernedResource::getEffectiveVersionId,
+                        com.hengshucredit.rule.model.entity.GovernedResource::getEffectiveVersionNo))) {
+            if (resource.getResourceType() == null || resource.getResourceId() == null) continue;
+            String key = nodeKey(graphNodeType(resource.getResourceType()), resource.getResourceId());
+            Map<String, Object> node = graph.nodes.get(key);
+            if (node == null) continue;
+            Integer version = resource.getEffectiveVersionNo();
+            if (version == null) continue;
+            node.put("version", version);
+            node.put("versionLabel", "最新 · v" + version);
+            node.put("versionId", resource.getEffectiveVersionId());
+        }
+    }
+
+    private String graphNodeType(String resourceType) {
+        return switch (normalizeType(resourceType)) {
+            case "DATABASE" -> "DB";
+            case "EXTERNAL_DATASOURCE" -> "DATASOURCE";
+            case "EXTERNAL_API" -> "API";
+            case "LIST_LIBRARY" -> "LIST";
+            default -> normalizeType(resourceType);
+        };
     }
 
     private LambdaQueryWrapper<RuleModel> withoutModelContent() {
@@ -471,6 +517,9 @@ public class RuleLineageService {
         } else if ("DB".equals(variable.getVarSource())) {
             Long datasourceId = config.getLong("datasourceId");
             if (datasourceId != null) addEdge(graph, nodeKey("DB", datasourceId), target, "数据库查询");
+        } else if ("SFTP".equals(variable.getVarSource())) {
+            Long datasourceId = config.getLong("sftpDatasourceId");
+            if (datasourceId != null) addEdge(graph, nodeKey("SFTP", datasourceId), target, "SFTP 文件读取");
         } else if ("LIST".equals(variable.getVarSource())) {
             Long listId = config.getLong("listId");
             if (listId == null) listId = config.getLong("listLibraryId");
@@ -569,7 +618,7 @@ public class RuleLineageService {
         if ("CONSTANT".equals(type) || "VARIABLE".equals(type)) return nodeKey("VARIABLE", refId);
         if ("DATA_OBJECT".equals(type) || "DATA_FIELD".equals(type)) return nodeKey("DATA_FIELD", refId);
         if ("MODEL".equals(type)) return nodeKey("MODEL", refId);
-        if ("API".equals(type) || "DB".equals(type) || "LIST".equals(type)) return nodeKey(type, refId);
+        if ("API".equals(type) || "DB".equals(type) || "SFTP".equals(type) || "LIST".equals(type)) return nodeKey(type, refId);
         return null;
     }
 

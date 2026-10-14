@@ -75,7 +75,10 @@ final class BillingSummaryTestDatabase implements AutoCloseable {
             ReflectionTestUtils.setField(target, "summaryMapper", sessions.getMapper(RuleBillingSummaryMapper.class));
             ProxyFactory proxy = new ProxyFactory(target);
             proxy.setProxyTargetClass(true);
-            proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(source), new AnnotationTransactionAttributeSource()));
+            TransactionInterceptor transactions = new TransactionInterceptor();
+            transactions.setTransactionManager(new DataSourceTransactionManager(source));
+            transactions.setTransactionAttributeSource(new AnnotationTransactionAttributeSource());
+            proxy.addAdvice(transactions);
             service = (RuleBillingService) proxy.getProxy();
         } catch (Exception | Error failure) {
             close();

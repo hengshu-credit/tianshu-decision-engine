@@ -26,6 +26,7 @@ public final class AggregateBuiltinFunctionRegistry {
     private static final Class<?>[] TWO_STRINGS = {String.class, String.class};
     private static final Class<?>[] STRING_STRING_DOUBLE = {String.class, String.class, double.class};
     private static final Class<?>[] STRING_DOUBLE = {String.class, double.class};
+    private static final Class<?>[] STRING_DOUBLE_OBJECT = {String.class, double.class, Object.class};
     private static final Class<?>[] STRING_DOUBLE_DOUBLE = {String.class, double.class, double.class};
     private static final Class<?>[] THREE_STRINGS = {String.class, String.class, String.class};
     private static final Class<?>[] FOUR_STRINGS = {String.class, String.class, String.class, String.class};
@@ -117,6 +118,7 @@ public final class AggregateBuiltinFunctionRegistry {
         registerMethod(runner, "facenoxLiveness", DECISION_DELEGATE, "facenoxLiveness", OBJECT_DOUBLE);
         registerMethod(runner, "facenoxLivenessList", DECISION_DELEGATE, "facenoxLivenessList", OBJECT_DOUBLE);
         if (includeNetworkFunctions) registerMethod(runner, "imageToBase64", IMAGE_DELEGATE, "imageToBase64", STRING_DOUBLE);
+        if (includeNetworkFunctions) registerMethod(runner, "imageToBase64WithOptions", IMAGE_DELEGATE, "imageToBase64WithOptions", STRING_DOUBLE_OBJECT);
         registerMethod(runner, "numRoundInteger", DECISION_DELEGATE, "numRoundInteger", new Class<?>[]{double.class});
         registerMethod(runner, "randomInt", RANDOM_DELEGATE, "randomInt", OBJECT_VARARGS);
         registerMethod(runner, "randomDecimal", RANDOM_DELEGATE, "randomDecimal", OBJECT_VARARGS);

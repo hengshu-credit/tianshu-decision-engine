@@ -108,6 +108,20 @@ public class ExternalConfigDefaultsTest {
     }
 
     @Test
+    public void apiMappingMustBeJsonObjectInsteadOfSilentlyBecomingEmpty() {
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setRequestMapping("[\"customerId\"]");
+        try {
+            invokeFillDefaults(new RuleExternalApiConfigService(), config);
+            org.junit.Assert.fail("Expected JSON object validation to fail");
+        } catch (Exception error) {
+            Throwable cause = error instanceof InvocationTargetException
+                    ? ((InvocationTargetException) error).getCause() : error;
+            org.junit.Assert.assertTrue(cause.getMessage().contains("请求映射"));
+        }
+    }
+
+    @Test
     public void apiReferenceValidationRejectsCrossProjectObjects() {
         RuleExternalApiConfig config = new RuleExternalApiConfig();
         config.setDatasourceId(8L);

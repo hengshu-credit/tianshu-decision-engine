@@ -9,6 +9,7 @@ import com.hengshucredit.rule.model.entity.DecisionArtifact;
 import com.hengshucredit.rule.model.entity.DecisionArtifactComponent;
 import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
+import com.hengshucredit.rule.model.entity.RuleSftpDatasource;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
@@ -23,6 +24,7 @@ import com.hengshucredit.rule.server.mapper.DecisionArtifactComponentMapper;
 import com.hengshucredit.rule.server.mapper.DecisionArtifactMapper;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleDbDatasourceMapper;
+import com.hengshucredit.rule.server.mapper.RuleSftpDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RuleFunctionMapper;
@@ -83,6 +85,8 @@ public class ArtifactDeploymentService {
     private RuleExternalDatasourceMapper externalDatasourceMapper;
     @Resource
     private RuleDbDatasourceMapper dbDatasourceMapper;
+    @Resource
+    private RuleSftpDatasourceMapper sftpDatasourceMapper;
     @Resource
     private RuleListLibraryMapper listLibraryMapper;
     @Resource
@@ -336,6 +340,7 @@ public class ArtifactDeploymentService {
 
     private String candidateType(String resourceType) {
         if ("DB_DATASOURCE".equals(resourceType)) return "DATABASE";
+        if ("SFTP_DATASOURCE".equals(resourceType)) return "SFTP";
         if ("DATA_OBJECT_ROOT".equals(resourceType)) return "DATA_OBJECT";
         return resourceType;
     }
@@ -579,6 +584,12 @@ public class ArtifactDeploymentService {
             }
             case "DB_DATASOURCE" -> {
                 RuleDbDatasource resource = dbDatasourceMapper.selectById(targetResourceId);
+                assertActiveAndOwned(resource == null ? null : resource.getStatus(),
+                        resource == null ? null : resource.getScope(),
+                        resource == null ? null : resource.getProjectId(), targetProjectId, targetResourceType);
+            }
+            case "SFTP" -> {
+                RuleSftpDatasource resource = sftpDatasourceMapper.selectById(targetResourceId);
                 assertActiveAndOwned(resource == null ? null : resource.getStatus(),
                         resource == null ? null : resource.getScope(),
                         resource == null ? null : resource.getProjectId(), targetProjectId, targetResourceType);

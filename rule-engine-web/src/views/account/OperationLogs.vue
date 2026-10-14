@@ -90,8 +90,8 @@ export default {
 .log-filters { display: flex; flex: 1; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .log-filters > .el-input { width: 180px; }
 .log-filters > .el-select { width: 140px; }
-.log-filters > .el-date-editor { flex: 0 1 340px; min-width: 280px; }
-.log-actions { display: flex; margin-left: auto; }
+.log-filters > .el-date-editor { flex: 0 1 340px; width: 340px; max-width: 100%; min-width: 280px; }
+.log-actions { display: flex; gap: 8px; margin-left: auto; }
 .log-note { color: var(--tianshu-text-tertiary); font-size: 12px; line-height: 1.6; }
 .location-path { overflow-wrap: anywhere; }
 .el-pagination { margin-top: 16px; justify-content: flex-end; flex-wrap: wrap; }

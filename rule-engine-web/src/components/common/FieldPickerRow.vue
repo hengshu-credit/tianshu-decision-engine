@@ -4,6 +4,7 @@
     <span class="fp-name" role="gridcell" :title="node.name" :style="{ paddingLeft: Math.min(depth, 6) * 12 + 'px' }">{{ node.children.length ? (expanded ? '▾ ' : '▸ ') : '' }}{{ node.name }}</span>
     <code class="fp-code" role="gridcell" :title="node.code">{{ node.code }}</code>
     <span class="fp-version" role="gridcell" @click.stop @dblclick.stop @keydown.stop><slot name="version" /></span>
+    <button v-if="node.item && node.selectable && node.children.length" type="button" class="fp-select-parent" title="选择整个字段" @click.stop="$emit('confirm')">选</button>
   </div>
 </template>
 <script>
@@ -21,7 +22,7 @@ export default {
 }
 </script>
 <style scoped>
-.fp-row { display:grid; grid-template-columns:48px minmax(70px,1fr) minmax(70px,1.15fr) 130px; align-items:center; gap:0; height:36px; box-sizing:border-box; padding:0 8px; border-bottom:1px solid var(--tianshu-border-subtle); color:var(--tianshu-text-primary); cursor:pointer; background:color-mix(in srgb,var(--el-color-primary) calc(min(var(--field-depth),5) * 3%),var(--tianshu-bg-surface)); }
+.fp-row { display:grid; grid-template-columns:48px minmax(70px,1fr) minmax(70px,1.15fr) 130px 28px; align-items:center; gap:0; height:36px; box-sizing:border-box; padding:0 8px; border-bottom:1px solid var(--tianshu-border-subtle); color:var(--tianshu-text-primary); cursor:pointer; background:color-mix(in srgb,var(--el-color-primary) calc(min(var(--field-depth),5) * 3%),var(--tianshu-bg-surface)); }
 .fp-row:hover,.fp-row:focus-visible { background:var(--tianshu-bg-hover); outline:1px solid var(--el-color-primary); outline-offset:-1px; }
 .fp-row--selected { background:var(--tianshu-info-bg); box-shadow:inset 3px 0 var(--el-color-primary); }
 .fp-row--parent .fp-name { color:var(--tianshu-primary-text, var(--el-color-primary)); font-weight:600; }
@@ -34,5 +35,7 @@ export default {
 .fp-type--collection { color:var(--tianshu-warning-text); background:var(--tianshu-warning-bg); }
 .fp-type--boolean { color:var(--tianshu-info-text); background:var(--tianshu-info-bg); }
 .fp-version { overflow:hidden; }
-@media(max-width:640px) { .fp-row { grid-template-columns:40px minmax(45px,1fr) minmax(45px,1fr) 96px; } }
+.fp-select-parent { width:22px; height:22px; padding:0; border:1px solid var(--tianshu-border); color:var(--tianshu-primary-text,var(--el-color-primary)); background:var(--tianshu-bg-surface); cursor:pointer; opacity:0; }
+.fp-row:hover .fp-select-parent,.fp-row:focus-within .fp-select-parent { opacity:1; }
+@media(max-width:640px) { .fp-row { grid-template-columns:40px minmax(45px,1fr) minmax(45px,1fr) 96px 24px; } }
 </style>

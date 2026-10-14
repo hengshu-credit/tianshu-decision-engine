@@ -1,7 +1,8 @@
-import { pickerReferenceCategory } from './pickerCategories'
+import { pickerReferenceCategory, API_PICKER_CATEGORIES } from './pickerCategories'
 
 // 这些标签是组件的配置协议，不在业务界面展示。
 export const FIELD_CATEGORY_TAGS = Object.freeze({
+  ...Object.fromEntries(API_PICKER_CATEGORIES.map(item => [item.key, ['http-context', 'reference', 'read']])),
   standalone: ['variable', 'reference', 'read', 'write'],
   constant: ['constant', 'reference', 'read'],
   object: ['object', 'reference', 'read', 'write'],
@@ -22,7 +23,7 @@ export const FIELD_ACTION_TAGS = Object.freeze({
 export function matchesFieldTags(tags, filter) {
   if (filter == null) return true
   const policy = Array.isArray(filter) ? { anyOf: filter } : filter
-  const available = new Set(tags)
+  const available = new Set(tags || [])
   return (policy.anyOf == null || policy.anyOf.some(tag => available.has(tag))) &&
     (policy.allOf == null || policy.allOf.every(tag => available.has(tag))) &&
     (policy.noneOf == null || policy.noneOf.every(tag => !available.has(tag)))

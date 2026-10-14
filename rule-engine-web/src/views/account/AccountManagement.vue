@@ -6,6 +6,8 @@
         <h1>账户管理</h1>
         <p>通过角色批量授权，并可对单个账户设置额外允许或明确拒绝。</p>
       </div>
+      <div class="uiue-btn-bar account-actions">
+        <div class="btn-right">
       <table-column-settings
         v-if="activeTab !== 'logs'"
         :columns="activeTab === 'accounts' ? accountColumns : roleColumns"
@@ -27,6 +29,8 @@
       >
         新增角色
       </el-button>
+        </div>
+      </div>
     </header>
 
     <section class="content-card management-table-region">
@@ -76,7 +80,7 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="260" fixed="right">
+            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '权限调整', '重置密码', '停用', '启用'])" fixed="right">
               <template #default="{ row }">
                 <el-button
                   v-permission="'account:manage'"
@@ -136,7 +140,7 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="150" fixed="right">
+            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['配置权限', '停用', '启用'])" fixed="right">
               <template #default="{ row }">
                 <el-button
                   v-permission="'role:manage'"
@@ -341,6 +345,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { hasPermission } from '@/security/permissionState'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import OperationLogs from './OperationLogs.vue'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import {
   changeConsoleAccountStatus,
   changeConsoleRoleStatus,
@@ -468,6 +473,7 @@ export default {
     this.loadData()
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     async loadData() {
       this.loading = true
       try {
@@ -589,6 +595,9 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.account-actions {
+  margin: 0 0 0 auto;
+}
 .account-page {
   color: var(--tianshu-text-primary);
 }

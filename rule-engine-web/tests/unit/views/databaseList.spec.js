@@ -5,6 +5,10 @@ import * as projectApi from '@/api/project'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import DatabaseList from '@/views/database/DatabaseList.vue'
 
+const FormItemStub = {
+  props: ['label'],
+  template: '<div class="form-item-stub" :data-label="label"><slot /></div>'
+}
 
 
 async function mountPage(route) {
@@ -22,7 +26,7 @@ async function mountPage(route) {
     },
     stubs: {
       'el-form': { template: '<form><slot /></form>', methods: { validate: vi.fn(cb => cb(true)) } },
-      'el-form-item': true,
+      'el-form-item': FormItemStub,
       'el-select': true,
       'el-option': true,
       'el-input': true,
@@ -138,6 +142,50 @@ describe('DatabaseList — JDBC URL 生成', () => {
     expect(data.connectionMode).toBe('SSH_TUNNEL')
     expect(data.sshHost).toBe('bastion.internal')
     expect(data.sshUsername).toBe('deploy')
+  })
+
+  test('数据库账号密码排在 SSH 配置之前', async () => {
+    wrapper.vm.dialogVisible = true
+    wrapper.vm.form.connectionMode = 'SSH_TUNNEL'
+    await nextTick()
+
+    const labels = wrapper.findAll('.form-item-stub').map(item => item.attributes('data-label'))
+    expect(labels.indexOf('用户名')).toBeGreaterThanOrEqual(0)
+    expect(labels.indexOf('密码')).toBeGreaterThanOrEqual(0)
+    expect(labels.indexOf('SSH主机')).toBeGreaterThan(labels.indexOf('用户名'))
+    expect(labels.indexOf('SSH主机')).toBeGreaterThan(labels.indexOf('密码'))
+  })
+
+  test.each([null, 1])('列表配置表单 id=%s 切换连接方式不串用数据库与 SSH 凭据', async (id) => {
+    databaseApi.testDbDatasourceDraft.mockResolvedValue({ data: '连接成功' })
+    databaseApi.createDbDatasource.mockResolvedValue({ data: {} })
+    databaseApi.updateDbDatasource.mockResolvedValue({ data: {} })
+    Object.assign(wrapper.vm.form, { id, scope: 'GLOBAL', host: 'mysql.internal', databaseName: 'risk' })
+    const input = label => wrapper.find(`[data-label="${label}"]`).findComponent('el-input-stub')
+    input('用户名').vm.$emit('update:modelValue', 'DB_User')
+    input('密码').vm.$emit('update:modelValue', ' Db!@#密 码 ')
+    const mode = wrapper.findComponent('el-radio-group-stub')
+    mode.vm.$emit('update:modelValue', 'SSH_TUNNEL')
+    await nextTick()
+    input('SSH用户').vm.$emit('update:modelValue', 'ssh_user')
+    input('SSH密码').vm.$emit('update:modelValue', 'SSH!pass')
+    const credentials = { username: 'DB_User', password: ' Db!@#密 码 ', sshUsername: 'ssh_user', sshPassword: 'SSH!pass' }
+
+    for (const connectionMode of ['DIRECT', 'SSH_TUNNEL']) {
+      mode.vm.$emit('update:modelValue', connectionMode)
+      await nextTick()
+      expect(input('用户名').exists()).toBe(true)
+      expect(input('密码').exists()).toBe(true)
+      expect(wrapper.vm.form).toMatchObject(credentials)
+      wrapper.vm.handleTestDraft()
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(databaseApi.testDbDatasourceDraft.mock.lastCall[0]).toMatchObject({ ...credentials, connectionMode })
+      wrapper.vm.handleSubmit()
+      await new Promise(resolve => setTimeout(resolve, 0))
+      const save = id ? databaseApi.updateDbDatasource : databaseApi.createDbDatasource
+      expect(save.mock.lastCall[0]).toMatchObject({ ...credentials, connectionMode })
+    }
+    expect(id ? databaseApi.createDbDatasource : databaseApi.updateDbDatasource).not.toHaveBeenCalled()
   })
 
   test('提供数据库变量配置说明和只读查询提示', () => {

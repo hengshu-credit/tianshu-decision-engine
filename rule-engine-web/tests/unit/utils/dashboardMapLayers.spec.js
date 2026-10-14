@@ -3,6 +3,7 @@ import {
   dashboardCountryOptions,
   dashboardMapView,
   dashboardPointsInGeoJson,
+  dashboardRegionStatistics,
   dashboardRegionNames,
   dashboardWorldCountries,
   filterDashboardRegionFeatures,
@@ -116,6 +117,33 @@ describe('dashboard administrative map layers', () => {
       { longitude: 2, latitude: 2, count: 3 },
       { longitude: 'bad', latitude: 0, count: 4 }
     ], geoJson)).toEqual([{ longitude: 0.2, latitude: 0.2, count: 2 }])
+  })
+
+  test('按当前行政区边界聚合进件数和引擎决策结果', () => {
+    const geoJson = { type: 'FeatureCollection', features: [
+      { ...region('region-1', '区域一'), geometry: {
+        type: 'Polygon', coordinates: [[[0, 0], [1, 0], [0, 1], [0, 0]]]
+      } },
+      { ...region('region-2', '区域二'), geometry: {
+        type: 'Polygon', coordinates: [[[2, 0], [3, 0], [2, 1], [2, 0]]]
+      } }
+    ] }
+    expect(dashboardRegionStatistics(geoJson, {
+      points: [
+        { longitude: 0.2, latitude: 0.2, count: 4, passCount: 2, reviewCount: 1, rejectCount: 1 },
+        { longitude: 2.2, latitude: 0.2, count: 2, passCount: 0, reviewCount: 1, rejectCount: 1 },
+        { longitude: 9, latitude: 9, count: 8, passCount: 8 }
+      ]
+    })).toEqual([
+      {
+        id: 'region-1', name: '区域一', count: 4, rate: 2 / 3,
+        passCount: 2, reviewCount: 1, rejectCount: 1, rejectRate: 1 / 4
+      },
+      {
+        id: 'region-2', name: '区域二', count: 2, rate: 1 / 3,
+        passCount: 0, reviewCount: 1, rejectCount: 1, rejectRate: 1 / 2
+      }
+    ])
   })
 
   test('当前层级边界生成居中且带适量留白的地图视角', () => {

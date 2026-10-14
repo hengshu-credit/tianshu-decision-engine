@@ -50,7 +50,7 @@ describe('LayoutSidebar', () => {
     const items = wrapper.findAll('.sidebar-menu__item')
 
     expect(items.at(0).attributes('title')).toBe('数据看板')
-    expect(items.at(13).attributes('title')).toBe('账单管理')
+    expect(items.at(14).attributes('title')).toBe('账单管理')
     wrapper.unmount()
   })
 

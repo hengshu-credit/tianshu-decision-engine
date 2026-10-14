@@ -50,12 +50,12 @@
       </el-form>
       <div class="uiue-btn-bar">
         <div class="btn-right">
-          <governance-workspace-toolbar resource-type="PROJECT" />
           <table-column-settings
             v-model="projectColumnOrder"
             :columns="projectColumns"
             storage-key="tianshu:table-columns:project-list"
           />
+          <governance-workspace-toolbar resource-type="PROJECT" />
           <el-button
             v-permission="'project:edit'"
             type="primary"

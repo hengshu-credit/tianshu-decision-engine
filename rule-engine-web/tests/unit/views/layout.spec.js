@@ -53,10 +53,10 @@ import {
   writeSidebarState
 } from '@/layout/layoutState'
 describe('Layout — 菜单与路由归属', () => {
-  test('包含 17 个路由唯一、图标唯一的平铺一级菜单项', () => {
-    expect(SIDEBAR_MENUS).toHaveLength(17)
-    expect(new Set(SIDEBAR_MENUS.map(item => item.index)).size).toBe(17)
-    expect(new Set(SIDEBAR_MENUS.map(item => item.icon)).size).toBe(17)
+  test('包含 18 个路由唯一、图标唯一的平铺一级菜单项', () => {
+    expect(SIDEBAR_MENUS).toHaveLength(18)
+    expect(new Set(SIDEBAR_MENUS.map(item => item.index)).size).toBe(18)
+    expect(new Set(SIDEBAR_MENUS.map(item => item.icon)).size).toBe(18)
     expect(SIDEBAR_MENUS[0].permission).toBe('')
   })
 
@@ -69,6 +69,7 @@ describe('Layout — 菜单与路由归属', () => {
       { index: '/list', label: '名单管理', icon: 'Notebook', permission: 'list:view' },
       { index: '/datasource', label: '外数管理', icon: 'Connection', permission: 'datasource:view' },
       { index: '/database', label: '数据库管理', icon: 'Coin', permission: 'database:view' },
+      { index: '/sftp', label: 'SFTP管理', icon: 'Files', permission: 'database:view' },
       { index: '/model', label: '模型管理', icon: 'Cpu', permission: 'model:view' },
       { index: '/function', label: '函数管理', icon: 'ScaleToOriginal', permission: 'function:view' },
       { index: '/test', label: '规则测试', icon: 'VideoPlay', permission: 'rule:view' },
@@ -607,7 +608,7 @@ describe('Layout — 全局布局集成', () => {
 
     expect(wrapper.findComponent(LayoutSidebar).exists()).toBe(false)
     expect(wrapper.find('.layout-primary-topbar').exists()).toBe(true)
-    expect(wrapper.findAll('.top-navigation__item')).toHaveLength(17)
+    expect(wrapper.findAll('.top-navigation__item')).toHaveLength(18)
     expect(wrapper.find('.top-navigation__more').exists()).toBe(false)
     expect(wrapper.find('.layout-account').exists()).toBe(true)
     expect(wrapper.findComponent(WorkspaceTabs).exists()).toBe(true)

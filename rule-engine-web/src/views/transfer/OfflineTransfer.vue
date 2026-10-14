@@ -40,7 +40,7 @@
             />
             <p v-if="root.loadError" class="root-error" role="alert">{{ root.loadError }}</p>
           </div>
-          <resource-version-select v-if="root.resourceId" :resource-type="root.resourceType" :resource-id="root.resourceId" v-model="root.versionSelection" :disabled="exporting" />
+          <resource-version-select v-if="root.resourceId" class="root-version" :resource-type="root.resourceType" :resource-id="root.resourceId" v-model="root.versionSelection" :disabled="exporting" @change="onRootVersionChange(root, $event)" />
           <el-button v-if="roots.length > 1" link type="danger" :disabled="exporting" :aria-label="`移除第 ${index + 1} 项资源`" @click="removeRoot(index)">移除</el-button>
         </div>
         <el-alert v-if="exportError" :title="exportError" type="error" :closable="false" />
@@ -283,6 +283,7 @@ const RESOURCE_TYPES = [
   { value: 'DATA_OBJECT', label: '数据对象' },
   { value: 'FUNCTION', label: '函数' },
   { value: 'DATABASE', label: '数据库' },
+  { value: 'SFTP', label: 'SFTP 数据源' },
   { value: 'EXTERNAL_DATASOURCE', label: '外数数据源' },
   { value: 'EXTERNAL_API', label: '外数 API' },
   { value: 'LIST_LIBRARY', label: '名单配置' },
@@ -290,9 +291,9 @@ const RESOURCE_TYPES = [
   { value: 'EXPERIMENT', label: '分流实验' }
 ]
 
-const LINEAGE_TYPES = { DATABASE: 'DB', EXTERNAL_DATASOURCE: 'DATASOURCE', EXTERNAL_API: 'API', LIST_LIBRARY: 'LIST' }
+const LINEAGE_TYPES = { DATABASE: 'DB', SFTP: 'SFTP', EXTERNAL_DATASOURCE: 'DATASOURCE', EXTERNAL_API: 'API', LIST_LIBRARY: 'LIST' }
 
-const newRoot = (key, fetch) => ({ key, resourceType: 'RULE', resourceId: '', versionSelection: { versionMode: 'LATEST', versionId: null }, loadError: '', requestId: 0, fetchOptions: params => fetch(key, params) })
+const newRoot = (key, fetch) => ({ key, resourceType: 'RULE', resourceId: '', versionSelection: { versionMode: 'LATEST', versionId: null }, versionLabel: '最新版（当前生产）', loadError: '', requestId: 0, fetchOptions: params => fetch(key, params) })
 
 export default {
   name: 'OfflineTransfer',
@@ -347,12 +348,12 @@ export default {
     },
     previewLineageRoots() {
       const resources = this.preview?.resources || []
-      return resources.map(item => ({ key: item.key, label: `${item.resourceCode || item.key} · ${item.resourceType}` }))
+      return resources.map(item => ({ key: item.key, label: `${item.resourceCode || item.key} · ${item.resourceType}${this.resourceVersionLabel(item) ? ` · ${this.resourceVersionLabel(item)}` : ''}` }))
     },
     exportLineageRoots() {
       return this.roots.filter(item => item.resourceId).map(item => ({
         key: item.key,
-        label: `${item.resourceType} · ${item.resourceId}`,
+        label: `${item.resourceType} · ${item.resourceId} · ${item.versionLabel || '最新版（当前生产）'}`,
       }))
     },
     exportLineageGraph() {
@@ -363,11 +364,12 @@ export default {
       const resources = this.preview.resources || []
       const selected = resources.find(item => item.key === this.selectedLineageRoot)
       if (!selected) return null
-      const typeMap = { PROJECT: 'PROJECT', RULE: 'RULE', VARIABLE: 'VARIABLE', DATA_OBJECT: 'DATA_OBJECT', FUNCTION: 'FUNCTION', DATABASE: 'DB', EXTERNAL_DATASOURCE: 'DATASOURCE', EXTERNAL_API: 'API', LIST_LIBRARY: 'LIST', MODEL: 'MODEL', EXPERIMENT: 'EXPERIMENT', RULE_VERSION: 'RULE' }
+      const typeMap = { PROJECT: 'PROJECT', RULE: 'RULE', VARIABLE: 'VARIABLE', DATA_OBJECT: 'DATA_OBJECT', FUNCTION: 'FUNCTION', DATABASE: 'DB', SFTP: 'SFTP', EXTERNAL_DATASOURCE: 'DATASOURCE', EXTERNAL_API: 'API', LIST_LIBRARY: 'LIST', MODEL: 'MODEL', EXPERIMENT: 'EXPERIMENT', RULE_VERSION: 'RULE' }
       const nodeMap = new Map(resources.map(item => [item.key, {
         id: item.key, type: typeMap[item.resourceType] || item.resourceType,
         label: item.resourceCode || item.key, code: item.resourceCode || item.key,
         refId: item.sourceResourceId,
+        versionLabel: this.resourceVersionLabel(item),
       }]))
       const edges = resources.flatMap(item => (item.references || []).map(reference => ({
         from: item.key, to: reference.targetKey, label: reference.path || '依赖',
@@ -426,6 +428,7 @@ export default {
     removeRoot(index) { this.roots.splice(index, 1) },
     onRootTypeChange(root) {
       root.versionSelection = { versionMode: 'LATEST', versionId: null }
+      root.versionLabel = '最新版（当前生产）'
       root.resourceId = ''
       root.loadError = ''
       root.requestId += 1
@@ -433,6 +436,7 @@ export default {
     },
     onRootSelectionChange(root) {
       root.versionSelection = { versionMode: 'LATEST', versionId: null }
+      root.versionLabel = '最新版（当前生产）'
       this.exportError = ''
       if (!root.resourceId) return
       if (this.roots.some(other => other !== root && other.resourceType === root.resourceType
@@ -453,7 +457,12 @@ export default {
           direction: 'ALL',
           maxDepth: 2,
         })
-        this.exportLineageGraphs = { ...this.exportLineageGraphs, [root.key]: response.data || null }
+        const graph = response.data || null
+        if (graph && root.versionLabel && root.versionSelection?.versionMode === 'FIXED') {
+          const nodeKey = `${LINEAGE_TYPES[root.resourceType] || root.resourceType}:${root.resourceId}`
+          const patchNode = node => node?.id === nodeKey ? { ...node, versionLabel: root.versionLabel } : node
+          this.exportLineageGraphs = { ...this.exportLineageGraphs, [root.key]: { ...graph, startNode: patchNode(graph.startNode), nodes: (graph.nodes || []).map(patchNode) } }
+        } else this.exportLineageGraphs = { ...this.exportLineageGraphs, [root.key]: graph }
       } catch (error) {
         this.exportLineageGraphs = { ...this.exportLineageGraphs, [root.key]: null }
       } finally {
@@ -485,6 +494,17 @@ export default {
         }
         throw error
       }
+    },
+    onRootVersionChange(root, selection) {
+      if (!root || !selection) return
+      root.versionLabel = selection.label || (selection.versionMode === 'LATEST' ? '最新版（当前生产）' : `指定 v${selection.version || selection.versionId}`)
+      this.loadExportLineage(root)
+    },
+    resourceVersionLabel(item) {
+      if (!item) return ''
+      if (item.versionLabel) return item.versionLabel
+      const version = item.version ?? item.versionNo ?? item.configuration?.versionNo
+      return version == null ? '' : `指定 v${version}`
     },
     invalidatePreview() {
       this.previewRequestId += 1
@@ -521,7 +541,7 @@ export default {
     async exportPackage() {
       if (this.exporting) return
       this.exportError = ''
-      const roots = this.roots.map(item => ({ resourceType: item.resourceType, resourceId: item.resourceId, ...(item.versionSelection?.versionMode === 'FIXED' ? item.versionSelection : {}) }))
+      const roots = this.roots.map(item => ({ resourceType: item.resourceType, resourceId: item.resourceId, ...(item.versionSelection?.versionMode === 'FIXED' ? { versionMode: 'FIXED', versionId: item.versionSelection.versionId } : {}) }))
       if (!roots.length || roots.some(item => !/^[1-9]\d*$/.test(String(item.resourceId)) || BigInt(item.resourceId) > 9223372036854775807n)) {
         ElMessage.warning('请为每一行选择要导出的资源')
         return
@@ -703,8 +723,9 @@ export default {
 .card-kicker { color: var(--el-color-primary); font-size: 11px; letter-spacing: .12em; font-weight: 700; }
 .card-heading h2 { margin: 5px 0 0; font-size: 20px; }
 .card-help { color: var(--el-text-color-secondary); line-height: 1.65; min-height: 52px; }
-.root-row { display: grid; grid-template-columns: 160px 1fr auto; gap: 8px; margin: 10px 0; }
+.root-row { display: grid; grid-template-columns: 160px minmax(0, 1fr) minmax(220px, auto) auto; gap: 12px; align-items: start; margin: 12px 0; }
 .root-resource { min-width: 0; }
+.root-version { width: 220px; max-width: 100%; }
 .root-error { margin: 6px 0 0; color: var(--el-color-danger); font-size: 12px; line-height: 1.5; }
 .card-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .upload-copy { display: flex; flex-direction: column; gap: 8px; color: var(--el-text-color-secondary); }
@@ -748,5 +769,6 @@ export default {
 .result-json { max-height: 360px; overflow: auto; background: var(--el-fill-color-light); padding: 12px; border-radius: 8px; font-size: 12px; }
 @media (max-width: 900px) { .transfer-grid { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .import-options__target, .import-options__policies { grid-template-columns: 1fr 1fr; } .create-project-toggle { grid-column: 1 / -1; margin-bottom: 0; } .import-options__policies .el-checkbox { grid-column: 1 / -1; } }
-@media (max-width: 560px) { .root-row { grid-template-columns: 1fr auto; } .root-type { grid-column: 1 / -1; } .import-options__target, .project-create-fields__inputs, .import-options__policies { grid-template-columns: 1fr; } .create-project-toggle, .import-options__policies .el-checkbox { grid-column: auto; } }
+@media (max-width: 900px) { .root-row { grid-template-columns: 160px minmax(0, 1fr); } .root-version { grid-column: 2; width: 100%; } }
+@media (max-width: 560px) { .root-row { grid-template-columns: 1fr auto; gap: 8px; } .root-type { grid-column: 1 / -1; } .root-resource, .root-version { grid-column: 1 / -1; width: 100%; } .import-options__target, .project-create-fields__inputs, .import-options__policies { grid-template-columns: 1fr; } .create-project-toggle, .import-options__policies .el-checkbox { grid-column: auto; } }
 </style>

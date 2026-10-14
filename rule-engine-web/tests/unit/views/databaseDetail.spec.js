@@ -9,6 +9,11 @@ function flushPromises() {
   return new Promise(resolve => setTimeout(resolve, 0))
 }
 
+const FormItemStub = {
+  props: ['label'],
+  template: '<div class="form-item-stub" :data-label="label"><slot /></div>'
+}
+
 function mountPage(route) {
   return shallowMount(DatabaseDetail, {
     mocks: {
@@ -18,7 +23,7 @@ function mountPage(route) {
     },
     stubs: {
       'el-form': { template: '<form><slot /></form>', methods: { validate: vi.fn(cb => cb(true)) } },
-      'el-form-item': true,
+      'el-form-item': FormItemStub,
       'el-select': true,
       'el-option': true,
       'el-input': true,
@@ -103,6 +108,70 @@ describe('DatabaseDetail — 项目选择', () => {
       path: '/database',
       query: { projectId: 3 }
     })
+  })
+
+  test('数据库账号密码排在 SSH 配置之前', async () => {
+    projectApi.listProjects.mockResolvedValue({ data: { records: [] } })
+    const wrapper = mountPage({ path: '/database/new', params: { id: 'new' }, query: {} })
+    await flushPromises()
+
+    wrapper.vm.form.connectionMode = 'SSH_TUNNEL'
+    await nextTick()
+
+    const labels = wrapper.findAll('.form-item-stub').map(item => item.attributes('data-label'))
+    expect(labels.indexOf('用户名')).toBeGreaterThanOrEqual(0)
+    expect(labels.indexOf('密码')).toBeGreaterThanOrEqual(0)
+    expect(labels.indexOf('SSH主机')).toBeGreaterThan(labels.indexOf('用户名'))
+    expect(labels.indexOf('SSH主机')).toBeGreaterThan(labels.indexOf('密码'))
+    wrapper.unmount()
+  })
+
+  test.each(['new', '1'])('账号密码移动后，%s 页面切换连接方式仍正确测试和保存', async (id) => {
+    projectApi.listProjects.mockResolvedValue({ data: { records: [] } })
+    databaseApi.getDbDatasource.mockResolvedValue({ data: {
+      id: 1, scope: 'GLOBAL', datasourceCode: 'risk_db', datasourceName: '风险库',
+      host: 'mysql.internal', port: 3306, databaseName: 'risk', jdbcParams: '',
+      jdbcUrl: 'jdbc:mysql://mysql.internal:3306/risk', username: 'loaded_db_user', password: 'loaded_db_password'
+    } })
+    databaseApi.testDbDatasourceDraft.mockResolvedValue({ data: '连接成功' })
+    databaseApi.createDbDatasource.mockResolvedValue({ data: {} })
+    databaseApi.updateDbDatasource.mockResolvedValue({ data: {} })
+    const wrapper = mountPage({ path: `/database/${id}`, params: { id }, query: {} })
+    try {
+      await flushPromises()
+      if (id !== 'new') {
+        expect(wrapper.vm.form).toMatchObject({ username: 'loaded_db_user', password: 'loaded_db_password' })
+      }
+      Object.assign(wrapper.vm.form, { scope: 'GLOBAL', host: 'mysql.internal', databaseName: 'risk' })
+      const input = label => wrapper.find(`[data-label="${label}"]`).findComponent('el-input-stub')
+      input('用户名').vm.$emit('update:modelValue', 'DB_User')
+      input('密码').vm.$emit('update:modelValue', ' Db!@#密 码 ')
+      const mode = wrapper.findComponent('el-radio-group-stub')
+      mode.vm.$emit('update:modelValue', 'SSH_TUNNEL')
+      await nextTick()
+      input('SSH用户').vm.$emit('update:modelValue', 'ssh_user')
+      input('SSH密码').vm.$emit('update:modelValue', 'SSH!pass')
+      const credentials = { username: 'DB_User', password: ' Db!@#密 码 ', sshUsername: 'ssh_user', sshPassword: 'SSH!pass' }
+
+      for (const connectionMode of ['DIRECT', 'SSH_TUNNEL']) {
+        mode.vm.$emit('update:modelValue', connectionMode)
+        await nextTick()
+        expect(wrapper.find('.form-section').exists()).toBe(connectionMode === 'SSH_TUNNEL')
+        expect(input('用户名').exists()).toBe(true)
+        expect(input('密码').exists()).toBe(true)
+        expect(wrapper.vm.form).toMatchObject(credentials)
+        wrapper.vm.handleTestDraft()
+        await flushPromises()
+        expect(databaseApi.testDbDatasourceDraft.mock.lastCall[0]).toMatchObject({ ...credentials, connectionMode })
+        wrapper.vm.handleSubmit()
+        await flushPromises()
+        const save = id === 'new' ? databaseApi.createDbDatasource : databaseApi.updateDbDatasource
+        expect(save.mock.lastCall[0]).toMatchObject({ ...credentials, connectionMode })
+      }
+      expect(id === 'new' ? databaseApi.updateDbDatasource : databaseApi.createDbDatasource).not.toHaveBeenCalled()
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   test('连接测试成功后保留可见的成功状态', async () => {

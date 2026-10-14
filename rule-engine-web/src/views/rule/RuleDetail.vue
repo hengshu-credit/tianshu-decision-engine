@@ -1,30 +1,25 @@
 <template>
   <div class="uiue-list-page">
-    <div v-if="loading" data-testid="rule-detail-loading" role="status">正在加载规则详情与版本，请稍候…</div>
+    <div v-if="loading" data-testid="rule-detail-loading" role="status">正在加载规则详情，请稍候…</div>
     <el-alert v-else-if="loadError" data-testid="rule-detail-error" title="规则详情加载失败" type="error" :closable="false" show-icon>
       <span>{{ loadError }}</span>
       <el-button size="small" @click="load">重新加载</el-button>
     </el-alert>
     <div data-testid="rule-detail-content" :inert="loading || !!loadError" :aria-busy="loading">
     <!-- 页面头部 -->
-    <div
-      style="
-        margin-bottom: 16px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-        align-items: center;
-        justify-content: space-between;
-      "
-    >
-      <h2 style="margin: 0">{{ rule.ruleName || '规则详情' }}</h2>
-      <div class="rule-detail-actions">
+    <div class="uiue-detail-header rule-detail-header">
+      <div class="uiue-detail-header__title">
         <el-button
+          link
           size="small"
           :icon="ElIconBack"
+          class="uiue-detail-back"
           @click="$router.push('/rule')"
           >返回</el-button
         >
+        <h2 style="margin: 0">{{ rule.ruleName || '规则详情' }}</h2>
+      </div>
+      <div class="uiue-detail-header__actions rule-detail-actions">
         <el-button v-if="hasEditableWorkspace && !canEditDraft" size="small" @click="showWorkspaceFields">返回工作区草稿</el-button>
         <el-button
           v-permission="'rule:edit'"
@@ -42,7 +37,6 @@
           @click="openTestDialog"
           >规则测试</el-button
         >
-        <resource-version-manager resource-type="RULE" :resource-id="$route.params.id" has-legacy @legacy="openVersionDialog" />
       </div>
     </div>
 
@@ -68,12 +62,6 @@
       }}</el-descriptions-item>
       <el-descriptions-item label="所属项目">{{
         rule.projectName || '—'
-      }}</el-descriptions-item>
-      <el-descriptions-item label="内容保存版本"
-        >v{{ rule.currentVersion }}</el-descriptions-item
-      >
-      <el-descriptions-item label="当前发布版本">{{
-        rule.publishedVersion ? 'v' + rule.publishedVersion : '-'
       }}</el-descriptions-item>
       <el-descriptions-item label="状态">
         <el-tag size="small" :type="statusType(rule.status)">{{
@@ -279,8 +267,8 @@
           >
         </template>
         <rule-revision-fields-panel
-          v-if="fieldViewMode === 'revision' && activeDetailTab === 'inputs' && !loading && !loadError"
-          v-model="lifecycleRevisionId" :definition-id="$route.params.id" :revisions="revisions" direction="input"
+          v-if="detailDefinitionId && fieldViewMode === 'revision' && activeDetailTab === 'inputs' && !loading && !loadError"
+          v-model="lifecycleRevisionId" :definition-id="detailDefinitionId" :revisions="revisions" direction="input"
           :workspace-available="hasEditableWorkspace" @workspace="showWorkspaceFields"
         />
         <template v-if="fieldViewMode === 'workspace'">
@@ -422,7 +410,7 @@
           </el-table-column>
           <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false"
             label="操作"
-            width="140"
+            :width="operationColumnWidth(['保存', '取消', '编辑'])"
             align="center"
             fixed="right"
           >
@@ -483,8 +471,8 @@
           >
         </template>
         <rule-revision-fields-panel
-          v-if="fieldViewMode === 'revision' && activeDetailTab === 'outputs' && !loading && !loadError"
-          v-model="lifecycleRevisionId" :definition-id="$route.params.id" :revisions="revisions" direction="output"
+          v-if="detailDefinitionId && fieldViewMode === 'revision' && activeDetailTab === 'outputs' && !loading && !loadError"
+          v-model="lifecycleRevisionId" :definition-id="detailDefinitionId" :revisions="revisions" direction="output"
           :workspace-available="hasEditableWorkspace" @workspace="showWorkspaceFields"
         />
         <template v-if="fieldViewMode === 'workspace'">
@@ -567,7 +555,7 @@
           </el-table-column>
           <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false"
             label="操作"
-            width="140"
+            :width="operationColumnWidth(['保存', '取消', '编辑'])"
             align="center"
             fixed="right"
           >
@@ -798,30 +786,15 @@
             >
               <el-table-column label="规则入参" min-width="280">
                 <template v-slot="{ row }">
-                  <el-select :disabled="!canEditDraft"
-                    v-model="row.targetKey"
-                    filterable
-                    placeholder="选择稳定引用"
-                    no-data-text="当前规则暂无可映射的入参"
-                    style="width: 100%"
-                  >
-                    <template #label="{ value, label }">
-                      <field-reference-display
-                        v-if="openApiFieldOption(openInputOptions, value)"
-                        :field="openApiFieldOption(openInputOptions, value)"
-                        compact
-                      />
-                      <span v-else>{{ label }}</span>
-                    </template>
-                    <el-option
-                      v-for="item in openInputOptions"
-                      :key="item.value"
-                      :label="item.label"
-                      :value="item.value"
-                    >
-                      <field-reference-display :field="item" />
-                    </el-option>
-                  </el-select>
+                  <var-picker
+                    :value="row.targetKey"
+                    :vars="openInputPickerItems"
+                    value-key="reference"
+                    :allow-custom="false"
+                    :disabled="!canEditDraft"
+                    placeholder="选择规则入参"
+                    @update:value="row.targetKey = $event"
+                  />
                 </template>
               </el-table-column>
               <el-table-column label="来源" width="110">
@@ -861,7 +834,7 @@
                 ><template v-slot="{ row }"
                   ><el-input :disabled="!canEditDraft" v-model="row.defaultValue" /></template
               ></el-table-column>
-              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="70" align="center"
+              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['删除'])" align="center"
                 ><template v-slot="{ $index }"
                   ><el-button :disabled="!canEditDraft"
                     link
@@ -914,31 +887,16 @@
             >
               <el-table-column label="引擎内部输出字段" min-width="300">
                 <template v-slot="{ row }">
-                  <el-select :disabled="!canEditDraft"
-                    v-model="row.sourceKey"
-                    filterable
-                    placeholder="选择稳定引用"
-                    no-data-text="当前规则暂无可映射的输出"
-                    style="width: 100%"
-                    @change="onOpenResponseSourceChange(row)"
-                  >
-                    <template #label="{ value, label }">
-                      <field-reference-display
-                        v-if="openApiFieldOption(openOutputOptions, value)"
-                        :field="openApiFieldOption(openOutputOptions, value)"
-                        compact
-                      />
-                      <span v-else>{{ label }}</span>
-                    </template>
-                    <el-option
-                      v-for="item in openOutputOptions"
-                      :key="item.value"
-                      :label="item.label"
-                      :value="item.value"
-                    >
-                      <field-reference-display :field="item" />
-                    </el-option>
-                  </el-select>
+                  <var-picker
+                    :value="row.sourceKey"
+                    :vars="openOutputPickerItems"
+                    value-key="reference"
+                    :allow-custom="false"
+                    :disabled="!canEditDraft"
+                    placeholder="选择引擎输出字段"
+                    @update:value="row.sourceKey = $event"
+                    @select="onOpenResponseSourceChange(row)"
+                  />
                 </template>
               </el-table-column>
               <el-table-column label="对外 API 字段" min-width="220">
@@ -948,7 +906,7 @@
                     placeholder="如 credit_score_v1"
                 /></template>
               </el-table-column>
-              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="70" align="center"
+              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['删除'])" align="center"
                 ><template v-slot="{ $index }"
                   ><el-button :disabled="!canEditDraft"
                     link
@@ -1358,7 +1316,7 @@
             formatVersionTime(row.publishTime)
           }}</template>
         </el-table-column>
-        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="180" align="center">
+        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['对比上一版', '恢复并编辑', '查看设计'])" align="center">
           <template v-slot="{ row, $index }">
             <el-button
               link
@@ -1498,7 +1456,6 @@
 </template>
 
 <script>
-import ResourceVersionManager from '@/components/common/ResourceVersionManager.vue'
 import { chooseVersionRestore, versionDisplayLabel } from '@/utils/versionRestore'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import { markRaw } from 'vue'
@@ -1547,8 +1504,9 @@ import RuleValidationReport from '@/components/rule/RuleValidationReport.vue'
 import RuleLifecycleTimeline from '@/components/rule/RuleLifecycleTimeline.vue'
 import RuleFieldHierarchyDisplay from '@/components/rule/RuleFieldHierarchyDisplay.vue'
 import RuleRevisionFieldsPanel from '@/components/rule/RuleRevisionFieldsPanel.vue'
-import FieldReferenceDisplay from '@/components/common/FieldReferenceDisplay.vue'
+import VarPicker from '@/components/common/VarPicker.vue'
 import ArtifactDeploymentDialog from '@/components/artifact/ArtifactDeploymentDialog.vue'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import { OPERAND_KINDS, collectOperandReferences, validateOperand } from '@/utils/operand'
 import { formatExpressionFormula } from '@/utils/expressionDisplay'
@@ -1609,6 +1567,11 @@ const LIFECYCLE_ACTIONS_BY_STATE = {
   APPROVED: ['publish', 'download', 'migration-download'],
   PUBLISHED: ['download', 'migration-download', 'offline'],
   OFFLINE: ['download', 'migration-download'],
+}
+
+function normalizeDefinitionId(value) {
+  const id = String(value ?? '').trim()
+  return /^[1-9]\d*$/.test(id) ? value : null
 }
 
 const OPEN_API_STATUS_CODES = [
@@ -1850,7 +1813,6 @@ export default {
     }
   },
   components: {
-    ResourceVersionManager,
     ApiScenarioPanel,
     RuleVersionDiff,
     RuleLifecyclePanel,
@@ -1858,7 +1820,7 @@ export default {
     RuleLifecycleTimeline,
     RuleFieldHierarchyDisplay,
     RuleRevisionFieldsPanel,
-    FieldReferenceDisplay,
+    VarPicker,
     ArtifactDeploymentDialog,
     OperandPicker,
     ElIconSetting,
@@ -1891,6 +1853,11 @@ export default {
     this.invalidateTestRequests()
   },
   computed: {
+    detailDefinitionId() {
+      const id = this.$route?.params?.id
+      if (!this.detailActive || (this.detailRoutePath && this.detailRoutePath !== this.$route?.path)) return null
+      return normalizeDefinitionId(id)
+    },
     selectedTestExecutionSource() {
       return revisionTestSource(this.lifecycleRevision) || { sourceType: 'WORKSPACE' }
     },
@@ -1983,6 +1950,9 @@ export default {
         })
         .filter((item) => item.value)
     },
+    openInputPickerItems() {
+      return this.openApiPickerItems(this.rule && this.rule.inputFieldsJson)
+    },
     openIdempotencyOptions() {
       return this.openInputOptions.map((item) => ({
         ...item,
@@ -2027,6 +1997,9 @@ export default {
           }
         })
         .filter((item) => item.value)
+    },
+    openOutputPickerItems() {
+      return this.openApiPickerItems(this.rule && this.rule.outputFieldsJson)
     },
     openOutputPlaceholders() {
       return ((this.rule && this.rule.outputFieldsJson) || [])
@@ -2107,6 +2080,7 @@ export default {
     },
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     versionDisplayLabel,
     executionSourceLabel,
     invalidateTestRequests() {
@@ -2154,6 +2128,37 @@ export default {
         fieldType: field.fieldType || 'OBJECT',
       }
     },
+    openApiPickerItems(fields) {
+      return (fields || [])
+        .filter((field) => field && field.varId)
+        .map((field) => {
+          const refType = field.refType || 'VARIABLE'
+          const category = {
+            CONSTANT: 'constant',
+            DATA_OBJECT: 'object',
+            DATA_OBJECT_FIELD: 'object',
+            MODEL: 'model',
+            MODEL_OUTPUT: 'model',
+            EXTERNAL_API: 'external',
+          }[String(refType).toUpperCase()] || 'standalone'
+          const display = this.openApiFieldDisplay(field)
+          return {
+            ...field,
+            id: field.varId,
+            _varId: field.varId,
+            _refType: refType,
+            varCode: display.fieldCode,
+            varLabel: display.fieldName,
+            varLabelText: display.fieldName,
+            varType: display.fieldType,
+            _ref: {
+              ...(field._ref || {}),
+              category,
+              refType,
+            },
+          }
+        })
+    },
     openApiFieldOptionLabel(field) {
       const display = this.openApiFieldDisplay(field)
       return `${display.fieldName}（${display.fieldCode}） · ${display.fieldType}`
@@ -2168,7 +2173,7 @@ export default {
       return this.ownsDetailRoute() && requestId === this.detailLoadRequestId && String(definitionId) === String(this.$route.params.id)
     },
     async load() {
-      const id = this.$route.params.id
+      const id = normalizeDefinitionId(this.$route?.params?.id)
       if (!id || !this.ownsDetailRoute()) return
       const requestId = ++this.detailLoadRequestId
       this.preflightRequestId++

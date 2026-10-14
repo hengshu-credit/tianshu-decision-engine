@@ -111,7 +111,9 @@ public class ExternalApiInvokeService {
         JSONObject savedPaths = ExternalApiTrialContext.current().snapshot.getJSONObject("paths");
         if (savedPaths != null) savedPaths.forEach((key, value) -> paths.put(key, String.valueOf(value)));
         ExternalApiRequestPlan plan = ExternalApiRequestPlan.prepare(selectRequestBranch(config, params), params, Map.of(), paths);
-        return pending == null || pending.isEmpty() ? invokePlanned(plan) : invokePending(plan, pending);
+        return pending == null || pending.isEmpty()
+                ? invoke(plan.config(), plan.params(), false)
+                : invokePending(plan, pending);
     }
 
     private RuleExternalDatasource invocationDatasource(Long id) {
@@ -162,11 +164,23 @@ public class ExternalApiInvokeService {
     }
 
     void cleanTrialResources(long rowId, JSONObject snapshot, Map<String, Object> saved) {
-        long root = -Math.multiplyExact(rowId, 65536L);
+        if (snapshot == null) return;
+        final long root;
+        try {
+            root = ExternalApiTrialContext.rootIdentity(rowId);
+        } catch (IllegalArgumentException invalidIdentity) {
+            // 试运行上下文在创建临时资源前已经拒绝了此身份；这里仅做幂等清理，不能再让查看结果失败。
+            return;
+        }
         List<Long> ids = new ArrayList<>();
         ids.add(root);
         JSONObject indexes = snapshot.getJSONObject("stepIndexes");
-        if (indexes != null) indexes.values().forEach(value -> ids.add(root - ((Number) value).longValue()));
+        if (indexes != null) indexes.values().forEach(value -> {
+            if (value instanceof Number number) {
+                long ordinal = number.longValue();
+                if (ordinal > 0 && ordinal <= 65535) ids.add(root - ordinal);
+            }
+        });
         for (Long id : ids) {
             apiHttpClientRegistry.invalidate("api:" + id);
             externalApiGuardRegistry.invalidateTrial(id);
@@ -214,7 +228,7 @@ public class ExternalApiInvokeService {
     }
 
     Map<String, Object> invokePlanned(ExternalApiRequestPlan plan) {
-        return invoke(plan.config(), plan.params(), false);
+        return invoke(plan.config(), plan.params(), true);
     }
 
     /**
@@ -333,6 +347,15 @@ public class ExternalApiInvokeService {
             trace.cacheStatus = "HIT";
             Map<String, Object> cached = copyCachedResponse(cachedResponse.getResponse(), true, false, 0);
             restoreCachedTrace(cached, trace);
+            // 当前调用没有再次访问供应商，也不应沿用上一次调用的计费状态。
+            trace.billed = false;
+            if (ExternalApiRequestPlan.specification(apiConfig) != null
+                    && !Boolean.TRUE.equals(cached.get("responseMapped"))) {
+                cached = assembleResponse(apiConfig, cached, invokeParams);
+                cached.put("responseMapped", true);
+                recordTraceStep(trace, "RESPONSE_MAPPING", "组装缓存响应结果", "SUCCESS", null,
+                        cached.get("body"), apiConfig.getId());
+            }
             attachExternalCall(cached, trace);
             logDatasourceCall(apiConfig, datasource, trace, true, cached, null, 0);
             return cached;
@@ -351,9 +374,16 @@ public class ExternalApiInvokeService {
                 if (responseCacheSeconds > 0 && responseCacheKey != null) {
                     ExternalApiResponseCache.LoadResult loaded = externalApiResponseCache.singleFlight(
                             apiConfig, responseCacheKey,
-                            () -> doInvoke(apiConfig, datasource, invokeParams, trace));
+                            () -> {
+                                Map<String, Object> loadedResult = doInvoke(apiConfig, datasource, invokeParams, trace);
+                                // 把领导请求的报文摘要一并放入共享结果，等待者才能恢复完整排查信息。
+                                return attachExternalCall(loadedResult, trace);
+                            });
                     result = loaded.getResponse();
-                    if (loaded.isShared()) trace.cacheStatus = "COALESCED";
+                    if (loaded.isShared()) {
+                        trace.cacheStatus = "COALESCED";
+                        restoreTraceMetadata(result, trace);
+                    }
                 } else {
                     result = doInvoke(apiConfig, datasource, invokeParams, trace);
                 }
@@ -367,6 +397,12 @@ public class ExternalApiInvokeService {
                 result.put("sourceOutcome", !result.containsKey("success") || booleanValue(result.get("success"))
                         ? "SUCCESS" : "ERROR");
                 attachExternalCall(result, trace);
+                if (ExternalApiRequestPlan.specification(apiConfig) != null) {
+                    result = assembleResponse(apiConfig, result, invokeParams);
+                    result.put("responseMapped", true);
+                    recordTraceStep(trace, "RESPONSE_MAPPING", "组装响应结果", "SUCCESS", null,
+                            result.get("body"), apiConfig.getId());
+                }
                 if (!apiConfig.isBillingSuppressed() && billingService != null && shouldRecordSuccessBilling(apiConfig, result)) {
                     try { trace.billed = recordInvocationBilling(apiConfig, datasource, true, cost, null); }
                     catch (RuntimeException failure) { throw billingFailure(apiConfig, datasource, trace, result, failure, cost); }
@@ -376,10 +412,6 @@ public class ExternalApiInvokeService {
                     externalApiResponseCache.put(apiConfig, responseCacheKey, result);
                 }
                 attachExternalCall(result, trace);
-                if (ExternalApiRequestPlan.specification(apiConfig) != null) {
-                    result = assembleResponse(apiConfig, result, invokeParams);
-                    recordTraceStep(trace, "RESPONSE_MAPPING", "组装响应结果", "SUCCESS", null, result.get("body"), apiConfig.getId());
-                }
                 logDatasourceCall(apiConfig, datasource, trace, true, result, null, cost);
                 return result;
             } catch (Exception e) {
@@ -731,6 +763,15 @@ public class ExternalApiInvokeService {
 
     private void restoreCachedTrace(Map<String, Object> cached, InvokeTrace trace) {
         if (cached == null || trace == null) return;
+        restoreTraceMetadata(cached, trace);
+        Map<String, Object> cacheStepInput = new LinkedHashMap<>();
+        cacheStepInput.put("cacheStatus", trace.cacheStatus);
+        recordTraceStep(trace, "CACHE_RESULT", "缓存返回外数结果", "SUCCESS",
+                cacheStepInput, maskSensitiveForLog(trace.responseBody), null);
+    }
+
+    private void restoreTraceMetadata(Map<String, Object> cached, InvokeTrace trace) {
+        if (cached == null || trace == null) return;
         trace.responseBody = cached.get("body");
         Object rawRequest = cached.get("rawRequestBody");
         trace.rawRequestBody = rawRequest == null ? null : String.valueOf(rawRequest);
@@ -766,10 +807,6 @@ public class ExternalApiInvokeService {
             Object externalStatus = ((Map<?, ?>) externalCall).get("responseStatus");
             if (externalStatus instanceof Number) trace.responseStatus = ((Number) externalStatus).intValue();
         }
-        Map<String, Object> cacheStepInput = new LinkedHashMap<>();
-        cacheStepInput.put("cacheStatus", trace.cacheStatus);
-        recordTraceStep(trace, "CACHE_RESULT", "缓存返回外数结果", "SUCCESS",
-                cacheStepInput, maskSensitiveForLog(trace.responseBody), null);
     }
 
     private Map<String, Object> copyStringKeyedMap(Object value) {
@@ -1041,6 +1078,12 @@ public class ExternalApiInvokeService {
                     }
                     assembled = fields;
                 }
+                String outputPath = branch.getString("outputPath");
+                if ("VALUE".equals(branch.getString("mode")) && outputPath != null && !outputPath.isBlank()) {
+                    Map<String, Object> mapped = new LinkedHashMap<>();
+                    ExternalApiRequestPlan.write(mapped, outputPath, assembled);
+                    assembled = mapped;
+                }
                 response.put("body", assembled);
                 response.put("responseBranchId", branch.getString("id"));
                 break;
@@ -1112,12 +1155,26 @@ public class ExternalApiInvokeService {
         result.put("method", request.method.name());
         result.put("headers", headersForScript(request.headers));
         result.put("query", request.query);
+        result.put("cookies", cookiesForScript(request.headers));
         result.put("body", request.scriptBody);
         MediaType contentType = request.headers.getContentType();
         result.put("contentType", contentType == null ? null : contentType.toString());
         result.put("form", contentType != null && (MediaType.APPLICATION_FORM_URLENCODED.includes(contentType)
                 || MediaType.MULTIPART_FORM_DATA.includes(contentType)) ? request.scriptBody : null);
         result.put("json", contentType != null && MediaType.APPLICATION_JSON.includes(contentType) ? request.scriptBody : null);
+        return result;
+    }
+
+    private Map<String, Object> cookiesForScript(HttpHeaders headers) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (headers == null) return result;
+        String raw = headers.getFirst(HttpHeaders.COOKIE);
+        if (!hasText(raw)) return result;
+        for (String part : raw.split(";")) {
+            int separator = part.indexOf('=');
+            if (separator <= 0) continue;
+            result.put(part.substring(0, separator).trim(), part.substring(separator + 1).trim());
+        }
         return result;
     }
 
@@ -1772,6 +1829,7 @@ public class ExternalApiInvokeService {
         RequestNullPolicy nullPolicy = requestNullPolicy(parseJsonMap(apiConfig.getRequestMapping()));
         NonJsonNullPolicy nonJsonPolicy = nonJsonNullPolicy(parseJsonMap(apiConfig.getRequestMapping()));
         applyJsonHeaders(headers, apiConfig.getHeaderConfig(), params, nullPolicy, nonJsonPolicy);
+        applyCookies(headers, apiConfig.getRequestMapping(), params);
         UriComponentsBuilder initialBuilder = httpUrlBuilder(url);
         applyQueryParams(initialBuilder, apiConfig.getQueryConfig(), params, nullPolicy, nonJsonPolicy);
         AppliedAuth appliedAuth = applyAuth(initialBuilder, headers, datasource, apiConfig, params,
@@ -1978,6 +2036,23 @@ public class ExternalApiInvokeService {
             }
             headers.set(entry.getKey(), String.valueOf(resolved.value));
         }
+    }
+
+    private void applyCookies(HttpHeaders headers, String requestMapping, Map<String, Object> params) {
+        Map<String, Object> mapping = parseJsonMap(requestMapping);
+        Map<String, Object> cookies = parseNestedMap(mapping.get("_cookies"));
+        if (cookies.isEmpty()) return;
+        List<String> parts = new ArrayList<>();
+        for (Map.Entry<String, Object> entry : cookies.entrySet()) {
+            ResolvedRequestValue resolved = resolveRequestValue(entry.getValue(), params);
+            if (!resolved.present || resolved.value == null) continue;
+            String name = entry.getKey() == null ? "" : entry.getKey().trim();
+            if (name.isEmpty()) throw new IllegalArgumentException("Cookie 名称不能为空");
+            parts.add(name + "=" + String.valueOf(resolved.value));
+        }
+        if (parts.isEmpty()) return;
+        String existing = headers.getFirst(HttpHeaders.COOKIE);
+        headers.set(HttpHeaders.COOKIE, hasText(existing) ? existing + "; " + String.join("; ", parts) : String.join("; ", parts));
     }
 
     private void applyQueryParams(UriComponentsBuilder builder, String queryConfig, Map<String, Object> params,
@@ -3179,6 +3254,12 @@ public class ExternalApiInvokeService {
             Map<String, Object> failed = new LinkedHashMap<>();
             failed.put("success", false);
             failed.put("body", trace.responseBody);
+            failed.put("httpStatus", trace.responseStatus);
+            failed.put("responseStatus", trace.responseStatus);
+            failed.put("response", trace.responseDetails == null
+                    ? Map.of("httpStatus", trace.responseStatus, "body", trace.responseBody)
+                    : trace.responseDetails);
+            failed.put("errorMessage", trace.responseBody == null ? "外数调用失败" : "供应商响应未满足成功条件");
             attachExternalCall(failed, trace);
             return shouldRecordSuccessBilling(apiConfig, failed);
         }

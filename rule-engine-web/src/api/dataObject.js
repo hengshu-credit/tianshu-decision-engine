@@ -146,15 +146,6 @@ export async function saveDataObjectFieldOptions(fieldId, options, objectId) {
   })
 }
 
-export function batchValidateRules(projectId) {
-  if (!projectId) return batchValidateAll()
-  return request({ url: `/rule/variable/batch-validate/${projectId}`, method: 'post' })
-}
-
-export function batchValidateAll() {
-  return request({ url: `/rule/variable/batch-validate`, method: 'post' })
-}
-
 async function loadDataObjectAggregate(objectId) {
   const response = await getDataObject(objectId)
   const detail = response.data || {}

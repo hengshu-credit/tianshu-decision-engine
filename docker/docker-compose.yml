@@ -1,7 +1,8 @@
-# 应用 Compose（外部 MySQL/Redis）。数据库地址通过 MYSQL_SERVICE_HOST、REDIS_SERVICE_HOST 配置，
-# 本文件不依赖或创建其它 Compose 项目。
-# 资源硬上限：server 4G/0.80C、runtime-http 1G/0.10C、runtime-sdk 1G/0.20C、web 256M/0.05C；
-# 本文件合计不超过 6.25G 内存、1.15C CPU。full/mysql/redis Compose 使用同一预算表，整体不超过 10G/1.95C。
+# 方案 C：应用 Compose（外部 MySQL/Redis）。数据库地址使用统一的 MYSQL_HOST/MYSQL_PORT、REDIS_HOST/REDIS_PORT。
+# 本文件独立启动 server、HTTP runtime、SDK runtime 和 web，不创建 MySQL/Redis。
+# 使用 DEPLOY_PROJECT 为每套部署隔离 Compose 项目、网络和卷；不要与 full Compose 共用同一个项目名。
+# 资源硬上限：server 3G/1.00C、runtime-http 768M/0.10C、runtime-sdk 1280M/0.15C、web 256M/0.05C；
+# 本文件按 2 个 server 副本合计约 4.50G 内存、1.20C CPU；外接 Kafka/MySQL/Redis 时整体按 8G/2C 预算。
 name: ${DEPLOY_PROJECT:-tianshu}
 
 x-java: &java
@@ -37,26 +38,31 @@ x-runtime: &runtime
 services:
   server:
     <<: *java
-    cpus: "0.80"
-    mem_limit: 4g
+    scale: ${SERVER_REPLICAS:-2}
+    cpus: "0.45"
+    mem_limit: 1536m
     deploy:
       resources:
         limits:
-          cpus: "0.80"
-          memory: 4G
+          cpus: "0.45"
+          memory: 1536M
     environment:
       <<: *java-env
       SERVER_PORT: 8080
-      MYSQL_HOST: ${MYSQL_SERVICE_HOST:-host.docker.internal}
-      MYSQL_PORT: ${MYSQL_SERVICE_PORT:-3306}
+      MYSQL_HOST: ${MYSQL_HOST:-host.docker.internal}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-rule_engine}
       MYSQL_USERNAME: "${MYSQL_USERNAME:?Set MYSQL_USERNAME}"
       MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}"
-      REDIS_HOST: ${REDIS_SERVICE_HOST:-host.docker.internal}
-      REDIS_PORT: ${REDIS_SERVICE_PORT:-6379}
+      REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
+      REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_DATABASE: ${REDIS_DATABASE:-0}
       REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
       SPRING_SQL_INIT_MODE: ${SPRING_SQL_INIT_MODE:-always}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-}
+      RULE_KAFKA_ENABLED: ${RULE_KAFKA_ENABLED:-false}
+      RULE_KAFKA_GROUP_ID: ${RULE_KAFKA_GROUP_ID:-rule-engine-server}
+      SPRING_APPLICATION_JSON: "${KAFKA_SERVER_APPLICATION_JSON:-}"
       RULE_AUTH_MASTER_KEY: "${RULE_AUTH_MASTER_KEY:?Set RULE_AUTH_MASTER_KEY}"
       RULE_AUTH_ACTIVE_KEY_ID: ${RULE_AUTH_ACTIVE_KEY_ID:-v2}
       RULE_AUTH_LEGACY_MASTER_KEY: ${RULE_AUTH_LEGACY_MASTER_KEY:-}
@@ -67,7 +73,8 @@ services:
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
       SESSION_REDIS_NAMESPACE: ${SESSION_REDIS_NAMESPACE:-tianshu:session}
       CORS_ALLOWED_ORIGIN_PATTERNS: "${CORS_ALLOWED_ORIGIN_PATTERNS:?Set CORS_ALLOWED_ORIGIN_PATTERNS}"
-      JAVA_TOOL_OPTIONS: ${SERVER_JAVA_TOOL_OPTIONS:--Xms256m -Xmx1536m -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:+ExitOnOutOfMemoryError}
+      LOGGING_FILE_NAME: ""
+      JAVA_TOOL_OPTIONS: ${SERVER_JAVA_TOOL_OPTIONS:--Xms256m -Xmx768m -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:+ExitOnOutOfMemoryError}
       LOGGING_LEVEL_ROOT: ${SERVER_LOG_LEVEL:-INFO}
       RULE_EXECUTION_PERSISTENCE_JOURNAL_DIR: /data/logs/execution-persistence-journal
       RULE_LIST_ACTION_JOURNAL_DIR: /data/logs/list-action-journal
@@ -79,20 +86,24 @@ services:
         bind:
           create_host_path: false
       - server-logs:/data/logs
-    command: ["java", "-jar", "/app/app.jar"]
-    ports:
-      - "${SERVER_PUBLIC_PORT:-8080}:8080"
+    command:
+      - sh
+      - -ec
+      - |
+        export RULE_EXECUTION_PERSISTENCE_JOURNAL_DIR="/data/logs/execution-persistence-journal/$${HOSTNAME}"
+        export RULE_LIST_ACTION_JOURNAL_DIR="/data/logs/list-action-journal/$${HOSTNAME}"
+        exec java -jar /app/app.jar
     expose: ["8080"]
 
   runtime-http:
     <<: *runtime
     cpus: "0.10"
-    mem_limit: 1g
+    mem_limit: 512m
     deploy:
       resources:
         limits:
           cpus: "0.10"
-          memory: 1G
+          memory: 512M
     depends_on:
       server:
         condition: service_started
@@ -106,7 +117,7 @@ services:
       RULE_TRACE_ENABLED: ${RUNTIME_TRACE_ENABLED:-true}
       RULE_HTTP_TIMEOUT_MS: ${RULE_HTTP_TIMEOUT_MS:-30000}
       RUNTIME_ACCESS_TOKEN: "${HTTP_ACCESS_TOKEN:?Set HTTP_ACCESS_TOKEN}"
-      RUNTIME_APP_NAME: ${RUNTIME_HTTP_APP_NAME:-runtime-http}
+      RUNTIME_APP_NAME: runtime-http
       RUNTIME_CORS_ALLOWED_ORIGINS: "${RUNTIME_CORS_ALLOWED_ORIGINS:?Set RUNTIME_CORS_ALLOWED_ORIGINS}"
       JAVA_TOOL_OPTIONS: ${RUNTIME_HTTP_JAVA_TOOL_OPTIONS:--Xms128m -Xmx512m -XX:MaxMetaspaceSize=128m -XX:MaxDirectMemorySize=128m -XX:+ExitOnOutOfMemoryError}
       LOGGING_LEVEL_ROOT: ${RUNTIME_LOG_LEVEL:-INFO}
@@ -120,18 +131,18 @@ services:
       - runtime-http-logs:/data/logs
     command: ["java", "-jar", "/app/app.jar"]
     ports:
-      - "${RUNTIME_HTTP_PORT:-7070}:7070"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${RUNTIME_HTTP_PORT:-7070}:7070"
     expose: ["7070"]
 
   runtime-sdk:
     <<: *runtime
-    cpus: "0.20"
-    mem_limit: 1g
+    cpus: "0.15"
+    mem_limit: 768m
     deploy:
       resources:
         limits:
-          cpus: "0.20"
-          memory: 1G
+          cpus: "0.15"
+          memory: 768M
     depends_on:
       server:
         condition: service_started
@@ -145,7 +156,7 @@ services:
       RULE_TRACE_ENABLED: ${RUNTIME_TRACE_ENABLED:-true}
       RULE_HTTP_TIMEOUT_MS: ${RULE_HTTP_TIMEOUT_MS:-30000}
       RUNTIME_ACCESS_TOKEN: "${SDK_ACCESS_TOKEN:?Set SDK_ACCESS_TOKEN}"
-      RUNTIME_APP_NAME: ${RUNTIME_SDK_APP_NAME:-runtime-sdk}
+      RUNTIME_APP_NAME: runtime-sdk
       RUNTIME_CORS_ALLOWED_ORIGINS: "${RUNTIME_CORS_ALLOWED_ORIGINS:?Set RUNTIME_CORS_ALLOWED_ORIGINS}"
       RULE_PROJECT_CODE: "${RUNTIME_RULE_PROJECT_CODE:?Set RUNTIME_RULE_PROJECT_CODE}"
       RULE_PROJECT_ID: "${RUNTIME_RULE_PROJECT_ID:?Set RUNTIME_RULE_PROJECT_ID}"
@@ -155,12 +166,13 @@ services:
       SDK_KAFKA_LOG_TOPIC: ${SDK_KAFKA_LOG_TOPIC:-rule-execution-log}
       SDK_KAFKA_HTTP_FALLBACK_ENABLED: ${SDK_KAFKA_HTTP_FALLBACK_ENABLED:-true}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-}
-      REDIS_HOST: ${REDIS_SERVICE_HOST:-host.docker.internal}
-      REDIS_PORT: ${REDIS_SERVICE_PORT:-6379}
+      SPRING_APPLICATION_JSON: "${KAFKA_SDK_APPLICATION_JSON:-}"
+      REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
+      REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_DATABASE: ${REDIS_DATABASE:-0}
       REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
-      SPRING_DATA_REDIS_HOST: ${REDIS_SERVICE_HOST:-host.docker.internal}
-      SPRING_DATA_REDIS_PORT: ${REDIS_SERVICE_PORT:-6379}
+      SPRING_DATA_REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
+      SPRING_DATA_REDIS_PORT: ${REDIS_PORT:-6379}
       SPRING_DATA_REDIS_DATABASE: ${REDIS_DATABASE:-0}
       SPRING_DATA_REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
       JAVA_TOOL_OPTIONS: ${RUNTIME_SDK_JAVA_TOOL_OPTIONS:--Xms128m -Xmx768m -XX:MaxMetaspaceSize=160m -XX:MaxDirectMemorySize=160m -XX:+ExitOnOutOfMemoryError}
@@ -175,7 +187,7 @@ services:
       - runtime-sdk-logs:/data/logs
     command: ["java", "-jar", "/app/app.jar"]
     ports:
-      - "${RUNTIME_SDK_PORT:-7071}:7071"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${RUNTIME_SDK_PORT:-7071}:7071"
     expose: ["7071"]
 
   web:
@@ -199,31 +211,21 @@ services:
         read_only: true
         bind:
           create_host_path: false
-    command:
-      - /bin/sh
-      - -ec
-      - |
-        cat > /etc/nginx/conf.d/default.conf <<'EOF'
-        server {
-          listen 80;
-          root /usr/share/nginx/html;
-          index index.html;
-          client_max_body_size 512m;
-          location /api/ {
-            proxy_pass http://server:8080;
-            proxy_set_header Host $$host;
-            proxy_set_header X-Real-IP $$remote_addr;
-            proxy_set_header X-Forwarded-For $$proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $$scheme;
-          }
-          location / {
-            try_files $$uri $$uri/ /index.html;
-          }
-        }
-        EOF
-        exec nginx -g 'daemon off;'
+      - type: bind
+        source: ./nginx/default.conf
+        target: /etc/nginx/conf.d/default.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./nginx/proxy.conf
+        target: /etc/nginx/tianshu-proxy.conf
+        read_only: true
+        bind:
+          create_host_path: false
+    command: ["nginx", "-g", "daemon off;"]
     ports:
-      - "${FRONTEND_PORT:-9090}:80"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-9090}:80"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/index.html >/dev/null"]
       interval: 10s

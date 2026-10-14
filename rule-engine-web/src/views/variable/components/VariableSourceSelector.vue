@@ -43,6 +43,11 @@ const ITEMS = [
     help: '通过只读 SQL 获取业务数据',
   },
   {
+    value: 'SFTP',
+    label: 'SFTP 文件',
+    help: '从连接池读取远端合同、图片或其他文件',
+  },
+  {
     value: 'LIST',
     label: '名单匹配',
     help: '判断输入是否命中一个或多个名单',
@@ -86,7 +91,7 @@ export default {
   },
   methods: {
     countFor(source) {
-      if (!['API', 'DB', 'LIST'].includes(source)) return null
+      if (!['API', 'DB', 'SFTP', 'LIST'].includes(source)) return null
       const value = Number(this.counts[source])
       return Number.isFinite(value) ? value : 0
     },

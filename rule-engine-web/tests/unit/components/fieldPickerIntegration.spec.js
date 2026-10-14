@@ -3,7 +3,7 @@ import { nextTick } from 'vue'
 import ResourcePicker from '@/components/common/ResourcePicker.vue'
 import ProtocolPathPicker from '@/components/common/ProtocolPathPicker.vue'
 import { preferredFieldPageSize, readFieldPageSize, setPreferredFieldPageSize } from '@/utils/fieldPickerPreferences'
-import { buildFieldTree, fieldAncestors } from '@/utils/fieldPicker'
+import { buildFieldTree, fieldAncestors, visibleFieldRows } from '@/utils/fieldPicker'
 import { API_MODULE_FIELDS } from '@/utils/apiExecution'
 
 const VarPicker = (await vi.importActual('@/components/common/VarPicker.vue')).default
@@ -50,7 +50,9 @@ test('外数上下文的请求、响应、状态有父级；路径保持协议�
   const tree = buildFieldTree(fields)
   const status = tree.nodes.get('API_CONTEXT:response.httpStatus:')
   expect(status.type).toBe('INTEGER')
-  expect(fieldAncestors(status).map(node => node.name)).toEqual(['当前 API', '响应'])
+  expect(fieldAncestors(status).map(node => node.name)).toEqual(['响应'])
   expect(fields.find(item => item.varCode === 'request.headers')._varId).toBe('request.headers')
+  const rows = visibleFieldRows(tree, new Set(['API_CONTEXT:response:']), 'api-response', '')
+  expect(rows.map(row => row.node.name)).toEqual(expect.arrayContaining(['响应', '响应 · HTTP 状态码', '响应 · 原始响应体']))
   wrapper.unmount()
 })

@@ -216,6 +216,18 @@ const routes = [
         meta: { title: '数据库数据源详情' }
       },
       {
+        path: 'sftp',
+        name: 'SftpDatasourceList',
+        component: () => import('@/views/sftp/SftpDatasourceList.vue'),
+        meta: { title: 'SFTP数据源配置', keepAlive: true }
+      },
+      {
+        path: 'sftp/logs',
+        name: 'SftpQueryLog',
+        component: () => import('@/views/sftp/SftpQueryLog.vue'),
+        meta: { title: 'SFTP查询日志', keepAlive: true }
+      },
+      {
         path: 'model',
         name: 'ModelList',
         component: () => import('@/views/model/ModelList.vue'),
@@ -315,6 +327,7 @@ function inferRoutePermission(path) {
   if (value.startsWith('variable')) return 'field:view'
   if (value.startsWith('datasource')) return 'datasource:view'
   if (value.startsWith('database')) return 'database:view'
+  if (value.startsWith('sftp')) return 'database:view'
   if (value.startsWith('model')) return 'model:view'
   if (value.startsWith('function')) return 'function:view'
   if (value.startsWith('approval')) return 'approval:view'

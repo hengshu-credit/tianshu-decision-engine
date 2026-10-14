@@ -257,7 +257,7 @@
             <span v-else style="color: var(--tianshu-text-tertiary)">-</span>
           </template>
         </el-table-column>
-        <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="130" align="center" fixed="right">
+        <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['查看', '回放'])" align="center" fixed="right">
           <template v-slot="{ row }">
             <el-button link size="small" type="primary" @click="handleViewDetail(row)">详情</el-button>
             <el-button v-if="!row.traceInfo" link size="small" type="warning" :loading="replayLoadingId === row.id" @click="handleReplay(row)">回溯</el-button>
@@ -619,6 +619,7 @@ import {
 } from '@/utils/pageStateCache'
 import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
 import { ruleSetCoverageHint } from '@/utils/ruleSetStatistics'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
   components: { ExecutionVersionFilter,
@@ -825,6 +826,7 @@ this.loadRequestId++
 this.ruleSetStatsRequestId++
 },
 methods: {
+operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
 ruleSetCoverageHint,
 applyProjectContext: function (project) {
 if (!project || !project.id) return

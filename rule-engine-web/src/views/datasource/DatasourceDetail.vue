@@ -1,7 +1,9 @@
 <template>
   <div class="uiue-list-page datasource-detail-page">
-    <div class="detail-header">
-      <div>
+    <div class="detail-header uiue-detail-header">
+      <div class="uiue-detail-header__title">
+        <el-button link size="small" class="uiue-detail-back" @click="$router.push('/datasource')">返回</el-button>
+        <div>
         <div class="detail-title">
           {{ isCreateMode ? '新建外数数据源' : '编辑外数数据源' }}
         </div>
@@ -9,11 +11,9 @@
           {{ form.datasourceName || '未命名数据源' }} /
           {{ form.datasourceCode || '待填写编码' }}
         </div>
+        </div>
       </div>
-      <div class="detail-actions">
-        <el-button size="small" @click="$router.push('/datasource')"
-          >返回</el-button
-        >
+      <div class="detail-actions uiue-detail-header__actions">
         <el-button
           v-permission="'datasource:edit'"
           size="small"

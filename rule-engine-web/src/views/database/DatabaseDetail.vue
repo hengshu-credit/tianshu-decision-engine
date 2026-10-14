@@ -1,7 +1,9 @@
 <template>
   <div class="uiue-list-page database-detail-page">
-    <div class="detail-header">
-      <div>
+    <div class="detail-header uiue-detail-header">
+      <div class="uiue-detail-header__title">
+        <el-button link size="small" class="uiue-detail-back" @click="goBack">返回</el-button>
+        <div>
         <div class="detail-title">
           {{ isCreateMode ? '新建数据库数据源' : '编辑数据库数据源' }}
         </div>
@@ -9,11 +11,9 @@
           {{ form.datasourceName || '未命名数据源' }} /
           {{ form.datasourceCode || '待填写编码' }}
         </div>
+        </div>
       </div>
-      <div class="detail-actions">
-        <el-button size="small" @click="goBack"
-          >返回</el-button
-        >
+      <div class="detail-actions uiue-detail-header__actions">
         <el-button v-permission="'database:edit'"
           size="small"
           data-testid="test-database-connection"
@@ -248,6 +248,23 @@
         >
         <div class="field-help" data-testid="jdbc-mode-hint">{{ jdbcModeHint }}</div>
       </el-form-item>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="用户名">
+            <el-input v-model="form.username" autocomplete="off" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="密码">
+            <el-input
+              v-model="form.password"
+              type="password"
+              autocomplete="new-password"
+              show-password
+            />
+          </el-form-item>
+        </el-col>
+      </el-row>
       <div v-if="form.connectionMode === 'SSH_TUNNEL'" class="form-section">
         <div class="section-title">SSH 隧道</div>
         <el-row :gutter="12">
@@ -299,13 +316,13 @@
         <el-row :gutter="12">
           <el-col :span="16">
             <el-form-item label="SSH私钥">
-              <el-input
-                v-model="form.sshPrivateKey"
-                class="code-input"
-                type="textarea"
-                :rows="4"
-                placeholder="可粘贴 PEM 私钥内容；密码和私钥二选一"
+                <monaco-editor
+                  v-model:value="form.sshPrivateKey"
+                  language="plaintext"
+                  height="130px"
+                  :options="{ minimap: { enabled: false }, wordWrap: 'on' }"
               />
+                <div class="field-help">可粘贴 PEM 私钥内容；密码和私钥二选一</div>
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -320,23 +337,6 @@
           </el-col>
         </el-row>
       </div>
-      <el-row :gutter="12">
-        <el-col :span="12">
-          <el-form-item label="用户名">
-            <el-input v-model="form.username" autocomplete="off" />
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="密码">
-            <el-input
-              v-model="form.password"
-              type="password"
-              autocomplete="new-password"
-              show-password
-            />
-          </el-form-item>
-        </el-col>
-      </el-row>
       <el-collapse v-model="advancedPanels" class="advanced-settings">
         <el-collapse-item title="高级连接设置（可选）" name="advanced">
           <el-row :gutter="12">

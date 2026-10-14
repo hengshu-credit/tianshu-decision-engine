@@ -270,14 +270,20 @@
                 依赖明细
               </div>
               <el-table show-overflow-tooltip :data="detail.dependencies" size="small">
-                <el-table-column label="依赖资源" min-width="170">
+                <el-table-column label="依赖资源" min-width="250">
                   <template #default="{ row }">
-                    {{ resourceTypeLabel(row.targetResourceType) }} #{{ row.targetResourceId || '—' }}
+                    <div class="dependency-resource-cell">
+                      <strong>{{ row.resourceName || row.fieldName || resourceTypeLabel(row.targetResourceType) }}</strong>
+                      <span>{{ row.resourceCode || row.fieldCode || resourceTypeLabel(row.displayResourceType || row.targetResourceType) }} · ID {{ row.targetResourceId || '—' }}</span>
+                    </div>
                   </template>
                 </el-table-column>
-                <el-table-column label="生效版本" width="100">
+                <el-table-column label="类型 / 版本" width="170">
                   <template #default="{ row }">
-                    {{ row.targetVersionNo ? `V${row.targetVersionNo}` : '—' }}
+                    <div class="dependency-version-cell">
+                      <strong>{{ resourceTypeLabel(row.displayResourceType || row.targetResourceType) }}</strong>
+                      <span>{{ row.versionSelection?.versionSource === 'BUSINESS_VERSION' ? `业务 v${row.targetVersionNo || '—'}` : row.versionSelection?.versionSource === 'RULE_BINDING' ? `规则绑定 v${row.targetVersionNo || '—'}` : `快照 v${row.targetVersionNo || '—'}` }} · 修订 {{ row.targetRevisionNo || row.targetVersionId || '—' }}</span>
+                    </div>
                   </template>
                 </el-table-column>
                 <el-table-column label="状态" width="110">
@@ -289,12 +295,10 @@
                 </el-table-column>
                 <el-table-column label="引用位置" min-width="240">
                   <template #default="{ row }">
-                    <span
-                      class="dependency-reference"
-                      :title="row.referencePath || ''"
-                    >
-                      {{ dependencyReferenceLabel(row) }}
-                    </span>
+                    <div class="dependency-reference" :title="row.referencePath || ''">
+                      <strong>{{ dependencyReferenceLabel(row) }}</strong>
+                      <small v-if="row.relationType || row.required !== undefined">{{ row.relationType || '引用' }} · {{ row.required === false ? '可选' : '必需' }}</small>
+                    </div>
                   </template>
                 </el-table-column>
                 <el-table-column label="处理建议" min-width="190">
@@ -352,23 +356,13 @@
             <el-table-column label="生效时间" width="175">
               <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
             </el-table-column>
-            <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="250">
+            <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['查看', '对比', '恢复'])">
               <template #default="{ row }">
-                <el-button link type="info" @click="viewGovernanceVersion(row)">
-                  查看
-                </el-button>
-                <el-button link type="primary" @click="compareGovernanceVersion(row)">
-                  与当前审批对比
-                </el-button>
-                <el-button
-                  v-permission="'approval:submit'"
-                  link
-                  type="primary"
-                  :disabled="row.deleted || ['EDITING', 'PENDING'].includes(request.status)"
-                  @click="restoreVersion(row)"
-                >
-                  恢复此版本
-                </el-button>
+                <div class="approval-version-actions">
+                  <el-button link type="info" @click="viewGovernanceVersion(row)">查看</el-button>
+                  <el-button link type="primary" @click="compareGovernanceVersion(row)">对比</el-button>
+                  <el-button v-permission="'approval:submit'" link type="primary" :disabled="row.deleted || ['EDITING', 'PENDING'].includes(request.status)" @click="restoreVersion(row)">恢复</el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -422,6 +416,7 @@ import {
 import { listRuleRevisions } from '@/api/definition'
 import { getCurrentUser, hasPermission } from '@/security/permissionState'
 import { resourceActionPermission } from '@/security/pickerAccess'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import { resolveDesignerRouteName } from '@/utils/ruleDesignerNavigation'
 import JsonVersionDiff from '@/components/common/JsonVersionDiff.vue'
 import RuleVersionDiff from '@/components/rule/versionDiff/RuleVersionDiff.vue'
@@ -641,9 +636,12 @@ export default {
   },
   watch: { detail() { this.fieldPage = 1 }, fieldQuery() { this.fieldPage = 1 } },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     dependencyReferenceLabel(dependency) {
       const path = dependency && dependency.referencePath
-      const segments = this.referencePathSegments(path)
+      const scriptOffset = path && path.match(/@([0-9]+)$/)?.[1]
+      const cleanPath = path ? path.replace(/@[0-9]+$/, '') : path
+      const segments = this.referencePathSegments(cleanPath)
       if (!segments.length) return path || '—'
 
       const labels = []
@@ -664,7 +662,18 @@ export default {
       const suffix = value === undefined
         ? ''
         : ` = ${this.formatDependencyValue(value)}`
-      return `${labels.join(' · ')}${suffix}`
+      const scriptPosition = scriptOffset
+        ? ` · ${this.scriptPositionLabel(value, scriptOffset)}`
+        : ''
+      return `${labels.join(' · ')}${scriptPosition}${suffix}`
+    },
+    scriptPositionLabel(source, offset) {
+      if (typeof source !== 'string') return `脚本字符 ${offset}`
+      const position = Math.max(0, Math.min(Number(offset), source.length))
+      const before = source.slice(0, position)
+      const line = before.split('\n').length
+      const column = position - before.lastIndexOf('\n')
+      return `脚本第 ${line} 行第 ${column} 列`
     },
     dependencyStatusLabel(status) {
       return {
@@ -904,6 +913,7 @@ export default {
       return path
         .replace(/^\$\.?/, '')
         .replace(/\[['"]([^'"]+)['"]\]/g, '.$1')
+        .replace(/\[([A-Za-z_$][\w$-]*)\]/g, '.$1')
         .replace(/\[(\d+)\]/g, '.$1')
         .split('.')
         .filter(Boolean)
@@ -915,6 +925,10 @@ export default {
       let value = this.requestSnapshot()
       for (const segment of segments) {
         if (value === null || value === undefined || segment === '*') return undefined
+        if (segment === 'json' && typeof value === 'string') {
+          try { value = JSON.parse(value) } catch { return undefined }
+          continue
+        }
         value = Array.isArray(value)
           ? value[Number(segment)]
           : value[segment]
@@ -949,7 +963,7 @@ export default {
     referenceItemLabel(value) {
       if (!value || typeof value !== 'object' || Array.isArray(value)) return ''
       return value.varLabel || value.fieldLabel || value.label ||
-        value.varCode || value.fieldName || value.code || ''
+        value.name || value.ruleName || value.varCode || value.fieldName || value.code || ''
     },
     formatDependencyValue(value) {
       if (value === null) return '空值'
@@ -990,6 +1004,7 @@ export default {
         EXTERNAL_DATASOURCE: '外数源',
         EXTERNAL_API: '外数 API',
         DATABASE: '数据库',
+        SFTP: 'SFTP',
         DB: '数据库',
         FUNCTION: '函数',
         RULE: '规则',
@@ -1288,11 +1303,30 @@ export default {
   font-weight: 600;
 }
 
+.dependency-resource-cell,
+.dependency-version-cell,
 .dependency-reference {
-  display: inline-block;
+  display: flex;
   max-width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dependency-resource-cell span,
+.dependency-version-cell span,
+.dependency-reference small {
   overflow: hidden;
+  color: var(--tianshu-text-tertiary);
+  font-size: 12px;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-version-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   white-space: nowrap;
 }
 

@@ -40,6 +40,15 @@ public class DashboardApplicationServiceTest {
         assertEquals(2L, result.summary().deviceCount());
         assertEquals(1D / 3D, result.summary().passRate(), 0.000001D);
         assertFalse(result.summary().empty());
+        DashboardResponses.GeoPoint grid = result.geo().points().stream()
+                .filter(point -> point.longitude() == 120.2D
+                        && point.latitude() == 30.3D)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(3L, grid.count());
+        assertEquals(1L, grid.passCount());
+        assertEquals(1L, grid.reviewCount());
+        assertEquals(1L, grid.rejectCount());
     }
 
     @Test

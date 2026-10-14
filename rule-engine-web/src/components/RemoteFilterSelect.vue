@@ -13,7 +13,6 @@
     :placeholder="placeholder"
     :aria-label="$attrs['aria-label']"
     clearable
-    fit-input-width
     @update:model-value="updateValue"
     @change="$emit('change', $event)"
     @select="handleSelect"
@@ -23,7 +22,7 @@
     @keydown.enter.capture="handleEnterStart"
     @keyup.enter="handleEnter"
   >
-    <template #default="{ item }">{{ item.label }}</template>
+    <template #default="{ item }"><span class="remote-filter-suggestion" :title="item.label">{{ item.label }}</span></template>
   </el-autocomplete>
   <el-select
     v-else
@@ -264,9 +263,35 @@ export default {
 <style scoped>
 .remote-filter-input {
   width: 100%;
+  min-width: 160px;
 }
 
 :global(.remote-filter-suggestions[aria-hidden='true']) {
   pointer-events: none;
+}
+
+:global(.remote-filter-suggestions.el-popper) {
+  min-width: min(320px, calc(100vw - 24px)) !important;
+  max-width: calc(100vw - 24px);
+}
+
+:global(.remote-filter-suggestions .el-autocomplete-suggestion__list li) {
+  min-height: 32px;
+  height: auto;
+  padding: 6px 12px;
+  line-height: 20px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.remote-filter-suggestion {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .remote-filter-input {
+    min-width: 0;
+  }
 }
 </style>

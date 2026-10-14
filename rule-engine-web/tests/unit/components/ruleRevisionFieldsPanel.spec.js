@@ -96,4 +96,13 @@ describe('修订字段只读视图', () => {
     wrapper.unmount(); resolveLate({ data: view() }); await request
     expect(vm.view).toBeNull()
   })
+
+  test.each([null, 'undefined'])('无效规则 ID 不发起修订字段请求（%s）', async definitionId => {
+    const wrapper = await render({ definitionId })
+    try {
+      expect(api.getRuleRevisionFieldView).not.toHaveBeenCalled()
+      expect(wrapper.vm.loading).toBe(false)
+      expect(wrapper.vm.view).toBeNull()
+    } finally { wrapper.unmount() }
+  })
 })

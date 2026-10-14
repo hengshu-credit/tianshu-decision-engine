@@ -83,6 +83,10 @@ final class BuiltinFunctionCatalog {
         list.add(fn("imageToBase64", "图片转 Base64", "自动识别 Base64、Data URI 或 HTTP(S) URL；URL 下载最多 10 MB，超时由参数明确配置", params(
                 p("image", "STRING", "图片 Base64 或 URL", "dGVzdC1pbWFnZS1jb250ZW50"),
                 p("timeoutMs", "NUMBER", "URL 下载超时（毫秒）", 10000)), "STRING", IMAGE_CLASS, "imageToBase64"));
+        list.add(fn("imageToBase64WithOptions", "文件转 Base64（可选预处理）", "默认保持原文件；可选限制大小、图片分辨率、宽高、格式或压缩为 ZIP", params(
+                p("image", "STRING", "文件 Base64 或 URL", "dGVzdC1maWxl"),
+                p("timeoutMs", "NUMBER", "URL 下载超时（毫秒）", 10000),
+                p("options", "OBJECT", "可选处理参数，如 {format:'jpg',maxBytes:300000,width:1080,height:1080,zip:true}", Map.of())), "STRING", IMAGE_CLASS, "imageToBase64WithOptions"));
         list.add(fn("numPow", "数值幂运算", "返回 value 的 exponent 次幂", params(p("value", "NUMBER", "底数", 2), p("exponent", "NUMBER", "指数", 3)), "NUMBER", DECISION_CLASS, "numPow"));
         list.add(fn("numBetween", "数值区间判断", "判断 value 是否在 [min, max] 闭区间内", params(p("value", "NUMBER", "数值", 85), p("min", "NUMBER", "下限", 60), p("max", "NUMBER", "上限", 100)), "BOOLEAN", DECISION_CLASS, "numBetween"));
         list.add(fn("randomInt", "随机整数",

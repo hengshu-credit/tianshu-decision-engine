@@ -31,7 +31,7 @@
               <el-select v-if="publishMode === 'OVERWRITE'" v-model="targetVersionId" aria-label="覆盖目标版本"><el-option v-for="version in writableVersions" :key="version.versionId" :value="String(version.versionId)" :label="label(version)" /></el-select>
             </el-form-item>
             <el-form-item v-for="field in editableFields" :key="field.key" :label="field.label"><el-input :model-value="String(editValue[field.key] ?? '')" :type="field.multiline ? 'textarea' : 'text'" :rows="field.multiline ? 3 : undefined" :aria-label="field.label" @update:model-value="editField(field.key, $event)" /></el-form-item>
-            <el-collapse><el-collapse-item title="完整配置（结构与高级参数）" name="raw"><el-form-item label="版本内容"><el-input v-model="editJson" type="textarea" :rows="16" aria-label="版本内容" spellcheck="false" /></el-form-item></el-collapse-item></el-collapse>
+            <el-collapse><el-collapse-item title="完整配置（结构与高级参数）" name="raw"><el-form-item label="版本内容"><MonacoEditor v-model:value="editJson" language="json" height="300px" aria-label="版本内容" :options="{ minimap: { enabled: false }, wordWrap: 'on' }" /></el-form-item></el-collapse-item></el-collapse>
           </el-form>
           <div class="version-actions"><el-button :disabled="busy" @click="cancelEdit">取消编辑</el-button><el-button type="primary" :loading="busy" @click="save">保存草稿</el-button></div>
         </template>
@@ -59,13 +59,13 @@
               <el-table-column prop="changeSummary" label="变更说明" min-width="200" />
               <el-table-column prop="createBy" label="发布人" width="110" />
               <el-table-column prop="createTime" label="发布时间" min-width="170" />
-              <el-table-column label="操作" width="170"><template #default="{ row }"><el-button link @click="selected = 'r:' + row.versionId; tab = 'preview'">预览</el-button><el-button v-if="canEdit && !row.latest && !row.deleted" link type="danger" :disabled="busy" @click="remove(row)">删除版本</el-button></template></el-table-column>
+              <el-table-column label="操作" :width="operationColumnWidth(['预览', '删除版本'])"><template #default="{ row }"><el-button link @click="selected = 'r:' + row.versionId; tab = 'preview'">预览</el-button><el-button v-if="canEdit && !row.latest && !row.deleted" link type="danger" :disabled="busy" @click="remove(row)">删除版本</el-button></template></el-table-column>
             </el-table>
             <el-table :data="workspace.history || []" row-key="id" class="version-history">
               <el-table-column label="历史修订" width="170"><template #default="{ row }">v{{ row.versionNo }} · 修订 {{ row.revisionNo }}</template></el-table-column>
               <el-table-column prop="changeSummary" label="变更说明" />
               <el-table-column prop="createTime" label="时间" width="180" />
-              <el-table-column label="操作" width="100"><template #default="{ row }"><el-button link @click="selected = 'r:' + row.id; tab = 'preview'">预览</el-button></template></el-table-column>
+              <el-table-column label="操作" :width="operationColumnWidth(['预览'])"><template #default="{ row }"><el-button link @click="selected = 'r:' + row.id; tab = 'preview'">预览</el-button></template></el-table-column>
             </el-table>
           </el-tab-pane>
           <el-tab-pane label="变更记录" name="events">
@@ -78,10 +78,12 @@
 </template>
 <script>
 import { getResourceVersions, getResourceVersionEvents, getVersionDeletionImpact, createVersionDraft, deleteResourceVersion } from '@/api/resourceVersions'
+import MonacoEditor from '@/components/MonacoEditor.vue'
 import { saveGovernanceDraft, submitGovernanceRequest, cancelGovernanceRequest } from '@/api/governance'
 import { exportResourceTransfer } from '@/api/transfer'
 import { hasPermission } from '@/security/permissionState'
 import { resourceActionPermission } from '@/security/pickerAccess'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import { parseMetadataResponse } from '@/utils/metadataResponse'
 import JsonVersionDiff from './JsonVersionDiff.vue'
 
@@ -97,7 +99,7 @@ const fields = [
 
 export default {
   name: 'ResourceVersionManager',
-  components: { JsonVersionDiff },
+  components: { JsonVersionDiff, MonacoEditor },
   props: { resourceType: { type: String, required: true }, resourceId: { type: [String, Number], required: true }, showTrigger: { type: Boolean, default: true }, hasLegacy: Boolean },
   emits: ['changed', 'legacy'],
   data: () => ({ visible: false, loading: false, busy: false, sequence: 0, contextGeneration: 0, workspace: {}, events: [], error: '', selected: 'LATEST', tab: 'preview', comparison: '', editing: false, editJson: '', changeSummary: '', publishMode: 'NEW', targetVersionId: '' }),
@@ -123,6 +125,7 @@ export default {
   watch: { contextKey() { this.sequence++; this.contextGeneration++; this.visible = false; this.editing = false; this.workspace = {}; this.events = []; this.selected = 'LATEST'; this.loading = false; this.busy = false } },
   beforeUnmount() { this.sequence++; this.contextGeneration++ },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     label(row) { return `v${row.version}${row.latest ? ' · 最新' : ''}${row.deleted ? ' · 已删除' : ''}` },
     pretty(json) { try { return JSON.stringify(parseMetadataResponse(json), null, 2) } catch { return json } },
     statusLabel(value) { return { EDITING: '编辑中', PENDING: '审批中', CONFLICT: '审批冲突', REJECTED: '已驳回' }[value] || value },

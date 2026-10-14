@@ -58,14 +58,15 @@
       <div v-if="conditionRoot?.children?.length || conditionRoot?.type === 'leaf'" class="generated-expr">{{ conditionSummary }}</div>
       <details v-if="modelValue.conditionExpr" class="generated-expr"><summary>查看生成表达式</summary><code>{{ modelValue.conditionExpr }}</code></details>
     </div>
-    <el-input
+    <MonacoEditor
       v-else
-      :model-value="modelValue.conditionExpr"
-      type="textarea"
-      :rows="3"
-      placeholder="QLExpress 表达式，如：amount > 100000"
-      class="mono-input"
-      @update:model-value="updateProperty('conditionExpr', $event)"
+      :value="modelValue.conditionExpr"
+      language="ql"
+      height="110px"
+      :references="editorReferences"
+      :functions="functions"
+      :options="{ ariaLabel: 'QLExpress 条件表达式', minimap: { enabled: false }, wordWrap: 'on' }"
+      @update:value="updateProperty('conditionExpr', $event)"
     />
     <div class="hint-box condition-hint">清空整个条件组时为默认分支；未完成的条件不会视为默认分支。</div>
   </div>
@@ -75,11 +76,12 @@
 import { markRaw } from 'vue'
 import { Check } from '@element-plus/icons-vue'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
+import MonacoEditor from '@/components/MonacoEditor.vue'
 import { formatConditionTreeDescription } from '@/utils/expressionDisplay'
 
 export default {
   name: 'EdgePropertiesEditor',
-  components: { ConditionGroupEditor },
+  components: { ConditionGroupEditor, MonacoEditor },
   props: {
     modelValue: { type: Object, required: true },
     conditionRoot: { type: Object, default: null },
@@ -95,6 +97,16 @@ export default {
     return { Check: markRaw(Check) }
   },
   computed: {
+    editorReferences() {
+      return this.vars.map(item => ({
+        ...item,
+        refCode: item.refCode || item.varCode || item.scriptName,
+        varLabel: item.varLabel || item.varLabelText || item.label,
+        varType: item.varType || 'OBJECT',
+        _varId: item._varId != null ? item._varId : item.id,
+        _refType: item._refType || item.refType,
+      })).filter(item => item.refCode)
+    },
     conditionSummary() { return formatConditionTreeDescription(this.conditionRoot) },
   },
   methods: {

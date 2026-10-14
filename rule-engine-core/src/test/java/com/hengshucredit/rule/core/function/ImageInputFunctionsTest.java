@@ -9,6 +9,7 @@ import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -24,6 +25,16 @@ public class ImageInputFunctionsTest {
 
         assertEquals(base64, functions.imageToBase64(base64, 1000D));
         assertEquals(base64, functions.imageToBase64("data:image/jpeg;base64," + base64, 1000D));
+    }
+
+    @Test
+    public void optionalFileProcessingKeepsRawBytesByDefaultAndCanZipThem() {
+        ImageInputFunctions functions = new ImageInputFunctions();
+        String base64 = Base64.getEncoder().encodeToString(IMAGE_BYTES);
+        assertEquals(base64, functions.imageToBase64WithOptions(base64, 1000D, Map.of()));
+        byte[] zipped = Base64.getDecoder().decode(functions.imageToBase64WithOptions(base64, 1000D, Map.of("zip", true, "zipName", "payload.bin")));
+        assertEquals((byte) 'P', zipped[0]);
+        assertEquals((byte) 'K', zipped[1]);
     }
 
     @Test

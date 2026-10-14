@@ -43,6 +43,8 @@
           :list-options="listOptions"
           :allowed-kinds="effectiveAllowedKinds"
           :expected-type="expectedType || contextMeta.expectedType"
+          :visible-tags="visibleTags"
+          :selectable-tags="selectableTags"
           @insert="insertTemplate"
         />
         <section class="expression-workspace">

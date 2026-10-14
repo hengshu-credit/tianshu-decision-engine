@@ -66,6 +66,7 @@ public final class ExternalApiExecutionConfig {
                 identity(branch, ids, "条件分支");
                 validateFields(branch);
                 validateConditionIfPresent(branch.get("condition"), "条件分支判断");
+                if ("responseBranches".equals(key)) validateResponseBranch(branch, "响应分支");
                 if ("retryBranches".equals(key)) {
                     int retries = branch.getIntValue("retryCount");
                     if (retries < 0 || retries > 10) throw new IllegalArgumentException("重试次数必须在 0 到 10 之间");
@@ -100,9 +101,13 @@ public final class ExternalApiExecutionConfig {
             validateConditionIfPresent(step.get("exceptionCondition"), "步骤异常条件");
             validateConditionIfPresent(step.get("successCondition"), "步骤成功条件");
             if (step.get("responseBranches") instanceof Iterable<?> responseBranches) {
+                Set<String> responseBranchIds = new HashSet<>();
                 for (Object branch : responseBranches) {
                     if (branch instanceof java.util.Map<?, ?> map) {
-                        validateConditionIfPresent(map.get("condition"), "步骤响应分支条件");
+                        JSONObject responseBranch = JSON.parseObject(JSON.toJSONString(map));
+                        identity(responseBranch, responseBranchIds, "步骤响应分支");
+                        validateConditionIfPresent(responseBranch.get("condition"), "步骤响应分支条件");
+                        validateResponseBranch(responseBranch, "步骤响应分支");
                     }
                 }
             }
@@ -171,12 +176,41 @@ public final class ExternalApiExecutionConfig {
         for (JSONObject field : ExternalApiRequestPlan.fields(config)) {
             ExternalApiFileInputs.validate(field);
             identity(field, ids, "请求字段");
-            if (!Set.of("HEADER", "QUERY", "JSON", "FORM", "FORM_DATA").contains(field.getString("location"))) throw new IllegalArgumentException("请求字段位置无效");
+            if (!Set.of("HEADER", "QUERY", "COOKIE", "JSON", "FORM", "FORM_DATA").contains(field.getString("location"))) throw new IllegalArgumentException("请求字段位置无效");
             if ("HEADER".equals(field.getString("location")) && field.getBooleanValue("overridable")) throw new IllegalArgumentException("Header 字段不能由变量或对象覆盖");
             if (field.getString("path") == null || field.getString("path").isBlank()) throw new IllegalArgumentException("请求字段路径不能为空");
-            if (!targets.add(field.getString("location") + ":" + field.getString("path"))) throw new IllegalArgumentException("请求字段目标路径重复");
+            String targetPath = "HEADER".equals(field.getString("location"))
+                    ? field.getString("path").trim().toLowerCase(java.util.Locale.ROOT)
+                    : field.getString("path");
+            if (!targets.add(field.getString("location") + ":" + targetPath)) throw new IllegalArgumentException("请求字段目标路径重复");
             String policy = field.getString("nullPolicy");
             if (policy != null && !Set.of("DEFAULT", "OMIT", "NULL", "EMPTY").contains(policy)) throw new IllegalArgumentException("传空策略无效");
+        }
+    }
+
+    private static void validateResponseBranch(JSONObject branch, String label) {
+        String mode = branch.getString("mode");
+        if (mode != null && !Set.of("FIELDS", "VALUE").contains(mode.trim().toUpperCase(java.util.Locale.ROOT))) {
+            throw new IllegalArgumentException(label + "模式只能是 FIELDS 或 VALUE");
+        }
+        if ("VALUE".equalsIgnoreCase(mode)) {
+            if (!branch.containsKey("value")) throw new IllegalArgumentException(label + "整体取值不能为空");
+            String outputPath = branch.getString("outputPath");
+            if (outputPath != null && outputPath.isBlank()) throw new IllegalArgumentException(label + "整体取值字段路径不能为空");
+            return;
+        }
+        Object rawFields = branch.get("outputFields");
+        if (!(rawFields instanceof Iterable<?> fields)) return;
+        Set<String> ids = new HashSet<>();
+        Set<String> paths = new HashSet<>();
+        for (Object raw : fields) {
+            JSONObject field = JSON.parseObject(JSON.toJSONString(raw));
+            String path = field.getString("path");
+            if (path == null || path.isBlank()) throw new IllegalArgumentException(label + "输出字段路径不能为空");
+            String id = field.getString("id");
+            if (id != null && !id.isBlank() && !ids.add(id)) throw new IllegalArgumentException(label + "输出字段 ID 重复: " + id);
+            if (!paths.add(path)) throw new IllegalArgumentException(label + "输出字段路径重复: " + path);
+            if (!field.containsKey("value")) throw new IllegalArgumentException(label + "输出字段缺少取值: " + path);
         }
     }
 

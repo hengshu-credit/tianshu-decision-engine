@@ -59,8 +59,8 @@
       </el-form>
       <div class="uiue-btn-bar">
         <div class="btn-right">
-          <governance-workspace-toolbar resource-type="EXPERIMENT" />
           <table-column-settings :columns="experimentColumns" storage-key="tianshu:table-columns:experiment-list" />
+          <governance-workspace-toolbar resource-type="EXPERIMENT" />
           <el-button
             v-permission="'experiment:edit'"
             size="small"
@@ -141,7 +141,7 @@
           }}</el-tag></governance-resource-status>
         </template>
       </el-table-column>
-      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="325" align="center" fixed="right">
+      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['详情', '验证执行', '版本', '发布', '删除'])" align="center" fixed="right">
         <template v-slot="{ row }">
           <el-button
             v-permission="'experiment:edit'"
@@ -313,6 +313,8 @@
                 v-model:value="row.conditionExpression"
                 language="ql"
                 height="70px"
+                :references="editorReferences"
+                :functions="editorFunctions"
               />
             </template>
           </el-table-column>
@@ -354,7 +356,7 @@
                 :precision="2"
                 style="width: 100%" /></template
           ></el-table-column>
-          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
+          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['删除'])" align="center">
             <template v-slot="{ row }">
               <el-button
                 link
@@ -415,6 +417,8 @@
                 v-model:value="row.conditionExpression"
                 language="ql"
                 height="70px"
+                :references="editorReferences"
+                :functions="editorFunctions"
               />
             </template>
           </el-table-column>
@@ -455,7 +459,7 @@
                 :active-value="1"
                 :inactive-value="0" /></template
           ></el-table-column>
-          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center"
+          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['删除'])" align="center"
             ><template v-slot="{ row }"
               ><el-button
                 link
@@ -794,6 +798,7 @@ import {
   schemaFieldsToTestFields,
 } from '@/utils/testSchema'
 import { routeProjectId } from '@/utils/projectContext'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
   data() {
@@ -868,6 +873,22 @@ export default {
   },
   mixins: [varPickerMixin],
   computed: {
+    editorFunctions() {
+      return this.$data.projectFunctions || []
+    },
+    editorReferences() {
+      const options = this.$options.computed?.varPickerOptions
+        ? this.$options.computed.varPickerOptions.call(this)
+        : []
+      return options.map(item => ({
+        ...item,
+        refCode: item.refCode || item.varCode || item.scriptName,
+        varLabel: item.varLabel || item.varLabelText || item.label,
+        varType: item.varType || 'OBJECT',
+        _varId: item._varId != null ? item._varId : item.id,
+        _refType: item._refType || item.refType || 'VARIABLE',
+      })).filter(item => item.refCode)
+    },
     productionFormGroups() {
       return this.form.groups.filter(
         (g) => g.groupType === 'CHAMPION' || g.groupType === 'CHALLENGER'
@@ -900,6 +921,7 @@ export default {
     this.loadExperiments()
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     emptyForm() {
       return {
         id: null,

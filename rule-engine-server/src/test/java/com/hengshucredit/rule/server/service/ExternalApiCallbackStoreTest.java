@@ -70,6 +70,15 @@ public class ExternalApiCallbackStoreTest {
     }
 
     @Test
+    public void invalidJsonCallbackIsReportedAsBadRequestAndDoesNotComplete() throws Exception {
+        ExternalApiCallbackStore store = store();
+        String id = store.register(protocol());
+        byte[] body = "not-json".getBytes(StandardCharsets.UTF_8);
+        assertThrows(IllegalArgumentException.class, () -> store.accept(id, signature(body), body));
+        assertNull(store.result(id));
+    }
+
+    @Test
     public void continueFailureDoesNotConsumeLaterSuccessfulCallback() throws Exception {
         ExternalApiCallbackStore store = store();
         JSONObject config = protocol();

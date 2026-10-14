@@ -55,6 +55,20 @@
     font-size: 11px;
     font-weight: 700;
   }
+  .lineage-lf-node .node-version {
+    max-width: 72px;
+    overflow: hidden;
+    padding: 1px 4px;
+    border: 1px solid color-mix(in srgb, var(--lineage-node-color, var(--tianshu-border)) 28%, transparent);
+    border-radius: 3px;
+    color: var(--lineage-node-color, var(--tianshu-text-secondary));
+    background: color-mix(in srgb, var(--lineage-node-color, var(--tianshu-border)) 10%, transparent);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .lineage-lf-node .node-label {
     overflow: hidden;
     color: var(--tianshu-text-primary);

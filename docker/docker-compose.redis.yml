@@ -1,18 +1,18 @@
-# Redis 独立 Compose；数据和配置集中在 docker/rule-engine-redis。
-# 固定上限：512M 内存、0.15C CPU；与应用/MySQL Compose 同时运行时仍保持总预算不超过 9.75G/1.90C。
+# 依赖组件 Compose：只启动 Redis，供 JAR、单容器 Docker 或外接数据库应用 Compose 使用。
+# 它不启动 server/web，也不依赖其它 Compose；使用 DEPLOY_PROJECT 隔离多套环境。
+# 固定上限：384M 内存、0.10C CPU；与应用/MySQL/Kafka Compose 同时运行时按 8G/2C 预算。
 name: ${DEPLOY_PROJECT:-tianshu}
 
 services:
   redis:
     image: ${REDIS_IMAGE:-redis:8.2.1}
-    cpus: "0.15"
-    mem_limit: 512m
+    cpus: "0.10"
+    mem_limit: 384m
     deploy:
       resources:
         limits:
-          cpus: "0.15"
-          memory: 512M
-    container_name: rule-engine-redis
+          cpus: "0.10"
+          memory: 384M
     restart: unless-stopped
     environment:
       REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
@@ -24,7 +24,7 @@ services:
       - |
         exec redis-server /usr/local/etc/redis/redis.conf --maxmemory "$${REDIS_MAXMEMORY}" --requirepass "$${REDIS_PASSWORD}"
     ports:
-      - "${REDIS_HOST_PORT:-6379}:6379"
+      - "${REDIS_BIND_ADDRESS:-0.0.0.0}:${REDIS_HOST_PORT:-6379}:6379"
     volumes:
       - ./rule-engine-redis/data:/data
       - ./rule-engine-redis/logs:/logs

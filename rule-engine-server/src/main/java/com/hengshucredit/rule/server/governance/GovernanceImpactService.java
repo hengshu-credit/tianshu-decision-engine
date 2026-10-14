@@ -134,6 +134,7 @@ public class GovernanceImpactService {
                     "DATASOURCE";
             case GovernanceResourceTypes.EXTERNAL_API -> "API";
             case GovernanceResourceTypes.DATABASE -> "DB";
+            case GovernanceResourceTypes.SFTP -> "SFTP";
             case GovernanceResourceTypes.RULE -> "RULE";
             case GovernanceResourceTypes.FUNCTION -> "FUNCTION";
             case GovernanceResourceTypes.EXPERIMENT -> "EXPERIMENT";

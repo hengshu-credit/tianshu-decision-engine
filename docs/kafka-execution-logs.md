@@ -89,7 +89,75 @@ SDK_KAFKA_HTTP_FALLBACK_ENABLED=true
 SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka.internal:9092
 ```
 
-两个现有 Compose 文件将 `KAFKA_BOOTSTRAP_SERVERS` 映射给 SDK 容器；该地址必须能从容器访问。它们不会自动部署 Kafka 集群。服务端主题绑定通过外部 Spring 配置提供，不要用客户端提交的项目编号替代绑定。
+两个应用 Compose 文件将 Kafka 地址映射给 server 和 SDK 容器；full Compose 默认使用内部 `kafka:19092`，外部数据库 Compose 使用 `KAFKA_BOOTSTRAP_SERVERS`。独立 `docker-compose.kafka.yml` 提供单节点 broker；server 的主题绑定必须由部署方配置，不能用消息中提交的项目编号替代绑定。
+
+## 各部署方案的接入方式
+
+Kafka 为可选依赖，默认 HTTP 上报。以下配置可以配合 JAR、独立 Docker、外接数据库 Compose、自带数据库 Compose 使用；启用前先准备 Kafka 集群和主主题、死信主题，取得实际项目 ID、项目凭证和已发布的本地计算规则。Kafka 的 `advertised.listeners` 必须公布客户端可达的地址，不能只保证 bootstrap 地址能连通。
+
+### JAR 包
+
+将上文“服务端外部配置”保存为 `/opt/tianshu/config/server-kafka.yml`，在服务进程环境中设置 `KAFKA_BOOTSTRAP_SERVERS`，加载配置启动 server：
+
+```bash
+java -jar server.jar --spring.config.additional-location=file:/opt/tianshu/config/server-kafka.yml
+```
+
+SDK runtime 进程使用上节列出的 `SDK_*` 和 `SPRING_KAFKA_BOOTSTRAP_SERVERS` 环境变量，同时配置 `RULE_SERVER_URL`、`RULE_PROJECT_ID`、`RULE_PROJECT_CODE`、`PROJECT_ACCESS_TOKEN`、`RULE_ALLOWED_CODES`、`RUNTIME_ACCESS_TOKEN`、`RUNTIME_CORS_ALLOWED_ORIGINS` 及与 server 一致的 Redis 连接，然后执行：
+
+```bash
+java -jar runtime.jar --spring.profiles.active=sdk --server.port=7071
+```
+
+SDK runtime 没有 server 的 `.env` 自动导入配置；使用进程环境变量，或显式追加 `--spring.config.additional-location=file:/实际路径/runtime.properties`。业务应用内嵌完整 Java SDK 时使用上文 `rule-engine.client` 配置。
+
+### 独立 Docker
+
+在原 `docker run` 命令中为 server 追加配置挂载和加载参数：
+
+```bash
+# 添加到镜像名之前
+-v /opt/tianshu/config/server-kafka.yml:/config/server-kafka.yml:ro
+-e SPRING_CONFIG_ADDITIONAL_LOCATION=file:/config/server-kafka.yml
+-e KAFKA_BOOTSTRAP_SERVERS=kafka.internal:9092
+```
+
+SDK 容器的 `--env-file` 使用 `SPRING_KAFKA_BOOTSTRAP_SERVERS` 和上节 `SDK_*` 参数；`RULE_PROJECT_ID` 与 server 主题绑定保持一致。`KAFKA_SERVER_APPLICATION_JSON`、`KAFKA_SDK_APPLICATION_JSON` 是 Compose 别名，直接 `docker run` 需改用各容器独立的 `SPRING_APPLICATION_JSON` 或配置挂载。Linux 容器使用宿主机 broker 时需要网关映射及可达的 advertised 地址。
+
+### 两种应用 Compose
+
+在仓库根目录 `.env` 中配置（实际部署替换项目 ID `1`）：
+
+```dotenv
+KAFKA_BOOTSTRAP_SERVERS=kafka.internal:9092
+RULE_KAFKA_ENABLED=true
+RULE_KAFKA_GROUP_ID=rule-engine-server
+KAFKA_SERVER_APPLICATION_JSON={"rule-engine":{"kafka":{"topic-projects":{"rule-execution-log-risk":1}}}}
+KAFKA_SDK_APPLICATION_JSON={}
+SDK_LOG_REPORT_ENABLED=true
+SDK_LOG_REPORT_TRANSPORT=KAFKA
+SDK_KAFKA_LOG_TOPIC=rule-execution-log-risk
+SDK_KAFKA_HTTP_FALLBACK_ENABLED=true
+RUNTIME_RULE_PROJECT_ID=1
+```
+
+server 和 SDK 分别读取两个 JSON，经 Compose 映射到各容器的 `SPRING_APPLICATION_JSON`。主主题、项目 ID、项目编码、凭证和规则白名单须指向同一实际项目；多个项目在 server JSON 的 `topic-projects` 中追加对应项。现有 `SPRING_APPLICATION_JSON` 内容需合并进去。先启用 server 消费，再切换 SDK 通道，具体 `up -d` 命令见 [Docker 部署说明](../docker/README.md#可选接入-kafka-执行日志)。
+
+### TLS/SASL 配置与证书
+
+server（读取主主题、写入死信）和 SDK（写入主主题）分别使用各自 Kafka 身份。JAR/独立 Docker 可在外部 YAML 中扩展 `spring.kafka`；Compose 则在相应 JSON 中增加同样的 `spring.kafka` 配置，例如下面的结构按角色合并，真实凭据通过部署环境注入：
+
+```json
+{"spring":{"kafka":{"security":{"protocol":"SASL_SSL"},"properties":{"sasl.mechanism":"SCRAM-SHA-512","sasl.jaas.config":"org.apache.kafka.common.security.scram.ScramLoginModule required username=\"实际账号\" password=\"实际密码\";"}}}}
+```
+
+server JSON 必须同时保留 `rule-engine.kafka.topic-projects`。使用自签 CA/双向 TLS 时添加集群要求的 `spring.kafka.ssl` 参数，并在 `docker run`/Compose override 中只读挂载证书到相应服务；配置路径使用容器内路径。仅把 `SPRING_KAFKA_*` 写在 Compose `.env` 中不会自动传入容器；也不能把 broker ACL 当成客户端环境变量。[Spring Boot 外部配置](https://docs.spring.io/spring-boot/3.5/reference/features/external-config.html)、[Compose 环境变量](https://docs.docker.com/compose/how-tos/environment-variables/set-environment-variables/)说明了上述注入规则。
+
+### 验收与关闭
+
+检查 server 已订阅目标主题、SDK 启用 KAFKA 后执行一条已发布的本地计算规则，并在控制台执行日志中按同一 `traceId` 核对项目归属。检查消费积压、`.DLT` 和 `rule.engine.kafka.log.records` 指标；应用 readiness 为 UP 不能单独证明 Kafka 投递成功。测试发送失败时，核实已鉴权 HTTP 补报实际落库；同一 trace 的重复投递不应产生重复计费。
+
+关闭时先将全部生产者切回 HTTP，等待消费者处理完积压，再设置 `RULE_KAFKA_ENABLED=false` 并重建 server 容器或重启 JAR；数据库部署方式无需随之改变。
 
 ## 消费失败、死信与重放
 

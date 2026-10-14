@@ -64,6 +64,7 @@
           >
             <el-option label="输入参数" value="INPUT" />
             <el-option label="数据库查询" value="DB" />
+            <el-option label="SFTP 文件" value="SFTP" />
             <el-option label="接口调用" value="API" />
             <el-option label="名单查询" value="LIST" />
             <el-option label="计算得出" value="COMPUTED" />
@@ -111,12 +112,10 @@
           </div>
           <variable-toolbar-actions
             :primary-create-label="primaryCreateLabel"
-            :validating="validating"
             :column-settings-columns="variableColumns"
             :column-settings-model-value="variableColumnOrder"
             @import="handleImportCmd"
             @create="handlePrimaryCreate"
-            @validate="handleBatchValidate"
             @update:column-settings-model-value="variableColumnOrder = $event"
           />
         </div>
@@ -226,7 +225,7 @@
                 ></governance-resource-status>
               </template>
             </el-table-column>
-            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="455" align="center" fixed="right">
+            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['详情', '编辑', '测试', '版本', '发布', '删除'])" align="center" fixed="right">
               <template v-slot="{ row }">
                 <el-button
                   v-if="isTestableSource(row)"
@@ -369,12 +368,10 @@
           </div>
           <variable-toolbar-actions
             :primary-create-label="primaryCreateLabel"
-            :validating="validating"
             :column-settings-columns="objectColumns"
             :column-settings-model-value="objectColumnOrder"
             @import="handleImportCmd"
             @create="handlePrimaryCreate"
-            @validate="handleBatchValidate"
             @update:column-settings-model-value="objectColumnOrder = $event"
           />
         </div>
@@ -471,7 +468,7 @@
                     <span v-else class="text-muted">—</span>
                   </template>
                 </el-table-column>
-                <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="140" align="center">
+                <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '选项', '删除'])" align="center">
                   <template v-slot="{ row }">
                     <el-button
                       v-permission="'field:edit'"
@@ -593,7 +590,7 @@
                 <governance-resource-status v-if="node && node.object" resource-type="DATA_OBJECT" :resource-id="node.object.id" :status="node.object.status" />
               </template>
             </el-table-column>
-            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="435" align="center" fixed="right">
+            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '版本', '发布', '添加字段', '删除'])" align="center" fixed="right">
               <template v-slot="{ row: node }">
                 <template v-if="node && node.object">
                   <el-button
@@ -710,12 +707,10 @@
           </div>
           <variable-toolbar-actions
             :primary-create-label="primaryCreateLabel"
-            :validating="validating"
             :column-settings-columns="constantColumns"
             :column-settings-model-value="constantColumnOrder"
             @import="handleImportCmd"
             @create="handlePrimaryCreate"
-            @validate="handleBatchValidate"
             @update:column-settings-model-value="constantColumnOrder = $event"
           />
         </div>
@@ -803,7 +798,7 @@
               ></governance-resource-status></template
             >
           </el-table-column>
-          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="315" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '版本', '发布', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 v-permission="'field:edit'"
@@ -1008,7 +1003,7 @@
           </el-table-column>
           <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false"
             label="操作"
-            width="255"
+            :width="operationColumnWidth(['编辑', '版本', '发布', '删除'])"
             align="center"
             fixed="right"
           >
@@ -1381,6 +1376,27 @@
             <el-input v-model="form.dbFallbackValue" placeholder="可为空" />
           </el-form-item>
         </template>
+        <template v-if="!isObjectField && form.varSource === 'SFTP'">
+          <el-form-item label="SFTP 数据源">
+            <el-select v-model="form.sftpDatasourceId" filterable clearable placeholder="选择 SFTP 数据源" style="width: 100%">
+              <el-option v-for="item in sourceCatalog.sftpOptions" :key="item.id" :label="item.name ? item.name + ' / ' + item.code : item.code" :value="item.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="远端文件路径">
+            <el-input v-model="form.sftpRemotePath" placeholder="/contracts/${customerId}/contract.pdf" />
+            <div class="field-help">支持 $.field 或 ${field} 引用请求参数；路径会在规则执行时从连接池读取。</div>
+          </el-form-item>
+          <el-form-item label="输出格式">
+            <el-select v-model="form.sftpOutputFormat" style="width: 180px"><el-option label="文本（TEXT）" value="TEXT" /><el-option label="Base64（BASE64）" value="BASE64" /><el-option label="JSON 对象（JSON）" value="JSON" /></el-select>
+          </el-form-item>
+          <el-form-item label="文本编码"><el-input v-model="form.sftpCharset" placeholder="UTF-8" style="width: 180px" /></el-form-item>
+          <el-form-item label="读取失败时"><el-select v-model="form.sftpExceptionStrategy" style="width: 180px"><el-option label="抛出异常" value="ERROR" /><el-option label="返回默认值" value="RETURN_DEFAULT" /><el-option label="跳过补值" value="SKIP" /></el-select></el-form-item>
+          <el-form-item v-if="form.sftpExceptionStrategy === 'RETURN_DEFAULT'" label="兜底值"><el-input v-model="form.sftpFallbackValue" /></el-form-item>
+          <el-form-item label="跨规则缓存"><el-input-number v-model="form.sftpCacheSeconds" :min="0" :max="86400" controls-position="right" style="width: 180px" /><span class="field-help">秒；0 表示不缓存。缓存只保存成功读取的文件内容。</span></el-form-item>
+          <el-form-item label="失败重试次数"><el-input-number v-model="form.sftpRetryCount" :min="0" :max="5" controls-position="right" style="width: 180px" /><span class="field-help">只对连接、Socket 和临时 SFTP 错误重试。</span></el-form-item>
+          <el-form-item label="重试退避(ms)"><el-input-number v-model="form.sftpRetryBackoffMs" :min="0" :max="60000" controls-position="right" style="width: 180px" /><span class="field-help">每次失败后的初始等待时间。</span></el-form-item>
+          <el-form-item label="退避倍数"><el-input-number v-model="form.sftpRetryBackoffMultiplier" :min="1" :max="5" :step="0.1" controls-position="right" style="width: 180px" /></el-form-item>
+        </template>
         <template v-if="!isObjectField && form.varSource === 'LIST'">
           <el-form-item label="名单库（多选）">
             <el-select
@@ -1560,7 +1576,7 @@
           </el-form-item>
         </template>
         <section
-          v-if="!isObjectField && ['API', 'DB', 'LIST', 'DERIVED'].includes(form.varSource)"
+          v-if="!isObjectField && ['API', 'DB', 'SFTP', 'LIST', 'DERIVED'].includes(form.varSource)"
           class="draft-preview-panel"
         >
           <div class="draft-preview-panel__heading">
@@ -1578,7 +1594,7 @@
             </el-button>
           </div>
           <el-alert
-            v-if="form.varSource === 'API' || form.varSource === 'DB'"
+            v-if="form.varSource === 'API' || form.varSource === 'DB' || form.varSource === 'SFTP'"
             type="warning"
             :closable="false"
             show-icon
@@ -1741,10 +1757,22 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="查询 SQL">
-                <el-input v-model="objectForm.sql" type="textarea" :rows="4" placeholder="仅支持只读查询，例如 SELECT * FROM customer WHERE id = ?" />
+                <monaco-editor
+                  v-model:value="objectForm.sql"
+                  language="sql"
+                  height="130px"
+                  :options="{ minimap: { enabled: false }, wordWrap: 'on' }"
+                />
+                <div class="field-help">仅支持只读查询，例如 SELECT * FROM customer WHERE id = ?</div>
               </el-form-item>
               <el-form-item label="SQL 参数">
-                <el-input v-model="objectForm.params" type="textarea" :rows="3" placeholder='例如 [{"kind":"REFERENCE","path":"customerId"}]' />
+                <monaco-editor
+                  v-model:value="objectForm.params"
+                  language="json"
+                  height="120px"
+                  :options="{ minimap: { enabled: false }, wordWrap: 'on' }"
+                />
+                <div class="field-help">例如 [{"kind":"REFERENCE","path":"customerId"}]</div>
               </el-form-item>
               <el-form-item label="绑定方式">
                 <el-radio-group v-model="objectForm.bindingMode">
@@ -1809,7 +1837,7 @@
               placeholder="中文标签"
           /></template>
         </el-table-column>
-        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
+        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['移除'])" align="center">
           <template v-slot="{ $index }"
             ><el-button
               link
@@ -2333,103 +2361,6 @@
       </template>
     </el-dialog>
 
-    <!-- Validation Results Dialog -->
-    <el-dialog title="规则验证结果" v-model="validateVisible" width="700px">
-      <el-table show-overflow-tooltip :data="validateResults" size="small" border>
-        <el-table-column
-          prop="ruleName"
-          label="规则名称"
-          min-width="160"
-          show-overflow-tooltip
-        />
-        <el-table-column
-          prop="ruleCode"
-          label="规则编码"
-          min-width="120"
-          show-overflow-tooltip
-        />
-        <el-table-column
-          prop="modelType"
-          label="模型"
-          min-width="70"
-          align="center"
-        />
-        <el-table-column label="编译" min-width="60" align="center">
-          <template v-slot="{ row }"
-            ><el-tag :type="row.compileOk ? 'success' : 'danger'" size="small">{{
-              row.compileOk ? '通过' : '失败'
-            }}</el-tag></template
-          >
-        </el-table-column>
-        <el-table-column label="执行" min-width="60" align="center">
-          <template v-slot="{ row }"
-            ><el-tag :type="row.executeOk ? 'success' : 'danger'" size="small">{{
-              row.executeOk ? '通过' : '失败'
-            }}</el-tag></template
-          >
-        </el-table-column>
-        <el-table-column
-          prop="errorMsg"
-          label="错误信息"
-          min-width="200"
-          show-overflow-tooltip
-        />
-      </el-table>
-      <template v-slot:footer>
-        <div>
-          <el-button size="small" @click="validateVisible = false"
-            >关闭</el-button
-          >
-        </div>
-      </template>
-    </el-dialog>
-
-    <!-- Batch Validate Dialog -->
-    <el-dialog
-      title="验证规则"
-      v-model="validateDialogVisible"
-      width="500px"
-      :close-on-click-modal="false"
-    >
-      <el-form size="small" label-width="100px">
-        <el-form-item label="选择项目">
-          <el-select
-            v-model="validateProjectId"
-            placeholder="请选择项目（不选择则验证所有规则）"
-            style="width: 100%"
-            filterable
-            clearable
-          >
-            <el-option
-              v-for="p in projects"
-              :key="p.id"
-              :label="p.projectName"
-              :value="p.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <span style="color: var(--tianshu-text-tertiary); font-size: 12px"
-            >不选择项目则验证所有规则</span
-          >
-        </el-form-item>
-      </el-form>
-      <template v-slot:footer>
-        <div>
-          <el-button size="small" @click="validateDialogVisible = false"
-            >取消</el-button
-          >
-          <el-button v-permission="'field:edit'"
-            size="small"
-            type="primary"
-            :loading="validating"
-            @click="doBatchValidate"
-            >开始验证</el-button
-          >
-        </div>
-      </template>
-    </el-dialog>
-
     <!-- Import Result Dialog -->
     <el-dialog title="导入结果" v-model="importResultVisible" width="500px">
       <div class="import-result-body">
@@ -2527,7 +2458,6 @@ import {
   importDdlTable,
   updateObjectType,
   deleteDataObject,
-  batchValidateRules,
   createDataObjectField,
   updateDataObjectField,
   deleteDataObjectField,
@@ -2538,6 +2468,7 @@ import {
 } from '@/api/dataObject'
 import { listApiConfigs } from '@/api/datasource'
 import { listDbDatasources } from '@/api/database'
+import { listSftpDatasources } from '@/api/sftp'
 import { listLibraries } from '@/api/ruleList'
 import { listAllFunctionsByProject } from '@/api/function'
 import { listAllModelsByProject } from '@/api/model'
@@ -2573,6 +2504,7 @@ import {
 import { normalizeTestSchema } from '@/utils/testSchema'
 import { normalizeTestResult } from '@/utils/testResult'
 import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import {
   cloneOperand,
   collectOperandReferences,
@@ -2693,11 +2625,12 @@ export default {
       form: this.initForm(),
       apiConfigOptions: [],
       dbDatasourceOptions: [],
+      sftpDatasourceOptions: [],
       listLibraryOptions: [],
       listReferenceOptions: [],
       listFunctionOptions: [],
       listReferenceProjectId: null,
-      sourceOptionsLoaded: { API: false, DB: false, LIST: false },
+      sourceOptionsLoaded: { API: false, DB: false, SFTP: false, LIST: false },
       sourceCatalogLoading: false,
       sourceCatalogKey: '',
       sourceCatalogRequestId: 0,
@@ -2705,6 +2638,7 @@ export default {
         apiOptions: [],
         databaseOptions: [],
         listOptions: [],
+        sftpOptions: [],
       },
       draftPreviewParamsText: '{}',
       draftPreviewResult: null,
@@ -2839,12 +2773,6 @@ export default {
       importJsonConstVisible: false,
       importResultVisible: false,
       importResult: {},
-      // Validation
-      validating: false,
-      validateVisible: false,
-      validateResults: [],
-      validateDialogVisible: false,
-      validateProjectId: '',
       // 字段校验规则库
       validationLoading: false,
       validationRows: [],
@@ -3080,6 +3008,7 @@ export default {
         API: this.sourceCatalog.apiOptions.length,
         DB: this.sourceCatalog.databaseOptions.length,
         LIST: this.sourceCatalog.listOptions.length,
+        SFTP: this.sourceCatalog.sftpOptions.length,
       }
     },
     compatibleListOptions() {
@@ -3176,6 +3105,8 @@ export default {
           sourced = !!this.form.dbDatasourceId && !validateReadOnlyQuery(this.form.dbSql) &&
             !validateSqlParameters(this.form.dbSql, parseSqlParameters(this.form.dbParams))
         } catch (e) { sourced = false }
+      } else if (this.form.varSource === 'SFTP') {
+        sourced = !!this.form.sftpDatasourceId && !!String(this.form.sftpRemotePath || '').trim()
       } else if (this.form.varSource === 'LIST') {
         sourced =
           this.form.listIds.length > 0 &&
@@ -3189,7 +3120,7 @@ export default {
       } else if (this.form.varSource === 'DERIVED') {
         sourced = !validateDerivedConfig(this.form.derivedConfig)
       }
-      const requiresPreview = ['API', 'DB', 'LIST', 'DERIVED'].includes(
+      const requiresPreview = ['API', 'DB', 'SFTP', 'LIST', 'DERIVED'].includes(
         this.form.varSource
       )
       const sourceReady = defined && sourced
@@ -3254,6 +3185,7 @@ export default {
     },
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     changeVariableApi(id) {
       if (String(id || '') === String(this.form.apiConfigId || '')) return
       Object.assign(this.form, { apiConfigId: id || '', apiRequestOverrides: {}, apiInputOverrides: {}, apiParamMapping: '{}', apiResultPath: 'body' })
@@ -3353,6 +3285,16 @@ export default {
         dbForceRefresh: false,
         dbExceptionStrategy: 'ERROR',
         dbFallbackValue: '',
+        sftpDatasourceId: '',
+        sftpRemotePath: '',
+        sftpOutputFormat: 'TEXT',
+        sftpCharset: 'UTF-8',
+        sftpExceptionStrategy: 'ERROR',
+        sftpFallbackValue: '',
+        sftpCacheSeconds: 0,
+        sftpRetryCount: 2,
+        sftpRetryBackoffMs: 200,
+        sftpRetryBackoffMultiplier: 2,
         listIds: [],
         listQueryOperands: [null],
         listCombinationMode: 'ANY_FIELD_ANY_LIST',
@@ -3389,14 +3331,14 @@ export default {
       if (source === 'LIST')
         this.onListReturnModeChange(this.form.listReturnMode)
       await this.loadVariableSourceCatalog(true)
-      if (['LIST', 'DB', 'DERIVED'].includes(source)) await this.loadListExpressionOptions()
+      if (['LIST', 'DB', 'SFTP', 'DERIVED'].includes(source)) await this.loadListExpressionOptions()
     },
     async onVariableProjectChange() {
       if (this.form.varSource === 'API') await this.loadListExpressionOptions(true)
       this.listReferenceProjectId = null
       this.resetDraftPreview()
       await this.loadVariableSourceCatalog(true)
-      if (['LIST', 'DB', 'DERIVED'].includes(this.form.varSource)) await this.loadListExpressionOptions()
+      if (['LIST', 'DB', 'SFTP', 'DERIVED'].includes(this.form.varSource)) await this.loadListExpressionOptions()
     },
     resetDraftPreview() {
       this.draftPreviewParamsText = '{}'
@@ -3419,6 +3361,7 @@ export default {
           apiOptions: [],
           databaseOptions: [],
           listOptions: [],
+          sftpOptions: [],
         }
         if (clearInvalid) this.clearIncompatibleSourceSelection()
         return
@@ -3440,6 +3383,7 @@ export default {
             ? data.databaseOptions
             : [],
           listOptions: Array.isArray(data.listOptions) ? data.listOptions : [],
+          sftpOptions: Array.isArray(data.sftpOptions) ? data.sftpOptions : [],
         }
         this.sourceCatalogKey = key
         if (clearInvalid) this.clearIncompatibleSourceSelection()
@@ -3450,6 +3394,7 @@ export default {
           apiOptions: [],
           databaseOptions: [],
           listOptions: [],
+          sftpOptions: [],
         }
         this.$message.warning('可用取值来源加载失败，请稍后重试')
       } finally {
@@ -3478,6 +3423,16 @@ export default {
         )
       ) {
         this.form.dbDatasourceId = ''
+        cleared = true
+      }
+      if (
+        this.form.varSource === 'SFTP' &&
+        this.form.sftpDatasourceId &&
+        !this.sourceCatalog.sftpOptions.some(
+          (item) => String(item.id) === String(this.form.sftpDatasourceId)
+        )
+      ) {
+        this.form.sftpDatasourceId = ''
         cleared = true
       }
       const compatibleListIds = (this.form.listIds || []).filter((id) =>
@@ -3572,6 +3527,15 @@ export default {
           this.dbDatasourceOptions = []
         }
       }
+      if (source === 'SFTP' && hasPermission('database:view') && !this.sourceOptionsLoaded.SFTP) {
+        try {
+          const res = await listSftpDatasources({ pageNum: 1, pageSize: 1000, status: 1 })
+          this.sftpDatasourceOptions = (res.data && res.data.records) || []
+          this.sourceOptionsLoaded.SFTP = true
+        } catch (e) {
+          this.sftpDatasourceOptions = []
+        }
+      }
       if (source === 'LIST' && hasPermission('list:view') && !this.sourceOptionsLoaded.LIST) {
         try {
           const res = await listLibraries({
@@ -3585,7 +3549,7 @@ export default {
           this.listLibraryOptions = []
         }
       }
-      if (['LIST', 'DB', 'DERIVED'].includes(source)) await this.loadListExpressionOptions()
+      if (['LIST', 'DB', 'SFTP', 'DERIVED'].includes(source)) await this.loadListExpressionOptions()
     },
     normalizeSourceList(res) {
       const data = res && res.data !== undefined ? res.data : res
@@ -3667,6 +3631,17 @@ export default {
         this.form.dbExceptionStrategy = config.exceptionStrategy || 'ERROR'
         this.form.dbFallbackValue =
           config.fallbackValue != null ? String(config.fallbackValue) : ''
+      } else if (this.form.varSource === 'SFTP') {
+        this.form.sftpDatasourceId = config.sftpDatasourceId || ''
+        this.form.sftpRemotePath = config.remotePath || ''
+        this.form.sftpOutputFormat = config.outputFormat || 'TEXT'
+        this.form.sftpCharset = config.charset || 'UTF-8'
+        this.form.sftpExceptionStrategy = config.exceptionStrategy || 'ERROR'
+        this.form.sftpFallbackValue = config.fallbackValue != null ? String(config.fallbackValue) : ''
+        this.form.sftpCacheSeconds = config.cacheSeconds ?? 0
+        this.form.sftpRetryCount = config.retryCount ?? 2
+        this.form.sftpRetryBackoffMs = config.retryBackoffMs ?? 200
+        this.form.sftpRetryBackoffMultiplier = config.retryBackoffMultiplier ?? 2
       } else if (this.form.varSource === 'LIST') {
         this.form.listIds = Array.isArray(config.listIds)
           ? config.listIds.slice()
@@ -3747,6 +3722,27 @@ export default {
           exceptionStrategy: payload.dbExceptionStrategy || 'ERROR',
           fallbackValue: payload.dbFallbackValue || null,
         })
+      } else if (payload.varSource === 'SFTP') {
+        if (!payload.sftpDatasourceId) {
+          this.$message.warning('请选择 SFTP 数据源')
+          return null
+        }
+        if (!String(payload.sftpRemotePath || '').trim()) {
+          this.$message.warning('请输入远端文件路径')
+          return null
+        }
+        payload.sourceConfig = JSON.stringify({
+          sftpDatasourceId: payload.sftpDatasourceId,
+          remotePath: payload.sftpRemotePath,
+          outputFormat: payload.sftpOutputFormat || 'TEXT',
+          charset: payload.sftpCharset || 'UTF-8',
+          exceptionStrategy: payload.sftpExceptionStrategy || 'ERROR',
+          fallbackValue: payload.sftpFallbackValue || null,
+          cacheSeconds: payload.sftpCacheSeconds ?? 0,
+          retryCount: payload.sftpRetryCount ?? 2,
+          retryBackoffMs: payload.sftpRetryBackoffMs ?? 200,
+          retryBackoffMultiplier: payload.sftpRetryBackoffMultiplier ?? 2,
+        })
       } else if (payload.varSource === 'LIST') {
         if (!Array.isArray(payload.listIds) || !payload.listIds.length) {
           this.$message.warning('请至少选择一个名单库')
@@ -3815,6 +3811,16 @@ export default {
         'dbForceRefresh',
         'dbExceptionStrategy',
         'dbFallbackValue',
+        'sftpDatasourceId',
+        'sftpRemotePath',
+        'sftpOutputFormat',
+        'sftpCharset',
+        'sftpExceptionStrategy',
+        'sftpFallbackValue',
+        'sftpCacheSeconds',
+        'sftpRetryCount',
+        'sftpRetryBackoffMs',
+        'sftpRetryBackoffMultiplier',
         'listIds',
         'listQueryOperands',
         'listCombinationMode',
@@ -5041,7 +5047,7 @@ export default {
         .catch(() => {})
     },
     isTestableSource(row) {
-      return row && ['API', 'DB', 'LIST', 'DERIVED'].indexOf(row.varSource) >= 0
+      return row && ['API', 'DB', 'SFTP', 'LIST', 'DERIVED'].indexOf(row.varSource) >= 0
     },
     async handleViewSourceDetail(row) {
       await this.loadVariableSourceOptions(row && row.varSource)
@@ -5088,6 +5094,8 @@ export default {
             expression: String(item || ''),
           })
         })
+      } else if (row && row.varSource === 'SFTP') {
+        rows.push({ field: '远端文件路径', usage: 'SFTP 文件读取', expression: config.remotePath || '未配置' })
       } else if (row && row.varSource === 'LIST') {
         (config.queryOperands || []).forEach((operand, index) => {
           const refs = collectOperandReferences(operand)
@@ -5148,6 +5156,10 @@ export default {
             setPathValue(sample, path, this.sampleValueForPath(path))
           )
         })
+      } else if (row && row.varSource === 'SFTP') {
+        collectReferencePaths(config.remotePath || '', { allowBarePath: true }).forEach((path) =>
+          setPathValue(sample, path, this.sampleValueForPath(path))
+        )
       } else if (row && row.varSource === 'LIST') {
         (config.queryOperands || []).forEach((operand) => {
           collectOperandReferences(operand).forEach((ref) => {
@@ -5252,7 +5264,7 @@ export default {
     sourceBusinessTitle(row) {
       if (!row) return '取数配置'
       return (
-        { API: '接口取数', DB: '数据库查询', LIST: '名单匹配', DERIVED: '衍生变量' }[
+        { API: '接口取数', DB: '数据库查询', SFTP: 'SFTP 文件读取', LIST: '名单匹配', DERIVED: '衍生变量' }[
           row.varSource
         ] || '取数配置'
       )
@@ -5272,6 +5284,9 @@ export default {
       }
       if (row && row.varSource === 'DB') {
         return '执行规则时按配置的查询条件读取数据库结果，再将结果写入当前变量。'
+      }
+      if (row && row.varSource === 'SFTP') {
+        return '执行规则时从 SFTP 连接池读取远端文件，并按指定格式写入当前变量。'
       }
       if (row && row.varSource === 'LIST') {
         return '执行规则时获取待匹配内容的字段值或表达式结果，再按所选组合模式到名单库中匹配。'
@@ -5323,6 +5338,15 @@ export default {
             label: '失败处理',
             value: this.exceptionStrategyLabel(config.exceptionStrategy),
           },
+        ]
+      }
+      if (row && row.varSource === 'SFTP') {
+        const sftp = [...(this.sourceCatalog.sftpOptions || []), ...(this.sftpDatasourceOptions || [])].find(item => String(item.id) === String(config.sftpDatasourceId))
+        return [
+          { label: 'SFTP 数据源', value: sftp ? (sftp.name || sftp.code) : (config.sftpDatasourceId ? '数据源ID ' + config.sftpDatasourceId : '未配置') },
+          { label: '远端路径', value: config.remotePath || '未配置' },
+          { label: '输出格式', value: config.outputFormat || 'TEXT' },
+          { label: '失败处理', value: this.exceptionStrategyLabel(config.exceptionStrategy) },
         ]
       }
       if (row && row.varSource === 'LIST') {
@@ -5656,30 +5680,11 @@ export default {
       }
     },
 
-    // ── Batch Validate ──
-    handleBatchValidate() {
-      this.validateProjectId = this.currentProjectId || ''
-      this.validateDialogVisible = true
-    },
     goImportApprovals() {
       this.importResultVisible = false
       const ids = this.importResult.requestIds || []
       this.$router.push(ids.length === 1 ? '/approval/' + ids[0] : '/approval')
     },
-    async doBatchValidate() {
-      this.validating = true
-      try {
-        const res = await batchValidateRules(this.validateProjectId || null)
-        this.validateResults = res.data || []
-        this.validateDialogVisible = false
-        this.validateVisible = true
-      } catch (e) {
-        this.$message.error('验证失败: ' + (e.message || ''))
-      } finally {
-        this.validating = false
-      }
-    },
-
     // ── Helpers ──
     typeLabel: varTypeLabel,
     typeTagColor: varTypeTagColor,
@@ -5750,9 +5755,12 @@ export default {
 }
 .tab-filter-row {
   display: flex;
+  width: 100%;
   gap: 16px;
   align-items: flex-start;
   margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--tianshu-border-subtle);
 }
 .tab-filter-fields {
   display: flex;
@@ -5762,9 +5770,16 @@ export default {
   align-items: center;
   flex-wrap: wrap;
 }
+.tab-filter-row :deep(.variable-toolbar-actions) {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
 @media (max-width: 768px) {
   .tab-filter-row {
     flex-wrap: wrap;
+  }
+  .tab-filter-row :deep(.variable-toolbar-actions) {
+    width: 100%;
   }
 }
 .tab-empty {

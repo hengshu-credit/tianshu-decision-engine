@@ -110,8 +110,8 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
-          <governance-workspace-toolbar resource-type="EXTERNAL_DATASOURCE" />
-              <table-column-settings :columns="datasourceColumns" storage-key="tianshu:table-columns:datasource-list" />
+          <table-column-settings :columns="datasourceColumns" storage-key="tianshu:table-columns:datasource-list" />
+              <governance-workspace-toolbar resource-type="EXTERNAL_DATASOURCE" />
               <el-button
                 v-permission="'datasource:edit'"
                 type="primary"
@@ -195,7 +195,7 @@
               ></governance-resource-status>
             </template>
           </el-table-column>
-          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="365" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '测试', '版本', '发布', '加接口', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 v-permission="'datasource:edit'"
@@ -341,8 +341,8 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
-          <governance-workspace-toolbar resource-type="EXTERNAL_API" />
-              <table-column-settings :columns="apiColumns" storage-key="tianshu:table-columns:api-list" />
+          <table-column-settings :columns="apiColumns" storage-key="tianshu:table-columns:api-list" />
+              <governance-workspace-toolbar resource-type="EXTERNAL_API" />
               <el-button
                 v-permission="'datasource:edit'"
                 type="primary"
@@ -421,7 +421,7 @@
               ></governance-resource-status>
             </template>
           </el-table-column>
-          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="315" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '测试', '版本', '发布', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 v-permission="'datasource:edit'"
@@ -1387,6 +1387,7 @@ import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import { routeProjectId } from '@/utils/projectContext'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
   data() {
@@ -1597,6 +1598,7 @@ export default {
     this.loadDataObjectOptions(0)
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     applyProjectContext(project) {
       if (!project || !project.id) return
       this.contextProjectId = Number(project.id)

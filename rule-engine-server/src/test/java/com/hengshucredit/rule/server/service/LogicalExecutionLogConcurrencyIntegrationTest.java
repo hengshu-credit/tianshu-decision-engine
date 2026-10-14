@@ -439,7 +439,6 @@ public class LogicalExecutionLogConcurrencyIntegrationTest {
                 assertFalse(historyPlan.isEmpty());
                 System.out.println("N26_EXPLAIN_TRACE_PHASE_" + phase + '=' + com.alibaba.fastjson.JSON.toJSONString(tracePlan));
                 System.out.println("N26_EXPLAIN_HISTORY_PHASE_" + phase + '=' + com.alibaba.fastjson.JSON.toJSONString(historyPlan));
-                if (phase == 0) backfillOnlyOwnTrace(source, jdbc, trace);
             }
             RuleExecutionLog failed = log(trace, 4);
             failed.setSuccess(0);
@@ -503,10 +502,8 @@ public class LogicalExecutionLogConcurrencyIntegrationTest {
             Matcher identityDdl = Pattern.compile("CREATE TABLE IF NOT EXISTS `rule_execution_log_identity`[\\s\\S]*?;").matcher(schema);
             assertTrue(identityDdl.find());
             String initialization = identityDdl.group();
-            Matcher prematureView = Pattern.compile("CREATE OR REPLACE SQL SECURITY INVOKER VIEW `rule_execution_log_current`[\\s\\S]*?;").matcher(schema);
-            if (prematureView.find()) initialization += '\n' + prematureView.group();
             try (var connection = source.getConnection()) {
-                // 与Spring SQL initialization相同，任何DDL错误立即失败，不能靠continue-on-error放过旧库。
+                // schema.sql 中的逻辑视图使用字段存在性守卫，旧库由 SchemaSyncService 补齐后创建。
                 ScriptUtils.executeSqlScript(connection, new ByteArrayResource(renameLogTables(
                         initialization, audit, identity, view).getBytes(StandardCharsets.UTF_8)));
             }
@@ -533,21 +530,6 @@ public class LogicalExecutionLogConcurrencyIntegrationTest {
     private static String renameLogTables(String sql, String audit, String identity, String view) {
         return sql.replace("rule_execution_log_identity", identity)
                 .replace("rule_execution_log_current", view).replace("rule_execution_log", audit);
-    }
-
-    private static void backfillOnlyOwnTrace(DataSource source, JdbcTemplate jdbc, String trace) throws Exception {
-        String after = trace.substring(0, trace.length() - 1);
-        assertEquals("执行维护脚本前确认游标范围内只有本测试 trace", List.of(trace), jdbc.queryForList(
-                "SELECT DISTINCT trace_id FROM rule_execution_log WHERE trace_id > ? AND trace_id <= ?", String.class, after, trace));
-        try (var connection = source.getConnection(); var statement = connection.prepareStatement(
-                "SET @execution_log_after_trace = ?, @execution_log_through_trace = ?")) {
-            statement.setString(1, after);
-            statement.setString(2, trace);
-            statement.execute();
-            ScriptUtils.executeSqlScript(connection, new ClassPathResource("sql/backfill-execution-log-identity.sql"));
-        }
-        assertEquals(Integer.valueOf(1), jdbc.queryForObject(
-                "SELECT COUNT(*) FROM rule_execution_log_identity WHERE trace_id = ?", Integer.class, trace));
     }
 
     private static RuleExecutionLogMapper observeUnprotectedReads(RuleExecutionLogMapper delegate,

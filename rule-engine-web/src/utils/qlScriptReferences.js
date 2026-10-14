@@ -1,5 +1,6 @@
 import { createPathOperand, resolvePathOperand } from '@/utils/operand'
 import { resourceVersionIdentity } from '@/utils/resourceVersion'
+import { fieldTypeIcon } from '@/utils/fieldPicker'
 
 // 保留源码偏移；字符串仅在静态下标或 _result 输出 key 位置参与引用匹配。
 function tokenize(script) {
@@ -134,7 +135,8 @@ export function collectQlScriptReferences(script, options = [], functions = [], 
       label: binding?.label || option.varLabelText || option._ref?.refLabel?.label || option.varLabel || option.varCode,
       bound: Boolean(binding),
       version: binding?.versionMode === 'FIXED' ? binding.version
-        : option._ref?.modelVersion ?? option.varObj?.currentVersion ?? option.varObj?.version,
+        : option._ref?.modelVersion ?? option._ref?.objectVersion ?? option.modelVersion ?? option.objectVersion
+          ?? option.varObj?.currentVersion ?? option.varObj?.version,
     })
   })
   return result
@@ -154,11 +156,17 @@ function plainLabel(value) {
   return String(value || '').replace(/[\r\n\t]+/g, ' ')
 }
 
+export function referenceTypeDisplay(reference) {
+  const option = reference?.option || reference
+  const valueType = option?.varType || option?.valueType || 'OBJECT'
+  return fieldTypeIcon(valueType)
+}
+
 function escapeMarkdown(value) {
   return plainLabel(value).replace(/[\\`*_{}[\]()<>#+.!|~-]/g, '\\$&')
 }
 
-export function buildQlReferenceDecorations(references, model, versions = {}, catalogMode = 'LIVE') {
+export function buildQlReferenceDecorations(references, model, versions = {}, catalogMode = 'LIVE', displayOptions = {}) {
   return references.flatMap(ref => {
     const state = versions[qlReferenceVersionKey(ref, catalogMode)]
     const version = state?.version ?? ref.version
@@ -167,10 +175,10 @@ export function buildQlReferenceDecorations(references, model, versions = {}, ca
     const start = model.getPositionAt(ref.start)
     const end = model.getPositionAt(ref.end)
     const hoverMessage = {
-      value: `${escapeMarkdown(ref.code)} · ${escapeMarkdown(name)} · ${escapeMarkdown(versionLabel)}${ref.outputKey ? '\n\n规则输出字段' : ''}\n\n${ref.bound ? '已绑定引擎引用' : '尚未绑定，请从左侧字段或代码补全中选择以记录引用'}${state?.error ? '\n\n版本读取失败，可关闭后重新开启引用展示以重试。' : ''}`,
+      value: `${escapeMarkdown(referenceTypeDisplay(ref))} ${escapeMarkdown(ref.code)} ${escapeMarkdown(name)} ${escapeMarkdown(versionLabel)}${ref.outputKey ? '\n\n规则输出字段' : ''}\n\n${ref.bound ? '已绑定引擎引用' : '尚未绑定，请从左侧字段或代码补全中选择以记录引用'}${state?.error ? '\n\n版本读取失败，可关闭后重新开启引用展示以重试。' : ''}`,
       isTrusted: false, supportHtml: false,
     }
-    return [{
+    const decorations = [{
       range: { startLineNumber: start.lineNumber, startColumn: start.column, endLineNumber: end.lineNumber, endColumn: end.column },
       options: {
         description: 'ql-engine-reference',
@@ -188,5 +196,21 @@ export function buildQlReferenceDecorations(references, model, versions = {}, ca
         hoverMessage,
       },
     }]
+    if (displayOptions.includeType) {
+      decorations.unshift({
+        range: { startLineNumber: start.lineNumber, startColumn: start.column, endLineNumber: start.lineNumber, endColumn: start.column },
+        options: {
+          description: 'ql-engine-reference-type',
+          showIfCollapsed: true,
+          before: {
+            content: `${referenceTypeDisplay(ref)} `,
+            inlineClassName: 'se-reference-type',
+            inlineClassNameAffectsLetterSpacing: true,
+          },
+          hoverMessage,
+        },
+      })
+    }
+    return decorations
   })
 }

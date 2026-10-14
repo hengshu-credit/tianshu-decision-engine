@@ -24,6 +24,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.Assert.*;
 
 public class ExternalApiTrialServiceTest {
+
+    @Test
+    public void trialIdentityRejectsOverflowAndKeepsStepRangeSafe() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ExternalApiTrialContext.rootIdentity(Long.MAX_VALUE));
+        long root = ExternalApiTrialContext.rootIdentity(1L);
+        assertEquals(-65536L, root);
+        assertEquals(-65537L, root - 1L);
+    }
     @Test public void workflowSharedTaskMappingSurvivesCheckpointAndResumesWithoutSubmittingAgain() throws Exception {
         assertSharedTaskSurvivesResume(true);
     }

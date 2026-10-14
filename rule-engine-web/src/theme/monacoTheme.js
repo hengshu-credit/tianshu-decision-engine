@@ -114,7 +114,13 @@ export function syncMonacoTheme(
       'editorSuggestWidget.background': colors.background,
       'editorSuggestWidget.border': colors.border,
       'editorSuggestWidget.foreground': colors.foreground,
-      'editorSuggestWidget.selectedBackground': colors.muted,
+      'editorSuggestWidget.selectedBackground': withAlpha(colors.primary, dark ? '66' : '24'),
+      'editorSuggestWidget.selectedForeground': colors.foreground,
+      'editorSuggestWidget.highlightForeground': colors.activePrimary,
+      'editorSuggestWidget.focusHighlightForeground': colors.activePrimary,
+      'editorSuggestWidget.descriptionForeground': colors.secondary,
+      'editorSuggestWidget.selectedDescriptionForeground': colors.foreground,
+      'editorSuggestWidget.selectedIconForeground': colors.activePrimary,
     },
   })
   monaco.editor.setTheme(name)

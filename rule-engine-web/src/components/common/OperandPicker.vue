@@ -84,7 +84,7 @@ import {
 import { createFunctionTemplate, functionParameters } from '@/components/expression/expressionTree'
 import { fieldPickerTags, matchesFieldTags } from '@/utils/fieldPickerPolicy'
 import { canViewPickerItem } from '@/security/pickerAccess'
-import { LITERAL_TYPE_OPTIONS, literalTypeCompatible, literalTypeFamily, literalValidationError, recommendLiteralType } from '@/utils/literalType'
+import { LITERAL_TYPE_OPTIONS, literalTypeCompatible, literalTypeFamily, literalValidationError, recommendLiteralType, arrayLiteralDraft } from '@/utils/literalType'
 import {
   createExpressionSessionId,
   createExpressionSessionTitle,
@@ -361,9 +361,10 @@ export default {
       this.editorVisible = false
       this.manualError = ''
       this.manualComposing = false
-      const existing = this.value?.kind === kind
+      const arrayDraft = kind === 'LITERAL' ? arrayLiteralDraft(this.value) : null
+      const existing = this.value?.kind === kind || !!arrayDraft
       const reference = kind === 'PATH' && this.value?.kind === 'REFERENCE' ? { ...cloneOperand(this.value), kind: 'PATH', anchorPath: this.value.relativePath && this.value.code?.endsWith(this.value.relativePath) ? this.value.code.slice(0, -this.value.relativePath.length) : this.value.code } : null
-      this.manualOperand = saved?.operand || (existing ? cloneOperand(this.value) : reference || (kind === 'PATH' ? createPathOperand('') : createLiteralOperand('', recommendLiteralType('', this.expectedType))))
+      this.manualOperand = saved?.operand || (existing ? arrayDraft || cloneOperand(this.value) : reference || (kind === 'PATH' ? createPathOperand('') : createLiteralOperand('', recommendLiteralType('', this.expectedType))))
       const value = this.manualOperand.value
       this.manualInputText = saved?.text ?? (typeof value === 'object' && value !== null ? JSON.stringify(value, null, 2) : String(value ?? ''))
       this.manualTypeMode = saved?.typeMode || (existing && kind === 'LITERAL' ? this.manualOperand.valueType : 'AUTO')

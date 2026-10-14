@@ -1586,6 +1586,42 @@ CREATE TABLE IF NOT EXISTS `rule_db_datasource` (
   KEY `idx_db_ds_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部数据库数据源定义表';
 
+CREATE TABLE IF NOT EXISTS `rule_sftp_datasource` (
+  `id`                       BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `project_id`               BIGINT       NOT NULL DEFAULT 0      COMMENT '所属项目ID，0表示全局',
+  `scope`                    VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL/PROJECT',
+  `datasource_code`          VARCHAR(128) NOT NULL                COMMENT 'SFTP数据源编码',
+  `datasource_name`          VARCHAR(128) NOT NULL                COMMENT 'SFTP数据源名称',
+  `connection_mode`          VARCHAR(32)  NOT NULL DEFAULT 'DIRECT' COMMENT '连接方式：DIRECT/PROXY',
+  `host`                     VARCHAR(256) NOT NULL                COMMENT 'SFTP主机',
+  `port`                     INT          NOT NULL DEFAULT 22       COMMENT 'SFTP端口',
+  `base_path`                VARCHAR(1024) DEFAULT NULL            COMMENT '远端根目录',
+  `username`                 VARCHAR(128) NOT NULL                COMMENT 'SFTP用户名',
+  `password`                 VARCHAR(1024) DEFAULT NULL            COMMENT '密码',
+  `private_key`              TEXT         DEFAULT NULL            COMMENT '私钥内容',
+  `passphrase`               VARCHAR(512) DEFAULT NULL            COMMENT '私钥口令',
+  `known_hosts`              TEXT         DEFAULT NULL            COMMENT 'known_hosts内容',
+  `strict_host_key_checking` TINYINT      NOT NULL DEFAULT 0       COMMENT '是否校验主机指纹',
+  `connect_timeout_ms`       INT          NOT NULL DEFAULT 10000   COMMENT '连接超时毫秒',
+  `session_timeout_ms`       INT          NOT NULL DEFAULT 30000   COMMENT '会话超时毫秒',
+  `socket_timeout_ms`        INT          NOT NULL DEFAULT 30000   COMMENT 'Socket超时毫秒',
+  `max_pool_size`            INT          NOT NULL DEFAULT 8        COMMENT '最大连接数',
+  `min_idle`                 INT          NOT NULL DEFAULT 1        COMMENT '最小空闲连接数',
+  `borrow_timeout_ms`        INT          NOT NULL DEFAULT 5000     COMMENT '借用连接超时毫秒',
+  `idle_timeout_ms`          INT          NOT NULL DEFAULT 600000   COMMENT '空闲连接超时毫秒',
+  `max_file_size_bytes`      INT          NOT NULL DEFAULT 10485760 COMMENT '单文件最大读取字节数',
+  `file_name_encoding`       VARCHAR(64)  NOT NULL DEFAULT 'UTF-8'  COMMENT '文件名编码',
+  `extra_config`             JSON         DEFAULT NULL              COMMENT 'JSch扩展配置JSON',
+  `description`              VARCHAR(512) DEFAULT NULL              COMMENT '说明',
+  `status`                   TINYINT      NOT NULL DEFAULT 1        COMMENT '状态：0-停用，1-启用',
+  `create_time`              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_sftp_ds_scope_project_code` (`scope`, `project_id`, `datasource_code`),
+  KEY `idx_sftp_ds_project_id` (`project_id`),
+  KEY `idx_sftp_ds_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='SFTP连接池数据源定义表';
+
 CREATE TABLE IF NOT EXISTS `rule_billing_config` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`      BIGINT       NOT NULL DEFAULT 0      COMMENT '所属项目ID，0表示全局',
@@ -1885,3 +1921,143 @@ CREATE TABLE IF NOT EXISTS `offline_transfer_log` (
   KEY `idx_offline_transfer_log_time` (`create_time`),
   KEY `idx_offline_transfer_log_operation` (`operation_type`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 系统常量依赖 uk_scope_project_var 唯一索引幂等补齐；已有常量的 ID 和配置保持不变。
+INSERT INTO `rule_variable`
+  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+   `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
+   `status`, `create_time`, `update_time`)
+SELECT 0, 'GLOBAL', 'NULL_VALUE', '空值', 'NULL_VALUE', 'OBJECT', 'CONSTANT',
+       'null', NULL, 'null', '系统常量：缺失值。', -999, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+ON DUPLICATE KEY UPDATE `id` = `id`;
+
+INSERT INTO `rule_variable`
+  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+   `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
+   `status`, `create_time`, `update_time`)
+SELECT 0, 'GLOBAL', 'EMPTY_STRING', '空字符串', 'EMPTY_STRING', 'STRING', 'CONSTANT',
+       '', NULL, '', '系统常量：空字符串。', -998, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+ON DUPLICATE KEY UPDATE `id` = `id`;
+
+INSERT INTO `rule_variable`
+  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+   `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
+   `status`, `create_time`, `update_time`)
+SELECT 0, 'GLOBAL', 'EMPTY_LIST', '空列表', 'EMPTY_LIST', 'LIST', 'CONSTANT',
+       '[]', NULL, '[]', '系统常量：空列表。', -997, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+ON DUPLICATE KEY UPDATE `id` = `id`;
+
+INSERT INTO `rule_variable`
+  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+   `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
+   `status`, `create_time`, `update_time`)
+SELECT 0, 'GLOBAL', 'EMPTY_MAP', '空映射', 'EMPTY_MAP', 'MAP', 'CONSTANT',
+       '{}', NULL, '{}', '系统常量：空键值映射。', -996, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+ON DUPLICATE KEY UPDATE `id` = `id`;
+
+INSERT INTO `rule_variable`
+  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+   `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
+   `status`, `create_time`, `update_time`)
+SELECT 0, 'GLOBAL', 'FALSE_VALUE', '布尔假', 'FALSE_VALUE', 'BOOLEAN', 'CONSTANT',
+       'false', NULL, 'false', '系统常量：布尔假。', -995, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+ON DUPLICATE KEY UPDATE `id` = `id`;
+
+INSERT INTO `rule_variable`
+  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+   `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
+   `status`, `create_time`, `update_time`)
+SELECT 0, 'GLOBAL', 'TRUE_VALUE', '布尔真', 'TRUE_VALUE', 'BOOLEAN', 'CONSTANT',
+       'true', NULL, 'true', '系统常量：布尔真。', -994, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+ON DUPLICATE KEY UPDATE `id` = `id`;
+
+INSERT INTO `rule_variable`
+  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+   `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
+   `status`, `create_time`, `update_time`)
+SELECT 0, 'GLOBAL', 'NEGATIVE_ONE', '负一', 'NEGATIVE_ONE', 'NUMBER', 'CONSTANT',
+       '-1', NULL, '-1', '系统常量：数值负一。', -993, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+ON DUPLICATE KEY UPDATE `id` = `id`;
+
+INSERT INTO `rule_variable`
+  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+   `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
+   `status`, `create_time`, `update_time`)
+SELECT 0, 'GLOBAL', 'ZERO', '零', 'ZERO', 'NUMBER', 'CONSTANT',
+       '0', NULL, '0', '系统常量：数值零。', -992, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+ON DUPLICATE KEY UPDATE `id` = `id`;
+
+INSERT INTO `rule_variable`
+  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+   `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
+   `status`, `create_time`, `update_time`)
+SELECT 0, 'GLOBAL', 'ONE', '一', 'ONE', 'NUMBER', 'CONSTANT',
+       '1', NULL, '1', '系统常量：数值一。', -991, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+ON DUPLICATE KEY UPDATE `id` = `id`;
+
+INSERT INTO `rule_variable`
+  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+   `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
+   `status`, `create_time`, `update_time`)
+SELECT 0, 'GLOBAL', 'NEGATIVE_INFINITY', '负无穷', 'NEGATIVE_INFINITY', 'DOUBLE', 'CONSTANT',
+       '-Infinity', NULL, '-Infinity', '系统常量：数值比较下界。', -1000, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+ON DUPLICATE KEY UPDATE `id` = `id`;
+
+INSERT INTO `rule_variable`
+  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+   `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
+   `status`, `create_time`, `update_time`)
+SELECT 0, 'GLOBAL', 'POSITIVE_INFINITY', '正无穷', 'POSITIVE_INFINITY', 'DOUBLE', 'CONSTANT',
+       'Infinity', NULL, 'Infinity', '系统常量：数值比较上界。', -990, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+ON DUPLICATE KEY UPDATE `id` = `id`;
+
+-- 旧库缺少逻辑视图依赖字段时先跳过视图创建，SchemaSyncService 补齐字段后再创建；新库和已升级库直接创建。
+SET @schema_log_view_sql = IF(
+  (SELECT COUNT(*) FROM information_schema.tables
+   WHERE table_schema = DATABASE() AND table_name IN ('rule_execution_log', 'rule_execution_log_identity')) = 2
+  AND (SELECT COUNT(*) FROM information_schema.columns
+       WHERE table_schema = DATABASE() AND table_name = 'rule_execution_log'
+         AND column_name IN ('trace_id', 'attempt_no')) = 2,
+  'CREATE OR REPLACE SQL SECURITY INVOKER VIEW `rule_execution_log_current` AS
+SELECT log_row.*
+FROM rule_execution_log log_row
+LEFT JOIN rule_execution_log_identity logical_identity
+  ON logical_identity.trace_id = CONVERT(log_row.trace_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+WHERE NULLIF(TRIM(log_row.trace_id), '''') IS NULL
+   OR (logical_identity.log_id = log_row.id AND logical_identity.log_create_time = log_row.create_time)
+   OR (logical_identity.log_id IS NULL AND NOT EXISTS (
+       SELECT 1 FROM rule_execution_log newer
+       WHERE newer.trace_id = log_row.trace_id
+         AND (COALESCE(newer.attempt_no, 1) > COALESCE(log_row.attempt_no, 1)
+           OR (COALESCE(newer.attempt_no, 1) = COALESCE(log_row.attempt_no, 1)
+             AND (newer.create_time > log_row.create_time
+               OR (newer.create_time = log_row.create_time AND newer.id > log_row.id))))
+   ))',
+  'SELECT 1'
+);
+PREPARE schema_log_view_stmt FROM @schema_log_view_sql;
+EXECUTE schema_log_view_stmt;
+DEALLOCATE PREPARE schema_log_view_stmt;
+
+SET @schema_statistics_view_sql = IF(
+  (SELECT COUNT(*) FROM information_schema.tables
+   WHERE table_schema = DATABASE() AND table_name IN ('rule_execution_statistics', 'rule_execution_log_current')) = 2
+  AND (SELECT COUNT(*) FROM information_schema.columns
+       WHERE table_schema = DATABASE() AND table_name = 'rule_execution_statistics'
+         AND column_name IN ('trace_id', 'attempt_no')) = 2,
+  'CREATE OR REPLACE SQL SECURITY INVOKER VIEW `rule_execution_statistics_current` AS
+SELECT statistics.*
+FROM rule_execution_statistics statistics
+LEFT JOIN rule_execution_log_identity logical_identity
+  ON logical_identity.trace_id = CONVERT(statistics.trace_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
+WHERE NULLIF(TRIM(statistics.trace_id), '''') IS NULL
+   OR (logical_identity.log_id = statistics.id AND logical_identity.log_create_time = statistics.create_time)
+   OR (logical_identity.log_id IS NULL AND EXISTS (
+       SELECT 1 FROM rule_execution_log_current legacy
+       WHERE legacy.id = statistics.id AND legacy.create_time = statistics.create_time
+   ))',
+  'SELECT 1'
+);
+PREPARE schema_statistics_view_stmt FROM @schema_statistics_view_sql;
+EXECUTE schema_statistics_view_stmt;
+DEALLOCATE PREPARE schema_statistics_view_stmt;

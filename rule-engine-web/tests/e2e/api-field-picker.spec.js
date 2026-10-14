@@ -19,7 +19,7 @@ test('API 请求字段分别配置位置、格式和文件内容，窄窗口只�
   const editor = page.locator('.api-execution-editor:visible')
   await expect(editor.getByRole('columnheader', { name: '字段位置', exact: true })).toBeVisible()
   await expect(editor.getByRole('columnheader', { name: '数据格式', exact: true })).toBeVisible()
-  await expect(editor.getByRole('columnheader', { name: '字段内容', exact: true })).toBeVisible()
+  await expect(editor.getByRole('columnheader', { name: '字段内容', exact: true })).toHaveCount(0)
   const row = editor.locator('.el-table__body .el-table__row').first()
   await row.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '请求体格式', exact: true }) }).click()
   await page.getByRole('option', { name: 'x-www-form-urlencoded', exact: true }).click()

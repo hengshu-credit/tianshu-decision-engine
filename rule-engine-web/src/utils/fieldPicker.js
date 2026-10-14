@@ -32,6 +32,7 @@ function source(item) {
   if (item._resource) return null
   const ref = item._ref || {}
   const category = pickerReferenceCategory(item)
+  if (item._refType === 'API_CONTEXT') return { key: `${category}:${ref.apiId || 'current'}`, code: '', label: ref.apiModuleLabel || ref.apiLabel || '当前 API', category, protocol: true }
   const prefix = { object: 'object', model: 'model', external: 'api' }[category]
   if (!prefix) return null
   const id = ref[`${prefix}Id`] ?? item[`${prefix}Id`] ?? item.varObj?.[`${prefix}Id`]
@@ -53,16 +54,17 @@ export function buildFieldTree(items) {
     nodes.set(key, node)
     if (!group) { roots.push(node); continue }
     if (!groups.has(group.key)) {
-      const parent = { key: `group:${group.key}`, name: group.label, code: group.code, category: group.category, type: group.category === 'model' ? 'MODEL' : 'OBJECT', item: null, version: item._ref?.modelVersion, catalogMode: item.catalogMode, parent: null, children: [], selectable: false }
+      const parent = { key: `group:${group.key}`, name: group.label, code: group.code, category: group.category, protocol: group.protocol, type: group.category === 'model' ? 'MODEL' : 'OBJECT', item: null, version: item._ref?.modelVersion, catalogMode: item.catalogMode, parent: null, children: [], selectable: false }
       if (group.id != null && ['model', 'object'].includes(group.category)) parent.item = {
         _versionGroup: true, _varId: group.id, _refType: group.category === 'model' ? 'MODEL' : 'DATA_OBJECT',
         versionOwnerId: group.id, varCode: group.code, varLabel: group.label, varType: parent.type,
         _ref: { category: group.category, modelVersion: item._ref?.modelVersion }, ...item._groupVersion,
         catalogMode: item.catalogMode,
       }
+      // 数据对象/模型根节点也可作为整体字段引用；类型过滤仍会按目标类型收紧 selectable。
+      parent.selectable = !!parent.item
       groups.set(group.key, { parent, fields: [] })
-      nodes.set(parent.key, parent)
-      roots.push(parent)
+      if (!group.protocol) { nodes.set(parent.key, parent); roots.push(parent) }
     }
     groups.get(group.key).fields.push(node)
     if (node.name.startsWith(group.label + '/')) node.name = node.name.slice(group.label.length + 1)
@@ -87,8 +89,10 @@ export function buildFieldTree(items) {
       const seen = new Set([node.key])
       while (ancestor && !seen.has(ancestor.key)) { seen.add(ancestor.key); ancestor = ancestor.parent }
       if (ancestor) owner = null
-      node.parent = owner || parent
-      node.parent.children.push(node)
+      // 当前 API 的模块已在分类栏，不再增加一个需要点击的目录层。
+      node.parent = owner || (parent.protocol ? null : parent)
+      if (node.parent) node.parent.children.push(node)
+      else roots.push(node)
     }
   }
   return { roots, nodes }

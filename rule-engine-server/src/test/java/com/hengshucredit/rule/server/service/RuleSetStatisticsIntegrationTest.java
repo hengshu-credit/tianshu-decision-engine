@@ -204,13 +204,19 @@ public class RuleSetStatisticsIntegrationTest {
         ReflectionTestUtils.setField(target, "statisticsStore", new RuleSetStatisticsStore(db.jdbc));
         ReflectionTestUtils.setField(target, "projectFilterService", new ProjectFilterService());
         ProxyFactory proxy = new ProxyFactory(target); proxy.setProxyTargetClass(true);
-        proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(db.source), new AnnotationTransactionAttributeSource()));
+        TransactionInterceptor transactions = new TransactionInterceptor();
+        transactions.setTransactionManager(new DataSourceTransactionManager(db.source));
+        transactions.setTransactionAttributeSource(new AnnotationTransactionAttributeSource());
+        proxy.addAdvice(transactions);
         return (RuleExecutionLogService)proxy.getProxy();
     }
 
     static RuleSetStatisticsQuery transactionalQuery(BillingSummaryTestDatabase db, JdbcTemplate jdbc) {
         ProxyFactory proxy = new ProxyFactory(new RuleSetStatisticsQuery(jdbc)); proxy.setProxyTargetClass(true);
-        proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(db.source), new AnnotationTransactionAttributeSource()));
+        TransactionInterceptor transactions = new TransactionInterceptor();
+        transactions.setTransactionManager(new DataSourceTransactionManager(db.source));
+        transactions.setTransactionAttributeSource(new AnnotationTransactionAttributeSource());
+        proxy.addAdvice(transactions);
         return (RuleSetStatisticsQuery)proxy.getProxy();
     }
 

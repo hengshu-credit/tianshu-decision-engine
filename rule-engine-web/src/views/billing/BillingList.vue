@@ -92,8 +92,8 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
-          <governance-workspace-toolbar resource-type="BILLING_CONFIG" />
-              <table-column-settings :columns="billingColumns" storage-key="tianshu:table-columns:billing-list" />
+          <table-column-settings :columns="billingColumns" storage-key="tianshu:table-columns:billing-list" />
+              <governance-workspace-toolbar resource-type="BILLING_CONFIG" />
               <el-button
                 v-permission="'billing:edit'"
                 type="primary"
@@ -169,7 +169,7 @@
               ></governance-resource-status>
             </template>
           </el-table-column>
-          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="255" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '版本', '发布', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 v-permission="'billing:edit'"
@@ -553,14 +553,6 @@
           <div class="uiue-btn-bar">
             <div class="btn-right">
               <table-column-settings :columns="summaryColumns" storage-key="tianshu:table-columns:billing-summary" />
-              <el-date-picker
-                v-model="refreshDate"
-                size="small"
-                type="date"
-                value-format="YYYY-MM-DD"
-                placeholder="选择日期"
-                style="width: 150px"
-              />
               <el-button
                 v-permission="'billing:edit'"
                 size="small"
@@ -958,6 +950,7 @@ import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import { trialStatusLabel, trialStatusType } from '@/utils/apiTrialStatus'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
   mixins: [governanceWorkspaceMixin],
@@ -1080,7 +1073,7 @@ export default {
         beginDate: '',
         endDate: '',
       },
-      refreshDate: '',
+      refreshDate: new Date().toISOString().slice(0, 10),
       summaryRefreshTask: null,
       summaryRefreshSubmitting: false,
       summaryRefreshError: '',
@@ -1143,6 +1136,7 @@ export default {
   deactivated() { this.stopSummaryRefresh() },
   activated() { if (this.activeTab === 'summary') this.loadSummaryRefreshTask() },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     trialStatusLabel,
     trialStatusType,
     billingBasisLabel(basis) {

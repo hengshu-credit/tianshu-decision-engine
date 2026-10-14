@@ -41,6 +41,7 @@ module.exports = {
       dispose: vi.fn()
     })),
     setModelLanguage: vi.fn(),
+    registerCommand: vi.fn(() => ({ dispose: vi.fn() })),
     setTheme: vi.fn(),
     defineTheme: vi.fn(),
     setLanguages: vi.fn(),
@@ -53,7 +54,12 @@ module.exports = {
     getLanguages: vi.fn(() => []),
     register: vi.fn(),
     registerCompletionItemProvider: vi.fn(),
+    registerHoverProvider: vi.fn(),
+    registerSignatureHelpProvider: vi.fn(),
     setLanguageConfiguration: vi.fn(),
+    setMonarchTokensProvider: vi.fn(),
+    CompletionItemKind: { Function: 1, Field: 17 },
+    CompletionItemInsertTextRule: { InsertAsSnippet: 4 },
     HoverProvider: {}
   },
   // Token 类型

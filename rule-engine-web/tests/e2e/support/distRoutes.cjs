@@ -29,7 +29,7 @@ const apiData = new Map([
     },
     periods: { items: [{ key: '12', label: '12期', count: 18, rate: 1 }], validCount: 18, excludedCount: 0 },
     amounts: { items: [{ key: '[3000,5000)', label: '3,000–4,999', count: 18, rate: 1 }], validCount: 18, excludedCount: 0 },
-    geo: { points: [{ longitude: 120.12, latitude: 30.28, count: 18 }], validCount: 18, excludedCount: 0, excludedReasons: {} },
+    geo: { points: [{ longitude: 120.12, latitude: 30.28, count: 18, passCount: 12, reviewCount: 3, rejectCount: 3 }], validCount: 18, excludedCount: 0, excludedReasons: {} },
     mappingIssues: []
   }],
   ['/api/rule/dashboard/operations', {

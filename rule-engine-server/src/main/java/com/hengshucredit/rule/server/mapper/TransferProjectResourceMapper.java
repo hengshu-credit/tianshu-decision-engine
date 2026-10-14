@@ -31,6 +31,9 @@ public interface TransferProjectResourceMapper {
             SELECT 'DATABASE', id FROM rule_db_datasource
             WHERE project_id = #{projectId} AND scope = 'PROJECT' AND status != -1
             UNION ALL
+            SELECT 'SFTP', id FROM rule_sftp_datasource
+            WHERE project_id = #{projectId} AND scope = 'PROJECT' AND status != -1
+            UNION ALL
             SELECT 'EXTERNAL_DATASOURCE', id FROM rule_external_datasource
             WHERE project_id = #{projectId} AND scope = 'PROJECT' AND status != -1
             UNION ALL

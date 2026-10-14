@@ -36,6 +36,7 @@ public class ConsoleAccessGuard {
             case "MODEL", "MODEL_OUTPUT" -> "model";
             case "EXTERNAL_DATASOURCE", "EXTERNAL_API", "API", "DATASOURCE" -> "datasource";
             case "DATABASE", "DB" -> "database";
+            case "SFTP" -> "database";
             case "FUNCTION" -> "function";
             case "RULE", "RULE_VERSION", "RULE_PROJECT_BINDING" -> "rule";
             case "LIST", "LIST_LIBRARY", "LIST_RECORD_BATCH" -> "list";

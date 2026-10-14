@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public class BuiltInConstantSqlTest {
 
     private static final List<String> SQL_RESOURCES = Arrays.asList(
-            "sql/data-example.sql", "docker/rule-engine-mysql/data-tianshu-example.sql");
+            "sql/schema.sql", "docker/rule-engine-mysql/data-tianshu-example.sql");
     private static final List<String> CONSTANT_CODES = Arrays.asList(
             "NULL_VALUE", "EMPTY_STRING", "EMPTY_LIST", "EMPTY_MAP",
             "TRUE_VALUE", "FALSE_VALUE", "ZERO", "ONE", "NEGATIVE_ONE",
@@ -38,8 +38,8 @@ public class BuiltInConstantSqlTest {
                     Assert.assertFalse(resource + " must not delete obsolete " + obsoleteCode,
                             sql.contains("'" + obsoleteCode + "'"));
                 } else {
-                    Assert.assertTrue(resource + " must clean obsolete " + obsoleteCode,
-                            Pattern.compile("(?s)DELETE FROM.{0,500}'" + obsoleteCode + "'").matcher(sql).find());
+                    Assert.assertFalse(resource + " must not seed obsolete " + obsoleteCode,
+                            sql.contains("'" + obsoleteCode + "'"));
                 }
             }
             Assert.assertFalse(resource + " must store a real empty string",
@@ -48,8 +48,9 @@ public class BuiltInConstantSqlTest {
                 Assert.assertTrue(resource + " must use insert-only statements",
                         sql.toUpperCase().contains("INSERT IGNORE INTO"));
             } else {
-                Assert.assertTrue(resource + " must use idempotent upsert",
-                        sql.toUpperCase().contains("ON DUPLICATE KEY UPDATE"));
+                Assert.assertTrue(resource + " must use the variable unique index for idempotence",
+                        sql.toLowerCase().contains("on duplicate key update")
+                                && sql.contains("UNIQUE KEY `uk_scope_project_var`"));
             }
         }
     }

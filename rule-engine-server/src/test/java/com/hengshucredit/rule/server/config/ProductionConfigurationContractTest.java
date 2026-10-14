@@ -76,8 +76,8 @@ public class ProductionConfigurationContractTest {
         Assert.assertFalse(mysqlCompose.contains(LEGACY_SHARED_PASSWORD));
         Assert.assertFalse(redisCompose.contains(LEGACY_SHARED_PASSWORD));
         Assert.assertFalse(appCompose.contains("mysql-init:"));
-        Assert.assertTrue(appCompose.contains("MYSQL_SERVICE_HOST:-host.docker.internal"));
-        Assert.assertTrue(appCompose.contains("REDIS_SERVICE_HOST:-host.docker.internal"));
+        Assert.assertTrue(appCompose.contains("MYSQL_HOST:-host.docker.internal"));
+        Assert.assertTrue(appCompose.contains("REDIS_HOST:-host.docker.internal"));
         Assert.assertTrue(appCompose.contains("runtime-http:"));
         Assert.assertTrue(appCompose.contains("runtime-sdk:"));
         Assert.assertTrue(appCompose.contains("./tianshu-decision-engine-runtime"));

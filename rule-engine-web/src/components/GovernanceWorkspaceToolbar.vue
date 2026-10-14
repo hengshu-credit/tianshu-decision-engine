@@ -22,7 +22,7 @@
         <el-table-column prop="applicant" label="申请人" min-width="100" show-overflow-tooltip />
         <el-table-column prop="reviewComment" label="审批意见" min-width="150" show-overflow-tooltip />
         <el-table-column prop="updateTime" label="更新时间" min-width="170" />
-        <el-table-column label="操作" min-width="205" fixed="right"><template #default="{ row }">
+        <el-table-column label="操作" :width="operationColumnWidth(['发布', '查看详情', '删除草稿', '撤回'])" fixed="right"><template #default="{ row }">
           <el-button v-if="row.status === 'EDITING' && canPublish(row)" :data-request-id="row.id" link type="success" :disabled="busy" @click="publish(row)">{{ submitLabel(row) }}</el-button>
           <el-button v-if="canReview" :data-review-id="row.id" link type="primary" :disabled="busy" @click="review(row)">查看详情</el-button>
           <el-button v-if="viewScope === 'MINE' && row.status === 'EDITING' && row.action === 'CREATE' && canEdit(row)" link type="danger" :disabled="busy" @click="discard(row)">删除草稿</el-button>
@@ -41,6 +41,7 @@ import { resourceActionPermission, resourceViewPermission } from '@/security/pic
 import { isNewContentRequest } from '@/utils/governanceWorkspace'
 import { parseMetadataResponse } from '@/utils/metadataResponse'
 import { routeProjectId, routeSupportsProjectContext } from '@/utils/projectContext'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 const statuses = [{ value: 'EDITING', label: '草稿' }, { value: 'PENDING', label: '审批中' }, { value: 'APPROVED', label: '已通过' }, { value: 'REJECTED', label: '已驳回' }, { value: 'CONFLICT', label: '审批冲突' }, { value: 'CANCELLED', label: '已取消' }]
 export default {
@@ -61,6 +62,7 @@ export default {
   mounted() { window.addEventListener('tianshu:resource-draft-change', this.refreshIfOpen) },
   beforeUnmount() { this.sequence++; window.removeEventListener('tianshu:resource-draft-change', this.refreshIfOpen) },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     isNewContentRequest,
     canEdit(row) { return hasPermission(resourceActionPermission(row.resourceType, 'edit')) },
     canPublish(row) { return this.viewScope === 'MINE' && this.canEdit(row) && hasPermission('approval:submit') && hasPermission(resourceActionPermission(row.resourceType, 'submit')) },
@@ -87,7 +89,7 @@ export default {
     title(row) {
       let value = {}
       try { value = parseMetadataResponse(row.draftSnapshotJson || '{}') } catch { /* Preserve the request number for older incomplete records. */ }
-      const keys = { RULE: 'ruleName', PROJECT: 'projectName', VARIABLE: 'varLabel', DATA_OBJECT: 'objectLabel', MODEL: 'modelName', FUNCTION: 'funcName', EXTERNAL_API: 'apiName', EXTERNAL_DATASOURCE: 'datasourceName', DATABASE: 'datasourceName', EXPERIMENT: 'experimentName', LIST_LIBRARY: 'listName', FIELD_VALIDATION: 'validationName', BILLING_CONFIG: 'billingName' }
+      const keys = { RULE: 'ruleName', PROJECT: 'projectName', VARIABLE: 'varLabel', DATA_OBJECT: 'objectLabel', MODEL: 'modelName', FUNCTION: 'funcName', EXTERNAL_API: 'apiName', EXTERNAL_DATASOURCE: 'datasourceName', DATABASE: 'datasourceName', SFTP: 'datasourceName', EXPERIMENT: 'experimentName', LIST_LIBRARY: 'listName', FIELD_VALIDATION: 'validationName', BILLING_CONFIG: 'billingName' }
       return value[keys[row.resourceType]] || row.requestNo
     },
     review(row) { this.visible = false; this.$router.push('/approval/' + row.id) },

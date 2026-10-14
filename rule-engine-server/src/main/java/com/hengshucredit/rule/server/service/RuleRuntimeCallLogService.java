@@ -172,7 +172,8 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
                         .or().eq(RuleRuntimeCallLog::getTraceId, rootTraceId))
                 .in(RuleRuntimeCallLog::getActionType,
                         "API_INVOKE", "API_ASSIGNMENT", "DB_VARIABLE_QUERY",
-                        "LIST_VARIABLE_MATCH", "MODEL_EXECUTE")
+                        "LIST_VARIABLE_MATCH", "SFTP_VARIABLE_READ", "SFTP_QUERY",
+                        "MODEL_EXECUTE")
                 .orderByAsc(RuleRuntimeCallLog::getCreateTime)
                 .orderByAsc(RuleRuntimeCallLog::getId);
         if (projectId != null) wrapper.eq(RuleRuntimeCallLog::getProjectId, projectId);

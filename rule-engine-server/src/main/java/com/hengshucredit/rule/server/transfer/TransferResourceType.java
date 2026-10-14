@@ -8,6 +8,7 @@ public enum TransferResourceType {
     DATA_OBJECT("rule_data_object", "objectCode", "objectLabel", "field"),
     FUNCTION("rule_function", "funcCode", "funcName", "function"),
     DATABASE("rule_db_datasource", "datasourceCode", "datasourceName", "database"),
+    SFTP("rule_sftp_datasource", "datasourceCode", "datasourceName", "database"),
     EXTERNAL_DATASOURCE("rule_external_datasource", "datasourceCode", "datasourceName", "datasource"),
     EXTERNAL_API("rule_external_api_config", "apiCode", "apiName", "datasource"),
     LIST_LIBRARY("rule_list_library", "listCode", "listName", "list"),

@@ -9,6 +9,7 @@ import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleVariable;
+import com.hengshucredit.rule.model.entity.RuleSftpDatasource;
 import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
 import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import org.junit.Test;
@@ -34,6 +35,32 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 public class VariableSourceResolverTest {
+
+    @Test
+    public void sftpVariableIsFetchedOnceWithinRootAndThenUsesCrossRuleCache() throws Exception {
+        RuleVariable variable = variable("contractText", "SFTP",
+                "{\"sftpDatasourceId\":9,\"remotePath\":\"/contracts/A.pdf\","
+                        + "\"outputFormat\":\"TEXT\",\"cacheSeconds\":60,\"retryCount\":0}");
+        FakeSftpPools sftp = new FakeSftpPools();
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()));
+        setField(resolver, "sftpConnectPools", sftp);
+        setField(resolver, "sftpFileCache", new SftpFileCache(new ExternalCallProperties(),
+                (SftpFileDistributedCache) null));
+
+        VariableResolutionInvocationCache shared = new VariableResolutionInvocationCache();
+        VariableResolveOptions root = VariableResolveOptions.defaults();
+        root.setInvocationCache(shared);
+        Map<String, Object> values = resolver.resolve(1L, Collections.emptyMap(), root);
+        VariableResolveOptions child = VariableResolveOptions.defaults();
+        child.setInvocationCache(shared);
+        resolver.resolveIntoSnapshot(Collections.singletonList(variable), Collections.emptyList(),
+                Collections.emptyList(), values, child);
+        resolver.resolve(1L, Collections.emptyMap(), VariableResolveOptions.defaults());
+
+        assertEquals("同一根规则含子规则只读取一次，新的规则命中文件缓存", 1, sftp.reads);
+        assertEquals("合同内容", values.get("contractText"));
+    }
 
     @Test
     public void frozenListPathResolvesUpstreamByIdWithoutReadingLiveMetadata() throws Exception {
@@ -852,6 +879,18 @@ public class VariableSourceResolverTest {
         assertEquals("ERROR", options.getSourceStates().get("VARIABLE:1").get("OUTCOME"));
     }
 
+    @Test
+    public void ignoreStrategySuppressesSourceFailureWithoutInventingDefaultValue() throws Exception {
+        RuleVariable variable = variable("riskScore", "DB",
+                "{\"datasourceId\":3,\"sql\":\"select score from t\",\"exceptionStrategy\":\"IGNORE\"}");
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(new IllegalStateException("db down")));
+
+        Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap(), VariableResolveOptions.defaults());
+
+        assertFalse(resolved.containsKey("riskScore"));
+    }
+
     @Test(expected = IllegalStateException.class)
     public void unselectedDbErrorKeepsOriginalFailFastBehavior() throws Exception {
         RuleVariable variable = variable("riskScore", "DB",
@@ -1356,6 +1395,26 @@ public class VariableSourceResolverTest {
             this.lastTimeoutSeconds = queryTimeoutSeconds;
             this.lastParams = params == null ? Collections.emptyList() : Arrays.asList(params.toArray());
             return rows;
+        }
+    }
+
+    private static class FakeSftpPools extends SftpConnectPools {
+        private int reads;
+
+        @Override
+        public RuleSftpDatasource connectionConfig(Long id) {
+            RuleSftpDatasource datasource = new RuleSftpDatasource();
+            datasource.setId(id);
+            datasource.setBasePath("/");
+            datasource.setFileNameEncoding("UTF-8");
+            return datasource;
+        }
+
+        @Override
+        public ReadResult readFileWithRetry(Long datasourceId, String remotePath, int retryCount,
+                                            long backoffMs, double backoffMultiplier) {
+            reads++;
+            return new ReadResult("合同内容".getBytes(java.nio.charset.StandardCharsets.UTF_8), 0);
         }
     }
 

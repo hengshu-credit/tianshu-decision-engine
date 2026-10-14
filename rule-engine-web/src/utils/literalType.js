@@ -40,3 +40,35 @@ export function literalValidationError(operand, expected = '') {
   }
   return ''
 }
+
+/** 只把纯常量数组转换为阈值草稿；数字保留文本，避免长整数经 Number 丢精度。 */
+export function arrayLiteralDraft(operand) {
+  if (operand?.kind === 'PATH' && operand.refId == null && !operand.protocolPath) {
+    try {
+      if (Array.isArray(JSON.parse(operand.value))) return { kind: 'LITERAL', valueType: 'LIST', value: operand.value }
+    } catch { return null }
+  }
+  const encode = node => {
+    if (node?.kind === 'ARRAY') {
+      const items = node.items || []
+      const values = items.map(encode)
+      // 新建数组默认带一个空槽位；此时应直接进入“输入阈值”的 JSON
+      // 编辑器，而不是把用户送回组合表达式页面。混合了字段/计算项的
+      // 数组仍保留原表达式语义，避免转换时丢失引用。
+      if (values.some(value => value == null)) return items.every(item => item == null) ? '[]' : null
+      return '[' + values.join(', ') + ']'
+    }
+    if (node?.kind !== 'LITERAL') return null
+    const type = literalTypeFamily(node.valueType)
+    if (type === 'NULL') return 'null'
+    if (literalValidationError(node)) return null
+    if (['NUMBER', 'BOOLEAN', 'LIST', 'OBJECT'].includes(type)) {
+      const text = typeof node.value === 'string' ? node.value : JSON.stringify(node.value)
+      try { JSON.parse(text); return text } catch { return null }
+    }
+    return JSON.stringify(String(node.value ?? ''))
+  }
+  if (operand?.kind !== 'ARRAY') return null
+  const value = encode(operand)
+  return value == null ? null : { kind: 'LITERAL', valueType: 'LIST', value }
+}

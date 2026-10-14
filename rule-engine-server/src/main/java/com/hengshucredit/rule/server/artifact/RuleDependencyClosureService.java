@@ -74,6 +74,7 @@ public class RuleDependencyClosureService {
     private RuleDataObjectMapper dataObjectMapper;
     @Resource private com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper apiConfigMapper;
     @Resource private com.hengshucredit.rule.server.mapper.RuleDbDatasourceMapper dbDatasourceMapper;
+    @Resource private com.hengshucredit.rule.server.mapper.RuleSftpDatasourceMapper sftpDatasourceMapper;
     @Resource private com.hengshucredit.rule.server.mapper.RuleListLibraryMapper listLibraryMapper;
     @Resource
     private RulePublishedMapper publishedMapper;
@@ -531,6 +532,11 @@ public class RuleDependencyClosureService {
                     }
                 }
             }
+        } else if ("SFTP".equals(source)) {
+            addExternalBinding(variable, actualType, "SFTP", config.getLong("sftpDatasourceId"),
+                    path, dependencies, issues);
+            collectStructuredReferences(JSON.toJSONString(config.get("remotePath")), variable.getProjectId(),
+                    dependencies, issues, new LinkedHashSet<>(), new LinkedHashSet<>());
         } else if ("LIST".equals(source)) {
             collectStructuredReferences(JSON.toJSONString(config.get("queryOperands")),
                     variable.getProjectId(), dependencies, issues, new LinkedHashSet<>(), new LinkedHashSet<>());
@@ -579,6 +585,9 @@ public class RuleDependencyClosureService {
             if (api != null) { code = api.getApiCode(); name = api.getApiName(); }
         } else if ("DB_DATASOURCE".equals(targetResourceType) && dbDatasourceMapper != null) {
             var datasource = dbDatasourceMapper.selectById(resourceId);
+            if (datasource != null) { code = datasource.getDatasourceCode(); name = datasource.getDatasourceName(); }
+        } else if ("SFTP".equals(targetResourceType) && sftpDatasourceMapper != null) {
+            var datasource = sftpDatasourceMapper.selectById(resourceId);
             if (datasource != null) { code = datasource.getDatasourceCode(); name = datasource.getDatasourceName(); }
         } else if ("LIST_LIBRARY".equals(targetResourceType) && listLibraryMapper != null) {
             var list = listLibraryMapper.selectById(resourceId);

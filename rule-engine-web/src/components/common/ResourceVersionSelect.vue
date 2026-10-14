@@ -1,7 +1,7 @@
 <template>
-  <el-select :model-value="selected" :loading="loading" :disabled="disabled || !resourceId" aria-label="资源执行版本" @visible-change="load" @change="select">
+  <el-select class="resource-version-select" :model-value="selected" :loading="loading" :disabled="disabled || !resourceId" :title="selectedLabel" aria-label="资源执行版本" @visible-change="load" @change="select">
     <el-option value="LATEST" label="最新版（当前生产）" />
-    <el-option v-for="row in versions" :key="row.versionId" :value="String(row.versionId)" :label="`指定 v${row.version}`" />
+    <el-option v-for="row in versions" :key="row.versionId" :value="String(row.versionId)" :label="versionLabel(row)" />
     <el-option v-if="modelValue.versionMode === 'FIXED' && !selectedVersion" :value="selected" :label="selectionNotice" disabled />
   </el-select>
 </template>
@@ -20,6 +20,7 @@ export default {
     },
     selected() { return this.modelValue.versionMode === 'FIXED' ? String(this.selectedVersion?.versionId ?? this.modelValue.versionId) : 'LATEST' },
     selectionNotice() { return this.error ? '所选版本暂时无法核验' : this.loaded ? '所选版本已删除或不可用' : '指定版本（待核验）' },
+    selectedLabel() { return this.modelValue.versionMode === 'FIXED' ? this.selectedVersion ? this.versionLabel(this.selectedVersion) : this.selectionNotice : '最新版（当前生产）' },
     identity() { return `${this.resourceType}:${this.resourceId}` },
   },
   watch: { identity() { this.sequence++; this.versions = []; this.history = []; this.loading = false; this.loaded = false; this.error = false; if (this.modelValue.versionMode === 'FIXED') this.load(true) } },
@@ -37,7 +38,19 @@ export default {
       } catch (error) { if (sequence === this.sequence) { this.versions = []; this.history = []; this.error = true; this.$message.error(error.message || '版本读取失败') } }
       finally { if (sequence === this.sequence) this.loading = false }
     },
-    select(value) { if (this.disabled || !this.resourceId || value !== 'LATEST' && !this.versions.some(row => String(row.versionId) === value)) return; const selection = { versionMode: value === 'LATEST' ? 'LATEST' : 'FIXED', versionId: value === 'LATEST' ? null : value }; this.$emit('update:modelValue', selection); this.$emit('change', selection) },
+    versionLabel(row) { return `指定 v${row.version}${row.revision ? ` · 修订 ${row.revision}` : ''}` },
+    select(value) {
+      if (this.disabled || !this.resourceId || value !== 'LATEST' && !this.versions.some(row => String(row.versionId) === value)) return
+      const selectedVersion = this.versions.find(row => String(row.versionId) === String(value))
+      const selection = { versionMode: value === 'LATEST' ? 'LATEST' : 'FIXED', versionId: value === 'LATEST' ? null : value }
+      this.$emit('update:modelValue', selection)
+      this.$emit('change', { ...selection, version: selectedVersion?.version ?? null, revision: selectedVersion?.revision ?? null, label: value === 'LATEST' ? '最新版（当前生产）' : selectedVersion ? this.versionLabel(selectedVersion) : this.selectionNotice })
+    },
   },
 }
 </script>
+
+<style scoped>
+.resource-version-select { width: 220px; max-width: 100%; }
+.resource-version-select :deep(.el-select__selected-item) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>

@@ -19,7 +19,7 @@
             <span class="fp-category-icon" aria-hidden="true">{{ entry.icon }}</span><span>{{ entry.label }}</span><small>{{ entry.count }}</small>
           </button>
         </div>
-        <div class="fp-sidebar-hint">单击查看 · 双击选择</div>
+        <div class="fp-sidebar-hint">单击模块展开 · 单击字段选择</div>
       </nav>
       <main class="fp-main">
         <div class="fp-search"><el-input :model-value="query" size="small" clearable aria-label="搜索字段名称或编码" placeholder="搜索字段名称或编码" @update:model-value="search" /></div>
@@ -38,7 +38,16 @@
           <div :style="{ height: Math.max(0, pageRows.length - virtualEnd) * rowHeight + 'px' }" />
           <div v-if="!rows.length" class="fp-empty">{{ loading ? '正在加载字段…' : '没有符合条件的字段' }}</div>
         </div>
-        <div class="fp-preview" :title="previewText">{{ previewText || '选择字段可查看完整名称、编码和类型' }}</div>
+        <el-tooltip
+          v-if="previewText"
+          :content="previewText"
+          placement="top"
+          :show-after="120"
+          popper-class="field-picker-preview-tooltip"
+        >
+          <div class="fp-preview">{{ previewText }}</div>
+        </el-tooltip>
+        <div v-else class="fp-preview">选择字段可查看完整名称、编码和类型</div>
         <footer class="fp-pagination">
           <span>共 {{ rows.length }} 项</span>
           <label>每页 <select :value="pageSize" aria-label="每页字段数" @change="changePageSize(Number($event.target.value))"><option v-for="size in pageSizes" :key="size" :value="size">{{ size }} 条</option></select></label>
@@ -60,8 +69,10 @@ import { normalizeFieldPageSize } from '@/utils/fieldPickerPreferences'
 import { filterFieldTreeByTags } from '@/utils/fieldPickerPolicy'
 import { fieldPickerDetails } from '@/utils/fieldPickerDetails'
 import { canViewPickerItem, recordPickerActivity } from '@/security/pickerAccess'
+import { API_PICKER_CATEGORIES } from '@/utils/pickerCategories'
 
 const categoryMeta = {
+  ...Object.fromEntries(API_PICKER_CATEGORIES.map(item => [item.key, [item.label, item.icon]])),
   selected: ['已选内容', '✓'], recent: ['最近使用', '◷'], all: ['全部字段', '⊞'], standalone: ['变量', '{}'], constant: ['常量', 'C'], object: ['数据对象', '◇'], model: ['模型', 'M'], function: ['函数 / 方法', 'ƒ'], operator: ['操作符', '∑'], external: ['外数 API', '↗'], rule: ['规则', 'R'], list: ['名单', '[]'], database: ['数据库', '▤'],
 }
 export default {
@@ -79,15 +90,21 @@ export default {
     selectableTags: { type: [Array, Object], default: null },
   },
   emits: ['category', 'search', 'select', 'manual', 'expression', 'close', 'back', 'move', 'resize', 'page-size'],
-  data() { return { expanded: new Set(), page: 1, pageSize: normalizeFieldPageSize(this.initialPageSize), scrollTop: 0, viewportHeight: 300, preview: null, motion: null, locatePending: true, rowHeight: FIELD_ROW_HEIGHT } },
+  data() { return { expanded: new Set(), page: 1, pageSize: normalizeFieldPageSize(this.initialPageSize), scrollTop: 0, viewportHeight: 300, preview: null, motion: null, locatePending: true, rowHeight: FIELD_ROW_HEIGHT, lastConfirmKey: '', lastConfirmAt: 0 } },
   computed: {
     pageSizes() { return [...new Set([...FIELD_PAGE_SIZES, this.pageSize])].sort((a, b) => a - b) },
     tree() { return markRaw(filterFieldTreeByTags(filterFieldTree(buildFieldTree(this.items.filter(canViewPickerItem)), this.expectedType), this.visibleTags, this.selectableTags)) },
     categories() {
       const counts = new Map([['all', 0], ['selected', this.availableSelected.length], ['recent', this.availableRecent.length]])
-      this.tree.nodes.forEach(node => { if (node.item) counts.set(node.category, (counts.get(node.category) || 0) + 1) })
+      this.tree.nodes.forEach(node => {
+        // 对象/模型分组行只是目录结构，不应被计为可选字段数量。
+        if (node.item && !node.item._versionGroup) counts.set(node.category, (counts.get(node.category) || 0) + 1)
+      })
       counts.set('all', [...this.tree.nodes.values()].filter(node => node.item && node.selectable).length)
-      return Object.entries(categoryMeta).filter(([key]) => counts.has(key)).map(([key, [label, icon]]) => ({ key, label, icon, count: counts.get(key) }))
+      const persistentCategories = new Set(['recent', 'selected'])
+      return Object.entries(categoryMeta)
+        .filter(([key]) => persistentCategories.has(key) || (counts.get(key) || 0) > 0)
+        .map(([key, [label, icon]]) => ({ key, label, icon, count: counts.get(key) || 0 }))
     },
     availableSelected() { return [...new Set([this.selectedKey, ...this.selectedKeys])].filter(key => this.tree.nodes.get(key)?.selectable) },
     availableRecent() { return this.recentKeys.filter(key => this.tree.nodes.get(key)?.selectable) },
@@ -107,7 +124,8 @@ export default {
     stickyParents() {
       if (['recent', 'selected'].includes(this.category)) return []
       const current = this.pageRows[Math.min(this.pageRows.length - 1, Math.floor(this.scrollTop / this.rowHeight))]
-      return fieldAncestors(current?.node)
+      const pageKeys = new Set(this.pageRows.map(row => row.node.key))
+      return fieldAncestors(current?.node).filter(parent => !pageKeys.has(parent.key))
     },
     selectedNode() { return this.tree.nodes.get(this.selectedKey) },
     selectedOutsideSearch() { return this.selectedNode && this.query && !this.rows.some(row => row.node.key === this.selectedKey) },
@@ -151,6 +169,10 @@ export default {
       this.locatePending = false
       this.preview = node
       if (node.item && !(event?.detail > 1)) recordPickerActivity('FIELD_VIEW', node.item, this.$route)
+      if (!node.children.length && node.selectable && event?.detail <= 1) {
+        this.confirm(node)
+        return
+      }
       // The second click of a double click must not collapse the tree before confirmation.
       if (event?.detail > 1 || !node.children.length) return
       const expanded = new Set(this.expanded)
@@ -159,6 +181,10 @@ export default {
     },
     confirm(node) {
       if (node.item && node.selectable && canViewPickerItem(node.item)) {
+        const now = Date.now()
+        if (this.lastConfirmKey === node.key && now - this.lastConfirmAt < 300) return
+        this.lastConfirmKey = node.key
+        this.lastConfirmAt = now
         recordPickerActivity('FIELD_SELECT', node.item, this.$route)
         this.$emit('select', node.item)
       }
@@ -199,10 +225,8 @@ export default {
     stopMotion() { this.motion = null; window.removeEventListener('pointermove', this.onMotion); window.removeEventListener('pointerup', this.stopMotion); window.removeEventListener('pointercancel', this.stopMotion) },
     clamp() {
       if (!this.visible || !this.$refs.panel) return
-      const rect = this.$refs.panel.getBoundingClientRect()
       const width = Math.min(this.width, window.innerWidth - 8), height = Math.min(this.height, window.innerHeight - 8)
       this.$emit('resize', { width, height })
-      this.$emit('move', { left: Math.max(4, Math.min(window.innerWidth - width - 4, rect.left)), top: Math.max(4, Math.min(window.innerHeight - height - 4, rect.top)) })
       this.measure()
     },
   },
@@ -234,12 +258,13 @@ export default {
 .fp-main { display:flex; flex:1; min-width:0; flex-direction:column; }
 .fp-search { padding:8px; }
 .fp-search :deep(.el-input__wrapper) { border-radius:0; }
-.fp-columns { display:grid; grid-template-columns:48px minmax(70px,1fr) minmax(70px,1.15fr) 130px; align-items:center; min-height:30px; padding:0 8px; color:var(--tianshu-text-tertiary); border-bottom:1px solid var(--tianshu-border); }
+.fp-columns { display:grid; grid-template-columns:48px minmax(70px,1fr) minmax(70px,1.15fr) 130px 28px; align-items:center; min-height:30px; padding:0 8px; color:var(--tianshu-text-tertiary); border-bottom:1px solid var(--tianshu-border); }
 .fp-viewport { flex:1; min-height:0; overflow:auto; position:relative; overflow-anchor:none; }
 .fp-sticky { position:sticky; top:0; height:0; overflow:visible; z-index:2; }
 .fp-sticky :deep(.fp-row) { background:var(--tianshu-bg-muted); box-shadow:0 1px var(--tianshu-border); }
 .fp-empty { padding:30px 10px; text-align:center; color:var(--tianshu-text-tertiary); }
 .fp-preview { min-height:28px; line-height:28px; padding:0 8px; border-top:1px solid var(--tianshu-border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--tianshu-text-secondary); }
+:global(.field-picker-preview-tooltip.el-popper) { max-width:min(720px,calc(100vw - 24px)); white-space:normal; overflow-wrap:anywhere; }
 .fp-pagination { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:6px; padding:6px 8px; border-top:1px solid var(--tianshu-border); font-size:11px; }
 .fp-pagination > span { margin-right:auto; }
 .fp-pagination input { width:36px; padding:2px; }
@@ -265,5 +290,5 @@ export default {
 .fp-panel :deep(.rule-call-version > span:first-child),.fp-panel :deep(.rule-call-version > small) { display:none; }
 .fp-panel :deep(.rule-call-version .el-select) { width:100%; }
 .fp-panel :deep(.rule-call-version .el-select__wrapper) { border-radius:0; min-height:26px; font-size:11px; }
-@media(max-width:640px) { .fp-categories { width:112px; } .fp-category-icon { display:none; } .fp-columns { grid-template-columns:40px minmax(45px,1fr) minmax(45px,1fr) 96px; } }
+@media(max-width:640px) { .fp-categories { width:112px; } .fp-category-icon { display:none; } .fp-columns { grid-template-columns:40px minmax(45px,1fr) minmax(45px,1fr) 96px 24px; } }
 </style>

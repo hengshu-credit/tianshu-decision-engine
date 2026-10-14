@@ -122,6 +122,53 @@ export function dashboardPointsInGeoJson(points = [], geoJson) {
 }
 
 /**
+ * 将经纬度网格聚合到当前地图的行政区边界，用于侧栏的地区统计。
+ * 统计沿用服务端返回的网格计数和决策分类计数，切换行政层级或下钻后
+ * 只保留当前 GeoJSON 范围内的进件，避免侧栏与地图颜色使用不同口径。
+ */
+export function dashboardRegionStatistics(geoJson, geo = {}) {
+  const regions = (geoJson?.features || [])
+    .filter(feature => !feature.properties?.mapRole && feature.geometry)
+    .map(feature => ({
+      feature,
+      id: feature.properties?.shapeID || feature.properties?.ADM0_A3 || feature.properties?.NAME_ZH,
+      name: feature.properties?.shapeName || feature.properties?.NAME_ZH || feature.properties?.shapeID
+    }))
+    .filter(region => region.id && region.name)
+  const totals = regions.map(region => ({
+    id: region.id,
+    name: region.name,
+    count: 0,
+    passCount: 0,
+    reviewCount: 0,
+    rejectCount: 0
+  }))
+  const points = Array.isArray(geo?.points) ? geo.points : []
+  for (const point of points) {
+    const longitude = Number(point?.longitude)
+    const latitude = Number(point?.latitude)
+    const count = Number(point?.count || 0)
+    if (!Number.isFinite(longitude) || !Number.isFinite(latitude) || !Number.isFinite(count) || count <= 0) continue
+    const index = regions.findIndex(region => pointInGeometry([longitude, latitude], region.feature.geometry))
+    if (index < 0) continue
+    const target = totals[index]
+    target.count += count
+    target.passCount += nonNegativeCount(point?.passCount)
+    target.reviewCount += nonNegativeCount(point?.reviewCount)
+    target.rejectCount += nonNegativeCount(point?.rejectCount)
+  }
+  const total = totals.reduce((sum, region) => sum + region.count, 0)
+  return totals
+    .filter(region => region.count > 0)
+    .sort((first, second) => second.count - first.count || first.name.localeCompare(second.name, 'zh-CN'))
+    .map(region => ({
+      ...region,
+      rate: total ? region.count / total : 0,
+      rejectRate: region.count ? region.rejectCount / region.count : 0
+    }))
+}
+
+/**
  * 根据当前已加载的行政区边界计算地图视角。
  *
  * 下钻后的 GeoJSON 只包含当前层级（或当前父级）边界，使用它计算
@@ -202,6 +249,11 @@ function parentPropertyMatch(child = {}, parent = {}) {
 
 function normalizeRegionName(value) {
   return typeof value === 'string' ? value.replace(/\s+/g, '') : ''
+}
+
+function nonNegativeCount(value) {
+  const count = Number(value || 0)
+  return Number.isFinite(count) && count > 0 ? count : 0
 }
 
 function pointInGeometry(point, geometry, includeBoundary = true) {

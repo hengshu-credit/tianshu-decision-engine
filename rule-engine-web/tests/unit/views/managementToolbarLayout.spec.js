@@ -10,6 +10,7 @@ import ModelList from '@/views/model/ModelList.vue'
 import FunctionList from '@/views/function/FunctionList.vue'
 import ExperimentList from '@/views/experiment/ExperimentList.vue'
 import BillingList from '@/views/billing/BillingList.vue'
+import ApprovalList from '@/views/approval/ApprovalList.vue'
 
 const SlotStub = {
   template: '<div><slot /></div>',
@@ -106,6 +107,7 @@ const toolbarPages = [
   ['函数管理', FunctionList, 1],
   ['分流实验', ExperimentList, 1],
   ['账单管理', BillingList, 3],
+  ['审批管理', ApprovalList, 1],
 ]
 
 describe('管理页面筛选工具栏布局', () => {
@@ -124,6 +126,8 @@ describe('管理页面筛选工具栏布局', () => {
         form.element.compareDocumentPosition(actions.element) &
           Node.DOCUMENT_POSITION_FOLLOWING
       ).not.toBe(0)
+      const fields = actions.findComponent({ name: 'TableColumnSettings' })
+      if (fields.exists()) expect(fields.element.previousElementSibling).toBeNull()
     })
 
     wrapper.unmount()

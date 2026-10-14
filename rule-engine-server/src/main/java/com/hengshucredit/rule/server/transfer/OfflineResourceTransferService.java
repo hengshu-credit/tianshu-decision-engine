@@ -482,7 +482,7 @@ public class OfflineResourceTransferService {
                 || "BEAN".equalsIgnoreCase(String.valueOf(configuration.get("implType"))))) {
             fields.add("目标环境需提供同名 Java 类或 Spring Bean");
         }
-        if (type == TransferResourceType.DATABASE || type == TransferResourceType.EXTERNAL_DATASOURCE
+        if (type == TransferResourceType.DATABASE || type == TransferResourceType.SFTP || type == TransferResourceType.EXTERNAL_DATASOURCE
                 || type == TransferResourceType.EXTERNAL_API) {
             fields.add("目标环境连接、地址和凭据需复核");
         }

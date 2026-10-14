@@ -61,7 +61,15 @@
     </template>
     <template v-else-if="mode === 'SNAPSHOT'">
       <p class="expectation-help">{{ modelValue == null ? '已有 JSON 快照继续保留，不会自动转换为字段预期。' : '比较执行是否成功、业务输出和错误信息；不比较外层接口响应码及耗时。' }}</p>
-      <el-input type="textarea" :rows="8" :model-value="snapshotJson" data-testid="expectation-snapshot" aria-label="预期 JSON 快照" placeholder="粘贴已确认的预期响应；留空表示尚未设置预期" @update:model-value="$emit('update:snapshotJson', $event)" />
+      <MonacoEditor
+        :value="snapshotJson"
+        language="json"
+        height="190px"
+        data-testid="expectation-snapshot"
+        aria-label="预期 JSON 快照"
+        :options="snapshotEditorOptions"
+        @update:value="$emit('update:snapshotJson', $event)"
+      />
       <div v-if="snapshotError" class="expectation-error" role="alert">{{ snapshotError }}</div>
       <el-button size="small" data-testid="expectation-use-actual" :disabled="!actualResponseJson" @click="$emit('update:snapshotJson', actualResponseJson)">采用最近一次结果</el-button>
       <p class="expectation-help">采用结果会替换当前预期快照，请先确认业务结果正确；执行成功本身不代表符合预期。</p>
@@ -73,6 +81,7 @@
 <script>
 import ConditionRangeInput from '@/components/common/ConditionRangeInput.vue'
 import ConditionCollectionInput from '@/components/common/ConditionCollectionInput.vue'
+import MonacoEditor from '@/components/MonacoEditor.vue'
 import { parseExactJson, parseExecutionSnapshotJson, stringifyExactJson, cloneExactJson, isExactNumber, exactNumberText } from '@/utils/exactJson'
 import { isValidDecimalText, requireRangeBounds } from '@/utils/conditionRange'
 import { requireCollectionItems } from '@/utils/conditionCollection'
@@ -96,7 +105,7 @@ const literal = (valueType, value) => ({ kind: 'LITERAL', valueType, value })
 
 export default {
   name: 'ExpectedOutputEditor',
-  components: { ConditionRangeInput, ConditionCollectionInput },
+  components: { ConditionRangeInput, ConditionCollectionInput, MonacoEditor },
   props: {
     modelValue: { type: String, default: null },
     outputs: { type: Array, default: () => [] },
@@ -105,6 +114,14 @@ export default {
   },
   emits: ['update:modelValue', 'update:snapshotJson'],
   computed: {
+    snapshotEditorOptions() {
+      return {
+        minimap: { enabled: false },
+        formatOnType: false,
+        formatOnPaste: false,
+        wordWrap: 'on',
+      }
+    },
     parsed() {
       if (this.modelValue == null) return { config: { version: 1, mode: 'SNAPSHOT', checks: [] }, error: '' }
       try {

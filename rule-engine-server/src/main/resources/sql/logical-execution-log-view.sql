@@ -1,5 +1,4 @@
--- 由 SchemaSync 在旧库的 trace_id、attempt_no 等前置列补齐后创建。
--- 不放入启动时先执行的 schema.sql，避免旧表的 CREATE TABLE IF NOT EXISTS 跳过补列。
+-- schema.sql 包含带字段存在性守卫的权威定义；此独立副本供 SchemaSync 在旧库补齐字段后重建视图。
 CREATE OR REPLACE SQL SECURITY INVOKER VIEW `rule_execution_log_current` AS
 SELECT log_row.*
 FROM rule_execution_log log_row

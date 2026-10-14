@@ -103,8 +103,8 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
-          <governance-workspace-toolbar resource-type="DATABASE" />
-              <table-column-settings :columns="databaseColumns" storage-key="tianshu:table-columns:database-list" />
+          <table-column-settings :columns="databaseColumns" storage-key="tianshu:table-columns:database-list" />
+              <governance-workspace-toolbar resource-type="DATABASE" />
               <el-button
                 v-permission="'database:edit'"
                 type="primary"
@@ -208,7 +208,7 @@
               ></governance-resource-status>
             </template>
           </el-table-column>
-          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="355" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['查询', '编辑', '测试', '版本', '发布', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button v-permission="'database:edit'"
                 link
@@ -419,6 +419,23 @@
             >按上方表单自动生成 JDBC URL</el-checkbox
           >
         </el-form-item>
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="用户名">
+              <el-input v-model="form.username" autocomplete="off" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="密码">
+              <el-input
+                v-model="form.password"
+                type="password"
+                autocomplete="new-password"
+                show-password
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
         <div v-if="form.connectionMode === 'SSH_TUNNEL'" class="form-section">
           <div class="section-title">SSH 隧道</div>
           <el-row :gutter="12">
@@ -470,13 +487,13 @@
           <el-row :gutter="12">
             <el-col :span="16">
               <el-form-item label="SSH私钥">
-                <el-input
-                  v-model="form.sshPrivateKey"
-                  class="code-input"
-                  type="textarea"
-                  :rows="4"
-                  placeholder="可粘贴 PEM 私钥内容；密码和私钥二选一"
+                <monaco-editor
+                  v-model:value="form.sshPrivateKey"
+                  language="plaintext"
+                  height="130px"
+                  :options="{ minimap: { enabled: false }, wordWrap: 'on' }"
                 />
+                <div class="field-help">可粘贴 PEM 私钥内容；密码和私钥二选一</div>
               </el-form-item>
             </el-col>
             <el-col :span="8">
@@ -491,23 +508,6 @@
             </el-col>
           </el-row>
         </div>
-        <el-row :gutter="12">
-          <el-col :span="12">
-            <el-form-item label="用户名">
-              <el-input v-model="form.username" autocomplete="off" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="密码">
-              <el-input
-                v-model="form.password"
-                type="password"
-                autocomplete="new-password"
-                show-password
-              />
-            </el-form-item>
-          </el-col>
-        </el-row>
         <el-row :gutter="12">
           <el-col :span="8">
             <el-form-item label="最大连接数">
@@ -762,6 +762,7 @@ import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import { routeProjectId } from '@/utils/projectContext'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
   data() {
@@ -926,6 +927,7 @@ export default {
     },
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     emptyForm() {
       return {
         id: null,

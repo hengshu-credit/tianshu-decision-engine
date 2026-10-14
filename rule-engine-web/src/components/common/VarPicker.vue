@@ -41,6 +41,7 @@
           :popper-options="{ strategy: 'fixed', modifiers: [{ name: 'computeStyles', options: { gpuAcceleration: false } }] }"
         >
           <field-picker-panel
+            v-if="!lazyCatalog || popoverVisible"
             ref="fieldPanel" :items="panelItems" :selected-key="panelSelectedKey" :visible="popoverVisible"
             :selected-keys="panelSelectedKeys" :recent-keys="panelRecentKeys"
             :query="searchText" :category="panelCategory" :loading="loading"
@@ -147,6 +148,8 @@ import FieldVersionSelect from './FieldVersionSelect.vue'
 import { versionFields, compactVersion, resourceVersionIdentity } from '@/utils/resourceVersion'
 import { getFieldVersionFields } from '@/api/fieldPickerVersion'
 import { fieldIdentity, pickerTypeMatches } from '@/utils/fieldPicker'
+import { arrayLiteralDraft } from '@/utils/literalType'
+import { pickerReferenceDisplay } from '@/utils/pickerReferenceDisplay'
 import { recentFieldKeys, rememberField, selectedFieldKeys } from '@/utils/fieldPickerHistory'
 import { preferredFieldPageSize, normalizeFieldPageSize, setPreferredFieldPageSize } from '@/utils/fieldPickerPreferences'
 import { canUsePickerAction, fieldPickerTags, matchesFieldTags } from '@/utils/fieldPickerPolicy'
@@ -161,7 +164,7 @@ import { $emit } from '../../utils/gogocodeTransfer'
 import { varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
 import { formatVarDisplay } from '@/utils/varDisplay'
 import { formatExpressionFormula } from '@/utils/expressionDisplay'
-import { REFERENCE_PICKER_CATEGORIES } from '@/utils/pickerCategories'
+import { REFERENCE_PICKER_CATEGORIES, API_PICKER_CATEGORIES } from '@/utils/pickerCategories'
 import {
   groupReferenceOptions,
   referenceChildRelativePath,
@@ -171,7 +174,6 @@ import {
   createReferenceOperand,
   createOperationOperand,
   OPERATION_OPERATORS,
-  operandDisplay,
   operandKindMeta,
 } from '@/utils/operand'
 
@@ -242,6 +244,7 @@ export default {
     grouped: { type: Boolean, default: false },
     groupedByCategory: { type: Boolean, default: true },
     loading: { type: Boolean, default: false },
+    lazyCatalog: Boolean,
     disabled: { type: Boolean, default: false },
     virtualRef: { type: Object, default: null },
     /** 是否允许手动输入自定义变量（不在变量管理中的） */
@@ -353,6 +356,7 @@ export default {
     panelRecentKeys() { return recentFieldKeys.value },
     panelSelectedKeys() { return [...new Set([this.panelSelectedKey, ...selectedFieldKeys(this.value, this.panelItems, this.selectedItems)].filter(Boolean))] },
     basePanelItems() {
+      if (this.lazyCatalog && !this.popoverVisible) return []
       const expected = this.typeFilter || (this.operandMode ? this.expectedType : '')
       const fields = (!this.operandMode || this.allowsOperandKind('REFERENCE'))
         ? this.vars.filter(item => this.isWritableOption(item)) : []
@@ -370,6 +374,17 @@ export default {
         ? OPERATION_OPERATORS.map(operator => ({ _operation: operator, _varId: operator, _refType: 'OPERATOR', _ref: { category: 'operator' }, varCode: operator, varType: 'OPERATOR', varLabel: ({ '+': '加', '-': '减', '*': '乘', '/': '除', '%': '取余', '==': '等于', '!=': '不等于', '>': '大于', '>=': '大于等于', '<': '小于', '<=': '小于等于', '&&': '且', '||': '或' })[operator] })) : []
       return [...fields, ...functions, ...operators]
     },
+    categorizedVars() {
+      const result = new Map()
+      for (const item of this.vars) {
+        const category = (item._ref && item._ref.category) || 'standalone'
+        if (this.typeFilter && item.varType !== this.typeFilter) continue
+        if (!this.isWritableOption(item)) continue
+        if (!result.has(category)) result.set(category, [])
+        result.get(category).push(item)
+      }
+      return result
+    },
     panelItems() {
       let items = this.basePanelItems
       for (const [key, group] of Object.entries(this.groupVersions)) {
@@ -385,7 +400,7 @@ export default {
       }
       return items.map(item => this.versionedItem(item, this.fieldVersionSelection(item)))
     },
-    inputVersion() { return compactVersion(this.versionSelection || this.value) },
+    inputVersion() { return this.operandMode && ['PATH', 'REFERENCE'].includes(this.value?.kind) ? '' : compactVersion(this.versionSelection || this.value) },
     panelSelectedKey() {
       if (this.operandMode && this.value?.kind === 'PATH' && this.value.protocolPath) {
         const item = this.vars.find(item => item._refType === 'API_CONTEXT' && item.varCode === this.value.value)
@@ -418,7 +433,7 @@ export default {
     referenceInputValue() {
       if (this.operandMode) {
         return ['LITERAL', 'PATH', 'REFERENCE'].includes(this.value && this.value.kind)
-          ? operandDisplay(this.value)
+          ? pickerReferenceDisplay(this.value, this.vars)
           : formatExpressionFormula(this.value, { humanReadable: true })
       }
       return this.referenceKeyword || this.displayValue
@@ -468,7 +483,7 @@ export default {
                 return String(item.id) === String(this.value)
               }.bind(this)
             )
-          : null
+          : this.vars.find(item => item.varCode === this.value)
       if (!v) return this.value
       var ref = v._ref || {}
       var label = this.optionLabel(v)
@@ -480,10 +495,11 @@ export default {
     },
     /** 分类列表（仅显示有数据的分类） */
     categoryList() {
+      if (this.lazyCatalog && !this.popoverVisible) return []
       var list = [
         { key: 'manual', label: '手动输入', count: 0 },
         { key: 'selected', label: '已选字段', count: 0 },
-        ...REFERENCE_PICKER_CATEGORIES.map(function (item) {
+        ...[...REFERENCE_PICKER_CATEGORIES, ...API_PICKER_CATEGORIES].map(function (item) {
           return { key: item.key, label: item.label, count: 0 }
         }),
         { key: 'function', label: '函数/方法', count: 0 },
@@ -530,7 +546,6 @@ export default {
     },
     /** 右侧项列表（按当前分类过滤 + 排序）。对象/模型字段自动附加同分组下的所有字段 children） */
     rightItems() {
-      var self = this
       if (this.activeCategory === 'function') {
         return this.functions.map(function (fn) {
           return {
@@ -556,13 +571,7 @@ export default {
       if (this.activeCategory === 'selected') {
         return this.selectedItems.filter(this.isWritableOption)
       }
-      var list = this.vars.filter(function (v) {
-        var cat = (v._ref && v._ref.category) || 'standalone'
-        if (cat !== self.activeCategory) return false
-        if (self.typeFilter && v.varType !== self.typeFilter) return false
-        if (!self.isWritableOption(v)) return false
-        return true
-      })
+      var list = (this.categorizedVars.get(this.activeCategory) || []).slice()
 
       if (this.isGroupedFieldCategory(this.activeCategory)) {
         return this.groupFieldItems(list, this.activeCategory)
@@ -675,19 +684,12 @@ export default {
       return this.findOptionByIdentity(parts.slice(1).join(':'), parts[0])
     },
     categoryItems(category) {
-      var self = this
       if (category === 'manual') return []
       if (category === 'function') return this.functions
       if (category === 'selected') {
         return this.selectedItems.filter(this.isWritableOption)
       }
-      var list = this.vars.filter(function (v) {
-        var cat = (v._ref && v._ref.category) || 'standalone'
-        if (cat !== category) return false
-        if (self.typeFilter && v.varType !== self.typeFilter) return false
-        if (!self.isWritableOption(v)) return false
-        return true
-      })
+      var list = (this.categorizedVars.get(category) || []).slice()
 
       if (this.isGroupedFieldCategory(category)) {
         return this.groupFieldItems(list, category)
@@ -1315,6 +1317,13 @@ export default {
     focusCurrentValueInPicker(options = {}) {
       var option
       if (this.operandMode && this.value && typeof this.value === 'object') {
+        if (this.value.kind === 'ARRAY' || arrayLiteralDraft(this.value)) {
+          if (options.restoreManual !== false) {
+            if (arrayLiteralDraft(this.value) && this.allowsOperandKind('LITERAL')) this.requestManualEdit('LITERAL')
+            else this.$emit('expression', this.value)
+          }
+          return true
+        }
         if (this.value.kind === 'LITERAL' || (this.value.kind === 'PATH' && !this.value.protocolPath)) {
           this.positionPickerCategory('manual')
           if (options.restoreManual !== false && this.restoreManualOnOpen && this.allowsOperandKind(this.value.kind)) this.requestManualEdit(this.value.kind)

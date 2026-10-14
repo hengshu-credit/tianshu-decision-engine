@@ -25,6 +25,7 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
         Map<String, Object> effective = new LinkedHashMap<>();
         Map<String, Object> headers = new LinkedHashMap<>();
         Map<String, Object> query = new LinkedHashMap<>();
+        Map<String, Object> cookies = new LinkedHashMap<>();
         Map<String, Object> body = new LinkedHashMap<>();
         Map<String, Object> context = new LinkedHashMap<>(input == null ? Map.of() : input);
         context.putIfAbsent("input", input == null ? Map.of() : input);
@@ -56,6 +57,7 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
             switch (location) {
                 case "HEADER" -> headers.put(path, reference);
                 case "QUERY" -> query.put(path, reference);
+                case "COOKIE" -> cookies.put(path, reference);
                 case "JSON" -> write(body, path, reference);
                 case "FORM", "FORM_DATA" -> body.put(path, reference);
                 default -> throw new IllegalArgumentException("不支持的请求字段位置: " + location);
@@ -72,6 +74,7 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
             body.put("_nullPolicy", "SEND_ALL");
             api.setHeaderConfig(JSON.toJSONString(headers));
             api.setQueryConfig(JSON.toJSONString(query));
+            if (!cookies.isEmpty()) body.put("_cookies", cookies);
             api.setRequestMapping(JSON.toJSONString(body));
             api.setBodyTemplate("{}");
             Map<String, Object> params = new LinkedHashMap<>(context);

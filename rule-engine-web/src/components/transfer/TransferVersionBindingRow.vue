@@ -41,7 +41,7 @@ export default {
   methods: {
     async fetchResources({ query, pageNum, pageSize }) {
       const type = this.source.targetResourceType
-      const response = await listTransferResources({ nodeType: ({ EXTERNAL_API: 'API', DATABASE: 'DB', EXTERNAL_DATASOURCE: 'DATASOURCE' })[type] || type, keyword: query, pageNum, pageSize })
+      const response = await listTransferResources({ nodeType: ({ EXTERNAL_API: 'API', DATABASE: 'DB', SFTP: 'SFTP', EXTERNAL_DATASOURCE: 'DATASOURCE' })[type] || type, keyword: query, pageNum, pageSize })
       return { ...response.data, records: (response.data?.records || []).map(row => ({ id: row.id, label: `${row.displayName || row.name || row.code} · ${row.scope === 'GLOBAL' ? '全局' : row.projectName || '项目 ' + row.projectId}` })) }
     },
     selectResource(id) { this.$emit('update:modelValue', { resourceId: id || null, versionId: null, fieldId: null, expectedSnapshotId: null }) },

@@ -8,7 +8,7 @@
         </div>
       </div>
       <el-button
-        v-if="hasResourceId"
+        v-if="hasResourceId && showAction"
         data-action="run-resource-preflight"
         class="resource-preflight-button"
         size="small"
@@ -72,7 +72,8 @@ export default {
   props: {
     resourceType: { type: String, required: true },
     resourceId: { type: [String, Number], default: null },
-    configSignature: { type: String, default: '' }
+    configSignature: { type: String, default: '' },
+    showAction: { type: Boolean, default: true }
   },
   emits: ['checked'],
   data() {

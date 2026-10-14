@@ -35,6 +35,8 @@ import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
 import com.hengshucredit.rule.server.service.RuleExternalApiConfigService;
 import com.hengshucredit.rule.server.service.FunctionMethodCatalogService;
 import com.hengshucredit.rule.server.service.DBConnectPools;
+import com.hengshucredit.rule.server.service.SftpConnectPools;
+import com.hengshucredit.rule.server.mapper.RuleSftpDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RuleVariableOptionMapper;
 import com.hengshucredit.rule.server.service.RuleLifecycleService;
 import com.hengshucredit.rule.server.service.RuleDraftService;
@@ -108,6 +110,14 @@ public class GovernanceResourceAdapterConfiguration {
             GovernanceSecretCodec secretCodec,
             DBConnectPools pools) {
         return new DatabaseGovernedResourceAdapter(store(mapper), secretCodec, pools);
+    }
+
+    @Bean
+    public GovernedResourceAdapter sftpGovernanceAdapter(
+            RuleSftpDatasourceMapper mapper,
+            GovernanceSecretCodec secretCodec,
+            SftpConnectPools pools) {
+        return new SftpGovernedResourceAdapter(store(mapper), secretCodec, pools);
     }
 
     @Bean

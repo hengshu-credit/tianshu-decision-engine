@@ -12,6 +12,7 @@ export const SIDEBAR_MENUS = [
   { index: '/list', label: '名单管理', icon: 'Notebook', permission: 'list:view' },
   { index: '/datasource', label: '外数管理', icon: 'Connection', permission: 'datasource:view' },
   { index: '/database', label: '数据库管理', icon: 'Coin', permission: 'database:view' },
+  { index: '/sftp', label: 'SFTP管理', icon: 'Files', permission: 'database:view' },
   { index: '/model', label: '模型管理', icon: 'Cpu', permission: 'model:view' },
   { index: '/function', label: '函数管理', icon: 'ScaleToOriginal', permission: 'function:view' },
   { index: '/test', label: '规则测试', icon: 'VideoPlay', permission: 'rule:view' },
@@ -34,6 +35,7 @@ const MENU_PREFIXES = [
   ['/function/', '/function'],
   ['/datasource/', '/datasource'],
   ['/database/', '/database'],
+  ['/sftp/', '/sftp'],
   ['/experiment/', '/experiment'],
   ['/approval/', '/approval'],
   ['/account/', '/account']

@@ -110,4 +110,16 @@ describe('QL 脚本行内引擎引用', () => {
     expect(decorations[0].options.hoverMessage.isTrusted).toBe(false)
     expect(decorations[0].options.hoverMessage.supportHtml).toBe(false)
   })
+
+  test('通用编辑器模式按类型、编码、名称、版本展示引擎引用', () => {
+    const script = 'return age;'
+    const matches = collectQlScriptReferences(script, [option('age', 1, 'INTEGER', { varLabelText: '年龄', varObj: { version: 3 } })])
+    const model = { getPositionAt: offset => ({ lineNumber: 1, column: offset + 1 }) }
+    const decorations = buildQlReferenceDecorations(matches, model, {}, 'LIVE', { includeType: true })
+    expect(decorations).toHaveLength(3)
+    expect(decorations[0].options.before.content).toBe('123 ')
+    expect(decorations[1].options.inlineClassName).toBe('se-reference-code')
+    expect(decorations[2].options.before.content).toBe(' 年龄 ')
+    expect(decorations[2].options.after.content).toBe('v3')
+  })
 })

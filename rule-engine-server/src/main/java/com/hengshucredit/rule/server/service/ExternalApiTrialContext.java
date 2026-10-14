@@ -18,6 +18,8 @@ import java.util.function.Supplier;
 
 /** 仅管理端试运行安装的调用域；正式 API 调用不读取或创建试运行状态。 */
 final class ExternalApiTrialContext implements AutoCloseable {
+    private static final long STEP_IDENTITY_RANGE = 1L << 16;
+    private static final long MAX_ROW_ID = (Long.MAX_VALUE - (STEP_IDENTITY_RANGE - 1)) / STEP_IDENTITY_RANGE;
     private static final ThreadLocal<ExternalApiTrialContext> CURRENT = new ThreadLocal<>();
     private final ExternalApiTrialContext previous = CURRENT.get();
     final String trialId;
@@ -37,8 +39,7 @@ final class ExternalApiTrialContext implements AutoCloseable {
         this.trialId = trialId;
         this.expiresAt = expiresAt;
         this.snapshot = snapshot;
-        this.rootIdentity = -Math.multiplyExact(rowId, 65536L);
-        if (rootIdentity >= 0) throw new IllegalArgumentException("试运行内部身份超出可用范围");
+        this.rootIdentity = rootIdentity(rowId);
         callIds.put(rootIdentity, trialId);
         Set<String> uniqueCalls = new LinkedHashSet<>();
         uniqueCalls.add(trialId);
@@ -122,6 +123,17 @@ final class ExternalApiTrialContext implements AutoCloseable {
         Integer ordinal = indexes == null ? null : indexes.getInteger(stepId);
         if (ordinal == null || ordinal <= 0 || ordinal > 65535) throw new IllegalArgumentException("试运行步骤不在冻结快照中");
         return Math.subtractExact(rootIdentity, ordinal.longValue());
+    }
+
+    /**
+     * 用负数地址隔离试运行临时资源，并为每个步骤预留低 16 位序号空间。
+     * 先校验再计算，避免恶意或损坏的数据库 ID 把清理流程打成 ArithmeticException。
+     */
+    static long rootIdentity(long rowId) {
+        if (rowId <= 0 || rowId > MAX_ROW_ID) {
+            throw new IllegalArgumentException("试运行内部身份超出可用范围");
+        }
+        return -rowId * STEP_IDENTITY_RANGE;
     }
 
     String callId(Long identity) {

@@ -105,12 +105,12 @@
       </el-form>
       <div class="uiue-btn-bar">
         <div class="btn-right">
-          <governance-workspace-toolbar resource-type="RULE" />
           <table-column-settings
             v-model="ruleColumnOrder"
             :columns="ruleColumns"
             storage-key="tianshu:table-columns:rule-list"
           />
+          <governance-workspace-toolbar resource-type="RULE" />
           <el-button
             v-permission="'rule:edit'"
             type="primary"
@@ -158,7 +158,7 @@
           <span v-else>{{ ruleCellValue(row, column.key) }}</span>
         </template>
       </el-table-column>
-      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="325" align="center" fixed="right">
+      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['详情', '查看', '版本', '发布', '删除'])" align="center" fixed="right">
         <template v-slot="{ row }">
           <div class="table-operation-group">
             <el-button
@@ -334,6 +334,7 @@ import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
 import { ruleDesignerLocation } from '@/utils/ruleDesignerNavigation'
 import RuleModelTypeHelp from '@/components/rule/RuleModelTypeHelp.vue'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
   data() {
@@ -437,6 +438,7 @@ export default {
     this.loadProjectList()
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     restoreCachedState() {
       const state = restorePageState(projectPageStateKey('RuleList', this.contextProjectId))
       if (state.queryParams)

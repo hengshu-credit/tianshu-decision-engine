@@ -1,7 +1,6 @@
 <template>
   <div class="uiue-btn-bar variable-toolbar-actions">
     <div class="btn-right">
-      <governance-workspace-toolbar />
       <table-column-settings
         v-if="columnSettingsColumns.length"
         :model-value="columnSettingsModelValue"
@@ -9,6 +8,7 @@
         :storage-key="columnSettingsStorageKey"
         @update:model-value="$emit('update:columnSettingsModelValue', $event)"
       />
+      <governance-workspace-toolbar />
       <el-dropdown
         v-if="showBatchActions"
         v-permission="'approval:submit'"
@@ -46,17 +46,6 @@
         @click="$emit('create')"
         >{{ primaryCreateLabel }}</el-button
       >
-      <el-button
-        v-if="showBatchActions"
-        v-permission="'field:edit'"
-        size="small"
-        :icon="ElIconVideoPlay"
-        type="primary"
-        class="variable-validate-button"
-        :loading="validating"
-        @click="$emit('validate')"
-        >验证规则</el-button
-      >
     </div>
   </div>
 </template>
@@ -72,7 +61,6 @@ import {
   PriceTag as ElIconPriceTag,
   Tickets as ElIconTickets,
   Upload as ElIconUpload2,
-  VideoPlay as ElIconVideoPlay,
 } from '@element-plus/icons-vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
@@ -89,10 +77,6 @@ export default {
       type: Boolean,
       default: true,
     },
-    validating: {
-      type: Boolean,
-      default: false,
-    },
     columnSettingsColumns: {
       type: Array,
       default: () => [],
@@ -106,7 +90,7 @@ export default {
       default: 'tianshu:table-columns:variable-list',
     },
   },
-  emits: ['import', 'create', 'validate', 'update:columnSettingsModelValue'],
+  emits: ['import', 'create', 'update:columnSettingsModelValue'],
   data() {
     return {
       ElIconUpload2: markRaw(ElIconUpload2),
@@ -116,7 +100,6 @@ export default {
       ElIconCoin: markRaw(ElIconCoin),
       ElIconPriceTag: markRaw(ElIconPriceTag),
       ElIconPlus: markRaw(ElIconPlus),
-      ElIconVideoPlay: markRaw(ElIconVideoPlay),
     }
   },
 }
@@ -128,14 +111,4 @@ export default {
   margin: 0 0 0 auto;
 }
 
-.variable-validate-button {
-  color: var(--tianshu-brand-foreground) !important;
-  font-weight: 600;
-  background: var(--el-color-primary) !important;
-  border-color: var(--el-color-primary) !important;
-
-  :deep(.el-icon) {
-    color: currentColor;
-  }
-}
 </style>

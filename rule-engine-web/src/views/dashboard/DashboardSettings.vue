@@ -137,7 +137,7 @@
           <el-tag v-else type="success" size="small">可用</el-tag>
         </template>
       </el-table-column>
-      <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="100" align="center">
+      <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['恢复继承'])" align="center">
         <template #default="{ row }">
           <el-button
             link
@@ -186,6 +186,7 @@ import {
   saveDashboardSettings
 } from '@/api/dashboard'
 import { listProjects } from '@/api/project'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import {
   defaultDashboardMapView,
   readDashboardMapView,
@@ -217,6 +218,7 @@ export default {
     this.load()
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     persistMapView(successMessage) {
       const result = writeDashboardMapView(window.sessionStorage, this.mapView)
       if (!result.valid) {

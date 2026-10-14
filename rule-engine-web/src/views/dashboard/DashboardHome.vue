@@ -133,7 +133,17 @@
                 />
               </chart-card>
             </div>
-            <chart-card class="dashboard-chart-card--wide" title="进件地图热力图" :note="geoNote">
+            <div class="dashboard-map-layout">
+              <chart-card class="dashboard-map-side dashboard-map-side--left" title="地区进件数" note="进件数、占比与累计占比">
+                <dashboard-chart
+                  aria-label="地区进件数统计"
+                  height="clamp(420px, 62vh, 700px)"
+                  :empty="!regionStats.length"
+                  empty-description="暂无有效行政区进件坐标"
+                  :option="regionalApplicationOption"
+                />
+              </chart-card>
+              <chart-card class="dashboard-chart-card--wide dashboard-map-center" title="行政区进件分布地图" :note="geoNote">
               <template #actions>
                 <el-button
                   data-testid="dashboard-map-reset"
@@ -213,7 +223,17 @@
                 <a href="https://www.geoboundaries.org" target="_blank" rel="noopener noreferrer">geoBoundaries</a>
                 （CC BY 4.0，按需在线加载）
               </p>
-            </chart-card>
+              </chart-card>
+              <chart-card class="dashboard-map-side dashboard-map-side--right" title="地区引擎通过 / 拒绝" note="通过、拒绝及拒绝率">
+                <dashboard-chart
+                  aria-label="地区引擎通过拒绝统计"
+                  height="clamp(420px, 62vh, 700px)"
+                  :empty="!regionStats.length"
+                  empty-description="暂无有效行政区决策坐标"
+                  :option="regionalDecisionOption"
+                />
+              </chart-card>
+            </div>
           </div>
         </template>
         <el-empty v-else description="无规则查看权限，进件分析已隐藏" />
@@ -328,6 +348,8 @@ import {
   distributionBarOption,
   distributionPieOption,
   geoHeatmapOption,
+  regionalApplicationOption,
+  regionalDecisionOption,
   registerDashboardMap,
   ruleSetHitOption
 } from '@/charts/dashboardCharts'
@@ -345,6 +367,7 @@ import {
   dashboardCountryOptions,
   dashboardMapView,
   dashboardPointsInGeoJson,
+  dashboardRegionStatistics,
   dashboardRegionNames,
   dashboardWorldCountries,
   filterDashboardRegionFeatures,
@@ -438,6 +461,17 @@ export default {
       void this.themeVersion
       return distributionBarOption((this.applications.amounts || {}).items || [])
     },
+    regionStats() {
+      return dashboardRegionStatistics(this.mapGeoJson, this.applications.geo || {})
+    },
+    regionalApplicationOption() {
+      void this.themeVersion
+      return regionalApplicationOption(this.regionStats)
+    },
+    regionalDecisionOption() {
+      void this.themeVersion
+      return regionalDecisionOption(this.regionStats)
+    },
     geoOption() {
       void this.themeVersion
       const points = dashboardPointsInGeoJson((this.applications.geo || {}).points || [], this.mapGeoJson)
@@ -462,6 +496,7 @@ export default {
         regionNames: this.mapRegionNames,
         bounds: mapView.bounds,
         decorations: this.mapDecorations,
+        regionData: this.regionStats,
         fitRegion: Boolean(this.mapCountry)
       })
     },
@@ -900,6 +935,14 @@ export default {
   gap: 14px;
 }
 
+.dashboard-map-layout {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(220px, 0.86fr) minmax(520px, 1.8fr) minmax(220px, 0.86fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
 .dashboard-operation-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -930,6 +973,20 @@ export default {
 
 .dashboard-chart-card--wide {
   grid-column: 1 / -1;
+}
+
+.dashboard-map-layout .dashboard-chart-card--wide {
+  grid-column: auto;
+}
+
+.dashboard-map-side,
+.dashboard-map-center {
+  min-width: 0;
+}
+
+.dashboard-map-side :deep(.dashboard-chart-shell),
+.dashboard-map-center :deep(.dashboard-chart-shell) {
+  min-height: 420px;
 }
 
 .dashboard-map-toolbar {
@@ -1035,13 +1092,17 @@ export default {
 @media (max-width: 1200px) {
   .dashboard-metrics { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
   .dashboard-operation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-map-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-map-center { grid-column: 1 / -1 !important; }
 }
 
 @media (max-width: 760px) {
   .dashboard-metrics,
   .dashboard-chart-grid,
   .dashboard-operation-grid,
-  .dashboard-distribution-grid { grid-template-columns: 1fr; }
+  .dashboard-distribution-grid,
+  .dashboard-map-layout { grid-template-columns: 1fr; }
   .dashboard-chart-card--wide { grid-column: auto; }
+  .dashboard-map-center { grid-column: auto !important; }
 }
 </style>

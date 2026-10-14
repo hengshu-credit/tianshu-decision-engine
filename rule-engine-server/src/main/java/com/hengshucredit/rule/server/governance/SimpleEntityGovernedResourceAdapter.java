@@ -267,6 +267,7 @@ public class SimpleEntityGovernedResourceAdapter<T>
             case "datasourceId" -> owner.containsKey("sql")
                     ? "DATABASE" : "EXTERNAL_DATASOURCE";
             case "dbDatasourceId" -> "DATABASE";
+            case "sftpDatasourceId" -> "SFTP";
             case "apiConfigId", "apiId" -> "EXTERNAL_API";
             case "listId", "listIds", "listLibraryId" -> "LIST_LIBRARY";
             case "validationRuleId", "validationRuleIds" -> "FIELD_VALIDATION";
@@ -285,7 +286,7 @@ public class SimpleEntityGovernedResourceAdapter<T>
                 .toUpperCase(Locale.ROOT);
         return switch (type) {
             case "MODEL", "MODEL_OUTPUT", "RULE", "EXPERIMENT", "EXTERNAL_API", "EXTERNAL_DATASOURCE",
-                 "DATABASE", "LIST_LIBRARY", "FIELD_VALIDATION" -> type;
+                 "DATABASE", "SFTP", "LIST_LIBRARY", "FIELD_VALIDATION" -> type;
             case "FUNCTION" -> "FUNCTION";
             case "DATA_OBJECT", "OBJECT" -> "DATA_OBJECT";
             default -> "VARIABLE";

@@ -322,7 +322,7 @@ public class RuleSyncController {
             String source = variable == null || variable.getVarSource() == null ? ""
                     : variable.getVarSource().trim().toUpperCase(Locale.ROOT);
             if ("API".equals(source) || "DB".equals(source)
-                    || "LIST".equals(source) || "DERIVED".equals(source)) {
+                    || "LIST".equals(source) || "SFTP".equals(source) || "DERIVED".equals(source)) {
                 published.setRequiresServerExecution(true);
                 published.setServerExecutionReason("包含" + source + "变量来源");
                 return;

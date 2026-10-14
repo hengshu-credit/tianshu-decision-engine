@@ -24,6 +24,9 @@ public class ExternalCallProperties {
     private long asyncLogShutdownWaitMillis = 2000L;
     private int tokenLastUsedMaxEntries = 10000;
     private long tokenLastUsedCoalesceSeconds = 60L;
+    private int sftpCacheMaxEntries = 4096;
+    private int sftpCacheMaxBytes = 64 * 1024 * 1024;
+    private boolean sftpCacheRedisEnabled = true;
 
     @PostConstruct
     public void validate() {
@@ -74,6 +77,12 @@ public class ExternalCallProperties {
         }
         if (tokenLastUsedCoalesceSeconds < 1 || tokenLastUsedCoalesceSeconds > 3600) {
             throw new IllegalStateException("external-call.token-last-used-coalesce-seconds must be between 1 and 3600");
+        }
+        if (sftpCacheMaxEntries < 1 || sftpCacheMaxEntries > 100000) {
+            throw new IllegalStateException("external-call.sftp-cache-max-entries must be between 1 and 100000");
+        }
+        if (sftpCacheMaxBytes < 1024 || sftpCacheMaxBytes > 256 * 1024 * 1024) {
+            throw new IllegalStateException("external-call.sftp-cache-max-bytes must be between 1024 and 268435456");
         }
     }
 }

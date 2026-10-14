@@ -81,7 +81,10 @@ public class BillingSummaryCapacityIntegrationTest {
                 ReflectionTestUtils.setField(target, "summaryMapper", template.getMapper(RuleBillingSummaryMapper.class));
                 ProxyFactory proxy = new ProxyFactory(target);
                 proxy.setProxyTargetClass(true);
-                proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(source), new AnnotationTransactionAttributeSource()));
+                TransactionInterceptor transactions = new TransactionInterceptor();
+                transactions.setTransactionManager(new DataSourceTransactionManager(source));
+                transactions.setTransactionAttributeSource(new AnnotationTransactionAttributeSource());
+                proxy.addAdvice(transactions);
                 RuleBillingService service = (RuleBillingService) proxy.getProxy();
                 long began = System.nanoTime();
                 assertEquals(2, service.refreshSummary(LocalDate.of(2026, 10, 1)));

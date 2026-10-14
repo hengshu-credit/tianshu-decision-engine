@@ -1,14 +1,16 @@
 <template>
   <div class="uiue-list-page list-detail-page">
-    <div class="detail-header">
-      <div>
+    <div class="detail-header uiue-detail-header">
+      <div class="uiue-detail-header__title">
+        <el-button link size="small" class="uiue-detail-back" @click="$router.push('/list')">返回</el-button>
+        <div>
         <div class="detail-title">{{ library.listName || '名单详情' }}</div>
         <div class="detail-meta">
           {{ library.listCode || '-' }} · {{ listTypeLabel(library.listType) }}
         </div>
+        </div>
       </div>
-      <div class="detail-actions">
-        <el-button size="small" @click="$router.push('/list')">返回</el-button>
+      <div class="detail-actions uiue-detail-header__actions">
         <el-button size="small" :icon="ElIconDownload" @click="downloadTemplate"
           >模板</el-button
         >
@@ -177,7 +179,7 @@
               ></template
             >
           </el-table-column>
-          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="执行操作" width="160" align="center">
+          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="执行操作" :width="operationColumnWidth(['修改', '追踪', '删除'])" align="center">
             <template v-slot="{ row }">
               <el-button
                 v-permission="'list:edit'"
@@ -419,6 +421,7 @@ import {
   listExportUrl,
 } from '@/api/ruleList'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 function emptyRecordQuery(pageSize = 10) {
   return { pageNum: 1, pageSize, itemType: '', status: '', keyword: '', effectiveOnly: false }
@@ -504,6 +507,7 @@ export default {
     },
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     keywordPlaceholder(itemType) {
       return `${itemType ? this.itemTypeLabel(itemType) : '内容'}/原因/备注`
     },

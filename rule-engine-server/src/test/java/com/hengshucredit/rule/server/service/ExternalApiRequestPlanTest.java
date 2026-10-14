@@ -61,4 +61,17 @@ public class ExternalApiRequestPlanTest {
         assertTrue(plan.values().containsKey("optional"));
         assertNull(plan.values().get("optional"));
     }
+
+    @Test @SuppressWarnings("unchecked") public void cookieFieldsAreKeptOutOfBodyAndBoundToRequestMapping() {
+        RuleExternalApiConfig api = api();
+        api.setExecutionConfig("{\"version\":2,\"requestFields\":["
+                + "{\"id\":\"session\",\"location\":\"COOKIE\",\"path\":\"session_id\",\"value\":{\"kind\":\"LITERAL\",\"value\":\"s-1\"}},"
+                + "{\"id\":\"query\",\"location\":\"QUERY\",\"path\":\"q\",\"value\":{\"kind\":\"LITERAL\",\"value\":\"risk\"}}]}" );
+        var plan = ExternalApiRequestPlan.prepare(api, Map.of(), Map.of(), Map.of());
+        Map<String, Object> mapping = JSON.parseObject(plan.config().getRequestMapping());
+        Map<String, Object> cookies = (Map<String, Object>) mapping.get("_cookies");
+        Map<String, Object> query = JSON.parseObject(plan.config().getQueryConfig());
+        assertEquals("$.__apiFields.session", cookies.get("session_id"));
+        assertEquals("$.__apiFields.query", query.get("q"));
+    }
 }

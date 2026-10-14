@@ -293,7 +293,7 @@
             formatVersionTime(row.publishTime)
           }}</template>
         </el-table-column>
-        <el-table-column class-name="table-operation-column" label="操作" width="300" fixed="right">
+        <el-table-column class-name="table-operation-column" label="操作" :width="operationColumnWidth(['查看内容', '对比上一版', '载入此版本', '评审与发布'])" fixed="right">
           <template v-slot="{ row, $index }">
             <el-button
               link
@@ -397,6 +397,7 @@ import OperandPicker from '@/components/common/OperandPicker.vue'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
 import ActionBlockEditor from '@/components/flow/ActionBlockEditor.vue'
 import { actionDataToBlocks, newBlock } from '@/utils/actionDataCodegen'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import {
   createEmptyGroup,
   createEmptyLeaf,
@@ -498,6 +499,7 @@ export default {
     this.loadContent()
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     async loadContent() {
       try {
         if (this.draftGuardPromise) await this.draftGuardPromise

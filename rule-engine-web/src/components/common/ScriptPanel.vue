@@ -51,14 +51,21 @@
         </div>
 
         <div class="sp-editor-container">
-          <div class="sp-line-numbers" aria-hidden="true">
-            <div v-for="n in lineCount" :key="n" class="sp-line-num">
-              {{ n }}
-            </div>
-          </div>
-          <textarea
+          <MonacoEditor
+            v-if="!showFallbackEditor"
             ref="editorRef"
-            v-model="editScript"
+            :value="editScript"
+            language="ql"
+            :height="editorHeight"
+            read-only
+            :options="editorOptions"
+            @editor-ready="onEditorReady"
+          />
+          <!-- Monaco 加载失败时保留可复制的只读降级面板，避免脚本内容不可见。 -->
+          <textarea
+            v-else
+            ref="fallbackEditorRef"
+            :value="editScript"
             class="sp-editor readonly"
             readonly
             :placeholder="placeholder"
@@ -66,7 +73,6 @@
             autocomplete="off"
             autocorrect="off"
             autocapitalize="off"
-            @scroll="syncScroll"
           />
         </div>
 
@@ -86,6 +92,7 @@
 
 <script>
 import { markRaw } from 'vue'
+import MonacoEditor from '@/components/MonacoEditor.vue'
 import {
   Promotion as ElIconSPromotion,
   CircleClose as ElIconCloseCircle,
@@ -98,6 +105,7 @@ import {
 export default {
   name: 'ScriptPanel',
   components: {
+    MonacoEditor,
     ElIconSPromotion,
     ElIconCloseCircle,
     ElIconInfo,
@@ -113,6 +121,15 @@ export default {
       expanded: false,
       content: {},
       editScript: '',
+      showFallbackEditor: typeof window === 'undefined' || !window.monaco,
+      editorHeight: '260px',
+      editorOptions: {
+        readOnly: true,
+        minimap: { enabled: false },
+        wordWrap: 'on',
+        formatOnPaste: false,
+        formatOnType: false,
+      },
       ElIconDocumentCopy: markRaw(ElIconDocumentCopy),
     }
   },
@@ -156,20 +173,21 @@ export default {
         this.$message.warning(this.emptyMessage)
         return
       }
+      const editor = this.$refs.editorRef?.getEditor?.()
+      const text = editor?.getValue?.() || this.editScript
       if (navigator.clipboard) {
-        navigator.clipboard.writeText(this.editScript).then(() => {
+        navigator.clipboard.writeText(text).then(() => {
           this.$message.success('脚本已复制到剪贴板')
         })
       } else {
-        const editor = this.$refs.editorRef
-        editor.select()
+        const fallback = this.$refs.fallbackEditorRef
+        fallback?.select()
         document.execCommand('copy')
         this.$message.success('脚本已复制')
       }
     },
-    syncScroll(e) {
-      const lineNumbers = this.$el.querySelector('.sp-line-numbers')
-      if (lineNumbers) lineNumbers.scrollTop = e.target.scrollTop
+    onEditorReady() {
+      this.showFallbackEditor = false
     },
   },
 }

@@ -38,6 +38,8 @@ import java.util.UUID;
 
 @Service
 public class GovernanceApprovalService {
+    @Autowired(required = false)
+    private GovernanceDependencyDisplayService dependencyDisplay;
 
     @Autowired
     private com.hengshucredit.rule.server.security.ConsoleAccessGuard accessGuard;
@@ -989,7 +991,7 @@ public class GovernanceApprovalService {
 
     private void restrictVisibleResources(LambdaQueryWrapper<GovernanceApprovalRequest> query) {
         if (accessGuard == null) return;
-        List<String> types = List.of("VARIABLE", "DATA_OBJECT", "FIELD_VALIDATION", "MODEL", "EXTERNAL_DATASOURCE", "EXTERNAL_API", "DATABASE", "FUNCTION", "RULE", "RULE_PROJECT_BINDING", "LIST_LIBRARY", "LIST_RECORD_BATCH", "BILLING_CONFIG", "EXPERIMENT", "PROJECT");
+        List<String> types = List.of("VARIABLE", "DATA_OBJECT", "FIELD_VALIDATION", "MODEL", "EXTERNAL_DATASOURCE", "EXTERNAL_API", "DATABASE", "SFTP", "FUNCTION", "RULE", "RULE_PROJECT_BINDING", "LIST_LIBRARY", "LIST_RECORD_BATCH", "BILLING_CONFIG", "EXPERIMENT", "PROJECT");
         List<String> visible = types.stream().filter(type -> accessGuard.can(
                 com.hengshucredit.rule.server.security.ConsoleAccessGuard.resourceModule(type) + ":view")).toList();
         if (visible.isEmpty()) query.eq(GovernanceApprovalRequest::getId, -1L);
@@ -1031,7 +1033,8 @@ public class GovernanceApprovalService {
                 GovernanceRequestView.from(request),
                 diff,
                 events(requestId),
-                loadDependencies(requestId),
+                loadDependencies(requestId).stream().map(dependency -> dependencyDisplay == null
+                        ? CanonicalJson.readMap(CanonicalJson.write(dependency)) : dependencyDisplay.describe(dependency)).toList(),
                 versions(request.getResourceType(),
                         request.getResourceId()).stream()
                         .map(GovernanceVersionView::from)
@@ -1595,7 +1598,8 @@ public class GovernanceApprovalService {
                     addScopedIdentity(identity, value, projectId,
                             "objectCode");
             case GovernanceResourceTypes.EXTERNAL_DATASOURCE,
-                 GovernanceResourceTypes.DATABASE ->
+                 GovernanceResourceTypes.DATABASE,
+                 GovernanceResourceTypes.SFTP ->
                     addScopedIdentity(identity, value, projectId,
                             "datasourceCode");
             case GovernanceResourceTypes.FUNCTION ->

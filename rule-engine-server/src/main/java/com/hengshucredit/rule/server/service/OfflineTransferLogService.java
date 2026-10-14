@@ -139,6 +139,7 @@ public class OfflineTransferLogService extends ServiceImpl<OfflineTransferLogMap
     private String graphType(String type) {
         return switch (type) {
             case "DATABASE" -> "DB";
+            case "SFTP" -> "SFTP";
             case "EXTERNAL_DATASOURCE" -> "DATASOURCE";
             case "EXTERNAL_API" -> "API";
             case "LIST_LIBRARY" -> "LIST";

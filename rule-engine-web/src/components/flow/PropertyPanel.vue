@@ -23,6 +23,7 @@
             v-model:value="edgeProps.conditionExpr"
             language="ql"
             height="90px"
+            :references="editorReferences"
             @change="onEdgeChange"
           />
         </el-form-item>
@@ -258,6 +259,7 @@
               v-model:value="nodeProps.scriptContent"
               language="ql"
               height="180px"
+              :references="editorReferences"
               @change="onNodeChange"
             />
           </div>
@@ -302,6 +304,16 @@ export default {
     projectVars: { type: Array, default: () => [] },
   },
   computed: {
+    editorReferences() {
+      return (this.projectVars || []).map(item => ({
+        ...item,
+        refCode: item.refCode || item.varCode || item.scriptName,
+        varLabel: item.varLabel || item.varLabelText || item.label,
+        varType: item.varType || 'OBJECT',
+        _varId: item._varId != null ? item._varId : item.id,
+        _refType: item._refType || item.refType || 'VARIABLE',
+      })).filter(item => item.refCode)
+    },
     isEdge() {
       return this.activeElement && this.activeElement.baseType === 'edge'
     },

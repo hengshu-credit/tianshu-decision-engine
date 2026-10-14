@@ -963,10 +963,10 @@ describe('ModelDetail — 版本管理', () => {
 
   test('顶部使用公共版本管理并保留早期快照入口，不提供直接下线和删除操作', async () => {
     await wrapper.setData({ model: { ...mockModel(), currentVersion: 3, publishedVersion: 1 } })
-    const header = wrapper.find('h2').element.parentElement
+    const header = wrapper.find('.model-detail-header').element
     const manager = wrapper.findComponent({ name: 'ResourceVersionManager' })
     expect(manager.props()).toMatchObject({ resourceType: 'MODEL', resourceId: 1, hasLegacy: true })
-    const directActions = Array.from(header.querySelector('div').children).filter(element => element.tagName === 'EL-BUTTON-STUB').map(element => element.textContent)
+    const directActions = Array.from(header.querySelector('.model-detail-actions').children).filter(element => element.tagName === 'EL-BUTTON-STUB').map(element => element.textContent)
     expect(directActions.join('')).not.toContain('下线')
     expect(directActions.join('')).not.toContain('删除')
     manager.vm.$emit('legacy')

@@ -125,6 +125,7 @@ public class ConsolePermissionInterceptor implements HandlerInterceptor {
             case "definition", "expression", "artifact" -> "rule";
             case "variable", "dataobject", "field-validation" -> "field";
             case "log", "runtime-log" -> "log";
+            case "sftp" -> "database";
             default -> null;
         };
     }

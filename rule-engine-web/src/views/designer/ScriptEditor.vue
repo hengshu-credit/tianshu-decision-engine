@@ -287,7 +287,13 @@
             v-model:value="script"
             language="ql"
             height="100%"
+            :references="qlIntelligenceRefs()"
+            :functions="projectFunctions"
+            :show-reference-decorations="showEngineReferences"
+            :reference-versions="referenceVersions"
+            :reference-catalog-mode="referenceCatalogMode"
             @editor-ready="onEditorReady"
+            @reference-select="recordScriptReference"
             :options="editorOptions"
           />
         </div>
@@ -566,17 +572,11 @@ export default {
   watch: {
     scriptReferences: {
       flush: 'post',
-      handler() { this.refreshReferenceDecorations(); this.loadReferenceVersions() },
-    },
-    referenceVersions: {
-      deep: true,
-      flush: 'post',
-      handler() { this.refreshReferenceDecorations() },
+      handler() { this.loadReferenceVersions() },
     },
     showEngineReferences() {
       this.referenceVersionRequest++
       this.referenceVersions = {}
-      this.refreshReferenceDecorations()
       this.loadReferenceVersions()
     },
     referenceCatalogKey() { this.resetReferenceVersions() },
@@ -633,7 +633,7 @@ export default {
     resetReferenceVersions() {
       this.referenceVersionRequest++
       this.referenceVersions = {}
-      this.$nextTick(() => { this.refreshReferenceDecorations(); this.loadReferenceVersions() })
+      this.$nextTick(() => { this.loadReferenceVersions() })
     },
     async loadReferenceVersions() {
       if (!this.showEngineReferences || this.referenceCatalogMode !== 'LIVE') return
@@ -921,10 +921,6 @@ export default {
     },
     onEditorReady(editor) {
       this.monacoEditor = editor
-      this.$nextTick(() => this.refreshReferenceDecorations?.())
-      if (typeof this.registerQlProviders === 'function') {
-        this.registerQlProviders()
-      }
       const pending = this.pendingVarInsertions.splice(0)
       pending.forEach((variable) => this.insertVar(variable))
     },
@@ -1402,22 +1398,38 @@ export default {
   border-radius: 0;
 }
 .se-editor-container :deep(.se-reference-code),
+.se-editor-container :deep(.se-reference-type),
 .se-editor-container :deep(.se-reference-name),
 .se-editor-container :deep(.se-reference-version) {
   border: none;
   border-radius: 0;
+  padding: 1px 5px;
+  line-height: 1.35;
 }
 .se-editor-container :deep(.se-reference-code) {
-  background: var(--tianshu-border);
+  background: color-mix(in srgb, var(--el-color-primary) 32%, var(--tianshu-bg-surface));
+  color: var(--tianshu-primary-text);
+  text-decoration: underline;
+  text-decoration-color: var(--el-color-primary);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+}
+.se-editor-container :deep(.se-reference-type) {
+  background: color-mix(in srgb, var(--el-color-primary) 20%, var(--tianshu-bg-surface));
   color: var(--tianshu-info-text);
+  font-weight: 700;
+  border-radius: 4px 0 0 4px;
 }
 .se-editor-container :deep(.se-reference-name) {
-  background: var(--tianshu-bg-hover);
-  color: var(--tianshu-text-secondary);
+  background: color-mix(in srgb, var(--el-color-success) 24%, var(--tianshu-bg-surface));
+  color: var(--tianshu-success-text);
+  font-weight: 700;
 }
 .se-editor-container :deep(.se-reference-version) {
-  background: var(--tianshu-bg-muted);
-  color: var(--tianshu-text-tertiary);
+  background: color-mix(in srgb, var(--el-color-warning) 24%, var(--tianshu-bg-surface));
+  color: var(--tianshu-warning-text);
+  font-weight: 700;
+  border-radius: 0 4px 4px 0;
 }
 .se-footer {
   display: flex;

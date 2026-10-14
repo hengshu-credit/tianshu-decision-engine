@@ -1,3 +1,5 @@
+import { fieldTypeIcon } from '@/utils/fieldPicker'
+
 function parseParams(value) {
   if (Array.isArray(value)) return value
   try {
@@ -11,6 +13,13 @@ function parseParams(value) {
 function completionPrefix(linePrefix) {
   const match = String(linePrefix || '').match(/[A-Za-z_$][\w$]*(?:\.[\w$]*)*$/)
   return match ? match[0] : ''
+}
+
+function referenceVersion(ref) {
+  const version = ref?.displayVersion ?? ref?.version ?? ref?.modelVersion ?? ref?.objectVersion
+    ?? ref?._ref?.modelVersion ?? ref?._ref?.objectVersion
+    ?? ref?.varObj?.currentVersion ?? ref?.varObj?.version
+  return version == null ? '版本未提供' : `v${version}`
 }
 
 export function buildQlCompletionItems(refs = [], functions = [], linePrefix = '') {
@@ -40,6 +49,9 @@ export function buildQlCompletionItems(refs = [], functions = [], linePrefix = '
         documentation: `${ref.refCode}\n类型：${ref.varType || 'OBJECT'}`,
         valueType: ref.varType || 'OBJECT',
         refCode: ref.refCode,
+        referenceType: fieldTypeIcon(ref.varType || 'OBJECT'),
+        referenceName: ref.varLabel || ref.refCode,
+        referenceVersion: referenceVersion(ref),
         kind: 'FIELD',
         stableReference:
           ref._varId != null && (ref._refType || ref.refType)
@@ -72,6 +84,9 @@ export function buildQlCompletionItems(refs = [], functions = [], linePrefix = '
           .map((param) => `${param.name || '-'}: ${param.type || 'OBJECT'}`)
           .join('\n'),
         kind: 'FUNCTION',
+        referenceType: fieldTypeIcon('FUNCTION'),
+        referenceName: func.funcName || func.funcCode,
+        referenceVersion: referenceVersion(func),
         snippet: true,
         stableReference: func.id == null ? null : {
           refCode: func.funcCode,

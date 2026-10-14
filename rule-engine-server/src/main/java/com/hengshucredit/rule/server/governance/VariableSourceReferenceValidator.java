@@ -8,10 +8,12 @@ import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
 import com.hengshucredit.rule.model.entity.RuleListLibrary;
 import com.hengshucredit.rule.model.entity.RuleVariable;
+import com.hengshucredit.rule.model.entity.RuleSftpDatasource;
 import com.hengshucredit.rule.server.mapper.RuleDbDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RuleListLibraryMapper;
+import com.hengshucredit.rule.server.mapper.RuleSftpDatasourceMapper;
 import com.hengshucredit.rule.server.service.DatabaseQueryOptions;
 import org.springframework.stereotype.Service;
 
@@ -38,6 +40,9 @@ public class VariableSourceReferenceValidator {
 
     @Resource
     private RuleListLibraryMapper listLibraryMapper;
+
+    @Resource
+    private RuleSftpDatasourceMapper sftpDatasourceMapper;
 
     @Resource
     private com.hengshucredit.rule.server.derived.DerivedVariableValidator derivedVariableValidator;
@@ -98,6 +103,14 @@ public class VariableSourceReferenceValidator {
                     library.getProjectId(), null, null));
         }
 
+        List<VariableSourceOption> sftpOptions = new ArrayList<>();
+        for (RuleSftpDatasource datasource : safeList(sftpDatasourceMapper == null ? null : sftpDatasourceMapper.selectList(null))) {
+            if (!isEnabled(datasource.getStatus()) || !isCompatible(normalizedScope, projectId,
+                    datasource.getScope(), datasource.getProjectId())) continue;
+            sftpOptions.add(new VariableSourceOption(datasource.getId(), datasource.getDatasourceCode(),
+                    datasource.getDatasourceName(), datasource.getScope(), datasource.getProjectId(), null, null));
+        }
+
         Comparator<VariableSourceOption> ordering = Comparator
                 .comparing((VariableSourceOption option) ->
                         text(option.name()))
@@ -106,10 +119,12 @@ public class VariableSourceReferenceValidator {
         apiOptions.sort(ordering);
         databaseOptions.sort(ordering);
         listOptions.sort(ordering);
+        sftpOptions.sort(ordering);
         return new VariableSourceCatalog(
                 accessGuard == null || accessGuard.can("datasource:view") ? List.copyOf(apiOptions) : List.of(),
                 accessGuard == null || accessGuard.can("database:view") ? List.copyOf(databaseOptions) : List.of(),
-                accessGuard == null || accessGuard.can("list:view") ? List.copyOf(listOptions) : List.of());
+                accessGuard == null || accessGuard.can("list:view") ? List.copyOf(listOptions) : List.of(),
+                accessGuard == null || accessGuard.can("database:view") ? List.copyOf(sftpOptions) : List.of());
     }
 
     public List<GovernanceIssue> validate(RuleVariable variable) {
@@ -137,6 +152,7 @@ public class VariableSourceReferenceValidator {
             case "API" -> validateApi(variable, config, issues);
             case "DB" -> validateDatabase(variable, config, issues);
             case "LIST" -> validateLists(variable, config, issues);
+            case "SFTP" -> validateSftp(variable, config, issues);
             case "DERIVED" -> {
                 try {
                     derivedVariableValidator.validate(variable, config);
@@ -278,6 +294,59 @@ public class VariableSourceReferenceValidator {
         }
     }
 
+    private void validateSftp(RuleVariable variable, JSONObject config,
+                              List<GovernanceIssue> issues) {
+        Long datasourceId = longValue(config.get("sftpDatasourceId"));
+        if (datasourceId == null) {
+            issues.add(issue(variable, "VARIABLE_SOURCE_REFERENCE_REQUIRED", "请选择 SFTP 数据源",
+                    "$.sourceConfig.sftpDatasourceId"));
+            return;
+        }
+        RuleSftpDatasource datasource = sftpDatasourceMapper.selectById(datasourceId);
+        validateResource(variable, datasource == null ? null : datasource.getScope(),
+                datasource == null ? null : datasource.getProjectId(), datasource == null ? null : datasource.getStatus(),
+                datasource == null, "SFTP数据源", "$.sourceConfig.sftpDatasourceId", issues);
+        if (config.getString("remotePath") == null || config.getString("remotePath").isBlank()) {
+            issues.add(issue(variable, "VARIABLE_SOURCE_PATH_REQUIRED", "请填写远端文件路径",
+                    "$.sourceConfig.remotePath"));
+        }
+        String format = config.getString("outputFormat");
+        if (format != null && !List.of("TEXT", "BASE64", "JSON").contains(format.toUpperCase())) {
+            issues.add(issue(variable, "VARIABLE_SOURCE_FORMAT_INVALID", "SFTP输出格式仅支持 TEXT、BASE64 或 JSON",
+                    "$.sourceConfig.outputFormat"));
+        }
+        validateIntegerRange(variable, config.get("retryCount"), 0, 5,
+                "SFTP重试次数必须在 0 到 5 之间", "$.sourceConfig.retryCount", issues);
+        validateIntegerRange(variable, config.get("retryBackoffMs"), 0, 60000,
+                "SFTP重试退避必须在 0 到 60000 毫秒之间", "$.sourceConfig.retryBackoffMs", issues);
+        validateIntegerRange(variable, config.get("cacheSeconds"), 0, 86400,
+                "SFTP缓存时长必须在 0 到 86400 秒之间，0 表示不缓存", "$.sourceConfig.cacheSeconds", issues);
+        Object multiplier = config.get("retryBackoffMultiplier");
+        if (multiplier != null) {
+            try {
+                double value = Double.parseDouble(String.valueOf(multiplier));
+                if (!Double.isFinite(value) || value < 1D || value > 5D) {
+                    issues.add(issue(variable, "VARIABLE_SOURCE_RETRY_INVALID",
+                            "SFTP退避倍数必须在 1 到 5 之间", "$.sourceConfig.retryBackoffMultiplier"));
+                }
+            } catch (NumberFormatException e) {
+                issues.add(issue(variable, "VARIABLE_SOURCE_RETRY_INVALID",
+                        "SFTP退避倍数必须是数字", "$.sourceConfig.retryBackoffMultiplier"));
+            }
+        }
+    }
+
+    private void validateIntegerRange(RuleVariable variable, Object raw, int min, int max,
+                                     String message, String path, List<GovernanceIssue> issues) {
+        if (raw == null) return;
+        try {
+            int value = Integer.parseInt(String.valueOf(raw));
+            if (value < min || value > max) issues.add(issue(variable, "VARIABLE_SOURCE_RETRY_INVALID", message, path));
+        } catch (NumberFormatException e) {
+            issues.add(issue(variable, "VARIABLE_SOURCE_RETRY_INVALID", message, path));
+        }
+    }
+
     private void validateResource(RuleVariable variable,
                                   String sourceScope,
                                   Long sourceProjectId,
@@ -345,7 +414,7 @@ public class VariableSourceReferenceValidator {
 
     private boolean isExternalSource(String source) {
         return "API".equals(source) || "DB".equals(source)
-                || "LIST".equals(source) || "DERIVED".equals(source);
+                || "LIST".equals(source) || "SFTP".equals(source) || "DERIVED".equals(source);
     }
 
     private boolean isEnabled(Integer status) {

@@ -30,4 +30,26 @@ describe('外数响应条件树', () => {
     expect(wrapper.findAllComponents(ApiValueEditor)).toHaveLength(1)
     wrapper.unmount()
   })
+  test('列表条件恢复旧 values 数组到阈值入口，保留前导零和成员边界', () => {
+    const child = { type: 'condition', left: { kind: 'PATH', value: 'response.body.code' }, operator: 'in', values: ['0000', 'B0013', '含,逗号'] }
+    const wrapper = shallowMount(ResponseConditionTreeEditor, { props: { operandMode: true, group: { type: 'group', operator: 'AND', children: [child] } } })
+    const right = wrapper.findAllComponents(ApiValueEditor)[1]
+    expect(right.props('value')).toEqual({ kind: 'LITERAL', valueType: 'LIST', value: '["0000","B0013","含,逗号"]' })
+    expect(child.right).toBeUndefined()
+    right.vm.$emit('update:value', { kind: 'LITERAL', valueType: 'LIST', value: '["0000"]' })
+    expect(child).toMatchObject({ right: { value: '["0000"]' } })
+    expect(child.values).toBeUndefined()
+    wrapper.unmount()
+  })
+  test('条件树暴露后端支持的类型、区间、集合和布尔运算符', () => {
+    const wrapper = shallowMount(ResponseConditionTreeEditor, { props: { group: { type: 'group', operator: 'AND', children: [] } } })
+    const operators = wrapper.vm.operatorOptions.map(item => item.value)
+    expect(operators).toEqual(expect.arrayContaining([
+      'not_null', 'blank', 'not_blank', 'type_not', 'is_true', 'is_false',
+      'between', 'not_between', 'contains_any', 'contains_all', 'has_key', 'not_has_key',
+    ]))
+    expect(wrapper.vm.operatorHasNoValue('is_true')).toBe(true)
+    expect(wrapper.vm.isMultiValue('contains_all')).toBe(true)
+    wrapper.unmount()
+  })
 })

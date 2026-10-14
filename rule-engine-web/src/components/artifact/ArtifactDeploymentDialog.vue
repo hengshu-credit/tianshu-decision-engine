@@ -255,7 +255,7 @@ export default {
         && this.bindingSearchRequests[componentId] === requestId
       try {
         const response = await listTransferResources({
-          nodeType: ({ DATABASE: 'DB', DB_DATASOURCE: 'DB', EXTERNAL_API: 'API', DATA_OBJECT_ROOT: 'DATA_OBJECT', LIST_LIBRARY: 'LIST' }[association.targetResourceType] || association.targetResourceType),
+          nodeType: ({ DATABASE: 'DB', DB_DATASOURCE: 'DB', SFTP: 'SFTP', EXTERNAL_API: 'API', DATA_OBJECT_ROOT: 'DATA_OBJECT', LIST_LIBRARY: 'LIST' }[association.targetResourceType] || association.targetResourceType),
           keyword: association.targetCode || '',
           pageNum: 1,
           pageSize: 50,

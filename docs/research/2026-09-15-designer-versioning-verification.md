@@ -17,12 +17,9 @@
 
 ## 数据库升级
 
-已有数据库需要依次执行：
+已有数据库需要执行 `rule-engine-server/src/main/resources/sql/schema.sql`；演示数据仅在需要时导入 `docker/rule-engine-mysql/data-tianshu-example.sql`。
 
-1. `rule-engine-server/src/main/resources/sql/schema.sql`
-2. `rule-engine-server/src/main/resources/sql/data.sql`
-
-本地 Docker 数据库已执行；两份迁移各重复执行两遍验证幂等。迁移前后的规则修订、审批、历史版本快照数量不变。新增绑定表与元数据列，不重放初始化 export，不覆盖已有业务数据。
+本地 Docker 数据库已执行 schema 初始化并重复验证幂等。迁移前后的规则修订、审批、历史版本快照数量不变。新增绑定表与元数据列，不重放样例数据，不覆盖已有业务数据。
 
 ## 验收证据
 

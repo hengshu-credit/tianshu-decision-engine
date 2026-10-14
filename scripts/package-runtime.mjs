@@ -46,7 +46,7 @@ try {
 
   mkdirSync(outputRoot, { recursive: true })
   rmSync(path.join(outputRoot, 'dist'), { recursive: true, force: true })
-  for (const file of ['server.jar', 'runtime.jar', 'schema.sql', 'data.sql']) {
+  for (const file of ['server.jar', 'runtime.jar', 'schema.sql']) {
     rmSync(path.join(outputRoot, file), { force: true })
   }
 

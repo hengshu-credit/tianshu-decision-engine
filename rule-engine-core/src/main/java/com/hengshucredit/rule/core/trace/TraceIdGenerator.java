@@ -79,6 +79,8 @@ public final class TraceIdGenerator {
             case "DATABASE":
             case "DB":
                 return "DB";
+            case "SFTP":
+                return "SF";
             case "LIST":
                 return "LS";
             case "MODEL":

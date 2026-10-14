@@ -30,4 +30,18 @@ describe('API 入参覆盖与结果选择', () => {
     expect(wrapper.emitted('update:value')).toBeUndefined()
     wrapper.unmount()
   })
+  test('开启覆盖时保留默认值 0 和 false', async () => {
+    request.get.mockResolvedValueOnce({ data: { bindingMode: 'FIELDS', requestFields: [
+      { id: 'zero', path: 'count', value: 0, overridable: true },
+      { id: 'flag', path: 'enabled', value: false, overridable: true },
+    ] } })
+    const wrapper = shallowMount(ApiSourceBinding, { props: { apiId: 3 } })
+    await flushPromises()
+    wrapper.vm.toggle(wrapper.vm.fields[0], true)
+    await wrapper.setProps({ value: { zero: 0 } })
+    wrapper.vm.toggle(wrapper.vm.fields[1], true)
+    const updates = wrapper.emitted('update:value')
+    expect(updates.at(-1)[0]).toEqual({ zero: 0, flag: false })
+    wrapper.unmount()
+  })
 })

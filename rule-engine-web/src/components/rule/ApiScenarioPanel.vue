@@ -71,7 +71,7 @@
       <el-table-column label="规则版本" width="90" align="center">
         <template v-slot="{ row }">v{{ row.ruleVersion }}</template>
       </el-table-column>
-      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="245" fixed="right">
+      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '复制', '上移', '下移', '删除'])" fixed="right">
         <template v-slot="{ row, $index }">
           <el-button
             link
@@ -316,6 +316,7 @@ import {
 } from '@/utils/testSchema'
 import { parseExactJson, parseExecutionSnapshotJson, stringifyExactJson, isExactNumber, exactNumberText, createExactNumber } from '@/utils/exactJson'
 import { executionSourceKey, executionSourceLabel, requireExecutionIdentity } from '@/utils/ruleTestExecutionSource'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key)
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value) && !isExactNumber(value)
@@ -412,6 +413,7 @@ export default {
     this.scenariosRequestId++
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     executionSourceLabel,
     emptyDraft() {
       return {

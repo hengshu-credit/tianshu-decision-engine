@@ -29,6 +29,14 @@ function mountEditor(propsData = {}) {
 }
 
 describe('ExpressionEditorDialog', () => {
+  test('完整表达式资源面板继承字段可见和可选策略', () => {
+    const wrapper = mountEditor({ visibleTags: ['object'], selectableTags: ['object'] })
+    const palette = wrapper.findComponent({ name: 'ExpressionPalette' })
+    expect(palette.props('visibleTags')).toEqual(['object'])
+    expect(palette.props('selectableTags')).toEqual(['object'])
+    wrapper.unmount()
+  })
+
   test('转换函数的通用参数不误过滤数值或文本字段', () => {
     const wrapper = mountEditor({ value: { kind: 'FUNCTION', functionCode: 'toNumberValue', parameterTypes: ['OBJECT'], args: [null] } })
     expect(wrapper.vm.selectedExpectedType).toBe('')

@@ -16,7 +16,14 @@ public final class ExternalApiResponseSchema {
         Map<String, Object> context = new LinkedHashMap<>();
         Map<String, Object> response = new LinkedHashMap<>(); response.put("body", sample); response.put("httpStatus", 200);
         context.put("response", response); context.put("body", sample); context.put("httpStatus", 200);
-        if ("VALUE".equals(branch.getString("mode"))) return ExternalApiRequestPlan.evaluate(branch.get("value"), context, Map.of());
+        if ("VALUE".equals(branch.getString("mode"))) {
+            Object value = ExternalApiRequestPlan.evaluate(branch.get("value"), context, Map.of());
+            String outputPath = branch.getString("outputPath");
+            if (outputPath == null || outputPath.isBlank()) return value;
+            Map<String, Object> mapped = new LinkedHashMap<>();
+            ExternalApiRequestPlan.write(mapped, outputPath, value);
+            return mapped;
+        }
         Map<String, Object> result = new LinkedHashMap<>();
         if (branch.getJSONArray("outputFields") != null) {
             for (Object raw : branch.getJSONArray("outputFields")) {
@@ -54,7 +61,8 @@ public final class ExternalApiResponseSchema {
             JSONObject branch = JSON.parseObject(JSON.toJSONString(raw));
             if (branch.containsKey("sample")) add(fields, prefix + "response.body", branch.get("sample"));
             if ("VALUE".equals(branch.getString("mode"))) {
-                addCatalogValue(fields, prefix + "body", branch.getJSONObject("value"), branch);
+                String outputPath = branch.getString("outputPath");
+                addCatalogValue(fields, prefix + "body" + (outputPath == null || outputPath.isBlank() ? "" : (outputPath.startsWith("[") ? "" : ".") + outputPath), branch.getJSONObject("value"), branch);
             } else if (branch.getJSONArray("outputFields") != null) for (Object entry : branch.getJSONArray("outputFields")) {
                 JSONObject field = JSON.parseObject(JSON.toJSONString(entry));
                 String path = field.getString("path");

@@ -1,6 +1,7 @@
 export const API_REQUEST_POSITIONS = [
   { value: 'HEADER', label: 'Headers', hint: '请求头，例如 Authorization。' },
   { value: 'QUERY', label: 'Params', hint: 'Query 参数，拼接在请求地址后面，例如 ?page=1。' },
+  { value: 'COOKIE', label: 'Cookies', hint: '请求 Cookies，例如 session_id。' },
   { value: 'BODY', label: 'Body', hint: '请求体，支持 JSON、x-www-form-urlencoded 和 form-data。' },
 ]
 
@@ -11,7 +12,7 @@ export const API_BODY_FORMATS = [
 ]
 
 export function requestFieldPosition(field) {
-  if (API_BODY_FORMATS.some(format => format.value === field.location)) return API_REQUEST_POSITIONS[2]
+  if (API_BODY_FORMATS.some(format => format.value === field.location)) return API_REQUEST_POSITIONS.find(position => position.value === 'BODY')
   return API_REQUEST_POSITIONS.find(position => position.value === field.location) || (field.location === 'INPUT'
     ? { value: 'INPUT', label: '调用入参', hint: '先覆盖本次调用的输入，再由 API 的请求映射放入相应位置。' }
     : { value: field.location, label: '未设置', hint: '请选择字段发送的位置。' })
@@ -20,7 +21,7 @@ export function requestFieldPosition(field) {
 export function requestFieldFormat(field) {
   return API_BODY_FORMATS.find(format => format.value === field.location) || (field.location === 'INPUT'
     ? { label: '由 API 映射', hint: '实际发送位置和格式由 API 请求映射决定。' }
-    : { label: '键值对', hint: field.location === 'HEADER' ? '请求头名称及对应取值。' : '请求参数名称及对应取值。' })
+    : { label: '键值对', hint: field.location === 'HEADER' ? '请求头名称及对应取值。' : field.location === 'COOKIE' ? 'Cookie 名称及对应取值。' : '请求参数名称及对应取值。' })
 }
 
 export function requestFieldContent(field) {

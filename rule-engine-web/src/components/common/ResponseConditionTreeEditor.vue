@@ -55,7 +55,7 @@
             :value="item.value"
           />
         </el-select>
-        <api-value-editor v-if="operandMode && !operatorHasNoValue(child.operator)" :value="child.right || literalOperand(child.value)" :vars="vars" :functions="functions" :modules="pathOptions" @update:value="child.right = $event" />
+        <api-value-editor v-if="operandMode && !operatorHasNoValue(child.operator)" :value="rightOperand(child)" :vars="vars" :functions="functions" :modules="pathOptions" @update:value="updateRight(child, $event)" />
         <el-select
           v-else-if="!operatorHasNoValue(child.operator) && isMultiValue(child.operator)"
           v-model="child.values"
@@ -113,28 +113,51 @@ export default {
         { label: '小于', value: '<' },
         { label: '小于等于', value: '<=' },
         { label: '为空', value: 'is_null' },
+        { label: '不为空', value: 'not_null', noValue: true },
         { label: '路径缺失', value: 'missing', noValue: true },
         { label: '存在', value: 'exists' },
         { label: '为空字符串/空集合', value: 'is_empty', noValue: true },
         { label: '非空', value: 'not_empty', noValue: true },
+        { label: '空白字符串', value: 'blank', noValue: true },
+        { label: '非空白字符串', value: 'not_blank', noValue: true },
         { label: '类型等于', value: 'type_is' },
+        { label: '类型不等于', value: 'type_not' },
         { label: '类型变化/不等于', value: 'type_changed' },
+        { label: '为真', value: 'is_true', noValue: true },
+        { label: '为假', value: 'is_false', noValue: true },
+        { label: '介于（含边界）', value: 'between' },
+        { label: '不在区间内', value: 'not_between' },
         { label: '以…开头', value: 'starts_with' },
         { label: '不以…开头', value: 'not_starts_with' },
         { label: '在列表内', value: 'in' },
         { label: '不在列表内', value: 'not_in' },
+        { label: '包含任一值', value: 'contains_any' },
+        { label: '包含全部值', value: 'contains_all' },
         { label: '正则匹配', value: 'regex' },
         { label: '正则不匹配', value: 'not_regex' },
         { label: '包含', value: 'contains' },
         { label: '不包含', value: 'not_contains' },
         { label: '以…结尾', value: 'ends_with' },
         { label: '不以…结尾', value: 'not_ends_with' },
+        { label: '对象含键', value: 'has_key' },
+        { label: '对象不含键', value: 'not_has_key' },
       ],
     }
   },
   methods: {
     pathOperand(path) { return path ? { kind: 'PATH', value: path, protocolPath: true, resolved: true } : null },
     literalOperand(value) { return value == null ? null : { kind: 'LITERAL', valueType: 'STRING', value: String(value) } },
+    rightOperand(condition) {
+      if (condition.right != null) return condition.right
+      const value = condition.values ?? condition.value
+      if (Array.isArray(value)) return { kind: 'LITERAL', valueType: 'LIST', value: JSON.stringify(value) }
+      return this.literalOperand(value)
+    },
+    updateRight(condition, operand) {
+      condition.right = operand
+      delete condition.values
+      delete condition.value
+    },
     setOperator(operator) {
       this.group['operator'] = operator
     },
@@ -159,7 +182,7 @@ export default {
       this.group.children.splice(index, 1)
     },
     isMultiValue(operator) {
-      return operator === 'in' || operator === 'not_in'
+      return ['in', 'not_in', 'contains_any', 'contains_all'].includes(operator)
     },
     onOperatorChange(condition) {
       if (this.operatorHasNoValue(condition.operator)) {
@@ -175,7 +198,7 @@ export default {
       }
     },
     operatorHasNoValue(operator) {
-      return ['missing', 'exists', 'is_null', 'is_empty', 'not_empty'].includes(operator)
+      return ['missing', 'exists', 'is_null', 'not_null', 'is_empty', 'not_empty', 'blank', 'not_blank', 'is_true', 'is_false'].includes(operator)
     },
     valuePlaceholder(operator) {
       return operator === 'regex' || operator === 'not_regex'
@@ -207,9 +230,14 @@ export default {
 }
 .condition-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.2fr) 150px minmax(180px, 1fr) auto;
+  grid-template-columns: minmax(0, 1.2fr) minmax(140px, .8fr) minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
+}
+@media (max-width: 900px) {
+  .condition-row { grid-template-columns: minmax(0, 1fr) minmax(140px, .8fr); }
+  .condition-row > :nth-child(3) { grid-column: 1 / -1; }
+  .condition-row > :last-child { grid-column: 2; justify-self: end; }
 }
 .danger {
   color: var(--el-color-danger);

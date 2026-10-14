@@ -1,10 +1,10 @@
 import { buildPickerOptions, buildReferenceCatalog } from '@/utils/referenceCatalog'
 
-export const API_MODULE_FIELDS = [
+export const API_MODULE_FIELDS = Object.freeze([
   ['$', '完整调用结果', 'OBJECT'],
   ['request', '请求', 'OBJECT'], ['response', '响应', 'OBJECT'], ['status', '调用状态', 'OBJECT'],
   ['request.url', '请求 · URL', 'STRING'], ['request.method', '请求 · 方法', 'STRING'],
-  ['request.headers', '请求 · Header', 'OBJECT'], ['request.query', '请求 · Query', 'OBJECT'],
+  ['request.headers', '请求 · Header', 'OBJECT'], ['request.query', '请求 · Query', 'OBJECT'], ['request.cookies', '请求 · Cookies', 'OBJECT'],
   ['request.form', '请求 · 表单', 'OBJECT'], ['request.json', '请求 · JSON', 'OBJECT'],
   ['request.body', '请求 · 请求体', 'OBJECT'], ['response.httpStatus', '响应 · HTTP 状态码', 'INTEGER'],
   ['response.headers', '响应 · Header', 'OBJECT'], ['response.body', '响应 · 原始响应体', 'OBJECT'],
@@ -17,7 +17,7 @@ export const API_MODULE_FIELDS = [
   ['status.requestIssued', '状态 · 是否已发出请求', 'BOOLEAN'], ['status.attemptCount', '状态 · 请求次数', 'INTEGER'],
   ['status.circuitOpen', '状态 · 是否熔断', 'BOOLEAN'], ['status.exception', '状态 · 是否异常', 'BOOLEAN'],
   ['callId', '追踪 · 调用 ID', 'STRING'], ['costTimeMs', '追踪 · 耗时毫秒', 'NUMBER'],
-].map(([value, label, type]) => ({ value, label, type }))
+].map(([value, label, type]) => Object.freeze({ value, label, type })))
 
 export const newApiId = () => {
   const cryptoApi = globalThis.crypto
@@ -54,13 +54,14 @@ export function parseExecution(text) {
     retryIntervalMs: 200,
     retryBackoffMultiplier: 2,
     ...branch,
+    ...(branch?.sample && typeof branch.sample === 'object' ? { sample: Object.freeze(branch.sample) } : {}),
   })
   config.requestBranches = (config.requestBranches || []).map(normalizeBranch)
   config.responseBranches = (config.responseBranches || []).map(branch => ({ mode: 'FIELDS', ...normalizeBranch(branch) }))
   config.exceptionBranches = (config.exceptionBranches || []).map(normalizeBranch)
   config.billingBranches = (config.billingBranches || []).map(normalizeBranch)
   config.retryBranches = (config.retryBranches || []).map(normalizeBranch)
-  config.steps = (config.steps || []).map(step => ({ successConditionTree: newCondition(), exceptionConditionTree: newCondition(), retryConditionTree: newCondition(), ...step, ...(step.callback ? { callback: { successCondition: newCondition(), failureCondition: newCondition(), ...step.callback } } : {}), ...(step.poll ? { poll: { failure: newCondition(), ...step.poll } } : {}) }))
+  config.steps = (config.steps || []).map(step => ({ successConditionTree: newCondition(), exceptionConditionTree: newCondition(), retryConditionTree: newCondition(), ...step, responseBranches: (step.responseBranches || []).map(normalizeBranch), ...(step.callback ? { callback: { successCondition: newCondition(), failureCondition: newCondition(), ...step.callback } } : {}), ...(step.poll ? { poll: { failure: newCondition(), ...step.poll } } : {}) }))
   return config
 }
 export const newApiField = () => ({ id: newApiId(), location: 'JSON', path: '', value: null, required: false, nullPolicy: 'DEFAULT', overridable: false })
@@ -79,7 +80,10 @@ export function sampleFields(sample, prefix = 'response.body', target = '', resu
   return result
 }
 
+const samplePathCache = new WeakMap()
 export function samplePathOptions(sample, prefix = 'response.body') {
+  const cacheable = sample && typeof sample === 'object' && Object.isFrozen(sample)
+  if (cacheable && samplePathCache.get(sample)?.has(prefix)) return samplePathCache.get(sample).get(prefix)
   const result = []
   const visit = (value, path) => {
     const type = value === null ? 'NULL' : Array.isArray(value) ? 'LIST' : typeof value === 'object' ? 'OBJECT' : typeof value === 'boolean' ? 'BOOLEAN' : typeof value === 'number' ? 'NUMBER' : 'STRING'
@@ -91,6 +95,10 @@ export function samplePathOptions(sample, prefix = 'response.body') {
     })
   }
   visit(sample, prefix)
+  if (cacheable) {
+    if (!samplePathCache.has(sample)) samplePathCache.set(sample, new Map())
+    samplePathCache.get(sample).set(prefix, Object.freeze(result))
+  }
   return result
 }
 
@@ -100,7 +108,7 @@ export function prepareResponseSample(sample, previous = {}, strategy = 'AUTO') 
   const ids = new Map((previous.outputFields || []).map(field => [field.path, field.id]))
   const value = previous.mode === 'VALUE' && previous.value ? previous.value : { kind: 'PATH', value: 'response.body', protocolPath: true, resolved: true }
   return {
-    sample, mode: whole ? 'VALUE' : 'FIELDS',
+    sample: sample && typeof sample === 'object' ? Object.freeze(sample) : sample, mode: whole ? 'VALUE' : 'FIELDS',
     value: whole ? value : null,
     outputFields: whole ? [] : sampleFields(sample).map(field => ({ ...field, id: ids.get(field.path) || field.id })),
   }
@@ -119,21 +127,79 @@ export function apiFieldOptions(variables, objects) {
   return buildPickerOptions(buildReferenceCatalog(variables || [], objects || [], []))
 }
 
+const CONDITION_OPERATORS = new Set(['*', '==', 'eq', '!=', '<>', 'ne', '>', '>=', '<', '<=', 'between', 'not_between', 'contains', 'not_contains', 'contains_any', 'contains_all', 'starts_with', 'not_starts_with', 'ends_with', 'not_ends_with', 'regex', 'matches', 'string_matches', 'not_regex', 'not_matches', 'in', 'not_in', 'has_key', 'not_has_key', 'missing', 'not_exists', 'absent', 'exists', 'present', 'is_null', 'not_null', 'is_empty', 'blank', 'not_empty', 'not_blank', 'type_is', 'type_not', 'type_changed', 'is_true', 'is_false'])
+const NO_VALUE_OPERATORS = new Set(['missing', 'not_exists', 'absent', 'exists', 'present', 'is_null', 'not_null', 'is_empty', 'blank', 'not_empty', 'not_blank', 'is_true', 'is_false'])
+const MULTI_VALUE_OPERATORS = new Set(['in', 'not_in', 'contains_any', 'contains_all'])
+
+/** 校验统一链路中的条件树，空条件组表示无条件匹配。 */
+export function validateConditionTree(raw, label = '条件') {
+  if (raw == null || raw === '') return ''
+  let condition = raw
+  if (typeof condition === 'string') {
+    try { condition = JSON.parse(condition) } catch { return `${label}必须是合法 JSON` }
+  }
+  if (!condition || typeof condition !== 'object' || Array.isArray(condition)) return `${label}必须是条件对象`
+  if (condition.type === 'group' || Array.isArray(condition.children)) {
+    const children = Array.isArray(condition.children) ? condition.children : []
+    if (!children.length) return ''
+    const operator = String(condition.operator || condition.op || 'AND').toUpperCase()
+    if (!['AND', 'OR'].includes(operator)) return `${label}条件组运算符只能是 AND 或 OR`
+    for (const child of children) {
+      const error = validateConditionTree(child, label)
+      if (error) return error
+    }
+    return ''
+  }
+  const hasLeft = condition.left != null || [condition.path, condition.field, condition.varCode].some(value => String(value || '').trim())
+  if (!hasLeft) return `${label}存在未填写的响应字段路径`
+  const operator = String(condition.operator || '==').toLowerCase()
+  if (!CONDITION_OPERATORS.has(operator)) return `${label}不支持运算符: ${condition.operator || ''}`
+  if (NO_VALUE_OPERATORS.has(operator)) return ''
+  const hasRight = condition.right != null || condition.value !== undefined || Array.isArray(condition.values) && condition.values.length > 0
+  if (!hasRight) return `${label}缺少判断值`
+  if (MULTI_VALUE_OPERATORS.has(operator) && Array.isArray(condition.values) && !condition.values.length && condition.right == null && condition.value === undefined) return `${label}的列表判断至少需要一个值`
+  return ''
+}
+
+function validateOutputFields(fields, label) {
+  const seenIds = new Set()
+  const seenPaths = new Set()
+  for (const field of fields || []) {
+    if (!field) return `${label}配置无效`
+    if (field.id && seenIds.has(field.id)) return `${label} ID 重复`
+    if (!String(field.path || '').trim()) return `${label}路径不能为空`
+    if (seenPaths.has(field.path)) return `${label}路径重复：${field.path}`
+    if (!Object.hasOwn(field, 'value')) return `${label}缺少取值：${field.path}`
+    if (field.id) seenIds.add(field.id)
+    seenPaths.add(field.path)
+  }
+  return ''
+}
+
+function validateResponseBranch(branch, label) {
+  const mode = String(branch?.mode || 'FIELDS').toUpperCase()
+  if (!['FIELDS', 'VALUE'].includes(mode)) return `${label}模式只能是 FIELDS 或 VALUE`
+  if (mode === 'VALUE' && !Object.hasOwn(branch || {}, 'value')) return `${label}整体取值不能为空`
+  return mode === 'FIELDS' ? validateOutputFields(branch?.outputFields, `${label}输出字段`) : ''
+}
+
 export function validateExecution(spec, requestMode) {
   if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return '统一链路配置必须是 JSON 对象'
   if (spec.version !== 2) return '统一链路配置版本必须为 2'
   if (requestMode === 'ASYNC' && !(spec.steps || []).length) return '异步接口请至少添加一个链路步骤'
   const validateFields = (fields, label = '请求字段') => {
+    const hasConfiguredValue = value => value !== null && value !== undefined && (typeof value !== 'string' || value.trim() !== '')
     const seen = new Set()
     const targets = new Set()
     for (const field of fields || []) {
       if (!field.path?.trim()) return `${label}路径不能为空`
       if (!field.id || seen.has(field.id)) return `${label} ID 重复或缺失`
-      if (!field.location || !['HEADER', 'QUERY', 'JSON', 'FORM', 'FORM_DATA'].includes(field.location)) return `${label}位置无效`
-      const target = `${field.location}:${field.path}`
+      if (!field.location || !['HEADER', 'QUERY', 'COOKIE', 'JSON', 'FORM', 'FORM_DATA'].includes(field.location)) return `${label}位置无效`
+      const targetPath = field.location === 'HEADER' ? field.path.trim().toLowerCase() : field.path
+      const target = `${field.location}:${targetPath}`
       if (targets.has(target)) return `${label}目标路径重复：${field.path}`
       if (field.location === 'HEADER' && field.overridable) return 'Header 字段不能由变量或对象覆盖'
-      if (field.required && !field.value && !field.defaultValue) return `请配置必填字段 ${field.path} 的取值`
+      if (field.required && !hasConfiguredValue(field.value) && !hasConfiguredValue(field.defaultValue)) return `请配置必填字段 ${field.path} 的取值`
       seen.add(field.id)
       targets.add(target)
     }
@@ -149,6 +215,16 @@ export function validateExecution(spec, requestMode) {
       branchIds.add(branch.id)
       error = validateFields(branch.requestFields, `${key} 分支请求字段`)
       if (error) return error
+      error = validateConditionTree(branch.condition, `${key} 分支条件`)
+      if (error) return error
+      if (key === 'responseBranches') {
+        error = validateResponseBranch(branch, `${key} 分支`)
+        if (error) return error
+      }
+      if (key === 'retryBranches') {
+        const retryCount = branch.retryCount == null ? 0 : branch.retryCount
+        if (!Number.isInteger(retryCount) || retryCount < 0 || retryCount > 10) return `${key} 分支重试次数必须在 0 到 10 之间`
+      }
     }
   }
   if ((spec.steps || []).length && requestMode !== 'ASYNC') return '多步链路需要选择异步模式'
@@ -163,6 +239,25 @@ export function validateExecution(spec, requestMode) {
     if (step.type === 'HTTP' && step.poll && !step.poll.until?.children?.length) return `第 ${index + 1} 个轮询步骤必须配置完成条件`
     error = validateFields(step.requestFields, `第 ${index + 1} 个步骤请求字段`)
     if (error) return error
+    for (const [name, tree] of [['执行条件', step.when], ['成功条件', step.successConditionTree], ['异常条件', step.exceptionConditionTree], ['重试条件', step.retryConditionTree]]) {
+      error = validateConditionTree(tree, `第 ${index + 1} 个步骤${name}`)
+      if (error) return error
+    }
+    if (step.poll) {
+      error = validateConditionTree(step.poll.until, `第 ${index + 1} 个步骤轮询完成条件`)
+      if (error || !step.poll.until?.children?.length) return error || `第 ${index + 1} 个步骤轮询必须配置完成条件`
+      error = validateConditionTree(step.poll.failure, `第 ${index + 1} 个步骤轮询失败条件`)
+      if (error) return error
+    }
+    const responseBranchIds = new Set()
+    for (const [branchIndex, branch] of (step.responseBranches || []).entries()) {
+      if (!branch?.id || responseBranchIds.has(branch.id)) return `第 ${index + 1} 个步骤响应分支 ID 重复或缺失`
+      responseBranchIds.add(branch.id)
+      error = validateConditionTree(branch.condition, `第 ${index + 1} 个步骤响应分支 ${branchIndex + 1} 条件`)
+      if (error) return error
+      error = validateResponseBranch(branch, `第 ${index + 1} 个步骤响应分支 ${branchIndex + 1}`)
+      if (error) return error
+    }
     const text = JSON.stringify(step)
     const matcher = /(?:\$\.|\$\{)?steps\.([A-Za-z0-9_-]+)\./g
     let match

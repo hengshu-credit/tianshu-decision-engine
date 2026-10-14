@@ -132,10 +132,10 @@ docker compose --env-file .env -f docker/docker-compose.redis.yml up -d
 
 ### 数据库初始化
 
-- `schema.sql` 只包含数据库、表和索引等结构 DDL；服务端启动时默认自动执行，脚本使用当前连接的数据库，不写死数据库名
+- `schema.sql` 包含数据库表结构、逻辑执行日志视图和按变量唯一索引幂等补齐的系统常量；服务端启动时默认自动执行，脚本使用当前连接的数据库，不写死数据库名
 - Docker Compose 默认只启动 MySQL、Redis 和应用服务，不导入业务数据；启用 `example-data` profile 后等待 schema 完成并以 `INSERT IGNORE` 导入 `docker/rule-engine-mysql/data-tianshu-example.sql`
-- 手工完整恢复顺序：删除 `MYSQL_DATABASE` 指定的数据库，启动服务自动执行 `schema.sql`，再按需导入 `docker/rule-engine-mysql/data-tianshu-example.sql`
-- `data.sql` / `data-example.sql` / `data-third-party-api.sql` 仅作为可选快照、示例或模板数据脚本手动导入，不属于系统初始数据来源
+- 手工演示环境准备顺序：启动服务自动执行 `schema.sql`，再按需导入 `docker/rule-engine-mysql/data-tianshu-example.sql`；该样例脚本不用于保留业务数据的数据库
+- 样例数据只保留 `docker/rule-engine-mysql/data-tianshu-example.sql`，不属于系统初始数据来源；服务端启动不自动导入样例数据
 - 仅在 README 的 12 节「实现边界」中保留的已知限制（如血缘仅静态识别脚本引用）才是真实待修缮项
 - Compose 不提供共享默认密码；全新数据卷根据 `MYSQL_USERNAME` / `MYSQL_PASSWORD` 创建应用账号，已有数据卷需由数据库管理员预先创建或更新最小权限账号
 - Maven/JAR 启动时会自动读取当前目录或上级目录的 `.env`；系统环境变量和命令行参数优先覆盖文件值，生产仍应通过 Secret/KMS 注入 MySQL、Redis、控制台和 `RULE_AUTH_MASTER_KEY` 等真实凭据
@@ -228,6 +228,13 @@ Vitest 配置（`vitest.config.mjs`）关键点：
 ### 铁律五：前端代码修改需要符合 eslint 规范。
 
 > ⚠️ **铁律**：前端代码修改需要符合 eslint 规范。
+
+### 页面筛选与操作工具栏规范
+
+- 列表、审批和各模块调用日志页面中，筛选与页面级操作必须共用同一行工具栏：筛选靠最左，操作按钮组靠最右。复用 `uiue-search-container uiue-filter-toolbar`，不得将字段、刷新等操作另起一行放到标题区。
+- 右侧操作按钮组中的“字段”必须排在最左第一个，其后再放草稿与审批、刷新、新建等操作；相关按钮紧邻排列，不使用 `space-between` 将“字段”和“刷新”拉到按钮区两端。
+- 没有筛选的监控看板，字段与刷新仍应作为紧凑按钮组靠右；窄屏允许按公共响应式规则换行，但不得遮挡、裁剪按钮或造成整页横向溢出。
+- 调整公共组件时，同时检查模型执行日志、数据库调用日志、外数调用日志、名单日志等所有复用入口。
 
 ## 设计器变量引用链路
 

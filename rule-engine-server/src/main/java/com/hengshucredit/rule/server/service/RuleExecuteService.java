@@ -270,8 +270,10 @@ public class RuleExecuteService {
         if (identity != null) {
             result.setExecutionIdentity(identity);
             result.setRevisionId(identity.getRevisionId() == null ? null : Long.valueOf(identity.getRevisionId()));
+            result.setArtifactDigest(identity.getArtifactDigest());
             log.setRevisionId(result.getRevisionId());
-            log.setRuleVersion(null);
+            log.setRuleVersion(identity.getVersionNo());
+            log.setArtifactDigest(identity.getArtifactDigest());
         }
         log.setModelType(definition.getModelType());
         log.setSource("SERVER");

@@ -17,23 +17,21 @@ describe('请求字段的位置、格式和文件内容', () => {
     expect(fields.some(field => field.id === added.id)).toBe(false)
     wrapper.unmount()
   })
-  test('文件不能配置到请求头；改回普通字段后切换请求头会关闭覆盖', () => {
+  test('历史文件字段不能移动到请求头，新增配置不再提供文件类型控件', () => {
     const file = { mode: 'ZIP_BASE64', kind: 'PDF', name: '申请.pdf', maxBytes: 2048 }
     const field = { id: 'document', path: 'document', location: 'JSON', file, overridable: true }
     const wrapper = shallowMount(ApiParameterFields, { props: { fields: [field] } })
     wrapper.vm.setPosition(field, 'HEADER')
     expect(field.location).toBe('JSON')
     expect(field.file).toEqual(file)
-    wrapper.vm.setFileMode(field, 'NONE')
-    wrapper.vm.setPosition(field, 'HEADER')
-    expect(field.file).toBeUndefined()
-    expect(field.location).toBe('HEADER')
-    expect(field.overridable).toBe(false)
+    expect(field.file).toEqual(file)
+    expect(field.location).toBe('JSON')
     wrapper.unmount()
   })
   test('相同字段名能通过位置和格式区分，旧映射入参不假装成请求体', () => {
     expect(requestFieldPosition({ location: 'HEADER' }).label).toBe('Headers')
     expect(requestFieldPosition({ location: 'QUERY' }).label).toBe('Params')
+    expect(requestFieldPosition({ location: 'COOKIE' }).label).toBe('Cookies')
     for (const location of ['JSON', 'FORM', 'FORM_DATA']) expect(requestFieldPosition({ location }).label).toBe('Body')
     expect(requestFieldFormat({ location: 'FORM' }).label).toBe('x-www-form-urlencoded')
     expect(requestFieldFormat({ location: 'FORM_DATA' }).label).toBe('form-data')
@@ -42,5 +40,16 @@ describe('请求字段的位置、格式和文件内容', () => {
     expect(requestFieldFormat({ location: 'INPUT' }).label).toBe('由 API 映射')
     expect(requestFieldContent({ file: { mode: 'BASE64', kind: 'IMAGE' } }).hint).toContain('图片')
     expect(requestFieldContent({ file: { mode: 'ZIP_BASE64' } }).hint).toContain('ZIP')
+  })
+  test('默认值是单输入框；清空即删除默认处理，填写保留原文', () => {
+    const field = { id: 'default', path: 'queryPhone', location: 'JSON', value: null }
+    const wrapper = shallowMount(ApiParameterFields, { props: { fields: [field] } })
+    expect(wrapper.vm.defaultValueText(field)).toBe('')
+    wrapper.vm.setDefaultValue(field, '0000')
+    expect(field.defaultValue).toBe('0000')
+    expect(wrapper.vm.defaultValueText(field)).toBe('0000')
+    wrapper.vm.setDefaultValue(field, '')
+    expect(field.defaultValue).toBeUndefined()
+    wrapper.unmount()
   })
 })

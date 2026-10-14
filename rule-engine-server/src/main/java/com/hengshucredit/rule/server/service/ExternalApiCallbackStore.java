@@ -55,7 +55,15 @@ public class ExternalApiCallbackStore {
         if (!validSignature(config.getString("signatureSecret"), body, signature)) {
             throw new SecurityException("回调签名校验失败");
         }
-        Object parsed = JSON.parse(new String(body, StandardCharsets.UTF_8));
+        final Object parsed;
+        try {
+            parsed = JSON.parse(new String(body, StandardCharsets.UTF_8));
+        } catch (RuntimeException invalidJson) {
+            throw new IllegalArgumentException("回调内容必须是合法 JSON", invalidJson);
+        }
+        if (!(parsed instanceof Map<?, ?>)) {
+            throw new IllegalArgumentException("回调内容必须是 JSON 对象");
+        }
         Map<String, Object> envelope = new java.util.LinkedHashMap<>();
         envelope.put("httpStatus", 200);
         envelope.put("body", parsed);

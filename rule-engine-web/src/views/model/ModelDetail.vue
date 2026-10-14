@@ -1,21 +1,68 @@
 <template>
   <div class="uiue-list-page uiue-compact-workbench">
     <!-- 页面头部 -->
-    <div
-      style="
-        margin-bottom: 16px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-      "
-    >
-      <h2 style="margin: 0">{{ model.modelName || '模型详情' }}</h2>
-      <div>
+    <div class="uiue-detail-header model-detail-header">
+      <div class="uiue-detail-header__title">
         <el-button
+          link
           size="small"
           :icon="ElIconBack"
+          class="uiue-detail-back"
           @click="$router.push('/model')"
           >返回</el-button
+        >
+        <h2 style="margin: 0">{{ model.modelName || '模型详情' }}</h2>
+      </div>
+      <div class="uiue-detail-header__actions model-detail-actions">
+        <resource-version-manager
+          v-if="model.id"
+          :show-trigger="false"
+          resource-type="MODEL"
+          :resource-id="model.id"
+          has-legacy
+          @legacy="openVersionDialog"
+        />
+        <el-select
+          v-if="model.id"
+          v-model="modelVersionSelection"
+          size="small"
+          class="model-version-select"
+          aria-label="模型版本"
+          :disabled="loading || modelVersionLoading"
+          @change="handleModelVersionChange"
+        >
+          <el-option
+            v-for="item in modelVersionOptions"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          />
+        </el-select>
+        <el-button v-permission="'model:edit'" size="small" @click="openImpact('REPLACE')">替换模型文件</el-button>
+        <el-button
+          v-permission="'model:edit'"
+          size="small"
+          data-action="run-model-preflight"
+          :disabled="loading || !model.id"
+          @click="runModelPreflight"
+          >检查</el-button
+        >
+        <el-button
+          v-permission="'model:edit'"
+          size="small"
+          :loading="modelSaving"
+          :disabled="loading || !model.id"
+          @click="saveModelDraft"
+          >保存</el-button
+        >
+        <el-button
+          v-permission="['model:edit', 'approval:submit']"
+          size="small"
+          type="primary"
+          :loading="modelPublishing"
+          :disabled="loading || !model.id"
+          @click="publishModelDraft"
+          >发布</el-button
         >
         <el-button v-permission="'model:edit'"
           size="small"
@@ -26,8 +73,6 @@
           @click="openTestDialog"
           >模型测试</el-button
         >
-        <resource-version-manager v-if="model.id" resource-type="MODEL" :resource-id="model.id" has-legacy @legacy="openVersionDialog" />
-        <el-button v-permission="'model:edit'" size="small" @click="openImpact('REPLACE')">替换模型文件</el-button>
       </div>
       <input ref="replaceFile" type="file" :accept="model.modelFormat === 'PMML' ? '.pmml' : '.onnx'" hidden @change="handleReplaceFile" />
     </div>
@@ -68,12 +113,6 @@
         <code class="model-digest">{{ model.modelDigest || '—' }}</code>
       </el-descriptions-item>
       <el-descriptions-item label="样例校验">{{ modelSampleStatus }}</el-descriptions-item>
-      <el-descriptions-item label="设计版本">{{
-        model.businessVersion || model.currentVersion
-      }}</el-descriptions-item>
-      <el-descriptions-item label="发布版本">{{
-        model.publishedVersion ? (model.businessVersion || model.publishedVersion) : '-'
-      }}</el-descriptions-item>
       <el-descriptions-item
         v-if="model.modelFormat === 'ONNX'"
         label="ONNX 推理任务"
@@ -111,9 +150,11 @@
     </el-descriptions>
 
     <resource-preflight-panel
+      ref="modelPreflight"
       resource-type="MODEL"
       :resource-id="model.id"
       :config-signature="preflightConfigSignature"
+      :show-action="false"
     />
 
     <!-- 描述 -->
@@ -257,7 +298,7 @@
           <!-- 操作 -->
           <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false"
             label="操作"
-            width="140"
+            :width="operationColumnWidth(['保存', '取消', '编辑'])"
             align="center"
             fixed="right"
           >
@@ -447,7 +488,7 @@
           <!-- 操作 -->
           <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false"
             label="操作"
-            width="140"
+            :width="operationColumnWidth(['保存', '取消', '编辑'])"
             align="center"
             fixed="right"
           >
@@ -553,7 +594,7 @@
             row.publishTime ? String(row.publishTime).replace('T', ' ') : '-'
           }}</template>
         </el-table-column>
-        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="170" align="center">
+        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['对比上一版', '回滚'])" align="center">
           <template v-slot="{ row, $index }">
             <el-button
               link
@@ -891,10 +932,11 @@
 </template>
 
 <script>
-import ResourceVersionManager from '@/components/common/ResourceVersionManager.vue'
 import { hasPermission } from '@/security/permissionState'
-import { editableResource } from '@/api/governance'
+import { editableResource, submitGovernanceRequest } from '@/api/governance'
 import { completeResourceChange } from '@/utils/governanceWorkspace'
+import { getResourceVersions } from '@/api/resourceVersions'
+import ResourceVersionManager from '@/components/common/ResourceVersionManager.vue'
 import { chooseVersionRestore, versionDisplayLabel } from '@/utils/versionRestore'
 import ResourcePicker from '@/components/common/ResourcePicker.vue'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
@@ -922,6 +964,7 @@ import OperandValueDisplay from '@/components/common/OperandValueDisplay.vue'
 import ResourcePreflightPanel from '@/components/common/ResourcePreflightPanel.vue'
 import ModelImpactDialog from '@/components/model/ModelImpactDialog.vue'
 import JsonVersionDiff from '@/components/common/JsonVersionDiff.vue'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import {
   compileOperand,
   createFunctionOperand,
@@ -966,6 +1009,12 @@ export default {
       loading: false,
       detailActivated: false,
       model: {},
+      modelVersionSelection: 'LATEST',
+      modelVersionOptions: [{ value: 'LATEST', label: '生产版本' }],
+      modelVersionWorkspace: null,
+      modelVersionLoading: false,
+      modelSaving: false,
+      modelPublishing: false,
       impactVisible: false,
       impactAction: 'REPLACE',
       replaceImpactToken: '',
@@ -1214,6 +1263,7 @@ export default {
     this.load()
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     versionDisplayLabel,
     openImpact(action) {
       this.impactAction = action
@@ -1339,6 +1389,117 @@ export default {
         ? compileOperand(row.transformOperand) || '-'
         : '-'
     },
+    async loadModelVersionWorkspace(id) {
+      this.modelVersionLoading = true
+      try {
+        const response = await getResourceVersions('MODEL', id)
+        const workspace = response?.data || {}
+        this.modelVersionWorkspace = workspace
+        const drafts = (workspace.drafts || []).filter(item => item && item.id != null)
+        this.modelVersionOptions = [
+          { value: 'LATEST', label: '生产版本' },
+          ...drafts.map(item => ({ value: `d:${item.id}`, label: `草稿 #${item.id}` })),
+        ]
+        if (drafts.some(item => String(item.id) === String(this.modelVersionSelection.slice(2)))) return
+        if (drafts.length && this.modelVersionSelection === 'LATEST') {
+          this.modelVersionSelection = `d:${drafts[0].id}`
+        }
+      } catch {
+        this.modelVersionWorkspace = null
+        this.modelVersionOptions = [{ value: 'LATEST', label: '生产版本' }]
+      } finally {
+        this.modelVersionLoading = false
+      }
+    },
+    parseModelVersionSnapshot(snapshot) {
+      if (!snapshot) return null
+      try {
+        const value = typeof snapshot === 'string' ? JSON.parse(snapshot) : snapshot
+        return value && typeof value === 'object' && !Array.isArray(value) ? value : null
+      } catch {
+        return null
+      }
+    },
+    normalizeModelFields() {
+      if (this.model.inputFields) {
+        this.model.inputFields.forEach((f) => {
+          f['_editing'] = false
+          const sourceOperand = this.parseOperand(f.sourceOperand) || operandFromReferenceFields({ ...f, valueType: f.fieldType }, 'scriptName', 'varId', 'refType')
+          if (sourceOperand && !sourceOperand.valueType) sourceOperand.valueType = f.fieldType || ''
+          f['sourceOperand'] = sourceOperand
+          f['defaultOperand'] = this.parseOperand(f.defaultOperand) || (f.defaultValue ? createLiteralOperand(f.defaultValue, f.fieldType) : null)
+        })
+      }
+      if (this.model.outputFields) {
+        this.model.outputFields.forEach((f) => {
+          f['_editing'] = false
+          const targetOperand = this.parseOperand(f.targetOperand) || operandFromReferenceFields({ ...f, valueType: f.fieldType }, 'scriptName', 'varId', 'refType')
+          if (targetOperand && !targetOperand.valueType) targetOperand.valueType = f.fieldType || ''
+          f['targetOperand'] = targetOperand
+          f['transformOperand'] = this.parseOperand(f.transformOperand)
+        })
+      }
+      this.normalizeFieldPages()
+    },
+    async handleModelVersionChange(value) {
+      if (value === 'LATEST') {
+        const workspace = this.modelVersionWorkspace || {}
+        const latest = (workspace.history || []).find(item => String(item.id) === String(workspace.latestVersionId)) || (workspace.history || []).find(item => item.latest)
+        const snapshot = this.parseModelVersionSnapshot(latest?.snapshotJson)
+        if (snapshot) {
+          this.model = { ...this.model, ...snapshot }
+          this.normalizeModelFields()
+        } else {
+          await this.load()
+        }
+        return
+      }
+      const draft = (this.modelVersionWorkspace?.drafts || []).find(item => String(item.id) === String(value).slice(2))
+      const snapshot = this.parseModelVersionSnapshot(draft?.draftSnapshotJson)
+      if (!snapshot) {
+        this.$message.warning('该草稿内容暂不可读取，请刷新后重试')
+        return
+      }
+      this.model = { ...this.model, ...snapshot }
+      this.normalizeModelFields()
+    },
+    async runModelPreflight() {
+      await this.$refs.modelPreflight?.runCheck?.()
+    },
+    async saveModelDraft() {
+      if (this.modelSaving || !this.model.id) return
+      this.modelSaving = true
+      try {
+        const snapshot = JSON.parse(JSON.stringify(this.model))
+        ;(snapshot.inputFields || []).forEach(field => { delete field._editing; delete field._origin; delete field._saving })
+        ;(snapshot.outputFields || []).forEach(field => { delete field._editing; delete field._origin; delete field._saving })
+        const response = await api.updateModel(snapshot)
+        await completeResourceChange(this, response, () => this.load())
+      } catch (error) {
+        this.$message.error(error.message || '模型保存失败')
+      } finally {
+        this.modelSaving = false
+      }
+    },
+    async publishModelDraft() {
+      if (this.modelPublishing || !this.model.id) return
+      this.modelPublishing = true
+      try {
+        const response = await api.publishModel(this.model.id, '提交模型发布审批')
+        const draft = response?.data
+        if (draft?.id && draft.status === 'EDITING') {
+          await submitGovernanceRequest(draft.id, '提交模型发布审批', draft.snapshotDigest)
+          this.$message.success('模型已提交发布审批')
+          await this.load()
+        } else {
+          await completeResourceChange(this, response, () => this.load())
+        }
+      } catch (error) {
+        this.$message.error(error.message || '模型发布失败')
+      } finally {
+        this.modelPublishing = false
+      }
+    },
     async load() {
       const id = this.$route.params.id
       if (!id) return
@@ -1347,46 +1508,8 @@ export default {
         const res = await api.getModel(id)
         if (res.data?.id && hasPermission('model:edit')) res.data = await editableResource('MODEL', res.data.id, res.data)
         this.model = res.data || {}
-        // 初始化 _editing 标志
-        if (this.model.inputFields) {
-          this.model.inputFields.forEach((f) => {
-            f['_editing'] = false
-            const sourceOperand =
-              this.parseOperand(f.sourceOperand) ||
-              operandFromReferenceFields(
-                { ...f, valueType: f.fieldType },
-                'scriptName',
-                'varId',
-                'refType'
-              )
-            if (sourceOperand && !sourceOperand.valueType)
-              sourceOperand.valueType = f.fieldType || ''
-            f['sourceOperand'] = sourceOperand
-            f['defaultOperand'] =
-              this.parseOperand(f.defaultOperand) ||
-              (f.defaultValue
-                ? createLiteralOperand(f.defaultValue, f.fieldType)
-                : null)
-          })
-        }
-        if (this.model.outputFields) {
-          this.model.outputFields.forEach((f) => {
-            f['_editing'] = false
-            const targetOperand =
-              this.parseOperand(f.targetOperand) ||
-              operandFromReferenceFields(
-                { ...f, valueType: f.fieldType },
-                'scriptName',
-                'varId',
-                'refType'
-              )
-            if (targetOperand && !targetOperand.valueType)
-              targetOperand.valueType = f.fieldType || ''
-            f['targetOperand'] = targetOperand
-            f['transformOperand'] = this.parseOperand(f.transformOperand)
-          })
-        }
-        this.normalizeFieldPages()
+        await this.loadModelVersionWorkspace(id)
+        this.normalizeModelFields()
         // 模型加载后加载变量库
         await this.loadVars()
       } catch (e) {
@@ -2465,6 +2588,12 @@ export default {
   align-items: center;
   gap: 10px;
   margin-bottom: 12px;
+}
+.model-detail-actions {
+  flex-wrap: wrap;
+}
+.model-version-select {
+  width: 180px;
 }
 .version-compare-toolbar .el-select {
   width: 150px;

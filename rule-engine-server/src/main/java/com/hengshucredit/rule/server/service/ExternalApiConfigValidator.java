@@ -11,6 +11,15 @@ import java.util.Set;
 
 /** 保存、审批和草稿试调用使用同一份外数协议校验。 */
 public final class ExternalApiConfigValidator {
+    private static final Set<String> CONDITION_OPERATORS = Set.of(
+            "*", "==", "eq", "!=", "<>", "ne", ">", ">=", "<", "<=",
+            "between", "not_between", "contains", "not_contains", "contains_any", "contains_all",
+            "starts_with", "not_starts_with", "ends_with", "not_ends_with",
+            "regex", "matches", "string_matches", "not_regex", "not_matches",
+            "in", "not_in", "has_key", "not_has_key",
+            "missing", "not_exists", "absent", "exists", "present",
+            "is_null", "not_null", "is_empty", "blank", "not_empty", "not_blank",
+            "type_is", "type_not", "type_changed", "is_true", "is_false");
     private ExternalApiConfigValidator() { }
 
     public static void validate(RuleExternalApiConfig config) {
@@ -42,6 +51,16 @@ public final class ExternalApiConfigValidator {
         }
         if (hasText(config.getTokenFailureCondition())) {
             validateCondition(parseCondition(config.getTokenFailureCondition(), "Token鉴权失败条件"), "Token鉴权失败条件");
+        }
+        if (hasText(config.getBillingCondition())) {
+            JSONObject billing = parseCondition(config.getBillingCondition(), "计费条件");
+            String billingMode = billing.getString("mode");
+            if (billingMode != null && !Set.of("QUERY", "HIT").contains(billingMode.trim().toUpperCase(Locale.ROOT))) {
+                throw new IllegalArgumentException("计费模式只能是 QUERY 或 HIT");
+            }
+            if (!"QUERY".equalsIgnoreCase(billingMode)) {
+                validateCondition(billing.containsKey("condition") ? billing.getJSONObject("condition") : billing, "计费条件");
+            }
         }
         if (hasText(config.getPayloadCaptureConfig())) {
             ExternalApiPayloadCapturePolicy.validate(config.getPayloadCaptureConfig());
@@ -202,14 +221,24 @@ public final class ExternalApiConfigValidator {
         } else if ("group".equalsIgnoreCase(condition.getString("type"))) {
             var children = condition.getJSONArray("children");
             if (children == null || children.isEmpty()) throw new IllegalArgumentException(label + "至少需要一个判断条件");
+            String groupOperator = hasText(condition.getString("operator"))
+                    ? condition.getString("operator") : condition.getString("op");
+            if (groupOperator != null && !Set.of("AND", "OR").contains(groupOperator.trim().toUpperCase(Locale.ROOT))) {
+                throw new IllegalArgumentException(label + "条件组运算符只能是 AND 或 OR");
+            }
             for (int i = 0; i < children.size(); i++) validateCondition(children.getJSONObject(i), label);
         } else {
             String path = condition.getString("path");
             if (!hasText(path)) path = condition.getString("field");
             if (!hasText(path)) path = condition.getString("varCode");
-            if (condition.getJSONObject("left") == null) required(path, label + "响应字段路径");
-            String operator = condition.getString("operator");
-            if (operator != null && Set.of("type_is", "type_not", "type_changed").contains(operator.toLowerCase(Locale.ROOT))) {
+            boolean operandLeft = condition.get("left") != null;
+            if (!operandLeft) required(path, label + "响应字段路径");
+            String operator = hasText(condition.getString("operator"))
+                    ? condition.getString("operator").trim().toLowerCase(Locale.ROOT) : "==";
+            if (!CONDITION_OPERATORS.contains(operator)) {
+                throw new IllegalArgumentException(label + "不支持运算符: " + condition.getString("operator"));
+            }
+            if (Set.of("type_is", "type_not", "type_changed").contains(operator)) {
                 if (!hasText(condition.getString("value")) && condition.get("right") == null) {
                     required(condition.getString("value"), label + "类型值");
                 }

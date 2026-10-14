@@ -73,7 +73,7 @@ describe('ExpressionPalette', () => {
       functions: [{ id: 7, funcCode: 'numMax', funcName: '最大值' }]
     })
 
-    expect(wrapper.findAll('.palette-category')).toHaveLength(10)
+    expect(wrapper.findAll('.palette-category')).toHaveLength(7)
     expect(wrapper.find('.palette-category--active').text()).toContain('普通变量')
     expect(wrapper.vm.categories.find(item => item.key === 'standalone').count).toBe(1)
 
@@ -91,6 +91,32 @@ describe('ExpressionPalette', () => {
     expect(wrapper.vm.activeItems).toHaveLength(120)
     expect(wrapper.vm.pagedItems).toHaveLength(50)
     expect(wrapper.vm.categories.find(item => item.key === 'standalone').count).toBe(120)
+  })
+
+  test('分类只展示当前可选择的资源，并应用字段标签过滤', () => {
+    const wrapper = mountPalette({
+      visibleTags: ['object'],
+      selectableTags: ['object'],
+      vars: [
+        variable(1, 'age'),
+        objectField(2, 'LoanApply', '借款申请', 'amount', '申请金额')
+      ]
+    })
+
+    expect(wrapper.vm.categories.map(item => item.key)).toEqual(['manual', 'object', 'list', 'operation', 'transform'])
+    wrapper.vm.selectCategory('object')
+    expect(wrapper.vm.activeItems[0].children).toHaveLength(1)
+  })
+
+  test('表达式资源分类遵循当前位置的期望类型', () => {
+    const wrapper = mountPalette({
+      expectedType: 'NUMBER',
+      vars: [variable(1, 'numberValue'), { ...variable(2, 'textValue'), varType: 'STRING' }],
+      functions: [{ id: 7, funcCode: 'numberFn', returnType: 'NUMBER' }, { id: 8, funcCode: 'textFn', returnType: 'STRING' }]
+    })
+
+    expect(wrapper.vm.selectableVars.map(item => item.varCode)).toEqual(['numberValue'])
+    expect(wrapper.vm.selectableFunctions.map(item => item.funcCode)).toEqual(['numberFn'])
   })
 
   test('切换分类保留同一个搜索词并回到第一页', () => {
@@ -193,11 +219,21 @@ describe('ExpressionPalette', () => {
     expect(wrapper.emitted().insert[1][0]).toMatchObject({ kind: 'PATH', value: '', resolved: false })
   })
 
-  test('字段结果使用类型编码名称三列展示', () => {
+  test('字段结果使用类型编码名称和版本四列展示', () => {
     const wrapper = mountPalette({ vars: [variable(1, 'customer.extremely_long_score')] })
 
-    expect(wrapper.findAll('.palette-reference-table th')).toHaveLength(3)
+    expect(wrapper.findAll('.palette-reference-table th')).toHaveLength(4)
     expect(wrapper.find('.palette-reference-code').text()).toBe('customer.extremely_long_score')
+  })
+
+  test('选择历史字段版本后插入引用保留版本绑定', () => {
+    const item = variable(1, 'customer.score')
+    const wrapper = mountPalette({ vars: [item] })
+    const selection = { versionMode: 'FIXED', versionId: '9007199254740993', version: 2, versionOwnerId: '1', code: 'customer.score_v2', label: '历史评分', valueType: 'NUMBER' }
+    wrapper.vm.changeVersion(item, selection)
+    wrapper.vm.emitInsert(wrapper.vm.referenceTemplate(wrapper.vm.versionedItem(item)))
+    expect(wrapper.emitted('insert')[0][0]).toMatchObject({ kind: 'REFERENCE', versionMode: 'FIXED', versionId: selection.versionId, code: selection.code, label: selection.label })
+    wrapper.unmount()
   })
 
   test('分类栏和内容栏宽度分别受到上下限约束', () => {

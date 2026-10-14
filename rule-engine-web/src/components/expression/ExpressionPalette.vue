@@ -58,6 +58,7 @@
                 <th>类型</th>
                 <th>对象编码</th>
                 <th>对象名称</th>
+                <th>版本</th>
               </tr>
             </thead>
             <tbody>
@@ -76,29 +77,31 @@
                   </td>
                   <td class="palette-reference-code">{{ group.groupCode }}</td>
                   <td class="palette-reference-name">{{ group.groupLabel }}</td>
+                  <td class="palette-reference-version" />
                 </tr>
                 <tr
                   v-if="expandedGroupKey === group.groupKey"
                   class="palette-reference-children-row"
                 >
-                  <td colspan="3">
-                    <button
-                      v-for="child in pagedGroupChildren(group)"
-                      :key="referenceKey(child)"
-                      type="button"
-                      class="palette-reference-child"
-                      @click.stop="emitInsert(referenceTemplate(child))"
-                    >
-                      <code>{{ childRelativePath(child) }}</code>
-                      <span
-                        class="palette-type-badge"
-                        :class="
-                          'palette-type-badge--' + typeChar(child.varType)
-                        "
-                        >{{ typeChar(child.varType) }}</span
+                  <td colspan="4">
+                    <div v-for="child in pagedGroupChildren(group)" :key="referenceKey(child)" class="palette-reference-child-row">
+                      <button
+                        type="button"
+                        class="palette-reference-child"
+                        @click.stop="emitInsert(referenceTemplate(versionedItem(child)))"
                       >
-                      <span>{{ childDisplayName(child) }}</span>
-                    </button>
+                        <code>{{ childRelativePath(child) }}</code>
+                        <span
+                          class="palette-type-badge"
+                          :class="
+                            'palette-type-badge--' + typeChar(child.varType)
+                          "
+                          >{{ typeChar(child.varType) }}</span
+                        >
+                        <span>{{ childDisplayName(child) }}</span>
+                      </button>
+                      <field-version-select :item="child" :selection="versionSelection(child)" @change="changeVersion(child, $event)" />
+                    </div>
                     <el-pagination
                       v-if="group.children.length > pageSize"
                       small
@@ -122,13 +125,14 @@
                 <th>类型</th>
                 <th>字段编码</th>
                 <th>字段名称</th>
+                <th>版本</th>
               </tr>
             </thead>
             <tbody>
               <tr
                 v-for="item in pagedItems"
                 :key="referenceKey(item)"
-                @click="emitInsert(referenceTemplate(item))"
+                @click="emitInsert(referenceTemplate(versionedItem(item)))"
               >
                 <td>
                   <span
@@ -147,24 +151,22 @@
                 >
                   {{ referenceLabel(item) }}
                 </td>
+                <td class="palette-reference-version" @click.stop>
+                  <field-version-select :item="item" :selection="versionSelection(item)" @change="changeVersion(item, $event)" />
+                </td>
               </tr>
             </tbody>
           </table>
         </template>
 
         <template v-else-if="activeCategory === 'function'">
-          <button
-            v-for="fn in pagedItems"
-            :key="functionKey(fn)"
-            class="palette-result"
-            type="button"
-            @click="emitInsert(functionTemplate(fn))"
-          >
-            <span>{{
-              fn.funcName || fn.functionLabel || functionCode(fn)
-            }}</span>
-            <code>{{ functionCode(fn) }}()</code>
-          </button>
+          <div v-for="fn in pagedItems" :key="functionKey(fn)" class="palette-result-row">
+            <button class="palette-result" type="button" @click="emitInsert(functionTemplate(versionedFunction(fn)))">
+              <span>{{ fn.funcName || fn.functionLabel || functionCode(fn) }}</span>
+              <code>{{ functionCode(fn) }}()</code>
+            </button>
+            <field-version-select :item="functionVersionItem(fn)" :selection="versionSelection(functionVersionItem(fn))" @change="changeVersion(functionVersionItem(fn), $event)" />
+          </div>
         </template>
 
         <template v-else-if="activeCategory === 'list'">
@@ -258,6 +260,9 @@ import {
   REFERENCE_PICKER_CATEGORIES,
   pickerReferenceCategory,
 } from '@/utils/pickerCategories'
+import { canViewPickerItem } from '@/security/pickerAccess'
+import { fieldPickerTags, matchesFieldTags } from '@/utils/fieldPickerPolicy'
+import { pickerTypeMatches } from '@/utils/fieldPicker'
 import {
   filterReferenceGroups,
   groupReferenceOptions,
@@ -265,6 +270,8 @@ import {
   referenceChildRelativePath,
 } from '@/utils/referenceGroups'
 import { createFunctionTemplate } from './expressionTree'
+import FieldVersionSelect from '@/components/common/FieldVersionSelect.vue'
+import { versionFields } from '@/utils/resourceVersion'
 
 const OPERATORS = [
   '+',
@@ -299,12 +306,14 @@ export default {
       resizeStartWidth: 0,
       bodyCursor: '',
       bodyUserSelect: '',
+      versionSelections: {},
       ElIconSearch: markRaw(ElIconSearch),
     }
   },
   components: {
     ElIconCollection,
     ElIconSearch,
+    FieldVersionSelect,
   },
   name: 'ExpressionPalette',
   props: {
@@ -313,8 +322,16 @@ export default {
     listOptions: { type: Array, default: () => [] },
     allowedKinds: { type: Array, default: () => [] },
     expectedType: { type: String, default: '' },
+    visibleTags: { type: [Array, Object], default: null },
+    selectableTags: { type: [Array, Object], default: null },
   },
   computed: {
+    selectableVars() {
+      return this.vars.filter(item => this.isSelectableReference(item))
+    },
+    selectableFunctions() {
+      return this.functions.filter(fn => this.isSelectableFunction(fn))
+    },
     categories() {
       const result = []
       const manualCount =
@@ -323,17 +340,17 @@ export default {
         result.push({ key: 'manual', label: '手动输入', count: manualCount })
       if (this.allows('REFERENCE')) {
         REFERENCE_PICKER_CATEGORIES.forEach((category) => {
-          const count = this.vars.filter(
+          const count = this.selectableVars.filter(
             (item) => pickerReferenceCategory(item) === category.key
           ).length
-          result.push({ key: category.key, label: category.label, count })
+          if (count) result.push({ key: category.key, label: category.label, count })
         })
       }
-      if (this.allows('FUNCTION') && this.functions.length)
+      if (this.allows('FUNCTION') && this.selectableFunctions.length)
         result.push({
           key: 'function',
           label: '函数/方法',
-          count: this.functions.length,
+          count: this.selectableFunctions.length,
         })
       if (this.allows('LIST_QUERY'))
         result.push({ key: 'list', label: '名单查询', count: 1 })
@@ -420,14 +437,14 @@ export default {
     },
     activeItems() {
       if (this.isReferenceCategory) {
-        const items = this.vars.filter(
+        const items = this.selectableVars.filter(
           (item) => pickerReferenceCategory(item) === this.activeCategory
         )
         return this.isGroupedReferenceCategory
           ? groupReferenceOptions(items, this.activeCategory)
           : items
       }
-      if (this.activeCategory === 'function') return this.functions
+      if (this.activeCategory === 'function') return this.selectableFunctions
       if (this.activeCategory === 'manual') return this.manualItems
       if (this.activeCategory === 'list')
         return [
@@ -497,6 +514,17 @@ export default {
     this.stopResize()
   },
   methods: {
+    isSelectableReference(item) {
+      if (!item || item.disabled || !canViewPickerItem(item)) return false
+      if (!pickerTypeMatches(item.varType, this.expectedType)) return false
+      const tags = fieldPickerTags(item)
+      return matchesFieldTags(tags, this.visibleTags) && matchesFieldTags(tags, this.selectableTags)
+    },
+    isSelectableFunction(fn) {
+      const item = { _function: true, function: fn, varType: fn?.returnType || 'FUNCTION' }
+      const tags = fieldPickerTags(item)
+      return pickerTypeMatches(item.varType, this.expectedType) && canViewPickerItem(item) && matchesFieldTags(tags, this.visibleTags) && matchesFieldTags(tags, this.selectableTags)
+    },
     allows(kind) {
       return !this.allowedKinds.length || this.allowedKinds.includes(kind)
     },
@@ -586,6 +614,34 @@ export default {
     },
     functionTemplate(fn) {
       return createFunctionTemplate(fn)
+    },
+    versionSelection(item) {
+      return this.versionSelections[this.referenceKey(item)] || versionFields(item)
+    },
+    changeVersion(item, selection) {
+      this.versionSelections = { ...this.versionSelections, [this.referenceKey(item)]: selection }
+    },
+    versionedItem(item) {
+      const selection = this.versionSelection(item)
+      if (!selection?.versionMode) return item
+      const result = { ...item, ...versionFields(selection) }
+      if (selection.versionMode === 'FIXED') {
+        if (selection.code) result.varCode = selection.code
+        if (selection.label) { result.varLabel = selection.label; result.varLabelText = selection.label }
+        if (selection.valueType) result.varType = selection.valueType
+      }
+      return result
+    },
+    functionVersionItem(fn) {
+      return { ...fn, _function: true, id: fn.id ?? fn.functionId, _varId: fn.id ?? fn.functionId, _refType: 'FUNCTION', varCode: this.functionCode(fn), varLabel: fn.funcName || fn.functionLabel || this.functionCode(fn), varType: fn.returnType || fn.valueType || 'FUNCTION', function: fn }
+    },
+    versionedFunction(fn) {
+      const item = this.versionedItem(this.functionVersionItem(fn))
+      const selection = this.versionSelection(this.functionVersionItem(fn))
+      if (selection?.versionMode !== 'FIXED') return fn
+      const code = selection.functionCode || selection.funcCode || item.varCode || fn.funcCode
+      const label = selection.functionLabel || selection.funcName || item.varLabel || fn.funcName
+      return { ...fn, ...selection, id: fn.id ?? fn.functionId, functionId: fn.id ?? fn.functionId, functionCode: code, funcCode: code, funcName: label, functionLabel: label, returnType: selection.valueType || selection.returnType || fn.returnType, params: selection.params || fn.params, parameters: selection.parameters || fn.parameters, paramsJson: selection.paramsJson || fn.paramsJson }
     },
     operationTemplate(operator) {
       return createOperationOperand([
@@ -896,6 +952,10 @@ export default {
 .palette-reference-table th:nth-child(2) {
   width: 46%;
 }
+.palette-reference-table th:nth-child(4),
+.palette-reference-table th:nth-child(3):last-child {
+  width: 112px;
+}
 .palette-reference-table td {
   padding: 8px;
   border-bottom: 1px solid var(--tianshu-border-subtle);
@@ -925,6 +985,13 @@ export default {
   padding: 6px 8px;
   background: var(--tianshu-bg-soft);
 }
+.palette-reference-child-row,
+.palette-result-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
 .palette-reference-child {
   display: grid;
   width: 100%;
@@ -938,6 +1005,20 @@ export default {
   color: var(--tianshu-text-primary);
   cursor: pointer;
   text-align: left;
+}
+.palette-reference-child-row .palette-reference-child,
+.palette-result-row .palette-result {
+  min-width: 0;
+  flex: 1;
+}
+.palette-reference-version,
+.palette-result-row :deep(.fp-version-select) {
+  width: 112px;
+  min-width: 0;
+}
+.palette-reference-version :deep(.el-select),
+.palette-result-row :deep(.el-select) {
+  width: 100%;
 }
 .palette-reference-child:hover {
   background: var(--tianshu-bg-active);

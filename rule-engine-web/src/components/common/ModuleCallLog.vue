@@ -5,13 +5,9 @@
         <div class="log-title">{{ title || profile.title }}</div>
         <div class="log-subtitle">{{ profile.subtitle }}</div>
       </div>
-      <table-column-settings :columns="moduleColumns" :storage-key="`tianshu:table-columns:module-log-${moduleType.toLowerCase()}`" />
-      <el-button size="small" :icon="ElIconRefresh" @click="load"
-        >刷新</el-button
-      >
     </div>
 
-    <div class="log-filter">
+    <div class="log-filter uiue-search-container uiue-filter-toolbar">
       <el-form :inline="true" size="small" @keyup.enter="handleQuery">
         <el-form-item label="动作">
           <el-select
@@ -71,6 +67,12 @@
           <el-button @click="resetQuery">重置</el-button>
         </el-form-item>
       </el-form>
+      <div class="uiue-btn-bar">
+        <div class="btn-right">
+          <table-column-settings :columns="moduleColumns" :storage-key="`tianshu:table-columns:module-log-${moduleType.toLowerCase()}`" />
+          <el-button size="small" :icon="ElIconRefresh" @click="load">刷新</el-button>
+        </div>
+      </div>
     </div>
 
     <el-table class="management-table" show-overflow-tooltip
@@ -151,7 +153,7 @@
       <el-table-column prop="createTime" label="时间" width="160" fixed="right">
         <template v-slot="{ row }">{{ formatTime(row.createTime) }}</template>
       </el-table-column>
-      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center" fixed="right">
+      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['详情'])" align="center" fixed="right">
         <template v-slot="{ row }">
           <el-button
             link
@@ -436,6 +438,7 @@ import { getRuntimeCallPayload, listRuntimeLogs } from '@/api/runtimeLog'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import ExternalCallTrace from './ExternalCallTrace.vue'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 const PROFILES = {
   DATASOURCE: {
@@ -632,6 +635,7 @@ export default {
     this.load()
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     fetchTargetCodeOptions({ query, pageNum, pageSize }) {
       return listRuntimeLogs(this.cleanParams({
         ...this.query,

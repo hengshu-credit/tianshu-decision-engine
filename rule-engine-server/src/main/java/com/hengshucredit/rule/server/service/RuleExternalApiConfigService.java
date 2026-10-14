@@ -193,6 +193,21 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
             config.setAsyncCallbackUrl(null);
             config.setAsyncResultPath(null);
         }
+        validateJsonObject(config.getHeaderConfig(), "Header配置");
+        validateJsonObject(config.getQueryConfig(), "Query配置");
+        validateJsonObject(config.getRequestMapping(), "请求映射");
+        validateJsonObject(config.getResponseMapping(), "响应映射");
+        validateJsonObject(config.getAuthApiConfig(), "接口鉴权配置");
+        validateJsonObject(config.getCacheKeyConfig(), "缓存键配置");
+        validateJsonObject(config.getExecutionConfig(), "统一链路配置");
+        validateJsonObject(config.getAsyncPollConfig(), "异步轮询配置");
+        validateJsonObject(config.getAsyncCallbackConfig(), "异步回调配置");
+        validateJsonText(config.getSuccessCondition(), "请求成功条件");
+        validateJsonText(config.getExceptionCondition(), "接口异常条件");
+        validateJsonText(config.getRetryCondition(), "业务响应重试条件");
+        validateJsonText(config.getTokenFailureCondition(), "Token鉴权失败条件");
+        validateJsonText(config.getBillingCondition(), "计费条件");
+        validateJsonObject(config.getTestSampleParams(), "测试样例");
         defaultInteger(config.getTokenCacheSeconds(), config::setTokenCacheSeconds,
                 0, 0, 604800, "Token缓存秒数");
         defaultInteger(config.getResponseCacheSeconds(), config::setResponseCacheSeconds,
@@ -329,6 +344,29 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
 
     private String nullIfBlank(String value) {
         return hasText(value) ? value : null;
+    }
+
+    private void validateJsonObject(String value, String label) {
+        if (!hasText(value)) return;
+        try {
+            Object parsed = com.alibaba.fastjson.JSON.parse(value);
+            if (!(parsed instanceof Map<?, ?>)) {
+                throw new IllegalArgumentException(label + "必须是 JSON 对象");
+            }
+        } catch (IllegalArgumentException error) {
+            throw error;
+        } catch (RuntimeException error) {
+            throw new IllegalArgumentException(label + "不是合法 JSON 对象", error);
+        }
+    }
+
+    private void validateJsonText(String value, String label) {
+        if (!hasText(value)) return;
+        try {
+            com.alibaba.fastjson.JSON.parse(value);
+        } catch (RuntimeException error) {
+            throw new IllegalArgumentException(label + "不是合法 JSON", error);
+        }
     }
 
     private void defaultInteger(Integer value, java.util.function.Consumer<Integer> setter,

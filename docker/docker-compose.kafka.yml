@@ -1,0 +1,45 @@
+# 单节点 KRaft Kafka；full 通过同一配置运行。默认使用 SASL/PLAINTEXT，生产可用 Compose override 改成 SASL_SSL。
+name: ${DEPLOY_PROJECT:-tianshu}
+services:
+  kafka:
+    image: ${KAFKA_IMAGE:-apache/kafka:4.0.2}
+    restart: unless-stopped
+    init: true
+    scale: 1
+    cpus: "0.25"
+    mem_limit: 1g
+    memswap_limit: 1g
+    pids_limit: 256
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    environment:
+      KAFKA_ADVERTISED_HOST: "${KAFKA_ADVERTISED_HOST:?Set KAFKA_ADVERTISED_HOST to a client-reachable hostname}"
+      KAFKA_HOST_PORT: ${KAFKA_HOST_PORT:-9092}
+      KAFKA_USERNAME: "${KAFKA_USERNAME:?Set KAFKA_USERNAME}"
+      KAFKA_PASSWORD: "${KAFKA_PASSWORD:?Set KAFKA_PASSWORD}"
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+      KAFKA_OPTS: -XX:ActiveProcessorCount=2
+    entrypoint: ["/bin/bash", "/opt/tianshu/start-kafka.sh"]
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+      - ./rule-engine-kafka/start-kafka.sh:/opt/tianshu/start-kafka.sh:ro
+    ports:
+      - "${KAFKA_BIND_ADDRESS:-0.0.0.0}:${KAFKA_HOST_PORT:-9092}:9094"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:19092 --command-config /tmp/tianshu-client.properties --list >/dev/null"]
+      start_period: 90s
+      interval: 30s
+      timeout: 20s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
+        max-file: "${DOCKER_LOG_MAX_FILES:-5}"
+    networks: [rule-engine]
+volumes:
+  kafka-data:
+networks:
+  rule-engine:
+    name: ${ENGINE_NETWORK:-${DEPLOY_PROJECT:-tianshu}-engine}
+    driver: bridge

@@ -63,7 +63,7 @@ export default {
     describe(operand) { if (operand == null) return '未设置'; return operand.kind ? operandDisplay(operand) : typeof operand === 'object' ? JSON.stringify(operand) : String(operand) },
     emitValue(value) { this.$emit(this.bindingMode === 'INPUT' ? 'update:inputOverrides' : 'update:value', value) },
     set(id, operand) { this.emitValue({ ...this.activeValue, [id]: operand }) },
-    toggle(field, enabled) { if (enabled && !field.overridable) return; const next = { ...this.activeValue }; if (enabled) next[field.id] = field.value ? JSON.parse(JSON.stringify(field.value)) : null; else delete next[field.id]; this.emitValue(next) },
+    toggle(field, enabled) { if (enabled && !field.overridable) return; const next = { ...this.activeValue }; if (enabled) next[field.id] = field.value !== null && field.value !== undefined ? JSON.parse(JSON.stringify(field.value)) : null; else delete next[field.id]; this.emitValue(next) },
     clearInvalid() {
       this.emitValue(Object.fromEntries(Object.entries(this.activeValue).filter(([key]) => !this.invalidKeys.includes(key))))
       if (this.hasWrongBinding) this.$emit(this.bindingMode === 'INPUT' ? 'update:value' : 'update:inputOverrides', {})

@@ -1,0 +1,17 @@
+[Unit]
+Description=Tianshu Decision Engine Docker Compose
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/tianshu
+ExecStart=/usr/bin/docker compose --project-name tianshu-full --env-file /opt/tianshu/.env -f /opt/tianshu/docker/docker-compose.full.yml up -d --scale server=2
+ExecStop=/usr/bin/docker compose --project-name tianshu-full --env-file /opt/tianshu/.env -f /opt/tianshu/docker/docker-compose.full.yml stop
+TimeoutStartSec=0
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target

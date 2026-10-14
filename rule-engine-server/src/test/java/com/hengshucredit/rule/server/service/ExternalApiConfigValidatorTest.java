@@ -116,6 +116,59 @@ public class ExternalApiConfigValidatorTest {
     }
 
     @Test
+    public void responseBranchesValidateOutputShapeBeforeExecution() {
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setExecutionConfig("""
+            {"version":2,"responseBranches":[{"id":"result","mode":"FIELDS","outputFields":[
+              {"id":"score","path":"score","value":{"kind":"PATH","value":"response.body.score"}},
+              {"id":"duplicate","path":"score","value":{"kind":"LITERAL","value":0}}
+            ]}]}
+            """);
+        assertThrows(IllegalArgumentException.class, () -> ExternalApiConfigValidator.validate(config));
+
+        config.setExecutionConfig("""
+            {"version":2,"responseBranches":[{"id":"result","mode":"VALUE"}]}
+            """);
+        assertThrows(IllegalArgumentException.class, () -> ExternalApiConfigValidator.validate(config));
+
+        config.setExecutionConfig("""
+            {"version":2,"steps":[{"id":"step","type":"HTTP","endpointUrl":"https://example.test/step",
+              "responseBranches":[{"id":"result","mode":"FIELDS","outputFields":[
+                {"id":"score","path":"score","value":{"kind":"PATH","value":"response.body.score"}}
+              ]}]}]}
+            """);
+        config.setRequestMode("ASYNC");
+        ExternalApiConfigValidator.validate(config);
+
+        config.setExecutionConfig("""
+            {"version":2,"steps":[{"id":"step","type":"HTTP","endpointUrl":"https://example.test/step",
+              "responseBranches":[{"id":"same"},{"id":"same"}]}]}
+            """);
+        assertThrows(IllegalArgumentException.class, () -> ExternalApiConfigValidator.validate(config));
+    }
+
+    @Test
+    public void requestHeadersAreDeduplicatedCaseInsensitively() {
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setExecutionConfig("""
+            {"version":2,"requestFields":[
+              {"id":"a","location":"HEADER","path":"Authorization","value":{"kind":"LITERAL","value":"a"}},
+              {"id":"b","location":"HEADER","path":"authorization","value":{"kind":"LITERAL","value":"b"}}
+            ]}
+            """);
+        assertThrows(IllegalArgumentException.class, () -> ExternalApiConfigValidator.validate(config));
+    }
+
+    @Test
+    public void legacyBillingConditionIsValidatedBeforeExecution() {
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setBillingCondition("{\"mode\":\"HIT\",\"condition\":{\"operator\":\"==\",\"value\":1}}");
+        assertThrows(IllegalArgumentException.class, () -> ExternalApiConfigValidator.validate(config));
+        config.setBillingCondition("{\"mode\":\"QUERY\"}");
+        ExternalApiConfigValidator.validate(config);
+    }
+
+    @Test
     public void unsupportedAuthModeFailsBeforeExecution() {
         RuleExternalApiConfig config = new RuleExternalApiConfig();
         config.setAuthMode("UNKNOWN");

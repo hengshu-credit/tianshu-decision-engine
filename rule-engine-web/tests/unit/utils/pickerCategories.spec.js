@@ -19,5 +19,6 @@ describe('pickerCategories', () => {
   test('没有显式分类的字段归入普通变量', () => {
     expect(pickerReferenceCategory({ varCode: 'age' })).toBe('standalone')
     expect(pickerReferenceCategory({ _ref: { category: 'model' } })).toBe('model')
+    expect(pickerReferenceCategory({ category: 'external' })).toBe('external')
   })
 })

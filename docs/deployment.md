@@ -2,6 +2,8 @@
 
 本文介绍运行环境、基础设施配置、四种部署方式与业务系统接入。部署前先阅读本文开头的参数表；后面的每个部署模块都可以单独照着执行。
 
+Docker 相关命令的单一入口是 [`docker/README.md`](../docker/README.md)，其中按 JAR、独立 Docker、外接数据库 Compose、自带数据库 Compose 分开说明了准备、启动、验证、停止和更新流程；本文保留参数、安全和业务接入细节。
+
 ## 一、部署参数总览
 
 参数可以来自操作系统环境变量、JAR 启动参数或仓库根目录（JAR 从 `rule-engine-server` 目录启动时为上一级目录）的 `.env`。优先级为：命令行参数/操作系统环境变量 > `.env` > `application.yml` 默认值。生产环境请把密码和密钥放在 Secret/KMS 或容器编排的 Secret 中，不要提交到 Git。
@@ -42,7 +44,7 @@
 
 | 参数名 | 默认值 | 含义与具体作用 |
 |---|---:|---|
-| `SPRING_SQL_INIT_MODE` | `always` | Spring 启动时是否执行 `schema.sql`；默认自动建表，已有数据库可临时设为 `never`。 |
+| `SPRING_SQL_INIT_MODE` | `always` | Spring 启动时是否执行 `schema.sql`；默认每次启动幂等执行结构、视图和系统常量补齐，已有数据库可临时设为 `never`。 |
 | `SPRING_DATASOURCE_INITIALIZATION_MODE` | 空 | Spring Boot 旧版本兼容别名，仅在迁移旧部署时使用；优先使用 `SPRING_SQL_INIT_MODE`。 |
 | `SPRING_SQL_INIT_CONTINUE_ON_ERROR` | `false` | 初始化 SQL 出错时是否继续；生产保持 `false`，让错误阻止启动。 |
 | `RULE_TRACE_MAX_PERSIST_BYTES` | `1048576` | 单条持久化追踪 JSON 的最大字节数（默认 1 MiB）；超出时只截断持久化副本，不截断本次请求结果。 |
@@ -51,18 +53,33 @@
 
 Compose 还会使用 `MYSQL_PUBLIC_PORT`、`REDIS_PUBLIC_PORT`、`CONSOLE_PUBLIC_PORT` 这类“宿主机映射参数”（如果在自定义 Compose 文件中定义），它们只改变宿主机暴露端口，不会改变应用在容器网络中的端口。Docker 的 `-p` 左侧同样只是宿主机端口。
 
-### 1.4 四种部署方式如何选择
+### 1.4 四种独立部署方案
 
-| 模块 | 适用场景 | 本模块直接交付的内容 |
-|---|---|---|
-| [Docker 运行时部署](#二docker-运行时部署) | 已有 MySQL/Redis，希望用容器运行 JAR 和后管 | 两个运行时容器，JAR 与 `dist` 均从宿主机目录挂载，更新文件后重启对应容器。 |
-| [Docker Compose 部署](#三docker-compose-一体化部署) | 希望分别使用外部依赖或单机一键启动 | 独立 MySQL/Redis Compose、外部数据库应用 Compose 和完整单机 Compose，全部数据目录挂载到 docker/。 |
-| [后管 + JAR 包部署](#四后管静态文件--jar-包部署) | 不运行应用容器，使用 Nginx/Java 进程或 systemd | `dist` 由 Nginx 提供，JAR 由 `java -jar` 或 systemd 启动。 |
-| [多节点横向扩容](#五多节点横向扩容) | 需要提高吞吐或故障切换能力 | 多个相同 JAR 节点置于负载均衡器后，共享 MySQL/Redis，按 readiness 滚动发布。 |
+完整的 Docker 命令、停止方式、端口、数据目录和更新流程以 [`docker/README.md`](../docker/README.md) 为准。四种方案可以分别部署，不要求同时运行：
+
+| 方案 | 启动内容 | 数据库/Redis | 入口 |
+|---|---|---|---|
+| JAR 包 | 宿主机 Java + Nginx | 外接服务或依赖 Compose | [JAR 包 + Nginx](#四后管静态文件--jar-包部署) |
+| Docker | `docker run` 启动 server、runtime、Nginx | 外接服务或依赖 Compose | [Docker 运行时](#二docker-运行时部署) |
+| 外接数据库 Compose | server、HTTP runtime、SDK runtime、web | 外接 MySQL/Redis | [外接数据库 Compose](../docker/README.md#方案三docker-compose--外接-mysqlredis) |
+| 自带数据库 Compose | MySQL、Redis、server、HTTP、SDK、web | Compose 内置 | [完整 Compose](../docker/README.md#方案四docker-compose--自带-mysqlredis) |
+
+`docker-compose.mysql.yml` 和 `docker-compose.redis.yml` 只是可选依赖组件，适合给 JAR 或独立 Docker 提供 MySQL/Redis；它们不启动应用。不同环境并行运行时设置不同 `DEPLOY_PROJECT` 和宿主机端口，不要让 full Compose 与依赖组件 Compose 共用一套容器名、网络或端口。
 
 **Docker 更新约定：**后管 `dist` 和服务端 JAR 都通过宿主机目录挂载到容器内，不把它们写死在运行时镜像中。更新时先替换容器外的 `dist` 或 JAR，再对后管执行 Nginx reload、对 JAR 容器执行 restart；这样可以在不重建镜像的情况下发布和回滚。
 
 以上模块都依赖可访问的 MySQL 8 和 Redis；如果没有现成依赖，请选择第 0 步的独立依赖 Compose 或第 1.4 节的完整单机 Compose。第 1.3 节应用 Compose 只连接外部数据库，不会创建依赖容器。
+
+### 1.5 可选 Kafka 执行日志
+
+系统默认通过 HTTP 上报客户端执行日志；需要 Kafka 日志链路时，可使用部署包中的单节点 KRaft Kafka Compose，或接入外部 Kafka 集群，并配置生产者、服务端消费者、项目主题绑定和 TLS/SASL/ACL。Kafka 的独立 Compose 使用 `KAFKA_ADVERTISED_HOST`、`KAFKA_USERNAME`、`KAFKA_PASSWORD`，full Compose 会同时启动一个 broker。
+
+完整配置、主题隔离、失败补报、重试、死信和迁移说明见 [`docs/kafka-execution-logs.md`](kafka-execution-logs.md)。部署时至少确认：
+
+- Kafka broker 及其公布的地址从应用侧可访问。Compose 的 `KAFKA_BOOTSTRAP_SERVERS` 映射到 server、SDK 容器的 `SPRING_KAFKA_BOOTSTRAP_SERVERS`；直接运行 JAR 或 `docker run` 使用后者或外部 YAML。
+- SDK 只有显式设置 `SDK_LOG_REPORT_TRANSPORT=KAFKA` 才会发送 Kafka；HTTP 补报需要保留有效项目鉴权。
+- 服务端只有显式设置 `RULE_KAFKA_ENABLED=true` 才会消费 Kafka。Compose 使用 `KAFKA_SERVER_APPLICATION_JSON` 绑定主题到真实 `project_id`；JAR 和 `docker run` 使用 `SPRING_APPLICATION_JSON` 或外部 YAML。SDK 的项目 ID 必须与绑定一致。
+- 主主题、对应的 `<topic>.DLT`、生产者 ACL、消费者组 ACL 和死信写入权限须由 Kafka 管理员提前准备；不能只依赖消息头中的项目编号。
 
 ## 环境要求
 
@@ -95,8 +112,8 @@ PowerShell 可使用 `Copy-Item .env.example .env`。Compose 不再提供 MySQL/
 如果 MySQL 和 Redis 已由 Docker Compose 启动，不需要再次创建容器。确认端口和健康状态：
 
 ```powershell
-docker ps --filter "name=rule-engine-mysql" --filter "name=rule-engine-redis"
-docker inspect --format='{{.Name}} {{.State.Health.Status}}' rule-engine-mysql rule-engine-redis
+docker compose --env-file .env -f docker/docker-compose.mysql.yml ps
+docker compose --env-file .env -f docker/docker-compose.redis.yml ps
 ```
 
 服务端在宿主机上用 Maven 启动时，将 `.env` 设置为：
@@ -126,9 +143,9 @@ mvn spring-boot:run
 
 `MYSQL_HOST`、`MYSQL_PORT` 由 `application.yml` 读取；Redis 已通过 `REDIS_HOST`、`REDIS_PORT` 读取。不要在 `.env` 中写入 Spring 风格的 `${NAME:default}` 表达式，因为 Docker Compose 会把它解析为非法模板；`.env` 中应使用已经展开的实际值。
 
-`schema.sql` 只包含数据库、表和索引等结构 DDL，不创建用户、不修改 root 账号、也不执行全局授权；服务端启动时默认由 Spring 执行 classpath 中的 `schema.sql`。示例数据脚本 `data-tianshu-example.sql` 放在 `docker/rule-engine-mysql/`，只在需要演示数据时手工导入，不随服务端启动自动导入。项目鉴权、临时 Token 及其访问审计数据与部署主密钥绑定，不写入示例数据；服务启动后会把项目表中的兼容访问令牌按当前主密钥迁移为默认鉴权记录。
+`schema.sql` 包含数据库表结构、逻辑执行日志视图和按变量唯一索引幂等补齐的系统常量，不创建用户、不修改 root 账号、也不执行全局授权；服务端启动时默认由 Spring 执行 classpath 中的 `schema.sql`。示例数据脚本 `data-tianshu-example.sql` 放在 `docker/rule-engine-mysql/`，只在需要演示数据时手工导入，不随服务端启动自动导入。项目鉴权、临时 Token 及其访问审计数据与部署主密钥绑定，不写入示例数据；服务启动后会把项目表中的兼容访问令牌按当前主密钥迁移为默认鉴权记录。
 
-需要手工完整恢复时，固定顺序为：删除 `MYSQL_DATABASE` 指定的数据库，启动服务自动执行 `schema.sql`，再按需执行 `docker/rule-engine-mysql/data-tianshu-example.sql`。示例数据脚本会写入演示数据，因此不得直接用于需要保留现有业务数据的数据库。
+需要手工准备演示环境时，固定顺序为：启动服务自动执行 `schema.sql`，再按需执行 `docker/rule-engine-mysql/data-tianshu-example.sql`。示例数据脚本会写入演示数据，因此不得直接用于需要保留现有业务数据的数据库。
 
 ### 后端
 
@@ -361,7 +378,7 @@ docker/
 
 四种方式彼此独立，按部署环境选择一种即可：
 
-**0. 只启动 MySQL/Redis。** 可以使用本项目提供的独立 Compose，也可以使用已有远程实例。独立容器默认发布到宿主机全部网卡，使用 `MYSQL_HOST_PORT`、`REDIS_HOST_PORT` 调整端口，防火墙只放行可信网段；应用连接远程实例时把 `MYSQL_SERVICE_HOST`、`REDIS_SERVICE_HOST` 改成容器可以访问的域名或 IP。
+**0. 只启动 MySQL/Redis。** 可以使用本项目提供的独立 Compose，也可以使用已有远程实例。独立容器默认发布到宿主机全部网卡，使用 `MYSQL_HOST_PORT`、`REDIS_HOST_PORT` 调整端口，防火墙只放行可信网段；应用连接远程实例时把 `MYSQL_HOST`、`REDIS_HOST` 改成容器可以访问的域名或 IP。
 
 ```powershell
 docker compose --env-file .env -f docker/docker-compose.mysql.yml up -d
@@ -393,7 +410,7 @@ java -Dspring.profiles.active=sdk -Dserver.port=7071 -DRULE_SERVER_URL=http://12
 
 Nginx 的 `root` 指向 `rule-engine-web/dist`，`/api/` 反向代理到 `http://127.0.0.1:8080`；JAR 更新采用临时文件原子替换后逐个重启，避免读取半写入文件。
 
-**1.3 Docker 应用 + 外部 MySQL/Redis。** 只需要准备 JAR/dist 和一份 `.env`，将 `MYSQL_SERVICE_HOST`、`REDIS_SERVICE_HOST` 配置为远程地址；本文件不创建或依赖 MySQL/Redis Compose 服务。
+**1.3 Docker 应用 + 外部 MySQL/Redis。** 只需要准备 JAR/dist 和一份 `.env`，将 `MYSQL_HOST`、`REDIS_HOST` 配置为远程地址；本文件不创建或依赖 MySQL/Redis Compose 服务。
 
 ```powershell
 docker compose --env-file .env -f docker/docker-compose.yml up -d
@@ -409,7 +426,9 @@ docker compose --env-file .env -f docker/docker-compose.full.yml ps
 
 完整模式启动 MySQL 和 Redis 后直接启动 server；server 默认自动执行 `schema.sql`。需要演示数据时，默认不导入；启动时增加 `--profile example-data` 会等待 schema 完成后只执行插入。完整模式与第 0 步的独立 MySQL/Redis 不要同时占用相同端口和容器名。
 
-所有 Compose 文件都设置了固定容器资源上限。完整模式基础服务中 MySQL/Redis/server/HTTP/SDK/web 的限额合计为 9.75G 内存、1.90C CPU；启用 `example-data` profile 时额外增加 256M/0.05C，仍不超过 10G/1.95C。外部数据库模式合计为 6.25G/1.15C；`docker-compose.mysql.yml` 启用 profile 后为 3.25G/0.65C。
+所有 Compose 文件都设置了固定容器资源上限。完整模式按 2 个 server 副本计算，MySQL/Redis/Kafka/server/HTTP/SDK/web 合计约 7.38G 内存、1.95C CPU；启用 `example-data` profile 时额外增加 256M/0.05C。外部数据库应用模式按 2 个 server 副本合计约 4.50G/1.20C；再同时启动独立 MySQL/Redis/Kafka 时仍按 8G/2C 预算。
+
+Ubuntu 公网部署使用 Nginx Proxy Manager 管理 HTTPS、证书和反向代理；本项目不安装或修改 UFW、Fail2ban、宿主机 Nginx 及现有端口规则。Compose 中 server/web/runtime 默认绑定本机，MySQL、Redis、Kafka 可通过 `.env` 绑定宿主机端口供远程调试，访问控制由现有安全组/防火墙策略负责。full Compose 提供单节点 Kafka，外接 Compose/JAR 使用外部 Broker 的 `KAFKA_BOOTSTRAP_SERVERS` 和可访问的 `advertised.listeners`。控制台登录密码必须使用 BCrypt 哈希，项目执行必须使用至少 32 位的独立 runtime 接入令牌；NPM 应配置 HTTPS、访问控制和请求限流。
 
 ### 3.2 构建制品
 
@@ -442,7 +461,7 @@ MySQL 数据目录为 docker/rule-engine-mysql/data，Redis 数据目录为 dock
 
 迁移已有部署时保留原 DEPLOY_PROJECT；若需沿用旧 Docker 网络，在 .env 设置 ENGINE_NETWORK 为原网络名。移动数据前应停止对应容器，完成停机备份和文件校验后再启动；不要对仍在写入的数据目录直接复制或移动。MySQL/Redis 的监听端口仍由 MYSQL_HOST_PORT、REDIS_HOST_PORT 配置。
 
-使用生产托管数据库时，把 MYSQL_SERVICE_HOST、MYSQL_SERVICE_PORT、REDIS_SERVICE_HOST、REDIS_SERVICE_PORT 改为生产地址，并确保服务端账号具备执行 `schema.sql` 的建表权限；如需跳过启动建表，可设置 `SPRING_SQL_INIT_MODE=never`。应用账号仍通过 MYSQL_USERNAME / MYSQL_PASSWORD 配置，Redis 密码通过 REDIS_PASSWORD 配置。
+使用生产托管数据库时，把 MYSQL_HOST、MYSQL_PORT、REDIS_HOST、REDIS_PORT 改为生产地址，并确保服务端账号具备执行 `schema.sql` 的建表权限；如需跳过启动建表，可设置 `SPRING_SQL_INIT_MODE=never`。应用账号仍通过 MYSQL_USERNAME / MYSQL_PASSWORD 配置，Redis 密码通过 REDIS_PASSWORD 配置。
 
 默认入口为前端 http://localhost:9090、管理端 API http://localhost:8080、HTTP 运行时 http://localhost:7070、SDK 运行时 http://localhost:7071。Docker Compose 不构建镜像，也不挂载源码，升级时替换运行目录中的 JAR/dist 后执行：
 

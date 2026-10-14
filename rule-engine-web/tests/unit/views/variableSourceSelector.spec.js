@@ -2,21 +2,22 @@ import { mount } from '@test-utils'
 import VariableSourceSelector from '@/views/variable/components/VariableSourceSelector.vue'
 
 describe('VariableSourceSelector', () => {
-  test('以业务语言展示七种取值方式和当前范围可用数量', () => {
+  test('以业务语言展示八种取值方式和当前范围可用数量', () => {
     const wrapper = mount(VariableSourceSelector, {
       props: {
         modelValue: 'INPUT',
-        counts: { API: 2, DB: 1, LIST: 3 },
+        counts: { API: 2, DB: 1, SFTP: 1, LIST: 3 },
       },
     })
 
     expect(wrapper.attributes('role')).toBe('radiogroup')
-    expect(wrapper.findAll('button')).toHaveLength(7)
+    expect(wrapper.findAll('button')).toHaveLength(8)
     expect(wrapper.text()).toContain('衍生变量')
     expect(wrapper.text()).toContain('请求输入')
     expect(wrapper.text()).toContain('外数接口')
     expect(wrapper.text()).toContain('2 个可用')
     expect(wrapper.text()).toContain('数据库查询')
+    expect(wrapper.text()).toContain('SFTP 文件')
     expect(wrapper.text()).toContain('名单匹配')
   })
 

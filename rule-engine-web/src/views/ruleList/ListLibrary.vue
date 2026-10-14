@@ -88,8 +88,8 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
-          <governance-workspace-toolbar resource-type="LIST_LIBRARY" />
-              <table-column-settings :columns="listColumns" storage-key="tianshu:table-columns:list-library" />
+          <table-column-settings :columns="listColumns" storage-key="tianshu:table-columns:list-library" />
+              <governance-workspace-toolbar resource-type="LIST_LIBRARY" />
               <el-button
                 v-permission="'list:edit'"
                 type="primary"
@@ -170,7 +170,7 @@
               </governance-resource-status>
             </template>
           </el-table-column>
-          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="305" align="center">
+          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['详情', '编辑', '版本', '发布', '删除'])" align="center">
             <template v-slot="{ row }">
               <el-button
               link
@@ -334,6 +334,7 @@ import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
   mixins: [governanceWorkspaceMixin],
@@ -384,6 +385,7 @@ export default {
     this.loadData()
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     emptyForm() {
       return {
         id: null,

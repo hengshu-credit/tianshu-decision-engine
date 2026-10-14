@@ -196,7 +196,7 @@ public class DecisionController {
 </code></pre>
 <p>该接口只返回调用所属项目的报文；缓存命中没有真实的供应商请求，<code>rawRequestAvailable=false</code> 属于正常情况，响应仍可通过 <code>callId</code> 关联。</p>
 <p>外数接口的报文留存策略还可以在控制台按请求/响应分别配置：选择实际报文或脚本显式写入的 <code>state.logRequestBody</code>/<code>state.logResponseBody</code> 中间副本，配置 JSONPath 排除字段和单字段字节上限；Base64、3DES Base64 解密只生成分析副本，失败时不会回退覆盖未处理密文，<code>originalRequestBody</code>/<code>originalResponseBody</code> 仍保存供应商实际报文，规则实时结果不受影响。</p>
-</section><section class="manual-section deployment-section" id="logging" data-search="5. 日志追踪开关 配置 默认值 作用 trace-enabled true 控制本地及服务端执行的表达式追踪；关闭后不返回表达式 traces ，仍保留 traceId log-report-enabled true 控制 SDK 本地执行 日志上报；关闭后 HTTP、Kafka、自定义 reporter 均不接收日志 两个开关独立：关闭追踪但保留上报时，可保留基础执行日志；开启追踪但关闭上报时，可在 Java 服务读取追踪而不从 SDK 上报。服务端执行不重复从客户端上报日志。服务端基础执行日志、鉴权审计、外数日志及计费不受 log-report-enabled 控制；两个开关都关闭不等于平台不留任何日志。 本地上报默认使用有界 HTTP 异步队列。启用上报且有自定义 ExecutionLogReporter 时使用自定义实现，否则存在 KafkaTemplate 时自动选择 Kafka。日志上报失败不应改变决策结果。程序化 Builder 支持 .traceEnabled(false).logReportEnabled(false) ；即使显式传入 reporter，关闭上报仍然生效。"><h2>5. 日志追踪开关</h2>
+</section><section class="manual-section deployment-section" id="logging" data-search="5. 日志追踪开关 配置 默认值 作用 trace-enabled true 控制本地及服务端执行的表达式追踪；关闭后不返回表达式 traces ，仍保留 traceId log-report-enabled true 控制 SDK 本地执行 日志上报；关闭后 HTTP、Kafka、自定义 reporter 均不接收日志 两个开关独立：关闭追踪但保留上报时，可保留基础执行日志；开启追踪但关闭上报时，可在 Java 服务读取追踪而不从 SDK 上报。服务端执行不重复从客户端上报日志。服务端基础执行日志、鉴权审计、外数日志及计费不受 log-report-enabled 控制；两个开关都关闭不等于平台不留任何日志。 本地上报默认使用有界 HTTP 异步队列。启用上报且有自定义 ExecutionLogReporter 时使用自定义实现，使用内置 Kafka 通道必须显式配置 log-report-transport: KAFKA，不会因存在 KafkaTemplate 自动切换。日志上报失败不应改变决策结果。程序化 Builder 支持 .traceEnabled(false).logReportEnabled(false) ；即使显式传入 reporter，关闭上报仍然生效。"><h2>5. 日志追踪开关</h2>
 <table>
 <thead>
 <tr>
@@ -219,7 +219,7 @@ public class DecisionController {
 </tbody>
 </table>
 <p>两个开关独立：关闭追踪但保留上报时，可保留基础执行日志；开启追踪但关闭上报时，可在 Java 服务读取追踪而不从 SDK 上报。服务端执行不重复从客户端上报日志。服务端基础执行日志、鉴权审计、外数日志及计费不受 <code>log-report-enabled</code> 控制；两个开关都关闭不等于平台不留任何日志。</p>
-<p>本地上报默认使用有界 HTTP 异步队列。启用上报且有自定义 <code>ExecutionLogReporter</code> 时使用自定义实现，否则存在 <code>KafkaTemplate</code> 时自动选择 Kafka。日志上报失败不应改变决策结果。程序化 Builder 支持 <code>.traceEnabled(false).logReportEnabled(false)</code>；即使显式传入 reporter，关闭上报仍然生效。</p>
+<p>本地上报默认使用有界 HTTP 异步队列。启用上报且有自定义 <code>ExecutionLogReporter</code> 时使用自定义实现，使用内置 Kafka 通道必须显式配置 <code>log-report-transport: KAFKA</code>，不会因存在 <code>KafkaTemplate</code> 自动切换。日志上报失败不应改变决策结果。程序化 Builder 支持 <code>.traceEnabled(false).logReportEnabled(false)</code>；即使显式传入 reporter，关闭上报仍然生效。</p>
 </section><section class="manual-section deployment-section" id="example" data-search="6. 运行现成示例 当前默认示例已改为 HTTP-only，配置 RULE_SERVER_URL 、 PROJECT_ACCESS_TOKEN 、 RULE_ALLOWED_CODES 即可接入，不再使用 RULE_PROJECT_ID 、 RULE_PROJECT_CODE 或 Redis。表达式追踪使用 RULE_TRACE_ENABLED ，默认关闭；没有本地日志上报。 在根目录运行 mvn -pl rule-engine-client-http -am clean install 生成对外 tar.gz。解压后复制配置模板，执行 start.ps1 或 sh start.sh ，访问默认 7070 端口的联调页。完整使用方法见 HTTP 接入示例 。原本依赖预置 SQL 和本地 Java/Bean 函数的示例保留在 本地 SDK 样例统一使用 rule-engine-runtime 的 sdk profile ，不随对外包交付。"><h2>6. 运行现成示例</h2>
 <p>当前默认示例已改为 HTTP-only，配置 <code>RULE_SERVER_URL</code>、<code>PROJECT_ACCESS_TOKEN</code>、<code>RULE_ALLOWED_CODES</code> 即可接入，不再使用 <code>RULE_PROJECT_ID</code>、<code>RULE_PROJECT_CODE</code> 或 Redis。表达式追踪使用 <code>RULE_TRACE_ENABLED</code>，默认关闭；没有本地日志上报。</p>
 <p>需要远程执行时直接使用 <code>rule-engine-client-http</code>，或部署 <code>rule-engine-runtime</code> 的 <code>http</code> profile；需要本地缓存执行时使用 <code>rule-engine-runtime</code> 的 <code>sdk</code> profile。</p>

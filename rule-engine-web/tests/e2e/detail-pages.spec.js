@@ -416,6 +416,20 @@ for (const detail of editableDetails) {
   })
 }
 
+test('离开缓存规则详情后不再读取旧修订字段', async ({ page }) => {
+  const apiData = createDetailApiData()
+  apiData.set('/api/rule/definition/101/revisions/41/fields', {
+    definitionId: '101', revisionId: '41', status: 'AVAILABLE', source: 'FROZEN_ARTIFACT', readOnly: true,
+    inputFields: [], outputFields: [], diagnostics: [], localOutputNames: []
+  })
+  const errors = await openDetailPage(page, '/rule/101', apiData)
+  await page.getByRole('tab', { name: /输入字段/ }).click()
+  await expect(page.getByTestId('revision-fields-panel')).toBeVisible()
+  await page.goto('http://tianshu.local/index.html#/datasource/source/21')
+  await expect(page.getByRole('textbox', { name: '* 数据源编码', exact: true })).toHaveValue('credit_vendor')
+  errors.assertClean()
+})
+
 test('模型详情加载输入输出字段且字段内容可复制', async ({ page }) => {
   const errors = await openDetailPage(page, '/model/41')
   await expect(page.getByText('credit_score', { exact: true }).first()).toBeVisible()

@@ -10,6 +10,7 @@ describe('MonacoEditor', () => {
     editor = {
       getValue: vi.fn(() => ''),
       getModel: vi.fn(() => ({ setValue: vi.fn() })),
+      deltaDecorations: vi.fn(() => ['reference-decoration']),
       layout: vi.fn(),
       dispose: vi.fn(),
       onDidChangeModelContent: vi.fn(),
@@ -42,6 +43,68 @@ describe('MonacoEditor', () => {
     expect(editor.layout).not.toHaveBeenCalled()
     expect(isProxy(wrapper.vm.editor)).toBe(false)
 
+    wrapper.unmount()
+  })
+
+  test('按编辑器实例注册 QL 引擎引用提示，并返回匹配的内容说明', async () => {
+    const model = {
+      getLanguageId: vi.fn(() => 'ql'),
+      getLineContent: vi.fn(() => 'riskScore'),
+      getWordUntilPosition: vi.fn(() => ({ startColumn: 1, endColumn: 6 })),
+    }
+    editor.getModel.mockReturnValue(model)
+    monaco.languages.registerCompletionItemProvider.mockReturnValue({ dispose: vi.fn() })
+    monaco.languages.registerHoverProvider.mockReturnValue({ dispose: vi.fn() })
+    monaco.languages.registerSignatureHelpProvider.mockReturnValue({ dispose: vi.fn() })
+
+    const wrapper = mount(MonacoEditor, {
+      props: {
+        language: 'ql',
+        references: [{ refCode: 'riskScore', varLabel: '风险分', varType: 'NUMBER', _varId: 8, _refType: 'VARIABLE' }],
+        functions: [{ funcCode: 'between', funcName: '区间判断', paramsJson: '[{"name":"value","type":"NUMBER"}]' }],
+      },
+    })
+    await wrapper.vm.$nextTick()
+
+    const provider = monaco.languages.registerCompletionItemProvider.mock.calls.at(-1)[1]
+    const result = await provider.provideCompletionItems(model, { lineNumber: 1, column: 6 })
+    expect(result.suggestions.map(item => item.label)).toContain('riskScore')
+    expect(result.suggestions[0].documentation).toEqual(expect.objectContaining({ value: expect.stringContaining('NUMBER') }))
+
+    const hoverProvider = monaco.languages.registerHoverProvider.mock.calls.at(-1)[1]
+    const hover = await hoverProvider.provideHover(model, { lineNumber: 1, column: 4 })
+    expect(hover.contents.join ? hover.contents.join('') : hover.contents).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  test('通用编辑器按类型、编码、名称、版本绘制引擎引用标注', async () => {
+    const model = {
+      getLanguageId: vi.fn(() => 'ql'),
+      getPositionAt: vi.fn((offset) => ({ lineNumber: 1, column: offset + 1 })),
+    }
+    editor.getModel.mockReturnValue(model)
+    editor.getValue.mockReturnValue('return riskScore;')
+    monaco.languages.registerCompletionItemProvider.mockReturnValue({ dispose: vi.fn() })
+
+    const wrapper = mount(MonacoEditor, {
+      props: {
+        language: 'ql',
+        value: 'return riskScore;',
+        showReferenceDecorations: true,
+        references: [{ refCode: 'riskScore', varLabel: '风险分', varType: 'NUMBER', _varId: 8, _refType: 'VARIABLE', varObj: { version: 4 } }],
+      },
+    })
+    await wrapper.vm.$nextTick()
+
+    const decorations = editor.deltaDecorations.mock.calls.at(-1)[1]
+    expect(decorations.map(item => item.options.description)).toEqual([
+      'ql-engine-reference-type',
+      'ql-engine-reference',
+      'ql-engine-reference-label',
+    ])
+    expect(decorations[0].options.before.content).toBe('N ')
+    expect(decorations[2].options.before.content).toBe(' 风险分 ')
+    expect(decorations[2].options.after.content).toBe('v4')
     wrapper.unmount()
   })
 })

@@ -66,6 +66,32 @@ describe('DashboardHome', () => {
     wrapper.unmount()
   })
 
+  test('地图两侧展示地区进件与通过拒绝统计', async () => {
+    dashboardApi.getDashboardApplications.mockResolvedValueOnce({
+      data: {
+        ...applications(),
+        geo: {
+          points: [{ longitude: 120, latitude: 30, count: 4, passCount: 2, reviewCount: 1, rejectCount: 1 }],
+          validCount: 4,
+          excludedCount: 0
+        }
+      }
+    })
+    const wrapper = mount(DashboardHome, {
+      global: { stubs: { DashboardChart: true } }
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.dashboard-map-layout').exists()).toBe(true)
+    expect(wrapper.find('.dashboard-map-side--left').text()).toContain('地区进件数')
+    expect(wrapper.find('.dashboard-map-side--right').text()).toContain('地区引擎通过 / 拒绝')
+    expect(wrapper.findAllComponents({ name: 'DashboardChart' })
+      .some(chart => chart.props('ariaLabel') === '地区进件数统计')).toBe(true)
+    expect(wrapper.findAllComponents({ name: 'DashboardChart' })
+      .some(chart => chart.props('ariaLabel') === '地区引擎通过拒绝统计')).toBe(true)
+    wrapper.unmount()
+  })
+
   test('期数和金额都没有有效数据时隐藏占比整行，有任一数据时恢复', async () => {
     const wrapper = mount(DashboardHome, {
       global: { stubs: { DashboardChart: true } }

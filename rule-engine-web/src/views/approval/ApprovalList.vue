@@ -41,7 +41,8 @@
         />
       </el-tabs>
 
-      <div class="filter-bar" @keyup.enter="search">
+      <div class="filter-bar uiue-search-container uiue-filter-toolbar">
+        <el-form :inline="true" size="small" class="approval-filters" @keyup.enter="search">
         <remote-filter-select
           v-model:value="filters.keyword"
           :fetch-options="fetchKeywordOptions"
@@ -86,10 +87,11 @@
         </el-select>
         <el-button type="primary" @click="search">查询</el-button>
         <el-button @click="resetFilters">重置</el-button>
-      </div>
-      <div class="uiue-btn-bar">
-        <div class="btn-right">
-          <table-column-settings :columns="approvalColumns" storage-key="tianshu:table-columns:approval-list" />
+        </el-form>
+        <div class="uiue-btn-bar">
+          <div class="btn-right">
+            <table-column-settings :columns="approvalColumns" storage-key="tianshu:table-columns:approval-list" />
+          </div>
         </div>
       </div>
 
@@ -134,7 +136,7 @@
             {{ formatTime(row.submitTime || row.createTime) }}
           </template>
         </el-table-column>
-        <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="90" fixed="right">
+        <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['查看'])" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click.stop="openDetail(row)">
               查看
@@ -172,6 +174,7 @@ import {
 import { routeProjectId } from '@/utils/projectContext'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 const STATUS_OPTIONS = [
   { value: 'EDITING', label: '草稿' },
@@ -206,6 +209,7 @@ const RESOURCE_OPTIONS = [
   { value: 'EXTERNAL_DATASOURCE', label: '外数源' },
   { value: 'EXTERNAL_API', label: '外数 API' },
   { value: 'DATABASE', label: '数据库' },
+  { value: 'SFTP', label: 'SFTP' },
   { value: 'FUNCTION', label: '函数' },
   { value: 'RULE', label: '规则' },
   { value: 'RULE_PROJECT_BINDING', label: '项目规则关联' },
@@ -320,6 +324,7 @@ export default {
     this.loadRequests()
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     fetchKeywordOptions({ query, pageNum, pageSize }) {
       return listGovernanceRequests({
         ...this.filters,
@@ -457,6 +462,7 @@ export default {
         EXTERNAL_DATASOURCE: '外数源',
         EXTERNAL_API: '外数 API',
         DATABASE: '数据库',
+        SFTP: 'SFTP',
         FUNCTION: '函数',
         RULE: '规则',
         RULE_PROJECT_BINDING: '项目规则关联',
@@ -591,18 +597,27 @@ export default {
 }
 
 .filter-bar {
-  display: flex;
-  gap: 10px;
   padding: 18px 22px;
   background: var(--tianshu-bg-soft);
 }
 
+.approval-filters {
+  gap: 10px;
+}
+
 .filter-bar .keyword-filter {
-  width: min(360px, 34vw);
+  flex: 0 1 360px;
+  width: 360px;
+  max-width: 100%;
+  min-width: 160px;
 }
 
 .filter-bar :deep(.el-select) {
   width: 160px;
+}
+
+.filter-bar > .uiue-btn-bar {
+  margin-bottom: 0;
 }
 
 .approval-table {
@@ -678,11 +693,8 @@ export default {
     display: none;
   }
 
-  .filter-bar {
-    flex-wrap: wrap;
-  }
-
   .filter-bar .keyword-filter {
+    flex-basis: 100%;
     width: 100%;
   }
 

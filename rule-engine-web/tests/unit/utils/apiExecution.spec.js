@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import { emptyExecution, newApiId, parseExecution, sampleFields, validateExecution, prepareResponseSample, samplePathOptions } from '@/utils/apiExecution'
+import { emptyExecution, newApiId, parseExecution, sampleFields, validateExecution, validateConditionTree, prepareResponseSample, samplePathOptions } from '@/utils/apiExecution'
 
 describe('统一外数配置', () => {
   it('万字段征信响应默认整体绑定，保留结构与原始字段名供搜索', () => {
@@ -65,6 +65,44 @@ describe('统一外数配置', () => {
     spec.steps[1].requestFields[0].value = { kind: 'LITERAL', valueType: 'NUMBER', value: '2' }
     spec.steps[1].requestFields.push({ id: 'c', location: 'JSON', path: 'score', value: { kind: 'LITERAL', valueType: 'NUMBER', value: '3' } })
     expect(validateExecution(spec, 'ASYNC')).toContain('目标路径重复')
+  })
+  it('必填请求字段保留 0 和 false 等显式取值', () => {
+    const spec = emptyExecution()
+    spec.requestFields.push(
+      { id: 'zero', location: 'JSON', path: 'zero', required: true, value: 0 },
+      { id: 'false', location: 'JSON', path: 'enabled', required: true, value: false },
+    )
+    expect(validateExecution(spec, 'SYNC')).toBe('')
+  })
+  it('统一请求字段允许独立 Cookie 位置', () => {
+    const spec = emptyExecution()
+    spec.requestFields.push({ id: 'session', location: 'COOKIE', path: 'session_id', value: { kind: 'LITERAL', value: 's-1' } })
+    expect(validateExecution(spec, 'SYNC')).toBe('')
+  })
+  it('请求头名称按 HTTP 不区分大小写去重', () => {
+    const spec = emptyExecution()
+    spec.requestFields.push(
+      { id: 'a', location: 'HEADER', path: 'Authorization', value: 'a' },
+      { id: 'b', location: 'HEADER', path: 'authorization', value: 'b' },
+    )
+    expect(validateExecution(spec, 'SYNC')).toContain('目标路径重复')
+  })
+  it('保存前校验响应输出字段、步骤响应分支和自定义条件树', () => {
+    const spec = emptyExecution()
+    spec.responseBranches.push({ id: 'result', mode: 'FIELDS', condition: { type: 'group', operator: 'AND', children: [] }, outputFields: [
+      { id: 'score', path: 'score', value: { kind: 'PATH', value: 'response.body.score' } },
+      { id: 'duplicate', path: 'score', value: { kind: 'LITERAL', value: 0 } },
+    ] })
+    expect(validateExecution(spec, 'SYNC')).toContain('路径重复')
+    spec.responseBranches[0].outputFields.pop()
+    spec.responseBranches[0].condition = { type: 'group', operator: 'XOR', children: [{ path: 'response.body.code', operator: '==' }] }
+    expect(validateExecution(spec, 'SYNC')).toContain('只能是 AND 或 OR')
+    expect(validateConditionTree({ type: 'group', operator: 'AND', children: [{ path: 'response.body.code', operator: 'missing' }] })).toBe('')
+    const asyncSpec = emptyExecution()
+    asyncSpec.steps.push(
+      { id: 'step', type: 'HTTP', endpointUrl: '/step', responseBranches: [{ id: 'same' }, { id: 'same' }] },
+    )
+    expect(validateExecution(asyncSpec, 'ASYNC')).toContain('响应分支 ID 重复')
   })
   it('非安全页面缺少 randomUUID 时仍可生成链路 ID', () => {
     vi.stubGlobal('crypto', { getRandomValues: bytes => bytes.fill(0) })

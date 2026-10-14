@@ -8,7 +8,7 @@ public record GovernanceRequestDetail(
         GovernanceRequestView request,
         ResourceDiff diff,
         List<GovernanceApprovalEvent> events,
-        List<GovernancePreflightReport.ResolvedDependency> dependencies,
+        List<java.util.Map<String, Object>> dependencies,
         List<GovernanceVersionView> versions,
         boolean credentialChanged) {
 }

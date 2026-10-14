@@ -82,8 +82,8 @@
       </el-form>
       <div class="uiue-btn-bar">
         <div class="btn-right">
-          <governance-workspace-toolbar resource-type="FUNCTION" />
           <table-column-settings :columns="functionColumns" storage-key="tianshu:table-columns:function-list" />
+          <governance-workspace-toolbar resource-type="FUNCTION" />
           <el-button
             v-permission="'function:edit'"
             size="small"
@@ -177,7 +177,7 @@
           }}</el-tag></governance-resource-status>
         </template>
       </el-table-column>
-      <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="285" align="center">
+      <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '测试', '版本', '发布', '删除'])" align="center">
         <template v-slot="{ row }">
           <el-button
             v-permission="'function:edit'"
@@ -506,7 +506,7 @@
           show-overflow-tooltip
         />
         <el-table-column prop="publishTime" label="时间" width="170" />
-        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="220" align="center">
+        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['查看', '对比', '回滚'])" align="center">
           <template v-slot="{ row, $index }">
             <el-button
               link
@@ -592,6 +592,7 @@ import JsonVersionDiff from '@/components/common/JsonVersionDiff.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
   mixins: [governanceWorkspaceMixin],
@@ -712,6 +713,7 @@ export default {
   },
   beforeUnmount() { this.methodRequestId++; this.editSessionId++ },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     versionDisplayLabel,
     functionBindingKey(form = this.editForm, params = this.editParams) {
       return JSON.stringify([form.implType, form.implClass, form.implBeanName, form.implMethod, form.funcCode, params])

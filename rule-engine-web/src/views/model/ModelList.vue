@@ -102,8 +102,8 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
-          <governance-workspace-toolbar resource-type="MODEL" />
-              <table-column-settings :columns="modelColumns" storage-key="tianshu:table-columns:model-list" />
+          <table-column-settings :columns="modelColumns" storage-key="tianshu:table-columns:model-list" />
+              <governance-workspace-toolbar resource-type="MODEL" />
               <el-button
                 v-permission="'model:edit'"
                 size="small"

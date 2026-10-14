@@ -36,6 +36,15 @@ describe('统一字段选择面板', () => {
     wrapper.unmount()
     recentFieldKeys.value = []
   })
+  test('没有字段的分类不展示，最近使用和已选内容保持常驻', () => {
+    const wrapper = panel({ items: [variable(1)], category: 'all' })
+    const categoryKeys = wrapper.vm.categories.map(item => item.key)
+    expect(categoryKeys).toEqual(expect.arrayContaining(['recent', 'selected', 'all', 'standalone']))
+    expect(categoryKeys).not.toContain('object')
+    expect(categoryKeys).not.toContain('model')
+    expect(categoryKeys).not.toContain('function')
+    wrapper.unmount()
+  })
   test('同名引用按 ID 区分，数字和复合类型有明确图标', () => {
     const a = variable('9007199254740993', { varCode: 'same' }), b = variable('9007199254740994', { varCode: 'same' })
     expect(buildFieldTree([a, b]).roots.map(node => node.key)).toEqual([fieldIdentity(a), fieldIdentity(b)])
@@ -63,19 +72,27 @@ describe('统一字段选择面板', () => {
     expect(wrapper.emitted('page-size').at(-1)).toEqual([25])
     wrapper.unmount()
   })
-  test('单击查看及折叠，双击才提交；不会提交展示用的合成分组', async () => {
+  test('叶子字段单击提交，父级单击展开；不会提交展示用的合成分组', async () => {
     const wrapper = panel({ items: [objectField(1, 'report.items', 'LIST'), objectField(2, 'report.items.score', 'NUMBER', 1)] })
     await wrapper.find('.fp-row').trigger('click')
     expect(wrapper.emitted('select')).toBeUndefined()
-    await wrapper.find('.fp-row').trigger('dblclick')
-    expect(wrapper.emitted('select')).toBeUndefined()
-    const rows = wrapper.findAll('.fp-row')
-    await rows[1].trigger('click')
-    rows[1].element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }))
     await nextTick()
-    await rows[1].trigger('dblclick')
-    expect(wrapper.emitted('select')[0][0]._varId).toBe(1)
+    const objectRow = wrapper.findAll('.fp-row').find(row => row.text().includes('items'))
+    await objectRow.trigger('click')
+    await nextTick()
+    const leaf = wrapper.findAll('.fp-row').find(row => row.text().includes('score'))
+    await leaf.trigger('click')
+    await nextTick()
+    expect(wrapper.emitted('select')[0][0]._varId).toBe(2)
     expect(wrapper.vm.expanded.has('DATA_OBJECT:1')).toBe(true)
+    wrapper.unmount()
+  })
+  test('数据对象根节点可以作为整体字段提交', async () => {
+    const wrapper = panel({ items: [objectField(1, 'report.items', 'LIST')] })
+    const selectButton = wrapper.find('.fp-select-parent')
+    expect(selectButton.exists()).toBe(true)
+    await selectButton.trigger('click')
+    expect(wrapper.emitted('select')[0][0]).toMatchObject({ _varId: '9223372036854775800', _refType: 'DATA_OBJECT', _versionGroup: true })
     wrapper.unmount()
   })
   test('切分类不清除搜索；已选字段不匹配搜索时明确展示', async () => {
@@ -84,6 +101,21 @@ describe('统一字段选择面板', () => {
     expect(wrapper.emitted('search')).toBeUndefined()
     expect(wrapper.find('.fp-located').text()).toContain('字段1')
     wrapper.unmount()
+  })
+  test('对象分组行不重复计入字段分类数量', () => {
+    const wrapper = panel({ items: [objectField(1, 'report.score'), objectField(2, 'report.name')] })
+    expect(wrapper.vm.categories.find(item => item.key === 'object').count).toBe(2)
+    wrapper.unmount()
+  })
+  test('完整字段预览使用可换行的受控提示，不依赖原生 title 滚动提示', async () => {
+    const wrapper = panel({ items: [variable(1, { varLabel: '合同签署授权/证件反面图片', varCode: 'authorization_for_contracts_execution.idcard_back_image' })], selectedKey: 'VARIABLE:1' })
+    await nextTick(); await nextTick()
+    try {
+      expect(wrapper.vm.previewText).toContain('合同签署授权/证件反面图片')
+      expect(wrapper.get('.fp-preview').attributes('title')).toBeUndefined()
+      expect(wrapper.find('.field-picker-preview-tooltip').exists()).toBe(false)
+      expect(wrapper.html()).toContain('field-picker-preview-tooltip')
+    } finally { wrapper.unmount() }
   })
   test('搜索子字段保留层级，收起对象后没有子字段行', () => {
     const tree = buildFieldTree([objectField(1, 'report.items', 'LIST'), objectField(2, 'report.items.score', 'NUMBER', 1)])

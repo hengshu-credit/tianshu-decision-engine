@@ -72,7 +72,7 @@ const STATES = { DRAFT: '草稿', REVIEW: '评审中', APPROVED: '已批准', RE
 export default {
   name: 'RuleRevisionFieldsPanel',
   props: {
-    definitionId: { type: [Number, String], required: true },
+    definitionId: { type: [Number, String], default: null },
     modelValue: { type: [Number, String], default: null },
     revisions: { type: Array, default: () => [] },
     direction: { type: String, default: 'input' },
@@ -106,8 +106,13 @@ export default {
     },
     async load() {
       const requestId = ++this.requestId, context = this.requestContext
-      this.view = null; this.error = ''; this.page = 1; this.loading = Boolean(this.modelValue)
-      if (!this.modelValue) { this.error = '请选择要查看的修订'; return }
+      const definitionId = String(this.definitionId ?? '').trim()
+      const validDefinitionId = /^[1-9]\d*$/.test(definitionId)
+      this.view = null; this.error = ''; this.page = 1; this.loading = Boolean(validDefinitionId && this.modelValue)
+      if (!validDefinitionId || !this.modelValue) {
+        if (!this.modelValue) this.error = '请选择要查看的修订'
+        return
+      }
       try {
         const response = await getRuleRevisionFieldView(this.definitionId, this.modelValue)
         if (!this.active || requestId !== this.requestId || context !== this.requestContext) return

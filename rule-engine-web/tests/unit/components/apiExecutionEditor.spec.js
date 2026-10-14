@@ -4,6 +4,27 @@ import { ElInputNumber } from 'element-plus/es/components/input-number/index.mjs
 import { ElInput } from 'element-plus/es/components/input/index.mjs'
 
 describe('API response sample import', () => {
+  test('添加首个请求条件分支会把原有请求字段放入分支，拖拽可调整分支顺序', () => {
+    const wrapper = shallowMount(ApiExecutionEditor, {
+      props: { value: JSON.stringify({ requestFields: [{ id: 'base', path: 'mobile', location: 'JSON', value: { kind: 'LITERAL', value: '1' } }] }) },
+    })
+    wrapper.vm.addBranch('requestBranches')
+    expect(wrapper.vm.config.requestFields).toEqual([])
+    expect(wrapper.vm.config.requestBranches[0].requestFields[0].id).toBe('base')
+    wrapper.vm.addBranch('requestBranches')
+    const first = wrapper.vm.config.requestBranches[0].id
+    wrapper.vm.startBranchDrag('requestBranches', 0, {})
+    wrapper.vm.dropBranch('requestBranches', 1, { preventDefault() {} })
+    expect(wrapper.vm.config.requestBranches[1].id).toBe(first)
+    wrapper.unmount()
+  })
+
+  test('响应整体取值保留输出字段路径配置', () => {
+    const wrapper = shallowMount(ApiExecutionEditor, { props: { value: JSON.stringify({ responseBranches: [{ id: 'result', mode: 'VALUE', outputPath: 'data.score', value: { kind: 'PATH', value: 'response.body.score' } }] }) } })
+    expect(wrapper.vm.config.responseBranches[0].outputPath).toBe('data.score')
+    wrapper.unmount()
+  })
+
   test('重新导入公司响应样例保留已配置的 data 整体取值', () => {
     const value = { kind: 'PATH', value: 'response.body.data' }
     const sample = { code: '0000', data: Object.fromEntries(Array.from({ length: 250 }, (_, index) => [`QY_${index}`, index])) }

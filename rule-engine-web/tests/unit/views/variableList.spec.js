@@ -33,8 +33,6 @@ vi.mock('@/api/dataObject', () => ({
   importJavaEntity: vi.fn(),
   importJsonObject: vi.fn(),
   importDdlTable: vi.fn(),
-  batchValidateRules: vi.fn(),
-  batchValidateAll: vi.fn(),
   getVariableTree: vi.fn(),
   createDataObjectField: vi.fn(),
   updateDataObjectField: vi.fn(),
@@ -599,14 +597,14 @@ describe('VariableList — 变量操作', () => {
     expect(constantTable).not.toContain('转为全局')
   })
 
-  test('变量列表使用字段按钮替代额外列复选框，验证规则保持亮色主操作', () => {
+  test('变量列表使用字段按钮替代额外列复选框，并移除全量规则验证入口', () => {
     const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/variable/VariableList.vue'), 'utf8')
     const toolbar = source.slice(source.indexOf('<variable-toolbar-actions'), source.indexOf('<!-- 1. 普通变量'))
     expect(toolbar).toContain(':column-settings-columns="variableColumns"')
     expect(toolbar).toContain(':column-settings-model-value="variableColumnOrder"')
     expect(source).not.toContain('显示脚本名称、默认值和取值范围')
     const actions = fs.readFileSync(path.resolve(process.cwd(), 'src/views/variable/components/VariableToolbarActions.vue'), 'utf8')
-    expect(actions).toContain('class="variable-validate-button"')
+    expect(actions).not.toContain('验证规则')
     expect(actions.indexOf('table-column-settings')).toBeLessThan(actions.indexOf('批量导入'))
   })
 
@@ -835,13 +833,6 @@ describe('VariableList — 变量操作', () => {
 
     wrapper.vm.goImportApprovals()
     expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/approval')
-  })
-
-  test('handleBatchValidate 打开验证弹窗', () => {
-    // handleBatchValidate 不直接调用 API，只打开 validateDialogVisible
-    wrapper.vm.handleBatchValidate()
-    expect(wrapper.vm.validateDialogVisible).toBe(true)
-    // doBatchValidate 才调用 batchValidateRules
   })
 
   test('API/DB/LIST 变量显示测试入口并执行变量测试', async () => {

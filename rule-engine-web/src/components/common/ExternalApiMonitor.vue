@@ -8,10 +8,12 @@
           外数调用日志表统计；缓存命中只计算缓存期内命中的数据。
         </div>
       </div>
-      <table-column-settings :columns="providerColumns" storage-key="tianshu:table-columns:external-api-monitor" />
-      <el-button size="small" :icon="ElIconRefresh" @click="loadStats"
-        >刷新指标</el-button
-      >
+      <div class="uiue-btn-bar monitor-actions">
+        <div class="btn-right">
+          <table-column-settings :columns="providerColumns" storage-key="tianshu:table-columns:external-api-monitor" />
+          <el-button size="small" :icon="ElIconRefresh" @click="loadStats">刷新指标</el-button>
+        </div>
+      </div>
     </div>
     <async-state
       :loading="statsLoading"
@@ -353,10 +355,15 @@ export default {
 }
 .stats-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
+}
+.monitor-actions {
+  flex: 0 0 auto;
+  margin: 0 0 0 auto;
 }
 .datasource-stats-layout {
   display: flex !important;

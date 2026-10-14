@@ -213,11 +213,11 @@ public class ExternalApiInvokeServiceTest {
             api.setExecutionConfig("""
                 {"version":2,"requestFields":[],
                  "steps":[{"id":"report","type":"HTTP","endpointUrl":"/report","requestFields":[]}],
-                 "responseBranches":[{"id":"result","mode":"VALUE","value":{"kind":"PATH","value":"response.body.data"}}]}
+                 "responseBranches":[{"id":"result","mode":"VALUE","outputPath":"data.result","value":{"kind":"PATH","value":"response.body.data"}}]}
                 """);
             var result = configuredService(api, httpDatasource(server)).invoke(api, Map.of());
             assertEquals(true, result.get("success"));
-            assertEquals(report, ExternalApiRequestPlan.read(result, "body.report"));
+            assertEquals(report, ExternalApiRequestPlan.read(result, "body.data.result.report"));
             Map<?, ?> stage = ((List<?>) result.get("traceSteps")).stream()
                     .map(value -> (Map<?, ?>) value).filter(value -> "WORKFLOW_STEP".equals(value.get("type")))
                     .findFirst().orElseThrow();
@@ -274,6 +274,39 @@ public class ExternalApiInvokeServiceTest {
             assertEquals(720, ((Map<?, ?>) result.get("body")).get("score"));
             assertEquals(2, tokens.get());
             assertEquals(2, calls.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void responseCacheRetainsUnifiedResponseAssembly() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/score", exchange -> {
+            calls.incrementAndGet();
+            byte[] body = "{\"code\":\"0000\",\"data\":{\"score\":88}}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalApiConfig api = basicApiConfig(9902L, 1L, "/score");
+            api.setResponseCacheSeconds(60);
+            api.setExecutionConfig("""
+                {"version":2,"requestFields":[],"responseBranches":[{"id":"score","mode":"FIELDS","outputFields":[
+                  {"id":"value","path":"score","value":{"kind":"PATH","value":"response.body.data.score"}}
+                ]}]}
+                """);
+            ExternalApiInvokeService service = configuredService(api, httpDatasource(server));
+            var first = service.invoke(api, Map.of());
+            var second = service.invoke(api, Map.of());
+            assertEquals(1, calls.get());
+            assertEquals(88, ExternalApiRequestPlan.read(first, "body.score"));
+            assertEquals(88, ExternalApiRequestPlan.read(second, "body.score"));
+            assertEquals("HIT", second.get("cacheStatus"));
+            assertEquals(false, ExternalApiRequestPlan.read(second, "status.billed"));
         } finally {
             server.stop(0);
         }
@@ -1312,6 +1345,27 @@ public class ExternalApiInvokeServiceTest {
                 "{\"path\":\"body.status\",\"operator\":\"==\",\"value\":0}", response);
 
         assertEquals(false, matched);
+    }
+
+    @Test
+    public void failedUnifiedCallBillingCanMatchRawResponsePath() throws Exception {
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setExecutionConfig("""
+            {"version":2,"billingBranches":[{"id":"failed","bill":true,
+              "condition":{"path":"response.body.code","operator":"==","value":"ERR"}}]}
+            """);
+        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        Class<?> traceType = java.util.Arrays.stream(ExternalApiInvokeService.class.getDeclaredClasses())
+                .filter(type -> "InvokeTrace".equals(type.getSimpleName())).findFirst().orElseThrow();
+        var constructor = traceType.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        Object trace = constructor.newInstance();
+        ReflectionTestUtils.setField(trace, "requestIssued", true);
+        ReflectionTestUtils.setField(trace, "responseStatus", 500);
+        ReflectionTestUtils.setField(trace, "responseBody", Map.of("code", "ERR"));
+        ReflectionTestUtils.setField(trace, "responseDetails", Map.of("httpStatus", 500, "body", Map.of("code", "ERR")));
+
+        assertEquals(true, ReflectionTestUtils.invokeMethod(service, "shouldRecordFailedBilling", config, trace));
     }
 
     @Test
@@ -2400,6 +2454,30 @@ public class ExternalApiInvokeServiceTest {
         ReflectionTestUtils.invokeMethod(service, "applyTokenHeader", customHeaders,
                 config, "token-value");
         assertEquals("Custom  token-value", customHeaders.getFirst("X-Custom-Token"));
+    }
+
+    @Test
+    public void unifiedCookieFieldIsSentAsCookieHeader() throws Exception {
+        AtomicReference<String> cookie = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/cookie", exchange -> {
+            cookie.set(exchange.getRequestHeaders().getFirst("Cookie"));
+            byte[] body = "{\"ok\":true}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalApiConfig api = basicApiConfig(9902L, 1L, "/cookie");
+            api.setExecutionConfig("{\"version\":2,\"requestFields\":["
+                    + "{\"id\":\"session\",\"location\":\"COOKIE\",\"path\":\"session_id\",\"value\":{\"kind\":\"LITERAL\",\"value\":\"s-1\"}}]}" );
+            Map<String, Object> result = configuredService(api, httpDatasource(server)).invoke(api, Map.of());
+            assertEquals(Boolean.TRUE, result.get("success"));
+            assertEquals("session_id=s-1", cookie.get());
+        } finally {
+            server.stop(0);
+        }
     }
 
     @SuppressWarnings("unchecked")

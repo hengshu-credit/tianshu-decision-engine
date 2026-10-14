@@ -1,7 +1,9 @@
 <template>
   <div class="uiue-list-page experiment-detail-page uiue-compact-workbench">
-    <div class="detail-header">
-      <div>
+    <div class="detail-header uiue-detail-header">
+      <div class="uiue-detail-header__title">
+        <el-button link size="small" class="uiue-detail-back" @click="$router.push('/experiment')">返回</el-button>
+        <div>
         <div class="detail-title">
           {{ form.id ? '分流实验详情' : '新建分流实验' }}
         </div>
@@ -9,11 +11,9 @@
           {{ form.experimentName || '未命名实验' }} /
           {{ form.experimentCode || '待填写编码' }}
         </div>
+        </div>
       </div>
-      <div class="detail-actions">
-        <el-button size="small" @click="$router.push('/experiment')"
-          >返回</el-button
-        >
+      <div class="detail-actions uiue-detail-header__actions">
         <el-button
           v-permission="'experiment:edit'"
           size="small"
@@ -22,7 +22,6 @@
           @click="handleSave"
           >保存</el-button
         >
-        <resource-version-manager v-if="form.id" resource-type="EXPERIMENT" :resource-id="form.id" has-legacy @legacy="openVersionDialog" />
       </div>
     </div>
 
@@ -36,20 +35,6 @@
         <div class="guide-text">{{ item.text }}</div>
       </div>
     </div>
-
-    <section class="experiment-release-map" data-testid="experiment-release-map">
-      <div>
-        <span class="section-kicker">VERSION &amp; TRAFFIC</span>
-        <strong>版本与分流关系</strong>
-        <small>保存为草稿，发布审批通过后形成生效版本；TEST 组只记录结果。</small>
-      </div>
-      <div class="experiment-release-map__stats">
-        <span><b>{{ productionFormGroups.length }}</b> 个生产组</span>
-        <span><b>{{ testFormGroups.length }}</b> 个测试组</span>
-        <span><b>{{ ratioTotal }}%</b> 生产流量</span>
-      </div>
-      <resource-version-manager v-if="form.id" resource-type="EXPERIMENT" :resource-id="form.id" has-legacy @legacy="openVersionDialog" />
-    </section>
 
     <el-form
       ref="form"
@@ -234,6 +219,8 @@
                 v-model:value="row.conditionExpression"
                 language="ql"
                 height="70px"
+                :references="editorReferences"
+                :functions="editorFunctions"
               />
             </div>
             <div class="route-action">
@@ -382,6 +369,8 @@
                 v-model:value="row.conditionExpression"
                 language="ql"
                 height="70px"
+                :references="editorReferences"
+                :functions="editorFunctions"
               />
             </div>
             <div class="route-action">
@@ -631,7 +620,7 @@
               formatTime(row.createTime)
             }}</template>
           </el-table-column>
-          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
+          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['详情'])" align="center">
             <template v-slot="{ row }"
               ><el-button
                 link
@@ -744,7 +733,7 @@
           show-overflow-tooltip
         />
         <el-table-column prop="publishTime" label="时间" width="170" />
-        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="220" align="center">
+        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['查看', '对比', '回滚'])" align="center">
           <template v-slot="{ row, $index }">
             <el-button
               link
@@ -800,7 +789,6 @@
 </template>
 
 <script>
-import ResourceVersionManager from '@/components/common/ResourceVersionManager.vue'
 import { hasPermission } from '@/security/permissionState'
 import { editableResource } from '@/api/governance'
 import { completeResourceChange } from '@/utils/governanceWorkspace'
@@ -840,6 +828,7 @@ import {
 import { getExpressionContext } from '@/constants/expressionContexts'
 import { normalizeRuleOptions } from '@/utils/ruleCallConfig'
 import { routeProjectId } from '@/utils/projectContext'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
   data() {
@@ -856,10 +845,6 @@ export default {
         {
           title: '空跑测试',
           text: 'TEST 组只记录试算结果，不影响生产结果；适合验证新规则输出、耗时和异常情况。',
-        },
-        {
-          title: '版本回滚',
-          text: '保存后可继续编辑草稿；发布时审批并形成版本，历史恢复也支持修改后重新审批。',
         },
       ],
       activeTab: 'champion',
@@ -905,7 +890,6 @@ export default {
   },
   name: 'ExperimentDetail',
   components: {
-    ResourceVersionManager,
     ConditionGroupEditor,
     OperandPicker,
     ProjectResourceSelect,
@@ -915,6 +899,22 @@ export default {
   },
   mixins: [varPickerMixin, workspaceTabTitleMixin(vm => vm.form.experimentName)],
   computed: {
+    editorFunctions() {
+      return this.$data.projectFunctions || []
+    },
+    editorReferences() {
+      const options = this.$options.computed?.varPickerOptions
+        ? this.$options.computed.varPickerOptions.call(this)
+        : []
+      return options.map(item => ({
+        ...item,
+        refCode: item.refCode || item.varCode || item.scriptName,
+        varLabel: item.varLabel || item.varLabelText || item.label,
+        varType: item.varType || 'OBJECT',
+        _varId: item._varId != null ? item._varId : item.id,
+        _refType: item._refType || item.refType || 'VARIABLE',
+      })).filter(item => item.refCode)
+    },
     experimentId() {
       return this.$route.params.experimentId
     },
@@ -1030,6 +1030,7 @@ export default {
     await this.loadLogs()
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     versionDisplayLabel,
     async applyProjectContext(projectId) {
       const id = Number(projectId)

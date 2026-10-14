@@ -270,8 +270,7 @@ describe('ExperimentDetail', () => {
     expect(ctx.experimentGuideCards.map(item => item.title)).toEqual([
       '冠军组',
       '挑战组',
-      '空跑测试',
-      '版本回滚'
+      '空跑测试'
     ])
     expect(ctx.experimentGuideCards[2].text).toContain('不影响生产结果')
   })

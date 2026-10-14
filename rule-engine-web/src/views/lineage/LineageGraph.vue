@@ -86,6 +86,7 @@
         </span>
       </div>
       <div v-if="startNode" class="graph-toolbar" @pointerdown.stop>
+        <el-button size="small" :icon="ElIconDownload" aria-label="下载PNG血缘图" @click="downloadPng">下载 PNG</el-button>
         <el-button size="small" :icon="ElIconMagicStick" @click="resetToBestLayout">一键美化</el-button>
         <el-button size="small" :icon="ElIconMapLocation" :class="{ 'is-tool-active': miniMapVisible }" @click="toggleMiniMap">小地图</el-button>
         <el-button-group size="small">
@@ -154,6 +155,7 @@
             <div><dt>编码</dt><dd class="is-code">{{ selectedNode.code || '-' }}</dd></div>
             <div><dt>节点 ID</dt><dd class="is-code">{{ selectedNode.id || '-' }}</dd></div>
             <div><dt>业务 ID</dt><dd>{{ selectedNode.refId ?? '-' }}</dd></div>
+            <div v-if="selectedNode.versionLabel || selectedNode.version != null"><dt>版本</dt><dd>{{ selectedNode.versionLabel || `v${selectedNode.version}` }}</dd></div>
             <div><dt>关系方向</dt><dd>{{ selectedNodeMeta.direction }}</dd></div>
             <div><dt>上游节点</dt><dd>{{ selectedNodeMeta.upstreamCount }}</dd></div>
             <div><dt>下游节点</dt><dd>{{ selectedNodeMeta.downstreamCount }}</dd></div>
@@ -199,9 +201,10 @@ import {
   ZoomOut as ElIconZoomOut,
   Rank as ElIconRank,
   RefreshLeft as ElIconRefreshLeft,
+  Download as ElIconDownload,
 } from '@element-plus/icons-vue'
 import { createGraphCanvas } from '@/components/flow/graphCanvas'
-import { MiniMap } from '@logicflow/extension'
+import { MiniMap, Snapshot } from '@logicflow/extension'
 import { getLineageGraph, listLineageOptions } from '@/api/lineage'
 import { lineageLayout } from '@/utils/lineageLayers'
 import { LINEAGE_NODE_COLORS, LINEAGE_NODE_WIDTH as CARD_W, LINEAGE_NODE_HEIGHT as CARD_H } from '@/components/flow/nodes'
@@ -230,7 +233,7 @@ export default {
       lineageGuideCards: [
         {
           title: '选择起点',
-          text: '先选择节点类型，再输入编码或名称搜索起点；适合从变量、规则、API、DB、名单或模型定位影响范围。',
+          text: '先选择节点类型，再输入编码或名称搜索起点；适合从变量、规则、API、DB、SFTP、名单或模型定位影响范围。',
         },
         {
           title: '两跳展开',
@@ -257,7 +260,10 @@ export default {
       graphHeight: 440,
       viewport: { x: 0, y: 0, scale: 1 },
       positionOverrides: {},
+      positionOffset: { left: 0, top: 0 },
+      preservedCurrentPosition: null,
       skipGraphRender: false,
+      preserveGraphViewport: false,
       pointerInteraction: null,
       lf: null,
       selectedNodeId: null,
@@ -285,6 +291,7 @@ export default {
       ElIconZoomOut: markRaw(ElIconZoomOut),
       ElIconRank: markRaw(ElIconRank),
       ElIconRefreshLeft: markRaw(ElIconRefreshLeft),
+      ElIconDownload: markRaw(ElIconDownload),
       query: { nodeType: 'VARIABLE', nodeId: '', direction: 'ALL' },
       nodeTypeOptions: [
         { label: '项目', value: 'PROJECT' },
@@ -294,6 +301,7 @@ export default {
         { label: '模型', value: 'MODEL' },
         { label: 'API', value: 'API' },
         { label: '数据库', value: 'DB' },
+        { label: 'SFTP', value: 'SFTP' },
         { label: '名单', value: 'LIST' },
         { label: '外数源', value: 'DATASOURCE' },
       ],
@@ -325,6 +333,7 @@ export default {
           this.skipGraphRender = false
           return
         }
+        this.alignPreservedCurrentPosition()
         this.renderLineageGraph()
       },
     },
@@ -565,7 +574,7 @@ export default {
       const nodes = this.graphData.nodes.map(node => ({
         key: node.id,
         kind: 'NODE',
-        label: `${node.properties.nodeLabel || node.properties.nodeCode} (${node.properties.nodeCode || '-'})`,
+        label: `${node.properties.nodeLabel || node.properties.nodeCode} (${node.properties.nodeCode || '-'})${node.properties.nodeVersionLabel ? ` · ${node.properties.nodeVersionLabel}` : ''}`,
         refType: node.properties.nodeType,
         refId: node.properties.nodeId,
       }))
@@ -629,7 +638,7 @@ export default {
     initLogicFlow() {
       this.lf = createGraphCanvas({
         container: this.$refs.graphContainer,
-        plugins: [MiniMap],
+        plugins: [MiniMap, Snapshot],
         pluginsOptions: {
           miniMap: {
             width: 180,
@@ -773,7 +782,8 @@ export default {
       if (selected) this.lf.selectElementById(selected.id)
       else this.selectedNodeId = null
       this.resizeCanvas()
-      this.fitGraph()
+      if (this.preserveGraphViewport) this.preserveGraphViewport = false
+      else this.fitGraph()
     },
     beginLogicFlowNodeDrag(modelId, event) {
       if (!this.lf || !modelId || !event || event.button !== 0) return
@@ -788,6 +798,7 @@ export default {
         const scale = this.lf.getTransform().SCALE_X || 1
         const x = Math.round((originX + (moveEvent.clientX - startX) / scale) / 20) * 20
         const y = Math.round((originY + (moveEvent.clientY - startY) / scale) / 20) * 20
+        this.skipGraphRender = true
         this.lf.graphModel.moveNode2Coordinate(modelId, x, y, true)
       }
       const onUp = () => {
@@ -795,6 +806,7 @@ export default {
         document.removeEventListener('pointerup', onUp)
         const current = this.lf.getNodeModelById(modelId)
         if (current) {
+          this.skipGraphRender = true
           this.positionOverrides = {
             ...this.positionOverrides,
             [modelId]: { left: current.x - CARD_W / 2, top: current.y - CARD_H / 2 },
@@ -803,6 +815,19 @@ export default {
       }
       document.addEventListener('pointermove', onMove)
       document.addEventListener('pointerup', onUp, { once: true })
+    },
+    async downloadPng() {
+      if (!this.lf || !this.startNode || typeof this.lf.getSnapshot !== 'function') return
+      try {
+        await this.lf.getSnapshot('lineage-graph.png', {
+          fileType: 'png',
+          backgroundColor: this.getThemeCanvasColor(),
+          padding: 48,
+          partial: false,
+        })
+      } catch (error) {
+        this.$message.error(error?.message || '血缘图下载失败，请重试')
+      }
     },
     toGraphNode(id, node, properties) {
       const position = this.nodePosition(id)
@@ -817,6 +842,7 @@ export default {
           nodeTypeLabel: this.nodeTypeLabel(node.type),
           nodeLabel: node.label || node.code,
           nodeCode: node.code,
+          nodeVersionLabel: node.versionLabel || (node.version != null ? `v${node.version}` : ''),
           color: this.nodeColor(node.type),
           ...properties,
           toggleText: properties.loading ? '…' : properties.expanded ? '−' : '+',
@@ -853,6 +879,7 @@ export default {
     },
     async toggleHierarchy(id, expanded) {
       if (this.hierarchyLoading[id]) return
+      this.preserveCurrentPosition()
       const node = this.knownNodes[id]
       if (!expanded[id] && !this.fieldChildren.has(id) && !this.loadedHierarchy[id]) {
         this.hierarchyLoading[id] = true
@@ -868,7 +895,6 @@ export default {
         }
       }
       expanded[id] = !expanded[id]
-      this.$nextTick(() => this.fitGraph())
     },
     async loadOptions(keyword) {
       this.optionLoading = true
@@ -899,6 +925,8 @@ export default {
       this.loadedHierarchy = {}
       this.hierarchyLoading = {}
       this.positionOverrides = {}
+      this.positionOffset = { left: 0, top: 0 }
+      this.preservedCurrentPosition = null
       this.pointerInteraction = null
       this.viewport = { x: 0, y: 0, scale: 1 }
       this.selectedNodeId = null
@@ -925,6 +953,8 @@ export default {
     },
     resetToBestLayout() {
       this.positionOverrides = {}
+      this.positionOffset = { left: 0, top: 0 }
+      this.preservedCurrentPosition = null
       this.lf?.resetZoom()
       this.blurToolbarFocus()
       this.$nextTick(() => {
@@ -1021,10 +1051,14 @@ export default {
       this.pointerInteraction = null
     },
     nodePosition(instanceId) {
-      return (
+      const position = (
         this.positionOverrides[instanceId] ||
         this.mindMapLayout.positions[instanceId] || { left: 0, top: 0 }
       )
+      return {
+        left: position.left + this.positionOffset.left,
+        top: position.top + this.positionOffset.top,
+      }
     },
     async loadGraph() {
       if (!this.query.nodeId) {
@@ -1160,6 +1194,7 @@ export default {
         return
       }
       if (!branch || branch.loading || branch.cycle) return
+      this.preserveCurrentPosition()
       const matching = []
       const collect = branches => branches.forEach(item => {
         if (!item.cycle && item.node.id === branch.node.id && item.direction === branch.direction) matching.push(item)
@@ -1194,6 +1229,23 @@ export default {
       } finally {
         matching.forEach(item => { item.loading = false })
       }
+    },
+    preserveCurrentPosition() {
+      if (!this.lf || !this.startNode) return
+      const current = this.nodePosition('CURRENT')
+      if (!current) return
+      this.preserveGraphViewport = true
+      this.preservedCurrentPosition = { left: current.left, top: current.top }
+    },
+    alignPreservedCurrentPosition() {
+      if (!this.preservedCurrentPosition || !this.startNode) return
+      const next = this.mindMapLayout.positions.CURRENT
+      if (!next) return
+      this.positionOffset = {
+        left: this.preservedCurrentPosition.left - next.left,
+        top: this.preservedCurrentPosition.top - next.top,
+      }
+      this.preservedCurrentPosition = null
     },
     canToggle(branch) {
       if (branch?.fieldGroup) return Boolean(branch.hasMore)

@@ -11,6 +11,7 @@ public final class GovernanceResourceTypes {
             "EXTERNAL_DATASOURCE";
     public static final String EXTERNAL_API = "EXTERNAL_API";
     public static final String DATABASE = "DATABASE";
+    public static final String SFTP = "SFTP";
     public static final String FUNCTION = "FUNCTION";
     public static final String RULE = "RULE";
     public static final String RULE_PROJECT_BINDING =
@@ -28,6 +29,7 @@ public final class GovernanceResourceTypes {
             "DATASOURCE", List.of(
                     EXTERNAL_DATASOURCE, EXTERNAL_API),
             "DATABASE", List.of(DATABASE),
+            "SFTP", List.of(SFTP),
             "FUNCTION", List.of(FUNCTION),
             "RULE", List.of(RULE, RULE_PROJECT_BINDING),
             "LIST", List.of(LIST_LIBRARY, LIST_RECORD_BATCH),

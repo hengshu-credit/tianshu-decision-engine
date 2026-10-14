@@ -302,7 +302,7 @@ public class RuleListServiceTest {
                             return selectedById;
                         }
                         if ("selectPage".equals(method.getName())) {
-                            Page<RuleListRecord> page = (Page<RuleListRecord>) args[0];
+                            Page<RuleListRecord> page = page(args[0]);
                             pageCalls++;
                             lastPageSize = page.getSize();
                             page.setRecords(page.getCurrent() == 1 ? pageRecords : Collections.emptyList());

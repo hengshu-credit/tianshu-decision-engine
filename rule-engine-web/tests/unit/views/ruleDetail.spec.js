@@ -254,12 +254,12 @@ describe('RuleDetail 生命周期治理', () => {
     wrapper.unmount()
   })
 
-  test('详情页明确区分内容保存版本、生命周期修订和当前发布版本', async () => {
+  test('详情页不在基础信息区展示版本字段，但保留生命周期内容', async () => {
     const wrapper = await mountAndWait()
 
-    expect(wrapper.text()).toContain('内容保存版本')
+    expect(wrapper.text()).not.toContain('内容保存版本')
     expect(wrapper.text()).toContain('生命周期修订')
-    expect(wrapper.text()).toContain('当前发布版本')
+    expect(wrapper.text()).not.toContain('当前发布版本')
     wrapper.unmount()
   })
 
@@ -691,13 +691,16 @@ async function mountAndWait(
   ],
   routeQuery = {},
   ruleDetail = mockRuleDetail(1),
-  extraStubs = {}
+  extraStubs = {},
+  routeId = 1
 ) {
-  definitionApi.getDefinitionDetail.mockResolvedValueOnce({ data: ruleDetail })
-  definitionApi.getContent.mockResolvedValueOnce({ data: content })
-  definitionApi.listRuleRevisions.mockResolvedValueOnce({ data: revisions })
-  definitionApi.getRuleLifecycleTimeline.mockResolvedValueOnce({ data: [] })
-  if (!revisions.length || revisions.some(item => item.state === 'DRAFT')) {
+  if (routeId != null) {
+    definitionApi.getDefinitionDetail.mockResolvedValueOnce({ data: ruleDetail })
+    definitionApi.getContent.mockResolvedValueOnce({ data: content })
+    definitionApi.listRuleRevisions.mockResolvedValueOnce({ data: revisions })
+    definitionApi.getRuleLifecycleTimeline.mockResolvedValueOnce({ data: [] })
+  }
+  if (routeId != null && (!revisions.length || revisions.some(item => item.state === 'DRAFT'))) {
     variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
     variableApi.listVariables.mockResolvedValueOnce({ data: { records: [] } })
     variableApi.listAvailableFieldValidations.mockResolvedValueOnce({ data: [{
@@ -711,7 +714,12 @@ async function mountAndWait(
   const wrapper = shallowMount(RuleDetail, {
     props: { id: '1' },
     mocks: {
-      $route: { name: 'RuleDetail', path: '/rule/1', params: { id: 1 }, query: routeQuery },
+      $route: {
+        name: 'RuleDetail',
+        path: routeId == null ? '/rule' : `/rule/${routeId}`,
+        params: routeId == null ? {} : { id: routeId },
+        query: routeQuery,
+      },
       $router: { push: vi.fn(), replace: vi.fn() },
       $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
       $confirm: vi.fn().mockResolvedValue('confirm')
@@ -767,6 +775,21 @@ describe('RuleDetail — 初始化与数据加载', () => {
 
   beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.unmount() })
+
+  test('路由参数尚未就绪时不挂载需要规则 ID 的治理组件', async () => {
+    const pendingRouteWrapper = await mountAndWait(undefined, [], {}, mockRuleDetail(1), {}, null)
+    expect(pendingRouteWrapper.findComponent({ name: 'ResourceVersionManager' }).exists()).toBe(false)
+    expect(pendingRouteWrapper.findComponent({ name: 'RuleRevisionFieldsPanel' }).exists()).toBe(false)
+    pendingRouteWrapper.unmount()
+  })
+
+  test('缓存详情离开规则路由后不再保留治理组件', async () => {
+    wrapper.vm.detailActive = false
+    wrapper.vm.$route.path = '/datasource/source/21'
+    wrapper.vm.$route.params.id = 21
+    await nextTick()
+    expect(wrapper.findComponent({ name: 'ResourceVersionManager' }).exists()).toBe(false)
+  })
 
   test('mounted 后调用 getDefinitionDetail', () => {
     expect(definitionApi.getDefinitionDetail).toHaveBeenCalledWith(1)
@@ -1060,6 +1083,28 @@ describe('RuleDetail — 开放接口契约', () => {
     expect(
       wrapper.vm.openApiFieldOption(wrapper.vm.openInputOptions, 'VARIABLE:1')
     ).toBe(inputOption)
+    wrapper.unmount()
+  })
+
+  test('开放接口映射使用字段选择器所需的稳定引用字段', async () => {
+    const wrapper = await mountAndWait()
+    expect(wrapper.vm.openInputPickerItems[0]).toMatchObject({
+      id: 1,
+      _varId: 1,
+      _refType: 'VARIABLE',
+      varCode: 'age',
+      varLabel: '年龄',
+      varType: 'INTEGER',
+    })
+    expect(wrapper.vm.openOutputPickerItems[0]).toMatchObject({
+      id: 3,
+      _varId: 3,
+      _refType: 'VARIABLE',
+      varCode: 'result',
+      varLabel: '结果',
+      varType: 'STRING',
+    })
+    expect(wrapper.vm.$options.components.VarPicker).toBeDefined()
     wrapper.unmount()
   })
 

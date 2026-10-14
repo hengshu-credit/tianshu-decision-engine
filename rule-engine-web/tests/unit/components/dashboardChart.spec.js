@@ -10,6 +10,7 @@ vi.mock('@/charts/dashboardCharts', () => ({
 }))
 
 import { mount } from '@test-utils'
+import { flushPromises } from '@vue/test-utils'
 import DashboardChart from '@/components/dashboard/DashboardChart.vue'
 
 describe('DashboardChart', () => {
@@ -22,19 +23,24 @@ describe('DashboardChart', () => {
         option: { series: [] }
       }
     })
+    await flushPromises()
+    await new Promise(resolve => setTimeout(resolve, 60))
     expect(chart.setOption).toHaveBeenCalledWith({ series: [] }, true)
 
     window.dispatchEvent(new Event('tianshu-theme-change'))
+    await new Promise(resolve => setTimeout(resolve, 60))
     expect(chart.setOption).toHaveBeenCalledTimes(2)
 
     wrapper.unmount()
     expect(chart.dispose).toHaveBeenCalledOnce()
   })
 
-  test('空数据展示统一空状态且不初始化画布', () => {
+  test('空数据展示统一空状态且不初始化画布', async () => {
     const wrapper = mount(DashboardChart, {
       props: { ariaLabel: '空图表', empty: true, option: { series: [] } }
     })
+    await flushPromises()
+    await new Promise(resolve => setTimeout(resolve, 60))
     expect(wrapper.find('el-empty-stub').attributes('description'))
       .toBe('暂无统计数据')
     expect(chart.setOption).not.toHaveBeenCalled()
@@ -44,10 +50,13 @@ describe('DashboardChart', () => {
     const wrapper = mount(DashboardChart, {
       props: { ariaLabel: '地图', option: { series: [] } }
     })
+    await flushPromises()
+    await new Promise(resolve => setTimeout(resolve, 60))
     const handler = chart.on.mock.calls.find(([event]) => event === 'click')[1]
     handler({ componentType: 'geo', name: '中国' })
+    handler({ componentType: 'series', seriesType: 'map', name: '省一' })
     handler({ componentType: 'series', name: '热力点' })
-    expect(wrapper.emitted('region-click')).toEqual([['中国']])
+    expect(wrapper.emitted('region-click')).toEqual([['中国'], ['省一']])
 
     await wrapper.setProps({ option: { series: [{ type: 'heatmap' }] } })
     expect(chart.on).toHaveBeenCalledOnce()

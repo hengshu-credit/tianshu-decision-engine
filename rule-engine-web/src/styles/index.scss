@@ -30,6 +30,65 @@ body {
   }
 }
 
+/* 详情页统一头部：返回入口始终位于标题左侧，操作按钮保持紧凑排列。 */
+.uiue-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  margin-bottom: 14px;
+}
+
+.uiue-detail-header__title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.uiue-detail-header__title > :last-child {
+  min-width: 0;
+}
+
+.uiue-detail-back.el-button,
+.uiue-compact-designer [data-designer-back].el-button {
+  flex: 0 0 auto;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--tianshu-text-secondary);
+}
+
+.uiue-detail-back.el-button:hover,
+.uiue-detail-back.el-button:focus-visible,
+.uiue-compact-designer [data-designer-back].el-button:hover,
+.uiue-compact-designer [data-designer-back].el-button:focus-visible {
+  color: var(--el-color-primary);
+  background: var(--tianshu-bg-muted);
+}
+
+.uiue-detail-header__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .uiue-detail-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .uiue-detail-header__actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
 .uiue-search-container {
   overflow: hidden;
   padding-bottom: 0;
@@ -44,6 +103,16 @@ body {
 
   .el-form .el-form-item {
     margin-bottom: 10px;
+    margin-right: 0;
+  }
+
+  .el-form {
+    column-gap: 12px;
+    row-gap: 4px;
+  }
+
+  .el-form-item__label {
+    padding-right: 8px;
   }
 }
 

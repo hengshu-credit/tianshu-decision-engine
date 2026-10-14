@@ -96,7 +96,7 @@
               >
             </template>
           </el-table-column>
-          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="220" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['完整值', '编辑', '重置密钥', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
               <div class="auth-row-actions">
                 <el-button
@@ -206,7 +206,7 @@
               }}</el-tag></template
             >
           </el-table-column>
-          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="125" align="center">
+          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['完整值', '撤销'])" align="center">
             <template v-slot="{ row }">
               <el-button
                 link
@@ -648,6 +648,7 @@
 <script>
 import { markRaw } from 'vue'
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import {
   listProjectAuths,
   createProjectAuth,
@@ -753,6 +754,7 @@ export default {
     },
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     emptyAuthForm() {
       return {
         id: null,

@@ -477,6 +477,7 @@ function LineageNodeFactory(RectNode) {
       const code = properties.nodeCode || '-'
       const typeLabel = properties.nodeTypeLabel || properties.nodeType || '节点'
       const badge = properties.current ? '当前' : properties.cycle ? '循环引用' : ''
+      const versionLabel = properties.nodeVersionLabel || (properties.nodeVersion != null ? `v${properties.nodeVersion}` : '')
       const nodeClass = [
         'lineage-lf-node',
         properties.current ? 'current-node' : 'branch-node',
@@ -536,6 +537,7 @@ function LineageNodeFactory(RectNode) {
             toggle,
             h('div', { class: 'node-head' }, [
               h('span', { class: 'node-type-wrap' }, [renderLineageIcon(properties.nodeType, color), h('span', { class: 'node-type' }, typeLabel)]),
+              versionLabel ? h('span', { class: 'node-version', title: versionLabel }, versionLabel) : null,
               badge ? h('span', { class: 'node-badge' }, badge) : null,
             ]),
             h('div', {

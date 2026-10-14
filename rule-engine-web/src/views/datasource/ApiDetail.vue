@@ -1,7 +1,9 @@
 <template>
   <div class="uiue-list-page api-detail-page">
-    <div class="detail-header">
-      <div>
+    <div class="detail-header uiue-detail-header">
+      <div class="uiue-detail-header__title">
+        <el-button link size="small" class="uiue-detail-back" @click="handleBack">返回</el-button>
+        <div>
         <div class="detail-title">
           {{ isCreateMode ? '新建外数 API 接口' : '编辑外数 API 接口' }}
         </div>
@@ -9,9 +11,9 @@
           {{ form.apiName || '未命名接口' }} /
           {{ form.apiCode || '待填写编码' }}
         </div>
+        </div>
       </div>
-      <div class="detail-actions">
-        <el-button size="small" @click="handleBack">返回</el-button>
+      <div class="detail-actions uiue-detail-header__actions">
         <el-button
           v-permission="'datasource:edit'"
           size="small"
@@ -292,19 +294,12 @@
             <el-row v-else-if="form.authMode === 'BASIC'" :gutter="12">
               <el-col :lg="12" :md="24">
                 <el-form-item label="用户名">
-                  <el-input
-                    v-model="apiAuthConfig.username"
-                    placeholder="支持 ${appId} 从测试参数取值"
-                  />
+                  <var-picker v-model:value="apiAuthConfig.username" :vars="apiPickerVars" :functions="apiPickerFunctions" allow-custom width="100%" placeholder="选择字段或输入 ${appId}" @select="onLegacyAuthSelect('username', $event)" />
                 </el-form-item>
               </el-col>
               <el-col :lg="12" :md="24">
                 <el-form-item label="密码">
-                  <el-input
-                    v-model="apiAuthConfig.password"
-                    show-password
-                    placeholder="支持 ${secret} 从测试参数取值"
-                  />
+                  <var-picker v-model:value="apiAuthConfig.password" :vars="apiPickerVars" :functions="apiPickerFunctions" allow-custom width="100%" placeholder="选择字段或输入 ${secret}" @select="onLegacyAuthSelect('password', $event)" />
                 </el-form-item>
               </el-col>
             </el-row>
@@ -312,12 +307,7 @@
               v-else-if="form.authMode === 'BEARER'"
               label="Bearer Token"
             >
-              <el-input
-                v-model="apiAuthConfig.token"
-                type="textarea"
-                :rows="3"
-                placeholder="支持 ${token} 从测试参数取值"
-              />
+              <var-picker v-model:value="apiAuthConfig.token" :vars="apiPickerVars" :functions="apiPickerFunctions" allow-custom width="100%" placeholder="选择字段或输入 ${token}" @select="onLegacyAuthSelect('token', $event)" />
             </el-form-item>
             <el-row v-else-if="form.authMode === 'API_KEY'" :gutter="12">
               <el-col :lg="8" :md="24">
@@ -341,10 +331,7 @@
               </el-col>
               <el-col :lg="8" :md="24">
                 <el-form-item label="Key取值">
-                  <el-input
-                    v-model="apiAuthConfig.value"
-                    placeholder="支持 ${apiKey}"
-                  />
+                  <var-picker v-model:value="apiAuthConfig.value" :vars="apiPickerVars" :functions="apiPickerFunctions" allow-custom width="100%" placeholder="选择字段或输入 ${apiKey}" @select="onLegacyAuthSelect('value', $event)" />
                 </el-form-item>
               </el-col>
             </el-row>
@@ -477,7 +464,7 @@
 
         <template v-if="form.executionConfig && activeConfigGroup === 'business'">
           <el-tab-pane v-for="item in executionTabs" :key="item.name" :label="item.label" :name="`execution.${item.name}`">
-            <api-execution-editor v-model:value="form.executionConfig" :active-tab="item.editorTab || item.name" :active-policy="item.policy || ''" embedded-tabs
+            <api-execution-editor v-if="activeConfigTab === `execution.${item.name}`" v-model:value="form.executionConfig" :active-tab="item.editorTab || item.name" :active-policy="item.policy || ''" embedded-tabs
               :api-config="form" :project-id="resolveDatasourceProjectId(form.datasourceId) || contextProjectId || 0" :async-mode="form.requestMode === 'ASYNC'"
               @select-mode="form.requestMode = $event" @select-sample="invokeParamsText = JSON.stringify($event, null, 2); goToConfigTab('test')" />
           </el-tab-pane>
@@ -647,12 +634,7 @@
               </el-table-column>
               <el-table-column label="变量值" min-width="280">
                 <template v-slot="{ row }">
-                  <el-input
-                    v-model="row.value"
-                    :type="row.sensitive ? 'password' : 'text'"
-                    :show-password="row.sensitive"
-                    autocomplete="new-password"
-                  />
+                  <var-picker :value="row.value" :vars="apiPickerVars" :functions="apiPickerFunctions" allow-custom width="100%" placeholder="选择字段或输入固定值" @input="row.value = $event" />
                 </template>
               </el-table-column>
               <el-table-column label="敏感" width="90" align="center">
@@ -660,7 +642,7 @@
                   <el-switch v-model="row.sensitive" />
                 </template>
               </el-table-column>
-              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
+              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['删除'])" align="center">
                 <template v-slot="{ $index }">
                   <el-button
                     link
@@ -753,7 +735,16 @@
               </el-table-column>
               <el-table-column label="取值" min-width="240">
                 <template v-slot="{ row }">
-                  <el-input v-model="row.value" placeholder="如 ${requestId}" />
+                  <var-picker
+                    :value="row.value"
+                    :vars="apiPickerVars"
+                    :functions="apiPickerFunctions"
+                    allow-custom
+                    width="100%"
+                    placeholder="选择字段或输入 ${requestId}"
+                    @input="row.value = $event"
+                    @select="onLegacyRowValueSelect(row, $event)"
+                  />
                 </template>
               </el-table-column>
               <el-table-column label="说明" min-width="180">
@@ -761,7 +752,7 @@
                   <el-input v-model="row.remark" placeholder="业务含义，可选" />
                 </template>
               </el-table-column>
-              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
+              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['删除'])" align="center">
                 <template v-slot="{ $index }">
                   <el-button
                     link
@@ -816,7 +807,16 @@
               </el-table-column>
               <el-table-column label="取值" min-width="240">
                 <template v-slot="{ row }">
-                  <el-input v-model="row.value" placeholder="如 $.mobile_no" />
+                  <var-picker
+                    :value="row.value"
+                    :vars="apiPickerVars"
+                    :functions="apiPickerFunctions"
+                    allow-custom
+                    width="100%"
+                    placeholder="选择字段或输入 $.mobile_no"
+                    @input="row.value = $event"
+                    @select="onLegacyRowValueSelect(row, $event)"
+                  />
                 </template>
               </el-table-column>
               <el-table-column label="说明" min-width="180">
@@ -824,7 +824,7 @@
                   <el-input v-model="row.remark" placeholder="业务含义，可选" />
                 </template>
               </el-table-column>
-              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
+              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['删除'])" align="center">
                 <template v-slot="{ $index }">
                   <el-button
                     link
@@ -835,6 +835,38 @@
                     >删除</el-button
                   >
                 </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane
+          v-if="isConfigTabVisible('cookies')"
+          label="请求 Cookies"
+          name="cookies"
+        >
+          <div class="tab-section">
+            <div class="section-toolbar">
+              <div>
+                <div class="section-title">Cookie 配置</div>
+                <div class="field-help">每行配置一个 Cookie；取值支持字段选择器、固定值和自定义路径，发送时会合并到 Cookie 请求头。</div>
+              </div>
+              <el-button size="small" :icon="ElIconPlus" @click="addCookieRow">添加 Cookie</el-button>
+            </div>
+            <el-table :data="cookieRows" border size="small" class="config-table">
+              <el-table-column label="Cookie名称" min-width="180">
+                <template v-slot="{ row }"><el-input v-model="row.name" placeholder="如 session_id" /></template>
+              </el-table-column>
+              <el-table-column label="取值" min-width="240">
+                <template v-slot="{ row }">
+                  <var-picker :value="row.value" :vars="apiPickerVars" :functions="apiPickerFunctions" allow-custom width="100%" placeholder="选择字段或输入固定值" @input="row.value = $event" @select="onLegacyRowValueSelect(row, $event)" />
+                </template>
+              </el-table-column>
+              <el-table-column label="说明" min-width="180">
+                <template v-slot="{ row }"><el-input v-model="row.remark" placeholder="业务含义，可选" /></template>
+              </el-table-column>
+              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['删除'])" align="center">
+                <template v-slot="{ $index }"><el-button link size="small" type="danger" class="btn-delete" @click="removeRow(cookieRows, $index)">删除</el-button></template>
               </el-table-column>
             </el-table>
           </div>
@@ -912,10 +944,15 @@
                   </el-table-column>
                   <el-table-column label="引擎入参路径/固定值" min-width="240">
                     <template v-slot="{ row, $index }">
-                      <el-input
-                        v-model="row.sourcePath"
-                        placeholder="如 $.customer.idNo 或 ONLINE"
-                        @update:model-value="onRequestSourceInput(row, $index)"
+                      <var-picker
+                        :value="row.sourcePath"
+                        :vars="apiPickerVars"
+                        :functions="apiPickerFunctions"
+                        allow-custom
+                        width="100%"
+                        placeholder="选择字段或输入 $.customer.idNo"
+                        @input="row.sourcePath = $event; onRequestSourceInput(row, $index)"
+                        @select="onLegacyRequestSourceSelect(row, $index, $event)"
                       />
                     </template>
                   </el-table-column>
@@ -927,7 +964,7 @@
                       />
                     </template>
                   </el-table-column>
-                  <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
+                  <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['删除'])" align="center">
                     <template v-slot="{ $index }">
                       <el-button
                         link
@@ -973,7 +1010,7 @@
                       fieldScriptPath(row)
                     }}</template>
                   </el-table-column>
-                  <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="58" align="center">
+                  <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['使用'])" align="center">
                     <template v-slot="{ row }">
                       <el-button
                         link
@@ -1075,7 +1112,7 @@
                       />
                     </template>
                   </el-table-column>
-                  <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
+                    <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['删除'])" align="center">
                     <template v-slot="{ $index }">
                       <el-button
                         link
@@ -1209,7 +1246,7 @@
                       >body.{{ outputFieldName(row) }}</template
                     >
                   </el-table-column>
-                  <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="58" align="center">
+                  <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['使用'])" align="center">
                     <template v-slot="{ row }">
                       <el-button
                         link
@@ -1819,6 +1856,7 @@
         <template v-if="form.executionConfig && activeConfigGroup === 'reliability'">
           <el-tab-pane v-for="item in executionPolicyTabs" :key="item.name" :label="item.label" :name="`execution.${item.name}`">
             <api-execution-editor
+              v-if="activeConfigTab === `execution.${item.name}`"
               v-model:value="form.executionConfig"
               :active-tab="item.editorTab"
               :active-policy="item.policy"
@@ -2097,12 +2135,13 @@
                 <span>仅检查报文时请使用“生成请求预览”，预览不会访问外部地址。</span>
               </template>
             </el-alert>
-            <el-form-item label="预览Token">
+            <el-form-item v-if="previewTokenRequired" label="预览Token">
               <el-input
                 v-model="previewToken"
                 placeholder="Token/OAuth接口预览可填占位值；不会请求Token地址"
               />
             </el-form-item>
+            <el-alert v-else type="info" :closable="false" show-icon :title="previewAuthDescription" />
             <el-alert v-if="testFeedback" type="warning" :closable="false" show-icon>{{ testFeedback }}</el-alert>
             <el-alert v-if="requestPreviewText && previewSnapshotChanged" type="warning" :closable="false" show-icon>配置或参数已变化，下面是此前的请求预览，请重新生成。</el-alert>
             <el-alert v-if="form.id && invokeResultText && invokeSnapshotChanged" type="warning" :closable="false" show-icon>配置或参数已变化，下面是此前的调用结果，请重新测试。</el-alert>
@@ -2157,6 +2196,7 @@ import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import ApiExecutionEditor from './components/ApiExecutionEditor.vue'
 import ExternalCallTrace from '@/components/common/ExternalCallTrace.vue'
 import { selectTraceSteps } from '@/utils/externalCallTrace'
+import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import { emptyExecution, newApiId, validateExecution } from '@/utils/apiExecution'
 import {
   ASYNC_REQUEST_KEYS,
@@ -2184,6 +2224,10 @@ import {
   updateApiConfig,
 } from '@/api/datasource'
 import { getVariableTree, listDataObjects } from '@/api/dataObject'
+import { listVariablesByProject } from '@/api/variable'
+import { listAllFunctionsByProject } from '@/api/function'
+import { apiFieldOptions } from '@/utils/apiExecution'
+import VarPicker from '@/components/common/VarPicker.vue'
 import ResponseConditionTreeEditor from '@/components/common/ResponseConditionTreeEditor.vue'
 import ResourcePreflightPanel from '@/components/common/ResourcePreflightPanel.vue'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
@@ -2213,6 +2257,8 @@ export default {
       contextProjectId: null,
       dataObjectOptions: [],
       dataObjectTree: [],
+      apiPickerVars: [],
+      apiPickerFunctions: [],
       saving: false,
       invokeLoading: false,
       previewLoading: false,
@@ -2263,6 +2309,7 @@ export default {
         { name: 'auth', group: 'business' },
         { name: 'headers', group: 'business' },
         { name: 'query', group: 'business' },
+        { name: 'cookies', group: 'business' },
         { name: 'request', group: 'business' },
         { name: 'response', group: 'business' },
         { name: 'payloadCapture', group: 'business' },
@@ -2310,6 +2357,7 @@ export default {
       maxPayloadCaptureFieldBytes: MAX_PAYLOAD_CAPTURE_FIELD_BYTES,
       headerRows: [this.emptyNameValueRow()],
       queryRows: [this.emptyNameValueRow()],
+      cookieRows: [this.emptyNameValueRow()],
       requestMappingRows: [this.emptyRequestMappingRow()],
       responseMappingRows: [this.emptyResponseMappingRow()],
       responseConditionRows: [],
@@ -2387,6 +2435,7 @@ export default {
     MonacoEditor,
     ResponseConditionTreeEditor,
     ResourcePreflightPanel,
+    VarPicker,
   },
   computed: {
     invokeTraceSteps() {
@@ -2399,6 +2448,16 @@ export default {
     invokeSnapshotChanged() { return this.invokeSourceSignature !== this.captureTestSignature() },
     trialSnapshotChanged() { return Boolean(this.trialSourceSignature && this.trialSourceSignature !== this.captureTestSignature()) },
     retryConfigurationMessage() { return retryConfigurationError(this.form) },
+    effectivePreviewAuthMode() {
+      if (this.form.authMode !== 'INHERIT') return String(this.form.authMode || 'NONE').toUpperCase()
+      const datasource = this.datasourceOptions.find(item => String(item.id) === String(this.form.datasourceId))
+      return String(datasource?.authType || 'NONE').toUpperCase()
+    },
+    previewTokenRequired() { return ['TOKEN_API', 'OAUTH2'].includes(this.effectivePreviewAuthMode || String(this.form.authMode || 'NONE').toUpperCase()) },
+    previewAuthDescription() {
+      const labels = { NONE: '当前接口无鉴权，预览不会附加 Token Header。', BASIC: '当前接口按 Basic 鉴权配置生成 Authorization，不使用预览 Token。', BEARER: '当前接口按 Bearer 鉴权配置生成 Authorization，不使用预览 Token。', API_KEY: '当前接口按 API Key 的名称、位置和值配置发送，不使用预览 Token。', CUSTOM: '当前接口按自定义鉴权脚本和参数处理，不使用预览 Token。' }
+      return labels[this.effectivePreviewAuthMode] || '当前鉴权配置将决定请求头、Query 或脚本处理方式。'
+    },
     executionSamples() { return this.form.executionConfig ? JSON.parse(this.form.executionConfig).samples || [] : [] },
     isCreateMode() {
       return !this.$route.params.id || this.$route.params.id === 'new'
@@ -2507,7 +2566,7 @@ export default {
     visibleConfigTabs() {
       return this.configTabs.filter((item) => {
         if (item.name === 'execution') return false
-        if (this.form.executionConfig && ['headers', 'query', 'request', 'response', 'async'].includes(item.name)) return false
+        if (this.form.executionConfig && ['headers', 'query', 'cookies', 'request', 'response', 'async'].includes(item.name)) return false
         if (item.group !== this.activeConfigGroup) return false
         return !item.asyncOnly || this.form.requestMode === 'ASYNC'
       })
@@ -2525,7 +2584,6 @@ export default {
       return [
         { name: 'exception-policy', label: '异常条件', editorTab: 'policies', policy: 'exceptionBranches' },
         { name: 'retry-policy', label: '重试条件', editorTab: 'policies', policy: 'retryBranches' },
-        { name: 'billing-policy', label: '计费条件', editorTab: 'policies', policy: 'billingBranches' },
       ]
     },
     visibleExecutionTabNames() {
@@ -2670,6 +2728,7 @@ export default {
     this.invalidateTestRequests()
   },
   methods: {
+    operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     emptyPayloadCaptureConfig() {
       return emptyPayloadCaptureConfig()
     },
@@ -2966,28 +3025,37 @@ export default {
       if (!projectId || Number(projectId) <= 0) {
         this.dataObjectOptions = []
         this.dataObjectTree = []
+        await this.loadApiPickerOptions(0)
         return
       }
+      const [objectsResult, treeResult] = await Promise.all([
+        listDataObjects(projectId).catch(() => null),
+        getVariableTree(projectId).catch(() => null),
+      ])
+      this.dataObjectOptions = Array.isArray(objectsResult?.data)
+        ? objectsResult.data
+        : Array.isArray(objectsResult)
+        ? objectsResult
+        : []
+      const treeData = treeResult?.data || treeResult
+      this.dataObjectTree = Array.isArray(treeData)
+        ? treeData
+        : Array.isArray(treeData?.tree)
+        ? treeData.tree
+        : []
+      await this.loadApiPickerOptions(projectId)
+    },
+    async loadApiPickerOptions(projectId) {
       try {
-        const res = await listDataObjects(projectId)
-        this.dataObjectOptions = Array.isArray(res.data)
-          ? res.data
-          : Array.isArray(res)
-          ? res
-          : []
+        const [variables, functions] = await Promise.all([
+          listVariablesByProject(Number(projectId) || 0),
+          listAllFunctionsByProject(Number(projectId) || 0),
+        ])
+        this.apiPickerVars = apiFieldOptions(variables?.data || [], this.dataObjectTree || [])
+        this.apiPickerFunctions = functions?.data || []
       } catch (e) {
-        this.dataObjectOptions = []
-      }
-      try {
-        const treeRes = await getVariableTree(projectId)
-        const treeData = treeRes && treeRes.data ? treeRes.data : treeRes
-        this.dataObjectTree = Array.isArray(treeData)
-          ? treeData
-          : Array.isArray(treeData && treeData.tree)
-          ? treeData.tree
-          : []
-      } catch (e) {
-        this.dataObjectTree = []
+        this.apiPickerVars = []
+        this.apiPickerFunctions = []
       }
     },
     async loadDetail(requestId = this.initializationId) {
@@ -3032,6 +3100,7 @@ export default {
       this.requestBodyMode = 'MAPPING'
       try {
         const requestConfig = this.parseConfigForTemplate(this.form.requestMapping)
+        this.cookieRows = this.rowsFromNameValueObject(requestConfig && requestConfig._cookies)
         this.requestNullPolicy =
           requestConfig && requestConfig._nullPolicy
             ? requestConfig._nullPolicy
@@ -3043,6 +3112,7 @@ export default {
           auth: (nonJsonPolicy && nonJsonPolicy.auth) || 'EMPTY',
         }
       } catch (e) {
+        this.cookieRows = [this.emptyNameValueRow()]
         this.requestNullPolicy = 'OMIT_MISSING_SEND_NULL'
         this.nonJsonNullPolicy = { header: 'OMIT', query: 'PRESERVE_NULL', auth: 'EMPTY' }
       }
@@ -3267,6 +3337,9 @@ export default {
     },
     rowsFromNameValueConfig(text) {
       const config = this.parseConfigForTemplate(text)
+      return this.rowsFromNameValueObject(config)
+    },
+    rowsFromNameValueObject(config) {
       if (!config || typeof config !== 'object' || Array.isArray(config))
         return [this.emptyNameValueRow()]
       const rows = Object.keys(config).map((name) => ({
@@ -3284,6 +3357,7 @@ export default {
       const mapping = { ...config }
       delete mapping._nullPolicy
       delete mapping.nullValuePolicy
+      delete mapping._cookies
       const rows = []
       this.flattenMappingRows(mapping, '', rows)
       return rows.length ? rows : [this.emptyRequestMappingRow()]
@@ -3571,6 +3645,8 @@ export default {
         (row) => row && row.targetPath && String(row.targetPath).trim()
       )
       if (validRows.length) result._nullPolicy = this.requestNullPolicy
+      const cookies = this.buildNameValueConfig(this.cookieRows)
+      if (Object.keys(cookies).length) result._cookies = cookies
       const nonJsonPolicy = this.nonJsonNullPolicy || {
         header: 'OMIT',
         query: 'PRESERVE_NULL',
@@ -3857,6 +3933,26 @@ export default {
     addHeaderRow() {
       this.headerRows.push(this.emptyNameValueRow())
     },
+    legacySelectedPath(item) {
+      const code = item && (item.varCode || item.code)
+      if (!code) return ''
+      const value = String(code)
+      return value.startsWith('$.') ? value : '$.' + value
+    },
+    onLegacyRowValueSelect(row, item) {
+      const path = this.legacySelectedPath(item)
+      if (path) row.value = path
+    },
+    onLegacyRequestSourceSelect(row, index, item) {
+      const path = this.legacySelectedPath(item)
+      if (!path) return
+      row.sourcePath = path
+      this.onRequestSourceInput(row, index)
+    },
+    onLegacyAuthSelect(key, item) {
+      const path = this.legacySelectedPath(item)
+      if (path) this.apiAuthConfig[key] = path
+    },
     addScriptVariableRow() {
       this.scriptVariableRows.push(this.emptyScriptVariableRow())
     },
@@ -3882,6 +3978,9 @@ export default {
     addQueryRow() {
       this.queryRows.push(this.emptyNameValueRow())
     },
+    addCookieRow() {
+      this.cookieRows.push(this.emptyNameValueRow())
+    },
     addRequestMappingRow() {
       this.requestMappingRows.push(this.emptyRequestMappingRow())
     },
@@ -3894,7 +3993,7 @@ export default {
     removeRow(rows, index) {
       rows.splice(index, 1)
       if (rows.length === 0) {
-        if (rows === this.headerRows || rows === this.queryRows)
+        if (rows === this.headerRows || rows === this.queryRows || rows === this.cookieRows)
           rows.push(this.emptyNameValueRow())
         if (rows === this.requestMappingRows)
           rows.push(this.emptyRequestMappingRow())
@@ -4301,7 +4400,7 @@ export default {
     },
     captureTestSignature() {
       return JSON.stringify([
-        this.form, this.invokeParamsText, this.headerRows, this.queryRows,
+        this.form, this.invokeParamsText, this.headerRows, this.queryRows, this.cookieRows,
         this.requestBodyMode, this.requestMappingRows, this.requestMappingJsonText,
         this.requestNullPolicy, this.nonJsonNullPolicy, this.responseMappingMode,
         this.responseMappingRows, this.responseConditionRows, this.responseMappingJsonText,

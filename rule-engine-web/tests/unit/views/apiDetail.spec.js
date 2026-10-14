@@ -23,6 +23,7 @@ function createContext(overrides = {}) {
     form: ApiDetail.methods.emptyForm(),
     headerRows: [ApiDetail.methods.emptyNameValueRow()],
     queryRows: [ApiDetail.methods.emptyNameValueRow()],
+    cookieRows: [ApiDetail.methods.emptyNameValueRow()],
     requestMappingRows: [ApiDetail.methods.emptyRequestMappingRow()],
     responseMappingRows: [ApiDetail.methods.emptyResponseMappingRow()],
     responseConditionRows: [],
@@ -215,7 +216,7 @@ describe('ApiDetail helpers', () => {
     const visible = ApiDetail.computed.visibleConfigTabs.call(ctx)
 
     expect(visible.map(item => item.name)).toEqual([
-      'auth', 'headers', 'query', 'request', 'response', 'payloadCapture', 'test'
+      'auth', 'headers', 'query', 'cookies', 'request', 'response', 'payloadCapture', 'test'
     ])
     ctx.visibleConfigTabs = visible
     ctx.switchConfigGroup('reliability')
@@ -223,6 +224,27 @@ describe('ApiDetail helpers', () => {
     expect(ctx.visibleConfigTabs.map(item => item.name)).toEqual([
       'connection', 'retry', 'billing'
     ])
+  })
+
+  test('接口测试预览鉴权按实际配置区分 Token/OAuth 与其他鉴权', () => {
+    const ctx = createContext({ datasourceOptions: [{ id: 8, authType: 'BASIC' }], form: { ...ApiDetail.methods.emptyForm(), datasourceId: 8, authMode: 'INHERIT' } })
+    expect(ApiDetail.computed.effectivePreviewAuthMode.call(ctx)).toBe('BASIC')
+    expect(ApiDetail.computed.previewTokenRequired.call(ctx)).toBe(false)
+    const oauth = createContext({ datasourceOptions: [], form: { ...ApiDetail.methods.emptyForm(), authMode: 'OAUTH2' } })
+    expect(ApiDetail.computed.effectivePreviewAuthMode.call(oauth)).toBe('OAUTH2')
+    expect(ApiDetail.computed.previewTokenRequired.call(oauth)).toBe(true)
+  })
+
+  test('旧版请求映射单独保存 Cookies，并可从字段选择器取值', () => {
+    const ctx = createContext({
+      cookieRows: [{ name: 'session_id', value: '$.sessionId', remark: '' }],
+      requestMappingRows: [{ targetPath: 'mobile', sourcePath: '$.mobile', remark: '' }],
+    })
+    const mapping = ctx.buildRequestMappingConfig()
+    expect(mapping._cookies).toEqual({ session_id: '$.sessionId' })
+    expect(mapping.mobile).toBe('$.mobile')
+    ctx.cookieRows = [ApiDetail.methods.emptyNameValueRow()]
+    expect(ctx.rowsFromNameValueObject({ session_id: '$.sessionId' })[0]).toMatchObject({ name: 'session_id', value: '$.sessionId' })
   })
 
   test('异步接口在稳定性分组中显示回调配置', () => {

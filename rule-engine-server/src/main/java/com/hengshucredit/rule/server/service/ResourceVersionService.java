@@ -274,7 +274,7 @@ public class ResourceVersionService {
         stored = JSON.parseObject(stored.toJSONString());
         JSONObject publicPayload = stored.getJSONObject("payload");
         if (runtime != null && runtime.isImported() && ("EXTERNAL_API".equals(call.refType())
-                || "VARIABLE".equals(call.refType()) && Set.of("API", "DB", "LIST", "DERIVED").contains(publicPayload.getString("varSource") == null ? "" : publicPayload.getString("varSource"))
+                || "VARIABLE".equals(call.refType()) && Set.of("API", "DB", "LIST", "SFTP", "DERIVED").contains(publicPayload.getString("varSource") == null ? "" : publicPayload.getString("varSource"))
                 || "DATA_OBJECT".equals(call.refType()) && Set.of("API", "DB", "DATABASE").contains(publicPayload.getString("sourceType") == null ? "" : publicPayload.getString("sourceType"))))
             throw new IllegalArgumentException("导入的固定版本含外部资源引用，请在目标环境重新绑定并发布；禁止按来源环境 ID 调用本地资源");
         if (stored.getBooleanValue("requiresSecrets")) {

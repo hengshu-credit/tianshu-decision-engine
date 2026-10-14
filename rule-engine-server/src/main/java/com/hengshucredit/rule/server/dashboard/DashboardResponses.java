@@ -58,7 +58,10 @@ public final class DashboardResponses {
 
     public record GeoPoint(double longitude,
                            double latitude,
-                           long count) {
+                           long count,
+                           long passCount,
+                           long reviewCount,
+                           long rejectCount) {
     }
 
     public record GeoDistribution(List<GeoPoint> points,

@@ -1,18 +1,18 @@
-# MySQL 独立 Compose；数据和配置集中在 docker/rule-engine-mysql。
-# 固定上限：3G 内存、0.60C CPU；与应用/Redis Compose 同时运行时仍保持总预算不超过 9.75G/1.90C。
+# 依赖组件 Compose：只启动 MySQL，供 JAR、单容器 Docker 或外接数据库应用 Compose 使用。
+# 它不启动 server/web，也不依赖其它 Compose；使用 DEPLOY_PROJECT 隔离多套环境。
+# 固定上限：1536M 内存、0.40C CPU；与应用/Redis/Kafka Compose 同时运行时按 8G/2C 预算。
 name: ${DEPLOY_PROJECT:-tianshu}
 
 services:
   mysql:
     image: ${MYSQL_IMAGE:-mysql:8.4.6}
-    cpus: "0.60"
-    mem_limit: 3g
+    cpus: "0.40"
+    mem_limit: 1536m
     deploy:
       resources:
         limits:
-          cpus: "0.60"
-          memory: 3G
-    container_name: rule-engine-mysql
+          cpus: "0.40"
+          memory: 1536M
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}"
@@ -29,7 +29,7 @@ services:
       - --mysql-native-password=ON
       - --bind-address=${MYSQL_BIND_ADDRESS:-0.0.0.0}
     ports:
-      - "${MYSQL_HOST_PORT:-3306}:3306"
+      - "${MYSQL_BIND_ADDRESS:-0.0.0.0}:${MYSQL_HOST_PORT:-3306}:3306"
     volumes:
       - ./rule-engine-mysql/data:/var/lib/mysql
       - ./rule-engine-mysql/logs:/var/log/mysql

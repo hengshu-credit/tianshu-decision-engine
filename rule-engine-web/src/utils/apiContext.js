@@ -3,7 +3,7 @@ import { API_MODULE_FIELDS, samplePathOptions } from './apiExecution'
 const rawResponse = Object.freeze([
   { value: 'httpStatus', label: 'HTTP 状态码', type: 'INTEGER' },
   { value: 'headers', label: '响应头', type: 'MAP' },
-  { value: 'body', label: '响应体', type: 'OBJECT' },
+  { value: 'body', label: '响应体', type: 'OBJECT', category: 'api-response' },
 ])
 export const uniqueApiPaths = paths => Object.freeze([...new Map(paths.filter(item => item?.value).map(item => [item.value, item])).values()])
 const protocolFieldsCache = new WeakMap()
@@ -29,7 +29,8 @@ function responseStructure(branch, prefix = '') {
 
 export function apiStagePaths(config = {}, stage = 'RESULT', index = 0, branch = null) {
   if (stage === 'REQUEST') return []
-  if (stage === 'STEP_CONDITION' || stage === 'CALLBACK') return rawResponse
+  if (stage === 'STEP_CONDITION' || stage === 'CALLBACK') return uniqueApiPaths([...rawResponse,
+    ...(config.steps?.[index]?.responseBranches || []).flatMap(item => Object.hasOwn(item, 'sample') ? samplePathOptions(item.sample, 'body').map(field => ({ ...field, category: 'api-response' })) : [])])
   if (stage === 'RETRY') return uniqueApiPaths([...rawResponse.filter(field => field.value !== 'headers'), ...API_MODULE_FIELDS.filter(field => field.value === 'response' || field.value.startsWith('response.')),
     { value: 'errorMessage', label: '异常信息', type: 'STRING' }])
   const steps = config.steps || []
@@ -45,7 +46,13 @@ export function apiStagePaths(config = {}, stage = 'RESULT', index = 0, branch =
   if (stage === 'STEP_REQUEST') return uniqueApiPaths([...requestPaths, ...stepPaths, ...callbacks])
   const base = stage === 'RESULT' ? API_MODULE_FIELDS : API_MODULE_FIELDS.filter(field => field.value !== 'status.billed').map(field => field.value === 'body' && stage !== 'STEP_POLL' && stage !== 'POLICY' ? { ...field, label: '响应体（组装前）' } : field)
   const outputBranches = stage === 'STEP_POLL' ? steps[index]?.responseBranches || [] : ['POLICY', 'RESULT'].includes(stage) ? config.responseBranches || [] : []
-  return uniqueApiPaths([...base, ...stepPaths, ...(['STEP_RESPONSE', 'STEP_POLL'].includes(stage) ? [...requestPaths, ...callbacks] : []),
+  const currentFields = ['STEP_RESPONSE', 'STEP_POLL'].includes(stage) ? steps[index]?.requestFields || [] : requestFields
+  const actualRequest = currentFields.map(field => {
+    const root = { HEADER: 'request.headers', QUERY: 'request.query', COOKIE: 'request.cookies', JSON: 'request.json', FORM: 'request.form', FORM_DATA: 'request.form' }[field.location]
+    const suffix = field.location === 'JSON' ? (field.path?.startsWith('[') ? '' : '.') + field.path : `[${JSON.stringify(field.path)}]`
+    return { value: root && field.path ? root + suffix : '', label: field.remark || field.path, type: field.value?.valueType || 'STRING' }
+  })
+  return uniqueApiPaths([...base, ...actualRequest, ...stepPaths, ...(['STEP_RESPONSE', 'STEP_POLL'].includes(stage) ? [...requestPaths, ...callbacks] : []),
     ...(branch && Object.hasOwn(branch, 'sample') ? samplePathOptions(branch.sample) : []), ...outputBranches.flatMap(response => responseStructure(response))])
 }
 
@@ -60,7 +67,7 @@ export function apiProtocolFields(paths, contextLabel = '当前外数 API · HTT
     _varId: path.value, _refType: 'API_CONTEXT', varCode: path.value, varLabel: path.label || path.value,
     varType: path.type || 'OBJECT', disabled: structural && !available(path.value) || path.disabled === true,
     tags: ['http-context', ...(path.tags || [])],
-    _ref: { category: 'external', apiId, apiCode: 'http', apiLabel: contextLabel },
+    _ref: { category: path.category || apiPathCategory(path.value), apiId, apiCode: 'http', apiLabel: contextLabel },
   })
   for (const path of uniqueApiPaths(paths)) {
     let quote = '', escaped = false, depth = 0
@@ -78,12 +85,23 @@ export function apiProtocolFields(paths, contextLabel = '当前外数 API · HTT
     }
     add(path)
   }
-  const result = [...fields.values()]
+  const result = Object.freeze([...fields.values()])
   if (Object.isFrozen(paths)) {
     if (!protocolFieldsCache.has(paths)) protocolFieldsCache.set(paths, new Map())
     protocolFieldsCache.get(paths).set(cacheKey, result)
   }
   return result
+}
+
+function apiPathCategory(path) {
+  const normalized = path.replace(/^\$\./, '')
+  for (const [prefix, category] of [
+    ['authentication', 'api-auth'], ['request.headers', 'api-headers'], ['request.cookies', 'api-cookies'],
+    ['request.query', 'api-query'], ['request.body', 'api-body'], ['request.json', 'api-body'], ['request.form', 'api-body'],
+    ['request', 'api-request'], ['response', 'api-response'], ['headers', 'api-response'], ['httpStatus', 'api-response'],
+    ['body', 'api-result'], ['input', 'api-input'], ['steps', 'api-steps'], ['callbacks', 'api-callback'],
+  ]) if (normalized === prefix || normalized.startsWith(prefix + '.') || normalized.startsWith(prefix + '[')) return category
+  return 'api-status'
 }
 
 export function isAvailableApiPath(value, paths) {

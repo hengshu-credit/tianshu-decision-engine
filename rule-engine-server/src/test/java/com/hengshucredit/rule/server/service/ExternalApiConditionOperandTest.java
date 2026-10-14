@@ -79,6 +79,19 @@ public class ExternalApiConditionOperandTest {
         assertFalse(ExternalApiRequestPlan.present(response, "response.body.items[1]['score.value']"));
     }
 
+    @Test public void validatorRejectsUnknownConditionOperatorAndGroupOperator() {
+        RuleExternalApiConfig unknown = new RuleExternalApiConfig();
+        unknown.setExceptionCondition("{\"path\":\"body.code\",\"operator\":\"contains_regex\",\"value\":\"x\"}");
+        assertThrows(IllegalArgumentException.class, () -> ExternalApiConfigValidator.validate(unknown));
+
+        RuleExternalApiConfig invalidGroup = new RuleExternalApiConfig();
+        invalidGroup.setExceptionCondition("{\"type\":\"group\",\"operator\":\"XOR\",\"children\":[{\"path\":\"body.code\",\"operator\":\"exists\"}]}");
+        assertThrows(IllegalArgumentException.class, () -> ExternalApiConfigValidator.validate(invalidGroup));
+
+        invalidGroup.setExceptionCondition("{\"type\":\"group\",\"op\":\"XOR\",\"children\":[{\"path\":\"body.code\",\"operator\":\"exists\"}]}");
+        assertThrows(IllegalArgumentException.class, () -> ExternalApiConfigValidator.validate(invalidGroup));
+    }
+
     private boolean matches(String path, String operator, Map<String, Object> response) {
         return service.matchesResponseCondition(JSON.toJSONString(Map.of(
                 "left", Map.of("kind", "PATH", "value", path), "operator", operator)), response);

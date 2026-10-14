@@ -28,11 +28,11 @@ export default {
     option: {
       deep: true,
       handler() {
-        this.renderChart()
+        this.scheduleRender()
       }
     },
     empty() {
-      this.$nextTick(this.renderChart)
+      this.scheduleRender()
     }
   },
   mounted() {
@@ -43,15 +43,24 @@ export default {
     } else {
       window.addEventListener('resize', this.resize)
     }
-    this.renderChart()
+    this.scheduleRender()
   },
   beforeUnmount() {
     window.removeEventListener('tianshu-theme-change', this.handleThemeChange)
     window.removeEventListener('resize', this.resize)
+    if (this.renderTimer) window.clearTimeout(this.renderTimer)
+    if (this.resizeTimer) window.clearTimeout(this.resizeTimer)
     if (this.resizeObserver) this.resizeObserver.disconnect()
     if (this.chart) this.chart.dispose()
   },
   methods: {
+    scheduleRender() {
+      if (this.renderTimer) window.clearTimeout(this.renderTimer)
+      this.renderTimer = window.setTimeout(() => {
+        this.renderChart()
+        this.resize()
+      }, 50)
+    },
     renderChart() {
       if (this.empty || !this.option || !this.$refs.chart) return
       if (!this.chart) {
@@ -61,13 +70,18 @@ export default {
       this.chart.setOption(this.option, true)
     },
     handleChartClick(params) {
-      if (params.componentType === 'geo') this.$emit('region-click', params.name)
+      if (params.componentType === 'geo' || (params.seriesType === 'map' && params.name)) {
+        this.$emit('region-click', params.name)
+      }
     },
     handleThemeChange() {
-      this.renderChart()
+      this.scheduleRender()
     },
     resize() {
-      if (this.chart) this.chart.resize()
+      if (!this.chart) return
+      const width = this.$el.clientWidth
+      const height = this.$el.clientHeight
+      if (width > 0 && height > 0) this.chart.resize({ width, height })
     }
   }
 }

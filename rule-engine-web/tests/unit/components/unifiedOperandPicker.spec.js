@@ -23,6 +23,30 @@ function mountPicker(propsData = {}, options = {}) {
 }
 
 describe('统一 OperandPicker', () => {
+  test('历史路径中误存的纯 JSON 数组可打开阈值草稿，应用前不改写', () => {
+    const text = '["0000", "B0013", 9007199254740993]'
+    const wrapper = mountPicker({ value: { kind: 'PATH', value: text } })
+    wrapper.vm.openManualInput('LITERAL')
+    expect(wrapper.vm.manualOperand).toEqual({ kind: 'LITERAL', valueType: 'LIST', value: text })
+    expect(wrapper.emitted('input')).toBeUndefined()
+    wrapper.unmount()
+  })
+  test('纯数组节点在阈值面板编辑时保留字符串编码、数字精度及嵌套内容', () => {
+    const value = { kind: 'ARRAY', items: [
+      { kind: 'LITERAL', valueType: 'STRING', value: '0000' },
+      { kind: 'LITERAL', valueType: 'NUMBER', value: '9007199254740993' },
+      { kind: 'ARRAY', items: [{ kind: 'LITERAL', valueType: 'BOOLEAN', value: false }] },
+    ] }
+    const wrapper = mountPicker({ value })
+    wrapper.vm.openManualInput('LITERAL')
+    expect(wrapper.vm.manualKind).toBe('LITERAL')
+    expect(wrapper.vm.manualOperand.valueType).toBe('LIST')
+    expect(wrapper.vm.manualInputText).toContain('"0000"')
+    expect(wrapper.vm.manualInputText).toContain('9007199254740993')
+    expect(wrapper.vm.manualInputText).toContain('false')
+    expect(wrapper.emitted('input')).toBeUndefined()
+    wrapper.unmount()
+  })
   test('函数通用 Object 参数可接收任意类型，LIST 参数仍保持限制', () => {
     const wrapper = mountPicker({ value: { kind: 'FUNCTION', parameterTypes: ['OBJECT', 'LIST'], args: [null, null] } })
     expect(wrapper.vm.argumentType(0)).toBe('')

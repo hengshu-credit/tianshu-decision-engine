@@ -2302,6 +2302,7 @@ export default {
         DATASOURCE: '外数 API',
         EXTERNAL_API: '外数 API',
         DATABASE: '数据库查询',
+        SFTP: 'SFTP 文件读取',
         LIST: '名单查询',
         MODEL: '模型执行',
       }

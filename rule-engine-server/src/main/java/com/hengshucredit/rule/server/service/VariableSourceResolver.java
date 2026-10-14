@@ -10,6 +10,7 @@ import com.hengshucredit.rule.core.engine.RuleTerminationSignal;
 import com.hengshucredit.rule.core.function.BuiltinFunctionInvoker;
 import com.hengshucredit.rule.core.util.MissingValueSemantics;
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
+import com.hengshucredit.rule.model.entity.RuleSftpDatasource;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
 import com.hengshucredit.rule.model.entity.RuleModel;
@@ -34,9 +35,11 @@ import jakarta.annotation.Resource;
 import java.lang.reflect.Array;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
@@ -47,6 +50,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 public class VariableSourceResolver {
@@ -68,6 +72,12 @@ public class VariableSourceResolver {
 
     @Resource
     private DBConnectPools dbConnectPools;
+
+    @Resource
+    private SftpConnectPools sftpConnectPools;
+
+    @Resource
+    private SftpFileCache sftpFileCache;
 
     @Resource
     private RuleListService ruleListService;
@@ -908,6 +918,8 @@ public class VariableSourceResolver {
                 value = derivedVariableService.resolve(variable, resolvedParams,
                         effectiveOptions.getDerivedReferencePaths(), effectiveOptions.getDerivedFunctions(),
                         effectiveOptions.getHistoryFieldDefinitions());
+            } else if ("SFTP".equals(varSource)) {
+                value = resolveSftpVariable(variable, config, resolvedParams, effectiveOptions);
             } else {
                 value = resolveListVariable(variable, config, resolvedParams, effectiveOptions);
             }
@@ -941,7 +953,7 @@ public class VariableSourceResolver {
         }
         String varSource = variable.getVarSource();
         if (!"API".equals(varSource) && !"DB".equals(varSource) && !"LIST".equals(varSource)
-                && !"CONSTANT".equals(varSource) && !"DERIVED".equals(varSource)) {
+                && !"SFTP".equals(varSource) && !"CONSTANT".equals(varSource) && !"DERIVED".equals(varSource)) {
             return false;
         }
         if (requiredScriptNames == null) {
@@ -1225,6 +1237,8 @@ public class VariableSourceResolver {
                     }
                 }
             }
+        } else if ("SFTP".equals(varSource)) {
+            collectDependencyValues(config.get("remotePath"), dependencies);
         }
         return dependencies;
     }
@@ -1673,8 +1687,9 @@ public class VariableSourceResolver {
             throw new IllegalArgumentException("变量不存在");
         }
         String varSource = variable.getVarSource();
-        if (!"API".equals(varSource) && !"DB".equals(varSource) && !"LIST".equals(varSource) && !"DERIVED".equals(varSource)) {
-            throw new IllegalArgumentException("仅支持测试 API、数据库、名单、衍生变量");
+        if (!"API".equals(varSource) && !"DB".equals(varSource) && !"LIST".equals(varSource)
+                && !"SFTP".equals(varSource) && !"DERIVED".equals(varSource)) {
+            throw new IllegalArgumentException("仅支持测试 API、数据库、名单、SFTP、衍生变量");
         }
         String scriptName = resolveScriptName(variable);
         if (!hasText(scriptName)) {
@@ -1711,9 +1726,9 @@ public class VariableSourceResolver {
         }
         String varSource = variable.getVarSource();
         if (!"API".equals(varSource) && !"DB".equals(varSource)
-                && !"LIST".equals(varSource) && !"DERIVED".equals(varSource)) {
+                && !"LIST".equals(varSource) && !"SFTP".equals(varSource) && !"DERIVED".equals(varSource)) {
             throw new IllegalArgumentException(
-                    "仅支持预览 API、数据库、名单、衍生字段");
+                    "仅支持预览 API、数据库、名单、SFTP、衍生字段");
         }
         String scriptName = resolveScriptName(variable);
         if (!hasText(scriptName)) {
@@ -1925,6 +1940,151 @@ public class VariableSourceResolver {
         }
     }
 
+    private Object resolveSftpVariable(RuleVariable variable, Map<String, Object> config,
+                                       Map<String, Object> params, VariableResolveOptions options) throws Exception {
+        Long datasourceId = longValue(config.get("sftpDatasourceId"));
+        if (datasourceId == null) throw new IllegalArgumentException("SFTP变量缺少 sftpDatasourceId");
+        Object configuredPath = parseConfiguredValue(config.get("remotePath"), params);
+        String remotePath = stringValue(configuredPath).trim();
+        if (!hasText(remotePath)) throw new IllegalArgumentException("SFTP变量缺少远端文件路径");
+        String outputFormat = stringValue(config.get("outputFormat"));
+        if (!hasText(outputFormat)) outputFormat = "TEXT";
+        outputFormat = outputFormat.toUpperCase(java.util.Locale.ROOT);
+        int retryCount = intConfig(config.get("retryCount"), 2, 0, 5);
+        long retryBackoffMs = longConfig(config.get("retryBackoffMs"), 200L, 0L, 60000L);
+        double retryBackoffMultiplier = doubleConfig(config.get("retryBackoffMultiplier"), 2D, 1D, 5D);
+        int cacheSeconds = intConfig(config.get("cacheSeconds"), 0, 0, 86400);
+        long start = System.currentTimeMillis();
+        RuntimeTraceService.ModuleTrace runtimeTrace = startRuntimeTrace(
+                "SFTP", resolveRuntimeProjectId(variable), datasourceId, resolveScriptName(variable));
+        RuleSftpDatasource datasource = null;
+        String normalizedPath = remotePath;
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("sftpDatasourceId", datasourceId);
+        request.put("remotePath", normalizedPath);
+        request.put("targetVariable", resolveScriptName(variable));
+        request.put("outputFormat", outputFormat);
+        request.put("retryCount", retryCount);
+        request.put("retryBackoffMs", retryBackoffMs);
+        request.put("retryBackoffMultiplier", retryBackoffMultiplier);
+        request.put("cacheSeconds", cacheSeconds);
+        try {
+            AtomicInteger actualRetryCount = new AtomicInteger();
+            SftpFileCache.Lookup preliminary = sftpFileCache == null
+                    ? null : sftpFileCache.get(sftpFileCache.key(datasourceId, remotePath), cacheSeconds);
+            SftpFileCache.LoadResult loaded;
+            if (preliminary != null) {
+                loaded = new SftpFileCache.LoadResult(preliminary.content(), true, false);
+            } else {
+                datasource = sftpConnectPools.connectionConfig(datasourceId);
+                normalizedPath = sftpConnectPools.remotePath(remotePath, datasource);
+                request.put("remotePath", normalizedPath);
+                String resolvedPath = normalizedPath;
+                String cacheKey = sftpFileCache == null ? null : sftpFileCache.key(datasourceId, resolvedPath);
+                loaded = sftpFileCache == null
+                        ? new SftpFileCache.LoadResult(readSftpFile(datasourceId, resolvedPath, retryCount,
+                                retryBackoffMs, retryBackoffMultiplier, actualRetryCount), false, false)
+                        : sftpFileCache.load(cacheKey, cacheSeconds, () -> {
+                            SftpConnectPools.ReadResult read = sftpConnectPools.readFileWithRetry(datasourceId,
+                                    resolvedPath, retryCount, retryBackoffMs, retryBackoffMultiplier);
+                            actualRetryCount.set(read.retryCount());
+                            return read.content();
+                        });
+            }
+            byte[] content = loaded.content();
+            boolean cacheHit = loaded.cacheHit() || loaded.shared();
+            String cacheState = cacheSeconds <= 0 ? "DISABLED" : cacheHit ? "HIT" : "MISS";
+            if (sftpFileCache != null && cacheSeconds > 0 && !remotePath.equals(normalizedPath)) {
+                sftpFileCache.put(sftpFileCache.key(datasourceId, remotePath), content, cacheSeconds);
+            }
+            options.recordSourceState("VARIABLE", variable.getId(), "CACHE_CONFIGURED", cacheSeconds > 0 ? "TRUE" : "FALSE");
+            options.recordSourceState("VARIABLE", variable.getId(), "CACHE_STATE", cacheState);
+            options.recordSourceState("VARIABLE", variable.getId(), "DATA_ORIGIN", cacheHit ? "CACHE" : "REALTIME");
+            options.recordSourceState("VARIABLE", variable.getId(), "RETRY_COUNT", actualRetryCount.get());
+            options.recordSourceState("VARIABLE", variable.getId(), "RETRIED", actualRetryCount.get() > 0 ? "TRUE" : "FALSE");
+            Object value = switch (outputFormat) {
+                case "BASE64" -> Base64.getEncoder().encodeToString(content);
+                case "JSON" -> JSON.parse(new String(content, Charset.forName(stringValue(config.get("charset"),
+                        datasource == null ? "UTF-8" : datasource.getFileNameEncoding()))));
+                case "TEXT" -> new String(content, Charset.forName(stringValue(config.get("charset"),
+                        datasource == null ? "UTF-8" : datasource.getFileNameEncoding())));
+                default -> throw new IllegalArgumentException("SFTP输出格式仅支持 TEXT、BASE64 或 JSON");
+            };
+            options.recordSourceState("VARIABLE", variable.getId(), "OUTCOME", "SUCCESS");
+            options.recordSourceState("VARIABLE", variable.getId(), "FILE_SIZE", content.length);
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("status", "SUCCESS");
+            response.put("size", content.length);
+            response.put("contentType", contentTypeForPath(normalizedPath));
+            response.put("outputFormat", outputFormat);
+            response.put("cacheConfigured", cacheSeconds > 0);
+            response.put("cacheStatus", cacheState);
+            response.put("dataOrigin", cacheHit ? "CACHE" : "REALTIME");
+            response.put("retryCount", actualRetryCount.get());
+            completeRuntimeTrace(runtimeTrace, true, null, System.currentTimeMillis() - start);
+            logVariableSource("SFTP", "SFTP_VARIABLE_READ", variable, datasourceId, request,
+                    response, null, System.currentTimeMillis() - start, runtimeTrace);
+            return value;
+        } catch (Exception e) {
+            completeRuntimeTrace(runtimeTrace, false, e.getMessage(), System.currentTimeMillis() - start);
+            logVariableSource("SFTP", "SFTP_VARIABLE_READ", variable, datasourceId, request,
+                    Map.of("status", "FAILED"), e.getMessage(), System.currentTimeMillis() - start, runtimeTrace);
+            throw e;
+        }
+    }
+
+    private String stringValue(Object value, String fallback) {
+        String text = stringValue(value);
+        return hasText(text) ? text : fallback;
+    }
+
+    private byte[] readSftpFile(Long datasourceId, String path, int retryCount, long backoffMs,
+                                double backoffMultiplier, AtomicInteger actualRetryCount) throws Exception {
+        SftpConnectPools.ReadResult read = sftpConnectPools.readFileWithRetry(datasourceId, path,
+                retryCount, backoffMs, backoffMultiplier);
+        actualRetryCount.set(read.retryCount());
+        return read.content();
+    }
+
+    private int intConfig(Object value, int fallback, int min, int max) {
+        if (value == null) return fallback;
+        try {
+            int parsed = Integer.parseInt(String.valueOf(value));
+            return Math.max(min, Math.min(max, parsed));
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private long longConfig(Object value, long fallback, long min, long max) {
+        if (value == null) return fallback;
+        try {
+            long parsed = Long.parseLong(String.valueOf(value));
+            return Math.max(min, Math.min(max, parsed));
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private double doubleConfig(Object value, double fallback, double min, double max) {
+        if (value == null) return fallback;
+        try {
+            double parsed = Double.parseDouble(String.valueOf(value));
+            return Double.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private String contentTypeForPath(String path) {
+        String value = path == null ? "" : path.toLowerCase(java.util.Locale.ROOT);
+        if (value.endsWith(".pdf")) return "application/pdf";
+        if (value.endsWith(".json")) return "application/json";
+        if (value.endsWith(".png")) return "image/png";
+        if (value.endsWith(".jpg") || value.endsWith(".jpeg")) return "image/jpeg";
+        return "application/octet-stream";
+    }
+
     private RuleDbDatasource loadDbDatasource(Long datasourceId) {
         if (dbDatasourceService == null || datasourceId == null) {
             return null;
@@ -2086,6 +2246,20 @@ public class VariableSourceResolver {
         log.setTargetRefId(targetId);
         log.setTargetCode(resolveScriptName(variable));
         log.setTargetName(variable.getVarLabel());
+        if ("SFTP".equals(moduleType)) {
+            log.setDatasourceId(targetId);
+            Map<String, Object> request = requestBody instanceof Map<?, ?> raw
+                    ? parseNestedMap(raw) : Collections.emptyMap();
+            Object path = request.get("remotePath");
+            RuleSftpDatasource datasource = null;
+            try { datasource = sftpConnectPools == null || targetId == null ? null : sftpConnectPools.cachedDatasource(targetId); }
+            catch (RuntimeException ignored) { }
+            if (datasource != null) {
+                log.setRequestUrl("sftp://" + datasource.getHost() + ":" + datasource.getPort()
+                        + (path == null || String.valueOf(path).startsWith("/") ? String.valueOf(path == null ? "" : path)
+                        : "/" + path));
+            }
+        }
         log.setSuccess(errorMessage == null ? 1 : 0);
         log.setRequestMethod(resolveRuntimeLogMethod(moduleType));
         log.setResponseStatus(errorMessage == null ? 200 : 500);
@@ -2150,6 +2324,9 @@ public class VariableSourceResolver {
         }
         if ("LIST".equals(moduleType)) {
             return "MATCH";
+        }
+        if ("SFTP".equals(moduleType)) {
+            return "SFTP";
         }
         return "HTTP";
     }
@@ -2226,7 +2403,7 @@ public class VariableSourceResolver {
         if (!hasText(strategy)) {
             strategy = "ERROR";
         }
-        if ("SKIP".equals(strategy)) {
+        if ("SKIP".equals(strategy) || "IGNORE".equals(strategy)) {
             return false;
         }
         if ("BREAK".equals(strategy)) {

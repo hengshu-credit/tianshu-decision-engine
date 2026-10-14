@@ -103,6 +103,7 @@ export function buildReferenceCatalog(variables = [], objectTree = [], models = 
           recordResult: field.recordResult === true || source?.recordResult === true,
           objectCode,
           objectId: object.id,
+          objectVersion: object.currentVersion ?? object.version,
           objectRawCode: object.objectCode || '',
           objectLabel
         }

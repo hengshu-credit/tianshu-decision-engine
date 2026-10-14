@@ -66,20 +66,55 @@ public class RuleExecuteServiceTest {
         ReflectionTestUtils.setField(service, "billingService", billing);
         ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
         RulePublished published = new RulePublished();
-        published.setDefinitionId(10L); published.setRevisionId(33L); published.setArtifactId(501L);
+        published.setDefinitionId(10L); published.setVersion(4); published.setRevisionId(33L); published.setArtifactId(501L);
         published.setArtifactDigest("frozen"); published.setRuleCode("RISK_RULE"); published.setProjectCode("bound_project");
         published.setModelType("SCRIPT"); published.setModelJson(snapshot.getModelJson()); published.setCompiledScript("frozenScore");
         var identity = new com.hengshucredit.rule.model.dto.RuleTestExecutionIdentity();
         identity.setDefinitionId("10"); identity.setSourceType("REVISION"); identity.setSourceId("33");
+        identity.setVersionNo(4); identity.setRevisionId("33"); identity.setArtifactDigest("frozen");
         var target = new RuleTestTargetResolver.Target(definitions.getById(10L), 7L, snapshot.getModelJson(), "SCRIPT", "frozenScore",
                 new RuleFieldAnalyzer.ResolvedFields(List.of(), List.of()), published, snapshot, identity);
         RuleResult result = service.testExecuteTarget(target, Map.of());
         assertTrue(result.getErrorMessage(), result.isSuccess());
         assertEquals(1, billing.count);
         assertEquals(Long.valueOf(7L), logs.saved.getExecutionProjectId());
+        assertEquals(Integer.valueOf(4), logs.saved.getRuleVersion());
+        assertEquals(Long.valueOf(33L), logs.saved.getRevisionId());
+        assertEquals("frozen", logs.saved.getArtifactDigest());
+        assertEquals("frozen", result.getArtifactDigest());
         assertNotNull("关联全局规则的测试必须保留所选项目的真实计费归属", billing.authContext);
         assertEquals(Long.valueOf(7L), billing.authContext.getProjectId());
         assertEquals("bound_project", billing.authContext.getProjectCode());
+    }
+
+    @Test public void revisionTestLogKeepsSelectedBusinessVersionAttribution() {
+        RuleExecuteService service = newService();
+        RecordingLogService logs = new RecordingLogService();
+        RecordingBillingService billing = new RecordingBillingService();
+        ReflectionTestUtils.setField(service, "qlExpressEngine", new QLExpressEngine());
+        ReflectionTestUtils.setField(service, "definitionService", new FakeDefinitionService());
+        ReflectionTestUtils.setField(service, "projectService", new FakeProjectService());
+        ReflectionTestUtils.setField(service, "logService", logs);
+        ReflectionTestUtils.setField(service, "billingService", billing);
+        ReflectionTestUtils.setField(service, "functionService", new FakeFunctionService());
+        ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
+        ReflectionTestUtils.setField(service, "variableSourceResolver", new PassThroughVariableResolver());
+        ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(service, "runtimeRuleInvoker", new NoOpRuntimeInvoker());
+        var identity = new com.hengshucredit.rule.model.dto.RuleTestExecutionIdentity();
+        identity.setDefinitionId("10"); identity.setSourceType("VERSION"); identity.setSourceId("90");
+        identity.setRevisionId("33"); identity.setVersionNo(4); identity.setArtifactDigest("frozen");
+        var target = new RuleTestTargetResolver.Target(new FakeDefinitionService().getById(10L), 1L,
+                "{\"script\":\"1\"}", "SCRIPT", "1",
+                new RuleFieldAnalyzer.ResolvedFields(List.of(), List.of()), null, null, identity);
+
+        RuleResult result = service.testExecuteTarget(target, Map.of());
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals(Integer.valueOf(4), logs.saved.getRuleVersion());
+        assertEquals(Long.valueOf(33L), logs.saved.getRevisionId());
+        assertEquals("frozen", logs.saved.getArtifactDigest());
+        assertEquals("frozen", result.getArtifactDigest());
     }
 
     @Test public void unsavedPreviewCollectsItsOwnOutputFieldsInsteadOfTheSavedProjection() {

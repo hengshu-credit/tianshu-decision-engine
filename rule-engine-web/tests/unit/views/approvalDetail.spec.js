@@ -70,6 +70,25 @@ import { clearCurrentUser, setCurrentUser } from '@/security/permissionState'
 import ApprovalDetail from '@/views/approval/ApprovalDetail.vue'
 
 describe('统一审批详情', () => {
+  test('引用位置解析内嵌 JSON、条件名称和脚本行列，不只显示技术偏移', async () => {
+    const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
+    await flushPromises()
+    wrapper.vm.detail = {
+      ...wrapper.vm.detail,
+      request: {
+        ...wrapper.vm.detail.request,
+        submittedSnapshotJson: JSON.stringify({ content: { modelJson: JSON.stringify({
+          rules: [{ name: '高风险客户', conditions: [{ label: '年龄条件', leftOperand: { kind: 'REFERENCE', refId: 7 } }] }],
+          script: '\nreturn resourceVersionValue("VARIABLE",7,"BUSINESS_VERSION:81", "");',
+        }) } })
+      }
+    }
+    await wrapper.vm.$nextTick()
+    expect(wrapper.vm.dependencyReferenceLabel({ referencePath: '$.content.modelJson[json].rules[0].conditions[0].leftOperand.refId' })).toContain('高风险客户')
+    expect(wrapper.vm.dependencyReferenceLabel({ referencePath: '$.content.modelJson[json].rules[0].conditions[0].leftOperand.refId' })).toContain('年龄条件')
+    expect(wrapper.vm.dependencyReferenceLabel({ referencePath: '$.content.modelJson[json].script@8' })).toContain('第 2 行')
+    wrapper.unmount()
+  })
   test('依赖问题优先显示业务状态和处理建议，技术路径只作辅助定位', async () => {
     const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
     await flushPromises()
