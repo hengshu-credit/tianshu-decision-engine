@@ -81,12 +81,18 @@ public class ProductionConfigurationContractTest {
         Assert.assertTrue(appCompose.contains("runtime-http:"));
         Assert.assertTrue(appCompose.contains("runtime-sdk:"));
         Assert.assertTrue(appCompose.contains("./runtime"));
+        Assert.assertTrue(appCompose.contains("RUNTIME_RULE_SERVER_URL:?Set RUNTIME_RULE_SERVER_URL"));
+        Assert.assertFalse(appCompose.contains("RUNTIME_RULE_SERVER_URL:-http://server:8080"));
+        Assert.assertTrue(appCompose.contains("SERVER_PUBLIC_BIND_ADDRESS"));
         Assert.assertTrue(fullCompose.contains("mysql:"));
         Assert.assertTrue(fullCompose.contains("redis:"));
         Assert.assertFalse(fullCompose.contains("mysql-init:"));
         Assert.assertTrue(fullCompose.contains("condition: service_healthy"));
         Assert.assertTrue(fullCompose.contains("  http:"));
         Assert.assertTrue(fullCompose.contains("  sdk:"));
+        Assert.assertTrue(fullCompose.contains("RUNTIME_RULE_SERVER_URL:?Set RUNTIME_RULE_SERVER_URL"));
+        Assert.assertFalse(fullCompose.contains("RUNTIME_RULE_SERVER_URL:-http://server:8080"));
+        Assert.assertTrue(fullCompose.contains("SERVER_PUBLIC_BIND_ADDRESS"));
         Assert.assertTrue(fullCompose.contains("example-data-import:"));
         Assert.assertTrue(fullCompose.contains("profiles: [example-data]"));
         Assert.assertTrue(mysqlCompose.contains("example-data-import:"));

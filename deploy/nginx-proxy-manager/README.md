@@ -7,7 +7,9 @@
 - 控制台：`web:80`（NPM 与 Compose 在同一个 Docker 网络），或宿主机 `127.0.0.1:9090`
 - 项目 HTTP runtime：`http:7070`（同网络），或宿主机 `127.0.0.1:7070`
 - SDK runtime：默认只供内网使用，使用 `sdk:7071` 或宿主机 `127.0.0.1:7071`
-- 管理后端：由 web 容器内部的 Docker DNS upstream 发现 `server` 的多个副本；不要把 server 8080 端口映射到宿主机。
+- 管理后端：由 web 容器内部的 Docker DNS upstream 发现 `server` 的多个副本；不要把 server 容器的 8080 端口直接映射到宿主机，IP+端口入口应使用 web 的 8080 监听。
+
+运行时的 `RULE_SERVER_URL` 使用服务端实际可访问的地址，不填写 Compose 内部的 `server:8080`：同机或内网客户端填写 `http://<服务端IP>:<SERVER_PUBLIC_PORT>`，跨机器客户端填写 NPM 配置的 `https://api.example.com` 或服务端 IP+端口。Compose 已将 web 的 8080 入口映射为 `SERVER_PUBLIC_BIND_ADDRESS:SERVER_PUBLIC_PORT`，该入口由 web 负载均衡到所有 server 副本。
 
 如果 NPM 是独立 Docker Compose，执行 `docker network connect tianshu-engine <npm-container>`，或把 NPM Compose 加入名为 `${DEPLOY_PROJECT}-engine` 的 external network。
 

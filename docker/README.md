@@ -133,7 +133,7 @@ docker run -d \
   java -jar /opt/tianshu/runtime/server.jar
 ```
 
-如果 Nginx 容器与 server 在同一 `tianshu-app` 网络，前端代理地址使用 `http://tianshu-server:8080`，不需要经过宿主机端口。
+运行时的 `RULE_SERVER_URL` 不使用 Compose 内部的 `server` 服务名。请填写客户端能够实际访问的服务端 IP+端口，例如 `http://192.168.1.10:8080`；跨机器部署时也可以填写 Nginx Proxy Manager 提供的 `https://api.example.com`。
 
 ### 3. 启动 HTTP/SDK runtime（可选）
 
@@ -145,7 +145,7 @@ docker run -d \
   --env-file /opt/tianshu/runtime/.env \
   -e SPRING_PROFILES_ACTIVE=http \
   -e SERVER_PORT=7070 \
-  -e RULE_SERVER_URL=http://tianshu-server:8080 \
+  -e RULE_SERVER_URL=http://192.168.1.10:8080 \
   -p 7070:7070 \
   -v /opt/tianshu/runtime/runtime.jar:/app/app.jar:ro \
   eclipse-temurin:17-jre-jammy java -jar /app/app.jar
@@ -155,7 +155,7 @@ SDK runtime 使用同样的命令，把容器名、profile 和端口改为 `tian
 
 ### 4. 启动 Nginx 容器
 
-先把下面配置保存为 `/opt/tianshu/nginx/default.conf`。其中 `proxy_pass` 使用同一 `tianshu-app` 网络中的 `http://tianshu-server:8080`，并保留 Monaco 编辑器资源重写：
+先把下面配置保存为 `/opt/tianshu/nginx/default.conf`。其中 `proxy_pass` 使用服务端实际可访问的 `http://192.168.1.10:8080`，并保留 Monaco 编辑器资源重写：
 
 ```nginx
 server {
@@ -165,7 +165,7 @@ server {
     index index.html;
 
     location /api/ {
-        proxy_pass http://tianshu-server:8080;
+        proxy_pass http://192.168.1.10:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

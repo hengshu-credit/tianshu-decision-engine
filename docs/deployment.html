@@ -597,7 +597,7 @@ docker logs --tail 200 tianshu-server
 <p>后端必须等待 <code>readiness</code> 返回 <code>UP</code> 后再接收业务流量；它会检查数据库、Redis、ONNX 和已发布规则预热状态。发布更新时，在宿主机替换 <code>/opt/tianshu/server/rule-engine-server.jar</code>，然后执行 <code>docker restart tianshu-server</code>；不要重新构建运行时镜像。后管更新时把新 <code>dist</code> 内容同步到 <code>/opt/tianshu/console/dist/</code>，再执行 <code>docker exec tianshu-console nginx -s reload</code>。文件同步完成前不要删除旧目录，避免用户拿到不完整的静态资源。</p>
 </section>
 <section class="manual-section deployment-section" id="compose" data-search="Docker Compose 部署方案包括外接数据库 Compose 和自带数据库 Compose；docker-compose.mysql.yml、docker-compose.redis.yml 只提供可选依赖；docker-compose.yml 只启动 server、HTTP runtime、SDK runtime、web，docker-compose.full.yml 启动 MySQL、Redis 和全部应用；schema.sql 由 server 启动时幂等执行；示例数据仅在 example-data profile 中导入 docker/rule-engine-mysql/data-tianshu-example.sql。"><h2>三、Docker Compose 一体化部署</h2>
-<p>部署制品统一放在 docker/runtime：server.jar、runtime.jar 和前端 dist/。MySQL、Redis 配置、数据、日志和示例数据脚本分别放在 docker/rule-engine-mysql/、docker/rule-engine-redis/；子目录不再保留重复的 Compose。外部数据库 Compose 只启动应用，完整 Compose 启动全部服务，schema.sql 由 server 启动时自动执行。</p>
+<p>部署制品统一放在 docker/runtime：server.jar、runtime.jar 和前端 dist/。MySQL、Redis 配置、数据、日志和示例数据脚本分别放在 docker/rule-engine-mysql/、docker/rule-engine-redis/；子目录不再保留重复的 Compose。外部数据库 Compose 只启动应用，完整 Compose 启动全部服务，schema.sql 由 server 启动时自动执行。</p><p>运行时的 <code>RULE_SERVER_URL</code> 必须填写客户端实际可访问的服务端地址：同机或内网使用服务端 IP+<code>SERVER_PUBLIC_PORT</code>，跨机器可使用 Nginx Proxy Manager 配置的 HTTPS 域名或服务端 IP+端口。Compose 不再把 Docker 内部的 <code>server:8080</code> 作为隐式默认值。</p>
 <pre><code class="language-text">docker/
 ├── docker-compose.yml
 ├── docker-compose.mysql.yml
@@ -807,7 +807,7 @@ curl -fsS http://127.0.0.1:8080/actuator/health/readiness
 </section>
 <section class="manual-section deployment-section" id="sdk" data-search="业务系统 SDK 集成 外部客户优先使用 纯 HTTP SDK 与离线 tar 包 。以下配置属于完整 SDK rule-engine-client-sdk ；HTTP-only SDK 不使用 Redis、规则同步、本地执行和本地日志上报。 从业务 HTTP 接口到引擎结果返回的完整示例、全局规则关联、多项目客户端及日志开关语义见 Java 业务服务接入指南 。 业务系统引入 rule-engine-client-sdk 后，可继续使用项目原有访问令牌，也可按项目配置账号密码、API Key 或 HMAC-SHA256。非旧令牌方式默认先调用 /api/rule/auth/token 换取短期 Bearer Token，再同步或执行规则；调用方不需要也不能传 authCode ，服务端会根据凭证自动识别鉴权配置。 rule-engine:
   client:
-    server-url: http://localhost:8080
+    server-url: http://192.168.1.10:8080
     app-name: your-service-name
     project-code: your-project-code
     token: &lt;项目访问令牌&gt;
@@ -820,7 +820,7 @@ curl -fsS http://127.0.0.1:8080/actuator/health/readiness
     # 规则依赖 API/DB/名单变量时必须开启服务端执行
     server-side-execution: true project-code 是项目级实时推送和项目函数隔离的必填路由键，必须与服务端项目编码完全一致； app-name 只标识调用应用，不会替代 project-code 订阅项目频道。未配置 project-code 时 SDK 仍可通过 HTTP 同步并接收 GLOBAL 广播，但不会订阅任何项目频道，因此不能获得项目规则/函数的实时变更。 账号密码方式示例（默认 Token 有效期 2 小时、失效后宽限 10 分钟，均可在项目鉴权配置中调整）： rule-engine:
   client:
-    server-url: http://localhost:8080
+    server-url: http://192.168.1.10:8080
     app-name: your-service-name
     project-code: your-project-code
     auth-type: BASIC
@@ -844,7 +844,7 @@ curl -X POST http://localhost:8080/api/rule/sync/execute/RC_PRICING_TABLE \
 <p>业务系统引入 <code>rule-engine-client-sdk</code> 后，可继续使用项目原有访问令牌，也可按项目配置账号密码、API Key 或 HMAC-SHA256。非旧令牌方式默认先调用 <code>/api/rule/auth/token</code> 换取短期 Bearer Token，再同步或执行规则；调用方不需要也不能传 <code>authCode</code>，服务端会根据凭证自动识别鉴权配置。</p>
 <pre><code class="language-yaml">rule-engine:
   client:
-    server-url: http://localhost:8080
+    server-url: http://192.168.1.10:8080
     app-name: your-service-name
     project-code: your-project-code
     token: &lt;项目访问令牌&gt;
@@ -861,7 +861,7 @@ curl -X POST http://localhost:8080/api/rule/sync/execute/RC_PRICING_TABLE \
 <p>账号密码方式示例（默认 Token 有效期 2 小时、失效后宽限 10 分钟，均可在项目鉴权配置中调整）：</p>
 <pre><code class="language-yaml">rule-engine:
   client:
-    server-url: http://localhost:8080
+    server-url: http://192.168.1.10:8080
     app-name: your-service-name
     project-code: your-project-code
     auth-type: BASIC

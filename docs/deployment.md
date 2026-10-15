@@ -361,6 +361,8 @@ docker logs --tail 200 tianshu-server
 
 部署制品统一放在 docker/runtime：server.jar、runtime.jar 和前端 dist/。MySQL、Redis 配置、数据、日志和示例数据脚本分别放在 docker/rule-engine-mysql/、docker/rule-engine-redis/；子目录不再保留重复的 Compose。外部数据库 Compose 只启动应用，完整 Compose 启动全部服务，schema.sql 由 server 启动时自动执行。
 
+运行时的 RULE_SERVER_URL 必须填写客户端实际可访问的服务端地址：同机或内网使用服务端 IP+SERVER_PUBLIC_PORT，跨机器可使用 Nginx Proxy Manager 配置的 HTTPS 域名或服务端 IP+端口。Compose 不再把 Docker 内部的 server:8080 作为隐式默认值。
+
 ```text
 docker/
 ├── docker-compose.yml
@@ -644,7 +646,7 @@ curl -fsS http://127.0.0.1:8080/actuator/health/readiness
 ```yaml
 rule-engine:
   client:
-    server-url: http://localhost:8080
+    server-url: http://192.168.1.10:8080
     app-name: your-service-name
     project-code: your-project-code
     token: <项目访问令牌>
@@ -665,7 +667,7 @@ rule-engine:
 ```yaml
 rule-engine:
   client:
-    server-url: http://localhost:8080
+    server-url: http://192.168.1.10:8080
     app-name: your-service-name
     project-code: your-project-code
     auth-type: BASIC
