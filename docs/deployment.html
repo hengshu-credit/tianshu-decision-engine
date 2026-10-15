@@ -597,7 +597,7 @@ docker logs --tail 200 tianshu-server
 <p>后端必须等待 <code>readiness</code> 返回 <code>UP</code> 后再接收业务流量；它会检查数据库、Redis、ONNX 和已发布规则预热状态。发布更新时，在宿主机替换 <code>/opt/tianshu/server/rule-engine-server.jar</code>，然后执行 <code>docker restart tianshu-server</code>；不要重新构建运行时镜像。后管更新时把新 <code>dist</code> 内容同步到 <code>/opt/tianshu/console/dist/</code>，再执行 <code>docker exec tianshu-console nginx -s reload</code>。文件同步完成前不要删除旧目录，避免用户拿到不完整的静态资源。</p>
 </section>
 <section class="manual-section deployment-section" id="compose" data-search="Docker Compose 部署方案包括外接数据库 Compose 和自带数据库 Compose；docker-compose.mysql.yml、docker-compose.redis.yml 只提供可选依赖；docker-compose.yml 只启动 server、HTTP runtime、SDK runtime、web，docker-compose.full.yml 启动 MySQL、Redis 和全部应用；schema.sql 由 server 启动时幂等执行；示例数据仅在 example-data profile 中导入 docker/rule-engine-mysql/data-tianshu-example.sql。"><h2>三、Docker Compose 一体化部署</h2>
-<p>部署制品统一放在 docker/tianshu-decision-engine-runtime：server.jar、runtime.jar 和前端 dist/。MySQL、Redis 配置、数据、日志和示例数据脚本分别放在 docker/rule-engine-mysql/、docker/rule-engine-redis/；子目录不再保留重复的 Compose。外部数据库 Compose 只启动应用，完整 Compose 启动全部服务，schema.sql 由 server 启动时自动执行。</p>
+<p>部署制品统一放在 docker/runtime：server.jar、runtime.jar 和前端 dist/。MySQL、Redis 配置、数据、日志和示例数据脚本分别放在 docker/rule-engine-mysql/、docker/rule-engine-redis/；子目录不再保留重复的 Compose。外部数据库 Compose 只启动应用，完整 Compose 启动全部服务，schema.sql 由 server 启动时自动执行。</p>
 <pre><code class="language-text">docker/
 ├── docker-compose.yml
 ├── docker-compose.mysql.yml
@@ -605,9 +605,9 @@ docker logs --tail 200 tianshu-server
 ├── docker-compose.full.yml
 ├── rule-engine-mysql/                 # conf.d/、data/、logs/
 ├── rule-engine-redis/                 # redis.conf、data/、logs/
-└── tianshu-decision-engine-runtime/   # server.jar、runtime.jar、dist/
+└── runtime/   # server.jar、runtime.jar、dist/
 </code></pre>
-<p>以下命令从仓库根目录执行，<code>.env</code> 仍保留在仓库根目录。Compose 的相对挂载路径以 <code>docker/</code> 为基准，因此 <code>RUNTIME_DIR</code> 默认填 <code>./tianshu-decision-engine-runtime</code>，也可改为宿主机绝对路径。</p>
+<p>以下命令从仓库根目录执行，<code>.env</code> 仍保留在仓库根目录。Compose 的相对挂载路径以 <code>docker/</code> 为基准，因此 <code>RUNTIME_DIR</code> 默认填 <code>./runtime</code>，也可改为宿主机绝对路径。</p>
 <h3>3.1 启动方式</h3>
 <p>四种方式彼此独立，按部署环境选择一种即可：</p>
 <p><strong>0. 只启动 MySQL/Redis。</strong> 可以使用本项目提供的独立 Compose，也可以使用已有远程实例。独立容器默认发布到宿主机全部网卡，使用 <code>MYSQL_HOST_PORT</code>、<code>REDIS_HOST_PORT</code> 调整端口，防火墙只放行可信网段；应用连接远程实例时把 <code>MYSQL_HOST</code>、<code>REDIS_HOST</code> 改成容器可以访问的域名或 IP。</p>
@@ -621,14 +621,14 @@ docker compose --env-file .env -f docker/docker-compose.redis.yml up -d
 <p><strong>1.2 JAR + Nginx。</strong> 编译后将三个 JAR/前端产物分别启动；SDK 与 HTTP 使用各自端口和 profile，前端由 Nginx 指向 <code>dist/</code>。</p>
 <pre><code class="language-powershell">mvn clean package -DskipTests
 cd rule-engine-web; npm ci; npm run build
-Copy-Item rule-engine-server/target/rule-engine-server-*.jar docker/tianshu-decision-engine-runtime/server.jar
-Copy-Item rule-engine-runtime/target/rule-engine-runtime-*.jar docker/tianshu-decision-engine-runtime/runtime.jar
-New-Item -ItemType Directory -Force docker/tianshu-decision-engine-runtime/dist | Out-Null
-Copy-Item rule-engine-web/dist/* docker/tianshu-decision-engine-runtime/dist -Recurse -Force
+Copy-Item rule-engine-server/target/rule-engine-server-*.jar docker/runtime/server.jar
+Copy-Item rule-engine-runtime/target/rule-engine-runtime-*.jar docker/runtime/runtime.jar
+New-Item -ItemType Directory -Force docker/runtime/dist | Out-Null
+Copy-Item rule-engine-web/dist/* docker/runtime/dist -Recurse -Force
 # 分别在三个终端执行：
-java -jar docker/tianshu-decision-engine-runtime/server.jar
-java -Dspring.profiles.active=http -Dserver.port=7070 -DRULE_SERVER_URL=http://127.0.0.1:8080 -jar docker/tianshu-decision-engine-runtime/runtime.jar
-java -Dspring.profiles.active=sdk -Dserver.port=7071 -DRULE_SERVER_URL=http://127.0.0.1:8080 -jar docker/tianshu-decision-engine-runtime/runtime.jar
+java -jar docker/runtime/server.jar
+java -Dspring.profiles.active=http -Dserver.port=7070 -DRULE_SERVER_URL=http://127.0.0.1:8080 -jar docker/runtime/runtime.jar
+java -Dspring.profiles.active=sdk -Dserver.port=7071 -DRULE_SERVER_URL=http://127.0.0.1:8080 -jar docker/runtime/runtime.jar
 </code></pre>
 <p>Nginx 的 <code>root</code> 指向 <code>rule-engine-web/dist</code>，<code>/api/</code> 反向代理到 <code>http://127.0.0.1:8080</code>；JAR 更新采用临时文件原子替换后逐个重启，避免读取半写入文件。</p>
 <p><strong>1.3 Docker 应用 + 外部 MySQL/Redis。</strong> 只需要准备 JAR/dist 和一份 <code>.env</code>，将 <code>MYSQL_HOST</code>、<code>REDIS_HOST</code> 配置为远程地址；本文件不创建或依赖 MySQL/Redis Compose 服务。</p>
@@ -644,7 +644,7 @@ docker compose --env-file .env -f docker/docker-compose.full.yml ps
 <h3>3.2 构建制品</h3>
 <pre><code class="language-powershell">node scripts/package-runtime.mjs
 </code></pre>
-<p>脚本会构建后端和前端，并清理后重新生成 <code>docker/tianshu-decision-engine-runtime</code>。复制到服务器时至少带上 <code>docker/docker-compose*.yml</code>、该运行时目录、<code>docker/rule-engine-mysql/data-tianshu-example.sql</code> 和填写完成的 <code>.env</code>；server 会从 JAR 内读取 <code>schema.sql</code>，不再依赖源码目录。</p>
+<p>脚本会构建后端和前端，并清理后重新生成 <code>docker/runtime</code>。复制到服务器时至少带上 <code>docker/docker-compose*.yml</code>、该运行时目录、<code>docker/rule-engine-mysql/data-tianshu-example.sql</code> 和填写完成的 <code>.env</code>；server 会从 JAR 内读取 <code>schema.sql</code>，不再依赖源码目录。</p>
 <pre><code class="language-powershell">docker compose --profile example-data --env-file .env -f docker/docker-compose.full.yml up -d
 </code></pre>
 <p>示例数据脚本在最前面设置 <code>utf8mb4</code> 编码，只使用 <code>INSERT IGNORE</code>，不会删除数据、更新已有记录或重建表。</p>

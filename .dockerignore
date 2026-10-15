@@ -10,7 +10,7 @@ rule-engine-web/dist
 rule-engine-web/test-results
 docker/rule-engine-mysql/data
 docker/rule-engine-redis/data
-docker/tianshu-decision-engine-runtime
+docker/runtime
 **/logs
 *.log
 *.tmp

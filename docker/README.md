@@ -33,7 +33,7 @@ node scripts/package-deployment.mjs
 
 该脚本使用 Maven、Node.js 和 zip 容器构建，不依赖宿主机的 JDK、Maven 或前端 `node_modules`；产物位于 `output/tianshu-deployment-*.zip`。
 
-生成目录为 `docker/tianshu-decision-engine-runtime/`：
+生成目录为 `docker/runtime/`：
 
 ```text
 server.jar       管理端 API
@@ -74,7 +74,7 @@ SESSION_COOKIE_SECURE=true
 
 ```bash
 # 在仓库根目录运行，确保根目录 .env 被 Spring Boot 读取
-java -jar docker/tianshu-decision-engine-runtime/server.jar
+java -jar docker/runtime/server.jar
 ```
 
 生产环境建议使用 systemd、Windows 服务或其他进程管理器。server readiness 返回 `UP` 后再接收流量：
@@ -91,17 +91,17 @@ curl -i http://127.0.0.1:8080/actuator/health/readiness
 ```bash
 java -Dspring.profiles.active=http -Dserver.port=7070 \
   -DRULE_SERVER_URL=http://127.0.0.1:8080 \
-  -jar docker/tianshu-decision-engine-runtime/runtime.jar
+  -jar docker/runtime/runtime.jar
 java -Dspring.profiles.active=sdk -Dserver.port=7071 \
   -DRULE_SERVER_URL=http://127.0.0.1:8080 \
-  -jar docker/tianshu-decision-engine-runtime/runtime.jar
+  -jar docker/runtime/runtime.jar
 ```
 
 两个 runtime 的项目凭证、规则白名单和访问令牌通过环境变量或 `.env` 注入；生产环境不要把示例令牌直接用于业务流量。
 
 ### 4. 启动前端
 
-Nginx 的 `/api/` 反向代理到 `http://127.0.0.1:8080`，静态根目录指向 `docker/tianshu-decision-engine-runtime/dist`。必须保留 Monaco 的 `dist/vs/` 目录，并配置 `/vs/css!vs/`、`/vs/nls!vs/` 重写；完整配置见 `docs/deployment.md` 的 Nginx 示例。
+Nginx 的 `/api/` 反向代理到 `http://127.0.0.1:8080`，静态根目录指向 `docker/runtime/dist`。必须保留 Monaco 的 `dist/vs/` 目录，并配置 `/vs/css!vs/`、`/vs/nls!vs/` 重写；完整配置见 `docs/deployment.md` 的 Nginx 示例。
 
 更新时先替换 JAR 或 `dist`，再重启 Java 服务或 reload Nginx。不要在运行中的 JAR 文件上直接覆盖写入。
 
@@ -116,7 +116,7 @@ docker network create tianshu-app
 mkdir -p /opt/tianshu/runtime /opt/tianshu/nginx
 ```
 
-把 `docker/tianshu-decision-engine-runtime/` 复制到 `/opt/tianshu/runtime/`，并把 server 配置保存为 `/opt/tianshu/runtime/.env`。容器内连接宿主机依赖时，Linux 需要使用 `host.docker.internal` 并通过 `--add-host` 映射；云数据库直接填写容器可访问的地址。
+把 `docker/runtime/` 复制到 `/opt/tianshu/runtime/`，并把 server 配置保存为 `/opt/tianshu/runtime/.env`。容器内连接宿主机依赖时，Linux 需要使用 `host.docker.internal` 并通过 `--add-host` 映射；云数据库直接填写容器可访问的地址。
 
 ### 2. 启动 server 容器
 
@@ -221,7 +221,7 @@ MYSQL_HOST=host.docker.internal
 MYSQL_PORT=3306
 REDIS_HOST=host.docker.internal
 REDIS_PORT=6379
-RUNTIME_DIR=./tianshu-decision-engine-runtime
+RUNTIME_DIR=./runtime
 ```
 
 云数据库或远程 Redis 直接把 `MYSQL_HOST`、`MYSQL_PORT`、`REDIS_HOST`、`REDIS_PORT` 改为容器可访问的域名/IP。启动：

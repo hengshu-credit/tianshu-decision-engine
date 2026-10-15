@@ -29,7 +29,7 @@ x-runtime: &runtime
   <<: *java
   volumes:
     - type: bind
-      source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/runtime.jar
+      source: ${RUNTIME_DIR:-./runtime}/runtime.jar
       target: /app/app.jar
       read_only: true
       bind:
@@ -80,7 +80,7 @@ services:
       RULE_LIST_ACTION_JOURNAL_DIR: /data/logs/list-action-journal
     volumes:
       - type: bind
-        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/server.jar
+        source: ${RUNTIME_DIR:-./runtime}/server.jar
         target: /app/app.jar
         read_only: true
         bind:
@@ -123,7 +123,7 @@ services:
       LOGGING_LEVEL_ROOT: ${RUNTIME_LOG_LEVEL:-INFO}
     volumes:
       - type: bind
-        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/runtime.jar
+        source: ${RUNTIME_DIR:-./runtime}/runtime.jar
         target: /app/app.jar
         read_only: true
         bind:
@@ -179,7 +179,7 @@ services:
       LOGGING_LEVEL_ROOT: ${RUNTIME_LOG_LEVEL:-INFO}
     volumes:
       - type: bind
-        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/runtime.jar
+        source: ${RUNTIME_DIR:-./runtime}/runtime.jar
         target: /app/app.jar
         read_only: true
         bind:
@@ -206,7 +206,7 @@ services:
         condition: service_started
     volumes:
       - type: bind
-        source: ${RUNTIME_DIR:-./tianshu-decision-engine-runtime}/dist
+        source: ${RUNTIME_DIR:-./runtime}/dist
         target: /usr/share/nginx/html
         read_only: true
         bind:

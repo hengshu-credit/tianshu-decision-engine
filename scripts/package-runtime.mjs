@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const webRoot = path.join(root, 'rule-engine-web')
-const outputRoot = path.join(root, 'docker', 'tianshu-decision-engine-runtime')
+const outputRoot = path.join(root, 'docker', 'runtime')
 
 const command = name => process.platform === 'win32' ? `${name}.cmd` : name
 

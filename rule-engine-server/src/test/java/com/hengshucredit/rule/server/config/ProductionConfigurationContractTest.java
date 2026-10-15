@@ -80,7 +80,7 @@ public class ProductionConfigurationContractTest {
         Assert.assertTrue(appCompose.contains("REDIS_HOST:-host.docker.internal"));
         Assert.assertTrue(appCompose.contains("runtime-http:"));
         Assert.assertTrue(appCompose.contains("runtime-sdk:"));
-        Assert.assertTrue(appCompose.contains("./tianshu-decision-engine-runtime"));
+        Assert.assertTrue(appCompose.contains("./runtime"));
         Assert.assertTrue(fullCompose.contains("mysql:"));
         Assert.assertTrue(fullCompose.contains("redis:"));
         Assert.assertFalse(fullCompose.contains("mysql-init:"));

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const outputRoot = path.join(root, 'output')
-const runtimeRoot = path.join(root, 'docker', 'tianshu-decision-engine-runtime')
+const runtimeRoot = path.join(root, 'docker', 'runtime')
 const stageRoot = path.join(outputRoot, 'tianshu-deployment')
 const withTests = process.argv.includes('--with-tests') || process.env.PACKAGE_RUN_TESTS === 'true'
 const skipJavaBuild = process.env.PACKAGE_SKIP_JAVA === 'true'
@@ -108,7 +108,7 @@ function prepareStage() {
 try {
   const mavenBuild = [
     'rm -rf /tmp/tianshu-source && mkdir -p /tmp/tianshu-source',
-    "tar -C /workspace --exclude=.git --exclude=output --exclude=.worktrees --exclude=.codex-validation --exclude=.codex-run-logs --exclude=node_modules --exclude='*/node_modules' --exclude='*/target' --exclude='docker/rule-engine-mysql/data' --exclude='docker/rule-engine-mysql/logs' --exclude='docker/rule-engine-redis/data' --exclude='docker/rule-engine-redis/logs' --exclude='docker/tianshu-decision-engine-runtime/server.jar' --exclude='docker/tianshu-decision-engine-runtime/runtime.jar' --exclude='docker/tianshu-decision-engine-runtime/dist' --exclude='*.log' -cf - . | tar -C /tmp/tianshu-source -xf -",
+    "tar -C /workspace --exclude=.git --exclude=output --exclude=.worktrees --exclude=.codex-validation --exclude=.codex-run-logs --exclude=node_modules --exclude='*/node_modules' --exclude='*/target' --exclude='docker/rule-engine-mysql/data' --exclude='docker/rule-engine-mysql/logs' --exclude='docker/rule-engine-redis/data' --exclude='docker/rule-engine-redis/logs' --exclude='docker/runtime/server.jar' --exclude='docker/runtime/runtime.jar' --exclude='docker/runtime/dist' --exclude='*.log' -cf - . | tar -C /tmp/tianshu-source -xf -",
     'cd /tmp/tianshu-source',
     `mvn -B -P!onnx-gpu clean package -DskipTests -Donnxruntime.artifactId=onnxruntime${withTests ? ' && mvn -B -P!onnx-gpu test -Donnxruntime.artifactId=onnxruntime' : ''}`,
     'rm -rf /workspace/rule-engine-server/target /workspace/rule-engine-runtime/target',

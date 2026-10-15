@@ -359,7 +359,7 @@ docker logs --tail 200 tianshu-server
 
 ## 三、Docker Compose 一体化部署
 
-部署制品统一放在 docker/tianshu-decision-engine-runtime：server.jar、runtime.jar 和前端 dist/。MySQL、Redis 配置、数据、日志和示例数据脚本分别放在 docker/rule-engine-mysql/、docker/rule-engine-redis/；子目录不再保留重复的 Compose。外部数据库 Compose 只启动应用，完整 Compose 启动全部服务，schema.sql 由 server 启动时自动执行。
+部署制品统一放在 docker/runtime：server.jar、runtime.jar 和前端 dist/。MySQL、Redis 配置、数据、日志和示例数据脚本分别放在 docker/rule-engine-mysql/、docker/rule-engine-redis/；子目录不再保留重复的 Compose。外部数据库 Compose 只启动应用，完整 Compose 启动全部服务，schema.sql 由 server 启动时自动执行。
 
 ```text
 docker/
@@ -369,10 +369,10 @@ docker/
 ├── docker-compose.full.yml
 ├── rule-engine-mysql/                 # conf.d/、data/、logs/
 ├── rule-engine-redis/                 # redis.conf、data/、logs/
-└── tianshu-decision-engine-runtime/   # server.jar、runtime.jar、dist/
+└── runtime/   # server.jar、runtime.jar、dist/
 ```
 
-以下命令从仓库根目录执行，`.env` 仍保留在仓库根目录。Compose 的相对挂载路径以 `docker/` 为基准，因此 `RUNTIME_DIR` 默认填 `./tianshu-decision-engine-runtime`，也可改为宿主机绝对路径。
+以下命令从仓库根目录执行，`.env` 仍保留在仓库根目录。Compose 的相对挂载路径以 `docker/` 为基准，因此 `RUNTIME_DIR` 默认填 `./runtime`，也可改为宿主机绝对路径。
 
 ### 3.1 启动方式
 
@@ -398,14 +398,14 @@ node scripts/start-source.mjs
 ```powershell
 mvn clean package -DskipTests
 cd rule-engine-web; npm ci; npm run build
-Copy-Item rule-engine-server/target/rule-engine-server-*.jar docker/tianshu-decision-engine-runtime/server.jar
-Copy-Item rule-engine-runtime/target/rule-engine-runtime-*.jar docker/tianshu-decision-engine-runtime/runtime.jar
-New-Item -ItemType Directory -Force docker/tianshu-decision-engine-runtime/dist | Out-Null
-Copy-Item rule-engine-web/dist/* docker/tianshu-decision-engine-runtime/dist -Recurse -Force
+Copy-Item rule-engine-server/target/rule-engine-server-*.jar docker/runtime/server.jar
+Copy-Item rule-engine-runtime/target/rule-engine-runtime-*.jar docker/runtime/runtime.jar
+New-Item -ItemType Directory -Force docker/runtime/dist | Out-Null
+Copy-Item rule-engine-web/dist/* docker/runtime/dist -Recurse -Force
 # 分别在三个终端执行：
-java -jar docker/tianshu-decision-engine-runtime/server.jar
-java -Dspring.profiles.active=http -Dserver.port=7070 -DRULE_SERVER_URL=http://127.0.0.1:8080 -jar docker/tianshu-decision-engine-runtime/runtime.jar
-java -Dspring.profiles.active=sdk -Dserver.port=7071 -DRULE_SERVER_URL=http://127.0.0.1:8080 -jar docker/tianshu-decision-engine-runtime/runtime.jar
+java -jar docker/runtime/server.jar
+java -Dspring.profiles.active=http -Dserver.port=7070 -DRULE_SERVER_URL=http://127.0.0.1:8080 -jar docker/runtime/runtime.jar
+java -Dspring.profiles.active=sdk -Dserver.port=7071 -DRULE_SERVER_URL=http://127.0.0.1:8080 -jar docker/runtime/runtime.jar
 ```
 
 Nginx 的 `root` 指向 `rule-engine-web/dist`，`/api/` 反向代理到 `http://127.0.0.1:8080`；JAR 更新采用临时文件原子替换后逐个重启，避免读取半写入文件。
@@ -436,7 +436,7 @@ Ubuntu 公网部署使用 Nginx Proxy Manager 管理 HTTPS、证书和反向代�
 node scripts/package-runtime.mjs
 ```
 
-脚本会构建后端和前端，并清理后重新生成 `docker/tianshu-decision-engine-runtime`。复制到服务器时至少带上 `docker/docker-compose*.yml`、该运行时目录、`docker/rule-engine-mysql/data-tianshu-example.sql` 和填写完成的 `.env`；server 会从 JAR 内读取 `schema.sql`，不再依赖源码目录。
+脚本会构建后端和前端，并清理后重新生成 `docker/runtime`。复制到服务器时至少带上 `docker/docker-compose*.yml`、该运行时目录、`docker/rule-engine-mysql/data-tianshu-example.sql` 和填写完成的 `.env`；server 会从 JAR 内读取 `schema.sql`，不再依赖源码目录。
 
 默认启动不导入示例数据；需要导入时使用：
 
