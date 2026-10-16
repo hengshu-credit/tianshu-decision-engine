@@ -26,6 +26,9 @@ public class VariableResolutionInvocationCache {
             new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, CompletableFuture<SourceResolutionResult>> variableResults =
             new ConcurrentHashMap<>();
+    /** 同一根规则内共享的 SFTP 文件字节；不进入跨请求检查点，避免持久化文件内容。 */
+    private final ConcurrentHashMap<String, CompletableFuture<byte[]>> sftpFiles =
+            new ConcurrentHashMap<>();
     private final Map<String, HistoricalFieldDefinition> historyDefinitions = new ConcurrentHashMap<>();
     private final Map<String, HistoricalFieldDefinition> historyDefaults = new ConcurrentHashMap<>();
     private final Map<String, Object> fieldResults = new ConcurrentHashMap<>();
@@ -490,6 +493,35 @@ public class VariableResolutionInvocationCache {
 
     public SourceResolutionResult variableResult(String key) {
         return variableResults.get(key).join();
+    }
+
+    public boolean hasSftpFile(String key) {
+        CompletableFuture<byte[]> value = sftpFiles.get(key);
+        return value != null && value.isDone() && !value.isCompletedExceptionally();
+    }
+
+    public byte[] resolveSftpFile(String key, java.util.concurrent.Callable<byte[]> loader) throws Exception {
+        if (key == null || loader == null) throw new IllegalArgumentException("SFTP文件调用键和加载器不能为空");
+        CompletableFuture<byte[]> created = new CompletableFuture<>();
+        CompletableFuture<byte[]> existing = sftpFiles.putIfAbsent(key, created);
+        CompletableFuture<byte[]> shared = existing == null ? created : existing;
+        if (existing == null) {
+            try {
+                byte[] content = loader.call();
+                created.complete(content == null ? null : content.clone());
+            } catch (Throwable failure) {
+                created.completeExceptionally(failure);
+            }
+        }
+        try {
+            byte[] content = shared.join();
+            return content == null ? null : content.clone();
+        } catch (CompletionException failure) {
+            Throwable cause = failure.getCause();
+            if (cause instanceof Exception exception) throw exception;
+            if (cause instanceof Error error) throw error;
+            throw failure;
+        }
     }
 
     public boolean hasResponse(String key) {

@@ -1386,8 +1386,18 @@
             <el-input v-model="form.sftpRemotePath" placeholder="/contracts/${customerId}/contract.pdf" />
             <div class="field-help">支持 $.field 或 ${field} 引用请求参数；路径会在规则执行时从连接池读取。</div>
           </el-form-item>
+          <el-form-item label="业务文件地址">
+            <el-input v-model="form.sftpFileAddress" placeholder="$.contractFileUrl" />
+            <div class="field-help">业务系统只需传入 HTTP(S) 文件地址；规则执行前会下载并上传到下面的 SFTP 目标路径，不需要把 SFTP 凭据交给业务系统。</div>
+          </el-form-item>
+          <el-form-item label="上传目标路径">
+            <el-input v-model="form.sftpUploadRemotePath" placeholder="/contracts/${customerId}/contract.pdf" />
+            <div class="field-help">填写业务文件地址时必填；上传完成后引擎从该路径读取。目标目录需提前在 SFTP 创建。</div>
+          </el-form-item>
+          <el-form-item label="上传超时(ms)"><el-input-number v-model="form.sftpUploadTimeoutMs" :min="100" :max="300000" controls-position="right" style="width: 180px" /></el-form-item>
           <el-form-item label="输出格式">
             <el-select v-model="form.sftpOutputFormat" style="width: 180px"><el-option label="文本（TEXT）" value="TEXT" /><el-option label="Base64（BASE64）" value="BASE64" /><el-option label="JSON 对象（JSON）" value="JSON" /></el-select>
+            <span class="field-help">API 接口需要同一文件时，建议引用此变量并选择 BASE64；同一规则会复用已获取的文件字节。</span>
           </el-form-item>
           <el-form-item label="文本编码"><el-input v-model="form.sftpCharset" placeholder="UTF-8" style="width: 180px" /></el-form-item>
           <el-form-item label="读取失败时"><el-select v-model="form.sftpExceptionStrategy" style="width: 180px"><el-option label="抛出异常" value="ERROR" /><el-option label="返回默认值" value="RETURN_DEFAULT" /><el-option label="跳过补值" value="SKIP" /></el-select></el-form-item>
@@ -3287,6 +3297,9 @@ export default {
         dbFallbackValue: '',
         sftpDatasourceId: '',
         sftpRemotePath: '',
+        sftpFileAddress: '',
+        sftpUploadRemotePath: '',
+        sftpUploadTimeoutMs: 30000,
         sftpOutputFormat: 'TEXT',
         sftpCharset: 'UTF-8',
         sftpExceptionStrategy: 'ERROR',
@@ -3638,6 +3651,9 @@ export default {
         this.form.sftpCharset = config.charset || 'UTF-8'
         this.form.sftpExceptionStrategy = config.exceptionStrategy || 'ERROR'
         this.form.sftpFallbackValue = config.fallbackValue != null ? String(config.fallbackValue) : ''
+        this.form.sftpFileAddress = config.fileAddress || ''
+        this.form.sftpUploadRemotePath = config.uploadRemotePath || ''
+        this.form.sftpUploadTimeoutMs = config.uploadTimeoutMs ?? 30000
         this.form.sftpCacheSeconds = config.cacheSeconds ?? 0
         this.form.sftpRetryCount = config.retryCount ?? 2
         this.form.sftpRetryBackoffMs = config.retryBackoffMs ?? 200
@@ -3731,6 +3747,10 @@ export default {
           this.$message.warning('请输入远端文件路径')
           return null
         }
+        if (String(payload.sftpFileAddress || '').trim() && !String(payload.sftpUploadRemotePath || '').trim()) {
+          this.$message.warning('填写业务文件地址后，请配置上传目标路径')
+          return null
+        }
         payload.sourceConfig = JSON.stringify({
           sftpDatasourceId: payload.sftpDatasourceId,
           remotePath: payload.sftpRemotePath,
@@ -3738,6 +3758,9 @@ export default {
           charset: payload.sftpCharset || 'UTF-8',
           exceptionStrategy: payload.sftpExceptionStrategy || 'ERROR',
           fallbackValue: payload.sftpFallbackValue || null,
+          fileAddress: payload.sftpFileAddress || null,
+          uploadRemotePath: payload.sftpUploadRemotePath || null,
+          uploadTimeoutMs: payload.sftpUploadTimeoutMs ?? 30000,
           cacheSeconds: payload.sftpCacheSeconds ?? 0,
           retryCount: payload.sftpRetryCount ?? 2,
           retryBackoffMs: payload.sftpRetryBackoffMs ?? 200,
@@ -3817,6 +3840,9 @@ export default {
         'sftpCharset',
         'sftpExceptionStrategy',
         'sftpFallbackValue',
+        'sftpFileAddress',
+        'sftpUploadRemotePath',
+        'sftpUploadTimeoutMs',
         'sftpCacheSeconds',
         'sftpRetryCount',
         'sftpRetryBackoffMs',

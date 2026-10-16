@@ -310,6 +310,16 @@ public class VariableSourceReferenceValidator {
             issues.add(issue(variable, "VARIABLE_SOURCE_PATH_REQUIRED", "请填写远端文件路径",
                     "$.sourceConfig.remotePath"));
         }
+        boolean hasFileAddress = config.getString("fileAddress") != null
+                && !config.getString("fileAddress").isBlank();
+        String uploadPath = config.getString("uploadRemotePath");
+        if (hasFileAddress && (uploadPath == null || uploadPath.isBlank())) {
+            issues.add(issue(variable, "VARIABLE_SOURCE_UPLOAD_PATH_REQUIRED",
+                    "配置业务文件地址时必须填写 SFTP 上传目标路径；未填写时请清空业务文件地址",
+                    "$.sourceConfig.uploadRemotePath"));
+        }
+        validateIntegerRange(variable, config.get("uploadTimeoutMs"), 100, 300000,
+                "业务文件上传超时必须在 100 到 300000 毫秒之间", "$.sourceConfig.uploadTimeoutMs", issues);
         String format = config.getString("outputFormat");
         if (format != null && !List.of("TEXT", "BASE64", "JSON").contains(format.toUpperCase())) {
             issues.add(issue(variable, "VARIABLE_SOURCE_FORMAT_INVALID", "SFTP输出格式仅支持 TEXT、BASE64 或 JSON",

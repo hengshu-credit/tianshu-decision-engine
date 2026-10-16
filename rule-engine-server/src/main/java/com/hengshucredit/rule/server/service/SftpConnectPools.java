@@ -18,6 +18,9 @@ import java.io.InputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.net.SocketTimeoutException;
+import java.net.URI;
+import java.net.URL;
+import java.net.HttpURLConnection;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -42,6 +45,74 @@ public class SftpConnectPools implements DisposableBean {
 
     public byte[] readFile(Long datasourceId, String remotePath) throws Exception {
         return readFileWithRetry(datasourceId, remotePath, 2, 200, 2D).content();
+    }
+
+    public void uploadFile(Long datasourceId, String remotePath, byte[] content) throws Exception {
+        uploadFileWithRetry(datasourceId, remotePath, content, 2, 200, 2D);
+    }
+
+    public void uploadFileWithRetry(Long datasourceId, String remotePath, byte[] content, int retryCount,
+                                    long backoffMs, double backoffMultiplier) throws Exception {
+        if (content == null || content.length == 0) throw new IllegalArgumentException("待上传文件不能为空");
+        int retries = Math.max(0, Math.min(5, retryCount));
+        long delay = Math.max(0, Math.min(60000, backoffMs));
+        double multiplier = Math.max(1D, Math.min(5D, backoffMultiplier));
+        Exception last = null;
+        for (int attempt = 0; attempt <= retries; attempt++) {
+            try {
+                RequestDeadlineContext.check();
+                uploadFileOnce(datasourceId, remotePath, content);
+                return;
+            } catch (Exception failure) {
+                last = failure;
+                if (attempt >= retries || !isRetryable(failure)) throw failure;
+                RequestDeadlineContext.check();
+                if (delay > 0) {
+                    long sleepMs = Math.min(delay, Math.max(1, RequestDeadlineContext.remainingMillis()));
+                    try {
+                        Thread.sleep(sleepMs);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw interrupted;
+                    }
+                }
+                delay = Math.min(60000, Math.max(delay + 1, (long) Math.ceil(delay * multiplier)));
+            }
+        }
+        throw last == null ? new IllegalStateException("SFTP文件上传失败") : last;
+    }
+
+    /** 从业务系统提供的 HTTP(S) 地址读取文件，大小和超时均受本次配置限制。 */
+    public byte[] readFileAddress(String address, int maxBytes, int timeoutMs) throws Exception {
+        if (address == null || address.isBlank()) throw new IllegalArgumentException("业务文件地址不能为空");
+        URI uri = URI.create(address.trim());
+        if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
+                || uri.getHost() == null || uri.getUserInfo() != null) {
+            throw new IllegalArgumentException("业务文件地址仅支持合法 HTTP(S) URL");
+        }
+        int timeout = Math.max(100, Math.min(300000, timeoutMs));
+        HttpURLConnection connection = null;
+        try {
+            RequestDeadlineContext.check();
+            connection = (HttpURLConnection) new URL(uri.toString()).openConnection();
+            connection.setRequestMethod("GET");
+            connection.setRequestProperty("User-Agent", "Tianshu-Decision-Engine/1.0");
+            connection.setInstanceFollowRedirects(true);
+            int remaining = RequestDeadlineContext.remainingMillis();
+            int effectiveTimeout = Math.min(timeout, remaining == Integer.MAX_VALUE ? timeout : Math.max(100, remaining));
+            connection.setConnectTimeout(effectiveTimeout);
+            connection.setReadTimeout(effectiveTimeout);
+            connection.connect();
+            int status = connection.getResponseCode();
+            if (status < 200 || status >= 300) throw new IllegalArgumentException("业务文件下载失败，HTTP状态码：" + status);
+            long contentLength = connection.getContentLengthLong();
+            if (contentLength > maxBytes) throw new IllegalArgumentException("业务文件超过单文件读取上限：" + maxBytes + " 字节");
+            try (InputStream input = connection.getInputStream()) {
+                return readLimited(input, maxBytes);
+            }
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
     }
 
     public ReadResult readFileWithRetry(Long datasourceId, String remotePath, int retryCount,
@@ -92,6 +163,25 @@ public class SftpConnectPools implements DisposableBean {
         } catch (Exception e) {
             reusable = false;
             throw e;
+        } finally {
+            holder.release(pooled, reusable);
+        }
+    }
+
+    protected void uploadFileOnce(Long datasourceId, String remotePath, byte[] content) throws Exception {
+        if (datasourceId == null) throw new IllegalArgumentException("SFTP数据源ID不能为空");
+        SftpPoolHolder holder = pool(datasourceId);
+        String path = remotePath(remotePath, holder.datasource);
+        if (content == null || content.length > holder.datasource.getMaxFileSizeBytes()) {
+            throw new IllegalArgumentException("SFTP文件超过单文件读取上限：" + holder.datasource.getMaxFileSizeBytes() + " 字节");
+        }
+        PooledChannel pooled = holder.borrow();
+        boolean reusable = true;
+        try (InputStream input = new ByteArrayInputStream(content)) {
+            pooled.channel.put(input, path, ChannelSftp.OVERWRITE);
+        } catch (Exception failure) {
+            reusable = false;
+            throw failure;
         } finally {
             holder.release(pooled, reusable);
         }

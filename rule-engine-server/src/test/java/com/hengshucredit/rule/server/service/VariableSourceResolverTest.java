@@ -63,6 +63,33 @@ public class VariableSourceResolverTest {
     }
 
     @Test
+    public void businessFileAddressIsUploadedAndReusedWithinRootExecution() throws Exception {
+        RuleVariable variable = variable("contractText", "SFTP",
+                "{\"sftpDatasourceId\":9,\"remotePath\":\"/contracts/A.pdf\","
+                        + "\"fileAddress\":\"$.contractUrl\",\"uploadRemotePath\":\"/contracts/A.pdf\","
+                        + "\"outputFormat\":\"TEXT\",\"cacheSeconds\":0}");
+        FakeSftpPools sftp = new FakeSftpPools();
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()));
+        setField(resolver, "sftpConnectPools", sftp);
+        setField(resolver, "sftpFileCache", new SftpFileCache(new ExternalCallProperties(),
+                (SftpFileDistributedCache) null));
+
+        VariableResolutionInvocationCache shared = new VariableResolutionInvocationCache();
+        VariableResolveOptions root = VariableResolveOptions.defaults();
+        root.setInvocationCache(shared);
+        Map<String, Object> values = resolver.resolve(1L, singletonMap("contractUrl", "https://files.test/A.pdf"), root);
+        VariableResolveOptions child = VariableResolveOptions.defaults();
+        child.setInvocationCache(shared);
+        resolver.resolveIntoSnapshot(Collections.singletonList(variable), Collections.emptyList(),
+                Collections.emptyList(), values, child);
+
+        assertEquals("业务文件只应上传一次", 1, sftp.uploads);
+        assertEquals("业务文件上传后只应从 SFTP 读取一次", 1, sftp.reads);
+        assertEquals("上传后的文件内容应进入变量", "合同内容", values.get("contractText"));
+    }
+
+    @Test
     public void frozenListPathResolvesUpstreamByIdWithoutReadingLiveMetadata() throws Exception {
         RuleVariable upstream = variable("currentMobile", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.mobile\"}");
         upstream.setId(11L);
@@ -1400,6 +1427,7 @@ public class VariableSourceResolverTest {
 
     private static class FakeSftpPools extends SftpConnectPools {
         private int reads;
+        private int uploads;
 
         @Override
         public RuleSftpDatasource connectionConfig(Long id) {
@@ -1407,6 +1435,7 @@ public class VariableSourceResolverTest {
             datasource.setId(id);
             datasource.setBasePath("/");
             datasource.setFileNameEncoding("UTF-8");
+            datasource.setMaxFileSizeBytes(10 * 1024 * 1024);
             return datasource;
         }
 
@@ -1415,6 +1444,17 @@ public class VariableSourceResolverTest {
                                             long backoffMs, double backoffMultiplier) {
             reads++;
             return new ReadResult("合同内容".getBytes(java.nio.charset.StandardCharsets.UTF_8), 0);
+        }
+
+        @Override
+        public byte[] readFileAddress(String address, int maxBytes, int timeoutMs) {
+            return "合同内容".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        }
+
+        @Override
+        public void uploadFileWithRetry(Long datasourceId, String remotePath, byte[] content, int retryCount,
+                                        long backoffMs, double backoffMultiplier) {
+            uploads++;
         }
     }
 

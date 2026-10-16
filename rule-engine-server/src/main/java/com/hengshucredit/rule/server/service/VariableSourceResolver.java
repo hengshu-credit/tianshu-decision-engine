@@ -51,6 +51,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 public class VariableSourceResolver {
@@ -1239,6 +1240,8 @@ public class VariableSourceResolver {
             }
         } else if ("SFTP".equals(varSource)) {
             collectDependencyValues(config.get("remotePath"), dependencies);
+            collectDependencyValues(config.get("fileAddress"), dependencies);
+            collectDependencyValues(config.get("uploadRemotePath"), dependencies);
         }
         return dependencies;
     }
@@ -1947,6 +1950,10 @@ public class VariableSourceResolver {
         Object configuredPath = parseConfiguredValue(config.get("remotePath"), params);
         String remotePath = stringValue(configuredPath).trim();
         if (!hasText(remotePath)) throw new IllegalArgumentException("SFTP变量缺少远端文件路径");
+        String fileAddress = stringValue(parseConfiguredValue(config.get("fileAddress"), params)).trim();
+        boolean uploadEnabled = hasText(fileAddress);
+        String uploadRemotePath = stringValue(parseConfiguredValue(config.get("uploadRemotePath"), params)).trim();
+        if (uploadEnabled && !hasText(uploadRemotePath)) uploadRemotePath = remotePath;
         String outputFormat = stringValue(config.get("outputFormat"));
         if (!hasText(outputFormat)) outputFormat = "TEXT";
         outputFormat = outputFormat.toUpperCase(java.util.Locale.ROOT);
@@ -1954,6 +1961,7 @@ public class VariableSourceResolver {
         long retryBackoffMs = longConfig(config.get("retryBackoffMs"), 200L, 0L, 60000L);
         double retryBackoffMultiplier = doubleConfig(config.get("retryBackoffMultiplier"), 2D, 1D, 5D);
         int cacheSeconds = intConfig(config.get("cacheSeconds"), 0, 0, 86400);
+        int uploadTimeoutMs = intConfig(config.get("uploadTimeoutMs"), 30000, 100, 300000);
         long start = System.currentTimeMillis();
         RuntimeTraceService.ModuleTrace runtimeTrace = startRuntimeTrace(
                 "SFTP", resolveRuntimeProjectId(variable), datasourceId, resolveScriptName(variable));
@@ -1968,8 +1976,14 @@ public class VariableSourceResolver {
         request.put("retryBackoffMs", retryBackoffMs);
         request.put("retryBackoffMultiplier", retryBackoffMultiplier);
         request.put("cacheSeconds", cacheSeconds);
+        request.put("uploadEnabled", uploadEnabled);
+        request.put("uploadRemotePath", hasText(uploadRemotePath) ? uploadRemotePath : null);
+        request.put("uploadTimeoutMs", uploadTimeoutMs);
         try {
             AtomicInteger actualRetryCount = new AtomicInteger();
+            AtomicInteger uploadedBytes = new AtomicInteger();
+            AtomicBoolean executionCacheHit = new AtomicBoolean();
+            AtomicBoolean runtimeCacheHit = new AtomicBoolean();
             SftpFileCache.Lookup preliminary = sftpFileCache == null
                     ? null : sftpFileCache.get(sftpFileCache.key(datasourceId, remotePath), cacheSeconds);
             SftpFileCache.LoadResult loaded;
@@ -1981,25 +1995,69 @@ public class VariableSourceResolver {
                 request.put("remotePath", normalizedPath);
                 String resolvedPath = normalizedPath;
                 String cacheKey = sftpFileCache == null ? null : sftpFileCache.key(datasourceId, resolvedPath);
-                loaded = sftpFileCache == null
-                        ? new SftpFileCache.LoadResult(readSftpFile(datasourceId, resolvedPath, retryCount,
-                                retryBackoffMs, retryBackoffMultiplier, actualRetryCount), false, false)
-                        : sftpFileCache.load(cacheKey, cacheSeconds, () -> {
-                            SftpConnectPools.ReadResult read = sftpConnectPools.readFileWithRetry(datasourceId,
-                                    resolvedPath, retryCount, retryBackoffMs, retryBackoffMultiplier);
-                            actualRetryCount.set(read.retryCount());
-                            return read.content();
-                        });
+                String resolvedUploadPath = uploadEnabled
+                        ? sftpConnectPools.remotePath(uploadRemotePath, datasource) : null;
+                RuleSftpDatasource effectiveDatasource = datasource;
+                request.put("uploadRemotePath", resolvedUploadPath);
+                // 以最终远端文件路径作为根执行键；上传型变量与只读型变量也能复用同一文件。
+                String executionKey = "SFTP_EXECUTION:" + datasourceId + ":" + resolvedPath;
+                java.util.concurrent.Callable<byte[]> loader = () -> {
+                    if (sftpFileCache != null && cacheSeconds > 0) {
+                        SftpFileCache.Lookup cachedBeforeUpload = sftpFileCache.get(cacheKey, cacheSeconds);
+                        if (cachedBeforeUpload != null) {
+                            runtimeCacheHit.set(true);
+                            return cachedBeforeUpload.content();
+                        }
+                    }
+                    if (uploadEnabled) {
+                        byte[] source = sftpConnectPools.readFileAddress(fileAddress,
+                                effectiveDatasource.getMaxFileSizeBytes(), uploadTimeoutMs);
+                        sftpConnectPools.uploadFileWithRetry(datasourceId, resolvedUploadPath, source,
+                                retryCount, retryBackoffMs, retryBackoffMultiplier);
+                        uploadedBytes.set(source.length);
+                    }
+                    if (sftpFileCache == null) {
+                        SftpConnectPools.ReadResult read = sftpConnectPools.readFileWithRetry(datasourceId,
+                                resolvedPath, retryCount, retryBackoffMs, retryBackoffMultiplier);
+                        actualRetryCount.set(read.retryCount());
+                        return read.content();
+                    }
+                    SftpFileCache.LoadResult cachedLoad = sftpFileCache.load(cacheKey, cacheSeconds, () -> {
+                        SftpConnectPools.ReadResult read = sftpConnectPools.readFileWithRetry(datasourceId,
+                                resolvedPath, retryCount, retryBackoffMs, retryBackoffMultiplier);
+                        actualRetryCount.set(read.retryCount());
+                        return read.content();
+                    });
+                    runtimeCacheHit.set(cachedLoad.cacheHit() || cachedLoad.shared());
+                    return cachedLoad.content();
+                };
+                if (options.getInvocationCache() != null) {
+                    boolean hadExecutionResult = options.getInvocationCache().hasSftpFile(executionKey);
+                    byte[] executionContent = options.getInvocationCache().resolveSftpFile(executionKey, loader);
+                    executionCacheHit.set(hadExecutionResult);
+                    loaded = new SftpFileCache.LoadResult(executionContent, false, hadExecutionResult);
+                } else {
+                    loaded = new SftpFileCache.LoadResult(loader.call(), false, false);
+                }
             }
             byte[] content = loaded.content();
-            boolean cacheHit = loaded.cacheHit() || loaded.shared();
-            String cacheState = cacheSeconds <= 0 ? "DISABLED" : cacheHit ? "HIT" : "MISS";
+            boolean sameExecutionHit = executionCacheHit.get() || loaded.shared();
+            boolean cacheHit = loaded.cacheHit() || runtimeCacheHit.get();
+            String cacheState = sameExecutionHit ? "EXECUTION_HIT"
+                    : cacheSeconds <= 0 ? "DISABLED" : cacheHit ? "HIT" : "MISS";
+            String dataOrigin = sameExecutionHit ? "EXECUTION_CACHE"
+                    : cacheHit ? "CACHE" : uploadEnabled ? "UPLOADED_REALTIME" : "REALTIME";
             if (sftpFileCache != null && cacheSeconds > 0 && !remotePath.equals(normalizedPath)) {
                 sftpFileCache.put(sftpFileCache.key(datasourceId, remotePath), content, cacheSeconds);
             }
+            if (sftpFileCache != null && cacheSeconds > 0 && sameExecutionHit) {
+                sftpFileCache.put(sftpFileCache.key(datasourceId, normalizedPath), content, cacheSeconds);
+            }
             options.recordSourceState("VARIABLE", variable.getId(), "CACHE_CONFIGURED", cacheSeconds > 0 ? "TRUE" : "FALSE");
             options.recordSourceState("VARIABLE", variable.getId(), "CACHE_STATE", cacheState);
-            options.recordSourceState("VARIABLE", variable.getId(), "DATA_ORIGIN", cacheHit ? "CACHE" : "REALTIME");
+            options.recordSourceState("VARIABLE", variable.getId(), "DATA_ORIGIN", dataOrigin);
+            options.recordSourceState("VARIABLE", variable.getId(), "UPLOAD_ENABLED", uploadEnabled ? "TRUE" : "FALSE");
+            if (uploadedBytes.get() > 0) options.recordSourceState("VARIABLE", variable.getId(), "UPLOADED_BYTES", uploadedBytes.get());
             options.recordSourceState("VARIABLE", variable.getId(), "RETRY_COUNT", actualRetryCount.get());
             options.recordSourceState("VARIABLE", variable.getId(), "RETRIED", actualRetryCount.get() > 0 ? "TRUE" : "FALSE");
             Object value = switch (outputFormat) {
@@ -2019,7 +2077,9 @@ public class VariableSourceResolver {
             response.put("outputFormat", outputFormat);
             response.put("cacheConfigured", cacheSeconds > 0);
             response.put("cacheStatus", cacheState);
-            response.put("dataOrigin", cacheHit ? "CACHE" : "REALTIME");
+            response.put("dataOrigin", dataOrigin);
+            response.put("uploadEnabled", uploadEnabled);
+            if (uploadedBytes.get() > 0) response.put("uploadedBytes", uploadedBytes.get());
             response.put("retryCount", actualRetryCount.get());
             completeRuntimeTrace(runtimeTrace, true, null, System.currentTimeMillis() - start);
             logVariableSource("SFTP", "SFTP_VARIABLE_READ", variable, datasourceId, request,
@@ -2027,8 +2087,12 @@ public class VariableSourceResolver {
             return value;
         } catch (Exception e) {
             completeRuntimeTrace(runtimeTrace, false, e.getMessage(), System.currentTimeMillis() - start);
+            Map<String, Object> failureResponse = new LinkedHashMap<>();
+            failureResponse.put("status", "FAILED");
+            failureResponse.put("phase", uploadEnabled ? "UPLOAD_AND_READ" : "READ");
+            failureResponse.put("errorType", e.getClass().getSimpleName());
             logVariableSource("SFTP", "SFTP_VARIABLE_READ", variable, datasourceId, request,
-                    Map.of("status", "FAILED"), e.getMessage(), System.currentTimeMillis() - start, runtimeTrace);
+                    failureResponse, e.getMessage(), System.currentTimeMillis() - start, runtimeTrace);
             throw e;
         }
     }
