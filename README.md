@@ -367,7 +367,7 @@ SDK 本地执行日志默认通过 HTTP 上报；需要 Kafka 时显式启用，
 
 完整环境变量、Docker Compose 启动命令、ONNX CPU/CUDA 配置和 SDK 接入示例见 [部署与接入说明](https://hengshu-credit.github.io/tianshu-decision-engine/deployment.html)；生产 JAR/dist 制品位于 `docker/runtime`。
 
-项目启动方式彼此独立：源码模式先启动 MySQL/Redis，再分别运行 server、web、HTTP 和 SDK；服务端默认在启动时自动执行包含表结构、逻辑执行日志视图和系统常量幂等补齐的 `schema.sql`，执行 `node scripts/package-runtime.mjs` 可把后端 JAR 和前端 `dist/` 统一生成到 `docker/runtime`；JAR、Docker 和两种 Compose 方案的完整命令见 [`docker/README.md`](docker/README.md)。示例数据 `data-tianshu-example.sql` 位于 `docker/rule-engine-mysql`，默认不导入，需要时通过 `--profile example-data` 启用只插入导入；外部数据库 Docker 模式执行 `docker compose --env-file .env -f docker/docker-compose.yml up -d --scale server=2`；完整单机模式执行 `docker compose --env-file .env -f docker/docker-compose.full.yml up -d --scale server=2`，该文件自包含 MySQL、Redis、Kafka、server、HTTP、SDK 和 web。Kafka 主题绑定、账号和死信策略详见 [`docs/kafka-execution-logs.md`](docs/kafka-execution-logs.md)。
+项目启动方式彼此独立：源码模式先启动 MySQL/Redis，再分别运行 server、web、HTTP 和 SDK；服务端默认在启动时自动执行包含表结构、逻辑执行日志视图和系统常量幂等补齐的 `schema.sql`，执行 `node scripts/package-runtime.mjs` 可把后端 JAR 和前端 `dist/` 统一生成到 `docker/runtime`；正式部署推荐使用 `docker/docker-compose.server.yml` + `.env.server` 启动 server/web，再使用 `docker/docker-compose.client.yml` + `.env.client` 独立启动 HTTP/SDK runtime，完整命令见 [`docker/README.md`](docker/README.md)。示例数据 `data-tianshu-example.sql` 位于 `docker/rule-engine-mysql`，默认不导入，需要时通过 `--profile example-data` 启用只插入导入；`docker-compose.full.yml` 保留用于自带 MySQL/Redis/Kafka 的单机模式。Kafka 主题绑定、账号和死信策略详见 [`docs/kafka-execution-logs.md`](docs/kafka-execution-logs.md)。
 
 需要在 Docker 内一次生成后端、前端和可上传部署 ZIP 时执行 `node scripts/package-deployment.mjs`。公网部署使用 Nginx Proxy Manager 提供 HTTPS、证书和反向代理；Compose 不修改 Ubuntu 的防火墙和既有端口策略，MySQL、Redis、Kafka 按 `.env` 与现有安全组对外提供调试访问。
 

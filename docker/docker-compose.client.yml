@@ -1,0 +1,135 @@
+# 方案：客户端 runtime Compose。服务端使用 docker-compose.server.yml 独立部署。
+# 本文件只启动 HTTP/SDK runtime，不启动 server/web；RULE_SERVER_URL 必须填写 IP+端口或 NPM 域名。
+# 使用 .env.client；客户端可单独部署到其他机器并独立扩容。
+# runtime-http 512M/0.10C、runtime-sdk 768M/0.15C；默认各 1 个实例。
+# 本文件默认 runtime-http、runtime-sdk 各 1 个实例；客户端可独立扩容，SDK 连接 server 共用的 Redis。
+name: ${DEPLOY_PROJECT:-tianshu}
+
+x-java: &java
+  image: ${JAVA_IMAGE:-eclipse-temurin:17-jre-jammy}
+  restart: unless-stopped
+  init: true
+  working_dir: /app
+  environment: &java-env
+    TZ: Asia/Shanghai
+    SERVER_SHUTDOWN: graceful
+    SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: ${SHUTDOWN_TIMEOUT:-120s}
+    LOGGING_FILE_NAME: /data/logs/application.log
+  stop_grace_period: 180s
+  logging:
+    driver: json-file
+    options:
+      max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
+      max-file: "${DOCKER_LOG_MAX_FILES:-5}"
+  networks: [rule-engine]
+  extra_hosts:
+    - host.docker.internal:host-gateway
+
+x-runtime: &runtime
+  <<: *java
+  volumes:
+    - type: bind
+      source: ${RUNTIME_DIR:-./runtime}/runtime.jar
+      target: /app/app.jar
+      read_only: true
+      bind:
+        create_host_path: false
+
+services:
+  runtime-http:
+    <<: *runtime
+    cpus: "0.10"
+    mem_limit: 512m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: 512M
+    environment:
+      <<: *java-env
+      SPRING_PROFILES_ACTIVE: http
+      SERVER_PORT: 7070
+      RULE_SERVER_URL: "${RUNTIME_RULE_SERVER_URL:?Set RUNTIME_RULE_SERVER_URL to server IP:port or NPM URL}"
+      PROJECT_ACCESS_TOKEN: "${RUNTIME_PROJECT_ACCESS_TOKEN:?Set RUNTIME_PROJECT_ACCESS_TOKEN}"
+      RULE_ALLOWED_CODES: "${HTTP_RULE_ALLOWED_CODES:?Set HTTP_RULE_ALLOWED_CODES}"
+      RULE_TRACE_ENABLED: ${RUNTIME_TRACE_ENABLED:-true}
+      RULE_HTTP_TIMEOUT_MS: ${RULE_HTTP_TIMEOUT_MS:-30000}
+      RUNTIME_ACCESS_TOKEN: "${HTTP_ACCESS_TOKEN:?Set HTTP_ACCESS_TOKEN}"
+      RUNTIME_APP_NAME: runtime-http
+      RUNTIME_CORS_ALLOWED_ORIGINS: "${RUNTIME_CORS_ALLOWED_ORIGINS:?Set RUNTIME_CORS_ALLOWED_ORIGINS}"
+      JAVA_TOOL_OPTIONS: ${RUNTIME_HTTP_JAVA_TOOL_OPTIONS:--Xms128m -Xmx512m -XX:MaxMetaspaceSize=128m -XX:MaxDirectMemorySize=128m -XX:+ExitOnOutOfMemoryError}
+      LOGGING_LEVEL_ROOT: ${RUNTIME_LOG_LEVEL:-INFO}
+    volumes:
+      - type: bind
+        source: ${RUNTIME_DIR:-./runtime}/runtime.jar
+        target: /app/app.jar
+        read_only: true
+        bind:
+          create_host_path: false
+      - runtime-http-logs:/data/logs
+    command: ["java", "-jar", "/app/app.jar"]
+    ports:
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${RUNTIME_HTTP_PORT:-7070}:7070"
+    expose: ["7070"]
+
+  runtime-sdk:
+    <<: *runtime
+    cpus: "0.15"
+    mem_limit: 768m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.15"
+          memory: 768M
+    environment:
+      <<: *java-env
+      SPRING_PROFILES_ACTIVE: sdk
+      SERVER_PORT: 7071
+      RULE_SERVER_URL: "${RUNTIME_RULE_SERVER_URL:?Set RUNTIME_RULE_SERVER_URL to server IP:port or NPM URL}"
+      PROJECT_ACCESS_TOKEN: "${RUNTIME_PROJECT_ACCESS_TOKEN:?Set RUNTIME_PROJECT_ACCESS_TOKEN}"
+      RULE_ALLOWED_CODES: "${SDK_RULE_ALLOWED_CODES:?Set SDK_RULE_ALLOWED_CODES}"
+      RULE_TRACE_ENABLED: ${RUNTIME_TRACE_ENABLED:-true}
+      RULE_HTTP_TIMEOUT_MS: ${RULE_HTTP_TIMEOUT_MS:-30000}
+      RUNTIME_ACCESS_TOKEN: "${SDK_ACCESS_TOKEN:?Set SDK_ACCESS_TOKEN}"
+      RUNTIME_APP_NAME: runtime-sdk
+      RUNTIME_CORS_ALLOWED_ORIGINS: "${RUNTIME_CORS_ALLOWED_ORIGINS:?Set RUNTIME_CORS_ALLOWED_ORIGINS}"
+      RULE_PROJECT_CODE: "${RUNTIME_RULE_PROJECT_CODE:?Set RUNTIME_RULE_PROJECT_CODE}"
+      RULE_PROJECT_ID: "${RUNTIME_RULE_PROJECT_ID:?Set RUNTIME_RULE_PROJECT_ID}"
+      SDK_CACHE_MAX_SIZE: ${SDK_CACHE_MAX_SIZE:-1000}
+      SDK_LOG_REPORT_ENABLED: ${SDK_LOG_REPORT_ENABLED:-true}
+      SDK_LOG_REPORT_TRANSPORT: ${SDK_LOG_REPORT_TRANSPORT:-HTTP}
+      SDK_KAFKA_LOG_TOPIC: ${SDK_KAFKA_LOG_TOPIC:-rule-execution-log}
+      SDK_KAFKA_HTTP_FALLBACK_ENABLED: ${SDK_KAFKA_HTTP_FALLBACK_ENABLED:-true}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-}
+      SPRING_APPLICATION_JSON: "${KAFKA_SDK_APPLICATION_JSON:-}"
+      REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_DATABASE: ${REDIS_DATABASE:-0}
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
+      SPRING_DATA_REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
+      SPRING_DATA_REDIS_PORT: ${REDIS_PORT:-6379}
+      SPRING_DATA_REDIS_DATABASE: ${REDIS_DATABASE:-0}
+      SPRING_DATA_REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
+      JAVA_TOOL_OPTIONS: ${RUNTIME_SDK_JAVA_TOOL_OPTIONS:--Xms128m -Xmx768m -XX:MaxMetaspaceSize=160m -XX:MaxDirectMemorySize=160m -XX:+ExitOnOutOfMemoryError}
+      LOGGING_LEVEL_ROOT: ${RUNTIME_LOG_LEVEL:-INFO}
+    volumes:
+      - type: bind
+        source: ${RUNTIME_DIR:-./runtime}/runtime.jar
+        target: /app/app.jar
+        read_only: true
+        bind:
+          create_host_path: false
+      - runtime-sdk-logs:/data/logs
+    command: ["java", "-jar", "/app/app.jar"]
+    ports:
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${RUNTIME_SDK_PORT:-7071}:7071"
+    expose: ["7071"]
+
+volumes:
+  runtime-http-logs:
+  runtime-sdk-logs:
+
+networks:
+  rule-engine:
+    name: ${ENGINE_NETWORK:-${DEPLOY_PROJECT:-tianshu}-engine}
+    driver: bridge

@@ -67,6 +67,8 @@ public class ProductionConfigurationContractTest {
     public void containerConfigurationRequiresExternalPasswords() throws Exception {
         Path root = repositoryRoot();
         String appCompose = read(root.resolve("docker/docker-compose.yml"));
+        String serverCompose = read(root.resolve("docker/docker-compose.server.yml"));
+        String clientCompose = read(root.resolve("docker/docker-compose.client.yml"));
         String fullCompose = read(root.resolve("docker/docker-compose.full.yml"));
         String mysqlCompose = read(root.resolve("docker/docker-compose.mysql.yml"));
         String redisCompose = read(root.resolve("docker/docker-compose.redis.yml"));
@@ -102,6 +104,13 @@ public class ProductionConfigurationContractTest {
         Assert.assertTrue(mysqlCompose.contains("MYSQL_PASSWORD: \"${MYSQL_PASSWORD:?"));
         Assert.assertTrue(redisCompose.contains("${REDIS_PASSWORD:?"));
         Assert.assertTrue(appCompose.contains("${REDIS_PASSWORD:?"));
+        Assert.assertTrue(serverCompose.contains("  server:"));
+        Assert.assertTrue(serverCompose.contains("  web:"));
+        Assert.assertFalse(serverCompose.contains("runtime-http:"));
+        Assert.assertTrue(clientCompose.contains("  runtime-http:"));
+        Assert.assertTrue(clientCompose.contains("  runtime-sdk:"));
+        Assert.assertFalse(clientCompose.contains("  server:"));
+        Assert.assertTrue(clientCompose.contains("SPRING_DATA_REDIS_HOST"));
     }
 
     @Test

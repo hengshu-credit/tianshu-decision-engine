@@ -43,6 +43,53 @@ dist/            Vue 控制台静态文件
 
 `schema.sql` 在 server JAR 内，服务端默认每次启动幂等执行。样例数据不会自动导入；需要演示数据时，只使用 `docker/rule-engine-mysql/data-tianshu-example.sql`。
 
+## 推荐：server/client 分离部署
+
+正式部署建议把服务端和客户端 runtime 分开管理，分别使用两个配置文件：
+
+```bash
+cp .env.server.example .env.server
+cp .env.client.example .env.client
+vi .env.server
+vi .env.client
+```
+
+`.env.server` 只配置 server 多节点、web、控制台、MySQL、Redis、Kafka 和服务端密钥；`.env.client` 只配置 HTTP/SDK runtime、`RULE_SERVER_URL`、项目凭据、客户端令牌，以及 SDK 需要访问的 Redis。SDK runtime 必须连接与 server 共用的 Redis，才能接收规则和函数变更推送；启用 Kafka 日志时还要把 `KAFKA_BOOTSTRAP_SERVERS` 配成客户端可达地址。
+
+服务端启动：
+
+```bash
+docker compose --project-name tianshu-server --env-file .env.server \
+  -f docker/docker-compose.server.yml up -d --scale server=2
+docker compose --project-name tianshu-server --env-file .env.server \
+  -f docker/docker-compose.server.yml ps
+```
+
+如果使用本包提供的 Kafka，先用同一份 `.env.server` 启动：
+
+```bash
+docker compose --project-name tianshu-server --env-file .env.server \
+  -f docker/docker-compose.kafka.yml up -d
+```
+
+客户端 runtime 启动：
+
+```bash
+docker compose --project-name tianshu-client --env-file .env.client \
+  -f docker/docker-compose.client.yml up -d
+docker compose --project-name tianshu-client --env-file .env.client \
+  -f docker/docker-compose.client.yml ps
+```
+
+客户端可以独立扩容或部署到其他服务器：
+
+```bash
+docker compose --project-name tianshu-client --env-file .env.client \
+  -f docker/docker-compose.client.yml up -d --scale runtime-http=3 --scale runtime-sdk=2
+```
+
+客户端部署在其他机器时，`RUNTIME_RULE_SERVER_URL` 使用服务端 IP+端口或 Nginx Proxy Manager 的 HTTPS 域名；`REDIS_HOST` 使用 server 侧 Redis 的可达 IP，不能填写客户端容器内的 `localhost`。
+
 ## 方案一：JAR 包 + Nginx
 
 适合已有 Java 17、Nginx 或 systemd 的服务器。MySQL 和 Redis 可以是云服务、物理机或依赖 Compose。

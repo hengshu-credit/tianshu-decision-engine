@@ -85,7 +85,7 @@ function replaceRuntimeArtifacts(serverJar, runtimeJar, frontendDist) {
 function prepareStage() {
   rmSync(stageRoot, { recursive: true, force: true })
   mkdirSync(stageRoot, { recursive: true })
-  for (const name of ['.env.example', 'README.md', 'LICENSE', 'NOTICE', 'THIRD_PARTY_LICENSES.md']) {
+  for (const name of ['.env.example', '.env.server.example', '.env.client.example', 'README.md', 'LICENSE', 'NOTICE', 'THIRD_PARTY_LICENSES.md']) {
     cpSync(path.join(root, name), path.join(stageRoot, name))
   }
   copyTree(path.join(root, 'docker'), path.join(stageRoot, 'docker'))
@@ -94,11 +94,12 @@ function prepareStage() {
   writeFileSync(path.join(stageRoot, 'README-部署.md'), [
     '# 天枢决策引擎 Ubuntu 部署',
     '',
-    '1. 复制并编辑配置：cp .env.example .env。替换所有密码、BCrypt 控制台密码、项目令牌和 RULE_AUTH_MASTER_KEY。',
-    '2. 在独立的 Nginx Proxy Manager 中使用服务器 IP+端口配置 console.example.com -> :9090、engine-api.example.com -> :8080、api.example.com -> :7070，并申请 HTTPS 证书。',
-    '3. server/web/HTTP/SDK 共用 APP_BIND_ADDRESS；远程调试 MySQL/Redis 时，将 MYSQL_BIND_ADDRESS/REDIS_BIND_ADDRESS 保持为 0.0.0.0。',
-    '4. 启动服务：docker compose --project-name tianshu-full --env-file .env -f docker/docker-compose.full.yml up -d --scale server=2',
-    '5. 控制台访问 https://console.example.com/；项目执行入口为 https://api.example.com/api/rule/execute/{ruleCode}；Kafka 外部调试端口为 KAFKA_ADVERTISED_HOST:KAFKA_HOST_PORT。',
+    '1. 推荐分离配置：cp .env.server.example .env.server && cp .env.client.example .env.client。分别替换数据库、Redis、BCrypt 控制台密码、项目令牌和各类密钥。',
+    '2. 启动服务端：docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml up -d --scale server=2。',
+    '3. 需要本包 Kafka 时：docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.kafka.yml up -d。',
+    '4. 启动客户端：docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml up -d。',
+    '5. 在独立的 Nginx Proxy Manager 中使用服务器 IP+端口配置 console.example.com -> :9090、engine-api.example.com -> :8080、api.example.com -> :7070，并申请 HTTPS 证书。',
+    '6. 控制台访问 https://console.example.com/；项目执行入口为 https://api.example.com/api/rule/execute/{ruleCode}。',
     '',
     '完整安全说明和 Nginx Proxy Manager 配置见 docker/README.md；完整部署说明见 docs/deployment.md。'
   ].join('\n'), 'utf8')

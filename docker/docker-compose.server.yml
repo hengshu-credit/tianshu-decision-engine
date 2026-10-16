@@ -1,0 +1,147 @@
+# 方案：服务端 Compose（外部 MySQL/Redis/Kafka）。客户端 runtime 使用 docker-compose.client.yml 独立部署。
+# 本文件只启动 server 多节点和 web，不启动 HTTP/SDK runtime。
+# 使用 .env.server；Nginx Proxy Manager 通过服务器 IP+端口代理 web/server API。
+# server 资源上限：每个副本 1.5G/0.45C；web 256M/0.05C。
+# 本文件按 2 个 server 副本合计约 4.50G 内存、1.20C CPU；外接 Kafka/MySQL/Redis 时整体按 8G/2C 预算。
+name: ${DEPLOY_PROJECT:-tianshu}
+
+x-java: &java
+  image: ${JAVA_IMAGE:-eclipse-temurin:17-jre-jammy}
+  restart: unless-stopped
+  init: true
+  working_dir: /app
+  environment: &java-env
+    TZ: Asia/Shanghai
+    SERVER_SHUTDOWN: graceful
+    SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: ${SHUTDOWN_TIMEOUT:-120s}
+    LOGGING_FILE_NAME: /data/logs/application.log
+  stop_grace_period: 180s
+  logging:
+    driver: json-file
+    options:
+      max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
+      max-file: "${DOCKER_LOG_MAX_FILES:-5}"
+  networks: [rule-engine]
+  extra_hosts:
+    - host.docker.internal:host-gateway
+
+x-runtime: &runtime
+  <<: *java
+  volumes:
+    - type: bind
+      source: ${RUNTIME_DIR:-./runtime}/runtime.jar
+      target: /app/app.jar
+      read_only: true
+      bind:
+        create_host_path: false
+
+services:
+  server:
+    <<: *java
+    scale: ${SERVER_REPLICAS:-2}
+    cpus: "0.45"
+    mem_limit: 1536m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.45"
+          memory: 1536M
+    environment:
+      <<: *java-env
+      SERVER_PORT: 8080
+      MYSQL_HOST: ${MYSQL_HOST:-host.docker.internal}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-rule_engine}
+      MYSQL_USERNAME: "${MYSQL_USERNAME:?Set MYSQL_USERNAME}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}"
+      REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_DATABASE: ${REDIS_DATABASE:-0}
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
+      SPRING_SQL_INIT_MODE: ${SPRING_SQL_INIT_MODE:-always}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-}
+      RULE_KAFKA_ENABLED: ${RULE_KAFKA_ENABLED:-false}
+      RULE_KAFKA_GROUP_ID: ${RULE_KAFKA_GROUP_ID:-rule-engine-server}
+      SPRING_APPLICATION_JSON: "${KAFKA_SERVER_APPLICATION_JSON:-}"
+      RULE_AUTH_MASTER_KEY: "${RULE_AUTH_MASTER_KEY:?Set RULE_AUTH_MASTER_KEY}"
+      RULE_AUTH_ACTIVE_KEY_ID: ${RULE_AUTH_ACTIVE_KEY_ID:-v2}
+      RULE_AUTH_LEGACY_MASTER_KEY: ${RULE_AUTH_LEGACY_MASTER_KEY:-}
+      RULE_AUTH_LEGACY_V2_MASTER_KEY: ${RULE_AUTH_LEGACY_V2_MASTER_KEY:-}
+      CONSOLE_USERNAME: "${CONSOLE_USERNAME:?Set CONSOLE_USERNAME}"
+      CONSOLE_PASSWORD: "${CONSOLE_PASSWORD:?Set CONSOLE_PASSWORD}"
+      CONSOLE_PASSWORD_ENCODING: ${CONSOLE_PASSWORD_ENCODING:-BCRYPT}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+      SESSION_REDIS_NAMESPACE: ${SESSION_REDIS_NAMESPACE:-tianshu:session}
+      CORS_ALLOWED_ORIGIN_PATTERNS: "${CORS_ALLOWED_ORIGIN_PATTERNS:?Set CORS_ALLOWED_ORIGIN_PATTERNS}"
+      LOGGING_FILE_NAME: ""
+      JAVA_TOOL_OPTIONS: ${SERVER_JAVA_TOOL_OPTIONS:--Xms256m -Xmx768m -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:+ExitOnOutOfMemoryError}
+      LOGGING_LEVEL_ROOT: ${SERVER_LOG_LEVEL:-INFO}
+      RULE_EXECUTION_PERSISTENCE_JOURNAL_DIR: /data/logs/execution-persistence-journal
+      RULE_LIST_ACTION_JOURNAL_DIR: /data/logs/list-action-journal
+    volumes:
+      - type: bind
+        source: ${RUNTIME_DIR:-./runtime}/server.jar
+        target: /app/app.jar
+        read_only: true
+        bind:
+          create_host_path: false
+      - server-logs:/data/logs
+    command:
+      - sh
+      - -ec
+      - |
+        export RULE_EXECUTION_PERSISTENCE_JOURNAL_DIR="/data/logs/execution-persistence-journal/$${HOSTNAME}"
+        export RULE_LIST_ACTION_JOURNAL_DIR="/data/logs/list-action-journal/$${HOSTNAME}"
+        exec java -jar /app/app.jar
+    expose: ["8080"]
+
+  web:
+    image: ${NGINX_IMAGE:-nginx:1.29.1-alpine}
+    cpus: "0.05"
+    mem_limit: 256m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.05"
+          memory: 256M
+    restart: unless-stopped
+    init: true
+    depends_on:
+      server:
+        condition: service_started
+    volumes:
+      - type: bind
+        source: ${RUNTIME_DIR:-./runtime}/dist
+        target: /usr/share/nginx/html
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./nginx/default.conf
+        target: /etc/nginx/conf.d/default.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./nginx/proxy.conf
+        target: /etc/nginx/tianshu-proxy.conf
+        read_only: true
+        bind:
+          create_host_path: false
+    command: ["nginx", "-g", "daemon off;"]
+    ports:
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-9090}:80"
+      - "${SERVER_PUBLIC_BIND_ADDRESS:-127.0.0.1}:${SERVER_PUBLIC_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/index.html >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [rule-engine]
+volumes:
+  server-logs:
+
+networks:
+  rule-engine:
+    name: ${ENGINE_NETWORK:-${DEPLOY_PROJECT:-tianshu}-engine}
+    driver: bridge

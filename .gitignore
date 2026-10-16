@@ -11,6 +11,8 @@
 !.github/workflows/pages.yml
 .DS_Store
 /.env
+/.env.server
+/.env.client
 *.log
 *.tmp
 .vscode/
