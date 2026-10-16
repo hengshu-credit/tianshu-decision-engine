@@ -2,7 +2,7 @@
 
 本目录支持四种相互独立的部署方案。每套方案只使用自己的进程、Compose 项目、网络、端口和数据目录；部署时选择一种即可。
 
-Ubuntu 公网部署使用 Nginx Proxy Manager 管理 HTTPS、证书和反向代理；本项目不安装或修改 UFW、Fail2ban、宿主机 Nginx 及现有端口规则。管理端和 runtime 可绑定本机供 NPM 代理，MySQL、Redis 按 `.env` 绑定到 `0.0.0.0` 以便远程调试，访问控制由现有安全组/防火墙策略负责。
+Ubuntu 公网部署使用服务器上独立运行的 Nginx Proxy Manager 管理 HTTPS、证书和反向代理；本项目不安装或修改 UFW、Fail2ban、宿主机 Nginx 及现有端口规则。NPM 直接使用服务器 IP 和宿主机端口配置 Proxy Host。MySQL、Redis 按 `.env` 绑定到 `0.0.0.0` 以便远程调试，访问控制由现有安全组/防火墙策略负责。
 
 | 方案 | 启动内容 | MySQL/Redis | 适用场景 |
 |---|---|---|---|
@@ -343,6 +343,88 @@ docker compose --project-name tianshu-full --env-file .env -f docker/docker-comp
 ```
 
 JAR 和独立 `docker run` 直接使用 Spring Boot 的 `SPRING_KAFKA_BOOTSTRAP_SERVERS`、`SPRING_APPLICATION_JSON` 或外部 YAML，不能直接使用上述两个 Compose JSON 别名。具体启动命令、TLS/SASL 配置、验收及关闭顺序见 [Kafka 部署接入](../docs/kafka-execution-logs.md#各部署方案的接入方式)。
+
+## Ubuntu 与独立 Nginx Proxy Manager
+
+本项目不会安装或修改 Ubuntu 的 UFW、Fail2ban、宿主机 Nginx、Certbot 或既有端口规则。先准备配置：
+
+```bash
+cp .env.example .env
+vi .env
+```
+
+如果独立 NPM 通过服务器 IP 访问容器映射端口，应用端口需要绑定到可被 NPM 访问的地址：
+
+```dotenv
+APP_BIND_ADDRESS=0.0.0.0
+SERVER_PUBLIC_BIND_ADDRESS=0.0.0.0
+FRONTEND_PORT=9090
+SERVER_PUBLIC_PORT=8080
+RUNTIME_HTTP_PORT=7070
+RUNTIME_SDK_PORT=7071
+```
+
+如果 NPM 在宿主机上运行，也可以将应用地址保持为 `127.0.0.1`，然后在 NPM 中代理到 `127.0.0.1`。不论哪种方式，`RULE_SERVER_URL` 都填写服务端实际地址，不填写 `server:8080`：
+
+```dotenv
+# 客户端通过 IP+端口访问
+RUNTIME_RULE_SERVER_URL=http://192.168.1.10:8080
+
+# 或客户端通过 NPM HTTPS 域名访问
+# RUNTIME_RULE_SERVER_URL=https://engine-api.example.com
+```
+
+在 Nginx Proxy Manager 中创建 Proxy Host，Forward Host 填服务器 IP，Forward Port 填宿主机映射端口：
+
+| 用途 | 域名示例 | Forward Host | Forward Port |
+|---|---|---|---:|
+| 控制台 | `console.example.com` | `192.168.1.10` | `9090` |
+| server API / `RULE_SERVER_URL` | `engine-api.example.com` | `192.168.1.10` | `8080` |
+| HTTP runtime | `api.example.com` | `192.168.1.10` | `7070` |
+| SDK runtime（确需公网访问时） | `sdk.example.com` | `192.168.1.10` | `7071` |
+
+每个 Proxy Host 在 SSL 页面申请对应证书，并启用 `Force SSL`、HTTP/2 和 HSTS。Advanced 配置保留以下转发头：
+
+```nginx
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header Host $host;
+```
+
+项目执行请求仍需携带 runtime 的 `Authorization: Bearer ...`。MySQL、Redis、Kafka 是 TCP 服务，不能通过 NPM 的普通 Proxy Host 代理；它们的访问范围由现有 Ubuntu 防火墙、云安全组和 Compose 端口绑定控制。Kafka 默认外部调试端口为 `9092`，生产环境应使用 SASL_SSL/TLS。
+
+### 服务器重启自动拉起
+
+完整 Compose 需要随 Ubuntu 启动时自动拉起时，可创建 `/etc/systemd/system/tianshu-compose.service`：
+
+```ini
+[Unit]
+Description=Tianshu Decision Engine Docker Compose
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/tianshu
+ExecStart=/usr/bin/docker compose --project-name tianshu-full --env-file /opt/tianshu/.env -f /opt/tianshu/docker/docker-compose.full.yml up -d --scale server=2
+ExecStop=/usr/bin/docker compose --project-name tianshu-full --env-file /opt/tianshu/.env -f /opt/tianshu/docker/docker-compose.full.yml stop
+TimeoutStartSec=0
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启用服务：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now tianshu-compose.service
+sudo systemctl status tianshu-compose.service
+```
 
 ## 常用验证和更新
 
