@@ -297,7 +297,7 @@ docker compose --project-name tianshu-external --env-file .env.client --env-file
 `docker-compose.kafka.yml` 启动一个单节点 KRaft Kafka，宿主机端口默认为 `9092`，外部客户端使用 `KAFKA_ADVERTISED_HOST:KAFKA_HOST_PORT`，容器内应用使用 `kafka:19092`。启动前在 `.env` 配置 `KAFKA_ADVERTISED_HOST`、`KAFKA_USERNAME`、`KAFKA_PASSWORD`：
 
 ```bash
-docker compose --project-name tianshu-kafka --env-file .env.client --env-file .env.server \
+docker compose --project-name tianshu-kafka --env-file .env.server \
   -f docker/docker-compose.kafka.yml up -d
 ```
 
@@ -358,7 +358,7 @@ docker compose --project-name tianshu-redis --env-file .env.client --env-file .e
 
 Kafka 只服务于完整 Java SDK 或 `rule-engine-runtime` 的本地执行日志，以及 server 对 Kafka 日志的消费。HTTP-only runtime、服务端本地执行和规则同步仍不依赖 Kafka。full Compose 会提供一个单节点 broker；生产环境也可以通过 `KAFKA_BOOTSTRAP_SERVERS` 接入外部 Kafka 集群。
 
-两个 Compose 方案使用 Kafka 时，在 `.env` 中配置以下内容（示例项目 ID `1` 必须替换为实际值）：
+两个 Compose 方案使用 Kafka 时，server 配置写入 `.env.server`，SDK 配置写入 `.env.client`（示例项目 ID `1` 必须替换为实际值）：
 
 ```dotenv
 KAFKA_BOOTSTRAP_SERVERS=kafka.internal:9092
@@ -377,7 +377,7 @@ RULE_KAFKA_GROUP_ID=rule-engine-server
 KAFKA_SERVER_APPLICATION_JSON={"rule-engine":{"kafka":{"topic-projects":{"rule-execution-log-risk":1}}}}
 ```
 
-`KAFKA_BOOTSTRAP_SERVERS` 同时映射到 server 和 SDK 容器的 `SPRING_KAFKA_BOOTSTRAP_SERVERS`。server 的 `KAFKA_SERVER_APPLICATION_JSON`、SDK 的 `KAFKA_SDK_APPLICATION_JSON` 分别映射到各自的 `SPRING_APPLICATION_JSON`；可在 JSON 的 `spring.kafka` 下分别配置消费者和生产者的 TLS/SASL 参数。`.env` 中任意新增的 `SPRING_KAFKA_*` 不会自动进入 Compose 容器，须通过这两个 JSON 或 Compose override 明确注入；证书路径需对应容器内实际挂载路径。已有 `SPRING_APPLICATION_JSON` 配置应合并到相应 JSON 中。
+`KAFKA_BOOTSTRAP_SERVERS` 同时映射到 server 和 SDK 容器的 `SPRING_KAFKA_BOOTSTRAP_SERVERS`。server 的 `KAFKA_SERVER_APPLICATION_JSON` 写入 `.env.server`，SDK 的 `KAFKA_SDK_APPLICATION_JSON` 写入 `.env.client`，分别映射到各自的 `SPRING_APPLICATION_JSON`；可在 JSON 的 `spring.kafka` 下分别配置消费者和生产者的 TLS/SASL 参数。两个 env 文件中任意新增的 `SPRING_KAFKA_*` 不会自动进入 Compose 容器，须通过这两个 JSON 或 Compose override 明确注入；证书路径需对应容器内实际挂载路径。已有 `SPRING_APPLICATION_JSON` 配置应合并到相应 JSON 中。
 
 主主题和 `<topic>.DLT`、生产者/消费者组 ACL、死信写入权限须提前准备；broker 的 `advertised.listeners` 返回地址也必须从应用侧可达。保留实际项目凭证、项目编码和已发布规则白名单，先启动 server 完成主题绑定，再启动 SDK。修改后执行对应方案命令（项目名与原部署一致）：
 
