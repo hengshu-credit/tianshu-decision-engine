@@ -85,7 +85,7 @@ function replaceRuntimeArtifacts(serverJar, runtimeJar, frontendDist) {
 function prepareStage() {
   rmSync(stageRoot, { recursive: true, force: true })
   mkdirSync(stageRoot, { recursive: true })
-  for (const name of ['.env.example', '.env.server.example', '.env.client.example', 'README.md', 'LICENSE', 'NOTICE', 'THIRD_PARTY_LICENSES.md']) {
+  for (const name of ['.env.server.example', '.env.client.example', 'README.md', 'LICENSE', 'NOTICE', 'THIRD_PARTY_LICENSES.md']) {
     cpSync(path.join(root, name), path.join(stageRoot, name))
   }
   copyTree(path.join(root, 'docker'), path.join(stageRoot, 'docker'))

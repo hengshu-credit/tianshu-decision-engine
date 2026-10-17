@@ -13,7 +13,8 @@ Docker 相关命令的单一入口是 [`docker/README.md`](../docker/README.md)�
 | 参数名 | 默认值 | 含义与具体作用 |
 |---|---:|---|
 | `SERVER_PORT` | `8080` | Spring Boot 监听端口；容器内端口和负载均衡器后端端口应保持一致。 |
-| `VITE_PORT` | `9090` | 仅用于 `npm run dev` 的 Vite 开发端口；不会改变生产 `dist` 静态站点端口。 |
+| `VITE_PORT` | `9090` | 仅用于 
+pm run dev` 的 Vite 开发端口；不会改变生产 `dist` 静态站点端口。 |
 | `VITE_DEV_PROXY` | 空 | Vite 开发服务器 `/api` 代理目标；设置后优先于 `SERVER_PORT` 推导出的后端地址。 |
 | `MYSQL_HOST` | `localhost` | MySQL 主机名。后端在 Compose 网络中运行时填 `mysql`，不能填容器内的 `127.0.0.1`。 |
 | `MYSQL_PORT` | `3306` | MySQL 端口。 |
@@ -44,7 +45,8 @@ Docker 相关命令的单一入口是 [`docker/README.md`](../docker/README.md)�
 
 | 参数名 | 默认值 | 含义与具体作用 |
 |---|---:|---|
-| `SPRING_SQL_INIT_MODE` | `always` | Spring 启动时是否执行 `schema.sql`；默认每次启动幂等执行结构、视图和系统常量补齐，已有数据库可临时设为 `never`。 |
+| `SPRING_SQL_INIT_MODE` | `always` | Spring 启动时是否执行 `schema.sql`；默认每次启动幂等执行结构、视图和系统常量补齐，已有数据库可临时设为 
+ever`。 |
 | `SPRING_DATASOURCE_INITIALIZATION_MODE` | 空 | Spring Boot 旧版本兼容别名，仅在迁移旧部署时使用；优先使用 `SPRING_SQL_INIT_MODE`。 |
 | `SPRING_SQL_INIT_CONTINUE_ON_ERROR` | `false` | 初始化 SQL 出错时是否继续；生产保持 `false`，让错误阻止启动。 |
 | `RULE_TRACE_MAX_PERSIST_BYTES` | `1048576` | 单条持久化追踪 JSON 的最大字节数（默认 1 MiB）；超出时只截断持久化副本，不截断本次请求结果。 |
@@ -95,25 +97,27 @@ Compose 还会使用 `MYSQL_PUBLIC_PORT`、`REDIS_PUBLIC_PORT`、`CONSOLE_PUBLIC
 ### 数据库与基础设施
 
 ```bash
-cp .env.example .env
+cp .env.server.example .env.server
+cp .env.client.example .env.client
 # 编辑 .env，替换全部 replace-with-* 占位值
-docker compose --env-file .env -f docker/docker-compose.mysql.yml up -d
-docker compose --env-file .env -f docker/docker-compose.redis.yml up -d
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.mysql.yml up -d
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.redis.yml up -d
 # 选择外部数据库应用模式时单独执行：
-# docker compose --env-file .env -f docker/docker-compose.yml up -d
+# docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml up -d
 # 选择完整单机模式时改为一条命令：
-# docker compose --env-file .env -f docker/docker-compose.full.yml up -d
+# docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml up -d
 ```
 
-PowerShell 可使用 `Copy-Item .env.example .env`。Compose 不再提供 MySQL/Redis 共享默认密码；全新数据卷会根据 `MYSQL_USERNAME`、`MYSQL_PASSWORD` 创建应用账号。已有数据卷升级时，需由数据库管理员按最小权限原则预先创建或更新该账号。
+PowerShell 可使用 `Copy-Item .env.server.example .env.server
+Copy-Item .env.client.example .env.client`。Compose 不再提供 MySQL/Redis 共享默认密码；全新数据卷会根据 `MYSQL_USERNAME`、`MYSQL_PASSWORD` 创建应用账号。已有数据卷升级时，需由数据库管理员按最小权限原则预先创建或更新该账号。
 
 #### 复用已经运行的 Compose 容器
 
 如果 MySQL 和 Redis 已由 Docker Compose 启动，不需要再次创建容器。确认端口和健康状态：
 
 ```powershell
-docker compose --env-file .env -f docker/docker-compose.mysql.yml ps
-docker compose --env-file .env -f docker/docker-compose.redis.yml ps
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.mysql.yml ps
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.redis.yml ps
 ```
 
 服务端在宿主机上用 Maven 启动时，将 `.env` 设置为：
@@ -155,7 +159,8 @@ Windows 本地开发可在仓库根目录执行以下命令，同时启动前后
 .\start-dev.cmd
 ```
 
-需先配置根目录 `.env`，并保持 MySQL、Redis 运行，确保 Java、Maven、Node.js 可从 `PATH` 调用。命令会编译后端依赖、在缺少前端依赖时执行 `npm ci`，后台启动服务并等待健康检查及前端 API 代理检查通过；已就绪的服务会直接复用。端口沿用 `.env` 的 `SERVER_PORT` 和 `VITE_PORT`，日志及本次启动的进程 ID 保存在 `.codex-run-logs/`。命令只启动前后端，不会重启 MySQL、Redis；检测到 WSL 与项目 Docker 服务的本机端口冲突时，仅为本次后端进程调整连接地址。
+需先配置根目录 `.env`，并保持 MySQL、Redis 运行，确保 Java、Maven、Node.js 可从 `PATH` 调用。命令会编译后端依赖、在缺少前端依赖时执行 
+pm ci`，后台启动服务并等待健康检查及前端 API 代理检查通过；已就绪的服务会直接复用。端口沿用 `.env` 的 `SERVER_PORT` 和 `VITE_PORT`，日志及本次启动的进程 ID 保存在 `.codex-run-logs/`。命令只启动前后端，不会重启 MySQL、Redis；检测到 WSL 与项目 Docker 服务的本机端口冲突时，仅为本次后端进程调整连接地址。
 
 Windows 本机如果 JDK 默认 Unix Domain Socket 临时目录导致 Redis/Lettuce 健康检查出现 `Unable to establish loopback connection`，先为本次进程指定工作区目录，再启动后端：
 
@@ -224,7 +229,8 @@ SERVER_PORT=8081
 VITE_PORT=9091
 ```
 
-修改后重启后端和 `npm run dev`，访问 `http://localhost:9091/`，`/api` 会自动代理到 `http://localhost:8081`。未配置时仍使用后端 `8080`、前端 `9090`；前端端口被占用时会直接报错，不会自动切换端口。
+修改后重启后端和 
+pm run dev`，访问 `http://localhost:9091/`，`/api` 会自动代理到 `http://localhost:8081`。未配置时仍使用后端 `8080`、前端 `9090`；前端端口被占用时会直接报错，不会自动切换端口。
 
 后端运行在其他地址时，可额外设置 `VITE_DEV_PROXY=http://后端地址:端口`，该配置优先于 `SERVER_PORT` 推导的地址。系统环境变量优先于 `.env`。这些配置不会改变生产静态站点的监听端口，生产前端仍需配置 Nginx 或容器端口映射。
 
@@ -235,7 +241,8 @@ VITE_PORT=9091
 
 ## 二、Docker 运行时部署
 
-本模块不要求项目提供 Dockerfile，直接使用 `eclipse-temurin:17-jre` 运行 JAR、使用 `nginx:1.27-alpine` 提供后管静态文件。MySQL 和 Redis 可以是云服务、物理机服务或已经运行的容器；只要从应用容器内可访问即可。
+本模块不要求项目提供 Dockerfile，直接使用 `eclipse-temurin:17-jre` 运行 JAR、使用 
+ginx:1.27-alpine` 提供后管静态文件。MySQL 和 Redis 可以是云服务、物理机服务或已经运行的容器；只要从应用容器内可访问即可。
 
 ### 2.1 准备宿主机目录和制品
 
@@ -299,7 +306,8 @@ docker run -d \
 
 后管需要把 `/api` 反向代理到 JAR 容器，并保留 Monaco 的 `vs` 资源重写。先创建 `/opt/tianshu/console/nginx.conf`：
 
-```nginx
+``
+ginx
 server {
     listen 80;
     server_name _;
@@ -383,8 +391,8 @@ docker/
 **0. 只启动 MySQL/Redis。** 可以使用本项目提供的独立 Compose，也可以使用已有远程实例。独立容器默认发布到宿主机全部网卡，使用 `MYSQL_HOST_PORT`、`REDIS_HOST_PORT` 调整端口，防火墙只放行可信网段；应用连接远程实例时把 `MYSQL_HOST`、`REDIS_HOST` 改成容器可以访问的域名或 IP。
 
 ```powershell
-docker compose --env-file .env -f docker/docker-compose.mysql.yml up -d
-docker compose --env-file .env -f docker/docker-compose.redis.yml up -d
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.mysql.yml up -d
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.redis.yml up -d
 ```
 
 **1.1 源码启动 server + web + SDK + HTTP。** 先完成第 0 步，再在一个终端运行统一启动脚本：
@@ -415,15 +423,15 @@ Nginx 的 `root` 指向 `rule-engine-web/dist`，`/api/` 反向代理到 `http:/
 **1.3 Docker 应用 + 外部 MySQL/Redis。** 只需要准备 JAR/dist 和一份 `.env`，将 `MYSQL_HOST`、`REDIS_HOST` 配置为远程地址；本文件不创建或依赖 MySQL/Redis Compose 服务。
 
 ```powershell
-docker compose --env-file .env -f docker/docker-compose.yml up -d
-docker compose --env-file .env -f docker/docker-compose.yml ps
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml up -d
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml ps
 ```
 
 **1.4 Docker 全量单机。** 这个文件自包含 MySQL、Redis、server、HTTP、SDK 和 web，一条命令即可启动，不需要先启动另外三个 Compose 文件。
 
 ```powershell
-docker compose --env-file .env -f docker/docker-compose.full.yml up -d
-docker compose --env-file .env -f docker/docker-compose.full.yml ps
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml up -d
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml ps
 ```
 
 完整模式启动 MySQL 和 Redis 后直接启动 server；server 默认自动执行 `schema.sql`。需要演示数据时，默认不导入；启动时增加 `--profile example-data` 会等待 schema 完成后只执行插入。完整模式与第 0 步的独立 MySQL/Redis 不要同时占用相同端口和容器名。
@@ -443,7 +451,7 @@ node scripts/package-runtime.mjs
 默认启动不导入示例数据；需要导入时使用：
 
 ```powershell
-docker compose --profile example-data --env-file .env -f docker/docker-compose.full.yml up -d
+docker compose --profile example-data --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml up -d
 ```
 
 该导入脚本在最前面设置 `utf8mb4` 编码，只使用 `INSERT IGNORE`，不会删除数据、更新已有记录或重建表。
@@ -452,11 +460,12 @@ docker compose --profile example-data --env-file .env -f docker/docker-compose.f
 ### 3.3 启动与更新
 
 ```powershell
-Copy-Item .env.example .env
+Copy-Item .env.server.example .env.server
+Copy-Item .env.client.example .env.client
 # 编辑 .env，替换全部 replace-with-* 占位值和数据库密码
 # 选择 1.3 或 1.4 其中一种，不要同时启动
-docker compose --env-file .env -f docker/docker-compose.yml up -d
-# 或：docker compose --env-file .env -f docker/docker-compose.full.yml up -d
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml up -d
+# 或：docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml up -d
 ```
 
 MySQL 数据目录为 docker/rule-engine-mysql/data，Redis 数据目录为 docker/rule-engine-redis/data；均通过宿主机目录挂载持久化，停止或删除容器不会删除这些文件。外部数据库模式要求服务端账号具备执行 `schema.sql` 的建表权限。数据与日志目录已排除在 Git 和镜像构建上下文之外。
@@ -468,23 +477,23 @@ MySQL 数据目录为 docker/rule-engine-mysql/data，Redis 数据目录为 dock
 默认入口为前端 http://localhost:9090、管理端 API http://localhost:8080、HTTP 运行时 http://localhost:7070、SDK 运行时 http://localhost:7071。Docker Compose 不构建镜像，也不挂载源码，升级时替换运行目录中的 JAR/dist 后执行：
 
 ```powershell
-docker compose --env-file .env -f docker/docker-compose.yml up -d
-docker compose --env-file .env -f docker/docker-compose.yml ps
-docker compose --env-file .env -f docker/docker-compose.yml logs --tail 200 server runtime-http runtime-sdk
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml up -d
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml ps
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml logs --tail 200 server runtime-http runtime-sdk
 ```
 
 全量模式对应命令为：
 
 ```powershell
-docker compose --env-file .env -f docker/docker-compose.full.yml up -d
-docker compose --env-file .env -f docker/docker-compose.full.yml logs --tail 200 server http sdk web
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml up -d
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml logs --tail 200 server http sdk web
 ```
 
 停止应用与基础设施分别执行：
 
 ```powershell
-docker compose --env-file .env -f docker/docker-compose.yml down
-docker compose --env-file .env -f docker/docker-compose.full.yml down
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml down
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml down
 ```
 
 ## 四、后管静态文件 + JAR 包部署
@@ -492,10 +501,11 @@ docker compose --env-file .env -f docker/docker-compose.full.yml down
 本模块不运行应用容器，适合已有 Nginx、systemd 或进程管理器的服务器。MySQL 和 Redis 可以继续使用 Docker Compose：
 
 ```bash
-cp .env.example .env
+cp .env.server.example .env.server
+cp .env.client.example .env.client
 # 将 MYSQL_HOST、REDIS_HOST 保持为 127.0.0.1/localhost（服务在宿主机运行）
-docker compose --env-file .env -f docker/docker-compose.mysql.yml up -d
-docker compose --env-file .env -f docker/docker-compose.redis.yml up -d
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.mysql.yml up -d
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.redis.yml up -d
 ```
 
 ### 4.1 构建并发布后管
@@ -582,7 +592,8 @@ sudo systemctl restart tianshu-server
 
 以 Nginx 为例，后端节点监听内网地址 `10.0.0.31:8080`、`10.0.0.32:8080`：
 
-```nginx
+``
+ginx
 upstream tianshu_server {
     # 管理端 HttpSession 需要粘性；这是 Nginx 开源版可直接使用的简单方案
     ip_hash;

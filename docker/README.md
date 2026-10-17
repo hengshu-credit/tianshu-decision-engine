@@ -20,8 +20,9 @@ Ubuntu 公网部署使用服务器上独立运行的 Nginx Proxy Manager 管理 
 在仓库根目录执行，生成 server JAR、runtime JAR 和前端 `dist`：
 
 ```powershell
-Copy-Item .env.example .env
-# 编辑 .env，替换所有 replace-with-* 占位值
+Copy-Item .env.server.example .env.server
+Copy-Item .env.client.example .env.client
+# 分别编辑 .env.server 和 .env.client，替换所有 replace-with-* 占位值
 node scripts/package-runtime.mjs
 ```
 
@@ -59,32 +60,32 @@ vi .env.client
 服务端启动：
 
 ```bash
-docker compose --project-name tianshu-server --env-file .env.server \
+docker compose --project-name tianshu-server --env-file .env.client --env-file .env.server.server \
   -f docker/docker-compose.server.yml up -d --scale server=2
-docker compose --project-name tianshu-server --env-file .env.server \
+docker compose --project-name tianshu-server --env-file .env.client --env-file .env.server.server \
   -f docker/docker-compose.server.yml ps
 ```
 
 如果使用本包提供的 Kafka，先用同一份 `.env.server` 启动：
 
 ```bash
-docker compose --project-name tianshu-server --env-file .env.server \
+docker compose --project-name tianshu-server --env-file .env.client --env-file .env.server.server \
   -f docker/docker-compose.kafka.yml up -d
 ```
 
 客户端 runtime 启动：
 
 ```bash
-docker compose --project-name tianshu-client --env-file .env.client \
+docker compose --project-name tianshu-client --env-file .env.client --env-file .env.server.client \
   -f docker/docker-compose.client.yml up -d
-docker compose --project-name tianshu-client --env-file .env.client \
+docker compose --project-name tianshu-client --env-file .env.client --env-file .env.server.client \
   -f docker/docker-compose.client.yml ps
 ```
 
 客户端可以独立扩容或部署到其他服务器：
 
 ```bash
-docker compose --project-name tianshu-client --env-file .env.client \
+docker compose --project-name tianshu-client --env-file .env.client --env-file .env.server.client \
   -f docker/docker-compose.client.yml up -d --scale runtime-http=3 --scale runtime-sdk=2
 ```
 
@@ -274,18 +275,18 @@ RUNTIME_DIR=./runtime
 云数据库或远程 Redis 直接把 `MYSQL_HOST`、`MYSQL_PORT`、`REDIS_HOST`、`REDIS_PORT` 改为容器可访问的域名/IP。启动：
 
 ```bash
-docker compose --project-name tianshu-external --env-file .env \
+docker compose --project-name tianshu-external --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.yml up -d
-docker compose --project-name tianshu-external --env-file .env \
+docker compose --project-name tianshu-external --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.yml ps
-docker compose --project-name tianshu-external --env-file .env \
+docker compose --project-name tianshu-external --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.yml logs --tail 200 server runtime-http runtime-sdk web
 ```
 
 停止：
 
 ```bash
-docker compose --project-name tianshu-external --env-file .env \
+docker compose --project-name tianshu-external --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.yml down
 ```
 
@@ -296,7 +297,7 @@ docker compose --project-name tianshu-external --env-file .env \
 `docker-compose.kafka.yml` 启动一个单节点 KRaft Kafka，宿主机端口默认为 `9092`，外部客户端使用 `KAFKA_ADVERTISED_HOST:KAFKA_HOST_PORT`，容器内应用使用 `kafka:19092`。启动前在 `.env` 配置 `KAFKA_ADVERTISED_HOST`、`KAFKA_USERNAME`、`KAFKA_PASSWORD`：
 
 ```bash
-docker compose --project-name tianshu-kafka --env-file .env \
+docker compose --project-name tianshu-kafka --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.kafka.yml up -d
 ```
 
@@ -307,22 +308,22 @@ docker compose --project-name tianshu-kafka --env-file .env \
 `docker-compose.full.yml` 是完整单机方案，包含 MySQL、Redis、Kafka、server、HTTP、SDK 和 web，都在同一个 Compose 项目和网络内。server 默认启动 2 个副本；不要先启动 `docker-compose.mysql.yml` 或 `docker-compose.redis.yml`。
 
 ```bash
-docker compose --project-name tianshu-full --env-file .env \
+docker compose --project-name tianshu-full --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.full.yml up -d
 
 # 显式指定 server 副本数时：
-docker compose --project-name tianshu-full --env-file .env \
+docker compose --project-name tianshu-full --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.full.yml up -d --scale server=2
-docker compose --project-name tianshu-full --env-file .env \
+docker compose --project-name tianshu-full --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.full.yml ps
-docker compose --project-name tianshu-full --env-file .env \
+docker compose --project-name tianshu-full --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.full.yml logs --tail 200 server http sdk web kafka
 ```
 
 数据库和 Redis 数据分别持久化到 `docker/rule-engine-mysql/data`、`docker/rule-engine-redis/data`；停止 Compose 不会删除数据目录。停止：
 
 ```bash
-docker compose --project-name tianshu-full --env-file .env \
+docker compose --project-name tianshu-full --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.full.yml down
 ```
 
@@ -330,7 +331,7 @@ docker compose --project-name tianshu-full --env-file .env \
 
 ```bash
 docker compose --project-name tianshu-full --profile example-data \
-  --env-file .env -f docker/docker-compose.full.yml up -d
+  --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml up -d
 ```
 
 已有数据目录不会被示例导入自动清空。生产环境不要启用 `example-data`，也不要把 MySQL 数据目录直接复制到另一套实例。
@@ -340,17 +341,17 @@ docker compose --project-name tianshu-full --profile example-data \
 这两个文件只用于给 JAR 或独立 Docker 方案提供依赖，不能代替应用启动：
 
 ```bash
-docker compose --project-name tianshu-mysql --env-file .env \
+docker compose --project-name tianshu-mysql --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.mysql.yml up -d
-docker compose --project-name tianshu-redis --env-file .env \
+docker compose --project-name tianshu-redis --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.redis.yml up -d
 ```
 
 JAR/容器从宿主机访问时使用 `127.0.0.1` 和映射端口；同一 Docker 网络中的容器使用 Compose 服务名和容器端口。停止依赖组件：
 
 ```bash
-docker compose --project-name tianshu-mysql --env-file .env -f docker/docker-compose.mysql.yml down
-docker compose --project-name tianshu-redis --env-file .env -f docker/docker-compose.redis.yml down
+docker compose --project-name tianshu-mysql --env-file .env.client --env-file .env.server -f docker/docker-compose.mysql.yml down
+docker compose --project-name tianshu-redis --env-file .env.client --env-file .env.server -f docker/docker-compose.redis.yml down
 ```
 
 ## 可选：接入 Kafka 执行日志
@@ -382,11 +383,11 @@ KAFKA_SERVER_APPLICATION_JSON={"rule-engine":{"kafka":{"topic-projects":{"rule-e
 
 ```bash
 # 外接数据库 Compose
-docker compose --project-name tianshu-external --env-file .env -f docker/docker-compose.yml up -d server
-docker compose --project-name tianshu-external --env-file .env -f docker/docker-compose.yml up -d runtime-sdk
+docker compose --project-name tianshu-external --env-file .env.client --env-file .env.server -f docker/docker-compose.yml up -d server
+docker compose --project-name tianshu-external --env-file .env.client --env-file .env.server -f docker/docker-compose.yml up -d runtime-sdk
 # 自带数据库 Compose
-docker compose --project-name tianshu-full --env-file .env -f docker/docker-compose.full.yml up -d server
-docker compose --project-name tianshu-full --env-file .env -f docker/docker-compose.full.yml up -d sdk
+docker compose --project-name tianshu-full --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml up -d server
+docker compose --project-name tianshu-full --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml up -d sdk
 ```
 
 JAR 和独立 `docker run` 直接使用 Spring Boot 的 `SPRING_KAFKA_BOOTSTRAP_SERVERS`、`SPRING_APPLICATION_JSON` 或外部 YAML，不能直接使用上述两个 Compose JSON 别名。具体启动命令、TLS/SASL 配置、验收及关闭顺序见 [Kafka 部署接入](../docs/kafka-execution-logs.md#各部署方案的接入方式)。
@@ -396,7 +397,7 @@ JAR 和独立 `docker run` 直接使用 Spring Boot 的 `SPRING_KAFKA_BOOTSTRAP_
 本项目不会安装或修改 Ubuntu 的 UFW、Fail2ban、宿主机 Nginx、Certbot 或既有端口规则。先准备配置：
 
 ```bash
-cp .env.example .env
+cp .env.server.example .env.server`ncp .env.client.example .env.client
 vi .env
 ```
 
@@ -456,8 +457,8 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/tianshu
-ExecStart=/usr/bin/docker compose --project-name tianshu-full --env-file /opt/tianshu/.env -f /opt/tianshu/docker/docker-compose.full.yml up -d --scale server=2
-ExecStop=/usr/bin/docker compose --project-name tianshu-full --env-file /opt/tianshu/.env -f /opt/tianshu/docker/docker-compose.full.yml stop
+ExecStart=/usr/bin/docker compose --project-name tianshu-full --env-file /opt/tianshu/.env.client --env-file /opt/tianshu/.env.server -f /opt/tianshu/docker/docker-compose.full.yml up -d --scale server=2
+ExecStop=/usr/bin/docker compose --project-name tianshu-full --env-file /opt/tianshu/.env.client --env-file /opt/tianshu/.env.server -f /opt/tianshu/docker/docker-compose.full.yml stop
 TimeoutStartSec=0
 TimeoutStopSec=180
 
@@ -484,7 +485,7 @@ curl -I http://127.0.0.1:9090/
 `readiness` 返回 `UP` 后再接收业务流量。更新时重新运行 `node scripts/package-runtime.mjs`，再替换 `RUNTIME_DIR` 中的 JAR/dist；Compose 只需重启应用服务：
 
 ```bash
-docker compose --project-name tianshu-external --env-file .env \
+docker compose --project-name tianshu-external --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.yml up -d --force-recreate server runtime-http runtime-sdk web
 ```
 

@@ -14,7 +14,7 @@ mysql -h"$MYSQL_HOST" -P"$MYSQL_PORT" -u"$MYSQL_USERNAME" -p "$MYSQL_DATABASE" \
 Compose 可选导入：
 
 ```bash
-docker compose --profile example-data --env-file .env \
+docker compose --profile example-data --env-file .env.server \
   -f docker/docker-compose.full.yml up -d
 ```
 
@@ -22,6 +22,6 @@ docker compose --profile example-data --env-file .env \
 如果 MySQL 使用独立 Compose，则在 server 已启动并完成 schema 初始化后执行：
 
 ```bash
-docker compose --profile example-data --env-file .env \
+docker compose --profile example-data --env-file .env.server \
   -f docker/docker-compose.mysql.yml up -d
 ```

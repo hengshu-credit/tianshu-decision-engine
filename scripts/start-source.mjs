@@ -8,13 +8,17 @@ const isWindows = process.platform === 'win32'
 const command = name => isWindows ? `${name}.cmd` : name
 
 function loadEnv() {
-  const file = path.join(root, '.env')
-  if (!existsSync(file)) throw new Error('缺少根目录 .env，请先复制 .env.example 并填写真实配置。')
   const values = {}
-  for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
-    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/)
-    if (!match || match[1].startsWith('#')) continue
-    values[match[1]] = match[2].replace(/^(['"])(.*)\1$/, '$2')
+  const files = ['.env.server', '.env.client']
+    .map(name => path.join(root, name))
+    .filter(existsSync)
+  if (files.length === 0) throw new Error('缺少 .env.server 和 .env.client，请先复制两个配置模板并填写真实配置。')
+  for (const file of files) {
+    for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+      const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/)
+      if (!match || match[1].startsWith('#')) continue
+      values[match[1]] = match[2].replace(/^(['"])(.*)\1$/, '$2')
+    }
   }
   return { ...values, ...process.env }
 }

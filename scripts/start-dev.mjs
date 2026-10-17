@@ -1,11 +1,15 @@
 import { spawn } from 'node:child_process'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const logDir = path.join(root, '.codex-run-logs')
-const envFile = readFileSync(path.join(root, '.env'), 'utf8')
+const envFiles = ['.env.server', '.env.client']
+  .map(name => path.join(root, name))
+  .filter(existsSync)
+if (envFiles.length === 0) throw new Error('缺少 .env.server 和 .env.client，请先复制两个配置模板并填写真实配置。')
+const envFile = envFiles.map(file => readFileSync(file, 'utf8')).join('\n')
 const psQuote = value => `'${String(value).replaceAll("'", "''")}'`
 
 function setting(name, fallback) {
