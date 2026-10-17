@@ -115,6 +115,7 @@ public class DataObjectAppliedIdentityTest {
                 public void update(RuleDataObject object) { rootWrites++; value = object; }
             };
             ProjectAuthProperties auth = new ProjectAuthProperties();
+            auth.setActiveKeyId("v1");
             auth.getMasterKeys().put("v1", "0123456789abcdef0123456789abcdef");
             adapter = new DataObjectGovernedResourceAdapter(store, fieldMapper, options, new GovernanceSecretCodec(new CredentialCipher(auth)));
         }

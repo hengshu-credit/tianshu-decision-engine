@@ -242,6 +242,7 @@ public class TokenAuthInterceptorTest {
 
     private FakeProjectAuthService service(ProjectAuthContext context) {
         ProjectAuthProperties properties = new ProjectAuthProperties();
+        properties.setActiveKeyId("v1");
         properties.setMasterKeys(Collections.singletonMap("v1", "test-master-key"));
         return new FakeProjectAuthService(new CredentialCipher(properties), context);
     }

@@ -32,9 +32,7 @@ pm run dev` 的 Vite 开发端口；不会改变生产 `dist` 静态站点端口
 | 参数名 | 默认值 | 含义与具体作用 |
 |---|---:|---|
 | `RULE_AUTH_MASTER_KEY` | 无 | 项目长期凭证的活动加密主密钥，至少 32 个字符；缺失或使用公开示例值时服务拒绝启动。所有节点必须一致。 |
-| `RULE_AUTH_ACTIVE_KEY_ID` | `v2` | 新写入凭证使用的密钥版本标识；轮换时先配置新版本，再按项目重置/迁移凭证。 |
-| `RULE_AUTH_LEGACY_MASTER_KEY` | 空 | 读取历史 `v1` 密文的旧主密钥；旧凭证全部重置后删除。 |
-| `RULE_AUTH_LEGACY_V2_MASTER_KEY` | 空 | 读取曾错误复用 `v2` 标识的历史密文；迁移完成后删除。 |
+| `RULE_AUTH_ACTIVE_KEY_ID` | `v2` | 当前凭证使用的密钥版本标识；服务只使用该版本对应的主密钥。 |
 | `CONSOLE_USERNAME` | 空 | 管理控制台登录用户名。 |
 | `CONSOLE_PASSWORD` | 空 | 管理控制台密码；默认按 BCrypt 哈希校验。不要把明文密码提交到 `.env`。 |
 | `CONSOLE_PASSWORD_ENCODING` | `BCRYPT` | `CONSOLE_PASSWORD` 的编码方式；本地临时调试可设 `PLAIN`，生产使用 `BCRYPT` 或外部身份系统。 |
@@ -47,7 +45,6 @@ pm run dev` 的 Vite 开发端口；不会改变生产 `dist` 静态站点端口
 |---|---:|---|
 | `SPRING_SQL_INIT_MODE` | `always` | Spring 启动时是否执行 `schema.sql`；默认每次启动幂等执行结构、视图和系统常量补齐，已有数据库可临时设为 
 ever`。 |
-| `SPRING_DATASOURCE_INITIALIZATION_MODE` | 空 | Spring Boot 旧版本兼容别名，仅在迁移旧部署时使用；优先使用 `SPRING_SQL_INIT_MODE`。 |
 | `SPRING_SQL_INIT_CONTINUE_ON_ERROR` | `false` | 初始化 SQL 出错时是否继续；生产保持 `false`，让错误阻止启动。 |
 | `RULE_TRACE_MAX_PERSIST_BYTES` | `1048576` | 单条持久化追踪 JSON 的最大字节数（默认 1 MiB）；超出时只截断持久化副本，不截断本次请求结果。 |
 | `RULE_TRACE_MASK_PATHS` | 空 | 持久化追踪副本的 JSONPath 脱敏列表，逗号分隔，例如 `$.input.idCard,$.items[*].phone`。 |
@@ -201,7 +198,6 @@ mvn "-Ponnx-gpu" "-Dtianshu.cuda.diagnostic=true" "-Dtest=CudaEnvironmentDiagnos
 | `MYSQL_USERNAME` / `MYSQL_PASSWORD` | 必填；生产使用仅具备 `rule_engine` 所需权限的独立账号 |
 | `REDIS_PASSWORD` | 必填；与 server 和 SDK 实际连接的 Redis 实例一致 |
 | `RULE_AUTH_MASTER_KEY` | 必填；至少 32 位的私有随机密钥，生产通过 Secret/KMS 注入 |
-| `RULE_AUTH_LEGACY_MASTER_KEY` / `RULE_AUTH_LEGACY_V2_MASTER_KEY` | 仅升级旧部署时配置；分别用于读取历史 `v1` 密文和曾复用 `v2` 标识的旧密文 |
 | `CONSOLE_USERNAME` / `CONSOLE_PASSWORD` | 必填；密码默认按 BCrypt 校验 |
 | `CORS_ALLOWED_ORIGIN_PATTERNS` | 生产控制台的精确 HTTPS 来源，不使用任意来源 |
 | `SESSION_COOKIE_SECURE` | HTTPS 生产环境设为 `true` |
@@ -735,7 +731,7 @@ SDK 行为：
 - 服务端持久化追踪默认限制为 1 MiB，可通过 `RULE_TRACE_MAX_PERSIST_BYTES` 调整；超过上限的日志保存截断标记和原始大小，请求结果及内存中的本次追踪不受该持久化上限影响。
 - `log-report-enabled=false` 禁止 SDK 本地日志上报，包括自定义、HTTP 和 Kafka reporter；不关闭服务端基础日志、鉴权审计或计费。开启上报时 Spring 容器中的自定义 `ExecutionLogReporter` 优先；内置通道默认 HTTP，Kafka 需显式设置 `log-report-transport: KAFKA`。服务端需启用 Kafka 消费并将主题绑定真实项目 ID；完整配置、失败补报和旧版迁移见 [Kafka 执行日志上报](kafka-execution-logs.md)。
 
-项目鉴权配置、长期凭证和短期 Token 均可在控制台再次查看完整值。长期凭证在数据库中使用 AES-GCM 可逆加密存储；启动服务前必须通过 `RULE_AUTH_MASTER_KEY` 配置至少 32 位的独立主密钥并妥善保管，未配置或使用公开开发密钥时服务会拒绝启动。新密文默认使用 `v2` 密钥；升级前若已有旧 `v1` 密文，需通过 `RULE_AUTH_LEGACY_MASTER_KEY` 保留原主密钥；若历史版本曾在更换密钥材料时继续复用 `v2` 标识，还需通过 `RULE_AUTH_LEGACY_V2_MASTER_KEY` 配置当时的材料。解密会优先使用密文标识对应的密钥，再尝试已配置的历史密钥；待旧凭证全部修改或重置后应移除历史密钥。可通过 `RULE_AUTH_ACTIVE_KEY_ID` 显式选择活动密钥版本，后续轮换必须使用新的 key ID。访问审计记录所有受保护接口调用；只有实际规则执行进入计费，计费明细可区分 `authCode` 和 `tokenCode`，按日汇总到鉴权配置维度。
+项目鉴权配置、长期凭证和短期 Token 均可在控制台再次查看完整值。长期凭证在数据库中使用 AES-GCM 可逆加密存储；启动服务前必须通过 `RULE_AUTH_MASTER_KEY` 配置至少 32 位的独立主密钥并妥善保管，未配置或使用公开开发密钥时服务会拒绝启动。新密文默认使用 `v2` 密钥，解密只接受密文中标识对应的当前主密钥，不再回退读取历史主密钥。所有节点必须使用相同的 `RULE_AUTH_MASTER_KEY` 和 `RULE_AUTH_ACTIVE_KEY_ID`。访问审计记录所有受保护接口调用；只有实际规则执行进入计费，计费明细可区分 `authCode` 和 `tokenCode`，按日汇总到鉴权配置维度。
 
 ## 计费汇总币种升级与历史重建
 

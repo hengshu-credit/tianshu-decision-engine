@@ -33,6 +33,7 @@ public class ProjectAuthManagementServiceTest {
     @Before
     public void setUp() {
         ProjectAuthProperties properties = new ProjectAuthProperties();
+        properties.setActiveKeyId("v1");
         properties.setMasterKeys(Collections.singletonMap("v1", "test-master-key"));
         cipher = new CredentialCipher(properties);
         service = new ManagementAuthService(cipher);

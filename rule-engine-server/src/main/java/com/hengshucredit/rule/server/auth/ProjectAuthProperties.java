@@ -12,7 +12,7 @@ import java.util.List;
 @Data
 @ConfigurationProperties(prefix = "rule-engine.project-auth")
 public class ProjectAuthProperties {
-    private String activeKeyId = "v1";
+    private String activeKeyId = "v2";
     private Map<String, String> masterKeys = new LinkedHashMap<>();
     private long hmacTimeWindowSeconds = 300L;
     private int tokenFailureLimit = 10;

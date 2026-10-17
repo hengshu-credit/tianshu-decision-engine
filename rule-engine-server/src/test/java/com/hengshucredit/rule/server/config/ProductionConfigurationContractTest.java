@@ -24,6 +24,8 @@ public class ProductionConfigurationContractTest {
 
         Assert.assertFalse(application.contains(LEGACY_SHARED_PASSWORD));
         Assert.assertFalse(application.contains(LEGACY_MASTER_KEY));
+        Assert.assertFalse(application.contains("RULE_AUTH_LEGACY_MASTER_KEY"));
+        Assert.assertFalse(application.contains("RULE_AUTH_LEGACY_V2_MASTER_KEY"));
         Assert.assertTrue(application.contains("${MYSQL_PASSWORD:}"));
         Assert.assertTrue(application.contains("${RULE_AUTH_MASTER_KEY:}"));
         Assert.assertTrue(application.contains("${CONSOLE_PASSWORD:}"));
@@ -50,6 +52,7 @@ public class ProductionConfigurationContractTest {
         MockEnvironment environment = new MockEnvironment();
         String mode = properties.getProperty("spring.sql.init.mode");
 
+        Assert.assertFalse(mode.contains("SPRING_DATASOURCE_INITIALIZATION_MODE"));
         Assert.assertEquals("always", environment.resolveRequiredPlaceholders(mode));
         Assert.assertEquals("classpath:sql/schema.sql", properties.getProperty("spring.sql.init.schema-locations"));
         Assert.assertEquals("false", environment.resolveRequiredPlaceholders(
@@ -75,6 +78,12 @@ public class ProductionConfigurationContractTest {
 
         Assert.assertFalse(appCompose.contains(LEGACY_SHARED_PASSWORD));
         Assert.assertFalse(fullCompose.contains(LEGACY_SHARED_PASSWORD));
+        Assert.assertFalse(appCompose.contains("RULE_AUTH_LEGACY_MASTER_KEY"));
+        Assert.assertFalse(appCompose.contains("RULE_AUTH_LEGACY_V2_MASTER_KEY"));
+        Assert.assertFalse(serverCompose.contains("RULE_AUTH_LEGACY_MASTER_KEY"));
+        Assert.assertFalse(serverCompose.contains("RULE_AUTH_LEGACY_V2_MASTER_KEY"));
+        Assert.assertFalse(fullCompose.contains("RULE_AUTH_LEGACY_MASTER_KEY"));
+        Assert.assertFalse(fullCompose.contains("RULE_AUTH_LEGACY_V2_MASTER_KEY"));
         Assert.assertFalse(mysqlCompose.contains(LEGACY_SHARED_PASSWORD));
         Assert.assertFalse(redisCompose.contains(LEGACY_SHARED_PASSWORD));
         Assert.assertFalse(appCompose.contains("mysql-init:"));

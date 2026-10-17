@@ -23,6 +23,7 @@ import static org.junit.Assert.*;
 public class ExternalApiCallbackStoreTest {
     static ExternalApiCallbackStore store() {
         ProjectAuthProperties properties = new ProjectAuthProperties();
+        properties.setActiveKeyId("v1");
         properties.setMasterKeys(Map.of("v1", "unit-test-encryption-key-0123456789abcdef"));
         return new ExternalApiCallbackStore(new MemoryRedis(), new CredentialCipher(properties));
     }
@@ -97,6 +98,7 @@ public class ExternalApiCallbackStoreTest {
     @Test public void trialCallbackLifetimeOutlivesOneHttpSliceAndRegistrationIsDurableBeforeReturn() {
         MemoryRedis redis = new MemoryRedis();
         ProjectAuthProperties properties = new ProjectAuthProperties();
+        properties.setActiveKeyId("v1");
         properties.setMasterKeys(Map.of("v1", "unit-test-encryption-key-0123456789abcdef"));
         ExternalApiCallbackStore callbacks = new ExternalApiCallbackStore(redis, new CredentialCipher(properties));
         java.util.concurrent.atomic.AtomicReference<Map<String, Object>> saved = new java.util.concurrent.atomic.AtomicReference<>();
@@ -111,6 +113,7 @@ public class ExternalApiCallbackStoreTest {
     @Test public void unconfirmedCallbackRegistrationIsClosedBeforeAnySupplierCanReceiveIt() {
         MemoryRedis redis = new MemoryRedis();
         ProjectAuthProperties properties = new ProjectAuthProperties();
+        properties.setActiveKeyId("v1");
         properties.setMasterKeys(Map.of("v1", "unit-test-encryption-key-0123456789abcdef"));
         ExternalApiCallbackStore callbacks = new ExternalApiCallbackStore(redis, new CredentialCipher(properties));
         try (ExternalApiTrialContext trial = new ExternalApiTrialContext("trial", 1, System.currentTimeMillis() + 60000,

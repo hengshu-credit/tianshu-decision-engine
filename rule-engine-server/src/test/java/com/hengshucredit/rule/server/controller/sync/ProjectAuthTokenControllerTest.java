@@ -57,6 +57,7 @@ public class ProjectAuthTokenControllerTest {
 
     private CredentialCipher cipher() {
         ProjectAuthProperties properties = new ProjectAuthProperties();
+        properties.setActiveKeyId("v1");
         properties.setMasterKeys(Collections.singletonMap("v1", "test-master-key"));
         return new CredentialCipher(properties);
     }

@@ -31,6 +31,7 @@ public class ProjectAuthControllerTest {
     @Before
     public void setUp() {
         ProjectAuthProperties properties = new ProjectAuthProperties();
+        properties.setActiveKeyId("v1");
         properties.setMasterKeys(Collections.singletonMap("v1", "test-master-key"));
         service = new FakeProjectAuthService(new CredentialCipher(properties));
         controller = new ProjectAuthController();

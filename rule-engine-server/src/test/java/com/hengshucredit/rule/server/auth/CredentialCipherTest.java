@@ -20,26 +20,14 @@ public class CredentialCipherTest {
         assertEquals("secret-value", cipher.decrypt(encrypted));
     }
 
-    @Test
-    public void decryptsExistingValueAfterActiveKeyChanges() {
+    @Test(expected = IllegalStateException.class)
+    public void rejectsExistingValueWhenItsKeyIsNotConfigured() {
         ProjectAuthProperties oldProperties = properties("v1", "v1", "old-master-key");
         String encrypted = new CredentialCipher(oldProperties).encrypt("legacy-secret");
 
-        ProjectAuthProperties rotatedProperties = properties("v2", "v1", "old-master-key");
-        rotatedProperties.getMasterKeys().put("v2", "new-master-key");
+        ProjectAuthProperties currentProperties = properties("v2", "v2", "new-master-key");
 
-        assertEquals("legacy-secret", new CredentialCipher(rotatedProperties).decrypt(encrypted));
-    }
-
-    @Test
-    public void decryptsValueWhenHistoricalAndCurrentMaterialsSharedTheSameKeyId() {
-        ProjectAuthProperties currentProperties = properties("v2", "v2", "current-master-key");
-        String encrypted = new CredentialCipher(currentProperties).encrypt("current-secret");
-
-        ProjectAuthProperties rotatedProperties = properties("v3", "v2", "historical-v2-master-key");
-        rotatedProperties.getMasterKeys().put("v3", "current-master-key");
-
-        assertEquals("current-secret", new CredentialCipher(rotatedProperties).decrypt(encrypted));
+        new CredentialCipher(currentProperties).decrypt(encrypted);
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -80,16 +68,6 @@ public class CredentialCipherTest {
     @Test
     public void acceptsExplicitStrongMasterKey() {
         ProjectAuthProperties properties = properties("v1", "v1",
-                "test-only-master-key-with-at-least-32-characters");
-
-        properties.validateMasterKeys();
-    }
-
-    @Test
-    public void acceptsLegacyDevelopmentKeyWhenActiveKeyIsStrong() {
-        ProjectAuthProperties properties = properties("v2", "v1",
-                "tianshu-dev-auth-master-key-change-me");
-        properties.getMasterKeys().put("v2",
                 "test-only-master-key-with-at-least-32-characters");
 
         properties.validateMasterKeys();

@@ -10,9 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.util.ArrayList;
 import java.util.Base64;
-import java.util.List;
 
 @Component
 public class CredentialCipher {
@@ -65,39 +63,11 @@ public class CredentialCipher {
             byte[] encrypted = new byte[payload.length - IV_LENGTH];
             System.arraycopy(payload, 0, iv, 0, iv.length);
             System.arraycopy(payload, iv.length, encrypted, 0, encrypted.length);
-            return decryptWithAvailableKeys(parts[1], iv, encrypted);
-        } catch (IllegalArgumentException e) {
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, keyForId(parts[1]), new GCMParameterSpec(128, iv));
+            return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
+        } catch (GeneralSecurityException | IllegalArgumentException e) {
             throw new IllegalArgumentException("Unable to decrypt project credential", e);
-        }
-    }
-
-    private String decryptWithAvailableKeys(String keyId, byte[] iv, byte[] encrypted) {
-        List<String> candidates = new ArrayList<>();
-        addCandidate(candidates, properties.getMasterKeys().get(keyId));
-        for (String material : properties.getMasterKeys().values()) {
-            addCandidate(candidates, material);
-        }
-        if (candidates.isEmpty()) {
-            throw new IllegalStateException("Missing project authentication master key: " + keyId);
-        }
-
-        GeneralSecurityException lastFailure = null;
-        for (String material : candidates) {
-            try {
-                Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-                cipher.init(Cipher.DECRYPT_MODE, keyFromMaterial(material), new GCMParameterSpec(128, iv));
-                return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
-            } catch (GeneralSecurityException e) {
-                lastFailure = e;
-            }
-        }
-        throw new IllegalArgumentException("No configured project authentication key can decrypt the credential",
-                lastFailure);
-    }
-
-    private void addCandidate(List<String> candidates, String material) {
-        if (material != null && !material.isEmpty() && !candidates.contains(material)) {
-            candidates.add(material);
         }
     }
 
@@ -113,10 +83,6 @@ public class CredentialCipher {
         if (material == null || material.isEmpty()) {
             throw new IllegalStateException("Missing project authentication master key: " + keyId);
         }
-        return keyFromMaterial(material);
-    }
-
-    private SecretKeySpec keyFromMaterial(String material) {
         try {
             byte[] key = MessageDigest.getInstance("SHA-256")
                     .digest(material.getBytes(StandardCharsets.UTF_8));

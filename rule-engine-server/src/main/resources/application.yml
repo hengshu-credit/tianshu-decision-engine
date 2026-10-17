@@ -31,7 +31,7 @@ spring:
     init:
       schema-locations: classpath:sql/schema.sql
       encoding: UTF-8
-      mode: ${SPRING_SQL_INIT_MODE:${SPRING_DATASOURCE_INITIALIZATION_MODE:always}}
+      mode: ${SPRING_SQL_INIT_MODE:always}
       continue-on-error: ${SPRING_SQL_INIT_CONTINUE_ON_ERROR:false}
   data:
     redis:
@@ -92,9 +92,7 @@ rule-engine:
   project-auth:
     active-key-id: ${RULE_AUTH_ACTIVE_KEY_ID:v2}
     master-keys:
-      v1: ${RULE_AUTH_LEGACY_MASTER_KEY:}
       v2: ${RULE_AUTH_MASTER_KEY:}
-      legacy-v2: ${RULE_AUTH_LEGACY_V2_MASTER_KEY:}
     hmac-time-window-seconds: 300
     token-failure-limit: 10
     token-failure-window-seconds: 300
