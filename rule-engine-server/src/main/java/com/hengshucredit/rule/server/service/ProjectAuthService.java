@@ -804,9 +804,8 @@ public class ProjectAuthService {
     }
 
     private byte[] requestBody(HttpServletRequest request) {
-        return request instanceof CachedBodyHttpServletRequest
-                ? ((CachedBodyHttpServletRequest) request).getCachedBody()
-                : new byte[0];
+        byte[] cachedBody = CachedBodyHttpServletRequest.cachedBody(request);
+        return cachedBody == null ? new byte[0] : cachedBody;
     }
 
     private String resolveRequestId(HttpServletRequest request) {

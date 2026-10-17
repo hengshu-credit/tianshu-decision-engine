@@ -16,16 +16,26 @@ import java.nio.charset.StandardCharsets;
 public class CachedBodyHttpServletRequest extends HttpServletRequestWrapper {
 
     public static final int MAX_BODY_SIZE = 5 * 1024 * 1024;
+    public static final String CACHED_BODY_ATTRIBUTE = CachedBodyHttpServletRequest.class.getName() + ".body";
 
     private final byte[] cachedBody;
 
     public CachedBodyHttpServletRequest(HttpServletRequest request) throws IOException {
         super(request);
         this.cachedBody = readBody(request.getInputStream());
+        request.setAttribute(CACHED_BODY_ATTRIBUTE, this.cachedBody.clone());
     }
 
     public byte[] getCachedBody() {
         return cachedBody.clone();
+    }
+
+    public static byte[] cachedBody(HttpServletRequest request) {
+        if (request instanceof CachedBodyHttpServletRequest cached) {
+            return cached.getCachedBody();
+        }
+        Object value = request == null ? null : request.getAttribute(CACHED_BODY_ATTRIBUTE);
+        return value instanceof byte[] bytes ? bytes.clone() : null;
     }
 
     @Override

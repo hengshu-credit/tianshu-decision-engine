@@ -594,7 +594,7 @@ INSERT IGNORE INTO rule_variable (project_id,`scope`,var_code,var_label,script_n
 	 (0,'GLOBAL','NEGATIVE_ONE','负一','NEGATIVE_ONE','NUMBER','CONSTANT',NULL,'-1','','-1','系统常量：数值负一。',-993,1,NOW(),NOW()),
 	 (0,'GLOBAL','ZERO','零','ZERO','NUMBER','CONSTANT',NULL,'0','','0','系统常量：数值零。',-992,1,NOW(),NOW()),
 	 (0,'GLOBAL','ONE','一','ONE','NUMBER','CONSTANT',NULL,'1','','1','系统常量：数值一。',-991,1,NOW(),NOW()),
-	 (0,'GLOBAL','POSITIVE_INFINITY','正无穷','POSITIVE_INFINITY','DOUBLE','CONSTANT',NULL,'Infinity','','Infinity','系统常量：数值比较上界，可在条件右侧通过字段选择器引用。',-990,1,NOW(),NOW())
+	 (0,'GLOBAL','POSITIVE_INFINITY','正无穷','POSITIVE_INFINITY','DOUBLE','CONSTANT',NULL,'Infinity','','Infinity','系统常量：数值比较上界，可在条件右侧通过字段选择器引用。',-990,1,NOW(),NOW());
 
 -- 分流实验样例（只保留实验配置，不写入实验执行日志）。
 INSERT IGNORE INTO rule_experiment

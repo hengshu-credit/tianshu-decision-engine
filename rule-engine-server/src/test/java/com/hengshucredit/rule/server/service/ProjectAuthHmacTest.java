@@ -11,6 +11,8 @@ import com.hengshucredit.rule.server.auth.ProjectAuthType;
 import org.junit.Before;
 import org.junit.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
@@ -80,6 +82,14 @@ public class ProjectAuthHmacTest {
         byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
         assertNotNull(service.authenticate(signedRequest(body, NOW, "nonce-replay")));
         assertNull(service.authenticate(signedRequest(body, NOW, "nonce-replay")));
+    }
+
+    @Test
+    public void authenticatesBodyWhenRequestIsWrappedAfterBodyCaching() throws Exception {
+        byte[] body = "{\"amount\":100}".getBytes(StandardCharsets.UTF_8);
+        HttpServletRequest wrapped = new HttpServletRequestWrapper(signedRequest(body, NOW, "nonce-wrapped"));
+
+        assertNotNull(service.authenticate(wrapped));
     }
 
     @Test
