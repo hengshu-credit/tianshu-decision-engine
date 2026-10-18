@@ -27,6 +27,8 @@ public class ProductionConfigurationContractTest {
         Assert.assertFalse(application.contains("RULE_AUTH_LEGACY_MASTER_KEY"));
         Assert.assertFalse(application.contains("RULE_AUTH_LEGACY_V2_MASTER_KEY"));
         Assert.assertTrue(application.contains("createDatabaseIfNotExist=true"));
+        Assert.assertTrue(application.contains("forward-headers-strategy: framework"));
+        Assert.assertFalse(application.contains("SESSION_COOKIE_SECURE"));
         Assert.assertTrue(application.contains("${MYSQL_PASSWORD:}"));
         Assert.assertTrue(application.contains("${RULE_AUTH_MASTER_KEY:}"));
         Assert.assertTrue(application.contains("${CONSOLE_PASSWORD:}"));

@@ -1,11 +1,11 @@
 server:
   port: ${SERVER_PORT:8080}
+  forward-headers-strategy: framework
   servlet:
     session:
       timeout: 60m
       cookie:
         http-only: true
-        secure: ${SESSION_COOKIE_SECURE:false}
         same-site: lax
 
 spring:
@@ -71,6 +71,12 @@ rule-engine:
     mask-paths: ${RULE_TRACE_MASK_PATHS:}
   source-resolution:
     parallelism: ${SOURCE_RESOLUTION_PARALLELISM:4}
+  database:
+    # 所有数据库数据源共享的查询并发预算；超出后立即返回可重试的容量错误。
+    max-concurrent-queries: ${RULE_DATABASE_MAX_CONCURRENT_QUERIES:128}
+  external-call:
+    runtime-log-content-enabled: ${RULE_RUNTIME_LOG_CONTENT_ENABLED:true}
+    runtime-log-max-field-bytes: ${RULE_RUNTIME_LOG_MAX_FIELD_BYTES:0}
   onnx:
     # 8 种任务各保留 CPU 检查与一种运行配置；仅限制会话数量，不等于 native/显存字节预算。
     # 满额优先释放最久未用的空闲会话，全部在用时明确拒绝新的模型/运行配置。
@@ -86,6 +92,7 @@ rule-engine:
     journal-replay-batch-size: ${RULE_EXECUTION_PERSISTENCE_JOURNAL_REPLAY_BATCH_SIZE:1000}
   list-actions:
     journal-dir: ${RULE_LIST_ACTION_JOURNAL_DIR:./logs/list-action-journal}
+    scan-parent: ${RULE_LIST_ACTION_JOURNAL_SCAN_PARENT:false}
   cors:
     # 生产环境必须通过环境变量配置为实际控制台域名，多个来源使用英文逗号分隔
     allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:${VITE_PORT:9090},http://127.0.0.1:${VITE_PORT:9090}}
