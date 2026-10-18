@@ -37,8 +37,8 @@ import java.util.Set;
 public class RuleExecuteService {
     @Resource private RuleActionRuntimeService ruleActions;
     @Resource @org.springframework.context.annotation.Lazy private ResourceVersionService resourceVersions;
-    @org.springframework.beans.factory.annotation.Value("${rule-engine.trace.max-persist-bytes:1048576}")
-    private int maxPersistTraceBytes = 1048576;
+    @org.springframework.beans.factory.annotation.Value("${rule-engine.trace.max-persist-bytes:0}")
+    private int maxPersistTraceBytes = 0;
 
     @org.springframework.beans.factory.annotation.Value("${rule-engine.trace.mask-paths:}")
     private String traceMaskPaths = "";

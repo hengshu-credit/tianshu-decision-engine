@@ -44,7 +44,7 @@ dist/            Vue 控制台静态文件
 
 `schema.sql` 在 server JAR 内，服务端默认每次启动幂等执行。JDBC URL 使用 `createDatabaseIfNotExist=true`，首次连接时会自动创建 `MYSQL_DATABASE`；因此首次部署账号需要建库权限，后续运行至少需要目标库的建表/变更权限。所有表显式使用 `utf8mb4`。样例数据不会自动导入；需要演示数据时，只使用 `docker/rule-engine-mysql/data-tianshu-example.sql`。
 
-生产 Compose 默认只把日志写到 Docker stdout，不再在 runtime 的 `/data/logs/application.log` 生成文件；Docker 日志默认按 `10m × 3` 轮转。`SERVER_LOG_LEVEL` 和 `RUNTIME_LOG_LEVEL` 支持 `ERROR`、`WARN`、`INFO`、`DEBUG`，生产建议保持 `WARN`，临时排障再调高。客户端 runtime 默认关闭执行 trace，服务端持久化 trace 默认限制为 64KB；可通过 `.env.server`/`.env.client` 中对应变量调整。执行恢复 journal 属于故障恢复数据，数据库正常时会自动消费和压缩，不应当作普通日志删除。
+生产 Compose 默认只把日志写到 Docker stdout，不再在 runtime 的 `/data/logs/application.log` 生成文件；Docker 日志默认按 `10m × 3` 轮转。`SERVER_LOG_LEVEL` 和 `RUNTIME_LOG_LEVEL` 支持 `ERROR`、`WARN`、`INFO`、`DEBUG`，生产建议保持 `WARN`，临时排障再调高。客户端 runtime 默认关闭执行 trace（可通过 `RUNTIME_TRACE_ENABLED=true` 开启），服务端持久化 trace 默认不限制大小，可用 `RULE_TRACE_MAX_PERSIST_BYTES` 设置正数上限。执行恢复 journal 属于故障恢复数据，数据库正常时会自动消费和压缩，不应当作普通日志删除。
 
 ## 推荐：server/client 分离部署
 

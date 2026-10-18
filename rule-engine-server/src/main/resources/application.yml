@@ -66,7 +66,7 @@ rule-engine:
     auth-access-log-days: ${RULE_AUTH_ACCESS_LOG_RETENTION_DAYS:0}
   trace:
     # 仅限制持久化日志中的追踪 JSON；请求结果和内存追踪不截断。
-    max-persist-bytes: ${RULE_TRACE_MAX_PERSIST_BYTES:1048576}
+    max-persist-bytes: ${RULE_TRACE_MAX_PERSIST_BYTES:0}
     # 仅遮罩持久化追踪副本，逗号分隔 JSONPath，例如 $.input.idCard,$.items[*].phone。
     mask-paths: ${RULE_TRACE_MASK_PATHS:}
   source-resolution:

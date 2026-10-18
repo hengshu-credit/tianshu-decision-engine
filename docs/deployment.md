@@ -49,7 +49,7 @@ pm run dev` 的 Vite 开发端口；不会改变生产 `dist` 静态站点端口
 | `SPRING_SQL_INIT_MODE` | `always` | Spring 启动时是否执行 `schema.sql`；默认每次启动幂等执行结构、视图和系统常量补齐，已有数据库可临时设为 
 ever`。 |
 | `SPRING_SQL_INIT_CONTINUE_ON_ERROR` | `false` | 初始化 SQL 出错时是否继续；生产保持 `false`，让错误阻止启动。 |
-| `RULE_TRACE_MAX_PERSIST_BYTES` | `1048576` | 单条持久化追踪 JSON 的最大字节数（默认 1 MiB）；超出时只截断持久化副本，不截断本次请求结果。 |
+| `RULE_TRACE_MAX_PERSIST_BYTES` | `0` | 单条持久化追踪 JSON 的字节上限；`0` 表示不限制，设置为正数时只截断持久化副本，不截断本次请求结果。 |
 | `RULE_TRACE_MASK_PATHS` | 空 | 持久化追踪副本的 JSONPath 脱敏列表，逗号分隔，例如 `$.input.idCard,$.items[*].phone`。 |
 | `SOURCE_RESOLUTION_PARALLELISM` | `4` | API、数据库、名单等外部变量并行解析线程数；按外部依赖容量调整。 |
 
@@ -730,7 +730,7 @@ SDK 行为：
 - 没有外部 `ExecutionLogReporter` 时，日志通过有界 HTTP 队列异步上报，不阻塞规则结果；达到 `log-batch-size` 立即发送，否则最多等待 `log-flush-interval-ms`。队列达到 `log-buffer-size` 后采用 drop-newest 并记录丢弃计数/告警；HTTP 或业务响应失败最多尝试 3 次，最终失败记录批次和日志计数。
 - `RuleEngineClient.close()` 会在有界等待内冲刷自己创建的 HTTP reporter；规则结果不会因 reporter 抛错而改为失败。应用提供的外部 reporter 生命周期归应用容器管理，客户端不会替它启动或关闭。
 - `trace-enabled` 控制本地及服务端执行的表达式追踪，默认 true；直接 HTTP 调用通过顶层 `traceEnabled` 字段控制。关闭后仍保留 traceId 和服务端基础执行日志。
-- 服务端持久化追踪默认限制为 1 MiB，可通过 `RULE_TRACE_MAX_PERSIST_BYTES` 调整；超过上限的日志保存截断标记和原始大小，请求结果及内存中的本次追踪不受该持久化上限影响。
+- 服务端持久化追踪默认不限制大小；通过 `RULE_TRACE_MAX_PERSIST_BYTES` 设置为正数后，超过上限的日志保存截断标记和原始大小，请求结果及内存中的本次追踪不受该持久化上限影响。
 - `log-report-enabled=false` 禁止 SDK 本地日志上报，包括自定义、HTTP 和 Kafka reporter；不关闭服务端基础日志、鉴权审计或计费。开启上报时 Spring 容器中的自定义 `ExecutionLogReporter` 优先；内置通道默认 HTTP，Kafka 需显式设置 `log-report-transport: KAFKA`。服务端需启用 Kafka 消费并将主题绑定真实项目 ID；完整配置、失败补报和旧版迁移见 [Kafka 执行日志上报](kafka-execution-logs.md)。
 
 项目鉴权配置、长期凭证和短期 Token 均可在控制台再次查看完整值。长期凭证在数据库中使用 AES-GCM 可逆加密存储；启动服务前必须通过 `RULE_AUTH_MASTER_KEY` 配置至少 32 位的独立主密钥并妥善保管，未配置或使用公开开发密钥时服务会拒绝启动。新密文默认使用 `v2` 密钥，解密只接受密文中标识对应的当前主密钥，不再回退读取历史主密钥。所有节点必须使用相同的 `RULE_AUTH_MASTER_KEY` 和 `RULE_AUTH_ACTIVE_KEY_ID`。访问审计记录所有受保护接口调用；只有实际规则执行进入计费，计费明细可区分 `authCode` 和 `tokenCode`，按日汇总到鉴权配置维度。
