@@ -26,6 +26,9 @@ pm run dev` 的 Vite 开发端口；不会改变生产 `dist` 静态站点端口
 | `REDIS_HOST` | `localhost` | Redis 主机名。多节点必须指向同一个 Redis 实例或同一高可用服务。 |
 | `REDIS_PORT` | `6379` | Redis 端口。 |
 | `REDIS_PASSWORD` | 空 | Redis 认证密码；所有 Docker Compose 运行模式都会强制要求非空。 |
+| `SERVER_LOG_LEVEL` / `RUNTIME_LOG_LEVEL` | `WARN` | 容器 stdout 日志级别，可设为 `ERROR`、`WARN`、`INFO`、`DEBUG`；生产建议使用 `WARN`。 |
+| `DOCKER_LOG_MAX_SIZE` / `DOCKER_LOG_MAX_FILES` | `10m` / `3` | Docker `json-file` 日志轮转上限；达到大小后自动轮转，避免 stdout 日志无限增长。 |
+| `RUNTIME_TRACE_ENABLED` | `false` | HTTP/SDK runtime 是否收集执行 trace；生产默认关闭，按请求仍可由业务侧显式开启时需评估日志量。 |
 
 ### 1.2 鉴权、控制台与安全参数
 

@@ -92,6 +92,8 @@ public class ProductionConfigurationContractTest {
         Assert.assertFalse(appCompose.contains("mysql-init:"));
         Assert.assertTrue(appCompose.contains("MYSQL_HOST:-host.docker.internal"));
         Assert.assertTrue(appCompose.contains("REDIS_HOST:-host.docker.internal"));
+        Assert.assertTrue(appCompose.contains("LOGGING_FILE_NAME: \"\""));
+        Assert.assertTrue(appCompose.contains("RUNTIME_TRACE_ENABLED:-false"));
         Assert.assertTrue(appCompose.contains("runtime-http:"));
         Assert.assertTrue(appCompose.contains("runtime-sdk:"));
         Assert.assertTrue(appCompose.contains("./runtime"));
@@ -120,6 +122,9 @@ public class ProductionConfigurationContractTest {
         Assert.assertTrue(serverCompose.contains("  web:"));
         Assert.assertTrue(serverCompose.contains("http://127.0.0.1:8080/actuator/health/readiness"));
         Assert.assertTrue(serverCompose.contains("condition: service_healthy"));
+        Assert.assertTrue(serverCompose.contains("LOGGING_FILE_NAME: \"\""));
+        Assert.assertTrue(serverCompose.contains("LOGGING_LEVEL_ROOT: ${SERVER_LOG_LEVEL:-WARN}"));
+        Assert.assertTrue(serverCompose.contains("RULE_TRACE_MAX_PERSIST_BYTES: ${RULE_TRACE_MAX_PERSIST_BYTES:-65536}"));
         Assert.assertFalse(serverCompose.contains("runtime-http:"));
         Assert.assertTrue(clientCompose.contains("  runtime-http:"));
         Assert.assertTrue(clientCompose.contains("  runtime-sdk:"));
