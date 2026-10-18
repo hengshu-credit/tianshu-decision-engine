@@ -2,7 +2,8 @@ SET NAMES utf8mb4;
 SET character_set_connection = utf8mb4;
 
 -- 天枢决策引擎完整数据库结构。
--- 本文件只依赖当前连接的数据库，不创建或切换数据库；请使用 MYSQL_DATABASE 选择目标库。
+-- MySQL Connector/J 通过 createDatabaseIfNotExist=true 确保 MYSQL_DATABASE 存在；本文件只依赖当前连接的数据库，不创建或切换数据库。
+-- 所有表显式使用 utf8mb4；外部数据库账号需要具备目标库的建库（首次部署）和建表/变更权限。
 
 CREATE TABLE IF NOT EXISTS `rule_project` (
   `id`           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',

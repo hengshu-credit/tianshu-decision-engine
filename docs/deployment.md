@@ -18,7 +18,7 @@ pm run dev` 的 Vite 开发端口；不会改变生产 `dist` 静态站点端口
 | `VITE_DEV_PROXY` | 空 | Vite 开发服务器 `/api` 代理目标；设置后优先于 `SERVER_PORT` 推导出的后端地址。 |
 | `MYSQL_HOST` | `localhost` | MySQL 主机名。后端在 Compose 网络中运行时填 `mysql`，不能填容器内的 `127.0.0.1`。 |
 | `MYSQL_PORT` | `3306` | MySQL 端口。 |
-| `MYSQL_DATABASE` | `rule_engine` | 后端连接的数据库名；完整 Compose 的初始化容器按 `MYSQL_DATABASE` 创建和初始化，修改该值会同时作用于 Docker、Spring 和基础数据脚本。 |
+| `MYSQL_DATABASE` | `rule_engine` | 后端连接的数据库名；JDBC 首次连接使用 `createDatabaseIfNotExist=true` 自动创建，完整 Compose 也按此值初始化；首次部署账号需要建库权限。 |
 | `MYSQL_USERNAME` | 空 | 后端连接 MySQL 的应用账号；应只授予 `rule_engine` 所需权限。 |
 | `MYSQL_PASSWORD` | 空 | 后端应用账号密码。 |
 | `MYSQL_ROOT_PASSWORD` | 无 | 仅由 MySQL 容器初始化使用的 root 密码；不能替代 `MYSQL_PASSWORD`。 |

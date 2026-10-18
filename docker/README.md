@@ -42,7 +42,7 @@ runtime.jar      HTTP/SDK runtime，共用同一个 JAR，通过 profile 区分
 dist/            Vue 控制台静态文件
 ```
 
-`schema.sql` 在 server JAR 内，服务端默认每次启动幂等执行。样例数据不会自动导入；需要演示数据时，只使用 `docker/rule-engine-mysql/data-tianshu-example.sql`。
+`schema.sql` 在 server JAR 内，服务端默认每次启动幂等执行。JDBC URL 使用 `createDatabaseIfNotExist=true`，首次连接时会自动创建 `MYSQL_DATABASE`；因此首次部署账号需要建库权限，后续运行至少需要目标库的建表/变更权限。所有表显式使用 `utf8mb4`。样例数据不会自动导入；需要演示数据时，只使用 `docker/rule-engine-mysql/data-tianshu-example.sql`。
 
 ## 推荐：server/client 分离部署
 
@@ -60,16 +60,16 @@ vi .env.client
 服务端启动：
 
 ```bash
-docker compose --project-name tianshu-server --env-file .env.client --env-file .env.server.server \
+docker compose --project-name tianshu-server --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.server.yml up -d --scale server=2
-docker compose --project-name tianshu-server --env-file .env.client --env-file .env.server.server \
+docker compose --project-name tianshu-server --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.server.yml ps
 ```
 
 如果使用本包提供的 Kafka，先用同一份 `.env.server` 启动：
 
 ```bash
-docker compose --project-name tianshu-server --env-file .env.client --env-file .env.server.server \
+docker compose --project-name tianshu-server --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.kafka.yml up -d
 ```
 
@@ -290,7 +290,7 @@ docker compose --project-name tianshu-external --env-file .env.client --env-file
   -f docker/docker-compose.yml down
 ```
 
-该方案不会删除外部数据库或 Redis 数据。第一次部署前必须确认外部账号有执行 `schema.sql` 所需的建表/变更权限。该方案不创建 Kafka，使用外部 Broker 时配置 `KAFKA_BOOTSTRAP_SERVERS` 和可访问的 `advertised.listeners`。
+该方案不会删除外部数据库或 Redis 数据。首次部署时，JDBC 会尝试创建 `MYSQL_DATABASE`，因此账号需要建库权限；已有数据库或后续启动至少需要执行 `schema.sql` 所需的建表/变更权限。该方案不创建 Kafka，使用外部 Broker 时配置 `KAFKA_BOOTSTRAP_SERVERS` 和可访问的 `advertised.listeners`。
 
 ## Kafka 独立 Compose
 

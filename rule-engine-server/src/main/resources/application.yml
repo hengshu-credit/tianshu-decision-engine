@@ -23,8 +23,8 @@ spring:
       max-request-size: 512MB
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    # 含数据库名，${MYSQL_DATABASE} 可通过环境变量或配置文件注入
-    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:rule_engine}?useUnicode=true&allowMultiQueries=${MYSQL_ALLOW_MULTI_QUERIES:false}&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+    # 含数据库名；MySQL Connector/J 会在目标库不存在时先创建它，再执行 schema.sql。
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:rule_engine}?createDatabaseIfNotExist=true&useUnicode=true&allowMultiQueries=${MYSQL_ALLOW_MULTI_QUERIES:false}&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
     username: ${MYSQL_USERNAME:}
     password: ${MYSQL_PASSWORD:}
   sql:
