@@ -39,7 +39,7 @@ pm run dev` 的 Vite 开发端口；不会改变生产 `dist` 静态站点端口
 | `CONSOLE_USERNAME` | 空 | 管理控制台登录用户名。 |
 | `CONSOLE_PASSWORD` | 空 | 管理控制台密码；默认按 BCrypt 哈希校验。不要把明文密码提交到 `.env`。 |
 | `CONSOLE_PASSWORD_ENCODING` | `BCRYPT` | `CONSOLE_PASSWORD` 的编码方式；本地临时调试可设 `PLAIN`，生产使用 `BCRYPT` 或外部身份系统。 |
-| `CORS_ALLOWED_ORIGIN_PATTERNS` | 跟随 `VITE_PORT` 的本地来源 | 允许访问后端的控制台来源，多个来源用英文逗号分隔；生产填写实际 HTTPS 域名。 |
+| `CORS_ALLOWED_ORIGIN_PATTERNS` | `*` | 允许访问后端的控制台来源，多个来源用英文逗号分隔；模板默认允许所有来源，生产建议改为实际 HTTPS 域名/IP。 |
 | 会话 Cookie Secure | 按请求协议自动设置 | HTTPS 请求自动带 `Secure`，HTTP 请求不带；域名 HTTPS 和 IP+端口 HTTP 不需要两套配置。 |
 
 ### 1.3 初始化、追踪与资源解析参数
@@ -49,7 +49,8 @@ pm run dev` 的 Vite 开发端口；不会改变生产 `dist` 静态站点端口
 | `SPRING_SQL_INIT_MODE` | `always` | Spring 启动时是否执行 `schema.sql`；默认每次启动幂等执行结构、视图和系统常量补齐，已有数据库可临时设为 
 ever`。 |
 | `SPRING_SQL_INIT_CONTINUE_ON_ERROR` | `false` | 初始化 SQL 出错时是否继续；生产保持 `false`，让错误阻止启动。 |
-| `RULE_TRACE_MAX_PERSIST_BYTES` | `0` | 单条持久化追踪 JSON 的字节上限；`0` 表示不限制，设置为正数时只截断持久化副本，不截断本次请求结果。 |
+| `RULE_TRACE_MAX_PERSIST_BYTES` | `0` | 单条持久化追踪 JSON 的大小上限，单位是字节（Bytes）；`0` 表示不限制，设置为正数时只截断持久化副本，不截断本次请求结果。 |
+| `SHUTDOWN_TIMEOUT` | `120s` | 容器停止时，Spring 每个生命周期阶段等待正在处理的请求、队列和资源释放的最长时间；可设 `30s`-`300s`。 |
 | `RULE_TRACE_MASK_PATHS` | 空 | 持久化追踪副本的 JSONPath 脱敏列表，逗号分隔，例如 `$.input.idCard,$.items[*].phone`。 |
 | `SOURCE_RESOLUTION_PARALLELISM` | `4` | API、数据库、名单等外部变量并行解析线程数；按外部依赖容量调整。 |
 
@@ -202,7 +203,7 @@ mvn "-Ponnx-gpu" "-Dtianshu.cuda.diagnostic=true" "-Dtest=CudaEnvironmentDiagnos
 | `REDIS_PASSWORD` | 必填；与 server 和 SDK 实际连接的 Redis 实例一致 |
 | `RULE_AUTH_MASTER_KEY` | 必填；至少 32 位的私有随机密钥，生产通过 Secret/KMS 注入 |
 | `CONSOLE_USERNAME` / `CONSOLE_PASSWORD` | 必填；密码默认按 BCrypt 校验 |
-| `CORS_ALLOWED_ORIGIN_PATTERNS` | 生产控制台的精确 HTTPS 来源，不使用任意来源 |
+| `CORS_ALLOWED_ORIGIN_PATTERNS` | 模板默认 `*`；生产建议配置精确 HTTPS 域名/IP来源 |
 | 会话 Cookie | 按请求协议自动设置 Secure；通过 Nginx Proxy Manager 的 HTTPS 域名和 HTTP IP+端口均可登录 |
 
 本地临时开发如需使用明文控制台密码，可显式设置 `CONSOLE_PASSWORD_ENCODING=PLAIN`；生产必须使用 BCrypt 或外部身份系统，不应提交密码或密钥到仓库。
@@ -235,7 +236,7 @@ pm run dev`，访问 `http://localhost:9091/`，`/api` 会自动代理到 `http:
 
 前端生产静态服务器需要保留 `dist/vs/` 下的 Monaco 资源，并将 AMD loader 生成的资源标识 URL 重写后再读取静态文件：`/vs/css!vs/<path>` 映射到 `/vs/<path>`，`/vs/nls!vs/<path>` 映射到 `/vs/<path>.js`（已有 `.js` 后缀时不重复添加）。若静态服务器不支持此重写，规则设计器、SQL 和 JSON 编辑器会出现资源 404，页面控制台会报 Monaco 加载错误。
 
-未设置 `CORS_ALLOWED_ORIGIN_PATTERNS` 时，后端默认允许的本地来源会跟随 `VITE_PORT`；如果 `.env` 已显式设置该项，修改前端端口时也要同步更新其中的来源地址。会话 Cookie 会根据请求协议自动决定是否附加 `Secure`，不需要额外配置。
+未设置 `CORS_ALLOWED_ORIGIN_PATTERNS` 时，后端默认允许所有来源（`*`）；生产环境建议显式填写实际 HTTPS 域名/IP，多个来源用英文逗号分隔。会话 Cookie 会根据请求协议自动决定是否附加 `Secure`，不需要额外配置。
 
 
 ## 二、Docker 运行时部署
@@ -280,7 +281,7 @@ RULE_AUTH_ACTIVE_KEY_ID=v2
 CONSOLE_USERNAME=admin
 CONSOLE_PASSWORD=BCrypt哈希
 CONSOLE_PASSWORD_ENCODING=BCRYPT
-CORS_ALLOWED_ORIGIN_PATTERNS=https://console.example.com
+CORS_ALLOWED_ORIGIN_PATTERNS=*
 ```
 
 ### 2.2 启动 JAR 容器
