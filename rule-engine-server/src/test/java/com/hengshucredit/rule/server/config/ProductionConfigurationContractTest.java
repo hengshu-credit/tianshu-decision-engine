@@ -116,6 +116,8 @@ public class ProductionConfigurationContractTest {
         Assert.assertTrue(appCompose.contains("${REDIS_PASSWORD:?"));
         Assert.assertTrue(serverCompose.contains("  server:"));
         Assert.assertTrue(serverCompose.contains("  web:"));
+        Assert.assertTrue(serverCompose.contains("http://127.0.0.1:8080/actuator/health/readiness"));
+        Assert.assertTrue(serverCompose.contains("condition: service_healthy"));
         Assert.assertFalse(serverCompose.contains("runtime-http:"));
         Assert.assertTrue(clientCompose.contains("  runtime-http:"));
         Assert.assertTrue(clientCompose.contains("  runtime-sdk:"));

@@ -252,6 +252,12 @@ services:
         export RULE_LIST_ACTION_JOURNAL_DIR="/data/logs/list-action-journal/$${HOSTNAME}"
         exec java -jar /app/app.jar
     expose: ["8080"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/actuator/health/readiness | grep -q '\"status\":\"UP\"'"]
+      start_period: 120s
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
   http:
     <<: *runtime
@@ -361,7 +367,7 @@ services:
     init: true
     depends_on:
       server:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - type: bind
         source: ${RUNTIME_DIR:-./runtime}/dist
