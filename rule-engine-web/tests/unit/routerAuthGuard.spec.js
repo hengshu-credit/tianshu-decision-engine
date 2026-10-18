@@ -111,7 +111,7 @@ describe('router console auth guard', () => {
     expect(next).toHaveBeenCalledWith()
   })
 
-  test('没有业务模块权限时仍进入自裁剪数据看板', async () => {
+  test('没有业务模块权限时进入无权限提示页', async () => {
     const fetchConfig = vi.fn().mockResolvedValue({ code: 200, data: { loginEnabled: true } })
     const fetchMe = vi.fn().mockResolvedValue({
       code: 200,
@@ -122,7 +122,7 @@ describe('router console auth guard', () => {
     const guard = createConsoleAuthGuard(fetchConfig, fetchMe)
     await guard(createRoute('/project'), createRoute('/login'), next)
 
-    expect(next).toHaveBeenCalledWith({ path: '/dashboard', replace: true })
+    expect(next).toHaveBeenCalledWith({ path: '/no-permission', replace: true })
   })
 
   test('鉴权配置加载失败时不放行受保护页面', async () => {

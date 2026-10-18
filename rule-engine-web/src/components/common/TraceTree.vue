@@ -121,6 +121,27 @@
             {{ ruleTraceStatusLabel(event.status) }} ·
             {{ event.durationMs || 0 }} ms
           </span>
+          <div v-if="event.moduleType === 'MODEL'" class="rule-trace-model-detail">
+            <span v-if="event.modelVersion">版本 v{{ event.modelVersion }}</span>
+            <span v-if="event.configuredProvider">配置 {{ event.configuredProvider }}</span>
+            <span v-if="event.effectiveProvider">实际 {{ event.effectiveProvider }}</span>
+            <span v-if="event.executionStatus">状态 {{ executionStatusLabel(event.executionStatus) }}</span>
+            <span v-if="event.outputKeys && event.outputKeys.length">输出 {{ event.outputKeys.join('、') }}</span>
+          </div>
+          <div
+            v-if="event.moduleType === 'DATABASE' && event.databaseQuery"
+            class="rule-trace-database-detail"
+          >
+            <div><span>SQL</span><code>{{ event.databaseQuery.sql || '-' }}</code></div>
+            <div>
+              <span>结果</span>
+              <strong>{{ event.databaseQuery.rowCount || 0 }} 行</strong>
+              <span v-if="event.databaseQuery.resultPath"> · {{ event.databaseQuery.resultPath }}</span>
+            </div>
+            <div v-if="event.databaseQuery.errorMessage" class="is-error">
+              {{ event.databaseQuery.errorMessage }}
+            </div>
+          </div>
           <external-call-trace
             :steps="moduleTraceSteps(event)"
             :subtitle="moduleTraceSubtitle(event)"
@@ -2310,6 +2331,15 @@ export default {
     },
     moduleTraceSteps: function (event) {
       var steps = event && Array.isArray(event.traceSteps) ? event.traceSteps.slice() : []
+      if (event && event.moduleType === 'LIST' && (event.input || event.output)) {
+        steps.unshift({
+          type: 'LIST_MATCH',
+          label: '名单匹配',
+          status: event.status,
+          input: event.input,
+          output: event.output,
+        })
+      }
       var events = this.ruleTraceFrame && Array.isArray(this.ruleTraceFrame.events)
         ? this.ruleTraceFrame.events : []
       var callId = event && event.callId
@@ -2326,6 +2356,9 @@ export default {
       if (event && event.synthetic) return '仅保留赋值事件，关联 callId：' + (event.callId || '-')
       if (event && event.callId) return 'callId：' + event.callId
       return ''
+    },
+    executionStatusLabel: function (status) {
+      return executionStatusLabel(status, status || '处理中')
     },
     moduleStepKey: function (event, step) {
       return (event && event.traceId ? event.traceId : 'module') + '-' + (step && step.sequence ? step.sequence : (step && step.type ? step.type : 'step'))
@@ -4624,6 +4657,38 @@ export default {
 .rule-trace-module-status {
   margin-left: auto;
   font-weight: 600;
+}
+.rule-trace-database-detail {
+  flex: 0 0 100%;
+  display: grid;
+  gap: 4px;
+  color: var(--tianshu-text-secondary);
+  line-height: 1.5;
+}
+.rule-trace-model-detail {
+  flex: 0 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  color: var(--tianshu-text-secondary);
+  font-size: 12px;
+}
+.rule-trace-database-detail > div {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.rule-trace-database-detail > div > span:first-child {
+  flex: 0 0 36px;
+}
+.rule-trace-database-detail code {
+  min-width: 0;
+  color: var(--tianshu-text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.rule-trace-database-detail .is-error {
+  color: var(--tianshu-danger-text);
 }
 .rule-trace-module-steps {
   flex: 0 0 100%;

@@ -336,7 +336,7 @@ describe('ModelList — 上传模型', () => {
     expect(wrapper.vm.uploadVisible).toBe(true)
     expect(wrapper.vm.uploadForm.modelCode).toBe('')
     expect(wrapper.vm.uploadForm.modelName).toBe('')
-    expect(wrapper.vm.uploadForm.modelType).toBe('LR')
+    expect(wrapper.vm.uploadForm.modelType).toBe('')
     expect(wrapper.vm.uploadForm.scope).toBe('PROJECT')
     expect(wrapper.vm.uploadForm.executionProvider).toBe('CPU')
     expect(wrapper.vm.uploadForm.cudaDeviceId).toBe(0)

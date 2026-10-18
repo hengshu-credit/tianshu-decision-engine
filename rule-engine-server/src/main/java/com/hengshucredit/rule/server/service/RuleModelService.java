@@ -22,6 +22,7 @@ import org.dmg.pmml.PMML;
 import org.jpmml.evaluator.*;
 import org.jpmml.model.PMMLUtil;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -31,6 +32,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 @Service
@@ -45,6 +50,7 @@ public class RuleModelService {
     public static final int DEFAULT_EXECUTION_TIMEOUT_MS = 120000;
     public static final int MIN_EXECUTION_TIMEOUT_MS = 100;
     public static final int MAX_EXECUTION_TIMEOUT_MS = 1800000;
+    private static final long DEFAULT_MAX_MODEL_FILE_BYTES = 256L * 1024L * 1024L;
 
     private final PMMLModelExecutor pmmlExecutor = new PMMLModelExecutor();
 
@@ -85,6 +91,13 @@ public class RuleModelService {
     private ModelArtifactValidator modelArtifactValidator;
     @Resource
     private ResourceImpactAnalysisService impactAnalysisService;
+    @Value("${rule-engine.model.max-file-size-bytes:268435456}")
+    private long maxModelFileBytes = DEFAULT_MAX_MODEL_FILE_BYTES;
+    @Value("${rule-engine.model.max-test-params-bytes:1048576}")
+    private long maxTestParamsBytes = 1024L * 1024L;
+    @Value("${rule-engine.model.max-concurrent-per-model:8}")
+    private int maxConcurrentPerModel = 8;
+    private final ConcurrentHashMap<Long, Semaphore> modelExecutionPermits = new ConcurrentHashMap<>();
 
     /**
      * 检查模型编码是否与现有模型冲突
@@ -102,14 +115,16 @@ public class RuleModelService {
                     .eq(RuleModel::getScope, SCOPE_GLOBAL)
                     .eq(RuleModel::getModelCode, trimmedCode);
             if (excludeId != null) wrapper.ne(RuleModel::getId, excludeId);
-            return modelMapper.selectCount(wrapper) > 0;
+            Long count = modelMapper.selectCount(wrapper);
+            return count != null && count > 0;
         }
 
         LambdaQueryWrapper<RuleModel> globalWrapper = new LambdaQueryWrapper<RuleModel>()
                 .eq(RuleModel::getScope, SCOPE_GLOBAL)
                 .eq(RuleModel::getModelCode, trimmedCode);
         if (excludeId != null) globalWrapper.ne(RuleModel::getId, excludeId);
-        if (modelMapper.selectCount(globalWrapper) > 0) return true;
+        Long globalCount = modelMapper.selectCount(globalWrapper);
+        if (globalCount != null && globalCount > 0) return true;
 
         if (projectId != null && projectId > 0) {
             LambdaQueryWrapper<RuleModel> projectWrapper = new LambdaQueryWrapper<RuleModel>()
@@ -117,7 +132,8 @@ public class RuleModelService {
                     .eq(RuleModel::getProjectId, projectId)
                     .eq(RuleModel::getModelCode, trimmedCode);
             if (excludeId != null) projectWrapper.ne(RuleModel::getId, excludeId);
-            return modelMapper.selectCount(projectWrapper) > 0;
+            Long projectCount = modelMapper.selectCount(projectWrapper);
+            return projectCount != null && projectCount > 0;
         }
         return false;
     }
@@ -239,6 +255,9 @@ public class RuleModelService {
             String onnxConfig, Integer preloadOnStartup,
             Integer executionTimeoutMs) {
         try {
+            String normalizedScope = validateModelIdentity(
+                    modelCode, modelName, scope, projectId, null);
+            validateModelFileSize(file);
             byte[] fileBytes = file.getBytes();
             String modelContent = Base64.getEncoder().encodeToString(fileBytes);
             ValidatedModelFile parsed = validateModelFile(fileBytes, file.getOriginalFilename(),
@@ -261,10 +280,10 @@ public class RuleModelService {
             }
 
             RuleModel model = new RuleModel();
-            model.setProjectId(projectId);
+            model.setProjectId(SCOPE_GLOBAL.equals(normalizedScope) ? null : projectId);
             model.setProjectCode(projectCode);
             model.setProjectName(projectName);
-            model.setScope(scope != null ? scope : SCOPE_PROJECT);
+            model.setScope(normalizedScope);
             model.setModelCode(modelCode);
             model.setModelName(modelName);
             model.setModelType(modelType != null ? modelType : "ML");
@@ -293,6 +312,45 @@ public class RuleModelService {
             return model;
         } catch (IOException e) {
             throw new RuntimeException("读取模型文件失败: " + e.getMessage(), e);
+        }
+    }
+
+    private String validateModelIdentity(String modelCode, String modelName,
+                                         String scope, Long projectId, Long excludeId) {
+        return validateModelIdentity(modelCode, modelName, scope, projectId, excludeId, true);
+    }
+
+    private String validateModelIdentity(String modelCode, String modelName,
+                                         String scope, Long projectId, Long excludeId,
+                                         boolean checkConflict) {
+        if (modelCode == null || modelCode.trim().isEmpty()) {
+            throw new IllegalArgumentException("模型编码不能为空");
+        }
+        if (modelName == null || modelName.trim().isEmpty()) {
+            throw new IllegalArgumentException("模型名称不能为空");
+        }
+        String normalizedScope = scope == null || scope.trim().isEmpty()
+                ? SCOPE_PROJECT : scope.trim().toUpperCase(Locale.ROOT);
+        if (!SCOPE_PROJECT.equals(normalizedScope) && !SCOPE_GLOBAL.equals(normalizedScope)) {
+            throw new IllegalArgumentException("模型作用范围仅支持 PROJECT 或 GLOBAL");
+        }
+        if (SCOPE_PROJECT.equals(normalizedScope) && (projectId == null || projectId <= 0)) {
+            throw new IllegalArgumentException("项目级模型必须指定所属项目");
+        }
+        if (checkConflict && modelMapper != null && existsModelCodeConflict(modelCode, normalizedScope,
+                SCOPE_PROJECT.equals(normalizedScope) ? projectId : null, excludeId)) {
+            throw new IllegalArgumentException("模型编码已存在，请更换编码");
+        }
+        return normalizedScope;
+    }
+
+    private void validateModelFileSize(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("模型文件不能为空");
+        }
+        long limit = maxModelFileBytes > 0 ? maxModelFileBytes : DEFAULT_MAX_MODEL_FILE_BYTES;
+        if (file.getSize() > limit) {
+            throw new IllegalArgumentException("模型文件不能超过 " + (limit / 1024 / 1024) + " MB");
         }
     }
 
@@ -359,6 +417,7 @@ public class RuleModelService {
             modelConfig.put("testParamsSource", "UPLOAD_SAMPLE");
         }
 
+        validateTestParamsSize(testParams);
         Map<String, Object> sample = parseOptionalSample(testParams);
         List<String> declaredInputs = fieldNames(inputFields);
         List<String> declaredOutputs = fieldNames(outputFields);
@@ -432,6 +491,14 @@ public class RuleModelService {
             return new LinkedHashMap<>(com.alibaba.fastjson.JSON.parseObject(testParams));
         } catch (RuntimeException e) {
             throw new IllegalArgumentException("Model sample must be a valid JSON object", e);
+        }
+    }
+
+    private void validateTestParamsSize(String testParams) {
+        if (testParams == null) return;
+        long limit = maxTestParamsBytes > 0 ? maxTestParamsBytes : 1024L * 1024L;
+        if (testParams.getBytes(StandardCharsets.UTF_8).length > limit) {
+            throw new IllegalArgumentException("模型测试参数不能超过 " + (limit / 1024) + " KB");
         }
     }
 
@@ -574,6 +641,10 @@ public class RuleModelService {
      */
     public RuleModel create(RuleModel model) {
         validateSupportedFormat(model);
+        validateModelIdentity(model == null ? null : model.getModelCode(),
+                model == null ? null : model.getModelName(),
+                model == null ? null : model.getScope(),
+                model == null ? null : model.getProjectId(), null);
         if (model.getScope() == null || model.getScope().isEmpty()) {
             model.setScope(SCOPE_PROJECT);
         }
@@ -598,6 +669,9 @@ public class RuleModelService {
             throw new IllegalArgumentException("模型不存在");
         }
         validateSupportedFormat(existing);
+        if (model.getModelName() == null || model.getModelName().trim().isEmpty()) {
+            throw new IllegalArgumentException("模型名称不能为空");
+        }
         // 只更新允许变更的字段，避免覆盖文件内容等核心数据
         existing.setModelName(model.getModelName());
         existing.setDescription(model.getDescription());
@@ -633,6 +707,9 @@ public class RuleModelService {
 
     public Map<String, Object> runtimeCapabilities() {
         Map<String, Object> result = new LinkedHashMap<>(onnxSessionManager.runtimeCapabilities());
+        if (modelExecutionTimeoutExecutor != null) {
+            result.put("modelExecution", modelExecutionTimeoutExecutor.snapshot());
+        }
         List<Map<String, Object>> states = new ArrayList<>();
         List<RuleModel> models = modelMapper.selectList(withoutModelContent()
                 .eq(RuleModel::getModelFormat, "ONNX")
@@ -714,6 +791,7 @@ public class RuleModelService {
         RuleModel model = modelMapper.selectById(modelId);
         if (model == null) throw new IllegalArgumentException("模型不存在");
         try {
+            validateModelFileSize(file);
             byte[] fileBytes = file.getBytes();
             ValidatedModelFile parsed = validateModelFile(fileBytes, file.getOriginalFilename(),
                     model.getModelType(), testParams, onnxTaskType, onnxConfig);
@@ -766,6 +844,7 @@ public class RuleModelService {
         RuleModel model = modelMapper.selectById(modelId);
         if (model == null) throw new IllegalArgumentException("模型不存在");
         try {
+            validateModelFileSize(file);
             byte[] fileBytes = file.getBytes();
             ValidatedModelFile parsed = validateModelFile(
                     fileBytes, file.getOriginalFilename(),
@@ -934,6 +1013,7 @@ public class RuleModelService {
 
     /** 调用者与创建审批草稿保持同一事务，行锁防止把旧样例挂到新配置。 */
     public RuleModel prepareVersionSampleDraft(Long modelId, Integer version, String testParams) {
+        validateTestParamsSize(testParams);
         RuleModel model = modelMapper.selectOne(new LambdaQueryWrapper<RuleModel>()
                 .eq(RuleModel::getId, modelId).last("FOR UPDATE"));
         if (model == null || Integer.valueOf(-1).equals(model.getStatus())) throw new IllegalArgumentException("模型不存在或已删除");
@@ -1238,11 +1318,11 @@ public class RuleModelService {
             Model firstModel = models.get(0);
 
             // 1. 从 PMML 数据结构直接提取入参（MiningSchema 中非 target 的 active 字段）
-            List<RuleModelInputField> inputs = buildInputFieldsFromPmml(firstModel);
+            List<RuleModelInputField> inputs = buildInputFieldsFromPmml(firstModel, pmml);
             result.setInputFields(inputs);
 
             // 2. 从 PMML 数据结构直接提取出参（Output 中 isFinalResult="true" 的字段）
-            List<RuleModelOutputField> outputs = buildOutputFieldsFromPmml(firstModel);
+            List<RuleModelOutputField> outputs = buildOutputFieldsFromPmml(firstModel, pmml);
             result.setOutputFields(outputs);
 
             // 3. 通过 evaluator 获取模型类型（不调用 getInputFields/getOutputFields，避免链式模型异常）
@@ -1264,7 +1344,7 @@ public class RuleModelService {
     /**
      * 从 PMML Model 结构提取入参字段（排除 target）
      */
-    private java.util.List<RuleModelInputField> buildInputFieldsFromPmml(Model model) {
+    private java.util.List<RuleModelInputField> buildInputFieldsFromPmml(Model model, PMML pmml) {
         java.util.List<RuleModelInputField> fields = new java.util.ArrayList<>();
         org.dmg.pmml.MiningSchema miningSchema = model.getMiningSchema();
         if (miningSchema == null) return fields;
@@ -1280,7 +1360,7 @@ public class RuleModelService {
             field.setScriptName(name);
             field.setFieldLabel(name);
             field.setDataType("CONTINUOUS");
-            field.setFieldType("DOUBLE");
+            field.setFieldType(pmmlFieldType(pmml, name));
             field.setTransformType("NONE");
             field.setSortOrder(sortOrder++);
             fields.add(field);
@@ -1292,7 +1372,7 @@ public class RuleModelService {
      * 从 PMML Model 结构提取出参字段（仅 isFinalResult=true）
      * 对于 MiningModel 链式模型（modelChain），Output 在最后一个 Segment 中，需要遍历查找
      */
-    private java.util.List<RuleModelOutputField> buildOutputFieldsFromPmml(Model model) {
+    private java.util.List<RuleModelOutputField> buildOutputFieldsFromPmml(Model model, PMML pmml) {
         java.util.List<RuleModelOutputField> fields = new java.util.ArrayList<>();
         org.dmg.pmml.Output pmmlOutput = model.getOutput();
 
@@ -1323,7 +1403,7 @@ public class RuleModelService {
                         String name = mf.getName();
                         field.setFieldName(name);
                         field.setFieldLabel(name);
-                        field.setFieldType("DOUBLE");
+                        field.setFieldType(pmmlFieldType(pmml, name));
                         field.setIsProbability(0);
                         field.setSortOrder(0);
                         fields.add(field);
@@ -1343,7 +1423,8 @@ public class RuleModelService {
             String name = of.getName();
             field.setFieldName(name);
             field.setFieldLabel(name);
-            field.setFieldType("DOUBLE");
+            String targetName = of.getTargetField() == null ? name : of.getTargetField();
+            field.setFieldType(pmmlFieldType(pmml, targetName));
             field.setIsProbability(0);
 
             if (of.getResultFeature() != null) {
@@ -1357,6 +1438,21 @@ public class RuleModelService {
             fields.add(field);
         }
         return fields;
+    }
+
+    private String pmmlFieldType(PMML pmml, String fieldName) {
+        if (pmml != null && pmml.getDataDictionary() != null && fieldName != null) {
+            for (org.dmg.pmml.DataField field : pmml.getDataDictionary().getDataFields()) {
+                if (!fieldName.equals(field.getName()) || field.getDataType() == null) continue;
+                String type = field.getDataType().value().toUpperCase(Locale.ROOT);
+                if (type.contains("DATE")) return "DATE";
+                if ("BOOLEAN".equals(type)) return "BOOLEAN";
+                if ("INTEGER".equals(type) || type.contains("INT")) return "INTEGER";
+                if (Set.of("DOUBLE", "FLOAT", "DECIMAL", "NUMBER").contains(type)) return "DOUBLE";
+                return "STRING";
+            }
+        }
+        return "STRING";
     }
 
     /**
@@ -1471,7 +1567,7 @@ public class RuleModelService {
         }
 
         int timeoutMs = normalizedExecutionTimeout(model.getExecutionTimeoutMs());
-        return modelExecutionTimeoutExecutor.execute(
+        return executeWithModelCapacity(model.getId(),
                 () -> executeConfiguredModel(model, params, Collections.emptyMap()), timeoutMs);
     }
 
@@ -1485,8 +1581,35 @@ public class RuleModelService {
         int timeoutMs = normalizedExecutionTimeout(model.getExecutionTimeoutMs());
         Map<Long, RuleFunction> frozenFunctions = functions == null
                 ? Collections.emptyMap() : functions;
-        return modelExecutionTimeoutExecutor.execute(
+        return executeWithModelCapacity(model.getId(),
                 () -> executeConfiguredModel(model, params, frozenFunctions), timeoutMs);
+    }
+
+    private <T> T executeWithModelCapacity(Long modelId, Callable<T> task, int timeoutMs) {
+        if (modelId == null || maxConcurrentPerModel <= 0) {
+            return modelExecutionTimeoutExecutor.execute(task, timeoutMs);
+        }
+        Semaphore semaphore = modelExecutionPermits.computeIfAbsent(modelId,
+                ignored -> new Semaphore(maxConcurrentPerModel));
+        if (!semaphore.tryAcquire()) {
+            throw new ExecutionCapacityException(ExecutionCapacityException.Resource.MODEL_EXECUTION,
+                    "模型执行并发已达上限: " + maxConcurrentPerModel);
+        }
+        AtomicBoolean started = new AtomicBoolean(false);
+        try {
+            return modelExecutionTimeoutExecutor.execute(() -> {
+                started.set(true);
+                try {
+                    return task.call();
+                } finally {
+                    semaphore.release();
+                }
+            }, timeoutMs);
+        } catch (RuntimeException error) {
+            // A task rejected before it starts never reaches the finally block.
+            if (!started.get()) semaphore.release();
+            throw error;
+        }
     }
 
     private Map<String, Object> executeConfiguredModel(RuleModel model, Map<String, Object> params,
@@ -1566,10 +1689,26 @@ public class RuleModelService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("modelCode", model.getModelCode());
         result.put("modelFormat", "ONNX");
+        result.put("version", model.getCurrentVersion());
+        result.put("modelDigest", model.getModelDigest());
+        result.put("configurationDigest", modelConfigurationDigest(model));
         try {
+            OnnxRuntimeConfig runtimeConfig = null;
+            try {
+                runtimeConfig = OnnxTaskConfig.parse(model.getModelConfig()).getRuntimeConfig();
+                result.put("configuredProvider", runtimeConfig.getExecutionProvider());
+            } catch (IllegalArgumentException ignored) {
+                // The execution service owns task validation; keep its original error contract.
+            }
             byte[] modelBytes = Base64.getDecoder().decode(model.getModelContent());
             Map<String, Object> rawOutputs = onnxModelExecutionService.execute(
                     modelBytes, model.getModelConfig(), params);
+            if (runtimeConfig != null) {
+                result.put("effectiveProvider", onnxSessionManager == null
+                        ? runtimeConfig.getExecutionProvider()
+                        : onnxSessionManager.hasCpuFallback(modelBytes, runtimeConfig)
+                        ? OnnxRuntimeConfig.CPU : runtimeConfig.getExecutionProvider());
+            }
             result.put("success", true);
             result.put("outputs", applyOutputTransforms(
                     model, transformContext, rawOutputs, functions));
@@ -1606,6 +1745,14 @@ public class RuleModelService {
     /** 预检使用提交快照，发布落库后也复用同一套校验，避免批准时才发现缺失绑定。 */
     public void validateDraftForPublication(RuleModel model) {
         if (model == null) throw new IllegalArgumentException("模型草稿不能为空");
+        if (model.getModelCode() != null && !model.getModelCode().trim().isEmpty()
+                && model.getModelName() != null && !model.getModelName().trim().isEmpty()
+                && (model.getScope() != null || model.getProjectId() != null)) {
+            // 编码和作用域在创建/上传时校验；发布阶段只校验结构，避免再次触发
+            // 编码查询，也避免把不可变快照发布流程耦合到当前模型查询结果。
+            validateModelIdentity(model.getModelCode(), model.getModelName(), model.getScope(),
+                    model.getProjectId(), model.getId(), false);
+        }
         validateSupportedFormat(model);
         List<String> errors = new ArrayList<>();
         for (RuleModelInputField field : model.getInputFields() == null ? List.<RuleModelInputField>of() : model.getInputFields()) {
@@ -1614,11 +1761,17 @@ public class RuleModelService {
             }
             validateFieldBinding(errors, "输入字段", field.getFieldName(), field.getFieldLabel(),
                     field.getFieldType(), field.getVarId(), field.getRefType(), field.getScriptName(), field.getSourceOperand(), false);
+            validateReferenceScope(errors, model, "输入字段", field.getRefType(), field.getVarId());
+            validateOperandReferences(errors, model, "输入字段", field.getSourceOperand());
+            validateOperandReferences(errors, model, "输入字段", field.getDefaultOperand());
         }
 
         for (RuleModelOutputField field : model.getOutputFields() == null ? List.<RuleModelOutputField>of() : model.getOutputFields()) {
             validateFieldBinding(errors, "输出字段", field.getFieldName(), field.getFieldLabel(),
                     field.getFieldType(), field.getVarId(), field.getRefType(), field.getScriptName(), field.getTargetOperand(), true);
+            validateReferenceScope(errors, model, "输出字段", field.getRefType(), field.getVarId());
+            validateOperandReferences(errors, model, "输出字段", field.getTargetOperand());
+            validateOperandReferences(errors, model, "输出字段", field.getTransformOperand());
             String transformError = validateTransformOperand(model, field.getFieldLabel(), field.getFieldName(), field.getTransformOperand());
             if (transformError != null) errors.add(transformError);
         }
@@ -1636,7 +1789,13 @@ public class RuleModelService {
             try {
                 com.alibaba.fastjson.JSONObject operand = com.alibaba.fastjson.JSON.parseObject(operandJson);
                 String kind = operand.getString("kind");
-                if ("PATH".equals(kind)) return;
+                if ("PATH".equals(kind)) {
+                    if (Boolean.FALSE.equals(operand.getBoolean("resolved"))
+                            && operand.getLong("refId") == null) {
+                        errors.add(section + "「" + displayName + "」路径未解析到可用字段");
+                    }
+                    return;
+                }
                 if (!writableTarget && ("FUNCTION".equals(kind) || "LITERAL".equals(kind))) return;
                 if ("REFERENCE".equals(kind) && operand.getLong("refId") != null && operand.getString("refType") != null) {
                     String operandRefType = operand.getString("refType").toUpperCase();
@@ -1661,6 +1820,81 @@ public class RuleModelService {
         }
         if (!isTypeCompatible(fieldType, actualType)) {
             errors.add(section + "「" + displayName + "」类型不匹配，模型字段为 " + normalizeType(fieldType) + "，关联字段为 " + normalizeType(actualType));
+        }
+    }
+
+    private void validateOperandReferences(List<String> errors, RuleModel model,
+                                           String section, String operandJson) {
+        if (operandJson == null || operandJson.trim().isEmpty()) return;
+        try {
+            inspectOperandReferences(errors, model, section,
+                    com.alibaba.fastjson.JSON.parseObject(operandJson));
+        } catch (RuntimeException error) {
+            // JSON completeness is reported by validateFieldBinding/validateTransformOperand.
+        }
+    }
+
+    private void inspectOperandReferences(List<String> errors, RuleModel model,
+                                          String section, Object node) {
+        if (node instanceof com.alibaba.fastjson.JSONObject object) {
+            String kind = object.getString("kind");
+            if (("REFERENCE".equals(kind) || "PATH".equals(kind))
+                    && object.getLong("refId") != null) {
+                validateReferenceScope(errors, model, section,
+                        object.getString("refType"), object.getLong("refId"));
+            }
+            for (Object value : object.values()) inspectOperandReferences(errors, model, section, value);
+        } else if (node instanceof com.alibaba.fastjson.JSONArray array) {
+            for (Object value : array) inspectOperandReferences(errors, model, section, value);
+        }
+    }
+
+    private void validateReferenceScope(List<String> errors, RuleModel model,
+                                        String section, String refType, Long refId) {
+        if (refId == null || refType == null || refType.trim().isEmpty()) return;
+        String normalized = refType.trim().toUpperCase(Locale.ROOT);
+        if ("DATA_FIELD".equals(normalized)) normalized = "DATA_OBJECT";
+        String targetScope = null;
+        Long targetProjectId = null;
+        if ("VARIABLE".equals(normalized) || "CONSTANT".equals(normalized)) {
+            RuleVariable target = variableMapper.selectById(refId);
+            if (target == null) {
+                errors.add(section + "引用资源不存在：" + refType + ":" + refId);
+                return;
+            }
+            targetScope = target.getScope(); targetProjectId = target.getProjectId();
+        } else if ("DATA_OBJECT".equals(normalized)) {
+            RuleDataObjectField target = dataObjectFieldMapper.selectById(refId);
+            if (target == null) {
+                errors.add(section + "引用资源不存在：" + refType + ":" + refId);
+                return;
+            }
+            targetScope = target.getScope(); targetProjectId = target.getProjectId();
+        } else if ("MODEL".equals(normalized)) {
+            RuleModel target = modelMapper.selectById(refId);
+            if (target == null) {
+                errors.add(section + "引用资源不存在：" + refType + ":" + refId);
+                return;
+            }
+            targetScope = target.getScope(); targetProjectId = target.getProjectId();
+        } else if ("MODEL_OUTPUT".equals(normalized)) {
+            RuleModelOutputField output = outputFieldMapper.selectById(refId);
+            RuleModel target = output == null ? null : modelMapper.selectById(output.getModelId());
+            if (target == null) {
+                errors.add(section + "引用模型输出不存在：" + refType + ":" + refId);
+                return;
+            }
+            targetScope = target.getScope(); targetProjectId = target.getProjectId();
+        } else {
+            return;
+        }
+        boolean targetGlobal = SCOPE_GLOBAL.equalsIgnoreCase(targetScope)
+                || targetProjectId == null || targetProjectId <= 0;
+        boolean modelGlobal = model == null || SCOPE_GLOBAL.equalsIgnoreCase(model.getScope())
+                || model.getProjectId() == null || model.getProjectId() <= 0;
+        boolean sameProject = model != null && Objects.equals(model.getProjectId(), targetProjectId);
+        if ((modelGlobal && !targetGlobal) || (!modelGlobal && !targetGlobal && !sameProject)) {
+            errors.add(section + "引用了不属于当前模型作用域的资源：" + refType + ":" + refId);
         }
     }
 
@@ -1727,6 +1961,9 @@ public class RuleModelService {
         Map<String, Object> result = new HashMap<>();
         result.put("modelCode", model.getModelCode());
         result.put("modelFormat", "PMML");
+        result.put("version", model.getCurrentVersion());
+        result.put("modelDigest", model.getModelDigest());
+        result.put("configurationDigest", modelConfigurationDigest(model));
 
         try {
             Map<String, Object> rawOutputs = pmmlExecutor.evaluate(model.getModelContent(), params);
@@ -1747,6 +1984,11 @@ public class RuleModelService {
         }
 
         return result;
+    }
+
+    private String modelConfigurationDigest(RuleModel model) {
+        return model == null || model.getModelConfig() == null
+                ? null : com.hengshucredit.rule.server.artifact.Sha256Digests.text(model.getModelConfig());
     }
 
     private Map<String, Object> applyOutputTransforms(RuleModel model, Map<String, Object> params,
@@ -1885,6 +2127,7 @@ public class RuleModelService {
      * 保存模型的测试参数（JSON）
      */
     public void saveTestParams(Long modelId, String testParams) {
+        validateTestParamsSize(testParams);
         RuleModel model = modelMapper.selectById(modelId);
         if (model == null) {
             throw new IllegalArgumentException("模型不存在");

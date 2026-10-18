@@ -116,11 +116,13 @@ public class DbDatasourceController {
         if (body.get("params") instanceof List<?> rawParams) params.addAll(rawParams);
         Integer maxRows = null;
         try {
-            DatabaseQueryOptions options = DatabaseQueryOptions.from(body, 100);
+            DatabaseQueryOptions options = DatabaseQueryOptions.from(body, 1000);
             maxRows = options.maxRows();
-            List<Map<String, Object>> rows = dbConnectPools.query(id, sql, params, maxRows, options.queryTimeoutSeconds());
+            List<Map<String, Object>> rows = dbConnectPools.query(id, sql, params, maxRows,
+                    options.queryTimeoutSeconds(), options.maxContentBytes());
             Map<String, Object> request = buildDatabaseRequest(datasource, sql, params, maxRows, null, startTime);
             request.put("queryTimeoutSeconds", options.queryTimeoutSeconds());
+            request.put("maxContentBytes", options.maxContentBytes());
             logDatabaseCall(datasource, "QUERY", request,
                     buildDatabaseResponse("SUCCESS", null, rows, null, null, startTime), true, null, System.currentTimeMillis() - start);
             return R.ok(rows);

@@ -10,6 +10,7 @@ public class ConsoleUserSaveRequest {
     private Long id;
     private String username;
     private String displayName;
+    private String email;
     private String password;
     private Integer status;
     private List<Long> roleIds;

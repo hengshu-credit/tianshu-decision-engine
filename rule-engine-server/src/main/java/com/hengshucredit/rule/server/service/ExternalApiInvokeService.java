@@ -104,6 +104,9 @@ public class ExternalApiInvokeService {
     private ExternalApiResponseCache externalApiResponseCache = new ExternalApiResponseCache(
             new ExternalCallProperties(), null, System::currentTimeMillis);
 
+    @Resource
+    private EngineFieldValidationService fieldValidationService;
+
     Map<String, Object> invokeTrial(RuleExternalApiConfig config, Map<String, Object> params,
                                     Map<String, Object> pending) {
         ExternalApiTrialContext.check();
@@ -111,6 +114,7 @@ public class ExternalApiInvokeService {
         JSONObject savedPaths = ExternalApiTrialContext.current().snapshot.getJSONObject("paths");
         if (savedPaths != null) savedPaths.forEach((key, value) -> paths.put(key, String.valueOf(value)));
         ExternalApiRequestPlan plan = ExternalApiRequestPlan.prepare(selectRequestBranch(config, params), params, Map.of(), paths);
+        validateRequestPlan(plan);
         return pending == null || pending.isEmpty()
                 ? invoke(plan.config(), plan.params(), false)
                 : invokePending(plan, pending);
@@ -210,7 +214,10 @@ public class ExternalApiInvokeService {
         if (apiConfig.getExecutionConfig() != null && !apiConfig.getExecutionConfig().isBlank()) {
             RuleExternalDatasource owner = datasourceMapper.selectById(apiConfig.getDatasourceId());
             Map<String, String> paths = apiVariableService == null ? Map.of() : apiVariableService.buildRefScriptNameMap(owner.getProjectId());
-            return invokePlanned(ExternalApiRequestPlan.prepare(selectRequestBranch(apiConfig, params), params, Map.of(), paths));
+            ExternalApiRequestPlan plan = ExternalApiRequestPlan.prepare(
+                    selectRequestBranch(apiConfig, params), params, Map.of(), paths);
+            validateRequestPlan(plan);
+            return invokePlanned(plan);
         }
         return invoke(apiConfig, params, false);
         }
@@ -248,6 +255,16 @@ public class ExternalApiInvokeService {
             throw new IllegalArgumentException("异步外数恢复信息缺少任务号");
         }
         return invoke(plan.config(), plan.params(), false, pending);
+    }
+
+    private void validateRequestPlan(ExternalApiRequestPlan plan) {
+        if (fieldValidationService == null || plan == null) return;
+        RuleExternalDatasource datasource = invocationDatasource(
+                plan.config().getDatasourceId());
+        Long projectId = datasource == null
+                || "GLOBAL".equalsIgnoreCase(datasource.getScope())
+                ? 0L : datasource.getProjectId();
+        fieldValidationService.validateApiPlan(projectId, plan);
     }
 
     RuleExternalApiConfig selectRequestBranch(RuleExternalApiConfig source, Map<String, Object> values) {
@@ -585,6 +602,7 @@ public class ExternalApiInvokeService {
         if (ExternalApiRequestPlan.specification(apiConfig) != null) {
             Map<String, String> paths = apiVariableService == null ? Map.of() : apiVariableService.buildRefScriptNameMap(datasource.getProjectId());
             ExternalApiRequestPlan plan = ExternalApiRequestPlan.prepare(selectRequestBranch(apiConfig, input), input, Map.of(), paths);
+            validateRequestPlan(plan);
             apiConfig = plan.config();
             input = plan.params();
         }
@@ -1051,7 +1069,10 @@ public class ExternalApiInvokeService {
         RuleExternalApiConfig stage = config.toJavaObject(RuleExternalApiConfig.class);
         if (ExternalApiTrialContext.current() != null) stage.setId(ExternalApiTrialContext.current().stepIdentity(step.getString("id")));
         Map<String, String> paths = invocationPaths(invocationDatasource(root.getDatasourceId()).getProjectId());
-        return ExternalApiRequestPlan.prepare(selectRequestBranch(stage, context), context, Map.of(), paths);
+        ExternalApiRequestPlan plan = ExternalApiRequestPlan.prepare(
+                selectRequestBranch(stage, context), context, Map.of(), paths);
+        validateRequestPlan(plan);
+        return plan;
     }
 
     Map<String, Object> assembleResponse(RuleExternalApiConfig api, Map<String, Object> response) {

@@ -57,18 +57,14 @@ class BoundedAsyncLogWriter<T> implements AutoCloseable {
     boolean offer(T event) {
         if (event == null) return false;
         if (detailQueue.offer(event)) return true;
-        // Queue pressure must not silently discard a runtime fact. Apply bounded
-        // backpressure by writing the full event on the caller thread.
-        try {
-            sink.write(java.util.Collections.singletonList(event));
-            return true;
-        } catch (Exception synchronousFailure) {
+        T metadata = metadataOnly.apply(event);
+        if (metadataQueue.offer(metadata)) {
             droppedBodies.incrementAndGet();
-            T metadata = metadataOnly.apply(event);
-            if (metadataQueue.offer(metadata)) return true;
-            droppedLogs.incrementAndGet();
-            return false;
+            return true;
         }
+        droppedBodies.incrementAndGet();
+        droppedLogs.incrementAndGet();
+        return false;
     }
 
     long getDroppedBodies() { return droppedBodies.get(); }
@@ -96,13 +92,34 @@ class BoundedAsyncLogWriter<T> implements AutoCloseable {
                 }
                 try {
                     sink.write(batch);
-                } catch (Exception ignored) {
-                    droppedLogs.addAndGet(batch.size());
+                } catch (Exception failure) {
+                    requeue(batch);
+                    try {
+                        Thread.sleep(Math.min(1000L, Math.max(10L, flushMillis)));
+                    } catch (InterruptedException interrupted) {
+                        if (!running) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
                 }
             } catch (InterruptedException e) {
                 if (running) continue;
                 Thread.currentThread().interrupt();
                 break;
+            }
+        }
+    }
+
+    private void requeue(List<T> batch) {
+        for (T event : batch) {
+            if (detailQueue.offer(event)) continue;
+            T metadata = metadataOnly.apply(event);
+            if (metadataQueue.offer(metadata)) {
+                droppedBodies.incrementAndGet();
+            } else {
+                droppedBodies.incrementAndGet();
+                droppedLogs.incrementAndGet();
             }
         }
     }

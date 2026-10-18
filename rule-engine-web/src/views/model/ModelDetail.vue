@@ -16,28 +16,13 @@
       <div class="uiue-detail-header__actions model-detail-actions">
         <resource-version-manager
           v-if="model.id"
-          :show-trigger="false"
+          :show-trigger="true"
           resource-type="MODEL"
           :resource-id="model.id"
           has-legacy
           @legacy="openVersionDialog"
+          @changed="load"
         />
-        <el-select
-          v-if="model.id"
-          v-model="modelVersionSelection"
-          size="small"
-          class="model-version-select"
-          aria-label="模型版本"
-          :disabled="loading || modelVersionLoading"
-          @change="handleModelVersionChange"
-        >
-          <el-option
-            v-for="item in modelVersionOptions"
-            :key="item.value"
-            :label="item.label"
-            :value="item.value"
-          />
-        </el-select>
         <el-button v-permission="'model:edit'" size="small" @click="openImpact('REPLACE')">替换模型文件</el-button>
         <el-button
           v-permission="'model:edit'"
@@ -782,9 +767,7 @@
               </div>
               <el-input
                 v-if="
-                  field.fieldType === 'NUMBER' ||
-                  field.fieldType === 'DOUBLE' ||
-                  field.fieldType === 'INTEGER'
+                   ['NUMBER', 'DOUBLE', 'INTEGER', 'LONG', 'DECIMAL', 'FLOAT', 'PROBABILITY'].includes(field.fieldType)
                 "
                 :model-value="testNumericText(testParams[field.fieldName])"
                 @update:model-value="testParams[field.fieldName] = $event"
@@ -1508,7 +1491,6 @@ export default {
         const res = await api.getModel(id)
         if (res.data?.id && hasPermission('model:edit')) res.data = await editableResource('MODEL', res.data.id, res.data)
         this.model = res.data || {}
-        await this.loadModelVersionWorkspace(id)
         this.normalizeModelFields()
         // 模型加载后加载变量库
         await this.loadVars()
@@ -2314,7 +2296,7 @@ export default {
         const path = field.fieldName
         let value = this.testParams[path]
         if (value === undefined) continue
-        if (['NUMBER', 'DOUBLE', 'INTEGER', 'LONG', 'DECIMAL', 'FLOAT'].includes(field.fieldType) && value !== null && value !== '') {
+        if (['NUMBER', 'DOUBLE', 'INTEGER', 'LONG', 'DECIMAL', 'FLOAT', 'PROBABILITY'].includes(field.fieldType) && value !== null && value !== '') {
           value = createExactNumber(this.testNumericText(value))
         }
         const parts = Object.hasOwn(values, path) ? [path] : path.split('.')
@@ -2470,9 +2452,7 @@ export default {
       this.testFields.forEach((f) => {
         if (f.fieldType === 'BOOLEAN') this.testParams[f.fieldName] = false
         else if (
-          f.fieldType === 'NUMBER' ||
-          f.fieldType === 'DOUBLE' ||
-          f.fieldType === 'INTEGER'
+          ['NUMBER', 'DOUBLE', 'INTEGER', 'LONG', 'DECIMAL', 'FLOAT', 'PROBABILITY'].includes(f.fieldType)
         )
           this.testParams[f.fieldName] = 0
         else this.testParams[f.fieldName] = ''

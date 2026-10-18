@@ -22,6 +22,8 @@ public class ExternalCallProperties {
     private int asyncLogBatchSize = 100;
     private long asyncLogFlushMillis = 200L;
     private long asyncLogShutdownWaitMillis = 2000L;
+    private boolean runtimeLogContentEnabled = true;
+    private int runtimeLogMaxFieldBytes;
     private int tokenLastUsedMaxEntries = 10000;
     private long tokenLastUsedCoalesceSeconds = 60L;
     private int sftpCacheMaxEntries = 4096;
@@ -71,6 +73,9 @@ public class ExternalCallProperties {
         }
         if (asyncLogShutdownWaitMillis < 0 || asyncLogShutdownWaitMillis > 30000) {
             throw new IllegalStateException("external-call.async-log-shutdown-wait-millis must be between 0 and 30000");
+        }
+        if (runtimeLogMaxFieldBytes < 0 || runtimeLogMaxFieldBytes > 64 * 1024 * 1024) {
+            throw new IllegalStateException("external-call.runtime-log-max-field-bytes must be between 0 and 67108864");
         }
         if (tokenLastUsedMaxEntries < 1 || tokenLastUsedMaxEntries > 1000000) {
             throw new IllegalStateException("external-call.token-last-used-max-entries must be between 1 and 1000000");

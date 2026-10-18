@@ -43,6 +43,9 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
     @Resource
     private ExternalApiResponseCache externalApiResponseCache;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private EngineFieldValidationService fieldValidationService;
+
     public IPage<RuleExternalApiConfig> pageList(int pageNum, int pageSize, Long datasourceId, Long projectId,
                                                  String projectCode, String projectName, String datasourceCode,
                                                  String apiCode, String apiName, String requestMode, Integer status) {
@@ -95,6 +98,7 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
     public RuleExternalApiConfig saveWithDefaults(RuleExternalApiConfig config) {
         fillDefaults(config);
         validateReferences(config);
+        validateFieldBindings(config);
         save(config);
         return getById(config.getId());
     }
@@ -104,6 +108,12 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
                 com.alibaba.fastjson.JSON.toJSONString(config), RuleExternalApiConfig.class);
         fillDefaults(copy);
         validateReferences(copy);
+        if (fieldValidationService != null) {
+            RuleExternalDatasource datasource = datasourceMapper.selectById(copy.getDatasourceId());
+            Long projectId = datasource == null || "GLOBAL".equalsIgnoreCase(datasource.getScope())
+                    ? 0L : datasource.getProjectId();
+            fieldValidationService.validateApiConfiguration(projectId, copy);
+        }
         copy.setBillingSuppressed(false);
         copy.setExecutionCallId(null);
         return copy;
@@ -112,12 +122,21 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
     public RuleExternalApiConfig updateWithDefaults(RuleExternalApiConfig config) {
         fillDefaults(config);
         validateReferences(config);
+        validateFieldBindings(config);
         updateById(config);
         apiHttpClientRegistry.invalidate("api:" + String.valueOf(config.getId()));
         externalApiGuardRegistry.invalidate(config.getId());
         circuitBreakerRegistry.invalidate(config.getId());
         externalApiResponseCache.invalidate(config.getId());
         return getById(config.getId());
+    }
+
+    private void validateFieldBindings(RuleExternalApiConfig config) {
+        if (fieldValidationService == null || config == null) return;
+        RuleExternalDatasource datasource = datasourceMapper.selectById(config.getDatasourceId());
+        Long projectId = datasource == null || "GLOBAL".equalsIgnoreCase(datasource.getScope())
+                ? 0L : datasource.getProjectId();
+        fieldValidationService.validateApiConfiguration(projectId, config);
     }
 
     public boolean removeApiConfig(Long id) {

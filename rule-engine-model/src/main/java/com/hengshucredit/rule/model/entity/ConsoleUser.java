@@ -17,6 +17,10 @@ public class ConsoleUser {
     private String username;
     private String displayName;
     private String passwordHash;
+    private String email;
+    private LocalDateTime emailVerifiedAt;
+    private String registrationStatus;
+    private String registrationSource;
     private Integer status;
     private Long permissionVersion;
     private LocalDateTime lastLoginTime;

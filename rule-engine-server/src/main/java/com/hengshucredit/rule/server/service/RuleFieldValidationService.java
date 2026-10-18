@@ -44,6 +44,9 @@ public class RuleFieldValidationService extends ServiceImpl<RuleFieldValidationM
     @Resource
     private FieldValidationEvaluator evaluator;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private FieldValidationReferenceScanner referenceScanner;
+
     public IPage<RuleFieldValidation> pageList(int pageNum, int pageSize, Long projectId,
                                                String scope, String validationType, String keyword) {
         LambdaQueryWrapper<RuleFieldValidation> query =
@@ -115,6 +118,9 @@ public class RuleFieldValidationService extends ServiceImpl<RuleFieldValidationM
         if (existing == null) throw new IllegalArgumentException("字段校验规则不存在");
         if (BuiltinFieldValidationCatalog.isBuiltin(existing)) {
             throw new IllegalArgumentException("系统内置校验规则不可删除");
+        }
+        if (referenceScanner != null && referenceScanner.referenced(id)) {
+            throw new IllegalArgumentException("字段校验规则已被下游配置引用，不能删除");
         }
         List<RuleDefinitionInputField> fields = inputFieldMapper.selectList(
                 new LambdaQueryWrapper<RuleDefinitionInputField>()

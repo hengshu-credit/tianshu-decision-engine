@@ -46,6 +46,21 @@ public class ResourcePreflightServiceTest {
     }
 
     @Test
+    public void customJdbcUrlDoesNotRequireStructuredHostFields() {
+        RuleDbDatasource datasource = new RuleDbDatasource();
+        datasource.setStatus(1);
+        datasource.setDbType("OTHER");
+        datasource.setConnectionMode("DIRECT");
+        datasource.setJdbcUrl("jdbc:custom:CaseSensitiveEndpoint");
+        dbMapper = mapper(RuleDbDatasourceMapper.class, Map.of(9L, datasource));
+        ReflectionTestUtils.setField(service, "dbDatasourceMapper", dbMapper);
+
+        ResourcePreflightReport report = service.database(9L);
+
+        Assert.assertTrue(report.isValid());
+    }
+
+    @Test
     public void databaseVariableRejectsWriteSqlWithoutConnecting() {
         RuleVariable variable = new RuleVariable();
         variable.setStatus(1);

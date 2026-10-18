@@ -43,6 +43,36 @@ const routes = [
     meta: { title: '登录' }
   },
   {
+    path: '/register',
+    name: 'ConsoleRegister',
+    component: () => import('@/views/Register.vue'),
+    meta: { title: '注册账户' }
+  },
+  {
+    path: '/forgot-password',
+    name: 'ForgotConsolePassword',
+    component: () => import('@/views/ForgotPassword.vue'),
+    meta: { title: '忘记密码' }
+  },
+  {
+    path: '/password-reset',
+    name: 'ResetConsolePassword',
+    component: () => import('@/views/PasswordReset.vue'),
+    meta: { title: '重置密码' }
+  },
+  {
+    path: '/admin-recovery',
+    name: 'AdminRecovery',
+    component: () => import('@/views/AdminRecovery.vue'),
+    meta: { title: '超级管理员恢复' }
+  },
+  {
+    path: '/no-permission',
+    name: 'NoConsolePermission',
+    component: () => import('@/views/NoPermission.vue'),
+    meta: { title: '暂无访问权限', authOnly: true }
+  },
+  {
     path: '/',
     component: Layout,
     redirect: '/dashboard',
@@ -309,7 +339,13 @@ const routes = [
         path: 'account',
         name: 'AccountManagement',
         component: () => import('@/views/account/AccountManagement.vue'),
-        meta: { title: '账户管理', permission: ['account:view', 'role:view', 'role:manage', 'account:audit'] }
+        meta: { title: '账户管理', permission: ['account:view', 'account:manage', 'account:approve', 'account:role-assign', 'account:password-reset', 'role:view', 'role:manage', 'account:audit'] }
+      },
+      {
+        path: 'account/profile',
+        name: 'AccountProfile',
+        component: () => import('@/views/account/AccountProfile.vue'),
+        meta: { title: '个人设置', authOnly: true }
       }
     ]
   }
@@ -339,7 +375,7 @@ function inferRoutePermission(path) {
 routes.forEach(route => {
   ;(route.children || []).forEach(child => {
     if (!child.meta) child.meta = {}
-    if (!child.meta.permission) {
+    if (!child.meta.permission && !child.meta.authOnly) {
       child.meta.permission = inferRoutePermission(child.path)
     }
   })

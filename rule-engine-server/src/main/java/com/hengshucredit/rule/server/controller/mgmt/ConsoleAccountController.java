@@ -29,13 +29,17 @@ public class ConsoleAccountController {
     private ConsoleOperatorResolver operatorResolver;
 
     @GetMapping
-    @RequirePermission("account:view")
+    @RequirePermission(value = "account:view",
+            anyOf = {"account:manage", "account:approve", "account:role-assign",
+                    "account:password-reset"})
     public Result<List<ConsoleAccountManagementService.ConsoleUserDetail>> list() {
         return Result.ok(accountService.listUsers());
     }
 
     @GetMapping("/{id}")
-    @RequirePermission("account:view")
+    @RequirePermission(value = "account:view",
+            anyOf = {"account:manage", "account:approve", "account:role-assign",
+                    "account:password-reset"})
     public Result<ConsoleAccountManagementService.ConsoleUserDetail> detail(
             @PathVariable Long id) {
         return Result.ok(accountService.getUser(id));
@@ -50,7 +54,8 @@ public class ConsoleAccountController {
     }
 
     @PutMapping("/{id}/permissions")
-    @RequirePermission("account:manage")
+    @RequirePermission(value = "account:role-assign",
+            anyOf = {"account:manage"})
     public Result<ConsoleAccountManagementService.ConsoleUserDetail> permissions(
             @PathVariable Long id,
             @RequestBody ConsoleUserPermissionRequest request) {
@@ -67,7 +72,8 @@ public class ConsoleAccountController {
     }
 
     @PutMapping("/{id}/password")
-    @RequirePermission("account:manage")
+    @RequirePermission(value = "account:password-reset",
+            anyOf = {"account:manage"})
     public Result<Void> resetPassword(
             @PathVariable Long id,
             @RequestBody ConsolePasswordResetRequest request) {

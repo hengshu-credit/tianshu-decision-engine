@@ -64,13 +64,31 @@ describe('LayoutSidebar', () => {
     wrapper.unmount()
   })
 
-  // 侧边栏折叠按钮当前不启用，对应交互用例随组件模板一并停用。
-  // test('折叠按钮发送 toggle-collapse', async() => {
-  //   const wrapper = mountSidebar()
-  //   await wrapper.find('.sidebar-collapse').trigger('click')
-  //   expect(wrapper.emitted('toggle-collapse')).toHaveLength(1)
-  //   wrapper.unmount()
-  // })
+  test('折叠按钮位于菜单项之后并发送 toggle-collapse', async() => {
+    const wrapper = mountSidebar()
+    const collapseButton = wrapper.find('.sidebar-collapse')
+
+    expect(collapseButton.exists()).toBe(true)
+    expect(collapseButton.element.parentElement.classList.contains('sidebar-menu')).toBe(true)
+    expect(collapseButton.attributes('aria-label')).toBe('收起侧边栏')
+    expect(collapseButton.attributes('title')).toBe('收起侧边栏')
+    expect(collapseButton.findComponent({ name: 'AppIcon' }).props('name')).toBe('DArrowLeft')
+    expect(collapseButton.findComponent({ name: 'AppIcon' }).exists()).toBe(true)
+
+    await collapseButton.trigger('click')
+    expect(wrapper.emitted('toggle-collapse')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  test('窄栏折叠按钮提供展开语义', () => {
+    const wrapper = mountSidebar({ compact: true, width: 64 })
+    const collapseButton = wrapper.find('.sidebar-collapse')
+
+    expect(collapseButton.attributes('aria-label')).toBe('展开侧边栏')
+    expect(collapseButton.attributes('title')).toBe('展开侧边栏')
+    expect(collapseButton.findComponent({ name: 'AppIcon' }).props('name')).toBe('DArrowRight')
+    wrapper.unmount()
+  })
 
   test('拖拽时按鼠标位移发送宽度并在结束时发送最终宽度', async() => {
     const wrapper = mountSidebar({ width: 220 })

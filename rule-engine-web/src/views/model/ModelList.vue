@@ -3,7 +3,7 @@
     <!-- 提示信息 -->
     <div class="linkage-hint">
       <el-icon><el-icon-info /></el-icon> 模型仅支持从 ONNX、PMML
-      格式文件导入，用于在规则设计时调用机器学习模型进行预测。
+      格式文件导入；ONNX 当前按图像/人脸任务配置，用于在规则设计时调用机器学习模型进行预测。
     </div>
 
     <el-tabs class="management-table-region" v-model="activeTab">
@@ -372,6 +372,7 @@
         </el-form-item>
         <el-form-item label="模型大类" prop="modelType">
           <el-select v-model="uploadForm.modelType" style="width: 100%">
+            <el-option label="PMML 自动识别" value="" />
             <el-option label="LR（逻辑回归）" value="LR" />
             <el-option label="XGBoost" value="XGBOOST" />
             <el-option label="LightGBM" value="LIGHTGBM" />
@@ -393,7 +394,7 @@
           >
             <el-button size="small" type="primary">选择文件</el-button>
             <template v-slot:tip>
-              <span class="el-upload__tip">仅支持 ONNX、PMML 格式</span>
+              <span class="el-upload__tip">仅支持 ONNX、PMML 格式；ONNX 需选择图像/人脸推理任务</span>
             </template>
           </el-upload>
         </el-form-item>
@@ -771,15 +772,6 @@
             placeholder="模型描述信息"
           />
         </el-form-item>
-        <el-form-item label="状态">
-          <el-switch
-            v-model="editForm.status"
-            :active-value="1"
-            :inactive-value="0"
-            active-text="启用"
-            inactive-text="停用"
-          />
-        </el-form-item>
       </el-form>
       <template v-slot:footer>
         <div>
@@ -853,7 +845,7 @@ const createUploadForm = () => ({
   scope: 'PROJECT',
   modelCode: '',
   modelName: '',
-  modelType: 'LR',
+  modelType: '',
   description: '',
   changeLog: '',
   testParams: '',
@@ -967,9 +959,7 @@ export default {
                   if (res.data === true) {
                     callback(
                       new Error(
-                        this.uploadForm.scope === 'GLOBAL'
-                          ? '该编码已被其他全局模型使用'
-                          : '该编码在当前项目内已存在，或与某个全局编码冲突'
+                        '该模型编码已存在，请更换编码'
                       )
                     )
                   } else {
@@ -984,9 +974,7 @@ export default {
         modelName: [
           { required: true, message: '请输入模型名称', trigger: 'blur' },
         ],
-        modelType: [
-          { required: true, message: '请选择模型大类', trigger: 'change' },
-        ],
+        modelType: [],
       },
       fileList: [],
       selectedFile: null,
@@ -1018,7 +1006,7 @@ export default {
                 )
                 .then((res) => {
                   if (res.data === true) {
-                    callback(new Error('该编码已被其他全局模型使用'))
+                    callback(new Error('该模型编码已存在，请更换编码'))
                   } else {
                     callback()
                   }
@@ -1502,7 +1490,6 @@ export default {
             description: this.editForm.description,
             targetCategories: this.editForm.targetCategories || null,
             modelVersion: this.editForm.modelVersion || null,
-            status: this.editForm.status,
             preloadOnStartup: this.editForm.preloadOnStartup,
             executionTimeoutMs: this.editForm.executionTimeoutMs,
           }

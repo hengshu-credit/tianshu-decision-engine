@@ -28,8 +28,11 @@ import com.hengshucredit.rule.server.mapper.RuleExperimentGroupMapper;
 import com.hengshucredit.rule.server.mapper.RuleExperimentMapper;
 import com.hengshucredit.rule.server.mapper.RuleExperimentVersionMapper;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
+import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import jakarta.annotation.Resource;
 import java.math.BigDecimal;
@@ -46,9 +49,27 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, RuleExperiment> {
+    private static final Logger log = LoggerFactory.getLogger(RuleExperimentService.class);
+    private static final int TEST_QUEUE_WORKERS = 4;
+    private static final int TEST_QUEUE_CAPACITY = 256;
+
+    private final ThreadPoolExecutor testExecutor = new ThreadPoolExecutor(
+            TEST_QUEUE_WORKERS, TEST_QUEUE_WORKERS, 0L, TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<>(TEST_QUEUE_CAPACITY),
+            runnable -> {
+                Thread thread = new Thread(runnable, "rule-experiment-test");
+                thread.setDaemon(true);
+                return thread;
+            }, new ThreadPoolExecutor.AbortPolicy());
     @Resource private RuleVersionBindingService versionBindings;
     @Resource private com.hengshucredit.rule.server.artifact.PublishedRuleFieldSnapshotResolver publishedFields;
     @Resource private ResourceVersionService resourceVersions;
@@ -59,6 +80,11 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     private static final String GROUP_CHALLENGER = "CHALLENGER";
     private static final String GROUP_TEST = "TEST";
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
+
+    @PreDestroy
+    public void shutdownTestExecutor() {
+        testExecutor.shutdown();
+    }
 
     @Resource
     private RuleExperimentGroupMapper groupMapper;
@@ -86,6 +112,9 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
 
     @Resource
     private RuleFieldAnalyzer ruleFieldAnalyzer;
+
+    @Resource
+    private EngineFieldValidationService fieldValidationService;
 
     @Resource
     private VariableSourceResolver variableSourceResolver;
@@ -305,6 +334,11 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     @Transactional
     public RuleExperiment saveExperiment(RuleExperiment experiment) {
         normalizeExperiment(experiment);
+        if (fieldValidationService != null) {
+            experiment.setInputValidationConfig(fieldValidationService
+                    .normalizeExperimentConfiguration(experiment.getProjectId(),
+                            experiment.getInputValidationConfig()));
+        }
         if (experiment.getGroups() != null) {
             for (RuleExperimentGroup group : experiment.getGroups()) {
                 normalizeGroup(group);
@@ -369,8 +403,13 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         Map<String, Object> params = request == null || request.getParams() == null
                 ? Collections.emptyMap()
                 : request.getParams();
-        params = selectedVersion == null ? bindExperimentParams(experiment, params)
-                : executionParameterBinder.bindRuleInputsPreservingMissing(resolveTestFields(experiment).getInputFields(), params);
+        List<RuleDefinitionInputField> experimentInputs = resolveTestFields(experiment).getInputFields();
+        params = executionParameterBinder.bindRuleInputsPreservingMissing(experimentInputs, params);
+        if (fieldValidationService != null) {
+            fieldValidationService.validateExperimentInputs(
+                    experiment.getProjectId(), experiment.getInputValidationConfig(),
+                    experimentInputs, params);
+        }
         params = resolveRoutingParams(experiment, groups, params);
         try (var versions = resourceVersions == null ? null : resourceVersions.bind(experiment.getProjectId(), params, VariableResolveOptions.defaults())) {
         String requestKey = resolveRequestKey(experiment, request, params);
@@ -385,13 +424,17 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         result.setRequestKey(requestKey);
 
         RouteChoice productionChoice = chooseProductionGroup(experiment, groups, params, requestKey, clientAppName);
-        RuleExperimentGroupResult productionResult = runGroup(experiment, productionChoice.group, params,
+        RuleExperimentGroupResult productionResult = runGroup(experiment, productionChoice.group, copyParams(params),
                 requestKey, requestTime, clientAppName, "PRODUCTION", productionChoice.reason, true,
                 experimentTraceId, configDigest, productionChoice.routeTrace);
         result.setProductionGroup(productionResult);
         result.getTags().add(productionChoice.group.getGroupCode());
 
         List<RouteChoice> testChoices = chooseTestGroups(experiment, groups, params, requestKey);
+        List<RouteChoice> queuedChoices = new ArrayList<>();
+        List<Future<RuleExperimentGroupResult>> queuedResults = new ArrayList<>();
+        RuleExperiment executionExperiment = experiment;
+        Map<String, Object> executionParams = params;
         for (RouteChoice testChoice : testChoices) {
             RuleExperimentGroup testGroup = testChoice.group;
             if (hasExecutedTestGroup(experiment.getId(), testGroup.getId(), requestKey, configDigest)) {
@@ -400,11 +443,37 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 continue;
             }
             boolean invokeExternal = testGroup.getInvokeExternalSource() == null || testGroup.getInvokeExternalSource() == 1;
-            RuleExperimentGroupResult testResult = runGroup(experiment, testGroup, params,
-                    requestKey, requestTime, clientAppName, "TEST", testChoice.reason, invokeExternal,
-                    experimentTraceId, configDigest, testChoice.routeTrace);
+            try {
+                RouteChoice queuedChoice = testChoice;
+                RuleExperimentGroup queuedGroup = testGroup;
+                queuedChoices.add(queuedChoice);
+                queuedResults.add(testExecutor.submit(() -> runTestGroup(executionExperiment, queuedGroup,
+                        copyParams(executionParams), requestKey, requestTime, clientAppName,
+                        queuedChoice.reason, invokeExternal, experimentTraceId, configDigest,
+                        queuedChoice.routeTrace)));
+            } catch (RejectedExecutionException rejected) {
+                queuedChoices.remove(queuedChoices.size() - 1);
+                result.getTestGroups().add(skippedTestResult(testGroup, "实验测试队列已满，未执行空跑"));
+                log.warn("实验测试队列已满，跳过测试组: experiment={}, group={}",
+                        experiment.getExperimentCode(), testGroup.getGroupCode());
+            }
+        }
+        for (int index = 0; index < queuedResults.size(); index++) {
+            RouteChoice choice = queuedChoices.get(index);
+            RuleExperimentGroupResult testResult;
+            try {
+                testResult = queuedResults.get(index).get();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                testResult = failedTestResult(choice.group, "实验测试线程被中断");
+            } catch (ExecutionException failed) {
+                testResult = failedTestResult(choice.group, failed.getCause() == null
+                        ? "实验测试执行失败" : failed.getCause().getMessage());
+            }
             result.getTestGroups().add(testResult);
-            result.getTags().add(testGroup.getGroupCode());
+            if (testResult.isMatched() && !testResult.isSkipped()) {
+                result.getTags().add(choice.group.getGroupCode());
+            }
         }
 
         result.setSuccess(productionResult.isSuccess());
@@ -477,9 +546,17 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         return TraceIdGenerator.projectScopeCode(projectId);
     }
 
-    private Map<String, Object> bindExperimentParams(RuleExperiment experiment, Map<String, Object> params) {
-        return executionParameterBinder.bindRuleInputsPreservingMissing(
-                resolveTestFields(experiment.getId()).getInputFields(), params);
+    private Map<String, Object> bindExperimentParams(RuleExperiment experiment,
+                                                      Map<String, Object> params) {
+        List<RuleDefinitionInputField> fields = resolveTestFields(experiment.getId()).getInputFields();
+        Map<String, Object> bound = executionParameterBinder
+                .bindRuleInputsPreservingMissing(fields, params);
+        if (fieldValidationService != null) {
+            fieldValidationService.validateExperimentInputs(
+                    experiment.getProjectId(), experiment.getInputValidationConfig(),
+                    fields, bound);
+        }
+        return bound;
     }
 
     /**
@@ -704,14 +781,67 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         VariableResolveOptions options = VariableResolveOptions.defaults();
         options.setSkipApiSources(!invokeExternalSource);
         if (GROUP_TEST.equals(group.getGroupType())) {
+            options.setDryRun(true);
             options.setListMatchTime(requestTime);
         }
-        RuleExecuteService.ExecutionOutcome outcome = executeService.executePublishedWithOptions(
-                published, params, experiment.getProjectId(), clientAppName, options, "EXPERIMENT_" + stage);
+        RuleExecuteService.ExecutionOutcome outcome;
+        try (var versions = resourceVersions == null ? null
+                : resourceVersions.bind(experiment.getProjectId(), params, options)) {
+            outcome = executeService.executePublishedWithOptions(
+                    published, params, experiment.getProjectId(), clientAppName, options, "EXPERIMENT_" + stage);
+        }
         RuleExperimentGroupResult groupResult = toGroupResult(group, outcome, stage, routeReason);
-        saveExecutionLog(experiment, group, groupResult, params, requestKey, stage, routeReason,
-                experimentTraceId, configDigest, routeTrace);
+        try {
+            saveExecutionLog(experiment, group, groupResult, params, requestKey, stage, routeReason,
+                    experimentTraceId, configDigest, routeTrace);
+        } catch (RuntimeException error) {
+            log.warn("实验执行日志写入失败，不影响规则结果: experiment={}, group={}",
+                    experiment.getExperimentCode(), group.getGroupCode(), error);
+        }
         return groupResult;
+    }
+
+    private RuleExperimentGroupResult runTestGroup(RuleExperiment experiment, RuleExperimentGroup group,
+                                                   Map<String, Object> params, String requestKey,
+                                                   LocalDateTime requestTime, String clientAppName,
+                                                   String routeReason, boolean invokeExternalSource,
+                                                   String experimentTraceId, String configDigest,
+                                                   List<Map<String, Object>> routeTrace) {
+        try {
+            return runGroup(experiment, group, params, requestKey, requestTime, clientAppName,
+                    "TEST", routeReason, invokeExternalSource, experimentTraceId, configDigest, routeTrace);
+        } catch (RuntimeException error) {
+            RuleExperimentGroupResult failed = failedTestResult(group,
+                    error.getMessage() == null ? "实验测试执行失败" : error.getMessage());
+            try {
+                saveExecutionLog(experiment, group, failed, params, requestKey, "TEST", routeReason,
+                        experimentTraceId, configDigest, routeTrace);
+            } catch (RuntimeException logError) {
+                log.warn("实验测试失败日志写入失败: experiment={}, group={}",
+                        experiment.getExperimentCode(), group.getGroupCode(), logError);
+            }
+            return failed;
+        }
+    }
+
+    private RuleExperimentGroupResult failedTestResult(RuleExperimentGroup group, String message) {
+        RuleExperimentGroupResult result = new RuleExperimentGroupResult();
+        result.setStage("TEST");
+        result.setGroupCode(group.getGroupCode());
+        result.setGroupName(group.getGroupName());
+        result.setGroupType(group.getGroupType());
+        result.setRuleCode(group.getRuleCode());
+        result.setRouteReason("测试组异常，不影响生产结果");
+        result.setMatched(true);
+        result.setSuccess(false);
+        result.setErrorMessage(message);
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> copyParams(Map<String, Object> params) {
+        if (params == null || params.isEmpty()) return new LinkedHashMap<>();
+        return JSON.parseObject(JSON.toJSONString(params), Map.class);
     }
 
     private RuleExperimentGroupResult toGroupResult(RuleExperimentGroup group,

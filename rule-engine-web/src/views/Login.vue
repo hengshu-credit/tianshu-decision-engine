@@ -60,13 +60,18 @@
             </el-button>
           </el-form-item>
         </el-form>
+        <div v-if="registrationEnabled || passwordRecoveryEnabled" class="login-links">
+          <router-link v-if="registrationEnabled" to="/register">注册账号</router-link>
+          <span v-if="registrationEnabled && passwordRecoveryEnabled" aria-hidden="true">·</span>
+          <router-link v-if="passwordRecoveryEnabled" to="/forgot-password">忘记密码</router-link>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script>
-import { consoleLogin } from '@/api/auth'
+import { consoleLogin, getConsoleAuthConfig } from '@/api/auth'
 
 export default {
   name: 'Login',
@@ -74,6 +79,8 @@ export default {
     return {
       brandLogoUrl: `${import.meta.env.BASE_URL || './'}images/hengshucredit_animated.svg`,
       loading: false,
+      registrationEnabled: false,
+      passwordRecoveryEnabled: false,
       form: { username: '', password: '' },
       rules: {
         username: [
@@ -81,6 +88,16 @@ export default {
         ],
         password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
       },
+    }
+  },
+  async created() {
+    try {
+      const response = await getConsoleAuthConfig()
+      this.registrationEnabled = response.data?.registrationEnabled === true
+      this.passwordRecoveryEnabled = response.data?.passwordRecoveryEnabled === true
+    } catch (e) {
+      this.registrationEnabled = false
+      this.passwordRecoveryEnabled = false
     }
   },
   methods: {
@@ -283,6 +300,21 @@ $login-muted: var(--tianshu-text-tertiary);
 .login-form__actions {
   margin-bottom: 0;
   margin-top: 8px;
+}
+.login-links {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  font-size: 13px;
+}
+.login-links a {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+.login-links a:hover {
+  text-decoration: underline;
 }
 .login-footnote {
   margin: 20px 0 0;

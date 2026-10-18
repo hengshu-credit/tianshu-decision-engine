@@ -219,6 +219,13 @@
           <el-descriptions-item label="规则 trace_id" :span="2">{{
             detail.ruleTraceId || '-'
           }}</el-descriptions-item>
+          <template v-if="moduleType === 'MODEL'">
+            <el-descriptions-item label="模型版本">{{ detail.modelVersion || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="配置摘要">{{ detail.configurationDigest || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="文件摘要" :span="2">{{ detail.modelDigest || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="运行设备">{{ detail.configuredProvider || '-' }} → {{ detail.effectiveProvider || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="执行状态">{{ detail.executionStatus || (detail.success === 1 ? 'SUCCESS' : 'ERROR') }}</el-descriptions-item>
+          </template>
           <el-descriptions-item
             v-if="detail.requestUrl"
             :label="profile.resourceLabel"
@@ -327,7 +334,7 @@
           <div class="detail-grid">
             <div class="detail-kv">
               <span>匹配值</span
-              ><strong>{{ listRequest.queryValue || '-' }}</strong>
+              ><strong>{{ listQueryValue }}</strong>
             </div>
             <div class="detail-kv">
               <span>匹配模式</span
@@ -600,6 +607,9 @@ export default {
     listResponse() {
       return this.parseJsonValue(this.detail && this.detail.responseBody)
     },
+    listQueryValue() {
+      return this.listQueryValueFor(this.listRequest)
+    },
     modelRequest() {
       return this.parseJsonValue(this.detail && this.detail.requestBody)
     },
@@ -743,8 +753,8 @@ export default {
         const request = this.parseJsonValue(row.requestBody)
         const response = this.parseJsonValue(row.responseBody)
         return (
-          '值=' +
-          (request.queryValue || '-') +
+            '值=' +
+            this.listQueryValueFor(request) +
           '，' +
           (response.hit ? '命中' : '未命中')
         )
@@ -755,6 +765,12 @@ export default {
       return row.responseStatus
         ? 'HTTP ' + row.responseStatus
         : this.prettyInline(this.parseJsonValue(row.responseBody))
+    },
+    listQueryValueFor(request) {
+      if (!request) return '-'
+      const values = request.queryValues || request.queryValue
+      if (values == null || values === '') return '-'
+      return Array.isArray(values) ? values.join('、') : String(values)
     },
     pretty(value) {
       if (value == null || value === '') return '-'

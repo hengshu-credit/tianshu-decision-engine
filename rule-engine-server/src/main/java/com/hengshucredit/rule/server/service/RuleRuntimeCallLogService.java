@@ -24,6 +24,8 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
 
     @Resource
     private RuntimeCallLogAsyncWriter asyncWriter;
+    @Resource
+    private RuntimeCallLogContentPolicy contentPolicy;
 
     public IPage<RuleRuntimeCallLog> pageList(int pageNum, int pageSize, String moduleType, String actionType,
                                               String targetCode, String traceId, Integer success,
@@ -264,6 +266,12 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
         result.put("requestId", log.getRequestId());
         result.put("targetRefId", log.getTargetRefId());
         result.put("targetCode", log.getTargetCode());
+        result.put("modelVersion", log.getModelVersion());
+        result.put("modelDigest", log.getModelDigest());
+        result.put("configurationDigest", log.getConfigurationDigest());
+        result.put("configuredProvider", log.getConfiguredProvider());
+        result.put("effectiveProvider", log.getEffectiveProvider());
+        result.put("executionStatus", log.getExecutionStatus());
         result.put("requestMethod", log.getRequestMethod());
         result.put("requestUrl", log.getRequestUrl());
         result.put("requestBody", log.getRawRequestBody() == null
@@ -311,6 +319,7 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
         if (log == null) {
             return;
         }
+        if (contentPolicy != null) contentPolicy.apply(log);
         if (log.getRootTraceId() != null && "API_INVOKE".equals(log.getActionType()) && log.getHistoryFields() != null) {
             try {
                 if (!save(log)) throw new IllegalStateException("insert returned false");

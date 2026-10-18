@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -44,11 +45,14 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.Comparator;
 import java.util.stream.Collectors;
 
 @Service
@@ -58,7 +62,8 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
     public static final String SCOPE_PROJECT = "PROJECT";
 
     private static final String[] EXCEL_HEADERS = {
-            "名单内容", "内容类型", "生效时间", "失效时间", "插入原因", "插入备注", "执行操作", "插入时间"
+            "名单内容", "内容类型", "生效时间", "失效时间", "插入原因", "插入备注", "执行操作", "插入时间",
+            "记录ID（修改/删除可选）"
     };
     private static final Map<String, String> ITEM_TYPE_LABELS = new LinkedHashMap<>();
     private static final String MATCH_IN_LIST = "IN_LIST";
@@ -299,6 +304,88 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
                 : matched;
     }
 
+    /**
+     * 一次执行内批量计算名单匹配单元，避免每个“字段×名单”单独查一次数据库。
+     * 返回键为 listId + NUL + 内容；调用方传入的匹配模式和有效时间对整批单元一致。
+     */
+    public Map<String, Boolean> matchCells(List<Long> listIds, List<Object> values,
+                                           List<String> itemTypes, String matchMode,
+                                           LocalDateTime matchTime) {
+        List<Long> ids = listIds == null ? List.of() : listIds.stream()
+                .filter(Objects::nonNull).distinct().toList();
+        List<Object> inputs = values == null ? List.of() : values;
+        String normalizedMode = normalizeMatchMode(matchMode);
+        Map<String, Boolean> result = new LinkedHashMap<>();
+        if (ids.isEmpty() || inputs.isEmpty()) return result;
+        if (recordMapper == null || baseMapper == null) {
+            for (Long id : ids) {
+                for (Object value : inputs) {
+                    if (MissingValueSemantics.isMissing(value)) continue;
+                    result.put(cellKey(id, value), matchAt(id, value, itemTypes, normalizedMode, matchTime));
+                }
+            }
+            return result;
+        }
+
+        List<RuleListLibrary> libraries = listByIds(ids);
+        Set<Long> activeIds = new HashSet<>();
+        for (RuleListLibrary library : libraries) {
+            if (library != null && Integer.valueOf(1).equals(library.getStatus())) activeIds.add(library.getId());
+        }
+        if (activeIds.isEmpty()) return result;
+
+        List<String> normalizedTypes = normalizeItemTypes(itemTypes);
+        LambdaQueryWrapper<RuleListRecord> wrapper = new LambdaQueryWrapper<RuleListRecord>()
+                .eq(RuleListRecord::getStatus, 1)
+                .in(RuleListRecord::getListId, activeIds);
+        if (!normalizedTypes.isEmpty()) wrapper.in(RuleListRecord::getItemType, normalizedTypes);
+        appendEffectiveCondition(wrapper, matchTime == null ? LocalDateTime.now() : matchTime);
+        List<Map.Entry<Long, String>> cells = new ArrayList<>();
+        for (Long id : activeIds) {
+            for (Object value : inputs) {
+                if (MissingValueSemantics.isMissing(value)) continue;
+                cells.add(Map.entry(id, String.valueOf(value)));
+            }
+        }
+        if (cells.isEmpty()) return result;
+        wrapper.and(group -> {
+            boolean first = true;
+            for (Map.Entry<Long, String> cell : cells) {
+                if (!first) group.or();
+                first = false;
+                if (MATCH_CONTAINED_IN_LIST.equals(normalizedMode)
+                        || MATCH_NOT_CONTAINED_IN_LIST.equals(normalizedMode)) {
+                    group.and(pair -> pair.eq(RuleListRecord::getListId, cell.getKey())
+                            .like(RuleListRecord::getItemContent, cell.getValue()));
+                } else {
+                    group.and(pair -> pair.eq(RuleListRecord::getListId, cell.getKey())
+                            .eq(RuleListRecord::getItemContent, cell.getValue()));
+                }
+            }
+        });
+        List<RuleListRecord> matchedRecords = recordMapper.selectList(wrapper);
+        boolean negative = MATCH_NOT_IN_LIST.equals(normalizedMode)
+                || MATCH_NOT_CONTAINED_IN_LIST.equals(normalizedMode);
+        for (Map.Entry<Long, String> cell : cells) {
+            boolean hit = matchedRecords.stream().anyMatch(record ->
+                    Objects.equals(record.getListId(), cell.getKey())
+                            && (MATCH_CONTAINED_IN_LIST.equals(normalizedMode)
+                            || MATCH_NOT_CONTAINED_IN_LIST.equals(normalizedMode)
+                            ? record.getItemContent() != null && record.getItemContent().contains(cell.getValue())
+                            : Objects.equals(record.getItemContent(), cell.getValue())));
+            result.put(cellKey(cell.getKey(), cell.getValue()), negative ? !hit : hit);
+        }
+        return result;
+    }
+
+    private List<RuleListLibrary> listByIds(List<Long> ids) {
+        return list(new LambdaQueryWrapper<RuleListLibrary>().in(RuleListLibrary::getId, ids));
+    }
+
+    private String cellKey(Long listId, Object value) {
+        return String.valueOf(listId) + '\u0000' + String.valueOf(value);
+    }
+
     public Workbook createTemplateWorkbook() {
         Workbook workbook = new XSSFWorkbook();
         Sheet sheet = workbook.createSheet("名单内容");
@@ -351,6 +438,7 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
                     row.createCell(5).setCellValue(nullToEmpty(record.getRemark()));
                     row.createCell(6).setCellValue(nullToEmpty(record.getLastOperation()));
                     writeDateCell(row.createCell(7), record.getCreateTime(), dateStyle);
+                    row.createCell(8).setCellValue(record.getId() == null ? "" : String.valueOf(record.getId()));
                 }
                 if (page.getRecords().size() < batchSize) break;
                 pageNumber++;
@@ -396,6 +484,7 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
                     record.setReason(cellText(row, 4, formatter));
                     record.setRemark(cellText(row, 5, formatter));
                     String operation = cellText(row, 6, formatter);
+                    record.setId(cellLong(row.getCell(8), formatter));
                     upsertRecord(record, normalizeOperation(operation), null);
                     success++;
                 } catch (Exception e) {
@@ -457,22 +546,48 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
         if (logs == null || logs.isEmpty()) {
             return;
         }
-        for (RuleListRecordLog log : logs) {
-            RuleListRecordLog previous = findPreviousLog(log);
-            log.setChangeContent(buildLogChangeContent(log, previous));
+        Set<Long> recordIds = logs.stream().map(RuleListRecordLog::getRecordId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        if (recordIds.isEmpty()) {
+            for (RuleListRecordLog log : logs) log.setChangeContent(buildLogChangeContent(log, null));
+            return;
         }
-    }
-
-    private RuleListRecordLog findPreviousLog(RuleListRecordLog log) {
-        if (log == null || log.getId() == null || log.getRecordId() == null) {
-            return null;
+        Long listId = logs.get(0).getListId();
+        Long maxId = logs.stream().map(RuleListRecordLog::getId)
+                .filter(Objects::nonNull).max(Long::compareTo).orElse(0L);
+        List<RuleListRecordLog> history = logMapper.selectList(new LambdaQueryWrapper<RuleListRecordLog>()
+                .eq(RuleListRecordLog::getListId, listId)
+                .in(RuleListRecordLog::getRecordId, recordIds)
+                .lt(RuleListRecordLog::getId, maxId)
+                .orderByAsc(RuleListRecordLog::getId));
+        if (history == null) {
+            for (RuleListRecordLog log : logs) {
+                RuleListRecordLog previous = logMapper.selectOne(new LambdaQueryWrapper<RuleListRecordLog>()
+                        .eq(RuleListRecordLog::getListId, log.getListId())
+                        .eq(RuleListRecordLog::getRecordId, log.getRecordId())
+                        .lt(RuleListRecordLog::getId, log.getId())
+                        .orderByDesc(RuleListRecordLog::getId)
+                        .last("LIMIT 1"));
+                log.setChangeContent(buildLogChangeContent(log, previous));
+            }
+            return;
         }
-        return logMapper.selectOne(new LambdaQueryWrapper<RuleListRecordLog>()
-                .eq(RuleListRecordLog::getListId, log.getListId())
-                .eq(RuleListRecordLog::getRecordId, log.getRecordId())
-                .lt(RuleListRecordLog::getId, log.getId())
-                .orderByDesc(RuleListRecordLog::getId)
-                .last("LIMIT 1"));
+        Map<Long, List<RuleListRecordLog>> historyByRecord = history.stream()
+                .collect(Collectors.groupingBy(RuleListRecordLog::getRecordId));
+        List<RuleListRecordLog> ordered = logs.stream()
+                .sorted(Comparator.comparing(RuleListRecordLog::getId,
+                        Comparator.nullsFirst(Long::compareTo))).toList();
+        Map<Long, Integer> offsets = new HashMap<>();
+        Map<Long, RuleListRecordLog> latest = new HashMap<>();
+        for (RuleListRecordLog log : ordered) {
+            List<RuleListRecordLog> prior = historyByRecord.getOrDefault(log.getRecordId(), List.of());
+            int offset = offsets.getOrDefault(log.getRecordId(), 0);
+            while (log.getId() != null && offset < prior.size() && prior.get(offset).getId() < log.getId()) {
+                latest.put(log.getRecordId(), prior.get(offset++));
+            }
+            offsets.put(log.getRecordId(), offset);
+            log.setChangeContent(buildLogChangeContent(log, latest.get(log.getRecordId())));
+        }
     }
 
     private String buildLogChangeContent(RuleListRecordLog current, RuleListRecordLog previous) {
@@ -549,10 +664,27 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
             if (library.getProjectId() != null && library.getProjectId() > 0) {
                 library.setProjectName(projectNames.get(library.getProjectId()));
             }
-            Long count = recordMapper.selectCount(new LambdaQueryWrapper<RuleListRecord>()
-                    .eq(RuleListRecord::getListId, library.getId())
-                    .eq(RuleListRecord::getStatus, 1));
-            library.setRecordCount(count);
+        }
+        Map<Long, Long> counts = new HashMap<>();
+        List<Long> listIds = libraries.stream().map(RuleListLibrary::getId)
+                .filter(Objects::nonNull).toList();
+        if (!listIds.isEmpty()) {
+            LocalDateTime now = LocalDateTime.now();
+            QueryWrapper<RuleListRecord> countWrapper = new QueryWrapper<>();
+            countWrapper.select("list_id", "COUNT(*) AS record_count")
+                    .in("list_id", listIds)
+                    .eq("status", 1)
+                    .and(w -> w.isNull("effective_time").or().le("effective_time", now))
+                    .and(w -> w.isNull("expire_time").or().ge("expire_time", now))
+                    .groupBy("list_id");
+            for (Map<String, Object> row : recordMapper.selectMaps(countWrapper)) {
+                Object id = row.get("list_id");
+                Object count = row.get("record_count");
+                if (id != null && count instanceof Number number) counts.put(Long.valueOf(String.valueOf(id)), number.longValue());
+            }
+        }
+        for (RuleListLibrary library : libraries) {
+            library.setRecordCount(counts.getOrDefault(library.getId(), 0L));
         }
     }
 
@@ -645,7 +777,8 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
         aliases.put("其他", "OTHER");
         aliases.put("任意", "ANY");
         String alias = aliases.get(value);
-        return alias != null ? alias : upper;
+        if (alias != null) return alias;
+        return ITEM_TYPE_LABELS.containsKey(upper) ? upper : null;
     }
 
     private String normalizeMatchMode(String matchMode) {
@@ -654,7 +787,7 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
             return MATCH_IN_LIST;
         }
         String upper = value.toUpperCase();
-        if ("HIT".equals(upper) || "EXACT".equals(upper) || "IN".equals(upper)) {
+        if (MATCH_IN_LIST.equals(upper) || "HIT".equals(upper) || "EXACT".equals(upper) || "IN".equals(upper)) {
             return MATCH_IN_LIST;
         }
         if ("MISS".equals(upper) || "NOT_IN".equals(upper)) {
@@ -669,7 +802,7 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
         if (MATCH_NOT_IN_LIST.equals(upper) || MATCH_CONTAINED_IN_LIST.equals(upper) || MATCH_NOT_CONTAINED_IN_LIST.equals(upper)) {
             return upper;
         }
-        return MATCH_IN_LIST;
+        throw new IllegalArgumentException("不支持的名单匹配模式: " + matchMode);
     }
 
     private String itemTypeLabel(String itemType) {
@@ -755,8 +888,18 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
         return trimToNull(formatter.formatCellValue(row.getCell(index)));
     }
 
+    private Long cellLong(Cell cell, DataFormatter formatter) {
+        String value = cell == null ? null : trimToNull(formatter.formatCellValue(cell));
+        if (value == null) return null;
+        try {
+            return Long.valueOf(value);
+        } catch (NumberFormatException invalid) {
+            throw new IllegalArgumentException("记录ID必须是整数");
+        }
+    }
+
     private boolean isBlankRow(Row row, DataFormatter formatter) {
-        for (int i = 0; i < 7; i++) {
+        for (int i = 0; i < EXCEL_HEADERS.length; i++) {
             if (hasText(formatter.formatCellValue(row.getCell(i)))) {
                 return false;
             }

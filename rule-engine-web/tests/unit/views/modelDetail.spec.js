@@ -965,7 +965,7 @@ describe('ModelDetail — 版本管理', () => {
     await wrapper.setData({ model: { ...mockModel(), currentVersion: 3, publishedVersion: 1 } })
     const header = wrapper.find('.model-detail-header').element
     const manager = wrapper.findComponent({ name: 'ResourceVersionManager' })
-    expect(manager.props()).toMatchObject({ resourceType: 'MODEL', resourceId: 1, hasLegacy: true })
+    expect(manager.props()).toMatchObject({ resourceType: 'MODEL', resourceId: 1, hasLegacy: true, showTrigger: true })
     const directActions = Array.from(header.querySelector('.model-detail-actions').children).filter(element => element.tagName === 'EL-BUTTON-STUB').map(element => element.textContent)
     expect(directActions.join('')).not.toContain('下线')
     expect(directActions.join('')).not.toContain('删除')

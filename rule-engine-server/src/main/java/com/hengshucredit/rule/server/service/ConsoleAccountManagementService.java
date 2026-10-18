@@ -89,6 +89,10 @@ public class ConsoleAccountManagementService {
             user = new ConsoleUser();
             user.setUsername(request.getUsername().trim());
             user.setDisplayName(displayName(request));
+            user.setEmail(normalizeEmail(request.getEmail()));
+            user.setEmailVerifiedAt(user.getEmail() == null ? null : java.time.LocalDateTime.now());
+            user.setRegistrationStatus("ACTIVE");
+            user.setRegistrationSource("ADMIN");
             user.setPasswordHash(BCrypt.hashpw(request.getPassword()));
             user.setStatus(request.getStatus() == null ? 1 : request.getStatus());
             user.setPermissionVersion(1L);
@@ -104,6 +108,10 @@ public class ConsoleAccountManagementService {
             }
             user.setUsername(username);
             user.setDisplayName(displayName(request));
+            if (request.getEmail() != null && !request.getEmail().isBlank()) {
+                user.setEmail(normalizeEmail(request.getEmail()));
+                user.setEmailVerifiedAt(java.time.LocalDateTime.now());
+            }
             if (request.getStatus() != null) {
                 user.setStatus(request.getStatus());
             }
@@ -386,6 +394,9 @@ public class ConsoleAccountManagementService {
         detail.setId(user.getId());
         detail.setUsername(user.getUsername());
         detail.setDisplayName(user.getDisplayName());
+        detail.setEmail(user.getEmail());
+        detail.setEmailVerifiedAt(user.getEmailVerifiedAt());
+        detail.setRegistrationStatus(user.getRegistrationStatus());
         detail.setStatus(user.getStatus());
         detail.setPermissionVersion(user.getPermissionVersion());
         detail.setLastLoginTime(user.getLastLoginTime());
@@ -524,11 +535,19 @@ public class ConsoleAccountManagementService {
                 ? request.getUsername().trim() : request.getDisplayName().trim();
     }
 
+    private String normalizeEmail(String email) {
+        if (email == null || email.isBlank()) return null;
+        return email.trim().toLowerCase(Locale.ROOT);
+    }
+
     @Data
     public static class ConsoleUserDetail {
         private Long id;
         private String username;
         private String displayName;
+        private String email;
+        private java.time.LocalDateTime emailVerifiedAt;
+        private String registrationStatus;
         private Integer status;
         private Long permissionVersion;
         private java.time.LocalDateTime lastLoginTime;

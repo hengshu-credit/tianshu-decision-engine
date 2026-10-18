@@ -37,7 +37,7 @@
       <label>名单内容</label>
       <div v-for="(entry, index) in block.entries" :key="index" class="content-row">
         <el-select v-model="entry.itemType" :aria-label="`内容类型 ${index + 1}`" @change="editor.sync()"><el-option v-for="type in itemTypes" :key="type.value" :label="type.label" :value="type.value" /></el-select>
-        <operand-picker :value="entry.valueOperand" :vars="contentFields" :selected-vars="editor.selectedVars" :functions="editor.functions" :allowed-kinds="['REFERENCE', 'PATH']" placeholder="从字段选择器选择内容" @input="value => editor.setOperand(entry, 'valueOperand', value)" />
+        <operand-picker :value="entry.valueOperand" :vars="contentFields" :selected-vars="editor.selectedVars" :functions="editor.functions" :allowed-kinds="['REFERENCE', 'PATH', 'FUNCTION', 'OPERATION', 'ACCESS', 'CAST']" placeholder="从字段选择器选择内容或表达式" @input="value => editor.setOperand(entry, 'valueOperand', value)" />
         <el-button link type="danger" :aria-label="`删除内容 ${index + 1}`" @click="removeEntry(index)">删除</el-button>
       </div>
       <el-button @click="addEntry">添加内容字段</el-button>

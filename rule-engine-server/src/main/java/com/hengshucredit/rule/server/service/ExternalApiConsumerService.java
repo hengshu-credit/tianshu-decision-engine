@@ -17,6 +17,7 @@ public class ExternalApiConsumerService {
     @Resource private ExternalApiInvokeService invokeService;
     @Resource private RuleVariableService variableService;
     @Resource private com.hengshucredit.rule.server.mapper.RuleExternalDatasourceMapper datasourceMapper;
+    @Resource private EngineFieldValidationService fieldValidationService;
 
     public Map<String, Object> resolve(Long projectId, Long apiId, Map<String, Object> binding,
                                        Map<String, Object> values, VariableResolveOptions options) {
@@ -75,6 +76,9 @@ public class ExternalApiConsumerService {
             overrides = active;
         }
         ExternalApiRequestPlan plan = ExternalApiRequestPlan.prepare(selected, values, overrides, paths);
+        if (fieldValidationService != null) {
+            fieldValidationService.validateApiPlan(projectId, plan);
+        }
         String key = plan.identity();
         VariableResolutionInvocationCache cache = options.getInvocationCache();
         // 检查点与 single-flight 使用同一请求身份，变量/对象换取值路径或增加中间值不会重复提交。

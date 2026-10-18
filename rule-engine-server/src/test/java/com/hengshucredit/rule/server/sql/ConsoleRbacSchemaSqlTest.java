@@ -21,7 +21,8 @@ public class ConsoleRbacSchemaSqlTest {
                 "console_user_role",
                 "console_role_permission",
                 "console_user_permission_override",
-                "console_security_audit_log");
+                "console_security_audit_log",
+                "console_account_token");
 
         for (String table : tables) {
             Assert.assertTrue("missing table " + table,
@@ -37,6 +38,10 @@ public class ConsoleRbacSchemaSqlTest {
                 "UNIQUE KEY `uk_console_user_permission_override` (`user_id`, `permission_id`)"));
         Assert.assertTrue(sql.contains(
                 "`effect` VARCHAR(8) NOT NULL COMMENT 'ALLOW or DENY'"));
+        Assert.assertTrue(sql.contains("`email`              VARCHAR(256)"));
+        Assert.assertTrue(sql.contains("`registration_status` VARCHAR(16)"));
+        Assert.assertTrue(sql.contains(
+                "UNIQUE KEY `uk_console_account_token_hash` (`token_hash`)"));
     }
 
     private static String readSchema() throws Exception {

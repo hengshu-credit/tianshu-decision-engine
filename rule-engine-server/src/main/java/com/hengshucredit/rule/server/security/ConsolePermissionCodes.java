@@ -36,6 +36,8 @@ public final class ConsolePermissionCodes {
         addGovernedResource(definitions, "experiment", "分流管理", "/experiment", 700);
         addGovernedResource(definitions, "project", "项目管理", "/project", 800);
         addGovernedResource(definitions, "list", "名单管理", "/list", 820);
+        definitions.add(new PermissionDefinition(
+                "list:export", "导出名单内容", "名单管理", "ACTION", null, 823));
         addGovernedResource(definitions, "billing", "账单管理", "/billing", 840);
         definitions.add(new PermissionDefinition(
                 "log:view", "查看执行日志", "日志管理", "MENU", "/log", 860));
@@ -58,11 +60,17 @@ public final class ConsolePermissionCodes {
         definitions.add(new PermissionDefinition(
                 "account:manage", "管理账户", "账户管理", "ACTION", null, 1001));
         definitions.add(new PermissionDefinition(
-                "role:view", "查看角色", "账户管理", "ACTION", null, 1002));
+                "account:approve", "审核注册", "账户管理", "ACTION", null, 1002));
         definitions.add(new PermissionDefinition(
-                "role:manage", "管理角色", "账户管理", "ACTION", null, 1003));
+                "account:role-assign", "分配账户权限", "账户管理", "ACTION", null, 1003));
         definitions.add(new PermissionDefinition(
-                "account:audit", "查看操作日志", "账户管理", "ACTION", null, 1004));
+                "account:password-reset", "重置账户密码", "账户管理", "ACTION", null, 1004));
+        definitions.add(new PermissionDefinition(
+                "role:view", "查看角色", "账户管理", "ACTION", null, 1005));
+        definitions.add(new PermissionDefinition(
+                "role:manage", "管理角色", "账户管理", "ACTION", null, 1006));
+        definitions.add(new PermissionDefinition(
+                "account:audit", "查看操作日志", "账户管理", "ACTION", null, 1007));
         return Collections.unmodifiableList(definitions);
     }
 

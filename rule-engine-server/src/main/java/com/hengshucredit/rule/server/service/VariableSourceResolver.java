@@ -687,6 +687,7 @@ public class VariableSourceResolver {
     private VariableResolveOptions copyResolveOptions(VariableResolveOptions source) {
         VariableResolveOptions copy = VariableResolveOptions.defaults();
         copy.setSkipApiSources(source.isSkipApiSources());
+        copy.setDryRun(source.isDryRun());
         copy.setOfflineReplay(source.isOfflineReplay());
         copy.setForceRefreshSource(source.isForceRefreshSource());
         copy.setRequiredNamesUpstreamOnly(source.isRequiredNamesUpstreamOnly());
@@ -1359,12 +1360,17 @@ public class VariableSourceResolver {
                         }
                         throw new IllegalStateException("模型[" + modelCode + "]执行失败：" + modelError(result));
                     }
+                    updateRuntimeTrace(runtimeTrace, model, result);
                     completeRuntimeTrace(runtimeTrace, true, null, System.currentTimeMillis() - start);
-                    logModelExecution(model, modelParams, result, null, System.currentTimeMillis() - start, runtimeTrace);
+                    logModelExecution(model, modelParams, result, null, System.currentTimeMillis() - start,
+                            runtimeTrace, null);
                     return result;
                 } catch (RuntimeException error) {
+                    updateRuntimeTrace(runtimeTrace, model, Map.of(
+                            "executionStatus", ExecutionCapacityException.find(error) != null ? "THROTTLED" : "ERROR"));
                     completeRuntimeTrace(runtimeTrace, false, error.getMessage(), System.currentTimeMillis() - start);
-                    logModelExecution(model, modelParams, null, error.getMessage(), System.currentTimeMillis() - start, runtimeTrace);
+                    logModelExecution(model, modelParams, null, error.getMessage(), System.currentTimeMillis() - start,
+                            runtimeTrace, ExecutionCapacityException.find(error) != null ? "THROTTLED" : "ERROR");
                     throw error;
                 }
             });
@@ -1906,18 +1912,19 @@ public class VariableSourceResolver {
             throw new IllegalArgumentException("DB变量缺少查询SQL");
         }
         List<Object> queryParams = alignQueryParamsWithSql(sql, buildDbParamList(variable, config.get("params"), params, options));
-        DatabaseQueryOptions queryOptions = DatabaseQueryOptions.from(config, 1);
+        DatabaseQueryOptions queryOptions = DatabaseQueryOptions.from(config, 1000);
         int maxRows = queryOptions.maxRows();
         long start = System.currentTimeMillis();
         LocalDateTime startTime = LocalDateTime.now();
         RuleDbDatasource datasource = loadDbDatasource(datasourceId);
         Map<String, Object> request = buildDbLogRequest(datasource, variable, config, sql, queryParams, maxRows, startTime);
         request.put("queryTimeoutSeconds", queryOptions.queryTimeoutSeconds());
+        request.put("maxContentBytes", queryOptions.maxContentBytes());
         RuntimeTraceService.ModuleTrace runtimeTrace = startRuntimeTrace(
                 "DATABASE", variable.getProjectId(), datasourceId, resolveScriptName(variable));
         try {
             List<Map<String, Object>> rows = dbConnectPools.query(datasourceId, sql, queryParams,
-                    maxRows, queryOptions.queryTimeoutSeconds());
+                    maxRows, queryOptions.queryTimeoutSeconds(), queryOptions.maxContentBytes());
             if (options.isCaptureDatabasePreview()) options.setDatabasePreviewRows(rows);
             options.recordSourceState("VARIABLE", variable.getId(), "OUTCOME", "SUCCESS");
             options.recordSourceState("VARIABLE", variable.getId(), "DATA_STATE",
@@ -1930,12 +1937,16 @@ public class VariableSourceResolver {
                 extracted = defaultDbValue(rows, maxRows);
             }
             Map<String, Object> response = buildDbLogResponse("SUCCESS", rows, resultPath, extracted, startTime, null);
+            updateDatabaseTrace(runtimeTrace, sql, queryParams, queryOptions, resultPath,
+                    rows == null ? 0 : rows.size(), extracted, null);
             completeRuntimeTrace(runtimeTrace, true, null, System.currentTimeMillis() - start);
             logVariableSource("DATABASE", "DB_VARIABLE_QUERY", variable, datasourceId, request,
                     response, null, System.currentTimeMillis() - start, runtimeTrace);
             return extracted;
         } catch (Exception e) {
             Map<String, Object> response = buildDbLogResponse("FAILED", null, stringValue(config.get("resultPath")), null, startTime, e.getMessage());
+            updateDatabaseTrace(runtimeTrace, sql, queryParams, queryOptions, stringValue(config.get("resultPath")),
+                    0, null, e.getMessage());
             completeRuntimeTrace(runtimeTrace, false, e.getMessage(), System.currentTimeMillis() - start);
             logVariableSource("DATABASE", "DB_VARIABLE_QUERY", variable, datasourceId, request,
                     response, e.getMessage(), System.currentTimeMillis() - start, runtimeTrace);
@@ -2184,6 +2195,24 @@ public class VariableSourceResolver {
         return request;
     }
 
+    private void updateDatabaseTrace(RuntimeTraceService.ModuleTrace runtimeTrace, String sql,
+                                     List<Object> queryParams, DatabaseQueryOptions options,
+                                     String resultPath, int rowCount, Object extracted,
+                                     String errorMessage) {
+        if (runtimeTraceService == null || runtimeTrace == null) return;
+        Map<String, Object> query = new LinkedHashMap<>();
+        query.put("sql", sql);
+        query.put("params", queryParams);
+        query.put("maxRows", options.maxRows());
+        query.put("maxContentBytes", options.maxContentBytes());
+        query.put("queryTimeoutSeconds", options.queryTimeoutSeconds());
+        query.put("resultPath", resultPath);
+        query.put("rowCount", rowCount);
+        query.put("extractedValue", extracted);
+        if (errorMessage != null) query.put("errorMessage", errorMessage);
+        runtimeTraceService.updateModuleDetails(runtimeTrace, Map.of("databaseQuery", query));
+    }
+
     private Map<String, Object> buildDbLogResponse(String status, List<Map<String, Object>> rows, String resultPath,
             Object extracted, LocalDateTime startTime, String errorMessage) {
         Map<String, Object> response = new LinkedHashMap<>();
@@ -2272,6 +2301,11 @@ public class VariableSourceResolver {
         }
         RuntimeTraceService.ModuleTrace runtimeTrace = startRuntimeTrace(
                 "LIST", variable.getProjectId(), listIds.get(0), resolveScriptName(variable));
+        if (runtimeTraceService != null) {
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("input", request);
+            runtimeTraceService.updateModuleDetails(runtimeTrace, details);
+        }
         ListMatchMatrix matrix = listMatchMatrix == null ? new ListMatchMatrix(ruleListService) : listMatchMatrix;
         boolean hit;
         try {
@@ -2281,6 +2315,10 @@ public class VariableSourceResolver {
             options.recordSourceState("VARIABLE", variable.getId(), "MATCH_STATE", hit ? "HIT" : "MISS");
             completeRuntimeTrace(runtimeTrace, true, null, System.currentTimeMillis() - start);
         } catch (RuntimeException e) {
+            if (runtimeTraceService != null) {
+                runtimeTraceService.updateModuleDetails(runtimeTrace,
+                        Map.of("output", Map.of("hit", false, "error", String.valueOf(e.getMessage()))));
+            }
             completeRuntimeTrace(runtimeTrace, false, e.getMessage(), System.currentTimeMillis() - start);
             logVariableSource("LIST", "LIST_VARIABLE_MATCH", variable, listIds.get(0), request,
                     null, e.getMessage(), System.currentTimeMillis() - start, runtimeTrace);
@@ -2288,6 +2326,9 @@ public class VariableSourceResolver {
         }
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("hit", hit);
+        if (runtimeTraceService != null) {
+            runtimeTraceService.updateModuleDetails(runtimeTrace, Map.of("output", response));
+        }
         logVariableSource("LIST", "LIST_VARIABLE_MATCH", variable, listIds.get(0), request,
                 response, null, System.currentTimeMillis() - start, runtimeTrace);
         if ("BOOLEAN".equals(returnMode)) {
@@ -2336,7 +2377,8 @@ public class VariableSourceResolver {
 
     private void logModelExecution(RuleModel model, Object requestBody, Object responseBody,
                                    String errorMessage, long costTimeMs,
-                                   RuntimeTraceService.ModuleTrace runtimeTrace) {
+                                   RuntimeTraceService.ModuleTrace runtimeTrace,
+                                   String failureStatus) {
         if (runtimeCallLogService == null || model == null) {
             return;
         }
@@ -2348,6 +2390,17 @@ public class VariableSourceResolver {
         log.setTargetRefId(model.getId());
         log.setTargetCode(model.getModelCode());
         log.setTargetName(model.getModelName());
+        Map<?, ?> result = responseBody instanceof Map<?, ?> map ? map : Collections.emptyMap();
+        Object version = result.get("version");
+        log.setModelVersion(version instanceof Number
+                ? ((Number) version).intValue() : model.getCurrentVersion());
+        log.setModelDigest(stringValue(result.get("modelDigest"), model.getModelDigest()));
+        log.setConfigurationDigest(stringValue(result.get("configurationDigest"),
+                modelConfigurationDigest(model)));
+        log.setConfiguredProvider(stringValue(result.get("configuredProvider")));
+        log.setEffectiveProvider(stringValue(result.get("effectiveProvider")));
+        log.setExecutionStatus(stringValue(result.get("executionStatus"),
+                failureStatus == null ? (errorMessage == null ? "SUCCESS" : "ERROR") : failureStatus));
         log.setSuccess(errorMessage == null ? 1 : 0);
         log.setRequestMethod("EXECUTE");
         log.setResponseStatus(errorMessage == null ? 200 : 500);
@@ -2356,6 +2409,11 @@ public class VariableSourceResolver {
         log.setErrorMessage(errorMessage);
         log.setCostTimeMs(costTimeMs);
         runtimeCallLogService.safeSave(log);
+    }
+
+    private String modelConfigurationDigest(RuleModel model) {
+        return model == null || model.getModelConfig() == null
+                ? null : com.hengshucredit.rule.server.artifact.Sha256Digests.text(model.getModelConfig());
     }
 
     private RuntimeTraceService.ModuleTrace startRuntimeTrace(String moduleType, Long projectId,
@@ -2369,6 +2427,23 @@ public class VariableSourceResolver {
         if (runtimeTraceService != null) {
             runtimeTraceService.completeModule(runtimeTrace, success, errorMessage, durationMs);
         }
+    }
+
+    private void updateRuntimeTrace(RuntimeTraceService.ModuleTrace runtimeTrace,
+                                    RuleModel model, Map<String, Object> result) {
+        if (runtimeTraceService == null || runtimeTrace == null) return;
+        Map<String, Object> details = new LinkedHashMap<>();
+        Object version = result == null ? null : result.get("version");
+        details.put("modelVersion", version == null ? model == null ? null : model.getCurrentVersion() : version);
+        if (result != null) {
+            for (String key : List.of("modelDigest", "configurationDigest", "configuredProvider",
+                    "effectiveProvider", "executionStatus")) {
+                if (result.containsKey(key)) details.put(key, result.get(key));
+            }
+            Object outputs = result.get("outputs");
+            if (outputs instanceof Map<?, ?> map) details.put("outputKeys", map.keySet().stream().map(String::valueOf).toList());
+        }
+        runtimeTraceService.updateModuleDetails(runtimeTrace, details);
     }
 
     private void applyRuntimeTrace(RuleRuntimeCallLog log, RuntimeTraceService.ModuleTrace runtimeTrace) {
@@ -2689,15 +2764,15 @@ public class VariableSourceResolver {
         if (rows == null || rows.isEmpty()) {
             return null;
         }
-        if (maxRows != 1) return rows;
         Map<String, Object> first = rows.get(0);
         if (first == null || first.isEmpty()) {
             return null;
         }
-        if (first.size() == 1) {
+        if (rows.size() == 1 && first.size() == 1) {
             return first.values().iterator().next();
         }
-        return maxRows == 1 ? first : rows;
+        if (rows.size() == 1) return first;
+        return rows;
     }
 
     private Object parseConfiguredValue(Object value, Map<String, Object> params) {

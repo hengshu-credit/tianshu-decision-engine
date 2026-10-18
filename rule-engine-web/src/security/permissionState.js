@@ -41,9 +41,13 @@ export function hasPermission(permissionCode) {
   return currentUser.value.permissions.includes(permissionCode)
 }
 
-export function filterMenus(menus) {
+export function filterMenus(menus, options = {}) {
   const source = Array.isArray(menus) ? menus : []
   return source.filter(menu =>
-    !menu.permission || hasPermission(menu.permission)
+    (!menu.permission
+      && !(options.hidePublicWhenEmpty
+        && currentUser.value
+        && currentUser.value.permissions.length === 0))
+      || hasPermission(menu.permission)
   )
 }

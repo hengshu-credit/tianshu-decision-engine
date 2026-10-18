@@ -30,6 +30,13 @@ public class RuleRuntimeCallLog {
     private Long targetRefId;
     private String targetCode;
     private String targetName;
+    /** 模型执行归因字段；其它模块保持为空。 */
+    private Integer modelVersion;
+    private String modelDigest;
+    private String configurationDigest;
+    private String configuredProvider;
+    private String effectiveProvider;
+    private String executionStatus;
     private Integer success;
     private Integer requestSuccess;
     private Integer found;

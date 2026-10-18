@@ -26,7 +26,9 @@ public class ExecutionCapacityException extends RejectedExecutionException {
 
     public enum Resource {
         ONNX_SESSION_CACHE("onnx-session-cache"),
-        PMML_MODEL_LOADING("pmml-model-loading");
+        PMML_MODEL_LOADING("pmml-model-loading"),
+        MODEL_EXECUTION("model-execution"),
+        DATABASE_QUERY("database-query");
 
         private final String limitName;
 

@@ -20,12 +20,12 @@ public class BoundedAsyncLogWriterTest {
         assertTrue(writer.offer("detail-1"));
         assertTrue(writer.offer("detail-2"));
         assertEquals(1, writer.detailSize());
-        assertEquals(0, writer.metadataSize());
-        assertEquals(0L, writer.getDroppedBodies());
+        assertEquals(1, writer.metadataSize());
+        assertEquals(1L, writer.getDroppedBodies());
 
         writer.start();
         writer.close();
         assertTrue(written.contains("detail-1"));
-        assertTrue(written.contains("detail-2"));
+        assertTrue(written.contains("meta:detail-2"));
     }
 }

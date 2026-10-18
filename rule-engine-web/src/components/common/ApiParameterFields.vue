@@ -16,6 +16,7 @@
         <el-table-column v-if="!output" label="必填" width="72"><template #default="{ row }"><el-checkbox v-model="row.required" :aria-label="'必填 ' + row.path" /></template></el-table-column>
         <el-table-column v-if="!output" label="缺失值处理" width="150"><template #default="{ row }"><el-select v-model="row.nullPolicy" aria-label="缺失值处理"><el-option label="跟随默认" value="DEFAULT" /><el-option label="不传空值" value="OMIT" /><el-option label="传 null" value="NULL" /><el-option label="传空字符串" value="EMPTY" /></el-select></template></el-table-column>
         <el-table-column v-if="!output" label="默认值" min-width="220"><template #default="{ row }"><el-input :model-value="defaultValueText(row)" :aria-label="'默认值 ' + row.path" placeholder="留空表示不转换；填写后按该内容处理" @update:model-value="setDefaultValue(row, $event)" /></template></el-table-column>
+        <el-table-column v-if="!output && validationOptions.length" label="输入校验" min-width="220"><template #default="{ row }"><el-select v-model="row.validationRuleIds" multiple collapse-tags collapse-tags-tooltip clearable filterable :aria-label="'输入校验 ' + (row.path || '请求字段')" placeholder="可选"><el-option v-for="item in validationOptions" :key="item.id" :label="validationLabel(item)" :value="item.id" /></el-select></template></el-table-column>
         <el-table-column label="备注说明" min-width="160"><template #default="{ row }"><el-input v-model="row.remark" :aria-label="'备注说明 ' + row.path" placeholder="字段用途或取值说明" /></template></el-table-column>
         <el-table-column label="操作" :width="operationColumnWidth(['删除'])"><template #default="{ row }"><el-button link type="danger" @click="remove(row.id)">删除</el-button></template></el-table-column>
       </el-table>
@@ -32,7 +33,7 @@ import { API_REQUEST_POSITIONS, API_BODY_FORMATS, requestFieldPosition, requestF
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 export default {
   components: { ApiValueEditor },
-  props: { fields: { type: Array, required: true }, output: Boolean, allowOverrides: { type: Boolean, default: true }, vars: { type: Array, default: () => [] }, functions: { type: Array, default: () => [] }, modules: { type: Array, default: () => API_MODULE_FIELDS } },
+  props: { fields: { type: Array, required: true }, output: Boolean, allowOverrides: { type: Boolean, default: true }, vars: { type: Array, default: () => [] }, functions: { type: Array, default: () => [] }, modules: { type: Array, default: () => API_MODULE_FIELDS }, validationOptions: { type: Array, default: () => [] } },
   emits: ['update:fields'],
   data: () => ({ positions: API_REQUEST_POSITIONS, bodyFormats: API_BODY_FORMATS, query: '', page: 1 }),
   computed: {
@@ -42,6 +43,7 @@ export default {
   methods: {
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     requestFieldPosition, requestFieldFormat,
+    validationLabel(item) { return `${item.builtIn ? '【系统内置】' : ''}${item.validationName}（${item.validationType}）` },
     setPosition(field, position) { if (field.file && position !== 'BODY') return; field.location = position === 'BODY' ? this.fields.find(item => requestFieldPosition(item).value === 'BODY')?.location || 'JSON' : position; if (position === 'HEADER') field.overridable = false },
     setBodyFormat(format) { this.fields.filter(field => requestFieldPosition(field).value === 'BODY').forEach(field => { field.location = format }) },
     defaultValueText(field) { const value = field?.defaultValue; if (value == null) return ''; if (value && typeof value === 'object' && value.kind === 'LITERAL') return value.value == null ? '' : String(value.value); return typeof value === 'object' ? JSON.stringify(value) : String(value) },

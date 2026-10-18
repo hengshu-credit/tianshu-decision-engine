@@ -16,6 +16,7 @@ public class ConsoleRbacEntityMappingTest {
         assertMapping("ConsoleRolePermission", "console_role_permission");
         assertMapping("ConsoleUserPermissionOverride", "console_user_permission_override");
         assertMapping("ConsoleSecurityAuditLog", "console_security_audit_log");
+        assertMapping("ConsoleAccountToken", "console_account_token");
     }
 
     private static void assertMapping(String simpleName, String tableName) throws Exception {

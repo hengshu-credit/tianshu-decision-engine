@@ -192,7 +192,7 @@ public class DataObjectSourceResolver {
         List<Object> params = "DB".equalsIgnoreCase(owner.sourceType)
                 || "DATABASE".equalsIgnoreCase(owner.sourceType)
                 ? queryParams(owner.config.get("params"), values) : List.of();
-        DatabaseQueryOptions queryOptions = DatabaseQueryOptions.from(owner.config, 1);
+        DatabaseQueryOptions queryOptions = DatabaseQueryOptions.from(owner.config, 1000);
         Map<String, Object> cacheIdentity = new LinkedHashMap<>();
         cacheIdentity.put("projectId", projectId);
         cacheIdentity.put("ownerId", owner.id);
@@ -216,7 +216,7 @@ public class DataObjectSourceResolver {
             List<Map<String, Object>> rows;
             try {
                 rows = dbConnectPools.query(datasourceId, sql, params,
-                        1, queryOptions.queryTimeoutSeconds());
+                        queryOptions.maxRows(), queryOptions.queryTimeoutSeconds(), queryOptions.maxContentBytes());
             } catch (Exception e) {
                 throw new IllegalStateException("数据对象数据库查询失败：" + e.getMessage(), e);
             }

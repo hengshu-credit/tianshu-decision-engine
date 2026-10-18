@@ -686,7 +686,7 @@
 
       <div v-if="testing" class="execution-running-state">
         <strong>正在验证执行</strong>
-        <span>正在依次计算生产组与测试组结果，请等待本次请求完成。</span>
+        <span>生产组完成后，测试组会在独立队列中执行；测试组异常不会改变生产结果。</span>
       </div>
 
       <section v-if="testResult" class="execution-result">

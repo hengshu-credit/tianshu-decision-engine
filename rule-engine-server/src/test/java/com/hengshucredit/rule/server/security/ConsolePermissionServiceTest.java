@@ -46,6 +46,9 @@ public class ConsolePermissionServiceTest {
         Assert.assertTrue(codes.contains("approval:submit"));
         Assert.assertTrue(codes.contains("approval:approve"));
         Assert.assertTrue(codes.contains("account:manage"));
+        Assert.assertTrue(codes.contains("account:approve"));
+        Assert.assertTrue(codes.contains("account:role-assign"));
+        Assert.assertTrue(codes.contains("account:password-reset"));
         Assert.assertTrue(codes.contains("role:manage"));
         Assert.assertTrue(codes.contains("field:submit"));
         Assert.assertTrue(codes.contains("project:submit"));

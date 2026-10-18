@@ -25,6 +25,8 @@ function createContext(overrides = {}) {
     varPickerOptions: [],
     rulesForProject: [],
     ruleFieldMap: {},
+    fieldValidationOptions: [],
+    inputValidationConfigMap: {},
     nextUid: 1,
     logs: [],
     logTotal: 0,
@@ -163,6 +165,25 @@ describe('ExperimentDetail', () => {
 
     expect(ctx.experimentInputFields.map(f => f.fieldName)).toEqual(['amount', 'age'])
     expect(ctx.experimentOutputFields.map(f => f.fieldName)).toEqual(['riskLevel'])
+  })
+
+  test('可选保存实验输入字段校验绑定', async () => {
+    saveExperiment.mockResolvedValue({ data: { id: 12 } })
+    const ctx = createContext({
+      ruleFieldMap: { 8: { input: [{ scriptName: 'age', fieldLabel: '年龄', fieldType: 'NUMBER' }], output: [] } },
+      fieldValidationOptions: [{ id: 11, validationName: '必填', validationType: 'REQUIRED' }],
+    })
+    ctx.form.projectId = 1
+    ctx.form.experimentCode = 'EXP_VALIDATION'
+    ctx.form.experimentName = '输入校验'
+    ctx.form.groups[0].ruleId = 8
+    ctx.form.groups[0].ruleCode = 'rule'
+    ctx.form.groups[0].conditionConfig = null
+    ctx.inputValidationConfigMap = { 'PATH:age': [11] }
+
+    await ctx.handleSave()
+
+    expect(JSON.parse(saveExperiment.mock.calls[0][0].inputValidationConfig)).toEqual({ 'PATH:age': [11] })
   })
 
   test('请求键使用统一表达式保存并归集引用字段', async () => {

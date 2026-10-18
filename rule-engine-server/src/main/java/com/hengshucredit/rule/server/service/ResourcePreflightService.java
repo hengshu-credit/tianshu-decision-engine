@@ -75,12 +75,19 @@ public class ResourcePreflightService {
         if (datasource == null) { error(report, "RESOURCE_NOT_FOUND", "$", "数据库数据源不存在", "刷新资源后重试"); finish(report); return report; }
         if (!active(datasource.getStatus())) error(report, "DATASOURCE_DISABLED", "status", "数据库数据源未启用", "启用数据源后重新检查");
         String mode = upper(datasource.getConnectionMode(), "DIRECT");
-        if ("JDBC_URL".equals(mode) && blank(datasource.getJdbcUrl())) {
-            error(report, "JDBC_URL_REQUIRED", "jdbcUrl", "JDBC 模式必须填写连接地址", "填写 JDBC URL");
+        boolean jdbcReady = !blank(datasource.getJdbcUrl());
+        boolean fieldsReady = !blank(datasource.getHost())
+                && datasource.getPort() != null && datasource.getPort() > 0
+                && ("SQLSERVER".equalsIgnoreCase(datasource.getDbType())
+                || !blank(datasource.getDatabaseName()));
+        if (!jdbcReady && !fieldsReady) {
+            error(report, "CONNECTION_FIELDS_REQUIRED", "connection",
+                    "数据库连接缺少 JDBC URL，或缺少主机、端口和数据库名", "补齐连接参数或填写自定义 JDBC URL");
         }
-        if (!"JDBC_URL".equals(mode)
-                && (blank(datasource.getHost()) || datasource.getPort() == null || blank(datasource.getDatabaseName()))) {
-            error(report, "CONNECTION_FIELDS_REQUIRED", "connection", "直连模式缺少主机、端口或数据库名", "补齐连接参数");
+        if ("SSH_TUNNEL".equals(mode)
+                && (blank(datasource.getHost()) || blank(datasource.getSshHost())
+                || blank(datasource.getSshUsername()))) {
+            error(report, "SSH_FIELDS_REQUIRED", "ssh", "SSH 隧道缺少数据库主机、堡垒机地址或用户名", "补齐 SSH 隧道参数");
         }
         warn(report, "CONNECTION_TEST_REQUIRED", "connectionTest", "尚未在该报告中执行真实数据库连接测试", "执行只读连接测试");
         finish(report);
@@ -107,6 +114,11 @@ public class ResourcePreflightService {
                 warn(report, "API_RESULT_PATH_MISSING", "sourceConfig.resultPath", "API 变量未配置结果路径，将依赖默认取值规则", "补充明确的结果路径");
             }
         } else if ("DB".equals(source)) {
+            try {
+                DatabaseQueryOptions.from(config, 1000);
+            } catch (IllegalArgumentException exception) {
+                error(report, "DB_QUERY_LIMIT_INVALID", "sourceConfig", exception.getMessage(), "修正查询行数、内容大小和超时配置");
+            }
             Long dbId = longValue(config.get("dbDatasourceId"));
             if (dbId == null) dbId = longValue(config.get("datasourceId"));
             RuleDbDatasource db = dbId == null ? null : dbDatasourceMapper.selectById(dbId);

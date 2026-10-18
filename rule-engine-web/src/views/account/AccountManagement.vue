@@ -50,6 +50,16 @@
                 </div>
               </template>
             </el-table-column>
+            <el-table-column label="邮箱" min-width="220">
+              <template #default="{ row }">
+                <div class="email-cell">
+                  <span>{{ row.email || '未设置' }}</span>
+                  <el-tag v-if="row.email" :type="row.emailVerifiedAt ? 'success' : 'warning'" effect="plain" size="small">
+                    {{ row.emailVerifiedAt ? '已验证' : '未验证' }}
+                  </el-tag>
+                </div>
+              </template>
+            </el-table-column>
             <el-table-column label="角色" min-width="220">
               <template #default="{ row }">
                 <div class="tag-list">
@@ -92,7 +102,7 @@
                   编辑
                 </el-button>
                 <el-button
-                  v-permission="'account:manage'"
+                  v-permission="['account:role-assign', 'account:manage']"
                   link
                   data-action="configure"
                   type="primary"
@@ -101,7 +111,7 @@
                   权限调整
                 </el-button>
                 <el-button
-                  v-permission="'account:manage'"
+                  v-permission="['account:password-reset', 'account:manage']"
                   link
                   data-action="reset"
                   @click="openPasswordDialog(row)"
@@ -185,6 +195,9 @@
         </el-form-item>
         <el-form-item label="显示名称">
           <el-input v-model="accountForm.displayName" />
+        </el-form-item>
+        <el-form-item label="邮箱">
+          <el-input v-model="accountForm.email" type="email" placeholder="用于找回密码，可留空" />
         </el-form-item>
         <el-form-item :label="accountForm.id ? '新密码（留空不修改）' : '初始密码'">
           <el-input v-model="accountForm.password" type="password" show-password />
@@ -363,6 +376,7 @@ function emptyAccountForm() {
     id: null,
     username: '',
     displayName: '',
+    email: '',
     password: '',
     status: 1,
     roleIds: []
@@ -386,7 +400,7 @@ export default {
   data() {
     return {
       accountColumns: [
-        { key: 'account', label: '账户' }, { key: 'roles', label: '角色' },
+        { key: 'account', label: '账户' }, { key: 'email', label: '邮箱' }, { key: 'roles', label: '角色' },
         { key: 'permissions', label: '最终权限' }, { key: 'status', label: '状态' },
       ],
       roleColumns: [
@@ -412,9 +426,11 @@ export default {
     }
   },
   computed: {
-    canViewAccounts() { return hasPermission('account:view') },
+    canViewAccounts() {
+      return hasPermission(['account:view', 'account:manage', 'account:approve', 'account:role-assign', 'account:password-reset'])
+    },
     canViewRoles() { return hasPermission(['role:view', 'role:manage']) },
-    canLoadRoleOptions() { return this.canViewRoles || hasPermission('account:manage') },
+    canLoadRoleOptions() { return this.canViewRoles || hasPermission(['account:manage', 'account:role-assign']) },
     canViewLogs() { return hasPermission('account:audit') },
     enabledRoles() {
       return this.roles.filter(role => role.status === 1)
@@ -503,6 +519,7 @@ export default {
             id: account.id,
             username: account.username,
             displayName: account.displayName,
+            email: account.email || '',
             password: '',
             status: account.status,
             roleIds: (account.roleIds || []).slice()
@@ -668,6 +685,13 @@ export default {
   font-weight: 600;
   background: var(--tianshu-info-bg);
   border-radius: 50%;
+}
+.email-cell {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--tianshu-text-secondary);
 }
 .tag-list {
   display: inline-flex;

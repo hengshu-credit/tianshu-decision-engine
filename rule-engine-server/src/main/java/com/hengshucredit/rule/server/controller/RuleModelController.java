@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.controller;
 
 import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.model.dto.GovernanceDraftRequest;
+import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
 import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleModelInputField;
 import com.hengshucredit.rule.model.entity.RuleModelOutputField;
@@ -298,17 +299,43 @@ public class RuleModelController {
                 model.setProjectCode((String) result.get("projectCode"));
                 if (result.get("projectId") != null) model.setProjectId(Long.valueOf(String.valueOf(result.get("projectId"))));
             }
+            if (!modelExecutionSucceeded(result)) {
+                String error = modelExecutionError(result);
+                logModelExecute(model, modelTestLogRequest(id, version, params), result,
+                        error, System.currentTimeMillis() - start);
+                Integer code = "THROTTLED".equals(result.get("executionStatus")) ? 503 : 500;
+                return R.fail(code, error);
+            }
             logModelExecute(model, modelTestLogRequest(id, version, params), result, null, System.currentTimeMillis() - start);
             return R.ok(result);
         } catch (IllegalArgumentException e) {
             logModelExecute(model, modelTestLogRequest(id, version, params), null, e.getMessage(), System.currentTimeMillis() - start);
             return R.fail(e.getMessage());
         } catch (RuntimeException e) {
+            ExecutionCapacityException capacity = ExecutionCapacityException.find(e);
+            if (capacity != null) {
+                logModelExecute(model, modelTestLogRequest(id, version, params), null,
+                        capacity.getMessage(), System.currentTimeMillis() - start);
+                return R.fail(503, capacity.getMessage());
+            }
             String msg = e.getMessage();
             if (msg == null || msg.isEmpty()) msg = e.toString();
             logModelExecute(model, modelTestLogRequest(id, version, params), null, "模型执行失败: " + msg, System.currentTimeMillis() - start);
             return R.fail("模型执行失败: " + msg);
         }
+    }
+
+    private boolean modelExecutionSucceeded(Map<String, Object> result) {
+        Object value = result == null ? null : result.get("success");
+        return Boolean.TRUE.equals(value)
+                || value instanceof Number && ((Number) value).intValue() == 1;
+    }
+
+    private String modelExecutionError(Map<String, Object> result) {
+        if (result == null) return "模型执行返回为空";
+        Object value = result.get("error");
+        if (value == null) value = result.get("message");
+        return value == null ? "模型执行失败" : String.valueOf(value);
     }
 
     private Map<String, Object> modelTestLogRequest(Long id, Integer version, Map<String, Object> params) {
@@ -425,6 +452,14 @@ public class RuleModelController {
             log.setTargetRefId(model.getId());
             log.setTargetCode(model.getModelCode());
             log.setTargetName(model.getModelName());
+            Object version = result == null ? null : result.get("version");
+            log.setModelVersion(version == null ? model.getCurrentVersion()
+                    : Integer.valueOf(String.valueOf(version)));
+            log.setModelDigest(result == null ? null : stringValue(result.get("modelDigest")));
+            log.setConfigurationDigest(result == null ? null : stringValue(result.get("configurationDigest")));
+            log.setConfiguredProvider(result == null ? null : stringValue(result.get("configuredProvider")));
+            log.setEffectiveProvider(result == null ? null : stringValue(result.get("effectiveProvider")));
+            log.setExecutionStatus(result == null ? null : stringValue(result.get("executionStatus")));
         }
         log.setSuccess(errorMessage == null ? 1 : 0);
         log.setRequestBody(runtimeCallLogService.toJson(params));
@@ -432,6 +467,10 @@ public class RuleModelController {
         log.setErrorMessage(errorMessage);
         log.setCostTimeMs(costTimeMs);
         runtimeCallLogService.safeSave(log);
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 
     private GovernanceRequestView createModelDraft(

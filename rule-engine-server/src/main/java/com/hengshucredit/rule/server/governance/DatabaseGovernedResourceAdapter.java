@@ -13,6 +13,8 @@ import java.util.Set;
 public class DatabaseGovernedResourceAdapter extends SimpleEntityGovernedResourceAdapter<RuleDbDatasource> {
     private static final Logger log = LoggerFactory.getLogger(DatabaseGovernedResourceAdapter.class);
     private final DBConnectPools pools;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private DatabasePoolRefreshNotifier refreshNotifier;
 
     public DatabaseGovernedResourceAdapter(EntityStore<RuleDbDatasource> store,
                                             GovernanceSecretCodec secretCodec,
@@ -40,6 +42,7 @@ public class DatabaseGovernedResourceAdapter extends SimpleEntityGovernedResourc
         } else {
             refreshLocalPool(resourceId);
         }
+        if (refreshNotifier != null) refreshNotifier.publish(resourceId);
         return applied;
     }
 

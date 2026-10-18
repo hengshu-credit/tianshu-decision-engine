@@ -112,6 +112,7 @@ public class OnnxRuntimeSessionManager {
         } catch (ExecutionCapacityException | SessionWaitInterruptedException controlFailure) {
             throw controlFailure;
         } catch (RuntimeException | LinkageError cudaFailure) {
+            if (!isProviderFailure(cudaFailure)) throw cudaFailure;
             synchronized (sessions) {
                 if (closed || Thread.currentThread().isInterrupted()) throw cudaFailure;
             }
@@ -135,6 +136,13 @@ public class OnnxRuntimeSessionManager {
                 throw combined;
             }
         }
+    }
+
+    private boolean isProviderFailure(Throwable failure) {
+        String message = failureMessage(failure).toLowerCase(java.util.Locale.ROOT);
+        return message.contains("cuda") || message.contains("cudnn")
+                || message.contains("cublas") || message.contains("execution provider")
+                || message.contains("provider");
     }
 
     private String cpuFallbackReason(String key) {
@@ -542,6 +550,10 @@ public class OnnxRuntimeSessionManager {
         }
         String key = sha256(modelBytes) + ':' + runtimeConfig.cacheKey();
         return cpuFallbackReason(key) != null;
+    }
+
+    public boolean hasCpuFallback(byte[] modelBytes, OnnxRuntimeConfig runtimeConfig) {
+        return usesCpuFallback(modelBytes, runtimeConfig);
     }
 
     private String failureMessage(Throwable failure) {

@@ -52,6 +52,14 @@ describe('统一外数配置', () => {
     const spec = parseExecution(JSON.stringify({ version: 2, steps: [{ id: 'provider', type: 'HTTP' }] }))
     expect(spec.steps[0].exceptionConditionTree).toEqual({ type: 'group', operator: 'AND', children: [] })
   })
+  it('请求字段保留可选校验规则 ID，旧配置默认空数组', () => {
+    const spec = parseExecution(JSON.stringify({
+      requestFields: [{ id: 'mobile', path: 'mobile', validationRuleIds: [11] }],
+      steps: [{ id: 'step', requestFields: [{ id: 'age', path: 'age' }] }],
+    }))
+    expect(spec.requestFields[0].validationRuleIds).toEqual([11])
+    expect(spec.steps[0].requestFields[0].validationRuleIds).toEqual([])
+  })
   it('损坏配置不会让 API 编辑器直接崩溃，并保留解析错误提示', () => {
     const spec = parseExecution('{broken')
     expect(spec.__parseError).toBeTruthy()

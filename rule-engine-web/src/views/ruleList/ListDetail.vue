@@ -22,6 +22,7 @@
           >导入并审批</el-button
         >
         <el-button
+          v-permission="'list:export'"
           size="small"
           :icon="ElIconDownload"
           type="primary"
@@ -40,7 +41,7 @@
 
     <config-layer-guide
       title="名单内容变更流程"
-      description="审批通过前，当前有效记录和变更日志都不会改变；重复数据会自动跳过，错误行会明确提示。"
+       description="审批通过前，当前有效记录和变更日志都不会改变；重复数据会自动跳过，错误行会明确提示。Excel 导出包含记录 ID，修改或删除时可保留该列。"
       :items="[
         { label: '填写或导入', detail: '准备新增、修改或删除的记录' },
         { label: '提交审批', detail: '核对变更内容并提交审批' },
@@ -287,6 +288,10 @@
             }}</template>
           </el-table-column>
           <el-table-column prop="operation" label="执行操作" width="90" />
+          <el-table-column prop="ruleCode" label="来源规则" min-width="150" show-overflow-tooltip>
+            <template v-slot="{ row }">{{ row.ruleCode || '-' }}</template>
+          </el-table-column>
+          <el-table-column prop="ruleVersion" label="规则版本" width="90" />
           <el-table-column label="有效期" min-width="230" show-overflow-tooltip>
             <template v-slot="{ row }">{{ formatPeriod(row) }}</template>
           </el-table-column>

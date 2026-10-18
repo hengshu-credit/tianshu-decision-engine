@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
+import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
 import com.hengshucredit.rule.server.mapper.RuleDbDatasourceMapper;
 import com.hengshucredit.rule.core.util.MissingValueSemantics;
 import com.jcraft.jsch.JSch;
@@ -8,6 +9,8 @@ import com.jcraft.jsch.Session;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.Resource;
@@ -18,6 +21,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
+import java.sql.SQLDataException;
 import java.sql.SQLTimeoutException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -31,6 +35,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -44,8 +50,21 @@ public class DBConnectPools implements DisposableBean {
     private final Object poolLifecycle = new Object();
     private volatile boolean closed;
     private final ScheduledThreadPoolExecutor deadlineExecutor;
+    private final Semaphore queryPermits;
+    private final int queryConcurrencyLimit;
+    private final AtomicLong queryRejected = new AtomicLong();
 
     public DBConnectPools() {
+        this(128);
+    }
+
+    @Autowired
+    public DBConnectPools(@Value("${rule-engine.database.max-concurrent-queries:128}") int maxConcurrentQueries) {
+        if (maxConcurrentQueries <= 0) {
+            throw new IllegalArgumentException("数据库查询并发上限必须大于 0");
+        }
+        queryConcurrencyLimit = maxConcurrentQueries;
+        queryPermits = new Semaphore(maxConcurrentQueries, true);
         deadlineExecutor = new ScheduledThreadPoolExecutor(1, runnable -> {
             Thread thread = new Thread(runnable, "database-query-deadline");
             thread.setDaemon(true);
@@ -151,6 +170,9 @@ public class DBConnectPools implements DisposableBean {
         result.put("idle", idle);
         result.put("total", total);
         result.put("pending", pending);
+        result.put("queryConcurrencyLimit", queryConcurrencyLimit);
+        result.put("queryConcurrencyActive", queryActiveCount());
+        result.put("queryRejected", queryRejected.get());
         result.put("pools", poolDetails);
         return result;
     }
@@ -172,12 +194,27 @@ public class DBConnectPools implements DisposableBean {
     }
 
     public List<Map<String, Object>> query(Long datasourceId, String sql, List<Object> params, int maxRows) throws Exception {
-        return query(datasourceId, sql, params, maxRows, 5);
+        return query(datasourceId, sql, params, maxRows, 0);
     }
 
     public List<Map<String, Object>> query(Long datasourceId, String sql, List<Object> params,
                                            int maxRows, int queryTimeoutSeconds) throws Exception {
-        DatabaseQueryOptions options = new DatabaseQueryOptions(maxRows, queryTimeoutSeconds);
+        return queryInternal(datasourceId, sql, params, maxRows, queryTimeoutSeconds, 0);
+    }
+
+    public List<Map<String, Object>> query(Long datasourceId, String sql, List<Object> params,
+                                           int maxRows, int queryTimeoutSeconds,
+                                           int maxContentBytes) throws Exception {
+        if (maxContentBytes == 0) {
+            return query(datasourceId, sql, params, maxRows, queryTimeoutSeconds);
+        }
+        return queryInternal(datasourceId, sql, params, maxRows, queryTimeoutSeconds, maxContentBytes);
+    }
+
+    private List<Map<String, Object>> queryInternal(Long datasourceId, String sql, List<Object> params,
+                                                    int maxRows, int queryTimeoutSeconds,
+                                                    int maxContentBytes) throws Exception {
+        DatabaseQueryOptions options = new DatabaseQueryOptions(maxRows, queryTimeoutSeconds, maxContentBytes);
         SqlQuerySupport.Analysis analysis = SqlQuerySupport.analyze(sql);
         if (!isReadOnlySelectSql(sql)) {
             throw new IllegalArgumentException("只允许执行 SELECT 查询");
@@ -187,7 +224,9 @@ public class DBConnectPools implements DisposableBean {
             throw new IllegalArgumentException("SQL 需要 " + analysis.placeholderCount()
                     + " 个参数，当前配置了 " + actualParams + " 个，请核对参数顺序和数量");
         }
+        acquireQueryPermit();
         List<Map<String, Object>> rows = new ArrayList<>();
+        long contentBytes = 0L;
         try (QueryDeadline ignored = new QueryDeadline()) {
             HikariDataSource dataSource = getDataSource(datasourceId);
             checkQueryBudget();
@@ -218,7 +257,13 @@ public class DBConnectPools implements DisposableBean {
                             Map<String, Object> row = new LinkedHashMap<>();
                             for (int i = 1; i <= columnCount; i++) {
                                 network.applyRemaining();
-                                row.put(metaData.getColumnLabel(i), MissingValueSemantics.normalize(resultSet.getObject(i)));
+                                String columnLabel = metaData.getColumnLabel(i);
+                                Object value = MissingValueSemantics.normalize(resultSet.getObject(i));
+                                contentBytes += contentBytes(columnLabel) + contentBytes(value);
+                                if (options.maxContentBytes() > 0 && contentBytes > options.maxContentBytes()) {
+                                    throw new SQLDataException("查询结果超过内容大小限制: " + options.maxContentBytes() + " 字节");
+                                }
+                                row.put(columnLabel, value);
                                 checkQueryBudget();
                             }
                             rows.add(row);
@@ -231,9 +276,37 @@ public class DBConnectPools implements DisposableBean {
                 throw new SQLTimeoutException("数据库查询超过项目请求剩余时间预算", "HYT00", failure);
             }
             throw failure;
+        } finally {
+            queryPermits.release();
         }
         checkQueryBudget();
         return rows;
+    }
+
+    private void acquireQueryPermit() throws SQLException {
+        boolean acquired;
+        try {
+            int remaining = RequestDeadlineContext.remainingMillis();
+            acquired = remaining == Integer.MAX_VALUE
+                    ? queryPermits.tryAcquire()
+                    : queryPermits.tryAcquire(Math.max(1, remaining), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new SQLException("等待数据库查询并发许可时被中断", "HY008", interrupted);
+        }
+        if (!acquired) {
+            queryRejected.incrementAndGet();
+            throw new ExecutionCapacityException(ExecutionCapacityException.Resource.DATABASE_QUERY,
+                    "数据库查询并发已达上限，请稍后重试");
+        }
+    }
+
+    private int queryActiveCount() {
+        return queryConcurrencyLimit - queryPermits.availablePermits();
+    }
+
+    private long contentBytes(Object value) {
+        return value == null ? 4L : String.valueOf(value).getBytes(StandardCharsets.UTF_8).length;
     }
 
     private static int checkQueryBudget() throws SQLException {
@@ -340,7 +413,7 @@ public class DBConnectPools implements DisposableBean {
         config.setConnectionTimeout(defaultInt(datasource.getConnectionTimeoutMs(), 3000));
         config.setIdleTimeout(defaultInt(datasource.getIdleTimeoutMs(), 600000));
         if (hasText(datasource.getValidationQuery())) {
-            config.setConnectionTestQuery(datasource.getValidationQuery());
+            config.setConnectionTestQuery(validationSql(datasource.getValidationQuery()));
         }
         try {
             return new DbPoolHolder(new HikariDataSource(config), sshSession);

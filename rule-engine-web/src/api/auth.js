@@ -14,6 +14,38 @@ export function consoleLogin(data) {
   return request.post('/auth/console/login', data)
 }
 
+export function consoleRegister(data) {
+  return request.post('/auth/console/register', data)
+}
+
+export function verifyConsoleRegistration(data) {
+  return request.post('/auth/console/register/verify', data)
+}
+
+export function requestConsolePasswordRecovery(data) {
+  return request.post('/auth/console/password-recovery/request', data)
+}
+
+export function confirmConsolePasswordRecovery(data) {
+  return request.post('/auth/console/password-recovery/confirm', data)
+}
+
+export function emergencyResetConsolePassword(data) {
+  return request.post('/auth/console/emergency-password-reset', data)
+}
+
+export function getConsoleProfile() {
+  return request.get('/auth/console/profile')
+}
+
+export function updateConsoleProfile(data) {
+  return request.put('/auth/console/profile', data)
+}
+
+export function changeConsolePassword(data) {
+  return request.post('/auth/console/password/change', data)
+}
+
 /**
  * 注销当前会话。
  */

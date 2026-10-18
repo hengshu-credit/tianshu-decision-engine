@@ -8,9 +8,11 @@ import {
   getActiveMenuIndex,
   SIDEBAR_MENUS
 } from '@/layout/layoutState'
+import { getCurrentUser } from '@/security/permissionState'
 
 function resolveRoutePermission(route) {
   var meta = route && route.meta ? route.meta : {}
+  if (meta.authOnly) return ''
   if (meta.permission) return meta.permission
   var menuIndex = meta.menu || getActiveMenuIndex(route && route.path)
   var menu = SIDEBAR_MENUS.find(item => item.index === menuIndex)
@@ -18,9 +20,21 @@ function resolveRoutePermission(route) {
 }
 
 function firstAccessibleRoute() {
+  var user = getCurrentUser()
+  if (user && Array.isArray(user.permissions) && user.permissions.length === 0) {
+    return '/no-permission'
+  }
   var menu = SIDEBAR_MENUS.find(item => hasPermission(item.permission))
-  return menu ? menu.index : '/login'
+  return menu ? menu.index : '/no-permission'
 }
+
+const PUBLIC_AUTH_PATHS = new Set([
+  '/login',
+  '/register',
+  '/forgot-password',
+  '/password-reset',
+  '/admin-recovery'
+])
 
 export function createConsoleAuthGuard(loadConfig, loadCurrentUser) {
   return async function consoleAuthGuard(to, from, next) {
@@ -30,7 +44,7 @@ export function createConsoleAuthGuard(loadConfig, loadCurrentUser) {
     } catch (e) { /* fail closed below */ }
     var configLoaded = Boolean(body && body.code === 200 && body.data)
     var loginEnabled = configLoaded && body.data.loginEnabled === true
-    if (to.path === '/login') {
+    if (PUBLIC_AUTH_PATHS.has(to.path)) {
       setPermissionEnforcement(!configLoaded || loginEnabled)
       if (configLoaded && !loginEnabled) {
         // 登录已禁用，直接跳转（使用 Vue Router 而非 location 避免页面刷新）
@@ -61,6 +75,11 @@ export function createConsoleAuthGuard(loadConfig, loadCurrentUser) {
             ? me.data.permissions
             : []
         })
+        if (getCurrentUser().permissions.length === 0
+            && to.path !== '/no-permission'
+            && !(to.meta && to.meta.authOnly)) {
+          return next({ path: '/no-permission', replace: true })
+        }
         var requiredPermission = resolveRoutePermission(to)
         if (requiredPermission && !hasPermission(requiredPermission)) {
           return next({ path: firstAccessibleRoute(), replace: true })

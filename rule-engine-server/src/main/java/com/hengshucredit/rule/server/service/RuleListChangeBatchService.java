@@ -71,6 +71,7 @@ public class RuleListChangeBatchService {
             DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final int ERROR_LIMIT = 20;
     private static final int SAMPLE_LIMIT = 5;
+    private static final int MAX_IMPORT_ROWS = 100_000;
 
     @Resource
     private RuleListChangeBatchMapper batchMapper;
@@ -600,6 +601,9 @@ public class RuleListChangeBatchService {
         try (InputStream input = file.getInputStream();
              Workbook workbook = new XSSFWorkbook(input)) {
             Sheet sheet = workbook.getSheetAt(0);
+            if (sheet.getLastRowNum() > MAX_IMPORT_ROWS) {
+                throw new IllegalArgumentException("名单导入最多支持 " + MAX_IMPORT_ROWS + " 行");
+            }
             for (int index = 1; index <= sheet.getLastRowNum(); index++) {
                 Row row = sheet.getRow(index);
                 if (row == null || isBlankRow(row, formatter)) continue;
@@ -616,6 +620,7 @@ public class RuleListChangeBatchService {
                     record.setReason(cellText(row, 4, formatter));
                     record.setRemark(cellText(row, 5, formatter));
                     operation = cellText(row, 6, formatter);
+                    record.setId(cellLong(row.getCell(8), formatter));
                     record.setStatus(1);
                 } catch (RuntimeException invalid) {
                     error = invalid.getMessage();
@@ -881,6 +886,16 @@ public class RuleListChangeBatchService {
     private String cellText(Row row, int index,
                             DataFormatter formatter) {
         return trimToNull(formatter.formatCellValue(row.getCell(index)));
+    }
+
+    private Long cellLong(Cell cell, DataFormatter formatter) {
+        String value = cell == null ? null : trimToNull(formatter.formatCellValue(cell));
+        if (value == null) return null;
+        try {
+            return Long.valueOf(value);
+        } catch (NumberFormatException invalid) {
+            throw new IllegalArgumentException("记录ID必须是整数");
+        }
     }
 
     private boolean isBlankRow(Row row, DataFormatter formatter) {

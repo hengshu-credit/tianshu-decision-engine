@@ -86,6 +86,9 @@ public class RuleExecuteService {
     private RuleFieldAnalyzer ruleFieldAnalyzer;
 
     @Resource
+    private RuleFieldValidationService fieldValidationService;
+
+    @Resource
     private ArtifactRuntimeSnapshotService artifactRuntimeSnapshotService;
     @Resource
     private RuleTestTargetResolver testTargetResolver;
@@ -217,6 +220,10 @@ public class RuleExecuteService {
         resolveOptions.setExecutionProjectId(executionProjectId);
         Map<String, Object> executeParams = bindInputs(
                 referencePlan.mergeBindingFields(inputFields), params, resolveOptions);
+        if (fieldValidationService != null) {
+            fieldValidationService.validateInputFields(
+                    referencePlan.mergeBindingFields(inputFields), executeParams);
+        }
         Map<String, Object> originalInput = snapshotMap(executeParams);
         String projectCode = null;
         if (executionProjectId != null) {
@@ -437,6 +444,10 @@ public class RuleExecuteService {
         includeReferenceSources(effectiveOptions, referencePlan);
         Map<String, Object> executeParams = bindInputs(
                 referencePlan.mergeBindingFields(inputFields), params, effectiveOptions);
+        if (fieldValidationService != null) {
+            fieldValidationService.validateInputFields(
+                    referencePlan.mergeBindingFields(inputFields), executeParams);
+        }
         Map<String, Object> originalInput = snapshotMap(executeParams);
         String projectCode = published.getProjectCode();
         if (projectCode == null && executionProjectId != null) {

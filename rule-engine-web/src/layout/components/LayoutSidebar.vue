@@ -31,6 +31,18 @@
         <app-icon :name="menu.icon" class="menu-icon" />
         <span v-if="!compact" class="menu-label">{{ menu.label }}</span>
       </button>
+      <button
+        type="button"
+        class="sidebar-collapse"
+        :aria-label="compact ? '展开侧边栏' : '收起侧边栏'"
+        :title="compact ? '展开侧边栏' : '收起侧边栏'"
+        @click="$emit('toggle-collapse')"
+      >
+        <app-icon
+          :name="compact ? 'DArrowRight' : 'DArrowLeft'"
+          aria-hidden="true"
+        />
+      </button>
     </nav>
 
     <button
@@ -96,7 +108,7 @@ export default {
       window.removeEventListener('mouseup', this.finishResize)
     },
   },
-  emits: ['navigate', 'resize', 'resize-end'],
+  emits: ['navigate', 'resize', 'resize-end', 'toggle-collapse'],
 }
 </script>
 
@@ -158,26 +170,30 @@ export default {
   }
 }
 .sidebar-collapse {
-  position: absolute;
-  right: 6px;
-  bottom: -12px;
-  z-index: 2;
+  flex: none;
   display: flex;
-  width: 24px;
-  height: 24px;
+  width: 100%;
+  height: 36px;
+  margin-top: 8px;
   padding: 0;
   align-items: center;
   justify-content: center;
-  color: var(--tianshu-text-disabled);
-  background: #262d4f;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 50%;
+  color: var(--tianshu-sidebar-text, var(--tianshu-text-disabled));
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
   cursor: pointer;
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
   &:hover,
   &:focus-visible {
-    color: #ffffff;
+    color: var(--tianshu-sidebar-text-active, #ffffff);
+    background: var(--tianshu-sidebar-bg-hover, #{$menuHover});
     border-color: rgba(255, 255, 255, 0.3);
     outline: none;
+  }
+
+  .app-icon {
+    font-size: 18px;
   }
 }
 .sidebar-menu {
@@ -288,10 +304,6 @@ export default {
   .sidebar-brand {
     padding: 0;
     justify-content: center;
-  }
-
-  .sidebar-collapse {
-    right: -12px;
   }
 
   .sidebar-menu {

@@ -1354,9 +1354,13 @@
             <el-input-number v-model="form.dbMaxRows" :min="0" :max="2147483647" :precision="0" />
             <span class="field-help">0 表示不限制；多行查询默认返回行集合。</span>
           </el-form-item>
+          <el-form-item label="结果内容上限（字节）">
+            <el-input-number v-model="form.dbMaxContentBytes" :min="0" :max="67108864" :precision="0" />
+            <span class="field-help">0 表示不限制；超过上限时查询失败，避免一次规则读取过大的结果。</span>
+          </el-form-item>
           <el-form-item label="查询超时（秒）">
             <el-input-number v-model="form.dbQueryTimeoutSeconds" :min="0" :max="2147483647" :precision="0" />
-            <span class="field-help">默认 5 秒，0 表示不设置查询超时。</span>
+            <span class="field-help">默认不设置单独超时（0）；正式请求仍受项目总超时约束。</span>
           </el-form-item>
           <el-form-item label="查询失败时">
             <el-select
@@ -1421,7 +1425,7 @@
               <el-option
                 v-for="item in sourceCatalog.listOptions"
                 :key="item.id"
-                :label="item.name ? item.name + ' / ' + item.code : item.code"
+                :label="listOptionLabel(item)"
                 :value="item.id"
               />
             </el-select>
@@ -3290,8 +3294,9 @@ export default {
         dbSql: '',
         dbParams: '[]',
         dbResultPath: '',
-        dbMaxRows: 1,
-        dbQueryTimeoutSeconds: 5,
+        dbMaxRows: 1000,
+        dbMaxContentBytes: 0,
+        dbQueryTimeoutSeconds: 0,
         dbForceRefresh: false,
         dbExceptionStrategy: 'ERROR',
         dbFallbackValue: '',
@@ -3638,8 +3643,9 @@ export default {
         this.form.dbSql = config.sql || ''
         this.form.dbParams = this.stringifyConfig(config.params || [])
         this.form.dbResultPath = config.resultPath || ''
-        this.form.dbMaxRows = config.maxRows ?? 1
-        this.form.dbQueryTimeoutSeconds = config.queryTimeoutSeconds ?? 5
+        this.form.dbMaxRows = config.maxRows ?? 1000
+        this.form.dbMaxContentBytes = config.maxContentBytes ?? 0
+        this.form.dbQueryTimeoutSeconds = config.queryTimeoutSeconds ?? 0
         this.form.dbForceRefresh = config.forceRefresh === true
         this.form.dbExceptionStrategy = config.exceptionStrategy || 'ERROR'
         this.form.dbFallbackValue =
@@ -3732,8 +3738,9 @@ export default {
           sql: payload.dbSql,
           params,
           resultPath: payload.dbResultPath || '',
-          maxRows: payload.dbMaxRows ?? 1,
-          queryTimeoutSeconds: payload.dbQueryTimeoutSeconds ?? 5,
+          maxRows: payload.dbMaxRows ?? 1000,
+          maxContentBytes: payload.dbMaxContentBytes ?? 0,
+          queryTimeoutSeconds: payload.dbQueryTimeoutSeconds ?? 0,
           forceRefresh: payload.dbForceRefresh === true,
           exceptionStrategy: payload.dbExceptionStrategy || 'ERROR',
           fallbackValue: payload.dbFallbackValue || null,
@@ -3830,6 +3837,7 @@ export default {
         'dbParams',
         'dbResultPath',
         'dbMaxRows',
+        'dbMaxContentBytes',
         'dbQueryTimeoutSeconds',
         'dbForceRefresh',
         'dbExceptionStrategy',
@@ -4556,8 +4564,9 @@ export default {
             sql: this.objectForm.sql,
             params,
             bindingMode: this.objectForm.bindingMode || 'OBJECT',
-            maxRows: 1,
-            queryTimeoutSeconds: 5,
+            maxRows: 1000,
+            maxContentBytes: 0,
+            queryTimeoutSeconds: 0,
           })
         }
         try {
@@ -5359,7 +5368,7 @@ export default {
               : '未配置',
           },
           { label: '返回位置', value: config.resultPath || '第一列/首行结果' },
-          { label: '最多返回', value: (config.maxRows || 1) + ' 行' },
+          { label: '最多返回', value: (config.maxRows ?? 1000) + ' 行' },
           {
             label: '失败处理',
             value: this.exceptionStrategyLabel(config.exceptionStrategy),
@@ -5434,6 +5443,15 @@ export default {
         (item) => item.value === value
       )
       return found ? found.label : value || '在名单内（精确匹配）'
+    },
+    listOptionLabel(item) {
+      if (!item) return ''
+      const scope = item.scope === 'GLOBAL' ? '全局' : `项目${item.projectId || ''}`
+      const type = item.listType ? ` · ${this.listTypeLabel(item.listType)}` : ''
+      return `${item.name || item.code} / ${item.code || ''} · ${scope}${type}`
+    },
+    listTypeLabel(value) {
+      return { BLACK: '黑名单', GREY: '灰名单', WHITE: '白名单', OTHER: '其他' }[value] || value || ''
     },
     async doTestVariable() {
       if (!this.testTarget) return

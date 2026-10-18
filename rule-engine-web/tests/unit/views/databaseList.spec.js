@@ -254,8 +254,9 @@ describe('DatabaseList — JDBC URL 生成', () => {
     expect(databaseApi.queryDbDatasource).toHaveBeenCalledWith(31, {
       sql: 'SELECT ? AS score, ? AS enabled, ? AS note',
       params: [88, false, null],
-      queryTimeoutSeconds: 5,
-      maxRows: 100
+      queryTimeoutSeconds: 0,
+      maxContentBytes: 0,
+      maxRows: 1000
     })
     expect(wrapper.vm.queryStatus).toBe('SUCCESS')
     expect(wrapper.vm.queryColumns).toEqual(['score', 'enabled', 'note'])

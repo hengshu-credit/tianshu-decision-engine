@@ -16,6 +16,8 @@ import java.util.Set;
 public class ExternalApiGovernedResourceAdapter extends SimpleEntityGovernedResourceAdapter<RuleExternalApiConfig> {
     @jakarta.annotation.Resource private com.hengshucredit.rule.server.service.RuleBillingService billingService;
     @jakarta.annotation.Resource private com.hengshucredit.rule.server.service.RuleVariableService variableService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.service.EngineFieldValidationService fieldValidationService;
     @jakarta.annotation.Resource private RuleDataObjectFieldMapper dataObjectFieldMapper;
     private final GovernanceSecretCodec secrets;
     private final RuleExternalDatasourceMapper datasourceMapper;
@@ -72,6 +74,11 @@ public class ExternalApiGovernedResourceAdapter extends SimpleEntityGovernedReso
             if (config.getExecutionConfig() != null && variableService != null) {
                 com.hengshucredit.rule.server.service.ExternalApiExecutionConfig.bindReferences(
                         JSON.parseObject(config.getExecutionConfig()), variableService.buildRefScriptNameMap(datasource.getProjectId()));
+            }
+            if (fieldValidationService != null) {
+                Long projectId = datasource == null || "GLOBAL".equalsIgnoreCase(datasource.getScope())
+                        ? 0L : datasource.getProjectId();
+                fieldValidationService.validateApiConfiguration(projectId, config);
             }
         } catch (RuntimeException e) {
             issues.add(GovernanceIssue.error("EXTERNAL_API_CONFIG_INVALID", e.getMessage(),

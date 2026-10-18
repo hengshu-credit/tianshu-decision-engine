@@ -36,6 +36,15 @@ public class RuntimeCallLogAsyncWriter {
 
     public long getDroppedBodies() { return writer.getDroppedBodies(); }
     public long getDroppedLogs() { return writer.getDroppedLogs(); }
+    public java.util.Map<String, Object> snapshot() {
+        java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("detailQueue", writer.detailSize());
+        result.put("metadataQueue", writer.metadataSize());
+        result.put("retryQueue", 0);
+        result.put("droppedBodies", writer.getDroppedBodies());
+        result.put("droppedLogs", writer.getDroppedLogs());
+        return result;
+    }
 
     private void writeBatch(List<RuleRuntimeCallLog> batch) {
         try (SqlSession session = sqlSessionFactory.openSession(ExecutorType.BATCH, false)) {
@@ -72,6 +81,12 @@ public class RuntimeCallLogAsyncWriter {
         target.setTargetRefId(source.getTargetRefId());
         target.setTargetCode(source.getTargetCode());
         target.setTargetName(source.getTargetName());
+        target.setModelVersion(source.getModelVersion());
+        target.setModelDigest(source.getModelDigest());
+        target.setConfigurationDigest(source.getConfigurationDigest());
+        target.setConfiguredProvider(source.getConfiguredProvider());
+        target.setEffectiveProvider(source.getEffectiveProvider());
+        target.setExecutionStatus(source.getExecutionStatus());
         target.setSuccess(source.getSuccess());
         target.setRequestSuccess(source.getRequestSuccess());
         target.setFound(source.getFound());

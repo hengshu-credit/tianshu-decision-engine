@@ -28,14 +28,76 @@ public class ConsoleAuthController {
     @Autowired(required = false)
     private DatabaseConsoleAccountService databaseAccountService;
 
+    @Autowired(required = false)
+    private ConsoleAccountCredentialService credentialService;
+
     /**
      * 返回是否启用用户名密码登录，供前端决定是否展示登录页与携带 Cookie。
      */
     @GetMapping("/console/config")
     public R<Map<String, Object>> config() {
-        Map<String, Object> body = new HashMap<>(2);
+        Map<String, Object> body = new HashMap<>(5);
         body.put("loginEnabled", consoleLoginProperties.isEnabled());
+        body.put("registrationEnabled", consoleLoginProperties.isRegistrationEnabled()
+                && credentialService != null && credentialService.mailConfigured());
+        body.put("passwordRecoveryEnabled", consoleLoginProperties.isPasswordRecoveryEnabled()
+                && credentialService != null && credentialService.mailConfigured());
+        body.put("breakGlassRecoveryEnabled", consoleLoginProperties.isBreakGlassRecoveryEnabled()
+                && credentialService != null && credentialService.breakGlassConfigured());
+        body.put("passwordMinLength", 8);
         return R.ok(body);
+    }
+
+    @PostMapping("/console/register")
+    public R<Void> register(@RequestBody RegistrationRequest body,
+                            HttpServletRequest request) {
+        requireCredentialService();
+        if (body == null) return R.fail("注册信息不能为空");
+        credentialService.register(body.getUsername(), body.getDisplayName(),
+                body.getEmail(), body.getPassword(), baseUrl(request),
+                request.getRemoteAddr());
+        return R.ok();
+    }
+
+    @PostMapping("/console/register/verify")
+    public R<Void> verifyRegistration(@RequestBody TokenRequest body,
+                                      HttpServletRequest request) {
+        requireCredentialService();
+        credentialService.verifyEmail(body == null ? null : body.getToken(),
+                request.getRemoteAddr());
+        return R.ok();
+    }
+
+    @PostMapping("/console/password-recovery/request")
+    public R<Void> requestPasswordRecovery(@RequestBody IdentifierRequest body,
+                                           HttpServletRequest request) {
+        requireCredentialService();
+        credentialService.requestPasswordReset(
+                body == null ? null : body.getIdentifier(), baseUrl(request),
+                request.getRemoteAddr());
+        return R.ok();
+    }
+
+    @PostMapping("/console/password-recovery/confirm")
+    public R<Void> confirmPasswordRecovery(@RequestBody PasswordResetRequest body,
+                                           HttpServletRequest request) {
+        requireCredentialService();
+        credentialService.resetPassword(body == null ? null : body.getToken(),
+                body == null ? null : body.getPassword(),
+                request.getRemoteAddr());
+        return R.ok();
+    }
+
+    @PostMapping("/console/emergency-password-reset")
+    public R<Void> emergencyPasswordReset(@RequestBody EmergencyResetRequest body,
+                                          HttpServletRequest request) {
+        requireCredentialService();
+        credentialService.emergencyReset(
+                body == null ? null : body.getUsername(),
+                body == null ? null : body.getRecoveryKey(),
+                body == null ? null : body.getPassword(),
+                request.getRemoteAddr());
+        return R.ok();
     }
 
     /**
@@ -118,6 +180,39 @@ public class ConsoleAuthController {
         return R.ok();
     }
 
+    @GetMapping("/console/profile")
+    public R<ConsoleAccountCredentialService.Profile> profile(
+            HttpServletRequest request) {
+        if (!isLoggedIn(request)) return R.fail(401, "未登录");
+        requireCredentialService();
+        return R.ok(credentialService.profile(currentUserId(request)));
+    }
+
+    @PutMapping("/console/profile")
+    public R<ConsoleAccountCredentialService.Profile> updateProfile(
+            @RequestBody ProfileRequest body, HttpServletRequest request) {
+        if (!isLoggedIn(request)) return R.fail(401, "未登录");
+        requireCredentialService();
+        return R.ok(credentialService.updateProfile(
+                currentUserId(request), body == null ? null : body.getDisplayName(),
+                body == null ? null : body.getEmail(), baseUrl(request),
+                request.getRemoteAddr()));
+    }
+
+    @PostMapping("/console/password/change")
+    public R<Void> changePassword(@RequestBody PasswordChangeRequest body,
+                                  HttpServletRequest request) {
+        if (!isLoggedIn(request)) return R.fail(401, "未登录");
+        requireCredentialService();
+        credentialService.changePassword(currentUserId(request),
+                body == null ? null : body.getCurrentPassword(),
+                body == null ? null : body.getPassword(),
+                request.getRemoteAddr());
+        HttpSession session = request.getSession(false);
+        if (session != null) session.invalidate();
+        return R.ok();
+    }
+
     /**
      * 查询当前登录用户名；未启用登录时返回 data 为 null；启用但未登录返回 401。
      */
@@ -168,9 +263,86 @@ public class ConsoleAuthController {
         return data;
     }
 
+    private void requireCredentialService() {
+        if (credentialService == null) {
+            throw new IllegalStateException("账户凭证服务未就绪");
+        }
+    }
+
+    private boolean isLoggedIn(HttpServletRequest request) {
+        if (!consoleLoginProperties.isEnabled()) return false;
+        HttpSession session = request.getSession(false);
+        return session != null && session.getAttribute(
+                consoleLoginProperties.getSessionUserIdAttribute()) != null;
+    }
+
+    private Long currentUserId(HttpServletRequest request) {
+        Object value = request.getSession(false).getAttribute(
+                consoleLoginProperties.getSessionUserIdAttribute());
+        if (value instanceof Number number) return number.longValue();
+        try {
+            return Long.valueOf(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("登录账户无效");
+        }
+    }
+
+    private String baseUrl(HttpServletRequest request) {
+        String configured = consoleLoginProperties.getMail().getBaseUrl();
+        if (configured != null && !configured.isBlank()) return configured;
+        String origin = request.getHeader("Origin");
+        if (origin != null && !origin.isBlank()) return origin;
+        return request.getScheme() + "://" + request.getServerName()
+                + ((request.getServerPort() == 80 || request.getServerPort() == 443)
+                ? "" : ":" + request.getServerPort());
+    }
+
     @Data
     public static class LoginRequest {
         private String username;
         private String password;
+    }
+
+    @Data
+    public static class RegistrationRequest {
+        private String username;
+        private String displayName;
+        private String email;
+        private String password;
+    }
+
+    @Data
+    public static class TokenRequest {
+        private String token;
+    }
+
+    @Data
+    public static class IdentifierRequest {
+        private String identifier;
+    }
+
+    @Data
+    public static class PasswordResetRequest {
+        private String token;
+        private String password;
+    }
+
+    @Data
+    public static class PasswordChangeRequest {
+        private String currentPassword;
+        private String password;
+    }
+
+    @Data
+    public static class EmergencyResetRequest {
+        private String username;
+        private String recoveryKey;
+        private String password;
+    }
+
+    @Data
+    public static class ProfileRequest {
+        private String displayName;
+        private String email;
     }
 }

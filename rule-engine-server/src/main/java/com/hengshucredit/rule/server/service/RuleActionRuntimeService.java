@@ -29,18 +29,25 @@ public class RuleActionRuntimeService {
             ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot) {
         return RuntimeContextBridge.currentContext().bindListWriteResolver((configJson, values) -> {
             Object result;
+            RuntimeException rejected = null;
             try {
                 if (options.isOfflineReplay()) result = Map.of("status", "SKIPPED_REPLAY");
+                else if (options.isDryRun()) result = Map.of("status", "SKIPPED_DRY_RUN");
                 else {
                     var config = JSON.parseObject(configJson);
                     var ids = config.getJSONArray("listIds");
                     for (int i = 0; i < ids.size(); i++) ids.set(i, bound(snapshot, "LIST_LIBRARY", ids.getLong(i)));
                     result = listActions.submit(projectId, config, values, RuntimeContextBridge.currentContext().startedAt());
+                    if (result instanceof Map<?, ?> status && "REJECTED".equals(status.get("status"))) {
+                        rejected = new IllegalStateException(String.valueOf(status.get("error")));
+                    }
                 }
             } catch (RuntimeException error) {
                 result = Map.of("status", "REJECTED", "error", String.valueOf(error.getMessage()));
+                rejected = error;
             }
             RuntimeContextBridge.addTraceEvent(Map.of("type", "LIST_ACTION", "label", "异步名单落库", "result", result));
+            if (rejected != null) throw rejected;
             return result;
         });
     }

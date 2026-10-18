@@ -17,6 +17,8 @@ public class ExperimentGovernedResourceAdapter
     private final RuleExperimentGroupMapper groupMapper;
     @jakarta.annotation.Resource @org.springframework.context.annotation.Lazy
     private com.hengshucredit.rule.server.service.RuleExperimentService experimentService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.service.EngineFieldValidationService fieldValidationService;
 
     @Override
     protected AppliedResource afterAggregateApplied(ApprovalApplyContext context, AppliedResource applied) {
@@ -94,6 +96,23 @@ public class ExperimentGovernedResourceAdapter
     @Override
     protected void validateAggregate(Map<String, Object> snapshot,
                                      List<GovernanceIssue> issues) {
+        if (fieldValidationService != null) {
+            try {
+                String normalized = fieldValidationService
+                        .normalizeExperimentConfiguration(
+                                longValue(snapshot.get("projectId")),
+                                snapshot.get("inputValidationConfig") == null
+                                        ? null
+                                        : String.valueOf(snapshot.get("inputValidationConfig")));
+                snapshot.put("inputValidationConfig", normalized);
+            } catch (IllegalArgumentException error) {
+                issues.add(GovernanceIssue.error(
+                        "EXPERIMENT_INPUT_VALIDATION_INVALID",
+                        error.getMessage(), GovernanceResourceTypes.EXPERIMENT,
+                        longValue(snapshot.get("id")),
+                        "$.inputValidationConfig"));
+            }
+        }
         List<RuleExperimentGroup> groups = groups(snapshot);
         for (int index = 0; index < groups.size(); index++) {
             RuleExperimentGroup group = groups.get(index);

@@ -24,6 +24,8 @@ public class RuleExperiment {
     private String testRoutingMode;
     private String conditionRuleCode;
     private String requestKeyPath;
+    /** 输入字段校验绑定：稳定字段键（refType:refId 或 PATH:path）到规则 ID 数组。 */
+    private String inputValidationConfig;
     private Integer testExclusive;
     private Integer status;
 

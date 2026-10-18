@@ -40,6 +40,8 @@ public class ExecutionMetricsController {
     @Resource
     private DBConnectPools dbConnectPools;
     @Resource
+    private com.hengshucredit.rule.server.service.RuntimeCallLogAsyncWriter runtimeCallLogAsyncWriter;
+    @Resource
     private RuleWarmupStatus ruleWarmupStatus;
     @Resource
     private RuleScriptPreparationService ruleScriptPreparationService;
@@ -65,6 +67,7 @@ public class ExecutionMetricsController {
         result.put("externalResponseCache", externalApiResponseCache.snapshot());
         result.put("externalCircuitBreakers", externalApiCircuitBreakerRegistry.snapshot());
         result.put("databasePools", dbConnectPools.snapshot());
+        result.put("runtimeCallLog", runtimeCallLogAsyncWriter.snapshot());
         result.put("ruleWarmup", ruleWarmupStatus.details());
         result.put("publishOutbox", rulePublishOutboxService.snapshot());
         result.put("executionPersistenceOutbox", executionPersistenceOutboxService.snapshot());

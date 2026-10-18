@@ -25,6 +25,12 @@ public class RuleListRecordLog {
     private String remark;
     private String operation;
     private String operator;
+    private String taskId;
+    private String rootTraceId;
+    private String ruleCode;
+    private String ruleVersion;
+    private String revisionId;
+    private String artifactDigest;
 
     @TableField(exist = false)
     private String changeContent;

@@ -6,12 +6,12 @@
     <el-tabs v-model="tab" :class="{ 'embedded-tabs': embeddedTabs }">
       <el-tab-pane label="请求字段" name="request"><template v-if="tab === 'request'">
         <el-form-item label="默认传空策略"><el-select v-model="config.nullPolicy"><el-option label="不传空值" value="OMIT" /><el-option label="传 null" value="NULL" /><el-option label="传空字符串" value="EMPTY" /></el-select></el-form-item>
-        <api-parameter-fields v-model:fields="config.requestFields" :vars="vars" :functions="functions" :modules="[]" />
+        <api-parameter-fields v-model:fields="config.requestFields" :vars="vars" :functions="functions" :modules="[]" :validation-options="validationOptions" />
         <el-button @click="addBranch('requestBranches')">添加请求条件分支</el-button>
         <el-card v-for="(branch, index) in config.requestBranches" :key="branch.id" shadow="never" class="branch-card" draggable="true" @dragstart="startBranchDrag('requestBranches', index, $event)" @dragover.prevent @drop="dropBranch('requestBranches', index, $event)">
           <div class="panel-toolbar"><span class="branch-drag-handle" title="拖拽调整条件顺序">☷</span><el-input v-model="branch.name" placeholder="分支名称" /><el-button link type="danger" @click="config.requestBranches.splice(index, 1)">删除分支</el-button></div>
           <response-condition-tree-editor operand-mode :functions="functions" :group="branch.condition" :path-options="[]" :vars="vars" />
-          <api-parameter-fields v-model:fields="branch.requestFields" :vars="vars" :functions="functions" :modules="[]" />
+          <api-parameter-fields v-model:fields="branch.requestFields" :vars="vars" :functions="functions" :modules="[]" :validation-options="validationOptions" />
         </el-card>
       </template></el-tab-pane>
       <el-tab-pane label="响应结构" name="response"><template v-if="tab === 'response'">
@@ -42,7 +42,7 @@
             <el-form-item label="鉴权方式"><el-select v-model="step.authMode"><el-option v-for="mode in ['INHERIT', 'NONE', 'API', 'BASIC', 'BEARER', 'API_KEY', 'TOKEN_API', 'OAUTH2', 'CUSTOM']" :key="mode" :value="mode" :label="authLabel(mode)" /></el-select></el-form-item>
             <el-form-item v-if="step.authMode === 'API'" label="鉴权 API"><resource-picker v-model:value="step.authApiConfigId" :resources="apis" placeholder="选择鉴权 API" /></el-form-item>
             <el-form-item v-else-if="!['NONE', 'INHERIT'].includes(step.authMode)" label="鉴权参数"><MonacoEditor v-model:value="step.authApiConfig" language="json" height="110px" :options="{ minimap: { enabled: false }, wordWrap: 'on' }" /></el-form-item>
-            <api-parameter-fields :allow-overrides="false" v-model:fields="step.requestFields" :vars="vars" :functions="functions" :modules="stepModules(index)" />
+            <api-parameter-fields :allow-overrides="false" v-model:fields="step.requestFields" :vars="vars" :functions="functions" :modules="stepModules(index)" :validation-options="validationOptions" />
             <el-collapse>
               <el-collapse-item title="本步骤响应结构与条件分支">
                 <el-button @click="addStepResponse(step)">添加本步骤响应分支</el-button>
@@ -111,7 +111,7 @@ import ResponseConditionTreeEditor from '@/components/common/ResponseConditionTr
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import { newApiId, newCondition, parseExecution, prepareResponseSample, validateExecution, apiFieldOptions } from '@/utils/apiExecution'
 import { apiStagePaths } from '@/utils/apiContext'
-import { listVariablesByProject, getVariableSourceOptions } from '@/api/variable'
+import { listVariablesByProject, getVariableSourceOptions, listAvailableFieldValidations } from '@/api/variable'
 import { getVariableTree } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
 import request from '@/api/request'
@@ -119,7 +119,7 @@ export default {
   components: { ApiParameterFields, ApiValueEditor, ApiSampleStructure, ResponseConditionTreeEditor, ResourcePicker, ProtocolPathPicker, MonacoEditor },
   props: { value: { type: String, default: '' }, projectId: { type: [Number, String], default: 0 }, asyncMode: Boolean, apiConfig: { type: Object, default: () => ({}) }, embeddedTabs: Boolean, activeTab: { type: String, default: '' }, activePolicy: { type: String, default: '' } },
   emits: ['update:value', 'select-sample', 'select-mode', 'update:activeTab'],
-  data() { return { config: parseExecution(this.value), emittedConfig: '', emitTimer: null, pathCatalogs: markRaw(new Map()), draggingBranch: null, tab: this.activeTab || 'request', policyTab: this.activePolicy || 'exceptionBranches', vars: [], functions: [], apis: [], loadNumber: 0, sampleVisible: false, sampleText: '{}', sampleBranch: null, sampleStrategy: 'AUTO', configImportVisible: false, configImportText: '', responsePreview: '',
+  data() { return { config: parseExecution(this.value), emittedConfig: '', emitTimer: null, pathCatalogs: markRaw(new Map()), draggingBranch: null, tab: this.activeTab || 'request', policyTab: this.activePolicy || 'exceptionBranches', vars: [], functions: [], apis: [], validationOptions: [], loadNumber: 0, sampleVisible: false, sampleText: '{}', sampleBranch: null, sampleStrategy: 'AUTO', configImportVisible: false, configImportText: '', responsePreview: '',
     callbackPlaceholder: 'https://公网地址/api/external-callback/${invocationId}', contentTypes: ['application/json', 'application/x-www-form-urlencoded', 'multipart/form-data'],
     policies: [{ key: 'exceptionBranches', label: '异常判断' }, { key: 'retryBranches', label: '重试条件' }] } },
   computed: {
@@ -147,13 +147,14 @@ export default {
     async loadOptions() {
       const sequence = ++this.loadNumber
       const projectId = Number(this.projectId || 0)
-      this.vars = []; this.apis = []; this.functions = []
+       this.vars = []; this.apis = []; this.functions = []; this.validationOptions = []
       try {
-        const [variables, objects, apis, functions] = await Promise.all([listVariablesByProject(projectId), getVariableTree(projectId), getVariableSourceOptions({ scope: projectId > 0 ? 'PROJECT' : 'GLOBAL', projectId }), listAllFunctionsByProject(projectId)])
+        const [variables, objects, apis, functions, validations] = await Promise.all([listVariablesByProject(projectId), getVariableTree(projectId), getVariableSourceOptions({ scope: projectId > 0 ? 'PROJECT' : 'GLOBAL', projectId }), listAllFunctionsByProject(projectId), listAvailableFieldValidations(projectId)])
         if (sequence !== this.loadNumber) return
         this.vars = apiFieldOptions(variables?.data || [], objects?.data?.tree || [])
         this.apis = apis?.data?.apiOptions || []
         this.functions = functions?.data || []
+        this.validationOptions = validations?.data || []
       } catch (error) { if (sequence === this.loadNumber) this.$message.error(error.message || '配置字段加载失败') }
     },
     addBranch(key) {

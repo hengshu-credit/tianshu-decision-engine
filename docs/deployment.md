@@ -210,6 +210,8 @@ mvn "-Ponnx-gpu" "-Dtianshu.cuda.diagnostic=true" "-Dtest=CudaEnvironmentDiagnos
 
 ONNX 神经网络模型可在“模型管理”中逐个选择 CPU 或 CUDA，并配置 GPU 设备号、显存上限、显存扩展策略、cuDNN 卷积算法搜索和默认 CUDA 流。CPU 版后端即使读取到历史 CUDA 配置也会自动回退 CPU，不影响服务启动；CUDA 版后端会实际检查 CUDA 共享库及其依赖是否可加载。服务按“模型文件内容 + 运行配置”缓存推理会话；开启“启动预加载”后会在服务启动阶段创建对应 CPU/CUDA 会话。配置 CUDA 的模型在 GPU 会话初始化或推理失败时会自动重试 CPU，CPU 成功后同一服务进程内后续调用会直接使用 CPU；修复 GPU 环境后需重启服务以重新尝试 CUDA。YuNet 人脸检测同样通过 ONNX Runtime 执行，OpenCV 仅保留图片解码、缩放和检测结果后处理。
 
+模型文件、测试参数和执行并发受服务端上限保护：`RULE_MODEL_MAX_FILE_SIZE_BYTES` 默认 256 MiB，`RULE_MODEL_MAX_TEST_PARAMS_BYTES` 默认 1 MiB，`RULE_MODEL_EXECUTION_PARALLELISM` 默认 8，`RULE_MODEL_EXECUTION_QUEUE_CAPACITY` 默认 256，`RULE_MODEL_MAX_CONCURRENT_PER_MODEL` 默认 8。队列或单模型并发达到上限时返回 503/`THROTTLED`，可通过模型运行时能力接口观察活动数、队列深度和完成数。
+
 模型运行时当前使用 JPMML Evaluator Metro 1.7.7 和 ONNX Runtime 1.26.0。PMML 输入字段按模型声明精确匹配，不自动转换大小写、驼峰或下划线；PMML/ONNX 缓存键均包含模型内容或运行配置，替换文件后不会继续复用旧模型。本项目已选择以 AGPL-3.0 开源方式交付 JPMML：凡对外提供包含 JPMML 的制品或网络服务，都必须同步提供与运行版本一致的完整 Corresponding Source、许可证和重建材料，详见 [THIRD_PARTY_LICENSES.md](../THIRD_PARTY_LICENSES.md)。
 
 ### 前端

@@ -10,6 +10,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -22,7 +26,9 @@ import java.util.concurrent.TimeUnit;
 public class AsyncListActionService implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(AsyncListActionService.class);
     private final RuleListActionWriter writer;
-    private final DurableExecutionPersistenceJournal journal;
+    private final String journalDirectory;
+    private final boolean scanParentDirectories;
+    private final List<DurableExecutionPersistenceJournal> journals = new ArrayList<>();
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(task -> {
         Thread thread = new Thread(task, "rule-list-actions"); thread.setDaemon(true); return thread;
     });
@@ -31,15 +37,46 @@ public class AsyncListActionService implements AutoCloseable {
     private volatile int failures;
     private volatile String lastError;
 
+    public AsyncListActionService(RuleListActionWriter writer, String directory) {
+        this(writer, directory, false);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
     public AsyncListActionService(RuleListActionWriter writer,
-            @Value("${rule-engine.list-actions.journal-dir:./logs/list-action-journal}") String directory) {
+            @Value("${rule-engine.list-actions.journal-dir:./logs/list-action-journal}") String directory,
+            @Value("${rule-engine.list-actions.scan-parent:false}") boolean scanParentDirectories) {
         this.writer = writer;
-        this.journal = new DurableExecutionPersistenceJournal(directory);
+        this.journalDirectory = directory;
+        this.scanParentDirectories = scanParentDirectories;
     }
 
     @PostConstruct public void start() {
-        journal.initialize();
+        openJournals();
         executor.scheduleWithFixedDelay(this::drain, 100, 100, TimeUnit.MILLISECONDS);
+    }
+
+    private void openJournals() {
+        Path primary = Path.of(journalDirectory).toAbsolutePath().normalize();
+        List<Path> directories = new ArrayList<>();
+        directories.add(primary);
+        Path parent = primary.getParent();
+        if (scanParentDirectories && parent != null && Files.isDirectory(parent)) {
+            try (var stream = Files.list(parent)) {
+                stream.filter(Files::isDirectory).sorted(Comparator.comparing(Path::toString))
+                        .filter(path -> !path.equals(primary))
+                        .filter(path -> Files.exists(path.resolve("execution-persistence.ndjson.lock"))
+                                || Files.exists(path.resolve("execution-persistence.ndjson")))
+                        .forEach(directories::add);
+            } catch (Exception error) {
+                log.warn("扫描名单动作恢复目录失败，继续使用当前实例目录: {}", parent, error);
+            }
+        }
+        for (Path directory : directories) {
+            DurableExecutionPersistenceJournal candidate =
+                    new DurableExecutionPersistenceJournal(directory.toString());
+            candidate.initialize();
+            journals.add(candidate);
+        }
     }
 
     public Object submit(Long projectId, JSONObject config, Object values, LocalDateTime now) {
@@ -52,7 +89,7 @@ public class AsyncListActionService implements AutoCloseable {
         payload.put("rule", RuntimeContextBridge.currentRule());
         var entry = new DurableExecutionPersistenceJournal.Entry(taskId, payload.toJSONString(), null, true,
                 null, null, projectId, null, null, null, null, null, null, null, true, false);
-        if (closed || !journal.append(entry)) {
+        if (closed || journals.isEmpty() || !journals.get(0).append(entry)) {
             log.error("名单动作持久化交接失败 taskId={} projectId={}", taskId, projectId);
             return Map.of("taskId", taskId, "status", "REJECTED", "error", "名单任务未能持久化，请检查恢复队列存储");
         }
@@ -63,14 +100,25 @@ public class AsyncListActionService implements AutoCloseable {
         if (closed || System.currentTimeMillis() < retryAt) return;
         try {
             // 只加载有界批次；数据库故障时积压保留在磁盘，不填满引擎堆内存。
-            for (var entry : journal.read(100)) {
-                if (closed) break;
-                var payload = JSON.parseObject(entry.logJson());
-                writer.write(entry.eventId(), entry.projectId(), payload.getJSONObject("config"),
-                        payload.getJSONArray("values"), LocalDateTime.parse(payload.getString("actionTime")));
-                journal.replacePrefix(1, List.of());
-                failures = 0;
-                lastError = null;
+            for (var journal : journals) {
+                for (var entry : journal.read(100)) {
+                    if (closed) break;
+                    var payload = JSON.parseObject(entry.logJson());
+                    JSONObject rule = payload.getJSONObject("rule");
+                    boolean hasRuleIdentity = rule != null && (rule.get("traceId") != null
+                            || rule.get("code") != null || rule.get("revisionId") != null
+                            || rule.get("artifactDigest") != null);
+                    if (!hasRuleIdentity) {
+                        writer.write(entry.eventId(), entry.projectId(), payload.getJSONObject("config"),
+                                payload.getJSONArray("values"), LocalDateTime.parse(payload.getString("actionTime")));
+                    } else {
+                        writer.write(entry.eventId(), entry.projectId(), payload.getJSONObject("config"),
+                                payload.getJSONArray("values"), LocalDateTime.parse(payload.getString("actionTime")), rule);
+                    }
+                    journal.replacePrefix(1, List.of());
+                    failures = 0;
+                    lastError = null;
+                }
             }
         } catch (RuntimeException error) {
             failures = Math.min(failures + 1, 6);
@@ -81,7 +129,10 @@ public class AsyncListActionService implements AutoCloseable {
     }
 
     public Map<String, Object> snapshot() {
-        var result = new java.util.LinkedHashMap<>(journal.snapshot());
+        var result = new java.util.LinkedHashMap<>(journals.isEmpty()
+                ? Map.of() : journals.get(0).snapshot());
+        result.put("journalCount", journals.size());
+        result.put("recoveryJournals", journals.stream().skip(1).map(DurableExecutionPersistenceJournal::snapshot).toList());
         result.put("consecutiveFailures", failures); result.put("lastError", lastError);
         result.put("nextRetryAt", failures == 0 ? null : java.time.Instant.ofEpochMilli(retryAt));
         result.put("writeConcurrency", 1);
@@ -93,6 +144,6 @@ public class AsyncListActionService implements AutoCloseable {
         executor.shutdown();
         try { if (!executor.awaitTermination(15, TimeUnit.SECONDS)) executor.shutdownNow(); }
         catch (InterruptedException error) { Thread.currentThread().interrupt(); executor.shutdownNow(); }
-        journal.close();
+        for (var journal : journals) journal.close();
     }
 }

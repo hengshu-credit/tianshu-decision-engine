@@ -98,6 +98,10 @@ CREATE TABLE IF NOT EXISTS `console_user` (
   `username`           VARCHAR(64)  NOT NULL                COMMENT '登录用户名',
   `display_name`       VARCHAR(128) NOT NULL                COMMENT '显示名称',
   `password_hash`      VARCHAR(128) NOT NULL                COMMENT 'BCrypt密码摘要',
+  `email`              VARCHAR(256) DEFAULT NULL             COMMENT '注册及找回密码邮箱',
+  `email_verified_at`  DATETIME     DEFAULT NULL             COMMENT '邮箱验证时间',
+  `registration_status` VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT '注册状态：PENDING/ACTIVE',
+  `registration_source` VARCHAR(16) NOT NULL DEFAULT 'ADMIN' COMMENT '账户来源：ADMIN/SELF_REGISTER',
   `status`             TINYINT      NOT NULL DEFAULT 1       COMMENT '状态：0-停用，1-启用',
   `permission_version` BIGINT       NOT NULL DEFAULT 1       COMMENT '权限版本号',
   `last_login_time`    DATETIME     DEFAULT NULL             COMMENT '最后登录时间',
@@ -109,6 +113,20 @@ CREATE TABLE IF NOT EXISTS `console_user` (
   UNIQUE KEY `uk_console_user_username` (`username`),
   KEY `idx_console_user_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台账户表';
+
+CREATE TABLE IF NOT EXISTS `console_account_token` (
+  `id`           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `user_id`      BIGINT       NOT NULL                COMMENT '控制台账户ID',
+  `purpose`      VARCHAR(32)  NOT NULL                COMMENT '用途：EMAIL_VERIFY/PASSWORD_RESET',
+  `token_hash`   CHAR(64)     NOT NULL                COMMENT '令牌SHA-256摘要',
+  `expires_at`   DATETIME     NOT NULL                COMMENT '过期时间',
+  `consumed_at`  DATETIME     DEFAULT NULL             COMMENT '消费时间',
+  `request_ip`   VARCHAR(64)  DEFAULT NULL             COMMENT '请求IP',
+  `create_time`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_console_account_token_hash` (`token_hash`),
+  KEY `idx_console_account_token_user_purpose` (`user_id`, `purpose`, `consumed_at`, `expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台账户邮箱验证及密码找回令牌';
 
 CREATE TABLE IF NOT EXISTS `console_user_preference` (
   `id`               BIGINT      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -837,12 +855,19 @@ CREATE TABLE IF NOT EXISTS `rule_list_record` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_list_type_content` (`list_id`, `item_type`, `item_content`),
   KEY `idx_list_record_lookup` (`list_id`, `item_type`, `item_content`, `status`),
+  KEY `idx_list_record_content_status` (`list_id`, `item_content`, `status`),
+  KEY `idx_list_record_effective_lookup` (`list_id`, `status`, `effective_time`, `expire_time`),
   KEY `idx_list_record_effective` (`effective_time`, `expire_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单当前记录表';
 
 CREATE TABLE IF NOT EXISTS `rule_list_action_receipt` (
   `task_id` VARCHAR(64) NOT NULL,
   `project_id` BIGINT DEFAULT NULL,
+  `root_trace_id` CHAR(36) DEFAULT NULL,
+  `rule_code` VARCHAR(128) DEFAULT NULL,
+  `rule_version` VARCHAR(32) DEFAULT NULL,
+  `revision_id` VARCHAR(64) DEFAULT NULL,
+  `artifact_digest` CHAR(64) DEFAULT NULL,
   `changed_count` INT NOT NULL DEFAULT 0,
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`task_id`)
@@ -860,10 +885,17 @@ CREATE TABLE IF NOT EXISTS `rule_list_record_log` (
   `remark`         VARCHAR(512) DEFAULT NULL            COMMENT '插入备注',
   `operation`      VARCHAR(16)  NOT NULL                COMMENT '执行操作：ADD/UPDATE/DELETE',
   `operator`       VARCHAR(64)  DEFAULT NULL            COMMENT '操作人',
+  `task_id`        VARCHAR(64)  DEFAULT NULL            COMMENT '规则名单动作任务ID',
+  `root_trace_id`  CHAR(36)     DEFAULT NULL            COMMENT '规则根Trace ID',
+  `rule_code`      VARCHAR(128) DEFAULT NULL            COMMENT '规则编码',
+  `rule_version`   VARCHAR(32)  DEFAULT NULL            COMMENT '规则版本',
+  `revision_id`    VARCHAR(64)  DEFAULT NULL            COMMENT '规则修订ID',
+  `artifact_digest` CHAR(64)    DEFAULT NULL            COMMENT '规则制品摘要',
   `create_time`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
   PRIMARY KEY (`id`),
   KEY `idx_list_log_list_record` (`list_id`, `record_id`),
   KEY `idx_list_log_content` (`list_id`, `item_type`, `item_content`),
+  KEY `idx_list_log_task_trace` (`task_id`, `root_trace_id`, `create_time`),
   KEY `idx_list_log_time` (`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单变更日志表';
 
@@ -1137,6 +1169,7 @@ CREATE TABLE IF NOT EXISTS `rule_model` (
   `project_name`       VARCHAR(128) DEFAULT NULL             COMMENT '所属项目名称',
   `scope`              VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL-全局，PROJECT-项目级',
   `model_code`         VARCHAR(128) NOT NULL                COMMENT '模型编码（唯一）',
+  `model_code_scope_key` VARCHAR(256) GENERATED ALWAYS AS (IF(`scope` = 'GLOBAL', CONCAT('GLOBAL:', `model_code`), CONCAT('PROJECT:', COALESCE(`project_id`, 0), ':', `model_code`))) STORED COMMENT '模型编码作用域唯一键',
   `model_name`         VARCHAR(256) NOT NULL                COMMENT '模型名称（中文）',
   `model_type`         VARCHAR(32)  NOT NULL                COMMENT '模型大类：CLASSIFICATION-分类/REGRESSION-回归/CLUSTERING-聚类/ML-机器学习',
   `model_format`       VARCHAR(32)  NOT NULL                COMMENT '模型格式：PMML/PICKLE/DILL/ONNX',
@@ -1161,7 +1194,7 @@ CREATE TABLE IF NOT EXISTS `rule_model` (
   `update_by`          VARCHAR(64)  DEFAULT NULL             COMMENT '更新人',
   `update_time`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_model_code` (`model_code`),
+  UNIQUE KEY `uk_model_code_scope` (`model_code_scope_key`),
   KEY `idx_project_id` (`project_id`),
   KEY `idx_scope` (`scope`),
   KEY `idx_model_format` (`model_format`),
@@ -1378,6 +1411,12 @@ CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
   `target_ref_id`   BIGINT       DEFAULT NULL            COMMENT '目标配置ID',
   `target_code`     VARCHAR(128) DEFAULT NULL            COMMENT '目标编码',
   `target_name`     VARCHAR(128) DEFAULT NULL            COMMENT '目标名称',
+  `model_version`   INT          DEFAULT NULL            COMMENT '模型业务执行版本',
+  `model_digest`    CHAR(64)     DEFAULT NULL            COMMENT '模型文件摘要',
+  `configuration_digest` CHAR(64) DEFAULT NULL          COMMENT '模型配置摘要',
+  `configured_provider` VARCHAR(16) DEFAULT NULL        COMMENT '模型配置设备',
+  `effective_provider` VARCHAR(16) DEFAULT NULL         COMMENT '模型实际设备',
+  `execution_status` VARCHAR(32) DEFAULT NULL           COMMENT '模型执行状态',
   `success`         TINYINT      NOT NULL DEFAULT 1      COMMENT '是否成功：0-失败，1-成功',
   `request_success` TINYINT      DEFAULT NULL            COMMENT '按接口响应条件树判断的请求成功标记',
   `found`           TINYINT      DEFAULT NULL            COMMENT '按计费条件树判断的查得标记',
@@ -1425,6 +1464,7 @@ CREATE TABLE IF NOT EXISTS `rule_experiment` (
   `test_routing_mode` VARCHAR(32) NOT NULL DEFAULT 'CONDITION' COMMENT '测试组分流方式：RATIO/CONDITION',
   `condition_rule_code` VARCHAR(128) DEFAULT NULL        COMMENT '条件分流规则编码',
   `request_key_path` VARCHAR(128) NOT NULL DEFAULT 'requestId' COMMENT '请求唯一键路径',
+  `input_validation_config` JSON DEFAULT NULL             COMMENT '实验输入字段校验绑定JSON',
   `test_exclusive`  TINYINT      NOT NULL DEFAULT 1      COMMENT '测试组是否互斥',
   `status`          TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-停用，1-启用',
   `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',

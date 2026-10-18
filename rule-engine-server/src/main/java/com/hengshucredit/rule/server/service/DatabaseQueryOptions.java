@@ -3,17 +3,22 @@ package com.hengshucredit.rule.server.service;
 import java.math.BigDecimal;
 import java.util.Map;
 
-/** 数据库变量与在线查询共用的查询限制；0 不设单独限制，正式执行仍服从请求总预算。 */
-public record DatabaseQueryOptions(int maxRows, int queryTimeoutSeconds) {
+/** 数据库变量与在线查询共用的查询限制；行数、内容和超时为0时分别表示不设该项限制。 */
+public record DatabaseQueryOptions(int maxRows, int queryTimeoutSeconds, int maxContentBytes) {
+    public DatabaseQueryOptions(int maxRows, int queryTimeoutSeconds) {
+        this(maxRows, queryTimeoutSeconds, 0);
+    }
+
     public DatabaseQueryOptions {
-        if (maxRows < 0 || queryTimeoutSeconds < 0) {
-            throw new IllegalArgumentException("查询行数和超时必须是大于或等于 0 的整数");
+        if (maxRows < 0 || queryTimeoutSeconds < 0 || maxContentBytes < 0) {
+            throw new IllegalArgumentException("查询行数、内容大小和超时必须是大于或等于 0 的整数");
         }
     }
 
     public static DatabaseQueryOptions from(Map<String, Object> config, int defaultRows) {
         return new DatabaseQueryOptions(integer(config.get("maxRows"), defaultRows, "最多返回行数"),
-                integer(config.get("queryTimeoutSeconds"), 5, "查询超时秒数"));
+                integer(config.get("queryTimeoutSeconds"), 0, "查询超时秒数"),
+                integer(config.get("maxContentBytes"), 0, "查询内容大小"));
     }
 
     int timeoutWithinBudget(int remainingMillis) {

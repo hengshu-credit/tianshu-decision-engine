@@ -79,7 +79,7 @@ describe('Layout — 菜单与路由归属', () => {
       { index: '/billing', label: '账单管理', icon: 'Wallet', permission: 'billing:view' },
       { index: '/approval', label: '审批管理', icon: 'Stamp', permission: 'approval:view' },
       { index: '/transfer', label: '离线迁移', icon: 'Upload', permission: 'transfer:view' },
-      { index: '/account', label: '账户管理', icon: 'User', permission: ['account:view', 'role:view', 'role:manage', 'account:audit'] }
+      { index: '/account', label: '账户管理', icon: 'User', permission: ['account:view', 'account:manage', 'account:approve', 'account:role-assign', 'account:password-reset', 'role:view', 'role:manage', 'account:audit'] }
     ])
   })
 
@@ -630,7 +630,7 @@ describe('Layout — 全局布局集成', () => {
     wrapper.unmount()
   })
 
-  test('账户菜单的用户设置进入现有账户管理页面', async() => {
+  test('账户菜单的用户设置进入个人设置页面', async() => {
     authApi.getConsoleAuthConfig.mockResolvedValue({ data: { loginEnabled: true } })
     authApi.getConsoleMe.mockResolvedValue({ data: { username: 'admin' } })
     const { wrapper, router } = mountLayout()
@@ -641,7 +641,7 @@ describe('Layout — 全局布局集成', () => {
     dropdown.vm.$emit('command', 'settings')
     await nextTick()
 
-    expect(router.push).toHaveBeenCalledWith('/account')
+    expect(router.push).toHaveBeenCalledWith('/account/profile')
     wrapper.unmount()
   })
 

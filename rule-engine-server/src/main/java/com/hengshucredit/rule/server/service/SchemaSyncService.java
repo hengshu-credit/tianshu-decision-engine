@@ -47,7 +47,8 @@ public class SchemaSyncService {
             "console_user_role",
             "console_role_permission",
             "console_user_permission_override",
-            "console_security_audit_log"
+            "console_security_audit_log",
+            "console_account_token"
     );
 
     private static final List<String> GOVERNANCE_TABLES = Arrays.asList(
@@ -67,6 +68,7 @@ public class SchemaSyncService {
             ensureFieldValidationSchema();
             ensureVariableSourceConfigColumn();
             ensureListTables();
+            ensureListIndexes();
             ensureListChangeBatchSchema();
             ensureExperimentTables();
             ensureExperimentRuleReferenceSchema();
@@ -84,6 +86,7 @@ public class SchemaSyncService {
             ensureDbDatasourceConnectionColumns();
             ensureModelRuntimeColumns();
             ensureModelScopeConsistency();
+            ensureModelCodeScopeKey();
             ensureModelFieldForeignKeysRemoved();
             ensureDataObjectFieldReferenceSchema();
             ensureDataObjectReferenceLoading();
@@ -419,6 +422,41 @@ public class SchemaSyncService {
                     + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单变更日志表'");
         }
         ensureUtf8mb4Table("rule_list_record_log");
+        if (!tableExists("rule_list_action_receipt")) {
+            jdbcTemplate.execute("CREATE TABLE `rule_list_action_receipt` ("
+                    + "`task_id` VARCHAR(64) NOT NULL,"
+                    + "`project_id` BIGINT DEFAULT NULL,"
+                    + "`root_trace_id` CHAR(36) DEFAULT NULL,"
+                    + "`rule_code` VARCHAR(128) DEFAULT NULL,"
+                    + "`rule_version` VARCHAR(32) DEFAULT NULL,"
+                    + "`revision_id` VARCHAR(64) DEFAULT NULL,"
+                    + "`artifact_digest` CHAR(64) DEFAULT NULL,"
+                    + "`changed_count` INT NOT NULL DEFAULT 0,"
+                    + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                    + "PRIMARY KEY (`task_id`)"
+                    + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='异步名单动作幂等回执'");
+        }
+        ensureUtf8mb4Table("rule_list_action_receipt");
+        addColumnIfMissing("rule_list_action_receipt", "root_trace_id", "`root_trace_id` CHAR(36) DEFAULT NULL");
+        addColumnIfMissing("rule_list_action_receipt", "rule_code", "`rule_code` VARCHAR(128) DEFAULT NULL");
+        addColumnIfMissing("rule_list_action_receipt", "rule_version", "`rule_version` VARCHAR(32) DEFAULT NULL");
+        addColumnIfMissing("rule_list_action_receipt", "revision_id", "`revision_id` VARCHAR(64) DEFAULT NULL");
+        addColumnIfMissing("rule_list_action_receipt", "artifact_digest", "`artifact_digest` CHAR(64) DEFAULT NULL");
+        addColumnIfMissing("rule_list_record_log", "task_id", "`task_id` VARCHAR(64) DEFAULT NULL");
+        addColumnIfMissing("rule_list_record_log", "root_trace_id", "`root_trace_id` CHAR(36) DEFAULT NULL");
+        addColumnIfMissing("rule_list_record_log", "rule_code", "`rule_code` VARCHAR(128) DEFAULT NULL");
+        addColumnIfMissing("rule_list_record_log", "rule_version", "`rule_version` VARCHAR(32) DEFAULT NULL");
+        addColumnIfMissing("rule_list_record_log", "revision_id", "`revision_id` VARCHAR(64) DEFAULT NULL");
+        addColumnIfMissing("rule_list_record_log", "artifact_digest", "`artifact_digest` CHAR(64) DEFAULT NULL");
+    }
+
+    private void ensureListIndexes() {
+        addIndexIfMissing("rule_list_record", "idx_list_record_content_status",
+                "`list_id`,`item_content`,`status`");
+        addIndexIfMissing("rule_list_record", "idx_list_record_effective_lookup",
+                "`list_id`,`status`,`effective_time`,`expire_time`");
+        addIndexIfMissing("rule_list_record_log", "idx_list_log_task_trace",
+                "`task_id`,`root_trace_id`,`create_time`");
     }
 
     private void ensureListChangeBatchSchema() {
@@ -509,6 +547,8 @@ public class SchemaSyncService {
         ensureUtf8mb4Table("rule_experiment");
         addColumnIfMissing("rule_experiment", "test_routing_mode",
                 "`test_routing_mode` VARCHAR(32) NOT NULL DEFAULT 'CONDITION' COMMENT '测试组分流方式' AFTER `routing_mode`");
+        addColumnIfMissing("rule_experiment", "input_validation_config",
+                "`input_validation_config` JSON DEFAULT NULL COMMENT '实验输入字段校验绑定JSON' AFTER `request_key_path`");
         if (!tableExists("rule_experiment_group")) {
             jdbcTemplate.execute("CREATE TABLE `rule_experiment_group` ("
                     + "`id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',"
@@ -578,6 +618,12 @@ public class SchemaSyncService {
                     + "`target_ref_id` BIGINT DEFAULT NULL COMMENT '目标配置ID',"
                     + "`target_code` VARCHAR(128) DEFAULT NULL COMMENT '目标编码',"
                     + "`target_name` VARCHAR(128) DEFAULT NULL COMMENT '目标名称',"
+                     + "`model_version` INT DEFAULT NULL COMMENT '模型业务执行版本',"
+                     + "`model_digest` CHAR(64) DEFAULT NULL COMMENT '模型文件摘要',"
+                     + "`configuration_digest` CHAR(64) DEFAULT NULL COMMENT '模型配置摘要',"
+                     + "`configured_provider` VARCHAR(16) DEFAULT NULL COMMENT '模型配置设备',"
+                     + "`effective_provider` VARCHAR(16) DEFAULT NULL COMMENT '模型实际设备',"
+                     + "`execution_status` VARCHAR(32) DEFAULT NULL COMMENT '模型执行状态',"
                     + "`success` TINYINT NOT NULL DEFAULT 1 COMMENT '是否成功',"
                     + "`request_method` VARCHAR(16) DEFAULT NULL COMMENT '请求方法',"
                     + "`request_url` VARCHAR(1024) DEFAULT NULL COMMENT '请求地址',"
@@ -599,6 +645,18 @@ public class SchemaSyncService {
         }
         addColumnIfMissing("rule_runtime_call_log", "request_success",
                 "`request_success` TINYINT DEFAULT NULL COMMENT '按接口响应条件树判断的请求成功标记' AFTER `success`");
+        addColumnIfMissing("rule_runtime_call_log", "model_version",
+                "`model_version` INT DEFAULT NULL COMMENT '模型业务执行版本' AFTER `target_name`");
+        addColumnIfMissing("rule_runtime_call_log", "model_digest",
+                "`model_digest` CHAR(64) DEFAULT NULL COMMENT '模型文件摘要' AFTER `model_version`");
+        addColumnIfMissing("rule_runtime_call_log", "configuration_digest",
+                "`configuration_digest` CHAR(64) DEFAULT NULL COMMENT '模型配置摘要' AFTER `model_digest`");
+        addColumnIfMissing("rule_runtime_call_log", "configured_provider",
+                "`configured_provider` VARCHAR(16) DEFAULT NULL COMMENT '模型配置设备' AFTER `configuration_digest`");
+        addColumnIfMissing("rule_runtime_call_log", "effective_provider",
+                "`effective_provider` VARCHAR(16) DEFAULT NULL COMMENT '模型实际设备' AFTER `configured_provider`");
+        addColumnIfMissing("rule_runtime_call_log", "execution_status",
+                "`execution_status` VARCHAR(32) DEFAULT NULL COMMENT '模型执行状态' AFTER `effective_provider`");
         addColumnIfMissing("rule_runtime_call_log", "found",
                 "`found` TINYINT DEFAULT NULL COMMENT '按计费条件树判断的查得标记' AFTER `request_success`");
         addColumnIfMissing("rule_runtime_call_log", "provider_request",
@@ -816,6 +874,18 @@ public class SchemaSyncService {
 
     private void ensureConsoleRbacSchema() {
         ensureTablesFromSchema(CONSOLE_RBAC_TABLES);
+        if (tableExists("console_user")) {
+            addColumnIfMissing("console_user", "email",
+                    "`email` VARCHAR(256) DEFAULT NULL COMMENT '注册及找回密码邮箱'");
+            addColumnIfMissing("console_user", "email_verified_at",
+                    "`email_verified_at` DATETIME DEFAULT NULL COMMENT '邮箱验证时间'");
+            addColumnIfMissing("console_user", "registration_status",
+                    "`registration_status` VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT '注册状态：PENDING/ACTIVE'");
+            addColumnIfMissing("console_user", "registration_source",
+                    "`registration_source` VARCHAR(16) NOT NULL DEFAULT 'ADMIN' COMMENT '账户来源：ADMIN/SELF_REGISTER'");
+            jdbcTemplate.update("UPDATE `console_user` SET `registration_status` = 'ACTIVE' WHERE `registration_status` IS NULL OR `registration_status` = ''");
+            jdbcTemplate.update("UPDATE `console_user` SET `registration_source` = 'ADMIN' WHERE `registration_source` IS NULL OR `registration_source` = ''");
+        }
     }
 
     private void ensureGovernanceSchema() {
@@ -1115,6 +1185,23 @@ public class SchemaSyncService {
         jdbcTemplate.execute("UPDATE `rule_model` SET `project_id` = NULL, `project_code` = NULL, `project_name` = NULL "
                 + "WHERE `scope` = 'GLOBAL' AND (`project_id` IS NOT NULL OR `project_code` IS NOT NULL "
                 + "OR `project_name` IS NOT NULL)");
+    }
+
+    private void ensureModelCodeScopeKey() {
+        String table = "rule_model";
+        if (!tableExists(table)) return;
+        if (!columnExists(table, "model_code_scope_key")) {
+            jdbcTemplate.execute("ALTER TABLE `rule_model` ADD COLUMN `model_code_scope_key` VARCHAR(256) "
+                    + "GENERATED ALWAYS AS (IF(`scope` = 'GLOBAL', CONCAT('GLOBAL:', `model_code`), "
+                    + "CONCAT('PROJECT:', COALESCE(`project_id`, 0), ':', `model_code`))) STORED "
+                    + "COMMENT '模型编码作用域唯一键' AFTER `model_code`");
+        }
+        if (indexExists(table, "uk_model_code")) {
+            jdbcTemplate.execute("ALTER TABLE `rule_model` DROP INDEX `uk_model_code`");
+        }
+        if (!indexExists(table, "uk_model_code_scope")) {
+            jdbcTemplate.execute("ALTER TABLE `rule_model` ADD UNIQUE KEY `uk_model_code_scope` (`model_code_scope_key`)");
+        }
     }
 
     private void ensureDataObjectFieldUniqueKey() {

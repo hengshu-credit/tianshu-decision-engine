@@ -443,6 +443,28 @@
             width="100"
             align="center"
           />
+          <el-table-column label="字段校验" min-width="240">
+            <template #default="{ row }">
+              <el-select
+                :model-value="inputValidationIds(row)"
+                multiple
+                collapse-tags
+                collapse-tags-tooltip
+                clearable
+                filterable
+                placeholder="可选"
+                style="width: 100%"
+                @update:model-value="setInputValidationIds(row, $event)"
+              >
+                <el-option
+                  v-for="item in fieldValidationOptions"
+                  :key="item.id"
+                  :label="fieldValidationLabel(item)"
+                  :value="item.id"
+                />
+              </el-select>
+            </template>
+          </el-table-column>
         </el-table>
       </el-tab-pane>
 
@@ -829,6 +851,7 @@ import { getExpressionContext } from '@/constants/expressionContexts'
 import { normalizeRuleOptions } from '@/utils/ruleCallConfig'
 import { routeProjectId } from '@/utils/projectContext'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
+import { listAvailableFieldValidations } from '@/api/variable'
 
 export default {
   data() {
@@ -853,6 +876,8 @@ export default {
       rulesForProject: [],
       ruleFieldMap: {},
       ruleVersionFields: {},
+      fieldValidationOptions: [],
+      inputValidationConfigMap: {},
       form: this.emptyForm(),
       rules: {
         projectId: [
@@ -969,6 +994,8 @@ export default {
               fieldName: reference.code || reference.path,
               fieldLabel: reference.label,
               fieldType: reference.valueType,
+                refType: reference.refType,
+                refId: reference.refId,
             })
           )
         }
@@ -986,6 +1013,8 @@ export default {
                     fieldName: reference.code || reference.path,
                     fieldLabel: reference.label,
                     fieldType: reference.valueType,
+                    refType: reference.refType,
+                    refId: reference.refId,
                   })
                 )
               })
@@ -1053,6 +1082,7 @@ export default {
         conditionRuleCode: '',
         requestKeyPath: '',
         requestKeyOperand: null,
+        inputValidationConfig: '{}',
         testExclusive: 1,
         status: 1,
         groups: [
@@ -1128,6 +1158,7 @@ export default {
         requestKeyOperand: this.parseRequestKeyOperand(data.requestKeyPath),
         groups: (data.groups || []).map((g) => this.normalizeGroupForEdit(g)),
       }
+      this.inputValidationConfigMap = this.parseInputValidationConfig(data.inputValidationConfig)
       await this.loadRules(this.form.projectId)
       await this.loadExperimentRefs(this.form.projectId)
     },
@@ -1206,6 +1237,8 @@ export default {
           fieldName: field.scriptName || field.fieldName || field.varCode,
           fieldLabel: field.fieldLabel || field.varLabel || field.fieldName,
           fieldType: field.fieldType || field.varType,
+          refType: field.refType,
+          refId: field.varId,
         })
       )
     },
@@ -1218,7 +1251,44 @@ export default {
         fieldName: field.fieldName || '-',
         fieldLabel: field.fieldLabel || '-',
         fieldType: field.fieldType || '-',
+        refType: field.refType || '',
+        refId: field.refId == null ? null : field.refId,
       }
+    },
+    parseInputValidationConfig(value) {
+      if (!value) return {}
+      if (typeof value === 'object' && !Array.isArray(value)) return JSON.parse(JSON.stringify(value))
+      try {
+        const parsed = JSON.parse(value)
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+      } catch (e) {
+        return {}
+      }
+    },
+    inputValidationKey(field) {
+      if (field?.refType && field?.refId != null) return `${String(field.refType).toUpperCase()}:${field.refId}`
+      return `PATH:${field?.fieldName || ''}`
+    },
+    inputValidationIds(field) {
+      const value = this.inputValidationConfigMap[this.inputValidationKey(field)]
+      return Array.isArray(value) ? value : []
+    },
+    setInputValidationIds(field, ids) {
+      const key = this.inputValidationKey(field)
+      const values = Array.isArray(ids) ? ids : []
+      if (values.length) this.inputValidationConfigMap[key] = values
+      else delete this.inputValidationConfigMap[key]
+    },
+    fieldValidationLabel(item) {
+      return `${item.builtIn ? '【系统内置】' : ''}${item.validationName}（${item.validationType}）`
+    },
+    prepareInputValidationConfig() {
+      const result = {}
+      this.experimentInputFields.forEach(field => {
+        const ids = this.inputValidationIds(field)
+        if (ids.length) result[this.inputValidationKey(field)] = ids
+      })
+      return result
     },
     onProjectChange(projectId) {
       this.form.groups.forEach((g) => {
@@ -1236,10 +1306,13 @@ export default {
         this.projectIdForRefs = null
         this.projectRefs = []
         this.projectVars = []
+        this.fieldValidationOptions = []
         return
       }
       this.projectIdForRefs = projectId
       await this.refreshProjectRefs()
+      const response = await listAvailableFieldValidations(projectId)
+      this.fieldValidationOptions = response?.data || []
     },
     onRoutingModeChange(mode) {
       if (mode === 'RATIO') {
@@ -1360,6 +1433,7 @@ export default {
           this.saving = true
           try {
             const data = { ...this.form, groups: this.prepareGroupsForSave() }
+            data.inputValidationConfig = JSON.stringify(this.prepareInputValidationConfig())
             data.requestKeyPath = data.requestKeyOperand
               ? JSON.stringify(data.requestKeyOperand)
               : ''

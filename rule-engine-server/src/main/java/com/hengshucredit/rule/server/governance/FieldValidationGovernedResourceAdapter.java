@@ -31,6 +31,9 @@ public class FieldValidationGovernedResourceAdapter
     private final RuleProjectMapper projectMapper;
     private final RuleDefinitionInputFieldMapper inputFieldMapper;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.service.FieldValidationReferenceScanner referenceScanner;
+
     public FieldValidationGovernedResourceAdapter(
             RuleFieldValidationMapper validationMapper,
             RuleProjectMapper projectMapper,
@@ -187,7 +190,7 @@ public class FieldValidationGovernedResourceAdapter
         if (id != null && ("DISABLE".equals(normalizedAction)
                 || "DELETE".equals(normalizedAction)) && referenced(id)) {
             issues.add(error("FIELD_VALIDATION_IN_USE",
-                    "字段校验规则已被规则输入字段引用，不能停用或删除",
+                    "字段校验规则已被规则、实验或外数 API 引用，不能停用或删除",
                     id, "$"));
         }
         return issues;
@@ -225,7 +228,7 @@ public class FieldValidationGovernedResourceAdapter
                 RuleFieldValidation.class);
         String action = upper(context.action(), "UPDATE");
         if (("DELETE".equals(action) || "DRAFT_DELETE".equals(action)) && context.resourceId() != null && referenced(context.resourceId())) {
-            throw new IllegalArgumentException("字段校验规则仍被下游规则引用，请先删除下游规则");
+            throw new IllegalArgumentException("字段校验规则仍被规则、实验或外数 API 引用，请先删除下游配置");
         }
         String status = switch (action) {
             case "DRAFT_CREATE", "DRAFT_UPDATE" -> "DRAFT";
@@ -258,6 +261,7 @@ public class FieldValidationGovernedResourceAdapter
     }
 
     private boolean referenced(Long id) {
+        if (referenceScanner != null) return referenceScanner.referenced(id);
         List<RuleDefinitionInputField> fields = inputFieldMapper.selectList(
                 new LambdaQueryWrapper<RuleDefinitionInputField>()
                         .inSql(RuleDefinitionInputField::getDefinitionId,

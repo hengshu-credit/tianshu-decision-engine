@@ -169,6 +169,7 @@ import {
 import {
   clearCurrentUser,
   filterMenus,
+  getCurrentUser,
   setCurrentUser,
 } from '@/security/permissionState'
 import {
@@ -450,7 +451,7 @@ export default {
     handleAccountCommand(command) {
       if (command === 'theme') return this.openThemeSettings()
       if (command === 'settings' && this.loginEnabled) {
-        return this.navigateTo('/account')
+        return this.navigateTo('/account/profile')
       }
       if (command === 'logout') return this.doLogout()
     },
@@ -508,7 +509,9 @@ export default {
         } else {
           clearCurrentUser()
         }
-        this.sidebarMenus = filterMenus(SIDEBAR_MENUS)
+        this.sidebarMenus = filterMenus(SIDEBAR_MENUS, {
+          hidePublicWhenEmpty: getCurrentUser()?.permissions?.length === 0
+        })
         try {
           const theme = await getConsoleThemePreference()
           this.confirmTheme(theme && theme.data

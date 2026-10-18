@@ -48,4 +48,4 @@ scripts/quality-gates/fixtures/request.local.json
 /**/target/
 /docker/runtime/*.jar
 /docker/runtime/dist/
-
+node_modules

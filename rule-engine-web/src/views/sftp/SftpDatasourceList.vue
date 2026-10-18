@@ -5,10 +5,10 @@
       <div class="hint-text">维护可复用的 SFTP 连接池。规则执行时的 SFTP 文件读取会沿用当前规则 trace_id，并在查询日志中保留远端文件地址。</div>
     </div>
 
-    <div class="sftp-subnav">
-      <el-button type="primary" plain size="small" @click="$router.push('/sftp')">数据源配置</el-button>
-      <el-button size="small" @click="$router.push('/sftp/logs')">查询日志</el-button>
-    </div>
+    <el-tabs v-model="activeTab" class="management-table-region sftp-tabs" @tab-click="onTabChange">
+      <el-tab-pane label="数据源配置" name="datasource" />
+      <el-tab-pane label="查询日志" name="logs" />
+    </el-tabs>
 
     <div class="uiue-search-container uiue-filter-toolbar">
       <el-form :inline="true" size="small" @keyup.enter="load">
@@ -62,12 +62,13 @@ function emptyForm() {
 export default {
   name: 'SftpDatasourceList',
   data() {
-    return { query: { pageNum: 1, pageSize: 10, projectCode: '', projectName: '', datasourceCode: '', status: null }, rows: [], total: 0, loading: false, projects: [], dialogVisible: false, form: emptyForm(), saving: false, testing: false, rules: { datasourceCode: [{ required: true, message: '请输入数据源编码', trigger: 'blur' }], datasourceName: [{ required: true, message: '请输入数据源名称', trigger: 'blur' }], host: [{ required: true, message: '请输入 SFTP 主机', trigger: 'blur' }], username: [{ required: true, message: '请输入用户名', trigger: 'blur' }] } }
+    return { activeTab: 'datasource', query: { pageNum: 1, pageSize: 10, projectCode: '', projectName: '', datasourceCode: '', status: null }, rows: [], total: 0, loading: false, projects: [], dialogVisible: false, form: emptyForm(), saving: false, testing: false, rules: { datasourceCode: [{ required: true, message: '请输入数据源编码', trigger: 'blur' }], datasourceName: [{ required: true, message: '请输入数据源名称', trigger: 'blur' }], host: [{ required: true, message: '请输入 SFTP 主机', trigger: 'blur' }], username: [{ required: true, message: '请输入用户名', trigger: 'blur' }] } }
   },
   async mounted() { await Promise.all([this.load(), this.loadProjects()]) },
   methods: {
     async load() { this.loading = true; try { const res = await listSftpDatasources(this.query); this.rows = res.data?.records || []; this.total = res.data?.total || 0 } finally { this.loading = false } },
     async loadProjects() { try { const res = await listProjects({ pageNum: 1, pageSize: 500 }); this.projects = res.data?.records || [] } catch (e) { this.projects = [] } },
+    onTabChange(tab) { const paneName = tab && (tab.paneName ?? tab.name ?? (tab.props && tab.props.name)); if ((paneName && paneName.value !== undefined ? paneName.value : paneName) === 'logs') this.$router.push('/sftp/logs') },
     resetQuery() { this.query = { ...this.query, pageNum: 1, projectCode: '', projectName: '', datasourceCode: '', status: null }; this.load() },
     openCreate() { this.form = emptyForm(); this.dialogVisible = true; this.$nextTick(() => this.$refs.formRef?.clearValidate()) },
     async openEdit(row) { const res = await getSftpDatasource(row.id); let detail = res.data || row; try { detail = await editableResource('SFTP', row.id, detail) } catch (e) { /* no editable draft yet; use the sanitized effective projection */ } this.form = { ...emptyForm(), ...(detail || row) }; this.dialogVisible = true; this.$nextTick(() => this.$refs.formRef?.clearValidate()) },
@@ -81,9 +82,23 @@ export default {
 </script>
 
 <style scoped>
-.sftp-subnav { display: flex; gap: 8px; margin-bottom: 12px; }
+.sftp-page .module-hint {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  border: 1px solid var(--tianshu-info-border);
+  border-radius: 6px;
+  background: var(--tianshu-info-bg);
+  color: var(--tianshu-info-text);
+}
+.sftp-page .hint-title { color: inherit; font-weight: 700; white-space: nowrap; }
+.sftp-page .hint-text { color: var(--tianshu-text-secondary); line-height: 1.5; }
+.sftp-tabs { margin-bottom: 12px; }
 .form-section { padding: 12px; margin: 4px 0 14px; border: 1px solid var(--tianshu-border-subtle); border-radius: 8px; }
 .section-title { margin-bottom: 10px; color: var(--tianshu-text-primary); font-size: 13px; font-weight: 700; }
 .field-help { margin-left: 8px; color: var(--tianshu-text-tertiary); font-size: 12px; }
 @media (max-width: 900px) { .sftp-page :deep(.uiue-search-container) { align-items: flex-start; } }
+@media (max-width: 720px) { .sftp-page .module-hint { align-items: flex-start; flex-direction: column; gap: 4px; } }
 </style>

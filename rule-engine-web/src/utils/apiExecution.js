@@ -56,15 +56,23 @@ export function parseExecution(text) {
     ...branch,
     ...(branch?.sample && typeof branch.sample === 'object' ? { sample: Object.freeze(branch.sample) } : {}),
   })
-  config.requestBranches = (config.requestBranches || []).map(normalizeBranch)
+  const normalizeRequestFields = fields => (fields || []).map(field => ({
+    ...field,
+    validationRuleIds: Array.isArray(field?.validationRuleIds) ? field.validationRuleIds : [],
+  }))
+  config.requestFields = normalizeRequestFields(config.requestFields)
+  config.requestBranches = (config.requestBranches || []).map(branch => ({
+    ...normalizeBranch(branch),
+    requestFields: normalizeRequestFields(branch?.requestFields),
+  }))
   config.responseBranches = (config.responseBranches || []).map(branch => ({ mode: 'FIELDS', ...normalizeBranch(branch) }))
   config.exceptionBranches = (config.exceptionBranches || []).map(normalizeBranch)
   config.billingBranches = (config.billingBranches || []).map(normalizeBranch)
   config.retryBranches = (config.retryBranches || []).map(normalizeBranch)
-  config.steps = (config.steps || []).map(step => ({ successConditionTree: newCondition(), exceptionConditionTree: newCondition(), retryConditionTree: newCondition(), ...step, responseBranches: (step.responseBranches || []).map(normalizeBranch), ...(step.callback ? { callback: { successCondition: newCondition(), failureCondition: newCondition(), ...step.callback } } : {}), ...(step.poll ? { poll: { failure: newCondition(), ...step.poll } } : {}) }))
+  config.steps = (config.steps || []).map(step => ({ successConditionTree: newCondition(), exceptionConditionTree: newCondition(), retryConditionTree: newCondition(), ...step, requestFields: normalizeRequestFields(step?.requestFields), responseBranches: (step.responseBranches || []).map(normalizeBranch), ...(step.callback ? { callback: { successCondition: newCondition(), failureCondition: newCondition(), ...step.callback } } : {}), ...(step.poll ? { poll: { failure: newCondition(), ...step.poll } } : {}) }))
   return config
 }
-export const newApiField = () => ({ id: newApiId(), location: 'JSON', path: '', value: null, required: false, nullPolicy: 'DEFAULT', overridable: false })
+export const newApiField = () => ({ id: newApiId(), location: 'JSON', path: '', value: null, required: false, nullPolicy: 'DEFAULT', overridable: false, validationRuleIds: [] })
 export const newCondition = () => ({ type: 'group', operator: 'AND', children: [] })
 export const literal = value => ({ kind: 'LITERAL', valueType: typeof value === 'number' ? 'NUMBER' : typeof value === 'boolean' ? 'BOOLEAN' : 'STRING', value: String(value) })
 

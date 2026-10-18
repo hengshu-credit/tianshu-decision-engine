@@ -113,6 +113,8 @@ public class DatabaseConsoleAccountService {
         ConsoleUser user = new ConsoleUser();
         user.setUsername(username);
         user.setDisplayName(username);
+        user.setRegistrationStatus("ACTIVE");
+        user.setRegistrationSource("ADMIN");
         user.setPasswordHash(BCrypt.hashpw(rawPassword));
         user.setStatus(1);
         user.setPermissionVersion(1L);

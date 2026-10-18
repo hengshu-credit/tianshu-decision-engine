@@ -43,10 +43,21 @@ public class RuleListActionWriter implements AutoCloseable {
     }
 
     int write(String taskId, Long projectId, JSONObject config, List<?> values, LocalDateTime actionTime) {
+        return write(taskId, projectId, config, values, actionTime, null);
+    }
+
+    int write(String taskId, Long projectId, JSONObject config, List<?> values,
+              LocalDateTime actionTime, JSONObject rule) {
         LocalDateTime expires = validateRequest(config, values, actionTime);
         List<Long> ids = config.getJSONArray("listIds").stream().map(id -> ListWriteConfig.positiveLong(id, "名单 ID")).distinct().sorted().toList();
+        String rootTraceId = rule == null ? null : rule.getString("traceId");
+        String ruleCode = rule == null ? null : rule.getString("code");
+        String ruleVersion = rule == null || rule.get("version") == null ? null : String.valueOf(rule.get("version"));
+        String revisionId = rule == null ? null : rule.getString("revisionId");
+        String artifactDigest = rule == null ? null : rule.getString("artifactDigest");
         Integer count = transaction.execute(status -> {
-            int accepted = jdbc.update("INSERT IGNORE INTO rule_list_action_receipt (task_id, project_id) VALUES (?, ?)", taskId, projectId);
+            int accepted = jdbc.update("INSERT IGNORE INTO rule_list_action_receipt (task_id, project_id, root_trace_id, rule_code, rule_version, revision_id, artifact_digest) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    taskId, projectId, rootTraceId, ruleCode, ruleVersion, revisionId, artifactDigest);
             if (accepted == 0) return 0;
             for (Long id : ids) {
                 var libraries = jdbc.queryForList("SELECT scope, project_id, status FROM rule_list_library WHERE id = ? FOR UPDATE", id);
@@ -59,7 +70,8 @@ public class RuleListActionWriter implements AutoCloseable {
             for (Long id : ids) for (int i = 0; i < values.size(); i++) {
                 Object value = values.get(i);
                 if (MissingValueSemantics.isMissing(value)) continue;
-                changed += writeRecord(id, config.getJSONArray("itemTypes").getString(i), String.valueOf(value), config.getString("operation"), actionTime, expires, taskId);
+                changed += writeRecord(id, config.getJSONArray("itemTypes").getString(i), String.valueOf(value), config.getString("operation"), actionTime, expires,
+                        taskId, rootTraceId, ruleCode, ruleVersion, revisionId, artifactDigest);
             }
             jdbc.update("UPDATE rule_list_action_receipt SET changed_count = ? WHERE task_id = ?", changed, taskId);
             return changed;
@@ -82,7 +94,9 @@ public class RuleListActionWriter implements AutoCloseable {
     }
 
     private int writeRecord(Long listId, String type, String content, String operation,
-                            LocalDateTime now, LocalDateTime expires, String taskId) {
+                            LocalDateTime now, LocalDateTime expires, String taskId,
+                            String rootTraceId, String ruleCode, String ruleVersion,
+                            String revisionId, String artifactDigest) {
         var rows = jdbc.queryForList("SELECT id, status, effective_time, expire_time FROM rule_list_record WHERE list_id = ? AND item_type = ? AND item_content = ? FOR UPDATE", listId, type, content);
         Map<String, Object> previous = rows.isEmpty() ? null : rows.get(0);
         boolean enabled = previous != null && ((Number) previous.get("status")).intValue() == 1;
@@ -100,7 +114,8 @@ public class RuleListActionWriter implements AutoCloseable {
         if (previous == null) jdbc.update("INSERT INTO rule_list_record (list_id,item_type,item_content,effective_time,expire_time,reason,last_operation,status) VALUES (?,?,?,?,?,?,?,1)", listId, type, content, start, end, reason, change);
         else if ("REMOVE".equals(operation)) jdbc.update("UPDATE rule_list_record SET status=0,last_operation='DELETE',reason=? WHERE id=?", reason, previous.get("id"));
         else jdbc.update("UPDATE rule_list_record SET effective_time=?,expire_time=?,reason=?,last_operation=?,status=1 WHERE id=?", start, end, reason, change, previous.get("id"));
-        jdbc.update("INSERT INTO rule_list_record_log (list_id,record_id,item_type,item_content,effective_time,expire_time,reason,operation,operator) SELECT list_id,id,item_type,item_content,effective_time,expire_time,reason,last_operation,? FROM rule_list_record WHERE list_id=? AND item_type=? AND item_content=?", "规则任务:" + taskId, listId, type, content);
+        jdbc.update("INSERT INTO rule_list_record_log (list_id,record_id,item_type,item_content,effective_time,expire_time,reason,operation,operator,task_id,root_trace_id,rule_code,rule_version,revision_id,artifact_digest) SELECT list_id,id,item_type,item_content,effective_time,expire_time,reason,last_operation,?,?,?,?,?,?,? FROM rule_list_record WHERE list_id=? AND item_type=? AND item_content=?",
+                "规则任务:" + taskId, taskId, rootTraceId, ruleCode, ruleVersion, revisionId, artifactDigest, listId, type, content);
         return 1;
     }
 

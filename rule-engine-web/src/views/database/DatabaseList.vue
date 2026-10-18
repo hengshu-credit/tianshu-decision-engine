@@ -630,9 +630,21 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="内容上限（字节）">
+          <el-input-number
+            v-model="queryForm.maxContentBytes"
+            :min="0"
+            :max="67108864"
+            :precision="0"
+            :disabled="queryLoading"
+            style="width: 100%"
+            @change="resetQueryResult"
+          />
+          <span class="field-help">0 表示不限制；超过上限时查询失败并释放结果。</span>
+        </el-form-item>
         <el-form-item label="查询超时（秒）">
           <el-input-number v-model="queryForm.queryTimeoutSeconds" :min="0" :max="2147483647" :precision="0" :disabled="queryLoading" />
-          <span class="field-help">超时和最大行数设为 0 时不限制。</span>
+          <span class="field-help">0 表示不设置单独超时；正式请求仍受项目总超时约束。</span>
         </el-form-item>
         <div v-if="queryParamRows.length" class="query-params">
           <div
@@ -823,7 +835,7 @@ export default {
       queryDialogVisible: false,
       queryTarget: {},
       queryLoading: false,
-      queryForm: { sql: '', maxRows: 100, queryTimeoutSeconds: 5 },
+      queryForm: { sql: '', maxRows: 1000, maxContentBytes: 0, queryTimeoutSeconds: 0 },
       queryParamRows: [],
       queryStatus: 'IDLE',
       queryError: '',
@@ -1060,7 +1072,7 @@ export default {
     openQuery(row) {
       ++this.queryRequestId
       this.queryTarget = row
-      this.queryForm = { sql: '', maxRows: 100, queryTimeoutSeconds: 5 }
+      this.queryForm = { sql: '', maxRows: 1000, maxContentBytes: 0, queryTimeoutSeconds: 0 }
       this.queryParamRows = []
       this.queryRows = []
       this.queryColumns = []
@@ -1098,7 +1110,8 @@ export default {
           sql: this.queryForm.sql,
           params,
           maxRows: this.queryForm.maxRows,
-          queryTimeoutSeconds: this.queryForm.queryTimeoutSeconds ?? 5,
+          maxContentBytes: this.queryForm.maxContentBytes ?? 0,
+          queryTimeoutSeconds: this.queryForm.queryTimeoutSeconds ?? 0,
         })
         if (!this.isActiveQueryRequest(requestId, datasourceId)) return
         this.queryRows = res.data || []

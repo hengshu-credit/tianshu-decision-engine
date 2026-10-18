@@ -35,7 +35,7 @@ public class DBConnectPoolsTest {
         pools.query(1L, "select 1", java.util.List.of(), 2000);
 
         assertEquals(2000, settings.get("setMaxRows"));
-        assertEquals(5, settings.get("setQueryTimeout"));
+        assertEquals(0, settings.get("setQueryTimeout"));
         pools.query(1L, "select 1", java.util.List.of(), 0, 12);
         assertEquals(0, settings.get("setMaxRows"));
         assertEquals(12, settings.get("setQueryTimeout"));
@@ -51,8 +51,10 @@ public class DBConnectPoolsTest {
             org.junit.Assert.assertThrows(IllegalArgumentException.class,
                     () -> DatabaseQueryOptions.from(java.util.Map.of("queryTimeoutSeconds", invalid), 1));
         }
-        assertEquals(new DatabaseQueryOptions(0, 0), DatabaseQueryOptions.from(
+        assertEquals(new DatabaseQueryOptions(0, 0, 0), DatabaseQueryOptions.from(
                 java.util.Map.of("maxRows", 0, "queryTimeoutSeconds", 0), 1));
+        assertEquals(new DatabaseQueryOptions(1000, 0, 4096), DatabaseQueryOptions.from(
+                java.util.Map.of("maxContentBytes", 4096), 1000));
     }
 
     private <T> T jdbcProxy(Class<T> type, java.util.function.BiFunction<String, Object[], Object> handler) {

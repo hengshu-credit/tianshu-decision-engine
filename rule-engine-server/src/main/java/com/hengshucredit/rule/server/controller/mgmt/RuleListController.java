@@ -112,6 +112,7 @@ public class RuleListController {
     }
 
     @GetMapping("/{listId:\\d+}/export")
+    @RequirePermission("list:export")
     public ResponseEntity<StreamingResponseBody> export(@PathVariable Long listId) {
         RuleListLibrary library = listService.getById(listId);
         String prefix = library != null && library.getListCode() != null ? library.getListCode() : "list";

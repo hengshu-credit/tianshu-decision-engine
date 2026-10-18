@@ -23,6 +23,21 @@ public class RuleEngineConsoleLoginProperties {
      */
     private boolean enabled = false;
 
+    /** 是否允许通过登录页注册控制台账户。 */
+    private boolean registrationEnabled = false;
+
+    /** 是否允许通过邮箱找回控制台密码。 */
+    private boolean passwordRecoveryEnabled = true;
+
+    /** 是否启用受控的超级管理员应急恢复页。 */
+    private boolean breakGlassRecoveryEnabled = false;
+
+    /** 应急恢复密钥只允许通过 Secret 注入，不提供默认值。 */
+    private String breakGlassRecoveryKey = "";
+
+    /** 邮件链接和令牌相关配置。 */
+    private Mail mail = new Mail();
+
     /**
      * 需要会话校验的路径（Ant 风格）；默认覆盖管理端 API 前缀。
      */
@@ -80,5 +95,17 @@ public class RuleEngineConsoleLoginProperties {
     public enum PasswordEncoding {
         BCRYPT,
         PLAIN
+    }
+
+    @Data
+    public static class Mail {
+        /** 发件人地址；为空时邮件功能视为未配置。 */
+        private String from = "";
+
+        /** 前端控制台绝对地址，例如 https://console.example.com。 */
+        private String baseUrl = "";
+
+        private int verificationTtlMinutes = 30;
+        private int passwordResetTtlMinutes = 30;
     }
 }

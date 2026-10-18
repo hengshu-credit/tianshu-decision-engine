@@ -397,7 +397,7 @@ VITE_PORT=9091
 <p>修改后重启后端和 <code>npm run dev</code>，访问 <code>http://localhost:9091/</code>，<code>/api</code> 会自动代理到 <code>http://localhost:8081</code>。未配置时仍使用后端 <code>8080</code>、前端 <code>9090</code>；前端端口被占用时会直接报错，不会自动切换端口。</p>
 <p>后端运行在其他地址时，可额外设置 <code>VITE_DEV_PROXY=http://后端地址:端口</code>，该配置优先于 <code>SERVER_PORT</code> 推导的地址。系统环境变量优先于 <code>.env</code>。这些配置不会改变生产静态站点的监听端口，生产前端仍需配置 Nginx 或容器端口映射。</p>
 <p>前端生产静态服务器需要保留 <code>dist/vs/</code> 下的 Monaco 资源，并将 AMD loader 生成的资源标识 URL 重写后再读取静态文件：<code>/vs/css!vs/&lt;path&gt;</code> 映射到 <code>/vs/&lt;path&gt;</code>，<code>/vs/nls!vs/&lt;path&gt;</code> 映射到 <code>/vs/&lt;path&gt;.js</code>（已有 <code>.js</code> 后缀时不重复添加）。若静态服务器不支持此重写，规则设计器、SQL 和 JSON 编辑器会出现资源 404，页面控制台会报 Monaco 加载错误。</p>
-<p>未设置 <code>CORS_ALLOWED_ORIGIN_PATTERNS</code> 时，后端默认允许所有来源（<code>*</code>）；生产环境建议显式填写实际 HTTPS 域名/IP，多个来源用英文逗号分隔。会话 Cookie 会根据请求协议自动决定是否附加 <code>Secure</code>，不需要额外配置。</p></section>
+<p>未设置 <code>CORS_ALLOWED_ORIGIN_PATTERNS</code> 时，后端默认允许所有来源（*）；生产环境建议显式填写实际 HTTPS 域名/IP，多个来源用英文逗号分隔。会话 Cookie 会根据请求协议自动决定是否附加 <code>Secure</code>，不需要额外配置。</p></section>
 <section class="manual-section deployment-section" id="docker" data-search="二、Docker 运行时部署 本模块不要求项目提供 Dockerfile，直接使用 eclipse-temurin:17-jre 运行 JAR、使用 nginx:1.27-alpine 提供后管静态文件。MySQL 和 Redis 可以是云服务、物理机服务或已经运行的容器；只要从应用容器内可访问即可。 2.1 准备宿主机目录和制品 以下命令在仓库根目录执行。生产环境请把 /opt/tianshu 换成实际发布目录，并让运行 Docker 的账号对该目录有读权限。 mkdir -p /opt/tianshu/server /opt/tianshu/console/dist /opt/tianshu/console
 
 # 构建 JAR；默认跳过测试，正式发布前应在 CI 先完成完整测试
