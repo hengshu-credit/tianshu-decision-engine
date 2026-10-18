@@ -124,7 +124,7 @@ public class ProductionConfigurationContractTest {
         Assert.assertTrue(serverCompose.contains("condition: service_healthy"));
         Assert.assertTrue(serverCompose.contains("LOGGING_FILE_NAME: \"\""));
         Assert.assertTrue(serverCompose.contains("LOGGING_LEVEL_ROOT: ${SERVER_LOG_LEVEL:-WARN}"));
-        Assert.assertTrue(serverCompose.contains("RULE_TRACE_MAX_PERSIST_BYTES: ${RULE_TRACE_MAX_PERSIST_BYTES:-65536}"));
+        Assert.assertTrue(serverCompose.contains("RULE_TRACE_MAX_PERSIST_BYTES: ${RULE_TRACE_MAX_PERSIST_BYTES:-0}"));
         Assert.assertFalse(serverCompose.contains("runtime-http:"));
         Assert.assertTrue(clientCompose.contains("  runtime-http:"));
         Assert.assertTrue(clientCompose.contains("  runtime-sdk:"));
