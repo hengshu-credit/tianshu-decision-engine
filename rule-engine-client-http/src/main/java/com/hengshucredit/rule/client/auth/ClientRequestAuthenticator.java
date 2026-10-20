@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.client.auth;
 
+import com.hengshucredit.rule.model.security.GlobalAccessSignature;
 import okhttp3.HttpUrl;
 import okhttp3.Request;
 import okio.Buffer;
@@ -75,6 +76,18 @@ public class ClientRequestAuthenticator {
                     .header("X-Rule-Signature", signature)
                     .build();
         }
+        if (ClientAuthConfig.GLOBAL_KEY.equals(authType)) {
+            String keyId = required(authConfig.getGlobalKeyId(), "Global access key id is required");
+            String privateKey = required(authConfig.getGlobalPrivateKey(), "Global access private key is required");
+            String timestamp = String.valueOf(currentEpochSeconds());
+            String nonce = generateNonce();
+            String signature = signGlobal(privateKey, request, timestamp, nonce);
+            return builder.header(GlobalAccessSignature.KEY_ID_HEADER, keyId)
+                    .header(GlobalAccessSignature.TIMESTAMP_HEADER, timestamp)
+                    .header(GlobalAccessSignature.NONCE_HEADER, nonce)
+                    .header(GlobalAccessSignature.SIGNATURE_HEADER, signature)
+                    .build();
+        }
         throw new IOException("Unsupported authentication type: " + authType);
     }
 
@@ -105,6 +118,21 @@ public class ClientRequestAuthenticator {
             return toHex(mac.doFinal(canonical.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception e) {
             throw new IOException("Unable to sign HMAC request", e);
+        }
+    }
+
+    private String signGlobal(String privateKey, Request request, String timestamp, String nonce) throws IOException {
+        byte[] body = new byte[0];
+        if (request.body() != null) {
+            Buffer buffer = new Buffer();
+            request.body().writeTo(buffer);
+            body = buffer.readByteArray();
+        }
+        try {
+            return GlobalAccessSignature.sign(privateKey, request.method(), request.url().encodedPath(),
+                    valueOrEmpty(request.url().encodedQuery()), timestamp, nonce, body);
+        } catch (RuntimeException e) {
+            throw new IOException("Unable to sign global access request", e);
         }
     }
 

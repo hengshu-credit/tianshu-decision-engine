@@ -8,6 +8,7 @@ import com.hengshucredit.rule.server.auth.HmacRequestSigner;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.auth.ProjectAuthProperties;
 import com.hengshucredit.rule.server.auth.ProjectAuthType;
+import com.hengshucredit.rule.model.security.GlobalAccessSignature;
 import org.junit.Before;
 import org.junit.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -101,6 +102,23 @@ public class ProjectAuthHmacTest {
                         "1721000000", "nonce-1", "{}".getBytes(StandardCharsets.UTF_8)));
     }
 
+    @Test
+    public void authenticatesGlobalEd25519RequestAndRejectsReplay() throws Exception {
+        GlobalAccessSignature.AccessKeyPair pair = GlobalAccessSignature.generateKeyPair();
+        ProjectAuthProperties globalProperties = new ProjectAuthProperties();
+        ProjectAuthProperties.GlobalAccess access = new ProjectAuthProperties.GlobalAccess();
+        access.setEnabled(true);
+        access.setKeyId("all-rules");
+        access.setPublicKey(pair.publicKey());
+        access.setTimeWindowSeconds(300L);
+        globalProperties.setGlobalAccess(access);
+        GlobalAuthService globalService = new GlobalAuthService(new CredentialCipher(globalProperties), globalProperties,
+                pair.privateKey());
+
+        assertNotNull(globalService.authenticate(globalService.signedRequest("nonce-global")));
+        assertNull(globalService.authenticate(globalService.signedRequest("nonce-global")));
+    }
+
     private CachedBodyHttpServletRequest signedRequest(byte[] body, long timestamp, String nonce)
             throws Exception {
         return signedRequest(body, body, timestamp, nonce);
@@ -158,6 +176,42 @@ public class ProjectAuthHmacTest {
         @Override
         protected boolean claimHmacNonce(Long authId, String nonce) {
             return nonces.add(authId + ":" + nonce);
+        }
+    }
+
+    private static class GlobalAuthService extends ProjectAuthService {
+        private final String privateKey;
+        private final Set<String> nonces = new HashSet<>();
+
+        private GlobalAuthService(CredentialCipher cipher, ProjectAuthProperties properties, String privateKey) {
+            super(cipher);
+            this.privateKey = privateKey;
+            org.springframework.test.util.ReflectionTestUtils.setField(this, "properties", properties);
+        }
+
+        @Override
+        protected long currentEpochSeconds() {
+            return NOW;
+        }
+
+        @Override
+        protected boolean claimGlobalNonce(String keyId, String nonce) {
+            return nonces.add(keyId + ":" + nonce);
+        }
+
+        private CachedBodyHttpServletRequest signedRequest(String nonce) throws Exception {
+            byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
+            MockHttpServletRequest raw = new MockHttpServletRequest();
+            raw.setMethod("GET");
+            raw.setRequestURI("/api/rule/sync/all");
+            raw.setQueryString("trace=true");
+            raw.setContent(body);
+            raw.addHeader(GlobalAccessSignature.KEY_ID_HEADER, "all-rules");
+            raw.addHeader(GlobalAccessSignature.TIMESTAMP_HEADER, String.valueOf(NOW));
+            raw.addHeader(GlobalAccessSignature.NONCE_HEADER, nonce);
+            raw.addHeader(GlobalAccessSignature.SIGNATURE_HEADER, GlobalAccessSignature.sign(privateKey,
+                    raw.getMethod(), raw.getRequestURI(), raw.getQueryString(), String.valueOf(NOW), nonce, body));
+            return new CachedBodyHttpServletRequest(raw);
         }
     }
 }

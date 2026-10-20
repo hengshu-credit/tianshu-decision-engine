@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.auth;
 
+import com.hengshucredit.rule.model.security.GlobalAccessSignature;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -20,6 +21,7 @@ public class ProjectAuthProperties {
     private long tokenLockSeconds = 900L;
     private List<String> trustedProxyCidrs = new ArrayList<>();
     private int guardRegistryMaxEntries = 2048;
+    private GlobalAccess globalAccess = new GlobalAccess();
 
     @PostConstruct
     public void validateMasterKeys() {
@@ -36,5 +38,25 @@ public class ProjectAuthProperties {
             throw new IllegalStateException(
                     "Project auth master key must be a private, non-repetitive value of at least 32 characters");
         }
+        if (globalAccess != null && globalAccess.isEnabled()) {
+            if (globalAccess.getKeyId() == null || globalAccess.getKeyId().trim().isEmpty()) {
+                throw new IllegalStateException("Global access key id must be configured");
+            }
+            if (globalAccess.getPublicKey() == null || globalAccess.getPublicKey().trim().isEmpty()) {
+                throw new IllegalStateException("Global access public key must be configured");
+            }
+            if (globalAccess.getTimeWindowSeconds() <= 0 || globalAccess.getTimeWindowSeconds() > 86400) {
+                throw new IllegalStateException("Global access time window must be between 1 and 86400 seconds");
+            }
+            GlobalAccessSignature.decodePublicKey(globalAccess.getPublicKey());
+        }
+    }
+
+    @Data
+    public static class GlobalAccess {
+        private boolean enabled;
+        private String keyId = GlobalAccessSignature.DEFAULT_KEY_ID;
+        private String publicKey;
+        private long timeWindowSeconds = 300L;
     }
 }

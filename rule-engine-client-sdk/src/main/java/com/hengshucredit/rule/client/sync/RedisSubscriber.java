@@ -12,6 +12,7 @@ import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.listener.ChannelTopic;
+import org.springframework.data.redis.listener.PatternTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.data.redis.listener.Topic;
 
@@ -78,11 +79,9 @@ public class RedisSubscriber {
         this.channel = this.projectCode == null ? null : "rule:push:" + this.projectCode;
         this.ruleFetcher = ruleFetcher;
         this.topics = this.channel == null
-                ? Collections.<Topic>singletonList(new ChannelTopic("rule:push:broadcast"))
+                ? Collections.<Topic>singletonList(new PatternTopic("rule:push:*"))
                 : Arrays.<Topic>asList(new ChannelTopic(channel), new ChannelTopic("rule:push:broadcast"));
-        if (this.projectCode == null) {
-            log.warn("projectCode is not configured; project Redis channel subscription is disabled");
-        }
+        if (this.projectCode == null) log.info("projectCode is not configured; subscribing to all rule Redis channels");
     }
 
     /**
@@ -96,11 +95,6 @@ public class RedisSubscriber {
      * 启动Redis订阅（带指数退避重试）
      */
     public void start() {
-        if (projectCode == null) {
-            // 项目级推送必须按真实 projectCode 隔离；没有项目编码时不订阅广播频道。
-            log.warn("Redis subscriber skipped because projectCode is not configured");
-            return;
-        }
         if (connectionFactory == null) {
             log.warn("Redis subscriber skipped because RedisConnectionFactory is not configured");
             return;
@@ -379,6 +373,7 @@ public class RedisSubscriber {
             return true;
         }
         String pushedProjectCode = trimToNull(push.getProjectCode());
+        if (projectCode == null) return true;
         if ("PROJECT".equals(scope)) {
             return projectCode != null && projectCode.equals(pushedProjectCode);
         }

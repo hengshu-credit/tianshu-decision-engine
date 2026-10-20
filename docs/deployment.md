@@ -36,6 +36,10 @@ pm run dev` 的 Vite 开发端口；不会改变生产 `dist` 静态站点端口
 |---|---:|---|
 | `RULE_AUTH_MASTER_KEY` | 无 | 项目长期凭证的活动加密主密钥，至少 32 个字符；缺失或使用公开示例值时服务拒绝启动。所有节点必须一致。 |
 | `RULE_AUTH_ACTIVE_KEY_ID` | `v2` | 当前凭证使用的密钥版本标识；服务只使用该版本对应的主密钥。 |
+| `RULE_GLOBAL_ACCESS_ENABLED` | `true`（示例默认） | 是否启用 Ed25519 全局规则访问；启用后必须同时配置公钥、Key ID 和时间窗。关闭后客户端改用项目级凭据。 |
+| `RULE_GLOBAL_ACCESS_KEY_ID` | `default` | 全局访问公钥的 Key ID，客户端必须使用相同 ID。 |
+| `RULE_GLOBAL_ACCESS_PUBLIC_KEY` | 空 | Ed25519 X.509 公钥的 Base64 值；私钥只放在 HTTP/SDK 客户端。 |
+| `RULE_GLOBAL_ACCESS_TIME_WINDOW_SECONDS` | `300` | 全局签名允许的时间偏差，服务端同时按 nonce 防重放。 |
 | `CONSOLE_USERNAME` | 空 | 管理控制台登录用户名。 |
 | `CONSOLE_PASSWORD` | 空 | 管理控制台密码；默认按 BCrypt 哈希校验。不要把明文密码提交到 `.env`。 |
 | `CONSOLE_PASSWORD_ENCODING` | `BCRYPT` | `CONSOLE_PASSWORD` 的编码方式；本地临时调试可设 `PLAIN`，生产使用 `BCRYPT` 或外部身份系统。 |
@@ -48,6 +52,8 @@ pm run dev` 的 Vite 开发端口；不会改变生产 `dist` 静态站点端口
 |---|---:|---|
 | `SPRING_SQL_INIT_MODE` | `always` | Spring 启动时是否执行 `schema.sql`；默认每次启动幂等执行结构、视图和系统常量补齐，已有数据库可临时设为 
 ever`。 |
+| `RULE_ENGINE_INITIAL_DATA_ENABLED` | `false` | 可选：设为 `true` 后，server 每次启动按编码执行 `sql/initial-data.sql`，补齐内置变量、数据对象及字段，不覆盖已有修改。 |
+| `RULE_ENGINE_INITIAL_DATA_LOCATION` | `classpath:sql/initial-data.sql` | 可选：替换初始配置脚本位置；自定义脚本也必须按编码幂等插入。 |
 | `SPRING_SQL_INIT_CONTINUE_ON_ERROR` | `false` | 初始化 SQL 出错时是否继续；生产保持 `false`，让错误阻止启动。 |
 | `RULE_TRACE_MAX_PERSIST_BYTES` | `0` | 单条持久化追踪 JSON 的大小上限，单位是字节（Bytes）；`0` 表示不限制，设置为正数时只截断持久化副本，不截断本次请求结果。 |
 | `SHUTDOWN_TIMEOUT` | `120s` | 容器停止时，Spring 每个生命周期阶段等待正在处理的请求、队列和资源释放的最长时间；可设 `30s`-`300s`。 |
@@ -672,7 +678,17 @@ rule-engine:
     server-side-execution: true
 ```
 
-`project-code` 是项目级实时推送和项目函数隔离的必填路由键，必须与服务端项目编码完全一致；`app-name` 只标识调用应用，不会替代 `project-code` 订阅项目频道。未配置 `project-code` 时 SDK 仍可通过 HTTP 同步并接收 GLOBAL 广播，但不会订阅任何项目频道，因此不能获得项目规则/函数的实时变更。
+项目鉴权下，`project-code` 是项目级实时推送和项目函数隔离的路由键，必须与服务端项目编码完全一致；`app-name` 只标识调用应用。使用 server 配置的 Ed25519 全局鉴权时，客户端改用 `auth-type: GLOBAL_KEY` 和私钥，不设置 `project-code`，SDK 的 `/sync/all` 和 `/sync/functions/all` 会同步全部已发布规则与启用函数，并订阅所有规则 Redis 频道。项目级客户端仍可按需配置项目 ID、编码和规则白名单。
+
+```yaml
+rule-engine:
+  client:
+    server-url: http://192.168.1.10:8080
+    app-name: global-rule-service
+    auth-type: GLOBAL_KEY
+    global-key-id: default
+    global-private-key: ${RULE_GLOBAL_PRIVATE_KEY}
+```
 
 账号密码方式示例（默认 Token 有效期 2 小时、失效后宽限 10 分钟，均可在项目鉴权配置中调整）：
 
@@ -691,7 +707,7 @@ rule-engine:
 
 API Key 使用 `auth-type: API_KEY` 并配置 `api-key`、`api-key-placement`（`HEADER` 或 `QUERY`）和 `api-key-parameter-name`；HMAC 使用 `auth-type: HMAC_SHA256` 并配置 `access-key` 与 `hmac-secret`。Java Builder 分别提供 `basicAuth(...)`、`apiKeyAuth(...)` 和 `hmacAuth(...)`。
 
-HMAC 请求固定携带 `X-Rule-Access-Key`、`X-Rule-Timestamp`、`X-Rule-Nonce` 和 `X-Rule-Signature`。签名值为以下标准串使用 HMAC-SHA256 计算后的小写十六进制结果；Query 使用原始编码串，请求体使用原始字节。下面每行代表一个字段，字段之间使用 LF（换行符）连接，最后的 `NONCE` 后不再追加换行符：
+HMAC 请求固定携带 `X-Rule-Access-Key`、`X-Rule-Timestamp`、`X-Rule-Nonce` 和 `X-Rule-Signature`。签名值为以下标准串使用 HMAC-SHA256 计算后的小写十六进制结果；Query 使用原始编码串，请求体使用原始字节。下面每行代表一个字段，字段之间使用 LF（换行符）连接，最后的 `NONCE` 后不再追加换行符。全局 Ed25519 请求对应携带 `X-Rule-Global-Key-Id`、`X-Rule-Global-Timestamp`、`X-Rule-Global-Nonce` 和 Base64 编码的 `X-Rule-Global-Signature`，使用同样的标准串由配对私钥签名。
 
 ```text
 HTTP_METHOD

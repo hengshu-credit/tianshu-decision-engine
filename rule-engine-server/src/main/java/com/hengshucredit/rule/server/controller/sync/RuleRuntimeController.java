@@ -61,17 +61,21 @@ public class RuleRuntimeController {
             @RequestBody(required = false) RuleExperimentExecuteRequest request,
             HttpServletRequest httpRequest) {
         ProjectAuthContext auth = ProjectAuthContext.from(httpRequest);
-        if (auth == null || auth.getProjectId() == null) return R.fail(401, "Unauthorized project token");
+        if (auth == null || (!auth.isGlobalAccess() && auth.getProjectId() == null)) {
+            return R.fail(401, "Unauthorized project token");
+        }
         RuleExperimentExecutionStateService.Decision activeDecision = null;
         try {
             var experiment = experimentService.getOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.hengshucredit.rule.model.entity.RuleExperiment>()
                     .eq(com.hengshucredit.rule.model.entity.RuleExperiment::getExperimentCode, experimentCode)
                     .eq(com.hengshucredit.rule.model.entity.RuleExperiment::getStatus, 1));
-            if (experiment == null || !auth.getProjectId().equals(experiment.getProjectId())) {
+            Long executionProjectId = auth.isGlobalAccess() ? experiment == null ? null : experiment.getProjectId()
+                    : auth.getProjectId();
+            if (experiment == null || !executionProjectId.equals(experiment.getProjectId())) {
                 return R.fail(404, "Experiment not found");
             }
-            var decision = experimentStateService.begin(auth.getProjectId(), experiment.getId(), experimentCode,
-                    request, experimentService.executionFingerprint(experimentCode, auth.getProjectId()), null);
+            var decision = experimentStateService.begin(executionProjectId, experiment.getId(), experimentCode,
+                    request, experimentService.executionFingerprint(experimentCode, executionProjectId), null);
             activeDecision = decision.isClaimed() ? decision : null;
             if (decision.getStatus() == RuleExperimentExecutionStateService.Status.COMPLETED) {
                 return R.ok(decision.getResult());
@@ -83,7 +87,7 @@ public class RuleRuntimeController {
                 return R.fail(409, "相同幂等键的请求正在执行");
             }
             RuleExperimentExecuteResult result = experimentService.executeForProject(
-                    experimentCode, auth.getProjectId(), request, decision.getTraceId());
+                    experimentCode, executionProjectId, request, decision.getTraceId());
             experimentStateService.complete(decision, result);
             activeDecision = null;
             return R.ok(result);
@@ -100,12 +104,19 @@ public class RuleRuntimeController {
     public R<RuleExecutionStatus> getExecutionStatus(@PathVariable String traceId,
                                                        HttpServletRequest httpRequest) {
         ProjectAuthContext auth = ProjectAuthContext.from(httpRequest);
-        if (auth == null || auth.getProjectId() == null) return R.fail(401, "Unauthorized project token");
+        if (auth == null || (!auth.isGlobalAccess() && auth.getProjectId() == null)) {
+            return R.fail(401, "Unauthorized project token");
+        }
         RuleExecutionStateService.State state = stateService.findByRootTraceId(traceId);
-        boolean projectAllowed = state != null && state.projectId() != null && state.projectId() > 0
-                ? state.projectId().equals(auth.getProjectId())
-                : state != null && definitionService.isDefinitionAvailableInProject(
-                        state.definitionId(), auth.getProjectId());
+        boolean projectAllowed;
+        if (auth.isGlobalAccess()) {
+            projectAllowed = state != null;
+        } else if (state != null && state.projectId() != null && state.projectId() > 0) {
+            projectAllowed = state.projectId().equals(auth.getProjectId());
+        } else {
+            projectAllowed = state != null && definitionService.isDefinitionAvailableInProject(
+                    state.definitionId(), auth.getProjectId());
+        }
         if (state == null || !projectAllowed) {
             return R.fail(404, "Execution status not found");
         }
@@ -169,9 +180,13 @@ public class RuleRuntimeController {
     public R<?> getExecutionResult(@PathVariable String traceId,
                                    HttpServletRequest httpRequest) {
         ProjectAuthContext auth = ProjectAuthContext.from(httpRequest);
-        if (auth == null || auth.getProjectId() == null) return R.fail(401, "Unauthorized project token");
+        if (auth == null || (!auth.isGlobalAccess() && auth.getProjectId() == null)) {
+            return R.fail(401, "Unauthorized project token");
+        }
         RuleExecutionStateService.State state = stateService.findByRootTraceId(traceId);
-        if (!sameProject(state, auth.getProjectId())) return R.fail(404, "Execution result not found");
+        if (!auth.isGlobalAccess() && !sameProject(state, auth.getProjectId())) {
+            return R.fail(404, "Execution result not found");
+        }
         if (state.resultJson() == null || state.resultJson().isBlank() || !isTerminalSuccess(state)) {
             return R.fail(202, "Execution result is not ready");
         }
@@ -184,9 +199,13 @@ public class RuleRuntimeController {
                                 @RequestBody(required = false) Map<String, Object> params,
                                 HttpServletRequest httpRequest) {
         ProjectAuthContext auth = ProjectAuthContext.from(httpRequest);
-        if (auth == null || auth.getProjectId() == null) return R.fail(401, "Unauthorized project token");
+        if (auth == null || (!auth.isGlobalAccess() && auth.getProjectId() == null)) {
+            return R.fail(401, "Unauthorized project token");
+        }
         RuleExecutionStateService.State state = stateService.findByRootTraceId(traceId);
-        if (!sameProject(state, auth.getProjectId())) return R.fail(404, "Execution state not found");
+        if (!auth.isGlobalAccess() && !sameProject(state, auth.getProjectId())) {
+            return R.fail(404, "Execution state not found");
+        }
         if (state.resultJson() != null && !state.resultJson().isBlank() && isTerminalSuccess(state)) {
             return R.ok(JSON.parseObject(state.resultJson()));
         }
@@ -213,7 +232,7 @@ public class RuleRuntimeController {
             RuleResult result = idempotencyService.withDecision(decision,
                     () -> executeService.executePublished(published,
                             resumeParams,
-                            auth.getProjectId(), "RUNTIME_RESUME", auth, true, true));
+                            state.projectId(), "RUNTIME_RESUME", auth, true, true));
             idempotencyService.complete(decision, result, null);
             return R.ok(result);
         } catch (RuntimeException error) {
@@ -238,8 +257,11 @@ public class RuleRuntimeController {
     public R<Map<String, Object>> getExternalCallPayload(@PathVariable String callId,
                                                            HttpServletRequest httpRequest) {
         ProjectAuthContext auth = ProjectAuthContext.from(httpRequest);
-        if (auth == null || auth.getProjectId() == null) return R.fail(401, "Unauthorized project token");
-        Map<String, Object> payload = runtimeCallLogService.payloadByCallId(callId, auth.getProjectId());
+        if (auth == null || (!auth.isGlobalAccess() && auth.getProjectId() == null)) {
+            return R.fail(401, "Unauthorized project token");
+        }
+        Map<String, Object> payload = runtimeCallLogService.payloadByCallId(callId,
+                auth.isGlobalAccess() ? null : auth.getProjectId());
         if (payload == null || payload.isEmpty()) return R.fail(404, "External call not found");
         return R.ok(payload);
     }

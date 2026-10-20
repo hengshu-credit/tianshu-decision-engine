@@ -20,6 +20,8 @@ public class CachedRule {
     private java.util.Map<String, Long> importBindings;
     /** 规则所属项目编码 */
     private String projectCode;
+    /** 规则所属项目 ID，用于全局客户端生成项目级 trace。 */
+    private Long projectId;
     /** 服务端标记该规则需要变量来源解析/恢复状态时，本地纯计算模式不得静默执行。 */
     private boolean requiresServerExecution;
     private String serverExecutionReason;

@@ -76,15 +76,24 @@ public class RuntimeConfiguration {
                 yield ClientAuthConfig.apiKey(name, required(env, "RULE_API_KEY"), placement);
             }
             case ClientAuthConfig.HMAC_SHA256 -> ClientAuthConfig.hmac(required(env, "RULE_ACCESS_KEY"), required(env, "RULE_HMAC_SECRET"));
+            case ClientAuthConfig.GLOBAL_KEY -> ClientAuthConfig.globalKey(
+                    env.getProperty("RULE_GLOBAL_KEY_ID", "default"),
+                    required(env, "RULE_GLOBAL_PRIVATE_KEY"));
             default -> throw new IllegalArgumentException("不支持的 RULE_AUTH_TYPE: " + type);
         };
-        if (!ClientAuthConfig.LEGACY_TOKEN.equals(type)) {
+        if (!ClientAuthConfig.LEGACY_TOKEN.equals(type)
+                && !ClientAuthConfig.GLOBAL_KEY.equals(type)) {
             auth.setTokenExchangeEnabled(env.getProperty("RULE_TOKEN_EXCHANGE_ENABLED", Boolean.class, true));
         }
         return auth;
     }
 
     static java.util.List<String> allowedCodes(Environment env) {
+        String authType = env.getProperty("RULE_AUTH_TYPE", ClientAuthConfig.LEGACY_TOKEN);
+        if (ClientAuthConfig.GLOBAL_KEY.equalsIgnoreCase(authType)
+                && !org.springframework.util.StringUtils.hasText(env.getProperty("RULE_ALLOWED_CODES"))) {
+            return java.util.List.of();
+        }
         var codes = Arrays.stream(required(env, "RULE_ALLOWED_CODES").split(","))
                 .map(String::trim).filter(value -> !value.isEmpty()).distinct().toList();
         if (codes.isEmpty()) throw new IllegalArgumentException("RULE_ALLOWED_CODES 不能为空");

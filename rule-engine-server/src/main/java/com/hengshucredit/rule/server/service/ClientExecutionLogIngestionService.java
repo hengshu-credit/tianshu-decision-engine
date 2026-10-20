@@ -35,7 +35,7 @@ public class ClientExecutionLogIngestionService {
     @Transactional
     public int ingestHttp(List<RuleExecutionLog> logs, ProjectAuthContext authContext) {
         if (logs == null || logs.isEmpty()) return 0;
-        if (authContext == null || authContext.getProjectId() == null) {
+        if (authContext == null || (!authContext.isGlobalAccess() && authContext.getProjectId() == null)) {
             throw invalid(401, "Unauthorized project token");
         }
         return ingest(logs, authContext, false);
@@ -62,15 +62,16 @@ public class ClientExecutionLogIngestionService {
         Map<String, Map<String, RuleTraceRegistry>> trees = new LinkedHashMap<>();
         for (RuleExecutionLog log : logs) {
             if (log == null) continue;
-            RuleDefinition rule = resolveRule(log.getRuleCode(), null, auth.getProjectId());
-            if (!kafka && hasText(log.getProjectCode())
+            RuleDefinition rule = resolveRule(log.getRuleCode(), null, auth.getProjectId(), auth.isGlobalAccess());
+            Long traceProjectId = auth.isGlobalAccess() ? rule.getProjectId() : auth.getProjectId();
+            if (!kafka && !auth.isGlobalAccess() && hasText(log.getProjectCode())
                     && !Objects.equals(log.getProjectCode(), auth.getProjectCode())) {
                 throw invalid(403, "Project token does not match log project");
             }
-            sanitize(log, auth);
+            sanitize(log, auth, rule);
             Map<String, RuleTraceRegistry> tree = new LinkedHashMap<>();
             try {
-                collectTraces(log, rule, auth.getProjectId(), tree);
+                collectTraces(log, rule, traceProjectId, auth.isGlobalAccess(), tree);
             } catch (ClientLogValidationException e) {
                 throw e;
             } catch (com.alibaba.fastjson.JSONException | IllegalArgumentException | ClassCastException e) {
@@ -112,10 +113,10 @@ public class ClientExecutionLogIngestionService {
         return fresh.size();
     }
 
-    private void sanitize(RuleExecutionLog log, ProjectAuthContext auth) {
+    private void sanitize(RuleExecutionLog log, ProjectAuthContext auth, RuleDefinition rule) {
         log.setId(null);
         log.setCreateTime(null);
-        log.setProjectCode(auth.getProjectCode());
+        log.setProjectCode(auth.isGlobalAccess() && rule != null ? rule.getProjectCode() : auth.getProjectCode());
         log.setSource("CLIENT");
         log.setRootRuleId(null);
         log.setExecutionProjectId(null);
@@ -128,21 +129,24 @@ public class ClientExecutionLogIngestionService {
         log.setTokenCode(auth.getTokenCode());
         log.setAuthPhase(auth.getAuthPhase());
         // 保留 SDK 实际执行的版本快照，仅缺失时沿用已有补全策略。
-        logService.applyPublishedAttribution(log, auth.getProjectCode());
+        logService.applyPublishedAttribution(log, log.getProjectCode());
     }
 
-    private RuleDefinition resolveRule(String ruleCode, Long ruleId, Long projectId) {
-        if (!hasText(ruleCode) || !billingService.isRuleAccessible(projectId, ruleCode)) {
+    private RuleDefinition resolveRule(String ruleCode, Long ruleId, Long projectId, boolean globalAccess) {
+        if (!hasText(ruleCode) || (!globalAccess && !billingService.isRuleAccessible(projectId, ruleCode))
+                || (globalAccess && !billingService.isRuleAccessibleGlobally(ruleCode))) {
             throw invalid(403, "Rule is not available to authenticated project");
         }
-        RuleDefinition rule = billingService.findDefinitionByRuleCode(ruleCode, projectId);
+        RuleDefinition rule = globalAccess
+                ? billingService.findDefinitionByRuleCodeGlobally(ruleCode)
+                : billingService.findDefinitionByRuleCode(ruleCode, projectId);
         if (rule == null || (ruleId != null && !ruleId.equals(rule.getId()))) {
             throw invalid(403, "Client trace rule identity does not match the available rule");
         }
         return rule;
     }
 
-    private void collectTraces(RuleExecutionLog log, RuleDefinition rule, Long projectId,
+    private void collectTraces(RuleExecutionLog log, RuleDefinition rule, Long projectId, boolean globalAccess,
                                Map<String, RuleTraceRegistry> traces) {
         if (!hasText(log.getTraceId())) return; // 兼容旧 HTTP；Kafka 必须提供幂等身份。
         validateRuleTrace(log.getTraceId(), projectId, rule);
@@ -159,14 +163,15 @@ public class ClientExecutionLogIngestionService {
                 || !log.getRuleCode().equals(root.getString("ruleCode"))) {
             throw invalid(400, "执行日志与入口追踪树身份不一致");
         }
-        collectRuleTrace(root, projectId, null, traces, 0);
+        collectRuleTrace(root, projectId, globalAccess, null, traces, 0);
     }
 
-    private void collectRuleTrace(JSONObject trace, Long projectId, String parentId,
+    private void collectRuleTrace(JSONObject trace, Long projectId, boolean globalAccess, String parentId,
                                   Map<String, RuleTraceRegistry> traces, int depth) {
         if (trace == null || depth > 128) throw invalid(400, "客户端追踪树结构无效或层级过深");
         String traceId = trace.getString("traceId");
-        RuleDefinition rule = resolveRule(trace.getString("ruleCode"), trace.getLong("ruleId"), projectId);
+        RuleDefinition rule = resolveRule(trace.getString("ruleCode"), trace.getLong("ruleId"), projectId,
+                globalAccess);
         validateRuleTrace(traceId, projectId, rule);
         collectTrace(traceId, projectId, "RULE", rule.getId(), rule.getRuleCode(), parentId, traces);
         JSONArray events = trace.getJSONArray("events");
@@ -187,7 +192,7 @@ public class ClientExecutionLogIngestionService {
         JSONArray children = trace.getJSONArray("children");
         if (children != null) {
             for (int i = 0; i < children.size(); i++) {
-                collectRuleTrace(children.getJSONObject(i), projectId, traceId, traces, depth + 1);
+                collectRuleTrace(children.getJSONObject(i), projectId, globalAccess, traceId, traces, depth + 1);
             }
         }
     }

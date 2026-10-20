@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.runtime;
 
 import com.hengshucredit.rule.client.http.RuleHttpClient;
+import com.hengshucredit.rule.model.security.GlobalAccessSignature;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.Test;
 import org.springframework.mock.env.MockEnvironment;
@@ -34,6 +35,31 @@ public class RuntimeAuthenticationTest {
                 assertTrue(client.execute("R", Map.of()).isSuccess());
                 assertEquals("Basic " + Base64.getEncoder().encodeToString("Caller:secret".getBytes(StandardCharsets.UTF_8)),
                         authorization.get());
+            }
+        } finally { server.stop(0); }
+    }
+
+    @Test
+    public void globalKeyAuthSignsRuntimeRequests() throws Exception {
+        GlobalAccessSignature.AccessKeyPair pair = GlobalAccessSignature.generateKeyPair();
+        AtomicReference<String> signature = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/rule/sync/execute/R", exchange -> {
+            signature.set(exchange.getRequestHeaders().getFirst(GlobalAccessSignature.SIGNATURE_HEADER));
+            byte[] json = "{\"code\":200,\"data\":{\"success\":true,\"result\":12}}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, json.length);
+            exchange.getResponseBody().write(json);
+            exchange.close();
+        });
+        server.start();
+        try {
+            MockEnvironment env = new MockEnvironment()
+                    .withProperty("RULE_SERVER_URL", "http://127.0.0.1:" + server.getAddress().getPort())
+                    .withProperty("RULE_AUTH_TYPE", "GLOBAL_KEY")
+                    .withProperty("RULE_GLOBAL_PRIVATE_KEY", pair.privateKey());
+            try (RuleHttpClient client = new RuntimeConfiguration().httpClient(env)) {
+                assertTrue(client.execute("R", Map.of()).isSuccess());
+                assertNotNull(signature.get());
             }
         } finally { server.stop(0); }
     }

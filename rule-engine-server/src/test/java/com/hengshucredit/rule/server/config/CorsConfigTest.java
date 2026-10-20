@@ -3,7 +3,6 @@ package com.hengshucredit.rule.server.config;
 import org.junit.Test;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockServletContext;
 import org.springframework.test.web.servlet.MockMvc;
@@ -54,8 +53,12 @@ public class CorsConfigTest {
 
     @Configuration
     @EnableWebMvc
-    @Import(CorsConfig.class)
     static class TestWebConfig {
+        @Bean
+        CorsConfig corsConfig() {
+            return new CorsConfig(new String[] {"http://localhost:9090", "http://127.0.0.1:9090"});
+        }
+
         @Bean
         PingController pingController() {
             return new PingController();

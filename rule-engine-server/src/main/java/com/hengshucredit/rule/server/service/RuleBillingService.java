@@ -352,7 +352,7 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         if (log == null || !hasText(log.getRuleCode())) {
             return;
         }
-        RuleDefinition definition = authContext == null
+        RuleDefinition definition = authContext == null || authContext.isGlobalAccess()
                 ? findDefinitionByRuleCode(log.getRuleCode())
                 : findDefinitionByRuleCode(log.getRuleCode(), authContext.getProjectId());
         if (definition == null) {
@@ -372,6 +372,15 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
             return false;
         }
         return definitionMapper.selectCount(projectRuleWrapper(ruleCode, projectId)) > 0;
+    }
+
+    public boolean isRuleAccessibleGlobally(String ruleCode) {
+        return hasText(ruleCode) && definitionMapper.selectCount(new LambdaQueryWrapper<RuleDefinition>()
+                .eq(RuleDefinition::getRuleCode, ruleCode)) > 0;
+    }
+
+    public RuleDefinition findDefinitionByRuleCodeGlobally(String ruleCode) {
+        return hasText(ruleCode) ? findDefinitionByRuleCode(ruleCode) : null;
     }
 
     public boolean recordApiExecution(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,

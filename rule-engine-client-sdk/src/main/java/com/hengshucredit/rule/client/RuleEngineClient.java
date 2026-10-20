@@ -279,6 +279,7 @@ public class RuleEngineClient {
             entry.setTraceId(result.getTraceId());
             entry.setRuleCode(ruleCode);
             entry.setProjectCode(config.getProjectCode());
+            entry.setExecutionProjectId(cached.getProjectId());
             entry.setRuleVersion(cached.getVersion());
             entry.setRevisionId(cached.getRevisionId());
             entry.setArtifactDigest(cached.getArtifactDigest());
@@ -385,6 +386,11 @@ public class RuleEngineClient {
         return l1Cache.get(ruleCode);
     }
 
+    /** 返回当前本地规则缓存数量，供全局同步运行时健康检查使用。 */
+    public int cachedRuleCount() {
+        return l1Cache.size();
+    }
+
     /**
      * 获取内部 QLExpress 引擎实例，用于注册自定义函数等扩展操作
      */
@@ -400,6 +406,20 @@ public class RuleEngineClient {
     }
 
     private void syncFunctions() {
+        if (config.getProjectId() <= 0 && (config.getProjectCode() == null || config.getProjectCode().isBlank())) {
+            try {
+                List<JSONObject> functions = httpSyncClient.fetchFunctionsAll();
+                if (functions != null) {
+                    functionRegistrar.replaceRemoteSnapshot(functions);
+                    log.info("Global function sync completed, {} functions registered", functions.size());
+                }
+            } catch (ProjectClientAuthenticationException e) {
+                throw e;
+            } catch (Exception e) {
+                log.warn("Global function sync failed: {}", e.getMessage());
+            }
+            return;
+        }
         if (config.getProjectId() <= 0) return;
         try {
             List<JSONObject> functions = httpSyncClient.fetchFunctions(config.getProjectId());
@@ -491,6 +511,12 @@ public class RuleEngineClient {
         }
         public Builder hmacAuth(String accessKey, String hmacSecret) {
             return authConfig(ClientAuthConfig.hmac(accessKey, hmacSecret));
+        }
+        public Builder globalKeyAuth(String keyId, String privateKey) {
+            return authConfig(ClientAuthConfig.globalKey(keyId, privateKey));
+        }
+        public Builder globalKeyAuth(String privateKey) {
+            return authConfig(ClientAuthConfig.globalKey(privateKey));
         }
         public Builder l1CacheMaxSize(int size) { config.setL1CacheMaxSize(size); return this; }
         public Builder httpTimeoutMs(int ms) { config.setHttpTimeoutMs(ms); return this; }

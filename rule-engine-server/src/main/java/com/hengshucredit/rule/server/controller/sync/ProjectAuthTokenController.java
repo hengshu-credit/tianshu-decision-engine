@@ -21,7 +21,7 @@ public class ProjectAuthTokenController {
     @PostMapping("/token")
     public R<ProjectTokenResponse> issueToken(HttpServletRequest request) {
         ProjectAuthContext context = ProjectAuthContext.from(request);
-        if (context == null || context.isTemporaryToken()) {
+        if (context == null || context.isTemporaryToken() || context.isGlobalAccess()) {
             return R.fail(401, "Base project credential is required");
         }
         try {

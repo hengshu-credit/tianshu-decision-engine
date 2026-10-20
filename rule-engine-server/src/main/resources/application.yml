@@ -64,6 +64,12 @@ spring:
       namespace: ${SESSION_REDIS_NAMESPACE:tianshu:session}
 
 rule-engine:
+  # 可选的变量与数据对象初始配置。启用后每次 server 启动执行幂等脚本，
+  # 脚本只补齐缺失编码，已有配置（包括人工修改）不会被覆盖。
+  initial-data:
+    enabled: ${RULE_ENGINE_INITIAL_DATA_ENABLED:false}
+    locations:
+      - ${RULE_ENGINE_INITIAL_DATA_LOCATION:classpath:sql/initial-data.sql}
   log-retention:
     # 默认永久保留业务审计日志；生产按部署策略显式开启并设置各类天数。
     enabled: ${RULE_LOG_RETENTION_ENABLED:false}
@@ -114,6 +120,12 @@ rule-engine:
     active-key-id: ${RULE_AUTH_ACTIVE_KEY_ID:v2}
     master-keys:
       v2: ${RULE_AUTH_MASTER_KEY:}
+    global-access:
+      # 启用后，客户端使用对应 Ed25519 私钥签名即可访问全部已发布规则。
+      enabled: ${RULE_GLOBAL_ACCESS_ENABLED:false}
+      key-id: ${RULE_GLOBAL_ACCESS_KEY_ID:default}
+      public-key: ${RULE_GLOBAL_ACCESS_PUBLIC_KEY:}
+      time-window-seconds: ${RULE_GLOBAL_ACCESS_TIME_WINDOW_SECONDS:300}
     hmac-time-window-seconds: 300
     token-failure-limit: 10
     token-failure-window-seconds: 300

@@ -6,9 +6,9 @@
 
 ## 1. 确定规则范围与执行位置
 
-- 项目规则：使用所属项目的凭据。
-- 全局规则：先在调用项目中关联全局规则，再使用该项目凭据调用。全局不代表匿名可用，也不代表任何项目均可执行。
-- 多项目：每个项目使用独立凭据与 SDK 实例；`project-id`、`project-code` 必须与凭据所属项目一致。不能通过业务请求中的项目字段扩大权限。
+- 默认客户端使用服务端 Ed25519 全局鉴权，可同步和执行全部已发布项目规则；全局私钥不提交到仓库，也不放入浏览器。
+- 项目级客户端可选配置所属项目的凭据、`project-id`、`project-code` 和规则白名单，只加载该项目规则。
+- 多项目客户端可以按项目分别创建实例；不能通过业务请求中的项目字段扩大项目级权限。
 - 只有已发布规则可以通过开放接口访问；草稿、审核中及下线规则不可调用。
 
 `server-side-execution: true` 表示 SDK 通过 HTTP 请求引擎服务端执行。涉及 API、数据库、名单、模型、派生变量或服务端函数等运行依赖时，应使用此模式。
@@ -56,9 +56,48 @@ spring:
       database: ${REDIS_DATABASE:0}
 ```
 
-项目凭据在“项目管理 → 调用鉴权”中取得；实际入口以控制台为准。凭据仅放在 Java 服务的 Secret/环境变量中，不交给浏览器或移动端。Redis 地址、密码和 database 必须与引擎服务端一致。`project-code` 是实时推送路由键；`app-name` 只标识业务应用，不授予权限。HTTP 超时应覆盖规则、外数调用及轮询总耗时。
+项目凭据在“项目管理 → 调用鉴权”中取得；实际入口以控制台为准。凭据仅放在 Java 服务的 Secret/环境变量中，不交给浏览器或移动端。Redis 地址、密码和 database 必须与引擎服务端一致。全局模式不填写 `project-code`，客户端会全量同步并订阅所有规则推送；项目模式必须填写真实 `project-code`，它是实时推送路由键。`app-name` 只标识业务应用，不授予权限。HTTP 超时应覆盖规则、外数调用及轮询总耗时。
 
 账号密码、API Key、HMAC-SHA256 的配置见 [部署与接入](deployment.html#sdk)，也可直接复制该项目导出 API 文档中的鉴权配置。
+
+### 全局规则访问（Ed25519）
+
+先在任意 JDK 17 程序中生成一对密钥，并把 `publicKey` 放入服务端配置；私钥只注入客户端：
+
+```java
+var pair = com.hengshucredit.rule.model.security.GlobalAccessSignature.generateKeyPair();
+System.out.println("privateKey=" + pair.privateKey());
+System.out.println("publicKey=" + pair.publicKey());
+```
+
+服务端：
+
+```dotenv
+RULE_GLOBAL_ACCESS_ENABLED=true
+RULE_GLOBAL_ACCESS_KEY_ID=default
+RULE_GLOBAL_ACCESS_PUBLIC_KEY=<publicKey>
+```
+
+HTTP SDK：
+
+```java
+RuleHttpClient client = RuleHttpClient.builder()
+        .serverUrl(serverUrl)
+        .globalKeyAuth("default", privateKey)
+        .build();
+```
+
+完整 SDK：
+
+```java
+RuleEngineClient client = RuleEngineClient.builder()
+        .serverUrl(serverUrl)
+        .globalKeyAuth("default", privateKey)
+        .connectionFactory(redis)
+        .build();
+```
+
+全局模式下不设置 `project-code`；SDK 的 `/sync/all` 和 `/sync/functions/all` 会同步全部已发布规则与启用函数，并订阅所有规则推送。服务端仍按每条规则所属项目执行外数、数据库、名单、模型和计费逻辑。签名包含 HTTP 方法、原始路径、原始查询串、请求体摘要、时间戳和随机 nonce，服务端会校验时间窗并拒绝 nonce 重放。
 
 ## 4. 暴露业务接口并处理结果
 

@@ -117,6 +117,15 @@ public class RuleFunctionService {
         return functionMapper.selectList(wrapper);
     }
 
+    /** 全局鉴权客户端同步用：返回所有项目的启用函数。 */
+    public List<RuleFunction> listAllEnabled() {
+        return functionMapper.selectList(new LambdaQueryWrapper<RuleFunction>()
+                .eq(RuleFunction::getStatus, 1)
+                .orderByAsc(RuleFunction::getScope)
+                .orderByAsc(RuleFunction::getProjectId)
+                .orderByAsc(RuleFunction::getFuncCode));
+    }
+
     public Map<Long, String> buildFunctionCodeMap(Long projectId) {
         return listByProject(projectId).stream()
                 .filter(function -> function.getId() != null && function.getFuncCode() != null

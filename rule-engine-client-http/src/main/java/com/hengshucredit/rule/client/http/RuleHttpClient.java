@@ -255,6 +255,9 @@ public final class RuleHttpClient implements AutoCloseable {
             }
         } else if (ClientAuthConfig.HMAC_SHA256.equalsIgnoreCase(type)) {
             required(auth.getAccessKey(), "accessKey"); required(auth.getHmacSecret(), "hmacSecret");
+        } else if (ClientAuthConfig.GLOBAL_KEY.equalsIgnoreCase(type)) {
+            required(auth.getGlobalKeyId(), "globalKeyId");
+            required(auth.getGlobalPrivateKey(), "globalPrivateKey");
         } else throw new IllegalArgumentException("不支持的 authType");
     }
 
@@ -280,6 +283,12 @@ public final class RuleHttpClient implements AutoCloseable {
         public Builder appName(String value) { appName = value; return this; }
         public Builder authConfig(ClientAuthConfig value) { auth = value; return this; }
         public Builder token(String value) { return authConfig(ClientAuthConfig.legacyToken(value)); }
+        public Builder globalKeyAuth(String keyId, String privateKey) {
+            return authConfig(ClientAuthConfig.globalKey(keyId, privateKey));
+        }
+        public Builder globalKeyAuth(String privateKey) {
+            return authConfig(ClientAuthConfig.globalKey(privateKey));
+        }
         public Builder timeoutMs(int value) { timeoutMs = value; return this; }
         public Builder traceEnabled(boolean value) { traceEnabled = value; return this; }
         public RuleHttpClient build() { return new RuleHttpClient(this); }

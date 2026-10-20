@@ -13,6 +13,7 @@ import com.hengshucredit.rule.model.entity.RuleAuthAccessLog;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RuleProjectAuth;
 import com.hengshucredit.rule.model.entity.RuleProjectAuthToken;
+import com.hengshucredit.rule.model.security.GlobalAccessSignature;
 import com.hengshucredit.rule.server.auth.CachedBodyHttpServletRequest;
 import com.hengshucredit.rule.server.auth.CredentialCipher;
 import com.hengshucredit.rule.server.auth.HmacRequestSigner;
@@ -98,6 +99,10 @@ public class ProjectAuthService {
 
     public ProjectAuthContext authenticate(HttpServletRequest request) {
         if (request == null) return null;
+
+        if (hasGlobalSignature(request)) {
+            return authenticateGlobalSignature(request);
+        }
 
         String authorization = request.getHeader("Authorization");
         if (startsWithIgnoreCase(authorization, "Bearer ")) {
@@ -560,6 +565,53 @@ public class ProjectAuthService {
 
     protected boolean claimHmacNonce(Long authId, String nonce) {
         return replayGuard.claim(authId, nonce, hmacTimeWindowSeconds() * 2L + 1L);
+    }
+
+    protected boolean claimGlobalNonce(String keyId, String nonce) {
+        return replayGuard != null && replayGuard.claimGlobal(keyId, nonce,
+                globalAccessTimeWindowSeconds() * 2L + 1L);
+    }
+
+    protected long globalAccessTimeWindowSeconds() {
+        ProjectAuthProperties.GlobalAccess global = properties.getGlobalAccess();
+        return global == null ? 300L : global.getTimeWindowSeconds();
+    }
+
+    private ProjectAuthContext authenticateGlobalSignature(HttpServletRequest request) {
+        ProjectAuthProperties.GlobalAccess global = properties.getGlobalAccess();
+        if (global == null || !global.isEnabled() || isTokenEndpoint(request)) return null;
+        String keyId = request.getHeader(GlobalAccessSignature.KEY_ID_HEADER);
+        String timestampText = request.getHeader(GlobalAccessSignature.TIMESTAMP_HEADER);
+        String nonce = request.getHeader(GlobalAccessSignature.NONCE_HEADER);
+        String signature = request.getHeader(GlobalAccessSignature.SIGNATURE_HEADER);
+        if (!StringUtils.hasText(keyId) || !keyId.equals(global.getKeyId())
+                || !StringUtils.hasText(timestampText) || !StringUtils.hasText(nonce)
+                || !StringUtils.hasText(signature) || keyId.length() > 128
+                || nonce.length() > 128 || signature.length() > 512) {
+            return null;
+        }
+        long timestamp;
+        try {
+            timestamp = Long.parseLong(timestampText);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        long now = currentEpochSeconds();
+        long window = globalAccessTimeWindowSeconds();
+        if (timestamp < now - window || timestamp > now + window) return null;
+        if (!GlobalAccessSignature.verify(global.getPublicKey(), request.getMethod(), request.getRequestURI(),
+                request.getQueryString(), timestampText, nonce, requestBody(request), signature)) {
+            return null;
+        }
+        if (!claimGlobalNonce(keyId, nonce)) return null;
+        return ProjectAuthContext.global(keyId, new ProjectAccessPolicy());
+    }
+
+    private boolean hasGlobalSignature(HttpServletRequest request) {
+        return request.getHeader(GlobalAccessSignature.KEY_ID_HEADER) != null
+                || request.getHeader(GlobalAccessSignature.TIMESTAMP_HEADER) != null
+                || request.getHeader(GlobalAccessSignature.NONCE_HEADER) != null
+                || request.getHeader(GlobalAccessSignature.SIGNATURE_HEADER) != null;
     }
 
     private ProjectAuthContext authenticateBasic(String encodedCredentials) {

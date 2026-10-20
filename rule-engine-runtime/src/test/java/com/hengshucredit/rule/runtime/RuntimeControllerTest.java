@@ -65,6 +65,27 @@ public class RuntimeControllerTest {
     }
 
     @Test
+    public void globalAccessDoesNotRequireRuleWhitelist() throws Exception {
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("RULE_AUTH_TYPE", "GLOBAL_KEY")
+                .withProperty("RUNTIME_ACCESS_TOKEN", TOKEN);
+        RuleResult result = new RuleResult();
+        result.setSuccess(true);
+        result.setResult("all-projects");
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(
+                        new RuntimeController((code, params) -> result, env))
+                .build();
+
+        var response = mvc.perform(post("/api/rule/execute/any-project-rule")
+                        .header("Authorization", "Bearer " + TOKEN)
+                        .contentType("application/json")
+                        .content("{\"params\":{}}"))
+                .andReturn().getResponse();
+
+        assertEquals(200, response.getStatus());
+    }
+
+    @Test
     public void sdkFetchesScriptOnceAndExecutesLocallyWithoutRemoteExecution() throws Exception {
         AtomicInteger fetches = new AtomicInteger();
         AtomicInteger remoteExecutions = new AtomicInteger();

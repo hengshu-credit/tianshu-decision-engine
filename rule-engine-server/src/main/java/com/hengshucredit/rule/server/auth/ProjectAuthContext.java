@@ -15,10 +15,12 @@ public class ProjectAuthContext {
     private final String authPhase;
     private final ProjectAccessPolicy accessPolicy;
     private final boolean asyncAccessLogEnabled;
+    private final boolean globalAccess;
 
     private ProjectAuthContext(Long projectId, String projectCode, Long authId, String authCode,
                                String authType, Long tokenId, String tokenCode, String authPhase,
-                               ProjectAccessPolicy accessPolicy, boolean asyncAccessLogEnabled) {
+                               ProjectAccessPolicy accessPolicy, boolean asyncAccessLogEnabled,
+                               boolean globalAccess) {
         this.projectId = projectId;
         this.projectCode = projectCode;
         this.authId = authId;
@@ -29,19 +31,20 @@ public class ProjectAuthContext {
         this.authPhase = authPhase;
         this.accessPolicy = accessPolicy == null ? new ProjectAccessPolicy() : accessPolicy;
         this.asyncAccessLogEnabled = asyncAccessLogEnabled;
+        this.globalAccess = globalAccess;
     }
 
     public static ProjectAuthContext direct(Long projectId, String projectCode, Long authId,
                                             String authCode, String authType) {
         return new ProjectAuthContext(projectId, projectCode, authId, authCode, authType,
-                null, null, "DIRECT", new ProjectAccessPolicy(), true);
+                null, null, "DIRECT", new ProjectAccessPolicy(), true, false);
     }
 
     public static ProjectAuthContext direct(Long projectId, String projectCode, Long authId,
                                             String authCode, String authType,
                                             ProjectAccessPolicy accessPolicy) {
         return new ProjectAuthContext(projectId, projectCode, authId, authCode, authType,
-                null, null, "DIRECT", accessPolicy, true);
+                null, null, "DIRECT", accessPolicy, true, false);
     }
 
     public static ProjectAuthContext direct(Long projectId, String projectCode, Long authId,
@@ -49,14 +52,14 @@ public class ProjectAuthContext {
                                             ProjectAccessPolicy accessPolicy,
                                             boolean asyncAccessLogEnabled) {
         return new ProjectAuthContext(projectId, projectCode, authId, authCode, authType,
-                null, null, "DIRECT", accessPolicy, asyncAccessLogEnabled);
+                null, null, "DIRECT", accessPolicy, asyncAccessLogEnabled, false);
     }
 
     public static ProjectAuthContext temporary(Long projectId, String projectCode, Long authId,
                                                String authCode, String authType, Long tokenId,
                                                String tokenCode, String authPhase) {
         return new ProjectAuthContext(projectId, projectCode, authId, authCode, authType,
-                tokenId, tokenCode, authPhase, new ProjectAccessPolicy(), true);
+                tokenId, tokenCode, authPhase, new ProjectAccessPolicy(), true, false);
     }
 
     public static ProjectAuthContext temporary(Long projectId, String projectCode, Long authId,
@@ -64,7 +67,7 @@ public class ProjectAuthContext {
                                                String tokenCode, String authPhase,
                                                ProjectAccessPolicy accessPolicy) {
         return new ProjectAuthContext(projectId, projectCode, authId, authCode, authType,
-                tokenId, tokenCode, authPhase, accessPolicy, true);
+                tokenId, tokenCode, authPhase, accessPolicy, true, false);
     }
 
     public static ProjectAuthContext temporary(Long projectId, String projectCode, Long authId,
@@ -73,13 +76,19 @@ public class ProjectAuthContext {
                                                ProjectAccessPolicy accessPolicy,
                                                boolean asyncAccessLogEnabled) {
         return new ProjectAuthContext(projectId, projectCode, authId, authCode, authType,
-                tokenId, tokenCode, authPhase, accessPolicy, asyncAccessLogEnabled);
+                tokenId, tokenCode, authPhase, accessPolicy, asyncAccessLogEnabled, false);
+    }
+
+    public static ProjectAuthContext global(String keyId, ProjectAccessPolicy accessPolicy) {
+        return new ProjectAuthContext(null, null, -1L, keyId, ProjectAuthType.GLOBAL_KEY,
+                null, null, "DIRECT", accessPolicy, true, true);
     }
 
     public void attach(HttpServletRequest request) {
         request.setAttribute(REQUEST_ATTRIBUTE, this);
         request.setAttribute("projectId", projectId);
         request.setAttribute("projectCode", projectCode);
+        request.setAttribute("globalAccess", globalAccess);
     }
 
     public static ProjectAuthContext from(HttpServletRequest request) {
@@ -101,4 +110,5 @@ public class ProjectAuthContext {
     public String getAuthPhase() { return authPhase; }
     public ProjectAccessPolicy getAccessPolicy() { return accessPolicy; }
     public boolean isAsyncAccessLogEnabled() { return asyncAccessLogEnabled; }
+    public boolean isGlobalAccess() { return globalAccess; }
 }

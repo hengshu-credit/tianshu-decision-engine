@@ -357,19 +357,19 @@ API 配置中的“报文留存”可分别设置 `request` / `response`：`sour
 
 运行环境为 JDK 17、Maven 3.6+、MySQL 8、Redis 和 Node.js 20.19+。前端构建产物独立部署，业务系统通过服务端同步规则，不直连管理数据库。
 
-业务系统可通过开放 API 或 Java SDK 接入，按项目使用访问令牌、账号密码、API Key 或 HMAC-SHA256 鉴权。
+业务系统可通过开放 API 或 Java SDK 接入，按项目使用访问令牌、账号密码、API Key 或 HMAC-SHA256 鉴权；需要跨项目读取全部已发布规则时，可由 server 配置 Ed25519 公钥，HTTP/SDK 客户端使用配对私钥签名访问。
 
 ```java
 RuleResult result = ruleEngineClient.execute("face_threshold_table", requestMap);
 ```
 
-SDK 通过 HTTP 同步规则与函数，并订阅 Redis 变更通知。`project-code` 用于项目路由，需与服务端项目编码一致；`app-name` 标识调用应用。规则依赖 API、数据库或名单取数时，使用服务端执行配置。
+SDK 默认通过 Ed25519 全局鉴权同步全部已发布项目规则与函数，并订阅 Redis 变更通知；项目级模式下配置 `project-code`、项目 ID 和规则白名单，只加载授权项目。`app-name` 只标识调用应用。规则依赖 API、数据库或名单取数时，使用服务端执行配置。
 
 SDK 本地执行日志默认通过 HTTP 上报；需要 Kafka 时显式启用，并在服务端按主题绑定项目 ID。配置、失败补报、死信处理和旧版迁移见 [Kafka 执行日志上报](docs/kafka-execution-logs.md)。
 
 完整环境变量、Docker Compose 启动命令、ONNX CPU/CUDA 配置和 SDK 接入示例见 [部署与接入说明](https://hengshu-credit.github.io/tianshu-decision-engine/deployment.html)；生产 JAR/dist 制品位于 `docker/runtime`。
 
-项目启动方式彼此独立：源码模式先启动 MySQL/Redis，再分别运行 server、web、HTTP 和 SDK；服务端默认在启动时自动执行包含表结构、逻辑执行日志视图和系统常量幂等补齐的 `schema.sql`，执行 `node scripts/package-runtime.mjs` 可把后端 JAR 和前端 `dist/` 统一生成到 `docker/runtime`；正式部署推荐使用 `docker/docker-compose.server.yml` + `.env.server` 启动 server/web，再使用 `docker/docker-compose.client.yml` + `.env.client` 独立启动 HTTP/SDK runtime，完整命令见 [`docker/README.md`](docker/README.md)。示例数据 `data-tianshu-example.sql` 位于 `docker/rule-engine-mysql`，默认不导入，需要时通过 `--profile example-data` 启用只插入导入；`docker-compose.full.yml` 保留用于自带 MySQL/Redis/Kafka 的单机模式。Kafka 主题绑定、账号和死信策略详见 [`docs/kafka-execution-logs.md`](docs/kafka-execution-logs.md)。
+项目启动方式彼此独立：源码模式先启动 MySQL/Redis，再分别运行 server、web、HTTP 和 SDK；服务端默认在启动时自动执行包含表结构、逻辑执行日志视图和系统常量幂等补齐的 `schema.sql`，需要内置变量和数据对象时将 `RULE_ENGINE_INITIAL_DATA_ENABLED=true` 交给 server，启动时会按编码补齐 `sql/initial-data.sql` 且不覆盖已有修改；执行 `node scripts/package-runtime.mjs` 可把后端 JAR 和前端 `dist/` 统一生成到 `docker/runtime`；正式部署推荐使用 `docker/docker-compose.server.yml` + `.env.server` 启动 server/web，再使用 `docker/docker-compose.client.yml` + `.env.client` 独立启动 HTTP/SDK runtime，完整命令见 [`docker/README.md`](docker/README.md)。示例数据 `data-tianshu-example.sql` 位于 `docker/rule-engine-mysql`，默认不导入，需要时通过 `--profile example-data` 启用只插入导入；`docker-compose.full.yml` 保留用于自带 MySQL/Redis/Kafka 的单机模式。Kafka 主题绑定、账号和死信策略详见 [`docs/kafka-execution-logs.md`](docs/kafka-execution-logs.md)。
 
 需要在 Docker 内一次生成后端、前端和可上传部署 ZIP 时执行 `node scripts/package-deployment.mjs`。公网部署使用 Nginx Proxy Manager 提供 HTTPS、证书和反向代理；Compose 不修改 Ubuntu 的防火墙和既有端口策略，MySQL、Redis、Kafka 按 `.env` 与现有安全组对外提供调试访问。
 

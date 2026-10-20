@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.client.auth;
 
+import com.hengshucredit.rule.model.security.GlobalAccessSignature;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import org.junit.Test;
@@ -53,6 +54,28 @@ public class ClientRequestAuthenticatorTest {
                 authenticated.header("X-Rule-Signature"));
     }
 
+    @Test
+    public void globalKeySignsRequestWithEd25519Headers() throws Exception {
+        GlobalAccessSignature.AccessKeyPair pair = GlobalAccessSignature.generateKeyPair();
+        ClientAuthConfig config = ClientAuthConfig.globalKey("tenant-all", pair.privateKey());
+        FixedGlobalAuthenticator authenticator = new FixedGlobalAuthenticator(config);
+        Request request = new Request.Builder()
+                .url("http://localhost/api/rule/sync/all?trace=true")
+                .post(RequestBody.create("{}", okhttp3.MediaType.parse("application/json")))
+                .build();
+
+        Request authenticated = authenticator.authenticate(request);
+
+        assertEquals("tenant-all", authenticated.header(GlobalAccessSignature.KEY_ID_HEADER));
+        assertEquals("1721000000", authenticated.header(GlobalAccessSignature.TIMESTAMP_HEADER));
+        assertEquals("nonce-global", authenticated.header(GlobalAccessSignature.NONCE_HEADER));
+        org.junit.Assert.assertTrue(GlobalAccessSignature.verify(pair.publicKey(), authenticated.method(),
+                authenticated.url().encodedPath(), authenticated.url().encodedQuery(),
+                authenticated.header(GlobalAccessSignature.TIMESTAMP_HEADER),
+                authenticated.header(GlobalAccessSignature.NONCE_HEADER), "{}".getBytes(),
+                authenticated.header(GlobalAccessSignature.SIGNATURE_HEADER)));
+    }
+
     private static class FixedTokenExchangeManager extends TokenExchangeManager {
         private final String token;
 
@@ -80,6 +103,22 @@ public class ClientRequestAuthenticatorTest {
         @Override
         protected String generateNonce() {
             return "nonce-1";
+        }
+    }
+
+    private static class FixedGlobalAuthenticator extends ClientRequestAuthenticator {
+        private FixedGlobalAuthenticator(ClientAuthConfig config) {
+            super("http://localhost:8080", 1000, config);
+        }
+
+        @Override
+        protected long currentEpochSeconds() {
+            return 1721000000L;
+        }
+
+        @Override
+        protected String generateNonce() {
+            return "nonce-global";
         }
     }
 }

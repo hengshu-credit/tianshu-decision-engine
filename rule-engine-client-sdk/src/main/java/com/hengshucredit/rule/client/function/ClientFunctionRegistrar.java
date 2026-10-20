@@ -344,8 +344,16 @@ public class ClientFunctionRegistrar {
             return frozen;
         }
         Map<RemoteFunctionKey, CustomFunction> remoteSnapshot = remoteFunctions;
-        if (configuredProjectCode != null) {
-            CustomFunction project = remoteSnapshot.get(new RemoteFunctionKey(PROJECT, configuredProjectCode, funcCode));
+        String effectiveProjectCode = configuredProjectCode;
+        if (effectiveProjectCode == null) {
+            Map<String, Object> currentRule = RuntimeContextBridge.currentRule();
+            Object currentProjectCode = currentRule == null ? null : currentRule.get("projectCode");
+            if (currentProjectCode != null) {
+                effectiveProjectCode = trimToNull(String.valueOf(currentProjectCode));
+            }
+        }
+        if (effectiveProjectCode != null) {
+            CustomFunction project = remoteSnapshot.get(new RemoteFunctionKey(PROJECT, effectiveProjectCode, funcCode));
             if (project != null) {
                 return project;
             }

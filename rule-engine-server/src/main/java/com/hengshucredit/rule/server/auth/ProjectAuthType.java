@@ -6,6 +6,7 @@ public final class ProjectAuthType {
     public static final String BASIC = "BASIC";
     public static final String HMAC_SHA256 = "HMAC_SHA256";
     public static final String BEARER_TOKEN = "BEARER_TOKEN";
+    public static final String GLOBAL_KEY = "GLOBAL_KEY";
 
     private ProjectAuthType() {
     }

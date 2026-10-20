@@ -59,6 +59,10 @@ public class ProductionConfigurationContractTest {
         Assert.assertEquals("always", environment.resolveRequiredPlaceholders(mode));
         Assert.assertEquals("classpath:sql/schema.sql", properties.getProperty("spring.sql.init.schema-locations"));
         Assert.assertEquals("false", environment.resolveRequiredPlaceholders(
+                properties.getProperty("rule-engine.initial-data.enabled")));
+        Assert.assertEquals("classpath:sql/initial-data.sql", environment.resolveRequiredPlaceholders(
+                properties.getProperty("rule-engine.initial-data.locations[0]")));
+        Assert.assertEquals("false", environment.resolveRequiredPlaceholders(
                 properties.getProperty("spring.sql.init.continue-on-error")));
         Assert.assertNull(properties.getProperty("spring.sql.init.data-locations"));
         Assert.assertFalse(Files.exists(resources.resolve("data.sql")));
@@ -109,6 +113,12 @@ public class ProductionConfigurationContractTest {
         Assert.assertTrue(fullCompose.contains("RUNTIME_RULE_SERVER_URL:?Set RUNTIME_RULE_SERVER_URL"));
         Assert.assertFalse(fullCompose.contains("RUNTIME_RULE_SERVER_URL:-http://server:8080"));
         Assert.assertTrue(fullCompose.contains("SERVER_PUBLIC_BIND_ADDRESS"));
+        Assert.assertTrue(appCompose.contains("RULE_ENGINE_INITIAL_DATA_ENABLED"));
+        Assert.assertTrue(serverCompose.contains("RULE_ENGINE_INITIAL_DATA_ENABLED"));
+        Assert.assertTrue(fullCompose.contains("RULE_ENGINE_INITIAL_DATA_ENABLED"));
+        Assert.assertTrue(appCompose.contains("RULE_ENGINE_INITIAL_DATA_LOCATION"));
+        Assert.assertTrue(serverCompose.contains("RULE_ENGINE_INITIAL_DATA_LOCATION"));
+        Assert.assertTrue(fullCompose.contains("RULE_ENGINE_INITIAL_DATA_LOCATION"));
         Assert.assertTrue(fullCompose.contains("example-data-import:"));
         Assert.assertTrue(fullCompose.contains("profiles: [example-data]"));
         Assert.assertTrue(mysqlCompose.contains("example-data-import:"));

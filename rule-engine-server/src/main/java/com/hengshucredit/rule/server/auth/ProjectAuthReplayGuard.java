@@ -25,4 +25,18 @@ public class ProjectAuthReplayGuard {
             return false;
         }
     }
+
+    public boolean claimGlobal(String keyId, String nonce, long windowSeconds) {
+        try {
+            String fingerprint = HmacRequestSigner.sha256Hex(
+                    (String.valueOf(keyId) + ":" + nonce).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            Boolean claimed = stringRedisTemplate.opsForValue().setIfAbsent(
+                    "rule:auth:global:nonce:" + fingerprint,
+                    "1", windowSeconds, TimeUnit.SECONDS);
+            return Boolean.TRUE.equals(claimed);
+        } catch (RuntimeException e) {
+            log.error("Unable to verify global access nonce replay state", e);
+            return false;
+        }
+    }
 }

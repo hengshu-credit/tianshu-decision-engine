@@ -57,13 +57,13 @@ public class RedisSubscriberTest {
     }
 
     @Test
-    public void withoutProjectCodeSubscribesOnlyToGlobalBroadcastChannel() throws Exception {
+    public void withoutProjectCodeSubscribesToAllRuleChannels() throws Exception {
         RedisSubscriber subscriber = new RedisSubscriber(new L1MemoryCache(10), null, null);
 
         assertNull(getField(subscriber, "channel"));
         List<?> topics = (List<?>) getField(subscriber, "topics");
         assertEquals(1, topics.size());
-        assertEquals("rule:push:broadcast", ((Topic) topics.get(0)).getTopic());
+        assertEquals("rule:push:*", ((Topic) topics.get(0)).getTopic());
     }
 
     @Test

@@ -275,10 +275,12 @@ class ClientRuleRuntimeInvoker {
 
     private RuleTraceFrame createTraceFrame(CachedRule rule, String parentTraceId) {
         String modelType = rule == null || !hasText(rule.getModelType()) ? "SCRIPT" : rule.getModelType();
-        boolean global = rule == null || !hasText(rule.getProjectCode());
+        Long ruleProjectId = rule == null ? null : rule.getProjectId();
+        if (ruleProjectId == null || ruleProjectId <= 0) ruleProjectId = config.getProjectId();
+        boolean global = rule == null || !hasText(rule.getProjectCode()) || ruleProjectId == null || ruleProjectId <= 0;
         String scopeType = global ? "G" : "P";
         String scopeCode = global ? TraceIdGenerator.GLOBAL_SCOPE_CODE
-                : TraceIdGenerator.projectScopeCode(config.getProjectId());
+                : TraceIdGenerator.projectScopeCode(ruleProjectId);
         RuleTraceFrame trace = new RuleTraceFrame();
         trace.setTraceId(TraceIdGenerator.generate(
                 TraceIdGenerator.ruleTypeCode(modelType), scopeType, scopeCode));
@@ -300,7 +302,8 @@ class ClientRuleRuntimeInvoker {
         Map<String, Object> context = new LinkedHashMap<>();
         context.put("code", rule == null ? null : rule.getRuleCode());
         context.put("name", rule == null ? null : rule.getRuleCode());
-        context.put("projectId", config.getProjectId());
+        context.put("projectId", rule == null || rule.getProjectId() == null
+                ? config.getProjectId() : rule.getProjectId());
         context.put("projectCode", rule == null ? null : rule.getProjectCode());
         context.put("traceId", traceId);
         RuntimeContextBridge.setRuleContext(context, Collections.<String>emptyList());

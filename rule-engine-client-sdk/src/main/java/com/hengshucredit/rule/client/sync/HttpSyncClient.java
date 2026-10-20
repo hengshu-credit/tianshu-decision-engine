@@ -181,6 +181,35 @@ public class HttpSyncClient {
         return null;
     }
 
+    /** 从服务端拉取全局鉴权客户端可见的全部启用函数。 */
+    public List<JSONObject> fetchFunctionsAll() {
+        try {
+            Request.Builder requestBuilder = new Request.Builder()
+                    .url(serverUrl + "/api/rule/sync/functions/all")
+                    .get();
+            Request request = authenticate(requestBuilder.build());
+            try (Response response = httpClient.newCall(request).execute()) {
+                throwIfAuthenticationFailure(response);
+                if (!response.isSuccessful() || response.body() == null) {
+                    log.warn("Failed to fetch all functions: HTTP {}", response.code());
+                    return null;
+                }
+                JSONObject json = JSON.parseObject(response.body().string());
+                if (json == null || json.getIntValue("code") != 200) return null;
+                JSONArray arr = json.getJSONArray("data");
+                if (arr == null) return null;
+                List<JSONObject> functions = new ArrayList<>();
+                for (int i = 0; i < arr.size(); i++) functions.add(arr.getJSONObject(i));
+                return functions;
+            }
+        } catch (ProjectClientAuthenticationException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("Failed to fetch all functions: {}", e.getMessage());
+            return null;
+        }
+    }
+
     public RuleResult executeRule(String ruleCode, Object params, String clientAppName) {
         return executeRule(ruleCode, params, clientAppName, true);
     }
@@ -402,6 +431,7 @@ public class HttpSyncClient {
             rule.setImportBindings(ids);
         }
         rule.setProjectCode(obj.getString("projectCode"));
+        rule.setProjectId(obj.getLong("projectId"));
         rule.setRequiresServerExecution(obj.getBooleanValue("requiresServerExecution"));
         rule.setServerExecutionReason(obj.getString("serverExecutionReason"));
         rule.setVersion(obj.getIntValue("version"));

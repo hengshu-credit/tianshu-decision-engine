@@ -17,6 +17,9 @@ public class RulePublished {
     private String artifactDigest;
     /** 规则所属项目编码 */
     private String projectCode;
+    /** 规则所属项目 ID，仅用于同步给全局客户端生成项目级 trace。 */
+    @TableField(exist = false)
+    private Long projectId;
     private Integer version;
     @TableField(exist = false)
     private Long versionBindingId;

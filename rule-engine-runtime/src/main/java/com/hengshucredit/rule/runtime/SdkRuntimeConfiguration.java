@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.runtime;
 
+import com.hengshucredit.rule.client.auth.ClientAuthConfig;
 import com.hengshucredit.rule.client.RuleEngineClient;
 import com.hengshucredit.rule.client.RuleEngineClientConfig;
 import com.hengshucredit.rule.client.log.ExecutionLogReporter;
@@ -29,14 +30,18 @@ public class SdkRuntimeConfiguration {
     @Bean(destroyMethod = "close")
     public RuleEngineClient sdkClient(Environment env, RedisConnectionFactory redis, ApplicationContext context,
                                       ObjectProvider<ExecutionLogReporter> reporterProvider) {
-        long projectId = env.getRequiredProperty("RULE_PROJECT_ID", Long.class);
-        if (projectId <= 0) throw new IllegalArgumentException("RULE_PROJECT_ID 必须为真实项目 ID");
+        String authType = env.getProperty("RULE_AUTH_TYPE", ClientAuthConfig.LEGACY_TOKEN)
+                .toUpperCase(java.util.Locale.ROOT);
+        boolean globalAccess = ClientAuthConfig.GLOBAL_KEY.equals(authType);
+        long projectId = env.getProperty("RULE_PROJECT_ID", Long.class, 0L);
+        if (!globalAccess && projectId <= 0) throw new IllegalArgumentException("RULE_PROJECT_ID 必须为真实项目 ID");
         var codes = RuntimeConfiguration.allowedCodes(env);
         boolean logReportEnabled = env.getProperty("SDK_LOG_REPORT_ENABLED", Boolean.class, false);
         RuleEngineClient.Builder builder = RuleEngineClient.builder()
                 .serverUrl(RuntimeConfiguration.required(env, "RULE_SERVER_URL"))
                 .authConfig(RuntimeConfiguration.projectAuth(env))
-                .projectCode(RuntimeConfiguration.required(env, "RULE_PROJECT_CODE")).projectId(projectId)
+                .projectCode(globalAccess ? null : RuntimeConfiguration.required(env, "RULE_PROJECT_CODE"))
+                .projectId(projectId)
                 .appName(env.getProperty("RUNTIME_APP_NAME", "sdk-runtime"))
                 .httpTimeoutMs(env.getProperty("RULE_HTTP_TIMEOUT_MS", Integer.class, 30000))
                 .l1CacheMaxSize(env.getProperty("SDK_CACHE_MAX_SIZE", Integer.class, 1000))
@@ -49,12 +54,16 @@ public class SdkRuntimeConfiguration {
         if (logReportEnabled) builder.logReporter(reporterProvider.getIfAvailable());
         RuleEngineClient client = builder.build();
         try {
-            // 最小样例只按白名单逐条 HTTP 拉取规则，不启动函数同步、定时全量同步或 Redis 推送订阅。
-            // 这样可以明确展示“服务端规则 -> SDK L1 缓存 -> 本地执行”的链路。
-            for (String code : codes) {
-                client.refreshRule(code);
-                if (!executable(client, code)) {
-                    throw new IllegalStateException("SDK 仅接受已发布的本地纯计算规则: " + code);
+            if (globalAccess) {
+                // 全局模式同步全部已发布规则和函数，并保持定时全量同步；项目模式仍按白名单启动。
+                client.start();
+            } else {
+                // 项目模式只按白名单逐条拉取规则，避免把项目外规则加载到客户端。
+                for (String code : codes) {
+                    client.refreshRule(code);
+                    if (!executable(client, code)) {
+                        throw new IllegalStateException("SDK 仅接受已发布的本地纯计算规则: " + code);
+                    }
                 }
             }
             return client;
@@ -90,8 +99,10 @@ public class SdkRuntimeConfiguration {
 
     @Bean
     public HealthIndicator sdkRulesHealthIndicator(RuleEngineClient client, Environment env) {
+        boolean globalAccess = ClientAuthConfig.GLOBAL_KEY.equalsIgnoreCase(
+                env.getProperty("RULE_AUTH_TYPE", ClientAuthConfig.LEGACY_TOKEN));
         var codes = RuntimeConfiguration.allowedCodes(env);
-        return () -> codes.stream().allMatch(code -> executable(client, code))
+        return () -> globalAccess || codes.stream().allMatch(code -> executable(client, code))
                 ? Health.up().build() : Health.down().build();
     }
 

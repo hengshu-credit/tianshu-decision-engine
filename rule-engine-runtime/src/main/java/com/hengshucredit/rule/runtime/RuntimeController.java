@@ -20,10 +20,13 @@ public class RuntimeController {
     private final BiFunction<String, Map<String, Object>, RuleResult> executor;
     private final List<String> allowedCodes;
     private final byte[] authorization;
+    private final boolean globalAccess;
 
     public RuntimeController(BiFunction<String, Map<String, Object>, RuleResult> executor, Environment env) {
         this.executor = executor;
         this.allowedCodes = RuntimeConfiguration.allowedCodes(env);
+        this.globalAccess = com.hengshucredit.rule.client.auth.ClientAuthConfig.GLOBAL_KEY
+                .equalsIgnoreCase(env.getProperty("RULE_AUTH_TYPE", com.hengshucredit.rule.client.auth.ClientAuthConfig.LEGACY_TOKEN));
         String token = RuntimeConfiguration.required(env, "RUNTIME_ACCESS_TOKEN");
         if (token.length() < 32) throw new IllegalArgumentException("RUNTIME_ACCESS_TOKEN 至少 32 位");
         this.authorization = ("Bearer " + token).getBytes(StandardCharsets.UTF_8);
@@ -36,7 +39,7 @@ public class RuntimeController {
         if (!MessageDigest.isEqual(authorization, header.getBytes(StandardCharsets.UTF_8))) {
             return ResponseEntity.status(401).body(Map.of("code", 401, "message", "接入令牌无效"));
         }
-        if (!allowedCodes.contains(ruleCode)) {
+        if (!globalAccess && !allowedCodes.contains(ruleCode)) {
             return ResponseEntity.status(403).body(Map.of("code", 403, "message", "规则不在允许执行的列表中"));
         }
         if (body == null || body.params() == null) throw new IllegalArgumentException("params 必须为对象");

@@ -57,7 +57,7 @@ vi .env.server
 vi .env.client
 ```
 
-`.env.server` 只配置 server 多节点、web、控制台、MySQL、Redis、Kafka 和服务端密钥；`.env.client` 只配置 HTTP/SDK runtime、`RULE_SERVER_URL`、项目凭据、客户端令牌，以及 SDK 需要访问的 Redis。SDK runtime 必须连接与 server 共用的 Redis，才能接收规则和函数变更推送；启用 Kafka 日志时还要把 `KAFKA_BOOTSTRAP_SERVERS` 配成客户端可达地址。
+`.env.server` 只配置 server 多节点、web、控制台、MySQL、Redis、Kafka 和服务端密钥；`.env.client` 只配置 HTTP/SDK runtime、`RULE_SERVER_URL`、客户端令牌，以及 SDK 需要访问的 Redis。示例默认使用 `GLOBAL_KEY` 全局鉴权，直接同步全部已发布项目；切换项目级客户端时再填写项目凭据、项目 ID/编码和规则白名单。SDK runtime 必须连接与 server 共用的 Redis，才能接收规则和函数变更推送；启用 Kafka 日志时还要把 `KAFKA_BOOTSTRAP_SERVERS` 配成客户端可达地址。
 
 服务端启动：
 
@@ -78,9 +78,9 @@ docker compose --project-name tianshu-server --env-file .env.client --env-file .
 客户端 runtime 启动：
 
 ```bash
-docker compose --project-name tianshu-client --env-file .env.client --env-file .env.server.client \
+docker compose --project-name tianshu-client --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.client.yml up -d
-docker compose --project-name tianshu-client --env-file .env.client --env-file .env.server.client \
+docker compose --project-name tianshu-client --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.client.yml ps
 ```
 
@@ -112,6 +112,8 @@ REDIS_HOST=Redis地址
 REDIS_PORT=6379
 REDIS_PASSWORD=Redis密码
 SPRING_SQL_INIT_MODE=always
+RULE_ENGINE_INITIAL_DATA_ENABLED=false
+RULE_ENGINE_INITIAL_DATA_LOCATION=classpath:sql/initial-data.sql
 RULE_AUTH_MASTER_KEY=当前环境至少32位随机密钥
 CONSOLE_USERNAME=admin
 CONSOLE_PASSWORD=BCrypt哈希
@@ -359,7 +361,7 @@ docker compose --project-name tianshu-redis --env-file .env.client --env-file .e
 
 Kafka 只服务于完整 Java SDK 或 `rule-engine-runtime` 的本地执行日志，以及 server 对 Kafka 日志的消费。HTTP-only runtime、服务端本地执行和规则同步仍不依赖 Kafka。full Compose 会提供一个单节点 broker；生产环境也可以通过 `KAFKA_BOOTSTRAP_SERVERS` 接入外部 Kafka 集群。
 
-两个 Compose 方案使用 Kafka 时，server 配置写入 `.env.server`，SDK 配置写入 `.env.client`（示例项目 ID `1` 必须替换为实际值）：
+两个 Compose 方案使用 Kafka 时，server 配置写入 `.env.server`，SDK 配置写入 `.env.client`。默认全局客户端不需要项目 ID、项目编码或规则白名单；只有切换到项目级鉴权并使用项目级 Kafka 日志时才填写实际项目 ID：
 
 ```dotenv
 KAFKA_BOOTSTRAP_SERVERS=kafka.internal:9092
@@ -367,7 +369,8 @@ SDK_LOG_REPORT_ENABLED=true
 SDK_LOG_REPORT_TRANSPORT=KAFKA
 SDK_KAFKA_LOG_TOPIC=rule-execution-log-risk
 SDK_KAFKA_HTTP_FALLBACK_ENABLED=true
-RUNTIME_RULE_PROJECT_ID=1
+# 项目级客户端 + Kafka 日志时才需要：
+# RUNTIME_RULE_PROJECT_ID=1
 ```
 
 server 消费 Kafka 时追加：
@@ -398,8 +401,10 @@ JAR 和独立 `docker run` 直接使用 Spring Boot 的 `SPRING_KAFKA_BOOTSTRAP_
 本项目不会安装或修改 Ubuntu 的 UFW、Fail2ban、宿主机 Nginx、Certbot 或既有端口规则。先准备配置：
 
 ```bash
-cp .env.server.example .env.server`ncp .env.client.example .env.client
-vi .env
+cp .env.server.example .env.server
+cp .env.client.example .env.client
+vi .env.server
+vi .env.client
 ```
 
 如果独立 NPM 通过服务器 IP 访问容器映射端口，应用端口需要绑定到可被 NPM 访问的地址：

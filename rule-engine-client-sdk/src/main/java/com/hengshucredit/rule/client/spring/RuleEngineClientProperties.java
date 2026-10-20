@@ -26,6 +26,8 @@ public class RuleEngineClientProperties {
     private String apiKeyParameterName = "X-Rule-Api-Key";
     private String accessKey;
     private String hmacSecret;
+    private String globalKeyId = "default";
+    private String globalPrivateKey;
     private boolean tokenExchangeEnabled = true;
     private int tokenRefreshAheadSeconds = 60;
 
@@ -52,6 +54,8 @@ public class RuleEngineClientProperties {
             auth = ClientAuthConfig.apiKey(apiKeyParameterName, apiKey, apiKeyPlacement);
         } else if (ClientAuthConfig.HMAC_SHA256.equalsIgnoreCase(authType)) {
             auth = ClientAuthConfig.hmac(accessKey, hmacSecret);
+        } else if (ClientAuthConfig.GLOBAL_KEY.equalsIgnoreCase(authType)) {
+            auth = ClientAuthConfig.globalKey(globalKeyId, globalPrivateKey);
         } else if (token != null && !token.isEmpty()) {
             auth = ClientAuthConfig.legacyToken(token);
         } else {
