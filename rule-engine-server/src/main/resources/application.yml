@@ -117,9 +117,8 @@ rule-engine:
     # 生产环境必须通过环境变量配置为实际控制台域名，多个来源使用英文逗号分隔
     allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:*}
   project-auth:
-    active-key-id: ${RULE_AUTH_ACTIVE_KEY_ID:v2}
     master-keys:
-      v2: ${RULE_AUTH_MASTER_KEY:}
+      auto: ${RULE_AUTH_MASTER_KEY:}
     global-access:
       # 启用后，客户端使用对应 Ed25519 私钥签名即可访问全部已发布规则。
       enabled: ${RULE_GLOBAL_ACCESS_ENABLED:false}

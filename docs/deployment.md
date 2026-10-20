@@ -35,7 +35,7 @@ pm run dev` 的 Vite 开发端口；不会改变生产 `dist` 静态站点端口
 | 参数名 | 默认值 | 含义与具体作用 |
 |---|---:|---|
 | `RULE_AUTH_MASTER_KEY` | 无 | 项目长期凭证的活动加密主密钥，至少 32 个字符；缺失或使用公开示例值时服务拒绝启动。所有节点必须一致。 |
-| `RULE_AUTH_ACTIVE_KEY_ID` | `v2` | 当前凭证使用的密钥版本标识；服务只使用该版本对应的主密钥。 |
+| （自动生成） | `auto-<master-key-hash>` | 服务根据 `RULE_AUTH_MASTER_KEY` 稳定生成密钥版本 ID；不需要配置环境变量。同一主密钥在多节点上会得到相同 ID，并保留 `v2` 作为历史密文兼容别名。 |
 | `RULE_GLOBAL_ACCESS_ENABLED` | `true`（示例默认） | 是否启用 Ed25519 全局规则访问；启用后必须同时配置公钥、Key ID 和时间窗。关闭后客户端改用项目级凭据。 |
 | `RULE_GLOBAL_ACCESS_KEY_ID` | `default` | 全局访问公钥的 Key ID，客户端必须使用相同 ID。 |
 | `RULE_GLOBAL_ACCESS_PUBLIC_KEY` | 空 | Ed25519 X.509 公钥的 Base64 值；私钥只放在 HTTP/SDK 客户端。 |
@@ -285,7 +285,6 @@ REDIS_HOST=10.0.0.21
 REDIS_PORT=6379
 REDIS_PASSWORD=替换为Redis密码
 RULE_AUTH_MASTER_KEY=至少32位的当前环境随机密钥
-RULE_AUTH_ACTIVE_KEY_ID=v2
 CONSOLE_USERNAME=admin
 CONSOLE_PASSWORD=BCrypt哈希
 CONSOLE_PASSWORD_ENCODING=BCRYPT
@@ -593,7 +592,7 @@ sudo systemctl restart tianshu-server
 
 ## 五、多节点横向扩容
 
-多节点扩容复制的是无状态的 JAR 执行节点，数据和分布式状态不能各自保存一份：所有节点必须连接同一个 MySQL 数据库和同一个 Redis 实例（或同一高可用 Redis 服务），并使用完全相同的 `RULE_AUTH_MASTER_KEY`、`RULE_AUTH_ACTIVE_KEY_ID`、控制台账号和 CORS 配置。每个节点可以使用自己的 JAR 挂载目录和日志目录，但不要为每个节点创建独立的规则数据库或 Redis。
+多节点扩容复制的是无状态的 JAR 执行节点，数据和分布式状态不能各自保存一份：所有节点必须连接同一个 MySQL 数据库和同一个 Redis 实例（或同一高可用 Redis 服务），并使用完全相同的 `RULE_AUTH_MASTER_KEY`、控制台账号和 CORS 配置。服务会根据主密钥自动生成相同的鉴权版本 ID。每个节点可以使用自己的 JAR 挂载目录和日志目录，但不要为每个节点创建独立的规则数据库或 Redis。
 
 ### 5.1 负载均衡器配置
 
@@ -752,7 +751,7 @@ SDK 行为：
 - 服务端持久化追踪默认不限制大小；通过 `RULE_TRACE_MAX_PERSIST_BYTES` 设置为正数后，超过上限的日志保存截断标记和原始大小，请求结果及内存中的本次追踪不受该持久化上限影响。
 - `log-report-enabled=false` 禁止 SDK 本地日志上报，包括自定义、HTTP 和 Kafka reporter；不关闭服务端基础日志、鉴权审计或计费。开启上报时 Spring 容器中的自定义 `ExecutionLogReporter` 优先；内置通道默认 HTTP，Kafka 需显式设置 `log-report-transport: KAFKA`。服务端需启用 Kafka 消费并将主题绑定真实项目 ID；完整配置、失败补报和旧版迁移见 [Kafka 执行日志上报](kafka-execution-logs.md)。
 
-项目鉴权配置、长期凭证和短期 Token 均可在控制台再次查看完整值。长期凭证在数据库中使用 AES-GCM 可逆加密存储；启动服务前必须通过 `RULE_AUTH_MASTER_KEY` 配置至少 32 位的独立主密钥并妥善保管，未配置或使用公开开发密钥时服务会拒绝启动。新密文默认使用 `v2` 密钥，解密只接受密文中标识对应的当前主密钥，不再回退读取历史主密钥。所有节点必须使用相同的 `RULE_AUTH_MASTER_KEY` 和 `RULE_AUTH_ACTIVE_KEY_ID`。访问审计记录所有受保护接口调用；只有实际规则执行进入计费，计费明细可区分 `authCode` 和 `tokenCode`，按日汇总到鉴权配置维度。
+项目鉴权配置、长期凭证和短期 Token 均可在控制台再次查看完整值。长期凭证在数据库中使用 AES-GCM 可逆加密存储；启动服务前必须通过 `RULE_AUTH_MASTER_KEY` 配置至少 32 位的独立主密钥并妥善保管，未配置或使用公开开发密钥时服务会拒绝启动。服务根据主密钥稳定生成当前密文版本 ID，历史 `v2` 密文仍可使用同一主密钥解密。所有节点必须使用相同的 `RULE_AUTH_MASTER_KEY`。访问审计记录所有受保护接口调用；只有实际规则执行进入计费，计费明细可区分 `authCode` 和 `tokenCode`，按日汇总到鉴权配置维度。
 
 ## 计费汇总币种升级与历史重建
 

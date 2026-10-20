@@ -73,6 +73,19 @@ public class CredentialCipherTest {
         properties.validateMasterKeys();
     }
 
+    @Test
+    public void generatesStableActiveKeyIdFromMasterKeyWhenNotConfigured() {
+        String masterKey = "test-only-master-key-with-at-least-32-characters";
+        ProjectAuthProperties properties = new ProjectAuthProperties();
+        properties.getMasterKeys().put("auto", masterKey);
+
+        properties.validateMasterKeys();
+
+        assertTrue(properties.getActiveKeyId().startsWith("auto-"));
+        assertEquals(masterKey, properties.getMasterKeys().get(properties.getActiveKeyId()));
+        assertEquals(masterKey, properties.getMasterKeys().get("v2"));
+    }
+
     private ProjectAuthProperties properties(String activeKeyId, String keyId, String key) {
         ProjectAuthProperties properties = new ProjectAuthProperties();
         properties.setActiveKeyId(activeKeyId);

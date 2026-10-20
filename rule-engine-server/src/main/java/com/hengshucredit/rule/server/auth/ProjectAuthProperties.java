@@ -5,6 +5,9 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import jakarta.annotation.PostConstruct;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.ArrayList;
@@ -13,7 +16,8 @@ import java.util.List;
 @Data
 @ConfigurationProperties(prefix = "rule-engine.project-auth")
 public class ProjectAuthProperties {
-    private String activeKeyId = "v2";
+    /** Stable ID derived from the active master key; it is not a user-facing setting. */
+    private String activeKeyId;
     private Map<String, String> masterKeys = new LinkedHashMap<>();
     private long hmacTimeWindowSeconds = 300L;
     private int tokenFailureLimit = 10;
@@ -25,18 +29,21 @@ public class ProjectAuthProperties {
 
     @PostConstruct
     public void validateMasterKeys() {
-        if (activeKeyId == null || activeKeyId.trim().isEmpty()) {
-            throw new IllegalStateException("rule-engine.project-auth.active-key-id must be configured");
-        }
-        String activeKey = masterKeys.get(activeKeyId);
+        String activeKey = resolveActiveKey();
         if (activeKey == null || activeKey.trim().isEmpty()) {
-            throw new IllegalStateException("Active project auth master key must be configured");
+            throw new IllegalStateException("Project auth master key must be configured");
         }
         if ("tianshu-dev-auth-master-key-change-me".equals(activeKey)
                 || activeKey.length() < 32
                 || activeKey.chars().distinct().count() < 8) {
             throw new IllegalStateException(
                     "Project auth master key must be a private, non-repetitive value of at least 32 characters");
+        }
+        if (activeKeyId == null || activeKeyId.trim().isEmpty()) {
+            activeKeyId = generatedKeyId(activeKey);
+            masterKeys.putIfAbsent(activeKeyId, activeKey);
+            // Existing v2 ciphertexts remain decryptable after the setting is removed.
+            masterKeys.putIfAbsent("v2", activeKey);
         }
         if (globalAccess != null && globalAccess.isEnabled()) {
             if (globalAccess.getKeyId() == null || globalAccess.getKeyId().trim().isEmpty()) {
@@ -49,6 +56,33 @@ public class ProjectAuthProperties {
                 throw new IllegalStateException("Global access time window must be between 1 and 86400 seconds");
             }
             GlobalAccessSignature.decodePublicKey(globalAccess.getPublicKey());
+        }
+    }
+
+    private String resolveActiveKey() {
+        if (activeKeyId != null && !activeKeyId.trim().isEmpty()) {
+            return masterKeys.get(activeKeyId);
+        }
+        if (masterKeys == null) {
+            return null;
+        }
+        return masterKeys.values().stream()
+                .filter(value -> value != null && !value.trim().isEmpty())
+                .findFirst()
+                .orElse(null);
+    }
+
+    private String generatedKeyId(String masterKey) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(masterKey.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(16);
+            for (int index = 0; index < 8; index++) {
+                hex.append(String.format("%02x", digest[index] & 0xff));
+            }
+            return "auto-" + hex;
+        } catch (NoSuchAlgorithmException error) {
+            throw new IllegalStateException("Unable to generate project auth key ID", error);
         }
     }
 
