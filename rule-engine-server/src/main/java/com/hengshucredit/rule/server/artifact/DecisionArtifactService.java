@@ -49,6 +49,13 @@ public class DecisionArtifactService {
 
     @Transactional
     public DecisionArtifact buildApprovedArtifact(Long revisionId, String actor) {
+        return buildApprovedArtifact(revisionId, actor, null);
+    }
+
+    /** Only accepts the analysis produced inside the current approval transaction. */
+    @Transactional
+    public DecisionArtifact buildApprovedArtifact(Long revisionId, String actor,
+            RulePreflightValidationService.Analysis prepared) {
         RuleRevision revision = loadRevision(revisionId);
         if (revision == null) throw new IllegalArgumentException("规则修订不存在");
         if (!"REVIEW".equals(revision.getState()) && !"APPROVED".equals(revision.getState())) {
@@ -56,8 +63,13 @@ public class DecisionArtifactService {
         }
         RuleDefinition definition = loadDefinition(revision.getDefinitionId());
         if (definition == null) throw new IllegalArgumentException("规则定义不存在");
-        RuleFieldAnalyzer.ResolvedFields fields = resolveFields(definition, revision);
-        RulePreflightReport report = preflight(revisionId);
+        if (prepared != null && (!java.util.Objects.equals(revisionId, prepared.report().getRevisionId())
+                || !java.util.Objects.equals(revision.getLockVersion(), prepared.report().getLockVersion())
+                || !java.util.Objects.equals(Sha256Digests.text(revision.getModelJson()), prepared.modelDigest())
+                || !java.util.Objects.equals(revision.getContentDigest(), prepared.report().getContentDigest())))
+            throw new IllegalStateException("批准分析与当前修订不一致");
+        RulePreflightValidationService.Analysis analysis = prepared == null ? analyzeRevision(revisionId) : prepared;
+        RulePreflightReport report = analysis.report();
         if (!report.isValid()) {
             throw new IllegalStateException("发布前验证未通过: "
                     + (report.getErrors().isEmpty() ? "未知错误" : report.getErrors().get(0).getMessage()));
@@ -65,8 +77,8 @@ public class DecisionArtifactService {
         if (report.isBreakingChangeReasonRequired()) {
             throw new IllegalStateException("破坏性 Schema 变更必须填写原因");
         }
-        RuleDependencyClosureService.DependencyClosure closure =
-                resolveDependencies(revision.getDefinitionId(), revisionId, fields);
+        RuleFieldAnalyzer.ResolvedFields fields = analysis.fields();
+        RuleDependencyClosureService.DependencyClosure closure = analysis.dependencies();
         if (closure.hasErrors()) {
             throw new IllegalStateException("依赖闭包校验未通过");
         }
@@ -261,9 +273,8 @@ public class DecisionArtifactService {
         return definitionService == null ? null : definitionService.getById(definitionId);
     }
 
-    protected RuleFieldAnalyzer.ResolvedFields resolveFields(
-            RuleDefinition definition, RuleRevision revision) {
-        return preflightService.resolveFields(definition, revision);
+    protected RulePreflightValidationService.Analysis analyzeRevision(Long revisionId) {
+        return preflightService.analyzeForPublication(revisionId);
     }
 
     protected List<RuleDefinitionInputField> loadInputFields(Long definitionId) {
@@ -276,18 +287,9 @@ public class DecisionArtifactService {
                 : definitionService.listOutputFields(definitionId);
     }
 
-    protected RulePreflightReport preflight(Long revisionId) {
-        return preflightService.validate(revisionId);
-    }
-
     protected RuleDependencyClosureService.DependencyClosure resolveDependencies(
             Long definitionId, Long revisionId) {
         return dependencyClosureService.resolve(definitionId, revisionId);
-    }
-
-    protected RuleDependencyClosureService.DependencyClosure resolveDependencies(
-            Long definitionId, Long revisionId, RuleFieldAnalyzer.ResolvedFields fields) {
-        return dependencyClosureService.resolve(definitionId, revisionId, fields);
     }
 
     protected DecisionArtifact findByDigest(String artifactDigest) {

@@ -12,6 +12,11 @@ import java.util.Map;
 
 @Repository
 public class ApplicationHistoryRepository {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.security.ConsoleDataPermissionHandler consoleDataScope;
+
+    private String secured(String sql) { return consoleDataScope == null ? sql : consoleDataScope.filterSql(sql); }
+
     private static final int MAX_QUERY_ROWS = 100000;
     private final JdbcTemplate jdbc;
 
@@ -26,6 +31,7 @@ public class ApplicationHistoryRepository {
 
     public List<HistoryQuery.Row> query(String scope, Long projectId, Long rootRuleId,
                                        LocalDateTime from, LocalDateTime before) {
+        if (consoleDataScope != null) consoleDataScope.requireHistoryScope(scope, projectId);
         StringBuilder sql = new StringBuilder("SELECT id, occurred_at, field_values FROM rule_application_history "
                 + "WHERE occurred_at >= ? AND occurred_at < ?");
         List<Object> parameters = new ArrayList<>(List.of(Timestamp.valueOf(from), Timestamp.valueOf(before)));
@@ -42,7 +48,7 @@ public class ApplicationHistoryRepository {
         sql.append(" ORDER BY occurred_at, id LIMIT ").append(MAX_QUERY_ROWS + 1);
         long[] bytesRead = {0};
         List<HistoryQuery.Row> rows = jdbc.query(connection -> {
-            var statement = connection.prepareStatement(sql.toString());
+            var statement = connection.prepareStatement(secured(sql.toString()));
             statement.setQueryTimeout(10);
             for (int i = 0; i < parameters.size(); i++) statement.setObject(i + 1, parameters.get(i));
             return statement;

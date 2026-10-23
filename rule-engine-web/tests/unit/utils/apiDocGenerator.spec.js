@@ -2,6 +2,23 @@ import { generateApiDocHtml, generateOpenApiDocument } from '@/utils/apiDoc'
 import { DEFAULT_THEME_CONFIG } from '@/theme/themeConfig'
 
 describe('完整 API 文档生成器', () => {
+  test('成功、等待和鉴权失败的示例使用对应的平台码及描述', () => {
+    const document = generateOpenApiDocument({ project: {}, rules: [{ ruleCode: 'RISK', openApiEnabled: true }] })
+    for (const path of ['/api/rule/sync/execute/RISK', '/api/rule/openapi/RISK']) {
+      const responses = document.paths[path].post.responses
+      const success = responses['200'].content['application/json'].schema.properties
+      const waiting = responses['202'].content['application/json'].schema.properties
+      const unauthorized = responses['401'].content['application/json'].schema.properties
+      expect(success.code.example).toBe('000000')
+      expect(success.message.example).toBe('成功')
+      expect(success.success.example).toBe(true)
+      expect(waiting.code.example).toBe('400006')
+      expect(waiting.success.example).toBe(false)
+      expect(unauthorized.code.example).toBe('300001')
+      expect(unauthorized.message.example).toBe('Token 已过期或失效')
+      expect(unauthorized.success.example).toBe(false)
+    }
+  })
   test('生成可导入的 OpenAPI 3.1 文档且不输出凭据', () => {
     const openApi = generateOpenApiDocument({
       project: { projectCode: 'credit', projectName: '授信决策' },

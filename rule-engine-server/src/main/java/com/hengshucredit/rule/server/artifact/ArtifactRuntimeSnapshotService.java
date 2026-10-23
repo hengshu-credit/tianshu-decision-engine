@@ -127,6 +127,16 @@ public class ArtifactRuntimeSnapshotService {
             } else if ("MODEL".equals(resourceType)) {
                 snapshot.models.add(model(component, executionProjectId,
                         decoded.getPackageDigest()));
+            } else if ("DATA_OBJECT_ROOT".equals(resourceType)) {
+                RuleDataObject object = JSON.parseObject(component.getContent(), RuleDataObject.class);
+                Long targetId = bindings.get("BINDING:DATA_OBJECT:" + object.getId());
+                if (targetId != null && dataObjectMapper != null) {
+                    RuleDataObject target = boundDataObjects.computeIfAbsent(targetId, dataObjectMapper::selectById);
+                    if (target != null) { object.setSourceType(target.getSourceType()); object.setSourceContent(target.getSourceContent()); }
+                }
+                snapshot.dataObjects.add(object);
+                snapshot.referencePaths.put("DATA_OBJECT_ROOT:" + object.getId(),
+                        object.getScriptName() == null || object.getScriptName().isBlank() ? object.getObjectCode() : object.getScriptName());
             } else if ("DATA_OBJECT".equals(resourceType)) {
                 RuleDataObjectField dataObjectField = JSON.parseObject(
                         component.getContent(), RuleDataObjectField.class);
@@ -351,6 +361,7 @@ public class ArtifactRuntimeSnapshotService {
         private final List<RuleDefinitionInputField> inputFields = new ArrayList<>();
         private final List<RuleDefinitionOutputField> outputFields = new ArrayList<>();
         private final List<RuleDataObjectField> dataObjectFields = new ArrayList<>();
+        private final List<RuleDataObject> dataObjects = new ArrayList<>();
         private final List<NestedRuleSnapshot> nestedRules = new ArrayList<>();
         private final List<Map<String, Object>> displayBindings = new ArrayList<>();
         private final Map<String, Long> bindings = new LinkedHashMap<>();
@@ -370,6 +381,7 @@ public class ArtifactRuntimeSnapshotService {
         public List<RuleDefinitionInputField> getInputFields() { return inputFields; }
         public List<RuleDefinitionOutputField> getOutputFields() { return outputFields; }
         public List<RuleDataObjectField> getDataObjectFields() { return dataObjectFields; }
+        public List<RuleDataObject> getDataObjects() { return dataObjects; }
         public List<NestedRuleSnapshot> getNestedRules() { return nestedRules; }
         public List<Map<String, Object>> getDisplayBindings() { return displayBindings; }
         public Map<String, Long> getBindings() { return bindings; }

@@ -27,9 +27,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
-import java.io.Reader;
 import java.net.InetAddress;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -45,7 +43,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-/** 使用根 .env 指向的本机 MySQL；显式开启后配置、连接或表结构异常必须使测试失败。 */
+/** 使用本机服务配置 指向的本机 MySQL；显式开启后配置、连接或表结构异常必须使测试失败。 */
 public class ExecutionPersistenceTransactionIntegrationTest {
     private static final ThreadLocal<String> TEST_TABLE = new ThreadLocal<>();
 
@@ -559,14 +557,11 @@ public class ExecutionPersistenceTransactionIntegrationTest {
             root = root.getParent();
         }
         if (root == null) throw new IllegalStateException("无法定位仓库根目录");
-        Properties settings = new Properties();
-        try (Reader reader = Files.newBufferedReader(root.resolve(".env"), StandardCharsets.UTF_8)) {
-            settings.load(reader);
-        }
+        Properties settings = LocalIntegrationSettings.load(root);
         String host = required(settings, "MYSQL_HOST");
         InetAddress address = InetAddress.getByName(host);
         if (!address.isLoopbackAddress()) {
-            throw new IllegalStateException("事务集成测试仅允许根 .env 的 MYSQL_HOST 指向本机");
+            throw new IllegalStateException("事务集成测试仅允许本机服务配置 的 MYSQL_HOST 指向本机");
         }
         int port = Integer.parseInt(required(settings, "MYSQL_PORT"));
         if (port < 1 || port > 65535) throw new IllegalStateException("MYSQL_PORT 无效");
@@ -588,7 +583,7 @@ public class ExecutionPersistenceTransactionIntegrationTest {
 
     private static String required(Properties settings, String key) {
         String value = settings.getProperty(key);
-        if (value == null || value.isBlank()) throw new IllegalStateException("根 .env 缺少 " + key);
+        if (value == null || value.isBlank()) throw new IllegalStateException("本机服务配置 缺少 " + key);
         return value;
     }
 }

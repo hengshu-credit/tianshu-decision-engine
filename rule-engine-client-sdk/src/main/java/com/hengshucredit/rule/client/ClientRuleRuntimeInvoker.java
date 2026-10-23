@@ -81,7 +81,12 @@ class ClientRuleRuntimeInvoker {
     }
 
     void enter(CachedRule rule, Object context) {
+        enter(rule, context, config.isTraceEnabled());
+    }
+
+    void enter(CachedRule rule, Object context, boolean traceEnabled) {
         ExecutionFrame frame = new ExecutionFrame();
+        frame.traceEnabled = traceEnabled;
         frame.currentRule = rule;
         frame.context = context;
         frame.rootOutputScriptNames = rule == null || rule.getOutputScriptNames() == null
@@ -111,7 +116,7 @@ class ClientRuleRuntimeInvoker {
         }
         // 执行身份与表达式追踪开关独立，日志补报复用同一次执行的 traceId。
         result.setTraceId(frame.rootTrace.getTraceId());
-        if (config.isTraceEnabled()) {
+        if (frame.traceEnabled) {
             frame.rootTrace.setExpressionTrace(result.getTraces() == null
                     ? Collections.<Object>emptyList() : result.getTraces());
             frame.rootTrace.setStatus(result.isSuccess() ? "SUCCESS" : "FAILED");
@@ -250,7 +255,7 @@ class ClientRuleRuntimeInvoker {
         try (var ignored = frame.requestContext.bindFunctions(cached.getPreparedFunctions())) {
             frame.currentRule = cached;
             setRuleContext(cached, childTrace.getTraceId());
-            RuleResult result = engine.execute(engine.prepare(cached.getCompiledScript()), frame.context, config.isTraceEnabled(), frame.requestContext);
+            RuleResult result = engine.execute(engine.prepare(cached.getCompiledScript()), frame.context, frame.traceEnabled, frame.requestContext);
             childTrace.setExpressionTrace(result.getTraces() == null
                     ? Collections.<Object>emptyList() : result.getTraces());
             childTrace.setStatus(result.isSuccess() ? "SUCCESS" : "FAILED");
@@ -369,6 +374,7 @@ class ClientRuleRuntimeInvoker {
     }
 
     private static class ExecutionFrame {
+        private boolean traceEnabled;
         private final com.hengshucredit.rule.core.engine.RequestContext requestContext =
                 new com.hengshucredit.rule.core.engine.RequestContext();
         private RuntimeContextBridge.ContextScope contextScope;

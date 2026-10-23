@@ -19,6 +19,8 @@ import java.util.Map;
 
 @Component
 public class OpenRuleExecutionExecutor {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.security.ConsoleProjectAccess consoleProjects;
 
     private final ThreadPoolExecutor executor;
     private final AtomicLong submitted = new AtomicLong();
@@ -40,13 +42,14 @@ public class OpenRuleExecutionExecutor {
         int timeoutMs = RequestDeadlineContext.remainingMillis();
         if (timeoutMs == 0) throw new TimedOut();
         Long deadline = RequestDeadlineContext.capture();
+        Callable<T> scopedTask = consoleProjects == null ? task : consoleProjects.wrap(task);
         Future<T> future;
         submitted.incrementAndGet();
         try {
             future = executor.submit(() -> {
                 try (RequestDeadlineContext.Scope ignored = RequestDeadlineContext.install(deadline)) {
                     if (RequestDeadlineContext.remainingMillis() == 0) throw new TimedOut();
-                    return task.call();
+                    return scopedTask.call();
                 }
             });
         } catch (RejectedExecutionException e) {

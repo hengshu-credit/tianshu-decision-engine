@@ -26,6 +26,16 @@ import java.util.List;
 import java.util.Map;
 
 public class RuleDependencyClosureServiceTest {
+    @Test public void wholeObjectIsFrozenIndependentlyOfFieldsAndKeepsEnvironmentBinding() {
+        FixtureService service = new FixtureService();
+        var object = new RuleDataObject(); object.setId(17L); object.setScope("GLOBAL"); object.setStatus(1); object.setObjectCode("Request"); object.setSourceType("INPUT");
+        service.dataObjects.put(17L, object);
+        service.revision.setModelJson("{\"kind\":\"PATH\",\"refType\":\"DATA_OBJECT_ROOT\",\"refId\":17,\"code\":\"Request.extra.score\",\"relativePath\":\".extra.score\",\"valueType\":\"NUMBER\"}");
+        var closure = service.resolve(100L, 200L);
+        Assert.assertFalse(closure.getIssues().toString(), closure.hasErrors());
+        Assert.assertTrue(closure.getDependencies().stream().anyMatch(item -> "DATA_OBJECT_ROOT:17".equals(item.getComponentId())));
+        Assert.assertTrue(closure.getDependencies().stream().anyMatch(item -> "BINDING:DATA_OBJECT:17".equals(item.getComponentId())));
+    }
     @Test public void staticResourceVersionCallsInScriptsFreezeTheirExactVersionDependencies() {
         FixtureService service = new FixtureService();
         String script = "// resourceVersionValue('VARIABLE','999','999','')\nreturn resourceVersionValue('CONSTANT','7','BUSINESS_VERSION:91','') + invokeFunctionVersionById('13','FUNCTION_HISTORY:92',1);";
@@ -133,6 +143,27 @@ public class RuleDependencyClosureServiceTest {
         var closure = service.resolve(100L, 200L);
         Assert.assertFalse(closure.getIssues().toString(), closure.hasErrors());
         Assert.assertEquals(List.of("FUNCTION:13"), closure.getDependencies().stream()
+                .map(ArtifactDependency::getComponentId).toList());
+    }
+
+    @Test
+    public void scriptFunctionDependenciesAreRecursivelyFrozen() {
+        FixtureService service = new FixtureService();
+        service.revision.setModelJson("{\"kind\":\"FUNCTION\",\"functionId\":13,\"functionCode\":\"rootFn\",\"args\":[]}");
+        service.revision.setCompiledScript("return rootFn();");
+        RuleFunction root = function(13L, 1, "SCRIPT");
+        root.setScope("PROJECT"); root.setProjectId(9L); root.setFuncCode("rootFn");
+        root.setImplScript("return nestedFn();");
+        RuleFunction nested = function(14L, 1, "SCRIPT");
+        nested.setScope("PROJECT"); nested.setProjectId(9L); nested.setFuncCode("nestedFn");
+        nested.setImplScript("return 42;");
+        service.functions.put(13L, root); service.functions.put(14L, nested);
+
+        var closure = service.resolve(100L, 200L);
+
+        Assert.assertFalse(closure.getIssues().toString(), closure.hasErrors());
+        Assert.assertEquals(List.of("FUNCTION:13", "FUNCTION:14"), closure.getDependencies().stream()
+                .filter(item -> "FUNCTION".equals(item.getResourceType()))
                 .map(ArtifactDependency::getComponentId).toList());
     }
 
@@ -761,6 +792,16 @@ public class RuleDependencyClosureServiceTest {
         }
 
         @Override
+        protected List<RuleFunction> loadFunctionsByCode(String code, Long projectId) {
+            return functions.values().stream()
+                    .filter(function -> code.equals(function.getFuncCode())
+                            && Integer.valueOf(1).equals(function.getStatus())
+                            && ("GLOBAL".equals(function.getScope())
+                            || projectId != null && projectId.equals(function.getProjectId())))
+                    .toList();
+        }
+
+        @Override
         protected RuleDataObjectField loadDataObjectField(Long fieldId) {
             return dataObjectFields.get(fieldId);
         }
@@ -768,6 +809,9 @@ public class RuleDependencyClosureServiceTest {
         @Override
         protected RuleDataObject loadDataObject(Long objectId) {
             return dataObjects.get(objectId);
+        }
+        @Override protected List<RuleDataObjectField> loadDataObjectFields(Long objectId) {
+            return dataObjectFields.values().stream().filter(field -> objectId.equals(field.getObjectId())).toList();
         }
     }
 }

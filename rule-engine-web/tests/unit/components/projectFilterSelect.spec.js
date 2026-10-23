@@ -1,10 +1,10 @@
 import { shallowMount } from '@test-utils'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
-import { listProjects } from '@/api/project'
+import { listProjectOptions as listProjects } from '@/api/project'
 
 vi.mock('@/api/project', () => ({
-  listProjects: vi.fn()
+  listProjectOptions: vi.fn()
 }))
 
 function mountFilter(field) {

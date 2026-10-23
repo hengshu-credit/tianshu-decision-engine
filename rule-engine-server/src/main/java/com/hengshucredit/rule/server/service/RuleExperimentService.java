@@ -704,12 +704,12 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             }
             return routeChoice(champion, "条件分流未命中有效组，回退冠军组", routeTrace);
         }
-        int bucket = routeBucket(experiment.getExperimentCode(), requestKey);
+        BigDecimal bucket = routeBucket(experiment.getExperimentCode(), requestKey);
         routeTrace.add(routeEvent("RANDOM_VALUE", "value", bucket));
         BigDecimal cursor = BigDecimal.ZERO;
         for (RuleExperimentGroup group : productionGroups) {
             cursor = cursor.add(group.getTrafficRatio() == null ? BigDecimal.ZERO : group.getTrafficRatio());
-            if (new BigDecimal(bucket).compareTo(cursor) < 0) {
+            if (bucket.compareTo(cursor) < 0) {
                 return routeChoice(group, "比例分流命中桶位: " + bucket, routeTrace);
             }
         }
@@ -724,13 +724,13 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         if (ROUTING_RATIO.equals(experiment.getTestRoutingMode())) {
             List<Map<String, Object>> routeTrace = routingStart("TEST", experiment.getTestRoutingMode());
-            int bucket = routeBucket(experiment.getExperimentCode() + ":TEST", requestKey);
+            BigDecimal bucket = routeBucket(experiment.getExperimentCode() + ":TEST", requestKey);
             routeTrace.add(routeEvent("RANDOM_VALUE", "value", bucket));
             RuleExperimentGroup chosen = chooseRatioGroup(testGroups, bucket);
             if (chosen == null) {
                 chosen = testGroups.get(0);
             }
-            return Collections.singletonList(routeChoice(chosen, "测试组比例分流命中", routeTrace));
+            return Collections.singletonList(routeChoice(chosen, "测试组比例分流命中桶位: " + bucket, routeTrace));
         }
 
         List<RouteChoice> choices = new ArrayList<>();
@@ -758,11 +758,11 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         return choices;
     }
 
-    private RuleExperimentGroup chooseRatioGroup(List<RuleExperimentGroup> groups, int bucket) {
+    private RuleExperimentGroup chooseRatioGroup(List<RuleExperimentGroup> groups, BigDecimal bucket) {
         BigDecimal cursor = BigDecimal.ZERO;
         for (RuleExperimentGroup group : groups) {
             cursor = cursor.add(group.getTrafficRatio() == null ? BigDecimal.ZERO : group.getTrafficRatio());
-            if (new BigDecimal(bucket).compareTo(cursor) < 0) {
+            if (bucket.compareTo(cursor) < 0) {
                 return group;
             }
         }
@@ -791,6 +791,9 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                     published, params, experiment.getProjectId(), clientAppName, options, "EXPERIMENT_" + stage);
         }
         RuleExperimentGroupResult groupResult = toGroupResult(group, outcome, stage, routeReason);
+        groupResult.setRuleId(published.getDefinitionId());
+        groupResult.setRuleVersion(published.getVersion());
+        groupResult.setRevisionId(outcome.getResult().getRevisionId());
         try {
             saveExecutionLog(experiment, group, groupResult, params, requestKey, stage, routeReason,
                     experimentTraceId, configDigest, routeTrace);
@@ -1088,7 +1091,8 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         } else throw new IllegalArgumentException("未知实验组规则版本策略");
     }
 
-    private void validateExperiment(RuleExperiment experiment) {
+    /** 审批预检与执行共用相同分流约束。 */
+    public void validateExperiment(RuleExperiment experiment) {
         List<RuleExperimentGroup> groups = experiment.getGroups() == null
                 ? Collections.emptyList()
                 : experiment.getGroups();
@@ -1096,6 +1100,11 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     }
 
     private void validateRuntimeGroups(RuleExperiment experiment, List<RuleExperimentGroup> groups) {
+        for (RuleExperimentGroup group : groups) {
+            BigDecimal ratio = group == null ? null : group.getTrafficRatio();
+            if (ratio != null && (ratio.signum() < 0 || ratio.compareTo(ONE_HUNDRED) > 0 || ratio.stripTrailingZeros().scale() > 2))
+                throw new IllegalArgumentException("分流比例必须在0%至100%之间，最多保留两位小数（0.01%）");
+        }
         if (championGroup(groups) == null) {
             throw new IllegalArgumentException("分流实验必须且只能配置一组冠军组");
         }
@@ -1219,9 +1228,9 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         return routeResult == null ? null : String.valueOf(routeResult);
     }
 
-    private int routeBucket(String experimentCode, String requestKey) {
+    private BigDecimal routeBucket(String experimentCode, String requestKey) {
         if (!hasText(requestKey)) {
-            return (int) (Math.random() * 100);
+            return BigDecimal.valueOf(java.util.concurrent.ThreadLocalRandom.current().nextInt(10000), 2);
         }
         try {
             MessageDigest digest = MessageDigest.getInstance("MD5");
@@ -1230,10 +1239,17 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             for (int i = 0; i < 4; i++) {
                 value = (value << 8) | (bytes[i] & 0xff);
             }
-            return Math.floorMod(value, 100);
+            return preciseBucket(value);
         } catch (Exception e) {
-            return Math.floorMod((experimentCode + ":" + requestKey).hashCode(), 100);
+            return preciseBucket((experimentCode + ":" + requestKey).hashCode());
         }
+    }
+
+    private BigDecimal preciseBucket(int hash) {
+        // 保留旧整数桶，仅细分桶内位置；整数百分比的既有命中不变。
+        int whole = Math.floorMod(hash, 100);
+        int fraction = Math.floorMod(Math.floorDiv(hash, 100), 100);
+        return BigDecimal.valueOf(whole * 100L + fraction, 2);
     }
 
     private RuleExperiment findEnabledExperiment(String experimentCode) {

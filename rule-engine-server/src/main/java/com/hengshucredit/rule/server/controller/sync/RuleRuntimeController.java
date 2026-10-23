@@ -1,12 +1,14 @@
 package com.hengshucredit.rule.server.controller.sync;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.model.dto.RuleExperimentExecuteRequest;
 import com.hengshucredit.rule.model.dto.RuleExperimentExecuteResult;
 import com.hengshucredit.rule.model.dto.RuleExecutionStatus;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
-import com.hengshucredit.rule.server.common.R;
+import com.hengshucredit.rule.model.PlatformCode;
 import com.hengshucredit.rule.server.service.RuleExperimentService;
 import com.hengshucredit.rule.server.service.RuleExecutionStateService;
 import com.hengshucredit.rule.server.service.RuleExperimentExecutionStateService;
@@ -56,13 +58,13 @@ public class RuleRuntimeController {
     private RuleIdempotencyService idempotencyService;
 
     @PostMapping("/experiment/execute/{experimentCode}")
-    public R<RuleExperimentExecuteResult> executeExperiment(
+    public ApiResponse<RuleExperimentExecuteResult> executeExperiment(
             @PathVariable String experimentCode,
             @RequestBody(required = false) RuleExperimentExecuteRequest request,
             HttpServletRequest httpRequest) {
         ProjectAuthContext auth = ProjectAuthContext.from(httpRequest);
         if (auth == null || (!auth.isGlobalAccess() && auth.getProjectId() == null)) {
-            return R.fail(401, "Unauthorized project token");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.TOKEN_INVALID, "Unauthorized project token");
         }
         RuleExperimentExecutionStateService.Decision activeDecision = null;
         try {
@@ -72,40 +74,40 @@ public class RuleRuntimeController {
             Long executionProjectId = auth.isGlobalAccess() ? experiment == null ? null : experiment.getProjectId()
                     : auth.getProjectId();
             if (experiment == null || !executionProjectId.equals(experiment.getProjectId())) {
-                return R.fail(404, "Experiment not found");
+                return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "Experiment not found");
             }
             var decision = experimentStateService.begin(executionProjectId, experiment.getId(), experimentCode,
                     request, experimentService.executionFingerprint(experimentCode, executionProjectId), null);
             activeDecision = decision.isClaimed() ? decision : null;
             if (decision.getStatus() == RuleExperimentExecutionStateService.Status.COMPLETED) {
-                return R.ok(decision.getResult());
+                return ApiResponse.ok(decision.getResult());
             }
             if (decision.getStatus() == RuleExperimentExecutionStateService.Status.CONFLICT) {
-                return R.fail(409, "幂等键已被其他请求使用且请求内容不同");
+                return ApiResponse.fail(PlatformCode.IDEMPOTENCY_CONFLICT, null);
             }
             if (decision.getStatus() == RuleExperimentExecutionStateService.Status.IN_PROGRESS) {
-                return R.fail(409, "相同幂等键的请求正在执行");
+                return ApiResponse.fail(PlatformCode.EXECUTION_IN_PROGRESS, null);
             }
             RuleExperimentExecuteResult result = experimentService.executeForProject(
                     experimentCode, executionProjectId, request, decision.getTraceId());
             experimentStateService.complete(decision, result);
             activeDecision = null;
-            return R.ok(result);
+            return ApiResponse.ok(result);
         } catch (IllegalArgumentException e) {
             if (activeDecision != null) experimentStateService.release(activeDecision, e.getMessage());
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         } catch (RuntimeException e) {
             if (activeDecision != null) experimentStateService.release(activeDecision, e.getMessage());
-            return R.fail(500, "实验执行异常");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.SYSTEM_ERROR, "实验执行异常");
         }
     }
 
     @GetMapping("/executions/{traceId}")
-    public R<RuleExecutionStatus> getExecutionStatus(@PathVariable String traceId,
+    public ApiResponse<RuleExecutionStatus> getExecutionStatus(@PathVariable String traceId,
                                                        HttpServletRequest httpRequest) {
         ProjectAuthContext auth = ProjectAuthContext.from(httpRequest);
         if (auth == null || (!auth.isGlobalAccess() && auth.getProjectId() == null)) {
-            return R.fail(401, "Unauthorized project token");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.TOKEN_INVALID, "Unauthorized project token");
         }
         RuleExecutionStateService.State state = stateService.findByRootTraceId(traceId);
         boolean projectAllowed;
@@ -118,7 +120,7 @@ public class RuleRuntimeController {
                     state.definitionId(), auth.getProjectId());
         }
         if (state == null || !projectAllowed) {
-            return R.fail(404, "Execution status not found");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "Execution status not found");
         }
         RuleExecutionStatus status = new RuleExecutionStatus();
         status.setTraceId(state.rootTraceId());
@@ -133,7 +135,7 @@ public class RuleRuntimeController {
         } else {
             status.setIntermediate(intermediateState(state));
         }
-        return R.ok(status);
+        return ApiResponse.ok(status);
     }
 
     @SuppressWarnings("unchecked")
@@ -177,37 +179,37 @@ public class RuleRuntimeController {
 
     /** 单独读取已完成订单结果，客户端超时后不必重复提交执行请求。 */
     @GetMapping("/executions/{traceId}/result")
-    public R<?> getExecutionResult(@PathVariable String traceId,
+    public ApiResponse<?> getExecutionResult(@PathVariable String traceId,
                                    HttpServletRequest httpRequest) {
         ProjectAuthContext auth = ProjectAuthContext.from(httpRequest);
         if (auth == null || (!auth.isGlobalAccess() && auth.getProjectId() == null)) {
-            return R.fail(401, "Unauthorized project token");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.TOKEN_INVALID, "Unauthorized project token");
         }
         RuleExecutionStateService.State state = stateService.findByRootTraceId(traceId);
-        if (!auth.isGlobalAccess() && !sameProject(state, auth.getProjectId())) {
-            return R.fail(404, "Execution result not found");
+        if (state == null || (!auth.isGlobalAccess() && !sameProject(state, auth.getProjectId()))) {
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "Execution result not found");
         }
         if (state.resultJson() == null || state.resultJson().isBlank() || !isTerminalSuccess(state)) {
-            return R.fail(202, "Execution result is not ready");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESULT_PENDING, "Execution result is not ready");
         }
-        return R.ok(JSON.parseObject(state.resultJson()));
+        return ApiResponse.ok(JSON.parseObject(state.resultJson()));
     }
 
     /** 使用原订单入参按 trace 恢复可重试执行；服务端校验摘要以防止跨订单恢复。 */
     @PostMapping("/executions/{traceId}/resume")
-    public R<?> resumeExecution(@PathVariable String traceId,
+    public ApiResponse<?> resumeExecution(@PathVariable String traceId,
                                 @RequestBody(required = false) Map<String, Object> params,
                                 HttpServletRequest httpRequest) {
         ProjectAuthContext auth = ProjectAuthContext.from(httpRequest);
         if (auth == null || (!auth.isGlobalAccess() && auth.getProjectId() == null)) {
-            return R.fail(401, "Unauthorized project token");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.TOKEN_INVALID, "Unauthorized project token");
         }
         RuleExecutionStateService.State state = stateService.findByRootTraceId(traceId);
-        if (!auth.isGlobalAccess() && !sameProject(state, auth.getProjectId())) {
-            return R.fail(404, "Execution state not found");
+        if (state == null || (!auth.isGlobalAccess() && !sameProject(state, auth.getProjectId()))) {
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "Execution state not found");
         }
         if (state.resultJson() != null && !state.resultJson().isBlank() && isTerminalSuccess(state)) {
-            return R.ok(JSON.parseObject(state.resultJson()));
+            return ApiResponse.ok(JSON.parseObject(state.resultJson()));
         }
         var publishedQuery = new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<RulePublished>()
                 .eq(RulePublished::getDefinitionId, state.definitionId()).eq(RulePublished::getStatus, 1);
@@ -217,27 +219,27 @@ public class RuleRuntimeController {
             publishedQuery.last("LIMIT 1");
         }
         RulePublished published = publishedMapper.selectOne(publishedQuery);
-        if (published == null) return R.fail(404, "Published rule not found");
+        if (published == null) return ApiResponse.fail(PlatformCode.RULE_NOT_FOUND, "Published rule not found");
         Map<String, Object> resumeParams = params == null ? idempotencyService.requestParams(state) : params;
-        if (resumeParams == null) return R.fail(409, "订单检查点未保存原始入参，请提供原订单入参恢复");
+        if (resumeParams == null) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_CONFLICT, "订单检查点未保存原始入参，请提供原订单入参恢复");
         RuleIdempotencyService.Decision decision;
         try {
             decision = idempotencyService.resumeByTrace(state, published,
                     resumeParams);
         } catch (IllegalArgumentException error) {
-            return R.fail(409, error.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_CONFLICT, error.getMessage());
         }
-        if (!decision.isClaimed()) return R.fail(409, "相同订单正在其他节点恢复执行");
+        if (!decision.isClaimed()) return ApiResponse.fail(PlatformCode.EXECUTION_IN_PROGRESS, "相同订单正在其他节点恢复执行");
         try {
             RuleResult result = idempotencyService.withDecision(decision,
                     () -> executeService.executePublished(published,
                             resumeParams,
                             state.projectId(), "RUNTIME_RESUME", auth, true, true));
             idempotencyService.complete(decision, result, null);
-            return R.ok(result);
+            return ApiResponse.ok(result);
         } catch (RuntimeException error) {
             idempotencyService.release(decision, error.getMessage());
-            return R.fail(500, "恢复执行失败: " + error.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.SYSTEM_ERROR, "恢复执行失败: " + error.getMessage());
         }
     }
 
@@ -254,15 +256,15 @@ public class RuleRuntimeController {
      * 只允许同一项目的业务令牌读取，避免把控制台日志查询接口暴露给业务侧。
      */
     @GetMapping("/external-calls/{callId}")
-    public R<Map<String, Object>> getExternalCallPayload(@PathVariable String callId,
+    public ApiResponse<Map<String, Object>> getExternalCallPayload(@PathVariable String callId,
                                                            HttpServletRequest httpRequest) {
         ProjectAuthContext auth = ProjectAuthContext.from(httpRequest);
         if (auth == null || (!auth.isGlobalAccess() && auth.getProjectId() == null)) {
-            return R.fail(401, "Unauthorized project token");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.TOKEN_INVALID, "Unauthorized project token");
         }
         Map<String, Object> payload = runtimeCallLogService.payloadByCallId(callId,
                 auth.isGlobalAccess() ? null : auth.getProjectId());
-        if (payload == null || payload.isEmpty()) return R.fail(404, "External call not found");
-        return R.ok(payload);
+        if (payload == null || payload.isEmpty()) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "External call not found");
+        return ApiResponse.ok(payload);
     }
 }

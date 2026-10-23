@@ -17,7 +17,7 @@ describe('Vite AMD 兼容配置', () => {
     expect(viteConfig.optimizeDeps?.include).toEqual([
       '@logicflow/core',
       '@logicflow/extension',
-      '@logicflow/layout',
+      '@logicflow/layout/es/dagre/index.js',
     ])
   })
 })

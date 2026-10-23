@@ -30,7 +30,7 @@ public class ConsoleAuthControllerTest {
                 .andExpect(status().isOk())
                 .andReturn());
 
-        assertEquals(200, response.getIntValue("code"));
+        assertEquals("000000", response.getString("code"));
         assertTrue(response.getJSONObject("data").getBooleanValue("loginEnabled"));
         assertFalse(response.getJSONObject("data").getBooleanValue("authenticated"));
     }
@@ -115,7 +115,7 @@ public class ConsoleAuthControllerTest {
         session.setAttribute(properties.getSessionUserIdAttribute(), 9L);
         session.setAttribute(properties.getSessionPermissionVersionAttribute(), 3L);
         JSONObject body = response(mockMvc(properties, accountService()).perform(get("/api/auth/console/me").session(session)).andReturn());
-        assertEquals(401, body.getIntValue("code"));
+        assertEquals("301001", body.getString("code"));
         assertFalse(session.isInvalid());
         org.junit.Assert.assertNull(session.getAttribute(properties.getSessionUsernameAttribute()));
     }

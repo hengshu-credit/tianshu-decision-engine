@@ -18,7 +18,7 @@
           <el-option label="布尔" value="BOOLEAN" />
           <el-option label="空值" value="NULL" />
           <el-option label="业务字段" value="REFERENCE" />
-          <el-option v-if="typeOf(row) === 'LEGACY'" label="原有表达式" value="LEGACY" />
+          <el-option v-if="typeOf(row) === 'INVALID'" label="请选择类型" value="INVALID" disabled />
         </el-select>
         <operand-picker
           v-if="typeOf(row) === 'REFERENCE'"
@@ -33,7 +33,7 @@
           <el-option label="是（true）" :value="true" />
           <el-option label="否（false）" :value="false" />
         </el-select>
-        <el-input v-else :model-value="displayValue(row)" :aria-label="`参数 ${index + 1} 值`" :disabled="['NULL', 'LEGACY'].includes(typeOf(row))" @update:model-value="changeValue(index, typeOf(row), $event)" />
+        <el-input v-else :model-value="displayValue(row)" :aria-label="`参数 ${index + 1} 值`" :disabled="['NULL', 'INVALID'].includes(typeOf(row))" @update:model-value="changeValue(index, typeOf(row), $event)" />
         <el-button link type="danger" :aria-label="`删除参数 ${index + 1}`" @click="remove(index)">删除</el-button>
       </div>
       <div class="sql-params-actions">
@@ -41,7 +41,6 @@
         <el-button v-if="rows.length < expectedCount" :disabled="!!parseError" @click="fillMissing">补齐参数</el-button>
       </div>
       <p>按 SQL 中 ? 的顺序填写；引号和注释内的 ? 不计入。业务字段按 ID 绑定。</p>
-      <p v-if="rows.some(row => typeOf(row) === 'LEGACY')">原有表达式按原配置保留，可切换 JSON 查看；选择新类型时才转换该项。</p>
     </template>
   </section>
 </template>

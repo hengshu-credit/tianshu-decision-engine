@@ -17,8 +17,6 @@ import com.hengshucredit.rule.server.mapper.ConsoleUserRoleMapper;
 import com.hengshucredit.rule.server.security.ConsolePermissionCodes;
 import com.hengshucredit.rule.server.security.ConsolePermissionService;
 import jakarta.annotation.Resource;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,9 +46,25 @@ public class DatabaseConsoleAccountService {
     @Resource
     private ConsolePermissionService permissionService;
 
-    @Autowired(required = false)
-    @Lazy
-    private ConsoleLoginAuthenticator bootstrapAuthenticator;
+    public boolean initializationRequired() {
+        return userMapper.initializedAt() == null && countUsers() == 0;
+    }
+
+    /** 首次注册独立于普通邮箱注册；锁与持久化标记防止多节点重复初始化。 */
+    @Transactional
+    public void initializeAdministrator(String username, String displayName, String password) {
+        String normalizedUsername = ConsoleAccountCredentialService.requireUsername(username);
+        ConsoleAccountCredentialService.requirePassword(password);
+        if (displayName != null && displayName.trim().length() > 128) throw new IllegalArgumentException("显示名称不能超过128位");
+        if (userMapper.lockSecurity() == null) throw new IllegalStateException("账户安全锁未初始化");
+        if (!initializationRequired()) throw new com.hengshucredit.rule.model.PlatformException(
+                com.hengshucredit.rule.model.PlatformCode.PERMISSION_DENIED, "系统已初始化，请登录或使用管理员恢复");
+        ConsoleUser user = createBootstrapUser(normalizedUsername, password);
+        if (displayName != null && !displayName.isBlank()) user.setDisplayName(displayName.trim());
+        persistBootstrapUser(user);
+        if (userMapper.completeInitialization(user.getId()) != 1) throw new IllegalStateException("系统初始化状态已变化");
+        appendAudit(user, "INITIALIZE_SUPER_ADMIN");
+    }
 
     @Transactional
     public ConsoleLoginResult authenticate(String username, String rawPassword) {
@@ -58,20 +72,9 @@ public class DatabaseConsoleAccountService {
             return ConsoleLoginResult.failure();
         }
         String normalizedUsername = username.trim();
-        if (countUsers() == 0) {
-            if (!authenticateBootstrapSource(normalizedUsername, rawPassword)) {
-                return ConsoleLoginResult.failure();
-            }
-            ConsoleUser user = createBootstrapUser(
-                    normalizedUsername, rawPassword);
-            persistBootstrapUser(user);
-            updateLastLogin(user);
-            appendAudit(user, "BOOTSTRAP_SUPER_ADMIN");
-            return successfulResult(user, true);
-        }
-
         ConsoleUser user = findUser(normalizedUsername);
-        if (user == null || !Integer.valueOf(1).equals(user.getStatus())
+        if (user == null || user.getMergedIntoUserId() != null || !Integer.valueOf(1).equals(user.getStatus())
+                || (user.getRegistrationStatus() != null && !"ACTIVE".equals(user.getRegistrationStatus()))
                 || !matchesPassword(rawPassword, user.getPasswordHash())) {
             return ConsoleLoginResult.failure();
         }
@@ -85,7 +88,8 @@ public class DatabaseConsoleAccountService {
     public ConsoleLoginResult currentUser(Long userId) {
         if (userId == null) return ConsoleLoginResult.failure();
         ConsoleUser user = userMapper.selectById(userId);
-        if (user == null || !Integer.valueOf(1).equals(user.getStatus())) {
+        if (user == null || user.getMergedIntoUserId() != null || !Integer.valueOf(1).equals(user.getStatus())
+                || (user.getRegistrationStatus() != null && !"ACTIVE".equals(user.getRegistrationStatus()))) {
             return ConsoleLoginResult.failure();
         }
         return successfulResult(user, false);
@@ -102,16 +106,11 @@ public class DatabaseConsoleAccountService {
                 .last("LIMIT 1"));
     }
 
-    protected boolean authenticateBootstrapSource(String username,
-                                                  String rawPassword) {
-        return bootstrapAuthenticator != null
-                && bootstrapAuthenticator.authenticate(username, rawPassword);
-    }
-
     protected ConsoleUser createBootstrapUser(String username,
                                               String rawPassword) {
         ConsoleUser user = new ConsoleUser();
         user.setUsername(username);
+        user.setOperatorName(username);
         user.setDisplayName(username);
         user.setRegistrationStatus("ACTIVE");
         user.setRegistrationSource("ADMIN");
@@ -142,12 +141,19 @@ public class DatabaseConsoleAccountService {
     }
 
     protected Set<String> resolvePermissions(Long userId) {
-        return permissionService.effectivePermissions(userId);
+        return permissionService.scope(userId).availablePermissions();
     }
 
     protected void updateLastLogin(ConsoleUser user) {
         user.setLastLoginTime(LocalDateTime.now());
-        userMapper.updateById(user);
+        int changed = userMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ConsoleUser>()
+                .eq(ConsoleUser::getId, user.getId())
+                .eq(ConsoleUser::getStatus, 1)
+                .eq(ConsoleUser::getPermissionVersion, user.getPermissionVersion())
+                .eq(ConsoleUser::getPasswordHash, user.getPasswordHash())
+                .set(ConsoleUser::getLastLoginTime, user.getLastLoginTime()));
+        if (changed != 1) throw new com.hengshucredit.rule.model.PlatformException(
+                com.hengshucredit.rule.model.PlatformCode.CREDENTIAL_INVALID, "账户状态已变更，请重新登录");
     }
 
     private ConsoleLoginResult successfulResult(ConsoleUser user,
@@ -160,7 +166,12 @@ public class DatabaseConsoleAccountService {
                 user.getDisplayName(),
                 user.getPermissionVersion(),
                 resolveRoleCodes(user.getId()),
-                resolvePermissions(user.getId()));
+                resolvePermissions(user.getId()), user.getOperatorName(), resolveOperatorNames(user));
+    }
+
+    protected Set<String> resolveOperatorNames(ConsoleUser user) {
+        String actor = user.getOperatorName() == null ? user.getUsername() : user.getOperatorName();
+        return userMapper == null ? Set.of(actor) : Set.copyOf(userMapper.operatorNames(actor));
     }
 
     private boolean matchesPassword(String rawPassword, String passwordHash) {
@@ -213,6 +224,7 @@ public class DatabaseConsoleAccountService {
      */
     protected void synchronizePermissionCatalogForExistingUsers(
             String operator) {
+        if (userMapper != null && userMapper.lockSecurity() == null) throw new IllegalStateException("账户安全锁未初始化");
         PermissionCatalogSync catalog =
                 synchronizePermissionCatalog();
         ConsoleRole role = roleMapper.selectOne(
@@ -286,8 +298,21 @@ public class DatabaseConsoleAccountService {
                                      String displayName,
                                      Long permissionVersion,
                                      List<String> roleCodes,
-                                     Set<String> permissions) {
+                                     Set<String> permissions,
+                                     String operatorName,
+                                     Set<String> operatorNames) {
+        public ConsoleLoginResult(boolean authenticated, boolean bootstrapped, Long userId, String username,
+                                  String displayName, Long permissionVersion, List<String> roleCodes, Set<String> permissions, String operatorName) {
+            this(authenticated, bootstrapped, userId, username, displayName, permissionVersion, roleCodes, permissions, operatorName, null);
+        }
+        public ConsoleLoginResult(boolean authenticated, boolean bootstrapped, Long userId, String username,
+                                  String displayName, Long permissionVersion, List<String> roleCodes, Set<String> permissions) {
+            this(authenticated, bootstrapped, userId, username, displayName, permissionVersion, roleCodes, permissions, username);
+        }
         public ConsoleLoginResult {
+            if (operatorName == null || operatorName.isBlank()) operatorName = username;
+            operatorNames = operatorNames == null || operatorNames.isEmpty()
+                    ? operatorName == null ? Set.of() : Set.of(operatorName) : Set.copyOf(operatorNames);
             roleCodes = roleCodes == null
                     ? Collections.emptyList() : List.copyOf(roleCodes);
             permissions = permissions == null

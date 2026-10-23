@@ -50,7 +50,7 @@ public class HttpLogReporterTest {
             requestCount.incrementAndGet();
             requestEntered.countDown();
             await(releaseResponse);
-            respond(exchange, 200, "{\"code\":200}");
+            respond(exchange, 200, "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true}");
         });
         HttpLogReporter reporter = new HttpLogReporter(serverUrl, 2000);
         ExecutorService caller = Executors.newSingleThreadExecutor();
@@ -80,7 +80,7 @@ public class HttpLogReporterTest {
             if (attempt == 1) {
                 respond(exchange, 200, "{\"code\":500,\"message\":\"temporarily unavailable\"}");
             } else {
-                respond(exchange, attempt < 3 ? 500 : 200, "{\"code\":200}");
+                respond(exchange, attempt < 3 ? 500 : 200, "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true}");
             }
         });
         HttpLogReporter reporter = new HttpLogReporter(serverUrl, 1000);
@@ -104,7 +104,7 @@ public class HttpLogReporterTest {
                 firstRequestEntered.countDown();
                 await(releaseFirstRequest);
             }
-            respond(exchange, 200, "{\"code\":200}");
+            respond(exchange, 200, "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true}");
         });
         HttpLogReporter reporter = configuredReporter(serverUrl, 2, 1, 10);
         try {
@@ -128,7 +128,7 @@ public class HttpLogReporterTest {
         String serverUrl = startServer(exchange -> {
             requestCount.incrementAndGet();
             requestReceived.countDown();
-            respond(exchange, 200, "{\"code\":200}");
+            respond(exchange, 200, "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true}");
         });
         HttpLogReporter reporter = configuredReporter(serverUrl, 10, 2, 2000);
         try {
@@ -149,7 +149,7 @@ public class HttpLogReporterTest {
         AtomicInteger requestCount = new AtomicInteger();
         String serverUrl = startServer(exchange -> {
             requestCount.incrementAndGet();
-            respond(exchange, 200, "{\"code\":200}");
+            respond(exchange, 200, "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true}");
         });
         HttpLogReporter reporter = configuredReporter(serverUrl, 10, 1, 10);
 
@@ -167,7 +167,7 @@ public class HttpLogReporterTest {
         AtomicInteger requestCount = new AtomicInteger();
         String serverUrl = startServer(exchange -> {
             requestCount.incrementAndGet();
-            respond(exchange, 200, "{\"code\":200}");
+            respond(exchange, 200, "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true}");
         });
         HttpLogReporter reporter = configuredReporter(serverUrl, 10, 1, 10);
         BlockingFirstOfferQueue queue = new BlockingFirstOfferQueue(10);
@@ -204,7 +204,7 @@ public class HttpLogReporterTest {
             requestCount.incrementAndGet();
             requestEntered.countDown();
             await(releaseResponse);
-            respond(exchange, 200, "{\"code\":200}");
+            respond(exchange, 200, "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true}");
         });
         HttpLogReporter reporter = configuredReporter(serverUrl, 1000, 10, 1, 10);
         reporter.report(Collections.singletonList(log("HANGING")));
@@ -236,7 +236,7 @@ public class HttpLogReporterTest {
         AtomicInteger requestCount = new AtomicInteger();
         String serverUrl = startServer(exchange -> {
             requestCount.incrementAndGet();
-            respond(exchange, 200, "{\"code\":200}");
+            respond(exchange, 200, "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true}");
         });
         BlockingAuthenticator authenticator = new BlockingAuthenticator(serverUrl);
         HttpLogReporter reporter = new HttpLogReporter(serverUrl, 1000, authenticator,
@@ -277,7 +277,7 @@ public class HttpLogReporterTest {
         CountDownLatch firstResponseSent = new CountDownLatch(1);
         String serverUrl = startServer(exchange -> {
             int attempt = requestCount.incrementAndGet();
-            respond(exchange, attempt == 1 ? 500 : 200, "{\"code\":200}");
+            respond(exchange, attempt == 1 ? 500 : 200, "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true}");
             if (attempt == 1) firstResponseSent.countDown();
         });
         HttpLogReporter reporter = new HttpLogReporter(serverUrl, 1000, null,
@@ -448,7 +448,7 @@ public class HttpLogReporterTest {
     }
 
     private void respond(HttpExchange exchange, int status) throws IOException {
-        respond(exchange, status, "{\"code\":200}");
+        respond(exchange, status, "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true}");
     }
 
     private void respond(HttpExchange exchange, int status, String responseBody) throws IOException {

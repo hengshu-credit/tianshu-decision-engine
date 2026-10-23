@@ -66,7 +66,7 @@ async function mountPage(permissionValues) {
     mocks: {
       $route: { params: { id: 9 } },
       $router: { push: vi.fn() },
-      $message: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
+      $message: { success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() },
       $confirm: vi.fn().mockResolvedValue(true)
     },
     stubs: {
@@ -152,7 +152,7 @@ describe('ListDetail governed record changes', () => {
     wrapper.vm.logTimeRange = ['2026-08-01 00:00:00', '2026-08-02 00:00:00']
     wrapper.vm.handleTrace({ itemType: 'MOBILE', itemContent: '13800138000' })
     await flush()
-    const identity = { pageNum: 1, pageSize: 10, itemType: 'MOBILE', itemContent: '13800138000' }
+    const identity = { pageNum: 1, pageSize: 20, itemType: 'MOBILE', itemContent: '13800138000' }
     expect(ruleListApi.listRecordLogs).toHaveBeenLastCalledWith(9, identity)
     wrapper.vm.logQuery.operation = 'UPDATE'
     wrapper.vm.resetLogQuery()
@@ -160,7 +160,7 @@ describe('ListDetail governed record changes', () => {
     expect(ruleListApi.listRecordLogs).toHaveBeenLastCalledWith(9, identity)
     wrapper.vm.clearTrace()
     await flush()
-    expect(ruleListApi.listRecordLogs).toHaveBeenLastCalledWith(9, { pageNum: 1, pageSize: 10 })
+    expect(ruleListApi.listRecordLogs).toHaveBeenLastCalledWith(9, { pageNum: 1, pageSize: 20 })
   })
 
   test('new record stages approval with normalized validity period', async () => {
@@ -233,7 +233,7 @@ describe('ListDetail governed record changes', () => {
     expect(wrapper.vm.activeTab).toBe('logs')
     expect(ruleListApi.listRecordLogs).toHaveBeenCalledWith(9, {
       pageNum: 1,
-      pageSize: 10,
+      pageSize: 20,
       itemType: 'MOBILE',
       itemContent: '13800138000'
     })
@@ -243,7 +243,7 @@ describe('ListDetail governed record changes', () => {
     await flush()
     expect(ruleListApi.listRecordLogs).toHaveBeenCalledWith(9, {
       pageNum: 2,
-      pageSize: 10,
+      pageSize: 20,
       itemType: 'MOBILE',
       itemContent: '13800138000'
     })
@@ -253,7 +253,7 @@ describe('ListDetail governed record changes', () => {
     await flush()
     expect(ruleListApi.listRecordLogs).toHaveBeenCalledWith(9, {
       pageNum: 1,
-      pageSize: 10
+      pageSize: 20
     })
   })
 
@@ -297,6 +297,16 @@ describe('ListDetail governed record changes', () => {
     expect(wrapper.vm.batchFeedback.errors[0]).toContain('row 3')
     expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
     expect(ruleListApi.listRecords).toHaveBeenCalledTimes(1)
+  })
+
+  test('all duplicate import explains no change instead of asking to fix nonexistent errors', async () => {
+    wrapper.vm.handleBatchResult(batchResult({ submittable: false, approvalRequestId: null,
+      totalCount: 3, addCount: 0, duplicateCount: 3, invalidCount: 0 }), 'Excel 导入')
+    expect(wrapper.vm.batchFeedback.title).toBe('Excel 导入无需变更')
+    expect(wrapper.vm.batchFeedback.hasErrors).toBe(false)
+    expect(wrapper.vm.$message.warning).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.info).toHaveBeenCalledWith('所有记录均已存在，无需重复提交')
+    expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
   })
 })
 

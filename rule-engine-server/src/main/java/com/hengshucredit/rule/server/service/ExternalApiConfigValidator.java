@@ -22,8 +22,21 @@ public final class ExternalApiConfigValidator {
             "type_is", "type_not", "type_changed", "is_true", "is_false");
     private ExternalApiConfigValidator() { }
 
+    public static void validateEditableConfig(RuleExternalApiConfig config) {
+        if (java.util.stream.Stream.of(config.getHeaderConfig(), config.getQueryConfig(), config.getRequestMapping(),
+                config.getResponseMapping(), config.getBodyTemplate(), config.getAsyncPollConfig(), config.getAsyncCallbackConfig(),
+                config.getAsyncCallbackUrl(), config.getAsyncResultPath(), config.getAsyncResultMode()).anyMatch(ExternalApiConfigValidator::hasText)) {
+            throw new IllegalArgumentException("请求、响应和异步步骤必须在 executionConfig 中配置");
+        }
+        validate(config);
+    }
+
     public static void validate(RuleExternalApiConfig config) {
+        if (ExternalApiRequestPlan.specification(config) == null) {
+            throw new IllegalArgumentException("外数 API 必须使用 V2 executionConfig");
+        }
         ExternalApiExecutionConfig.validate(config);
+        ExternalApiAuthConfig.validate(config.getAuthApiConfig(), null);
         if (hasText(config.getExceptionStrategy())) {
             String strategy = config.getExceptionStrategy().trim().toUpperCase(Locale.ROOT);
             if (!Set.of("FAIL_FAST", "RETURN_DEFAULT", "IGNORE", "USE_CACHE", "SKIP", "BREAK", "WAIT", "RETRY").contains(strategy)) {
@@ -80,58 +93,7 @@ public final class ExternalApiConfigValidator {
             if (execution.getJSONArray("steps") == null || execution.getJSONArray("steps").isEmpty()) throw new IllegalArgumentException("异步接口请至少添加一个链路步骤");
             return;
         }
-        String mode = config.getAsyncResultMode() == null ? ""
-                : config.getAsyncResultMode().trim().toUpperCase(Locale.ROOT);
-        if (!"POLL".equals(mode) && !"CALLBACK".equals(mode)) {
-            throw new IllegalArgumentException("异步接口必须选择引擎轮询或外部回调");
-        }
-        JSONObject protocol = JSON.parseObject("POLL".equals(mode)
-                ? config.getAsyncPollConfig() : config.getAsyncCallbackConfig());
-        if (protocol == null) throw new IllegalArgumentException("请填写异步结果获取配置");
-        if (!hasText(protocol.getString("taskIdPath")) && !hasText(protocol.getString("traceIdPath"))
-                && !hasText(protocol.getString("submissionTaskIdPath"))) {
-            throw new IllegalArgumentException("异步配置必须填写任务号或 trace_id 路径");
-        }
-        required(protocol.getString("statusPath"), "异步状态路径");
-        required(protocol.getString("successValue"), "异步成功值");
-        if (hasText(protocol.getString("failureValue"))
-                && protocol.getString("failureValue").equals(protocol.getString("successValue"))) {
-            throw new IllegalArgumentException("异步成功值和失败值不能相同");
-        }
-        if (hasText(protocol.getString("failureMode"))
-                && !Set.of("CONTINUE", "TERMINATE").contains(protocol.getString("failureMode").trim().toUpperCase(Locale.ROOT))) {
-            throw new IllegalArgumentException("异步失败处理方式只能是 CONTINUE 或 TERMINATE");
-        }
-        if ("POLL".equals(mode)) {
-            required(protocol.getString("resultEndpointUrl"), "结果查询地址");
-            positive(protocol, "intervalMs", 3000);
-            int maxAttempts = nonNegative(protocol, "maxAttempts", 20);
-            if (asyncTimeoutMs == 0 && maxAttempts > 0) {
-                throw new IllegalArgumentException("异步等待超时为 0 时，maxAttempts 必须为 0 才能持续等待");
-            }
-            if (protocol.get("backoffMultiplier") != null) {
-                double multiplier = protocol.getDoubleValue("backoffMultiplier");
-                if (multiplier < 1 || multiplier > 10) throw new IllegalArgumentException("轮询退避倍数必须在 1 到 10 之间");
-            }
-            if (protocol.get("maxIntervalMs") != null) positive(protocol, "maxIntervalMs", 60000);
-            String failureMode = protocol.getString("failureMode");
-            if (hasText(failureMode) && !Set.of("CONTINUE", "TERMINATE").contains(failureMode.trim().toUpperCase(Locale.ROOT))) {
-                throw new IllegalArgumentException("异步失败处理方式只能是 CONTINUE 或 TERMINATE");
-            }
-            for (String field : new String[]{"headerConfig", "queryConfig", "requestMapping"}) {
-                Object value = protocol.get(field);
-                if (value != null && !(value instanceof java.util.Map)) {
-                    throw new IllegalArgumentException("轮询 " + field + " 必须是 JSON 对象");
-                }
-            }
-        } else {
-            required(config.getAsyncCallbackUrl(), "引擎公网回调地址模板");
-            if (!config.getAsyncCallbackUrl().matches("https?://.+/api/external-callback/\\$\\{invocationId}")) {
-                throw new IllegalArgumentException("回调地址必须是 http(s)://公网地址/api/external-callback/${invocationId}");
-            }
-            required(protocol.getString("signatureHeader"), "回调签名 Header");
-            required(protocol.getString("signatureSecret"), "回调签名密钥");
-        }
+        throw new IllegalArgumentException("异步接口必须配置执行链路");
     }
 
     /** 校验外数接口引用的数据源和请求/响应对象属于同一可见作用域。 */

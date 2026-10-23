@@ -1,9 +1,10 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.model.dto.ConsolePasswordResetRequest;
 import com.hengshucredit.rule.model.dto.ConsoleUserPermissionRequest;
 import com.hengshucredit.rule.model.dto.ConsoleUserSaveRequest;
-import com.hengshucredit.rule.server.common.Result;
 import com.hengshucredit.rule.server.security.RequirePermission;
 import com.hengshucredit.rule.server.service.ConsoleAccountManagementService;
 import com.hengshucredit.rule.server.service.ConsoleOperatorResolver;
@@ -28,58 +29,64 @@ public class ConsoleAccountController {
     @Resource
     private ConsoleOperatorResolver operatorResolver;
 
+    @GetMapping("/project-options")
+    @RequirePermission(value = "account:role-assign", anyOf = {"account:manage"})
+    public ApiResponse<List<com.hengshucredit.rule.server.mapper.ConsoleUserProjectMapper.ProjectOption>> projectOptions() {
+        return ApiResponse.ok(accountService.projectOptions());
+    }
+
     @GetMapping
     @RequirePermission(value = "account:view",
             anyOf = {"account:manage", "account:approve", "account:role-assign",
                     "account:password-reset"})
-    public Result<List<ConsoleAccountManagementService.ConsoleUserDetail>> list() {
-        return Result.ok(accountService.listUsers());
+    public ApiResponse<List<ConsoleAccountManagementService.ConsoleUserDetail>> list() {
+        return ApiResponse.ok(accountService.listUsers());
     }
 
     @GetMapping("/{id}")
     @RequirePermission(value = "account:view",
             anyOf = {"account:manage", "account:approve", "account:role-assign",
                     "account:password-reset"})
-    public Result<ConsoleAccountManagementService.ConsoleUserDetail> detail(
+    public ApiResponse<ConsoleAccountManagementService.ConsoleUserDetail> detail(
             @PathVariable Long id) {
-        return Result.ok(accountService.getUser(id));
+        return ApiResponse.ok(accountService.getUser(id));
     }
 
     @PostMapping
     @RequirePermission("account:manage")
-    public Result<ConsoleAccountManagementService.ConsoleUserDetail> save(
+    public ApiResponse<ConsoleAccountManagementService.ConsoleUserDetail> save(
             @RequestBody ConsoleUserSaveRequest request) {
-        return Result.ok(accountService.saveUser(
+        return ApiResponse.ok(accountService.saveUser(
                 request, operatorResolver.resolve()));
     }
 
     @PutMapping("/{id}/permissions")
     @RequirePermission(value = "account:role-assign",
             anyOf = {"account:manage"})
-    public Result<ConsoleAccountManagementService.ConsoleUserDetail> permissions(
+    public ApiResponse<ConsoleAccountManagementService.ConsoleUserDetail> permissions(
             @PathVariable Long id,
             @RequestBody ConsoleUserPermissionRequest request) {
-        return Result.ok(accountService.saveUserPermissions(
+        return ApiResponse.ok(accountService.saveUserPermissions(
                 id, request, operatorResolver.resolve()));
     }
 
     @PutMapping("/{id}/status")
     @RequirePermission("account:manage")
-    public Result<Void> status(@PathVariable Long id,
+    public ApiResponse<Void> status(@PathVariable Long id,
                                @RequestParam Integer status) {
         accountService.changeUserStatus(id, status, operatorResolver.resolve());
-        return Result.ok();
+        return ApiResponse.ok();
     }
 
     @PutMapping("/{id}/password")
     @RequirePermission(value = "account:password-reset",
             anyOf = {"account:manage"})
-    public Result<Void> resetPassword(
+    public ApiResponse<Void> resetPassword(
             @PathVariable Long id,
             @RequestBody ConsolePasswordResetRequest request) {
         accountService.resetPassword(id,
                 request == null ? null : request.getPassword(),
                 operatorResolver.resolve());
-        return Result.ok();
+        return ApiResponse.ok();
     }
 }

@@ -1,8 +1,8 @@
 package com.hengshucredit.rule.server.audit;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.model.entity.ConsoleOperationLog;
-import com.hengshucredit.rule.server.common.R;
-import com.hengshucredit.rule.server.common.Result;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -65,8 +65,8 @@ public class ConsoleOperationAudit implements HandlerInterceptor {
         State state = state(request);
         if (state == null) return;
         Object data = null;
-        if (response instanceof R<?> body) { state.log.setResultCode(body.getCode()); data = body.getData(); }
-        else if (response instanceof Result<?> body) { state.log.setResultCode(body.getCode()); data = body.getData(); }
+        if (response instanceof ApiResponse<?> body) { state.log.setResultCode(body.status().httpStatus()); data = body.getData(); }
+
         if (!state.authorized || data == null) return;
         if (java.util.Set.of("EXECUTE", "DEBUG").contains(state.log.getAction()) &&
                 (Boolean.FALSE.equals(OperationLogMetadataResolver.property(data, "success")) ||

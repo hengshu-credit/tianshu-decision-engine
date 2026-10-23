@@ -1,7 +1,8 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
+const { platformResponse } = require('./platformResponse.cjs')
 
-const distRoot = path.resolve(__dirname, '../../../dist')
+const distRoot = process.env.E2E_DIST_DIR ? path.resolve(process.env.E2E_DIST_DIR) : path.resolve(__dirname, '../../../dist')
 
 const apiData = new Map([
   ['/api/rule/governance/workspaces/states', ({ url }) => (url.searchParams.get('ids') || '').split(',').filter(Boolean).map(resourceId => ({ resourceId, effectiveStatus: null, hasEffectiveVersion: false, requestId: null, requestStatus: null, owned: false, hasRuleDraft: false }))],
@@ -10,6 +11,10 @@ const apiData = new Map([
   ['/api/rule/governance/workspaces', { records: [], total: 0 }],
   ['/api/auth/console/config', { loginEnabled: false }],
   ['/api/auth/console/me', { username: 'e2e' }],
+  ['/api/rule/console/accounts/project-options', [
+    { id: 1, projectCode: 'e2e_project', projectName: 'E2E 项目', status: 1 }
+  ]],
+  ['/api/rule/project/1', { id: 1, projectCode: 'e2e_project', projectName: 'E2E 项目', status: 1 }],
   ['/api/rule/project/list', {
     records: [{ id: 1, projectCode: 'e2e_project', projectName: 'E2E 项目', status: 1 }],
     total: 1
@@ -85,6 +90,7 @@ const apiData = new Map([
   }],
   ['/api/rule/model/list', { records: [], total: 0 }],
   ['/api/rule/datasource/api-config/list', { records: [], total: 0 }],
+  ['/api/rule/datasource/api-config/available', []],
   ['/api/rule/model/health', { healthy: true }],
   ['/api/rule/model/runtimeCapabilities', { availableProviders: ['CPUExecutionProvider'] }]
 ])
@@ -108,10 +114,31 @@ function resolveApiFixture(routeApiData, pathname, method = 'GET') {
   // 同一路径可配置多个方法；方法不匹配时仍保留期望方法用于严格错误报告。
   const otherMethod = [...routeApiData].find(([key]) => key.endsWith(` ${pathname}`))?.[1]
   if (otherMethod) return otherMethod
+  // 项目选择器使用只读目录；复用同一组测试项目，但仅返回真实目录契约允许的元数据。
+  if (method === 'GET' && pathname === '/api/rule/project/options') {
+    return projectOptionsFixture(routeApiData.get('GET /api/rule/project/list'), true)
+  }
+  const projectOption = /^\/api\/rule\/project\/options\/(\d+)$/.exec(pathname)
+  if (method === 'GET' && projectOption) {
+    return projectOptionsFixture(routeApiData.get(`GET /api/rule/project/${projectOption[1]}`), false)
+  }
   if (/^\/api\/rule\/governance\/workspaces\/[A-Z_]+\/\d+$/.test(pathname)) return { data: null, expectedMethod: 'GET' }
   if (/^\/api\/rule\/resource-versions\/[A-Z_]+\/\d+$/.test(pathname)) return { data: { versions: [], history: [], drafts: [], actor: 'e2e' }, expectedMethod: 'GET' }
   if (/^\/api\/rule\/resource-versions\/[A-Z_]+\/\d+\/events$/.test(pathname)) return { data: [], expectedMethod: 'GET' }
   return null
+}
+
+function projectOptionsFixture(source, paged) {
+  if (!source) return null
+  const metadata = project => project == null ? null : ({
+    id: project.id, projectCode: project.projectCode, projectName: project.projectName, status: project.status
+  })
+  return { expectedMethod: 'GET', data: async args => {
+    const value = typeof source.data === 'function' ? await source.data(args) : source.data
+    if (!paged) return metadata(value)
+    if (Array.isArray(value)) return { records: value.map(metadata), total: value.length }
+    return { ...value, records: (value?.records || []).map(metadata) }
+  } }
 }
 
 async function apiResponse(url, request, routeApiData) {
@@ -119,11 +146,7 @@ async function apiResponse(url, request, routeApiData) {
   const data = typeof configuredData === 'function'
     ? await configuredData({ url, request })
     : configuredData
-  return {
-    code: 200,
-    message: 'success',
-    data: data === undefined ? { records: [], total: 0 } : data
-  }
+  return platformResponse(data === undefined ? { records: [], total: 0 } : data)
 }
 
 function addApiFixtures(target, fixtures) {
@@ -169,8 +192,9 @@ async function installDistRoutes(page, options = {}) {
   page.on('pageerror', error => pageErrors.push(error.message))
   page.on('console', message => {
     if (message.type() === 'error') consoleErrors.push(message.text())
+    if (message.type() === 'warning' && /Failed to resolve (component|directive)/.test(message.text())) consoleErrors.push(message.text())
   })
-  await page.route('http://tianshu.local/**', async route => {
+  await page.route(`${options.origin || 'http://tianshu.local'}/**`, async route => {
     const url = new URL(route.request().url())
     if (url.pathname.startsWith('/api/')) {
       const method = route.request().method()
@@ -191,6 +215,7 @@ async function installDistRoutes(page, options = {}) {
       return
     }
 
+    if (options.liveStatic) { await route.continue(); return }
     const absolutePath = resolveDistFile(normalizeMonacoPluginPath(url.pathname))
     if (!absolutePath) {
       await route.fulfill({ status: 403, body: 'Forbidden' })

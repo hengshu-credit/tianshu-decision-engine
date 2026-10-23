@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
-import com.hengshucredit.rule.server.common.R;
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.server.service.DecisionExecutionPersistence;
 import com.hengshucredit.rule.server.service.OpenRuleExecutionExecutor;
 import com.hengshucredit.rule.server.service.SourceResolutionExecutor;
@@ -56,7 +57,7 @@ public class ExecutionMetricsController {
 
     @GetMapping("/execution-metrics")
     @RequirePermission("log:view")
-    public R<Map<String, Object>> executionMetrics() {
+    public ApiResponse<Map<String, Object>> executionMetrics() {
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("instanceId", instanceId());
         result.put("observedAt", java.time.Instant.now());
@@ -73,7 +74,7 @@ public class ExecutionMetricsController {
         result.put("executionPersistenceOutbox", executionPersistenceOutboxService.snapshot());
         result.put("logRetention", logRetentionService == null ? java.util.Collections.emptyMap()
                 : logRetentionService.snapshot());
-        return R.ok(result);
+        return ApiResponse.ok(result);
     }
 
     private String instanceId() {
@@ -84,7 +85,7 @@ public class ExecutionMetricsController {
     /** 修复发布规则或函数后，允许运维在不重启服务的情况下重新验证预热。 */
     @org.springframework.web.bind.annotation.PostMapping("/rule-warmup/retry")
     @RequirePermission("rule:submit")
-    public R<Map<String, Object>> retryRuleWarmup() {
-        return R.ok(ruleScriptPreparationService.warmupPublishedRules());
+    public ApiResponse<Map<String, Object>> retryRuleWarmup() {
+        return ApiResponse.ok(ruleScriptPreparationService.warmupPublishedRules());
     }
 }

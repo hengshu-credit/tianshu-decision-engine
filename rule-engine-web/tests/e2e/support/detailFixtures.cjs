@@ -266,6 +266,7 @@ function createDetailApiData() {
     endpointUrl: '/v1/credit/query',
     contentType: 'application/json',
     requestMode: 'SYNC',
+    executionConfig: JSON.stringify({ version: 2, requestFields: [], requestBranches: [], responseBranches: [], exceptionBranches: [], billingBranches: [], retryBranches: [], steps: [], samples: [] }),
     authMode: 'INHERIT',
     timeoutMs: 3000,
     retryCount: 1,

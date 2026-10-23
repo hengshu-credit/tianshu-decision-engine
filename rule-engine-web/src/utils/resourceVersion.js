@@ -18,7 +18,7 @@ export function resourceVersionIdentity(item) {
   if (!item || item._operation || item.catalogMode === 'FROZEN' || item.function?.catalogMode === 'FROZEN') return null
   const type = item._function ? 'FUNCTION' : item._refType || item.refType || item._ref?.refType
   const refId = item._function ? item.function?.id ?? item.function?.functionId : item._varId ?? item.refId ?? item.id
-  const module = { VARIABLE: 'variable', CONSTANT: 'variable', DATA_OBJECT: 'dataobject', MODEL: 'model', MODEL_OUTPUT: 'model', FUNCTION: 'function', EXTERNAL_API: 'datasource' }[type]
+  const module = { VARIABLE: 'variable', CONSTANT: 'variable', DATA_OBJECT: 'dataobject', DATA_OBJECT_ROOT: 'dataobject', MODEL: 'model', MODEL_OUTPUT: 'model', FUNCTION: 'function', EXTERNAL_API: 'datasource' }[type]
   const ownerId = item.versionOwnerId ?? ({ DATA_OBJECT: item._ref?.objectId ?? item.objectId, MODEL_OUTPUT: item._ref?.modelId ?? item.modelId }[type]) ?? refId
   if (!module || !refId || !ownerId) return null
   return { module, refType: type, refId: String(refId), ownerId: String(ownerId) }

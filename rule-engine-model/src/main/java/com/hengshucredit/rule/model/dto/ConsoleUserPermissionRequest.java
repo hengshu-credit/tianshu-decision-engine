@@ -7,6 +7,10 @@ import java.util.Map;
 
 @Data
 public class ConsoleUserPermissionRequest {
+    private java.util.List<Long> projectIds;
+    private String projectAccessMode;
+    private Boolean globalEditable;
+    private java.util.Map<Long, java.util.Map<String, String>> projectPermissionOverrides;
     private List<Long> roleIds;
     private Map<String, String> permissionOverrides;
 }

@@ -21,7 +21,7 @@ public class DatabasePoolRefreshNotifier implements MessageListener {
     public static final String CHANNEL = "rule:push:database";
 
     @Resource
-    private StringRedisTemplate redisTemplate;
+    private StringRedisTemplate stringRedisTemplate;
     @Resource
     private RedisMessageListenerContainer listenerContainer;
     @Resource
@@ -35,7 +35,7 @@ public class DatabasePoolRefreshNotifier implements MessageListener {
     public void publish(Long datasourceId) {
         if (datasourceId == null) return;
         try {
-            redisTemplate.convertAndSend(CHANNEL, JSON.toJSONString(Map.of("datasourceId", datasourceId)));
+            stringRedisTemplate.convertAndSend(CHANNEL, JSON.toJSONString(Map.of("datasourceId", datasourceId)));
         } catch (RuntimeException ignored) {
             // 当前节点已经刷新；其他节点会在下一次配置版本检查或重启时收敛。
         }

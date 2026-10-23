@@ -23,6 +23,7 @@ import com.hengshucredit.rule.model.entity.RuleModelInputField;
 import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RuleVariable;
+import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleDbDatasourceMapper;
@@ -184,7 +185,10 @@ public class RuleLineageService {
     private record OptionSource(BaseMapper<?> mapper, String codeColumn, String labelColumn, boolean scoped, String ownerColumn) { }
 
     public Map<String, Object> graph(String nodeType, Long nodeId, String direction, Integer maxDepth) {
+        if (accessGuard != null) accessGuard.requireResource(normalizeType(nodeType), "view");
         FullGraph full = buildFullGraph();
+        if (accessGuard != null) full.nodes.entrySet().removeIf(entry -> !accessGuard.can(
+                com.hengshucredit.rule.server.security.ConsoleAccessGuard.resourceModule(String.valueOf(entry.getValue().get("type"))) + ":view"));
         String startKey = nodeKey(normalizeType(nodeType), nodeId);
         if (!full.nodes.containsKey(startKey)) {
             throw new IllegalArgumentException("血缘起点不存在");
@@ -205,17 +209,26 @@ public class RuleLineageService {
 
     /** 治理按配置中持有的稳定ID判断消费者，与页面展示的数据流方向相互独立。 */
     public List<Map<String, Object>> directReferenceConsumers(String nodeType, Long nodeId) {
+        return directReferenceConsumers(nodeType, List.of(nodeId)).getOrDefault(nodeId, List.of());
+    }
+
+    /** 一个对象的多个字段共享本次查询的邻接索引，不跨请求缓存权限或配置。 */
+    public Map<Long, List<Map<String, Object>>> directReferenceConsumers(String nodeType, List<Long> nodeIds) {
+        if (nodeIds.isEmpty()) return Map.of();
         FullGraph full = buildFullGraph();
         String type = normalizeType(nodeType);
-        String target = nodeKey(type, nodeId);
-        if (!full.nodes.containsKey(target)) return List.of();
-        if (Set.of("RULE", "VARIABLE", "FUNCTION", "MODEL", "API", "DATA_FIELD").contains(type)) addRuleCallReferences(full);
-        List<Map<String, Object>> consumers = new ArrayList<>();
-        for (String key : full.referenceConsumers.getOrDefault(target, Collections.emptySet())) {
-            Map<String, Object> node = full.nodes.get(key);
-            if (node != null) consumers.add(nodeWithRelations(full, key, node));
+        if (Set.of("RULE", "VARIABLE", "FUNCTION", "MODEL", "API", "DATA_FIELD", "LIST").contains(type)) addRuleCallReferences(full);
+        Map<Long, List<Map<String, Object>>> result = new LinkedHashMap<>();
+        for (Long nodeId : nodeIds) {
+            String target = nodeKey(type, nodeId);
+            List<Map<String, Object>> consumers = new ArrayList<>();
+            if (full.nodes.containsKey(target)) for (String key : full.referenceConsumers.getOrDefault(target, Collections.emptySet())) {
+                Map<String, Object> node = full.nodes.get(key);
+                if (node != null) consumers.add(nodeWithRelations(full, key, node));
+            }
+            result.put(nodeId, consumers);
         }
-        return consumers;
+        return result;
     }
 
     private void addRuleCallReferences(FullGraph graph) {
@@ -308,9 +321,9 @@ public class RuleLineageService {
             if (node != null) nodes.add(nodeWithRelations(full, key, node));
         }
         List<Map<String, Object>> edges = new ArrayList<>();
-        for (Map<String, Object> edge : full.edges) {
-            if (selectedEdges.contains(edgeKey(edge))) {
-                edges.add(edge);
+        for (String key : selectedNodes) {
+            for (Map<String, Object> edge : full.outgoingEdges.getOrDefault(key, List.of())) {
+                if (selectedEdges.contains(edgeKey(edge))) edges.add(edge);
             }
         }
         Map<String, Object> result = new LinkedHashMap<>();
@@ -377,20 +390,21 @@ public class RuleLineageService {
     }
 
     private FullGraph buildFullGraph() {
+        // 构图只读取标签和引用列，不把连接凭据、接口报文或脚本内容搬入堆内存。
         FullGraph graph = new FullGraph();
-        List<RuleProject> projects = projectMapper.selectList(new LambdaQueryWrapper<RuleProject>());
+        List<RuleProject> projects = projectMapper.selectList(new QueryWrapper<RuleProject>().select("id", "project_code", "project_name", "status"));
         for (RuleProject item : projects) {
             if (Integer.valueOf(-1).equals(item.getStatus())) continue;
             addNode(graph, "PROJECT", item.getId(), item.getProjectCode(), item.getProjectName());
         }
-        for (RuleVariable item : variableMapper.selectList(new LambdaQueryWrapper<RuleVariable>())) {
+        List<RuleVariable> variables = variableMapper.selectList(new QueryWrapper<RuleVariable>().select("id", "project_id", "var_code", "var_label", "status", "var_source", "source_config"));
+        for (RuleVariable item : variables) {
             if (Integer.valueOf(-1).equals(item.getStatus())) continue;
             addNode(graph, "VARIABLE", item.getId(), item.getVarCode(), item.getVarLabel());
             addProjectEdge(graph, item.getProjectId(), nodeKey("VARIABLE", item.getId()));
-            addVariableSourceEdges(graph, item);
         }
         Set<Long> deletedObjectIds = new LinkedHashSet<>();
-        for (RuleDataObject item : dataObjectMapper.selectList(new LambdaQueryWrapper<RuleDataObject>())) {
+        for (RuleDataObject item : dataObjectMapper.selectList(new QueryWrapper<RuleDataObject>().select("id", "project_id", "object_code", "object_label", "status"))) {
             if (Integer.valueOf(-1).equals(item.getStatus())) {
                 deletedObjectIds.add(item.getId());
                 continue;
@@ -399,7 +413,7 @@ public class RuleLineageService {
             addProjectEdge(graph, item.getProjectId(), nodeKey("DATA_OBJECT", item.getId()));
         }
         // 对象整体删除后，其历史字段不能以独立项目字段的身份重新进入当前引用图。
-        List<RuleDataObjectField> objectFields = dataObjectFieldMapper.selectList(new LambdaQueryWrapper<RuleDataObjectField>())
+        List<RuleDataObjectField> objectFields = dataObjectFieldMapper.selectList(new QueryWrapper<RuleDataObjectField>().select("id", "object_id", "parent_field_id", "project_id", "script_name", "var_code", "var_label", "status"))
                 .stream().filter(item -> !Integer.valueOf(-1).equals(item.getStatus())
                         && !deletedObjectIds.contains(item.getObjectId())).toList();
         for (RuleDataObjectField item : objectFields) {
@@ -425,7 +439,7 @@ public class RuleLineageService {
                 addProjectEdge(graph, item.getProjectId(), fieldKey);
             }
         }
-        for (RuleDefinition item : definitionMapper.selectList(new LambdaQueryWrapper<RuleDefinition>())) {
+        for (RuleDefinition item : definitionMapper.selectList(new QueryWrapper<RuleDefinition>().select("id", "project_id", "rule_code", "rule_name", "status"))) {
             if (Integer.valueOf(-1).equals(item.getStatus())) continue;
             addNode(graph, "RULE", item.getId(), item.getRuleCode(), item.getRuleName());
             addProjectEdge(graph, item.getProjectId(), nodeKey("RULE", item.getId()));
@@ -435,37 +449,47 @@ public class RuleLineageService {
             addNode(graph, "MODEL", item.getId(), item.getModelCode(), item.getModelName());
             addProjectEdge(graph, item.getProjectId(), nodeKey("MODEL", item.getId()));
         }
-        for (RuleExternalDatasource item : externalDatasourceMapper.selectList(new LambdaQueryWrapper<RuleExternalDatasource>())) {
+        for (RuleExternalDatasource item : externalDatasourceMapper.selectList(new QueryWrapper<RuleExternalDatasource>().select("id", "project_id", "datasource_code", "datasource_name", "status"))) {
             if (Integer.valueOf(-1).equals(item.getStatus())) continue;
             addNode(graph, "DATASOURCE", item.getId(), item.getDatasourceCode(), item.getDatasourceName());
             addProjectEdge(graph, item.getProjectId(), nodeKey("DATASOURCE", item.getId()));
         }
-        for (RuleExternalApiConfig item : externalApiConfigMapper.selectList(new LambdaQueryWrapper<RuleExternalApiConfig>())) {
+        for (RuleExternalApiConfig item : externalApiConfigMapper.selectList(new QueryWrapper<RuleExternalApiConfig>().select("id", "datasource_id", "api_code", "api_name", "status"))) {
             if (Integer.valueOf(-1).equals(item.getStatus())) continue;
             addNode(graph, "API", item.getId(), item.getApiCode(), item.getApiName());
             if (item.getDatasourceId() != null) {
                 addEdge(graph, nodeKey("DATASOURCE", item.getDatasourceId()), nodeKey("API", item.getId()), "包含API");
             }
         }
-        for (RuleDbDatasource item : dbDatasourceMapper.selectList(new LambdaQueryWrapper<RuleDbDatasource>())) {
+        for (RuleDbDatasource item : dbDatasourceMapper.selectList(new QueryWrapper<RuleDbDatasource>().select("id", "project_id", "datasource_code", "datasource_name", "status"))) {
             if (Integer.valueOf(-1).equals(item.getStatus())) continue;
             addNode(graph, "DB", item.getId(), item.getDatasourceCode(), item.getDatasourceName());
             addProjectEdge(graph, item.getProjectId(), nodeKey("DB", item.getId()));
         }
         if (sftpDatasourceMapper != null) {
-            for (RuleSftpDatasource item : sftpDatasourceMapper.selectList(new LambdaQueryWrapper<RuleSftpDatasource>())) {
+            for (RuleSftpDatasource item : sftpDatasourceMapper.selectList(new QueryWrapper<RuleSftpDatasource>().select("id", "project_id", "datasource_code", "datasource_name", "status"))) {
                 if (Integer.valueOf(-1).equals(item.getStatus())) continue;
                 addNode(graph, "SFTP", item.getId(), item.getDatasourceCode(), item.getDatasourceName());
                 addProjectEdge(graph, item.getProjectId(), nodeKey("SFTP", item.getId()));
             }
         }
-        for (RuleListLibrary item : listLibraryMapper.selectList(new LambdaQueryWrapper<RuleListLibrary>())) {
+        for (RuleListLibrary item : listLibraryMapper.selectList(new QueryWrapper<RuleListLibrary>().select("id", "project_id", "list_code", "list_name", "status"))) {
             if (Integer.valueOf(-1).equals(item.getStatus())) continue;
             addNode(graph, "LIST", item.getId(), item.getListCode(), item.getListName());
             addProjectEdge(graph, item.getProjectId(), nodeKey("LIST", item.getId()));
         }
+        if (functionMapper != null) {
+            for (RuleFunction item : functionMapper.selectList(new QueryWrapper<RuleFunction>().select("id", "project_id", "func_code", "func_name", "status"))) {
+                if (Integer.valueOf(-1).equals(item.getStatus())) continue;
+                addNode(graph, "FUNCTION", item.getId(), item.getFuncCode(), item.getFuncName());
+                addProjectEdge(graph, item.getProjectId(), nodeKey("FUNCTION", item.getId()));
+            }
+        }
         addRuleFieldEdges(graph);
-        addModelFieldEdges(graph);
+        Map<Long, Long> outputModelIds = addModelFieldEdges(graph);
+        for (RuleVariable item : variables) {
+            if (!Integer.valueOf(-1).equals(item.getStatus())) addVariableSourceEdges(graph, item, outputModelIds);
+        }
         enrichNodeVersions(graph);
         return graph;
     }
@@ -502,10 +526,10 @@ public class RuleLineageService {
 
     private LambdaQueryWrapper<RuleModel> withoutModelContent() {
         return new LambdaQueryWrapper<RuleModel>()
-                .select(RuleModel.class, field -> !"modelContent".equals(field.getProperty()));
+                .select(RuleModel::getId, RuleModel::getProjectId, RuleModel::getModelCode, RuleModel::getModelName, RuleModel::getStatus);
     }
 
-    private void addVariableSourceEdges(FullGraph graph, RuleVariable variable) {
+    private void addVariableSourceEdges(FullGraph graph, RuleVariable variable, Map<Long, Long> outputModelIds) {
         if (variable == null || variable.getId() == null) {
             return;
         }
@@ -521,28 +545,39 @@ public class RuleLineageService {
             Long datasourceId = config.getLong("sftpDatasourceId");
             if (datasourceId != null) addEdge(graph, nodeKey("SFTP", datasourceId), target, "SFTP 文件读取");
         } else if ("LIST".equals(variable.getVarSource())) {
-            Long listId = config.getLong("listId");
-            if (listId == null) listId = config.getLong("listLibraryId");
-            if (listId != null) addEdge(graph, nodeKey("LIST", listId), target, "名单匹配");
+            Set<Long> listIds = new LinkedHashSet<>();
+            var configured = config.getJSONArray("listIds");
+            if (configured != null) {
+                for (int i = 0; i < configured.size(); i++) listIds.add(configured.getLong(i));
+            } else {
+                Long listId = config.getLong("listId");
+                listIds.add(listId == null ? config.getLong("listLibraryId") : listId);
+            }
+            for (Long listId : listIds) if (listId != null) addEdge(graph, nodeKey("LIST", listId), target, "名单匹配");
+        }
+        Set<String> added = new LinkedHashSet<>();
+        for (var reference : OperandDependencyCollector.collectReferences(config)) {
+            String from = modelInputRefNodeKey(reference.getRefType(), reference.getRefId(), outputModelIds);
+            if (from != null && added.add(from)) addEdge(graph, from, target, "取值引用");
         }
     }
 
     private void addRuleFieldEdges(FullGraph graph) {
-        for (RuleDefinitionInputField field : definitionInputFieldMapper.selectList(new LambdaQueryWrapper<RuleDefinitionInputField>())) {
+        for (RuleDefinitionInputField field : definitionInputFieldMapper.selectList(new QueryWrapper<RuleDefinitionInputField>().select("definition_id", "var_id", "ref_type"))) {
             String from = refNodeKey(field.getRefType(), field.getVarId());
             String to = nodeKey("RULE", field.getDefinitionId());
             if (from != null) addEdge(graph, from, to, "规则输入");
         }
-        for (RuleDefinitionOutputField field : definitionOutputFieldMapper.selectList(new LambdaQueryWrapper<RuleDefinitionOutputField>())) {
+        for (RuleDefinitionOutputField field : definitionOutputFieldMapper.selectList(new QueryWrapper<RuleDefinitionOutputField>().select("definition_id", "var_id", "ref_type"))) {
             String from = nodeKey("RULE", field.getDefinitionId());
             String to = refNodeKey(field.getRefType(), field.getVarId());
             if (to != null) addEdge(graph, from, to, "规则输出", true);
         }
     }
 
-    private void addModelFieldEdges(FullGraph graph) {
+    private Map<Long, Long> addModelFieldEdges(FullGraph graph) {
         List<RuleModelOutputField> outputFields = modelOutputFieldMapper.selectList(
-                new LambdaQueryWrapper<RuleModelOutputField>());
+                new QueryWrapper<RuleModelOutputField>().select("id", "model_id", "ref_type", "var_id"));
         Map<Long, Long> outputModelIds = new LinkedHashMap<>();
         for (RuleModelOutputField field : outputFields) {
             if (field.getId() != null && field.getModelId() != null) {
@@ -550,7 +585,7 @@ public class RuleLineageService {
             }
         }
         Set<String> inputEdgeKeys = new LinkedHashSet<>();
-        for (RuleModelInputField field : modelInputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelInputField>())) {
+        for (RuleModelInputField field : modelInputFieldMapper.selectList(new QueryWrapper<RuleModelInputField>().select("id", "model_id", "status", "source_operand", "default_operand", "ref_type", "var_id"))) {
             if (Integer.valueOf(0).equals(field.getStatus())) continue;
             String to = nodeKey("MODEL", field.getModelId());
             boolean operandConfigured = hasText(field.getSourceOperand()) || hasText(field.getDefaultOperand());
@@ -573,6 +608,7 @@ public class RuleLineageService {
             String to = refNodeKey(field.getRefType(), field.getVarId());
             if (to != null) addEdge(graph, from, to, "模型输出", true);
         }
+        return outputModelIds;
     }
 
     private void collectOperandReferences(String operandJson, List<JSONObject> references) {
@@ -617,8 +653,11 @@ public class RuleLineageService {
         String type = normalizeType(refType);
         if ("CONSTANT".equals(type) || "VARIABLE".equals(type)) return nodeKey("VARIABLE", refId);
         if ("DATA_OBJECT".equals(type) || "DATA_FIELD".equals(type)) return nodeKey("DATA_FIELD", refId);
+        if ("DATA_OBJECT_ROOT".equals(type)) return nodeKey("DATA_OBJECT", refId);
         if ("MODEL".equals(type)) return nodeKey("MODEL", refId);
-        if ("API".equals(type) || "DB".equals(type) || "SFTP".equals(type) || "LIST".equals(type)) return nodeKey(type, refId);
+        if ("EXTERNAL_API".equals(type)) return nodeKey("API", refId);
+        if ("LIST_LIBRARY".equals(type)) return nodeKey("LIST", refId);
+        if (Set.of("API", "DB", "SFTP", "LIST", "FUNCTION", "RULE").contains(type)) return nodeKey(type, refId);
         return null;
     }
 

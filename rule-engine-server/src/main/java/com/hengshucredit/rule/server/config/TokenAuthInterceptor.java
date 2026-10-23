@@ -138,8 +138,9 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
         response.setStatus(status.getHttpStatus());
         addCapacityHeaders(request, response, status);
         response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write("{\"code\":\"" + status.getCode() + "\",\"message\":\""
-                + escape(status.getMessage()) + "\"}");
+        response.getWriter().write(com.alibaba.fastjson.JSON.toJSONString(
+                com.hengshucredit.rule.model.ApiResponse.fail(
+                        com.hengshucredit.rule.model.PlatformCode.find(status.getCode()), status.getDetail())));
     }
 
     private void addCapacityHeaders(HttpServletRequest request, HttpServletResponse response,
@@ -150,10 +151,6 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
         String limitName = OpenApiStatuses.QPS_CONCURRENCY_EXCEEDED.equals(status.getCode())
                 ? "project-execution-guard" : "token-request-rate";
         response.setHeader("X-Rule-Limit-Name", limitName);
-    }
-
-    private String escape(String value) {
-        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     static boolean isExecutionPath(String uri) {

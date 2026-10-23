@@ -97,7 +97,7 @@ export function buildCapacityReport(config, request, summary, evaluation) {
       method: String(request.method || 'POST').toUpperCase(),
       headerNames: Object.keys(request.headers || {}).sort(),
       bodyIncluded: request.body !== undefined,
-      responseAssertionPaths: Object.keys(request.expectedResponse || { success: true }),
+      responseAssertionPaths: Object.keys(request.expectedResponse || { code: '000000', success: true }),
     },
     load: {
       mode: config.arrivalRate ? 'CONSTANT_ARRIVAL' : 'CLOSED',

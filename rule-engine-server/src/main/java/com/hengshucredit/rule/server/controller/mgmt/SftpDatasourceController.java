@@ -1,10 +1,11 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
 import com.hengshucredit.rule.model.entity.RuleSftpDatasource;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.governance.GovernedProjectionMutation;
 import com.hengshucredit.rule.server.service.RuleRuntimeCallLogService;
 import com.hengshucredit.rule.server.service.RuleSftpDatasourceService;
@@ -35,7 +36,7 @@ public class SftpDatasourceController {
     @Resource private RuntimeTraceService runtimeTraceService;
 
     @GetMapping("/list")
-    public R<IPage<RuleSftpDatasource>> list(
+    public ApiResponse<IPage<RuleSftpDatasource>> list(
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) String scope,
@@ -45,36 +46,36 @@ public class SftpDatasourceController {
             @RequestParam(required = false) String datasourceCode,
             @RequestParam(required = false) String datasourceName,
             @RequestParam(required = false) Integer status) {
-        return R.ok(datasourceService.pageList(pageNum, pageSize, scope, projectId, projectCode, projectName,
+        return ApiResponse.ok(datasourceService.pageList(pageNum, pageSize, scope, projectId, projectCode, projectName,
                 datasourceCode, datasourceName, status));
     }
 
     @GetMapping("/{id:\\d+}")
-    public R<RuleSftpDatasource> get(@PathVariable Long id) { return R.ok(datasourceService.getDetail(id)); }
+    public ApiResponse<RuleSftpDatasource> get(@PathVariable Long id) { return ApiResponse.ok(datasourceService.getDetail(id)); }
 
     @PostMapping
     @GovernedProjectionMutation
-    public R<Void> create(@RequestBody RuleSftpDatasource datasource) { datasourceService.saveWithDefaults(datasource); return R.ok(); }
+    public ApiResponse<Void> create(@RequestBody RuleSftpDatasource datasource) { datasourceService.saveWithDefaults(datasource); return ApiResponse.ok(); }
 
     @PutMapping
     @GovernedProjectionMutation
-    public R<Void> update(@RequestBody RuleSftpDatasource datasource) { datasourceService.updateWithDefaults(datasource); return R.ok(); }
+    public ApiResponse<Void> update(@RequestBody RuleSftpDatasource datasource) { datasourceService.updateWithDefaults(datasource); return ApiResponse.ok(); }
 
     @DeleteMapping("/{id:\\d+}")
     @GovernedProjectionMutation
-    public R<Void> delete(@PathVariable Long id) { datasourceService.deleteDatasource(id); return R.ok(); }
+    public ApiResponse<Void> delete(@PathVariable Long id) { datasourceService.deleteDatasource(id); return ApiResponse.ok(); }
 
     @PostMapping("/{id:\\d+}/test")
-    public R<String> testSaved(@PathVariable Long id) {
+    public ApiResponse<String> testSaved(@PathVariable Long id) {
         RuleSftpDatasource datasource = datasourceService.getById(id);
         return test(datasource, "TEST_CONNECTION");
     }
 
     @PostMapping("/test")
-    public R<String> testDraft(@RequestBody RuleSftpDatasource datasource) { return test(datasource, "TEST_CONNECTION_DRAFT"); }
+    public ApiResponse<String> testDraft(@RequestBody RuleSftpDatasource datasource) { return test(datasource, "TEST_CONNECTION_DRAFT"); }
 
     @PostMapping("/{id:\\d+}/read")
-    public R<Map<String, Object>> read(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+    public ApiResponse<Map<String, Object>> read(@PathVariable Long id, @RequestBody Map<String, Object> body) {
         RuleSftpDatasource datasource = datasourceService.getById(id);
         String path = body == null || body.get("remotePath") == null ? null : String.valueOf(body.get("remotePath"));
         return readFile(datasource, path, "QUERY");
@@ -84,10 +85,10 @@ public class SftpDatasourceController {
     @GetMapping("/logs/{logId:\\d+}/content")
     public ResponseEntity<byte[]> preview(@PathVariable Long logId, HttpServletRequest request) {
         RuleRuntimeCallLog log = runtimeCallLogService.getById(logId);
-        if (log == null || !"SFTP".equals(log.getModuleType())) return ResponseEntity.notFound().build();
+        if (log == null || !"SFTP".equals(log.getModuleType())) throw new com.hengshucredit.rule.model.PlatformException(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "文件查询日志不存在");
         Map<String, Object> payload = parseMap(log.getRequestBody());
         Object remotePath = payload.get("remotePath");
-        if (log.getTargetRefId() == null || remotePath == null) return ResponseEntity.badRequest().build();
+        if (log.getTargetRefId() == null || remotePath == null) throw new com.hengshucredit.rule.model.PlatformException(com.hengshucredit.rule.model.PlatformCode.PARAMETER_INVALID, "文件日志缺少数据源或路径");
         try {
             byte[] content = sftpConnectPools.readFile(log.getTargetRefId(), String.valueOf(remotePath));
             String contentType = contentType(String.valueOf(remotePath));
@@ -98,19 +99,18 @@ public class SftpDatasourceController {
                     .filename(fileName(String.valueOf(remotePath)), StandardCharsets.UTF_8).build());
             return ResponseEntity.ok().headers(headers).body(content);
         } catch (Exception e) {
-            return ResponseEntity.status(502).header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_PLAIN_VALUE)
-                    .body(("SFTP文件读取失败：" + e.getMessage()).getBytes(StandardCharsets.UTF_8));
+            throw new com.hengshucredit.rule.model.PlatformException(com.hengshucredit.rule.model.PlatformCode.SFTP_ERROR, e.getMessage(), e);
         }
     }
 
     @GetMapping("/pool/snapshot")
-    public R<Map<String, Object>> poolSnapshot() {
+    public ApiResponse<Map<String, Object>> poolSnapshot() {
         Map<String, Object> snapshot = new LinkedHashMap<>(sftpConnectPools.snapshot());
         snapshot.put("fileCache", sftpFileCache.snapshot());
-        return R.ok(snapshot);
+        return ApiResponse.ok(snapshot);
     }
 
-    private R<String> test(RuleSftpDatasource datasource, String action) {
+    private ApiResponse<String> test(RuleSftpDatasource datasource, String action) {
         long start = System.currentTimeMillis();
         RuntimeTraceService.ModuleTrace trace = runtimeTraceService.startModule("SFTP",
                 datasource == null ? null : datasource.getProjectId(), datasource == null ? null : datasource.getId(),
@@ -120,15 +120,15 @@ public class SftpDatasourceController {
             datasourceService.testConnection(datasource);
             runtimeTraceService.completeModule(trace, true, null, System.currentTimeMillis() - start);
             log(datasource, action, Map.of("operation", "pwd"), Map.of("status", "SUCCESS"), null, start, trace);
-            return R.ok("SFTP连接成功");
+            return ApiResponse.ok("SFTP连接成功");
         } catch (Exception e) {
             runtimeTraceService.completeModule(trace, false, e.getMessage(), System.currentTimeMillis() - start);
             log(datasource, action, safeConfig(datasource), Map.of("status", "FAILED"), e.getMessage(), start, trace);
-            return R.fail("SFTP连接失败：" + e.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.SFTP_ERROR, e.getMessage());
         }
     }
 
-    private R<Map<String, Object>> readFile(RuleSftpDatasource datasource, String path, String action) {
+    private ApiResponse<Map<String, Object>> readFile(RuleSftpDatasource datasource, String path, String action) {
         long start = System.currentTimeMillis();
         RuntimeTraceService.ModuleTrace trace = runtimeTraceService.startModule("SFTP",
                 datasource == null ? null : datasource.getProjectId(), datasource == null ? null : datasource.getId(),
@@ -144,11 +144,11 @@ public class SftpDatasourceController {
             result.put("contentType", contentType(path));
             runtimeTraceService.completeModule(trace, true, null, System.currentTimeMillis() - start);
             log(datasource, action, request, result, null, start, trace);
-            return R.ok(result);
+            return ApiResponse.ok(result);
         } catch (Exception e) {
             runtimeTraceService.completeModule(trace, false, e.getMessage(), System.currentTimeMillis() - start);
             log(datasource, action, request, Map.of("status", "FAILED"), e.getMessage(), start, trace);
-            return R.fail("SFTP文件读取失败：" + e.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.SFTP_ERROR, e.getMessage());
         }
     }
 

@@ -1,6 +1,5 @@
 package com.hengshucredit.rule.server.service;
 
-import com.alibaba.fastjson.JSON;
 import com.alibaba.qlexpress4.Express4Runner;
 import com.alibaba.qlexpress4.InitOptions;
 import com.alibaba.qlexpress4.QLOptions;
@@ -10,15 +9,12 @@ import com.hengshucredit.rule.core.function.AggregateBuiltinFunctionRegistry;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 /** 执行外数 API 请求/响应脚本，不加载业务 Bean 或用户自定义 Java 函数。 */
 @Service
 public class ExternalApiScriptService {
 
-    private static final Pattern VARIABLE_NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
     private final Express4Runner runner;
 
     public ExternalApiScriptService() {
@@ -36,34 +32,6 @@ public class ExternalApiScriptService {
 
     public Object executeResponse(String script, Map<String, Object> context) {
         return execute("响应", script, context);
-    }
-
-    @SuppressWarnings("unchecked")
-    public Map<String, Object> parseScriptVariables(String authApiConfig) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        if (authApiConfig == null || authApiConfig.trim().isEmpty()) return result;
-        Map<String, Object> config;
-        try {
-            config = JSON.parseObject(authApiConfig, LinkedHashMap.class);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("接口鉴权配置不是有效 JSON");
-        }
-        Object rows = config.get("scriptVariables");
-        if (!(rows instanceof List)) return result;
-        for (Object rowObject : (List<?>) rows) {
-            if (!(rowObject instanceof Map)) continue;
-            Map<String, Object> row = (Map<String, Object>) rowObject;
-            String name = row.get("name") == null ? "" : String.valueOf(row.get("name")).trim();
-            if (name.isEmpty()) continue;
-            if (!VARIABLE_NAME.matcher(name).matches()) {
-                throw new IllegalArgumentException("脚本变量名格式错误: " + name);
-            }
-            if (result.containsKey(name)) {
-                throw new IllegalArgumentException("脚本变量名重复: " + name);
-            }
-            result.put(name, row.get("value"));
-        }
-        return result;
     }
 
     private Object execute(String phase, String script, Map<String, Object> context) {

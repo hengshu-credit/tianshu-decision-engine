@@ -44,7 +44,8 @@ public class ResourceVersionManagementService {
                 .in(GovernanceApprovalRequest::getStatus, "EDITING", "PENDING", "CONFLICT", "REJECTED")
                 .orderByDesc(GovernanceApprovalRequest::getId));
         // Viewing a resource does not grant access to another applicant's unpublished content.
-        if (!access.can("approval:view")) drafts = drafts.stream().filter(draft -> Objects.equals(actor, draft.getApplicant())).toList();
+        Set<String> actorNames = approvals.actorNames(actor);
+        if (!access.can("approval:view")) drafts = drafts.stream().filter(draft -> draft.getApplicant() != null && actorNames.contains(draft.getApplicant())).toList();
         Map<String, Object> result = new LinkedHashMap<>();
         Long latestId = history.stream().filter(ResourceVersionLines::published)
                 .filter(version -> Objects.equals(version.getId(), resource.getEffectiveVersionId())).map(GovernedResourceVersion::getId).findFirst().orElse(null);
@@ -52,6 +53,9 @@ public class ResourceVersionManagementService {
         result.put("history", history.stream().map(GovernanceVersionView::from).toList());
         result.put("drafts", drafts.stream().map(GovernanceRequestView::from).toList());
         result.put("actor", actor);
+        result.put("actorNames", actorNames);
+        result.put("projectId", resource.getProjectId());
+        result.put("scope", resource.getProjectId() != null && resource.getProjectId() > 0 ? "PROJECT" : "GLOBAL");
         return result;
     }
 

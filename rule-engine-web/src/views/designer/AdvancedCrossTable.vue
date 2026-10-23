@@ -509,6 +509,8 @@
     <script-panel
       v-if="definitionId"
       :compile-result="designerCompileResult"
+      :references="projectRefs"
+      :functions="projectFunctions"
     />
 
     <!-- 测试弹窗 -->

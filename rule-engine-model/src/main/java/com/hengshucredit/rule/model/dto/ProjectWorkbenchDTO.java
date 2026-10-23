@@ -9,6 +9,7 @@ import java.util.Map;
 
 @Data
 public class ProjectWorkbenchDTO {
+    private LocalDateTime observedAt;
     private ProjectSummary project;
     private Metrics metrics;
     private List<CheckItem> checks = new ArrayList<>();
@@ -35,6 +36,8 @@ public class ProjectWorkbenchDTO {
         private Long enabledExternalDataSourceCount;
         private Long databaseDataSourceCount;
         private Long enabledDatabaseDataSourceCount;
+        private Long sftpDataSourceCount;
+        private Long enabledSftpDataSourceCount;
         private Long modelCount;
         private Long ruleCount;
         private Long draftRuleCount;

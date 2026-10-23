@@ -3,7 +3,7 @@
 # 使用 .env.server；Nginx Proxy Manager 通过服务器 IP+端口代理 web/server API。
 # server 资源上限：每个副本 1.5G/0.45C；web 256M/0.05C。
 # 本文件按 2 个 server 副本合计约 4.50G 内存、1.20C CPU；外接 Kafka/MySQL/Redis 时整体按 8G/2C 预算。
-name: ${DEPLOY_PROJECT:-tianshu}
+name: ${DEPLOY_PROJECT:-tianshu-server}
 
 x-java: &java
   image: ${JAVA_IMAGE:-eclipse-temurin:17-jre-jammy}
@@ -72,9 +72,6 @@ services:
       RULE_GLOBAL_ACCESS_KEY_ID: ${RULE_GLOBAL_ACCESS_KEY_ID:-default}
       RULE_GLOBAL_ACCESS_PUBLIC_KEY: ${RULE_GLOBAL_ACCESS_PUBLIC_KEY:-}
       RULE_GLOBAL_ACCESS_TIME_WINDOW_SECONDS: ${RULE_GLOBAL_ACCESS_TIME_WINDOW_SECONDS:-300}
-      CONSOLE_USERNAME: "${CONSOLE_USERNAME:?Set CONSOLE_USERNAME}"
-      CONSOLE_PASSWORD: "${CONSOLE_PASSWORD:?Set CONSOLE_PASSWORD}"
-      CONSOLE_PASSWORD_ENCODING: ${CONSOLE_PASSWORD_ENCODING:-BCRYPT}
       SESSION_REDIS_NAMESPACE: ${SESSION_REDIS_NAMESPACE:-tianshu:session}
       CORS_ALLOWED_ORIGIN_PATTERNS: "${CORS_ALLOWED_ORIGIN_PATTERNS:?Set CORS_ALLOWED_ORIGIN_PATTERNS}"
       LOGGING_FILE_NAME: ""
@@ -154,5 +151,5 @@ volumes:
 
 networks:
   rule-engine:
-    name: ${ENGINE_NETWORK:-${DEPLOY_PROJECT:-tianshu}-engine}
+    name: ${ENGINE_NETWORK:-${DEPLOY_PROJECT:-tianshu-server}-engine}
     driver: bridge

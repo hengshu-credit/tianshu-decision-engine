@@ -20,6 +20,11 @@ import java.util.LinkedHashSet;
  */
 @Repository
 public class ExecutionLogHistoryRepository {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.security.ConsoleDataPermissionHandler consoleDataScope;
+
+    private String secured(String sql) { return consoleDataScope == null ? sql : consoleDataScope.filterSql(sql); }
+
     private static final int MAX_QUERY_ROWS = 100000;
     private final JdbcTemplate jdbc;
 
@@ -36,6 +41,7 @@ public class ExecutionLogHistoryRepository {
     public List<HistoryQuery.Row> query(String scope, Long projectId, Long rootRuleId,
             LocalDateTime from, LocalDateTime before, Set<String> requiredFields,
             Map<String, HistoricalFieldDefinition> definitions) {
+        if (consoleDataScope != null) consoleDataScope.requireHistoryScope(scope, projectId);
         StringBuilder sql = new StringBuilder(
                 "SELECT l.id, l.trace_id, l.started_at, l.history_fields "
                         + "FROM rule_execution_log_current l "
@@ -63,7 +69,7 @@ public class ExecutionLogHistoryRepository {
         Map<String, HistoryQuery.Row> rowsByTrace = new LinkedHashMap<>();
         Map<String, Set<Long>> expectedApis = new LinkedHashMap<>();
         List<HistoryQuery.Row> rows = new ArrayList<>(jdbc.query(connection -> {
-            var statement = connection.prepareStatement(sql.toString());
+            var statement = connection.prepareStatement(secured(sql.toString()));
             statement.setQueryTimeout(10);
             for (int i = 0; i < parameters.size(); i++) statement.setObject(i + 1, parameters.get(i));
             return statement;
@@ -109,7 +115,7 @@ public class ExecutionLogHistoryRepository {
                     + "WHERE action_type = 'API_INVOKE' AND module_type = 'DATASOURCE' AND root_trace_id IN ("
                     + String.join(",", java.util.Collections.nCopies(batch.size(), "?")) + ") ORDER BY id";
             jdbc.query(connection -> {
-                var statement = connection.prepareStatement(sql);
+                var statement = connection.prepareStatement(secured(sql));
                 statement.setQueryTimeout(Math.max(1, (int) ((deadline - System.nanoTime()) / 1_000_000_000L)));
                 int index = 1;
                 for (String trace : batch) statement.setString(index++, trace);

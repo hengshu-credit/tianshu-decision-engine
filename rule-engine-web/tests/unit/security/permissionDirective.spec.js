@@ -10,6 +10,14 @@ import {
 } from '@/security/permissionState'
 
 describe('操作按钮权限指令', () => {
+  test('账户权限调整按钮接受独立授权，复合业务权限仍要求全部满足', () => {
+    setCurrentUser({ permissions: ['account:role-assign', 'field:edit'] })
+    const button = document.createElement('button')
+    applyPermissionVisibility(button, { anyOf: ['account:manage', 'account:role-assign'] })
+    expect(button.hidden).toBe(false)
+    applyPermissionVisibility(button, ['field:edit', 'approval:submit'])
+    expect(button.hidden).toBe(true)
+  })
   test('其他渲染指令改写样式后仍保持无权限按钮隐藏', () => {
     setCurrentUser({ permissions: [] })
     const button = document.createElement('button')

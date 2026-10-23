@@ -578,7 +578,7 @@ export default {
     canManageDraft() {
       if (!this.request) return false
       const user = getCurrentUser()
-      return (!user || user.username === this.request.applicant) && hasPermission(resourceActionPermission(this.request.resourceType, 'edit'))
+      return (!user || (user.operatorNames || [user.operatorName || user.username]).includes(this.request.applicant)) && hasPermission(resourceActionPermission(this.request.resourceType, 'edit'))
     },
     resourceSubmitPermission() { return resourceActionPermission(this.request?.resourceType, 'submit') },
     resourceEditPermission() { return resourceActionPermission(this.request?.resourceType, 'edit') },

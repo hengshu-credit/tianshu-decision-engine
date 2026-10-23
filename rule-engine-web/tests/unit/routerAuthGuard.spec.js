@@ -14,13 +14,28 @@ function createRoute(path) {
 }
 
 describe('router console auth guard', () => {
+  test.each(['/login', '/project', '/admin-recovery'])('未初始化时 %s 进入注册页面，初始化后可进入登录页', async path => {
+    const config = { code: '000000', data: { loginEnabled: true, initializationRequired: true } }
+    const fetchMe = vi.fn()
+    const guard = createConsoleAuthGuard(async () => config, fetchMe)
+    const next = vi.fn()
+    await guard(createRoute(path), createRoute('/'), next)
+    expect(next).toHaveBeenLastCalledWith({ path: '/register', replace: true })
+    await guard(createRoute('/register'), createRoute('/login'), next)
+    expect(next).toHaveBeenLastCalledWith()
+    config.data.initializationRequired = false
+    await guard(createRoute('/login'), createRoute('/register'), next)
+    expect(next).toHaveBeenLastCalledWith()
+    expect(fetchMe).not.toHaveBeenCalled()
+  })
+
   afterEach(() => {
     clearCurrentUser()
     setPermissionEnforcement(false)
   })
 
   test('登录关闭时直接放行受保护路由', async () => {
-    const fetchConfig = vi.fn().mockResolvedValue({ code: 200, data: { loginEnabled: false } })
+    const fetchConfig = vi.fn().mockResolvedValue({ code: '000000', data: { loginEnabled: false } })
     const fetchMe = vi.fn()
     const next = vi.fn()
 
@@ -32,7 +47,7 @@ describe('router console auth guard', () => {
   })
 
   test('登录开启且未登录时每次访问受保护路由都跳转登录页', async () => {
-    const fetchConfig = vi.fn().mockResolvedValue({ code: 200, data: { loginEnabled: true } })
+    const fetchConfig = vi.fn().mockResolvedValue({ code: '000000', data: { loginEnabled: true } })
     const fetchMe = vi.fn().mockResolvedValue({ code: 401, message: '未登录' })
     const next = vi.fn()
 
@@ -54,9 +69,9 @@ describe('router console auth guard', () => {
   })
 
   test('登录开启且会话有效时放行', async () => {
-    const fetchConfig = vi.fn().mockResolvedValue({ code: 200, data: { loginEnabled: true } })
+    const fetchConfig = vi.fn().mockResolvedValue({ code: '000000', data: { loginEnabled: true } })
     const fetchMe = vi.fn().mockResolvedValue({
-      code: 200,
+      code: '000000',
       data: { username: 'admin', permissions: ['project:view'] }
     })
     const next = vi.fn()
@@ -68,9 +83,9 @@ describe('router console auth guard', () => {
   })
 
   test('登录开启时按最终权限拒绝无权访问的页面', async () => {
-    const fetchConfig = vi.fn().mockResolvedValue({ code: 200, data: { loginEnabled: true } })
+    const fetchConfig = vi.fn().mockResolvedValue({ code: '000000', data: { loginEnabled: true } })
     const fetchMe = vi.fn().mockResolvedValue({
-      code: 200,
+      code: '000000',
       data: { username: 'viewer', permissions: ['project:view'] }
     })
     const next = vi.fn()
@@ -84,9 +99,9 @@ describe('router console auth guard', () => {
   })
 
   test('未显式声明权限的设计器路由继承所属一级菜单权限', async () => {
-    const fetchConfig = vi.fn().mockResolvedValue({ code: 200, data: { loginEnabled: true } })
+    const fetchConfig = vi.fn().mockResolvedValue({ code: '000000', data: { loginEnabled: true } })
     const fetchMe = vi.fn().mockResolvedValue({
-      code: 200,
+      code: '000000',
       data: { username: 'field-viewer', permissions: ['field:view'] }
     })
     const next = vi.fn()
@@ -98,9 +113,9 @@ describe('router console auth guard', () => {
   })
 
   test('未显式声明权限的详情路由按所属一级菜单权限放行', async () => {
-    const fetchConfig = vi.fn().mockResolvedValue({ code: 200, data: { loginEnabled: true } })
+    const fetchConfig = vi.fn().mockResolvedValue({ code: '000000', data: { loginEnabled: true } })
     const fetchMe = vi.fn().mockResolvedValue({
-      code: 200,
+      code: '000000',
       data: { username: 'list-viewer', permissions: ['list:view'] }
     })
     const next = vi.fn()
@@ -112,9 +127,9 @@ describe('router console auth guard', () => {
   })
 
   test('没有业务模块权限时进入无权限提示页', async () => {
-    const fetchConfig = vi.fn().mockResolvedValue({ code: 200, data: { loginEnabled: true } })
+    const fetchConfig = vi.fn().mockResolvedValue({ code: '000000', data: { loginEnabled: true } })
     const fetchMe = vi.fn().mockResolvedValue({
-      code: 200,
+      code: '000000',
       data: { username: 'restricted', permissions: [] }
     })
     const next = vi.fn()
@@ -160,7 +175,7 @@ describe('router console auth guard', () => {
   })
 
   test('登录关闭时访问登录页跳回 redirect 或数据看板', async () => {
-    const fetchConfig = vi.fn().mockResolvedValue({ code: 200, data: { loginEnabled: false } })
+    const fetchConfig = vi.fn().mockResolvedValue({ code: '000000', data: { loginEnabled: false } })
     const fetchMe = vi.fn()
     const next = vi.fn()
     const loginRoute = createRoute('/login')

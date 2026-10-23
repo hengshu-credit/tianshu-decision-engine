@@ -103,6 +103,7 @@ public class RuleExternalDatasourceService extends ServiceImpl<RuleExternalDatas
         }
         datasource.setAuthType(authType);
         datasource.setAuthConfig(nullIfBlank(datasource.getAuthConfig()));
+        ExternalApiAuthConfig.validate(datasource.getAuthConfig(), null);
         if (datasource.getTokenCacheSeconds() == null) {
             datasource.setTokenCacheSeconds(0);
         }

@@ -17,6 +17,30 @@ import java.util.List;
 import java.util.Map;
 
 public class RulePreflightValidationServiceTest {
+    @org.junit.Test
+    public void enabledCaseWithoutEvidenceBlocksPublicationPreflight() {
+        FixtureService service = new FixtureService();
+        var evidence = new com.hengshucredit.rule.server.service.RuleRegressionEvidenceService() {
+            @Override protected List<com.hengshucredit.rule.model.entity.RuleApiDocScenario> enabledCases(Long id) {
+                var scenario = new com.hengshucredit.rule.model.entity.RuleApiDocScenario();
+                scenario.setId(7L); scenario.setScenarioName("边界样例"); scenario.setStatus(1);
+                return List.of(scenario);
+            }
+            @Override protected List<com.hengshucredit.rule.model.entity.RuleRegressionEvidence> latestEvidence(Long id, Long revision) { return List.of(); }
+        };
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "regressionEvidence", evidence);
+        RulePreflightReport preview = service.validatePreview(service.revision);
+        Assert.assertTrue("未回归不能阻止编辑、编译和保存草稿", preview.isValid());
+        Assert.assertFalse("普通保存不弹出发布环节的回归提醒", preview.getWarnings().stream().anyMatch(issue -> "REGRESSION_PENDING".equals(issue.getCode())));
+        Assert.assertFalse(preview.getRegression().isAllowed());
+        Assert.assertEquals(1, preview.getRegression().getRequiredCount());
+        RulePreflightReport report = service.validate(200L);
+        Assert.assertFalse(report.isValid());
+        Assert.assertTrue(report.getErrors().stream().anyMatch(issue -> "REGRESSION_REQUIRED".equals(issue.getCode())));
+        RulePreflightReport artifactReport = service.analyzeForPublication(200L).report();
+        Assert.assertFalse("制品复用的分析也必须执行回归证据门禁", artifactReport.isValid());
+        Assert.assertTrue(artifactReport.getErrors().stream().anyMatch(issue -> "REGRESSION_REQUIRED".equals(issue.getCode())));
+    }
 
     @Test
     public void dependencyValidationReceivesFreshCompilationWithoutChangingTheDraft() {
@@ -173,6 +197,10 @@ public class RulePreflightValidationServiceTest {
         private RuleRevision dependencyRevision;
 
         private FixtureService() {
+            org.springframework.test.util.ReflectionTestUtils.setField(this, "regressionEvidence",
+                    new com.hengshucredit.rule.server.service.RuleRegressionEvidenceService() {
+                        @Override protected List<com.hengshucredit.rule.model.entity.RuleApiDocScenario> enabledCases(Long id) { return List.of(); }
+                    });
             revision.setId(200L);
             revision.setDefinitionId(100L);
             revision.setState("REVIEW");

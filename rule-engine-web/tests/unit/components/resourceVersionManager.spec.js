@@ -17,6 +17,16 @@ beforeEach(() => {
 })
 afterEach(() => vi.restoreAllMocks())
 
+test('合并账号的历史草稿仍可在版本工作区编辑并保存原申请', async () => {
+  const save = vi.spyOn(governance, 'saveGovernanceDraft').mockResolvedValue({ data: { id: '9' } })
+  const view = mount(); await view.vm.open()
+  await view.setData({ workspace: { ...workspace, actorNames: ['owner', 'merged-owner'], drafts: [{ id: '9', status: 'EDITING', applicant: 'merged-owner', snapshotDigest: 'digest', draftSnapshotJson: '{"a":1}' }] }, selected: 'd:9' })
+  expect(view.vm.editableDraft).toBe(true)
+  view.vm.edit(); await view.setData({ editJson: '{"a":2}' }); await view.vm.save()
+  expect(save).toHaveBeenCalledWith('9', { snapshotJson: '{"a":2}', changeSummary: '', expectedSnapshotDigest: 'digest' })
+  view.unmount()
+})
+
 test('最新版读取生产指针，覆盖旧版本不改变默认预览', async () => {
   const view = mount(); await view.vm.open()
   expect(view.vm.snapshot).toBe('{"defaultValue":"latest"}')

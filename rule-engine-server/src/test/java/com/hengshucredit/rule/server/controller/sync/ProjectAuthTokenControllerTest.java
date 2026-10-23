@@ -1,11 +1,12 @@
 package com.hengshucredit.rule.server.controller.sync;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.model.dto.ProjectTokenResponse;
 import com.hengshucredit.rule.server.auth.CredentialCipher;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.auth.ProjectAuthProperties;
 import com.hengshucredit.rule.server.auth.ProjectAuthType;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.ProjectAuthService;
 import org.junit.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -30,9 +31,9 @@ public class ProjectAuthTokenControllerTest {
                 "BASIC_MAIN", ProjectAuthType.BASIC);
         context.attach(request);
 
-        R<ProjectTokenResponse> response = controller.issueToken(request);
+        ApiResponse<ProjectTokenResponse> response = controller.issueToken(request);
 
-        assertEquals(200, response.getCode());
+        assertEquals("000000", response.getCode());
         assertSame(expected, response.getData());
         assertSame(context, service.issuedFrom);
     }
@@ -45,7 +46,7 @@ public class ProjectAuthTokenControllerTest {
         ProjectAuthContext.temporary(7L, "credit", 11L, "BASIC_MAIN", ProjectAuthType.BASIC,
                 21L, "TOKEN_A", "VALID").attach(request);
 
-        assertEquals(401, controller.issueToken(request).getCode());
+        assertEquals("300001", controller.issueToken(request).getCode());
         assertNull(service.issuedFrom);
     }
 

@@ -428,6 +428,7 @@ public class VariableResolutionInvocationCache {
         Map<String, HistoricalFieldDefinition> definitions = new LinkedHashMap<>(historyDefaults);
         definitions.putAll(historyDefinitions);
         java.util.Set<String> inputKeys = new java.util.HashSet<>();
+        java.util.Set<String> resolvedObjectKeys = new java.util.HashSet<>();
         for (RuleDefinitionInputField input : inputs == null ? List.<RuleDefinitionInputField>of() : inputs) {
             if (input.getVarId() == null || input.getRefType() == null) continue;
             String key = input.getRefType() + ":" + input.getVarId();
@@ -435,11 +436,22 @@ public class VariableResolutionInvocationCache {
             if (definition != null && !"INPUT".equals(definition.source())) continue;
             inputKeys.add(key);
             String path = input.getScriptName() == null ? input.getFieldName() : input.getScriptName();
-            fields.put(key, HistoryFieldValues.read(original, path));
+            if ("DATA_OBJECT".equals(input.getRefType())
+                    && !HistoryFieldValues.present(original, path)
+                    && fieldResults.containsKey(key)) {
+                resolvedObjectKeys.add(key);
+                if (definition != null && definition.recordResult()) {
+                    Object result = fieldResults.get(key);
+                    fields.put(key, result == NULL_VALUE ? null : copyValue(result));
+                }
+            } else {
+                fields.put(key, HistoryFieldValues.read(original, path));
+            }
         }
         for (HistoricalFieldDefinition field : definitions.values()) {
             Object originalValue = HistoryFieldValues.read(original, field.path());
-            if ("INPUT".equals(field.source()) && (originalValue != null || inputKeys.contains(field.inputRootKey()))) {
+            if ("INPUT".equals(field.source()) && !resolvedObjectKeys.contains(field.key())
+                    && (originalValue != null || inputKeys.contains(field.inputRootKey()))) {
                 fields.put(field.key(), originalValue);
             }
             if (field.recordResult() && !"API".equals(field.source()) && !fields.containsKey(field.key())) {

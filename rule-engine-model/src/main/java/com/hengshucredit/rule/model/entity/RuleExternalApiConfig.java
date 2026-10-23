@@ -104,6 +104,10 @@ public class RuleExternalApiConfig {
     private String datasourceName;
     @TableField(exist = false)
     private String datasourceCode;
+    @TableField(exist = false)
+    private Long ownerProjectId;
+    @TableField(exist = false)
+    private String ownerScope;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
     @TableField(fill = FieldFill.INSERT_UPDATE)

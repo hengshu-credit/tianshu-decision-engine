@@ -144,7 +144,7 @@
       <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['详情', '验证执行', '版本', '发布', '删除'])" align="center" fixed="right">
         <template v-slot="{ row }">
           <el-button
-            v-permission="'experiment:edit'"
+            v-permission="{ code: 'experiment:edit', projectId: row.projectId, scope: row.scope }"
             link
             data-action="detail"
             size="small"
@@ -153,7 +153,7 @@
             >详情</el-button
           >
           <el-button
-            v-permission="'experiment:edit'"
+            v-permission="{ code: 'experiment:edit', projectId: row.projectId, scope: row.scope }"
             link
             data-action="execute"
             size="small"
@@ -162,7 +162,7 @@
             >验证执行</el-button
           >
           <governance-publish-action resource-type="EXPERIMENT" :resource-id="row.id" />
-          <el-button v-permission="'experiment:edit'"
+          <el-button v-permission="{ code: 'experiment:edit', projectId: row.projectId, scope: row.scope }"
             link
             data-action="delete"
             size="small"
@@ -179,7 +179,7 @@
       :page-size="query.pageSize"
       :total="total"
       layout="total,sizes,prev,pager,next"
-      :page-sizes="[10, 30, 50, 100]"
+      :page-sizes="[10, 20, 30, 50, 100]"
       @current-change="
         (p) => {
           query.pageNum = p
@@ -720,6 +720,9 @@
             size="small"
             :type="testResult.productionGroup.success === false ? 'danger' : testResult.productionGroup.skipped ? 'info' : 'success'"
           >{{ testResult.productionGroup.success === false ? '执行失败' : testResult.productionGroup.skipped ? '未执行' : '执行成功' }}</el-tag>
+          <p class="execution-group-reason">{{ testResult.productionGroup.routeReason || '未返回分组原因，请查看执行日志' }}</p>
+          <p>执行规则：{{ testResult.productionGroup.ruleCode || '未执行' }}<span v-if="testResult.productionGroup.ruleVersion != null"> · v{{ testResult.productionGroup.ruleVersion }}</span></p>
+          <pre v-if="!testResult.productionGroup.skipped && Object.hasOwn(testResult.productionGroup, 'result')" class="execution-group-output">{{ groupResultPreview(testResult.productionGroup.result, testResult.productionGroup.resultJson) }}</pre>
           <p v-if="testResult.productionGroup.errorMessage">{{ testResult.productionGroup.errorMessage }}</p>
         </div>
         <div v-if="testResult.testGroups && testResult.testGroups.length" class="execution-test-groups">
@@ -731,6 +734,9 @@
           >
             <strong>{{ group.groupCode }}</strong>
             <el-tag size="small" :type="group.status === 'FAILED' ? 'danger' : group.status === 'SKIPPED' || group.status === 'NOT_MATCHED' ? 'info' : 'success'">{{ group.status === 'MATCHED' ? '命中并执行' : group.status === 'NOT_MATCHED' ? '未命中' : group.status === 'SKIPPED' ? '未执行' : group.status === 'FAILED' ? '执行失败' : '执行成功' }}</el-tag>
+            <p class="execution-group-reason">{{ group.routeReason || '未返回分组原因，请查看执行日志' }}</p>
+            <p>执行规则：{{ group.ruleCode || '未执行' }}<span v-if="group.ruleVersion != null"> · v{{ group.ruleVersion }}</span></p>
+            <pre v-if="group.status !== 'SKIPPED' && Object.hasOwn(group, 'result')" class="execution-group-output">{{ groupResultPreview(group.result, group.resultJson) }}</pre>
             <span v-if="group.errorMessage">{{ group.errorMessage }}</span>
           </div>
         </div>
@@ -759,6 +765,7 @@
 
 <script>
 import ResourceVersionSelect from '@/components/common/ResourceVersionSelect.vue'
+import { formatExperimentJson } from '@/utils/experimentResponse'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
@@ -817,7 +824,7 @@ export default {
       contentLoaded: true,
       query: {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         projectId: '',
         projectCode: '',
         projectName: '',
@@ -1655,6 +1662,9 @@ export default {
         else if (stage === 'TEST' && group.matched) status = 'MATCHED'
         else if (stage === 'TEST') status = 'NOT_MATCHED'
         const item = { groupCode: group.groupCode, stage, status }
+        for (const key of ['ruleCode', 'ruleVersion', 'revisionId', 'traceId', 'routeReason', 'result', 'resultJson']) {
+          if (Object.hasOwn(group, key)) item[key] = group[key]
+        }
         if (group.errorMessage) item.errorMessage = group.errorMessage
         groupSummary.push(item)
       }
@@ -1668,6 +1678,10 @@ export default {
       if (overall.status === 'FAILED' && result && result.errorMessage)
         overall.errorMessage = result.errorMessage
       return { overall, groups: groupSummary }
+    },
+    groupResultPreview(result, resultJson) {
+      const text = resultJson ?? JSON.stringify(result, null, 2) ?? '未返回结果'
+      return text.length <= 2048 ? text : text.slice(0, 2048) + '\n…完整内容请展开原始执行结果'
     },
     productionGroups(row) {
       return (row.groups || []).filter(
@@ -1688,13 +1702,15 @@ export default {
       return params
     },
     formatJson(value) {
-      return JSON.stringify(value, null, 2)
+      return formatExperimentJson(value)
     },
   },
 }
 </script>
 
 <style lang="scss" scoped>
+.execution-group-reason, .execution-group-output { flex-basis: 100%; overflow-wrap: anywhere; }
+.execution-group-output { margin: 8px 0; max-height: 160px; overflow: auto; white-space: pre-wrap; }
 .experiment-page {
   .page-head {
     display: flex;

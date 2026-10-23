@@ -1,6 +1,13 @@
 import { pickerReferenceDisplay } from '@/utils/pickerReferenceDisplay'
 import { arrayLiteralDraft } from '@/utils/literalType'
 
+test('API 动态子路径摘要显示来源和完整后缀，不能看起来像直接取响应体', () => {
+  expect(pickerReferenceDisplay({ kind: 'PATH', refType: 'EXTERNAL_API', refId: '9', code: 'api.response.body.extra.score',
+    anchorPath: 'api.response.body', anchorRelativePath: 'response.body', relativePath: 'response.body.extra.score', label: '响应体' }, [
+    { _varId: '9', _refType: 'EXTERNAL_API', varCode: 'api.response.body', relativePath: 'response.body', varLabelText: '响应体' },
+  ])).toBe('响应体 api.response.body 最新 [.extra.score]')
+})
+
 test('字段显示包含名称、编码、版本和对象后续取值路径', () => {
   const option = { _varId: 7, _refType: 'DATA_OBJECT', varCode: 'report.items', varLabelText: '征信报告/明细', varObj: { version: 3 } }
   const value = { kind: 'PATH', refId: 7, refType: 'DATA_OBJECT', code: 'report.items[0].score', value: 'report.items[0].score', label: '征信报告/明细', relativePath: '[0].score' }

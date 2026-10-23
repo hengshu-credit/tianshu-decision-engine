@@ -22,7 +22,7 @@
             :aria-label="tab.title"
             @click="$emit('activate', tab.fullPath)"
           >
-            <span class="workspace-tab__title">{{ tab.title }}</span>
+            <span class="workspace-tab__title" :class="{ 'is-overflowing': overflowingPaths.includes(tab.fullPath) }">{{ tab.displayTitle }}</span>
           </button>
         </el-tooltip>
         <button
@@ -87,6 +87,7 @@ export default {
   },
   data() {
     return {
+      overflowingPaths: [],
       contextMenu: {
         visible: false,
         left: 0,
@@ -122,14 +123,17 @@ export default {
         return {
           ...tab,
           title: tab.detailTitle ? `${title} · ${tab.detailTitle}` : title,
+          displayTitle: tab.detailTitle ? `${title}·${tab.detailTitle}` : title,
         }
       })
     },
   },
   watch: {
+    tabs: { deep: true, handler() { this.$nextTick(this.observeTitles) } },
     activePath() {
       this.closeContextMenu()
       this.$nextTick(this.scrollActiveIntoView)
+      this.$nextTick(this.measureTitles)
     },
   },
   mounted() {
@@ -137,13 +141,31 @@ export default {
     window.addEventListener('blur', this.closeContextMenu)
     window.addEventListener('scroll', this.closeContextMenu, true)
     this.scrollActiveIntoView()
+    this.titleObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(this.measureTitles)
+    this.observeTitles()
+    document.fonts?.ready.then(() => this.measureTitles())
   },
   beforeUnmount() {
     document.removeEventListener('click', this.closeContextMenu)
     window.removeEventListener('blur', this.closeContextMenu)
     window.removeEventListener('scroll', this.closeContextMenu, true)
+    this.titleObserver?.disconnect()
+    this.titleObserver = null
   },
   methods: {
+    observeTitles() {
+      this.titleObserver?.disconnect()
+      this.$el?.querySelectorAll('.workspace-tab__title').forEach(title => this.titleObserver?.observe(title))
+      this.measureTitles()
+    },
+    measureTitles() {
+      if (!this.$el?.isConnected) return
+      const paths = Array.from(this.$el.querySelectorAll('.workspace-tab')).filter(tab => {
+        const title = tab.querySelector('.workspace-tab__title')
+        return title && title.scrollWidth > title.clientWidth
+      }).map(tab => tab.dataset.tab)
+      if (paths.length !== this.overflowingPaths.length || paths.some((path, index) => path !== this.overflowingPaths[index])) this.overflowingPaths = paths
+    },
     openContextMenu(event, targetPath) {
       const menuWidth = 176
       const menuHeight = 224
@@ -270,7 +292,7 @@ export default {
   flex: 1;
   min-width: 0;
   height: 100%;
-  padding: 0 26px 0 8px;
+  padding: 0 8px;
   align-items: center;
   color: inherit;
   font: inherit;
@@ -290,8 +312,11 @@ export default {
   font-size: 13px;
   line-height: 20px;
   text-align: left;
-  text-overflow: ellipsis;
+  text-overflow: clip;
   white-space: nowrap;
+  &.is-overflowing {
+    mask-image: linear-gradient(to right, #000 calc(100% - 12px), transparent);
+  }
 }
 :global(.workspace-tab-tooltip) {
   max-width: min(480px, calc(100vw - 32px));
@@ -301,6 +326,7 @@ export default {
 .workspace-tab__close {
   position: absolute;
   right: 2px;
+  z-index: 1;
   display: flex;
   flex: none;
   width: 20px;
@@ -308,12 +334,14 @@ export default {
   padding: 0;
   align-items: center;
   justify-content: center;
-  color: var(--tianshu-text-disabled);
-  background: transparent;
+  color: var(--tianshu-text-secondary);
+  background: var(--tianshu-bg-elevated, var(--tianshu-bg-surface));
   border: 0;
   border-radius: 50%;
+  box-shadow: var(--tianshu-shadow-small, 0 2px 8px rgba(15, 23, 42, 0.08));
   cursor: pointer;
   opacity: 0;
+  pointer-events: none;
   transition: color 160ms ease, background-color 160ms ease,
     opacity 160ms ease;
   &:hover,
@@ -325,8 +353,9 @@ export default {
   }
 }
 .workspace-tab:hover .workspace-tab__close,
-.workspace-tab.is-active .workspace-tab__close {
-  opacity: 0.7;
+.workspace-tab:has(:focus-visible) .workspace-tab__close {
+  opacity: 1;
+  pointer-events: auto;
 }
 .workspace-tabs__context-menu {
   position: fixed;

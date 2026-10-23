@@ -57,6 +57,7 @@
           />
           <governance-workspace-toolbar resource-type="PROJECT" />
           <el-button
+            v-if="canCreateProject"
             v-permission="'project:edit'"
             type="primary"
             size="small"
@@ -105,7 +106,7 @@
               @click="$router.push('/project/' + row.id)"
               >进入</el-button
             >
-            <el-button v-permission="'project:edit'" link data-action="edit" size="small" type="primary" @click="editWorkspace('PROJECT', row, handleEdit)"
+            <el-button v-permission="{ code: 'project:edit', projectId: row.id, scope: 'PROJECT' }" link data-action="edit" size="small" type="primary" @click="editWorkspace('PROJECT', row, handleEdit)"
               >编辑</el-button
             >
             <governance-publish-action resource-type="PROJECT" :resource-id="row.id" />
@@ -116,7 +117,7 @@
               >API</el-button
             >
             <el-button
-              v-permission="'project:edit'"
+              v-permission="{ code: 'project:edit', projectId: row.id, scope: 'PROJECT' }"
               link
               data-action="delete"
               size="small"
@@ -135,7 +136,7 @@
       :page-size="qp.pageSize"
       :total="total"
       layout="total,sizes,prev,pager,next"
-      :page-sizes="[10, 30, 50, 100, 200, 500]"
+      :page-sizes="[10, 20, 30, 50, 100, 200, 500]"
       @current-change="
         (p) => {
           qp.pageNum = p
@@ -203,6 +204,9 @@
 </template>
 
 <script>
+import { getCurrentUser } from '@/security/permissionState'
+import { PLATFORM_SUCCESS_CODE } from '@/utils/platformResponse'
+
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
@@ -237,7 +241,7 @@ export default {
       total: 0,
       qp: {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         projectCode: '',
         projectName: '',
         status: '',
@@ -286,6 +290,10 @@ export default {
     }
   },
   computed: {
+    canCreateProject() {
+      const user = getCurrentUser()
+      return !user || (user.projectAccessMode !== 'SELECTED' && user.defaultPermissions.includes('project:edit'))
+    },
     visibleProjectColumns() {
       return this.projectColumnOrder
         .map(key => this.projectColumns.find(column => column.key === key))
@@ -410,7 +418,7 @@ export default {
           await completeResourceChange(this, res, () => this.loadData())
         } else {
           const res = await createProject(this.form)
-          if (res.code === 200 && res.data) {
+          if (res.code === PLATFORM_SUCCESS_CODE && res.data) {
             this.dialogVisible = false
             await completeResourceChange(this, res, () => this.loadData())
           }
@@ -453,7 +461,7 @@ export default {
           exportApiDoc(row.id),
           this.loadApiDocLogo(),
         ])
-        if (res.code === 200 && res.data) {
+        if (res.code === PLATFORM_SUCCESS_CODE && res.data) {
           const doc = res.data
           const html = generateApiDocHtml(doc, {
             logoSvg,

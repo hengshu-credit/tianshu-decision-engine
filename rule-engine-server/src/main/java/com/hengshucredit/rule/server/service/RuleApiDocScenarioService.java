@@ -51,6 +51,16 @@ public class RuleApiDocScenarioService {
                 .orderByAsc(RuleApiDocScenario::getId));
     }
 
+    public void requireDefinitionAccess(Long definitionId) { requireDefinition(definitionId); }
+
+    private RuleDefinition lockDefinition(Long definitionId) {
+        requireDefinition(definitionId);
+        RuleDefinition locked = definitionMapper.selectOne(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<RuleDefinition>()
+                .eq("id", definitionId).last("FOR UPDATE"));
+        if (locked == null) throw new IllegalArgumentException("规则不存在或已被删除");
+        return locked;
+    }
+
     public RuleApiDocScenario getForExecution(Long definitionId, Long scenarioId) {
         requireDefinition(definitionId);
         return requireScenario(definitionId, scenarioId);
@@ -58,7 +68,7 @@ public class RuleApiDocScenarioService {
 
     @Transactional
     public RuleApiDocScenario create(Long definitionId, ApiDocScenarioSaveRequest request) {
-        RuleDefinition definition = requireDefinition(definitionId);
+        RuleDefinition definition = lockDefinition(definitionId);
         RuleApiDocScenario scenario = new RuleApiDocScenario();
         scenario.setDefinitionId(definitionId);
         applyRequest(scenario, request, definition);
@@ -69,8 +79,8 @@ public class RuleApiDocScenarioService {
 
     @Transactional
     public RuleApiDocScenario update(Long definitionId, Long scenarioId, ApiDocScenarioSaveRequest request) {
+        RuleDefinition definition = lockDefinition(definitionId);
         RuleApiDocScenario scenario = requireScenario(definitionId, scenarioId);
-        RuleDefinition definition = requireDefinition(definitionId);
         applyRequest(scenario, request, definition);
         ensureUniqueName(definitionId, scenario.getScenarioName(), scenarioId);
         scenarioMapper.updateById(scenario);
@@ -79,8 +89,8 @@ public class RuleApiDocScenarioService {
 
     @Transactional
     public RuleApiDocScenario copy(Long definitionId, Long scenarioId, String scenarioName) {
+        RuleDefinition definition = lockDefinition(definitionId);
         RuleApiDocScenario source = requireScenario(definitionId, scenarioId);
-        RuleDefinition definition = requireDefinition(definitionId);
         String normalizedName = requireName(scenarioName);
         ensureUniqueName(definitionId, normalizedName, null);
 
@@ -105,7 +115,7 @@ public class RuleApiDocScenarioService {
 
     @Transactional
     public void sort(Long definitionId, List<Long> scenarioIds) {
-        requireDefinition(definitionId);
+        lockDefinition(definitionId);
         if (scenarioIds == null) {
             throw new IllegalArgumentException("场景排序不能为空");
         }
@@ -122,6 +132,7 @@ public class RuleApiDocScenarioService {
 
     @Transactional
     public void delete(Long definitionId, Long scenarioId) {
+        lockDefinition(definitionId);
         requireScenario(definitionId, scenarioId);
         scenarioMapper.deleteById(scenarioId);
     }

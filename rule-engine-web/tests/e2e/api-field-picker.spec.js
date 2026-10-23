@@ -23,20 +23,17 @@ test('API 请求字段分别配置位置、格式和文件内容，窄窗口只�
   const row = editor.locator('.el-table__body .el-table__row').first()
   await row.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '请求体格式', exact: true }) }).click()
   await page.getByRole('option', { name: 'x-www-form-urlencoded', exact: true }).click()
-  await row.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '字段内容', exact: true }) }).click()
-  await page.getByRole('option', { name: '压缩后转 Base64', exact: true }).click()
+  await expect(row.locator('.api-value-editor')).toBeVisible()
   await row.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '字段位置', exact: true }) }).click()
-  await expect(page.getByRole('option', { name: 'Headers', exact: true })).toHaveAttribute('aria-disabled', 'true')
+  await expect(page.getByRole('option', { name: 'Headers', exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
-  await row.getByRole('button', { name: '展开当前行', exact: true }).click()
-  await expect(editor.getByPlaceholder('ZIP 内文件名，例如 application.pdf')).toBeVisible()
   await expect(row.locator('input[placeholder="如 mobile"]')).toHaveValue('Customer.Mobile')
   const geometry = await editor.evaluate(element => ({ client: element.clientWidth, scroll: element.scrollWidth }))
   expect(geometry.scroll).toBeLessThanOrEqual(geometry.client + 1)
   assertClean()
 })
 
-for (const mode of ['INPUT', 'FIELDS']) {
+for (const mode of ['FIELDS']) {
   test(`接口变量通过统一选择器配置 ${mode} 入参覆盖和响应子字段`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1000 })
     const apiData = createManagementApiData()
@@ -49,7 +46,6 @@ for (const mode of ['INPUT', 'FIELDS']) {
     apiData.set('/api/rule/variable/source-options', { apiOptions: [{ id: 22, name: '征信查询', code: 'credit_query' }], dbOptions: [], listOptions: [] })
     apiData.set('/api/rule/datasource/api-config/22/binding-contract', {
       bindingMode: mode, apiName: '征信查询',
-      inputFields: [{ id: 'customer.age', path: 'customer.age', location: 'INPUT', overridable: true }],
       requestFields: [{ id: 'field-1', path: 'customer.age', location: 'JSON', overridable: true }, { id: 'locked', path: 'product', location: 'JSON', overridable: false }],
       resultFields: [{ value: 'body.features.score', label: '评分', type: 'NUMBER' }],
     })
@@ -67,8 +63,8 @@ for (const mode of ['INPUT', 'FIELDS']) {
     const binding = dialog.locator('.api-source-binding')
     await expect(binding.getByRole('columnheader', { name: '覆盖位置', exact: true })).toBeVisible()
     await expect(binding.getByRole('columnheader', { name: '数据格式', exact: true })).toBeVisible()
-    await expect(binding.getByRole('cell', { name: mode === 'INPUT' ? '调用入参' : 'Body', exact: true }).first()).toBeVisible()
-    await expect(binding.getByRole('cell', { name: mode === 'INPUT' ? '由 API 映射' : 'JSON', exact: true }).first()).toBeVisible()
+    await expect(binding.getByRole('cell', { name: 'Body', exact: true }).first()).toBeVisible()
+    await expect(binding.getByRole('cell', { name: 'JSON', exact: true }).first()).toBeVisible()
     await expect(binding.getByRole('cell', { name: 'customer.age', exact: true })).toBeVisible()
     if (mode === 'FIELDS') await expect(binding.getByText('未开放', { exact: true })).toBeVisible()
     await binding.locator('.el-checkbox[aria-label="覆盖 customer.age"]').click()
@@ -86,8 +82,9 @@ for (const mode of ['INPUT', 'FIELDS']) {
     await dialog.getByRole('button', { name: '真实调用测试', exact: true }).click()
     await expect.poll(() => preview).toBeTruthy()
     const source = JSON.parse(preview.variable.sourceConfig)
-    const overrides = mode === 'INPUT' ? source.inputOverrides : source.requestOverrides
-    expect(String(overrides[mode === 'INPUT' ? 'customer.age' : 'field-1'].refId)).toBe('1')
+    const overrides = source.requestOverrides
+    expect(String(overrides['field-1'].refId)).toBe('1')
+    expect(source).not.toHaveProperty('inputOverrides')
     expect(source.resultPath).toBe('body.features.score')
     expect(source.apiConfigId).toBe(22)
     await dialog.locator('.el-dialog__headerbtn').click()

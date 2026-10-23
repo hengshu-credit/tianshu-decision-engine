@@ -103,6 +103,11 @@ function standaloneOptions(count = 3) {
 }
 
 describe('VarPicker', () => {
+  test('可编辑协议路径回显原文，业务名称不能混入持久化路径', () => {
+    const wrapper = mountPicker({ editOnInput: true, value: 'body.Score', vars: [{ _varId: 'body.Score', _refType: 'API_CONTEXT', varCode: 'body.Score', varLabel: '评分', varType: 'NUMBER' }] })
+    expect(wrapper.vm.referenceInputValue).toBe('body.Score')
+    wrapper.unmount()
+  })
   test('单元格主选择器互斥，但保留当前表达式内的子选择器', async () => {
     const first = mountPicker({ operandMode: true }, { attachTo: document.body })
     const child = mountPicker({ operandMode: true, dismissOnOutside: true }, { attachTo: document.body })

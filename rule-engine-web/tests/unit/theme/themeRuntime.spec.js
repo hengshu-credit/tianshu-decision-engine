@@ -11,6 +11,16 @@ import {
 } from '@/theme/themeRuntime'
 
 describe('themeRuntime — 全局主题应用和本地降级', () => {
+  test('登录按钮各主题渐变端点为加载淡化保留文字对比度，品牌原色不变', () => {
+    for (const preset of ACCENT_PRESETS) {
+      applyTheme({ ...DEFAULT_THEME_CONFIG, accentPreset: preset.id })
+      const style = document.documentElement.style
+      const background = style.getPropertyValue('--tianshu-brand-button-background')
+      expect(background).not.toBe('')
+      expect(style.getPropertyValue('--tianshu-brand-background')).toBe(preset.background)
+      for (const color of background.match(/#[\da-f]{6}/gi)) expect(contrastRatio(preset.foreground, color)).toBeGreaterThanOrEqual(7)
+    }
+  })
   beforeEach(() => {
     window.localStorage.clear()
     document.documentElement.removeAttribute('data-theme')
@@ -22,13 +32,20 @@ describe('themeRuntime — 全局主题应用和本地降级', () => {
   })
 
   test('表格滚动模式能应用、持久化并恢复默认', () => {
-    const fixed = { ...DEFAULT_THEME_CONFIG, tableScrollMode: 'FIXED' }
-    writeLocalTheme(window.localStorage, fixed)
+    const auto = { ...DEFAULT_THEME_CONFIG, tableScrollMode: 'AUTO' }
+    writeLocalTheme(window.localStorage, auto)
+    bootstrapLocalTheme(window.localStorage)
+    expect(document.documentElement.dataset.tableScrollMode).toBe('auto')
+    expect(readLocalTheme(window.localStorage).tableScrollMode).toBe('AUTO')
+    window.localStorage.clear()
     bootstrapLocalTheme(window.localStorage)
     expect(document.documentElement.dataset.tableScrollMode).toBe('fixed')
-    expect(readLocalTheme(window.localStorage).tableScrollMode).toBe('FIXED')
-    applyTheme(DEFAULT_THEME_CONFIG)
-    expect(document.documentElement.dataset.tableScrollMode).toBe('auto')
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(document.documentElement.dataset.navigationLayout).toBe('left')
+    expect(document.documentElement.dataset.sidebarTheme).toBe('dark')
+    expect(document.documentElement.classList.contains('theme-content--fixed')).toBe(false)
+    expect(document.documentElement.style.getPropertyValue('--tianshu-brand-background'))
+      .toBe('linear-gradient(135deg, #873FF2 0%, #E14ECA 100%)')
   })
 
   test('夜间渐变主题一次更新根属性、布局状态和 Element Plus 主色', () => {
@@ -94,7 +111,7 @@ describe('themeRuntime — 全局主题应用和本地降级', () => {
   })
 
   test('切换主题色时更新辅助色和信息提示，业务状态保持稳定', () => {
-    applyTheme(DEFAULT_THEME_CONFIG)
+    applyTheme({ ...DEFAULT_THEME_CONFIG, accentPreset: 'THEME_BLUE' })
     const bluePalette = readAppliedPalette()
 
     applyTheme({
@@ -145,7 +162,7 @@ describe('themeRuntime — 全局主题应用和本地降级', () => {
   })
 
   test('管理列表操作色随主题切换且编辑使用当前主题色', () => {
-    applyTheme(DEFAULT_THEME_CONFIG)
+    applyTheme({ ...DEFAULT_THEME_CONFIG, accentPreset: 'THEME_BLUE' })
     const blueActions = readAppliedActions()
 
     applyTheme({

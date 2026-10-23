@@ -85,9 +85,6 @@ public class OpenApiContractService {
 
     public OpenApiContract defaultContract() {
         OpenApiContract contract = new OpenApiContract();
-        contract.setEnvelopeTemplate(JSON.parse("{\"success\":\"${status.success}\",\"code\":\"${status.code}\","
-                + "\"message\":\"${status.message}\",\"traceId\":\"${traceId}\",\"data\":\"${data}\"}"));
-        contract.setDataPath("$.data");
         contract.setSuccessDataTemplate("${response}");
         contract.setErrorDataTemplate(JSON.parse("{\"errorCode\":\"${status.code}\",\"errorMessage\":\"${status.message}\"}"));
         return contract;

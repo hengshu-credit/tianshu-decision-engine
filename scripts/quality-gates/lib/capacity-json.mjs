@@ -50,7 +50,9 @@ function decimalIdentity(text) {
 }
 
 export function matchesCapacityResponse(document, request) {
-  return Object.entries(request.expectedResponse || { success: true }).every(([path, expected]) => {
+  if (capacityJsonNode(document, ['code'])?.value !== '000000'
+      || capacityJsonNode(document, ['success'])?.value !== true) return false;
+  return Object.entries(request.expectedResponse || { code: '000000', success: true }).every(([path, expected]) => {
     const node = capacityJsonNode(document, path.split('.'))
     if (!node) return false
     if (typeof expected === 'number') {

@@ -467,7 +467,7 @@ describe('RuleTest — 初始化与数据加载', () => {
     expect(wrapper.vm.selectedProjectId).toBe(1)
     expect(definitionApi.listProjectDefinitions).toHaveBeenCalledWith(1, {
       pageNum: 1,
-      pageSize: 1000
+      pageSize: 20
     })
   })
 
@@ -485,7 +485,7 @@ describe('RuleTest — 初始化与数据加载', () => {
     expect(wrapper.vm.selectedProjectId).toBe(1)
     expect(definitionApi.listProjectDefinitions).toHaveBeenCalledWith(1, {
       pageNum: 1,
-      pageSize: 1000,
+      pageSize: 20,
       scope: 'GLOBAL'
     })
     expect(definitionApi.listDefinitions).not.toHaveBeenCalledWith(
@@ -1306,6 +1306,16 @@ describe('RuleTest — 执行与结果展示', () => {
     expect(wrapper.vm.batchResults[1].diffs[0]).toMatchObject({ path: '$.result.level', expectedJson: '"A"', actualJson: '"B"' })
   })
 
+  test('保存用例后保留仍存在的批测选择，但旧批测结论清空', async () => {
+    wrapper.vm.selectedRuleId = 4
+    wrapper.vm.selectedTestCaseIds = ['9007199254740993', 'deleted']
+    wrapper.vm.batchResults = [{ validationStatus: 'PASSED' }]
+    definitionApi.listApiScenarios.mockResolvedValueOnce({ data: [{ id: '9007199254740993', scenarioName: '保留的用例' }, { id: '12', scenarioName: '未勾选的用例' }] })
+    await wrapper.vm.loadTestCases({ preserveSelection: true })
+    expect(wrapper.vm.selectedTestCaseIds).toEqual(['9007199254740993'])
+    expect(wrapper.vm.batchResults).toEqual([])
+  })
+
   test('修改执行输入后不能把旧响应收藏成新输入的预期结果', async () => {
     wrapper.vm.selectedRuleId = 4
     wrapper.vm.params = [{ key: 'age', value: '18', type: 'INTEGER' }]
@@ -1467,6 +1477,26 @@ describe('RuleTest — 执行与结果展示', () => {
 
     expect(wrapper.vm.batchResults).toEqual([])
     expect(wrapper.vm.batchExecuting).toBe(false)
+  })
+
+  test('停止批测只停止后续用例，保留已发出请求的结果和进度', async () => {
+    let rejectFirst
+    wrapper.vm.selectedRuleId = 1
+    wrapper.vm.testCases = [{ id: 11, scenarioName: '当前用例' }, { id: 12, scenarioName: '后续用例' }]
+    wrapper.vm.selectedTestCaseIds = [11, 12]
+    definitionApi.executeApiScenarioValidated.mockClear()
+    definitionApi.executeApiScenarioValidated.mockReturnValueOnce(new Promise((_resolve, reject) => { rejectFirst = reject }))
+    const executing = wrapper.vm.executeSelectedTestCases()
+    wrapper.vm.stopBatchExecution()
+    expect(wrapper.vm.batchExecuting).toBe(true)
+    rejectFirst(new Error('当前用例执行失败'))
+    await executing
+    expect(definitionApi.executeApiScenarioValidated).toHaveBeenCalledTimes(1)
+    expect(wrapper.vm.batchResults).toHaveLength(1)
+    expect(wrapper.vm.batchResults[0]).toMatchObject({ scenarioName: '当前用例', success: false })
+    expect(wrapper.vm.batchTotal).toBe(2)
+    expect(wrapper.vm.batchExecuting).toBe(false)
+    expect(wrapper.vm.batchStopRequested).toBe(true)
   })
 
   test('追踪树按状态和关键字筛选并保留祖先', () => {

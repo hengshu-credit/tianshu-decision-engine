@@ -21,6 +21,8 @@ public class RuleSftpDatasourceService extends ServiceImpl<RuleSftpDatasourceMap
     @Resource private SftpConnectPools sftpConnectPools;
     @Resource private SftpFileCache sftpFileCache;
     @Resource private ProjectFilterService projectFilterService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.governance.DatasourceDraftCredentials draftCredentials;
 
     public IPage<RuleSftpDatasource> pageList(int pageNum, int pageSize, String scope, Long projectId,
                                               String projectCode, String projectName,
@@ -69,13 +71,31 @@ public class RuleSftpDatasourceService extends ServiceImpl<RuleSftpDatasourceMap
     }
 
     public void testConnection(RuleSftpDatasource datasource) throws Exception {
-        sftpConnectPools.testConnection(withDefaults(datasource));
+        var cleared = com.hengshucredit.rule.server.governance.CredentialChanges.clearFields(
+                datasource.getClearCredentials(), com.hengshucredit.rule.server.governance.CredentialChanges.SFTP_FIELDS,
+                new org.springframework.beans.BeanWrapperImpl(datasource)::getPropertyValue);
+        RuleSftpDatasource trial = new RuleSftpDatasource();
+        org.springframework.beans.BeanUtils.copyProperties(datasource, trial);
+        if (trial.getId() != null) {
+            RuleSftpDatasource stored = getById(trial.getId());
+            if (stored == null) throw new IllegalArgumentException("SFTP数据源不存在");
+            Map<String, Object> draft = draftCredentials == null ? Map.of() : draftCredentials.load("SFTP", trial.getId());
+            if (!hasText(trial.getPassword())) trial.setPassword((String) draft.getOrDefault("password", stored.getPassword()));
+            if (!hasText(trial.getPrivateKey())) trial.setPrivateKey((String) draft.getOrDefault("privateKey", stored.getPrivateKey()));
+            if (!hasText(trial.getPassphrase())) trial.setPassphrase((String) draft.getOrDefault("passphrase", stored.getPassphrase()));
+            if (!hasText(trial.getKnownHosts())) trial.setKnownHosts((String) draft.getOrDefault("knownHosts", stored.getKnownHosts()));
+        }
+        var trialProperties = new org.springframework.beans.BeanWrapperImpl(trial);
+        cleared.forEach(field -> trialProperties.setPropertyValue(field, ""));
+        sftpConnectPools.testConnection(withDefaults(trial));
     }
 
     private RuleSftpDatasource withDefaults(RuleSftpDatasource datasource) { fillDefaults(datasource); return datasource; }
 
     private void fillDefaults(RuleSftpDatasource datasource) {
         if (datasource == null) throw new IllegalArgumentException("SFTP数据源不能为空");
+        Map<String, String> issues = SftpConfigurationValidator.issues(datasource);
+        if (!issues.isEmpty()) throw new IllegalArgumentException(issues.values().iterator().next());
         if (!hasText(datasource.getScope())) datasource.setScope(RuleVariableService.SCOPE_PROJECT);
         if (RuleVariableService.SCOPE_GLOBAL.equals(datasource.getScope())) datasource.setProjectId(0L);
         if (datasource.getProjectId() == null) datasource.setProjectId(0L);
@@ -111,6 +131,9 @@ public class RuleSftpDatasourceService extends ServiceImpl<RuleSftpDatasourceMap
     private void hideSecrets(List<RuleSftpDatasource> list) {
         if (list == null) return;
         list.forEach(item -> {
+            item.setConfiguredSecrets(Map.of("password", hasText(item.getPassword()),
+                    "privateKey", hasText(item.getPrivateKey()), "passphrase", hasText(item.getPassphrase()),
+                    "knownHosts", hasText(item.getKnownHosts())));
             item.setPassword(null);
             item.setPrivateKey(null);
             item.setPassphrase(null);

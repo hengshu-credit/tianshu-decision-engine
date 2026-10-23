@@ -20,6 +20,7 @@ import java.util.Map;
 
 @Service
 public class ModelExecutionTimeoutExecutor {
+    @Autowired(required = false) private com.hengshucredit.rule.server.security.ConsoleProjectAccess consoleProjects;
 
     private final ThreadPoolExecutor executor;
 
@@ -41,7 +42,7 @@ public class ModelExecutionTimeoutExecutor {
     public <T> T execute(Callable<T> task, int timeoutMs) {
         final Future<T> future;
         try {
-            future = executor.submit(task);
+            future = executor.submit(consoleProjects == null ? task : consoleProjects.wrap(task));
         } catch (java.util.concurrent.RejectedExecutionException e) {
             throw new ExecutionCapacityException(ExecutionCapacityException.Resource.MODEL_EXECUTION,
                     "模型执行队列已满，请稍后重试");

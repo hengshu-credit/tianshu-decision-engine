@@ -8,6 +8,113 @@ async function replaceThreshold(content, value) {
   await content.fill(value)
 }
 
+test('子路径最长匹配展示名称编码版本，保存重载后仍保留来源 ID', async ({ page }, testInfo) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const data = createDesignerApiData()
+  const object = data.get('/api/rule/dataobject/tree/1')[0]
+  object.object.currentVersion = 4
+  object.variables.push(
+    { id: '80', varCode: 'payload', varLabel: '动态内容', varType: 'OBJECT' },
+    { id: '81', varCode: 'payload.customer', varLabel: '客户资料', parentFieldId: '80', varType: 'OBJECT' },
+    { id: '82', varCode: 'payload.customer.stats', varLabel: '客户统计', parentFieldId: '81', varType: 'OBJECT' },
+  )
+  const revision = data.get('/api/rule/definition/101/revisions')[0]
+  let saved
+  data.set('POST /api/rule/definition/101/designer/drafts', ({ request }) => {
+    saved = request.postDataJSON()
+    Object.assign(revision, { modelJson: saved.modelJson, lockVersion: revision.lockVersion + 1 })
+    return { revision, compileSuccess: true, issues: [] }
+  })
+  data.set('/api/rule/definition/101/revisions/2101', () => revision)
+  const { assertClean } = await installDistRoutes(page, { origin, liveStatic: !!process.env.E2E_DEV_BASE_URL, apiData: data })
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto(`${origin}/#/designer/table/101`)
+  await page.getByRole('button', { name: '添加行', exact: true }).click()
+  const field = page.getByPlaceholder('选择左操作数...').first()
+  await field.click()
+  await page.locator('.fp-panel:visible').getByRole('button', { name: '写入路径', exact: true }).click()
+  await page.getByPlaceholder('选择变量、对象、模型或 API', { exact: true }).click()
+  const sourcePanel = page.locator('.fp-panel:visible').last()
+  await sourcePanel.getByRole('textbox', { name: '搜索字段名称或编码' }).fill('TaxRequest')
+  await sourcePanel.getByRole('row').filter({ has: page.getByRole('gridcell', { name: 'TaxRequest', exact: true }) }).dblclick()
+  const panel = page.locator('.fp-panel:visible')
+  const path = panel.getByRole('textbox', { name: '子路径', exact: true })
+  await path.fill('payload.customer')
+  await expect(panel.locator('.operand-path-match')).toContainText('客户资料')
+  await expect(panel.locator('.operand-path-match')).toContainText('已完整匹配')
+  await path.fill('payload.customer.stats.score')
+  await expect(panel.locator('.operand-path-match')).toContainText('客户统计')
+  await expect(panel.locator('.operand-path-match')).toContainText('TaxRequest.payload.customer.stats')
+  await expect(panel.locator('.operand-path-match')).toContainText('版本v4')
+  await expect(panel.locator('.operand-path-match')).toContainText('.score')
+  await panel.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '取值结果类型' }) }).click()
+  await page.getByRole('option', { name: '数值 (NUMBER)', exact: true }).click()
+  await path.click()
+  await expect(page.locator('.el-select-dropdown:visible')).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('longest-path.png') })
+  await panel.getByRole('button', { name: '使用路径', exact: true }).click()
+  await expect(field).toHaveValue(/客户统计.*TaxRequest.payload.customer.stats.*v4.*\.score/)
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page).toHaveURL(/sourceType=REVISION.*sourceId=2101/)
+  expect(saved.modelJson).toContain('"refType":"DATA_OBJECT_ROOT"')
+  expect(saved.modelJson).toContain('"refId":10')
+  await page.reload()
+  await expect(field).toHaveValue(/客户统计.*TaxRequest.payload.customer.stats.*v4.*\.score/)
+  assertClean()
+})
+
+for (const source of [
+  { code: 'TaxRequest.payload', type: 'DATA_OBJECT', id: '9007199254740993', path: '.extra.score' },
+  { code: 'TaxRequest', type: 'DATA_OBJECT_ROOT', id: 10, path: '.extra.score' },
+  { code: 'creditModel', type: 'MODEL', id: 20, path: '.extra.score' },
+  { code: 'profile.response.body', type: 'EXTERNAL_API', id: '91', path: 'response.body.extra.score' },
+]) test(`${source.type} 选择来源后读取未声明子路径，保存并重载保持 ID 和数值类型`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const data = createDesignerApiData()
+  data.get('/api/rule/dataobject/tree/1')[0].variables.push({ id: '9007199254740993', varCode: 'payload', varLabel: '动态内容', varType: 'OBJECT', children: [] })
+  data.set('/api/rule/datasource/api-config/available', [{ id: '91', apiCode: 'profile', apiName: '资料查询', status: 1 }])
+  let saved
+  const revision = data.get('/api/rule/definition/101/revisions')[0]
+  data.set('POST /api/rule/definition/101/designer/drafts', ({ request }) => {
+    saved = request.postDataJSON()
+    Object.assign(revision, { modelJson: saved.modelJson, lockVersion: revision.lockVersion + 1 })
+    return { revision, compileSuccess: true, issues: [] }
+  })
+  data.set('/api/rule/definition/101/revisions/2101', () => revision)
+  const { assertClean } = await installDistRoutes(page, { apiData: data })
+  await page.goto('http://tianshu.local/index.html#/designer/table/101')
+  await page.getByRole('button', { name: '添加行', exact: true }).click()
+  const field = page.getByPlaceholder('选择左操作数...').first()
+  await field.click()
+  await page.locator('.fp-panel:visible').getByRole('button', { name: '写入路径', exact: true }).click()
+  await page.getByPlaceholder('选择变量、对象、模型或 API', { exact: true }).click()
+  const sourcePanel = page.locator('.fp-panel:visible').last()
+  await sourcePanel.getByRole('textbox', { name: '搜索字段名称或编码' }).fill(source.code)
+  await sourcePanel.getByRole('row').filter({ has: page.getByRole('gridcell', { name: source.code, exact: true }) }).dblclick()
+  const panel = page.locator('.fp-panel:visible')
+  await panel.getByRole('textbox', { name: '子路径', exact: true }).fill('extra.score')
+  await panel.getByRole('button', { name: '使用路径', exact: true }).click()
+  await expect(panel.getByRole('alert')).toContainText('结果类型')
+  await panel.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '取值结果类型' }) }).click()
+  await page.getByRole('option', { name: '数值 (NUMBER)', exact: true }).click()
+  await page.screenshot({ path: testInfo.outputPath('subpath.png'), animations: 'disabled' })
+  await panel.getByRole('button', { name: '使用路径', exact: true }).click()
+  await expect(field).toHaveValue(/extra.score/)
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect.poll(() => !!saved).toBe(true)
+  const operands = []
+  const visit = value => { if (!value || typeof value !== 'object') return; if (value.kind === 'PATH') operands.push(value); Object.values(value).forEach(visit) }
+  visit(typeof saved.modelJson === 'string' ? JSON.parse(saved.modelJson) : saved.modelJson)
+  expect(operands).toEqual(expect.arrayContaining([expect.objectContaining({ refType: source.type, refId: source.id, relativePath: source.path, valueType: 'NUMBER' })]))
+  await expect(page).toHaveURL(/sourceType=REVISION.*sourceId=2101/)
+  await page.reload()
+  await expect(field).toHaveValue(/extra.score/)
+  await field.click()
+  await expect(page.getByRole('textbox', { name: '子路径', exact: true })).toHaveValue('extra.score')
+  await expect(panel.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '取值结果类型' }) })).toContainText('数值 (NUMBER)')
+  assertClean()
+})
+
 test('阈值自动推荐、用户手选优先；路径、阈值与 fx 面板各自保留草稿', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   const { assertClean } = await installDistRoutes(page, { apiData: createDesignerApiData() })
@@ -44,8 +151,11 @@ test('阈值自动推荐、用户手选优先；路径、阈值与 fx 面板各�
   await expect(panel.locator('.operand-type-recommendation')).toContainText('按你的选择：字符串')
   await panel.getByRole('button', { name: '写入路径', exact: true }).click()
   await page.mouse.move(5, 5)
-  const path = panel.getByRole('textbox', { name: '字段路径', exact: true })
-  await path.fill('TaxRequest.amount')
+  await panel.getByPlaceholder('选择变量、对象、模型或 API').click()
+  const sourcePanel = page.locator('.fp-panel:visible').last()
+  await sourcePanel.getByRole('textbox', { name: '搜索字段名称或编码' }).fill('TaxRequest.amount')
+  await sourcePanel.getByRole('row').filter({ hasText: 'TaxRequest.amount' }).dblclick()
+  const path = panel.getByRole('textbox', { name: '子路径', exact: true })
   await expect(panel.locator('.operand-path-match')).toContainText('金额')
   await expect(field).toHaveValue('')
   await panel.getByRole('button', { name: '输入阈值', exact: true }).click()
@@ -54,11 +164,11 @@ test('阈值自动推荐、用户手选优先；路径、阈值与 fx 面板各�
   await panel.getByRole('button', { name: 'ƒx 组合表达式', exact: true }).click()
   await expect(panel.locator('.expression-editor--compact')).toBeVisible()
   await panel.getByRole('button', { name: '写入路径', exact: true }).click()
-  await expect(path).toHaveValue('TaxRequest.amount')
+  await expect(path).toHaveValue('')
   await page.mouse.click(5, 5)
   await expect(panel).toHaveCount(0)
   await field.click()
-  await expect(path).toHaveValue('TaxRequest.amount')
+  await expect(path).toHaveValue('')
   await expect(page.locator('.var-picker-popover:visible')).toHaveCSS('opacity', '1')
   await page.screenshot({ path: testInfo.outputPath('path-panel.png'), animations: 'disabled' })
   await panel.getByRole('button', { name: '使用路径', exact: true }).click()

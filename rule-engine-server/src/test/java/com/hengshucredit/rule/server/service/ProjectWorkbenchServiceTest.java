@@ -11,6 +11,17 @@ import java.util.stream.Collectors;
 import static org.junit.Assert.assertEquals;
 
 public class ProjectWorkbenchServiceTest {
+    @Test
+    public void sourceCheckRoutesSftpAndDoesNotClaimConnectionWasTested() {
+        ProjectWorkbenchDTO.Metrics metrics = metrics();
+        metrics.setDataSourceCount(1L);
+        metrics.setEnabledDataSourceCount(1L);
+        metrics.setSftpDataSourceCount(1L);
+        metrics.setEnabledSftpDataSourceCount(1L);
+        var source = checks(new ProjectWorkbenchService().buildChecks(project(1), metrics, null)).get("SOURCE");
+        assertEquals("CONFIGURE_SFTP_SOURCES", source.getActionCode());
+        org.junit.Assert.assertTrue(source.getReason().contains("不代表连接测试通过"));
+    }
 
     @Test
     public void fieldCheckUsesActualReferenceIdsIncludingGlobalFields() {

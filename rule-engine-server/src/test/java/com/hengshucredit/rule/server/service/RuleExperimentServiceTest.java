@@ -72,6 +72,41 @@ public class RuleExperimentServiceTest {
         assertTrue(routeTrace.toString().contains("GROUP_SELECTED"));
     }
 
+    @Test public void oneBasisPointRoutingIsNotRoundedUpToOnePercent() throws Exception {
+        var experiment = experiment("RATIO", "RATIO");
+        var tiny = group("tiny", "CHAMPION", 0, 0, "", null); tiny.setTrafficRatio(new BigDecimal("0.01"));
+        var other = group("other", "CHALLENGER", 0, 1, "", null); other.setTrafficRatio(new BigDecimal("99.99"));
+        var testTiny = group("test_tiny", "TEST", 0, 2, "", null); testTiny.setTrafficRatio(new BigDecimal("0.01"));
+        var testOther = group("test_other", "TEST", 0, 3, "", null); testOther.setTrafficRatio(new BigDecimal("99.99"));
+        List<RuleExperimentGroup> groups = List.of(tiny, other, testTiny, testOther);
+        Method production = RuleExperimentService.class.getDeclaredMethod("chooseProductionGroup", RuleExperiment.class, List.class, Map.class, String.class, String.class);
+        Method testing = RuleExperimentService.class.getDeclaredMethod("chooseTestGroups", RuleExperiment.class, List.class, Map.class, String.class);
+        production.setAccessible(true); testing.setAccessible(true);
+        int productionHits = 0, testHits = 0;
+        for (int i = 0; i < 20000; i++) {
+            String key = "basis-point-" + i;
+            if ("tiny".equals(routeGroup(production.invoke(service, experiment, groups, Map.of(), key, null)).getGroupCode())) productionHits++;
+            var choices = (List<?>) testing.invoke(service, experiment, groups, Map.of(), key);
+            if ("test_tiny".equals(routeGroup(choices.get(0)).getGroupCode())) testHits++;
+        }
+        assertTrue("0.01%不能被整数桶放大成1%: " + productionHits, productionHits <= 10);
+        assertTrue("测试组也必须支持两位小数比例: " + testHits, testHits <= 10);
+    }
+
+    @Test public void integerPercentageAssignmentsStayCompatibleWithExistingBuckets() throws Exception {
+        var experiment = experiment("RATIO", "RATIO");
+        List<RuleExperimentGroup> groups = List.of(group("champion", "CHAMPION", 37, 0, "", null), group("other", "CHALLENGER", 63, 1, "", null));
+        Method routing = RuleExperimentService.class.getDeclaredMethod("chooseProductionGroup", RuleExperiment.class, List.class, Map.class, String.class, String.class);
+        routing.setAccessible(true);
+        for (int i = 0; i < 500; i++) {
+            String key = "stable-" + i;
+            byte[] digest = java.security.MessageDigest.getInstance("MD5").digest(("EXP_TEST:" + key).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            int legacyHash = java.nio.ByteBuffer.wrap(digest).getInt();
+            String expected = Math.floorMod(legacyHash, 100) < 37 ? "champion" : "other";
+            assertEquals(expected, routeGroup(routing.invoke(service, experiment, groups, Map.of(), key, null)).getGroupCode());
+        }
+    }
+
     @Test
     public void conditionTestGroupsHonorExclusiveFlag() throws Exception {
         RuleExperiment experiment = experiment("RATIO", "CONDITION");

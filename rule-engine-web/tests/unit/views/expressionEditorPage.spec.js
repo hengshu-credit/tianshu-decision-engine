@@ -80,6 +80,21 @@ function mountPage(current = session(), options = {}) {
 afterEach(() => vi.clearAllMocks())
 
 describe('ExpressionEditorPage', () => {
+  test('等待编译时表达式已修改，迟到结果不能回填旧内容或切走页面', async () => {
+    let complete
+    expressionApi.compileExpression.mockImplementationOnce(() => new Promise(resolve => { complete = resolve }))
+    const current = reactive(session())
+    const { wrapper, dispatch, push } = mountPage(current)
+    const applying = wrapper.vm.saveAndCompile()
+    current.draft = { kind: 'LITERAL', value: '99', valueType: 'NUMBER' }
+    await wrapper.vm.$nextTick()
+    complete({ data: { success: true, compiledScript: '8' } })
+    await applying
+    expect(dispatch).not.toHaveBeenCalledWith('expressionSessions/saveCompiled', expect.anything())
+    expect(push).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   test('管理配置检查后回填原配置，不请求仅支持规则上下文的编译接口', async () => {
     const { wrapper, dispatch, push } = mountPage(session({ ruleId: null, returnRoute: { name: 'VariableList', params: {}, query: { projectId: '1' } } }))
     await wrapper.vm.saveAndCompile()

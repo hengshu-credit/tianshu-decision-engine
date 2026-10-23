@@ -9,4 +9,7 @@ public class RuleDesignerCompileTaskResponse {
     private String status;
     private RuleDesignerCompileResponse result;
     private String errorMessage;
+    private long submittedAt;
+    private long startedAt;
+    private long completedAt;
 }

@@ -46,6 +46,22 @@ describe('ExpressionFormulaPreview', () => {
     expect(wrapper.vm.editScript).toBe('request.age')
   })
 
+  test('编辑脚本把字段和函数目录传给公共编辑器', async() => {
+    const functions = [{ id: 22, funcCode: 'risk', funcName: '风险计算' }]
+    const wrapper = shallowMount(ExpressionFormulaPreview, {
+      props: { operand: { kind: 'PATH', value: 'age', code: 'age' }, vars, functions },
+      stubs: {
+        MonacoEditor: { name: 'MonacoEditor', props: ['references', 'functions'], template: '<textarea />' },
+        'el-button': { template: '<button @click="$emit(\'click\')"><slot /></button>' },
+      },
+    })
+    await wrapper.find('.expression-formula-preview__read').trigger('dblclick')
+    const editor = wrapper.findComponent({ name: 'MonacoEditor' })
+    expect(editor.props('references')).toEqual(vars)
+    expect(editor.props('functions')).toEqual(functions)
+    wrapper.unmount()
+  })
+
   test('确认脚本后发出结构化 Operand', () => {
     const wrapper = mountPreview()
     wrapper.vm.startEditing()

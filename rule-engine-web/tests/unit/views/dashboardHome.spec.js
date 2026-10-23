@@ -187,7 +187,7 @@ describe('DashboardHome', () => {
     })
     await flushPromises()
 
-    const ruleFilters = wrapper.findAllComponents(RemoteFilterSelect)
+    const ruleFilters = wrapper.findAllComponents(RemoteFilterSelect).filter(item => ['ruleCode', 'ruleName'].includes(item.props('optionValueKey')))
     expect(ruleFilters).toHaveLength(2)
     expect(ruleFilters.map(item => item.props('optionValueKey')))
       .toEqual(['ruleCode', 'ruleName'])

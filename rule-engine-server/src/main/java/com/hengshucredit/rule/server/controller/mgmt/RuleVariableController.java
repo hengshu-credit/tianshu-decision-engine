@@ -1,10 +1,11 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.model.dto.RuleValidationResult;
 import com.hengshucredit.rule.model.dto.VariableSourcePreviewRequest;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.model.entity.RuleVariableOption;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.governance.GovernanceBatchImportService;
 import com.hengshucredit.rule.server.governance.GovernedProjectionMutation;
 import com.hengshucredit.rule.server.governance.VariableSourceCatalog;
@@ -56,15 +57,15 @@ public class RuleVariableController {
 
     @PostMapping("/derived-schema")
     @RequirePermission("field:view")
-    public R<com.hengshucredit.rule.model.dto.RuleTestSchema> derivedSchema(@RequestBody RuleVariable variable) {
+    public ApiResponse<com.hengshucredit.rule.model.dto.RuleTestSchema> derivedSchema(@RequestBody RuleVariable variable) {
         sourceReferenceValidator.validateOrThrow(variable);
-        return R.ok(ruleTestSchemaService.buildDerivedDraft(variable));
+        return ApiResponse.ok(ruleTestSchemaService.buildDerivedDraft(variable));
     }
 
     /** 健康检查，用于验证变量管理接口是否正常注册 */
     @GetMapping("/health")
-    public R<String> health() {
-        return R.ok("ok");
+    public ApiResponse<String> health() {
+        return ApiResponse.ok("ok");
     }
 
     /**
@@ -73,7 +74,7 @@ public class RuleVariableController {
      * @param scope 作用域筛选：GLOBAL/PROJECT，null 表示不限制
      */
     @GetMapping("/list")
-    public R<IPage<RuleVariable>> list(
+    public ApiResponse<IPage<RuleVariable>> list(
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) Long projectId,
@@ -86,13 +87,13 @@ public class RuleVariableController {
             @RequestParam(required = false) String projectName,
             @RequestParam(required = false) String varCode,
             @RequestParam(required = false) String varLabel) {
-        return R.ok(variableService.pageList(pageNum, pageSize, projectId, varType, keyword, standaloneOnly, varSource, scope, projectCode, projectName, varCode, varLabel));
+        return ApiResponse.ok(variableService.pageList(pageNum, pageSize, projectId, varType, keyword, standaloneOnly, varSource, scope, projectCode, projectName, varCode, varLabel));
     }
 
     /** 从 Java 常量类批量生成常量生命周期审批草稿。 */
     @PostMapping("/import/constants/java")
     @RequirePermission("approval:submit")
-    public R<Map<String, Object>> importConstantsJava(@RequestBody Map<String, String> body) {
+    public ApiResponse<Map<String, Object>> importConstantsJava(@RequestBody Map<String, String> body) {
         String pidStr = body.get("projectId");
         Long projectId = pidStr != null && !pidStr.isEmpty() ? Long.valueOf(pidStr) : null;
         String scope = body.getOrDefault("scope", "PROJECT");
@@ -101,13 +102,13 @@ public class RuleVariableController {
                 governanceBatchImportService.importConstantsFromJava(
                         projectId, scope, javaSource,
                         operatorResolver.resolve());
-        return R.ok(result);
+        return ApiResponse.ok(result);
     }
 
     /** 从扁平 JSON 批量生成常量生命周期审批草稿。 */
     @PostMapping("/import/constants/json")
     @RequirePermission("approval:submit")
-    public R<Map<String, Object>> importConstantsJson(@RequestBody Map<String, String> body) {
+    public ApiResponse<Map<String, Object>> importConstantsJson(@RequestBody Map<String, String> body) {
         String pidStr = body.get("projectId");
         Long projectId = pidStr != null && !pidStr.isEmpty() ? Long.valueOf(pidStr) : null;
         String scope = body.getOrDefault("scope", "PROJECT");
@@ -116,126 +117,126 @@ public class RuleVariableController {
                 governanceBatchImportService.importConstantsFromJson(
                         projectId, scope, jsonContent,
                         operatorResolver.resolve());
-        return R.ok(result);
+        return ApiResponse.ok(result);
     }
 
     @GetMapping("/project/{projectId:\\d+}")
-    public R<List<RuleVariable>> listByProject(@PathVariable Long projectId,
+    public ApiResponse<List<RuleVariable>> listByProject(@PathVariable Long projectId,
             @RequestParam(required = false) String varSource) {
-        return R.ok(variableService.listByProject(projectId, varSource));
+        return ApiResponse.ok(variableService.listByProject(projectId, varSource));
     }
 
     @GetMapping("/source-options")
-    public R<VariableSourceCatalog> sourceOptions(
+    public ApiResponse<VariableSourceCatalog> sourceOptions(
             @RequestParam String scope,
             @RequestParam(required = false) Long projectId) {
         try {
-            return R.ok(sourceReferenceValidator.catalog(scope, projectId));
+            return ApiResponse.ok(sourceReferenceValidator.catalog(scope, projectId));
         } catch (IllegalArgumentException exception) {
-            return R.fail(exception.getMessage());
+            return ApiResponse.fail(exception);
         }
     }
 
     @PostMapping("/preview")
-    public R<Map<String, Object>> previewVariable(
+    public ApiResponse<Map<String, Object>> previewVariable(
             @RequestBody VariableSourcePreviewRequest request) {
         try {
             if (request == null || request.getVariable() == null) {
-                return R.fail("字段草稿不能为空");
+                return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.REQUIRED_FIELD_MISSING, "字段草稿不能为空");
             }
             sourceReferenceValidator.validateOrThrow(request.getVariable());
-            return R.ok(variableSourceResolver.previewVariable(
+            return ApiResponse.ok(variableSourceResolver.previewVariable(
                     request.getVariable(), request.getParams()));
         } catch (IllegalArgumentException | IllegalStateException exception) {
-            return R.fail(exception.getMessage());
+            return ApiResponse.fail(exception);
         }
     }
 
     @GetMapping("/{id:\\d+}")
-    public R<RuleVariable> get(@PathVariable Long id) {
-        return R.ok(variableService.getById(id));
+    public ApiResponse<RuleVariable> get(@PathVariable Long id) {
+        return ApiResponse.ok(variableService.getById(id));
     }
 
     @PostMapping("/{variableId:\\d+}/test")
-    public R<Map<String, Object>> testVariable(@PathVariable Long variableId,
+    public ApiResponse<Map<String, Object>> testVariable(@PathVariable Long variableId,
                                                @RequestBody(required = false) Map<String, Object> params) {
         try {
-            return R.ok(variableSourceResolver.testVariable(variableId, params));
+            return ApiResponse.ok(variableSourceResolver.testVariable(variableId, params));
         } catch (IllegalArgumentException | IllegalStateException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
     @PostMapping
     @GovernedProjectionMutation
-    public R<RuleVariable> create(@RequestBody RuleVariable variable) {
+    public ApiResponse<RuleVariable> create(@RequestBody RuleVariable variable) {
         if (variable.getScriptName() == null || variable.getScriptName().isEmpty()) {
             variable.setScriptName(variable.getVarCode());
         }
         try {
             variableService.save(variable);
-            return R.ok(variable);
+            return ApiResponse.ok(variable);
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
     @PutMapping
     @GovernedProjectionMutation
-    public R<Void> update(@RequestBody RuleVariable variable) {
+    public ApiResponse<Void> update(@RequestBody RuleVariable variable) {
         try {
             variableService.updateById(variable);
-            return R.ok();
+            return ApiResponse.ok();
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
     /** 将项目级变量（含常量）转为全局变量。 */
     @PostMapping("/toGlobal/{id:\\d+}")
     @GovernedProjectionMutation
-    public R<Void> toGlobal(@PathVariable Long id) {
+    public ApiResponse<Void> toGlobal(@PathVariable Long id) {
         try {
             variableService.toGlobal(id);
-            return R.ok();
+            return ApiResponse.ok();
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
     @DeleteMapping("/{id:\\d+}")
     @GovernedProjectionMutation
-    public R<Void> delete(@PathVariable Long id) {
+    public ApiResponse<Void> delete(@PathVariable Long id) {
         variableService.deleteWithOptions(id);
-        return R.ok();
+        return ApiResponse.ok();
     }
 
     @GetMapping("/{variableId:\\d+}/options")
-    public R<List<RuleVariableOption>> getOptions(@PathVariable Long variableId) {
-        return R.ok(variableService.getOptions(variableId));
+    public ApiResponse<List<RuleVariableOption>> getOptions(@PathVariable Long variableId) {
+        return ApiResponse.ok(variableService.getOptions(variableId));
     }
 
     @PostMapping("/{variableId:\\d+}/options")
     @GovernedProjectionMutation
-    public R<Void> saveOptions(@PathVariable Long variableId, @RequestBody List<RuleVariableOption> options) {
+    public ApiResponse<Void> saveOptions(@PathVariable Long variableId, @RequestBody List<RuleVariableOption> options) {
         variableService.saveOptions(variableId, options);
-        return R.ok();
+        return ApiResponse.ok();
     }
 
     @GetMapping("/tree/{projectId:\\d+}")
-    public R<Map<String, Object>> tree(@PathVariable Long projectId) {
-        return R.ok(dataObjectService.getVariableTree(projectId));
+    public ApiResponse<Map<String, Object>> tree(@PathVariable Long projectId) {
+        return ApiResponse.ok(dataObjectService.getVariableTree(projectId));
     }
 
     @PostMapping("/batch-validate/{projectId:\\d+}")
-    public R<List<RuleValidationResult>> batchValidate(@PathVariable Long projectId) {
-        return R.ok(batchTestService.validateProjectRules(projectId));
+    public ApiResponse<List<RuleValidationResult>> batchValidate(@PathVariable Long projectId) {
+        return ApiResponse.ok(batchTestService.validateProjectRules(projectId));
     }
 
     /** 全局批量验证（不限定项目） */
     @PostMapping("/batch-validate")
-    public R<List<RuleValidationResult>> batchValidateAll() {
-        return R.ok(batchTestService.validateAllRules());
+    public ApiResponse<List<RuleValidationResult>> batchValidateAll() {
+        return ApiResponse.ok(batchTestService.validateAllRules());
     }
 
     private void trySyncSchema() {

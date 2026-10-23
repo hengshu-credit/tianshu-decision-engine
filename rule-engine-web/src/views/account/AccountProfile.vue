@@ -20,6 +20,7 @@
               <el-tag :type="profile.emailVerifiedAt ? 'success' : 'warning'" effect="plain">
                 {{ profile.emailVerifiedAt ? '已验证' : '未验证' }}
               </el-tag>
+              <el-button v-if="profile.email && !profile.emailVerifiedAt" link :loading="resending" @click="resendVerification">重发验证邮件</el-button>
             </div>
           </el-form-item>
           <el-form-item label="账户状态"><el-tag type="success">{{ profile.registrationStatus === 'ACTIVE' ? '已激活' : '待验证' }}</el-tag></el-form-item>
@@ -42,7 +43,7 @@
 
 <script>
 import { ElMessage } from 'element-plus'
-import { changeConsolePassword, getConsoleProfile, updateConsoleProfile } from '@/api/auth'
+import { changeConsolePassword, getConsoleProfile, updateConsoleProfile, resendConsoleEmailVerification } from '@/api/auth'
 import { clearCurrentUser } from '@/security/permissionState'
 
 export default {
@@ -53,6 +54,7 @@ export default {
       loading: false,
       savingProfile: false,
       changingPassword: false,
+      resending: false,
       profile: { username: '', displayName: '', email: '', emailVerifiedAt: null, registrationStatus: '' },
       passwordForm: { currentPassword: '', password: '', confirmPassword: '' },
       passwordRules: {
@@ -64,6 +66,10 @@ export default {
   },
   mounted() { this.loadProfile() },
   methods: {
+    async resendVerification() {
+      this.resending = true
+      try { await resendConsoleEmailVerification(); ElMessage.success('验证邮件已发送') } finally { this.resending = false }
+    },
     async loadProfile() {
       this.loading = true
       try { const response = await getConsoleProfile(); this.profile = { ...this.profile, ...(response.data || {}) } } finally { this.loading = false }

@@ -1,21 +1,16 @@
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { loadSourceEnvironment } from './lib/source-environment.mjs'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const logDir = path.join(root, '.codex-run-logs')
-const envFiles = ['.env.server', '.env.client']
-  .map(name => path.join(root, name))
-  .filter(existsSync)
-if (envFiles.length === 0) throw new Error('缺少 .env.server 和 .env.client，请先复制两个配置模板并填写真实配置。')
-const envFile = envFiles.map(file => readFileSync(file, 'utf8')).join('\n')
+const serverEnv = loadSourceEnvironment(root, 'server')
 const psQuote = value => `'${String(value).replaceAll("'", "''")}'`
 
 function setting(name, fallback) {
-  const line = envFile.split(/\r?\n/).find(value => value.trimStart().startsWith(`${name}=`))
-  const value = process.env[name] ?? line?.slice(line.indexOf('=') + 1).trim()
-  return value?.replace(/^(['"])(.*)\1$/, '$2') || fallback
+  return serverEnv[name] || fallback
 }
 
 function portSetting(name, fallback) {
@@ -106,12 +101,14 @@ async function main() {
       const health = await request(`${backendUrl}/actuator/health/readiness`)
       if (health?.status !== 'UP') return false
       const config = await request(`${backendUrl}/api/auth/console/config`)
-      return config?.code === 200 && typeof config.data?.loginEnabled === 'boolean'
+      return config?.code === '000000' && typeof config.data?.loginEnabled === 'boolean'
     }
   }
   const launched = []
   const front = await start(frontend, `
 Set-Location -LiteralPath ${psQuote(path.join(root, 'rule-engine-web'))}
+$env:SERVER_PORT = ${psQuote(String(backendPort))}
+$env:VITE_PORT = ${psQuote(String(frontendPort))}
 if (-not (Test-Path -LiteralPath 'node_modules')) {
   & npm.cmd ci
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -120,24 +117,9 @@ if (-not (Test-Path -LiteralPath 'node_modules')) {
 exit $LASTEXITCODE`)
   if (front) launched.push(front)
 
-  // 只在 WSL 本地端口转发与项目 Docker 服务同时存在时调整本次进程的地址。
+  // server 通过统一 dotenv 加载器读取配置，不根据本机网卡猜测数据库地址。
   const back = await start(backend, `
 Set-Location -LiteralPath ${psQuote(root)}
-$relayPorts = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object {
-  $_.LocalPort -in 3306,6379 -and (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName -eq 'wslrelay'
-} | Select-Object -ExpandProperty LocalPort -Unique)
-if ($relayPorts.Count -gt 0 -and (Get-Command docker.exe -ErrorAction SilentlyContinue)) {
-  try { $runningContainers = @(& docker.exe ps --format '{{.Names}}' 2>$null) } catch { $runningContainers = @() }
-  $dockerAddress = Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway } | Select-Object -First 1 | ForEach-Object { $_.IPv4Address.IPAddress }
-  if ($dockerAddress) {
-    if ($relayPorts -contains 3306 -and $runningContainers -contains 'rule-engine-mysql' -and -not ${psQuote(setting('SPRING_DATASOURCE_URL', ''))}) {
-      $env:SPRING_DATASOURCE_URL = 'jdbc:mysql://' + $dockerAddress + ${psQuote(`:3306/${setting('MYSQL_DATABASE', 'rule_engine')}?useUnicode=true&allowMultiQueries=${setting('MYSQL_ALLOW_MULTI_QUERIES', 'false')}&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true`)}
-    }
-    if ($relayPorts -contains 6379 -and $runningContainers -contains 'rule-engine-redis' -and ${psQuote(setting('REDIS_HOST', 'localhost'))} -in @('localhost','127.0.0.1','::1') -and ${psQuote(setting('REDIS_PORT', '6379'))} -eq '6379') {
-      $env:REDIS_HOST = $dockerAddress
-    }
-  }
-}
 & mvn.cmd -B -pl rule-engine-core -am install -DskipTests
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Set-Location -LiteralPath ${psQuote(path.join(root, 'rule-engine-server'))}
@@ -170,7 +152,7 @@ exit $LASTEXITCODE`)
   }
   if (pending.length) throw new Error(`等待服务就绪超过 30 分钟，请检查 ${logDir} 中的日志。`)
   const proxyConfig = await request(`${frontendUrl}/api/auth/console/config`)
-  if (proxyConfig?.code !== 200 || typeof proxyConfig.data?.loginEnabled !== 'boolean') {
+  if (proxyConfig?.code !== '000000' || typeof proxyConfig.data?.loginEnabled !== 'boolean') {
     throw new Error('前后端已启动，但前端 API 代理检查失败，请检查 VITE_DEV_PROXY。')
   }
   console.log(`\n前后端已就绪并在后台运行。\n前端：${frontendUrl}\n后端：${backendUrl}`)

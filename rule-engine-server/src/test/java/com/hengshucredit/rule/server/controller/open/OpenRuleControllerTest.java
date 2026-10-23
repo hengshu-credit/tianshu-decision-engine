@@ -132,8 +132,10 @@ public class OpenRuleControllerTest {
                 Assert.assertNull("模型缓存拒绝不能伪报开放规则线程池队列深度", response.getHeaders().getFirst("X-Rule-Queue-Depth"));
                 Assert.assertEquals("1", response.getHeaders().getFirst("Retry-After"));
                 Map<?, ?> body = (Map<?, ?>) response.getBody();
-                Assert.assertEquals("400001", body.get("retCode"));
-                Assert.assertEquals(executeService.result.getErrorMessage(), ((Map<?, ?>) body.get("payload")).get("errorMessage"));
+                Assert.assertEquals("400001", body.get("code"));
+                Assert.assertEquals(executeService.result.getErrorMessage(), body.get("detail"));
+                Assert.assertEquals(com.hengshucredit.rule.model.PlatformCode.CAPACITY_EXCEEDED.message(),
+                        ((Map<?, ?>) body.get("data")).get("errorMessage"));
                 if ("CLAIMED".equals(mode)) Assert.assertSame(executeService.result, completed.get());
                 if ("COMPLETED".equals(mode)) Assert.assertNull(executeService.params);
             } finally {
@@ -143,7 +145,7 @@ public class OpenRuleControllerTest {
     }
 
     @Test
-    public void untypedModelErrorStillReturns500WithoutLimitHeaders() {
+    public void untypedModelErrorReturnsExecutionFailureWithoutLimitHeaders() {
         RecordingExecuteService executeService = new RecordingExecuteService();
         executeService.result.setSuccess(false);
         executeService.result.setErrorMessage("PMML 模型加载并发已达上限");
@@ -152,8 +154,8 @@ public class OpenRuleControllerTest {
             ResponseEntity<Object> response = controller.execute("OPEN_RISK",
                     Collections.singletonMap("customer", Collections.singletonMap("idNo", "A001")),
                     new HttpHeaders(), authenticatedRequest());
-            Assert.assertEquals(500, response.getStatusCode().value());
-            Assert.assertEquals("200001", ((Map<?, ?>) response.getBody()).get("retCode"));
+            Assert.assertEquals(422, response.getStatusCode().value());
+            Assert.assertEquals("200001", ((Map<?, ?>) response.getBody()).get("code"));
             Assert.assertNull(response.getHeaders().getFirst("X-Rule-Limit-Name"));
             Assert.assertNull(response.getHeaders().getFirst("Retry-After"));
         } finally {
@@ -185,11 +187,11 @@ public class OpenRuleControllerTest {
                 if (wrapper < 3) {
                     Assert.assertEquals(429, response.getStatusCode().value());
                     Assert.assertEquals("onnx-session-cache", response.getHeaders().getFirst("X-Rule-Limit-Name"));
-                    Assert.assertEquals("400001", ((Map<?, ?>) response.getBody()).get("retCode"));
+                    Assert.assertEquals("400001", ((Map<?, ?>) response.getBody()).get("code"));
                 } else {
                     Assert.assertEquals(wrapper == 3 ? 500 : 400, response.getStatusCode().value());
                     Assert.assertNull(response.getHeaders().getFirst("X-Rule-Limit-Name"));
-                    Assert.assertEquals(wrapper == 3 ? "900001" : "100001", ((Map<?, ?>) response.getBody()).get("retCode"));
+                    Assert.assertEquals(wrapper == 3 ? "900001" : "100001", ((Map<?, ?>) response.getBody()).get("code"));
                 }
             } finally {
                 ((OpenRuleExecutionExecutor) ReflectionTestUtils.getField(controller, "executionExecutor")).close();
@@ -216,12 +218,12 @@ public class OpenRuleControllerTest {
         Map<?, ?> successBody = (Map<?, ?>) success.getBody();
         Map<?, ?> failureBody = (Map<?, ?>) failure.getBody();
         Assert.assertEquals(200, success.getStatusCode().value());
-        Assert.assertEquals(500, failure.getStatusCode().value());
+        Assert.assertEquals(422, failure.getStatusCode().value());
         Assert.assertEquals(successBody.keySet(), failureBody.keySet());
         Assert.assertEquals("A001", executeService.params.get("currentIdNo"));
-        Assert.assertEquals("PASS", ((Map<?, ?>) successBody.get("payload")).get("decision"));
-        Assert.assertEquals("200001", ((Map<?, ?>) failureBody.get("payload")).get("errorCode"));
-        Assert.assertEquals(success.getHeaders().getFirst("X-Trace-Id"), successBody.get("requestId"));
+        Assert.assertEquals("PASS", ((Map<?, ?>) successBody.get("data")).get("decision"));
+        Assert.assertEquals("200001", ((Map<?, ?>) failureBody.get("data")).get("errorCode"));
+        Assert.assertEquals(success.getHeaders().getFirst("X-Trace-Id"), successBody.get("traceId"));
         Assert.assertFalse(executeService.collectTrace);
         Assert.assertFalse(executeService.recordTrace);
     }
@@ -238,8 +240,8 @@ public class OpenRuleControllerTest {
 
         Assert.assertEquals(400, response.getStatusCode().value());
         Map<?, ?> body = (Map<?, ?>) response.getBody();
-        Assert.assertEquals("100002", body.get("retCode"));
-        Assert.assertEquals("100002", ((Map<?, ?>) body.get("payload")).get("errorCode"));
+        Assert.assertEquals("100002", body.get("code"));
+        Assert.assertEquals("100002", ((Map<?, ?>) body.get("data")).get("errorCode"));
     }
 
     @Test
@@ -270,8 +272,8 @@ public class OpenRuleControllerTest {
 
         Assert.assertEquals(400, response.getStatusCode().value());
         Map<?, ?> responseBody = (Map<?, ?>) response.getBody();
-        Assert.assertEquals("100001", responseBody.get("retCode"));
-        Map<?, ?> payload = (Map<?, ?>) responseBody.get("payload");
+        Assert.assertEquals("100001", responseBody.get("code"));
+        Map<?, ?> payload = (Map<?, ?>) responseBody.get("data");
         Assert.assertEquals("100001", payload.get("errorCode"));
         Assert.assertEquals("currentIdNo", payload.get("field"));
         Assert.assertEquals("id_no_regex", payload.get("validationCode"));
@@ -344,8 +346,6 @@ public class OpenRuleControllerTest {
         mapping.setRequired(true);
         mapping.setTargetType("STRING");
         contract.setRequestMappings(Collections.singletonList(mapping));
-        contract.setEnvelopeTemplate(JSON.parse("{\"retCode\":\"${status.code}\",\"retMessage\":\"${status.message}\",\"requestId\":\"${traceId}\",\"payload\":\"${data}\"}"));
-        contract.setDataPath("$.payload");
         contract.setSuccessDataTemplate(JSON.parse("{\"decision\":\"${output.VARIABLE.201}\"}"));
         contract.setErrorDataTemplate(JSON.parse("{\"errorCode\":\"${status.code}\",\"errorMessage\":\"${status.message}\"}"));
         RuleProjectAuth auth = new RuleProjectAuth();
@@ -387,7 +387,7 @@ public class OpenRuleControllerTest {
         ResponseEntity<Object> response = controller.execute("OPEN_RISK", body, headers, authenticatedRequest());
 
         Map<?, ?> responseBody = (Map<?, ?>) response.getBody();
-        Assert.assertEquals("PASS", ((Map<?, ?>) responseBody.get("payload")).get("decision_result"));
+        Assert.assertEquals("PASS", ((Map<?, ?>) responseBody.get("data")).get("decision_result"));
     }
 
     @Test
@@ -395,9 +395,6 @@ public class OpenRuleControllerTest {
         OpenApiContractService.ResolvedContract resolved = resolvedContract();
         resolved.getContract().setSuccessDataTemplate(JSON.parse(
                 "{\"revision\":\"${revisionId}\",\"artifact\":\"${artifactDigest}\"}"));
-        resolved.getContract().setEnvelopeTemplate(JSON.parse(
-                "{\"code\":\"${status.code}\",\"data\":\"${data}\"}"));
-        resolved.getContract().setDataPath("$.data");
         RecordingExecuteService executeService = new RecordingExecuteService();
         executeService.result.setRevisionId(42L);
         executeService.result.setArtifactDigest("artifact-42");

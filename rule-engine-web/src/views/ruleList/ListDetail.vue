@@ -10,33 +10,6 @@
         </div>
         </div>
       </div>
-      <div class="detail-actions uiue-detail-header__actions">
-        <el-button size="small" :icon="ElIconDownload" @click="downloadTemplate"
-          >模板</el-button
-        >
-        <el-button
-          v-permission="'list:edit'"
-          size="small"
-          :icon="ElIconUpload2"
-          @click="$refs.fileInput.click()"
-          >导入并审批</el-button
-        >
-        <el-button
-          v-permission="'list:export'"
-          size="small"
-          :icon="ElIconDownload"
-          type="primary"
-          @click="exportData"
-          >导出</el-button
-        >
-        <input
-          ref="fileInput"
-          type="file"
-          accept=".xlsx"
-          class="hidden-file"
-          @change="handleFileChange"
-        />
-      </div>
     </div>
 
     <config-layer-guide
@@ -52,7 +25,7 @@
     <div
       v-if="batchFeedback && !dialogVisible"
       class="batch-feedback"
-      :class="{ 'is-error': !batchFeedback.submittable }"
+      :class="{ 'is-error': batchFeedback.hasErrors }"
       role="alert"
     >
       <div class="batch-feedback-title">{{ batchFeedback.title }}</div>
@@ -62,9 +35,11 @@
           {{ error }}
         </li>
       </ul>
+      <div v-if="batchFeedback.moreErrors">仅显示前 {{ batchFeedback.errors.length }} 条错误，请修正后重新导入以检查其余行。</div>
       <el-button link type="primary" @click="batchFeedback = null">关闭提示</el-button>
     </div>
 
+    <input ref="fileInput" type="file" accept=".xlsx" class="hidden-file" @change="handleFileChange" />
     <el-tabs v-model="activeTab">
       <el-tab-pane label="名单内容" name="records">
         <div class="uiue-search-container uiue-filter-toolbar" data-testid="record-filter-toolbar">
@@ -110,11 +85,16 @@
                 style="width: 180px"
               />
             </el-form-item>
+            <el-form-item>
+              <el-button size="small" type="primary" @click="handleQuery">查询</el-button>
+              <el-button size="small" @click="resetQuery">重置</el-button>
+            </el-form-item>
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
-              <el-button size="small" type="primary" @click="handleQuery">查询</el-button>
-              <el-button size="small" @click="resetQuery">重置</el-button>
+              <el-button size="small" :icon="ElIconDownload" @click="downloadTemplate">模板</el-button>
+              <el-button v-permission="'list:edit'" size="small" :icon="ElIconUpload2" @click="$refs.fileInput.click()">导入并审批</el-button>
+              <el-button v-permission="'list:export'" size="small" :icon="ElIconDownload" @click="exportData">导出</el-button>
               <el-button
                 v-permission="'list:edit'"
                 type="primary"
@@ -214,7 +194,7 @@
           :page-size="query.pageSize"
           :total="total"
           layout="total,sizes,prev,pager,next"
-          :page-sizes="[10, 30, 50, 100, 200, 500]"
+          :page-sizes="[10, 20, 30, 50, 100, 200, 500]"
           @current-change="
             (p) => {
               query.pageNum = p
@@ -255,16 +235,21 @@
                 style="width: 180px"
               />
             </el-form-item>
-            <el-form-item label="操作时间">
+            <el-form-item label="操作时间" class="list-log-time-filter">
               <el-date-picker v-model="logTimeRange" type="datetimerange" value-format="YYYY-MM-DD HH:mm:ss"
-                range-separator="至" start-placeholder="开始时间" end-placeholder="结束时间" style="width: 340px" />
+                range-separator="至" start-placeholder="开始时间" end-placeholder="结束时间" style="width: 100%" />
+            </el-form-item>
+            <el-form-item>
+              <el-button size="small" type="primary" @click="handleLogQuery">查询</el-button>
+              <el-button size="small" @click="resetLogQuery">重置</el-button>
+              <el-button v-if="traceRecord" size="small" @click="clearTrace">查看全部日志</el-button>
             </el-form-item>
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
-              <el-button size="small" type="primary" @click="handleLogQuery">查询</el-button>
-              <el-button size="small" @click="resetLogQuery">重置</el-button>
-              <el-button v-if="traceRecord" size="small" @click="clearTrace">查看全部日志</el-button>
+              <el-button size="small" :icon="ElIconDownload" @click="downloadTemplate">模板</el-button>
+              <el-button v-permission="'list:edit'" size="small" :icon="ElIconUpload2" @click="$refs.fileInput.click()">导入并审批</el-button>
+              <el-button v-permission="'list:export'" size="small" :icon="ElIconDownload" @click="exportData">导出</el-button>
             </div>
           </div>
         </div>
@@ -320,7 +305,7 @@
           :page-size="logQuery.pageSize"
           :total="logTotal"
           layout="total,sizes,prev,pager,next"
-          :page-sizes="[10, 30, 50, 100, 200, 500]"
+          :page-sizes="[10, 20, 30, 50, 100, 200, 500]"
           @current-change="onLogPageChange"
           @size-change="onLogSizeChange"
         />
@@ -428,11 +413,11 @@ import {
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
-function emptyRecordQuery(pageSize = 10) {
+function emptyRecordQuery(pageSize = 20) {
   return { pageNum: 1, pageSize, itemType: '', status: '', keyword: '', effectiveOnly: false }
 }
 
-function emptyLogQuery(pageSize = 10) {
+function emptyLogQuery(pageSize = 20) {
   return { pageNum: 1, pageSize, itemType: '', operation: '', keyword: '' }
 }
 
@@ -693,13 +678,19 @@ export default {
         this.$router.push('/approval/' + data.approvalRequestId)
         return true
       }
+      const errors = (data.errors || []).slice(0, 20)
+      const hasErrors = (data.invalidCount || 0) > 0 || errors.length > 0
+      const allDuplicate = !hasErrors && validCount === 0 && data.duplicateCount > 0
       this.batchFeedback = {
         submittable: false,
-        title: `${sourceLabel}未提交审批`,
+        hasErrors,
+        title: `${sourceLabel}${allDuplicate ? '无需变更' : '未提交审批'}`,
         summary,
-        errors: (data.errors || []).slice(0, 20),
+        errors,
+        moreErrors: (data.invalidCount || 0) > errors.length,
       }
-      this.$message.warning('请按页面提示修正错误后重新提交')
+      if (allDuplicate) this.$message.info('所有记录均已存在，无需重复提交')
+      else this.$message.warning(hasErrors ? '请按页面提示修正错误后重新提交' : '没有可提交的变更，请检查表格内容')
       return false
     },
     downloadTemplate() {
@@ -741,6 +732,13 @@ export default {
 <style scoped>
 .list-detail-page :deep(.uiue-filter-toolbar .el-form-item) {
   margin-right: 16px;
+}
+.list-detail-page :deep(.list-log-time-filter) {
+  width: 396px;
+  max-width: calc(100% - 16px);
+}
+.list-detail-page :deep(.list-log-time-filter .el-form-item__content) {
+  min-width: 0;
 }
 .detail-header {
   display: flex;

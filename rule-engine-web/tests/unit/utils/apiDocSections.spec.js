@@ -28,7 +28,7 @@ describe('API 文档内容区块', () => {
     const scenarios = buildEndpointScenarios({ ruleCode: 'RISK', scenarios: [] })
 
     expect(scenarios.map(item => item.title)).toContain('200 / 执行成功')
-    expect(scenarios.map(item => item.title)).toContain('200 / 规则执行失败')
+    expect(scenarios.map(item => item.title)).toContain('422 / 规则执行失败')
     expect(scenarios.map(item => item.title)).toContain('401 / 鉴权失败')
     expect(scenarios.map(item => item.title)).toContain('404 / 规则不存在')
     expect(scenarios.some(item => item.kind === 'BUSINESS')).toBe(false)
@@ -64,13 +64,14 @@ describe('API 文档内容区块', () => {
     expect(scenarios.find(item => item.kind === 'BUSINESS').title).toBe('200 / 人工复核')
   })
 
-  test('通用响应约定提供 code 与 success 两级含义', () => {
+  test('通用响应约定只需判断平台成功码并区分业务决策', () => {
     const html = renderResponseContract()
 
     expect(html).toContain('通用响应约定与码表')
     expect(html).toContain('401')
-    expect(html).toContain('data.success')
-    expect(html).toContain('不是业务决策 code')
+    expect(html).toContain('000000')
+    expect(html).toContain('业务通过、拒绝或复核')
+    expect(html).toContain('400006')
     expect(html).toContain('artifactDigest')
   })
 

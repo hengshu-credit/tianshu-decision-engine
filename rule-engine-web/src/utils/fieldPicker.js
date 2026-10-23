@@ -56,7 +56,7 @@ export function buildFieldTree(items) {
     if (!groups.has(group.key)) {
       const parent = { key: `group:${group.key}`, name: group.label, code: group.code, category: group.category, protocol: group.protocol, type: group.category === 'model' ? 'MODEL' : 'OBJECT', item: null, version: item._ref?.modelVersion, catalogMode: item.catalogMode, parent: null, children: [], selectable: false }
       if (group.id != null && ['model', 'object'].includes(group.category)) parent.item = {
-        _versionGroup: true, _varId: group.id, _refType: group.category === 'model' ? 'MODEL' : 'DATA_OBJECT',
+        _versionGroup: true, _varId: group.id, _refType: group.category === 'model' ? 'MODEL' : 'DATA_OBJECT_ROOT',
         versionOwnerId: group.id, varCode: group.code, varLabel: group.label, varType: parent.type,
         _ref: { category: group.category, modelVersion: item._ref?.modelVersion }, ...item._groupVersion,
         catalogMode: item.catalogMode,
@@ -65,6 +65,16 @@ export function buildFieldTree(items) {
       parent.selectable = !!parent.item
       groups.set(group.key, { parent, fields: [] })
       if (!group.protocol) { nodes.set(parent.key, parent); roots.push(parent) }
+    }
+    if (item.rootReference || group.category === 'external' && item.relativePath === '$') {
+      const parent = groups.get(group.key).parent
+      nodes.delete(parent.key)
+      parent.key = key
+      parent.item = { ...item, _versionGroup: ['object', 'model'].includes(group.category) }
+      parent.type = node.type
+      parent.selectable = !item.disabled
+      nodes.set(key, parent)
+      continue
     }
     groups.get(group.key).fields.push(node)
     if (node.name.startsWith(group.label + '/')) node.name = node.name.slice(group.label.length + 1)

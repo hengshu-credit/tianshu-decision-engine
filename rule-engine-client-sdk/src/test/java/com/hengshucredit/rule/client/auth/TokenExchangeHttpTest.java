@@ -46,7 +46,7 @@ public class TokenExchangeHttpTest {
     private void handleToken(HttpExchange exchange) throws IOException {
         authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
         requestBody.set(new String(readAll(exchange), StandardCharsets.UTF_8));
-        byte[] response = ("{\"code\":200,\"data\":{" +
+        byte[] response = ("{\"code\":\"000000\",\"message\":\"成功\",\"success\":true,\"data\":{" +
                 "\"accessToken\":\"temporary-token\"," +
                 "\"expiresInSeconds\":7200," +
                 "\"graceExpiresInSeconds\":7800," +

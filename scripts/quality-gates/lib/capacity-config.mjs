@@ -95,7 +95,7 @@ export async function loadRequestDefinition(path) {
     throw new Error('request timeoutMs must be greater than zero')
   }
   const expectedResponse = definition.expectedResponse === undefined
-    ? { success: true }
+    ? { code: '000000', success: true }
     : definition.expectedResponse
   if (!expectedResponse || typeof expectedResponse !== 'object'
       || Array.isArray(expectedResponse) || Object.keys(expectedResponse).length === 0

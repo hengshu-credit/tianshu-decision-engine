@@ -2,6 +2,7 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
 import { operationPagePath } from '@/security/operationActivity'
+import { PLATFORM_CODES, PLATFORM_SUCCESS_CODE, platformResponseMessage, acceptsExecutionFailure, isPlatformResponse } from '@/utils/platformResponse'
 
 const REQUEST_ERROR_DEDUPE_MS = 1500
 const recentRequestErrors = new Map()
@@ -49,24 +50,35 @@ service.interceptors.response.use(
     if (response.config && response.config.responseType === 'blob') {
       return response
     }
-    const res = response.data
+    const res = response.data || {}
+    if (!isPlatformResponse(res, response.status)) {
+      const error = Object.assign(new Error(PLATFORM_CODES.UPSTREAM_RESPONSE_INVALID.message), {
+        code: PLATFORM_CODES.UPSTREAM_RESPONSE_INVALID.code, response, config: response.config,
+      })
+      showRequestError(error.message, error)
+      return Promise.reject(error)
+    }
     const reqUrl = (response.config && response.config.url) || ''
-    if (res.code === 401) {
+    if ([PLATFORM_CODES.LOGIN_REQUIRED.code, PLATFORM_CODES.TOKEN_INVALID.code].includes(res.code)) {
       import('@/security/permissionState').then(({ clearCurrentUser }) => clearCurrentUser())
       if (reqUrl.includes('/auth/console/login')) {
-        const error = new Error(res.message || '登录失败')
+        const error = new Error(platformResponseMessage(res, '登录失败'))
+        Object.assign(error, { code: res.code, response, config: response.config })
         showRequestError(error.message, error)
         return Promise.reject(error)
       }
       if (router.currentRoute.value.path !== '/login') {
         router.replace({ path: '/login', query: { redirect: router.currentRoute.value.fullPath } })
       }
-      const error = new Error(res.message || '未登录')
+      const error = new Error(platformResponseMessage(res, '未登录'))
+      Object.assign(error, { code: res.code, response, config: response.config })
       showRequestError(error.message, error)
       return Promise.reject(error)
     }
-    if (res.code !== 200) {
-      const error = new Error(res.message || '请求失败')
+    if (acceptsExecutionFailure(response.config, res)) return res
+    if (res.code !== PLATFORM_SUCCESS_CODE) {
+      const error = new Error(platformResponseMessage(res))
+      error.code = res.code
       error.response = response
       error.config = response.config
       showRequestError(error.message, error)
@@ -74,11 +86,29 @@ service.interceptors.response.use(
     }
     return res
   },
-  error => {
+  async error => {
     const status = error.response && error.response.status
     const url = (error.config && error.config.url) || ''
-    const data = error.response && error.response.data
-    const msg = (data && data.message) || error.message || '网络异常'
+    let data = error.response && error.response.data
+    if (data instanceof Blob && /json/i.test(data.type)) {
+      try {
+        const text = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result)
+          reader.onerror = () => reject(reader.error)
+          reader.readAsText(data)
+        })
+        data = JSON.parse(text)
+        error.response.data = data
+      } catch { /* 非 JSON 下载错误仍使用网络错误信息。 */ }
+    }
+    if (data != null && !isPlatformResponse(data, status)) {
+      data = { ...PLATFORM_CODES.UPSTREAM_RESPONSE_INVALID }
+    }
+    if (acceptsExecutionFailure(error.config, data)) return data
+    const msg = platformResponseMessage(data, error.message || '网络异常')
+    error.message = msg
+    if (data?.code) error.code = data.code
     if (status === 401 && !url.includes('/auth/console/login')) {
       import('@/security/permissionState').then(({ clearCurrentUser }) => clearCurrentUser())
       if (router.currentRoute.value.path !== '/login') {

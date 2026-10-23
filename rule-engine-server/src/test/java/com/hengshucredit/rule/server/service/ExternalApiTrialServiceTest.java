@@ -34,14 +34,10 @@ public class ExternalApiTrialServiceTest {
         assertEquals(-65537L, root - 1L);
     }
     @Test public void workflowSharedTaskMappingSurvivesCheckpointAndResumesWithoutSubmittingAgain() throws Exception {
-        assertSharedTaskSurvivesResume(true);
+        assertSharedTaskSurvivesResume();
     }
 
-    @Test public void legacyAsyncSharedTaskMappingSurvivesInternalCopiesAndResumeWithoutSubmittingAgain() throws Exception {
-        assertSharedTaskSurvivesResume(false);
-    }
-
-    private void assertSharedTaskSurvivesResume(boolean workflow) throws Exception {
+    private void assertSharedTaskSurvivesResume() throws Exception {
         for (boolean pause : new boolean[]{false, true}) {
             var now = new java.util.concurrent.atomic.AtomicLong();
             RequestDeadlineContext.setNanoTimeSource(now::get);
@@ -61,7 +57,7 @@ public class ExternalApiTrialServiceTest {
                     var expire = new java.util.concurrent.atomic.AtomicBoolean(true);
                     fixture.store.afterCheckpoint = raw -> {
                         JSONObject state = JSON.parseObject(raw);
-                        String path = workflow ? "continuation.results.submit" : "continuation.taskId";
+                        String path = "continuation.results.submit";
                         if (ExternalApiRequestPlan.read(state, path) != null && expire.compareAndSet(true, false)) {
                             now.addAndGet(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(10_001));
                         }
@@ -69,7 +65,6 @@ public class ExternalApiTrialServiceTest {
                 }
                 RuleExternalApiConfig config = fixture.config();
                 config.setRequestMode("ASYNC"); config.setAsyncTimeoutMs(10_000); config.setExceptionStrategy("WAIT");
-                if (workflow) {
                     config.setExecutionConfig("""
                             {"version":2,"requestFields":[],"steps":[
                               {"id":"submit","type":"HTTP","endpointUrl":"/submit","requestFields":[],
@@ -80,27 +75,14 @@ public class ExternalApiTrialServiceTest {
                                 {"id":"task","location":"JSON","path":"taskId","required":true,
                                  "value":{"kind":"PATH","value":"steps.submit.body.lookup.taskId"}}]}]}
                             """);
-                } else {
-                    config.setResponseScript("_result = newMap(); _result = mapPut(_result, \"original\", body); _result = mapPut(_result, \"lookup\", body); _result");
-                    config.setAsyncResultMode("POLL");
-                    config.setAsyncPollConfig("""
-                            {"taskIdPath":"body.lookup.taskId","resultEndpointUrl":"/shared-query","requestMethod":"POST",
-                             "requestMapping":{"taskId":"${submission.body.lookup.taskId}"},
-                             "statusPath":"body.status","successValue":"DONE","intervalMs":1,"maxAttempts":1}
-                            """);
-                }
                 Map<String, Object> first = fixture.service.create("owner", UUID.randomUUID().toString(), config, Map.of());
                 if (pause) {
                     assertEquals("提交后应保存等待状态: " + first.get("errorMessage"), "WAITING", first.get("status"));
                     assertEquals(1, fixture.submissions.get()); assertEquals(0, fixture.polls.get());
                     String id = (String) first.get("trialId");
                     JSONObject saved = JSON.parseObject(fixture.store.get(id, "owner").pendingJson());
-                    String taskPath = workflow ? "continuation.results.submit.body.lookup.taskId" : "continuation.submission.body.lookup.taskId";
+                    String taskPath = "continuation.results.submit.body.lookup.taskId";
                     assertEquals("持久检查点必须保留业务值", "task1", ExternalApiRequestPlan.read(saved, taskPath));
-                    if (!workflow) {
-                        assertEquals("查询上下文不能反向污染已发提交报文", Map.of(),
-                                ExternalApiRequestPlan.read(saved, "continuation.submission.request.body"));
-                    }
                     Map<String, Object> resumed = fixture.service.resume("owner", id);
                     assertEquals("恢复必须保留共享映射中的任务号: " + resumed.get("errorMessage"), "SUCCEEDED", resumed.get("status"));
                 } else {
@@ -362,9 +344,8 @@ public class ExternalApiTrialServiceTest {
             RuleExternalApiConfig config = fixture.config();
             config.setRequestMode("ASYNC");
             config.setExceptionStrategy("WAIT");
-            config.setAsyncResultMode("POLL");
             config.setAsyncTimeoutMs(1000);
-            config.setAsyncPollConfig("{\"taskIdPath\":\"body.taskId\",\"statusPath\":\"body.status\",\"successValue\":\"DONE\",\"resultEndpointUrl\":\"/poll\",\"intervalMs\":1,\"maxAttempts\":1}");
+            config.setExecutionConfig(ExternalApiTestConfig.pollingResult("/submit", "/poll", "body.status", "DONE", 0, 2000, null));
             Map<String, Object> first = fixture.service.create("owner", UUID.randomUUID().toString(), config, Map.of());
             assertEquals("WAITING", first.get("status"));
             assertEquals(true, first.get("canResume"));
@@ -378,43 +359,6 @@ public class ExternalApiTrialServiceTest {
             fixture.service.resume("owner", (String) first.get("trialId"));
             assertEquals(2, fixture.polls.get());
         }
-    }
-
-    @Test public void legacyAsyncResumeKeepsPendingTaskWhenBudgetExpiresBeforePollSend() throws Exception {
-        var now = new java.util.concurrent.atomic.AtomicLong();
-        RequestDeadlineContext.setNanoTimeSource(now::get);
-        try (Fixture fixture = new Fixture()) {
-            fixture.service.slice = 10_000;
-            var expireNextPoll = new java.util.concurrent.atomic.AtomicBoolean();
-            Object invoker = ReflectionTestUtils.getField(fixture.service, "invoker");
-            ReflectionTestUtils.setField(invoker, "externalApiScriptService", new ExternalApiScriptService() {
-                @Override public Object executeRequest(String script, Map<String, Object> context) {
-                    if (script != null && script.contains("expire-on-resume") && expireNextPoll.compareAndSet(true, false)) {
-                        now.addAndGet(java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(10_001));
-                    }
-                    return context.get("body");
-                }
-            });
-            RuleExternalApiConfig config = fixture.config();
-            config.setRequestMode("ASYNC"); config.setExceptionStrategy("WAIT"); config.setAsyncResultMode("POLL");
-            config.setAsyncTimeoutMs(10_000);
-            config.setAsyncPollConfig("{\"taskIdPath\":\"body.taskId\",\"statusPath\":\"body.status\",\"successValue\":\"DONE\","
-                    + "\"resultEndpointUrl\":\"/poll\",\"intervalMs\":1,\"maxAttempts\":1,\"requestScript\":\"return body; // expire-on-resume\"}");
-            Map<String, Object> first = fixture.service.create("owner", UUID.randomUUID().toString(), config, Map.of());
-            assertEquals("WAITING", first.get("status"));
-            String id = (String) first.get("trialId");
-            assertEquals(1, fixture.submissions.get()); assertEquals(1, fixture.polls.get());
-            expireNextPoll.set(true);
-            Map<String, Object> paused = fixture.service.resume("owner", id);
-            assertEquals("本片预算耗尽前尚未发poll", 1, fixture.polls.get());
-            assertEquals("原任务仍可恢复: " + paused.get("errorMessage"), "WAITING", paused.get("status"));
-            assertEquals(true, paused.get("canResume"));
-            JSONObject saved = JSON.parseObject(fixture.store.get(id, "owner").pendingJson());
-            assertEquals("task1", ExternalApiRequestPlan.read(saved, "continuation.taskId"));
-            fixture.ready = true;
-            assertEquals("SUCCEEDED", fixture.service.resume("owner", id).get("status"));
-            assertEquals(1, fixture.submissions.get()); assertEquals(2, fixture.polls.get());
-        } finally { RequestDeadlineContext.clear(); RequestDeadlineContext.resetNanoTimeSource(); }
     }
 
     @Test public void multiStepWaitResumesAtPendingStepUsingDistinctStableStepIdentity() throws Exception {
@@ -922,7 +866,7 @@ public class ExternalApiTrialServiceTest {
             ReflectionTestUtils.setField(service, "invoker", invoker);
         }
         RuleExternalApiConfig config() {
-            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            RuleExternalApiConfig config = ExternalApiTestConfig.api();
             config.setDatasourceId(1L); config.setApiCode("TRIAL"); config.setApiName("本机试运行");
             config.setRequestMode("SYNC"); config.setRequestMethod("POST"); config.setEndpointUrl("/submit");
             config.setContentType("application/json"); config.setTimeoutMs(1000); config.setAuthMode("NONE");

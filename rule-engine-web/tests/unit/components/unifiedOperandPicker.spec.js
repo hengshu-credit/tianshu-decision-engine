@@ -1,5 +1,6 @@
 import { shallowMount } from '@test-utils'
 import OperandPicker from '@/components/common/OperandPicker.vue'
+import * as fieldVersions from '@/api/fieldPickerVersion'
 
 const focusManualInput = vi.fn()
 
@@ -23,6 +24,61 @@ function mountPicker(propsData = {}, options = {}) {
 }
 
 describe('统一 OperandPicker', () => {
+  test('最长匹配读取固定版本字段，应用时保留根引用及历史展示信息', async () => {
+    const read = vi.spyOn(fieldVersions, 'getFieldVersionFields').mockResolvedValue({ data: { version: 2, fields: [
+      { refId: '12', refType: 'DATA_OBJECT', code: 'old.customer', label: '历史客户', valueType: 'OBJECT' },
+    ] } })
+    const wrapper = mountPicker({ value: { kind: 'REFERENCE', refId: '7', refType: 'DATA_OBJECT_ROOT', code: 'old', value: 'old', label: '旧对象', valueType: 'OBJECT', resolved: true,
+      versionMode: 'FIXED', versionId: '31', versionOwnerId: '7', version: 2 } })
+    try {
+      wrapper.vm.openManualInput('PATH')
+      await Promise.resolve(); await wrapper.vm.$nextTick()
+      wrapper.vm.updateSubpath('customer.extra')
+      wrapper.vm.selectPathResultType('STRING')
+      expect(wrapper.vm.manualPathMatch).toMatchObject({ label: '历史客户', code: 'old.customer', version: 'v2', suffix: '.extra' })
+      wrapper.vm.finishManualInput()
+      expect(wrapper.emitted().input.at(-1)[0]).toMatchObject({ refId: '7', refType: 'DATA_OBJECT_ROOT', relativePath: '.customer.extra',
+        pathDisplay: { label: '历史客户', code: 'old.customer', version: 'v2' } })
+      expect(read).toHaveBeenCalledWith(expect.objectContaining({ ownerId: '7', module: 'dataobject' }), '31', undefined)
+    } finally { wrapper.unmount(); read.mockRestore() }
+  })
+  test('同一来源切换版本时保留子路径与结果类型', () => {
+    const wrapper = mountPicker()
+    const source = { kind: 'REFERENCE', refId: '7', refType: 'VARIABLE', code: 'payload', valueType: 'OBJECT', resolved: true, versionMode: 'LATEST' }
+    wrapper.vm.openManualInput('PATH'); wrapper.vm.selectPathSource(source)
+    wrapper.vm.updateSubpath('customer.score'); wrapper.vm.selectPathResultType('NUMBER')
+    wrapper.vm.selectPathSource({ ...source, versionMode: 'FIXED', versionId: '9', version: 2 })
+    expect(wrapper.vm.manualOperand).toMatchObject({ relativePath: '.customer.score', valueType: 'NUMBER', versionId: '9' })
+    wrapper.unmount()
+  })
+  test('数值配置也能先选择对象来源，再填写未声明子路径和结果类型', () => {
+    const reference = { kind: 'REFERENCE', refId: '71', refType: 'MODEL', code: 'risk', value: 'risk', valueType: 'OBJECT', resolved: true }
+    const wrapper = mountPicker({ expectedType: 'NUMBER' })
+    wrapper.vm.openManualInput('PATH')
+    wrapper.vm.selectPathSource(reference)
+    wrapper.vm.updateSubpath('extra.score')
+    wrapper.vm.finishManualInput()
+    expect(wrapper.emitted().input.at(-1)[0]).toMatchObject({ refId: '71', refType: 'MODEL', relativePath: '.extra.score', valueType: 'NUMBER' })
+    wrapper.unmount()
+  })
+  test('动态路径未指定结果类型或格式不完整时不提交，切换面板保留草稿', () => {
+    const wrapper = mountPicker()
+    wrapper.vm.openManualInput('PATH')
+    wrapper.vm.selectPathSource({ kind: 'REFERENCE', refId: '7', refType: 'DATA_OBJECT', code: 'request.payload', valueType: 'OBJECT', resolved: true })
+    wrapper.vm.updateSubpath('items[')
+    wrapper.vm.finishManualInput()
+    expect(wrapper.emitted().input).toBeUndefined()
+    wrapper.vm.openManualInput('LITERAL')
+    wrapper.vm.openManualInput('PATH')
+    expect(wrapper.vm.manualSubpathInput).toBe('items[')
+    wrapper.vm.updateSubpath('items[0].name')
+    wrapper.vm.finishManualInput()
+    expect(wrapper.vm.manualError).toContain('结果类型')
+    wrapper.vm.selectPathResultType('STRING')
+    wrapper.vm.finishManualInput()
+    expect(wrapper.emitted().input.at(-1)[0]).toMatchObject({ refId: '7', valueType: 'STRING', relativePath: '.items[0].name' })
+    wrapper.unmount()
+  })
   test('历史路径中误存的纯 JSON 数组可打开阈值草稿，应用前不改写', () => {
     const text = '["0000", "B0013", 9007199254740993]'
     const wrapper = mountPicker({ value: { kind: 'PATH', value: text } })
@@ -409,6 +465,21 @@ describe('统一 OperandPicker', () => {
       sessionId: 'session-7',
       revision: 2
     })
+  })
+
+  test('另一来源版本的表达式编译结果不能回填当前选择器', async () => {
+    const wrapper = mountPicker({ value: { kind: 'LITERAL', value: '2' } }, {
+      mocks: {
+        $route: { name: 'DecisionTable', path: '/designer/table/7', params: { id: '7' }, query: { sourceType: 'VERSION', sourceId: '2' } },
+        $store: { dispatch: vi.fn(), getters: {
+          'expressionSessions/pendingCompiledResult': () => ({ operand: { kind: 'LITERAL', value: 'old' }, revision: 1, sourceIdentity: 'VERSION:1', sourceValue: 'old' }),
+        } },
+      },
+    })
+    await wrapper.setData({ expressionSessionId: 'old-session' })
+    await wrapper.vm.consumePendingExpression()
+    expect(wrapper.emitted().input).toBeUndefined()
+    wrapper.unmount()
   })
 
   test('管理配置也进入独立表达式页并记录返回位置', async() => {

@@ -169,9 +169,6 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
 
     private void fillDefaults(RuleExternalApiConfig config) {
         config.setRequestMode(normalizeEnum(config.getRequestMode(), "SYNC", "ASYNC", "请求模式"));
-        if (hasText(config.getAsyncResultMode())) {
-            config.setAsyncResultMode(normalizeEnum(config.getAsyncResultMode(), "POLL", "CALLBACK", "异步结果模式"));
-        }
         if (!hasText(config.getRequestMethod())) {
             config.setRequestMethod("POST");
         } else {
@@ -186,10 +183,6 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
         if (!hasText(config.getAuthMode())) {
             config.setAuthMode("INHERIT");
         }
-        config.setHeaderConfig(nullIfBlank(config.getHeaderConfig()));
-        config.setQueryConfig(nullIfBlank(config.getQueryConfig()));
-        config.setRequestMapping(nullIfBlank(config.getRequestMapping()));
-        config.setResponseMapping(nullIfBlank(config.getResponseMapping()));
         config.setCacheKeyConfig(nullIfBlank(config.getCacheKeyConfig()));
         config.setSuccessCondition(nullIfBlank(config.getSuccessCondition()));
         config.setRetryCondition(nullIfBlank(config.getRetryCondition()));
@@ -198,29 +191,9 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
         config.setPayloadCaptureConfig(nullIfBlank(config.getPayloadCaptureConfig()));
         config.setAuthApiConfig(nullIfBlank(config.getAuthApiConfig()));
         config.setTestSampleParams(nullIfBlank(config.getTestSampleParams()));
-        config.setAsyncPollConfig(nullIfBlank(config.getAsyncPollConfig()));
-        config.setAsyncCallbackConfig(nullIfBlank(config.getAsyncCallbackConfig()));
-        config.setAsyncCallbackUrl(nullIfBlank(config.getAsyncCallbackUrl()));
-        config.setAsyncResultPath(nullIfBlank(config.getAsyncResultPath()));
-        if ("ASYNC".equals(config.getRequestMode()) && !hasText(config.getAsyncResultMode())) {
-            config.setAsyncResultMode("POLL");
-        }
-        if (!"ASYNC".equals(config.getRequestMode())) {
-            config.setAsyncResultMode(null);
-            config.setAsyncPollConfig(null);
-            config.setAsyncCallbackConfig(null);
-            config.setAsyncCallbackUrl(null);
-            config.setAsyncResultPath(null);
-        }
-        validateJsonObject(config.getHeaderConfig(), "Header配置");
-        validateJsonObject(config.getQueryConfig(), "Query配置");
-        validateJsonObject(config.getRequestMapping(), "请求映射");
-        validateJsonObject(config.getResponseMapping(), "响应映射");
         validateJsonObject(config.getAuthApiConfig(), "接口鉴权配置");
         validateJsonObject(config.getCacheKeyConfig(), "缓存键配置");
         validateJsonObject(config.getExecutionConfig(), "统一链路配置");
-        validateJsonObject(config.getAsyncPollConfig(), "异步轮询配置");
-        validateJsonObject(config.getAsyncCallbackConfig(), "异步回调配置");
         validateJsonText(config.getSuccessCondition(), "请求成功条件");
         validateJsonText(config.getExceptionCondition(), "接口异常条件");
         validateJsonText(config.getRetryCondition(), "业务响应重试条件");
@@ -314,7 +287,7 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
         if (config.getStatus() == null) {
             config.setStatus(1);
         }
-        ExternalApiConfigValidator.validate(config);
+        ExternalApiConfigValidator.validateEditableConfig(config);
     }
 
     private void validateReferences(RuleExternalApiConfig config) {
@@ -353,6 +326,8 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
             if (datasource != null) {
                 v.setDatasourceCode(datasource.getDatasourceCode());
                 v.setDatasourceName(datasource.getDatasourceName());
+                v.setOwnerProjectId(datasource.getProjectId());
+                v.setOwnerScope(datasource.getScope());
             }
         });
     }

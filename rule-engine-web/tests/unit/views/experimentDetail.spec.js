@@ -11,6 +11,9 @@ const leaf = (code, value, label = code) => ({
 
 function createContext(overrides = {}) {
   const ctx = {
+    rulesRequestId: 0,
+    refsRequestId: 0,
+    markConfigurationSaved: vi.fn(),
     $set(target, key, value) { target[key] = value },
     $forceUpdate: vi.fn(),
     $message: { success: vi.fn(), error: vi.fn() },
@@ -65,6 +68,18 @@ function createContext(overrides = {}) {
   })
   return ctx
 }
+
+test('分流实验切换项目时丢弃较晚返回的旧规则目录', async () => {
+  let oldResult
+  listProjectDefinitions.mockImplementationOnce(() => new Promise(resolve => { oldResult = resolve }))
+    .mockResolvedValueOnce({ data: { records: [{ id: 22, ruleCode: 'current', ruleName: '当前项目规则', modelType: 'SCRIPT', status: 1 }], total: 1 } })
+  const ctx = createContext()
+  const previous = ctx.loadRules(1)
+  await ctx.loadRules(2)
+  oldResult({ data: { records: [{ id: 11, ruleCode: 'old', ruleName: '旧项目规则', modelType: 'SCRIPT', status: 1 }], total: 1 } })
+  await previous
+  expect(ctx.rulesForProject.map(rule => rule.id)).toEqual([22])
+})
 
 describe('ExperimentDetail', () => {
   beforeEach(() => {

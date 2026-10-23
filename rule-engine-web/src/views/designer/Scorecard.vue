@@ -396,6 +396,8 @@
     <script-panel
       v-if="definitionId"
       :compile-result="designerCompileResult"
+      :references="projectRefs"
+      :functions="projectFunctions"
     />
 
     <designer-test-dialog

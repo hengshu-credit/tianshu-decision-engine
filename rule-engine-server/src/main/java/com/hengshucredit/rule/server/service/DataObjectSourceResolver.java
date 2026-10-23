@@ -36,6 +36,7 @@ public class DataObjectSourceResolver {
     private ExternalApiInvokeService externalApiInvokeService;
     @Resource private ExternalApiConsumerService externalApiConsumerService;
     @Resource private VariableSourceResolver variableSourceResolver;
+    @Resource private RuleVariableService variableService;
     @Resource
     private DBConnectPools dbConnectPools;
 
@@ -57,6 +58,13 @@ public class DataObjectSourceResolver {
         }
         Map<String, ObjectBinding> bindings = new LinkedHashMap<>();
         for (RuleDefinitionInputField direct : directFields) {
+            if (direct != null && "DATA_OBJECT_ROOT".equals(direct.getRefType()) && direct.getVarId() != null) {
+                RuleDataObject object = effective.getRuntimeSnapshot() == null
+                        ? objectMapper.selectById(direct.getVarId()) : effective.getRuntimeSnapshot().getDataObjects().stream()
+                        .filter(item -> direct.getVarId().equals(item.getId())).findFirst().orElse(null);
+                if (object != null) resolveWholeObject(projectId, object, values, effective, snapshotFields);
+                continue;
+            }
             if (!isDataObject(direct) || direct.getVarId() == null) continue;
             Set<String> required = effective.getRequiredScriptNames();
             String target = pathOf(direct);
@@ -76,10 +84,6 @@ public class DataObjectSourceResolver {
                     if (child.get("requestOverrides") instanceof Map<?, ?> childOverrides) childOverrides.forEach((id, value) -> overrides.put(String.valueOf(id), value));
                     config.putAll(child);
                     config.put("requestOverrides", overrides);
-                    Map<String, Object> inputOverrides = new LinkedHashMap<>();
-                    if (binding.owner.config.get("inputOverrides") instanceof Map<?, ?> rootInputs) rootInputs.forEach((id, value) -> inputOverrides.put(String.valueOf(id), value));
-                    if (child.get("inputOverrides") instanceof Map<?, ?> childInputs) childInputs.forEach((id, value) -> inputOverrides.put(String.valueOf(id), value));
-                    config.put("inputOverrides", inputOverrides);
                     config.put("bindingMode", "FIELDS");
                     binding.owner = new SourceOwner(binding.owner.id, binding.owner.sourceType, binding.owner.sourceContent,
                             binding.owner.scriptName, binding.owner.objectCode, binding.owner.objectLabel, config);
@@ -96,6 +100,8 @@ public class DataObjectSourceResolver {
             try {
             if (variableSourceResolver != null && "API".equalsIgnoreCase(binding.owner.sourceType)) {
                 variableSourceResolver.resolveApiDependencies(projectId, binding.owner.config, values, effective);
+            } else if (variableSourceResolver != null && "DB".equalsIgnoreCase(binding.owner.sourceType)) {
+                variableSourceResolver.resolveSqlDependencies(projectId, binding.owner.config, values, effective);
             }
             Map<String, Object> response = load(projectId, binding.owner, values, effective);
             binding.fields.forEach(item -> ExternalApiConsumerService.recordStatus(response, effective, "DATA_OBJECT", item.field.getId()));
@@ -138,6 +144,12 @@ public class DataObjectSourceResolver {
                 }
                 if (binding.fields.stream().noneMatch(item -> effective.requiresSourceStatus("DATA_OBJECT", item.field.getId()))) throw error;
             } finally { active.remove(binding.owner.id); if (active.isEmpty()) resolving.remove(); }
+            if (effective.getInvocationCache() != null) {
+                for (FieldBinding item : binding.fields) {
+                    effective.getInvocationCache().rememberFieldResult(
+                            "DATA_OBJECT:" + item.field.getId(), readPath(values, item.targetPath));
+                }
+            }
         }
     }
 
@@ -151,6 +163,46 @@ public class DataObjectSourceResolver {
             references.add(direct);
         });
         resolve(projectId, references, values, options, options.getRuntimeSnapshot() == null ? null : options.getRuntimeSnapshot().getDataObjectFields());
+    }
+
+    public void resolveWholeObject(Long projectId, RuleDataObject object, Map<String, Object> values, VariableResolveOptions options,
+                                   List<RuleDataObjectField> snapshotFields) {
+        String root = firstText(object.getScriptName(), object.getObjectCode());
+        if (root == null || present(values, root) || !supportsSource(object.getSourceType()) || options.isOfflineReplay()
+                || options.isSkipApiSources() && "API".equalsIgnoreCase(object.getSourceType())) return;
+        Set<String> required = options.getRequiredScriptNames();
+        if (required != null && required.stream().noneMatch(path -> path != null && (path.equals(root) || path.startsWith(root + ".") || path.startsWith(root + "[")))) return;
+        if (options.getInvocationCache() == null) options.setInvocationCache(new VariableResolutionInvocationCache());
+        List<RuleDataObjectField> fields = snapshotFields == null ? fieldMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<RuleDataObjectField>()
+                        .eq(RuleDataObjectField::getObjectId, object.getId()).eq(RuleDataObjectField::getStatus, 1))
+                : snapshotFields.stream().filter(field -> object.getId().equals(field.getObjectId())).toList();
+        if (!fields.isEmpty()) {
+            List<RuleDefinitionInputField> inputs = new ArrayList<>();
+            for (var field : fields) {
+                String code = firstText(field.getScriptName(), field.getVarCode());
+                RuleDefinitionInputField input = new RuleDefinitionInputField(); input.setVarId(field.getId()); input.setRefType("DATA_OBJECT");
+                input.setScriptName(code.equals(root) || code.startsWith(root + ".") ? code : root + "." + code); inputs.add(input);
+            }
+            VariableResolveOptions wholeOptions = new VariableResolveOptions();
+            org.springframework.beans.BeanUtils.copyProperties(options, wholeOptions);
+            wholeOptions.setRequiredScriptNames(Set.of(root));
+            resolve(projectId, inputs, values, wholeOptions, snapshotFields);
+            return;
+        }
+        SourceOwner source = new SourceOwner(object.getId(), object.getSourceType(), object.getSourceContent(), root,
+                object.getObjectCode(), object.getObjectLabel(), parseJson(object.getSourceContent()));
+        Set<Long> active = resolving.get();
+        if (!active.add(object.getId())) throw new IllegalArgumentException("数据对象外数依赖存在循环，对象 ID=" + object.getId());
+        try {
+            if (variableSourceResolver != null) {
+                if ("API".equalsIgnoreCase(source.sourceType)) variableSourceResolver.resolveApiDependencies(projectId, source.config, values, options);
+                else variableSourceResolver.resolveSqlDependencies(projectId, source.config, values, options);
+            }
+            Map<String, Object> response = load(projectId, source, values, options);
+            ExternalApiConsumerService.recordStatus(response, options, "DATA_OBJECT_ROOT", object.getId());
+            setPath(values, root, payload(source, response));
+        } finally { active.remove(object.getId()); if (active.isEmpty()) resolving.remove(); }
     }
 
     private RuleDataObjectField findField(Long id, List<RuleDataObjectField> snapshotFields) {
@@ -182,16 +234,14 @@ public class DataObjectSourceResolver {
         if ("API".equalsIgnoreCase(owner.sourceType) && externalApiConsumerService != null) {
             Long apiId = longValue(owner.config.get("apiConfigId"));
             if (apiId == null) throw new IllegalArgumentException("数据对象 API 来源缺少 apiConfigId");
-            Map<String, Object> mapped = mappedParams(owner.config.get("paramMapping"), values);
-            if (!(owner.config.get("inputOverrides") instanceof Map<?, ?> overrides) || overrides.isEmpty())
-                return externalApiConsumerService.resolve(projectId, apiId, owner.config, mapped, options);
-            return externalApiConsumerService.resolve(projectId, apiId, owner.config, mapped, options, null, values);
+            ExternalApiRequestPlan.validateBinding(owner.config);
+            return externalApiConsumerService.resolve(projectId, apiId, owner.config, values, options);
         }
         Long datasourceId = longValue(firstNonNull(owner.config.get("dbDatasourceId"), owner.config.get("datasourceId")));
         String sql = text(owner.config.get("sql"));
         List<Object> params = "DB".equalsIgnoreCase(owner.sourceType)
                 || "DATABASE".equalsIgnoreCase(owner.sourceType)
-                ? queryParams(owner.config.get("params"), values) : List.of();
+                ? queryParams(projectId, owner.config.get("params"), values, options) : List.of();
         DatabaseQueryOptions queryOptions = DatabaseQueryOptions.from(owner.config, 1000);
         Map<String, Object> cacheIdentity = new LinkedHashMap<>();
         cacheIdentity.put("projectId", projectId);
@@ -209,7 +259,8 @@ public class DataObjectSourceResolver {
             if ("API".equalsIgnoreCase(owner.sourceType)) {
                 Long apiId = longValue(owner.config.get("apiConfigId"));
                 if (apiId == null) throw new IllegalArgumentException("数据对象 API 来源缺少 apiConfigId");
-                return externalApiInvokeService.invoke(apiId, mappedParams(owner.config.get("paramMapping"), values));
+                ExternalApiRequestPlan.validateBinding(owner.config);
+                return externalApiInvokeService.invoke(apiId, values);
             }
             if (datasourceId == null) throw new IllegalArgumentException("数据对象数据库来源缺少 datasourceId");
             if (sql == null) throw new IllegalArgumentException("数据对象数据库来源缺少查询 SQL");
@@ -238,40 +289,13 @@ public class DataObjectSourceResolver {
         return ExternalApiConsumerService.select(response, path);
     }
 
-    private Map<String, Object> mappedParams(Object rawMapping, Map<String, Object> values) {
-        if (!(rawMapping instanceof Map<?, ?> mapping) || mapping.isEmpty()) return new LinkedHashMap<>(values);
-        Map<String, Object> result = new LinkedHashMap<>();
-        mapping.forEach((key, raw) -> {
-            if (key == null) return;
-            String path = text(raw);
-            Object value = path == null ? raw : readPath(values, stripTemplate(path));
-            if (value == null && path != null && !containsPath(values, stripTemplate(path))) value = raw;
-            result.put(String.valueOf(key), value);
-        });
-        return result;
-    }
-
-    private List<Object> queryParams(Object rawParams, Map<String, Object> values) {
-        if (!(rawParams instanceof List<?> list)) return new ArrayList<>();
-        List<Object> result = new ArrayList<>();
-        for (Object raw : list) {
-            if (raw instanceof Map<?, ?> map) {
-                String kind = upper(map.get("kind"));
-                if ("REFERENCE".equals(kind)) {
-                    String path = firstText(text(map.get("path")), text(map.get("code")), text(map.get("value")));
-                    result.add(readPath(values, path));
-                } else if (map.containsKey("value")) {
-                    result.add(map.get("value"));
-                } else {
-                    result.add(raw);
-                }
-            } else if (raw instanceof String text && text.startsWith("${") && text.endsWith("}")) {
-                result.add(readPath(values, text.substring(2, text.length() - 1).trim()));
-            } else {
-                result.add(raw);
-            }
-        }
-        return result;
+    private List<Object> queryParams(Long projectId, Object rawParams, Map<String, Object> values, VariableResolveOptions options) {
+        if (rawParams == null || rawParams instanceof List<?> list && list.isEmpty()) return List.of();
+        Map<String, String> paths = options.getDerivedReferencePaths();
+        if (paths == null) paths = variableService.buildRefScriptNameMap(projectId);
+        Map<String, Object> constants = options.getRuntimeSnapshot() != null || variableService == null
+                ? Map.of() : variableService.buildRefConstantValueMap(projectId);
+        return SqlParameterValues.resolve(rawParams, values, paths, constants);
     }
 
     private boolean supportsSource(String sourceType) {

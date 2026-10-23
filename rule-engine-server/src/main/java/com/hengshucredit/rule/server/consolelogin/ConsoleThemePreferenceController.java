@@ -1,7 +1,8 @@
 package com.hengshucredit.rule.server.consolelogin;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.model.dto.ConsoleThemePreference;
-import com.hengshucredit.rule.server.common.R;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,23 +28,23 @@ public class ConsoleThemePreferenceController {
     }
 
     @GetMapping("/theme")
-    public R<ConsoleThemePreference> theme(HttpServletRequest request) {
+    public ApiResponse<ConsoleThemePreference> theme(HttpServletRequest request) {
         SessionIdentity identity = currentIdentity(request);
-        if (identity == null) return R.fail(401, "未登录");
-        return R.ok(themePreferenceService.load(identity.userId()));
+        if (identity == null) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.TOKEN_INVALID, "未登录");
+        return ApiResponse.ok(themePreferenceService.load(identity.userId()));
     }
 
     @PutMapping("/theme")
-    public R<ConsoleThemePreference> saveTheme(
+    public ApiResponse<ConsoleThemePreference> saveTheme(
             @RequestBody Map<String, Object> body,
             HttpServletRequest request) {
         SessionIdentity identity = currentIdentity(request);
-        if (identity == null) return R.fail(401, "未登录");
+        if (identity == null) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.TOKEN_INVALID, "未登录");
         try {
-            return R.ok(themePreferenceService.save(
+            return ApiResponse.ok(themePreferenceService.save(
                     identity.userId(), identity.username(), body));
         } catch (IllegalArgumentException exception) {
-            return R.fail(400, exception.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.PARAMETER_INVALID, exception.getMessage());
         }
     }
 

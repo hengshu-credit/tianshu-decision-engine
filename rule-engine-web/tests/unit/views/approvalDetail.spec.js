@@ -70,6 +70,30 @@ import { clearCurrentUser, setCurrentUser } from '@/security/permissionState'
 import ApprovalDetail from '@/views/approval/ApprovalDetail.vue'
 
 describe('统一审批详情', () => {
+  test('合并超管后可管理保留历史归属名的草稿，普通账号不能认领', async () => {
+    setCurrentUser({ username: 'primary', operatorName: 'primary', operatorNames: ['primary', 'same-user'], permissions: ['database:edit'] })
+    const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
+    try {
+      await flushPromises()
+      expect(wrapper.vm.canManageDraft).toBe(true)
+      setCurrentUser({ username: 'ordinary', operatorName: 'ordinary', operatorNames: ['ordinary'], permissions: ['database:edit'] })
+      await wrapper.vm.$nextTick()
+      expect(wrapper.vm.canManageDraft).toBe(false)
+    } finally { wrapper.unmount(); clearCurrentUser() }
+  })
+
+  test('超管恢复改名后仍能管理原归属标识的草稿', async () => {
+    setCurrentUser({ username: 'renamed-admin', operatorName: 'same-user', permissions: ['database:edit'] })
+    const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
+    try {
+      await flushPromises()
+      expect(wrapper.vm.canManageDraft).toBe(true)
+      setCurrentUser({ username: 'same-user', operatorName: 'another-owner', permissions: ['database:edit'] })
+      await wrapper.vm.$nextTick()
+      expect(wrapper.vm.canManageDraft).toBe(false)
+    } finally { wrapper.unmount(); clearCurrentUser() }
+  })
+
   test('引用位置解析内嵌 JSON、条件名称和脚本行列，不只显示技术偏移', async () => {
     const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
     await flushPromises()

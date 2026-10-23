@@ -6,7 +6,7 @@ describe('large API structures', () => {
   test('万字段结构只显示当前页，搜索能到达最后一个字段', async () => {
     const sample = Object.fromEntries(Array.from({ length: 9937 }, (_, index) => [`QY_${index}`, index]))
     const wrapper = shallowMount(ApiSampleStructure, { props: { sample } })
-    expect(wrapper.vm.visibleRows).toHaveLength(50)
+    expect(wrapper.vm.visibleRows).toHaveLength(20)
     await wrapper.setData({ query: 'QY_9936', page: 1 })
     expect(wrapper.vm.visibleRows.map(item => item.value)).toEqual(['response.body.QY_9936'])
     wrapper.unmount()
@@ -15,10 +15,10 @@ describe('large API structures', () => {
     const fields = Array.from({ length: 120 }, (_, index) => ({ id: `field_${index}`, path: `name_${index}` }))
     const wrapper = shallowMount(ApiParameterFields, { props: { fields, output: true } })
     await wrapper.setData({ page: 2 })
-    expect(wrapper.vm.visibleFields[0].id).toBe('field_50')
-    wrapper.vm.remove('field_62')
+    expect(wrapper.vm.visibleFields[0].id).toBe('field_20')
+    wrapper.vm.remove('field_32')
     const saved = wrapper.emitted('update:fields')[0][0]
-    expect(saved.find(item => item.id === 'field_62')).toBeUndefined()
+    expect(saved.find(item => item.id === 'field_32')).toBeUndefined()
     expect(saved.find(item => item.id === 'field_12')).toBeDefined()
     wrapper.unmount()
   })

@@ -44,7 +44,12 @@ public class GovernanceResourceBootstrapServiceTest {
                         storedResource[0].setId(71L);
                         return 1;
                     }
-                    if ("updateById".equals(method)) return 1;
+                    if ("linkBaselineVersion".equals(method)) {
+                        Assert.assertEquals(Long.valueOf(71L), args[0]);
+                        Assert.assertEquals(Long.valueOf(72L), args[1]);
+                        Assert.assertEquals(Integer.valueOf(1), args[2]);
+                        return 1;
+                    }
                     return null;
                 });
         GovernedResourceVersionMapper versionMapper = proxy(

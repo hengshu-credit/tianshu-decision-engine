@@ -1,9 +1,10 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.model.dto.RulePushMessage;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleProject;
-import com.hengshucredit.rule.server.common.Result;
 import com.hengshucredit.rule.server.publish.RuleFunctionPushService;
 import com.hengshucredit.rule.server.publish.RulePushService;
 import com.hengshucredit.rule.server.service.RuleFunctionService;
@@ -48,9 +49,9 @@ public class RuleFunctionControllerTest {
                 functionPushService(pushService, 18L, "credit-app"));
 
         RuleFunction function = projectFunction(18L, "riskScore");
-        Result<Void> result = controller.update(function);
+        ApiResponse<Void> result = controller.update(function);
 
-        assertEquals(200, result.getCode());
+        assertEquals("000000", result.getCode());
         assertEquals(function, functionService.updated);
         assertEquals("PROJECT", pushService.message.getScope());
         assertEquals("credit-app", pushService.message.getProjectCode());
@@ -68,9 +69,9 @@ public class RuleFunctionControllerTest {
         RuleFunction function = projectFunction(18L, "riskScore");
         function.setId(91L);
         functionService.existing = function;
-        Result<Void> result = controller.delete(91L);
+        ApiResponse<Void> result = controller.delete(91L);
 
-        assertEquals(200, result.getCode());
+        assertEquals("000000", result.getCode());
         assertEquals(Long.valueOf(91L), functionService.deletedId);
         assertEquals("PROJECT", pushService.message.getScope());
         assertEquals("credit-app", pushService.message.getProjectCode());
@@ -89,9 +90,9 @@ public class RuleFunctionControllerTest {
         function.setScope(RuleFunctionService.SCOPE_GLOBAL);
         function.setProjectId(0L);
         function.setFuncCode("globalRiskScore");
-        Result<Void> result = controller.update(function);
+        ApiResponse<Void> result = controller.update(function);
 
-        assertEquals(200, result.getCode());
+        assertEquals("000000", result.getCode());
         assertEquals("GLOBAL", pushService.message.getScope());
         assertNull(pushService.message.getProjectCode());
     }

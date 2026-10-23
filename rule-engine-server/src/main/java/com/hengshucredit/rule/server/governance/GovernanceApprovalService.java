@@ -38,6 +38,8 @@ import java.util.UUID;
 
 @Service
 public class GovernanceApprovalService {
+    @jakarta.annotation.Resource private com.hengshucredit.rule.server.service.ConsoleOperatorResolver operatorResolver;
+    @jakarta.annotation.Resource private com.hengshucredit.rule.server.security.ConsoleResourceAccess consoleResources;
     @Autowired(required = false)
     private GovernanceDependencyDisplayService dependencyDisplay;
 
@@ -64,6 +66,15 @@ public class GovernanceApprovalService {
     private RuleDraftDeletionService ruleDraftDeletionService;
     @Autowired(required = false)
     private com.hengshucredit.rule.server.mapper.RuleRevisionMapper ruleRevisionMapper;
+
+    public Set<String> actorNames(String actor) {
+        if (actor == null || actor.isBlank()) return Set.of();
+        return operatorResolver == null ? Set.of(actor) : operatorResolver.namesFor(actor);
+    }
+
+    public boolean ownsRequest(String actor, String applicant) {
+        return applicant != null && actorNames(actor).contains(applicant);
+    }
 
     public List<GovernanceResourceState> resourceStates(String type, List<Long> ids, String actor) {
         String resourceType = normalizeType(type);
@@ -95,6 +106,7 @@ public class GovernanceApprovalService {
                         if ("APPROVED".equals(revision.getState())) approvedRules.add(revision.getDefinitionId());
                     });
         }
+        Set<String> actors = actorNames(actor);
         return uniqueIds.stream().map(id -> {
             GovernedResource resource = resources.get(id);
             GovernanceApprovalRequest request = requests.get(id);
@@ -102,7 +114,8 @@ public class GovernanceApprovalService {
                     resource != null && resource.getEffectiveVersionId() != null,
                     request == null ? null : request.getId(), request == null ? null : request.getStatus(),
                     request == null ? null : request.getAction(), request == null ? null : request.getApplicant(),
-                    request != null && Objects.equals(actor, request.getApplicant()), ruleDrafts.contains(id), approvedRules.contains(id));
+                    request != null && request.getApplicant() != null && actors.contains(request.getApplicant()), ruleDrafts.contains(id), approvedRules.contains(id),
+                    resource != null ? resource.getProjectId() : request == null ? null : request.getProjectId());
         }).toList();
     }
 
@@ -123,8 +136,23 @@ public class GovernanceApprovalService {
         requireResourcePermission(resourceType, "edit");
         GovernanceApprovalRequest request = findActiveRequest(resourceType + ":" + id);
         if (request == null || isTerminalRequest(request)) return null;
-        if (!Objects.equals(actor, request.getApplicant()) || !GovernanceRequestStatus.EDITING.name().equals(request.getStatus())) return null;
+        if (!ownsRequest(actor, request.getApplicant()) || !GovernanceRequestStatus.EDITING.name().equals(request.getStatus())) return null;
         return GovernanceRequestView.from(request);
+    }
+
+    /** Internal trial use only; the encrypted payload must never be returned by a controller. */
+    public ResourceSnapshot editableCredentialSnapshot(String type, Long id, String actor) {
+        GovernanceRequestView view = editableWorkspace(type, id, actor);
+        if (view == null) return null;
+        GovernanceApprovalRequest request = findActiveRequest(normalizeType(type) + ":" + id);
+        if (request == null || !Objects.equals(request.getId(), view.id())
+                || !Objects.equals(request.getSnapshotDigest(), view.snapshotDigest())
+                || !Objects.equals(request.getStatus(), view.status())
+                || !ownsRequest(actor, request.getApplicant())) {
+            throw new IllegalArgumentException("草稿已变化，请刷新后重新测试");
+        }
+        return new ResourceSnapshot(request.getDraftSnapshotJson(), null,
+                request.getSecretPayloadCiphertext(), request.getSecretDigest());
     }
 
     @Transactional
@@ -282,6 +310,7 @@ public class GovernanceApprovalService {
                                         effective == null ? null
                                                 : effective
                                                 .secretDigest()))));
+        if (consoleResources != null) draft.setProjectId(consoleResources.draftProject(resourceType, draft.getResourceId(), normalized.snapshotJson()));
         if (resource == null) {
             activeResourceKey = createActiveResourceKey(
                     resourceType, draft.getProjectId(), normalized);
@@ -403,6 +432,7 @@ public class GovernanceApprovalService {
                                 request.getSecretPayloadCiphertext()),
                         firstNotBlank(draft.getSecretDigest(),
                                 request.getSecretDigest())));
+        if (consoleResources != null) request.setProjectId(consoleResources.draftProject(request.getResourceType(), request.getResourceId(), normalized.snapshotJson()));
         normalized = saveWorkspace(request, normalized, actor);
         request.setDraftSnapshotJson(normalized.snapshotJson());
         request.setSnapshotDigest(
@@ -427,6 +457,7 @@ public class GovernanceApprovalService {
         requireApplicant(request, actor);
         requireResourcePermission(request.getResourceType(), "edit");
         ResourceSnapshot normalized = normalize(request, snapshotJson);
+        if (consoleResources != null) request.setProjectId(consoleResources.draftProject(request.getResourceType(), request.getResourceId(), normalized.snapshotJson()));
         normalized = saveWorkspace(request, normalized, actor);
         request.setDraftSnapshotJson(normalized.snapshotJson());
         request.setSecretPayloadCiphertext(
@@ -878,8 +909,8 @@ public class GovernanceApprovalService {
             wrapper.eq(GovernanceApprovalRequest::getStatus,
                     GovernanceRequestStatus.PENDING.name());
         } else if ("MINE".equals(taskScope)) {
-            wrapper.eq(GovernanceApprovalRequest::getApplicant,
-                    requireActor(actor));
+            wrapper.in(GovernanceApprovalRequest::getApplicant,
+                    actorNames(requireActor(actor)));
         } else if ("COMPLETED".equals(taskScope)) {
             wrapper.in(GovernanceApprovalRequest::getStatus,
                     GovernanceRequestStatus.APPROVED.name(),
@@ -946,14 +977,14 @@ public class GovernanceApprovalService {
                                 GovernanceRequestStatus.PENDING.name());
         LambdaQueryWrapper<GovernanceApprovalRequest> myDrafts =
                 projectScoped(projectId)
-                        .eq(GovernanceApprovalRequest::getApplicant,
-                                applicant)
+                        .in(GovernanceApprovalRequest::getApplicant,
+                                actorNames(applicant))
                         .eq(GovernanceApprovalRequest::getStatus,
                                 GovernanceRequestStatus.EDITING.name());
         LambdaQueryWrapper<GovernanceApprovalRequest> myRequests =
                 projectScoped(projectId)
-                        .eq(GovernanceApprovalRequest::getApplicant,
-                                applicant);
+                        .in(GovernanceApprovalRequest::getApplicant,
+                                actorNames(applicant));
         LambdaQueryWrapper<GovernanceApprovalRequest> completed =
                 projectScoped(projectId)
                         .in(GovernanceApprovalRequest::getStatus,
@@ -1467,6 +1498,7 @@ public class GovernanceApprovalService {
             resource.setEffectiveVersionNo(0);
             insertResource(resource);
             request.setResourceId(applied.resourceId());
+            if ("PROJECT".equals(request.getResourceType())) request.setProjectId(applied.resourceId());
             request.setActiveResourceKey(request.getResourceType() + ":" + applied.resourceId());
         }
         ResourceSnapshot stored = adapter.loadEffective(applied.resourceId());
@@ -1561,7 +1593,7 @@ public class GovernanceApprovalService {
     private void requireApplicant(GovernanceApprovalRequest request,
                                   String actor) {
         String operator = requireActor(actor);
-        if (!operator.equals(request.getApplicant())) {
+        if (!ownsRequest(operator, request.getApplicant())) {
             String requestReference = request.getRequestNo() == null
                     || request.getRequestNo().isBlank()
                     ? "#" + request.getId()

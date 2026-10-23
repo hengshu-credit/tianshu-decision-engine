@@ -1,7 +1,7 @@
 import request from './request'
 
 export function compileExpression(data) {
-  return request({ url: '/rule/expression/compile', method: 'post', data })
+  return request({ acceptExecutionFailure: true, url: '/rule/expression/compile', method: 'post', data })
 }
 
 export function getExpressionTestSchema(data) {
@@ -9,5 +9,5 @@ export function getExpressionTestSchema(data) {
 }
 
 export function executeExpression(data) {
-  return request({ url: '/rule/expression/test', method: 'post', data })
+  return request({ acceptExecutionFailure: true, url: '/rule/expression/test', method: 'post', data })
 }

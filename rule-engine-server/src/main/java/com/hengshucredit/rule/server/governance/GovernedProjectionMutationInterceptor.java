@@ -1,7 +1,8 @@
 package com.hengshucredit.rule.server.governance;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.alibaba.fastjson.JSON;
-import com.hengshucredit.rule.server.common.R;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.method.HandlerMethod;
@@ -29,8 +30,8 @@ public class GovernedProjectionMutationInterceptor implements HandlerInterceptor
         response.setStatus(HttpServletResponse.SC_CONFLICT);
         response.setCharacterEncoding("UTF-8");
         response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write(JSON.toJSONString(R.fail(
-                HttpServletResponse.SC_CONFLICT, ERROR_CODE)));
+        response.getWriter().write(JSON.toJSONString(ApiResponse.fail(
+                com.hengshucredit.rule.model.PlatformCode.GOVERNANCE_CONFLICT, ERROR_CODE)));
         return false;
     }
 }

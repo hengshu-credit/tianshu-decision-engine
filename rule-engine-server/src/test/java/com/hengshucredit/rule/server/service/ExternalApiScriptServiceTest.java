@@ -59,13 +59,13 @@ public class ExternalApiScriptServiceTest {
     @Test
     public void scriptVariablesAreParsedWithoutChangingNames() {
         String config = "{\"scriptVariables\":["
-                + "{\"name\":\"appKey\",\"value\":\"A001\",\"sensitive\":false},"
-                + "{\"name\":\"secret_key\",\"value\":\"S001\",\"sensitive\":true}]}";
+                + "{\"name\":\"appKey\",\"value\":{\"kind\":\"LITERAL\",\"valueType\":\"STRING\",\"value\":\"A001\"},\"sensitive\":false},"
+                + "{\"name\":\"secret_key\",\"value\":{\"kind\":\"LITERAL\",\"valueType\":\"STRING\",\"value\":\"S001\"},\"sensitive\":true}]}";
 
         assertEquals(new LinkedHashMap<String, Object>() {{
             put("appKey", "A001");
             put("secret_key", "S001");
-        }}, service.parseScriptVariables(config));
+        }}, ExternalApiAuthConfig.resolveVariables(config, Map.of(), Map.of()));
     }
 
     private Map<String, Object> context() {

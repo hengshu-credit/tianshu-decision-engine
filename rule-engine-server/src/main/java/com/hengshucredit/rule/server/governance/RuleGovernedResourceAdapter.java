@@ -157,7 +157,7 @@ public class RuleGovernedResourceAdapter
 
     private ResourceDependencyRef resolveGovernedRoot(
             ResourceDependencyRef dependency) {
-        if (dependency.versionSelection() != null || dataObjectFieldMapper == null
+        if (dependency.versionSelection() != null || "DATA_OBJECT_ROOT".equals(dependency.refType()) || dataObjectFieldMapper == null
                 || !GovernanceResourceTypes.DATA_OBJECT.equals(
                 dependency.targetResourceType())
                 || !DataObjectGovernanceReferences.isFieldReferencePath(dependency.referencePath())) {

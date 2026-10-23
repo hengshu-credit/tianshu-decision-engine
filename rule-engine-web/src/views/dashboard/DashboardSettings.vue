@@ -11,21 +11,14 @@
     <div class="uiue-search-container uiue-filter-toolbar">
       <el-form :inline="true" size="small">
         <el-form-item label="配置范围">
-          <el-select
+          <project-resource-select
             v-model="projectId"
             clearable
             filterable
             placeholder="个人默认（仅全局字段）"
             style="width: 280px"
             @change="load"
-          >
-            <el-option
-              v-for="project in projects"
-              :key="project.id"
-              :label="projectLabel(project)"
-              :value="project.id"
-            />
-          </el-select>
+           :projects="projects" />
         </el-form-item>
         <el-form-item>
           <el-tag :type="projectId ? 'success' : 'info'">
@@ -180,6 +173,7 @@
 </template>
 
 <script>
+import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import {
   deleteDashboardSetting,
   getDashboardSettings,
@@ -196,6 +190,7 @@ import {
 const NUMERIC_FIELDS = new Set(['LONGITUDE', 'LATITUDE', 'PERIOD', 'AMOUNT'])
 
 export default {
+  components: { ProjectResourceSelect },
   name: 'DashboardSettings',
   data() {
     return {

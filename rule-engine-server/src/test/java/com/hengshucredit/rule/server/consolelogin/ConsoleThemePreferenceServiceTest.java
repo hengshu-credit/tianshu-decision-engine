@@ -24,7 +24,7 @@ public class ConsoleThemePreferenceServiceTest {
         assertEquals(Integer.valueOf(3), theme.getSchemaVersion());
         assertEquals("LIGHT", theme.getColorScheme());
         assertEquals("PRESET", theme.getAccentMode());
-        assertEquals("THEME_BLUE", theme.getAccentPreset());
+        assertEquals("PEACH_PINK_GRADIENT", theme.getAccentPreset());
         assertEquals("#2639E9", theme.getCustomSolidColor());
         assertEquals(List.of("#2639E9", "#873FF2"),
                 theme.getCustomGradientColors());
@@ -33,7 +33,7 @@ public class ConsoleThemePreferenceServiceTest {
         assertEquals("LEFT", theme.getNavigationLayout());
         assertEquals("DARK", theme.getSidebarTheme());
         assertEquals("FLUID", theme.getContentWidth());
-        assertEquals("AUTO", theme.getTableScrollMode());
+        assertEquals("FIXED", theme.getTableScrollMode());
         assertTrue(theme.getFixedSidebar());
         assertFalse(theme.getColorWeak());
     }
@@ -160,7 +160,7 @@ public class ConsoleThemePreferenceServiceTest {
         ConsoleThemePreference loaded = service(rows).load(7L);
 
         assertEquals("LIGHT", loaded.getColorScheme());
-        assertEquals("THEME_BLUE", loaded.getAccentPreset());
+        assertEquals("PEACH_PINK_GRADIENT", loaded.getAccentPreset());
     }
 
     @Test
@@ -171,7 +171,7 @@ public class ConsoleThemePreferenceServiceTest {
             request.put("tableScrollMode", mode);
             assertEquals(mode, service.save(7L, "alice", request).getTableScrollMode());
             assertEquals(mode, service.load(7L).getTableScrollMode());
-            assertEquals("AUTO", service.load(8L).getTableScrollMode());
+            assertEquals("FIXED", service.load(8L).getTableScrollMode());
         }
     }
 

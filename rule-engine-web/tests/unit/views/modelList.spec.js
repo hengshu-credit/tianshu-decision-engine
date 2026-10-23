@@ -124,6 +124,7 @@ async function mountAndWait(routeQuery = {}) {
 test('模型发布按钮提交所见草稿审批，不能只停留在编辑中申请', async () => {
   setCurrentUser({ permissions: ['model:edit', 'model:submit', 'approval:submit'] })
   const submit = vi.spyOn(governanceApi, 'submitGovernanceRequest').mockResolvedValue({ data: { status: 'PENDING' } })
+  const preflight = vi.spyOn(governanceApi, 'preflightGovernanceRequest').mockResolvedValue({ data: { valid: true } })
   const draft = vi.spyOn(governanceApi, 'getWorkspaceDraft').mockResolvedValue({ data: { id: 91, resourceId: 2, status: 'EDITING', action: 'UPDATE', snapshotDigest: 'shown' } })
   const wrapper = mount(ModelList.components.GovernancePublishAction, { props: { resourceType: 'MODEL', resourceId: 2 } })
   try {
@@ -131,7 +132,7 @@ test('模型发布按钮提交所见草稿审批，不能只停留在编辑中�
     await wrapper.vm.publish()
     expect(draft).toHaveBeenCalledWith('MODEL', 2)
     expect(submit).toHaveBeenCalledWith(91, '从列表提交发布审批', 'shown')
-  } finally { wrapper.unmount(); draft.mockRestore(); submit.mockRestore(); clearCurrentUser() }
+  } finally { wrapper.unmount(); draft.mockRestore(); submit.mockRestore(); preflight.mockRestore(); clearCurrentUser() }
 })
 
 test('模型退出项目范围后清除自动项目筛选并从第一页加载', async () => {
@@ -143,7 +144,7 @@ test('模型退出项目范围后清除自动项目筛选并从第一页加载',
   projectWrapper.unmount()
 
   const globalWrapper = await mountAndWait()
-  expect(modelApi.listModels).toHaveBeenLastCalledWith({ pageNum: 1, pageSize: 10 })
+  expect(modelApi.listModels).toHaveBeenLastCalledWith({ pageNum: 1, pageSize: 20 })
   globalWrapper.unmount()
   sessionStorage.clear()
 })
@@ -247,7 +248,7 @@ describe('ModelList — 初始化与数据加载', () => {
 
   test('分页参数初始化正确', () => {
     expect(wrapper.vm.qp.pageNum).toBe(1)
-    expect(wrapper.vm.qp.pageSize).toBe(10)
+    expect(wrapper.vm.qp.pageSize).toBe(20)
     expect(wrapper.vm.qp.scope).toBe('')
     expect(wrapper.vm.qp.modelType).toBe('')
   })

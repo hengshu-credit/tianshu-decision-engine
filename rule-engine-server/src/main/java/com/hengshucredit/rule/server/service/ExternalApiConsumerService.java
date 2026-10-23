@@ -51,14 +51,15 @@ public class ExternalApiConsumerService {
         }
         RuleExternalApiConfig api = snapshot == null ? apiConfigMapper.selectById(apiId) : snapshot;
         if (api == null || api.getStatus() != null && api.getStatus() != 1) throw new IllegalArgumentException("外数 API 不存在或已停用: " + apiId);
+        com.hengshucredit.rule.model.entity.RuleExternalDatasource datasource = null;
         if (datasourceMapper != null) {
-            var datasource = datasourceMapper.selectById(api.getDatasourceId());
+            datasource = datasourceMapper.selectById(api.getDatasourceId());
             if (datasource == null || !Integer.valueOf(1).equals(datasource.getStatus()) || !"GLOBAL".equals(datasource.getScope())
                     && !java.util.Objects.equals(projectId, datasource.getProjectId())) throw new IllegalArgumentException("外数 API 不属于当前项目可用范围");
         }
         Map<String, String> paths = options.getDerivedReferencePaths();
         if (paths == null) paths = variableService.buildRefScriptNameMap(projectId);
-        values = ExternalApiRequestPlan.overrideInputs(api, values, sourceValues, binding.get("inputOverrides"), paths);
+        ExternalApiRequestPlan.validateBinding(binding);
         Map<String, Object> overrides = binding.get("requestOverrides") instanceof Map<?, ?> raw
                 ? JSON.parseObject(JSON.toJSONString(raw)) : Map.of();
         RuleExternalApiConfig selected = invokeService.selectRequestBranch(api, values);
@@ -75,7 +76,7 @@ public class ExternalApiConsumerService {
             }
             overrides = active;
         }
-        ExternalApiRequestPlan plan = ExternalApiRequestPlan.prepare(selected, values, overrides, paths);
+        ExternalApiRequestPlan plan = ExternalApiRequestPlan.prepare(selected, values, overrides, paths, datasource == null ? null : datasource.getAuthConfig(), invokeService.linkedRequestInputs(selected));
         if (fieldValidationService != null) {
             fieldValidationService.validateApiPlan(projectId, plan);
         }

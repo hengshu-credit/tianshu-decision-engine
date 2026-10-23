@@ -26,6 +26,7 @@ import java.util.*;
 @Slf4j
 @Service
 public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProject> {
+    @Resource private com.hengshucredit.rule.server.security.ConsoleProjectAccess consoleProjects;
 
     @Resource
     private ProjectAuthService projectAuthService;
@@ -76,6 +77,7 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
         
         // 保存项目
         save(project);
+        if (consoleProjects != null) consoleProjects.grantCreatedProject(project.getId());
         project.setTraceScopeCode(TraceIdGenerator.projectScopeCode(project.getId()));
         updateById(project);
         projectAuthService.saveLegacyToken(project, token);

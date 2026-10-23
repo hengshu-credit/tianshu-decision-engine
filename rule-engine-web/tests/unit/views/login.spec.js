@@ -99,7 +99,7 @@ describe('Login 登录按钮加载态契约', () => {
     const opacity = Number(loading.match(/opacity:\s*([\d.]+)/)?.[1])
 
     expect(loading).toContain(
-      'background: var(--tianshu-brand-background) !important'
+      'background: var(--tianshu-brand-button-background) !important'
     )
     expect(loading).toContain('border-color: var(--el-color-primary) !important')
     expect(opacity).toBeGreaterThanOrEqual(0.85)

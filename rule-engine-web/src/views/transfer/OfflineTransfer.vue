@@ -12,7 +12,7 @@
     <el-tabs v-model="activeTab" class="transfer-tabs" @tab-change="onTabChange">
       <el-tab-pane label="配置迁移" name="transfer">
     <section class="transfer-grid">
-      <article class="transfer-card">
+      <article class="transfer-card export-card">
         <div class="card-heading">
           <div>
             <span class="card-kicker">EXPORT</span>
@@ -41,7 +41,7 @@
             <p v-if="root.loadError" class="root-error" role="alert">{{ root.loadError }}</p>
           </div>
           <resource-version-select v-if="root.resourceId" class="root-version" :resource-type="root.resourceType" :resource-id="root.resourceId" v-model="root.versionSelection" :disabled="exporting" @change="onRootVersionChange(root, $event)" />
-          <el-button v-if="roots.length > 1" link type="danger" :disabled="exporting" :aria-label="`移除第 ${index + 1} 项资源`" @click="removeRoot(index)">移除</el-button>
+          <el-button v-if="roots.length > 1" class="root-remove" link type="danger" :disabled="exporting" :aria-label="`移除第 ${index + 1} 项资源`" @click="removeRoot(index)">移除</el-button>
         </div>
         <el-alert v-if="exportError" :title="exportError" type="error" :closable="false" />
         <el-checkbox v-model="exportOnlySelected" :disabled="exporting">
@@ -715,6 +715,11 @@ export default {
 .transfer-page { padding-bottom: 36px; }
 .transfer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .transfer-card { background: var(--el-bg-color-overlay); border: 1px solid var(--el-border-color-light); border-radius: 14px; padding: 20px; box-shadow: 0 8px 28px rgba(15, 23, 42, .05); }
+.export-card { min-width: 0; container: export-card / inline-size; }
+.export-card .card-heading, .export-card .card-actions, .export-card .inline-lineage-toolbar { flex-wrap: wrap; }
+.export-card .inline-lineage-toolbar :deep(.el-select) { max-width: 100%; }
+.export-card :deep(.el-checkbox) { height: auto; white-space: normal; }
+.export-card :deep(.el-checkbox__label) { white-space: normal; line-height: 1.5; }
 .transfer-tabs { margin-top: 4px; }
 .transfer-tabs :deep(.el-tabs__content) { overflow: visible; }
 .transfer-log-card { margin-top: 12px; }
@@ -723,9 +728,12 @@ export default {
 .card-kicker { color: var(--el-color-primary); font-size: 11px; letter-spacing: .12em; font-weight: 700; }
 .card-heading h2 { margin: 5px 0 0; font-size: 20px; }
 .card-help { color: var(--el-text-color-secondary); line-height: 1.65; min-height: 52px; }
-.root-row { display: grid; grid-template-columns: 160px minmax(0, 1fr) minmax(220px, auto) auto; gap: 12px; align-items: start; margin: 12px 0; }
-.root-resource { min-width: 0; }
-.root-version { width: 220px; max-width: 100%; }
+.root-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; margin: 12px 0; }
+.root-type { flex: 0 1 160px; min-width: 0; max-width: 100%; }
+.root-resource { flex: 1 1 240px; min-width: 0; }
+.root-resource :deep(.el-select) { width: 100%; }
+.root-version { flex: 0 1 220px; width: 220px; max-width: 100%; }
+.root-remove { flex: none; align-self: center; margin-left: auto; }
 .root-error { margin: 6px 0 0; color: var(--el-color-danger); font-size: 12px; line-height: 1.5; }
 .card-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .upload-copy { display: flex; flex-direction: column; gap: 8px; color: var(--el-text-color-secondary); }
@@ -769,6 +777,6 @@ export default {
 .result-json { max-height: 360px; overflow: auto; background: var(--el-fill-color-light); padding: 12px; border-radius: 8px; font-size: 12px; }
 @media (max-width: 900px) { .transfer-grid { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .import-options__target, .import-options__policies { grid-template-columns: 1fr 1fr; } .create-project-toggle { grid-column: 1 / -1; margin-bottom: 0; } .import-options__policies .el-checkbox { grid-column: 1 / -1; } }
-@media (max-width: 900px) { .root-row { grid-template-columns: 160px minmax(0, 1fr); } .root-version { grid-column: 2; width: 100%; } }
-@media (max-width: 560px) { .root-row { grid-template-columns: 1fr auto; gap: 8px; } .root-type { grid-column: 1 / -1; } .root-resource, .root-version { grid-column: 1 / -1; width: 100%; } .import-options__target, .project-create-fields__inputs, .import-options__policies { grid-template-columns: 1fr; } .create-project-toggle, .import-options__policies .el-checkbox { grid-column: auto; } }
+@container export-card (max-width: 460px) { .root-type, .root-resource, .root-version { flex-basis: 100%; width: 100%; } }
+@media (max-width: 560px) { .import-options__target, .project-create-fields__inputs, .import-options__policies { grid-template-columns: 1fr; } .create-project-toggle, .import-options__policies .el-checkbox { grid-column: auto; } }
 </style>

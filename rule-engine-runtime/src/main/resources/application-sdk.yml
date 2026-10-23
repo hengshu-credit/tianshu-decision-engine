@@ -1,5 +1,16 @@
 server:
-  port: ${SERVER_PORT:7071}
+  port: ${SERVER_PORT:${RUNTIME_SDK_PORT:7071}}
+RUNTIME_ACCESS_TOKEN: ${SDK_ACCESS_TOKEN:}
+RULE_ALLOWED_CODES: ${SDK_RULE_ALLOWED_CODES:}
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
+      password: ${REDIS_PASSWORD:}
+      connect-timeout: 2000ms
+      timeout: 3000ms
 management:
   endpoint:
     health:

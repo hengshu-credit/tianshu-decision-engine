@@ -98,7 +98,8 @@ public class ExternalApiRecoveryContractTest {
             ReflectionTestUtils.setField(resolver, "externalApiInvokeService", fixture.invoke);
             var error = assertThrows(ExternalApiWaitingException.class, () -> resolver.resolveIntoSnapshot(
                     List.of(variable), List.of(), List.of(), new LinkedHashMap<>(Map.of("mobile", "111")), initial));
-            assertEquals("task-1", ((ExternalApiInvokeService.ApiInvokeException) error.getCause()).getPendingAsync().get("taskId"));
+            assertEquals("task-1", ExternalApiRequestPlan.read(
+                    ((ExternalApiInvokeService.ApiInvokeException) error.getCause()).getPendingAsync(), "results.submit.body.taskId"));
             assertEquals("WAITING_EXTERNAL", initial.getSourceStates().get("VARIABLE:7").get("OUTCOME"));
 
             var resumed = fixture.restore(initial);
@@ -145,11 +146,15 @@ public class ExternalApiRecoveryContractTest {
             server.start();
             RuleExternalApiConfig api = new RuleExternalApiConfig();
             api.setId(9L); api.setDatasourceId(1L); api.setStatus(1); api.setRequestMethod("POST");
-            api.setEndpointUrl("/submit"); api.setRequestMapping("{\"mobile\":\"$.mobile\"}");
+            api.setEndpointUrl("/submit");
             api.setAuthMode("NONE"); api.setContentType("application/json");
-            api.setRequestMode("ASYNC"); api.setAsyncResultMode("POLL"); api.setExceptionStrategy("WAIT");
-            api.setAsyncPollConfig("{\"taskIdPath\":\"body.taskId\",\"resultEndpointUrl\":\"/poll/${taskId}\","
-                    + "\"statusPath\":\"body.status\",\"successValue\":\"DONE\",\"resultPath\":\"body.data\",\"maxAttempts\":1,\"intervalMs\":1}");
+            api.setRequestMode("ASYNC"); api.setExceptionStrategy("WAIT"); api.setAsyncTimeoutMs(1000);
+            var config = com.alibaba.fastjson.JSON.parseObject(ExternalApiTestConfig.pollingResult(
+                    "/submit", "/poll/${steps.submit.body.taskId}", "body.status", "DONE", 0, 2000, "body.data"));
+            var requestFields = List.of(ExternalApiTestConfig.field("mobile", "JSON", "mobile", ExternalApiTestConfig.reference(100L, "mobile")));
+            config.put("requestFields", requestFields);
+            config.getJSONArray("steps").getJSONObject(0).put("requestFields", requestFields);
+            api.setExecutionConfig(com.hengshucredit.rule.server.artifact.CanonicalJson.write(config));
             RuleExternalDatasource datasource = new RuleExternalDatasource();
             datasource.setId(1L); datasource.setStatus(1); datasource.setScope("GLOBAL");
             datasource.setProtocol("HTTP"); datasource.setAuthType("NONE");
@@ -158,6 +163,9 @@ public class ExternalApiRecoveryContractTest {
             var datasourceMapper = mapper(RuleExternalDatasourceMapper.class, datasource);
             ReflectionTestUtils.setField(invoke, "apiConfigMapper", apiMapper);
             ReflectionTestUtils.setField(invoke, "datasourceMapper", datasourceMapper);
+            ReflectionTestUtils.setField(invoke, "apiVariableService", new RuleVariableService() {
+                @Override public Map<String, String> buildRefScriptNameMap(Long projectId) { return Map.of("VARIABLE:100", "mobile"); }
+            });
             ReflectionTestUtils.setField(consumer, "apiConfigMapper", apiMapper);
             ReflectionTestUtils.setField(consumer, "datasourceMapper", datasourceMapper);
             ReflectionTestUtils.setField(consumer, "invokeService", invoke);
@@ -170,7 +178,7 @@ public class ExternalApiRecoveryContractTest {
 
         VariableResolveOptions options() {
             var options = VariableResolveOptions.defaults();
-            options.setDerivedReferencePaths(Map.of());
+            options.setDerivedReferencePaths(Map.of("VARIABLE:100", "mobile"));
             options.setInvocationCache(new VariableResolutionInvocationCache());
             return options;
         }

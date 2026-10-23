@@ -97,7 +97,7 @@ describe('ProjectList — 初始化与数据加载', () => {
 
   test('分页参数初始化正确', () => {
     expect(wrapper.vm.qp.pageNum).toBe(1)
-    expect(wrapper.vm.qp.pageSize).toBe(10)
+    expect(wrapper.vm.qp.pageSize).toBe(20)
     expect(wrapper.vm.qp.status).toBe('')
   })
 })
@@ -279,7 +279,7 @@ describe('ProjectList — 项目操作', () => {
   test('handleExportDoc 使用模块化生成器并内嵌 hengshucredit SVG', async () => {
     const doc = { project: { projectCode: 'project_a' }, authentications: [], rules: [] }
     const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-    projectApi.exportApiDoc.mockResolvedValue({ code: 200, data: doc })
+    projectApi.exportApiDoc.mockResolvedValue({ code: '000000', data: doc })
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       text: vi.fn().mockResolvedValue('<svg id="hengshucredit"></svg>')
@@ -301,7 +301,7 @@ describe('ProjectList — 项目操作', () => {
   })
 
   test('handleSubmit 新建项目时调用 createProject', async () => {
-    projectApi.createProject.mockResolvedValue({ code: 200, data: {
+    projectApi.createProject.mockResolvedValue({ code: '000000', data: {
       project: { id: 9, projectCode: 'new_project', projectName: '新项目' },
       accessToken: 'tok'
     } })
@@ -316,7 +316,7 @@ describe('ProjectList — 项目操作', () => {
 
   test('handleSubmit 正在提交时忽略重复点击', async () => {
     projectApi.createProject.mockImplementation(() => new Promise(resolve => {
-      setTimeout(() => resolve({ code: 200, data: { id: 9 } }), 30)
+      setTimeout(() => resolve({ code: '000000', data: { id: 9 } }), 30)
     }))
     wrapper.vm.form = { id: null, projectCode: 'new_project', projectName: '新项目', status: 1 }
     withFormRef(wrapper)
@@ -330,7 +330,7 @@ describe('ProjectList — 项目操作', () => {
   })
 
   test('handleSubmit 编辑项目时调用 updateProject', async () => {
-    projectApi.updateProject.mockResolvedValue({ code: 200, data: true })
+    projectApi.updateProject.mockResolvedValue({ code: '000000', data: true })
     wrapper.vm.form = { id: 1, projectCode: 'project_a', projectName: '项目A已更新', description: '', status: 1 }
     withFormRef(wrapper)
     wrapper.vm.handleSubmit()
@@ -340,7 +340,7 @@ describe('ProjectList — 项目操作', () => {
   })
 
   test('handleSubmit 成功后关闭弹窗并刷新', async () => {
-    projectApi.createProject.mockResolvedValue({ code: 200, data: {
+    projectApi.createProject.mockResolvedValue({ code: '000000', data: {
       project: { id: 9, projectCode: 'new_project', projectName: '新项目' },
       accessToken: 'tok'
     } })
@@ -354,7 +354,7 @@ describe('ProjectList — 项目操作', () => {
 
   test('新建项目保存后留在模块，等待显式发布且不提前开放鉴权', async () => {
     projectApi.createProject.mockResolvedValue({
-      code: 200,
+      code: '000000',
       data: { id: 41 }
     })
     wrapper.vm.form = { id: null, projectCode: 'new_project', projectName: '新项目', status: 1 }

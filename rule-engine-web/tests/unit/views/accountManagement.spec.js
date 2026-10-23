@@ -1,4 +1,5 @@
 vi.mock('@/api/consoleAccount', () => ({
+  listConsoleProjectOptions: vi.fn().mockResolvedValue({ data: [{ id: 1, projectCode: 'A', projectName: '项目A' }, { id: 2, projectCode: 'B', projectName: '项目B' }] }),
   listConsoleAccounts: vi.fn().mockResolvedValue({
     data: [{
       id: 9,

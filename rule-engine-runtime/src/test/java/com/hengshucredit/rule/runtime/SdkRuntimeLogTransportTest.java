@@ -37,14 +37,15 @@ public class SdkRuntimeLogTransportTest {
     private final AtomicReference<ProducerRecord<String, String>> kafkaRecord = new AtomicReference<>();
     private final CountDownLatch kafkaSent = new CountDownLatch(1);
     private boolean kafkaFails;
+    private final AtomicInteger subscriptions = new AtomicInteger();
     private MockEnvironment env;
 
     @Before
     public void startUpstream() throws Exception {
         upstream = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         upstream.createContext("/api/rule/sync/MixedCase", exchange -> {
-            byte[] json = ("{\"code\":200,\"data\":{\"ruleCode\":\"MixedCase\",\"definitionId\":7,"
-                    + "\"projectCode\":\"ProjectA\",\"version\":1,\"modelType\":\"SCRIPT\","
+            byte[] json = ("{\"code\":\"000000\",\"success\":true,\"message\":\"成功\",\"data\":{\"ruleCode\":\"MixedCase\",\"definitionId\":7,"
+                    + "\"projectCode\":\"ProjectA\",\"projectId\":42,\"version\":1,\"modelType\":\"SCRIPT\","
                     + "\"compiledScript\":\"Age + 2\",\"requiresServerExecution\":false}}")
                     .getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, json.length);
@@ -55,10 +56,20 @@ public class SdkRuntimeLogTransportTest {
             httpReports.incrementAndGet();
             httpToken.set(exchange.getRequestHeaders().getFirst("X-Rule-Token"));
             httpBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            byte[] json = "{\"code\":200}".getBytes(StandardCharsets.UTF_8);
+            byte[] json = JSON.toJSONBytes(com.hengshucredit.rule.model.ApiResponse.ok());
             exchange.sendResponseHeaders(200, json.length);
             exchange.getResponseBody().write(json);
             exchange.close();
+        });
+        upstream.createContext("/api/rule/sync/all", exchange -> {
+            byte[] json = JSON.toJSONBytes(com.hengshucredit.rule.model.ApiResponse.ok(java.util.List.of(Map.of(
+                    "ruleCode", "MixedCase", "definitionId", 7, "projectCode", "ProjectA", "projectId", 42, "version", 1,
+                    "modelType", "SCRIPT", "compiledScript", "Age + 2", "requiresServerExecution", false))));
+            exchange.sendResponseHeaders(200, json.length); exchange.getResponseBody().write(json); exchange.close();
+        });
+        upstream.createContext("/api/rule/sync/functions/42", exchange -> {
+            byte[] json = JSON.toJSONBytes(com.hengshucredit.rule.model.ApiResponse.ok(java.util.List.of()));
+            exchange.sendResponseHeaders(200, json.length); exchange.getResponseBody().write(json); exchange.close();
         });
         upstream.start();
         env = new MockEnvironment()
@@ -75,6 +86,25 @@ public class SdkRuntimeLogTransportTest {
     @After
     public void stopUpstream() {
         upstream.stop(0);
+    }
+
+    @Test
+    public void projectRuntimeStartsSubscriptionsAndRecoveryHeartbeat() {
+        try (var context = context(false)) {
+            context.refresh();
+            assertEquals("项目模式必须启动规则订阅", 1, subscriptions.get());
+            assertTrue(org.springframework.test.util.ReflectionTestUtils.getField(context.getBean(RuleEngineClient.class), "scheduler")
+                    instanceof java.util.concurrent.ScheduledExecutorService);
+            execute(context);
+        }
+    }
+
+    @Test public void wrongProjectCodeCannotSilentlySubscribeToAnUnrelatedChannel() {
+        env.withProperty("RULE_PROJECT_CODE", "WrongProject");
+        try (var context = context(false)) {
+            BeansException failure = assertThrows(BeansException.class, context::refresh);
+            assertTrue(failure.getMostSpecificCause().getMessage().contains("RULE_PROJECT_CODE"));
+        }
     }
 
     @Test
@@ -196,7 +226,17 @@ public class SdkRuntimeLogTransportTest {
     private AnnotationConfigApplicationContext context(boolean withKafka) {
         var context = new AnnotationConfigApplicationContext();
         context.setEnvironment(env);
-        context.register(SdkRuntimeConfiguration.class);
+        context.registerBean(SdkRuntimeConfiguration.class, () -> new SdkRuntimeConfiguration() {
+            @Override RuleEngineClient createClient(RuleEngineClient.Builder builder) {
+                RuleEngineClient client = super.createClient(builder);
+                org.springframework.test.util.ReflectionTestUtils.setField(client, "redisSubscriber",
+                        new com.hengshucredit.rule.client.sync.RedisSubscriber(null, null, "ProjectA") {
+                            @Override public void start() { subscriptions.incrementAndGet(); }
+                            @Override public void stop() { }
+                        });
+                return client;
+            }
+        });
         context.registerBean(RedisConnectionFactory.class, () -> (RedisConnectionFactory) Proxy.newProxyInstance(
                 RedisConnectionFactory.class.getClassLoader(), new Class<?>[]{RedisConnectionFactory.class},
                 (proxy, method, args) -> { throw new AssertionError("本地执行不得访问 Redis"); }));

@@ -85,7 +85,7 @@ public class DecisionController {
     <h3>3. 暴露业务接口</h3>
     <p>以下类放入业务服务的 Spring 扫描包中。业务端 POST /api/decision，请求体直接使用本文档 params 内的字段。业务服务仍需配置自己的登录鉴权、参数校验与规则白名单。</p>
     <pre><code>${escapeHtml(controller)}</code></pre>
-    <p>SDK 返回 RuleResult，不含引擎 HTTP 响应的外层 code / message / data。success 表示执行成功，不代表业务通过；实际通过、拒绝或复核由 result 的业务字段决定。鉴权或网络异常需由业务服务统一映射，不能默认为通过。</p>
+    <p>SDK 返回 RuleResult，包含统一的 code、message 和 detail，code 为 000000 表示执行成功，不代表业务通过；实际通过、拒绝或复核由 result 的业务字段决定。鉴权或网络异常需由业务服务统一映射，不能默认为通过。</p>
     <h3>4. 日志与追踪选项</h3>
     <p><code>trace-enabled</code> 默认 true，控制本地及服务端执行的表达式追踪；false 时不返回表达式 traces，仍保留 traceId。直接调用引擎 HTTP 接口使用请求体顶层 <code>traceEnabled: false</code>，省略时默认 true。</p>
     <p><code>log-report-enabled</code> 默认 true，仅控制 SDK 本地执行日志上报；false 时 HTTP、Kafka 和自定义 reporter 均不接收执行日志。服务端执行不重复上报，服务端审计、基础执行日志、外数日志与计费不受该开关影响。两项均为 false 不等于关闭所有平台日志。</p>

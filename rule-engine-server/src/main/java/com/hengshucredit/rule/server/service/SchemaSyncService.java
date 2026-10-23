@@ -41,6 +41,9 @@ public class SchemaSyncService {
     );
 
     private static final List<String> CONSOLE_RBAC_TABLES = Arrays.asList(
+            "console_security_lock",
+            "console_user_project",
+            "console_user_project_permission",
             "console_user",
             "console_role",
             "console_permission",
@@ -76,6 +79,26 @@ public class SchemaSyncService {
             ensureTraceSchema();
             ensureProjectAuthSchema();
             ensureConsoleRbacSchema();
+            jdbcTemplate.update("INSERT IGNORE INTO console_security_lock (id) VALUES (1)");
+            addColumnIfMissing("console_user", "operator_name", "`operator_name` VARCHAR(64) DEFAULT NULL");
+            addColumnIfMissing("console_user", "merged_into_user_id", "`merged_into_user_id` BIGINT DEFAULT NULL");
+            addColumnIfMissing("console_user", "merged_username", "`merged_username` VARCHAR(64) DEFAULT NULL");
+            jdbcTemplate.update("UPDATE console_user SET operator_name=username WHERE operator_name IS NULL");
+            if (!indexExists("console_user", "uk_console_user_operator_name")) {
+                jdbcTemplate.execute("ALTER TABLE console_user ADD UNIQUE KEY uk_console_user_operator_name (operator_name)");
+            }
+            addColumnIfMissing("console_security_lock", "initialized_at", "`initialized_at` DATETIME DEFAULT NULL");
+            addColumnIfMissing("console_security_lock", "administrator_user_id", "`administrator_user_id` BIGINT DEFAULT NULL");
+            jdbcTemplate.update("""
+                    UPDATE console_security_lock SET initialized_at=CURRENT_TIMESTAMP,
+                    administrator_user_id=(SELECT MIN(u.id) FROM console_user u
+                      JOIN console_user_role ur ON ur.user_id=u.id JOIN console_role r ON r.id=ur.role_id
+                      WHERE r.role_code='SUPER_ADMIN')
+                    WHERE id=1 AND initialized_at IS NULL AND EXISTS (SELECT 1 FROM console_user)
+                    """);
+            addColumnIfMissing("console_account_token", "target_email", "`target_email` VARCHAR(256) DEFAULT NULL");
+            addColumnIfMissing("console_user", "project_access_mode", "`project_access_mode` VARCHAR(16) NOT NULL DEFAULT 'ALL'");
+            addColumnIfMissing("console_user", "global_editable", "`global_editable` TINYINT NOT NULL DEFAULT 1");
             ensureGovernanceSchema();
             ensureRuleGovernanceEffectiveStatus();
             ensureRuleGovernanceLink();
@@ -119,7 +142,12 @@ public class SchemaSyncService {
         ensureExternalApiTrialSchema();
         ensureModelVersionExecutionSchema();
         ensureConsoleOperationLogSchema();
-        ensureTablesFromSchema(List.of("rule_billing_summary_lock", "rule_billing_summary_task"));
+        ensureTablesFromSchema(List.of("rule_billing_summary_lock", "rule_billing_summary_task", "offline_transfer_log_resource"));
+        // 不能在重复超管合并失败后继续启动为可用；只变更账户身份，业务表保持原样。
+        jdbcTemplate.execute((org.springframework.jdbc.core.ConnectionCallback<Void>) connection -> {
+            com.hengshucredit.rule.server.consolelogin.ConsoleAdministratorMerge.consolidate(connection);
+            return null;
+        });
     }
 
     private void ensureRuleSetStatisticsSchema() {
@@ -533,7 +561,7 @@ public class SchemaSyncService {
                     + "`routing_mode` VARCHAR(32) NOT NULL DEFAULT 'RATIO' COMMENT '分流方式',"
                     + "`test_routing_mode` VARCHAR(32) NOT NULL DEFAULT 'CONDITION' COMMENT '测试组分流方式',"
                     + "`condition_rule_code` VARCHAR(128) DEFAULT NULL COMMENT '条件分流规则编码',"
-                    + "`request_key_path` VARCHAR(128) NOT NULL DEFAULT 'requestId' COMMENT '请求唯一键路径',"
+                    + "`request_key_path` LONGTEXT DEFAULT NULL COMMENT '请求唯一键路径或组合表达式JSON',"
                     + "`test_exclusive` TINYINT NOT NULL DEFAULT 1 COMMENT '测试组是否互斥',"
                     + "`status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态',"
                     + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',"
@@ -545,6 +573,7 @@ public class SchemaSyncService {
                     + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验定义表'");
         }
         ensureUtf8mb4Table("rule_experiment");
+        ensureLongTextColumn("rule_experiment", "request_key_path", true, "请求唯一键路径或组合表达式JSON");
         addColumnIfMissing("rule_experiment", "test_routing_mode",
                 "`test_routing_mode` VARCHAR(32) NOT NULL DEFAULT 'CONDITION' COMMENT '测试组分流方式' AFTER `routing_mode`");
         addColumnIfMissing("rule_experiment", "input_validation_config",
@@ -559,8 +588,8 @@ public class SchemaSyncService {
                     + "`rule_code` VARCHAR(128) NOT NULL COMMENT '执行规则编码',"
                     + "`traffic_ratio` DECIMAL(8,4) NOT NULL DEFAULT 0.0000 COMMENT '比例分流权重',"
                     + "`condition_value` VARCHAR(128) DEFAULT NULL COMMENT '条件分流返回值',"
-                    + "`condition_expression` VARCHAR(1024) DEFAULT NULL COMMENT '条件分流命中表达式',"
-                    + "`condition_config` TEXT DEFAULT NULL COMMENT '可视化条件配置JSON',"
+                    + "`condition_expression` LONGTEXT DEFAULT NULL COMMENT '条件分流命中表达式',"
+                    + "`condition_config` LONGTEXT DEFAULT NULL COMMENT '可视化条件配置JSON',"
                     + "`invoke_external_source` TINYINT NOT NULL DEFAULT 1 COMMENT '测试组是否调用API外数',"
                     + "`status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态',"
                     + "`sort_order` INT NOT NULL DEFAULT 0 COMMENT '排序',"
@@ -572,10 +601,12 @@ public class SchemaSyncService {
                     + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验组表'");
         }
         ensureUtf8mb4Table("rule_experiment_group");
+        ensureLongTextColumn("rule_experiment_group", "condition_expression", true, "条件分流命中表达式");
+        ensureLongTextColumn("rule_experiment_group", "condition_config", true, "可视化条件配置JSON");
         addColumnIfMissing("rule_experiment_group", "version_mode", "`version_mode` VARCHAR(16) DEFAULT 'LATEST' COMMENT '规则调用版本策略'");
         addColumnIfMissing("rule_experiment_group", "version_binding_id", "`version_binding_id` BIGINT DEFAULT NULL COMMENT '规则业务版本绑定ID'");
         addColumnIfMissing("rule_experiment_group", "condition_config",
-                "`condition_config` TEXT DEFAULT NULL COMMENT '可视化条件配置JSON' AFTER `condition_expression`");
+                "`condition_config` LONGTEXT DEFAULT NULL COMMENT '可视化条件配置JSON' AFTER `condition_expression`");
         if (!tableExists("rule_experiment_execution_log")) {
             jdbcTemplate.execute("CREATE TABLE `rule_experiment_execution_log` ("
                     + "`id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',"

@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.dashboard;
 
-import com.hengshucredit.rule.server.common.R;
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.server.consolelogin.RuleEngineConsoleLoginProperties;
 import com.hengshucredit.rule.server.controller.mgmt.DashboardController;
 import com.hengshucredit.rule.server.security.ConsolePermissionService;
@@ -21,15 +22,15 @@ public class DashboardControllerTest {
         Fixture fixture = new Fixture(false);
         MockHttpServletRequest request = new MockHttpServletRequest();
 
-        R<DashboardResponses.Settings> get = fixture.controller.settings(
+        ApiResponse<DashboardResponses.Settings> get = fixture.controller.settings(
                 null, request);
-        R<DashboardResponses.Settings> put = fixture.controller.saveSettings(
+        ApiResponse<DashboardResponses.Settings> put = fixture.controller.saveSettings(
                 null, new DashboardController.SettingsUpdateRequest(
                         Collections.emptyMap()), request);
 
-        assertEquals(200, get.getCode());
+        assertEquals("000000", get.getCode());
         assertFalse(get.getData().editable());
-        assertEquals(403, put.getCode());
+        assertEquals("301002", put.getCode());
         assertEquals(0, fixture.mappings.saveCalls);
     }
 
@@ -42,11 +43,11 @@ public class DashboardControllerTest {
         request.getSession().setAttribute(
                 fixture.properties.getSessionUsernameAttribute(), "reviewer");
 
-        R<DashboardResponses.Settings> result = fixture.controller.saveSettings(
+        ApiResponse<DashboardResponses.Settings> result = fixture.controller.saveSettings(
                 3L, new DashboardController.SettingsUpdateRequest(
                         Collections.emptyMap()), request);
 
-        assertEquals(200, result.getCode());
+        assertEquals("000000", result.getCode());
         assertEquals(Long.valueOf(9L), fixture.mappings.savedUserId);
         assertEquals("reviewer", fixture.mappings.savedUsername);
         assertEquals(Long.valueOf(3L), fixture.mappings.savedProjectId);

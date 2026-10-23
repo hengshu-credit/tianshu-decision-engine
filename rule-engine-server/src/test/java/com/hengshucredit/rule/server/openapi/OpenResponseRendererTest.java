@@ -12,13 +12,26 @@ import java.util.Map;
 public class OpenResponseRendererTest {
 
     @Test
-    public void rendersOneConfigurableEnvelopeForSuccessAndError() {
+    public void platformJudgementFieldsAreCanonical() {
+        OpenApiContract contract = contract();
+        JSONObject body = (JSONObject) new OpenResponseRenderer().render(contract,
+                new OpenApiStatus(com.hengshucredit.rule.model.PlatformCode.PARAMETER_INVALID, "年龄缺失"),
+                "trace-1", Map.of()).getBody();
+        Assert.assertEquals("100001", body.getString("code"));
+        Assert.assertEquals("入参校验失败", body.getString("message"));
+        Assert.assertEquals("年龄缺失", body.getString("detail"));
+        Assert.assertFalse(body.getBooleanValue("success"));
+        Assert.assertEquals(java.util.Set.of("code", "message", "detail", "success", "traceId", "data"), body.keySet());
+    }
+
+    @Test
+    public void rendersFixedEnvelopeForSuccessAndError() {
         OpenApiContract contract = contract();
         Map<String, Object> successValues = new LinkedHashMap<>();
         successValues.put("output.VARIABLE.201", "PASS");
         successValues.put("output.MODEL.202", 88);
-        OpenApiStatus success = new OpenApiStatus(true, "OK", "成功", 200);
-        OpenApiStatus error = new OpenApiStatus(false, "REQUEST_INVALID", "字段缺失", 400);
+        OpenApiStatus success = new OpenApiStatus(com.hengshucredit.rule.model.PlatformCode.SUCCESS, null);
+        OpenApiStatus error = new OpenApiStatus(com.hengshucredit.rule.model.PlatformCode.PARAMETER_INVALID, "字段缺失");
 
         OpenResponseRenderer.RenderedResponse normal = new OpenResponseRenderer().render(
                 contract, success, "trace-1", successValues);
@@ -28,11 +41,11 @@ public class OpenResponseRendererTest {
         JSONObject normalBody = (JSONObject) normal.getBody();
         JSONObject errorBody = (JSONObject) failed.getBody();
         Assert.assertEquals(normalBody.keySet(), errorBody.keySet());
-        Assert.assertEquals("OK", normalBody.getString("retCode"));
-        Assert.assertEquals("REQUEST_INVALID", errorBody.getString("retCode"));
-        Assert.assertEquals("trace-1", normalBody.getString("requestId"));
-        Assert.assertEquals(88, normalBody.getJSONObject("payload").getInteger("score").intValue());
-        Assert.assertEquals("REQUEST_INVALID", errorBody.getJSONObject("payload").getString("errorCode"));
+        Assert.assertEquals("000000", normalBody.getString("code"));
+        Assert.assertEquals("100001", errorBody.getString("code"));
+        Assert.assertEquals("trace-1", normalBody.getString("traceId"));
+        Assert.assertEquals(88, normalBody.getJSONObject("data").getInteger("score").intValue());
+        Assert.assertEquals("100001", errorBody.getJSONObject("data").getString("errorCode"));
         Assert.assertEquals("trace-1", normal.getHeaders().get("X-Business-Trace"));
     }
 
@@ -44,19 +57,15 @@ public class OpenResponseRendererTest {
         values.put("output.MODEL.202", true);
 
         JSONObject payload = (JSONObject) new OpenResponseRenderer().render(contract,
-                new OpenApiStatus(true, "OK", "成功", 200), "trace", values)
+                new OpenApiStatus(com.hengshucredit.rule.model.PlatformCode.SUCCESS, null), "trace", values)
                 .getBody();
 
-        Assert.assertEquals(Arrays.asList("A", "B"), payload.getJSONObject("payload").getJSONArray("decision"));
-        Assert.assertEquals(Boolean.TRUE, payload.getJSONObject("payload").getBoolean("score"));
+        Assert.assertEquals(Arrays.asList("A", "B"), payload.getJSONObject("data").getJSONArray("decision"));
+        Assert.assertEquals(Boolean.TRUE, payload.getJSONObject("data").getBoolean("score"));
     }
 
     @Test
-    public void rejectsMissingDataSlotAndUnsafeHeaders() {
-        OpenApiContract missingData = contract();
-        missingData.setDataPath("$.missing");
-        assertRenderFails(missingData, "dataPath");
-
+    public void rejectsUnsafeHeaders() {
         OpenApiContract unsafeHeader = contract();
         unsafeHeader.getResponseHeaders().put("Set-Cookie", "session=${traceId}");
         assertRenderFails(unsafeHeader, "Header");
@@ -65,7 +74,7 @@ public class OpenResponseRendererTest {
     private void assertRenderFails(OpenApiContract contract, String message) {
         try {
             new OpenResponseRenderer().render(contract,
-                    new OpenApiStatus(true, "OK", "成功", 200), "trace",
+                    new OpenApiStatus(com.hengshucredit.rule.model.PlatformCode.SUCCESS, null), "trace",
                     new LinkedHashMap<String, Object>());
             Assert.fail("Expected render to fail");
         } catch (IllegalArgumentException expected) {
@@ -75,8 +84,6 @@ public class OpenResponseRendererTest {
 
     private OpenApiContract contract() {
         OpenApiContract contract = new OpenApiContract();
-        contract.setEnvelopeTemplate(JSON.parse("{\"retCode\":\"${status.code}\",\"retMessage\":\"${status.message}\",\"requestId\":\"${traceId}\",\"payload\":\"${data}\"}"));
-        contract.setDataPath("$.payload");
         contract.setSuccessDataTemplate(JSON.parse("{\"decision\":\"${output.VARIABLE.201}\",\"score\":\"${output.MODEL.202}\"}"));
         contract.setErrorDataTemplate(JSON.parse("{\"errorCode\":\"${status.code}\",\"errorMessage\":\"${status.message}\"}"));
         Map<String, String> headers = new LinkedHashMap<>();

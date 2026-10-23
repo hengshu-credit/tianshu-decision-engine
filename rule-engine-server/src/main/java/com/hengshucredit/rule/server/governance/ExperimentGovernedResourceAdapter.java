@@ -6,7 +6,6 @@ import com.hengshucredit.rule.model.entity.RuleExperiment;
 import com.hengshucredit.rule.model.entity.RuleExperimentGroup;
 import com.hengshucredit.rule.server.mapper.RuleExperimentGroupMapper;
 
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -128,38 +127,11 @@ public class ExperimentGovernedResourceAdapter
                         GovernanceResourceTypes.EXPERIMENT, longValue(snapshot.get("id")), "$.groups[" + index + "].versionBindingId")); }
             }
         }
-        long champions = groups.stream()
-                .filter(group -> Integer.valueOf(1).equals(
-                        group.getStatus()))
-                .filter(group -> "CHAMPION".equalsIgnoreCase(
-                        group.getGroupType()))
-                .count();
-        if (champions != 1) {
-            issues.add(GovernanceIssue.error(
-                    "EXPERIMENT_CHAMPION_REQUIRED",
-                    "分流实验必须且只能配置一个启用的冠军组",
-                    GovernanceResourceTypes.EXPERIMENT,
-                    longValue(snapshot.get("id")),
-                    "$.groups"));
-        }
-        BigDecimal total = groups.stream()
-                .filter(group -> Integer.valueOf(1).equals(
-                        group.getStatus()))
-                .filter(group -> !"TEST".equalsIgnoreCase(
-                        group.getGroupType()))
-                .map(RuleExperimentGroup::getTrafficRatio)
-                .filter(value -> value != null)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        if ("RATIO".equalsIgnoreCase(
-                String.valueOf(snapshot.get("routingMode")))
-                && total.compareTo(new BigDecimal("100")) != 0
-                && total.compareTo(BigDecimal.ONE) != 0) {
-            issues.add(GovernanceIssue.error(
-                    "EXPERIMENT_RATIO_INVALID",
-                    "比例分流的启用生产组流量总和必须为 100%（或 1）",
-                    GovernanceResourceTypes.EXPERIMENT,
-                    longValue(snapshot.get("id")),
-                    "$.groups[*].trafficRatio"));
+        try {
+            experimentService.validateExperiment(JSON.parseObject(JSON.toJSONString(snapshot), RuleExperiment.class));
+        } catch (IllegalArgumentException invalid) {
+            issues.add(GovernanceIssue.error("EXPERIMENT_ROUTING_INVALID", invalid.getMessage(),
+                    GovernanceResourceTypes.EXPERIMENT, longValue(snapshot.get("id")), "$.groups"));
         }
     }
 

@@ -21,6 +21,7 @@ import java.util.Set;
 
 @Service
 public class GovernanceDependencyService {
+    @jakarta.annotation.Resource private com.hengshucredit.rule.server.security.ConsoleProjectAccess consoleProjects;
 
     @Autowired @org.springframework.context.annotation.Lazy
     private com.hengshucredit.rule.server.service.ResourceVersionService resourceVersions;
@@ -241,6 +242,7 @@ public class GovernanceDependencyService {
         if (resourceMapper == null) {
             return null;
         }
+        if (projectReferenceOnly(resourceType, resourceId)) return resourceMapper.selectProjectReferenceMetadata(resourceId);
         GovernedResource resource = resourceMapper.selectOne(
                 new LambdaQueryWrapper<
                 GovernedResource>()
@@ -333,8 +335,8 @@ public class GovernanceDependencyService {
             return current(dependency, target, "INACTIVE",
                     null, issue.code(), issue.message());
         }
-        GovernedResourceVersion version =
-                findVersion(target.getEffectiveVersionId());
+        GovernedResourceVersion version = projectReferenceOnly(targetType, dependency.targetResourceId())
+                ? versionMapper.selectProjectReferenceMetadata(target.getEffectiveVersionId()) : findVersion(target.getEffectiveVersionId());
         if (version == null) {
             GovernanceIssue issue = GovernanceIssue.error(
                     "DEPENDENCY_VERSION_MISSING",
@@ -368,6 +370,11 @@ public class GovernanceDependencyService {
                 && resource.getEffectiveStatus() != null
                 && EFFECTIVE_STATUSES.contains(
                 resource.getEffectiveStatus().toUpperCase(Locale.ROOT));
+    }
+
+    private boolean projectReferenceOnly(String type, Long id) {
+        var scope = consoleProjects == null ? null : consoleProjects.current();
+        return "PROJECT".equals(normalizeType(type)) && scope != null && !scope.can("project:view", id);
     }
 
     private GovernancePreflightReport.ResolvedDependency resolveFixed(ResourceDependencyRef dependency, List<GovernanceIssue> errors) {

@@ -261,7 +261,7 @@
                 @click="$router.push('/model/' + row.id)"
                 >详情</el-button
               >
-              <el-button v-permission="'model:edit'"
+              <el-button v-permission="{ code: 'model:edit', projectId: row.projectId, scope: row.scope }"
                 link
                 data-action="edit"
                 size="small"
@@ -270,7 +270,7 @@
                 >编辑</el-button
               >
               <governance-publish-action resource-type="MODEL" :resource-id="row.id" />
-              <el-button v-permission="'model:edit'"
+              <el-button v-permission="{ code: 'model:edit', projectId: row.projectId, scope: row.scope }"
                 v-if="row.scope === 'PROJECT'"
                 link
                 data-action="global"
@@ -279,7 +279,7 @@
                 @click="handleToGlobal(row)"
                 >转为全局</el-button
               >
-              <el-button v-permission="'model:edit'"
+              <el-button v-permission="{ code: 'model:edit', projectId: row.projectId, scope: row.scope }"
                 link
                 data-action="delete"
                 size="small"
@@ -297,7 +297,7 @@
           :page-size="qp.pageSize"
           :total="total"
           layout="total,sizes,prev,pager,next"
-          :page-sizes="[10, 30, 50, 100]"
+          :page-sizes="[10, 20, 30, 50, 100]"
           @current-change="
             (p) => {
               qp.pageNum = p
@@ -343,20 +343,13 @@
           label="所属项目"
           prop="projectId"
         >
-          <el-select
+          <project-resource-select
             v-model="uploadForm.projectId"
             style="width: 100%"
             filterable
             clearable
             placeholder="请选择项目"
-          >
-            <el-option
-              v-for="p in projects"
-              :key="p.id"
-              :label="p.projectName"
-              :value="p.id"
-            />
-          </el-select>
+           :projects="projects" />
         </el-form-item>
         <el-form-item label="模型编码" prop="modelCode">
           <el-input
@@ -797,6 +790,7 @@
 </template>
 
 <script>
+import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
@@ -900,7 +894,7 @@ export default {
       filteredProjectNames: [],
       qp: {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         projectId: '',
         scope: '',
         modelType: '',
@@ -1029,7 +1023,7 @@ export default {
       ElIconUpload2: markRaw(ElIconUpload2),
     }
   },
-  components: { GovernancePublishAction, GovernanceWorkspaceToolbar,
+  components: { ProjectResourceSelect, GovernancePublishAction, GovernanceWorkspaceToolbar,
     GovernanceResourceStatus,
     TableColumnSettings,
     ModuleCallLog,

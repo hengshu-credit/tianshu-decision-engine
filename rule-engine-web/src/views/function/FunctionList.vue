@@ -5,6 +5,10 @@
       自定义函数可在规则设计器的函数选择器中使用，无需手写调用表达式。支持脚本、Java 类或 Spring Bean 实现。
     </div>
 
+    <div v-if="currentProjectId" class="function-context-hint">
+      当前项目：<strong>{{ currentProjectName || currentProjectId }}</strong>。列表包含全局函数和当前项目函数，新建默认保存为项目级函数。
+    </div>
+
     <div v-if="projectLoadError" class="function-page-error" role="alert">
       {{ projectLoadError }}，项目筛选暂不可用。
       <el-button link size="small" @click="loadProjects">重试</el-button>
@@ -180,7 +184,8 @@
       <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '测试', '版本', '发布', '删除'])" align="center">
         <template v-slot="{ row }">
           <el-button
-            v-permission="'function:edit'"
+            v-permission="{ code: 'function:edit', projectId: row.projectId, scope: row.scope }"
+            v-if="!['JAVA', 'BEAN'].includes(row.implType) || canManageNative"
             link
             data-action="edit"
             size="small"
@@ -188,7 +193,7 @@
             @click="editWorkspace('FUNCTION', row, handleEdit)"
             >编辑</el-button
           >
-          <el-button v-permission="'function:edit'"
+          <el-button v-permission="{ code: 'function:edit', projectId: row.projectId, scope: row.scope }"
             link
             data-action="execute"
             size="small"
@@ -199,7 +204,7 @@
           <resource-version-manager v-if="row.id" data-action="version" resource-type="FUNCTION" :resource-id="row.id" has-legacy @legacy="openVersionDialog(row)" />
           <governance-publish-action resource-type="FUNCTION" :resource-id="row.id" :show-versions="false" />
           <el-button
-            v-permission="'function:edit'"
+            v-permission="{ code: 'function:edit', projectId: row.projectId, scope: row.scope }"
             link
             data-action="delete"
             size="small"
@@ -233,7 +238,7 @@
       :page-size="qp.pageSize"
       :total="total"
       layout="total,sizes,prev,pager,next"
-      :page-sizes="[10, 30, 50, 100, 200, 500]"
+      :page-sizes="[10, 20, 30, 50, 100, 200, 500]"
       @current-change="onPageChange"
       @size-change="onSizeChange"
     />
@@ -245,6 +250,7 @@
       width="760px"
       append-to-body
     >
+      <function-impact-panel v-if="dialogVisible" :form="editForm" :params="editParams" />
       <el-form :model="editForm" label-width="90px" size="small" :disabled="functionSaving">
         <el-form-item label="作用范围">
           <el-select
@@ -262,37 +268,31 @@
           label="项目名称"
           required
         >
-          <el-select
+          <project-resource-select
             v-model="editForm.projectId"
             placeholder="请选择项目"
             style="width: 100%"
             filterable
-          >
-            <el-option
-              v-for="p in projects"
-              :key="p.id"
-              :label="p.projectName"
-              :value="p.id"
-            />
-          </el-select>
+           :projects="projects" />
         </el-form-item>
         <el-form-item label="函数编码" required>
           <el-input
             v-model="editForm.funcCode"
+            maxlength="128"
+            show-word-limit
             placeholder="如 calcTax（QLExpress 脚本中的调用名）"
           />
         </el-form-item>
         <el-form-item label="函数名称" required>
-          <el-input
-            v-model="editForm.funcName"
-            placeholder="中文名称，如 计算税额"
-          />
+          <el-input v-model="editForm.funcName" maxlength="128" show-word-limit placeholder="中文名称，如 计算税额" />
         </el-form-item>
         <el-form-item label="说明">
           <el-input
             v-model="editForm.description"
             type="textarea"
             :rows="2"
+            maxlength="512"
+            show-word-limit
             placeholder="函数功能说明"
           />
         </el-form-item>
@@ -312,8 +312,8 @@
         <el-form-item label="实现方式">
           <el-radio-group v-model="editForm.implType" @change="onImplementationChange">
             <el-radio value="SCRIPT">QLExpress 脚本</el-radio>
-            <el-radio value="JAVA">Java 类</el-radio>
-            <el-radio value="BEAN">Spring Bean</el-radio>
+            <el-radio value="JAVA" :disabled="!canManageNative">Java 类</el-radio>
+            <el-radio value="BEAN" :disabled="!canManageNative">Spring Bean</el-radio>
           </el-radio-group>
         </el-form-item>
         <template v-if="isNativeFunction">
@@ -341,6 +341,7 @@
           </el-form-item>
         </template>
         <el-form-item label="参数列表">
+          <div class="function-form-help">参数名用于脚本调用；Java/Bean 函数的实际方法类型由方法选择结果带出，业务类型用于设计器字段类型匹配。</div>
           <el-alert v-if="parameterConfigError" :title="parameterConfigError" type="error" :closable="false" show-icon>
             <el-button link @click="resetFunctionParameters">重新配置参数</el-button>
           </el-alert>
@@ -406,6 +407,7 @@
             v-model:value="editForm.implScript"
             language="ql"
             height="180px"
+            :functions="funcList"
           />
         </el-form-item>
       </el-form>
@@ -525,7 +527,7 @@
               @click="compareWithNext(row, $index)"
               >对比</el-button
             >
-            <el-button v-permission="['function:edit', 'approval:submit']"
+            <el-button v-permission="{ code: 'function:edit', projectId: row.projectId, scope: row.scope }"
               link
               data-action="rollback"
               size="small"
@@ -553,6 +555,9 @@
 </template>
 
 <script>
+import { hasPermission } from '@/security/permissionState'
+import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
+import FunctionImpactPanel from '@/components/FunctionImpactPanel.vue'
 import ResourceVersionManager from '@/components/common/ResourceVersionManager.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
@@ -593,6 +598,7 @@ import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
+import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
 
 export default {
   mixins: [governanceWorkspaceMixin],
@@ -612,7 +618,7 @@ export default {
       total: 0,
       qp: {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         scope: '',
         projectCode: '',
         projectName: '',
@@ -673,7 +679,7 @@ export default {
       ElIconDelete: markRaw(ElIconDelete),
     }
   },
-  components: { ResourceVersionManager, GovernancePublishAction, GovernanceWorkspaceToolbar,
+  components: { FunctionImpactPanel, ProjectResourceSelect, ResourceVersionManager, GovernancePublishAction, GovernanceWorkspaceToolbar,
     GovernanceResourceStatus,
     TableColumnSettings,
     MonacoEditor,
@@ -684,6 +690,7 @@ export default {
   },
   name: 'FunctionList',
   computed: {
+    canManageNative() { return hasPermission('function:native') },
     isNativeFunction() { return ['JAVA', 'BEAN'].includes(this.editForm.implType) },
     nativeBindingKey() { return this.functionBindingKey() },
     nativeTargetKey() { return JSON.stringify([this.editForm.implType, this.editForm.implClass, this.editForm.implBeanName]) },
@@ -703,16 +710,33 @@ export default {
         'funcLabel',
       ].some((key) => String(this.qp[key] || '').trim() !== '')
     },
+    currentProjectName() {
+      const project = this.projects.find(item => String(item.id) === String(this.currentProjectId))
+      return project?.projectName || ''
+    },
   },
   created() {
+    this.syncProjectContext()
     this.restoreCachedState()
     this.loadProjects().then(() => this.loadFunctions())
   },
   watch: {
     dialogVisible(visible) { if (!visible) { this.methodRequestId++; this.editSessionId++; this.methodLoading = false } },
+    '$route.query.projectId'() { this.handleProjectContextChange() },
   },
   beforeUnmount() { this.methodRequestId++; this.editSessionId++ },
   methods: {
+    syncProjectContext() {
+      this.currentProjectId = routeProjectId(this.$route, this.$store && this.$store.state.currentProject)
+    },
+    handleProjectContextChange() {
+      const previous = this.currentProjectId
+      this.syncProjectContext()
+      if (previous === this.currentProjectId) return
+      this.qp.pageNum = 1
+      this.restoreCachedState()
+      this.loadFunctions()
+    },
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     versionDisplayLabel,
     functionBindingKey(form = this.editForm, params = this.editParams) {
@@ -766,6 +790,7 @@ export default {
       if (!selected) return
       const catalog = this.methodCatalog
       this.editForm.implMethod = selected.name
+      this.editForm.returnType = this.returnTypeForJavaType(selected.returnJavaType)
       this.editParams = selected.parameters.map((parameter, index) => {
         const previous = this.editParams[index]
         const untouched = previous && !previous.name && !previous.label && previous.type === 'STRING' && !previous.javaType
@@ -776,17 +801,28 @@ export default {
       this.methodCatalog = { ...catalog, signature, legacySignature: false, valid: true, message: '已选择实际方法；保存前将再次核对完整参数配置' }
       this.methodCatalogKey = this.nativeBindingKey
     },
+    returnTypeForJavaType(javaType) {
+      const type = String(javaType || '')
+      if (type === 'boolean' || type === 'java.lang.Boolean') return 'BOOLEAN'
+      if (type === 'java.lang.String' || type === 'char' || type === 'java.lang.Character') return 'STRING'
+      if (['byte', 'short', 'int', 'long', 'float', 'double'].includes(type)
+        || ['java.lang.Byte', 'java.lang.Short', 'java.lang.Integer', 'java.lang.Long', 'java.lang.Float', 'java.lang.Double', 'java.math.BigDecimal'].includes(type)) return 'NUMBER'
+      if (type === 'java.util.Map') return 'MAP'
+      if (type.startsWith('[') || type === 'java.util.List' || type === 'java.util.Collection') return 'LIST'
+      if (type === 'java.util.Date' || type.startsWith('java.time.')) return 'DATE'
+      return 'OBJECT'
+    },
     methodParameterType(index) {
       const explicit = this.editParams[index]?.javaType
       if (explicit) return explicit
       return this.currentMethodCatalog?.methods?.find(method => method.signature === this.currentMethodCatalog.signature)?.parameters?.[index]?.javaType || '旧映射，读取方法后确认'
     },
     restoreCachedState() {
-      const state = restorePageState('FunctionList')
+      const state = restorePageState(projectPageStateKey('FunctionList', this.currentProjectId))
       if (state.qp) this.qp = { ...this.qp, ...state.qp }
     },
     saveCachedState() {
-      savePageState('FunctionList', { qp: this.qp })
+      savePageState(projectPageStateKey('FunctionList', this.currentProjectId), { qp: this.qp })
     },
     async loadProjects() {
       this.projectLoadError = ''
@@ -855,7 +891,7 @@ export default {
         funcCode: '',
         funcLabel: '',
       }
-      clearPageState('FunctionList')
+      clearPageState(projectPageStateKey('FunctionList', this.currentProjectId))
       this.loadFunctions()
     },
     async loadFunctions() {
@@ -1179,6 +1215,22 @@ export default {
   background: var(--tianshu-bg-muted);
   padding: 8px 12px;
   border-radius: 4px;
+}
+.function-context-hint {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  color: var(--tianshu-text-secondary);
+  background: var(--tianshu-bg-soft);
+  border-left: 2px solid var(--el-color-primary);
+  border-radius: 4px;
+  font-size: 13px;
+}
+.function-form-help {
+  width: 100%;
+  margin-bottom: 8px;
+  color: var(--tianshu-text-tertiary);
+  font-size: 12px;
+  line-height: 1.6;
 }
 .function-page-error {
   padding: 8px 12px;

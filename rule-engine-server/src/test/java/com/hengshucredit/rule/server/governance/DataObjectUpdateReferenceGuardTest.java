@@ -21,6 +21,12 @@ import java.lang.reflect.Proxy;
 import static org.junit.Assert.*;
 
 public class DataObjectUpdateReferenceGuardTest {
+    @Test public void wholeObjectPathProtectsItsFieldsWithoutConfusingRootAndFieldIds() {
+        var f = fixture("RULE", Map.of("leftOperand", Map.of("kind", "PATH", "refType", "DATA_OBJECT_ROOT", "refId", 9, "relativePath", ".payload.score")));
+        assertFalse(f.validate(9L, Map.of("fields", List.of())).isEmpty());
+        var unrelated = fixture("RULE", Map.of("leftOperand", Map.of("kind", "PATH", "refType", "DATA_OBJECT_ROOT", "refId", 81)));
+        assertTrue(unrelated.validate(9L, Map.of("fields", List.of())).isEmpty());
+    }
     @Test public void removingFieldUsedByRuleOutputModelOutputOrFunctionIsBlocked() {
         for (String type : List.of("RULE_INPUT", "RULE_OUTPUT", "MODEL_INPUT", "MODEL_OUTPUT", "FUNCTION")) {
             var f = fixture(type, Map.of("paramsJson", "[{\"varId\":81,\"refType\":\"DATA_OBJECT\"}]"));

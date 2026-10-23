@@ -1,4 +1,6 @@
 import { mount } from '@vue/test-utils'
+import fs from 'node:fs'
+import path from 'node:path'
 import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
 
 describe('配置步骤导航', () => {
@@ -34,5 +36,25 @@ describe('配置步骤导航', () => {
     expect(wrapper.find('button').exists()).toBe(false)
     expect(wrapper.get('[role="status"]').text()).toBe('1 / 2 已就绪')
     expect(wrapper.text()).toContain('核对结果')
+  })
+
+  test('完成态使用主题语义色并允许自定义进度文案', () => {
+    const wrapper = mount(ConfigLayerGuide, { props: {
+      items: [{ key: 'base', label: '基础信息', status: 'READY' }],
+      showProgress: true,
+      progressLabel: '已完成',
+      readyStateLabel: '已完成',
+    } })
+    expect(wrapper.get('[role="status"]').text()).toBe('1 / 1 已完成')
+    expect(wrapper.get('.config-layer-guide__state').text()).toBe('已完成')
+    expect(wrapper.get('.config-layer-guide__item').classes()).toContain('is-ready')
+  })
+
+  test('完成态圆标使用主题主色，夜间主题不会回退到固定成功绿', () => {
+    const source = fs.readFileSync(path.resolve('src/components/common/ConfigLayerGuide.vue'), 'utf8')
+    expect(source).toContain('var(--el-color-primary)')
+    expect(source).toContain('var(--tianshu-brand-foreground)')
+    expect(source).toContain('var(--tianshu-primary-text)')
+    expect(source).not.toContain('var(--tianshu-status-success-solid)')
   })
 })

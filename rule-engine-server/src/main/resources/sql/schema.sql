@@ -93,9 +93,19 @@ CREATE TABLE IF NOT EXISTS `rule_auth_access_log` (
   KEY `idx_auth_access_success_time` (`success`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目鉴权访问日志表';
 
+-- 串行化低频账户/角色管理及凭证状态转换，保护邮箱唯一性和最后管理员。
+CREATE TABLE IF NOT EXISTS `console_security_lock` (
+  `id` TINYINT NOT NULL PRIMARY KEY,
+  `initialized_at` DATETIME DEFAULT NULL COMMENT '首次初始化完成时间，不能因重启或账户停用清除',
+  `administrator_user_id` BIGINT DEFAULT NULL COMMENT '超管恢复目标，关联稳定账户ID'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS `console_user` (
   `id`                 BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `username`           VARCHAR(64)  NOT NULL                COMMENT '登录用户名',
+  `operator_name`      VARCHAR(64)  DEFAULT NULL             COMMENT '固定业务归属标识，恢复改名时保留',
+  `merged_into_user_id` BIGINT      DEFAULT NULL             COMMENT '合并归档后的主账户ID',
+  `merged_username`    VARCHAR(64)  DEFAULT NULL             COMMENT '合并前登录名，保留给主账户恢复使用',
   `display_name`       VARCHAR(128) NOT NULL                COMMENT '显示名称',
   `password_hash`      VARCHAR(128) NOT NULL                COMMENT 'BCrypt密码摘要',
   `email`              VARCHAR(256) DEFAULT NULL             COMMENT '注册及找回密码邮箱',
@@ -104,6 +114,8 @@ CREATE TABLE IF NOT EXISTS `console_user` (
   `registration_source` VARCHAR(16) NOT NULL DEFAULT 'ADMIN' COMMENT '账户来源：ADMIN/SELF_REGISTER',
   `status`             TINYINT      NOT NULL DEFAULT 1       COMMENT '状态：0-停用，1-启用',
   `permission_version` BIGINT       NOT NULL DEFAULT 1       COMMENT '权限版本号',
+  `project_access_mode` VARCHAR(16) NOT NULL DEFAULT 'ALL' COMMENT 'ALL默认不限制项目；SELECTED仅指定项目',
+  `global_editable` TINYINT NOT NULL DEFAULT 1 COMMENT '全局内容允许编辑，仍需对应模块操作权限',
   `last_login_time`    DATETIME     DEFAULT NULL             COMMENT '最后登录时间',
   `create_by`          VARCHAR(64)  DEFAULT NULL             COMMENT '创建人',
   `create_time`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -111,14 +123,27 @@ CREATE TABLE IF NOT EXISTS `console_user` (
   `update_time`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_console_user_username` (`username`),
+  UNIQUE KEY `uk_console_user_operator_name` (`operator_name`),
   KEY `idx_console_user_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台账户表';
+
+CREATE TABLE IF NOT EXISTS `console_user_project` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `user_id` BIGINT NOT NULL,
+  `project_id` BIGINT NOT NULL,
+  `create_by` VARCHAR(64) DEFAULT NULL,
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_console_user_project` (`user_id`, `project_id`),
+  KEY `idx_console_project_user` (`project_id`, `user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台账户可访问项目；无分配仅能访问获授权的全局内容';
 
 CREATE TABLE IF NOT EXISTS `console_account_token` (
   `id`           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id`      BIGINT       NOT NULL                COMMENT '控制台账户ID',
   `purpose`      VARCHAR(32)  NOT NULL                COMMENT '用途：EMAIL_VERIFY/PASSWORD_RESET',
   `token_hash`   CHAR(64)     NOT NULL                COMMENT '令牌SHA-256摘要',
+  `target_email` VARCHAR(256) DEFAULT NULL            COMMENT '签发时的邮箱，防止链接验证其他邮箱',
   `expires_at`   DATETIME     NOT NULL                COMMENT '过期时间',
   `consumed_at`  DATETIME     DEFAULT NULL             COMMENT '消费时间',
   `request_ip`   VARCHAR(64)  DEFAULT NULL             COMMENT '请求IP',
@@ -127,6 +152,15 @@ CREATE TABLE IF NOT EXISTS `console_account_token` (
   UNIQUE KEY `uk_console_account_token_hash` (`token_hash`),
   KEY `idx_console_account_token_user_purpose` (`user_id`, `purpose`, `consumed_at`, `expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台账户邮箱验证及密码找回令牌';
+
+CREATE TABLE IF NOT EXISTS `console_user_project_permission` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `user_id` BIGINT NOT NULL,
+  `project_id` BIGINT NOT NULL,
+  `permission_id` BIGINT NOT NULL,
+  `effect` VARCHAR(8) NOT NULL COMMENT 'ALLOW/DENY；无记录继承账户默认权限',
+  UNIQUE KEY `uk_console_project_permission` (`user_id`, `project_id`, `permission_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='按项目覆盖账户模块权限';
 
 CREATE TABLE IF NOT EXISTS `console_user_preference` (
   `id`               BIGINT      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -446,6 +480,43 @@ CREATE TABLE IF NOT EXISTS `rule_api_doc_scenario` (
   KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`),
   KEY `idx_api_doc_scenario_revision` (`definition_id`, `revision_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则 API 文档测试场景';
+
+CREATE TABLE IF NOT EXISTS `rule_regression_evidence` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `definition_id` BIGINT NOT NULL,
+  `scenario_id` BIGINT NOT NULL,
+  `scenario_name` VARCHAR(128) NOT NULL,
+  `revision_id` BIGINT DEFAULT NULL,
+  `project_id` BIGINT DEFAULT NULL,
+  `source_type` VARCHAR(32) DEFAULT NULL,
+  `source_id` VARCHAR(64) DEFAULT NULL,
+  `content_digest` CHAR(64) DEFAULT NULL,
+  `dependency_digest` CHAR(64) DEFAULT NULL,
+  `scenario_digest` CHAR(64) NOT NULL,
+  `eligible` TINYINT NOT NULL DEFAULT 0,
+  `state` VARCHAR(24) NOT NULL,
+  `success` TINYINT DEFAULT NULL,
+  `validation_status` VARCHAR(32) DEFAULT NULL,
+  `validation_json` LONGTEXT,
+  `message` VARCHAR(2000) DEFAULT NULL,
+  `trace_id` VARCHAR(128) DEFAULT NULL,
+  `execution_identity_json` LONGTEXT,
+  `executed_by` VARCHAR(128) DEFAULT NULL,
+  `create_time` DATETIME(3) NOT NULL,
+  `completed_at` DATETIME(3) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_regression_history` (`definition_id`, `id`),
+  KEY `idx_regression_case` (`definition_id`, `revision_id`, `eligible`, `scenario_id`, `id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='服务端实际回归执行证据';
+
+CREATE TABLE IF NOT EXISTS `rule_regression_evidence_latest` (
+  `definition_id` BIGINT NOT NULL,
+  `revision_id` BIGINT NOT NULL,
+  `scenario_id` BIGINT NOT NULL,
+  `evidence_id` BIGINT NOT NULL,
+  PRIMARY KEY (`definition_id`, `revision_id`, `scenario_id`),
+  KEY `idx_regression_latest_report` (`evidence_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='每个修订和固定用例的最新有效回归尝试';
 
 CREATE TABLE IF NOT EXISTS `rule_definition_content` (
   `id`              BIGINT   NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -1463,7 +1534,7 @@ CREATE TABLE IF NOT EXISTS `rule_experiment` (
   `routing_mode`    VARCHAR(32)  NOT NULL DEFAULT 'RATIO' COMMENT '冠军挑战分流方式：RATIO/CONDITION',
   `test_routing_mode` VARCHAR(32) NOT NULL DEFAULT 'CONDITION' COMMENT '测试组分流方式：RATIO/CONDITION',
   `condition_rule_code` VARCHAR(128) DEFAULT NULL        COMMENT '条件分流规则编码',
-  `request_key_path` VARCHAR(128) NOT NULL DEFAULT 'requestId' COMMENT '请求唯一键路径',
+  `request_key_path` LONGTEXT DEFAULT NULL COMMENT '请求唯一键路径或组合表达式JSON',
   `input_validation_config` JSON DEFAULT NULL             COMMENT '实验输入字段校验绑定JSON',
   `test_exclusive`  TINYINT      NOT NULL DEFAULT 1      COMMENT '测试组是否互斥',
   `status`          TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-停用，1-启用',
@@ -1487,8 +1558,8 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_group` (
   `rule_code`       VARCHAR(128) NOT NULL                COMMENT '执行规则编码',
   `traffic_ratio`   DECIMAL(8,4) NOT NULL DEFAULT 0.0000 COMMENT '比例分流权重',
   `condition_value` VARCHAR(128) DEFAULT NULL            COMMENT '条件分流返回值',
-  `condition_expression` VARCHAR(1024) DEFAULT NULL      COMMENT '条件分流命中表达式',
-  `condition_config` TEXT DEFAULT NULL                   COMMENT '可视化条件配置JSON',
+  `condition_expression` LONGTEXT DEFAULT NULL          COMMENT '条件分流命中表达式',
+  `condition_config` LONGTEXT DEFAULT NULL               COMMENT '可视化条件配置JSON',
   `invoke_external_source` TINYINT NOT NULL DEFAULT 1    COMMENT '测试组是否调用API外数',
   `status`          TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-停用，1-启用',
   `sort_order`      INT          NOT NULL DEFAULT 0      COMMENT '排序',
@@ -1947,6 +2018,13 @@ CREATE TABLE IF NOT EXISTS `console_operation_log` (
   KEY `idx_console_operation_module_time` (`module`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='控制台账户操作记录';
 
+CREATE TABLE IF NOT EXISTS `offline_transfer_log_resource` (
+  `log_id` BIGINT NOT NULL,
+  `resource_type` VARCHAR(32) NOT NULL,
+  `resource_id` BIGINT NOT NULL COMMENT '本地资源ID；0代表用户上传包中的全局内容',
+  PRIMARY KEY (`log_id`, `resource_type`, `resource_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='迁移日志内容权限索引';
+
 CREATE TABLE IF NOT EXISTS `offline_transfer_log` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,
   `operation_type` VARCHAR(16) NOT NULL,
@@ -1964,6 +2042,8 @@ CREATE TABLE IF NOT EXISTS `offline_transfer_log` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 系统常量依赖 uk_scope_project_var 唯一索引幂等补齐；已有常量的 ID 和配置保持不变。
+-- 可选的业务初始变量和数据对象由 server 的 InitialDataInitializer 执行 sql/initial-data.sql，
+-- 通过 RULE_ENGINE_INITIAL_DATA_ENABLED 控制，避免结构 schema 默认写入业务配置。
 INSERT INTO `rule_variable`
   (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
    `default_value`, `value_range`, `example_value`, `description`, `sort_order`,

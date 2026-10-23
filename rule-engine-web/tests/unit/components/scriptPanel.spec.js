@@ -1,4 +1,5 @@
 import { mount } from '@test-utils'
+import * as monaco from 'monaco-editor'
 
 vi.unmock('@/components/common/ScriptPanel.vue')
 
@@ -20,6 +21,16 @@ function mountPanel(compileResult = null) {
 }
 
 describe('ScriptPanel', () => {
+  test('历史源码标明所选版本，保留原始文本且只读', () => {
+    const script = '// version 3\nreturn 42;\n'
+    const { wrapper } = mountPanel({ compileSuccess: true, compiledScript: script, saved: true, sourceLabel: '版本 3' })
+    expect(wrapper.find('textarea').element.value).toBe(script)
+    expect(wrapper.find('textarea').element.readOnly).toBe(true)
+    expect(wrapper.text()).toContain('显示版本 3已保存的编译源码')
+    expect(wrapper.text()).toContain('已保存源码')
+    wrapper.unmount()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -77,5 +88,20 @@ describe('ScriptPanel', () => {
       '暂无脚本，请先编译'
     )
     wrapper.unmount()
+  })
+
+  test('编译脚本预览把字段目录和函数目录交给公共编辑器解析', () => {
+    const references = [{ refCode: 'age', varLabel: '年龄', varType: 'INTEGER', _varId: 1, _refType: 'VARIABLE' }]
+    const functions = [{ funcCode: 'risk', funcName: '风险计算', id: 2 }]
+    window.monaco = monaco
+    const wrapper = mount(ScriptPanel, {
+      props: { compileResult: { compileSuccess: true, compiledScript: 'return risk(age);' }, references, functions },
+      mocks: { $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } },
+    })
+    const editor = wrapper.findComponent({ name: 'MonacoEditor' })
+    expect(editor.props('references')).toEqual(references)
+    expect(editor.props('functions')).toEqual(functions)
+    wrapper.unmount()
+    delete window.monaco
   })
 })

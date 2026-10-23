@@ -15,8 +15,6 @@ public class OpenApiContract {
     private IdempotencyConfig idempotency = new IdempotencyConfig();
     private List<RequestMapping> requestMappings = new ArrayList<>();
     private List<ResponseMapping> responseMappings = new ArrayList<>();
-    private Object envelopeTemplate;
-    private String dataPath;
     private Object successDataTemplate;
     private Object errorDataTemplate;
     private Map<String, String> responseHeaders = new LinkedHashMap<>();
@@ -86,22 +84,6 @@ public class OpenApiContract {
 
     public void setResponseMappings(List<ResponseMapping> responseMappings) {
         this.responseMappings = responseMappings == null ? new ArrayList<ResponseMapping>() : responseMappings;
-    }
-
-    public Object getEnvelopeTemplate() {
-        return envelopeTemplate;
-    }
-
-    public void setEnvelopeTemplate(Object envelopeTemplate) {
-        this.envelopeTemplate = envelopeTemplate;
-    }
-
-    public String getDataPath() {
-        return dataPath;
-    }
-
-    public void setDataPath(String dataPath) {
-        this.dataPath = dataPath;
     }
 
     public Object getSuccessDataTemplate() {

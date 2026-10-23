@@ -5,8 +5,8 @@ import org.junit.Test;
 
 public class OpenApiContractCodecTest {
 
-    private static final String RESPONSE = "\"envelopeTemplate\":{\"data\":\"${data}\"},"
-            + "\"dataPath\":\"$.data\",\"successDataTemplate\":\"${result}\","
+    private static final String RESPONSE = ""
+            + "\"successDataTemplate\":\"${result}\","
             + "\"errorDataTemplate\":{\"code\":\"${status.code}\"}";
 
     @Test

@@ -81,16 +81,14 @@
 .deployment-page .deployment-hero .hero-actions {
   display: flex;
   align-items: center;
-  flex-wrap: nowrap;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-top: 30px;
   padding: 0;
   border: 0;
   background: transparent;
   box-shadow: none;
 }
-
-.deployment-page .deployment-hero .hero-actions .button { padding-right: 13px; padding-left: 13px; font-size: 12px; }
 
 .deployment-page .deployment-body {
   width: 100%;

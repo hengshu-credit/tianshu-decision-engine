@@ -1,12 +1,13 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.hengshucredit.rule.model.dto.RuleListChangeBatchResult;
 import com.hengshucredit.rule.model.dto.RuleListRecordChangeRequest;
 import com.hengshucredit.rule.model.entity.RuleListLibrary;
 import com.hengshucredit.rule.model.entity.RuleListRecord;
 import com.hengshucredit.rule.model.entity.RuleListRecordLog;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.security.RequirePermission;
 import com.hengshucredit.rule.server.service.ConsoleOperatorResolver;
 import com.hengshucredit.rule.server.service.RuleListChangeBatchService;
@@ -47,7 +48,7 @@ public class RuleListController {
     private ConsoleOperatorResolver operatorResolver;
 
     @GetMapping("/library")
-    public R<IPage<RuleListLibrary>> listLibraries(
+    public ApiResponse<IPage<RuleListLibrary>> listLibraries(
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) Long projectId,
@@ -57,17 +58,17 @@ public class RuleListController {
             @RequestParam(required = false) String listType,
             @RequestParam(required = false) Integer status,
             @RequestParam(required = false) String keyword) {
-        return R.ok(listService.pageLibraries(pageNum, pageSize, projectId, projectCode, projectName,
+        return ApiResponse.ok(listService.pageLibraries(pageNum, pageSize, projectId, projectCode, projectName,
                 scope, listType, status, keyword));
     }
 
     @GetMapping("/library/{id:\\d+}")
-    public R<RuleListLibrary> getLibrary(@PathVariable Long id) {
-        return R.ok(listService.getById(id));
+    public ApiResponse<RuleListLibrary> getLibrary(@PathVariable Long id) {
+        return ApiResponse.ok(listService.getById(id));
     }
 
     @GetMapping("/{listId:\\d+}/record")
-    public R<IPage<RuleListRecord>> listRecords(
+    public ApiResponse<IPage<RuleListRecord>> listRecords(
             @PathVariable Long listId,
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
@@ -75,23 +76,23 @@ public class RuleListController {
             @RequestParam(required = false) Integer status,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Boolean effectiveOnly) {
-        return R.ok(listService.pageRecords(listId, pageNum, pageSize, itemType, status, keyword, effectiveOnly));
+        return ApiResponse.ok(listService.pageRecords(listId, pageNum, pageSize, itemType, status, keyword, effectiveOnly));
     }
 
     @PostMapping("/{listId:\\d+}/change-batch")
     @RequirePermission("approval:submit")
-    public R<RuleListChangeBatchResult> stageRecordChange(
+    public ApiResponse<RuleListChangeBatchResult> stageRecordChange(
             @PathVariable Long listId,
             @RequestBody RuleListRecordChangeRequest request) {
         try {
-            return R.ok(changeBatchService.stageSingle(listId, request, operatorResolver.resolve()));
+            return ApiResponse.ok(changeBatchService.stageSingle(listId, request, operatorResolver.resolve()));
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
     @GetMapping("/{listId:\\d+}/log")
-    public R<IPage<RuleListRecordLog>> listLogs(
+    public ApiResponse<IPage<RuleListRecordLog>> listLogs(
             @PathVariable Long listId,
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
@@ -102,7 +103,7 @@ public class RuleListController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
-        return R.ok(listService.pageLogs(listId, pageNum, pageSize, recordId, itemType, itemContent,
+        return ApiResponse.ok(listService.pageLogs(listId, pageNum, pageSize, recordId, itemType, itemContent,
                 operation, keyword, startTime, endTime));
     }
 
@@ -126,13 +127,13 @@ public class RuleListController {
 
     @PostMapping("/{listId:\\d+}/import")
     @RequirePermission("approval:submit")
-    public R<RuleListChangeBatchResult> importRecords(
+    public ApiResponse<RuleListChangeBatchResult> importRecords(
             @PathVariable Long listId,
             @RequestPart("file") MultipartFile file) {
         try {
-            return R.ok(changeBatchService.stageImport(listId, file, operatorResolver.resolve()));
+            return ApiResponse.ok(changeBatchService.stageImport(listId, file, operatorResolver.resolve()));
         } catch (Exception e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 

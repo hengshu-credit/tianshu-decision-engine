@@ -717,7 +717,7 @@ export default {
       tokenLoading: false,
       tokenList: [],
       tokenTotal: 0,
-      tokenQuery: { pageNum: 1, pageSize: 10 },
+      tokenQuery: { pageNum: 1, pageSize: 20 },
       fullTokenDialogVisible: false,
       fullTokenValue: '',
       logLoading: false,
@@ -726,7 +726,7 @@ export default {
       logDateRange: [],
       logQuery: {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         authType: '',
         authCode: '',
         tokenCode: '',

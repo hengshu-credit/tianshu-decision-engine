@@ -94,6 +94,7 @@ describe('definition API', () => {
 
     expect(request).toHaveBeenCalledWith({
       url: '/rule/definition/execute',
+      acceptExecutionFailure: true,
       method: 'post',
       data,
       timeout: 90000
@@ -107,10 +108,10 @@ describe('definition API', () => {
     await getDesignerCompileTask(16, 'task-1')
 
     expect(request).toHaveBeenNthCalledWith(1, {
-      url: '/rule/definition/16/designer/compile', method: 'post', data: payload
+      url: '/rule/definition/16/designer/compile', method: 'post', data: payload, acceptExecutionFailure: true
     })
     expect(request).toHaveBeenNthCalledWith(2, {
-      url: '/rule/definition/16/designer/compile/task-1', method: 'get'
+      url: '/rule/definition/16/designer/compile/task-1', method: 'get', acceptExecutionFailure: true
     })
   })
 

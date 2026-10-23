@@ -18,8 +18,20 @@ export function consoleRegister(data) {
   return request.post('/auth/console/register', data)
 }
 
+export function initializeConsoleAdministrator(data) {
+  return request.post('/auth/console/initialize', data)
+}
+
 export function verifyConsoleRegistration(data) {
   return request.post('/auth/console/register/verify', data)
+}
+
+export function resendConsoleRegistration(data) {
+  return request.post('/auth/console/register/resend', data)
+}
+
+export function resendConsoleEmailVerification() {
+  return request.post('/auth/console/profile/email-verification')
 }
 
 export function requestConsolePasswordRecovery(data) {

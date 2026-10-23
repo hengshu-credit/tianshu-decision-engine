@@ -256,7 +256,7 @@
       :page-size="qp.pageSize"
       :total="total"
       layout="total,sizes,prev,pager,next"
-      :page-sizes="[10, 30, 50, 100, 200, 500]"
+      :page-sizes="[10, 20, 30, 50, 100, 200, 500]"
       @current-change="
         (p) => {
           qp.pageNum = p
@@ -434,7 +434,7 @@
         :page-size="globalQp.pageSize"
         :total="globalTotal"
         layout="total,sizes,prev,pager,next"
-        :page-sizes="[10, 30, 50]"
+        :page-sizes="[10, 20, 30, 50]"
         @current-change="
           (p) => {
             globalQp.pageNum = p
@@ -498,7 +498,7 @@ export default {
       total: 0,
       qp: {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         scope: '',
         modelType: '',
         ruleCode: '',
@@ -520,7 +520,7 @@ export default {
       globalTotal: 0,
       globalQp: {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         modelType: '',
         ruleCode: '',
         ruleName: '',
@@ -785,7 +785,7 @@ export default {
       this.addRuleDlgVis = true
       this.globalQp = {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         modelType: '',
         ruleCode: '',
         ruleName: '',

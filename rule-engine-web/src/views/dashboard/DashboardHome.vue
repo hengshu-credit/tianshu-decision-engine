@@ -19,20 +19,13 @@
         @keyup.enter="refreshAll"
       >
         <el-form-item label="项目">
-          <el-select
+          <project-resource-select
             v-model="filters.projectId"
             clearable
             filterable
             placeholder="全部有权限项目"
             style="width: 190px"
-          >
-            <el-option
-              v-for="project in projects"
-              :key="project.id"
-              :label="projectLabel(project)"
-              :value="project.id"
-            />
-          </el-select>
+           :projects="projects" />
         </el-form-item>
         <el-form-item label="规则编码">
           <remote-filter-select
@@ -91,7 +84,7 @@
     <div class="dashboard-sections">
       <dashboard-section
         title="进件与决策"
-        description="同一项目优先按请求编号、其次按 Trace ID 去重，保留时间最新的一条。"
+        description="按所选项目、规则和时间范围统计；同一项目优先按请求编号、其次按 Trace ID 去重，保留最新一条。通过率=通过数/进件数，人审率=人审数/进件数；未分类记录也计入进件数。"
         :loading="sections.applications.loading"
         :loaded="sections.applications.loaded"
         :error="sections.applications.error"
@@ -336,6 +329,7 @@
 </template>
 
 <script>
+import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import { ruleSetCoverageHint } from '@/utils/ruleSetStatistics'
 import {
   getDashboardApplications,
@@ -386,7 +380,7 @@ import {
 
 export default {
   name: 'DashboardHome',
-  components: {
+  components: { ProjectResourceSelect,
     DashboardChart,
     DashboardSection,
     RemoteFilterSelect,

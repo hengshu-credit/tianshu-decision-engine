@@ -1,3 +1,4 @@
+import { PLATFORM_CODES, PLATFORM_RESPONSE_CODES } from '../platformResponse'
 import { escapeAttribute, escapeHtml } from './escape'
 import { buildExampleBody } from './model'
 import { EXAMPLE_CREDENTIALS, generateCodeSamples } from './codeSamples'
@@ -81,18 +82,11 @@ export function renderAuthentication(doc) {
 }
 
 export function renderResponseContract() {
-  return `<section id="response-contract" class="panel">
-    <h2>通用响应约定与码表</h2>
-    <p class="lead">外层 <code>code</code> 表示平台调用状态；<code>data.success</code> 表示规则是否执行成功。规则结果内的字段由具体规则定义，不是业务决策 code，除非文档场景中已单独配置。成功响应还可按接口模板返回实际执行的 <code>revisionId</code> 与 <code>artifactDigest</code>，用于核对线上制品。</p>
-    <div class="table-wrap"><table><thead><tr><th>字段 / code</th><th>含义</th><th>调用方处理建议</th></tr></thead><tbody>
-      <tr><td><code>code = 200</code></td><td>平台已受理请求；继续检查 <code>data.success</code></td><td>success=true 时读取 result；false 时读取 errorMessage</td></tr>
-      <tr><td><code>code = 401</code></td><td>凭据缺失、失效或签名校验失败</td><td>核对鉴权方式、时间戳和生产凭据</td></tr>
-      <tr><td><code>code = 404</code></td><td>项目范围内不存在已发布的规则编码</td><td>核对 ruleCode 与发布状态</td></tr>
-      <tr><td><code>code = 429</code></td><td>临时 Token 申请触发安全限流</td><td>降低重试频率并采用退避策略</td></tr>
-      <tr><td><code>data.success = true</code></td><td>规则执行成功</td><td>按接口字段表读取 <code>data.result</code></td></tr>
-      <tr><td><code>data.success = false</code></td><td>规则执行失败</td><td>记录 traceId 与 errorMessage 后排查</td></tr>
-    </tbody></table></div>
-  </section>`
+  const rows = PLATFORM_RESPONSE_CODES.map(item => '<tr><td><code>' + item.code + '</code></td><td>' + escapeHtml(item.message) + '</td><td>' + item.httpStatus + '</td></tr>').join('')
+  return '<section id="response-contract" class="panel"><h2>通用响应约定与码表</h2>' +
+    '<p class="lead">所有接口仅以字符串 <code>000000</code> 表示成功。六位编码按领域、子类和原因分组；message 是平台固定描述，detail 是本次请求的具体原因。HTTP 状态码保持标准语义。业务通过、拒绝或复核由 data 中的业务字段决定。</p>' +
+    '<p>执行结果通过 traceId 关联，revisionId 和 artifactDigest 标识实际制品。等待外数或结果未知时先查询状态，避免重复执行。日/月限额编码为预留。</p>' +
+    '<div class="table-wrap"><table><thead><tr><th>平台结果码</th><th>固定描述</th><th>HTTP 状态</th></tr></thead><tbody>' + rows + '</tbody></table></div></section>'
 }
 
 function platformScenarios(rule) {
@@ -101,22 +95,22 @@ function platformScenarios(rule) {
     kind: 'PLATFORM',
     title: '200 / 执行成功',
     requestJson: request,
-    responseJson: prettyJson({ code: 200, message: 'success', data: { traceId: 'trace-example', revisionId: 12, artifactDigest: 'sha256-example', result: buildExampleBody(rule.responseFields || []).data?.result || {}, traces: [], success: true, errorMessage: null, executeTimeMs: 12 } })
+    responseJson: prettyJson({ code: PLATFORM_CODES.SUCCESS.code, message: PLATFORM_CODES.SUCCESS.message, data: { traceId: 'trace-example', revisionId: 12, artifactDigest: 'sha256-example', result: buildExampleBody(rule.responseFields || []).data?.result || {}, traces: [], success: true, errorMessage: null, executeTimeMs: 12 } })
   }, {
     kind: 'PLATFORM',
-    title: '200 / 规则执行失败',
+    title: '422 / 规则执行失败',
     requestJson: request,
-    responseJson: prettyJson({ code: 200, message: 'success', data: { traceId: 'trace-example', result: null, traces: [], success: false, errorMessage: '规则执行失败示例', executeTimeMs: 8 } })
+    responseJson: prettyJson({ code: PLATFORM_CODES.RESULT_ERROR.code, message: PLATFORM_CODES.RESULT_ERROR.message, detail: '规则执行失败示例', data: { traceId: 'trace-example', result: null, traces: [], success: false, errorMessage: '规则执行失败示例', executeTimeMs: 8 } })
   }, {
     kind: 'PLATFORM',
     title: '401 / 鉴权失败',
     requestJson: request,
-    responseJson: prettyJson({ code: 401, message: 'Unauthorized project credential', data: null })
+    responseJson: prettyJson({ code: PLATFORM_CODES.TOKEN_INVALID.code, message: PLATFORM_CODES.TOKEN_INVALID.message, data: null })
   }, {
     kind: 'PLATFORM',
     title: '404 / 规则不存在',
     requestJson: request,
-    responseJson: prettyJson({ code: 404, message: 'Rule not found', data: null })
+    responseJson: prettyJson({ code: PLATFORM_CODES.RULE_NOT_FOUND.code, message: PLATFORM_CODES.RULE_NOT_FOUND.message, data: null })
   }]
 }
 
@@ -165,7 +159,7 @@ export function renderRuleEndpoint(rule, authentications, active = false) {
   const path = '/api/rule/sync/execute/' + encodeURIComponent(rule.ruleCode)
   const normalFields = [{ path: 'clientAppName', type: 'STRING', required: false, label: '调用方应用名', exampleValue: 'api-doc-example' }, { path: 'traceEnabled', type: 'BOOLEAN', required: false, label: '是否采集表达式追踪，默认 true；false 不关闭服务端基础日志与审计', exampleValue: false }, ...(rule.requestFields || [])]
   const body = prettyJson({ clientAppName: 'api-doc-example', params: buildExampleBody(rule.requestFields || []).params || {} })
-  const responseFields = [{ path: 'code', type: 'INTEGER', required: true, label: '平台响应码', exampleValue: 200 }, { path: 'message', type: 'STRING', required: true, label: '平台响应信息', exampleValue: 'success' }, { path: 'data.success', type: 'BOOLEAN', required: true, label: '规则执行状态', exampleValue: true }, { path: 'data.revisionId', type: 'INTEGER', required: false, label: '实际执行修订 ID', exampleValue: 12 }, { path: 'data.artifactDigest', type: 'STRING', required: false, label: '实际执行制品摘要', exampleValue: 'sha256-example' }, { path: 'data.errorMessage', type: 'STRING', required: false, label: '规则执行失败原因', exampleValue: null }, ...(rule.responseFields || [])]
+  const responseFields = [{ path: 'code', type: 'STRING', required: true, label: '平台响应码，仅 000000 为成功', exampleValue: PLATFORM_CODES.SUCCESS.code }, { path: 'message', type: 'STRING', required: true, label: '平台响应信息', exampleValue: PLATFORM_CODES.SUCCESS.message }, { path: 'data.success', type: 'BOOLEAN', required: true, label: '规则执行状态', exampleValue: true }, { path: 'data.revisionId', type: 'INTEGER', required: false, label: '实际执行修订 ID', exampleValue: 12 }, { path: 'data.artifactDigest', type: 'STRING', required: false, label: '实际执行制品摘要', exampleValue: 'sha256-example' }, { path: 'data.errorMessage', type: 'STRING', required: false, label: '规则执行失败原因', exampleValue: null }, ...(rule.responseFields || [])]
   const endpoint = { method: 'POST', path, baseUrl: 'https://api.example.com', body }
   const schemaNotice = rule.schemaTrust === 'UNVERIFIED'
     ? `<div class="notice warning">字段契约未通过已发布制品校验：${escapeHtml((rule.schemaDiagnostics || []).join('；') || '请重新发布后再使用此文档。')}</div>`
@@ -188,13 +182,20 @@ function renderOpenApiEndpoint(rule, authentications, responseFields) {
   const fields = rule.openApiRequestFields || []
   const body = prettyJson(buildExampleBody(fields))
   const endpoint = { method: 'POST', path, baseUrl: 'https://api.example.com', body }
+  const openFields = [
+    ...responseFields.filter(field => ['code', 'message'].includes(field.path)),
+    { path: 'success', type: 'BOOLEAN', required: true, label: '平台操作是否成功', exampleValue: true },
+    { path: 'detail', type: 'STRING', required: false, label: '本次请求的详细原因' },
+    { path: 'traceId', type: 'STRING', required: false, label: '执行追踪标识' },
+    { path: 'data', type: 'JSON', required: false, label: '按已发布响应模板生成的业务数据' },
+  ]
   return '<div class="open-api-documentation">' +
     '<h2>OpenAPI 契约执行入口</h2>' +
     '<div class="notice">仅在规则已启用 OpenAPI 服务时生成。该入口使用已发布契约的请求映射、响应模板、幂等和错误码。</div>' +
     '<div class="endpoint-head"><span class="method">POST</span><code class="path">' + escapeHtml(path) + '</code><span class="badge">OpenAPI</span></div>' +
     renderFields('Body 映射字段', fields) +
     '<pre><code>' + escapeHtml(body) + '</code></pre>' +
-    renderFields('OpenAPI 响应体', responseFields) +
+    renderFields('OpenAPI 响应体', openFields) +
     '<h3>OpenAPI 代码示例</h3>' + renderCodeTabs(rule, authentications || [], endpoint) +
     '</div>'
 }

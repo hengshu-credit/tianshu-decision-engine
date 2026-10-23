@@ -28,7 +28,7 @@ beforeEach(() => {
   model.listAllModelsByProject.mockResolvedValue({ data: [] })
   fn.listAllFunctionsByProject.mockResolvedValue({ data: [] })
   list.listLibraries.mockResolvedValue({ data: { records: [] } })
-  datasource.listApiConfigs.mockResolvedValue({ data: { records: [] } })
+  datasource.listAvailableApiConfigs.mockResolvedValue({ data: [] })
 })
 
 function mountDesigner(component, route) {

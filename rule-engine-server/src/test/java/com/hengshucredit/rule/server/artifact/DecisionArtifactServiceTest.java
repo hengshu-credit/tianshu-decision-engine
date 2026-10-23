@@ -20,6 +20,18 @@ import java.util.List;
 import java.util.Map;
 
 public class DecisionArtifactServiceTest {
+    @Test public void approvalReusesItsExactAnalysisAndRejectsChangedContent() {
+        FixtureService service = new FixtureService();
+        var analysis = service.analyzeRevision(200L);
+        service.revision.setContentDigest(analysis.report().getContentDigest());
+        DecisionArtifact artifact = service.buildApprovedArtifact(200L, "alice", analysis);
+        Assert.assertNotNull(artifact.getPackageContent());
+        Assert.assertEquals(1, service.revisionFieldResolveCount);
+        Assert.assertEquals(1, service.revisionDependencyResolveCount);
+        service.revision.setModelJson("{\"script\":\"changed\"}");
+        Assert.assertThrows(IllegalStateException.class, () -> service.buildApprovedArtifact(200L, "alice", analysis));
+        Assert.assertEquals(1, service.insertCount);
+    }
 
     @Test
     public void approvedArtifactContainsFrozenRuleSchemasAndDependencies() {
@@ -248,14 +260,19 @@ public class DecisionArtifactServiceTest {
         }
 
         @Override
-        protected RuleFieldAnalyzer.ResolvedFields resolveFields(
+        protected RulePreflightValidationService.Analysis analyzeRevision(Long revisionId) {
+            var fields = resolveFields(definition, revision);
+            return new RulePreflightValidationService.Analysis(preflight(revisionId), fields,
+                    resolveDependencies(definition.getId(), revisionId, fields), Sha256Digests.text(revision.getModelJson()));
+        }
+
+        private RuleFieldAnalyzer.ResolvedFields resolveFields(
                 RuleDefinition currentDefinition, RuleRevision currentRevision) {
             revisionFieldResolveCount++;
             return resolved;
         }
 
-        @Override
-        protected RulePreflightReport preflight(Long revisionId) {
+        private RulePreflightReport preflight(Long revisionId) {
             return report;
         }
 
@@ -266,8 +283,7 @@ public class DecisionArtifactServiceTest {
             return closure;
         }
 
-        @Override
-        protected RuleDependencyClosureService.DependencyClosure resolveDependencies(
+        private RuleDependencyClosureService.DependencyClosure resolveDependencies(
                 Long definitionId, Long revisionId, RuleFieldAnalyzer.ResolvedFields fields) {
             revisionDependencyResolveCount++;
             lastDependencyFields = fields;

@@ -3,6 +3,7 @@
     <template v-if="guide">
       <strong>{{ guide.purpose }}</strong>
       <p>{{ guide.example }}</p>
+      <p>{{ checks[modelType] }}</p>
     </template>
     <p v-else>先按业务目标选择类型：条件判断可从决策表开始；累计打分选评分卡；多步骤编排选决策流。</p>
     <span>创建后继续配置条件和结果，保存并测试，通过校验和审批后再发布。</span>
@@ -22,9 +23,22 @@ const GUIDES = {
   SCRIPT: { purpose: '直接编写 QL 脚本表达决策逻辑。', example: '适合熟悉脚本的配置人员。通过变量选择器插入引用，并用测试覆盖分支和异常情况。' },
 }
 
+const CHECKS = {
+  TABLE: '建议测试：一行命中、多行同时命中、全部不命中，以及阈值恰好相等的情况。',
+  TREE: '建议测试：每条分支、没有分支命中、缺失输入；在追踪中核对最终到达的叶子。',
+  FLOW: '建议测试：分支、汇合、提前终止、子规则失败；按追踪确认动作顺序和最终输出。',
+  RULE_SET: '建议测试：首条命中、多条命中和无命中，确认是否继续执行后续规则。',
+  CROSS: '建议测试：行列区间的端点、重叠、空白格和区间外输入，确认默认结果。',
+  SCORE: '建议测试：每项得分、权重、总分和等级边界，核对缺失输入是否影响累计结果。',
+  CROSS_ADV: '建议测试：每个维度的边界与组合、未覆盖组合和默认结果，核对写入字段。',
+  SCORE_ADV: '建议测试：各维度分段、缺失值、总分与等级边界，逐项解释分数贡献。',
+  SCRIPT: '建议测试：正常、边界与异常路径；动态拼接的引用需要额外检查，不能只依赖静态血缘。',
+}
+
 export default {
   name: 'RuleModelTypeHelp',
   props: { modelType: { type: String, default: '' } },
+  data() { return { checks: CHECKS } },
   computed: {
     guide() { return GUIDES[this.modelType] || null },
   },

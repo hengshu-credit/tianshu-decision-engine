@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineConfig, loadEnv, normalizePath } from 'vite'
+import { defineConfig, normalizePath } from 'vite'
+import { loadSourceEnvironment } from '../scripts/lib/source-environment.mjs'
 import vue from '@vitejs/plugin-vue'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 
@@ -10,9 +11,10 @@ const elementOverrideFile = normalizePath(path.resolve(projectRoot, 'src/styles/
 
 export default defineConfig(({ mode }) => {
   // 仅用于开发服务器配置，不将根目录中的凭据注入浏览器。
-  const env = loadEnv(mode, path.resolve(projectRoot, '..'), ['SERVER_PORT', 'VITE_PORT', 'VITE_DEV_PROXY'])
+  const env = loadSourceEnvironment(path.resolve(projectRoot, '..'), 'server')
 
   return {
+    envDir: false,
     base: './',
     // Monaco 的 AMD loader 会暴露全局 define；LogicFlow 的部分依赖仍包含 UMD
     // 分支，懒加载设计器时不能让这些已打包依赖再次向 Monaco 注册匿名模块。
@@ -23,7 +25,7 @@ export default defineConfig(({ mode }) => {
       // LogicFlow 由血缘、决策树和决策流路由懒加载；依赖图变化后强制刷新
       // 预构建缓存，避免浏览器拿到旧的 @logicflow/core 入口而返回 504。
       force: mode === 'development',
-      include: ['@logicflow/core', '@logicflow/extension', '@logicflow/layout'],
+      include: ['@logicflow/core', '@logicflow/extension', '@logicflow/layout/es/dagre/index.js'],
       rolldownOptions: {
         transform: {
           define: { 'define.amd': 'false' }

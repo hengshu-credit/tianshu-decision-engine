@@ -31,6 +31,22 @@ import static org.junit.Assert.assertThrows;
 
 public class RuleEngineClientTest {
 
+    @Test public void requestTraceSettingAppliesToRootAndChildrenWithoutChangingDefaults() throws Exception {
+        RuleEngineClient client = RuleEngineClient.builder().connectionFactory(connectionFactory())
+                .projectCode("P001").projectId(1L).traceEnabled(true).logReportEnabled(false).build();
+        try {
+            L1MemoryCache cache = (L1MemoryCache) getField(client, "l1Cache");
+            cache.put(rule("ROOT", "SCRIPT", "executeRule(\"CHILD\")"));
+            cache.put(rule("CHILD", "SCRIPT", "1 + 1"));
+            var request = com.hengshucredit.rule.model.RuleExecutionRequest.fromBody(Map.of("params", Map.of(), "traceEnabled", false));
+            RuleResult result = client.executeRequest("ROOT", request);
+            assertTrue(result.getDetail(), result.isSuccess());
+            assertNull(result.getTraces());
+            org.junit.Assert.assertNotNull(result.getTraceId());
+            org.junit.Assert.assertNotNull(client.execute("ROOT", Map.of()).getTraces());
+        } finally { client.close(); }
+    }
+
     @Test
     public void explicitKafkaNeverSilentlyFallsBackToHttpAtStartup() {
         IllegalStateException error = assertThrows(IllegalStateException.class,
@@ -188,7 +204,7 @@ public class RuleEngineClientTest {
             client.start();
             fail("Expected authentication failure from initial full sync");
         } catch (ProjectClientAuthenticationException expected) {
-            assertTrue(expected.getMessage().contains("expired token"));
+            assertTrue(expected.getDetail().contains("expired token"));
         } finally {
             client.close();
         }
@@ -243,7 +259,7 @@ public class RuleEngineClientTest {
         server.createContext("/api/rule/sync/execute/REMOTE", exchange -> {
             request.set(com.alibaba.fastjson.JSON.parseObject(new String(
                     exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)));
-            byte[] response = "{\"code\":200,\"data\":{\"success\":true,\"result\":2}}"
+            byte[] response = "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true,\"data\":{\"success\":true,\"result\":2}}"
                     .getBytes(java.nio.charset.StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, response.length);
             exchange.getResponseBody().write(response);

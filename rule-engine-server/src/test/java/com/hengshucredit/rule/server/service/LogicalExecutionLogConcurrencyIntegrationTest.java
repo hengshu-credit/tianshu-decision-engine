@@ -33,7 +33,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
-import java.io.Reader;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.net.InetAddress;
@@ -58,7 +57,7 @@ import java.util.regex.Pattern;
 
 import static org.junit.Assert.*;
 
-/** 根 .env 的本机 MySQL，真实分区表、独立事务和并发连接；仅清理本测试创建的 trace。 */
+/** 本机服务配置 的本机 MySQL，真实分区表、独立事务和并发连接；仅清理本测试创建的 trace。 */
 public class LogicalExecutionLogConcurrencyIntegrationTest {
     private static final int WRITERS = 4;
 
@@ -626,8 +625,7 @@ public class LogicalExecutionLogConcurrencyIntegrationTest {
         Path root = Path.of(System.getProperty("user.dir")).toAbsolutePath();
         while (root != null && !Files.isDirectory(root.resolve("rule-engine-server"))) root = root.getParent();
         if (root == null) throw new IllegalStateException("无法定位仓库根目录");
-        Properties settings = new Properties();
-        try (Reader reader = Files.newBufferedReader(root.resolve(".env"), StandardCharsets.UTF_8)) { settings.load(reader); }
+        Properties settings = LocalIntegrationSettings.load(root);
         InetAddress address = InetAddress.getByName(required(settings, "MYSQL_HOST"));
         if (!address.isLoopbackAddress()) throw new IllegalStateException("日志并发集成测试仅允许本机 MySQL");
         String database = required(settings, "MYSQL_DATABASE");
@@ -647,7 +645,7 @@ public class LogicalExecutionLogConcurrencyIntegrationTest {
 
     private static String required(Properties settings, String key) {
         String value = settings.getProperty(key);
-        if (value == null || value.isBlank()) throw new IllegalStateException("根 .env 缺少 " + key);
+        if (value == null || value.isBlank()) throw new IllegalStateException("本机服务配置 缺少 " + key);
         return value;
     }
 }

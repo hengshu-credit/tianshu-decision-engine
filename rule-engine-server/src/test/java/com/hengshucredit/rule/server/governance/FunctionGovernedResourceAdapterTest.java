@@ -21,7 +21,10 @@ import static org.junit.Assert.assertTrue;
 
 public class FunctionGovernedResourceAdapterTest {
 
-    public static class NativeMethods { public double choose(double amount) { return amount; } }
+    public static class NativeMethods {
+        public double choose(double amount) { return amount; }
+        public String text(double amount) { return String.valueOf(amount); }
+    }
 
     @Test public void unresolvedTargetAndLegacyMappingAreVisibleWarningsNotClaimsOfExactValidation() {
         List<String> events = new ArrayList<>();
@@ -46,6 +49,16 @@ public class FunctionGovernedResourceAdapterTest {
         assertEquals(List.of(), events);
     }
 
+    @Test public void preflightRejectsMissingScriptImplementation() {
+        List<String> events = new ArrayList<>();
+        var adapter = adapter(new RecordingStore(events), events, projectService(18L, "credit-app"));
+        RuleFunction function = projectFunction(18L, "riskScore");
+        function.setImplScript(" ");
+        var issues = adapter.validate(ResourceSnapshot.ofJson(JSON.toJSONString(function)));
+        assertTrue(issues.stream().anyMatch(issue -> issue.isError() && issue.message().contains("脚本不能为空")));
+        assertEquals(List.of(), events);
+    }
+
     @Test public void preflightRejectsAnExactSignatureThatDoesNotExist() {
         List<String> events = new ArrayList<>();
         var adapter = adapter(new RecordingStore(events), events, projectService(18L, "credit-app"));
@@ -54,6 +67,18 @@ public class FunctionGovernedResourceAdapterTest {
         function.setParamsJson("[{\"name\":\"amount\",\"type\":\"NUMBER\",\"javaType\":\"long\"}]");
         var issues = adapter.validate(ResourceSnapshot.ofJson(JSON.toJSONString(function)));
         assertTrue(issues.stream().anyMatch(issue -> issue.isError() && issue.message().contains("choose(long)")));
+        assertEquals(List.of(), events);
+    }
+
+    @Test public void preflightRejectsDeclaredReturnTypeThatDiffersFromMethod() {
+        List<String> events = new ArrayList<>();
+        var adapter = adapter(new RecordingStore(events), events, projectService(18L, "credit-app"));
+        RuleFunction function = projectFunction(18L, "textValue");
+        function.setReturnType("NUMBER");
+        function.setImplType("JAVA"); function.setImplClass(NativeMethods.class.getName()); function.setImplMethod("text");
+        function.setParamsJson("[{\"name\":\"amount\",\"type\":\"NUMBER\",\"javaType\":\"double\"}]");
+        var issues = adapter.validate(ResourceSnapshot.ofJson(JSON.toJSONString(function)));
+        assertTrue(issues.stream().anyMatch(issue -> issue.isError() && issue.message().contains("返回类型")));
         assertEquals(List.of(), events);
     }
 
@@ -102,11 +127,22 @@ public class FunctionGovernedResourceAdapterTest {
         function.setScope(RuleFunctionService.SCOPE_GLOBAL);
         function.setProjectId(0L);
         function.setFuncCode("globalRiskScore");
+        function.setImplType("SCRIPT");
+        function.setImplScript("return 1;");
 
         adapter.apply(context(null, "CREATE", function));
 
         assertEquals(List.of("INSERT:globalRiskScore",
                 "PUSH:rule:push:broadcast"), events);
+    }
+
+    @Test public void disablingFunctionRemovesItFromClientRemoteRegistry() {
+        List<String> events = new ArrayList<>();
+        RecordingStore store = new RecordingStore(events);
+        FunctionGovernedResourceAdapter adapter = adapter(store, events,
+                projectService(18L, "credit-app"));
+        adapter.apply(context(31L, "DISABLE", projectFunction(18L, "riskScore")));
+        assertEquals(List.of("UPDATE:riskScore", "PUSH:rule:push:credit-app"), events);
     }
 
     @Test
@@ -154,6 +190,7 @@ public class FunctionGovernedResourceAdapterTest {
         function.setFuncCode(funcCode);
         function.setFuncName(funcCode);
         function.setImplType("SCRIPT");
+        function.setImplScript("return 1;");
         return function;
     }
 

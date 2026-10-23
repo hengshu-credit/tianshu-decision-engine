@@ -14,6 +14,15 @@ public class ConsoleOperatorResolver {
 
     @Resource
     private RuleEngineConsoleLoginProperties consoleLoginProperties;
+    @Resource
+    private com.hengshucredit.rule.server.mapper.ConsoleUserMapper userMapper;
+
+    public java.util.Set<String> namesFor(String actor) {
+        if (actor == null || actor.isBlank()) return java.util.Set.of();
+        if (userMapper == null) return java.util.Set.of(actor);
+        var names = userMapper.operatorNames(actor);
+        return names.isEmpty() ? java.util.Set.of(actor) : java.util.Set.copyOf(names);
+    }
 
     public String resolve() {
         if (consoleLoginProperties == null || !consoleLoginProperties.isEnabled()) {
@@ -25,7 +34,8 @@ public class ConsoleOperatorResolver {
         HttpServletRequest request = attributes.getRequest();
         HttpSession session = request.getSession(false);
         if (session == null) return SYSTEM_CONSOLE;
-        Object value = session.getAttribute(consoleLoginProperties.getSessionUsernameAttribute());
+        Object value = session.getAttribute(consoleLoginProperties.getSessionOperatorNameAttribute());
+        if (value == null) value = session.getAttribute(consoleLoginProperties.getSessionUsernameAttribute());
         if (value == null || value.toString().isBlank()) return SYSTEM_CONSOLE;
         return value.toString();
     }

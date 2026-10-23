@@ -32,14 +32,15 @@ public class ClientFrozenFunctionExecutionTest {
             JSONObject unavailable = function("BEAN", "oldVersion"); unavailable.put("implBeanName", "serverOnlyBean");
             Map<String, Object> serverOnly = fixture.rule("SERVER_ONLY", 2, 12, "return frozenScore();", List.of(unavailable));
             serverOnly.put("requiresServerExecution", true); serverOnly.put("serverExecutionReason", "包含模型执行");
-            byte[] body = JSON.toJSONString(Map.of("code", 200, "data", List.of(updated, serverOnly))).getBytes(StandardCharsets.UTF_8);
+            byte[] body = JSON.toJSONString(Map.of("code", "000000", "message", "成功", "success", true, "data", List.of(updated, serverOnly))).getBytes(StandardCharsets.UTF_8);
             fixture.server.createContext("/api/rule/sync/all", exchange -> fixture.send(exchange, body));
             fixture.client.refreshAll();
             assertValue(2, fixture.client.execute("PURE", new LinkedHashMap<>()));
             assertTrue(fixture.client.getRuleInfo("SERVER_ONLY").isRequiresServerExecution());
-            IllegalStateException rejected = assertThrows(IllegalStateException.class,
+            com.hengshucredit.rule.model.PlatformException rejected = assertThrows(com.hengshucredit.rule.model.PlatformException.class,
                     () -> fixture.client.execute("SERVER_ONLY", new LinkedHashMap<>()));
-            assertTrue("应在执行本地能力门禁拒绝，而非加载不需要的服务端Bean", rejected.getMessage().contains("serverSideExecution"));
+            assertEquals("201002", rejected.getCode());
+            assertTrue("应在执行本地能力门禁拒绝，而非加载不需要的服务端Bean", rejected.getDetail().contains("serverSideExecution"));
         }
     }
 
@@ -181,7 +182,7 @@ public class ClientFrozenFunctionExecutionTest {
             rule.put("artifactDigest", String.valueOf(id % 10).repeat(64)); rule.put("modelType", "SCRIPT");
             rule.put("compiledScript", script); rule.put("compiledType", "QL"); rule.put("projectCode", "client-project");
             if (functions != null) rule.put("frozenFunctions", functions);
-            byte[] body = JSON.toJSONString(Map.of("code", 200, "data", rule)).getBytes(StandardCharsets.UTF_8);
+            byte[] body = JSON.toJSONString(Map.of("code", "000000", "message", "成功", "success", true, "data", rule)).getBytes(StandardCharsets.UTF_8);
             server.createContext("/api/rule/sync/" + code, exchange -> send(exchange, body));
             server.createContext("/api/rule/sync/by-id/" + id, exchange -> { fixedLoads.incrementAndGet(); send(exchange, body); });
             return rule;

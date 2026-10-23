@@ -11,29 +11,22 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.Assert.*;
 
 public class ExternalApiConsumerServiceTest {
-    @Test public void legacyInputOverridesResolveStableReferencesAndPreserveOtherInputs() {
+    @Test public void requestOverridesResolveStableReferencesAndPreserveOtherInputs() {
         var consumer = service(new AtomicInteger(), false);
-        RuleExternalApiConfig legacy = new RuleExternalApiConfig(); legacy.setId(9L); legacy.setStatus(1);
-        legacy.setQueryConfig("{\"phone\":\"$.customer.mobile\",\"limit\":\"$.limit\"}");
-        ReflectionTestUtils.setField(consumer, "apiConfigMapper", Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{RuleExternalApiConfigMapper.class}, (p,m,a) -> legacy));
+        RuleExternalApiConfig current = api();
+        ReflectionTestUtils.setField(consumer, "apiConfigMapper", Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{RuleExternalApiConfigMapper.class}, (p,m,a) -> current));
         ReflectionTestUtils.setField(consumer, "invokeService", new ExternalApiInvokeService() {
-            @Override Map<String,Object> invokePlanned(ExternalApiRequestPlan plan) { return Map.of("body", plan.params()); }
+            @Override Map<String,Object> invokePlanned(ExternalApiRequestPlan plan) { return Map.of("body", plan.values()); }
         });
         Map<String,Object> input = Map.of("customer", Map.of("mobile", "old"), "limit", 0, "currentPhone", "new");
         var options = options(); options.setDerivedReferencePaths(Map.of("VARIABLE:99", "currentPhone"));
-        var override = Map.of("inputOverrides", Map.of("customer.mobile", Map.of("kind", "REFERENCE", "refType", "VARIABLE", "refId", 99, "code", "stalePhone")));
+        var override = Map.of("requestOverrides", Map.of("phone", Map.of("kind", "REFERENCE", "refType", "VARIABLE", "refId", 99, "code", "stalePhone")));
         var result = consumer.resolve(1L, 9L, new java.util.LinkedHashMap<>(override), input, options);
-        assertEquals("new", ExternalApiConsumerService.select(result, "body.customer.mobile"));
-        assertEquals(0, ExternalApiConsumerService.select(result, "body.limit"));
+        assertEquals("new", ExternalApiConsumerService.select(result, "body.phone"));
+        assertEquals(0, input.get("limit"));
         assertEquals("old", ((Map<?,?>) input.get("customer")).get("mobile"));
-        // 旧 paramMapping 处理后的参数没有引擎变量，覆盖表达式仍从原始已解析变量按 ID 取值。
-        var mapped = Map.<String,Object>of("customer", Map.of("mobile", "mapped"), "limit", 0);
-        var mappedResult = consumer.resolve(1L, 9L, new java.util.LinkedHashMap<>(override), mapped, options, "VARIABLE:8",
-                Map.of("currentPhone", "from-original"));
-        assertEquals("from-original", ExternalApiConsumerService.select(mappedResult, "body.customer.mobile"));
-        assertEquals(0, ExternalApiConsumerService.select(mappedResult, "body.limit"));
-        assertNull(ExternalApiConsumerService.select(mappedResult, "body.currentPhone"));
         assertThrows(IllegalArgumentException.class, () -> consumer.resolve(1L, 9L, Map.of("inputOverrides", Map.of("unknown", Map.of("kind", "LITERAL", "value", "x", "valueType", "STRING"))), input, options));
+        assertThrows(IllegalArgumentException.class, () -> consumer.resolve(1L, 9L, Map.of("paramMapping", Map.of()), input, options));
     }
     @Test public void historicalApiConfigUsesDistinctRequestIdentityAndPreservesReplayPolicy() {
         AtomicInteger calls = new AtomicInteger();

@@ -28,21 +28,26 @@ public class GovernanceSecretCodec {
         Map<String, Object> publicValue =
                 new LinkedHashMap<>(CanonicalJson.readMap(
                         draft.snapshotJson()));
-        Map<String, Object> secrets = new LinkedHashMap<>();
+        Set<String> cleared = CredentialChanges.clearFields(publicValue.remove(CredentialChanges.CLEAR_FIELD),
+                sensitiveKeys == null ? Set.of() : sensitiveKeys, publicValue::get);
+        String ciphertext = draft.secretPayloadCiphertext();
+        Map<String, Object> previousSecrets = ciphertext == null || ciphertext.isBlank()
+                ? Map.of() : CanonicalJson.readMap(cipher.decrypt(ciphertext));
+        Map<String, Object> secrets = new LinkedHashMap<>(previousSecrets);
+        // A removed nested configuration must not regain its former credentials.
+        secrets.keySet().removeIf(path -> !hasParent(publicValue, path));
         Map<String, Boolean> configured = new LinkedHashMap<>();
         extract(publicValue, "", normalizeKeys(sensitiveKeys),
-                secrets, configured,
-                draft.secretPayloadCiphertext() != null
-                        && !draft.secretPayloadCiphertext().isBlank());
+                secrets);
+        // Empty strings survive entity updates (SQL NULL would be skipped by updateById).
+        cleared.forEach(field -> secrets.put("/" + escape(field), ""));
+        secrets.forEach((path, value) -> configured.put(path, isConfigured(value)));
 
-        String ciphertext = draft.secretPayloadCiphertext();
         String digest = draft.secretDigest();
-        if (!secrets.isEmpty()) {
-            String secretJson = CanonicalJson.write(secrets);
-            ciphertext = cipher.encrypt(secretJson);
-            digest = Sha256Digests.text(secretJson);
-        } else {
-            configured.putAll(readConfigured(publicValue));
+        if (!secrets.equals(previousSecrets)) {
+            String secretJson = secrets.isEmpty() ? null : CanonicalJson.write(secrets);
+            ciphertext = secretJson == null ? null : cipher.encrypt(secretJson);
+            digest = secretJson == null ? null : Sha256Digests.text(secretJson);
         }
         publicValue.remove(SECRET_STATE_KEY);
         if (!configured.isEmpty()) {
@@ -74,9 +79,7 @@ public class GovernanceSecretCodec {
     private void extract(Object node,
                          String path,
                          Set<String> sensitiveKeys,
-                         Map<String, Object> secrets,
-                         Map<String, Boolean> configured,
-                         boolean preserveExistingSecrets) {
+                         Map<String, Object> secrets) {
         if (node instanceof Map<?, ?> rawMap) {
             @SuppressWarnings("unchecked")
             Map<String, Object> map = (Map<String, Object>) rawMap;
@@ -89,40 +92,37 @@ public class GovernanceSecretCodec {
                 String childPath = path + "/" + escape(key);
                 if (sensitiveKeys.contains(
                         key.toLowerCase(Locale.ROOT))) {
-                    if (preserveExistingSecrets
-                            && !isConfigured(value)) {
-                        configured.put(childPath, true);
-                    } else {
+                    if (!secrets.containsKey(childPath) || isConfigured(value)) {
                         secrets.put(childPath, value);
-                        configured.put(childPath,
-                                isConfigured(value));
                     }
                     map.remove(key);
                 } else {
-                    extract(value, childPath, sensitiveKeys,
-                            secrets, configured,
-                            preserveExistingSecrets);
+                    extract(value, childPath, sensitiveKeys, secrets);
                 }
             }
         } else if (node instanceof List<?> list) {
             for (int index = 0; index < list.size(); index++) {
                 extract(list.get(index), path + "/" + index,
-                        sensitiveKeys, secrets, configured,
-                        preserveExistingSecrets);
+                        sensitiveKeys, secrets);
             }
         }
     }
 
-    private Map<String, Boolean> readConfigured(
-            Map<String, Object> value) {
-        Object raw = value.get(SECRET_STATE_KEY);
-        if (!(raw instanceof Map<?, ?> map)) {
-            return Map.of();
+    private boolean hasParent(Map<String, Object> root, String path) {
+        String[] parts = path.split("/");
+        Object current = root;
+        for (int i = 1; i < parts.length - 1; i++) {
+            String part = unescape(parts[i]);
+            if (current instanceof Map<?, ?> map) {
+                current = map.get(part);
+            } else if (current instanceof List<?> list) {
+                int index = Integer.parseInt(part);
+                current = index < list.size() ? list.get(index) : null;
+            } else {
+                return false;
+            }
         }
-        Map<String, Boolean> result = new LinkedHashMap<>();
-        map.forEach((key, configured) -> result.put(
-                String.valueOf(key), Boolean.TRUE.equals(configured)));
-        return result;
+        return current instanceof Map<?, ?>;
     }
 
     private void restorePath(Map<String, Object> root,

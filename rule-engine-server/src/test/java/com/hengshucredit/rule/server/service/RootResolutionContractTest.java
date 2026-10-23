@@ -49,10 +49,11 @@ public class RootResolutionContractTest {
 
     @Test
     public void sameApiKeyIsReusedButChangedKeyCallsAgain() {
-        var first = variable(11, "score", "API", "{\"apiConfigId\":7,\"paramMapping\":{\"id\":\"$.customerId\"},\"resultPath\":\"body.score\"}");
-        var second = variable(12, "limit", "API", "{\"apiConfigId\":7,\"paramMapping\":{\"id\":\"$.customerId\"},\"resultPath\":\"body.limit\"}");
+        var first = variable(11, "score", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.score\"}");
+        var second = variable(12, "limit", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.limit\"}");
         AtomicInteger calls = new AtomicInteger();
         VariableSourceResolver resolver = new VariableSourceResolver();
+        wireApiConfig(resolver);
         ReflectionTestUtils.setField(resolver, "externalApiInvokeService", new ExternalApiInvokeService() {
             @Override public Map<String, Object> invoke(Long id, Map<String, Object> params) {
                 calls.incrementAndGet();
@@ -61,10 +62,10 @@ public class RootResolutionContractTest {
         });
         var cache = new VariableResolutionInvocationCache();
         var values = new LinkedHashMap<String, Object>(Map.of("customerId", "first", "score", 999));
-        resolver.resolveIntoSnapshot(List.of(first, second), List.of(), List.of(), values, options(cache, "score"));
+        resolver.resolveIntoSnapshot(List.of(first, second), List.of(), List.of(), values, apiOptions(cache, "score"));
         assertEquals(88, values.get("score"));
         values.put("customerId", "changed");
-        resolver.resolveIntoSnapshot(List.of(first, second), List.of(), List.of(), values, options(cache, "limit"));
+        resolver.resolveIntoSnapshot(List.of(first, second), List.of(), List.of(), values, apiOptions(cache, "limit"));
         assertEquals(100, values.get("limit"));
         assertEquals("参数变化后调用键变化，应重新调用外数API", 2, calls.get());
     }
@@ -72,21 +73,22 @@ public class RootResolutionContractTest {
     @Test
     public void durableSourceStepRechecksInputDigestBeforeReuse() {
         var api = variable(11, "score", "API",
-                "{\"apiConfigId\":7,\"paramMapping\":{\"id\":\"$.customerId\"},\"resultPath\":\"body.score\"}");
+                "{\"apiConfigId\":7,\"resultPath\":\"body.score\"}");
         AtomicInteger calls = new AtomicInteger();
         VariableSourceResolver resolver = new VariableSourceResolver();
+        wireApiConfig(resolver);
         ReflectionTestUtils.setField(resolver, "externalApiInvokeService", new ExternalApiInvokeService() {
             @Override public Map<String, Object> invoke(Long id, Map<String, Object> params) {
                 calls.incrementAndGet();
-                return Map.of("body", Map.of("score", params.get("id")));
+                return Map.of("body", Map.of("score", params.get("customerId")));
             }
         });
         var cache = new VariableResolutionInvocationCache();
         cache.setSourceStepListener(step -> { });
         var first = new LinkedHashMap<String, Object>(Map.of("customerId", "A"));
-        resolver.resolveIntoSnapshot(List.of(api), List.of(), List.of(), first, options(cache, "score"));
+        resolver.resolveIntoSnapshot(List.of(api), List.of(), List.of(), first, apiOptions(cache, "score"));
         var second = new LinkedHashMap<String, Object>(Map.of("customerId", "B"));
-        resolver.resolveIntoSnapshot(List.of(api), List.of(), List.of(), second, options(cache, "score"));
+        resolver.resolveIntoSnapshot(List.of(api), List.of(), List.of(), second, apiOptions(cache, "score"));
         assertEquals("持久化来源的实际输入变化后必须重新调用", 2, calls.get());
         assertEquals("B", second.get("score"));
     }
@@ -155,6 +157,19 @@ public class RootResolutionContractTest {
         assertEquals("ERROR", status.getSourceStates().get("VARIABLE:11").get("OUTCOME"));
         assertThrows(IllegalStateException.class, () -> resolver.resolveIntoSnapshot(List.of(api), List.of(), List.of(), values, options(cache, "score")));
         assertEquals(1, calls.get());
+    }
+
+    private static void wireApiConfig(VariableSourceResolver resolver) {
+        var api = ExternalApiTestConfig.api(); api.setId(7L);
+        api.setExecutionConfig(ExternalApiTestConfig.request(List.of(ExternalApiTestConfig.field("customerId", "JSON", "customerId", ExternalApiTestConfig.reference(100, "customerId")))));
+        var type = com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper.class;
+        ReflectionTestUtils.setField(resolver, "apiConfigMapper", java.lang.reflect.Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, (proxy, method, args) -> api));
+    }
+
+    private static VariableResolveOptions apiOptions(VariableResolutionInvocationCache cache, String required) {
+        var value = options(cache, required);
+        value.setDerivedReferencePaths(Map.of("VARIABLE:100", "customerId"));
+        return value;
     }
 
     private static VariableResolveOptions options(VariableResolutionInvocationCache cache, String required) {

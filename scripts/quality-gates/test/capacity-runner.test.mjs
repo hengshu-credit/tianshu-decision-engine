@@ -36,7 +36,7 @@ test('constant arrival scheduling sends the planned count independently of respo
   let received = 0
   const url = await arrivalServer(t, (_request, response) => {
     received++
-    setTimeout(() => response.end('{"success":true}'), 35)
+    setTimeout(() => response.end('{"code":"000000","success":true}'), 35)
   })
   const result = await runCapacityScenario(arrivalConfig(url), { method: 'POST' })
   assert.equal(received, 6)
@@ -54,7 +54,7 @@ test('overload drops scheduled arrivals at a bounded concurrency and cannot pass
   const url = await arrivalServer(t, (_request, response) => {
     inFlight++
     peak = Math.max(peak, inFlight)
-    setTimeout(() => { inFlight--; response.end('{"success":true}') }, 80)
+    setTimeout(() => { inFlight--; response.end('{"code":"000000","success":true}') }, 80)
   })
   const result = await runCapacityScenario(arrivalConfig(url, {
     concurrency: 1, arrivalRate: 100, durationSeconds: 0.24, maxErrorRate: 1,
@@ -77,7 +77,7 @@ test('a stalled generator reports missed arrivals instead of issuing an unbounde
       const until = performance.now() + 75
       while (performance.now() < until) { /* deliberate event-loop fault */ }
     }
-    response.end('{"success":true}')
+    response.end('{"code":"000000","success":true}')
   })
   const result = await runCapacityScenario(arrivalConfig(url, {
     arrivalRate: 100, maxScheduleLagMs: 20, durationSeconds: 0.2,
@@ -122,11 +122,11 @@ test('aggregate throughput uses the common observation duration rather than addi
 
 test('multiple targets finish all warmups before sharing one measured observation window', async t => {
   let slowWarmupFinishedAt = 0
-  const fast = await arrivalServer(t, (_request, response) => response.end('{"success":true}'))
+  const fast = await arrivalServer(t, (_request, response) => response.end('{"code":"000000","success":true}'))
   const slow = await arrivalServer(t, (_request, response) => {
     setTimeout(() => {
       if (!slowWarmupFinishedAt) slowWarmupFinishedAt = Date.now()
-      response.end('{"success":true}')
+      response.end('{"code":"000000","success":true}')
     }, 70)
   })
   const result = await capacity.runCapacityTargets({ ...arrivalConfig(fast), urls: [fast, slow],
@@ -146,7 +146,7 @@ test('arrival reports expose bounded catch-up admitted inside the explicit sched
       const until = performance.now() + 75
       while (performance.now() < until) { /* controlled scheduling lag below 100ms budget */ }
     }
-    return '{"success":true}'
+    return '{"code":"000000","success":true}'
   } }))
   const result = await runCapacityScenario(arrivalConfig('http://unused', {
     arrivalRate: 50, concurrency: 100, durationSeconds: 0.2, maxScheduleLagMs: 100,
@@ -162,7 +162,7 @@ test('a blocked event loop cannot turn an expired request into a success by dela
     async text() {
       const until = performance.now() + 30
       while (performance.now() < until) { /* simulate expensive synchronous JSON decoding */ }
-      return '{"success":true}'
+      return '{"code":"000000","success":true}'
     },
   }))
   const result = await runCapacityScenario({ ...arrivalConfig('http://unused'), arrivalRate: null,
@@ -241,7 +241,7 @@ test('raw JSON request numbers and numeric assertions remain exact without coupl
   const directory = await mkdtemp(join(tmpdir(), 'tianshu-capacity-exact-'))
   t.after(() => rm(directory, { recursive: true, force: true }))
   const file = join(directory, 'request.json')
-  let responseText = '{"success":true,"score":9007199254740992}'
+  let responseText = '{"code":"000000","success":true,"score":9007199254740992}'
   let received = ''
   const url = await arrivalServer(t, (request, response) => {
     request.on('data', chunk => { received += chunk })
@@ -253,13 +253,13 @@ test('raw JSON request numbers and numeric assertions remain exact without coupl
   const wrong = await runCapacityScenario(config, request)
   assert.equal(wrong.summary.success, 0, '相邻大整数不能被Number舍入后假通过')
   assert.match(received, /9007199254740993/)
-  responseText = '{"success":true,"score":9007199254740993}'
+  responseText = '{"code":"000000","success":true,"score":9007199254740993}'
   assert.equal((await runCapacityScenario(config, request)).summary.success, 1)
   await writeFile(file, '{"expectedResponse":{"score":0.10000000000000001}}')
-  responseText = '{"score":0.1}'
+  responseText = '{"code":"000000","success":true,"score":0.1}'
   assert.equal((await runCapacityScenario(config, await loadRequestDefinition(file))).summary.success, 0)
   await writeFile(file, '{"expectedResponse":{"score":1e400}}')
-  responseText = '{"score":10e399,"irrelevant":{"__proto__":2,"id":9007199254740993}}'
+  responseText = '{"code":"000000","success":true,"score":10e399,"irrelevant":{"__proto__":2,"id":9007199254740993}}'
   assert.equal((await runCapacityScenario(config, await loadRequestDefinition(file))).summary.success, 1)
 })
 
@@ -385,7 +385,7 @@ for (const scenario of [
 }
 
 test('checks a custom runtime envelope and exact expected output types', async t => {
-  let body = { code: 200, data: { success: true, result: { score: 88 } } }
+  let body = { success: true, code: '000000', data: { success: true, result: { score: 88 } } }
   const server = createServer((request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' })
     response.end(JSON.stringify(body))
@@ -397,7 +397,7 @@ test('checks a custom runtime envelope and exact expected output types', async t
     concurrency: 1, warmupSeconds: 0.01, durationSeconds: 0.04,
     maxErrorRate: 0, maxP95Ms: 1000, minThroughput: 1,
   }
-  const request = { method: 'POST', expectedResponse: { code: 200, 'data.success': true, 'data.result.score': 88 } }
+  const request = { method: 'POST', expectedResponse: { code: '000000', 'data.success': true, 'data.result.score': 88 } }
   assert.equal((await runCapacityScenario(config, request)).evaluation.passed, true)
   body.data.result.score = '88'
   const failed = await runCapacityScenario(config, request)

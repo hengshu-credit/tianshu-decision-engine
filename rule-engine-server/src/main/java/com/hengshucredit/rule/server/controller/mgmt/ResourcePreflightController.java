@@ -1,7 +1,8 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.model.dto.ResourcePreflightReport;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.ResourcePreflightService;
 import com.hengshucredit.rule.server.security.RequirePermission;
 import jakarta.annotation.Resource;
@@ -15,7 +16,7 @@ public class ResourcePreflightController {
 
     @GetMapping("/{resourceType}/{id:\\d+}")
     @RequirePermission("")
-    public R<ResourcePreflightReport> check(@PathVariable String resourceType, @PathVariable Long id) {
+    public ApiResponse<ResourcePreflightReport> check(@PathVariable String resourceType, @PathVariable Long id) {
         accessGuard.requireResource(resourceType, "view");
         try {
             ResourcePreflightReport report = switch (resourceType.trim().toUpperCase(java.util.Locale.ROOT)) {
@@ -25,9 +26,9 @@ public class ResourcePreflightController {
                 case "MODEL" -> service.model(id);
                 default -> throw new IllegalArgumentException("资源类型不受支持: " + resourceType);
             };
-            return R.ok(report);
+            return ApiResponse.ok(report);
         } catch (IllegalArgumentException error) {
-            return R.fail(400, error.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.PARAMETER_INVALID, error.getMessage());
         }
     }
 }

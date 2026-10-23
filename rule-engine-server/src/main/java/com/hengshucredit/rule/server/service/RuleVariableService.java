@@ -223,6 +223,11 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
             }
         }
         Map<Long, RuleDataObject> objectMap = buildObjectMap(projectId);
+        for (RuleDataObject object : objectMap.values()) {
+            String root = trimToNull(object.getScriptName());
+            if (root == null) root = trimToNull(object.getObjectCode());
+            if (root != null) map.put(refKey("DATA_OBJECT_ROOT", object.getId()), root);
+        }
         for (RuleDataObjectField f : listObjectFields(projectId)) {
             String scriptName = buildObjectFieldScriptName(f, objectMap);
             if (f.getId() != null && scriptName != null) {

@@ -88,6 +88,8 @@ public class ResourceVersionService {
                 else if (!"CONSTANT".equals(variable.getVarSource())) {
                     for (String path : variableResolver.versionDependencies(variable, projectId)) addInput(inputs, path, path, "OBJECT");
                 }
+            } else if ("DATA_OBJECT_ROOT".equals(call.refType()) && !Set.of("API", "DB", "DATABASE").contains(first(payload.getString("sourceType"), "INPUT"))) {
+                addInput(inputs, first(payload.getString("scriptName"), payload.getString("objectCode")), payload.getString("objectLabel"), "OBJECT");
             } else if ("DATA_OBJECT".equals(call.refType()) && !Set.of("API", "DB", "DATABASE").contains(first(payload.getString("sourceType"), "INPUT"))) {
                 RuleDataObjectField field = payload.getJSONArray("fields").toJavaList(RuleDataObjectField.class).stream().filter(item -> call.refId().equals(item.getId())).findFirst().orElseThrow();
                 addInput(inputs, objectPath(payload, field), field.getVarLabel(), field.getVarType());
@@ -147,9 +149,9 @@ public class ResourceVersionService {
                         ? ConstantValueCodec.toRuntimeValue(variable.getVarType(), variable.getDefaultValue())
                         : variableResolver.resolveVersion(variable, values, isolated);
             }
-            case "DATA_OBJECT" -> {
+            case "DATA_OBJECT", "DATA_OBJECT_ROOT" -> {
                 List<RuleDataObjectField> fields = payload.getJSONArray("fields").toJavaList(RuleDataObjectField.class);
-                RuleDataObjectField field = fields.stream().filter(item -> call.refId().equals(item.getId())).findFirst()
+                RuleDataObjectField field = "DATA_OBJECT_ROOT".equals(call.refType()) ? null : fields.stream().filter(item -> call.refId().equals(item.getId())).findFirst()
                         .orElseThrow(() -> new IllegalArgumentException("字段不属于指定数据对象版本"));
                 for (RuleDataObjectField item : fields) {
                     item.setObjectSourceType(first(payload.getString("sourceType"), "INPUT"));
@@ -157,13 +159,14 @@ public class ResourceVersionService {
                     item.setObjectCode(payload.getString("objectCode"));
                     item.setObjectScriptName(first(payload.getString("scriptName"), payload.getString("objectCode")));
                 }
-                String path = objectPath(payload, field);
+                String path = field == null ? first(payload.getString("scriptName"), payload.getString("objectCode")) : objectPath(payload, field);
                 Map<String, Object> resolved = new LinkedHashMap<>(values);
+                if (field == null) objectResolver.resolveWholeObject(projectId, payload.toJavaObject(com.hengshucredit.rule.model.entity.RuleDataObject.class), resolved, isolated, fields);
                 RuleDefinitionInputField direct = new RuleDefinitionInputField();
-                direct.setVarId(field.getId()); direct.setRefType("DATA_OBJECT"); direct.setScriptName(path);
-                objectResolver.resolve(projectId, List.of(direct), resolved, isolated, fields);
+                direct.setVarId(call.refId()); direct.setRefType(call.refType()); direct.setScriptName(path);
+                if (field != null) objectResolver.resolve(projectId, List.of(direct), resolved, isolated, fields);
                 value = read(resolved, path);
-                if (value == null && field.referencesValue()) {
+                if (value == null && field != null && field.referencesValue()) {
                     value = variableResolver.resolveReferencedVariable(field.getRefVariableId(), values, isolated);
                 }
             }
@@ -251,7 +254,7 @@ public class ResourceVersionService {
                 throw new IllegalArgumentException("资源版本快照摘要校验失败");
             JSONObject payload = JSON.parseObject(version.getSnapshotJson());
             if (!Objects.equals(payload.getLong("id"), version.getResourceId())) throw new IllegalArgumentException("版本快照资源归属不匹配");
-            if ("DATA_OBJECT".equals(type)) {
+            if ("DATA_OBJECT".equals(type) && !"DATA_OBJECT_ROOT".equals(call.refType())) {
                 if (payload.getJSONArray("fields") == null || payload.getJSONArray("fields").stream().noneMatch(
                         field -> call.refId().equals(((JSONObject) JSON.toJSON(field)).getLong("id"))))
                     throw new IllegalArgumentException("字段不属于指定数据对象版本");
@@ -275,7 +278,7 @@ public class ResourceVersionService {
         JSONObject publicPayload = stored.getJSONObject("payload");
         if (runtime != null && runtime.isImported() && ("EXTERNAL_API".equals(call.refType())
                 || "VARIABLE".equals(call.refType()) && Set.of("API", "DB", "LIST", "SFTP", "DERIVED").contains(publicPayload.getString("varSource") == null ? "" : publicPayload.getString("varSource"))
-                || "DATA_OBJECT".equals(call.refType()) && Set.of("API", "DB", "DATABASE").contains(publicPayload.getString("sourceType") == null ? "" : publicPayload.getString("sourceType"))))
+                || Set.of("DATA_OBJECT", "DATA_OBJECT_ROOT").contains(call.refType()) && Set.of("API", "DB", "DATABASE").contains(publicPayload.getString("sourceType") == null ? "" : publicPayload.getString("sourceType"))))
             throw new IllegalArgumentException("导入的固定版本含外部资源引用，请在目标环境重新绑定并发布；禁止按来源环境 ID 调用本地资源");
         if (stored.getBooleanValue("requiresSecrets")) {
             if (runtime != null && runtime.isImported()) throw new IllegalArgumentException("导入制品的历史敏感配置需要在目标环境重新选择并发布版本");
@@ -372,7 +375,7 @@ public class ResourceVersionService {
                 item.put("parentFieldId", field.getParentFieldId() == null ? null : String.valueOf(field.getParentFieldId()));
                 fields.add(item);
             }
-            result.put("ownerCode", owner.getString("objectCode")); result.put("ownerLabel", owner.getString("objectLabel"));
+            result.put("ownerCode", first(owner.getString("scriptName"), owner.getString("objectCode"))); result.put("ownerLabel", owner.getString("objectLabel"));
         } else throw new IllegalArgumentException("该分类没有历史子字段");
         result.put("fields", fields);
         return result;
@@ -422,6 +425,9 @@ public class ResourceVersionService {
             }
         } else if ("FUNCTION".equals(type)) {
             for (String key : List.of("funcCode", "funcName", "paramsJson", "returnType")) field.put(key, payload.get(key));
+        } else if ("DATA_OBJECT_ROOT".equals(type)) {
+            field.put("code", first(payload.getString("scriptName"), payload.getString("objectCode")));
+            field.put("label", payload.getString("objectLabel")); field.put("valueType", "OBJECT");
         } else if ("DATA_OBJECT".equals(type)) {
             RuleDataObjectField data = payload.getJSONArray("fields").toJavaList(RuleDataObjectField.class).stream()
                     .filter(item -> refId.equals(item.getId())).findFirst().orElseThrow();
@@ -498,6 +504,7 @@ public class ResourceVersionService {
     private static String governanceType(String type) {
         return switch (type) {
             case "VARIABLE", "CONSTANT" -> "VARIABLE";
+            case "DATA_OBJECT_ROOT" -> "DATA_OBJECT";
             case "DATA_OBJECT", "EXTERNAL_API", "FUNCTION" -> type;
             default -> throw new IllegalArgumentException("该分类不支持固定版本");
         };

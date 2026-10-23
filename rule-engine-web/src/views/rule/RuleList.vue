@@ -180,7 +180,7 @@
             >
             <governance-publish-action resource-type="RULE" :resource-id="row.id" />
             <el-button
-              v-permission="'rule:edit'"
+              v-permission="{ code: 'rule:edit', projectId: row.projectId, scope: row.scope }"
               link
               data-action="delete"
               size="small"
@@ -199,7 +199,7 @@
       :page-size="queryParams.pageSize"
       :total="total"
       layout="total,sizes,prev,pager,next"
-      :page-sizes="[10, 30, 50, 100, 200, 500]"
+      :page-sizes="[10, 20, 30, 50, 100, 200, 500]"
       @current-change="
         (p) => {
           queryParams.pageNum = p
@@ -372,7 +372,7 @@ export default {
       ],
       queryParams: {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         scope: '',
         projectCode: '',
         projectName: '',

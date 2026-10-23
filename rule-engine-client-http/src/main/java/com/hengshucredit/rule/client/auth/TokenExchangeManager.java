@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.client.auth;
 
-import com.alibaba.fastjson.JSON;
+import com.hengshucredit.rule.client.http.PlatformHttpResponses;
+import com.hengshucredit.rule.client.http.RuleHttpException;
 import com.alibaba.fastjson.JSONObject;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -12,8 +13,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.concurrent.TimeUnit;
 
 public class TokenExchangeManager {
@@ -87,23 +86,22 @@ public class TokenExchangeManager {
                 .build();
         request = baseAuthenticator.authenticateBase(request);
         try (Response response = httpClient.newCall(request).execute()) {
-            if (response.body() == null) throw new IOException("Token endpoint returned an empty response");
-            JSONObject json = JSON.parseObject(response.body().string());
-            if (!response.isSuccessful() || json.getIntValue("code") != 200 || json.get("data") == null) {
-                String message = json.getString("message");
-                throw new IOException(message == null ? "Token exchange failed" : message);
-            }
+            JSONObject json = PlatformHttpResponses.read(response);
+            PlatformHttpResponses.requireSuccess(response, json);
+            if (!(json.get("data") instanceof JSONObject)) throw PlatformHttpResponses.invalid(response.code());
             JSONObject data = json.getJSONObject("data");
             Integer expiresInSeconds = data.getInteger("expiresInSeconds");
             Integer graceExpiresInSeconds = data.getInteger("graceExpiresInSeconds");
             if (expiresInSeconds != null && graceExpiresInSeconds != null
-                    && expiresInSeconds > 0 && graceExpiresInSeconds >= expiresInSeconds) {
+                    && expiresInSeconds > 0 && graceExpiresInSeconds >= expiresInSeconds
+                    && data.get("accessToken") instanceof String token && !token.isBlank()) {
                 return new TokenState(data.getString("accessToken"),
                         requestStartedAt.plusSeconds(expiresInSeconds),
                         requestStartedAt.plusSeconds(graceExpiresInSeconds));
             }
-            return new TokenState(data.getString("accessToken"), parseLegacyTime(data.getString("expiresAt")),
-                    parseLegacyTime(data.getString("graceExpiresAt")));
+            throw PlatformHttpResponses.invalid(response.code());
+        } catch (RuleHttpException e) {
+            throw new ProjectTokenExchangeException(e.platformStatus(), e.getHttpStatus(), e.getTraceId());
         } catch (IOException e) {
             throw e;
         } catch (RuntimeException e) {
@@ -113,15 +111,6 @@ public class TokenExchangeManager {
 
     protected Instant currentInstant() {
         return Instant.now();
-    }
-
-    private Instant parseLegacyTime(String value) throws IOException {
-        try {
-            return value == null ? null : LocalDateTime.parse(value)
-                    .atZone(ZoneId.systemDefault()).toInstant();
-        } catch (RuntimeException e) {
-            throw new IOException("Token endpoint returned an invalid expiration time", e);
-        }
     }
 
     public static class TokenState {

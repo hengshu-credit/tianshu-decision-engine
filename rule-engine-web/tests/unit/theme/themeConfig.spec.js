@@ -71,6 +71,7 @@ describe('themeConfig — 配置白名单和固定色卡', () => {
       contentWidth: 'FIXED',
       fixedSidebar: false,
       colorWeak: true,
+      tableScrollMode: 'AUTO',
     })
   })
 

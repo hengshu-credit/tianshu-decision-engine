@@ -58,6 +58,26 @@ async function editScript(page, text) {
 }
 
 for (const [route, id, modelType, add] of designers) {
+  if (route !== 'script') test(`${modelType} 重开发布版本直接展示该版本编译源码`, async ({ page }) => {
+    const data = fixtures(id)
+    const script = `return "frozen-${modelType}";`
+    const original = data.apiData.get(`/api/rule/definition/${id}/versions/81`)
+    data.apiData.set(`/api/rule/definition/${id}/versions/81`, { ...original, compiledScript: script, compiledType: 'QLEXPRESS' })
+    const harness = await installDistRoutes(page, { apiData: data.apiData })
+    await page.goto(`http://tianshu.local/index.html#/designer/${route}/${id}?projectId=1`)
+    const panel = page.locator('.script-panel')
+    await expect(panel).toContainText('已保存源码')
+    await panel.getByRole('button', { name: '展开脚本面板', exact: true }).click()
+    await expect.poll(async () => await panel.locator('textarea.sp-editor').count()
+      ? panel.locator('textarea.sp-editor').inputValue()
+      : panel.locator('.view-lines').innerText()).toBe(script)
+    await page.reload()
+    await expect(panel).toContainText('已保存源码')
+    expect(data.compiled).toHaveLength(0)
+    expect(data.saved).toHaveLength(0)
+    harness.assertClean()
+  })
+
   test(`${modelType} 五按钮使用当前配置，检查编译测试零保存，保存产生独立草稿`, async ({ page }) => {
     const data = fixtures(id)
     const harness = await installDistRoutes(page, { apiData: data.apiData })

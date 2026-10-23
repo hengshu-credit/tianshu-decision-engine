@@ -42,17 +42,18 @@ public class ModelVersionTestControllerTest {
                 (proxy, method, args) -> null));
         RuleModelController controller = new RuleModelController();
         ReflectionTestUtils.setField(controller, "modelService", service);
-        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller).build();
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setControllerAdvice(new com.hengshucredit.rule.server.common.PlatformResponseAdvice()).build();
 
         var response = mvc.perform(post("/api/rule/model/execute/7")
                 .param("version", "999")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"Age\":25}")).andReturn().getResponse();
 
-        assertEquals(200, response.getStatus());
+        assertEquals(400, response.getStatus());
         var body = JSON.parseObject(response.getContentAsString());
-        assertNotEquals("指定不存在版本不能得到最新模型的成功响应", Integer.valueOf(200), body.getInteger("code"));
+        assertNotEquals("指定不存在版本不能得到最新模型的成功响应", "000000", body.getString("code"));
         assertEquals("带版本请求必须进入版本执行路径", 0, latestExecutions.get());
-        assertTrue(body.getString("message"), body.getString("message").contains("版本"));
+        assertTrue(body.getString("detail"), body.getString("detail").contains("版本"));
     }
 }

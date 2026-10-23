@@ -23,6 +23,28 @@ public class VariableSourceReferenceValidatorTest {
 
     private VariableSourceReferenceValidator validator;
 
+    @Test
+    public void catalogQueriesDoNotLoadSecretsAndDoNotTruncateLargeDirectories() {
+        List<RuleDbDatasource> rows = java.util.stream.LongStream.rangeClosed(1, 5001)
+                .mapToObj(id -> db(id, 7L, "PROJECT", 1)).toList();
+        ReflectionTestUtils.setField(validator, "dbDatasourceMapper", Proxy.newProxyInstance(
+                RuleDbDatasourceMapper.class.getClassLoader(), new Class<?>[]{RuleDbDatasourceMapper.class}, (proxy, method, args) -> {
+                    if (!"selectList".equals(method.getName())) return null;
+                    Assert.assertNotNull("目录必须限定查询列和作用域", args[0]);
+                    var query = (com.baomidou.mybatisplus.core.conditions.AbstractWrapper<?, ?, ?>) args[0];
+                    Assert.assertNotNull(query.getSqlSelect());
+                    Assert.assertFalse(query.getSqlSelect().contains("password"));
+                    Assert.assertFalse(query.getSqlSelect().contains("jdbc_url"));
+                    Assert.assertTrue(query.getSqlSegment().contains("project_id"));
+                    Assert.assertTrue(query.getSqlSegment().contains("status"));
+                    Assert.assertFalse(query.getSqlSegment().toUpperCase().contains("LIMIT"));
+                    return rows;
+                }));
+        List<Long> ids = validator.catalog("PROJECT", 7L).databaseOptions().stream().map(VariableSourceOption::id).toList();
+        Assert.assertEquals(5001, ids.size());
+        Assert.assertTrue(ids.contains(5001L));
+    }
+
     @Before
     public void setUp() {
         RuleExternalDatasource globalApiSource = apiSource(
@@ -81,6 +103,42 @@ public class VariableSourceReferenceValidatorTest {
                 .stream().map(VariableSourceOption::id).toList());
         Assert.assertEquals(List.of(30L), catalog.listOptions()
                 .stream().map(VariableSourceOption::id).toList());
+    }
+
+    @Test
+    public void designerApiCatalogUsesTheSameScopeAndExcludesDisabledResources() {
+        Assert.assertEquals(List.of("10", "11"), validator.apiReferenceCatalog(7L).stream().map(item -> item.get("id")).toList());
+        Assert.assertEquals(List.of("10"), validator.apiReferenceCatalog(0L).stream().map(item -> item.get("id")).toList());
+        var sources = (RuleExternalDatasourceMapper) ReflectionTestUtils.getField(validator, "externalDatasourceMapper");
+        var apis = (RuleExternalApiConfigMapper) ReflectionTestUtils.getField(validator, "apiConfigMapper");
+        sources.selectById(2L).setStatus(0);
+        Assert.assertEquals(List.of("10"), validator.apiReferenceCatalog(7L).stream().map(item -> item.get("id")).toList());
+        apis.selectById(10L).setStatus(0);
+        Assert.assertTrue(validator.apiReferenceCatalog(7L).isEmpty());
+    }
+
+    @Test
+    public void designerApiCatalogPreservesLongIdsAndExposesStructureWithoutCredentialsOrSamples() {
+        var apis = (RuleExternalApiConfigMapper) ReflectionTestUtils.getField(validator, "apiConfigMapper");
+        var api = apis.selectById(10L);
+        api.setId(9007199254740993L);
+        api.setAuthApiConfig("{\"token\":{\"kind\":\"LITERAL\",\"value\":\"private-test-secret\"}}");
+        api.setExecutionConfig("{\"version\":2,\"requestFields\":[],\"responseBranches\":[{\"id\":\"result\",\"mode\":\"VALUE\",\"sample\":{\"Score\":99,\"Comment\":\"private-test-sample\"},\"value\":{\"kind\":\"PATH\",\"value\":\"response.body\"}}]}");
+        var metadata = validator.apiReferenceCatalog(0L).get(0);
+        Assert.assertEquals("9007199254740993", metadata.get("id"));
+        String text = com.alibaba.fastjson.JSON.toJSONString(metadata);
+        Assert.assertTrue(text.contains("body.Score"));
+        Assert.assertFalse(text.contains("private-test-secret"));
+        Assert.assertFalse(text.contains("private-test-sample"));
+        Assert.assertFalse(metadata.containsKey("executionConfig"));
+    }
+
+    @Test
+    public void designerApiCatalogHonorsDatasourceViewPermission() {
+        ReflectionTestUtils.setField(validator, "accessGuard", new com.hengshucredit.rule.server.security.ConsoleAccessGuard(null, null) {
+            @Override public boolean can(String permission) { return false; }
+        });
+        Assert.assertTrue(validator.apiReferenceCatalog(7L).isEmpty());
     }
 
     @Test

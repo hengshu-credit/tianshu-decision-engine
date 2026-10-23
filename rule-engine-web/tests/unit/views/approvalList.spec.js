@@ -25,6 +25,12 @@ import router from '@/router'
 import * as governanceApi from '@/api/governance'
 
 describe('统一审批列表', () => {
+  test('外数接口审批标题与详情使用接口名称', async () => {
+    const wrapper = shallowMount(ApprovalList)
+    await flushPromises()
+    expect(wrapper.vm.resourceTitle({ resourceType: 'EXTERNAL_API', resourceId: 7, submittedSnapshotJson: '{"apiName":"评分查询"}' })).toBe('评分查询')
+    wrapper.unmount()
+  })
   test('默认从跨模块待处理任务进入并提供任务视角', async() => {
     const wrapper = shallowMount(ApprovalList)
     await flushPromises()

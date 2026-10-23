@@ -1,6 +1,13 @@
 server:
   port: ${SERVER_PORT:7070}
   shutdown: graceful
+# RuntimeEnvironmentPostProcessor 仅自动读取当前/上级目录的 .env.client。
+# 兼容 Compose 使用的运行时变量；环境变量和命令行参数优先于文件。
+RULE_SERVER_URL: ${RUNTIME_RULE_SERVER_URL:}
+PROJECT_ACCESS_TOKEN: ${RUNTIME_PROJECT_ACCESS_TOKEN:}
+RULE_PROJECT_CODE: ${RUNTIME_RULE_PROJECT_CODE:}
+RULE_PROJECT_ID: ${RUNTIME_RULE_PROJECT_ID:0}
+RULE_TRACE_ENABLED: ${RUNTIME_TRACE_ENABLED:false}
 spring:
   application:
     name: rule-engine-runtime
@@ -8,6 +15,8 @@ spring:
     default: http
   lifecycle:
     timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:120s}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
 management:
   endpoints:
     web:

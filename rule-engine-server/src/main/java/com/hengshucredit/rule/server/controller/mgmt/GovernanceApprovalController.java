@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.hengshucredit.rule.model.dto.GovernanceApprovalQuery;
 import com.hengshucredit.rule.model.dto.GovernanceDraftRequest;
@@ -7,7 +9,6 @@ import com.hengshucredit.rule.model.dto.GovernanceRestoreRequest;
 import com.hengshucredit.rule.model.dto.GovernanceReviewRequest;
 import com.hengshucredit.rule.model.dto.GovernanceSubmitRequest;
 import com.hengshucredit.rule.model.entity.GovernanceApprovalRequest;
-import com.hengshucredit.rule.server.common.Result;
 import com.hengshucredit.rule.server.governance.GovernanceApprovalService;
 import com.hengshucredit.rule.server.governance.GovernanceApprovalSummary;
 import com.hengshucredit.rule.server.governance.GovernancePreflightReport;
@@ -40,70 +41,70 @@ public class GovernanceApprovalController {
 
     @PostMapping("/rules/{id}/delete")
     @RequirePermission("rule:edit")
-    public Result<com.hengshucredit.rule.server.governance.GovernanceDeletionResult> deleteRule(@PathVariable Long id) {
-        return Result.ok(approvalService.deleteRule(id, operatorResolver.resolve()));
+    public ApiResponse<com.hengshucredit.rule.server.governance.GovernanceDeletionResult> deleteRule(@PathVariable Long id) {
+        return ApiResponse.ok(approvalService.deleteRule(id, operatorResolver.resolve()));
     }
 
     @PostMapping("/resources/{type}/{id}/delete")
     @RequirePermission("")
-    public Result<com.hengshucredit.rule.server.governance.GovernanceDeletionResult> deleteResource(
+    public ApiResponse<com.hengshucredit.rule.server.governance.GovernanceDeletionResult> deleteResource(
             @PathVariable String type, @PathVariable Long id) {
-        return Result.ok(approvalService.deleteResource(type, id, operatorResolver.resolve()));
+        return ApiResponse.ok(approvalService.deleteResource(type, id, operatorResolver.resolve()));
     }
 
     @GetMapping("/requests")
     @RequirePermission("approval:view")
-    public Result<IPage<GovernanceRequestView>> requests(
+    public ApiResponse<IPage<GovernanceRequestView>> requests(
             @ModelAttribute GovernanceApprovalQuery query) {
-        return Result.ok(approvalService.page(
+        return ApiResponse.ok(approvalService.page(
                 query, operatorResolver.resolve()));
     }
 
     @GetMapping("/requests/summary")
     @RequirePermission("approval:view")
-    public Result<GovernanceApprovalSummary> summary(
+    public ApiResponse<GovernanceApprovalSummary> summary(
             @RequestParam(required = false) Long projectId) {
-        return Result.ok(approvalService.summary(
+        return ApiResponse.ok(approvalService.summary(
                 projectId, operatorResolver.resolve()));
     }
 
     @GetMapping("/requests/{id}")
     @RequirePermission("approval:view")
-    public Result<GovernanceRequestDetail> detail(
+    public ApiResponse<GovernanceRequestDetail> detail(
             @PathVariable Long id) {
-        return Result.ok(approvalService.detail(id));
+        return ApiResponse.ok(approvalService.detail(id));
     }
 
     @PostMapping("/drafts")
     @RequirePermission("")
-    public Result<GovernanceRequestView> createDraft(
+    public ApiResponse<GovernanceRequestView> createDraft(
             @RequestBody GovernanceDraftRequest request) {
-        return Result.ok(GovernanceRequestView.from(
+        return ApiResponse.ok(GovernanceRequestView.from(
                 approvalService.createDraft(
                         request, operatorResolver.resolve())));
     }
 
     @PutMapping("/requests/{id}/draft")
     @RequirePermission("")
-    public Result<GovernanceRequestView> saveDraft(
+    public ApiResponse<GovernanceRequestView> saveDraft(
             @PathVariable Long id,
             @RequestBody GovernanceDraftRequest request) {
-        return Result.ok(GovernanceRequestView.from(
+        return ApiResponse.ok(GovernanceRequestView.from(
                 approvalService.saveDraft(
                         id, request, operatorResolver.resolve())));
     }
 
     @PostMapping("/requests/{id}/preflight")
     @RequirePermission("")
-    public Result<GovernancePreflightReport> preflight(
+    public ApiResponse<GovernancePreflightReport> preflight(
             @PathVariable Long id) {
-        return Result.ok(approvalService.preflight(
+        return ApiResponse.ok(approvalService.preflight(
                 id, operatorResolver.resolve()));
     }
 
     @PostMapping("/requests/{id}/submit")
     @RequirePermission("approval:submit")
-    public Result<GovernanceRequestView> submit(
+    public ApiResponse<GovernanceRequestView> submit(
             @PathVariable Long id,
             @RequestBody(required = false)
             GovernanceSubmitRequest request) {
@@ -113,7 +114,7 @@ public class GovernanceApprovalController {
 
     @PostMapping("/requests/{id}/approve")
     @RequirePermission("approval:approve")
-    public Result<GovernanceRequestView> approve(
+    public ApiResponse<GovernanceRequestView> approve(
             @PathVariable Long id,
             @RequestBody(required = false)
             GovernanceReviewRequest request) {
@@ -123,7 +124,7 @@ public class GovernanceApprovalController {
 
     @PostMapping("/requests/{id}/reject")
     @RequirePermission("approval:approve")
-    public Result<GovernanceRequestView> reject(
+    public ApiResponse<GovernanceRequestView> reject(
             @PathVariable Long id,
             @RequestBody(required = false)
             GovernanceReviewRequest request) {
@@ -133,7 +134,7 @@ public class GovernanceApprovalController {
 
     @PostMapping("/requests/{id}/cancel")
     @RequirePermission("")
-    public Result<GovernanceRequestView> cancel(
+    public ApiResponse<GovernanceRequestView> cancel(
             @PathVariable Long id,
             @RequestBody(required = false)
             GovernanceReviewRequest request) {
@@ -143,39 +144,39 @@ public class GovernanceApprovalController {
 
     @GetMapping("/workspaces")
     @RequirePermission("")
-    public Result<IPage<GovernanceRequestView>> workspaces(@ModelAttribute GovernanceApprovalQuery query) {
+    public ApiResponse<IPage<GovernanceRequestView>> workspaces(@ModelAttribute GovernanceApprovalQuery query) {
         query.setTaskScope("MINE");
         String status = query.getStatus();
         query.setStatus(status == null ? "EDITING" : "ALL".equals(status) ? null
                 : com.hengshucredit.rule.model.enums.GovernanceRequestStatus.valueOf(status).name());
-        return Result.ok(approvalService.page(query, operatorResolver.resolve()));
+        return ApiResponse.ok(approvalService.page(query, operatorResolver.resolve()));
     }
 
     @GetMapping("/workspaces/{type}/{id}")
     @RequirePermission("")
-    public Result<GovernanceRequestView> workspace(@PathVariable String type, @PathVariable Long id) {
-        return Result.ok(approvalService.editableWorkspace(type, id, operatorResolver.resolve()));
+    public ApiResponse<GovernanceRequestView> workspace(@PathVariable String type, @PathVariable Long id) {
+        return ApiResponse.ok(approvalService.editableWorkspace(type, id, operatorResolver.resolve()));
     }
 
     @GetMapping("/workspaces/draft-ids")
     @RequirePermission("")
-    public Result<List<Long>> draftIds(@RequestParam String type, @RequestParam List<Long> ids) {
-        return Result.ok(approvalService.draftResourceIds(type, ids));
+    public ApiResponse<List<Long>> draftIds(@RequestParam String type, @RequestParam List<Long> ids) {
+        return ApiResponse.ok(approvalService.draftResourceIds(type, ids));
     }
 
     @GetMapping("/workspaces/states")
     @RequirePermission("")
-    public Result<List<com.hengshucredit.rule.server.governance.GovernanceResourceState>> states(
+    public ApiResponse<List<com.hengshucredit.rule.server.governance.GovernanceResourceState>> states(
             @RequestParam String type, @RequestParam List<Long> ids) {
-        return Result.ok(approvalService.resourceStates(type, ids, operatorResolver.resolve()));
+        return ApiResponse.ok(approvalService.resourceStates(type, ids, operatorResolver.resolve()));
     }
 
     @GetMapping("/resources/{type}/{id}/versions")
     @RequirePermission("approval:view")
-    public Result<List<GovernanceVersionView>> versions(
+    public ApiResponse<List<GovernanceVersionView>> versions(
             @PathVariable String type,
             @PathVariable Long id) {
-        return Result.ok(approvalService.versions(type, id)
+        return ApiResponse.ok(approvalService.versions(type, id)
                 .stream()
                 .map(GovernanceVersionView::from)
                 .toList());
@@ -183,7 +184,7 @@ public class GovernanceApprovalController {
 
     @PostMapping("/resources/{type}/{id}/restore")
     @RequirePermission("")
-    public Result<GovernanceRequestView> restore(
+    public ApiResponse<GovernanceRequestView> restore(
             @PathVariable String type,
             @PathVariable Long id,
             @RequestBody GovernanceRestoreRequest request) {
@@ -195,8 +196,8 @@ public class GovernanceApprovalController {
                 operatorResolver.resolve()));
     }
 
-    private Result<GovernanceRequestView> view(
+    private ApiResponse<GovernanceRequestView> view(
             GovernanceApprovalRequest request) {
-        return Result.ok(GovernanceRequestView.from(request));
+        return ApiResponse.ok(GovernanceRequestView.from(request));
     }
 }

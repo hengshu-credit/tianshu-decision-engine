@@ -14,6 +14,24 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class ClientFunctionRegistrarTest {
+    @Test public void absentLocalBeanDoesNotBlockOtherRemoteFunctionsAndCanRecoverWhenBeanAppears() {
+        var context = new org.springframework.context.support.GenericApplicationContext();
+        context.refresh();
+        try {
+            QLExpressEngine engine = new QLExpressEngine();
+            var registrar = new ClientFunctionRegistrar(engine, context, "project-a");
+            JSONObject bean = function("deferredService", "");
+            bean.put("implType", "BEAN"); bean.put("implBeanName", "lateBean");
+            bean.put("implMethod", "first"); bean.put("paramsJson", "[]");
+            registrar.replaceRemoteSnapshot(Arrays.asList(bean, function("readyScore", "42")));
+            assertResult(engine, "readyScore()", 42);
+            var unavailable = engine.execute("deferredService()", Collections.emptyMap(), false);
+            assertFalse(unavailable.isSuccess());
+            assertTrue(unavailable.getErrorMessage(), unavailable.getErrorMessage().contains("lateBean"));
+            context.getBeanFactory().registerSingleton("lateBean", new FrozenFunctions());
+            assertResult(engine, "deferredService()", 1);
+        } finally { context.close(); }
+    }
     @Test public void frozenTargetsUseCompleteDefinitionsAndBoundedCacheWithoutRetiringActiveBindings() throws Exception {
         QLExpressEngine engine = new QLExpressEngine();
         ClientFunctionRegistrar registrar = new ClientFunctionRegistrar(engine, null, "project-a");

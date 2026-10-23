@@ -18,6 +18,11 @@ import java.util.Map;
 /** 查询只读取已提取的计数素材；完整追踪不会进入控制台查询的Java堆。 */
 @Service
 public class RuleSetStatisticsQuery {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.security.ConsoleDataPermissionHandler consoleDataScope;
+
+    private String secured(String sql) { return consoleDataScope == null ? sql : consoleDataScope.filterSql(sql); }
+
     private final JdbcTemplate jdbc;
     public RuleSetStatisticsQuery(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
@@ -36,7 +41,7 @@ public class RuleSetStatisticsQuery {
         Map<String, Object> coverage = new LinkedHashMap<>();
         coverage.put("queriedAt", LocalDateTime.now());
         for (String field : List.of("totalCount", "pendingCount", "readyCount", "noTraceCount", "invalidCount", "truncatedCount")) coverage.put(field, 0L);
-        jdbc.query("SELECT COUNT(*) AS amount FROM rule_execution_log_current" + where + " AND (rule_set_stats_version IS NULL OR rule_set_stats_version<2)", rs -> {
+        scopedQuery("SELECT COUNT(*) AS amount FROM rule_execution_log_current" + where + " AND (rule_set_stats_version IS NULL OR rule_set_stats_version<2)", rs -> {
             long pending = rs.getLong("amount"); coverage.put("pendingCount",pending); coverage.put("totalCount",pending);
         }, parameters.toArray());
         String eventWhere = " WHERE 1=1";
@@ -58,7 +63,7 @@ public class RuleSetStatisticsQuery {
                 + "SELECT totals.*,code.rule_code ruleCode,name.rule_name ruleName FROM totals "
                 + "LEFT JOIN rule_set_statistics_event code ON code.order_key=totals.code_key LEFT JOIN rule_set_statistics_event name ON name.order_key=totals.name_key "
                 + "UNION ALL SELECT 'COVERAGE',NULL,NULL,NULL,NULL,NULL,COUNT(*),0,0,0,0,0,rule_set_stats_status,NULL FROM eligible GROUP BY rule_set_stats_status";
-        List<Map<String, Object>> rows = jdbc.query(query, (rs, row) -> {
+        List<Map<String, Object>> rows = scopedQuery(query, (rs, row) -> {
             Map<String, Object> result = metrics(rs);
             result.put("kind",rs.getString("kind")); result.put("key",rs.getString("rule_key")); result.put("ruleId",rs.getObject("ruleId"));
             result.put("ruleCode",rs.getString("ruleCode")); result.put("ruleName",rs.getString("ruleName")); return result;
@@ -105,5 +110,13 @@ public class RuleSetStatisticsQuery {
         result.put("hitRate", count == 0 ? 0D : (double)hit/count); result.put("failureRate", count == 0 ? 0D : (double)failed/count);
         result.put("avgCostTimeMs", rs.getDouble("avgCostTimeMs")); result.put("p95CostTimeMs", rs.getLong("p95CostTimeMs")); result.put("p99CostTimeMs", rs.getLong("p99CostTimeMs"));
         return result;
+    }
+
+    private <T> java.util.List<T> scopedQuery(String sql, org.springframework.jdbc.core.RowMapper<T> mapper, Object... parameters) {
+        return jdbc.query(secured(sql), mapper, parameters);
+    }
+
+    private void scopedQuery(String sql, org.springframework.jdbc.core.RowCallbackHandler handler, Object... parameters) {
+        jdbc.query(secured(sql), handler, parameters);
     }
 }

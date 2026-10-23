@@ -2,11 +2,15 @@ import request from './request'
 import { metadataResponse } from '@/utils/metadataResponse'
 
 export function compileDesignerModel(id, data) {
-  return request({ url: `/rule/definition/${id}/designer/compile`, method: 'post', data })
+  return request({ acceptExecutionFailure: true, url: `/rule/definition/${id}/designer/compile`, method: 'post', data })
 }
 
 export function getDesignerCompileTask(id, taskId) {
-  return request({ url: `/rule/definition/${id}/designer/compile/${encodeURIComponent(taskId)}`, method: 'get' })
+  return request({ acceptExecutionFailure: true, url: `/rule/definition/${id}/designer/compile/${encodeURIComponent(taskId)}`, method: 'get' })
+}
+
+export function waitForDesignerCompileTask(id, taskId) {
+  return request({ url: `/rule/definition/${id}/designer/compile/${encodeURIComponent(taskId)}/completion`, method: 'get' })
 }
 
 export function saveDesignerDraft(id, data) {
@@ -126,7 +130,7 @@ export function copyRule(id) {
 }
 
 export function compileRule(id) {
-  return request({ url: `/rule/definition/compile/${id}`, method: 'post' })
+  return request({ acceptExecutionFailure: true, url: `/rule/definition/compile/${id}`, method: 'post' })
 }
 
 export function validateCallCycle(definitionId, modelJson) {
@@ -270,7 +274,7 @@ export function migrateReferences(data) {
 export const DEFAULT_RULE_REQUEST_TIMEOUT_MS = 180000
 
 export function executeRule(data, timeoutMs = DEFAULT_RULE_REQUEST_TIMEOUT_MS) {
-  return request({ url: '/rule/definition/execute', method: 'post', data, timeout: timeoutMs })
+  return request({ acceptExecutionFailure: true, url: '/rule/definition/execute', method: 'post', data, timeout: timeoutMs })
 }
 
 export function getRuleTestSchema(data) {
@@ -355,6 +359,7 @@ export function sortApiScenarios(definitionId, scenarioIds) {
 
 export function executeApiScenario(definitionId, data, timeout = DEFAULT_RULE_REQUEST_TIMEOUT_MS) {
   return request({
+    acceptExecutionFailure: true,
     url: `/rule/definition/${definitionId}/api-scenarios/execute`,
     method: 'post',
     data,
@@ -370,5 +375,17 @@ export function executeApiScenarioValidated(definitionId, data, timeout = DEFAUL
     data,
     timeout
   })
+}
+
+export function listRuleRegressionReports(definitionId, params) {
+  return request({ ...metadataResponse, url: `/rule/definition/${definitionId}/api-scenarios/reports`, method: 'get', params })
+}
+
+export function getRuleRegressionReport(definitionId, reportId) {
+  return request({ ...metadataResponse, url: `/rule/definition/${definitionId}/api-scenarios/reports/${reportId}`, method: 'get' })
+}
+
+export function checkRuleRegressionReports(definitionId, revisionId) {
+  return request({ ...metadataResponse, url: `/rule/definition/${definitionId}/api-scenarios/reports/check`, method: 'post', data: { revisionId } })
 }
 

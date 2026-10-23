@@ -915,6 +915,7 @@
 </template>
 
 <script>
+import { loadPagedCatalog } from '@/utils/pagedCatalog'
 import { hasPermission } from '@/security/permissionState'
 import { editableResource, submitGovernanceRequest } from '@/api/governance'
 import { completeResourceChange } from '@/utils/governanceWorkspace'
@@ -923,6 +924,7 @@ import ResourceVersionManager from '@/components/common/ResourceVersionManager.v
 import { chooseVersionRestore, versionDisplayLabel } from '@/utils/versionRestore'
 import ResourcePicker from '@/components/common/ResourcePicker.vue'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
+import configurationDraftMixin from '@/mixins/configurationDraftMixin'
 import { markRaw } from 'vue'
 import {
   ArrowDown as ElIconArrowDown,
@@ -1039,7 +1041,7 @@ export default {
       testSaving: false,
       testResult: null,
       testDialogKey: 1,
-      fieldPageSize: 100,
+      fieldPageSize: 20,
       inputFieldPage: 1,
       outputFieldPage: 1,
       versionVisible: false,
@@ -1069,7 +1071,7 @@ export default {
     ResourcePreflightPanel,
   },
   name: 'ModelDetail',
-  mixins: [workspaceTabTitleMixin(vm => vm.model.modelName)],
+  mixins: [configurationDraftMixin(vm => ({ model: vm.model })), workspaceTabTitleMixin(vm => vm.model.modelName)],
   computed: {
     preflightConfigSignature() {
       if (!this.model || !this.model.id) return ''
@@ -1494,6 +1496,7 @@ export default {
         this.normalizeModelFields()
         // 模型加载后加载变量库
         await this.loadVars()
+        this.markConfigurationSaved()
       } catch (e) {
         this.$message.error(e.message || '加载模型详情失败')
       } finally {
@@ -1531,12 +1534,10 @@ export default {
         const [varsRes, constRes, treeRes, modelRes, functionRes] =
           await Promise.all([
             listVariablesByProject(projectId),
-            listVariables({
+            loadPagedCatalog(listVariables, {
               projectId,
               varSource: 'CONSTANT',
-              pageNum: 1,
-              pageSize: 5000,
-            }),
+              }),
             getVariableTree(projectId),
             api.listAllModelsByProject(projectId),
             listAllFunctionsByProject(projectId),
@@ -1570,13 +1571,11 @@ export default {
       try {
         const [varsRes, constRes, treeRes, modelRes, functionRes] =
           await Promise.all([
-            listVariables({ scope: 'GLOBAL', pageNum: 1, pageSize: 5000 }),
-            listVariables({
+            loadPagedCatalog(listVariables, { scope: 'GLOBAL', }),
+            loadPagedCatalog(listVariables, {
               scope: 'GLOBAL',
               varSource: 'CONSTANT',
-              pageNum: 1,
-              pageSize: 5000,
-            }),
+              }),
             getVariableTree(0),
             api.listAllModelsByProject(0),
             listAllFunctionsByProject(0),

@@ -4,6 +4,24 @@ import * as monaco from 'monaco-editor'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 
 describe('MonacoEditor', () => {
+  test('加载 Monaco 期间卸载组件会取消等待，不留下计时器或创建编辑器', async () => {
+    vi.useFakeTimers()
+    delete window.monaco
+    const wrapper = mount(MonacoEditor)
+    try {
+      expect(vi.getTimerCount()).toBeGreaterThan(0)
+      wrapper.unmount()
+      expect(vi.getTimerCount()).toBe(0)
+      window.monaco = monaco
+      await vi.runAllTimersAsync()
+      expect(monaco.editor.create).not.toHaveBeenCalled()
+    } finally {
+      window.monaco = monaco
+      await vi.runAllTimersAsync()
+      vi.useRealTimers()
+    }
+  })
+
   let editor
 
   beforeEach(() => {
@@ -102,8 +120,9 @@ describe('MonacoEditor', () => {
       'ql-engine-reference',
       'ql-engine-reference-label',
     ])
-    expect(decorations[0].options.before.content).toBe('N ')
-    expect(decorations[2].options.before.content).toBe(' 风险分 ')
+    expect(decorations[0].options.before.content).toBe('N')
+    expect(decorations[0].options.before.inlineClassName).toContain('se-reference-type--number')
+    expect(decorations[2].options.before.content).toBe('风险分')
     expect(decorations[2].options.after.content).toBe('v4')
     wrapper.unmount()
   })

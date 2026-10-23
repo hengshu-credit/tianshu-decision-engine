@@ -40,6 +40,8 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
+import static com.hengshucredit.rule.server.service.ExternalApiTestConfig.*;
+
 public class ExternalApiInvokeServiceTest {
 
     @Test public void retriedRequestWithoutResponseIsUnknownDespiteEarlierHttpError() throws Exception {
@@ -236,7 +238,7 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test public void responseConditionOperandsSupportNumericComparisonsAndPureExpressions() {
-        var service = new ExternalApiInvokeService();
+        var service = serviceWithFields();
         String condition = "{\"type\":\"group\",\"operator\":\"AND\",\"children\":[{\"left\":{\"kind\":\"PATH\",\"value\":\"response.body.score\"},\"operator\":\">=\",\"right\":{\"kind\":\"LITERAL\",\"valueType\":\"NUMBER\",\"value\":80}}]}";
         assertTrue(service.matchesResponseCondition(condition, Map.of("response", Map.of("body", Map.of("score", 88)))));
         assertFalse(service.matchesResponseCondition(condition, Map.of("response", Map.of("body", Map.of("score", 60)))));
@@ -300,8 +302,8 @@ public class ExternalApiInvokeServiceTest {
                 ]}]}
                 """);
             ExternalApiInvokeService service = configuredService(api, httpDatasource(server));
-            var first = service.invoke(api, Map.of());
-            var second = service.invoke(api, Map.of());
+            var first = service.invoke(api.getId(), Map.of());
+            var second = service.invoke(api.getId(), Map.of());
             assertEquals(1, calls.get());
             assertEquals(88, ExternalApiRequestPlan.read(first, "body.score"));
             assertEquals(88, ExternalApiRequestPlan.read(second, "body.score"));
@@ -313,7 +315,7 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
-    public void inheritedBearerAuthAcceptsLegacyLowercaseTypes() throws Exception {
+    public void inheritedBearerAuthNormalizesCaseAndResolvesLiteralOperand() throws Exception {
         AtomicReference<String> authorization = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/score", exchange -> {
@@ -327,14 +329,14 @@ public class ExternalApiInvokeServiceTest {
         try {
             RuleExternalDatasource datasource = httpDatasource(server);
             datasource.setAuthType("bearer");
-            datasource.setAuthConfig("{\"token\":\"legacy-token\"}");
+            datasource.setAuthConfig(JSON.toJSONString(Map.of("token", literal("provider-token"))));
             RuleExternalApiConfig config = basicApiConfig(2L, 1L, "/score");
             config.setAuthMode("inherit");
 
             Map<String, Object> result = configuredService(config, datasource).invoke(2L, Map.of());
 
             assertEquals(720, ((Map<?, ?>) result.get("body")).get("score"));
-            assertEquals("Bearer legacy-token", authorization.get());
+            assertEquals("Bearer provider-token", authorization.get());
         } finally {
             server.stop(0);
         }
@@ -373,7 +375,7 @@ public class ExternalApiInvokeServiceTest {
     public void invocationCacheKeyUsesConfiguredComponentsOrAllParamsHashByDefault() {
         RuleExternalApiConfig config = basicApiConfig(4L, 1L, "/score");
         config.setCacheKeyConfig("{\"components\":[{\"path\":\"customerId\"}]}");
-        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        ExternalApiInvokeService service = serviceWithFields();
         ReflectionTestUtils.setField(service, "apiConfigMapper",
                 mapperProxy(RuleExternalApiConfigMapper.class, config));
 
@@ -446,10 +448,7 @@ public class ExternalApiInvokeServiceTest {
         try {
             RuleExternalApiConfig config = basicApiConfig(1L, 1L, "/submit");
             config.setRequestMode("ASYNC");
-            config.setAsyncResultMode("POLL");
-            config.setAsyncPollConfig("{\"taskIdPath\":\"body.taskId\",\"resultEndpointUrl\":\"/result/${taskId}\","
-                    + "\"requestMethod\":\"GET\",\"intervalMs\":1,\"maxAttempts\":3,"
-                    + "\"statusPath\":\"body.status\",\"successValue\":\"SUCCESS\",\"resultPath\":\"body.data\"}");
+            config.setExecutionConfig(ExternalApiTestConfig.pollingResult("/submit", "/result/${steps.submit.body.taskId}", "body.status", "SUCCESS", 3, 1, "body.data"));
             config.setPayloadCaptureConfig("{\"response\":{\"source\":\"ORIGINAL\",\"saveOriginal\":true}}");
             Map<String, Object> result = configuredService(config, httpDatasource(server)).invoke(1L, Map.of());
             assertEquals(680, ((Map<?, ?>) result.get("body")).get("score"));
@@ -489,10 +488,7 @@ public class ExternalApiInvokeServiceTest {
             config.setRequestMethod("POST");
             config.setRequestMode("ASYNC");
             config.setRetryCount(1);
-            config.setAsyncResultMode("POLL");
-            config.setAsyncPollConfig("{\"taskIdPath\":\"body.taskId\",\"resultEndpointUrl\":\"/result/${taskId}\","
-                    + "\"requestMethod\":\"GET\",\"intervalMs\":1,\"maxAttempts\":3,"
-                    + "\"statusPath\":\"body.status\",\"successValue\":\"SUCCESS\",\"resultPath\":\"body.data\"}");
+            config.setExecutionConfig(ExternalApiTestConfig.pollingResult("/submit", "/result/${steps.submit.body.taskId}", "body.status", "SUCCESS", 3, 1, "body.data"));
 
             Map<String, Object> result = configuredService(config, httpDatasource(server)).invoke(7L, Map.of());
 
@@ -536,10 +532,12 @@ public class ExternalApiInvokeServiceTest {
             RuleExternalApiConfig config = basicApiConfig(1L, 1L, "/submit");
             config.setRequestMethod("POST");
             config.setRequestMode("ASYNC");
-            config.setAsyncResultMode("CALLBACK");
-            config.setAsyncCallbackConfig(ExternalApiCallbackStoreTest.protocol().toJSONString());
-            config.setAsyncCallbackUrl("http://engine.example/api/external-callback/${invocationId}");
-            config.setRequestMapping("{\"callback\":\"$.callbackUrl\"}");
+            JSONObject callback = ExternalApiCallbackStoreTest.protocol();
+            callback.put("url", "http://engine.example/api/external-callback/${invocationId}");
+            config.setExecutionConfig(com.hengshucredit.rule.server.artifact.CanonicalJson.write(Map.of("version", 2, "requestFields", List.of(), "steps", List.of(
+                    Map.of("id", "submit", "type", "HTTP", "endpointUrl", "/submit", "requestMethod", "POST", "requestFields", List.of(field("callback", "JSON", "callback", path("callbacks.notify.url")))),
+                    Map.of("id", "notify", "type", "CALLBACK", "callback", callback)))));
+            branches(config, List.of(Map.of("id", "report", "mode", "VALUE", "value", path("body.report"))));
             config.setPayloadCaptureConfig("{\"response\":{\"source\":\"ORIGINAL\",\"saveOriginal\":true}}");
             ExternalApiInvokeService api = configuredService(config, httpDatasource(server));
             ReflectionTestUtils.setField(api, "callbackStore", callbacks);
@@ -582,8 +580,8 @@ public class ExternalApiInvokeServiceTest {
         server.start();
         try {
             RuleExternalApiConfig config = basicApiConfig(1L, 1L, "/submit");
-            config.setRequestMode("ASYNC"); config.setAsyncResultMode("POLL");
-            config.setAsyncPollConfig("{\"taskIdPath\":\"body.taskId\",\"resultEndpointUrl\":\"/poll\",\"statusPath\":\"body.status\",\"successValue\":\"DONE\",\"intervalMs\":1,\"maxAttempts\":2}");
+            config.setRequestMode("ASYNC"); config.setAsyncTimeoutMs(1000);
+            config.setExecutionConfig(ExternalApiTestConfig.pollingResult("/submit", "/poll", "body.status", "DONE", 0, 2000, null));
             config.setRetryCount(2); config.setRetryOnTimeout(1);
             config.setExceptionStrategy("RETURN_DEFAULT"); config.setFallbackValue("{\"score\":0}");
             Map<String, Object> result = configuredService(config, httpDatasource(server)).invoke(1L, Map.of());
@@ -663,11 +661,8 @@ public class ExternalApiInvokeServiceTest {
         try {
             RuleExternalApiConfig config = basicApiConfig(91L, 1L, "/submit");
             config.setRequestMode("ASYNC");
-            config.setAsyncResultMode("POLL");
             config.setAsyncTimeoutMs(1000);
-            config.setAsyncPollConfig("{\"taskIdPath\":\"body.taskId\",\"resultEndpointUrl\":\"/poll/${taskId}\","
-                    + "\"statusPath\":\"body.status\",\"successValue\":\"SUCCESS\",\"resultPath\":\"body.data\","
-                    + "\"intervalMs\":2000,\"maxAttempts\":3}");
+            config.setExecutionConfig(ExternalApiTestConfig.pollingResult("/submit", "/poll/${steps.submit.body.taskId}", "body.status", "SUCCESS", 3, 2000, "body.data"));
             ExternalApiInvokeService service = configuredService(config, httpDatasource(server));
             ExternalApiInvokeService.ApiInvokeException error;
             try {
@@ -679,7 +674,8 @@ public class ExternalApiInvokeServiceTest {
             }
             Map<String, Object> pending = error.getPendingAsync();
             assertNotNull(pending);
-            assertEquals("resume-task", pending.get("taskId"));
+            assertEquals("WORKFLOW", pending.get("kind"));
+            assertEquals("resume-task", ExternalApiRequestPlan.read(pending, "results.submit.body.taskId"));
             assertEquals(1, submissions.get());
             assertEquals(1, polls.get());
 
@@ -839,15 +835,9 @@ public class ExternalApiInvokeServiceTest {
             config.setRetryCondition("{\"type\":\"condition\",\"path\":\"body.response_code\",\"operator\":\"==\",\"value\":\"10000429\"}");
             ExternalApiInvokeService service = configuredService(config, datasource);
 
-            boolean failed = false;
-            try {
-                service.invoke(52L, Collections.emptyMap());
-            } catch (ExternalApiInvokeService.ApiInvokeException e) {
-                failed = true;
-                assertTrue(e.getMessage().contains("20100103"));
-            }
-
-            assertTrue(failed);
+            Map<String, Object> failed = service.invoke(52L, Collections.emptyMap());
+            assertEquals(false, failed.get("success"));
+            assertTrue(String.valueOf(failed.get("errorMessage")).contains("20100103"));
             assertEquals(1, providerCalls.get());
         } finally {
             server.stop(0);
@@ -884,7 +874,7 @@ public class ExternalApiInvokeServiceTest {
             RuleExternalApiConfig draft = basicApiConfig(100L, 8L, "/draft");
             saved.setResponseCacheSeconds(60);
             draft.setResponseCacheSeconds(60);
-            ExternalApiInvokeService service = new ExternalApiInvokeService();
+            ExternalApiInvokeService service = serviceWithFields();
             ReflectionTestUtils.setField(service, "apiConfigMapper",
                     mapperProxy(RuleExternalApiConfigMapper.class, saved));
             ReflectionTestUtils.setField(service, "datasourceMapper",
@@ -903,7 +893,7 @@ public class ExternalApiInvokeServiceTest {
     }
 
     private RuleExternalApiConfig basicApiConfig(Long id, Long datasourceId, String endpointUrl) {
-        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        RuleExternalApiConfig config = ExternalApiTestConfig.api();
         config.setId(id);
         config.setDatasourceId(datasourceId);
         config.setRequestMethod("GET");
@@ -938,8 +928,8 @@ public class ExternalApiInvokeServiceTest {
 
     @Test
     public void responseMappingReplacesBodyWithMappedFields() {
-        RuleExternalApiConfig config = new RuleExternalApiConfig();
-        config.setResponseMapping("{\"score\":\"body.data.score\",\"level\":\"$.body.data.level\",\"ok\":\"success\",\"missing\":\"body.notFound\"}");
+        RuleExternalApiConfig config = ExternalApiTestConfig.api();
+        response(config, Map.of("score", path("body.data.score"), "level", path("body.data.level"), "ok", path("success"), "missing", path("body.notFound")));
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("score", 88);
@@ -950,20 +940,20 @@ public class ExternalApiInvokeServiceTest {
         response.put("success", true);
         response.put("body", body);
 
-        Map<String, Object> mappedResponse = new ExternalApiInvokeService().applyResponseMapping(config, response);
+        Map<String, Object> mappedResponse = serviceWithFields().assembleResponse(config, response);
 
-        assertSame(body, mappedResponse.get("rawBody"));
+        assertEquals(88, ExternalApiRequestPlan.read(body, "data.score"));
         Map<?, ?> mapped = (Map<?, ?>) mappedResponse.get("body");
         assertEquals(88, mapped.get("score"));
         assertEquals("A", mapped.get("level"));
         assertEquals(Boolean.TRUE, mapped.get("ok"));
         assertEquals(null, mapped.get("missing"));
-        assertSame(mapped, mappedResponse.get("mapped"));
+        assertEquals("result", mappedResponse.get("responseBranchId"));
     }
 
     @Test
     public void exceptionConditionSupportsMissingEmptyAndTypeChecks() {
-        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        ExternalApiInvokeService service = serviceWithFields();
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("body", new LinkedHashMap<>(Map.of("empty", "", "score", 88, "flag", true)));
 
@@ -1028,8 +1018,8 @@ public class ExternalApiInvokeServiceTest {
 
     @Test
     public void responseMappingUsesFirstAvailablePathForDynamicStructures() {
-        RuleExternalApiConfig config = new RuleExternalApiConfig();
-        config.setResponseMapping("{\"score\":[\"body.data.score\",\"body.model_params.br_applyloanstr_v2.score\",\"body.score\"],\"firstReason\":\"body.reasons.0.code\"}");
+        RuleExternalApiConfig config = ExternalApiTestConfig.api();
+        response(config, Map.of("score", nvl(path("body.data.score"), nvl(path("body.model_params.br_applyloanstr_v2.score"), path("body.score"))), "firstReason", path("body.reasons[0].code")));
 
         Map<String, Object> v1 = new LinkedHashMap<>();
         v1.put("score", 661.8);
@@ -1046,7 +1036,7 @@ public class ExternalApiInvokeServiceTest {
         response.put("success", true);
         response.put("body", body);
 
-        Map<String, Object> mappedResponse = new ExternalApiInvokeService().applyResponseMapping(config, response);
+        Map<String, Object> mappedResponse = serviceWithFields().assembleResponse(config, response);
 
         Map<?, ?> mapped = (Map<?, ?>) mappedResponse.get("body");
         assertEquals(661.8, ((Number) mapped.get("score")).doubleValue(), 0.000001);
@@ -1059,7 +1049,7 @@ public class ExternalApiInvokeServiceTest {
         item.put("score.value", 88);
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("items", List.of(item));
-        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        ExternalApiInvokeService service = serviceWithFields();
         assertTrue((Boolean) ReflectionTestUtils.invokeMethod(service, "containsPath",
                 input, "$.items[0]['score.value']"));
         assertFalse((Boolean) ReflectionTestUtils.invokeMethod(service, "containsPath",
@@ -1068,8 +1058,8 @@ public class ExternalApiInvokeServiceTest {
 
     @Test
     public void responseMappingSupportsConditionalCasesAndDefaultValue() {
-        RuleExternalApiConfig config = new RuleExternalApiConfig();
-        config.setResponseMapping("{\"riskScore\":{\"cases\":[{\"when\":{\"path\":\"body.code\",\"operator\":\"==\",\"value\":\"00\"},\"path\":\"body.data.score\"},{\"when\":{\"path\":\"body.code\",\"operator\":\"!=\",\"value\":\"00\"},\"path\":\"body.error.score\"}],\"default\":-1}}");
+        RuleExternalApiConfig config = ExternalApiTestConfig.api();
+        branches(config, List.of(responseBranch("success", Map.of("path", "body.code", "operator", "==", "value", "00"), "riskScore", nvl(path("body.data.score"), literal(-1))), responseBranch("fallback", Map.of(), "riskScore", nvl(path("body.error.score"), literal(-1)))));
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("code", "E001");
@@ -1080,15 +1070,15 @@ public class ExternalApiInvokeServiceTest {
         response.put("success", true);
         response.put("body", body);
 
-        Map<String, Object> mappedResponse = new ExternalApiInvokeService().applyResponseMapping(config, response);
+        Map<String, Object> mappedResponse = serviceWithFields().assembleResponse(config, response);
 
         assertEquals(0, ((Map<?, ?>) mappedResponse.get("body")).get("riskScore"));
     }
 
     @Test
     public void responseMappingUsesDefaultWhenConditionalCasesHaveNoValue() {
-        RuleExternalApiConfig config = new RuleExternalApiConfig();
-        config.setResponseMapping("{\"riskScore\":{\"cases\":[{\"when\":{\"path\":\"body.code\",\"value\":\"00\"},\"path\":\"body.data.score\"}],\"default\":-1}}");
+        RuleExternalApiConfig config = ExternalApiTestConfig.api();
+        branches(config, List.of(responseBranch("success", Map.of("path", "body.code", "operator", "==", "value", "00"), "riskScore", nvl(path("body.data.score"), literal(-1))), responseBranch("fallback", Map.of(), "riskScore", literal(-1))));
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("code", "00");
@@ -1096,23 +1086,21 @@ public class ExternalApiInvokeServiceTest {
         response.put("success", true);
         response.put("body", body);
 
-        Map<String, Object> mappedResponse = new ExternalApiInvokeService().applyResponseMapping(config, response);
+        Map<String, Object> mappedResponse = serviceWithFields().assembleResponse(config, response);
 
-        assertEquals(-1, ((Map<?, ?>) mappedResponse.get("body")).get("riskScore"));
+        assertEquals(new java.math.BigDecimal("-1"), ((Map<?, ?>) mappedResponse.get("body")).get("riskScore"));
     }
 
     @Test
     public void responseMappingSupportsNestedConditionTreeAndFallbackCase() {
-        RuleExternalApiConfig config = new RuleExternalApiConfig();
-        config.setResponseMapping("{\"riskScore\":{\"cases\":["
-                + "{\"when\":{\"type\":\"group\",\"op\":\"AND\",\"children\":["
-                + "{\"type\":\"leaf\",\"varCode\":\"body.code\",\"operator\":\"==\",\"value\":\"00\"},"
-                + "{\"type\":\"group\",\"op\":\"OR\",\"children\":["
-                + "{\"type\":\"leaf\",\"varCode\":\"body.data.level\",\"operator\":\"==\",\"value\":\"A\"},"
-                + "{\"type\":\"leaf\",\"varCode\":\"body.data.score\",\"operator\":\">=\",\"value\":\"700\",\"varType\":\"NUMBER\"}"
-                + "]}]},\"path\":\"body.data.score\"},"
-                + "{\"path\":\"body.error.score\"}"
-                + "]}}");
+        RuleExternalApiConfig config = ExternalApiTestConfig.api();
+        Object condition = Map.of("type", "group", "operator", "AND", "children", List.of(
+                Map.of("path", "body.code", "operator", "==", "value", "00"),
+                Map.of("type", "group", "operator", "OR", "children", List.of(
+                        Map.of("path", "body.data.level", "operator", "==", "value", "A"),
+                        Map.of("path", "body.data.score", "operator", ">=", "value", 700)))));
+        branches(config, List.of(responseBranch("success", condition, "riskScore", path("body.data.score")),
+                responseBranch("fallback", Map.of(), "riskScore", path("body.error.score"))));
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("level", "B");
@@ -1124,7 +1112,7 @@ public class ExternalApiInvokeServiceTest {
         response.put("success", true);
         response.put("body", body);
 
-        Map<String, Object> mappedResponse = new ExternalApiInvokeService().applyResponseMapping(config, response);
+        Map<String, Object> mappedResponse = serviceWithFields().assembleResponse(config, response);
 
         assertEquals(720, ((Map<?, ?>) mappedResponse.get("body")).get("riskScore"));
 
@@ -1136,7 +1124,7 @@ public class ExternalApiInvokeServiceTest {
         Map<String, Object> fallbackResponse = new LinkedHashMap<>();
         fallbackResponse.put("success", true);
         fallbackResponse.put("body", fallbackBody);
-        mappedResponse = new ExternalApiInvokeService().applyResponseMapping(config, fallbackResponse);
+        mappedResponse = serviceWithFields().assembleResponse(config, fallbackResponse);
 
         assertEquals(-2, ((Map<?, ?>) mappedResponse.get("body")).get("riskScore"));
     }
@@ -1149,7 +1137,7 @@ public class ExternalApiInvokeServiceTest {
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("password", "md5-password");
 
-        Object requestBody = new ExternalApiInvokeService().buildTokenRequestBody(
+        Object requestBody = serviceWithFields().buildTokenRequestBody(
                 body, params, MediaType.MULTIPART_FORM_DATA);
 
         assertTrue(requestBody instanceof MultiValueMap);
@@ -1164,7 +1152,7 @@ public class ExternalApiInvokeServiceTest {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("username", "user");
 
-        Object requestBody = new ExternalApiInvokeService().buildTokenRequestBody(
+        Object requestBody = serviceWithFields().buildTokenRequestBody(
                 body, new LinkedHashMap<>(), MediaType.APPLICATION_JSON);
 
         assertEquals(body, requestBody);
@@ -1177,7 +1165,7 @@ public class ExternalApiInvokeServiceTest {
         body.put("data_type", "json");
         body.put("empty", null);
 
-        Object requestBody = new ExternalApiInvokeService().buildHttpRequestBody(
+        Object requestBody = serviceWithFields().buildHttpRequestBody(
                 body, MediaType.APPLICATION_FORM_URLENCODED);
 
         assertTrue(requestBody instanceof MultiValueMap);
@@ -1197,7 +1185,7 @@ public class ExternalApiInvokeServiceTest {
         form.add("name", "张三");
         form.add("note", "a b");
 
-        String raw = ReflectionTestUtils.invokeMethod(new ExternalApiInvokeService(),
+        String raw = ReflectionTestUtils.invokeMethod(serviceWithFields(),
                 "rawRequestPayload", form, MediaType.APPLICATION_FORM_URLENCODED);
 
         assertEquals("name=%E5%BC%A0%E4%B8%89&note=a+b", raw);
@@ -1206,7 +1194,7 @@ public class ExternalApiInvokeServiceTest {
     @Test
     public void tokenContentTypeDefaultsToJson() {
         assertEquals(MediaType.APPLICATION_JSON,
-                new ExternalApiInvokeService().resolveTokenContentType(new LinkedHashMap<>()));
+                serviceWithFields().resolveTokenContentType(new LinkedHashMap<>()));
     }
 
     @Test
@@ -1217,7 +1205,7 @@ public class ExternalApiInvokeServiceTest {
         params.put("mobile", "13800138000");
         String config = "{\"components\":[{\"path\":\"name\"},{\"path\":\"idCard\"},{\"path\":\"mobile\"}]}";
 
-        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        ExternalApiInvokeService service = serviceWithFields();
         String key = service.buildResponseCacheKey(7L, config, params);
         Map<String, Object> changed = new LinkedHashMap<>(params);
         changed.put("mobile", "13900139000");
@@ -1237,7 +1225,7 @@ public class ExternalApiInvokeServiceTest {
         RequestContext context = new RequestContext();
         context.setRuleContext(Map.of("projectId", 88L, "traceId", "root-88"), List.of());
         try (RuntimeContextBridge.ContextScope ignored = RuntimeContextBridge.install(context)) {
-            Long projectId = ReflectionTestUtils.invokeMethod(new ExternalApiInvokeService(),
+            Long projectId = ReflectionTestUtils.invokeMethod(serviceWithFields(),
                     "resolveRuntimeProjectId", datasource);
             assertEquals(Long.valueOf(88L), projectId);
         }
@@ -1254,7 +1242,7 @@ public class ExternalApiInvokeServiceTest {
         Map<String, Object> changed = new LinkedHashMap<>(first);
         changed.put("name", "李四");
 
-        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        ExternalApiInvokeService service = serviceWithFields();
         String key = service.buildResponseCacheKey(8L, null, first);
 
         assertTrue(key.startsWith("8:"));
@@ -1271,7 +1259,7 @@ public class ExternalApiInvokeServiceTest {
         cached.put("success", true);
         cached.put("body", body);
 
-        Map<String, Object> response = new ExternalApiInvokeService()
+        Map<String, Object> response = serviceWithFields()
                 .copyCachedResponse(cached, true, true, 5);
 
         assertEquals(Boolean.TRUE, response.get("success"));
@@ -1285,7 +1273,7 @@ public class ExternalApiInvokeServiceTest {
 
     @Test
     public void cachedTraceRestoresCapturedRequestAndRequestStageFields() throws Exception {
-        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        ExternalApiInvokeService service = serviceWithFields();
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("method", "POST");
         request.put("url", "https://provider.example/score");
@@ -1326,7 +1314,7 @@ public class ExternalApiInvokeServiceTest {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("body", body);
 
-        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        ExternalApiInvokeService service = serviceWithFields();
 
         assertTrue(service.matchesBillingCondition(
                 "{\"path\":\"body.status\",\"operator\":\"==\",\"value\":0}", response));
@@ -1341,7 +1329,7 @@ public class ExternalApiInvokeServiceTest {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("body", body);
 
-        boolean matched = new ExternalApiInvokeService().matchesBillingCondition(
+        boolean matched = serviceWithFields().matchesBillingCondition(
                 "{\"path\":\"body.status\",\"operator\":\"==\",\"value\":0}", response);
 
         assertEquals(false, matched);
@@ -1349,12 +1337,12 @@ public class ExternalApiInvokeServiceTest {
 
     @Test
     public void failedUnifiedCallBillingCanMatchRawResponsePath() throws Exception {
-        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        RuleExternalApiConfig config = ExternalApiTestConfig.api();
         config.setExecutionConfig("""
             {"version":2,"billingBranches":[{"id":"failed","bill":true,
               "condition":{"path":"response.body.code","operator":"==","value":"ERR"}}]}
             """);
-        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        ExternalApiInvokeService service = serviceWithFields();
         Class<?> traceType = java.util.Arrays.stream(ExternalApiInvokeService.class.getDeclaredClasses())
                 .filter(type -> "InvokeTrace".equals(type.getSimpleName())).findFirst().orElseThrow();
         var constructor = traceType.getDeclaredConstructor();
@@ -1382,7 +1370,7 @@ public class ExternalApiInvokeServiceTest {
                 + "{\"path\":\"body.code\",\"operator\":\"in\",\"values\":[\"2000\",\"2001\"]},"
                 + "{\"path\":\"body.message\",\"operator\":\"regex\",\"value\":\"^OK-.*\"}]}]}";
 
-        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        ExternalApiInvokeService service = serviceWithFields();
 
         assertTrue(service.matchesResponseCondition(condition, response));
         assertFalse(service.matchesResponseCondition(
@@ -1399,7 +1387,7 @@ public class ExternalApiInvokeServiceTest {
         datasource.setProtocol("HTTPS");
         datasource.setDatasourceCode("tianshu_rule_engine");
 
-        assertTrue(new ExternalApiInvokeService().isRuleEngineDatasource(datasource));
+        assertTrue(serviceWithFields().isRuleEngineDatasource(datasource));
     }
 
     @Test
@@ -1421,7 +1409,7 @@ public class ExternalApiInvokeServiceTest {
             datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
             datasource.setAuthType("NONE");
 
-            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            RuleExternalApiConfig config = ExternalApiTestConfig.api();
             config.setId(99L);
             config.setDatasourceId(7L);
             config.setRequestMethod("POST");
@@ -1433,7 +1421,7 @@ public class ExternalApiInvokeServiceTest {
             config.setRetryIntervalMs(0);
             config.setExceptionStrategy("FAIL_FAST");
 
-            ExternalApiInvokeService service = new ExternalApiInvokeService();
+            ExternalApiInvokeService service = serviceWithFields();
             ReflectionTestUtils.setField(service, "apiConfigMapper",
                     mapperProxy(RuleExternalApiConfigMapper.class, config));
             ReflectionTestUtils.setField(service, "datasourceMapper",
@@ -1523,7 +1511,7 @@ public class ExternalApiInvokeServiceTest {
             assertNull(firstResult.get("rawRequestBody"));
             assertEquals("{\"code\":\"2000\"}", firstResult.get("rawResponseBody"));
             assertTrue(firstResult.get("externalCall") instanceof Map);
-            assertEquals(List.of("REQUEST_INPUT", "API_REQUEST", "AUTHENTICATION", "EXTERNAL_REQUEST", "EXTERNAL_RESPONSE"),
+            assertEquals(List.of("REQUEST_INPUT", "API_REQUEST", "AUTHENTICATION", "EXTERNAL_REQUEST", "EXTERNAL_RESPONSE", "RESPONSE_MAPPING"),
                     stepTypes(steps(log.getTraceSteps())));
             assertTrue(firstResult.get("traceSteps") instanceof java.util.List);
             RuleRuntimeCallLog attempt = logs.logs.stream()
@@ -1561,20 +1549,20 @@ public class ExternalApiInvokeServiceTest {
             datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
             datasource.setAuthType("NONE");
 
-            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            RuleExternalApiConfig config = ExternalApiTestConfig.api();
             config.setId(99L);
             config.setDatasourceId(7L);
             config.setRequestMethod("POST");
             config.setEndpointUrl("/score");
             config.setContentType("application/json");
-            config.setRequestMapping("{\"request_id\":\"$.request_id\",\"model_id\":\"$.model_id\",\"model_params\":{\"br_applyloanstr_v2\":\"$.model_params.br_applyloanstr_v2\"}}");
+            config.setExecutionConfig(request(List.of(field("request", "JSON", "request_id", reference(3, "request_id")), field("model", "JSON", "model_id", reference(4, "model_id")), field("payload", "JSON", "model_params.br_applyloanstr_v2", reference(5, "model_params.br_applyloanstr_v2")))));
             config.setResponseCacheSeconds(0);
             config.setTimeoutMs(3000);
             config.setRetryCount(0);
             config.setRetryIntervalMs(0);
             config.setExceptionStrategy("FAIL_FAST");
 
-            ExternalApiInvokeService service = new ExternalApiInvokeService();
+            ExternalApiInvokeService service = serviceWithFields();
             ReflectionTestUtils.setField(service, "apiConfigMapper",
                     mapperProxy(RuleExternalApiConfigMapper.class, config));
             ReflectionTestUtils.setField(service, "datasourceMapper",
@@ -1625,20 +1613,20 @@ public class ExternalApiInvokeServiceTest {
             datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
             datasource.setAuthType("NONE");
 
-            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            RuleExternalApiConfig config = ExternalApiTestConfig.api();
             config.setId(99L);
             config.setDatasourceId(7L);
             config.setRequestMethod("POST");
             config.setEndpointUrl("/score");
             config.setContentType("application/json");
-            config.setRequestMapping("{\"$.params.mobile_no\":\"$.mobile_no\",\"$.params.idcard_no\":\"$.idcard_no\"}");
+            config.setExecutionConfig(request(List.of(field("phone", "JSON", "$.params.mobile_no", reference(1, "mobile_no")), field("id", "JSON", "$.params.idcard_no", reference(2, "idcard_no")))));
             config.setResponseCacheSeconds(0);
             config.setTimeoutMs(3000);
             config.setRetryCount(0);
             config.setRetryIntervalMs(0);
             config.setExceptionStrategy("FAIL_FAST");
 
-            ExternalApiInvokeService service = new ExternalApiInvokeService();
+            ExternalApiInvokeService service = serviceWithFields();
             ReflectionTestUtils.setField(service, "apiConfigMapper",
                     mapperProxy(RuleExternalApiConfigMapper.class, config));
             ReflectionTestUtils.setField(service, "datasourceMapper",
@@ -1661,7 +1649,7 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
-    public void requestMappingTakesPrecedenceOverLegacyBodyTemplate() throws Exception {
+    public void requestFieldsAssembleNestedValuesAndFixedFields() throws Exception {
         AtomicReference<String> requestBody = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/score", exchange -> {
@@ -1685,21 +1673,21 @@ public class ExternalApiInvokeServiceTest {
             datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
             datasource.setAuthType("NONE");
 
-            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            RuleExternalApiConfig config = ExternalApiTestConfig.api();
             config.setId(99L);
             config.setDatasourceId(7L);
             config.setRequestMethod("POST");
             config.setEndpointUrl("/score");
             config.setContentType("application/json");
-            config.setRequestMapping("{\"params\":{\"$.mobile_no\":\"$.mobile_no\"},\"clientAppName\":\"BNLP\"}");
-            config.setBodyTemplate("{\"params\":{\"mobile_no\":\"legacy\"}}");
+            config.setExecutionConfig(request(List.of(field("phone", "JSON", "params.mobile_no", reference(1, "mobile_no")), field("client", "JSON", "clientAppName", literal("BNLP")))));
+            
             config.setResponseCacheSeconds(0);
             config.setTimeoutMs(3000);
             config.setRetryCount(0);
             config.setRetryIntervalMs(0);
             config.setExceptionStrategy("FAIL_FAST");
 
-            ExternalApiInvokeService service = new ExternalApiInvokeService();
+            ExternalApiInvokeService service = serviceWithFields();
             ReflectionTestUtils.setField(service, "apiConfigMapper",
                     mapperProxy(RuleExternalApiConfigMapper.class, config));
             ReflectionTestUtils.setField(service, "datasourceMapper",
@@ -1726,7 +1714,7 @@ public class ExternalApiInvokeServiceTest {
         datasource.setBaseUrl("bad-url");
         datasource.setAuthType("NONE");
 
-        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        RuleExternalApiConfig config = ExternalApiTestConfig.api();
         config.setId(99L);
         config.setDatasourceId(7L);
         config.setRequestMethod("POST");
@@ -1741,7 +1729,7 @@ public class ExternalApiInvokeServiceTest {
         config.setFallbackValue("{}");
 
         RecordingBillingService billingService = new RecordingBillingService();
-        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        ExternalApiInvokeService service = serviceWithFields();
         ReflectionTestUtils.setField(service, "apiConfigMapper",
                 mapperProxy(RuleExternalApiConfigMapper.class, config));
         ReflectionTestUtils.setField(service, "datasourceMapper",
@@ -1774,7 +1762,7 @@ public class ExternalApiInvokeServiceTest {
             datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
             datasource.setAuthType("NONE");
 
-            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            RuleExternalApiConfig config = ExternalApiTestConfig.api();
             config.setId(99L);
             config.setDatasourceId(7L);
             config.setRequestMethod("POST");
@@ -1788,7 +1776,7 @@ public class ExternalApiInvokeServiceTest {
             config.setExceptionStrategy("FAIL_FAST");
 
             RecordingBillingService billingService = new RecordingBillingService();
-            ExternalApiInvokeService service = new ExternalApiInvokeService();
+            ExternalApiInvokeService service = serviceWithFields();
             ReflectionTestUtils.setField(service, "apiConfigMapper",
                     mapperProxy(RuleExternalApiConfigMapper.class, config));
             ReflectionTestUtils.setField(service, "datasourceMapper",
@@ -1817,7 +1805,7 @@ public class ExternalApiInvokeServiceTest {
         items.add(item);
         body.put("items", items);
 
-        Object masked = new ExternalApiInvokeService().maskSensitiveForLog(body);
+        Object masked = serviceWithFields().maskSensitiveForLog(body);
 
         Map<?, ?> maskedMap = (Map<?, ?>) masked;
         assertEquals("alice", maskedMap.get("username"));
@@ -1855,7 +1843,7 @@ public class ExternalApiInvokeServiceTest {
             datasource.setAuthConfig("{\"tokenUrl\":\"/token\",\"method\":\"POST\",\"tokenPath\":\"headers.Authorization\",\"expiresInPath\":\"headers.X-Expires-In\"}");
             datasource.setTokenCacheSeconds(0);
 
-            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            RuleExternalApiConfig config = ExternalApiTestConfig.api();
             config.setId(100L);
             config.setDatasourceId(8L);
             config.setRequestMethod("POST");
@@ -1868,7 +1856,7 @@ public class ExternalApiInvokeServiceTest {
             config.setRetryIntervalMs(0);
             config.setExceptionStrategy("FAIL_FAST");
 
-            ExternalApiInvokeService service = new ExternalApiInvokeService();
+            ExternalApiInvokeService service = serviceWithFields();
             ReflectionTestUtils.setField(service, "apiConfigMapper",
                     mapperProxy(RuleExternalApiConfigMapper.class, config));
             ReflectionTestUtils.setField(service, "datasourceMapper",
@@ -1923,14 +1911,7 @@ public class ExternalApiInvokeServiceTest {
             ReflectionTestUtils.setField(service, "runtimeCallLogService", runtimeLogs);
             ReflectionTestUtils.setField(service, "apiHttpClientRegistry", clientRegistry);
 
-            boolean failed = false;
-            try {
-                service.invoke(810L, new LinkedHashMap<>());
-            } catch (ExternalApiInvokeService.ApiInvokeException e) {
-                failed = true;
-            }
-
-            assertTrue(failed);
+            assertEquals(false, service.invoke(810L, new LinkedHashMap<>()).get("success"));
             assertEquals(2, tokenCalls.get());
             assertEquals(2, providerCalls.get());
             assertEquals(1, clientRegistry.size());
@@ -2000,12 +1981,7 @@ public class ExternalApiInvokeServiceTest {
             config.setAuthMode("INHERIT");
             config.setRetryCount(2);
 
-            try {
-                configuredService(config, datasource).invoke(811L, Map.of("amount", 100));
-                fail("应因供应商 401 失败");
-            } catch (ExternalApiInvokeService.ApiInvokeException expected) {
-                // 未确认供应商幂等性时，POST 不得刷新 Token 后再次提交。
-            }
+            assertEquals(false, configuredService(config, datasource).invoke(811L, Map.of("amount", 100)).get("success"));
 
             assertEquals(1, tokenCalls.get());
             assertEquals(1, providerCalls.get());
@@ -2042,7 +2018,7 @@ public class ExternalApiInvokeServiceTest {
                     + "\"tokenPath\":\"body.token_id\",\"tokenHeaderName\":\"token_id\",\"tokenPrefix\":\"\"}");
             datasource.setTokenCacheSeconds(0);
 
-            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            RuleExternalApiConfig config = ExternalApiTestConfig.api();
             config.setId(101L);
             config.setDatasourceId(9L);
             config.setRequestMethod("POST");
@@ -2055,7 +2031,7 @@ public class ExternalApiInvokeServiceTest {
             config.setRetryIntervalMs(0);
             config.setExceptionStrategy("FAIL_FAST");
 
-            ExternalApiInvokeService service = new ExternalApiInvokeService();
+            ExternalApiInvokeService service = serviceWithFields();
             ReflectionTestUtils.setField(service, "apiConfigMapper",
                     mapperProxy(RuleExternalApiConfigMapper.class, config));
             ReflectionTestUtils.setField(service, "datasourceMapper",
@@ -2100,7 +2076,7 @@ public class ExternalApiInvokeServiceTest {
                     + "\"tokenResponseScript\":\"jsonParse(strSubstring(rawBody, 8, strLength(rawBody) - 9))\"}");
             datasource.setTokenCacheSeconds(0);
 
-            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            RuleExternalApiConfig config = ExternalApiTestConfig.api();
             config.setId(114L);
             config.setDatasourceId(114L);
             config.setRequestMethod("POST");
@@ -2154,7 +2130,7 @@ public class ExternalApiInvokeServiceTest {
                     + "\"tokenPath\":\"body.access_token\",\"tokenPlacement\":\"SCRIPT_ONLY\"}");
             datasource.setTokenCacheSeconds(0);
 
-            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            RuleExternalApiConfig config = ExternalApiTestConfig.api();
             config.setId(115L);
             config.setDatasourceId(115L);
             config.setRequestMethod("POST");
@@ -2184,14 +2160,14 @@ public class ExternalApiInvokeServiceTest {
         datasource.setBaseUrl("https://vendor.example.com");
         datasource.setAuthType("NONE");
 
-        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        RuleExternalApiConfig config = ExternalApiTestConfig.api();
         config.setId(116L);
         config.setDatasourceId(116L);
         config.setRequestMethod("POST");
         config.setEndpointUrl("/api/v1/score/${appId}");
         config.setContentType("application/json");
         config.setAuthMode("NONE");
-        config.setAuthApiConfig("{\"scriptVariables\":[{\"name\":\"appId\",\"value\":\"APP001\",\"sensitive\":false}]}");
+        config.setAuthApiConfig("{\"scriptVariables\":[{\"name\":\"appId\",\"value\":{\"kind\":\"LITERAL\",\"valueType\":\"STRING\",\"value\":\"APP001\"},\"sensitive\":false}]}");
 
         Map<String, Object> preview = configuredService(config, datasource)
                 .previewRequest(config, new LinkedHashMap<>(), null);
@@ -2225,19 +2201,19 @@ public class ExternalApiInvokeServiceTest {
             datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
             datasource.setAuthType("NONE");
 
-            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            RuleExternalApiConfig config = ExternalApiTestConfig.api();
             config.setId(110L);
             config.setDatasourceId(110L);
             config.setRequestMethod("POST");
             config.setEndpointUrl("/script-score");
             config.setContentType("application/json");
             config.setAuthMode("NONE");
-            config.setRequestMapping("{\"mobile\":\"$.mobile_no\"}");
-            config.setAuthApiConfig("{\"scriptVariables\":[{\"name\":\"secret\",\"value\":\"S001\",\"sensitive\":true}]}");
+            config.setExecutionConfig(request(List.of(field("phone", "JSON", "mobile", reference(1, "mobile_no")))));
+            config.setAuthApiConfig("{\"scriptVariables\":[{\"name\":\"secret\",\"value\":{\"kind\":\"LITERAL\",\"valueType\":\"STRING\",\"value\":\"S001\"},\"sensitive\":true}]}");
             config.setRequestScript("apiPut(state, \"logRequestBody\", body); apiPut(state, \"transientKey\", \"EPHEMERAL\"); apiPut(body, \"sign\", apiMd5(mapGet(vars, \"secret\") + mapGet(body, \"mobile\"))); body");
             config.setResponseScript("apiPut(state, \"logResponseBody\", body); _result = newMap(); _result = mapPut(_result, \"score\", toNumberValue(mapGet(body, \"encryptedScore\"))); _result = mapPut(_result, \"shared\", mapGet(state, \"transientKey\")); _result");
             config.setPayloadCaptureConfig("{\"request\":{\"source\":\"PROCESSED\"},\"response\":{\"source\":\"PROCESSED\"}}");
-            config.setResponseMapping("{\"score\":\"body.score\",\"shared\":\"body.shared\"}");
+            response(config, Map.of("score", path("body.score"), "shared", path("body.shared")));
             config.setResponseCacheSeconds(0);
             config.setTimeoutMs(3000);
             config.setRetryCount(0);
@@ -2298,15 +2274,15 @@ public class ExternalApiInvokeServiceTest {
             datasource.setAuthType("TOKEN_API");
             datasource.setAuthConfig("{\"tokenUrl\":\"/token\",\"tokenPath\":\"body.token\"}");
 
-            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            RuleExternalApiConfig config = ExternalApiTestConfig.api();
             config.setId(111L);
             config.setDatasourceId(111L);
             config.setRequestMethod("POST");
             config.setEndpointUrl("/never-called");
             config.setContentType("application/json");
             config.setAuthMode("INHERIT");
-            config.setRequestMapping("{\"mobile\":\"$.mobile_no\"}");
-            config.setAuthApiConfig("{\"scriptVariables\":[{\"name\":\"secretKey\",\"value\":\"S001\",\"sensitive\":true}]}");
+            config.setExecutionConfig(request(List.of(field("phone", "JSON", "mobile", reference(1, "mobile_no")))));
+            config.setAuthApiConfig("{\"scriptVariables\":[{\"name\":\"secretKey\",\"value\":{\"kind\":\"LITERAL\",\"valueType\":\"STRING\",\"value\":\"S001\"},\"sensitive\":true}]}");
             config.setRequestScript("apiPut(body, \"signature\", apiMd5(mapGet(vars, \"secretKey\") + token)); body");
 
             ExternalApiInvokeService service = configuredService(config, datasource);
@@ -2341,7 +2317,7 @@ public class ExternalApiInvokeServiceTest {
             datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
             datasource.setAuthType("NONE");
 
-            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            RuleExternalApiConfig config = ExternalApiTestConfig.api();
             config.setId(112L);
             config.setDatasourceId(112L);
             config.setRequestMethod("POST");
@@ -2374,17 +2350,17 @@ public class ExternalApiInvokeServiceTest {
         datasource.setDatasourceCode("tianshu_rule_engine");
         datasource.setAuthType("NONE");
 
-        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        RuleExternalApiConfig config = ExternalApiTestConfig.api();
         config.setId(113L);
         config.setDatasourceId(113L);
         config.setApiCode("rule_script_test");
         config.setRequestMethod("POST");
         config.setEndpointUrl("RULE_SCRIPT_TEST");
         config.setAuthMode("NONE");
-        config.setRequestMapping("{\"ruleCode\":\"RULE_SCRIPT_TEST\",\"params\":{\"mobile_no\":\"$.mobile_no\"}}");
+        config.setExecutionConfig(request(List.of(field("phone", "JSON", "params.mobile_no", reference(1, "mobile_no")))));
         config.setRequestScript("apiPut(body, \"signed\", \"YES\"); body");
         config.setResponseScript("_result = newMap(); _result = mapPut(_result, \"score\", mapGet(body, \"rawScore\")); _result");
-        config.setResponseMapping("{\"score\":\"body.score\"}");
+        response(config, Map.of("score", path("body.score")));
         config.setResponseCacheSeconds(0);
         config.setRetryCount(0);
         config.setExceptionStrategy("FAIL_FAST");
@@ -2434,13 +2410,13 @@ public class ExternalApiInvokeServiceTest {
         config.put("tokenHeaderName", " ");
         config.put("tokenPrefix", "");
 
-        ReflectionTestUtils.invokeMethod(new ExternalApiInvokeService(), "applyTokenHeader",
+        ReflectionTestUtils.invokeMethod(serviceWithFields(), "applyTokenHeader",
                 new HttpHeaders(), config, "token-value");
     }
 
     @Test
     public void tokenApiDefaultsToRawAuthorizationAndPreservesPrefixSpaces() {
-        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        ExternalApiInvokeService service = serviceWithFields();
 
         HttpHeaders defaultHeaders = new HttpHeaders();
         ReflectionTestUtils.invokeMethod(service, "applyTokenHeader", defaultHeaders,
@@ -2510,9 +2486,20 @@ public class ExternalApiInvokeServiceTest {
         });
     }
 
+    private ExternalApiInvokeService serviceWithFields() {
+        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        ReflectionTestUtils.setField(service, "apiVariableService", new RuleVariableService() {
+            @Override public Map<String, String> buildRefScriptNameMap(Long projectId) {
+                return Map.of("VARIABLE:1", "mobile_no", "VARIABLE:2", "idcard_no", "VARIABLE:3", "request_id",
+                        "VARIABLE:4", "model_id", "VARIABLE:5", "model_params.br_applyloanstr_v2");
+            }
+        });
+        return service;
+    }
+
     private ExternalApiInvokeService configuredService(RuleExternalApiConfig config,
                                                        RuleExternalDatasource datasource) {
-        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        ExternalApiInvokeService service = serviceWithFields();
         ReflectionTestUtils.setField(service, "apiConfigMapper",
                 mapperProxy(RuleExternalApiConfigMapper.class, config));
         ReflectionTestUtils.setField(service, "datasourceMapper",

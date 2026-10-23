@@ -20,6 +20,11 @@ import static com.hengshucredit.rule.server.dashboard.DashboardMetricField.REQUE
 
 @Repository
 public class DashboardQueryRepository {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.security.ConsoleDataPermissionHandler consoleDataScope;
+
+    private String secured(String sql) { return consoleDataScope == null ? sql : consoleDataScope.filterSql(sql); }
+
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -74,7 +79,7 @@ public class DashboardQueryRepository {
                 .append(" amount_value, longitude_value, latitude_value, ")
                 .append(" create_time FROM ranked WHERE ranking_index = 1");
 
-        return jdbcTemplate.query(sql.toString(), this::applicationRow,
+        return scopedQuery(sql.toString(), this::applicationRow,
                 parameters.toArray());
     }
 
@@ -93,7 +98,7 @@ public class DashboardQueryRepository {
                 "execution.project_code");
         appendExecutionRuleFilter(sql, parameters, criteria,
                 "execution.rule_code");
-        return jdbcTemplate.query(sql.toString(),
+        return scopedQuery(sql.toString(),
                 (rs, rowNumber) -> rs.getLong(1), parameters.toArray());
     }
 
@@ -116,7 +121,7 @@ public class DashboardQueryRepository {
         appendProjectCode(sql, parameters, criteria,
                 "runtime_call.project_code");
         appendRuntimeRuleFilter(sql, parameters, criteria);
-        return jdbcTemplate.query(sql.toString(), (rs, rowNumber) ->
+        return scopedQuery(sql.toString(), (rs, rowNumber) ->
                         new RuntimeCall(rs.getBoolean("success"),
                                 nullableBoolean(rs, "request_success"),
                                 nullableBoolean(rs, "found"),
@@ -140,7 +145,7 @@ public class DashboardQueryRepository {
                         + "ON resource.id = api.datasource_id "
                         + "WHERE api.status = 1 AND resource.status = 1" + scope,
                 scopeParameters);
-        List<CategoryCount> listCategories = jdbcTemplate.query(
+        List<CategoryCount> listCategories = scopedQuery(
                 "SELECT resource.list_type, COUNT(*) AS item_count "
                         + "FROM rule_list_library resource "
                         + "WHERE resource.status = 1" + scope
@@ -167,7 +172,7 @@ public class DashboardQueryRepository {
         appendExecutionRuleFilter(sql, parameters, criteria,
                 "billing_record.rule_code");
         sql.append(" GROUP BY currency ORDER BY currency");
-        return jdbcTemplate.query(sql.toString(), (rs, rowNumber) ->
+        return scopedQuery(sql.toString(), (rs, rowNumber) ->
                         new BillingAmount(rs.getString("currency"),
                                 rs.getBigDecimal("total_amount")),
                 parameters.toArray());
@@ -217,7 +222,7 @@ public class DashboardQueryRepository {
         }
         appendApprovalRuleFilter(sql, parameters, criteria);
         sql.append(" GROUP BY approval.status");
-        return jdbcTemplate.query(sql.toString(), (rs, rowNumber) ->
+        return scopedQuery(sql.toString(), (rs, rowNumber) ->
                         new CategoryCount(rs.getString("status"),
                                 rs.getLong("item_count")),
                 parameters.toArray());
@@ -322,7 +327,7 @@ public class DashboardQueryRepository {
     }
 
     private long count(String sql, List<Object> parameters) {
-        Long value = jdbcTemplate.queryForObject(sql, Long.class,
+        Long value = jdbcTemplate.queryForObject(secured(sql), Long.class,
                 parameters.toArray());
         return value == null ? 0L : value;
     }
@@ -396,5 +401,9 @@ public class DashboardQueryRepository {
     }
 
     public record BillingAmount(String currency, BigDecimal amount) {
+    }
+
+    private <T> java.util.List<T> scopedQuery(String sql, org.springframework.jdbc.core.RowMapper<T> mapper, Object... parameters) {
+        return jdbcTemplate.query(secured(sql), mapper, parameters);
     }
 }

@@ -32,6 +32,7 @@ public final class ConsolePermissionCodes {
         addGovernedResource(definitions, "datasource", "外数管理", "/datasource", 300);
         addGovernedResource(definitions, "database", "数据库管理", "/database", 400);
         addGovernedResource(definitions, "function", "函数管理", "/function", 500);
+        definitions.add(new PermissionDefinition("function:native", "配置原生函数（需全局管理员）", "函数管理", "ACTION", null, 503));
         addGovernedResource(definitions, "rule", "规则管理", "/rule", 600);
         addGovernedResource(definitions, "experiment", "分流管理", "/experiment", 700);
         addGovernedResource(definitions, "project", "项目管理", "/project", 800);
@@ -60,7 +61,7 @@ public final class ConsolePermissionCodes {
         definitions.add(new PermissionDefinition(
                 "account:manage", "管理账户", "账户管理", "ACTION", null, 1001));
         definitions.add(new PermissionDefinition(
-                "account:approve", "审核注册", "账户管理", "ACTION", null, 1002));
+                "account:approve", "查看账户（旧权限兼容）", "账户管理", "ACTION", null, 1002));
         definitions.add(new PermissionDefinition(
                 "account:role-assign", "分配账户权限", "账户管理", "ACTION", null, 1003));
         definitions.add(new PermissionDefinition(

@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.controller;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.model.dto.GovernanceDraftRequest;
 import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
@@ -9,7 +11,6 @@ import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import com.hengshucredit.rule.model.entity.RuleModelVersion;
 import com.hengshucredit.rule.model.entity.ResourceImpactAnalysis;
 import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.governance.GovernanceApprovalService;
 import com.hengshucredit.rule.server.governance.GovernanceRequestView;
 import com.hengshucredit.rule.server.governance.GovernedProjectionMutation;
@@ -53,16 +54,16 @@ public class RuleModelController {
      * 健康检查
      */
     @GetMapping("/health")
-    public R<String> health() {
-        return R.ok("ok");
+    public ApiResponse<String> health() {
+        return ApiResponse.ok("ok");
     }
 
     /**
      * 查询 ONNX Runtime execution provider 能力，供模型配置页面展示。
      */
     @GetMapping("/runtimeCapabilities")
-    public R<Map<String, Object>> runtimeCapabilities() {
-        return R.ok(modelService.runtimeCapabilities());
+    public ApiResponse<Map<String, Object>> runtimeCapabilities() {
+        return ApiResponse.ok(modelService.runtimeCapabilities());
     }
 
     /**
@@ -73,13 +74,13 @@ public class RuleModelController {
      * @param excludeId 排除的模型ID（编辑时传自己的ID，跳过自身比对）
      */
     @GetMapping("/checkCode")
-    public R<Boolean> checkCode(
+    public ApiResponse<Boolean> checkCode(
             @RequestParam String modelCode,
             @RequestParam String scope,
             @RequestParam(required = false) Long projectId,
             @RequestParam(required = false) Long excludeId) {
         boolean exists = modelService.existsModelCodeConflict(modelCode, scope, projectId, excludeId);
-        return R.ok(exists);
+        return ApiResponse.ok(exists);
     }
 
     /**
@@ -87,7 +88,7 @@ public class RuleModelController {
      */
     @PostMapping("/upload")
     @RequirePermission("model:edit")
-    public R<GovernanceRequestView> upload(
+    public ApiResponse<GovernanceRequestView> upload(
             @RequestParam("file") MultipartFile file,
             @RequestParam(required = false) Long projectId,
             @RequestParam(required = false) String scope,
@@ -107,13 +108,13 @@ public class RuleModelController {
                     modelType, description, testParams,
                     onnxTaskType, onnxConfig,
                     preloadOnStartup, executionTimeoutMs);
-            return R.ok(createModelDraft(model, "CREATE",
+            return ApiResponse.ok(createModelDraft(model, "CREATE",
                     changeLog == null || changeLog.isBlank()
                             ? "上传并新建模型" : changeLog));
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         } catch (RuntimeException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
@@ -121,7 +122,7 @@ public class RuleModelController {
      * 分页查询模型列表
      */
     @GetMapping("/list")
-    public R<IPage<RuleModel>> list(
+    public ApiResponse<IPage<RuleModel>> list(
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) Long projectId,
@@ -132,7 +133,7 @@ public class RuleModelController {
             @RequestParam(required = false) String modelName,
             @RequestParam(required = false) String projectCode,
             @RequestParam(required = false) String projectName) {
-        return R.ok(modelService.pageList(pageNum, pageSize, projectId, scope,
+        return ApiResponse.ok(modelService.pageList(pageNum, pageSize, projectId, scope,
                 modelType, modelFormat, modelCode, modelName, projectCode, projectName));
     }
 
@@ -140,9 +141,9 @@ public class RuleModelController {
      * 获取模型详情（含字段信息）
      */
     @GetMapping("/{id}")
-    public R<RuleModel> get(@PathVariable Long id) {
+    public ApiResponse<RuleModel> get(@PathVariable Long id) {
         RuleModel model = modelService.getDetail(id);
-        return model != null ? R.ok(model) : R.fail("模型不存在");
+        return model != null ? ApiResponse.ok(model) : ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "模型不存在");
     }
 
     /**
@@ -150,12 +151,12 @@ public class RuleModelController {
      */
     @PutMapping
     @GovernedProjectionMutation
-    public R<Void> update(@RequestBody RuleModel model) {
+    public ApiResponse<Void> update(@RequestBody RuleModel model) {
         try {
             modelService.update(model);
-            return R.ok();
+            return ApiResponse.ok();
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
@@ -164,12 +165,12 @@ public class RuleModelController {
      */
     @DeleteMapping("/{id}")
     @GovernedProjectionMutation
-    public R<Void> delete(@PathVariable Long id, @RequestParam String impactToken) {
+    public ApiResponse<Void> delete(@PathVariable Long id, @RequestParam String impactToken) {
         try {
             modelService.delete(id, impactToken);
-            return R.ok();
+            return ApiResponse.ok();
         } catch (IllegalArgumentException | IllegalStateException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
@@ -178,13 +179,13 @@ public class RuleModelController {
      */
     @PostMapping("/publish/{id}")
     @GovernedProjectionMutation
-    public R<Void> publish(@PathVariable Long id,
+    public ApiResponse<Void> publish(@PathVariable Long id,
             @RequestParam(required = false) String changeLog) {
         try {
             modelService.publish(id, changeLog, null);
-            return R.ok();
+            return ApiResponse.ok();
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
@@ -193,28 +194,28 @@ public class RuleModelController {
      */
     @PostMapping("/unpublish/{id}")
     @GovernedProjectionMutation
-    public R<Void> unpublish(@PathVariable Long id, @RequestParam String impactToken) {
+    public ApiResponse<Void> unpublish(@PathVariable Long id, @RequestParam String impactToken) {
         try {
             modelService.unpublish(id, impactToken);
-            return R.ok();
+            return ApiResponse.ok();
         } catch (IllegalArgumentException | IllegalStateException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
     @PostMapping("/impact/{id}")
-    public R<ResourceImpactAnalysis> analyzeImpact(@PathVariable Long id,
+    public ApiResponse<ResourceImpactAnalysis> analyzeImpact(@PathVariable Long id,
                                                    @RequestParam String action) {
         try {
-            return R.ok(impactAnalysisService.analyze("MODEL", id, action, null));
+            return ApiResponse.ok(impactAnalysisService.analyze("MODEL", id, action, null));
         } catch (IllegalArgumentException | IllegalStateException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
     @PostMapping("/replace/{id}")
     @RequirePermission("model:edit")
-    public R<GovernanceRequestView> replace(@PathVariable Long id,
+    public ApiResponse<GovernanceRequestView> replace(@PathVariable Long id,
                                 @RequestParam("file") MultipartFile file,
                                 @RequestParam String impactToken,
                                 @RequestParam(required = false) String changeLog,
@@ -225,47 +226,47 @@ public class RuleModelController {
             RuleModel model = modelService.buildReplacementSnapshot(
                     id, file, testParams, onnxTaskType,
                     onnxConfig, impactToken);
-            return R.ok(createModelDraft(model, "UPDATE",
+            return ApiResponse.ok(createModelDraft(model, "UPDATE",
                     changeLog == null || changeLog.isBlank()
                             ? "替换模型文件" : changeLog));
         } catch (IllegalArgumentException | IllegalStateException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
     @GetMapping("/versions/{modelId}")
-    public R<List<RuleModelVersion>> listVersions(@PathVariable Long modelId) {
-        return R.ok(modelService.listVersions(modelId));
+    public ApiResponse<List<RuleModelVersion>> listVersions(@PathVariable Long modelId) {
+        return ApiResponse.ok(modelService.listVersions(modelId));
     }
 
     @GetMapping("/version/{modelId}/{version}")
-    public R<RuleModelVersion> getVersion(@PathVariable Long modelId, @PathVariable Integer version) {
+    public ApiResponse<RuleModelVersion> getVersion(@PathVariable Long modelId, @PathVariable Integer version) {
         RuleModelVersion snapshot = modelService.getVersion(modelId, version);
-        return snapshot == null ? R.fail("Version not found") : R.ok(snapshot);
+        return snapshot == null ? ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "Version not found") : ApiResponse.ok(snapshot);
     }
 
     @GetMapping("/versionCompare/{modelId}")
-    public R<Map<String, Object>> compareVersions(@PathVariable Long modelId,
+    public ApiResponse<Map<String, Object>> compareVersions(@PathVariable Long modelId,
             @RequestParam Integer leftVersion,
             @RequestParam Integer rightVersion) {
         try {
-            return R.ok(modelService.compareVersions(modelId, leftVersion, rightVersion));
+            return ApiResponse.ok(modelService.compareVersions(modelId, leftVersion, rightVersion));
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
     @PostMapping("/rollback/{modelId}/{version}")
     @RequirePermission("model:edit")
-    public R<GovernanceRequestView> rollback(@PathVariable Long modelId,
+    public ApiResponse<GovernanceRequestView> rollback(@PathVariable Long modelId,
                                              @PathVariable Integer version,
                                              @RequestParam(defaultValue = "NEW") String restoreMode) {
         try {
-            return R.ok(GovernanceRequestView.from(
+            return ApiResponse.ok(GovernanceRequestView.from(
                     legacyRestoreService.restoreModel(modelId, version, restoreMode,
                             operatorResolver.resolve())));
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
@@ -273,8 +274,8 @@ public class RuleModelController {
      * 查询项目下所有模型（非分页，设计器使用）
      */
     @GetMapping("/project/{projectId}/all")
-    public R<List<RuleModel>> listAllByProject(@PathVariable Long projectId) {
-        return R.ok(modelService.listByProject(projectId));
+    public ApiResponse<List<RuleModel>> listAllByProject(@PathVariable Long projectId) {
+        return ApiResponse.ok(modelService.listByProject(projectId));
     }
 
     /**
@@ -283,7 +284,7 @@ public class RuleModelController {
      * @param requestJson 原始输入参数，保留大整数和十进制精度
      */
     @PostMapping("/execute/{id}")
-    public R<Map<String, Object>> execute(@PathVariable Long id, @RequestBody String requestJson,
+    public ApiResponse<Map<String, Object>> execute(@PathVariable Long id, @RequestBody String requestJson,
                                           @RequestParam(required = false) Integer version) {
         long start = System.currentTimeMillis();
         RuleModel model = version == null ? modelService.getDetail(id) : new RuleModel();
@@ -303,25 +304,27 @@ public class RuleModelController {
                 String error = modelExecutionError(result);
                 logModelExecute(model, modelTestLogRequest(id, version, params), result,
                         error, System.currentTimeMillis() - start);
-                Integer code = "THROTTLED".equals(result.get("executionStatus")) ? 503 : 500;
-                return R.fail(code, error);
+                com.hengshucredit.rule.model.PlatformCode code = "THROTTLED".equals(result.get("executionStatus"))
+                        ? com.hengshucredit.rule.model.PlatformCode.CAPACITY_EXCEEDED
+                        : com.hengshucredit.rule.model.PlatformCode.MODEL_EXECUTION_ERROR;
+                return ApiResponse.fail(code, error);
             }
             logModelExecute(model, modelTestLogRequest(id, version, params), result, null, System.currentTimeMillis() - start);
-            return R.ok(result);
+            return ApiResponse.ok(result);
         } catch (IllegalArgumentException e) {
             logModelExecute(model, modelTestLogRequest(id, version, params), null, e.getMessage(), System.currentTimeMillis() - start);
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         } catch (RuntimeException e) {
             ExecutionCapacityException capacity = ExecutionCapacityException.find(e);
             if (capacity != null) {
                 logModelExecute(model, modelTestLogRequest(id, version, params), null,
                         capacity.getMessage(), System.currentTimeMillis() - start);
-                return R.fail(503, capacity.getMessage());
+                return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.CAPACITY_EXCEEDED, capacity.getMessage());
             }
             String msg = e.getMessage();
             if (msg == null || msg.isEmpty()) msg = e.toString();
             logModelExecute(model, modelTestLogRequest(id, version, params), null, "模型执行失败: " + msg, System.currentTimeMillis() - start);
-            return R.fail("模型执行失败: " + msg);
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.MODEL_EXECUTION_ERROR, msg);
         }
     }
 
@@ -343,18 +346,18 @@ public class RuleModelController {
     }
 
     @GetMapping("/version/{id}/{version}/test-context")
-    public R<Map<String, Object>> versionTestContext(@PathVariable Long id, @PathVariable Integer version) {
-        try { return R.ok(modelService.versionTestContext(id, version)); }
-        catch (IllegalArgumentException error) { return R.fail(error.getMessage()); }
+    public ApiResponse<Map<String, Object>> versionTestContext(@PathVariable Long id, @PathVariable Integer version) {
+        try { return ApiResponse.ok(modelService.versionTestContext(id, version)); }
+        catch (IllegalArgumentException error) { return ApiResponse.fail(error); }
     }
 
     @PostMapping("/version/{id}/{version}/testParams")
     @RequirePermission("model:edit")
     @org.springframework.transaction.annotation.Transactional
-    public R<GovernanceRequestView> saveVersionTestParams(@PathVariable Long id, @PathVariable Integer version,
+    public ApiResponse<GovernanceRequestView> saveVersionTestParams(@PathVariable Long id, @PathVariable Integer version,
                                                          @RequestBody Map<String, String> body) {
         RuleModel draft = modelService.prepareVersionSampleDraft(id, version, body.get("testParams"));
-        return R.ok(createModelDraft(draft, "UPDATE", "修改模型 v" + version + " 的测试参数"));
+        return ApiResponse.ok(createModelDraft(draft, "UPDATE", "修改模型 v" + version + " 的测试参数"));
     }
 
     /**
@@ -364,12 +367,12 @@ public class RuleModelController {
      */
     @PostMapping("/testParams/{id}")
     @GovernedProjectionMutation
-    public R<Void> saveTestParams(@PathVariable Long id, @RequestBody Map<String, String> body) {
+    public ApiResponse<Void> saveTestParams(@PathVariable Long id, @RequestBody Map<String, String> body) {
         try {
             modelService.saveTestParams(id, body.get("testParams"));
-            return R.ok();
+            return ApiResponse.ok();
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
@@ -378,9 +381,9 @@ public class RuleModelController {
      * @param id 模型ID
      */
     @GetMapping("/testParams/{id}")
-    public R<String> getTestParams(@PathVariable Long id) {
+    public ApiResponse<String> getTestParams(@PathVariable Long id) {
         String params = modelService.getTestParams(id);
-        return R.ok(params);
+        return ApiResponse.ok(params);
     }
 
     /**
@@ -388,12 +391,12 @@ public class RuleModelController {
      */
     @PutMapping("/inputField/{id}")
     @GovernedProjectionMutation
-    public R<Void> updateInputField(@PathVariable Long id, @RequestBody RuleModelInputField field) {
+    public ApiResponse<Void> updateInputField(@PathVariable Long id, @RequestBody RuleModelInputField field) {
         try {
             modelService.updateInputField(id, field);
-            return R.ok();
+            return ApiResponse.ok();
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
@@ -402,12 +405,12 @@ public class RuleModelController {
      */
     @PutMapping("/outputField/{id}")
     @GovernedProjectionMutation
-    public R<Void> updateOutputField(@PathVariable Long id, @RequestBody RuleModelOutputField field) {
+    public ApiResponse<Void> updateOutputField(@PathVariable Long id, @RequestBody RuleModelOutputField field) {
         try {
             modelService.updateOutputField(id, field);
-            return R.ok();
+            return ApiResponse.ok();
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
@@ -418,23 +421,23 @@ public class RuleModelController {
      */
     @PostMapping("/toGlobal/{id:\\d+}")
     @RequirePermission("model:edit")
-    public R<GovernanceRequestView> toGlobal(
+    public ApiResponse<GovernanceRequestView> toGlobal(
             @PathVariable Long id,
             @RequestBody Map<String, String> body) {
         try {
             RuleModel model = modelService.getDetail(id);
             if (model == null) {
-                return R.fail("模型不存在");
+                return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "模型不存在");
             }
             model.setModelCode(body.get("modelCode"));
             model.setScope("GLOBAL");
             model.setProjectId(0L);
             model.setProjectCode(null);
             model.setProjectName(null);
-            return R.ok(createModelDraft(
+            return ApiResponse.ok(createModelDraft(
                     model, "UPDATE", "将模型转为全局资源"));
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 

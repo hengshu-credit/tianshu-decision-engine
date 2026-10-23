@@ -5,6 +5,7 @@ import com.alibaba.qlexpress4.runtime.function.CustomFunction;
 import com.alibaba.qlexpress4.runtime.function.QMethodFunction;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.core.function.FunctionParameterContract;
+import com.hengshucredit.rule.core.function.FunctionScriptContract;
 import com.hengshucredit.rule.core.function.ManagedFunctionInvoker;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.server.functions.RuleListFunctions;
@@ -60,9 +61,8 @@ public class FunctionRegistrar {
                 continue;
             }
             String script = func.getImplScript();
-            if (script == null || script.trim().isEmpty()) {
-                continue;
-            }
+            FunctionScriptContract.requireIdentifier(func.getFuncCode());
+            if (script == null || script.trim().isEmpty()) throw new IllegalArgumentException("SCRIPT 函数实现脚本不能为空");
             List<String> paramNames = FunctionParameterContract.names(func.getParamsJson());
             sb.append("function ").append(func.getFuncCode()).append("(");
             for (int i = 0; i < paramNames.size(); i++) {

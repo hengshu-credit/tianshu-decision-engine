@@ -13,6 +13,9 @@ public class RuleExperimentGroupResult {
     private String groupName;
     private String groupType;
     private String ruleCode;
+    private Long ruleId;
+    private Integer ruleVersion;
+    private Long revisionId;
     private String routeReason;
     private boolean matched;
     private boolean skipped;

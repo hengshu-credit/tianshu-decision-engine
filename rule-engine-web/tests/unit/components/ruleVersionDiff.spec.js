@@ -54,24 +54,31 @@ describe('RuleVersionDiff', () => {
   })
 
   test('QL 脚本使用 Monaco Diff 并展示变量引用变化', async() => {
-    const originalModel = { getValue: vi.fn(() => 'result = age;'), setValue: vi.fn(), dispose: vi.fn() }
-    const modifiedModel = { getValue: vi.fn(() => 'result = age + 1;'), setValue: vi.fn(), dispose: vi.fn() }
-    const diffEditor = { setModel: vi.fn(), layout: vi.fn(), dispose: vi.fn() }
+    const originalModel = { getValue: vi.fn(() => 'result = age;'), getPositionAt: vi.fn(offset => ({ lineNumber: 1, column: offset + 1 })), setValue: vi.fn(), dispose: vi.fn() }
+    const modifiedModel = { getValue: vi.fn(() => 'result = age + 1;'), getPositionAt: vi.fn(offset => ({ lineNumber: 1, column: offset + 1 })), setValue: vi.fn(), dispose: vi.fn() }
+    const originalEditor = { getModel: vi.fn(() => originalModel), deltaDecorations: vi.fn(() => ['left-ref']) }
+    const modifiedEditor = { getModel: vi.fn(() => modifiedModel), deltaDecorations: vi.fn(() => ['right-ref']) }
+    const diffEditor = { setModel: vi.fn(), layout: vi.fn(), dispose: vi.fn(), getOriginalEditor: () => originalEditor, getModifiedEditor: () => modifiedEditor }
     monaco.editor.createModel.mockReset().mockReturnValueOnce(originalModel).mockReturnValueOnce(modifiedModel)
     monaco.editor.createDiffEditor.mockReset().mockReturnValue(diffEditor)
     window.monaco = monaco
 
     const wrapper = factory(
       'SCRIPT',
-      { script: 'result = age;', scriptVarRefs: [{ refCode: 'age', varId: 1 }] },
-      { script: 'result = age + 1;', scriptVarRefs: [{ refCode: 'age', varId: 2 }] }
+      { script: 'result = age;', scriptVarRefs: [{ refCode: 'age', varId: 1, refType: 'VARIABLE' }] },
+      { script: 'result = age + 1;', scriptVarRefs: [{ refCode: 'age', varId: 2, refType: 'VARIABLE' }] }
     )
+    await wrapper.setProps({
+      references: [{ varCode: 'age', varLabel: '年龄', varType: 'INTEGER', _varId: 1, _refType: 'VARIABLE' }],
+    })
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('.monaco-diff-editor').exists()).toBe(true)
     expect(wrapper.find('.rule-script-ref-diff').text()).toContain('变量 ID')
     expect(wrapper.find('.rule-script-ref-diff').text()).toContain('1')
     expect(wrapper.find('.rule-script-ref-diff').text()).toContain('2')
+    expect(originalEditor.deltaDecorations).toHaveBeenCalled()
+    expect(modifiedEditor.deltaDecorations).toHaveBeenCalled()
     wrapper.unmount()
     delete window.monaco
   })

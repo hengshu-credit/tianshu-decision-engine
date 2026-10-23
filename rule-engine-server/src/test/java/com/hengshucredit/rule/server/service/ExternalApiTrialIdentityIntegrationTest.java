@@ -32,11 +32,9 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.sql.DataSource;
-import java.io.Reader;
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
 import java.net.InetAddress;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -239,7 +237,7 @@ public class ExternalApiTrialIdentityIntegrationTest {
         Path root = Path.of(System.getProperty("user.dir")).toAbsolutePath();
         while (root != null && !Files.isDirectory(root.resolve("rule-engine-server"))) root = root.getParent();
         if (root == null) throw new IllegalStateException("无法定位仓库根目录");
-        Properties env = new Properties(); try (Reader reader = Files.newBufferedReader(root.resolve(".env"), StandardCharsets.UTF_8)) { env.load(reader); }
+        Properties env = LocalIntegrationSettings.load(root);
         InetAddress address = InetAddress.getByName(required(env, "MYSQL_HOST"));
         if (!address.isLoopbackAddress()) throw new IllegalStateException("身份持久化测试仅允许本机MySQL");
         String database = required(env, "MYSQL_DATABASE"); if (!database.matches("[A-Za-z0-9_$-]+")) throw new IllegalStateException("数据库名无效");
@@ -257,5 +255,5 @@ public class ExternalApiTrialIdentityIntegrationTest {
         source.setUrl("jdbc:mysql://" + host + ':' + port + '/' + database + "?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&connectTimeout=5000&socketTimeout=15000");
         source.setUsername(required(env, "MYSQL_USERNAME")); source.setPassword(required(env, "MYSQL_PASSWORD")); return source;
     }
-    private static String required(Properties env, String name) { String value = env.getProperty(name); if (value == null || value.isBlank()) throw new IllegalStateException("根.env缺少" + name); return value; }
+    private static String required(Properties env, String name) { String value = env.getProperty(name); if (value == null || value.isBlank()) throw new IllegalStateException("本机服务配置缺少" + name); return value; }
 }

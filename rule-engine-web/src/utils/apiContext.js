@@ -11,7 +11,7 @@ const protocolFieldsCache = new WeakMap()
 function responseStructure(branch, prefix = '') {
   const samples = Object.hasOwn(branch, 'sample') ? samplePathOptions(branch.sample) : []
   const sampleByPath = new Map(samples.map(field => [field.value, field]))
-  const outputs = branch.mode === 'VALUE' ? [{ path: '', value: branch.value }] : branch.outputFields || []
+  const outputs = branch.mode === 'VALUE' ? [{ path: branch.outputPath || '', value: branch.value }] : branch.outputFields || []
   return [...samples.map(field => ({ ...field, value: prefix + field.value })), ...outputs.flatMap(field => {
     const target = prefix + 'body' + (field.path ? (field.path.startsWith('[') ? '' : '.') + field.path : '')
     const operand = field.value

@@ -43,7 +43,7 @@ final class TransferVersionReferences {
                 String type = rule ? "RULE" : "FUNCTION".equals(map.get("kind")) ? "FUNCTION" : String.valueOf(map.get("refType"));
                 String idField = rule ? "ruleId" : "FUNCTION".equals(type) ? "functionId" : map.containsKey("refId") ? "refId" : map.containsKey("varId") ? "varId" : "_varId";
                 String versionField = rule ? "versionBindingId" : "versionId";
-                if (!Set.of("RULE", "VARIABLE", "CONSTANT", "MODEL", "MODEL_OUTPUT", "DATA_OBJECT", "EXTERNAL_API", "FUNCTION").contains(type))
+                if (!Set.of("RULE", "VARIABLE", "CONSTANT", "MODEL", "MODEL_OUTPUT", "DATA_OBJECT", "DATA_OBJECT_ROOT", "EXTERNAL_API", "FUNCTION").contains(type))
                     throw new IllegalArgumentException("不支持的固定版本引用类型: " + type);
                 Long id = positive(map.get(idField)), version = positive(map.get(versionField));
                 List<String> aliases = new ArrayList<>();

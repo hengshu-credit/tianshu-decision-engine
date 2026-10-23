@@ -130,16 +130,12 @@ public class RuleCompileServiceTest {
         });
         ReflectionTestUtils.setField(service, "functionService", new RuleFunctionService() {
             @Override
-            public Map<Long, String> buildFunctionCodeMap(Long projectId) {
-                return Collections.singletonMap(31L, "projectRisk");
-            }
-
-            @Override
-            public Map<Long, Integer> buildFunctionArityMap(Long projectId) {
-                return Collections.singletonMap(31L, 1);
-            }
-            @Override public java.util.Set<Long> buildNativeFunctionIds(Long projectId) {
-                return nativeFunctions ? java.util.Set.of(31L) : java.util.Set.of();
+            public java.util.List<com.hengshucredit.rule.model.entity.RuleFunction> listByProject(Long projectId) {
+                var function = new com.hengshucredit.rule.model.entity.RuleFunction();
+                function.setId(31L); function.setFuncCode("projectRisk");
+                function.setParamsJson("[{\"name\":\"value\",\"type\":\"NUMBER\"}]");
+                function.setImplType(nativeFunctions ? "JAVA" : "QLEXPRESS");
+                return java.util.List.of(function);
             }
         });
         return service;

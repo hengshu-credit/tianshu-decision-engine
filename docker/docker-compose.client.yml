@@ -3,7 +3,7 @@
 # 使用 .env.client；客户端可单独部署到其他机器并独立扩容。
 # runtime-http 512M/0.10C、runtime-sdk 768M/0.15C；默认各 1 个实例。
 # 本文件默认 runtime-http、runtime-sdk 各 1 个实例；客户端可独立扩容，SDK 连接 server 共用的 Redis。
-name: ${DEPLOY_PROJECT:-tianshu}
+name: ${DEPLOY_PROJECT:-tianshu-client}
 
 x-java: &java
   image: ${JAVA_IMAGE:-eclipse-temurin:17-jre-jammy}
@@ -27,6 +27,12 @@ x-java: &java
 
 x-runtime: &runtime
   <<: *java
+  healthcheck:
+    test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${SERVER_PORT}/actuator/health/readiness | grep -q '\"status\":\"UP\"'"]
+    start_period: 120s
+    interval: 10s
+    timeout: 5s
+    retries: 12
   volumes:
     - type: bind
       source: ${RUNTIME_DIR:-./runtime}/runtime.jar
@@ -139,5 +145,5 @@ volumes:
 
 networks:
   rule-engine:
-    name: ${ENGINE_NETWORK:-${DEPLOY_PROJECT:-tianshu}-engine}
+    name: ${ENGINE_NETWORK:-${DEPLOY_PROJECT:-tianshu-client}-engine}
     driver: bridge

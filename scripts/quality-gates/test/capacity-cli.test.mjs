@@ -15,7 +15,7 @@ test('CLI exports arrival evidence and returns failure on dropped load despite s
     await rm(directory, { recursive: true, force: true })
   })
   const server = createServer((_request, response) => {
-    setTimeout(() => response.end('{"success":true}'), 80)
+    setTimeout(() => response.end('{"code":"000000","success":true}'), 80)
   })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   t.after(() => new Promise(resolve => server.close(resolve)))

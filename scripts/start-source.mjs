@@ -1,39 +1,32 @@
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { loadSourceEnvironment } from './lib/source-environment.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const isWindows = process.platform === 'win32'
 const command = name => isWindows ? `${name}.cmd` : name
 
-function loadEnv() {
-  const values = {}
-  const files = ['.env.server', '.env.client']
-    .map(name => path.join(root, name))
-    .filter(existsSync)
-  if (files.length === 0) throw new Error('缺少 .env.server 和 .env.client，请先复制两个配置模板并填写真实配置。')
-  for (const file of files) {
-    for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
-      const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/)
-      if (!match || match[1].startsWith('#')) continue
-      values[match[1]] = match[2].replace(/^(['"])(.*)\1$/, '$2')
-    }
-  }
-  return { ...values, ...process.env }
+function launch(executable, args, options) {
+  return isWindows
+    ? spawn('cmd.exe', ['/d', '/c', command(executable), ...args], { ...options, windowsHide: true })
+    : spawn(executable, args, options)
 }
 
-const env = loadEnv()
+const serverEnv = loadSourceEnvironment(root, 'server')
+const clientEnv = loadSourceEnvironment(root, 'client')
 const children = []
 let stopping = false
 
-function start(name, executable, args, cwd, childEnv = env) {
-  const child = spawn(command(executable), args, {
+function start(name, executable, args, cwd, childEnv = serverEnv) {
+  const child = launch(executable, args, {
     cwd,
     env: { ...childEnv, FORCE_COLOR: '1' },
     stdio: 'inherit'
   })
   children.push({ name, child })
+  child.once('error', error => { console.error(`${name} 启动失败：${error.message}`); stop(1) })
   child.once('exit', (code, signal) => {
     if (stopping) return
     if (code !== 0) {
@@ -48,7 +41,10 @@ function stop(code = 0) {
   if (stopping) return
   stopping = true
   for (const { child } of children.reverse()) {
-    if (child.exitCode === null) child.kill('SIGTERM')
+    if (child.exitCode === null && child.pid) {
+      if (isWindows) spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
+      else child.kill('SIGTERM')
+    }
   }
   setTimeout(() => process.exit(code), 1000).unref()
 }
@@ -58,32 +54,31 @@ process.once('SIGTERM', () => stop(0))
 
 try {
   console.log('正在编译后端和运行时模块…')
-  const build = spawn(command('mvn'), ['-B', 'install', '-DskipTests'], {
+  const build = launch('mvn', ['-B', 'install', '-DskipTests'], {
     cwd: root,
-    env: { ...env, FORCE_COLOR: '1' },
+    env: { ...process.env, FORCE_COLOR: '1' },
     stdio: 'inherit'
   })
-  const buildCode = await new Promise(resolve => build.once('exit', resolve))
+  const buildCode = await new Promise((resolve, reject) => { build.once('exit', resolve); build.once('error', reject) })
   if (buildCode !== 0) throw new Error(`Maven 编译失败：${buildCode}`)
 
-  const runtimeServer = env.RUNTIME_RULE_SERVER_URL || 'http://127.0.0.1:8080'
   start('server', 'mvn', ['spring-boot:run', '-DskipTests'], path.join(root, 'rule-engine-server'))
   start('http', 'mvn', ['spring-boot:run', '-DskipTests'], path.join(root, 'rule-engine-runtime'), {
-    ...env, SPRING_PROFILES_ACTIVE: 'http', SERVER_PORT: '7070', RULE_SERVER_URL: runtimeServer
+    ...clientEnv, SPRING_PROFILES_ACTIVE: 'http', SERVER_PORT: clientEnv.RUNTIME_HTTP_PORT || '7070'
   })
   start('sdk', 'mvn', ['spring-boot:run', '-DskipTests'], path.join(root, 'rule-engine-runtime'), {
-    ...env, SPRING_PROFILES_ACTIVE: 'sdk', SERVER_PORT: '7071', RULE_SERVER_URL: runtimeServer
+    ...clientEnv, SPRING_PROFILES_ACTIVE: 'sdk', SERVER_PORT: clientEnv.RUNTIME_SDK_PORT || '7071'
   })
 
   const web = path.join(root, 'rule-engine-web')
   if (!existsSync(path.join(web, 'node_modules'))) {
     console.log('正在安装前端依赖…')
-    const install = spawn(command('npm'), ['ci'], { cwd: web, env, stdio: 'inherit' })
-    const installCode = await new Promise(resolve => install.once('exit', resolve))
+    const install = launch('npm', ['ci'], { cwd: web, env: serverEnv, stdio: 'inherit' })
+    const installCode = await new Promise((resolve, reject) => { install.once('exit', resolve); install.once('error', reject) })
     if (installCode !== 0) throw new Error(`前端依赖安装失败：${installCode}`)
   }
-  start('web', 'npm', ['run', 'dev'], web, env)
-  console.log('源码服务已启动：server=8080, web=9090, http=7070, sdk=7071。按 Ctrl+C 停止全部服务。')
+  start('web', 'npm', ['run', 'dev'], web, serverEnv)
+  console.log(`源码服务启动中：server=${serverEnv.SERVER_PORT || 8080}, web=${serverEnv.VITE_PORT || 9090}, http=${clientEnv.RUNTIME_HTTP_PORT || 7070}, sdk=${clientEnv.RUNTIME_SDK_PORT || 7071}。按 Ctrl+C 停止全部服务。`)
 } catch (error) {
   console.error(error.message)
   stop(1)

@@ -1,3 +1,4 @@
+import { PLATFORM_SUCCESS_CODE } from '@/utils/platformResponse'
 import {
   clearCurrentUser,
   hasPermission,
@@ -42,8 +43,13 @@ export function createConsoleAuthGuard(loadConfig, loadCurrentUser) {
     try {
       body = await loadConfig()
     } catch (e) { /* fail closed below */ }
-    var configLoaded = Boolean(body && body.code === 200 && body.data)
+    var configLoaded = Boolean(body && body.code === PLATFORM_SUCCESS_CODE && body.data)
     var loginEnabled = configLoaded && body.data.loginEnabled === true
+    if (loginEnabled && body.data.initializationRequired === true && to.path !== '/register') {
+      setPermissionEnforcement(true)
+      clearCurrentUser()
+      return next({ path: '/register', replace: true })
+    }
     if (PUBLIC_AUTH_PATHS.has(to.path)) {
       setPermissionEnforcement(!configLoaded || loginEnabled)
       if (configLoaded && !loginEnabled) {
@@ -68,7 +74,7 @@ export function createConsoleAuthGuard(loadConfig, loadCurrentUser) {
     }
     try {
       var me = await loadCurrentUser()
-      if (me && me.code === 200 && me.data && me.data.username) {
+      if (me && me.code === PLATFORM_SUCCESS_CODE && me.data && me.data.username) {
         setCurrentUser({
           ...me.data,
           permissions: Array.isArray(me.data.permissions)

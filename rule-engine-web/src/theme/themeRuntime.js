@@ -31,6 +31,16 @@ export function applyTheme(config, root = document.documentElement) {
   root.classList.toggle('theme-color-weak', normalized.colorWeak)
 
   setProperty(root, '--tianshu-brand-background', preset.background)
+  // 登录按钮加载时会淡化到 0.88；预留对比度，避免渐变较亮的一端文字难读。
+  const buttonTarget = relativeLuminance(preset.foreground) > 0.5 ? '#000000' : '#FFFFFF'
+  const buttonBackground = preset.background.replace(/#[\da-f]{6}/gi, color => {
+    for (let weight = 0; weight <= 100; weight++) {
+      const adjusted = mixThemeColors(color, buttonTarget, weight / 100)
+      if (contrastRatio(preset.foreground, adjusted) >= 7) return adjusted
+    }
+    return buttonTarget
+  })
+  setProperty(root, '--tianshu-brand-button-background', buttonBackground)
   setProperty(
     root,
     '--tianshu-brand-gradient',

@@ -27,21 +27,16 @@ public class ExternalConfigDefaultsTest {
     }
 
     @Test
-    public void apiBlankJsonConfigsBecomeNullButMappingsArePreserved() throws Exception {
-        RuleExternalApiConfig config = new RuleExternalApiConfig();
-        config.setHeaderConfig("");
-        config.setQueryConfig("  ");
-        config.setRequestMapping("{\"customerId\":\"$.customerId\"}");
-        config.setResponseMapping("");
+    public void apiBlankJsonConfigsBecomeNullAndCurrentFieldsArePreserved() throws Exception {
+        RuleExternalApiConfig config = ExternalApiTestConfig.api();
+        String execution = ExternalApiTestConfig.request(java.util.List.of(ExternalApiTestConfig.field("customer", "JSON", "Customer.ID", ExternalApiTestConfig.reference(1L, "customerId"))));
+        config.setExecutionConfig(execution);
         config.setAuthApiConfig("");
         config.setRetryCondition("  ");
 
         invokeFillDefaults(new RuleExternalApiConfigService(), config);
 
-        assertNull(config.getHeaderConfig());
-        assertNull(config.getQueryConfig());
-        assertEquals("{\"customerId\":\"$.customerId\"}", config.getRequestMapping());
-        assertNull(config.getResponseMapping());
+        assertEquals(execution, config.getExecutionConfig());
         assertNull(config.getAuthApiConfig());
         assertNull(config.getRetryCondition());
         assertNull(config.getContentType());
@@ -49,38 +44,28 @@ public class ExternalConfigDefaultsTest {
     }
 
     @Test
-    public void apiAsyncDefaultsPreserveSelectedAsyncConfigOnly() throws Exception {
-        RuleExternalApiConfig config = new RuleExternalApiConfig();
+    public void apiAsyncDefaultsPreserveWorkflow() throws Exception {
+        RuleExternalApiConfig config = ExternalApiTestConfig.api();
         config.setRequestMode("ASYNC");
-        config.setAsyncResultMode("POLL");
-        String pollConfig = "{\"resultEndpointUrl\":\"/result/${taskId}\",\"taskIdPath\":\"body.taskId\",\"statusPath\":\"body.status\",\"successValue\":\"DONE\"}";
-        config.setAsyncPollConfig(pollConfig);
-        config.setAsyncCallbackConfig("");
-        config.setAsyncCallbackUrl("  ");
-        config.setAsyncResultPath("body.data");
+        String execution = ExternalApiTestConfig.pollingResult("/submit", "/result/${steps.submit.body.taskId}", "body.status", "DONE", 3, 1, "body.data");
+        config.setExecutionConfig(execution);
 
         invokeFillDefaults(new RuleExternalApiConfigService(), config);
 
         assertEquals("ASYNC", config.getRequestMode());
-        assertEquals("POLL", config.getAsyncResultMode());
-        assertEquals(pollConfig, config.getAsyncPollConfig());
-        assertNull(config.getAsyncCallbackConfig());
-        assertNull(config.getAsyncCallbackUrl());
-        assertEquals("body.data", config.getAsyncResultPath());
+        assertEquals(execution, config.getExecutionConfig());
     }
 
     @Test
     public void apiRequestAndAsyncModesAreNormalizedAndValidated() throws Exception {
-        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        RuleExternalApiConfig config = ExternalApiTestConfig.api();
         config.setRequestMode(" async ");
-        config.setAsyncResultMode(" poll ");
         config.setRequestMethod(" get ");
-        config.setAsyncPollConfig("{\"resultEndpointUrl\":\"/result/${taskId}\",\"taskIdPath\":\"body.taskId\",\"statusPath\":\"body.status\",\"successValue\":\"DONE\"}");
+        config.setExecutionConfig(ExternalApiTestConfig.polling("/submit", "/result/${steps.submit.body.taskId}", "body.status", "DONE", 3));
 
         invokeFillDefaults(new RuleExternalApiConfigService(), config);
 
         assertEquals("ASYNC", config.getRequestMode());
-        assertEquals("POLL", config.getAsyncResultMode());
         assertEquals("GET", config.getRequestMethod());
     }
 
@@ -97,7 +82,7 @@ public class ExternalConfigDefaultsTest {
 
     @Test
     public void apiExceptionStrategyIsNormalizedAndInvalidValuesRejected() throws Exception {
-        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        RuleExternalApiConfig config = ExternalApiTestConfig.api();
         config.setExceptionStrategy(" use_cache ");
         invokeFillDefaults(new RuleExternalApiConfigService(), config);
         assertEquals("USE_CACHE", config.getExceptionStrategy());
@@ -108,16 +93,16 @@ public class ExternalConfigDefaultsTest {
     }
 
     @Test
-    public void apiMappingMustBeJsonObjectInsteadOfSilentlyBecomingEmpty() {
+    public void apiExecutionMustBeJsonObjectInsteadOfSilentlyBecomingEmpty() {
         RuleExternalApiConfig config = new RuleExternalApiConfig();
-        config.setRequestMapping("[\"customerId\"]");
+        config.setExecutionConfig("[\"customerId\"]");
         try {
             invokeFillDefaults(new RuleExternalApiConfigService(), config);
             org.junit.Assert.fail("Expected JSON object validation to fail");
         } catch (Exception error) {
             Throwable cause = error instanceof InvocationTargetException
                     ? ((InvocationTargetException) error).getCause() : error;
-            org.junit.Assert.assertTrue(cause.getMessage().contains("请求映射"));
+            org.junit.Assert.assertTrue(cause.getMessage().contains("统一链路配置"));
         }
     }
 

@@ -10,7 +10,7 @@ for (const colorScheme of ['LIGHT', 'DARK']) test(`${colorScheme} 字段选择�
   const apiData = createDesignerApiData()
   apiData.get('/api/rule/variable/project/1').push(...Array.from({ length: 100 }, (_, index) => ({ id: 1000 + index, varCode: `value${index}`, varLabel: `字段 ${index}`, varType: 'NUMBER', varSource: 'INPUT' })))
   apiData.set('/api/rule/function/project/1/all', [{ id: 99, funcCode: 'countItems', funcName: '计数', returnType: 'NUMBER', paramsJson: '[]' }])
-  apiData.set('/api/rule/datasource/api-config/list', { records: [{ id: 88, apiCode: 'credit_api', apiName: '征信 API' }], total: 1 })
+  apiData.set('/api/rule/datasource/api-config/available', [{ id: 88, apiCode: 'credit_api', apiName: '征信 API' }])
   const { assertClean } = await installDistRoutes(page, { apiData })
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto('http://tianshu.local/index.html#/designer/table/101')

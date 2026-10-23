@@ -99,6 +99,11 @@ public class RuleReferenceCatalogService {
         for (var variable : snapshot.getVariables()) catalog.getVariables().add(row(variable,
                 "id", "varCode", "varLabel", "scriptName", "varType", "varSource", "defaultValue", "exampleValue", "valueRange", "recordResult", "status"));
         Map<String, Map<String, Object>> objects = new LinkedHashMap<>();
+        for (var object : snapshot.getDataObjects()) {
+            Map<String, Object> group = new LinkedHashMap<>();
+            group.put("object", row(object, "id", "objectCode", "objectLabel", "scriptName"));
+            group.put("variables", new ArrayList<Map<String, Object>>()); objects.put(object.getId().toString(), group);
+        }
         for (var field : snapshot.getDataObjectFields()) {
             String objectId = field.getObjectId() == null ? "missing:" + field.getId() : field.getObjectId().toString();
             Map<String, Object> group = objects.computeIfAbsent(objectId, ignored -> {
@@ -130,7 +135,7 @@ public class RuleReferenceCatalogService {
                 var model = metadata.toJavaObject(com.hengshucredit.rule.model.entity.RuleModel.class);
                 Map<String, Object> value = row(model, "id", "modelCode", "modelName", "modelType", "modelFormat", "currentVersion");
                 value.put("inputFields", fields(model.getInputFields())); value.put("outputFields", fields(model.getOutputFields())); catalog.getModels().add(value);
-            } else if ("DATA_OBJECT".equals(type)) {
+            } else if ("DATA_OBJECT".equals(type) || "DATA_OBJECT_ROOT".equals(type)) {
                 Map<String, Object> object = row(payload.toJavaObject(com.hengshucredit.rule.model.entity.RuleDataObject.class), "id", "objectCode", "objectLabel", "scriptName");
                 List<Map<String, Object>> fields = new ArrayList<>();
                 for (var field : payload.getJSONArray("fields").toJavaList(com.hengshucredit.rule.model.entity.RuleDataObjectField.class)) {
@@ -138,7 +143,12 @@ public class RuleReferenceCatalogService {
                     value.put("version", pinned.getInteger("version")); fields.add(value);
                 }
                 catalog.getObjectTree().add(Map.of("object", object, "variables", fields));
-            } else if ("EXTERNAL_API".equals(type)) catalog.getApis().add(row(payload.toJavaObject(com.hengshucredit.rule.model.entity.RuleExternalApiConfig.class), "id", "apiCode", "apiName"));
+            } else if ("EXTERNAL_API".equals(type)) {
+                var api = payload.toJavaObject(com.hengshucredit.rule.model.entity.RuleExternalApiConfig.class);
+                Map<String, Object> metadata = row(api, "id", "apiCode", "apiName");
+                metadata.put("resultFields", ExternalApiResponseSchema.catalog(api));
+                catalog.getApis().add(metadata);
+            }
         }
         for (var rule : snapshot.getNestedRules()) {
             Map<String, Object> value = row(rule, "ruleCode", "ruleName", "modelType", "version", "versionBindingId", "bindingGeneration", "revisionId", "artifactDigest");

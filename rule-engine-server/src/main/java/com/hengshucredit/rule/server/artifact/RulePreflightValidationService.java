@@ -26,6 +26,7 @@ import java.util.Map;
 
 @Service
 public class RulePreflightValidationService {
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(RulePreflightValidationService.class);
     @Resource
     private RuleRevisionMapper revisionMapper;
     @Resource
@@ -40,45 +41,74 @@ public class RulePreflightValidationService {
     private RuleDependencyClosureService dependencyClosureService;
     @Resource
     private RuleFieldAnalyzer ruleFieldAnalyzer;
+    @Resource
+    private com.hengshucredit.rule.server.service.RuleRegressionEvidenceService regressionEvidence;
 
     private final RuleSchemaService schemaService = new RuleSchemaService();
     private final RuleSchemaCompatibilityService compatibilityService =
             new RuleSchemaCompatibilityService();
 
     public RulePreflightReport validate(Long revisionId) {
-        RulePreflightReport report = validatePreview(loadRevision(revisionId));
+        RuleRevision revision = loadRevision(revisionId);
+        RulePreflightReport report = validatePreview(revision);
         report.setRevisionId(revisionId);
+        if (report.isValid()) regressionEvidence.appendGate(revision.getDefinitionId(), report);
         return report;
     }
 
     /** 与持久化预检共享校验，但绝不插入临时修订。 */
     public RulePreflightReport validatePreview(RuleRevision revision) {
+        return validatePreview(revision, true);
+    }
+
+    public RulePreflightReport validatePreview(RuleRevision revision, boolean includeRegressionSummary) {
+        return analyze(revision, includeRegressionSummary).report();
+    }
+
+    /** Analysis stays within this operation; never reuse it as a later publication authorization. */
+    public record Analysis(RulePreflightReport report, RuleFieldAnalyzer.ResolvedFields fields,
+                           RuleDependencyClosureService.DependencyClosure dependencies, String modelDigest) { }
+
+    public Analysis analyzeForPublication(Long revisionId) {
+        RuleRevision revision = loadRevision(revisionId);
+        Analysis analysis = analyze(revision, true);
+        if (analysis.report().isValid()) regressionEvidence.appendGate(revision.getDefinitionId(), analysis.report());
+        return analysis;
+    }
+
+    public Analysis analyze(RuleRevision revision, boolean includeRegressionSummary) {
+        long started = System.nanoTime();
+        Map<String, Long> durations = new LinkedHashMap<>();
         RulePreflightReport report = new RulePreflightReport();
         report.setRevisionId(revision == null ? null : revision.getId());
         if (revision == null) {
             report.getErrors().add(RuleValidationIssue.error("REVISION_NOT_FOUND", "$", "规则修订不存在"));
             report.setValid(false);
-            return report;
+            return new Analysis(report, null, null, null);
         }
         RuleDefinition definition = loadDefinition(revision.getDefinitionId());
         report.setLockVersion(revision.getLockVersion());
         if (definition == null) {
             report.getErrors().add(RuleValidationIssue.error("DEFINITION_NOT_FOUND", "$", "规则定义不存在"));
             report.setValid(false);
-            return report;
+            return new Analysis(report, null, null, null);
         }
 
+        long stage = System.nanoTime();
         RuleFieldAnalyzer.ResolvedFields fields = resolveFields(definition, revision);
+        stage = recordDuration(durations, "fields", stage);
         fields.getDiagnostics().forEach(issue -> issue.setRevisionId(revision.getId()));
         fields.getDiagnostics().forEach(issue -> addIssue(report, issue));
 
         RuleReferenceIntegrityService.AuditReport audit = auditReferences(definition, revision);
+        stage = recordDuration(durations, "references", stage);
         for (RuleReferenceIntegrityService.ReferenceIssue issue : audit.getIssues()) {
             report.getErrors().add(RuleValidationIssue.error("REFERENCE_" + issue.getReason(),
                     issue.getPath(), issue.getRefType(), issue.getRefId(), issue.getMessage()));
         }
 
         CompileResult compileResult = compile(definition, revision);
+        stage = recordDuration(durations, "compile", stage);
         if (!compileResult.isSuccess()) {
             report.getErrors().add(RuleValidationIssue.error("COMPILE_FAILED", "$",
                     compileResult.getErrorMessage()));
@@ -92,6 +122,7 @@ public class RulePreflightValidationService {
         compiledRevision.setCompiledScript(report.getCompiledScript());
         RuleDependencyClosureService.DependencyClosure closure =
                 resolveDependencies(definition, compiledRevision, fields);
+        stage = recordDuration(durations, "dependencies", stage);
         report.setDependencyDigest(closure.getDependencyDigest());
         for (RuleValidationIssue issue : closure.getIssues()) {
             addIssue(report, issue);
@@ -104,6 +135,7 @@ public class RulePreflightValidationService {
                     propertySchemas(fields.getOutputPropertySchemas()));
             report.setInputSchemaJson(schemas.getInputSchemaJson());
             report.setOutputSchemaJson(schemas.getOutputSchemaJson());
+            report.setFieldDigest(fieldDigest(fields));
         } catch (IllegalArgumentException e) {
             report.getErrors().add(RuleValidationIssue.error("SCHEMA_INVALID", "$", e.getMessage()));
             schemas = schemaService.build(Collections.emptyList(), Collections.emptyList(),
@@ -146,7 +178,19 @@ public class RulePreflightValidationService {
         digestSource.put("dependencyDigest", closure.getDependencyDigest());
         report.setContentDigest(Sha256Digests.bytes(CanonicalJson.writeBytes(digestSource)));
         report.setValid(report.getErrors().isEmpty());
-        return report;
+        stage = recordDuration(durations, "schemasAndDigests", stage);
+        if (includeRegressionSummary && report.isValid()) regressionEvidence.appendSummary(definition.getId(), report);
+        recordDuration(durations, "regression", stage);
+        recordDuration(durations, "total", started);
+        LOG.info("Rule analysis definitionId={} revisionId={} valid={} durationMs={}",
+                revision.getDefinitionId(), revision.getId(), report.isValid(), durations);
+        return new Analysis(report, fields, closure, Sha256Digests.text(revision.getModelJson()));
+    }
+
+    private long recordDuration(Map<String, Long> durations, String stage, long started) {
+        long now = System.nanoTime();
+        durations.put(stage, java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(now - started));
+        return now;
     }
 
     private void addIssue(RulePreflightReport report, RuleValidationIssue issue) {
@@ -155,6 +199,27 @@ public class RulePreflightValidationService {
         } else {
             report.getErrors().add(issue);
         }
+    }
+
+    public static String fieldDigest(RuleFieldAnalyzer.ResolvedFields fields) {
+        return Sha256Digests.text(CanonicalJson.write(Map.of("inputs", fieldContracts(fields.getInputFields()),
+                "outputs", fieldContracts(fields.getOutputFields()), "inputProperties", fields.getInputPropertySchemas(),
+                "outputProperties", fields.getOutputPropertySchemas())));
+    }
+
+    private static List<Map<String, Object>> fieldContracts(List<?> fields) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Object field : fields) {
+            var bean = new org.springframework.beans.BeanWrapperImpl(field);
+            Map<String, Object> contract = new LinkedHashMap<>();
+            for (var property : bean.getPropertyDescriptors()) {
+                String name = property.getName();
+                if (List.of("class", "id", "definitionId", "createTime", "updateTime").contains(name)) continue;
+                contract.put(name, bean.getPropertyValue(name));
+            }
+            result.add(contract);
+        }
+        return result;
     }
 
     private boolean blank(String value) {

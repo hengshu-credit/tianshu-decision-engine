@@ -22,7 +22,8 @@ function uniqueSessionTitle(sessions, payload, current) {
 }
 
 function activeSession(payload, current, sessions) {
-  const retained = current && current.status === 'ACTIVE' ? current : null
+  const retained = current && current.status === 'ACTIVE' && current.sourceIdentity === payload.sourceIdentity
+    && current.sourceValue === payload.sourceValue ? current : null
   const displayTitle = uniqueSessionTitle(sessions, payload, retained)
   return {
     ...cloneValue(payload),
@@ -50,12 +51,14 @@ const getters = {
     return {
       operand: cloneValue(session.compiledOperand),
       compiledScript: session.compiledScript,
-      revision: session.compiledRevision
+      revision: session.compiledRevision,
+      ...(session.sourceIdentity ? { sourceIdentity: session.sourceIdentity, sourceValue: session.sourceValue } : {})
     }
   }
 }
 
 const mutations = {
+  CLEAR(state) { state.sessions = {} },
   OPEN_SESSION(state, payload) {
     const nextSessions = { ...state.sessions }
     nextSessions[payload.sessionId] = activeSession(payload, nextSessions[payload.sessionId], nextSessions)
@@ -94,7 +97,8 @@ const mutations = {
     if (revision <= session.appliedRevision) return
     state.sessions = {
       ...state.sessions,
-      [payload.sessionId]: { ...session, appliedRevision: revision }
+      [payload.sessionId]: { ...session, appliedRevision: revision,
+        ...(session.sourceIdentity ? { sourceValue: JSON.stringify(session.compiledOperand) } : {}) }
     }
   }
 }

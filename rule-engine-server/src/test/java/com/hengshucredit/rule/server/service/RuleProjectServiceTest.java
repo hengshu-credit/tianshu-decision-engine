@@ -230,7 +230,7 @@ public class RuleProjectServiceTest {
         method.setAccessible(true);
         String json = "{\"enabled\":true,\"requestMappings\":[{\"targetRefType\":\"VARIABLE\",\"targetVarId\":7,\"sourceType\":\"BODY\",\"sourcePath\":\"$.age\",\"required\":true,\"targetType\":\"INTEGER\"}],"
                 + "\"responseMappings\":[{\"sourceRefType\":\"VARIABLE\",\"sourceVarId\":8,\"targetField\":\"decision\"}],"
-                + "\"envelopeTemplate\":{\"data\":\"${data}\"},\"dataPath\":\"$.data\",\"successDataTemplate\":\"${response}\","
+                + "\"successDataTemplate\":\"${response}\","
                 + "\"errorDataTemplate\":{\"message\":\"${status.message}\"},\"responseHeaders\":{\"X-Trace\":\"secret-value\"}}";
 
         @SuppressWarnings("unchecked")

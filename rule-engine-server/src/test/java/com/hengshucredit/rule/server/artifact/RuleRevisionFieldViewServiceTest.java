@@ -159,9 +159,9 @@ public class RuleRevisionFieldViewServiceTest {
         Fixture service = new Fixture();
         RuleDefinitionController controller = new RuleDefinitionController();
         ReflectionTestUtils.setField(controller, "revisionFieldViewService", service);
-        assertEquals(200, controller.getRevisionFields(101L, 301L).getCode());
+        assertEquals("000000", controller.getRevisionFields(101L, 301L).getCode());
         service.revision.setDefinitionId(999L);
-        assertEquals(400, controller.getRevisionFields(101L, 301L).getCode());
+        assertEquals("100001", controller.getRevisionFields(101L, 301L).getCode());
     }
 
     private static final class Fixture extends RuleRevisionFieldViewService {

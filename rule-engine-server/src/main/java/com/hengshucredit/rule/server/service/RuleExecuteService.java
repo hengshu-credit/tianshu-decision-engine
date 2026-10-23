@@ -144,6 +144,7 @@ public class RuleExecuteService {
             RuleResult r = new RuleResult();
             r.setSuccess(false);
             r.setErrorMessage("规则定义不存在");
+            r.setPlatformCode(com.hengshucredit.rule.model.PlatformCode.RULE_NOT_FOUND.code());
             return r;
         }
 
@@ -158,6 +159,7 @@ public class RuleExecuteService {
             RuleResult r = new RuleResult();
             r.setSuccess(false);
             r.setErrorMessage("规则尚未编译成功，请先编译");
+            r.setPlatformCode(com.hengshucredit.rule.model.PlatformCode.RULE_COMPILE_ERROR.code());
             return r;
         }
 
@@ -406,6 +408,7 @@ public class RuleExecuteService {
             RuleResult r = new RuleResult();
             r.setSuccess(false);
             r.setErrorMessage("已发布规则不存在");
+            r.setPlatformCode(com.hengshucredit.rule.model.PlatformCode.RULE_NOT_FOUND.code());
             return new ExecutionOutcome(r, Collections.emptyMap());
         }
 
@@ -625,6 +628,12 @@ public class RuleExecuteService {
     }
 
     private void setFailureStatus(RuleResult result, RuntimeException error) {
+        com.hengshucredit.rule.model.PlatformCode code = com.hengshucredit.rule.model.PlatformErrors.classify(error);
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof FieldValidationException) { code = com.hengshucredit.rule.model.PlatformCode.PARAMETER_INVALID; break; }
+            if (cause instanceof ExternalApiInvokeService.ApiInvokeException) code = com.hengshucredit.rule.model.PlatformCode.EXTERNAL_API_ERROR;
+            if (cause == cause.getCause()) break;
+        }
         ExecutionCapacityException capacity = ExecutionCapacityException.find(error);
         if (capacity != null) {
             result.setExecutionStatus("THROTTLED");
@@ -634,6 +643,10 @@ public class RuleExecuteService {
         } else if (isCapacityRejectedExternalFailure(error)) result.setExecutionStatus("THROTTLED");
         else if (isWaitingExternalFailure(error)) result.setExecutionStatus("WAITING_EXTERNAL");
         else if (isUnknownExternalFailure(error)) result.setExecutionStatus("UNKNOWN");
+        if (result.getExecutionStatus() != null) {
+            code = com.hengshucredit.rule.model.PlatformCode.execution(false, null, result.getExecutionStatus());
+        }
+        result.setPlatformCode(code.code());
     }
 
     private boolean isCapacityRejectedExternalFailure(Throwable error) {

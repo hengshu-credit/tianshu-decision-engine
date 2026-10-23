@@ -2,7 +2,7 @@ import BillingList from '@/views/billing/BillingList.vue'
 import { nextTick } from 'vue'
 import { shallowMount, mount, flushPromises } from '@test-utils'
 import * as billingApi from '@/api/billing'
-import { listDefinitions } from '@/api/definition'
+import { listDefinitions, getDefinition } from '@/api/definition'
 import { listApiConfigs, getApiConfigTrial } from '@/api/datasource'
 import { ElTable, ElTableColumn } from 'element-plus/es/components/table/index.mjs'
 import { ElButton } from 'element-plus/es/components/button/index.mjs'
@@ -11,7 +11,7 @@ import { ElTag } from 'element-plus/es/components/tag/index.mjs'
 import { listDbDatasources } from '@/api/database'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 
-vi.mock('@/api/datasource', () => ({ listApiConfigs: vi.fn(), getApiConfigTrial: vi.fn() }))
+vi.mock('@/api/datasource', () => ({ listApiConfigs: vi.fn(), getApiConfig: vi.fn(), getApiConfigTrial: vi.fn() }))
 
 test('计费汇总接入公共版本筛选并在查询和重置中保留正确语义', async () => {
   const wrapper = shallowMount(BillingList)
@@ -385,9 +385,20 @@ describe('BillingList target selector', () => {
 
     await ctx.loadTargetOptions()
 
-    expect(listDefinitions).toHaveBeenCalledWith({ pageNum: 1, pageSize: 500, status: 1, projectId: 7 })
+    expect(listDefinitions).toHaveBeenCalledWith({ pageNum: 1, pageSize: 20, status: 1, projectId: 7 })
     expect(ctx.targetOptions).toEqual([{ id: 11, ruleName: 'Rule A', ruleCode: 'rule_a' }])
     expect(ctx.targetLoading).toBe(false)
+  })
+
+  test('指定对象支持第 26 页和搜索，并按 ID 回显不在本页的旧选择', async () => {
+    listDefinitions.mockResolvedValue({ data: { records: [{ id: 501, ruleName: '目标规则' }], total: 1001 } })
+    getDefinition.mockResolvedValue({ data: { id: 900, ruleName: '已选择规则', ruleCode: 'Keep_Code' } })
+    const ctx = createContext({ configForm: { scope: 'PROJECT', projectId: 7, billingTarget: 'ENGINE', targetRefId: 900 } })
+    const response = await ctx.loadTargetOptions({ query: '目标规则', pageNum: 26, pageSize: 20 })
+    expect(listDefinitions).toHaveBeenCalledWith({ pageNum: 26, pageSize: 20, status: 1, projectId: 7, keyword: '目标规则' })
+    expect(response.data.total).toBe(1001)
+    expect(getDefinition).toHaveBeenCalledWith(900)
+    expect(BillingList.computed.selectedTargetOption.call(ctx)).toMatchObject({ id: 900, displayName: '已选择规则 / Keep_Code' })
   })
 
   test('loadTargetOptions loads API configs for API target', async () => {
@@ -396,7 +407,7 @@ describe('BillingList target selector', () => {
 
     await ctx.loadTargetOptions()
 
-    expect(listApiConfigs).toHaveBeenCalledWith({ pageNum: 1, pageSize: 500, status: 1 })
+    expect(listApiConfigs).toHaveBeenCalledWith({ pageNum: 1, pageSize: 20, status: 1 })
     expect(ctx.targetOptions[0].id).toBe(21)
   })
 
@@ -406,7 +417,7 @@ describe('BillingList target selector', () => {
 
     await ctx.loadTargetOptions()
 
-    expect(listDbDatasources).toHaveBeenCalledWith({ pageNum: 1, pageSize: 500, status: 1, projectId: 7 })
+    expect(listDbDatasources).toHaveBeenCalledWith({ pageNum: 1, pageSize: 20, status: 1, projectId: 7 })
     expect(ctx.targetOptions[0].id).toBe(31)
   })
 

@@ -1,9 +1,10 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
 import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.governance.GovernedProjectionMutation;
 import com.hengshucredit.rule.server.service.DBConnectPools;
 import com.hengshucredit.rule.server.service.DatabaseQueryOptions;
@@ -32,7 +33,7 @@ public class DbDatasourceController {
     private RuleRuntimeCallLogService runtimeCallLogService;
 
     @GetMapping("/list")
-    public R<IPage<RuleDbDatasource>> list(
+    public ApiResponse<IPage<RuleDbDatasource>> list(
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) String scope,
@@ -43,38 +44,38 @@ public class DbDatasourceController {
             @RequestParam(required = false) String datasourceName,
             @RequestParam(required = false) String dbType,
             @RequestParam(required = false) Integer status) {
-        return R.ok(datasourceService.pageList(pageNum, pageSize, scope, projectId, projectCode, projectName,
+        return ApiResponse.ok(datasourceService.pageList(pageNum, pageSize, scope, projectId, projectCode, projectName,
                 datasourceCode, datasourceName, dbType, status));
     }
 
     @GetMapping("/{id:\\d+}")
-    public R<RuleDbDatasource> get(@PathVariable Long id) {
-        return R.ok(datasourceService.getDetail(id));
+    public ApiResponse<RuleDbDatasource> get(@PathVariable Long id) {
+        return ApiResponse.ok(datasourceService.getDetail(id));
     }
 
     @PostMapping
     @GovernedProjectionMutation
-    public R<Void> create(@RequestBody RuleDbDatasource datasource) {
+    public ApiResponse<Void> create(@RequestBody RuleDbDatasource datasource) {
         datasourceService.saveWithDefaults(datasource);
-        return R.ok();
+        return ApiResponse.ok();
     }
 
     @PutMapping
     @GovernedProjectionMutation
-    public R<Void> update(@RequestBody RuleDbDatasource datasource) {
+    public ApiResponse<Void> update(@RequestBody RuleDbDatasource datasource) {
         datasourceService.updateWithDefaults(datasource);
-        return R.ok();
+        return ApiResponse.ok();
     }
 
     @DeleteMapping("/{id:\\d+}")
     @GovernedProjectionMutation
-    public R<Void> delete(@PathVariable Long id) {
+    public ApiResponse<Void> delete(@PathVariable Long id) {
         datasourceService.deleteDatasource(id);
-        return R.ok();
+        return ApiResponse.ok();
     }
 
     @PostMapping("/{id:\\d+}/test")
-    public R<String> testSavedConnection(@PathVariable Long id) {
+    public ApiResponse<String> testSavedConnection(@PathVariable Long id) {
         long start = System.currentTimeMillis();
         LocalDateTime startTime = LocalDateTime.now();
         RuleDbDatasource datasource = datasourceService.getById(id);
@@ -82,32 +83,32 @@ public class DbDatasourceController {
             datasourceService.testConnection(id);
             logDatabaseCall(datasource, "TEST_CONNECTION", buildDatabaseRequest(datasource, null, null, null, null, startTime),
                     buildDatabaseResponse("SUCCESS", "连接成功", null, null, null, startTime), true, null, System.currentTimeMillis() - start);
-            return R.ok("连接成功");
+            return ApiResponse.ok("连接成功");
         } catch (Exception e) {
             logDatabaseCall(datasource, "TEST_CONNECTION", buildDatabaseRequest(datasource, null, null, null, null, startTime),
                     buildDatabaseResponse("FAILED", null, null, null, e.getMessage(), startTime), false, e.getMessage(), System.currentTimeMillis() - start);
-            return R.fail("连接失败：" + e.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.DATABASE_ERROR, e.getMessage());
         }
     }
 
     @PostMapping("/test")
-    public R<String> testConnection(@RequestBody RuleDbDatasource datasource) {
+    public ApiResponse<String> testConnection(@RequestBody RuleDbDatasource datasource) {
         long start = System.currentTimeMillis();
         LocalDateTime startTime = LocalDateTime.now();
         try {
             datasourceService.testConnection(datasource);
             logDatabaseCall(datasource, "TEST_CONNECTION_DRAFT", buildDatabaseRequest(datasource, null, null, null, safeDatasourcePreview(datasource), startTime),
                     buildDatabaseResponse("SUCCESS", "连接成功", null, null, null, startTime), true, null, System.currentTimeMillis() - start);
-            return R.ok("连接成功");
+            return ApiResponse.ok("连接成功");
         } catch (Exception e) {
             logDatabaseCall(datasource, "TEST_CONNECTION_DRAFT", buildDatabaseRequest(datasource, null, null, null, safeDatasourcePreview(datasource), startTime),
                     buildDatabaseResponse("FAILED", null, null, null, e.getMessage(), startTime), false, e.getMessage(), System.currentTimeMillis() - start);
-            return R.fail("连接失败：" + e.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.DATABASE_ERROR, e.getMessage());
         }
     }
 
     @PostMapping("/{id:\\d+}/query")
-    public R<List<Map<String, Object>>> query(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+    public ApiResponse<List<Map<String, Object>>> query(@PathVariable Long id, @RequestBody Map<String, Object> body) {
         long start = System.currentTimeMillis();
         LocalDateTime startTime = LocalDateTime.now();
         RuleDbDatasource datasource = datasourceService.getById(id);
@@ -125,11 +126,11 @@ public class DbDatasourceController {
             request.put("maxContentBytes", options.maxContentBytes());
             logDatabaseCall(datasource, "QUERY", request,
                     buildDatabaseResponse("SUCCESS", null, rows, null, null, startTime), true, null, System.currentTimeMillis() - start);
-            return R.ok(rows);
+            return ApiResponse.ok(rows);
         } catch (Exception e) {
             logDatabaseCall(datasource, "QUERY", buildDatabaseRequest(datasource, sql, params, maxRows, null, startTime),
                     buildDatabaseResponse("FAILED", null, null, null, e.getMessage(), startTime), false, e.getMessage(), System.currentTimeMillis() - start);
-            return R.fail("查询失败：" + e.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.DATABASE_ERROR, e.getMessage());
         }
     }
 

@@ -18,6 +18,8 @@ import java.util.Map;
 
 @Component
 public class SourceResolutionExecutor implements AutoCloseable {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.security.ConsoleProjectAccess consoleProjects;
 
     private static final long SHUTDOWN_WAIT_SECONDS = 5L;
     private final int parallelism;
@@ -54,6 +56,7 @@ public class SourceResolutionExecutor implements AutoCloseable {
         if (task == null) {
             throw new IllegalArgumentException("Source resolution task must not be null");
         }
+        Callable<T> scopedTask = consoleProjects == null ? task : consoleProjects.wrap(task);
         submitted.incrementAndGet();
         if (closed) {
             CompletableFuture<T> rejected = CompletableFuture.failedFuture(
@@ -62,11 +65,11 @@ public class SourceResolutionExecutor implements AutoCloseable {
             return rejected;
         }
         if (executor == null) {
-            CompletableFuture<T> inline = callInline(task);
+            CompletableFuture<T> inline = callInline(scopedTask);
             observe(inline);
             return inline;
         }
-        SourceResolutionTask<T> future = new SourceResolutionTask<>(task, RequestDeadlineContext.capture());
+        SourceResolutionTask<T> future = new SourceResolutionTask<>(scopedTask, RequestDeadlineContext.capture());
         observe(future);
         try {
             executor.execute(future);

@@ -46,7 +46,7 @@ public class RuleApiDocScenarioServiceTest {
                 mapper(RuleApiDocScenarioMapper.class, scenarioHandler));
         ReflectionTestUtils.setField(service, "definitionMapper",
                 mapper(RuleDefinitionMapper.class, (proxy, method, args) -> {
-                    if ("selectById".equals(method.getName()) && Long.valueOf(7L).equals(args[0])) {
+                    if (("selectById".equals(method.getName()) && Long.valueOf(7L).equals(args[0])) || "selectOne".equals(method.getName())) {
                         return definition;
                     }
                     return defaultValue(method.getReturnType());

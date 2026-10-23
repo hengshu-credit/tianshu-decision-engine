@@ -14,6 +14,51 @@ import java.util.Map;
 import static org.junit.Assert.assertEquals;
 
 public class DataObjectSourceResolverTest {
+    @Test public void wholeObjectWithoutDeclaredFieldsReadsProviderPayloadAndRespectsExplicitInput() {
+        DataObjectSourceResolver resolver = new DataObjectSourceResolver();
+        CountingApi api = new CountingApi(Map.of("body", Map.of("extra", Map.of("score", 93))));
+        ReflectionTestUtils.setField(resolver, "externalApiInvokeService", api);
+        var object = new com.hengshucredit.rule.model.entity.RuleDataObject(); object.setId(100L); object.setObjectCode("request");
+        object.setSourceType("API"); object.setSourceContent("{\"apiConfigId\":9,\"bindingMode\":\"OBJECT\"}");
+        Map<String, Object> values = new LinkedHashMap<>();
+        var options = VariableResolveOptions.defaults();
+        resolver.resolveWholeObject(null, object, values, options, List.of());
+        assertEquals(93, ExternalApiRequestPlan.read(values, "request.extra.score"));
+        resolver.resolveWholeObject(null, object, values, options, List.of());
+        assertEquals(1, api.calls);
+        options.setOfflineReplay(true);
+        resolver.resolveWholeObject(null, object, new LinkedHashMap<>(), options, List.of());
+        assertEquals(1, api.calls);
+    }
+
+    @Test public void wholeObjectUsesDeclaredFieldMappingRatherThanProviderNames() {
+        DataObjectSourceResolver resolver = new DataObjectSourceResolver();
+        ReflectionTestUtils.setField(resolver, "externalApiInvokeService", new CountingApi(Map.of("body", Map.of("raw", Map.of("score", 93)))));
+        var object = new com.hengshucredit.rule.model.entity.RuleDataObject(); object.setId(100L); object.setObjectCode("request"); object.setSourceType("API");
+        object.setSourceContent("{\"apiConfigId\":9,\"bindingMode\":\"FIELDS\"}");
+        var field = field(10L, "payload", "raw"); configureOwner(field, object.getSourceContent());
+        Map<String, Object> values = new LinkedHashMap<>(); var options = VariableResolveOptions.defaults(); options.setRequiredScriptNames(java.util.Set.of("request.payload.score"));
+        resolver.resolveWholeObject(null, object, values, options, List.of(field));
+        assertEquals(93, ExternalApiRequestPlan.read(values, "request.payload.score"));
+        assertEquals(java.util.Set.of("request.payload.score"), options.getRequiredScriptNames());
+    }
+    @Test
+    public void databaseParametersResolveStableIdsAfterRename() {
+        DataObjectSourceResolver resolver = new DataObjectSourceResolver();
+        ReflectionTestUtils.setField(resolver, "dbConnectPools", new DBConnectPools() {
+            @Override public List<Map<String, Object>> query(Long id, String sql, List<Object> params, int maxRows, int timeoutSeconds) {
+                assertEquals(List.of("C-9"), params);
+                return List.of(Map.of("score", 91));
+            }
+        });
+        RuleDataObjectField score = field(30L, "score", "score");
+        configureOwner(score, "{\"dbDatasourceId\":8,\"sql\":\"select score from customer where id = ?\",\"bindingMode\":\"FIELDS\",\"params\":[{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":9,\"code\":\"oldName\"}]}");
+        var options = VariableResolveOptions.defaults();
+        options.setDerivedReferencePaths(Map.of("VARIABLE:9", "renamedId"));
+        Map<String, Object> values = new LinkedHashMap<>(Map.of("renamedId", "C-9"));
+        resolver.resolve(1L, List.of(direct(30L, "request.score")), values, options, List.of(score));
+        assertEquals(91, ExternalApiRequestPlan.read(values, "request.score"));
+    }
     @Test
     public void modelCapacityInApiDependenciesCannotBecomeAnObjectStatusFallback() {
         DataObjectSourceResolver resolver = new DataObjectSourceResolver();

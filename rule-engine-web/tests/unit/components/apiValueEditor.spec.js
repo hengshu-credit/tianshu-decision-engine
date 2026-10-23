@@ -2,6 +2,14 @@ import { shallowMount } from '@test-utils'
 import ApiValueEditor from '@/components/common/ApiValueEditor.vue'
 
 describe('API operand binding', () => {
+  test('只提供后端允许的无副作用函数，不把网络文件函数列为可用', () => {
+    const wrapper = shallowMount(ApiValueEditor, { props: { functions: [
+      { funcCode: 'nvl', implClass: 'com.hengshucredit.rule.core.function.DecisionBuiltinFunctions' },
+      { funcCode: 'imageToBase64', implClass: 'com.hengshucredit.rule.core.function.ImageInputFunctions' }
+    ] } })
+    expect(wrapper.vm.pureFunctions.map(fn => fn.funcCode)).toEqual(['nvl'])
+    wrapper.unmount()
+  })
   test('外数模块引用在嵌套表达式内转换为协议路径，不保存临时选择器 ID', () => {
     const wrapper = shallowMount(ApiValueEditor)
     wrapper.vm.update({ kind: 'FUNCTION', functionCode: 'nvl', args: [{ kind: 'REFERENCE', refType: 'API_CONTEXT', refId: 8, value: 'response.httpStatus' }] })

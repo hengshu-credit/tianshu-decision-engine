@@ -8,6 +8,7 @@ import * as projectApi from '@/api/project'
 import * as definitionApi from '@/api/definition'
 import requestApi from '@/api/request'
 import * as runtimeLogApi from '@/api/runtimeLog'
+import * as variableApi from '@/api/variable'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import ExecutionLog from '@/views/log/ExecutionLog.vue'
 
@@ -18,6 +19,58 @@ function deferred() {
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
 }
+
+describe('ExecutionLog 历史设计快照', () => {
+  let wrapper
+  beforeEach(async () => { wrapper = await mountAndWait() })
+  afterEach(() => { wrapper.unmount() })
+
+  test('变量展示目录超过 1000 条仍加载最后一条，不丢字段名称', async () => {
+    const original = variableApi.listVariables.getMockImplementation()
+    const records = Array.from({ length: 1001 }, (_, index) => ({ id: String(index + 1), varCode: `field_${index + 1}`, varLabel: `字段${index + 1}` }))
+    variableApi.listVariables.mockImplementation(({ pageNum, pageSize }) => Promise.resolve({ data: {
+      records: records.slice((pageNum - 1) * pageSize, pageNum * pageSize), total: records.length
+    } }))
+    try {
+      await wrapper.vm.loadVarMap()
+      expect(wrapper.vm.varMap.field_1001).toBe('字段1001')
+    } finally { variableApi.listVariables.mockImplementation(original) }
+  })
+
+  test.each([false, true])('规则已经改名或修改时仍使用执行时快照（数组包装=%s），不读取当前设计', async wrapped => {
+    const historical = { nodes: [{ id: 'old-node', text: { value: '执行时节点' } }], edges: [] }
+    wrapper.vm.ruleList = [{ id: 99, ruleCode: 'reused_code' }]
+    const frame = {
+      schemaVersion: 2, traceKind: 'RULE', ruleId: 7, modelJson: JSON.stringify(historical)
+    }
+    wrapper.vm.detail = { rootRuleId: 7, ruleCode: 'reused_code', traceInfo: JSON.stringify(wrapped ? [frame] : frame) }
+    definitionApi.getContent.mockResolvedValue({ data: { modelJson: JSON.stringify({ nodes: [{ id: 'current-node' }], edges: [] }) } })
+    await wrapper.vm.loadModelJson()
+    expect(wrapper.vm.definitionModel).toEqual(historical)
+    expect(wrapper.vm.modelData).toEqual(historical)
+    expect(definitionApi.getContent).not.toHaveBeenCalled()
+  })
+
+  test('没有历史快照时说明边界，不用同编码的当前设计伪装历史图', async () => {
+    wrapper.vm.ruleList = [{ id: 99, ruleCode: 'reused_code' }]
+    wrapper.vm.detail = { ruleCode: 'reused_code', traceInfo: '[]' }
+    definitionApi.getContent.mockResolvedValue({ data: { modelJson: '{"nodes":[{"id":"current-node"}],"edges":[]}' } })
+    await wrapper.vm.loadModelJson()
+    expect(wrapper.vm.definitionModel).toBeNull()
+    expect(wrapper.vm.modelSnapshotWarning).toContain('未保存执行时的设计快照')
+    expect(definitionApi.getContent).not.toHaveBeenCalled()
+  })
+
+  test('快照损坏时清空上条日志模型，并保留可解释提示', async () => {
+    wrapper.vm.definitionModel = { nodes: [{ id: 'previous' }] }
+    wrapper.vm.modelData = wrapper.vm.definitionModel
+    wrapper.vm.detail = { traceInfo: JSON.stringify({ schemaVersion: 2, traceKind: 'RULE', modelJson: '{broken' }) }
+    await wrapper.vm.loadModelJson()
+    expect(wrapper.vm.definitionModel).toBeNull()
+    expect(wrapper.vm.modelData).toBeNull()
+    expect(wrapper.vm.modelSnapshotWarning).toContain('无法解析')
+  })
+})
 
 describe('ExecutionLog 查询响应顺序', () => {
   let wrapper
@@ -304,7 +357,7 @@ describe('ExecutionLog — 初始化与数据加载', () => {
 
   test('初始日志请求严格使用当前页码和分页大小', () => {
     const call = requestApi.mock.calls.find(args => args[0] && args[0].url === '/rule/log/list')
-    expect(call[0].params).toMatchObject({ pageNum: 1, pageSize: 10 })
+    expect(call[0].params).toMatchObject({ pageNum: 1, pageSize: 20 })
   })
 
   test('list 数据正确赋值', () => {
@@ -427,7 +480,7 @@ describe('ExecutionLog — 筛选与分页', () => {
     expect(wrapper.vm.qp.pageNum).toBe(1)
   })
 
-  test('缓存中的非法 1000 页大小回落为默认 10', () => {
+  test('缓存中的非法 1000 页大小回落为默认 20', () => {
     window.sessionStorage.setItem('qlexpress.pageState.ExecutionLog:project:all', JSON.stringify({
       qp: { pageNum: 3, pageSize: 1000 }
     }))
@@ -435,7 +488,7 @@ describe('ExecutionLog — 筛选与分页', () => {
     wrapper.vm.restoreCachedState()
 
     expect(wrapper.vm.qp.pageNum).toBe(3)
-    expect(wrapper.vm.qp.pageSize).toBe(10)
+    expect(wrapper.vm.qp.pageSize).toBe(20)
     window.sessionStorage.removeItem('qlexpress.pageState.ExecutionLog:project:all')
   })
 

@@ -22,7 +22,8 @@ public class TianshuExampleSqlTest {
 
         assertTrue(sourceConfig.contains("item_content = ?"));
         assertFalse(sourceConfig.contains("item_content = %s"));
-        assertTrue(sourceConfig.contains("\"params\": [\"$.mobile_no\"]"));
+        assertTrue(sourceConfig.contains("\"params\": [{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":7"));
+        assertFalse(sourceConfig.contains("$.mobile_no"));
     }
 
     private String extractBlackUserCountSourceConfig(String fixture) {

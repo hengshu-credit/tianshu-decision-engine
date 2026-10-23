@@ -4,17 +4,38 @@
 
 Docker 相关命令的单一入口是 [`docker/README.md`](../docker/README.md)，其中按 JAR、独立 Docker、外接数据库 Compose、自带数据库 Compose 分开说明了准备、启动、验证、停止和更新流程；本文保留参数、安全和业务接入细节。
 
+## 管理员初始化与恢复
+
+首次启动后访问控制台，会自动进入注册页面。设置超级管理员用户名、显示名称和密码即可完成初始化，不依赖 SMTP；无需在环境文件填写管理员账号或密码。初始化标记及账户保存于当前 MySQL 数据库，重启保留原账户和引擎内容。已有系统升级后不会重新开放首次初始化。
+
+系统仅保留一个 `SUPER_ADMIN` 身份。历史重复超管在升级启动或签发恢复码时合并：优先保留初始化标记指向的有效账号，否则选择最早的有效超管；全部停用时保留标记账号，标记无效则保留最早的超管供恢复。主账号 ID 和授权不变，其余超管归档并撤销登录及令牌；原操作人名称保留，草稿和迁移记录归属由主账号继承。合并后账户列表不展示归档账号，不能重新启用或向其他账号分配超管角色；普通账号及其授权不受影响。
+
+普通用户随后仍按邮箱注册和管理员授权流程使用系统。只使用 `.env.server`、`.env.client` 及对应 `.example` 模板，其他环境文件不参与配置。
+
+若超管账号和密码都忘记，由具备服务器权限的运维生成一次性恢复码：
+
+```bash
+# JAR：在能读取 .env.server 的工作目录执行；按实际路径替换 server.jar
+java -jar server.jar --console-admin-recovery-code
+
+# 本仓库服务端 Compose：沿用原项目名和配置，只执行维护命令
+docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T server java -jar /app/app.jar --console-admin-recovery-code
+```
+
+维护命令使用服务端原数据库连接，不启动第二个 Web 服务。它先确认并合并历史重复超管，再签发账户恢复令牌和记录安全审计，不修改业务内容。输出的随机恢复码30分钟有效、只能使用一次，再次签发会撤销旧码。到登录页的“管理员应急恢复”中填写恢复码、新用户名和新密码，无需原用户名；可以使用已合并超管原来的登录名，恢复仍更新同一个主账号，不新增账号。
+
+恢复保留原账户ID和授权，仅更改登录凭证并启用该账户，撤销旧会话与旧令牌。项目、规则、变量、模型、名单、版本及日志不删除；历史记录继续保留原操作人名称。恢复不修改 `RULE_AUTH_MASTER_KEY`，也不删除数据卷、清空数据库或重新导入样例数据。
+
 ## 一、部署参数总览
 
-参数可以来自操作系统环境变量、JAR 启动参数或仓库根目录（JAR 从 `rule-engine-server` 目录启动时为上一级目录）的 `.env`。优先级为：命令行参数/操作系统环境变量 > `.env` > `application.yml` 默认值。生产环境请把密码和密钥放在 Secret/KMS 或容器编排的 Secret 中，不要提交到 Git。
+参数可以来自操作系统环境变量、JAR 启动参数或仓库根目录（JAR 从 `rule-engine-server` 目录启动时为上一级目录）的 `.env.server`。优先级为：命令行参数/操作系统环境变量 > `.env.server` > `application.yml` 默认值。生产环境请把密码和密钥放在 Secret/KMS 或容器编排的 Secret 中，不要提交到 Git。
 
 ### 1.1 服务、前端与数据库参数
 
 | 参数名 | 默认值 | 含义与具体作用 |
 |---|---:|---|
 | `SERVER_PORT` | `8080` | Spring Boot 监听端口；容器内端口和负载均衡器后端端口应保持一致。 |
-| `VITE_PORT` | `9090` | 仅用于 
-pm run dev` 的 Vite 开发端口；不会改变生产 `dist` 静态站点端口。 |
+| `VITE_PORT` | `9090` | 仅用于 `npm run dev` 的 Vite 开发端口；不会改变生产 `dist` 静态站点端口。 |
 | `VITE_DEV_PROXY` | 空 | Vite 开发服务器 `/api` 代理目标；设置后优先于 `SERVER_PORT` 推导出的后端地址。 |
 | `MYSQL_HOST` | `localhost` | MySQL 主机名。后端在 Compose 网络中运行时填 `mysql`，不能填容器内的 `127.0.0.1`。 |
 | `MYSQL_PORT` | `3306` | MySQL 端口。 |
@@ -40,9 +61,6 @@ pm run dev` 的 Vite 开发端口；不会改变生产 `dist` 静态站点端口
 | `RULE_GLOBAL_ACCESS_KEY_ID` | `default` | 全局访问公钥的 Key ID，客户端必须使用相同 ID。 |
 | `RULE_GLOBAL_ACCESS_PUBLIC_KEY` | 空 | Ed25519 X.509 公钥的 Base64 值；私钥只放在 HTTP/SDK 客户端。 |
 | `RULE_GLOBAL_ACCESS_TIME_WINDOW_SECONDS` | `300` | 全局签名允许的时间偏差，服务端同时按 nonce 防重放。 |
-| `CONSOLE_USERNAME` | 空 | 管理控制台登录用户名。 |
-| `CONSOLE_PASSWORD` | 空 | 管理控制台密码；默认按 BCrypt 哈希校验。不要把明文密码提交到 `.env`。 |
-| `CONSOLE_PASSWORD_ENCODING` | `BCRYPT` | `CONSOLE_PASSWORD` 的编码方式；本地临时调试可设 `PLAIN`，生产使用 `BCRYPT` 或外部身份系统。 |
 | `CORS_ALLOWED_ORIGIN_PATTERNS` | `*` | 允许访问后端的控制台来源，多个来源用英文逗号分隔；模板默认允许所有来源，生产建议改为实际 HTTPS 域名/IP。 |
 | 会话 Cookie Secure | 按请求协议自动设置 | HTTPS 请求自动带 `Secure`，HTTP 请求不带；域名 HTTPS 和 IP+端口 HTTP 不需要两套配置。 |
 
@@ -106,7 +124,7 @@ Compose 还会使用 `MYSQL_PUBLIC_PORT`、`REDIS_PUBLIC_PORT`、`CONSOLE_PUBLIC
 ```bash
 cp .env.server.example .env.server
 cp .env.client.example .env.client
-# 编辑 .env，替换全部 replace-with-* 占位值
+# 编辑 .env.server，替换全部 replace-with-* 占位值
 docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.mysql.yml up -d
 docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.redis.yml up -d
 # 选择外部数据库应用模式时单独执行：
@@ -127,7 +145,7 @@ docker compose --env-file .env.client --env-file .env.server -f docker/docker-co
 docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.redis.yml ps
 ```
 
-服务端在宿主机上用 Maven 启动时，将 `.env` 设置为：
+服务端在宿主机上用 Maven 启动时，将 `.env.server` 设置为：
 
 ```dotenv
 MYSQL_HOST=127.0.0.1
@@ -152,7 +170,7 @@ cd rule-engine-server
 mvn spring-boot:run
 ```
 
-`MYSQL_HOST`、`MYSQL_PORT` 由 `application.yml` 读取；Redis 已通过 `REDIS_HOST`、`REDIS_PORT` 读取。不要在 `.env` 中写入 Spring 风格的 `${NAME:default}` 表达式，因为 Docker Compose 会把它解析为非法模板；`.env` 中应使用已经展开的实际值。
+`MYSQL_HOST`、`MYSQL_PORT` 由 `application.yml` 读取；Redis 已通过 `REDIS_HOST`、`REDIS_PORT` 读取。不要在 `.env.server` 中写入 Spring 风格的 `${NAME:default}` 表达式，因为 Docker Compose 会把它解析为非法模板；`.env.server` 中应使用已经展开的实际值。
 
 `schema.sql` 包含数据库表结构、逻辑执行日志视图和按变量唯一索引幂等补齐的系统常量，不创建用户、不修改 root 账号、也不执行全局授权；服务端启动时默认由 Spring 执行 classpath 中的 `schema.sql`。示例数据脚本 `data-tianshu-example.sql` 放在 `docker/rule-engine-mysql/`，只在需要演示数据时手工导入，不随服务端启动自动导入。项目鉴权、临时 Token 及其访问审计数据与部署主密钥绑定，不写入示例数据；服务启动后会把项目表中的兼容访问令牌按当前主密钥迁移为默认鉴权记录。
 
@@ -166,8 +184,7 @@ Windows 本地开发可在仓库根目录执行以下命令，同时启动前后
 .\start-dev.cmd
 ```
 
-需先配置根目录 `.env`，并保持 MySQL、Redis 运行，确保 Java、Maven、Node.js 可从 `PATH` 调用。命令会编译后端依赖、在缺少前端依赖时执行 
-pm ci`，后台启动服务并等待健康检查及前端 API 代理检查通过；已就绪的服务会直接复用。端口沿用 `.env` 的 `SERVER_PORT` 和 `VITE_PORT`，日志及本次启动的进程 ID 保存在 `.codex-run-logs/`。命令只启动前后端，不会重启 MySQL、Redis；检测到 WSL 与项目 Docker 服务的本机端口冲突时，仅为本次后端进程调整连接地址。
+需先配置根目录 `.env.server`，并保持 MySQL、Redis 运行，确保 Java、Maven、Node.js 可从 `PATH` 调用。命令会编译后端依赖、在缺少前端依赖时执行 `npm ci`，后台启动服务并等待健康检查及前端 API 代理检查通过；已就绪的服务会直接复用。端口沿用 `.env.server` 的 `SERVER_PORT` 和 `VITE_PORT`，日志及本次启动的进程 ID 保存在 `.codex-run-logs/`。命令只启动前后端，不会重启 MySQL、Redis；检测到 WSL 与项目 Docker 服务的本机端口冲突时，仅为本次后端进程调整连接地址。
 
 Windows 本机如果 JDK 默认 Unix Domain Socket 临时目录导致 Redis/Lettuce 健康检查出现 `Unable to establish loopback connection`，先为本次进程指定工作区目录，再启动后端：
 
@@ -201,18 +218,16 @@ mvn "-Ponnx-gpu" "-Dtianshu.cuda.diagnostic=true" "-Dtest=CudaEnvironmentDiagnos
 
 诊断通过后使用同一 `onnx-gpu` Profile 启动服务，并在模型管理页面将目标 ONNX 模型的执行设备显式设置为“GPU（CUDA）”。仅启用 GPU Profile 不会自动修改已有模型的 CPU/CUDA 配置。
 
-后端启动时会将当前目录的 `.env` 和上级目录的 `.env` 作为可选配置源读取：在仓库根目录运行 JAR 时读取 `./.env`，在 `rule-engine-server` 目录运行 `mvn spring-boot:run` 时读取 `../.env`。操作系统环境变量和命令行参数的优先级高于 `.env`，因此生产环境仍应通过 Secret/KMS 注入真实凭据；缺少必填密钥时，现有安全校验仍会拒绝启动。关键配置如下：
+后端启动时会将当前目录的 `.env.server` 和上级目录的 `.env.server` 作为可选配置源读取：在仓库根目录运行 JAR 时读取 `./.env.server`，在 `rule-engine-server` 目录运行 `mvn spring-boot:run` 时读取 `../.env.server`。操作系统环境变量和命令行参数的优先级高于 `.env.server`，因此生产环境仍应通过 Secret/KMS 注入真实凭据；缺少必填密钥时，现有安全校验仍会拒绝启动。关键配置如下：
 
 | 配置 | 要求 |
 |------|------|
 | `MYSQL_USERNAME` / `MYSQL_PASSWORD` | 必填；生产使用仅具备 `rule_engine` 所需权限的独立账号 |
 | `REDIS_PASSWORD` | 必填；与 server 和 SDK 实际连接的 Redis 实例一致 |
 | `RULE_AUTH_MASTER_KEY` | 必填；至少 32 位的私有随机密钥，生产通过 Secret/KMS 注入 |
-| `CONSOLE_USERNAME` / `CONSOLE_PASSWORD` | 必填；密码默认按 BCrypt 校验 |
 | `CORS_ALLOWED_ORIGIN_PATTERNS` | 模板默认 `*`；生产建议配置精确 HTTPS 域名/IP来源 |
 | 会话 Cookie | 按请求协议自动设置 Secure；通过 Nginx Proxy Manager 的 HTTPS 域名和 HTTP IP+端口均可登录 |
 
-本地临时开发如需使用明文控制台密码，可显式设置 `CONSOLE_PASSWORD_ENCODING=PLAIN`；生产必须使用 BCrypt 或外部身份系统，不应提交密码或密钥到仓库。
 
 ONNX 神经网络模型可在“模型管理”中逐个选择 CPU 或 CUDA，并配置 GPU 设备号、显存上限、显存扩展策略、cuDNN 卷积算法搜索和默认 CUDA 流。CPU 版后端即使读取到历史 CUDA 配置也会自动回退 CPU，不影响服务启动；CUDA 版后端会实际检查 CUDA 共享库及其依赖是否可加载。服务按“模型文件内容 + 运行配置”缓存推理会话；开启“启动预加载”后会在服务启动阶段创建对应 CPU/CUDA 会话。配置 CUDA 的模型在 GPU 会话初始化或推理失败时会自动重试 CPU，CPU 成功后同一服务进程内后续调用会直接使用 CPU；修复 GPU 环境后需重启服务以重新尝试 CUDA。YuNet 人脸检测同样通过 ONNX Runtime 执行，OpenCV 仅保留图片解码、缩放和检测结果后处理。
 
@@ -230,17 +245,16 @@ npm run dev
 
 开发访问地址为 `http://localhost:9090/`，`/api` 会代理到 `http://localhost:8080`。
 
-在仓库根目录 `.env` 中设置以下配置，可统一修改后端和前端开发端口：
+在仓库根目录 `.env.server` 中设置以下配置，可统一修改后端和前端开发端口：
 
 ```dotenv
 SERVER_PORT=8081
 VITE_PORT=9091
 ```
 
-修改后重启后端和 
-pm run dev`，访问 `http://localhost:9091/`，`/api` 会自动代理到 `http://localhost:8081`。未配置时仍使用后端 `8080`、前端 `9090`；前端端口被占用时会直接报错，不会自动切换端口。
+修改后重启后端和 `npm run dev`，访问 `http://localhost:9091/`，`/api` 会自动代理到 `http://localhost:8081`。未配置时仍使用后端 `8080`、前端 `9090`；前端端口被占用时会直接报错，不会自动切换端口。
 
-后端运行在其他地址时，可额外设置 `VITE_DEV_PROXY=http://后端地址:端口`，该配置优先于 `SERVER_PORT` 推导的地址。系统环境变量优先于 `.env`。这些配置不会改变生产静态站点的监听端口，生产前端仍需配置 Nginx 或容器端口映射。
+后端运行在其他地址时，可额外设置 `VITE_DEV_PROXY=http://后端地址:端口`，该配置优先于 `SERVER_PORT` 推导的地址。系统环境变量优先于 `.env.server`。这些配置不会改变生产静态站点的监听端口，生产前端仍需配置 Nginx 或容器端口映射。
 
 前端生产静态服务器需要保留 `dist/vs/` 下的 Monaco 资源，并将 AMD loader 生成的资源标识 URL 重写后再读取静态文件：`/vs/css!vs/<path>` 映射到 `/vs/<path>`，`/vs/nls!vs/<path>` 映射到 `/vs/<path>.js`（已有 `.js` 后缀时不重复添加）。若静态服务器不支持此重写，规则设计器、SQL 和 JSON 编辑器会出现资源 404，页面控制台会报 Monaco 加载错误。
 
@@ -272,7 +286,7 @@ cp -a dist/. /opt/tianshu/console/dist/
 cd ..
 ```
 
-在 `/opt/tianshu/server/.env` 写入服务端参数。`MYSQL_HOST`、`REDIS_HOST` 必须填写应用容器能够解析和访问的地址；如果依赖也在 Docker 中，请使用同一网络里的服务名，不要写 `localhost`。
+在 `/opt/tianshu/server/.env.server` 写入服务端参数。`MYSQL_HOST`、`REDIS_HOST` 必须填写应用容器能够解析和访问的地址；如果依赖也在 Docker 中，请使用同一网络里的服务名，不要写 `localhost`。
 
 ```dotenv
 SERVER_PORT=8080
@@ -285,9 +299,6 @@ REDIS_HOST=10.0.0.21
 REDIS_PORT=6379
 REDIS_PASSWORD=替换为Redis密码
 RULE_AUTH_MASTER_KEY=至少32位的当前环境随机密钥
-CONSOLE_USERNAME=admin
-CONSOLE_PASSWORD=BCrypt哈希
-CONSOLE_PASSWORD_ENCODING=BCRYPT
 CORS_ALLOWED_ORIGIN_PATTERNS=*
 ```
 
@@ -299,14 +310,14 @@ CORS_ALLOWED_ORIGIN_PATTERNS=*
 docker run -d \
   --name tianshu-server \
   --restart unless-stopped \
-  --env-file /opt/tianshu/server/.env \
+  --env-file /opt/tianshu/server/.env.server \
   -p 8080:8080 \
   -v /opt/tianshu/server:/opt/tianshu/server:ro \
   eclipse-temurin:17-jre \
   java -jar /opt/tianshu/server/rule-engine-server.jar
 ```
 
-如果 MySQL/Redis 也是 Docker 容器，可先创建网络并在同一网络启动依赖，再把 `.env` 中的主机名改为容器名；不要把宿主机 `3306`/`6379` 映射端口误当成容器网络地址。
+如果 MySQL/Redis 也是 Docker 容器，可先创建网络并在同一网络启动依赖，再把 `.env.server` 中的主机名改为容器名；不要把宿主机 `3306`/`6379` 映射端口误当成容器网络地址。
 
 ### 2.3 启动后管容器
 
@@ -388,7 +399,7 @@ docker/
 └── runtime/   # server.jar、runtime.jar、dist/
 ```
 
-以下命令从仓库根目录执行，`.env` 仍保留在仓库根目录。Compose 的相对挂载路径以 `docker/` 为基准，因此 `RUNTIME_DIR` 默认填 `./runtime`，也可改为宿主机绝对路径。
+以下命令从仓库根目录执行，`.env.server` 仍保留在仓库根目录。Compose 的相对挂载路径以 `docker/` 为基准，因此 `RUNTIME_DIR` 默认填 `./runtime`，也可改为宿主机绝对路径。
 
 ### 3.1 启动方式
 
@@ -407,7 +418,7 @@ docker compose --env-file .env.client --env-file .env.server -f docker/docker-co
 node scripts/start-source.mjs
 ```
 
-脚本会先执行 Maven 编译，再启动 server、HTTP profile、SDK profile 和 Vite web；按 Ctrl+C 会停止本次启动的全部进程。SDK/HTTP 的项目凭证、规则白名单、Redis 地址和运行时令牌仍从 `.env` 或系统环境变量读取；源码启动时默认使用 `http://127.0.0.1:8080`，不要把 Compose 服务名 `server` 带到宿主机进程。
+脚本会先执行 Maven 编译，再启动 server、HTTP profile、SDK profile 和 Vite web；按 Ctrl+C 会停止本次启动的全部进程。SDK/HTTP 的项目凭证、规则白名单、Redis 地址和运行时令牌从 `.env.client` 或系统环境变量读取；源码启动时默认使用 `http://127.0.0.1:8080`，不要把 Compose 服务名 `server` 带到宿主机进程。
 
 **1.2 JAR + Nginx。** 编译后将三个 JAR/前端产物分别启动；SDK 与 HTTP 使用各自端口和 profile，前端由 Nginx 指向 `dist/`。
 
@@ -426,7 +437,7 @@ java -Dspring.profiles.active=sdk -Dserver.port=7071 -DRULE_SERVER_URL=http://12
 
 Nginx 的 `root` 指向 `rule-engine-web/dist`，`/api/` 反向代理到 `http://127.0.0.1:8080`；JAR 更新采用临时文件原子替换后逐个重启，避免读取半写入文件。
 
-**1.3 Docker 应用 + 外部 MySQL/Redis。** 只需要准备 JAR/dist 和一份 `.env`，将 `MYSQL_HOST`、`REDIS_HOST` 配置为远程地址；本文件不创建或依赖 MySQL/Redis Compose 服务。
+**1.3 Docker 应用 + 外部 MySQL/Redis。** 只需要准备 JAR/dist、`.env.server` 和 `.env.client`，将 `MYSQL_HOST`、`REDIS_HOST` 配置为远程地址；本文件不创建或依赖 MySQL/Redis Compose 服务。
 
 ```powershell
 docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml up -d
@@ -444,7 +455,7 @@ docker compose --env-file .env.client --env-file .env.server -f docker/docker-co
 
 所有 Compose 文件都设置了固定容器资源上限。完整模式按 2 个 server 副本计算，MySQL/Redis/Kafka/server/HTTP/SDK/web 合计约 7.38G 内存、1.95C CPU；启用 `example-data` profile 时额外增加 256M/0.05C。外部数据库应用模式按 2 个 server 副本合计约 4.50G/1.20C；再同时启动独立 MySQL/Redis/Kafka 时仍按 8G/2C 预算。
 
-Ubuntu 公网部署使用 Nginx Proxy Manager 管理 HTTPS、证书和反向代理；本项目不安装或修改 UFW、Fail2ban、宿主机 Nginx 及现有端口规则。Compose 中 server/web/runtime 默认绑定本机，MySQL、Redis、Kafka 可通过 `.env` 绑定宿主机端口供远程调试，访问控制由现有安全组/防火墙策略负责。full Compose 提供单节点 Kafka，外接 Compose/JAR 使用外部 Broker 的 `KAFKA_BOOTSTRAP_SERVERS` 和可访问的 `advertised.listeners`。控制台登录密码必须使用 BCrypt 哈希，项目执行必须使用至少 32 位的独立 runtime 接入令牌；NPM 应配置 HTTPS、访问控制和请求限流。
+Ubuntu 公网部署使用 Nginx Proxy Manager 管理 HTTPS、证书和反向代理；本项目不安装或修改 UFW、Fail2ban、宿主机 Nginx 及现有端口规则。Compose 中 server/web/runtime 默认绑定本机，MySQL、Redis、Kafka 可通过 `.env.server` 绑定宿主机端口供远程调试，访问控制由现有安全组/防火墙策略负责。full Compose 提供单节点 Kafka，外接 Compose/JAR 使用外部 Broker 的 `KAFKA_BOOTSTRAP_SERVERS` 和可访问的 `advertised.listeners`。控制台账号密码在首次注册页面设置并以 BCrypt 摘要保存到数据库，项目执行必须使用至少 32 位的独立 runtime 接入令牌；NPM 应配置 HTTPS、访问控制和请求限流。
 
 ### 3.2 构建制品
 
@@ -452,7 +463,7 @@ Ubuntu 公网部署使用 Nginx Proxy Manager 管理 HTTPS、证书和反向代�
 node scripts/package-runtime.mjs
 ```
 
-脚本会构建后端和前端，并清理后重新生成 `docker/runtime`。复制到服务器时至少带上 `docker/docker-compose*.yml`、该运行时目录、`docker/rule-engine-mysql/data-tianshu-example.sql` 和填写完成的 `.env`；server 会从 JAR 内读取 `schema.sql`，不再依赖源码目录。
+脚本会构建后端和前端，并清理后重新生成 `docker/runtime`。复制到服务器时至少带上 `docker/docker-compose*.yml`、该运行时目录、`docker/rule-engine-mysql/data-tianshu-example.sql` 和填写完成的 `.env.server`；server 会从 JAR 内读取 `schema.sql`，不再依赖源码目录。
 
 默认启动不导入示例数据；需要导入时使用：
 
@@ -468,7 +479,7 @@ docker compose --profile example-data --env-file .env.client --env-file .env.ser
 ```powershell
 Copy-Item .env.server.example .env.server
 Copy-Item .env.client.example .env.client
-# 编辑 .env，替换全部 replace-with-* 占位值和数据库密码
+# 编辑 .env.server，替换全部 replace-with-* 占位值和数据库密码
 # 选择 1.3 或 1.4 其中一种，不要同时启动
 docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml up -d
 # 或：docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml up -d
@@ -476,7 +487,7 @@ docker compose --env-file .env.client --env-file .env.server -f docker/docker-co
 
 MySQL 数据目录为 docker/rule-engine-mysql/data，Redis 数据目录为 docker/rule-engine-redis/data；均通过宿主机目录挂载持久化，停止或删除容器不会删除这些文件。外部数据库模式要求服务端账号具备执行 `schema.sql` 的建表权限。数据与日志目录已排除在 Git 和镜像构建上下文之外。
 
-迁移已有部署时保留原 DEPLOY_PROJECT；若需沿用旧 Docker 网络，在 .env 设置 ENGINE_NETWORK 为原网络名。移动数据前应停止对应容器，完成停机备份和文件校验后再启动；不要对仍在写入的数据目录直接复制或移动。MySQL/Redis 的监听端口仍由 MYSQL_HOST_PORT、REDIS_HOST_PORT 配置。
+迁移已有部署时保留原 DEPLOY_PROJECT；若需沿用旧 Docker 网络，在 .env.server 设置 ENGINE_NETWORK 为原网络名。移动数据前应停止对应容器，完成停机备份和文件校验后再启动；不要对仍在写入的数据目录直接复制或移动。MySQL/Redis 的监听端口仍由 MYSQL_HOST_PORT、REDIS_HOST_PORT 配置。
 
 使用生产托管数据库时，把 MYSQL_HOST、MYSQL_PORT、REDIS_HOST、REDIS_PORT 改为生产地址，并确保服务端账号具备执行 `schema.sql` 的建表权限；如需跳过启动建表，可设置 `SPRING_SQL_INIT_MODE=never`。应用账号仍通过 MYSQL_USERNAME / MYSQL_PASSWORD 配置，Redis 密码通过 REDIS_PASSWORD 配置。
 
@@ -538,9 +549,9 @@ sudo systemctl reload nginx
 mvn clean package -DskipTests
 sudo mkdir -p /opt/tianshu/server
 sudo cp rule-engine-server/target/rule-engine-server-*.jar /opt/tianshu/server/rule-engine-server.jar
-sudo cp .env /opt/tianshu/server/.env
+sudo cp .env.server /opt/tianshu/server/.env.server
 cd /opt/tianshu/server
-# application.yml 会从当前目录自动读取 .env；不需要在 shell 中 source，避免 BCrypt 的 $ 被 shell 展开
+# application.yml 会从当前目录自动读取 .env.server；不需要在 shell 中 source，避免密钥中的 $ 被 shell 展开
 java -jar ./rule-engine-server.jar
 ```
 
@@ -554,7 +565,7 @@ Wants=network-online.target
 
 [Service]
 WorkingDirectory=/opt/tianshu/server
-EnvironmentFile=/opt/tianshu/server/.env
+EnvironmentFile=/opt/tianshu/server/.env.server
 ExecStart=/usr/bin/java -jar /opt/tianshu/server/rule-engine-server.jar
 Restart=always
 RestartSec=5
@@ -627,7 +638,7 @@ server {
 
 ### 5.2 启动、摘除和扩容节点
 
-每台节点分别准备相同的 JAR、`.env` 和运行目录；节点可以都监听自己的 `8080`，由负载均衡器通过节点地址区分，不需要额外的实例标识参数：
+每台节点分别准备相同的 JAR、`.env.server` 和运行目录；节点可以都监听自己的 `8080`，由负载均衡器通过节点地址区分，不需要额外的实例标识参数：
 
 ```bash
 # 节点 1/2 都执行，MYSQL_HOST 与 REDIS_HOST 指向共享依赖
@@ -738,7 +749,7 @@ RuleResult result = ruleEngineClient.execute("RC_PRICING_TABLE", requestMap);
 SDK 行为：
 
 - 启动时先通过 HTTP 全量同步规则和函数，再建立 Redis 订阅；项目鉴权失败会直接使启动失败，不会留下半启动的订阅或定时任务。
-- 成功的全量响应是权威快照：服务端已删除的规则/函数会从客户端移除，成功返回空数组会清空对应远端快照；HTTP 非 2xx、空响应、业务 `code != 200`、非法 JSON 或网络失败不会清空旧快照。
+- 成功的全量响应是权威快照：服务端已删除的规则/函数会从客户端移除，成功返回空数组会清空对应远端快照；HTTP 非 2xx、空响应、业务 `code !== "000000"`、非法 JSON 或网络失败不会清空旧快照。
 - 订阅 `rule:push:{projectCode}` 和 `rule:push:broadcast`，规则发布/下线及函数更新/删除后增量刷新本地状态。项目推送只接受相同 `projectCode`；GLOBAL 推送对所有客户端生效。
 - 缓存未命中时可按规则编码单条拉取。
 - 默认本地使用 QLExpress 执行脚本，适合只依赖入参、常量、计算变量和已同步函数的规则。

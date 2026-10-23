@@ -173,22 +173,21 @@ export default {
   flex: none;
   display: flex;
   width: 100%;
-  height: 36px;
-  margin-top: 8px;
+  height: 44px;
+  margin-top: auto;
   padding: 0;
   align-items: center;
   justify-content: center;
   color: var(--tianshu-sidebar-text, var(--tianshu-text-disabled));
   background: transparent;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 6px;
   cursor: pointer;
-  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
+  transition: color 160ms ease, background-color 160ms ease;
   &:hover,
   &:focus-visible {
     color: var(--tianshu-sidebar-text-active, #ffffff);
     background: var(--tianshu-sidebar-bg-hover, #{$menuHover});
-    border-color: rgba(255, 255, 255, 0.3);
     outline: none;
   }
 

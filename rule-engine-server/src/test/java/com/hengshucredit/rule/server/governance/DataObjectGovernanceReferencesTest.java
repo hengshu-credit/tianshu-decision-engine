@@ -10,6 +10,16 @@ import java.util.List;
 import static org.junit.Assert.assertEquals;
 
 public class DataObjectGovernanceReferencesTest {
+    @Test public void wholeObjectDependencyNeverLooksUpAnUnrelatedFieldWithTheSameId() {
+        RuleDataObjectFieldMapper fields = (RuleDataObjectFieldMapper) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{RuleDataObjectFieldMapper.class}, (proxy, method, args) -> { throw new AssertionError("根对象不能查字段表"); });
+        var refs = SimpleEntityGovernedResourceAdapter.dependenciesIn("{\"value\":{\"kind\":\"PATH\",\"refType\":\"DATA_OBJECT_ROOT\",\"refId\":42,\"relativePath\":\".score\"}}");
+        assertEquals(1, refs.size());
+        var root = DataObjectGovernanceReferences.owners(refs, fields).get(0);
+        assertEquals("DATA_OBJECT", root.targetResourceType());
+        assertEquals("DATA_OBJECT_ROOT", root.refType());
+        assertEquals(Long.valueOf(42), root.targetResourceId());
+    }
     @Test
     public void designerFieldAliasesResolveTheOwnerWhileObjectReferencesKeepTheirId() {
         RuleDataObjectFieldMapper fields = (RuleDataObjectFieldMapper) Proxy.newProxyInstance(

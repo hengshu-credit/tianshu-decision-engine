@@ -185,6 +185,7 @@ export default {
   data() {
     return {
       expressionSessionId: this.$route.params.sessionId,
+      expressionPageActive: true,
       compiling: false,
       testVisible: false,
       schemaLoading: false,
@@ -204,9 +205,12 @@ export default {
   name: 'ExpressionEditorPage',
   components: { ExpressionEditorDialog },
   deactivated() {
+    this.expressionPageActive = false
     this.persistDraft()
   },
+  activated() { this.expressionPageActive = true },
   beforeUnmount() {
+    this.expressionPageActive = false
     this.persistDraft()
   },
   computed: {
@@ -281,7 +285,10 @@ export default {
       if (errors.length) return
       this.compiling = true
       try {
+        const session = this.activeSession
         const operand = this.currentDraft()
+        const unchanged = () => this.expressionPageActive && this.activeSession?.sessionId === session.sessionId
+          && this.activeSession?.sourceIdentity === session.sourceIdentity && JSON.stringify(this.currentDraft()) === JSON.stringify(operand)
         if (this.activeSession.ruleId == null) {
           await this.$store.dispatch('expressionSessions/saveCompiled', { sessionId: this.activeSession.sessionId, operand, compiledScript: '' })
           this.$message.success('表达式检查通过，已回填配置；保存配置后生效')
@@ -295,6 +302,7 @@ export default {
           params: {},
         })
         const result = this.responseData(response)
+        if (!unchanged()) return
         if (!result || !result.success) {
           this.$message.error(
             '表达式编译失败: ' +

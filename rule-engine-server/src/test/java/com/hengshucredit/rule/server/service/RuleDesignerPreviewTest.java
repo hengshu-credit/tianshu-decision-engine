@@ -42,6 +42,9 @@ public class RuleDesignerPreviewTest {
             @Override protected RuleFunction loadFunction(Long id) { return null; }
         };
         ReflectionTestUtils.setField(preflight, "dependencyClosureService", dependencies);
+        ReflectionTestUtils.setField(preflight, "regressionEvidence", new RuleRegressionEvidenceService() {
+            @Override protected List<com.hengshucredit.rule.model.entity.RuleApiDocScenario> enabledCases(Long id) { return List.of(); }
+        });
         RuleDesignerService service = new RuleDesignerService() {
             @Override protected void requireLocalNamespace(RuleRevision revision) { }
         };

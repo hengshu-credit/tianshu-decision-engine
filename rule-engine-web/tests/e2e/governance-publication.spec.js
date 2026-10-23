@@ -7,7 +7,7 @@ const modules = [['/project', 'PROJECT'], ['/rule', 'RULE'], ['/variable', 'FIEL
 
 test('发布只在保存了可提交草稿后出现，审批中及没有变更时隐藏', async ({ page }) => {
   const data = createManagementApiData()
-  let phase = 'APPROVED', draft
+  let phase = 'APPROVED', draft, preflightValid = false
   data.set('/api/rule/governance/workspaces/states', ({ url }) => url.searchParams.get('ids').split(',').map(resourceId => ({ resourceId, effectiveStatus: 'ACTIVE', requestStatus: phase, action: 'UPDATE', owned: true })))
   data.set('/api/rule/governance/workspaces/PROJECT/1', () => phase === 'EDITING' ? draft : null)
   data.set('POST /api/rule/governance/drafts', ({ request }) => {
@@ -23,6 +23,7 @@ test('发布只在保存了可提交草稿后出现，审批中及没有变更�
     phase = 'PENDING'
     return { ...draft, status: phase }
   })
+  data.set('POST /api/rule/governance/requests/991/preflight', () => ({ valid: preflightValid, errors: preflightValid ? [] : [{ message: '依赖资源已停用，请先恢复来源', referencePath: '$.sourceId' }], warnings: [] }))
   const { assertClean } = await installDistRoutes(page, { apiData: data })
   await page.goto('http://tianshu.local/index.html#/project')
   const row = page.locator('.el-table__body tr').filter({ hasText: 'E2E 项目' }).first()
@@ -34,6 +35,11 @@ test('发布只在保存了可提交草稿后出现，审批中及没有变更�
   await edit.getByRole('button', { name: '确定', exact: true }).click()
   await expect(edit).toBeHidden()
   await expect(row.locator('.governance-resource-status')).toHaveText('已发布·待更新')
+  await row.getByRole('button', { name: '发布', exact: true }).click()
+  const preflight = page.getByRole('dialog', { name: '发布前检查未通过', exact: true })
+  await expect(preflight).toContainText('依赖资源已停用，请先恢复来源')
+  await preflight.getByRole('button', { name: '关闭', exact: true }).click()
+  preflightValid = true
   await row.getByRole('button', { name: '发布', exact: true }).click()
   await page.getByRole('dialog', { name: '提交发布审批', exact: true }).getByRole('button', { name: '确定', exact: true }).click()
   await expect(row.locator('.governance-resource-status')).toHaveText('已发布·审批中')

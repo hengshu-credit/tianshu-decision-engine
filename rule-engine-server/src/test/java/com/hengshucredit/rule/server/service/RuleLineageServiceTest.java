@@ -54,6 +54,56 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class RuleLineageServiceTest {
+    @Test
+    public void variableSourcesIncludeAllListsAndStructuredReferences() {
+        RuleLineageService service = serviceWithProjectBranch(false);
+        RuleVariable listed = variable(4L, "listed"); listed.setVarSource("LIST");
+        listed.setSourceConfig("{\"listIds\":[21,22,21],\"fields\":[{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":1}]}");
+        RuleVariable derived = variable(5L, "derived"); derived.setVarSource("DERIVED");
+        derived.setSourceConfig("{\"mode\":\"EXPRESSION\",\"operand\":{\"kind\":\"FUNCTION\",\"functionId\":7,\"args\":[{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":4}]}}");
+        setMapper(service, "variableMapper", RuleVariableMapper.class, List.of(variable(1L, "original"), listed, derived));
+        var first = new com.hengshucredit.rule.model.entity.RuleListLibrary(); first.setId(21L); first.setListCode("first");
+        var second = new com.hengshucredit.rule.model.entity.RuleListLibrary(); second.setId(22L); second.setListCode("second");
+        setMapper(service, "listLibraryMapper", RuleListLibraryMapper.class, List.of(first, second));
+        var function = new com.hengshucredit.rule.model.entity.RuleFunction(); function.setId(7L); function.setFuncCode("calculate");
+        setMapper(service, "functionMapper", com.hengshucredit.rule.server.mapper.RuleFunctionMapper.class, List.of(function));
+        Set<String> ids = nodeIds(service.graph("VARIABLE", 5L, "UPSTREAM", 3));
+        assertTrue(ids.containsAll(Set.of("LIST:21", "LIST:22", "FUNCTION:7", "VARIABLE:4", "VARIABLE:1")));
+        assertEquals(1, service.directReferenceConsumers("LIST", 22L).size());
+        assertEquals(1, service.directReferenceConsumers("FUNCTION", 7L).size());
+        assertEquals(2, edges(service.graph("VARIABLE", 4L, "UPSTREAM", 1)).stream()
+                .filter(edge -> "名单匹配".equals(edge.get("label"))).count());
+    }
+    @Test
+    public void graphDoesNotLoadDatasourceCredentialsOrConnectionBodies() {
+        RuleLineageService service = serviceWithProjectBranch(false);
+        RuleDbDatasourceMapper mapper = (RuleDbDatasourceMapper) Proxy.newProxyInstance(
+                RuleDbDatasourceMapper.class.getClassLoader(), new Class<?>[]{RuleDbDatasourceMapper.class}, (proxy, method, args) -> {
+                    if (!"selectList".equals(method.getName())) return defaultValue(method.getReturnType());
+                    var query = (com.baomidou.mybatisplus.core.conditions.AbstractWrapper<?, ?, ?>) args[0];
+                    String selected = query.getSqlSelect();
+                    assertNotNull("构图必须明确裁剪列，不能 SELECT *", selected);
+                    assertTrue(selected.contains("datasource_code"));
+                    assertFalse(selected.contains("password"));
+                    assertFalse(selected.contains("private_key"));
+                    assertFalse(selected.contains("jdbc_url"));
+                    return List.of();
+                });
+        ReflectionTestUtils.setField(service, "dbDatasourceMapper", mapper);
+        assertTrue(nodeIds(service.graph("VARIABLE", 1L, "ALL", 1)).contains("VARIABLE:1"));
+    }
+    @Test
+    public void referencedFunctionMustExistInGraphAndRemainProtected() {
+        RuleLineageService service = serviceWithProjectBranch(false);
+        var function = new com.hengshucredit.rule.model.entity.RuleFunction();
+        function.setId(7L); function.setProjectId(1L); function.setFuncCode("Keep_Function"); function.setFuncName("业务函数"); function.setStatus(1);
+        setMapper(service, "functionMapper", com.hengshucredit.rule.server.mapper.RuleFunctionMapper.class, List.of(function));
+        RuleDefinitionContent content = new RuleDefinitionContent(); content.setDefinitionId(10L);
+        content.setModelJson("{\"operand\":{\"kind\":\"FUNCTION\",\"functionId\":7,\"args\":[]}}");
+        setMapper(service, "definitionContentMapper", RuleDefinitionContentMapper.class, List.of(content));
+        assertEquals("引用函数的规则必须可被影响分析识别", 1, service.directReferenceConsumers("FUNCTION", 7L).size());
+        assertTrue(nodeIds(service.graph("FUNCTION", 7L, "UPSTREAM", 1)).contains("PROJECT:1"));
+    }
 
     @Test
     public void deletingRuleDoesNotTreatItsOutputTargetAsAConsumerOrReverseTheVisualGraph() {
@@ -326,12 +376,11 @@ public class RuleLineageServiceTest {
                     normalized.contains("model_code") || normalized.contains("modelcode"));
             assertFalse("模型文件内容必须排除，实际投影：" + normalized,
                     normalized.contains("model_content") || normalized.contains("modelcontent"));
-            if (index == 0) continue; // 候选只需 ID、名称、编码和归属；图查询保留其余元数据。
-            assertTrue("模型配置必须保留，实际投影：" + normalized,
+            assertFalse("图与目录都不使用模型配置，避免加载大字段，实际投影：" + normalized,
                     normalized.contains("model_config") || normalized.contains("modelconfig"));
-            assertTrue("模型文件名必须保留，实际投影：" + normalized,
+            assertFalse("图与目录不使用模型文件名，实际投影：" + normalized,
                     normalized.contains("model_file_name") || normalized.contains("modelfilename"));
-            assertTrue("模型文件大小必须保留，实际投影：" + normalized,
+            assertFalse("图与目录不使用模型文件大小，实际投影：" + normalized,
                     normalized.contains("model_file_size") || normalized.contains("modelfilesize"));
         }
     }

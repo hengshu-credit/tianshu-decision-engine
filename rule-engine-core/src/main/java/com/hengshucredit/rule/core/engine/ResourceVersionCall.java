@@ -9,7 +9,7 @@ import java.util.Set;
 /** 固定版本读取按资源身份与不可变版本身份分离，业务编码不参与关联。 */
 public record ResourceVersionCall(String refType, Long refId, Long versionId,
                                   String relativePath, List<Object> arguments, String statusDimension, String expectedStatus, String versionSource) {
-    private static final Set<String> TYPES = Set.of("VARIABLE", "CONSTANT", "DATA_OBJECT", "MODEL", "MODEL_OUTPUT", "EXTERNAL_API", "FUNCTION");
+    private static final Set<String> TYPES = Set.of("VARIABLE", "CONSTANT", "DATA_OBJECT", "DATA_OBJECT_ROOT", "MODEL", "MODEL_OUTPUT", "EXTERNAL_API", "FUNCTION");
 
     public ResourceVersionCall(String refType, Long refId, Long versionId, String relativePath, List<Object> arguments) {
         this(refType, refId, versionId, relativePath, arguments, null, null, null);

@@ -19,7 +19,7 @@
             <span class="fp-category-icon" aria-hidden="true">{{ entry.icon }}</span><span>{{ entry.label }}</span><small>{{ entry.count }}</small>
           </button>
         </div>
-        <div class="fp-sidebar-hint">单击模块展开 · 单击字段选择</div>
+      <div class="fp-sidebar-hint">单击查看或展开 · 双击 / Enter 选择</div>
       </nav>
       <main class="fp-main">
         <div class="fp-search"><el-input :model-value="query" size="small" clearable aria-label="搜索字段名称或编码" placeholder="搜索字段名称或编码" @update:model-value="search" /></div>
@@ -98,7 +98,7 @@ export default {
       const counts = new Map([['all', 0], ['selected', this.availableSelected.length], ['recent', this.availableRecent.length]])
       this.tree.nodes.forEach(node => {
         // 对象/模型分组行只是目录结构，不应被计为可选字段数量。
-        if (node.item && !node.item._versionGroup) counts.set(node.category, (counts.get(node.category) || 0) + 1)
+        if (node.item && (!node.item._versionGroup || node.item.rootReference)) counts.set(node.category, (counts.get(node.category) || 0) + 1)
       })
       counts.set('all', [...this.tree.nodes.values()].filter(node => node.item && node.selectable).length)
       const persistentCategories = new Set(['recent', 'selected'])
@@ -169,10 +169,6 @@ export default {
       this.locatePending = false
       this.preview = node
       if (node.item && !(event?.detail > 1)) recordPickerActivity('FIELD_VIEW', node.item, this.$route)
-      if (!node.children.length && node.selectable && event?.detail <= 1) {
-        this.confirm(node)
-        return
-      }
       // The second click of a double click must not collapse the tree before confirmation.
       if (event?.detail > 1 || !node.children.length) return
       const expanded = new Set(this.expanded)
@@ -250,7 +246,7 @@ export default {
 .fp-actions :deep(button) { color: var(--tianshu-primary-text, var(--el-color-primary)); font: inherit; border: 1px solid var(--tianshu-border); border-radius: 0; background: var(--tianshu-bg-surface); cursor: pointer; }
 .fp-categories { display:flex; flex-direction:column; width:148px; flex:none; min-height:0; overflow:hidden; border-right:1px solid var(--tianshu-border); }
 .fp-category-list { flex:1; min-height:0; overflow-x:hidden; overflow-y:auto; padding:6px; }
-.fp-sidebar-hint { display:flex; align-items:center; justify-content:center; flex:none; min-height:36px; box-sizing:border-box; padding:8px 4px; border-top:1px solid var(--tianshu-border-subtle); color:var(--tianshu-text-secondary); font-size:11px; line-height:18px; text-align:center; white-space:nowrap; }
+.fp-sidebar-hint { display:flex; align-items:center; justify-content:center; flex:none; min-height:36px; box-sizing:border-box; padding:8px 4px; border-top:1px solid var(--tianshu-border-subtle); color:var(--tianshu-text-secondary); font-size:11px; line-height:18px; text-align:center; white-space:normal; }
 .fp-categories button { display:flex; width:100%; align-items:center; gap:6px; height:34px; padding:0 6px; border:0; white-space:nowrap; }
 .fp-categories button.active { color:var(--tianshu-primary-text, var(--el-color-primary)); background:var(--tianshu-info-bg); font-weight:600; }
 .fp-categories small { margin-left:auto; font-size:10px; color:var(--tianshu-text-tertiary); }

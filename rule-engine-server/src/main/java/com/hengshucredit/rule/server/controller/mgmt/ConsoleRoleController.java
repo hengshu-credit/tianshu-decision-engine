@@ -1,8 +1,9 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.model.dto.ConsoleRoleSaveRequest;
 import com.hengshucredit.rule.model.entity.ConsolePermission;
-import com.hengshucredit.rule.server.common.Result;
 import com.hengshucredit.rule.server.security.RequirePermission;
 import com.hengshucredit.rule.server.service.ConsoleAccountManagementService;
 import com.hengshucredit.rule.server.service.ConsoleOperatorResolver;
@@ -28,30 +29,30 @@ public class ConsoleRoleController {
     private ConsoleOperatorResolver operatorResolver;
 
     @GetMapping("/roles")
-    @RequirePermission(value = "role:view", anyOf = {"account:manage", "role:manage"})
-    public Result<List<ConsoleAccountManagementService.ConsoleRoleDetail>> roles() {
-        return Result.ok(accountService.listRoles());
+    @RequirePermission(value = "role:view", anyOf = {"account:manage", "role:manage", "account:role-assign"})
+    public ApiResponse<List<ConsoleAccountManagementService.ConsoleRoleDetail>> roles() {
+        return ApiResponse.ok(accountService.listRoles());
     }
 
     @PostMapping("/roles")
     @RequirePermission("role:manage")
-    public Result<ConsoleAccountManagementService.ConsoleRoleDetail> saveRole(
+    public ApiResponse<ConsoleAccountManagementService.ConsoleRoleDetail> saveRole(
             @RequestBody ConsoleRoleSaveRequest request) {
-        return Result.ok(accountService.saveRole(
+        return ApiResponse.ok(accountService.saveRole(
                 request, operatorResolver.resolve()));
     }
 
     @PutMapping("/roles/{id}/status")
     @RequirePermission("role:manage")
-    public Result<Void> roleStatus(@PathVariable Long id,
+    public ApiResponse<Void> roleStatus(@PathVariable Long id,
                                    @RequestParam Integer status) {
         accountService.changeRoleStatus(id, status, operatorResolver.resolve());
-        return Result.ok();
+        return ApiResponse.ok();
     }
 
     @GetMapping("/permissions")
-    @RequirePermission(value = "role:view", anyOf = {"account:manage", "role:manage"})
-    public Result<List<ConsolePermission>> permissions() {
-        return Result.ok(accountService.listPermissions());
+    @RequirePermission(value = "role:view", anyOf = {"account:manage", "role:manage", "account:role-assign"})
+    public ApiResponse<List<ConsolePermission>> permissions() {
+        return ApiResponse.ok(accountService.listPermissions());
     }
 }

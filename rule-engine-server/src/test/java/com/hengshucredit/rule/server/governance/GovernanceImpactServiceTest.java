@@ -112,6 +112,12 @@ public class GovernanceImpactServiceTest {
             List<Map<String, Object>> nodes) {
         return new RuleLineageService() {
             @Override
+            public Map<Long, List<Map<String, Object>>> directReferenceConsumers(String nodeType, List<Long> nodeIds) {
+                Map<Long, List<Map<String, Object>>> result = new LinkedHashMap<>();
+                for (Long id : nodeIds) result.put(id, directReferenceConsumers(nodeType, id));
+                return result;
+            }
+            @Override
             public List<Map<String, Object>> directReferenceConsumers(String nodeType, Long nodeId) {
                 return nodes.stream().filter(node -> !(nodeType.equals(node.get("type"))
                         && nodeId.equals(node.get("refId")))).toList();

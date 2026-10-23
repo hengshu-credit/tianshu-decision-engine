@@ -3,6 +3,7 @@ package com.hengshucredit.rule.server.controller.open;
 import com.hengshucredit.rule.core.trace.TraceIdGenerator;
 import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
 import com.hengshucredit.rule.model.dto.RuleResult;
+import com.hengshucredit.rule.model.PlatformCode;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.openapi.OpenApiContract;
 import com.hengshucredit.rule.server.openapi.OpenApiContractService;
@@ -100,13 +101,11 @@ public class OpenRuleController {
                         traceId, cached.isSuccess() ? outputValues(resolved, cached) : errorValues(cached));
             }
             if (idempotency.getStatus() == RuleIdempotencyService.Status.CONFLICT) {
-                return render(resolved.getContract(), new OpenApiStatus(false, "400004",
-                                "幂等键已被其他请求使用且请求内容不同", 409),
+                return render(resolved.getContract(), new OpenApiStatus(PlatformCode.IDEMPOTENCY_CONFLICT, null),
                         traceId, errorValues("幂等键已被其他请求使用且请求内容不同"));
             }
             if (idempotency.getStatus() == RuleIdempotencyService.Status.IN_PROGRESS) {
-                return render(resolved.getContract(), new OpenApiStatus(false, "400005",
-                                "相同幂等键的请求正在执行", 409),
+                return render(resolved.getContract(), new OpenApiStatus(PlatformCode.EXECUTION_IN_PROGRESS, null),
                         traceId, errorValues("相同幂等键的请求正在执行"));
             }
             OpenApiContractService.ResolvedContract executionContract = resolved;
@@ -162,18 +161,11 @@ public class OpenRuleController {
     }
 
     private OpenApiStatus statusForResult(RuleResult result) {
-        if (result.isSuccess()) return OpenApiStatuses.success();
-        if ("WAITING_EXTERNAL".equals(result.getExecutionStatus())) return OpenApiStatuses.waitingExternal();
-        if ("THROTTLED".equals(result.getExecutionStatus())) {
-            return ExecutionCapacityException.Resource.fromCode(result.getCapacityResource()) == null
-                    ? OpenApiStatuses.qpsConcurrencyExceeded() : capacityStatus(result.getErrorMessage());
-        }
-        return OpenApiStatuses.resultError(safeMessage(result.getErrorMessage(), "结果处理异常"));
+        return new OpenApiStatus(result.platformStatus(), result.platformDetail());
     }
 
     private OpenApiStatus capacityStatus(String message) {
-        return new OpenApiStatus(false, OpenApiStatuses.QPS_CONCURRENCY_EXCEEDED,
-                safeMessage(message, "执行资源容量不足，请稍后重试"), 429);
+        return new OpenApiStatus(PlatformCode.CAPACITY_EXCEEDED, safeMessage(message, "执行资源容量不足，请稍后重试"));
     }
 
     private ResponseEntity<Object> renderSafely(OpenApiContractService.ResolvedContract resolved,

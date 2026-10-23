@@ -1,4 +1,5 @@
 const http = require('node:http')
+const { platformResponse } = require('./platformResponse.cjs')
 const { createDocsApiData } = require('./docsFixtures.cjs')
 
 const fixtures = createDocsApiData()
@@ -17,17 +18,13 @@ const server = http.createServer(async (request, response) => {
     response.writeHead(200, {
       'Content-Type': 'application/json; charset=utf-8',
     })
-    response.end(JSON.stringify({ code: 200, message: 'success', data }))
+    response.end(JSON.stringify(platformResponse(data)))
   } catch (error) {
     response.writeHead(500, {
       'Content-Type': 'application/json; charset=utf-8',
     })
     response.end(
-      JSON.stringify({
-        code: 500,
-        message: error instanceof Error ? error.message : String(error),
-        data: null,
-      })
+      JSON.stringify(platformResponse(null, 'SYSTEM_ERROR', error instanceof Error ? error.message : String(error)))
     )
   }
 })

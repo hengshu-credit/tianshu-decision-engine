@@ -210,7 +210,7 @@
           </el-table-column>
           <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['查询', '编辑', '测试', '版本', '发布', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
-              <el-button v-permission="'database:edit'"
+              <el-button v-permission="{ code: 'database:edit', projectId: row.projectId, scope: row.scope }"
                 link
                 data-action="inspect"
                 size="small"
@@ -219,7 +219,7 @@
                 >查询</el-button
               >
               <el-button
-                v-permission="'database:edit'"
+                v-permission="{ code: 'database:edit', projectId: row.projectId, scope: row.scope }"
                 link
                 data-action="edit"
                 size="small"
@@ -227,7 +227,7 @@
                 @click="handleEdit(row)"
                 >编辑</el-button
               >
-              <el-button v-permission="'database:edit'"
+              <el-button v-permission="{ code: 'database:edit', projectId: row.projectId, scope: row.scope }"
                 link
                 data-action="execute"
                 size="small"
@@ -237,7 +237,7 @@
               >
               <governance-publish-action resource-type="DATABASE" :resource-id="row.id" />
               <el-button
-                v-permission="'database:edit'"
+                v-permission="{ code: 'database:edit', projectId: row.projectId, scope: row.scope }"
                 link
                 data-action="delete"
                 size="small"
@@ -255,7 +255,7 @@
           :page-size="qp.pageSize"
           :total="total"
           layout="total,sizes,prev,pager,next"
-          :page-sizes="[10, 30, 50, 100, 200, 500]"
+          :page-sizes="[10, 20, 30, 50, 100, 200, 500]"
           @current-change="
             (p) => {
               qp.pageNum = p
@@ -807,7 +807,7 @@ export default {
       loading: false,
       qp: {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         projectCode: '',
         projectName: '',
         scope: '',

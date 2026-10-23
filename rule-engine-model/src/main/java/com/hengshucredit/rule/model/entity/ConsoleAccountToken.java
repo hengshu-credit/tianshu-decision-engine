@@ -17,6 +17,7 @@ public class ConsoleAccountToken {
     private Long userId;
     private String purpose;
     private String tokenHash;
+    private String targetEmail;
     private LocalDateTime expiresAt;
     private LocalDateTime consumedAt;
     private String requestIp;

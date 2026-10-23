@@ -241,7 +241,10 @@ public class KafkaLogReporterTest {
             httpTokens.add(String.valueOf(exchange.getRequestHeaders().getFirst("X-Rule-Token")));
             httpLogs.addAll(JSON.parseArray(new String(exchange.getRequestBody().readAllBytes(),
                     StandardCharsets.UTF_8), RuleExecutionLog.class));
-            byte[] body = ("{\"code\":" + responseStatus + "}").getBytes(StandardCharsets.UTF_8);
+            Object envelope = responseStatus == 200
+                    ? com.hengshucredit.rule.model.ApiResponse.ok()
+                    : com.hengshucredit.rule.model.ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.fromHttpStatus(responseStatus), "test response");
+            byte[] body = JSON.toJSONString(envelope).getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(responseStatus, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();

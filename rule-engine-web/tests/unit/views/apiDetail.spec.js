@@ -1,12 +1,14 @@
 import ApiDetail from '@/views/datasource/ApiDetail.vue'
+import { emptyExecution } from '@/utils/apiExecution'
 import { mount, flushPromises } from '@test-utils'
 import * as dataObjectApi from '@/api/dataObject'
 import * as datasourceApi from '@/api/datasource'
+import * as governanceApi from '@/api/governance'
 import { ElButton } from 'element-plus/es/components/button/index.mjs'
 import { ElAlert } from 'element-plus/es/components/alert/index.mjs'
 
 vi.mock('@/api/datasource', () => ({
-  createApiConfig: vi.fn(), getApiConfig: vi.fn(), updateApiConfig: vi.fn(),
+  getDatasource: vi.fn(), createApiConfig: vi.fn(), getApiConfig: vi.fn(), updateApiConfig: vi.fn(),
   invokeApiConfigPreview: vi.fn(), createApiConfigTrial: vi.fn(), previewApiConfigRequest: vi.fn(),
   getApiConfigTrial: vi.fn(), resumeApiConfigTrial: vi.fn(), cancelApiConfigTrial: vi.fn(),
   listApiConfigTrials: vi.fn().mockResolvedValue({ data: [] }),
@@ -16,45 +18,58 @@ vi.mock('@/api/datasource', () => ({
 afterEach(() => { vi.clearAllMocks() })
 
 function createContext(overrides = {}) {
-  const ctx = {
-    datasourceOptions: [],
-    dataObjectOptions: [],
-    dataObjectTree: [],
-    form: ApiDetail.methods.emptyForm(),
-    headerRows: [ApiDetail.methods.emptyNameValueRow()],
-    queryRows: [ApiDetail.methods.emptyNameValueRow()],
-    cookieRows: [ApiDetail.methods.emptyNameValueRow()],
-    requestMappingRows: [ApiDetail.methods.emptyRequestMappingRow()],
-    responseMappingRows: [ApiDetail.methods.emptyResponseMappingRow()],
-    responseConditionRows: [],
-    requestBodyMode: 'MAPPING',
-    responseMappingMode: 'MAPPING',
-    requestMappingJsonText: '{}',
-    responseMappingJsonText: '{}',
-    syncingMapping: false,
-    apiAuthConfig: ApiDetail.methods.emptyAuthConfig('INHERIT'),
-    scriptVariableRows: [ApiDetail.methods.emptyScriptVariableRow()],
-    cacheKeyRows: [ApiDetail.methods.emptyCacheKeyRow()],
-    successConditionRoot: ApiDetail.methods.emptyApiConditionRoot('httpStatus', 'starts_with', '2'),
-    retryConditionRoot: ApiDetail.methods.emptyApiConditionRoot('body.response_code', '==', '10000429'),
-    billingConfig: ApiDetail.methods.emptyBillingConfig(),
-    payloadCapture: ApiDetail.methods.emptyPayloadCaptureConfig(),
-    asyncShared: ApiDetail.methods.emptyAsyncShared(),
-    asyncPollConfig: ApiDetail.methods.emptyAsyncPollConfig(),
-    asyncCallbackConfig: ApiDetail.methods.emptyAsyncCallbackConfig(),
-    $route: { params: {}, query: {} },
-    ...overrides
-  }
-  Object.keys(ApiDetail.methods).forEach(name => {
-    ctx[name] = ApiDetail.methods[name].bind(ctx)
-  })
+  const ctx = { $route: { params: {}, query: {} }, markConfigurationSaved: vi.fn() }
+  Object.keys(ApiDetail.methods).forEach(name => { ctx[name] = ApiDetail.methods[name].bind(ctx) })
+  Object.assign(ctx, ApiDetail.data.call(ctx), { initializing: false }, overrides)
   return ctx
 }
 
 describe('ApiDetail helpers', () => {
+  test('已保存审批草稿的对象形链路配置可以重新打开编辑', async () => {
+    const ctx = createContext({ initializationId: 1, $route: { path: '/datasource/api/20', params: { id: '20' } } })
+    datasourceApi.getApiConfig.mockResolvedValueOnce({ data: { id: 20, executionConfig: JSON.stringify(emptyExecution()) } })
+    const editable = vi.spyOn(governanceApi, 'editableResource').mockResolvedValueOnce({ id: 20, apiCode: 'Score', executionConfig: emptyExecution() })
+    ctx.ensureSelectedDatasource = vi.fn().mockResolvedValue()
+    ctx.loadApiPickerOptions = vi.fn().mockResolvedValue()
+    try {
+      await ctx.loadDetail(1)
+      expect(ctx.form.apiCode).toBe('Score')
+      expect(JSON.parse(ctx.form.executionConfig).version).toBe(2)
+    } finally { editable.mockRestore() }
+  })
+  test('当前配置只保存请求字段和响应分支，原样保留协议名称、引用 ID 和响应路径', () => {
+    const ctx = createContext()
+    const spec = { ...emptyExecution(), requestFields: [
+      { id: 'cookie', location: 'COOKIE', path: 'Session.Id', value: { kind: 'REFERENCE', refType: 'VARIABLE', refId: '9007199254740993', code: 'renamed' } },
+      { id: 'json', location: 'JSON', path: 'Customer["Mobile.Number"]', value: { kind: 'LITERAL', valueType: 'STRING', value: '0001' } },
+    ], responseBranches: [{ id: 'success', mode: 'VALUE', outputPath: 'data', value: { kind: 'PATH', value: 'response.body.Payload', protocolPath: true } }] }
+    ctx.form.executionConfig = JSON.stringify(spec)
+    const saved = ctx.normalizeForm(ctx.form)
+    expect(JSON.parse(saved.executionConfig)).toEqual(spec)
+    for (const key of ['headerConfig', 'queryConfig', 'requestMapping', 'responseMapping', 'bodyTemplate', 'asyncPollConfig']) expect(saved).not.toHaveProperty(key)
+  })
+  test('缺少当前执行配置时阻止保存，异步必须通过链路步骤配置', () => {
+    const ctx = createContext()
+    ctx.form.executionConfig = ''
+    expect(() => ctx.normalizeForm(ctx.form)).toThrow('请求与响应')
+    ctx.form.executionConfig = JSON.stringify(emptyExecution())
+    ctx.form.requestMode = 'ASYNC'
+    expect(() => ctx.normalizeForm(ctx.form)).toThrow('链路步骤')
+    const spec = { ...emptyExecution(), steps: [{ id: 'query', type: 'HTTP', endpointUrl: '/query', requestFields: [], poll: { until: { type: 'group', children: [{ path: 'body.State', operator: '==', value: 'DONE' }] }, maxAttempts: 0 } }] }
+    ctx.form.executionConfig = JSON.stringify(spec)
+    expect(JSON.parse(ctx.normalizeForm(ctx.form).executionConfig).steps[0].poll.maxAttempts).toBe(0)
+    expect(ApiDetail.computed.executionTabs.call(ctx).map(tab => tab.name)).toEqual(['request', 'response', 'steps', 'samples'])
+  })
+  test('保存具名样例保留整个当前配置，不直接修改正式 API', async () => {
+    const ctx = createContext({ invokeParamsText: '{"Customer":{"Id":"A"}}', $message: { success: vi.fn(), error: vi.fn() } })
+    await ctx.saveCurrentSample()
+    expect(JSON.parse(ctx.form.executionConfig).samples[0].params).toEqual({ Customer: { Id: 'A' } })
+    expect(datasourceApi.updateApiConfig).not.toHaveBeenCalled()
+    expect(datasourceApi.createApiConfig).not.toHaveBeenCalled()
+  })
   test('缓存接口详情不将其他页面的 ID 当作 API ID 加载', async () => {
     datasourceApi.listDatasources.mockResolvedValue({ data: { records: [] } })
-    datasourceApi.getApiConfig.mockResolvedValue({ data: { id: 20, apiCode: 'ORIGINAL' } })
+    datasourceApi.getApiConfig.mockResolvedValue({ data: { id: 20, apiCode: 'ORIGINAL', executionConfig: JSON.stringify(emptyExecution()) } })
     const route = { name: 'ApiDetail', path: '/datasource/api/20', fullPath: '/datasource/api/20', params: { id: '20' }, query: {} }
     const wrapper = mount(ApiDetail, { mocks: { $route: route } })
     await flushPromises()
@@ -134,7 +149,7 @@ describe('ApiDetail helpers', () => {
     expect(() => ctx.normalizeForm(ctx.form)).toThrow('至少 1 次')
     ctx.form.executionConfig = JSON.stringify({ version: 2, retryBranches: [{ id: 'retry', retryCount: 1 }] })
     expect(ctx.normalizeForm(ctx.form).retryCount).toBe(0)
-    ctx.form.executionConfig = ''
+    ctx.form.executionConfig = JSON.stringify(emptyExecution())
     ctx.form.exceptionStrategy = 'FAIL_FAST'
     expect(ctx.normalizeForm(ctx.form).retryCount).toBe(0)
   })
@@ -149,7 +164,7 @@ describe('ApiDetail helpers', () => {
       expect(wrapper.find('.detail-form').exists()).toBe(false)
       expect(wrapper.find('[data-testid="api-detail-loading"]').exists()).toBe(true)
     } finally {
-      finish({ data: { id: 20, endpointUrl: '/saved', apiCode: 'EXISTING_API' } })
+      finish({ data: { id: 20, endpointUrl: '/saved', apiCode: 'EXISTING_API', executionConfig: JSON.stringify(emptyExecution()) } })
       await flushPromises()
     }
     expect(wrapper.find('.detail-form').exists()).toBe(true)
@@ -184,31 +199,9 @@ describe('ApiDetail helpers', () => {
     expect(ctx.tokenFailureConditionRoot.children[1].value).toBe('TOKEN_EXPIRED')
   })
 
-  test('提交任务号与回调任务号配置分别保存，不互相覆盖', () => {
-    const ctx = createContext({
-      form: { ...ApiDetail.methods.emptyForm(), requestMode: 'ASYNC', asyncResultMode: 'CALLBACK', asyncCallbackUrl: 'https://engine.example/api/external-callback/${invocationId}' },
-      asyncShared: { taskIdPath: 'body.receipt.id' },
-      asyncCallbackConfig: { ...ApiDetail.methods.emptyAsyncCallbackConfig(), taskIdPath: 'body.report.job', signatureHeader: 'X-Signature', signatureSecret: 'test-secret' }
-    })
-    const data = ctx.normalizeForm(ctx.form)
-    expect(JSON.parse(data.asyncCallbackConfig)).toMatchObject({ submissionTaskIdPath: 'body.receipt.id', taskIdPath: 'body.report.job' })
-    ctx.form = data
-    ctx.syncAsyncConfigFromForm()
-    expect(ctx.asyncShared.taskIdPath).toBe('body.receipt.id')
-    expect(ctx.asyncCallbackConfig.taskIdPath).toBe('body.report.job')
-  })
+  
 
-  test('轮询请求体与失败状态能保存，缺少结果查询地址时阻止保存', () => {
-    const ctx = createContext({
-      form: { ...ApiDetail.methods.emptyForm(), requestMode: 'ASYNC', asyncResultMode: 'POLL' },
-      asyncPollRequestText: '{"requestMapping":{"job":"$.taskId"}}'
-    })
-    expect(() => ctx.normalizeForm(ctx.form)).toThrow('结果查询地址')
-    ctx.asyncPollConfig.resultEndpointUrl = '/query'
-    ctx.asyncPollConfig.requestMethod = 'POST'
-    const data = ctx.normalizeForm(ctx.form)
-    expect(JSON.parse(data.asyncPollConfig)).toMatchObject({ requestMapping: { job: '$.taskId' }, failureValue: 'FAILED' })
-  })
+  
   test('默认只展示业务配置并把稳定性与高级能力分层', () => {
     const ctx = createContext({ activeConfigGroup: 'business' })
     ctx.configTabs = ApiDetail.data.call(ctx).configTabs
@@ -216,7 +209,7 @@ describe('ApiDetail helpers', () => {
     const visible = ApiDetail.computed.visibleConfigTabs.call(ctx)
 
     expect(visible.map(item => item.name)).toEqual([
-      'auth', 'headers', 'query', 'cookies', 'request', 'response', 'payloadCapture', 'test'
+      'auth', 'payloadCapture', 'test'
     ])
     ctx.visibleConfigTabs = visible
     ctx.switchConfigGroup('reliability')
@@ -235,19 +228,9 @@ describe('ApiDetail helpers', () => {
     expect(ApiDetail.computed.previewTokenRequired.call(oauth)).toBe(true)
   })
 
-  test('旧版请求映射单独保存 Cookies，并可从字段选择器取值', () => {
-    const ctx = createContext({
-      cookieRows: [{ name: 'session_id', value: '$.sessionId', remark: '' }],
-      requestMappingRows: [{ targetPath: 'mobile', sourcePath: '$.mobile', remark: '' }],
-    })
-    const mapping = ctx.buildRequestMappingConfig()
-    expect(mapping._cookies).toEqual({ session_id: '$.sessionId' })
-    expect(mapping.mobile).toBe('$.mobile')
-    ctx.cookieRows = [ApiDetail.methods.emptyNameValueRow()]
-    expect(ctx.rowsFromNameValueObject({ session_id: '$.sessionId' })[0]).toMatchObject({ name: 'session_id', value: '$.sessionId' })
-  })
+  
 
-  test('异步接口在稳定性分组中显示回调配置', () => {
+  test('异步接口只使用多步链路，不显示旧异步配置入口', () => {
     const ctx = createContext({
       activeConfigGroup: 'reliability',
       form: {
@@ -258,7 +241,7 @@ describe('ApiDetail helpers', () => {
     ctx.configTabs = ApiDetail.data.call(ctx).configTabs
 
     expect(ApiDetail.computed.visibleConfigTabs.call(ctx).map(item => item.name))
-      .toEqual(['connection', 'async', 'retry', 'billing'])
+      .toEqual(['connection', 'retry', 'billing'])
   })
 
   test('配置检查可把用户带到对应配置项', () => {
@@ -296,51 +279,13 @@ describe('ApiDetail helpers', () => {
 
     await ctx.loadDatasourceOptions()
 
-    expect(datasourceApi.listDatasources).toHaveBeenCalledWith({ pageNum: 1, pageSize: 500, status: 1 })
+    expect(datasourceApi.listDatasources).toHaveBeenCalledWith({ pageNum: 1, pageSize: 20, status: 1 })
     expect(ctx.datasourceOptions).toEqual([publishedDatasource])
   })
 
-  test('applyTemplate fills rule engine mapping template', () => {
-    const ctx = createContext({
-      form: {
-        ...ApiDetail.methods.emptyForm(),
-        endpointUrl: 'RC_PRICING_TABLE'
-      }
-    })
+  
 
-    ctx.applyTemplate('RULE_ENGINE')
-
-    expect(ctx.form.requestMethod).toBe('POST')
-    expect(JSON.parse(ctx.form.requestMapping)).toEqual({
-      ruleCode: 'RC_PRICING_TABLE',
-      params: {
-        customerType: '$.customerType',
-        productLine: '$.productLine'
-      }
-    })
-    expect(JSON.parse(ctx.form.responseMapping)).toEqual({
-      decision: 'body.decision',
-      rate: 'body.rate',
-      score: 'body.score'
-    })
-  })
-
-  test('normalizeForm accepts dynamic response mapping JSON', () => {
-    const ctx = createContext({ responseMappingMode: 'JSON' })
-    ctx.form = {
-      ...ctx.emptyForm(),
-      responseMapping: JSON.stringify({
-        score: {
-          cases: [
-            { when: { path: 'body.code', value: '00' }, path: 'body.data.score' }
-          ],
-          default: 0
-        }
-      })
-    }
-
-    expect(ctx.normalizeForm(ctx.form).responseMapping).toContain('cases')
-  })
+  
 
   test('initializeRoute resets form and reloads detail when route switches to edit mode', async () => {
     const ctx = createContext({
@@ -363,83 +308,13 @@ describe('ApiDetail helpers', () => {
     expect(ctx.loadDetail).toHaveBeenCalled()
   })
 
-  test('request mapping form and json modes keep each other synchronized', () => {
-    const row = { targetPath: '$.customer.mobile', sourcePath: '', remark: '' }
-    const ctx = createContext({
-      requestMappingRows: [row]
-    })
+  
 
-    ctx.onRequestTargetInput(row)
-    expect(row.sourcePath).toBe('$.customer.mobile')
-    expect(JSON.parse(ctx.requestMappingJsonText)).toEqual({
-      customer: { mobile: '$.customer.mobile' }
-    })
+  
 
-    ctx.requestBodyMode = 'JSON'
-    ctx.syncRequestRowsFromJson('{"customer":{"certNo":"$.customer.idNo"}}', false)
-    expect(ctx.requestMappingRows).toEqual([
-      { targetPath: 'customer.certNo', sourcePath: '$.customer.idNo', remark: '' }
-    ])
-  })
+  
 
-  test('request source path can fill target path automatically', () => {
-    const row = { targetPath: '', sourcePath: '$.apply.customer.idNo', remark: '' }
-    const ctx = createContext({
-      requestMappingRows: [row]
-    })
-
-    ctx.onRequestSourceInput(row)
-
-    expect(row.targetPath).toBe('apply.customer.idNo')
-    expect(JSON.parse(ctx.requestMappingJsonText)).toEqual({
-      apply: { customer: { idNo: '$.apply.customer.idNo' } }
-    })
-  })
-
-  test('response conditional rows serialize to cases mapping', () => {
-    const ctx = createContext({
-      responseMappingRows: [{ outputField: 'score', sourcePath: 'body.data.score', defaultValue: '' }],
-      responseConditionRows: [{
-        outputField: 'score',
-        conditionRoot: {
-          type: 'group',
-          op: 'AND',
-          children: [{ type: 'leaf', varCode: 'body.code', operator: '==', valueKind: 'CONST', value: '00', varType: 'STRING' }]
-        },
-        sourcePath: 'body.data.score',
-        defaultValue: 0,
-        fallback: false
-      }]
-    })
-
-    const config = ctx.buildResponseMappingConfig()
-
-    expect(config.score.cases[0]).toMatchObject({
-      when: {
-        type: 'group',
-        op: 'AND',
-        children: [{ type: 'leaf', varCode: 'body.code', operator: '==', value: '00' }]
-      },
-      path: 'body.data.score'
-    })
-    expect(config.score.default).toBe(0)
-  })
-
-  test('response fallback branch serializes without when condition', () => {
-    const ctx = createContext({
-      responseConditionRows: [{
-        outputField: 'score',
-        conditionRoot: { type: 'group', op: 'AND', children: [] },
-        sourcePath: 'body.backup.score',
-        defaultValue: '',
-        fallback: true
-      }]
-    })
-
-    const config = ctx.buildResponseMappingConfig()
-
-    expect(config.score.cases[0]).toEqual({ path: 'body.backup.score' })
-  })
+  
 
   test('cache key config keeps selected component order and requires every component', () => {
     const ctx = createContext({
@@ -591,102 +466,13 @@ describe('ApiDetail helpers', () => {
     expect(() => ctx.normalizeForm(ctx.form)).toThrow('响应单字段上限')
   })
 
-  test('buildRequestMappingConfig nests dotted api field paths', () => {
-    const ctx = createContext({
-      requestMappingRows: [
-        { targetPath: 'customer.certNo', sourcePath: '$.customer.idNo', remark: '' },
-        { targetPath: '$.customer.mobile', sourcePath: '$.customer.mobile', remark: '' }
-      ]
-    })
+  
 
-    expect(ctx.buildRequestMappingConfig()).toEqual({
-      customer: {
-        certNo: '$.customer.idNo',
-        mobile: '$.customer.mobile'
-      }
-    })
-  })
+  
 
-  test('normalizeForm serializes async polling config for async api', () => {
-    const ctx = createContext({
-      form: {
-        ...ApiDetail.methods.emptyForm(),
-        requestMode: 'ASYNC',
-        asyncResultMode: 'POLL'
-      },
-      asyncShared: { taskIdPath: 'body.taskId' },
-      asyncPollConfig: {
-        ...ApiDetail.methods.emptyAsyncPollConfig(),
-        resultEndpointUrl: '/result/${taskId}',
-        intervalMs: 2000
-      }
-    })
+  
 
-    const data = ctx.normalizeForm(ctx.form)
-
-    expect(data.asyncResultMode).toBe('POLL')
-    expect(JSON.parse(data.asyncPollConfig)).toMatchObject({
-      resultEndpointUrl: '/result/${taskId}',
-      intervalMs: 2000,
-      taskIdPath: 'body.taskId'
-    })
-    expect(data.asyncCallbackConfig).toBeNull()
-  })
-
-  test('buildApiInvokeParamTemplate uses mappings and field types to create sample json', () => {
-    const ctx = createContext({
-      form: {
-        ...ApiDetail.methods.emptyForm(),
-        requestObjectId: 10
-      },
-      dataObjectOptions: [{ id: 10, scriptName: 'customer' }],
-      dataObjectTree: [{
-        object: { id: 10, scriptName: 'customer' },
-        flatVariables: [
-          { scriptName: 'customer.idNo', varLabel: '证件号', varType: 'STRING' },
-          { scriptName: 'customer.age', varLabel: '年龄', varType: 'NUMBER' },
-          { scriptName: 'customer.tags', varLabel: '标签', varType: 'LIST' },
-          { scriptName: 'customer.ext', varLabel: '扩展', varType: 'OBJECT' }
-        ]
-      }]
-    })
-    const row = {
-      headerConfig: '{"X-Trace":"${traceId}"}',
-      requestMapping: '{"certNo":"$.customer.idNo","age":"$.customer.age","tags":"$.customer.tags","ext":"$.customer.ext"}'
-    }
-
-    expect(JSON.parse(ctx.buildApiInvokeParamTemplate(row))).toEqual({
-      traceId: '',
-      customer: {
-        idNo: '',
-        age: 0,
-        tags: [],
-        ext: {}
-      }
-    })
-  })
-
-  test('buildApiInvokeParamTemplate includes request object fields without mappings', () => {
-    const ctx = createContext({
-      form: {
-        ...ApiDetail.methods.emptyForm(),
-        requestObjectId: 7
-      },
-      dataObjectOptions: [{ id: 7, objectCode: 'TSRequestBody', scriptName: '' }],
-      dataObjectTree: [{
-        object: { id: 7, objectCode: 'TSRequestBody', scriptName: '' },
-        flatVariables: [
-          { scriptName: 'clientAppName', varType: 'STRING' },
-          { scriptName: 'params', varType: 'OBJECT' }
-        ]
-      }]
-    })
-
-    expect(JSON.parse(ctx.buildApiInvokeParamTemplate(ctx.form))).toEqual({
-      clientAppName: '',
-      params: {}
-    })
-  })
+  
 
   test('buildApiInvokeParamTemplate includes ID-bound unified API request operands', () => {
     const ctx = createContext({ form: { ...ApiDetail.methods.emptyForm() } })
@@ -706,17 +492,14 @@ describe('ApiDetail helpers', () => {
     })
   })
 
-  test('loadDataObjectOptions accepts variable tree wrapped in response data tree', async () => {
+  test('共享目录加载对象字段并保留稳定 ID', async () => {
     const ctx = createContext()
     const requestNode = {
       object: { id: 10, scriptName: 'customer' },
       flatVariables: [
-        { scriptName: 'customer.idNo', varLabel: '证件号', varType: 'STRING' }
+        { id: 11, scriptName: 'customer.idNo', varLabel: '证件号', varType: 'STRING' }
       ]
     }
-    dataObjectApi.listDataObjects.mockResolvedValueOnce({
-      data: [{ id: 10, scriptName: 'customer' }]
-    })
     dataObjectApi.getVariableTree.mockResolvedValueOnce({
       data: {
         objectIdMap: { 10: requestNode },
@@ -724,10 +507,8 @@ describe('ApiDetail helpers', () => {
       }
     })
 
-    await ctx.loadDataObjectOptions(1)
-
-    expect(ctx.dataObjectTree).toEqual([requestNode])
-    expect(ctx.fieldsForObject(10)).toEqual(requestNode.flatVariables)
+    await ctx.loadApiPickerOptions(1)
+    expect(ctx.apiPickerVars).toContainEqual(expect.objectContaining({ _varId: 11, _refType: 'DATA_OBJECT', varCode: 'customer.idNo' }))
   })
 
   test('script variables are saved independently from auth mode', () => {
@@ -1046,27 +827,7 @@ describe('ApiDetail helpers', () => {
     expect(ctx.formatTrialTime(0)).not.toBe('—')
   })
 
-  test('保存测试样例送审时携带报文留存配置', async () => {
-    const ctx = createContext({
-      form: { ...ApiDetail.methods.emptyForm(), id: 8, datasourceId: 2 },
-      invokeParamsText: '{"mobile":"13800138000"}',
-      payloadCapture: {
-        request: { source: 'PROCESSED', excludePaths: ['$.secret'], maxFieldBytes: 1024, oversizedFields: [] },
-        response: { source: 'ORIGINAL', excludePaths: [], maxFieldBytes: 0, oversizedFields: [] }
-      },
-      $router: { push: vi.fn() },
-      $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() }
-    })
-    datasourceApi.updateApiConfig.mockResolvedValue({ data: { id: 8 } })
-
-    await ctx.saveCurrentSample()
-
-    const submitted = datasourceApi.updateApiConfig.mock.calls[0][0]
-    expect(JSON.parse(submitted.payloadCaptureConfig)).toEqual({
-      request: { ...ctx.payloadCapture.request, saveOriginal: true },
-      response: { ...ctx.payloadCapture.response, saveOriginal: true }
-    })
-  })
+  
 
   test('real invocation warning explains network and cost impact next to the test controls', async () => {
     const wrapper = mount(ApiDetail, {

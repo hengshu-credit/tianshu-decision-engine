@@ -83,6 +83,13 @@
                 <span class="muted"> 项</span>
               </template>
             </el-table-column>
+            <el-table-column label="可访问项目" min-width="180">
+              <template #default="{ row }">
+                <span v-if="row.projectAccessMode !== 'SELECTED'">不限制项目</span>
+                <span v-else-if="!(row.projectIds || []).length" class="muted">仅全局内容</span>
+                <span v-else>{{ (row.projectIds || []).map(projectName).join('、') }}</span>
+              </template>
+            </el-table-column>
             <el-table-column label="状态" width="90">
               <template #default="{ row }">
                 <el-tag :type="row.status === 1 ? 'success' : 'info'">
@@ -102,7 +109,7 @@
                   编辑
                 </el-button>
                 <el-button
-                  v-permission="['account:role-assign', 'account:manage']"
+                  v-permission="{ anyOf: ['account:role-assign', 'account:manage'] }"
                   link
                   data-action="configure"
                   type="primary"
@@ -111,7 +118,7 @@
                   权限调整
                 </el-button>
                 <el-button
-                  v-permission="['account:password-reset', 'account:manage']"
+                  v-permission="{ anyOf: ['account:password-reset', 'account:manage'] }"
                   link
                   data-action="reset"
                   @click="openPasswordDialog(row)"
@@ -122,6 +129,7 @@
                   v-permission="'account:manage'"
                   link
                   :data-action="row.status === 1 ? 'disable' : 'publish'"
+                  :disabled="(row.roleCodes || []).includes('SUPER_ADMIN')"
                   :type="row.status === 1 ? 'danger' : 'success'"
                   @click="toggleAccount(row)"
                 >
@@ -165,6 +173,7 @@
                   v-permission="'role:manage'"
                   link
                   :data-action="row.status === 1 ? 'disable' : 'publish'"
+                  :disabled="row.roleCode === 'SUPER_ADMIN'"
                   :type="row.status === 1 ? 'danger' : 'success'"
                   @click="toggleRole(row)"
                 >
@@ -209,9 +218,23 @@
               :key="role.id"
               :label="role.roleName"
               :value="role.id"
+              :disabled="role.roleCode === 'SUPER_ADMIN'"
             />
           </el-select>
+          <span class="muted">超级管理员为系统唯一身份，不能分配给其他账户。</span>
         </el-form-item>
+        <el-form-item label="项目范围">
+          <el-radio-group v-model="accountForm.projectAccessMode">
+            <el-radio-button value="ALL">不限制项目</el-radio-button>
+            <el-radio-button value="SELECTED">仅指定项目</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="accountForm.projectAccessMode === 'SELECTED'" label="可访问项目">
+          <el-select v-model="accountForm.projectIds" multiple filterable clearable placeholder="不分配项目，仅可访问获授权的全局内容">
+            <el-option v-for="project in projectOptions" :key="project.id" :label="project.projectName + ' (' + project.projectCode + ')'" :value="project.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="全局内容"><el-switch v-model="accountForm.globalEditable" active-text="允许编辑（仍需模块权限）" inactive-text="只读" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="accountDialogVisible = false">取消</el-button>
@@ -226,7 +249,7 @@
     >
       <div class="permission-summary">
         <div>
-          <span>角色继承</span>
+          <span>{{ permissionScope === 'DEFAULT' ? '角色继承' : '默认权限' }}</span>
           <strong>{{ inheritedPermissionCount }}</strong>
         </div>
         <div>
@@ -250,9 +273,30 @@
               :key="role.id"
               :label="role.roleName"
               :value="role.id"
+              :disabled="role.roleCode === 'SUPER_ADMIN'"
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="项目范围">
+          <el-radio-group v-model="permissionProjectAccessMode">
+            <el-radio-button value="ALL">不限制项目</el-radio-button>
+            <el-radio-button value="SELECTED">仅指定项目</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="permissionProjectAccessMode === 'SELECTED'" label="可访问项目">
+          <el-select v-model="permissionProjectIds" multiple filterable clearable placeholder="不分配项目，仅可访问获授权的全局内容">
+            <el-option v-for="project in projectOptions" :key="project.id" :label="project.projectName + ' (' + project.projectCode + ')'" :value="project.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="全局内容"><el-switch v-model="permissionGlobalEditable" active-text="允许编辑（仍需模块权限）" inactive-text="只读" /></el-form-item>
+        <el-form-item label="配置权限范围">
+          <el-select v-model="permissionScope" filterable @change="selectPermissionScope">
+            <el-option label="默认权限（全局及未单独配置的项目）" value="DEFAULT" />
+            <el-option v-for="project in permissionProjectOptions" :key="project.id" :label="project.projectName + ' (' + project.projectCode + ')'" :value="String(project.id)" />
+          </el-select>
+          <el-button v-if="permissionScope !== 'DEFAULT'" link @click="resetProjectPermissions">此项目全部继承默认</el-button>
+        </el-form-item>
+        <el-alert title="默认不区分项目。选择某个项目后，可单独允许或拒绝模块权限；未配置项继承默认权限。仅指定项目且清单为空时只能访问全局内容。" type="info" :closable="false" />
       </el-form>
       <el-table :data="permissionRows" max-height="420">
         <el-table-column prop="permissionGroup" label="模块" width="130" />
@@ -271,7 +315,7 @@
         </el-table-column>
         <el-table-column label="账户调整" width="260">
           <template #default="{ row }">
-            <el-radio-group v-model="overrideDraft[row.permissionCode]">
+            <el-radio-group v-model="activeOverrideDraft[row.permissionCode]">
               <el-radio-button value="INHERIT">继承</el-radio-button>
               <el-radio-button value="ALLOW">允许</el-radio-button>
               <el-radio-button value="DENY">拒绝</el-radio-button>
@@ -303,7 +347,7 @@
             <el-input v-model="roleForm.roleName" />
           </el-form-item>
           <el-form-item label="角色编码">
-            <el-input v-model="roleForm.roleCode" />
+            <el-input v-model="roleForm.roleCode" :disabled="roleForm.systemRole === 1" />
           </el-form-item>
         </div>
         <el-form-item label="说明">
@@ -363,6 +407,7 @@ import {
   changeConsoleAccountStatus,
   changeConsoleRoleStatus,
   listConsoleAccounts,
+  listConsoleProjectOptions,
   listConsolePermissions,
   listConsoleRoles,
   resetConsoleAccountPassword,
@@ -379,7 +424,10 @@ function emptyAccountForm() {
     email: '',
     password: '',
     status: 1,
-    roleIds: []
+    roleIds: [],
+    projectIds: [],
+    projectAccessMode: 'ALL',
+    globalEditable: true
   }
 }
 
@@ -412,6 +460,7 @@ export default {
       accounts: [],
       roles: [],
       permissionCatalog: [],
+      projectOptions: [],
       accountDialogVisible: false,
       permissionDialogVisible: false,
       roleDialogVisible: false,
@@ -422,6 +471,11 @@ export default {
       passwordAccount: null,
       newPassword: '',
       permissionRoleIds: [],
+      permissionProjectIds: [],
+      permissionProjectAccessMode: 'ALL',
+      permissionGlobalEditable: true,
+      permissionScope: 'DEFAULT',
+      projectOverrideDraft: {},
       overrideDraft: {}
     }
   },
@@ -445,10 +499,11 @@ export default {
       return codes
     },
     permissionRows() {
-      return this.permissionCatalog.map(permission => {
+      return this.permissionCatalog.filter(permission => this.permissionScope === 'DEFAULT' ||
+        (!permission.permissionCode.startsWith('account:') && !permission.permissionCode.startsWith('role:') && permission.permissionCode !== 'function:native')).map(permission => {
         const code = permission.permissionCode
-        const inherited = this.inheritedPermissionCodes.has(code)
-        const override = this.overrideDraft[code] || 'INHERIT'
+        const inherited = (this.permissionScope === 'DEFAULT' ? this.inheritedPermissionCodes : this.defaultPermissionCodes).has(code)
+        const override = this.activeOverrideDraft[code] || 'INHERIT'
         return {
           ...permission,
           inherited,
@@ -460,16 +515,30 @@ export default {
       })
     },
     inheritedPermissionCount() {
-      return this.inheritedPermissionCodes.size
+      return (this.permissionScope === 'DEFAULT' ? this.inheritedPermissionCodes : this.defaultPermissionCodes).size
     },
     allowCount() {
-      return Object.values(this.overrideDraft).filter(value => value === 'ALLOW').length
+      return Object.values(this.activeOverrideDraft).filter(value => value === 'ALLOW').length
     },
     denyCount() {
-      return Object.values(this.overrideDraft).filter(value => value === 'DENY').length
+      return Object.values(this.activeOverrideDraft).filter(value => value === 'DENY').length
     },
     effectivePermissionCount() {
       return this.permissionRows.filter(row => row.effective).length
+    },
+    defaultPermissionCodes() {
+      const codes = new Set(this.inheritedPermissionCodes)
+      Object.entries(this.overrideDraft).forEach(([code, effect]) => {
+        if (effect === 'ALLOW') codes.add(code)
+        if (effect === 'DENY') codes.delete(code)
+      })
+      return codes
+    },
+    activeOverrideDraft() {
+      return this.permissionScope === 'DEFAULT' ? this.overrideDraft : (this.projectOverrideDraft[this.permissionScope] || {})
+    },
+    permissionProjectOptions() {
+      return this.permissionProjectAccessMode === 'ALL' ? this.projectOptions : this.projectOptions.filter(project => this.permissionProjectIds.includes(project.id))
     },
     permissionGroups() {
       const groups = new Map()
@@ -493,14 +562,16 @@ export default {
     async loadData() {
       this.loading = true
       try {
-        const [accounts, roles, permissions] = await Promise.all([
+        const [accounts, roles, permissions, projects] = await Promise.all([
           this.canViewAccounts ? listConsoleAccounts() : Promise.resolve({ data: [] }),
           this.canLoadRoleOptions ? listConsoleRoles() : Promise.resolve({ data: [] }),
-          this.canLoadRoleOptions ? listConsolePermissions() : Promise.resolve({ data: [] })
+          this.canLoadRoleOptions ? listConsolePermissions() : Promise.resolve({ data: [] }),
+          hasPermission(['account:manage', 'account:role-assign']) ? listConsoleProjectOptions() : Promise.resolve({ data: [] })
         ])
         this.accounts = accounts.data || []
         this.roles = roles.data || []
         this.permissionCatalog = permissions.data || []
+        this.projectOptions = projects.data || []
       } finally {
         this.loading = false
       }
@@ -508,6 +579,10 @@ export default {
     accountInitial(account) {
       const value = (account && (account.displayName || account.username)) || 'U'
       return Array.from(value.trim())[0].toUpperCase()
+    },
+    projectName(id) {
+      const project = this.projectOptions.find(item => item.id === id)
+      return project ? project.projectName : '项目 #' + id
     },
     roleName(code) {
       const role = this.roles.find(item => item.roleCode === code)
@@ -522,7 +597,10 @@ export default {
             email: account.email || '',
             password: '',
             status: account.status,
-            roleIds: (account.roleIds || []).slice()
+            roleIds: (account.roleIds || []).slice(),
+            projectIds: (account.projectIds || []).slice(),
+            projectAccessMode: account.projectAccessMode || 'ALL',
+            globalEditable: account.globalEditable !== false
           }
         : emptyAccountForm()
       this.accountDialogVisible = true
@@ -536,6 +614,11 @@ export default {
     openPermissionDialog(account) {
       this.selectedAccount = account
       this.permissionRoleIds = (account.roleIds || []).slice()
+      this.permissionProjectIds = (account.projectIds || []).slice()
+      this.permissionProjectAccessMode = account.projectAccessMode || 'ALL'
+      this.permissionGlobalEditable = account.globalEditable !== false
+      this.permissionScope = 'DEFAULT'
+      this.projectOverrideDraft = Object.fromEntries(Object.entries(account.projectPermissionOverrides || {}).map(([id, value]) => [id, { ...value }]))
       const overrides = account.permissionOverrides || {}
       this.overrideDraft = {}
       this.permissionCatalog.forEach(permission => {
@@ -551,11 +634,26 @@ export default {
       })
       await saveConsoleAccountPermissions(this.selectedAccount.id, {
         roleIds: this.permissionRoleIds,
+        projectIds: this.permissionProjectIds,
+        projectAccessMode: this.permissionProjectAccessMode,
+        globalEditable: this.permissionGlobalEditable,
+        projectPermissionOverrides: Object.fromEntries(Object.entries(this.projectOverrideDraft).map(([id, values]) => [id,
+          Object.fromEntries(Object.entries(values).filter(([, effect]) => effect !== 'INHERIT'))])),
         permissionOverrides: overrides
       })
       this.permissionDialogVisible = false
       ElMessage.success('账户最终权限已更新')
       await this.loadData()
+    },
+    selectPermissionScope() {
+      if (this.permissionScope === 'DEFAULT') return
+      if (!this.projectOverrideDraft[this.permissionScope]) this.projectOverrideDraft[this.permissionScope] = {}
+      this.permissionCatalog.forEach(permission => {
+        if (!(permission.permissionCode in this.projectOverrideDraft[this.permissionScope])) this.projectOverrideDraft[this.permissionScope][permission.permissionCode] = 'INHERIT'
+      })
+    },
+    resetProjectPermissions() {
+      if (this.permissionScope !== 'DEFAULT') { this.projectOverrideDraft[this.permissionScope] = {}; this.selectPermissionScope() }
     },
     async toggleAccount(account) {
       const next = account.status === 1 ? 0 : 1
@@ -587,6 +685,7 @@ export default {
             roleName: role.roleName,
             description: role.description || '',
             status: role.status,
+            systemRole: role.systemRole,
             permissionCodes: (role.permissionCodes || []).slice()
           }
         : emptyRoleForm()

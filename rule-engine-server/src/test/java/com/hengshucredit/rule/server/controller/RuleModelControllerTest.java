@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.controller;
 
-import com.hengshucredit.rule.server.common.R;
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.server.service.RuleModelService;
 import com.hengshucredit.rule.server.service.RuleRuntimeCallLogService;
@@ -35,9 +36,9 @@ public class RuleModelControllerTest {
         RuleModelController controller = new RuleModelController();
         ReflectionTestUtils.setField(controller, "modelService", service);
 
-        R<Map<String, Object>> response = controller.runtimeCapabilities();
+        ApiResponse<Map<String, Object>> response = controller.runtimeCapabilities();
 
-        assertEquals(200, response.getCode());
+        assertEquals("000000", response.getCode());
         assertEquals("1.26.0", response.getData().get("onnxRuntimeVersion"));
         assertTrue((Boolean) response.getData().get("cudaAvailable"));
         assertEquals(7L, ((Map<?, ?>) ((Iterable<?>) response.getData()
@@ -64,10 +65,10 @@ public class RuleModelControllerTest {
         ReflectionTestUtils.setField(controller, "modelService", service);
         ReflectionTestUtils.setField(controller, "runtimeCallLogService", logs);
 
-        R<Map<String, Object>> response = controller.execute(7L, "{}", null);
+        ApiResponse<Map<String, Object>> response = controller.execute(7L, "{}", null);
 
-        assertEquals(500, response.getCode());
-        assertEquals("模型输入不匹配", response.getMessage());
+        assertEquals("202001", response.getCode());
+        assertEquals("模型输入不匹配", response.getDetail());
         assertEquals(Integer.valueOf(0), saved.get().getSuccess());
     }
 }

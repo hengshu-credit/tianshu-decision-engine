@@ -60,10 +60,12 @@
             </el-button>
           </el-form-item>
         </el-form>
-        <div v-if="registrationEnabled || passwordRecoveryEnabled" class="login-links">
+        <div v-if="registrationEnabled || passwordRecoveryEnabled || breakGlassRecoveryEnabled" class="login-links">
           <router-link v-if="registrationEnabled" to="/register">注册账号</router-link>
-          <span v-if="registrationEnabled && passwordRecoveryEnabled" aria-hidden="true">·</span>
+          <span v-if="registrationEnabled && (passwordRecoveryEnabled || breakGlassRecoveryEnabled)" aria-hidden="true">·</span>
           <router-link v-if="passwordRecoveryEnabled" to="/forgot-password">忘记密码</router-link>
+          <span v-if="passwordRecoveryEnabled && breakGlassRecoveryEnabled" aria-hidden="true">·</span>
+          <router-link v-if="breakGlassRecoveryEnabled" to="/admin-recovery">管理员应急恢复</router-link>
         </div>
       </div>
     </div>
@@ -81,6 +83,7 @@ export default {
       loading: false,
       registrationEnabled: false,
       passwordRecoveryEnabled: false,
+      breakGlassRecoveryEnabled: false,
       form: { username: '', password: '' },
       rules: {
         username: [
@@ -95,9 +98,11 @@ export default {
       const response = await getConsoleAuthConfig()
       this.registrationEnabled = response.data?.registrationEnabled === true
       this.passwordRecoveryEnabled = response.data?.passwordRecoveryEnabled === true
+      this.breakGlassRecoveryEnabled = response.data?.breakGlassRecoveryEnabled === true
     } catch (e) {
       this.registrationEnabled = false
       this.passwordRecoveryEnabled = false
+      this.breakGlassRecoveryEnabled = false
     }
   },
   methods: {
@@ -372,7 +377,7 @@ $login-muted: var(--tianshu-text-tertiary);
   letter-spacing: 0.02em;
   border-radius: 12px !important;
   color: var(--tianshu-brand-foreground) !important;
-  background: var(--tianshu-brand-background) !important;
+  background: var(--tianshu-brand-button-background) !important;
   border-color: var(--el-color-primary) !important;
   cursor: pointer;
   transition: filter 0.2s ease, box-shadow 0.2s ease,
@@ -380,14 +385,14 @@ $login-muted: var(--tianshu-text-tertiary);
 }
 .login-btn.el-button--primary.is-loading:disabled {
   opacity: 0.88;
-  background: var(--tianshu-brand-background) !important;
+  background: var(--tianshu-brand-button-background) !important;
   border-color: var(--el-color-primary) !important;
 }
 .login-btn.is-loading::before {
   background-color: transparent;
 }
 .login-btn:not(.is-loading):hover {
-  background: var(--tianshu-brand-background) !important;
+  background: var(--tianshu-brand-button-background) !important;
   border-color: var(--el-color-primary-dark-1) !important;
   box-shadow: 0 10px 28px var(--tianshu-primary-shadow);
   filter: brightness(1.08);

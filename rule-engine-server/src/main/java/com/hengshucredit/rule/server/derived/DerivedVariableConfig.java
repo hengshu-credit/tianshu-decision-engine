@@ -117,21 +117,63 @@ public final class DerivedVariableConfig {
     }
 
     private static void validateOperand(JSONObject operand) {
+        require(operand != null, "表达式参数不能为空");
         String kind = operand.getString("kind");
         require(kind != null && Set.of("REFERENCE", "LITERAL", "FUNCTION", "OPERATION", "ACCESS", "CAST", "ARRAY").contains(kind),
                 "衍生表达式必须通过字段 ID 引用，不支持自由路径或脚本");
-        if ("REFERENCE".equals(kind)) fieldKey(operand);
-        for (Object value : operand.values()) {
-            if (value instanceof JSONObject child && child.containsKey("kind")) validateOperand(child);
-            if (value instanceof JSONArray array) {
-                for (Object item : array) {
-                    if (item instanceof JSONObject child) {
-                        if (child.containsKey("kind")) validateOperand(child);
-                        else if (child.getJSONObject("operand") != null) validateOperand(child.getJSONObject("operand"));
-                    }
+        switch (kind) {
+            case "REFERENCE" -> fieldKey(operand);
+            case "FUNCTION" -> {
+                require(operand.getString("functionCode") != null && !operand.getString("functionCode").isBlank(),
+                        "方法编码不能为空");
+                Object args = operand.get("args");
+                require(args == null || args instanceof JSONArray, "方法参数必须是数组");
+                if (args instanceof JSONArray array) {
+                    for (Object item : array) validateOperand(arrayItem(item));
                 }
             }
+            case "OPERATION" -> {
+                JSONArray terms = operand.getJSONArray("terms");
+                require(terms != null && terms.size() >= 2, "运算表达式至少需要 2 个运算项");
+                for (int index = 0; index < terms.size(); index++) {
+                    JSONObject term = terms.getJSONObject(index);
+                    require(term != null, "第 " + (index + 1) + " 个运算项不能为空");
+                    if (index == 0) {
+                        require(term.getString("operator") == null || term.getString("operator").isBlank(),
+                                "第 1 个运算项不能设置前置运算符");
+                    } else {
+                        require(Set.of("+", "-", "*", "/", "%", "==", "!=", ">", ">=", "<", "<=", "&&", "||")
+                                        .contains(term.getString("operator")),
+                                "第 " + (index + 1) + " 个运算项缺少有效运算符");
+                    }
+                    validateOperand(term.getJSONObject("operand"));
+                }
+            }
+            case "ACCESS" -> {
+                require(Set.of("KEY", "INDEX").contains(operand.getString("accessType")), "访问方式无效");
+                validateOperand(operand.getJSONObject("target"));
+                validateOperand(operand.getJSONObject("accessor"));
+            }
+            case "CAST" -> {
+                require(operand.getString("targetType") != null && !operand.getString("targetType").isBlank(),
+                        "转换目标类型不能为空");
+                validateOperand(operand.getJSONObject("operand"));
+            }
+            case "ARRAY" -> {
+                JSONArray items = operand.getJSONArray("items");
+                require(items != null, "数组项必须是数组");
+                for (Object item : items) validateOperand(arrayItem(item));
+            }
+            case "LITERAL" -> {
+                // 字面量允许省略 valueType，执行器会按字符串兼容处理。
+            }
+            default -> throw new IllegalArgumentException("不支持的表达式节点类型: " + kind);
         }
+    }
+
+    private static JSONObject arrayItem(Object item) {
+        require(item instanceof JSONObject, "表达式数组项不能为空");
+        return (JSONObject) item;
     }
 
     public static String fieldKey(JSONObject field) {

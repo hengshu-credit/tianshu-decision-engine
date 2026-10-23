@@ -11,13 +11,19 @@ import java.util.Locale;
 @Service
 @RequiredArgsConstructor
 public class ConsoleAccessGuard {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private ConsoleProjectAccess projectAccess;
     private final RuleEngineConsoleLoginProperties properties;
     private final ConsolePermissionService permissions;
 
     public boolean can(String permission) {
         if (!properties.isEnabled()) return true;
+        var scope = projectAccess == null ? null : projectAccess.current();
+        if (scope != null) return scope.can(permission);
         // SDK、后台任务没有控制台请求；它们由各自的项目鉴权链路负责。
         if (!(RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes)) return true;
+        if (com.hengshucredit.rule.server.auth.ProjectAuthContext.from(attributes.getRequest()) != null) return true;
         var session = attributes.getRequest().getSession(false);
         Object id = session == null ? null : session.getAttribute(properties.getSessionUserIdAttribute());
         return id instanceof Number number && permissions.hasPermission(number.longValue(), permission);
@@ -32,11 +38,11 @@ public class ConsoleAccessGuard {
     public static String resourceModule(String type) {
         if (type == null) throw new IllegalArgumentException("资源类型不能为空");
         return switch (type.trim().toUpperCase(Locale.ROOT)) {
-            case "VARIABLE", "CONSTANT", "DATA_OBJECT", "DATA_OBJECT_FIELD", "DATA_FIELD", "FIELD_VALIDATION" -> "field";
-            case "MODEL", "MODEL_OUTPUT" -> "model";
+            case "VARIABLE", "CONSTANT", "DATA_OBJECT_ROOT", "DATA_OBJECT", "DATA_OBJECT_FIELD", "DATA_FIELD", "FIELD_VALIDATION" -> "field";
+            case "MODEL", "MODEL_OUTPUT", "MODEL_VERSION" -> "model";
             case "EXTERNAL_DATASOURCE", "EXTERNAL_API", "API", "DATASOURCE" -> "datasource";
-            case "DATABASE", "DB" -> "database";
-            case "SFTP" -> "database";
+            case "DATABASE", "DB", "DB_DATASOURCE" -> "database";
+            case "SFTP", "SFTP_DATASOURCE" -> "database";
             case "FUNCTION" -> "function";
             case "RULE", "RULE_VERSION", "RULE_PROJECT_BINDING" -> "rule";
             case "LIST", "LIST_LIBRARY", "LIST_RECORD_BATCH" -> "list";

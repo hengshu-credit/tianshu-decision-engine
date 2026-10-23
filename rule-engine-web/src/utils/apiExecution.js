@@ -2,6 +2,7 @@ import { buildPickerOptions, buildReferenceCatalog } from '@/utils/referenceCata
 
 export const API_MODULE_FIELDS = Object.freeze([
   ['$', '完整调用结果', 'OBJECT'],
+  ['success', '调用是否成功', 'BOOLEAN'],
   ['request', '请求', 'OBJECT'], ['response', '响应', 'OBJECT'], ['status', '调用状态', 'OBJECT'],
   ['request.url', '请求 · URL', 'STRING'], ['request.method', '请求 · 方法', 'STRING'],
   ['request.headers', '请求 · Header', 'OBJECT'], ['request.query', '请求 · Query', 'OBJECT'], ['request.cookies', '请求 · Cookies', 'OBJECT'],
@@ -69,7 +70,7 @@ export function parseExecution(text) {
   config.exceptionBranches = (config.exceptionBranches || []).map(normalizeBranch)
   config.billingBranches = (config.billingBranches || []).map(normalizeBranch)
   config.retryBranches = (config.retryBranches || []).map(normalizeBranch)
-  config.steps = (config.steps || []).map(step => ({ successConditionTree: newCondition(), exceptionConditionTree: newCondition(), retryConditionTree: newCondition(), ...step, requestFields: normalizeRequestFields(step?.requestFields), responseBranches: (step.responseBranches || []).map(normalizeBranch), ...(step.callback ? { callback: { successCondition: newCondition(), failureCondition: newCondition(), ...step.callback } } : {}), ...(step.poll ? { poll: { failure: newCondition(), ...step.poll } } : {}) }))
+  config.steps = (config.steps || []).map(step => ({ successConditionTree: newCondition(), exceptionConditionTree: newCondition(), retryConditionTree: newCondition(), ...step, when: step.when || newCondition(), requestFields: normalizeRequestFields(step?.requestFields), responseBranches: (step.responseBranches || []).map(normalizeBranch), ...(step.callback ? { callback: { successCondition: newCondition(), failureCondition: newCondition(), ...step.callback } } : {}), ...(step.poll ? { poll: { failure: newCondition(), ...step.poll } } : {}) }))
   return config
 }
 export const newApiField = () => ({ id: newApiId(), location: 'JSON', path: '', value: null, required: false, nullPolicy: 'DEFAULT', overridable: false, validationRuleIds: [] })
@@ -120,6 +121,13 @@ export function prepareResponseSample(sample, previous = {}, strategy = 'AUTO') 
     value: whole ? value : null,
     outputFields: whole ? [] : sampleFields(sample).map(field => ({ ...field, id: ids.get(field.path) || field.id })),
   }
+}
+
+export function apiTargetPaths(sample) {
+  if (sample === undefined) return []
+  return samplePathOptions(sample, '$').filter(field => field.value !== '$').map(field => ({
+    ...field, value: field.value.replace(/^\$\.?/, ''), label: field.value.replace(/^\$\.?/, ''),
+  }))
 }
 
 export function filterApiPaths(options, query = '', selected = '') {

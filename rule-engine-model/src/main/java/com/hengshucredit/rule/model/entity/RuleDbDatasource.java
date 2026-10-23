@@ -44,6 +44,10 @@ public class RuleDbDatasource {
     private Integer status;
     @TableField(exist = false)
     private String projectName;
+    @TableField(exist = false)
+    private java.util.Map<String, Boolean> configuredSecrets;
+    @TableField(exist = false)
+    private java.util.List<String> clearCredentials;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
     @TableField(fill = FieldFill.INSERT_UPDATE)

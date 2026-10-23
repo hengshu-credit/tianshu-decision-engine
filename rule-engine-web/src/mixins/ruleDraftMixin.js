@@ -297,7 +297,8 @@ export default {
       if (!path) return
       if (this.designerLeaveUnregister) this.designerLeaveUnregister()
       this.designerLeaveUnregister = registerDesignerLeaveGuard(path, () =>
-        this.confirmDesignerLeave({ discardRecovery: true })
+        this.confirmDesignerLeave({ discardRecovery: true }),
+        () => { this.designerLeaveApproved = false }
       )
     },
     designerSessionStorage() {
@@ -316,6 +317,7 @@ export default {
     },
     initializeDesignerDraftTracking(modelJson) {
       if (this.designerRestoringRecovery) return
+      this.designerCompileResult = this.savedDesignerCompileResult()
       if (!this.canEditDraft) {
         this.designerDraftTrackingReady = false
         this.designerRecoveryCandidate = null
@@ -331,11 +333,22 @@ export default {
       this.designerCurrentFingerprint = fingerprint
       this.designerCheckedFingerprint = ''
       this.designerValidationReport = null
-      this.designerCompileResult = null
       this.designerCompileTaskId = ''
       this.designerActionState = 'CLEAN'
       this.designerDraftTrackingReady = true
       this.designerRecoveryCandidate = null
+    },
+    savedDesignerCompileResult() {
+      const source = this.viewRevision
+      if (!source || typeof source.compiledScript !== 'string' || !source.compiledScript.trim()) return null
+      return {
+        compiledScript: source.compiledScript,
+        compiledType: source.compiledType,
+        compileSuccess: source.compileSuccess !== false && source.compileStatus !== 2,
+        compileMessage: source.compileMessage || '',
+        saved: true,
+        sourceLabel: this.viewRevisionLabel,
+      }
     },
     syncDesignerReferenceMetadata(sync) {
       this.captureDesignerDraftState()
@@ -383,6 +396,7 @@ export default {
       if (fingerprint === this.designerCurrentFingerprint) return
       this.designerCurrentFingerprint = fingerprint
       if (fingerprint === this.designerBaselineFingerprint) {
+        this.designerCompileResult = this.savedDesignerCompileResult()
         this.designerActionState =
           this.designerCheckedFingerprint === fingerprint
             ? 'READY_TO_TEST'
@@ -408,7 +422,7 @@ export default {
       this.designerCurrentFingerprint = typeof this.serializeDesignerDraft === 'function' ? createDraftFingerprint(this.serializeDesignerDraft()) : fingerprint
       this.designerCheckedFingerprint = ''
       this.designerValidationReport = null
-      this.designerCompileResult = null
+      this.designerCompileResult = this.designerCurrentFingerprint === fingerprint ? this.savedDesignerCompileResult() : null
       this.designerCompileTaskId = ''
       this.designerDraftTrackingReady = true
       this.designerActionState = this.designerCurrentFingerprint === fingerprint ? 'SAVED_UNCHECKED' : 'DIRTY'
@@ -557,6 +571,8 @@ export default {
       const source = this.requestedSource
       const requestedSourceKey = sourceKey(source)
       const refreshToken = ++this.viewRefreshToken
+      this.designerCompileResult = null
+      this.designerCompileTaskId = ''
       this.designerReferencePreview = false
       this.clearReferenceCatalog?.()
       this.designerCompilePollToken++
@@ -748,7 +764,10 @@ export default {
       const deadline = Date.now() + 30 * 60 * 1000
       while (!terminalStatuses.has(String(task?.status || '').toUpperCase())) {
         if (Date.now() >= deadline) throw new Error('编译任务等待超时，请稍后重新打开页面查看')
-        await new Promise(resolve => window.setTimeout(resolve, 800))
+        const waitingSince = Date.now()
+        const completed = unwrap(await definitionApi.waitForDesignerCompileTask(definitionId, taskId))
+        // A saturated waiter registry can reply immediately; keep that fallback bounded.
+        if (!completed && Date.now() - waitingSince < 200) await new Promise(resolve => window.setTimeout(resolve, 200))
         if (pollToken !== this.designerCompilePollToken || !this.isCurrentViewAction(action)) return false
         task = unwrap(await definitionApi.getDesignerCompileTask(definitionId, taskId))
       }
@@ -949,8 +968,11 @@ export default {
           this.designerVersions = this.normalizeDesignerVersions(await definitionApi.listPublishedVersions(String(this.definitionId || this.$route.params.id)))
           const action = this.designerActionSnapshot()
           const modelJson = this.serializeDesignerDraft()
+          const regression = compiled.preflightReport?.regression
+          const warnings = [...(compiled.preflightReport?.warnings || [])]
+          if (regression && (!regression.allowed || regression.requiredCount === 0)) warnings.push({ code: 'REGRESSION_STATUS', message: regression.message })
           const choice = await this.requestDesignerChoice('publish', {
-            warnings: compiled.preflightReport?.warnings || [],
+            warnings,
             publishMode: saved.revision.publishMode || 'NEW',
             targetVersionId: saved.revision.targetVersionId ? String(saved.revision.targetVersionId) : '',
           })

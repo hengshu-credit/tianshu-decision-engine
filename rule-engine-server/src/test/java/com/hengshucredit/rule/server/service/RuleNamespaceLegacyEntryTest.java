@@ -39,9 +39,7 @@ public class RuleNamespaceLegacyEntryTest {
             @Override public Map<Long, String> buildRefConstantExpressionMap(Long projectId) { liveReads.incrementAndGet(); return Map.of(); }
         });
         ReflectionTestUtils.setField(service, "functionService", new RuleFunctionService() {
-            @Override public Map<Long, String> buildFunctionCodeMap(Long projectId) { liveReads.incrementAndGet(); return Map.of(); }
-            @Override public Map<Long, Integer> buildFunctionArityMap(Long projectId) { liveReads.incrementAndGet(); return Map.of(); }
-            @Override public java.util.Set<Long> buildNativeFunctionIds(Long projectId) { liveReads.incrementAndGet(); return java.util.Set.of(); }
+            @Override public List<RuleFunction> listByProject(Long projectId) { liveReads.incrementAndGet(); return List.of(); }
         });
         ReflectionTestUtils.setField(service, "contentMapper", mapper(writes));
         assertEquals("REFERENCE_NAMESPACE_MIGRATION_REQUIRED", assertThrows(RuleGovernanceException.class,
@@ -50,7 +48,7 @@ public class RuleNamespaceLegacyEntryTest {
         assertEquals("frozen-script", content.getCompiledScript());
         rejectNamespace[0] = false;
         assertTrue(service.compile(30L).isSuccess());
-        assertEquals(5, liveReads.get()); assertEquals(1, writes.get());
+        assertEquals(3, liveReads.get()); assertEquals(1, writes.get());
         assertEquals("return 1;", content.getCompiledScript());
     }
 

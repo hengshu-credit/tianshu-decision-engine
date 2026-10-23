@@ -49,7 +49,7 @@ public class DecisionArtifactControllerTest {
         var response = controller.importArtifact(new MockMultipartFile(
                 "file", "artifact.zip", "application/zip", new byte[]{1}), null);
 
-        Assert.assertEquals(422, response.getCode());
-        Assert.assertTrue(response.getMessage().contains("摘要"));
+        Assert.assertEquals("100007", response.getCode());
+        Assert.assertTrue(response.getDetail().contains("摘要"));
     }
 }

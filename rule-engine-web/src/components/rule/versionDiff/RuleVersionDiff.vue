@@ -67,6 +67,8 @@
         :modified="diff.script.rightScript"
         language="ql"
         height="480px"
+        :references="scriptReferences"
+        :functions="scriptFunctions"
       />
       <section v-if="diff.script.refLanes.length" class="rule-script-ref-diff">
         <div class="rule-script-ref-head">
@@ -127,6 +129,8 @@ export default {
       type: Object,
       required: true,
     },
+    references: { type: Array, default: () => [] },
+    functions: { type: Array, default: () => [] },
   },
   computed: {
     diff() {
@@ -148,6 +152,34 @@ export default {
     },
     modelTypeLabel() {
       return MODEL_TYPE_LABELS[this.modelType] || '规则'
+    },
+    scriptReferences() {
+      const byKey = new Map((this.references || []).map(reference => [
+        `${reference._refType || reference.refType}:${reference._varId ?? reference.id}`,
+        reference,
+      ]))
+      const bindings = [this.leftVersion, this.rightVersion].flatMap(version => {
+        try {
+          const model = typeof version.modelJson === 'string' ? JSON.parse(version.modelJson) : version.modelJson
+          return Array.isArray(model?.scriptVarRefs) ? model.scriptVarRefs : []
+        } catch { return [] }
+      })
+      return bindings.map(binding => byKey.get(`${binding.refType}:${binding.varId}`)).filter(Boolean)
+    },
+    scriptFunctions() {
+      const functions = [...(this.functions || [])]
+      const codes = new Set(functions.map(item => item.funcCode || item.functionCode))
+      const bindings = [this.leftVersion, this.rightVersion].flatMap(version => {
+        try {
+          const model = typeof version.modelJson === 'string' ? JSON.parse(version.modelJson) : version.modelJson
+          return Array.isArray(model?.scriptVarRefs) ? model.scriptVarRefs : []
+        } catch { return [] }
+      })
+      bindings.filter(binding => binding.refType === 'FUNCTION' && binding.refCode && !codes.has(binding.refCode)).forEach(binding => {
+        functions.push({ id: binding.varId, funcCode: binding.refCode, funcName: binding.refCode })
+        codes.add(binding.refCode)
+      })
+      return functions
     },
   },
   methods: {

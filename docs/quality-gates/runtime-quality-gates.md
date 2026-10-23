@@ -9,7 +9,7 @@ ONNX 启动预热状态为 `NOT_STARTED → WARMING → READY|FAILED`。没有�
 
 ## 启动就绪检查
 
-先使用部署环境的 Secret/KMS 或本地已授权 `.env` 启动 MySQL、Redis 和后端，然后在仓库根目录执行：
+先使用部署环境的 Secret/KMS 或本地已授权 `.env.server` / `.env.client` 启动 MySQL、Redis 和后端，然后在仓库根目录执行：
 
 ```powershell
 node scripts/quality-gates/wait-for-readiness.mjs `
@@ -18,6 +18,21 @@ node scripts/quality-gates/wait-for-readiness.mjs `
 ```
 
 等待器会容忍应用端口尚未监听以及 readiness 返回 503/OUT_OF_SERVICE，持续轮询到超时；一旦已获得明确的非 UP liveness 状态则立即失败。它只输出聚合状态，不输出健康详情或连接信息。验证结束后必须主动停止后端和临时基础设施进程。
+
+在存放 `.env.client` 的目录检查对应运行模式；只读取 `.env.client`，系统环境变量优先，报告不输出凭据值：
+
+```powershell
+node scripts/quality-gates/check-runtime-config.mjs --mode http
+node scripts/quality-gates/check-runtime-config.mjs --mode sdk
+```
+
+HTTP 模式使用上游凭据调用 server，不要求 Redis。SDK 项目模式使用真实项目 ID 和编码启动规则/函数同步、Redis 订阅与每 5 分钟的全量补偿同步；入口白名单限制可直接调用的规则。SDK 校验已加载项目规则的归属，编码和 ID 不匹配时拒绝启动。全局模式使用显式配置的全局签名凭据。
+
+配置自检不能证明凭据正确或网络可达。启动后分别检查 `http://127.0.0.1:7070/actuator/health/readiness` 与 `http://127.0.0.1:7071/actuator/health/readiness`，再用同一份已知预期的测试请求验证 `/api/rule/execute/{ruleCode}`。HTTP readiness 检查上游连通性；SDK readiness 检查已加载规则和 Redis。测试应同时核对业务结果、无入口令牌的 401，以及项目模式白名单外规则的 403。
+
+SDK 同步目录可能包含仅服务端部署的 Bean 函数。缺少本地 Bean 不阻断其他函数同步；实际调用该函数时明确失败，本地 Bean 就绪后可恢复。冻结制品仍会严格检查其实际依赖，不以目录同步成功代替规则可执行性检查。依赖外数、名单、数据库等服务端能力的业务应采用 HTTP 执行模式。
+
+Redis Pub/Sub 没有消息补发。连接中断期间 SDK 可继续使用已有缓存；重连后的遗漏变更由每 5 分钟的全量同步补齐。readiness 恢复不代表遗漏推送已经补齐，需要用规则版本与已知预期结果确认。对版本立即一致有要求的调用应使用 HTTP 模式；本机故障演练测得补偿恢复 212942ms，这不是最长时延承诺。
 
 ## 容量门禁
 

@@ -27,6 +27,10 @@ export function inspectFunctionMethods(data) {
   return request.post('/rule/function/methods', data)
 }
 
+export function inspectFunctionImpact(data) {
+  return request.post('/rule/function/signature-impact', data, metadataResponse)
+}
+
 export function createFunction(data) {
   return createResourceDraft('FUNCTION', data, 'CREATE', {
     changeSummary: '新建函数'
@@ -47,7 +51,7 @@ export function deleteFunction(id) {
 }
 
 export function testFunction(id, params) {
-  return request.post('/rule/function/' + id + '/test', params)
+  return request.post('/rule/function/' + id + '/test', params, { acceptExecutionFailure: true })
 }
 
 export function listVersions(functionId) {

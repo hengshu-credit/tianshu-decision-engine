@@ -168,7 +168,7 @@ public class ClientFunctionRegistrar {
                 continue;
             }
             try {
-                CustomFunction target = buildFunction(function);
+                CustomFunction target = buildRemoteFunction(function);
                 if (target != null) {
                     snapshot.put(key, target);
                     if (isPlatformBuiltin(function)) platformBuiltins.add(key); else platformBuiltins.remove(key);
@@ -187,6 +187,34 @@ public class ClientFunctionRegistrar {
             remoteFunctions = snapshot;
         }
         AggregateBuiltinFunctionRegistry.register(engine.getRunner());
+    }
+
+    private CustomFunction buildRemoteFunction(JSONObject function) throws Exception {
+        if (!"BEAN".equals(function.getString("implType"))) return buildFunction(function);
+        String beanName = trimToNull(function.getString("implBeanName"));
+        if (beanName == null) return buildFunction(function);
+        FunctionParameterContract.parse(function.getString("paramsJson"));
+        try {
+            CustomFunction target = buildBeanFunction(function);
+            if (target != null) return target;
+        } catch (Exception error) {
+            if (!isMissingBeanFailure(error)) throw error;
+        }
+        // 同步目录也包含仅服务端部署的 Bean；它不能阻断其他函数的完整快照。
+        // 保留明确的失败目标，不能落到旧实现或同名手工函数；冻结制品仍使用严格准备。
+        JSONObject definition = new JSONObject(function);
+        log.info("[ClientFuncReg] 函数 {} 等待本地 Bean {}，调用前须提供该实现或使用 HTTP 执行",
+                function.getString("funcCode"), beanName);
+        return (context, parameters) -> {
+            CustomFunction target;
+            try { target = buildBeanFunction(definition); }
+            catch (Exception error) {
+                if (!isMissingBeanFailure(error)) throw error;
+                throw new IllegalStateException("客户端缺少函数 Bean " + beanName + "，请提供本地实现或使用 HTTP 执行", error);
+            }
+            if (target == null) throw new IllegalStateException("客户端缺少函数 Bean " + beanName + "，请提供本地实现或使用 HTTP 执行");
+            return target.call(context, parameters);
+        };
     }
 
     /** 接收 Redis 函数更新；scope 缺失的旧消息按“有 projectCode 为 PROJECT，否则 GLOBAL”兼容。 */

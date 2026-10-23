@@ -39,17 +39,17 @@ node scripts/quality-gates/run-capacity-gate.mjs `
 生产演练必须使用只读检查和临时恢复库，不直接覆盖线上库：
 
 ```powershell
-mysqldump --single-transaction --routines --events --triggers `
+mysqldump --single-transaction --routines --events --triggers --hex-blob `
   --host $env:MYSQL_HOST --port $env:MYSQL_PORT `
   --user $env:MYSQL_BACKUP_USER --password `
-  $env:MYSQL_DATABASE > target/backup/rule_engine.sql
+  --result-file=target/backup/rule_engine.sql $env:MYSQL_DATABASE
 
 mysql --host $env:MYSQL_HOST --port $env:MYSQL_PORT `
   --user $env:MYSQL_RESTORE_USER --password `
-  --database rule_engine_restore < target/backup/rule_engine.sql
+  --database rule_engine_restore --execute="source target/backup/rule_engine.sql"
 ```
 
-恢复后必须核对：规则制品摘要、发布版本、变量/模型 ID 引用、实验版本、执行日志分区和账单汇总。Redis 需要单独导出项目推送相关键或重新触发全量同步，不能只恢复 MySQL。
+备份包含二进制决策制品，必须保留 `--hex-blob`，并由 mysqldump 的 `--result-file` 写文件，避免 PowerShell 或 UTF-8 文本转换损坏 BLOB。恢复库须预先单独创建，不能覆盖源库。恢复后必须核对：逐表行数和内容校验、规则制品摘要、发布版本、变量/模型 ID 引用、实验版本、执行日志分区和账单汇总。项目加密主密钥须单独备份并保持一致。Redis 需要单独导出项目推送相关键或重新触发全量同步，不能只恢复 MySQL。
 
 Windows Docker 本地验证可使用容器内部管道，避免宿主机大文件重定向导致恢复中断：
 
@@ -61,7 +61,7 @@ $env:MYSQL_ROOT_PASSWORD = '<local-secret>'
   -RestoreDatabase rule_engine_restore_gate
 ```
 
-脚本只写入临时恢复库，校验关键表计数后删除恢复库和容器内临时 dump；报告写入 `target/quality-gates/backup-restore-summary.json`，不保存密码。
+运行门禁前暂停业务写入，保证原库计数/校验和与备份处于同一稳定状态。脚本拒绝源库与目标库同名以及已存在的目标库；仅创建全新的临时恢复库。逐表核对行数与 CHECKSUM 后，清理本次创建的恢复库和临时 dump；报告写入 `target/quality-gates/backup-restore-summary.json`，不保存密码。在线持续写入场景应使用可重复读取的专用备份快照进行同等校验。
 
 ## 3. 真实环境浏览器 E2E
 

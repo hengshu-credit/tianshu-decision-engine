@@ -7,6 +7,7 @@ export default [
     ignores: [
       'coverage/**',
       'dist/**',
+      '.codex-validation/**',
       'node_modules/**',
       'public/**'
     ]

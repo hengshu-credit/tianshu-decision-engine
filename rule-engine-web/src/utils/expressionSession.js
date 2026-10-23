@@ -2,6 +2,11 @@ function routeSegment(value) {
   return encodeURIComponent(String(value == null ? '' : value))
 }
 
+export function expressionSourceIdentity(route = {}) {
+  const ordered = value => Object.fromEntries(Object.entries(value || {}).sort(([left], [right]) => left.localeCompare(right)))
+  return JSON.stringify({ name: route.name || '', params: ordered(route.params), query: ordered(route.query) })
+}
+
 export function createExpressionSessionId(ruleId, pickerUid) {
   return `expression-${routeSegment(ruleId)}-${routeSegment(pickerUid)}`
 }

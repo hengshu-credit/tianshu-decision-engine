@@ -131,8 +131,8 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
   })
 }
 
-async function controlContrast(locator) {
-  return locator.evaluate(element => {
+async function controlContrast(locator, gradientStop = null) {
+  return locator.evaluate((element, gradientStop) => {
     const canvas = document.createElement('canvas')
     canvas.width = canvas.height = 1
     const context = canvas.getContext('2d')
@@ -154,7 +154,8 @@ async function controlContrast(locator) {
     let opacity = 1
     for (let current = element; current; current = current.parentElement) {
       const style = getComputedStyle(current)
-      const layer = rgba(style.backgroundColor), layerOpacity = Number(style.opacity)
+      const stops = current === element && gradientStop != null ? style.backgroundImage.match(/rgba?\([^)]+\)/g) : null
+      const layer = rgba(stops?.length ? stops[gradientStop === 0 ? 0 : stops.length - 1] : style.backgroundColor), layerOpacity = Number(style.opacity)
       foreground = composite(foreground, layer)
       background = composite(background, layer)
       foreground[3] *= layerOpacity
@@ -173,7 +174,7 @@ async function controlContrast(locator) {
       backgroundLuminance,
       opacity,
     }
-  })
+  }, gradientStop)
 }
 
 for (const accentPreset of ['MIDNIGHT_PURPLE', 'PEACH_PINK_GRADIENT']) {
@@ -473,7 +474,9 @@ test('登录输入框使用 Element 内置交互且图标与当前主题一致',
 })
 
 test('登录按钮加载时保留主题背景并仅轻微淡化', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
   const { assertClean } = await installDistRoutes(page, {
+    origin, liveStatic: !!process.env.E2E_DEV_BASE_URL,
     apiData: new Map([
       ['/api/auth/console/config', { loginEnabled: true }],
       ['POST /api/auth/console/login', async () => {
@@ -485,7 +488,7 @@ test('登录按钮加载时保留主题背景并仅轻微淡化', async ({ page 
       ['POST /api/rule/console/activity', true],
     ])
   })
-  await page.goto('http://tianshu.local/index.html#/login')
+  await page.goto(`${origin}/#/login`)
 
   await page.locator('input[autocomplete="username"]').fill('visual-test-user')
   await page.locator('input[autocomplete="current-password"]')
@@ -498,17 +501,20 @@ test('登录按钮加载时保留主题背景并仅轻微淡化', async ({ page 
     const buttonStyle = getComputedStyle(button)
     const maskStyle = getComputedStyle(button, '::before')
     const themeBackground = getComputedStyle(document.documentElement)
-      .getPropertyValue('--tianshu-brand-background').trim()
+      .getPropertyValue('--tianshu-brand-button-background').trim()
     const colorProbe = document.createElement('span')
-    colorProbe.style.color = themeBackground
+    colorProbe.style.background = themeBackground
     document.body.appendChild(colorProbe)
-    const resolvedThemeBackground = getComputedStyle(colorProbe).color
+    const resolvedThemeBackground = getComputedStyle(colorProbe).backgroundColor
+    const resolvedThemeImage = getComputedStyle(colorProbe).backgroundImage
     colorProbe.style.color = 'var(--tianshu-brand-foreground)'
     const resolvedThemeForeground = getComputedStyle(colorProbe).color
     colorProbe.remove()
     return {
       color: buttonStyle.color,
       backgroundColor: buttonStyle.backgroundColor,
+      backgroundImage: buttonStyle.backgroundImage,
+      resolvedThemeImage,
       maskBackgroundColor: maskStyle.backgroundColor,
       opacity: Number(buttonStyle.opacity),
       resolvedThemeBackground,
@@ -519,8 +525,9 @@ test('登录按钮加载时保留主题背景并仅轻微淡化', async ({ page 
   })
 
   expect(visual.backgroundColor).toBe(visual.resolvedThemeBackground)
+  expect(visual.backgroundImage).toBe(visual.resolvedThemeImage)
   expect(visual.color).toBe(visual.resolvedThemeForeground)
-  const loadingReadability = await controlContrast(loginButton)
+  const loadingReadability = (await Promise.all([controlContrast(loginButton, 0), controlContrast(loginButton, 1)])).sort((a, b) => a.ratio - b.ratio)[0]
   expect(loadingReadability.ratio).toBeGreaterThanOrEqual(4.5)
   await fs.mkdir(test.info().outputDir, { recursive: true })
   await fs.writeFile(test.info().outputPath('contrast-values.json'), JSON.stringify({ loadingReadability }, null, 2))
@@ -622,8 +629,9 @@ for (const appearance of [
 ]) {
   test(`短页面底色铺满内容区且长页面仍可滚动：${appearance.colorScheme}`, async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 1120 })
+    const data = createManagementApiData()
     const { assertClean } = await installDistRoutes(page, {
-      apiData: createManagementApiData(),
+      apiData: data,
     })
     await page.goto('http://tianshu.local/index.html#/database')
     const dataTab = page.getByRole('tabpanel', { name: '数据源配置' })
@@ -634,6 +642,7 @@ for (const appearance of [
     await page.locator(`[data-theme-scheme="${appearance.colorScheme}"]`).click()
     await page.locator(`[data-navigation-layout="${appearance.navigationLayout}"]`).click()
     await page.locator(`[data-content-width="${appearance.contentWidth}"]`).click()
+    await page.locator('[data-table-scroll-mode="AUTO"]').click()
     await page.getByRole('button', { name: '保存设置', exact: true }).click()
     await expect(page.getByRole('dialog', { name: '主题设置' })).not.toBeVisible()
 
@@ -654,6 +663,10 @@ for (const appearance of [
     expect(layout.mainScrollRange).toBe(0)
     if (appearance.contentWidth === 'FIXED') expect(layout.width).toBe(1440)
 
+    const original = data.get('/api/rule/database/list').records[0]
+    Object.assign(data.get('/api/rule/database/list'), { records: Array.from({ length: 20 }, (_, index) => ({ ...original, id: index + 1 })), total: 20 })
+    await dataTab.locator('.uiue-filter-toolbar').getByRole('button', { name: '查询', exact: true }).click()
+    await expect(dataTab.locator('.el-table__body > tbody > tr')).toHaveCount(20)
     await page.setViewportSize({ width: 1280, height: 420 })
     await dataTab.locator('.el-pagination').scrollIntoViewIfNeeded()
     await expect(dataTab.locator('.el-pagination')).toBeVisible()
@@ -774,6 +787,7 @@ test('右上角账户头像和名字视觉边界对齐且侧栏不再显示账�
 })
 
 test('表头、状态、作用范围和普通操作随主题色切换', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify({ schemaVersion: 1, colorScheme: 'LIGHT', accentPreset: 'THEME_BLUE', sidebarTheme: 'DARK', contentWidth: 'FLUID', fixedSidebar: true, colorWeak: false })))
   const { assertClean } = await installDistRoutes(page, {
     apiData: createManagementApiData()
   })
@@ -899,10 +913,10 @@ test('项目列表同一行操作使用互不重复且语义稳定的主题色',
     color: getComputedStyle(button).color,
   })))
   expect(appearance.map(item => item.action)).toEqual([
+    'detail',
+    'edit',
     'version',
     'publish',
-    'edit',
-    'detail',
     'configure',
     'docs',
     'delete',

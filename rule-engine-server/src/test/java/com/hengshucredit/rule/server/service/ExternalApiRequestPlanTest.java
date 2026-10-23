@@ -9,6 +9,96 @@ import java.util.Map;
 import static org.junit.Assert.*;
 
 public class ExternalApiRequestPlanTest {
+    @Test public void stepAuthenticationFromChainInputAlsoIsolatesTheResponseCache() {
+        var api = ExternalApiTestConfig.api();
+        api.setId(9L); api.setAuthMode("NONE");
+        api.setExecutionConfig(com.hengshucredit.rule.server.artifact.CanonicalJson.write(Map.of("version", 2,
+                "requestFields", java.util.List.of(ExternalApiTestConfig.field("token", "JSON", "token", ExternalApiTestConfig.reference(7L, "credential"))),
+                "steps", java.util.List.of(Map.of("id", "submit", "type", "HTTP", "authMode", "BEARER", "authApiConfig",
+                        JSON.toJSONString(Map.of("token", ExternalApiTestConfig.path("input.__apiFields.token"))))))));
+        var paths = Map.of("VARIABLE:7", "credential");
+        var a = ExternalApiRequestPlan.prepare(api, Map.of("credential", "tenant-A", "customerId", "C1"), Map.of(), paths);
+        var b = ExternalApiRequestPlan.prepare(api, Map.of("credential", "tenant-B", "customerId", "C1"), Map.of(), paths);
+        var service = new ExternalApiInvokeService();
+        String cache = "{\"components\":[{\"path\":\"customerId\"}]}";
+        assertNotEquals(service.buildResponseCacheKey(9L, cache, a.params()), service.buildResponseCacheKey(9L, cache, b.params()));
+    }
+    @Test public void inlineStepAuthenticationAlsoIsolatesTheResponseCache() {
+        var api = ExternalApiTestConfig.api();
+        api.setId(9L); api.setAuthMode("NONE");
+        var auth = JSON.toJSONString(Map.of("token", ExternalApiTestConfig.reference(7L, "credential")));
+        api.setExecutionConfig(com.hengshucredit.rule.server.artifact.CanonicalJson.write(Map.of("version", 2, "requestFields", java.util.List.of(),
+                "steps", java.util.List.of(Map.of("id", "submit", "type", "HTTP", "authMode", "BEARER", "authApiConfig", auth)))));
+        var paths = Map.of("VARIABLE:7", "credential");
+        var a = ExternalApiRequestPlan.prepare(api, Map.of("credential", "tenant-A", "customerId", "C1"), Map.of(), paths);
+        var b = ExternalApiRequestPlan.prepare(api, Map.of("credential", "tenant-B", "customerId", "C1"), Map.of(), paths);
+        String cache = "{\"components\":[{\"path\":\"customerId\"}]}";
+        var service = new ExternalApiInvokeService();
+        assertNotEquals(a.identity(), b.identity());
+        assertNotEquals(service.buildResponseCacheKey(9L, cache, a.params()), service.buildResponseCacheKey(9L, cache, b.params()));
+    }
+    @Test public void authenticationSubfieldsOfOneResourceHaveIndependentIdentities() {
+        RuleExternalApiConfig api = ExternalApiTestConfig.api();
+        api.setId(9L); api.setAuthMode("BASIC");
+        var username = Map.of("kind", "PATH", "refType", "VARIABLE", "refId", 7,
+                "relativePath", ".username", "value", "credentials.username");
+        var password = Map.of("kind", "PATH", "refType", "VARIABLE", "refId", 7,
+                "relativePath", ".password", "value", "credentials.password");
+        api.setAuthApiConfig(JSON.toJSONString(Map.of("username", username, "password", password)));
+        var paths = Map.of("VARIABLE:7", "credentials");
+        Map<String, Object> first = Map.of("credentials", Map.of("username", "tenant-A", "password", "same-test-password"), "customerId", "C1");
+        Map<String, Object> second = Map.of("credentials", Map.of("username", "tenant-B", "password", "same-test-password"), "customerId", "C1");
+        assertEquals("tenant-A", ExternalApiRequestPlan.evaluate(username, first, paths));
+        assertEquals("tenant-B", ExternalApiRequestPlan.evaluate(username, second, paths));
+        var a = ExternalApiRequestPlan.prepare(api, first, Map.of(), paths);
+        var b = ExternalApiRequestPlan.prepare(api, second, Map.of(), paths);
+        assertNotEquals(a.identity(), b.identity());
+        var service = new ExternalApiInvokeService();
+        String cache = "{\"components\":[{\"path\":\"customerId\"}]}";
+        assertNotEquals(service.buildResponseCacheKey(9L, cache, a.params()), service.buildResponseCacheKey(9L, cache, b.params()));
+        assertEquals(a.identity(), ExternalApiRequestPlan.prepare(api, first, Map.of(), paths).identity());
+    }
+
+    @Test public void stepSubfieldsCannotOverwriteEachOtherInRequestIdentity() {
+        var api = ExternalApiTestConfig.api();
+        var step = Map.of("id", "submit", "type", "HTTP", "requestFields", java.util.List.of(
+                ExternalApiTestConfig.field("first", "JSON", "first", Map.of("kind", "PATH", "refType", "VARIABLE", "refId", 7, "relativePath", ".first")),
+                ExternalApiTestConfig.field("second", "JSON", "second", Map.of("kind", "PATH", "refType", "VARIABLE", "refId", 7, "relativePath", ".second"))));
+        api.setExecutionConfig(com.hengshucredit.rule.server.artifact.CanonicalJson.write(Map.of("version", 2, "requestFields", java.util.List.of(), "steps", java.util.List.of(step))));
+        var paths = Map.of("VARIABLE:7", "inputObject");
+        var a = ExternalApiRequestPlan.prepare(api, Map.of("inputObject", Map.of("first", "A", "second", "unchanged")), Map.of(), paths);
+        var b = ExternalApiRequestPlan.prepare(api, Map.of("inputObject", Map.of("first", "B", "second", "unchanged")), Map.of(), paths);
+        assertNotEquals(a.identity(), b.identity());
+    }
+    @Test public void linkedAuthenticationChangesNeverReuseAnotherCredentialsRequestIdentity() {
+        RuleExternalApiConfig api = api();
+        Map<String, Object> linked = Map.of("authApiConfigId:9", Map.of("authApiConfig", JSON.toJSONString(
+                Map.of("token", ExternalApiTestConfig.reference(2, "oldToken")))));
+        var paths = Map.of("VARIABLE:1", "applicant", "VARIABLE:2", "token");
+        var first = ExternalApiRequestPlan.prepare(api, Map.of("applicant", "111", "token", "one"), Map.of(), paths, null, linked);
+        var second = ExternalApiRequestPlan.prepare(api, Map.of("applicant", "111", "token", "two"), Map.of(), paths, null, linked);
+        assertNotEquals(first.identity(), second.identity());
+        assertNotEquals(first.params().get("__apiAuthIdentity"), second.params().get("__apiAuthIdentity"));
+    }
+    @Test public void stepAuthenticationInputsParticipateInIdentityAndRootPathIsSelectable() {
+        RuleExternalApiConfig api = api();
+        var config = JSON.parseObject(api.getExecutionConfig());
+        config.put("steps", java.util.List.of(Map.of("id", "step", "authApiConfig", JSON.toJSONString(Map.of("token", ExternalApiTestConfig.reference(2L, "oldToken"))))));
+        api.setExecutionConfig(JSON.toJSONString(config));
+        var paths = Map.of("VARIABLE:1", "applicant", "VARIABLE:2", "token");
+        assertNotEquals(ExternalApiRequestPlan.prepare(api, Map.of("applicant", "111", "token", "one"), Map.of(), paths).identity(),
+                ExternalApiRequestPlan.prepare(api, Map.of("applicant", "111", "token", "two"), Map.of(), paths).identity());
+        assertEquals(Map.of("body", 1), ExternalApiRequestPlan.evaluate(ExternalApiTestConfig.path("$"), Map.of("body", 1), Map.of()));
+    }
+    @Test public void authenticationReferencesParticipateInInvocationIdentity() {
+        RuleExternalApiConfig api = api();
+        api.setAuthMode("BEARER");
+        api.setAuthApiConfig("{\"token\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":2,\"code\":\"oldToken\"}}");
+        Map<String, String> paths = Map.of("VARIABLE:1", "applicant", "VARIABLE:2", "tenantToken");
+        var one = ExternalApiRequestPlan.prepare(api, Map.of("applicant", "111", "tenantToken", "one"), Map.of(), paths);
+        var two = ExternalApiRequestPlan.prepare(api, Map.of("applicant", "111", "tenantToken", "two"), Map.of(), paths);
+        assertNotEquals(one.identity(), two.identity());
+    }
     @Test public void quotedFieldNamesPreserveProviderNamesAndPreviewRejectsNetworkFunctions() {
         Map<String, Object> output = new java.util.LinkedHashMap<>();
         ExternalApiRequestPlan.write(output, "customer[\"Mobile.Number\"]", "111");

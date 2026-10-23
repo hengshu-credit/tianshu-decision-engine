@@ -1,5 +1,6 @@
 const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
+const { platformResponse } = require('./support/platformResponse.cjs')
 const baseUrl = process.env.TRANSFER_DEV_URL || 'http://tianshu.local/index.html'
 
 async function installTransferRoutes(page) {
@@ -68,7 +69,7 @@ async function installTransferRoutes(page) {
       await route.fallback()
       return
     }
-    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 200, message: 'success', data }) })
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(platformResponse(data)) })
   })
   return { assertClean, previews, imports, exports, searches, logRequests, lineages, delayPreview(wait) { delayNextPreview = wait }, failSearch() { failNextSearch = true } }
 }
@@ -86,6 +87,48 @@ async function exportAndUpload(page, testInfo) {
 async function chooseScope(page, label) {
   await page.getByRole('combobox', { name: '目标范围', exact: true }).press('ArrowDown')
   await page.getByRole('option', { name: label, exact: true }).click()
+}
+
+for (const width of [1440, 1280, 1024, 760, 560]) {
+  test(`${width}px 导出资源输入框保持可用，选择版本和添加移除资源不挤压输入框`, async ({ page }, testInfo) => {
+    const fixture = await installTransferRoutes(page)
+    await page.setViewportSize({ width, height: 1000 })
+    await page.goto(`${baseUrl}#/transfer`)
+    const card = page.locator('.transfer-card').first()
+    const firstRow = card.locator('.root-row').first()
+    const search = page.getByRole('combobox', { name: '第 1 项导出资源', exact: true })
+    const expectUsable = async row => {
+      const bounds = await row.boundingBox()
+      const input = row.locator('.root-resource .el-select')
+      await expect(input).toBeVisible()
+      const inputBox = await input.boundingBox()
+      expect(inputBox.width).toBeGreaterThanOrEqual(Math.min(240, bounds.width))
+      for (const control of await row.locator('.root-type, .root-resource, .root-version, .el-button').all()) {
+        const box = await control.boundingBox()
+        expect(box.x).toBeGreaterThanOrEqual(bounds.x - 1)
+        expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1)
+      }
+    }
+    await expectUsable(firstRow)
+    await search.fill('授信')
+    await page.getByRole('option', { name: '授信判断 (risk_rule) · 授信项目 / credit', exact: true }).click()
+    await expect(firstRow.getByRole('combobox', { name: '资源执行版本' })).toBeVisible()
+    await expect(firstRow.locator('.root-version')).toContainText('最新版（当前生产）')
+    await expectUsable(firstRow)
+    await page.getByRole('button', { name: '添加根资源', exact: true }).click()
+    await expect(card.locator('.root-row')).toHaveCount(2)
+    await expectUsable(firstRow)
+    await expectUsable(card.locator('.root-row').last())
+    await page.getByRole('button', { name: '移除第 2 项资源', exact: true }).click()
+    await expect(card.locator('.root-row')).toHaveCount(1)
+    await firstRow.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: testInfo.outputPath(`export-inputs-${width}.png`) })
+    const download = page.waitForEvent('download')
+    await page.getByRole('button', { name: '生成并下载配置包', exact: true }).click()
+    await (await download).saveAs(testInfo.outputPath('responsive-export.zip'))
+    expect(fixture.exports).toEqual([{ roots: [{ resourceType: 'RULE', resourceId: 101 }], includeDependencies: true }])
+    fixture.assertClean()
+  })
 }
 
 test('离线迁移页面展示导出、目标范围和冲突策略流程', async ({ page }) => {

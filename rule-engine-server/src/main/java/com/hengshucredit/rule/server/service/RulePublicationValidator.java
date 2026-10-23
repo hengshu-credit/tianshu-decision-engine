@@ -17,31 +17,23 @@ public class RulePublicationValidator {
     @Resource private RuleVersionBindingMapper bindings;
     @Resource private RuleDefinitionVersionMapper snapshots;
     @Resource private RuleRevisionMapper revisions;
+    @Resource private RuleRegressionEvidenceService regressionEvidence;
 
     public String previewCycle(Long definitionId, String modelJson) {
         RuleRevision candidate = new RuleRevision(); candidate.setDefinitionId(definitionId);
         candidate.setPublishMode("NEW"); candidate.setModelJson(modelJson);
         List<RuleVersionBinding> active = bindings.selectList(new LambdaQueryWrapper<RuleVersionBinding>().eq(RuleVersionBinding::getStatus, 1));
-        Map<Long, RuleDefinitionVersion> history = new HashMap<>();
-        for (RuleVersionBinding binding : active) {
-            RuleDefinitionVersion snapshot = snapshots.selectById(binding.getSnapshotId());
-            if (snapshot != null) history.put(snapshot.getId(), snapshot);
-        }
+        Map<Long, RuleDefinitionVersion> history = loadSnapshots(active, false);
         try { validateGraph(candidate, active, history); return null; }
         catch (IllegalStateException invalid) { return invalid.getMessage(); }
     }
 
     public void validate(RuleRevision candidate) {
+        regressionEvidence.requirePublication(candidate);
         // Current reads serialize activation checks, so simultaneous publications cannot introduce a cycle.
         List<RuleVersionBinding> active = bindings.selectList(new LambdaQueryWrapper<RuleVersionBinding>()
                 .eq(RuleVersionBinding::getStatus, 1).orderByAsc(RuleVersionBinding::getId).last("FOR UPDATE"));
-        Map<Long, RuleDefinitionVersion> history = new HashMap<>();
-        for (RuleVersionBinding binding : active) {
-            RuleDefinitionVersion snapshot = snapshots.selectOne(new LambdaQueryWrapper<RuleDefinitionVersion>()
-                    .eq(RuleDefinitionVersion::getDefinitionId, binding.getDefinitionId())
-                    .eq(RuleDefinitionVersion::getId, binding.getSnapshotId()).last("FOR UPDATE"));
-            if (snapshot != null) history.put(snapshot.getId(), snapshot);
-        }
+        Map<Long, RuleDefinitionVersion> history = loadSnapshots(active, true);
         Set<Long> affected = validateGraph(candidate, active, history);
         if (!affected.isEmpty()) {
             RuleVersionBinding prior = "OVERWRITE".equals(candidate.getPublishMode())
@@ -55,6 +47,27 @@ public class RulePublicationValidator {
                     candidate.getInputSchemaJson(), candidate.getOutputSchemaJson()).hasBreakingChanges())
                 throw new IllegalStateException("发布会破坏调用方字段契约，请先调整依赖规则；受影响规则: " + affected);
         }
+    }
+
+    private Map<Long, RuleDefinitionVersion> loadSnapshots(List<RuleVersionBinding> active, boolean lock) {
+        List<Long> ids = active.stream().map(RuleVersionBinding::getSnapshotId).filter(Objects::nonNull).distinct().sorted().toList();
+        Map<Long, RuleDefinitionVersion> history = new HashMap<>();
+        for (int offset = 0; offset < ids.size(); offset += 500) {
+            var query = new LambdaQueryWrapper<RuleDefinitionVersion>()
+                    .select(RuleDefinitionVersion::getId, RuleDefinitionVersion::getDefinitionId,
+                            RuleDefinitionVersion::getRevisionId, RuleDefinitionVersion::getModelJson)
+                    .in(RuleDefinitionVersion::getId, ids.subList(offset, Math.min(offset + 500, ids.size())))
+                    .orderByAsc(RuleDefinitionVersion::getId);
+            if (lock) query.last("FOR UPDATE");
+            for (RuleDefinitionVersion snapshot : snapshots.selectList(query)) history.put(snapshot.getId(), snapshot);
+        }
+        // A snapshot ID alone must never establish ownership of a version binding.
+        for (RuleVersionBinding binding : active) {
+            RuleDefinitionVersion snapshot = history.get(binding.getSnapshotId());
+            if (snapshot != null && !Objects.equals(binding.getDefinitionId(), snapshot.getDefinitionId()))
+                throw new IllegalStateException("规则版本快照归属不匹配");
+        }
+        return history;
     }
 
     Set<Long> validateGraph(RuleRevision candidate, List<RuleVersionBinding> active, Map<Long, RuleDefinitionVersion> history) {

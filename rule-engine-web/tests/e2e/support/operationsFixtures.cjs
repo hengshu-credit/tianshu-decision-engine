@@ -1,4 +1,5 @@
 const { createManagementApiData } = require('./managementFixtures.cjs')
+const { platformResponse } = require('./platformResponse.cjs')
 const { withTestExecutionIdentity } = require('./testExecutionFixtures.cjs')
 
 function createOperationsApiData() {
@@ -174,7 +175,7 @@ function createOperationsApiData() {
     const execution = typeof configured === 'function' ? await configured(context) : configured
     return {
       execution,
-      responseJson: JSON.stringify({ code: 200, data: execution }),
+      responseJson: JSON.stringify(platformResponse(execution)),
       validation: { status: 'NOT_CONFIGURED', message: '未设置预期，不判断用例是否通过', checks: [], diffs: [] }
     }
   })

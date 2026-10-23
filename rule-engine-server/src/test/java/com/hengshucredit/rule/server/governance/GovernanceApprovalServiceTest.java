@@ -18,6 +18,27 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class GovernanceApprovalServiceTest {
+    @Test
+    public void trialCredentialsUseOnlyActorsEditableWorkspace() {
+        TestService service = new TestService();
+        service.request.setId(12L);
+        service.request.setResourceType("DATABASE");
+        service.request.setResourceId(7L);
+        service.request.setActiveResourceKey("DATABASE:7");
+        service.request.setStatus("EDITING");
+        service.request.setApplicant("alice");
+        service.request.setDraftSnapshotJson("{\"id\":7}");
+        service.request.setSnapshotDigest("draft-digest");
+        service.request.setSecretPayloadCiphertext("protected-draft");
+        service.request.setSecretDigest("secret-digest");
+        ResourceSnapshot snapshot = service.editableCredentialSnapshot("DATABASE", 7L, "alice");
+        Assert.assertEquals("protected-draft", snapshot.secretPayloadCiphertext());
+        Assert.assertEquals("{\"id\":7}", snapshot.snapshotJson());
+        Assert.assertNull(service.editableCredentialSnapshot("DATABASE", 7L, "bob"));
+        service.request.setStatus("PENDING");
+        Assert.assertNull(service.editableCredentialSnapshot("DATABASE", 7L, "alice"));
+    }
+
     @Test public void overwriteApprovalConflictsWhenTargetRevisionChanged() {
         var target = new GovernedResourceVersion(); target.setId(2L); target.setVersionNo(2); target.setBusinessVersion(1);
         TestService service = new TestService() {

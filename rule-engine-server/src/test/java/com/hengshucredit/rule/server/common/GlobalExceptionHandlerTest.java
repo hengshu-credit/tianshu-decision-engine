@@ -25,7 +25,7 @@ public class GlobalExceptionHandlerTest {
                 .andExpect(status().isNotFound())
                 .andReturn().getResponse().getContentAsString();
         JsonNode body = new ObjectMapper().readTree(content);
-        org.junit.Assert.assertEquals(404, body.get("code").asInt());
+        org.junit.Assert.assertEquals("501001", body.get("code").asText());
         org.junit.Assert.assertEquals("资源不存在", body.get("message").asText());
     }
 

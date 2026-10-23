@@ -1640,7 +1640,7 @@ public class RuleModelService {
 
         Map<String, Object> result = new HashMap<>();
         result.put("success", false);
-        result.put("message", model.getModelFormat() + " 格式暂不支持在线执行，仅 PMML 格式支持测试");
+        result.put("message", model.getModelFormat() + " 格式暂不支持在线执行，仅支持 PMML 和 ONNX 格式测试");
         result.put("modelCode", model.getModelCode());
         result.put("modelFormat", model.getModelFormat());
         result.put("inputParams", executionParams);

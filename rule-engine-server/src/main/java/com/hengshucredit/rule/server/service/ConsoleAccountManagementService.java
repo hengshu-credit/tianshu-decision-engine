@@ -19,6 +19,9 @@ import com.hengshucredit.rule.server.mapper.ConsoleSecurityAuditLogMapper;
 import com.hengshucredit.rule.server.mapper.ConsoleUserMapper;
 import com.hengshucredit.rule.server.mapper.ConsoleUserPermissionOverrideMapper;
 import com.hengshucredit.rule.server.mapper.ConsoleUserRoleMapper;
+import com.hengshucredit.rule.server.mapper.ConsoleAccountTokenMapper;
+import com.hengshucredit.rule.model.entity.ConsoleAccountToken;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.hengshucredit.rule.server.security.ConsolePermissionService;
 import jakarta.annotation.Resource;
 import lombok.Data;
@@ -56,10 +59,17 @@ public class ConsoleAccountManagementService {
     private ConsoleSecurityAuditLogMapper auditLogMapper;
     @Resource
     private ConsolePermissionService permissionService;
+    @Resource
+    private ConsoleAccountTokenMapper tokenMapper;
+    @Resource
+    private com.hengshucredit.rule.server.mapper.ConsoleUserProjectMapper userProjectMapper;
+    @Resource
+    private com.hengshucredit.rule.server.mapper.ConsoleUserProjectPermissionMapper projectPermissionMapper;
 
     public List<ConsoleUserDetail> listUsers() {
         List<ConsoleUser> users = userMapper.selectList(
                 new LambdaQueryWrapper<ConsoleUser>()
+                        .isNull(ConsoleUser::getMergedIntoUserId)
                         .orderByAsc(ConsoleUser::getUsername));
         List<ConsoleUserDetail> result = new ArrayList<>(users.size());
         for (ConsoleUser user : users) {
@@ -75,32 +85,54 @@ public class ConsoleAccountManagementService {
     @Transactional
     public ConsoleUserDetail saveUser(ConsoleUserSaveRequest request,
                                       String operator) {
+        lockAccounts();
         if (request == null || request.getUsername() == null
                 || request.getUsername().isBlank()) {
             throw new IllegalArgumentException("用户名不能为空");
         }
         boolean existingUser = request.getId() != null;
+        if (request.getUsername().trim().length() < 3 || request.getUsername().trim().length() > 64) {
+            throw new IllegalArgumentException("用户名长度必须为3到64位");
+        }
+        validateStatus(request.getStatus());
+        if (Integer.valueOf(0).equals(request.getStatus()) && request.getId() != null
+                && request.getId().equals(systemAdministratorId())) {
+            throw new IllegalArgumentException("系统唯一超级管理员不能停用");
+        }
+        String requestedEmail = normalizeEmail(request.getEmail());
+        if (requestedEmail != null && userMapper.selectCount(new LambdaQueryWrapper<ConsoleUser>()
+                .eq(ConsoleUser::getEmail, requestedEmail).ne(existingUser, ConsoleUser::getId, request.getId())) > 0) {
+            throw new IllegalArgumentException("邮箱已被其他账户使用");
+        }
         ConsoleUser user;
         if (request.getId() == null) {
+            String username = request.getUsername().trim();
+            if (userMapper.selectCount(new LambdaQueryWrapper<ConsoleUser>()
+                    .and(q -> q.eq(ConsoleUser::getUsername, username).or().eq(ConsoleUser::getOperatorName, username).or().eq(ConsoleUser::getMergedUsername, username))) > 0) {
+                throw new IllegalArgumentException("用户名不可用");
+            }
             if (request.getPassword() == null
                     || request.getPassword().length() < 8) {
                 throw new IllegalArgumentException("新账户密码不能少于8位");
             }
             user = new ConsoleUser();
             user.setUsername(request.getUsername().trim());
+            user.setOperatorName(user.getUsername());
             user.setDisplayName(displayName(request));
-            user.setEmail(normalizeEmail(request.getEmail()));
+            user.setEmail(requestedEmail);
             user.setEmailVerifiedAt(user.getEmail() == null ? null : java.time.LocalDateTime.now());
             user.setRegistrationStatus("ACTIVE");
             user.setRegistrationSource("ADMIN");
             user.setPasswordHash(BCrypt.hashpw(request.getPassword()));
             user.setStatus(request.getStatus() == null ? 1 : request.getStatus());
             user.setPermissionVersion(1L);
+            applyProjectPolicy(user, request.getProjectAccessMode(), request.getGlobalEditable());
             user.setCreateBy(operator);
             user.setUpdateBy(operator);
             userMapper.insert(user);
         } else {
             user = requireUser(request.getId());
+            applyProjectPolicy(user, request.getProjectAccessMode(), request.getGlobalEditable());
             String username = request.getUsername().trim();
             if (!username.equals(user.getUsername())) {
                 throw new IllegalArgumentException(
@@ -108,12 +140,19 @@ public class ConsoleAccountManagementService {
             }
             user.setUsername(username);
             user.setDisplayName(displayName(request));
-            if (request.getEmail() != null && !request.getEmail().isBlank()) {
-                user.setEmail(normalizeEmail(request.getEmail()));
-                user.setEmailVerifiedAt(java.time.LocalDateTime.now());
+            boolean emailChanged = request.getEmail() != null && !java.util.Objects.equals(requestedEmail, user.getEmail());
+            if (emailChanged) {
+                user.setEmail(requestedEmail);
+                user.setEmailVerifiedAt(requestedEmail == null ? null : java.time.LocalDateTime.now());
+                revokeTokens(user.getId());
             }
             if (request.getStatus() != null) {
+                boolean disabling = request.getStatus() == 0 && !Integer.valueOf(0).equals(user.getStatus());
                 user.setStatus(request.getStatus());
+                if (disabling) {
+                    if ("PENDING".equals(user.getRegistrationStatus())) user.setRegistrationStatus("DISABLED");
+                    revokeTokens(user.getId());
+                }
             }
             if (request.getPassword() != null
                     && !request.getPassword().isBlank()) {
@@ -121,9 +160,12 @@ public class ConsoleAccountManagementService {
                     throw new IllegalArgumentException("密码不能少于8位");
                 }
                 user.setPasswordHash(BCrypt.hashpw(request.getPassword()));
+                revokeTokens(user.getId());
             }
             user.setUpdateBy(operator);
-            userMapper.updateById(user);
+            LambdaUpdateWrapper<ConsoleUser> update = new LambdaUpdateWrapper<ConsoleUser>().eq(ConsoleUser::getId, user.getId());
+            if (emailChanged && requestedEmail == null) update.set(ConsoleUser::getEmail, null).set(ConsoleUser::getEmailVerifiedAt, null);
+            userMapper.update(user, update);
         }
         if (request.getRoleIds() != null
                 || request.getPermissionOverrides() != null) {
@@ -133,6 +175,8 @@ public class ConsoleAccountManagementService {
         if (existingUser) {
             bumpPermissionVersion(user, operator);
         }
+        replaceProjects(user.getId(), request.getProjectIds(), operator);
+        replaceProjectPermissions(user.getId(), request.getProjectPermissionOverrides());
         ensureAtLeastOneAdministrator();
         appendAudit(user.getId(), user.getUsername(),
                 request.getId() == null ? "ACCOUNT_CREATE" : "ACCOUNT_UPDATE",
@@ -145,11 +189,15 @@ public class ConsoleAccountManagementService {
             Long userId,
             ConsoleUserPermissionRequest request,
             String operator) {
+        lockAccounts();
         ConsoleUser user = requireUser(userId);
+        if (request != null) applyProjectPolicy(user, request.getProjectAccessMode(), request.getGlobalEditable());
         replaceUserPermissions(userId,
                 request == null ? null : request.getRoleIds(),
                 request == null ? null : request.getPermissionOverrides(),
                 operator);
+        replaceProjects(userId, request == null ? null : request.getProjectIds(), operator);
+        replaceProjectPermissions(userId, request == null ? null : request.getProjectPermissionOverrides());
         bumpPermissionVersion(user, operator);
         ensureAtLeastOneAdministrator();
         appendAudit(userId, user.getUsername(),
@@ -159,10 +207,12 @@ public class ConsoleAccountManagementService {
 
     @Transactional
     public void changeUserStatus(Long userId, Integer status, String operator) {
+        lockAccounts();
         if (status == null || (status != 0 && status != 1)) {
             throw new IllegalArgumentException("账户状态必须为0或1");
         }
         ConsoleUser user = requireUser(userId);
+        if (status == 0 && userId.equals(systemAdministratorId())) throw new IllegalArgumentException("系统唯一超级管理员不能停用");
         if (status == 0 && isEnabledAdministrator(userId)
                 && countOtherEnabledAdministrators(userId) == 0) {
             throw new LastAdministratorException();
@@ -174,6 +224,7 @@ public class ConsoleAccountManagementService {
 
     @Transactional
     public void resetPassword(Long userId, String rawPassword, String operator) {
+        lockAccounts();
         if (rawPassword == null || rawPassword.length() < 8) {
             throw new IllegalArgumentException("密码不能少于8位");
         }
@@ -196,6 +247,7 @@ public class ConsoleAccountManagementService {
     @Transactional
     public ConsoleRoleDetail saveRole(ConsoleRoleSaveRequest request,
                                       String operator) {
+        lockAccounts();
         if (request == null || request.getRoleCode() == null
                 || request.getRoleCode().isBlank()
                 || request.getRoleName() == null
@@ -203,7 +255,9 @@ public class ConsoleAccountManagementService {
             throw new IllegalArgumentException("角色编码和名称不能为空");
         }
         ConsoleRole role;
+        validateStatus(request.getStatus());
         if (request.getId() == null) {
+            if ("SUPER_ADMIN".equalsIgnoreCase(request.getRoleCode().trim())) throw new IllegalArgumentException("系统角色编码不可用于新建角色");
             role = new ConsoleRole();
             role.setRoleCode(request.getRoleCode().trim());
             role.setRoleName(request.getRoleName().trim());
@@ -215,6 +269,12 @@ public class ConsoleAccountManagementService {
             roleMapper.insert(role);
         } else {
             role = requireRole(request.getId());
+            if (!"SUPER_ADMIN".equals(role.getRoleCode()) && "SUPER_ADMIN".equalsIgnoreCase(request.getRoleCode().trim())) {
+                throw new IllegalArgumentException("系统角色编码不可用于其他角色");
+            }
+            if (Integer.valueOf(1).equals(role.getSystemRole()) && !role.getRoleCode().equals(request.getRoleCode().trim())) {
+                throw new IllegalArgumentException("系统角色编码不可修改");
+            }
             role.setRoleCode(request.getRoleCode().trim());
             role.setRoleName(request.getRoleName().trim());
             role.setDescription(request.getDescription());
@@ -222,6 +282,9 @@ public class ConsoleAccountManagementService {
                 role.setStatus(request.getStatus());
             }
             role.setUpdateBy(operator);
+            if ("SUPER_ADMIN".equals(role.getRoleCode()) && Integer.valueOf(0).equals(role.getStatus())) {
+                throw new IllegalArgumentException("系统超级管理员角色不能停用");
+            }
             roleMapper.updateById(role);
         }
         if (request.getPermissionCodes() != null) {
@@ -238,10 +301,12 @@ public class ConsoleAccountManagementService {
 
     @Transactional
     public void changeRoleStatus(Long roleId, Integer status, String operator) {
+        lockAccounts();
         if (status == null || (status != 0 && status != 1)) {
             throw new IllegalArgumentException("角色状态必须为0或1");
         }
         ConsoleRole role = requireRole(roleId);
+        if (status == 0 && "SUPER_ADMIN".equals(role.getRoleCode())) throw new IllegalArgumentException("系统超级管理员角色不能停用");
         role.setStatus(status);
         role.setUpdateBy(operator);
         roleMapper.updateById(role);
@@ -261,9 +326,11 @@ public class ConsoleAccountManagementService {
 
     protected ConsoleUser requireUser(Long userId) {
         ConsoleUser user = userMapper.selectById(userId);
-        if (user == null) throw new IllegalArgumentException("账户不存在");
+        if (user == null || user.getMergedIntoUserId() != null) throw new IllegalArgumentException("账户不存在或已合并至系统超级管理员");
         return user;
     }
+
+    protected Long systemAdministratorId() { return userMapper.administratorUserId(); }
 
     protected boolean isEnabledAdministrator(Long userId) {
         ConsoleUser user = userMapper.selectById(userId);
@@ -291,9 +358,11 @@ public class ConsoleAccountManagementService {
     protected void persistUserStatus(ConsoleUser user, Integer status,
                                      String operator) {
         user.setStatus(status);
+        if (status == 0 && "PENDING".equals(user.getRegistrationStatus())) user.setRegistrationStatus("DISABLED");
         user.setPermissionVersion(nextPermissionVersion(user));
         user.setUpdateBy(operator);
         userMapper.updateById(user);
+        revokeTokens(user.getId());
     }
 
     protected void persistPasswordHash(ConsoleUser user, String passwordHash,
@@ -302,6 +371,7 @@ public class ConsoleAccountManagementService {
         user.setPermissionVersion(nextPermissionVersion(user));
         user.setUpdateBy(operator);
         userMapper.updateById(user);
+        revokeTokens(user.getId());
     }
 
     protected void appendAudit(Long userId, String username, String action,
@@ -321,6 +391,17 @@ public class ConsoleAccountManagementService {
                                         Map<String, String> overrides,
                                         String operator) {
         if (roleIds != null) {
+            Long ownerId = systemAdministratorId();
+            boolean superAdministratorSelected = false;
+            for (Long roleId : new LinkedHashSet<>(roleIds)) {
+                if ("SUPER_ADMIN".equals(requireRole(roleId).getRoleCode())) superAdministratorSelected = true;
+            }
+            if (superAdministratorSelected && !userId.equals(ownerId)) {
+                throw new IllegalArgumentException("系统只允许一个超级管理员，请使用现有超管或账号恢复流程");
+            }
+            if (userId.equals(ownerId) && !superAdministratorSelected) {
+                throw new IllegalArgumentException("不能移除系统唯一超级管理员的身份");
+            }
             userRoleMapper.delete(new LambdaQueryWrapper<ConsoleUserRole>()
                     .eq(ConsoleUserRole::getUserId, userId));
             for (Long roleId : new LinkedHashSet<>(roleIds)) {
@@ -399,14 +480,73 @@ public class ConsoleAccountManagementService {
         detail.setRegistrationStatus(user.getRegistrationStatus());
         detail.setStatus(user.getStatus());
         detail.setPermissionVersion(user.getPermissionVersion());
+        detail.setProjectAccessMode("SELECTED".equals(user.getProjectAccessMode()) ? "SELECTED" : "ALL");
+        detail.setGlobalEditable(!Boolean.FALSE.equals(user.getGlobalEditable()));
+        detail.setProjectPermissionOverrides(permissionService.projectOverrides(user.getId()));
         detail.setLastLoginTime(user.getLastLoginTime());
         detail.setRoleIds(roleIds);
         detail.setRoleCodes(roles.stream().map(ConsoleRole::getRoleCode).toList());
         detail.setInheritedPermissions(inherited);
         detail.setPermissionOverrides(overrides);
-        detail.setEffectivePermissions(
-                permissionService.merge(inherited, overrides));
+        detail.setProjectIds(userProjectMapper == null ? List.of() : userProjectMapper.selectList(
+                new LambdaQueryWrapper<com.hengshucredit.rule.model.entity.ConsoleUserProject>()
+                        .eq(com.hengshucredit.rule.model.entity.ConsoleUserProject::getUserId, user.getId()))
+                .stream().map(com.hengshucredit.rule.model.entity.ConsoleUserProject::getProjectId).toList());
+        detail.setEffectivePermissions(new com.hengshucredit.rule.server.security.ConsoleProjectAccess.Scope(user.getId(),
+                Set.copyOf(detail.getProjectIds()), permissionService.merge(inherited, overrides),
+                "ALL".equals(detail.getProjectAccessMode()), detail.getGlobalEditable(), detail.getProjectPermissionOverrides()).availablePermissions());
         return detail;
+    }
+
+    public List<com.hengshucredit.rule.server.mapper.ConsoleUserProjectMapper.ProjectOption> projectOptions() {
+        return userProjectMapper.grantOptions();
+    }
+
+    private void replaceProjects(Long userId, List<Long> projectIds, String operator) {
+        if (projectIds == null) return;
+        Set<Long> unique = new LinkedHashSet<>(projectIds);
+        for (Long projectId : unique) {
+            if (projectId == null || projectId <= 0 || userProjectMapper.grantTargetExists(projectId) != 1) {
+                throw new IllegalArgumentException("授权项目不存在或已删除");
+            }
+        }
+        userProjectMapper.delete(new LambdaQueryWrapper<com.hengshucredit.rule.model.entity.ConsoleUserProject>()
+                .eq(com.hengshucredit.rule.model.entity.ConsoleUserProject::getUserId, userId));
+        for (Long projectId : unique) {
+            var grant = new com.hengshucredit.rule.model.entity.ConsoleUserProject();
+            grant.setUserId(userId); grant.setProjectId(projectId); grant.setCreateBy(operator);
+            userProjectMapper.insert(grant);
+        }
+    }
+
+    private void applyProjectPolicy(ConsoleUser user, String mode, Boolean globalEditable) {
+        if (mode != null && !Set.of("ALL", "SELECTED").contains(mode)) throw new IllegalArgumentException("项目范围必须为 ALL 或 SELECTED");
+        if (mode != null) user.setProjectAccessMode(mode);
+        else if (user.getProjectAccessMode() == null) user.setProjectAccessMode("ALL");
+        if (globalEditable != null) user.setGlobalEditable(globalEditable);
+        else if (user.getGlobalEditable() == null) user.setGlobalEditable(true);
+    }
+
+    private void replaceProjectPermissions(Long userId, Map<Long, Map<String, String>> overrides) {
+        if (overrides == null) return;
+        Map<String, ConsolePermission> catalogue = permissionsByCode();
+        var rows = new ArrayList<com.hengshucredit.rule.model.entity.ConsoleUserProjectPermission>();
+        for (var project : overrides.entrySet()) {
+            if (project.getKey() == null || project.getKey() <= 0 || userProjectMapper.grantTargetExists(project.getKey()) != 1) throw new IllegalArgumentException("配置权限的项目不存在");
+            if (project.getValue() == null) throw new IllegalArgumentException("项目权限配置不能为空");
+            for (var override : project.getValue().entrySet()) {
+                ConsolePermission permission = catalogue.get(override.getKey());
+                if (permission == null || !com.hengshucredit.rule.server.security.ConsoleProjectAccess.isProjectPermission(override.getKey())) {
+                    throw new IllegalArgumentException("该权限不支持按项目配置: " + override.getKey());
+                }
+                var row = new com.hengshucredit.rule.model.entity.ConsoleUserProjectPermission();
+                row.setUserId(userId); row.setProjectId(project.getKey()); row.setPermissionId(permission.getId()); row.setEffect(normalizeEffect(override.getValue()));
+                rows.add(row);
+            }
+        }
+        projectPermissionMapper.delete(new LambdaQueryWrapper<com.hengshucredit.rule.model.entity.ConsoleUserProjectPermission>()
+                .eq(com.hengshucredit.rule.model.entity.ConsoleUserProjectPermission::getUserId, userId));
+        rows.forEach(projectPermissionMapper::insert);
     }
 
     protected List<Long> enabledRoleIds(List<ConsoleRole> roles) {
@@ -537,11 +677,31 @@ public class ConsoleAccountManagementService {
 
     private String normalizeEmail(String email) {
         if (email == null || email.isBlank()) return null;
-        return email.trim().toLowerCase(Locale.ROOT);
+        String value = email.trim().toLowerCase(Locale.ROOT);
+        if (value.length() > 256 || !value.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) throw new IllegalArgumentException("请输入有效邮箱");
+        return value;
+    }
+
+    private void validateStatus(Integer status) {
+        if (status != null && status != 0 && status != 1) throw new IllegalArgumentException("状态必须为0或1");
+    }
+
+    private void lockAccounts() {
+        if (userMapper != null && userMapper.lockSecurity() == null) throw new IllegalStateException("账户安全锁未初始化");
+    }
+
+    private void revokeTokens(Long userId) {
+        tokenMapper.update(null, new LambdaUpdateWrapper<ConsoleAccountToken>()
+                .eq(ConsoleAccountToken::getUserId, userId).isNull(ConsoleAccountToken::getConsumedAt)
+                .set(ConsoleAccountToken::getConsumedAt, java.time.LocalDateTime.now()));
     }
 
     @Data
     public static class ConsoleUserDetail {
+        private List<Long> projectIds;
+        private String projectAccessMode;
+        private Boolean globalEditable;
+        private Map<Long, Map<String, String>> projectPermissionOverrides;
         private Long id;
         private String username;
         private String displayName;

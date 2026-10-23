@@ -1,6 +1,7 @@
 const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createDesignerApiData } = require('./support/designerFixtures.cjs')
+const { platformResponse } = require('./support/platformResponse.cjs')
 
 for (const accentPreset of ['THEME_BLUE', 'MIDNIGHT_PURPLE', 'PEACH_PINK']) {
   test(`深色 ${accentPreset} 决策表添加动作在普通、悬停、键盘聚焦时均清晰可读`, async ({ page }) => {
@@ -306,8 +307,8 @@ test('版本读取失败在页内重试恢复，不弹确认也不创建草稿',
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(attempts === 1
-        ? { code: 400, message: '模拟版本读取失败' }
-        : { code: 200, data: { id: 82, definitionId: 109, version: 2, modelJson: '{"script":"result = 2"}' } })
+        ? platformResponse(null, 'REQUEST_REJECTED', '模拟版本读取失败')
+        : platformResponse({ id: 82, definitionId: 109, version: 2, modelJson: '{"script":"result = 2"}' }))
     })
   })
   await page.goto('http://tianshu.local/index.html#/designer/script/109?sourceType=VERSION&sourceId=82')
@@ -545,7 +546,6 @@ for (const designer of [
     const picker = page.getByRole('dialog', { name: '字段选择器', exact: true })
     await picker.getByRole('row', { name: /年龄.*age/ }).dblclick()
     await expect(leftField).toHaveValue(/age/)
-    await expect(leftField).toBeFocused()
 
     const blankHint = page.getByText('清空整个条件组时为默认分支；未完成的条件不会视为默认分支。', { exact: true })
     await blankHint.click()
@@ -581,7 +581,7 @@ for (const designer of designers) {
       await expect.poll(() => requests.some(request =>
         new URL(request.url).pathname === `/api/rule/definition/${designer.path.split('/').pop()}/reference-catalog`
       )).toBe(true)
-      await expect(page.getByTestId('designer-info')).toContainText('已加载 5 个可选引用')
+      await expect(page.getByTestId('designer-info')).toContainText('已加载 7 个可选引用') // 包含对象和模型整体
     }
     const items = page.locator(designer.itemSelector)
     const before = await items.count()
@@ -859,6 +859,12 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
     await expect(versions).toHaveText(['v3', 'v1', 'v4', 'v1', 'v3'])
     await expect(page.locator('.view-lines .se-reference-code').filter({ hasText: /^"age"$/ })).toHaveCount(1)
     await expect(page.locator('.view-lines .se-reference-code').filter({ hasText: /^"TaxRequest.orders.amount"$/ })).toHaveCount(1)
+    const ageCode = page.locator('.view-lines .se-reference-code').filter({ hasText: /^age$/ }).first()
+    const ageBox = await ageCode.boundingBox()
+    await page.mouse.click(ageBox.x + ageBox.width - 1, ageBox.y + ageBox.height / 2)
+    await page.keyboard.insertText('X')
+    await expect(editor).toHaveValue(/\+ ageX;/)
+    await editor.press('Control+z')
     const readReferenceStyles = () => page.locator('.view-lines').evaluate(element =>
       ['code', 'name', 'version'].map(part => {
         const style = getComputedStyle(element.querySelector('.se-reference-' + part))

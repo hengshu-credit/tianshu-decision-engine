@@ -1403,11 +1403,15 @@ export default {
 .se-editor-container :deep(.se-reference-version) {
   border: none;
   border-radius: 0;
-  padding: 1px 5px;
-  line-height: 1.35;
+  padding: 0 2px;
+  line-height: inherit;
 }
 .se-editor-container :deep(.se-reference-code) {
-  background: color-mix(in srgb, var(--el-color-primary) 32%, var(--tianshu-bg-surface));
+  padding-left: 0;
+  padding-right: 0;
+}
+.se-editor-container :deep(.se-reference-code) {
+  background: var(--tianshu-border);
   color: var(--tianshu-primary-text);
   text-decoration: underline;
   text-decoration-color: var(--el-color-primary);
@@ -1415,21 +1419,41 @@ export default {
   text-underline-offset: 2px;
 }
 .se-editor-container :deep(.se-reference-type) {
-  background: color-mix(in srgb, var(--el-color-primary) 20%, var(--tianshu-bg-surface));
+  display: inline-flex;
+  width: 22px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding-left: 0;
+  padding-right: 0;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--tianshu-info-bg);
   color: var(--tianshu-info-text);
-  font-weight: 700;
-  border-radius: 4px 0 0 4px;
+}
+.se-editor-container :deep(.se-reference-type--number) {
+  color: var(--tianshu-success-text);
+  background: var(--tianshu-success-bg);
+}
+.se-editor-container :deep(.se-reference-type--collection) {
+  color: var(--tianshu-warning-text);
+  background: var(--tianshu-warning-bg);
+}
+.se-editor-container :deep(.se-reference-type--boolean) {
+  color: var(--tianshu-info-text);
+  background: var(--tianshu-info-bg);
 }
 .se-editor-container :deep(.se-reference-name) {
-  background: color-mix(in srgb, var(--el-color-success) 24%, var(--tianshu-bg-surface));
-  color: var(--tianshu-success-text);
+  background: var(--tianshu-bg-hover);
+  color: var(--tianshu-text-secondary);
   font-weight: 700;
 }
 .se-editor-container :deep(.se-reference-version) {
-  background: color-mix(in srgb, var(--el-color-warning) 24%, var(--tianshu-bg-surface));
-  color: var(--tianshu-warning-text);
+  background: var(--tianshu-bg-muted);
+  color: var(--tianshu-text-tertiary);
   font-weight: 700;
-  border-radius: 0 4px 4px 0;
+  border-radius: 0;
 }
 .se-footer {
   display: flex;

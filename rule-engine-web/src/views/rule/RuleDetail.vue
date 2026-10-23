@@ -37,6 +37,15 @@
           @click="openTestDialog"
           >规则测试</el-button
         >
+        <resource-version-manager
+          v-if="rule.id && detailActive && String(rule.id) === String($route.params.id)"
+          :show-trigger="true"
+          resource-type="RULE"
+          :resource-id="rule.id"
+          has-legacy
+          @legacy="openVersionDialog"
+          @changed="load"
+        />
       </div>
     </div>
 
@@ -89,35 +98,20 @@
       </div>
       <p class="revision-scope-note">发布与审批状态来自版本记录。当前页面的管理测试不作为该修订的测试证据。</p>
     </el-card>
-    <el-card v-else shadow="never" class="release-progress-card" data-testid="rule-release-progress">
-      <div class="release-progress-header">
-        <div>
-          <span class="section-kicker">RELEASE READINESS</span>
-          <strong>工作区发布准备</strong>
-          <span class="release-progress-summary">{{ releaseProgressSummary }}</span>
-        </div>
-        <el-tag :type="releaseProgressCompleted === releaseChecklist.length ? 'success' : 'warning'" size="small">
-          {{ releaseProgressCompleted }}/{{ releaseChecklist.length }} 已完成
-        </el-tag>
-      </div>
-      <div class="release-progress-steps">
-        <button
-          v-for="item in releaseChecklist"
-          :key="item.key"
-          type="button"
-          class="release-progress-step"
-          :class="`is-${item.status}`"
-          :data-step="item.key"
-          @click="goToChecklistItem(item)"
-        >
-          <span class="release-progress-step__index">{{ item.status === 'done' ? '✓' : item.index }}</span>
-          <span class="release-progress-step__body">
-            <strong>{{ item.label }}</strong>
-            <small>{{ item.detail }}</small>
-          </span>
-        </button>
-      </div>
-    </el-card>
+    <config-layer-guide
+      v-else
+      title="工作区发布准备"
+      :description="releaseProgressSummary"
+      aria-label="工作区发布准备"
+      test-id="rule-release-progress"
+      item-test-id-prefix="rule-release-step"
+      :items="releaseChecklist"
+      show-progress
+      progress-label="已完成"
+      ready-state-label="已完成"
+      interactive
+      @select="goToChecklistItem"
+    />
 
     <el-dialog
       title="编辑规则基本信息"
@@ -747,7 +741,7 @@
             </div>
           </div>
           <el-alert
-            title="契约随规则版本发布；保存只更新草稿，发布后下游才会使用新配置。正常和异常共用同一个外层模板，只有 data 节点内容不同。"
+            title="契约随规则版本发布；保存只更新草稿，发布后下游才会使用新配置。正常和异常共用同一个平台外层结构，只有 data 节点内容不同。"
             type="info"
             :closable="false"
             show-icon
@@ -778,6 +772,11 @@
               :closable="false"
               show-icon
             />
+            <el-collapse><el-collapse-item title="导入请求样例辅助选择来源路径">
+              <monaco-editor v-model:value="openRequestSampleText" language="json" height="160px" :read-only="!canEditDraft" />
+              <el-button :disabled="!canEditDraft" @click="importOpenRequestSample">生成请求路径目录</el-button>
+              <p v-if="openRequestSampleError" role="alert">{{ openRequestSampleError }}</p>
+            </el-collapse-item></el-collapse>
             <el-table
               :data="openApiForm.requestMappings"
               border
@@ -807,14 +806,14 @@
               </el-table-column>
               <el-table-column label="来源路径 / Header" min-width="220">
                 <template v-slot="{ row }"
-                  ><el-input :disabled="!canEditDraft"
-                    v-model="row.sourcePath"
-                    :placeholder="
-                      row.sourceType === 'HEADER'
-                        ? 'X-Customer-Id'
-                        : '$.customer.id'
-                    "
-                /></template>
+                  ><protocol-path-picker
+                    :value="row.sourcePath"
+                    :paths="row.sourceType === 'HEADER' ? openApiHeaderPathOptions : openApiBodyPathOptions"
+                    :context-label="row.sourceType === 'HEADER' ? '开放 API 请求 Header' : '开放 API 请求体'"
+                    :disabled="!canEditDraft"
+                    :placeholder="row.sourceType === 'HEADER' ? '选择或输入 Header 名称' : '选择或输入 JSONPath'"
+                    @update:value="row.sourcePath = $event"
+                  /></template>
               </el-table-column>
               <el-table-column label="目标类型" width="120">
                 <template v-slot="{ row }"
@@ -924,9 +923,7 @@
           <div class="open-api-section">
             <div class="open-api-title">统一响应契约</div>
             <div class="open-api-help">
-              外层模板必须且只能包含一个
-              <code>${data}</code
-              >；可用占位符：<code>${status.success}</code>、<code>${status.code}</code>、<code>${status.message}</code>、<code>${status.httpStatus}</code>、<code>${traceId}</code>。
+              响应外层固定为 code、message、success、detail、traceId 和 data，结果码与描述由平台统一提供。下方可定制 data 内容和业务响应头。
             </div>
             <el-form
               :model="openApiForm"
@@ -934,22 +931,7 @@
               class="open-api-response-form"
             >
               <el-row :gutter="12" class="open-api-editors">
-                <el-col :lg="12" :md="24">
-                  <el-form-item label="外层响应 JSON"
-                    ><monaco-editor
-                      :value="openEnvelopeText"
-                      :read-only="!canEditDraft"
-                      @update:value="updateOpenApiEditor('openEnvelopeText', $event)"
-                      language="json"
-                      height="230px"
-                  /></el-form-item>
-                </el-col>
-                <el-col :lg="12" :md="24">
-                  <el-form-item label="data JSONPath"
-                    ><el-input :disabled="!canEditDraft"
-                      v-model="openApiForm.dataPath"
-                      placeholder="$.data"
-                  /></el-form-item>
+                <el-col :span="24">
                   <el-form-item label="响应 Header JSON"
                     ><monaco-editor
                       :value="openResponseHeadersText"
@@ -968,7 +950,7 @@
                 ><span v-if="!openOutputPlaceholders.length">暂无输出字段</span>
               </div>
               <div class="open-api-help">
-                字段校验异常可用占位符：<code>${error.message}</code>、<code>${error.field}</code>、<code>${error.validationCode}</code>、<code>${error.validationName}</code>。原有异常模板无需修改。
+                字段校验异常可用占位符：<code>${error.message}</code>、<code>${error.field}</code>、<code>${error.validationCode}</code>、<code>${error.validationName}</code>。
               </div>
               <el-row :gutter="12" class="open-api-editors">
                 <el-col :lg="12" :md="24"
@@ -1008,9 +990,9 @@
           </div>
 
           <div class="open-api-section">
-            <div class="open-api-title">开放接口状态码</div>
+            <div class="open-api-title">平台响应结果码</div>
             <div class="open-api-help">
-              下游以六位业务 code 判断结果；HTTP
+              所有接口仅以 000000 表示成功；code、message 和 detail 由平台统一提供。HTTP
               状态码保留标准传输语义。日/月限额编码为预留编码，可供后续额度策略直接复用。
             </div>
             <el-table show-overflow-tooltip
@@ -1054,7 +1036,7 @@
       :close-on-click-modal="false"
     >
       <el-alert
-        title="预览使用示例占位值，不会执行规则或发起外数请求。成功与异常响应始终使用同一个外层模板。"
+        title="预览使用示例占位值，不会执行规则或发起外数请求。成功与异常响应始终使用同一个平台外层结构。"
         type="success"
         :closable="false"
         show-icon
@@ -1400,6 +1382,8 @@
           :model-type="rule.modelType"
           :left-version="versionCompare.left"
           :right-version="versionCompare.right"
+            :references="ruleVersionReferences"
+            :functions="idempotencyFunctions"
         />
         <div
           v-else-if="versions.length >= 2 && !versionCompareLoading"
@@ -1456,6 +1440,9 @@
 </template>
 
 <script>
+import { loadPagedCatalog } from '@/utils/pagedCatalog'
+import { PLATFORM_RESPONSE_CODES, PLATFORM_CODES } from '@/utils/platformResponse'
+
 import { chooseVersionRestore, versionDisplayLabel } from '@/utils/versionRestore'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import { markRaw } from 'vue'
@@ -1504,8 +1491,13 @@ import RuleValidationReport from '@/components/rule/RuleValidationReport.vue'
 import RuleLifecycleTimeline from '@/components/rule/RuleLifecycleTimeline.vue'
 import RuleFieldHierarchyDisplay from '@/components/rule/RuleFieldHierarchyDisplay.vue'
 import RuleRevisionFieldsPanel from '@/components/rule/RuleRevisionFieldsPanel.vue'
+import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
 import VarPicker from '@/components/common/VarPicker.vue'
+import ProtocolPathPicker from '@/components/common/ProtocolPathPicker.vue'
+import { samplePathOptions } from '@/utils/apiExecution'
+import { isRestrictedJsonPath } from '@/utils/restrictedJsonPath'
 import ArtifactDeploymentDialog from '@/components/artifact/ArtifactDeploymentDialog.vue'
+import ResourceVersionManager from '@/components/common/ResourceVersionManager.vue'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import { OPERAND_KINDS, collectOperandReferences, validateOperand } from '@/utils/operand'
@@ -1574,100 +1566,7 @@ function normalizeDefinitionId(value) {
   return /^[1-9]\d*$/.test(id) ? value : null
 }
 
-const OPEN_API_STATUS_CODES = [
-  { code: '000000', scene: '成功', message: '成功', httpStatus: 200 },
-  {
-    code: '100001',
-    scene: '入参校验',
-    message: '入参校验失败',
-    httpStatus: 400,
-  },
-  {
-    code: '100002',
-    scene: '必填字段',
-    message: '必填字段缺失',
-    httpStatus: 400,
-  },
-  {
-    code: '200001',
-    scene: '结果异常',
-    message: '结果处理异常',
-    httpStatus: 500,
-  },
-  {
-    code: '300001',
-    scene: 'Token 过期',
-    message: 'Token 已过期或失效',
-    httpStatus: 401,
-  },
-  {
-    code: '300002',
-    scene: '账户密码错误',
-    message: '账户或密码错误',
-    httpStatus: 401,
-  },
-  {
-    code: '300003',
-    scene: 'IP 限制',
-    message: 'IP 不在访问白名单',
-    httpStatus: 403,
-  },
-  {
-    code: '300004',
-    scene: '域名限制',
-    message: '域名不在访问白名单',
-    httpStatus: 403,
-  },
-  { code: '300005', scene: '账户停用', message: '账户已停用', httpStatus: 403 },
-  {
-    code: '400001',
-    scene: 'QPS/并发超限',
-    message: 'QPS 或并发超过限制',
-    httpStatus: 429,
-  },
-  {
-    code: '400002',
-    scene: '请求过于频繁',
-    message: '请求过于频繁',
-    httpStatus: 429,
-  },
-  {
-    code: '400003',
-    scene: '请求超时',
-    message: '请求处理超时',
-    httpStatus: 504,
-  },
-  {
-    code: '500001',
-    scene: '产品无权限',
-    message: '产品无访问权限',
-    httpStatus: 403,
-  },
-  {
-    code: '500002',
-    scene: '日限额',
-    message: '已超过日调用限额',
-    httpStatus: 429,
-  },
-  {
-    code: '500003',
-    scene: '月限额',
-    message: '已超过月调用限额',
-    httpStatus: 429,
-  },
-  {
-    code: '500004',
-    scene: '请求产品无权限',
-    message: '请求产品不存在或未授权',
-    httpStatus: 403,
-  },
-  {
-    code: '900001',
-    scene: '系统异常',
-    message: '系统执行异常',
-    httpStatus: 500,
-  },
-]
+const OPEN_API_STATUS_CODES = PLATFORM_RESPONSE_CODES.map(item => ({ ...item, scene: item.message }))
 
 function createDefaultOpenApiContract() {
   return {
@@ -1676,14 +1575,6 @@ function createDefaultOpenApiContract() {
     returnTrace: false,
     requestMappings: [],
     responseMappings: [],
-    envelopeTemplate: {
-      success: '${status.success}',
-      code: '${status.code}',
-      message: '${status.message}',
-      traceId: '${traceId}',
-      data: '${data}',
-    },
-    dataPath: '$.data',
     successDataTemplate: '${response}',
     errorDataTemplate: {
       errorCode: '${status.code}',
@@ -1702,6 +1593,9 @@ function createDefaultOpenApiContract() {
 export default {
   data() {
     return {
+      openRequestSampleText: '{}',
+      openRequestSamplePaths: [],
+      openRequestSampleError: '',
       loading: false,
       loadError: '',
       detailLoadRequestId: 0,
@@ -1731,7 +1625,6 @@ export default {
       openApiSuccessPreview: {},
       openApiErrorPreview: {},
       openApiForm: createDefaultOpenApiContract(),
-      openEnvelopeText: '',
       openSuccessDataText: '',
       openErrorDataText: '',
       openResponseHeadersText: '',
@@ -1769,7 +1662,7 @@ export default {
         ruleName: '',
         description: '',
       },
-      fieldPageSize: 100,
+      fieldPageSize: 20,
       inputFieldPage: 1,
       outputFieldPage: 1,
       // 测试相关
@@ -1820,8 +1713,11 @@ export default {
     RuleLifecycleTimeline,
     RuleFieldHierarchyDisplay,
     RuleRevisionFieldsPanel,
+    ConfigLayerGuide,
     VarPicker,
+    ProtocolPathPicker,
     ArtifactDeploymentDialog,
+    ResourceVersionManager,
     OperandPicker,
     ElIconSetting,
     ElIconArrowDown,
@@ -1966,6 +1862,9 @@ export default {
     idempotencyFunctions() {
       return IDEMPOTENCY_PURE_FUNCTIONS
     },
+    ruleVersionReferences() {
+      return Object.values(this.varMap || {})
+    },
     idempotencyFormulaPreview() {
       return (this.openApiForm.idempotency?.components || []).map((item, index) => ({
         index: index + 1,
@@ -2000,6 +1899,12 @@ export default {
     },
     openOutputPickerItems() {
       return this.openApiPickerItems(this.rule && this.rule.outputFieldsJson)
+    },
+    openApiBodyPathOptions() {
+      return this.openRequestSamplePaths
+    },
+    openApiHeaderPathOptions() {
+      return [...new Set((this.openApiForm.requestMappings || []).filter(item => item.sourceType === 'HEADER').map(item => item.sourcePath).filter(Boolean))].map(value => ({ value, label: value, type: 'STRING' }))
     },
     openOutputPlaceholders() {
       return ((this.rule && this.rule.outputFieldsJson) || [])
@@ -2039,7 +1944,7 @@ export default {
         { key: 'test', label: '测试样例', done: testPassed, detail: testPassed ? '最近一次测试执行成功' : '执行一次规则测试并核对结果' },
         { key: 'publish', label: '审批发布', done: published, detail: published ? `线上版本 v${this.rule.publishedVersion || ''}` : '提交审批、批准后发布' },
       ]
-      return steps.map((item, index) => ({ ...item, index: index + 1, status: item.done ? 'done' : 'pending' }))
+      return steps.map((item, index) => ({ ...item, index: index + 1, status: item.done ? 'READY' : 'PENDING' }))
     },
     releaseProgressCompleted() {
       return this.releaseChecklist.filter(item => item.done).length
@@ -2080,6 +1985,13 @@ export default {
     },
   },
   methods: {
+    importOpenRequestSample() {
+      try {
+        const sample = JSON.parse(this.openRequestSampleText)
+        this.openRequestSamplePaths = samplePathOptions(sample, '$').map(path => ({ ...path, disabled: !isRestrictedJsonPath(path.value) }))
+        this.openRequestSampleError = this.openRequestSamplePaths.some(path => path.disabled) ? '部分字段名不符合开放接口的受限 JSONPath，已保留展示并禁用选择。' : ''
+      } catch { this.openRequestSampleError = '请输入合法 JSON 请求样例' }
+    },
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     versionDisplayLabel,
     executionSourceLabel,
@@ -2620,7 +2532,6 @@ export default {
         targetField: item.targetField || '',
       }))
       this.openApiForm = parsed
-      this.openEnvelopeText = this.formatOpenJson(parsed.envelopeTemplate)
       this.openSuccessDataText = this.formatOpenJson(parsed.successDataTemplate)
       this.openErrorDataText = this.formatOpenJson(parsed.errorDataTemplate)
       this.openResponseHeadersText = this.formatOpenJson(
@@ -2687,9 +2598,9 @@ export default {
         const separator = item.value.indexOf(':')
         return {
           targetRefType: item.value.substring(0, separator),
-          targetVarId: Number(item.value.substring(separator + 1)),
+          targetVarId: item.value.substring(separator + 1),
           sourceType: 'BODY',
-          sourcePath: item.externalName ? '$.' + item.externalName : '$.',
+          sourcePath: item.externalName ? (/^[A-Za-z_][A-Za-z0-9_]*$/.test(item.externalName) ? '$.' + item.externalName : '$[' + JSON.stringify(item.externalName) + ']') : '$.',
           required: false,
           defaultValue: '',
           targetType: item.targetType,
@@ -2701,7 +2612,7 @@ export default {
         const separator = item.value.indexOf(':')
         return {
           sourceRefType: item.value.substring(0, separator),
-          sourceVarId: Number(item.value.substring(separator + 1)),
+          sourceVarId: item.value.substring(separator + 1),
           targetField: item.scriptName,
         }
       })
@@ -2746,6 +2657,7 @@ export default {
       if (option) row['targetField'] = option.scriptName
     },
     buildOpenApiContract() {
+      const resourceId = value => Number.isSafeInteger(Number(value)) ? Number(value) : value
       const mappings = (this.openApiForm.requestMappings || []).map(
         (item, index) => {
           const targetKey = String(item.targetKey || '')
@@ -2756,7 +2668,7 @@ export default {
             throw new Error('请求映射第 ' + (index + 1) + ' 行未填写来源路径')
           return {
             targetRefType: targetKey.substring(0, separator),
-            targetVarId: Number(targetKey.substring(separator + 1)),
+            targetVarId: resourceId(targetKey.substring(separator + 1)),
             sourceType: item.sourceType || 'BODY',
             sourcePath: String(item.sourcePath).trim(),
             required: item.required === true,
@@ -2781,7 +2693,7 @@ export default {
             throw new Error('响应映射第 ' + (index + 1) + ' 行未填写对外字段')
           return {
             sourceRefType: sourceKey.substring(0, separator),
-            sourceVarId: Number(sourceKey.substring(separator + 1)),
+            sourceVarId: resourceId(sourceKey.substring(separator + 1)),
             targetField,
           }
         }
@@ -2792,8 +2704,6 @@ export default {
         returnTrace: this.openApiForm.returnTrace === true,
         requestMappings: mappings,
         responseMappings,
-        envelopeTemplate: this.parseOpenJson(this.openEnvelopeText, '外层响应'),
-        dataPath: String(this.openApiForm.dataPath || '').trim(),
         successDataTemplate: this.parseOpenJson(
           this.openSuccessDataText,
           '成功 data'
@@ -2842,14 +2752,13 @@ export default {
       // 这样编辑器可以先保存草稿再开启接口完成映射。
       if (!contract.enabled) return
       const targets = {}
-      const bodyPath = /^\$(?:\.[A-Za-z0-9_-]+|\[\d+\])*$/
       const headerName = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
       ;(contract.requestMappings || []).forEach((item, index) => {
         const target = item.targetRefType + ':' + item.targetVarId
         if (targets[target])
           throw new Error('请求映射第 ' + (index + 1) + ' 行目标字段重复')
         targets[target] = true
-        if (item.sourceType === 'BODY' && !bodyPath.test(item.sourcePath)) {
+        if (item.sourceType === 'BODY' && !isRestrictedJsonPath(item.sourcePath)) {
           throw new Error('请求映射第 ' + (index + 1) + ' 行不是受限 JSONPath')
         }
         if (item.sourceType === 'HEADER' && !headerName.test(item.sourcePath)) {
@@ -2881,42 +2790,6 @@ export default {
         if (!headerName.test(name))
           throw new Error('响应 Header 名称不合法：' + name)
       })
-      const dataSlots = this.countOpenDataSlots(contract.envelopeTemplate)
-      if (
-        dataSlots !== 1 ||
-        this.readOpenTemplatePath(
-          contract.envelopeTemplate,
-          contract.dataPath
-        ) !== '${data}'
-      ) {
-        throw new Error('data JSONPath 必须指向外层响应中唯一的 ${data} 占位符')
-      }
-    },
-    countOpenDataSlots(value) {
-      if (Array.isArray(value))
-        return value.reduce(
-          (total, item) => total + this.countOpenDataSlots(item),
-          0
-        )
-      if (value && typeof value === 'object') {
-        return Object.keys(value).reduce(
-          (total, key) => total + this.countOpenDataSlots(value[key]),
-          0
-        )
-      }
-      return value === '${data}' ? 1 : 0
-    },
-    readOpenTemplatePath(root, path) {
-      if (!/^\$(?:\.[A-Za-z0-9_-]+|\[\d+\])*$/.test(path || ''))
-        return undefined
-      const parts =
-        String(path)
-          .slice(1)
-          .match(/[A-Za-z0-9_-]+|\d+/g) || []
-      return parts.reduce(
-        (value, part) => (value == null ? undefined : value[part]),
-        root
-      )
     },
     renderOpenTemplate(template, context) {
       if (Array.isArray(template))
@@ -2936,11 +2809,13 @@ export default {
       })
     },
     openPreviewContext(success) {
+      const status = success ? PLATFORM_CODES.SUCCESS : PLATFORM_CODES.PARAMETER_INVALID
       const context = {
         'status.success': success,
-        'status.code': success ? '000000' : '100001',
-        'status.message': success ? '成功' : '入参校验失败',
-        'status.httpStatus': success ? 200 : 400,
+        'status.code': status.code,
+        'status.message': status.message,
+        'status.httpStatus': status.httpStatus,
+        'status.detail': success ? null : '字段值不满足校验逻辑',
         traceId: 'AP-P-PREVIEW',
         result: { sample: true },
         trace: [{ node: 'preview' }],
@@ -2978,14 +2853,14 @@ export default {
           contract.errorDataTemplate,
           errorContext
         )
-        this.openApiSuccessPreview = this.renderOpenTemplate(
-          contract.envelopeTemplate,
-          successContext
-        )
-        this.openApiErrorPreview = this.renderOpenTemplate(
-          contract.envelopeTemplate,
-          errorContext
-        )
+        this.openApiSuccessPreview = {}
+        this.openApiErrorPreview = {}
+        for (const [body, context] of [[this.openApiSuccessPreview, successContext], [this.openApiErrorPreview, errorContext]]) {
+          Object.assign(body, {
+            code: context['status.code'], message: context['status.message'], detail: context['status.detail'],
+            success: context['status.success'], traceId: context.traceId, data: context.data,
+          })
+        }
         this.openApiPreviewVisible = true
         this.$message.success('开放接口契约校验通过')
       } catch (e) {
@@ -3092,12 +2967,10 @@ export default {
       try {
         const [varsRes, constRes, treeRes, modelRes] = await Promise.all([
           listVariablesByProject(projectId),
-          listVariables({
+          loadPagedCatalog(listVariables, {
             projectId,
             varSource: 'CONSTANT',
-            pageNum: 1,
-            pageSize: 5000,
-          }),
+            }),
           getVariableTree(projectId),
           listAllModelsByProject(projectId),
         ])
@@ -3130,13 +3003,11 @@ export default {
     async loadGlobalVars(requestId = this.detailLoadRequestId) {
       try {
         const [varsRes, constRes, treeRes, modelRes] = await Promise.all([
-          listVariables({ scope: 'GLOBAL', pageNum: 1, pageSize: 5000 }),
-          listVariables({
+          loadPagedCatalog(listVariables, { scope: 'GLOBAL', }),
+          loadPagedCatalog(listVariables, {
             scope: 'GLOBAL',
             varSource: 'CONSTANT',
-            pageNum: 1,
-            pageSize: 5000,
-          }),
+            }),
           getVariableTree(0),
           listAllModelsByProject(0),
         ])
@@ -3486,7 +3357,7 @@ export default {
         row['validationOverride'] = 1
         row['_editing'] = false
         row['_saving'] = false
-        this.$message.success('保存成功')
+        this.$message.success('规则草稿字段已保存，发布审批通过后生效')
       } catch (e) {
         row['_saving'] = false
         this.$message.error('保存失败: ' + (e.message || e))
@@ -3550,7 +3421,7 @@ export default {
         })
         row['_editing'] = false
         row['_saving'] = false
-        this.$message.success('保存成功')
+        this.$message.success('规则草稿字段已保存，发布审批通过后生效')
       } catch (e) {
         row['_saving'] = false
         this.$message.error('保存失败: ' + (e.message || e))
@@ -4031,18 +3902,7 @@ export default {
 .release-progress-card { margin-bottom: 16px; }
 .release-progress-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .release-progress-header > div { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.section-kicker { color: var(--tianshu-text-tertiary); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
 .release-progress-summary { color: var(--tianshu-text-secondary); font-size: 13px; }
-.release-progress-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
-.release-progress-step { display: flex; min-width: 0; gap: 8px; padding: 10px; color: var(--tianshu-text-primary); text-align: left; background: var(--tianshu-bg-muted); border: 1px solid var(--tianshu-border-subtle); border-radius: 6px; cursor: pointer; }
-.release-progress-step:hover, .release-progress-step:focus-visible { border-color: var(--el-color-primary); outline: none; }
-.release-progress-step__index { display: inline-flex; flex: none; width: 22px; height: 22px; align-items: center; justify-content: center; color: var(--tianshu-text-tertiary); font-size: 12px; font-weight: 700; background: var(--tianshu-bg-soft); border-radius: 50%; }
-.release-progress-step.is-done .release-progress-step__index { color: var(--tianshu-text-inverse); background: var(--el-color-success); }
-.release-progress-step__body { display: grid; min-width: 0; gap: 3px; }
-.release-progress-step__body strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.release-progress-step__body small { overflow: hidden; color: var(--tianshu-text-tertiary); font-size: 11px; line-height: 1.35; text-overflow: ellipsis; }
-@media (max-width: 1100px) { .release-progress-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 680px) { .release-progress-steps { grid-template-columns: 1fr; } }
 .script-unbound {
   color: var(--tianshu-text-tertiary);
   font-style: italic;

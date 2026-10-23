@@ -106,6 +106,7 @@ public class ConsoleAccountManagementServiceTest {
     }
 
     private static class TestService extends ConsoleAccountManagementService {
+        @Override protected Long systemAdministratorId() { return null; }
         private boolean targetIsAdministrator;
         private long otherAdministratorCount;
         private Integer savedStatus;

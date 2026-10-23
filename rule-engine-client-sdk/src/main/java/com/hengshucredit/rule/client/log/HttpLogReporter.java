@@ -1,7 +1,7 @@
 package com.hengshucredit.rule.client.log;
 
 import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
+import com.hengshucredit.rule.client.http.PlatformHttpResponses;
 import com.hengshucredit.rule.client.auth.ClientAuthConfig;
 import com.hengshucredit.rule.client.auth.ClientRequestAuthenticator;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
@@ -273,21 +273,7 @@ public class HttpLogReporter implements ExecutionLogReporter {
             activeCallGeneration = workerGeneration;
         }
         try (Response response = call.execute()) {
-            if (!response.isSuccessful()) {
-                throw new IOException("HTTP status " + response.code());
-            }
-            String responseBody = response.body() == null ? null : response.body().string();
-            if (responseBody == null || responseBody.trim().isEmpty()) {
-                throw new IOException("Empty response envelope");
-            }
-            JSONObject envelope = JSON.parseObject(responseBody);
-            Integer code = envelope.getInteger("code");
-            if (code == null) {
-                throw new IOException("Response envelope is missing code");
-            }
-            if (code != 200) {
-                throw new IOException("Business code " + code + ": " + envelope.getString("message"));
-            }
+            PlatformHttpResponses.requireSuccess(response, PlatformHttpResponses.read(response));
         } finally {
             synchronized (lifecycleLock) {
                 if (activeCall == call && activeCallGeneration == workerGeneration) {

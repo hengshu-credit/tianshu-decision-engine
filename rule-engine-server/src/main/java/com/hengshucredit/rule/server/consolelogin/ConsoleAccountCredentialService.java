@@ -28,7 +28,9 @@ import java.util.regex.Pattern;
 public class ConsoleAccountCredentialService {
 
     private static final String EMAIL_VERIFY = "EMAIL_VERIFY";
+    private static final String REGISTRATION_VERIFY = "REGISTRATION_VERIFY";
     private static final String PASSWORD_RESET = "PASSWORD_RESET";
+    static final String ADMIN_RECOVERY = "ADMIN_RECOVERY";
     private static final Pattern EMAIL_PATTERN = Pattern.compile(
             "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -48,14 +50,25 @@ public class ConsoleAccountCredentialService {
     @Resource
     private RuleEngineConsoleLoginProperties properties;
 
+    @Resource
+    private DatabaseConsoleAccountService databaseAccounts;
+
     public boolean mailConfigured() {
-        return mailService.configured();
+        String base = properties.getMail().getBaseUrl();
+        if (!mailService.configured() || base == null || base.isBlank()) return false;
+        try {
+            java.net.URI uri = java.net.URI.create(base.trim());
+            return ("https".equalsIgnoreCase(uri.getScheme()) || "http".equalsIgnoreCase(uri.getScheme()))
+                    && uri.getHost() != null && uri.getUserInfo() == null && uri.getQuery() == null && uri.getFragment() == null;
+        } catch (IllegalArgumentException error) { return false; }
+    }
+
+    public boolean registrationReady() {
+        return !databaseAccounts.initializationRequired();
     }
 
     public boolean breakGlassConfigured() {
-        return properties.isBreakGlassRecoveryEnabled()
-                && properties.getBreakGlassRecoveryKey() != null
-                && !properties.getBreakGlassRecoveryKey().isBlank();
+        return registrationReady();
     }
 
     @Transactional
@@ -65,11 +78,15 @@ public class ConsoleAccountCredentialService {
             throw new IllegalStateException("控制台注册未启用");
         }
         ensureMailConfigured("注册邮件服务未配置");
+        lockAccounts();
+        if (!registrationReady()) {
+            throw new IllegalStateException("请先通过注册页面完成超级管理员初始化");
+        }
         String normalizedUsername = requireUsername(username);
         String normalizedEmail = requireEmail(email);
         requirePassword(password);
         if (userMapper.selectOne(new LambdaQueryWrapper<ConsoleUser>()
-                .eq(ConsoleUser::getUsername, normalizedUsername)
+                .and(q -> q.eq(ConsoleUser::getUsername, normalizedUsername).or().eq(ConsoleUser::getOperatorName, normalizedUsername).or().eq(ConsoleUser::getMergedUsername, normalizedUsername))
                 .last("LIMIT 1")) != null) {
             throw new IllegalArgumentException("用户名或邮箱不可用");
         }
@@ -80,6 +97,7 @@ public class ConsoleAccountCredentialService {
         }
         ConsoleUser user = new ConsoleUser();
         user.setUsername(normalizedUsername);
+        user.setOperatorName(normalizedUsername);
         user.setDisplayName(displayName == null || displayName.isBlank()
                 ? normalizedUsername : displayName.trim());
         user.setEmail(normalizedEmail);
@@ -91,7 +109,7 @@ public class ConsoleAccountCredentialService {
         user.setCreateBy(normalizedUsername);
         user.setUpdateBy(normalizedUsername);
         userMapper.insert(user);
-        String token = issueToken(user.getId(), EMAIL_VERIFY,
+        String token = issueToken(user.getId(), REGISTRATION_VERIFY,
                 properties.getMail().getVerificationTtlMinutes(), requestIp);
         mailService.sendVerification(normalizedEmail, user.getDisplayName(),
                 buildLink(baseUrl, "/register", token));
@@ -100,14 +118,23 @@ public class ConsoleAccountCredentialService {
 
     @Transactional
     public void verifyEmail(String token, String requestIp) {
-        ConsoleAccountToken accountToken = requireToken(token, EMAIL_VERIFY);
+        lockAccounts();
+        ConsoleAccountToken accountToken = requireToken(token, EMAIL_VERIFY, REGISTRATION_VERIFY);
         ConsoleUser user = requireUser(accountToken.getUserId());
+        boolean registration = REGISTRATION_VERIFY.equals(accountToken.getPurpose());
+        if (accountToken.getTargetEmail() == null || !accountToken.getTargetEmail().equals(user.getEmail())
+                || (registration && !"PENDING".equals(user.getRegistrationStatus()))
+                || (!registration && !Integer.valueOf(1).equals(user.getStatus()))) {
+            throw new IllegalArgumentException("账户状态或邮箱已变更，请重新申请验证链接");
+        }
+        consume(accountToken);
         user.setEmailVerifiedAt(LocalDateTime.now());
-        user.setRegistrationStatus("ACTIVE");
-        user.setStatus(1);
+        if (registration) {
+            user.setRegistrationStatus("ACTIVE");
+            user.setStatus(1);
+        }
         user.setUpdateBy(user.getUsername());
         userMapper.updateById(user);
-        consume(accountToken);
         appendAudit(user, "EMAIL_VERIFY", requestIp);
     }
 
@@ -116,15 +143,17 @@ public class ConsoleAccountCredentialService {
                                       String requestIp) {
         if (!properties.isPasswordRecoveryEnabled()) return;
         ensureMailConfigured("密码找回邮件服务未配置");
+        lockAccounts();
         String value = identifier == null ? "" : identifier.trim();
-        ConsoleUser user = value.isEmpty() ? null
-                : userMapper.selectOne(new LambdaQueryWrapper<ConsoleUser>()
+        var matches = value.isEmpty() ? java.util.List.<ConsoleUser>of()
+                : userMapper.selectList(new LambdaQueryWrapper<ConsoleUser>()
                 .and(wrapper -> wrapper.eq(ConsoleUser::getUsername, value)
                         .or().eq(ConsoleUser::getEmail,
                                 value.toLowerCase(Locale.ROOT)))
                 .eq(ConsoleUser::getStatus, 1)
                 .eq(ConsoleUser::getRegistrationStatus, "ACTIVE")
-                .last("LIMIT 1"));
+                .last("LIMIT 2"));
+        ConsoleUser user = matches.size() == 1 ? matches.get(0) : null;
         if (user == null || user.getEmail() == null
                 || user.getEmail().isBlank()
                 || user.getEmailVerifiedAt() == null) return;
@@ -137,14 +166,21 @@ public class ConsoleAccountCredentialService {
 
     @Transactional
     public void resetPassword(String token, String password, String requestIp) {
+        if (!properties.isPasswordRecoveryEnabled()) throw new IllegalStateException("密码找回未启用");
         requirePassword(password);
+        lockAccounts();
         ConsoleAccountToken accountToken = requireToken(token, PASSWORD_RESET);
         ConsoleUser user = requireUser(accountToken.getUserId());
+        if (!Integer.valueOf(1).equals(user.getStatus()) || accountToken.getTargetEmail() == null
+                || !accountToken.getTargetEmail().equals(user.getEmail()) || user.getEmailVerifiedAt() == null) {
+            throw new IllegalArgumentException("账户状态或邮箱已变更，请重新申请重置链接");
+        }
+        consume(accountToken);
         user.setPasswordHash(BCrypt.hashpw(password));
         user.setPermissionVersion(nextVersion(user));
         user.setUpdateBy(user.getUsername());
         userMapper.updateById(user);
-        consume(accountToken);
+        revokeTokens(user.getId());
         appendAudit(user, "PASSWORD_RESET_SUCCESS", requestIp);
     }
 
@@ -152,6 +188,7 @@ public class ConsoleAccountCredentialService {
     public void changePassword(Long userId, String currentPassword,
                                String password, String requestIp) {
         requirePassword(password);
+        lockAccounts();
         ConsoleUser user = requireUser(userId);
         if (!Integer.valueOf(1).equals(user.getStatus())
                 || !BCrypt.checkpw(currentPassword == null ? "" : currentPassword,
@@ -162,6 +199,7 @@ public class ConsoleAccountCredentialService {
         user.setPermissionVersion(nextVersion(user));
         user.setUpdateBy(user.getUsername());
         userMapper.updateById(user);
+        revokeTokens(userId);
         appendAudit(user, "PASSWORD_CHANGE", requestIp);
     }
 
@@ -169,22 +207,34 @@ public class ConsoleAccountCredentialService {
     public void emergencyReset(String username, String recoveryKey,
                                String password, String requestIp) {
         requirePassword(password);
-        if (!breakGlassConfigured()) {
-            throw new IllegalStateException("超级管理员应急恢复未启用");
-        }
-        ConsoleUser user = username == null ? null
-                : userMapper.selectOne(new LambdaQueryWrapper<ConsoleUser>()
-                .eq(ConsoleUser::getUsername, username.trim())
-                .last("LIMIT 1"));
-        if (user == null || !isSuperAdministrator(user.getId())
-                || !constantTimeEquals(properties.getBreakGlassRecoveryKey(), recoveryKey)) {
+        String newUsername = requireUsername(username);
+        lockAccounts();
+        ConsoleAccountToken token = requireToken(recoveryKey, ADMIN_RECOVERY);
+        ConsoleUser user = requireUser(token.getUserId());
+        if (!user.getId().equals(userMapper.administratorUserId()) || !isSuperAdministrator(user.getId())) {
             throw new IllegalArgumentException("应急恢复信息无效");
         }
+        if (userMapper.selectCount(new LambdaQueryWrapper<ConsoleUser>()
+                .and(q -> q.eq(ConsoleUser::getUsername, newUsername).or().eq(ConsoleUser::getOperatorName, newUsername).or().eq(ConsoleUser::getMergedUsername, newUsername))
+                .ne(ConsoleUser::getId, user.getId())
+                .and(q -> q.isNull(ConsoleUser::getMergedIntoUserId).or().ne(ConsoleUser::getMergedIntoUserId, user.getId()))) > 0) {
+            throw new IllegalArgumentException("新用户名已被其他账户使用");
+        }
+        consume(token);
+        if (user.getOperatorName() == null) user.setOperatorName(user.getUsername());
+        if (user.getUsername().equals(user.getDisplayName())) user.setDisplayName(newUsername);
+        user.setUsername(newUsername);
         user.setPasswordHash(BCrypt.hashpw(password));
+        user.setStatus(1);
+        user.setRegistrationStatus("ACTIVE");
         user.setPermissionVersion(nextVersion(user));
         user.setUpdateBy(user.getUsername());
         userMapper.updateById(user);
-        appendAudit(user, "SUPER_ADMIN_EMERGENCY_PASSWORD_RESET", requestIp);
+        revokeTokens(user.getId());
+        for (var role : roleMapper.selectList(new LambdaQueryWrapper<com.hengshucredit.rule.model.entity.ConsoleRole>().eq(com.hengshucredit.rule.model.entity.ConsoleRole::getRoleCode, "SUPER_ADMIN"))) {
+            if (!Integer.valueOf(1).equals(role.getStatus())) { role.setStatus(1); roleMapper.updateById(role); }
+        }
+        appendAudit(user, "SUPER_ADMIN_ACCOUNT_RECOVERED", requestIp);
     }
 
     public Profile profile(Long userId) {
@@ -197,7 +247,9 @@ public class ConsoleAccountCredentialService {
     @Transactional
     public Profile updateProfile(Long userId, String displayName, String email,
                                  String baseUrl, String requestIp) {
+        lockAccounts();
         ConsoleUser user = requireUser(userId);
+        if (!Integer.valueOf(1).equals(user.getStatus())) throw new IllegalArgumentException("账户已停用");
         if (displayName == null || displayName.isBlank()) {
             throw new IllegalArgumentException("显示名称不能为空");
         }
@@ -217,7 +269,14 @@ public class ConsoleAccountCredentialService {
             user.setEmailVerifiedAt(null);
         }
         user.setUpdateBy(user.getUsername());
-        userMapper.updateById(user);
+        LambdaUpdateWrapper<ConsoleUser> update = new LambdaUpdateWrapper<ConsoleUser>()
+                .eq(ConsoleUser::getId, userId).set(ConsoleUser::getDisplayName, user.getDisplayName())
+                .set(ConsoleUser::getUpdateBy, user.getUsername());
+        if (emailChanged) {
+            update.set(ConsoleUser::getEmail, normalizedEmail).set(ConsoleUser::getEmailVerifiedAt, null);
+            revokeTokens(userId);
+        }
+        userMapper.update(null, update);
         appendAudit(user, "PROFILE_UPDATE", requestIp);
         if (emailChanged) {
             String token = issueToken(user.getId(), EMAIL_VERIFY,
@@ -242,20 +301,21 @@ public class ConsoleAccountCredentialService {
         row.setUserId(userId);
         row.setPurpose(purpose);
         row.setTokenHash(sha256(token));
+        row.setTargetEmail(requireUser(userId).getEmail());
         row.setExpiresAt(LocalDateTime.now().plusMinutes(Math.max(5, ttlMinutes)));
         row.setRequestIp(requestIp);
         tokenMapper.insert(row);
         return token;
     }
 
-    private ConsoleAccountToken requireToken(String token, String purpose) {
+    private ConsoleAccountToken requireToken(String token, String... purposes) {
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("链接无效或已过期");
         }
         ConsoleAccountToken row = tokenMapper.selectOne(
                 new LambdaQueryWrapper<ConsoleAccountToken>()
                         .eq(ConsoleAccountToken::getTokenHash, sha256(token))
-                        .eq(ConsoleAccountToken::getPurpose, purpose)
+                        .in(ConsoleAccountToken::getPurpose, java.util.List.of(purposes))
                         .isNull(ConsoleAccountToken::getConsumedAt)
                         .gt(ConsoleAccountToken::getExpiresAt, LocalDateTime.now())
                         .last("LIMIT 1"));
@@ -264,8 +324,50 @@ public class ConsoleAccountCredentialService {
     }
 
     private void consume(ConsoleAccountToken token) {
-        token.setConsumedAt(LocalDateTime.now());
-        tokenMapper.updateById(token);
+        int changed = tokenMapper.update(null, new LambdaUpdateWrapper<ConsoleAccountToken>()
+                .eq(ConsoleAccountToken::getId, token.getId())
+                .isNull(ConsoleAccountToken::getConsumedAt)
+                .gt(ConsoleAccountToken::getExpiresAt, LocalDateTime.now())
+                .set(ConsoleAccountToken::getConsumedAt, LocalDateTime.now()));
+        if (changed != 1) throw new IllegalArgumentException("链接无效或已过期");
+    }
+
+    private void revokeTokens(Long userId) {
+        tokenMapper.update(null, new LambdaUpdateWrapper<ConsoleAccountToken>()
+                .eq(ConsoleAccountToken::getUserId, userId).isNull(ConsoleAccountToken::getConsumedAt)
+                .set(ConsoleAccountToken::getConsumedAt, LocalDateTime.now()));
+    }
+
+    @Transactional
+    public void resendRegistration(String identifier, String baseUrl, String requestIp) {
+        if (!properties.isRegistrationEnabled()) throw new IllegalStateException("控制台注册未启用");
+        ensureMailConfigured("注册邮件服务未配置");
+        lockAccounts();
+        String value = identifier == null ? "" : identifier.trim();
+        if (value.isEmpty()) return;
+        var users = userMapper.selectList(new LambdaQueryWrapper<ConsoleUser>()
+                .and(w -> w.eq(ConsoleUser::getUsername, value).or().eq(ConsoleUser::getEmail, value.toLowerCase(Locale.ROOT)))
+                .eq(ConsoleUser::getRegistrationStatus, "PENDING").eq(ConsoleUser::getStatus, 0).last("LIMIT 2"));
+        if (users.size() != 1) return;
+        ConsoleUser user = users.get(0);
+        String token = issueToken(user.getId(), REGISTRATION_VERIFY, properties.getMail().getVerificationTtlMinutes(), requestIp);
+        mailService.sendVerification(user.getEmail(), user.getDisplayName(), buildLink(baseUrl, "/register", token));
+    }
+
+    @Transactional
+    public void resendEmailVerification(Long userId, String baseUrl, String requestIp) {
+        ensureMailConfigured("注册邮件服务未配置");
+        lockAccounts();
+        ConsoleUser user = requireUser(userId);
+        if (!Integer.valueOf(1).equals(user.getStatus()) || user.getEmail() == null || user.getEmailVerifiedAt() != null) {
+            throw new IllegalArgumentException("当前账户没有待验证邮箱");
+        }
+        String token = issueToken(userId, EMAIL_VERIFY, properties.getMail().getVerificationTtlMinutes(), requestIp);
+        mailService.sendVerification(user.getEmail(), user.getDisplayName(), buildLink(baseUrl, "/register", token));
+    }
+
+    private void lockAccounts() {
+        if (userMapper.lockSecurity() == null) throw new IllegalStateException("账户安全锁未初始化");
     }
 
     private ConsoleUser requireUser(Long userId) {
@@ -274,7 +376,7 @@ public class ConsoleAccountCredentialService {
         return user;
     }
 
-    private String requireUsername(String username) {
+    static String requireUsername(String username) {
         String value = username == null ? "" : username.trim();
         if (value.length() < 3 || value.length() > 64) {
             throw new IllegalArgumentException("用户名长度必须为3到64位");
@@ -290,7 +392,7 @@ public class ConsoleAccountCredentialService {
         return value;
     }
 
-    private void requirePassword(String password) {
+    static void requirePassword(String password) {
         if (password == null || password.length() < 8) {
             throw new IllegalArgumentException("密码不能少于8位");
         }
@@ -310,12 +412,6 @@ public class ConsoleAccountCredentialService {
                 .map(com.hengshucredit.rule.model.entity.ConsoleUserRole::getRoleId)
                 .map(roleMapper::selectById)
                 .anyMatch(role -> role != null && "SUPER_ADMIN".equals(role.getRoleCode()));
-    }
-
-    private boolean constantTimeEquals(String expected, String actual) {
-        if (expected == null || actual == null) return false;
-        return MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8),
-                actual.getBytes(StandardCharsets.UTF_8));
     }
 
     private String buildLink(String baseUrl, String path, String token) {

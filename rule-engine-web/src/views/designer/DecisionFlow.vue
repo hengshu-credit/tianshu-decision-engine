@@ -444,6 +444,8 @@
     <div class="flow-script-area" v-if="definitionId">
       <script-panel
         :compile-result="designerCompileResult"
+        :references="projectRefs"
+        :functions="projectFunctions"
       />
     </div>
 
@@ -496,7 +498,8 @@ import {
   DynamicGroup,
   MiniMap,
 } from '@logicflow/extension'
-import { Dagre } from '@logicflow/layout'
+// 根入口还会加载未使用的 ELK；按当前固定版本直接使用 Dagre 模块。
+import { Dagre } from '@logicflow/layout/es/dagre/index.js'
 
 import {
   getDefaultFlowData,

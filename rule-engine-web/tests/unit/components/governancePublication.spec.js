@@ -5,7 +5,21 @@ import * as api from '@/api/governance'
 import { setCurrentUser, clearCurrentUser } from '@/security/permissionState'
 
 vi.mock('@/utils/workspaceDraftState', () => ({ watchResourceState: vi.fn((type, id, listener) => { listener({ ready: true }); return vi.fn() }) }))
+beforeEach(() => vi.spyOn(api, 'preflightGovernanceRequest').mockResolvedValue({ data: { valid: true, errors: [] } }))
 afterEach(() => { vi.restoreAllMocks(); clearCurrentUser() })
+
+test('列表发布预检失败显示具体修复原因，不提交或误报成功', async () => {
+  vi.spyOn(api, 'getWorkspaceDraft').mockResolvedValue({ data: { id: 19, action: 'CREATE', snapshotDigest: 'shown' } })
+  api.preflightGovernanceRequest.mockResolvedValue({ data: { valid: false, errors: [{ message: '响应分支缺少取值', referencePath: '$.responseBranches[0]' }] } })
+  const submit = vi.spyOn(api, 'submitGovernanceRequest')
+  const wrapper = mount(Publish, { props: { resourceType: 'EXTERNAL_API', resourceId: 7 } })
+  await wrapper.setData({ state: { ready: true, requestStatus: 'EDITING', action: 'CREATE', owned: true } })
+  await wrapper.vm.publish()
+  expect(submit).not.toHaveBeenCalled()
+  expect(wrapper.vm.issueVisible).toBe(true)
+  expect(wrapper.vm.preflightErrors[0].message).toBe('响应分支缺少取值')
+  wrapper.unmount()
+})
 
 test('生产仍生效的修改审批合并为一个状态，保留生产生效信息', async () => {
   const wrapper = mount(Status, { props: { resourceType: 'VARIABLE', resourceId: 7, status: 1 } })

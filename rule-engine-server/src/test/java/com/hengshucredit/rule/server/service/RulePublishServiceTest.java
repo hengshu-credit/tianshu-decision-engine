@@ -39,8 +39,8 @@ public class RulePublishServiceTest {
         content.setOpenApiConfigJson("{\"enabled\":true,\"requestMappings\":[{"
                 + "\"targetRefType\":\"VARIABLE\",\"targetVarId\":88,"
                 + "\"sourceType\":\"BODY\",\"sourcePath\":\"$.mobile\"}],"
-                + "\"envelopeTemplate\":{\"data\":\"${data}\"},"
-                + "\"dataPath\":\"$.data\",\"successDataTemplate\":\"${result}\","
+                + ""
+                + "\"successDataTemplate\":\"${result}\","
                 + "\"errorDataTemplate\":{\"code\":\"${status.code}\"}}");
         RecordingDefinitionService definitionService = new RecordingDefinitionService(definition, content);
         RuleDefinitionInputField inputField = new RuleDefinitionInputField();
@@ -119,7 +119,7 @@ public class RulePublishServiceTest {
         definition.setId(10L);
         RuleDefinitionContent content = new RuleDefinitionContent();
         content.setDefinitionId(10L);
-        content.setOpenApiConfigJson("{\"enabled\":true}");
+        content.setOpenApiConfigJson("{\"enabled\":true,\"requestMappings\":[{\"targetRefType\":\"VARIABLE\",\"targetVarId\":0,\"sourceType\":\"BODY\",\"sourcePath\":\"$.mobile\"}]}");
         RulePublishService service = new RulePublishService();
         ReflectionTestUtils.setField(service, "definitionService",
                 new RecordingDefinitionService(definition, content));
@@ -139,7 +139,7 @@ public class RulePublishServiceTest {
         content.setOpenApiConfigJson("{\"enabled\":true,\"requestMappings\":[{"
                 + "\"targetRefType\":\"VARIABLE\",\"targetVarId\":99,"
                 + "\"sourceType\":\"BODY\",\"sourcePath\":\"$.mobile\"}],"
-                + "\"envelopeTemplate\":{\"data\":\"${data}\"},\"dataPath\":\"$.data\","
+                + ""
                 + "\"successDataTemplate\":\"${result}\","
                 + "\"errorDataTemplate\":{\"code\":\"${status.code}\"}}");
         RecordingDefinitionService definitionService = new RecordingDefinitionService(definition, content);

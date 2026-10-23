@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
-import com.hengshucredit.rule.server.common.R;
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.server.security.RequirePermission;
 import com.hengshucredit.rule.server.transfer.OfflineResourceTransferService;
 import com.hengshucredit.rule.server.transfer.TransferRootRequest;
@@ -31,8 +32,8 @@ public class OfflineResourceTransferController {
 
     @GetMapping("/version-candidates")
     @RequirePermission("transfer:view")
-    public R<List<Map<String, Object>>> versionCandidates(@RequestParam String refType, @RequestParam Long resourceId) {
-        return R.ok(versionTransfers.candidates(refType, resourceId));
+    public ApiResponse<List<Map<String, Object>>> versionCandidates(@RequestParam String refType, @RequestParam Long resourceId) {
+        return ApiResponse.ok(versionTransfers.candidates(refType, resourceId));
     }
     @Resource private OfflineResourceTransferService service;
     @Resource private OfflineResourceImportService importService;
@@ -42,17 +43,17 @@ public class OfflineResourceTransferController {
 
     @GetMapping("/resources")
     @RequirePermission("transfer:view")
-    public R<Page<Map<String, Object>>> resources(@RequestParam String nodeType,
+    public ApiResponse<Page<Map<String, Object>>> resources(@RequestParam String nodeType,
                                                  @RequestParam(required = false) String keyword,
                                                  @RequestParam(required = false) Long projectId,
                                                  @RequestParam(defaultValue = "1") int pageNum,
                                                  @RequestParam(defaultValue = "20") int pageSize) {
         try {
-            return R.ok(lineageService.pageOptions(nodeType, keyword, projectId, pageNum, pageSize));
+            return ApiResponse.ok(lineageService.pageOptions(nodeType, keyword, projectId, pageNum, pageSize));
         } catch (com.hengshucredit.rule.server.security.ConsoleAccessDeniedException denied) {
             throw denied;
         } catch (IllegalArgumentException error) {
-            return R.fail(422, error.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.REQUEST_REJECTED, error.getMessage());
         }
     }
 
@@ -97,98 +98,98 @@ public class OfflineResourceTransferController {
 
     @PostMapping(value = "/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @RequirePermission("transfer:import")
-    public R<Map<String, Object>> preview(@RequestPart("file") MultipartFile file) {
+    public ApiResponse<Map<String, Object>> preview(@RequestPart("file") MultipartFile file) {
         try {
-            if (file == null || file.isEmpty()) return R.fail(422, "离线迁移包不能为空");
-            return R.ok(service.preview(file.getBytes()));
+            if (file == null || file.isEmpty()) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.REQUEST_REJECTED, "离线迁移包不能为空");
+            return ApiResponse.ok(service.preview(file.getBytes()));
         } catch (com.hengshucredit.rule.server.security.ConsoleAccessDeniedException denied) {
             throw denied;
         } catch (IllegalArgumentException error) {
-            return R.fail(422, error.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.REQUEST_REJECTED, error.getMessage());
         } catch (Exception error) {
-            return R.fail(500, "读取离线迁移包失败: " + error.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.SYSTEM_ERROR, "读取离线迁移包失败: " + error.getMessage());
         }
     }
 
     @PostMapping(value = "/preview/options", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @RequirePermission("transfer:import")
-    public R<Map<String, Object>> previewWithOptions(@RequestPart("file") MultipartFile file,
+    public ApiResponse<Map<String, Object>> previewWithOptions(@RequestPart("file") MultipartFile file,
                                                      @RequestPart(value = "options", required = false) String options) {
         try {
-            if (file == null || file.isEmpty()) return R.fail(422, "离线迁移包不能为空");
+            if (file == null || file.isEmpty()) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.REQUEST_REJECTED, "离线迁移包不能为空");
             TransferImportOptions parsed = options == null || options.isBlank()
                     ? new TransferImportOptions(null, "PROJECT", "REUSE", "SUFFIX", "_imported", false, null, null, Map.of())
                     : JSON.parseObject(options, TransferImportOptions.class);
-            return R.ok(service.preview(file.getBytes(), parsed));
+            return ApiResponse.ok(service.preview(file.getBytes(), parsed));
         } catch (com.hengshucredit.rule.server.security.ConsoleAccessDeniedException denied) {
             throw denied;
         } catch (IllegalArgumentException error) {
-            return R.fail(422, error.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.REQUEST_REJECTED, error.getMessage());
         } catch (Exception error) {
-            return R.fail(500, "读取离线迁移包失败: " + error.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.SYSTEM_ERROR, "读取离线迁移包失败: " + error.getMessage());
         }
     }
 
     @GetMapping("/resource-fields")
     @RequirePermission("transfer:view")
-    public R<List<Map<String, Object>>> resourceFields(@RequestParam String resourceType,
+    public ApiResponse<List<Map<String, Object>>> resourceFields(@RequestParam String resourceType,
                                                         @RequestParam Long resourceId) {
-        return R.ok(service.resourceFields(resourceType, resourceId));
+        return ApiResponse.ok(service.resourceFields(resourceType, resourceId));
     }
 
     @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @RequirePermission("transfer:import")
-    public R<Map<String, Object>> importPackage(@RequestPart("file") MultipartFile file,
+    public ApiResponse<Map<String, Object>> importPackage(@RequestPart("file") MultipartFile file,
                                                 @RequestPart("options") String options) {
         try {
-            if (file == null || file.isEmpty()) return R.fail(422, "离线迁移包不能为空");
+            if (file == null || file.isEmpty()) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.REQUEST_REJECTED, "离线迁移包不能为空");
             TransferImportOptions parsed = JSON.parseObject(options, TransferImportOptions.class);
             String operator = operatorResolver == null ? ConsoleOperatorResolver.SYSTEM_CONSOLE : operatorResolver.resolve();
             Map<String, Object> result = importService.apply(file.getBytes(), parsed, operator);
             result.put("options", parsed);
             if (logService != null) logService.recordImport(file.getBytes(), result, operator, null);
-            return R.ok(result);
+            return ApiResponse.ok(result);
         } catch (com.hengshucredit.rule.server.security.ConsoleAccessDeniedException denied) {
             throw denied;
         } catch (IllegalArgumentException error) {
             if (logService != null && file != null) {
                 try { logService.recordImport(file.getBytes(), Map.of(), ConsoleOperatorResolver.SYSTEM_CONSOLE, error.getMessage()); } catch (Exception ignored) { }
             }
-            return R.fail(422, error.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.REQUEST_REJECTED, error.getMessage());
         } catch (IllegalStateException error) {
             if (logService != null && file != null) {
                 try { logService.recordImport(file.getBytes(), Map.of(), ConsoleOperatorResolver.SYSTEM_CONSOLE, error.getMessage()); } catch (Exception ignored) { }
             }
-            return R.fail(409, error.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_CONFLICT, error.getMessage());
         } catch (Exception error) {
             if (logService != null && file != null) {
                 try { logService.recordImport(file.getBytes(), Map.of(),
                         ConsoleOperatorResolver.SYSTEM_CONSOLE, error.getMessage()); } catch (Exception ignored) { }
             }
-            return R.fail(500, "导入离线配置失败: " + error.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.SYSTEM_ERROR, "导入离线配置失败: " + error.getMessage());
         }
     }
 
     @GetMapping("/logs")
     @RequirePermission("transfer:view")
-    public R<com.baomidou.mybatisplus.core.metadata.IPage<OfflineTransferLog>> logs(
+    public ApiResponse<com.baomidou.mybatisplus.core.metadata.IPage<OfflineTransferLog>> logs(
             @RequestParam(defaultValue = "1") int pageNum,
             @RequestParam(defaultValue = "20") int pageSize,
             @RequestParam(required = false) String operationType) {
-        return R.ok(logService.page(pageNum, pageSize, operationType));
+        return ApiResponse.ok(logService.page(pageNum, pageSize, operationType));
     }
 
     @GetMapping("/logs/{id}")
     @RequirePermission("transfer:view")
-    public R<OfflineTransferLog> logDetail(@PathVariable Long id) {
+    public ApiResponse<OfflineTransferLog> logDetail(@PathVariable Long id) {
         OfflineTransferLog log = logService.getById(id);
-        return log == null ? R.fail(404, "迁移日志不存在") : R.ok(log);
+        return log == null ? ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "迁移日志不存在") : ApiResponse.ok(log);
     }
 
     @GetMapping("/logs/{id}/lineage")
     @RequirePermission("transfer:view")
-    public R<Map<String, Object>> logLineage(@PathVariable Long id) {
-        if (logService.getById(id) == null) return R.fail(404, "迁移日志不存在");
-        return R.ok(logService.lineage(id));
+    public ApiResponse<Map<String, Object>> logLineage(@PathVariable Long id) {
+        if (logService.getById(id) == null) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "迁移日志不存在");
+        return ApiResponse.ok(logService.lineage(id));
     }
 }

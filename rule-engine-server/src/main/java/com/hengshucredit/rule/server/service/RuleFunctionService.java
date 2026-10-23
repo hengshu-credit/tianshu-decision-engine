@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.core.function.FunctionParameterContract;
+import com.hengshucredit.rule.core.function.FunctionScriptContract;
 import com.hengshucredit.rule.core.function.ManagedFunctionInvoker;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleFunction;
@@ -23,17 +24,17 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
 public class RuleFunctionService {
+    @Resource private FunctionMethodCatalogService nativeFunctions;
+    @Resource private RuleLineageService lineageService;
 
     /** 作用域：全局 */
     public static final String SCOPE_GLOBAL = "GLOBAL";
     /** 作用域：项目级 */
     public static final String SCOPE_PROJECT = "PROJECT";
-    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
     @Resource
     private RuleFunctionMapper functionMapper;
@@ -62,11 +63,15 @@ public class RuleFunctionService {
                 .distinct()
                 .collect(Collectors.toList());
         if (projectIds.isEmpty()) return;
-        Map<Long, String> nameMap = projectMapper.selectByIds(projectIds).stream()
-                .collect(Collectors.toMap(RuleProject::getId, RuleProject::getProjectName, (a, b) -> a));
+        Map<Long, RuleProject> projectMap = projectMapper.selectByIds(projectIds).stream()
+                .collect(Collectors.toMap(RuleProject::getId, project -> project, (a, b) -> a));
         list.forEach(f -> {
             if (f.getProjectId() != null && f.getProjectId() > 0) {
-                f.setProjectName(nameMap.get(f.getProjectId()));
+                RuleProject project = projectMap.get(f.getProjectId());
+                if (project != null) {
+                    f.setProjectName(project.getProjectName());
+                    f.setProjectCode(project.getProjectCode());
+                }
             }
         });
     }
@@ -127,24 +132,44 @@ public class RuleFunctionService {
     }
 
     public Map<Long, String> buildFunctionCodeMap(Long projectId) {
-        return listByProject(projectId).stream()
+        return functionCodeMap(listByProject(projectId));
+    }
+
+    private Map<Long, String> functionCodeMap(List<RuleFunction> functions) {
+        return functions.stream()
                 .filter(function -> function.getId() != null && function.getFuncCode() != null
                         && !function.getFuncCode().trim().isEmpty())
                 .collect(Collectors.toMap(RuleFunction::getId, RuleFunction::getFuncCode, (left, right) -> left));
     }
 
     public Map<Long, Integer> buildFunctionArityMap(Long projectId) {
-        return listByProject(projectId).stream()
+        return functionArityMap(listByProject(projectId));
+    }
+
+    private Map<Long, Integer> functionArityMap(List<RuleFunction> functions) {
+        return functions.stream()
                 .filter(function -> function.getId() != null)
                 .collect(Collectors.toMap(RuleFunction::getId,
                         function -> parseParamNames(function.getParamsJson()).size(), (left, right) -> left));
     }
 
     public java.util.Set<Long> buildNativeFunctionIds(Long projectId) {
-        return listByProject(projectId).stream().filter(function -> function.getId() != null
+        return nativeFunctionIds(listByProject(projectId));
+    }
+
+    private java.util.Set<Long> nativeFunctionIds(List<RuleFunction> functions) {
+        return functions.stream().filter(function -> function.getId() != null
                         && ("JAVA".equals(function.getImplType()) || "BEAN".equals(function.getImplType())))
                 .map(RuleFunction::getId).collect(Collectors.toSet());
     }
+
+    /** One authorized catalog read supplies all three compiler maps. */
+    public CompileMetadata buildCompileMetadata(Long projectId) {
+        List<RuleFunction> functions = listByProject(projectId);
+        return new CompileMetadata(functionCodeMap(functions), functionArityMap(functions), nativeFunctionIds(functions));
+    }
+
+    public record CompileMetadata(Map<Long, String> codes, Map<Long, Integer> arities, java.util.Set<Long> nativeIds) { }
 
     /**
      * 按项目分页查询函数（管理页面使用）
@@ -263,11 +288,44 @@ public class RuleFunctionService {
         return functionMapper.selectById(id);
     }
 
+    /** 只分析已声明签名及稳定 ID 消费者，不执行或修改实现。 */
+    public com.hengshucredit.rule.model.dto.FunctionSignatureImpact signatureImpact(RuleFunction proposed) {
+        RuleFunction current = proposed.getId() == null ? null : getById(proposed.getId());
+        if (proposed.getId() != null && (current == null || Integer.valueOf(-1).equals(current.getStatus())))
+            throw new IllegalArgumentException("函数不存在或不可访问");
+        var parameters = FunctionParameterContract.parse(proposed.getParamsJson());
+        List<String> changes = new java.util.ArrayList<>();
+        if (current == null) changes.add("新建函数");
+        else {
+            if (!FunctionParameterContract.parse(current.getParamsJson()).equals(parameters)) changes.add("参数名称、顺序或类型");
+            if (!java.util.Objects.equals(current.getReturnType(), proposed.getReturnType())) changes.add("返回类型");
+            if (!java.util.Objects.equals(current.getFuncCode(), proposed.getFuncCode())) changes.add("调用编码");
+            if (!java.util.Objects.equals(current.getImplType(), proposed.getImplType())
+                    || !java.util.Objects.equals(current.getImplClass(), proposed.getImplClass())
+                    || !java.util.Objects.equals(current.getImplBeanName(), proposed.getImplBeanName())
+                    || !java.util.Objects.equals(current.getImplMethod(), proposed.getImplMethod())
+                    || !java.util.Objects.equals(current.getImplScript(), proposed.getImplScript())) changes.add("实现内容");
+        }
+        List<Map<String, Object>> consumers = current == null ? List.of() : lineageService.directReferenceConsumers("FUNCTION", current.getId());
+        return new com.hengshucredit.rule.model.dto.FunctionSignatureImpact(current == null ? "尚未生效" : functionSignature(current),
+                functionSignature(proposed), changes, consumers,
+                "仅列出当前有权查看、可按稳定 ID 静态识别的消费者；动态脚本调用可能未列出。固定版本继续使用原快照；跟随最新版本的调用需重新检查参数并回归。修改说明或显示名称不改变签名。");
+    }
+
+    private String functionSignature(RuleFunction function) {
+        String parameters = FunctionParameterContract.parse(function.getParamsJson()).stream()
+                .map(parameter -> parameter.name() + ": " + (parameter.type() == null ? "OBJECT" : parameter.type())
+                        + (parameter.javaType() == null ? "" : " [" + parameter.javaType() + "]"))
+                .collect(Collectors.joining(", "));
+        return function.getFuncCode() + "(" + parameters + ") → " + function.getReturnType();
+    }
+
     public Map<String, Object> testFunction(Long functionId, Map<String, Object> params) {
         RuleFunction function = getById(functionId);
         if (function == null) {
             throw new IllegalArgumentException("Function not found");
         }
+        if (!Integer.valueOf(1).equals(function.getStatus()) && nativeFunctions != null) nativeFunctions.requireNativePermission(function);
         Map<String, Object> context = params == null ? new LinkedHashMap<>() : new LinkedHashMap<>(params);
         String implType = function.getImplType() == null ? "SCRIPT" : function.getImplType().trim().toUpperCase();
         RuleResult ruleResult;
@@ -416,7 +474,7 @@ public class RuleFunctionService {
     }
 
     private String buildFunctionTestScript(RuleFunction function, String implType) {
-        String functionCode = requireIdentifier(function.getFuncCode(), "函数编码");
+        String functionCode = FunctionScriptContract.requireIdentifier(function.getFuncCode());
         List<String> paramNames = parseParamNames(function.getParamsJson());
         StringBuilder script = new StringBuilder();
         if ("SCRIPT".equals(implType)) {
@@ -440,10 +498,4 @@ public class RuleFunctionService {
         return FunctionParameterContract.names(paramsJson);
     }
 
-    private String requireIdentifier(String value, String label) {
-        if (value == null || !IDENTIFIER_PATTERN.matcher(value.trim()).matches()) {
-            throw new IllegalArgumentException(label + "不是合法标识符: " + value);
-        }
-        return value.trim();
-    }
 }

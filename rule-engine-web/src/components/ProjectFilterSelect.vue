@@ -13,7 +13,7 @@
 
 <script>
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
-import { listProjects } from '@/api/project'
+import { listProjectOptions as listProjects } from '@/api/project'
 
 export default {
   name: 'ProjectFilterSelect',

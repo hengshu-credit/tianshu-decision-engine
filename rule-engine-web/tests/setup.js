@@ -155,6 +155,9 @@ vi.mock('@/api/definition', () => ({
   sortApiScenarios: vi.fn(),
   executeApiScenario: vi.fn(),
   executeApiScenarioValidated: vi.fn(),
+  listRuleRegressionReports: vi.fn().mockResolvedValue({ data: { records: [], total: 0 } }),
+  getRuleRegressionReport: vi.fn(),
+  checkRuleRegressionReports: vi.fn(),
   DEFAULT_RULE_REQUEST_TIMEOUT_MS: 180000,
   migrateFields: vi.fn(),
   ensureDraftRevision: vi.fn(),
@@ -163,6 +166,7 @@ vi.mock('@/api/definition', () => ({
   saveTemporaryDraft: vi.fn(),
   compileDesignerModel: vi.fn(),
   getDesignerCompileTask: vi.fn(),
+  waitForDesignerCompileTask: vi.fn().mockResolvedValue({ data: true }),
   saveDesignerDraft: vi.fn(),
   deleteDesignerDraft: vi.fn(),
   listPublishedVersions: vi.fn(),
@@ -216,6 +220,7 @@ vi.mock('@/api/dataObject', () => ({
 }))
 vi.mock('@/api/function', () => ({
   inspectFunctionMethods: vi.fn(),
+  inspectFunctionImpact: vi.fn(),
   listAllFunctionsByProject: vi.fn(),
   listFunctionsByProject: vi.fn(),
   listFunctions: vi.fn(),
@@ -255,29 +260,33 @@ vi.mock('@/api/artifact', () => ({
   deployArtifact: vi.fn(),
   __esModule: true
 }))
-vi.mock('@/api/project', () => ({
-  listProjects: vi.fn(),
-  getProject: vi.fn(),
-  getProjectWorkbench: vi.fn(),
-  createProject: vi.fn(),
-  updateProject: vi.fn(),
-  deleteProject: vi.fn(),
-  getMaskedToken: vi.fn(),
-  getFullToken: vi.fn(),
-  regenerateToken: vi.fn(),
-  exportApiDoc: vi.fn(),
-  listProjectAuths: vi.fn(),
-  createProjectAuth: vi.fn(),
-  updateProjectAuth: vi.fn(),
-  updateProjectAuthStatus: vi.fn(),
-  getProjectAuthFull: vi.fn(),
-  regenerateProjectAuthSecret: vi.fn(),
-  listProjectAuthTokens: vi.fn(),
-  getProjectAuthTokenFull: vi.fn(),
-  revokeProjectAuthToken: vi.fn(),
-  listProjectAuthAccessLogs: vi.fn(),
-  __esModule: true
-}))
+vi.mock('@/api/project', () => {
+  const listProjects = vi.fn()
+  const getProject = vi.fn()
+  return {
+    listProjects, listProjectOptions: listProjects,
+    getProject, getProjectOption: getProject,
+    getProjectWorkbench: vi.fn(),
+    createProject: vi.fn(),
+    updateProject: vi.fn(),
+    deleteProject: vi.fn(),
+    getMaskedToken: vi.fn(),
+    getFullToken: vi.fn(),
+    regenerateToken: vi.fn(),
+    exportApiDoc: vi.fn(),
+    listProjectAuths: vi.fn(),
+    createProjectAuth: vi.fn(),
+    updateProjectAuth: vi.fn(),
+    updateProjectAuthStatus: vi.fn(),
+    getProjectAuthFull: vi.fn(),
+    regenerateProjectAuthSecret: vi.fn(),
+    listProjectAuthTokens: vi.fn(),
+    getProjectAuthTokenFull: vi.fn(),
+    revokeProjectAuthToken: vi.fn(),
+    listProjectAuthAccessLogs: vi.fn(),
+    __esModule: true
+  }
+})
 vi.mock('@/api/dashboard', () => ({
   getDashboardApplications: vi.fn(),
   getDashboardOperations: vi.fn(),
@@ -294,6 +303,7 @@ vi.mock('@/api/datasource', () => ({
   updateDatasource: vi.fn(),
   deleteDatasource: vi.fn(),
   listApiConfigs: vi.fn(),
+  listAvailableApiConfigs: vi.fn().mockResolvedValue([]),
   createApiConfig: vi.fn(),
   updateApiConfig: vi.fn(),
   deleteApiConfig: vi.fn(),

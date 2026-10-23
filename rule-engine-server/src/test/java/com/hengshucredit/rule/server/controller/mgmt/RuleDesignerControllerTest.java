@@ -19,6 +19,26 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 public class RuleDesignerControllerTest {
+    @Test public void completionWaitsWithoutBlockingAndReturnsOnlyAHint() throws Exception {
+        RuleDesignerController controller = new RuleDesignerController();
+        var notifier = new com.hengshucredit.rule.server.service.RuleCompileCompletionNotifier();
+        ReflectionTestUtils.setField(controller, "completionNotifier", notifier);
+        ReflectionTestUtils.setField(controller, "designerService", new RuleDesignerService() {
+            @Override public RuleDesignerCompileTaskResponse getCompileTask(Long id, String taskId) {
+                assertEquals(Long.valueOf(30), id); assertEquals("task", taskId);
+                var task = new RuleDesignerCompileTaskResponse(); task.setStatus("RUNNING"); return task;
+            }
+        });
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller).build();
+        var pending = mvc.perform(get("/api/rule/definition/30/designer/compile/task/completion"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.request().asyncStarted()).andReturn();
+        notifier.completed("task");
+        String body = mvc.perform(asyncDispatch(pending)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertEquals(Boolean.TRUE, JSON.parseObject(body).getBoolean("data"));
+        assertFalse(body.contains("compiledScript"));
+        notifier.close();
+    }
+
     @Test
     public void compileReturnsSyntaxFailureInEnvelopeAndDeleteRequiresLock() throws Exception {
         RuleDesignerController controller = new RuleDesignerController();
@@ -74,5 +94,7 @@ public class RuleDesignerControllerTest {
         }
         mvc.perform(delete("/api/rule/definition/30/revisions/8").session(session)
                 .param("lockVersion", "0")).andExpect(status().isForbidden());
+        mvc.perform(get("/api/rule/definition/30/designer/compile/task/completion").session(session))
+                .andExpect(status().isForbidden());
     }
 }

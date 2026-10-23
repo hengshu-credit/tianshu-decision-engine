@@ -75,7 +75,9 @@ public class GovernanceResourceBootstrapService {
 
         resource.setEffectiveVersionId(version.getId());
         resource.setEffectiveVersionNo(version.getDisplayVersion());
-        resourceMapper.updateById(resource);
+        if (resourceMapper.linkBaselineVersion(resource.getId(), version.getId(), version.getDisplayVersion()) != 1) {
+            throw new IllegalStateException("资源基准版本已变化，请重新读取");
+        }
         return resource;
     }
 

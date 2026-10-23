@@ -3,6 +3,7 @@
     <div class="overview-heading">
       <div>
         <p>集中查看配置进度、待处理事项和最近运行情况。</p>
+        <p v-if="workbench && workbench.observedAt">检查时间：{{ workbench.observedAt }}；来源统计仅含项目自有配置，未执行网络连通性测试。</p>
       </div>
       <div class="overview-status" aria-live="polite">
         <el-tag :type="readinessSummary.type">{{ readinessSummary.label }}</el-tag>
@@ -195,6 +196,7 @@ export default {
         { actionCode: 'CONFIGURE_FIELDS', actionLabel: '业务字段' },
         { actionCode: 'CONFIGURE_EXTERNAL_SOURCES', actionLabel: '外数管理' },
         { actionCode: 'CONFIGURE_DATABASE_SOURCES', actionLabel: '数据库' },
+        { actionCode: 'CONFIGURE_SFTP_SOURCES', actionLabel: 'SFTP' },
         { actionCode: 'CONFIGURE_RULES', actionLabel: '规则设计' },
         { actionCode: 'TEST_RULES', actionLabel: '规则测试' },
         { actionCode: 'REVIEW_APPROVALS', actionLabel: '审批事项' },
@@ -270,7 +272,7 @@ export default {
         {
           label: '启用数据源',
           value: `${enabledSources}/${totalSources}`,
-          hint: '外数与数据库数据源',
+          hint: '项目自有外数、数据库与 SFTP；不含全局来源',
         },
         {
           label: '预测模型',

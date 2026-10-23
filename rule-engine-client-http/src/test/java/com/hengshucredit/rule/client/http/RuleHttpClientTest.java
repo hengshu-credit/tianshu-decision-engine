@@ -30,14 +30,14 @@ public class RuleHttpClientTest {
 
     @Before public void start() throws Exception {
         status = 200;
-        response = "{\"code\":200,\"data\":{\"success\":true,\"traceId\":\"trace-1\",\"result\":{\"decision\":\"REJECT\",\"额度\":12.5},\"executeTimeMs\":3}}";
+        response = "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true,\"data\":{\"success\":true,\"traceId\":\"trace-1\",\"result\":{\"decision\":\"REJECT\",\"额度\":12.5},\"executeTimeMs\":3}}";
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", exchange -> {
             paths.add(exchange.getRequestURI().getRawPath());
             byte[] bytes;
             if (exchange.getRequestURI().getPath().endsWith("/auth/token")) {
                 exchanges.incrementAndGet();
-                bytes = "{\"code\":200,\"data\":{\"accessToken\":\"temporary\",\"expiresInSeconds\":7200,\"graceExpiresInSeconds\":7800}}".getBytes(StandardCharsets.UTF_8);
+                bytes = "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true,\"data\":{\"accessToken\":\"temporary\",\"expiresInSeconds\":7200,\"graceExpiresInSeconds\":7800}}".getBytes(StandardCharsets.UTF_8);
             } else {
                 headers = exchange.getRequestHeaders();
                 request = JSON.parseObject(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
@@ -78,12 +78,15 @@ public class RuleHttpClientTest {
 
     @Test public void ruleFailureIsReturnedButPlatformFailureThrows() {
         try (RuleHttpClient client = builder().build()) {
-            response = "{\"code\":200,\"data\":{\"success\":false,\"errorMessage\":\"规则错误\"}}";
+            status = 422;
+            response = "{\"code\":\"200001\",\"message\":\"规则执行失败\",\"success\":false,\"detail\":\"规则错误\",\"data\":{\"success\":false,\"errorMessage\":\"规则错误\"}}";
             assertFalse(client.execute("RULE", Map.of()).isSuccess());
             for (int code : new int[]{400, 401, 403, 404, 500}) {
-                response = "{\"code\":" + code + ",\"message\":\"do-not-leak-token\"}";
+                status = code;
+                String platform = com.hengshucredit.rule.model.PlatformCode.fromHttpStatus(code).code();
+                response = JSON.toJSONString(com.hengshucredit.rule.model.ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.find(platform), null));
                 RuleHttpException error = assertThrows(RuleHttpException.class, () -> client.execute("RULE", Map.of()));
-                assertEquals(Integer.valueOf(code), error.getPlatformCode());
+                assertEquals(platform, error.getPlatformCode());
                 assertFalse(error.getMessage().contains("do-not-leak"));
             }
         }
@@ -91,7 +94,7 @@ public class RuleHttpClientTest {
 
     @Test public void rejectsMalformedResponsesAndDoesNotFollowRedirects() {
         try (RuleHttpClient client = builder().build()) {
-            for (String invalid : new String[]{"", "null", "<html>bad</html>", "{}", "{\"code\":200}", "{\"code\":200,\"data\":{}}"}) {
+            for (String invalid : new String[]{"", "null", "<html>bad</html>", "{}", "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true}", "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true,\"data\":{}}"}) {
                 response = invalid;
                 assertThrows(RuleHttpException.class, () -> client.execute("RULE", Map.of()));
             }
@@ -127,6 +130,29 @@ public class RuleHttpClientTest {
         server.stop(0);
         try (RuleHttpClient client = builder().timeoutMs(200).build()) {
             assertEquals(0, assertThrows(RuleHttpException.class, () -> client.execute("RULE", Map.of())).getHttpStatus());
+        }
+    }
+
+    @Test public void unavailableTokenServiceIsAnUpstreamFailureBeforeExecution() {
+        server.stop(0);
+        try (RuleHttpClient client = builder().timeoutMs(200).authConfig(ClientAuthConfig.basic("account", "secret")).build()) {
+            RuleHttpException error = assertThrows(RuleHttpException.class, () -> client.execute("RULE", Map.of()));
+            assertEquals("900004", error.getCode());
+            assertEquals("上游调用失败", error.getMessage());
+            assertEquals("REJECTED", error.getExecutionStatus());
+        }
+    }
+
+    @Test public void readsPlatformStringCodesWithoutLosingAuthenticationFailure() {
+        try (RuleHttpClient client = builder().build()) {
+            response = "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true,\"data\":{\"success\":true,\"result\":17}}";
+            assertTrue(client.execute("RULE", Map.of()).isSuccess());
+            status = 401;
+            response = "{\"code\":\"300001\",\"message\":\"Token 已过期或失效\",\"success\":false,\"traceId\":\"auth-trace\"}";
+            RuleHttpException error = assertThrows(RuleHttpException.class, () -> client.execute("RULE", Map.of()));
+            assertEquals("300001", error.getPlatformCode());
+            assertEquals("auth-trace", error.getTraceId());
+            assertEquals("Token 已过期或失效", error.getMessage());
         }
     }
 

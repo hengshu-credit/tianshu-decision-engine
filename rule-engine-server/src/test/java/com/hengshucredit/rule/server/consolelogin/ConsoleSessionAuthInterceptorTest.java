@@ -11,6 +11,13 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class ConsoleSessionAuthInterceptorTest {
+    @org.junit.Test
+    public void runtimeEndpointsUseProjectCredentialsWithoutConsoleSession() throws Exception {
+        var properties = new RuleEngineConsoleLoginProperties(); properties.setEnabled(true);
+        var request = new org.springframework.mock.web.MockHttpServletRequest("POST", "/api/rule/runtime/experiment/execute/1");
+        org.junit.Assert.assertTrue(new ConsoleSessionAuthInterceptor(properties).preHandle(request,
+                new org.springframework.mock.web.MockHttpServletResponse(), new Object()));
+    }
 
     @Test
     public void allowsAnonymousProjectTokenExchange() throws Exception {

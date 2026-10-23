@@ -23,6 +23,30 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 public class RuleFunctionServiceTest {
+    @Test
+    public void signatureImpactPreservesExactTypesAndUsesStableConsumerIds() {
+        RuleFunction current = javaFunction("My_Calc", "[{\"name\":\"amount\",\"type\":\"NUMBER\",\"javaType\":\"double\"}]", "sample.Calculator", "calculate");
+        current.setId(9007199254740993L); current.setReturnType("NUMBER");
+        RuleFunctionService service = serviceWithFunction(current);
+        ReflectionTestUtils.setField(service, "lineageService", new RuleLineageService() {
+            @Override public List<Map<String,Object>> directReferenceConsumers(String type, Long id) {
+                assertEquals("FUNCTION", type); assertEquals(current.getId(), id);
+                return List.of(Map.of("id", "RULE:9007199254740994", "type", "RULE", "refId", 9007199254740994L, "label", "审批"));
+            }
+        });
+        RuleFunction proposed = com.alibaba.fastjson.JSON.parseObject(com.alibaba.fastjson.JSON.toJSONString(current), RuleFunction.class);
+        proposed.setParamsJson("[{\"name\":\"amount\",\"label\":\"金额\",\"type\":\"NUMBER\",\"javaType\":\"double\"}]");
+        assertTrue(service.signatureImpact(proposed).changes().isEmpty());
+        proposed.setParamsJson("[{\"name\":\"amount\",\"type\":\"NUMBER\",\"javaType\":\"java.lang.Double\"}]");
+        var report = service.signatureImpact(proposed);
+        assertEquals(List.of("参数名称、顺序或类型"), report.changes());
+        assertTrue(report.beforeSignature().contains("[double]"));
+        assertTrue(report.afterSignature().contains("[java.lang.Double]"));
+        assertEquals(9007199254740994L, report.consumers().get(0).get("refId"));
+        assertEquals("My_Calc", proposed.getFuncCode());
+        RuleFunctionService hidden = new RuleFunctionService() { @Override public RuleFunction getById(Long id) { return null; } };
+        org.junit.Assert.assertThrows(IllegalArgumentException.class, () -> hidden.signatureImpact(proposed));
+    }
 
     public static class VersionOne { public int value() { return 1; } }
     public static class VersionTwo { public int value() { return 2; } }

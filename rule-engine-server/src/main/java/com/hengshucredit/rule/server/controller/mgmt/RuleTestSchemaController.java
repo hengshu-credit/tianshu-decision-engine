@@ -1,8 +1,9 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.model.dto.RuleTestSchema;
 import com.hengshucredit.rule.model.dto.RuleTestSchemaRequest;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.security.RequirePermission;
 import com.hengshucredit.rule.server.service.RuleTestSchemaService;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,7 +22,7 @@ public class RuleTestSchemaController {
 
     @PostMapping("/test-schema")
     @RequirePermission("rule:view")
-    public R<RuleTestSchema> build(@RequestBody RuleTestSchemaRequest request) {
-        return R.ok(ruleTestSchemaService.build(request));
+    public ApiResponse<RuleTestSchema> build(@RequestBody RuleTestSchemaRequest request) {
+        return ApiResponse.ok(ruleTestSchemaService.build(request));
     }
 }

@@ -446,7 +446,7 @@ export default {
         return `${value.listName || '名单'} · ${count} 条内容变更`
       }
       return value.ruleName || value.modelName || value.funcName ||
-        value.datasourceName || value.projectName || value.varLabel ||
+        value.apiName || value.datasourceName || value.projectName || value.varLabel ||
         value.objectLabel || value.experimentName || value.listName ||
         value.validationName || value.billingName ||
         `${this.resourceTypeLabel(row.resourceType)} #${row.resourceId}`

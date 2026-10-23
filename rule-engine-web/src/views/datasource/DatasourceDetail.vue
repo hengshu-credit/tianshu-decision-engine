@@ -61,19 +61,13 @@
             label="所属项目"
             prop="projectId"
           >
-            <el-select
+            <project-resource-select
               v-model="form.projectId"
               filterable
               placeholder="请选择项目"
               style="width: 100%"
-            >
-              <el-option
-                v-for="project in projects"
-                :key="project.id"
-                :label="project.projectName"
-                :value="project.id"
-              />
-            </el-select>
+              @change="loadApiPickerOptions"
+             :projects="projects" />
           </el-form-item>
         </el-col>
       </el-row>
@@ -154,213 +148,8 @@
         </el-col>
       </el-row>
 
-      <div v-if="form.authType !== 'NONE'" class="form-section">
-        <div class="section-title">数据源鉴权配置</div>
-        <div class="section-help">
-          API 接口选择“继承数据源”时会使用这些配置。路径可写
-          <code>body.data.token</code> 或 <code>headers.Authorization</code>。
-        </div>
-        <template v-if="form.authType === 'BASIC'">
-          <el-row :gutter="12">
-            <el-col :span="12">
-              <el-form-item label="用户名">
-                <el-input v-model="authConfig.username" autocomplete="off" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="密码">
-                <el-input
-                  v-model="authConfig.password"
-                  type="password"
-                  autocomplete="new-password"
-                  show-password
-                />
-              </el-form-item>
-            </el-col>
-          </el-row>
-        </template>
-        <template v-else-if="form.authType === 'BEARER'">
-          <el-form-item label="Token">
-            <el-input
-              v-model="authConfig.token"
-              type="password"
-              autocomplete="new-password"
-              show-password
-              placeholder="直接写固定 token；动态 token 请使用 Token接口"
-            />
-          </el-form-item>
-        </template>
-        <template v-else-if="form.authType === 'API_KEY'">
-          <el-row :gutter="12">
-            <el-col :span="8">
-              <el-form-item label="放置位置">
-                <el-select v-model="authConfig.location" style="width: 100%">
-                  <el-option
-                    v-for="item in authLocationOptions"
-                    :key="item.value"
-                    :label="item.label"
-                    :value="item.value"
-                  />
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col :span="8">
-              <el-form-item label="字段名">
-                <el-input
-                  v-model="authConfig.name"
-                  placeholder="如 X-API-Key"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :span="8">
-              <el-form-item label="字段值">
-                <el-input
-                  v-model="authConfig.value"
-                  type="password"
-                  autocomplete="new-password"
-                  show-password
-                />
-              </el-form-item>
-            </el-col>
-          </el-row>
-        </template>
-        <template
-          v-else-if="
-            form.authType === 'TOKEN_API' || form.authType === 'OAUTH2'
-          "
-        >
-          <el-row :gutter="12">
-            <el-col :span="8">
-              <el-form-item label="请求方式">
-                <el-select v-model="authConfig.method" style="width: 100%">
-                  <el-option
-                    v-for="method in tokenHttpMethods"
-                    :key="method"
-                    :label="method"
-                    :value="method"
-                  />
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col :span="16">
-              <el-form-item label="鉴权地址">
-                <el-input
-                  v-model="authConfig.tokenUrl"
-                  placeholder="/oauth/token 或完整 URL"
-                />
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-row :gutter="12">
-            <el-col :span="8">
-              <el-form-item label="Content-Type">
-                <el-select
-                  v-model="authConfig.contentType"
-                  filterable
-                  allow-create
-                  clearable
-                  style="width: 100%"
-                >
-                  <el-option
-                    v-for="item in contentTypeOptions"
-                    :key="item"
-                    :label="item"
-                    :value="item"
-                  />
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col :span="8">
-              <el-form-item label="Token路径">
-                <protocol-path-picker v-model:value="authConfig.tokenPath"
-                  placeholder="body.data.access_token 或 headers.Authorization"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :span="8">
-              <el-form-item label="过期时间路径">
-                <protocol-path-picker v-model:value="authConfig.expiresInPath"
-                  placeholder="body.expires_in 或 headers.X-Expires-In"
-                />
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-row :gutter="12">
-            <el-col :span="12">
-              <el-form-item label="鉴权请求头">
-                <monaco-editor
-                  v-model:value="authConfig.headers"
-                  language="json"
-                  height="130px"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="鉴权请求体">
-                <monaco-editor
-                  v-model:value="authConfig.body"
-                  language="json"
-                  height="130px"
-                />
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-row :gutter="12">
-            <el-col :span="8">
-              <el-form-item label="Token放置方式">
-                <el-select
-                  v-model="authConfig.tokenPlacement"
-                  style="width: 100%"
-                >
-                  <el-option label="写入请求Header" value="HEADER" />
-                  <el-option label="仅供请求脚本使用" value="SCRIPT_ONLY" />
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col :span="8">
-              <el-form-item
-                label="Token Header名称"
-                label-width="140px"
-                class="token-header-name-item"
-              >
-                <el-input
-                  v-model="authConfig.tokenHeaderName"
-                  placeholder="默认 Authorization；冰鉴填写 token_id"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :span="8">
-              <el-form-item label="Token前缀">
-                <el-input
-                  v-model="authConfig.tokenPrefix"
-                  placeholder="默认无前缀，可填写 Bearer 或其他内容（空格会保留）"
-                />
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-form-item label="Token响应脚本">
-            <monaco-editor
-              v-model:value="authConfig.tokenResponseScript"
-              language="javascript"
-              height="150px"
-            />
-            <div class="field-help">
-              可选。用于 XML 包裹、加密响应等场景；上下文为
-              body/rawBody/httpStatus/headers/input，返回解析后的对象，再按
-              Token 路径提取。
-            </div>
-          </el-form-item>
-        </template>
-        <template v-else>
-          <el-form-item label="自定义JSON">
-            <monaco-editor
-              v-model:value="form.authConfig"
-              language="json"
-              height="150px"
-            />
-          </el-form-item>
-        </template>
-      </div>
+      <api-auth-editor v-if="form.authType !== 'CUSTOM'" ref="authEditor" v-model:value="authConfig" :type="form.authType" :vars="apiPickerVars" :functions="apiPickerFunctions" />
+      <el-form-item v-else label="自定义配置"><monaco-editor v-model:value="form.authConfig" language="json" height="180px" /></el-form-item>
       <el-form-item label="说明">
         <el-input v-model="form.description" type="textarea" :rows="2" />
       </el-form-item>
@@ -378,10 +167,13 @@
 </template>
 
 <script>
+import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import { hasPermission } from '@/security/permissionState'
+import { loadApiReferenceCatalog } from '@/utils/apiReferenceCatalog'
 import { editableResource } from '@/api/governance'
 import { completeResourceChange } from '@/utils/governanceWorkspace'
-import ProtocolPathPicker from '@/components/common/ProtocolPathPicker.vue'
+import ApiAuthEditor from '@/components/common/ApiAuthEditor.vue'
+import { emptyApiAuthConfig, readApiAuthConfig, apiAuthConfig } from '@/utils/apiAuthConfig'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import {
   createDatasource,
@@ -395,8 +187,8 @@ import { routeProjectId } from '@/utils/projectContext'
 export default {
   name: 'DatasourceDetail',
   mixins: [workspaceTabTitleMixin(vm => vm.form.datasourceName)],
-  components: {
-    ProtocolPathPicker, MonacoEditor },
+  components: { ProjectResourceSelect,
+    MonacoEditor, ApiAuthEditor },
   data() {
     return {
       projects: [],
@@ -407,6 +199,9 @@ export default {
       detailLoadSequence: 0,
       form: this.emptyForm(),
       authConfig: this.emptyAuthConfig('NONE'),
+      apiPickerVars: [],
+      apiPickerRequestId: 0,
+      apiPickerFunctions: [],
       rules: {
         datasourceCode: [
           { required: true, message: '请输入数据源编码', trigger: 'blur' },
@@ -479,6 +274,7 @@ export default {
       if (projectId) this.applyProjectContext(projectId)
     }
     await projects
+    await this.loadApiPickerOptions()
   },
   activated() { if (!this.isCreateMode && !this.detailLoaded && !this.detailLoading) this.loadDetail() },
   deactivated() { this.detailLoadSequence++; this.detailLoading = false },
@@ -487,6 +283,16 @@ export default {
     applyProjectContext(projectId) {
       this.form.scope = 'PROJECT'
       this.form.projectId = Number(projectId)
+    },
+    async loadApiPickerOptions() {
+      const requestId = ++this.apiPickerRequestId
+      const projectId = this.form.scope === 'GLOBAL' ? 0 : this.form.projectId
+      this.apiPickerVars = []; this.apiPickerFunctions = []
+      if (projectId == null || projectId === '') return
+      const catalog = await loadApiReferenceCatalog(Number(projectId) || 0)
+      if (requestId !== this.apiPickerRequestId) return
+      this.apiPickerVars = catalog.vars; this.apiPickerFunctions = catalog.functions
+      if (catalog.errors.length) this.$message.warning(catalog.errors.join('；'))
     },
     emptyForm() {
       return {
@@ -505,32 +311,7 @@ export default {
         status: 1,
       }
     },
-    emptyAuthConfig(type) {
-      const common = {
-        username: '',
-        password: '',
-        token: '',
-        name: 'X-API-Key',
-        value: '',
-        location: 'HEADER',
-        tokenUrl: '/oauth/token',
-        method: 'POST',
-        contentType: 'application/json',
-        tokenPath: 'body.access_token',
-        expiresInPath: 'body.expires_in',
-        tokenPlacement: 'HEADER',
-        tokenHeaderName: 'Authorization',
-        tokenPrefix: '',
-        tokenResponseScript: '',
-        headers: '{}',
-        body: '{"grant_type":"client_credentials"}',
-      }
-      if (type === 'TOKEN_API' || type === 'OAUTH2') {
-        common.tokenPath = 'body.access_token'
-        common.expiresInPath = 'body.expires_in'
-      }
-      return common
-    },
+    emptyAuthConfig() { return emptyApiAuthConfig() },
     async loadProjects() {
       try {
         const res = await listProjects({ pageNum: 1, pageSize: 500, status: 1 })
@@ -561,6 +342,7 @@ export default {
     },
     onScopeChange(scope) {
       if (scope === 'GLOBAL') this.form.projectId = 0
+      this.loadApiPickerOptions()
     },
     onProtocolChange(protocol) {
       if (protocol === 'RULE_ENGINE' && !this.form.baseUrl)
@@ -587,54 +369,10 @@ export default {
       return data
     },
     buildAuthConfig(type, rawAuthConfig) {
-      if (!type || type === 'NONE') return null
-      if (type === 'BASIC') {
-        return this.stringifyJson({
-          username: this.authConfig.username,
-          password: this.authConfig.password,
-        })
-      }
-      if (type === 'BEARER')
-        return this.stringifyJson({ token: this.authConfig.token })
-      if (type === 'API_KEY') {
-        return this.stringifyJson({
-          location: this.authConfig.location,
-          name: this.authConfig.name,
-          value: this.authConfig.value,
-        })
-      }
-      if (type === 'TOKEN_API' || type === 'OAUTH2') {
-        return this.stringifyJson({
-          tokenUrl: this.authConfig.tokenUrl,
-          method: this.authConfig.method,
-          contentType: this.authConfig.contentType,
-          headers: this.parseJsonText(this.authConfig.headers, '鉴权请求头'),
-          body: this.parseJsonText(this.authConfig.body, '鉴权请求体'),
-          tokenPath: this.authConfig.tokenPath,
-          expiresInPath: this.authConfig.expiresInPath,
-          tokenPlacement: this.authConfig.tokenPlacement,
-          tokenHeaderName: this.authConfig.tokenHeaderName,
-          tokenPrefix: this.authConfig.tokenPrefix,
-          tokenResponseScript: this.authConfig.tokenResponseScript,
-        })
-      }
-      return this.blankToNull(rawAuthConfig)
+      if (this.$refs?.authEditor && !this.$refs.authEditor.validate()) throw new Error('请修正鉴权配置中的字段名')
+      return type === 'CUSTOM' ? rawAuthConfig : JSON.stringify(apiAuthConfig(type, this.authConfig))
     },
-    parseAuthConfig(text, type) {
-      const base = this.emptyAuthConfig(type)
-      if (!text) return base
-      try {
-        const parsed = JSON.parse(text)
-        const merged = { ...base, ...parsed }
-        if (parsed.headers && typeof parsed.headers !== 'string')
-          merged.headers = this.stringifyJson(parsed.headers)
-        if (parsed.body && typeof parsed.body !== 'string')
-          merged.body = this.stringifyJson(parsed.body)
-        return merged
-      } catch (e) {
-        return base
-      }
-    },
+    parseAuthConfig(text) { return readApiAuthConfig(text) },
     handleSave() {
       if (!this.configurationReady || this.saving) return
       this.$refs.form.validate(async (valid) => {

@@ -33,6 +33,7 @@ import com.hengshucredit.rule.server.service.OperandDependencyCollector;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.server.service.RuleDefinitionService;
 import com.hengshucredit.rule.server.service.RuleFieldAnalyzer;
+import com.hengshucredit.rule.server.service.RuleFunctionService;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 
@@ -397,6 +398,7 @@ public class RuleDependencyClosureService {
             case "MODEL" -> addModel(refId, projectId, path, dependencies, issues);
             case "MODEL_OUTPUT" -> addModelOutput(refId, projectId, path, dependencies, issues);
             case "DATA_OBJECT" -> addDataObjectField(refId, projectId, path, dependencies, issues);
+            case "DATA_OBJECT_ROOT" -> addDataObjectRoot(refId, projectId, path, dependencies, issues);
             case "EXTERNAL_API" -> addDirectExternalApi(refId, projectId, path, dependencies, issues);
             case "LIST_LIBRARY" -> addDirectList(refId, projectId, path, dependencies, issues);
             default -> issues.add(RuleValidationIssue.error("UNSUPPORTED_REFERENCE_TYPE", path,
@@ -761,15 +763,28 @@ public class RuleDependencyClosureService {
     private void addFunction(Long functionId, Long projectId, String path,
                              Map<String, ArtifactDependency> dependencies,
                              List<RuleValidationIssue> issues) {
+        addFunction(functionId, projectId, path, dependencies, issues, new LinkedHashSet<>());
+    }
+
+    private void addFunction(Long functionId, Long projectId, String path,
+                             Map<String, ArtifactDependency> dependencies,
+                             List<RuleValidationIssue> issues,
+                             Set<Long> visitingFunctions) {
+        if (!visitingFunctions.add(functionId)) {
+            issues.add(RuleValidationIssue.error("FUNCTION_SCRIPT_CYCLE", path, "函数脚本存在循环依赖: FUNCTION:" + functionId));
+            return;
+        }
         RuleFunction function = loadFunction(functionId);
         if (function == null) {
             issues.add(RuleValidationIssue.error("DEPENDENCY_NOT_FOUND", path, "FUNCTION", functionId,
                     "函数不存在"));
+            visitingFunctions.remove(functionId);
             return;
         }
         if (!active(function.getStatus()) || !available(function.getScope(), function.getProjectId(), projectId)) {
             issues.add(RuleValidationIssue.error("INACTIVE_DEPENDENCY", path, "FUNCTION", functionId,
                     "函数已停用或不属于当前项目"));
+            visitingFunctions.remove(functionId);
             return;
         }
         String implType = firstText(function.getImplType(), null, "SCRIPT").toUpperCase(Locale.ROOT);
@@ -795,6 +810,45 @@ public class RuleDependencyClosureService {
         }
         addJsonDependency("FUNCTION:" + functionId, "FUNCTION", functionId, null,
                 "functions/" + functionId + ".json", mode, snapshot, dependencies);
+        if ("SCRIPT".equals(implType) && function.getImplScript() != null
+                && !function.getImplScript().isBlank()) {
+            Set<String> calls;
+            try {
+                calls = qlExpressEngine.getRunner().getOutFunctions(function.getImplScript());
+            } catch (RuntimeException error) {
+                issues.add(RuleValidationIssue.error("FUNCTION_SCRIPT_INVALID", path + ".implScript",
+                        error.getMessage() == null ? "函数脚本无法解析" : error.getMessage()));
+                visitingFunctions.remove(functionId);
+                return;
+            }
+            for (String code : calls) {
+                if (code == null || code.isBlank() || builtinFunction(code)) continue;
+                List<RuleFunction> candidates = loadFunctionsByCode(code, projectId);
+                if (candidates.isEmpty()) {
+                    issues.add(RuleValidationIssue.error("FUNCTION_DEPENDENCY_NOT_FOUND",
+                            path + ".implScript." + code, "函数脚本引用不存在: " + code));
+                } else if (candidates.size() > 1) {
+                    issues.add(RuleValidationIssue.error("FUNCTION_DEPENDENCY_AMBIGUOUS",
+                            path + ".implScript." + code, "函数脚本引用存在多个可用函数: " + code));
+                } else {
+                    addFunction(candidates.get(0).getId(), projectId,
+                            path + ".implScript." + code, dependencies, issues, visitingFunctions);
+                }
+            }
+        }
+        visitingFunctions.remove(functionId);
+    }
+
+    protected List<RuleFunction> loadFunctionsByCode(String code, Long projectId) {
+        List<RuleFunction> candidates = functionMapper.selectList(new LambdaQueryWrapper<RuleFunction>()
+                .eq(RuleFunction::getFuncCode, code)
+                .eq(RuleFunction::getStatus, 1));
+        List<RuleFunction> projectFunctions = candidates.stream()
+                .filter(function -> RuleFunctionService.SCOPE_PROJECT.equals(function.getScope())
+                        && projectId != null && projectId.equals(function.getProjectId()))
+                .toList();
+        if (!projectFunctions.isEmpty()) return projectFunctions;
+        return candidates.stream().filter(function -> RuleFunctionService.SCOPE_GLOBAL.equals(function.getScope())).toList();
     }
 
     private void addBuiltinFunctionRequirement(String functionCode,
@@ -803,6 +857,35 @@ public class RuleDependencyClosureService {
         addJsonDependency("BUILTIN_FUNCTION:" + functionCode, "BUILTIN_FUNCTION", null, null,
                 "runtime/builtin-functions/" + Sha256Digests.text(functionCode) + ".json",
                 "RUNTIME_REQUIREMENT", snapshot, dependencies);
+    }
+
+    private void addDataObjectRoot(Long objectId, Long projectId, String path,
+                                   Map<String, ArtifactDependency> dependencies, List<RuleValidationIssue> issues) {
+        RuleDataObject object = loadDataObject(objectId);
+        if (object == null || !active(object.getStatus()) || !available(object.getScope(), object.getProjectId(), projectId)) {
+            issues.add(RuleValidationIssue.error("DEPENDENCY_NOT_FOUND", path, "DATA_OBJECT_ROOT", objectId, "数据对象不存在、已停用或不属于当前项目"));
+            return;
+        }
+        if (!addJsonDependency("DATA_OBJECT_ROOT:" + objectId, "DATA_OBJECT_ROOT", objectId, null,
+                "data-objects/" + objectId + ".json", "EMBEDDED", JSON.parseObject(JSON.toJSONString(object)), dependencies)) return;
+        Map<String, Object> binding = new LinkedHashMap<>();
+        binding.put("sourceComponentId", "DATA_OBJECT_ROOT:" + objectId); binding.put("sourceType", object.getSourceType());
+        binding.put("sourceObjectId", objectId); binding.put("targetResourceType", "DATA_OBJECT_ROOT");
+        addJsonDependency("BINDING:DATA_OBJECT:" + objectId, "BINDING", objectId, null,
+                "bindings/data-objects/" + objectId + ".json", "EXPLICIT_BINDING", binding, dependencies);
+        for (RuleDataObjectField field : loadDataObjectFields(objectId)) {
+            addDataObjectField(field.getId(), projectId, path, dependencies, issues);
+        }
+        if ("API".equals(object.getSourceType())) {
+            RuleVariable source = new RuleVariable(); source.setId(objectId); source.setProjectId(projectId);
+            source.setVarSource("API"); source.setSourceConfig(object.getSourceContent());
+            addExternalSourceBindings(source, "DATA_OBJECT_ROOT", path, dependencies, issues);
+        }
+    }
+
+    protected List<RuleDataObjectField> loadDataObjectFields(Long objectId) {
+        return dataObjectFieldMapper.selectList(new LambdaQueryWrapper<RuleDataObjectField>()
+                .eq(RuleDataObjectField::getObjectId, objectId).eq(RuleDataObjectField::getStatus, 1));
     }
 
     private void addDataObjectField(Long fieldId, Long projectId, String path,

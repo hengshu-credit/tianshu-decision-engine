@@ -7,6 +7,7 @@ const ACTION_ROUTES = {
   CONFIGURE_SOURCES: '/datasource',
   CONFIGURE_EXTERNAL_SOURCES: '/datasource',
   CONFIGURE_DATABASE_SOURCES: '/database',
+  CONFIGURE_SFTP_SOURCES: '/sftp',
   CONFIGURE_MODELS: '/model',
   CONFIGURE_RULES: '/rule',
   TEST_RULES: '/test',

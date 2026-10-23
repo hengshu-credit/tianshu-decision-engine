@@ -26,6 +26,8 @@ import { markRaw } from 'vue'
 import { Loading as ElIconLoading } from '@element-plus/icons-vue'
 import { $emit } from '../../../utils/gogocodeTransfer'
 import { getMonacoScrollbarOptions, syncMonacoTheme } from '@/theme/monacoTheme'
+import { waitForMonaco } from '@/utils/monacoLoader'
+import { buildQlReferenceDecorations, collectQlScriptReferences } from '@/utils/qlScriptReferences'
 export default {
   components: {
     ElIconLoading,
@@ -48,24 +50,37 @@ export default {
       type: String,
       default: '480px',
     },
+    references: { type: Array, default: () => [] },
+    functions: { type: Array, default: () => [] },
+    referenceVersions: { type: Object, default: () => ({}) },
+    referenceCatalogMode: { type: String, default: 'LIVE' },
   },
   data() {
     return {
       diffEditor: null,
       originalModel: null,
       modifiedModel: null,
+      originalDecorationIds: [],
+      modifiedDecorationIds: [],
       loading: true,
       loadFailed: false,
       destroyed: false,
+      loadController: null,
     }
   },
   watch: {
     original(value) {
       this.updateModel(this.originalModel, value)
+      this.$nextTick(() => this.refreshReferenceDecorations())
     },
     modified(value) {
       this.updateModel(this.modifiedModel, value)
+      this.$nextTick(() => this.refreshReferenceDecorations())
     },
+    references: { deep: true, handler() { this.refreshReferenceDecorations() } },
+    functions: { deep: true, handler() { this.refreshReferenceDecorations() } },
+    referenceVersions: { deep: true, handler() { this.refreshReferenceDecorations() } },
+    referenceCatalogMode() { this.refreshReferenceDecorations() },
     language(value) {
       if (!window.monaco) return
       if (this.originalModel)
@@ -79,13 +94,10 @@ export default {
       'tianshu-theme-change',
       this.handleGlobalThemeChange
     )
-    let attempts = 0
-    while (!window.monaco && attempts < 100 && !this.destroyed) {
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      attempts++
-    }
-    if (this.destroyed) return
-    if (!window.monaco || !this.$refs.container) {
+    this.loadController = markRaw(new AbortController())
+    const monaco = window.monaco || await waitForMonaco(this.loadController.signal)
+    if (this.destroyed || this.loadController.signal.aborted || typeof window === 'undefined') return
+    if (!monaco || !this.$refs.container) {
       this.loading = false
       this.loadFailed = true
       return
@@ -122,6 +134,7 @@ export default {
       original: this.originalModel,
       modified: this.modifiedModel,
     })
+    this.refreshReferenceDecorations()
     this.loading = false
     $emit(this, 'ready', this.diffEditor)
     this.$nextTick(() => {
@@ -129,11 +142,13 @@ export default {
     })
   },
   beforeUnmount() {
+    this.loadController?.abort()
     window.removeEventListener(
       'tianshu-theme-change',
       this.handleGlobalThemeChange
     )
     this.destroyed = true
+    this.clearReferenceDecorations()
     if (this.diffEditor) this.diffEditor.dispose()
     if (this.originalModel) this.originalModel.dispose()
     if (this.modifiedModel) this.modifiedModel.dispose()
@@ -154,6 +169,38 @@ export default {
       const nextValue = value || ''
       if (!model.getValue || model.getValue() !== nextValue)
         model.setValue(nextValue)
+    },
+    normalizedReferences() {
+      return (this.references || []).map(reference => ({
+        ...reference,
+        varCode: reference.varCode || reference.refCode || reference.scriptName,
+        varLabelText: reference.varLabelText || reference.varLabel || reference.refLabel?.label || reference.label,
+        _varId: reference._varId != null ? reference._varId : reference.id,
+        _refType: reference._refType || reference.refType,
+      })).filter(reference => reference.varCode && reference._varId != null && reference._refType)
+    },
+    clearReferenceDecorations() {
+      if (this.diffEditor?.getOriginalEditor && this.originalDecorationIds.length) {
+        this.diffEditor.getOriginalEditor().deltaDecorations(this.originalDecorationIds, [])
+      }
+      if (this.diffEditor?.getModifiedEditor && this.modifiedDecorationIds.length) {
+        this.diffEditor.getModifiedEditor().deltaDecorations(this.modifiedDecorationIds, [])
+      }
+      this.originalDecorationIds = []
+      this.modifiedDecorationIds = []
+    },
+    refreshReferenceDecorations() {
+      this.clearReferenceDecorations()
+      if (this.language !== 'ql' || !this.diffEditor?.getOriginalEditor || (!this.references.length && !this.functions.length)) return
+      const references = this.normalizedReferences()
+      const apply = (editor) => {
+        const model = editor?.getModel?.()
+        if (!model || typeof model.getPositionAt !== 'function') return []
+        const matches = collectQlScriptReferences(model.getValue(), references, this.functions)
+        return editor.deltaDecorations([], buildQlReferenceDecorations(matches, model, this.referenceVersions, this.referenceCatalogMode, { includeType: true }))
+      }
+      this.originalDecorationIds = apply(this.diffEditor.getOriginalEditor())
+      this.modifiedDecorationIds = apply(this.diffEditor.getModifiedEditor())
     },
     ensureQlLanguage(monaco) {
       if (this.language !== 'ql' || !monaco.languages) return

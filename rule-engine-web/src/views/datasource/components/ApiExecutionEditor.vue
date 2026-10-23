@@ -5,13 +5,14 @@
     <div><el-button @click="configImportVisible = true">导入链路配置</el-button><span class="field-help">可导入经过检查的请求字段、步骤和响应配置，导入后仍需审批生效。</span></div>
     <el-tabs v-model="tab" :class="{ 'embedded-tabs': embeddedTabs }">
       <el-tab-pane label="请求字段" name="request"><template v-if="tab === 'request'">
+        <api-request-sample-editor v-model:value="config.requestSample" />
         <el-form-item label="默认传空策略"><el-select v-model="config.nullPolicy"><el-option label="不传空值" value="OMIT" /><el-option label="传 null" value="NULL" /><el-option label="传空字符串" value="EMPTY" /></el-select></el-form-item>
-        <api-parameter-fields v-model:fields="config.requestFields" :vars="vars" :functions="functions" :modules="[]" :validation-options="validationOptions" />
+        <api-parameter-fields v-model:fields="config.requestFields" :paths="requestPaths" :vars="vars" :functions="functions" :modules="[]" :validation-options="validationOptions" />
         <el-button @click="addBranch('requestBranches')">添加请求条件分支</el-button>
         <el-card v-for="(branch, index) in config.requestBranches" :key="branch.id" shadow="never" class="branch-card" draggable="true" @dragstart="startBranchDrag('requestBranches', index, $event)" @dragover.prevent @drop="dropBranch('requestBranches', index, $event)">
           <div class="panel-toolbar"><span class="branch-drag-handle" title="拖拽调整条件顺序">☷</span><el-input v-model="branch.name" placeholder="分支名称" /><el-button link type="danger" @click="config.requestBranches.splice(index, 1)">删除分支</el-button></div>
           <response-condition-tree-editor operand-mode :functions="functions" :group="branch.condition" :path-options="[]" :vars="vars" />
-          <api-parameter-fields v-model:fields="branch.requestFields" :vars="vars" :functions="functions" :modules="[]" :validation-options="validationOptions" />
+          <api-parameter-fields v-model:fields="branch.requestFields" :paths="requestPaths" :vars="vars" :functions="functions" :modules="[]" :validation-options="validationOptions" />
         </el-card>
       </template></el-tab-pane>
       <el-tab-pane label="响应结构" name="response"><template v-if="tab === 'response'">
@@ -21,8 +22,8 @@
           <div class="panel-toolbar"><span class="branch-drag-handle" title="拖拽调整条件顺序">☷</span><el-input v-model="branch.name" placeholder="分支名称" /><el-button @click="openSample(branch)">导入响应样例生成字段</el-button><el-button @click="previewResponse(branch)">预览响应组装</el-button><el-button link type="danger" @click="config.responseBranches.splice(index, 1)">删除分支</el-button></div>
           <response-condition-tree-editor operand-mode :functions="functions" :group="branch.condition" :path-options="responsePaths(branch)" />
           <el-radio-group v-model="branch.mode"><el-radio-button value="FIELDS">按字段组装</el-radio-button><el-radio-button value="VALUE">整体取值</el-radio-button></el-radio-group>
-          <div v-if="branch.mode === 'VALUE'" class="response-value-mapping"><el-input v-model="branch.outputPath" placeholder="结果字段路径，如 data 或 result.score" /><api-value-editor v-model:value="branch.value" :modules="responsePaths(branch)" :functions="functions" /></div>
-          <api-parameter-fields v-else v-model:fields="branch.outputFields" output :vars="[]" :functions="functions" :modules="responsePaths(branch)" />
+          <div v-if="branch.mode === 'VALUE'" class="response-value-mapping"><protocol-path-picker v-model:value="branch.outputPath" :paths="apiTargetPaths(branch.sample)" context-label="响应输出结构" placeholder="留空保留整体值；填写路径则嵌套输出，如 data.score" /><api-value-editor v-model:value="branch.value" :modules="responsePaths(branch)" :functions="functions" /></div>
+          <api-parameter-fields v-else v-model:fields="branch.outputFields" :paths="apiTargetPaths(branch.sample)" output :vars="[]" :functions="functions" :modules="responsePaths(branch)" />
           <el-collapse v-if="branch.sample"><el-collapse-item title="查看响应字段结构"><api-sample-structure :sample="branch.sample" /></el-collapse-item></el-collapse>
         </el-card>
         <pre v-if="responsePreview" class="response-preview">{{ responsePreview }}</pre>
@@ -30,7 +31,7 @@
       <el-tab-pane v-if="asyncMode" label="多步链路" name="steps"><template v-if="tab === 'steps'">
         <p class="field-help">可覆盖入参统一在“请求字段”声明，步骤中从“链路入参”选择。步骤 ID 创建后保持稳定。轮询仅重复当前步骤；回调地址可在提交步骤中从 callbacks.步骤ID.url 选择。总超时使用 API 基础配置。</p>
         <el-button @click="addStep('HTTP')">添加请求步骤</el-button><el-button @click="addStep('CALLBACK')">添加回调步骤</el-button>
-        <el-card v-for="(step, index) in config.steps" :key="step.id" shadow="never">
+        <el-card v-for="(step, index) in config.steps" :key="step.id" shadow="never" class="api-workflow-step" :data-step-id="step.id">
           <div class="panel-toolbar"><strong>{{ index + 1 }} · {{ step.type === 'HTTP' ? '主动请求' : '等待回调' }}</strong><el-input v-model="step.name" placeholder="步骤名称" /><el-button :disabled="index === 0" @click="moveStep(index, -1)">上移</el-button><el-button :disabled="index === config.steps.length - 1" @click="moveStep(index, 1)">下移</el-button><el-button link type="danger" @click="config.steps.splice(index, 1)">删除</el-button></div>
           <div class="field-help">步骤引用：<code>steps.{{ step.id }}</code></div>
           <el-collapse><el-collapse-item title="执行条件（为空时执行）"><response-condition-tree-editor operand-mode :functions="functions" :group="step.when" :path-options="stepModules(index)" /></el-collapse-item></el-collapse>
@@ -39,10 +40,12 @@
             <el-form-item label="请求地址"><el-input v-model="step.endpointUrl" placeholder="独立地址或覆盖关联 API 地址" /></el-form-item>
             <el-form-item label="请求方法"><el-select v-model="step.requestMethod"><el-option v-for="method in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']" :key="method" :value="method" :label="method" /></el-select></el-form-item>
             <el-form-item label="内容类型"><el-select v-model="step.contentType"><el-option v-for="type in contentTypes" :key="type" :value="type" :label="type" /></el-select></el-form-item>
-            <el-form-item label="鉴权方式"><el-select v-model="step.authMode"><el-option v-for="mode in ['INHERIT', 'NONE', 'API', 'BASIC', 'BEARER', 'API_KEY', 'TOKEN_API', 'OAUTH2', 'CUSTOM']" :key="mode" :value="mode" :label="authLabel(mode)" /></el-select></el-form-item>
+            <el-form-item label="鉴权方式"><el-select v-model="step.authMode" @change="step.authApiConfig = ''"><el-option v-for="mode in ['INHERIT', 'NONE', 'API', 'BASIC', 'BEARER', 'API_KEY', 'TOKEN_API', 'OAUTH2', 'CUSTOM']" :key="mode" :value="mode" :label="authLabel(mode)" /></el-select></el-form-item>
             <el-form-item v-if="step.authMode === 'API'" label="鉴权 API"><resource-picker v-model:value="step.authApiConfigId" :resources="apis" placeholder="选择鉴权 API" /></el-form-item>
-            <el-form-item v-else-if="!['NONE', 'INHERIT'].includes(step.authMode)" label="鉴权参数"><MonacoEditor v-model:value="step.authApiConfig" language="json" height="110px" :options="{ minimap: { enabled: false }, wordWrap: 'on' }" /></el-form-item>
-            <api-parameter-fields :allow-overrides="false" v-model:fields="step.requestFields" :vars="vars" :functions="functions" :modules="stepModules(index)" :validation-options="validationOptions" />
+            <el-form-item v-else-if="step.authMode === 'CUSTOM'" label="鉴权参数"><MonacoEditor v-model:value="step.authApiConfig" language="json" height="110px" :options="{ minimap: { enabled: false }, wordWrap: 'on' }" /></el-form-item>
+            <api-auth-editor v-else ref="stepAuthEditors" :value="readApiAuthConfig(step.authApiConfig)" :type="step.authMode || 'INHERIT'" :vars="vars" :functions="functions" :modules="stepModules(index)" @update:value="setStepAuth(step, $event)" />
+            <api-request-sample-editor v-model:value="step.requestSample" title="本步骤请求样例与字段目录" />
+            <api-parameter-fields :allow-overrides="false" v-model:fields="step.requestFields" :paths="requestPathsFor(step)" :vars="vars" :functions="functions" :modules="stepModules(index)" :validation-options="validationOptions" />
             <el-collapse>
               <el-collapse-item title="本步骤响应结构与条件分支">
                 <el-button @click="addStepResponse(step)">添加本步骤响应分支</el-button>
@@ -50,8 +53,8 @@
                   <div class="panel-toolbar"><el-input v-model="branch.name" placeholder="分支名称" /><el-button @click="openSample(branch)">导入响应样例生成字段</el-button></div>
                   <response-condition-tree-editor operand-mode :functions="functions" :group="branch.condition" :path-options="responsePaths(branch, index)" />
                   <el-radio-group v-model="branch.mode"><el-radio-button value="FIELDS">按字段组装</el-radio-button><el-radio-button value="VALUE">整体取值</el-radio-button></el-radio-group>
-          <div v-if="branch.mode === 'VALUE'" class="response-value-mapping"><el-input v-model="branch.outputPath" placeholder="结果字段路径，如 data 或 result.score" /><api-value-editor v-model:value="branch.value" :modules="responsePaths(branch, index)" :functions="functions" /></div>
-          <api-parameter-fields v-else v-model:fields="branch.outputFields" output :vars="[]" :functions="functions" :modules="responsePaths(branch, index)" />
+          <div v-if="branch.mode === 'VALUE'" class="response-value-mapping"><protocol-path-picker v-model:value="branch.outputPath" :paths="apiTargetPaths(branch.sample)" context-label="响应输出结构" placeholder="留空保留整体值；填写路径则嵌套输出，如 data.score" /><api-value-editor v-model:value="branch.value" :modules="responsePaths(branch, index)" :functions="functions" /></div>
+          <api-parameter-fields v-else v-model:fields="branch.outputFields" :paths="apiTargetPaths(branch.sample)" output :vars="[]" :functions="functions" :modules="responsePaths(branch, index)" />
                 </el-card>
               </el-collapse-item>
               <el-collapse-item title="本步骤成功、异常与重试判断">
@@ -104,25 +107,28 @@
 import { computed, markRaw } from 'vue'
 import ApiParameterFields from '@/components/common/ApiParameterFields.vue'
 import ApiValueEditor from '@/components/common/ApiValueEditor.vue'
+import ApiAuthEditor from '@/components/common/ApiAuthEditor.vue'
+import { readApiAuthConfig, apiAuthConfig } from '@/utils/apiAuthConfig'
+import ApiRequestSampleEditor from '@/components/common/ApiRequestSampleEditor.vue'
 import ResourcePicker from '@/components/common/ResourcePicker.vue'
 import ProtocolPathPicker from '@/components/common/ProtocolPathPicker.vue'
 import ApiSampleStructure from '@/components/common/ApiSampleStructure.vue'
 import ResponseConditionTreeEditor from '@/components/common/ResponseConditionTreeEditor.vue'
 import MonacoEditor from '@/components/MonacoEditor.vue'
-import { newApiId, newCondition, parseExecution, prepareResponseSample, validateExecution, apiFieldOptions } from '@/utils/apiExecution'
+import { newApiId, newCondition, parseExecution, prepareResponseSample, validateExecution, apiTargetPaths } from '@/utils/apiExecution'
 import { apiStagePaths } from '@/utils/apiContext'
-import { listVariablesByProject, getVariableSourceOptions, listAvailableFieldValidations } from '@/api/variable'
-import { getVariableTree } from '@/api/dataObject'
-import { listAllFunctionsByProject } from '@/api/function'
+import { getVariableSourceOptions, listAvailableFieldValidations } from '@/api/variable'
+import { loadApiReferenceCatalog } from '@/utils/apiReferenceCatalog'
 import request from '@/api/request'
 export default {
-  components: { ApiParameterFields, ApiValueEditor, ApiSampleStructure, ResponseConditionTreeEditor, ResourcePicker, ProtocolPathPicker, MonacoEditor },
+  components: { ApiParameterFields, ApiValueEditor, ApiAuthEditor, ApiRequestSampleEditor, ApiSampleStructure, ResponseConditionTreeEditor, ResourcePicker, ProtocolPathPicker, MonacoEditor },
   props: { value: { type: String, default: '' }, projectId: { type: [Number, String], default: 0 }, asyncMode: Boolean, apiConfig: { type: Object, default: () => ({}) }, embeddedTabs: Boolean, activeTab: { type: String, default: '' }, activePolicy: { type: String, default: '' } },
   emits: ['update:value', 'select-sample', 'select-mode', 'update:activeTab'],
   data() { return { config: parseExecution(this.value), emittedConfig: '', emitTimer: null, pathCatalogs: markRaw(new Map()), draggingBranch: null, tab: this.activeTab || 'request', policyTab: this.activePolicy || 'exceptionBranches', vars: [], functions: [], apis: [], validationOptions: [], loadNumber: 0, sampleVisible: false, sampleText: '{}', sampleBranch: null, sampleStrategy: 'AUTO', configImportVisible: false, configImportText: '', responsePreview: '',
     callbackPlaceholder: 'https://公网地址/api/external-callback/${invocationId}', contentTypes: ['application/json', 'application/x-www-form-urlencoded', 'multipart/form-data'],
     policies: [{ key: 'exceptionBranches', label: '异常判断' }, { key: 'retryBranches', label: '重试条件' }] } },
   computed: {
+    requestPaths() { return this.requestPathsFor(this.config) },
     rawResponseModules() { return apiStagePaths(this.config, 'STEP_CONDITION') },
 
   },
@@ -136,6 +142,15 @@ export default {
   },
   beforeUnmount() { this.loadNumber++; if (this.emitTimer) clearTimeout(this.emitTimer) },
   methods: {
+    apiTargetPaths,
+    requestPathsFor(config) { return apiTargetPaths(config.requestSample).map(path => ({ ...path, location: 'JSON' })) },
+    readApiAuthConfig,
+    setStepAuth(step, value) {
+      const config = apiAuthConfig(step.authMode || 'INHERIT', value)
+      if (value.scriptVariables) config.scriptVariables = value.scriptVariables
+      step.authApiConfig = JSON.stringify(config)
+    },
+    validate() { return (this.$refs.stepAuthEditors || []).every(editor => editor.validate()) },
     queueConfigEmit(value) {
       if (this.emitTimer) clearTimeout(this.emitTimer)
       this.emitTimer = setTimeout(() => {
@@ -144,16 +159,23 @@ export default {
         this.emitTimer = null
       }, 0)
     },
+    flushConfig() {
+      if (this.emitTimer) clearTimeout(this.emitTimer)
+      this.emitTimer = null
+      const text = JSON.stringify(this.config)
+      if (text !== this.emittedConfig) { this.emittedConfig = text; this.$emit('update:value', text) }
+    },
     async loadOptions() {
       const sequence = ++this.loadNumber
       const projectId = Number(this.projectId || 0)
        this.vars = []; this.apis = []; this.functions = []; this.validationOptions = []
       try {
-        const [variables, objects, apis, functions, validations] = await Promise.all([listVariablesByProject(projectId), getVariableTree(projectId), getVariableSourceOptions({ scope: projectId > 0 ? 'PROJECT' : 'GLOBAL', projectId }), listAllFunctionsByProject(projectId), listAvailableFieldValidations(projectId)])
+        const [catalog, apis, validations] = await Promise.all([loadApiReferenceCatalog(projectId), getVariableSourceOptions({ scope: projectId > 0 ? 'PROJECT' : 'GLOBAL', projectId }), listAvailableFieldValidations(projectId)])
         if (sequence !== this.loadNumber) return
-        this.vars = apiFieldOptions(variables?.data || [], objects?.data?.tree || [])
+        this.vars = catalog.vars
         this.apis = apis?.data?.apiOptions || []
-        this.functions = functions?.data || []
+        this.functions = catalog.functions
+        if (catalog.errors.length) this.$message.warning(catalog.errors.join('；'))
         this.validationOptions = validations?.data || []
       } catch (error) { if (sequence === this.loadNumber) this.$message.error(error.message || '配置字段加载失败') }
     },

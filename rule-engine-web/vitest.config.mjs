@@ -12,7 +12,7 @@ export default defineConfig({
       { find: /^monaco-editor$/, replacement: resolveFromRoot('./tests/__mocks__/monaco-editor.js') },
       { find: /^@logicflow\/core$/, replacement: resolveFromRoot('./tests/__mocks__/empty.js') },
       { find: /^@logicflow\/extension$/, replacement: resolveFromRoot('./tests/__mocks__/empty.js') },
-      { find: /^@logicflow\/layout$/, replacement: resolveFromRoot('./tests/__mocks__/empty.js') },
+      { find: /^@logicflow\/layout(?:\/es\/dagre\/index\.js)?$/, replacement: resolveFromRoot('./tests/__mocks__/empty.js') },
       { find: '@', replacement: resolveFromRoot('./src') }
     ],
     extensions: ['.mjs', '.js', '.mts', '.ts', '.jsx', '.tsx', '.json', '.vue']

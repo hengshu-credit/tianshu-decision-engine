@@ -22,8 +22,9 @@ import { getVariableTree, getDataObjectFieldOptions } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
 import { listAllModelsByProject } from '@/api/model'
 import { listLibraries } from '@/api/ruleList'
-import { listApiConfigs } from '@/api/datasource'
-import { API_MODULE_FIELDS } from '@/utils/apiExecution'
+import { listAvailableApiConfigs } from '@/api/datasource'
+import { API_MODULE_FIELDS, parseExecution } from '@/utils/apiExecution'
+import { apiStagePaths } from '@/utils/apiContext'
 import { varTypeTagColor, varTypeLabel as _varTypeLabel } from '@/constants/varTypes'
 import { makeRefLabel } from '@/utils/varDisplay'
 import { buildPickerOptions, buildReferenceCatalog } from '@/utils/referenceCatalog'
@@ -302,7 +303,16 @@ export default {
         if (apiId == null) return
         const apiCode = api.apiCode || api.code || `api_${apiId}`
         const apiLabel = api.apiName || api.name || apiCode
-        API_MODULE_FIELDS.forEach(field => {
+        const paths = new Map(API_MODULE_FIELDS.map(field => [field.value, field]))
+        ;(api.resultFields || []).forEach(field => { if (field?.value) paths.set(field.value, field) })
+        if (api.executionConfig) {
+          try {
+            apiStagePaths(parseExecution(api.executionConfig), 'RESULT').forEach(field => {
+              if (field?.value && !paths.has(field.value)) paths.set(field.value, field)
+            })
+          } catch (error) { /* 当前 API 结构无效时仍保留通用调用上下文。 */ }
+        }
+        paths.forEach(field => {
           const refCode = field.value === '$' ? apiCode : `${apiCode}.${field.value}`
           refs.push({
             id: apiId,
@@ -366,7 +376,7 @@ export default {
           hasPermission('function:view') ? listAllFunctionsByProject(pid).catch(optionalDirectory) : [],
           hasPermission('model:view') ? listAllModelsByProject(pid).catch(optionalDirectory) : [],
           hasPermission('list:view') ? Promise.resolve(listLibraries({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(optionalDirectory) : [],
-          hasPermission('datasource:view') ? Promise.resolve(listApiConfigs({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(optionalDirectory) : []
+          hasPermission('datasource:view') ? Promise.resolve(listAvailableApiConfigs(pid)).catch(optionalDirectory) : []
         ])
         if (!this.referenceRequestCurrent(requestId)) return
         this.projectFunctions = this.normalizeListResponse(funcRes)
@@ -454,7 +464,7 @@ export default {
           listAllFunctionsByProject(pid).catch(() => []),
           listAllModelsByProject(pid).catch(() => []),
           hasPermission('list:view') ? Promise.resolve(listLibraries({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(() => []) : [],
-          hasPermission('datasource:view') ? Promise.resolve(listApiConfigs({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(() => []) : []
+          hasPermission('datasource:view') ? Promise.resolve(listAvailableApiConfigs(pid)).catch(() => []) : []
         ])
         // request 拦截器已返回 res.data，直接使用
         this.projectFunctions = this.normalizeListResponse(funcRes)

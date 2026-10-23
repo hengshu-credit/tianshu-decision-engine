@@ -51,4 +51,23 @@ public class HistoryLogSnapshotTest {
         assertEquals(Map.of("VARIABLE:1", 10, "VARIABLE:3", 300, "VARIABLE:5", 20), fields);
         assertEquals(List.of(7L), snapshot.get("apiIds"));
     }
+
+    @Test
+    public void resolvedObjectSourceValueIsRecordedWhenRequestPathWasMissing() {
+        var cache = new VariableResolutionInvocationCache();
+        cache.registerHistoryFields(Map.of(
+                "DATA_OBJECT:30", new HistoricalFieldDefinition("DATA_OBJECT:30", "request.score", "INPUT", true,
+                        "DATA_OBJECT:30", null, null)));
+        cache.rememberFieldResult("DATA_OBJECT:30", 92);
+        RuleDefinitionInputField input = new RuleDefinitionInputField();
+        input.setVarId(30L);
+        input.setRefType("DATA_OBJECT");
+        input.setScriptName("request.score");
+        input.setFieldName("request.score");
+        Map<String, Object> original = new java.util.LinkedHashMap<>();
+        original.put("request", new java.util.LinkedHashMap<>());
+        Map<?, ?> fields = (Map<?, ?>) cache.historySnapshot(
+                List.of(input), original, Map.of("request", Map.of("score", 92))).get("fields");
+        assertEquals(92, fields.get("DATA_OBJECT:30"));
+    }
 }

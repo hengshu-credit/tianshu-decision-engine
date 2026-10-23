@@ -88,7 +88,7 @@ public class RuleSyncControllerTest {
         }
         for (Object invalid : new Object[]{0, "off", Collections.singletonList(false)}) {
             body.put("traceEnabled", invalid);
-            assertEquals(400, controller.execute("RISK", body, request).getCode());
+            assertEquals("100001", controller.execute("RISK", body, request).getCode());
         }
     }
 

@@ -61,6 +61,15 @@ function mockDraftSave(revision) {
 }
 
 describe('RuleDetail 生命周期治理', () => {
+  test('开放 API 映射保存超出 JavaScript 安全整数范围的资源 ID', async () => {
+    const wrapper = await mountAndWait()
+    wrapper.vm.openApiForm.requestMappings = [{ targetKey: 'VARIABLE:9007199254740993', sourcePath: '$.Age' }]
+    wrapper.vm.openApiForm.responseMappings = [{ sourceKey: 'MODEL_OUTPUT:9007199254740995', targetField: 'Score' }]
+    const saved = wrapper.vm.buildOpenApiContract()
+    expect(saved.requestMappings[0].targetVarId).toBe('9007199254740993')
+    expect(saved.responseMappings[0].sourceVarId).toBe('9007199254740995')
+    wrapper.unmount()
+  })
   test('TTL真实数字控件在详情加载完成后同时解除原生与ARIA禁用', async () => {
     const wrapper = await mountAndWait(undefined, undefined, {}, undefined,
       { 'el-input-number': ElInputNumber, 'el-input': ElInput, 'el-form-item': makeSlotStub('div') })
@@ -149,15 +158,15 @@ describe('RuleDetail 生命周期治理', () => {
       const operand = wrapper.findComponent({ name: 'OperandPicker' })
       expect(operand.exists()).toBe(true)
       const jsonEditors = wrapper.findAllComponents({ name: 'ContractEditorProbe' }).filter(item => item.element.closest('.open-api-panel'))
-      expect(jsonEditors).toHaveLength(4)
+      expect(jsonEditors).toHaveLength(3)
       await wrapper.setData({ lifecycleRevisionId: 8 })
-      const before = JSON.stringify(wrapper.vm.openApiForm), text = wrapper.vm.openEnvelopeText
+      const before = JSON.stringify(wrapper.vm.openApiForm), text = wrapper.vm.openResponseHeadersText
       operand.vm.$emit('input', { kind: 'LITERAL', value: 'late-expression' })
       jsonEditors[0].vm.$emit('update:value', '{"late":true}')
       for (const name of ['addOpenRequestMapping', 'removeOpenRequestMapping', 'addOpenResponseMapping', 'removeOpenResponseMapping', 'resetOpenResponseMappings', 'addIdempotencyComponent', 'removeIdempotencyComponent']) wrapper.vm[name](0)
       await nextTick()
       expect(JSON.stringify(wrapper.vm.openApiForm)).toBe(before)
-      expect(wrapper.vm.openEnvelopeText).toBe(text)
+      expect(wrapper.vm.openResponseHeadersText).toBe(text)
       expect(wrapper.findComponent({ name: 'OperandPicker' }).exists()).toBe(false)
       for (const item of jsonEditors) expect(item.props('readOnly')).toBe(true)
       for (const button of wrapper.findAll('.open-api-panel button').filter(item => ['添加映射', '删除', '恢复默认映射', '添加字段组件'].includes(item.text()))) expect(button.element.disabled).toBe(true)
@@ -844,6 +853,15 @@ describe('RuleDetail — 初始化与数据加载', () => {
     expect(wrapper.vm.releaseProgressCompleted).toBe(5)
     expect(wrapper.vm.releaseProgressSummary).toContain('审批发布')
   })
+  test('发布准备流程复用全局配置步骤组件并保留主题进度语义', () => {
+    const guide = wrapper.findComponent({ name: 'ConfigLayerGuide' })
+    expect(guide.exists()).toBe(true)
+    expect(guide.props('testId')).toBe('rule-release-progress')
+    expect(guide.props('interactive')).toBe(true)
+    expect(guide.props('progressLabel')).toBe('已完成')
+    expect(guide.props('items')[0].status).toBe('READY')
+    expect(guide.props('items')[3].status).toBe('PENDING')
+  })
 })
 
 describe('RuleDetail — 辅助方法', () => {
@@ -1133,8 +1151,6 @@ describe('RuleDetail — 开放接口契约', () => {
         sourceRefType: 'VARIABLE',
         targetField: 'decision_result'
       }],
-      envelopeTemplate: { retCode: '${status.code}', payload: '${data}' },
-      dataPath: '$.payload',
       successDataTemplate: { result: '${output.VARIABLE.3}' },
       errorDataTemplate: { errorCode: '${status.code}' },
       responseHeaders: { 'X-Business-Code': '${status.code}' }
@@ -1156,7 +1172,7 @@ describe('RuleDetail — 开放接口契约', () => {
 
     expect(wrapper.vm.openApiForm.requestMappings[0].targetKey).toBe('VARIABLE:1')
     expect(wrapper.vm.openApiForm.responseMappings[0].sourceKey).toBe('VARIABLE:3')
-    expect(wrapper.vm.openEnvelopeText).toContain('payload')
+    expect(wrapper.vm.openResponseHeadersText).toContain('X-Business-Code')
     await wrapper.vm.saveOpenApiConfig()
 
     const payload = definitionApi.saveContent.mock.calls[0][0]
@@ -1175,7 +1191,8 @@ describe('RuleDetail — 开放接口契约', () => {
       targetRefType: 'VARIABLE',
       sourcePath: '$.customer.age'
     }))
-    expect(saved.envelopeTemplate.payload).toBe('${data}')
+    expect(saved).not.toHaveProperty('envelopeTemplate')
+    expect(saved).not.toHaveProperty('dataPath')
     expect(saved.responseHeaders['X-Business-Code']).toBe('${status.code}')
     expect(saved.responseMappings[0]).toEqual({
       sourceVarId: 3,
@@ -1225,8 +1242,6 @@ describe('RuleDetail — 开放接口契约', () => {
   test('校验预览使用同一外层结构并分别渲染成功和异常 data', async () => {
     const wrapper = await mountAndWait()
     wrapper.vm.openApiForm.enabled = true
-    wrapper.vm.openEnvelopeText = JSON.stringify({ code: '${status.code}', payload: '${data}' })
-    wrapper.vm.openApiForm.dataPath = '$.payload'
     wrapper.vm.openSuccessDataText = JSON.stringify({ decision: '${output.VARIABLE.3}' })
     wrapper.vm.openErrorDataText = JSON.stringify({ errorCode: '${status.code}' })
 
@@ -1234,8 +1249,8 @@ describe('RuleDetail — 开放接口契约', () => {
 
     expect(wrapper.vm.openApiPreviewVisible).toBe(true)
     expect(Object.keys(wrapper.vm.openApiSuccessPreview)).toEqual(Object.keys(wrapper.vm.openApiErrorPreview))
-    expect(wrapper.vm.openApiSuccessPreview.payload.decision).toBe('<VARIABLE:3>')
-    expect(wrapper.vm.openApiErrorPreview.payload.errorCode).toBe('100001')
+    expect(wrapper.vm.openApiSuccessPreview.data.decision).toBe('<VARIABLE:3>')
+    expect(wrapper.vm.openApiErrorPreview.data.errorCode).toBe('100001')
     wrapper.unmount()
   })
 })

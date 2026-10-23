@@ -1,3 +1,4 @@
+import { PLATFORM_RESPONSE_CODES } from '../platformResponse'
 import { escapeHtml, serializeForScript } from './escape'
 import { normalizeApiDoc } from './model'
 import { renderOnlineRunner, renderOnlineRunnerScript } from './onlineRunner'
@@ -243,13 +244,31 @@ export function generateOpenApiDocument(doc) {
       } } },
       responses: {
         '200': { description: '规则执行完成', content: { 'application/json': { schema: {
-          type: 'object', properties: { code: { type: 'integer', example: 200 }, message: { type: 'string' }, data: { type: 'object', properties: {
+          type: 'object', properties: { code: { type: 'string', pattern: '^[0-9]{6}$', example: '000000' }, message: { type: 'string', example: '成功' }, detail: { type: ['string', 'null'] }, success: { type: 'boolean' }, traceId: { type: ['string', 'null'] }, data: { type: 'object', properties: {
             success: { type: 'boolean' }, traceId: { type: 'string' }, revisionId: { type: 'integer' }, artifactDigest: { type: 'string' }, result: fieldsSchema(rule.responseFields, 'data.result')
           } } }
         } } } },
         '400': { description: '请求参数或规则执行失败' }, '401': { description: '鉴权失败' }, '404': { description: '规则不存在' }, '409': { description: '幂等请求冲突或执行中' }, '429': { description: '限流或并发超过限制' }
       }
     } }
+    const schema = paths[path].post.responses['200'].content['application/json'].schema
+    for (const httpStatus of new Set(PLATFORM_RESPONSE_CODES.map(item => item.httpStatus))) {
+      const codes = PLATFORM_RESPONSE_CODES.filter(item => item.httpStatus === httpStatus)
+      const responseSchema = {
+        ...schema,
+        properties: {
+          ...schema.properties,
+          code: { ...schema.properties.code, enum: codes.map(item => item.code), example: codes[0].code },
+          message: { type: 'string', example: codes[0].message },
+          success: { type: 'boolean', example: httpStatus === 200 },
+          data: httpStatus === 200 ? schema.properties.data : {},
+        },
+      }
+      paths[path].post.responses[httpStatus] = {
+        description: codes.map(item => item.code + ' ' + item.message).join('；'),
+        content: { 'application/json': { schema: responseSchema } },
+      }
+    }
     if (rule.openApiEnabled) {
       const openPath = `/api/rule/openapi/${encodeURIComponent(rule.ruleCode)}`
       const openOperation = JSON.parse(JSON.stringify(paths[path].post))
@@ -257,6 +276,10 @@ export function generateOpenApiDocument(doc) {
       openOperation['x-open-api-contract-enabled'] = true
       openOperation['x-open-api-contract'] = rule.openApiContract
       openOperation.requestBody.content['application/json'].schema = fieldsSchema(rule.openApiRequestFields || [], '')
+      // 开放接口 data 由发布模板决定，不能复用同步执行 DTO 的内部字段。
+      for (const response of Object.values(openOperation.responses)) {
+        response.content['application/json'].schema.properties.data = {}
+      }
       paths[openPath] = { post: openOperation }
     }
   })

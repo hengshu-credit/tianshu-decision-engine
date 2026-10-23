@@ -44,7 +44,7 @@ public class RuleRuntimeControllerTest {
 
         var response = controller.getExternalCallPayload("call-1", new MockHttpServletRequest());
 
-        Assert.assertEquals(401, response.getCode());
+        Assert.assertEquals("300001", response.getCode());
     }
 
     @Test
@@ -62,7 +62,7 @@ public class RuleRuntimeControllerTest {
 
         var response = controller.getExecutionResult("trace-1", request);
 
-        Assert.assertEquals(200, response.getCode());
+        Assert.assertEquals("000000", response.getCode());
         Map<?, ?> payload = (Map<?, ?>) response.getData();
         Assert.assertEquals(720, ((Map<?, ?>) payload.get("result")).get("score"));
     }
@@ -79,7 +79,7 @@ public class RuleRuntimeControllerTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         ProjectAuthContext.direct(8L, "project-8", 1L, "auth", "TOKEN").attach(request);
 
-        Assert.assertEquals(404, controller.getExecutionResult("trace-1", request).getCode());
+        Assert.assertEquals("501001", controller.getExecutionResult("trace-1", request).getCode());
     }
 
     @Test
@@ -97,7 +97,7 @@ public class RuleRuntimeControllerTest {
         ProjectAuthContext.direct(8L, "project-8", 1L, "auth", "TOKEN").attach(request);
 
         var response = controller.getExecutionStatus("trace-wait", request);
-        Assert.assertEquals(200, response.getCode());
+        Assert.assertEquals("000000", response.getCode());
         Assert.assertEquals("WAITING_EXTERNAL", response.getData().getStatus());
         Assert.assertEquals("task-7", ((Map<?, ?>) ((Map<?, ?>) response.getData().getIntermediate()
                 .get("steps")).get("VARIABLE:7")).get("metadata") instanceof Map<?, ?> metadata
@@ -119,7 +119,7 @@ public class RuleRuntimeControllerTest {
         ProjectAuthContext.direct(8L, "project-8", 1L, "auth", "TOKEN").attach(request);
 
         var response = controller.getExecutionStatus("trace-done", request);
-        Assert.assertEquals(200, response.getCode());
+        Assert.assertEquals("000000", response.getCode());
         Assert.assertEquals("SUCCEEDED", response.getData().getStatus());
         Assert.assertEquals(720, ((Map<?, ?>) response.getData().getResult().getResult()).get("score"));
         Assert.assertNull(response.getData().getIntermediate());
@@ -138,11 +138,11 @@ public class RuleRuntimeControllerTest {
         ProjectAuthContext.direct(8L, "project-8", 1L, "auth", "TOKEN").attach(request);
 
         var status = controller.getExecutionStatus("trace-retry", request);
-        Assert.assertEquals(200, status.getCode());
+        Assert.assertEquals("000000", status.getCode());
         Assert.assertEquals("FAILED_RETRYABLE", status.getData().getStatus());
         Assert.assertNull(status.getData().getResult());
         Assert.assertNotNull(status.getData().getIntermediate());
-        Assert.assertEquals(202, controller.getExecutionResult("trace-retry", request).getCode());
+        Assert.assertEquals("400008", controller.getExecutionResult("trace-retry", request).getCode());
     }
 
     @Test
@@ -187,7 +187,7 @@ public class RuleRuntimeControllerTest {
 
         var response = controller.resumeExecution("trace-retry", Map.of("orderNo", "A-1"), request);
 
-        Assert.assertEquals(200, response.getCode());
+        Assert.assertEquals("000000", response.getCode());
         Assert.assertTrue(executed.get());
         RuleResult result = (RuleResult) response.getData();
         Assert.assertEquals(720, ((Map<?, ?>) result.getResult()).get("score"));

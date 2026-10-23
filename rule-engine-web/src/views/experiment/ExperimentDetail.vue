@@ -256,6 +256,7 @@
             <div class="tab-title">测试组配置</div>
             <div class="tab-subtitle">
               测试组在生产组执行后空跑，可独立选择随机分流或条件分流。
+              空跑不改写名单；是否访问外数取决于调用请求的外数开关，开启后仍可能产生供应商调用费用。
             </div>
           </div>
           <div class="test-mode">
@@ -660,7 +661,7 @@
           :page-size="logQuery.pageSize"
           :total="logTotal"
           layout="total,sizes,prev,pager,next"
-          :page-sizes="[10, 30, 50, 100]"
+          :page-sizes="[10, 20, 30, 50, 100]"
           @current-change="
             (p) => {
               logQuery.pageNum = p
@@ -816,6 +817,7 @@ import { editableResource } from '@/api/governance'
 import { completeResourceChange } from '@/utils/governanceWorkspace'
 import { chooseVersionRestore, versionDisplayLabel } from '@/utils/versionRestore'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
+import configurationDraftMixin from '@/mixins/configurationDraftMixin'
 import { markRaw } from 'vue'
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
 import { listProjectDefinitions } from '@/api/definition'
@@ -895,7 +897,7 @@ export default {
       logTotal: 0,
       logQuery: {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         requestKey: '',
         traceId: '',
         stage: '',
@@ -909,6 +911,8 @@ export default {
       versionCompare: null,
       versionPreview: '',
       nextUid: 1,
+      rulesRequestId: 0,
+      refsRequestId: 0,
       requestKeyKinds: getExpressionContext('READ_EXPRESSION').allowedKinds,
       ElIconPlus: markRaw(ElIconPlus),
     }
@@ -922,7 +926,7 @@ export default {
     GroupActionForm,
     TraceTree,
   },
-  mixins: [varPickerMixin, workspaceTabTitleMixin(vm => vm.form.experimentName)],
+  mixins: [configurationDraftMixin(vm => ({ form: vm.form, inputValidationConfigMap: vm.inputValidationConfigMap })), varPickerMixin, workspaceTabTitleMixin(vm => vm.form.experimentName)],
   computed: {
     editorFunctions() {
       return this.$data.projectFunctions || []
@@ -1053,6 +1057,7 @@ export default {
         this.$store && this.$store.state.currentProject
       )
       if (projectId) await this.applyProjectContext(projectId)
+      this.markConfigurationSaved()
       return
     }
     await this.loadDetail()
@@ -1159,10 +1164,11 @@ export default {
         groups: (data.groups || []).map((g) => this.normalizeGroupForEdit(g)),
       }
       this.inputValidationConfigMap = this.parseInputValidationConfig(data.inputValidationConfig)
-      await this.loadRules(this.form.projectId)
-      await this.loadExperimentRefs(this.form.projectId)
+      await Promise.all([this.loadRules(this.form.projectId), this.loadExperimentRefs(this.form.projectId)])
+      this.markConfigurationSaved()
     },
     async loadRules(projectId) {
+      const requestId = ++this.rulesRequestId
       if (!projectId) {
         this.rulesForProject = []
         this.ruleFieldMap = {}
@@ -1173,6 +1179,7 @@ export default {
       const pageSize = 200
       while (true) {
         const res = await listProjectDefinitions(projectId, { pageNum, pageSize, status: 1 })
+        if (requestId !== this.rulesRequestId) return
         const page = res && res.data ? res.data : res
         const records = Array.isArray(page) ? page : (page && page.records) || []
         rows.push(...records)
@@ -1302,6 +1309,7 @@ export default {
       this.form.projectCode = project?.projectCode || ''
     },
     async loadExperimentRefs(projectId) {
+      const requestId = ++this.refsRequestId
       if (!projectId) {
         this.projectIdForRefs = null
         this.projectRefs = []
@@ -1311,7 +1319,9 @@ export default {
       }
       this.projectIdForRefs = projectId
       await this.refreshProjectRefs()
+      if (requestId !== this.refsRequestId) return
       const response = await listAvailableFieldValidations(projectId)
+      if (requestId !== this.refsRequestId) return
       this.fieldValidationOptions = response?.data || []
     },
     onRoutingModeChange(mode) {
@@ -1431,6 +1441,7 @@ export default {
             }
           }
           this.saving = true
+          const submittedFingerprint = this.configurationFingerprint
           try {
             const data = { ...this.form, groups: this.prepareGroupsForSave() }
             data.inputValidationConfig = JSON.stringify(this.prepareInputValidationConfig())
@@ -1440,11 +1451,14 @@ export default {
             delete data.requestKeyOperand
             const res = await saveExperiment(data)
             await completeResourceChange(this, res)
+            this.markConfigurationSaved(submittedFingerprint)
             if (!this.form.id && res.data?.resourceId) {
               this.form.id = res.data.resourceId
               await this.$router.replace('/experiment/detail/' + this.form.id)
             }
             resolve(true)
+          } catch {
+            resolve(false)
           } finally {
             this.saving = false
           }

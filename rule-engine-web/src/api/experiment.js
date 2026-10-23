@@ -1,5 +1,6 @@
 import request from './request'
 import { createResourceDraft } from './governance'
+import { parseExperimentResponse } from '@/utils/experimentResponse'
 
 export function listExperiments(params) {
   return request({ url: '/rule/experiment/list', method: 'get', params })
@@ -30,7 +31,7 @@ export function deleteExperiment(id) {
 }
 
 export function executeExperiment(experimentCode, data) {
-  return request({ url: `/rule/experiment/execute/${experimentCode}`, method: 'post', data })
+  return request({ acceptExecutionFailure: true, url: `/rule/experiment/execute/${experimentCode}`, method: 'post', data, transformResponse: [parseExperimentResponse] })
 }
 
 export function listVersions(experimentId) {

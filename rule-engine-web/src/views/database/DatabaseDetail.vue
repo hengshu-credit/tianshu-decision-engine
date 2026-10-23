@@ -127,19 +127,12 @@
             label="所属项目"
             prop="projectId"
           >
-            <el-select
+            <project-resource-select
               v-model="form.projectId"
               filterable
               placeholder="请选择项目"
               style="width: 100%"
-            >
-              <el-option
-                v-for="project in projects"
-                :key="project.id"
-                :label="project.projectName"
-                :value="project.id"
-              />
-            </el-select>
+             :projects="projects" />
           </el-form-item>
         </el-col>
       </el-row>
@@ -258,10 +251,13 @@
           <el-form-item label="密码">
             <el-input
               v-model="form.password"
+              :disabled="isCredentialCleared('password')"
               type="password"
               autocomplete="new-password"
               show-password
             />
+            <div class="field-help">{{ credentialHint('password') }}</div>
+            <el-checkbox v-if="hasStoredCredential('password') || isCredentialCleared('password')" :model-value="isCredentialCleared('password')" @change="setCredentialCleared('password', $event)">清除已存密码</el-checkbox>
           </el-form-item>
         </el-col>
       </el-row>
@@ -296,20 +292,26 @@
             <el-form-item label="SSH密码">
               <el-input
                 v-model="form.sshPassword"
+                :disabled="isCredentialCleared('sshPassword')"
                 type="password"
                 autocomplete="new-password"
                 show-password
               />
+              <div class="field-help">{{ credentialHint('sshPassword') }}</div>
+              <el-checkbox v-if="hasStoredCredential('sshPassword') || isCredentialCleared('sshPassword')" :model-value="isCredentialCleared('sshPassword')" @change="setCredentialCleared('sshPassword', $event)">清除已存 SSH 密码</el-checkbox>
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item label="私钥口令">
               <el-input
                 v-model="form.sshPassphrase"
+                :disabled="isCredentialCleared('sshPassphrase')"
                 type="password"
                 autocomplete="new-password"
                 show-password
               />
+              <div class="field-help">{{ credentialHint('sshPassphrase') }}</div>
+              <el-checkbox v-if="hasStoredCredential('sshPassphrase') || isCredentialCleared('sshPassphrase')" :model-value="isCredentialCleared('sshPassphrase')" @change="setCredentialCleared('sshPassphrase', $event)">清除已存私钥口令</el-checkbox>
             </el-form-item>
           </el-col>
         </el-row>
@@ -318,11 +320,13 @@
             <el-form-item label="SSH私钥">
                 <monaco-editor
                   v-model:value="form.sshPrivateKey"
+                  :read-only="isCredentialCleared('sshPrivateKey')"
                   language="plaintext"
                   height="130px"
                   :options="{ minimap: { enabled: false }, wordWrap: 'on' }"
               />
-                <div class="field-help">可粘贴 PEM 私钥内容；密码和私钥二选一</div>
+                <div class="field-help">{{ credentialHint('sshPrivateKey') }}；密码和私钥二选一</div>
+                <el-checkbox v-if="hasStoredCredential('sshPrivateKey') || isCredentialCleared('sshPrivateKey')" :model-value="isCredentialCleared('sshPrivateKey')" @change="setCredentialCleared('sshPrivateKey', $event)">清除已存私钥</el-checkbox>
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -408,11 +412,14 @@
 </template>
 
 <script>
+import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import { hasPermission } from '@/security/permissionState'
 import { editableResource } from '@/api/governance'
 import { completeResourceChange } from '@/utils/governanceWorkspace'
 import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
+import configurationDraftMixin from '@/mixins/configurationDraftMixin'
+import credentialEditMixin from '@/mixins/credentialEditMixin'
 import {
   createDbDatasource,
   getDbDatasource,
@@ -426,8 +433,8 @@ import { normalizeProjectId } from '@/utils/projectContext'
 
 export default {
   name: 'DatabaseDetail',
-  mixins: [workspaceTabTitleMixin(vm => vm.form.datasourceName)],
-  components: { MonacoEditor, ResourcePreflightPanel, ConfigLayerGuide },
+  mixins: [credentialEditMixin, configurationDraftMixin(vm => ({ form: vm.form })), workspaceTabTitleMixin(vm => vm.form.datasourceName)],
+  components: { ProjectResourceSelect, MonacoEditor, ResourcePreflightPanel, ConfigLayerGuide },
   data() {
     return {
       projects: [],
@@ -541,7 +548,7 @@ export default {
         this.connectionTestSignature === this.connectionConfigSignature()
       const submissionReady =
         Boolean(this.submissionSignature) &&
-        this.submissionSignature === this.configurationSignature()
+        this.submissionSignature === this.configurationFingerprint
       return [
         {
           key: 'scope',
@@ -601,6 +608,7 @@ export default {
       if (this.$route.query.projectId)
         this.form.projectId = Number(this.$route.query.projectId)
       this.jdbcConfirmedPartsSignature = this.jdbcPartsSignature()
+      this.markConfigurationSaved()
     } else {
       this.loadDetail()
     }
@@ -626,6 +634,7 @@ export default {
         jdbcUrl: '',
         username: '',
         password: '',
+        clearCredentials: [],
         sshHost: '',
         sshPort: 22,
         sshUsername: '',
@@ -663,7 +672,8 @@ export default {
         String(form.sshHost || '').trim() &&
           String(form.sshUsername || '').trim() &&
           (String(form.sshPassword || '').trim() ||
-            String(form.sshPrivateKey || '').trim())
+            String(form.sshPrivateKey || '').trim() ||
+            this.hasStoredCredential('sshPassword') || this.hasStoredCredential('sshPrivateKey'))
       )
     },
     connectionConfigSignature() {
@@ -679,6 +689,7 @@ export default {
         driverClassName: form.driverClassName,
         username: form.username,
         password: form.password,
+        clearCredentials: form.clearCredentials || [],
         sshHost: form.sshHost,
         sshPort: form.sshPort,
         sshUsername: form.sshUsername,
@@ -746,6 +757,7 @@ export default {
         this.jdbcConfirmedPartsSignature = this.jdbcPartsSignature()
         this.jdbcGenerationFailed = false
         this.detailLoaded = true
+        this.markConfigurationSaved()
       } catch (error) {
         this.detailError = error.message || '无法读取数据库配置，请重新加载。'
       } finally {
@@ -849,7 +861,7 @@ export default {
       return data
     },
     normalizeLoadedForm(form) {
-      const data = { ...form }
+      const data = { ...form, clearCredentials: [] }
       if (
         data.scope === 'PROJECT' &&
         (!data.projectId || data.projectId <= 0)
@@ -865,10 +877,13 @@ export default {
         this.saving = true
         try {
           const data = this.normalizeForm(this.form)
+          const submittedFingerprint = this.configurationFingerprint
           const response = this.isCreateMode
             ? await createDbDatasource(data)
             : await updateDbDatasource(data)
-          this.submissionSignature = this.configurationSignature()
+          this.applySavedCredentialState(data)
+          this.submissionSignature = submittedFingerprint
+          this.markConfigurationSaved(submittedFingerprint)
           await completeResourceChange(this, response)
             if (!this.form.id && response.data?.resourceId) {
               this.form.id = response.data.resourceId

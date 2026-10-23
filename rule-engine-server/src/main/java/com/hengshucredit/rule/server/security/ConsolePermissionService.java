@@ -36,6 +36,9 @@ public class ConsolePermissionService {
     private ConsolePermissionMapper permissionMapper;
     @Resource
     private ConsoleUserPermissionOverrideMapper overrideMapper;
+    @Resource private com.hengshucredit.rule.server.mapper.ConsoleUserMapper userMapper;
+    @Resource private com.hengshucredit.rule.server.mapper.ConsoleUserProjectMapper userProjectMapper;
+    @Resource private com.hengshucredit.rule.server.mapper.ConsoleUserProjectPermissionMapper projectPermissionMapper;
 
     public Set<String> effectivePermissions(Long userId) {
         if (userId == null) return Collections.emptySet();
@@ -46,7 +49,28 @@ public class ConsolePermissionService {
 
     public boolean hasPermission(Long userId, String permissionCode) {
         return permissionCode != null
-                && effectivePermissions(userId).contains(permissionCode);
+                && scope(userId).can(permissionCode);
+    }
+
+    public ConsoleProjectAccess.Scope scope(Long userId) {
+        Set<String> defaults = effectivePermissions(userId);
+        if (userMapper == null) return new ConsoleProjectAccess.Scope(userId, Set.of(), defaults, true, true, Map.of());
+        var user = userId == null ? null : userMapper.selectById(userId);
+        if (user == null || user.getMergedIntoUserId() != null || !Integer.valueOf(1).equals(user.getStatus())) return new ConsoleProjectAccess.Scope(userId, Set.of(), Set.of());
+        Set<Long> projectIds = userProjectMapper.selectList(new LambdaQueryWrapper<com.hengshucredit.rule.model.entity.ConsoleUserProject>()
+                .eq(com.hengshucredit.rule.model.entity.ConsoleUserProject::getUserId, userId)).stream()
+                .map(com.hengshucredit.rule.model.entity.ConsoleUserProject::getProjectId).collect(java.util.stream.Collectors.toSet());
+        return new ConsoleProjectAccess.Scope(userId, projectIds, defaults, !"SELECTED".equals(user.getProjectAccessMode()),
+                !Boolean.FALSE.equals(user.getGlobalEditable()), projectOverrides(userId));
+    }
+
+    public Map<Long, Map<String, String>> projectOverrides(Long userId) {
+        Map<Long, Map<String, String>> result = new java.util.LinkedHashMap<>();
+        if (projectPermissionMapper == null) return result;
+        for (var row : projectPermissionMapper.overrides(userId)) {
+            result.computeIfAbsent(row.projectId(), ignored -> new java.util.LinkedHashMap<>()).put(row.permissionCode(), row.effect());
+        }
+        return result;
     }
 
     public Set<String> merge(Set<String> rolePermissions, Map<String, String> overrides) {

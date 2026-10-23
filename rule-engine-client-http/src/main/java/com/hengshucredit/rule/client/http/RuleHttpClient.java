@@ -8,6 +8,7 @@ import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.dto.RuleExperimentExecuteRequest;
 import com.hengshucredit.rule.model.dto.RuleExperimentExecuteResult;
 import com.hengshucredit.rule.model.dto.RuleExecutionStatus;
+import com.hengshucredit.rule.model.PlatformCode;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -62,7 +63,16 @@ public final class RuleHttpClient implements AutoCloseable {
     }
 
     /** 单次追踪开关不修改客户端全局配置，支持并发调用。 */
+    public RuleResult executeRequest(String ruleCode, com.hengshucredit.rule.model.RuleExecutionRequest input) {
+        return execute(ruleCode, input.getParams(), input.getTraceEnabled() == null ? traceEnabled : input.getTraceEnabled(),
+                input.getClientAppName() == null ? appName : input.getClientAppName());
+    }
+
     public RuleResult execute(String ruleCode, Object params, boolean collectTrace) {
+        return execute(ruleCode, params, collectTrace, appName);
+    }
+
+    private RuleResult execute(String ruleCode, Object params, boolean collectTrace, String clientAppName) {
         if (closed) throw new IllegalStateException("客户端已关闭");
         required(ruleCode, "ruleCode");
         if (".".equals(ruleCode) || "..".equals(ruleCode) || ruleCode.contains("/")) {
@@ -72,7 +82,7 @@ public final class RuleHttpClient implements AutoCloseable {
         if (!(input instanceof java.util.Map)) throw new IllegalArgumentException("params 必须是对象或 Map");
         JSONObject body = new JSONObject();
         body.put("params", input);
-        body.put("clientAppName", appName);
+        body.put("clientAppName", clientAppName);
         body.put("traceEnabled", collectTrace);
         HttpUrl url = executionUrl("sync", ruleCode);
         Request request = new Request.Builder().url(url)
@@ -80,20 +90,10 @@ public final class RuleHttpClient implements AutoCloseable {
         try {
             request = authenticator.authenticate(request);
         } catch (IOException e) {
-            throw new RuleHttpException("项目鉴权失败，请检查凭据、Token 服务及网络", 0, null);
+            throw authenticationError(e);
         }
         try (Response response = http.newCall(request).execute()) {
-            JSONObject envelope = parseEnvelope(response);
-            int code = envelope.getIntValue("code");
-            if (!response.isSuccessful() || code != 200) throw platformError(response, envelope, code);
-            if (!(envelope.get("data") instanceof JSONObject)) throw invalidResponse(response.code());
-            JSONObject data = envelope.getJSONObject("data");
-            if (!(data.get("success") instanceof Boolean)) throw invalidResponse(response.code());
-            try {
-                return data.toJavaObject(RuleResult.class);
-            } catch (RuntimeException e) {
-                throw invalidResponse(response.code());
-            }
+            return PlatformHttpResponses.ruleResult(response, PlatformHttpResponses.read(response));
         } catch (IOException e) {
             throw new RuleHttpException("引擎连接失败或超时；执行状态可能未知，请勿盲目重试", 0, null);
         }
@@ -111,20 +111,10 @@ public final class RuleHttpClient implements AutoCloseable {
         try {
             requestBuilder = authenticator.authenticate(requestBuilder);
         } catch (IOException e) {
-            throw new RuleHttpException("项目鉴权失败，请检查凭据、Token 服务及网络", 0, null);
+            throw authenticationError(e);
         }
         try (Response response = http.newCall(requestBuilder).execute()) {
-            JSONObject envelope = parseEnvelope(response);
-            int code = envelope.getIntValue("code");
-            if (!response.isSuccessful() || code != 200) throw platformError(response, envelope, code);
-            if (!(envelope.get("data") instanceof JSONObject)) {
-                throw invalidResponse(response.code());
-            }
-            try {
-                return envelope.getJSONObject("data").toJavaObject(RuleExperimentExecuteResult.class);
-            } catch (RuntimeException e) {
-                throw invalidResponse(response.code());
-            }
+            return PlatformHttpResponses.experimentResult(response, PlatformHttpResponses.read(response));
         } catch (IOException e) {
             throw new RuleHttpException("引擎连接失败或超时；执行状态可能未知，请勿盲目重试", 0, null);
         }
@@ -141,12 +131,11 @@ public final class RuleHttpClient implements AutoCloseable {
         try {
             request = authenticator.authenticate(request);
         } catch (IOException e) {
-            throw new RuleHttpException("项目鉴权失败，请检查凭据、Token 服务及网络", 0, null);
+            throw authenticationError(e);
         }
         try (Response response = http.newCall(request).execute()) {
-            JSONObject envelope = parseEnvelope(response);
-            int code = envelope.getIntValue("code");
-            if (!response.isSuccessful() || code != 200) throw platformError(response, envelope, code);
+            JSONObject envelope = PlatformHttpResponses.read(response);
+            PlatformHttpResponses.requireSuccess(response, envelope);
             if (!(envelope.get("data") instanceof JSONObject)) throw invalidResponse(response.code());
             return envelope.getJSONObject("data").toJavaObject(RuleExecutionStatus.class);
         } catch (IOException e) {
@@ -168,14 +157,10 @@ public final class RuleHttpClient implements AutoCloseable {
         try {
             request = authenticator.authenticate(request);
         } catch (IOException e) {
-            throw new RuleHttpException("项目鉴权失败，请检查凭据、Token 服务及网络", 0, null);
+            throw authenticationError(e);
         }
         try (Response response = http.newCall(request).execute()) {
-            JSONObject envelope = parseEnvelope(response);
-            int code = envelope.getIntValue("code");
-            if (!response.isSuccessful() || code != 200) throw platformError(response, envelope, code);
-            if (!(envelope.get("data") instanceof JSONObject)) throw invalidResponse(response.code());
-            return envelope.getJSONObject("data").toJavaObject(RuleResult.class);
+            return PlatformHttpResponses.ruleResult(response, PlatformHttpResponses.read(response));
         } catch (IOException e) {
             throw new RuleHttpException("恢复规则执行失败；请继续使用 trace 查询状态", 0, null,
                     "UNKNOWN", traceId, null);
@@ -183,51 +168,16 @@ public final class RuleHttpClient implements AutoCloseable {
     }
 
     private static RuleHttpException invalidResponse(int status) {
-        return new RuleHttpException("引擎响应格式无效", status, null);
+        return PlatformHttpResponses.invalid(status);
     }
 
-    private static JSONObject parseEnvelope(Response response) throws IOException {
-        if (response.body() == null) throw invalidResponse(response.code());
-        final String body = response.body().string();
-        final JSONObject envelope;
-        try {
-            envelope = JSON.parseObject(body);
-        } catch (RuntimeException e) {
-            throw invalidResponse(response.code());
+    private static RuleHttpException authenticationError(IOException error) {
+        if (error instanceof com.hengshucredit.rule.client.auth.ProjectTokenExchangeException token) {
+            return new RuleHttpException(null, token.httpStatus(), token.platformStatus().code(),
+                    "REJECTED", token.traceId(), null);
         }
-        if (envelope == null || !(envelope.get("code") instanceof Number)) {
-            throw invalidResponse(response.code());
-        }
-        return envelope;
-    }
-
-    private static RuleHttpException platformError(Response response, JSONObject envelope, int code) {
-        JSONObject data = envelope == null ? null : envelope.getJSONObject("data");
-        String status = data == null ? null : data.getString("executionStatus");
-        if (status == null || status.trim().isEmpty()) status = statusFor(code, response.code());
-        String traceId = data == null ? null : data.getString("traceId");
-        if (traceId == null || traceId.trim().isEmpty()) traceId = envelope == null ? null : envelope.getString("traceId");
-        Long retryAfterMs = retryAfterMillis(response.header("Retry-After"));
-        String message = response.code() == 0 ? "引擎请求失败" : "引擎请求失败，HTTP " + response.code();
-        if (code != 0 && code != 200) message += "，平台响应码 " + code;
-        return new RuleHttpException(message, response.code(), code == 0 ? null : code,
-                status, traceId, retryAfterMs);
-    }
-
-    private static String statusFor(int platformCode, int httpStatus) {
-        if (platformCode == 400004) return "CONFLICT";
-        if (platformCode == 400005) return "IN_PROGRESS";
-        if (httpStatus == 408 || httpStatus == 429 || httpStatus >= 500) return "UNKNOWN";
-        return "REJECTED";
-    }
-
-    private static Long retryAfterMillis(String value) {
-        if (value == null || value.trim().isEmpty()) return null;
-        try {
-            return Math.max(0L, Long.parseLong(value.trim())) * 1000L;
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
+        return new RuleHttpException("项目鉴权服务连接失败", 0, PlatformCode.UPSTREAM_CALL_FAILED.code(),
+                "REJECTED", null, null);
     }
 
     private HttpUrl executionUrl(String kind, String code) {

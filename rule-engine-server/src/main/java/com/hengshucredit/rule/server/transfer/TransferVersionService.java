@@ -26,7 +26,7 @@ public class TransferVersionService {
     @Resource private ConsoleAccessGuard access;
 
     static String ownerType(String type) {
-        return switch (type) { case "CONSTANT" -> "VARIABLE"; case "MODEL_OUTPUT" -> "MODEL"; default -> type; };
+        return switch (type) { case "CONSTANT" -> "VARIABLE"; case "MODEL_OUTPUT" -> "MODEL"; case "DATA_OBJECT_ROOT" -> "DATA_OBJECT"; default -> type; };
     }
 
     public List<Map<String, Object>> describe(Object configuration) {

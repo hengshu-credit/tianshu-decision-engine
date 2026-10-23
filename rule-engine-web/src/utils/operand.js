@@ -1,5 +1,6 @@
 import { formatConstantValue } from '@/utils/constantValue'
 import { versionFields } from '@/utils/resourceVersion'
+import { isRestrictedJsonPath } from '@/utils/restrictedJsonPath'
 
 export const OPERAND_KINDS = Object.freeze({
   LITERAL: 'LITERAL',
@@ -267,16 +268,41 @@ export function validateOperand(operand, options = {}) {
   return errors
 }
 
+export function pathOperandSource(operand) {
+  if (!operand?.refId || !operand.refType) return null
+  if (operand.kind !== OPERAND_KINDS.PATH) return cloneOperand(operand)
+  const code = operand.anchorPath || (operand.relativePath && operand.code?.endsWith(operand.relativePath)
+    ? operand.code.slice(0, -operand.relativePath.length) : operand.code)
+  return { ...operand, kind: OPERAND_KINDS.REFERENCE, code, value: code,
+    valueType: operand.anchorType || operand.valueType, relativePath: operand.anchorRelativePath || '' }
+}
+
+/** 子路径只在选定的稳定引用内部取值，不再按名称重新选择来源。 */
+export function createRelativePathOperand(reference, path = '', valueType = '') {
+  const text = String(path ?? '').trim()
+  const suffix = !text ? '' : text.startsWith('.') || text.startsWith('[') ? text : '.' + text
+  if (!isRestrictedJsonPath('$' + suffix)) throw new Error('子路径格式不正确，请使用 customer.name、items[0].name 或 ["特殊键名"]')
+  if (suffix && reference.valueType && !['OBJECT', 'MAP', 'LIST', 'ARRAY', 'MODEL', 'ANY'].includes(reference.valueType.toUpperCase())) {
+    throw new Error('请选择对象或列表作为子路径来源')
+  }
+  const base = reference.relativePath === '$' ? '' : reference.relativePath || ''
+  const relativePath = reference.refType === 'EXTERNAL_API' ? (base + suffix).replace(/^\./, '') || '$' : base + suffix
+  const code = reference.code + suffix
+  return { ...reference, kind: OPERAND_KINDS.PATH, code, value: code,
+    anchorPath: reference.code, anchorType: reference.valueType, anchorRelativePath: reference.relativePath || '',
+    relativePath, pathValueType: suffix ? valueType : '', valueType: suffix ? valueType : reference.valueType }
+}
+
 export function resolvePathOperand(operand, options = []) {
   const source = operand && operand.kind === OPERAND_KINDS.PATH
     ? { ...operand }
     : createPathOperand(operand && operand.value)
   const value = source.value
-  if (source.versionMode === 'FIXED' && source.refId != null && source.refType) {
+  if ((source.versionMode === 'FIXED' || source.anchorType) && source.refId != null && source.refType) {
     const anchor = source.anchorPath || (source.relativePath && source.code?.endsWith(source.relativePath)
       ? source.code.slice(0, -source.relativePath.length) : source.code)
     if (anchor && (value === anchor || value.startsWith(anchor + '.') || value.startsWith(anchor + '['))) return {
-      operand: { ...source, code: value, anchorPath: anchor, relativePath: value.slice(anchor.length), resolved: true }, candidates: [],
+      operand: createRelativePathOperand(pathOperandSource({ ...source, anchorPath: anchor }), value.slice(anchor.length), source.pathValueType || ''), candidates: [],
     }
     return resolvePathOperand(createPathOperand(value), options)
   }
@@ -321,14 +347,18 @@ export function resolvePathOperand(operand, options = []) {
       value,
       code: value,
       label: match.label || value,
-      valueType: match.valueType,
+      valueType: value === anchorPath ? match.valueType : '',
       refId: match.refId,
       refType: match.refType,
       ...(match.refType === 'EXTERNAL_API' ? { apiCode: match.apiCode } : {}),
       sourceType: match.sourceType,
       varSource: match.varSource,
       anchorPath,
-      relativePath: value.substring(anchorPath.length),
+      anchorType: match.valueType,
+      anchorRelativePath: match.relativePath || '',
+      relativePath: match.refType === 'EXTERNAL_API'
+        ? ((match.relativePath === '$' ? '' : match.relativePath || '') + value.substring(anchorPath.length)).replace(/^\./, '') || '$'
+        : value.substring(anchorPath.length),
       resolved: match.resolved
     },
     candidates: []
@@ -439,7 +469,8 @@ export function syncOperandReference(operand, options = []) {
     const apiCode = option?.apiCode || option?._ref?.apiCode
     if (!apiCode) return { operand, changed: false }
     const suffix = (operand.code || operand.value || '').slice(operand.apiCode.length)
-    const next = { ...operand, apiCode, code: apiCode + suffix, value: apiCode + suffix }
+    const next = { ...operand, apiCode, code: apiCode + suffix, value: apiCode + suffix,
+      ...(operand.anchorPath ? { anchorPath: apiCode + operand.anchorPath.slice(operand.apiCode.length) } : {}) }
     return { operand: next, changed: JSON.stringify(next) !== JSON.stringify(operand) }
   }
 
@@ -449,6 +480,7 @@ export function syncOperandReference(operand, options = []) {
       && (operand.refType !== 'EXTERNAL_API' || (option.relativePath || option._ref?.relativePath || '') === (operand.relativePath || '')))
   }
   if (!match && operand.kind === OPERAND_KINDS.PATH) {
+    if (operand.refId != null && operand.refType) return { operand: { ...operand, resolved: false }, changed: operand.resolved !== false }
     const resolved = resolvePathOperand(operand, options)
     return { operand: resolved.operand, changed: JSON.stringify(resolved.operand) !== JSON.stringify(operand) }
   }
@@ -462,7 +494,8 @@ export function syncOperandReference(operand, options = []) {
       value: current.code + (operand.relativePath || ''),
       anchorPath: current.code,
       label: current.label,
-      valueType: current.valueType,
+      anchorType: current.valueType,
+      valueType: operand.relativePath ? operand.pathValueType || '' : current.valueType,
       refId: current.refId,
       refType: current.refType,
       sourceType: current.sourceType,
@@ -689,7 +722,7 @@ function referenceKey(reference) {
 function referenceTypeMeta(refType) {
   const type = String(refType || '').toUpperCase()
   if (type === 'CONSTANT') return { label: '常量', tone: 'constant' }
-  if (type === 'DATA_OBJECT' || type === 'DATA_FIELD') return { label: '数据对象', tone: 'object' }
+  if (type === 'DATA_OBJECT' || type === 'DATA_OBJECT_ROOT' || type === 'DATA_FIELD') return { label: '数据对象', tone: 'object' }
   if (type === 'MODEL' || type === 'MODEL_OUTPUT') return { label: '模型', tone: 'model' }
   if (type === 'EXTERNAL_API') return { label: '外数 API', tone: 'external' }
   if (type === 'VARIABLE') return { label: '变量', tone: 'variable' }

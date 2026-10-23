@@ -5,7 +5,7 @@
       <el-table-column prop="value" label="字段路径" min-width="320" show-overflow-tooltip />
       <el-table-column prop="type" label="样例类型" width="120" />
     </el-table>
-    <el-pagination v-if="filtered.length > 50" v-model:current-page="page" :page-size="50" :total="filtered.length" layout="total, prev, pager, next" />
+    <el-pagination v-if="filtered.length > 20" v-model:current-page="page" :page-size="20" :total="filtered.length" layout="total, prev, pager, next" />
   </section>
 </template>
 <script>
@@ -16,7 +16,7 @@ export default {
   computed: {
     paths() { return samplePathOptions(this.sample, this.prefix) },
     filtered() { return this.paths.filter(item => item.value.toLowerCase().includes(this.query.trim().toLowerCase())) },
-    visibleRows() { return this.filtered.slice((this.page - 1) * 50, this.page * 50) },
+    visibleRows() { return this.filtered.slice((this.page - 1) * 20, this.page * 20) },
   },
   watch: { sample() { this.page = 1 } },
 }

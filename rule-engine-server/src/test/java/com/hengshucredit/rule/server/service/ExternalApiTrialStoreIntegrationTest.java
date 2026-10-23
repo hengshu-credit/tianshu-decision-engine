@@ -17,7 +17,6 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
-import java.io.Reader;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -217,8 +216,7 @@ public class ExternalApiTrialStoreIntegrationTest {
         Path root = Path.of(System.getProperty("user.dir")).toAbsolutePath();
         while (root != null && !Files.isDirectory(root.resolve("rule-engine-server"))) root = root.getParent();
         if (root == null) throw new IllegalStateException("无法定位仓库根目录");
-        Properties settings = new Properties();
-        try (Reader reader = Files.newBufferedReader(root.resolve(".env"), StandardCharsets.UTF_8)) { settings.load(reader); }
+        Properties settings = LocalIntegrationSettings.load(root);
         InetAddress address = InetAddress.getByName(required(settings, "MYSQL_HOST"));
         if (!address.isLoopbackAddress()) throw new IllegalStateException("试运行状态集成测试仅允许本机MySQL");
         String database = required(settings, "MYSQL_DATABASE");
@@ -231,6 +229,6 @@ public class ExternalApiTrialStoreIntegrationTest {
         source.setUsername(required(settings, "MYSQL_USERNAME")); source.setPassword(required(settings, "MYSQL_PASSWORD")); return source;
     }
     private static String required(Properties settings, String key) {
-        String value = settings.getProperty(key); if (value == null || value.isBlank()) throw new IllegalStateException("根.env缺少" + key); return value;
+        String value = settings.getProperty(key); if (value == null || value.isBlank()) throw new IllegalStateException("本机服务配置缺少" + key); return value;
     }
 }

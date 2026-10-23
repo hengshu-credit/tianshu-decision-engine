@@ -16,7 +16,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Arrays;
-import java.util.Map;
 import java.util.function.BiFunction;
 
 @Configuration
@@ -35,8 +34,8 @@ public class RuntimeConfiguration {
 
     @Bean
     @Profile("http")
-    public BiFunction<String, Map<String, Object>, RuleResult> httpExecutor(RuleHttpClient client) {
-        return client::execute;
+    public BiFunction<String, com.hengshucredit.rule.model.RuleExecutionRequest, RuleResult> httpExecutor(RuleHttpClient client) {
+        return client::executeRequest;
     }
 
     @Bean

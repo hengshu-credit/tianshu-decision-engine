@@ -9,10 +9,7 @@ import java.util.List;
 
 /**
  * 控制台（管理端）用户名密码登录相关配置，由 application.yml 中 rule-engine.console-login 绑定。
- * <p>
- * 未自定义 {@link ConsoleLoginAuthenticator} Bean 时，使用 {@link #builtin} 中的用户名与密码校验；
- * 自定义 Bean 时忽略 {@link #builtin}。
- * </p>
+ * 账户和密码仅存于数据库，首次使用注册页面初始化；恢复码由服务器维护命令签发。
  */
 @Data
 @ConfigurationProperties(prefix = "rule-engine.console-login")
@@ -29,12 +26,6 @@ public class RuleEngineConsoleLoginProperties {
     /** 是否允许通过邮箱找回控制台密码。 */
     private boolean passwordRecoveryEnabled = true;
 
-    /** 是否启用受控的超级管理员应急恢复页。 */
-    private boolean breakGlassRecoveryEnabled = false;
-
-    /** 应急恢复密钥只允许通过 Secret 注入，不提供默认值。 */
-    private String breakGlassRecoveryKey = "";
-
     /** 邮件链接和令牌相关配置。 */
     private Mail mail = new Mail();
 
@@ -50,6 +41,7 @@ public class RuleEngineConsoleLoginProperties {
             "/api/auth/**",
             "/api/rule/auth/token",
             "/api/rule/sync/**",
+            "/api/rule/runtime/**",
             "/api/rule/openapi/**",
             "/api/rule/log/report"
     ));
@@ -58,6 +50,7 @@ public class RuleEngineConsoleLoginProperties {
      * 登录成功后写入 HttpSession 的属性名。
      */
     private String sessionUsernameAttribute = "RULE_CONSOLE_USERNAME";
+    private String sessionOperatorNameAttribute = "RULE_CONSOLE_OPERATOR_NAME";
 
     /**
      * 登录成功后写入 HttpSession 的本地账户 ID 属性名。
@@ -68,34 +61,6 @@ public class RuleEngineConsoleLoginProperties {
      * 登录成功时记录的权限版本属性名，权限调整后用于使旧会话失效。
      */
     private String sessionPermissionVersionAttribute = "RULE_CONSOLE_PERMISSION_VERSION";
-
-    /**
-     * 内置账号：仅当未注册自定义 {@link ConsoleLoginAuthenticator} 时用于登录校验。
-     */
-    private Builtin builtin = new Builtin();
-
-    @Data
-    public static class Builtin {
-        /**
-         * 内置登录用户名；与 password 同时非空时才参与校验。
-         */
-        private String username = "";
-
-        /**
-         * 内置密码：PLAIN 时为明文；BCRYPT 时为 BCrypt 哈希串（推荐生产环境）。
-         */
-        private String password = "";
-
-        /**
-         * password 字段的编码方式。
-         */
-        private PasswordEncoding passwordEncoding = PasswordEncoding.PLAIN;
-    }
-
-    public enum PasswordEncoding {
-        BCRYPT,
-        PLAIN
-    }
 
     @Data
     public static class Mail {

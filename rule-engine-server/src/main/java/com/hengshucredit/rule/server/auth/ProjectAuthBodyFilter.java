@@ -19,6 +19,7 @@ public class ProjectAuthBodyFilter extends OncePerRequestFilter {
             "/api/sync",
             "/api/rule/sync",
             "/api/rule/runtime",
+            "/api/rule/openapi",
             "/api/rule/log/report",
             "/api/rule/auth/token"
     };
@@ -49,6 +50,8 @@ public class ProjectAuthBodyFilter extends OncePerRequestFilter {
     private void rejectOversizedBody(HttpServletResponse response) throws IOException {
         response.setStatus(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
         response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write("{\"code\":413,\"message\":\"Request body too large\"}");
+        response.getWriter().write(com.alibaba.fastjson.JSON.toJSONString(
+                com.hengshucredit.rule.model.ApiResponse.fail(
+                        com.hengshucredit.rule.model.PlatformCode.REQUEST_TOO_LARGE, null)));
     }
 }

@@ -1,0 +1,284 @@
+[
+  {
+    "name": "SUCCESS",
+    "code": "000000",
+    "message": "成功",
+    "httpStatus": 200
+  },
+  {
+    "name": "PARAMETER_INVALID",
+    "code": "100001",
+    "message": "入参校验失败",
+    "httpStatus": 400
+  },
+  {
+    "name": "REQUIRED_FIELD_MISSING",
+    "code": "100002",
+    "message": "必填字段缺失",
+    "httpStatus": 400
+  },
+  {
+    "name": "MALFORMED_REQUEST",
+    "code": "100003",
+    "message": "请求格式无效",
+    "httpStatus": 400
+  },
+  {
+    "name": "METHOD_NOT_ALLOWED",
+    "code": "100004",
+    "message": "请求方法不支持",
+    "httpStatus": 405
+  },
+  {
+    "name": "MEDIA_TYPE_UNSUPPORTED",
+    "code": "100005",
+    "message": "请求内容类型不支持",
+    "httpStatus": 415
+  },
+  {
+    "name": "REQUEST_TOO_LARGE",
+    "code": "100006",
+    "message": "请求内容超过大小限制",
+    "httpStatus": 413
+  },
+  {
+    "name": "REQUEST_REJECTED",
+    "code": "100007",
+    "message": "请求内容不满足业务约束",
+    "httpStatus": 422
+  },
+  {
+    "name": "RESPONSE_TYPE_UNSUPPORTED",
+    "code": "100008",
+    "message": "请求的响应类型不支持",
+    "httpStatus": 406
+  },
+  {
+    "name": "RESULT_ERROR",
+    "code": "200001",
+    "message": "规则执行失败",
+    "httpStatus": 422
+  },
+  {
+    "name": "RULE_NOT_FOUND",
+    "code": "201001",
+    "message": "已发布规则不存在",
+    "httpStatus": 404
+  },
+  {
+    "name": "LOCAL_EXECUTION_UNSUPPORTED",
+    "code": "201002",
+    "message": "规则需要服务端执行",
+    "httpStatus": 422
+  },
+  {
+    "name": "RULE_COMPILE_ERROR",
+    "code": "201003",
+    "message": "规则编译失败",
+    "httpStatus": 422
+  },
+  {
+    "name": "MODEL_EXECUTION_ERROR",
+    "code": "202001",
+    "message": "模型执行失败",
+    "httpStatus": 422
+  },
+  {
+    "name": "EXPERIMENT_EXECUTION_ERROR",
+    "code": "203001",
+    "message": "分流实验执行失败",
+    "httpStatus": 422
+  },
+  {
+    "name": "FUNCTION_EXECUTION_ERROR",
+    "code": "204001",
+    "message": "函数执行失败",
+    "httpStatus": 422
+  },
+  {
+    "name": "TOKEN_INVALID",
+    "code": "300001",
+    "message": "Token 已过期或失效",
+    "httpStatus": 401
+  },
+  {
+    "name": "CREDENTIAL_INVALID",
+    "code": "300002",
+    "message": "鉴权凭据无效",
+    "httpStatus": 401
+  },
+  {
+    "name": "IP_RESTRICTED",
+    "code": "300003",
+    "message": "IP 不在访问白名单",
+    "httpStatus": 403
+  },
+  {
+    "name": "DOMAIN_RESTRICTED",
+    "code": "300004",
+    "message": "域名不在访问白名单",
+    "httpStatus": 403
+  },
+  {
+    "name": "ACCOUNT_DISABLED",
+    "code": "300005",
+    "message": "账户已停用",
+    "httpStatus": 403
+  },
+  {
+    "name": "LOGIN_REQUIRED",
+    "code": "301001",
+    "message": "登录会话已失效，请重新登录",
+    "httpStatus": 401
+  },
+  {
+    "name": "PERMISSION_DENIED",
+    "code": "301002",
+    "message": "无操作权限",
+    "httpStatus": 403
+  },
+  {
+    "name": "CAPACITY_EXCEEDED",
+    "code": "400001",
+    "message": "执行容量或并发超过限制",
+    "httpStatus": 429
+  },
+  {
+    "name": "REQUEST_TOO_FREQUENT",
+    "code": "400002",
+    "message": "请求过于频繁",
+    "httpStatus": 429
+  },
+  {
+    "name": "REQUEST_TIMEOUT",
+    "code": "400003",
+    "message": "请求处理超时",
+    "httpStatus": 504
+  },
+  {
+    "name": "IDEMPOTENCY_CONFLICT",
+    "code": "400004",
+    "message": "幂等键已被不同请求使用",
+    "httpStatus": 409
+  },
+  {
+    "name": "EXECUTION_IN_PROGRESS",
+    "code": "400005",
+    "message": "请求正在执行",
+    "httpStatus": 409
+  },
+  {
+    "name": "WAITING_EXTERNAL",
+    "code": "400006",
+    "message": "外数结果尚未就绪，请查询状态或恢复执行",
+    "httpStatus": 202
+  },
+  {
+    "name": "EXECUTION_UNKNOWN",
+    "code": "400007",
+    "message": "执行结果未知，请查询状态后再决定是否重试",
+    "httpStatus": 504
+  },
+  {
+    "name": "RESULT_PENDING",
+    "code": "400008",
+    "message": "执行结果尚未就绪",
+    "httpStatus": 202
+  },
+  {
+    "name": "PRODUCT_UNAUTHORIZED",
+    "code": "500001",
+    "message": "产品无访问权限",
+    "httpStatus": 403
+  },
+  {
+    "name": "DAILY_QUOTA_EXCEEDED",
+    "code": "500002",
+    "message": "已超过日调用限额",
+    "httpStatus": 429
+  },
+  {
+    "name": "MONTHLY_QUOTA_EXCEEDED",
+    "code": "500003",
+    "message": "已超过月调用限额",
+    "httpStatus": 429
+  },
+  {
+    "name": "REQUEST_PRODUCT_UNAUTHORIZED",
+    "code": "500004",
+    "message": "请求产品不存在或未授权",
+    "httpStatus": 403
+  },
+  {
+    "name": "RESOURCE_NOT_FOUND",
+    "code": "501001",
+    "message": "资源不存在",
+    "httpStatus": 404
+  },
+  {
+    "name": "RESOURCE_CONFLICT",
+    "code": "501002",
+    "message": "资源状态冲突",
+    "httpStatus": 409
+  },
+  {
+    "name": "EXTERNAL_API_ERROR",
+    "code": "601001",
+    "message": "外数接口调用失败",
+    "httpStatus": 502
+  },
+  {
+    "name": "DATABASE_ERROR",
+    "code": "602001",
+    "message": "数据库调用失败",
+    "httpStatus": 502
+  },
+  {
+    "name": "LIST_ERROR",
+    "code": "603001",
+    "message": "名单操作失败",
+    "httpStatus": 502
+  },
+  {
+    "name": "SFTP_ERROR",
+    "code": "604001",
+    "message": "文件服务调用失败",
+    "httpStatus": 502
+  },
+  {
+    "name": "GOVERNANCE_CONFLICT",
+    "code": "700001",
+    "message": "资源治理状态冲突",
+    "httpStatus": 409
+  },
+  {
+    "name": "PREFLIGHT_FAILED",
+    "code": "700002",
+    "message": "发布前校验未通过",
+    "httpStatus": 422
+  },
+  {
+    "name": "SYSTEM_ERROR",
+    "code": "900001",
+    "message": "系统执行异常",
+    "httpStatus": 500
+  },
+  {
+    "name": "SERVICE_UNAVAILABLE",
+    "code": "900002",
+    "message": "服务暂不可用",
+    "httpStatus": 503
+  },
+  {
+    "name": "UPSTREAM_RESPONSE_INVALID",
+    "code": "900003",
+    "message": "上游响应格式无效",
+    "httpStatus": 502
+  },
+  {
+    "name": "UPSTREAM_CALL_FAILED",
+    "code": "900004",
+    "message": "上游调用失败",
+    "httpStatus": 502
+  }
+]

@@ -13,6 +13,8 @@
 /.env
 /.env.server
 /.env.client
+/.env.server.local
+/.env.client.local
 *.log
 *.tmp
 .vscode/
@@ -49,3 +51,8 @@ scripts/quality-gates/fixtures/request.local.json
 /docker/runtime/*.jar
 /docker/runtime/dist/
 node_modules
+.codex-validation
+*/.vite
+*/audits
+*/.codex-*
+start-dev.cmd

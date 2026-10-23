@@ -38,7 +38,7 @@ public class DashboardAccessService {
         }
         return new DashboardAccessContext(false, userId,
                 username.toString(),
-                permissionService.effectivePermissions(userId));
+                permissionService.scope(userId).availablePermissions());
     }
 
     private DashboardAccessContext restricted() {

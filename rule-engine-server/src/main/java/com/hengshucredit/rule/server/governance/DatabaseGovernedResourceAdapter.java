@@ -23,7 +23,7 @@ public class DatabaseGovernedResourceAdapter extends SimpleEntityGovernedResourc
                 RuleDbDatasource::getId, RuleDbDatasource::setId,
                 RuleDbDatasource::getStatus, RuleDbDatasource::setStatus,
                 Set.of("datasourceCode", "datasourceName", "dbType"),
-                Set.of("password", "sshPassword", "sshPrivateKey", "sshPassphrase"), secretCodec);
+                CredentialChanges.DATABASE_FIELDS, secretCodec);
         this.pools = pools;
     }
 

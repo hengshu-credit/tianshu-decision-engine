@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.governance;
 
 import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.core.function.FunctionParameterContract;
+import com.hengshucredit.rule.core.function.FunctionScriptContract;
 import com.hengshucredit.rule.model.dto.RulePushMessage;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.server.publish.RuleFunctionPushService;
@@ -53,6 +54,7 @@ public class FunctionGovernedResourceAdapter
     @Override
     public ResourceSnapshot normalizeDraft(ResourceSnapshot draft) {
         RuleFunction function = function(draft);
+        if (methodCatalogService != null) methodCatalogService.requireNativePermission(function);
         functionPushService.prepare(function, "FUNC_UPDATE");
         return delegate.normalizeDraft(snapshot(draft, function));
     }
@@ -67,7 +69,13 @@ public class FunctionGovernedResourceAdapter
     private List<GovernanceIssue> bindingIssues(RuleFunction function) {
         try {
             FunctionParameterContract.parse(function.getParamsJson());
-            if (!"JAVA".equals(function.getImplType()) && !"BEAN".equals(function.getImplType())) return List.of();
+            if ("SCRIPT".equals(function.getImplType())) {
+                FunctionScriptContract.validate(function.getFuncCode(), function.getImplScript(), function.getParamsJson());
+                return List.of();
+            }
+            if (!"JAVA".equals(function.getImplType()) && !"BEAN".equals(function.getImplType())) {
+                throw new IllegalArgumentException("函数实现方式必须是 SCRIPT、JAVA 或 BEAN");
+            }
             var catalog = methodCatalogService.inspect(function);
             if ("UNAVAILABLE".equals(catalog.status())) {
                 return List.of(new GovernanceIssue("WARNING", "FUNCTION_TARGET_UNVERIFIED", catalog.message(),
@@ -75,6 +83,17 @@ public class FunctionGovernedResourceAdapter
                         "目标运行端方法尚未验证", "在目标运行端部署相同实现并验证精确签名后再使用"));
             }
             if (!catalog.valid()) throw new IllegalArgumentException(catalog.message());
+            var selected = catalog.methods().stream()
+                    .filter(method -> java.util.Objects.equals(method.signature(), catalog.signature()))
+                    .findFirst().orElse(null);
+            if (selected != null && function.getReturnType() != null && !function.getReturnType().isBlank()) {
+                String declared = function.getReturnType().trim().toUpperCase(java.util.Locale.ROOT);
+                String actual = methodCatalogService.suggestedBusinessType(selected.returnJavaType());
+                boolean numeric = ("NUMBER".equals(declared) || "DOUBLE".equals(declared)) && "NUMBER".equals(actual);
+                if (!"OBJECT".equals(declared) && !numeric && !declared.equals(actual)) {
+                    throw new IllegalArgumentException("函数返回类型 " + declared + " 与实际方法返回类型 " + selected.returnJavaType() + " 不匹配");
+                }
+            }
             if (catalog.legacySignature()) {
                 return List.of(new GovernanceIssue("WARNING", "FUNCTION_LEGACY_SIGNATURE",
                         "当前按旧类型映射绑定 " + catalog.signature() + "；选择具体方法后可保存精确签名",
@@ -83,8 +102,10 @@ public class FunctionGovernedResourceAdapter
             }
             return List.of();
         } catch (IllegalArgumentException error) {
-            return List.of(GovernanceIssue.error("FUNCTION_METHOD_SIGNATURE_INVALID", error.getMessage(),
-                    resourceType(), function.getId(), "$.paramsJson"));
+            String code = "SCRIPT".equals(function.getImplType())
+                    ? "FUNCTION_DEFINITION_INVALID" : "FUNCTION_METHOD_SIGNATURE_INVALID";
+            return List.of(GovernanceIssue.error(code, error.getMessage(),
+                    resourceType(), function.getId(), "SCRIPT".equals(function.getImplType()) ? "$.implScript" : "$.paramsJson"));
         }
     }
 
@@ -111,7 +132,7 @@ public class FunctionGovernedResourceAdapter
             var error = bindingIssues(function).stream().filter(GovernanceIssue::isError).findFirst();
             if (error.isPresent()) throw new IllegalArgumentException(error.get().message());
         }
-        String action = "DELETE".equalsIgnoreCase(context.action())
+        String action = Set.of("DELETE", "DISABLE").contains(context.action())
                 ? "FUNC_DELETE" : "FUNC_UPDATE";
         RulePushMessage message = functionPushService.prepare(function,
                 action);

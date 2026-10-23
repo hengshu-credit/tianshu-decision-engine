@@ -10,6 +10,7 @@ import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
 import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleProject;
+import com.hengshucredit.rule.model.entity.RuleSftpDatasource;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.mapper.GovernanceApprovalRequestMapper;
 import com.hengshucredit.rule.server.mapper.RuleApiDocScenarioMapper;
@@ -19,6 +20,7 @@ import com.hengshucredit.rule.server.mapper.RuleExecutionLogMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
+import com.hengshucredit.rule.server.mapper.RuleSftpDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
 import com.hengshucredit.rule.server.health.RuleWarmupState;
 import com.hengshucredit.rule.server.health.RuleWarmupStatus;
@@ -47,6 +49,8 @@ public class ProjectWorkbenchService {
     @Resource
     private RuleDbDatasourceMapper dbDatasourceMapper;
     @Resource
+    private RuleSftpDatasourceMapper sftpDatasourceMapper;
+    @Resource
     private RuleModelMapper modelMapper;
     @Resource
     private RuleDefinitionMapper definitionMapper;
@@ -68,6 +72,7 @@ public class ProjectWorkbenchService {
         }
 
         ProjectWorkbenchDTO result = new ProjectWorkbenchDTO();
+        result.setObservedAt(LocalDateTime.now());
         result.setProject(toSummary(project));
         ProjectWorkbenchDTO.Metrics metrics = new ProjectWorkbenchDTO.Metrics();
         result.setMetrics(metrics);
@@ -93,7 +98,11 @@ public class ProjectWorkbenchService {
                                 .ne(RuleDbDatasource::getStatus, -1)));
         metrics.setExternalDataSourceCount(externalCount);
         metrics.setDatabaseDataSourceCount(databaseCount);
-        metrics.setDataSourceCount(sum(externalCount, databaseCount));
+        Long sftpCount = safeCount(result, "SFTP 数据源", () -> sftpDatasourceMapper.selectCount(
+                new LambdaQueryWrapper<RuleSftpDatasource>().eq(RuleSftpDatasource::getScope, "PROJECT")
+                        .eq(RuleSftpDatasource::getProjectId, projectId).ne(RuleSftpDatasource::getStatus, -1)));
+        metrics.setSftpDataSourceCount(sftpCount);
+        metrics.setDataSourceCount(sum(sum(externalCount, databaseCount), sftpCount));
 
         Long enabledExternalCount = safeCount(result, "启用的外数数据源",
                 () -> externalDatasourceMapper.selectCount(
@@ -109,8 +118,11 @@ public class ProjectWorkbenchService {
                                 .eq(RuleDbDatasource::getStatus, 1)));
         metrics.setEnabledExternalDataSourceCount(enabledExternalCount);
         metrics.setEnabledDatabaseDataSourceCount(enabledDatabaseCount);
-        metrics.setEnabledDataSourceCount(sum(
-                enabledExternalCount, enabledDatabaseCount));
+        Long enabledSftpCount = safeCount(result, "启用的 SFTP 数据源", () -> sftpDatasourceMapper.selectCount(
+                new LambdaQueryWrapper<RuleSftpDatasource>().eq(RuleSftpDatasource::getScope, "PROJECT")
+                        .eq(RuleSftpDatasource::getProjectId, projectId).eq(RuleSftpDatasource::getStatus, 1)));
+        metrics.setEnabledSftpDataSourceCount(enabledSftpCount);
+        metrics.setEnabledDataSourceCount(sum(sum(enabledExternalCount, enabledDatabaseCount), enabledSftpCount));
 
         metrics.setModelCount(safeCount(result, "模型",
                 () -> modelMapper.selectCount(
@@ -356,12 +368,12 @@ public class ProjectWorkbenchService {
         }
         if (total == 0) {
             return check("SOURCE", "接入业务数据", "OPTIONAL",
-                    "当前没有外数或数据库数据源；仅使用请求输入时可以跳过。",
+                    "当前没有项目自有的外数、数据库或 SFTP 数据源；仅使用请求输入或全局来源时可以跳过。",
                     "CONFIGURE_EXTERNAL_SOURCES", "按需接入");
         }
         if (enabled.equals(total)) {
             return check("SOURCE", "接入业务数据", "READY",
-                    "已启用 " + enabled + " 个数据源。",
+                    "已启用 " + enabled + " 个项目自有数据源；不代表连接测试通过，请在数据源页面确认可用性。",
                     sourceAction(metrics), "查看数据源");
         }
         return check("SOURCE", "接入业务数据", "ATTENTION",
@@ -382,12 +394,16 @@ public class ProjectWorkbenchService {
                 && enabledDatabase < database) {
             return "CONFIGURE_DATABASE_SOURCES";
         }
+        Long sftp = metrics.getSftpDataSourceCount();
+        Long enabledSftp = metrics.getEnabledSftpDataSourceCount();
+        if (sftp != null && enabledSftp != null && enabledSftp < sftp) return "CONFIGURE_SFTP_SOURCES";
         if (external != null && external > 0) {
             return "CONFIGURE_EXTERNAL_SOURCES";
         }
         if (database != null && database > 0) {
             return "CONFIGURE_DATABASE_SOURCES";
         }
+        if (sftp != null && sftp > 0) return "CONFIGURE_SFTP_SOURCES";
         return "CONFIGURE_EXTERNAL_SOURCES";
     }
 
@@ -455,6 +471,7 @@ public class ProjectWorkbenchService {
             case "业务字段" -> "field:view";
             case "外数数据源", "启用的外数数据源" -> "datasource:view";
             case "数据库数据源", "启用的数据库数据源" -> "database:view";
+            case "SFTP 数据源", "启用的 SFTP 数据源" -> "database:view";
             case "模型" -> "model:view";
             case "项目规则", "测试场景" -> "rule:view";
             case "待审批事项" -> "approval:view";

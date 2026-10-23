@@ -38,7 +38,8 @@ public class ExternalApiGovernedResourceAdapter extends SimpleEntityGovernedReso
 
     @Override
     public List<ResourceDependencyRef> collectDependencies(ResourceSnapshot draft) {
-        return DataObjectGovernanceReferences.owners(super.collectDependencies(draft), dataObjectFieldMapper);
+        return DataObjectGovernanceReferences.owners(dependenciesIn(
+                com.hengshucredit.rule.server.artifact.CanonicalJson.write(secrets.restore(draft))), dataObjectFieldMapper);
     }
 
     @Override
@@ -64,7 +65,7 @@ public class ExternalApiGovernedResourceAdapter extends SimpleEntityGovernedReso
         List<GovernanceIssue> issues = new ArrayList<>(super.validate(draft));
         try {
             RuleExternalApiConfig config = JSON.parseObject(JSON.toJSONString(secrets.restore(draft)), RuleExternalApiConfig.class);
-            ExternalApiConfigValidator.validate(config);
+            ExternalApiConfigValidator.validateEditableConfig(config);
             RuleExternalDatasource datasource = datasourceMapper.selectById(config.getDatasourceId());
             RuleDataObject requestObject = config.getRequestObjectId() == null ? null
                     : dataObjectMapper.selectById(config.getRequestObjectId());
@@ -74,6 +75,7 @@ public class ExternalApiGovernedResourceAdapter extends SimpleEntityGovernedReso
             if (config.getExecutionConfig() != null && variableService != null) {
                 com.hengshucredit.rule.server.service.ExternalApiExecutionConfig.bindReferences(
                         JSON.parseObject(config.getExecutionConfig()), variableService.buildRefScriptNameMap(datasource.getProjectId()));
+                com.hengshucredit.rule.server.service.ExternalApiAuthConfig.validate(config.getAuthApiConfig(), variableService.buildRefScriptNameMap(datasource.getProjectId()));
             }
             if (fieldValidationService != null) {
                 Long projectId = datasource == null || "GLOBAL".equalsIgnoreCase(datasource.getScope())

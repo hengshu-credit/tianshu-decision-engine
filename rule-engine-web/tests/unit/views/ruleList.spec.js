@@ -118,7 +118,7 @@ test('退出项目范围后重新加载全部规则，不恢复项目内筛选�
   projectWrapper.unmount()
 
   const globalWrapper = await mountAndWait()
-  expect(definitionApi.listDefinitions).toHaveBeenLastCalledWith({ pageNum: 1, pageSize: 10 })
+  expect(definitionApi.listDefinitions).toHaveBeenLastCalledWith({ pageNum: 1, pageSize: 20 })
   expect(globalWrapper.vm.contextProjectId).toBeNull()
   expect(globalWrapper.vm.tableData).toEqual(mockRules())
   globalWrapper.unmount()
@@ -154,7 +154,7 @@ test('全局和不同项目分别恢复自己的筛选，重置项目不会清�
   restoredProjectWrapper.unmount()
 
   const restoredGlobalWrapper = await mountAndWait()
-  expect(definitionApi.listDefinitions).toHaveBeenLastCalledWith({ pageNum: 1, pageSize: 10, ruleName: '全局查询' })
+  expect(definitionApi.listDefinitions).toHaveBeenLastCalledWith({ pageNum: 1, pageSize: 20, ruleName: '全局查询' })
   restoredGlobalWrapper.unmount()
   sessionStorage.clear()
 })
@@ -165,7 +165,7 @@ test('旧版本缓存中的隐藏项目条件不会继续限制全局规则', as
     queryParams: { pageNum: 5, projectId: 2, ruleCode: 'old_project_rule' },
   }))
   const wrapper = await mountAndWait()
-  expect(definitionApi.listDefinitions).toHaveBeenLastCalledWith({ pageNum: 1, pageSize: 10 })
+  expect(definitionApi.listDefinitions).toHaveBeenLastCalledWith({ pageNum: 1, pageSize: 20 })
   wrapper.unmount()
   sessionStorage.clear()
 })

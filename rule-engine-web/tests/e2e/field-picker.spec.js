@@ -114,10 +114,7 @@ test('决策表字段选择器可加载并选择普通变量和对象字段', as
   })
 
   const designerData = createDesignerApiData()
-  designerData.set('/api/rule/datasource/api-config/list', {
-    records: [{ id: 31, apiCode: 'credit_api', apiName: '征信接口', status: 1 }],
-    total: 1,
-  })
+  designerData.set('/api/rule/datasource/api-config/available', [{ id: 31, apiCode: 'credit_api', apiName: '征信接口', status: 1 }])
   const { requests, assertClean } = await installDistRoutes(page, {
     apiData: designerData
   })
@@ -211,7 +208,6 @@ test('决策表字段选择器可加载并选择普通变量和对象字段', as
   const externalGroup = leftPopover.locator('.fp-row').filter({ hasText: 'credit_api' })
   await expect(externalGroup).toBeVisible()
   await externalGroup.click()
-  await leftPopover.locator('.fp-row').filter({ hasText: '完整调用结果' }).click()
   await leftPopover.locator('.fp-row').filter({ hasText: 'credit_api.response' }).click()
   await leftPopover.locator('.fp-row').filter({ hasText: 'HTTP 状态码' }).dblclick()
   await expect(leftField).toHaveValue(/response\.httpStatus/)
@@ -250,7 +246,7 @@ test('决策表字段选择器可加载并选择普通变量和对象字段', as
     '/api/rule/function/project/1/all',
     '/api/rule/model/project/1/all',
     '/api/rule/list/library',
-    '/api/rule/datasource/api-config/list'
+    '/api/rule/datasource/api-config/available'
   ]))
   expect(pageErrors).toEqual([])
   expect(consoleErrors).toEqual([])

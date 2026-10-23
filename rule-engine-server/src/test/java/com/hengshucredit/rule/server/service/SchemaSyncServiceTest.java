@@ -16,6 +16,22 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class SchemaSyncServiceTest {
+    @Test public void experimentExpressionColumnsAreExpandedWithoutRepeatedMigration() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbc = new FakeJdbcTemplate();
+        jdbc.nonLongTextColumns.addAll(List.of("request_key_path", "condition_expression", "condition_config"));
+        setField(service, "jdbcTemplate", jdbc);
+        Method migration = SchemaSyncService.class.getDeclaredMethod("ensureExperimentTables");
+        migration.setAccessible(true); migration.invoke(service);
+        assertTrue(containsSql(jdbc.sqlList, "MODIFY COLUMN `request_key_path` LONGTEXT DEFAULT NULL"));
+        assertTrue(containsSql(jdbc.sqlList, "MODIFY COLUMN `condition_expression` LONGTEXT DEFAULT NULL"));
+        assertTrue(containsSql(jdbc.sqlList, "MODIFY COLUMN `condition_config` LONGTEXT DEFAULT NULL"));
+        jdbc.nonLongTextColumns.clear(); jdbc.sqlList.clear(); migration.invoke(service);
+        assertFalse(containsSql(jdbc.sqlList, "MODIFY COLUMN `request_key_path`"));
+        assertFalse(containsSql(jdbc.sqlList, "MODIFY COLUMN `condition_expression`"));
+        assertFalse(containsSql(jdbc.sqlList, "MODIFY COLUMN `condition_config`"));
+    }
+
     @Test public void experimentRuleVersionMigrationIncludesColumnNames() throws Exception {
         SchemaSyncService service = new SchemaSyncService();
         FakeJdbcTemplate jdbc = new FakeJdbcTemplate("version_mode", "version_binding_id");

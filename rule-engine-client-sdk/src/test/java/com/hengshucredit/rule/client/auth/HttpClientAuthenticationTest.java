@@ -29,14 +29,14 @@ public class HttpClientAuthenticationTest {
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/api/rule/sync/all", exchange -> {
             syncAuth.set(exchange.getRequestHeaders().getFirst("X-Test-Auth"));
-            respond(exchange, "{\"code\":200,\"data\":[]}");
+            respond(exchange, "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true,\"data\":[]}");
         });
         server.createContext("/api/rule/log/report", exchange -> {
             logAuth.set(exchange.getRequestHeaders().getFirst("X-Test-Auth"));
-            respond(exchange, "{\"code\":200}");
+            respond(exchange, "{\"code\":\"000000\",\"message\":\"成功\",\"success\":true}");
         });
         server.createContext("/api/rule/sync/unauthorized", exchange ->
-                respond(exchange, 401, "{\"code\":401,\"message\":\"Project token expired\"}"));
+                respond(exchange, 401, "{\"code\":\"300001\",\"message\":\"Token 已过期或失效\",\"success\":false,\"detail\":\"Project token expired\"}"));
         server.start();
         serverUrl = "http://127.0.0.1:" + server.getAddress().getPort();
     }
@@ -67,7 +67,7 @@ public class HttpClientAuthenticationTest {
         try {
             syncClient.fetchRule("unauthorized");
         } catch (ProjectClientAuthenticationException e) {
-            assertTrue(e.getMessage().contains("Project token expired"));
+            assertTrue(e.getDetail().contains("Project token expired"));
             return;
         }
         throw new AssertionError("Expected project authentication failure");
@@ -80,7 +80,8 @@ public class HttpClientAuthenticationTest {
         try {
             syncClient.fetchAll();
         } catch (ProjectClientAuthenticationException e) {
-            assertTrue(e.getMessage().contains("token refresh failed"));
+            assertTrue(e.getDetail().contains("token refresh failed"));
+            assertEquals("900004", e.getCode());
             return;
         }
         throw new AssertionError("Expected token refresh failure");

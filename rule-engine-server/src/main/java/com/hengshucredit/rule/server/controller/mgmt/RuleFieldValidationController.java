@@ -1,8 +1,9 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.hengshucredit.rule.model.entity.RuleFieldValidation;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.governance.GovernedProjectionMutation;
 import com.hengshucredit.rule.server.service.RuleFieldValidationService;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -26,38 +27,38 @@ public class RuleFieldValidationController {
     private RuleFieldValidationService service;
 
     @GetMapping("/list")
-    public R<IPage<RuleFieldValidation>> list(
+    public ApiResponse<IPage<RuleFieldValidation>> list(
             @RequestParam(defaultValue = "1") int pageNum,
             @RequestParam(defaultValue = "10") int pageSize,
             @RequestParam(required = false) Long projectId,
             @RequestParam(required = false) String scope,
             @RequestParam(required = false) String validationType,
             @RequestParam(required = false) String keyword) {
-        return R.ok(service.pageList(pageNum, pageSize, projectId, scope, validationType, keyword));
+        return ApiResponse.ok(service.pageList(pageNum, pageSize, projectId, scope, validationType, keyword));
     }
 
     @GetMapping("/available")
-    public R<List<RuleFieldValidation>> available(@RequestParam(required = false) Long projectId) {
-        return R.ok(service.listAvailable(projectId));
+    public ApiResponse<List<RuleFieldValidation>> available(@RequestParam(required = false) Long projectId) {
+        return ApiResponse.ok(service.listAvailable(projectId));
     }
 
     @PostMapping
     @GovernedProjectionMutation
-    public R<RuleFieldValidation> create(@RequestBody RuleFieldValidation rule) {
-        return R.ok(service.createRule(rule));
+    public ApiResponse<RuleFieldValidation> create(@RequestBody RuleFieldValidation rule) {
+        return ApiResponse.ok(service.createRule(rule));
     }
 
     @PutMapping
     @GovernedProjectionMutation
-    public R<Void> update(@RequestBody RuleFieldValidation rule) {
+    public ApiResponse<Void> update(@RequestBody RuleFieldValidation rule) {
         service.updateRule(rule);
-        return R.ok();
+        return ApiResponse.ok();
     }
 
     @DeleteMapping("/{id}")
     @GovernedProjectionMutation
-    public R<Void> delete(@PathVariable Long id) {
+    public ApiResponse<Void> delete(@PathVariable Long id) {
         service.deleteRule(id);
-        return R.ok();
+        return ApiResponse.ok();
     }
 }

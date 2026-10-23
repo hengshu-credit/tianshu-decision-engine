@@ -50,6 +50,22 @@ public final class RestrictedJsonPath {
             }
             if (marker == '[') {
                 int start = ++cursor;
+                if (cursor < path.length() && path.charAt(cursor) == '"') {
+                    cursor++;
+                    boolean escaped = false;
+                    while (cursor < path.length()) {
+                        char current = path.charAt(cursor);
+                        if (!escaped && current == '"') break;
+                        escaped = !escaped && current == '\\';
+                        cursor++;
+                    }
+                    if (cursor + 1 >= path.length() || path.charAt(cursor + 1) != ']') throw invalid(path);
+                    try {
+                        parts.add(PathPart.property((String) com.alibaba.fastjson.JSON.parse(path.substring(start, cursor + 1))));
+                    } catch (RuntimeException error) { throw invalid(path); }
+                    cursor += 2;
+                    continue;
+                }
                 while (cursor < path.length() && Character.isDigit(path.charAt(cursor))) cursor++;
                 if (start == cursor || cursor >= path.length() || path.charAt(cursor) != ']') throw invalid(path);
                 try {

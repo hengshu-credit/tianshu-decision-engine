@@ -67,15 +67,19 @@ public class GovernanceImpactService {
         if (!(raw instanceof List<?> fields)) {
             return;
         }
+        List<Long> fieldIds = fields.stream().filter(Map.class::isInstance)
+                .map(value -> longValue(((Map<?, ?>) value).get("id")))
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        Map<Long, List<Map<String, Object>>> consumers = lineageService.directReferenceConsumers("DATA_FIELD", fieldIds);
         for (int index = 0; index < fields.size(); index++) {
             if (!(fields.get(index) instanceof Map<?, ?> field)) {
                 continue;
             }
             Long fieldId = longValue(field.get("id"));
             if (fieldId != null) {
-                analyzeNode(GovernanceResourceTypes.DATA_OBJECT,
+                analyzeConsumers(GovernanceResourceTypes.DATA_OBJECT,
                         resourceId, "DATA_FIELD", fieldId,
-                        "$.fields[" + index + "]", issues);
+                        "$.fields[" + index + "]", consumers.getOrDefault(fieldId, List.of()), issues);
             }
         }
     }
@@ -88,6 +92,11 @@ public class GovernanceImpactService {
             String referencePath,
             List<GovernanceIssue> issues) {
         List<Map<String, Object>> nodes = lineageService.directReferenceConsumers(lineageType, lineageId);
+        analyzeConsumers(resourceType, resourceId, lineageType, lineageId, referencePath, nodes, issues);
+    }
+
+    private void analyzeConsumers(String resourceType, Long resourceId, String lineageType, Long lineageId,
+                                  String referencePath, List<Map<String, Object>> nodes, List<GovernanceIssue> issues) {
         List<String> consumers = nodes.stream()
                 .filter(Map.class::isInstance)
                 .map(Map.class::cast)

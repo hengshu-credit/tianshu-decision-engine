@@ -79,8 +79,8 @@ public class RuleLineageOptionsTest {
         assertEquals(5, page.getCurrent());
         assertEquals(20, page.getSize());
         assertEquals(121, page.getTotal());
-        assertEquals(500, controller.options("FUNCTION", "", null, 0, 20).getCode());
-        assertEquals(500, controller.options("FUNCTION", "", null, 1, 101).getCode());
+        assertEquals("100001", controller.options("FUNCTION", "", null, 0, 20).getCode());
+        assertEquals("100001", controller.options("FUNCTION", "", null, 1, 101).getCode());
     }
 
     @Test
@@ -109,7 +109,7 @@ public class RuleLineageOptionsTest {
         OfflineResourceTransferController controller = new OfflineResourceTransferController();
         ReflectionTestUtils.setField(controller, "lineageService", fixture.service);
         assertEquals(7L, controller.resources("FUNCTION", "tax", null, 1, 20).getData().getRecords().get(0).get("id"));
-        assertEquals(422, controller.resources("FUNCTION", "tax", null, 0, 20).getCode());
+        assertEquals(com.hengshucredit.rule.model.PlatformCode.REQUEST_REJECTED.code(), controller.resources("FUNCTION", "tax", null, 0, 20).getCode());
         RuleEngineConsoleLoginProperties properties = new RuleEngineConsoleLoginProperties();
         ConsolePermissionService permissions = new ConsolePermissionService() {
             @Override public boolean hasPermission(Long userId, String permissionCode) { return "transfer:view".equals(permissionCode); }

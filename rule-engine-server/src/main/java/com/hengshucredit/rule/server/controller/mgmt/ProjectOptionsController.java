@@ -1,8 +1,9 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.hengshucredit.rule.model.entity.RuleProject;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.security.RequirePermission;
 import com.hengshucredit.rule.server.service.RuleProjectService;
 import lombok.RequiredArgsConstructor;
@@ -16,28 +17,21 @@ import java.util.Map;
 @RequirePermission(value = "project:view", anyOf = {"rule:view", "field:view", "list:view", "datasource:view", "database:view", "model:view", "function:view", "experiment:view", "log:view", "billing:view", "approval:view", "transfer:view", "lineage:view"})
 @RequiredArgsConstructor
 public class ProjectOptionsController {
-    private final RuleProjectService projects;
+    private final com.hengshucredit.rule.server.mapper.ConsoleUserProjectMapper projects;
 
     @GetMapping
-    public R<IPage<Map<String, Object>>> list(@RequestParam(defaultValue = "1") int pageNum,
+    public ApiResponse<IPage<com.hengshucredit.rule.server.mapper.ConsoleUserProjectMapper.ProjectOption>> list(@RequestParam(defaultValue = "1") int pageNum,
             @RequestParam(defaultValue = "20") int pageSize, @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String projectCode, @RequestParam(required = false) String projectName,
             @RequestParam(required = false) Integer status) {
-        return R.ok(projects.pageList(Math.max(1, pageNum), Math.min(1000, Math.max(1, pageSize)), keyword,
-                projectCode, projectName, status, null, null).convert(this::label));
+        return ApiResponse.ok(projects.browseOptions(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(Math.max(1, pageNum), Math.min(1000, Math.max(1, pageSize))),
+                keyword, projectCode, projectName, status));
     }
 
     @GetMapping("/{id}")
-    public R<Map<String, Object>> detail(@PathVariable Long id) {
-        RuleProject project = projects.getById(id);
-        if (project == null || Integer.valueOf(-1).equals(project.getStatus())) return R.fail(404, "项目不存在");
-        return R.ok(label(project));
-    }
-
-    private Map<String, Object> label(RuleProject project) {
-        Map<String, Object> row = new LinkedHashMap<>();
-        row.put("id", project.getId()); row.put("projectCode", project.getProjectCode());
-        row.put("projectName", project.getProjectName()); row.put("status", project.getStatus());
-        return row;
+    public ApiResponse<com.hengshucredit.rule.server.mapper.ConsoleUserProjectMapper.ProjectOption> detail(@PathVariable Long id) {
+        var project = projects.browseOption(id);
+        if (project == null) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "项目不存在");
+        return ApiResponse.ok(project);
     }
 }

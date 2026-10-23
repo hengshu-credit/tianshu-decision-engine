@@ -19,6 +19,11 @@ import java.util.function.Supplier;
 /** 外数草稿试运行的跨节点状态；快照不随同一requestKey重写。 */
 @Service
 public class ExternalApiTrialStore {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.security.ConsoleDataPermissionHandler consoleDataScope;
+
+    private String secured(String sql) { return consoleDataScope == null ? sql : consoleDataScope.filterSql(sql); }
+
     private static final String DB_NOW = "CAST(UNIX_TIMESTAMP(CURRENT_TIMESTAMP(3))*1000 AS UNSIGNED)";
     private static final String COLUMNS = "id, trial_id, owner, request_key, datasource_id, snapshot_digest, snapshot_json, "
             + "status, attempt_no, lease_owner, lease_until_ms, expires_at_ms, pending_json, result_json, error_message, created_at_ms, updated_at_ms";
@@ -65,7 +70,7 @@ public class ExternalApiTrialStore {
         byte[] ownerKey = ownerKey(owner); int count = Math.max(1, Math.min(20, limit));
         return independent(() -> {
             expire("owner = ?", ownerKey);
-            return jdbcTemplate.query("SELECT " + COLUMNS + " FROM rule_external_api_trial WHERE owner = ? ORDER BY created_at_ms DESC, id DESC LIMIT ?", mapper(), ownerKey, count);
+            return scopedQuery("SELECT " + COLUMNS + " FROM rule_external_api_trial WHERE owner = ? ORDER BY created_at_ms DESC, id DESC LIMIT ?", mapper(), ownerKey, count);
         });
     }
     public boolean claim(String trialId, String owner, String leaseToken, int leaseSeconds) {
@@ -101,7 +106,7 @@ public class ExternalApiTrialStore {
         String id = uuid(trialId, "试运行ID"), token = uuid(leaseToken, "执行租约令牌");
         return independent(() -> {
             expire("trial_id = ? AND lease_owner = ?", id, token);
-            return !jdbcTemplate.query("SELECT 1 FROM rule_external_api_trial" + runningWhere(), (rs, row) -> true, id, token).isEmpty();
+            return !scopedQuery("SELECT 1 FROM rule_external_api_trial" + runningWhere(), (rs, row) -> true, id, token).isEmpty();
         });
     }
     public State cancel(String trialId, String owner) {
@@ -134,7 +139,7 @@ public class ExternalApiTrialStore {
                         + "OR (status IN ('CREATED', 'WAITING') AND expires_at_ms <= " + DB_NOW + "))", args);
     }
     private State selectOne(String predicate, Object... args) {
-        List<State> states = jdbcTemplate.query("SELECT " + COLUMNS + " FROM rule_external_api_trial WHERE " + predicate + " LIMIT 1", mapper(), args);
+        List<State> states = scopedQuery("SELECT " + COLUMNS + " FROM rule_external_api_trial WHERE " + predicate + " LIMIT 1", mapper(), args);
         return states.isEmpty() ? null : states.get(0);
     }
     private RowMapper<State> mapper() {
@@ -175,4 +180,8 @@ public class ExternalApiTrialStore {
                         String snapshotDigest, String snapshotJson, String status, int attemptNo,
                         String leaseOwner, Long leaseUntil, long expiresAt, String pendingJson,
                         String resultJson, String errorMessage, long createdAt, long updatedAt) { }
+
+    private <T> java.util.List<T> scopedQuery(String sql, org.springframework.jdbc.core.RowMapper<T> mapper, Object... parameters) {
+        return jdbcTemplate.query(secured(sql), mapper, parameters);
+    }
 }

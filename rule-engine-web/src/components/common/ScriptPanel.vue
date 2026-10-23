@@ -7,7 +7,7 @@
         <el-tag :type="statusTag.type" size="small" class="sp-status-tag">
           {{ statusTag.text }}
         </el-tag>
-        <span class="sp-check-guidance">{{ guidance }}</span>
+        <span class="sp-check-guidance">{{ compileResult?.saved ? `显示${compileResult.sourceLabel || '所选版本'}已保存的编译源码` : guidance }}</span>
       </div>
       <div class="sp-header-right" @click.stop>
         <el-tooltip
@@ -58,6 +58,10 @@
             language="ql"
             :height="editorHeight"
             read-only
+            :references="references"
+            :functions="functions"
+            :reference-versions="referenceVersions"
+            :reference-catalog-mode="referenceCatalogMode"
             :options="editorOptions"
             @editor-ready="onEditorReady"
           />
@@ -115,6 +119,10 @@ export default {
     guidance: { type: String, default: '由顶部“编译”生成' },
     placeholder: { type: String, default: '请先点击顶部“编译”生成脚本' },
     emptyMessage: { type: String, default: '暂无脚本，请先编译' },
+    references: { type: Array, default: () => [] },
+    functions: { type: Array, default: () => [] },
+    referenceVersions: { type: Object, default: () => ({}) },
+    referenceCatalogMode: { type: String, default: 'LIVE' },
   },
   data() {
     return {
@@ -139,7 +147,7 @@ export default {
     },
     statusTag() {
       const status = this.content.compileStatus
-      if (status === 1) return { type: 'success', text: '脚本已生成' }
+      if (status === 1) return { type: 'success', text: this.compileResult?.saved ? '已保存源码' : '脚本已生成' }
       if (status === 2) return { type: 'danger', text: '脚本生成失败' }
       return { type: 'info', text: '未生成' }
     },

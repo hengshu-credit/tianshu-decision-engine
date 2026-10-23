@@ -360,7 +360,8 @@ public class RuleLifecycleService {
         if (lockDefinition(revision.getDefinitionId()) == null) throw new IllegalArgumentException("规则不存在或已删除");
         revision = requireState(revisionId, RuleRevisionState.REVIEW);
         requireLocalNamespace(loadDefinition(revision.getDefinitionId()), revision);
-        RulePreflightReport report = preflight(revisionId);
+        RulePreflightValidationService.Analysis analysis = analyzeApproval(revisionId);
+        RulePreflightReport report = analysis.report();
         assertPreflightValid(report);
         if (revision.getContentDigest() == null
                 || !revision.getContentDigest().equals(report.getContentDigest())) {
@@ -370,10 +371,13 @@ public class RuleLifecycleService {
         if (report.isBreakingSchemaChange() && forceReason == null) {
             throw new IllegalArgumentException("破坏性 Schema 变更必须填写批准原因");
         }
-        if (forceReason != null) revision.setForcePublishReason(forceReason);
+        if (forceReason != null) {
+            revision.setForcePublishReason(forceReason);
+            report.setBreakingChangeReasonRequired(false);
+        }
         applyPreflight(revision, report);
         persistRevisionSnapshot(revision);
-        DecisionArtifact artifact = buildArtifact(revisionId, actor());
+        DecisionArtifact artifact = buildArtifact(revisionId, actor(), analysis);
         revision.setArtifactId(artifact.getId());
         revision.setApproveBy(actor());
         revision.setApproveTime(LocalDateTime.now());
@@ -902,8 +906,12 @@ public class RuleLifecycleService {
         return preflightService.validate(revisionId);
     }
 
-    protected DecisionArtifact buildArtifact(Long revisionId, String actor) {
-        return artifactService.buildApprovedArtifact(revisionId, actor);
+    protected RulePreflightValidationService.Analysis analyzeApproval(Long revisionId) {
+        return preflightService.analyzeForPublication(revisionId);
+    }
+
+    protected DecisionArtifact buildArtifact(Long revisionId, String actor, RulePreflightValidationService.Analysis analysis) {
+        return artifactService.buildApprovedArtifact(revisionId, actor, analysis);
     }
 
     protected void activateArtifact(RuleRevision revision, String actor) {

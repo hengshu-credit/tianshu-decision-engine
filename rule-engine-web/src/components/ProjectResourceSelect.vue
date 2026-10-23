@@ -1,80 +1,72 @@
 <template>
   <remote-filter-select
     v-bind="$attrs"
-    :value="value"
-    :fetch-options="fetchOptions"
-    option-label-key="projectName"
-    option-value-key="id"
+    :value="modelValue"
+    :fetch-options="fetchProjects"
     :selected-option="selectedProject"
-    :allow-free-input="false"
-    :disabled="disabled"
-    placeholder="输入项目名称搜索"
-    @update:value="updateValue"
-  @change="$emit('change', $event)"
+    option-label-key="displayName"
+    option-value-key="id"
+    placeholder="搜索项目名称或编码"
+    @update:value="$emit('update:modelValue', $event)"
+    @change="$emit('change', $event)"
+    @load-error="loadError = '项目读取失败，请重新打开或搜索'"
   />
+  <span v-if="loadError" role="alert" class="project-select-error">{{ loadError }}</span>
 </template>
 
 <script>
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
-import { getProject, listProjects } from '@/api/project'
+import { listProjectOptions as listProjects, getProjectOption as getProject } from '@/api/project'
+
+function labeled(project) {
+  return { ...project, displayName: [project.projectName, project.projectCode].filter(Boolean).join(' · ') || String(project.id) }
+}
 
 export default {
   name: 'ProjectResourceSelect',
   components: { RemoteFilterSelect },
   inheritAttrs: false,
   props: {
-    value: { type: [String, Number], default: null },
-    disabled: { type: Boolean, default: false },
+    modelValue: { type: [String, Number], default: null },
+    projects: { type: Array, default: () => [] },
+    status: { type: Number, default: 1 },
   },
-  emits: ['update:value', 'change', 'select'],
-  data() {
-    return { selectedProject: null, selectedRequestId: 0 }
-  },
+  emits: ['update:modelValue', 'change'],
+  data() { return { selectedProject: null, knownProjects: {}, labelRequestId: 0, loadError: '' } },
   watch: {
-    value: {
-      immediate: true,
-      async handler(value) {
-        const requestId = ++this.selectedRequestId
-        if (value === null || value === undefined || value === '') {
-          this.selectedProject = null
-          return
-        }
-        try {
-          const response = await getProject(value)
-          if (requestId !== this.selectedRequestId) return
-          this.selectedProject = response?.data || null
-          this.$emit('select', this.selectedProject)
-        } catch {
-          if (requestId === this.selectedRequestId) this.selectedProject = null
-        }
-      },
-    },
+    modelValue: { immediate: true, handler() { this.resolveSelectedProject() } },
+    projects() { this.resolveSelectedProject() },
   },
+  beforeUnmount() { this.labelRequestId++ },
   methods: {
-    async updateValue(value) {
-      const normalized = value === '' ? null : value
-      this.$emit('update:value', normalized)
-      if (normalized === null) {
-        this.selectedProject = null
-        this.$emit('select', null)
-        return
-      }
-      try {
-        const response = await getProject(normalized)
-        this.selectedProject = response?.data || null
-        this.$emit('select', this.selectedProject)
-      } catch {
-        this.$emit('select', null)
-      }
+    async fetchProjects({ query, pageNum, pageSize }) {
+      this.loadError = ''
+      const response = await listProjects({ keyword: query, pageNum, pageSize, status: this.status })
+      const data = response.data || {}
+      const records = (Array.isArray(data) ? data : data.records || []).map(labeled)
+      for (const project of records) this.knownProjects[String(project.id)] = project
+      return { data: { records, total: Array.isArray(data) ? data.length : data.total } }
     },
-    fetchOptions({ query, pageNum, pageSize }) {
-      return listProjects({
-        pageNum,
-        pageSize,
-        status: 1,
-        projectName: query || '',
-      })
+    async resolveSelectedProject() {
+      const requestId = ++this.labelRequestId
+      const id = this.modelValue
+      this.selectedProject = null
+      this.loadError = ''
+      if (id == null || id === '' || String(id) === '0') return
+      const known = this.knownProjects[String(id)] || this.projects.find(item => String(item.id) === String(id))
+      if (known) { this.selectedProject = labeled(known); return }
+      try {
+        const response = await getProject(id)
+        if (requestId !== this.labelRequestId) return
+        if (response.data?.id != null) this.selectedProject = labeled(response.data)
+      } catch {
+        if (requestId === this.labelRequestId) this.loadError = '已选项目读取失败，请重新选择'
+      }
     },
   },
 }
 </script>
+
+<style scoped>
+.project-select-error { color: var(--el-color-danger); font-size: 12px; }
+</style>

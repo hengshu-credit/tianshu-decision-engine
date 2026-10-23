@@ -27,6 +27,12 @@ x-java: &java
 
 x-runtime: &runtime
   <<: *java
+  healthcheck:
+    test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${SERVER_PORT}/actuator/health/readiness | grep -q '\"status\":\"UP\"'"]
+    start_period: 120s
+    interval: 10s
+    timeout: 5s
+    retries: 12
   volumes:
     - type: bind
       source: ${RUNTIME_DIR:-./runtime}/runtime.jar
@@ -72,9 +78,6 @@ services:
       RULE_GLOBAL_ACCESS_KEY_ID: ${RULE_GLOBAL_ACCESS_KEY_ID:-default}
       RULE_GLOBAL_ACCESS_PUBLIC_KEY: ${RULE_GLOBAL_ACCESS_PUBLIC_KEY:-}
       RULE_GLOBAL_ACCESS_TIME_WINDOW_SECONDS: ${RULE_GLOBAL_ACCESS_TIME_WINDOW_SECONDS:-300}
-      CONSOLE_USERNAME: "${CONSOLE_USERNAME:?Set CONSOLE_USERNAME}"
-      CONSOLE_PASSWORD: "${CONSOLE_PASSWORD:?Set CONSOLE_PASSWORD}"
-      CONSOLE_PASSWORD_ENCODING: ${CONSOLE_PASSWORD_ENCODING:-BCRYPT}
       SESSION_REDIS_NAMESPACE: ${SESSION_REDIS_NAMESPACE:-tianshu:session}
       CORS_ALLOWED_ORIGIN_PATTERNS: "${CORS_ALLOWED_ORIGIN_PATTERNS:?Set CORS_ALLOWED_ORIGIN_PATTERNS}"
       LOGGING_FILE_NAME: ""

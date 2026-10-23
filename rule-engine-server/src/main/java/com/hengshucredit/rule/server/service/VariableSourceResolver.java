@@ -1206,13 +1206,11 @@ public class VariableSourceResolver {
                 }
             }
         } else if ("API".equals(varSource)) {
-            Object mapping = config.get("paramMapping");
-            collectDependencyValues(mapping, dependencies);
-            collectApiConfigDependencies(config.get("apiConfigId"), dependencies);
+            ExternalApiRequestPlan.validateBinding(config);
             Map<String, String> paths = options != null ? options.getDerivedReferencePaths() : null;
             if (paths == null && variableService != null) paths = variableService.buildRefScriptNameMap(variable.getProjectId());
             collectApiOperandDependencies(config.get("requestOverrides"), paths, dependencies);
-            collectApiOperandDependencies(config.get("inputOverrides"), paths, dependencies);
+            collectApiConfigDependencies(config.get("apiConfigId"), paths, dependencies);
             RuleExternalApiConfig api = apiConfigMapper == null ? null : apiConfigMapper.selectById(longValue(config.get("apiConfigId")));
             if (api != null) collectApiOperandDependencies(effectiveApiInputs(ExternalApiRequestPlan.specification(api), config.get("requestOverrides")), paths, dependencies);
         } else if ("DB".equals(varSource)) {
@@ -1247,7 +1245,7 @@ public class VariableSourceResolver {
         return dependencies;
     }
 
-    private void collectApiConfigDependencies(Object apiConfigIdValue, Set<String> dependencies) {
+    private void collectApiConfigDependencies(Object apiConfigIdValue, Map<String, String> paths, Set<String> dependencies) {
         Long apiConfigId = longValue(apiConfigIdValue);
         if (apiConfigId == null || apiConfigMapper == null) {
             return;
@@ -1256,24 +1254,11 @@ public class VariableSourceResolver {
         if (apiConfig == null) {
             return;
         }
-        collectDependencyValues(parseJsonMap(apiConfig.getHeaderConfig()), dependencies);
-        collectDependencyValues(parseJsonMap(apiConfig.getQueryConfig()), dependencies);
-        collectDependencyValues(parseJsonMap(apiConfig.getRequestMapping()), dependencies);
-        collectDependencyValues(parseJsonOrRaw(apiConfig.getBodyTemplate()), dependencies);
-        collectDependencyValues(parseJsonMap(apiConfig.getAuthApiConfig()), dependencies);
-        if ("ASYNC".equals(apiConfig.getRequestMode())) {
-            if ("CALLBACK".equals(apiConfig.getAsyncResultMode())) {
-                dependencies.removeIf(name -> "callbackUrl".equals(name) || name.startsWith("callbackUrl."));
-            } else {
-                Map<String, Object> poll = parseJsonMap(apiConfig.getAsyncPollConfig());
-                Set<String> pollDependencies = new LinkedHashSet<>();
-                for (String key : new String[]{"headerConfig", "queryConfig", "requestMapping", "resultEndpointUrl"}) {
-                    collectDependencyValues(poll.get(key), pollDependencies);
-                }
-                pollDependencies.removeIf(name -> "taskId".equals(name) || "submission".equals(name)
-                        || name.startsWith("submission.") || name.startsWith("taskId."));
-                dependencies.addAll(pollDependencies);
-            }
+        collectApiOperandDependencies(ExternalApiAuthConfig.inputs(apiConfig.getAuthApiConfig()), paths, dependencies);
+        if (externalApiInvokeService != null) collectApiOperandDependencies(externalApiInvokeService.linkedRequestInputs(apiConfig), paths, dependencies);
+        if ((apiConfig.getAuthMode() == null || "INHERIT".equals(apiConfig.getAuthMode())) && externalDatasourceMapper != null) {
+            RuleExternalDatasource datasource = externalDatasourceMapper.selectById(apiConfig.getDatasourceId());
+            if (datasource != null) collectApiOperandDependencies(ExternalApiAuthConfig.inputs(datasource.getAuthConfig()), paths, dependencies);
         }
     }
 
@@ -1414,13 +1399,14 @@ public class VariableSourceResolver {
 
     private void collectApiOperandDependencies(Object node, Map<String, String> paths, Set<String> dependencies) {
         if (node instanceof Map<?, ?> map) {
+            if ("LITERAL".equals(map.get("kind"))) return;
             if (("REFERENCE".equals(map.get("kind")) || "PATH".equals(map.get("kind"))) && map.get("refId") != null && map.get("refType") != null) {
                 String key = map.get("refType") + ":" + map.get("refId");
                 String path = paths == null ? null : paths.get(key);
                 if (path == null) throw new IllegalArgumentException("外数入参引用无法解析: " + key);
                 dependencies.add(path);
             }
-            map.values().forEach(value -> collectApiOperandDependencies(value, paths, dependencies));
+            map.forEach((key, value) -> collectApiOperandDependencies("authApiConfig".equals(key) && value instanceof String text ? ExternalApiAuthConfig.inputs(text) : value, paths, dependencies));
         } else if (node instanceof Iterable<?> list) {
             list.forEach(value -> collectApiOperandDependencies(value, paths, dependencies));
         }
@@ -1431,7 +1417,7 @@ public class VariableSourceResolver {
         if (node instanceof Map<?, ?> map) {
             Map<String, Object> result = new LinkedHashMap<>();
             map.forEach((key, value) -> {
-                if (!Set.of("sample", "samples", "responseBranches", "exceptionBranches").contains(String.valueOf(key))) result.put(String.valueOf(key), effectiveApiInputs(value, overrides));
+                if (!Set.of("sample", "samples", "requestSample", "responseSample", "responseBranches", "exceptionBranches").contains(String.valueOf(key))) result.put(String.valueOf(key), effectiveApiInputs(value, overrides));
             });
             if (map.get("id") != null && map.containsKey("location") && overrides.containsKey(String.valueOf(map.get("id")))) {
                 result.put("value", overrides.get(String.valueOf(map.get("id")))); result.remove("defaultValue");
@@ -1779,7 +1765,8 @@ public class VariableSourceResolver {
         if (apiConfigId == null) {
             throw new IllegalArgumentException("API变量缺少 apiConfigId");
         }
-        Map<String, Object> requestParams = buildMappedParams(config.get("paramMapping"), params);
+        ExternalApiRequestPlan.validateBinding(config);
+        Map<String, Object> requestParams = params;
         Map<String, Object> response;
         if (externalApiConsumerService != null) {
             response = externalApiConsumerService.resolve(variable.getProjectId(), apiConfigId, config, requestParams,
@@ -1810,9 +1797,19 @@ public class VariableSourceResolver {
 
     void resolveApiDependencies(Long projectId, Map<String, Object> binding, Map<String, Object> values,
                                 VariableResolveOptions options) {
+        resolveSourceDependencies(projectId, "API", binding, values, options);
+    }
+
+    void resolveSqlDependencies(Long projectId, Map<String, Object> binding, Map<String, Object> values,
+                                VariableResolveOptions options) {
+        resolveSourceDependencies(projectId, "DB", binding, values, options);
+    }
+
+    private void resolveSourceDependencies(Long projectId, String sourceType, Map<String, Object> binding,
+                                           Map<String, Object> values, VariableResolveOptions options) {
         RuleVariable source = new RuleVariable();
         source.setProjectId(projectId);
-        source.setVarSource("API");
+        source.setVarSource(sourceType);
         source.setSourceConfig(JSON.toJSONString(binding));
         Set<String> dependencies = collectVariableDependencies(source, options);
         if (dependencies.isEmpty()) return;
@@ -2639,18 +2636,6 @@ public class VariableSourceResolver {
         return false;
     }
 
-    private Map<String, Object> buildMappedParams(Object mappingObject, Map<String, Object> params) {
-        Map<String, Object> mapping = parseNestedMap(mappingObject);
-        if (mapping.isEmpty()) {
-            return new LinkedHashMap<>(params);
-        }
-        Map<String, Object> result = new LinkedHashMap<>();
-        for (Map.Entry<String, Object> entry : mapping.entrySet()) {
-            result.put(entry.getKey(), parseConfiguredValue(entry.getValue(), params));
-        }
-        return result;
-    }
-
     private List<Object> buildParamList(Object configParams, Map<String, Object> params) {
         List<Object> result = new ArrayList<>();
         if (configParams instanceof Iterable) {
@@ -2680,41 +2665,20 @@ public class VariableSourceResolver {
     }
 
     private String dbReferencePath(RuleVariable variable, Map<?, ?> operand, VariableResolveOptions options) {
-        Long id = longValue(operand.get("refId"));
-        String type = stringValue(operand.get("refType"));
-        if (id == null || !("VARIABLE".equals(type) || "CONSTANT".equals(type))) {
-            throw new IllegalArgumentException("SQL 参数字段引用必须包含有效 ID 和引用类型");
-        }
-        Map<String, String> paths = options != null && options.getVariableReferencePaths() != null
-                ? options.getVariableReferencePaths() : variableService.buildRefScriptNameMap(variable.getProjectId());
-        String path = paths.get(type + ":" + id);
-        if (!hasText(path)) throw new IllegalArgumentException("SQL 参数引用字段不存在或已停用：" + type + ":" + id);
-        return path;
+        Map<String, String> paths = options == null ? null : options.getDerivedReferencePaths();
+        if (paths == null && options != null) paths = options.getVariableReferencePaths();
+        if (paths == null) paths = variableService.buildRefScriptNameMap(variable.getProjectId());
+        return SqlParameterValues.referencePath(operand, paths);
     }
 
     private List<Object> buildDbParamList(RuleVariable variable, Object configured, Map<String, Object> values,
                                          VariableResolveOptions options) {
-        if (!(configured instanceof Iterable<?> items)) return buildParamList(configured, values);
-        List<Object> result = new ArrayList<>();
-        for (Object value : items) {
-            if (value instanceof Map<?, ?> operand && "REFERENCE".equals(operand.get("kind"))) {
-                String path = dbReferencePath(variable, operand, options);
-                if ("CONSTANT".equals(operand.get("refType")) && options.getVariableReferencePaths() == null) {
-                    String key = "CONSTANT:" + longValue(operand.get("refId"));
-                    Map<String, Object> constants = variableService.buildRefConstantValueMap(variable.getProjectId());
-                    if (!constants.containsKey(key)) throw new IllegalArgumentException("SQL 参数常量不可用：" + key);
-                    result.add(constants.get(key));
-                } else {
-                    result.add(readPath(values, path));
-                }
-            } else if (value instanceof Map<?, ?> operand && "LITERAL".equals(operand.get("kind"))) {
-                result.add("NULL".equals(operand.get("valueType")) ? null
-                        : OperandValueResolver.resolve(JSON.toJSONString(operand), values));
-            } else {
-                result.add(parseConfiguredValue(value, values));
-            }
-        }
-        return result;
+        Map<String, String> paths = options.getDerivedReferencePaths();
+        if (paths == null) paths = options.getVariableReferencePaths();
+        if (paths == null && variableService != null) paths = variableService.buildRefScriptNameMap(variable.getProjectId());
+        Map<String, Object> constants = options.getRuntimeSnapshot() != null || variableService == null
+                ? Map.of() : variableService.buildRefConstantValueMap(variable.getProjectId());
+        return SqlParameterValues.resolve(configured, values, paths, constants);
     }
 
     private List<Object> alignQueryParamsWithSql(String sql, List<Object> queryParams) {

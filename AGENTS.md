@@ -51,7 +51,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 | 模块 | 说明 | 端口 |
 |------|------|------|
-| `rule-engine-model` | 公共实体与 DTO | - |
+| `rule-engine-model` | 公共实体、DTO、全局请求响应契约、平台结果码和 HTTP 映射 | - |
 | `rule-engine-core` | 规则编译与执行核心 | - |
 | `rule-engine-server` | 管理端 REST API | 8080 |
 | `rule-engine-client-sdk` | 完整 Java SDK，本地缓存与执行 | - |
@@ -120,25 +120,39 @@ npm run test:e2e:full # 设置 E2E_BASE_URL 后执行真实前后端联调
 # docker/docker-compose.mysql.yml / docker/docker-compose.redis.yml 可独立启动并远程提供 MySQL、Redis；
 # docker/docker-compose.yml 启动连接外部数据库的 server、web、HTTP、SDK；
 # docker/docker-compose.full.yml 一键启动 MySQL、Redis、server、web、HTTP、SDK。
-cp .env.example .env  # PowerShell 使用 Copy-Item .env.example .env
-# 替换 .env 中全部占位值
-docker compose --env-file .env -f docker/docker-compose.mysql.yml up -d
-docker compose --env-file .env -f docker/docker-compose.redis.yml up -d
-# 外部数据库模式：把 MYSQL_SERVICE_HOST/REDIS_SERVICE_HOST 配成容器可访问的远程地址，再执行：
-# docker compose --env-file .env -f docker/docker-compose.yml up -d
+cp .env.server.example .env.server
+cp .env.client.example .env.client  # PowerShell 使用 Copy-Item
+# 分别填写 .env.server 与 .env.client 的地址和凭据
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.mysql.yml up -d
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.redis.yml up -d
+# 外部数据库模式：把 MYSQL_HOST/REDIS_HOST 配成容器可访问的远程地址，再执行：
+# docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml up -d
 # 完整单机模式不需要先启动上面两个文件，直接执行：
-# docker compose --env-file .env -f docker/docker-compose.full.yml up -d
+# docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml up -d
 ```
 
 ### 数据库初始化
 
 - `schema.sql` 包含数据库表结构、逻辑执行日志视图和按变量唯一索引幂等补齐的系统常量；服务端启动时默认自动执行，脚本使用当前连接的数据库，不写死数据库名
 - Docker Compose 默认只启动 MySQL、Redis 和应用服务，不导入业务数据；启用 `example-data` profile 后等待 schema 完成并以 `INSERT IGNORE` 导入 `docker/rule-engine-mysql/data-tianshu-example.sql`
+- 可选初始配置通过 `RULE_ENGINE_INITIAL_DATA_ENABLED=true` 启用 `initial-data.sql`，仅插入缺失的全局变量/对象/字段，不覆盖已有配置；默认关闭。
 - 手工演示环境准备顺序：启动服务自动执行 `schema.sql`，再按需导入 `docker/rule-engine-mysql/data-tianshu-example.sql`；该样例脚本不用于保留业务数据的数据库
 - 样例数据只保留 `docker/rule-engine-mysql/data-tianshu-example.sql`，不属于系统初始数据来源；服务端启动不自动导入样例数据
-- 仅在 README 的 12 节「实现边界」中保留的已知限制（如血缘仅静态识别脚本引用）才是真实待修缮项
+- 功能边界以实际代码、测试和本文件下方的「仍需真实环境验证的边界」为准；本轮审查与实施状态见 `docs/audits/2026-10-22-engine-review.md`、对应优化计划和 `docs/audits/2026-10-23-optimization-completion.md`，不从历史功能清单推断能力缺失。
 - Compose 不提供共享默认密码；全新数据卷根据 `MYSQL_USERNAME` / `MYSQL_PASSWORD` 创建应用账号，已有数据卷需由数据库管理员预先创建或更新最小权限账号
-- Maven/JAR 启动时会自动读取当前目录或上级目录的 `.env`；系统环境变量和命令行参数优先覆盖文件值，生产仍应通过 Secret/KMS 注入 MySQL、Redis、控制台和 `RULE_AUTH_MASTER_KEY` 等真实凭据
+- 环境文件仅使用 `.env.server` 和 `.env.client`，保留对应 `.example` 模板；不加载旧 `.env` 或 `.local` 覆盖。Maven/JAR 的 server 及 Vite 读取 `.env.server`，runtime 读取 `.env.client`，系统环境变量和命令行参数优先。
+- 控制台账号密码不从环境变量或配置文件初始化。首次访问注册页面创建超管，数据库永久记录初始化状态。忘记账号和密码时，在服务器运行 `java -jar server.jar --console-admin-recovery-code` 生成30分钟一次性恢复码，再到恢复页面设置新的用户名和密码；不得清空业务表、删除数据卷或更换项目加密主密钥来重置账户。
+- 系统仅保留一个 `SUPER_ADMIN` 身份。启动及恢复命令通过账户安全锁合并历史重复超管，保留主账号 ID、授权和各原操作人名称的业务归属；重复账号归档，不能登录、重新启用或在账户列表显示。恢复新用户名仍更新主账号，不创建新超管；账户管理禁止给其他账号授予超管角色，也不能停用或移除唯一超管。普通业务管理员仍按模块和项目权限授权。
+
+### 发布、凭据与恢复验收
+
+- 规则发布：已有启用固定用例时须全部通过；无固定用例明确提示并保留原发布流程。回归证据由服务端记录，绑定修订、依赖和用例摘要，配置变化后旧报告不能用于发布。
+- 凭据编辑：空白保留、填写替换、显式勾选清除三种含义必须区分；清除意图需要经过草稿、审批和实际持久化，秘密不得回传或进入浏览器持久缓存。
+- 备份恢复：决策制品含二进制数据，mysqldump 使用 `--hex-blob` 和 `--result-file` 或容器内原始管道；禁止通过文本解码中转。恢复库不得与源库同名，也不得覆盖已有库。恢复验收同时检查逐表行数和内容校验。
+
+### 截图采集
+
+在 `rule-engine-web` 运行 `npm run docs:screenshots`，使用仓库的 Playwright 页面与夹具生成文档截图；这不替代真实环境端到端验收。
 
 ## 核心编译器（rule-engine-core）
 
@@ -222,6 +236,15 @@ Vitest 配置（`vitest.config.mjs`）关键点：
 
 > ⚠️ **铁律**：前端代码修改需要符合 eslint 规范。
 
+### 控制台项目与内容权限
+
+- 默认权限来自角色及账户覆盖，默认 `projectAccessMode=ALL`、`globalEditable=true`；可逐项目配置权限覆盖。项目覆盖只作用该项目，不能用于授予账户/角色管理权限。
+- `SELECTED` 模式只允许分配的项目，空清单仅可访问获授权的全局内容。全局查看仍需默认模块权限，全局只读禁止该范围内的业务修改。
+- 业务内容读写统一经过 `ConsoleDataPermissionHandler`、`ConsoleDataWriteInterceptor` 和目标资源授权；新增 JDBC 查询应使用同一过滤逻辑，缓存与异步返回也要检查真实资源所属项目。
+- 日志归属优先使用稳定项目 ID，不能通过可变项目编码猜测权限；受限账号不得读取无法确认归属的历史记录。SDK/OpenAPI 的项目凭证不使用控制台范围。
+- 项目或功能授权变化增加权限版本，使旧会话失效；不得绕过个人资料鉴权，也不得恢复上一身份的工作区/设计器缓存。账户变更的并发安全锁和令牌原子消费必须保留。
+- Java/Spring Bean 原生实现属于可信服务器代码能力，配置、导入或测试未发布实现需全局 `function:native`、账户管理及角色管理权限，且不限项目、全局可编辑；项目权限覆盖不能授予该能力。
+
 ### 页面筛选与操作工具栏规范
 
 - 列表、审批和各模块调用日志页面中，筛选与页面级操作必须共用同一行工具栏：筛选靠最左，操作按钮组靠最右。复用 `uiue-search-container uiue-filter-toolbar`，不得将字段、刷新等操作另起一行放到标题区。
@@ -280,7 +303,7 @@ Vitest 配置（`vitest.config.mjs`）关键点：
 | 规则生命周期与决策制品 | `RuleDetail` | `RuleDefinitionController`、`DecisionArtifactController` | `DRAFT → REVIEW → APPROVED → PUBLISHED → OFFLINE`；发布前 Schema/依赖影响校验；不可变制品下载、显式 ID 绑定导入部署；执行日志带修订与摘要归因 |
 | 模型制品治理 | `ModelList/ModelDetail` | `RuleModelController` | PMML/ONNX 字段精确匹配、摘要/格式/I/O/运行时校验；样例可选但提供时必须通过；删除、替换、下线前强制引用影响确认 |
 
-**仍为待修缮项（以 README 第 12 节「实现边界」为准）**：
+**仍需真实环境验证的边界**：
 - 血缘分析仅能静态识别结构化字段与变量来源配置，脚本中复杂的动态引用无法保证完全识别。
 - 控制台、MySQL、Redis 和项目鉴权均不提供共享默认凭证；部署必须通过 Secret/KMS 等方式注入并建立轮换流程。
 - 数据库管理只应配置只读账号和查询类 SQL；正式交付还需在真实部署环境完成浏览器 E2E、容量、备份恢复和灾备演练。

@@ -51,6 +51,15 @@ public class QLScriptFieldResolverTest {
     }
 
     @Test
+    public void wholeObjectHasItsOwnReferenceIdentityAndScope() {
+        fixture.dataObject(10L, activeDataObject(10L, 4L, "request"));
+        var reference = fixture.resolver.validateReference(4L, 10L, "DATA_OBJECT_ROOT");
+        assertEquals("request", reference.getScriptRoot());
+        assertEquals("OBJECT", reference.getValueType());
+        assertNull(fixture.resolver.validateReference(99L, 10L, "DATA_OBJECT_ROOT"));
+    }
+
+    @Test
     public void stableApiObjectVariableBindsBothPropertyReads() {
         RuleVariable variable = activeVariable(
                 302L, 4L, "icekredit_vn_credit_profile_features", "OBJECT", "API");

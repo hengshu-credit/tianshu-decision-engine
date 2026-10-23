@@ -5,6 +5,13 @@ import org.junit.Assert;
 import org.junit.Test;
 
 public class RestrictedJsonPathTest {
+    @org.junit.Test
+    public void quotedKeysPreservePunctuationCaseQuotesAndUnicode() {
+        var value = java.util.Map.of("Mobile.Number", java.util.List.of(java.util.Map.of("姓 名\"", "张")));
+        org.junit.Assert.assertEquals("张", RestrictedJsonPath.read(value, "$[\"Mobile.Number\"][0][\"姓 名\\\"\"]"));
+        org.junit.Assert.assertNull(RestrictedJsonPath.read(value, "$[\"mobile.number\"]"));
+        org.junit.Assert.assertThrows(IllegalArgumentException.class, () -> RestrictedJsonPath.read(value, "$[\"Mobile.Number\"]..*"));
+    }
 
     @Test
     public void readsObjectPropertiesAndArrayIndexes() {

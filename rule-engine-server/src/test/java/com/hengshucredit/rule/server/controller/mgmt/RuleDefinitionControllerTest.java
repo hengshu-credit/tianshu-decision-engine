@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.model.dto.RuleLifecycleActionRequest;
@@ -13,7 +15,6 @@ import com.hengshucredit.rule.model.entity.RuleDefinitionVersion;
 import com.hengshucredit.rule.model.entity.RuleRevision;
 import com.hengshucredit.rule.model.enums.RuleDraftSourceType;
 import com.hengshucredit.rule.server.common.GlobalExceptionHandler;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.common.RuleGovernanceException;
 import com.hengshucredit.rule.server.service.RuleDefinitionService;
 import com.hengshucredit.rule.server.service.RuleDraftService;
@@ -67,7 +68,7 @@ public class RuleDefinitionControllerTest {
                 .andReturn();
         JSONObject matchedBody = JSON.parseObject(
                 matched.getResponse().getContentAsString());
-        assertEquals(200, matchedBody.getIntValue("code"));
+        assertEquals("000000", matchedBody.getString("code"));
         assertEquals(81L, matchedBody.getJSONObject("data").getLongValue("id"));
         assertEquals("{\"source\":\"v4\"}",
                 matchedBody.getJSONObject("data").getString("modelJson"));
@@ -78,7 +79,7 @@ public class RuleDefinitionControllerTest {
                 .andReturn();
         JSONObject wrongDefinitionBody = JSON.parseObject(
                 wrongDefinition.getResponse().getContentAsString());
-        assertEquals(400, wrongDefinitionBody.getIntValue("code"));
+        assertEquals("100001", wrongDefinitionBody.getString("code"));
     }
 
     @Test
@@ -113,7 +114,7 @@ public class RuleDefinitionControllerTest {
 
         JSONObject body = JSON.parseObject(
                 result.getResponse().getContentAsString());
-        assertEquals(200, body.getIntValue("code"));
+        assertEquals("000000", body.getString("code"));
         assertEquals(7L, body.getJSONObject("data")
                 .getJSONObject("revision").getLongValue("id"));
         assertEquals(RuleDraftSourceType.VERSION,
@@ -151,7 +152,7 @@ public class RuleDefinitionControllerTest {
 
         JSONObject body = JSON.parseObject(
                 result.getResponse().getContentAsString());
-        assertEquals(409, body.getIntValue("code"));
+        assertEquals("700001", body.getString("code"));
         assertEquals("DRAFT_ALREADY_EXISTS", body.getJSONObject("data")
                 .getString("errorCode"));
     }
@@ -197,14 +198,14 @@ public class RuleDefinitionControllerTest {
             }
         });
 
-        R<RuleRevision> submitted = controller.submitRevision(10L, 3L, null);
-        R<RuleRevision> wrongDefinition = controller.submitRevision(11L, 3L, null);
-        R<RuleRevision> invalidApproval = controller.approveRevision(10L, 3L, null);
+        ApiResponse<RuleRevision> submitted = controller.submitRevision(10L, 3L, null);
+        ApiResponse<RuleRevision> wrongDefinition = controller.submitRevision(11L, 3L, null);
+        ApiResponse<RuleRevision> invalidApproval = controller.approveRevision(10L, 3L, null);
 
-        assertEquals(200, submitted.getCode());
+        assertEquals("000000", submitted.getCode());
         assertEquals("REVIEW", submitted.getData().getState());
-        assertEquals(400, wrongDefinition.getCode());
-        assertEquals(422, invalidApproval.getCode());
+        assertEquals("100001", wrongDefinition.getCode());
+        assertEquals("700002", invalidApproval.getCode());
     }
 
     @Test
@@ -220,9 +221,9 @@ public class RuleDefinitionControllerTest {
             }
         });
 
-        R<RulePreflightReport> response = controller.preflight(10L, 3L);
+        ApiResponse<RulePreflightReport> response = controller.preflight(10L, 3L);
 
-        assertEquals(422, response.getCode());
+        assertEquals("700002", response.getCode());
         assertEquals(Long.valueOf(3L), response.getData().getRevisionId());
     }
 
@@ -246,9 +247,9 @@ public class RuleDefinitionControllerTest {
         body.put("changeLog", "兼容入口发布");
         body.put("forcePublishReason", "兼容入口不得强制发布");
 
-        R<?> response = controller.publish(30L, body);
+        ApiResponse<?> response = controller.publish(30L, body);
 
-        assertEquals(200, response.getCode());
+        assertEquals("000000", response.getCode());
         assertEquals(approved, response.getData());
         assertEquals("兼容入口发布", captured[0].getComment());
         assertNull(captured[0].getForcePublishReason());
@@ -299,9 +300,9 @@ public class RuleDefinitionControllerTest {
                         return published;
                     }
                 });
-        R<?> response = controller.unpublish(30L);
+        ApiResponse<?> response = controller.unpublish(30L);
 
-        assertEquals(200, response.getCode());
+        assertEquals("000000", response.getCode());
         assertEquals(published, response.getData());
         assertNull(captured[0].getComment());
     }
@@ -373,7 +374,7 @@ public class RuleDefinitionControllerTest {
                 result.getResponse().getContentAsString());
         JSONObject data = body.getJSONObject("data");
 
-        assertEquals(200, body.getIntValue("code"));
+        assertEquals("000000", body.getString("code"));
         assertEquals(6L, data.getJSONObject("revision").getLongValue("id"));
         assertEquals(1, data.getJSONObject("revision")
                 .getIntValue("lockVersion"));
@@ -413,7 +414,7 @@ public class RuleDefinitionControllerTest {
                 result.getResponse().getContentAsString());
         JSONObject data = body.getJSONObject("data");
 
-        assertEquals(409, body.getIntValue("code"));
+        assertEquals("700001", body.getString("code"));
         assertEquals("DRAFT_BASE_MISMATCH",
                 data.getString("errorCode"));
         assertEquals("DRAFT_BASE_MISMATCH", data.getJSONArray("issues")
@@ -435,7 +436,7 @@ public class RuleDefinitionControllerTest {
                 result.getResponse().getContentAsString());
         JSONObject data = body.getJSONObject("data");
 
-        assertEquals(400, body.getIntValue("code"));
+        assertEquals("100001", body.getString("code"));
         assertEquals("DRAFT_SAVE_REQUEST_REQUIRED",
                 data.getString("errorCode"));
         assertEquals("DRAFT_SAVE_REQUEST_REQUIRED",
@@ -507,7 +508,7 @@ public class RuleDefinitionControllerTest {
                 result.getResponse().getContentAsString());
         JSONObject data = body.getJSONObject("data");
 
-        assertEquals(409, body.getIntValue("code"));
+        assertEquals("700001", body.getString("code"));
         assertEquals("DRAFT_CREATION_BLOCKED",
                 data.getString("errorCode"));
         assertEquals("DRAFT_CREATION_BLOCKED",
@@ -548,7 +549,7 @@ public class RuleDefinitionControllerTest {
         JSONObject body = JSON.parseObject(
                 result.getResponse().getContentAsString());
 
-        assertEquals(200, body.getIntValue("code"));
+        assertEquals("000000", body.getString("code"));
         assertEquals(6L, body.getJSONObject("data")
                 .getLongValue("sourceRevisionId"));
         assertEquals("VARIABLE:302", body.getJSONObject("data")
@@ -588,7 +589,7 @@ public class RuleDefinitionControllerTest {
         JSONObject body = JSON.parseObject(
                 result.getResponse().getContentAsString());
 
-        assertEquals(409, body.getIntValue("code"));
+        assertEquals("700001", body.getString("code"));
         assertEquals("REPAIR_PREVIEW_CHANGED",
                 body.getJSONObject("data")
                         .getString("errorCode"));
@@ -633,7 +634,7 @@ public class RuleDefinitionControllerTest {
         JSONObject body = JSON.parseObject(
                 result.getResponse().getContentAsString());
 
-        assertEquals(422, body.getIntValue("code"));
+        assertEquals("700002", body.getString("code"));
         assertEquals("SCRIPT_INPUT_REF_MISSING",
                 body.getJSONObject("data")
                         .getString("errorCode"));

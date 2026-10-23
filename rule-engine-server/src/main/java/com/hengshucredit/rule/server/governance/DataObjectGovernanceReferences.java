@@ -11,7 +11,7 @@ public final class DataObjectGovernanceReferences {
         if (fields == null) return references;
         return references.stream().map(reference -> {
             String path = reference.referencePath();
-            if (reference.versionSelection() != null || !GovernanceResourceTypes.DATA_OBJECT.equals(reference.targetResourceType()) || path == null
+            if (reference.versionSelection() != null || "DATA_OBJECT_ROOT".equals(reference.refType()) || !GovernanceResourceTypes.DATA_OBJECT.equals(reference.targetResourceType()) || path == null
                     || !isFieldReferencePath(path)) return reference;
             var field = fields.selectById(reference.targetResourceId());
             if (field == null || field.getObjectId() == null) return reference;

@@ -6,6 +6,8 @@ import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
+import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
+import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionContentMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionMapper;
 import org.springframework.stereotype.Service;
@@ -95,23 +97,37 @@ public class RuleReferenceIntegrityService {
         if (functionService != null) {
             functionService.buildFunctionCodeMap(projectId).forEach((id, code) -> catalog.put("FUNCTION:" + id, code));
         }
-        if (externalApiMapper != null) {
-            externalApiMapper.selectList(null).stream()
-                    .filter(api -> api != null && Integer.valueOf(1).equals(api.getStatus())
-                            && externalApiAvailable(api, projectId))
-                    .forEach(api -> catalog.put("EXTERNAL_API:" + api.getId(),
-                            api.getApiCode() == null ? String.valueOf(api.getId()) : api.getApiCode()));
+        if (externalApiMapper != null && externalDatasourceMapper != null) {
+            var sources = new LambdaQueryWrapper<RuleExternalDatasource>()
+                    .select(RuleExternalDatasource::getId,
+                            RuleExternalDatasource::getScope,
+                            RuleExternalDatasource::getProjectId,
+                            RuleExternalDatasource::getStatus)
+                    .eq(RuleExternalDatasource::getStatus, 1)
+                    .and(scope -> scope.eq(RuleExternalDatasource::getScope, "GLOBAL")
+                            .or(projectId != null).eq(projectId != null,
+                                    RuleExternalDatasource::getProjectId, projectId));
+            List<Long> ids = externalDatasourceMapper.selectList(sources).stream()
+                    .filter(source -> Integer.valueOf(1).equals(source.getStatus()) && ("GLOBAL".equals(source.getScope())
+                            || projectId != null && projectId.equals(source.getProjectId())))
+                    .map(RuleExternalDatasource::getId).distinct().toList();
+            Set<Long> available = new LinkedHashSet<>(ids);
+            for (int offset = 0; offset < ids.size(); offset += 500) {
+                var query = new LambdaQueryWrapper<RuleExternalApiConfig>()
+                        .select(RuleExternalApiConfig::getId,
+                                RuleExternalApiConfig::getDatasourceId,
+                                RuleExternalApiConfig::getStatus,
+                                RuleExternalApiConfig::getApiCode)
+                        .eq(RuleExternalApiConfig::getStatus, 1)
+                        .in(RuleExternalApiConfig::getDatasourceId,
+                                ids.subList(offset, Math.min(offset + 500, ids.size())));
+                for (var api : externalApiMapper.selectList(query)) {
+                    if (Integer.valueOf(1).equals(api.getStatus()) && available.contains(api.getDatasourceId()))
+                        catalog.put("EXTERNAL_API:" + api.getId(), api.getApiCode() == null ? String.valueOf(api.getId()) : api.getApiCode());
+                }
+            }
         }
         return catalog;
-    }
-
-    private boolean externalApiAvailable(com.hengshucredit.rule.model.entity.RuleExternalApiConfig api,
-                                         Long projectId) {
-        if (api == null || api.getDatasourceId() == null || externalDatasourceMapper == null) return false;
-        var datasource = externalDatasourceMapper.selectById(api.getDatasourceId());
-        if (datasource == null || !Integer.valueOf(1).equals(datasource.getStatus())) return false;
-        return "GLOBAL".equals(datasource.getScope())
-                || projectId != null && projectId.equals(datasource.getProjectId());
     }
 
     private AuditReport auditWithCatalog(Long definitionId, String modelJson, Map<String, String> validRefs) {
@@ -233,13 +249,17 @@ public class RuleReferenceIntegrityService {
         if (node instanceof JSONObject) {
             JSONObject object = (JSONObject) node;
             String kind = object.getString("kind");
+            if ("LITERAL".equals(kind)) return; // 字面对象中的业务字段不是配置引用。
             if (("PATH".equals(kind) || "REFERENCE".equals(kind))
                     && !blank(firstText(object.getString("code"), object.getString("value")))) {
                 checkPair(object, path, definitionId, "refId", "refType",
                         firstText(object.getString("code"), object.getString("value")),
                         validRefs, issues, seen);
             }
-            if (!blank(object.getString("varCode"))) {
+            boolean operandVariable = object.getJSONObject("operand") != null
+                    && (path.endsWith(".rowVar") || path.endsWith(".colVar") || path.endsWith(".resultVar")
+                    || path.endsWith(".levelVar") || path.matches(".*\\.(rowDimensions|colDimensions|dimensions)\\[\\d+\\]"));
+            if (!operandVariable && object.getJSONObject("leftOperand") == null && !blank(object.getString("varCode"))) {
                 checkPair(object, path, definitionId, "_varId", "_refType", object.getString("varCode"),
                         validRefs, issues, seen);
             }

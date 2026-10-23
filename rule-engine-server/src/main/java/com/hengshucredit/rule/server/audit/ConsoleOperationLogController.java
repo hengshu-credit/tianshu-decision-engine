@@ -1,8 +1,9 @@
 package com.hengshucredit.rule.server.audit;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.hengshucredit.rule.model.entity.ConsoleOperationLog;
-import com.hengshucredit.rule.server.common.Result;
 import com.hengshucredit.rule.server.security.ConsoleAccessGuard;
 import com.hengshucredit.rule.server.security.RequirePermission;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,23 +22,23 @@ public class ConsoleOperationLogController {
 
     @GetMapping("/operation-logs")
     @RequirePermission("account:audit")
-    public Result<IPage<ConsoleOperationLog>> page(
+    public ApiResponse<IPage<ConsoleOperationLog>> page(
             @RequestParam(defaultValue = "1") int pageNum, @RequestParam(defaultValue = "20") int pageSize,
             @RequestParam(required = false) String username, @RequestParam(required = false) String module,
             @RequestParam(required = false) String action, @RequestParam(required = false) String outcome,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
-        return Result.ok(logs.page(pageNum, pageSize, username, module, action, outcome, keyword, startTime, endTime));
+        return ApiResponse.ok(logs.page(pageNum, pageSize, username, module, action, outcome, keyword, startTime, endTime));
     }
 
     @GetMapping("/operation-logs/{id}")
     @RequirePermission("account:audit")
-    public Result<ConsoleOperationLog> detail(@PathVariable Long id) { return Result.ok(logs.detail(id)); }
+    public ApiResponse<ConsoleOperationLog> detail(@PathVariable Long id) { return ApiResponse.ok(logs.detail(id)); }
 
     @PostMapping("/activity")
     @RequirePermission("")
-    public Result<Void> activity(@RequestBody Activity activity, HttpServletRequest request) {
+    public ApiResponse<Void> activity(@RequestBody Activity activity, HttpServletRequest request) {
         if (activity == null || !Set.of("PAGE_VIEW", "FIELD_VIEW", "FIELD_SELECT").contains(activity.action())) throw new IllegalArgumentException("不支持的操作事件");
         String page = ConsoleOperationAuditFilter.pagePath(activity.pagePath());
         if (page == null) throw new IllegalArgumentException("页面路径无效");
@@ -62,7 +63,7 @@ public class ConsoleOperationLogController {
                 if (activity.version() != null && activity.version().matches("[A-Za-z0-9_.: -]{1,64}")) state.log.setTargetVersion(activity.version());
             }
         }
-        return Result.ok();
+        return ApiResponse.ok();
     }
 
     public record Activity(String action, String pagePath, String resourceType, String resourceId, String name, String version) { }

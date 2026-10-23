@@ -47,4 +47,20 @@ public class FunctionParameterContractTest {
         assertEquals("DOUBLE", FunctionParameterContract.parse(json).get(0).type());
         assertEquals("int", FunctionParameterContract.parse(json).get(0).javaType());
     }
+
+    @Test public void scriptContractRejectsInvalidDeclarationsBeforeApproval() {
+        assertThrows(IllegalArgumentException.class,
+                () -> FunctionScriptContract.validate("bad-code", "return 1;", "[]"));
+        assertThrows(IllegalArgumentException.class,
+                () -> FunctionScriptContract.validate("goodCode", " ", "[]"));
+        assertThrows(IllegalArgumentException.class,
+                () -> FunctionScriptContract.validate("goodCode", "return ;", "not-json"));
+        assertThrows(RuntimeException.class,
+                () -> FunctionScriptContract.validate("goodCode", "return (;", "[]"));
+    }
+
+    @Test public void scriptContractParsesAValidFunctionWithoutExecutingIt() {
+        FunctionScriptContract.validate("goodCode", "return value + 1;",
+                "[{\"name\":\"value\",\"type\":\"NUMBER\"}]");
+    }
 }

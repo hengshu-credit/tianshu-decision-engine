@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.annotation.JsonFilter;
@@ -15,7 +17,6 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.hengshucredit.rule.model.dto.ResolvedField;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.dto.TestExpectationResult;
-import com.hengshucredit.rule.server.common.R;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -98,7 +99,7 @@ public class RuleTestExpectationService {
     public String writeExecutionSnapshot(RuleResult execution) {
         try {
             // ObjectWriter属性属于本次写入，不修改共享执行对象或通用ObjectMapper。
-            return EXECUTION_SNAPSHOT_WRITER.withAttribute(SNAPSHOT_ROOT, execution).writeValueAsString(R.ok(execution));
+            return EXECUTION_SNAPSHOT_WRITER.withAttribute(SNAPSHOT_ROOT, execution).writeValueAsString(ApiResponse.ok(execution));
         } catch (Exception invalid) {
             throw new IllegalArgumentException("结果无法保存为有效JSON");
         }

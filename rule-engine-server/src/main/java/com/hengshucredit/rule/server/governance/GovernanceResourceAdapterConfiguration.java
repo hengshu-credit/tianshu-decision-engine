@@ -51,6 +51,8 @@ import java.util.function.Function;
 
 @Configuration
 public class GovernanceResourceAdapterConfiguration {
+    @jakarta.annotation.Resource private com.hengshucredit.rule.server.security.ConsoleProjectAccess consoleProjects;
+    @jakarta.annotation.Resource private com.hengshucredit.rule.server.security.ConsoleDataWriteInterceptor consoleWrites;
 
     @Bean
     public GovernedResourceAdapter variableGovernanceAdapter(
@@ -247,6 +249,7 @@ public class GovernanceResourceAdapterConfiguration {
                 if (mapper.insert(entity) != 1) {
                     throw new IllegalStateException("资源创建失败");
                 }
+                if (entity instanceof RuleProject project && consoleProjects != null) consoleProjects.grantCreatedProject(project.getId());
             }
 
             @Override
@@ -259,6 +262,7 @@ public class GovernanceResourceAdapterConfiguration {
 
             @Override
             public void restore(T entity) {
+                if (consoleWrites != null) consoleWrites.validateEntity(entity);
                 // Immutable snapshots are complete: nulls must clear values written by another version.
                 var table = com.baomidou.mybatisplus.core.metadata.TableInfoHelper.getTableInfo(entity.getClass());
                 var bean = new org.springframework.beans.BeanWrapperImpl(entity);

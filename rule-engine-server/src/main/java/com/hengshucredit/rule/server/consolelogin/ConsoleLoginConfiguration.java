@@ -3,7 +3,6 @@ package com.hengshucredit.rule.server.consolelogin;
 import com.hengshucredit.rule.server.security.ConsolePermissionInterceptor;
 import com.hengshucredit.rule.server.security.ConsolePermissionService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -11,8 +10,7 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * 启用 rule-engine.console-login.enabled=true 时注册会话拦截器；若不存在自定义 {@link ConsoleLoginAuthenticator}，
- * 再注册基于 yml builtin 的默认认证实现。
+ * 启用 rule-engine.console-login.enabled=true 时注册持久化账户的会话拦截器。
  */
 @Configuration
 @ConditionalOnProperty(prefix = "rule-engine.console-login", name = "enabled", havingValue = "true")
@@ -23,6 +21,8 @@ public class ConsoleLoginConfiguration implements WebMvcConfigurer {
 
     @Autowired(required = false)
     private ConsolePermissionService consolePermissionService;
+    @Autowired(required = false)
+    private com.hengshucredit.rule.server.security.ConsoleTargetAuthorization consoleTargetAuthorization;
 
     @Autowired(required = false)
     void setDatabaseAccountService(
@@ -34,15 +34,6 @@ public class ConsoleLoginConfiguration implements WebMvcConfigurer {
     public ConsoleLoginConfiguration(RuleEngineConsoleLoginProperties ruleEngineConsoleLoginProperties) {
         this.ruleEngineConsoleLoginProperties = ruleEngineConsoleLoginProperties;
         this.consoleSessionAuthInterceptor = new ConsoleSessionAuthInterceptor(ruleEngineConsoleLoginProperties);
-    }
-
-    /**
-     * 默认使用 yml 中 builtin 用户名密码；存在自定义 {@link ConsoleLoginAuthenticator} Bean 时不注册。
-     */
-    @Bean
-    @ConditionalOnMissingBean(ConsoleLoginAuthenticator.class)
-    public ConsoleLoginAuthenticator yamlBuiltinConsoleLoginAuthenticator(RuleEngineConsoleLoginProperties properties) {
-        return new YamlBuiltinConsoleLoginAuthenticator(properties);
     }
 
     /**
@@ -62,6 +53,10 @@ public class ConsoleLoginConfiguration implements WebMvcConfigurer {
                 .addPathPatterns(ruleEngineConsoleLoginProperties.getIncludePatterns())
                 .excludePathPatterns(ruleEngineConsoleLoginProperties.getExcludePatterns())
                 .excludePathPatterns("/api/external-callback/*");
+        registry.addInterceptor(consoleSessionAuthInterceptor)
+                .addPathPatterns("/api/auth/console/me", "/api/auth/console/profile",
+                        "/api/auth/console/profile/**", "/api/auth/console/password/change",
+                        "/api/auth/console/preferences/**");
         if (consolePermissionService != null) {
             registry.addInterceptor(new ConsolePermissionInterceptor(
                             ruleEngineConsoleLoginProperties, consolePermissionService))
@@ -69,5 +64,9 @@ public class ConsoleLoginConfiguration implements WebMvcConfigurer {
                     .excludePathPatterns(ruleEngineConsoleLoginProperties.getExcludePatterns())
                     .excludePathPatterns("/api/external-callback/*");
         }
+        if (consoleTargetAuthorization != null) registry.addInterceptor(consoleTargetAuthorization)
+                .addPathPatterns(ruleEngineConsoleLoginProperties.getIncludePatterns())
+                .excludePathPatterns(ruleEngineConsoleLoginProperties.getExcludePatterns())
+                .excludePathPatterns("/api/external-callback/*");
     }
 }

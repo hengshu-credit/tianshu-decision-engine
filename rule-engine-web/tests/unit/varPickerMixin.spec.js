@@ -71,7 +71,7 @@ describe('varPickerMixin', () => {
     functionApi.listAllFunctionsByProject.mockResolvedValue([])
     modelApi.listAllModelsByProject.mockResolvedValue(mockModels)
     ruleListApi.listLibraries.mockResolvedValue({ records: [{ id: 9, listCode: 'mobile_black', listName: '手机号黑名单' }] })
-    datasourceApi.listApiConfigs.mockResolvedValue({ records: [{ id: 31, apiCode: 'credit_api', apiName: '征信接口', status: 1 }] })
+    datasourceApi.listAvailableApiConfigs.mockResolvedValue([{ id: 31, apiCode: 'credit_api', apiName: '征信接口', status: 1 }])
     dataObjectApi.getDataObjectFieldOptions.mockResolvedValue([])
   })
 
@@ -133,7 +133,7 @@ describe('varPickerMixin', () => {
     expect(functionApi.listAllFunctionsByProject).toHaveBeenCalledWith(1)
     expect(modelApi.listAllModelsByProject).toHaveBeenCalledWith(1)
     expect(ruleListApi.listLibraries).toHaveBeenCalledWith({ pageNum: 1, pageSize: 1000, projectId: 1, status: 1 })
-    expect(datasourceApi.listApiConfigs).toHaveBeenCalledWith({ pageNum: 1, pageSize: 1000, projectId: 1, status: 1 })
+    expect(datasourceApi.listAvailableApiConfigs).toHaveBeenCalledWith(1)
     expect(vm.projectLists).toEqual([{ id: 9, listCode: 'mobile_black', listName: '手机号黑名单' }])
   })
 
@@ -155,6 +155,21 @@ describe('varPickerMixin', () => {
     const external = vm.projectRefs.filter(ref => ref.category === 'external')
     expect(external.some(ref => ref.refType === 'EXTERNAL_API' && ref.relativePath === 'response.httpStatus')).toBe(true)
     expect(external.some(ref => ref.relativePath === 'response.headers')).toBe(true)
+  })
+
+  test('设计器使用可引用目录同时加载全局和当前项目 API，刷新保留响应字段结构', async () => {
+    const apis = [
+      { id: '9007199254740993', apiCode: 'global_api', apiName: '全局接口', scope: 'GLOBAL', projectId: '0', resultFields: [{ value: 'body.Score', label: 'Score', type: 'NUMBER' }] },
+      { id: 32, apiCode: 'local_api', apiName: '项目接口', scope: 'PROJECT', projectId: '1' }
+    ]
+    datasourceApi.listAvailableApiConfigs.mockResolvedValue({ data: apis })
+    const vm = createMixinVM()
+    await vm.loadProjectVars(1)
+    expect(vm.projectApis).toEqual(apis)
+    expect(vm.projectRefs).toEqual(expect.arrayContaining([expect.objectContaining({ id: '9007199254740993', relativePath: 'body.Score' })]))
+    await vm.refreshProjectRefs()
+    expect(datasourceApi.listAvailableApiConfigs).toHaveBeenLastCalledWith(1)
+    expect(vm.projectApis).toEqual(apis)
   })
 
   test('缓存设计器重新激活时刷新项目字段引用', async () => {
@@ -206,7 +221,8 @@ describe('varPickerMixin', () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
     const models = vm.projectRefs.filter(r => r.category === 'model')
-    expect(models.length).toBe(1)
+    expect(models.length).toBe(2)
+    expect(models[1]).toMatchObject({ refType: 'MODEL', refCode: 'creditModel', varType: 'OBJECT' })
     expect(models[0].refCode).toBe('creditModel.score')
     expect(models[0].refType).toBe('MODEL_OUTPUT')
     expect(models[0].varObj.id).toBe(201)
@@ -306,7 +322,7 @@ describe('varPickerMixin', () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
     const options = vm.varPickerOptions
-    expect(options.length).toBe(6 + API_MODULE_FIELDS.length) // 变量/对象/模型 + 外数模块字段
+    expect(options.length).toBe(7 + API_MODULE_FIELDS.length) // 包含模型整体及其输出字段
     const ageOpt = options.find(o => o.varCode === 'age')
     expect(ageOpt).toBeDefined()
     expect(ageOpt.varLabel).toMatch(/年龄.*age/)

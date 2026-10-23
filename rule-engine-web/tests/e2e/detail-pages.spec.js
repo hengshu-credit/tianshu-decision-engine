@@ -248,33 +248,17 @@ test('开放接口字段选择器按规则设计样式展示类型、编码和�
   const requestSection = page.locator('.open-api-section').filter({
     has: page.getByText('请求映射', { exact: true })
   })
-  const selectedField = requestSection.locator(
-    '.field-reference-display--compact'
-  )
-  await expect(selectedField).toHaveCount(1)
-  await expect(selectedField.locator('.field-reference-display__type')).toHaveText('i')
-  await expect(selectedField.locator('.field-reference-display__code')).toHaveText('age')
-  await expect(selectedField.locator('.field-reference-display__name')).toHaveText('年龄')
-
-  await requestSection.locator('.el-select').first().click()
-  const fieldOption = page.locator(
-    '.el-select-dropdown:visible .field-reference-display'
-  )
-  await expect(fieldOption).toHaveCount(1)
-  await expect(fieldOption.locator('.field-reference-display__type')).toHaveText('i')
-  await expect(fieldOption.locator('.field-reference-display__code')).toHaveText('age')
-  await expect(fieldOption.locator('.field-reference-display__name')).toHaveText('年龄')
+  const selectedField = requestSection.getByPlaceholder('选择规则入参', { exact: true })
+  await expect(selectedField).toHaveValue(/年龄.*age/)
+  await selectedField.click()
+  await expect(page.locator('.var-picker-popover:visible')).toContainText('年龄')
+  await page.keyboard.press('Escape')
 
   const responseSection = page.locator('.open-api-section').filter({
     has: page.getByText('响应字段映射', { exact: true })
   })
-  const selectedOutput = responseSection.locator(
-    '.field-reference-display--compact'
-  )
-  await expect(selectedOutput).toHaveCount(1)
-  await expect(selectedOutput.locator('.field-reference-display__type')).toHaveText('b')
-  await expect(selectedOutput.locator('.field-reference-display__code')).toHaveText('approved')
-  await expect(selectedOutput.locator('.field-reference-display__name')).toHaveText('是否通过')
+  const selectedOutput = responseSection.locator('input[aria-label="打开字段与表达式选择器"]')
+  await expect(selectedOutput).toHaveValue(/是否通过.*approved/)
 
   await expectNoRootOverflow(page)
   expect(errors.pageErrors).toEqual([])
@@ -297,6 +281,22 @@ test('名单详情加载记录和变更日志且内容可复制', async ({ page 
   await expectNoRootOverflow(page)
   expect(errors.pageErrors).toEqual([])
   expect(errors.consoleErrors).toEqual([])
+  errors.assertClean()
+})
+
+test('名单变更日志窄屏日期范围与操作均完整可见', async ({ page }) => {
+  const errors = await openDetailPage(page, '/list/9')
+  await page.setViewportSize({ width: 560, height: 900 })
+  const expand = page.getByRole('button', { name: '展开侧边栏', exact: true })
+  if (await expand.isVisible()) await expand.click()
+  await page.getByRole('tab', { name: '变更日志', exact: true }).click()
+  const toolbar = page.getByTestId('log-filter-toolbar')
+  const frame = await toolbar.boundingBox()
+  const date = await toolbar.locator('.el-date-editor--datetimerange').boundingBox()
+  expect(date.x + date.width).toBeLessThanOrEqual(frame.x + frame.width)
+  expect(date.x + date.width).toBeLessThanOrEqual(page.viewportSize().width)
+  for (const name of ['查询', '重置', '导入并审批', '导出']) await expect(toolbar.getByRole('button', { name, exact: true })).toBeVisible()
+  await expectNoRootOverflow(page)
   errors.assertClean()
 })
 
@@ -343,7 +343,7 @@ test('名单详情筛选和操作同排，日志按类型、操作、关键字�
   await toolbar.getByPlaceholder('结束时间').fill('2026-08-04 23:59:59')
   await toolbar.getByPlaceholder('结束时间').press('Tab')
   await toolbar.getByRole('button', { name: '查询', exact: true }).click()
-  await expect.poll(() => queries.filter(query => query.pageSize === '10').at(-1)).toMatchObject({
+  await expect.poll(() => queries.filter(query => query.pageSize === '20').at(-1)).toMatchObject({
     pageNum: '1', itemType: 'MOBILE', operation: 'UPDATE', keyword: '人工核验',
     startTime: '2026-08-02 00:00:00', endTime: '2026-08-04 23:59:59'
   })
@@ -356,7 +356,7 @@ test('名单详情筛选和操作同排，日志按类型、操作、关键字�
   await expect(pane.getByText('共 3 条', { exact: true })).toBeVisible()
   await expect(keyword).toHaveValue('')
   await expect(toolbar.getByPlaceholder('开始时间')).toHaveValue('')
-  expect(queries.filter(query => query.pageSize === '10').at(-1)).toEqual({ pageNum: '1', pageSize: '10' })
+  expect(queries.filter(query => query.pageSize === '20').at(-1)).toEqual({ pageNum: '1', pageSize: '20' })
   await page.setViewportSize({ width: 1280, height: 720 })
   await expectNoRootOverflow(page)
   errors.assertClean()
@@ -523,34 +523,53 @@ test('规则生命周期和版本历史按稳定 ID 打开对应脚本内容', a
   errors.assertClean()
 })
 
-test('顶部详情页签展示业务标题，长标题省略并在悬停时完整展示', async ({ page }) => {
+test('顶部详情页签长标题渐隐，关闭仅悬停或键盘聚焦时显示且布局稳定', async ({ page }) => {
   const apiData = createDetailApiData()
   const projectName = '企业授信审批与风险准入综合决策项目（覆盖全国各分支机构）'
   const project = { ...apiData.get('/api/rule/project/1'), projectName }
   apiData.set('/api/rule/project/1', project)
   apiData.set('/api/rule/project/list', { records: [project], total: 1 })
-  const { assertClean } = await installDistRoutes(page, { apiData })
+  const origin = process.env.E2E_TAB_UI_ORIGIN || 'http://tianshu.local'
+  const { assertClean } = await installDistRoutes(page, { apiData, origin, liveStatic: Boolean(process.env.E2E_TAB_UI_ORIGIN) })
   await page.setViewportSize({ width: 1280, height: 800 })
-  await page.goto('http://tianshu.local/index.html#/project')
+  await page.goto(`${origin}/index.html#/project`)
   await page.getByRole('button', { name: '进入', exact: true }).click()
   const fullTitle = `项目 · ${projectName}`
-  const tab = page.locator('.workspace-tab__main').filter({ hasText: fullTitle })
+  const tab = page.locator('.workspace-tab__main').filter({ hasText: `项目·${projectName}` })
   await expect(tab).toHaveAttribute('aria-label', fullTitle)
   await expect.poll(() => page.locator('.workspace-tab').evaluateAll(elements => {
     const widths = elements.map(element => element.getBoundingClientRect().width)
     return [widths.length, widths[0] < 160, widths[1] === 160]
   })).toEqual([2, true, true])
   const title = tab.locator('.workspace-tab__title')
+  const close = page.getByRole('button', { name: `关闭${fullTitle}`, exact: true })
+  await page.mouse.move(1000, 400)
+  await expect(close).toHaveCSS('opacity', '0')
+  await expect(close).toHaveCSS('pointer-events', 'none')
+  await expect(tab).toHaveCSS('padding-right', '8px')
+  await expect(page.locator('.workspace-tab__main[data-path="/project"] .workspace-tab__title')).toHaveCSS('mask-image', 'none')
   await expect.poll(() => title.evaluate(element => ({
     truncated: element.scrollWidth > element.clientWidth,
     overflow: getComputedStyle(element).textOverflow,
-  }))).toEqual({ truncated: true, overflow: 'ellipsis' })
+    fade: getComputedStyle(element).maskImage.includes('linear-gradient'),
+  }))).toEqual({ truncated: true, overflow: 'clip', fade: true })
+  const restingWidth = (await tab.boundingBox()).width
+  const restingMask = await title.evaluate(element => getComputedStyle(element).maskImage)
+  await page.screenshot({ path: test.info().outputPath('workspace-tab-resting.png') })
   await tab.hover()
+  await expect(close).toHaveCSS('pointer-events', 'auto')
+  await expect.poll(() => close.evaluate(element => Number(getComputedStyle(element).opacity))).toBeGreaterThan(0)
+  expect((await tab.boundingBox()).width).toBe(restingWidth)
+  await expect(title).toHaveCSS('mask-image', restingMask)
+  const titleBox = await title.boundingBox()
+  expect((await close.boundingBox()).x).toBeLessThan(titleBox.x + titleBox.width)
   const tooltip = page.getByRole('tooltip', { name: fullTitle, exact: true })
   await expect(tooltip).toBeVisible()
   await expect(tooltip).toHaveCSS('opacity', '1')
   await page.screenshot({ path: test.info().outputPath('workspace-tab-title.png') })
   await page.locator('.workspace-tab__main[data-path="/project"]').click()
+  await page.mouse.move(1000, 400)
+  await expect(close).toHaveCSS('opacity', '0')
   await tab.click()
   await expect(tab).toHaveAttribute('aria-label', fullTitle)
   await page.reload()
@@ -559,7 +578,12 @@ test('顶部详情页签展示业务标题，长标题省略并在悬停时完�
   await page.locator('[data-operation="refresh"]').click()
   await expect(page.getByRole('heading', { name: projectName, exact: true })).toBeVisible()
   await expect(tab).toHaveAttribute('aria-label', fullTitle)
-  await page.getByRole('button', { name: `关闭${fullTitle}`, exact: true }).click()
+  await tab.click()
+  await page.mouse.move(1000, 400)
+  await page.keyboard.press('Tab')
+  await expect(close).toBeFocused()
+  await expect.poll(() => close.evaluate(element => Number(getComputedStyle(element).opacity))).toBeGreaterThan(0)
+  await page.keyboard.press('Enter')
   await expect(tab).toHaveCount(0)
   await expect(page).toHaveURL(/#\/project$/)
   await expectNoRootOverflow(page)

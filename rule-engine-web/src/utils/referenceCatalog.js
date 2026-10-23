@@ -110,6 +110,12 @@ export function buildReferenceCatalog(variables = [], objectTree = [], models = 
       })
       addRef(entry, 'dataObject')
     })
+    if (object.id != null && objectCode) addRef(refEntry({
+      id: object.id, refType: 'DATA_OBJECT_ROOT', refCode: objectCode, label: objectLabel,
+      varType: 'OBJECT', category: 'object', varObj: object,
+      extra: { rootReference: true, sourceType: 'dataObject', varSource: object.sourceType || 'INPUT',
+        objectId: object.id, objectCode, objectLabel, objectVersion: object.currentVersion ?? object.version },
+    }), 'dataObject')
   })
 
   ;(models || []).forEach(model => {
@@ -137,6 +143,11 @@ export function buildReferenceCatalog(variables = [], objectTree = [], models = 
       })
       addRef(entry, 'model')
     })
+    if (model.id != null) addRef(refEntry({
+      id: model.id, refType: 'MODEL', refCode: modelCode, label: modelLabel, varType: 'OBJECT', category: 'model', varObj: model,
+      extra: { rootReference: true, sourceType: 'model', varSource: 'MODEL', modelId: model.id, modelCode, modelLabel,
+        modelVersion: model.currentVersion ?? model.version, modelInputFields: inputFields },
+    }), 'model')
   })
 
   return {
@@ -168,6 +179,8 @@ export function buildDetailReferenceState(catalog) {
       varSource: ref.varSource,
       recordResult: ref.recordResult,
       sourceType: ref.sourceType,
+      rootReference: ref.rootReference,
+      _ref: ref,
       sourceLabel: ref.objectLabel || ref.modelLabel || '',
       sourceCode: ref.objectCode || ref.modelCode || '',
       objectLabel: ref.objectLabel || '',
@@ -205,6 +218,7 @@ export function buildPickerOptions(catalog) {
     recordResult: ref.recordResult,
     constantValue: ref.constantValue,
     relativePath: ref.relativePath,
+    rootReference: ref.rootReference,
     objectId: ref.objectId,
     apiId: ref.apiId,
     apiCode: ref.apiCode,

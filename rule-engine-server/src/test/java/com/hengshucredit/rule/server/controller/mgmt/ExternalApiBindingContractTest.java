@@ -11,6 +11,20 @@ import java.util.Map;
 import static org.junit.Assert.*;
 
 public class ExternalApiBindingContractTest {
+    @Test public void availableDirectoryRouteUsesTheRequestedProjectAndKeepsStringIds() throws Exception {
+        var controller = new ExternalDatasourceController();
+        ReflectionTestUtils.setField(controller, "sourceReferenceValidator", new com.hengshucredit.rule.server.governance.VariableSourceReferenceValidator() {
+            @Override public List<Map<String, Object>> apiReferenceCatalog(Long projectId) {
+                assertEquals(Long.valueOf(7), projectId);
+                return List.of(Map.of("id", "9007199254740993", "apiCode", "GlobalCredit", "resultFields", List.of()));
+            }
+        });
+        var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller).build();
+        var response = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/rule/datasource/api-config/available").param("projectId", "7"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertEquals("9007199254740993", JSON.parseObject(response).getJSONArray("data").getJSONObject(0).get("id"));
+    }
     private ExternalDatasourceController controller(RuleExternalApiConfig api) {
         var controller = new ExternalDatasourceController();
         ReflectionTestUtils.setField(controller, "apiConfigService", new RuleExternalApiConfigService() {
@@ -19,20 +33,17 @@ public class ExternalApiBindingContractTest {
         return controller;
     }
 
-    @Test public void legacyMappingsExposeInputPathsAndExactResponseNames() {
+    @Test public void v2ContractExposesRequestAndResponseFieldsWithoutLegacyInputs() {
         var api = new RuleExternalApiConfig(); api.setId(7L); api.setStatus(1); api.setApiName("画像查询");
-        api.setQueryConfig("{\"phone\":\"$.customer.mobile\"}");
-        api.setRequestMapping("{\"limit\":\"$.limit\",\"phone\":\"$.customer.mobile\"}");
-        api.setHeaderConfig("{\"Authorization\":\"$.secret\"}");
-        api.setResponseMapping("{\"原始.字段\":\"$.score\"}");
+        api.setExecutionConfig(JSON.toJSONString(Map.of("version", 2,
+                "requestFields", List.of(Map.of("id", "phone", "path", "customer.mobile", "location", "JSON", "overridable", true)),
+                "responseBranches", List.of(Map.of("id", "success", "sample", Map.of("score", 80), "mode", "FIELDS",
+                        "outputFields", List.of(Map.of("id", "score", "path", "score", "value", Map.of("kind", "PATH", "value", "response.body.score", "protocolPath", true))))))));
         var result = controller(api).bindingContract(7L).getData();
-        assertEquals("INPUT", result.get("bindingMode"));
-        var inputs = JSON.parseArray(JSON.toJSONString(result.get("inputFields")));
-        assertEquals(2, inputs.size());
-        assertEquals("customer.mobile", inputs.getJSONObject(0).getString("id"));
-        assertTrue(inputs.getJSONObject(0).getBooleanValue("overridable"));
-        assertFalse(JSON.toJSONString(inputs).contains("secret"));
-        assertTrue(JSON.toJSONString(result.get("resultFields")).contains("body[\\\"原始.字段\\\"]"));
+        assertEquals("FIELDS", result.get("bindingMode"));
+        assertFalse(result.containsKey("inputFields"));
+        assertEquals("customer.mobile", JSON.parseArray(JSON.toJSONString(result.get("requestFields"))).getJSONObject(0).getString("path"));
+        assertTrue(JSON.toJSONString(result.get("resultFields")).contains("body.score"));
     }
 
     @Test public void lockedFieldsStayVisibleAndHeadersDoNotExposeDefaults() {

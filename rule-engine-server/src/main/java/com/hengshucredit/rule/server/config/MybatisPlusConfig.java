@@ -13,10 +13,19 @@ import java.time.LocalDateTime;
 
 @Configuration
 public class MybatisPlusConfig {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private com.hengshucredit.rule.server.security.ConsoleDataPermissionHandler consoleDataPermissionHandler;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private com.hengshucredit.rule.server.security.ConsoleDataWriteInterceptor consoleDataWriteInterceptor;
 
     @Bean
     public MybatisPlusInterceptor mybatisPlusInterceptor() {
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
+        if (consoleDataWriteInterceptor != null) interceptor.addInnerInterceptor(consoleDataWriteInterceptor);
+        if (consoleDataPermissionHandler != null) interceptor.addInnerInterceptor(
+                new com.hengshucredit.rule.server.security.ConsoleDataPermissionInterceptor(consoleDataPermissionHandler));
         interceptor.addInnerInterceptor(new OptimisticLockerInnerInterceptor());
         interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.MYSQL));
         return interceptor;

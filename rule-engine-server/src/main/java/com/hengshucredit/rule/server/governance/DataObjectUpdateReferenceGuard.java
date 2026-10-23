@@ -103,7 +103,7 @@ public class DataObjectUpdateReferenceGuard {
             Object config = expand(JSON.toJSON(consumer.configuration()));
             boolean referenced = referencesObject(config, objectId) || OperandDependencyCollector.collectReferences(config).stream()
                     .anyMatch(ref -> Set.of("DATA_OBJECT", "DATA_FIELD", "OBJECT").contains(String.valueOf(ref.getRefType()).toUpperCase(Locale.ROOT))
-                            && affectedWithParents.contains(ref.getRefId()));
+                            && affectedWithParents.contains(ref.getRefId()) || "DATA_OBJECT_ROOT".equals(ref.getRefType()) && Objects.equals(objectId, ref.getRefId()));
             if (referenced) issues.add(GovernanceIssue.error("DATA_OBJECT_FIELD_IN_USE",
                     "不能删除或改变仍被 " + consumer.type() + ":" + consumer.id()
                             + " 引用的数据对象字段类型；请先调整引用，或选择新建并追加后缀",

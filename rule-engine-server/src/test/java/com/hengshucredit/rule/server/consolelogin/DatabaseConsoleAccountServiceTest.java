@@ -19,34 +19,27 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class DatabaseConsoleAccountServiceTest {
 
     @Test
-    public void builtinLoginBootstrapsDatabaseOnlyWhenNoAccountsExist() {
+    public void loginCannotInitializeAnEmptyDatabase() {
         InMemoryService service = new InMemoryService();
         service.userCount = 0;
-        service.builtinAccepted = true;
 
         DatabaseConsoleAccountService.ConsoleLoginResult result =
                 service.authenticate("admin", "secret");
 
-        Assert.assertTrue(result.authenticated());
-        Assert.assertTrue(result.bootstrapped());
-        Assert.assertEquals("admin", result.username());
-        Assert.assertNotNull(service.savedUser);
-        Assert.assertTrue(service.savedUser.getPasswordHash().startsWith("$2"));
-        Assert.assertTrue(BCrypt.checkpw(
-                "secret", service.savedUser.getPasswordHash()));
+        Assert.assertFalse(result.authenticated());
+        Assert.assertNull(service.savedUser);
     }
 
     @Test
     public void databaseAccountsDisableBuiltinFallback() {
         InMemoryService service = new InMemoryService();
         service.userCount = 1;
-        service.builtinAccepted = true;
 
         DatabaseConsoleAccountService.ConsoleLoginResult result =
                 service.authenticate("legacy-admin", "secret");
 
         Assert.assertFalse(result.authenticated());
-        Assert.assertEquals(0, service.builtinCalls);
+        Assert.assertNull(service.savedUser);
     }
 
     @Test
@@ -160,8 +153,6 @@ public class DatabaseConsoleAccountServiceTest {
 
     private static class InMemoryService extends DatabaseConsoleAccountService {
         private long userCount;
-        private boolean builtinAccepted;
-        private int builtinCalls;
         private ConsoleUser databaseUser;
         private ConsoleUser savedUser;
         private int catalogSyncCalls;
@@ -176,13 +167,6 @@ public class DatabaseConsoleAccountServiceTest {
             return databaseUser != null
                     && databaseUser.getUsername().equals(username)
                     ? databaseUser : null;
-        }
-
-        @Override
-        protected boolean authenticateBootstrapSource(
-                String username, String rawPassword) {
-            builtinCalls++;
-            return builtinAccepted;
         }
 
         @Override

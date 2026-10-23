@@ -103,7 +103,7 @@ test('loads a JSON request definition and rejects malformed shapes', async t => 
     body: { requestId: 'R1' },
     rawBody: '{"requestId":"R1"}',
     timeoutMs: 1000,
-    expectedResponse: { success: true },
+    expectedResponse: { code: '000000', success: true },
   })
   await assert.rejects(() => loadRequestDefinition(invalid), /method|headers/)
 })
@@ -112,7 +112,7 @@ test('loads explicit response assertions and rejects empty or ambiguous assertio
   const directory = await mkdtemp(join(tmpdir(), 'tianshu-response-'))
   t.after(() => rm(directory, { recursive: true, force: true }))
   const file = join(directory, 'request.json')
-  const expectedResponse = { code: 200, 'data.success': true, 'data.result.score': 88 }
+  const expectedResponse = { code: '000000', 'data.success': true, 'data.result.score': 88 }
   await writeFile(file, JSON.stringify({ expectedResponse }))
   assert.deepEqual((await loadRequestDefinition(file)).expectedResponse, expectedResponse)
   for (const invalid of [null, {}, [], { '': true }, { 'data..success': true }, { success: {} }]) {

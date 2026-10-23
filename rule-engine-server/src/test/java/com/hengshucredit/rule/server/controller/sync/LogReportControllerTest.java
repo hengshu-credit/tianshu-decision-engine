@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.controller.sync;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.core.trace.TraceIdGenerator;
 import com.hengshucredit.rule.model.dto.RuleTraceFrame;
@@ -8,7 +10,6 @@ import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleTraceRegistry;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.auth.ProjectAuthType;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.RuleBillingService;
 import com.hengshucredit.rule.server.service.RuleExecutionLogService;
 import com.hengshucredit.rule.server.service.RuleTraceRegistryService;
@@ -43,7 +44,7 @@ public class LogReportControllerTest {
         MockHttpServletRequest request = requestWithProject("RISK_DEMO");
         ProjectAuthContext.direct(1L, "RISK_DEMO", 11L, "BASIC_MAIN", ProjectAuthType.BASIC).attach(request);
 
-        assertEquals(200, controller.report(List.of(log), request).getCode());
+        assertEquals("000000", controller.report(List.of(log), request).getCode());
 
         RuleExecutionLog saved = logService.saved.get(0);
         assertEquals("CLIENT", saved.getSource());
@@ -59,9 +60,9 @@ public class LogReportControllerTest {
     public void rejectsReportWithoutProjectScope() {
         LogReportController controller = newController(new CapturingLogService(), new CapturingBillingService());
 
-        R<Void> result = controller.report(Collections.singletonList(new RuleExecutionLog()), new MockHttpServletRequest());
+        ApiResponse<Void> result = controller.report(Collections.singletonList(new RuleExecutionLog()), new MockHttpServletRequest());
 
-        assertEquals(401, result.getCode());
+        assertEquals("300001", result.getCode());
     }
 
     @Test
@@ -74,9 +75,9 @@ public class LogReportControllerTest {
         log.setRuleCode("RC_TEST");
         log.setProjectCode("OTHER");
 
-        R<Void> result = controller.report(Collections.singletonList(log), request);
+        ApiResponse<Void> result = controller.report(Collections.singletonList(log), request);
 
-        assertEquals(403, result.getCode());
+        assertEquals("301002", result.getCode());
     }
 
     @Test
@@ -91,9 +92,9 @@ public class LogReportControllerTest {
         ProjectAuthContext.direct(1L, "RISK_DEMO", 11L,
                 "BASIC_MAIN", ProjectAuthType.BASIC).attach(request);
 
-        R<Void> result = controller.report(Collections.singletonList(log), request);
+        ApiResponse<Void> result = controller.report(Collections.singletonList(log), request);
 
-        assertEquals(403, result.getCode());
+        assertEquals("301002", result.getCode());
     }
 
     @Test
@@ -113,9 +114,9 @@ public class LogReportControllerTest {
         MockHttpServletRequest request = requestWithProject("RISK_DEMO");
         ProjectAuthContext.temporary(1L, "RISK_DEMO", 11L, "BASIC_MAIN", ProjectAuthType.BASIC,
                 21L, "TOKEN_A", "VALID").attach(request);
-        R<Void> result = controller.report(Collections.singletonList(log), request);
+        ApiResponse<Void> result = controller.report(Collections.singletonList(log), request);
 
-        assertEquals(200, result.getCode());
+        assertEquals("000000", result.getCode());
         assertEquals(1, logService.saved.size());
         assertEquals("RISK_DEMO", logService.saved.get(0).getProjectCode());
         assertEquals("CLIENT", logService.saved.get(0).getSource());
@@ -148,9 +149,9 @@ public class LogReportControllerTest {
         MockHttpServletRequest request = requestWithProject("RISK_DEMO");
         ProjectAuthContext.direct(1L, "RISK_DEMO", 11L,
                 "BASIC_MAIN", ProjectAuthType.BASIC).attach(request);
-        R<Void> result = controller.report(Collections.singletonList(log), request);
+        ApiResponse<Void> result = controller.report(Collections.singletonList(log), request);
 
-        assertEquals(200, result.getCode());
+        assertEquals("000000", result.getCode());
         assertEquals(2, traceRegistryService.saved.size());
         assertEquals(1, traceRegistryService.saved.stream().filter(row -> root.getTraceId().equals(row.getTraceId())).count());
         assertEquals(root.getTraceId(), traceRegistryService.saved.stream()
@@ -174,9 +175,9 @@ public class LogReportControllerTest {
         MockHttpServletRequest request = requestWithProject("RISK_DEMO");
         ProjectAuthContext.direct(1L, "RISK_DEMO", 11L,
                 "BASIC_MAIN", ProjectAuthType.BASIC).attach(request);
-        R<Void> result = controller.report(java.util.Arrays.asList(valid, invalid), request);
+        ApiResponse<Void> result = controller.report(java.util.Arrays.asList(valid, invalid), request);
 
-        assertEquals(403, result.getCode());
+        assertEquals("301002", result.getCode());
         assertEquals(0, traceRegistryService.saved.size());
     }
 

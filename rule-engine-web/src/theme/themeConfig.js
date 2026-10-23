@@ -4,7 +4,7 @@ export const DEFAULT_THEME_CONFIG = Object.freeze({
   schemaVersion: 3,
   colorScheme: 'LIGHT',
   accentMode: 'PRESET',
-  accentPreset: 'THEME_BLUE',
+  accentPreset: 'PEACH_PINK_GRADIENT',
   customSolidColor: '#2639E9',
   customGradientColors: DEFAULT_GRADIENT_COLORS,
   customGradientType: 'LINEAR',
@@ -12,7 +12,7 @@ export const DEFAULT_THEME_CONFIG = Object.freeze({
   navigationLayout: 'LEFT',
   sidebarTheme: 'DARK',
   contentWidth: 'FLUID',
-  tableScrollMode: 'AUTO',
+  tableScrollMode: 'FIXED',
   fixedSidebar: true,
   colorWeak: false,
 })
@@ -218,6 +218,7 @@ function migrateLegacyConfig(value) {
     contentWidth: value.contentWidth,
     fixedSidebar: value.fixedSidebar,
     colorWeak: value.colorWeak,
+    tableScrollMode: 'AUTO',
   }
 }
 

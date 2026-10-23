@@ -28,6 +28,7 @@ public class FunctionApprovalApplyServiceTest {
     public void approvalApplyWritesThenPushesProjectFunctionForCreateUpdateAndDelete() {
         assertProjectAction("CREATE", 0L, "INSERT:riskScore", "FUNC_UPDATE");
         assertProjectAction("UPDATE", 31L, "UPDATE:riskScore", "FUNC_UPDATE");
+        assertProjectAction("DISABLE", 31L, "UPDATE:riskScore", "FUNC_DELETE");
         assertProjectAction("DELETE", 31L, "UPDATE:riskScore", "FUNC_DELETE");
     }
 
@@ -154,6 +155,7 @@ public class FunctionApprovalApplyServiceTest {
         function.setFuncCode("riskScore");
         function.setFuncName("riskScore");
         function.setImplType("SCRIPT");
+        function.setImplScript("return 1;");
         return function;
     }
 
@@ -164,6 +166,7 @@ public class FunctionApprovalApplyServiceTest {
         function.setFuncCode("globalRiskScore");
         function.setFuncName("globalRiskScore");
         function.setImplType("SCRIPT");
+        function.setImplScript("return 1;");
         return function;
     }
 

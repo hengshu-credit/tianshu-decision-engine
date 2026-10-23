@@ -21,7 +21,7 @@ public class RuntimeAuthenticationTest {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/rule/sync/execute/R", exchange -> {
             authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
-            byte[] json = "{\"code\":200,\"data\":{\"success\":true,\"result\":12}}".getBytes(StandardCharsets.UTF_8);
+            byte[] json = com.alibaba.fastjson.JSON.toJSONBytes(com.hengshucredit.rule.model.ApiResponse.ok(Map.of("success", true, "result", 12)));
             exchange.sendResponseHeaders(200, json.length);
             exchange.getResponseBody().write(json);
             exchange.close();
@@ -46,7 +46,7 @@ public class RuntimeAuthenticationTest {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/rule/sync/execute/R", exchange -> {
             signature.set(exchange.getRequestHeaders().getFirst(GlobalAccessSignature.SIGNATURE_HEADER));
-            byte[] json = "{\"code\":200,\"data\":{\"success\":true,\"result\":12}}".getBytes(StandardCharsets.UTF_8);
+            byte[] json = com.alibaba.fastjson.JSON.toJSONBytes(com.hengshucredit.rule.model.ApiResponse.ok(Map.of("success", true, "result", 12)));
             exchange.sendResponseHeaders(200, json.length);
             exchange.getResponseBody().write(json);
             exchange.close();

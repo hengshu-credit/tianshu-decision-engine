@@ -55,20 +55,23 @@ public class ExternalApiMissingValueTest {
     @Test
     public void responseMappingRetainsNullAndOmitsMissingWithoutTryingAlternatePath() {
         RuleExternalApiConfig config = config();
-        config.setResponseMapping("{\"nil\":{\"paths\":[\"body.nil\",\"body.backup\"],\"default\":9},"
-                + "\"absent\":\"body.absent\",\"defaulted\":{\"path\":\"body.absent\",\"default\":3}}");
+        config.setExecutionConfig(ExternalApiTestConfig.EMPTY);
+        ExternalApiTestConfig.branches(config, java.util.List.of(java.util.Map.of("id", "missing", "mode", "FIELDS",
+                "condition", java.util.Map.of("path", "body.absent", "operator", "missing"), "outputFields", java.util.List.of(
+                        java.util.Map.of("path", "nil", "value", ExternalApiTestConfig.path("body.nil")),
+                        java.util.Map.of("path", "defaulted", "value", ExternalApiTestConfig.literal(3))))));
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("nil", null);
         body.put("backup", 5);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("body", body);
-        service.applyResponseMapping(config, response);
+        service.assembleResponse(config, response);
         Map<?, ?> mapped = (Map<?, ?>) response.get("body");
         assertTrue(mapped.containsKey("nil"));
         assertNull(mapped.get("nil"));
         assertFalse(mapped.containsKey("absent"));
-        assertEquals(3, mapped.get("defaulted"));
-        assertEquals(Map.of("nil", true, "absent", false, "defaulted", true), response.get("mappedPresence"));
+        assertEquals(new java.math.BigDecimal("3"), mapped.get("defaulted"));
+        assertEquals("missing", response.get("responseBranchId"));
     }
 
     @Test

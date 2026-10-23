@@ -60,7 +60,7 @@ test('项目工作台加载失败后可重试，且未取得结果时不显示�
       return
     }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({
-      code: 200, data: { metrics: {}, checks: [{ code: 'RULE', title: '设计决策规则', status: 'READY', reason: '已配置规则' }], warnings: [] },
+      code: '000000', success: true, message: '成功', data: { metrics: {}, checks: [{ code: 'RULE', title: '设计决策规则', status: 'READY', reason: '已配置规则' }], warnings: [] },
     }) })
   })
   await page.goto('http://tianshu.local/index.html#/project/1')
@@ -377,7 +377,7 @@ test('外数异常重试提示随条件分支次数变化，不阻碍不重试�
   const strategy = page.locator('.el-form-item').filter({ hasText: '异常策略' }).locator('.el-select')
   await openRetry()
   expect(await page.locator('.config-tabs > .el-tabs__header .el-tabs__item').allTextContents()).toEqual([
-    '连接&流控', '异常&重试', '缓存&计费', '异常条件', '重试条件', '计费条件'
+    '连接&流控', '异常&重试', '缓存&计费', '异常条件', '重试条件'
   ])
   await strategy.click()
   await page.getByRole('option', { name: '异常重试', exact: true }).click()
@@ -478,8 +478,9 @@ test('数据库只读查询按 SQL 占位符引导填写参数并区分结果状
   expect(queryPayload).toEqual({
     sql: 'SELECT ? AS score',
     params: [88],
-    maxRows: 100,
-    queryTimeoutSeconds: 5
+    maxContentBytes: 0,
+    maxRows: 1000,
+    queryTimeoutSeconds: 0
   })
   assertClean()
 })

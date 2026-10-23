@@ -270,6 +270,7 @@ test('血缘默认隐藏小地图、使用直线且可独立调节背景透明�
 })
 
 test('血缘网格实时跟随主题色且夜间背景层不被遮挡', async ({ page }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify({ schemaVersion: 1, colorScheme: 'LIGHT', accentPreset: 'THEME_BLUE', sidebarTheme: 'DARK', contentWidth: 'FLUID', fixedSidebar: true, colorWeak: false })))
   const { assertClean } = await installDistRoutes(page, { apiData: createOperationsApiData() })
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.goto('http://tianshu.local/index.html#/lineage')

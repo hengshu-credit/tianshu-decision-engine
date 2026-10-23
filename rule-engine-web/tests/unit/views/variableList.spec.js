@@ -24,7 +24,7 @@ vi.mock('@/api/variable', () => ({
 }))
 
 vi.mock('@/api/project', () => ({
-  listProjects: vi.fn()
+  listProjectOptions: vi.fn()
 }))
 
 vi.mock('@/api/dataObject', () => ({
@@ -43,15 +43,15 @@ vi.mock('@/api/function', () => ({ listAllFunctionsByProject: vi.fn() }))
 vi.mock('@/api/model', () => ({ listAllModelsByProject: vi.fn() }))
 
 vi.mock('@/api/datasource', () => ({
-  listApiConfigs: vi.fn()
+  listApiConfigs: vi.fn(), getApiConfig: vi.fn()
 }))
 
 vi.mock('@/api/database', () => ({
-  listDbDatasources: vi.fn()
+  listDbDatasources: vi.fn(), getDbDatasource: vi.fn()
 }))
 
 vi.mock('@/api/ruleList', () => ({
-  listLibraries: vi.fn()
+  listLibraries: vi.fn(), getLibrary: vi.fn()
 }))
 
 import * as variableApi from '@/api/variable'
@@ -118,7 +118,7 @@ const FormStub = {
 async function mountAndWait(routeQuery = {}) {
   dataObjectApi.listDataObjects.mockResolvedValue({ data: [] })
   dataObjectApi.validateDataObjectFieldReference.mockResolvedValue({ data: [] })
-  projectApi.listProjects.mockResolvedValue({ data: { records: mockProjects() } })
+  projectApi.listProjectOptions.mockResolvedValue({ data: { records: mockProjects() } })
   variableApi.listVariables.mockResolvedValue({ data: { records: mockVars(), total: 3 } })
   variableApi.getVariableSourceOptions.mockResolvedValue({ data: {
     apiOptions: [], databaseOptions: [], listOptions: []
@@ -177,7 +177,7 @@ test('变量退出项目范围后清除自动项目筛选并从第一页加载',
 
   const globalWrapper = await mountAndWait()
   const standaloneCall = variableApi.listVariables.mock.calls.filter(([params]) => params.standaloneOnly).at(-1)
-  expect(standaloneCall[0]).toEqual({ pageNum: 1, pageSize: 10, standaloneOnly: true })
+  expect(standaloneCall[0]).toEqual({ pageNum: 1, pageSize: 20, standaloneOnly: true })
   globalWrapper.unmount()
   sessionStorage.clear()
 })
@@ -188,8 +188,8 @@ describe('VariableList — 初始化与数据加载', () => {
   beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.unmount() })
 
-  test('mounted 后调用 listProjects', () => {
-    expect(projectApi.listProjects).toHaveBeenCalled()
+  test('mounted 后调用 listProjectOptions', () => {
+    expect(projectApi.listProjectOptions).toHaveBeenCalled()
   })
 
   test('mounted 后调用 listVariables', () => {
@@ -778,14 +778,14 @@ describe('VariableList — 变量操作', () => {
     guardedHandlers.forEach(handler => {
       const escaped = handler.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       expect(source).toMatch(new RegExp(
-        `<el-button(?:(?!</el-button).)*v-permission="'field:edit'"(?:(?!</el-button).)*@click(?:\\.stop)?="${escaped}"`,
+        `<el-button(?:(?!</el-button).)*v-permission="\\{ code: 'field:edit', projectId: [^"]+, scope: [^"]+ \\}"(?:(?!</el-button).)*@click(?:\\.stop)?="${escaped}"`,
         's'
       ))
     })
     expect(source).toContain("if (!hasPermission('field:edit'))")
     expect(source).toContain("if (command === 'options') return this.handleOptions(row)")
     expect(source).toContain("if (command === 'delete') return this.handleDelete(row)")
-    expect(source).toMatch(/v-model="node\.object\.objectType"[\s\S]*?:disabled="!canEditFields"/)
+    expect(source).toMatch(/v-model="node\.object\.objectType"[\s\S]*?:disabled="!canEditResource\(node\.object\)"/)
     expect(source).not.toContain('v-model="node.object.scriptName"')
     expect(source).not.toContain('v-model="row.scriptName"')
   })
@@ -843,7 +843,7 @@ describe('VariableList — 变量操作', () => {
       scriptName: 'riskScore',
       varType: 'NUMBER',
       varSource: 'API',
-      sourceConfig: JSON.stringify({ paramMapping: { customerId: '$.customer.id' }, resultPath: 'body.score' })
+      sourceConfig: JSON.stringify({ requestOverrides: { customerId: { kind: 'REFERENCE', refType: 'DATA_OBJECT', refId: 20, code: 'customer.id' } }, resultPath: 'body.score' })
     }
     expect(wrapper.vm.isTestableSource(row)).toBe(true)
     expect(wrapper.vm.isTestableSource({ varSource: 'INPUT' })).toBe(false)
@@ -867,9 +867,9 @@ describe('VariableList — 变量操作', () => {
 
   test('接口变量测试优先加载 API 中保存的测试样例', async () => {
     wrapper.vm.apiConfigOptions = [
-      { id: 10001, apiName: '评分接口', testSampleParams: '{"request":{"mobile":"13800000000","age":30}}' }
+      { id: 10001, apiName: '评分接口', executionConfig: JSON.stringify({ version: 2, requestFields: [], samples: [{ id: 'sample', name: '测试', params: { request: { mobile: '13800000000', age: 30 } } }] }) }
     ]
-    wrapper.vm.sourceOptionsLoaded.API = true
+    datasourceApi.getApiConfig.mockResolvedValue({ data: wrapper.vm.apiConfigOptions[0] })
     const row = {
       id: 11,
       varSource: 'API',
@@ -883,14 +883,44 @@ describe('VariableList — 变量操作', () => {
     })
   })
 
-  test('变量测试模板支持模板表达式和名单递归表达式', () => {
+  test('来源详情直接按稳定 ID 加载，末尾资源不受首 1000 条目录限制', async () => {
+    const id = '9007199254740993'
+    datasourceApi.getApiConfig.mockResolvedValue({ data: { id, apiName: '末尾接口', executionConfig: '{"version":2}' } })
+    const row = { id: 12, varSource: 'API', sourceConfig: JSON.stringify({ apiConfigId: id }) }
+    await wrapper.vm.handleViewSourceDetail(row)
+    expect(datasourceApi.getApiConfig).toHaveBeenCalledWith(id)
+    expect(datasourceApi.listApiConfigs).not.toHaveBeenCalled()
+    expect(wrapper.vm.apiOption(id).apiName).toBe('末尾接口')
+  })
+
+  test('快速切换来源详情后迟到响应不覆盖当前资源', async () => {
+    let finishOld
+    datasourceApi.getApiConfig.mockImplementation(id => id === 1
+      ? new Promise(resolve => { finishOld = resolve })
+      : Promise.resolve({ data: { id: 2, apiName: '当前接口' } }))
+    const oldRow = { id: 1, varSource: 'API', sourceConfig: '{"apiConfigId":1}' }
+    const currentRow = { id: 2, varSource: 'API', sourceConfig: '{"apiConfigId":2}' }
+    const old = wrapper.vm.handleViewSourceDetail(oldRow)
+    await wrapper.vm.handleViewSourceDetail(currentRow)
+    finishOld({ data: { id: 1, apiName: '过期接口' } })
+    await old
+    expect(wrapper.vm.sourceDetailTarget.id).toBe(2)
+    expect(wrapper.vm.apiOption(2).apiName).toBe('当前接口')
+    expect(wrapper.vm.apiConfigOptions.some(item => item.apiName === '过期接口')).toBe(false)
+  })
+
+  test('变量测试模板支持接口和名单递归操作数', () => {
+    wrapper.vm.apiConfigOptions = [{ id: 7, executionConfig: JSON.stringify({ version: 2, requestFields: [
+      { id: 'request', value: { kind: 'REFERENCE', refType: 'VARIABLE', refId: 31, code: 'requestId' } },
+      { id: 'customer', value: { kind: 'FUNCTION', functionCode: 'concat', args: [
+        { kind: 'REFERENCE', refType: 'DATA_OBJECT', refId: 32, code: 'customer.idNo' },
+        { kind: 'REFERENCE', refType: 'DATA_OBJECT', refId: 33, code: 'customer.mobile' }
+      ] } }
+    ] }) }]
     const apiRow = {
       varSource: 'API',
       sourceConfig: JSON.stringify({
-        paramMapping: {
-          requestId: '${requestId}',
-          certNo: 'prefix-${customer.idNo}-${customer.mobile}'
-        }
+        apiConfigId: 7
       })
     }
     expect(JSON.parse(wrapper.vm.buildTestParamTemplate(apiRow))).toEqual({
@@ -915,19 +945,22 @@ describe('VariableList — 变量操作', () => {
     expect(wrapper.vm.sourceInputFields(listRow)[0].field).toBe('request.mobile')
   })
 
-  test('API variable test template merges paramMapping and API config references', () => {
+  test('API variable test template merges requestOverrides and current API operands', () => {
     wrapper.vm.apiConfigOptions = [
       {
         id: 10001,
-        headerConfig: '{"age":"$.age"}',
-        bodyTemplate: '{"income":"${income}"}'
+        executionConfig: JSON.stringify({ version: 2, requestFields: [
+          { id: 'age', value: { kind: 'REFERENCE', refType: 'VARIABLE', refId: 1, code: 'age' } },
+          { id: 'income', value: { kind: 'REFERENCE', refType: 'VARIABLE', refId: 2, code: 'income' } },
+          { id: 'request', value: { kind: 'LITERAL', valueType: 'STRING', value: '' } }
+        ] })
       }
     ]
     const apiRow = {
       varSource: 'API',
       sourceConfig: JSON.stringify({
         apiConfigId: 10001,
-        paramMapping: { requestId: '${requestId}' }
+        requestOverrides: { request: { kind: 'REFERENCE', refType: 'VARIABLE', refId: 3, code: 'requestId' } }
       })
     }
 
@@ -1056,18 +1089,17 @@ describe('VariableList — 变量操作', () => {
     expect(payload.apiConfigId).toBeUndefined()
   })
 
-  test('编辑接口变量时保留旧请求映射，并保存按 ID 选择的新调用入参覆盖', () => {
+  test('接口变量仅保存按 ID 选择的请求字段覆盖，切换 API 后清空原绑定', () => {
     wrapper.vm.form = { ...wrapper.vm.initForm(), varSource: 'API', apiConfigId: 7,
-      apiParamMapping: '{"customerId":"$.originalId"}',
-      apiInputOverrides: { customerId: { kind: 'REFERENCE', refType: 'VARIABLE', refId: '9007199254740993', code: 'currentId' } } }
+      apiRequestOverrides: { customerId: { kind: 'REFERENCE', refType: 'VARIABLE', refId: '9007199254740993', code: 'currentId' } } }
     const payload = wrapper.vm.buildVariablePayload()
     const config = JSON.parse(payload.sourceConfig)
-    expect(config.paramMapping).toEqual({ customerId: '$.originalId' })
-    expect(config.inputOverrides.customerId.refId).toBe('9007199254740993')
-    expect(payload.apiInputOverrides).toBeUndefined()
+    expect(config.paramMapping).toBeUndefined()
+    expect(config.inputOverrides).toBeUndefined()
+    expect(config.requestOverrides.customerId.refId).toBe('9007199254740993')
+    expect(payload.apiRequestOverrides).toBeUndefined()
     wrapper.vm.changeVariableApi(8)
-    expect(wrapper.vm.form.apiInputOverrides).toEqual({})
-    expect(wrapper.vm.form.apiParamMapping).toBe('{}')
+    expect(wrapper.vm.form.apiRequestOverrides).toEqual({})
     expect(wrapper.vm.form.apiResultPath).toBe('body')
   })
 
@@ -1077,7 +1109,7 @@ describe('VariableList — 变量操作', () => {
       varCode: 'riskScore', varLabel: '风险分', varType: 'NUMBER',
       varSource: 'DB', dbDatasourceId: 21,
       dbSql: 'select score from risk where customer_id = ?',
-      dbParams: '["$.customerId"]', dbResultPath: '0.score'
+      dbParams: '[{"kind":"REFERENCE","refType":"VARIABLE","refId":20,"code":"customerId"}]', dbResultPath: '0.score'
     }
     wrapper.vm.draftPreviewParamsText = '{"customerId":"C001"}'
     variableApi.previewVariableDraft.mockResolvedValueOnce({ data: {
@@ -1142,7 +1174,7 @@ describe('VariableList — 变量操作', () => {
   test('数据库配置进度只有在 SQL 和参数完整时才显示就绪', () => {
     wrapper.vm.form = { ...wrapper.vm.initForm(), scope: 'PROJECT', projectId: 1, varCode: 'score', varLabel: '评分', varSource: 'DB', dbDatasourceId: 31, dbSql: 'SELECT ?', dbParams: '[]' }
     expect(wrapper.vm.variableConfigurationChecklist[2].ready).toBe(false)
-    wrapper.vm.form.dbParams = '[0]'
+    wrapper.vm.form.dbParams = '[{"kind":"LITERAL","valueType":"NUMBER","value":0}]'
     expect(wrapper.vm.variableConfigurationChecklist[2].ready).toBe(true)
     wrapper.vm.form.dbParams = '{invalid'
     expect(wrapper.vm.variableConfigurationChecklist[2].ready).toBe(false)
@@ -1285,7 +1317,7 @@ describe('VariableList — 变量操作', () => {
       varSource: 'API',
       sourceConfig: JSON.stringify({
         apiConfigId: 10001,
-        paramMapping: { request_id: '$.requestId' },
+        requestOverrides: { request_id: { kind: 'REFERENCE', refType: 'VARIABLE', refId: '9007199254740993', code: 'requestId' } },
         resultPath: 'body.v1',
         forceRefresh: true,
         exceptionStrategy: 'RETURN_DEFAULT',
@@ -1296,7 +1328,7 @@ describe('VariableList — 变量操作', () => {
     wrapper.vm.applySourceConfigToForm()
 
     expect(wrapper.vm.form.apiConfigId).toBe(10001)
-    expect(JSON.parse(wrapper.vm.form.apiParamMapping)).toEqual({ request_id: '$.requestId' })
+    expect(wrapper.vm.form.apiRequestOverrides).toEqual({ request_id: { kind: 'REFERENCE', refType: 'VARIABLE', refId: '9007199254740993', code: 'requestId' } })
     expect(wrapper.vm.form.apiResultPath).toBe('body.v1')
     expect(wrapper.vm.form.apiForceRefresh).toBe(true)
     expect(wrapper.vm.form.apiExceptionStrategy).toBe('RETURN_DEFAULT')
@@ -1306,7 +1338,7 @@ describe('VariableList — 变量操作', () => {
 
 describe('VariableList — 边界情况', () => {
   test('listVariables 返回空数组不报错', async () => {
-    projectApi.listProjects.mockResolvedValue({ data: { records: [] } })
+    projectApi.listProjectOptions.mockResolvedValue({ data: { records: [] } })
     variableApi.listVariables.mockResolvedValue({ data: { records: [], total: 0 } })
     const wrapper = mount(VariableList, {
       mocks: {

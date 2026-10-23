@@ -2,7 +2,7 @@
 
 本目录支持四种相互独立的部署方案。每套方案只使用自己的进程、Compose 项目、网络、端口和数据目录；部署时选择一种即可。
 
-Ubuntu 公网部署使用服务器上独立运行的 Nginx Proxy Manager 管理 HTTPS、证书和反向代理；本项目不安装或修改 UFW、Fail2ban、宿主机 Nginx 及现有端口规则。NPM 直接使用服务器 IP 和宿主机端口配置 Proxy Host。MySQL、Redis 按 `.env` 绑定到 `0.0.0.0` 以便远程调试，访问控制由现有安全组/防火墙策略负责。
+Ubuntu 公网部署使用服务器上独立运行的 Nginx Proxy Manager 管理 HTTPS、证书和反向代理；本项目不安装或修改 UFW、Fail2ban、宿主机 Nginx 及现有端口规则。NPM 直接使用服务器 IP 和宿主机端口配置 Proxy Host。MySQL、Redis 按 `.env.server` 绑定到 `0.0.0.0` 以便远程调试，访问控制由现有安全组/防火墙策略负责。
 
 | 方案 | 启动内容 | MySQL/Redis | 适用场景 |
 |---|---|---|---|
@@ -22,7 +22,7 @@ Ubuntu 公网部署使用服务器上独立运行的 Nginx Proxy Manager 管理 
 ```powershell
 Copy-Item .env.server.example .env.server
 Copy-Item .env.client.example .env.client
-# 分别编辑 .env.server 和 .env.client，替换所有 replace-with-* 占位值
+# 分别编辑 .env.server 和 .env.client，填写实际地址并轮换模板中的全部凭据
 node scripts/package-runtime.mjs
 ```
 
@@ -62,36 +62,53 @@ vi .env.client
 服务端启动：
 
 ```bash
-docker compose --project-name tianshu-server --env-file .env.client --env-file .env.server \
+docker compose --project-name tianshu-server --env-file .env.server \
   -f docker/docker-compose.server.yml up -d --scale server=2
-docker compose --project-name tianshu-server --env-file .env.client --env-file .env.server \
+docker compose --project-name tianshu-server --env-file .env.server \
   -f docker/docker-compose.server.yml ps
 ```
 
 如果使用本包提供的 Kafka，先用同一份 `.env.server` 启动：
 
 ```bash
-docker compose --project-name tianshu-server --env-file .env.client --env-file .env.server \
+docker compose --project-name tianshu-server --env-file .env.server \
   -f docker/docker-compose.kafka.yml up -d
 ```
 
 客户端 runtime 启动：
 
 ```bash
-docker compose --project-name tianshu-client --env-file .env.client --env-file .env.server \
+docker compose --project-name tianshu-client --env-file .env.client \
   -f docker/docker-compose.client.yml up -d
-docker compose --project-name tianshu-client --env-file .env.client --env-file .env.server \
+docker compose --project-name tianshu-client --env-file .env.client \
   -f docker/docker-compose.client.yml ps
 ```
 
-客户端可以独立扩容或部署到其他服务器：
+客户端可以部署到其他服务器；同机运行多套客户端时使用不同项目名和宿主机端口：
 
 ```bash
-docker compose --project-name tianshu-client --env-file .env.client --env-file .env.server.client \
-  -f docker/docker-compose.client.yml up -d --scale runtime-http=3 --scale runtime-sdk=2
+docker compose --project-name tianshu-client-2 --env-file .env.client-2 \
+  -f docker/docker-compose.client.yml up -d
 ```
 
 客户端部署在其他机器时，`RUNTIME_RULE_SERVER_URL` 使用服务端 IP+端口或 Nginx Proxy Manager 的 HTTPS 域名；`REDIS_HOST` 使用 server 侧 Redis 的可达 IP，不能填写客户端容器内的 `localhost`。
+
+### 源码直接启动
+
+server 和 Vite 仅读取 `.env.server`，HTTP/SDK runtime 仅读取 `.env.client`，同名文件支持当前目录或上一级目录。系统环境变量和命令行参数优先；旧 `.env` 和 `.local` 不再加载，两类服务配置互不混入。
+
+源码运行时直接在两份配置中填写本机可访问的地址；容器运行时填写容器可访问的地址。`host.docker.internal` 面向容器访问宿主机，不能访问仅绑定到宿主机回环地址的服务。
+
+```powershell
+# 仓库根目录编译；失败时不要继续启动
+mvn clean install -DskipTests -Ponnx-gpu
+# 分别在三个终端启动，无需手工导出配置
+mvn -f rule-engine-server/pom.xml spring-boot:run -Ponnx-gpu
+mvn -f rule-engine-runtime/pom.xml spring-boot:run '-Dspring-boot.run.profiles=http'
+mvn -f rule-engine-runtime/pom.xml spring-boot:run '-Dspring-boot.run.profiles=sdk'
+```
+
+HTTP/SDK runtime 分别使用 `RUNTIME_HTTP_PORT` / `RUNTIME_SDK_PORT`、`HTTP_ACCESS_TOKEN` / `SDK_ACCESS_TOKEN` 和各自规则白名单；SDK 的 Redis 地址、密码和 database 必须与 server 一致。`node scripts/start-source.mjs` 会分别传递 server/client 配置，也可用 `start-dev.cmd` 只启动 server/web。
 
 ## 方案一：JAR 包 + Nginx
 
@@ -99,7 +116,7 @@ docker compose --project-name tianshu-client --env-file .env.client --env-file .
 
 ### 1. 准备服务端配置
 
-宿主机运行 JAR 和外接数据库 Compose 统一使用 `MYSQL_HOST`、`MYSQL_PORT`、`REDIS_HOST`、`REDIS_PORT`。完整 Compose 会在容器内自动使用 `mysql:3306` 和 `redis:6379`。将配置保存到仓库根目录 `.env`（或按生产路径复制到 JAR 工作目录）：
+宿主机运行 JAR 和外接数据库 Compose 统一使用 `MYSQL_HOST`、`MYSQL_PORT`、`REDIS_HOST`、`REDIS_PORT`。完整 Compose 会在容器内自动使用 `mysql:3306` 和 `redis:6379`。将配置保存到仓库根目录 `.env.server`（或按生产路径复制到 JAR 工作目录）：
 
 ```dotenv
 SERVER_PORT=8080
@@ -115,16 +132,13 @@ SPRING_SQL_INIT_MODE=always
 RULE_ENGINE_INITIAL_DATA_ENABLED=false
 RULE_ENGINE_INITIAL_DATA_LOCATION=classpath:sql/initial-data.sql
 RULE_AUTH_MASTER_KEY=当前环境至少32位随机密钥
-CONSOLE_USERNAME=admin
-CONSOLE_PASSWORD=BCrypt哈希
-CONSOLE_PASSWORD_ENCODING=BCRYPT
 CORS_ALLOWED_ORIGIN_PATTERNS=*
 ```
 
 ### 2. 启动 server
 
 ```bash
-# 在仓库根目录运行，确保根目录 .env 被 Spring Boot 读取
+# 在仓库根目录运行，确保根目录 .env.server 被 Spring Boot 读取
 java -jar docker/runtime/server.jar
 ```
 
@@ -148,7 +162,7 @@ java -Dspring.profiles.active=sdk -Dserver.port=7071 \
   -jar docker/runtime/runtime.jar
 ```
 
-两个 runtime 的项目凭证、规则白名单和访问令牌通过环境变量或 `.env` 注入；生产环境不要把示例令牌直接用于业务流量。
+两个 runtime 的项目凭证、规则白名单和访问令牌通过环境变量或 `.env.client` 注入；生产环境不要把示例令牌直接用于业务流量。
 
 ### 4. 启动前端
 
@@ -167,7 +181,7 @@ docker network create tianshu-app
 mkdir -p /opt/tianshu/runtime /opt/tianshu/nginx
 ```
 
-把 `docker/runtime/` 复制到 `/opt/tianshu/runtime/`，并把 server 配置保存为 `/opt/tianshu/runtime/.env`。容器内连接宿主机依赖时，Linux 需要使用 `host.docker.internal` 并通过 `--add-host` 映射；云数据库直接填写容器可访问的地址。
+把 `docker/runtime/` 复制到 `/opt/tianshu/runtime/`，并把 server 配置保存为 `/opt/tianshu/runtime/.env.server`、runtime 配置保存为 `/opt/tianshu/runtime/.env.client`。容器内连接宿主机依赖时，Linux 需要使用 `host.docker.internal` 并通过 `--add-host` 映射；云数据库直接填写容器可访问的地址。
 
 ### 2. 启动 server 容器
 
@@ -177,7 +191,7 @@ docker run -d \
   --restart unless-stopped \
   --network tianshu-app \
   --add-host=host.docker.internal:host-gateway \
-  --env-file /opt/tianshu/runtime/.env \
+  --env-file /opt/tianshu/runtime/.env.server \
   -p 8080:8080 \
   -v /opt/tianshu/runtime:/opt/tianshu/runtime:ro \
   eclipse-temurin:17-jre-jammy \
@@ -193,7 +207,7 @@ docker run -d \
   --name tianshu-http \
   --restart unless-stopped \
   --network tianshu-app \
-  --env-file /opt/tianshu/runtime/.env \
+  --env-file /opt/tianshu/runtime/.env.client \
   -e SPRING_PROFILES_ACTIVE=http \
   -e SERVER_PORT=7070 \
   -e RULE_SERVER_URL=http://192.168.1.10:8080 \
@@ -297,7 +311,7 @@ docker compose --project-name tianshu-external --env-file .env.client --env-file
 
 ## Kafka 独立 Compose
 
-`docker-compose.kafka.yml` 启动一个单节点 KRaft Kafka，宿主机端口默认为 `9092`，外部客户端使用 `KAFKA_ADVERTISED_HOST:KAFKA_HOST_PORT`，容器内应用使用 `kafka:19092`。启动前在 `.env` 配置 `KAFKA_ADVERTISED_HOST`、`KAFKA_USERNAME`、`KAFKA_PASSWORD`：
+`docker-compose.kafka.yml` 启动一个单节点 KRaft Kafka，宿主机端口默认为 `9092`，外部客户端使用 `KAFKA_ADVERTISED_HOST:KAFKA_HOST_PORT`，容器内应用使用 `kafka:19092`。启动前在 `.env.server` 配置 `KAFKA_ADVERTISED_HOST`、`KAFKA_USERNAME`、`KAFKA_PASSWORD`：
 
 ```bash
 docker compose --project-name tianshu-kafka --env-file .env.server \

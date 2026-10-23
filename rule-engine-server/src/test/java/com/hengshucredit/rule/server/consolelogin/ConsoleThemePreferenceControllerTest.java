@@ -38,7 +38,7 @@ public class ConsoleThemePreferenceControllerTest {
                 .andExpect(status().isOk())
                 .andReturn());
 
-        assertEquals(200, saved.getIntValue("code"));
+        assertEquals("000000", saved.getString("code"));
         assertEquals("NEBULA_GRADIENT",
                 loaded.getJSONObject("data").getString("accentPreset"));
         assertEquals("DARK",
@@ -56,8 +56,8 @@ public class ConsoleThemePreferenceControllerTest {
                 .andExpect(status().isOk())
                 .andReturn());
 
-        assertEquals(401, body.getIntValue("code"));
-        assertEquals("未登录", body.getString("message"));
+        assertEquals("300001", body.getString("code"));
+        assertEquals("未登录", body.getString("detail"));
     }
 
     @Test
@@ -75,7 +75,7 @@ public class ConsoleThemePreferenceControllerTest {
                 .andExpect(status().isOk())
                 .andReturn());
 
-        assertEquals(400, body.getIntValue("code"));
+        assertEquals("100001", body.getString("code"));
         assertEquals(0, fixture.rows.size());
     }
 

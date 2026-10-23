@@ -43,6 +43,7 @@ import java.util.Set;
 /** 将已确认的离线包写入目标环境；过程复用治理审批及规则草稿机制。 */
 @Service
 public class OfflineResourceImportService {
+    @Resource private com.hengshucredit.rule.server.security.ConsoleProjectAccess consoleProjects;
     @Resource private com.hengshucredit.rule.server.security.ConsoleAccessGuard accessGuard;
     @Resource private com.hengshucredit.rule.server.governance.GovernedResourceAdapterRegistry adapterRegistry;
     @Resource private GovernanceApprovalService approvalService;
@@ -207,6 +208,16 @@ public class OfflineResourceImportService {
                 }
             }
             ResourceSnapshot snapshot = ResourceSnapshot.ofJson(CanonicalJson.write(configuration));
+            if (consoleProjects != null) {
+                Long permissionProject = projectId(sourceKey.type(), options, resourceTargetProjectId);
+                consoleProjects.requirePermission("transfer:import", permissionProject);
+                consoleProjects.requirePermission(sourceKey.type().permissionModule + ":edit", permissionProject);
+                if (sourceKey.type() != TransferResourceType.RULE) {
+                    consoleProjects.requirePermission(sourceKey.type().permissionModule + ":submit", permissionProject);
+                    consoleProjects.requirePermission("approval:submit", permissionProject);
+                    consoleProjects.requirePermission("approval:approve", permissionProject);
+                }
+            }
             Long targetId;
             if (sourceKey.type() == TransferResourceType.RULE) {
                 if (existingId == null && ruleDefinitionMapper != null && ruleDefinitionMapper.selectOne(new LambdaQueryWrapper<RuleDefinition>()

@@ -172,7 +172,7 @@
           <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '版本', '发布', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
-                v-permission="'billing:edit'"
+                v-permission="{ code: 'billing:edit', projectId: row.projectId, scope: row.scope }"
                 link
                 data-action="edit"
                 size="small"
@@ -182,7 +182,7 @@
               >
               <governance-publish-action resource-type="BILLING_CONFIG" :resource-id="row.id" />
               <el-button
-                v-permission="'billing:edit'"
+                v-permission="{ code: 'billing:edit', projectId: row.projectId, scope: row.scope }"
                 link
                 data-action="delete"
                 size="small"
@@ -201,7 +201,7 @@
           :page-size="configQuery.pageSize"
           :total="configTotal"
           layout="total,sizes,prev,pager,next"
-          :page-sizes="[10, 30, 50, 100, 200, 500]"
+          :page-sizes="[10, 20, 30, 50, 100, 200, 500]"
           @current-change="
             (p) => {
               configQuery.pageNum = p
@@ -434,7 +434,7 @@
           :page-size="recordQuery.pageSize"
           :total="recordTotal"
           layout="total,sizes,prev,pager,next"
-          :page-sizes="[10, 30, 50, 100, 200, 500]"
+          :page-sizes="[10, 20, 30, 50, 100, 200, 500]"
           @current-change="
             (p) => {
               recordQuery.pageNum = p
@@ -661,7 +661,7 @@
           :page-size="summaryQuery.pageSize"
           :total="summaryTotal"
           layout="total,sizes,prev,pager,next"
-          :page-sizes="[10, 30, 50, 100, 200, 500]"
+          :page-sizes="[10, 20, 30, 50, 100, 200, 500]"
           @current-change="
             (p) => {
               summaryQuery.pageNum = p
@@ -815,22 +815,16 @@
         <el-row :gutter="12">
           <el-col :span="24">
             <el-form-item label="指定对象">
-              <el-select
-                v-model="configForm.targetRefId"
-                clearable
-                filterable
-                :loading="targetLoading"
-                :disabled="targetLoading"
+              <remote-filter-select
+                :key="`${configForm.billingTarget}:${configForm.scope}:${configForm.projectId}`"
+                v-model:value="configForm.targetRefId"
+                :fetch-options="loadTargetOptions"
+                :selected-option="selectedTargetOption"
+                option-value-key="id"
+                option-label-key="displayName"
                 placeholder="不选则作用于该类型全部对象"
                 style="width: 100%"
-              >
-                <el-option
-                  v-for="item in targetOptions"
-                  :key="item.id"
-                  :label="targetOptionLabel(item)"
-                  :value="item.id"
-                />
-              </el-select>
+              />
               <div v-if="targetError" role="alert" class="target-load-error">
                 <span>{{ targetError }}</span>
                 <el-button size="small" @click="loadTargetOptions">重试</el-button>
@@ -942,9 +936,9 @@ import {
   updateBillingConfigDraft,
   changeBillingConfigStatusDraft,
 } from '@/api/billing'
-import { listDefinitions } from '@/api/definition'
-import { listApiConfigs, getApiConfigTrial } from '@/api/datasource'
-import { listDbDatasources } from '@/api/database'
+import { listDefinitions, getDefinition } from '@/api/definition'
+import { listApiConfigs, getApiConfig, getApiConfigTrial } from '@/api/datasource'
+import { listDbDatasources, getDbDatasource } from '@/api/database'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
@@ -980,6 +974,7 @@ export default {
       ],
       activeTab: 'config',
       targetOptions: [],
+      targetKnownOptions: {},
       targetLoading: false,
       targetRequestId: 0,
       targetError: '',
@@ -993,7 +988,7 @@ export default {
       configSaving: false,
       configQuery: {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         projectCode: '',
         projectName: '',
         scope: '',
@@ -1040,7 +1035,7 @@ export default {
       recordDateRange: [],
       recordQuery: {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         billingTarget: '',
         billingCode: '',
         projectCode: '',
@@ -1059,7 +1054,7 @@ export default {
       summaryDateRange: [],
       summaryQuery: {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         billingTarget: '',
         billingCode: '',
         projectCode: '',
@@ -1105,6 +1100,10 @@ export default {
   components: { ExecutionVersionFilter, GovernancePublishAction, GovernanceWorkspaceToolbar,
     GovernanceResourceStatus, ProjectFilterSelect, ProjectResourceSelect, RemoteFilterSelect, TableColumnSettings },
   computed: {
+    selectedTargetOption() {
+      const item = this.targetKnownOptions?.[`${this.configForm?.billingTarget}:${this.configForm?.targetRefId}`]
+      return item ? { ...item, displayName: this.targetOptionLabel(item) } : null
+    },
     summaryRefreshActive() { return ['PENDING', 'RUNNING'].includes(this.summaryRefreshTask?.status) },
     summaryRefreshTitle() {
       const task = this.summaryRefreshTask
@@ -1487,31 +1486,43 @@ export default {
       this.targetRequestId++
       this.targetLoading = false
       this.targetOptions = []
+      this.targetKnownOptions = {}
       this.targetError = ''
     },
-    async loadTargetOptions() {
+    async loadTargetOptions({ query = '', pageNum = 1, pageSize = 20 } = {}) {
       if (!this.configForm) return
       const requestId = ++this.targetRequestId
       this.targetLoading = true
       this.targetOptions = []
       this.targetError = ''
       try {
-        const baseParams = { pageNum: 1, pageSize: 500, status: 1 }
+        const baseParams = { pageNum, pageSize, status: 1 }
         if (this.configForm.scope === 'PROJECT' && this.configForm.projectId) {
           baseParams.projectId = this.configForm.projectId
         }
         let res
         if (this.configForm.billingTarget === 'ENGINE') {
-          res = await listDefinitions(baseParams)
+          res = await listDefinitions({ ...baseParams, ...(query ? { keyword: query } : {}) })
         } else if (this.configForm.billingTarget === 'API') {
-          res = await listApiConfigs({ pageNum: 1, pageSize: 500, status: 1 })
+          res = await listApiConfigs({ pageNum, pageSize, status: 1, ...(query ? { apiName: query } : {}) })
         } else if (this.configForm.billingTarget === 'DB') {
-          res = await listDbDatasources(baseParams)
+          res = await listDbDatasources({ ...baseParams, ...(query ? { datasourceName: query } : {}) })
         } else {
           res = { data: { records: [] } }
         }
         if (requestId !== this.targetRequestId) return
         this.targetOptions = (res.data && res.data.records) || []
+        if (!this.targetKnownOptions) this.targetKnownOptions = {}
+        const type = this.configForm.billingTarget
+        for (const item of this.targetOptions) this.targetKnownOptions[`${type}:${item.id}`] = item
+        const selectedId = this.configForm.targetRefId
+        if (selectedId && !this.targetKnownOptions[`${type}:${selectedId}`]) {
+          const loader = { ENGINE: getDefinition, API: getApiConfig, DB: getDbDatasource }[type]
+          const selected = loader ? await loader(selectedId) : null
+          if (requestId !== this.targetRequestId) return
+          if (selected?.data?.id != null) this.targetKnownOptions[`${type}:${selectedId}`] = selected.data
+        }
+        return { data: { ...res.data, records: this.targetOptions.map(item => ({ ...item, displayName: this.targetOptionLabel(item) })) } }
       } catch {
         if (requestId === this.targetRequestId) this.targetError = '计费对象加载失败'
       } finally {
@@ -1525,6 +1536,9 @@ export default {
     onSummaryDateChange(val) {
       this.summaryQuery.beginDate = val ? val[0] : ''
       this.summaryQuery.endDate = val ? val[1] : ''
+      this.stopSummaryRefresh()
+      this.summaryRefreshTask = null
+      this.summaryRefreshError = ''
     },
     normalizeConfig(form) {
       const data = { ...form }

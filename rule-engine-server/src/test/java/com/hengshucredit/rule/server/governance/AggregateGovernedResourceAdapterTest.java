@@ -452,13 +452,14 @@ public class AggregateGovernedResourceAdapterTest {
         experiment.setId(6L);
         experiment.setExperimentCode("routing");
         experiment.setExperimentName("路由实验");
-        experiment.setRoutingMode("HASH");
+        experiment.setRoutingMode("RATIO");
         experiment.setStatus(1);
         RuleExperimentGroup group = new RuleExperimentGroup();
         group.setId(12L);
         group.setExperimentId(6L);
         group.setGroupType("CHAMPION");
         group.setRuleId(77L);
+        group.setTrafficRatio(new java.math.BigDecimal("100"));
         group.setStatus(1);
         RuleExperimentGroupMapper groupMapper =
                 mapper(RuleExperimentGroupMapper.class,
@@ -468,6 +469,7 @@ public class AggregateGovernedResourceAdapterTest {
                 new ExperimentGovernedResourceAdapter(
                         store(experiment, RuleExperiment::setId),
                         groupMapper, codec());
+        org.springframework.test.util.ReflectionTestUtils.setField(adapter, "experimentService", new com.hengshucredit.rule.server.service.RuleExperimentService());
 
         ResourceSnapshot snapshot = adapter.loadEffective(6L);
 
@@ -487,11 +489,24 @@ public class AggregateGovernedResourceAdapterTest {
     @Test
     public void experimentWithoutAnExecutionRuleCannotPassPublicationValidation() {
         var adapter = new ExperimentGovernedResourceAdapter(null, null, codec());
+        org.springframework.test.util.ReflectionTestUtils.setField(adapter, "experimentService", new com.hengshucredit.rule.server.service.RuleExperimentService());
         var draft = ResourceSnapshot.ofJson("{\"experimentCode\":\"draft\",\"experimentName\":\"未完成配置\",\"routingMode\":\"RATIO\","
                 + "\"groups\":[{\"groupCode\":\"champion\",\"groupType\":\"CHAMPION\",\"status\":1,\"trafficRatio\":100}]}");
         var errors = adapter.validate(draft);
         Assert.assertTrue(errors.stream().anyMatch(error -> "EXPERIMENT_RULE_REQUIRED".equals(error.code())
                 && "$.groups[0].ruleId".equals(error.referencePath())));
+    }
+
+    @Test public void experimentApprovalUsesTheSameRatiosAsExecution() {
+        var adapter = new ExperimentGovernedResourceAdapter(null, null, codec());
+        org.springframework.test.util.ReflectionTestUtils.setField(adapter, "experimentService", new com.hengshucredit.rule.server.service.RuleExperimentService());
+        for (String groups : List.of(
+                "[{\"groupType\":\"CHAMPION\",\"ruleId\":7,\"status\":1,\"trafficRatio\":1}]",
+                "[{\"groupType\":\"CHAMPION\",\"ruleId\":7,\"status\":1,\"trafficRatio\":100},{\"groupType\":\"TEST\",\"ruleId\":7,\"status\":1,\"trafficRatio\":90}]",
+                "[{\"groupType\":\"CHAMPION\",\"ruleId\":7,\"status\":1,\"trafficRatio\":0.001},{\"groupType\":\"CHALLENGER\",\"ruleId\":7,\"status\":1,\"trafficRatio\":99.999}]")) {
+            var snapshot = ResourceSnapshot.ofJson("{\"experimentCode\":\"ratio\",\"experimentName\":\"比例\",\"routingMode\":\"RATIO\",\"testRoutingMode\":\"RATIO\",\"groups\":" + groups + "}");
+            Assert.assertTrue("比例有误不能通过审批: " + groups, adapter.validate(snapshot).stream().anyMatch(issue -> "EXPERIMENT_ROUTING_INVALID".equals(issue.code())));
+        }
     }
 
     @Test

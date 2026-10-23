@@ -1,11 +1,12 @@
 package com.hengshucredit.rule.server.security;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.hengshucredit.rule.model.entity.ConsoleOperationLog;
 import com.hengshucredit.rule.server.audit.*;
 import com.hengshucredit.rule.server.auth.TrustedClientAddressResolver;
-import com.hengshucredit.rule.server.common.Result;
 import com.hengshucredit.rule.server.common.GlobalExceptionHandler;
 import com.hengshucredit.rule.server.consolelogin.RuleEngineConsoleLoginProperties;
 import com.hengshucredit.rule.server.mapper.RuleModelMapper;
@@ -206,21 +207,21 @@ public class ConsoleOperationAuditTest {
         public String getSourceConfig() { throw new AssertionError("不能读取操作内容"); }
     }
     @RestController static class TestController {
-        @PostMapping("/api/rule/definition/save") public Result<Map<String, Object>> createRule(@RequestBody Map<String, Object> body) { return Result.ok(Map.of("id", 22, "ruleName", "新规则")); }
-        @DeleteMapping("/api/rule/definition/{id}") public Result<Void> deleteRule() { return Result.ok(); }
+        @PostMapping("/api/rule/definition/save") public ApiResponse<Map<String, Object>> createRule(@RequestBody Map<String, Object> body) { return ApiResponse.ok(Map.of("id", 22, "ruleName", "新规则")); }
+        @DeleteMapping("/api/rule/definition/{id}") public ApiResponse<Void> deleteRule() { return ApiResponse.ok(); }
         @PostMapping("/api/rule/governance/rules/{id}/delete") @RequirePermission("rule:edit")
-        public Result<Map<String, Object>> requestDeletion() { return Result.ok(Map.of("deleted", false, "approvalRequestId", 21)); }
-        @PostMapping("/api/rule/definition/{id}/designer/drafts") public Result<Map<String, Object>> saveDraft(@PathVariable Long id, @RequestBody Map<String, Object> body) {
-            return Result.ok(Map.of("revision", Map.of("id", 99, "definitionId", id, "revisionNo", 4)));
+        public ApiResponse<Map<String, Object>> requestDeletion() { return ApiResponse.ok(Map.of("deleted", false, "approvalRequestId", 21)); }
+        @PostMapping("/api/rule/definition/{id}/designer/drafts") public ApiResponse<Map<String, Object>> saveDraft(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+            return ApiResponse.ok(Map.of("revision", Map.of("id", 99, "definitionId", id, "revisionNo", 4)));
         }
-        @PostMapping("/api/rule/definition/{id}/designer/publish") public Result<Map<String, Object>> publish(@PathVariable Long id) {
-            return Result.ok(Map.of("revision", Map.of("id", 99, "definitionId", id, "revisionNo", 4, "state", "REVIEW", "modelJson", "PRIVATE_CONTENT"), "approvalRequestId", 21));
+        @PostMapping("/api/rule/definition/{id}/designer/publish") public ApiResponse<Map<String, Object>> publish(@PathVariable Long id) {
+            return ApiResponse.ok(Map.of("revision", Map.of("id", 99, "definitionId", id, "revisionNo", 4, "state", "REVIEW", "modelJson", "PRIVATE_CONTENT"), "approvalRequestId", 21));
         }
-        @PostMapping("/api/rule/definition/{definitionId}/api-scenarios/execute-validated") public Result<Map<String, Object>> debug(@PathVariable Long definitionId) {
-            return Result.ok(Map.of("execution", Map.of("success", false, "executionIdentity", Map.of("definitionId", definitionId, "versionNo", 3)), "responseJson", "PRIVATE_RESPONSE"));
+        @PostMapping("/api/rule/definition/{definitionId}/api-scenarios/execute-validated") public ApiResponse<Map<String, Object>> debug(@PathVariable Long definitionId) {
+            return ApiResponse.ok(Map.of("execution", Map.of("success", false, "executionIdentity", Map.of("definitionId", definitionId, "versionNo", 3)), "responseJson", "PRIVATE_RESPONSE"));
         }
-        @PutMapping("/api/rule/project/{id}") public Result<Map<String, Object>> save(@RequestBody Map<String, Object> body) { return Result.ok(Map.of("id", 3, "projectName", body.get("name"), "currentVersion", 4, "responseContent", "PRIVATE_RESPONSE")); }
-        @PostMapping("/api/rule/project/failure") public Result<Void> failure() { return Result.fail(409, "PRIVATE_ERROR_CONTENT"); }
-        @PostMapping("/api/rule/project/1/test") public Result<Map<String, Object>> test() { return Result.ok(Map.of("success", false, "errorMessage", "PRIVATE_EXECUTION_RESULT")); }
+        @PutMapping("/api/rule/project/{id}") public ApiResponse<Map<String, Object>> save(@RequestBody Map<String, Object> body) { return ApiResponse.ok(Map.of("id", 3, "projectName", body.get("name"), "currentVersion", 4, "responseContent", "PRIVATE_RESPONSE")); }
+        @PostMapping("/api/rule/project/failure") public ApiResponse<Void> failure() { return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_CONFLICT, "PRIVATE_ERROR_CONTENT"); }
+        @PostMapping("/api/rule/project/1/test") public ApiResponse<Map<String, Object>> test() { return ApiResponse.ok(Map.of("success", false, "errorMessage", "PRIVATE_EXECUTION_RESULT")); }
     }
 }

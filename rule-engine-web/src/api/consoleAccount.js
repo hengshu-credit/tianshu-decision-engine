@@ -4,6 +4,10 @@ export function listConsoleAccounts() {
   return request.get('/rule/console/accounts')
 }
 
+export function listConsoleProjectOptions() {
+  return request.get('/rule/console/accounts/project-options')
+}
+
 export function getConsoleAccount(id) {
   return request.get(`/rule/console/accounts/${id}`)
 }

@@ -64,3 +64,9 @@ window.addEventListener('tianshu:resource-draft-change', () => {
   subscriptions.forEach((_, key) => pending.add(key))
   schedule()
 })
+
+window.addEventListener('tianshu:identity-change', () => {
+  generation++
+  subscriptions.clear()
+  pending.clear()
+})

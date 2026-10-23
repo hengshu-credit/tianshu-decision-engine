@@ -36,6 +36,7 @@ import java.util.Set;
  */
 @Service
 public class OfflineResourceTransferService {
+    @Resource private com.hengshucredit.rule.server.security.ConsoleResourceAccess consoleResources;
     @Resource
     private com.hengshucredit.rule.server.security.ConsoleAccessGuard accessGuard;
     private static final Set<String> JSON_FIELDS = Set.of(
@@ -81,6 +82,7 @@ public class OfflineResourceTransferService {
                 throw new IllegalArgumentException("同一迁移包不能为同一资源选择不同版本，请分别导出");
         }
         if (accessGuard != null) for (TransferKey root : roots) accessGuard.requireResource(root.type().name(), "view");
+        if (consoleResources != null) for (TransferKey root : roots) consoleResources.requirePermission(root.type().name(), root.id(), "transfer:export");
         Map<String, TransferBundle.Resource> resources = new LinkedHashMap<>();
         List<String> warnings = new ArrayList<>();
         Deque<TransferKey> queue = new ArrayDeque<>(roots);
@@ -98,6 +100,7 @@ public class OfflineResourceTransferService {
         while (!queue.isEmpty()) {
             TransferKey key = queue.removeFirst();
             if (accessGuard != null) accessGuard.requireResource(key.type().name(), "view");
+            if (consoleResources != null) consoleResources.require(key.type().name(), key.id(), "view");
             if (resources.containsKey(key.value())) continue;
             if (!visiting.add(key.value())) throw new IllegalArgumentException("离线导出依赖形成循环: " + key.value());
             if (key.type() == TransferResourceType.RULE_VERSION) {

@@ -27,6 +27,9 @@ public class RuleDbDatasourceService extends ServiceImpl<RuleDbDatasourceMapper,
     @Resource
     private ProjectFilterService projectFilterService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.governance.DatasourceDraftCredentials draftCredentials;
+
     public IPage<RuleDbDatasource> pageList(int pageNum, int pageSize, String scope, Long projectId,
                                             String projectCode, String projectName,
                                             String datasourceCode, String datasourceName, String dbType,
@@ -61,6 +64,7 @@ public class RuleDbDatasourceService extends ServiceImpl<RuleDbDatasourceMapper,
         wrapper.orderByDesc(RuleDbDatasource::getCreateTime);
         IPage<RuleDbDatasource> page = page(new Page<>(pageNum, pageSize), wrapper);
         fillProjectName(page.getRecords());
+        hideSecrets(page.getRecords());
         return page;
     }
 
@@ -73,6 +77,7 @@ public class RuleDbDatasourceService extends ServiceImpl<RuleDbDatasourceMapper,
         RuleDbDatasource datasource = getById(id);
         if (datasource != null) {
             fillProjectName(java.util.Collections.singletonList(datasource));
+            hideSecrets(java.util.Collections.singletonList(datasource));
         }
         return datasource;
     }
@@ -97,8 +102,36 @@ public class RuleDbDatasourceService extends ServiceImpl<RuleDbDatasourceMapper,
     }
 
     public void testConnection(RuleDbDatasource datasource) throws Exception {
-        fillDefaults(datasource);
-        dbConnectPools.testConnection(datasource);
+        var cleared = com.hengshucredit.rule.server.governance.CredentialChanges.clearFields(
+                datasource.getClearCredentials(), com.hengshucredit.rule.server.governance.CredentialChanges.DATABASE_FIELDS,
+                new org.springframework.beans.BeanWrapperImpl(datasource)::getPropertyValue);
+        RuleDbDatasource trial = new RuleDbDatasource();
+        org.springframework.beans.BeanUtils.copyProperties(datasource, trial);
+        if (trial.getId() != null) {
+            RuleDbDatasource stored = getById(trial.getId());
+            if (stored == null) throw new IllegalArgumentException("数据库数据源不存在");
+            Map<String, Object> draft = draftCredentials == null ? Map.of() : draftCredentials.load("DATABASE", trial.getId());
+            if (!hasText(trial.getPassword())) trial.setPassword((String) draft.getOrDefault("password", stored.getPassword()));
+            if (!hasText(trial.getSshPassword())) trial.setSshPassword((String) draft.getOrDefault("sshPassword", stored.getSshPassword()));
+            if (!hasText(trial.getSshPrivateKey())) trial.setSshPrivateKey((String) draft.getOrDefault("sshPrivateKey", stored.getSshPrivateKey()));
+            if (!hasText(trial.getSshPassphrase())) trial.setSshPassphrase((String) draft.getOrDefault("sshPassphrase", stored.getSshPassphrase()));
+        }
+        var trialProperties = new org.springframework.beans.BeanWrapperImpl(trial);
+        cleared.forEach(field -> trialProperties.setPropertyValue(field, ""));
+        fillDefaults(trial);
+        dbConnectPools.testConnection(trial);
+    }
+
+    private void hideSecrets(List<RuleDbDatasource> list) {
+        list.forEach(item -> {
+            item.setConfiguredSecrets(Map.of("password", hasText(item.getPassword()),
+                    "sshPassword", hasText(item.getSshPassword()), "sshPrivateKey", hasText(item.getSshPrivateKey()),
+                    "sshPassphrase", hasText(item.getSshPassphrase())));
+            item.setPassword(null);
+            item.setSshPassword(null);
+            item.setSshPrivateKey(null);
+            item.setSshPassphrase(null);
+        });
     }
 
     private void fillDefaults(RuleDbDatasource datasource) {

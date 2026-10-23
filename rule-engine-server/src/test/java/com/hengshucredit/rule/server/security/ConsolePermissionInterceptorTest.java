@@ -17,6 +17,7 @@ public class ConsolePermissionInterceptorTest {
                 {"/api/rule/list/library", "field:view", "list:view"},
                 {"/api/rule/log/list", "rule:view", "log:view"},
                 {"/api/rule/billing/config", "project:view", "billing:view"},
+                {"/api/rule/datasource/api-config/available", "rule:view", "datasource:view"},
                 {"/api/rule/lineage/options", "approval:view", "lineage:view"}
         }) {
             Assert.assertFalse(sample[0], allowed("GET", sample[0], sample[1]));

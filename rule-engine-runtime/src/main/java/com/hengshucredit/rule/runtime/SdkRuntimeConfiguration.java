@@ -20,7 +20,6 @@ import org.springframework.core.env.Environment;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 
-import java.util.Map;
 import java.util.function.BiFunction;
 
 /** 最小 SDK 样例：规则和函数来自服务端，不注册税率/评分 demo、不在本地写业务脚本。 */
@@ -33,7 +32,7 @@ public class SdkRuntimeConfiguration {
         String authType = env.getProperty("RULE_AUTH_TYPE", ClientAuthConfig.LEGACY_TOKEN)
                 .toUpperCase(java.util.Locale.ROOT);
         boolean globalAccess = ClientAuthConfig.GLOBAL_KEY.equals(authType);
-        long projectId = env.getProperty("RULE_PROJECT_ID", Long.class, 0L);
+        long projectId = globalAccess ? 0L : env.getProperty("RULE_PROJECT_ID", Long.class, 0L);
         if (!globalAccess && projectId <= 0) throw new IllegalArgumentException("RULE_PROJECT_ID 必须为真实项目 ID");
         var codes = RuntimeConfiguration.allowedCodes(env);
         boolean logReportEnabled = env.getProperty("SDK_LOG_REPORT_ENABLED", Boolean.class, false);
@@ -52,17 +51,21 @@ public class SdkRuntimeConfiguration {
                 .connectionFactory(redis).applicationContext(context)
                 .serverSideExecution(false);
         if (logReportEnabled) builder.logReporter(reporterProvider.getIfAvailable());
-        RuleEngineClient client = builder.build();
+        RuleEngineClient client = createClient(builder);
         try {
-            if (globalAccess) {
-                // 全局模式同步全部已发布规则和函数，并保持定时全量同步；项目模式仍按白名单启动。
-                client.start();
-            } else {
-                // 项目模式只按白名单逐条拉取规则，避免把项目外规则加载到客户端。
+            // 按上游凭证同步可访问的规则和函数，并启动订阅、心跳与日志生命周期。
+            // 入口白名单由 RuntimeController 执行，缓存也需要依赖规则，不能省略客户端启动。
+            client.start();
+            if (!globalAccess) {
                 for (String code : codes) {
-                    client.refreshRule(code);
                     if (!executable(client, code)) {
                         throw new IllegalStateException("SDK 仅接受已发布的本地纯计算规则: " + code);
+                    }
+                    var rule = client.getRuleInfo(code);
+                    if (rule.getProjectId() != null && rule.getProjectId() > 0
+                            && (rule.getProjectId() != projectId
+                            || !java.util.Objects.equals(rule.getProjectCode(), env.getProperty("RULE_PROJECT_CODE")))) {
+                        throw new IllegalArgumentException("RULE_PROJECT_ID / RULE_PROJECT_CODE 与上游规则归属不一致，无法建立正确的项目订阅");
                     }
                 }
             }
@@ -72,6 +75,8 @@ public class SdkRuntimeConfiguration {
             throw error;
         }
     }
+
+    RuleEngineClient createClient(RuleEngineClient.Builder builder) { return builder.build(); }
 
     @Configuration(proxyBeanMethods = false)
     @Profile("sdk")
@@ -93,8 +98,8 @@ public class SdkRuntimeConfiguration {
     }
 
     @Bean
-    public BiFunction<String, Map<String, Object>, RuleResult> sdkExecutor(RuleEngineClient client) {
-        return client::execute; // 在本进程执行已拉取脚本，绝不转发到服务端 execute。
+    public BiFunction<String, com.hengshucredit.rule.model.RuleExecutionRequest, RuleResult> sdkExecutor(RuleEngineClient client) {
+        return client::executeRequest; // 在本进程执行已拉取脚本，绝不转发到服务端 execute。
     }
 
     @Bean

@@ -85,6 +85,7 @@ const getters = {
 }
 
 const mutations = {
+  CLEAR(state) { state.tabs = []; state.activePath = ''; state.refreshVersions = {} },
   RESTORE(state, payload) {
     const currentTab = payload.currentTab
     const tabs = uniqueTabs([...(payload.cachedTabs || []), currentTab])

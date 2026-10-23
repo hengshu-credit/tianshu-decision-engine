@@ -122,6 +122,16 @@ public class HistoryQueryTest {
     }
 
     @Test
+    public void nullFilterDoesNotTreatMissingHistoryFieldAsExplicitNull() {
+        JSONObject config = query("COUNT");
+        config.put("filters", JSON.parseArray("[{\"field\":" + ref(1) + ",\"operator\":\"IS_NULL\"}]"));
+        Map<String, Object> explicitNull = new java.util.LinkedHashMap<>();
+        explicitNull.put("VARIABLE:1", null);
+        assertEquals(1L, evaluate(config, List.of(
+                row(1, Map.of()), row(2, explicitNull))));
+    }
+
+    @Test
     public void calendarDayWindowStartsAtLocalMidnightNotRollingTwentyFourHours() {
         assertEquals(LocalDateTime.of(2026, 9, 21, 0, 0),
                 DerivedVariableService.historyStart(

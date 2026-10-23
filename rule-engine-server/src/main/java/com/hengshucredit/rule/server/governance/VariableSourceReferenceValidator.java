@@ -3,7 +3,7 @@ package com.hengshucredit.rule.server.governance;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
@@ -60,25 +60,11 @@ public class VariableSourceReferenceValidator {
 
     public VariableSourceCatalog catalog(String scope, Long projectId) {
         String normalizedScope = normalizeScope(scope, projectId);
-        Map<Long, RuleExternalDatasource> compatibleApiSources =
-                new LinkedHashMap<>();
-        for (RuleExternalDatasource source : safeList(
-                externalDatasourceMapper.selectList(null))) {
-            if (isEnabled(source.getStatus()) && isCompatible(
-                    normalizedScope, projectId,
-                    source.getScope(), source.getProjectId())) {
-                compatibleApiSources.put(source.getId(), source);
-            }
-        }
+        Map<Long, RuleExternalDatasource> compatibleApiSources = compatibleApiSources(normalizedScope, projectId);
 
         List<VariableSourceOption> apiOptions = new ArrayList<>();
-        for (RuleExternalApiConfig api : safeList(
-                apiConfigMapper.selectList(null))) {
-            RuleExternalDatasource source = compatibleApiSources.get(
-                    api.getDatasourceId());
-            if (!isEnabled(api.getStatus()) || source == null) {
-                continue;
-            }
+        for (RuleExternalApiConfig api : availableApis(compatibleApiSources, false)) {
+            RuleExternalDatasource source = compatibleApiSources.get(api.getDatasourceId());
             apiOptions.add(new VariableSourceOption(
                     api.getId(), api.getApiCode(), api.getApiName(),
                     source.getScope(), source.getProjectId(),
@@ -87,7 +73,8 @@ public class VariableSourceReferenceValidator {
 
         List<VariableSourceOption> databaseOptions = new ArrayList<>();
         for (RuleDbDatasource datasource : safeList(
-                dbDatasourceMapper.selectList(null))) {
+                dbDatasourceMapper.selectList(catalogQuery(normalizedScope, projectId,
+                        "id", "datasource_code", "datasource_name", "scope", "project_id", "status")))) {
             if (!isEnabled(datasource.getStatus()) || !isCompatible(
                     normalizedScope, projectId,
                     datasource.getScope(), datasource.getProjectId())) {
@@ -100,12 +87,8 @@ public class VariableSourceReferenceValidator {
         }
 
         List<VariableSourceOption> listOptions = new ArrayList<>();
-        LambdaQueryWrapper<RuleListLibrary> listQuery = new LambdaQueryWrapper<RuleListLibrary>()
-                .eq(RuleListLibrary::getStatus, 1)
-                .and(scopeQuery -> scopeQuery.eq(RuleListLibrary::getScope, "GLOBAL")
-                        .or(projectId != null && projectId > 0,
-                                project -> project.eq(RuleListLibrary::getScope, "PROJECT")
-                                        .eq(RuleListLibrary::getProjectId, projectId)));
+        QueryWrapper<RuleListLibrary> listQuery = catalogQuery(normalizedScope, projectId,
+                "id", "list_code", "list_name", "scope", "project_id", "status", "list_type");
         for (RuleListLibrary library : safeList(
                 listLibraryMapper.selectList(listQuery))) {
             if (!isEnabled(library.getStatus()) || !isCompatible(
@@ -120,7 +103,8 @@ public class VariableSourceReferenceValidator {
         }
 
         List<VariableSourceOption> sftpOptions = new ArrayList<>();
-        for (RuleSftpDatasource datasource : safeList(sftpDatasourceMapper == null ? null : sftpDatasourceMapper.selectList(null))) {
+        for (RuleSftpDatasource datasource : safeList(sftpDatasourceMapper == null ? null : sftpDatasourceMapper.selectList(
+                catalogQuery(normalizedScope, projectId, "id", "datasource_code", "datasource_name", "scope", "project_id", "status")))) {
             if (!isEnabled(datasource.getStatus()) || !isCompatible(normalizedScope, projectId,
                     datasource.getScope(), datasource.getProjectId())) continue;
             sftpOptions.add(new VariableSourceOption(datasource.getId(), datasource.getDatasourceCode(),
@@ -141,6 +125,53 @@ public class VariableSourceReferenceValidator {
                 accessGuard == null || accessGuard.can("database:view") ? List.copyOf(databaseOptions) : List.of(),
                 accessGuard == null || accessGuard.can("list:view") ? List.copyOf(listOptions) : List.of(),
                 accessGuard == null || accessGuard.can("database:view") ? List.copyOf(sftpOptions) : List.of());
+    }
+
+    /** 设计器与变量来源复用相同范围，仅返回选择内容所需的元数据，不返回鉴权或样例值。 */
+    public List<Map<String, Object>> apiReferenceCatalog(Long projectId) {
+        if (accessGuard != null && !accessGuard.can("datasource:view")) return List.of();
+        var sources = compatibleApiSources(normalizeScope(null, projectId), projectId);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (var api : availableApis(sources, true)) {
+            var source = sources.get(api.getDatasourceId());
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("id", String.valueOf(api.getId()));
+            metadata.put("apiCode", api.getApiCode()); metadata.put("apiName", api.getApiName());
+            metadata.put("scope", source.getScope()); metadata.put("projectId", source.getProjectId() == null ? null : String.valueOf(source.getProjectId()));
+            metadata.put("resultFields", com.hengshucredit.rule.server.service.ExternalApiResponseSchema.catalog(api));
+            result.add(metadata);
+        }
+        result.sort(Comparator.comparing((Map<String, Object> value) -> text((String) value.get("apiName")))
+                .thenComparing(value -> text((String) value.get("apiCode"))).thenComparing(value -> (String) value.get("id")));
+        return result;
+    }
+
+    private Map<Long, RuleExternalDatasource> compatibleApiSources(String scope, Long projectId) {
+        Map<Long, RuleExternalDatasource> sources = new LinkedHashMap<>();
+        for (var source : safeList(externalDatasourceMapper.selectList(catalogQuery(scope, projectId,
+                "id", "datasource_name", "scope", "project_id", "status")))) {
+            if (isEnabled(source.getStatus()) && isCompatible(scope, projectId, source.getScope(), source.getProjectId())) {
+                sources.put(source.getId(), source);
+            }
+        }
+        return sources;
+    }
+
+    private List<RuleExternalApiConfig> availableApis(Map<Long, RuleExternalDatasource> sources, boolean includeSchema) {
+        if (sources.isEmpty()) return List.of();
+        QueryWrapper<RuleExternalApiConfig> query = new QueryWrapper<RuleExternalApiConfig>()
+                .select(includeSchema
+                        ? new String[]{"id", "datasource_id", "api_code", "api_name", "status", "execution_config"}
+                        : new String[]{"id", "datasource_id", "api_code", "api_name", "status"})
+                .eq("status", 1).in("datasource_id", sources.keySet());
+        return safeList(apiConfigMapper.selectList(query)).stream()
+                .filter(api -> isEnabled(api.getStatus()) && sources.containsKey(api.getDatasourceId())).toList();
+    }
+
+    private <T> QueryWrapper<T> catalogQuery(String scope, Long projectId, String... columns) {
+        return new QueryWrapper<T>().select(columns).eq("status", 1)
+                .and(query -> query.eq("scope", "GLOBAL").or().isNull("project_id").or().le("project_id", 0)
+                        .or("PROJECT".equals(scope), own -> own.eq("project_id", projectId)));
     }
 
     public List<GovernanceIssue> validate(RuleVariable variable) {
@@ -228,14 +259,10 @@ public class VariableSourceReferenceValidator {
                 issues.add(issue(variable, "API_PARAMETER_OVERRIDE_INVALID", exception.getMessage(), "$.sourceConfig.requestOverrides"));
             }
         }
-        if (config.getJSONObject("inputOverrides") != null) {
-            try {
-                com.hengshucredit.rule.server.service.ExternalApiRequestPlan.validateInputOverrides(api, config.getJSONObject("inputOverrides"));
-                if (variableService != null) com.hengshucredit.rule.server.service.ExternalApiExecutionConfig.bindReferences(
-                        config.get("inputOverrides"), variableService.buildRefScriptNameMap(variable.getProjectId()));
-            } catch (IllegalArgumentException exception) {
-                issues.add(issue(variable, "API_INPUT_OVERRIDE_INVALID", exception.getMessage(), "$.sourceConfig.inputOverrides"));
-            }
+        try {
+            com.hengshucredit.rule.server.service.ExternalApiRequestPlan.validateBinding(config);
+        } catch (IllegalArgumentException exception) {
+            issues.add(issue(variable, "API_BINDING_INVALID", exception.getMessage(), "$.sourceConfig"));
         }
         RuleExternalDatasource source = externalDatasourceMapper
                 .selectById(api.getDatasourceId());

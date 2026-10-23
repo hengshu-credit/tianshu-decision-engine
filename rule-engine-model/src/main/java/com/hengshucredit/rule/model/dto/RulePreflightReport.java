@@ -17,6 +17,8 @@ public class RulePreflightReport {
     private String schemaCompatibilityJson;
     private String dependencyDigest;
     private String contentDigest;
+    private String fieldDigest;
+    private RuleRegressionGate regression;
     private String compiledScript;
     private String compiledType;
     private List<RuleValidationIssue> errors = new ArrayList<>();

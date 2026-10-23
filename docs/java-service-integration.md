@@ -140,7 +140,7 @@ curl -X POST https://engine.example.com/api/rule/sync/execute/RISK_RULE \
   -d '{"clientAppName":"risk-service","traceEnabled":false,"params":{"age":18}}'
 ```
 
-HTTP 响应先检查外层 `code == 200`，再检查 `data.success`，最后读取 `data.result`。401/403 检查鉴权；404 检查所属项目、全局关联与发布状态。`traceEnabled` 位于请求体顶层，不在 `params` 中，默认 true；JSON 使用布尔值，multipart 可使用字符串 `true` / `false`，其他值返回业务码 400。
+HTTP 响应先检查外层 `code === "000000"`，最后读取 `data.result`。401/403 检查鉴权；404 检查所属项目、全局关联与发布状态。`traceEnabled` 位于请求体顶层，不在 `params` 中，默认 true；JSON 使用布尔值，multipart 可使用字符串 `true` / `false`，其他值返回平台码 100001。
 
 ### 外数原始报文关联
 

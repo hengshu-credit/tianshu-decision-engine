@@ -21,4 +21,11 @@ describe('designerLeaveGuard', () => {
       confirmDesignerPathsCanClose(['/designer/table/30'])
     ).resolves.toBe(true)
   })
+  test('批量关闭取消时撤销前面页签的离开许可', async () => {
+    const abort = vi.fn()
+    registerDesignerLeaveGuard('/database/1', async () => true, abort)
+    registerDesignerLeaveGuard('/model/2', async () => false)
+    expect(await confirmDesignerPathsCanClose(['/database/1', '/model/2'])).toBe(false)
+    expect(abort).toHaveBeenCalledOnce()
+  })
 })

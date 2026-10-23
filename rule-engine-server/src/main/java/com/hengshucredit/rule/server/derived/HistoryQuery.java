@@ -116,10 +116,12 @@ public final class HistoryQuery {
 
     private static boolean matchesFilters(Row row, JSONObject config, Function<JSONObject, Object> input) {
         for (JSONObject filter : objects(config, "filters")) {
-            Object actual = value(row, filter.getJSONObject("field"));
+            String field = fieldKey(filter.getJSONObject("field"));
+            boolean present = row.fields().containsKey(field);
+            Object actual = row.fields().get(field);
             String operator = filter.getString("operator");
-            if ("IS_NULL".equals(operator)) { if (actual != null) return false; continue; }
-            if ("NOT_NULL".equals(operator)) { if (actual == null) return false; continue; }
+            if ("IS_NULL".equals(operator)) { if (!present || actual != null) return false; continue; }
+            if ("NOT_NULL".equals(operator)) { if (!present || actual == null) return false; continue; }
             Object expected = input.apply(filter.getJSONObject("value"));
             if (actual == null || expected == null) return false;
             int comparison = compare(actual, expected);

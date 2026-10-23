@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
-import com.hengshucredit.rule.server.common.R;
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.server.dashboard.DashboardAccessContext;
 import com.hengshucredit.rule.server.dashboard.DashboardAccessService;
 import com.hengshucredit.rule.server.dashboard.DashboardApplicationService;
@@ -53,7 +54,7 @@ public class DashboardController {
     }
 
     @GetMapping("/applications")
-    public R<DashboardResponses.Applications> applications(
+    public ApiResponse<DashboardResponses.Applications> applications(
             @RequestParam(required = false) Long projectId,
             @RequestParam(required = false) String ruleCode,
             @RequestParam(required = false) String ruleName,
@@ -69,11 +70,11 @@ public class DashboardController {
                 ruleCode, ruleName, startTime, endTime);
         DashboardMapping.ResolvedMappings mappings = mappingService.resolve(
                 access.userId(), projectId);
-        return R.ok(applicationService.analyze(criteria, access, mappings));
+        return ApiResponse.ok(applicationService.analyze(criteria, access, mappings));
     }
 
     @GetMapping("/operations")
-    public R<DashboardResponses.Operations> operations(
+    public ApiResponse<DashboardResponses.Operations> operations(
             @RequestParam(required = false) Long projectId,
             @RequestParam(required = false) String ruleCode,
             @RequestParam(required = false) String ruleName,
@@ -87,11 +88,11 @@ public class DashboardController {
         DashboardAccessContext access = accessService.resolve(request);
         DashboardCriteria criteria = criteriaService.resolve(projectId,
                 ruleCode, ruleName, startTime, endTime);
-        return R.ok(operationsService.analyze(criteria, access));
+        return ApiResponse.ok(operationsService.analyze(criteria, access));
     }
 
     @GetMapping("/governance")
-    public R<DashboardResponses.Governance> governance(
+    public ApiResponse<DashboardResponses.Governance> governance(
             @RequestParam(required = false) Long projectId,
             @RequestParam(required = false) String ruleCode,
             @RequestParam(required = false) String ruleName,
@@ -105,47 +106,47 @@ public class DashboardController {
         DashboardAccessContext access = accessService.resolve(request);
         DashboardCriteria criteria = criteriaService.resolve(projectId,
                 ruleCode, ruleName, startTime, endTime);
-        return R.ok(governanceService.analyze(criteria, access));
+        return ApiResponse.ok(governanceService.analyze(criteria, access));
     }
 
     @GetMapping("/settings")
-    public R<DashboardResponses.Settings> settings(
+    public ApiResponse<DashboardResponses.Settings> settings(
             @RequestParam(required = false) Long projectId,
             HttpServletRequest request) {
         DashboardAccessContext access = accessService.resolve(request);
         validateProject(projectId);
-        return R.ok(mappingService.settings(access.userId(), projectId,
+        return ApiResponse.ok(mappingService.settings(access.userId(), projectId,
                 access.userId() != null));
     }
 
     @PutMapping("/settings")
-    public R<DashboardResponses.Settings> saveSettings(
+    public ApiResponse<DashboardResponses.Settings> saveSettings(
             @RequestParam(required = false) Long projectId,
             @RequestBody SettingsUpdateRequest body,
             HttpServletRequest request) {
         DashboardAccessContext access = accessService.resolve(request);
         if (access.userId() == null) {
-            return R.fail(403, "当前模式仅支持查看系统默认映射");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.PERMISSION_DENIED, "当前模式仅支持查看系统默认映射");
         }
         validateProject(projectId);
         mappingService.saveScope(access.userId(), access.username(), projectId,
                 body == null ? null : body.mappings());
-        return R.ok(mappingService.settings(access.userId(), projectId, true));
+        return ApiResponse.ok(mappingService.settings(access.userId(), projectId, true));
     }
 
     @DeleteMapping("/settings/{metricField}")
-    public R<DashboardResponses.Settings> deleteSetting(
+    public ApiResponse<DashboardResponses.Settings> deleteSetting(
             @RequestParam(required = false) Long projectId,
             @PathVariable DashboardMetricField metricField,
             HttpServletRequest request) {
         DashboardAccessContext access = accessService.resolve(request);
         if (access.userId() == null) {
-            return R.fail(403, "当前模式仅支持查看系统默认映射");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.PERMISSION_DENIED, "当前模式仅支持查看系统默认映射");
         }
         validateProject(projectId);
         mappingService.deleteField(access.userId(), access.username(),
                 projectId, metricField);
-        return R.ok(mappingService.settings(access.userId(), projectId, true));
+        return ApiResponse.ok(mappingService.settings(access.userId(), projectId, true));
     }
 
     private void validateProject(Long projectId) {

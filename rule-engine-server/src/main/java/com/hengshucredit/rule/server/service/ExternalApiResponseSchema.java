@@ -45,14 +45,7 @@ public final class ExternalApiResponseSchema {
     }
 
     public static List<Map<String, Object>> catalog(com.hengshucredit.rule.model.entity.RuleExternalApiConfig api) {
-        var execution = ExternalApiRequestPlan.specification(api);
-        List<Map<String, Object>> fields = new ArrayList<>(catalog(execution));
-        if (execution == null && api.getResponseMapping() != null && !api.getResponseMapping().isBlank()) {
-            JSONObject mapping = JSON.parseObject(api.getResponseMapping());
-            if (mapping != null) for (String name : mapping.keySet()) fields.add(Map.of("value", "body" + segment(name), "label", "组装结果 · " + name, "type", "OBJECT"));
-            fields.add(Map.of("value", "rawBody", "label", "原始响应体", "type", "OBJECT"));
-        }
-        return fields;
+        return catalog(ExternalApiRequestPlan.specification(api));
     }
 
     private static void catalogBranches(Map<String, Map<String, Object>> fields, JSONObject execution, String prefix) {
@@ -83,8 +76,6 @@ public final class ExternalApiResponseSchema {
         String type = operand == null || operand.getString("valueType") == null ? "OBJECT" : operand.getString("valueType");
         fields.putIfAbsent(path, Map.of("value", path, "label", (path.startsWith("response.") || path.contains(".response.") ? "原始响应 · " : "组装结果 · ") + path, "type", type));
     }
-
-    private static String segment(String name) { return name.matches("[A-Za-z_][A-Za-z0-9_]*") ? "." + name : "[" + JSON.toJSONString(name) + "]"; }
 
     private static void add(Map<String, Map<String, Object>> fields, String path, Object value) {
         String type = value instanceof Map ? "OBJECT" : value instanceof List ? "LIST" : value instanceof Number ? "NUMBER" : value instanceof Boolean ? "BOOLEAN" : value == null ? "NULL" : "STRING";

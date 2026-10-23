@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.model.dto.ApiDocScenarioCopyRequest;
 import com.hengshucredit.rule.model.dto.ApiDocScenarioSaveRequest;
 import com.hengshucredit.rule.model.dto.ApiDocScenarioSortRequest;
@@ -10,7 +12,6 @@ import com.hengshucredit.rule.model.dto.ResolvedField;
 import com.hengshucredit.rule.model.dto.RuleTestSchemaRequest;
 import com.hengshucredit.rule.model.dto.TestExpectationResult;
 import com.hengshucredit.rule.model.entity.RuleApiDocScenario;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.RuleApiDocScenarioService;
 import com.hengshucredit.rule.server.service.RuleExecuteService;
 import com.hengshucredit.rule.server.service.RuleTestExpectationService;
@@ -44,10 +45,41 @@ public class RuleApiDocScenarioController {
     private RuleTestExpectationService expectationService;
     @Resource
     private RuleTestSchemaService testSchemaService;
+    @Resource
+    private com.hengshucredit.rule.server.service.RuleRegressionEvidenceService regressionEvidence;
+
+    @GetMapping("/reports")
+    @RequirePermission("rule:view")
+    public ApiResponse<com.baomidou.mybatisplus.core.metadata.IPage<com.hengshucredit.rule.model.entity.RuleRegressionEvidence>> reports(
+            @PathVariable Long definitionId,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "1") int pageNum,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "20") int pageSize) {
+        return execute(() -> { scenarioService.requireDefinitionAccess(definitionId); return regressionEvidence.history(definitionId, pageNum, pageSize); });
+    }
+
+    @GetMapping("/reports/{reportId:\\d+}")
+    @RequirePermission("rule:view")
+    public ApiResponse<com.hengshucredit.rule.model.entity.RuleRegressionEvidence> reportDetail(
+            @PathVariable Long definitionId, @PathVariable Long reportId) {
+        return execute(() -> { scenarioService.requireDefinitionAccess(definitionId); return regressionEvidence.detail(definitionId, reportId); });
+    }
+
+    public record RegressionCheckRequest(Long revisionId) { }
+
+    @PostMapping("/reports/check")
+    @RequirePermission("rule:edit")
+    public ApiResponse<com.hengshucredit.rule.model.dto.RuleRegressionGate> checkReports(
+            @PathVariable Long definitionId, @RequestBody RegressionCheckRequest request) {
+        return execute(() -> {
+            scenarioService.requireDefinitionAccess(definitionId);
+            if (request == null || request.revisionId() == null) throw new IllegalArgumentException("请选择已保存的草稿或版本");
+            return regressionEvidence.checkRevision(definitionId, request.revisionId());
+        });
+    }
 
     @PostMapping("/execute-validated")
     @RequirePermission("rule:edit")
-    public R<ApiScenarioExecutionResponse> executeValidated(@PathVariable Long definitionId,
+    public ApiResponse<ApiScenarioExecutionResponse> executeValidated(@PathVariable Long definitionId,
             @RequestBody ApiScenarioExecutionRequest request) {
         return execute(() -> {
             if (request == null) throw new IllegalArgumentException("测试请求不能为空");
@@ -63,54 +95,61 @@ public class RuleApiDocScenarioController {
             Long projectId = request.getProjectId() != null ? request.getProjectId() : expectationService.requestProjectId(input);
             com.hengshucredit.rule.server.service.RuleTestTargetResolver.Target target = request.getExecutionSource() == null
                     ? null : executeService.resolveTestTarget(definitionId, request.getExecutionSource(), null, null, projectId);
-            RuleResult execution = target == null ? executeService.testExecute(definitionId, params, projectId)
-                    : executeService.testExecuteTarget(target, params);
-            String responseSnapshot = expectationService.writeExecutionSnapshot(execution);
-            List<ResolvedField> outputs = List.of();
-            String schemaError = null;
-            if (expectationService.needsOutputSchema(config) && execution.isSuccess()) {
-                try {
-                    if (target != null) outputs = testSchemaService.outputFields(target);
-                    else {
-                        RuleTestSchemaRequest schemaRequest = new RuleTestSchemaRequest();
-                        schemaRequest.setTargetType("RULE");
-                        schemaRequest.setTargetId(definitionId);
-                        schemaRequest.setProjectId(projectId);
-                        outputs = testSchemaService.build(schemaRequest).getOutputs();
+            var run = regressionEvidence.begin(definitionId, stored, target, input, config, expected, projectId);
+            try {
+                RuleResult execution = target == null ? executeService.testExecute(definitionId, params, projectId)
+                        : executeService.testExecuteTarget(target, params);
+                String responseSnapshot = expectationService.writeExecutionSnapshot(execution);
+                List<ResolvedField> outputs = List.of();
+                String schemaError = null;
+                if (expectationService.needsOutputSchema(config) && execution.isSuccess()) {
+                    try {
+                        if (target != null) outputs = testSchemaService.outputFields(target);
+                        else {
+                            RuleTestSchemaRequest schemaRequest = new RuleTestSchemaRequest();
+                            schemaRequest.setTargetType("RULE");
+                            schemaRequest.setTargetId(definitionId);
+                            schemaRequest.setProjectId(projectId);
+                            outputs = testSchemaService.build(schemaRequest).getOutputs();
+                        }
+                    } catch (RuntimeException unavailable) {
+                        schemaError = unavailable.getMessage();
                     }
-                } catch (RuntimeException unavailable) {
-                    schemaError = unavailable.getMessage();
                 }
+                TestExpectationResult validation = expectationService.evaluate(config, expected, responseSnapshot, outputs);
+                if (schemaError != null) {
+                    validation.setStatus("INVALID");
+                    validation.setMessage("输出字段结构读取失败，无法校验预期：" + schemaError);
+                }
+                String reportId = regressionEvidence.complete(run, execution, validation);
+                return new ApiScenarioExecutionResponse(execution, responseSnapshot, validation, reportId);
+            } catch (RuntimeException failure) {
+                regressionEvidence.fail(run, failure);
+                throw failure;
             }
-            TestExpectationResult validation = expectationService.evaluate(config, expected, responseSnapshot, outputs);
-            if (schemaError != null) {
-                validation.setStatus("INVALID");
-                validation.setMessage("输出字段结构读取失败，无法校验预期：" + schemaError);
-            }
-            return new ApiScenarioExecutionResponse(execution, responseSnapshot, validation);
         });
     }
 
     @GetMapping
-    public R<List<RuleApiDocScenario>> list(@PathVariable Long definitionId) {
+    public ApiResponse<List<RuleApiDocScenario>> list(@PathVariable Long definitionId) {
         return execute(() -> scenarioService.listByDefinition(definitionId));
     }
 
     @PostMapping
-    public R<RuleApiDocScenario> create(@PathVariable Long definitionId,
+    public ApiResponse<RuleApiDocScenario> create(@PathVariable Long definitionId,
                                         @RequestBody ApiDocScenarioSaveRequest request) {
         return execute(() -> scenarioService.create(definitionId, request));
     }
 
     @PutMapping("/{scenarioId:\\d+}")
-    public R<RuleApiDocScenario> update(@PathVariable Long definitionId,
+    public ApiResponse<RuleApiDocScenario> update(@PathVariable Long definitionId,
                                         @PathVariable Long scenarioId,
                                         @RequestBody ApiDocScenarioSaveRequest request) {
         return execute(() -> scenarioService.update(definitionId, scenarioId, request));
     }
 
     @PostMapping("/{scenarioId:\\d+}/copy")
-    public R<RuleApiDocScenario> copy(@PathVariable Long definitionId,
+    public ApiResponse<RuleApiDocScenario> copy(@PathVariable Long definitionId,
                                       @PathVariable Long scenarioId,
                                       @RequestBody(required = false) ApiDocScenarioCopyRequest request) {
         return execute(() -> scenarioService.copy(definitionId, scenarioId,
@@ -118,43 +157,43 @@ public class RuleApiDocScenarioController {
     }
 
     @PutMapping("/sort")
-    public R<Void> sort(@PathVariable Long definitionId,
+    public ApiResponse<Void> sort(@PathVariable Long definitionId,
                         @RequestBody(required = false) ApiDocScenarioSortRequest request) {
         return executeVoid(() -> scenarioService.sort(definitionId,
                 request == null ? null : request.getScenarioIds()));
     }
 
     @DeleteMapping("/{scenarioId:\\d+}")
-    public R<Void> delete(@PathVariable Long definitionId, @PathVariable Long scenarioId) {
+    public ApiResponse<Void> delete(@PathVariable Long definitionId, @PathVariable Long scenarioId) {
         return executeVoid(() -> scenarioService.delete(definitionId, scenarioId));
     }
 
     @PostMapping("/execute")
     @SuppressWarnings("unchecked")
-    public R<RuleResult> execute(@PathVariable Long definitionId,
+    public ApiResponse<RuleResult> execute(@PathVariable Long definitionId,
                                  @RequestBody(required = false) Map<String, Object> body) {
         Map<String, Object> params = body != null && body.get("params") instanceof Map
                 ? (Map<String, Object>) body.get("params") : Collections.emptyMap();
         Long projectId = body == null || body.get("projectId") == null
                 ? null : Long.valueOf(body.get("projectId").toString());
-        return R.ok(executeService.testExecute(
+        return ApiResponse.ok(executeService.testExecute(
                 definitionId, params, projectId));
     }
 
-    private <T> R<T> execute(Supplier<T> action) {
+    private <T> ApiResponse<T> execute(Supplier<T> action) {
         try {
-            return R.ok(action.get());
+            return ApiResponse.ok(action.get());
         } catch (IllegalArgumentException e) {
-            return R.fail(400, e.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.PARAMETER_INVALID, e.getMessage());
         }
     }
 
-    private R<Void> executeVoid(Runnable action) {
+    private ApiResponse<Void> executeVoid(Runnable action) {
         try {
             action.run();
-            return R.ok();
+            return ApiResponse.ok();
         } catch (IllegalArgumentException e) {
-            return R.fail(400, e.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.PARAMETER_INVALID, e.getMessage());
         }
     }
 }

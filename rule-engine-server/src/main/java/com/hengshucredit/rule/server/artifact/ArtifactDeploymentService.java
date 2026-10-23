@@ -52,6 +52,11 @@ import java.util.Set;
 
 @Service
 public class ArtifactDeploymentService {
+    @Resource
+    private com.hengshucredit.rule.server.security.ConsoleAccessGuard accessGuard;
+    @Resource private com.hengshucredit.rule.server.security.ConsoleResourceAccess consoleResources;
+    @Resource private com.hengshucredit.rule.server.security.ConsoleProjectAccess consoleProjects;
+    @Resource private com.hengshucredit.rule.server.service.FunctionMethodCatalogService nativeFunctions;
     private static final Set<String> MODEL_TYPES = Set.of(
             "TABLE", "TREE", "FLOW", "RULE_SET", "CROSS", "CROSS_ADV", "SCORE", "SCORE_ADV", "SCRIPT");
     @Resource
@@ -97,6 +102,7 @@ public class ArtifactDeploymentService {
     @Transactional
     public ArtifactImportResult importArtifact(byte[] bytes, String expectedPackageDigest, String actor) {
         DecisionArtifactPackageCodec.DecodedPackage decoded = codec.decode(bytes);
+        requireNativePackagePermission(decoded.getArtifactPackage());
         if (expectedPackageDigest != null && !expectedPackageDigest.isBlank()
                 && !expectedPackageDigest.equals(decoded.getPackageDigest())) {
             throw new IllegalArgumentException("制品包摘要与上传声明不一致");
@@ -159,6 +165,7 @@ public class ArtifactDeploymentService {
         DecisionArtifact artifact = loadArtifact(request.getArtifactId());
         if (artifact == null) throw new IllegalArgumentException("决策制品不存在");
         DecisionArtifactPackageCodec.DecodedPackage decoded = decodeStoredArtifact(artifact);
+        requireNativePackagePermission(decoded.getArtifactPackage());
         String modelType = packageModelType(decoded.getArtifactPackage());
         if (!blank(request.getTargetModelType()) && !modelType.equals(normalizeModelType(request.getTargetModelType()))) {
             throw new IllegalArgumentException("目标模型类型必须与制品一致，请使用制品提供的类型");
@@ -250,7 +257,53 @@ public class ArtifactDeploymentService {
     }
 
     public DecisionArtifact getArtifact(Long artifactId) {
-        return loadArtifact(artifactId);
+        DecisionArtifact artifact = loadArtifact(artifactId);
+        requireArtifactAccess(artifact);
+        return artifact;
+    }
+
+    private void requireNativePackagePermission(DecisionArtifactPackage artifactPackage) {
+        if (nativeFunctions == null) return;
+        for (var component : artifactPackage.getComponents().values()) {
+            String type = String.valueOf(component.getMetadata().get("resourceType"));
+            if ("FUNCTION".equals(type)) nativeFunctions.requireNativePermission(com.alibaba.fastjson.JSON.parseObject(component.getContent(), com.hengshucredit.rule.model.entity.RuleFunction.class));
+            if ("RESOURCE_VERSION".equals(type)) {
+                var snapshot = com.alibaba.fastjson.JSON.parseObject(component.getContent());
+                if ("FUNCTION".equals(snapshot.getString("refType"))) nativeFunctions.requireNativePermission(snapshot.getObject("payload", com.hengshucredit.rule.model.entity.RuleFunction.class));
+            }
+        }
+    }
+
+    private void requireArtifactAccess(DecisionArtifact artifact) {
+        if (accessGuard == null || artifact == null || artifact.getPackageContent() == null) return;
+        accessGuard.require("rule:view");
+        boolean local = artifact.getDefinitionId() != null && artifact.getDefinitionId() > 0;
+        if (local && consoleResources != null) consoleResources.require("RULE", artifact.getDefinitionId(), "view");
+        if (!local && consoleProjects != null) consoleProjects.requirePermission("rule:view", null);
+        for (var component : codec.decode(artifact.getPackageContent()).getArtifactPackage().getComponents().values()) {
+            String type = String.valueOf(component.getMetadata().get("resourceType"));
+            if ("BINDING".equals(type)) {
+                var binding = com.alibaba.fastjson.JSON.parseObject(component.getContent());
+                accessGuard.requireResource(binding.getString("targetResourceType"), "view");
+                requireComponentAccess(local, binding.getString("targetResourceType"), binding.getLong("sourceResourceId"));
+            } else if (Set.of("VARIABLE", "CONSTANT", "MODEL", "FUNCTION", "RULE", "DATA_OBJECT", "DATA_OBJECT_ROOT").contains(type)) {
+                accessGuard.requireResource(type, "view");
+                Object id = component.getMetadata().get("resourceId");
+                requireComponentAccess(local, "DATA_OBJECT".equals(type) ? "DATA_FIELD" : type, id instanceof Number number ? number.longValue() : null);
+            } else if ("RESOURCE_VERSION".equals(type)) {
+                var version = com.alibaba.fastjson.JSON.parseObject(component.getContent());
+                String refType = version.getString("refType");
+                if (refType == null) throw new IllegalArgumentException("制品资源版本缺少引用类型");
+                accessGuard.requireResource(refType, "view");
+                requireComponentAccess(local, "DATA_OBJECT".equals(refType) ? "DATA_FIELD" : refType, version.getLong("refId"));
+            }
+        }
+    }
+
+    private void requireComponentAccess(boolean local, String type, Long id) {
+        if (local && consoleResources != null) consoleResources.require(type, id, "view");
+        if (!local && consoleProjects != null) consoleProjects.requirePermission(
+                com.hengshucredit.rule.server.security.ConsoleAccessGuard.resourceModule(type) + ":view", null);
     }
 
     public byte[] migrationPackage(Long artifactId, boolean includeDependencies) {
@@ -274,7 +327,7 @@ public class ArtifactDeploymentService {
     }
 
     public Map<String, Object> describeArtifact(Long artifactId) {
-        DecisionArtifact artifact = loadArtifact(artifactId);
+        DecisionArtifact artifact = getArtifact(artifactId);
         if (artifact == null) throw new IllegalArgumentException("决策制品不存在");
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("id", artifact.getId());

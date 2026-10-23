@@ -93,6 +93,8 @@ const fields = [
   ['apiCode', '接口编码'], ['apiName', '接口名称'], ['endpointUrl', '接口地址'],
   ['datasourceCode', '数据源编码'], ['datasourceName', '数据源名称'], ['objectCode', '对象编码'], ['objectLabel', '对象名称'],
   ['experimentCode', '实验编码'], ['experimentName', '实验名称'], ['funcCode', '函数编码'], ['funcName', '函数名称'],
+  ['implType', '实现方式'], ['implMethod', '实际方法'], ['implClass', 'Java 类'], ['implBeanName', 'Bean 名称'],
+  ['returnType', '返回类型'], ['paramsJson', '参数定义', true],
   ['projectCode', '项目编码'], ['projectName', '项目名称'], ['billingCode', '计费编码'], ['billingName', '计费名称'],
   ['description', '说明', true],
 ].map(([key, label, multiline]) => ({ key, label, multiline }))
@@ -106,14 +108,20 @@ export default {
   computed: {
     contextKey() { return `${this.resourceType}:${this.resourceId}` },
     canView() { return hasPermission(resourceActionPermission(this.resourceType, 'view')) },
-    canEdit() { return hasPermission(resourceActionPermission(this.resourceType, 'edit')) },
-    canSubmit() { return this.canEdit && hasPermission('approval:submit') && hasPermission(resourceActionPermission(this.resourceType, 'submit')) },
+    permissionScope() { return Object.hasOwn(this.workspace, 'projectId') ? { projectId: this.workspace.projectId, scope: this.workspace.scope } : undefined },
+    canEdit() {
+      if (this.resourceType === 'FUNCTION') {
+        try { if (['JAVA', 'BEAN'].includes(parseMetadataResponse(this.snapshot || '{}').implType) && !hasPermission('function:native')) return false } catch { return false }
+      }
+      return hasPermission(resourceActionPermission(this.resourceType, 'edit'), this.permissionScope)
+    },
+    canSubmit() { return this.canEdit && hasPermission('approval:submit', this.permissionScope) && hasPermission(resourceActionPermission(this.resourceType, 'submit'), this.permissionScope) },
     canReview() { return hasPermission('approval:view') },
-    canExport() { return hasPermission('transfer:export') },
+    canExport() { return hasPermission('transfer:export', this.permissionScope) },
     activeVersions() { return (this.workspace.versions || []).filter(row => !row.deleted) },
     writableVersions() { return this.activeVersions.filter(row => !row.status || row.status === 'ACTIVE') },
     currentDraft() { return this.selected.startsWith('d:') ? (this.workspace.drafts || []).find(row => String(row.id) === this.selected.slice(2)) : null },
-    editableDraft() { return this.currentDraft?.status === 'EDITING' && this.currentDraft.applicant === this.workspace.actor },
+    editableDraft() { return this.currentDraft?.status === 'EDITING' && (this.workspace.actorNames || [this.workspace.actor]).includes(this.currentDraft.applicant) },
     currentVersion() { if (this.selected !== 'LATEST' && !this.selected.startsWith('r:')) return null; const id = this.selected === 'LATEST' ? this.workspace.latestVersionId : this.selected.slice(2); return (this.workspace.history || []).find(row => String(row.id) === String(id)) },
     selectedVersionDeleted() { return !!this.currentVersion && (this.workspace.versions || []).some(row => row.deleted && String(row.version) === String(this.currentVersion.versionNo)) },
     snapshot() { return this.currentDraft?.draftSnapshotJson || this.currentVersion?.snapshotJson || '' },

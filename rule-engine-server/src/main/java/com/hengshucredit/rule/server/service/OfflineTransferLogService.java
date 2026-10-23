@@ -20,8 +20,17 @@ import java.util.List;
 import java.util.Map;
 
 @Service
+@org.springframework.context.annotation.DependsOn("schemaSyncService")
 public class OfflineTransferLogService extends ServiceImpl<OfflineTransferLogMapper, OfflineTransferLog> {
+    @Resource private com.hengshucredit.rule.server.mapper.OfflineTransferLogResourceMapper visibilityIndex;
     private final TransferBundleCodec codec = new TransferBundleCodec();
+
+    /** 旧日志只补齐权限关联，不改写原始内容；无法解析的内容保持不可读取。 */
+    @jakarta.annotation.PostConstruct
+    public void indexExistingLogs() {
+        if (visibilityIndex == null) return;
+        for (var rows = visibilityIndex.unindexed(); !rows.isEmpty(); rows = visibilityIndex.unindexed()) rows.forEach(this::indexVisibility);
+    }
 
     public void recordExport(List<TransferRootRequest> roots, byte[] bytes, String operator) {
         Map<String, Object> content = new LinkedHashMap<>();
@@ -159,5 +168,40 @@ public class OfflineTransferLogService extends ServiceImpl<OfflineTransferLogMap
         log.setOperationType(operationType); log.setStatus(status); log.setOperator(operator);
         log.setPackageDigest(digest); log.setRootsJson(JSON.toJSONString(roots)); log.setResourceCount(count);
         log.setContentJson(JSON.toJSONString(content)); log.setErrorMessage(error); save(log);
+        if (visibilityIndex != null) indexVisibility(log);
+    }
+
+    private void indexVisibility(OfflineTransferLog log) {
+        var refs = new java.util.LinkedHashSet<String>();
+        try {
+            var content = log.getContentJson() == null ? new com.alibaba.fastjson.JSONObject() : JSON.parseObject(log.getContentJson());
+            var result = content.getJSONObject("result");
+            var mapping = result == null ? null : result.getJSONObject("resourceIdMapping");
+            if ("IMPORT".equals(log.getOperationType()) && mapping != null && !mapping.isEmpty()) {
+                for (String source : mapping.keySet()) {
+                    var key = com.hengshucredit.rule.server.transfer.TransferKey.parse(source);
+                    Long target = mapping.getLong(source);
+                    if (target != null && target > 0) refs.add(key.type().name() + ":" + target);
+                }
+            } else {
+                var graph = content.getJSONObject("lineage");
+                var nodes = graph == null ? null : graph.getJSONArray("nodes");
+                if (nodes != null) for (int i = 0; i < nodes.size(); i++) {
+                    var key = com.hengshucredit.rule.server.transfer.TransferKey.parse(nodes.getJSONObject(i).getString("id"));
+                    refs.add(key.type().name() + ":" + ("IMPORT".equals(log.getOperationType()) ? 0 : key.id()));
+                }
+                if (refs.isEmpty() && log.getRootsJson() != null) for (String root : JSON.parseArray(log.getRootsJson(), String.class)) {
+                    var key = com.hengshucredit.rule.server.transfer.TransferKey.parse(root);
+                    refs.add(key.type().name() + ":" + ("IMPORT".equals(log.getOperationType()) ? 0 : key.id()));
+                }
+            }
+            if (refs.isEmpty()) refs.add("TRANSFER_LOG:0");
+        } catch (RuntimeException error) { refs.clear(); refs.add("UNREADABLE:0"); }
+        var indexed = new java.util.ArrayList<com.hengshucredit.rule.server.mapper.OfflineTransferLogResourceMapper.Reference>();
+        for (String ref : refs) {
+            int split = ref.indexOf(':');
+            indexed.add(new com.hengshucredit.rule.server.mapper.OfflineTransferLogResourceMapper.Reference(ref.substring(0, split), Long.valueOf(ref.substring(split + 1))));
+        }
+        visibilityIndex.index(log.getId(), indexed);
     }
 }

@@ -8,7 +8,15 @@ export function listProjects(params) {
 }
 
 export function getProject(id) {
-  return request({ url: hasPermission('project:view') ? `/rule/project/${id}` : `/rule/project/options/${id}`, method: 'get' })
+  return request({ url: hasPermission('project:view', { projectId: id, scope: 'PROJECT' }) ? `/rule/project/${id}` : `/rule/project/options/${id}`, method: 'get' })
+}
+
+export function listProjectOptions(params) {
+  return request({ ...metadataResponse, url: '/rule/project/options', method: 'get', params })
+}
+
+export function getProjectOption(id) {
+  return request.get(`/rule/project/options/${id}`)
 }
 
 export function getProjectWorkbench(id) {

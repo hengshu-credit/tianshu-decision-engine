@@ -16,9 +16,9 @@ public class SimpleEntityGovernedResourceAdapter<T>
         implements GovernedResourceAdapter {
 
     private static final Set<String> READ_ONLY_KEYS = Set.of(
-            "createTime", "updateTime", "accessToken");
+            "createTime", "updateTime", "accessToken", "configuredSecrets", "ownerProjectId", "ownerScope");
     private static final Set<String> BUSINESS_VALUE_KEYS = Set.of(
-            "testParams", "testSampleParams", "sampleParams", "defaultValue", "optionValue");
+            "testParams", "testSampleParams", "sampleParams", "sample", "samples", "requestSample", "responseSample", "defaultValue", "optionValue");
 
     private final String resourceType;
     private final Class<T> entityType;
@@ -188,7 +188,7 @@ public class SimpleEntityGovernedResourceAdapter<T>
                     DependencyVersionSelection selection = DependencyVersionSelection.forReference(entry.getKey(), map, id);
                     if (selection != null) targetType = "CONSTANT".equals(selection.refType()) ? "VARIABLE" : selection.refType();
                     dependencies.add(new ResourceDependencyRef(
-                            targetType, id, targetType,
+                            "DATA_OBJECT_ROOT".equals(targetType) ? "DATA_OBJECT" : targetType, id, targetType,
                             path + "." + entry.getKey(),
                             "REFERENCES", true, selection));
                 }
@@ -202,7 +202,7 @@ public class SimpleEntityGovernedResourceAdapter<T>
                                 "RULE".equals(reference.getRefType()) ? "RULE_BINDING" : java.util.Objects.toString(reference.getVersionSource(), "SNAPSHOT"),
                                 "RULE".equals(reference.getRefType()) ? reference.getVersionBindingId() : reference.getVersionId()) : null;
                         String type = "CONSTANT".equals(reference.getRefType()) ? "VARIABLE" : reference.getRefType();
-                        dependencies.add(new ResourceDependencyRef(type, reference.getRefId(), type,
+                        dependencies.add(new ResourceDependencyRef("DATA_OBJECT_ROOT".equals(type) ? "DATA_OBJECT" : type, reference.getRefId(), type,
                                 path + "." + entry.getKey() + reference.getPath().substring("$.script".length()), "REFERENCES", true, selection));
                     }
                 }
@@ -215,7 +215,7 @@ public class SimpleEntityGovernedResourceAdapter<T>
                         Long itemId = longValue(ids.get(index));
                         if (itemId != null && itemId > 0) {
                             dependencies.add(new ResourceDependencyRef(
-                                    targetType, itemId, targetType,
+                                    "DATA_OBJECT_ROOT".equals(targetType) ? "DATA_OBJECT" : targetType, itemId, targetType,
                                     path + "." + entry.getKey()
                                             + "[" + index + "]",
                                     "REFERENCES", true));
@@ -289,6 +289,7 @@ public class SimpleEntityGovernedResourceAdapter<T>
                  "DATABASE", "SFTP", "LIST_LIBRARY", "FIELD_VALIDATION" -> type;
             case "FUNCTION" -> "FUNCTION";
             case "DATA_OBJECT", "OBJECT" -> "DATA_OBJECT";
+            case "DATA_OBJECT_ROOT" -> type;
             default -> "VARIABLE";
         };
     }

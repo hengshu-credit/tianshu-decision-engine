@@ -64,7 +64,7 @@ public class ExternalApiConditionOperandTest {
              {"left":{"kind":"PATH","value":"response.body.score"},"operator":"type_changed",
               "right":{"kind":"LITERAL","valueType":"STRING","value":"NUMBER"}}]}
             """;
-        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        RuleExternalApiConfig config = ExternalApiTestConfig.api();
         config.setExceptionCondition(tree);
         ExternalApiConfigValidator.validate(config);
         assertFalse(service.matchesResponseCondition(tree, Map.of("response", Map.of("body", Map.of("score", 88)))));
@@ -80,11 +80,11 @@ public class ExternalApiConditionOperandTest {
     }
 
     @Test public void validatorRejectsUnknownConditionOperatorAndGroupOperator() {
-        RuleExternalApiConfig unknown = new RuleExternalApiConfig();
+        RuleExternalApiConfig unknown = ExternalApiTestConfig.api();
         unknown.setExceptionCondition("{\"path\":\"body.code\",\"operator\":\"contains_regex\",\"value\":\"x\"}");
         assertThrows(IllegalArgumentException.class, () -> ExternalApiConfigValidator.validate(unknown));
 
-        RuleExternalApiConfig invalidGroup = new RuleExternalApiConfig();
+        RuleExternalApiConfig invalidGroup = ExternalApiTestConfig.api();
         invalidGroup.setExceptionCondition("{\"type\":\"group\",\"operator\":\"XOR\",\"children\":[{\"path\":\"body.code\",\"operator\":\"exists\"}]}");
         assertThrows(IllegalArgumentException.class, () -> ExternalApiConfigValidator.validate(invalidGroup));
 

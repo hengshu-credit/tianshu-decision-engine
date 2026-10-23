@@ -1243,15 +1243,19 @@ public class RuleFieldAnalyzerTest {
     @Test
     @SuppressWarnings("unchecked")
     public void sourceVariablesExpandToUnderlyingInputs() throws Exception {
-        setField(analyzer, "variableSourceResolver", new VariableSourceResolver());
+        var resolver = new VariableSourceResolver();
+        setField(resolver, "variableService", new RuleVariableService() {
+            @Override public Map<String, String> buildRefScriptNameMap(Long projectId) { return Map.of("VARIABLE:6", "idcard_no"); }
+        });
+        setField(analyzer, "variableSourceResolver", resolver);
 
         Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
         Map<String, Object> dbMeta = new HashMap<>();
         dbMeta.put("varSource", "DB");
-        dbMeta.put("sourceConfig", "{\"sql\":\"select 1\",\"params\":[\"$.idcard_no\"]}");
+        dbMeta.put("sourceConfig", "{\"sql\":\"select 1\",\"params\":[{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":6}]}");
         Map<String, Object> apiMeta = new HashMap<>();
         apiMeta.put("varSource", "API");
-        apiMeta.put("sourceConfig", "{\"apiConfigId\":7,\"paramMapping\":{\"idNo\":\"$.idcard_no\"}}");
+        apiMeta.put("sourceConfig", "{\"apiConfigId\":7,\"requestOverrides\":{\"idNo\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":6}}}");
         Map<String, Object> computedMeta = new HashMap<>();
         computedMeta.put("varSource", "COMPUTED");
         computedMeta.put("sourceConfig", "{\"expression\":\"idcard_no + age\"}");
@@ -1313,29 +1317,11 @@ public class RuleFieldAnalyzerTest {
     @Test
     @SuppressWarnings("unchecked")
     public void apiObjectPropertyAccessExpandsByStableRootReference() throws Exception {
-        setField(analyzer, "variableSourceResolver", new VariableSourceResolver());
-
-        RuleExternalApiConfig apiConfig = new RuleExternalApiConfig();
-        apiConfig.setId(7L);
-        apiConfig.setRequestObjectId(301L);
-        RuleDataObject requestObject = new RuleDataObject();
-        requestObject.setId(301L);
-        requestObject.setScriptName("request");
-        RuleDataObjectField requestId = new RuleDataObjectField();
-        requestId.setId(201L);
-        requestId.setObjectId(301L);
-        requestId.setScriptName("id");
-        requestId.setVarCode("id");
-        requestId.setVarLabel("请求ID");
-        requestId.setVarType("STRING");
-        requestId.setStatus(1);
-        setField(analyzer, "externalApiConfigMapper", mapper(RuleExternalApiConfigMapper.class,
-                (proxy, method, args) -> "selectById".equals(method.getName()) ? apiConfig : null));
-        setField(analyzer, "dataObjectMapper", mapper(RuleDataObjectMapper.class,
-                (proxy, method, args) -> "selectById".equals(method.getName()) ? requestObject : null));
-        setField(analyzer, "dataObjectFieldMapper", mapper(RuleDataObjectFieldMapper.class,
-                (proxy, method, args) -> "selectList".equals(method.getName())
-                        ? Collections.singletonList(requestId) : null));
+        var resolver = new VariableSourceResolver();
+        setField(resolver, "variableService", new RuleVariableService() {
+            @Override public Map<String, String> buildRefScriptNameMap(Long projectId) { return Map.of("DATA_OBJECT:201", "request.id"); }
+        });
+        setField(analyzer, "variableSourceResolver", resolver);
 
         String json = "{\"scriptVarRefs\":[{\"refCode\":\"api_features\",\"varId\":101,\"refType\":\"VARIABLE\"}]}";
         Method collectRefs = RuleFieldAnalyzer.class.getDeclaredMethod("collectExplicitRefs", String.class);
@@ -1354,9 +1340,10 @@ public class RuleFieldAnalyzerTest {
         apiMeta.put("refType", "VARIABLE");
         apiMeta.put("scriptName", "api_features");
         apiMeta.put("varSource", "API");
-        apiMeta.put("sourceConfig", "{\"apiConfigId\":7,\"paramMapping\":{\"id\":\"$.request.id\"}}");
+        apiMeta.put("sourceConfig", "{\"apiConfigId\":7,\"requestOverrides\":{\"id\":{\"kind\":\"REFERENCE\",\"refType\":\"DATA_OBJECT\",\"refId\":201}}}");
         Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
         varMetaMap.put("api_features", apiMeta);
+        varMetaMap.put("request.id", new HashMap<>(Map.of("id", 201L, "varId", 201L, "refType", "DATA_OBJECT", "scriptName", "request.id", "varSource", "INPUT", "varType", "STRING")));
 
         Method expand = RuleFieldAnalyzer.class.getDeclaredMethod("expandModelInputFields", List.class, Map.class);
         expand.setAccessible(true);
@@ -1397,110 +1384,37 @@ public class RuleFieldAnalyzerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    public void apiRequestObjectExpansionAlsoIncludesApiConfigDependencies() throws Exception {
-        RuleExternalApiConfig apiConfig = new RuleExternalApiConfig();
-        apiConfig.setId(7L);
-        apiConfig.setRequestObjectId(301L);
-        apiConfig.setHeaderConfig("{\"X-Tenant\":\"$.tenantId\"}");
-
-        RuleDataObject requestObject = new RuleDataObject();
-        requestObject.setId(301L);
-        requestObject.setScriptName("request");
-        RuleDataObjectField requestId = new RuleDataObjectField();
-        requestId.setId(201L);
-        requestId.setObjectId(301L);
-        requestId.setScriptName("id");
-        requestId.setVarCode("id");
-        requestId.setVarLabel("请求ID");
-        requestId.setVarType("STRING");
-        requestId.setStatus(1);
-
-        setField(analyzer, "externalApiConfigMapper", mapper(RuleExternalApiConfigMapper.class,
-                (proxy, method, args) -> "selectById".equals(method.getName()) ? apiConfig : null));
-        setField(analyzer, "dataObjectMapper", mapper(RuleDataObjectMapper.class,
-                (proxy, method, args) -> "selectById".equals(method.getName()) ? requestObject : null));
-        setField(analyzer, "dataObjectFieldMapper", mapper(RuleDataObjectFieldMapper.class,
-                (proxy, method, args) -> "selectList".equals(method.getName())
-                        ? Collections.singletonList(requestId) : null));
-        setField(analyzer, "variableSourceResolver", new VariableSourceResolver() {
-            @Override
-            Set<String> collectVariableDependencies(RuleVariable variable) {
-                return Collections.singleton("tenantId");
+    public void apiRequestOperandsExpandNestedFieldsAndAuthenticationDependencies() throws Exception {
+        RuleExternalApiConfig api = ExternalApiTestConfig.api();
+        api.setId(7L);
+        api.setAuthMode("BEARER");
+        api.setAuthApiConfig(com.alibaba.fastjson.JSON.toJSONString(Map.of("token", ExternalApiTestConfig.reference(202L, "oldTenant"))));
+        api.setExecutionConfig(ExternalApiTestConfig.request(List.of(ExternalApiTestConfig.field("name", "JSON", "customerName",
+                Map.of("kind", "REFERENCE", "refType", "DATA_OBJECT", "refId", 201L, "code", "oldPath")))));
+        VariableSourceResolver resolver = new VariableSourceResolver();
+        setField(resolver, "apiConfigMapper", mapper(RuleExternalApiConfigMapper.class,
+                (proxy, method, args) -> "selectById".equals(method.getName()) ? api : null));
+        setField(resolver, "variableService", new RuleVariableService() {
+            @Override public Map<String, String> buildRefScriptNameMap(Long projectId) {
+                return Map.of("DATA_OBJECT:201", "request.profile.name", "VARIABLE:202", "tenantId");
             }
         });
-
-        Map<String, Object> apiMeta = new HashMap<>();
-        apiMeta.put("id", 101L);
-        apiMeta.put("refType", "VARIABLE");
-        apiMeta.put("scriptName", "api_features");
-        apiMeta.put("varSource", "API");
-        apiMeta.put("sourceConfig", "{\"apiConfigId\":7}");
-        Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
-        varMetaMap.put("api_features", apiMeta);
-
-        Method expand = RuleFieldAnalyzer.class.getDeclaredMethod(
-                "expandModelInputFields", List.class, Map.class);
+        setField(analyzer, "variableSourceResolver", resolver);
+        Map<String, Map<String, Object>> metadata = new HashMap<>();
+        metadata.put("api_features", new HashMap<>(Map.of("id", 101L, "refType", "VARIABLE", "scriptName", "api_features", "varSource", "API", "sourceConfig", "{\"apiConfigId\":7}")));
+        metadata.put("request.profile.name", new HashMap<>(Map.of("id", 201L, "refType", "DATA_OBJECT", "scriptName", "request.profile.name", "varType", "STRING")));
+        metadata.put("tenantid", leafMeta("tenantId", "INPUT", 202L));
+        Method expand = RuleFieldAnalyzer.class.getDeclaredMethod("expandModelInputFields", List.class, Map.class);
         expand.setAccessible(true);
-        RuleDefinitionInputField apiField = inputField(
-                "api_features", "VARIABLE", "API", 101L);
-        List<RuleDefinitionInputField> result = (List<RuleDefinitionInputField>) expand.invoke(
-                analyzer, Collections.singletonList(apiField), varMetaMap);
-
-        assertTrue(names(result).contains("request.id"));
-        assertTrue(names(result).contains("tenantId"));
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    public void apiRequestObjectExpansionPreservesNestedFieldPaths() throws Exception {
-        RuleExternalApiConfig apiConfig = new RuleExternalApiConfig();
-        apiConfig.setId(7L);
-        apiConfig.setRequestObjectId(301L);
-        RuleDataObject requestObject = new RuleDataObject();
-        requestObject.setId(301L);
-        requestObject.setScriptName("request");
-        RuleDataObjectField profile = new RuleDataObjectField();
-        profile.setId(201L);
-        profile.setObjectId(301L);
-        profile.setScriptName("profile");
-        profile.setVarCode("profile");
-        profile.setVarType("OBJECT");
-        profile.setStatus(1);
-        RuleDataObjectField name = new RuleDataObjectField();
-        name.setId(202L);
-        name.setObjectId(301L);
-        name.setParentFieldId(201L);
-        name.setScriptName("name");
-        name.setVarCode("name");
-        name.setVarType("STRING");
-        name.setStatus(1);
-        setField(analyzer, "externalApiConfigMapper", mapper(RuleExternalApiConfigMapper.class,
-                (proxy, method, args) -> "selectById".equals(method.getName()) ? apiConfig : null));
-        setField(analyzer, "dataObjectMapper", mapper(RuleDataObjectMapper.class,
-                (proxy, method, args) -> "selectById".equals(method.getName()) ? requestObject : null));
-        setField(analyzer, "dataObjectFieldMapper", mapper(RuleDataObjectFieldMapper.class,
-                (proxy, method, args) -> "selectList".equals(method.getName())
-                        ? Arrays.asList(profile, name) : null));
-
-        Map<String, Object> apiMeta = new HashMap<>();
-        apiMeta.put("id", 101L);
-        apiMeta.put("refType", "VARIABLE");
-        apiMeta.put("scriptName", "api_features");
-        apiMeta.put("varSource", "API");
-        apiMeta.put("sourceConfig", "{\"apiConfigId\":7}");
-        Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
-        varMetaMap.put("api_features", apiMeta);
-
-        Method expand = RuleFieldAnalyzer.class.getDeclaredMethod(
-                "expandModelInputFields", List.class, Map.class);
-        expand.setAccessible(true);
-        RuleDefinitionInputField apiField = inputField(
-                "api_features", "VARIABLE", "API", 101L);
-        List<RuleDefinitionInputField> result = (List<RuleDefinitionInputField>) expand.invoke(
-                analyzer, Collections.singletonList(apiField), varMetaMap);
-
+        List<RuleDefinitionInputField> result = (List<RuleDefinitionInputField>) expand.invoke(analyzer,
+                List.of(inputField("api_features", "VARIABLE", "API", 101L)), metadata);
         assertTrue(names(result).contains("request.profile.name"));
+        assertTrue(names(result).contains("tenantId"));
+        assertFalse(names(result).contains("oldPath"));
         assertFalse(names(result).contains("request.name"));
+        RuleDefinitionInputField nested = result.stream().filter(field -> "request.profile.name".equals(field.getScriptName())).findFirst().orElseThrow();
+        assertEquals("DATA_OBJECT", nested.getRefType());
+        assertEquals(Long.valueOf(201L), nested.getVarId());
     }
 
     @Test

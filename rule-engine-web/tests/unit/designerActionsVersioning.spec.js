@@ -5,14 +5,14 @@ import RuleDesignerActionBar from '@/components/rule/RuleDesignerActionBar.vue'
 import { setCurrentUser, clearCurrentUser } from '@/security/permissionState'
 
 const draft = { id: '9007199254740993', state: 'DRAFT', lockVersion: 4, modelJson: '{"script":"old"}' }
-async function host(source = draft) {
+async function host(source = draft, overrides = {}) {
   api.listRuleRevisions.mockResolvedValue({ data: [source, { ...draft, id: '77' }] })
   api.listPublishedVersions.mockResolvedValue({ data: [] })
   api.getRuleRevision.mockResolvedValue({ data: source })
   const wrapper = mount({
     mixins: [ruleDraftMixin], template: '<div />',
-    data: () => ({ modelJson: '{"script":"new"}' }),
-    methods: { serializeDesignerDraft() { return this.modelJson } },
+    data: () => ({ modelJson: '{"script":"new"}', ...overrides.data }),
+    methods: { serializeDesignerDraft() { return this.modelJson }, ...overrides.methods },
   }, { mocks: { $route: { params: { id: '30' }, query: { projectId: '9', sourceType: 'REVISION', sourceId: source.id } }, $router: { replace: vi.fn(), push: vi.fn() } } })
   await flushPromises()
   wrapper.vm.initializeDesignerDraftTracking(source.modelJson)
@@ -23,8 +23,40 @@ beforeEach(() => {
   vi.clearAllMocks()
   api.compileDesignerModel.mockReset()
   api.getDesignerCompileTask.mockReset()
+  api.waitForDesignerCompileTask.mockReset().mockResolvedValue({ data: true })
   api.compileDesignerModel.mockResolvedValue({ data: { compileSuccess: true, compiledScript: 'new;', preflightReport: { valid: true, errors: [] } } })
   api.saveDesignerDraft.mockImplementation(async (_id, data) => ({ data: { revision: { ...draft, id: data.saveMode === 'NEW' ? '88' : draft.id, lockVersion: 5, modelJson: data.modelJson }, compileSuccess: true, issues: [] } }))
+})
+
+test('重开已发布修订显示它保存的编译源码，编辑后失效，撤销编辑后恢复', async () => {
+  const source = { ...draft, state: 'PUBLISHED', revisionNo: 3, modelJson: '{"script":"new"}', compiledScript: 'published_v3();', compiledType: 'QLEXPRESS' }
+  const wrapper = await host(source)
+  expect(wrapper.vm.designerCompileResult).toMatchObject({ compiledScript: 'published_v3();', saved: true })
+  expect(wrapper.vm.designerActionState).toBe('CLEAN')
+  expect(wrapper.vm.designerCheckedFingerprint).toBe('')
+  expect(wrapper.vm.designerCompileTaskId).toBe('')
+  expect(api.compileDesignerModel).not.toHaveBeenCalled()
+  wrapper.vm.modelJson = '{"script":"changed"}'
+  wrapper.vm.captureDesignerDraftState()
+  expect(wrapper.vm.designerCompileResult).toBeNull()
+  wrapper.vm.modelJson = source.modelJson
+  wrapper.vm.captureDesignerDraftState()
+  expect(wrapper.vm.designerCompileResult.compiledScript).toBe('published_v3();')
+  wrapper.unmount()
+})
+
+test('只读历史版本也能展示保存源码，切换失败不遗留上一版本源码', async () => {
+  const wrapper = await host({ ...draft, state: 'PUBLISHED', modelJson: '{"script":"new"}', compiledScript: 'historical();' }, {
+    data: { frozenReferenceCatalog: { localEditingAllowed: false } },
+    methods: { loadDesignerReferenceCatalog: vi.fn() },
+  })
+  expect(wrapper.vm.canEditDraft).toBe(false)
+  wrapper.vm.initializeDesignerDraftTracking(wrapper.vm.modelJson)
+  expect(wrapper.vm.designerCompileResult.compiledScript).toBe('historical();')
+  api.getRuleRevision.mockRejectedValueOnce(new Error('版本读取失败'))
+  await wrapper.vm.refreshViewedRevision()
+  expect(wrapper.vm.designerCompileResult).toBeNull()
+  wrapper.unmount()
 })
 test('五个独立动作按顺序显示，未保存未编译仍可检查和测试，状态不占按钮行', async () => {
   const wrapper = mount(RuleDesignerActionBar, { props: { canEdit: true, canTest: true, state: 'DIRTY' } })
@@ -119,10 +151,27 @@ test('后台编译任务完成后才更新编译结果和页面状态', async ()
   await wrapper.vm.compileDesignerDraft()
 
   expect(api.getDesignerCompileTask).toHaveBeenCalledTimes(2)
+  expect(api.waitForDesignerCompileTask).toHaveBeenCalledTimes(2)
   expect(wrapper.vm.designerCompileResult.compiledScript).toBe('async;')
   expect(wrapper.vm.designerActionState).toBe('READY_TO_TEST')
   await wrapper.vm.saveDraftModel(wrapper.vm.modelJson, { saveMode: 'OVERWRITE' })
   expect(api.saveDesignerDraft.mock.calls[0][1]).toMatchObject({ compileTaskId: 'compile-1' })
+  wrapper.unmount()
+})
+
+test('等待完成通知期间切换来源，不读取旧结果或覆盖当前页面', async () => {
+  const wrapper = await host()
+  api.compileDesignerModel.mockResolvedValueOnce({ data: { taskId: 'old-task', status: 'PENDING' } })
+  let complete
+  api.waitForDesignerCompileTask.mockImplementationOnce(() => new Promise(resolve => { complete = resolve }))
+  const compiling = wrapper.vm.compileDesignerDraft()
+  await flushPromises()
+  expect(api.getDesignerCompileTask).not.toHaveBeenCalled()
+  wrapper.vm.designerCompilePollToken++
+  complete({ data: true })
+  expect(await compiling).toBe(false)
+  expect(api.getDesignerCompileTask).not.toHaveBeenCalled()
+  expect(wrapper.vm.designerCompileResult).toBeNull()
   wrapper.unmount()
 })
 
@@ -278,5 +327,19 @@ test('发布覆盖请求使用已保存修订锁和业务绑定代次，取消�
   expect(api.publishDesignerDraft).toHaveBeenCalledWith('30', { revisionId: draft.id, lockVersion: 4, publishMode: 'OVERWRITE', targetVersionId: '8001', targetGeneration: 3, comment: '更新额度' })
   expect(api.saveDesignerDraft).not.toHaveBeenCalled()
   expect(wrapper.vm.$router.push).toHaveBeenCalledWith({ name: 'ApprovalDetail', params: { id: '19' } })
+  wrapper.unmount()
+})
+
+test.each([{ allowed: true, requiredCount: 0, message: '暂无启用的固定用例' },
+  { allowed: false, requiredCount: 1, message: '固定用例尚未回归' }])('回归状态在发布确认中明确展示且取消不提交：$message', async regression => {
+  const wrapper = await host()
+  wrapper.vm.modelJson = draft.modelJson
+  api.compileDesignerModel.mockResolvedValueOnce({ data: { compileSuccess: true, preflightReport: { valid: true, errors: [], warnings: [], regression } } })
+  const pending = wrapper.vm.handlePublish()
+  await flushPromises()
+  expect(wrapper.vm.designerChoice.warnings).toEqual([expect.objectContaining({ message: regression.message })])
+  wrapper.vm.resolveDesignerChoice({ action: 'cancel' })
+  await pending
+  expect(api.publishDesignerDraft).not.toHaveBeenCalled()
   wrapper.unmount()
 })

@@ -20,6 +20,17 @@ function createSession(sessionId, ruleId, sourceKey, title = '决策表 · 右�
 }
 
 describe('expressionSessions store', () => {
+  test('来源版本或绑定值变化后不沿用上一来源的表达式草稿', async () => {
+    const store = createTestStore()
+    const source = { ...createSession('s1', 7, 'picker-1'), sourceIdentity: 'VERSION:1', sourceValue: 'original' }
+    await store.dispatch('expressionSessions/openSession', source)
+    await store.dispatch('expressionSessions/saveDraft', { sessionId: 's1', draft: { kind: 'LITERAL', value: '88' } })
+    await store.dispatch('expressionSessions/openSession', { ...source, sourceIdentity: 'VERSION:2', draft: { kind: 'LITERAL', value: '2' } })
+    expect(store.getters['expressionSessions/sessionById']('s1').draft.value).toBe('2')
+    await store.dispatch('expressionSessions/openSession', { ...source, sourceIdentity: 'VERSION:2', sourceValue: 'changed', draft: { kind: 'LITERAL', value: '3' } })
+    expect(store.getters['expressionSessions/sessionById']('s1').draft.value).toBe('3')
+  })
+
   test('暂存草稿、编译结果并按修订号只消费一次', async() => {
     const store = createTestStore()
     await store.dispatch('expressionSessions/openSession', createSession('s1', 7, 'picker-1'))

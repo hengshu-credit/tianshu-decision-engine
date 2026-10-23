@@ -1,12 +1,13 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.hengshucredit.rule.model.dto.RuleExperimentExecuteRequest;
 import com.hengshucredit.rule.model.dto.RuleExperimentExecuteResult;
 import com.hengshucredit.rule.model.entity.RuleExperiment;
 import com.hengshucredit.rule.model.entity.RuleExperimentExecutionLog;
 import com.hengshucredit.rule.model.entity.RuleExperimentVersion;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.governance.GovernanceRequestView;
 import com.hengshucredit.rule.server.governance.GovernedProjectionMutation;
 import com.hengshucredit.rule.server.governance.LegacyGovernanceRestoreService;
@@ -40,25 +41,25 @@ public class RuleExperimentController {
     private ConsoleOperatorResolver operatorResolver;
 
     @GetMapping("/list")
-    public R<IPage<RuleExperiment>> list(@RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
+    public ApiResponse<IPage<RuleExperiment>> list(@RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
                                          @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
                                          @RequestParam(required = false) Long projectId,
                                          @RequestParam(required = false) String projectCode,
                                          @RequestParam(required = false) String projectName,
                                          @RequestParam(required = false) Integer status,
                                          @RequestParam(required = false) String keyword) {
-        return R.ok(experimentService.pageExperiments(pageNum, pageSize, projectId, projectCode, projectName,
+        return ApiResponse.ok(experimentService.pageExperiments(pageNum, pageSize, projectId, projectCode, projectName,
                 status, keyword));
     }
 
     @GetMapping("/{id}")
-    public R<RuleExperiment> get(@PathVariable Long id) {
+    public ApiResponse<RuleExperiment> get(@PathVariable Long id) {
         RuleExperiment experiment = experimentService.getDetail(id);
-        return experiment == null ? R.fail("分流实验不存在") : R.ok(experiment);
+        return experiment == null ? ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "分流实验不存在") : ApiResponse.ok(experiment);
     }
 
     @GetMapping("/logs")
-    public R<IPage<RuleExperimentExecutionLog>> logs(@RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
+    public ApiResponse<IPage<RuleExperimentExecutionLog>> logs(@RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
                                                      @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
                                                      @RequestParam(required = false) Long experimentId,
                                                      @RequestParam(required = false) String experimentCode,
@@ -67,72 +68,72 @@ public class RuleExperimentController {
                                                      @RequestParam(required = false) String stage,
                                                      @RequestParam(required = false) String groupCode,
                                                      @RequestParam(required = false) Integer success) {
-        return R.ok(experimentService.pageExecutionLogs(pageNum, pageSize, experimentId, experimentCode,
+        return ApiResponse.ok(experimentService.pageExecutionLogs(pageNum, pageSize, experimentId, experimentCode,
                 requestKey, traceId, stage, groupCode, success));
     }
 
     @PostMapping
     @GovernedProjectionMutation
-    public R<RuleExperiment> save(@RequestBody RuleExperiment experiment) {
+    public ApiResponse<RuleExperiment> save(@RequestBody RuleExperiment experiment) {
         try {
-            return R.ok(experimentService.saveExperiment(experiment));
+            return ApiResponse.ok(experimentService.saveExperiment(experiment));
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
     @DeleteMapping("/{id}")
     @GovernedProjectionMutation
-    public R<Void> delete(@PathVariable Long id) {
+    public ApiResponse<Void> delete(@PathVariable Long id) {
         experimentService.deleteExperiment(id);
-        return R.ok();
+        return ApiResponse.ok();
     }
 
     @GetMapping("/versions/{experimentId}")
-    public R<List<RuleExperimentVersion>> listVersions(@PathVariable Long experimentId) {
-        return R.ok(experimentService.listVersions(experimentId));
+    public ApiResponse<List<RuleExperimentVersion>> listVersions(@PathVariable Long experimentId) {
+        return ApiResponse.ok(experimentService.listVersions(experimentId));
     }
 
     @GetMapping("/version/{experimentId}/{version}")
-    public R<RuleExperimentVersion> getVersion(@PathVariable Long experimentId, @PathVariable Integer version) {
+    public ApiResponse<RuleExperimentVersion> getVersion(@PathVariable Long experimentId, @PathVariable Integer version) {
         RuleExperimentVersion snapshot = experimentService.getVersion(experimentId, version);
-        return snapshot == null ? R.fail("Version not found") : R.ok(snapshot);
+        return snapshot == null ? ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "Version not found") : ApiResponse.ok(snapshot);
     }
 
     @GetMapping("/versionCompare/{experimentId}")
-    public R<Map<String, Object>> compareVersions(@PathVariable Long experimentId,
+    public ApiResponse<Map<String, Object>> compareVersions(@PathVariable Long experimentId,
                                                   @RequestParam Integer leftVersion,
                                                   @RequestParam Integer rightVersion) {
         try {
-            return R.ok(experimentService.compareVersions(experimentId, leftVersion, rightVersion));
+            return ApiResponse.ok(experimentService.compareVersions(experimentId, leftVersion, rightVersion));
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
     @PostMapping("/rollback/{experimentId}/{version}")
     @RequirePermission("experiment:edit")
-    public R<GovernanceRequestView> rollback(
+    public ApiResponse<GovernanceRequestView> rollback(
             @PathVariable Long experimentId,
             @PathVariable Integer version,
             @RequestParam(defaultValue = "NEW") String restoreMode) {
         try {
-            return R.ok(GovernanceRequestView.from(
+            return ApiResponse.ok(GovernanceRequestView.from(
                     legacyRestoreService.restoreExperiment(
                             experimentId, version, restoreMode,
                             operatorResolver.resolve())));
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
     @PostMapping("/execute/{experimentCode}")
-    public R<RuleExperimentExecuteResult> execute(@PathVariable String experimentCode,
+    public ApiResponse<RuleExperimentExecuteResult> execute(@PathVariable String experimentCode,
                                                   @RequestBody(required = false) RuleExperimentExecuteRequest request) {
         try {
-            return R.ok(experimentService.execute(experimentCode, request));
+            return ApiResponse.ok(experimentService.execute(experimentCode, request));
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 }

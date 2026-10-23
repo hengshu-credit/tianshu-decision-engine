@@ -72,7 +72,7 @@ describe('统一字段选择面板', () => {
     expect(wrapper.emitted('page-size').at(-1)).toEqual([25])
     wrapper.unmount()
   })
-  test('叶子字段单击提交，父级单击展开；不会提交展示用的合成分组', async () => {
+  test('叶子字段双击提交，父级单击展开；不会提交展示用的合成分组', async () => {
     const wrapper = panel({ items: [objectField(1, 'report.items', 'LIST'), objectField(2, 'report.items.score', 'NUMBER', 1)] })
     await wrapper.find('.fp-row').trigger('click')
     expect(wrapper.emitted('select')).toBeUndefined()
@@ -81,7 +81,7 @@ describe('统一字段选择面板', () => {
     await objectRow.trigger('click')
     await nextTick()
     const leaf = wrapper.findAll('.fp-row').find(row => row.text().includes('score'))
-    await leaf.trigger('click')
+    await leaf.trigger('dblclick')
     await nextTick()
     expect(wrapper.emitted('select')[0][0]._varId).toBe(2)
     expect(wrapper.vm.expanded.has('DATA_OBJECT:1')).toBe(true)
@@ -92,7 +92,7 @@ describe('统一字段选择面板', () => {
     const selectButton = wrapper.find('.fp-select-parent')
     expect(selectButton.exists()).toBe(true)
     await selectButton.trigger('click')
-    expect(wrapper.emitted('select')[0][0]).toMatchObject({ _varId: '9223372036854775800', _refType: 'DATA_OBJECT', _versionGroup: true })
+    expect(wrapper.emitted('select')[0][0]).toMatchObject({ _varId: '9223372036854775800', _refType: 'DATA_OBJECT_ROOT', _versionGroup: true })
     wrapper.unmount()
   })
   test('切分类不清除搜索；已选字段不匹配搜索时明确展示', async () => {

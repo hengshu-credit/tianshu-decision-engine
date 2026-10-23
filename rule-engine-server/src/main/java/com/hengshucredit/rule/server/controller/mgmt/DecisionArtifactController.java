@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.model.dto.ArtifactDeployRequest;
 import com.hengshucredit.rule.model.dto.ArtifactImportResult;
 import com.hengshucredit.rule.model.dto.RulePublishOutboxSummary;
@@ -7,7 +9,6 @@ import com.hengshucredit.rule.model.entity.ArtifactDeployment;
 import com.hengshucredit.rule.model.entity.ArtifactResourceBinding;
 import com.hengshucredit.rule.model.entity.DecisionArtifact;
 import com.hengshucredit.rule.server.artifact.ArtifactDeploymentService;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.ConsoleOperatorResolver;
 import com.hengshucredit.rule.server.service.RulePublishOutboxService;
 import jakarta.annotation.Resource;
@@ -38,30 +39,30 @@ public class DecisionArtifactController {
     private RulePublishOutboxService outboxService;
 
     @GetMapping("/{artifactId:\\d+}")
-    public R<Map<String, Object>> detail(@PathVariable Long artifactId) {
-        return R.ok(deploymentService.describeArtifact(artifactId));
+    public ApiResponse<Map<String, Object>> detail(@PathVariable Long artifactId) {
+        return ApiResponse.ok(deploymentService.describeArtifact(artifactId));
     }
 
     @GetMapping("/{artifactId:\\d+}/deployments")
-    public R<List<ArtifactDeployment>> deployments(@PathVariable Long artifactId) {
-        return R.ok(deploymentService.listDeployments(artifactId));
+    public ApiResponse<List<ArtifactDeployment>> deployments(@PathVariable Long artifactId) {
+        return ApiResponse.ok(deploymentService.listDeployments(artifactId));
     }
 
     @GetMapping("/{artifactId:\\d+}/deployment-options")
-    public R<Map<String, Object>> deploymentOptions(@PathVariable Long artifactId,
+    public ApiResponse<Map<String, Object>> deploymentOptions(@PathVariable Long artifactId,
                                                     @RequestParam(required = false) Long targetProjectId) {
-        return R.ok(deploymentService.deploymentOptions(artifactId, targetProjectId));
+        return ApiResponse.ok(deploymentService.deploymentOptions(artifactId, targetProjectId));
     }
 
     @GetMapping("/deployments/{deploymentId:\\d+}/bindings")
-    public R<List<ArtifactResourceBinding>> bindings(@PathVariable Long deploymentId) {
-        return R.ok(deploymentService.listBindings(deploymentId));
+    public ApiResponse<List<ArtifactResourceBinding>> bindings(@PathVariable Long deploymentId) {
+        return ApiResponse.ok(deploymentService.listBindings(deploymentId));
     }
 
     @GetMapping("/outbox")
-    public R<List<RulePublishOutboxSummary>> outbox(@RequestParam Long definitionId,
+    public ApiResponse<List<RulePublishOutboxSummary>> outbox(@RequestParam Long definitionId,
                                             @RequestParam(defaultValue = "50") int limit) {
-        return R.ok(outboxService.listRecentSummary(definitionId, limit));
+        return ApiResponse.ok(outboxService.listRecentSummary(definitionId, limit));
     }
 
     @GetMapping("/{artifactId:\\d+}/download")
@@ -93,27 +94,27 @@ public class DecisionArtifactController {
     }
 
     @PostMapping("/import")
-    public R<ArtifactImportResult> importArtifact(@RequestPart("file") MultipartFile file,
+    public ApiResponse<ArtifactImportResult> importArtifact(@RequestPart("file") MultipartFile file,
                                                   @RequestParam(required = false)
                                                   String expectedPackageDigest) {
         try {
-            if (file == null || file.isEmpty()) return R.fail(422, "制品文件不能为空");
-            return R.ok(deploymentService.importArtifact(file.getBytes(), expectedPackageDigest, actor()));
+            if (file == null || file.isEmpty()) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.REQUEST_REJECTED, "制品文件不能为空");
+            return ApiResponse.ok(deploymentService.importArtifact(file.getBytes(), expectedPackageDigest, actor()));
         } catch (IllegalArgumentException e) {
-            return R.fail(422, e.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.REQUEST_REJECTED, e.getMessage());
         } catch (Exception e) {
-            return R.fail(500, "读取制品文件失败: " + e.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.SYSTEM_ERROR, "读取制品文件失败: " + e.getMessage());
         }
     }
 
     @PostMapping("/deploy")
-    public R<ArtifactDeployment> deploy(@RequestBody ArtifactDeployRequest request) {
+    public ApiResponse<ArtifactDeployment> deploy(@RequestBody ArtifactDeployRequest request) {
         try {
-            return R.ok(deploymentService.deploy(request, actor()));
+            return ApiResponse.ok(deploymentService.deploy(request, actor()));
         } catch (IllegalArgumentException e) {
-            return R.fail(422, e.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.REQUEST_REJECTED, e.getMessage());
         } catch (IllegalStateException e) {
-            return R.fail(409, e.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_CONFLICT, e.getMessage());
         }
     }
 

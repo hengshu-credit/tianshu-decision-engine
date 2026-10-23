@@ -1,3 +1,7 @@
+server:
+  port: ${SERVER_PORT:${RUNTIME_HTTP_PORT:7070}}
+RUNTIME_ACCESS_TOKEN: ${HTTP_ACCESS_TOKEN:}
+RULE_ALLOWED_CODES: ${HTTP_RULE_ALLOWED_CODES:}
 spring:
   autoconfigure:
     exclude:

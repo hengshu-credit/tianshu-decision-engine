@@ -32,6 +32,10 @@ export function listApiConfigs(params) {
   return request({ url: '/rule/datasource/api-config/list', method: 'get', params })
 }
 
+export function listAvailableApiConfigs(projectId) {
+  return request({ url: '/rule/datasource/api-config/available', method: 'get', params: { projectId } })
+}
+
 export function getApiConfig(id) {
   return request({ url: `/rule/datasource/api-config/${id}`, method: 'get' })
 }
@@ -66,11 +70,11 @@ async function apiProjectId(data) {
 }
 
 export function invokeApiConfig(id, data) {
-  return request({ url: `/rule/datasource/api-config/${id}/invoke`, method: 'post', data, timeout: 0 })
+  return request({ url: `/rule/datasource/api-config/${id}/invoke`, method: 'post', data, timeout: 0, acceptExecutionFailure: true })
 }
 
 export function invokeApiConfigPreview(id, data) {
-  return request({ url: `/rule/datasource/api-config/${id}/invoke-preview`, method: 'post', data, timeout: 0 })
+  return request({ url: `/rule/datasource/api-config/${id}/invoke-preview`, method: 'post', data, timeout: 0, acceptExecutionFailure: true })
 }
 
 export function createApiConfigTrial(data) {

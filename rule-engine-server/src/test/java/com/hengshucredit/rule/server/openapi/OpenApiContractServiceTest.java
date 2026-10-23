@@ -120,8 +120,8 @@ public class OpenApiContractServiceTest {
             published.setId(50L); published.setDefinitionId(10L); published.setRuleCode("R");
             published.setProjectCode("P"); published.setVersion(1); published.setStatus(1);
             published.setRevisionId(100L); published.setArtifactId(101L); published.setArtifactDigest("digest-v1");
-            published.setOpenApiConfigJson("{\"enabled\":true,\"envelopeTemplate\":{\"data\":\"${data}\"},"
-                    + "\"dataPath\":\"$.data\",\"successDataTemplate\":\"${response}\",\"errorDataTemplate\":{}}");
+            published.setOpenApiConfigJson("{\"enabled\":true,"
+                    + "\"successDataTemplate\":\"${response}\",\"errorDataTemplate\":{}}");
             BeanUtils.copyProperties(published, projection);
             RuleProjectAuth auth = new RuleProjectAuth();
             auth.setId(5L); auth.setProjectId(7L); auth.setStatus(1);

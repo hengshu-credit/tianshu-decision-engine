@@ -118,11 +118,12 @@ public class VariableSourceResolverTest {
 
     @Test
     public void rootAndChildResolutionsReuseTheCompleteApiResponseButNextRequestDoesNot() throws Exception {
-        RuleVariable first = variable("firstMetric", "API", "{\"apiConfigId\":7,\"paramMapping\":{\"customerId\":\"$.customerId\"},\"resultPath\":\"body.first\"}");
-        RuleVariable second = variable("secondMetric", "API", "{\"apiConfigId\":7,\"paramMapping\":{\"customerId\":\"$.customerId\"},\"resultPath\":\"body.second\"}");
+        RuleVariable first = variable("firstMetric", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.first\",\"requestOverrides\":{\"customerId\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":100,\"code\":\"customerId\"}}}");
+        RuleVariable second = variable("secondMetric", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.second\",\"requestOverrides\":{\"customerId\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":100,\"code\":\"customerId\"}}}");
         second.setId(2L);
         FakeApiService api = new FakeApiService(responseBody(mapOf("first", 11, "second", 22)));
-        VariableSourceResolver resolver = resolver(Arrays.asList(first, second), api, new FakeDbPools(Collections.emptyList()));
+        RuleVariable input = customerIdInput();
+        VariableSourceResolver resolver = resolver(Arrays.asList(first, second, input), api, new FakeDbPools(Collections.emptyList()));
         VariableResolutionInvocationCache shared = new VariableResolutionInvocationCache();
         VariableResolveOptions root = VariableResolveOptions.defaults();
         root.setInvocationCache(shared);
@@ -133,7 +134,7 @@ public class VariableSourceResolverTest {
         VariableResolveOptions child = VariableResolveOptions.defaults();
         child.setInvocationCache(shared);
         child.setRequiredScriptNames(java.util.Set.of("secondMetric"));
-        resolver.resolveIntoSnapshot(Arrays.asList(first, second), List.of(), List.of(), values, child);
+        resolver.resolveIntoSnapshot(Arrays.asList(first, second, input), List.of(), List.of(), values, child);
         assertEquals(11, values.get("firstMetric"));
         assertEquals(22, values.get("secondMetric"));
         assertEquals("同一根请求中上下文新增输出不应引起第二次 API 调用", 1, api.callCount);
@@ -142,9 +143,9 @@ public class VariableSourceResolverTest {
     }
 
     @Test
-    public void sameRootReusesOnlyWhenMappedRequestKeyMatches() throws Exception {
-        RuleVariable a = variable("metricA", "API", "{\"apiConfigId\":7,\"paramMapping\":{\"x\":\"$.customerId\",\"y\":1},\"resultPath\":\"body.score\"}");
-        RuleVariable b = variable("metricB", "API", "{\"apiConfigId\":7,\"paramMapping\":{\"x\":\"$.otherCustomerId\",\"y\":1},\"resultPath\":\"body.score\"}");
+    public void sameRootReusesOnlyWhenRequestFieldValuesMatch() throws Exception {
+        RuleVariable a = variable("metricA", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.score\",\"requestOverrides\":{\"x\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":100,\"code\":\"customerId\"},\"y\":{\"kind\":\"LITERAL\",\"valueType\":\"NUMBER\",\"value\":1}}}");
+        RuleVariable b = variable("metricB", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.score\",\"requestOverrides\":{\"x\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":101,\"code\":\"otherCustomerId\"},\"y\":{\"kind\":\"LITERAL\",\"valueType\":\"NUMBER\",\"value\":1}}}");
         b.setId(2L);
         FakeApiService api = new FakeApiService(responseBody("score", 88));
         VariableSourceResolver resolver = resolver(Arrays.asList(a, b), api, new FakeDbPools(Collections.emptyList()));
@@ -159,9 +160,9 @@ public class VariableSourceResolverTest {
     }
 
     @Test
-    public void apiVariableUsesParamMappingAndResultPath() throws Exception {
+    public void apiVariableUsesRequestOverridesAndResultPath() throws Exception {
         RuleVariable variable = variable("riskScore", "API",
-                "{\"apiConfigId\":7,\"paramMapping\":{\"cust\":\"$.customerId\"},\"resultPath\":\"body.data.score\"}");
+                "{\"apiConfigId\":7,\"resultPath\":\"body.data.score\",\"requestOverrides\":{\"cust\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":100,\"code\":\"customerId\"}}}");
         FakeApiService apiService = new FakeApiService(responseBody("data", singletonMap("score", 88)));
         VariableSourceResolver resolver = resolver(Collections.singletonList(variable), apiService, new FakeDbPools(Collections.emptyList()));
 
@@ -219,9 +220,9 @@ public class VariableSourceResolverTest {
     }
 
     @Test
-    public void apiVariableCanUseBareParamMappingFieldName() throws Exception {
+    public void apiVariableUsesStableRequestOverride() throws Exception {
         RuleVariable variable = variable("riskScore", "API",
-                "{\"apiConfigId\":7,\"paramMapping\":{\"cust\":\"customerId\"},\"resultPath\":\"body.score\"}");
+                "{\"apiConfigId\":7,\"resultPath\":\"body.score\",\"requestOverrides\":{\"cust\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":100,\"code\":\"customerId\"}}}");
         FakeApiService apiService = new FakeApiService(responseBody("score", 88));
         VariableSourceResolver resolver = resolver(Collections.singletonList(variable), apiService, new FakeDbPools(Collections.emptyList()));
 
@@ -234,9 +235,9 @@ public class VariableSourceResolverTest {
     @Test
     public void apiVariablesShareSameResponseWithinOneResolve() throws Exception {
         RuleVariable scoreV1 = variable("hscreditScoreV1", "API",
-                "{\"apiConfigId\":7,\"paramMapping\":{\"request_id\":\"$.requestId\"},\"resultPath\":\"body.v1\"}");
+                "{\"apiConfigId\":7,\"resultPath\":\"body.v1\",\"requestOverrides\":{\"request_id\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":102,\"code\":\"requestId\"}}}");
         RuleVariable scoreV2 = variable("hscreditScoreV2", "API",
-                "{\"apiConfigId\":7,\"paramMapping\":{\"request_id\":\"$.requestId\"},\"resultPath\":\"body.v2\"}");
+                "{\"apiConfigId\":7,\"resultPath\":\"body.v2\",\"requestOverrides\":{\"request_id\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":102,\"code\":\"requestId\"}}}");
         scoreV2.setId(2L);
         Map<String, Object> score = new LinkedHashMap<>();
         score.put("v1", 661.8);
@@ -378,12 +379,12 @@ public class VariableSourceResolverTest {
     public void draftVariableCanBePreviewedWithoutPersistence() throws Exception {
         RuleVariable draft = variable("riskScore", "DB",
                 "{\"dbDatasourceId\":3,\"sql\":\"select score from t where id = ?\"," +
-                        "\"params\":[\"$.customerId\"],\"resultPath\":\"0.score\"}");
+                        "\"params\":[{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":100,\"code\":\"customerId\"}],\"resultPath\":\"0.score\"}");
         draft.setId(null);
         draft.setScriptName(null);
         FakeDbPools dbPools = new FakeDbPools(Collections.singletonList(
                 singletonMap("score", 88)));
-        VariableSourceResolver resolver = resolver(Collections.emptyList(),
+        VariableSourceResolver resolver = resolver(Collections.singletonList(customerIdInput()),
                 new FakeApiService(Collections.emptyMap()), dbPools);
 
         Map<String, Object> result = resolver.previewVariable(
@@ -491,7 +492,7 @@ public class VariableSourceResolverTest {
     @Test
     public void sourceVariableDependenciesResolveBeforeDependentApi() throws Exception {
         RuleVariable apiScore = variable("riskScore", "API",
-                "{\"apiConfigId\":7,\"paramMapping\":{\"score\":\"$.dbScore\"},\"resultPath\":\"body.score\"}");
+                "{\"apiConfigId\":7,\"resultPath\":\"body.score\",\"requestOverrides\":{\"score\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":2,\"code\":\"dbScore\"}}}");
         RuleVariable dbScore = variable("dbScore", "DB",
                 "{\"datasourceId\":3,\"sql\":\"select score from t\",\"maxRows\":1}");
         dbScore.setId(2L);
@@ -509,15 +510,14 @@ public class VariableSourceResolverTest {
     }
 
     @Test
-    public void apiVariableCanInferDependenciesFromApiConfigWithoutParamMapping() throws Exception {
+    public void apiVariableCollectsDefaultRequestFieldDependencies() throws Exception {
         RuleVariable apiScore = variable("riskScore", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.score\"}");
         RuleVariable customerId = variable("customerId", "CONSTANT", null);
         customerId.setVarType("STRING");
         customerId.setDefaultValue("C001");
         RuleExternalApiConfig apiConfig = new RuleExternalApiConfig();
         apiConfig.setId(7L);
-        apiConfig.setQueryConfig("{\"customer\":\"${customerId}\"}");
-        apiConfig.setBodyTemplate("{\"payload\":{\"customerId\":\"${customerId}\"}}");
+        apiConfig.setExecutionConfig(ExternalApiTestConfig.request(List.of(ExternalApiTestConfig.field("customerId", "QUERY", "customer", Map.of("kind", "REFERENCE", "refType", "CONSTANT", "refId", 1)))));
         FakeApiService apiService = new FakeApiService(responseBody("score", 88));
         VariableSourceResolver resolver = resolver(Arrays.asList(apiScore, customerId), apiService,
                 new FakeDbPools(Collections.emptyList()), new FakeRuleListService(false), null, apiConfig);
@@ -532,12 +532,12 @@ public class VariableSourceResolverTest {
     }
 
     @Test
-    public void apiVariableCollectsParamMappingAndApiConfigDependenciesTogether() throws Exception {
+    public void apiVariableCollectsOverridesAndApiConfigDependenciesTogether() throws Exception {
         RuleVariable apiScore = variable("riskScore", "API",
-                "{\"apiConfigId\":7,\"paramMapping\":{\"request_id\":\"$.requestId\"},\"resultPath\":\"body.score\"}");
+                "{\"apiConfigId\":7,\"resultPath\":\"body.score\",\"requestOverrides\":{\"request_id\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":102,\"code\":\"requestId\"}}}");
         RuleExternalApiConfig apiConfig = new RuleExternalApiConfig();
         apiConfig.setId(7L);
-        apiConfig.setQueryConfig("{\"customer\":\"${customerId}\"}");
+        apiConfig.setExecutionConfig(ExternalApiTestConfig.request(List.of(ExternalApiTestConfig.field("customerId", "QUERY", "customer", ExternalApiTestConfig.reference(100, "customerId")))));
         VariableSourceResolver resolver = resolver(Collections.singletonList(apiScore),
                 new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()),
                 new FakeRuleListService(false), null, apiConfig);
@@ -768,7 +768,7 @@ public class VariableSourceResolverTest {
     @Test
     public void sourceVariableWaitsForRequiredModelOutput() throws Exception {
         RuleVariable riskBand = variable("riskBand", "API",
-                "{\"apiConfigId\":7,\"paramMapping\":{\"score\":\"$.score_f1.score\"},\"resultPath\":\"body.band\"}");
+                "{\"apiConfigId\":7,\"resultPath\":\"body.band\",\"requestOverrides\":{\"score\":{\"kind\":\"REFERENCE\",\"refType\":\"MODEL_OUTPUT\",\"refId\":1000,\"code\":\"score_f1.score\"}}}");
         FakeApiService apiService = new FakeApiService(responseBody("band", "A"));
         SequencedModelService modelService = new SequencedModelService(
                 Collections.singletonList(model(100L, "score_f1")),
@@ -831,12 +831,12 @@ public class VariableSourceResolverTest {
     }
 
     @Test
-    public void apiVariableCanUseConstantDefaultAsMappedParam() throws Exception {
+    public void apiVariableCanUseConstantDefaultAsRequestOverride() throws Exception {
         RuleVariable threshold = variable("riskThreshold", "CONSTANT", null);
         threshold.setVarType("INTEGER");
         threshold.setDefaultValue("700");
         RuleVariable riskBand = variable("riskBand", "API",
-                "{\"apiConfigId\":7,\"paramMapping\":{\"threshold\":\"$.riskThreshold\"},\"resultPath\":\"body.band\"}");
+                "{\"apiConfigId\":7,\"resultPath\":\"body.band\",\"requestOverrides\":{\"threshold\":{\"kind\":\"REFERENCE\",\"refType\":\"CONSTANT\",\"refId\":1,\"code\":\"riskThreshold\"}}}");
         FakeApiService apiService = new FakeApiService(responseBody("band", "A"));
         VariableSourceResolver resolver = resolver(Arrays.asList(riskBand, threshold),
                 apiService, new FakeDbPools(Collections.emptyList()));
@@ -853,9 +853,9 @@ public class VariableSourceResolverTest {
     @Test
     public void dbVariableUsesPreparedParamsAndFirstColumnByDefault() throws Exception {
         RuleVariable variable = variable("riskScore", "DB",
-                "{\"datasourceId\":3,\"sql\":\"select score from t where id = ?\",\"params\":[\"$.customerId\"],\"maxRows\":1}");
+                "{\"datasourceId\":3,\"sql\":\"select score from t where id = ?\",\"params\":[{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":100,\"code\":\"customerId\"}],\"maxRows\":1}");
         FakeDbPools dbPools = new FakeDbPools(Collections.singletonList(singletonMap("score", 72)));
-        VariableSourceResolver resolver = resolver(Collections.singletonList(variable), new FakeApiService(Collections.emptyMap()), dbPools);
+        VariableSourceResolver resolver = resolver(List.of(variable, customerIdInput()), new FakeApiService(Collections.emptyMap()), dbPools);
 
         Map<String, Object> params = singletonMap("customerId", "C002");
         Map<String, Object> resolved = resolver.resolve(1L, params);
@@ -866,11 +866,11 @@ public class VariableSourceResolverTest {
     }
 
     @Test
-    public void dbVariableCanUseBareParamFieldName() throws Exception {
+    public void dbVariableUsesReferenceIdEvenWhenCodeIsStale() throws Exception {
         RuleVariable variable = variable("riskScore", "DB",
-                "{\"datasourceId\":3,\"sql\":\"select score from t where id = ?\",\"params\":[\"customerId\"],\"maxRows\":1}");
+                "{\"datasourceId\":3,\"sql\":\"select score from t where id = ?\",\"params\":[{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":100,\"code\":\"oldCustomerId\"}],\"maxRows\":1}");
         FakeDbPools dbPools = new FakeDbPools(Collections.singletonList(singletonMap("score", 72)));
-        VariableSourceResolver resolver = resolver(Collections.singletonList(variable), new FakeApiService(Collections.emptyMap()), dbPools);
+        VariableSourceResolver resolver = resolver(List.of(variable, customerIdInput()), new FakeApiService(Collections.emptyMap()), dbPools);
 
         Map<String, Object> resolved = resolver.resolve(1L, singletonMap("customerId", "C002"));
 
@@ -1056,7 +1056,7 @@ public class VariableSourceResolverTest {
     @Test
     public void forceRefreshCompletesDependenciesBeforeCallingApi() throws Exception {
         RuleVariable apiScore = variable("riskScore", "API",
-                "{\"apiConfigId\":7,\"paramMapping\":{\"score\":\"$.dbScore\"},\"resultPath\":\"body.score\"}");
+                "{\"apiConfigId\":7,\"resultPath\":\"body.score\",\"requestOverrides\":{\"score\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":2,\"code\":\"dbScore\"}}}");
         RuleVariable dbScore = variable("dbScore", "DB", "{\"datasourceId\":3,\"sql\":\"select score from t\"}");
         dbScore.setId(2L);
         FakeApiService api = new FakeApiService(responseBody("score", 88));
@@ -1074,13 +1074,16 @@ public class VariableSourceResolverTest {
     public void asyncDependenciesExcludeGeneratedParametersAndIncludePollingInputs() throws Exception {
         RuleVariable variable = variable("result", "API", "{\"apiConfigId\":7}");
         RuleExternalApiConfig config = new RuleExternalApiConfig();
-        config.setId(7L); config.setRequestMode("ASYNC"); config.setAsyncResultMode("CALLBACK");
-        config.setRequestMapping("{\"callback\":\"$.callbackUrl\",\"customer\":\"$.customerId\"}");
+        config.setId(7L); config.setRequestMode("ASYNC");
+        config.setExecutionConfig(ExternalApiTestConfig.request(List.of(
+                ExternalApiTestConfig.field("customer", "JSON", "customer", ExternalApiTestConfig.reference(100, "customerId")),
+                ExternalApiTestConfig.field("callback", "JSON", "callback", ExternalApiTestConfig.path("callbacks.notify.url")))));
         VariableSourceResolver resolver = resolver(Collections.singletonList(variable), new FakeApiService(Collections.emptyMap()),
                 new FakeDbPools(Collections.emptyList()), new FakeRuleListService(false), null, config);
         assertEquals(new LinkedHashSet<>(Collections.singletonList("customerId")), resolver.collectVariableDependencies(variable));
-        config.setAsyncResultMode("POLL"); config.setRequestMapping(null);
-        config.setAsyncPollConfig("{\"resultEndpointUrl\":\"/result/${taskId}\",\"requestMapping\":{\"customer\":\"$.customerId\",\"job\":\"$.submission.body.id\"}}");
+        config.setExecutionConfig(ExternalApiTestConfig.request(List.of(
+                ExternalApiTestConfig.field("customer", "JSON", "customer", ExternalApiTestConfig.reference(100, "customerId")),
+                ExternalApiTestConfig.field("job", "JSON", "job", ExternalApiTestConfig.path("steps.submit.body.id")))));
         assertEquals(new LinkedHashSet<>(Collections.singletonList("customerId")), resolver.collectVariableDependencies(variable));
     }
 
@@ -1180,9 +1183,9 @@ public class VariableSourceResolverTest {
     @Test
     public void parallelApiVariablesShareOneInvocationForTheSameRequest() throws Exception {
         RuleVariable scoreV1 = variable("scoreV1", "API",
-                "{\"apiConfigId\":7,\"paramMapping\":{\"requestId\":\"$.requestId\"},\"resultPath\":\"body.v1\"}");
+                "{\"apiConfigId\":7,\"resultPath\":\"body.v1\",\"requestOverrides\":{\"requestId\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":102,\"code\":\"requestId\"}}}");
         RuleVariable scoreV2 = variable("scoreV2", "API",
-                "{\"apiConfigId\":7,\"paramMapping\":{\"requestId\":\"$.requestId\"},\"resultPath\":\"body.v2\"}");
+                "{\"apiConfigId\":7,\"resultPath\":\"body.v2\",\"requestOverrides\":{\"requestId\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":102,\"code\":\"requestId\"}}}");
         scoreV2.setId(2L);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("v1", 61);
@@ -1252,6 +1255,12 @@ public class VariableSourceResolverTest {
         return variable;
     }
 
+    private RuleVariable customerIdInput() {
+        RuleVariable input = variable("customerId", "INPUT", null);
+        input.setId(100L); input.setVarType("STRING");
+        return input;
+    }
+
     private VariableSourceResolver resolver(List<RuleVariable> variables, ExternalApiInvokeService apiService,
                                             DBConnectPools dbPools) throws Exception {
         return resolver(variables, apiService, dbPools, new FakeRuleListService(false));
@@ -1274,6 +1283,29 @@ public class VariableSourceResolverTest {
         VariableSourceResolver resolver = new VariableSourceResolver();
         setField(resolver, "variableService", new FakeVariableService(variables));
         setField(resolver, "externalApiInvokeService", apiService);
+        ExternalApiConsumerService consumer = new ExternalApiConsumerService();
+        setField(consumer, "variableService", new FakeVariableService(variables));
+        setField(consumer, "apiConfigMapper", Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{RuleExternalApiConfigMapper.class}, (proxy, method, args) -> {
+            long id = Long.parseLong(String.valueOf(args[0]));
+            RuleExternalApiConfig current = apiConfig == null ? ExternalApiTestConfig.api() : apiConfig;
+            current.setId(id); current.setStatus(1);
+            var spec = com.alibaba.fastjson.JSON.parseObject(current.getExecutionConfig());
+            var fields = spec.getJSONArray("requestFields");
+            for (RuleVariable item : variables) {
+                if (!"API".equals(item.getVarSource())) continue;
+                var binding = com.alibaba.fastjson.JSON.parseObject(item.getSourceConfig());
+                if (binding.getLongValue("apiConfigId") != id || binding.getJSONObject("requestOverrides") == null) continue;
+                for (String key : binding.getJSONObject("requestOverrides").keySet()) if (fields.stream().noneMatch(raw -> key.equals(((Map<?, ?>) raw).get("id")))) {
+                    fields.add(Map.of("id", key, "location", "JSON", "path", key, "overridable", true));
+                }
+            }
+            current.setExecutionConfig(com.hengshucredit.rule.server.artifact.CanonicalJson.write(spec));
+            return current;
+        }));
+        setField(consumer, "invokeService", new ExternalApiInvokeService() {
+            @Override Map<String, Object> invokePlanned(ExternalApiRequestPlan plan) { return apiService.invoke(plan.config().getId(), plan.values()); }
+        });
+        setField(resolver, "externalApiConsumerService", consumer);
         if (apiConfig != null) {
             setField(resolver, "apiConfigMapper", apiConfigMapper(apiConfig));
         }
@@ -1349,6 +1381,13 @@ public class VariableSourceResolverTest {
         private FakeVariableService(List<RuleVariable> variables) {
             this.variables = variables;
         }
+
+        @Override public Map<String, String> buildRefScriptNameMap(Long projectId) {
+            Map<String, String> paths = new LinkedHashMap<>(Map.of("VARIABLE:100", "customerId", "VARIABLE:101", "otherCustomerId", "VARIABLE:102", "requestId", "MODEL_OUTPUT:1000", "score_f1.score"));
+            for (RuleVariable variable : variables) paths.put(("CONSTANT".equals(variable.getVarSource()) ? "CONSTANT:" : "VARIABLE:") + variable.getId(), variable.getScriptName());
+            return paths;
+        }
+        @Override public Map<String, Object> buildRefConstantValueMap(Long projectId) { return Map.of(); }
 
         @Override
         public List<RuleVariable> listByProject(Long projectId, String varSource) {

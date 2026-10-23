@@ -174,6 +174,50 @@ describe('DatabaseDetail — 项目选择', () => {
     }
   })
 
+  test('已保存的 SSH 凭据留空时仍视为已配置，并明确提示保留', async () => {
+    databaseApi.getDbDatasource.mockResolvedValue({ data: {
+      id: 1, scope: 'GLOBAL', connectionMode: 'SSH_TUNNEL',
+      host: 'db.internal', port: 3306, databaseName: 'risk', jdbcUrl: 'jdbc:mysql://db.internal/risk',
+      sshHost: 'bastion.internal', sshUsername: 'reader',
+      _secretConfigured: { '/password': true, '/sshPassword': true }
+    } })
+    const wrapper = mountPage()
+    try {
+      await flushPromises()
+      expect(wrapper.vm.isConnectionConfigured()).toBe(true)
+      expect(wrapper.find('[data-label="SSH密码"]').text()).toContain('已配置，留空保留；输入新值替换')
+      expect(wrapper.vm.form.sshPassword).toBe('')
+    } finally { wrapper.unmount() }
+  })
+
+  test('明确清除已存凭据时，试连和保存都携带同一清除意图', async () => {
+    databaseApi.getDbDatasource.mockResolvedValue({ data: {
+      id: 1, scope: 'GLOBAL', datasourceCode: 'db', datasourceName: '库',
+      jdbcUrl: 'jdbc:mysql://localhost/risk', configuredSecrets: { password: true }
+    } })
+    databaseApi.testDbDatasourceDraft.mockResolvedValue({ data: '连接成功' })
+    databaseApi.updateDbDatasource.mockResolvedValue({ data: {} })
+    const wrapper = mountPage()
+    try {
+      await flushPromises()
+      wrapper.vm.connectionTestStatus = 'success'
+      wrapper.vm.connectionTestSignature = wrapper.vm.connectionConfigSignature()
+      wrapper.vm.form.password = '尚未保存的新值'
+      wrapper.vm.setCredentialCleared('password', true)
+      expect(wrapper.vm.form.password).toBe('')
+      expect(wrapper.vm.connectionTestOutdated).toBe(true)
+      expect(wrapper.vm.credentialHint('password')).toContain('清除')
+      wrapper.vm.handleTestDraft()
+      await flushPromises()
+      expect(databaseApi.testDbDatasourceDraft.mock.lastCall[0]).toMatchObject({ password: '', clearCredentials: ['password'] })
+      wrapper.vm.handleSubmit()
+      await flushPromises()
+      expect(databaseApi.updateDbDatasource.mock.lastCall[0]).toMatchObject({ password: '', clearCredentials: ['password'] })
+      wrapper.vm.setCredentialCleared('password', false)
+      expect(wrapper.vm.hasStoredCredential('password')).toBe(false)
+    } finally { wrapper.unmount() }
+  })
+
   test('连接测试成功后保留可见的成功状态', async () => {
     projectApi.listProjects.mockResolvedValue({ data: { records: [] } })
     databaseApi.testDbDatasourceDraft.mockResolvedValue({ data: '连接成功' })

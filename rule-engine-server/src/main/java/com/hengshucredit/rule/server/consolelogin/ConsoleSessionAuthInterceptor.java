@@ -1,7 +1,8 @@
 package com.hengshucredit.rule.server.consolelogin;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.alibaba.fastjson.JSON;
-import com.hengshucredit.rule.server.common.R;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -46,10 +47,13 @@ public class ConsoleSessionAuthInterceptor implements HandlerInterceptor {
             return true;
         }
         String uri = request.getRequestURI();
-        if (!matchesAny(uri, properties.getIncludePatterns())) {
+        boolean identityEndpoint = uri.equals("/api/auth/console/me") || uri.equals("/api/auth/console/profile")
+                || uri.startsWith("/api/auth/console/profile/") || uri.equals("/api/auth/console/password/change")
+                || uri.startsWith("/api/auth/console/preferences/");
+        if (!identityEndpoint && !matchesAny(uri, properties.getIncludePatterns())) {
             return true;
         }
-        if (matchesAny(uri, properties.getExcludePatterns())) {
+        if (!identityEndpoint && matchesAny(uri, properties.getExcludePatterns())) {
             return true;
         }
         HttpSession session = request.getSession(false);
@@ -83,6 +87,7 @@ public class ConsoleSessionAuthInterceptor implements HandlerInterceptor {
     /** 撤销身份但保留会话容器，避免 Redis 并发请求因物理会话已删除而无法提交响应。 */
     static void clearIdentity(HttpSession session, RuleEngineConsoleLoginProperties properties) {
         session.removeAttribute(properties.getSessionUsernameAttribute());
+        session.removeAttribute(properties.getSessionOperatorNameAttribute());
         session.removeAttribute(properties.getSessionUserIdAttribute());
         session.removeAttribute(properties.getSessionPermissionVersionAttribute());
     }
@@ -106,7 +111,7 @@ public class ConsoleSessionAuthInterceptor implements HandlerInterceptor {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setCharacterEncoding("UTF-8");
         response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write(JSON.toJSONString(R.fail(401, message)));
+        response.getWriter().write(JSON.toJSONString(ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.LOGIN_REQUIRED, message)));
         return false;
     }
 }

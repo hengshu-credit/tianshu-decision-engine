@@ -1,6 +1,6 @@
 import { createPathOperand, resolvePathOperand } from '@/utils/operand'
 import { resourceVersionIdentity } from '@/utils/resourceVersion'
-import { fieldTypeIcon } from '@/utils/fieldPicker'
+import { fieldTypeIcon, pickerTypeMatches } from '@/utils/fieldPicker'
 
 // 保留源码偏移；字符串仅在静态下标或 _result 输出 key 位置参与引用匹配。
 function tokenize(script) {
@@ -162,6 +162,15 @@ export function referenceTypeDisplay(reference) {
   return fieldTypeIcon(valueType)
 }
 
+export function referenceTypeFamily(reference) {
+  const option = reference?.option || reference
+  const type = String(option?.varType || option?.valueType || 'OBJECT').toUpperCase()
+  if (pickerTypeMatches(type, 'NUMBER')) return 'number'
+  if (['LIST', 'ARRAY', 'MAP'].includes(type)) return 'collection'
+  if (type === 'BOOLEAN' || type === 'BOOL') return 'boolean'
+  return 'text'
+}
+
 function escapeMarkdown(value) {
   return plainLabel(value).replace(/[\\`*_{}[\]()<>#+.!|~-]/g, '\\$&')
 }
@@ -191,8 +200,8 @@ export function buildQlReferenceDecorations(references, model, versions = {}, ca
         description: 'ql-engine-reference-label',
         showIfCollapsed: true,
         // 同一位置的 before / after 保证名称、版本顺序稳定，且各自使用主题颜色。
-        before: { content: ` ${name} `, inlineClassName: 'se-reference-name', inlineClassNameAffectsLetterSpacing: true },
-        after: { content: versionLabel, inlineClassName: 'se-reference-version', inlineClassNameAffectsLetterSpacing: true },
+        before: { content: name, inlineClassName: 'se-reference-name', inlineClassNameAffectsLetterSpacing: false },
+        after: { content: versionLabel, inlineClassName: 'se-reference-version', inlineClassNameAffectsLetterSpacing: false },
         hoverMessage,
       },
     }]
@@ -203,9 +212,9 @@ export function buildQlReferenceDecorations(references, model, versions = {}, ca
           description: 'ql-engine-reference-type',
           showIfCollapsed: true,
           before: {
-            content: `${referenceTypeDisplay(ref)} `,
-            inlineClassName: 'se-reference-type',
-            inlineClassNameAffectsLetterSpacing: true,
+            content: referenceTypeDisplay(ref),
+            inlineClassName: `se-reference-type se-reference-type--${referenceTypeFamily(ref)}`,
+            inlineClassNameAffectsLetterSpacing: false,
           },
           hoverMessage,
         },

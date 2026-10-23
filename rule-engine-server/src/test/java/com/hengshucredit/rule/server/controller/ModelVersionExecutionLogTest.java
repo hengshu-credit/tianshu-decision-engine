@@ -29,7 +29,7 @@ public class ModelVersionExecutionLogTest {
         ReflectionTestUtils.setField(controller, "runtimeCallLogService", new RuleRuntimeCallLogService() {
             @Override public void safeSave(RuleRuntimeCallLog log) { saved.set(log); }
         });
-        assertEquals(200, controller.execute(7L, "{\"Age\":25}", 1).getCode());
+        assertEquals("000000", controller.execute(7L, "{\"Age\":25}", 1).getCode());
         assertEquals("OriginalModel", saved.get().getTargetCode());
         assertEquals("原始名称", saved.get().getTargetName());
         assertEquals(Long.valueOf(3L), saved.get().getProjectId());

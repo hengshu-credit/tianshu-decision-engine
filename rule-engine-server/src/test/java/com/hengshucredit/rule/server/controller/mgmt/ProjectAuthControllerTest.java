@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hengshucredit.rule.model.dto.ProjectAuthDTO;
@@ -8,7 +10,6 @@ import com.hengshucredit.rule.model.dto.ProjectAuthTokenDTO;
 import com.hengshucredit.rule.model.entity.RuleAuthAccessLog;
 import com.hengshucredit.rule.server.auth.CredentialCipher;
 import com.hengshucredit.rule.server.auth.ProjectAuthProperties;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.ProjectAuthService;
 import org.junit.Before;
 import org.junit.Test;
@@ -45,9 +46,9 @@ public class ProjectAuthControllerTest {
         dto.setSecretMasked("abcd****wxyz");
         service.auths = Collections.singletonList(dto);
 
-        R<List<ProjectAuthDTO>> response = controller.list(7L);
+        ApiResponse<List<ProjectAuthDTO>> response = controller.list(7L);
 
-        assertEquals(200, response.getCode());
+        assertEquals("000000", response.getCode());
         assertEquals(Long.valueOf(7L), service.projectId);
         assertNull(response.getData().get(0).getSecret());
     }
@@ -59,9 +60,9 @@ public class ProjectAuthControllerTest {
         expected.setId(11L);
         service.auth = expected;
 
-        R<ProjectAuthDTO> response = controller.create(7L, request, new MockHttpServletRequest());
+        ApiResponse<ProjectAuthDTO> response = controller.create(7L, request, new MockHttpServletRequest());
 
-        assertEquals(200, response.getCode());
+        assertEquals("000000", response.getCode());
         assertSame(expected, response.getData());
         assertSame(request, service.request);
         assertEquals(Long.valueOf(7L), service.projectId);
@@ -71,11 +72,11 @@ public class ProjectAuthControllerTest {
     public void returnsBadRequestForCrossProjectAccess() {
         service.error = new IllegalArgumentException("Authentication configuration not found for project");
 
-        R<ProjectAuthDTO> response = controller.getFull(
+        ApiResponse<ProjectAuthDTO> response = controller.getFull(
                 8L, 11L, new MockHttpServletRequest(), new MockHttpServletResponse());
 
-        assertEquals(400, response.getCode());
-        assertEquals("Authentication configuration not found for project", response.getMessage());
+        assertEquals("100001", response.getCode());
+        assertEquals("Authentication configuration not found for project", response.getDetail());
     }
 
     @Test
@@ -87,7 +88,7 @@ public class ProjectAuthControllerTest {
                 "GET", "/api/rule/project/7/auth/11/full");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        R<ProjectAuthDTO> result = controller.getFull(7L, 11L, request, response);
+        ApiResponse<ProjectAuthDTO> result = controller.getFull(7L, 11L, request, response);
 
         assertSame(full, result.getData());
         assertEquals("no-store", response.getHeader("Cache-Control"));
@@ -103,8 +104,8 @@ public class ProjectAuthControllerTest {
         service.tokens = tokens;
         service.logs = logs;
 
-        R<IPage<ProjectAuthTokenDTO>> tokenResponse = controller.listTokens(7L, 11L, 2, 20);
-        R<IPage<RuleAuthAccessLog>> logResponse = controller.listAccessLogs(
+        ApiResponse<IPage<ProjectAuthTokenDTO>> tokenResponse = controller.listTokens(7L, 11L, 2, 20);
+        ApiResponse<IPage<RuleAuthAccessLog>> logResponse = controller.listAccessLogs(
                 7L, 3, 30, "BASIC", "BASIC_MAIN", "TOKEN_A", 1,
                 "2026-07-01", "2026-07-15");
 

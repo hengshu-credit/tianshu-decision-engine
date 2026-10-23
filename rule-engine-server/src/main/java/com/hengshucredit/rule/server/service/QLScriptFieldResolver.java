@@ -209,6 +209,8 @@ public class QLScriptFieldResolver {
                 return validateVariable(projectId, refId, refType);
             case "DATA_OBJECT":
                 return validateDataObjectField(projectId, refId);
+            case "DATA_OBJECT_ROOT":
+                return validateDataObjectRoot(projectId, refId);
             case "MODEL":
                 return validateModel(projectId, refId);
             case "MODEL_OUTPUT":
@@ -238,6 +240,16 @@ public class QLScriptFieldResolver {
         }
         return ValidationResult.valid(new ValidatedScriptReference(
                 refId, refType, scriptRoot, variable.getVarType()));
+    }
+
+    private ValidationResult validateDataObjectRoot(Long projectId, Long refId) {
+        RuleDataObject object = ruleDataObjectMapper.selectById(refId);
+        if (object == null) return ValidationResult.invalid("REFERENCE_NOT_FOUND", "数据对象不存在");
+        if (!active(object.getStatus()) || !available(object.getScope(), object.getProjectId(), projectId))
+            return ValidationResult.invalid("REFERENCE_TYPE_MISMATCH", "数据对象状态或项目不匹配");
+        String root = firstNonBlank(object.getScriptName(), object.getObjectCode());
+        if (root == null) return ValidationResult.invalid("REFERENCE_TYPE_MISMATCH", "数据对象没有可用的脚本根");
+        return ValidationResult.valid(new ValidatedScriptReference(refId, "DATA_OBJECT_ROOT", root, "OBJECT"));
     }
 
     private ValidationResult validateDataObjectField(Long projectId, Long refId) {

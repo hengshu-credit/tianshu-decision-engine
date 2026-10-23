@@ -15,6 +15,11 @@ public class ConsoleUser {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String username;
+    /** 不随恢复改名变化的业务归属标识，兼容历史 applicant/operator。 */
+    private String operatorName;
+    /** 历史重复超管合并归档后指向保留账户；归档账户不可重新登录或启用。 */
+    private Long mergedIntoUserId;
+    private String mergedUsername;
     private String displayName;
     private String passwordHash;
     private String email;
@@ -23,6 +28,8 @@ public class ConsoleUser {
     private String registrationSource;
     private Integer status;
     private Long permissionVersion;
+    private String projectAccessMode;
+    private Boolean globalEditable;
     private LocalDateTime lastLoginTime;
     private String createBy;
     @TableField(fill = FieldFill.INSERT)

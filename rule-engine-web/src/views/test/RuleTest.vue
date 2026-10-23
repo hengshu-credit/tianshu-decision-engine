@@ -28,7 +28,7 @@
               </el-radio-group>
             </el-form-item>
             <el-form-item label="项目" v-if="ruleScope === 'PROJECT'">
-              <el-select
+              <project-resource-select
                 v-model="selectedProjectId"
                 placeholder="请选择项目"
                 clearable
@@ -36,18 +36,16 @@
                 :disabled="!!contextProjectId"
                 style="width: 100%"
                 @change="onProjectChange"
-              >
-                <el-option
-                  v-for="p in projects"
-                  :key="p.id"
-                  :label="p.projectName"
-                  :value="p.id"
-                />
-              </el-select>
+               :projects="projects" />
             </el-form-item>
             <el-form-item label="规则">
-              <el-select
-                v-model="selectedRuleId"
+              <remote-filter-select
+                :key="`${ruleScope}:${selectedProjectId}:${contextProjectId}`"
+                v-model:value="selectedRuleId"
+                :fetch-options="fetchRuleChoicePage"
+                :selected-option="selectedRule ? { ...selectedRule, displayName: ruleOptionLabel(selectedRule) } : null"
+                option-value-key="id"
+                option-label-key="displayName"
                 :placeholder="
                   ruleScope === 'PROJECT' && !selectedProjectId
                     ? '请先选择项目'
@@ -56,16 +54,8 @@
                 :disabled="ruleScope === 'PROJECT' && !selectedProjectId"
                 :loading="ruleListLoading"
                 style="width: 100%"
-                filterable
                 @change="onRuleChange"
-              >
-                <el-option
-                  v-for="r in rules"
-                  :key="r.id"
-                  :label="ruleOptionLabel(r)"
-                  :value="r.id"
-                />
-              </el-select>
+              />
             </el-form-item>
             <el-form-item v-if="selectedRuleId" label="测试版本">
               <el-select v-model="selectedTestSourceValue" :loading="testSourcesLoading" :disabled="testSourcesLoading" style="width: 100%" data-testid="rule-test-source" @change="onTestSourceChange">
@@ -302,6 +292,7 @@
           <div class="uiue-card-title fixed-cases-title">
             <span>固定测试用例收藏</span>
             <span>
+              <el-button link size="small" @click="reportsVisible = true">回归报告</el-button>
               <el-button v-permission="'rule:edit'" link size="small" :disabled="testCaseLoading" @click="saveCurrentTestCase"
                 ><el-icon><el-icon-star-off /></el-icon>
                 保存为新用例</el-button
@@ -316,8 +307,14 @@
                 v-permission="'rule:edit'"
                 ><el-icon><el-icon-video-play /></el-icon> 批量执行</el-button
               >
+              <el-button v-if="batchExecuting" link size="small" :disabled="batchStopRequested" @click="stopBatchExecution">停止后续</el-button>
             </span>
           </div>
+          <p v-if="batchTotal" role="status">
+            已完成 {{ batchResults.length }} / {{ batchTotal }} 个用例。
+            {{ batchStopRequested ? '已停止后续用例；已提交的请求会继续完成并保留结果。' : batchExecuting ? '正在执行当前用例。' : '批量执行结束。' }}
+          </p>
+          <p class="fixed-case-empty">已有启用固定用例时，发布前须全部通过。请选择已保存的草稿执行回归；临时修改的用例输入或预期不计入发布证据。</p>
           <div
             v-if="
               !testCasesLoading && !testCasesError && testCases.length === 0
@@ -539,10 +536,15 @@
         </div>
       </div>
     </div>
+    <regression-report-drawer v-if="reportsVisible && selectedRuleId" :definition-id="selectedRuleId" :revision-id="inputExecutionIdentity?.revisionId || null" @close="reportsVisible = false" />
   </div>
 </template>
 
 <script>
+import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
+import RegressionReportDrawer from '@/components/rule/RegressionReportDrawer.vue'
+import { validationLabel, validationTagType } from '@/utils/testValidationStatus'
 import {
   Star as ElIconStarOff,
   VideoPlay as ElIconVideoPlay,
@@ -595,7 +597,7 @@ import {
 } from '@/utils/testCaseTools'
 
 export default {
-  components: {
+  components: { ProjectResourceSelect, RemoteFilterSelect, RegressionReportDrawer,
     TraceTree,
     AsyncState,
     ConfigLayerGuide,
@@ -612,6 +614,7 @@ export default {
   name: 'RuleTest',
   data() {
     return {
+      reportsVisible: false,
       projects: [],
       projectsLoading: false,
       projectsError: '',
@@ -670,6 +673,8 @@ export default {
       testCasesError: '',
       testCasesRequestId: 0,
       batchExecuting: false,
+      batchTotal: 0,
+      batchStopRequested: false,
       batchResults: [],
       batchExecutionRequestId: 0,
       varMap: {},
@@ -839,10 +844,7 @@ export default {
     },
     executionStatusLabel,
     executionStatusHint,
-    validationLabel(status) {
-      return { PASSED: '校验通过', FAILED: '预期不符', NOT_CONFIGURED: '未设置预期', INVALID: '预期配置无效', NOT_EVALUATED: '未校验' }[status] || '未校验'
-    },
-    validationTagType(status) { return status === 'PASSED' ? 'success' : ['FAILED', 'INVALID'].includes(status) ? 'danger' : status === 'NOT_EVALUATED' ? 'warning' : 'info' },
+    validationLabel, validationTagType,
     resetExpectationContext() {
       this.testCaseEditSession++
       this.testCaseSaving = false
@@ -890,7 +892,7 @@ export default {
     async loadRulesByScope() {
       if (this.ruleScope === 'ALL') {
         await this.loadRuleOptions(() =>
-          listDefinitions({ pageNum: 1, pageSize: 1000 })
+          listDefinitions({ pageNum: 1, pageSize: 20 })
         )
       } else if (this.ruleScope === 'GLOBAL') {
         await this.loadGlobalRules()
@@ -908,7 +910,7 @@ export default {
       this.projectsLoading = true
       this.projectsError = ''
       try {
-        const res = await listProjects({ pageNum: 1, pageSize: 1000 })
+        const res = await listProjects({ pageNum: 1, pageSize: 20 })
         if (requestId !== this.projectsRequestId) return
         this.projects = res.data.records || []
       } catch (e) {
@@ -1025,7 +1027,7 @@ export default {
     async loadGlobalRules() {
       const params = {
         pageNum: 1,
-        pageSize: 1000,
+        pageSize: 20,
         scope: 'GLOBAL',
       }
       return this.loadRuleOptions(() =>
@@ -1079,7 +1081,7 @@ export default {
       return this.loadRuleOptions(() =>
         listProjectDefinitions(targetProjectId, {
           pageNum: 1,
-          pageSize: 1000,
+          pageSize: 20,
         })
       )
     },
@@ -1104,20 +1106,45 @@ export default {
         }
       }
     },
+    async fetchRuleChoicePage({ query, pageNum, pageSize }) {
+      const requestId = ++this.ruleListRequestId
+      this.ruleListError = ''
+      const params = { pageNum, pageSize, keyword: query || '', ...(this.ruleScope === 'GLOBAL' ? { scope: 'GLOBAL' } : {}) }
+      const projectId = this.ruleScope === 'PROJECT' ? this.selectedProjectId : this.ruleScope === 'GLOBAL' ? this.contextProjectId : null
+      try {
+        const response = projectId ? await listProjectDefinitions(projectId, params) : await listDefinitions(params)
+        if (requestId !== this.ruleListRequestId) return { data: { records: [], total: 0 } }
+        const data = response.data || {}
+        const records = data.records || []
+        const known = new Map(this.rules.map(item => [String(item.id), item]))
+        records.forEach(item => known.set(String(item.id), item))
+        this.rules = [...known.values()]
+        return { data: { ...data, records: records.map(item => ({ ...item, displayName: this.ruleOptionLabel(item) })) } }
+      } catch (error) {
+        if (requestId === this.ruleListRequestId) this.ruleListError = this.requestErrorMessage(error, '规则读取失败，请重试')
+        throw error
+      } finally {
+        if (requestId === this.ruleListRequestId) this.ruleListLoading = false
+      }
+    },
     retryRuleOptions() {
       return this.loadRulesByScope()
     },
     resetTestCases() {
+      this.reportsVisible = false
       ++this.testCasesRequestId
       ++this.batchExecutionRequestId
       this.testCases = []
       this.selectedTestCaseIds = []
       this.batchResults = []
       this.testCasesError = ''
+      this.batchTotal = 0
+      this.batchStopRequested = false
       this.testCasesLoading = false
       this.batchExecuting = false
     },
-    async loadTestCases() {
+    async loadTestCases({ preserveSelection = false } = {}) {
+      const selected = new Set(preserveSelection ? this.selectedTestCaseIds.map(String) : [])
       this.resetTestCases()
       if (!this.selectedRuleId) return
       const ruleId = this.selectedRuleId
@@ -1128,6 +1155,7 @@ export default {
         if (!this.isActiveTestCaseRequest(requestId, ruleId)) return
         const data = this.unwrapResponse(res)
         this.testCases = Array.isArray(data) ? data : []
+        this.selectedTestCaseIds = this.testCases.filter(item => selected.has(String(item.id))).map(item => item.id)
       } catch (e) {
         if (!this.isActiveTestCaseRequest(requestId, ruleId)) return
         this.testCasesError = this.requestErrorMessage(
@@ -1185,7 +1213,7 @@ export default {
         if (saved?.id) this.loadedTestCase = { ...saveRequest, ...saved }
         this.loadedRequestJson = requestJson
         this.loadedInputParamsJson = paramsJson
-        await this.loadTestCases()
+        await this.loadTestCases({ preserveSelection: true })
         this.notifySuccess(existing ? '测试用例已更新' : '固定测试用例已收藏')
       } catch (error) {
         if (error && typeof error === 'object' && error.message) this.notifyWarning(error.message)
@@ -1217,7 +1245,7 @@ export default {
       }
     },
     async executeSelectedTestCases() {
-      if (this.testSourcesLoading || this.testSourcesError || (this.selectedExecutionSource && this.inputLoadState === 'ERROR')) return
+      if (this.batchExecuting || this.testSourcesLoading || this.testSourcesError || (this.selectedExecutionSource && this.inputLoadState === 'ERROR')) return
       const selected = this.testCases.filter(
         (testCase) => this.selectedTestCaseIds.indexOf(testCase.id) >= 0
       ).map(testCase => ({ ...testCase }))
@@ -1227,9 +1255,12 @@ export default {
       const source = this.selectedExecutionSource ? { ...this.selectedExecutionSource } : null
       const requestId = ++this.batchExecutionRequestId
       this.batchExecuting = true
+      this.batchTotal = selected.length
+      this.batchStopRequested = false
       this.batchResults = []
       try {
         for (const testCase of selected) {
+          if (this.batchStopRequested || !this.isActiveBatchExecution(requestId, ruleId)) break
           try {
             const actual = await executeApiScenarioValidated(
               ruleId,
@@ -1242,7 +1273,9 @@ export default {
             requireExecutionIdentity(payload.execution.executionIdentity, ruleId, source)
             const normalized = normalizeTestResult(payload.execution)
             this.batchResults.push({
+              reportId: payload.reportId,
               scenarioName: testCase.scenarioName,
+              executionIdentity: payload.execution.executionIdentity,
               success: normalized.success === true,
               executionStatus: normalized.executionStatus || '',
               validationStatus: payload.validation.status, validationMessage: payload.validation.message,
@@ -1263,6 +1296,7 @@ export default {
         }
       }
     },
+    stopBatchExecution() { this.batchStopRequested = true },
     flattenCaseParams(value, prefix, target) {
       const output = target || Object.create(null)
       const currentPrefix = prefix || ''

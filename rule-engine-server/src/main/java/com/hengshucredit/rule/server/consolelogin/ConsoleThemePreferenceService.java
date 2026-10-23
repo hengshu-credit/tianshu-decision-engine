@@ -66,9 +66,9 @@ public class ConsoleThemePreferenceService {
 
     public ConsoleThemePreference defaults() {
         return new ConsoleThemePreference(
-                3, "LIGHT", "PRESET", "THEME_BLUE", "#2639E9",
+                3, "LIGHT", "PRESET", "PEACH_PINK_GRADIENT", "#2639E9",
                 List.of("#2639E9", "#873FF2"), "LINEAR", 135, "LEFT",
-                "DARK", "FLUID", "AUTO", true, false);
+                "DARK", "FLUID", "FIXED", true, false);
     }
 
     public ConsoleThemePreference load(Long userId) {

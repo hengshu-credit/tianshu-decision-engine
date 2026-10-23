@@ -59,7 +59,7 @@ button, input { font: inherit; }
 .hero h1 { max-width: 780px; margin: 17px 0 20px; font-size: clamp(36px, 5.4vw, 74px); letter-spacing: -.055em; line-height: 1.1; }
 .hero h1 em { color: var(--brand); font-style: normal; }
 .hero-copy { max-width: 675px; margin: 0; color: var(--ink-muted); font-size: 16px; }
-.hero-actions { display: flex; flex-wrap: wrap; gap: 11px; margin-top: 30px; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
 .button { display: inline-flex; align-items: center; gap: 10px; padding: 11px 18px; border-radius: 10px; font-size: 13px; font-weight: 700; transition: .2s ease; }
 .button-link { gap: 8px; }
 .button-icon { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 19px; height: 19px; }

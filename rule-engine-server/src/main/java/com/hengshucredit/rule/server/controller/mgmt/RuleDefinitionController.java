@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.core.compiler.CompileResult;
 import com.hengshucredit.rule.model.dto.RuleQueryDTO;
 import com.hengshucredit.rule.model.dto.RuleDraftSaveRequest;
@@ -11,7 +13,6 @@ import com.hengshucredit.rule.model.dto.RulePreflightReport;
 import com.hengshucredit.rule.model.dto.RuleRevisionRepairRequest;
 import com.hengshucredit.rule.model.dto.RuleValidationIssue;
 import com.hengshucredit.rule.model.entity.*;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.common.RuleGovernanceException;
 import com.hengshucredit.rule.server.governance.GovernedProjectionMutation;
 import com.hengshucredit.rule.server.service.RuleCompileService;
@@ -75,9 +76,9 @@ public class RuleDefinitionController {
 
     @GetMapping("/{definitionId}/reference-catalog")
     @RequirePermission("rule:view")
-    public R<com.hengshucredit.rule.model.dto.RuleReferenceCatalog> referenceCatalog(
+    public ApiResponse<com.hengshucredit.rule.model.dto.RuleReferenceCatalog> referenceCatalog(
             @PathVariable Long definitionId, @RequestParam String sourceType, @RequestParam String sourceId) {
-        return R.ok(referenceCatalogService.getCatalog(definitionId, sourceType, sourceId));
+        return ApiResponse.ok(referenceCatalogService.getCatalog(definitionId, sourceType, sourceId));
     }
 
     @Autowired(required = false)
@@ -85,7 +86,7 @@ public class RuleDefinitionController {
             governanceSubmissionService;
 
     @GetMapping("/list")
-    public R<IPage<RuleDefinition>> list(
+    public ApiResponse<IPage<RuleDefinition>> list(
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) Long projectId,
@@ -119,14 +120,14 @@ public class RuleDefinitionController {
         query.setCreateEndTime(createEndTime);
         query.setUpdateBeginTime(updateBeginTime);
         query.setUpdateEndTime(updateEndTime);
-        return R.ok(definitionService.pageList(query));
+        return ApiResponse.ok(definitionService.pageList(query));
     }
 
     /**
      * 获取全局规则列表（用于添加到项目）
      */
     @GetMapping("/global-list")
-    public R<IPage<RuleDefinition>> globalList(
+    public ApiResponse<IPage<RuleDefinition>> globalList(
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) String modelType,
@@ -150,14 +151,14 @@ public class RuleDefinitionController {
         query.setCreateEndTime(createEndTime);
         query.setUpdateBeginTime(updateBeginTime);
         query.setUpdateEndTime(updateEndTime);
-        return R.ok(definitionService.pageList(query));
+        return ApiResponse.ok(definitionService.pageList(query));
     }
 
     /**
      * 获取项目规则列表（包含项目级规则和已关联的全局规则）
      */
     @GetMapping("/project-list/{projectId}")
-    public R<IPage<RuleDefinition>> projectList(
+    public ApiResponse<IPage<RuleDefinition>> projectList(
             @PathVariable Long projectId,
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
@@ -171,59 +172,59 @@ public class RuleDefinitionController {
             @RequestParam(required = false) String updateBeginTime,
             @RequestParam(required = false) String updateEndTime,
             @RequestParam(required = false) String keyword) {
-        return R.ok(definitionService.pageListForProject(pageNum, pageSize, projectId, modelType, keyword, scope, status, ruleCode, ruleName, createBeginTime, createEndTime, updateBeginTime, updateEndTime));
+        return ApiResponse.ok(definitionService.pageListForProject(pageNum, pageSize, projectId, modelType, keyword, scope, status, ruleCode, ruleName, createBeginTime, createEndTime, updateBeginTime, updateEndTime));
     }
 
     @GetMapping("/{id}")
-    public R<RuleDefinition> get(@PathVariable Long id) {
-        return R.ok(definitionService.getById(id));
+    public ApiResponse<RuleDefinition> get(@PathVariable Long id) {
+        return ApiResponse.ok(definitionService.getById(id));
     }
 
     @PostMapping
-    public R<RuleDefinition> create(@RequestBody RuleDefinition definition) {
-        return R.ok(definitionService.createWithContent(definition));
+    public ApiResponse<RuleDefinition> create(@RequestBody RuleDefinition definition) {
+        return ApiResponse.ok(definitionService.createWithContent(definition));
     }
 
     @PutMapping
-    public R<Void> update(@RequestBody RuleDefinition definition) {
+    public ApiResponse<Void> update(@RequestBody RuleDefinition definition) {
         definitionService.updateWithProjectInfo(definition);
-        return R.ok();
+        return ApiResponse.ok();
     }
 
     @DeleteMapping("/{id}")
     @GovernedProjectionMutation
-    public R<Void> delete(@PathVariable Long id) {
+    public ApiResponse<Void> delete(@PathVariable Long id) {
         definitionService.deleteWithContent(id);
-        return R.ok();
+        return ApiResponse.ok();
     }
 
     @GetMapping("/content/{definitionId}")
-    public R<RuleDefinitionContent> getContent(@PathVariable Long definitionId) {
-        return R.ok(definitionService.getContent(definitionId));
+    public ApiResponse<RuleDefinitionContent> getContent(@PathVariable Long definitionId) {
+        return ApiResponse.ok(definitionService.getContent(definitionId));
     }
 
     @PostMapping("/save")
-    public R<RuleDraftSaveResponse> saveContent(
+    public ApiResponse<RuleDraftSaveResponse> saveContent(
             @RequestBody(required = false)
             RuleDraftSaveRequest request) {
         requireSaveRequest(request, null);
         request.setModelJson(normalizeModelJson(request.getModelJson()));
-        return R.ok(ruleDraftService.save(request));
+        return ApiResponse.ok(ruleDraftService.save(request));
     }
 
     @PostMapping("/compile/{definitionId}")
-    public R<CompileResult> compile(@PathVariable Long definitionId) {
-        return R.ok(compileService.compile(definitionId));
+    public ApiResponse<CompileResult> compile(@PathVariable Long definitionId) {
+        return ApiResponse.ok(compileService.compile(definitionId));
     }
 
     @PostMapping("/validateCallCycle/{definitionId}")
-    public R<Map<String, Object>> validateCallCycle(@PathVariable Long definitionId,
+    public ApiResponse<Map<String, Object>> validateCallCycle(@PathVariable Long definitionId,
                                                     @RequestBody(required = false) String modelJson) {
         String jsonToCheck = normalizeModelJson(modelJson);
         if (jsonToCheck == null || jsonToCheck.isEmpty()) {
             RuleDefinitionContent content = definitionService.getContent(definitionId);
             if (content == null || content.getModelJson() == null) {
-                return R.fail("规则内容不存在");
+                return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "规则内容不存在");
             }
             jsonToCheck = content.getModelJson();
         }
@@ -233,11 +234,11 @@ public class RuleDefinitionController {
         if (error != null) {
             result.put("message", error);
         }
-        return R.ok(result);
+        return ApiResponse.ok(result);
     }
 
     @PostMapping("/execute")
-    public R<RuleResult> execute(@RequestBody Map<String, Object> body) {
+    public ApiResponse<RuleResult> execute(@RequestBody Map<String, Object> body) {
         Long definitionId = Long.valueOf(body.get("definitionId").toString());
         @SuppressWarnings("unchecked")
         Map<String, Object> params = body.get("params") != null
@@ -251,16 +252,16 @@ public class RuleDefinitionController {
         if (source != null) {
             source.validate(modelJson);
             String modelType = body.get("modelType") == null ? null : body.get("modelType").toString();
-            return R.ok(executeService.testExecuteTarget(executeService.resolveTestTarget(
+            return ApiResponse.ok(executeService.testExecuteTarget(executeService.resolveTestTarget(
                     definitionId, source, modelJson, modelType, executionProjectId), params));
         }
         if (modelJson != null && !modelJson.trim().isEmpty()) {
             String modelType = body.get("modelType") == null ? null : body.get("modelType").toString();
-            return R.ok(executeService.testExecutePreview(
+            return ApiResponse.ok(executeService.testExecutePreview(
                     definitionId, modelJson, modelType, params,
                     executionProjectId));
         }
-        return R.ok(executeService.testExecute(
+        return ApiResponse.ok(executeService.testExecute(
                 definitionId, params, executionProjectId));
     }
 
@@ -274,7 +275,7 @@ public class RuleDefinitionController {
     }
 
     @PostMapping("/publish/{definitionId}")
-    public R<RuleRevision> publish(
+    public ApiResponse<RuleRevision> publish(
             @PathVariable Long definitionId,
             @RequestBody(required = false) Map<String, Object> body) {
         RuleLifecycleActionRequest request =
@@ -282,54 +283,54 @@ public class RuleDefinitionController {
         Object changeLog = body == null ? null : body.get("changeLog");
         request.setComment(changeLog == null
                 ? null : changeLog.toString());
-        return R.ok(lifecycleService.publishApproved(
+        return ApiResponse.ok(lifecycleService.publishApproved(
                 definitionId, request));
     }
 
     @PostMapping("/unpublish/{definitionId}")
-    public R<RuleRevision> unpublish(
+    public ApiResponse<RuleRevision> unpublish(
             @PathVariable Long definitionId) {
-        return R.ok(lifecycleService.offlinePublished(
+        return ApiResponse.ok(lifecycleService.offlinePublished(
                 definitionId, new RuleLifecycleActionRequest()));
     }
 
     @PostMapping("/{definitionId}/revisions/draft")
-    public R<RuleRevision> createDraft(
+    public ApiResponse<RuleRevision> createDraft(
             @PathVariable Long definitionId,
             @RequestBody(required = false) Map<String, Long> body) {
         Long baseRevisionId =
                 body == null ? null : body.get("baseRevisionId");
-        return R.ok(lifecycleService.createDraft(
+        return ApiResponse.ok(lifecycleService.createDraft(
                 definitionId, baseRevisionId));
     }
 
     @PostMapping("/{definitionId}/revisions/draft/from-source")
-    public R<RuleDraftSaveResponse> createDraftFromSource(
+    public ApiResponse<RuleDraftSaveResponse> createDraftFromSource(
             @PathVariable Long definitionId,
             @RequestBody(required = false) RuleDraftSourceRequest request) {
-        return R.ok(lifecycleService.createDraftFromSource(
+        return ApiResponse.ok(lifecycleService.createDraftFromSource(
                 definitionId, request));
     }
 
     @PostMapping("/{definitionId}/revisions/temporary-draft")
-    public R<RuleDraftSaveResponse> saveTemporaryDraft(
+    public ApiResponse<RuleDraftSaveResponse> saveTemporaryDraft(
             @PathVariable Long definitionId, @RequestBody RuleDraftSourceRequest request) {
-        return R.ok(definitionService.saveTemporaryDraft(definitionId, request));
+        return ApiResponse.ok(definitionService.saveTemporaryDraft(definitionId, request));
     }
 
     @GetMapping("/{definitionId}/revisions/repair-preview")
-    public R<RuleRevisionRepairService.RepairPreview>
+    public ApiResponse<RuleRevisionRepairService.RepairPreview>
     repairPreview(@PathVariable Long definitionId) {
-        return R.ok(revisionRepairService.preview(definitionId));
+        return ApiResponse.ok(revisionRepairService.preview(definitionId));
     }
 
     @PostMapping("/{definitionId}/revisions/repair")
-    public R<RuleRevision> repairRevision(
+    public ApiResponse<RuleRevision> repairRevision(
             @PathVariable Long definitionId,
             @RequestBody(required = false)
             RuleRevisionRepairRequest request) {
         try {
-            return R.ok(revisionRepairService.repair(
+            return ApiResponse.ok(revisionRepairService.repair(
                     definitionId, request));
         } catch (RuleGovernanceException error) {
             throw error;
@@ -350,55 +351,55 @@ public class RuleDefinitionController {
     }
 
     @PostMapping("/migrate-artifacts")
-    public R<RuleArtifactMigrationService.MigrationReport> migrateLegacyArtifacts() {
-        return R.ok(artifactMigrationService.migrateAll());
+    public ApiResponse<RuleArtifactMigrationService.MigrationReport> migrateLegacyArtifacts() {
+        return ApiResponse.ok(artifactMigrationService.migrateAll());
     }
 
     @GetMapping("/{definitionId}/revisions")
-    public R<List<RuleRevision>> listRevisions(@PathVariable Long definitionId) {
-        return R.ok(lifecycleService.listRevisions(definitionId));
+    public ApiResponse<List<RuleRevision>> listRevisions(@PathVariable Long definitionId) {
+        return ApiResponse.ok(lifecycleService.listRevisions(definitionId));
     }
 
     @GetMapping("/{definitionId}/revisions/current-draft")
-    public R<RuleRevision> currentDraft(@PathVariable Long definitionId) {
-        return R.ok(lifecycleService.currentDraft(definitionId));
+    public ApiResponse<RuleRevision> currentDraft(@PathVariable Long definitionId) {
+        return ApiResponse.ok(lifecycleService.currentDraft(definitionId));
     }
 
     @GetMapping("/{definitionId}/revisions/{revisionId}")
-    public R<RuleRevision> getRevision(@PathVariable Long definitionId,
+    public ApiResponse<RuleRevision> getRevision(@PathVariable Long definitionId,
                                        @PathVariable Long revisionId) {
         try {
-            return R.ok(lifecycleService.getRevision(definitionId, revisionId));
+            return ApiResponse.ok(lifecycleService.getRevision(definitionId, revisionId));
         } catch (IllegalArgumentException e) {
-            return R.fail(400, e.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.PARAMETER_INVALID, e.getMessage());
         }
     }
 
     @GetMapping("/{definitionId}/revisions/{revisionId}/fields")
     @RequirePermission("rule:view")
-    public R<com.hengshucredit.rule.model.dto.RuleRevisionFieldView> getRevisionFields(
+    public ApiResponse<com.hengshucredit.rule.model.dto.RuleRevisionFieldView> getRevisionFields(
             @PathVariable Long definitionId, @PathVariable Long revisionId) {
         try {
-            return R.ok(revisionFieldViewService.getFields(definitionId, revisionId));
+            return ApiResponse.ok(revisionFieldViewService.getFields(definitionId, revisionId));
         } catch (IllegalArgumentException error) {
-            return R.fail(400, error.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.PARAMETER_INVALID, error.getMessage());
         }
     }
 
     @PostMapping("/{definitionId}/revisions/{revisionId}/preflight")
-    public R<RulePreflightReport> preflight(@PathVariable Long definitionId,
+    public ApiResponse<RulePreflightReport> preflight(@PathVariable Long definitionId,
                                             @PathVariable Long revisionId) {
         try {
             RulePreflightReport report = lifecycleService.preflightReport(definitionId, revisionId);
-            return report.isValid() ? R.ok(report) : validationFailure(report);
+            return report.isValid() ? ApiResponse.ok(report) : validationFailure(report);
         } catch (IllegalArgumentException e) {
-            return R.fail(400, e.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.PARAMETER_INVALID, e.getMessage());
         }
     }
 
     @PostMapping("/{definitionId}/revisions/{revisionId}/submit")
     @RequirePermission("approval:submit")
-    public R<RuleRevision> submitRevision(@PathVariable Long definitionId,
+    public ApiResponse<RuleRevision> submitRevision(@PathVariable Long definitionId,
                                           @PathVariable Long revisionId,
                                           @RequestBody(required = false)
                                           RuleLifecycleActionRequest request) {
@@ -410,7 +411,7 @@ public class RuleDefinitionController {
     }
 
     @PostMapping("/{definitionId}/revisions/{revisionId}/return")
-    public R<RuleRevision> returnRevision(@PathVariable Long definitionId,
+    public ApiResponse<RuleRevision> returnRevision(@PathVariable Long definitionId,
                                           @PathVariable Long revisionId,
                                           @RequestBody(required = false)
                                           RuleLifecycleActionRequest request) {
@@ -421,7 +422,7 @@ public class RuleDefinitionController {
     }
 
     @PostMapping("/{definitionId}/revisions/{revisionId}/reject")
-    public R<RuleRevision> rejectRevision(@PathVariable Long definitionId,
+    public ApiResponse<RuleRevision> rejectRevision(@PathVariable Long definitionId,
                                           @PathVariable Long revisionId,
                                           @RequestBody(required = false)
                                           RuleLifecycleActionRequest request) {
@@ -432,7 +433,7 @@ public class RuleDefinitionController {
     }
 
     @PostMapping("/{definitionId}/revisions/{revisionId}/approve")
-    public R<RuleRevision> approveRevision(@PathVariable Long definitionId,
+    public ApiResponse<RuleRevision> approveRevision(@PathVariable Long definitionId,
                                            @PathVariable Long revisionId,
                                            @RequestBody(required = false)
                                            RuleLifecycleActionRequest request) {
@@ -443,7 +444,7 @@ public class RuleDefinitionController {
     }
 
     @PostMapping("/{definitionId}/revisions/{revisionId}/publish")
-    public R<RuleRevision> publishRevision(@PathVariable Long definitionId,
+    public ApiResponse<RuleRevision> publishRevision(@PathVariable Long definitionId,
                                            @PathVariable Long revisionId,
                                            @RequestBody(required = false)
                                            RuleLifecycleActionRequest request) {
@@ -454,7 +455,7 @@ public class RuleDefinitionController {
     }
 
     @PostMapping("/{definitionId}/revisions/{revisionId}/offline")
-    public R<RuleRevision> offlineRevision(@PathVariable Long definitionId,
+    public ApiResponse<RuleRevision> offlineRevision(@PathVariable Long definitionId,
                                            @PathVariable Long revisionId,
                                            @RequestBody(required = false)
                                            RuleLifecycleActionRequest request) {
@@ -465,21 +466,21 @@ public class RuleDefinitionController {
     }
 
     @GetMapping("/{definitionId}/revisions/timeline")
-    public R<List<RuleLifecycleEvent>> lifecycleTimeline(@PathVariable Long definitionId) {
-        return R.ok(lifecycleService.timeline(definitionId));
+    public ApiResponse<List<RuleLifecycleEvent>> lifecycleTimeline(@PathVariable Long definitionId) {
+        return ApiResponse.ok(lifecycleService.timeline(definitionId));
     }
 
-    private R<RuleRevision> lifecycleAction(Long definitionId, Long revisionId,
+    private ApiResponse<RuleRevision> lifecycleAction(Long definitionId, Long revisionId,
                                             java.util.function.Supplier<RuleRevision> action) {
         try {
             lifecycleService.getRevision(definitionId, revisionId);
-            return R.ok(action.get());
+            return ApiResponse.ok(action.get());
         } catch (IllegalArgumentException e) {
-            return R.fail(400, e.getMessage());
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.PARAMETER_INVALID, e.getMessage());
         } catch (IllegalStateException e) {
-            int code = e.getMessage() != null && e.getMessage().startsWith("发布前验证未通过")
-                    ? 422 : 409;
-            return R.fail(code, e.getMessage());
+            com.hengshucredit.rule.model.PlatformCode code = e.getMessage() != null && e.getMessage().startsWith("发布前验证未通过")
+                    ? com.hengshucredit.rule.model.PlatformCode.PREFLIGHT_FAILED : com.hengshucredit.rule.model.PlatformCode.GOVERNANCE_CONFLICT;
+            return ApiResponse.fail(code, e.getMessage());
         }
     }
 
@@ -496,65 +497,65 @@ public class RuleDefinitionController {
         return action.get();
     }
 
-    private R<RulePreflightReport> validationFailure(RulePreflightReport report) {
-        R<RulePreflightReport> response = R.fail(422, "发布前验证未通过");
+    private ApiResponse<RulePreflightReport> validationFailure(RulePreflightReport report) {
+        ApiResponse<RulePreflightReport> response = ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.PREFLIGHT_FAILED, null);
         response.setData(report);
         return response;
     }
 
     @GetMapping("/versions/{definitionId}")
-    public R<List<RuleDefinitionVersion>> listVersions(@PathVariable Long definitionId) {
-        return R.ok(definitionService.listVersions(definitionId));
+    public ApiResponse<List<RuleDefinitionVersion>> listVersions(@PathVariable Long definitionId) {
+        return ApiResponse.ok(definitionService.listVersions(definitionId));
     }
 
     @GetMapping("/{definitionId}/versions/{versionId}")
-    public R<RuleDefinitionVersion> getVersionById(
+    public ApiResponse<RuleDefinitionVersion> getVersionById(
             @PathVariable Long definitionId,
             @PathVariable Long versionId) {
         RuleDefinitionVersion snapshot = definitionService
                 .getVersionById(definitionId, versionId);
         return snapshot == null
-                ? R.fail(400, "版本快照不存在或不属于当前规则")
-                : R.ok(snapshot);
+                ? ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.PARAMETER_INVALID, "版本快照不存在或不属于当前规则")
+                : ApiResponse.ok(snapshot);
     }
 
     @GetMapping("/version/{definitionId}/{version}")
-    public R<RuleDefinitionVersion> getVersion(@PathVariable Long definitionId,
+    public ApiResponse<RuleDefinitionVersion> getVersion(@PathVariable Long definitionId,
                                                @PathVariable Integer version) {
         RuleDefinitionVersion snapshot = definitionService.getVersion(definitionId, version);
-        return snapshot == null ? R.fail("Version not found") : R.ok(snapshot);
+        return snapshot == null ? ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "Version not found") : ApiResponse.ok(snapshot);
     }
 
     @GetMapping("/versionCompare/{definitionId}")
-    public R<Map<String, Object>> compareVersions(@PathVariable Long definitionId,
+    public ApiResponse<Map<String, Object>> compareVersions(@PathVariable Long definitionId,
                                                   @RequestParam Integer leftVersion,
                                                   @RequestParam Integer rightVersion) {
         try {
-            return R.ok(definitionService.compareVersions(definitionId, leftVersion, rightVersion));
+            return ApiResponse.ok(definitionService.compareVersions(definitionId, leftVersion, rightVersion));
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
     @PostMapping("/rollback/{definitionId}/{version}")
-    public R<Void> rollback(@PathVariable Long definitionId, @PathVariable Integer version) {
+    public ApiResponse<Void> rollback(@PathVariable Long definitionId, @PathVariable Integer version) {
         try {
             definitionService.rollbackToVersion(definitionId, version);
-            return R.ok();
+            return ApiResponse.ok();
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
     @PostMapping("/script/{definitionId:\\d+}")
-    public R<RuleDraftSaveResponse> saveScript(
+    public ApiResponse<RuleDraftSaveResponse> saveScript(
             @PathVariable Long definitionId,
             @RequestBody(required = false)
             RuleDraftSaveRequest request) {
         requireSaveRequest(request, definitionId);
         request.setModelJson(
                 normalizeModelJson(request.getModelJson()));
-        return R.ok(definitionService.saveScript(request));
+        return ApiResponse.ok(definitionService.saveScript(request));
     }
 
     /**
@@ -562,14 +563,14 @@ public class RuleDefinitionController {
      * 请求体: { "scriptMode": "visual" | "script" }
      */
     @PostMapping("/scriptMode/{definitionId:\\d+}")
-    public R<Void> updateScriptMode(@PathVariable Long definitionId,
+    public ApiResponse<Void> updateScriptMode(@PathVariable Long definitionId,
                                      @RequestBody Map<String, String> body) {
         String mode = body.get("scriptMode");
         if (mode == null || (!"visual".equals(mode) && !"script".equals(mode))) {
-            return R.fail("scriptMode 必须为 visual 或 script");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.PARAMETER_INVALID, "scriptMode 必须为 visual 或 script");
         }
         definitionService.updateScriptMode(definitionId, mode);
-        return R.ok();
+        return ApiResponse.ok();
     }
 
     /**
@@ -577,13 +578,13 @@ public class RuleDefinitionController {
      * 请求体: { "script": "..." }
      */
     @PostMapping("/validateScript/{definitionId:\\d+}")
-    public R<CompileResult> validateScript(@PathVariable Long definitionId,
+    public ApiResponse<CompileResult> validateScript(@PathVariable Long definitionId,
                                             @RequestBody Map<String, String> body) {
         String script = body.get("script");
         if (script == null || script.trim().isEmpty()) {
-            return R.fail("脚本内容不能为空");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.REQUIRED_FIELD_MISSING, "脚本内容不能为空");
         }
-        return R.ok(compileService.validateScript(script.trim()));
+        return ApiResponse.ok(compileService.validateScript(script.trim()));
     }
 
     // ========== 规则字段管理 ==========
@@ -592,54 +593,54 @@ public class RuleDefinitionController {
      * 获取规则详情（含输入输出字段）
      */
     @GetMapping("/detail/{id}")
-    public R<RuleDefinition> getDetail(@PathVariable Long id) {
-        return R.ok(definitionService.getDetail(id));
+    public ApiResponse<RuleDefinition> getDetail(@PathVariable Long id) {
+        return ApiResponse.ok(definitionService.getDetail(id));
     }
 
     /**
      * 获取规则输入字段列表
      */
     @GetMapping("/inputFields/{definitionId}")
-    public R<List<RuleDefinitionInputField>> listInputFields(@PathVariable Long definitionId) {
-        return R.ok(definitionService.listInputFields(definitionId));
+    public ApiResponse<List<RuleDefinitionInputField>> listInputFields(@PathVariable Long definitionId) {
+        return ApiResponse.ok(definitionService.listInputFields(definitionId));
     }
 
     /**
      * 获取规则输出字段列表
      */
     @GetMapping("/outputFields/{definitionId}")
-    public R<List<RuleDefinitionOutputField>> listOutputFields(@PathVariable Long definitionId) {
-        return R.ok(definitionService.listOutputFields(definitionId));
+    public ApiResponse<List<RuleDefinitionOutputField>> listOutputFields(@PathVariable Long definitionId) {
+        return ApiResponse.ok(definitionService.listOutputFields(definitionId));
     }
 
     /**
      * 更新规则输入字段（关联变量映射）
      */
     @PutMapping("/inputField/{fieldId:\\d+}")
-    public R<Void> updateInputField(@PathVariable Long fieldId, @RequestBody RuleDefinitionInputField field) {
+    public ApiResponse<Void> updateInputField(@PathVariable Long fieldId, @RequestBody RuleDefinitionInputField field) {
         definitionService.updateInputField(fieldId, field);
-        return R.ok();
+        return ApiResponse.ok();
     }
 
     /**
      * 更新规则输出字段（关联变量映射）
      */
     @PutMapping("/outputField/{fieldId:\\d+}")
-    public R<Void> updateOutputField(@PathVariable Long fieldId, @RequestBody RuleDefinitionOutputField field) {
+    public ApiResponse<Void> updateOutputField(@PathVariable Long fieldId, @RequestBody RuleDefinitionOutputField field) {
         definitionService.updateOutputField(fieldId, field);
-        return R.ok();
+        return ApiResponse.ok();
     }
 
 
     @PostMapping("/refreshFields/{definitionId}")
-    public R<RuleDraftSaveResponse> refreshFields(
+    public ApiResponse<RuleDraftSaveResponse> refreshFields(
             @PathVariable Long definitionId,
             @RequestBody(required = false)
             RuleDraftSaveRequest request) {
         requireSaveRequest(request, definitionId);
         request.setModelJson(
                 normalizeModelJson(request.getModelJson()));
-        return R.ok(definitionService.refreshFields(request));
+        return ApiResponse.ok(definitionService.refreshFields(request));
     }
 
     private void requireSaveRequest(
@@ -699,27 +700,27 @@ public class RuleDefinitionController {
     }
 
     @GetMapping("/reference-integrity/scan/{definitionId}")
-    public R<RuleReferenceIntegrityService.AuditReport> scanReferenceIntegrity(
+    public ApiResponse<RuleReferenceIntegrityService.AuditReport> scanReferenceIntegrity(
             @PathVariable Long definitionId) {
         try {
-            return R.ok(referenceIntegrityService.scan(definitionId));
+            return ApiResponse.ok(referenceIntegrityService.scan(definitionId));
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 
     @GetMapping("/reference-integrity/scan-all")
-    public R<List<RuleReferenceIntegrityService.AuditReport>> scanAllReferenceIntegrity() {
-        return R.ok(referenceIntegrityService.scanAll());
+    public ApiResponse<List<RuleReferenceIntegrityService.AuditReport>> scanAllReferenceIntegrity() {
+        return ApiResponse.ok(referenceIntegrityService.scanAll());
     }
 
     @PostMapping("/reference-integrity/migrate")
-    public R<RuleReferenceIntegrityService.MigrationResult> migrateReferences(
+    public ApiResponse<RuleReferenceIntegrityService.MigrationResult> migrateReferences(
             @RequestBody RuleReferenceIntegrityService.MigrationRequest request) {
         try {
-            return R.ok(referenceIntegrityService.migrate(request));
+            return ApiResponse.ok(referenceIntegrityService.migrate(request));
         } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
+            return ApiResponse.fail(e);
         }
     }
 }

@@ -10,7 +10,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
-import java.util.Map;
+import com.hengshucredit.rule.model.ApiResponse;
+import com.hengshucredit.rule.model.PlatformCode;
 
 @RestController
 public class ExternalApiCallbackController {
@@ -19,16 +20,16 @@ public class ExternalApiCallbackController {
     public ExternalApiCallbackController(ExternalApiCallbackStore callbacks) { this.callbacks = callbacks; }
 
     @PostMapping("/api/external-callback/{invocationId}")
-    public ResponseEntity<Map<String, Object>> callback(@PathVariable String invocationId,
+    public ResponseEntity<ApiResponse<Void>> callback(@PathVariable String invocationId,
                                                        @RequestHeader HttpHeaders headers,
                                                        HttpServletRequest request) throws IOException {
         try {
             callbacks.accept(invocationId, headers, request.getInputStream().readNBytes(1048577));
-            return ResponseEntity.ok(Map.of("success", true));
+            return ResponseEntity.ok(ApiResponse.ok(null));
         } catch (SecurityException e) {
-            return ResponseEntity.status(401).body(Map.of("success", false, "message", e.getMessage()));
+            return ResponseEntity.status(401).body(ApiResponse.fail(PlatformCode.TOKEN_INVALID, e.getMessage()));
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+            return ResponseEntity.badRequest().body(ApiResponse.fail(PlatformCode.PARAMETER_INVALID, e.getMessage()));
         }
     }
 }

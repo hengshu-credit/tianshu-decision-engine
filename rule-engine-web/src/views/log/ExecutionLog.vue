@@ -19,6 +19,7 @@
       <el-tab-pane v-if="canViewRuntime" label="运行状态" name="runtime" />
     </el-tabs>
     <div class="management-table-region" v-if="activeView === 'logs'">
+      <p class="log-outcome-help">执行成功表示规则运行完成，不等于业务通过；通过、拒绝或人工审核等业务结论请查看输出结果。</p>
       <div class="uiue-search-container uiue-filter-toolbar">
         <el-form :inline="true" size="small" @keyup.enter="handleQuery">
           <el-form-item label="来源" style="width: 150px">
@@ -272,7 +273,7 @@
         :page-size="qp.pageSize"
         :total="total"
         layout="total,sizes,prev,pager,next"
-        :page-sizes="[10, 30, 50, 100, 200, 500]"
+        :page-sizes="[10, 20, 30, 50, 100, 200, 500]"
         @current-change="
           (p) => {
             qp.pageNum = p
@@ -573,6 +574,7 @@
                 <el-badge v-if="detail.traceInfo" is-dot class="trace-badge" />
               </span>
             </template>
+            <el-alert v-if="modelSnapshotWarning" :title="modelSnapshotWarning" type="info" :closable="false" show-icon />
             <trace-tree
               :trace-info="detail.traceInfo"
               :var-map="varMap"
@@ -600,7 +602,7 @@ import dayjs from 'dayjs'
 import request from '@/api/request'
 import { listVariables } from '@/api/variable'
 import { getVariableTree } from '@/api/dataObject'
-import { listDefinitions as listRules, getContent } from '@/api/definition'
+import { listDefinitions as listRules } from '@/api/definition'
 import { getProject, listProjects } from '@/api/project'
 import { listAllFunctionsByProject } from '@/api/function'
 import { listAllModelsByProject } from '@/api/model'
@@ -619,6 +621,8 @@ import {
 } from '@/utils/pageStateCache'
 import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
 import { ruleSetCoverageHint } from '@/utils/ruleSetStatistics'
+import { resolveTraceReferences } from '@/utils/traceReference'
+import { loadPagedCatalog } from '@/utils/pagedCatalog'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
@@ -654,7 +658,7 @@ list: [],
 total: 0,
 qp: {
 pageNum: 1,
-pageSize: 10,
+pageSize: 20,
 ruleCode: '',
 projectCode: '',
 projectName: '',
@@ -756,6 +760,7 @@ SCRIPT: '脚本',
 modelData: null,
 /** 规则设计器完整 modelJson 解析结果（交叉表/复杂交叉表矩阵展示依赖） */
 definitionModel: null,
+modelSnapshotWarning: '',
 /** 当前日志项目下函数编码→中文名，供追踪树展示调用函数 */
 functionNameMap: {},
   dayjs,
@@ -888,11 +893,11 @@ if (state.timeRange) this.timeRange = state.timeRange
 this.normalizePagination()
 },
 normalizePagination: function () {
-var allowedPageSizes = [10, 30, 50, 100, 200, 500]
+var allowedPageSizes = [10, 20, 30, 50, 100, 200, 500]
 var pageNum = Number(this.qp.pageNum)
 var pageSize = Number(this.qp.pageSize)
 this.qp.pageNum = Number.isInteger(pageNum) && pageNum > 0 ? pageNum : 1
-this.qp.pageSize = allowedPageSizes.indexOf(pageSize) >= 0 ? pageSize : 10
+this.qp.pageSize = allowedPageSizes.indexOf(pageSize) >= 0 ? pageSize : 20
 },
 saveCachedState: function () {
 savePageState(projectPageStateKey('ExecutionLog', this.contextProjectId), {
@@ -1055,7 +1060,7 @@ if (ruleCode && !hasRule) {
 },
 async loadVarMap() {
 try {
-  var r = await listVariables({ pageNum: 1, pageSize: 1000 })
+  var r = await loadPagedCatalog(listVariables)
   var vars = r.data && r.data.records ? r.data.records : []
   var map = {}
   for (var i = 0; i < vars.length; i++) {
@@ -1163,33 +1168,25 @@ try {
   console.warn('加载函数中文名映射失败:', e)
 }
 },
-/**
-* 根据 ruleCode 加载规则 modelJson：决策树/流提取 nodes+edges；交叉表等保留完整模型供追踪矩阵高亮。
-*/
+/** 历史图形只使用执行时保存的快照，不能用当前工作区内容补齐。 */
 async loadModelJson() {
 this.modelData = null
 this.definitionModel = null
-if (!this.detail || !this.detail.ruleCode) return
-var def = null
-for (var i = 0; i < this.ruleList.length; i++) {
-  if (this.ruleList[i].ruleCode === this.detail.ruleCode) {
-    def = this.ruleList[i]
-    break
-  }
-}
-if (!def || !def.id) return
+this.modelSnapshotWarning = ''
+if (!this.detail || !this.detail.traceInfo) return
 try {
-  var r = await getContent(def.id)
-  var content = r && r.data ? r.data : r
-  if (content && content.modelJson) {
-    var model = JSON.parse(content.modelJson)
-    this.definitionModel = model
-    if (model.nodes && model.edges) {
-      this.modelData = { nodes: model.nodes, edges: model.edges }
-    }
+  var frame = resolveTraceReferences(typeof this.detail.traceInfo === 'string' ? JSON.parse(this.detail.traceInfo) : this.detail.traceInfo)
+  if (Array.isArray(frame) && frame.length === 1) frame = frame[0]
+  if (!frame || frame.traceKind !== 'RULE' || !(Number(frame.schemaVersion) >= 2) || !frame.modelJson) {
+    this.modelSnapshotWarning = '该日志未保存执行时的设计快照，无法还原历史图形；仍可查看已保存的表达式追踪。'
+    return
   }
+  var model = typeof frame.modelJson === 'string' ? JSON.parse(frame.modelJson) : frame.modelJson
+  if (!model || typeof model !== 'object' || Array.isArray(model)) throw new Error('设计快照格式错误')
+  this.definitionModel = model
+  if (Array.isArray(model.nodes) && Array.isArray(model.edges)) this.modelData = { nodes: model.nodes, edges: model.edges }
 } catch (e) {
-  console.warn('加载规则模型失败:', e)
+  this.modelSnapshotWarning = '执行时的设计快照无法解析，无法还原历史图形；仍可查看日志原有的追踪信息。'
 }
 },
 async handleViewDetail(row) {
@@ -1362,6 +1359,7 @@ emits: ['pick']
 </script>
 
 <style scoped>
+.log-outcome-help { margin: 0 0 12px; color: var(--tianshu-text-secondary); font-size: 12px; line-height: 1.5; }
 .log-view-tabs {
   margin-bottom: 12px;
 }

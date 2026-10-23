@@ -115,6 +115,7 @@ export default {
       const aggregate = available.some(option => option.value === this.config.aggregate) ? this.config.aggregate : 'COUNT'
       this.patch({ valueField, aggregate })
       if (['MIN', 'MAX'].includes(aggregate)) this.$emit('type-change', type)
+      else if (aggregate !== 'CUSTOM') this.$emit('type-change', 'NUMBER')
     },
     setFunction(functionId) { this.patch({ functionId }); const fn = this.functions.find(item => item.id === functionId); if (fn?.returnType) this.$emit('type-change', fn.returnType) },
     fieldKey(field) { return `${field._refType || field.refType}:${field._varId || field.id}` },

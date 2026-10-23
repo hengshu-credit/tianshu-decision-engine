@@ -6,7 +6,7 @@ vi.mock('axios', () => ({ default: { create: () => ({ get }) } }))
 import { fetchConsoleConfig } from '@/router'
 
 test('登录配置首次网络失败后可以重试，成功后共享缓存', async () => {
-  const config = { code: 200, data: { loginEnabled: true } }
+  const config = { code: '000000', data: { loginEnabled: true } }
   get.mockRejectedValueOnce(new Error('temporarily unavailable'))
   get.mockResolvedValueOnce({ data: { code: 503 } })
   get.mockResolvedValueOnce({ data: config })

@@ -20,6 +20,8 @@
         v-model:value="editScript"
         language="ql"
         height="132px"
+        :references="vars"
+        :functions="functions"
         :options="editorOptions"
       />
       <p v-if="parseError" class="expression-formula-preview__error">

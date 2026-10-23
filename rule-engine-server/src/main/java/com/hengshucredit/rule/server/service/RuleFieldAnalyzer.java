@@ -1003,6 +1003,11 @@ public class RuleFieldAnalyzer {
             meta.put("scriptName", firstNonBlank(variable.getScriptName(), variable.getVarCode()));
             entries.add(meta);
         }
+        for (RuleDataObject object : snapshot.getDataObjects()) {
+            Map<String, Object> meta = new LinkedHashMap<>(); meta.put("id", object.getId()); meta.put("refType", "DATA_OBJECT_ROOT");
+            meta.put("scriptName", snapshot.getReferencePaths().get("DATA_OBJECT_ROOT:" + object.getId()));
+            meta.put("varLabel", object.getObjectLabel()); meta.put("varType", "OBJECT"); meta.put("varSource", "dataObject"); entries.add(meta);
+        }
         for (RuleDataObjectField field : snapshot.getDataObjectFields()) {
             Map<String, Object> meta = frozenBeanMetadata(field);
             meta.put("id", field.getId()); meta.put("refVariableId", field.getRefVariableId());
@@ -1223,6 +1228,15 @@ public class RuleFieldAnalyzer {
 
         // 查询数据对象字段（rule_data_object_field）
         Map<Long, RuleDataObject> objectMap = buildObjectMap(projectId);
+        for (RuleDataObject object : objectMap.values()) {
+            String root = firstNonBlank(object.getScriptName(), object.getObjectCode());
+            if (root == null) continue;
+            Map<String, Object> meta = new HashMap<>();
+            meta.put("id", object.getId()); meta.put("refType", "DATA_OBJECT_ROOT"); meta.put("varSource", "dataObject");
+            meta.put("scriptName", root); meta.put("varCode", object.getObjectCode());
+            meta.put("varLabel", object.getObjectLabel()); meta.put("varType", "OBJECT");
+            map.putIfAbsent(root.toLowerCase(), meta);
+        }
         LambdaQueryWrapper<RuleDataObjectField> fieldWrapper = new LambdaQueryWrapper<>();
         if (projectId != null && projectId > 0) {
             fieldWrapper.and(w -> w.eq(RuleDataObjectField::getScope, RuleVariableService.SCOPE_GLOBAL)
@@ -1770,31 +1784,6 @@ public class RuleFieldAnalyzer {
             if (expr != null) {
                 depNames.addAll(collectExpressionIdentifiers(expr));
             }
-        } else if ("API".equals(varSource)) {
-            List<RuleDefinitionInputField> requestFields = loadApiRequestObjectFields(sourceConfig);
-            Set<String> requestPaths = new LinkedHashSet<>();
-            if (!requestFields.isEmpty()) {
-                for (RuleDefinitionInputField requestField : requestFields) {
-                    expandFieldRecursive(requestField, varMetaMap, seen, visited, result);
-                    String requestPath = trimToNull(requestField.getScriptName());
-                    if (requestPath != null) requestPaths.add(requestPath.toLowerCase(Locale.ROOT));
-                }
-            }
-            if (variableSourceResolver != null) {
-                RuleVariable variable = new RuleVariable();
-                variable.setId(field.getVarId());
-                if (meta.get("projectId") instanceof Number projectId) {
-                    variable.setProjectId(projectId.longValue());
-                }
-                if (meta.get("scope") != null) {
-                    variable.setScope(String.valueOf(meta.get("scope")));
-                }
-                variable.setScriptName(trimToNull(field.getScriptName()));
-                variable.setVarSource(varSource);
-                variable.setSourceConfig(sourceConfig);
-                depNames.addAll(variableSourceResolver.collectVariableDependencies(variable));
-            }
-            depNames.removeIf(name -> name != null && requestPaths.contains(name.toLowerCase(Locale.ROOT)));
         } else if (variableSourceResolver != null) {
             RuleVariable variable = new RuleVariable();
             variable.setId(field.getVarId());
@@ -1820,16 +1809,15 @@ public class RuleFieldAnalyzer {
             depField.setCreateTime(LocalDateTime.now());
             enrichFieldFromMeta(depField, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
             Map<String, Object> depMeta = findFieldMeta(depField, varMetaMap);
+            if (depField.getRefType() == null && depMeta != null && depMeta.get("refType") != null) {
+                depField.setRefType(normalizeRefType(String.valueOf(depMeta.get("refType"))));
+            }
             if (depField.getRefType() == null && depMeta != null && depMeta.get("varSource") != null) {
                 depField.setRefType("VARIABLE");
             }
             if (depField.getVarId() == null && depMeta != null
                     && depMeta.get("id") instanceof Number id) {
                 depField.setVarId(id.longValue());
-            }
-            if (depField.getRefType() == null && depMeta != null
-                    && depMeta.get("refType") != null) {
-                depField.setRefType(normalizeRefType(String.valueOf(depMeta.get("refType"))));
             }
             if (depMeta != null && depMeta.get("varType") != null) {
                 depField.setFieldType(String.valueOf(depMeta.get("varType")));
@@ -2054,58 +2042,6 @@ public class RuleFieldAnalyzer {
                 break;
             }
         }
-    }
-
-    private List<RuleDefinitionInputField> loadApiRequestObjectFields(String sourceConfig) {
-        if (externalApiConfigMapper == null || dataObjectMapper == null || dataObjectFieldMapper == null) {
-            return Collections.emptyList();
-        }
-        Long apiConfigId = parseObject(sourceConfig).getLong("apiConfigId");
-        if (apiConfigId == null) {
-            return Collections.emptyList();
-        }
-        RuleExternalApiConfig apiConfig = externalApiConfigMapper.selectById(apiConfigId);
-        if (apiConfig == null || apiConfig.getRequestObjectId() == null) {
-            return Collections.emptyList();
-        }
-        RuleDataObject object = dataObjectMapper.selectById(apiConfig.getRequestObjectId());
-        if (object == null) {
-            return Collections.emptyList();
-        }
-        List<RuleDataObjectField> fields = dataObjectFieldMapper.selectList(
-                new LambdaQueryWrapper<RuleDataObjectField>()
-                        .eq(RuleDataObjectField::getObjectId, object.getId())
-                        .eq(RuleDataObjectField::getStatus, 1)
-                        .orderByAsc(RuleDataObjectField::getSortOrder)
-                        .orderByAsc(RuleDataObjectField::getId));
-        if (fields == null || fields.isEmpty()) {
-            return Collections.emptyList();
-        }
-        Map<Long, RuleDataObject> objectMap = Collections.singletonMap(object.getId(), object);
-        Map<Long, RuleDataObjectField> objectFieldMap = new HashMap<>();
-        for (RuleDataObjectField field : fields) {
-            if (field != null && field.getId() != null) {
-                objectFieldMap.put(field.getId(), field);
-            }
-        }
-        List<RuleDefinitionInputField> result = new ArrayList<>();
-        for (RuleDataObjectField source : fields) {
-            String scriptName = buildObjectFieldScriptName(source, objectMap, objectFieldMap);
-            if (scriptName == null) {
-                continue;
-            }
-            RuleDefinitionInputField target = new RuleDefinitionInputField();
-            target.setVarId(source.getId());
-            target.setRefType("DATA_OBJECT");
-            target.setFieldName(firstNonBlank(source.getVarCode(), source.getScriptName(), scriptName));
-            target.setFieldLabel(firstNonBlank(source.getVarLabel(), target.getFieldName()));
-            target.setScriptName(scriptName);
-            target.setFieldType(firstNonBlank(source.getVarType(), "STRING"));
-            target.setStatus(1);
-            target.setCreateTime(LocalDateTime.now());
-            result.add(target);
-        }
-        return result;
     }
 
     /** 显式动作和 API 结果引用复用 API 变量的上游入参展开，结果本身不属于外部入参。 */
@@ -2426,7 +2362,7 @@ public class RuleFieldAnalyzer {
             for (RuleDefinitionInputField field
                     : qlScriptFieldResolver.resolve(modelJson, null).getInputFields()) {
                 String refType = normalizeRefType(field.getRefType());
-                if ("VARIABLE".equals(refType) || "DATA_OBJECT".equals(refType)
+                if ("VARIABLE".equals(refType) || "DATA_OBJECT".equals(refType) || "DATA_OBJECT_ROOT".equals(refType)
                         || "MODEL".equals(refType)
                         || "MODEL_OUTPUT".equals(refType)) {
                     result.add(field);
@@ -2439,7 +2375,7 @@ public class RuleFieldAnalyzer {
         for (RuleDefinitionInputField field : extractInputFields(modelJson, modelType)) {
             applyExplicitRef(field, explicitRefMap);
             String refType = normalizeRefType(field.getRefType());
-            if ("VARIABLE".equals(refType) || "DATA_OBJECT".equals(refType)
+            if ("VARIABLE".equals(refType) || "DATA_OBJECT".equals(refType) || "DATA_OBJECT_ROOT".equals(refType)
                     || "MODEL".equals(refType) || "MODEL_OUTPUT".equals(refType)) {
                 result.add(field);
             }
@@ -3034,30 +2970,15 @@ public class RuleFieldAnalyzer {
     // ==================== 交叉表 ====================
 
     private void extractFromCrossTable(JSONObject model, Set<String> inputVars) {
-        JSONObject rowVar = model.getJSONObject("rowVar");
-        if (rowVar != null) {
-            String varCode = getString(rowVar, "varCode");
-            if (varCode != null && !varCode.isEmpty()) inputVars.add(varCode);
-        }
-        JSONObject colVar = model.getJSONObject("colVar");
-        if (colVar != null) {
-            String varCode = getString(colVar, "varCode");
-            if (varCode != null && !varCode.isEmpty()) inputVars.add(varCode);
-        }
-        OperandDependencyCollector.collect(rowVar == null ? null : rowVar.getJSONObject("operand"), inputVars);
-        OperandDependencyCollector.collect(colVar == null ? null : colVar.getJSONObject("operand"), inputVars);
+        extractConfiguredVar(model.getJSONObject("rowVar"), inputVars);
+        extractConfiguredVar(model.getJSONObject("colVar"), inputVars);
         collectOperandValues(model.get("rowHeaderOperands"), inputVars);
         collectOperandValues(model.get("colHeaderOperands"), inputVars);
         collectOperandValues(model.get("cellOperands"), inputVars);
     }
 
     private void extractOutputFromCrossTable(JSONObject model, Set<String> outputVars) {
-        JSONObject resultVar = model.getJSONObject("resultVar");
-        if (resultVar != null) {
-            String varCode = getString(resultVar, "varCode");
-            if (varCode != null && !varCode.isEmpty()) outputVars.add(varCode);
-        }
-        OperandDependencyCollector.collect(resultVar == null ? null : resultVar.getJSONObject("operand"), outputVars);
+        extractConfiguredVar(model.getJSONObject("resultVar"), outputVars);
     }
 
     // ==================== 评分卡 ====================
@@ -3091,12 +3012,7 @@ public class RuleFieldAnalyzer {
     }
 
     private void extractOutputFromScorecard(JSONObject model, Set<String> outputVars) {
-        JSONObject resultVar = model.getJSONObject("resultVar");
-        if (resultVar != null) {
-            String varCode = getString(resultVar, "varCode");
-            if (varCode != null && !varCode.isEmpty()) outputVars.add(varCode);
-        }
-        OperandDependencyCollector.collect(resultVar == null ? null : resultVar.getJSONObject("operand"), outputVars);
+        extractConfiguredVar(model.getJSONObject("resultVar"), outputVars);
         if (ScorecardLevelCompiler.isEnabled(model)) {
             JSONObject levelVar = ScorecardLevelCompiler.getTarget(model);
             JSONObject operand = levelVar.getJSONObject("operand");
@@ -3123,12 +3039,10 @@ public class RuleFieldAnalyzer {
     }
 
     private void extractDimensionVar(JSONObject dim, Set<String> varCodes) {
-        OperandDependencyCollector.collect(dim.getJSONObject("operand"), varCodes);
-        String varCode = getString(dim, "varCode");
-        if (varCode != null && !varCode.isEmpty()) varCodes.add(varCode);
+        extractConfiguredVar(dim, varCodes);
         // 兼容嵌套结构
         JSONObject condVar = dim.getJSONObject("condVar");
-        if (condVar != null) {
+        if (dim.getJSONObject("operand") == null && condVar != null) {
             String cv = getString(condVar, "varCode");
             if (cv != null && !cv.isEmpty()) varCodes.add(cv);
         }
@@ -3142,12 +3056,7 @@ public class RuleFieldAnalyzer {
     }
 
     private void extractOutputFromAdvancedCrossTable(JSONObject model, Set<String> outputVars) {
-        JSONObject resultVar = model.getJSONObject("resultVar");
-        if (resultVar != null) {
-            String varCode = getString(resultVar, "varCode");
-            if (varCode != null && !varCode.isEmpty()) outputVars.add(varCode);
-        }
-        OperandDependencyCollector.collect(resultVar == null ? null : resultVar.getJSONObject("operand"), outputVars);
+        extractConfiguredVar(model.getJSONObject("resultVar"), outputVars);
     }
 
     // ==================== 复杂评分卡 ====================
@@ -3161,9 +3070,7 @@ public class RuleFieldAnalyzer {
                 if (dimensions != null) {
                     for (int j = 0; j < dimensions.size(); j++) {
                         JSONObject dim = dimensions.getJSONObject(j);
-                        OperandDependencyCollector.collect(dim.getJSONObject("operand"), inputVars);
-                        String varCode = getString(dim, "varCode");
-                        if (varCode != null && !varCode.isEmpty()) inputVars.add(varCode);
+                        extractConfiguredVar(dim, inputVars);
                         // 兼容 condition
                         String condition = getString(dim, "condition");
                         if (condition != null && !condition.isEmpty()) {
@@ -3186,17 +3093,22 @@ public class RuleFieldAnalyzer {
     }
 
     private void extractOutputFromAdvancedScorecard(JSONObject model, Set<String> outputVars) {
-        JSONObject resultVar = model.getJSONObject("resultVar");
-        if (resultVar != null) {
-            String varCode = getString(resultVar, "varCode");
-            if (varCode != null && !varCode.isEmpty()) outputVars.add(varCode);
-        }
-        OperandDependencyCollector.collect(resultVar == null ? null : resultVar.getJSONObject("operand"), outputVars);
+        extractConfiguredVar(model.getJSONObject("resultVar"), outputVars);
         if (ScorecardLevelCompiler.isEnabled(model)) {
             JSONObject levelVar = ScorecardLevelCompiler.getTarget(model);
             JSONObject operand = levelVar.getJSONObject("operand");
             if (operand != null) OperandDependencyCollector.collect(operand, outputVars);
             else addVarName(outputVars, levelVar.getString("varCode"));
+        }
+    }
+
+    private void extractConfiguredVar(JSONObject config, Set<String> variables) {
+        if (config == null) return;
+        JSONObject operand = config.getJSONObject("operand");
+        if (operand != null) OperandDependencyCollector.collect(operand, variables);
+        else {
+            String code = getString(config, "varCode");
+            if (code != null && !code.isEmpty()) variables.add(code);
         }
     }
 

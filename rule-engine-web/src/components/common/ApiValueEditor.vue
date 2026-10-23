@@ -1,6 +1,6 @@
 <template>
   <div class="api-value-editor">
-    <operand-picker lazy-catalog :value="value" :vars="pickerVars" :functions="pureFunctions" :expected-type="expectedType" @input="update" />
+    <operand-picker lazy-catalog :value="value" :sensitive="sensitive" :vars="pickerVars" :functions="pureFunctions" :expected-type="expectedType" @input="update" />
     <div v-if="error" class="api-binding-error" role="alert">{{ error }}</div>
   </div>
 </template>
@@ -11,11 +11,11 @@ import { apiProtocolFields, isAvailableApiPath } from '@/utils/apiContext'
 import { resolvePathOperand } from '@/utils/operand'
 export default {
   components: { OperandPicker },
-  props: { value: { type: Object, default: null }, vars: { type: Array, default: () => [] }, functions: { type: Array, default: () => [] }, modules: { type: Array, default: () => API_MODULE_FIELDS }, expectedType: { type: String, default: '' }, contextLabel: { type: String, default: '当前外数 API · HTTP 上下文' } },
+  props: { value: { type: Object, default: null }, sensitive: Boolean, vars: { type: Array, default: () => [] }, functions: { type: Array, default: () => [] }, modules: { type: Array, default: () => API_MODULE_FIELDS }, expectedType: { type: String, default: '' }, contextLabel: { type: String, default: '当前外数 API · HTTP 上下文' } },
   emits: ['update:value'],
   data: () => ({ error: '' }),
   computed: {
-    pureFunctions() { return this.functions.filter(item => ['AggregateBuiltinFunctions', 'DecisionBuiltinFunctions', 'DigestBuiltinFunctions', 'ImageInputFunctions'].some(name => item.implClass?.endsWith('.' + name))) },
+    pureFunctions() { return this.functions.filter(item => ['AggregateBuiltinFunctions', 'DecisionBuiltinFunctions', 'DigestBuiltinFunctions'].some(name => item.implClass?.endsWith('.' + name))) },
     pickerVars() { return [...this.vars, ...apiProtocolFields(this.modules, this.contextLabel)] },
   },
   methods: {

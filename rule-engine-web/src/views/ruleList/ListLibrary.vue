@@ -208,7 +208,7 @@
           :page-size="query.pageSize"
           :total="total"
           layout="total,sizes,prev,pager,next"
-          :page-sizes="[10, 30, 50, 100, 200, 500]"
+          :page-sizes="[10, 20, 30, 50, 100, 200, 500]"
           @current-change="
             (p) => {
               query.pageNum = p
@@ -352,7 +352,7 @@ export default {
       total: 0,
       query: {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         projectCode: '',
         projectName: '',
         scope: '',

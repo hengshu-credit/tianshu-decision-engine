@@ -39,4 +39,17 @@ describe('DerivedVariableEditor', () => {
     wrapper.vm.setSubjects(['VARIABLE:7'])
     expect(wrapper.emitted('update:modelValue').at(-1)[0].subjectFields[0]).toMatchObject({ refType: 'VARIABLE', refId: 7 })
   })
+  test('统计属性导致聚合回退为计数时同步改为数值类型', () => {
+    const wrapper = mount(DerivedVariableEditor, { props: {
+      modelValue: { ...createDerivedConfig(), mode: 'HISTORY', aggregate: 'MIN', valueField: { kind: 'REFERENCE', refType: 'VARIABLE', refId: 1, valueType: 'STRING' } },
+      vars: [
+        { id: 1, _refType: 'VARIABLE', varType: 'STRING', varCode: 'name' },
+        { id: 2, _refType: 'VARIABLE', varType: 'LIST', varCode: 'tags' },
+      ],
+    } })
+    wrapper.vm.setValueField({ kind: 'REFERENCE', refType: 'VARIABLE', refId: 2, valueType: 'LIST' })
+    expect(wrapper.emitted('update:modelValue').at(-1)[0].aggregate).toBe('COUNT')
+    expect(wrapper.emitted('type-change').at(-1)[0]).toBe('NUMBER')
+  })
+
 })

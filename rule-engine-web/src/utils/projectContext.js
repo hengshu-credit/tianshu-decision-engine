@@ -5,6 +5,8 @@ const CONTEXT_PATHS = new Set([
   '/variable',
   '/datasource',
   '/database',
+  '/sftp',
+  '/sftp/logs',
   '/model',
   '/test',
   '/experiment',

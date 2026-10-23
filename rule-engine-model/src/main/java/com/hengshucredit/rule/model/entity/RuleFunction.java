@@ -29,6 +29,9 @@ public class RuleFunction {
     /** 所属项目名称（非DB字段，查询时由Service层填充） */
     @TableField(exist = false)
     private String projectName;
+    /** 所属项目编码（非DB字段，客户端同步时用于项目级函数路由） */
+    @TableField(exist = false)
+    private String projectCode;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
     @TableField(fill = FieldFill.INSERT_UPDATE)

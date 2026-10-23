@@ -17,11 +17,13 @@ import java.util.stream.Collectors;
 
 @Service
 public class FunctionMethodCatalogService {
+    @Resource private com.hengshucredit.rule.server.security.ConsoleProjectAccess consoleProjects;
     @Resource private ApplicationContext applicationContext;
 
     public FunctionMethodCatalog inspect(RuleFunction function) {
         if (function == null || !"JAVA".equals(function.getImplType()) && !"BEAN".equals(function.getImplType()))
             return unavailable("INVALID", "请选择 Java 类或 Spring Bean 实现", null);
+        requireNativePermission(function);
         Class<?> implementation;
         boolean javaClass = "JAVA".equals(function.getImplType());
         String target = javaClass ? function.getImplClass() : function.getImplBeanName();
@@ -81,6 +83,21 @@ public class FunctionMethodCatalogService {
         return new FunctionMethodCatalog(status, message, implementation, null, false, false, List.of());
     }
 
+    public void requireNativePermission(RuleFunction function) {
+        if (function == null || !("JAVA".equalsIgnoreCase(function.getImplType()) || "BEAN".equalsIgnoreCase(function.getImplType()))) return;
+        var scope = consoleProjects == null ? null : consoleProjects.current();
+        if (scope == null || isPlatformBinding(function)) return;
+        if (!scope.can("function:native")) throw new com.hengshucredit.rule.server.security.ConsoleAccessDeniedException(
+                "Java/Spring Bean 实现需要原生函数、账户管理和角色管理权限，且不能受项目范围或全局只读限制");
+    }
+
+    private boolean isPlatformBinding(RuleFunction function) {
+        Method platform = com.hengshucredit.rule.core.function.AggregateBuiltinFunctionRegistry.managementMethod(function.getFuncCode());
+        if (platform == null || !"JAVA".equals(function.getImplType()) || !platform.getDeclaringClass().getName().equals(function.getImplClass())) return false;
+        try { return platform.equals(FunctionParameterContract.resolveMethod(platform.getDeclaringClass(), function.getImplMethod(), function.getFuncCode(), function.getParamsJson())); }
+        catch (IllegalArgumentException error) { return false; }
+    }
+
     private String availability(Class<?> implementation, Method method, boolean javaClass) {
         if (!Modifier.isPublic(implementation.getModifiers()) || !Modifier.isPublic(method.getDeclaringClass().getModifiers()))
             return "实现类和方法声明类必须公开";
@@ -108,5 +125,26 @@ public class FunctionMethodCatalogService {
         if (type.isArray() || java.util.Collection.class.isAssignableFrom(type)) return "LIST";
         if (java.util.Date.class.isAssignableFrom(type) || java.time.temporal.TemporalAccessor.class.isAssignableFrom(type)) return "DATE";
         return "OBJECT";
+    }
+
+    public String suggestedBusinessType(String javaType) {
+        if (javaType == null || javaType.isBlank()) return "OBJECT";
+        try {
+            Class<?> type = switch (javaType) {
+                case "boolean" -> boolean.class;
+                case "byte" -> byte.class;
+                case "short" -> short.class;
+                case "char" -> char.class;
+                case "int" -> int.class;
+                case "long" -> long.class;
+                case "float" -> float.class;
+                case "double" -> double.class;
+                case "void" -> void.class;
+                default -> Class.forName(javaType, false, getClass().getClassLoader());
+            };
+            return suggestedType(type);
+        } catch (ClassNotFoundException error) {
+            return "OBJECT";
+        }
     }
 }

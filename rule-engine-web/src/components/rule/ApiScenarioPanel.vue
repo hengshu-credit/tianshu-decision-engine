@@ -426,7 +426,7 @@ export default {
           2
         ),
         responseJson: JSON.stringify(
-          { code: 200, message: 'success', data: null },
+          { code: '000000', message: '成功', data: null },
           null,
           2
         ),

@@ -32,12 +32,16 @@ public class ConsoleLoginConfigurationTest {
             context.refresh();
 
             assertNotNull(context.getBean(ConsoleSessionAuthInterceptor.class));
-            assertNotNull(context.getBean(ConsoleLoginAuthenticator.class));
+            assertNotNull(context.getBean(DatabaseConsoleAccountService.class));
         }
     }
 
     private static void registerAccountDependencies(
             AnnotationConfigApplicationContext context) {
+        context.registerBean(com.hengshucredit.rule.server.mapper.ConsoleUserProjectMapper.class,
+                () -> noOpProxy(com.hengshucredit.rule.server.mapper.ConsoleUserProjectMapper.class));
+        context.registerBean(com.hengshucredit.rule.server.mapper.ConsoleUserProjectPermissionMapper.class,
+                () -> noOpProxy(com.hengshucredit.rule.server.mapper.ConsoleUserProjectPermissionMapper.class));
         context.registerBean(ConsoleUserMapper.class,
                 () -> noOpProxy(ConsoleUserMapper.class));
         context.registerBean(ConsoleRoleMapper.class,

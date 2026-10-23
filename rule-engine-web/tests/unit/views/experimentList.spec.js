@@ -700,4 +700,14 @@ describe('ExperimentList', () => {
       groups: [{ groupCode: 'champion', stage: 'PRODUCTION', status: 'SKIPPED' }]
     })
   })
+
+  test('分组摘要保留实际命中原因、版本和零值输出，避免只在原始JSON中解释', () => {
+    const ctx = createContext()
+    const result = ctx.buildExecutionResultSummary({ success: true, productionGroup: { groupCode: 'champion', success: true,
+      ruleCode: 'Stable_Rule', ruleVersion: 3, revisionId: '9007199254740993', routeReason: '比例分流命中桶位: 12.34', result: 0 } })
+    expect(result.groups[0]).toMatchObject({ ruleCode: 'Stable_Rule', ruleVersion: 3, revisionId: '9007199254740993', routeReason: '比例分流命中桶位: 12.34', result: 0 })
+    expect(ctx.groupResultPreview(false)).toBe('false')
+    expect(ctx.groupResultPreview(0)).toBe('0')
+    expect(ctx.groupResultPreview('x'.repeat(3000))).toContain('完整内容请展开原始执行结果')
+  })
 })

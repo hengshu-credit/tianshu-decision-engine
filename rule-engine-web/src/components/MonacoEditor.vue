@@ -10,6 +10,7 @@
 import { markRaw } from 'vue'
 import { $emit } from '../utils/gogocodeTransfer'
 import { getMonacoScrollbarOptions, syncMonacoTheme } from '@/theme/monacoTheme'
+import { waitForMonaco } from '@/utils/monacoLoader'
 import {
   buildQlCompletionItems,
   buildQlHover,
@@ -97,6 +98,7 @@ export default {
   data() {
     return {
       editor: null,
+      loadController: null,
       intelligenceDisposables: [],
       referenceCommandDisposable: null,
       referenceDecorationIds: [],
@@ -146,13 +148,9 @@ export default {
       'tianshu-theme-change',
       this.handleGlobalThemeChange
     )
-    // 等待 monaco 加载（最多等待 10s 防死循环）
-    let attempts = 0
-    while (!window.monaco && attempts < 100) {
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      attempts++
-    }
-    if (!window.monaco || !this.$refs.container) return
+    this.loadController = markRaw(new AbortController())
+    const monaco = window.monaco || await waitForMonaco(this.loadController.signal)
+    if (this.loadController.signal.aborted || !monaco || typeof window === 'undefined' || !this.$refs.container) return
     this.registerQlExpressLanguage(window.monaco)
     this.registerSqlLanguage(window.monaco)
     this.registerLanguage(window.monaco)
@@ -215,6 +213,7 @@ export default {
     )
   },
   beforeUnmount() {
+    this.loadController?.abort()
     window.removeEventListener(
       'tianshu-theme-change',
       this.handleGlobalThemeChange
@@ -795,20 +794,49 @@ export default {
 .monaco-editor-container :deep(.se-reference-version) {
   border: none;
   border-radius: 0;
-  padding: 1px 5px;
-  line-height: 1.35;
+  padding: 0 2px;
+  line-height: inherit;
   font-weight: 700;
 }
 
+.monaco-editor-container :deep(.se-reference-code) {
+  padding-left: 0;
+  padding-right: 0;
+}
+
 .monaco-editor-container :deep(.se-reference-type) {
+  display: inline-flex;
+  width: 22px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding-left: 0;
+  padding-right: 0;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--tianshu-info-text);
-  background: color-mix(in srgb, var(--el-color-primary) 20%, var(--tianshu-bg-surface));
-  border-radius: 4px 0 0 4px;
+  background: var(--tianshu-info-bg);
+}
+
+.monaco-editor-container :deep(.se-reference-type--number) {
+  color: var(--tianshu-success-text);
+  background: var(--tianshu-success-bg);
+}
+
+.monaco-editor-container :deep(.se-reference-type--collection) {
+  color: var(--tianshu-warning-text);
+  background: var(--tianshu-warning-bg);
+}
+
+.monaco-editor-container :deep(.se-reference-type--boolean) {
+  color: var(--tianshu-info-text);
+  background: var(--tianshu-info-bg);
 }
 
 .monaco-editor-container :deep(.se-reference-code) {
   color: var(--tianshu-primary-text);
-  background: color-mix(in srgb, var(--el-color-primary) 32%, var(--tianshu-bg-surface));
+  background: var(--tianshu-border);
   text-decoration: underline;
   text-decoration-color: var(--el-color-primary);
   text-decoration-thickness: 2px;
@@ -816,13 +844,12 @@ export default {
 }
 
 .monaco-editor-container :deep(.se-reference-name) {
-  color: var(--tianshu-success-text);
-  background: color-mix(in srgb, var(--el-color-success) 24%, var(--tianshu-bg-surface));
+  color: var(--tianshu-text-secondary);
+  background: var(--tianshu-bg-hover);
 }
 
 .monaco-editor-container :deep(.se-reference-version) {
-  color: var(--tianshu-warning-text);
-  background: color-mix(in srgb, var(--el-color-warning) 24%, var(--tianshu-bg-surface));
-  border-radius: 0 4px 4px 0;
+  color: var(--tianshu-text-tertiary);
+  background: var(--tianshu-bg-muted);
 }
 </style>

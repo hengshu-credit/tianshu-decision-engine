@@ -1,3 +1,4 @@
+import { PLATFORM_SUCCESS_CODE } from '@/utils/platformResponse'
 import { createRouter, createWebHashHistory } from 'vue-router'
 import axios from 'axios'
 import Layout from '@/layout/index.vue'
@@ -21,7 +22,7 @@ export function fetchConsoleConfig() {
   if (!_consoleConfigPromise) {
     _consoleConfigPromise = authAxios.get('/auth/console/config')
       .then(function (res) {
-        if (res.data?.code !== 200 || !res.data.data) _consoleConfigPromise = null
+        if (res.data?.code !== PLATFORM_SUCCESS_CODE || !res.data.data || res.data.data.initializationRequired === true) _consoleConfigPromise = null
         return res.data
       })
       .catch(function () { _consoleConfigPromise = null; return null })

@@ -38,7 +38,7 @@
           popper-class="var-picker-popover"
           :show-arrow="false"
           :popper-style="panelPositionStyle"
-          :popper-options="{ strategy: 'fixed', modifiers: [{ name: 'computeStyles', options: { gpuAcceleration: false } }] }"
+          :popper-options="{ strategy: 'fixed', modifiers: [{ name: 'computeStyles', options: { gpuAcceleration: false } }, { name: 'preventOverflow', options: { altAxis: true, tether: false, padding: 4 } }] }"
         >
           <field-picker-panel
             v-if="!lazyCatalog || popoverVisible"
@@ -246,6 +246,7 @@ export default {
     loading: { type: Boolean, default: false },
     lazyCatalog: Boolean,
     disabled: { type: Boolean, default: false },
+    sensitive: Boolean,
     virtualRef: { type: Object, default: null },
     /** 是否允许手动输入自定义变量（不在变量管理中的） */
     allowCustom: { type: Boolean, default: true },
@@ -392,7 +393,9 @@ export default {
         const sample = items.find(item => this.versionGroupKey(item) === key)
         const category = key.startsWith('model:') ? 'model' : 'object'
         const prefix = category === 'model' ? 'model' : 'object'
-        items = items.filter(item => this.versionGroupKey(item) !== key).concat((group.fields || []).map(field => ({
+        const fields = [...(group.fields || []), { rootReference: true, refId: group.versionOwnerId,
+          refType: category === 'model' ? 'MODEL' : 'DATA_OBJECT_ROOT', code: group.ownerCode, label: group.ownerLabel, valueType: 'OBJECT' }]
+        items = items.filter(item => this.versionGroupKey(item) !== key).concat(fields.map(field => ({
           ...field, ...versionFields(group), _groupVersion: versionFields(group), id: field.refId, _varId: field.refId, _refType: field.refType,
           varCode: field.code, varLabel: field.label, varType: field.valueType,
           _ref: { ...sample?._ref, category, [`${prefix}Id`]: group.versionOwnerId, [`${prefix}Code`]: group.ownerCode, [`${prefix}Label`]: group.ownerLabel },
@@ -431,12 +434,13 @@ export default {
       return true
     },
     referenceInputValue() {
+      if (this.sensitive && this.value?.kind === 'LITERAL') return '••••••••（点击编辑）'
       if (this.operandMode) {
         return ['LITERAL', 'PATH', 'REFERENCE'].includes(this.value && this.value.kind)
           ? pickerReferenceDisplay(this.value, this.vars)
           : formatExpressionFormula(this.value, { humanReadable: true })
       }
-      return this.referenceKeyword || this.displayValue
+      return this.referenceKeyword || (this.editOnInput ? this.value : this.displayValue)
     },
     operandKindMetaValue() {
       return operandKindMeta(this.value)
@@ -488,6 +492,7 @@ export default {
       var ref = v._ref || {}
       var label = this.optionLabel(v)
       var code = v.varCode || ''
+      if (!label || label === code) return code
       if (ref.category === 'object') {
         return code ? label + ' ' + this.objectFieldPath(v) : label
       }
@@ -600,8 +605,8 @@ export default {
     async restoreVersionGroup() {
       const selected = this.value
       if (!this.vars.length || this.vars.every(item => item.catalogMode === 'FROZEN' || item.catalogMode === 'UNAVAILABLE')) return
-      if (!this.operandMode || selected?.versionMode !== 'FIXED' || !selected.versionOwnerId || !['MODEL_OUTPUT', 'DATA_OBJECT'].includes(selected.refType)) return
-      const module = selected.refType === 'MODEL_OUTPUT' ? 'model' : 'dataobject'
+      if (!this.operandMode || selected?.versionMode !== 'FIXED' || !selected.versionOwnerId || !['MODEL', 'MODEL_OUTPUT', 'DATA_OBJECT', 'DATA_OBJECT_ROOT'].includes(selected.refType)) return
+      const module = selected.refType.startsWith('MODEL') ? 'model' : 'dataobject'
       const key = `${module}:${selected.versionOwnerId}`
       const cached = this.groupVersions[key]
       if (selected.versionSource !== 'BUSINESS_VERSION' && String(cached?.versionId) === String(selected.versionId) && cached?.versionSource === selected.versionSource) return
@@ -1209,20 +1214,16 @@ export default {
       if (typeof document === 'undefined') return
       var popper = this.getPopoverElement()
       var active = document.activeElement
-      if (!popper || !active || !popper.contains(active)) return
       var reference = this.$refs.reference
-      if (reference && typeof reference.focus === 'function') reference.focus()
-      else {
-        var referenceElement = this.getReferenceElement()
-        var input =
-          referenceElement && referenceElement.matches('input')
-            ? referenceElement
-            : referenceElement && referenceElement.querySelector
-              ? referenceElement.querySelector('input')
-              : null
-        if (input && typeof input.focus === 'function') input.focus()
-        else if (typeof active.blur === 'function') active.blur()
-      }
+      var referenceElement = this.getReferenceElement()
+      var input = referenceElement && referenceElement.matches('input')
+        ? referenceElement
+        : referenceElement && referenceElement.querySelector
+          ? referenceElement.querySelector('input')
+          : null
+      if (reference && typeof reference.focus === 'function') return reference.focus()
+      if (input && typeof input.focus === 'function') return input.focus()
+      if (popper && active && popper.contains(active) && typeof active.blur === 'function') active.blur()
     },
     setPickerInert(inert) {
       var popper = this.getPopoverElement()
@@ -1509,7 +1510,8 @@ export default {
         (!popper &&
           target &&
           target.closest &&
-          target.closest('.var-picker-popover'))
+          target.closest('.var-picker-popover')) ||
+        (target && target.closest && target.closest('.fp-row'))
       ) {
         return
       }

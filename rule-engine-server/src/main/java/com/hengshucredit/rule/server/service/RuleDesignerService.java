@@ -41,6 +41,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 public class RuleDesignerService {
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(RuleDesignerService.class);
+    @Autowired(required = false) private RuleCompileCompletionNotifier completionNotifier;
+    @Resource private com.hengshucredit.rule.server.security.ConsoleProjectAccess consoleProjects;
+    @Resource private com.hengshucredit.rule.server.security.ConsoleResourceAccess consoleResources;
     private static final String COMPILE_TASK_PREFIX = "rule:designer:compile:";
     private static final long COMPILE_TASK_TTL_MINUTES = 30L;
     @Resource private RuleLifecycleService lifecycleService;
@@ -66,18 +70,26 @@ public class RuleDesignerService {
     /** 提交后台编译任务，避免设计器请求被长时间的预检或脚本解析阻塞。 */
     public RuleDesignerCompileTaskResponse submitCompile(Long definitionId,
                                                           RuleDesignerCompileRequest request) {
+        long submittedAt = System.currentTimeMillis();
         requirePayload(request);
         pruneCompileTasks();
         RuleRevision revision = prepare(definitionId, request);
         requireLocalNamespace(revision);
         CompileTask task = new CompileTask(UUID.randomUUID().toString(), definitionId);
+        task.submittedAt = submittedAt;
+        task.queuedAt = System.currentTimeMillis();
         task.modelDigest = Sha256Digests.text(revision.getModelJson());
         compileTasks.put(task.taskId, task);
         persistCompileTask(task);
         try {
-            compileExecutor.execute(() -> runCompileTask(task, revision));
+            Runnable compile = () -> runCompileTask(task, revision);
+            compileExecutor.execute(consoleProjects == null ? compile : consoleProjects.wrap(compile));
         } catch (RejectedExecutionException e) {
             compileTasks.remove(task.taskId);
+            if (compileTaskRedis != null) {
+                try { compileTaskRedis.delete(compileTaskKey(task.taskId)); }
+                catch (RuntimeException ignored) { /* No task ID is returned for a rejected submission. */ }
+            }
             throw error(429, "COMPILE_QUEUE_FULL", "编译任务较多，请稍后重试");
         }
         return task.snapshot();
@@ -85,6 +97,8 @@ public class RuleDesignerService {
 
     public RuleDesignerCompileTaskResponse getCompileTask(Long definitionId,
                                                            String taskId) {
+        if (consoleResources != null) consoleResources.require("RULE", definitionId, "edit");
+        pruneCompileTasks();
         CompileTask task = compileTasks.get(taskId);
         if (task != null && definitionId.equals(task.definitionId)) return task.snapshot();
         RuleDesignerCompileTaskResponse remote = readRemoteCompileTask(definitionId, taskId);
@@ -96,24 +110,40 @@ public class RuleDesignerService {
     }
 
     private void runCompileTask(CompileTask task, RuleRevision revision) {
+        task.startedAt = System.currentTimeMillis();
         task.status = "RUNNING";
         persistCompileTask(task);
+        String terminalStatus = "SUCCEEDED";
         try {
             task.result = compile(revision);
-            task.status = "SUCCEEDED";
         } catch (Exception e) {
             task.errorMessage = e.getMessage() == null ? "后台编译失败" : e.getMessage();
-            task.status = "FAILED";
+            terminalStatus = "FAILED";
         } finally {
             task.completedAt = System.currentTimeMillis();
+            task.status = terminalStatus;
             persistCompileTask(task);
+            LOG.info("Rule compile taskId={} definitionId={} status={} prepareMs={} queueMs={} executionMs={}",
+                    task.taskId, task.definitionId, task.status, task.queuedAt - task.submittedAt,
+                    task.startedAt - task.queuedAt, task.completedAt - task.startedAt);
+            if (completionNotifier != null) completionNotifier.completed(task.taskId);
+            pruneCompileTasks();
         }
     }
 
-    private void pruneCompileTasks() {
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 60000)
+    public void pruneCompileTasks() {
         long expireAt = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(30);
         compileTasks.entrySet().removeIf(entry -> entry.getValue().completedAt > 0
                 && entry.getValue().completedAt < expireAt);
+        List<CompileTask> completed = compileTasks.values().stream().filter(task -> task.completedAt > 0)
+                .sorted(java.util.Comparator.comparingLong(task -> task.completedAt)).toList();
+        long retainedChars = completed.stream().mapToLong(task -> task.resultChars).sum();
+        int count = completed.size();
+        for (CompileTask task : completed) {
+            if (count <= 128 && (retainedChars <= 8 * 1024 * 1024 || count <= 1)) break;
+            if (compileTasks.remove(task.taskId, task)) { count--; retainedChars -= task.resultChars; }
+        }
     }
 
     private RuleDesignerCompileResponse compile(RuleRevision revision) {
@@ -236,7 +266,7 @@ public class RuleDesignerService {
     }
 
     private void persistCompileTask(CompileTask task) {
-        if (compileTaskRedis == null || task == null) return;
+        if (task == null) return;
         try {
             Map<String, Object> payload = new java.util.LinkedHashMap<>();
             payload.put("definitionId", task.definitionId);
@@ -244,7 +274,14 @@ public class RuleDesignerService {
             payload.put("modelDigest", task.modelDigest);
             payload.put("result", task.result);
             payload.put("errorMessage", task.errorMessage);
-            compileTaskRedis.opsForValue().set(compileTaskKey(task.taskId), JSON.toJSONString(payload),
+            payload.put("submittedAt", task.submittedAt);
+            payload.put("queuedAt", task.queuedAt);
+            payload.put("startedAt", task.startedAt);
+            payload.put("completedAt", task.completedAt);
+            String serialized = JSON.toJSONString(payload);
+            task.resultChars = serialized.length();
+            if (compileTaskRedis == null) return;
+            compileTaskRedis.opsForValue().set(compileTaskKey(task.taskId), serialized,
                     COMPILE_TASK_TTL_MINUTES, TimeUnit.MINUTES);
         } catch (RuntimeException ignored) {
             // Redis is an optional cross-node enhancement; the local task remains usable when it is unavailable.
@@ -259,6 +296,9 @@ public class RuleDesignerService {
         response.setStatus(task.status);
         response.setResult(task.result);
         response.setErrorMessage(task.errorMessage);
+        response.setSubmittedAt(task.submittedAt);
+        response.setStartedAt(task.startedAt);
+        response.setCompletedAt(task.completedAt);
         return response;
     }
 
@@ -274,6 +314,9 @@ public class RuleDesignerService {
             task.modelDigest = payload.getString("modelDigest");
             task.result = payload.getObject("result", RuleDesignerCompileResponse.class);
             task.errorMessage = payload.getString("errorMessage");
+            task.submittedAt = payload.getLongValue("submittedAt");
+            task.startedAt = payload.getLongValue("startedAt");
+            task.completedAt = payload.getLongValue("completedAt");
             return task;
         } catch (RuntimeException ignored) {
             return null;
@@ -342,6 +385,10 @@ public class RuleDesignerService {
         private volatile String errorMessage;
         private volatile String modelDigest;
         private volatile long completedAt;
+        private volatile long submittedAt;
+        private volatile long queuedAt;
+        private volatile long startedAt;
+        private volatile long resultChars;
 
         private CompileTask(String taskId, Long definitionId) {
             this.taskId = taskId;
@@ -354,6 +401,9 @@ public class RuleDesignerService {
             response.setStatus(status);
             response.setResult(result);
             response.setErrorMessage(errorMessage);
+            response.setSubmittedAt(submittedAt);
+            response.setStartedAt(startedAt);
+            response.setCompletedAt(completedAt);
             return response;
         }
     }
@@ -363,6 +413,9 @@ public class RuleDesignerService {
         private String modelDigest;
         private RuleDesignerCompileResponse result;
         private String errorMessage;
+        private long submittedAt;
+        private long startedAt;
+        private long completedAt;
     }
 
     private static final class CompileThreadFactory implements ThreadFactory {

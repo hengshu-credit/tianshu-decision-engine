@@ -31,19 +31,25 @@ public class ProductionConfigurationContractTest {
         Assert.assertFalse(application.contains("SESSION_COOKIE_SECURE"));
         Assert.assertTrue(application.contains("${MYSQL_PASSWORD:}"));
         Assert.assertTrue(application.contains("${RULE_AUTH_MASTER_KEY:}"));
-        Assert.assertTrue(application.contains("${CONSOLE_PASSWORD:}"));
+        Assert.assertFalse(application.contains("${CONSOLE_PASSWORD:}"));
+        Assert.assertFalse(application.contains("${CONSOLE_USERNAME:"));
+        Assert.assertFalse(application.contains("CONSOLE_BREAK_GLASS_RECOVERY_KEY"));
     }
 
     @Test
     public void applicationConfigurationLoadsIgnoredLocalEnvFiles() throws Exception {
         Path root = repositoryRoot();
-        String application = read(root.resolve(
-                "rule-engine-server/src/main/resources/application.yml"));
+        String processor = read(root.resolve(
+                "rule-engine-server/src/main/java/com/hengshucredit/rule/server/config/ServerEnvironmentPostProcessor.java"));
+        String factories = read(root.resolve("rule-engine-server/src/main/resources/META-INF/spring.factories"));
         String gitignore = read(root.resolve(".gitignore"));
 
-        Assert.assertTrue(application.contains("optional:file:.env[.properties]"));
-        Assert.assertTrue(application.contains("optional:file:../.env[.properties]"));
+        Assert.assertTrue(processor.contains("\".env.server\""));
+        Assert.assertFalse(processor.contains("\".env.client\""));
+        Assert.assertTrue(factories.contains(ServerEnvironmentPostProcessor.class.getName()));
         Assert.assertTrue(gitignore.matches("(?s).*(^|\\R)/\\.env(\\R|$).*"));
+        Assert.assertTrue(gitignore.contains("/.env.server"));
+        Assert.assertTrue(gitignore.contains("/.env.client"));
     }
 
     @Test
@@ -140,6 +146,25 @@ public class ProductionConfigurationContractTest {
         Assert.assertTrue(clientCompose.contains("  runtime-sdk:"));
         Assert.assertFalse(clientCompose.contains("  server:"));
         Assert.assertTrue(clientCompose.contains("SPRING_DATA_REDIS_HOST"));
+    }
+
+    @Test
+    public void runtimeContainersWaitForApplicationReadiness() {
+        for (String name : new String[]{"docker-compose.client.yml", "docker-compose.yml", "docker-compose.full.yml"}) {
+            YamlPropertiesFactoryBean yaml = new YamlPropertiesFactoryBean();
+            yaml.setResources(new FileSystemResource(repositoryRoot().resolve("docker").resolve(name)));
+            Properties values = yaml.getObject();
+            String[] services = name.contains("full") ? new String[]{"http", "sdk"}
+                    : new String[]{"runtime-http", "runtime-sdk"};
+            for (String service : services) {
+                String key = "services." + service + ".healthcheck.";
+                Assert.assertEquals("CMD-SHELL", values.getProperty(key + "test[0]"));
+                String command = values.getProperty(key + "test[1]");
+                Assert.assertTrue(command.contains("$${SERVER_PORT}/actuator/health/readiness"));
+                Assert.assertTrue(command.contains("status"));
+                Assert.assertEquals("120s", values.getProperty(key + "start_period"));
+            }
+        }
     }
 
     @Test

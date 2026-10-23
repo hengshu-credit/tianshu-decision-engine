@@ -7,7 +7,7 @@ import {
   writeProjectContext,
 } from '@/utils/projectContext'
 
-export default createStore({
+const store = createStore({
   state: {
     currentProject: readProjectContext(projectContextStorage()),
     projectContextGeneration: 0,
@@ -25,3 +25,11 @@ export default createStore({
   actions: {},
   modules: { expressionSessions, workspaceTabs }
 })
+
+if (typeof window !== 'undefined') window.addEventListener('tianshu:identity-change', () => {
+  store.commit('workspaceTabs/CLEAR')
+  store.commit('expressionSessions/CLEAR')
+  store.commit('SET_CURRENT_PROJECT', null)
+})
+
+export default store

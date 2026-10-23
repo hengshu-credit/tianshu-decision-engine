@@ -17,6 +17,14 @@ import java.util.Map;
 import static org.junit.Assert.*;
 
 public class ResourceVersionServiceTest {
+    @Test public void wholeObjectVersionReadsDynamicChildrenWithoutFieldIds() {
+        version("DATA_OBJECT", "{\"id\":11,\"scope\":\"GLOBAL\",\"objectCode\":\"request\",\"sourceType\":\"INPUT\",\"fields\":[]}");
+        ReflectionTestUtils.setField(service, "objectResolver", new DataObjectSourceResolver());
+        var call = new ResourceVersionCall("DATA_OBJECT_ROOT", 11L, 91L, ".items[0].score", List.of());
+        assertEquals(93, service.resolve(call, 5L, Map.of("request", Map.of("items", List.of(Map.of("score", 93)))), VariableResolveOptions.defaults()));
+        assertEquals("request", service.field("DATA_OBJECT_ROOT", 11L, 91L).get("code"));
+        assertThrows(IllegalArgumentException.class, () -> service.snapshot(new ResourceVersionCall("DATA_OBJECT_ROOT", 12L, 91L, "", List.of()), 5L));
+    }
     @Test public void deletedBusinessFunctionCannotBeInvokedThroughItsNativeHistoryAlias() {
         var shared = version("FUNCTION", "{\"id\":11,\"scope\":\"GLOBAL\",\"status\":1}"); shared.setBusinessVersion(3); shared.setDeleted(true);
         var nativeVersion = new com.hengshucredit.rule.model.entity.RuleFunctionVersion(); nativeVersion.setId(99L); nativeVersion.setFunctionId(11L); nativeVersion.setVersion(8); nativeVersion.setBusinessVersion(3); nativeVersion.setFunctionJson(shared.getSnapshotJson());

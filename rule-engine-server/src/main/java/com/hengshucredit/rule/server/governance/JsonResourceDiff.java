@@ -112,6 +112,8 @@ public final class JsonResourceDiff {
     }
 
     private static String credentialLabel(ResourceSnapshot snapshot) {
+        Map<String, Boolean> configured = secretStates(snapshotMap(snapshot).get(GovernanceSecretCodec.SECRET_STATE_KEY));
+        if (!configured.isEmpty() && configured.values().stream().noneMatch(Boolean.TRUE::equals)) return "未配置";
         return snapshot == null || snapshot.secretDigest() == null
                 ? "未配置" : "已配置（内容受保护）";
     }

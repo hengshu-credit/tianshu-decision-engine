@@ -19,8 +19,20 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
                                      Map<String, Object> params, String identity) {
     public static ExternalApiRequestPlan prepare(RuleExternalApiConfig source, Map<String, Object> input,
                                                  Map<String, Object> overrides, Map<String, String> paths) {
+        return prepare(source, input, overrides, paths, null);
+    }
+
+    public static ExternalApiRequestPlan prepare(RuleExternalApiConfig source, Map<String, Object> input,
+                                                 Map<String, Object> overrides, Map<String, String> paths, String inheritedAuth) {
+        return prepare(source, input, overrides, paths, inheritedAuth, Map.of());
+    }
+
+    public static ExternalApiRequestPlan prepare(RuleExternalApiConfig source, Map<String, Object> input,
+                                                 Map<String, Object> overrides, Map<String, String> paths, String inheritedAuth,
+                                                 Map<String, Object> linkedInputs) {
         RuleExternalApiConfig api = JSON.parseObject(JSON.toJSONString(source), RuleExternalApiConfig.class);
         JSONObject specification = specification(api);
+        if (specification == null) throw new IllegalArgumentException("外数 API 必须使用 V2 executionConfig");
         List<JSONObject> fields = fields(specification);
         Map<String, Object> effective = new LinkedHashMap<>();
         Map<String, Object> headers = new LinkedHashMap<>();
@@ -66,7 +78,7 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
         for (String id : supplied.keySet()) {
             if (!accepted.contains(id)) throw new IllegalArgumentException("请求覆盖引用了不存在的字段 ID: " + id);
         }
-        if (specification != null && specification.containsKey("requestFields")) {
+        if (specification.containsKey("requestFields")) {
             if (bodyFormats.size() > 1) throw new IllegalArgumentException("同一次请求体不能混合 JSON、FORM 和 FORM_DATA 字段");
             if (bodyFormats.contains("FORM")) api.setContentType("application/x-www-form-urlencoded");
             if (bodyFormats.contains("FORM_DATA")) api.setContentType("multipart/form-data");
@@ -80,71 +92,57 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
             Map<String, Object> params = new LinkedHashMap<>(context);
             params.put("__apiFields", effective);
             Map<String, Object> identityValues = new LinkedHashMap<>(effective);
-            collectStepInputs(specification.get("steps"), context, paths, identityValues);
+            collectStepInputs(specification.get("steps"), context, paths, identityValues, effective);
+            Map<String, Object> authInputs = new LinkedHashMap<>();
+            Map<String, Object> stepAuth = new LinkedHashMap<>();
+            if (specification.get("steps") instanceof Iterable<?> steps) for (Object raw : steps) {
+                if (!(raw instanceof Map<?, ?> step)) continue;
+                Map<String, Object> definition = new LinkedHashMap<>();
+                for (String key : List.of("authMode", "authApiConfig", "authApiConfigId")) definition.put(key, step.get(key));
+                stepAuth.put(String.valueOf(step.get("id")), definition);
+            }
+            authInputs.put("stepDefinitions", stepAuth);
+            collectStepInputs(stepAuth, context, paths, authInputs, effective);
+            authInputs.put("linkedDefinitions", linkedInputs);
+            collectStepInputs(linkedInputs, context, paths, authInputs, effective);
+            authInputs.put("apiDefinition", source.getAuthApiConfig());
+            collectStepInputs(ExternalApiAuthConfig.inputs(source.getAuthApiConfig()), context, paths, authInputs, effective);
+            if (source.getAuthMode() == null || "INHERIT".equalsIgnoreCase(source.getAuthMode())) {
+                authInputs.put("definition", inheritedAuth);
+                collectStepInputs(ExternalApiAuthConfig.inputs(inheritedAuth), context, paths, authInputs, effective);
+            }
+            identityValues.put("authentication", authInputs);
+            params.put("__apiAuthIdentity", Sha256Digests.text(CanonicalJson.write(authInputs)));
             return new ExternalApiRequestPlan(api, effective, params, identity(source, identityValues));
         }
-        if (!supplied.isEmpty()) throw new IllegalArgumentException("API 未定义可覆盖的请求字段");
-        Map<String, Object> identityValues = new LinkedHashMap<>();
-        collectLegacyInputs(source.getHeaderConfig(), context, identityValues);
-        collectLegacyInputs(source.getQueryConfig(), context, identityValues);
-        collectLegacyInputs(source.getRequestMapping(), context, identityValues);
-        collectLegacyInputs(source.getBodyTemplate(), context, identityValues);
-        collectLegacyInputs(source.getAuthApiConfig(), context, identityValues);
-        if (source.getRequestScript() != null && !source.getRequestScript().isBlank()
-                || source.getRequestMapping() == null && source.getBodyTemplate() == null) {
-            Object original = com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext().rootInput();
-            identityValues.put("input", original == null ? context : original);
-        }
-        return new ExternalApiRequestPlan(api, context, context, identity(source, identityValues));
+        throw new IllegalArgumentException("V2 executionConfig 缺少 requestFields");
     }
 
-    private static void collectLegacyInputs(String template, Map<String, Object> context, Map<String, Object> values) {
-        if (template == null) return;
-        var matcher = java.util.regex.Pattern.compile("\\$\\.([A-Za-z0-9_.\\[\\]-]+)|\\$\\{([^}]+)}").matcher(template);
-        while (matcher.find()) {
-            String path = matcher.group(1) == null ? matcher.group(2).trim() : matcher.group(1);
-            values.put(path, read(context, path));
+    public static void validateBinding(Map<?, ?> binding) {
+        if (binding.containsKey("inputOverrides") || binding.containsKey("paramMapping")) {
+            throw new IllegalArgumentException("外数取值仅支持按请求字段 ID 配置 requestOverrides");
         }
     }
 
-    /** 旧接口的调用入参是协议路径，不是引擎资源身份；覆盖值仍使用带 ID 的 Operand。 */
-    public static Set<String> legacyInputPaths(RuleExternalApiConfig api) {
-        Set<String> paths = new LinkedHashSet<>();
-        for (String template : new String[]{api.getQueryConfig(), api.getRequestMapping(), api.getBodyTemplate()}) {
-            if (template == null) continue;
-            var matcher = java.util.regex.Pattern.compile("\\$\\.([A-Za-z0-9_.\\[\\]-]+)|\\$\\{([^}]+)}").matcher(template);
-            while (matcher.find()) paths.add(matcher.group(1) == null ? matcher.group(2).trim() : matcher.group(1));
-        }
-        paths.removeIf(path -> path.isBlank() || path.equals("callbackUrl") || path.startsWith("__apiFields."));
-        return paths;
-    }
-
-    public static void validateInputOverrides(RuleExternalApiConfig api, Map<?, ?> overrides) {
-        if (overrides == null || overrides.isEmpty()) return;
-        if (specification(api) != null) throw new IllegalArgumentException("接口已采用请求字段配置，请重新选择允许覆盖的请求字段");
-        Set<String> paths = legacyInputPaths(api);
-        for (Object path : overrides.keySet()) if (!paths.contains(String.valueOf(path)))
-            throw new IllegalArgumentException("API 没有声明此调用入参：" + path);
-    }
-
-    public static Map<String, Object> overrideInputs(RuleExternalApiConfig api, Map<String, Object> values,
-                                                    Map<String, Object> sourceValues, Object raw, Map<String, String> paths) {
-        if (!(raw instanceof Map<?, ?> overrides) || overrides.isEmpty()) return values;
-        validateInputOverrides(api, overrides);
-        // 路径写入只修改本次调用副本；不能污染其它变量或子规则共享的输入对象。
-        Map<String, Object> result = JSON.parseObject(JSON.toJSONString(values == null ? Map.of() : values));
-        overrides.forEach((path, operand) -> write(result, String.valueOf(path), evaluate(operand, sourceValues, paths)));
-        return result;
-    }
-
-    private static void collectStepInputs(Object node, Map<String, Object> context, Map<String, String> paths, Map<String, Object> values) {
+    private static void collectStepInputs(Object node, Map<String, Object> context, Map<String, String> paths,
+                                         Map<String, Object> values, Map<String, Object> boundFields) {
         if (node instanceof Map<?, ?> map) {
+            if ("LITERAL".equals(map.get("kind"))) return;
             if (map.get("refId") != null && map.get("refType") != null) {
-                values.put("reference:" + map.get("refType") + ":" + map.get("refId"), evaluate(node, context, paths));
+                // 同一资源可以引用不同子路径或版本，不能仅按资源 ID 覆盖前一个取值。
+                values.put("reference:" + CanonicalJson.write(map), evaluate(node, context, paths));
                 return;
             }
-            map.forEach((key, value) -> { if (!Set.of("sample", "samples", "responseBranches").contains(String.valueOf(key))) collectStepInputs(value, context, paths, values); });
-        } else if (node instanceof Iterable<?> list) list.forEach(child -> collectStepInputs(child, context, paths, values));
+            if ("PATH".equals(map.get("kind")) && map.get("value") instanceof String path
+                    && path.startsWith("input.__apiFields.")) {
+                values.put("boundInput:" + path, read(boundFields, path.substring("input.__apiFields.".length())));
+                return;
+            }
+            map.forEach((key, value) -> {
+                if ("authApiConfig".equals(key) && value instanceof String text) collectStepInputs(ExternalApiAuthConfig.inputs(text), context, paths, values, boundFields);
+                else if (!Set.of("sample", "samples", "requestSample", "responseSample", "responseBranches").contains(String.valueOf(key))) collectStepInputs(value, context, paths, values, boundFields);
+            });
+        } else if (node instanceof Iterable<?> list) list.forEach(child -> collectStepInputs(child, context, paths, values, boundFields));
     }
 
     public static JSONObject specification(RuleExternalApiConfig api) {
@@ -165,7 +163,7 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
         if (expression == null) return null;
         if (!(expression instanceof Map<?, ?>)) return expression;
         JSONObject operand = JSON.parseObject(JSON.toJSONString(expression));
-        if (operand.getString("kind") == null) {
+        if (!(operand.get("kind") instanceof String)) {
             Map<String, Object> result = new LinkedHashMap<>();
             operand.forEach((key, value) -> result.put(key, evaluate(value, context, paths)));
             return result;
@@ -203,10 +201,8 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
                 if (!paths.containsKey(key)) throw new IllegalArgumentException("API 引用字段无法按 ID 解析: " + key);
             } else if ("PATH".equals(kind)) {
                 String path = required(node.getString("value"), "字段路径");
-                boolean protocol = path.matches("(?:request|response|authentication|steps|callbacks|status|body|headers|rawBody)(?:[.\\[].+)?|input\\.__apiFields\\..+|httpStatus|callId|costTimeMs|errorMessage");
-                if (!protocol && !present(context, path) && !paths.containsValue(path)) {
-                    throw new IllegalArgumentException("API 字段路径无法解析: " + path);
-                }
+                boolean protocol = "$".equals(path) || path.matches("(?:request|response|authentication|steps|callbacks|status|body|headers|rawBody)(?:[.\\[].+)?|input\\.__apiFields\\..+|httpStatus|callId|costTimeMs|errorMessage|success");
+                if (!protocol) throw new IllegalArgumentException("引擎字段必须通过稳定 ID 引用: " + path);
             }
             raw.values().forEach(item -> validateReferences(item, context, paths));
         } else if (value instanceof Iterable<?> list) {

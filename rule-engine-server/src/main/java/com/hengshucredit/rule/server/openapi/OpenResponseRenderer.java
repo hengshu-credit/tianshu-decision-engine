@@ -13,14 +13,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
-/** 使用同一外层模板渲染开放接口的正常与异常响应。 */
+/** 使用固定平台外层结构渲染开放接口，模板仅定制 data 和业务响应头。 */
 @Component
 public class OpenResponseRenderer {
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([A-Za-z0-9_.-]+)}");
     private static final Pattern HEADER_NAME = Pattern.compile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$");
     private static final List<String> FORBIDDEN_HEADERS = Arrays.asList(
-            "content-length", "transfer-encoding", "connection", "set-cookie", "host", "content-type");
+            "content-length", "transfer-encoding", "connection", "set-cookie", "host", "content-type", "x-trace-id", "retry-after");
 
     public RenderedResponse render(OpenApiContract contract, OpenApiStatus status, String traceId,
                                    Map<String, Object> values) {
@@ -30,12 +30,19 @@ public class OpenResponseRenderer {
         context.put("status.success", status.isSuccess());
         context.put("status.code", status.getCode());
         context.put("status.message", status.getMessage());
+        context.put("status.detail", status.getDetail());
         context.put("status.httpStatus", status.getHttpStatus());
         context.put("traceId", traceId);
         Object dataTemplate = status.isSuccess() ? contract.getSuccessDataTemplate() : contract.getErrorDataTemplate();
         Object data = renderValue(dataTemplate, context);
         context.put("data", data);
-        Object body = renderValue(contract.getEnvelopeTemplate(), context);
+        JSONObject body = new JSONObject(true);
+        body.put("success", status.isSuccess());
+        body.put("code", status.getCode());
+        body.put("message", status.getMessage());
+        body.put("detail", status.getDetail());
+        body.put("traceId", traceId);
+        body.put("data", data);
         Map<String, String> headers = renderHeaders(contract.getResponseHeaders(), context);
         headers.put("Content-Type", "application/json");
         headers.put("X-Trace-Id", traceId);
@@ -43,13 +50,7 @@ public class OpenResponseRenderer {
     }
 
     public void validate(OpenApiContract contract) {
-        if (contract == null || contract.getEnvelopeTemplate() == null) {
-            throw new IllegalArgumentException("响应外层模板不能为空");
-        }
-        Object slot = RestrictedJsonPath.read(contract.getEnvelopeTemplate(), contract.getDataPath());
-        if (!"${data}".equals(slot) || countDataSlots(contract.getEnvelopeTemplate()) != 1) {
-            throw new IllegalArgumentException("dataPath 必须指向外层模板中唯一的 ${data} 占位符");
-        }
+        if (contract == null) throw new IllegalArgumentException("开放接口配置不能为空");
         validateHeaders(contract.getResponseHeaders());
     }
 
@@ -100,20 +101,6 @@ public class OpenResponseRenderer {
                 throw new IllegalArgumentException("不允许配置响应 Header: " + name);
             }
         }
-    }
-
-    private int countDataSlots(Object value) {
-        if (value instanceof Map) {
-            int count = 0;
-            for (Object item : ((Map<?, ?>) value).values()) count += countDataSlots(item);
-            return count;
-        }
-        if (value instanceof List) {
-            int count = 0;
-            for (Object item : (List<?>) value) count += countDataSlots(item);
-            return count;
-        }
-        return "${data}".equals(value) ? 1 : 0;
     }
 
     public static class RenderedResponse {

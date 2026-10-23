@@ -237,7 +237,7 @@
                   >详情</el-button
                 >
                 <el-button
-                  v-permission="'field:edit'"
+                  v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
                   link
                   data-action="edit"
                   size="small"
@@ -245,7 +245,7 @@
                   @click="editWorkspace('VARIABLE', row, handleEdit)"
                   >编辑</el-button
                 >
-                <el-button v-permission="'field:edit'"
+                <el-button v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
                   v-if="isTestableSource(row)"
                   link
                   data-action="execute"
@@ -257,7 +257,7 @@
                 <governance-publish-action resource-type="VARIABLE" :resource-id="row.id" />
                 <el-button
                   v-if="row.varType === 'ENUM'"
-                  v-permission="'field:edit'"
+                  v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
                   link
                   data-action="configure"
                   size="small"
@@ -266,7 +266,7 @@
                   >枚举</el-button
                 >
                 <el-button
-                  v-permission="'field:edit'"
+                  v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
                   link
                   data-action="delete"
                   size="small"
@@ -284,7 +284,7 @@
             :page-size="qp.pageSize"
             :total="standaloneTotal"
             layout="total,sizes,prev,pager,next"
-            :page-sizes="[10, 30, 50, 100, 200, 500]"
+            :page-sizes="[10, 20, 30, 50, 100, 200, 500]"
             @current-change="
               (p) => {
                 qp.pageNum = p
@@ -406,7 +406,7 @@
                     <el-button size="small" :disabled="!objectFieldBranchIds(node).length" @click="setObjectFieldExpansion(node, true)">展开全部</el-button>
                     <el-button size="small" :disabled="!objectFieldExpandedKeys(node).length" @click="setObjectFieldExpansion(node, false)">收起全部</el-button>
                     <el-button
-                      v-permission="'field:edit'"
+                      v-permission="{ code: 'field:edit', projectId: (node.object || node).projectId, scope: (node.object || node).scope }"
                       link
                       size="small"
                       :icon="ElIconPlus"
@@ -471,7 +471,7 @@
                 <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '选项', '删除'])" align="center">
                   <template v-slot="{ row }">
                     <el-button
-                      v-permission="'field:edit'"
+                      v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
                       link
                       data-action="edit"
                       size="small"
@@ -480,7 +480,7 @@
                       >编辑</el-button
                     >
                     <el-button
-                      v-permission="'field:edit'"
+                      v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
                       link
                       data-action="configure"
                       size="small"
@@ -490,7 +490,7 @@
                       >选项</el-button
                     >
                     <el-button
-                      v-permission="'field:edit'"
+                      v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
                       link
                       data-action="delete"
                       size="small"
@@ -551,7 +551,7 @@
                 <el-select
                   v-if="node && node.object"
                   v-model="node.object.objectType"
-                  :disabled="!canEditFields"
+                  :disabled="!canEditResource(node.object)"
                   size="small"
                   style="width: 108px"
                   @change="onObjectTypeChange(node.object)"
@@ -594,7 +594,7 @@
               <template v-slot="{ row: node }">
                 <template v-if="node && node.object">
                   <el-button
-                    v-permission="'field:edit'"
+                    v-permission="{ code: 'field:edit', projectId: (node.object || node).projectId, scope: (node.object || node).scope }"
                     link
                     data-action="edit"
                     size="small"
@@ -604,7 +604,7 @@
                   >
                   <governance-publish-action v-if="node && node.object" resource-type="DATA_OBJECT" :resource-id="node.object.id" />
                   <el-button
-                    v-permission="'field:edit'"
+                    v-permission="{ code: 'field:edit', projectId: (node.object || node).projectId, scope: (node.object || node).scope }"
                     link
                     data-action="add"
                     size="small"
@@ -613,7 +613,7 @@
                     >添加字段</el-button
                   >
                   <el-button
-                    v-permission="'field:edit'"
+                    v-permission="{ code: 'field:edit', projectId: (node.object || node).projectId, scope: (node.object || node).scope }"
                     link
                     data-action="delete"
                     size="small"
@@ -801,7 +801,7 @@
           <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '版本', '发布', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
-                v-permission="'field:edit'"
+                v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
                 link
                 data-action="edit"
                 size="small"
@@ -811,7 +811,7 @@
               >
               <governance-publish-action resource-type="VARIABLE" :resource-id="row.id" />
               <el-button
-                v-permission="'field:edit'"
+                v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
                 link
                 data-action="delete"
                 size="small"
@@ -829,7 +829,7 @@
           :page-size="constQp.pageSize"
           :total="constantTotal"
           layout="total,sizes,prev,pager,next"
-          :page-sizes="[10, 30, 50, 100]"
+          :page-sizes="[10, 20, 30, 50, 100]"
           @current-change="
             (p) => {
               constQp.pageNum = p
@@ -867,7 +867,7 @@
             <el-option label="全局" value="GLOBAL" />
             <el-option label="项目级" value="PROJECT" />
           </el-select>
-          <el-select
+          <project-resource-select
             v-model="validationQp.projectId"
             clearable
             filterable
@@ -875,14 +875,7 @@
             size="small"
             style="width: 150px"
             @change="handleFieldValidationQuery"
-          >
-            <el-option
-              v-for="p in projects"
-              :key="p.id"
-              :label="p.projectName"
-              :value="p.id"
-            />
-          </el-select>
+           :projects="projects" />
           <el-select
             v-model="validationQp.validationType"
             clearable
@@ -1010,7 +1003,7 @@
             <template v-slot="{ row }">
               <el-button
                 v-if="!row.builtIn"
-                v-permission="'field:edit'"
+                v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
                 link
                 data-action="edit"
                 size="small"
@@ -1021,7 +1014,7 @@
               <governance-publish-action v-if="!row.builtIn" resource-type="FIELD_VALIDATION" :resource-id="row.id" />
               <el-button
                 v-if="!row.builtIn"
-                v-permission="'field:edit'"
+                v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
                 link
                 data-action="delete"
                 size="small"
@@ -1039,7 +1032,7 @@
           :page-size="validationQp.pageSize"
           :total="validationTotal"
           layout="total,sizes,prev,pager,next"
-          :page-sizes="[10, 30, 50, 100]"
+          :page-sizes="[10, 20, 30, 50, 100]"
           @current-change="
             (p) => {
               validationQp.pageNum = p
@@ -1251,7 +1244,7 @@
           />
         </el-form-item>
         <el-form-item v-if="isObjectField && objectFieldApiId" class="api-source-form-item" label="覆盖 API 入参">
-          <api-source-binding :api-id="objectFieldApiId" v-model:value="form.apiRequestOverrides" v-model:input-overrides="form.apiInputOverrides" :result-path="form.sourcePath" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="form.sourcePath = $event" />
+          <api-source-binding :api-id="objectFieldApiId" v-model:value="form.apiRequestOverrides" :result-path="form.sourcePath" :expected-type="form.varType" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="form.sourcePath = $event" />
         </el-form-item>
         <el-form-item v-if="!isObjectField" label="取值方式">
           <variable-source-selector
@@ -1296,7 +1289,7 @@
               选择 API 后，可覆盖已开放的调用入参，并选择要提取的结果字段。
             </div>
           </el-form-item>
-          <el-form-item class="api-source-form-item" label="API 取值配置"><api-source-binding :api-id="form.apiConfigId" v-model:value="form.apiRequestOverrides" v-model:input-overrides="form.apiInputOverrides" :result-path="form.apiResultPath" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="form.apiResultPath = $event" /></el-form-item>
+          <el-form-item class="api-source-form-item" label="API 取值配置"><api-source-binding :api-id="form.apiConfigId" v-model:value="form.apiRequestOverrides" :result-path="form.apiResultPath" :expected-type="form.varType" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="form.apiResultPath = $event" /></el-form-item>
           <el-form-item label="异常策略">
             <el-select v-model="form.apiExceptionStrategy" style="width: 180px">
               <el-option label="抛出异常" value="ERROR" />
@@ -1347,7 +1340,7 @@
             />
           </el-form-item>
           <el-form-item label="结果路径">
-            <el-input v-model="form.dbResultPath" placeholder="0.score" />
+            <protocol-path-picker v-model:value="form.dbResultPath" :paths="dbResultChoices.map(choice => ({ value: choice.path, label: choice.label, category: 'database' }))" context-label="数据库查询结果" placeholder="选择查询结果路径，如 0.score" />
             <div class="field-help">例如 0.score 表示第一行的 score；留空按返回行列数自动取值。可在预览后选择结果。</div>
           </el-form-item>
           <el-form-item label="最多返回行数">
@@ -1755,7 +1748,7 @@
                 </el-radio-group>
               </el-form-item>
               <el-form-item class="api-source-form-item" label="API 取值配置">
-                <api-source-binding :api-id="objectForm.apiConfigId" v-model:value="objectForm.apiRequestOverrides" v-model:input-overrides="objectForm.apiInputOverrides" :result-path="objectForm.resultPath" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="objectForm.resultPath = $event" />
+                <api-source-binding :api-id="objectForm.apiConfigId" v-model:value="objectForm.apiRequestOverrides" :result-path="objectForm.resultPath" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="objectForm.resultPath = $event" />
                 <div class="field-help">整体结果模式从结果路径绑定对象；字段模式下各字段路径相对于此结果填写。</div>
               </el-form-item>
             </template>
@@ -1780,13 +1773,12 @@
                 <div class="field-help">仅支持只读查询，例如 SELECT * FROM customer WHERE id = ?</div>
               </el-form-item>
               <el-form-item label="SQL 参数">
-                <monaco-editor
+                <sql-parameter-editor
                   v-model:value="objectForm.params"
-                  language="json"
-                  height="120px"
-                  :options="{ minimap: { enabled: false }, wordWrap: 'on' }"
+                  :sql="objectForm.sql"
+                  :variables="listReferenceOptions"
                 />
-                <div class="field-help">例如 [{"kind":"REFERENCE","path":"customerId"}]</div>
+                <div class="field-help">按 SQL 中 ? 的顺序选择业务字段或填写固定值。</div>
               </el-form-item>
               <el-form-item label="绑定方式">
                 <el-radio-group v-model="objectForm.bindingMode">
@@ -2047,19 +2039,12 @@
           label="选择项目"
           required
         >
-          <el-select
+          <project-resource-select
             v-model="importForm.projectId"
             placeholder="请选择项目"
             style="width: 100%"
             filterable
-          >
-            <el-option
-              v-for="p in projects"
-              :key="p.id"
-              :label="p.projectName"
-              :value="p.id"
-            />
-          </el-select>
+           :projects="projects" />
         </el-form-item>
         <el-form-item label="对象类型">
           <el-radio-group v-model="importForm.objectType">
@@ -2126,19 +2111,12 @@
           label="选择项目"
           required
         >
-          <el-select
+          <project-resource-select
             v-model="importForm.projectId"
             placeholder="请选择项目"
             style="width: 100%"
             filterable
-          >
-            <el-option
-              v-for="p in projects"
-              :key="p.id"
-              :label="p.projectName"
-              :value="p.id"
-            />
-          </el-select>
+           :projects="projects" />
         </el-form-item>
         <el-form-item label="对象编码"
           ><el-input
@@ -2198,19 +2176,12 @@
           label="选择项目"
           required
         >
-          <el-select
+          <project-resource-select
             v-model="importForm.projectId"
             placeholder="请选择项目"
             style="width: 100%"
             filterable
-          >
-            <el-option
-              v-for="p in projects"
-              :key="p.id"
-              :label="p.projectName"
-              :value="p.id"
-            />
-          </el-select>
+           :projects="projects" />
         </el-form-item>
         <el-form-item label="对象类型">
           <el-radio-group v-model="importForm.objectType">
@@ -2265,19 +2236,12 @@
           label="选择项目"
           required
         >
-          <el-select
+          <project-resource-select
             v-model="importForm.projectId"
             placeholder="请选择项目"
             style="width: 100%"
             filterable
-          >
-            <el-option
-              v-for="p in projects"
-              :key="p.id"
-              :label="p.projectName"
-              :value="p.id"
-            />
-          </el-select>
+           :projects="projects" />
         </el-form-item>
         <el-form-item label="Java 源码">
           <monaco-editor
@@ -2337,19 +2301,12 @@
           label="选择项目"
           required
         >
-          <el-select
+          <project-resource-select
             v-model="importForm.projectId"
             placeholder="请选择项目"
             style="width: 100%"
             filterable
-          >
-            <el-option
-              v-for="p in projects"
-              :key="p.id"
-              :label="p.projectName"
-              :value="p.id"
-            />
-          </el-select>
+           :projects="projects" />
         </el-form-item>
         <el-form-item label="JSON 数据">
           <monaco-editor
@@ -2421,6 +2378,7 @@
 </template>
 
 <script>
+import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
 import governanceWorkspaceMixin from '@/mixins/governanceWorkspaceMixin'
@@ -2428,6 +2386,7 @@ import { completeResourceChange } from '@/utils/governanceWorkspace'
 import SqlParameterEditor from '@/components/common/SqlParameterEditor.vue'
 import ExternalCallTrace from '@/components/common/ExternalCallTrace.vue'
 import ApiSourceBinding from '@/components/common/ApiSourceBinding.vue'
+import ProtocolPathPicker from '@/components/common/ProtocolPathPicker.vue'
 import ResourcePicker from '@/components/common/ResourcePicker.vue'
 import DerivedVariableEditor from './components/DerivedVariableEditor.vue'
 import { createDerivedConfig, validateDerivedConfig, derivedCurrentInputs } from '@/utils/derivedVariable'
@@ -2461,7 +2420,7 @@ import {
   changeFieldValidationStatusDraft,
   deleteFieldValidationDraft,
 } from '@/api/variable'
-import { listProjects } from '@/api/project'
+import { listProjectOptions as listProjects } from '@/api/project'
 import { getRuleTestSchema } from '@/api/definition'
 import request from '@/api/request'
 import {
@@ -2478,14 +2437,12 @@ import {
   getDataObjectFieldOptions,
   saveDataObjectFieldOptions,
   createOrUpdateDataObject,
-  getVariableTree,
 } from '@/api/dataObject'
-import { listApiConfigs } from '@/api/datasource'
-import { listDbDatasources } from '@/api/database'
-import { listSftpDatasources } from '@/api/sftp'
-import { listLibraries } from '@/api/ruleList'
-import { listAllFunctionsByProject } from '@/api/function'
-import { listAllModelsByProject } from '@/api/model'
+import { getApiConfig } from '@/api/datasource'
+import { getDbDatasource } from '@/api/database'
+import { getSftpDatasource } from '@/api/sftp'
+import { getLibrary } from '@/api/ruleList'
+import { loadApiReferenceCatalog } from '@/utils/apiReferenceCatalog'
 import {
   VAR_TYPE_FILTER_OPTIONS,
   VAR_TYPE_FORM_OPTIONS,
@@ -2511,6 +2468,7 @@ import {
 } from '@/utils/pageStateCache'
 import {
   collectReferencePaths,
+  collectOperandInputPaths,
   collectReferencePathsFromText,
   sampleValueForVarType,
   setPathValue,
@@ -2525,10 +2483,6 @@ import {
   operandDisplay,
   validateOperand,
 } from '@/utils/operand'
-import {
-  buildPickerOptions,
-  buildReferenceCatalog,
-} from '@/utils/referenceCatalog'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
@@ -2556,7 +2510,7 @@ export default {
       total: 0,
       qp: {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         projectId: '',
         varType: '',
         varSource: '',
@@ -2642,9 +2596,10 @@ export default {
       sftpDatasourceOptions: [],
       listLibraryOptions: [],
       listReferenceOptions: [],
+      listReferenceLoadSequence: 0,
       listFunctionOptions: [],
       listReferenceProjectId: null,
-      sourceOptionsLoaded: { API: false, DB: false, SFTP: false, LIST: false },
+      sourceOptionsRequestId: 0,
       sourceCatalogLoading: false,
       sourceCatalogKey: '',
       sourceCatalogRequestId: 0,
@@ -2711,7 +2666,7 @@ export default {
       constLoading: false,
       constQp: {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         keyword: '',
         varType: '',
         scope: '',
@@ -2735,7 +2690,7 @@ export default {
       objectAdvancedSections: [],
       objectForm: {
         apiRequestOverrides: {},
-        apiInputOverrides: {},
+
         lazyLoadReferences: false,
         id: null,
         objectCode: '',
@@ -2750,7 +2705,6 @@ export default {
         dbDatasourceId: '',
         bindingMode: 'OBJECT',
         resultPath: 'body',
-        paramMapping: '{}',
         sql: '',
         params: '[]',
         description: '',
@@ -2793,7 +2747,7 @@ export default {
       validationTotal: 0,
       validationQp: {
         pageNum: 1,
-        pageSize: 10,
+        pageSize: 20,
         scope: '',
         projectId: '',
         validationType: '',
@@ -2818,7 +2772,7 @@ export default {
       varTypeFormOptions: VAR_TYPE_FORM_OPTIONS,
       // 数据对象 tab 分页与展开
       objPageNum: 1,
-      objPageSize: 10,
+      objPageSize: 20,
       objExpanded: {},
       objectFieldPageMap: {},
       objectFieldPageSize: 20,
@@ -2838,9 +2792,10 @@ export default {
       canEditFields: hasPermission('field:edit'),
     }
   },
-  components: { GovernancePublishAction,
+  components: { ProjectResourceSelect, GovernancePublishAction,
     GovernanceResourceStatus,
     ApiSourceBinding,
+    ProtocolPathPicker,
     ResourcePicker,
     ExternalCallTrace,
     DerivedVariableEditor,
@@ -2862,6 +2817,7 @@ export default {
     ElIconSuccess,
   },
   name: 'VariableList',
+  beforeUnmount() { this.sourceOptionsRequestId++ },
   created() {
     this.currentProjectId =
       routeProjectId(
@@ -2883,7 +2839,7 @@ export default {
   },
   watch: {
     'objectForm.scope'() { if (this.objectDialogVisible) this.loadObjectSourceOptions() },
-    'objectForm.projectId'() { if (this.objectDialogVisible) this.loadObjectSourceOptions() },
+    'objectForm.projectId'() { if (this.objectDialogVisible) { this.loadObjectSourceOptions(); this.loadListExpressionOptions(true, this.objectForm) } },
     form: {
       deep: true,
       handler() {
@@ -3199,15 +3155,16 @@ export default {
     },
   },
   methods: {
+    canEditResource(resource) { return hasPermission('field:edit', resource) },
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     changeVariableApi(id) {
       if (String(id || '') === String(this.form.apiConfigId || '')) return
-      Object.assign(this.form, { apiConfigId: id || '', apiRequestOverrides: {}, apiInputOverrides: {}, apiParamMapping: '{}', apiResultPath: 'body' })
+      Object.assign(this.form, { apiConfigId: id || '', apiRequestOverrides: {}, apiResultPath: 'body' })
       this.resetDraftPreview()
     },
     changeObjectApi(id) {
       if (String(id || '') === String(this.objectForm.apiConfigId || '')) return
-      Object.assign(this.objectForm, { apiConfigId: id || '', apiRequestOverrides: {}, apiInputOverrides: {}, paramMapping: '{}', resultPath: 'body' })
+      Object.assign(this.objectForm, { apiConfigId: id || '', apiRequestOverrides: {}, resultPath: 'body' })
     },
     isVariableColumnVisible(key) {
       return this.variableColumnOrder.includes(key)
@@ -3284,8 +3241,6 @@ export default {
         derivedConfig: createDerivedConfig(),
         apiConfigId: '',
         apiRequestOverrides: {},
-        apiInputOverrides: {},
-        apiParamMapping: '{}',
         apiResultPath: 'body',
         apiForceRefresh: false,
         apiExceptionStrategy: 'ERROR',
@@ -3518,63 +3473,37 @@ export default {
         if (!error.requestErrorNotified) this.$message.error(error.message || '上游入参生成失败')
       }
     },
-    async loadVariableSourceOptions(source) {
-      if (source === 'API' && hasPermission('datasource:view') && !this.sourceOptionsLoaded.API) {
+    async loadVariableSourceOptions(source, owner) {
+      const requestId = ++this.sourceOptionsRequestId
+      const config = this.parseJson(owner && owner.sourceConfig, {})
+      const sources = {
+        API: { permission: 'datasource:view', loader: getApiConfig, ids: [config.apiConfigId], target: 'apiConfigOptions' },
+        DB: { permission: 'database:view', loader: getDbDatasource, ids: [config.datasourceId], target: 'dbDatasourceOptions' },
+        SFTP: { permission: 'database:view', loader: getSftpDatasource, ids: [config.sftpDatasourceId], target: 'sftpDatasourceOptions' },
+        LIST: { permission: 'list:view', loader: getLibrary, ids: config.listIds || [], target: 'listLibraryOptions' },
+      }
+      const selected = sources[source]
+      if (selected && hasPermission(selected.permission)) {
+        const ids = [...new Set(selected.ids.filter(id => id != null && id !== ''))]
         try {
-          const res = await listApiConfigs({
-            pageNum: 1,
-            pageSize: 1000,
-            status: 1,
-          })
-          this.apiConfigOptions = (res.data && res.data.records) || []
-          this.sourceOptionsLoaded.API = true
-        } catch (e) {
-          this.apiConfigOptions = []
+          const records = await Promise.all(ids.map(async id => {
+            const response = await selected.loader(id)
+            if (response?.data?.id == null || String(response.data.id) !== String(id)) throw new Error('来源详情响应缺少对应资源 ID')
+            return response.data
+          }))
+          if (requestId !== this.sourceOptionsRequestId) return false
+          const keys = new Set(ids.map(String))
+          this[selected.target] = [...this[selected.target].filter(item => !keys.has(String(item.id))), ...records]
+        } catch (error) {
+          if (requestId === this.sourceOptionsRequestId) this.$message.warning('来源详情加载失败，请重试：' + error.message)
+          return false
         }
       }
-      if (source === 'DB' && hasPermission('database:view') && !this.sourceOptionsLoaded.DB) {
-        try {
-          const res = await listDbDatasources({
-            pageNum: 1,
-            pageSize: 1000,
-            status: 1,
-          })
-          this.dbDatasourceOptions = (res.data && res.data.records) || []
-          this.sourceOptionsLoaded.DB = true
-        } catch (e) {
-          this.dbDatasourceOptions = []
-        }
-      }
-      if (source === 'SFTP' && hasPermission('database:view') && !this.sourceOptionsLoaded.SFTP) {
-        try {
-          const res = await listSftpDatasources({ pageNum: 1, pageSize: 1000, status: 1 })
-          this.sftpDatasourceOptions = (res.data && res.data.records) || []
-          this.sourceOptionsLoaded.SFTP = true
-        } catch (e) {
-          this.sftpDatasourceOptions = []
-        }
-      }
-      if (source === 'LIST' && hasPermission('list:view') && !this.sourceOptionsLoaded.LIST) {
-        try {
-          const res = await listLibraries({
-            pageNum: 1,
-            pageSize: 1000,
-            status: 1,
-          })
-          this.listLibraryOptions = (res.data && res.data.records) || []
-          this.sourceOptionsLoaded.LIST = true
-        } catch (e) {
-          this.listLibraryOptions = []
-        }
-      }
-      if (['LIST', 'DB', 'SFTP', 'DERIVED'].includes(source)) await this.loadListExpressionOptions()
-    },
-    normalizeSourceList(res) {
-      const data = res && res.data !== undefined ? res.data : res
-      if (Array.isArray(data)) return data
-      return data && Array.isArray(data.records) ? data.records : []
+      if (['LIST', 'DB', 'SFTP', 'DERIVED'].includes(source)) await this.loadListExpressionOptions(false, owner || this.form)
+      return requestId === this.sourceOptionsRequestId
     },
     async loadListExpressionOptions(force = false, owner = this.form) {
+      const sequence = ++this.listReferenceLoadSequence
       const projectId = owner.scope === 'GLOBAL' ? 0 : owner.projectId
       if (projectId === '' || projectId == null) {
         this.listReferenceOptions = []
@@ -3587,35 +3516,22 @@ export default {
       )
         return
       try {
-        const [variableRes, objectRes, functionRes, modelRes] =
-          await Promise.all([
-            listVariablesByProject(projectId),
-            getVariableTree(projectId),
-            listAllFunctionsByProject(projectId),
-            listAllModelsByProject(projectId),
-          ])
-        const objectData =
-          objectRes && objectRes.data !== undefined ? objectRes.data : objectRes
-        const objectTree = Array.isArray(objectData)
-          ? objectData
-          : (objectData && objectData.tree) || []
-        const catalog = buildReferenceCatalog(
-          this.normalizeSourceList(variableRes),
-          objectTree,
-          this.normalizeSourceList(modelRes)
-        )
-        this.listReferenceOptions = buildPickerOptions(catalog).filter(
+        const catalog = await loadApiReferenceCatalog(projectId)
+        if (sequence !== this.listReferenceLoadSequence) return
+        this.listReferenceOptions = catalog.vars.filter(
           (option) => {
             return !(
-              this.form.id != null &&
+              owner.id != null &&
               option._refType === 'VARIABLE' &&
-              String(option._varId) === String(this.form.id)
+              String(option._varId) === String(owner.id)
             )
           }
         )
-        this.listFunctionOptions = this.normalizeSourceList(functionRes)
+        this.listFunctionOptions = catalog.functions
+        if (catalog.errors.length) this.$message.warning(catalog.errors.join('；'))
         this.listReferenceProjectId = projectId
       } catch (e) {
+        if (sequence !== this.listReferenceLoadSequence) return
         this.listReferenceOptions = []
         this.listFunctionOptions = []
         this.$message.warning('查询字段加载失败，请检查项目后重试')
@@ -3627,11 +3543,7 @@ export default {
         this.form.derivedConfig = { ...createDerivedConfig(), ...config }
       } else if (this.form.varSource === 'API') {
         this.form.apiRequestOverrides = config.requestOverrides || {}
-        this.form.apiInputOverrides = config.inputOverrides || {}
         this.form.apiConfigId = config.apiConfigId || ''
-        this.form.apiParamMapping = this.stringifyConfig(
-          config.paramMapping || {}
-        )
         this.form.apiResultPath = config.resultPath || 'body'
         this.form.apiForceRefresh = config.forceRefresh === true
         this.form.apiExceptionStrategy = config.exceptionStrategy || 'ERROR'
@@ -3704,13 +3616,9 @@ export default {
           this.$message.warning('请选择接口配置')
           return null
         }
-        const paramMapping = this.parseSourceJson(payload.apiParamMapping || '{}', '请求参数映射', {})
-        if (!paramMapping || Array.isArray(paramMapping) || typeof paramMapping !== 'object') return null
         payload.sourceConfig = JSON.stringify({
           apiConfigId: payload.apiConfigId,
           requestOverrides: payload.apiRequestOverrides || {},
-          inputOverrides: payload.apiInputOverrides || {},
-          ...(Object.keys(paramMapping).length ? { paramMapping } : {}),
           resultPath: payload.apiResultPath || 'body',
           forceRefresh: payload.apiForceRefresh === true,
           exceptionStrategy: payload.apiExceptionStrategy || 'ERROR',
@@ -3826,8 +3734,6 @@ export default {
         'derivedConfig',
         'apiConfigId',
         'apiRequestOverrides',
-        'apiInputOverrides',
-        'apiParamMapping',
         'apiResultPath',
         'apiForceRefresh',
         'apiExceptionStrategy',
@@ -4434,7 +4340,7 @@ export default {
     handleCreateObject() {
       this.objectForm = {
         apiRequestOverrides: {},
-        apiInputOverrides: {},
+
         lazyLoadReferences: false,
         id: null,
         objectCode: '',
@@ -4448,7 +4354,6 @@ export default {
         dbDatasourceId: '',
         bindingMode: 'OBJECT',
         resultPath: 'body',
-        paramMapping: '{}',
         sql: '',
         params: '[]',
         description: '',
@@ -4465,7 +4370,6 @@ export default {
       const sourceConfig = this.parseJsonSafe(obj.sourceContent, {})
       this.objectForm = {
         apiRequestOverrides: sourceConfig.requestOverrides || {},
-        apiInputOverrides: sourceConfig.inputOverrides || {},
         lazyLoadReferences: obj.lazyLoadReferences === true,
         id: obj.id,
         objectCode: obj.objectCode,
@@ -4480,7 +4384,6 @@ export default {
         dbDatasourceId: sourceConfig.dbDatasourceId || sourceConfig.datasourceId || '',
         bindingMode: sourceConfig.bindingMode || 'OBJECT',
         resultPath: sourceConfig.resultPath || 'body',
-        paramMapping: this.stringifyConfig(sourceConfig.paramMapping || {}),
         sql: sourceConfig.sql || '',
         params: this.stringifyConfig(sourceConfig.params || []),
         description: obj.description || '',
@@ -4535,15 +4438,11 @@ export default {
             this.$message.warning('请选择 API 配置')
             return
           }
-          const paramMapping = this.parseSourceJson(this.objectForm.paramMapping, '请求参数映射', {})
-          if (paramMapping == null || Array.isArray(paramMapping) || typeof paramMapping !== 'object') return
           sourceContent = JSON.stringify({
             apiConfigId: this.objectForm.apiConfigId,
             requestOverrides: this.objectForm.apiRequestOverrides || {},
-            inputOverrides: this.objectForm.apiInputOverrides || {},
             bindingMode: this.objectForm.bindingMode || 'OBJECT',
             resultPath: this.objectForm.resultPath || 'body',
-            paramMapping,
           })
         } else if (sourceType === 'DB') {
           if (!this.objectForm.dbDatasourceId) {
@@ -4559,6 +4458,8 @@ export default {
             if (params != null) this.$message.warning('SQL 参数必须是 JSON 数组')
             return
           }
+          const parameterError = validateSqlParameters(this.objectForm.sql, params)
+          if (parameterError) { this.$message.warning(parameterError); return }
           sourceContent = JSON.stringify({
             dbDatasourceId: this.objectForm.dbDatasourceId,
             sql: this.objectForm.sql,
@@ -4605,7 +4506,7 @@ export default {
       this.objectFieldNode = node
       this.form = {
         apiRequestOverrides: {},
-        apiInputOverrides: {},
+
         id: null,
         projectId: obj.projectId,
         varCode: '',
@@ -4638,7 +4539,6 @@ export default {
       this.objectFieldNode = node
       this.form = {
         apiRequestOverrides: this.parseJsonSafe(row.sourceConfig, {}).requestOverrides || {},
-        apiInputOverrides: this.parseJsonSafe(row.sourceConfig, {}).inputOverrides || {},
         id: row.id,
         projectId: row.projectId,
         varCode: row.varCode,
@@ -5005,8 +4905,8 @@ export default {
             scriptName: this.form.scriptName,
             varType: this.form.varType,
             sourcePath: this.form.sourcePath || null,
-            sourceConfig: Object.keys(this.form.apiRequestOverrides || {}).length || Object.keys(this.form.apiInputOverrides || {}).length
-              ? JSON.stringify({ requestOverrides: this.form.apiRequestOverrides || {}, inputOverrides: this.form.apiInputOverrides || {} }) : null,
+            sourceConfig: Object.keys(this.form.apiRequestOverrides || {}).length
+              ? JSON.stringify({ requestOverrides: this.form.apiRequestOverrides || {} }) : null,
             refObjectCode: this.form.refObjectCode || null,
             refObjectId: this.form.refObjectId || null,
             refVariableId: this.form.refVariableId || null,
@@ -5085,7 +4985,9 @@ export default {
       return row && ['API', 'DB', 'SFTP', 'LIST', 'DERIVED'].indexOf(row.varSource) >= 0
     },
     async handleViewSourceDetail(row) {
-      await this.loadVariableSourceOptions(row && row.varSource)
+      this.sourceDetailTarget = null
+      this.sourceDetailVisible = false
+      if (!(await this.loadVariableSourceOptions(row && row.varSource, row))) return
       this.sourceDetailTarget = row
       this.sourceDetailVisible = true
     },
@@ -5100,23 +5002,21 @@ export default {
         })
       } else if (row && row.varSource === 'API') {
         const mapping =
-          config.paramMapping || this.apiInputConfig(config.apiConfigId)
+          this.apiInputConfig(config.apiConfigId, config.requestOverrides)
         Object.keys(mapping).forEach((key) => {
           const expression = mapping[key]
-          const paths = collectReferencePaths(expression, {
-            allowBarePath: true,
-          })
+          const paths = collectOperandInputPaths(expression)
           rows.push({
             field: paths.length ? paths.join(', ') : key,
             usage: 'API入参 ' + key,
-            expression: String(expression || ''),
+            expression: operandDisplay(expression),
           })
         })
         if (rows.length === 0 && config.apiConfigId) {
           rows.push({
             field: '由API配置决定',
             usage: 'API入参',
-            expression: '外数 API 请求参数/请求体中未识别到 $. 或 ${} 引用',
+            expression: '外数 API 未声明业务字段依赖',
           })
         }
       } else if (row && row.varSource === 'DB') {
@@ -5146,16 +5046,19 @@ export default {
       return rows
     },
     async handleTestVariable(row) {
-      await this.loadVariableSourceOptions(row && row.varSource)
-      this.testTarget = row
+      this.variableTestVisible = false
+      if (!(await this.loadVariableSourceOptions(row && row.varSource, row))) return
+      const requestId = this.sourceOptionsRequestId
       let schema = null
       try {
         schema = normalizeTestSchema(
           await getRuleTestSchema({ targetType: 'VARIABLE', targetId: row.id })
         )
       } catch (e) {
-        /* compatibility fallback for older servers */
+        if (requestId === this.sourceOptionsRequestId) this.$message.warning('测试字段结构加载失败，请核对当前配置生成的样例')
       }
+      if (requestId !== this.sourceOptionsRequestId) return
+      this.testTarget = row
       this.variableTestParamsText =
         schema &&
         (schema.inputs.length || Object.keys(schema.sampleParams).length)
@@ -5170,19 +5073,13 @@ export default {
       if (row && row.varSource === 'API') {
         const savedSample = this.apiSavedSample(config.apiConfigId)
         if (savedSample) return this.formatJson(savedSample)
-        const mapping = {
-          ...this.apiInputConfig(config.apiConfigId),
-          ...(config.paramMapping || {}),
-        }
+        const mapping = this.apiInputConfig(config.apiConfigId, config.requestOverrides)
         Object.keys(mapping).forEach((key) => {
-          const paths = collectReferencePaths(mapping[key], {
-            allowBarePath: true,
-          })
+          const paths = collectOperandInputPaths(mapping[key])
           if (paths.length)
             paths.forEach((path) =>
               setPathValue(sample, path, this.sampleValueForPath(path))
             )
-          else sample[key] = this.sampleValueForPath(key)
         })
       } else if (row && row.varSource === 'DB') {
         const params = Array.isArray(config.params) ? config.params : []
@@ -5266,35 +5163,11 @@ export default {
         ) || null
       )
     },
-    apiSavedSample(apiConfigId) {
-      const api = this.apiOption(apiConfigId)
-      if (!api || !api.testSampleParams) return null
-      const parsed = this.parseJsonSafe(api.testSampleParams, null)
-      return parsed && typeof parsed === 'object' ? parsed : null
-    },
-    apiInputConfig(apiConfigId) {
-      const api = this.apiOption(apiConfigId)
-      const merged = {}
-      if (!api) return merged
-      ;[
-        'headerConfig',
-        'queryConfig',
-        'requestMapping',
-        'bodyTemplate',
-        'authApiConfig',
-      ].forEach((key) => {
-        const parsed = this.parseJson(api[key], null)
-        this.collectApiReferenceConfig(
-          parsed == null ? api[key] : parsed,
-          merged
-        )
-      })
-      return merged
-    },
-    collectApiReferenceConfig(value, target) {
-      collectReferencePaths(value, { allowBarePath: false }).forEach((path) => {
-        target[path] = '$.' + path
-      })
+    apiSavedSample(apiConfigId) { return this.parseJsonSafe(this.apiOption(apiConfigId)?.executionConfig, {}).samples?.[0]?.params || null },
+    apiInputConfig(apiConfigId, overrides = {}) {
+      const spec = this.parseJsonSafe(this.apiOption(apiConfigId)?.executionConfig, {})
+      const fields = [...(spec.requestFields || []), ...(spec.requestBranches || []).flatMap(branch => branch.requestFields || []), ...(spec.steps || []).flatMap(step => step.requestFields || [])]
+      return Object.fromEntries(fields.map(field => [field.id, Object.hasOwn(overrides, field.id) ? overrides[field.id] : field.value]))
     },
     sourceBusinessTitle(row) {
       if (!row) return '取数配置'
@@ -5378,7 +5251,7 @@ export default {
       if (row && row.varSource === 'SFTP') {
         const sftp = [...(this.sourceCatalog.sftpOptions || []), ...(this.sftpDatasourceOptions || [])].find(item => String(item.id) === String(config.sftpDatasourceId))
         return [
-          { label: 'SFTP 数据源', value: sftp ? (sftp.name || sftp.code) : (config.sftpDatasourceId ? '数据源ID ' + config.sftpDatasourceId : '未配置') },
+          { label: 'SFTP 数据源', value: sftp ? (sftp.name || sftp.datasourceName || sftp.code || sftp.datasourceCode) : (config.sftpDatasourceId ? '数据源ID ' + config.sftpDatasourceId : '未配置') },
           { label: '远端路径', value: config.remotePath || '未配置' },
           { label: '输出格式', value: config.outputFormat || 'TEXT' },
           { label: '失败处理', value: this.exceptionStrategyLabel(config.exceptionStrategy) },

@@ -203,9 +203,18 @@ public class RuleEngineClient {
         return doExecute(ruleCode, paramObj);
     }
 
+    public RuleResult executeRequest(String ruleCode, com.hengshucredit.rule.model.RuleExecutionRequest input) {
+        return doExecute(ruleCode, input.getParams(), input.getTraceEnabled() == null ? config.isTraceEnabled() : input.getTraceEnabled(),
+                input.getClientAppName() == null ? config.getAppName() : input.getClientAppName());
+    }
+
     private RuleResult doExecute(String ruleCode, Map<String, Object> params) {
+        return doExecute(ruleCode, params, config.isTraceEnabled(), config.getAppName());
+    }
+
+    private RuleResult doExecute(String ruleCode, Map<String, Object> params, boolean collectTrace, String appName) {
         if (config.isServerSideExecution()) {
-            return httpSyncClient.executeRule(ruleCode, params, config.getAppName(), config.isTraceEnabled());
+            return httpSyncClient.executeRule(ruleCode, params, appName, collectTrace);
         }
         long start = System.currentTimeMillis();
 
@@ -214,15 +223,16 @@ public class RuleEngineClient {
             RuleResult r = new RuleResult();
             r.setSuccess(false);
             r.setErrorMessage("规则未找到: " + ruleCode);
+            r.setPlatformCode(com.hengshucredit.rule.model.PlatformCode.RULE_NOT_FOUND.code());
             return r;
         }
         ensureLocalPureRule(cached);
 
         String originalInputJson = config.isLogReportEnabled() ? toJsonSafely(params) : null;
-        runtimeRuleInvoker.enter(cached, params);
+        runtimeRuleInvoker.enter(cached, params, collectTrace);
         RuleResult result = new RuleResult();
         try {
-            result = engine.execute(cached.getPreparedScript(), params, config.isTraceEnabled(),
+            result = engine.execute(cached.getPreparedScript(), params, collectTrace,
                     runtimeRuleInvoker.requestContext());
         } catch (RuleTerminationSignal e) {
             result.setSuccess(true);
@@ -233,7 +243,7 @@ public class RuleEngineClient {
             runtimeRuleInvoker.exit();
         }
 
-        reportLog(ruleCode, cached, originalInputJson, result, System.currentTimeMillis() - start);
+        reportLog(ruleCode, cached, originalInputJson, result, System.currentTimeMillis() - start, appName);
         return result;
     }
 
@@ -248,6 +258,7 @@ public class RuleEngineClient {
             RuleResult r = new RuleResult();
             r.setSuccess(false);
             r.setErrorMessage("规则未找到: " + ruleCode);
+            r.setPlatformCode(com.hengshucredit.rule.model.PlatformCode.RULE_NOT_FOUND.code());
             return r;
         }
         ensureLocalPureRule(cached);
@@ -267,12 +278,12 @@ public class RuleEngineClient {
             runtimeRuleInvoker.exit();
         }
 
-        reportLog(ruleCode, cached, originalInputJson, result, System.currentTimeMillis() - start);
+        reportLog(ruleCode, cached, originalInputJson, result, System.currentTimeMillis() - start, config.getAppName());
         return result;
     }
 
     private void reportLog(String ruleCode, CachedRule cached, String originalInputJson,
-                           RuleResult result, long costMs) {
+                           RuleResult result, long costMs, String appName) {
         if (!config.isLogReportEnabled()) return;
         try {
             RuleExecutionLog entry = new RuleExecutionLog();
@@ -285,7 +296,7 @@ public class RuleEngineClient {
             entry.setArtifactDigest(cached.getArtifactDigest());
             entry.setModelType(cached.getModelType());
             entry.setSource("CLIENT");
-            entry.setClientAppName(config.getAppName());
+            entry.setClientAppName(appName);
             entry.setInputParams(originalInputJson);
             entry.setOutputResult(toJsonSafely(result.getResult()));
             entry.setSuccess(result.isSuccess() ? 1 : 0);
@@ -378,7 +389,8 @@ public class RuleEngineClient {
     private void ensureLocalPureRule(CachedRule cached) {
         if (config.isServerSideExecution() || cached == null || !cached.isRequiresServerExecution()) return;
         String reason = cached.getServerExecutionReason();
-        throw new IllegalStateException("规则依赖服务端运行能力，当前为本地纯计算模式；请配置 serverSideExecution=true"
+        throw new com.hengshucredit.rule.model.PlatformException(com.hengshucredit.rule.model.PlatformCode.LOCAL_EXECUTION_UNSUPPORTED,
+                "规则依赖服务端运行能力，当前为本地纯计算模式；请配置 serverSideExecution=true"
                 + (reason == null || reason.isBlank() ? "" : "（" + reason + "）"));
     }
 

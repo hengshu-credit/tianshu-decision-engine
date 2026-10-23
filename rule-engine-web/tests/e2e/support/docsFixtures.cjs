@@ -1,4 +1,5 @@
 const { createDetailApiData } = require('./detailFixtures.cjs')
+const { platformResponse } = require('./platformResponse.cjs')
 const { createDesignerApiData } = require('./designerFixtures.cjs')
 const { withTestExecutionIdentity } = require('./testExecutionFixtures.cjs')
 
@@ -352,14 +353,6 @@ function createDocsApiData() {
         targetField: 'riskLevel'
       }
     ],
-    envelopeTemplate: {
-      success: '${status.success}',
-      code: '${status.code}',
-      message: '${status.message}',
-      traceId: '${traceId}',
-      data: '${data}'
-    },
-    dataPath: '$.data',
     successDataTemplate: '${response}',
     errorDataTemplate: {
       errorCode: '${status.code}',
@@ -907,7 +900,7 @@ function createDocsApiData() {
     const execution = typeof configured === 'function' ? await configured(context) : configured
     return {
       execution,
-      responseJson: JSON.stringify({ code: 200, data: execution }),
+      responseJson: JSON.stringify(platformResponse(execution)),
       validation: { status: 'NOT_CONFIGURED', message: '未设置预期，不判断用例是否通过', checks: [], diffs: [] }
     }
   })

@@ -28,6 +28,7 @@
 
     <div v-if="initializing" data-testid="api-detail-loading" role="status">正在加载接口配置，请稍候…</div>
     <el-alert v-else-if="initializationError" type="error" :closable="false" title="接口配置加载失败" :description="initializationError" show-icon>
+      <p>{{ initializationError }}</p>
       <el-button size="small" @click="initializeRoute">重新加载</el-button>
     </el-alert>
     <el-form
@@ -74,20 +75,16 @@
         <el-row :gutter="12">
           <el-col :lg="12" :md="24">
             <el-form-item label="所属数据源" prop="datasourceId">
-              <el-select
-                v-model="form.datasourceId"
-                filterable
+              <remote-filter-select
+                v-model:value="form.datasourceId"
+                :fetch-options="fetchDatasourceChoices"
+                :selected-option="selectedDatasourceChoice"
+                option-value-key="id"
+                option-label-key="displayName"
                 placeholder="请选择数据源"
                 style="width: 100%"
                 @change="onDatasourceChange"
-              >
-                <el-option
-                  v-for="item in datasourceOptions"
-                  :key="item.id"
-                  :label="item.datasourceName + ' / ' + item.datasourceCode"
-                  :value="item.id"
-                />
-              </el-select>
+              />
             </el-form-item>
           </el-col>
           <el-col :lg="12" :md="24">
@@ -157,20 +154,8 @@
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :lg="8" :md="24">
-            <el-form-item v-if="!form.executionConfig" label="请求对象">
-              <resource-picker v-model:value="form.requestObjectId" :resources="dataObjectOptions" category="object" placeholder="选择请求数据对象" />
-              <div class="field-help">用于生成请求字段参照和测试 JSON。</div>
-            </el-form-item>
-          </el-col>
-          <el-col :lg="8" :md="24">
-            <el-form-item v-if="!form.executionConfig" label="响应对象">
-              <resource-picker v-model:value="form.responseObjectId" :resources="dataObjectOptions" category="object" placeholder="选择响应数据对象" />
-              <div class="field-help">
-                用于生成响应字段参照，接口变量读取映射后的 body。
-              </div>
-            </el-form-item>
-          </el-col>
+
+
         </el-row>
         <el-form-item label="API说明">
           <el-input
@@ -188,7 +173,7 @@
         </button>
       </section>
 
-      <el-tabs v-model="activeConfigTab" lazy class="config-tabs" @tab-change="syncConfigGroupForTab">
+      <el-tabs v-model="activeConfigTab" lazy class="config-tabs" :before-leave="validateActiveEditors" @tab-change="syncConfigGroupForTab">
         <el-tab-pane
           v-if="isConfigTabVisible('auth')"
           label="接口鉴权"
@@ -252,219 +237,18 @@
                     active-text="记录获取/刷新" /></el-form-item
               ></el-col>
             </el-row>
-            <el-alert
-              type="info"
-              :closable="false"
-              show-icon
-              class="non-json-policy-alert"
-            >
-              <template #default>
-                非 JSON 鉴权参数缺失时，默认按兼容逻辑发送空字符串；可改为省略字段或直接报错。字符串内容（如 None、na）不会被改写。
-              </template>
-            </el-alert>
-            <el-form-item label="非 JSON 鉴权缺失策略">
-              <el-select v-model="nonJsonNullPolicy.auth" style="width: 280px">
-                <el-option
-                  v-for="item in nonJsonAuthPolicyOptions"
-                  :key="`auth-${item.value}`"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </el-select>
-            </el-form-item>
-
-            <el-form-item v-if="form.tokenRefreshOnUnauthorized === 1" label="Token失效条件">
-              <el-radio-group v-model="tokenFailureMode">
-                <el-radio-button value="DEFAULT">HTTP 401 / 403</el-radio-button>
-                <el-radio-button value="CUSTOM">自定义条件</el-radio-button>
-              </el-radio-group>
-              <div class="field-help">自定义条件替代默认判断，可组合 httpStatus、body.code 等原始响应字段。每次调用最多刷新一次，刷新后仍失效则失败。</div>
+            <el-form-item v-if="form.tokenRefreshOnUnauthorized === 1" label="Token 失效条件">
+              <el-radio-group v-model="tokenFailureMode"><el-radio-button value="DEFAULT">HTTP 401 / 403</el-radio-button><el-radio-button value="CUSTOM">自定义条件</el-radio-button></el-radio-group>
               <response-condition-tree-editor v-if="tokenFailureMode === 'CUSTOM'" :group="tokenFailureConditionRoot" :path-options="responsePathOptions" />
             </el-form-item>
-            <div
-              v-if="form.authMode === 'INHERIT' || form.authMode === 'NONE'"
-              class="empty-state"
-            >
-              {{
-                form.authMode === 'INHERIT'
-                  ? '当前接口使用数据源默认鉴权配置。'
-                  : '当前接口不附加鉴权信息。'
-              }}
-            </div>
-            <el-row v-else-if="form.authMode === 'BASIC'" :gutter="12">
-              <el-col :lg="12" :md="24">
-                <el-form-item label="用户名">
-                  <var-picker v-model:value="apiAuthConfig.username" :vars="apiPickerVars" :functions="apiPickerFunctions" allow-custom width="100%" placeholder="选择字段或输入 ${appId}" @select="onLegacyAuthSelect('username', $event)" />
-                </el-form-item>
-              </el-col>
-              <el-col :lg="12" :md="24">
-                <el-form-item label="密码">
-                  <var-picker v-model:value="apiAuthConfig.password" :vars="apiPickerVars" :functions="apiPickerFunctions" allow-custom width="100%" placeholder="选择字段或输入 ${secret}" @select="onLegacyAuthSelect('password', $event)" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-            <el-form-item
-              v-else-if="form.authMode === 'BEARER'"
-              label="Bearer Token"
-            >
-              <var-picker v-model:value="apiAuthConfig.token" :vars="apiPickerVars" :functions="apiPickerFunctions" allow-custom width="100%" placeholder="选择字段或输入 ${token}" @select="onLegacyAuthSelect('token', $event)" />
-            </el-form-item>
-            <el-row v-else-if="form.authMode === 'API_KEY'" :gutter="12">
-              <el-col :lg="8" :md="24">
-                <el-form-item label="放置位置">
-                  <el-select
-                    v-model="apiAuthConfig.location"
-                    style="width: 100%"
-                  >
-                    <el-option label="请求头" value="HEADER" />
-                    <el-option label="Query参数" value="QUERY" />
-                  </el-select>
-                </el-form-item>
-              </el-col>
-              <el-col :lg="8" :md="24">
-                <el-form-item label="Key名称">
-                  <el-input
-                    v-model="apiAuthConfig.name"
-                    placeholder="如 X-API-Key"
-                  />
-                </el-form-item>
-              </el-col>
-              <el-col :lg="8" :md="24">
-                <el-form-item label="Key取值">
-                  <var-picker v-model:value="apiAuthConfig.value" :vars="apiPickerVars" :functions="apiPickerFunctions" allow-custom width="100%" placeholder="选择字段或输入 ${apiKey}" @select="onLegacyAuthSelect('value', $event)" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-            <div
-              v-else-if="
-                form.authMode === 'TOKEN_API' || form.authMode === 'OAUTH2'
-              "
-            >
-              <el-row :gutter="12">
-                <el-col :lg="10" :md="24">
-                  <el-form-item label="Token地址">
-                    <el-input
-                      v-model="apiAuthConfig.tokenUrl"
-                      placeholder="/oauth/token 或完整 URL"
-                    />
-                  </el-form-item>
-                </el-col>
-                <el-col :lg="5" :md="12">
-                  <el-form-item label="方法">
-                    <el-select
-                      v-model="apiAuthConfig.method"
-                      style="width: 100%"
-                    >
-                      <el-option
-                        v-for="method in httpMethods"
-                        :key="method"
-                        :label="method"
-                        :value="method"
-                      />
-                    </el-select>
-                  </el-form-item>
-                </el-col>
-                <el-col :lg="9" :md="12">
-                  <el-form-item label="Content-Type">
-                    <el-select
-                      v-model="apiAuthConfig.contentType"
-                      filterable
-                      allow-create
-                      style="width: 100%"
-                    >
-                      <el-option
-                        v-for="item in contentTypeOptions"
-                        :key="item"
-                        :label="item"
-                        :value="item"
-                      />
-                    </el-select>
-                  </el-form-item>
-                </el-col>
-              </el-row>
-              <el-row :gutter="12">
-                <el-col :lg="12" :md="24">
-                  <el-form-item label="鉴权请求头">
-                    <monaco-editor
-                      v-model:value="apiAuthConfig.headers"
-                      language="json"
-                      height="120px"
-                    />
-                  </el-form-item>
-                </el-col>
-                <el-col :lg="12" :md="24">
-                  <el-form-item label="鉴权请求体">
-                    <monaco-editor
-                      v-model:value="apiAuthConfig.body"
-                      language="json"
-                      height="120px"
-                    />
-                  </el-form-item>
-                </el-col>
-              </el-row>
-              <el-row :gutter="12">
-                <el-col :lg="12" :md="24">
-                  <el-form-item label="Token路径">
-                    <protocol-path-picker v-model:value="apiAuthConfig.tokenPath"
-                      placeholder="如 body.access_token 或 headers.Authorization"
-                    />
-                  </el-form-item>
-                </el-col>
-                <el-col :lg="12" :md="24">
-                  <el-form-item label="过期秒路径">
-                    <protocol-path-picker v-model:value="apiAuthConfig.expiresInPath"
-                      placeholder="如 body.expires_in，可为空"
-                    />
-                  </el-form-item>
-                </el-col>
-              </el-row>
-              <el-row :gutter="12">
-                <el-col :lg="8" :md="24">
-                  <el-form-item label="Token放置方式">
-                    <el-select
-                      v-model="apiAuthConfig.tokenPlacement"
-                      style="width: 100%"
-                    >
-                      <el-option label="写入请求Header" value="HEADER" />
-                      <el-option label="仅供请求脚本使用" value="SCRIPT_ONLY" />
-                    </el-select>
-                  </el-form-item>
-                </el-col>
-                <el-col :lg="8" :md="24">
-                  <el-form-item
-                    label="Token Header名称"
-                    label-width="140px"
-                    class="token-header-name-item"
-                  >
-                    <el-input
-                      v-model="apiAuthConfig.tokenHeaderName"
-                      placeholder="默认 Authorization；冰鉴填写 token_id"
-                    />
-                  </el-form-item>
-                </el-col>
-                <el-col :lg="8" :md="24">
-                  <el-form-item label="Token前缀">
-                    <el-input
-                      v-model="apiAuthConfig.tokenPrefix"
-                      placeholder="默认无前缀，可填写 Bearer 或其他内容（空格会保留）"
-                    />
-                  </el-form-item>
-                </el-col>
-              </el-row>
-            </div>
-            <el-form-item v-else label="自定义配置">
-              <monaco-editor
-                v-model:value="form.authApiConfig"
-                language="json"
-                height="180px"
-              />
-            </el-form-item>
+            <api-auth-editor v-if="form.authMode !== 'CUSTOM'" ref="authEditor" v-model:value="apiAuthConfig" :type="form.authMode" :vars="apiPickerVars" :functions="apiPickerFunctions" />
+            <el-form-item v-else label="自定义配置"><monaco-editor v-model:value="form.authApiConfig" language="json" height="180px" /></el-form-item>
           </div>
         </el-tab-pane>
 
         <template v-if="form.executionConfig && activeConfigGroup === 'business'">
           <el-tab-pane v-for="item in executionTabs" :key="item.name" :label="item.label" :name="`execution.${item.name}`">
-            <api-execution-editor v-if="activeConfigTab === `execution.${item.name}`" v-model:value="form.executionConfig" :active-tab="item.editorTab || item.name" :active-policy="item.policy || ''" embedded-tabs
+            <api-execution-editor v-if="activeConfigTab === `execution.${item.name}`" ref="executionEditors" v-model:value="form.executionConfig" :active-tab="item.editorTab || item.name" :active-policy="item.policy || ''" embedded-tabs
               :api-config="form" :project-id="resolveDatasourceProjectId(form.datasourceId) || contextProjectId || 0" :async-mode="form.requestMode === 'ASYNC'"
               @select-mode="form.requestMode = $event" @select-sample="invokeParamsText = JSON.stringify($event, null, 2); goToConfigTab('test')" />
           </el-tab-pane>
@@ -634,7 +418,7 @@
               </el-table-column>
               <el-table-column label="变量值" min-width="280">
                 <template v-slot="{ row }">
-                  <var-picker :value="row.value" :vars="apiPickerVars" :functions="apiPickerFunctions" allow-custom width="100%" placeholder="选择字段或输入固定值" @input="row.value = $event" />
+                  <api-value-editor v-model:value="row.value" :vars="apiPickerVars" :functions="apiPickerFunctions" :modules="[]" :sensitive="row.sensitive" />
                 </template>
               </el-table-column>
               <el-table-column label="敏感" width="90" align="center">
@@ -692,801 +476,17 @@
           </div>
         </el-tab-pane>
 
-        <el-tab-pane
-          v-if="isConfigTabVisible('headers')"
-          label="请求头"
-          name="headers"
-        >
-          <div class="tab-section">
-            <div class="section-toolbar">
-              <div>
-                <div class="section-title">Header 配置</div>
-                <div class="field-help">
-                  Header 只放 HTTP 头，例如认证、追踪号、渠道号；GET 的 URL
-                  参数请在“请求体”页签配置。
-                </div>
-              </div>
-              <el-button size="small" :icon="ElIconPlus" @click="addHeaderRow"
-                >添加 Header</el-button
-              >
-            </div>
-            <div class="non-json-policy-line">
-              <span>缺失值策略</span>
-              <el-select v-model="nonJsonNullPolicy.header" size="small" style="width: 220px">
-                <el-option
-                  v-for="item in nonJsonPolicyOptions"
-                  :key="`header-${item.value}`"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </el-select>
-              <span class="field-help">默认省略缺失 Header；仅影响缺失值，不改写 None、na 等字符串。</span>
-            </div>
-            <el-table
-              :data="headerRows"
-              border
-              size="small"
-              class="config-table"
-            >
-              <el-table-column label="Header名称" min-width="180">
-                <template v-slot="{ row }">
-                  <el-input v-model="row.name" placeholder="如 X-Request-Id" />
-                </template>
-              </el-table-column>
-              <el-table-column label="取值" min-width="240">
-                <template v-slot="{ row }">
-                  <var-picker
-                    :value="row.value"
-                    :vars="apiPickerVars"
-                    :functions="apiPickerFunctions"
-                    allow-custom
-                    width="100%"
-                    placeholder="选择字段或输入 ${requestId}"
-                    @input="row.value = $event"
-                    @select="onLegacyRowValueSelect(row, $event)"
-                  />
-                </template>
-              </el-table-column>
-              <el-table-column label="说明" min-width="180">
-                <template v-slot="{ row }">
-                  <el-input v-model="row.remark" placeholder="业务含义，可选" />
-                </template>
-              </el-table-column>
-              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['删除'])" align="center">
-                <template v-slot="{ $index }">
-                  <el-button
-                    link
-                    size="small"
-                    type="danger"
-                    class="btn-delete"
-                    @click="removeRow(headerRows, $index)"
-                    >删除</el-button
-                  >
-                </template>
-              </el-table-column>
-            </el-table>
-          </div>
-        </el-tab-pane>
 
-        <el-tab-pane
-          v-if="isConfigTabVisible('query')"
-          label="请求参数"
-          name="query"
-        >
-          <div class="tab-section">
-            <div class="section-toolbar">
-              <div>
-                <div class="section-title">URL Query 参数</div>
-                <div class="field-help">
-                  这里配置拼接到 URL 上的查询参数，GET/DELETE
-                  的查询条件放这里，不会放入 Header 或
-                  Body。取值支持固定值、<code>$.字段路径</code>、<code>${字段路径}</code>。
-                </div>
-              </div>
-              <el-button size="small" :icon="ElIconPlus" @click="addQueryRow"
-                >添加 Query</el-button
-              >
-            </div>
-            <div class="non-json-policy-line">
-              <span>缺失值策略</span>
-              <el-select v-model="nonJsonNullPolicy.query" size="small" style="width: 220px">
-                <el-option
-                  v-for="item in nonJsonQueryPolicyOptions"
-                  :key="`query-${item.value}`"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </el-select>
-              <span class="field-help">默认省略缺失 Query，显式 null 按当前逻辑保留；也可改为空字符串、全部省略或报错。</span>
-            </div>
-            <el-table :data="queryRows" border size="small" class="config-table">
-              <el-table-column label="参数名" min-width="180">
-                <template v-slot="{ row }">
-                  <el-input v-model="row.name" placeholder="如 mobile_no" />
-                </template>
-              </el-table-column>
-              <el-table-column label="取值" min-width="240">
-                <template v-slot="{ row }">
-                  <var-picker
-                    :value="row.value"
-                    :vars="apiPickerVars"
-                    :functions="apiPickerFunctions"
-                    allow-custom
-                    width="100%"
-                    placeholder="选择字段或输入 $.mobile_no"
-                    @input="row.value = $event"
-                    @select="onLegacyRowValueSelect(row, $event)"
-                  />
-                </template>
-              </el-table-column>
-              <el-table-column label="说明" min-width="180">
-                <template v-slot="{ row }">
-                  <el-input v-model="row.remark" placeholder="业务含义，可选" />
-                </template>
-              </el-table-column>
-              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['删除'])" align="center">
-                <template v-slot="{ $index }">
-                  <el-button
-                    link
-                    size="small"
-                    type="danger"
-                    class="btn-delete"
-                    @click="removeRow(queryRows, $index)"
-                    >删除</el-button
-                  >
-                </template>
-              </el-table-column>
-            </el-table>
-          </div>
-        </el-tab-pane>
 
-        <el-tab-pane
-          v-if="isConfigTabVisible('cookies')"
-          label="请求 Cookies"
-          name="cookies"
-        >
-          <div class="tab-section">
-            <div class="section-toolbar">
-              <div>
-                <div class="section-title">Cookie 配置</div>
-                <div class="field-help">每行配置一个 Cookie；取值支持字段选择器、固定值和自定义路径，发送时会合并到 Cookie 请求头。</div>
-              </div>
-              <el-button size="small" :icon="ElIconPlus" @click="addCookieRow">添加 Cookie</el-button>
-            </div>
-            <el-table :data="cookieRows" border size="small" class="config-table">
-              <el-table-column label="Cookie名称" min-width="180">
-                <template v-slot="{ row }"><el-input v-model="row.name" placeholder="如 session_id" /></template>
-              </el-table-column>
-              <el-table-column label="取值" min-width="240">
-                <template v-slot="{ row }">
-                  <var-picker :value="row.value" :vars="apiPickerVars" :functions="apiPickerFunctions" allow-custom width="100%" placeholder="选择字段或输入固定值" @input="row.value = $event" @select="onLegacyRowValueSelect(row, $event)" />
-                </template>
-              </el-table-column>
-              <el-table-column label="说明" min-width="180">
-                <template v-slot="{ row }"><el-input v-model="row.remark" placeholder="业务含义，可选" /></template>
-              </el-table-column>
-              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['删除'])" align="center">
-                <template v-slot="{ $index }"><el-button link size="small" type="danger" class="btn-delete" @click="removeRow(cookieRows, $index)">删除</el-button></template>
-              </el-table-column>
-            </el-table>
-          </div>
-        </el-tab-pane>
 
-        <el-tab-pane
-          v-if="isConfigTabVisible('request')"
-          label="请求体"
-          name="request"
-        >
-          <div class="tab-section">
-            <div class="section-toolbar">
-              <div>
-                <div class="section-title">请求参数生成方式</div>
-                <div class="field-help">
-                  表单适合业务配置；JSON
-                  适合复制技术文档。两边会自动互相转换，保存时使用同一份映射。
-                </div>
-              </div>
-              <el-radio-group v-model="requestBodyMode" size="small">
-                <el-radio-button value="MAPPING">表单配置</el-radio-button>
-                <el-radio-button value="JSON">JSON配置</el-radio-button>
-              </el-radio-group>
-            </div>
 
-            <div v-if="requestBodyMode === 'MAPPING'" class="mapping-layout">
-              <div class="mapping-main">
-                <div class="section-toolbar compact">
-                  <div class="field-help">
-                    接口字段路径是发给外部 API
-                    的字段；右侧入参路径是规则引擎已有变量。填写任意一边时，另一边会按同名字段自动补齐。
-                  </div>
-                  <div>
-                    <el-select
-                      v-model="requestNullPolicy"
-                      size="small"
-                      style="width: 220px; margin-right: 8px"
-                      @change="syncRequestJsonFromRows"
-                    >
-                      <el-option
-                        v-for="item in requestNullPolicyOptions"
-                        :key="item.value"
-                        :label="item.label"
-                        :value="item.value"
-                      />
-                    </el-select>
-                    <el-button
-                      size="small"
-                      :disabled="requestFieldOptions.length === 0"
-                      @click="fillRequestRowsFromRequestObject"
-                      >按请求对象生成</el-button
-                    >
-                    <el-button
-                      size="small"
-                      :icon="ElIconPlus"
-                      @click="addRequestMappingRow"
-                      >添加字段</el-button
-                    >
-                  </div>
-                </div>
-                <el-table
-                  :data="requestMappingRows"
-                  border
-                  size="small"
-                  class="config-table"
-                >
-                  <el-table-column label="接口字段路径" min-width="190">
-                    <template v-slot="{ row, $index }">
-                      <el-input
-                        v-model="row.targetPath"
-                        placeholder="如 customer.certNo"
-                        @update:model-value="onRequestTargetInput(row, $index)"
-                      />
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="引擎入参路径/固定值" min-width="240">
-                    <template v-slot="{ row, $index }">
-                      <var-picker
-                        :value="row.sourcePath"
-                        :vars="apiPickerVars"
-                        :functions="apiPickerFunctions"
-                        allow-custom
-                        width="100%"
-                        placeholder="选择字段或输入 $.customer.idNo"
-                        @input="row.sourcePath = $event; onRequestSourceInput(row, $index)"
-                        @select="onLegacyRequestSourceSelect(row, $index, $event)"
-                      />
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="说明" min-width="180">
-                    <template v-slot="{ row }">
-                      <el-input
-                        v-model="row.remark"
-                        placeholder="业务含义，可选"
-                      />
-                    </template>
-                  </el-table-column>
-                  <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['删除'])" align="center">
-                    <template v-slot="{ $index }">
-                      <el-button
-                        link
-                        size="small"
-                        type="danger"
-                        class="btn-delete"
-                        @click="removeRow(requestMappingRows, $index)"
-                        >删除</el-button
-                      >
-                    </template>
-                  </el-table-column>
-                </el-table>
-              </div>
-              <div class="field-reference">
-                <div class="reference-title">请求对象字段</div>
-                <div
-                  v-if="requestFieldOptions.length === 0"
-                  class="empty-state"
-                >
-                  选择请求对象后显示字段。
-                </div>
-                <el-table show-overflow-tooltip
-                  v-else
-                  :data="requestFieldOptions"
-                  size="small"
-                  height="260"
-                >
-                  <el-table-column
-                    label="字段"
-                    min-width="120"
-                    show-overflow-tooltip
-                  >
-                    <template v-slot="{ row }">{{
-                      fieldDisplayName(row)
-                    }}</template>
-                  </el-table-column>
-                  <el-table-column
-                    label="路径"
-                    min-width="150"
-                    show-overflow-tooltip
-                  >
-                    <template v-slot="{ row }">{{
-                      fieldScriptPath(row)
-                    }}</template>
-                  </el-table-column>
-                  <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['使用'])" align="center">
-                    <template v-slot="{ row }">
-                      <el-button
-                        link
-                        size="small"
-                        type="success"
-                        @click="useRequestField(row)"
-                        >使用</el-button
-                      >
-                    </template>
-                  </el-table-column>
-                </el-table>
-              </div>
-            </div>
 
-            <div v-else>
-              <monaco-editor
-                v-model:value="requestMappingJsonText"
-                language="json"
-                height="320px"
-              />
-              <div class="field-help">
-                JSON 中左侧字段是接口字段，右侧可写
-                <code>$.mobile_no</code> 或固定值。切回表单时会自动拆成字段行。
-              </div>
-            </div>
-          </div>
-        </el-tab-pane>
 
-        <el-tab-pane
-          v-if="isConfigTabVisible('response')"
-          label="响应体"
-          name="response"
-        >
-          <div class="tab-section">
-            <div class="section-toolbar">
-              <div>
-                <div class="section-title">响应映射</div>
-                <div class="field-help">
-                  表单适合配置稳定响应；条件分支用于同一接口不同返回结构；JSON
-                  适合复制技术文档。接口变量读取映射后的
-                  <code>body.输出字段</code>。
-                </div>
-              </div>
-              <el-radio-group v-model="responseMappingMode" size="small">
-                <el-radio-button value="MAPPING">表单配置</el-radio-button>
-                <el-radio-button value="JSON">高级 JSON</el-radio-button>
-              </el-radio-group>
-            </div>
 
-            <div
-              v-if="responseMappingMode === 'MAPPING'"
-              class="mapping-layout"
-            >
-              <div class="mapping-main">
-                <div class="section-toolbar compact">
-                  <div class="field-help">
-                    来源路径从接口原始响应读取，常用
-                    <code>body.data.score</code>，也可用逗号分隔多个兜底路径。
-                  </div>
-                  <div>
-                    <el-button
-                      size="small"
-                      :disabled="responseFieldOptions.length === 0"
-                      @click="fillResponseRowsFromResponseObject"
-                      >按响应对象生成</el-button
-                    >
-                    <el-button
-                      size="small"
-                      :icon="ElIconPlus"
-                      @click="addResponseMappingRow"
-                      >添加字段</el-button
-                    >
-                  </div>
-                </div>
-                <el-table
-                  :data="responseMappingRows"
-                  border
-                  size="small"
-                  class="config-table"
-                >
-                  <el-table-column label="输出字段" min-width="160">
-                    <template v-slot="{ row }">
-                      <el-input
-                        v-model="row.outputField"
-                        placeholder="如 score"
-                      />
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="来源路径" min-width="240">
-                    <template v-slot="{ row }">
-                      <protocol-path-picker v-model:value="row.sourcePath" :paths="responsePathOptions" context-label="当前外数 API · HTTP 响应" placeholder="如 body.data.score" />
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="默认值" min-width="150">
-                    <template v-slot="{ row }">
-                      <el-input
-                        v-model="row.defaultValue"
-                        placeholder="可选，如 0"
-                      />
-                    </template>
-                  </el-table-column>
-                    <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['删除'])" align="center">
-                    <template v-slot="{ $index }">
-                      <el-button
-                        link
-                        size="small"
-                        type="danger"
-                        class="btn-delete"
-                        @click="removeRow(responseMappingRows, $index)"
-                        >删除</el-button
-                      >
-                    </template>
-                  </el-table-column>
-                </el-table>
 
-                <div class="section-toolbar compact condition-toolbar">
-                  <div>
-                    <div class="section-title">条件响应结构</div>
-                    <div class="field-help">
-                      按原始响应路径配置不同结构的读取规则；条件编辑器支持且/或嵌套，兜底分支放在最后。
-                    </div>
-                  </div>
-                  <div>
-                    <el-button
-                      size="small"
-                      :icon="ElIconPlus"
-                      @click="addResponseConditionRow(false)"
-                      >添加条件分支</el-button
-                    >
-                    <el-button
-                      size="small"
-                      @click="addResponseConditionRow(true)"
-                      >添加兜底分支</el-button
-                    >
-                  </div>
-                </div>
-                <div
-                  v-if="responseConditionRows.length === 0"
-                  class="empty-state"
-                >
-                  没有条件分支时，仅使用上方基础响应映射。
-                </div>
-                <div
-                  v-for="(row, index) in responseConditionRows"
-                  :key="'response-condition-' + index"
-                  class="response-condition-card"
-                >
-                  <div class="response-condition-head">
-                    <div class="response-condition-title">
-                      {{
-                        row.fallback ? '兜底分支' : '条件分支 #' + (index + 1)
-                      }}
-                    </div>
-                    <div>
-                      <el-switch
-                        v-model="row.fallback"
-                        active-text="兜底"
-                        inactive-text="条件"
-                      />
-                      <el-button
-                        link
-                        size="small"
-                        class="btn-delete"
-                        @click="removeRow(responseConditionRows, index)"
-                        >删除</el-button
-                      >
-                    </div>
-                  </div>
-                  <el-row :gutter="12">
-                    <el-col :lg="8" :md="24">
-                      <el-form-item label="输出字段">
-                        <el-input
-                          v-model="row.outputField"
-                          placeholder="如 score"
-                        />
-                      </el-form-item>
-                    </el-col>
-                    <el-col :lg="10" :md="24">
-                      <el-form-item label="读取路径">
-                        <el-input
-                          v-model="row.sourcePath"
-                          placeholder="如 body.data.score，可逗号分隔多个路径"
-                        />
-                      </el-form-item>
-                    </el-col>
-                    <el-col :lg="6" :md="24">
-                      <el-form-item label="默认值">
-                        <el-input
-                          v-model="row.defaultValue"
-                          placeholder="可选，如 0"
-                        />
-                      </el-form-item>
-                    </el-col>
-                  </el-row>
-                  <div v-if="!row.fallback" class="response-condition-tree">
-                    <condition-group-editor
-                      :group="row.conditionRoot"
-                      :vars="responseConditionVarOptions"
-                      :allow-custom-var="true"
-                    />
-                  </div>
-                </div>
-              </div>
-              <div class="field-reference">
-                <div class="reference-title">响应对象字段</div>
-                <div
-                  v-if="responseFieldOptions.length === 0"
-                  class="empty-state"
-                >
-                  选择响应对象后显示字段。
-                </div>
-                <el-table show-overflow-tooltip
-                  v-else
-                  :data="responseFieldOptions"
-                  size="small"
-                  height="260"
-                >
-                  <el-table-column
-                    label="字段"
-                    min-width="120"
-                    show-overflow-tooltip
-                  >
-                    <template v-slot="{ row }">{{
-                      fieldDisplayName(row)
-                    }}</template>
-                  </el-table-column>
-                  <el-table-column
-                    label="引擎读取"
-                    min-width="150"
-                    show-overflow-tooltip
-                  >
-                    <template v-slot="{ row }"
-                      >body.{{ outputFieldName(row) }}</template
-                    >
-                  </el-table-column>
-                  <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['使用'])" align="center">
-                    <template v-slot="{ row }">
-                      <el-button
-                        link
-                        size="small"
-                        type="success"
-                        @click="useResponseField(row)"
-                        >使用</el-button
-                      >
-                    </template>
-                  </el-table-column>
-                </el-table>
-              </div>
-            </div>
-            <div v-else>
-              <monaco-editor
-                v-model:value="responseMappingJsonText"
-                language="json"
-                height="320px"
-              />
-              <div class="field-help">
-                支持路径数组兜底和 cases 条件分支，保存前会校验 JSON。
-              </div>
-            </div>
-          </div>
-        </el-tab-pane>
 
-        <el-tab-pane
-          v-if="isConfigTabVisible('async')"
-          label="异步结果"
-          name="async"
-        >
-          <div class="tab-section">
-            <el-alert title="规则会在异步等待预算内等待最终结果，再将结果交给 API 变量。最大次数填 0 表示持续轮询；同步请求超时单独配置。" type="info" :closable="false" />
-            <el-row :gutter="12">
-              <el-col :lg="8" :md="24">
-                <el-form-item label="结果获取方式">
-                  <el-radio-group v-model="form.asyncResultMode">
-                    <el-radio-button value="POLL">引擎轮询</el-radio-button>
-                    <el-radio-button value="CALLBACK">外部回调</el-radio-button>
-                  </el-radio-group>
-                </el-form-item>
-              </el-col>
-              <el-col :lg="8" :md="12">
-                <el-form-item label="异步等待超时毫秒">
-                  <el-input-number
-                    v-model="form.asyncTimeoutMs"
-                    :min="1000"
-                    :max="86400000"
-                    :step="5000"
-                    style="width: 100%"
-                  />
-                  <div class="field-help">提交后轮询或等待回调的总预算；同步请求超时单独配置。</div>
-                </el-form-item>
-              </el-col>
-              <el-col :lg="8" :md="12">
-                <el-form-item label="提交任务号路径">
-                    <protocol-path-picker :paths="responsePathOptions" context-label="当前外数 API · HTTP 响应" v-model:value="asyncShared.taskIdPath"
-                      placeholder="如 body.taskId 或 body.trace_id"
-                  />
-                </el-form-item>
-              </el-col>
-              <el-col :lg="8" :md="12">
-                <el-form-item label="最终结果路径">
-                  <protocol-path-picker :paths="responsePathOptions" context-label="当前外数 API · HTTP 响应" v-model:value="form.asyncResultPath"
-                    placeholder="如 body.data.result"
-                  />
-                </el-form-item>
-              </el-col>
-            </el-row>
 
-            <div v-if="form.asyncResultMode === 'POLL'">
-              <el-row :gutter="12">
-                <el-col :lg="12" :md="24">
-                  <el-form-item label="结果查询地址">
-                    <el-input
-                      v-model="asyncPollConfig.resultEndpointUrl"
-                      placeholder="/v1/report/result/${taskId}"
-                    />
-                  </el-form-item>
-                </el-col>
-                <el-col :lg="4" :md="8">
-                  <el-form-item label="查询方法">
-                    <el-select
-                      v-model="asyncPollConfig.requestMethod"
-                      style="width: 100%"
-                    >
-                      <el-option
-                        v-for="method in httpMethods"
-                        :key="method"
-                        :label="method"
-                        :value="method"
-                      />
-                    </el-select>
-                  </el-form-item>
-                </el-col>
-                <el-col :lg="4" :md="8">
-                  <el-form-item label="间隔毫秒">
-                    <el-input-number
-                      v-model="asyncPollConfig.intervalMs"
-                      :min="1"
-                      :step="500"
-                      style="width: 100%"
-                    />
-                  </el-form-item>
-                </el-col>
-                <el-col :lg="4" :md="8">
-                  <el-form-item label="退避倍数">
-                    <el-input-number v-model="asyncPollConfig.backoffMultiplier" :min="1" :max="10" :step="0.5" style="width: 100%" />
-                  </el-form-item>
-                </el-col>
-                <el-col :lg="4" :md="8">
-                  <el-form-item label="最大间隔毫秒">
-                    <el-input-number v-model="asyncPollConfig.maxIntervalMs" :min="1" :max="86400000" :step="1000" style="width: 100%" />
-                  </el-form-item>
-                </el-col>
-                <el-col :lg="4" :md="8">
-                  <el-form-item label="最大次数">
-                    <el-input-number
-                      v-model="asyncPollConfig.maxAttempts"
-                      :min="0"
-                      :max="2147483647"
-                      style="width: 100%"
-                    />
-                  </el-form-item>
-                </el-col>
-              </el-row>
-              <el-row :gutter="12">
-                <el-col :lg="8" :md="24">
-                  <el-form-item label="状态路径">
-                    <protocol-path-picker :paths="responsePathOptions" context-label="当前外数 API · HTTP 响应" v-model:value="asyncPollConfig.statusPath"
-                      placeholder="如 body.status"
-                    />
-                  </el-form-item>
-                </el-col>
-                <el-col :lg="8" :md="24">
-                  <el-form-item label="成功值">
-                    <el-input
-                      v-model="asyncPollConfig.successValue"
-                      placeholder="如 SUCCESS 或 1"
-                    />
-                  </el-form-item>
-                </el-col>
-                <el-col :lg="8" :md="24">
-                  <el-form-item label="结果路径">
-                    <protocol-path-picker :paths="responsePathOptions" context-label="当前外数 API · HTTP 响应" v-model:value="asyncPollConfig.resultPath"
-                      placeholder="如 body.data"
-                    />
-                  </el-form-item>
-                </el-col>
-              </el-row>
-              <el-form-item label="失败状态值">
-                <el-input v-model="asyncPollConfig.failureValue" placeholder="如 FAILED；命中后立即执行异常策略" />
-              </el-form-item>
-              <el-form-item label="失败处理方式">
-                <el-select v-model="asyncPollConfig.failureMode" style="width: 220px">
-                  <el-option label="命中后继续轮询" value="CONTINUE" />
-                  <el-option label="命中后结束并报错" value="TERMINATE" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="轮询请求配置">
-                <monaco-editor v-model:value="asyncPollRequestText" language="json" height="180px" />
-                <div class="field-help">可配置 headerConfig、queryConfig、requestMapping、contentType、requestScript、responseScript。使用 $.taskId / $.traceId 或 ${taskId} / ${traceId} 查询中间结果；$.submission.body 可读取提交响应。</div>
-              </el-form-item>
-            </div>
-            <div v-else>
-              <el-row :gutter="12">
-                <el-col :lg="12" :md="24">
-                  <el-form-item label="引擎回调地址">
-                    <el-input
-                      v-model="form.asyncCallbackUrl"
-                      :placeholder="engineCallbackPlaceholder"
-                    />
-                    <div class="field-help">
-                      填写公网地址模板，保留 ${invocationId}。提交请求参数用 $.callbackUrl 引用本次回调地址，并传给外部服务。回调按原始请求体进行 HMAC-SHA256 验签，签名使用十六进制。
-                    </div>
-                  </el-form-item>
-                </el-col>
-                <el-col :lg="12" :md="24">
-                  <el-form-item label="回调任务号路径">
-                    <protocol-path-picker :paths="responsePathOptions" context-label="当前外数 API · HTTP 响应" v-model:value="asyncCallbackConfig.taskIdPath"
-                      placeholder="如 body.taskId"
-                    />
-                  </el-form-item>
-                </el-col>
-              </el-row>
-              <el-form-item label="失败处理方式">
-                <el-select v-model="asyncCallbackConfig.failureMode" style="width: 220px">
-                  <el-option label="收到失败回调后继续等待" value="CONTINUE" />
-                  <el-option label="收到失败回调后结束" value="TERMINATE" />
-                </el-select>
-              </el-form-item>
-              <el-row :gutter="12">
-                <el-col :lg="8" :md="24">
-                  <el-form-item label="回调状态路径">
-                    <protocol-path-picker :paths="responsePathOptions" context-label="当前外数 API · HTTP 响应" v-model:value="asyncCallbackConfig.statusPath"
-                      placeholder="如 body.status"
-                    />
-                  </el-form-item>
-                </el-col>
-                <el-col :lg="8" :md="24">
-                  <el-form-item label="成功值">
-                    <el-input
-                      v-model="asyncCallbackConfig.successValue"
-                      placeholder="如 SUCCESS 或 1"
-                    />
-                  </el-form-item>
-                </el-col>
-                <el-col :lg="8" :md="24">
-                  <el-form-item label="回调结果路径">
-                    <protocol-path-picker :paths="responsePathOptions" context-label="当前外数 API · HTTP 响应" v-model:value="asyncCallbackConfig.resultPath"
-                      placeholder="如 body.data"
-                    />
-                  </el-form-item>
-                </el-col>
-              </el-row>
-              <el-row :gutter="12">
-                <el-col :lg="12" :md="24">
-                  <el-form-item label="签名Header">
-                    <el-input
-                      v-model="asyncCallbackConfig.signatureHeader"
-                      placeholder="如 X-Signature，必填"
-                    />
-                  </el-form-item>
-                </el-col>
-                <el-col :lg="12" :md="24">
-                  <el-form-item label="签名密钥">
-                    <el-input
-                      v-model="asyncCallbackConfig.signatureSecret"
-                      show-password
-                      placeholder="HMAC-SHA256 共享密钥，必填"
-                    />
-                  </el-form-item>
-                </el-col>
-              </el-row>
-              <el-form-item label="失败状态值">
-                <el-input v-model="asyncCallbackConfig.failureValue" placeholder="如 FAILED；命中后立即执行异常策略" />
-              </el-form-item>
-            </div>
-          </div>
-        </el-tab-pane>
+
 
         <el-tab-pane
           v-if="isConfigTabVisible('retry')"
@@ -1857,6 +857,7 @@
           <el-tab-pane v-for="item in executionPolicyTabs" :key="item.name" :label="item.label" :name="`execution.${item.name}`">
             <api-execution-editor
               v-if="activeConfigTab === `execution.${item.name}`"
+              ref="executionEditors"
               v-model:value="form.executionConfig"
               :active-tab="item.editorTab"
               :active-policy="item.policy"
@@ -1971,7 +972,7 @@
                 <div class="config-card payload-capture-card">
                   <div class="section-title">响应报文</div>
                   <div class="field-help">
-                    选择供应商原始内容，或 responseScript 后、responseMapping 前的处理中间副本。
+                    选择供应商原始内容，或 响应后置脚本之后、响应组装之前的处理中间副本。
                   </div>
                   <el-form-item label="留存来源">
                     <el-radio-group v-model="payloadCapture.response.source" size="small">
@@ -2061,6 +1062,7 @@
                   会根据请求对象字段类型创建空字符串、0、false、{}、[]
                   等默认值。
                 </div>
+                <div class="field-help">试运行会按当前配置访问鉴权与外数服务，可能产生供应商调用费用。修改配置或入参后，请重新验证，不能沿用旧结果作为当前配置的通过证据。</div>
               </div>
               <div>
                 <el-button size="small" @click="regenerateTestParams"
@@ -2133,6 +1135,7 @@
               <template #default>
                 <strong>执行测试会真实访问外部接口，可能产生供应商费用或触发业务副作用。</strong>
                 <span>仅检查报文时请使用“生成请求预览”，预览不会访问外部地址。</span>
+                <span>当前配置测试不读取或写入响应缓存；缓存命中请通过已生效的接口变量或规则验证。</span>
               </template>
             </el-alert>
             <el-form-item v-if="previewTokenRequired" label="预览Token">
@@ -2186,26 +1189,29 @@
 </template>
 
 <script>
+import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import { getDatasource } from '@/api/datasource'
 import { hasPermission } from '@/security/permissionState'
+import { loadApiReferenceCatalog } from '@/utils/apiReferenceCatalog'
 import { editableResource } from '@/api/governance'
 import { completeResourceChange } from '@/utils/governanceWorkspace'
 import ProtocolPathPicker from '@/components/common/ProtocolPathPicker.vue'
-import ResourcePicker from '@/components/common/ResourcePicker.vue'
+import ApiAuthEditor from '@/components/common/ApiAuthEditor.vue'
+import { emptyApiAuthConfig, readApiAuthConfig, apiAuthConfig } from '@/utils/apiAuthConfig'
+import ApiValueEditor from '@/components/common/ApiValueEditor.vue'
 import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
+import configurationDraftMixin from '@/mixins/configurationDraftMixin'
 import ApiExecutionEditor from './components/ApiExecutionEditor.vue'
 import ExternalCallTrace from '@/components/common/ExternalCallTrace.vue'
 import { selectTraceSteps } from '@/utils/externalCallTrace'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
-import { emptyExecution, newApiId, validateExecution } from '@/utils/apiExecution'
+import { emptyExecution, newApiId, validateExecution, parseExecution } from '@/utils/apiExecution'
 import {
-  ASYNC_REQUEST_KEYS,
   emptyPayloadCaptureConfig,
   MAX_PAYLOAD_CAPTURE_FIELD_BYTES,
-  parseAsyncRequest,
   parsePayloadCaptureConfig,
   stringifyPayloadCaptureConfig,
-  validateAsyncApi,
   retryConfigurationError,
 } from '@/utils/externalApiConfig'
 import { markRaw } from 'vue'
@@ -2223,22 +1229,12 @@ import {
   previewApiConfigRequest,
   updateApiConfig,
 } from '@/api/datasource'
-import { getVariableTree, listDataObjects } from '@/api/dataObject'
-import { listVariablesByProject } from '@/api/variable'
-import { listAllFunctionsByProject } from '@/api/function'
-import { apiFieldOptions } from '@/utils/apiExecution'
-import VarPicker from '@/components/common/VarPicker.vue'
+import { apiStagePaths } from '@/utils/apiContext'
 import ResponseConditionTreeEditor from '@/components/common/ResponseConditionTreeEditor.vue'
 import ResourcePreflightPanel from '@/components/common/ResourcePreflightPanel.vue'
-import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import {
-  createEmptyGroup,
-  createEmptyLeaf,
-} from '@/utils/decisionConditionTree'
-import {
   collectOperandInputPaths,
-  collectReferencePaths,
   sampleValueForVarType,
   setPathValue,
 } from '@/utils/testParamTemplate'
@@ -2255,9 +1251,8 @@ export default {
       detailRoutePath: '',
       routeActive: true,
       contextProjectId: null,
-      dataObjectOptions: [],
-      dataObjectTree: [],
       apiPickerVars: [],
+      apiPickerRequestId: 0,
       apiPickerFunctions: [],
       saving: false,
       invokeLoading: false,
@@ -2307,60 +1302,16 @@ export default {
       configTabs: [
         { name: 'execution', group: 'business' },
         { name: 'auth', group: 'business' },
-        { name: 'headers', group: 'business' },
-        { name: 'query', group: 'business' },
-        { name: 'cookies', group: 'business' },
-        { name: 'request', group: 'business' },
-        { name: 'response', group: 'business' },
         { name: 'payloadCapture', group: 'business' },
         { name: 'test', group: 'business' },
         { name: 'connection', group: 'reliability' },
-        { name: 'async', group: 'reliability', asyncOnly: true },
         { name: 'retry', group: 'reliability' },
         { name: 'billing', group: 'reliability' },
         { name: 'scripts', group: 'advanced' },
       ],
-      requestBodyMode: 'MAPPING',
-      responseMappingMode: 'MAPPING',
-      requestNullPolicy: 'OMIT_MISSING_SEND_NULL',
-      nonJsonNullPolicy: {
-        header: 'OMIT',
-        query: 'PRESERVE_NULL',
-        auth: 'EMPTY',
-      },
-      nonJsonPolicyOptions: [
-        { value: 'OMIT', label: '缺失时省略字段' },
-        { value: 'EMPTY', label: '缺失时发送空字符串' },
-        { value: 'FAIL', label: '缺失时报错中断' },
-      ],
-      nonJsonQueryPolicyOptions: [
-        { value: 'OMIT', label: '缺失和 null 都省略' },
-        { value: 'EMPTY', label: '缺失和 null 发送空字符串' },
-        { value: 'PRESERVE_NULL', label: '缺失省略，显式 null 按当前逻辑保留' },
-        { value: 'FAIL', label: '缺失时报错中断' },
-      ],
-      nonJsonAuthPolicyOptions: [
-        { value: 'EMPTY', label: '缺失时发送空字符串' },
-        { value: 'OMIT', label: '缺失时省略鉴权字段' },
-        { value: 'FAIL', label: '缺失时报错中断' },
-      ],
-      requestNullPolicyOptions: [
-        { value: 'OMIT_MISSING_SEND_NULL', label: '缺失省略，显式 null 发送' },
-        { value: 'SEND_MISSING_SEND_NULL', label: '缺失和显式 null 都发送' },
-        { value: 'OMIT_MISSING_OMIT_NULL', label: '缺失和显式 null 都省略' },
-      ],
-      requestMappingJsonText: '{}',
-      responseMappingJsonText: '{}',
-      syncingMapping: false,
       payloadCapture: emptyPayloadCaptureConfig(),
       payloadCaptureError: '',
       maxPayloadCaptureFieldBytes: MAX_PAYLOAD_CAPTURE_FIELD_BYTES,
-      headerRows: [this.emptyNameValueRow()],
-      queryRows: [this.emptyNameValueRow()],
-      cookieRows: [this.emptyNameValueRow()],
-      requestMappingRows: [this.emptyRequestMappingRow()],
-      responseMappingRows: [this.emptyResponseMappingRow()],
-      responseConditionRows: [],
       apiAuthConfig: this.emptyAuthConfig('INHERIT'),
       scriptVariableRows: [this.emptyScriptVariableRow()],
       cacheKeyRows: [this.emptyCacheKeyRow()],
@@ -2373,11 +1324,7 @@ export default {
       retryConditionRoot: this.emptyApiConditionRoot(),
       tokenFailureMode: 'DEFAULT',
       tokenFailureConditionRoot: this.emptyApiConditionRoot('body.code', '==', 'TOKEN_EXPIRED'),
-      asyncPollRequestText: '{}',
       billingConfig: this.emptyBillingConfig(),
-      asyncShared: this.emptyAsyncShared(),
-      asyncPollConfig: this.emptyAsyncPollConfig(),
-      asyncCallbackConfig: this.emptyAsyncCallbackConfig(),
       rules: {
         datasourceId: [
           { required: true, message: '请选择数据源', trigger: 'change' },
@@ -2424,20 +1371,23 @@ export default {
     }
   },
   name: 'ApiDetail',
-  mixins: [workspaceTabTitleMixin(vm => vm.form.apiName)],
-  components: {
-    ResourcePicker,
+  mixins: [configurationDraftMixin(vm => ({ form: vm.form, apiAuthConfig: vm.apiAuthConfig, scriptVariableRows: vm.scriptVariableRows, cacheKeyRows: vm.cacheKeyRows, successConditionRoot: vm.successConditionRoot, exceptionConditionRoot: vm.exceptionConditionRoot, retryConditionRoot: vm.retryConditionRoot, tokenFailureMode: vm.tokenFailureMode, tokenFailureConditionRoot: vm.tokenFailureConditionRoot, billingConfig: vm.billingConfig, payloadCapture: vm.payloadCapture })), workspaceTabTitleMixin(vm => vm.form.apiName)],
+  components: { RemoteFilterSelect,
     ProtocolPathPicker,
     ConfigLayerGuide,
     ApiExecutionEditor,
     ExternalCallTrace,
-    ConditionGroupEditor,
     MonacoEditor,
     ResponseConditionTreeEditor,
     ResourcePreflightPanel,
-    VarPicker,
+    ApiAuthEditor,
+    ApiValueEditor,
   },
   computed: {
+    selectedDatasourceChoice() {
+      const item = this.datasourceOptions.find(value => String(value.id) === String(this.form.datasourceId))
+      return item ? { ...item, displayName: `${item.datasourceName || ''} / ${item.datasourceCode || ''}` } : null
+    },
     invokeTraceSteps() {
       try {
         const result = JSON.parse(this.invokeResultText)
@@ -2462,111 +1412,12 @@ export default {
     isCreateMode() {
       return !this.$route.params.id || this.$route.params.id === 'new'
     },
-    requestFieldOptions() {
-      return this.fieldsForObject(this.form.requestObjectId)
-    },
-    responseFieldOptions() {
-      return this.fieldsForObject(this.form.responseObjectId)
-    },
-    responseConditionVarOptions() {
-      const common = [
-        { varCode: 'success', varLabel: '调用是否成功', varType: 'BOOLEAN' },
-        {
-          varCode: 'body.response_code',
-          varLabel: '供应商响应编码',
-          varType: 'STRING',
-        },
-        {
-          varCode: 'body.response_msg',
-          varLabel: '供应商响应消息',
-          varType: 'STRING',
-        },
-        {
-          varCode: 'body.trace_id',
-          varLabel: '供应商追踪号',
-          varType: 'STRING',
-        },
-        { varCode: 'body.code', varLabel: '响应编码', varType: 'STRING' },
-        { varCode: 'body.status', varLabel: '响应状态', varType: 'STRING' },
-        { varCode: 'body.message', varLabel: '响应消息', varType: 'STRING' },
-      ]
-      const fields = this.responseFieldOptions
-        .map((field) => {
-          const path = this.stripSelectedObjectPrefix(
-            this.fieldScriptPath(field),
-            this.form.responseObjectId
-          )
-          const code = path ? 'body.' + path : ''
-          return {
-            ...field,
-            varCode: code,
-            varLabel: this.fieldDisplayName(field),
-            varType: field.varType || 'STRING',
-          }
-        })
-        .filter((item) => item.varCode)
-      const seen = {}
-      return common.concat(fields).filter((item) => {
-        if (seen[item.varCode]) return false
-        seen[item.varCode] = true
-        return true
-      })
-    },
-    requestPathOptions() {
-      const common = [
-        { label: '姓名 name', value: 'name' },
-        { label: '身份证号 idCard', value: 'idCard' },
-        { label: '手机号 mobile', value: 'mobile' },
-      ]
-      const fields = this.requestFieldOptions
-        .map((field) => {
-          const path = this.stripSelectedObjectPrefix(
-            this.fieldScriptPath(field),
-            this.form.requestObjectId
-          )
-          return {
-            label: this.fieldDisplayName(field) + ' ' + path,
-            value: path,
-            type: field.varType || 'STRING',
-          }
-        })
-        .filter((item) => item.value)
-      return this.uniquePathOptions(common.concat(fields))
-    },
-    responsePathOptions() {
-      const common = [
-        { label: 'HTTP 状态码', value: 'httpStatus', type: 'INTEGER' },
-        { label: '响应体', value: 'body', type: 'OBJECT' },
-        { label: '响应头', value: 'headers', type: 'MAP' },
-        { label: '供应商响应编码 response_code', value: 'body.response_code' },
-        { label: '供应商响应消息 response_msg', value: 'body.response_msg' },
-        { label: '供应商追踪号 trace_id', value: 'body.trace_id' },
-        { label: '响应编码', value: 'body.code' },
-        { label: '响应状态', value: 'body.status' },
-        { label: '响应消息', value: 'body.message' },
-      ]
-      const fields = this.responseFieldOptions
-        .map((field) => {
-          const path = this.stripSelectedObjectPrefix(
-            this.fieldScriptPath(field),
-            this.form.responseObjectId
-          )
-          return {
-            label: this.fieldDisplayName(field) + ' body.' + path,
-            value: path ? 'body.' + path : '',
-            type: field.varType || 'STRING',
-          }
-        })
-        .filter((item) => item.value)
-      return this.uniquePathOptions(common.concat(fields))
-    },
-    engineCallbackPlaceholder() {
-      return 'https://公网地址/api/external-callback/${invocationId}'
-    },
+    requestPathOptions() { return this.apiPickerVars.map(field => ({ value: field.varCode, label: field.varLabelText || field.varLabel, type: field.varType })) },
+    responsePathOptions() { return apiStagePaths(parseExecution(this.form.executionConfig), 'RESULT') },
     visibleConfigTabs() {
       return this.configTabs.filter((item) => {
         if (item.name === 'execution') return false
-        if (this.form.executionConfig && ['headers', 'query', 'cookies', 'request', 'response', 'async'].includes(item.name)) return false
+
         if (item.group !== this.activeConfigGroup) return false
         return !item.asyncOnly || this.form.requestMode === 'ASYNC'
       })
@@ -2599,15 +1450,8 @@ export default {
           String(this.form.endpointUrl || '').trim()
       )
       const unified = this.form.executionConfig ? JSON.parse(this.form.executionConfig) : null
-      const requestReady = unified ||
-        ['GET', 'DELETE'].includes(this.form.requestMethod) ||
-        Boolean(this.form.requestObjectId) ||
-        this.hasConfiguredRow(this.queryRows, ['name']) ||
-        this.hasConfiguredRow(this.requestMappingRows, ['targetPath'])
-      const responseReady = (unified && (unified.responseBranches || []).length > 0) ||
-        Boolean(this.form.responseObjectId) ||
-        this.hasConfiguredRow(this.responseMappingRows, ['outputField']) ||
-        this.responseConditionRows.length > 0
+      const requestReady = Boolean(unified && !validateExecution(unified, this.form.requestMode))
+      const responseReady = Boolean(unified && unified.responseBranches?.length)
       const previewReady = Boolean(this.requestPreviewText && !this.previewSnapshotChanged)
       const trialReady = Boolean(this.trial?.status === 'SUCCEEDED' && this.trial.result?.success !== false && !this.trialRecovered && this.trialSourceSignature === this.captureTestSignature())
       const effectiveReady = Boolean(this.form.id)
@@ -2623,7 +1467,7 @@ export default {
           key: 'request',
           order: 2,
           label: '请求数据',
-          tab: unified ? 'execution' : 'request',
+          tab: 'execution',
           status: requestReady ? 'READY' : 'ATTENTION',
           help: requestReady ? '已有请求结构' : '按接口文档配置参数或请求体',
         },
@@ -2631,7 +1475,7 @@ export default {
           key: 'response',
           order: 3,
           label: '响应数据',
-          tab: unified ? 'execution' : 'response',
+          tab: 'execution',
           status: responseReady ? 'READY' : 'ATTENTION',
           help: responseReady ? '已有输出映射' : '建议配置业务需要的输出字段',
         },
@@ -2667,38 +1511,7 @@ export default {
     },
   },
   watch: {
-    'form.requestMode'(value) {
-      if (value === 'ASYNC' && !this.form.asyncResultMode) {
-        this.form.asyncResultMode = 'POLL'
-      }
-      if (value !== 'ASYNC' && (this.activeConfigTab === 'async' || this.activeConfigTab === 'execution.steps')) {
-        this.activeConfigTab = 'retry'
-      }
-    },
-    requestBodyMode(value, oldValue) {
-      if (this.syncingMapping || value === oldValue) return
-      if (value === 'JSON') {
-        this.syncRequestJsonFromRows()
-      } else {
-        this.syncRequestRowsFromJson()
-      }
-    },
-    responseMappingMode(value, oldValue) {
-      if (this.syncingMapping || value === oldValue) return
-      if (value === 'JSON') {
-        this.syncResponseJsonFromRows()
-      } else {
-        this.syncResponseRowsFromJson()
-      }
-    },
-    requestMappingJsonText(value) {
-      if (this.syncingMapping || this.requestBodyMode !== 'JSON') return
-      this.syncRequestRowsFromJson(value, true)
-    },
-    responseMappingJsonText(value) {
-      if (this.syncingMapping || this.responseMappingMode !== 'JSON') return
-      this.syncResponseRowsFromJson(value, true)
-    },
+    'form.requestMode'(value) { if (value !== 'ASYNC' && this.activeConfigTab === 'execution.steps') this.activeConfigTab = 'execution.request' },
     '$route.fullPath': async function (value, oldValue) {
       if (value === oldValue) return
       await this.initializeRoute()
@@ -2715,7 +1528,7 @@ export default {
   activated() {
     const resuming = !this.routeActive
     this.routeActive = true
-    if (resuming && this.initializing) this.initializeRoute()
+    if (resuming && (this.initializing || this.initializationError)) this.initializeRoute()
   },
   deactivated() {
     this.routeActive = false
@@ -2751,6 +1564,7 @@ export default {
       if (item) this.activeConfigGroup = item.group
     },
     switchConfigGroup(group) {
+      if (!this.validateActiveEditors()) return
       this.activeConfigGroup = group
       const tabs = this.visibleConfigTabs
       const executionNames = Array.isArray(this.visibleExecutionTabNames) ? this.visibleExecutionTabNames : []
@@ -2760,6 +1574,7 @@ export default {
       }
     },
     goToConfigTab(name) {
+      if (!this.validateActiveEditors()) return
       const tab = this.configTabs.find((item) => item.name === name)
       if (!tab) return
       this.activeConfigGroup = tab.group
@@ -2800,11 +1615,12 @@ export default {
           this.form.executionConfig = JSON.stringify(emptyExecution())
           if (this.$route.query.datasourceId) {
             this.form.datasourceId = Number(this.$route.query.datasourceId)
-            await this.loadDataObjectOptions(
+            await this.ensureSelectedDatasource()
+            await this.loadApiPickerOptions(
               this.resolveDatasourceProjectId(this.form.datasourceId)
             )
           } else {
-            await this.loadDataObjectOptions(0)
+            await this.loadApiPickerOptions(0)
           }
           if (!this.isCurrentInitialization(requestId)) return
           this.syncEditableRowsFromForm()
@@ -2816,7 +1632,10 @@ export default {
       } catch (error) {
         if (this.isCurrentInitialization(requestId)) this.initializationError = error.message || '无法读取接口配置，请重试'
       } finally {
-        if (this.isCurrentInitialization(requestId)) this.initializing = false
+        if (this.isCurrentInitialization(requestId)) {
+          this.initializing = false
+          if (!this.initializationError) this.markConfigurationSaved()
+        }
       }
     },
     emptyForm() {
@@ -2829,13 +1648,7 @@ export default {
         endpointUrl: '',
         contentType: 'application/json',
         requestMode: 'SYNC',
-        requestObjectId: null,
-        responseObjectId: null,
-        headerConfig: '',
-        queryConfig: '',
-        requestMapping: '',
-        responseMapping: '',
-        bodyTemplate: '',
+        executionConfig: JSON.stringify(emptyExecution()),
         requestScript: '',
         responseScript: '',
         authMode: 'INHERIT',
@@ -2884,41 +1697,12 @@ export default {
         exceptionStrategy: 'FAIL_FAST',
         fallbackValue: '',
         payloadCaptureConfig: '',
-        asyncResultMode: 'POLL',
-        asyncPollConfig: '',
-        asyncCallbackConfig: '',
-        asyncCallbackUrl: '',
-        asyncResultPath: '',
         billingItemCode: '',
         billingCondition: '',
         unitPrice: 0,
         description: '',
-        testSampleParams: '',
         status: 1,
       }
-    },
-    emptyNameValueRow() {
-      return { name: '', value: '', remark: '' }
-    },
-    emptyRequestMappingRow() {
-      return { targetPath: '', sourcePath: '', remark: '' }
-    },
-    emptyResponseMappingRow() {
-      return { outputField: '', sourcePath: '', defaultValue: '' }
-    },
-    emptyResponseConditionRow(fallback) {
-      return {
-        outputField: '',
-        conditionRoot: this.createResponseConditionRoot(),
-        sourcePath: '',
-        defaultValue: '',
-        fallback: fallback === true,
-      }
-    },
-    createResponseConditionRoot() {
-      const root = createEmptyGroup('AND')
-      root.children.push(createEmptyLeaf())
-      return root
     },
     emptyCacheKeyRow() {
       return { path: '' }
@@ -2954,66 +1738,12 @@ export default {
         },
       }
     },
-    emptyAuthConfig(type) {
-      const common = {
-        username: '',
-        password: '',
-        token: '',
-        name: 'X-API-Key',
-        value: '',
-        location: 'HEADER',
-        tokenUrl: '/oauth/token',
-        method: 'POST',
-        contentType: 'application/json',
-        tokenPath: 'body.access_token',
-        expiresInPath: 'body.expires_in',
-        tokenPlacement: 'HEADER',
-        tokenHeaderName: 'Authorization',
-        tokenPrefix: '',
-        headers: '{}',
-        body: '{"grant_type":"client_credentials"}',
-      }
-      if (type === 'API_KEY') common.name = 'X-API-Key'
-      return common
-    },
-    emptyScriptVariableRow() {
-      return { name: '', value: '', sensitive: true }
-    },
-    emptyAsyncShared() {
-      return { taskIdPath: 'body.taskId' }
-    },
-    emptyAsyncPollConfig() {
-      return {
-        resultEndpointUrl: '',
-        requestMethod: 'GET',
-        intervalMs: 3000,
-        maxAttempts: 20,
-        taskIdPath: 'body.taskId',
-        statusPath: 'body.status',
-        successValue: 'SUCCESS',
-        resultPath: 'body.data',
-        failureValue: 'FAILED',
-        backoffMultiplier: 1,
-        maxIntervalMs: 60000,
-        failureMode: 'TERMINATE',
-      }
-    },
-    emptyAsyncCallbackConfig() {
-      return {
-        taskIdPath: 'body.taskId',
-        statusPath: 'body.status',
-        successValue: 'SUCCESS',
-        resultPath: 'body.data',
-        signatureHeader: '',
-        signatureSecret: '',
-        failureValue: 'FAILED',
-        failureMode: 'TERMINATE',
-      }
-    },
+    emptyAuthConfig() { return emptyApiAuthConfig() },
+    emptyScriptVariableRow() { return { name: '', value: null, sensitive: true } },
     async loadDatasourceOptions() {
       const res = await listDatasources({
         pageNum: 1,
-        pageSize: 500,
+          pageSize: 20,
         status: 1,
         ...(this.contextProjectId
           ? { projectId: this.contextProjectId }
@@ -3021,42 +1751,31 @@ export default {
       })
       this.datasourceOptions = (res.data && res.data.records) || []
     },
-    async loadDataObjectOptions(projectId) {
-      if (!projectId || Number(projectId) <= 0) {
-        this.dataObjectOptions = []
-        this.dataObjectTree = []
-        await this.loadApiPickerOptions(0)
-        return
-      }
-      const [objectsResult, treeResult] = await Promise.all([
-        listDataObjects(projectId).catch(() => null),
-        getVariableTree(projectId).catch(() => null),
-      ])
-      this.dataObjectOptions = Array.isArray(objectsResult?.data)
-        ? objectsResult.data
-        : Array.isArray(objectsResult)
-        ? objectsResult
-        : []
-      const treeData = treeResult?.data || treeResult
-      this.dataObjectTree = Array.isArray(treeData)
-        ? treeData
-        : Array.isArray(treeData?.tree)
-        ? treeData.tree
-        : []
-      await this.loadApiPickerOptions(projectId)
+    async ensureSelectedDatasource() {
+      const id = this.form.datasourceId
+      if (!id || this.datasourceOptions.some(item => String(item.id) === String(id))) return
+      const response = await getDatasource(id)
+      if (!response.data?.id) throw new Error('所属数据源不存在或不可访问，请重新选择')
+      this.datasourceOptions.push(response.data)
+    },
+    async fetchDatasourceChoices({ query, pageNum, pageSize }) {
+      const response = await listDatasources({ pageNum, pageSize, status: 1, ...(query ? { datasourceName: query } : {}) })
+      const data = response.data || {}
+      const records = data.records || []
+      const known = new Map(this.datasourceOptions.map(item => [String(item.id), item]))
+      records.forEach(item => known.set(String(item.id), item))
+      this.datasourceOptions = [...known.values()]
+      return { data: { ...data, records: records.map(item => ({ ...item, displayName: `${item.datasourceName || ''} / ${item.datasourceCode || ''}` })) } }
     },
     async loadApiPickerOptions(projectId) {
-      try {
-        const [variables, functions] = await Promise.all([
-          listVariablesByProject(Number(projectId) || 0),
-          listAllFunctionsByProject(Number(projectId) || 0),
-        ])
-        this.apiPickerVars = apiFieldOptions(variables?.data || [], this.dataObjectTree || [])
-        this.apiPickerFunctions = functions?.data || []
-      } catch (e) {
-        this.apiPickerVars = []
-        this.apiPickerFunctions = []
-      }
+      const requestId = ++this.apiPickerRequestId
+
+      this.apiPickerVars = []; this.apiPickerFunctions = []
+      if (projectId == null || projectId === '') return
+      const catalog = await loadApiReferenceCatalog(Number(projectId) || 0)
+      if (requestId !== this.apiPickerRequestId) return
+      this.apiPickerVars = catalog.vars; this.apiPickerFunctions = catalog.functions
+      if (catalog.errors.length) this.$message.warning(catalog.errors.join('；'))
     },
     async loadDetail(requestId = this.initializationId) {
       const res = await getApiConfig(this.$route.params.id)
@@ -3064,8 +1783,11 @@ export default {
       if (res.data?.id && hasPermission('datasource:edit')) res.data = await editableResource('EXTERNAL_API', res.data.id, res.data)
       if (!this.isCurrentInitialization(requestId)) return
       const data = res && res.data ? res.data : res
-      this.form = { ...this.emptyForm(), ...data }
-      await this.loadDataObjectOptions(
+      const executionConfig = typeof data?.executionConfig === 'string' ? data.executionConfig : JSON.stringify(data?.executionConfig)
+      if (!executionConfig || JSON.parse(executionConfig).version !== 2) throw new Error('接口缺少当前执行配置，请重新配置请求与响应。')
+      this.form = { ...this.emptyForm(), ...data, executionConfig }
+      await this.ensureSelectedDatasource()
+      await this.loadApiPickerOptions(
         this.resolveDatasourceProjectId(this.form.datasourceId)
       )
       if (!this.isCurrentInitialization(requestId)) return
@@ -3073,9 +1795,7 @@ export default {
       this.loadSavedSample()
     },
     onDatasourceChange(datasourceId) {
-      this.form.requestObjectId = null
-      this.form.responseObjectId = null
-      this.loadDataObjectOptions(this.resolveDatasourceProjectId(datasourceId))
+      this.loadApiPickerOptions(this.resolveDatasourceProjectId(datasourceId))
     },
     onAuthModeChange(type) {
       this.apiAuthConfig = this.emptyAuthConfig(type)
@@ -3095,45 +1815,7 @@ export default {
       return datasource && datasource.protocol === 'RULE_ENGINE'
     },
     syncEditableRowsFromForm() {
-      this.headerRows = this.rowsFromNameValueConfig(this.form.headerConfig)
-      this.queryRows = this.rowsFromNameValueConfig(this.form.queryConfig)
-      this.requestBodyMode = 'MAPPING'
-      try {
-        const requestConfig = this.parseConfigForTemplate(this.form.requestMapping)
-        this.cookieRows = this.rowsFromNameValueObject(requestConfig && requestConfig._cookies)
-        this.requestNullPolicy =
-          requestConfig && requestConfig._nullPolicy
-            ? requestConfig._nullPolicy
-            : 'OMIT_MISSING_SEND_NULL'
-        const nonJsonPolicy = requestConfig && requestConfig._nonJsonNullPolicy
-        this.nonJsonNullPolicy = {
-          header: (nonJsonPolicy && nonJsonPolicy.header) || 'OMIT',
-          query: (nonJsonPolicy && nonJsonPolicy.query) || 'PRESERVE_NULL',
-          auth: (nonJsonPolicy && nonJsonPolicy.auth) || 'EMPTY',
-        }
-      } catch (e) {
-        this.cookieRows = [this.emptyNameValueRow()]
-        this.requestNullPolicy = 'OMIT_MISSING_SEND_NULL'
-        this.nonJsonNullPolicy = { header: 'OMIT', query: 'PRESERVE_NULL', auth: 'EMPTY' }
-      }
-      this.requestMappingRows = this.rowsFromRequestMapping(
-        this.form.requestMapping
-      )
-      this.requestMappingJsonText = this.stringifyJson(
-        this.buildRequestMappingConfig()
-      )
-      this.responseMappingMode = 'MAPPING'
-      this.responseMappingRows = this.rowsFromResponseMapping(
-        this.form.responseMapping
-      )
-      this.responseConditionRows = this.rowsFromConditionalResponseMapping(
-        this.form.responseMapping
-      )
-      this.responseMappingJsonText = this.stringifyJson(
-        this.buildResponseMappingConfig()
-      )
       this.syncAuthConfigFromForm()
-      this.syncAsyncConfigFromForm()
       this.syncCacheKeyConfigFromForm()
       this.syncSuccessConditionFromForm()
       this.syncExceptionConditionFromForm()
@@ -3144,67 +1826,8 @@ export default {
       this.syncPayloadCaptureFromForm()
     },
     syncAuthConfigFromForm() {
-      const type = this.form.authMode
-      const base = this.emptyAuthConfig(type)
-      this.scriptVariableRows = [this.emptyScriptVariableRow()]
-      if (!this.form.authApiConfig) {
-        this.apiAuthConfig = base
-        return
-      }
-      try {
-        const parsed = JSON.parse(this.form.authApiConfig)
-        if (
-          Array.isArray(parsed.scriptVariables) &&
-          parsed.scriptVariables.length
-        ) {
-          this.scriptVariableRows = parsed.scriptVariables.map((item) => ({
-            name: item && item.name != null ? String(item.name) : '',
-            value: item && item.value != null ? item.value : '',
-            sensitive: !item || item.sensitive !== false,
-          }))
-        }
-        if (type === 'CUSTOM') {
-          this.apiAuthConfig = base
-          return
-        }
-        const merged = { ...base, ...parsed }
-        if (parsed.headers && typeof parsed.headers !== 'string')
-          merged.headers = this.stringifyJson(parsed.headers)
-        if (parsed.body && typeof parsed.body !== 'string')
-          merged.body = this.stringifyJson(parsed.body)
-        this.apiAuthConfig = merged
-      } catch (e) {
-        this.apiAuthConfig = base
-      }
-    },
-    syncAsyncConfigFromForm() {
-      this.asyncShared = this.emptyAsyncShared()
-      this.asyncPollConfig = this.mergeJsonConfig(
-        this.emptyAsyncPollConfig(),
-        this.form.asyncPollConfig
-      )
-      this.asyncCallbackConfig = this.mergeJsonConfig(
-        this.emptyAsyncCallbackConfig(),
-        this.form.asyncCallbackConfig
-      )
-      this.asyncShared.taskIdPath = this.form.asyncResultMode === 'CALLBACK'
-        ? this.asyncCallbackConfig.submissionTaskIdPath || this.asyncCallbackConfig.taskIdPath || 'body.taskId'
-        : this.asyncPollConfig.taskIdPath || 'body.taskId'
-      if (!this.form.asyncResultMode) this.form.asyncResultMode = 'POLL'
-      const request = {}
-      ASYNC_REQUEST_KEYS.forEach((key) => {
-        if (this.asyncPollConfig[key] != null) request[key] = this.asyncPollConfig[key]
-      })
-      this.asyncPollRequestText = this.stringifyJson(request)
-    },
-    mergeJsonConfig(base, text) {
-      if (!text) return { ...base }
-      try {
-        const parsed = typeof text === 'string' ? JSON.parse(text) : text
-        return { ...base, ...parsed }
-      } catch (e) {
-        return { ...base }
-      }
+      this.apiAuthConfig = readApiAuthConfig(this.form.authApiConfig)
+      this.scriptVariableRows = this.apiAuthConfig.scriptVariables || []
     },
     syncBillingConfigFromForm() {
       const parsed = this.parseConfigForTemplate(this.form.billingCondition)
@@ -3335,155 +1958,6 @@ export default {
       if (normalized.type === 'group') return normalized
       return { type: 'group', operator: 'AND', children: [normalized] }
     },
-    rowsFromNameValueConfig(text) {
-      const config = this.parseConfigForTemplate(text)
-      return this.rowsFromNameValueObject(config)
-    },
-    rowsFromNameValueObject(config) {
-      if (!config || typeof config !== 'object' || Array.isArray(config))
-        return [this.emptyNameValueRow()]
-      const rows = Object.keys(config).map((name) => ({
-        name,
-        value: this.valueToEditableText(config[name]),
-        remark: '',
-      }))
-      return rows.length ? rows : [this.emptyNameValueRow()]
-    },
-    rowsFromRequestMapping(text) {
-      const config = this.parseConfigForTemplate(text)
-      if (!config || typeof config !== 'object' || Array.isArray(config))
-        return [this.emptyRequestMappingRow()]
-      if (config._nullPolicy) this.requestNullPolicy = config._nullPolicy
-      const mapping = { ...config }
-      delete mapping._nullPolicy
-      delete mapping.nullValuePolicy
-      delete mapping._cookies
-      const rows = []
-      this.flattenMappingRows(mapping, '', rows)
-      return rows.length ? rows : [this.emptyRequestMappingRow()]
-    },
-    rowsFromResponseMapping(text) {
-      const config = this.parseConfigForTemplate(text)
-      if (!config || typeof config !== 'object' || Array.isArray(config))
-        return [this.emptyResponseMappingRow()]
-      const rows = Object.keys(config)
-        .filter((outputField) => {
-          const value = config[outputField]
-          return !(
-            value &&
-            typeof value === 'object' &&
-            !Array.isArray(value) &&
-            Array.isArray(value.cases)
-          )
-        })
-        .map((outputField) => {
-          const value = config[outputField]
-          const row = { outputField, sourcePath: '', defaultValue: '' }
-          if (typeof value === 'string') {
-            row.sourcePath = value
-          } else if (Array.isArray(value)) {
-            row.sourcePath = value.join(', ')
-          } else if (value && typeof value === 'object') {
-            if (Array.isArray(value.paths))
-              row.sourcePath = value.paths.join(', ')
-            else if (value.path) row.sourcePath = value.path
-            if (Object.prototype.hasOwnProperty.call(value, 'default'))
-              row.defaultValue = this.valueToEditableText(value.default)
-          }
-          return row
-        })
-      return rows.length ? rows : [this.emptyResponseMappingRow()]
-    },
-    rowsFromConditionalResponseMapping(text) {
-      const config = this.parseConfigForTemplate(text)
-      if (!config || typeof config !== 'object' || Array.isArray(config))
-        return []
-      const rows = []
-      Object.keys(config).forEach((outputField) => {
-        const value = config[outputField]
-        if (
-          !value ||
-          typeof value !== 'object' ||
-          Array.isArray(value) ||
-          !Array.isArray(value.cases)
-        )
-          return
-        value.cases.forEach((item) => {
-          const caseConfig = item && typeof item === 'object' ? item : {}
-          rows.push({
-            outputField,
-            conditionRoot: this.normalizeResponseConditionRoot(caseConfig.when),
-            sourcePath:
-              caseConfig.path ||
-              (Array.isArray(caseConfig.paths)
-                ? caseConfig.paths.join(', ')
-                : ''),
-            defaultValue: this.valueToEditableText(caseConfig.default),
-            fallback: !caseConfig.when,
-          })
-        })
-        if (
-          rows.length &&
-          Object.prototype.hasOwnProperty.call(value, 'default')
-        ) {
-          const last = rows[rows.length - 1]
-          if (last.outputField === outputField && !last.defaultValue)
-            last.defaultValue = this.valueToEditableText(value.default)
-        }
-      })
-      return rows
-    },
-    normalizeResponseConditionRoot(condition) {
-      if (!condition || typeof condition !== 'object')
-        return this.createResponseConditionRoot()
-      if (condition.type === 'group') {
-        return JSON.parse(JSON.stringify(condition))
-      }
-      if (condition.type === 'leaf') {
-        const root = createEmptyGroup('AND')
-        root.children.push(JSON.parse(JSON.stringify(condition)))
-        return root
-      }
-      const root = createEmptyGroup('AND')
-      const leaf = createEmptyLeaf()
-      leaf.varCode =
-        condition.path || condition.field || condition.varCode || ''
-      leaf.varLabel = leaf.varCode
-      leaf.operator = condition.operator || '=='
-      leaf.value = this.valueToEditableText(condition.value)
-      leaf.varType = condition.varType || 'STRING'
-      root.children.push(leaf)
-      return root
-    },
-    hasComplexResponseMapping(text) {
-      const config = this.parseConfigForTemplate(text)
-      if (!config || typeof config !== 'object' || Array.isArray(config))
-        return false
-      return Object.keys(config).some((key) => {
-        const value = config[key]
-        return (
-          value &&
-          typeof value === 'object' &&
-          !Array.isArray(value) &&
-          value.cases
-        )
-      })
-    },
-    flattenMappingRows(value, prefix, rows) {
-      Object.keys(value).forEach((key) => {
-        const nextPath = prefix ? prefix + '.' + key : key
-        const item = value[key]
-        if (item && typeof item === 'object' && !Array.isArray(item)) {
-          this.flattenMappingRows(item, nextPath, rows)
-        } else {
-          rows.push({
-            targetPath: nextPath,
-            sourcePath: this.valueToEditableText(item),
-            remark: '',
-          })
-        }
-      })
-    },
     valueToEditableText(value) {
       if (value == null) return ''
       if (typeof value === 'string') return value
@@ -3491,121 +1965,20 @@ export default {
     },
     syncStructuredConfigToForm() {
       this.form.authApiConfig = this.buildApiAuthConfig()
-      this.form.headerConfig = this.jsonTextOrBlank(
-        this.buildNameValueConfig(this.headerRows)
-      )
-      this.form.queryConfig = this.jsonTextOrBlank(
-        this.buildNameValueConfig(this.queryRows)
-      )
-      if (this.requestBodyMode === 'JSON') {
-        const requestJson = this.hasEditableJson(this.requestMappingJsonText)
-          ? this.requestMappingJsonText
-          : this.form.requestMapping
-        this.syncRequestRowsFromJson(requestJson, false)
-      }
-      this.form.requestMapping = this.jsonTextOrBlank(
-        this.buildRequestMappingConfig()
-      )
-      this.form.bodyTemplate = ''
-      if (this.responseMappingMode === 'JSON') {
-        const responseJson = this.hasEditableJson(this.responseMappingJsonText)
-          ? this.responseMappingJsonText
-          : this.form.responseMapping
-        this.syncResponseRowsFromJson(responseJson, false)
-      }
-      this.form.responseMapping = this.jsonTextOrBlank(
-        this.buildResponseMappingConfig()
-      )
-      this.form.cacheKeyConfig = this.jsonTextOrBlank(
-        this.buildCacheKeyConfig()
-      )
-      this.form.successCondition = this.jsonTextOrBlank(
-        this.buildSuccessConditionConfig()
-      )
-      this.form.exceptionCondition = this.jsonTextOrBlank(
-        this.buildExceptionConditionConfig()
-      )
-      this.form.retryCondition = this.jsonTextOrBlank(
-        this.buildRetryConditionConfig()
-      )
-      this.form.tokenFailureCondition = this.tokenFailureMode === 'CUSTOM'
-        ? JSON.stringify(this.sanitizeApiConditionTree(this.tokenFailureConditionRoot)) : ''
-      this.form.billingCondition = this.jsonTextOrBlank(
-        this.buildBillingConditionConfig()
-      )
+      this.form.cacheKeyConfig = this.jsonTextOrBlank(this.buildCacheKeyConfig())
+      this.form.successCondition = this.jsonTextOrBlank(this.buildSuccessConditionConfig())
+      this.form.exceptionCondition = this.jsonTextOrBlank(this.buildExceptionConditionConfig())
+      this.form.retryCondition = this.jsonTextOrBlank(this.buildRetryConditionConfig())
+      this.form.tokenFailureCondition = this.tokenFailureMode === 'CUSTOM' ? JSON.stringify(this.sanitizeApiConditionTree(this.tokenFailureConditionRoot)) : ''
+      this.form.billingCondition = this.jsonTextOrBlank(this.buildBillingConditionConfig())
       this.form.payloadCaptureConfig = this.buildPayloadCaptureConfig()
-      if (this.form.requestMode === 'ASYNC') {
-        this.form.asyncPollConfig =
-          this.form.asyncResultMode === 'POLL'
-            ? this.jsonTextOrBlank({
-                ...this.asyncPollConfig,
-                ...parseAsyncRequest(this.asyncPollRequestText),
-                taskIdPath: this.asyncShared.taskIdPath,
-              })
-            : ''
-        this.form.asyncCallbackConfig =
-          this.form.asyncResultMode === 'CALLBACK'
-            ? this.jsonTextOrBlank({
-                ...this.asyncCallbackConfig,
-                submissionTaskIdPath: this.asyncShared.taskIdPath,
-              })
-            : ''
-      } else {
-        this.form.asyncResultMode = null
-        this.form.asyncPollConfig = ''
-        this.form.asyncCallbackConfig = ''
-        this.form.asyncCallbackUrl = ''
-        this.form.asyncResultPath = ''
-      }
-    },
-    hasEditableJson(text) {
-      if (!text || !String(text).trim()) return false
-      const normalized = String(text).trim()
-      return normalized !== '{}' && normalized !== '[]'
     },
     buildApiAuthConfig() {
-      const type = this.form.authMode
-      let config = {}
-      if (type === 'BASIC') {
-        config = {
-          username: this.apiAuthConfig.username,
-          password: this.apiAuthConfig.password,
-        }
-      }
-      if (type === 'BEARER') config = { token: this.apiAuthConfig.token }
-      if (type === 'API_KEY') {
-        config = {
-          location: this.apiAuthConfig.location,
-          name: this.apiAuthConfig.name,
-          value: this.apiAuthConfig.value,
-        }
-      }
-      if (type === 'TOKEN_API' || type === 'OAUTH2') {
-        const headers = this.parseJsonText(
-          this.apiAuthConfig.headers,
-          '鉴权请求头'
-        )
-        const body = this.parseJsonText(this.apiAuthConfig.body, '鉴权请求体')
-        config = {
-          tokenUrl: this.apiAuthConfig.tokenUrl,
-          method: this.apiAuthConfig.method,
-          contentType: this.apiAuthConfig.contentType,
-          headers,
-          body,
-          tokenPath: this.apiAuthConfig.tokenPath,
-          expiresInPath: this.apiAuthConfig.expiresInPath,
-          tokenPlacement: this.apiAuthConfig.tokenPlacement,
-          tokenHeaderName: this.apiAuthConfig.tokenHeaderName,
-          tokenPrefix: this.apiAuthConfig.tokenPrefix,
-        }
-      }
-      if (type === 'CUSTOM' && this.form.authApiConfig) {
-        config = this.parseJsonText(this.form.authApiConfig, '接口鉴权配置')
-      }
-      const scriptVariables = this.buildScriptVariables()
-      if (scriptVariables.length) config.scriptVariables = scriptVariables
-      else delete config.scriptVariables
-      return Object.keys(config).length ? this.stringifyJson(config) : ''
+      if (this.$refs?.authEditor && !this.$refs.authEditor.validate()) throw new Error('请修正鉴权配置中的字段名')
+      const config = this.form.authMode === 'CUSTOM' ? this.parseJsonText(this.form.authApiConfig, '接口鉴权配置') : apiAuthConfig(this.form.authMode, this.apiAuthConfig)
+      const variables = this.buildScriptVariables()
+      if (variables.length) config.scriptVariables = variables
+      return Object.keys(config).length ? JSON.stringify(config) : ''
     },
     buildScriptVariables() {
       const result = []
@@ -3625,104 +1998,6 @@ export default {
           value: row.value,
           sensitive: row.sensitive !== false,
         })
-      })
-      return result
-    },
-    buildNameValueConfig(rows) {
-      const result = {}
-      const list = rows || []
-      list.forEach((row) => {
-        if (row && row.name && String(row.name).trim()) {
-          result[String(row.name).trim()] = row.value
-        }
-      })
-      return result
-    },
-    buildRequestMappingConfig() {
-      const result = {}
-      const rows = this.requestMappingRows || []
-      const validRows = rows.filter(
-        (row) => row && row.targetPath && String(row.targetPath).trim()
-      )
-      if (validRows.length) result._nullPolicy = this.requestNullPolicy
-      const cookies = this.buildNameValueConfig(this.cookieRows)
-      if (Object.keys(cookies).length) result._cookies = cookies
-      const nonJsonPolicy = this.nonJsonNullPolicy || {
-        header: 'OMIT',
-        query: 'PRESERVE_NULL',
-        auth: 'EMPTY',
-      }
-      if (
-        nonJsonPolicy.header !== 'OMIT' ||
-        nonJsonPolicy.query !== 'PRESERVE_NULL' ||
-        nonJsonPolicy.auth !== 'EMPTY'
-      ) {
-        result._nonJsonNullPolicy = {
-          header: nonJsonPolicy.header || 'OMIT',
-          query: nonJsonPolicy.query || 'PRESERVE_NULL',
-          auth: nonJsonPolicy.auth || 'EMPTY',
-        }
-      }
-      rows.forEach((row) => {
-        if (!row || !row.targetPath || !String(row.targetPath).trim()) return
-        setPathValue(result, String(row.targetPath).trim(), row.sourcePath)
-      })
-      return result
-    },
-    buildResponseMappingConfig() {
-      const result = {}
-      const rows = this.responseMappingRows || []
-      rows.forEach((row) => {
-        if (!row || !row.outputField || !String(row.outputField).trim()) return
-        const field = String(row.outputField).trim()
-        const paths = String(row.sourcePath || '')
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean)
-        const hasDefault =
-          row.defaultValue != null && String(row.defaultValue).trim() !== ''
-        if (paths.length > 1 || hasDefault) {
-          const config = {}
-          if (paths.length > 1) config.paths = paths
-          else config.path = paths[0] || ''
-          if (hasDefault)
-            config.default = this.parseJsonOrString(row.defaultValue)
-          result[field] = config
-        } else {
-          result[field] = paths[0] || ''
-        }
-      })
-      const conditionRows = this.responseConditionRows || []
-      conditionRows.forEach((row) => {
-        if (!row || !row.outputField || !String(row.outputField).trim()) return
-        const field = String(row.outputField).trim()
-        const target =
-          result[field] &&
-          typeof result[field] === 'object' &&
-          !Array.isArray(result[field])
-            ? result[field]
-            : {}
-        if (!Array.isArray(target.cases)) target.cases = []
-        const caseConfig = {}
-        if (!row.fallback && row.conditionRoot) {
-          caseConfig.when = JSON.parse(JSON.stringify(row.conditionRoot))
-        }
-        const paths = String(row.sourcePath || '')
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean)
-        if (paths.length > 1) caseConfig.paths = paths
-        else if (paths.length === 1) caseConfig.path = paths[0]
-        if (
-          row.defaultValue != null &&
-          String(row.defaultValue).trim() !== ''
-        ) {
-          caseConfig.default = this.parseJsonOrString(row.defaultValue)
-          if (!Object.prototype.hasOwnProperty.call(target, 'default'))
-            target.default = caseConfig.default
-        }
-        target.cases.push(caseConfig)
-        result[field] = target
       })
       return result
     },
@@ -3808,151 +2083,6 @@ export default {
         throw new Error(label + '的列表判断至少需要一个值')
       }
     },
-    syncRequestJsonFromRows() {
-      this.syncingMapping = true
-      this.requestMappingJsonText = this.stringifyJson(
-        this.buildRequestMappingConfig()
-      )
-      this.syncingMapping = false
-    },
-    syncRequestRowsFromJson(value, silent) {
-      try {
-        const text = value == null ? this.requestMappingJsonText : value
-        const parsed = this.parseJsonText(text, '请求映射JSON')
-        this.syncingMapping = true
-        this.requestMappingRows = this.rowsFromRequestMapping(parsed)
-        this.syncingMapping = false
-        return true
-      } catch (e) {
-        this.syncingMapping = false
-        if (!silent) throw e
-        return false
-      }
-    },
-    syncResponseJsonFromRows() {
-      this.syncingMapping = true
-      this.responseMappingJsonText = this.stringifyJson(
-        this.buildResponseMappingConfig()
-      )
-      this.syncingMapping = false
-    },
-    syncResponseRowsFromJson(value, silent) {
-      try {
-        const text = value == null ? this.responseMappingJsonText : value
-        const parsed = this.parseJsonText(text, '响应映射JSON')
-        this.syncingMapping = true
-        this.responseMappingRows = this.rowsFromResponseMapping(parsed)
-        this.responseConditionRows =
-          this.rowsFromConditionalResponseMapping(parsed)
-        this.syncingMapping = false
-        return true
-      } catch (e) {
-        this.syncingMapping = false
-        if (!silent) throw e
-        return false
-      }
-    },
-    onRequestTargetInput(row) {
-      if (!row) return
-      const target = String(row.targetPath || '').trim()
-      if (target && !String(row.sourcePath || '').trim()) {
-        row.sourcePath = '$.' + target.replace(/^\$\./, '')
-      }
-      if (this.requestBodyMode === 'MAPPING') this.syncRequestJsonFromRows()
-    },
-    onRequestSourceInput(row) {
-      if (!row) return
-      const source = String(row.sourcePath || '').trim()
-      if (
-        source &&
-        !String(row.targetPath || '').trim() &&
-        source.indexOf('$.') === 0
-      ) {
-        row.targetPath = source.substring(2)
-      }
-      if (this.requestBodyMode === 'MAPPING') this.syncRequestJsonFromRows()
-    },
-    fillRequestRowsFromRequestObject() {
-      const rows = this.requestFieldOptions
-        .map((field) => ({
-          targetPath: this.stripSelectedObjectPrefix(
-            this.fieldScriptPath(field),
-            this.form.requestObjectId
-          ),
-          sourcePath: '$.' + this.fieldScriptPath(field),
-          remark: this.fieldDisplayName(field),
-        }))
-        .filter((row) => row.targetPath)
-      this.requestMappingRows = rows.length
-        ? rows
-        : [this.emptyRequestMappingRow()]
-      this.syncRequestJsonFromRows()
-    },
-    fillResponseRowsFromResponseObject() {
-      const rows = this.responseFieldOptions
-        .map((field) => {
-          const sourcePath = this.stripSelectedObjectPrefix(
-            this.fieldScriptPath(field),
-            this.form.responseObjectId
-          )
-          return {
-            outputField: this.outputFieldName(field),
-            sourcePath: sourcePath ? 'body.' + sourcePath : '',
-            defaultValue: '',
-          }
-        })
-        .filter((row) => row.outputField)
-      this.responseMappingRows = rows.length
-        ? rows
-        : [this.emptyResponseMappingRow()]
-      this.syncResponseJsonFromRows()
-    },
-    useRequestField(field) {
-      this.requestMappingRows.push({
-        targetPath: this.stripSelectedObjectPrefix(
-          this.fieldScriptPath(field),
-          this.form.requestObjectId
-        ),
-        sourcePath: '$.' + this.fieldScriptPath(field),
-        remark: this.fieldDisplayName(field),
-      })
-      this.syncRequestJsonFromRows()
-    },
-    useResponseField(field) {
-      const sourcePath = this.stripSelectedObjectPrefix(
-        this.fieldScriptPath(field),
-        this.form.responseObjectId
-      )
-      this.responseMappingRows.push({
-        outputField: this.outputFieldName(field),
-        sourcePath: sourcePath ? 'body.' + sourcePath : '',
-        defaultValue: '',
-      })
-      this.syncResponseJsonFromRows()
-    },
-    addHeaderRow() {
-      this.headerRows.push(this.emptyNameValueRow())
-    },
-    legacySelectedPath(item) {
-      const code = item && (item.varCode || item.code)
-      if (!code) return ''
-      const value = String(code)
-      return value.startsWith('$.') ? value : '$.' + value
-    },
-    onLegacyRowValueSelect(row, item) {
-      const path = this.legacySelectedPath(item)
-      if (path) row.value = path
-    },
-    onLegacyRequestSourceSelect(row, index, item) {
-      const path = this.legacySelectedPath(item)
-      if (!path) return
-      row.sourcePath = path
-      this.onRequestSourceInput(row, index)
-    },
-    onLegacyAuthSelect(key, item) {
-      const path = this.legacySelectedPath(item)
-      if (path) this.apiAuthConfig[key] = path
-    },
     addScriptVariableRow() {
       this.scriptVariableRows.push(this.emptyScriptVariableRow())
     },
@@ -3975,50 +2105,16 @@ export default {
       if (!this.scriptVariableRows.length)
         this.scriptVariableRows.push(this.emptyScriptVariableRow())
     },
-    addQueryRow() {
-      this.queryRows.push(this.emptyNameValueRow())
-    },
-    addCookieRow() {
-      this.cookieRows.push(this.emptyNameValueRow())
-    },
-    addRequestMappingRow() {
-      this.requestMappingRows.push(this.emptyRequestMappingRow())
-    },
-    addResponseMappingRow() {
-      this.responseMappingRows.push(this.emptyResponseMappingRow())
-    },
-    addResponseConditionRow(fallback) {
-      this.responseConditionRows.push(this.emptyResponseConditionRow(fallback))
-    },
-    removeRow(rows, index) {
-      rows.splice(index, 1)
-      if (rows.length === 0) {
-        if (rows === this.headerRows || rows === this.queryRows || rows === this.cookieRows)
-          rows.push(this.emptyNameValueRow())
-        if (rows === this.requestMappingRows)
-          rows.push(this.emptyRequestMappingRow())
-        if (rows === this.responseMappingRows)
-          rows.push(this.emptyResponseMappingRow())
-      }
-      if (rows === this.requestMappingRows) this.syncRequestJsonFromRows()
-      if (
-        rows === this.responseMappingRows ||
-        rows === this.responseConditionRows
-      )
-        this.syncResponseJsonFromRows()
-    },
     normalizeForm(form) {
+      if (!this.validateActiveEditors()) throw new Error('请修正当前配置中的字段名')
       this.syncStructuredConfigToForm()
       const data = { ...form }
+      if (!data.executionConfig) throw new Error('请配置接口的请求与响应')
+      ;['headerConfig', 'queryConfig', 'requestMapping', 'responseMapping', 'bodyTemplate'].forEach(key => { delete data[key] })
       const retryError = retryConfigurationError(data)
       if (retryError) throw new Error(retryError)
-      if (data.executionConfig) {
-        const error = validateExecution(JSON.parse(data.executionConfig), data.requestMode)
-        if (error) throw new Error(error)
-        data.requestObjectId = null
-        data.responseObjectId = null
-        data.responseMapping = null
-      }
+      const executionError = validateExecution(JSON.parse(data.executionConfig), data.requestMode)
+      if (executionError) throw new Error(executionError)
       const successCondition = this.buildSuccessConditionConfig()
       if (this.tokenFailureMode === 'CUSTOM') this.validateApiConditionTree(this.tokenFailureConditionRoot, 'Token鉴权失败条件')
       this.validateApiConditionTree(successCondition, '请求成功条件')
@@ -4036,17 +2132,8 @@ export default {
           '查得条件'
         )
       }
-      if (!data.requestObjectId) data.requestObjectId = null
-      if (!data.responseObjectId) data.responseObjectId = null
       const jsonFields = {
-        headerConfig: 'Header配置',
-        queryConfig: 'Query配置',
-        requestMapping: '入参映射',
-        responseMapping: '响应映射',
         authApiConfig: '接口鉴权配置',
-        bodyTemplate: '请求体模板',
-        asyncPollConfig: '异步轮询配置',
-        asyncCallbackConfig: '异步回调配置',
         cacheKeyConfig: '缓存键配置',
         successCondition: '请求成功条件',
         exceptionCondition: '接口异常条件',
@@ -4055,7 +2142,6 @@ export default {
         billingCondition: '计费条件',
         fallbackValue: '兜底返回',
         payloadCaptureConfig: '报文留存配置',
-        testSampleParams: '测试样例',
       }
       Object.keys(jsonFields).forEach((key) => {
         data[key] = this.blankToNull(data[key])
@@ -4063,8 +2149,15 @@ export default {
       })
       data.requestScript = this.blankToNull(data.requestScript)
       data.responseScript = this.blankToNull(data.responseScript)
-      if (!data.executionConfig) validateAsyncApi(data)
       return data
+    },
+    validateActiveEditors() {
+      if (this.$refs?.authEditor && !this.$refs.authEditor.validate()) return false
+      for (const editor of this.$refs?.executionEditors || []) {
+        if (!editor.validate()) return false
+        editor.flushConfig()
+      }
+      return true
     },
     handleBack() {
       this.$router.push({
@@ -4089,6 +2182,7 @@ export default {
           return
         }
         this.saving = true
+        const submittedFingerprint = this.configurationFingerprint
         try {
           let res
           if (data.id) {
@@ -4097,6 +2191,7 @@ export default {
             res = await createApiConfig(data)
           }
           await completeResourceChange(this, res)
+          this.markConfigurationSaved(submittedFingerprint)
           if (!this.form.id && res.data?.resourceId) {
             this.form.id = res.data.resourceId
             await this.$router.replace('/datasource/api/' + this.form.id)
@@ -4105,63 +2200,6 @@ export default {
           this.saving = false
         }
       })
-    },
-    applyTemplate(type) {
-      if (type === 'RULE_ENGINE') {
-        this.form.requestMethod = 'POST'
-        this.form.contentType = 'application/json'
-        this.form.endpointUrl = this.form.endpointUrl || 'RC_PRICING_TABLE'
-        this.form.requestMapping = this.stringifyJson({
-          ruleCode: this.form.endpointUrl || 'RC_PRICING_TABLE',
-          params: {
-            customerType: '$.customerType',
-            productLine: '$.productLine',
-          },
-        })
-        this.form.responseMapping = this.stringifyJson({
-          decision: 'body.decision',
-          rate: 'body.rate',
-          score: 'body.score',
-        })
-        this.form.bodyTemplate = ''
-        this.syncEditableRowsFromForm()
-        return
-      }
-      this.form.requestMethod = 'POST'
-      this.form.contentType = 'application/json'
-      this.headerRows = [
-        { name: 'X-Request-Id', value: '${requestId}', remark: '请求流水号' },
-      ]
-      this.requestMappingRows = [
-        { targetPath: 'idNo', sourcePath: '$.customer.idNo', remark: '证件号' },
-        {
-          targetPath: 'mobile',
-          sourcePath: '$.customer.mobile',
-          remark: '手机号',
-        },
-        { targetPath: 'name', sourcePath: '$.customer.name', remark: '姓名' },
-      ]
-      this.responseMappingRows = [
-        {
-          outputField: 'score',
-          sourcePath: 'body.data.score',
-          defaultValue: '',
-        },
-        {
-          outputField: 'riskLevel',
-          sourcePath: 'body.data.riskLevel',
-          defaultValue: '',
-        },
-        {
-          outputField: 'hitReason',
-          sourcePath: 'body.data.reason',
-          defaultValue: '',
-        },
-      ]
-      this.form.bodyTemplate = ''
-      this.requestBodyMode = 'MAPPING'
-      this.responseMappingMode = 'MAPPING'
-      this.syncStructuredConfigToForm()
     },
     endpointPlaceholder() {
       return this.isRuleEngineDatasource()
@@ -4173,186 +2211,33 @@ export default {
         ? '内部规则引擎接口会按规则编码查找已发布版本，不发起外部 HTTP 请求。'
         : 'HTTP 接口可填写相对路径或完整 URL；完整 URL 会覆盖数据源基础地址。支持 ${appId}、${vars.appId} 和 ${input.channel} 占位。'
     },
-    fieldsForObject(objectId) {
-      if (!objectId) return []
-      const node = this.dataObjectTree.find((item) => {
-        const object = item.object || {}
-        return (
-          String(object.id || item.id || item.objectId) === String(objectId)
-        )
-      })
-      if (!node) return []
-      const fields = node.flatVariables || node.variables || node.children || []
-      return this.flattenObjectVariables(fields)
-    },
-    flattenObjectVariables(rows) {
-      const result = []
-      const visit = (list) => {
-        const current = list || []
-        current.forEach((row) => {
-          if (this.fieldScriptPath(row)) result.push(row)
-          if (row.children) visit(row.children)
-        })
-      }
-      visit(rows)
-      return result
-    },
-    fieldScriptPath(field) {
-      return field && (field.scriptName || field.varCode || '')
-        ? String(field.scriptName || field.varCode)
-        : ''
-    },
-    uniquePathOptions(options) {
-      const seen = {}
-      return (options || []).filter((item) => {
-        if (!item || !item.value || seen[item.value]) return false
-        seen[item.value] = true
-        return true
-      })
-    },
-    fieldDisplayName(field) {
-      if (!field) return ''
-      return field.varLabel || field.varCode || this.fieldScriptPath(field)
-    },
-    outputFieldName(field) {
-      const path = this.stripSelectedObjectPrefix(
-        this.fieldScriptPath(field),
-        this.form.responseObjectId
-      )
-      return this.leafName(path || this.fieldScriptPath(field))
-    },
-    stripSelectedObjectPrefix(path, objectId) {
-      const object = this.dataObjectOptions.find(
-        (item) => String(item.id) === String(objectId)
-      )
-      const prefix = object && (object.scriptName || object.objectCode)
-      if (!path || !prefix) return path || ''
-      let result = path
-      while (result.indexOf(prefix + '.') === 0) {
-        result = result.substring(prefix.length + 1)
-      }
-      return result
-    },
-    leafName(path) {
-      if (!path) return ''
-      const text = String(path)
-      const index = text.lastIndexOf('.')
-      return index >= 0 ? text.substring(index + 1) : text
-    },
     regenerateTestParams() {
       this.syncStructuredConfigToForm()
       this.invokeParamsText = this.buildApiInvokeParamTemplate(this.form)
     },
-    loadSavedSample() {
-      if (this.form.executionConfig) { this.selectExecutionSample(); return }
-      if (this.form.testSampleParams) {
-        this.invokeParamsText = this.stringifyJson(
-          this.parseConfigForTemplate(this.form.testSampleParams) || {}
-        )
-        return
-      }
-      this.regenerateTestParams()
-    },
+    loadSavedSample() { if (this.selectedSampleId) this.selectExecutionSample(); else this.regenerateTestParams() },
     selectExecutionSample() {
       const sample = this.executionSamples.find(item => item.id === this.selectedSampleId)
       if (sample) this.invokeParamsText = JSON.stringify(sample.params, null, 2)
     },
     async saveCurrentSample() {
       try {
-        const parsed = this.invokeParamsText
-          ? JSON.parse(this.invokeParamsText)
-          : {}
-        if (this.form.executionConfig) {
-          const spec = JSON.parse(this.form.executionConfig)
-          if (!spec.samples) spec.samples = []
-          const existing = spec.samples.find(sample => sample.id === this.selectedSampleId)
-          if (existing) existing.params = parsed
-          else { const sample = { id: newApiId(), name: `样例 ${spec.samples.length + 1}`, params: parsed }; spec.samples.push(sample); this.selectedSampleId = sample.id }
-          this.form.executionConfig = JSON.stringify(spec)
-          this.$message.success('样例已加入当前配置，请保存审批草稿后生效')
-          return
-        }
-        this.form.testSampleParams = this.stringifyJson(parsed)
-        if (!this.form.id) {
-          this.$message.warning('新接口需要先保存后才能保存测试样例')
-          return
-        }
-        const data = this.normalizeForm(this.form)
-        const res = await updateApiConfig(data)
-        await completeResourceChange(this, res)
-      } catch (e) {
-        this.$message.error(e.message || '测试参数不是合法 JSON')
-      }
+        const parsed = this.parseTestParams()
+        const spec = JSON.parse(this.form.executionConfig)
+        if (!spec.samples) spec.samples = []
+        const existing = spec.samples.find(sample => sample.id === this.selectedSampleId)
+        if (existing) existing.params = parsed
+        else { const sample = { id: newApiId(), name: '样例 ' + (spec.samples.length + 1), params: parsed }; spec.samples.push(sample); this.selectedSampleId = sample.id }
+        this.form.executionConfig = JSON.stringify(spec)
+        this.$message.success('样例已加入当前配置，请保存审批草稿后生效')
+      } catch (error) { this.$message.error(error.message || '测试参数不是合法 JSON') }
     },
     buildApiInvokeParamTemplate(row) {
       const sample = {}
-      const paths = []
-      const addPath = (path) => {
-        if (row && row.requestMode === 'ASYNC' && row.asyncResultMode === 'CALLBACK' && path === 'callbackUrl') return
-        if (path && paths.indexOf(path) < 0) paths.push(path)
-      }
-      const addPaths = (value) => {
-        collectReferencePaths(this.parseConfigForTemplate(value), {
-          allowBarePath: false,
-        }).forEach((path) => {
-          addPath(path)
-        })
-      }
-
-      const addUnifiedOperandPaths = (value) => {
-        collectOperandInputPaths(value).forEach(addPath)
-      }
-      const unified = this.parseConfigForTemplate(row && row.executionConfig)
-      if (unified && typeof unified === 'object') {
-        const fields = [
-          ...(unified.requestFields || []),
-          ...(unified.requestBranches || []).flatMap(branch => branch.requestFields || []),
-          ...(unified.steps || []).flatMap(step => step.requestFields || []),
-        ]
-        fields.forEach(field => {
-          addUnifiedOperandPaths(field && field.value)
-          addUnifiedOperandPaths(field && field.defaultValue)
-        })
-      }
-
-      const requestObjectId = row && row.requestObjectId
-      this.fieldsForObject(requestObjectId).forEach((field) => {
-        addPath(
-          this.stripSelectedObjectPrefix(
-            this.fieldScriptPath(field),
-            requestObjectId
-          )
-        )
-      })
-
-      addPaths(row && row.headerConfig)
-      addPaths(row && row.queryConfig)
-      addPaths(row && row.requestMapping)
-      addPaths(row && row.bodyTemplate)
-      if (row && row.requestMode === 'ASYNC' && row.asyncResultMode === 'POLL') {
-        const poll = this.parseConfigForTemplate(row.asyncPollConfig) || {}
-        ;['headerConfig', 'queryConfig', 'requestMapping', 'resultEndpointUrl'].forEach((key) => {
-          collectReferencePaths(poll[key], { allowBarePath: false }).forEach((path) => {
-            if (path !== 'taskId' && path !== 'submission' && !path.startsWith('submission.')) addPath(path)
-          })
-        })
-      }
-
-      const authConfig = this.parseConfigForTemplate(row && row.authApiConfig)
-      if (authConfig && typeof authConfig === 'object') {
-        addPaths(authConfig.headers)
-        addPaths(authConfig.body)
-        addPaths(authConfig.query)
-        addPaths(authConfig.params)
-        addPaths(authConfig.username)
-        addPaths(authConfig.password)
-        addPaths(authConfig.token)
-        addPaths(authConfig.value)
-      }
-
-      paths.forEach((path) =>
-        setPathValue(sample, path, this.sampleValueForPath(path))
-      )
+      const execution = JSON.parse(row.executionConfig)
+      const auth = this.parseConfigForTemplate(row.authApiConfig)
+      const paths = new Set(collectOperandInputPaths([execution.requestFields, execution.requestBranches, execution.steps, auth]))
+      paths.forEach(path => setPathValue(sample, path, this.sampleValueForPath(path)))
       return this.stringifyJson(sample)
     },
     sampleValueForPath(path) {
@@ -4360,56 +2245,11 @@ export default {
       const field = this.findFieldForSamplePath(normalized)
       return sampleValueForVarType(field && field.varType)
     },
-    findFieldForSamplePath(path) {
-      const normalized = String(path || '').replace(/^\$\./, '')
-      const requestFields = this.fieldsForObject(this.form.requestObjectId)
-      const candidates = requestFields.concat(this.flattenAllObjectFields())
-      const selectedObject = this.dataObjectOptions.find(
-        (item) => String(item.id) === String(this.form.requestObjectId)
-      )
-      const selectedPrefix =
-        selectedObject &&
-        (selectedObject.scriptName || selectedObject.objectCode)
-      return candidates.find((item) => {
-        const scriptName = this.fieldScriptPath(item)
-        const stripped = this.stripSelectedObjectPrefix(
-          scriptName,
-          this.form.requestObjectId
-        )
-        const leaf = this.leafName(scriptName)
-        return (
-          scriptName === normalized ||
-          stripped === normalized ||
-          (selectedPrefix
-            ? selectedPrefix + '.' + normalized === scriptName
-            : false) ||
-          (normalized.indexOf('.') < 0 && leaf === normalized)
-        )
-      })
-    },
-    flattenAllObjectFields() {
-      const result = []
-      const tree = this.dataObjectTree || []
-      tree.forEach((node) => {
-        result.push.apply(
-          result,
-          node.flatVariables || this.flattenObjectVariables(node.variables)
-        )
-      })
-      return result
-    },
+    findFieldForSamplePath(path) { return this.apiPickerVars.find(field => field.varCode === String(path || '').replace(/^\$\./, '')) },
     captureTestSignature() {
-      return JSON.stringify([
-        this.form, this.invokeParamsText, this.headerRows, this.queryRows, this.cookieRows,
-        this.requestBodyMode, this.requestMappingRows, this.requestMappingJsonText,
-        this.requestNullPolicy, this.nonJsonNullPolicy, this.responseMappingMode,
-        this.responseMappingRows, this.responseConditionRows, this.responseMappingJsonText,
-        this.apiAuthConfig, this.scriptVariableRows, this.cacheKeyRows,
-        this.successConditionRoot, this.exceptionConditionRoot, this.retryConditionRoot,
-        this.tokenFailureMode, this.tokenFailureConditionRoot, this.billingConfig,
-        this.payloadCapture, this.asyncShared, this.asyncPollConfig,
-        this.asyncPollRequestText, this.asyncCallbackConfig,
-      ])
+      return JSON.stringify([this.form, this.invokeParamsText, this.apiAuthConfig, this.scriptVariableRows, this.cacheKeyRows,
+        this.successConditionRoot, this.exceptionConditionRoot, this.retryConditionRoot, this.tokenFailureMode,
+        this.tokenFailureConditionRoot, this.billingConfig, this.payloadCapture])
     },
     capturePreviewSignature() { return JSON.stringify([this.captureTestSignature(), this.previewToken || '']) },
     parseTestParams() {

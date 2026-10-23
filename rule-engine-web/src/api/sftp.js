@@ -33,6 +33,6 @@ export function readSftpDatasource(id, remotePath) {
   return request({ url: `/rule/sftp/${id}/read`, method: 'post', data: { remotePath } })
 }
 
-export function previewSftpLog(logId) {
-  return request({ url: `/rule/sftp/logs/${logId}/content`, method: 'get', responseType: 'blob', timeout: 0 })
+export function previewSftpLog(logId, options = {}) {
+  return request({ url: `/rule/sftp/logs/${logId}/content`, method: 'get', responseType: 'blob', timeout: 0, signal: options.signal })
 }

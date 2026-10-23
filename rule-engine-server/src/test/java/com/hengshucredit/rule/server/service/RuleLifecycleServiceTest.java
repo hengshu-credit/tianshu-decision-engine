@@ -881,7 +881,14 @@ public class RuleLifecycleServiceTest {
         }
 
         @Override
-        protected DecisionArtifact buildArtifact(Long revisionId, String actor) {
+        protected com.hengshucredit.rule.server.artifact.RulePreflightValidationService.Analysis analyzeApproval(Long revisionId) {
+            return new com.hengshucredit.rule.server.artifact.RulePreflightValidationService.Analysis(preflight(revisionId), null, null, null);
+        }
+
+        @Override
+        protected DecisionArtifact buildArtifact(Long revisionId, String actor,
+                com.hengshucredit.rule.server.artifact.RulePreflightValidationService.Analysis analysis) {
+            Assert.assertSame(preflight, analysis.report());
             DecisionArtifact artifact = new DecisionArtifact();
             artifact.setId(revisionId + 1000);
             artifact.setArtifactDigest(String.valueOf('a').repeat(64));

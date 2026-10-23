@@ -41,16 +41,16 @@ public final class ExternalApiExecutionConfig {
                     if (!paths.containsKey(key)) throw new IllegalArgumentException("外数参数引用不属于可用字段: " + key);
                 } else {
                     String path = value.getString("value");
-                    boolean protocol = path != null && path.matches("(?:response|request|authentication|steps|callbacks|status|body|headers|rawBody)(?:[.\\[].+)?|input\\.__apiFields\\..+|httpStatus|callId|costTimeMs|errorMessage");
+                    boolean protocol = path != null && ("$".equals(path) || path.matches("(?:response|request|authentication|steps|callbacks|status|body|headers|rawBody)(?:[.\\[].+)?|input\\.__apiFields\\..+|httpStatus|callId|costTimeMs|errorMessage|success"));
                     if (!protocol) {
-                        var matches = paths.entrySet().stream().filter(entry -> java.util.Objects.equals(path, entry.getValue())).toList();
-                        if (matches.size() != 1) throw new IllegalArgumentException("字段路径无法唯一反解，请选择字段: " + path);
-                        String[] reference = matches.get(0).getKey().split(":", 2);
-                        value.put("refType", reference[0]); value.put("refId", Long.valueOf(reference[1])); value.put("resolved", true);
+                        throw new IllegalArgumentException("引擎字段必须通过稳定 ID 引用，请使用内容选择器: " + path);
                     }
                 }
             }
-            value.forEach((key, child) -> { if (!Set.of("sample", "samples").contains(key)) bindReferences(child, paths); });
+            value.forEach((key, child) -> {
+                if ("authApiConfig".equals(key) && child instanceof String text) ExternalApiAuthConfig.validate(text, paths);
+                else if (!Set.of("sample", "samples", "requestSample", "responseSample").contains(key)) bindReferences(child, paths);
+            });
         } else if (node instanceof Iterable<?> list) list.forEach(child -> bindReferences(child, paths));
     }
     public static void validate(RuleExternalApiConfig api) {
@@ -195,8 +195,7 @@ public final class ExternalApiExecutionConfig {
         }
         if ("VALUE".equalsIgnoreCase(mode)) {
             if (!branch.containsKey("value")) throw new IllegalArgumentException(label + "整体取值不能为空");
-            String outputPath = branch.getString("outputPath");
-            if (outputPath != null && outputPath.isBlank()) throw new IllegalArgumentException(label + "整体取值字段路径不能为空");
+            // 留空直接返回整体值，与响应组装器和样例预览保持一致。
             return;
         }
         Object rawFields = branch.get("outputFields");

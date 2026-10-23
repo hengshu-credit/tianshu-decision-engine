@@ -35,14 +35,29 @@
               <el-select :model-value="manualTypeMode" aria-label="阈值数据类型" @update:model-value="selectManualType"><el-option label="自动推荐" value="AUTO" /><el-option v-for="type in valueTypes" :key="type.value" :label="type.label" :value="type.value" :disabled="!typeCompatible(type.value, expectedType)" /></el-select>
               <span class="operand-type-recommendation">{{ manualTypeMode === 'AUTO' ? '自动推荐：' : '按你的选择：' }}{{ manualTypeLabel }}</span>
             </div>
-            <label class="operand-content-label">{{ manualKind === 'PATH' ? '字段路径' : '阈值内容' }}</label>
+            <template v-if="manualKind === 'PATH'">
+              <label class="operand-content-label">取值来源</label>
+              <var-picker class="operand-path-source" :value="manualPathSource" :vars="manualReferences" :allowed-kinds="['REFERENCE']" operand-mode
+                :writable-only="writableOnly" :visible-tags="pickerVisibleTags" :selectable-tags="pickerSelectableTags"
+                placeholder="选择变量、对象、模型或 API" @input="selectPathSource" />
+            </template>
+            <label class="operand-content-label">{{ manualKind === 'PATH' ? '子路径（可选）' : '阈值内容' }}</label>
             <monaco-editor v-if="manualKind === 'LITERAL'" ref="manualCode" :value="manualInputText" :language="manualJson ? 'json' : 'plaintext'" height="210px" :options="{ ariaLabel: '阈值内容', minimap: { enabled: false }, wordWrap: 'on', autoSurround: 'never', formatOnType: false, formatOnPaste: false }" @input="updateManualValue" @editor-ready="onManualEditorReady" />
-            <el-input v-else ref="manualInput" :model-value="manualInputText" placeholder="请输入字段路径" aria-label="字段路径" clearable @update:model-value="updateManualValue" @keydown.enter="onManualEnter" />
-            <p class="operand-manual-help">{{ manualKind === 'PATH' ? '自动匹配变量、对象和模型；支持子字段或列表路径，例如 model.score、items[0].name。' : '手选类型优先；自动模式推荐可保留输入内容的类型，数值支持整数和小数。' }}</p>
-            <div v-if="manualKind === 'PATH' && manualOperand?.resolved" class="operand-path-match">
-              <span>对应字段</span><strong>{{ manualOperand.label }}</strong><code>{{ manualOperand.anchorPath || manualOperand.code }}</code>
-              <template v-if="manualOperand.relativePath"><span>取值路径</span><code>{{ manualOperand.relativePath }}</code></template>
+            <el-input v-else ref="manualInput" :model-value="manualSubpathInput" :disabled="!manualPathSource" placeholder="例如 customer.name、items[0].name" aria-label="子路径" clearable @update:model-value="updateSubpath" @keydown.enter="onManualEnter" />
+            <p class="operand-manual-help">{{ manualKind === 'PATH' ? '留空取整个内容；只填写来源内部的路径，无需重复来源编码，也无需预先声明子字段。' : '手选类型优先；自动模式推荐可保留输入内容的类型，数值支持整数和小数。' }}</p>
+            <div v-if="manualKind === 'PATH' && manualSubpathInput" class="operand-type-row">
+              <label title="按实际返回值选择类型，用于比较和参数配置">结果类型</label>
+              <el-select :model-value="manualOperand?.pathValueType || ''" placeholder="请选择取值结果类型" aria-label="取值结果类型" @update:model-value="selectPathResultType">
+                <el-option v-for="type in valueTypes" :key="type.value" :label="type.label" :value="type.value" :disabled="!typeCompatible(type.value, expectedType)" />
+              </el-select>
             </div>
+            <div v-if="manualKind === 'PATH' && manualOperand?.resolved && manualPathMatch" class="operand-path-match">
+              <span>匹配内容</span><strong>{{ manualPathMatch.label }}</strong>
+              <span>编码</span><code>{{ manualPathMatch.code }}</code>
+              <template v-if="manualPathMatch.version"><span>版本</span><strong>{{ manualPathMatch.version }}</strong></template>
+              <span>剩余子路径</span><code>{{ manualPathMatch.suffix || '已完整匹配' }}</code>
+            </div>
+            <p v-if="manualKind === 'PATH' && pathDirectoryError" class="operand-manual-error" role="alert">{{ pathDirectoryError }}</p>
             <div v-if="manualPathCandidates.length" class="operand-path-candidates">
               <p>存在多个同名字段，请选择对应内容：</p>
               <button v-for="candidate in manualPathCandidates" :key="candidateKey(candidate)" type="button" @click="selectManualPathCandidate(candidate)"><span>{{ candidateLabel(candidate) }}</span><code>{{ candidateCode(candidate) }}</code></button>
@@ -76,6 +91,8 @@ import {
   createLiteralOperand,
   createListQueryOperand,
   createPathOperand,
+  createRelativePathOperand,
+  pathOperandSource,
   resolvePathOperand,
   VALUE_OPERAND_KINDS,
   operandDisplay,
@@ -84,10 +101,14 @@ import {
 import { createFunctionTemplate, functionParameters } from '@/components/expression/expressionTree'
 import { fieldPickerTags, matchesFieldTags } from '@/utils/fieldPickerPolicy'
 import { canViewPickerItem } from '@/security/pickerAccess'
+import { matchPathContent } from '@/utils/pathContentMatch'
+import { resourceVersionIdentity } from '@/utils/resourceVersion'
+import { getFieldVersionFields } from '@/api/fieldPickerVersion'
 import { LITERAL_TYPE_OPTIONS, literalTypeCompatible, literalTypeFamily, literalValidationError, recommendLiteralType, arrayLiteralDraft } from '@/utils/literalType'
 import {
   createExpressionSessionId,
   createExpressionSessionTitle,
+  expressionSourceIdentity,
 } from '@/utils/expressionSession'
 
 function inheriltClassAndStyle() {
@@ -146,10 +167,16 @@ export default {
       suppressQuickSelect: false,
       manualKind: '',
       manualOperand: null,
+      manualPathSource: null,
+      manualSubpathInput: '',
+      manualVersionReferences: [],
+      pathDirectoryError: '',
+      pathDirectoryRequest: 0,
       manualPathCandidates: [],
       manualError: '',
       activeArgument: null,
       expressionSourceKey: `operand-picker-${++operandPickerSequence}`,
+      expressionSourceSessions: {},
       expressionSessionId: '',
       lastAppliedExpressionRevision: 0,
     }
@@ -158,6 +185,7 @@ export default {
     pickerVisibleTags() { return this.visibleTags ?? (this.editorContext === 'WRITE_TARGET' ? ['write'] : null) },
     pickerSelectableTags() { return this.selectableTags ?? (this.editorContext === 'WRITE_TARGET' ? ['write'] : null) },
     manualReferences() { return this.vars.filter(item => !item.disabled && canViewPickerItem(item) && matchesFieldTags(fieldPickerTags(item), this.pickerVisibleTags) && matchesFieldTags(fieldPickerTags(item), this.pickerSelectableTags) && (!this.writableOnly || fieldPickerTags(item).includes('write'))) },
+    manualPathMatch() { return matchPathContent(this.manualOperand, [...this.manualReferences, ...this.manualVersionReferences]) },
     manualJson() { return this.manualKind === 'LITERAL' && ['LIST', 'OBJECT'].includes(literalTypeFamily(this.manualOperand?.valueType)) },
     valueTypes() { const type = this.manualOperand?.valueType; return type && !LITERAL_TYPE_OPTIONS.some(item => item.value === type) ? [...LITERAL_TYPE_OPTIONS, { value: type, label: type }] : LITERAL_TYPE_OPTIONS },
     manualTypeLabel() { return this.valueTypes.find(type => type.value === this.manualOperand?.valueType)?.label || this.manualOperand?.valueType || '' },
@@ -273,14 +301,21 @@ export default {
         return
       }
 
-      const sourceKey = this.expressionSourceKey
+      const sourceIdentity = expressionSourceIdentity(this.designerReturnRoute())
+      const sourceKey = this.expressionSourceSessions[sourceIdentity] || (this.expressionSourceSessions[sourceIdentity] =
+        Object.keys(this.expressionSourceSessions).length ? `operand-picker-${++operandPickerSequence}` : this.expressionSourceKey)
+      const sourceValue = JSON.stringify(this.value)
       const sessionId = createExpressionSessionId(ruleId ?? this.$route?.name, sourceKey)
+      const previous = this.$store.getters['expressionSessions/sessionById']?.(sessionId)
+      if (this.expressionSessionId !== sessionId || previous?.sourceValue !== sourceValue) this.lastAppliedExpressionRevision = 0
       const routeTitle =
         this.$route && this.$route.meta && this.$route.meta.title
       await this.$store.dispatch('expressionSessions/openSession', {
         sessionId,
         ruleId,
         sourceKey,
+        sourceIdentity,
+        sourceValue,
         draft: editorValue,
         vars: this.vars,
         functions: this.functions,
@@ -334,6 +369,8 @@ export default {
       const result = getter(this.expressionSessionId)
       if (!result || result.revision <= this.lastAppliedExpressionRevision)
         return
+      if (result.sourceIdentity && (result.sourceIdentity !== expressionSourceIdentity(this.designerReturnRoute())
+        || result.sourceValue !== JSON.stringify(this.value))) return
 
       this.lastAppliedExpressionRevision = result.revision
       const value = cloneOperand(result.operand)
@@ -350,7 +387,8 @@ export default {
     },
     typeCompatible: literalTypeCompatible,
     saveManualDraft() {
-      if (this.manualKind && this.manualOperand) this.manualDrafts[this.manualKind] = { operand: cloneOperand(this.manualOperand), text: this.manualInputText, typeMode: this.manualTypeMode }
+      if (this.manualKind && this.manualOperand) this.manualDrafts[this.manualKind] = { operand: cloneOperand(this.manualOperand), text: this.manualInputText, typeMode: this.manualTypeMode,
+        pathSource: cloneOperand(this.manualPathSource), subpath: this.manualSubpathInput }
     },
     openManualInput(kind, { reset = false } = {}) {
       if (!reset) this.saveManualDraft()
@@ -363,13 +401,16 @@ export default {
       this.manualComposing = false
       const arrayDraft = kind === 'LITERAL' ? arrayLiteralDraft(this.value) : null
       const existing = this.value?.kind === kind || !!arrayDraft
-      const reference = kind === 'PATH' && this.value?.kind === 'REFERENCE' ? { ...cloneOperand(this.value), kind: 'PATH', anchorPath: this.value.relativePath && this.value.code?.endsWith(this.value.relativePath) ? this.value.code.slice(0, -this.value.relativePath.length) : this.value.code } : null
+      const reference = kind === 'PATH' && this.value?.kind === 'REFERENCE' ? createRelativePathOperand(this.value) : null
       this.manualOperand = saved?.operand || (existing ? arrayDraft || cloneOperand(this.value) : reference || (kind === 'PATH' ? createPathOperand('') : createLiteralOperand('', recommendLiteralType('', this.expectedType))))
       const value = this.manualOperand.value
       this.manualInputText = saved?.text ?? (typeof value === 'object' && value !== null ? JSON.stringify(value, null, 2) : String(value ?? ''))
       this.manualTypeMode = saved?.typeMode || (existing && kind === 'LITERAL' ? this.manualOperand.valueType : 'AUTO')
       this.manualPathCandidates = []
       if (kind === 'PATH' && this.manualInputText && !this.manualOperand?.resolved) this.resolveManualPath()
+      this.manualPathSource = saved?.pathSource || pathOperandSource(this.manualOperand)
+      this.manualSubpathInput = saved?.subpath ?? (this.manualPathSource ? this.manualInputText.slice(this.manualPathSource.code.length).replace(/^\./, '') : '')
+      if (kind === 'PATH') this.loadPathDirectory()
       this.$nextTick(() => {
         this.$refs.varPicker?.openPopover?.({ restoreManual: false })
         this.$nextTick(this.focusManualInput)
@@ -414,10 +455,57 @@ export default {
     },
     resolveManualPath() {
       if (this.manualKind !== 'PATH') return
-      const source = this.manualOperand?.versionMode === 'FIXED' ? { ...this.manualOperand, value: this.manualInputText } : createPathOperand(this.manualInputText)
+      const source = this.manualOperand?.refId ? { ...this.manualOperand, value: this.manualInputText } : createPathOperand(this.manualInputText)
       const result = resolvePathOperand(source, this.manualReferences)
       this.manualOperand = result.operand
       this.manualPathCandidates = result.candidates
+    },
+    selectPathSource(reference) {
+      const sameSource = reference && this.manualPathSource && String(reference.refId) === String(this.manualPathSource.refId)
+        && reference.refType === this.manualPathSource.refType && reference.relativePath === this.manualPathSource.relativePath
+      const path = sameSource ? this.manualSubpathInput : ''
+      const type = sameSource ? this.manualOperand?.pathValueType : ''
+      this.manualPathSource = reference ? cloneOperand(reference) : null
+      this.manualSubpathInput = ''
+      this.manualOperand = reference ? createRelativePathOperand(reference) : createPathOperand('')
+      this.manualInputText = this.manualOperand.value
+      this.manualError = ''
+      this.manualPathCandidates = []
+      if (path) { this.manualOperand.pathValueType = type; this.updateSubpath(path) }
+      this.loadPathDirectory()
+      this.saveManualDraft()
+    },
+    async loadPathDirectory() {
+      const request = ++this.pathDirectoryRequest
+      this.manualVersionReferences = []
+      this.pathDirectoryError = ''
+      const source = this.manualPathSource
+      const identity = resourceVersionIdentity(source)
+      if (source?.versionMode !== 'FIXED' || !identity || !['model', 'dataobject'].includes(identity.module)) return
+      try {
+        const response = await getFieldVersionFields(identity, source.versionId, source.versionSource)
+        if (request !== this.pathDirectoryRequest) return
+        const group = response.data
+        const kind = identity.module === 'model' ? 'model' : 'object'
+        this.manualVersionReferences = (group.fields || []).map(field => ({
+          ...source, ...field, _varId: field.refId, _refType: field.refType, varCode: field.code,
+          varLabelText: field.label, varType: field.valueType, version: group.version, displayVersion: group.displayVersion,
+          _ref: { [`${kind}Id`]: identity.ownerId },
+        }))
+      } catch (error) { if (request === this.pathDirectoryRequest) this.pathDirectoryError = '该版本字段目录加载失败，保留已有路径；重新选择来源可重试。' }
+    },
+    updateSubpath(path) {
+      this.manualSubpathInput = path
+      this.manualError = ''
+      try {
+        this.manualOperand = createRelativePathOperand(this.manualPathSource, path, this.manualOperand?.pathValueType || this.expectedType)
+        this.manualInputText = this.manualOperand.value
+      } catch (error) { this.manualError = error.message; this.manualOperand = { ...this.manualOperand, resolved: false } }
+      this.saveManualDraft()
+    },
+    selectPathResultType(type) {
+      this.manualOperand = { ...this.manualOperand, pathValueType: type }
+      this.updateSubpath(this.manualSubpathInput)
     },
     selectManualPathCandidate(candidate) {
       const result = resolvePathOperand(createPathOperand(this.manualInputText), [candidate])
@@ -430,12 +518,25 @@ export default {
       $emit(this, 'path-resolve', { operand: cloneOperand(result.operand), candidates: result.candidates.slice() })
     },
     emitManualOperand() {
+      if (this.manualKind === 'PATH' && this.manualPathSource) {
+        this.updateSubpath(this.manualSubpathInput)
+        if (this.manualError) return false
+        if (this.manualSubpathInput && !this.manualOperand.valueType) { this.manualError = '请选择取值结果类型'; return false }
+        if (!literalTypeCompatible(this.manualOperand.valueType, this.expectedType)) { this.manualError = '取值结果类型不符合当前位置要求'; return false }
+      }
       this.manualError = this.manualKind === 'LITERAL' ? literalValidationError(this.manualOperand, this.expectedType)
         : !this.manualInputText.trim() ? '请输入字段路径'
           : this.manualPathCandidates.length ? '请选择对应字段'
             : !this.manualOperand?.resolved ? '未找到对应字段，请检查路径或先选择可用字段' : ''
       if (this.manualError) return false
       const value = cloneOperand(this.manualOperand)
+      if (value.kind === 'PATH') {
+        delete value.pathDisplay
+        if (value.versionMode === 'FIXED' && this.manualPathMatch?.sourceKey) {
+          const { label, code, matchedPath, version, sourceKey } = this.manualPathMatch
+          value.pathDisplay = { label, code, matchedPath, version, sourceKey }
+        }
+      }
       if (value.kind === 'LITERAL' && literalTypeFamily(value.valueType) === 'BOOLEAN' && typeof value.value === 'string') value.value = value.value.trim().toLowerCase()
       this.manualSourceValue = JSON.stringify(value)
       this.saveManualDraft()
@@ -537,6 +638,7 @@ export default {
 .operand-type-row > .el-select { width: 220px; }
 .operand-type-recommendation,.operand-manual-help { font-size: 12px; color: var(--tianshu-text-secondary); }
 .operand-content-label { display: block; margin-bottom: 8px; font-weight: 600; }
+.operand-path-source { margin-bottom: 12px; }
 .operand-manual-panel :deep(.el-input__wrapper),.operand-manual-panel :deep(.el-textarea__inner),.operand-manual-panel :deep(.el-select__wrapper) { border-radius: 0; }
 .operand-manual-help { line-height: 1.7; margin: 10px 0; }
 .operand-path-match { display: grid; grid-template-columns: 76px minmax(0,1fr); gap: 8px; padding: 12px; border: 1px solid var(--tianshu-border); background: var(--tianshu-bg-muted); }

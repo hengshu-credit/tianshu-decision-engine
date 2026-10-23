@@ -1,7 +1,8 @@
 package com.hengshucredit.rule.server.security;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.alibaba.fastjson.JSON;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.consolelogin.RuleEngineConsoleLoginProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -13,6 +14,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
 
 @RequiredArgsConstructor
 public class ConsolePermissionInterceptor implements HandlerInterceptor {
+    public static final String AUTHORIZED_PERMISSION = ConsolePermissionInterceptor.class.getName() + ".permission";
 
     private final RuleEngineConsoleLoginProperties properties;
     private final ConsolePermissionService permissionService;
@@ -47,8 +49,13 @@ public class ConsolePermissionInterceptor implements HandlerInterceptor {
         Long userId = resolveUserId(request.getSession(false));
         if (userId != null) {
             // 空权限只用于已登录用户的前端访问留痕，事件对象另行校验权限。
-            if (requirement.value().isEmpty() || permissionService.hasPermission(userId, requirement.value())) return true;
-            for (String code : requirement.anyOf()) if (permissionService.hasPermission(userId, code)) return true;
+            if (requirement.value().isEmpty()) return true;
+            if (permissionService.hasPermission(userId, requirement.value())) {
+                request.setAttribute(AUTHORIZED_PERMISSION, requirement.value()); return true;
+            }
+            for (String code : requirement.anyOf()) if (permissionService.hasPermission(userId, code)) {
+                request.setAttribute(AUTHORIZED_PERMISSION, code); return true;
+            }
         }
         return deny(response, "PERMISSION_DENIED");
     }
@@ -60,6 +67,7 @@ public class ConsolePermissionInterceptor implements HandlerInterceptor {
         if (userId != null
                 && permissionService.hasPermission(
                 userId, permissionCode)) {
+            request.setAttribute(AUTHORIZED_PERMISSION, permissionCode);
             return true;
         }
         return deny(response, "PERMISSION_DENIED");
@@ -71,7 +79,7 @@ public class ConsolePermissionInterceptor implements HandlerInterceptor {
         response.setCharacterEncoding("UTF-8");
         response.setContentType("application/json;charset=UTF-8");
         response.getWriter().write(JSON.toJSONString(
-                R.fail(HttpServletResponse.SC_FORBIDDEN, message)));
+                ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.PERMISSION_DENIED, message)));
         return false;
     }
 

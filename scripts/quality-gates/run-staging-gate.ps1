@@ -52,10 +52,10 @@ try {
         }
         $parent = Split-Path -Parent $BackupFile
         if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
-        & mysqldump --single-transaction --routines --events --triggers `
+        & mysqldump --single-transaction --routines --events --triggers --hex-blob `
             --host $env:MYSQL_HOST --port $env:MYSQL_PORT `
             --user $env:MYSQL_BACKUP_USER --password `
-            $env:MYSQL_DATABASE | Set-Content -Path $BackupFile -Encoding UTF8
+            "--result-file=$BackupFile" $env:MYSQL_DATABASE
         if ($LASTEXITCODE -ne 0) { throw 'staging backup failed' }
         $summary['backup'] = 'PASS'
     }

@@ -1,6 +1,7 @@
 const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createDocsApiData } = require('./support/docsFixtures.cjs')
+const { platformResponse } = require('./support/platformResponse.cjs')
 
 function deferred() {
   let resolve
@@ -55,7 +56,7 @@ for (const theme of ['LIGHT', 'DARK']) {
         const result = key => ({ records: [{ ...record, [entry.key]: key }], total: 1 })
         data.set(entry.path, ({ url }) => {
           const key = url.searchParams.get(entry.key) || 'INITIAL'
-          if (key === 'OLD' && url.searchParams.get('pageSize') === '10') {
+          if (key === 'OLD' && url.searchParams.get('pageSize') === '20') {
             started.resolve()
             return delayed.promise
           }
@@ -77,7 +78,7 @@ for (const theme of ['LIGHT', 'DARK']) {
         await expect(body).toContainText('CURRENT')
         const oldResponse = page.waitForResponse(response => {
           const url = new URL(response.url())
-          return url.pathname === entry.path && url.searchParams.get(entry.key) === 'OLD' && url.searchParams.get('pageSize') === '10'
+          return url.pathname === entry.path && url.searchParams.get(entry.key) === 'OLD' && url.searchParams.get('pageSize') === '20'
         })
         delayed.resolve(result('OLD'))
         await (await oldResponse).finished()
@@ -86,7 +87,7 @@ for (const theme of ['LIGHT', 'DARK']) {
         await expect(body).not.toContainText('OLD')
         await page.route(`**${entry.path}*`, async route => {
           if (new URL(route.request().url()).searchParams.get(entry.key) !== 'FAIL') return route.fallback()
-          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 500, message: '测试查询失败' }) })
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(platformResponse(null, 'SYSTEM_ERROR', '测试查询失败')) })
         })
         await input.fill('FAIL')
         await area.getByRole('button', { name: '查询', exact: true }).click()

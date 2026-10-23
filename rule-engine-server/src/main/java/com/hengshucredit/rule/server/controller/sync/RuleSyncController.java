@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.controller.sync;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
@@ -7,7 +9,7 @@ import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService;
-import com.hengshucredit.rule.server.common.R;
+import com.hengshucredit.rule.model.PlatformCode;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import com.hengshucredit.rule.server.service.RuleExecuteService;
@@ -40,15 +42,15 @@ public class RuleSyncController {
     @Resource private com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService artifactSnapshotService;
 
     @GetMapping("/by-id/{definitionId}")
-    public R<RulePublished> getById(@PathVariable Long definitionId,
+    public ApiResponse<RulePublished> getById(@PathVariable Long definitionId,
                                   @RequestParam(required = false) Long versionBindingId, HttpServletRequest request) {
         ProjectScope scope = resolveProjectScope(request);
-        if (scope == null) return R.fail(401, "Unauthorized project token");
+        if (scope == null) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.TOKEN_INVALID, "Unauthorized project token");
         RulePublished latest = publishedMapper.selectOne(appendProjectScope(new LambdaQueryWrapper<RulePublished>()
                 .eq(RulePublished::getDefinitionId, definitionId).eq(RulePublished::getStatus, 1), scope));
-        if (latest == null) return R.fail(404, "Rule not found");
+        if (latest == null) return ApiResponse.fail(PlatformCode.RULE_NOT_FOUND, "Rule not found");
         RulePublished selected = versionBindingService.resolvePublished(latest, versionBindingId);
-        return R.ok(withOutputScriptNames(selected));
+        return ApiResponse.ok(withOutputScriptNames(selected));
     }
 
     @Resource
@@ -70,36 +72,36 @@ public class RuleSyncController {
     private RuleIdempotencyService idempotencyService;
 
     @GetMapping("/{ruleCode}")
-    public R<RulePublished> getByCode(@PathVariable String ruleCode, HttpServletRequest request) {
+    public ApiResponse<RulePublished> getByCode(@PathVariable String ruleCode, HttpServletRequest request) {
         ProjectScope scope = resolveProjectScope(request);
         if (scope == null) {
-            return R.fail(401, "Unauthorized project token");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.TOKEN_INVALID, "Unauthorized project token");
         }
         RulePublished published = publishedMapper.selectOne(
                 appendProjectScope(new LambdaQueryWrapper<RulePublished>()
                         .eq(RulePublished::getRuleCode, ruleCode)
                         .eq(RulePublished::getStatus, 1), scope));
-        return R.ok(withOutputScriptNames(published));
+        return published == null ? ApiResponse.fail(PlatformCode.RULE_NOT_FOUND, null) : ApiResponse.ok(withOutputScriptNames(published));
     }
 
     @GetMapping("/all")
-    public R<List<RulePublished>> getAll(HttpServletRequest request) {
+    public ApiResponse<List<RulePublished>> getAll(HttpServletRequest request) {
         ProjectScope scope = resolveProjectScope(request);
         if (scope == null) {
-            return R.fail(401, "Unauthorized project token");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.TOKEN_INVALID, "Unauthorized project token");
         }
         List<RulePublished> list = publishedMapper.selectList(
                 appendProjectScope(new LambdaQueryWrapper<RulePublished>()
                         .eq(RulePublished::getStatus, 1), scope));
         for (int index = 0; index < list.size(); index++) list.set(index, withOutputScriptNames(list.get(index)));
-        return R.ok(list);
+        return ApiResponse.ok(list);
     }
 
     @GetMapping("/versions")
-    public R<Map<String, Integer>> getVersions(HttpServletRequest request) {
+    public ApiResponse<Map<String, Integer>> getVersions(HttpServletRequest request) {
         ProjectScope scope = resolveProjectScope(request);
         if (scope == null) {
-            return R.fail(401, "Unauthorized project token");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.TOKEN_INVALID, "Unauthorized project token");
         }
         List<RulePublished> list = publishedMapper.selectList(
                 appendProjectScope(new LambdaQueryWrapper<RulePublished>()
@@ -107,67 +109,58 @@ public class RuleSyncController {
                         .eq(RulePublished::getStatus, 1), scope));
         Map<String, Integer> versions = list.stream()
                 .collect(Collectors.toMap(RulePublished::getRuleCode, RulePublished::getVersion));
-        return R.ok(versions);
+        return ApiResponse.ok(versions);
     }
 
     @PostMapping("/execute/{ruleCode}")
-    public R<RuleResult> execute(@PathVariable String ruleCode,
-                                 @RequestBody(required = false) Map<String, Object> body,
+    public ApiResponse<RuleResult> execute(@PathVariable String ruleCode,
+                                 @RequestBody Map<String, Object> body,
                                  HttpServletRequest request) {
         return executeBody(ruleCode, body, request);
     }
 
     @PostMapping(value = "/execute/{ruleCode}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public R<RuleResult> executeMultipart(@PathVariable String ruleCode,
+    public ApiResponse<RuleResult> executeMultipart(@PathVariable String ruleCode,
                                           MultipartHttpServletRequest request) {
         return executeBody(ruleCode, buildMultipartBody(request.getParameterMap(), request.getFileMap()), request);
     }
 
-    private R<RuleResult> executeBody(String ruleCode, Map<String, Object> body, HttpServletRequest request) {
+    private ApiResponse<RuleResult> executeBody(String ruleCode, Map<String, Object> body, HttpServletRequest request) {
         ProjectScope scope = resolveProjectScope(request);
         if (scope == null) {
-            return R.fail(401, "Unauthorized project token");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.TOKEN_INVALID, "Unauthorized project token");
         }
         RulePublished published = publishedMapper.selectOne(
                 appendProjectScope(new LambdaQueryWrapper<RulePublished>()
                         .eq(RulePublished::getRuleCode, ruleCode)
                         .eq(RulePublished::getStatus, 1), scope));
         if (published == null) {
-            return R.fail(404, "Rule not found");
+            return ApiResponse.fail(PlatformCode.RULE_NOT_FOUND, "Rule not found");
         }
         Long executionProjectId = scope.global ? resolveDefinitionProjectId(published) : scope.projectId;
         if (executionProjectId == null || (!scope.global && executionProjectId <= 0)) {
-            return R.fail(404, "Rule project not found");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "Rule project not found");
         }
-        @SuppressWarnings("unchecked")
-        Map<String, Object> params = body != null && body.get("params") instanceof Map
-                ? (Map<String, Object>) body.get("params")
-                : Collections.emptyMap();
-        String clientAppName = body == null || body.get("clientAppName") == null
-                ? null
-                : String.valueOf(body.get("clientAppName"));
-        Object traceOption = body == null ? null : body.get("traceEnabled");
-        // multipart 的标量字段为字符串；JSON 调用也只接受明确的 true / false。
-        if (traceOption != null && !(traceOption instanceof Boolean)
-                && !(traceOption instanceof String && ("true".equalsIgnoreCase((String) traceOption)
-                || "false".equalsIgnoreCase((String) traceOption)))) {
-            return R.fail(400, "traceEnabled must be true or false");
-        }
-        boolean traceEnabled = traceOption == null || Boolean.parseBoolean(traceOption.toString());
+        com.hengshucredit.rule.model.RuleExecutionRequest input;
+        try { input = com.hengshucredit.rule.model.RuleExecutionRequest.fromBody(body); }
+        catch (com.hengshucredit.rule.model.PlatformException error) { return ApiResponse.fail(error); }
+        Map<String, Object> params = input.getParams();
+        String clientAppName = input.getClientAppName();
+        boolean traceEnabled = input.getTraceEnabled() == null || input.getTraceEnabled();
         RuleIdempotencyService.Decision idempotency = idempotencyService == null
                 ? null : idempotencyService.begin(published, executionProjectId, params);
         if (idempotency == null) {
-            return R.ok(executeService.executePublished(published, params, executionProjectId, clientAppName,
+            return ApiResponse.ok(executeService.executePublished(published, params, executionProjectId, clientAppName,
                     ProjectAuthContext.from(request), traceEnabled, traceEnabled));
         }
-        if (idempotency.getStatus() == RuleIdempotencyService.Status.COMPLETED) return R.ok(idempotency.getResult());
+        if (idempotency.getStatus() == RuleIdempotencyService.Status.COMPLETED) return ApiResponse.ok(idempotency.getResult());
         if (idempotency.getStatus() == RuleIdempotencyService.Status.CONFLICT) {
-            R<RuleResult> response = R.fail(409, "幂等键已被其他请求使用且请求内容不同");
+            ApiResponse<RuleResult> response = ApiResponse.fail(PlatformCode.IDEMPOTENCY_CONFLICT, null);
             response.setData(idempotencyStatus(idempotency, "CONFLICT"));
             return response;
         }
         if (idempotency.getStatus() == RuleIdempotencyService.Status.IN_PROGRESS) {
-            R<RuleResult> response = R.fail(409, "相同幂等键的请求正在执行");
+            ApiResponse<RuleResult> response = ApiResponse.fail(PlatformCode.EXECUTION_IN_PROGRESS, null);
             response.setData(idempotencyStatus(idempotency, "IN_PROGRESS"));
             return response;
         }
@@ -176,7 +169,7 @@ public class RuleSyncController {
                     published, params, executionProjectId, clientAppName,
                     ProjectAuthContext.from(request), traceEnabled, traceEnabled));
             idempotencyService.complete(idempotency, result, null);
-            return R.ok(result);
+            return ApiResponse.ok(result);
         } catch (RuntimeException error) {
             idempotencyService.release(idempotency, error.getMessage());
             throw error;
@@ -226,24 +219,24 @@ public class RuleSyncController {
      * 同步项目下所有已启用的函数定义（JAVA/BEAN/SCRIPT），供客户端 SDK 拉取并注册
      */
     @GetMapping("/functions/{projectId}")
-    public R<List<RuleFunction>> syncFunctions(@PathVariable Long projectId, HttpServletRequest request) {
+    public ApiResponse<List<RuleFunction>> syncFunctions(@PathVariable Long projectId, HttpServletRequest request) {
         ProjectScope scope = resolveProjectScope(request);
         if (scope == null) {
-            return R.fail(401, "Unauthorized project token");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.TOKEN_INVALID, "Unauthorized project token");
         }
         if (!scope.global && !isAuthorizedProject(projectId, scope.projectId)) {
-            return R.fail(403, "Project token does not match requested project");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.PERMISSION_DENIED, "Project token does not match requested project");
         }
-        return R.ok(functionService.listByProject(projectId));
+        return ApiResponse.ok(functionService.listByProject(projectId));
     }
 
     @GetMapping("/functions/all")
-    public R<List<RuleFunction>> syncAllFunctions(HttpServletRequest request) {
+    public ApiResponse<List<RuleFunction>> syncAllFunctions(HttpServletRequest request) {
         ProjectScope scope = resolveProjectScope(request);
         if (scope == null || !scope.global) {
-            return R.fail(403, "Global access is required");
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.PERMISSION_DENIED, "Global access is required");
         }
-        return R.ok(functionService.listAllEnabled());
+        return ApiResponse.ok(functionService.listAllEnabled());
     }
 
     private LambdaQueryWrapper<RulePublished> appendProjectScope(LambdaQueryWrapper<RulePublished> wrapper,

@@ -23,10 +23,89 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 public class RuntimeControllerTest {
     private static final String TOKEN = "runtime-token-for-isolated-tests-12345";
 
+    @Test public void unsupportedAcceptStillReceivesAPlatformJsonError() throws Exception {
+        RuleResult result = new RuleResult(); result.setSuccess(true);
+        var response = endpoint((code, params) -> result).perform(post("/api/rule/execute/MixedCase")
+                .header("Authorization", "Bearer " + TOKEN).contentType("application/json").accept("text/plain")
+                .content("{\"params\":{}}")).andReturn().getResponse();
+        assertEquals(406, response.getStatus());
+        assertEquals("100008", JSON.parseObject(response.getContentAsString()).getString("code"));
+    }
+
+    @Test public void runtimeForwardsPerRequestOptionsWithoutChangingClientDefaults() throws Exception {
+        var received = new java.util.concurrent.atomic.AtomicReference<com.alibaba.fastjson.JSONObject>();
+        HttpServer upstream = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        upstream.createContext("/", exchange -> {
+            received.set(JSON.parseObject(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8)));
+            byte[] bytes = JSON.toJSONBytes(com.hengshucredit.rule.model.ApiResponse.ok(Map.of("success", true, "result", 42)));
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        upstream.start();
+        try (var client = com.hengshucredit.rule.client.http.RuleHttpClient.builder()
+                .serverUrl("http://127.0.0.1:" + upstream.getAddress().getPort()).token("test-token").appName("default-app").traceEnabled(true).build()) {
+            var env = new MockEnvironment().withProperty("RULE_ALLOWED_CODES", "MixedCase").withProperty("RUNTIME_ACCESS_TOKEN", TOKEN);
+            var mvc = MockMvcBuilders.standaloneSetup(new RuntimeController(new RuntimeConfiguration().httpExecutor(client), env))
+                    .setControllerAdvice(new RuntimeExceptionHandler()).build();
+            var response = mvc.perform(post("/api/rule/execute/MixedCase").header("Authorization", "Bearer " + TOKEN)
+                    .contentType("application/json").content("{\"params\":{},\"traceEnabled\":false,\"clientAppName\":\"request-app\"}"))
+                    .andReturn().getResponse();
+            assertEquals(200, response.getStatus());
+            assertEquals(Boolean.FALSE, received.get().get("traceEnabled"));
+            assertEquals("request-app", received.get().getString("clientAppName"));
+            client.execute("MixedCase", Map.of());
+            assertEquals("default-app", received.get().getString("clientAppName"));
+            assertEquals(Boolean.TRUE, received.get().get("traceEnabled"));
+        } finally { upstream.stop(0); }
+    }
+
+    @Test
+    public void upstreamAuthenticationAndCapacityDoNotBecomeGeneric502() throws Exception {
+        for (var code : java.util.List.of(com.hengshucredit.rule.model.PlatformCode.TOKEN_INVALID,
+                com.hengshucredit.rule.model.PlatformCode.CAPACITY_EXCEEDED)) {
+            MockMvc mvc = endpoint((rule, params) -> {
+                throw new com.hengshucredit.rule.client.http.RuleHttpException(null, code.httpStatus(), code.code(),
+                        "REJECTED", "upstream-trace", 1000L);
+            });
+            var response = mvc.perform(post("/api/rule/execute/MixedCase")
+                    .header("Authorization", "Bearer " + TOKEN).contentType("application/json")
+                    .content("{\"params\":{}}")).andReturn().getResponse();
+            assertEquals(code.httpStatus(), response.getStatus());
+            var body = JSON.parseObject(response.getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
+            assertEquals(code.code(), body.getString("code"));
+            assertEquals(code.message(), body.getString("message"));
+            assertEquals("upstream-trace", body.getString("traceId"));
+        }
+    }
+
+    @Test
+    public void platformResponsePreservesWaitingAndUsesOneSuccessCode() throws Exception {
+        RuleResult result = new RuleResult();
+        result.setSuccess(true);
+        MockMvc mvc = endpoint((code, params) -> result);
+        var success = mvc.perform(post("/api/rule/execute/MixedCase")
+                .header("Authorization", "Bearer " + TOKEN).contentType("application/json")
+                .content("{\"params\":{}}")).andReturn().getResponse();
+        assertEquals("000000", JSON.parseObject(success.getContentAsString()).get("code"));
+        assertEquals("成功", JSON.parseObject(success.getContentAsString(java.nio.charset.StandardCharsets.UTF_8)).getString("message"));
+
+        result.setSuccess(false);
+        result.setExecutionStatus("WAITING_EXTERNAL");
+        result.setTraceId("waiting-trace");
+        var waiting = mvc.perform(post("/api/rule/execute/MixedCase")
+                .header("Authorization", "Bearer " + TOKEN).contentType("application/json")
+                .content("{\"params\":{}}")).andReturn().getResponse();
+        assertEquals(202, waiting.getStatus());
+        assertEquals("400006", JSON.parseObject(waiting.getContentAsString()).get("code"));
+        assertEquals("waiting-trace", JSON.parseObject(waiting.getContentAsString()).getString("traceId"));
+    }
+
     private MockMvc endpoint(BiFunction<String, Map<String, Object>, RuleResult> executor) {
         MockEnvironment env = new MockEnvironment().withProperty("RULE_ALLOWED_CODES", "MixedCase")
                 .withProperty("RUNTIME_ACCESS_TOKEN", TOKEN);
-        return MockMvcBuilders.standaloneSetup(new RuntimeController(executor, env))
+        return MockMvcBuilders.standaloneSetup(new RuntimeController((code, input) -> executor.apply(code, input.getParams()), env))
+                .setControllerAdvice(new RuntimeExceptionHandler())
                 .build();
     }
 
@@ -94,7 +173,7 @@ public class RuntimeControllerTest {
         upstream.createContext("/api/rule/sync/MixedCase", exchange -> {
             fetches.incrementAndGet();
             if (!"project-token".equals(exchange.getRequestHeaders().getFirst("X-Rule-Token"))) badAuth.incrementAndGet();
-            byte[] json = ("{\"code\":200,\"data\":{\"ruleCode\":\"MixedCase\",\"definitionId\":7,"
+            byte[] json = ("{\"code\":\"000000\",\"success\":true,\"message\":\"成功\",\"data\":{\"ruleCode\":\"MixedCase\",\"definitionId\":7,"
                     + "\"projectCode\":\"ProjectA\",\"version\":1,\"modelType\":\"SCRIPT\","
                     + "\"compiledScript\":\"Age + 2\",\"requiresServerExecution\":false}}").getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, json.length);

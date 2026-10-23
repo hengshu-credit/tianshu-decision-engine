@@ -1,8 +1,9 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.RuleRuntimeCallLogService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,7 +23,7 @@ public class RuntimeCallLogController {
     private RuleRuntimeCallLogService logService;
 
     @GetMapping("/list")
-    public R<IPage<RuleRuntimeCallLog>> list(
+    public ApiResponse<IPage<RuleRuntimeCallLog>> list(
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) String moduleType,
@@ -46,34 +47,34 @@ public class RuntimeCallLogController {
                 item.setTraceSteps(null);
             });
         }
-        return R.ok(page);
+        return ApiResponse.ok(page);
     }
 
     @GetMapping("/{id}/payload")
-    public R<Map<String, Object>> payload(@org.springframework.web.bind.annotation.PathVariable Long id,
+    public ApiResponse<Map<String, Object>> payload(@org.springframework.web.bind.annotation.PathVariable Long id,
                                            @RequestParam(required = false) Long projectId) {
-        return R.ok(logService.payload(id, projectId));
+        return ApiResponse.ok(logService.payload(id, projectId));
     }
 
     @GetMapping("/payload/by-call-id")
-    public R<Map<String, Object>> payloadByCallId(@RequestParam String callId,
+    public ApiResponse<Map<String, Object>> payloadByCallId(@RequestParam String callId,
                                                    @RequestParam(required = false) Long projectId) {
-        return R.ok(logService.managementPayloadByCallId(callId, projectId));
+        return ApiResponse.ok(logService.managementPayloadByCallId(callId, projectId));
     }
 
     @GetMapping("/payload/by-root-trace-id")
-    public R<java.util.List<Map<String, Object>>> payloadsByRootTraceId(
+    public ApiResponse<java.util.List<Map<String, Object>>> payloadsByRootTraceId(
             @RequestParam String rootTraceId,
             @RequestParam(required = false) Long projectId) {
-        return R.ok(logService.payloadsByRootTraceId(rootTraceId, projectId));
+        return ApiResponse.ok(logService.payloadsByRootTraceId(rootTraceId, projectId));
     }
 
     @GetMapping("/external-api-stats")
-    public R<Map<String, Object>> externalApiStats(
+    public ApiResponse<Map<String, Object>> externalApiStats(
             @RequestParam(required = false) Long projectId,
             @RequestParam(required = false) Long targetRefId,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
-        return R.ok(logService.externalApiStats(projectId, targetRefId, startTime, endTime));
+        return ApiResponse.ok(logService.externalApiStats(projectId, targetRefId, startTime, endTime));
     }
 }

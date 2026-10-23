@@ -11,12 +11,8 @@ server:
 spring:
   application:
     name: rule-engine-server
-  config:
-    # 仓库根目录启动时读取 ./.env；从 rule-engine-server 目录启动时读取 ../.env。
-    # 操作系统环境变量和命令行参数的优先级仍高于这些本地配置。
-    import:
-      - optional:file:.env[.properties]
-      - optional:file:../.env[.properties]
+  # ServerEnvironmentPostProcessor 仅自动读取当前/上级目录的 .env.server。
+  # 按 dotenv 语法去除引号；环境变量和命令行参数优先，客户端配置不混入 server。
   servlet:
     multipart:
       max-file-size: 512MB
@@ -35,6 +31,10 @@ spring:
     url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:rule_engine}?createDatabaseIfNotExist=true&useUnicode=true&allowMultiQueries=${MYSQL_ALLOW_MULTI_QUERIES:false}&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
     username: ${MYSQL_USERNAME:}
     password: ${MYSQL_PASSWORD:}
+    hikari:
+      # 管理库断开或池耗尽时尽快返回；SQL 执行超时仍由各调用链控制。
+      connection-timeout: 3000
+      validation-timeout: 1000
   sql:
     init:
       schema-locations: classpath:sql/schema.sql
@@ -141,8 +141,6 @@ rule-engine:
     enabled: true
     registration-enabled: ${CONSOLE_REGISTRATION_ENABLED:true}
     password-recovery-enabled: ${CONSOLE_PASSWORD_RECOVERY_ENABLED:true}
-    break-glass-recovery-enabled: ${CONSOLE_BREAK_GLASS_RECOVERY_ENABLED:false}
-    break-glass-recovery-key: ${CONSOLE_BREAK_GLASS_RECOVERY_KEY:}
     mail:
       from: ${CONSOLE_MAIL_FROM:}
       base-url: ${CONSOLE_MAIL_BASE_URL:}
@@ -156,14 +154,10 @@ rule-engine:
       - /api/auth/**
       - /api/rule/auth/token
       - /api/rule/sync/**
+      - /api/rule/runtime/**
       - /api/rule/openapi/**
       - /api/rule/log/report
     session-username-attribute: RULE_CONSOLE_USERNAME
-    # 未自定义 ConsoleLoginAuthenticator Bean 时使用以下账号登录；生产环境请改为环境变量或 BCrypt
-    builtin:
-      username: ${CONSOLE_USERNAME:}
-      password: ${CONSOLE_PASSWORD:}
-      password-encoding: ${CONSOLE_PASSWORD_ENCODING:BCRYPT}
 
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml

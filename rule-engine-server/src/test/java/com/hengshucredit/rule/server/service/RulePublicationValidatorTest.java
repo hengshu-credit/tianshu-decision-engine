@@ -5,6 +5,13 @@ import java.util.*;
 import static org.junit.Assert.*;
 
 public class RulePublicationValidatorTest {
+    @Test public void finalActivationRechecksRegressionEvidence() {
+        var validator = new RulePublicationValidator();
+        org.springframework.test.util.ReflectionTestUtils.setField(validator, "regressionEvidence", new RuleRegressionEvidenceService() {
+            @Override public void requirePublication(RuleRevision revision) { throw new IllegalStateException("固定用例证据已过期"); }
+        });
+        assertEquals("固定用例证据已过期", assertThrows(IllegalStateException.class, () -> validator.validate(new RuleRevision())).getMessage());
+    }
     @Test public void changingLatestCanCreateCycleButFixedOldVersionDoesNotFollow() {
         RuleVersionBinding a = binding(1, 10, 1), b1 = binding(2, 20, 1), b2 = binding(3, 20, 2);
         Map<Long, RuleDefinitionVersion> history = new HashMap<>();

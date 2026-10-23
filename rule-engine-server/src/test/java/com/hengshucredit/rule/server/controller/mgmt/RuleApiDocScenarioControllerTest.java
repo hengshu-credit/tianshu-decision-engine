@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.model.ApiResponse;
+
 import com.hengshucredit.rule.model.dto.ApiDocScenarioCopyRequest;
 import com.hengshucredit.rule.model.dto.ApiDocScenarioSaveRequest;
 import com.hengshucredit.rule.model.dto.ApiDocScenarioSortRequest;
@@ -9,7 +11,6 @@ import com.hengshucredit.rule.model.dto.ResolvedField;
 import com.hengshucredit.rule.model.dto.RuleTestSchema;
 import com.hengshucredit.rule.model.dto.RuleTestSchemaRequest;
 import com.hengshucredit.rule.model.entity.RuleApiDocScenario;
-import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.RuleApiDocScenarioService;
 import com.hengshucredit.rule.server.service.RuleExecuteService;
 import com.hengshucredit.rule.server.service.RuleTestExpectationService;
@@ -32,6 +33,22 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class RuleApiDocScenarioControllerTest {
+
+    @Test public void archivedReportUsesActualServerExecutionAndValidation() {
+        boolean[] recorded = { false };
+        executeService.result = new RuleResult(); executeService.result.setSuccess(true); executeService.result.setResult(Map.of("score", 42));
+        ReflectionTestUtils.setField(controller, "regressionEvidence", new com.hengshucredit.rule.server.service.RuleRegressionEvidenceService() {
+            @Override public Run begin(Long definitionId, RuleApiDocScenario stored, com.hengshucredit.rule.server.service.RuleTestTargetResolver.Target target,
+                                       String input, String expectation, String expected, Long projectId) { return null; }
+            @Override public String complete(Run run, RuleResult execution, com.hengshucredit.rule.model.dto.TestExpectationResult validation) {
+                assertSame(executeService.result, execution);
+                assertEquals("NOT_CONFIGURED", validation.getStatus()); recorded[0] = true; return "9007199254740993";
+            }
+        });
+        var request = new ApiScenarioExecutionRequest(); request.setRequestJson("{\"params\":{}}"); request.setExpectationJson("{\"version\":1,\"mode\":\"NONE\"}");
+        var response = controller.executeValidated(9L, request);
+        assertTrue(recorded[0]); assertEquals("9007199254740993", response.getData().reportId());
+    }
 
     @Test public void selectedTargetOutputValidationDoesNotReloadLiveInputsAfterExecution() {
         var definition = new com.hengshucredit.rule.model.entity.RuleDefinition(); definition.setId(9L);
@@ -68,7 +85,7 @@ public class RuleApiDocScenarioControllerTest {
         request.setRequestJson("{\"params\":{}}");
         request.setExpectationJson("{\"version\":1,\"mode\":\"FIELDS\",\"checks\":[{\"refType\":\"VARIABLE\",\"refId\":\"77\",\"valueType\":\"NUMBER\",\"operator\":\"==\",\"expected\":{\"kind\":\"LITERAL\",\"valueType\":\"NUMBER\",\"value\":\"88\"}}]}");
         var response = controller.executeValidated(9L, request);
-        assertEquals(200, response.getCode());
+        assertEquals("000000", response.getCode());
         assertEquals("同一执行的输出校验不能被执行后停用的输入变量改变", "PASSED", response.getData().validation().getStatus());
         assertEquals(0, lateReads[0]);
     }
@@ -85,6 +102,12 @@ public class RuleApiDocScenarioControllerTest {
         ReflectionTestUtils.setField(controller, "scenarioService", scenarioService);
         ReflectionTestUtils.setField(controller, "executeService", executeService);
         ReflectionTestUtils.setField(controller, "expectationService", new RuleTestExpectationService());
+        ReflectionTestUtils.setField(controller, "regressionEvidence", new com.hengshucredit.rule.server.service.RuleRegressionEvidenceService() {
+            @Override public Run begin(Long id, RuleApiDocScenario scenario, com.hengshucredit.rule.server.service.RuleTestTargetResolver.Target target,
+                                       String input, String expectation, String expected, Long projectId) { return null; }
+            @Override public String complete(Run run, RuleResult result, com.hengshucredit.rule.model.dto.TestExpectationResult validation) { return null; }
+            @Override public void fail(Run run, RuntimeException failure) { }
+        });
     }
 
     @Test
@@ -108,7 +131,7 @@ public class RuleApiDocScenarioControllerTest {
         execution.setAttemptNo(3);
         execution.setResumed(true);
         execution.setCapacityResource("DATABASE");
-        execution.setPlatformCode(429);
+        execution.setPlatformCode(com.hengshucredit.rule.model.PlatformCode.CAPACITY_EXCEEDED.code());
         execution.setRetryAfterMs(500L);
         execution.setRevisionId(19L);
         execution.setArtifactDigest("artifact-digest");
@@ -119,7 +142,7 @@ public class RuleApiDocScenarioControllerTest {
 
         var response = controller.executeValidated(9L, request);
 
-        assertEquals(200, response.getCode());
+        assertEquals("000000", response.getCode());
         assertSame(execution, response.getData().execution());
         assertSame(debugTraces, execution.getTraces());
         assertSame(business, execution.getResult());
@@ -127,7 +150,7 @@ public class RuleApiDocScenarioControllerTest {
         Map<String, Object> snapshot = json.readJsonObject(response.getData().responseJson(), "结果快照");
         Map<String, Object> data = (Map<String, Object>) snapshot.get("data");
         assertFalse("业务结果快照不能重复携带顶层调试追踪", data.containsKey("traces"));
-        Map<String, Object> original = json.readJsonObject(json.writeJson(R.ok(execution)), "完整执行结果");
+        Map<String, Object> original = json.readJsonObject(json.writeJson(ApiResponse.ok(execution)), "完整执行结果");
         Map<String, Object> originalData = (Map<String, Object>) original.get("data");
         assertTrue("专用过滤不能影响通用JSON写入及其它接口", originalData.containsKey("traces"));
         originalData.remove("traces");
@@ -152,7 +175,7 @@ public class RuleApiDocScenarioControllerTest {
 
         var response = controller.executeValidated(9L, request);
 
-        assertEquals(200, response.getCode());
+        assertEquals("000000", response.getCode());
         assertEquals("PASSED", response.getData().validation().getStatus());
         var factory = com.fasterxml.jackson.core.JsonFactory.builder().streamReadConstraints(
                 com.fasterxml.jackson.core.StreamReadConstraints.builder().maxNestingDepth(128).build()).build();
@@ -172,13 +195,13 @@ public class RuleApiDocScenarioControllerTest {
         List<Object> traces = List.of(Map.of("debugOnly", true)); execution.setTraces(traces);
         executeService.result = execution;
         RuleTestExpectationService json = new RuleTestExpectationService();
-        String historical = json.writeJson(R.ok(execution));
+        String historical = json.writeJson(ApiResponse.ok(execution));
         ApiScenarioExecutionRequest request = new ApiScenarioExecutionRequest();
         request.setRequestJson("{\"params\":{}}"); request.setExpectedResponseJson(historical);
 
         var response = controller.executeValidated(9L, request);
 
-        assertEquals(200, response.getCode());
+        assertEquals("000000", response.getCode());
         assertEquals("PASSED", response.getData().validation().getStatus());
         assertEquals(historical, request.getExpectedResponseJson());
         assertSame(traces, controller.execute(9L, Map.of()).getData().getTraces());
@@ -196,7 +219,7 @@ public class RuleApiDocScenarioControllerTest {
 
         var response = controller.executeValidated(9L, request);
 
-        assertEquals(200, response.getCode());
+        assertEquals("000000", response.getCode());
         assertEquals(Long.valueOf(77), scenarioService.scenarioId);
         assertEquals(Long.valueOf(9), executeService.definitionId);
         assertEquals(Long.valueOf(3), executeService.projectId);
@@ -235,8 +258,8 @@ public class RuleApiDocScenarioControllerTest {
         scenarioService.scenarios = Collections.singletonList(existing);
         ApiDocScenarioSaveRequest request = new ApiDocScenarioSaveRequest();
 
-        R<List<RuleApiDocScenario>> listResponse = controller.list(9L);
-        R<RuleApiDocScenario> createResponse = controller.create(9L, request);
+        ApiResponse<List<RuleApiDocScenario>> listResponse = controller.list(9L);
+        ApiResponse<RuleApiDocScenario> createResponse = controller.create(9L, request);
 
         assertSame(scenarioService.scenarios, listResponse.getData());
         assertSame(scenarioService.saved, createResponse.getData());
@@ -274,10 +297,10 @@ public class RuleApiDocScenarioControllerTest {
         ruleResult.setSuccess(true);
         executeService.result = ruleResult;
 
-        R<RuleResult> response = controller.execute(9L, body);
+        ApiResponse<RuleResult> response = controller.execute(9L, body);
 
-        assertEquals(200, response.getCode());
-        assertEquals("success", response.getMessage());
+        assertEquals("000000", response.getCode());
+        assertEquals("成功", response.getMessage());
         assertSame(ruleResult, response.getData());
         assertEquals(Long.valueOf(9L), executeService.definitionId);
         assertEquals(Long.valueOf(7L), executeService.projectId);
@@ -289,10 +312,10 @@ public class RuleApiDocScenarioControllerTest {
     public void invalidServiceRequestReturnsBadRequestEnvelope() {
         scenarioService.error = new IllegalArgumentException("请求报文不是合法 JSON");
 
-        R<RuleApiDocScenario> response = controller.create(9L, new ApiDocScenarioSaveRequest());
+        ApiResponse<RuleApiDocScenario> response = controller.create(9L, new ApiDocScenarioSaveRequest());
 
-        assertEquals(400, response.getCode());
-        assertEquals("请求报文不是合法 JSON", response.getMessage());
+        assertEquals("100001", response.getCode());
+        assertEquals("请求报文不是合法 JSON", response.getDetail());
     }
 
     private static class FakeScenarioService extends RuleApiDocScenarioService {
