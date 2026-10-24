@@ -16,20 +16,24 @@ import org.springframework.stereotype.Component;
 /** 使用固定平台外层结构渲染开放接口，模板仅定制 data 和业务响应头。 */
 @Component
 public class OpenResponseRenderer {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.system.SystemResponseMapping responseMapping;
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([A-Za-z0-9_.-]+)}");
     private static final Pattern HEADER_NAME = Pattern.compile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$");
     private static final List<String> FORBIDDEN_HEADERS = Arrays.asList(
-            "content-length", "transfer-encoding", "connection", "set-cookie", "host", "content-type", "x-trace-id", "retry-after");
+            "content-length", "transfer-encoding", "connection", "set-cookie", "host", "content-type", "x-trace-id", "retry-after", "x-rule-standard-code", "x-rule-code-mapping-version");
 
     public RenderedResponse render(OpenApiContract contract, OpenApiStatus status, String traceId,
                                    Map<String, Object> values) {
         validate(contract);
+        var mapping = responseMapping == null ? com.hengshucredit.rule.model.ExternalCodeMapping.DEFAULT : responseMapping.current();
+        var standard = com.hengshucredit.rule.model.PlatformCode.find(status.getCode());
         Map<String, Object> context = new LinkedHashMap<>();
         if (values != null) context.putAll(values);
         context.put("status.success", status.isSuccess());
-        context.put("status.code", status.getCode());
-        context.put("status.message", status.getMessage());
+        context.put("status.code", mapping.code(standard));
+        context.put("status.message", mapping.message(standard));
         context.put("status.detail", status.getDetail());
         context.put("status.httpStatus", status.getHttpStatus());
         context.put("traceId", traceId);
@@ -38,14 +42,18 @@ public class OpenResponseRenderer {
         context.put("data", data);
         JSONObject body = new JSONObject(true);
         body.put("success", status.isSuccess());
-        body.put("code", status.getCode());
-        body.put("message", status.getMessage());
+        body.put("code", mapping.code(standard));
+        body.put("message", mapping.message(standard));
         body.put("detail", status.getDetail());
         body.put("traceId", traceId);
         body.put("data", data);
         Map<String, String> headers = renderHeaders(contract.getResponseHeaders(), context);
         headers.put("Content-Type", "application/json");
         headers.put("X-Trace-Id", traceId);
+        if (mapping.enabled()) {
+            headers.put(com.hengshucredit.rule.model.ExternalCodeMapping.STANDARD_CODE_HEADER, standard.code());
+            headers.put(com.hengshucredit.rule.model.ExternalCodeMapping.VERSION_HEADER, Long.toString(mapping.version()));
+        }
         return new RenderedResponse(body, headers, status.getHttpStatus());
     }
 

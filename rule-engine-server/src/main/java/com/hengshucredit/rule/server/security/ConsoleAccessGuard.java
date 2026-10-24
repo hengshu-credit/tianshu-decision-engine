@@ -48,6 +48,7 @@ public class ConsoleAccessGuard {
             case "LIST", "LIST_LIBRARY", "LIST_RECORD_BATCH" -> "list";
             case "PROJECT" -> "project";
             case "BILLING_CONFIG" -> "billing";
+            case "SYSTEM_SETTING" -> "system";
             case "EXPERIMENT" -> "experiment";
             default -> throw new IllegalArgumentException("不支持的资源类型: " + type);
         };

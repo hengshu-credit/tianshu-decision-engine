@@ -14,6 +14,8 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 /** 控制器响应的 HTTP 状态只从公共结果码读取，文件和第三方原始报文不做包装。 */
 @RestControllerAdvice
 public class PlatformResponseAdvice implements ResponseBodyAdvice<Object> {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.system.SystemResponseMapping mapping;
     @Override public boolean supports(MethodParameter method, Class<? extends HttpMessageConverter<?>> converter) {
         return true;
     }
@@ -21,6 +23,10 @@ public class PlatformResponseAdvice implements ResponseBodyAdvice<Object> {
     @Override public Object beforeBodyWrite(Object body, MethodParameter method, MediaType mediaType,
             Class<? extends HttpMessageConverter<?>> converter, ServerHttpRequest request, ServerHttpResponse response) {
         if (body instanceof ApiResponse<?> envelope) {
+            String path = request.getURI().getPath();
+            if (request instanceof org.springframework.http.server.ServletServerHttpRequest servlet
+                    && servlet.getServletRequest().getAttribute(jakarta.servlet.RequestDispatcher.ERROR_REQUEST_URI) instanceof String original) path = original;
+            if (mapping != null && com.hengshucredit.rule.server.system.SystemResponseMapping.externalPath(path)) mapping.apply(envelope, response.getHeaders()::set);
             response.setStatusCode(HttpStatusCode.valueOf(envelope.status().httpStatus()));
             if (envelope.getTraceId() != null) response.getHeaders().set("X-Trace-Id", envelope.getTraceId());
             if (envelope.status().httpStatus() == 429) {

@@ -89,7 +89,7 @@ describe('全局日夜主题样式契约', () => {
   test('全局组件层支持渐变主按钮、定宽内容和文档滚动侧栏', () => {
     const css = compiled('theme-components.scss')
 
-    expect(css).toContain('background-image: var(--tianshu-brand-gradient)')
+    expect(compiled('theme-buttons.scss')).toContain('background: var(--tianshu-button-solid-bg)')
     expect(css).toContain('max-width: 1440px')
     expect(css).not.toContain('.theme-sidebar--static')
     expect(css).toContain('.layout-main .el-loading-mask')

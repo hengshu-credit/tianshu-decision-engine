@@ -3,6 +3,21 @@ import DerivedVariableEditor from '@/views/variable/components/DerivedVariableEd
 import { createDerivedConfig } from '@/utils/derivedVariable'
 
 describe('DerivedVariableEditor', () => {
+  test('主体字段通过统一目录按类型和 ID 去重，函数长整数 ID 原样保留', async () => {
+    const id = '9007199254740993'
+    const wrapper = mount(DerivedVariableEditor, { props: { modelValue: { ...createDerivedConfig(), mode: 'HISTORY' }, vars: [{ id, _refType: 'VARIABLE', varCode: 'mobile', varLabel: '手机号', varType: 'STRING', varSource: 'INPUT' }], functions: [{ id, funcCode: 'stat', returnType: 'NUMBER' }] } })
+    wrapper.vm.addSubject(`VARIABLE:${id}`)
+    const next = wrapper.emitted('update:modelValue').at(-1)[0]
+    expect(next.subjectFields).toHaveLength(1)
+    expect(next.subjectFields[0]).toMatchObject({ refType: 'VARIABLE', refId: id, label: '手机号' })
+    await wrapper.setProps({ modelValue: next })
+    const count = wrapper.emitted('update:modelValue').length
+    wrapper.vm.addSubject(`VARIABLE:${id}`)
+    expect(wrapper.emitted('update:modelValue')).toHaveLength(count)
+    wrapper.vm.setFunction(id)
+    expect(wrapper.emitted('update:modelValue').at(-1)[0].functionId).toBe(id)
+    expect(wrapper.emitted('type-change').at(-1)[0]).toBe('NUMBER')
+  })
   test('历史字段只提供请求、外数及显式记录的结果，本次计算仍可选全部变量', () => {
     const vars = [
       { id: 1, _refType: 'VARIABLE', varSource: 'INPUT' },

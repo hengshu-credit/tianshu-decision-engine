@@ -11,16 +11,61 @@ import {
 } from '@/theme/themeRuntime'
 
 describe('themeRuntime — 全局主题应用和本地降级', () => {
-  test('登录按钮各主题渐变端点为加载淡化保留文字对比度，品牌原色不变', () => {
-    for (const preset of ACCENT_PRESETS) {
-      applyTheme({ ...DEFAULT_THEME_CONFIG, accentPreset: preset.id })
+  test.each(['LIGHT', 'DARK'])('%s 的实心按钮在预设及极端自定义色的各交互状态均可读', colorScheme => {
+    const cases = [
+      ...ACCENT_PRESETS.map(preset => ({ accentPreset: preset.id })),
+      ...['#000000', '#FFFFFF', '#FFFF00', '#00FFFF', '#FF0000', '#808080'].map(customSolidColor => ({ accentMode: 'CUSTOM_SOLID', customSolidColor })),
+      ...[['#000000', '#FFFFFF'], ['#FFFF00', '#0000FF'], ['#FF0000', '#00FF00', '#0000FF']].flatMap(customGradientColors =>
+        ['LINEAR', 'RADIAL'].map(customGradientType => ({ accentMode: 'CUSTOM_GRADIENT', customGradientColors, customGradientType }))
+      ),
+    ]
+    for (const config of cases) {
+      applyTheme({ ...DEFAULT_THEME_CONFIG, colorScheme, ...config })
       const style = document.documentElement.style
-      const background = style.getPropertyValue('--tianshu-brand-button-background')
-      expect(background).not.toBe('')
-      expect(style.getPropertyValue('--tianshu-brand-background')).toBe(preset.background)
-      for (const color of background.match(/#[\da-f]{6}/gi)) expect(contrastRatio(preset.foreground, color)).toBeGreaterThanOrEqual(7)
+      for (const type of ['primary', 'success', 'warning', 'danger']) {
+        for (const state of ['', 'hover-', 'active-']) {
+          const text = style.getPropertyValue(`--tianshu-button-${type}-${state}text`)
+          const colors = style.getPropertyValue(`--tianshu-button-${type}-${state}bg`).match(/#[\da-f]{6}/gi)
+          expect(colors, JSON.stringify(config)).not.toBeNull()
+          const samples = colors.flatMap((color, index) => index === 0 ? [color]
+            : Array.from({ length: 100 }, (_, step) => compositeColor(colors[index - 1], color, (step + 1) / 100)))
+          for (const background of samples) {
+            expect(contrastRatio(text, background), `${JSON.stringify(config)} / ${type} / ${state} / ${background}`).toBeGreaterThanOrEqual(4.5)
+          }
+        }
+      }
     }
   })
+
+  test.each(['LIGHT', 'DARK'])('%s 下按钮根据实际底色选择深浅文字，悬停和按下有独立反馈', colorScheme => {
+    for (const [color, foreground] of [['#FFFFFF', '#19103B'], ['#000000', '#FFFFFF'], ['#FFFF00', '#19103B']]) {
+      applyTheme({ ...DEFAULT_THEME_CONFIG, colorScheme, accentMode: 'CUSTOM_SOLID', customSolidColor: color })
+      const style = document.documentElement.style
+      expect(style.getPropertyValue('--tianshu-button-primary-text')).toBe(foreground)
+      expect(style.getPropertyValue('--tianshu-button-primary-bg')).toBe(color)
+      expect(style.getPropertyValue('--tianshu-button-primary-hover-bg')).not.toBe(color)
+      expect(style.getPropertyValue('--tianshu-button-primary-active-bg')).not.toBe(style.getPropertyValue('--tianshu-button-primary-hover-bg'))
+      expect(style.getPropertyValue('--el-color-primary')).toBe(color)
+    }
+  })
+
+  test.each(['LIGHT', 'DARK'])('%s 的中等亮度粉色优先白字，浅粉和亮绿仍使用深色字', colorScheme => {
+    for (const [color, foreground] of [
+      ['#FF6B9D', '#FFFFFF'], ['#FF5B96', '#FFFFFF'], ['#E14ECA', '#FFFFFF'],
+      ['#808080', '#FFFFFF'], ['#FFB6C1', '#19103B'], ['#FDE7EF', '#19103B'],
+      ['#AAAAAA', '#19103B'], ['#00FF00', '#19103B'],
+    ]) {
+      applyTheme({ ...DEFAULT_THEME_CONFIG, colorScheme, accentMode: 'CUSTOM_SOLID', customSolidColor: color })
+      const style = document.documentElement.style
+      expect(style.getPropertyValue('--el-color-primary'), color).toBe(color)
+      expect(style.getPropertyValue('--tianshu-brand-background'), color).toBe(color)
+      for (const state of ['', 'hover-', 'active-']) {
+        expect(style.getPropertyValue(`--tianshu-button-primary-${state}text`), color).toBe(foreground)
+        expect(contrastRatio(foreground, style.getPropertyValue(`--tianshu-button-primary-${state}bg`)), color).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+
   beforeEach(() => {
     window.localStorage.clear()
     document.documentElement.removeAttribute('data-theme')
@@ -197,7 +242,7 @@ describe('themeRuntime — 全局主题应用和本地降级', () => {
   })
 
   test.each(customActionThemeCases)(
-    '%s / %s / %s 的自定义主题操作色仍保持可读和明显色差',
+    '%s / %s / %s 的自定义主题普通操作统一跟随主题且保持可读',
     (colorScheme, accentMode, primary) => {
       applyTheme({
         ...DEFAULT_THEME_CONFIG,
@@ -216,15 +261,8 @@ describe('themeRuntime — 全局主题应用和本地降级', () => {
         360 - Math.abs(editHue - primaryHue)
       )).toBeLessThanOrEqual(4)
 
-      for (const roles of coexistingActionGroups) {
-        for (let first = 0; first < roles.length; first += 1) {
-          for (let second = first + 1; second < roles.length; second += 1) {
-            expect(
-              colorDistance(actions[roles[first]], actions[roles[second]]),
-              `${roles[first]} / ${roles[second]}`
-            ).toBeGreaterThanOrEqual(18)
-          }
-        }
+      for (const role of actionRoles.filter(role => role !== 'delete')) {
+        expect(actions[role], role).toBe(actions.edit)
       }
 
       for (const interactionSurface of actionInteractionSurfaces(
@@ -237,46 +275,12 @@ describe('themeRuntime — 全局主题应用和本地降级', () => {
     }
   )
 
-  test.each(ACCENT_PRESETS.flatMap(preset => [
-    ['LIGHT', preset.id],
-    ['DARK', preset.id],
-  ]))('%s / %s 的辅助操作使用高饱和亮色且避开黄灰绿青', (colorScheme, accentPreset) => {
-    applyTheme({
-      ...DEFAULT_THEME_CONFIG,
-      colorScheme,
-      accentPreset,
-    })
-
-    const forbiddenActions = Object.entries(readAppliedActions())
-      .filter(([role, color]) => role !== 'edit' && !isAllowedBrightActionTone(color))
-      .map(([role]) => role)
-
-    expect(forbiddenActions).toEqual([])
-  })
-
-  test.each(ACCENT_PRESETS.flatMap(preset => [
-    ['LIGHT', preset.id],
-    ['DARK', preset.id],
-  ]))('%s / %s 的同一行辅助操作保持明显感知色差', (colorScheme, accentPreset) => {
-    applyTheme({
-      ...DEFAULT_THEME_CONFIG,
-      colorScheme,
-      accentPreset,
-    })
-
+  test.each(ACCENT_PRESETS.flatMap(preset => ['LIGHT', 'DARK'].map(colorScheme => [colorScheme, preset.id])))('%s / %s 普通操作使用主题色，删除保留风险语义', (colorScheme, accentPreset) => {
+    applyTheme({ ...DEFAULT_THEME_CONFIG, colorScheme, accentPreset })
     const actions = readAppliedActions()
-    for (const roles of coexistingActionGroups) {
-      for (let first = 0; first < roles.length; first += 1) {
-        for (let second = first + 1; second < roles.length; second += 1) {
-          const firstRole = roles[first]
-          const secondRole = roles[second]
-          expect(
-            colorDistance(actions[firstRole], actions[secondRole]),
-            `${firstRole} / ${secondRole}`
-          ).toBeGreaterThanOrEqual(18)
-        }
-      }
-    }
+    const text = document.documentElement.style.getPropertyValue('--tianshu-primary-text')
+    for (const role of actionRoles.filter(role => role !== 'delete')) expect(actions[role], role).toBe(text)
+    expect(isRedTone(actions.delete)).toBe(true)
   })
 
   test.each(ACCENT_PRESETS.flatMap(preset => [
@@ -430,28 +434,6 @@ const customActionThemeCases = [
   ['DARK', 'CUSTOM_GRADIENT', '#FF0040'],
 ])
 
-const coexistingActionGroups = [
-  ['edit', 'configure', 'reset', 'publish'],
-  ['edit', 'configure', 'reset', 'disable'],
-  ['configure', 'publish'],
-  ['configure', 'disable'],
-  ['version', 'edit', 'publish', 'delete'],
-  ['version', 'execute', 'detail', 'publish', 'delete'],
-  ['execute', 'edit', 'version', 'publish', 'delete'],
-  ['inspect', 'compare', 'rollback'],
-  ['version', 'detail', 'edit', 'publish', 'global', 'delete'],
-  ['detail', 'edit', 'disable', 'global', 'delete'],
-  ['version', 'edit', 'execute', 'inspect', 'publish', 'delete'],
-  ['version', 'edit', 'execute', 'add', 'publish', 'delete'],
-  ['version', 'edit', 'execute', 'publish', 'delete'],
-  ['version', 'detail', 'edit', 'publish', 'delete'],
-  ['version', 'edit', 'detail', 'execute', 'configure', 'global', 'publish', 'delete'],
-  ['version', 'edit', 'configure', 'publish', 'delete'],
-  ['version', 'edit', 'global', 'publish', 'delete'],
-  ['version', 'detail', 'inspect', 'publish', 'delete'],
-  ['version', 'edit', 'detail', 'configure', 'docs', 'publish', 'delete'],
-]
-
 function readAppliedActions() {
   const style = document.documentElement.style
   return Object.fromEntries(actionRoles.map(role => [
@@ -461,8 +443,8 @@ function readAppliedActions() {
 }
 
 function isRedTone(color) {
-  const { r, g, b } = rgb(color)
-  return r >= 150 && r > g * 1.8 && r > b * 1.4
+  const { hue, saturation } = hsl(color)
+  return (hue < 10 || hue > 350) && saturation > 0.55
 }
 
 function contrastRatio(foreground, background) {
@@ -513,12 +495,6 @@ function actionInteractionSurfaces(color, colorScheme) {
   ]
 }
 
-function isAllowedBrightActionTone(color) {
-  const { hue, saturation, lightness } = hsl(color)
-  const forbiddenHue = hue >= 35 && hue <= 205
-  return !forbiddenHue && saturation >= 0.6 && lightness >= 0.32
-}
-
 function hsl(color) {
   const channels = Object.values(rgb(color)).map(value => value / 255)
   const maximum = Math.max(...channels)
@@ -543,38 +519,5 @@ function hsl(color) {
       ? 0
       : delta / (1 - Math.abs(2 * lightness - 1)),
     lightness,
-  }
-}
-
-function colorDistance(first, second) {
-  const firstLab = lab(first)
-  const secondLab = lab(second)
-  return Math.sqrt(
-    (firstLab.lightness - secondLab.lightness) ** 2 +
-    (firstLab.a - secondLab.a) ** 2 +
-    (firstLab.b - secondLab.b) ** 2
-  )
-}
-
-function lab(color) {
-  const { r, g, b } = rgb(color)
-  const [red, green, blue] = [r, g, b].map(value => {
-    const channel = value / 255
-    return channel <= 0.04045
-      ? channel / 12.92
-      : ((channel + 0.055) / 1.055) ** 2.4
-  })
-  const [x, y, z] = [
-    (red * 0.4124 + green * 0.3576 + blue * 0.1805) / 0.95047,
-    red * 0.2126 + green * 0.7152 + blue * 0.0722,
-    (red * 0.0193 + green * 0.1192 + blue * 0.9505) / 1.08883,
-  ].map(value => value > 0.008856
-    ? Math.cbrt(value)
-    : 7.787 * value + 16 / 116)
-
-  return {
-    lightness: 116 * y - 16,
-    a: 500 * (x - y),
-    b: 200 * (y - z),
   }
 }

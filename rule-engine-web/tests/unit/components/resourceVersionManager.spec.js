@@ -17,6 +17,45 @@ beforeEach(() => {
 })
 afterEach(() => vi.restoreAllMocks())
 
+test('首次加载完成前不闪现无生产版本提示', async () => {
+  let finish
+  versions.getResourceVersions.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const view = mount()
+  const pending = view.vm.open()
+  await view.vm.$nextTick()
+  expect(view.find('el-empty-stub').exists()).toBe(false)
+  finish({ data: { versions: [], history: [], drafts: [] } })
+  await pending
+  await view.vm.$nextTick()
+  expect(view.find('el-empty-stub').attributes('description')).toContain('尚无生产版本')
+  view.unmount()
+})
+
+test('刷新期间保留已加载的版本内容', async () => {
+  const view = mount()
+  await view.vm.open()
+  let finish
+  versions.getResourceVersions.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const pending = view.vm.load()
+  await view.vm.$nextTick()
+  expect(view.vm.snapshot).toBe('{"defaultValue":"latest"}')
+  expect(view.find('.version-preview-summary').exists()).toBe(true)
+  expect(view.find('el-empty-stub').exists()).toBe(false)
+  finish({ data: workspace })
+  await pending
+  view.unmount()
+})
+
+test('版本加载失败展示错误，不误报为尚无生产版本', async () => {
+  versions.getResourceVersions.mockRejectedValueOnce(new Error('版本服务暂不可用'))
+  const view = mount()
+  await view.vm.open()
+  await view.vm.$nextTick()
+  expect(view.find('el-alert-stub').attributes('title')).toBe('版本服务暂不可用')
+  expect(view.find('el-empty-stub').exists()).toBe(false)
+  view.unmount()
+})
+
 test('合并账号的历史草稿仍可在版本工作区编辑并保存原申请', async () => {
   const save = vi.spyOn(governance, 'saveGovernanceDraft').mockResolvedValue({ data: { id: '9' } })
   const view = mount(); await view.vm.open()

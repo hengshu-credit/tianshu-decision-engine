@@ -25,6 +25,12 @@ import router from '@/router'
 import * as governanceApi from '@/api/governance'
 
 describe('统一审批列表', () => {
+  test('系统配置审批标题使用配置分组名称', async () => {
+    const wrapper = shallowMount(ApprovalList)
+    await flushPromises()
+    expect(wrapper.vm.resourceTitle({ resourceType: 'SYSTEM_SETTING', resourceId: 4, submittedSnapshotJson: '{"settingName":"对外结果码"}' })).toBe('系统配置 · 对外结果码')
+    wrapper.unmount()
+  })
   test('外数接口审批标题与详情使用接口名称', async () => {
     const wrapper = shallowMount(ApprovalList)
     await flushPromises()

@@ -6,9 +6,10 @@ public class ApiResponse<T> {
     private String detail;
     private String traceId;
     private T data;
+    private transient ExternalCodeMapping externalMapping = ExternalCodeMapping.DEFAULT;
 
-    public String getCode() { return status.code(); }
-    public String getMessage() { return status.message(); }
+    public String getCode() { return externalMapping.code(status); }
+    public String getMessage() { return externalMapping.message(status); }
     public boolean isSuccess() { return status == PlatformCode.SUCCESS; }
     public String getDetail() { return detail; }
     public void setDetail(String detail) { this.detail = detail; }
@@ -17,6 +18,13 @@ public class ApiResponse<T> {
     public T getData() { return data; }
     public void setData(T data) { this.data = data; }
     public PlatformCode status() { return status; }
+    public ApiResponse<T> mapExternal(ExternalCodeMapping mapping) {
+        externalMapping = java.util.Objects.requireNonNull(mapping);
+        if (data instanceof com.hengshucredit.rule.model.dto.RuleResult result) result.mapExternal(mapping);
+        if (data instanceof com.hengshucredit.rule.model.dto.RuleExperimentExecuteResult result) result.mapExternal(mapping);
+        if (data instanceof com.hengshucredit.rule.model.dto.RuleExecutionStatus execution && execution.getResult() != null) execution.getResult().mapExternal(mapping);
+        return this;
+    }
     public void setStatus(PlatformCode status) { this.status = java.util.Objects.requireNonNull(status); }
 
     protected void initialize(PlatformCode status, String detail, T data) {

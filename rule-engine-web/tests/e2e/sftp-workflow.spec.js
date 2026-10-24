@@ -1,6 +1,73 @@
 const { test, expect } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 
+async function expectCompactSftpLayout(page) {
+  await expect.poll(async () => {
+    const tabs = await page.locator('.sftp-tabs').boundingBox()
+    const filter = await page.locator('.uiue-filter-toolbar').boundingBox()
+    return filter.y - tabs.y
+  }).toBeLessThan(100)
+  const filter = await page.locator('.uiue-filter-toolbar').boundingBox()
+  const table = await page.locator('.management-table').boundingBox()
+  expect(table.y - filter.y - filter.height).toBeGreaterThanOrEqual(0)
+  expect(table.y - filter.y - filter.height).toBeLessThanOrEqual(20)
+}
+
+test('SFTP 往返切换、工作区页签和浏览器历史保持选中项与页面内容一致', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const harness = await installDistRoutes(page, {
+    origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL),
+    apiData: new Map([['/api/rule/sftp/list', { records: [], total: 0 }]]),
+  })
+  const expectPage = async (path, title, selected) => {
+    await expect(page).toHaveURL(`${origin}/#${path}`)
+    await expect(page.locator('.module-hint .hint-title')).toHaveText(title)
+    await expect(page.getByRole('tab', { name: selected, exact: true })).toHaveAttribute('aria-selected', 'true')
+  }
+  await page.goto(`${origin}/#/sftp`)
+  await expectPage('/sftp', 'SFTP 数据源配置', '数据源配置')
+  await page.getByPlaceholder('编码', { exact: true }).fill('keep-datasource-filter')
+  await page.getByRole('tab', { name: '查询日志', exact: true }).click()
+  await expectPage('/sftp/logs', 'SFTP 查询日志', '查询日志')
+  await page.getByPlaceholder('规则或模块 trace_id').fill('keep-log-filter')
+  await page.getByRole('tab', { name: '数据源配置', exact: true }).click()
+  await expectPage('/sftp', 'SFTP 数据源配置', '数据源配置')
+  await expect(page.getByPlaceholder('编码', { exact: true })).toHaveValue('keep-datasource-filter')
+  const workspace = page.getByRole('navigation', { name: '工作区页签' })
+  await workspace.getByRole('button', { name: 'SFTP查询日志', exact: true }).click()
+  await expectPage('/sftp/logs', 'SFTP 查询日志', '查询日志')
+  await expect(page.getByPlaceholder('规则或模块 trace_id')).toHaveValue('keep-log-filter')
+  await workspace.getByRole('button', { name: 'SFTP数据源配置', exact: true }).click()
+  await expectPage('/sftp', 'SFTP 数据源配置', '数据源配置')
+  await page.goBack()
+  await expectPage('/sftp/logs', 'SFTP 查询日志', '查询日志')
+  await page.goForward()
+  await expectPage('/sftp', 'SFTP 数据源配置', '数据源配置')
+  await page.reload()
+  await expectPage('/sftp', 'SFTP 数据源配置', '数据源配置')
+  harness.assertClean()
+})
+
+test('SFTP 标签切换保留显式项目范围，键盘切换也能跳转', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const harness = await installDistRoutes(page, {
+    origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL),
+    apiData: new Map([['/api/rule/sftp/list', { records: [], total: 0 }]]),
+  })
+  await page.goto(`${origin}/#/sftp?projectId=1`)
+  await page.getByRole('tab', { name: '查询日志', exact: true }).click()
+  await expect(page).toHaveURL(`${origin}/#/sftp/logs?projectId=1`)
+  await expect(page.getByRole('tab', { name: '查询日志', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('tab', { name: '查询日志', exact: true }).focus()
+  await page.keyboard.press('ArrowLeft')
+  await expect(page).toHaveURL(`${origin}/#/sftp?projectId=1`)
+  await expect(page.getByRole('tab', { name: '数据源配置', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('tab', { name: '数据源配置', exact: true }).focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page).toHaveURL(`${origin}/#/sftp/logs?projectId=1`)
+  harness.assertClean()
+})
+
 for (const width of [1440, 560]) test(`SFTP ${width}px 查询、连接测试与保存草稿`, async ({ page }, testInfo) => {
   const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
   const queries = []
@@ -19,6 +86,7 @@ for (const width of [1440, 560]) test(`SFTP ${width}px 查询、连接测试与�
   await page.setViewportSize({ width, height: 1000 })
   await page.goto(`${origin}/#/sftp`)
   await expect(page.getByRole('row').filter({ hasText: 'Existing_Sftp' })).toContainText('0 / 8')
+  await expectCompactSftpLayout(page)
   await page.locator('.el-pagination .btn-next').click()
   await expect.poll(() => queries.at(-1)?.pageNum).toBe('2')
   await page.getByPlaceholder('编码', { exact: true }).fill('Existing_Sftp')
@@ -46,6 +114,7 @@ for (const width of [1440, 560]) test(`SFTP ${width}px 查询、连接测试与�
   await page.getByRole('tab', { name: '查询日志', exact: true }).click()
   await expect(page).toHaveURL(/#\/sftp\/logs$/)
   await expect(page.getByRole('textbox', { name: '项目编码', exact: true })).toBeVisible()
+  await expectCompactSftpLayout(page)
   await page.locator('.el-pagination .btn-next').click()
   await expect.poll(() => logQueries.at(-1)?.pageNum).toBe('2')
   await page.getByPlaceholder('规则或模块 trace_id').fill('audit-trace')

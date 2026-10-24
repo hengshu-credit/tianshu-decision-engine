@@ -101,7 +101,7 @@ public class TokenExchangeManager {
             }
             throw PlatformHttpResponses.invalid(response.code());
         } catch (RuleHttpException e) {
-            throw new ProjectTokenExchangeException(e.platformStatus(), e.getHttpStatus(), e.getTraceId());
+            throw new ProjectTokenExchangeException(e.platformStatus(), e.getHttpStatus(), e.getTraceId()).mapExternal(e.externalMapping());
         } catch (IOException e) {
             throw e;
         } catch (RuntimeException e) {

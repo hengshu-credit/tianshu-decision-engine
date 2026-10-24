@@ -4,13 +4,13 @@
     <div class="act-header">
       <div class="act-title-area">
         <el-button
-          link
+          size="small"
           :icon="ElIconBack"
+          class="uiue-detail-back"
           aria-label="返回"
           data-designer-back
           title="返回"
           @click="$router.back()"
-          style="color: var(--tianshu-text-secondary)"
         />
         <el-icon class="act-title-icon"><el-icon-data-analysis /></el-icon>
         <span class="act-title">复杂交叉表设计器</span>
@@ -510,6 +510,7 @@
       v-if="definitionId"
       :compile-result="designerCompileResult"
       :references="projectRefs"
+      :version-references="scriptVersionReferences"
       :functions="projectFunctions"
     />
 
@@ -1201,17 +1202,6 @@ export default {
       })
       return params
     },
-    async doTest() {
-      let params = {}
-      try {
-        params = JSON.parse(this.testParamsJson || '{}')
-      } catch (e) {
-        this.$message.error('参数 JSON 格式错误')
-        return
-      }
-      const res = await this.executeDesignerPreview(params, 'CROSS_ADV')
-      this.testResult = res && res.data ? res.data : res
-    },
   },
 }
 </script>
@@ -1221,7 +1211,6 @@ export default {
   position: relative;
   background: var(--tianshu-bg-page);
   padding: 20px;
-  min-height: 100%;
 }
 .act-header {
   display: flex;

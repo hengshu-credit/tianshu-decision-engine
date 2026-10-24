@@ -9,13 +9,7 @@
         <div class="rule-trace-identity">
           <span class="rule-trace-type">分流实验</span>
           <div>
-            <div class="rule-trace-name">
-              {{
-                experimentTraceFrame.stage === 'TEST'
-                  ? '空跑测试组执行'
-                  : '生产组执行'
-              }}
-            </div>
+            <div class="rule-trace-name">{{ experimentTraceFrame.stage === 'TEST' ? '空跑测试组执行' : '生产组执行' }}</div>
             <div class="rule-trace-code">从分流判断到实际规则执行</div>
           </div>
         </div>
@@ -71,16 +65,7 @@
             ruleModelTypeLabel(ruleTraceFrame.modelType)
           }}</span>
           <div>
-            <div class="rule-trace-name">
-              {{
-                ruleTraceFrame.ruleName ||
-                ruleTraceFrame.ruleCode ||
-                '未命名规则'
-              }}
-            </div>
-            <div class="rule-trace-code">
-              {{ ruleTraceFrame.ruleCode || '-' }}
-            </div>
+            <content-reference :value="{ refType: 'RULE', refId: ruleTraceFrame.ruleId, code: ruleTraceFrame.ruleCode, label: ruleTraceFrame.ruleName, version: ruleTraceFrame.version, valueType: 'RULE' }" mode="trace" wrap />
           </div>
         </div>
         <div class="rule-trace-meta">
@@ -109,9 +94,7 @@
           <span class="rule-trace-module-type">{{
             moduleTypeLabel(event.moduleType)
           }}</span>
-          <span class="rule-trace-module-resource">{{
-            event.resourceCode || '-'
-          }}</span>
+          <content-reference mode="trace" :value="{ refType: event.moduleType === 'DATASOURCE' ? 'EXTERNAL_API' : event.moduleType, code: event.resourceCode, label: event.resourceName, version: event.modelVersion || event.version, valueType: event.valueType }" />
           <code>{{ event.traceId }}</code>
           <span
             class="rule-trace-module-status"
@@ -249,11 +232,9 @@
                       class="fc-cond-row"
                       :style="ci > 0 ? 'padding-left:20px' : ''"
                     >
-                      <code class="fc-cond-var">{{
-                        c.varLabel || c.varCode
-                      }}</code>
+                      <content-reference mode="trace" :value="c.leftOperand || c" />
                       <span class="fc-cond-op">{{ c.operator }}</span>
-                      <code class="fc-cond-val">{{ c.compareDisplay }}</code>
+                      <content-reference mode="trace" :value="c.rightOperand || { kind: 'LITERAL', value: c.compareDisplay, valueType: c.varType }" />
                       <span
                         class="fc-cond-check"
                         :class="c.result ? 'is-true' : 'is-false'"
@@ -273,8 +254,7 @@
                         v-for="(a, ai) in card.actions"
                         :key="ai"
                         class="fc-action-text"
-                        >{{ a.targetLabel || a.targetVar }} =
-                        {{ a.valueDisplay }}</strong
+                        > <content-reference mode="trace" :value="a.targetOperand || { varCode: a.targetVar, varLabel: a.targetLabel, valueType: a.valueType }" /> = {{ a.valueDisplay }}</strong
                       >
                     </div>
                   </template>
@@ -283,7 +263,7 @@
                     <div class="fc-func-row">
                       <div class="fc-func-name">
                         <span class="fc-func-icon">ƒ</span>
-                        <code>{{ funcDisplayName(card.funcName) }}</code>
+                        <content-reference mode="trace" :value="{ refType: 'FUNCTION', code: card.funcName, label: effectiveFunctionNameMap[card.funcName] || card.funcName, valueType: card.returnType, version: card.funcVersion }" />
                       </div>
                       <div
                         v-if="card.funcArgs && card.funcArgs.length"
@@ -504,8 +484,8 @@
           <thead>
             <tr>
               <th>规则编号</th>
-              <th v-for="c in ruleCols" :key="c">{{ varMap[c] || c }}</th>
-              <th v-for="a in actionCols" :key="a">{{ varMap[a] || a }}</th>
+              <th v-for="c in ruleCols" :key="c"><content-reference mode="trace" :value="{ varCode: c, varLabel: varMap[c] }" /></th>
+              <th v-for="a in actionCols" :key="a"><content-reference mode="trace" :value="{ varCode: a, varLabel: varMap[a] }" /></th>
               <th>当前匹配</th>
             </tr>
           </thead>
@@ -620,8 +600,8 @@
           <thead>
             <tr>
               <th>规则编号</th>
-              <th v-for="c in ruleCols" :key="c">{{ varMap[c] || c }}</th>
-              <th v-for="a in actionCols" :key="a">{{ varMap[a] || a }}</th>
+              <th v-for="c in ruleCols" :key="c"><content-reference mode="trace" :value="{ varCode: c, varLabel: varMap[c] }" /></th>
+              <th v-for="a in actionCols" :key="a"><content-reference mode="trace" :value="{ varCode: a, varLabel: varMap[a] }" /></th>
               <th>当前匹配</th>
             </tr>
           </thead>
@@ -655,10 +635,10 @@
               <th>规则号</th>
               <th>规则名称</th>
               <template v-if="!tableUseCondSummary">
-                <th v-for="c in ruleCols" :key="c">{{ varMap[c] || c }}</th>
+                <th v-for="c in ruleCols" :key="c"><content-reference mode="trace" :value="{ varCode: c, varLabel: varMap[c] }" /></th>
               </template>
               <th>条件</th>
-              <th v-for="a in actionCols" :key="a">{{ varMap[a] || a }}</th>
+              <th v-for="a in actionCols" :key="a"><content-reference mode="trace" :value="{ varCode: a, varLabel: varMap[a] }" /></th>
               <th>状态</th>
             </tr>
           </thead>
@@ -760,8 +740,7 @@
                       }"
                     >
                       <div class="rs-cond-var">
-                        <code>{{ item.varCode }}</code>
-                        <span>{{ item.varName }}</span>
+                        <content-reference mode="trace" :value="item.contentOperand || { varCode: item.varCode, varLabel: item.varName, varType: item.varType }" />
                       </div>
                       <span class="rs-cond-part"
                         >实际值 <strong>{{ item.actualText }}</strong></span
@@ -821,7 +800,7 @@
           <div class="t-hd">输入变量</div>
           <div class="var-list">
             <span v-for="v in usedVariables" :key="v.code" class="var-tag">
-              <span class="var-k">{{ v.label }}</span>
+              <content-reference mode="trace" :value="{ ...v, varCode: v.code, varLabel: v.label }" />
               <span class="var-v" :class="valCls(v.value)">{{
                 fmtVal(v.value)
               }}</span>
@@ -942,6 +921,8 @@
 </template>
 
 <script>
+import ContentReference from './ContentReference.vue'
+import { conditionOperatorRequiresValue } from '@/constants/conditionOperators'
 import {
   FullScreen as ElIconFullScreen,
   Close as ElIconClose,
@@ -1004,7 +985,7 @@ var BUILTIN_FUNC_CN = {
 }
 
 export default {
-  components: {
+  components: { ContentReference,
     TraceNode,
     DecisionTreeTraceNode,
     RuleSetConditionTraceNode,
@@ -3047,6 +3028,9 @@ export default {
         ? traceNode.value : null
       return {
         kind: 'condition',
+        hasThreshold: conditionOperatorRequiresValue(leaf.operator, leaf.varType),
+        contentOperand: leaf.leftOperand || { ...leaf, refType: leaf._refType || 'VARIABLE', refId: leaf._varId },
+        thresholdOperand: conditionOperatorRequiresValue(leaf.operator, leaf.varType) ? leaf.rightOperand || (leaf.valueKind === 'VAR' ? { refType: leaf.rightRefType || 'VARIABLE', refId: leaf.rightVarId, code: leaf.value, label: leaf.rightVarLabel } : { kind: 'LITERAL', value: leaf.value, valueType: leaf.varType }) : null,
         varCode: varCode || '?',
         varName: this._ruleSetVarName(leaf),
         actualText: actual === undefined ? (skipped ? '未执行' : '未记录') : this.fmtVal(actual),
@@ -5193,6 +5177,8 @@ export default {
   font-size: 12px;
 }
 .fc-action-text {
+  min-width: 0;
+  max-width: 100%;
   color: var(--tianshu-text-primary);
   line-height: 1.6;
   overflow-wrap: anywhere;
@@ -5203,6 +5189,8 @@ export default {
   gap: 6px;
 }
 .fc-func-name {
+  min-width: 0;
+  max-width: 100%;
   display: inline-flex;
   align-items: center;
   gap: 6px;

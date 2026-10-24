@@ -3,9 +3,9 @@
     <div class="rs-header">
       <div class="rs-title-area">
         <el-button
-          link
+          size="small"
           :icon="ElIconBack"
-          class="rs-back"
+          class="uiue-detail-back"
           aria-label="返回"
           data-designer-back
           title="返回"
@@ -253,6 +253,7 @@
       v-if="definitionId"
       :compile-result="designerCompileResult"
       :references="projectRefs"
+      :version-references="scriptVersionReferences"
       :functions="projectFunctions"
     />
 
@@ -366,12 +367,12 @@
 </template>
 
 <script>
+import ElIconLoading from '@/components/common/AppLoadingIcon.vue'
 import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { markRaw } from 'vue'
 import {
   DocumentChecked as ElIconSClaim,
   QuestionFilled as ElIconQuestion,
-  Loading as ElIconLoading,
   CollectionTag as ElIconCollectionTag,
   Rank as ElIconRank,
   Back as ElIconBack,
@@ -792,10 +793,6 @@ export default {
       this.testResult = null
       this.testVisible = true
     },
-    async doTest() {
-      const res = await this.executeDesignerPreview(this.testParams, 'RULE_SET')
-      this.testResult = res && res.data ? res.data : res
-    },
     testVarLabel(code) {
       const ref = this.projectRefs.find((r) => r.refCode === code)
       if (ref && ref.varObj && ref.varObj.varLabel) return ref.varObj.varLabel
@@ -925,7 +922,6 @@ export default {
   border-radius: 4px;
   padding: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  min-height: 100%;
   box-sizing: border-box;
 }
 .rs-header {
@@ -942,9 +938,6 @@ export default {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-}
-.rs-back {
-  color: var(--tianshu-text-secondary);
 }
 .rs-title-icon {
   font-size: 18px;

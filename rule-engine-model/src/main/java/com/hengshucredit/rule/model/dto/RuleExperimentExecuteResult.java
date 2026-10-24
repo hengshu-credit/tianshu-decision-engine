@@ -23,8 +23,12 @@ public class RuleExperimentExecuteResult implements PlatformOutcome {
     private List<RuleExperimentGroupResult> testGroups = new ArrayList<>();
     private List<String> tags = new ArrayList<>();
 
-    public String getCode() { return platformStatus().code(); }
-    public String getMessage() { return platformStatus().message(); }
+    @lombok.Getter(lombok.AccessLevel.NONE)
+    @lombok.Setter(lombok.AccessLevel.NONE)
+    private transient com.hengshucredit.rule.model.ExternalCodeMapping externalMapping = com.hengshucredit.rule.model.ExternalCodeMapping.DEFAULT;
+    public RuleExperimentExecuteResult mapExternal(com.hengshucredit.rule.model.ExternalCodeMapping mapping) { externalMapping = java.util.Objects.requireNonNull(mapping); return this; }
+    public String getCode() { return externalMapping.code(platformStatus()); }
+    public String getMessage() { return externalMapping.message(platformStatus()); }
     public String getDetail() { return platformDetail(); }
     @Override public PlatformCode platformStatus() {
         if (success) return PlatformCode.SUCCESS;

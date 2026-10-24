@@ -30,6 +30,26 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
 
 public class RuleEngineClientTest {
+    @Test public void localExecutionAppliesExternalMappingAfterCanonicalEvaluation() throws Exception {
+        RuleEngineClient client = RuleEngineClient.builder().connectionFactory(connectionFactory())
+                .projectCode("P001").projectId(1L).logReportEnabled(false).build();
+        try {
+            var mapping = new com.hengshucredit.rule.model.ExternalCodeMapping(3, true, Map.of(
+                    "000000", new com.hengshucredit.rule.model.ExternalCodeMapping.Entry("0000", "已处理"),
+                    "201002", new com.hengshucredit.rule.model.ExternalCodeMapping.Entry("E1", "无法执行")));
+            setField(client, "codeMapping", mapping);
+            L1MemoryCache cache = (L1MemoryCache) getField(client, "l1Cache");
+            cache.put(rule("LOCAL", "SCRIPT", "1 + 1"));
+            CachedRule remote = rule("REMOTE", "SCRIPT", "1 + 1"); remote.setRequiresServerExecution(true); cache.put(remote);
+            var result = client.execute("LOCAL", Map.of());
+            assertTrue(result.isSuccess()); assertEquals("0000", result.getCode()); assertEquals("已处理", result.getMessage());
+            assertEquals(com.hengshucredit.rule.model.PlatformCode.SUCCESS, result.platformStatus());
+            var request = com.hengshucredit.rule.model.RuleExecutionRequest.fromBody(Map.of("params", Map.of()));
+            assertEquals("0000", client.executeRequest("LOCAL", request).getCode());
+            var error = assertThrows(com.hengshucredit.rule.model.PlatformException.class, () -> client.execute("REMOTE", Map.of()));
+            assertEquals("E1", error.getCode()); assertEquals(com.hengshucredit.rule.model.PlatformCode.LOCAL_EXECUTION_UNSUPPORTED, error.platformStatus());
+        } finally { client.close(); }
+    }
 
     @Test public void requestTraceSettingAppliesToRootAndChildrenWithoutChangingDefaults() throws Exception {
         RuleEngineClient client = RuleEngineClient.builder().connectionFactory(connectionFactory())

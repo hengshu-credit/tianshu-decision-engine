@@ -13,6 +13,14 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class OperandCompilerTest {
+    @Test public void contentPredicatesCompileWithUnaryAndLogicalTerms() {
+        JSONObject expression = JSON.parseObject("{\"kind\":\"OPERATION\",\"terms\":[{\"operand\":{\"kind\":\"LITERAL\",\"value\":\"abc\",\"valueType\":\"STRING\"}},{\"operator\":\"contains\",\"operand\":{\"kind\":\"LITERAL\",\"value\":\"b\",\"valueType\":\"STRING\"}},{\"operator\":\"&&\",\"operand\":{\"kind\":\"LITERAL\",\"value\":true,\"valueType\":\"BOOLEAN\"}}]}");
+        Assert.assertEquals("((containsValue(\"abc\", \"b\") && true))", OperandCompiler.compile(expression, null));
+        expression.getJSONArray("terms").remove(2);
+        expression.getJSONArray("terms").getJSONObject(1).put("operator", "is_empty");
+        expression.getJSONArray("terms").getJSONObject(1).remove("operand");
+        Assert.assertEquals("(isBlank(\"abc\"))", OperandCompiler.compile(expression, null));
+    }
 
     @Test
     public void compilesTypedLiteralAndPath() {

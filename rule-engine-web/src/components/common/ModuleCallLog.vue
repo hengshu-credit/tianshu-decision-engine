@@ -201,12 +201,7 @@
           <el-descriptions-item label="动作">{{
             actionLabel(detail.actionType)
           }}</el-descriptions-item>
-          <el-descriptions-item :label="profile.targetLabel">{{
-            detail.targetCode || '-'
-          }}</el-descriptions-item>
-          <el-descriptions-item label="名称">{{
-            detail.targetName || '-'
-          }}</el-descriptions-item>
+          <el-descriptions-item :label="profile.targetLabel" :span="2"><content-reference :value="detailContent" mode="trace" wrap /></el-descriptions-item>
           <el-descriptions-item v-if="profile.showProject" label="项目编码">{{
             detail.projectCode || '-'
           }}</el-descriptions-item>
@@ -331,28 +326,18 @@
         </template>
 
         <template v-else-if="moduleType === 'LIST'">
-          <div class="detail-grid">
-            <div class="detail-kv">
-              <span>匹配值</span
-              ><strong>{{ listQueryValue }}</strong>
-            </div>
-            <div class="detail-kv">
-              <span>匹配模式</span
-              ><strong>{{ listRequest.matchMode || '-' }}</strong>
-            </div>
-            <div class="detail-kv">
-              <span>内容类型</span
-              ><strong>{{ prettyInline(listRequest.itemTypes) }}</strong>
-            </div>
-            <div class="detail-kv">
-              <span>是否命中</span
-              ><strong>{{
-                listResponse.hit === true ? '命中' : '未命中'
-              }}</strong>
-            </div>
-          </div>
-          <detail-block title="名单匹配请求" :content="pretty(listRequest)" />
-          <detail-block title="名单匹配结果" :content="pretty(listResponse)" />
+          <list-match-trace
+            :key="detail.id"
+            :request-body="detail.requestBody"
+            :response-body="detail.responseBody"
+            :success="detail.success"
+            :error-message="detail.errorMessage"
+          />
+          <details class="list-raw-payload">
+            <summary>原始报文（技术排查）</summary>
+            <detail-block title="名单匹配请求" :content="pretty(detail.requestBody)" />
+            <detail-block title="名单匹配结果" :content="pretty(detail.responseBody)" />
+          </details>
         </template>
 
         <template v-else-if="moduleType === 'MODEL'">
@@ -435,6 +420,7 @@
 </template>
 
 <script>
+import ContentReference from './ContentReference.vue'
 import { markRaw } from 'vue'
 import { Refresh as ElIconRefresh } from '@element-plus/icons-vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
@@ -445,6 +431,8 @@ import { getRuntimeCallPayload, listRuntimeLogs } from '@/api/runtimeLog'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import ExternalCallTrace from './ExternalCallTrace.vue'
+import ListMatchTrace from './ListMatchTrace.vue'
+import { listMatchOutcome, listMatchPayload } from '@/utils/listMatchTrace'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 const PROFILES = {
@@ -543,11 +531,12 @@ export default {
     }
   },
   name: 'ModuleCallLog',
-  components: {
+  components: { ContentReference,
     TableColumnSettings,
     RemoteFilterSelect,
     ProjectFilterSelect,
     ExternalCallTrace,
+    ListMatchTrace,
     DetailBlock: function render(_props, _context) {
       const ctx = {
         ..._context,
@@ -574,6 +563,7 @@ export default {
     title: { type: String, default: '' },
   },
   computed: {
+    detailContent() { const variable = ['DB_VARIABLE_QUERY', 'LIST_VARIABLE_MATCH', 'SFTP_VARIABLE_READ'].includes(this.detail?.actionType); return { refType: variable ? 'VARIABLE' : this.moduleType === 'DATASOURCE' ? 'EXTERNAL_API' : this.moduleType, refId: variable ? this.detail?.variableId : this.detail?.targetRefId, code: this.detail?.targetCode, label: this.detail?.targetName, valueType: this.detail?.valueType, version: this.detail?.modelVersion ?? this.detail?.targetVersion } },
     moduleColumns() {
       const columns = [
         { key: 'actionType', label: '动作' },
@@ -600,15 +590,6 @@ export default {
     },
     dbResponse() {
       return this.parseJsonValue(this.detail && this.detail.responseBody)
-    },
-    listRequest() {
-      return this.parseJsonValue(this.detail && this.detail.requestBody)
-    },
-    listResponse() {
-      return this.parseJsonValue(this.detail && this.detail.responseBody)
-    },
-    listQueryValue() {
-      return this.listQueryValueFor(this.listRequest)
     },
     modelRequest() {
       return this.parseJsonValue(this.detail && this.detail.requestBody)
@@ -750,13 +731,13 @@ export default {
         )
       }
       if (this.moduleType === 'LIST') {
-        const request = this.parseJsonValue(row.requestBody)
-        const response = this.parseJsonValue(row.responseBody)
+        const request = listMatchPayload(row.requestBody)
+        const response = listMatchPayload(row.responseBody)
         return (
             '值=' +
             this.listQueryValueFor(request) +
           '，' +
-          (response.hit ? '命中' : '未命中')
+          listMatchOutcome(request, response, row.success, row.errorMessage).label
         )
       }
       if (this.moduleType === 'MODEL') {
@@ -768,7 +749,7 @@ export default {
     },
     listQueryValueFor(request) {
       if (!request) return '-'
-      const values = request.queryValues || request.queryValue
+      const values = request.queryValues ?? request.queryValue
       if (values == null || values === '') return '-'
       return Array.isArray(values) ? values.join('、') : String(values)
     },
@@ -873,6 +854,17 @@ export default {
 }
 .detail-block {
   margin-top: 12px;
+}
+.list-raw-payload {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--tianshu-border-subtle);
+  border-radius: 6px;
+}
+.list-raw-payload summary {
+  color: var(--tianshu-text-secondary);
+  cursor: pointer;
+  font-weight: 600;
 }
 .detail-title {
   color: #334155;

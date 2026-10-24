@@ -2290,6 +2290,7 @@ public class VariableSourceResolver {
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("listIds", listIds);
         request.put("queryValues", queryValues);
+        request.put("queryOperands", listQueryOperandMetadata(config.get("queryOperands")));
         request.put("combinationMode", combinationMode);
         request.put("itemTypes", itemTypes);
         request.put("matchMode", matchMode);
@@ -2305,9 +2306,11 @@ public class VariableSourceResolver {
         }
         ListMatchMatrix matrix = listMatchMatrix == null ? new ListMatchMatrix(ruleListService) : listMatchMatrix;
         boolean hit;
+        ListMatchMatrix.MatchResult matchResult;
         try {
-            hit = matrix.match(listIds, queryValues, combinationMode, matchMode, itemTypes,
+            matchResult = matrix.matchDetailed(listIds, queryValues, combinationMode, matchMode, itemTypes,
                     options == null ? null : options.getListMatchTime());
+            hit = matchResult.hit();
             options.recordSourceState("VARIABLE", variable.getId(), "OUTCOME", "SUCCESS");
             options.recordSourceState("VARIABLE", variable.getId(), "MATCH_STATE", hit ? "HIT" : "MISS");
             completeRuntimeTrace(runtimeTrace, true, null, System.currentTimeMillis() - start);
@@ -2323,6 +2326,7 @@ public class VariableSourceResolver {
         }
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("hit", hit);
+        response.put("matchMatrix", matchResult.matrix());
         if (runtimeTraceService != null) {
             runtimeTraceService.updateModuleDetails(runtimeTrace, Map.of("output", response));
         }
@@ -2493,6 +2497,32 @@ public class VariableSourceResolver {
                     : JSON.parseObject(JSON.toJSONString(value));
             result.add(OperandValueResolver.resolve(operand, params,
                     referenceValues, functions));
+        }
+        return result;
+    }
+
+    /** 与 queryValues 保持一一对应，只记录展示字段，不复制函数参数、常量默认值或来源配置。 */
+    static List<Map<String, Object>> listQueryOperandMetadata(Object source) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        if (!(source instanceof Iterable<?> operands)) return result;
+        for (Object value : operands) {
+            JSONObject operand = value instanceof JSONObject json ? json : JSON.parseObject(JSON.toJSONString(value));
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            if (operand != null) {
+                metadata.put("kind", operand.getString("kind"));
+                if (!"LITERAL".equals(operand.getString("kind"))) {
+                    for (String key : List.of("refType", "refId", "label", "code", "valueType", "functionId", "functionCode",
+                            "versionMode", "versionId", "version", "displayVersion", "versionSource", "relativePath")) {
+                        if (operand.get(key) != null) metadata.put(key, key.endsWith("Id")
+                                ? operand.getString(key) : operand.get(key));
+                    }
+                    if ((operand.getString("code") == null || operand.getString("code").isBlank())
+                            && "PATH".equals(operand.getString("kind"))) {
+                        metadata.put("code", operand.getString("value"));
+                    }
+                }
+            }
+            result.add(metadata);
         }
         return result;
     }

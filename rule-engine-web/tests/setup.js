@@ -439,6 +439,9 @@ config.global.stubs = globalStubNames.reduce((stubs, name) => {
   stubs[name] = true
   return stubs
 }, {})
+// 内容展示是纯展示组件；浅挂载也保留真实分段，以校验各入口元信息而非空 stub。
+config.global.stubs.ContentReference = false
+config.global.stubs.ContentExpression = false
 config.global.stubs['el-autocomplete'] = {
   name: 'ElAutocomplete',
   props: ['modelValue', 'size'],

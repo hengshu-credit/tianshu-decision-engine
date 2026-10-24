@@ -15,7 +15,7 @@ describe('外数与名单动作面板', () => {
     expect(wrapper.vm.selectedTargets.map(item => item.id)).toEqual([2])
     wrapper.unmount()
   })
-  test('名单内容通过字段选择器增加并可分别删除，不把对象或集合作为内容', () => {
+  test('名单内容通过内容选择器增加并可分别删除，不把对象或集合作为内容', () => {
     const { wrapper, block, editor } = mount('list-write')
     expect(wrapper.vm.contentFields.map(item => item.id)).toEqual([1])
     wrapper.vm.addEntry()

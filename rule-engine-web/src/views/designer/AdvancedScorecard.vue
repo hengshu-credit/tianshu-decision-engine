@@ -4,13 +4,13 @@
     <div class="asc-header">
       <div class="asc-title-area">
         <el-button
-          link
+          size="small"
           :icon="ElIconBack"
+          class="uiue-detail-back"
           aria-label="返回"
           data-designer-back
           title="返回"
           @click="$router.back()"
-          style="color: var(--tianshu-text-secondary)"
         />
         <el-icon class="asc-title-icon"><el-icon-data-line /></el-icon>
         <span class="asc-title">复杂评分卡设计器</span>
@@ -463,65 +463,26 @@
           >添加等级</el-button
         >
       </div>
-      <div class="threshold-list">
-        <div
-          v-for="(thresh, ti) in model.thresholds"
-          :key="ti"
-          class="threshold-item"
-        >
-          <div
-            class="thresh-color-bar"
-            :style="{ background: thresholdColor(ti) }"
+      <score-threshold-editor
+        :thresholds="model.thresholds"
+        @change-min="(threshold, value) => threshold.min = value"
+        @change-max="(threshold, value) => threshold.max = value"
+        @remove="index => model.thresholds.splice(index, 1)"
+      >
+        <template #result="{ threshold }">
+          <operand-picker
+            :value="threshold.resultOperand"
+            :vars="varPickerOptions"
+            :functions="projectFunctions"
+            :selected-vars="selectedVarPickerOptions"
+            :allowed-kinds="valueOperandKinds"
+            placeholder="选择等级结果或手输阈值"
+            width="100%"
+            @input="(value) => setThresholdOperand(threshold, value)"
           />
-          <div class="thresh-range">
-            <el-input-number
-              v-model="thresh.min"
-              size="small"
-              :min="0"
-              :controls="false"
-              style="width: 100px"
-            />
-            <span class="thresh-sep">&le; 分数 &lt;</span>
-            <el-input-number
-              v-model="thresh.max"
-              size="small"
-              :min="thresh.min"
-              :controls="false"
-              style="width: 100px"
-            />
-          </div>
-          <div class="thresh-result">
-            <operand-picker
-              :value="thresh.resultOperand"
-              :vars="varPickerOptions"
-              :functions="projectFunctions"
-              :selected-vars="selectedVarPickerOptions"
-              :allowed-kinds="valueOperandKinds"
-              placeholder="选择等级结果或手输阈值"
-              width="100%"
-              @input="(value) => setThresholdOperand(thresh, value)"
-            />
-          </div>
-          <el-tag
-            :color="thresholdColor(ti)"
-            effect="dark"
-            size="small"
-            class="thresh-badge"
-          >
-            {{ thresh.result || '等级 ' + (ti + 1) }}
-          </el-tag>
-          <el-button
-            link
-            size="small"
-            :icon="ElIconDelete"
-            class="btn-delete"
-            @click="model.thresholds.splice(ti, 1)"
-          />
-        </div>
-        <div v-if="model.thresholds.length === 0" class="group-empty">
-          暂未配置等级，点击「添加等级」
-        </div>
-      </div>
+        </template>
+        <template #empty><div class="group-empty">暂未配置等级，点击「添加等级」</div></template>
+      </score-threshold-editor>
     </div>
 
     <!-- 脚本预览 -->
@@ -529,6 +490,7 @@
       v-if="definitionId"
       :compile-result="designerCompileResult"
       :references="projectRefs"
+      :version-references="scriptVersionReferences"
       :functions="projectFunctions"
     />
 
@@ -547,6 +509,7 @@
 </template>
 
 <script>
+import ScoreThresholdEditor from '@/components/decision/ScoreThresholdEditor.vue'
 import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { markRaw } from 'vue'
 import {
@@ -595,16 +558,6 @@ import {
   normalizeConditionOperator,
 } from '@/constants/conditionOperators'
 
-const THRESHOLD_COLORS = [
-  '#52c41a',
-  'var(--el-color-primary)',
-  '#fa8c16',
-  '#f5222d',
-  '#722ed1',
-  '#13c2c2',
-  '#eb2f96',
-]
-
 function conditionOperandType(condition) {
   return inferOperandType(condition && condition.leftOperand) || 'STRING'
 }
@@ -638,6 +591,7 @@ export default {
     }
   },
   components: {
+    ScoreThresholdEditor,
     RuleDesignerActionBar,
     RuleDraftReadOnly,
     DesignerTestDialog,
@@ -932,9 +886,6 @@ export default {
         })
       )
     },
-    thresholdColor(idx) {
-      return THRESHOLD_COLORS[idx % THRESHOLD_COLORS.length]
-    },
     toggleGroup(gi) {
       const g = this.model.dimensionGroups[gi]
       g['_collapsed'] = !g._collapsed
@@ -1099,17 +1050,6 @@ export default {
       })
       return params
     },
-    async doTest() {
-      let params = {}
-      try {
-        params = JSON.parse(this.testParamsJson || '{}')
-      } catch (e) {
-        this.$message.error('参数 JSON 格式错误')
-        return
-      }
-      const res = await this.executeDesignerPreview(params, 'SCORE_ADV')
-      this.testResult = res && res.data ? res.data : res
-    },
   },
 }
 </script>
@@ -1119,7 +1059,6 @@ export default {
   position: relative;
   background: var(--tianshu-bg-page);
   padding: 20px;
-  min-height: 100%;
 }
 .asc-header {
   display: flex;
@@ -1466,44 +1405,6 @@ export default {
 }
 .weight-detail-dims {
   color: #888;
-}
-.threshold-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.threshold-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--tianshu-border-subtle);
-  border-radius: 6px;
-  background: var(--tianshu-bg-muted);
-}
-.thresh-color-bar {
-  width: 4px;
-  height: 36px;
-  border-radius: 2px;
-  flex-shrink: 0;
-}
-.thresh-range {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-.thresh-sep {
-  font-size: 12px;
-  color: #888;
-  white-space: nowrap;
-}
-.thresh-result {
-  flex: 1;
-}
-.thresh-badge {
-  flex-shrink: 0;
-  border-color: transparent !important;
 }
 .test-hint {
   font-size: 12px;

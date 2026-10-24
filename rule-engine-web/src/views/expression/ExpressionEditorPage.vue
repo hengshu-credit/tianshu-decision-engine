@@ -507,8 +507,8 @@ export default {
 <style scoped>
 .expression-editor-page {
   display: grid;
-  height: calc(100vh - 82px);
-  min-height: 520px;
+  height: 100%;
+  min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
   overflow: hidden;

@@ -21,6 +21,15 @@ public class ConsoleOperationLogService {
 
     public IPage<ConsoleOperationLog> page(int pageNum, int pageSize, String username,
             String module, String action, String outcome, String keyword, LocalDateTime startTime, LocalDateTime endTime) {
+        return page(pageNum, pageSize, username, module, action, outcome, keyword, startTime, endTime, false);
+    }
+
+    public IPage<ConsoleOperationLog> systemChanges(int pageNum, int pageSize) {
+        return page(pageNum, pageSize, null, "system", null, null, null, null, null, true);
+    }
+
+    private IPage<ConsoleOperationLog> page(int pageNum, int pageSize, String username,
+            String module, String action, String outcome, String keyword, LocalDateTime startTime, LocalDateTime endTime, boolean changesOnly) {
         if (startTime != null && endTime != null && startTime.isAfter(endTime)) throw new IllegalArgumentException("开始时间不能晚于结束时间");
         LambdaQueryWrapper<ConsoleOperationLog> query = new LambdaQueryWrapper<>();
         // 所有读取仅包含对象元信息，不映射旧版正文、响应和快照列。
@@ -40,6 +49,7 @@ public class ConsoleOperationLogService {
                 .or().like(ConsoleOperationLog::getTargetId, keyword).or().like(ConsoleOperationLog::getRequestPath, keyword)
                 .or().like(ConsoleOperationLog::getPagePath, keyword).or().like(ConsoleOperationLog::getChangeSummary, keyword));
         query.orderByDesc(ConsoleOperationLog::getCreateTime).orderByDesc(ConsoleOperationLog::getId);
+        if (changesOnly) query.notIn(ConsoleOperationLog::getAction, java.util.List.of("READ", "PAGE_VIEW", "FIELD_VIEW", "FIELD_SELECT"));
         return mapper.selectPage(new Page<>(Math.max(1, pageNum), Math.max(1, Math.min(100, pageSize))), query);
     }
 

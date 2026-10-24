@@ -16,6 +16,7 @@ public class ConsoleDataPermissionHandler implements MultiDataPermissionHandler 
     public ConsoleDataPermissionHandler(ConsoleProjectAccess access) { this.access = access; }
 
     private static final Map<String, String> ROOT_MODULES = Map.ofEntries(
+            Map.entry("rule_system_setting", "system"),
             Map.entry("rule_definition", "rule"), Map.entry("rule_variable", "field"),
             Map.entry("rule_data_object", "field"), Map.entry("rule_data_object_field", "field"),
             Map.entry("rule_field_validation", "field"), Map.entry("rule_model", "model"),
@@ -23,6 +24,7 @@ public class ConsoleDataPermissionHandler implements MultiDataPermissionHandler 
             Map.entry("rule_external_datasource", "datasource"), Map.entry("rule_db_datasource", "database"),
             Map.entry("rule_sftp_datasource", "database"), Map.entry("rule_billing_config", "billing"));
     private static final Map<String, String> RESOURCE_TABLES = Map.ofEntries(
+            Map.entry("SYSTEM_SETTING", "rule_system_setting"),
             Map.entry("RULE", "rule_definition"), Map.entry("RULE_PROJECT_BINDING", "rule_definition_ref"),
             Map.entry("VARIABLE", "rule_variable"), Map.entry("CONSTANT", "rule_variable"),
             Map.entry("DATA_OBJECT", "rule_data_object"), Map.entry("DATA_OBJECT_ROOT", "rule_data_object"),
@@ -168,7 +170,7 @@ public class ConsoleDataPermissionHandler implements MultiDataPermissionHandler 
             // 汇总刷新为系统维护任务，不包含业务明细；响应另行去除全库计数和其他发起人身份。
             case "rule_billing_summary_task", "rule_billing_summary_lock" -> null;
             case "offline_transfer_log" -> transferLog(scope, a, depth);
-            case "console_operation_log" -> "(" + a + ".target_type IN ('CONSOLE_USER','CONSOLE_ROLE','ACCOUNT','ROLE') OR ("
+            case "console_operation_log" -> "(" + (scope.globalCan("system:audit") ? a + ".module = 'system' OR " : "") + a + ".target_type IN ('CONSOLE_USER','CONSOLE_ROLE','ACCOUNT','ROLE') OR ("
                     + a + ".target_id REGEXP '^[0-9]+$' AND " + resource(scope, a + ".target_type", a + ".target_id", depth) + "))";
             default -> table.startsWith("rule_") || table.startsWith("governance_") || table.startsWith("artifact_") ? "1 = 0" : null;
         };

@@ -55,6 +55,19 @@ import static org.junit.Assert.assertTrue;
 
 public class RuleLineageServiceTest {
     @Test
+    public void graphCarriesExactVariableTypeForSharedContentDisplay() {
+        RuleLineageService service = serviceWithProjectBranch(false);
+        RuleVariable value = variable(1L, "Account_AGE");
+        value.setVarType("INTEGER");
+        setMapper(service, "variableMapper", RuleVariableMapper.class, List.of(value));
+        Map<String, Object> graph = service.graph("VARIABLE", 1L, "ALL", 1);
+        Object start = graph.get("startNode");
+        assertTrue(start instanceof Map);
+        assertEquals("INTEGER", ((Map<?, ?>) start).get("valueType"));
+        assertEquals("Account_AGE", ((Map<?, ?>) start).get("code"));
+        assertEquals(1L, ((Map<?, ?>) start).get("refId"));
+    }
+    @Test
     public void variableSourcesIncludeAllListsAndStructuredReferences() {
         RuleLineageService service = serviceWithProjectBranch(false);
         RuleVariable listed = variable(4L, "listed"); listed.setVarSource("LIST");

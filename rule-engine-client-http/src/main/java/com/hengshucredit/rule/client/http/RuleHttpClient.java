@@ -58,6 +58,22 @@ public final class RuleHttpClient implements AutoCloseable {
 
     public static Builder builder() { return new Builder(); }
 
+    public com.hengshucredit.rule.model.ExternalCodeMapping fetchCodeMapping() {
+        if (closed) throw new IllegalStateException("客户端已关闭");
+        try {
+            var url = baseUrl.newBuilder().addPathSegments("api/rule/sync/system-code-mapping").build();
+            Request request = authenticator.authenticate(new Request.Builder().url(url).get().build());
+            try (Response response = http.newCall(request).execute()) {
+                if (response.code() == 404) return com.hengshucredit.rule.model.ExternalCodeMapping.DEFAULT;
+                JSONObject body = PlatformHttpResponses.read(response);
+                PlatformHttpResponses.requireSuccess(response, body);
+                JSONObject data = body.getJSONObject("data");
+                if (data == null) throw PlatformHttpResponses.invalid(response.code());
+                return com.hengshucredit.rule.model.ExternalCodeMapping.from(data.getLongValue("version"), data);
+            }
+        } catch (IOException error) { throw new IllegalStateException("结果码映射读取失败", error); }
+    }
+
     public RuleResult execute(String ruleCode, Object params) {
         return execute(ruleCode, params, traceEnabled);
     }
@@ -135,9 +151,7 @@ public final class RuleHttpClient implements AutoCloseable {
         }
         try (Response response = http.newCall(request).execute()) {
             JSONObject envelope = PlatformHttpResponses.read(response);
-            PlatformHttpResponses.requireSuccess(response, envelope);
-            if (!(envelope.get("data") instanceof JSONObject)) throw invalidResponse(response.code());
-            return envelope.getJSONObject("data").toJavaObject(RuleExecutionStatus.class);
+            return PlatformHttpResponses.executionStatus(response, envelope);
         } catch (IOException e) {
             throw new RuleHttpException("执行状态查询失败；状态可能未知，请稍后重试", 0, null,
                     "UNKNOWN", traceId, null);
@@ -173,8 +187,9 @@ public final class RuleHttpClient implements AutoCloseable {
 
     private static RuleHttpException authenticationError(IOException error) {
         if (error instanceof com.hengshucredit.rule.client.auth.ProjectTokenExchangeException token) {
-            return new RuleHttpException(null, token.httpStatus(), token.platformStatus().code(),
+            RuleHttpException mapped = new RuleHttpException(null, token.httpStatus(), token.platformStatus().code(),
                     "REJECTED", token.traceId(), null);
+            mapped.mapExternal(token.mapping()); return mapped;
         }
         return new RuleHttpException("项目鉴权服务连接失败", 0, PlatformCode.UPSTREAM_CALL_FAILED.code(),
                 "REJECTED", null, null);

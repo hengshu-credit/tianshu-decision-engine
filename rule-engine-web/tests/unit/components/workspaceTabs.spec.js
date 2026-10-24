@@ -27,6 +27,22 @@ function mountTabs(overrides = {}) {
 }
 
 describe('WorkspaceTabs', () => {
+  test('加载期间可切换页签或关闭目标页，其他关闭和刷新操作暂不可用', async () => {
+    const wrapper = mountTabs({ pendingPath: '/rule' })
+    expect(wrapper.get('[data-close="/project"]').element.disabled).toBe(true)
+    expect(wrapper.get('[data-close="/rule"]').element.disabled).toBe(false)
+    await wrapper.get('[data-tab="/rule"]').trigger('contextmenu', { clientX: 80, clientY: 40 })
+    expect(wrapper.get('[data-operation="refresh"]').element.disabled).toBe(true)
+    expect(wrapper.get('[data-operation="all"]').element.disabled).toBe(true)
+    await wrapper.get('[data-close="/rule"]').trigger('click')
+    expect(wrapper.emitted('operate')).toEqual([[{ operation: 'current', targetPath: '/rule' }]])
+    await wrapper.get('[data-path="/project"]').trigger('click')
+    expect(wrapper.emitted('activate')).toEqual([['/project']])
+    await wrapper.setProps({ pendingPath: '' })
+    expect(wrapper.get('[data-close="/project"]').element.disabled).toBe(false)
+    wrapper.unmount()
+  })
+
   test('业务页签同时显示名称和具体标题，并将完整内容交给悬停提示', () => {
     const title = '授信准入规则'.repeat(12)
     const wrapper = mountTabs({ tabs: [{ ...TABS[1], path: '/rule/8', fullPath: '/rule/8', title: '规则详情', detailTitle: title }] })

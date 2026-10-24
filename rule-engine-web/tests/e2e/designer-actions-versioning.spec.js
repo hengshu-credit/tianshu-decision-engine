@@ -58,6 +58,32 @@ async function editScript(page, text) {
 }
 
 for (const [route, id, modelType, add] of designers) {
+  test(`${modelType} 旧版本无制品时可读取并保存独立草稿`, async ({ page }) => {
+    const data = fixtures(id)
+    const catalogPath = `/api/rule/definition/${id}/reference-catalog`
+    const catalog = data.apiData.get(catalogPath)
+    data.apiData.set(catalogPath, context => ({ ...catalog(context), referenceNamespace: 'LOCAL' }))
+    const originalVersion = data.apiData.get(`/api/rule/definition/${id}/versions/81`)
+    const harness = await installDistRoutes(page, { apiData: data.apiData })
+    await page.goto(`http://tianshu.local/index.html#/designer/${route}/${id}`)
+    await expect(page.getByTestId('designer-info')).toContainText('当前环境资源')
+    await expect(page.getByTestId('draft-read-only')).toHaveCount(0)
+    const save = page.getByRole('button', { name: '保存', exact: true })
+    await expect(save).toBeEnabled()
+    expect(data.saved).toHaveLength(0)
+    await save.click()
+    await expect(page).toHaveURL(/sourceType=REVISION&sourceId=9001/)
+    expect(data.saved).toHaveLength(1)
+    expect(data.saved[0]).toMatchObject({ saveMode: 'NEW', sourceType: 'VERSION', sourceId: '81' })
+    expect(data.published).toHaveLength(0)
+    await page.reload()
+    await expect(page.getByTestId('designer-version-select')).toContainText('草稿')
+    await expect(save).toBeEnabled()
+    expect(data.saved).toHaveLength(1)
+    expect(data.apiData.get(`/api/rule/definition/${id}/versions/81`)).toEqual(originalVersion)
+    harness.assertClean()
+  })
+
   if (route !== 'script') test(`${modelType} 重开发布版本直接展示该版本编译源码`, async ({ page }) => {
     const data = fixtures(id)
     const script = `return "frozen-${modelType}";`
@@ -70,7 +96,7 @@ for (const [route, id, modelType, add] of designers) {
     await panel.getByRole('button', { name: '展开脚本面板', exact: true }).click()
     await expect.poll(async () => await panel.locator('textarea.sp-editor').count()
       ? panel.locator('textarea.sp-editor').inputValue()
-      : panel.locator('.view-lines').innerText()).toBe(script)
+      : panel.locator('.view-lines').innerText().then(text => text.replace(/\u00a0/g, ' '))).toBe(script)
     await page.reload()
     await expect(panel).toContainText('已保存源码')
     expect(data.compiled).toHaveLength(0)
@@ -323,7 +349,8 @@ for (const scheme of ['LIGHT', 'DARK']) test(`${scheme} 字段在左状态在右
   expect(layout.fieldsTop).toBe(layout.statusTop)
   const contrasts = await page.locator('main .rule-designer-actions button').evaluateAll(buttons => buttons.map(button => {
     const style = getComputedStyle(button)
-    const luminance = color => color.match(/[\d.]+/g).slice(0, 3).map(Number).map(n => n / 255).map(n => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4).reduce((sum, n, index) => sum + n * [.2126, .7152, .0722][index], 0)
+    // color-mix 可能返回 color(srgb ...)，由浏览器解析后再计算对比度。
+    const luminance = color => { const context = document.createElement('canvas').getContext('2d'); context.fillStyle = color; context.fillRect(0, 0, 1, 1); return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3).map(n => n / 255).map(n => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4).reduce((sum, n, index) => sum + n * [.2126, .7152, .0722][index], 0) }
     const a = luminance(style.color), b = luminance(style.backgroundColor)
     return (Math.max(a, b) + .05) / (Math.min(a, b) + .05)
   }))
@@ -370,7 +397,7 @@ for (const colorScheme of ['LIGHT', 'DARK']) for (const accentMode of ['CUSTOM_S
         if (state === 'focus') await button.focus()
         const colors = await button.evaluate(element => {
           const style = getComputedStyle(element)
-          const luminance = color => color.match(/[\d.]+/g).slice(0, 3).map(Number).map(n => n / 255).map(n => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4).reduce((sum, n, i) => sum + n * [.2126, .7152, .0722][i], 0)
+          const luminance = color => { const context = document.createElement('canvas').getContext('2d'); context.fillStyle = color; context.fillRect(0, 0, 1, 1); return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3).map(n => n / 255).map(n => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4).reduce((sum, n, i) => sum + n * [.2126, .7152, .0722][i], 0) }
           const a = luminance(style.color), b = luminance(style.backgroundColor)
           return { contrast: (Math.max(a, b) + .05) / (Math.min(a, b) + .05), image: style.backgroundImage, border: style.borderTopStyle }
         })

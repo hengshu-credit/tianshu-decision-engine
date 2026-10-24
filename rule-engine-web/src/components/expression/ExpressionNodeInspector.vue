@@ -44,13 +44,13 @@
             @update:model-value="patchTermOperator(index, $event)"
           >
             <el-option
-              v-for="operator in operators"
-              :key="operator"
-              :label="operator"
-              :value="operator"
+              v-for="operator in operatorOptions(node, index)"
+              :key="operator.value"
+              :label="operator.label"
+              :value="operator.value"
             />
           </el-select>
-          <span>{{ term.operand ? '已配置' : '待配置' }}</span>
+          <span>{{ noRight(term.operator) ? '无需右值' : term.operand ? '已配置' : '待配置' }}</span>
           <el-button
             link
             @click="removeOperationTerm(index)"
@@ -137,21 +137,7 @@
 
       <template v-else-if="node.kind === 'LIST_QUERY'">
         <label>名单（可多选）</label>
-        <el-select
-          :model-value="node.listIds"
-          size="small"
-          multiple
-          filterable
-          popper-class="expression-editor-select-popper"
-          @update:model-value="patch({ listIds: $event })"
-        >
-          <el-option
-            v-for="item in listOptions"
-            :key="item.id"
-            :label="item.listName || item.name || item.listCode"
-            :value="item.id"
-          />
-        </el-select>
+        <resource-picker :value="node.listIds" :resources="listOptions" category="list" multiple placeholder="选择一个或多个名单库" @update:value="patch({ listIds: $event })" />
         <label>字段与名单组合</label>
         <el-select
           :model-value="node.combinationMode"
@@ -225,9 +211,11 @@
 
 <script>
 import { Position as ElIconPosition } from '@element-plus/icons-vue'
+import ResourcePicker from '@/components/common/ResourcePicker.vue'
 import { $emit } from '../../utils/gogocodeTransfer'
-import { cloneOperand, OPERATION_OPERATORS } from '@/utils/operand'
-import { removeExpressionNode } from './expressionTree'
+import { cloneOperand } from '@/utils/operand'
+import { noRightOperand } from '@/utils/contentOperation'
+import { removeExpressionNode, expressionOperatorOptions } from './expressionTree'
 import {
   LIST_COMBINATION_MODES,
   LIST_ITEM_TYPES,
@@ -237,6 +225,7 @@ import {
 
 export default {
   components: {
+    ResourcePicker,
     ElIconPosition,
   },
   name: 'ExpressionNodeInspector',
@@ -246,7 +235,6 @@ export default {
   },
   data() {
     return {
-      operators: OPERATION_OPERATORS,
       valueTypes: [
         { label: '文本', value: 'STRING' },
         { label: '数字', value: 'NUMBER' },
@@ -293,6 +281,8 @@ export default {
     },
   },
   methods: {
+    operatorOptions: expressionOperatorOptions,
+    noRight: noRightOperand,
     patch(fields) {
       $emit(this, 'update:value', { ...cloneOperand(this.node), ...fields })
     },
@@ -307,6 +297,8 @@ export default {
     patchTermOperator(index, operator) {
       const terms = cloneOperand(this.node.terms || [])
       terms[index] = { ...terms[index], operator }
+      if (noRightOperand(operator)) delete terms[index].operand
+      else if (!terms[index].operand) terms[index].operand = null
       this.patch({ terms })
     },
     addOperationTerm() {

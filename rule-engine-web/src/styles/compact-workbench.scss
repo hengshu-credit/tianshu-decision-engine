@@ -83,6 +83,13 @@
   padding: 16px;
 }
 
+/* 设计器使用布局分配的剩余高度，自动扣除页签、项目范围和可换行页脚。 */
+.uiue-compact-designer {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+
 .uiue-compact-designer .designer-version-toolbar {
   min-width: 0;
   max-width: 100%;

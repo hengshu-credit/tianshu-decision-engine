@@ -37,6 +37,19 @@ function createEditorContext(blocks, extra = {}) {
 }
 
 describe('ActionBlockEditor', () => {
+  test('函数按 ID 选择，切换零参数函数及清除会去掉旧参数，重复选择保留编辑内容', () => {
+    const ctx = { sync: vi.fn() }
+    const select = ActionBlockEditor.methods.onFunctionResourceSelect.bind(ctx)
+    const block = { functionId: '1', functionCode: 'same', args: [{ kind: 'LITERAL', value: '保留' }] }
+    select(block, { id: '1', funcCode: 'same', params: [{ type: 'STRING' }] })
+    expect(block.args[0].value).toBe('保留')
+    select(block, { id: '2', funcCode: 'same', params: [] })
+    expect(block).toMatchObject({ functionId: '2', args: [] })
+    select(block, { id: '3', funcCode: 'third', params: [{ type: 'STRING' }, { type: 'NUMBER' }] })
+    expect(block.args).toEqual([null, null])
+    select(block, null)
+    expect(block).toMatchObject({ functionId: null, functionCode: '', args: [] })
+  })
   test('冻结包同号子规则不是当前环境自身，当前目录仍保留自身调用保护', async () => {
     const child = { id: '8', ruleCode: 'SourceChild', modelType: 'SCORE', inputFields: [], outputFields: [] }
     const wrapper = shallowMount(ActionBlockEditor, {

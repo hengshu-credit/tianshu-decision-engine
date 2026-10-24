@@ -130,6 +130,20 @@ describe('统一审批详情', () => {
     expect(restoreGovernanceVersion).not.toHaveBeenCalled()
     wrapper.unmount()
   })
+  test('系统配置审批显示分组名称，历史快照只能查看和对比', async () => {
+    const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
+    await flushPromises()
+    await wrapper.setData({ detail: { ...wrapper.vm.detail, request: {
+      id: 80, resourceType: 'SYSTEM_SETTING', resourceId: 4, status: 'APPROVED',
+      submittedSnapshotJson: '{"settingName":"对外结果码"}'
+    } } })
+    expect(wrapper.vm.resourceTitle).toBe('系统配置 · 对外结果码')
+    expect(wrapper.text()).toContain('调整配置请在系统配置页提交新审批')
+    expect(wrapper.text()).not.toContain('可新增或复用版本号')
+    await wrapper.vm.restoreVersion({ id: 3, versionNo: 2 })
+    expect(restoreGovernanceVersion).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   test('新增草稿未送审可删除，待审批时必须先驳回且不显示撤回入口', async () => {
     const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
     await flushPromises()

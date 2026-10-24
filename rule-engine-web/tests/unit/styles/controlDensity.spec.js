@@ -10,6 +10,7 @@ const source = fs.readFileSync(
   'utf8'
 )
 const css = compileString(source, { loadPaths: [stylesDir] }).css
+const buttonCss = compileString(fs.readFileSync(path.join(stylesDir, 'theme-buttons.scss'), 'utf8'), { loadPaths: [stylesDir] }).css
 
 function declarationBlock(selector) {
   const matches = Array.from(css.matchAll(/([^{}]+)\{([^}]*)\}/g))
@@ -59,45 +60,19 @@ test('普通操作链接统一使用主题色且危险操作保留提示层级',
   const linkButton = declarationBlock('.el-button.is-link')
   expect(linkButton).toContain('min-height: 28px')
   expect(linkButton).toContain('padding: 4px 6px')
-  expect(linkButton).toContain('background-color: transparent !important')
-  expect(declarationBlock(
-    '.el-button.is-link.el-button--primary:where(:not(.is-disabled):not(:disabled:not(.is-loading)))'
-  ).toLowerCase()).toContain(
-    'color: var(--el-color-primary) !important'
-  )
-  expect(declarationBlock('.el-button.is-link.el-button--success').toLowerCase()).toContain(
-    'color: var(--el-color-primary) !important'
-  )
-  expect(declarationBlock('.el-button.is-link.el-button--warning').toLowerCase()).toContain(
-    'color: var(--el-color-primary) !important'
-  )
-  expect(declarationBlock('.el-button.is-link.el-button--info').toLowerCase()).toContain(
-    'color: var(--el-color-primary) !important'
-  )
-  expect(declarationBlock('.el-button.is-link.el-button--danger').toLowerCase()).toContain(
-    'color: var(--tianshu-danger-text) !important'
-  )
+  expect(buttonCss).toContain('background: transparent !important')
+  expect(buttonCss).toContain('color: var(--tianshu-button-text) !important')
+  expect(buttonCss).toContain('--tianshu-button-text: var(--tianshu-primary-text)')
+  expect(buttonCss).toContain('--tianshu-button-text: var(--tianshu-action-delete)')
 })
 
 test('提示按钮、标签和占位文字使用高对比度主题派生色', () => {
   const root = declarationBlock(':root').toLowerCase()
   expect(root).toContain('--el-text-color-placeholder: #64748b')
 
-  expect(declarationBlock(
-    '.el-button--success:not(.is-link):not(.is-text):not(.is-plain)'
-  ).toLowerCase()).toContain(
-    'background-color: var(--el-color-success) !important'
-  )
-  expect(declarationBlock(
-    '.el-button--warning:not(.is-link):not(.is-text):not(.is-plain)'
-  ).toLowerCase()).toContain(
-    'background-color: var(--el-color-warning) !important'
-  )
-  expect(declarationBlock(
-    '.el-button--danger:not(.is-link):not(.is-text):not(.is-plain)'
-  ).toLowerCase()).toContain(
-    'background-color: var(--el-color-danger) !important'
-  )
+  for (const type of ['success', 'warning', 'danger']) {
+    expect(buttonCss).toContain('--tianshu-button-solid-bg: var(--tianshu-button-' + type + '-bg)')
+  }
   expect(declarationBlock('.el-tag--success').toLowerCase()).toContain(
     'color: var(--tianshu-success-text) !important'
   )

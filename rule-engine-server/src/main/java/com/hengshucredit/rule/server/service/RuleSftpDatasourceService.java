@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RuleSftpDatasource;
 import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleSftpDatasourceMapper;
@@ -13,7 +12,6 @@ import org.springframework.stereotype.Service;
 import jakarta.annotation.Resource;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Service
 public class RuleSftpDatasourceService extends ServiceImpl<RuleSftpDatasourceMapper, RuleSftpDatasource> {
@@ -119,13 +117,9 @@ public class RuleSftpDatasourceService extends ServiceImpl<RuleSftpDatasourceMap
     }
 
     private void fillProjectName(List<RuleSftpDatasource> list) {
-        if (list == null || list.isEmpty()) return;
-        List<Long> ids = list.stream().filter(v -> v.getProjectId() != null && v.getProjectId() > 0)
-                .map(RuleSftpDatasource::getProjectId).distinct().toList();
-        if (ids.isEmpty()) return;
-        Map<Long, String> names = projectMapper.selectByIds(ids).stream()
-                .collect(Collectors.toMap(RuleProject::getId, RuleProject::getProjectName, (a, b) -> a));
-        list.forEach(v -> v.setProjectName(names.get(v.getProjectId())));
+        ProjectDisplaySupport.fill(list, RuleSftpDatasource::getProjectId, projectMapper, (row, project) -> {
+            row.setProjectName(project == null ? null : project.getProjectName());
+        });
     }
 
     private void hideSecrets(List<RuleSftpDatasource> list) {

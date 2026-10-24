@@ -3,6 +3,7 @@ SET character_set_connection = utf8mb4;
 SET collation_connection = utf8mb4_unicode_ci;
 
 -- 可选启动种子数据：只补齐缺失配置，不更新已有记录。
+-- 名单/API/数据库的演示来源变量由样例脚本创建，不预置缺少依赖的固定 ID 配置。
 -- 变量写入 GLOBAL + project_id=0，但只要已有任意 GLOBAL 同 var_code 就跳过；对象以 GLOBAL + project_id=0 + object_code 幂等。
 INSERT INTO rule_data_object (project_id, `scope`, object_code, object_label, script_name, object_type, source_type, source_content, parent_object_id, status, create_time, update_time) VALUES
  (0,'GLOBAL','contact','联系人','','INPUT','JSON',NULL,NULL,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
@@ -784,18 +785,6 @@ INSERT INTO rule_variable (project_id,`scope`,var_code,var_label,script_name,var
 SELECT 0,'GLOBAL','close_time','关闭时间','close_time','DATE','INPUT',NULL,'','','','',0,1,'2026-07-04 03:05:03','2026-07-04 03:05:03'
 WHERE NOT EXISTS (SELECT 1 FROM rule_variable existing
   WHERE existing.scope = 'GLOBAL' AND existing.var_code = 'close_time');
-INSERT INTO rule_variable (project_id,`scope`,var_code,var_label,script_name,var_type,var_source,source_config,default_value,value_range,example_value,description,sort_order,status,create_time,update_time)
-SELECT 0,'GLOBAL','black_hit','是否命中黑名单','black_hit','NUMBER','LIST','{"listId": 1, "itemTypes": ["MOBILE", "ID_CARD", "ADDRESS", "IP"], "matchMode": "IN_LIST", "queryField": "mobile_no", "returnMode": "NUMBER", "forceRefresh": false}','-1','','','',0,1,'2026-07-04 03:35:32','2026-07-04 03:35:32'
-WHERE NOT EXISTS (SELECT 1 FROM rule_variable existing
-  WHERE existing.scope = 'GLOBAL' AND existing.var_code = 'black_hit');
-INSERT INTO rule_variable (project_id,`scope`,var_code,var_label,script_name,var_type,var_source,source_config,default_value,value_range,example_value,description,sort_order,status,create_time,update_time)
-SELECT 0,'GLOBAL','engine_bdrules','引擎黑规则结果','engine_bdrules','LIST','API','{"resultPath": "body", "apiConfigId": 1, "forceRefresh": false, "fallbackValue": null, "exceptionStrategy": "ERROR"}','','','','',0,1,'2026-07-04 03:51:57','2026-07-04 03:51:57'
-WHERE NOT EXISTS (SELECT 1 FROM rule_variable existing
-  WHERE existing.scope = 'GLOBAL' AND existing.var_code = 'engine_bdrules');
-INSERT INTO rule_variable (project_id,`scope`,var_code,var_label,script_name,var_type,var_source,source_config,default_value,value_range,example_value,description,sort_order,status,create_time,update_time)
-SELECT 0,'GLOBAL','black_user_count','黑名单人数','black_user_count','NUMBER','DB','{"sql": "SELECT count(1) user_count\\r\\nFROM rule_list_record AS rlr\\r\\nWHERE list_id = 1 and item_content = ?", "params": [{"kind":"REFERENCE","refType":"VARIABLE","refId":7,"code":"mobile_no"}], "maxRows": 1, "resultPath": "0.user_count", "datasourceId": 1, "forceRefresh": false, "fallbackValue": null, "exceptionStrategy": "ERROR"}','','','','',0,1,'2026-07-04 04:05:12','2026-07-07 02:42:18'
-WHERE NOT EXISTS (SELECT 1 FROM rule_variable existing
-  WHERE existing.scope = 'GLOBAL' AND existing.var_code = 'black_user_count');
 INSERT INTO rule_variable (project_id,`scope`,var_code,var_label,script_name,var_type,var_source,source_config,default_value,value_range,example_value,description,sort_order,status,create_time,update_time)
 SELECT 0,'GLOBAL','idcard_birthday','身份证生日','idcard_birthday','DATE','COMPUTED',NULL,'','','','',0,1,'2026-07-07 00:36:27','2026-07-07 00:36:27'
 WHERE NOT EXISTS (SELECT 1 FROM rule_variable existing

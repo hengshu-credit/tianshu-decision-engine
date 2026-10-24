@@ -1,19 +1,19 @@
 <template>
-  <section ref="panel" class="fp-panel" :class="{ 'fp-panel--compact': width < 680, 'fp-panel--narrow': width < 520, 'fp-panel--editor': editorMode }" role="dialog" aria-label="字段选择器" :style="{ width: width + 'px', height: height + 'px' }">
+  <section v-show="visible" ref="panel" class="fp-panel" :class="{ 'fp-panel--compact': width < 680, 'fp-panel--narrow': width < 520, 'fp-panel--editor': editorMode }" role="dialog" aria-label="内容选择器" :style="{ width: width + 'px', height: height + 'px' }">
     <header class="fp-header" @pointerdown="startMotion($event, 'move')">
-      <strong>{{ editorMode ? ({ LITERAL: '调整阈值', PATH: '写入路径', EXPRESSION: '组合表达式' })[editorKind] : '字段选择器' }}</strong>
+      <strong>{{ editorMode ? ({ LITERAL: '调整阈值', PATH: '写入路径', EXPRESSION: '组合表达式' })[editorKind] : '内容选择器' }}</strong>
       <div v-if="editorMode || manualKinds.length || expression" class="fp-actions" role="toolbar" aria-label="配置面板" @pointerdown.stop>
-        <button v-if="editorMode" type="button" @click="$emit('back')">返回字段</button>
+        <button v-if="editorMode" type="button" @click="$emit('back')">返回内容</button>
         <button v-if="manualKinds.includes('LITERAL')" type="button" :aria-pressed="editorMode && editorKind === 'LITERAL'" @click="$emit('manual', 'LITERAL')">输入阈值</button>
         <button v-if="manualKinds.includes('PATH')" type="button" :aria-pressed="editorMode && editorKind === 'PATH'" @click="$emit('manual', 'PATH')">写入路径</button>
         <button v-if="expression" type="button" :aria-pressed="editorMode && editorKind === 'EXPRESSION'" title="在当前面板中配置组合表达式" @click="$emit('expression')">ƒx 组合表达式</button>
       </div>
-      <button type="button" aria-label="关闭字段选择器" @pointerdown.stop @click="$emit('close')">×</button>
+      <button type="button" aria-label="关闭内容选择器" @pointerdown.stop @click="$emit('close')">×</button>
     </header>
     <div v-if="editorMode && editorKind === 'EXPRESSION'" class="fp-editor-tools"><slot name="editor-actions" /></div>
     <div v-show="editorMode" class="fp-editor"><slot name="editor" /></div>
     <div v-show="!editorMode" class="fp-body">
-      <nav class="fp-categories" aria-label="字段分类">
+      <nav class="fp-categories" aria-label="内容分类">
         <div class="fp-category-list">
           <button v-for="entry in categories" :key="entry.key" type="button" :class="{ active: category === entry.key }" @click="changeCategory(entry.key)">
             <span class="fp-category-icon" aria-hidden="true">{{ entry.icon }}</span><span>{{ entry.label }}</span><small>{{ entry.count }}</small>
@@ -22,10 +22,10 @@
       <div class="fp-sidebar-hint">单击查看或展开 · 双击 / Enter 选择</div>
       </nav>
       <main class="fp-main">
-        <div class="fp-search"><el-input :model-value="query" size="small" clearable aria-label="搜索字段名称或编码" placeholder="搜索字段名称或编码" @update:model-value="search" /></div>
+        <div class="fp-search"><el-input :model-value="query" size="small" clearable aria-label="搜索内容名称或编码" placeholder="搜索内容名称或编码" @update:model-value="search" /></div>
         <div v-if="selectedOutsideSearch" class="fp-located"><span>当前已选（不在搜索结果中）</span><button type="button" @click="preview = selectedNode">{{ selectedNode.name }}</button></div>
-        <div class="fp-columns" role="row"><span>类型</span><span>字段名称</span><span>字段编码</span><span>版本选择</span></div>
-        <div ref="viewport" class="fp-viewport" role="treegrid" aria-label="可选字段" :aria-rowcount="rows.length" @scroll="scrollTop = $event.target.scrollTop">
+        <div class="fp-columns" role="row"><span>来源 / 类型</span><span>内容名称</span><span>内容编码</span><span>版本选择</span></div>
+        <div ref="viewport" class="fp-viewport" role="treegrid" aria-label="可选内容" :aria-rowcount="rows.length" @scroll="scrollTop = $event.target.scrollTop">
           <div class="fp-sticky">
             <field-picker-row v-for="node in stickyParents" :key="node.key" :node="node" :depth="ancestors(node).length" :selected="node.key === selectedKey" :expanded="true" @preview="inspect(node, $event)" @confirm="confirm(node)">
               <template #version><slot name="version" :item="node.item" :active="preview?.key === node.key"><span class="fp-no-version">{{ versionLabel(node) }}</span></slot></template>
@@ -47,7 +47,7 @@
         >
           <div class="fp-preview">{{ previewText }}</div>
         </el-tooltip>
-        <div v-else class="fp-preview">选择字段可查看完整名称、编码和类型</div>
+        <div v-else class="fp-preview">选择内容可查看完整名称、编码和数据类型</div>
         <footer class="fp-pagination">
           <span>共 {{ rows.length }} 项</span>
           <label>每页 <select :value="pageSize" aria-label="每页字段数" @change="changePageSize(Number($event.target.value))"><option v-for="size in pageSizes" :key="size" :value="size">{{ size }} 条</option></select></label>
@@ -57,7 +57,7 @@
         </footer>
       </main>
     </div>
-    <span class="fp-resize" role="separator" aria-label="调整字段选择器大小" @pointerdown.prevent.stop="startMotion($event, 'resize')" />
+    <span class="fp-resize" role="separator" aria-label="调整内容选择器大小" @pointerdown.prevent.stop="startMotion($event, 'resize')" />
   </section>
 </template>
 
@@ -73,7 +73,7 @@ import { API_PICKER_CATEGORIES } from '@/utils/pickerCategories'
 
 const categoryMeta = {
   ...Object.fromEntries(API_PICKER_CATEGORIES.map(item => [item.key, [item.label, item.icon]])),
-  selected: ['已选内容', '✓'], recent: ['最近使用', '◷'], all: ['全部字段', '⊞'], standalone: ['变量', '{}'], constant: ['常量', 'C'], object: ['数据对象', '◇'], model: ['模型', 'M'], function: ['函数 / 方法', 'ƒ'], operator: ['操作符', '∑'], external: ['外数 API', '↗'], rule: ['规则', 'R'], list: ['名单', '[]'], database: ['数据库', '▤'],
+  selected: ['已选内容', '✓'], recent: ['最近使用', '◷'], all: ['全部内容', '⊞'], standalone: ['变量', '{}'], constant: ['常量', 'C'], object: ['数据对象', '◇'], model: ['模型', 'M'], function: ['函数 / 方法', 'ƒ'], operator: ['操作符', '∑'], external: ['外数 API', '↗'], rule: ['规则', 'R'], list: ['名单', '[]'], database: ['数据库', '▤'], sftp: ['SFTP', '↗'],
 }
 export default {
   name: 'FieldPickerPanel',
@@ -97,7 +97,7 @@ export default {
     categories() {
       const counts = new Map([['all', 0], ['selected', this.availableSelected.length], ['recent', this.availableRecent.length]])
       this.tree.nodes.forEach(node => {
-        // 对象/模型分组行只是目录结构，不应被计为可选字段数量。
+        // 对象/模型分组行只是目录结构，不应被计为可选内容数量。
         if (node.item && (!node.item._versionGroup || node.item.rootReference)) counts.set(node.category, (counts.get(node.category) || 0) + 1)
       })
       counts.set('all', [...this.tree.nodes.values()].filter(node => node.item && node.selectable).length)
@@ -254,7 +254,7 @@ export default {
 .fp-main { display:flex; flex:1; min-width:0; flex-direction:column; }
 .fp-search { padding:8px; }
 .fp-search :deep(.el-input__wrapper) { border-radius:0; }
-.fp-columns { display:grid; grid-template-columns:48px minmax(70px,1fr) minmax(70px,1.15fr) 130px 28px; align-items:center; min-height:30px; padding:0 8px; color:var(--tianshu-text-tertiary); border-bottom:1px solid var(--tianshu-border); }
+.fp-columns { display:grid; grid-template-columns:64px minmax(70px,1fr) minmax(70px,1.15fr) 130px 28px; align-items:center; min-height:30px; padding:0 8px; color:var(--tianshu-text-tertiary); border-bottom:1px solid var(--tianshu-border); }
 .fp-viewport { flex:1; min-height:0; overflow:auto; position:relative; overflow-anchor:none; }
 .fp-sticky { position:sticky; top:0; height:0; overflow:visible; z-index:2; }
 .fp-sticky :deep(.fp-row) { background:var(--tianshu-bg-muted); box-shadow:0 1px var(--tianshu-border); }
@@ -286,5 +286,5 @@ export default {
 .fp-panel :deep(.rule-call-version > span:first-child),.fp-panel :deep(.rule-call-version > small) { display:none; }
 .fp-panel :deep(.rule-call-version .el-select) { width:100%; }
 .fp-panel :deep(.rule-call-version .el-select__wrapper) { border-radius:0; min-height:26px; font-size:11px; }
-@media(max-width:640px) { .fp-categories { width:112px; } .fp-category-icon { display:none; } .fp-columns { grid-template-columns:40px minmax(45px,1fr) minmax(45px,1fr) 96px 24px; } }
+@media(max-width:640px) { .fp-categories { width:112px; } .fp-category-icon { display:none; } .fp-columns { grid-template-columns:64px minmax(45px,1fr) minmax(45px,1fr) 96px 24px; } }
 </style>

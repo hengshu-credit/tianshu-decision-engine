@@ -4,6 +4,7 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'element-plus/dist/index.css'
 import App from './App.vue'
 import router from './router'
+import { initializeSystemBrand } from '@/system/systemBrand'
 import store from './store'
 import ElementTabFocusGuard from '@/plugins/elementTabFocusGuard'
 import permissionDirective from '@/directives/permission'
@@ -15,8 +16,11 @@ import './styles/element-override.scss'
 import './styles/compact-workbench.scss'
 import './styles/theme-tokens.scss'
 import './styles/theme-components.scss'
+import './styles/theme-buttons.scss'
+import './styles/layout-menus.scss'
 import './styles/management-tables.scss'
 import './styles/scrollbars.scss'
+import './styles/content-reference.scss'
 import { bootstrapLocalTheme } from '@/theme/themeRuntime'
 
 bootstrapLocalTheme(window.localStorage, document.documentElement)
@@ -63,3 +67,4 @@ app.use(router)
 app.use(ElementPlus, { size: 'small', locale: zhCn })
 app.use(ElementTabFocusGuard)
 app.mount('#app')
+app.onUnmount(initializeSystemBrand(router))

@@ -2,7 +2,7 @@
   <div class="uiue-list-page list-detail-page">
     <div class="detail-header uiue-detail-header">
       <div class="uiue-detail-header__title">
-        <el-button link size="small" class="uiue-detail-back" @click="$router.push('/list')">返回</el-button>
+        <el-button size="small" class="uiue-detail-back" aria-label="返回" title="返回名单列表" @click="$router.push('/list')"><app-icon name="Back" /></el-button>
         <div>
         <div class="detail-title">{{ library.listName || '名单详情' }}</div>
         <div class="detail-meta">

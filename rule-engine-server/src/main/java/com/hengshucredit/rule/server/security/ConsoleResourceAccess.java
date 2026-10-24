@@ -35,6 +35,10 @@ public class ConsoleResourceAccess {
                 + policy.predicate("governance_approval_request", "sec_request") + ")", id);
         if (rows.isEmpty()) throw new ConsoleAccessDeniedException("审批单不存在或无访问权限");
         access.requirePermission(permission, number(rows.get(0).get("project_id")));
+        if ("SYSTEM_SETTING".equals(rows.get(0).get("resource_type"))) {
+            access.requirePermission("system:view", 0L);
+            if (!"approval:view".equals(permission)) access.requirePermission("system:edit", 0L);
+        }
         if ("approval:submit".equals(permission)) {
             String module = ConsoleAccessGuard.resourceModule(String.valueOf(rows.get(0).get("resource_type")));
             access.requirePermission(module + ":edit", number(rows.get(0).get("project_id")));

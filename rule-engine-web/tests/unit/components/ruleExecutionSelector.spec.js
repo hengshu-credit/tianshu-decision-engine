@@ -20,7 +20,7 @@ describe('RuleExecutionSelector', () => {
       inputFields: [{ scriptName: 'CREDIT_AMOUNT' }, { scriptName: 'age' }], outputFields: [{ scriptName: 'score' }] }
   ]
 
-  test('字段选择器同时提供项目和全局规则并保留输入输出摘要', () => {
+  test('内容选择器同时提供项目和全局规则并保留输入输出摘要', () => {
     const wrapper = shallowMount(RuleExecutionSelector, {
       props: { rules, ruleId: 8, ruleCode: 'score_card' },
       stubs

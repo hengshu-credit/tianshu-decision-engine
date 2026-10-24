@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
+import static com.hengshucredit.rule.server.service.SafeLogJson.toJsonSafely;
+
 import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
 
 import com.alibaba.fastjson.JSON;
@@ -762,8 +764,7 @@ public class RuleExecuteService {
     }
 
     private void addRequiredScriptName(Set<String> names, RuleDefinitionInputField field) {
-        if (field != null && !"MODEL_OUTPUT".equalsIgnoreCase(field.getRefType())
-                && field.getScriptName() != null && !field.getScriptName().trim().isEmpty()) {
+        if (field != null && field.getScriptName() != null && !field.getScriptName().trim().isEmpty()) {
             names.add(field.getScriptName().trim());
         }
     }
@@ -811,25 +812,7 @@ public class RuleExecuteService {
         return functionRegistrar.prepareFunctions(functions, qlExpressEngine.getRunner());
     }
 
-    private String toJsonSafely(Object value) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            return JSON.toJSONString(value);
-        } catch (StackOverflowError e) {
-            return "{\"error\":\"JSON_SERIALIZE_STACK_OVERFLOW\"}";
-        } catch (Exception e) {
-            return "{\"error\":\"JSON_SERIALIZE_FAILED\",\"message\":\"" + escapeJson(e.getMessage()) + "\"}";
-        }
-    }
 
-    private String escapeJson(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
 
     private Map<String, Object> snapshotMap(Map<String, Object> source) {
         Map<String, Object> snapshot = new LinkedHashMap<>();

@@ -996,6 +996,63 @@ public class VariableSourceResolverTest {
         assertEquals("NOT_IN_LIST", listService.lastMatchMode);
     }
 
+    @Test
+    public void listLogPreservesOperandMetadataAlongsideActualValues() throws Exception {
+        RuleVariable variable = variable("matchMetadata", "LIST", """
+                {"listIds":[9],"queryOperands":[
+                    {"kind":"REFERENCE","refType":"VARIABLE","refId":100,"label":"客户标识","code":"customerId","valueType":"STRING","versionMode":"LATEST","version":2},
+                    {"kind":"REFERENCE","refType":"DATA_OBJECT","refId":201,"label":"客户/手机号","code":"customer.mobile","valueType":"STRING"},
+                    {"kind":"REFERENCE","refType":"MODEL_OUTPUT","refId":301,"label":"风险模型/评分","code":"risk.score","valueType":"NUMBER"},
+                    {"kind":"LITERAL","valueType":"BOOLEAN","value":false}],
+                 "combinationMode":"ANY_FIELD_ANY_LIST","matchMode":"IN_LIST","itemTypes":[],"returnMode":"BOOLEAN"}
+                """);
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()), new FakeRuleListService(false));
+        RecordingRuntimeCallLogService logs = new RecordingRuntimeCallLogService();
+        setField(resolver, "runtimeCallLogService", logs);
+
+        resolver.resolve(1L, Map.of("customerId", "test-customer", "customer", Map.of("mobile", "test-mobile"), "risk", Map.of("score", 0)));
+
+        RuleRuntimeCallLog log = logs.logs.stream().filter(item -> "LIST".equals(item.getModuleType())).findFirst().orElseThrow();
+        var request = com.alibaba.fastjson.JSON.parseObject(log.getRequestBody());
+        assertEquals(Arrays.asList("test-customer", "test-mobile", 0, false), request.getJSONArray("queryValues"));
+        var metadata = request.getJSONArray("queryOperands");
+        assertEquals(4, metadata.size());
+        assertEquals("客户标识", metadata.getJSONObject(0).getString("label"));
+        assertEquals("100", metadata.getJSONObject(0).get("refId"));
+        assertEquals("LATEST", metadata.getJSONObject(0).getString("versionMode"));
+        assertEquals("DATA_OBJECT", metadata.getJSONObject(1).getString("refType"));
+        assertEquals("risk.score", metadata.getJSONObject(2).getString("code"));
+        assertEquals(Map.of("kind", "LITERAL"), metadata.getJSONObject(3));
+        assertFalse(com.alibaba.fastjson.JSON.parseObject(log.getResponseBody()).getBooleanValue("hit"));
+        assertEquals("[[false],[false],[false],[false]]",
+                com.alibaba.fastjson.JSON.parseObject(log.getResponseBody()).getJSONArray("matchMatrix").toJSONString());
+    }
+
+    @Test
+    public void listOperandMetadataKeepsFixedBindingsWithoutCopyingSourceInternals() {
+        var source = com.alibaba.fastjson.JSON.parseArray("""
+                [{"kind":"REFERENCE","refType":"MODEL_OUTPUT","refId":9007199254740993,"code":"risk.score","label":"评分","valueType":"NUMBER",
+                  "versionMode":"FIXED","versionId":9007199254740995,"version":7,"displayVersion":2,"versionSource":"BUSINESS_VERSION",
+                  "sourceConfig":{"password":"do-not-log"},"constantValue":"do-not-log"},
+                 {"kind":"FUNCTION","functionId":8,"functionCode":"strUpper","label":"转大写","valueType":"STRING","args":[{"value":"do-not-log"}]},
+                 {"kind":"PATH","value":"customer.mobile"}]
+                """);
+        var metadata = VariableSourceResolver.listQueryOperandMetadata(source);
+        assertEquals("9007199254740993", metadata.get(0).get("refId"));
+        assertEquals("9007199254740995", metadata.get(0).get("versionId"));
+        assertEquals("FIXED", metadata.get(0).get("versionMode"));
+        assertEquals("BUSINESS_VERSION", metadata.get(0).get("versionSource"));
+        assertEquals(2, metadata.get(0).get("displayVersion"));
+        assertEquals(7, metadata.get(0).get("version"));
+        assertEquals("strUpper", metadata.get(1).get("functionCode"));
+        assertEquals("customer.mobile", metadata.get(2).get("code"));
+        assertFalse(com.alibaba.fastjson.JSON.toJSONString(metadata).contains("do-not-log"));
+        assertTrue(source.getJSONObject(0).containsKey("sourceConfig"));
+        source.getJSONObject(0).put("label", "later name");
+        assertEquals("评分", metadata.get(0).get("label"));
+    }
+
     @Test(expected = IllegalStateException.class)
     public void listVariableRejectsLegacySingleFieldConfiguration() throws Exception {
         RuleVariable variable = variable("legacyListHit", "LIST",

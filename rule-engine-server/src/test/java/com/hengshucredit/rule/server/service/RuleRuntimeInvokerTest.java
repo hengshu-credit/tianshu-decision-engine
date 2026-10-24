@@ -39,6 +39,42 @@ import static org.junit.Assert.fail;
 
 public class RuleRuntimeInvokerTest {
 
+    @Test
+    public void nestedRuleResolvesItsReferencedModelOutput() {
+        RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
+        ReflectionTestUtils.setField(invoker, "definitionService", new ContextDefinitionService() {
+            @Override public RuleDefinition getById(Serializable id) {
+                RuleDefinition definition = super.getById(id);
+                definition.setModelType("RULE_SET");
+                return definition;
+            }
+            @Override public RuleDefinitionContent getContent(Long id) {
+                RuleDefinitionContent content = super.getContent(id);
+                content.setCompiledScript("score_f1.score");
+                content.setModelJson("{\"rules\":[{\"conditionRoot\":{\"type\":\"leaf\",\"varCode\":\"score_f1.score\","
+                        + "\"_varId\":81,\"_refType\":\"MODEL_OUTPUT\",\"operator\":\">\",\"value\":\"0\"}}]}");
+                return content;
+            }
+        });
+        ReflectionTestUtils.setField(invoker, "projectService", new GlobalProjectService());
+        ReflectionTestUtils.setField(invoker, "variableSourceResolver", new VariableSourceResolver() {
+            @Override public Map<String, Object> resolveInto(Long projectId, Map<String, Object> target,
+                                                            VariableResolveOptions options) {
+                if (options.getRequiredScriptNames().contains("score_f1.score")) {
+                    target.put("score_f1", Map.of("score", 650));
+                }
+                return target;
+            }
+        });
+        ReflectionTestUtils.setField(invoker, "qlExpressEngine", new QLExpressEngine());
+        ReflectionTestUtils.setField(invoker, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(invoker, "ruleFieldAnalyzer", new RuleFieldAnalyzer());
+        installPublishedFixture(invoker);
+        invoker.enter("PARENT", 0L, null, new LinkedHashMap<>(), true);
+        try { assertEquals(650, invoker.executeRuleById("2")); }
+        finally { invoker.exit(); }
+    }
+
     public static class CapacityDelegate {
         public Object rejectModel() {
             throw new ExecutionCapacityException(ExecutionCapacityException.Resource.PMML_MODEL_LOADING, "model capacity unavailable");

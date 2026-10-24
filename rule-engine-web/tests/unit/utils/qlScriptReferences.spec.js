@@ -16,6 +16,28 @@ const options = [
 const functions = [{ id: '8', funcCode: 'risk', funcName: '风险计算', version: 2 }]
 
 describe('QL 脚本行内引擎引用', () => {
+  test('内置方法、普通方法和链式方法均逆向展示，不伪造函数 ID', () => {
+    const script = 'return resourceVersionValue("VARIABLE", "548", "BUSINESS_VERSION:948", "") + obj.getName().trim();'
+    const refs = collectQlScriptReferences(script)
+    expect(refs.map(item => item.code)).toEqual(['resourceVersionValue', 'obj.getName', 'trim'])
+    expect(refs[0].label).toBe('固定版本取值')
+    expect(refs[0].option.builtin).toBe(true)
+    expect(refs.every(item => item.option._varId == null)).toBe(true)
+  })
+  test('普通方法名不会命中对象原型属性而被冒充为引擎内置方法', () => {
+    const refs = collectQlScriptReferences('constructor(); toString();')
+    expect(refs.map(item => item.label)).toEqual(['constructor', 'toString'])
+    expect(refs.every(item => item.option.builtin === false)).toBe(true)
+  })
+  test('固定版本调用按 ID、版本来源和版本 ID 精确反解，不能串当前资源或其他版本', () => {
+    const script = 'resourceVersionValue("VARIABLE", "9007199254740993", "BUSINESS_VERSION:948", "")'
+    const pinned = [{ refType: 'VARIABLE', refId: '9007199254740993', versionSource: 'BUSINESS_VERSION', versionId: '948', version: 7, displayVersion: 3, code: 'Old_AGE', label: '历史年龄', valueType: 'INTEGER' }]
+    const refs = collectQlScriptReferences(script, options, [], [], pinned)
+    expect(refs).toHaveLength(2)
+    expect(refs[1]).toMatchObject({ inlineMetadata: true, code: 'Old_AGE', label: '历史年龄', version: 3, option: { _varId: '9007199254740993' } })
+    expect(collectQlScriptReferences(script.replace(':948', ':949'), options, [], [], pinned)).toHaveLength(1)
+    expect(script).toContain('"9007199254740993"')
+  })
   test('入参、赋值出参和函数均可展示，源码与稳定引用不被改写', () => {
     const script = 'result = risk(age);'
     const bindings = [{ refCode: 'age', varId: '1', refType: 'VARIABLE' }]
@@ -38,7 +60,7 @@ describe('QL 脚本行内引擎引用', () => {
 
   test('字符串、注释、相似名称、其他对象成员和非调用函数名不被渲染', () => {
     const script = `// age risk(age)\n"age" + 'result'; /* 客户.地址.城市 */\nother.age + ageExtra + risk + obj.risk(age);`
-    expect(collectQlScriptReferences(script, options, functions).map(ref => script.slice(ref.start, ref.end))).toEqual(['age'])
+    expect(collectQlScriptReferences(script, options, functions).map(ref => script.slice(ref.start, ref.end))).toEqual(['obj.risk', 'age'])
   })
 
   test('支持带空白的路径和字符串下标，未闭合字符串不误标注', () => {
@@ -67,7 +89,7 @@ describe('QL 脚本行内引擎引用', () => {
     const script = `age; _result = {"result": risk(age, 客户.订单[idx].金额), "unknown": {age: [age, result]}}; age;`
     const bindings = [{ refCode: 'age', varId: '1', refType: 'VARIABLE' }]
     const matches = collectQlScriptReferences(script, options, functions, bindings)
-    expect(matches.map(ref => ref.code)).toEqual(['age', '"result"', 'age'])
+    expect(matches.map(ref => ref.code)).toEqual(['age', '"result"', 'risk', 'age'])
     expect(matches[1].outputKey).toBe(true)
   })
 
@@ -103,10 +125,10 @@ describe('QL 脚本行内引擎引用', () => {
     const matches = collectQlScriptReferences(script, [option('age', 1, 'INTEGER', { varLabelText: '<b>年龄</b>', varObj: { version: 3 } })])
     const model = { getPositionAt: offset => ({ lineNumber: 1, column: offset + 1 }) }
     const decorations = buildQlReferenceDecorations(matches, model)
-    expect(decorations).toHaveLength(2)
-    expect(decorations[0].range).toEqual({ startLineNumber: 1, startColumn: 8, endLineNumber: 1, endColumn: 11 })
-    expect(decorations[1].options.before.content).toBe('<b>年龄</b>')
-    expect(decorations[1].options.after.content).toBe('v3')
+    expect(decorations).toHaveLength(5)
+    expect(decorations[3].range).toEqual({ startLineNumber: 1, startColumn: 8, endLineNumber: 1, endColumn: 11 })
+    expect(decorations[2].options.before.content.trim()).toBe('<b>年龄</b>')
+    expect(decorations[4].options.after.content.trim()).toBe('v3')
     expect(decorations[0].options.hoverMessage.isTrusted).toBe(false)
     expect(decorations[0].options.hoverMessage.supportHtml).toBe(false)
   })
@@ -116,11 +138,12 @@ describe('QL 脚本行内引擎引用', () => {
     const matches = collectQlScriptReferences(script, [option('age', 1, 'INTEGER', { varLabelText: '年龄', varObj: { version: 3 } })])
     const model = { getPositionAt: offset => ({ lineNumber: 1, column: offset + 1 }) }
     const decorations = buildQlReferenceDecorations(matches, model, {}, 'LIVE', { includeType: true })
-    expect(decorations).toHaveLength(3)
-    expect(decorations[0].options.before.content).toBe('123')
-    expect(decorations[0].options.before.inlineClassName).toContain('se-reference-type--number')
-    expect(decorations[1].options.inlineClassName).toBe('se-reference-code')
-    expect(decorations[2].options.before.content).toBe('年龄')
-    expect(decorations[2].options.after.content).toBe('v3')
+    expect(decorations).toHaveLength(5)
+    expect(decorations[0].options.before.content.trim()).toBe('变量')
+    expect(decorations[1].options.before.content.trim()).toBe('123')
+    expect(decorations[1].options.before.inlineClassName).toContain('content-ref__type--number')
+    expect(decorations[3].options.inlineClassName).toContain('content-ref__code')
+    expect(decorations[2].options.before.content.trim()).toBe('年龄')
+    expect(decorations[4].options.after.content.trim()).toBe('v3')
   })
 })

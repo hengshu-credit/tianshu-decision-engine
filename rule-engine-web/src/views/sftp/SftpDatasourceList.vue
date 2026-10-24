@@ -5,7 +5,7 @@
       <div class="hint-text">维护可复用的 SFTP 连接池。规则执行时的 SFTP 文件读取会沿用当前规则 trace_id，并在查询日志中保留远端文件地址。</div>
     </div>
 
-    <el-tabs v-model="activeTab" class="management-table-region sftp-tabs" @tab-click="onTabChange">
+    <el-tabs model-value="datasource" class="sftp-tabs" :before-leave="navigateTab">
       <el-tab-pane label="数据源配置" name="datasource" />
       <el-tab-pane label="查询日志" name="logs" />
     </el-tabs>
@@ -63,7 +63,7 @@ import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import ScopeProjectFields from '@/components/common/ScopeProjectFields.vue'
-import { routeProjectId } from '@/utils/projectContext'
+import { routeProjectId, withProjectContext } from '@/utils/projectContext'
 import credentialEditMixin from '@/mixins/credentialEditMixin'
 
 function emptyForm() {
@@ -75,7 +75,7 @@ export default {
   mixins: [credentialEditMixin],
   components: { ProjectFilterSelect, GovernanceWorkspaceToolbar, GovernanceResourceStatus, GovernancePublishAction, ScopeProjectFields },
   data() {
-    return { activeTab: 'datasource', query: { pageNum: 1, pageSize: 20, projectCode: '', projectName: '', datasourceCode: '', status: null }, rows: [], total: 0, loading: false, loadError: '', listRequestId: 0, projects: [], dialogVisible: false, form: emptyForm(), saving: false, testing: false, connectionTestStatus: 'idle', connectionTestSignature: '', connectionTestMessage: '', testRequestId: 0, rules: { projectId: [{ validator: (_rule, value, callback) => callback(this.form.scope === 'PROJECT' && !(Number(value) > 0) ? new Error('请选择所属项目') : undefined), trigger: 'change' }], minIdle: [{ validator: (_rule, value, callback) => callback(Number(value) > Number(this.form.maxPoolSize) ? new Error('最小空闲连接数不能超过最大连接数') : undefined), trigger: 'change' }], datasourceCode: [{ required: true, message: '请输入数据源编码', trigger: 'blur' }], datasourceName: [{ required: true, message: '请输入数据源名称', trigger: 'blur' }], host: [{ required: true, message: '请输入 SFTP 主机', trigger: 'blur' }], username: [{ required: true, message: '请输入用户名', trigger: 'blur' }] } }
+    return { query: { pageNum: 1, pageSize: 20, projectCode: '', projectName: '', datasourceCode: '', status: null }, rows: [], total: 0, loading: false, loadError: '', listRequestId: 0, projects: [], dialogVisible: false, form: emptyForm(), saving: false, testing: false, connectionTestStatus: 'idle', connectionTestSignature: '', connectionTestMessage: '', testRequestId: 0, rules: { projectId: [{ validator: (_rule, value, callback) => callback(this.form.scope === 'PROJECT' && !(Number(value) > 0) ? new Error('请选择所属项目') : undefined), trigger: 'change' }], minIdle: [{ validator: (_rule, value, callback) => callback(Number(value) > Number(this.form.maxPoolSize) ? new Error('最小空闲连接数不能超过最大连接数') : undefined), trigger: 'change' }], datasourceCode: [{ required: true, message: '请输入数据源编码', trigger: 'blur' }], datasourceName: [{ required: true, message: '请输入数据源名称', trigger: 'blur' }], host: [{ required: true, message: '请输入 SFTP 主机', trigger: 'blur' }], username: [{ required: true, message: '请输入用户名', trigger: 'blur' }] } }
   },
   beforeUnmount() { this.listRequestId++; this.testRequestId++ },
   watch: { dialogVisible: { flush: 'sync', handler(visible) { if (!visible) this.resetConnectionTest() } } },
@@ -105,7 +105,11 @@ export default {
     },
     handleQuery() { this.query.pageNum = 1; return this.load() },
     async loadProjects() { try { const res = await listProjects({ pageNum: 1, pageSize: 500 }); this.projects = res.data?.records || [] } catch (e) { this.projects = [] } },
-    onTabChange(tab) { const paneName = tab && (tab.paneName ?? tab.name ?? (tab.props && tab.props.name)); if ((paneName && paneName.value !== undefined ? paneName.value : paneName) === 'logs') this.$router.push('/sftp/logs') },
+    async navigateTab(name) {
+      if (name === 'logs') await this.$router.push(withProjectContext('/sftp/logs', this.query.projectId))
+      // 标签用于路由导航，不切换本页空面板，避免缓存离开时的错误选中项。
+      return false
+    },
     resetQuery() { this.query = { ...this.query, pageNum: 1, projectCode: '', projectName: '', datasourceCode: '', status: null }; this.load() },
     openCreate() { this.resetConnectionTest(); this.form = { ...emptyForm(), projectId: this.query.projectId }; this.dialogVisible = true; this.$nextTick(() => this.$refs.formRef?.clearValidate()) },
     async openEdit(row) {

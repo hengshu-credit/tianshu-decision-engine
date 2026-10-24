@@ -19,8 +19,8 @@
 </template>
 
 <script>
+import ElIconLoading from '@/components/common/AppLoadingIcon.vue'
 import {
-  Loading as ElIconLoading,
   Warning as ElIconWarningOutline,
 } from '@element-plus/icons-vue'
 import { $emit } from '../../utils/gogocodeTransfer'

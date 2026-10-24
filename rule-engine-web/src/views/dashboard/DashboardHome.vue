@@ -853,6 +853,7 @@ export default {
   display: flex;
   align-items: flex-start;
   gap: 16px;
+  padding-bottom: 10px;
   margin-bottom: 0;
 }
 

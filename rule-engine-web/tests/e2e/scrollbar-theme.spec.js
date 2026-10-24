@@ -3,7 +3,7 @@ const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createOperationsApiData } = require('./support/operationsFixtures.cjs')
 const { createDesignerApiData } = require('./support/designerFixtures.cjs')
 
-for (const colorScheme of ['LIGHT', 'DARK']) test(`${colorScheme} 字段选择器分类和字段区滚动条沿用全局主题`, async ({ page }, testInfo) => {
+for (const colorScheme of ['LIGHT', 'DARK']) test(`${colorScheme} 内容选择器分类和字段区滚动条沿用全局主题`, async ({ page }, testInfo) => {
   await page.addInitScript(scheme => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify({
     schemaVersion: 1, colorScheme: scheme, accentPreset: 'THEME_BLUE_GRADIENT', sidebarTheme: 'DARK', contentWidth: 'FLUID', fixedSidebar: true, colorWeak: false,
   })), colorScheme)

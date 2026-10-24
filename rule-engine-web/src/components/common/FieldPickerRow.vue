@@ -1,41 +1,34 @@
 <template>
   <div class="fp-row" :class="{ 'fp-row--selected': selected, 'fp-row--parent': node.children.length, 'fp-row--disabled': !node.selectable && node.item && !node.item._versionGroup }" :style="{ '--field-depth': depth }" role="row" :aria-selected="selected" :aria-level="depth + 1" :aria-expanded="node.children.length ? expanded : undefined" tabindex="0" @click.stop="$emit('preview', $event)" @dblclick.stop="$emit('confirm')" @keydown.enter.prevent.stop="$emit('confirm')" @keydown.space.prevent.stop="$emit('preview', $event)">
-    <span role="gridcell"><span class="fp-type" :class="'fp-type--' + typeFamily" :title="typeName" :aria-label="typeName">{{ icon }}</span></span>
-    <span class="fp-name" role="gridcell" :title="node.name" :style="{ paddingLeft: Math.min(depth, 6) * 12 + 'px' }">{{ node.children.length ? (expanded ? '▾ ' : '▸ ') : '' }}{{ node.name }}</span>
-    <code class="fp-code" role="gridcell" :title="node.code">{{ node.code }}</code>
-    <span class="fp-version" role="gridcell" @click.stop @dblclick.stop @keydown.stop><slot name="version" /></span>
+    <div class="fp-content" :style="{ paddingLeft: Math.min(depth, 6) * 12 + 'px' }"><span v-if="node.children.length" class="fp-branch">{{ expanded ? '▾' : '▸' }}</span><content-reference :value="content" cell-role="gridcell"><template #version><span @click.stop @dblclick.stop @keydown.stop><slot name="version" /></span></template></content-reference></div>
     <button v-if="node.item && node.selectable && node.children.length" type="button" class="fp-select-parent" title="选择整个字段" @click.stop="$emit('confirm')">选</button>
   </div>
 </template>
 <script>
-import { fieldTypeIcon, pickerTypeMatches } from '@/utils/fieldPicker'
-import { varTypeLabel } from '@/constants/varTypes'
+import ContentReference from './ContentReference.vue'
 export default {
   name: 'FieldPickerRow',
+  components: { ContentReference },
   props: { node: { type: Object, required: true }, depth: { type: Number, default: 0 }, selected: Boolean, expanded: Boolean },
   emits: ['preview', 'confirm'],
   computed: {
-    icon() { return fieldTypeIcon(this.node.type) },
-    typeName() { return varTypeLabel(this.node.type) || this.node.type },
-    typeFamily() { return pickerTypeMatches(this.node.type, 'NUMBER') ? 'number' : ['LIST', 'ARRAY', 'MAP'].includes(this.node.type) ? 'collection' : this.node.type === 'BOOLEAN' ? 'boolean' : 'text' },
+    content() { return { ...this.node.item, varLabelText: this.node.name, varCode: this.node.code, varType: this.node.type,
+      _refType: this.node.item?._refType || ({ object: 'DATA_OBJECT_ROOT', model: 'MODEL', function: 'FUNCTION', external: 'EXTERNAL_API', constant: 'CONSTANT' })[this.node.category] || 'VARIABLE', version: this.node.item?.version ?? this.node.version } },
   },
 }
 </script>
 <style scoped>
-.fp-row { display:grid; grid-template-columns:48px minmax(70px,1fr) minmax(70px,1.15fr) 130px 28px; align-items:center; gap:0; height:36px; box-sizing:border-box; padding:0 8px; border-bottom:1px solid var(--tianshu-border-subtle); color:var(--tianshu-text-primary); cursor:pointer; background:color-mix(in srgb,var(--el-color-primary) calc(min(var(--field-depth),5) * 3%),var(--tianshu-bg-surface)); }
+.fp-row { display:grid; grid-template-columns:minmax(0,1fr) 28px; align-items:center; gap:0; height:36px; box-sizing:border-box; padding:0 8px; border-bottom:1px solid var(--tianshu-border-subtle); color:var(--tianshu-text-primary); cursor:pointer; background:color-mix(in srgb,var(--el-color-primary) calc(min(var(--field-depth),5) * 3%),var(--tianshu-bg-surface)); }
 .fp-row:hover,.fp-row:focus-visible { background:var(--tianshu-bg-hover); outline:1px solid var(--el-color-primary); outline-offset:-1px; }
 .fp-row--selected { background:var(--tianshu-info-bg); box-shadow:inset 3px 0 var(--el-color-primary); }
 .fp-row--parent .fp-name { color:var(--tianshu-primary-text, var(--el-color-primary)); font-weight:600; }
 .fp-row--disabled { opacity:.55; }
-.fp-row > span,.fp-code { min-width:0; }
-.fp-name,.fp-code { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-right:8px; }
-.fp-code { color:var(--tianshu-text-secondary); font-size:11px; }
-.fp-type { display:inline-flex; width:28px; height:28px; align-items:center; justify-content:center; font-size:11px; font-weight:600; color:var(--tianshu-primary-text, var(--el-color-primary)); background:var(--tianshu-info-bg); }
-.fp-type--number { color:var(--tianshu-success-text); background:var(--tianshu-success-bg); }
-.fp-type--collection { color:var(--tianshu-warning-text); background:var(--tianshu-warning-bg); }
-.fp-type--boolean { color:var(--tianshu-info-text); background:var(--tianshu-info-bg); }
-.fp-version { overflow:hidden; }
+.fp-content { display:flex; min-width:0; align-items:center; }
+.fp-content :deep(.content-ref) { width:100%; }
+.fp-content :deep(.content-ref__name), .fp-content :deep(.content-ref__code) { flex:1; }
+.fp-content :deep(.content-ref__version) { flex:0 0 130px; padding:0; }
+.fp-branch { flex:none; width:12px; }
 .fp-select-parent { width:22px; height:22px; padding:0; border:1px solid var(--tianshu-border); color:var(--tianshu-primary-text,var(--el-color-primary)); background:var(--tianshu-bg-surface); cursor:pointer; opacity:0; }
 .fp-row:hover .fp-select-parent,.fp-row:focus-within .fp-select-parent { opacity:1; }
-@media(max-width:640px) { .fp-row { grid-template-columns:40px minmax(45px,1fr) minmax(45px,1fr) 96px 24px; } }
+@media(max-width:640px) { .fp-content :deep(.content-ref__version) { flex-basis:96px; } }
 </style>

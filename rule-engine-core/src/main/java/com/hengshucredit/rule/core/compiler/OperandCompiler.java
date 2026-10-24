@@ -89,6 +89,8 @@ public final class OperandCompiler {
             if (terms == null || terms.size() < 2) {
                 throw new IllegalArgumentException("运算表达式 terms 至少需要 2 项");
             }
+            if (terms.stream().anyMatch(term -> term instanceof JSONObject object && ContentOperation.predicate(object.getString("operator"))))
+                return ContentOperation.compile(terms, child -> compileRequired(child, varContext));
             StringBuilder result = new StringBuilder("(");
             for (int i = 0; i < terms.size(); i++) {
                 JSONObject term = terms.getJSONObject(i);

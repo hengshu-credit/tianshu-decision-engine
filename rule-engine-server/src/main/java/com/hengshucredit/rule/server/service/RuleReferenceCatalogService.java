@@ -65,10 +65,17 @@ public class RuleReferenceCatalogService {
             catalog.getDiagnostics().add(invalidOrigin.getMessage());
         }
 
-        if ("WORKSPACE".equals(sourceType) || revision != null && "DRAFT".equals(revision.getState())) {
+        // Pre-artifact versions contain design JSON but no frozen dependency catalog. Their
+        // IDs may use the live catalog only after the same provenance proof used by saving.
+        boolean legacyVersion = version != null && version.getRevisionId() == null
+                && version.getArtifactId() == null && version.getArtifactDigest() == null;
+        boolean localRevision = version == null && revision != null && revision.getArtifactId() == null
+                && !"DELETED".equals(revision.getState());
+        if ("WORKSPACE".equals(sourceType) || legacyVersion || localRevision
+                || version == null && revision != null && "DRAFT".equals(revision.getState())) {
             if (catalog.isLocalEditingAllowed()) {
                 catalog.setStatus("AVAILABLE"); catalog.setReferenceNamespace("LOCAL");
-            } else catalog.getDiagnostics().add("该草稿的引用来源尚未物化或无法验证；保留原配置，请先通过离线迁移完成明确资源绑定。");
+            } else catalog.getDiagnostics().add("该配置的引用来源尚未物化或无法验证；保留原配置，请先通过离线迁移完成明确资源绑定。");
             return catalog;
         }
 
@@ -123,6 +130,7 @@ public class RuleReferenceCatalogService {
         for (var pinned : snapshot.getResourceVersions().values()) {
             var payload = pinned.getJSONObject("payload");
             String type = pinned.getString("refType");
+            catalog.getVersionReferences().add(versionReference(pinned));
             if ("VARIABLE".equals(type) || "CONSTANT".equals(type)) {
                 Map<String, Object> variable = row(payload.toJavaObject(com.hengshucredit.rule.model.entity.RuleVariable.class),
                         "id", "varCode", "varLabel", "scriptName", "varType", "varSource", "defaultValue", "status");
@@ -169,6 +177,48 @@ public class RuleReferenceCatalogService {
             catalog.getDisplayLabels().put(field.getRefType() + ":" + field.getVarId(), field.getFieldLabel());
         for (var field : snapshot.getOutputFields()) if (field.getRefType() != null && field.getVarId() != null && field.getFieldLabel() != null)
             catalog.getDisplayLabels().putIfAbsent(field.getRefType() + ":" + field.getVarId(), field.getFieldLabel());
+    }
+
+    /** 固定版本脚本逆向展示使用完整绑定键，不能借当前同号资源补名称。 */
+    private Map<String, Object> versionReference(com.alibaba.fastjson.JSONObject pinned) {
+        String type = pinned.getString("refType");
+        var payload = pinned.getJSONObject("payload");
+        var metadata = payload;
+        String prefix = "";
+        if (type != null && type.startsWith("MODEL")) {
+            metadata = com.alibaba.fastjson.JSON.parseObject(payload.getString("executionSnapshotJson")).getJSONObject("model");
+            if ("MODEL_OUTPUT".equals(type)) {
+                prefix = metadata.getString("modelCode");
+                metadata = versionField(metadata.getJSONArray("outputFields"), pinned.getString("refId"), metadata);
+            }
+        } else if ("DATA_OBJECT".equals(type)) {
+            prefix = firstDisplayText(payload, "scriptName", "objectCode");
+            metadata = versionField(payload.getJSONArray("fields"), pinned.getString("refId"), payload);
+        }
+        String code = firstDisplayText(metadata, "scriptName", "varCode", "funcCode", "modelCode", "objectCode", "apiCode", "fieldName");
+        if (prefix != null && !prefix.isBlank() && code != null && !code.startsWith(prefix + ".")) code = prefix + "." + code;
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("refType", type); result.put("refId", pinned.getString("refId"));
+        result.put("versionId", pinned.getString("versionId")); result.put("versionSource", pinned.getString("versionSource"));
+        result.put("version", pinned.getInteger("version")); result.put("displayVersion", pinned.getInteger("displayVersion"));
+        result.put("versionMode", "FIXED"); result.put("code", code);
+        result.put("label", firstDisplayText(metadata, "varLabel", "funcName", "modelName", "objectLabel", "apiName", "fieldLabel", "fieldName"));
+        String valueType = firstDisplayText(metadata, "varType", "returnType", "fieldType");
+        result.put("valueType", valueType == null && !"FUNCTION".equals(type) ? "OBJECT" : valueType);
+        return result;
+    }
+
+    private com.alibaba.fastjson.JSONObject versionField(com.alibaba.fastjson.JSONArray fields, String refId, com.alibaba.fastjson.JSONObject fallback) {
+        if (fields != null) for (int i = 0; i < fields.size(); i++) {
+            var field = fields.getJSONObject(i);
+            if (refId.equals(field.getString("id"))) return field;
+        }
+        return fallback;
+    }
+
+    private String firstDisplayText(com.alibaba.fastjson.JSONObject source, String... names) {
+        for (String name : names) { String value = source.getString(name); if (value != null && !value.isBlank()) return value; }
+        return null;
     }
 
     private List<Map<String, Object>> fields(List<?> fields) {

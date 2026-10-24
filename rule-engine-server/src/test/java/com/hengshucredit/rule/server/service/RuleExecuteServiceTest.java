@@ -40,6 +40,44 @@ import static org.junit.Assert.assertTrue;
 
 public class RuleExecuteServiceTest {
 
+    @Test
+    public void workspaceAndPublishedRuleResolveReferencedModelOutputs() {
+        RuleExecuteService service = newService();
+        String model = "{\"rules\":[{\"conditionRoot\":{\"type\":\"leaf\",\"varCode\":\"score_f1.score\","
+                + "\"_varId\":81,\"_refType\":\"MODEL_OUTPUT\",\"operator\":\">\",\"value\":\"0\"}}]}";
+        ReflectionTestUtils.setField(service, "definitionService", new FakeDefinitionService());
+        ReflectionTestUtils.setField(service, "projectService", new FakeProjectService());
+        ReflectionTestUtils.setField(service, "qlExpressEngine", new QLExpressEngine());
+        ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(service, "ruleFieldAnalyzer", new RuleFieldAnalyzer());
+        ReflectionTestUtils.setField(service, "runtimeRuleInvoker", new NoOpRuntimeInvoker());
+        ReflectionTestUtils.setField(service, "logService", new RecordingLogService());
+        ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+        ReflectionTestUtils.setField(service, "functionService", new FakeFunctionService());
+        ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
+        ReflectionTestUtils.setField(service, "variableSourceResolver", new VariableSourceResolver() {
+            @Override public Map<String, Object> resolveInto(Long projectId, Map<String, Object> target,
+                                                            VariableResolveOptions options) {
+                if (options.getRequiredScriptNames().contains("score_f1.score")) {
+                    target.put("score_f1", Map.of("score", 650));
+                }
+                return target;
+            }
+        });
+        var target = new RuleTestTargetResolver.Target(new FakeDefinitionService().getById(10L), 1L,
+                model, "RULE_SET", "score_f1.score", new RuleFieldAnalyzer.ResolvedFields(List.of(), List.of()),
+                null, null, null);
+        RuleResult workspace = service.testExecuteTarget(target, Map.of());
+        assertTrue(workspace.getErrorMessage(), workspace.isSuccess());
+        assertEquals(650, workspace.getResult());
+        RulePublished published = new RulePublished();
+        published.setDefinitionId(10L); published.setRuleCode("RISK_RULE"); published.setProjectCode("project_a");
+        published.setModelType("RULE_SET"); published.setModelJson(model); published.setCompiledScript("score_f1.score");
+        RuleResult result = service.executePublished(published, Map.of(), 1L, "test");
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals(650, result.getResult());
+    }
+
     @Test public void frozenGlobalTestKeepsTheSelectedProjectsBillingAttribution() {
         RuleExecuteService service = newService();
         RuleDefinitionService definitions = new FakeDefinitionService() {

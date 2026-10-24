@@ -1,0 +1,108 @@
+/* 标题栏页签菜单与账号菜单共享天枢的字体、密度和主题样式。 */
+.layout-popup-menu,
+.layout-popup-menu.el-popper {
+  min-width: 176px;
+  padding: 6px;
+  color: var(--tianshu-text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+  background: var(--tianshu-bg-elevated);
+  border: 1px solid var(--tianshu-border-subtle);
+  border-radius: 8px;
+  box-shadow: var(--tianshu-shadow-medium);
+}
+
+.layout-popup-menu {
+  .el-dropdown-menu {
+    padding: 0;
+    font: inherit;
+    background: transparent;
+    border-radius: 0;
+  }
+
+  .layout-popup-menu__item,
+  .el-dropdown-menu__item {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 32px;
+    margin: 0;
+    padding: 5px 10px;
+    gap: 8px;
+    color: var(--tianshu-text-primary);
+    font: inherit;
+    font-size: 14px;
+    line-height: 22px;
+    text-align: left;
+    white-space: nowrap;
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: color 160ms ease, background-color 160ms ease;
+
+    .el-icon {
+      flex: none;
+      width: 16px;
+      height: 16px;
+      margin-right: 0;
+      color: var(--tianshu-text-tertiary);
+      font-size: 16px;
+    }
+
+    &:hover:not(:disabled):not(.is-disabled),
+    &:focus:not(:disabled):not(.is-disabled) {
+      color: var(--tianshu-primary-text);
+      background: var(--tianshu-bg-active);
+
+      .el-icon { color: inherit; }
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--tianshu-focus-ring);
+      outline-offset: -2px;
+    }
+
+    &:disabled,
+    &.is-disabled {
+      color: var(--tianshu-text-disabled);
+      background: transparent;
+      cursor: not-allowed;
+
+      .el-icon,
+      .layout-popup-menu__shortcut { color: inherit; }
+    }
+
+    &.is-divided {
+      position: relative;
+      margin-top: 9px;
+
+      &::before {
+        position: absolute;
+        top: -5px;
+        right: 0;
+        left: 0;
+        height: 1px;
+        content: '';
+        background: var(--tianshu-border-subtle);
+        pointer-events: none;
+      }
+    }
+  }
+
+  .el-dropdown-menu__item--divided {
+    margin: 4px 0;
+    border-top-color: var(--tianshu-border-subtle);
+  }
+
+  .layout-popup-menu__shortcut {
+    margin-left: auto;
+    padding-left: 8px;
+    color: var(--tianshu-text-tertiary);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 20px;
+  }
+}

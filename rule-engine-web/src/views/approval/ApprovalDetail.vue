@@ -1,9 +1,7 @@
 <template>
   <div class="uiue-list-page approval-detail-page">
     <header class="detail-header">
-      <button class="back-button" type="button" @click="goBack">
-        ← 返回上一页
-      </button>
+      <el-button size="small" class="uiue-detail-back" aria-label="返回上一页" title="返回上一页" @click="goBack"><app-icon name="Back" /></el-button>
       <div v-if="request" class="header-main">
         <div>
           <div class="request-number">{{ request.requestNo }}</div>
@@ -17,7 +15,7 @@
             <span>申请人 {{ request.applicant || '—' }}</span>
           </div>
         </div>
-        <div class="header-actions">
+        <div class="header-actions uiue-action-group">
           <el-button
             v-if="request.resourceType === 'RULE'"
             @click="openRuleDesign"
@@ -344,7 +342,8 @@
               <span class="section-kicker">IMMUTABLE VERSIONS</span>
               <h2>历史生效版本</h2>
             </div>
-            <span>可新增或复用版本号，恢复后可继续编辑；历史快照和审批记录保留。</span>
+            <span v-if="isSystemSetting">历史快照用于查看和对比；调整配置请在系统配置页提交新审批。</span>
+            <span v-else>可新增或复用版本号，恢复后可继续编辑；历史快照和审批记录保留。</span>
           </div>
           <el-table show-overflow-tooltip :data="detail.versions || []" row-key="id">
             <el-table-column label="版本" width="90">
@@ -356,12 +355,12 @@
             <el-table-column label="生效时间" width="175">
               <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
             </el-table-column>
-            <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['查看', '对比', '恢复'])">
+            <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(isSystemSetting ? ['查看', '对比'] : ['查看', '对比', '恢复'])">
               <template #default="{ row }">
                 <div class="approval-version-actions">
                   <el-button link type="info" @click="viewGovernanceVersion(row)">查看</el-button>
                   <el-button link type="primary" @click="compareGovernanceVersion(row)">对比</el-button>
-                  <el-button v-permission="'approval:submit'" link type="primary" :disabled="row.deleted || ['EDITING', 'PENDING'].includes(request.status)" @click="restoreVersion(row)">恢复</el-button>
+                  <el-button v-if="!isSystemSetting" v-permission="'approval:submit'" link type="primary" :disabled="row.deleted || ['EDITING', 'PENDING'].includes(request.status)" @click="restoreVersion(row)">恢复</el-button>
                 </div>
               </template>
             </el-table-column>
@@ -453,6 +452,9 @@ export default {
     request() {
       return this.detail.request || null
     },
+    isSystemSetting() {
+      return this.request?.resourceType === 'SYSTEM_SETTING'
+    },
     diff() {
       return this.detail.diff || { fields: [] }
     },
@@ -543,6 +545,7 @@ export default {
     resourceTitle() {
       if (!this.request) return '审批详情'
       const value = this.requestSnapshot()
+      if (this.isSystemSetting && value.settingName) return `系统配置 · ${value.settingName}`
       if (
         this.request.resourceType === 'RULE_PROJECT_BINDING' &&
         value.definitionId &&
@@ -798,7 +801,7 @@ export default {
       }
     },
     async restoreVersion(version) {
-      if (version.deleted) return
+      if (version.deleted || this.isSystemSetting) return
       const mode = await chooseVersionRestore(version.versionNo)
       if (!mode) return
       const response = await restoreGovernanceVersion(
@@ -1014,6 +1017,7 @@ export default {
         LIST_RECORD_BATCH: '名单内容批次',
         FIELD_VALIDATION: '字段校验',
         BILLING_CONFIG: '计费配置',
+        SYSTEM_SETTING: '系统配置',
         EXPERIMENT: '分流',
         PROJECT: '项目'
       }[type] || type
@@ -1087,24 +1091,20 @@ export default {
 }
 
 .detail-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
   padding: 0 0 16px;
   border-bottom: 1px solid #e2e6ec;
 }
 
-.back-button {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #657184;
-  cursor: pointer;
-}
-
 .header-main {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
-  margin-top: 22px;
 }
 
 .request-number,
@@ -1122,8 +1122,7 @@ export default {
   letter-spacing: -0.035em;
 }
 
-.header-meta,
-.header-actions {
+.header-meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -1524,10 +1523,17 @@ export default {
 }
 
 @media (max-width: 680px) {
-  .detail-content,
-  .detail-header {
+  .detail-content {
     padding-right: 14px;
     padding-left: 14px;
+  }
+
+  .detail-header {
+    flex-direction: column;
+  }
+
+  .header-main {
+    width: 100%;
   }
 
   .overview-grid,

@@ -54,6 +54,8 @@ for (const entry of cases) {
       if (byEnter) await input.press('Enter')
       else await area.getByRole('button', { name: '查询', exact: true }).click()
       await requested
+      // 等过候选查询的 200ms 防抖窗口，确认回车后不会被排队任务重新打开。
+      await page.waitForTimeout(350)
       await expect(input).toHaveValue(value)
       await expect(page.locator('.el-autocomplete-suggestion:visible')).toHaveCount(0)
     }
@@ -101,5 +103,12 @@ test('项目多条件匹配结果正确，修改其中一项保留其余条件',
   await expect(code).toHaveValue('')
   await expect(name).toHaveValue('')
   await expect(page.getByText('共 3 条', { exact: true })).toBeVisible()
+  await code.click()
+  await page.getByRole('option', { name: 'risk_main', exact: true }).click()
+  await expect(code).toHaveValue('risk_main')
+  await code.press('Enter')
+  await expect(page.getByText('共 1 条', { exact: true })).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'risk_main', exact: true })).toBeVisible()
+  await expect(page.locator('.el-autocomplete-suggestion:visible')).toHaveCount(0)
   assertClean()
 })

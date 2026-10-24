@@ -1,5 +1,6 @@
 import { compileOperand, inferOperandType, operandFromReferenceFields, createLiteralOperand, OPERAND_KINDS } from '@/utils/operand'
 import { findConditionOperator } from '@/constants/conditionOperators'
+import { noRightOperand, operationLabel, predicateOperator } from './contentOperation'
 import { isRangeOperator, requireRangeBounds } from '@/utils/conditionRange'
 import { isTypedCollection, requireCollectionItems } from '@/utils/conditionCollection'
 import { LIST_COMBINATION_MODES, LIST_ITEM_TYPES, LIST_MATCH_MODES } from '@/constants/listMatchModes'
@@ -32,7 +33,7 @@ function formatNode(operand, rootOperation, humanReadable = false) {
   if (operand.kind === OPERAND_KINDS.OPERATION) {
     const content = (operand.terms || []).map((term, index) => {
       const value = formatNode(term && term.operand, false, humanReadable)
-      return index === 0 ? value : ((term && term.operator) || '') + ' ' + value
+      return index === 0 ? value : (predicateOperator(term?.operator) ? operationLabel(term.operator) : term?.operator || '') + (noRightOperand(term?.operator) ? '' : ' ' + value)
     }).join(' ')
     return rootOperation ? content : '(' + content + ')'
   }

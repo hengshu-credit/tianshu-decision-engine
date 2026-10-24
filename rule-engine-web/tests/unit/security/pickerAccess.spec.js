@@ -3,7 +3,7 @@ import { recordConsoleActivity } from '@/security/operationActivity'
 import { clearCurrentUser, setCurrentUser } from '@/security/permissionState'
 vi.mock('@/security/operationActivity', () => ({ recordConsoleActivity: vi.fn() }))
 
-describe('字段选择器资源权限', () => {
+describe('内容选择器资源权限', () => {
   test('字段访问只呈报身份和选定版本，不传入字段配置', () => {
     setCurrentUser({ permissions: ['model:view'] })
     recordPickerActivity('FIELD_VIEW', { _refType: 'MODEL', _varId: '3', version: 2, varLabel: '模型字段', sourceConfig: 'PRIVATE_CONFIG' }, '/rule/1')

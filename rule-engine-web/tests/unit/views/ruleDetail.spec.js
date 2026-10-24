@@ -266,6 +266,7 @@ describe('RuleDetail 生命周期治理', () => {
   test('详情页不在基础信息区展示版本字段，但保留生命周期内容', async () => {
     const wrapper = await mountAndWait()
 
+    expect(wrapper.findComponent({ name: 'ResourceVersionManager' }).props('showTrigger')).toBe(false)
     expect(wrapper.text()).not.toContain('内容保存版本')
     expect(wrapper.text()).toContain('生命周期修订')
     expect(wrapper.text()).not.toContain('当前发布版本')
@@ -1104,7 +1105,7 @@ describe('RuleDetail — 开放接口契约', () => {
     wrapper.unmount()
   })
 
-  test('开放接口映射使用字段选择器所需的稳定引用字段', async () => {
+  test('开放接口映射使用内容选择器所需的稳定引用字段', async () => {
     const wrapper = await mountAndWait()
     expect(wrapper.vm.openInputPickerItems[0]).toMatchObject({
       id: 1,
@@ -1213,11 +1214,8 @@ describe('RuleDetail — 开放接口契约', () => {
       expect.objectContaining({ sourceKey: 'VARIABLE:3', targetField: 'result' })
     ])
     expect(JSON.parse(wrapper.vm.openSuccessDataText)).toBe('${response}')
-    expect(wrapper.vm.openApiStatusCodes.map(item => item.code)).toEqual(expect.arrayContaining([
-      '000000', '100001', '100002', '200001', '300001', '300002', '300003',
-      '300004', '300005', '400001', '400002', '400003', '500001', '500002',
-      '500003', '500004'
-    ]))
+    expect(wrapper.find('.open-api-status-table').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('平台响应结果码')
     wrapper.unmount()
   })
 
@@ -1577,7 +1575,7 @@ describe('RuleDetail version history', () => {
 })
 
 describe('RuleDetail — 输入字段校验配置', () => {
-  test('字段选择器明确标识系统内置规则', async () => {
+  test('内容选择器明确标识系统内置规则', async () => {
     const wrapper = await mountAndWait()
 
     expect(wrapper.vm.fieldValidationOptionLabel(wrapper.vm.fieldValidationOptions[0]))

@@ -397,10 +397,10 @@ public class RuleLineageService {
             if (Integer.valueOf(-1).equals(item.getStatus())) continue;
             addNode(graph, "PROJECT", item.getId(), item.getProjectCode(), item.getProjectName());
         }
-        List<RuleVariable> variables = variableMapper.selectList(new QueryWrapper<RuleVariable>().select("id", "project_id", "var_code", "var_label", "status", "var_source", "source_config"));
+        List<RuleVariable> variables = variableMapper.selectList(new QueryWrapper<RuleVariable>().select("id", "project_id", "var_code", "var_label", "var_type", "status", "var_source", "source_config"));
         for (RuleVariable item : variables) {
             if (Integer.valueOf(-1).equals(item.getStatus())) continue;
-            addNode(graph, "VARIABLE", item.getId(), item.getVarCode(), item.getVarLabel());
+            addNode(graph, "VARIABLE", item.getId(), item.getVarCode(), item.getVarLabel(), item.getVarType());
             addProjectEdge(graph, item.getProjectId(), nodeKey("VARIABLE", item.getId()));
         }
         Set<Long> deletedObjectIds = new LinkedHashSet<>();
@@ -413,11 +413,11 @@ public class RuleLineageService {
             addProjectEdge(graph, item.getProjectId(), nodeKey("DATA_OBJECT", item.getId()));
         }
         // 对象整体删除后，其历史字段不能以独立项目字段的身份重新进入当前引用图。
-        List<RuleDataObjectField> objectFields = dataObjectFieldMapper.selectList(new QueryWrapper<RuleDataObjectField>().select("id", "object_id", "parent_field_id", "project_id", "script_name", "var_code", "var_label", "status"))
+        List<RuleDataObjectField> objectFields = dataObjectFieldMapper.selectList(new QueryWrapper<RuleDataObjectField>().select("id", "object_id", "parent_field_id", "project_id", "script_name", "var_code", "var_label", "var_type", "status"))
                 .stream().filter(item -> !Integer.valueOf(-1).equals(item.getStatus())
                         && !deletedObjectIds.contains(item.getObjectId())).toList();
         for (RuleDataObjectField item : objectFields) {
-            addNode(graph, "DATA_FIELD", item.getId(), item.getScriptName() != null ? item.getScriptName() : item.getVarCode(), item.getVarLabel());
+            addNode(graph, "DATA_FIELD", item.getId(), item.getScriptName() != null ? item.getScriptName() : item.getVarCode(), item.getVarLabel(), item.getVarType());
             String objectKey = nodeKey("DATA_OBJECT", item.getObjectId());
             if (graph.nodes.containsKey(objectKey) && item.getId() != null) {
                 graph.nodes.get(nodeKey("DATA_FIELD", item.getId())).put("objectNodeId", objectKey);
@@ -479,9 +479,9 @@ public class RuleLineageService {
             addProjectEdge(graph, item.getProjectId(), nodeKey("LIST", item.getId()));
         }
         if (functionMapper != null) {
-            for (RuleFunction item : functionMapper.selectList(new QueryWrapper<RuleFunction>().select("id", "project_id", "func_code", "func_name", "status"))) {
+            for (RuleFunction item : functionMapper.selectList(new QueryWrapper<RuleFunction>().select("id", "project_id", "func_code", "func_name", "return_type", "status"))) {
                 if (Integer.valueOf(-1).equals(item.getStatus())) continue;
-                addNode(graph, "FUNCTION", item.getId(), item.getFuncCode(), item.getFuncName());
+                addNode(graph, "FUNCTION", item.getId(), item.getFuncCode(), item.getFuncName(), item.getReturnType());
                 addProjectEdge(graph, item.getProjectId(), nodeKey("FUNCTION", item.getId()));
             }
         }
@@ -662,6 +662,15 @@ public class RuleLineageService {
     }
 
     private void addNode(FullGraph graph, String type, Long id, String code, String label) {
+        String valueType = switch (type) {
+            case "DATA_OBJECT" -> "OBJECT";
+            case "DB" -> "DATABASE";
+            default -> type;
+        };
+        addNode(graph, type, id, code, label, valueType);
+    }
+
+    private void addNode(FullGraph graph, String type, Long id, String code, String label, String valueType) {
         if (id == null) return;
         String key = nodeKey(type, id);
         if (graph.nodes.containsKey(key)) return;
@@ -671,6 +680,7 @@ public class RuleLineageService {
         node.put("refId", id);
         node.put("code", code);
         node.put("label", label != null && !label.trim().isEmpty() ? label : code);
+        node.put("valueType", valueType);
         graph.nodes.put(key, node);
     }
 

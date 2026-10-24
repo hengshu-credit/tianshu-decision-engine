@@ -116,14 +116,13 @@ describe('MonacoEditor', () => {
 
     const decorations = editor.deltaDecorations.mock.calls.at(-1)[1]
     expect(decorations.map(item => item.options.description)).toEqual([
-      'ql-engine-reference-type',
-      'ql-engine-reference',
-      'ql-engine-reference-label',
+      'engine-content-source', 'engine-content-type', 'engine-content-name', 'engine-content-code', 'engine-content-version',
     ])
-    expect(decorations[0].options.before.content).toBe('N')
-    expect(decorations[0].options.before.inlineClassName).toContain('se-reference-type--number')
-    expect(decorations[2].options.before.content).toBe('风险分')
-    expect(decorations[2].options.after.content).toBe('v4')
+    expect(decorations[0].options.before.content.trim()).toBe('变量')
+    expect(decorations[1].options.before.content.trim()).toBe('N')
+    expect(decorations[1].options.before.inlineClassName).toContain('content-ref__type--number')
+    expect(decorations[2].options.before.content.trim()).toBe('风险分')
+    expect(decorations[4].options.after.content.trim()).toBe('v4')
     wrapper.unmount()
   })
 })

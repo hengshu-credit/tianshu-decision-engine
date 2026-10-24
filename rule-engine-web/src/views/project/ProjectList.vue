@@ -204,6 +204,7 @@
 </template>
 
 <script>
+import { systemBrand, DEFAULT_BRAND, loadSystemBrand } from '@/system/systemBrand'
 import { getCurrentUser } from '@/security/permissionState'
 import { PLATFORM_SUCCESS_CODE } from '@/utils/platformResponse'
 
@@ -442,7 +443,16 @@ export default {
       this.authDialogVisible = true
     },
     async loadApiDocLogo() {
-      const baseUrl = import.meta.env.BASE_URL || './'
+      await loadSystemBrand(true)
+        if (/^https?:\/\//.test(systemBrand.logoUrl)) return systemBrand.logoUrl
+      if (systemBrand.logoUrl.startsWith('/api/auth/console/brand/assets/')) {
+        const image = await fetch(systemBrand.logoUrl)
+        if (!image.ok) throw new Error('加载系统 Logo 失败')
+        const blob = await image.blob()
+        return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob) })
+      }
+        if (systemBrand.logoUrl !== DEFAULT_BRAND.logoUrl && systemBrand.logoUrl.startsWith('/')) return new URL(systemBrand.logoUrl, window.location.origin).href
+        const baseUrl = import.meta.env.BASE_URL || './'
       const response = await fetch(
         `${baseUrl}images/hengshucredit_animated.svg`
       )
@@ -465,6 +475,7 @@ export default {
           const doc = res.data
           const html = generateApiDocHtml(doc, {
             logoSvg,
+            brand: { systemName: systemBrand.systemName, subtitle: systemBrand.subtitle },
             theme: this.getApiDocTheme(),
           })
           const blob = new Blob([html], { type: 'text/html;charset=utf-8' })

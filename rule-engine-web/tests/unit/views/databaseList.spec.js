@@ -10,7 +10,6 @@ const FormItemStub = {
   template: '<div class="form-item-stub" :data-label="label"><slot /></div>'
 }
 
-
 async function mountPage(route) {
   projectApi.listProjects.mockResolvedValue({ data: { records: [{ id: 1, projectName: '项目A' }] } })
   databaseApi.listDbDatasources.mockResolvedValue({ data: { records: [], total: 0 } })
@@ -50,7 +49,7 @@ async function mountPage(route) {
   return wrapper
 }
 
-describe('DatabaseList — JDBC URL 生成', () => {
+describe('DatabaseList — 列表与只读查询', () => {
   let wrapper
 
   beforeEach(async () => {
@@ -87,105 +86,6 @@ describe('DatabaseList — JDBC URL 生成', () => {
       path: '/database/new',
       query: { projectId: 2 },
     })
-  })
-
-  test('MySQL 表单字段能生成 JDBC URL 并追加扩展参数', () => {
-    wrapper.vm.form = wrapper.vm.emptyForm()
-    wrapper.vm.form.host = 'mysql.internal'
-    wrapper.vm.form.port = 3307
-    wrapper.vm.form.databaseName = 'riskdb'
-    wrapper.vm.form.jdbcParams = 'useUnicode=true&serverTimezone=Asia/Shanghai'
-
-    wrapper.vm.generateJdbcUrl(false)
-
-    expect(wrapper.vm.form.jdbcUrl).toBe('jdbc:mysql://mysql.internal:3307/riskdb?useUnicode=true&serverTimezone=Asia/Shanghai')
-  })
-
-  test('SQL Server 表单字段使用分号参数生成 JDBC URL', () => {
-    wrapper.vm.form = wrapper.vm.emptyForm()
-    wrapper.vm.form.dbType = 'SQLSERVER'
-    wrapper.vm.form.host = 'sql.internal'
-    wrapper.vm.form.port = 1433
-    wrapper.vm.form.databaseName = 'riskdb'
-    wrapper.vm.form.jdbcParams = 'encrypt=false;trustServerCertificate=true'
-
-    wrapper.vm.generateJdbcUrl(false)
-
-    expect(wrapper.vm.form.jdbcUrl).toBe('jdbc:sqlserver://sql.internal:1433;databaseName=riskdb;encrypt=false;trustServerCertificate=true')
-  })
-
-  test('关闭自动生成后手写 JDBC URL 不会被表单字段覆盖', () => {
-    wrapper.vm.form = wrapper.vm.emptyForm()
-    wrapper.vm.form.jdbcAutoBuild = false
-    wrapper.vm.form.jdbcUrl = 'jdbc:mysql://custom-host:3306/custom_db'
-    wrapper.vm.form.host = 'mysql.internal'
-    wrapper.vm.form.databaseName = 'riskdb'
-
-    wrapper.vm.onJdbcPartChange()
-
-    expect(wrapper.vm.form.jdbcUrl).toBe('jdbc:mysql://custom-host:3306/custom_db')
-  })
-
-  test('normalizeForm 移除前端自动生成标记并保留 SSH 配置', () => {
-    wrapper.vm.form = wrapper.vm.emptyForm()
-    wrapper.vm.form.connectionMode = 'SSH_TUNNEL'
-    wrapper.vm.form.host = 'mysql.internal'
-    wrapper.vm.form.databaseName = 'riskdb'
-    wrapper.vm.form.sshHost = 'bastion.internal'
-    wrapper.vm.form.sshUsername = 'deploy'
-    wrapper.vm.generateJdbcUrl(false)
-
-    const data = wrapper.vm.normalizeForm(wrapper.vm.form)
-
-    expect(data.jdbcAutoBuild).toBeUndefined()
-    expect(data.jdbcUrl).toBe('jdbc:mysql://mysql.internal:3306/riskdb?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false')
-    expect(data.connectionMode).toBe('SSH_TUNNEL')
-    expect(data.sshHost).toBe('bastion.internal')
-    expect(data.sshUsername).toBe('deploy')
-  })
-
-  test('数据库账号密码排在 SSH 配置之前', async () => {
-    wrapper.vm.dialogVisible = true
-    wrapper.vm.form.connectionMode = 'SSH_TUNNEL'
-    await nextTick()
-
-    const labels = wrapper.findAll('.form-item-stub').map(item => item.attributes('data-label'))
-    expect(labels.indexOf('用户名')).toBeGreaterThanOrEqual(0)
-    expect(labels.indexOf('密码')).toBeGreaterThanOrEqual(0)
-    expect(labels.indexOf('SSH主机')).toBeGreaterThan(labels.indexOf('用户名'))
-    expect(labels.indexOf('SSH主机')).toBeGreaterThan(labels.indexOf('密码'))
-  })
-
-  test.each([null, 1])('列表配置表单 id=%s 切换连接方式不串用数据库与 SSH 凭据', async (id) => {
-    databaseApi.testDbDatasourceDraft.mockResolvedValue({ data: '连接成功' })
-    databaseApi.createDbDatasource.mockResolvedValue({ data: {} })
-    databaseApi.updateDbDatasource.mockResolvedValue({ data: {} })
-    Object.assign(wrapper.vm.form, { id, scope: 'GLOBAL', host: 'mysql.internal', databaseName: 'risk' })
-    const input = label => wrapper.find(`[data-label="${label}"]`).findComponent('el-input-stub')
-    input('用户名').vm.$emit('update:modelValue', 'DB_User')
-    input('密码').vm.$emit('update:modelValue', ' Db!@#密 码 ')
-    const mode = wrapper.findComponent('el-radio-group-stub')
-    mode.vm.$emit('update:modelValue', 'SSH_TUNNEL')
-    await nextTick()
-    input('SSH用户').vm.$emit('update:modelValue', 'ssh_user')
-    input('SSH密码').vm.$emit('update:modelValue', 'SSH!pass')
-    const credentials = { username: 'DB_User', password: ' Db!@#密 码 ', sshUsername: 'ssh_user', sshPassword: 'SSH!pass' }
-
-    for (const connectionMode of ['DIRECT', 'SSH_TUNNEL']) {
-      mode.vm.$emit('update:modelValue', connectionMode)
-      await nextTick()
-      expect(input('用户名').exists()).toBe(true)
-      expect(input('密码').exists()).toBe(true)
-      expect(wrapper.vm.form).toMatchObject(credentials)
-      wrapper.vm.handleTestDraft()
-      await new Promise(resolve => setTimeout(resolve, 0))
-      expect(databaseApi.testDbDatasourceDraft.mock.lastCall[0]).toMatchObject({ ...credentials, connectionMode })
-      wrapper.vm.handleSubmit()
-      await new Promise(resolve => setTimeout(resolve, 0))
-      const save = id ? databaseApi.updateDbDatasource : databaseApi.createDbDatasource
-      expect(save.mock.lastCall[0]).toMatchObject({ ...credentials, connectionMode })
-    }
-    expect(id ? databaseApi.createDbDatasource : databaseApi.updateDbDatasource).not.toHaveBeenCalled()
   })
 
   test('提供数据库变量配置说明和只读查询提示', () => {

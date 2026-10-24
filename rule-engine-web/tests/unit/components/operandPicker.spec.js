@@ -55,6 +55,7 @@ const references = [
 describe('OperandPicker', () => {
   test('手动输入分类始终位于最前方', async () => {
     const wrapper = mountPicker({ vars: references })
+    wrapper.vm.openPopover()
     await nextTick()
 
     expect(wrapper.vm.categoryList.map(item => item.key)).toEqual([

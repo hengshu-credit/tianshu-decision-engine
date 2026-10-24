@@ -4,19 +4,19 @@
     <div class="uiue-detail-header model-detail-header">
       <div class="uiue-detail-header__title">
         <el-button
-          link
           size="small"
           :icon="ElIconBack"
           class="uiue-detail-back"
+          aria-label="返回"
+          title="返回模型列表"
           @click="$router.push('/model')"
-          >返回</el-button
-        >
+        />
         <h2 style="margin: 0">{{ model.modelName || '模型详情' }}</h2>
       </div>
       <div class="uiue-detail-header__actions model-detail-actions">
         <resource-version-manager
           v-if="model.id"
-          :show-trigger="true"
+          :show-trigger="false"
           resource-type="MODEL"
           :resource-id="model.id"
           has-legacy
@@ -1621,27 +1621,6 @@ export default {
       if (data && Array.isArray(data.records)) return data.records
       return []
     },
-    flattenObjectVariables(vars) {
-      const result = []
-      const visit = (rows) => {
-        const list = rows || []
-        list.forEach((row) => {
-          result.push(row)
-          if (row.children && row.children.length) visit(row.children)
-        })
-      }
-      visit(vars)
-      return result
-    },
-    stripObjectPrefix(text, objectCode) {
-      if (!text || !objectCode) return text || ''
-      var prefix = objectCode + '.'
-      return text.indexOf(prefix) === 0 ? text.substring(prefix.length) : text
-    },
-    refKey(id, refType) {
-      if (!id || !refType) return ''
-      return refType + ':' + id
-    },
     getRowVarMap(row) {
       return resolveDetailReference(this.varMap, row)
     },
@@ -1693,10 +1672,6 @@ export default {
         '变量'
       )
     },
-    putVarMap(item) {
-      const key = this.refKey(item.id, item.refType)
-      if (key) this.varMap[key] = item
-    },
     syncModelOperandReferences() {
       const options = this.varPickerOptions
       const syncField = (row, field) => {
@@ -1718,124 +1693,14 @@ export default {
       const state = buildDetailReferenceState(
         buildReferenceCatalog(vars, doTree, referenceModels)
       )
-      if (state && state.items) {
-        this.varMap = buildDetailReferenceMap(state)
-        this.varPickerGroups.splice(
-          0,
-          this.varPickerGroups.length,
-          ...state.groups.map((group) => ({
-            label: group.label,
-            options: group.options,
-          }))
-        )
-        this.syncModelOperandReferences()
-        return
-      }
-      this.varMap = {}
-      const seenIds = new Set()
-      const varOptions = []
-      const constOptions = []
-      const objOptions = []
-      const modelOptions = []
-      vars.forEach((v) => {
-        const refType = v.varSource === 'CONSTANT' ? 'CONSTANT' : 'VARIABLE'
-        const seenKey = this.refKey(v.id, refType)
-        if (!v.id || seenIds.has(seenKey)) return
-        seenIds.add(seenKey)
-        const labelText = v.varLabel || ''
-        const codeText = v.scriptName || v.varCode || ''
-        const isConst = v.varSource === 'CONSTANT'
-        const item = {
-          id: v.id,
-          refType,
-          varCode: codeText,
-          varLabel: labelText + (codeText ? ' ' + codeText : ''),
-          varLabelText: labelText,
-          varCodeText: codeText,
-          varType: v.varType,
-          varSource: v.varSource,
-          sourceType: isConst ? 'constant' : 'variable',
-          varObj: { ...v, refType },
-        }
-        this.putVarMap(item)
-        if (isConst) {
-          constOptions.push(item)
-        } else {
-          varOptions.push(item)
-        }
-      })
-      doTree.forEach((group) => {
-        const obj = group.object || {}
-        const fields =
-          group.flatVariables || this.flattenObjectVariables(group.variables)
-        fields.forEach((f) => {
-          const refType = 'DATA_OBJECT'
-          const seenKey = this.refKey(f.id, refType)
-          if (!f.id || seenIds.has(seenKey)) return
-          seenIds.add(seenKey)
-          const objCode = obj.scriptName || obj.objectCode || ''
-          const labelText = this.stripObjectPrefix(f.varLabel || '', objCode)
-          const codeText = f.scriptName || f.varCode || ''
-          const objLabel = obj.objectLabel || obj.objectCode || '数据对象'
-          const displayLabel = [objLabel, labelText].filter(Boolean).join('/')
-          const item = {
-            id: f.id,
-            refType,
-            varCode: codeText,
-            varLabel: displayLabel + (codeText ? ' ' + codeText : ''),
-            varLabelText: displayLabel,
-            varCodeText: codeText,
-            varType: f.varType,
-            varSource: 'INPUT',
-            sourceType: 'dataObject',
-            sourceLabel: objLabel,
-            sourceCode: objCode,
-            varObj: { ...f, refType },
-          }
-          this.putVarMap(item)
-          objOptions.push(item)
-        })
-      })
-      models.forEach((m) => {
-        const refType = 'MODEL'
-        const seenKey = this.refKey(m.id, refType)
-        if (!m.id || seenIds.has(seenKey)) return
-        seenIds.add(seenKey)
-        const codeText = m.modelCode || ''
-        if (!codeText) return
-        const labelText = m.modelName || codeText
-        const item = {
-          id: m.id,
-          refType,
-          varCode: codeText,
-          varLabel: labelText + ' ' + codeText,
-          varLabelText: labelText,
-          varCodeText: codeText,
-          varType: 'MODEL',
-          varSource: 'MODEL',
-          sourceType: 'model',
-          varObj: {
-            ...m,
-            id: m.id,
-            varCode: codeText,
-            varLabel: labelText,
-            scriptName: codeText,
-            varType: 'MODEL',
-            refType,
-          },
-        }
-        this.putVarMap(item)
-        modelOptions.push(item)
-      })
+      this.varMap = buildDetailReferenceMap(state)
       this.varPickerGroups.splice(
         0,
         this.varPickerGroups.length,
-        ...[
-          { label: '普通变量', options: varOptions },
-          { label: '常量', options: constOptions },
-          { label: '数据对象字段', options: objOptions },
-          { label: '模型', options: modelOptions },
-        ]
+        ...state.groups.map((group) => ({
+          label: group.label,
+          options: group.options,
+        }))
       )
       this.syncModelOperandReferences()
     },

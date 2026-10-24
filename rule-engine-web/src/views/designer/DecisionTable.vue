@@ -4,13 +4,13 @@
     <div class="dt-header">
       <div class="dt-title-area">
         <el-button
-          link
+          size="small"
           :icon="ElIconBack"
+          class="uiue-detail-back"
           aria-label="返回"
           data-designer-back
           title="返回"
           @click="$router.back()"
-          style="color: var(--tianshu-text-secondary)"
         />
         <el-icon class="dt-title-icon"><el-icon-s-grid /></el-icon>
         <span class="dt-title">决策表配置</span>
@@ -235,6 +235,7 @@
       v-if="definitionId"
       :compile-result="designerCompileResult"
       :references="projectRefs"
+      :version-references="scriptVersionReferences"
       :functions="projectFunctions"
     />
 
@@ -253,12 +254,12 @@
 </template>
 
 <script>
+import ElIconLoading from '@/components/common/AppLoadingIcon.vue'
 import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { markRaw } from 'vue'
 import {
   Grid as ElIconSGrid,
   QuestionFilled as ElIconQuestion,
-  Loading as ElIconLoading,
   Delete as ElIconDelete,
   Back as ElIconBack,
   Plus as ElIconPlus,
@@ -747,10 +748,6 @@ export default {
       this.testVisible = true
     },
 
-    async doTest() {
-      const res = await this.executeDesignerPreview(this.testParams, 'TABLE')
-      this.testResult = res && res.data ? res.data : res
-    },
 
     formatResult(val) {
       if (val === null || val === undefined) return '(空)'
@@ -775,7 +772,6 @@ export default {
   border-radius: 4px;
   padding: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  min-height: 100%;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;

@@ -13,6 +13,7 @@ export const FIELD_CATEGORY_TAGS = Object.freeze({
   rule: ['rule', 'callable'],
   list: ['list', 'reference', 'read'],
   database: ['database', 'reference', 'read'],
+  sftp: ['sftp', 'reference', 'read'],
 })
 
 export const FIELD_ACTION_TAGS = Object.freeze({

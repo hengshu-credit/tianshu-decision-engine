@@ -7,7 +7,6 @@ import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleModelOutputField;
-import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.model.entity.RuleVariableOption;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
@@ -75,20 +74,9 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
 
     /** 填充变量列表的项目名称 */
     private void fillProjectName(List<RuleVariable> list) {
-        if (list == null || list.isEmpty()) return;
-        // 收集所有 projectId（排除 0/全局）
-        List<Long> projectIds = list.stream()
-                .filter(v -> v.getProjectId() != null && v.getProjectId() > 0)
-                .map(RuleVariable::getProjectId)
-                .distinct()
-                .collect(Collectors.toList());
-        if (projectIds.isEmpty()) return;
-        // 批量查询项目名称
-        Map<Long, String> nameMap = projectMapper.selectByIds(projectIds).stream()
-                .collect(Collectors.toMap(RuleProject::getId, RuleProject::getProjectName, (a, b) -> a));
-        list.forEach(v -> {
-            if (v.getProjectId() != null && v.getProjectId() > 0) {
-                v.setProjectName(nameMap.get(v.getProjectId()));
+        ProjectDisplaySupport.fill(list, RuleVariable::getProjectId, projectMapper, (row, project) -> {
+            if (row.getProjectId() != null && row.getProjectId() > 0) {
+                row.setProjectName(project == null ? null : project.getProjectName());
             }
         });
     }

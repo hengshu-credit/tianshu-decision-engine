@@ -140,7 +140,7 @@ describe('VarPicker', () => {
       vars: standaloneOptions(1)
     })
 
-    expect(wrapper.vm.operandKindMetaValue.label).toBe('变量')
+    expect(wrapper.vm.referenceOperand).toMatchObject({ kind: 'REFERENCE', refType: 'VARIABLE' })
     expect(wrapper.get('.vp-reference').element.tagName).toBe('INPUT')
     expect(wrapper.find('div.vp-reference').exists()).toBe(false)
     expect(wrapper.vm.referenceStyle).toBeUndefined()
@@ -155,6 +155,7 @@ describe('VarPicker', () => {
     }))
 
     const wrapper = mountPicker({ vars })
+    wrapper.vm.openPopover()
     await nextTick(); await flushPromises()
 
     expect(wrapper.findAll('.fp-row')).toHaveLength(2)
@@ -162,7 +163,7 @@ describe('VarPicker', () => {
     errorSpy.mockRestore()
   })
 
-  test('可写操作数只展示变量和数据对象字段', () => {
+  test('可写操作数只展示变量和数据对象字段', async () => {
     const wrapper = mountPicker({
       operandMode: true,
       writableOnly: true,
@@ -175,11 +176,15 @@ describe('VarPicker', () => {
       ]
     })
 
+    wrapper.vm.openPopover()
+    await nextTick(); await flushPromises()
+
     expect(wrapper.vm.categoryList.map(item => item.key)).toEqual(['manual', 'standalone', 'object'])
   })
 
   test('只有对象字段时自动切换到对象分类', async () => {
     const wrapper = mountPicker({ vars: objectFieldOptions() })
+    wrapper.vm.openPopover()
     await nextTick(); await flushPromises()
 
     expect(wrapper.vm.categoryList.map(c => c.key)).toEqual(['object'])
@@ -203,6 +208,7 @@ describe('VarPicker', () => {
 
   test('点击对象分组只展开，点击子字段才选择字段', async () => {
     const wrapper = mountPicker({ vars: objectFieldOptions() })
+    wrapper.vm.openPopover()
     await nextTick(); await flushPromises()
 
     const group = wrapper.vm.rightItems[0]
@@ -218,7 +224,7 @@ describe('VarPicker', () => {
     expect(wrapper.vm.popoverVisible).toBe(false)
   })
 
-  test('字段选择器表头返回文本而不是函数对象', () => {
+  test('内容选择器表头返回文本而不是函数对象', () => {
     const wrapper = mountPicker({ columnLabels: 'dataObject' })
 
     expect(typeof wrapper.vm.codeColumnLabel()).toBe('string')
@@ -242,6 +248,7 @@ describe('VarPicker', () => {
         }
       ]
     })
+    wrapper.vm.openPopover()
     await nextTick(); await flushPromises()
 
     const child = wrapper.vm.rightItems[0].children[0]
@@ -292,6 +299,7 @@ describe('VarPicker', () => {
       vars,
       selectedVars: [vars[1], 'v2', vars[2]]
     })
+    wrapper.vm.openPopover()
     await nextTick(); await flushPromises()
 
     expect(wrapper.vm.categoryList[0]).toMatchObject({ key: 'selected', label: '已选字段', count: 2 })
@@ -306,6 +314,7 @@ describe('VarPicker', () => {
       vars,
       selectedVars: [vars[0], { varCode: 'projectOnlyVar', varLabel: '项目变量' }]
     })
+    wrapper.vm.openPopover()
     await nextTick(); await flushPromises()
 
     expect(wrapper.vm.selectedItems.map(v => v.varCode)).toEqual(['v1'])
@@ -504,6 +513,7 @@ describe('VarPicker', () => {
 
   test('200 个字段搜索前后左侧计数和面板宽度不变化', async () => {
     const wrapper = mountPicker({ vars: standaloneOptions(200) })
+    wrapper.vm.openPopover()
     await nextTick(); await flushPromises()
     const width = wrapper.vm.panelStyle.width
 
@@ -989,7 +999,7 @@ describe('VarPicker', () => {
     wrapper.unmount()
   })
 
-  test('Escape 只关闭字段选择器，不继续传播给父弹框', async () => {
+  test('Escape 只关闭内容选择器，不继续传播给父弹框', async () => {
     const wrapper = mountPicker(
       { vars: standaloneOptions(1) },
       { attachTo: document.body }

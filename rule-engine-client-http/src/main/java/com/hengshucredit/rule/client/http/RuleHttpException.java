@@ -26,7 +26,7 @@ public class RuleHttpException extends PlatformException {
     }
 
     public int getHttpStatus() { return httpStatus; }
-    public String getPlatformCode() { return getCode(); }
+    public String getPlatformCode() { return platformStatus().code(); }
     public String getExecutionStatus() { return executionStatus; }
     public String getTraceId() { return traceId; }
     public Long getRetryAfterMs() { return retryAfterMs; }

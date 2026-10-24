@@ -15,7 +15,7 @@
  * 格式化变量引用展示文本（返回字符串，供直接显示）。
  * @param {Object} item
  *   必需字段: varLabel, varCode
- *   可选字段: objectLabel（dataObject 时使用）
+ *   可选内容: objectLabel（dataObject 时使用）
  * @returns {string}
  */
 export function formatVarDisplay(item) {

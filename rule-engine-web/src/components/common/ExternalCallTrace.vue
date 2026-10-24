@@ -36,6 +36,7 @@
               {{ statusLabel(step.status) }}
             </span>
           </div>
+          <content-reference mode="trace" v-if="step.refId != null && step.refType" :value="{ refType: step.refType, refId: step.refId, code: step.refCode || step.varCode || step.targetPath, label: step.refLabel || step.varLabel, valueType: step.valueType, version: step.version }" wrap />
           <dl v-if="stepMeta(step).length" class="external-call-trace-meta">
             <template v-for="field in stepMeta(step)" :key="field.key">
               <dt>{{ field.label }}</dt>
@@ -60,6 +61,7 @@
 </template>
 
 <script>
+import ContentReference from './ContentReference.vue'
 import { executionStatusLabel, executionStatusHint } from '@/utils/executionStatus'
 import { selectTraceSteps } from '@/utils/externalCallTrace'
 
@@ -79,6 +81,7 @@ const META_FIELDS = [
 ]
 
 export default {
+  components: { ContentReference },
   name: 'ExternalCallTrace',
   props: {
     steps: { type: Array, default: () => [] },

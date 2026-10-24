@@ -16,6 +16,7 @@ const themeCss = compileString(`
   @use "element-override";
   @use "theme-tokens";
   @use "theme-components";
+  @use "theme-buttons";
 `, { loadPaths: [stylesDir] }).css
 
 function declarationBlock(selector) {
@@ -99,7 +100,7 @@ test('前端源码不再残留 Element 旧默认蓝色', () => {
   expect(offenders).toEqual([])
 })
 
-test('字段选择器和表达式控件显式读取统一主题变量', () => {
+test('内容选择器和表达式控件显式读取统一主题变量', () => {
   const controls = [
     'src/components/common/VarPicker.vue',
     'src/components/common/OperandPicker.vue',
@@ -115,14 +116,14 @@ test('字段选择器和表达式控件显式读取统一主题变量', () => {
 
 test('主按钮变体保持背景和文字的可读性契约', () => {
   const solid = themeRuleBlock(
-    '.el-button--primary:not(.is-link):not(.is-text):not(.is-plain):where(:not(.is-disabled):not(:disabled:not(.is-loading)))'
+    '.el-button.el-button--primary:not(.is-link):not(.is-text):not(.is-plain):where(:not(.is-disabled):not(:disabled:not(.is-loading)))'
   )
-  const plain = themeRuleBlock('.el-button--primary.is-plain:where(:not(.is-disabled):not(:disabled:not(.is-loading)))')
+  const plain = themeRuleBlock('.el-button.el-button.is-plain')
 
-  expect(solid).toContain('color: var(--tianshu-brand-foreground)')
-  expect(solid).toContain('background-color: var(--el-color-primary)')
-  expect(plain).toContain('color: var(--tianshu-text-primary)')
-  expect(plain).toContain('background-color: var(--tianshu-primary-soft-bg)')
+  expect(solid).toContain('color: var(--tianshu-button-solid-text)')
+  expect(solid).toContain('background: var(--tianshu-button-solid-bg)')
+  expect(plain).toContain('color: var(--tianshu-button-text)')
+  expect(plain).toContain('background: var(--tianshu-button-soft-bg)')
   expect(themeCss).not.toMatch(
     /\.el-button--primary\s*\{[^}]*background-color:\s*var\(--el-color-primary\)/
   )
@@ -160,10 +161,9 @@ test('页面提示容器统一读取当前主题衍生提示色', () => {
   }
 })
 
-test('表格操作按钮按 data-action 使用独立主题色和悬停背景', () => {
-  expect(themeCss).toContain('.el-table .el-button[data-action]')
-  expect(themeCss).toContain('color: var(--tianshu-action-color)')
-  expect(themeCss).toContain('rgba(var(--tianshu-action-rgb), 0.12)')
+test('操作按钮复用主题颜色，删除保留统一语义色和悬停背景', () => {
+  expect(themeCss).toContain('color: var(--tianshu-button-text)')
+  expect(themeCss).toContain('rgba(var(--tianshu-action-delete-rgb), 0.12)')
 
   for (const role of ['edit', 'detail', 'execute', 'inspect', 'configure', 'delete']) {
     expect(themeCss).toContain(`[data-action=${role}]`)

@@ -189,7 +189,7 @@ describe('DesignerTestDialog expression trace', () => {
   function mountDialog() {
     return shallowMount(DesignerTestDialog, {
       props: { definitionId: 7, modelType: 'SCRIPT' },
-      stubs: { TraceTree }
+      stubs: { TraceTree, ContentReference: false }
     })
   }
 
@@ -262,7 +262,7 @@ describe('DesignerTestDialog expression trace', () => {
 
     const pane = wrapper.find('[name="tree"]')
     expect(pane.attributes('label')).toBe('表达式追踪树')
-    expect(pane.find('.rule-trace-name').text()).toBe('设计器测试规则')
+    expect(pane.find('.rule-trace-identity .content-ref__name').text()).toBe('设计器测试规则')
     expect(pane.text()).toContain('规则执行过程')
     const tree = wrapper.findComponent(TraceTree)
     expect(JSON.parse(tree.props('traceInfo'))).toEqual([frame])
@@ -285,7 +285,7 @@ describe('DesignerTestDialog expression trace', () => {
 
     expect(wrapper.vm.activeTab).toBe('error')
     expect(wrapper.find('[name="error"]').text()).toContain('执行中断')
-    expect(wrapper.find('[name="tree"] .rule-trace-name').text()).toBe('设计器测试规则')
+    expect(wrapper.find('[name="tree"] .rule-trace-identity .content-ref__name').text()).toBe('设计器测试规则')
     expect(wrapper.findComponent(TraceTree).props('outputResult')).toBe('')
     wrapper.unmount()
   })
@@ -296,10 +296,10 @@ describe('DesignerTestDialog expression trace', () => {
       .mockResolvedValueOnce({ data: { success: false, errorMessage: '编译失败', traces } })
     const wrapper = mountDialog()
     await wrapper.vm.execute()
-    expect(wrapper.find('.rule-trace-name').exists()).toBe(true)
+    expect(wrapper.find('.rule-trace-session').exists()).toBe(true)
 
     await wrapper.vm.execute()
-    expect(wrapper.find('.rule-trace-name').exists()).toBe(false)
+    expect(wrapper.find('.rule-trace-session').exists()).toBe(false)
     expect(wrapper.find('[name="tree"]').text()).toContain('暂无追踪信息')
     wrapper.unmount()
   })

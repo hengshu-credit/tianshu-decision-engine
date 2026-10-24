@@ -4,6 +4,7 @@
 
 <script>
 import * as ElementPlusIcons from '@element-plus/icons-vue'
+import AppLoadingIcon from './AppLoadingIcon.vue'
 
 export default {
   name: 'AppIcon',
@@ -15,6 +16,7 @@ export default {
   },
   computed: {
     iconComponent() {
+      if (this.name === 'Loading' || this.name === ElementPlusIcons.Loading) return AppLoadingIcon
       if (typeof this.name !== 'string') return this.name
       return ElementPlusIcons[this.name] || ElementPlusIcons.QuestionFilled
     },

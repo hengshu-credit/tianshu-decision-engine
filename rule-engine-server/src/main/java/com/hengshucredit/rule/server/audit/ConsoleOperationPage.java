@@ -12,6 +12,7 @@ import java.util.Set;
 public record ConsoleOperationPage(String module, String resourceType, String resourceId, String label) {
     private static final Set<String> IDS = Set.of("projectId", "ruleId", "definitionId", "sourceId", "versionId", "revisionId");
     private static final Map<String, String> MODULE_NAMES = Map.ofEntries(
+            Map.entry("system", "系统配置"),
             Map.entry("project", "项目"), Map.entry("rule", "规则"), Map.entry("variable", "变量"),
             Map.entry("list", "名单"), Map.entry("model", "模型"), Map.entry("function", "函数"),
             Map.entry("database", "数据库"), Map.entry("datasource", "外数"), Map.entry("experiment", "分流实验"),
@@ -80,6 +81,7 @@ public record ConsoleOperationPage(String module, String resourceType, String re
         if (name == null) return null;
         String module = "variable".equals(section) ? "field" : section;
         String type = switch (section) {
+            case "system" -> "SYSTEM_SETTING";
             case "project" -> "PROJECT";
             case "rule" -> "RULE";
             case "list" -> "LIST_LIBRARY";

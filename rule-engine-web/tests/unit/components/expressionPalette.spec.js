@@ -223,7 +223,7 @@ describe('ExpressionPalette', () => {
     const wrapper = mountPalette({ vars: [variable(1, 'customer.extremely_long_score')] })
 
     expect(wrapper.findAll('.palette-reference-table th')).toHaveLength(4)
-    expect(wrapper.find('.palette-reference-code').text()).toBe('customer.extremely_long_score')
+    expect(wrapper.find('.content-ref__code').text()).toBe('customer.extremely_long_score')
   })
 
   test('选择历史字段版本后插入引用保留版本绑定', () => {

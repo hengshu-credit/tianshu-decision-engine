@@ -7,6 +7,7 @@ export function renderOnlineRunner() {
     <div class="runner-config-grid">
       <label class="runner-base-url-field">服务地址 / Base URL<input id="runner-base-url" value="https://api.example.com" placeholder="https://api.example.com 或 https://gateway.example.com/risk" autocomplete="off" spellcheck="false"></label>
       <label>接口<select id="runner-endpoint"></select></label>
+      <label>执行入口<select id="runner-entry"><option value="sync">同步执行</option><option value="open">OpenAPI 契约</option></select></label>
       <label>鉴权方式<select id="runner-auth"></select></label>
       <label>超时（毫秒）<input id="runner-timeout" type="number" min="1000" max="180000" value="30000"></label>
     </div>
@@ -15,13 +16,13 @@ export function renderOnlineRunner() {
     <div class="runner-actions"><button id="runner-copy-curl" class="button secondary" type="button">复制 cURL</button><button id="runner-send" class="button primary" type="button">发送请求</button><button id="runner-cancel" class="button secondary" type="button" disabled>取消请求</button></div>
     <details class="runner-auth-details"><summary>鉴权凭据 <span id="runner-auth-summary" class="muted"></span></summary><div id="runner-credentials"></div></details>
     <div class="runner-tabs tabs" data-tabs="runner-params">
-      <button class="tab active" type="button" data-tab-target="runner-query-panel" data-runner-tab="query">Query</button>
+      <button class="tab" type="button" data-tab-target="runner-query-panel" data-runner-tab="query">Query</button>
       <button class="tab" type="button" data-tab-target="runner-header-panel" data-runner-tab="header">Header</button>
-      <button class="tab" type="button" data-tab-target="runner-body-panel" data-runner-tab="body">Body</button>
+      <button class="tab active" type="button" data-tab-target="runner-body-panel" data-runner-tab="body">Body</button>
     </div>
-    <div id="runner-query-panel" class="tab-panel active">${renderCodeEditor({ id: 'runner-query', mode: 'kv', rows: 6 })}</div>
+    <div id="runner-query-panel" class="tab-panel">${renderCodeEditor({ id: 'runner-query', mode: 'kv', rows: 6 })}</div>
     <div id="runner-header-panel" class="tab-panel">${renderCodeEditor({ id: 'runner-headers', mode: 'kv', rows: 6 })}</div>
-    <div id="runner-body-panel" class="tab-panel">
+    <div id="runner-body-panel" class="tab-panel active">
       <div class="body-type-tabs">
         <button type="button" data-body-type="none">none</button>
         <button type="button" data-body-type="form-data">form-data</button>
@@ -32,11 +33,11 @@ export function renderOnlineRunner() {
         <div class="form-data-table-wrap"><table class="form-data-table"><thead><tr><th>启用</th><th>参数名</th><th>类型</th><th>值</th><th>说明</th><th></th></tr></thead><tbody id="runner-form-data-rows"></tbody></table></div>
         <button id="runner-form-data-add" class="button secondary" type="button">+ 新增参数</button>
       </div>
-      <div class="body-type-panel active" data-body-panel="json">${renderCodeEditor({ id: 'runner-body', mode: 'json', value: '{}', rows: 14 })}</div>
+      <div class="body-type-panel active" data-body-panel="json">${renderCodeEditor({ id: 'runner-body', mode: 'json', value: '{}', rows: 10 })}</div>
     </div>
     <section class="runner-response">
       <div class="runner-response-title"><h3>返回结果</h3><div class="runner-response-actions"><div id="runner-response-meta" class="response-meta"></div><button id="runner-copy-response" class="button secondary" type="button">复制响应</button></div></div>
-      <div id="runner-status" class="runner-empty">点击“发送”获取返回结果</div>
+      <div id="runner-status" class="runner-empty">填写鉴权与 Body 后，点击“发送请求”查看响应</div>
       <details open><summary>响应 Body</summary><pre><code id="runner-response-body">—</code></pre></details>
       <details><summary>响应 Header</summary><pre><code id="runner-response-headers">—</code></pre></details>
     </section>
@@ -72,8 +73,9 @@ export function renderOnlineRunnerScript() {
   }
   function currentEndpoint() { return doc.rules.find(function (rule) { return text(rule.id || rule.ruleCode) === state.endpointId; }) || doc.rules[0]; }
   function currentAuth() { var index = Number(elements.auth.value); return doc.authentications[index] || null; }
+  function isOpenEntry(rule) { return Boolean(rule && rule.openApiEnabled && elements.entry.value === 'open'); }
   function endpointPath(rule) {
-    const prefix = rule && rule.openApiEnabled ? '/api/rule/openapi/' : '/api/rule/sync/execute/'
+    const prefix = isOpenEntry(rule) ? '/api/rule/openapi/' : '/api/rule/sync/execute/'
     return prefix + encodeURIComponent(rule.ruleCode)
   }
   function inputValue(name) { var input = byId('credential-' + name); return input ? input.value : ''; }
@@ -89,8 +91,8 @@ export function renderOnlineRunnerScript() {
     });
   }
   function buildBody(rule) {
-    var value = rule && rule.openApiEnabled ? {} : { clientAppName: 'api-doc-example', params: {} };
-    var fields = rule && rule.openApiEnabled ? (rule.openApiRequestFields || []) : (rule.requestFields || []);
+    var value = isOpenEntry(rule) ? {} : { clientAppName: 'api-doc-example', params: {} };
+    var fields = isOpenEntry(rule) ? (rule.openApiRequestFields || []) : (rule.requestFields || []);
     fields.forEach(function (field) { setPath(value, field.path, exampleValue(field)); });
     return value;
   }
@@ -98,8 +100,8 @@ export function renderOnlineRunnerScript() {
     return { id: state.nextFormRowId++, enabled: true, name: field ? field.path : '', type: 'TEXT', value: field ? formValue(exampleValue(field)) : '', description: field ? (field.label || field.description || '') : '', file: null };
   }
   function resetFormRows(rule) {
-    var fields = rule && rule.openApiEnabled ? (rule.openApiRequestFields || []) : (rule.requestFields || []);
-    state.formRows = (rule && rule.openApiEnabled ? [] : [newFormRow({ path: 'clientAppName', exampleValue: 'api-doc-example', label: '调用方应用名' })]).concat(fields.map(newFormRow));
+    var fields = isOpenEntry(rule) ? (rule.openApiRequestFields || []) : (rule.requestFields || []);
+    state.formRows = (isOpenEntry(rule) ? [] : [newFormRow({ path: 'clientAppName', exampleValue: 'api-doc-example', label: '调用方应用名' })]).concat(fields.map(newFormRow));
     renderFormRows();
   }
   function renderFormRows() {
@@ -114,6 +116,8 @@ export function renderOnlineRunnerScript() {
     var rule = currentEndpoint();
     if (!rule) { elements.path.textContent = '/api/rule/sync/execute/'; return; }
     state.endpointId = text(rule.id || rule.ruleCode);
+    elements.entry.querySelector('[value="open"]').disabled = !rule.openApiEnabled;
+    if (!rule.openApiEnabled) elements.entry.value = 'sync';
     elements.path.textContent = endpointPath(rule);
     window.ApiDocEditors.set('runner-query', '', true);
     window.ApiDocEditors.set('runner-headers', '', true);
@@ -349,7 +353,7 @@ export function renderOnlineRunnerScript() {
     byId(open ? 'runner-close' : 'runner-toggle').focus();
   }
   function initialize() {
-    elements = { baseUrl: byId('runner-base-url'), endpoint: byId('runner-endpoint'), auth: byId('runner-auth'), authSummary: byId('runner-auth-summary'), credentials: byId('runner-credentials'), path: byId('runner-path'), timeout: byId('runner-timeout'), send: byId('runner-send'), cancel: byId('runner-cancel'), copyCurl: byId('runner-copy-curl'), copyResponse: byId('runner-copy-response'), usePageOrigin: byId('runner-use-page-origin'), connectionState: byId('runner-connection-state'), connectionHelp: byId('runner-connection-help'), formRows: byId('runner-form-data-rows'), formAdd: byId('runner-form-data-add'), status: byId('runner-status'), responseMeta: byId('runner-response-meta'), responseHeaders: byId('runner-response-headers'), responseBody: byId('runner-response-body') };
+    elements = { baseUrl: byId('runner-base-url'), endpoint: byId('runner-endpoint'), auth: byId('runner-auth'), entry: byId('runner-entry'), authSummary: byId('runner-auth-summary'), credentials: byId('runner-credentials'), path: byId('runner-path'), timeout: byId('runner-timeout'), send: byId('runner-send'), cancel: byId('runner-cancel'), copyCurl: byId('runner-copy-curl'), copyResponse: byId('runner-copy-response'), usePageOrigin: byId('runner-use-page-origin'), connectionState: byId('runner-connection-state'), connectionHelp: byId('runner-connection-help'), formRows: byId('runner-form-data-rows'), formAdd: byId('runner-form-data-add'), status: byId('runner-status'), responseMeta: byId('runner-response-meta'), responseHeaders: byId('runner-response-headers'), responseBody: byId('runner-response-body') };
     elements.endpoint.innerHTML = doc.rules.map(function (rule) { return '<option value="' + escapeMarkup(rule.id || rule.ruleCode) + '">' + escapeMarkup(rule.ruleName || rule.ruleCode) + ' · ' + escapeMarkup(rule.ruleCode) + '</option>'; }).join('');
     elements.auth.innerHTML = doc.authentications.length ? doc.authentications.map(function (auth, index) { return '<option value="' + index + '">' + escapeMarkup(auth.authName || auth.authType) + '</option>'; }).join('') : '<option value="-1">未配置鉴权</option>';
     state.endpointId = elements.endpoint.value;
@@ -360,6 +364,7 @@ export function renderOnlineRunnerScript() {
     if (!canUsePageOrigin) connectionHelp('当前文档通过本地文件打开，浏览器直连目标服务需要允许 Origin: null；跨域失败时可复制 cURL。');
     elements.endpoint.addEventListener('change', function () { state.endpointId = elements.endpoint.value; renderEndpoint(); });
     elements.auth.addEventListener('change', renderCredentials);
+    elements.entry.addEventListener('change', renderEndpoint);
     elements.send.addEventListener('click', sendRequest);
     elements.copyCurl.addEventListener('click', copyCurl);
     elements.copyResponse.addEventListener('click', copyResponse);

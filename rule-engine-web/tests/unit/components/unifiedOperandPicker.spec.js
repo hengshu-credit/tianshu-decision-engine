@@ -533,7 +533,7 @@ describe('统一 OperandPicker', () => {
     expect(wrapper.find('.operand-manual-panel').exists()).toBe(false)
   })
 
-  test('外部清空值时退出手输状态并回到字段选择器', async() => {
+  test('外部清空值时退出手输状态并回到内容选择器', async() => {
     const wrapper = mountPicker({ expectedType: 'NUMBER' })
 
     wrapper.vm.openManualInput('LITERAL')

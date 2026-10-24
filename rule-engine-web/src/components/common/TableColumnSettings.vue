@@ -71,14 +71,14 @@
         <div>
           <button
             type="button"
-            class="table-column-settings__button"
+            class="table-column-settings__button uiue-button"
             @click="open = false"
           >
             取消
           </button>
           <button
             type="button"
-            class="table-column-settings__button is-primary"
+            class="table-column-settings__button is-primary uiue-button uiue-button--primary"
             @click="apply"
           >
             应用

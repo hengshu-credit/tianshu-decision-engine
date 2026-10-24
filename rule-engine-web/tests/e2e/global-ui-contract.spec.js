@@ -473,7 +473,7 @@ test('登录输入框使用 Element 内置交互且图标与当前主题一致',
   assertClean()
 })
 
-test('登录按钮加载时保留主题背景并仅轻微淡化', async ({ page }) => {
+test('登录按钮加载时保留主题背景并保持文字对比度', async ({ page }) => {
   const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
   const { assertClean } = await installDistRoutes(page, {
     origin, liveStatic: !!process.env.E2E_DEV_BASE_URL,
@@ -501,13 +501,14 @@ test('登录按钮加载时保留主题背景并仅轻微淡化', async ({ page 
     const buttonStyle = getComputedStyle(button)
     const maskStyle = getComputedStyle(button, '::before')
     const themeBackground = getComputedStyle(document.documentElement)
-      .getPropertyValue('--tianshu-brand-button-background').trim()
+      .getPropertyValue('--tianshu-button-primary-bg').trim()
     const colorProbe = document.createElement('span')
     colorProbe.style.background = themeBackground
+    colorProbe.style.backgroundColor = 'var(--tianshu-button-primary-border)'
     document.body.appendChild(colorProbe)
     const resolvedThemeBackground = getComputedStyle(colorProbe).backgroundColor
     const resolvedThemeImage = getComputedStyle(colorProbe).backgroundImage
-    colorProbe.style.color = 'var(--tianshu-brand-foreground)'
+    colorProbe.style.color = 'var(--tianshu-button-primary-text)'
     const resolvedThemeForeground = getComputedStyle(colorProbe).color
     colorProbe.remove()
     return {
@@ -533,7 +534,7 @@ test('登录按钮加载时保留主题背景并仅轻微淡化', async ({ page 
   await fs.writeFile(test.info().outputPath('contrast-values.json'), JSON.stringify({ loadingReadability }, null, 2))
   expect(visual.maskBackgroundColor).toBe('rgba(0, 0, 0, 0)')
   expect(visual.opacity).toBeGreaterThanOrEqual(0.85)
-  expect(visual.opacity).toBeLessThan(1)
+  expect(visual.opacity).toBe(1)
   expect(visual.spinnerVisible).toBe(true)
   expect(visual.text).toBe('登录中…')
   await expect(page).not.toHaveURL(/#\/login$/)
@@ -676,7 +677,7 @@ for (const appearance of [
   })
 }
 
-test('数据加载只显示内容中央的透明 SVG 转圈', async ({ page }) => {
+test('数据加载在透明遮罩中央显示统一的瑶光扇叶动画', async ({ page }) => {
   let releaseProjects
   const projectsReady = new Promise(resolve => { releaseProjects = resolve })
   const apiData = createManagementApiData()
@@ -690,9 +691,11 @@ test('数据加载只显示内容中央的透明 SVG 转圈', async ({ page }) =
     await page.goto('http://tianshu.local/index.html#/project')
     const table = page.locator('.el-table').first()
     const mask = table.locator('.el-loading-mask')
-    const spinner = mask.locator('svg.circular')
+    const spinner = mask.locator('.el-loading-spinner')
     await expect(mask).toBeVisible()
     await expect(spinner).toBeVisible()
+    await expect(spinner.locator('svg.circular')).toBeHidden()
+    expect(await spinner.evaluate(element => getComputedStyle(element, '::before').animationName)).toBe('tianshu-loader2')
 
     const appearance = await Promise.all([
       table.boundingBox(),
@@ -892,7 +895,7 @@ test('表头、状态、作用范围和普通操作随主题色切换', async ({
   assertClean()
 })
 
-test('项目列表同一行操作使用互不重复且语义稳定的主题色', async ({ page }) => {
+test('项目列表普通操作使用统一主题色，删除保留危险语义', async ({ page }) => {
   const apiData = createManagementApiData()
   apiData.set('/api/rule/governance/workspaces/states', ({ url }) => url.searchParams.get('ids').split(',').map(resourceId => ({ resourceId, effectiveStatus: 'ACTIVE', requestStatus: 'EDITING', action: 'UPDATE', owned: true })))
   const { assertClean } = await installDistRoutes(page, {
@@ -921,7 +924,8 @@ test('项目列表同一行操作使用互不重复且语义稳定的主题色',
     'docs',
     'delete',
   ])
-  expect(new Set(appearance.map(item => item.color)).size).toBe(appearance.length)
+  expect(new Set(appearance.filter(item => item.action !== 'delete').map(item => item.color)).size).toBe(1)
+  expect(appearance.find(item => item.action === 'delete').color).not.toBe(appearance.find(item => item.action === 'edit').color)
 
   const deleteColor = appearance.find(item => item.action === 'delete').color
   const [red, green, blue] = deleteColor.match(/\d+/g).map(Number)

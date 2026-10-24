@@ -14,6 +14,8 @@ import java.io.IOException;
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class ProjectAuthBodyFilter extends OncePerRequestFilter {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.system.SystemResponseMapping responseMapping;
 
     private static final String[] PATH_PREFIXES = {
             "/api/sync",
@@ -50,8 +52,8 @@ public class ProjectAuthBodyFilter extends OncePerRequestFilter {
     private void rejectOversizedBody(HttpServletResponse response) throws IOException {
         response.setStatus(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
         response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write(com.alibaba.fastjson.JSON.toJSONString(
-                com.hengshucredit.rule.model.ApiResponse.fail(
-                        com.hengshucredit.rule.model.PlatformCode.REQUEST_TOO_LARGE, null)));
+        var body = com.hengshucredit.rule.model.ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.REQUEST_TOO_LARGE, null);
+        if (responseMapping != null) responseMapping.apply(body, response::setHeader);
+        response.getWriter().write(com.alibaba.fastjson.JSON.toJSONString(body));
     }
 }

@@ -51,30 +51,61 @@ body {
   min-width: 0;
 }
 
-.uiue-detail-back.el-button,
-.uiue-compact-designer [data-designer-back].el-button {
-  flex: 0 0 auto;
-  border: 0;
-  box-shadow: none;
-  background: transparent;
+.uiue-detail-back.el-button {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--tianshu-border-subtle);
+  border-radius: 8px;
+  background: var(--tianshu-bg-surface);
   color: var(--tianshu-text-secondary);
+  transition: color 0.16s ease, background-color 0.16s ease, border-color 0.16s ease;
+
+  .el-icon {
+    font-size: 16px;
+    transition: transform 0.16s ease;
+  }
+
+  &:hover {
+    color: var(--el-color-primary);
+    border-color: var(--el-color-primary-light-7);
+    background: var(--tianshu-bg-muted);
+
+    .el-icon { transform: translateX(-2px); }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--el-color-primary);
+    outline-offset: 2px;
+  }
+
+  &:active { background: var(--el-color-primary-light-9); }
 }
 
-.uiue-detail-back.el-button:hover,
-.uiue-detail-back.el-button:focus-visible,
-.uiue-compact-designer [data-designer-back].el-button:hover,
-.uiue-compact-designer [data-designer-back].el-button:focus-visible {
-  color: var(--el-color-primary);
-  background: var(--tianshu-bg-muted);
+@media (prefers-reduced-motion: reduce) {
+  .uiue-detail-back.el-button,
+  .uiue-detail-back.el-button .el-icon { transition: none; }
 }
 
-.uiue-detail-header__actions {
+/* 页面操作统一由 gap 排列，避免组件默认外边距与容器间距叠加。 */
+.uiue-action-group,
+.uiue-detail-header__actions,
+.uiue-btn-bar .btn-right {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
+
+  > .el-button {
+    margin-left: 0;
+    margin-right: 0;
+  }
+}
+
+.uiue-detail-header__actions {
+  justify-content: flex-end;
 }
 
 @media (max-width: 720px) {
@@ -152,8 +183,10 @@ body {
   align-items: center;
 
   .btn-left { flex: 0 0 auto; }
-  .btn-right { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center; flex-wrap: wrap;
-    > *:not(:last-child) { margin-right: 8px; }
+  .btn-right {
+    flex: 0 1 auto;
+    margin-left: auto;
+    justify-content: flex-end;
   }
 }
 

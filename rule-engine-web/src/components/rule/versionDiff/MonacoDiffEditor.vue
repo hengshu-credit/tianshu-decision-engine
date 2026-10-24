@@ -23,7 +23,7 @@
 
 <script>
 import { markRaw } from 'vue'
-import { Loading as ElIconLoading } from '@element-plus/icons-vue'
+import ElIconLoading from '@/components/common/AppLoadingIcon.vue'
 import { $emit } from '../../../utils/gogocodeTransfer'
 import { getMonacoScrollbarOptions, syncMonacoTheme } from '@/theme/monacoTheme'
 import { waitForMonaco } from '@/utils/monacoLoader'

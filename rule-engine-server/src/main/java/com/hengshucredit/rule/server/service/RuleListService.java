@@ -763,20 +763,7 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
         if (ITEM_TYPE_LABELS.containsKey(upper)) {
             return upper;
         }
-        Map<String, String> aliases = new HashMap<>();
-        aliases.put("手机号", "MOBILE");
-        aliases.put("手机", "MOBILE");
-        aliases.put("身份证", "ID_CARD");
-        aliases.put("地址", "ADDRESS");
-        aliases.put("设备号", "DEVICE");
-        aliases.put("设备", "DEVICE");
-        aliases.put("姓名", "NAME");
-        aliases.put("银行卡", "BANK_CARD");
-        aliases.put("邮箱", "EMAIL");
-        aliases.put("邮件", "EMAIL");
-        aliases.put("其他", "OTHER");
-        aliases.put("任意", "ANY");
-        String alias = aliases.get(value);
+        String alias = "任意".equals(value) ? "ANY" : ListRecordAliases.itemType(value);
         if (alias != null) return alias;
         return ITEM_TYPE_LABELS.containsKey(upper) ? upper : null;
     }
@@ -815,14 +802,7 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
         if (value == null) {
             return "ADD";
         }
-        Map<String, String> aliases = new HashMap<>();
-        aliases.put("新增", "ADD");
-        aliases.put("添加", "ADD");
-        aliases.put("修改", "UPDATE");
-        aliases.put("更新", "UPDATE");
-        aliases.put("删除", "DELETE");
-        aliases.put("停用", "DELETE");
-        String alias = aliases.get(value);
+        String alias = ListRecordAliases.operation(value);
         return alias != null ? alias : value.toUpperCase();
     }
 

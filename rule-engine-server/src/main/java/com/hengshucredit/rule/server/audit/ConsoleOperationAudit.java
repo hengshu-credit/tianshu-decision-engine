@@ -106,6 +106,7 @@ public class ConsoleOperationAudit implements HandlerInterceptor {
             case "RULE", "RULE_REVISION" -> "规则";
             case "CONSOLE_USER" -> "账户";
             case "CONSOLE_ROLE" -> "角色";
+            case "SYSTEM_SETTING" -> "系统配置";
             case "DATA_OBJECT" -> "数据对象";
             case "VARIABLE" -> "变量";
             case "RULE_INPUT_FIELD" -> "规则输入字段";

@@ -500,7 +500,7 @@ export default {
     },
     permissionRows() {
       return this.permissionCatalog.filter(permission => this.permissionScope === 'DEFAULT' ||
-        (!permission.permissionCode.startsWith('account:') && !permission.permissionCode.startsWith('role:') && permission.permissionCode !== 'function:native')).map(permission => {
+        (!permission.permissionCode.startsWith('account:') && !permission.permissionCode.startsWith('role:') && !permission.permissionCode.startsWith('system:') && permission.permissionCode !== 'function:native')).map(permission => {
         const code = permission.permissionCode
         const inherited = (this.permissionScope === 'DEFAULT' ? this.inheritedPermissionCodes : this.defaultPermissionCodes).has(code)
         const override = this.activeOverrideDraft[code] || 'INHERIT'

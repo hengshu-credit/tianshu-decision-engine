@@ -46,6 +46,25 @@ function mountCachedHost() {
 }
 
 describe('ruleDraftMixin', () => {
+  test('无冻结制品的本地历史版本按当前依赖预览，保留原版本作为来源', () => {
+    const context = {
+      viewRevision: { id: '301', sourceId: '301', state: 'VERSION' },
+      definitionId: '101',
+      frozenReferenceCatalog: { referenceNamespace: 'LOCAL' },
+    }
+    expect(ruleDraftMixin.computed.designerTestExecutionSource.call(context)).toEqual({
+      sourceType: 'PREVIEW', baseSourceType: 'VERSION', baseSourceId: '301',
+    })
+    context.frozenReferenceCatalog.referenceNamespace = 'ARTIFACT_SOURCE'
+    expect(ruleDraftMixin.computed.designerTestExecutionSource.call(context)).toEqual({
+      sourceType: 'VERSION', sourceId: '301',
+    })
+    context.frozenReferenceCatalog.referenceNamespace = 'LOCAL'
+    context.viewRevision = { id: '201', state: 'DRAFT', lockVersion: 4 }
+    expect(ruleDraftMixin.computed.designerTestExecutionSource.call(context)).toEqual({
+      sourceType: 'REVISION', sourceId: '201', lockVersion: 4,
+    })
+  })
   test('校验定位锁定来源修订，草稿锁版本变化时提示重新校验', () => {
     const context = {
       $route: { query: { sourceType: 'REVISION', sourceId: '6', validationSourceId: '6', validationLockVersion: '4', validationPath: '$.nodes[0]', validationMessage: '检查字段' } },

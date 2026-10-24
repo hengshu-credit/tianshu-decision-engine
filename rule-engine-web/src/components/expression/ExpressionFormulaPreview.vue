@@ -7,7 +7,7 @@
     >
       <div class="expression-formula-preview__business">
         <span>业务公式</span
-        ><code>{{ formula || '请选择中间位置并添加内容' }}</code>
+        ><code><content-expression v-if="operand" :value="operand" :options="vars" /><template v-else>请选择中间位置并添加内容</template></code>
         <el-button v-if="!editing" size="small" @click.stop="startEditing">编辑脚本</el-button>
       </div>
       <div v-if="!editing" class="expression-formula-preview__source">
@@ -38,6 +38,7 @@
 </template>
 
 <script>
+import ContentExpression from '@/components/common/ContentExpression.vue'
 import { $emit } from '../../utils/gogocodeTransfer'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import { compileOperand } from '@/utils/operand'
@@ -49,7 +50,7 @@ import {
 
 export default {
   name: 'ExpressionFormulaPreview',
-  components: { MonacoEditor },
+  components: { ContentExpression, MonacoEditor },
   props: {
     operand: { type: Object, default: null },
     vars: { type: Array, default: () => [] },

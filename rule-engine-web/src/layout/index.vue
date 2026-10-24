@@ -18,11 +18,11 @@
       <header v-if="isTopNavigation" class="layout-primary-topbar">
         <div class="top-navigation__brand">
           <img
-            :src="brandLogoUrl"
-            alt="天枢决策引擎"
+            :src="brand.logoUrl"
+            :alt="brand.systemName"
             class="top-navigation__logo"
           />
-          <strong>天枢决策引擎</strong>
+          <strong>{{ brand.systemName }}</strong>
         </div>
         <nav class="top-navigation__menu" aria-label="主导航">
           <button
@@ -44,6 +44,7 @@
         <workspace-tabs
           :tabs="workspaceTabs"
           :active-path="activeTabPath"
+          :pending-path="pendingRoute ? pendingRoute.fullPath : ''"
           @activate="activateTab"
           @operate="handleTabOperation"
         />
@@ -52,7 +53,7 @@
           <el-dropdown
             trigger="click"
             placement="bottom-end"
-            popper-class="layout-account-dropdown"
+            popper-class="layout-account-dropdown layout-popup-menu"
             @command="handleAccountCommand"
           >
             <button
@@ -101,22 +102,52 @@
           </el-dropdown>
         </div>
       <project-context-bar />
-      <main class="layout-main">
+      <main class="layout-main" :aria-busy="!!navigation.pendingRoute">
+        <route-page-skeleton v-if="navigation.pendingRoute" :title="navigation.pendingRoute.meta.title" />
+        <el-alert v-if="navigation.error && !navigation.pendingRoute" type="error" title="页面加载失败，请重试" show-icon @close="navigation.error = null">
+          <el-button size="small" @click="navigateTo(navigation.error.fullPath)">重新加载</el-button>
+        </el-alert>
         <router-view v-slot="{ Component }">
           <keep-alive :max="12">
             <component
               :is="Component"
               v-if="$route.meta.keepAlive"
+              v-show="!navigation.pendingRoute"
               :key="currentViewKey"
             />
           </keep-alive>
           <component
             :is="Component"
             v-if="!$route.meta.keepAlive"
+            v-show="!navigation.pendingRoute"
             :key="currentViewKey"
           />
         </router-view>
       </main>
+      <footer class="layout-footer">
+        <span class="layout-footer-copyright">
+          © 2026
+          <a href="https://hengshucredit.com/" target="_blank" rel="noopener noreferrer">上海衡枢真信科技有限公司</a>
+          · ALL RIGHTS RESERVED
+        </span>
+        <span>
+          开源地址：
+          <a href="https://github.com/hengshu-credit" target="_blank" rel="noopener noreferrer">github.com/hengshu-credit</a>
+        </span>
+        <a href="https://github.com/itlubber" target="_blank" rel="noopener noreferrer">github.com/itlubber</a>
+        <el-popover placement="top" :width="244" :trigger="['hover', 'focus']" :show-after="150" :persistent="false" title="微信：itlubber">
+          <template #reference>
+            <button type="button" class="layout-footer-contact">微信：itlubber</button>
+          </template>
+          <img class="layout-footer-qr-image" src="https://hengshucredit.com/images/itlubber.svg" alt="微信 itlubber 二维码" width="220" height="220" />
+        </el-popover>
+        <el-popover placement="top" :width="244" :trigger="['hover', 'focus']" :show-after="150" :persistent="false" title="公众号：itlubber_art">
+          <template #reference>
+            <button type="button" class="layout-footer-contact">公众号：itlubber_art</button>
+          </template>
+          <img class="layout-footer-qr-image" src="https://hengshucredit.com/images/itlubber_art.svg" alt="公众号 itlubber_art 二维码" width="220" height="220" />
+        </el-popover>
+      </footer>
     </section>
     <theme-settings-drawer
       v-model="themeDrawerOpen"
@@ -132,6 +163,9 @@
 
 <script>
 import { isNavigationFailure } from 'vue-router'
+import { isHandledNavigationError, navigationState } from '@/router/navigationState'
+import RoutePageSkeleton from '@/components/common/RoutePageSkeleton.vue'
+import { systemBrand } from '@/system/systemBrand'
 import LayoutSidebar from '@/layout/components/LayoutSidebar.vue'
 import WorkspaceTabs from '@/layout/components/WorkspaceTabs.vue'
 import ProjectContextBar from '@/components/ProjectContextBar.vue'
@@ -201,6 +235,7 @@ function browserLocalStorage() {
 export default {
   name: 'Layout',
   components: {
+    RoutePageSkeleton,
     LayoutSidebar,
     WorkspaceTabs,
     ProjectContextBar,
@@ -211,6 +246,7 @@ export default {
     const sidebarState = readSidebarState(browserSessionStorage())
     const initialTheme = readLocalTheme(browserLocalStorage())
     return {
+      navigation: navigationState,
       sidebarWidth: sidebarState.width,
       lastExpandedWidth: sidebarState.lastExpandedWidth,
       sidebarMenus: SIDEBAR_MENUS,
@@ -218,12 +254,16 @@ export default {
       username: '',
       confirmedTheme: initialTheme,
       activeTheme: initialTheme,
-      brandLogoUrl: `${import.meta.env.BASE_URL || './'}images/hengshucredit_animated.svg`,
+      brand: systemBrand,
       themeDrawerOpen: false,
       themeSaving: false,
     }
   },
   computed: {
+    pendingRoute() {
+      const route = this.navigation.pendingRoute
+      return route && isWorkspaceRoute(route) ? route : null
+    },
     isTopNavigation() {
       return this.activeTheme.navigationLayout === 'TOP'
     },
@@ -231,12 +271,18 @@ export default {
       return this.sidebarWidth < SIDEBAR_COMPACT_THRESHOLD
     },
     activeMenuIndex() {
-      return getActiveMenuIndex(this.$route.path)
+      return getActiveMenuIndex((this.pendingRoute || this.$route).path)
     },
     workspaceTabs() {
-      return this.$store.getters['workspaceTabs/tabs'] || []
+      const tabs = this.$store.getters['workspaceTabs/tabs'] || []
+      const pending = this.pendingRoute
+      // 只展示临时页签，导航成功后才写入工作区缓存。
+      return pending && !tabs.some(tab => tab.fullPath === pending.fullPath)
+        ? [...tabs, this.routeTab(pending)]
+        : tabs
     },
     activeTabPath() {
+      if (this.pendingRoute) return this.pendingRoute.fullPath
       return this.$store.getters['workspaceTabs/activePath'] || ''
     },
     currentViewKey() {
@@ -312,7 +358,7 @@ export default {
       this.$store.dispatch('workspaceTabs/open', this.routeTab(this.$route))
     },
     async navigateTo(fullPath, options = {}) {
-      if (!fullPath || fullPath === this.$route.fullPath) return
+      if (!fullPath || (fullPath === this.$route.fullPath && !this.pendingRoute)) return
       if (
         !options.skipDesignerGuard &&
         !(await confirmDesignerPathsCanClose([this.$route.fullPath]))
@@ -325,6 +371,8 @@ export default {
       )
       return this.$router.push(target).catch((error) => {
         if (isNavigationFailure(error)) return
+        // router.onError 已展示可重试反馈，避免点击事件产生未处理的 rejection。
+        if (isHandledNavigationError(error)) return { cancelled: true }
         throw error
       })
     },
@@ -359,7 +407,7 @@ export default {
     async activateTab(fullPath) {
       if (!fullPath) return
       const result = await this.navigateTo(fullPath)
-      if (result && result.cancelled) return result
+      if (result && (result.cancelled || isNavigationFailure(result))) return result
       this.$store.dispatch('workspaceTabs/activate', fullPath)
       return result
     },
@@ -377,6 +425,13 @@ export default {
       return this.handleTabOperation(command)
     },
     async handleTabOperation({ operation, targetPath }) {
+      if (this.pendingRoute) {
+        // 加载中的页签尚未提交到工作区；关闭它只取消导航并恢复原页面。
+        if (operation === 'current' && targetPath === this.pendingRoute.fullPath) {
+          return this.$router.push(this.$route.fullPath)
+        }
+        return { cancelled: true }
+      }
       if (operation === 'refresh') {
         const affectedPaths = targetPath === this.$route.fullPath
           ? [targetPath]
@@ -555,6 +610,7 @@ export default {
   background: var(--tianshu-bg-page);
 }
 .layout-workspace {
+  --layout-account-width: 136px;
   position: relative;
   display: flex;
   min-width: 0;
@@ -569,7 +625,7 @@ export default {
   display: flex;
   height: 60px;
   min-width: 0;
-  padding-right: 198px;
+  padding-right: var(--layout-account-width);
   overflow: hidden;
   flex: none;
   align-items: stretch;
@@ -668,11 +724,9 @@ export default {
   flex: none;
   height: 52px;
   min-width: 0;
-  padding-right: 198px;
+  padding-right: var(--layout-account-width);
   align-items: stretch;
-  background: var(--tianshu-bg-elevated, var(--tianshu-bg-surface));
-  border-bottom: 1px solid var(--tianshu-border-subtle, #dde3ee);
-  box-shadow: var(--tianshu-shadow-small, 0 2px 8px rgba(15, 23, 42, 0.05));
+  background: var(--tianshu-bg-surface);
 }
 .layout-account {
   position: absolute;
@@ -680,16 +734,25 @@ export default {
   top: 0;
   right: 0;
   display: flex;
-  width: 198px;
-  // 留出 header 的 1px 下边框，避免账户背景将连续分隔线遮断。
+  width: var(--layout-account-width);
   height: calc(52px - 1px);
   flex: none;
-  padding: 0 12px;
+  padding: 0 8px;
   align-items: center;
   justify-content: flex-end;
-  background: var(--tianshu-bg-elevated, var(--tianshu-bg-surface));
-  border-left: 1px solid var(--tianshu-border-subtle);
+  background: var(--tianshu-bg-surface);
   box-sizing: border-box;
+
+  &::before {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 1px;
+    height: 20px;
+    content: '';
+    background: color-mix(in srgb, var(--tianshu-border-subtle) 55%, transparent);
+    transform: translateY(-50%);
+  }
 }
 .layout-shell.is-top-navigation {
   .layout-topbar {
@@ -700,7 +763,9 @@ export default {
     height: calc(60px - 1px);
     color: var(--tianshu-sidebar-text-active);
     background: var(--tianshu-sidebar-bg);
-    border-left-color: var(--tianshu-sidebar-border);
+    &::before {
+      background: color-mix(in srgb, var(--tianshu-sidebar-border) 60%, transparent);
+    }
   }
 
   .layout-account-trigger {
@@ -720,8 +785,9 @@ export default {
   appearance: none;
   display: inline-flex;
   height: 36px;
-  max-width: 180px;
-  padding: 0 10px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 6px;
   align-items: center;
   color: var(--tianshu-text-primary);
   font: inherit;
@@ -729,7 +795,7 @@ export default {
   border: 0;
   border-radius: 8px;
   cursor: pointer;
-  gap: 8px;
+  gap: 6px;
   transition: color 160ms ease, background-color 160ms ease;
 
   &:hover {
@@ -762,7 +828,7 @@ export default {
 }
 .layout-account-name {
   min-width: 0;
-  max-width: 112px;
+  max-width: 80px;
   overflow: hidden;
   font-size: 14px;
   font-weight: 500;
@@ -775,12 +841,54 @@ export default {
   font-size: 12px;
   transition: transform 160ms ease;
 }
-:global(.layout-account-dropdown .el-dropdown-menu__item) {
-  min-width: 132px;
-  gap: 8px;
-}
-:global(.layout-account-dropdown .el-dropdown-menu__item .app-icon) {
+.layout-footer {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 12px;
+  padding: 0 16px 12px;
   color: var(--tianshu-text-tertiary);
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+  overflow-wrap: anywhere;
+  background: var(--tianshu-bg-page);
+
+  > * {
+    max-width: 100%;
+  }
+
+  a,
+  .layout-footer-contact {
+    color: var(--tianshu-text-secondary);
+    text-decoration: none;
+
+    &:hover,
+    &:focus-visible {
+      color: var(--el-color-primary);
+      text-decoration: underline;
+    }
+  }
+}
+.layout-footer-contact {
+  padding: 0;
+  border: 0;
+  font: inherit;
+  line-height: inherit;
+  white-space: nowrap;
+  background: transparent;
+  cursor: pointer;
+}
+.layout-footer-qr-image {
+  display: block;
+  width: 220px;
+  max-width: 100%;
+  height: auto;
+  padding: 8px;
+  // 二维码保持白色底衬，避免暗色主题影响扫码对比度。
+  background: var(--el-color-white);
 }
 .layout-main {
   min-width: 0;
@@ -798,20 +906,16 @@ export default {
 }
 
 @media (max-width: 1120px) {
+  .layout-workspace {
+    --layout-account-width: 120px;
+  }
+
   .top-navigation__brand {
     width: 184px;
   }
 
-  .layout-primary-topbar {
-    padding-right: 150px;
-  }
-
-  .layout-account {
-    width: 150px;
-  }
-
   .layout-account-name {
-    max-width: 72px;
+    max-width: 52px;
   }
 }
 </style>

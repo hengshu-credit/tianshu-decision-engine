@@ -1,5 +1,6 @@
 import { formatConstantValue } from '@/utils/constantValue'
 import { versionFields } from '@/utils/resourceVersion'
+import { CONTENT_OPERATORS, NATIVE_OPERATORS, noRightOperand, predicateOperator, compileContentOperation } from './contentOperation'
 import { isRestrictedJsonPath } from '@/utils/restrictedJsonPath'
 
 export const OPERAND_KINDS = Object.freeze({
@@ -14,9 +15,7 @@ export const OPERAND_KINDS = Object.freeze({
   LIST_QUERY: 'LIST_QUERY'
 })
 
-export const OPERATION_OPERATORS = Object.freeze([
-  '+', '-', '*', '/', '%', '==', '!=', '>', '>=', '<', '<=', '&&', '||'
-])
+export const OPERATION_OPERATORS = Object.freeze(NATIVE_OPERATORS)
 
 export const READ_OPERAND_KINDS = Object.freeze([
   OPERAND_KINDS.PATH,
@@ -120,6 +119,7 @@ export function createOperationOperand(terms = [], valueType = '') {
     terms: Array.isArray(terms) ? terms.map((term, index) => {
       const result = { operand: term && term.operand ? cloneOperand(term.operand) : null }
       if (index > 0 || (term && term.operator)) result.operator = (term && term.operator) || ''
+      if (index > 0 && noRightOperand(result.operator)) delete result.operand
       return result
     }) : [],
     valueType: valueType || ''
@@ -173,7 +173,7 @@ export function cloneOperand(operand) {
 export function operandChildren(operand) {
   if (!operand || !operand.kind) return []
   if (operand.kind === OPERAND_KINDS.FUNCTION) return operand.args || []
-  if (operand.kind === OPERAND_KINDS.OPERATION) return (operand.terms || []).map(term => term && term.operand)
+  if (operand.kind === OPERAND_KINDS.OPERATION) return (operand.terms || []).filter(term => !noRightOperand(term?.operator)).map(term => term && term.operand)
   if (operand.kind === OPERAND_KINDS.ACCESS) return [operand.target, operand.accessor]
   if (operand.kind === OPERAND_KINDS.CAST) return [operand.operand]
   if (operand.kind === OPERAND_KINDS.ARRAY) return operand.items || []
@@ -187,7 +187,7 @@ export function inferOperandType(operand) {
   if (operand.kind === OPERAND_KINDS.LIST_QUERY) return 'BOOLEAN'
   if (operand.kind === OPERAND_KINDS.OPERATION) {
     const operators = (operand.terms || []).slice(1).map(term => term && term.operator)
-    if (operators.some(operator => ['&&', '||', '==', '!=', '>', '>=', '<', '<='].includes(operator))) return 'BOOLEAN'
+    if (operators.some(operator => predicateOperator(operator) || ['&&', '||', '==', '!=', '>', '>=', '<', '<='].includes(operator))) return 'BOOLEAN'
     if (operand.valueType) return normalizeType(operand.valueType)
     const first = (operand.terms || []).map(term => term && term.operand).find(Boolean)
     return inferOperandType(first)
@@ -246,7 +246,7 @@ export function validateOperand(operand, options = {}) {
         if (index === 0 && term && term.operator) {
           errors.push({ path: path + '.terms[0].operator', message: '第 1 个运算项不能设置前置运算符' })
         }
-        if (index > 0 && (!term || !OPERATION_OPERATORS.includes(term.operator))) {
+        if (index > 0 && (!term || !CONTENT_OPERATORS.includes(term.operator))) {
           errors.push({ path: path + '.terms[' + index + '].operator', message: '第 ' + (index + 1) + ' 个运算项缺少运算符' })
         }
       })
@@ -389,11 +389,7 @@ export function compileOperand(operand) {
     return (operand.functionCode || '') + '(' + args + ')'
   }
   if (operand.kind === OPERAND_KINDS.OPERATION) {
-    const values = (operand.terms || []).map((term, index) => {
-      const value = compileOperand(term && term.operand)
-      return index === 0 ? value : ((term && term.operator) || '') + ' ' + value
-    })
-    return '(' + values.join(' ') + ')'
+    return compileContentOperation(operand.terms || [], compileOperand)
   }
   if (operand.kind === OPERAND_KINDS.ACCESS) {
     const fn = String(operand.accessType || '').toUpperCase() === 'INDEX' ? 'arrGet' : 'objGet'
@@ -650,7 +646,7 @@ function operandChildEntries(operand) {
     return (operand.terms || []).map((term, index) => ({
       path: '.terms[' + index + '].operand',
       value: term && term.operand
-    }))
+    })).filter((entry, index) => !noRightOperand(operand.terms[index]?.operator))
   }
   if (operand.kind === OPERAND_KINDS.ACCESS) return [{ path: '.target', value: operand.target }, { path: '.accessor', value: operand.accessor }]
   if (operand.kind === OPERAND_KINDS.CAST) return [{ path: '.operand', value: operand.operand }]
@@ -725,6 +721,13 @@ function referenceTypeMeta(refType) {
   if (type === 'DATA_OBJECT' || type === 'DATA_OBJECT_ROOT' || type === 'DATA_FIELD') return { label: '数据对象', tone: 'object' }
   if (type === 'MODEL' || type === 'MODEL_OUTPUT') return { label: '模型', tone: 'model' }
   if (type === 'EXTERNAL_API') return { label: '外数 API', tone: 'external' }
+  if (type === 'EXTERNAL_DATASOURCE') return { label: '外数源', tone: 'external' }
+  if (type === 'PROJECT') return { label: '项目', tone: 'reference' }
+  if (type === 'API_CONTEXT') return { label: 'HTTP上下文', tone: 'external' }
+  if (type === 'RULE') return { label: '规则', tone: 'reference' }
+  if (type === 'FUNCTION') return { label: '方法', tone: 'function' }
+  if (type === 'LIST_LIBRARY') return { label: '名单', tone: 'reference' }
+  if (type === 'DATABASE' || type === 'SFTP') return { label: type === 'DATABASE' ? '数据库' : 'SFTP', tone: 'reference' }
   if (type === 'VARIABLE') return { label: '变量', tone: 'variable' }
   return { label: '', tone: 'reference' }
 }

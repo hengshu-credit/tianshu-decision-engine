@@ -1,24 +1,24 @@
 <template>
-  <div class="login-page">
+  <div class="login-page" :class="{ 'is-preview': preview }">
     <div class="login-bg" aria-hidden="true">
       <div class="login-bg__mesh" />
       <div class="login-bg__orb login-bg__orb--a" />
       <div class="login-bg__orb login-bg__orb--b" />
     </div>
 
-    <div class="login-shell">
+    <div class="login-shell" :inert="preview">
       <div class="login-card" role="main">
         <header class="login-brand">
           <div class="login-brand__icon" aria-hidden="true">
             <img
-              :src="brandLogoUrl"
+              :src="brand.logoUrl"
               alt="logo"
               class="login-logo-img"
             />
           </div>
           <div class="login-brand__text">
-            <h1 class="login-brand__title">天枢决策引擎</h1>
-            <p class="login-brand__subtitle">天工开物，枢衡定策</p>
+            <h1 class="login-brand__title">{{ brand.systemName }}</h1>
+            <p v-if="brand.subtitle" class="login-brand__subtitle">{{ brand.subtitle }}</p>
           </div>
         </header>
 
@@ -74,12 +74,14 @@
 
 <script>
 import { consoleLogin, getConsoleAuthConfig } from '@/api/auth'
+import { systemBrand } from '@/system/systemBrand'
 
 export default {
   name: 'Login',
+  props: { preview: Boolean, previewBrand: { type: Object, default: null } },
+  computed: { brand() { return this.previewBrand || systemBrand } },
   data() {
     return {
-      brandLogoUrl: `${import.meta.env.BASE_URL || './'}images/hengshucredit_animated.svg`,
       loading: false,
       registrationEnabled: false,
       passwordRecoveryEnabled: false,
@@ -110,6 +112,7 @@ export default {
      * 校验表单并调用登录接口，成功后跳回 redirect 或首页。
      */
     submit() {
+      if (this.preview) return
       this.$refs.form.validate(async (valid) => {
         if (!valid) return
         this.loading = true
@@ -376,26 +379,18 @@ $login-muted: var(--tianshu-text-tertiary);
   font-weight: 600 !important;
   letter-spacing: 0.02em;
   border-radius: 12px !important;
-  color: var(--tianshu-brand-foreground) !important;
-  background: var(--tianshu-brand-button-background) !important;
-  border-color: var(--el-color-primary) !important;
   cursor: pointer;
-  transition: filter 0.2s ease, box-shadow 0.2s ease,
+  transition: border-color 0.2s ease, box-shadow 0.2s ease,
     transform 0.2s ease;
 }
 .login-btn.el-button--primary.is-loading:disabled {
-  opacity: 0.88;
-  background: var(--tianshu-brand-button-background) !important;
-  border-color: var(--el-color-primary) !important;
+  opacity: 1;
 }
 .login-btn.is-loading::before {
   background-color: transparent;
 }
 .login-btn:not(.is-loading):hover {
-  background: var(--tianshu-brand-button-background) !important;
-  border-color: var(--el-color-primary-dark-1) !important;
   box-shadow: 0 10px 28px var(--tianshu-primary-shadow);
-  filter: brightness(1.08);
 }
 .login-btn:not(.is-loading):active {
   transform: translateY(1px);
@@ -423,4 +418,13 @@ $login-muted: var(--tianshu-text-tertiary);
     padding: 40px 40px 32px;
   }
 }
+.login-page.is-preview {
+  min-height: 0;
+  padding: 24px 16px;
+  border-radius: 10px;
+  isolation: isolate;
+  overflow: hidden;
+}
+.is-preview .login-bg { position: absolute; }
+.is-preview .login-card, .is-preview .login-bg__mesh, .is-preview .login-bg__orb { animation: none; }
 </style>

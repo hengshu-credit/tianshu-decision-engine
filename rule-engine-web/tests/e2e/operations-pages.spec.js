@@ -349,8 +349,8 @@ test('血缘分析可生成关系图、拖动节点、缩放并恢复最佳分�
   await page.getByRole('option', { name: '年龄 (age)' }).click()
   await page.getByRole('button', { name: '生成血缘图' }).click()
 
-  const current = page.locator('.current-node .node-code')
-  const downstream = page.locator('.branch-node .node-code')
+  const current = page.locator('.current-node .content-ref__code')
+  const downstream = page.locator('.branch-node .content-ref__code')
   await expect(current).toHaveText('age')
   await expect(downstream).toHaveText('age_rule')
   await expectTextSelectable(downstream, 'age_rule')
@@ -383,7 +383,8 @@ test('血缘分析可生成关系图、拖动节点、缩放并恢复最佳分�
   const graphWrap = page.locator('.graph-wrap')
   await expect.poll(async () => {
     const graphBox = await graphWrap.boundingBox()
-    return 1200 - graphBox.y - graphBox.height
+    const footerBox = await page.locator('.layout-footer').boundingBox()
+    return footerBox.y - graphBox.y - graphBox.height
   }).toBeLessThanOrEqual(40)
 
   await expect(page.locator('.graph-canvas .lf-graph').first()).toBeVisible()
@@ -425,7 +426,7 @@ test('血缘共享依赖在部分规则收起及对象展开后保持层级和�
   await page.getByRole('combobox', { name: '起点', exact: true }).click()
   await page.getByRole('option', { name: '近1个月授信申请次数 (credit_apply_count_1m)', exact: true }).click()
   await page.getByRole('button', { name: '生成血缘图', exact: true }).click()
-  await expect(page.locator('.current-node .node-code')).toHaveText('credit_apply_count_1m')
+  await expect(page.locator('.current-node .content-ref__code')).toHaveText('credit_apply_count_1m')
   const node = id => page.locator(`[data-node-id="${id}"]`)
   const assertLayers = async expanded => {
     const currentX = (await page.locator('.current-node').boundingBox()).x
@@ -802,7 +803,7 @@ test('夜间模式下运行页面的提示区、代码块和血缘画布使用�
   expect(gridLayers.wrap).toBe('none')
   expect(await page.locator('.graph-canvas .lf-grid').count()).toBeGreaterThan(0)
   await expectStyleUsesToken(
-    page.locator('.current-node .node-label'),
+    page.locator('.current-node .content-ref__name'),
     'color',
     '--tianshu-text-primary'
   )
@@ -885,7 +886,7 @@ test('夜间模式下运行页面的提示区、代码块和血缘画布使用�
   assertClean()
 })
 
-test('夜间模式下审批与版本历史区域使用主题表面色', async ({ page }) => {
+test('夜间模式下审批与修订字段区域使用主题表面色', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify({
       schemaVersion: 1,
@@ -898,6 +899,8 @@ test('夜间模式下审批与版本历史区域使用主题表面色', async ({
     }))
   })
   const fixtures = createDetailApiData()
+  fixtures.set('/api/rule/definition/101/revisions/41/fields', { definitionId: '101', revisionId: '41', status: 'AVAILABLE', source: 'FROZEN_ARTIFACT', readOnly: true,
+    referenceNamespace: 'ARTIFACT_SOURCE', validationSource: 'FROZEN_REFERENCE_IDS', inputFields: [{ varId: '1', refType: 'VARIABLE', fieldLabel: '年龄', scriptName: 'age', fieldType: 'INTEGER' }], outputFields: [], diagnostics: [], localOutputNames: [] })
   fixtures.set('/api/rule/governance/requests/summary', {
     pendingCount: 2,
     myDraftCount: 2,
@@ -972,19 +975,10 @@ test('夜间模式下审批与版本历史区域使用主题表面色', async ({
   )
 
   await page.goto('http://tianshu.local/index.html#/rule/101')
-  await page.getByRole('button', { name: '版本', exact: true }).click()
-  await page.getByRole('button', { name: '早期历史快照', exact: true }).click()
-  const versionDialog = page.locator('.el-dialog').filter({ hasText: '版本历史' })
-  await expectStyleUsesToken(
-    versionDialog.locator('.version-compare-toolbar'),
-    'backgroundColor',
-    '--tianshu-bg-soft'
-  )
-  await expectStyleUsesToken(
-    versionDialog.locator('.rule-version-side').first(),
-    'backgroundColor',
-    '--tianshu-bg-soft'
-  )
+  await page.getByRole('tab', { name: /输入字段/ }).click()
+  const revisionPanel = page.locator('.el-tab-pane:visible').getByTestId('revision-fields-panel')
+  await expectStyleUsesToken(revisionPanel, 'color', '--tianshu-text-primary')
+  await expectStyleUsesToken(revisionPanel.getByTestId('field-revision-select').locator('.el-select__wrapper'), 'backgroundColor', '--tianshu-bg-surface')
   assertClean()
 })
 

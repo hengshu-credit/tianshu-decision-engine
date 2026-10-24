@@ -22,6 +22,7 @@ public final class GovernanceResourceTypes {
     public static final String BILLING_CONFIG = "BILLING_CONFIG";
     public static final String EXPERIMENT = "EXPERIMENT";
     public static final String PROJECT = "PROJECT";
+    public static final String SYSTEM_SETTING = "SYSTEM_SETTING";
 
     private static final Map<String, List<String>> TAB_TYPES = Map.of(
             "FIELD", List.of(VARIABLE, DATA_OBJECT, FIELD_VALIDATION),
@@ -40,6 +41,7 @@ public final class GovernanceResourceTypes {
     }
 
     public static List<String> forTab(String tab) {
+        if ("SYSTEM".equalsIgnoreCase(tab)) return List.of(SYSTEM_SETTING);
         return TAB_TYPES.getOrDefault(
                 tab == null ? "" : tab.toUpperCase(),
                 List.of());

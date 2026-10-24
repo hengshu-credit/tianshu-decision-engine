@@ -205,6 +205,7 @@ function normalizeRule(rule) {
 export function normalizeApiDoc(doc) {
   const project = doc && doc.project ? doc.project : {}
   return {
+    codeMapping: doc?.codeMapping || { enabled: false, mappings: {} },
     project: {
       id: project.id,
       projectCode: text(project.projectCode),
@@ -213,7 +214,7 @@ export function normalizeApiDoc(doc) {
       status: project.status
     },
     authentications: arrayOf(doc && doc.authentications).map(normalizeAuthentication),
-    rules: arrayOf(doc && doc.rules).map(normalizeRule)
+    rules: arrayOf(doc && doc.rules).map(rule => ({ ...normalizeRule(rule), codeMapping: doc?.codeMapping }))
   }
 }
 

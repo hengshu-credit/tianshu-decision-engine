@@ -3,9 +3,9 @@
     <template v-if="isInlineCompare">
       <div class="nd-box">
         <span class="nd-txt">
-          <span class="c-name">{{ leftText }}</span>
+          <content-reference mode="trace" :value="traceContent(node.children[0], varMap)" /><span v-if="node.children[0].type === 'VARIABLE'">({{ valueFor(node.children[0]) }})</span>
           <span class="c-op">{{ opText }}</span>
-          <span class="c-name">{{ rightText }}</span>
+          <content-reference mode="trace" :value="traceContent(node.children[1], varMap)" /><span v-if="node.children[1].type === 'VARIABLE'">({{ valueFor(node.children[1]) }})</span>
         </span>
         <span class="nd-res" :class="resCls" v-if="node.evaluated">{{
           resText
@@ -16,7 +16,7 @@
 
     <template v-else>
       <div class="nd-box" v-if="showSelf">
-        <span class="nd-txt">{{ nodeLabel }}</span>
+        <span class="nd-txt"><content-reference mode="trace" v-if="['VARIABLE', 'FUNCTION', 'METHOD', 'VALUE', 'PRIMARY'].includes(node.type)" :value="traceContent(node, varMap)" /><template v-else>{{ nodeLabel }}</template><span v-if="node.type === 'VARIABLE' && node.evaluated"> = {{ valueFor(node) }}</span></span>
         <span class="nd-res" :class="resCls" v-if="showRes">{{ resText }}</span>
         <span class="nd-res is-skip" v-else-if="!node.evaluated && !isSkipType"
           >未执行</span
@@ -40,6 +40,8 @@
 </template>
 
 <script>
+import { traceContentValue } from '@/utils/contentReference'
+import ContentReference from './ContentReference.vue'
 var OP_CN = {
   '||': '或',
   '&&': '且',
@@ -72,6 +74,7 @@ function fv(v) {
 }
 
 export default {
+  components: { ContentReference },
   name: 'TraceNode',
   props: {
     node: { type: Object, required: true },
@@ -175,6 +178,7 @@ export default {
     },
   },
   methods: {
+    traceContent: traceContentValue,
     inputValue: function (key) {
       if (!key || !this.inputParams) return undefined
       if (Object.prototype.hasOwnProperty.call(this.inputParams, key))

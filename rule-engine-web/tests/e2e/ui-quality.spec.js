@@ -446,8 +446,8 @@ test('列表操作使用稳定且可区分的主题提示色', async ({
         normalActionColors.set(action.action, action.color)
       }
     }
-    expect(new Set(normalActionColors.values()).size, `${item.route} 的不同操作颜色未区分: ${JSON.stringify(colors.normal)}`)
-      .toBe(normalActionColors.size)
+    expect(new Set(normalActionColors.values()).size, `${item.route} 的普通操作未跟随统一主题色: ${JSON.stringify(colors.normal)}`)
+      .toBe(1)
     expect(new Set(colors.danger.map(action => action.color)).size,
       `${item.route} 的危险操作颜色不稳定`).toBe(1)
     expect(colors.danger[0].color, `${item.route} 的危险操作未与普通操作区分`)

@@ -4,13 +4,13 @@
     <div class="sc-header">
       <div class="sc-title-area">
         <el-button
-          link
+          size="small"
           :icon="ElIconBack"
+          class="uiue-detail-back"
           aria-label="返回"
           data-designer-back
           title="返回"
           @click="$router.back()"
-          style="color: var(--tianshu-text-secondary)"
         />
         <el-icon class="sc-title-icon"><el-icon-data-line /></el-icon>
         <span class="sc-title">评分卡设计器</span>
@@ -314,82 +314,27 @@
       <div class="sc-card-title">
         <el-icon><el-icon-medal /></el-icon> 分数等级配置（可选）
       </div>
-      <div class="threshold-list">
-        <div
-          v-for="(thresh, ti) in model.thresholds"
-          :key="ti"
-          class="threshold-item"
-        >
-          <div
-            class="thresh-color-bar"
-            :style="{ background: thresholdColor(ti) }"
+      <score-threshold-editor
+        :thresholds="model.thresholds"
+        compact
+        @change-min="(threshold, value) => threshold.min = value"
+        @change-max="(threshold, value) => threshold.max = value"
+        @remove="removeThreshold"
+      >
+        <template #result="{ threshold }">
+          <operand-picker
+            :value="threshold.resultOperand"
+            :vars="varPickerOptions"
+            :functions="projectFunctions"
+            :allowed-kinds="valueOperandKinds"
+            expected-type="STRING"
+            placeholder="选择等级结果值"
+            style="width: 100%; min-width: 240px"
+            @input="(operand) => setThresholdOperand(threshold, operand)"
           />
-          <div class="thresh-range">
-            <el-input-number
-              v-model="thresh.min"
-              size="small"
-              :min="0"
-              :controls="false"
-              style="width: 100px"
-            />
-            <span class="thresh-sep">≤ 分数 &lt;</span>
-            <el-input-number
-              v-model="thresh.max"
-              size="small"
-              :min="thresh.min"
-              :controls="false"
-              style="width: 100px"
-            />
-          </div>
-          <div class="thresh-result">
-            <operand-picker
-              :value="thresh.resultOperand"
-              :vars="varPickerOptions"
-              :functions="projectFunctions"
-              :allowed-kinds="valueOperandKinds"
-              expected-type="STRING"
-              placeholder="选择等级结果值"
-              style="width: 100%; min-width: 240px"
-              @input="(operand) => setThresholdOperand(thresh, operand)"
-            />
-          </div>
-          <el-tag
-            :color="thresholdColor(ti)"
-            effect="dark"
-            size="small"
-            class="thresh-badge"
-          >
-            {{ thresh.result || '等级 ' + (ti + 1) }}
-          </el-tag>
-          <el-button
-            link
-            size="small"
-            :icon="ElIconDelete"
-            class="btn-delete"
-            @click="removeThreshold(ti)"
-          />
-        </div>
-        <div v-if="model.thresholds.length === 0" class="sc-empty">
-          暂未配置等级，点击「添加等级」设置分数区间
-        </div>
-      </div>
-
-      <!-- 等级色带预览 -->
-      <!--      <div v-if="model.thresholds.length > 0" class="threshold-visual">-->
-      <!--        <div-->
-      <!--          v-for="(thresh, ti) in sortedThresholds"-->
-      <!--          :key="ti"-->
-      <!--          class="visual-segment"-->
-      <!--          :style="{-->
-      <!--            flex: thresh.max - thresh.min,-->
-      <!--            background: thresholdColor(ti),-->
-      <!--            opacity: 0.85-->
-      <!--          }"-->
-      <!--        >-->
-      <!--          <span class="segment-label">{{ thresh.result || ('等级' + (ti + 1)) }}</span>-->
-      <!--          <span class="segment-range">{{ thresh.min }}~{{ thresh.max }}</span>-->
-      <!--        </div>-->
-      <!--      </div>-->
+        </template>
+        <template #empty><div class="sc-empty">暂未配置等级，点击「添加等级」设置分数区间</div></template>
+      </score-threshold-editor>
     </div>
 
     <!-- 脚本预览/编辑面板 -->
@@ -397,6 +342,7 @@
       v-if="definitionId"
       :compile-result="designerCompileResult"
       :references="projectRefs"
+      :version-references="scriptVersionReferences"
       :functions="projectFunctions"
     />
 
@@ -414,6 +360,7 @@
 </template>
 
 <script>
+import ScoreThresholdEditor from '@/components/decision/ScoreThresholdEditor.vue'
 import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { markRaw } from 'vue'
 import {
@@ -458,16 +405,6 @@ import {
   normalizeConditionOperator,
 } from '@/constants/conditionOperators'
 
-const THRESHOLD_COLORS = [
-  '#52c41a',
-  'var(--el-color-primary)',
-  '#fa8c16',
-  '#f5222d',
-  '#722ed1',
-  '#13c2c2',
-  '#eb2f96',
-]
-
 function scoreConditionType(item) {
   return (
     inferOperandType(item && item.leftOperand) ||
@@ -510,6 +447,7 @@ export default {
     }
   },
   components: {
+    ScoreThresholdEditor,
     RuleDesignerActionBar,
     RuleDraftReadOnly,
     DesignerTestDialog,
@@ -545,11 +483,6 @@ export default {
       if (Math.abs(w - 1.0) < 0.05) return '#087a5d'
       if (w > 1.05) return '#c93333'
       return '#b45309'
-    },
-    sortedThresholds() {
-      return [...this.model.thresholds].sort(
-        (a, b) => (b.min || 0) - (a.min || 0)
-      )
     },
     isResultMap() {
       return (
@@ -719,9 +652,6 @@ export default {
         ? '"' + String(condValue).replace(/"/g, '\\"') + '"'
         : condValue
       return condVar + ' ' + condOperator + ' ' + quoted
-    },
-    thresholdColor(idx) {
-      return THRESHOLD_COLORS[idx % THRESHOLD_COLORS.length]
     },
     onResultOperandSelect(operand) {
       const newCode = operand ? operand.code || operand.value || '' : ''
@@ -939,30 +869,6 @@ export default {
       this.testResult = null
       this.jsonError = ''
     },
-    async doTest() {
-      if (this.jsonError) {
-        this.$message.error('请修正 JSON 格式错误后再执行')
-        return
-      }
-      this.testExecuting = true
-      this.testResult = null
-      let params = {}
-      try {
-        params = JSON.parse(this.testParamsJson || '{}')
-      } catch (e) {
-        this.testExecuting = false
-        this.$message.error('参数 JSON 格式错误')
-        return
-      }
-      try {
-        const res = await this.executeDesignerPreview(params, 'SCORE')
-        this.testResult = res && res.data ? res.data : res
-      } catch (e) {
-        this.testResult = { success: false, errorMessage: e.message }
-      } finally {
-        this.testExecuting = false
-      }
-    },
     async saveTestParams() {
       // 将当前编辑的 JSON 保存到 model.testParams，下次打开时自动填充
       if (!this.testParamsJson || this.testParamsJson === '{}') {
@@ -989,7 +895,6 @@ export default {
   position: relative;
   background: var(--tianshu-bg-page);
   padding: 16px;
-  min-height: 100%;
 }
 .sc-header {
   display: flex;
@@ -1247,76 +1152,6 @@ export default {
 .formula-empty {
   color: var(--tianshu-text-tertiary);
   font-style: italic;
-}
-.threshold-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.threshold-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--tianshu-border-subtle);
-  border-radius: 6px;
-  background: var(--tianshu-bg-muted);
-}
-.thresh-color-bar {
-  width: 4px;
-  height: 36px;
-  border-radius: 2px;
-  flex-shrink: 0;
-}
-.thresh-range {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-.thresh-sep {
-  font-size: 12px;
-  color: var(--tianshu-text-tertiary);
-  white-space: nowrap;
-}
-.thresh-result {
-  flex: 1;
-}
-.thresh-badge {
-  flex-shrink: 0;
-  border-color: transparent !important;
-}
-.threshold-visual {
-  display: flex;
-  height: 36px;
-  border-radius: 6px;
-  overflow: hidden;
-  margin-top: 4px;
-}
-.visual-segment {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-width: 60px;
-  color: #fff;
-  font-size: 11px;
-  font-weight: bold;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  padding: 2px 4px;
-  overflow: hidden;
-}
-.segment-label {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-.segment-range {
-  font-size: 10px;
-  opacity: 0.85;
-  font-weight: normal;
 }
 .sc-empty {
   text-align: center;

@@ -2,7 +2,7 @@
   <div class="uiue-list-page api-detail-page">
     <div class="detail-header uiue-detail-header">
       <div class="uiue-detail-header__title">
-        <el-button link size="small" class="uiue-detail-back" @click="handleBack">返回</el-button>
+        <el-button size="small" class="uiue-detail-back" aria-label="返回" title="返回接口列表" @click="handleBack"><app-icon name="Back" /></el-button>
         <div>
         <div class="detail-title">
           {{ isCreateMode ? '新建外数 API 接口' : '编辑外数 API 接口' }}

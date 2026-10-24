@@ -1,0 +1,142 @@
+/* 按钮颜色只由主题令牌提供；文字和背景成对切换，避免 hover 滤镜改变文字对比度。 */
+.el-button.el-button,
+.uiue-button {
+  --tianshu-button-text: var(--tianshu-primary-text);
+  --tianshu-button-soft-bg: var(--tianshu-primary-soft-bg);
+  --tianshu-button-soft-hover-bg: var(--tianshu-primary-soft-hover-bg);
+  --tianshu-button-soft-active-bg: var(--tianshu-primary-soft-active-bg);
+  --tianshu-button-border: var(--el-color-primary);
+  // 文字和底色同时切换，避免禁用转启用时插值出低对比度的中间帧。
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+@each $type in primary, info, success, warning, danger {
+  $palette: $type;
+  @if $type == info { $palette: primary; }
+
+  .el-button.el-button--#{$type},
+  .uiue-button.uiue-button--#{$type} {
+    --tianshu-button-solid-bg: var(--tianshu-button-#{$palette}-bg);
+    --tianshu-button-solid-text: var(--tianshu-button-#{$palette}-text);
+    --tianshu-button-solid-border: var(--tianshu-button-#{$palette}-border);
+    --tianshu-button-solid-hover-bg: var(--tianshu-button-#{$palette}-hover-bg);
+    --tianshu-button-solid-hover-text: var(--tianshu-button-#{$palette}-hover-text);
+    --tianshu-button-solid-hover-border: var(--tianshu-button-#{$palette}-hover-border);
+    --tianshu-button-solid-active-bg: var(--tianshu-button-#{$palette}-active-bg);
+    --tianshu-button-solid-active-text: var(--tianshu-button-#{$palette}-active-text);
+    --tianshu-button-solid-active-border: var(--tianshu-button-#{$palette}-active-border);
+  }
+
+  .el-button.el-button--#{$type}:not(.is-link):not(.is-text):not(.is-plain):where(:not(.is-disabled):not(:disabled:not(.is-loading))),
+  .uiue-button.uiue-button--#{$type} {
+    color: var(--tianshu-button-solid-text) !important;
+    background: var(--tianshu-button-solid-bg) !important;
+    background-color: var(--tianshu-button-solid-border) !important;
+    border-color: var(--tianshu-button-solid-border) !important;
+    filter: none !important;
+
+    &:where(:not(.is-disabled):not(:disabled)):is(:hover, :focus-visible) {
+      color: var(--tianshu-button-solid-hover-text) !important;
+      background: var(--tianshu-button-solid-hover-bg) !important;
+      background-color: var(--tianshu-button-solid-hover-border) !important;
+      border-color: var(--tianshu-button-solid-hover-border) !important;
+    }
+
+    &:where(:not(.is-disabled):not(:disabled)):is(:active, .is-active) {
+      color: var(--tianshu-button-solid-active-text) !important;
+      background: var(--tianshu-button-solid-active-bg) !important;
+      background-color: var(--tianshu-button-solid-active-border) !important;
+      border-color: var(--tianshu-button-solid-active-border) !important;
+    }
+  }
+}
+
+@each $type in success, warning, danger {
+  .el-button.el-button--#{$type}.is-plain {
+    --tianshu-button-text: var(--tianshu-#{$type}-text);
+    --tianshu-button-soft-bg: var(--tianshu-#{$type}-bg);
+    --tianshu-button-soft-hover-bg: color-mix(in srgb, var(--tianshu-#{$type}-bg) 94%, var(--el-color-#{$type}));
+    --tianshu-button-soft-active-bg: color-mix(in srgb, var(--tianshu-#{$type}-bg) 88%, var(--el-color-#{$type}));
+    --tianshu-button-border: var(--tianshu-#{$type}-border);
+  }
+}
+
+.el-button.el-button:not(.el-button--primary, .el-button--info, .el-button--success, .el-button--warning, .el-button--danger),
+.el-button.el-button--default,
+.uiue-button:not([class*='uiue-button--']) {
+  color: var(--tianshu-text-primary) !important;
+  background: var(--tianshu-bg-surface) !important;
+  border-color: var(--tianshu-border) !important;
+}
+
+.el-button.el-button.is-plain {
+  color: var(--tianshu-button-text) !important;
+  background: var(--tianshu-button-soft-bg) !important;
+  border-color: var(--tianshu-button-border) !important;
+}
+
+.el-button.el-button:not(.el-button--primary, .el-button--info, .el-button--success, .el-button--warning, .el-button--danger),
+.el-button.el-button--default,
+.el-button.el-button:is(.is-plain, .is-link, .is-text),
+.uiue-button:not([class*='uiue-button--']) {
+  &:where(:not(.is-disabled):not(:disabled)):is(:hover, :focus-visible) {
+    color: var(--tianshu-button-text) !important;
+    background: var(--tianshu-button-soft-hover-bg) !important;
+    border-color: var(--tianshu-button-border) !important;
+  }
+
+  &:where(:not(.is-disabled):not(:disabled)):is(:active, .is-active, .is-tool-active) {
+    color: var(--tianshu-button-text) !important;
+    background: var(--tianshu-button-soft-active-bg) !important;
+    border-color: var(--tianshu-button-border) !important;
+  }
+}
+
+.el-button.el-button:is(.is-link, .is-text) {
+  --tianshu-button-border: transparent;
+  color: var(--tianshu-button-text) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+// data-action 保留动作含义，普通动作共用主题色，仅删除使用危险色。
+.el-button.el-button--danger:is(.is-link, .is-text),
+.el-button.el-button.btn-delete,
+.el-button.el-button[data-action='delete'] {
+  --tianshu-button-text: var(--tianshu-action-delete);
+  --tianshu-button-soft-hover-bg: rgba(var(--tianshu-action-delete-rgb), 0.08);
+  --tianshu-button-soft-active-bg: rgba(var(--tianshu-action-delete-rgb), 0.12);
+}
+
+@each $role in edit, detail, execute, inspect, configure, version, compare,
+  rollback, global, publish, reset, disable, add, docs, delete {
+  .el-button[data-action='#{$role}'] {
+    --tianshu-action-color: var(--tianshu-action-#{$role}, var(--tianshu-primary-text));
+    --tianshu-action-rgb: var(--tianshu-action-#{$role}-rgb, var(--el-color-primary-rgb));
+  }
+}
+
+// disabled 与 loading 分开：业务禁用保持中性颜色，加载中的按钮保留操作颜色。
+.el-button.el-button:is(.is-disabled, :disabled:where(:not(.is-loading))),
+.uiue-button.uiue-button:disabled {
+  color: var(--tianshu-text-secondary) !important;
+  background: var(--tianshu-bg-muted) !important;
+  border-color: var(--tianshu-border-subtle) !important;
+  filter: none !important;
+  opacity: 1 !important;
+  cursor: not-allowed;
+  box-shadow: none !important;
+}
+
+.el-button.el-button:is(.is-disabled, :disabled:where(:not(.is-loading))):is(.is-link, .is-text) {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+.el-button.is-loading::before { background-color: transparent; }
+
+.uiue-button:focus-visible {
+  outline: 2px solid var(--tianshu-primary-text);
+  outline-offset: 2px;
+}

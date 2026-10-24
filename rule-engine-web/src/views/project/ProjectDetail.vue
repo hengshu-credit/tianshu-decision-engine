@@ -1,22 +1,19 @@
 <template>
   <div class="uiue-list-page">
-    <div
-      style="
-        margin-bottom: 16px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-      "
-    >
-      <h2 style="margin: 0">
-        {{ project ? project.projectName : '加载中...' }}
-      </h2>
-      <el-button
-        size="small"
-        :icon="ElIconBack"
-        @click="$router.push('/project')"
-        >返回</el-button
-      >
+    <div class="uiue-detail-header">
+      <div class="uiue-detail-header__title">
+        <el-button
+          size="small"
+          :icon="ElIconBack"
+          class="uiue-detail-back"
+          aria-label="返回"
+          title="返回项目列表"
+          @click="$router.push('/project')"
+        />
+        <h2 style="margin: 0">
+          {{ project ? project.projectName : '加载中...' }}
+        </h2>
+      </div>
     </div>
 
     <el-tabs v-model="activeProjectTab" class="project-detail-tabs">

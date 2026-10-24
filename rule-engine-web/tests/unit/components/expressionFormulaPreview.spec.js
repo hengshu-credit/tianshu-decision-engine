@@ -17,7 +17,7 @@ describe('ExpressionFormulaPreview', () => {
   test('公式和完整只读脚本在同一面板展示，无需展开第二层面板', () => {
     const wrapper = mountPreview({ kind: 'REFERENCE', refId: 10, refType: 'VARIABLE', code: 'age', value: 'age', label: '年龄', resolved: true })
 
-    expect(wrapper.find('.expression-formula-preview__business').text()).toContain('年龄 age')
+    expect(wrapper.find('.expression-formula-preview__business').text()).toContain('年龄age')
     const script = wrapper.get('.expression-formula-preview__code')
     expect(script.text()).toBe('age')
     expect(script.element.tagName).toBe('PRE')

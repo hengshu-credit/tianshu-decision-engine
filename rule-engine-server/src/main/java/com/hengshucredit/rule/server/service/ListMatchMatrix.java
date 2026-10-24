@@ -4,6 +4,7 @@ import com.hengshucredit.rule.core.util.MissingValueSemantics;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -24,9 +25,17 @@ public class ListMatchMatrix {
 
     public boolean match(List<Long> listIds, List<Object> values, String combinationMode,
                          String matchMode, List<String> itemTypes, LocalDateTime matchTime) {
+        return matchDetailed(listIds, values, combinationMode, matchMode, itemTypes, matchTime).hit();
+    }
+
+    /** 同一次查询的逐项判断，行对应查询内容，列对应名单；不为日志重新执行匹配。 */
+    public record MatchResult(boolean hit, List<List<Boolean>> matrix) {}
+
+    public MatchResult matchDetailed(List<Long> listIds, List<Object> values, String combinationMode,
+                                     String matchMode, List<String> itemTypes, LocalDateTime matchTime) {
         validateCombinationMode(combinationMode);
         if (listIds == null || listIds.isEmpty() || values == null || values.isEmpty()) {
-            return false;
+            return new MatchResult(false, List.of());
         }
         if (ruleListService == null) {
             throw new IllegalStateException("名单匹配服务未初始化");
@@ -43,6 +52,16 @@ public class ListMatchMatrix {
                 }
             }
         }
+        List<List<Boolean>> matrix = new ArrayList<>();
+        for (Object value : values) {
+            List<Boolean> row = new ArrayList<>();
+            for (Long listId : listIds) row.add(cell(cells, listId, value));
+            matrix.add(List.copyOf(row));
+        }
+        return new MatchResult(combine(cells, listIds, values, combinationMode), List.copyOf(matrix));
+    }
+
+    private boolean combine(Map<String, Boolean> cells, List<Long> listIds, List<Object> values, String combinationMode) {
         if (ANY_FIELD_ANY_LIST.equals(combinationMode)) {
             for (Object value : values) {
                 for (Long listId : listIds) {

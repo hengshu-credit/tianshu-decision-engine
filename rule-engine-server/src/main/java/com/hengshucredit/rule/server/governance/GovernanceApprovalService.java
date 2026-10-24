@@ -1022,7 +1022,7 @@ public class GovernanceApprovalService {
 
     private void restrictVisibleResources(LambdaQueryWrapper<GovernanceApprovalRequest> query) {
         if (accessGuard == null) return;
-        List<String> types = List.of("VARIABLE", "DATA_OBJECT", "FIELD_VALIDATION", "MODEL", "EXTERNAL_DATASOURCE", "EXTERNAL_API", "DATABASE", "SFTP", "FUNCTION", "RULE", "RULE_PROJECT_BINDING", "LIST_LIBRARY", "LIST_RECORD_BATCH", "BILLING_CONFIG", "EXPERIMENT", "PROJECT");
+        List<String> types = List.of("VARIABLE", "DATA_OBJECT", "FIELD_VALIDATION", "MODEL", "EXTERNAL_DATASOURCE", "EXTERNAL_API", "DATABASE", "SFTP", "FUNCTION", "RULE", "RULE_PROJECT_BINDING", "LIST_LIBRARY", "LIST_RECORD_BATCH", "BILLING_CONFIG", "EXPERIMENT", "PROJECT", "SYSTEM_SETTING");
         List<String> visible = types.stream().filter(type -> accessGuard.can(
                 com.hengshucredit.rule.server.security.ConsoleAccessGuard.resourceModule(type) + ":view")).toList();
         if (visible.isEmpty()) query.eq(GovernanceApprovalRequest::getId, -1L);

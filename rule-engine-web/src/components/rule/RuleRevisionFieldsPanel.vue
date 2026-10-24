@@ -29,14 +29,8 @@
           <el-tag size="small" type="info">只读</el-tag>
         </div>
         <el-table :data="pagedFields" border size="small" max-height="500" data-testid="revision-fields-table">
-          <el-table-column label="字段名称" min-width="170">
-            <template #default="{ row }"><span class="revision-field-name">{{ row.fieldLabel || row.fieldName || row.scriptName || '未命名字段' }}</span></template>
-          </el-table-column>
-          <el-table-column label="字段路径" min-width="210">
-            <template #default="{ row }"><code class="revision-field-path">{{ row.scriptName || row.fieldName || '—' }}</code></template>
-          </el-table-column>
-          <el-table-column label="类型" width="120">
-            <template #default="{ row }">{{ typeLabel(row.fieldType) }}</template>
+          <el-table-column label="字段内容" min-width="420">
+            <template #default="{ row }"><content-reference :value="{ ...row, fieldCode: row.scriptName || row.fieldName, fieldName: row.fieldLabel || row.fieldName, refId: row.varId }" /></template>
           </el-table-column>
           <el-table-column label="引用" min-width="170">
             <template #default="{ row }">
@@ -44,7 +38,7 @@
             </template>
           </el-table-column>
           <el-table-column label="默认值" min-width="120">
-            <template #default="{ row }"><code>{{ valueText(row.defaultValue) }}</code></template>
+            <template #default="{ row }"><content-reference v-if="row.defaultValue != null" :value="{ kind: 'LITERAL', value: row.defaultValue, valueType: row.fieldType }" /><span v-else>—</span></template>
           </el-table-column>
           <el-table-column v-if="direction === 'input'" label="字段校验引用" min-width="160">
             <template #default="{ row }"><code>{{ valueText(row.validationRuleIds) }}</code></template>
@@ -64,12 +58,14 @@
 </template>
 
 <script>
+import ContentReference from '@/components/common/ContentReference.vue'
 import { getRuleRevisionFieldView } from '@/api/definition'
 import { varTypeLabel } from '@/constants/varTypes'
 
 const STATES = { DRAFT: '草稿', REVIEW: '评审中', APPROVED: '已批准', REJECTED: '已驳回', PUBLISHED: '已发布', OFFLINE: '已下线' }
 
 export default {
+  components: { ContentReference },
   name: 'RuleRevisionFieldsPanel',
   props: {
     definitionId: { type: [Number, String], default: null },

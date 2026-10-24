@@ -389,27 +389,10 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
     }
 
     public String toJson(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof String) {
-            return (String) value;
-        }
-        try {
-            return JSON.toJSONString(value);
-        } catch (StackOverflowError e) {
-            return "{\"error\":\"JSON_SERIALIZE_STACK_OVERFLOW\"}";
-        } catch (Exception e) {
-            return "{\"error\":\"JSON_SERIALIZE_FAILED\",\"message\":\"" + escapeJson(e.getMessage()) + "\"}";
-        }
+        if (value instanceof String) return (String) value;
+        return SafeLogJson.toJsonSafely(value);
     }
 
-    private String escapeJson(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();

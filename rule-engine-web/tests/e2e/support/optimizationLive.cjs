@@ -46,7 +46,7 @@ async function createRule(page, projectId, model) {
 async function field(page, trigger, code) {
   await trigger.click()
   const panel = page.locator('.fp-panel:visible')
-  await panel.getByRole('textbox', { name: '搜索字段名称或编码' }).fill(code)
+  await panel.getByRole('textbox', { name: '搜索内容名称或编码' }).fill(code)
   await panel.locator('.fp-row').filter({ hasText: code }).dblclick()
   await expect(panel).toHaveCount(0)
 }

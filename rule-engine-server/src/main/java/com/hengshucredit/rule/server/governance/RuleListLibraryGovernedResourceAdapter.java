@@ -1,5 +1,14 @@
 package com.hengshucredit.rule.server.governance;
 
+import static com.hengshucredit.rule.server.governance.SnapshotValues.longValue;
+import static com.hengshucredit.rule.server.governance.SnapshotValues.integerValue;
+import static com.hengshucredit.rule.server.governance.SnapshotValues.stringValue;
+import static com.hengshucredit.rule.server.governance.SnapshotValues.hasText;
+import static com.hengshucredit.rule.server.governance.SnapshotValues.upper;
+import static com.hengshucredit.rule.server.governance.SnapshotValues.defaultLong;
+import static com.hengshucredit.rule.server.governance.SnapshotValues.defaultInteger;
+import static com.hengshucredit.rule.server.governance.SnapshotValues.putLong;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.entity.RuleListLibrary;
 import com.hengshucredit.rule.server.artifact.CanonicalJson;
@@ -9,7 +18,6 @@ import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -226,53 +234,11 @@ public class RuleListLibraryGovernedResourceAdapter
         if (value != null) target.put(key, value);
     }
 
-    private void putLong(Map<String, Object> target,
-                         String key, Object value) {
-        Long parsed = longValue(value);
-        if (parsed != null) target.put(key, parsed);
-    }
 
-    private String upper(Object value, String fallback) {
-        String text = stringValue(value);
-        return hasText(text) ? text.trim().toUpperCase(Locale.ROOT)
-                : fallback;
-    }
 
-    private long defaultLong(Object value, long fallback) {
-        Long parsed = longValue(value);
-        return parsed == null ? fallback : parsed;
-    }
 
-    private int defaultInteger(Object value, int fallback) {
-        Integer parsed = integerValue(value);
-        return parsed == null ? fallback : parsed;
-    }
 
-    private Long longValue(Object value) {
-        if (value instanceof Number number) return number.longValue();
-        if (value == null || String.valueOf(value).isBlank()) return null;
-        try {
-            return Long.valueOf(String.valueOf(value));
-        } catch (NumberFormatException invalid) {
-            return null;
-        }
-    }
 
-    private Integer integerValue(Object value) {
-        if (value instanceof Number number) return number.intValue();
-        if (value == null || String.valueOf(value).isBlank()) return null;
-        try {
-            return Integer.valueOf(String.valueOf(value));
-        } catch (NumberFormatException invalid) {
-            return null;
-        }
-    }
 
-    private String stringValue(Object value) {
-        return value == null ? null : String.valueOf(value);
-    }
 
-    private boolean hasText(String value) {
-        return value != null && !value.trim().isEmpty();
-    }
 }

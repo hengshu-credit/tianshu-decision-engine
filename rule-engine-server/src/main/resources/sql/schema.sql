@@ -2182,3 +2182,26 @@ WHERE NULLIF(TRIM(statistics.trace_id), '''') IS NULL
 PREPARE schema_statistics_view_stmt FROM @schema_statistics_view_sql;
 EXECUTE schema_statistics_view_stmt;
 DEALLOCATE PREPARE schema_statistics_view_stmt;
+
+-- 全局系统配置：固定分组 ID，业务接口只读取已生效快照。
+CREATE TABLE IF NOT EXISTS `rule_system_setting` (
+  `id` BIGINT NOT NULL,
+  `scope` VARCHAR(16) NOT NULL DEFAULT 'GLOBAL',
+  `project_id` BIGINT NOT NULL DEFAULT 0,
+  `config_json` LONGTEXT NOT NULL,
+  `secret_ciphertext` LONGTEXT,
+  `secret_digest` VARCHAR(64),
+  `version` BIGINT NOT NULL DEFAULT 0,
+  `update_by` VARCHAR(128),
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='全局系统配置生效快照';
+
+CREATE TABLE IF NOT EXISTS `rule_system_asset` (
+  `id` VARCHAR(36) NOT NULL,
+  `content_type` VARCHAR(64) NOT NULL,
+  `content` MEDIUMBLOB NOT NULL,
+  `create_by` VARCHAR(128),
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统品牌图片';

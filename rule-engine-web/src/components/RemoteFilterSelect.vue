@@ -16,6 +16,7 @@
     @update:model-value="updateValue"
     @change="$emit('change', $event)"
     @select="handleSelect"
+    @focus="resumeSuggestions"
     @blur="closeSuggestions"
     @clear="closeSuggestions"
     @click="openSuggestions"
@@ -41,23 +42,26 @@
     @change="$emit('change', $event)"
     @popup-scroll="handleDropdownScroll"
   >
+    <template v-if="contentType" #label><content-reference v-if="selectedContent" :value="{ ...selectedContent, refType: contentType }" /></template>
     <el-option v-if="selectedOption && String(optionValue(selectedOption)) === String(value) && !options.some(option => String(optionValue(option)) === String(value))"
-      :key="'selected:' + value" :label="optionLabel(selectedOption)" :value="value" />
+      :key="'selected:' + value" :label="optionLabel(selectedOption)" :value="value"><content-reference v-if="contentType" :value="{ ...selectedOption, refType: contentType }" /></el-option>
     <el-option
       v-for="option in options"
       :key="optionValue(option)"
       :label="optionLabel(option)"
       :value="optionValue(option)"
-    />
+    ><content-reference v-if="contentType" :value="{ ...option, refType: contentType }" /></el-option>
   </el-select>
 </template>
 
 <script>
+import ContentReference from '@/components/common/ContentReference.vue'
 import { $emit } from '../utils/gogocodeTransfer'
 
 // 文本筛选使用受控输入；候选查询只更新建议，不改写筛选条件。
 // 页面通过 fetchOptions、optionLabelKey、optionValueKey 配置数据源和字段。
 export default {
+  components: { ContentReference },
   name: 'RemoteFilterSelect',
   inheritAttrs: false,
   props: {
@@ -68,9 +72,11 @@ export default {
     optionValueKey: { type: String, default: 'value' },
     optionFields: { type: Array, default: () => [] },
     selectedOption: { type: Object, default: null },
+    contentType: { type: String, default: '' },
     pageSize: { type: Number, default: 20 },
     allowFreeInput: { type: Boolean, default: false },
   },
+  computed: { selectedContent() { return this.options.find(option => String(this.optionValue(option)) === String(this.value)) || this.selectedOption } },
   data() {
     return {
       options: [],
@@ -84,6 +90,7 @@ export default {
       dropdownWrap: null,
       lastInputValue: this.value,
       composingEnter: false,
+      suggestionsClosed: false,
     }
   },
   watch: {
@@ -102,6 +109,7 @@ export default {
   },
   methods: {
     updateValue(value) {
+      this.resumeSuggestions()
       this.lastInputValue = value
       // 输入一变化就作废旧请求，不等候选查询的防抖结束。
       this.cancelPendingLoad()
@@ -113,6 +121,7 @@ export default {
       this.closeSuggestions()
     },
     openSuggestions() {
+      this.resumeSuggestions()
       const autocomplete = this.$refs.autocomplete
       if (autocomplete && !this.suggestionsCallback && !this.loading) {
         autocomplete.getData(String(this.value ?? ''))
@@ -120,6 +129,13 @@ export default {
     },
     handleEnterStart(event) {
       this.composingEnter = event.isComposing || event.keyCode === 229
+      if (this.composingEnter) return
+      // 未主动用方向键选中候选时，回车只查询输入，不执行自动补全的重新加载逻辑。
+      if (!(this.$refs.autocomplete?.highlightedIndex >= 0)) {
+        event.preventDefault()
+        event.stopPropagation()
+        this.closeSuggestions()
+      }
     },
     handleEnter(event) {
       if (this.composingEnter || event.isComposing || event.keyCode === 229) {
@@ -131,8 +147,8 @@ export default {
       // 值已经由 update:model-value 同步，keyup 冒泡到页面只执行一次查询。
     },
     fetchSuggestions(query, callback) {
-      // 自动补全组件可能还有重置前排队的防抖任务。
-      if (String(query ?? '') !== String(this.value ?? '')) {
+      // 回车、失焦或重置后，排队的防抖任务不能重新打开候选或再发起查询。
+      if (this.suggestionsClosed || String(query ?? '') !== String(this.value ?? '')) {
         callback([])
         return
       }
@@ -157,7 +173,11 @@ export default {
         this.cancelPendingLoad()
       }
     },
+    resumeSuggestions() {
+      this.suggestionsClosed = false
+    },
     closeSuggestions() {
+      this.suggestionsClosed = true
       this.cancelPendingLoad()
       this.suggestionsCallback?.([])
       this.suggestionsCallback = null

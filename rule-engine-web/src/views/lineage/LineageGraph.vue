@@ -151,8 +151,7 @@
             {{ nodeTypeLabel(selectedNode.type) }}
           </div>
           <dl class="lineage-node-panel__details">
-            <div><dt>名称</dt><dd>{{ selectedNode.label || selectedNode.code || '-' }}</dd></div>
-            <div><dt>编码</dt><dd class="is-code">{{ selectedNode.code || '-' }}</dd></div>
+            <div><dt>内容</dt><dd><content-reference :value="{ ...selectedNode, refType: selectedNode.type }" wrap /></dd></div>
             <div><dt>节点 ID</dt><dd class="is-code">{{ selectedNode.id || '-' }}</dd></div>
             <div><dt>业务 ID</dt><dd>{{ selectedNode.refId ?? '-' }}</dd></div>
             <div v-if="selectedNode.versionLabel || selectedNode.version != null"><dt>版本</dt><dd>{{ selectedNode.versionLabel || `v${selectedNode.version}` }}</dd></div>
@@ -192,6 +191,7 @@
 </template>
 
 <script>
+import ContentReference from '@/components/common/ContentReference.vue'
 import { markRaw } from 'vue'
 import {
   Share as ElIconShare,
@@ -309,7 +309,7 @@ export default {
     }
   },
   name: 'LineageGraph',
-  components: { GraphDesignerNavigator, CanvasBackgroundSettings },
+  components: { ContentReference, GraphDesignerNavigator, CanvasBackgroundSettings },
   watch: {
     initialGraph: {
       deep: true,
@@ -362,6 +362,8 @@ export default {
         this.resizeCanvas()
       })
       this.resizeObserver.observe(this.$refs.graphWrap)
+      const main = this.$el.closest('.layout-main')
+      if (main && !this.embedded) this.resizeObserver.observe(main)
     }
     this.renderLineageGraph()
   },
@@ -793,7 +795,10 @@ export default {
       const startY = event.clientY
       const originX = model.x
       const originY = model.y
+      let moved = false
       const onMove = moveEvent => {
+        if (Math.abs(moveEvent.clientX - startX) + Math.abs(moveEvent.clientY - startY) <= 4) return
+        moved = true
         moveEvent.preventDefault()
         const scale = this.lf.getTransform().SCALE_X || 1
         const x = Math.round((originX + (moveEvent.clientX - startX) / scale) / 20) * 20
@@ -806,6 +811,10 @@ export default {
         document.removeEventListener('pointerup', onUp)
         const current = this.lf.getNodeModelById(modelId)
         if (current) {
+          if (!moved) {
+            this.selectedNodeId = current.properties.nodeId
+            this.lf.selectElementById(modelId)
+          }
           this.skipGraphRender = true
           this.positionOverrides = {
             ...this.positionOverrides,
@@ -842,6 +851,8 @@ export default {
           nodeTypeLabel: this.nodeTypeLabel(node.type),
           nodeLabel: node.label || node.code,
           nodeCode: node.code,
+          valueType: node.valueType || node.varType || node.fieldType,
+          nodeVersion: node.version,
           nodeVersionLabel: node.versionLabel || (node.version != null ? `v${node.version}` : ''),
           color: this.nodeColor(node.type),
           ...properties,
@@ -868,7 +879,7 @@ export default {
       const bottom = main ? Math.min(window.innerHeight, main.getBoundingClientRect().bottom) : window.innerHeight
       const padding = main ? parseFloat(getComputedStyle(main).paddingBottom) || 0 : 16
       const pagePadding = parseFloat(getComputedStyle(this.$el).paddingBottom) || 0
-      const height = Math.max(this.embedded ? 360 : 440, bottom - top - padding - pagePadding)
+      const height = Math.max(this.embedded ? 360 : 160, bottom - top - padding - pagePadding)
       if (this.graphHeight !== height) {
         this.graphHeight = height
         this.$nextTick(() => this.fitGraph())
@@ -1494,7 +1505,7 @@ export default {
     background-color: var(--tianshu-bg-soft);
     border: 1px solid var(--tianshu-border-subtle);
     border-radius: 4px;
-    min-height: 440px;
+    min-height: 160px;
     overflow: hidden;
     position: relative;
     touch-action: none;

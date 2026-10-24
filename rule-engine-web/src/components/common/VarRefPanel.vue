@@ -24,11 +24,7 @@
         :title="v.description || v.varLabel"
         @click="copyCode(v.varCode)"
       >
-        <code class="var-code">{{ v.varCode }}</code>
-        <span class="var-label">{{ v.varLabel }}</span>
-        <el-tag :type="typeColor(v.varType)" size="small" class="var-tag">{{
-          typeLabel(v.varType)
-        }}</el-tag>
+        <content-reference :value="v" />
         <span v-if="v.exampleValue" class="var-example"
           >例：{{ v.exampleValue }}</span
         >
@@ -38,16 +34,17 @@
 </template>
 
 <script>
+import ElIconLoading from '@/components/common/AppLoadingIcon.vue'
 import {
   Connection as ElIconConnection,
   QuestionFilled as ElIconQuestion,
-  Loading as ElIconLoading,
 } from '@element-plus/icons-vue'
 import { $emit } from '../../utils/gogocodeTransfer'
-import { varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
+import ContentReference from './ContentReference.vue'
 
 export default {
   components: {
+    ContentReference,
     ElIconConnection,
     ElIconQuestion,
     ElIconLoading,
@@ -58,14 +55,6 @@ export default {
     loading: { type: Boolean, default: false },
   },
   methods: {
-    /** 与变量管理一致的类型中文名 */
-    typeLabel(t) {
-      return varTypeLabel(t)
-    },
-    /** 与变量管理一致的标签配色 */
-    typeColor(t) {
-      return varTypeTagColor(t)
-    },
     copyCode(code) {
       if (navigator.clipboard) {
         navigator.clipboard.writeText(code).then(() => {

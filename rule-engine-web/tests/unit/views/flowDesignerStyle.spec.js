@@ -4,7 +4,17 @@ const path = require('path')
 const repoRoot = path.resolve(__dirname, '../../..')
 
 function readSource(relativePath) {
-  return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8')
+  const source = fs.readFileSync(path.join(repoRoot, relativePath), 'utf8')
+  if (/^src\/views\/designer\/Decision(?:Tree|Flow)\.vue$/.test(relativePath)) {
+    expect(source).toContain("import graphDesignerMethods from '@/components/flow/graphDesignerMethods'")
+    expect(source).toContain('...graphDesignerMethods')
+    const mode = relativePath.includes('DecisionTree') ? 'tree' : 'flow'
+    expect(source).toContain(`@include graph-designer('${mode}');`)
+    const styles = fs.readFileSync(path.join(repoRoot, 'src/styles/graph-designer.scss'), 'utf8')
+      .replaceAll('#{$mode}', mode)
+    return source + '\n' + styles + '\n' + fs.readFileSync(path.join(repoRoot, 'src/components/flow/graphDesignerMethods.js'), 'utf8')
+  }
+  return source
 }
 
 describe('flow designer style regressions', () => {
@@ -33,32 +43,17 @@ describe('flow designer style regressions', () => {
     expect(lineageStyle).not.toContain('.lineage-lf-node .node-color-strip')
   })
 
-  test('决策树和决策流工具栏跟随主题渐变并保持操作按钮可读', () => {
-    const tree = readSource('src/views/designer/DecisionTree.vue')
-    const flow = readSource('src/views/designer/DecisionFlow.vue')
-
-    ;[tree, flow].forEach(source => {
-      expect(source).toContain('&.el-button--primary {')
+  test('决策树和决策流按钮复用公共主题交互，不再自行指定按钮色或亮度滤镜', () => {
+    for (const file of ['DecisionTree', 'DecisionFlow']) {
+      const source = readSource('src/views/designer/' + file + '.vue')
       expect(source).toContain('background: var(--tianshu-brand-background);')
-      expect(source).toContain('color: var(--tianshu-brand-foreground) !important;')
-      expect(source).toContain('border-color: var(--tianshu-designer-toolbar-accent) !important;')
       expect(source).toContain('min-width: 88px;')
-      expect(source).toContain('&.el-button--primary:hover,')
-      expect(source).toContain('&.el-button--primary:focus {')
-      expect(source).toContain('filter: brightness(1.08);')
-      expect(source).toContain('&.el-button--primary:active {')
-      expect(source).toContain('background: var(--tianshu-brand-background);')
-      expect(source).toContain('color: var(--designer-toolbar-foreground) !important;')
-      expect(source).toContain('border-color: var(--el-color-primary) !important;')
-      expect(source).toContain('--designer-toolbar-control-background: color-mix(')
-      expect(source).toContain('--designer-toolbar-control-border: color-mix(')
-      expect(source).toContain('background: var(--designer-toolbar-control-hover-background) !important;')
-      expect(source).toContain('box-shadow: 0 0 0 1px color-mix(in srgb, var(--tianshu-designer-toolbar-accent) 22%, transparent);')
-      expect(source).toContain('&.is-tool-active:hover,')
-      expect(source).toContain('box-shadow: 0 0 0 2px color-mix(in srgb, var(--tianshu-designer-toolbar-accent) 28%, transparent) !important;')
-      expect(source).toContain(':deep(.toolbar-action:hover)')
-      expect(source).toContain(':deep(.rule-designer-actions__button:not(.rule-designer-actions__publish))')
-    })
+      expect(source).not.toContain('filter: brightness(')
+      expect(source).not.toContain('background: #b45309')
+    }
+    const buttons = readSource('src/styles/theme-buttons.scss')
+    expect(buttons).toContain('background: var(--tianshu-button-solid-hover-bg)')
+    expect(buttons).toContain('color: var(--tianshu-button-solid-hover-text)')
   })
 
   test('属性面板的模式切换选中态使用主题色', () => {
@@ -181,13 +176,12 @@ describe('flow designer style regressions', () => {
     expect(graph).toContain('textStyle: { ...DYNAMIC_GROUP_TEXT_STYLE }')
   })
 
-  test('设计器节点引用按钮使用外层工具栏的主题变量', () => {
+  test('设计器节点引用按钮不覆盖公共主题按钮颜色', () => {
     const source = readSource('src/components/flow/GraphDesignerNavigator.vue')
 
-    expect(source).toContain('var(--designer-toolbar-control-border, var(--tianshu-border))')
-    expect(source).toContain('var(--designer-toolbar-control-background, var(--tianshu-bg-surface))')
-    expect(source).toContain('var(--designer-toolbar-foreground, var(--tianshu-text-primary))')
-    expect(source).toContain('border-color: var(--tianshu-designer-toolbar-accent, var(--el-color-primary));')
+    expect(source).toContain('class="toolbar-action"')
+    expect(source).not.toContain('.toolbar-action {')
+    expect(readSource('src/main.js')).toContain("import './styles/theme-buttons.scss'")
   })
 
   test('决策树和决策流工具栏拆成上下两行并提供网格、比例和统一控件', () => {
@@ -224,7 +218,7 @@ describe('flow designer style regressions', () => {
         /\.toolbar-edit-actions\s*\{[\s\S]*?flex-wrap:\s*wrap;/,
       )
       expect(source).toMatch(/\.toolbar-right\s*\{[\s\S]*?flex-wrap:\s*wrap;/)
-      expect(source).toContain('.toolbar-row-actions > .toolbar-right {\n  position: static;')
+      expect(source).toMatch(/\.toolbar-row-actions > \.toolbar-right\s*\{\s*position:\s*static;/)
     })
   })
 

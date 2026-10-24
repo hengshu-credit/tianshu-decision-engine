@@ -36,6 +36,8 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
 
     @Autowired(required = false)
     private OpenApiErrorResponder openApiErrorResponder;
+    @Autowired(required = false)
+    private com.hengshucredit.rule.server.system.SystemResponseMapping responseMapping;
 
     private static final String PERMIT_ATTRIBUTE = TokenAuthInterceptor.class.getName() + ".permit";
     
@@ -138,9 +140,10 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
         response.setStatus(status.getHttpStatus());
         addCapacityHeaders(request, response, status);
         response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write(com.alibaba.fastjson.JSON.toJSONString(
-                com.hengshucredit.rule.model.ApiResponse.fail(
-                        com.hengshucredit.rule.model.PlatformCode.find(status.getCode()), status.getDetail())));
+        var body = com.hengshucredit.rule.model.ApiResponse.fail(
+                com.hengshucredit.rule.model.PlatformCode.find(status.getCode()), status.getDetail());
+        if (responseMapping != null) responseMapping.apply(body, response::setHeader);
+        response.getWriter().write(com.alibaba.fastjson.JSON.toJSONString(body));
     }
 
     private void addCapacityHeaders(HttpServletRequest request, HttpServletResponse response,

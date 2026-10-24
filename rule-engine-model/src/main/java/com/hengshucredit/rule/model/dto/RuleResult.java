@@ -30,8 +30,12 @@ public class RuleResult implements PlatformOutcome {
     /** Present only for an explicitly selected management-test source. */
     private RuleTestExecutionIdentity executionIdentity;
 
-    public String getCode() { return platformStatus().code(); }
-    public String getMessage() { return platformStatus().message(); }
+    @lombok.Getter(lombok.AccessLevel.NONE)
+    @lombok.Setter(lombok.AccessLevel.NONE)
+    private transient com.hengshucredit.rule.model.ExternalCodeMapping externalMapping = com.hengshucredit.rule.model.ExternalCodeMapping.DEFAULT;
+    public RuleResult mapExternal(com.hengshucredit.rule.model.ExternalCodeMapping mapping) { externalMapping = java.util.Objects.requireNonNull(mapping); return this; }
+    public String getCode() { return externalMapping.code(platformStatus()); }
+    public String getMessage() { return externalMapping.message(platformStatus()); }
     public String getDetail() { return platformDetail(); }
     @Override public PlatformCode platformStatus() {
         return PlatformCode.execution(success, platformCode, executionStatus);

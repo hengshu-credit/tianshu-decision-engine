@@ -29,7 +29,7 @@ function firstAccessibleRoute() {
   return menu ? menu.index : '/no-permission'
 }
 
-const PUBLIC_AUTH_PATHS = new Set([
+export const PUBLIC_AUTH_PATHS = new Set([
   '/login',
   '/register',
   '/forgot-password',
@@ -37,12 +37,16 @@ const PUBLIC_AUTH_PATHS = new Set([
   '/admin-recovery'
 ])
 
-export function createConsoleAuthGuard(loadConfig, loadCurrentUser) {
+export function createConsoleAuthGuard(loadConfig, loadCurrentUser, isCurrentNavigation = () => true) {
+  let generation = 0
   return async function consoleAuthGuard(to, from, next) {
+    const requestGeneration = ++generation
+    const isCurrent = () => requestGeneration === generation && isCurrentNavigation(to)
     var body = null
     try {
       body = await loadConfig()
     } catch (e) { /* fail closed below */ }
+    if (!isCurrent()) return next(false)
     var configLoaded = Boolean(body && body.code === PLATFORM_SUCCESS_CODE && body.data)
     var loginEnabled = configLoaded && body.data.loginEnabled === true
     if (loginEnabled && body.data.initializationRequired === true && to.path !== '/register') {
@@ -74,6 +78,7 @@ export function createConsoleAuthGuard(loadConfig, loadCurrentUser) {
     }
     try {
       var me = await loadCurrentUser()
+      if (!isCurrent()) return next(false)
       if (me && me.code === PLATFORM_SUCCESS_CODE && me.data && me.data.username) {
         setCurrentUser({
           ...me.data,
@@ -93,6 +98,7 @@ export function createConsoleAuthGuard(loadConfig, loadCurrentUser) {
         return next()
       }
     } catch (e) { /* ignore */ }
+    if (!isCurrent()) return next(false)
     clearCurrentUser()
     return next({ path: '/login', query: { redirect: to.fullPath }, replace: true })
   }

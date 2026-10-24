@@ -3,6 +3,7 @@ package com.hengshucredit.rule.server.service;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.hengshucredit.rule.core.compiler.ContentOperation;
 import com.hengshucredit.rule.core.function.BuiltinFunctionInvoker;
 import com.hengshucredit.rule.core.util.MissingValueSemantics;
 
@@ -273,6 +274,10 @@ public final class OperandValueResolver {
             JSONObject term = terms.getJSONObject(i);
             if (term == null) throw new IllegalArgumentException("第 " + (i + 1) + " 个运算项不能为空");
             String operator = term.getString("operator");
+            if (i > 0 && com.hengshucredit.rule.core.compiler.ContentOperation.unary(operator)) {
+                valueStack.add(com.hengshucredit.rule.core.compiler.ContentOperation.evaluate(operator, valueStack.remove(valueStack.size() - 1), null));
+                continue;
+            }
             if (i == 0) {
                 if (!empty(operator)) throw new IllegalArgumentException("第 1 个运算项不能设置前置运算符");
             } else {
@@ -290,6 +295,7 @@ public final class OperandValueResolver {
     }
 
     private static int precedence(String operator) {
+        if (com.hengshucredit.rule.core.compiler.ContentOperation.predicate(operator)) return com.hengshucredit.rule.core.compiler.ContentOperation.precedence(operator);
         if ("*".equals(operator) || "/".equals(operator) || "%".equals(operator)) return 6;
         if ("+".equals(operator) || "-".equals(operator)) return 5;
         if (">".equals(operator) || ">=".equals(operator) || "<".equals(operator) || "<=".equals(operator)) return 4;
@@ -303,7 +309,8 @@ public final class OperandValueResolver {
         String operator = operators.remove(operators.size() - 1);
         Object right = values.remove(values.size() - 1);
         Object left = values.remove(values.size() - 1);
-        if ("&&".equals(operator)) values.add(booleanValue(left) && booleanValue(right));
+        if (com.hengshucredit.rule.core.compiler.ContentOperation.predicate(operator)) values.add(com.hengshucredit.rule.core.compiler.ContentOperation.evaluate(operator, left, right));
+        else if ("&&".equals(operator)) values.add(booleanValue(left) && booleanValue(right));
         else if ("||".equals(operator)) values.add(booleanValue(left) || booleanValue(right));
         else if (isComparison(operator)) values.add(compare(left, right, operator));
         else values.add(arithmetic(left, right, operator));
@@ -455,7 +462,9 @@ public final class OperandValueResolver {
             if (terms != null) {
                 for (int i = 0; i < terms.size(); i++) {
                     JSONObject term = terms.getJSONObject(i);
-                    children.add(term == null ? null : term.getJSONObject("operand"));
+                    if (term != null && !ContentOperation.unary(term.getString("operator"))) {
+                        children.add(term.getJSONObject("operand"));
+                    }
                 }
             }
         }

@@ -4,7 +4,7 @@
       <template #extra><el-button type="primary" @click="$router.replace('/login')">前往登录</el-button></template>
     </el-result>
     <div v-else-if="verifying" class="auth-state">
-      <el-icon class="is-loading" :size="28"><Loading /></el-icon>
+      <el-icon :size="28"><Loading /></el-icon>
       <p>正在验证邮箱，请稍候…</p>
     </div>
     <div v-else-if="verified" class="auth-state">
@@ -36,7 +36,7 @@
 
 <script>
 import { ElMessage } from 'element-plus'
-import { Loading } from '@element-plus/icons-vue'
+import Loading from '@/components/common/AppLoadingIcon.vue'
 import AuthPageShell from '@/components/auth/AuthPageShell.vue'
 import { consoleRegister, verifyConsoleRegistration, resendConsoleRegistration, getConsoleAuthConfig, initializeConsoleAdministrator } from '@/api/auth'
 

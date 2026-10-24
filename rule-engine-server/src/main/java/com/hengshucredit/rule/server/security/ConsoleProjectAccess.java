@@ -104,6 +104,8 @@ public class ConsoleProjectAccess {
         }
         public boolean allowsProject(Long id) { return id != null && id > 0 && (allProjects || projectIds.contains(id)); }
         public boolean globalCan(String code) {
+            if (code != null && code.startsWith("system:")) return permissions.contains(code)
+                    && (code.equals("system:view") || code.equals("system:audit") || globalEditable);
             if ("function:native".equals(code)) return allProjects && globalEditable && permissions.contains(code)
                     && permissions.contains("account:manage") && permissions.contains("role:manage");
             return permissions.contains(code) && (globalEditable || !isContentMutation(code));
@@ -132,7 +134,7 @@ public class ConsoleProjectAccess {
         public String projectSql() { return projectIds.isEmpty() ? "NULL" : projectIds.stream().sorted().map(String::valueOf).collect(Collectors.joining(",")); }
     }
 
-    public static boolean isProjectPermission(String code) { return code != null && !code.startsWith("account:") && !code.startsWith("role:") && !"function:native".equals(code); }
+    public static boolean isProjectPermission(String code) { return code != null && !code.startsWith("account:") && !code.startsWith("role:") && !code.startsWith("system:") && !"function:native".equals(code); }
     public static boolean isContentMutation(String code) {
         return isProjectPermission(code) && (code.endsWith(":edit") || code.endsWith(":submit") || code.equals("approval:approve") || code.equals("transfer:import"));
     }

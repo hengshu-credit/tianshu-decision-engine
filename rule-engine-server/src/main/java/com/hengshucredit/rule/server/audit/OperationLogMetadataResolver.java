@@ -18,6 +18,13 @@ public class OperationLogMetadataResolver {
 
     public void request(ConsoleOperationLog log, HttpServletRequest request, Object body) {
         String path = request.getRequestURI().replaceFirst("^/api/rule/", "");
+        if (path.startsWith("system/settings")) {
+            log.setTargetType("SYSTEM_SETTING");
+            String group = path.split("/").length > 2 ? path.split("/")[2] : "brand";
+            log.setTargetId(Map.of("brand", "1", "mail", "2", "access", "3", "codes", "4").getOrDefault(group, "1"));
+            log.setTargetName(Map.of("brand", "基本信息", "mail", "通知邮箱", "access", "登录与安全", "codes", "对外结果码").getOrDefault(group, "系统配置"));
+            return;
+        }
         if (path.startsWith("transfer/")) {
             log.setTargetType("TRANSFER_PACKAGE");
             log.setTargetName("迁移配置包");
@@ -100,6 +107,12 @@ public class OperationLogMetadataResolver {
 
     public void describe(ConsoleOperationLog log, Object data) {
         if (data instanceof com.hengshucredit.rule.server.governance.GovernanceRequestDetail detail) data = detail.request();
+        if ("SYSTEM_SETTING".equals(property(data, "resourceType"))) {
+            log.setModule("system"); log.setTargetType("SYSTEM_SETTING");
+            log.setTargetId(identifier(property(data, "resourceId")));
+            log.setTargetName(Map.of("1", "基本信息", "2", "通知邮箱", "3", "登录与安全", "4", "对外结果码")
+                    .getOrDefault(Objects.toString(log.getTargetId(), ""), "系统配置"));
+        }
         if (data == null || data instanceof Collection<?>) return;
         if (data instanceof com.hengshucredit.rule.server.governance.GovernanceRequestView approval &&
                 (approval.resourceId() == null || approval.resourceId() <= 0)) {

@@ -3,7 +3,7 @@
     <el-select v-if="node.kind === 'ACCESS'" :model-value="node.accessType" size="small" aria-label="取值方式" @update:model-value="$emit('patch', { accessType: $event })"><el-option label="字典 Key" value="KEY" /><el-option label="数组 Index" value="INDEX" /></el-select>
     <el-select v-else-if="node.kind === 'CAST'" :model-value="node.targetType" size="small" aria-label="转换类型" @update:model-value="$emit('patch', { targetType: $event, valueType: $event })"><el-option v-for="type in types" :key="type.value" :label="type.label" :value="type.value" /></el-select>
     <template v-else-if="node.kind === 'LIST_QUERY'">
-      <el-select :model-value="node.listIds" size="small" multiple filterable aria-label="查询名单" placeholder="选择名单" @update:model-value="$emit('patch', { listIds: $event })"><el-option v-for="list in listOptions" :key="list.id" :label="list.listName || list.name || list.listCode" :value="list.id" /></el-select>
+      <resource-picker :value="node.listIds" :resources="listOptions" multiple category="list" aria-label="查询名单" placeholder="选择名单" @update:value="$emit('patch', { listIds: $event })" />
       <el-select :model-value="node.combinationMode" size="small" aria-label="字段与名单组合" placeholder="字段与名单组合" @update:model-value="$emit('patch', { combinationMode: $event })"><el-option v-for="item in combinations" :key="item.value" :label="item.label" :value="item.value" /></el-select>
       <el-select :model-value="node.matchMode" size="small" aria-label="名单匹配方式" placeholder="匹配方式" @update:model-value="$emit('patch', { matchMode: $event })"><el-option v-for="item in matches" :key="item.value" :label="item.label" :value="item.value" /></el-select>
       <el-select :model-value="node.itemTypes" size="small" multiple clearable aria-label="名单内容类型" placeholder="任意内容类型" @update:model-value="$emit('patch', { itemTypes: $event })"><el-option v-for="item in itemTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select>
@@ -12,8 +12,10 @@
 </template>
 <script>
 import { LIST_COMBINATION_MODES, LIST_ITEM_TYPES, POSITIVE_LIST_MATCH_MODES } from '@/constants/listMatchModes'
+import ResourcePicker from '@/components/common/ResourcePicker.vue'
 export default {
   name: 'ExpressionNodeOptions',
+  components: { ResourcePicker },
   props: { node: { type: Object, required: true }, listOptions: { type: Array, default: () => [] } },
   emits: ['patch'],
   data: () => ({

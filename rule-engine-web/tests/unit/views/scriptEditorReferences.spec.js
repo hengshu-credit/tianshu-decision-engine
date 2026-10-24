@@ -57,7 +57,7 @@ test('关闭展示仅移除装饰，不替换源码、不触发编辑或保存',
   }
   view.referenceDecorationIds = []
   ScriptEditor.methods.refreshReferenceDecorations.call(view)
-  expect(view.monacoEditor.deltaDecorations.mock.calls[0][1]).toHaveLength(4)
+  expect(view.monacoEditor.deltaDecorations.mock.calls[0][1]).toHaveLength(10)
   view.showEngineReferences = false
   ScriptEditor.methods.refreshReferenceDecorations.call(view)
   expect(view.monacoEditor.deltaDecorations).toHaveBeenLastCalledWith(['decoration'], [])

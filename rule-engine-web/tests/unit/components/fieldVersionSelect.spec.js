@@ -44,6 +44,8 @@ describe('字段版本选择', () => {
   })
   it('未选字段只暂存版本，已选字段修改版本直接同步输入框', async () => {
     const wrapper = shallowMount(VarPicker, { props: { vars: [item], operandMode: true, value: null } })
+    wrapper.vm.openPopover()
+    await flushPromises()
     wrapper.vm.changeFieldVersion(item, fixed)
     expect(wrapper.emitted('input')).toBeUndefined()
     wrapper.vm.onItemClick(wrapper.vm.panelItems[0])
@@ -66,10 +68,12 @@ describe('字段版本选择', () => {
     expect(wrapper.vm.panelItems[0]).toMatchObject({ versionMode: 'FIXED', versionId: fixed.versionId })
     wrapper.unmount()
   })
-  it('函数当前签名改变后，仍显示并选择所绑定版本的名称、返回类型和参数', () => {
+  it('函数当前签名改变后，仍显示并选择所绑定版本的名称、返回类型和参数', async () => {
     const value = { kind: 'FUNCTION', ...fixed, functionId: '19', functionCode: 'oldFn', label: '旧函数', valueType: 'NUMBER', parameters: [{ name: 'n', type: 'NUMBER' }], args: [] }
     const wrapper = shallowMount(VarPicker, { props: { operandMode: true, allowedKinds: ['FUNCTION'], expectedType: 'NUMBER', value,
       functions: [{ id: '19', funcCode: 'newFn', funcName: '新函数', returnType: 'STRING', paramsJson: '[]' }] } })
+    wrapper.vm.openPopover()
+    await flushPromises()
     expect(wrapper.vm.panelItems[0]).toMatchObject({ varCode: 'oldFn', varLabel: '旧函数', varType: 'NUMBER' })
     wrapper.vm.onItemClick(wrapper.vm.panelItems[0])
     expect(wrapper.emitted('input')[0][0]).toMatchObject({ versionId: fixed.versionId, functionCode: 'oldFn', valueType: 'NUMBER', parameterCount: 1 })
@@ -86,8 +90,10 @@ describe('字段版本选择', () => {
     expect(wrapper.emitted('change')[0][0]).toMatchObject({ versionSource: 'FUNCTION_HISTORY', versionMode: 'FIXED' })
     wrapper.unmount()
   })
-  it('历史元信息加载期间不允许双击提交旧值', () => {
+  it('历史元信息加载期间不允许双击提交旧值', async () => {
     const wrapper = shallowMount(VarPicker, { props: { operandMode: true, vars: [item] } })
+    wrapper.vm.openPopover()
+    await flushPromises()
     wrapper.vm.pendingVersions[wrapper.vm.pendingVersionKey(item)] = true
     wrapper.vm.onItemClick(item)
     expect(wrapper.emitted('input')).toBeUndefined()

@@ -13,8 +13,13 @@ export function pickerTypeMatches(actual, expected) {
   return type === wanted
 }
 
+// Object/ANY 是函数的动态返回声明（如 arrGet），不等同于固定对象类型的字段。
+export function pickerFunctionTypeMatches(actual, expected) {
+  return ['', 'OBJECT', 'ANY'].includes(String(actual || '').toUpperCase()) || pickerTypeMatches(actual, expected)
+}
+
 export function fieldTypeIcon(type) {
-  return ({ STRING: 'Abc', CHAR: 'a', NUMBER: 'N', INTEGER: '123', INT: '123', LONG: '123', FLOAT: '1.2', DOUBLE: '1.0', DECIMAL: '1.2', BIGDECIMAL: '1.2', PROBABILITY: 'N', BOOLEAN: 'T/F', DATE: 'D', DATETIME: 'DT', LIST: '[]', ARRAY: '[]', OBJECT: '{}', MAP: '{k}', MODEL: 'M', FUNCTION: 'ƒ', RULE: 'R', OPERATOR: '∑', API: 'API', ENUM: 'E' })[String(type).toUpperCase()] || '?'
+  return ({ STRING: 'Abc', CHAR: 'a', NUMBER: 'N', INTEGER: '123', INT: '123', LONG: '123', FLOAT: '1.2', DOUBLE: '1.0', DECIMAL: '1.2', BIGDECIMAL: '1.2', PROBABILITY: 'N', BOOLEAN: 'T/F', DATE: 'D', DATETIME: 'DT', LIST: '[]', ARRAY: '[]', OBJECT: '{}', MAP: '{k}', MODEL: 'M', FUNCTION: 'ƒ', RULE: 'R', OPERATOR: '∑', API: 'API', DATABASE: 'DB', SFTP: 'FTP', ENUM: 'E' })[String(type).toUpperCase()] || '?'
 }
 
 export function fieldIdentity(item) {
@@ -120,7 +125,7 @@ export function filterFieldTree(tree, expectedType) {
   const nodes = new Map()
   const keep = node => {
     node.children = node.children.filter(keep)
-    const compatible = node.item && pickerTypeMatches(node.type, expectedType)
+    const compatible = node.item && (node.item._function ? pickerFunctionTypeMatches(node.type, expectedType) : pickerTypeMatches(node.type, expectedType))
     node.selectable = node.selectable && !!compatible
     if (!compatible && !node.children.length) return false
     nodes.set(node.key, node)

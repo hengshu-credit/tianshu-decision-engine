@@ -29,6 +29,7 @@
           type="button"
           class="workspace-tab__close"
           :data-close="tab.fullPath"
+          :disabled="isOperationDisabled('current', tab.fullPath)"
           :aria-label="'关闭' + tab.title"
           :title="'关闭' + tab.title"
           @click.stop="performOperation('current', tab.fullPath)"
@@ -40,7 +41,7 @@
 
     <div
       v-if="contextMenu.visible"
-      class="workspace-tabs__context-menu"
+      class="workspace-tabs__context-menu layout-popup-menu"
       :style="{ left: contextMenu.left + 'px', top: contextMenu.top + 'px' }"
       role="menu"
     >
@@ -49,6 +50,7 @@
         :key="operation.key"
         type="button"
         role="menuitem"
+        class="layout-popup-menu__item"
         :data-operation="operation.key"
         :disabled="isOperationDisabled(operation.key, contextMenu.targetPath)"
         :class="{ 'is-divided': operation.key === 'all' }"
@@ -58,7 +60,7 @@
         <span>{{ operation.label }}</span>
         <span
           v-if="operation.shortcut"
-          class="workspace-tab-operation__shortcut"
+          class="workspace-tab-operation__shortcut layout-popup-menu__shortcut"
           >{{ operation.shortcut }}</span
         >
       </button>
@@ -84,6 +86,7 @@ export default {
   props: {
     tabs: { type: Array, default: () => [] },
     activePath: { type: String, default: '' },
+    pendingPath: { type: String, default: '' },
   },
   data() {
     return {
@@ -167,7 +170,7 @@ export default {
       if (paths.length !== this.overflowingPaths.length || paths.some((path, index) => path !== this.overflowingPaths[index])) this.overflowingPaths = paths
     },
     openContextMenu(event, targetPath) {
-      const menuWidth = 176
+      const menuWidth = 200
       const menuHeight = 224
       const viewportWidth =
         window.innerWidth || document.documentElement.clientWidth
@@ -191,6 +194,7 @@ export default {
       this.contextMenu = { ...this.contextMenu, visible: false }
     },
     isOperationDisabled(operation, targetPath) {
+      if (this.pendingPath) return operation !== 'current' || targetPath !== this.pendingPath
       const index = this.tabs.findIndex((tab) => tab.fullPath === targetPath)
       if (!targetPath || index < 0) return true
       if (operation === 'left') return index === 0
@@ -234,58 +238,66 @@ export default {
   display: flex;
   min-width: 0;
   height: 100%;
-  padding: 8px 12px;
+  padding: 6px 12px;
   overflow-x: auto;
   overflow-y: hidden;
   flex: 1;
   align-items: center;
   box-sizing: border-box;
-  gap: 2px;
+  gap: 0;
 }
 .workspace-tab {
   position: relative;
   display: flex;
   flex: 0 0 auto;
-  height: 34px;
+  height: 40px;
   width: fit-content;
-  min-width: 0;
+  min-width: 96px;
   max-width: 160px;
   box-sizing: border-box;
   align-items: center;
   color: var(--tianshu-text-secondary);
-  background: var(--tianshu-bg-soft);
-  border: 1px solid var(--tianshu-border);
-  border-radius: 8px;
-  transition: color 160ms ease, background-color 160ms ease,
-    border-color 160ms ease, box-shadow 160ms ease;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  transition: color 160ms ease, background-color 160ms ease;
+
   &::after {
     position: absolute;
-    right: 10px;
-    bottom: 2px;
-    left: 10px;
+    right: 0;
+    bottom: 0;
+    left: 0;
     height: 2px;
     content: '';
-    background: transparent;
-    border-radius: 2px;
+    background: var(--tianshu-border);
+    pointer-events: none;
   }
 
   &:hover {
-    color: var(--tianshu-text-primary, #334155);
+    color: var(--tianshu-text-primary);
     background: var(--tianshu-bg-hover);
-    border-color: var(--tianshu-info-border);
   }
 
   &.is-active {
     color: var(--tianshu-text-primary);
     font-weight: 600;
-    background: var(--tianshu-bg-elevated, var(--tianshu-bg-surface));
-    border-color: var(--tianshu-info-border);
-    box-shadow: var(--tianshu-shadow-small, 0 2px 8px rgba(15, 23, 42, 0.08));
 
     &::after {
-      background: var(--tianshu-brand-background, #{$--color-primary});
+      background: var(--tianshu-brand-background);
     }
   }
+}
+.workspace-tab + .workspace-tab::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 1px;
+  height: 16px;
+  content: '';
+  background: color-mix(in srgb, var(--el-color-primary) 32%, transparent);
+  border-radius: 1px;
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 .workspace-tab__main {
   display: flex;
@@ -325,20 +337,19 @@ export default {
 }
 .workspace-tab__close {
   position: absolute;
-  right: 2px;
+  right: 4px;
   z-index: 1;
   display: flex;
   flex: none;
   width: 20px;
-  height: 24px;
+  height: 20px;
   padding: 0;
   align-items: center;
   justify-content: center;
   color: var(--tianshu-text-secondary);
-  background: var(--tianshu-bg-elevated, var(--tianshu-bg-surface));
+  background: var(--tianshu-bg-hover);
   border: 0;
-  border-radius: 50%;
-  box-shadow: var(--tianshu-shadow-small, 0 2px 8px rgba(15, 23, 42, 0.08));
+  border-radius: 4px;
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
@@ -361,56 +372,8 @@ export default {
   position: fixed;
   z-index: 3000;
   display: flex;
-  width: 176px;
-  padding: 6px;
+  width: 200px;
   flex-direction: column;
-  background: var(--tianshu-bg-elevated, var(--tianshu-bg-surface));
-  border: 1px solid var(--tianshu-border, #dce3ed);
-  border-radius: 8px;
-  box-shadow: var(--tianshu-shadow-large, 0 16px 36px rgba(15, 23, 42, 0.14));
-  button {
-    display: flex;
-    height: 34px;
-    padding: 0 10px;
-    align-items: center;
-    color: var(--tianshu-text-primary, #334155);
-    font: inherit;
-    font-size: 13px;
-    text-align: left;
-    background: transparent;
-    border: 0;
-    border-radius: 5px;
-    cursor: pointer;
-
-    i {
-      width: 20px;
-      margin-right: 6px;
-      color: var(--tianshu-text-tertiary);
-      text-align: center;
-    }
-
-    &:hover:not(:disabled),
-    &:focus-visible:not(:disabled) {
-      color: var(--el-color-primary, #{$--color-primary});
-      background: var(--tianshu-bg-active, #eef1ff);
-      outline: none;
-    }
-
-    &:disabled {
-      color: var(--tianshu-text-disabled, #cbd5e1);
-      cursor: not-allowed;
-
-      i {
-        color: inherit;
-      }
-    }
-
-    &.is-divided {
-      margin-top: 5px;
-      border-top: 1px solid var(--tianshu-border-subtle, #eef2f6);
-      border-radius: 0 0 5px 5px;
-    }
-  }
 }
 .workspace-tab-operation {
   display: flex;
@@ -418,11 +381,5 @@ export default {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-}
-.workspace-tab-operation__shortcut {
-  margin-left: auto;
-  color: var(--tianshu-text-disabled);
-  font-size: 12px;
-  font-weight: 400;
 }
 </style>

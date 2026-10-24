@@ -32,6 +32,8 @@ public class RuleProjectController {
 
     @Resource
     private ProjectWorkbenchService projectWorkbenchService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.system.SystemResponseMapping responseMapping;
 
     @GetMapping("/list")
     public ApiResponse<IPage<RuleProject>> list(
@@ -124,7 +126,9 @@ public class RuleProjectController {
      */
     @GetMapping("/{id}/api-doc")
     public ApiResponse<ApiDocDTO> exportApiDoc(@PathVariable Long id) {
-        return ApiResponse.ok(projectService.exportApiDoc(id));
+        ApiDocDTO doc = projectService.exportApiDoc(id);
+        if (responseMapping != null) doc.setCodeMapping(responseMapping.current());
+        return ApiResponse.ok(doc);
     }
 
     private void noStore(HttpServletResponse response) {

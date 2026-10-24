@@ -202,6 +202,7 @@ const ACTION_OPTIONS = [
 ]
 
 const RESOURCE_OPTIONS = [
+  { value: 'SYSTEM_SETTING', label: '系统配置' },
   { value: 'VARIABLE', label: '字段' },
   { value: 'DATA_OBJECT', label: '数据对象' },
   { value: 'FIELD_VALIDATION', label: '字段校验' },
@@ -426,6 +427,7 @@ export default {
     },
     resourceTitle(row) {
       const value = this.snapshot(row)
+      if (row.resourceType === 'SYSTEM_SETTING' && value.settingName) return `系统配置 · ${value.settingName}`
       if (
         row.resourceType === 'RULE_PROJECT_BINDING' &&
         value.definitionId &&
@@ -470,6 +472,7 @@ export default {
         LIST_RECORD_BATCH: '名单内容批次',
         FIELD_VALIDATION: '字段校验',
         BILLING_CONFIG: '计费配置',
+        SYSTEM_SETTING: '系统配置',
         EXPERIMENT: '分流',
         PROJECT: '项目'
       }[type] || type || '资源'

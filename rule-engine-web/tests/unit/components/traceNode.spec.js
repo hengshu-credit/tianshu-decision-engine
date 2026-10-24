@@ -20,7 +20,8 @@ describe('TraceNode', () => {
       }
     })
 
-    expect(wrapper.text()).toContain('年龄 = 20')
+    expect(wrapper.find('.content-ref__name').text()).toBe('年龄')
+    expect(wrapper.text()).toContain(' = 20')
     wrapper.unmount()
   })
 })

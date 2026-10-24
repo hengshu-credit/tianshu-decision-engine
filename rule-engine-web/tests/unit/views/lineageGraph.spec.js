@@ -3,6 +3,21 @@ import { nextTick } from 'vue'
 import LineageGraph from '@/views/lineage/LineageGraph.vue'
 import * as lineageApi from '@/api/lineage'
 
+test('点击色块打开节点信息，实际拖动只更新位置', () => {
+  const model = { x: 100, y: 100, properties: { nodeId: 'VARIABLE:1' } }
+  const ctx = { positionOverrides: {}, selectedNodeId: null, lf: { getNodeModelById: () => model, getTransform: () => ({ SCALE_X: 1 }), selectElementById: vi.fn(), graphModel: { moveNode2Coordinate: vi.fn() } } }
+  LineageGraph.methods.beginLogicFlowNodeDrag.call(ctx, 'CURRENT', { button: 0, clientX: 10, clientY: 20 })
+  document.dispatchEvent(new MouseEvent('pointerup'))
+  expect(ctx.selectedNodeId).toBe('VARIABLE:1')
+  expect(ctx.lf.selectElementById).toHaveBeenCalledWith('CURRENT')
+  ctx.selectedNodeId = null
+  LineageGraph.methods.beginLogicFlowNodeDrag.call(ctx, 'CURRENT', { button: 0, clientX: 10, clientY: 20 })
+  document.dispatchEvent(new MouseEvent('pointermove', { clientX: 40, clientY: 50 }))
+  document.dispatchEvent(new MouseEvent('pointerup'))
+  expect(ctx.selectedNodeId).toBeNull()
+  expect(ctx.lf.graphModel.moveNode2Coordinate).toHaveBeenCalled()
+})
+
 
 
 function graphResponse() {

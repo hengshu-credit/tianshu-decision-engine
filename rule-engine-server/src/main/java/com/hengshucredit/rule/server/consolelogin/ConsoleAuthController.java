@@ -43,9 +43,9 @@ public class ConsoleAuthController {
         boolean initializationRequired = consoleLoginProperties.isEnabled() && databaseAccountService != null
                 && databaseAccountService.initializationRequired();
         body.put("initializationRequired", initializationRequired);
-        body.put("registrationEnabled", consoleLoginProperties.isRegistrationEnabled()
+        body.put("registrationEnabled", (credentialService == null ? consoleLoginProperties.isRegistrationEnabled() : credentialService.registrationEnabled())
                 && credentialService != null && credentialService.mailConfigured() && credentialService.registrationReady());
-        body.put("passwordRecoveryEnabled", consoleLoginProperties.isPasswordRecoveryEnabled()
+        body.put("passwordRecoveryEnabled", (credentialService == null ? consoleLoginProperties.isPasswordRecoveryEnabled() : credentialService.passwordRecoveryEnabled())
                 && credentialService != null && credentialService.mailConfigured());
         body.put("breakGlassRecoveryEnabled", consoleLoginProperties.isEnabled()
                 && credentialService != null && credentialService.breakGlassConfigured());
@@ -169,7 +169,7 @@ public class ConsoleAuthController {
         session.setAttribute(consoleLoginProperties.getSessionOperatorNameAttribute(), loginResult.operatorName());
         session.setAttribute(consoleLoginProperties.getSessionUserIdAttribute(), loginResult.userId());
         session.setAttribute(consoleLoginProperties.getSessionPermissionVersionAttribute(), loginResult.permissionVersion());
-        return ApiResponse.ok(loginResultData(loginResult));
+        return ApiResponse.ok(loginResultData(loginResult, session));
     }
 
     /**
@@ -248,16 +248,19 @@ public class ConsoleAuthController {
                 ConsoleSessionAuthInterceptor.clearIdentity(session, consoleLoginProperties);
                 return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.LOGIN_REQUIRED, "会话权限已变更，请重新登录");
             }
-            return ApiResponse.ok(loginResultData(current));
+            return ApiResponse.ok(loginResultData(current, session));
         }
         Map<String, Object> data = new HashMap<>(2);
         data.put("username", u.toString());
+        data.put("loginTime", java.time.Instant.ofEpochMilli(session.getCreationTime()).toString());
         return ApiResponse.ok(data);
     }
 
     private Map<String, Object> loginResultData(
-            DatabaseConsoleAccountService.ConsoleLoginResult result) {
+            DatabaseConsoleAccountService.ConsoleLoginResult result, HttpSession session) {
         Map<String, Object> data = new HashMap<>(8);
+        // 登录成功后总是新建会话；读取会话创建时间，不随页面刷新或账户资料修改变化。
+        data.put("loginTime", java.time.Instant.ofEpochMilli(session.getCreationTime()).toString());
         data.put("userId", result.userId());
         data.put("username", result.username());
         data.put("operatorName", result.operatorName());
@@ -332,7 +335,7 @@ public class ConsoleAuthController {
     }
 
     private String baseUrl(HttpServletRequest request) {
-        String configured = consoleLoginProperties.getMail().getBaseUrl();
+        String configured = credentialService == null ? consoleLoginProperties.getMail().getBaseUrl() : credentialService.mailBaseUrl();
         if (configured == null || configured.isBlank()) throw new IllegalStateException("请配置可信的控制台邮件链接地址 CONSOLE_MAIL_BASE_URL");
         java.net.URI uri;
         try { uri = java.net.URI.create(configured.trim()); }

@@ -59,9 +59,9 @@ test('九千字段分页虚拟化、搜索保留、已选内容和最近使用',
   const field = page.getByPlaceholder('选择左操作数...')
   await field.click()
   const panel = page.locator('.fp-panel:visible')
-  await panel.getByRole('textbox', { name: '搜索字段名称或编码' }).fill('score8999')
+  await panel.getByRole('textbox', { name: '搜索内容名称或编码' }).fill('score8999')
   await panel.getByRole('button', { name: /^变量/ }).click()
-  await expect(panel.getByRole('textbox', { name: '搜索字段名称或编码' })).toHaveValue('score8999')
+  await expect(panel.getByRole('textbox', { name: '搜索内容名称或编码' })).toHaveValue('score8999')
   await panel.getByRole('button', { name: /^数据对象/ }).click()
   const selected = panel.locator('.fp-row').filter({ hasText: '评分字段8999' })
   await selected.click()
@@ -69,8 +69,8 @@ test('九千字段分页虚拟化、搜索保留、已选内容和最近使用',
   await selected.dblclick()
   await expect(field).toHaveValue(/CreditReport.items.score8999/)
   await field.click()
-  await expect(panel.getByRole('textbox', { name: '搜索字段名称或编码' })).toHaveValue('score8999')
-  await panel.getByRole('textbox', { name: '搜索字段名称或编码' }).fill('')
+  await expect(panel.getByRole('textbox', { name: '搜索内容名称或编码' })).toHaveValue('score8999')
+  await panel.getByRole('textbox', { name: '搜索内容名称或编码' }).fill('')
   await panel.getByRole('button', { name: /^最近使用/ }).click()
   await expect(panel.locator('.fp-row')).toHaveCount(1)
   await expect(panel.locator('.fp-row')).toContainText('score8999')
@@ -88,13 +88,13 @@ test('九千字段分页虚拟化、搜索保留、已选内容和最近使用',
   const rowHeight = await panel.locator('.fp-row').first().evaluate(element => element.getBoundingClientRect().height)
   expect(rowHeight).toBe(36)
   await expect(panel.locator('.fp-type small')).toHaveCount(0)
-  await panel.getByRole('button', { name: '关闭字段选择器', exact: true }).click()
+  await panel.getByRole('button', { name: '关闭内容选择器', exact: true }).click()
   await field.click()
   await expect(panel.locator('.fp-row--selected')).toContainText('score8999')
   await expect(panel.getByRole('spinbutton', { name: '页码' })).toHaveValue('19')
   await expect(panel.locator('.fp-sticky')).toContainText('征信报告')
   await expect(panel.locator('.fp-sticky')).toContainText('明细')
-  await panel.getByRole('button', { name: '关闭字段选择器', exact: true }).click()
+  await panel.getByRole('button', { name: '关闭内容选择器', exact: true }).click()
   await expect(panel).toHaveCount(0)
   await page.getByPlaceholder('选择目标字段').click()
   await expect(panel.getByRole('combobox', { name: '每页字段数' })).toHaveValue('500')
@@ -105,7 +105,7 @@ test('九千字段分页虚拟化、搜索保留、已选内容和最近使用',
   assertClean()
 })
 
-test('决策表字段选择器可加载并选择普通变量和对象字段', async ({ page }) => {
+test('决策表内容选择器可加载并选择普通变量和对象字段', async ({ page }) => {
   const pageErrors = []
   const consoleErrors = []
   page.on('pageerror', error => pageErrors.push(error.message))
@@ -137,22 +137,21 @@ test('决策表字段选择器可加载并选择普通变量和对象字段', as
   await expect(targetField).toHaveValue(/age/)
   await expect(popover).toBeHidden()
   const typeToValueGap = await targetReference.evaluate(reference => {
-    const type = reference.querySelector('.vp-operand-kind')
-    const input = reference.querySelector('input')
+    const type = reference.querySelector('.content-ref__type')
+    const input = reference.querySelector('.content-ref__name')
     const wrapper = reference.querySelector('.el-input__wrapper')
     const typeRect = type.getBoundingClientRect()
     const inputRect = input.getBoundingClientRect()
-    const inputStyle = getComputedStyle(input)
     const wrapperStyle = getComputedStyle(wrapper)
     return {
-      gap: inputRect.left + parseFloat(inputStyle.paddingLeft || '0') - typeRect.right,
+      gap: inputRect.left - typeRect.right,
       paddingLeft: parseFloat(wrapperStyle.paddingLeft || '0'),
       paddingRight: parseFloat(wrapperStyle.paddingRight || '0'),
       suffixIcons: reference.querySelectorAll('.el-input__suffix .el-icon').length
     }
   })
   expect(typeToValueGap.gap).toBeGreaterThanOrEqual(0)
-  expect(typeToValueGap.gap).toBeLessThanOrEqual(8)
+  expect(typeToValueGap.gap).toBeLessThanOrEqual(0.5)
   expect(typeToValueGap).toMatchObject({
     paddingLeft: 4,
     paddingRight: 4,

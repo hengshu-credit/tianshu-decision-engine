@@ -60,9 +60,9 @@
             <div v-if="selected.execution.conditions && selected.execution.conditions.length" class="flow-trace-detail__section">
               <div class="flow-trace-detail__label">判断条件</div>
               <div v-for="(condition, index) in selected.execution.conditions" :key="index" class="flow-trace-condition">
-                <code>{{ condition.varLabel || condition.varCode }}</code>
+                <content-reference mode="trace" :value="condition.leftOperand || condition" />
                 <span>{{ condition.operator }}</span>
-                <code>{{ condition.compareDisplay }}</code>
+                <content-reference mode="trace" :value="condition.rightOperand || { kind: 'LITERAL', value: condition.compareDisplay, valueType: condition.varType }" />
                 <b :class="condition.result ? 'is-hit' : 'is-miss'">{{ condition.result ? '满足' : '不满足' }}</b>
               </div>
             </div>
@@ -77,7 +77,7 @@
             <div v-if="selected.execution.actions && selected.execution.actions.length" class="flow-trace-detail__section">
               <div class="flow-trace-detail__label">动作赋值</div>
               <div v-for="(action, index) in selected.execution.actions" :key="index" class="flow-trace-action">
-                <code>{{ action.targetLabel || action.targetVar }}</code>
+                <content-reference mode="trace" :value="action.targetOperand || { varCode: action.targetVar, varLabel: action.targetLabel }" />
                 <span>=</span>
                 <code>{{ action.valueDisplay }}</code>
               </div>
@@ -106,6 +106,7 @@
 </template>
 
 <script>
+import ContentReference from './ContentReference.vue'
 import { createGraphCanvas } from '@/components/flow/graphCanvas'
 
 const NODE_TYPES = {
@@ -141,6 +142,7 @@ const STATUS_STYLES = {
 }
 
 export default {
+  components: { ContentReference },
   name: 'FlowTraceGraph',
   props: {
     modelData: { type: Object, default: null },

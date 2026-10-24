@@ -4,13 +4,13 @@
     <div class="se-header">
       <div class="se-title-area">
         <el-button
-          link
+          size="small"
           :icon="ElIconBack"
+          class="uiue-detail-back"
           aria-label="返回"
           data-designer-back
           title="返回"
           @click="$router.back()"
-          style="color: var(--tianshu-text-secondary)"
         />
         <el-icon class="se-title-icon"><el-icon-edit-outline /></el-icon>
         <span class="se-title">QL脚本编辑器</span>
@@ -146,14 +146,7 @@
                     :title="'双击插入: ' + v.varCode"
                     @dblclick="insertVar(v)"
                   >
-                    <el-tag
-                      :type="varTypeColor(v.varType)"
-                      size="small"
-                      class="var-type-tag"
-                      >{{ varTypeLabel(v.varType) }}</el-tag
-                    >
-                    <span class="var-code">{{ v.varCode }}</span>
-                    <span class="var-label">{{ v.varLabel }}</span>
+                    <content-reference :value="v" />
                   </div>
                   <el-pagination
                     v-if="scriptListNeedsPaging(cat.children)"
@@ -201,14 +194,7 @@
                         :title="'双击插入: ' + v.varCode"
                         @dblclick="insertVar(v)"
                       >
-                        <el-tag
-                          :type="varTypeColor(v.varType)"
-                          size="small"
-                          class="var-type-tag"
-                          >{{ varTypeLabel(v.varType) }}</el-tag
-                        >
-                        <span class="var-code">{{ v.varCode }}</span>
-                        <span class="var-label">{{ v.varLabel }}</span>
+                        <content-reference :value="v" />
                       </div>
                       <el-pagination
                         v-if="scriptListNeedsPaging(group.children)"
@@ -291,6 +277,7 @@
             :functions="projectFunctions"
             :show-reference-decorations="showEngineReferences"
             :reference-versions="referenceVersions"
+            :version-references="scriptVersionReferences"
             :reference-catalog-mode="referenceCatalogMode"
             @editor-ready="onEditorReady"
             @reference-select="recordScriptReference"
@@ -322,12 +309,13 @@
 </template>
 
 <script>
+import ContentReference from '@/components/common/ContentReference.vue'
+import ElIconLoading from '@/components/common/AppLoadingIcon.vue'
 import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { markRaw } from 'vue'
 import {
   EditPen as ElIconEditOutline,
   DataAnalysis as ElIconSData,
-  Loading as ElIconLoading,
   Warning as ElIconWarning,
   FolderOpened as ElIconFolderOpened,
   CircleCheckFilled as ElIconSuccess,
@@ -406,7 +394,7 @@ export default {
       ElIconSearch: markRaw(ElIconSearch),
     }
   },
-  components: {
+  components: { ContentReference,
     RuleDesignerActionBar,
     RuleDraftReadOnly,
     DesignerTestDialog,
@@ -424,7 +412,7 @@ export default {
   mixins: [varPickerMixin, ruleDraftMixin],
   computed: {
     scriptReferences() {
-      return collectQlScriptReferences(this.script, this.varPickerOptions, this.projectFunctions, this.scriptVarRefs)
+      return collectQlScriptReferences(this.script, this.varPickerOptions, this.projectFunctions, this.scriptVarRefs, this.scriptVersionReferences)
     },
     varPanelStyle() {
       if (this.varPanelCollapsed) return {}
@@ -531,7 +519,8 @@ export default {
             _varId: f.id,
             _refType: 'FUNCTION',
             varLabel: f.funcName,
-            varType: 'FUNC',
+            varType: f.returnType || 'FUNCTION',
+            version: f.currentVersion ?? f.version,
           })),
         })
       }
@@ -874,17 +863,6 @@ export default {
       const codes = collectScriptInputCodes(this.script, this.projectRefs)
       return buildSampleParamsFromCodes(Array.from(codes), this.projectRefs)
     },
-    async doTest() {
-      let params = {}
-      try {
-        params = JSON.parse(this.testParamsJson || '{}')
-      } catch (e) {
-        this.$message.error('参数 JSON 格式错误')
-        return
-      }
-      const res = await this.executeDesignerPreview(params, 'SCRIPT')
-      this.testResult = res && res.data ? res.data : res
-    },
     insertVar(v) {
       if (!v) return
       if (!this.monacoEditor) {
@@ -1114,7 +1092,6 @@ export default {
 .se-designer {
   position: relative;
   background: var(--tianshu-bg-workspace);
-  height: calc(100vh - 82px);
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1397,64 +1374,15 @@ export default {
   border: none;
   border-radius: 0;
 }
-.se-editor-container :deep(.se-reference-code),
-.se-editor-container :deep(.se-reference-type),
-.se-editor-container :deep(.se-reference-name),
-.se-editor-container :deep(.se-reference-version) {
-  border: none;
-  border-radius: 0;
-  padding: 0 2px;
-  line-height: inherit;
-}
-.se-editor-container :deep(.se-reference-code) {
-  padding-left: 0;
-  padding-right: 0;
-}
-.se-editor-container :deep(.se-reference-code) {
-  background: var(--tianshu-border);
-  color: var(--tianshu-primary-text);
-  text-decoration: underline;
-  text-decoration-color: var(--el-color-primary);
-  text-decoration-thickness: 2px;
-  text-underline-offset: 2px;
-}
-.se-editor-container :deep(.se-reference-type) {
-  display: inline-flex;
-  width: 22px;
-  height: 20px;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  padding-left: 0;
-  padding-right: 0;
-  font-size: 11px;
-  font-weight: 600;
-  background: var(--tianshu-info-bg);
-  color: var(--tianshu-info-text);
-}
-.se-editor-container :deep(.se-reference-type--number) {
-  color: var(--tianshu-success-text);
-  background: var(--tianshu-success-bg);
-}
-.se-editor-container :deep(.se-reference-type--collection) {
-  color: var(--tianshu-warning-text);
-  background: var(--tianshu-warning-bg);
-}
-.se-editor-container :deep(.se-reference-type--boolean) {
-  color: var(--tianshu-info-text);
-  background: var(--tianshu-info-bg);
-}
-.se-editor-container :deep(.se-reference-name) {
-  background: var(--tianshu-bg-hover);
-  color: var(--tianshu-text-secondary);
-  font-weight: 700;
-}
-.se-editor-container :deep(.se-reference-version) {
-  background: var(--tianshu-bg-muted);
-  color: var(--tianshu-text-tertiary);
-  font-weight: 700;
-  border-radius: 0;
-}
+
+
+
+
+
+
+
+
+
 .se-footer {
   display: flex;
   align-items: center;

@@ -2,18 +2,14 @@
   <div class="side-effect-editor">
     <template v-if="block.type === 'api-call'">
       <label>外数 API</label>
-      <el-select v-model="block.apiId" aria-label="外数 API" filterable placeholder="选择要调用的 API 外数" @change="editor.sync()">
-        <el-option v-for="api in editor.apiOptions" :key="api.id" :label="`${api.apiName || api.apiCode}（${api.apiCode}）`" :value="api.id" />
-      </el-select>
+      <resource-picker v-model:value="block.apiId" :resources="editor.apiOptions" aria-label="外数 API" placeholder="选择要调用的 API 外数" @update:value="editor.sync()" />
       <label>完整结果赋值（可选）</label>
       <operand-picker :value="block.targetOperand" :vars="objectTargets" :selected-vars="selectedTargets" :allowed-kinds="editor.writeKinds" writable-only expected-type="OBJECT" placeholder="选择接收完整结果的变量或对象" @input="value => editor.setOperand(block, 'targetOperand', value)" />
-      <p>执行到此动作时调用 API。完整结果包含请求、响应、组装结果、调用状态等内容；后续规则可从字段选择器的外数字段继续取值。同一请求与隐式调用共用结果。</p>
+      <p>执行到此动作时调用 API。完整结果包含请求、响应、组装结果、调用状态等内容；后续规则可从内容选择器的外数字段继续取值。同一请求与隐式调用共用结果。</p>
     </template>
     <template v-else>
       <label>目标名单</label>
-      <el-select v-model="block.listIds" aria-label="目标名单" multiple filterable placeholder="选择一个或多个名单" @change="editor.sync()">
-        <el-option v-for="list in editor.listOptions" :key="list.id" :label="`${list.listName || list.listCode}（${list.listCode}）`" :value="list.id" />
-      </el-select>
+      <resource-picker v-model:value="block.listIds" :resources="editor.listOptions" category="list" aria-label="目标名单" multiple placeholder="选择一个或多个名单" @update:value="editor.sync()" />
       <label>执行操作</label>
       <el-select v-model="block.operation" aria-label="名单执行操作" @change="editor.sync()">
         <el-option label="加入并合并有效期" value="MERGE" />
@@ -37,7 +33,7 @@
       <label>名单内容</label>
       <div v-for="(entry, index) in block.entries" :key="index" class="content-row">
         <el-select v-model="entry.itemType" :aria-label="`内容类型 ${index + 1}`" @change="editor.sync()"><el-option v-for="type in itemTypes" :key="type.value" :label="type.label" :value="type.value" /></el-select>
-        <operand-picker :value="entry.valueOperand" :vars="contentFields" :selected-vars="editor.selectedVars" :functions="editor.functions" :allowed-kinds="['REFERENCE', 'PATH', 'FUNCTION', 'OPERATION', 'ACCESS', 'CAST']" placeholder="从字段选择器选择内容或表达式" @input="value => editor.setOperand(entry, 'valueOperand', value)" />
+        <operand-picker :value="entry.valueOperand" :vars="contentFields" :selected-vars="editor.selectedVars" :functions="editor.functions" :allowed-kinds="['REFERENCE', 'PATH', 'FUNCTION', 'OPERATION', 'ACCESS', 'CAST']" placeholder="从内容选择器选择内容或表达式" @input="value => editor.setOperand(entry, 'valueOperand', value)" />
         <el-button link type="danger" :aria-label="`删除内容 ${index + 1}`" @click="removeEntry(index)">删除</el-button>
       </div>
       <el-button @click="addEntry">添加内容字段</el-button>
@@ -47,10 +43,11 @@
 </template>
 <script>
 import OperandPicker from '@/components/common/OperandPicker.vue'
+import ResourcePicker from '@/components/common/ResourcePicker.vue'
 import { LIST_ITEM_TYPES } from '@/constants/listMatchModes'
 export default {
   name: 'ActionSideEffectEditor',
-  components: { OperandPicker },
+  components: { OperandPicker, ResourcePicker },
   inject: { editor: { from: 'actionEditor' } },
   props: { block: { type: Object, required: true } },
   data: () => ({ itemTypes: LIST_ITEM_TYPES }),

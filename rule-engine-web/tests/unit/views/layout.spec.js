@@ -53,10 +53,10 @@ import {
   writeSidebarState
 } from '@/layout/layoutState'
 describe('Layout — 菜单与路由归属', () => {
-  test('包含 18 个路由唯一、图标唯一的平铺一级菜单项', () => {
-    expect(SIDEBAR_MENUS).toHaveLength(18)
-    expect(new Set(SIDEBAR_MENUS.map(item => item.index)).size).toBe(18)
-    expect(new Set(SIDEBAR_MENUS.map(item => item.icon)).size).toBe(18)
+  test('包含 19 个路由唯一、图标唯一的平铺一级菜单项', () => {
+    expect(SIDEBAR_MENUS).toHaveLength(19)
+    expect(new Set(SIDEBAR_MENUS.map(item => item.index)).size).toBe(19)
+    expect(new Set(SIDEBAR_MENUS.map(item => item.icon)).size).toBe(19)
     expect(SIDEBAR_MENUS[0].permission).toBe('')
   })
 
@@ -79,7 +79,8 @@ describe('Layout — 菜单与路由归属', () => {
       { index: '/billing', label: '账单管理', icon: 'Wallet', permission: 'billing:view' },
       { index: '/approval', label: '审批管理', icon: 'Stamp', permission: 'approval:view' },
       { index: '/transfer', label: '离线迁移', icon: 'Upload', permission: 'transfer:view' },
-      { index: '/account', label: '账户管理', icon: 'User', permission: ['account:view', 'account:manage', 'account:approve', 'account:role-assign', 'account:password-reset', 'role:view', 'role:manage', 'account:audit'] }
+      { index: '/account', label: '账户管理', icon: 'User', permission: ['account:view', 'account:manage', 'account:approve', 'account:role-assign', 'account:password-reset', 'role:view', 'role:manage', 'account:audit'] },
+      { index: '/system/settings', label: '系统配置', icon: 'Setting', permission: 'system:view' }
     ])
   })
 
@@ -608,7 +609,7 @@ describe('Layout — 全局布局集成', () => {
 
     expect(wrapper.findComponent(LayoutSidebar).exists()).toBe(false)
     expect(wrapper.find('.layout-primary-topbar').exists()).toBe(true)
-    expect(wrapper.findAll('.top-navigation__item')).toHaveLength(18)
+    expect(wrapper.findAll('.top-navigation__item')).toHaveLength(19)
     expect(wrapper.find('.top-navigation__more').exists()).toBe(false)
     expect(wrapper.find('.layout-account').exists()).toBe(true)
     expect(wrapper.findComponent(WorkspaceTabs).exists()).toBe(true)

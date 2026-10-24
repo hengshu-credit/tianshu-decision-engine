@@ -43,7 +43,6 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -800,33 +799,14 @@ public class RuleListChangeBatchService {
 
     private String normalizeOperation(String operation) {
         String value = required(operation, "执行操作不能为空");
-        Map<String, String> aliases = new HashMap<>();
-        aliases.put("新增", "ADD");
-        aliases.put("添加", "ADD");
-        aliases.put("修改", "UPDATE");
-        aliases.put("更新", "UPDATE");
-        aliases.put("删除", "DELETE");
-        aliases.put("停用", "DELETE");
-        return aliases.getOrDefault(value,
-                value.toUpperCase(Locale.ROOT));
+        String alias = ListRecordAliases.operation(value);
+        return alias != null ? alias : value.toUpperCase(Locale.ROOT);
     }
 
     private String normalizeItemType(String itemType) {
         String value = required(itemType, "内容类型不能为空");
-        Map<String, String> aliases = new HashMap<>();
-        aliases.put("手机号", "MOBILE");
-        aliases.put("手机", "MOBILE");
-        aliases.put("身份证", "ID_CARD");
-        aliases.put("地址", "ADDRESS");
-        aliases.put("设备号", "DEVICE");
-        aliases.put("设备", "DEVICE");
-        aliases.put("姓名", "NAME");
-        aliases.put("银行卡", "BANK_CARD");
-        aliases.put("邮箱", "EMAIL");
-        aliases.put("邮件", "EMAIL");
-        aliases.put("其他", "OTHER");
-        String normalized = aliases.getOrDefault(value,
-                value.toUpperCase(Locale.ROOT));
+        String alias = ListRecordAliases.itemType(value);
+        String normalized = alias != null ? alias : value.toUpperCase(Locale.ROOT);
         if (!ITEM_TYPES.contains(normalized)) {
             throw new IllegalArgumentException("不支持的内容类型: " + value);
         }

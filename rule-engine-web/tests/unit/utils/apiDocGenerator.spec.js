@@ -2,6 +2,46 @@ import { generateApiDocHtml, generateOpenApiDocument } from '@/utils/apiDoc'
 import { DEFAULT_THEME_CONFIG } from '@/theme/themeConfig'
 
 describe('完整 API 文档生成器', () => {
+  test('配置的图片 URL 用于文档品牌并转义属性', () => {
+    const html = generateApiDocHtml({ project: {}, rules: [] }, { logoSvg: 'https://images.example.com/logo.svg?v=1&mode=doc' })
+    expect(html).toContain('src="https://images.example.com/logo.svg?v=1&amp;mode=doc"')
+    expect(() => generateApiDocHtml({ project: {}, rules: [] }, { logoSvg: 'https://user:secret@example.com/logo.png' })).toThrow('不能包含登录凭据')
+  })
+  test('导出携带可直接调用的样例，开放契约不混入同步 DTO，Bearer 使用正确安全方案', () => {
+    const exported = generateOpenApiDocument({
+      project: { projectName: '文档回归' },
+      authentications: [{ authType: 'BEARER_TOKEN' }],
+      rules: [{ ruleCode: 'CHECK', openApiEnabled: true,
+        inputVariables: [{ varCode: 'age', varType: 'INTEGER', exampleValue: 20 }],
+        openApiContract: { requestMappings: [{ sourceType: 'BODY', sourcePath: '$.customerAge', targetType: 'INTEGER', defaultValue: 21 }] }
+      }]
+    })
+    expect(exported.components.securitySchemes.projectAuth1).toEqual({ type: 'http', scheme: 'bearer' })
+    const sync = exported.paths['/api/rule/sync/execute/CHECK'].post
+    const open = exported.paths['/api/rule/openapi/CHECK'].post
+    expect(sync.requestBody.content['application/json'].example.params).toEqual({ age: 20 })
+    expect(open.requestBody.content['application/json'].example).toEqual({ customerAge: 21 })
+    const success = sync.responses['200'].content['application/json']
+    expect(success.example.success).toBe(true)
+    expect(success.example.data.executeTimeMs).toBe(12)
+    expect(success.schema.properties.data.properties.traces.type).toBe('array')
+    expect(sync.responses['401'].content['application/json'].example.success).toBe(false)
+    expect(open.responses['200'].content['application/json'].example).toBeUndefined()
+    expect(open.responses['200'].content['application/json'].schema.properties.data).toEqual({})
+  })
+  test('导出使用品牌与多对一结果码映射，保留 success 和 HTTP 语义', () => {
+    const doc = { project: {}, rules: [{ ruleCode: 'RISK' }], codeMapping: { version: 2, enabled: true, mappings: { '000000': { code: '0000', message: '处理完成' }, '100001': { code: 'ERR', message: '参数错误' }, '100002': { code: 'ERR', message: '参数错误' } } } }
+    const responses = generateOpenApiDocument(doc).paths['/api/rule/sync/execute/RISK'].post.responses
+    expect(responses['200'].content['application/json'].schema.properties.code.example).toBe('0000')
+    const codes = responses['400'].content['application/json'].schema.properties.code
+    expect(codes.enum.filter(code => code === 'ERR')).toHaveLength(1)
+    expect(new RegExp(codes.pattern).test('ERR')).toBe(true)
+    const html = generateApiDocHtml(doc, { logoSvg: 'data:image/png;base64,aGVsbG8=', brand: { systemName: '新系统', subtitle: '<副标题>' } })
+    expect(html).toContain('新系统')
+    expect(html).toContain('&lt;副标题&gt;')
+    expect(html).toContain('data:image/png;base64,aGVsbG8=')
+    expect(html).toContain('处理完成')
+  })
   test('成功、等待和鉴权失败的示例使用对应的平台码及描述', () => {
     const document = generateOpenApiDocument({ project: {}, rules: [{ ruleCode: 'RISK', openApiEnabled: true }] })
     for (const path of ['/api/rule/sync/execute/RISK', '/api/rule/openapi/RISK']) {
@@ -136,7 +176,7 @@ describe('完整 API 文档生成器', () => {
     expect(html).toContain('class="brand-header-title"')
     expect(html).toContain('class="brand-logo"')
     expect(html).toContain('class="brand-main-text">天枢决策引擎')
-    expect(html).toContain('class="brand-sub-text">天工开物, 枢衡定策')
+    expect(html).toContain('class="brand-sub-text">天工开物，枢衡定策')
     expect(html).toContain('class="brand-project"')
     expect(html).toContain('授信决策')
     expect(html).toContain('credit')

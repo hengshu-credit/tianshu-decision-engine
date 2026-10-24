@@ -10,13 +10,13 @@
     <div class="uiue-detail-header rule-detail-header">
       <div class="uiue-detail-header__title">
         <el-button
-          link
           size="small"
           :icon="ElIconBack"
           class="uiue-detail-back"
+          aria-label="返回"
+          title="返回规则列表"
           @click="$router.push('/rule')"
-          >返回</el-button
-        >
+        />
         <h2 style="margin: 0">{{ rule.ruleName || '规则详情' }}</h2>
       </div>
       <div class="uiue-detail-header__actions rule-detail-actions">
@@ -39,7 +39,7 @@
         >
         <resource-version-manager
           v-if="rule.id && detailActive && String(rule.id) === String($route.params.id)"
-          :show-trigger="true"
+          :show-trigger="false"
           resource-type="RULE"
           :resource-id="rule.id"
           has-legacy
@@ -989,33 +989,6 @@
             >
           </div>
 
-          <div class="open-api-section">
-            <div class="open-api-title">平台响应结果码</div>
-            <div class="open-api-help">
-              所有接口仅以 000000 表示成功；code、message 和 detail 由平台统一提供。HTTP
-              状态码保留标准传输语义。日/月限额编码为预留编码，可供后续额度策略直接复用。
-            </div>
-            <el-table show-overflow-tooltip
-              :data="openApiStatusCodes"
-              border
-              size="small"
-              class="open-api-status-table"
-            >
-              <el-table-column prop="code" label="业务 code" width="110" />
-              <el-table-column prop="scene" label="场景" min-width="180" />
-              <el-table-column
-                prop="message"
-                label="默认说明"
-                min-width="240"
-              />
-              <el-table-column
-                prop="httpStatus"
-                label="HTTP"
-                width="80"
-                align="center"
-              />
-            </el-table>
-          </div>
         </div>
       </el-tab-pane>
 
@@ -1441,7 +1414,7 @@
 
 <script>
 import { loadPagedCatalog } from '@/utils/pagedCatalog'
-import { PLATFORM_RESPONSE_CODES, PLATFORM_CODES } from '@/utils/platformResponse'
+import { PLATFORM_CODES } from '@/utils/platformResponse'
 
 import { chooseVersionRestore, versionDisplayLabel } from '@/utils/versionRestore'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
@@ -1566,7 +1539,6 @@ function normalizeDefinitionId(value) {
   return /^[1-9]\d*$/.test(id) ? value : null
 }
 
-const OPEN_API_STATUS_CODES = PLATFORM_RESPONSE_CODES.map(item => ({ ...item, scene: item.message }))
 
 function createDefaultOpenApiContract() {
   return {
@@ -1645,7 +1617,6 @@ export default {
         'ARRAY',
         'MAP',
       ],
-      openApiStatusCodes: OPEN_API_STATUS_CODES,
       fieldValidationOptions: [],
       /** varId -> 变量对象映射 */
       varMap: {},
@@ -3053,31 +3024,6 @@ export default {
       if (data && Array.isArray(data.records)) return data.records
       return []
     },
-    flattenObjectVariables(vars) {
-      const result = []
-      const visit = (rows) => {
-        const list = rows || []
-        list.forEach((row) => {
-          result.push(row)
-          if (row.children && row.children.length) visit(row.children)
-        })
-      }
-      visit(vars)
-      return result
-    },
-    stripObjectPrefix(text, objectCode) {
-      if (!text || !objectCode) return text || ''
-      const prefix = objectCode + '.'
-      return text.indexOf(prefix) === 0 ? text.substring(prefix.length) : text
-    },
-    refKey(id, refType) {
-      if (!id || !refType) return ''
-      return refType + ':' + id
-    },
-    putVarMap(item) {
-      const key = this.refKey(item.id, item.refType)
-      if (key) this.varMap[key] = item
-    },
     getFieldVarMap(row) {
       return resolveDetailReference(this.varMap, row)
     },
@@ -3117,127 +3063,14 @@ export default {
       const state = buildDetailReferenceState(
         buildReferenceCatalog(vars, doTree, models)
       )
-      if (state && state.items) {
-        this.varMap = buildDetailReferenceMap(state)
-        this.varPickerGroups.splice(
-          0,
-          this.varPickerGroups.length,
-          ...state.groups.map((group) => ({
-            label: group.label,
-            options: group.options,
-          }))
-        )
-        return
-      }
-      this.varMap = {}
-      const seenIds = new Set()
-      /** @type {Array} 普通变量选项 */
-      const varOptions = []
-      /** @type {Array} 常量选项 */
-      const constOptions = []
-      /** @type {Array} 数据对象字段选项 */
-      const objOptions = []
-      const modelOptions = []
-      vars.forEach((v) => {
-        const refType = v.varSource === 'CONSTANT' ? 'CONSTANT' : 'VARIABLE'
-        const seenKey = this.refKey(v.id, refType)
-        if (!v.id || seenIds.has(seenKey)) return
-        seenIds.add(seenKey)
-        const labelText = v.varLabel || ''
-        const codeText = v.scriptName || v.varCode || ''
-        const item = {
-          id: v.id,
-          refType,
-          varCode: v.varCode || '',
-          varCodeText: v.scriptName || v.varCode || '',
-          scriptName: codeText,
-          varLabel: labelText + (codeText ? ' ' + codeText : ''),
-          varLabelText: labelText,
-          varType: v.varType,
-          varSource: v.varSource,
-          sourceType: v.varSource === 'CONSTANT' ? 'constant' : 'variable',
-          varObj: { ...v, refType },
-        }
-        this.putVarMap(item)
-        if (v.varSource === 'CONSTANT') {
-          constOptions.push(item)
-        } else {
-          varOptions.push(item)
-        }
-      })
-      doTree.forEach((group) => {
-        const obj = group.object || {}
-        const fields =
-          group.flatVariables || this.flattenObjectVariables(group.variables)
-        fields.forEach((f) => {
-          const refType = 'DATA_OBJECT'
-          const seenKey = this.refKey(f.id, refType)
-          if (!f.id || seenIds.has(seenKey)) return
-          seenIds.add(seenKey)
-          const objCode = obj.scriptName || obj.objectCode || ''
-          const labelText = this.stripObjectPrefix(f.varLabel || '', objCode)
-          const codeText = f.scriptName || f.varCode || ''
-          const objLabel = obj.objectLabel || obj.objectCode || '数据对象'
-          const item = {
-            id: f.id,
-            refType,
-            varCode: codeText,
-            varCodeText: f.scriptName || f.varCode || '',
-            scriptName: codeText,
-            varLabel: labelText + (codeText ? ' ' + codeText : ''),
-            varLabelText: labelText,
-            varType: f.varType,
-            varSource: 'INPUT',
-            sourceType: 'dataObject',
-            sourceLabel: objLabel,
-            sourceCode: objCode,
-            varObj: { ...f, refType },
-          }
-          this.putVarMap(item)
-          objOptions.push(item)
-        })
-      })
-      models.forEach((m) => {
-        const refType = 'MODEL'
-        const seenKey = this.refKey(m.id, refType)
-        if (!m.id || seenIds.has(seenKey)) return
-        seenIds.add(seenKey)
-        const codeText = m.modelCode || ''
-        if (!codeText) return
-        const labelText = m.modelName || codeText
-        const item = {
-          id: m.id,
-          refType,
-          varCode: codeText,
-          varCodeText: codeText,
-          scriptName: codeText,
-          varLabel: labelText + ' ' + codeText,
-          varLabelText: labelText,
-          varType: 'MODEL',
-          varSource: 'MODEL',
-          sourceType: 'model',
-          varObj: {
-            ...m,
-            id: m.id,
-            varCode: codeText,
-            varLabel: labelText,
-            scriptName: codeText,
-            varType: 'MODEL',
-            refType,
-          },
-        }
-        this.putVarMap(item)
-        modelOptions.push(item)
-      })
+      this.varMap = buildDetailReferenceMap(state)
       this.varPickerGroups.splice(
         0,
         this.varPickerGroups.length,
-        ...[
-          { label: '普通变量', options: varOptions },
-          { label: '常量', options: constOptions },
-          { label: '数据对象字段', options: objOptions },
-          { label: '模型', options: modelOptions },
-        ]
+        ...state.groups.map((group) => ({
+          label: group.label,
+          options: group.options,
+        }))
       )
     },
     normalizeFieldPages() {

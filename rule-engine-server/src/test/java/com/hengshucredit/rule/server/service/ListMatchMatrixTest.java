@@ -11,6 +11,7 @@ import java.util.Map;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertEquals;
 
 public class ListMatchMatrixTest {
 
@@ -69,6 +70,25 @@ public class ListMatchMatrixTest {
     public void rejectsUnknownCombinationMode() {
         matrix(Collections.<String, Boolean>emptyMap()).match(Collections.singletonList(10L),
                 Collections.<Object>singletonList("value"), "UNKNOWN", "IN_LIST", Collections.<String>emptyList(), null);
+    }
+
+    @Test
+    public void detailedResultsKeepInputAndListOrderWithoutRepeatingQueries() {
+        int[] calls = {0};
+        ListMatchMatrix matrix = new ListMatchMatrix(new RuleListService() {
+            @Override public Map<String, Boolean> matchCells(List<Long> ids, List<Object> values,
+                    List<String> itemTypes, String matchMode, LocalDateTime matchTime) {
+                calls[0]++;
+                assertEquals("NOT_IN_LIST", matchMode);
+                return Map.of("20\u0000a", true, "10\u0000a", false, "20\u0000b", false, "10\u0000b", true,
+                        "20\u0000null", true);
+            }
+        });
+        var result = matrix.matchDetailed(List.of(20L, 10L), Arrays.asList("a", "b", "a", null),
+                "ANY_FIELD_ANY_LIST", "NOT_IN_LIST", List.of(), null);
+        assertEquals(1, calls[0]);
+        assertTrue(result.hit());
+        assertEquals(List.of(List.of(true, false), List.of(false, true), List.of(true, false), List.of(false, false)), result.matrix());
     }
 
     private static ListMatchMatrix matrix(Map<String, Boolean> cells) {

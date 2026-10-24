@@ -39,7 +39,7 @@ export const FLOW_MENU_OPTIONS = {
 /**
  * 清理设计器属性编辑器中的当前焦点。
  *
- * LogicFlow 的画布空白区域本身不会接管浏览器焦点，字段选择器关闭后
+ * LogicFlow 的画布空白区域本身不会接管浏览器焦点，内容选择器关闭后
  * 引用输入框因此仍会保持焦点，导致用户点击空白处时看起来仍处于输入态。
  */
 export function blurActiveDesignerControl() {

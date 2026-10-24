@@ -3,6 +3,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import axios from 'axios'
 import Layout from '@/layout/index.vue'
 import { createConsoleAuthGuard } from './authGuard'
+import { installNavigationFeedback, navigationState, preloadableView } from './navigationState'
 
 /**
  * 与后端会话 Cookie 配合的裸 axios，避免与 response 封装循环依赖。
@@ -17,11 +18,14 @@ const authAxios = axios.create({
  * 只缓存成功的登录配置；后端短暂不可用后允许再次登录重试。
  */
 var _consoleConfigPromise = null
+var _consoleConfigFetchedAt = 0
 
 export function fetchConsoleConfig() {
+  if (Date.now() - _consoleConfigFetchedAt > 10000) _consoleConfigPromise = null
   if (!_consoleConfigPromise) {
     _consoleConfigPromise = authAxios.get('/auth/console/config')
       .then(function (res) {
+        _consoleConfigFetchedAt = Date.now()
         if (res.data?.code !== PLATFORM_SUCCESS_CODE || !res.data.data || res.data.data.initializationRequired === true) _consoleConfigPromise = null
         return res.data
       })
@@ -347,6 +351,12 @@ const routes = [
         name: 'AccountProfile',
         component: () => import('@/views/account/AccountProfile.vue'),
         meta: { title: '个人设置', authOnly: true }
+      },
+      {
+        path: 'system/settings',
+        name: 'SystemSettings',
+        component: () => import('@/views/system/SystemSettings.vue'),
+        meta: { title: '系统配置', permission: 'system:view' }
       }
     ]
   }
@@ -374,7 +384,9 @@ function inferRoutePermission(path) {
 }
 
 routes.forEach(route => {
+  if (typeof route.component === 'function') route.component = preloadableView(route.component)
   ;(route.children || []).forEach(child => {
+    child.component = preloadableView(child.component)
     if (!child.meta) child.meta = {}
     if (!child.meta.permission && !child.meta.authOnly) {
       child.meta.permission = inferRoutePermission(child.path)
@@ -391,7 +403,8 @@ const router = createRouter({
  * 若后端启用控制台登录，则每次进入受保护路由都校验会话；
  * 未启用时与改造前行为一致。
  */
-router.beforeEach(createConsoleAuthGuard(fetchConsoleConfig, fetchMe))
+installNavigationFeedback(router)
+router.beforeEach(createConsoleAuthGuard(fetchConsoleConfig, fetchMe, to => navigationState.pendingRoute === to))
 router.afterEach((to, from, failure) => {
   if (!failure && to.path !== '/login') {
     import('@/security/operationActivity').then(({ recordPageVisit }) => {

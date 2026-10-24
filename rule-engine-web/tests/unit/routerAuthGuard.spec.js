@@ -2,6 +2,7 @@ import { createConsoleAuthGuard } from '../../src/router/authGuard.js'
 import {
   clearCurrentUser,
   hasPermission,
+  getCurrentUser,
   setPermissionEnforcement
 } from '../../src/security/permissionState.js'
 
@@ -14,6 +15,24 @@ function createRoute(path) {
 }
 
 describe('router console auth guard', () => {
+  test.each([false, true])('较早导航的会话请求晚返回（失败=%s）不会覆盖新身份', async fail => {
+    let resolveOld, rejectOld
+    const oldMe = new Promise((resolve, reject) => { resolveOld = resolve; rejectOld = reject })
+    const fetchMe = vi.fn().mockReturnValueOnce(oldMe).mockResolvedValue({
+      code: '000000', data: { username: 'new-user', permissions: ['project:view'] },
+    })
+    const guard = createConsoleAuthGuard(async () => ({ code: '000000', data: { loginEnabled: true } }), fetchMe)
+    const oldNext = vi.fn()
+    const oldNavigation = guard(createRoute('/rule'), createRoute('/'), oldNext)
+    await Promise.resolve()
+    await guard(createRoute('/project'), createRoute('/'), vi.fn())
+    if (fail) rejectOld(new Error('expired'))
+    else resolveOld({ code: '000000', data: { username: 'old-user', permissions: ['rule:view'] } })
+    await oldNavigation
+    expect(getCurrentUser()?.username).toBe('new-user')
+    expect(oldNext).toHaveBeenCalledWith(false)
+  })
+
   test.each(['/login', '/project', '/admin-recovery'])('未初始化时 %s 进入注册页面，初始化后可进入登录页', async path => {
     const config = { code: '000000', data: { loginEnabled: true, initializationRequired: true } }
     const fetchMe = vi.fn()

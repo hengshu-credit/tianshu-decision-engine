@@ -66,6 +66,7 @@ export default {
   },
 
   computed: {
+    scriptVersionReferences() { return this.frozenReferenceCatalog?.versionReferences || [] },
     /** VarPicker 使用的选项列表（分层：普通变量 / 常量 / 对象字段） */
     varPickerOptions() {
       return buildPickerOptions({ refs: this.projectRefs }).map(item => ({ ...item, catalogMode: this.referenceCatalogMode }))

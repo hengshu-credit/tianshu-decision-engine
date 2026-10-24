@@ -5,8 +5,7 @@ import { ElAutocomplete } from 'element-plus/es/components/autocomplete/index.mj
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 
 const wrappers = []
-function mountFilter(initialValue = '') {
-  const fetchOptions = vi.fn().mockResolvedValue({ records: ['risk_main', 'risk_other'], total: 2 })
+function mountFilter(initialValue = '', fetchOptions = vi.fn().mockResolvedValue({ records: ['risk_main', 'risk_other'], total: 2 })) {
   const wrapper = mount({
     components: { RemoteFilterSelect },
     data: () => ({ value: initialValue, queries: [] }),
@@ -111,5 +110,57 @@ describe('筛选框真实输入交互', () => {
     await input.trigger('keydown', { key: 'Enter' })
     await input.trigger('keyup', { key: 'Enter' })
     expect(wrapper.vm.queries).toEqual(['风控'])
+  })
+
+  test('输入后立即回车取消排队候选，继续输入才重新打开', async () => {
+    const { wrapper, input, fetchOptions } = mountFilter()
+    input.element.focus()
+    await input.setValue('risk')
+    await input.trigger('keydown', { key: 'Enter', code: 'Enter' })
+    await input.trigger('keyup', { key: 'Enter', code: 'Enter' })
+    await new Promise(resolve => setTimeout(resolve, 350))
+    await flushPromises()
+    expect(wrapper.vm.queries).toEqual(['risk'])
+    expect(fetchOptions).not.toHaveBeenCalled()
+    expect(wrapper.find('.el-autocomplete').attributes('aria-expanded')).toBe('false')
+    expect(input.element.value).toBe('risk')
+
+    await input.setValue('risk_')
+    await vi.waitFor(() => expect(fetchOptions).toHaveBeenCalledWith({ query: 'risk_', pageNum: 1, pageSize: 20 }))
+    await flushPromises()
+    expect(wrapper.find('.el-autocomplete').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.vm.queries).toEqual(['risk'])
+  })
+
+  test('回车后迟到的候选响应不改写输入或重新打开弹窗', async () => {
+    let resolve
+    const fetchOptions = vi.fn(() => new Promise(done => { resolve = done }))
+    const { wrapper, input } = mountFilter('risk', fetchOptions)
+    await flushPromises()
+    input.element.focus()
+    await vi.waitFor(() => expect(fetchOptions).toHaveBeenCalledTimes(1))
+    await input.trigger('keydown', { key: 'Enter', code: 'Enter' })
+    await input.trigger('keyup', { key: 'Enter', code: 'Enter' })
+    resolve({ records: ['risk_main'], total: 1 })
+    await new Promise(done => setTimeout(done, 350))
+    await flushPromises()
+    expect(wrapper.vm.queries).toEqual(['risk'])
+    expect(input.element.value).toBe('risk')
+    expect(fetchOptions).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.el-autocomplete').attributes('aria-expanded')).toBe('false')
+  })
+
+  test('主动用方向键选中候选后回车可按选定值查询', async () => {
+    const { wrapper, input } = mountFilter('risk')
+    await flushPromises()
+    input.element.focus()
+    await vi.waitFor(() => expect(document.querySelectorAll('.el-autocomplete-suggestion li')).toHaveLength(2))
+    await input.trigger('keydown', { key: 'ArrowDown', code: 'ArrowDown' })
+    await input.trigger('keydown', { key: 'Enter', code: 'Enter' })
+    await input.trigger('keyup', { key: 'Enter', code: 'Enter' })
+    await flushPromises()
+    expect(wrapper.vm.queries).toEqual(['risk_main'])
+    expect(input.element.value).toBe('risk_main')
+    expect(wrapper.find('.el-autocomplete').attributes('aria-expanded')).toBe('false')
   })
 })

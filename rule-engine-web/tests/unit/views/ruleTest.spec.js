@@ -1381,7 +1381,7 @@ describe('RuleTest — 执行与结果展示', () => {
     expect(definitionApi.createApiScenario).not.toHaveBeenCalled()
   })
 
-  test('载入固定用例完整替换输入，不残留旧手动参数或缺省的可选字段', async () => {
+  test('载入固定用例完整替换输入，不残留旧手动参数或缺省的可选内容', async () => {
     wrapper.vm.selectedRuleId = 4
     wrapper.vm.selectedRule = mockRules()[1]
     wrapper.vm.params = [

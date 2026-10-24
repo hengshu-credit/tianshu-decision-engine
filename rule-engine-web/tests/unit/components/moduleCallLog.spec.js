@@ -1,5 +1,7 @@
-import { shallowMount } from '@test-utils'
+import { mount, shallowMount } from '@test-utils'
 import { nextTick } from 'vue'
+import { flushPromises } from '@vue/test-utils'
+import { getLibrary } from '@/api/ruleList'
 
 import {
   getExternalApiStats,
@@ -13,10 +15,48 @@ describe('ModuleCallLog', () => {
     listRuntimeLogs.mockResolvedValue({ data: { records: [], total: 0 } })
     getExternalApiStats.mockResolvedValue({ data: { overview: {}, providers: [] } })
     getRuntimeCallPayload.mockResolvedValue({ data: {} })
+    getLibrary.mockImplementation(async id => ({ data: { id, listName: `名单${id}`, listCode: `list_${id}` } }))
   })
 
   afterEach(() => {
     vi.clearAllMocks()
+  })
+
+  test('名单详情以业务语言展示匹配过程，同时完整保留原始报文', async () => {
+    const wrapper = mount(ModuleCallLog, { props: { moduleType: 'LIST' } })
+    const request = { listIds: [4, 2], queryValues: ['测试手机号', 0, false], combinationMode: 'ALL_FIELDS_ANY_LIST', itemTypes: ['MOBILE', 'ID_CARD'], matchMode: 'IN_LIST' }
+    try {
+      await wrapper.vm.openDetail({ success: 1, requestBody: JSON.stringify(request), responseBody: '{"hit":false}' })
+      await flushPromises()
+      const trace = wrapper.find('.list-match-trace')
+      expect(trace.text()).toContain('未命中')
+      expect(trace.text()).toContain('全部内容各自命中任一名单')
+      expect(trace.text()).toContain('在名单内（精确匹配）')
+      expect(trace.text()).toContain('手机号、身份证')
+      expect(trace.findAll('.list-match-value').map(item => item.text())).toEqual(['测试手机号', '测试手机号', '0', '0', 'false', 'false'])
+      expect(trace.findAll('.match-library .content-ref__name').map(item => item.text())).toEqual(['名单4', '名单2', '名单4', '名单2', '名单4', '名单2'])
+      expect(trace.findAll('.match-library .content-ref__code').map(item => item.text())).toEqual(['list_4', 'list_2', 'list_4', 'list_2', 'list_4', 'list_2'])
+      expect(trace.text()).toContain('未记录逐项匹配明细')
+      expect(wrapper.find('.list-raw-payload summary').text()).toContain('原始报文')
+      const reports = wrapper.findAll('.list-raw-payload pre')
+      expect(JSON.parse(reports[0].text())).toEqual(request)
+      expect(JSON.parse(reports[1].text())).toEqual({ hit: false })
+    } finally { wrapper.unmount() }
+  })
+
+  test('名单执行失败或缺少结果不能显示为未命中，异常报文仍可排查', async () => {
+    const wrapper = mount(ModuleCallLog, { props: { moduleType: 'LIST' } })
+    try {
+      const failed = { success: 0, errorMessage: '名单服务超时', requestBody: '{broken', responseBody: '{"hit":false}' }
+      await wrapper.vm.openDetail(failed)
+      expect(wrapper.find('.list-match-trace').text()).toContain('匹配失败')
+      expect(wrapper.find('.list-match-trace').text()).not.toContain('未命中')
+      expect(wrapper.find('.list-raw-payload pre').text()).toBe('{broken')
+      expect(wrapper.vm.rowSummary(failed)).toContain('匹配失败')
+      await wrapper.vm.openDetail({ success: 1, requestBody: 'null', responseBody: '{}' })
+      expect(wrapper.find('.list-match-trace').text()).toContain('未记录匹配结果')
+      expect(wrapper.find('.list-match-trace').text()).not.toContain('未命中')
+    } finally { wrapper.unmount() }
   })
 
   test('草稿试运行与单次请求分别以中文展示并保留独立动作筛选值', async () => {

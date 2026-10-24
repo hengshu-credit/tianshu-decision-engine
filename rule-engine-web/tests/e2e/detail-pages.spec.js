@@ -84,6 +84,46 @@ async function expectPrimaryActions(page, names) {
   }
 }
 
+for (const colorScheme of ['LIGHT', 'DARK']) {
+  test(`${colorScheme} 详情返回箭头在窄屏可用且顶部不再出现版本按钮`, async ({ page }, testInfo) => {
+    test.setTimeout(60000)
+    const theme = {
+      schemaVersion: 1, colorScheme, accentPreset: 'LIQUID_PURPLE',
+      sidebarTheme: 'DARK', contentWidth: 'FLUID', fixedSidebar: true, colorWeak: false,
+    }
+    await page.addInitScript(value => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify(value)), theme)
+    const apiData = createDetailApiData()
+    apiData.set('/api/auth/console/preferences/theme', theme)
+    const { assertClean } = await installDistRoutes(page, { apiData })
+    for (const [path, destination] of [
+      ['/project/1', '/project'], ['/rule/101', '/rule'], ['/model/41', '/model'],
+      ['/list/9', '/list'], ['/datasource/source/21', '/datasource'],
+      ['/datasource/api/22', '/datasource?tab=api'], ['/database/31', '/database'], ['/experiment/detail/61', '/experiment'],
+    ]) {
+      await page.setViewportSize({ width: 1280, height: 800 })
+      await page.goto('http://tianshu.local/index.html#' + path)
+      await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme.toLowerCase())
+      const header = page.locator('.uiue-detail-header')
+      const back = header.getByRole('button', { name: '返回', exact: true })
+      await expect(back).toBeVisible()
+      await expect(back.locator('svg')).toBeVisible()
+      await expect(back).toHaveText('')
+      await expect(back).toHaveAttribute('title', /返回.+列表/)
+      await expect(back).toHaveCSS('width', '32px')
+      await expect(back).toHaveCSS('border-radius', '8px')
+      await expect(header.getByRole('button', { name: '版本', exact: true })).toHaveCount(0)
+      if (path === '/model/41') await page.screenshot({ path: testInfo.outputPath(`detail-header-${colorScheme}.png`) })
+      await page.setViewportSize({ width: 560, height: 800 })
+      await expect(back).toBeInViewport()
+      await expectNoRootOverflow(page)
+      // 按键激活与点击共用原有返回路径，接口详情须保留目标页签。
+      await back.press('Enter')
+      await expect(page).toHaveURL('http://tianshu.local/index.html#' + destination)
+    }
+    assertClean()
+  })
+}
+
 test('项目详情加载项目规则并保持内容可复制', async ({ page }) => {
   const errors = await openDetailPage(page, '/project/1')
   const title = page.getByText('E2E 项目', { exact: true }).first()
@@ -125,7 +165,7 @@ test('规则工作区详情加载输入输出字段且页签可操作', async ({
 })
 
 for (const colorScheme of ['LIGHT', 'DARK']) {
-  test(`${colorScheme} 冻结修订字段选择器展示完整标签且紧凑侧栏窄屏可操作`, async ({ page }) => {
+  test(`${colorScheme} 冻结修订内容选择器展示完整标签且紧凑侧栏窄屏可操作`, async ({ page }) => {
     const theme = {
       schemaVersion: 1, colorScheme, accentPreset: 'LIQUID_PURPLE',
       sidebarTheme: 'DARK', contentWidth: 'FLUID', fixedSidebar: true, colorWeak: false
@@ -223,23 +263,23 @@ test('规则工作区输入和输出的数据对象字段按对象父层和字�
   const errors = await openDetailPage(page, '/rule/101', apiData)
   await page.getByRole('tab', { name: /输入字段/ }).click()
   const inputHierarchy = page.getByTestId('input-field-hierarchy-2001')
-  await expect(inputHierarchy.locator('.rule-field-hierarchy__object-name')).toHaveText('评分字段')
-  await expect(inputHierarchy.locator('.rule-field-hierarchy__object-code')).toHaveText('score_f1_fields')
-  await expect(inputHierarchy.locator('.rule-field-hierarchy__field-name')).toHaveText('HYBASE_X115')
-  await expect(inputHierarchy.locator('.rule-field-hierarchy__field-path')).toHaveText('score_f1_fields.HYBASE_X115')
+  await expect(inputHierarchy.locator('.content-ref__name').first()).toHaveText('评分字段')
+  await expect(inputHierarchy.locator('.content-ref__code').first()).toHaveText('score_f1_fields')
+  await expect(inputHierarchy.locator('.content-ref__name').last()).toHaveText('HYBASE_X115')
+  await expect(inputHierarchy.locator('.content-ref__code').last()).toHaveText('score_f1_fields.HYBASE_X115')
 
   await page.getByRole('tab', { name: /输出字段/ }).click()
   const outputHierarchy = page.getByTestId('output-field-hierarchy-2002')
-  await expect(outputHierarchy.locator('.rule-field-hierarchy__object-name')).toHaveText('评分字段')
-  await expect(outputHierarchy.locator('.rule-field-hierarchy__field-name')).toHaveText('风险结果')
-  await expect(outputHierarchy.locator('.rule-field-hierarchy__field-path')).toHaveText('score_f1_fields.risk_result')
+  await expect(outputHierarchy.locator('.content-ref__name').first()).toHaveText('评分字段')
+  await expect(outputHierarchy.locator('.content-ref__name').last()).toHaveText('风险结果')
+  await expect(outputHierarchy.locator('.content-ref__code').last()).toHaveText('score_f1_fields.risk_result')
   await expectNoRootOverflow(page)
   expect(errors.pageErrors).toEqual([])
   expect(errors.consoleErrors).toEqual([])
   errors.assertClean()
 })
 
-test('开放接口字段选择器按规则设计样式展示类型、编码和名称', async ({ page }) => {
+test('开放接口内容选择器按规则设计样式展示类型、编码和名称', async ({ page }) => {
   const errors = await openDetailPage(page, '/rule/101', createEditableDetailApiData())
   const openApiTab = page.getByRole('tab', { name: /开放接口/ })
   await openApiTab.click()
@@ -257,7 +297,7 @@ test('开放接口字段选择器按规则设计样式展示类型、编码和�
   const responseSection = page.locator('.open-api-section').filter({
     has: page.getByText('响应字段映射', { exact: true })
   })
-  const selectedOutput = responseSection.locator('input[aria-label="打开字段与表达式选择器"]')
+  const selectedOutput = responseSection.locator('input[aria-label="打开内容选择器"]')
   await expect(selectedOutput).toHaveValue(/是否通过.*approved/)
 
   await expectNoRootOverflow(page)
@@ -450,7 +490,7 @@ test('模型详情加载输入输出字段且字段内容可复制', async ({ pa
   errors.assertClean()
 })
 
-test('模型转换方法及类型参数使用分页字段选择器，取消保留原配置', async ({ page }) => {
+test('模型转换方法及类型参数使用分页内容选择器，取消保留原配置', async ({ page }) => {
   const errors = await openDetailPage(page, '/model/41')
   await page.getByRole('tab', { name: /输出字段/ }).click()
   const row = page.getByRole('row').filter({ hasText: 'riskScore' })
@@ -495,20 +535,15 @@ test('新建外数接口页面字段与主操作正常显示', async ({ page }) 
   errors.assertClean()
 })
 
-test('规则生命周期和版本历史按稳定 ID 打开对应脚本内容', async ({ page }) => {
+test('规则生命周期和设计器版本选择按稳定 ID 打开对应脚本内容', async ({ page }) => {
   const errors = await openDetailPage(page, '/rule/101')
 
   await page.getByTestId('view-design').click()
   await page.waitForURL(/sourceType=REVISION.*sourceId=41/)
   await expect(page.getByRole('textbox', { name: /Editor content/ })).toHaveValue("result = 'revision-41'")
 
-  await page.goto('http://tianshu.local/index.html#/rule/101')
-  await expect(page.getByRole('main')).toBeVisible()
-  await page.getByRole('button', { name: '版本', exact: true }).click()
-  await page.getByRole('button', { name: '早期历史快照', exact: true }).click()
-  const versionDialog = page.locator('.el-dialog').filter({ hasText: '版本历史' })
-  await expect(versionDialog).toBeVisible()
-  await versionDialog.getByRole('button', { name: '查看设计', exact: true }).click()
+  await page.getByTestId('designer-version-select').click()
+  await page.getByRole('option', { name: /^生产 · 2 \/ / }).click()
   await page.waitForURL(/sourceType=VERSION.*sourceId=81/)
   await expect(page.getByRole('textbox', { name: /Editor content/ })).toHaveValue("result = 'version-81'")
   await expect(

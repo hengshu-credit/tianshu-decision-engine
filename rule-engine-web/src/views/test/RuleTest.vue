@@ -541,6 +541,7 @@
 </template>
 
 <script>
+import ElIconLoading from '@/components/common/AppLoadingIcon.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import RegressionReportDrawer from '@/components/rule/RegressionReportDrawer.vue'
@@ -552,7 +553,6 @@ import {
   Plus as ElIconPlus,
   MagicStick as ElIconMagicStick,
   Delete as ElIconDelete,
-  Loading as ElIconLoading,
 } from '@element-plus/icons-vue'
 import { listProjects } from '@/api/project'
 import {

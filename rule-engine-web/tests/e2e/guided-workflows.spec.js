@@ -429,7 +429,7 @@ test('新建字段按业务取值方式引导并可在送审前预览外数结�
     .locator('input').fill('风险分')
   await dialog.locator('.el-form-item').filter({ hasText: '接口配置' })
     .locator('input').click()
-  await page.locator('.fp-panel:visible .fp-row').filter({ hasText: 'credit_query' }).locator('.fp-name').dblclick()
+  await page.locator('.fp-panel:visible .fp-row').filter({ hasText: 'credit_query' }).locator('.content-ref__name').dblclick()
 
   await expect(dialog.getByText('3 / 4 已就绪', { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: /预览取值|真实调用测试/, exact: true }).click()

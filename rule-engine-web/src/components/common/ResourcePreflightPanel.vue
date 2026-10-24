@@ -195,12 +195,6 @@ export default {
 }
 .resource-preflight-title { color: var(--tianshu-text-primary); font-weight: 700; }
 .resource-preflight-subtitle { margin-top: 4px; color: var(--tianshu-text-tertiary); font-size: 12px; line-height: 1.6; }
-.resource-preflight-panel :deep(.resource-preflight-button.is-disabled) {
-  background-color: var(--el-color-primary-dark-1) !important;
-  border-color: var(--el-color-primary-dark-1) !important;
-  color: #fff !important;
-  opacity: 0.72;
-}
 @media (max-width: 720px) {
   .resource-preflight-heading { align-items: stretch; flex-direction: column; }
 }

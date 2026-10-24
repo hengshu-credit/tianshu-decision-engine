@@ -85,6 +85,15 @@ public class ConsoleAuthControllerTest {
         JSONObject body = response(result).getJSONObject("data");
         assertEquals("reviewer", body.getString("username"));
         assertTrue(body.getJSONArray("permissions").contains("approval:view"));
+        String loginTime = java.time.Instant.ofEpochMilli(session.getCreationTime()).toString();
+        assertEquals(loginTime, body.getString("loginTime"));
+        for (int i = 0; i < 2; i++) {
+            JSONObject me = response(mockMvc.perform(get("/api/auth/console/me").session(session)).andReturn()).getJSONObject("data");
+            assertEquals(loginTime, me.getString("loginTime"));
+        }
+        mockMvc.perform(post("/api/auth/console/logout").session(session));
+        assertTrue(session.isInvalid());
+        assertEquals("301001", response(mockMvc.perform(get("/api/auth/console/me")).andReturn()).getString("code"));
     }
 
     @Test
@@ -103,6 +112,7 @@ public class ConsoleAuthControllerTest {
 
         assertEquals(9L, data.getLongValue("userId"));
         assertEquals("reviewer", data.getString("displayName"));
+        assertEquals(java.time.Instant.ofEpochMilli(session.getCreationTime()).toString(), data.getString("loginTime"));
         assertTrue(data.getJSONArray("roleCodes").contains("REVIEWER"));
         assertTrue(data.getJSONArray("permissions").contains("approval:view"));
     }

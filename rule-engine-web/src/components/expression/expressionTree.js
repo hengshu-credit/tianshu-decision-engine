@@ -4,9 +4,9 @@ import {
   createFunctionOperand,
   createLiteralOperand,
   createOperationOperand,
-  inferOperandType,
-  OPERATION_OPERATORS
+  inferOperandType
 } from '@/utils/operand'
+import { CONTENT_OPERATORS as OPERATION_OPERATORS, noRightOperand, operationOptions, operationPrecedence, operationRightType } from '@/utils/contentOperation'
 
 export function getExpressionNode(root, path = []) {
   return (path || []).reduce((node, key) => node == null ? null : node[key], root)
@@ -82,6 +82,8 @@ export function replaceExpressionOperator(root, path, operator) {
   }
   const next = cloneOperand(location.parent)
   next.terms[location.index].operator = operator
+  if (noRightOperand(operator)) delete next.terms[location.index].operand
+  else if (!next.terms[location.index].operand) next.terms[location.index].operand = null
   return { root: setExpressionNode(root, location.parentPath, next), selectedPath: path.slice(), changed: true }
 }
 
@@ -92,6 +94,7 @@ export function expressionChildEntries(node, basePath = []) {
     return (node.terms || []).map((term, index) => ({
       label: '运算项 ' + (index + 1),
       operator: index === 0 ? '' : (term.operator || ''),
+      noValue: noRightOperand(term.operator),
       termIndex: index,
       path: basePath.concat(['terms', index, 'operand']),
       value: term.operand
@@ -104,6 +107,31 @@ export function expressionChildEntries(node, basePath = []) {
   if (node.kind === 'CAST') return [{ label: '待转换值', path: basePath.concat(['operand']), value: node.operand }]
   if (node.kind === 'ARRAY') return (node.items || []).map((value, index) => ({ label: '元素 ' + (index + 1), path: basePath.concat(['items', index]), value }))
   return []
+}
+
+export function expressionOperatorOptions(node, index) {
+  return OPERATION_OPERATORS.flatMap(operator => operationOptions(expressionLeftType(node, index, operator)).filter(option => option.value === operator))
+}
+export function expressionLeftType(node, index, operator = node?.terms?.[index]?.operator) {
+  if (index <= 1) return inferOperandType(node?.terms?.[0]?.operand)
+  // 与执行器使用相同的优先级，避免 a > b && text contains x 把 text 误判为布尔。
+  const values = [], operators = []
+  const apply = () => {
+    const right = values.pop(), left = values.pop(), op = operators.pop()
+    values.push(inferOperandType({ kind: 'OPERATION', terms: [{ operand: { kind: 'LITERAL', valueType: left } }, { operator: op, operand: { kind: 'LITERAL', valueType: right } }] }))
+  }
+  node.terms.slice(0, index).forEach((term, i) => {
+    if (!i) { values.push(inferOperandType(term.operand)); return }
+    if (noRightOperand(term.operator)) { values.pop(); values.push('BOOLEAN'); return }
+    while (operators.length && operationPrecedence(operators.at(-1)) >= operationPrecedence(term.operator)) apply()
+    operators.push(term.operator)
+    values.push(inferOperandType(term.operand))
+  })
+  while (operators.length && operationPrecedence(operators.at(-1)) >= operationPrecedence(operator)) apply()
+  return values.at(-1) || ''
+}
+export function expressionRightType(node, index) {
+  return operationRightType(node?.terms?.[index]?.operator, expressionLeftType(node, index))
 }
 
 export function expressionPathKey(path = []) {
@@ -149,7 +177,7 @@ export function existingCollapsedPaths(root, collapsedPathKeys = []) {
 export function firstEditablePath(node, basePath = []) {
   const children = expressionChildEntries(node, basePath)
   if (!children.length) return basePath
-  const empty = children.find(entry => !entry.value)
+  const empty = children.find(entry => !entry.noValue && !entry.value)
   if (empty) return empty.path
   return children[0].path
 }
@@ -196,13 +224,14 @@ export function insertExpressionOperation(root, selectedPath = [], operator) {
   const path = selectedPath.slice()
   const current = getExpressionNode(root, path)
   const location = operationTermLocation(root, path)
+  const term = noRightOperand(operator) ? { operator } : { operator, operand: null }
   if (!current && location && location.index > 0) {
     return replaceExpressionOperator(root, path, operator)
   }
   if (current && current.kind === 'OPERATION') {
     const next = cloneOperand(current)
     const index = (next.terms || []).length
-    next.terms = (next.terms || []).concat([{ operator, operand: null }])
+    next.terms = (next.terms || []).concat([term])
     return {
       root: setExpressionNode(root, path, next),
       selectedPath: path.concat(['terms', index, 'operand']),
@@ -216,7 +245,7 @@ export function insertExpressionOperation(root, selectedPath = [], operator) {
     const parent = getExpressionNode(root, parentPath)
     if (parent && parent.kind === 'OPERATION' && Number.isInteger(index)) {
       const next = cloneOperand(parent)
-      next.terms.splice(index + 1, 0, { operator, operand: null })
+      next.terms.splice(index + 1, 0, term)
       return {
         root: setExpressionNode(root, parentPath, next),
         selectedPath: parentPath.concat(['terms', index + 1, 'operand']),

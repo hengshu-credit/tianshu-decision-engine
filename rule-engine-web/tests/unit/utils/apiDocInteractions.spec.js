@@ -8,7 +8,7 @@ const doc = {
     { authType: 'BASIC', authName: 'Basic' }
   ],
   rules: [
-    { id: 8, ruleCode: 'RISK', ruleName: '风险决策', inputVariables: [{ varCode: 'customer.age', varType: 'INTEGER', exampleValue: 17 }] },
+    { id: 8, ruleCode: 'RISK', ruleName: '风险决策', inputVariables: [{ varCode: 'customer.age', varType: 'INTEGER', exampleValue: 17 }], openApiEnabled: true, openApiContract: { requestMappings: [{ sourceType: 'BODY', sourcePath: '$.age', targetType: 'INTEGER', defaultValue: 18 }] } },
     { id: 9, ruleCode: 'SECOND', ruleName: '第二接口', inputVariables: [{ varCode: 'amount', varType: 'INTEGER', exampleValue: 100 }] }
   ]
 }
@@ -38,6 +38,48 @@ describe('导出 API 文档真实脚本交互', () => {
   })
 
   afterEach(() => dom.window.close())
+
+  test('目录支持名称和编码搜索，清空恢复所有接口且无结果时给出提示', () => {
+    const page = dom.window.document
+    const search = page.getElementById('endpoint-search')
+    const filter = value => { search.value = value; search.dispatchEvent(new dom.window.Event('input')) }
+    filter('risk')
+    expect(page.querySelector('[data-endpoint-nav="8"]').hidden).toBe(false)
+    expect(page.querySelector('[data-endpoint-nav="9"]').hidden).toBe(true)
+    filter('第二')
+    expect(page.querySelector('[data-endpoint-nav="9"]').hidden).toBe(false)
+    filter('不存在的接口')
+    expect(page.getElementById('endpoint-search-empty').hidden).toBe(false)
+    filter('')
+    expect([...page.querySelectorAll('[data-endpoint-nav]')].every(link => !link.hidden)).toBe(true)
+    expect(page.getElementById('endpoint-search-empty').hidden).toBe(true)
+  })
+
+  test('两种执行入口的代码页签独立，调试入口与 Body、cURL 保持一致', async () => {
+    const page = dom.window.document
+    const ids = [...page.querySelectorAll('[id]')].map(element => element.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    page.querySelector('[data-tab-target="code-RISK-open-0-python"]').click()
+    expect(page.getElementById('code-RISK-open-0-python').classList.contains('active')).toBe(true)
+    expect(page.getElementById('code-RISK-sync-0-shell').classList.contains('active')).toBe(true)
+    expect(page.getElementById('runner-body-panel').classList.contains('active')).toBe(true)
+    const entry = page.getElementById('runner-entry')
+    entry.value = 'open'
+    entry.dispatchEvent(new dom.window.Event('change'))
+    expect(page.getElementById('runner-path').textContent).toBe('/api/rule/openapi/RISK')
+    expect(JSON.parse(page.getElementById('runner-body').value)).toEqual({ age: 18 })
+    page.getElementById('runner-copy-curl').click()
+    await vi.waitFor(() => expect(dom.window.navigator.clipboard.writeText).toHaveBeenCalled())
+    const curl = dom.window.navigator.clipboard.writeText.mock.calls[0][0]
+    expect(curl).toContain('/api/rule/openapi/RISK')
+    expect(curl).toContain('"age": 18')
+    expect(curl).not.toContain('clientAppName')
+    page.querySelector('[data-endpoint-nav="9"]').click()
+    expect(entry.value).toBe('sync')
+    expect(entry.querySelector('[value="open"]').disabled).toBe(true)
+    expect(page.getElementById('runner-path').textContent).toBe('/api/rule/sync/execute/SECOND')
+    expect(JSON.parse(page.getElementById('runner-body').value).params).toEqual({ amount: 100 })
+  })
 
   test('完整 HTML 启动无脚本异常，页签和接口按钮均能切换内容', () => {
     expect(errors).toEqual([])
@@ -200,7 +242,7 @@ describe('导出 API 文档真实脚本交互', () => {
     reader.readAsText(createUrl.mock.calls[0][0])
     const exported = JSON.parse(await content)
     expect(exported.openapi).toBe('3.1.0')
-    expect(Object.keys(exported.paths)).toEqual(['/api/rule/sync/execute/RISK', '/api/rule/sync/execute/SECOND'])
+    expect(Object.keys(exported.paths)).toEqual(['/api/rule/sync/execute/RISK', '/api/rule/openapi/RISK', '/api/rule/sync/execute/SECOND'])
     await vi.waitFor(() => expect(dom.window.URL.revokeObjectURL).toHaveBeenCalledWith('blob:api-doc'))
     expect(errors).toEqual([])
   })

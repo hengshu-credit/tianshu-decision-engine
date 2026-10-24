@@ -21,11 +21,25 @@ function mountPanel(compileResult = null) {
 }
 
 describe('ScriptPanel', () => {
-  test('历史源码标明所选版本，保留原始文本且只读', () => {
+  test('等待 Monaco 正常加载，明确加载失败才降级且保留原始源码', async () => {
+    const { wrapper } = mountPanel({ compileSuccess: true, compiledScript: 'return age;' })
+    expect(wrapper.vm.showFallbackEditor).toBe(false)
+    wrapper.findComponent({ name: 'MonacoEditor' }).vm.$emit('load-error')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('textarea').element.value).toBe('return age;')
+    expect(wrapper.get('textarea').element.readOnly).toBe(true)
+    wrapper.unmount()
+  })
+  test('历史源码标明所选版本，保留原始文本且只读', async () => {
     const script = '// version 3\nreturn 42;\n'
     const { wrapper } = mountPanel({ compileSuccess: true, compiledScript: script, saved: true, sourceLabel: '版本 3' })
-    expect(wrapper.find('textarea').element.value).toBe(script)
-    expect(wrapper.find('textarea').element.readOnly).toBe(true)
+    const editor = wrapper.findComponent({ name: 'MonacoEditor' })
+    expect(editor.props('value')).toBe(script)
+    expect(editor.props('readOnly')).toBe(true)
+    editor.vm.$emit('load-error', new Error('editor unavailable'))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('textarea').element.value).toBe(script)
+    expect(wrapper.get('textarea').element.readOnly).toBe(true)
     expect(wrapper.text()).toContain('显示版本 3已保存的编译源码')
     expect(wrapper.text()).toContain('已保存源码')
     wrapper.unmount()
@@ -63,18 +77,21 @@ describe('ScriptPanel', () => {
 
     expect(wrapper.text()).toContain('脚本已生成')
     expect(wrapper.vm.editScript).toBe('result = input.score;')
-    expect(wrapper.find('textarea').element.readOnly).toBe(true)
+    expect(wrapper.findComponent({ name: 'MonacoEditor' }).props('value')).toBe('result = input.score;')
+    expect(wrapper.findComponent({ name: 'MonacoEditor' }).props('readOnly')).toBe(true)
     wrapper.unmount()
   })
 
-  test('未检查状态提示从顶部唯一入口生成脚本', () => {
+  test('未检查状态提示从顶部唯一入口生成脚本', async () => {
     const { wrapper } = mountPanel()
 
     expect(wrapper.text()).toContain('由顶部“编译”生成')
     expect(wrapper.text()).not.toContain('保存并编译仅更新草稿')
     expect(wrapper.find('[data-testid="designer-lifecycle-guidance"]').exists())
       .toBe(false)
-    expect(wrapper.find('textarea').attributes('placeholder'))
+    wrapper.findComponent({ name: 'MonacoEditor' }).vm.$emit('load-error', new Error('editor unavailable'))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.vm.placeholder)
       .toBe('请先点击顶部“编译”生成脚本')
     wrapper.unmount()
   })

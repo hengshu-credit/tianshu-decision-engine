@@ -89,7 +89,7 @@ describe('Login Element Plus 输入框契约', () => {
 })
 
 describe('Login 登录按钮加载态契约', () => {
-  test('加载时保持主题背景并仅轻微降低透明度', () => {
+  test('加载时保持主题背景并保持文字对比度', () => {
     const loading = declarationBlock(
       '.login-btn.el-button--primary.is-loading[data-v-login-contract]:disabled'
     )
@@ -98,12 +98,9 @@ describe('Login 登录按钮加载态契约', () => {
     )
     const opacity = Number(loading.match(/opacity:\s*([\d.]+)/)?.[1])
 
-    expect(loading).toContain(
-      'background: var(--tianshu-brand-button-background) !important'
-    )
-    expect(loading).toContain('border-color: var(--el-color-primary) !important')
+    expect(loading).not.toMatch(/(?:background|color|filter):/)
     expect(opacity).toBeGreaterThanOrEqual(0.85)
-    expect(opacity).toBeLessThan(1)
+    expect(opacity).toBe(1)
     expect(loadingMask).toContain('background-color: transparent')
   })
 })

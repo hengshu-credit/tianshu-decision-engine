@@ -4,17 +4,7 @@
     :class="{ 'is-compact': compact, 'is-resizing': resizing }"
     :style="{ width: width + 'px' }"
   >
-    <div class="sidebar-brand">
-      <img
-        :src="brandLogoUrl"
-        alt="天枢决策引擎"
-        class="sidebar-brand__logo"
-      />
-      <div v-if="!compact" class="brand-copy">
-        <strong>天枢决策引擎</strong>
-        <span>天工开物，枢衡定策</span>
-      </div>
-    </div>
+    <navigation-brand :brand="brand" :compact="compact" />
 
     <nav class="sidebar-menu" aria-label="主导航">
       <button
@@ -58,9 +48,12 @@
 <script>
 import { $emit } from '../../utils/gogocodeTransfer'
 import { clampSidebarWidth } from '@/layout/layoutState'
+import NavigationBrand from '@/components/common/NavigationBrand.vue'
+import { systemBrand } from '@/system/systemBrand'
 
 export default {
   name: 'LayoutSidebar',
+  components: { NavigationBrand },
   props: {
     width: { type: Number, required: true },
     compact: { type: Boolean, default: false },
@@ -69,7 +62,7 @@ export default {
   },
   data() {
     return {
-      brandLogoUrl: `${import.meta.env.BASE_URL || './'}images/hengshucredit_animated.svg`,
+      brand: systemBrand,
       resizing: false,
       resizeStartX: 0,
       resizeStartWidth: 0,
@@ -127,46 +120,6 @@ export default {
   &.is-resizing {
     transition: none;
     user-select: none;
-  }
-}
-.sidebar-brand {
-  position: relative;
-  display: flex;
-  flex: none;
-  align-items: center;
-  min-height: 60px;
-  padding: 0 16px;
-  overflow: hidden;
-  border-bottom: 1px solid var(--tianshu-sidebar-border, rgba(255, 255, 255, 0.08));
-}
-.sidebar-brand__logo {
-  flex: none;
-  width: 36px;
-  height: 36px;
-}
-.brand-copy {
-  display: flex;
-  min-width: 0;
-  margin-left: 10px;
-  flex-direction: column;
-  strong {
-    overflow: hidden;
-    color: var(--tianshu-sidebar-text-active, #ffffff);
-    font-size: 16px;
-    font-weight: 600;
-    line-height: 22px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  span {
-    overflow: hidden;
-    margin-top: 2px;
-    color: #22d3ee;
-    font-size: 12px;
-    line-height: 16px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 }
 .sidebar-collapse {
@@ -294,17 +247,9 @@ export default {
       background: var(--el-color-primary, #7180ff);
 }
 
-:global([data-sidebar-theme='light']) .brand-copy strong {
-  color: var(--tianshu-text-primary, #172033);
-}
 
 }
 .layout-sidebar.is-compact {
-  .sidebar-brand {
-    padding: 0;
-    justify-content: center;
-  }
-
   .sidebar-menu {
     padding-right: 10px;
     padding-left: 10px;

@@ -13,12 +13,12 @@ describe('FieldReferenceDisplay', () => {
       },
     })
 
-    const type = wrapper.find('.field-reference-display__type')
-    expect(type.text()).toBe('i')
-    expect(type.attributes('title')).toBe('整数')
-    expect(type.classes()).toContain('field-reference-display__type--i')
-    expect(wrapper.find('.field-reference-display__code').text()).toBe('age')
-    expect(wrapper.find('.field-reference-display__name').text()).toBe('年龄')
+    const type = wrapper.find('.content-ref__type')
+    expect(type.text()).toBe('123')
+    expect(type.attributes('title')).toContain('INTEGER')
+    expect(type.classes()).toContain('content-ref__type--number')
+    expect(wrapper.find('.content-ref__code').text()).toBe('age')
+    expect(wrapper.find('.content-ref__name').text()).toBe('年龄')
   })
 
   test('未知类型使用问号标识且缺少名称时回退到字段编码', () => {
@@ -32,9 +32,9 @@ describe('FieldReferenceDisplay', () => {
       },
     })
 
-    expect(wrapper.classes()).toContain('field-reference-display--compact')
-    expect(wrapper.find('.field-reference-display__type').text()).toBe('?')
-    expect(wrapper.find('.field-reference-display__name').text()).toBe(
+    expect(wrapper.find('.content-ref--wrap').exists()).toBe(false)
+    expect(wrapper.find('.content-ref__type').text()).toBe('?')
+    expect(wrapper.find('.content-ref__name').text()).toBe(
       'custom_field'
     )
   })

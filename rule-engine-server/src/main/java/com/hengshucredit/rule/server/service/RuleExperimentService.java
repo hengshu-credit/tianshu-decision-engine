@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
+import static com.hengshucredit.rule.server.service.SafeLogJson.toJsonSafely;
+
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -920,25 +922,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         return trace;
     }
 
-    private String toJsonSafely(Object value) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            return JSON.toJSONString(value);
-        } catch (StackOverflowError e) {
-            return "{\"error\":\"JSON_SERIALIZE_STACK_OVERFLOW\"}";
-        } catch (Exception e) {
-            return "{\"error\":\"JSON_SERIALIZE_FAILED\",\"message\":\"" + escapeJson(e.getMessage()) + "\"}";
-        }
-    }
 
-    private String escapeJson(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
 
     private RuleExperimentGroupResult skippedTestResult(RuleExperimentGroup group, String reason) {
         RuleExperimentGroupResult result = new RuleExperimentGroupResult();

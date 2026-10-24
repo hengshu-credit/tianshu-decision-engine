@@ -48,6 +48,8 @@ public class RuleEngineClient {
     private final Object lifecycleLock = new Object();
     private LifecycleState lifecycleState = LifecycleState.STOPPED;
     private ScheduledExecutorService scheduler;
+    private volatile com.hengshucredit.rule.model.ExternalCodeMapping codeMapping = com.hengshucredit.rule.model.ExternalCodeMapping.DEFAULT;
+    public com.hengshucredit.rule.model.ExternalCodeMapping getCodeMapping() { return codeMapping; }
 
     private RuleEngineClient(RuleEngineClientConfig config, RedisConnectionFactory connectionFactory,
                              ExecutionLogReporter externalReporter, ApplicationContext applicationContext) {
@@ -158,7 +160,7 @@ public class RuleEngineClient {
      * 执行规则，是否采集表达式追踪由 traceEnabled 配置决定（默认开启）。
      */
     public RuleResult execute(String ruleCode, Map<String, Object> params) {
-        return doExecute(ruleCode, params);
+        return externalResult(() -> doExecute(ruleCode, params));
     }
 
     public RuleExperimentExecuteResult executeExperiment(String experimentCode,
@@ -195,17 +197,27 @@ public class RuleEngineClient {
     @SuppressWarnings("unchecked")
     public RuleResult execute(String ruleCode, Object paramObj) {
         if (paramObj == null) {
-            return doExecute(ruleCode, Collections.emptyMap());
+            return externalResult(() -> doExecute(ruleCode, Collections.emptyMap()));
         }
         if (paramObj instanceof Map) {
-            return doExecute(ruleCode, (Map<String, Object>) paramObj);
+            return externalResult(() -> doExecute(ruleCode, (Map<String, Object>) paramObj));
         }
-        return doExecute(ruleCode, paramObj);
+        return externalResult(() -> doExecute(ruleCode, paramObj));
+    }
+
+    private RuleResult externalResult(java.util.function.Supplier<RuleResult> action) {
+        try {
+            RuleResult result = action.get();
+            return config.isServerSideExecution() ? result : result.mapExternal(codeMapping);
+        } catch (com.hengshucredit.rule.model.PlatformException error) {
+            if (!config.isServerSideExecution() && !error.externalMapping().enabled()) error.mapExternal(codeMapping);
+            throw error;
+        }
     }
 
     public RuleResult executeRequest(String ruleCode, com.hengshucredit.rule.model.RuleExecutionRequest input) {
-        return doExecute(ruleCode, input.getParams(), input.getTraceEnabled() == null ? config.isTraceEnabled() : input.getTraceEnabled(),
-                input.getClientAppName() == null ? config.getAppName() : input.getClientAppName());
+        return externalResult(() -> doExecute(ruleCode, input.getParams(), input.getTraceEnabled() == null ? config.isTraceEnabled() : input.getTraceEnabled(),
+                input.getClientAppName() == null ? config.getAppName() : input.getClientAppName()));
     }
 
     private RuleResult doExecute(String ruleCode, Map<String, Object> params) {
@@ -454,6 +466,8 @@ public class RuleEngineClient {
                 return;
             }
             l1Cache.replaceSnapshot(rules);
+            try { codeMapping = httpSyncClient.fetchCodeMapping(); }
+            catch (RuntimeException error) { log.warn("结果码映射同步失败，保留上一生效版本: {}", error.getMessage()); }
             log.debug("Full sync completed, {} rules", rules.size());
         } catch (ProjectClientAuthenticationException e) {
             throw e;

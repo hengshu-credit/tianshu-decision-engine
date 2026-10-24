@@ -172,7 +172,9 @@ export default {
         && this.referenceCatalogMode !== 'UNAVAILABLE' && !this.loadingVars
     },
     designerTestExecutionSource() {
-      if (this.designerHasUnsavedChanges || this.designerReferencePreview) return previewTestSource(this.viewRevision, this.definitionId || this.$route?.params?.id)
+      const localHistoricalSource = this.frozenReferenceCatalog?.referenceNamespace === 'LOCAL'
+        && this.viewRevision && !['DRAFT', 'LEGACY'].includes(this.viewRevision.state)
+      if (this.designerHasUnsavedChanges || this.designerReferencePreview || localHistoricalSource) return previewTestSource(this.viewRevision, this.definitionId || this.$route?.params?.id)
       return revisionTestSource(this.viewRevision)
     },
     designerHasUnsavedChanges() {

@@ -48,14 +48,7 @@
             <span class="dtt-leaf-task" v-if="child.taskName"
               >{{ child.taskName }}：</span
             >
-            <span class="dtt-leaf-var" v-if="child.resultVar"
-              >{{
-                child.resultVarLabel ||
-                varMap[child.resultVar] ||
-                child.resultVar
-              }}
-              =
-            </span>
+            <span class="dtt-leaf-var" v-if="child.resultVar"><content-reference mode="trace" :value="child.resultOperand || { varCode: child.resultVar, varLabel: child.resultVarLabel || varMap[child.resultVar], varType: child.resultVarType }" /> = </span>
             <span class="dtt-leaf-val">{{ child.label }}</span>
           </div>
           <!-- 叶子节点关联的函数调用 -->
@@ -70,7 +63,7 @@
               :class="{ 'dtt-func-item--hit': child.status === 'hit' }"
             >
               <span class="dtt-func-icon">ƒ</span>
-              <code class="dtt-func-name">{{ funcDisplayName(fc.name) }}</code>
+              <content-reference mode="trace" :value="{ refType: 'FUNCTION', code: fc.name, label: funcDisplayName(fc.name), version: fc.version, valueType: fc.returnType }" />
               <span class="dtt-func-expr"
                 >({{
                   fc.args
@@ -99,9 +92,10 @@
 </template>
 
 <script>
+import ContentReference from './ContentReference.vue'
 import { ArrowRight as ElIconArrowRight } from '@element-plus/icons-vue'
 export default {
-  components: {
+  components: { ContentReference,
     ElIconArrowRight,
   },
   name: 'DecisionTreeTraceNode',

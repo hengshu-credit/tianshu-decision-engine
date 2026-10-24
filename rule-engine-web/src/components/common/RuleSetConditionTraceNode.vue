@@ -16,22 +16,23 @@
   </div>
   <div v-else class="rs-trace-leaf" :class="resultClass">
     <div class="rs-trace-leaf-var">
-      <code>{{ node.varCode }}</code>
-      <span>{{ node.varName }}</span>
+      <content-reference mode="trace" :value="node.contentOperand || { varCode: node.varCode, varLabel: node.varName, varType: node.varType }" />
     </div>
     <span class="rs-trace-leaf-part"
       >{{ node.actualSource === 'input' ? '输入值' : '实际值' }} <strong>{{ node.actualText }}</strong></span
     >
     <span class="rs-trace-leaf-op">{{ node.operatorText }}</span>
-    <span class="rs-trace-leaf-part"
-      >阈值 <strong>{{ node.thresholdText }}</strong></span
+    <span v-if="node.hasThreshold !== false" class="rs-trace-leaf-part"
+      ><content-reference mode="trace" v-if="node.thresholdOperand" :value="node.thresholdOperand" /><template v-else>阈值 <strong>{{ node.thresholdText }}</strong></template></span
     >
     <span class="rs-trace-leaf-result">{{ resultText }}</span>
   </div>
 </template>
 
 <script>
+import ContentReference from './ContentReference.vue'
 export default {
+  components: { ContentReference },
   name: 'RuleSetConditionTraceNode',
   props: {
     node: { type: Object, required: true },

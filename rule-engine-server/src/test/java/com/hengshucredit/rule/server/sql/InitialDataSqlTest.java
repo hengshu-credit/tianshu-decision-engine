@@ -56,6 +56,9 @@ public class InitialDataSqlTest {
         Assert.assertTrue(sql.contains("'contact'"));
         Assert.assertTrue(sql.contains("'credit_id'"));
         Assert.assertTrue(sql.contains("'authorization_for_contracts_execution'"));
+        for (String demoSource : java.util.List.of("black_hit", "engine_bdrules", "black_user_count")) {
+            Assert.assertFalse("演示来源变量应由样例脚本在真实依赖就绪后创建", sql.contains("'" + demoSource + "'"));
+        }
     }
 
     private static int statementEnd(String sql, int start) {

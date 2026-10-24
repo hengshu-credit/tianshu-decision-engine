@@ -35,6 +35,7 @@ public class HttpSyncClient {
     private final String serverUrl;
     private final HttpUrl baseUrl;
     private final ClientRequestAuthenticator authenticator;
+    private volatile boolean codeMappingAvailable;
 
     public HttpSyncClient(String serverUrl, int timeoutMs) {
         this(serverUrl, timeoutMs, (ClientRequestAuthenticator) null);
@@ -67,6 +68,21 @@ public class HttpSyncClient {
     public CachedRule fetchRule(String ruleCode) {
         requiredPathSegment(ruleCode, "ruleCode");
         return fetchRulePath(ruleUrl(ruleCode, null));
+    }
+
+    public com.hengshucredit.rule.model.ExternalCodeMapping fetchCodeMapping() {
+        if (!codeMappingAvailable) return com.hengshucredit.rule.model.ExternalCodeMapping.DEFAULT;
+        try {
+            Request request = authenticate(new Request.Builder().url(serverUrl + "/api/rule/sync/system-code-mapping").get().build());
+            try (Response response = httpClient.newCall(request).execute()) {
+                if (response.code() == 404) return com.hengshucredit.rule.model.ExternalCodeMapping.DEFAULT;
+                JSONObject body = PlatformHttpResponses.read(response);
+                PlatformHttpResponses.requireSuccess(response, body);
+                JSONObject data = body.getJSONObject("data");
+                if (data == null) throw PlatformHttpResponses.invalid(response.code());
+                return com.hengshucredit.rule.model.ExternalCodeMapping.from(data.getLongValue("version"), data);
+            }
+        } catch (java.io.IOException error) { throw new IllegalStateException("结果码映射同步失败", error); }
     }
 
     public CachedRule fetchRuleById(Long ruleId, Long bindingId) {
@@ -112,6 +128,7 @@ public class HttpSyncClient {
                     .get();
             Request request = authenticate(requestBuilder.build());
             try (Response response = httpClient.newCall(request).execute()) {
+                codeMappingAvailable = response.header(com.hengshucredit.rule.model.ExternalCodeMapping.VERSION_HEADER) != null;
                 throwIfAuthenticationFailure(response);
                 if (!response.isSuccessful() || response.body() == null) {
                     log.warn("Failed to fetch all rules: HTTP {}", response.code());
@@ -245,9 +262,7 @@ public class HttpSyncClient {
         requiredPathSegment(traceId, "traceId");
         try (Response response = executeRequest(stateUrl(traceId, false), null, true)) {
             JSONObject envelope = PlatformHttpResponses.read(response);
-            PlatformHttpResponses.requireSuccess(response, envelope);
-            if (!(envelope.get("data") instanceof JSONObject)) throw PlatformHttpResponses.invalid(response.code());
-            return envelope.getJSONObject("data").toJavaObject(RuleExecutionStatus.class);
+            return PlatformHttpResponses.executionStatus(response, envelope);
         } catch (java.io.IOException e) {
             throw unknown(traceId);
         }
@@ -304,7 +319,8 @@ public class HttpSyncClient {
             return authenticator == null ? request : authenticator.authenticate(request);
         } catch (java.io.IOException e) {
             if (e instanceof com.hengshucredit.rule.client.auth.ProjectTokenExchangeException token) {
-                throw new ProjectClientAuthenticationException(token.platformStatus(), null);
+                var mapped = new ProjectClientAuthenticationException(token.platformStatus(), null);
+                mapped.mapExternal(token.mapping()); throw mapped;
             }
             throw new ProjectClientAuthenticationException(PlatformCode.UPSTREAM_CALL_FAILED,
                     "Project authentication failed: " + e.getMessage(), e);
@@ -317,7 +333,8 @@ public class HttpSyncClient {
         }
         try {
             JSONObject body = PlatformHttpResponses.read(response);
-            throw new ProjectClientAuthenticationException(PlatformCode.find(body.getString("code")), body.getString("detail"));
+            var mapped = new ProjectClientAuthenticationException(PlatformCode.find(body.getString("code")), body.getString("detail"));
+            mapped.mapExternal(PlatformHttpResponses.mapping(body)); throw mapped;
         } catch (java.io.IOException e) {
             throw new ProjectClientAuthenticationException(PlatformCode.UPSTREAM_CALL_FAILED, "读取鉴权响应失败", e);
         }

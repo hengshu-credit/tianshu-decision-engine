@@ -22,7 +22,8 @@ export const SIDEBAR_MENUS = [
   { index: '/billing', label: '账单管理', icon: 'Wallet', permission: 'billing:view' },
   { index: '/approval', label: '审批管理', icon: 'Stamp', permission: 'approval:view' },
   { index: '/transfer', label: '离线迁移', icon: 'Upload', permission: 'transfer:view' },
-  { index: '/account', label: '账户管理', icon: 'User', permission: ['account:view', 'account:manage', 'account:approve', 'account:role-assign', 'account:password-reset', 'role:view', 'role:manage', 'account:audit'] }
+  { index: '/account', label: '账户管理', icon: 'User', permission: ['account:view', 'account:manage', 'account:approve', 'account:role-assign', 'account:password-reset', 'role:view', 'role:manage', 'account:audit'] },
+  { index: '/system/settings', label: '系统配置', icon: 'Setting', permission: 'system:view' }
 ]
 
 const MENU_PREFIXES = [

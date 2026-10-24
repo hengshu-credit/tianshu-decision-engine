@@ -2,7 +2,7 @@
   <div class="uiue-list-page experiment-detail-page uiue-compact-workbench">
     <div class="detail-header uiue-detail-header">
       <div class="uiue-detail-header__title">
-        <el-button link size="small" class="uiue-detail-back" @click="$router.push('/experiment')">返回</el-button>
+        <el-button size="small" class="uiue-detail-back" aria-label="返回" title="返回实验列表" @click="$router.push('/experiment')"><app-icon name="Back" /></el-button>
         <div>
         <div class="detail-title">
           {{ form.id ? '分流实验详情' : '新建分流实验' }}

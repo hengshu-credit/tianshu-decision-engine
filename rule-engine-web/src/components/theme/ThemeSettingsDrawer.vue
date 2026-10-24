@@ -328,7 +328,7 @@
 
       <button
         type="button"
-        class="restore-button"
+        class="restore-button uiue-button"
         data-action="restore-default"
         :disabled="saving"
         @click="restoreDefault"
@@ -342,7 +342,7 @@
       <div class="drawer-actions">
         <button
           type="button"
-          class="drawer-button drawer-button--secondary"
+          class="drawer-button drawer-button--secondary uiue-button"
           data-action="cancel"
           :disabled="saving"
           @click="requestClose"
@@ -351,7 +351,7 @@
         </button>
         <button
           type="button"
-          class="drawer-button drawer-button--primary"
+          class="drawer-button drawer-button--primary uiue-button uiue-button--primary"
           data-action="save"
           :disabled="saving"
           @click="submit"

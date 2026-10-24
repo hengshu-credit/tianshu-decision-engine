@@ -2,7 +2,7 @@
   <div class="uiue-list-page datasource-detail-page">
     <div class="detail-header uiue-detail-header">
       <div class="uiue-detail-header__title">
-        <el-button link size="small" class="uiue-detail-back" @click="$router.push('/datasource')">返回</el-button>
+        <el-button size="small" class="uiue-detail-back" aria-label="返回" title="返回外数列表" @click="$router.push('/datasource')"><app-icon name="Back" /></el-button>
         <div>
         <div class="detail-title">
           {{ isCreateMode ? '新建外数数据源' : '编辑外数数据源' }}

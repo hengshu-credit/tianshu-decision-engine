@@ -237,21 +237,7 @@
           </div>
           <div class="inline-row">
             <span class="mini-label">函数</span>
-            <el-select
-              v-model="block.functionCode"
-              size="small"
-              filterable
-              placeholder="选择函数"
-              class="grow"
-              @change="onFunctionSelect(block, $event)"
-            >
-              <el-option
-                v-for="fn in functions"
-                :key="fn.id || fn.funcCode"
-                :label="functionLabel(fn)"
-                :value="fn.funcCode || fn.functionCode"
-              />
-            </el-select>
+            <resource-picker :value="block.functionId" :resources="functions" category="function" size="small" placeholder="选择函数" class="grow" @select="fn => onFunctionResourceSelect(block, fn)" />
           </div>
           <div
             v-for="(arg, argIndex) in block.args"
@@ -621,6 +607,7 @@ import {
 } from '@element-plus/icons-vue'
 import { $emit } from '../../utils/gogocodeTransfer'
 import OperandPicker from '@/components/common/OperandPicker.vue'
+import ResourcePicker from '@/components/common/ResourcePicker.vue'
 import RuleExecutionSelector from '@/components/common/RuleExecutionSelector.vue'
 import AssignmentRow from './ActionAssignmentRow.vue'
 import AssignmentTarget from './ActionAssignmentTarget.vue'
@@ -641,7 +628,7 @@ import {
   getConditionOperatorOptions,
   normalizeConditionOperator,
 } from '@/constants/conditionOperators'
-import { inferOperandType } from '@/utils/operand'
+import { createFunctionOperand, inferOperandType } from '@/utils/operand'
 import { isRuleOutputMappingEnabled, selectedRuleCallVersion } from '@/utils/ruleCallConfig'
 const EMPTY_RULE_VERSIONS = Object.freeze([])
 
@@ -670,6 +657,7 @@ export default {
     AssignmentRow,
     AssignmentTarget,
     OperandPicker,
+    ResourcePicker,
     RuleExecutionSelector,
     ElIconInfo,
   },
@@ -895,25 +883,12 @@ export default {
       part['operand'] = null
       this.sync()
     },
-    onFunctionSelect(block, functionCode) {
-      const fn = this.functions.find(
-        (item) => (item.funcCode || item.functionCode) === functionCode
-      )
-      block['functionId'] = fn && fn.id != null ? fn.id : null
-      if (fn && fn.paramsJson) {
-        try {
-          const params = JSON.parse(fn.paramsJson)
-          block['args'] = params.map(() => null)
-        } catch (e) {
-          /* 保留用户当前参数 */
-        }
-      }
+    onFunctionResourceSelect(block, fn) {
+      const same = fn && String(block.functionId) === String(fn.id)
+      block.functionId = fn?.id ?? null
+      block.functionCode = fn?.funcCode || fn?.functionCode || ''
+      if (!same) block.args = Array.from({ length: createFunctionOperand(fn)?.parameterCount || 0 }, () => null)
       this.sync()
-    },
-    functionLabel(fn) {
-      const code = fn.funcCode || fn.functionCode || ''
-      const name = fn.funcName || fn.functionName || code
-      return code && code !== name ? name + ' (' + code + ')' : name
     },
     rememberRuleCallSnapshot(block, visible) {
       if (!visible || !block) return

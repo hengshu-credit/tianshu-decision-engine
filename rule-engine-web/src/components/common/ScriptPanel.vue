@@ -61,9 +61,11 @@
             :references="references"
             :functions="functions"
             :reference-versions="referenceVersions"
+            :version-references="versionReferences"
             :reference-catalog-mode="referenceCatalogMode"
             :options="editorOptions"
             @editor-ready="onEditorReady"
+            @load-error="showFallbackEditor = true"
           />
           <!-- Monaco 加载失败时保留可复制的只读降级面板，避免脚本内容不可见。 -->
           <textarea
@@ -121,6 +123,7 @@ export default {
     emptyMessage: { type: String, default: '暂无脚本，请先编译' },
     references: { type: Array, default: () => [] },
     functions: { type: Array, default: () => [] },
+    versionReferences: { type: Array, default: () => [] },
     referenceVersions: { type: Object, default: () => ({}) },
     referenceCatalogMode: { type: String, default: 'LIVE' },
   },
@@ -129,7 +132,7 @@ export default {
       expanded: false,
       content: {},
       editScript: '',
-      showFallbackEditor: typeof window === 'undefined' || !window.monaco,
+      showFallbackEditor: false,
       editorHeight: '260px',
       editorOptions: {
         readOnly: true,

@@ -7,6 +7,8 @@ import lombok.Data;
  */
 @Data
 public class ApiDocDTO {
+    /** 导出时的对外结果码映射快照，供离线文档与 OpenAPI 示例使用。 */
+    private com.hengshucredit.rule.model.ExternalCodeMapping codeMapping;
     /** 项目基本信息 */
     private ProjectInfo project;
     /** 规则列表 */

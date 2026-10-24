@@ -4,13 +4,13 @@
     <div class="ct-header">
       <div class="ct-title-area">
         <el-button
-          link
+          size="small"
           :icon="ElIconBack"
+          class="uiue-detail-back"
           aria-label="返回"
           data-designer-back
           title="返回"
           @click="$router.back()"
-          style="color: var(--tianshu-text-secondary)"
         />
         <el-icon class="ct-title-icon"><el-icon-data-analysis /></el-icon>
         <span class="ct-title">交叉表设计器</span>
@@ -321,6 +321,7 @@
       v-if="definitionId"
       :compile-result="designerCompileResult"
       :references="projectRefs"
+      :version-references="scriptVersionReferences"
       :functions="projectFunctions"
     />
 
@@ -705,7 +706,6 @@ export default {
   border-radius: 4px;
   padding: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  min-height: 100%;
 }
 .ct-header {
   display: flex;

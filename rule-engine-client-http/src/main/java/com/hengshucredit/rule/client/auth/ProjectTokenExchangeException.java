@@ -8,6 +8,7 @@ public class ProjectTokenExchangeException extends IOException {
     private final PlatformCode platformStatus;
     private final int httpStatus;
     private final String traceId;
+    private com.hengshucredit.rule.model.ExternalCodeMapping mapping = com.hengshucredit.rule.model.ExternalCodeMapping.DEFAULT;
 
     public ProjectTokenExchangeException(PlatformCode code, int httpStatus, String traceId) {
         super(code.message());
@@ -18,4 +19,6 @@ public class ProjectTokenExchangeException extends IOException {
     public PlatformCode platformStatus() { return platformStatus; }
     public int httpStatus() { return httpStatus; }
     public String traceId() { return traceId; }
+    public ProjectTokenExchangeException mapExternal(com.hengshucredit.rule.model.ExternalCodeMapping value) { mapping = value; return this; }
+    public com.hengshucredit.rule.model.ExternalCodeMapping mapping() { return mapping; }
 }

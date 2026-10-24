@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
-import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.server.mapper.RuleExternalDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
 import org.springframework.stereotype.Service;
@@ -15,7 +14,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 public class RuleExternalDatasourceService extends ServiceImpl<RuleExternalDatasourceMapper, RuleExternalDatasource> {
@@ -113,16 +111,9 @@ public class RuleExternalDatasourceService extends ServiceImpl<RuleExternalDatas
     }
 
     private void fillProjectName(List<RuleExternalDatasource> list) {
-        if (list == null || list.isEmpty()) return;
-        List<Long> projectIds = list.stream()
-                .filter(v -> v.getProjectId() != null && v.getProjectId() > 0)
-                .map(RuleExternalDatasource::getProjectId)
-                .distinct()
-                .collect(Collectors.toList());
-        if (projectIds.isEmpty()) return;
-        Map<Long, String> nameMap = projectMapper.selectByIds(projectIds).stream()
-                .collect(Collectors.toMap(RuleProject::getId, RuleProject::getProjectName, (a, b) -> a));
-        list.forEach(v -> v.setProjectName(nameMap.get(v.getProjectId())));
+        ProjectDisplaySupport.fill(list, RuleExternalDatasource::getProjectId, projectMapper, (row, project) -> {
+            row.setProjectName(project == null ? null : project.getProjectName());
+        });
     }
 
     private boolean hasText(String value) {

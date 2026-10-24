@@ -11,6 +11,30 @@ const ElInputStub = {
 }
 
 describe('ExpressionCanvas', () => {
+  test('方法节点显示名称、编码、版本和返回类型图标', () => {
+    const wrapper = shallowMount(ExpressionCanvas, { props: { node: { kind: 'FUNCTION', functionId: 7, functionCode: 'arrGet', label: '数组取值', valueType: 'OBJECT', versionMode: 'FIXED', version: 3, args: [] } } })
+    expect(wrapper.get('.content-ref__source').text()).toBe('方法')
+    expect(wrapper.get('.content-ref__type').text()).toBe('{}')
+    expect(wrapper.get('.content-ref__name').text()).toBe('数组取值')
+    wrapper.unmount()
+  })
+  test('内容节点同时展示来源、具体数据类型、名称编码和版本', () => {
+    const node = { kind: 'REFERENCE', refId: 7, refType: 'VARIABLE', code: 'age', label: '年龄', valueType: 'INTEGER', versionMode: 'FIXED', version: 3 }
+    const wrapper = shallowMount(ExpressionCanvas, { props: { node, fieldPickerEnabled: true } })
+    expect(wrapper.get('.content-ref__source').text()).toBe('变量')
+    expect(wrapper.get('.content-ref__type').text()).toBe('123')
+    expect(wrapper.get('.content-ref__type').attributes('title')).toContain('INTEGER')
+    expect(wrapper.get('.content-ref__version').text()).toBe('v3')
+    wrapper.unmount()
+  })
+  test('单目操作符独立保留一行但不渲染右侧节点', () => {
+    const node = { kind: 'OPERATION', terms: [{ operand: { kind: 'LITERAL', value: '', valueType: 'STRING' } }, { operator: 'is_empty' }] }
+    const wrapper = shallowMount(ExpressionCanvas, { props: { node, fieldPickerEnabled: true } })
+    expect(wrapper.findAllComponents(ExpressionCanvas)).toHaveLength(1)
+    expect(wrapper.get('.canvas-edge-operator').text()).toContain('无需右值')
+    expect(wrapper.vm.operatorOptions(wrapper.vm.children[1]).map(item => item.value)).not.toContain('-')
+    wrapper.unmount()
+  })
   test.each(['LITERAL', 'PATH', 'REFERENCE', 'FUNCTION', 'ACCESS', 'CAST', 'ARRAY', 'OPERATION'])('内嵌 %s 行点击打开选择器，未选中也能在同一边框内删除', async kind => {
     const path = ['args', 0]
     const wrapper = shallowMount(ExpressionCanvas, { props: { node: { kind, value: '1', valueType: 'NUMBER' }, fieldPickerEnabled: true, path } })
@@ -171,7 +195,7 @@ describe('ExpressionCanvas', () => {
     const wrapper = shallowMount(ExpressionCanvas, { props: { node: operation } })
 
     expect(wrapper.findAll('.canvas-child')).toHaveLength(3)
-    expect(wrapper.findAll('.canvas-edge-operator').map(item => item.text())).toEqual(['+', '*'])
+    expect(wrapper.findAll('.canvas-edge-operator code').map(item => item.text())).toEqual(['+', '*'])
   })
 
   test('根运算只展示子项，不再生成与公式预览重复的根卡片', () => {

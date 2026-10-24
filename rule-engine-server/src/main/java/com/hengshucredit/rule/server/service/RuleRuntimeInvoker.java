@@ -603,8 +603,7 @@ public class RuleRuntimeInvoker {
         Set<String> names = new LinkedHashSet<>();
         if (fields == null) return names;
         for (RuleDefinitionInputField field : fields) {
-            if (field != null && !"MODEL_OUTPUT".equalsIgnoreCase(field.getRefType())
-                    && hasText(field.getScriptName())) {
+            if (field != null && hasText(field.getScriptName())) {
                 names.add(field.getScriptName().trim());
             }
         }

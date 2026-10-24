@@ -11,7 +11,6 @@ import com.hengshucredit.rule.core.function.ManagedFunctionInvoker;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleFunctionVersion;
-import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.server.mapper.RuleFunctionMapper;
 import com.hengshucredit.rule.server.mapper.RuleFunctionVersionMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
@@ -56,22 +55,10 @@ public class RuleFunctionService {
 
     /** 填充函数列表的项目名称 */
     private void fillProjectName(List<RuleFunction> list) {
-        if (list == null || list.isEmpty()) return;
-        List<Long> projectIds = list.stream()
-                .filter(f -> f.getProjectId() != null && f.getProjectId() > 0)
-                .map(RuleFunction::getProjectId)
-                .distinct()
-                .collect(Collectors.toList());
-        if (projectIds.isEmpty()) return;
-        Map<Long, RuleProject> projectMap = projectMapper.selectByIds(projectIds).stream()
-                .collect(Collectors.toMap(RuleProject::getId, project -> project, (a, b) -> a));
-        list.forEach(f -> {
-            if (f.getProjectId() != null && f.getProjectId() > 0) {
-                RuleProject project = projectMap.get(f.getProjectId());
-                if (project != null) {
-                    f.setProjectName(project.getProjectName());
-                    f.setProjectCode(project.getProjectCode());
-                }
+        ProjectDisplaySupport.fill(list, RuleFunction::getProjectId, projectMapper, (row, project) -> {
+            if (project != null) {
+                row.setProjectName(project.getProjectName());
+                row.setProjectCode(project.getProjectCode());
             }
         });
     }

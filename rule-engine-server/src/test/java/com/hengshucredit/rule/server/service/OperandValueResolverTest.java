@@ -14,6 +14,38 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 public class OperandValueResolverTest {
+    @org.junit.Test public void extendedOperatorsAgreeWithCompiledRuleExecution() {
+        Object[][] cases = {
+            {"contains", "abc", "b", true}, {"not_contains", null, "b", false}, {"regex_match", "abc", "^a.*", true},
+            {"starts_with", "abc", "a", true}, {"ends_with", "abc", "c", true},
+            {"contains_any", java.util.List.of("A", "B"), java.util.List.of("B", "C"), true},
+            {"contains_all", java.util.List.of("A", "B"), java.util.List.of("B", "C"), false},
+            {"has_key", java.util.Map.of("score", 93), "score", true}, {"has_value", java.util.Map.of("score", 93), 93, true},
+            {"is_empty", java.util.List.of(), null, true}, {"is_true", true, null, true}, {"is_false", false, null, true},
+            {"not_null", null, null, false}, {"size_gte", java.util.List.of("A", "B"), 2, true},
+        };
+        for (Object[] sample : cases) {
+            var tree = com.alibaba.fastjson.JSON.parseObject("{\"kind\":\"OPERATION\",\"terms\":[{\"operand\":{\"kind\":\"PATH\",\"value\":\"left\"}},{\"operator\":\"" + sample[0] + "\",\"operand\":{\"kind\":\"PATH\",\"value\":\"right\"}}]}");
+            if (com.hengshucredit.rule.core.compiler.ContentOperation.unary((String) sample[0])) tree.getJSONArray("terms").getJSONObject(1).remove("operand");
+            var values = new java.util.HashMap<String, Object>(); values.put("left", sample[1]); values.put("right", sample[2]);
+            String script = com.hengshucredit.rule.core.compiler.OperandCompiler.compile(tree, null);
+            var result = new com.hengshucredit.rule.core.engine.QLExpressEngine().execute(script, values);
+            org.junit.Assert.assertTrue(script + ": " + result.getErrorMessage(), result.isSuccess());
+            org.junit.Assert.assertEquals(script, sample[3], result.getResult());
+            org.junit.Assert.assertEquals(script, result.getResult(), OperandValueResolver.resolve(tree, values));
+        }
+    }
+    @org.junit.Test public void contentPredicatesResolveWithoutPhantomRightOperands() {
+        var expression = com.alibaba.fastjson.JSON.parseObject("{\"kind\":\"OPERATION\",\"terms\":[{\"operand\":{\"kind\":\"PATH\",\"value\":\"items\"}},{\"operator\":\"is_empty\"}]}");
+        org.junit.Assert.assertEquals(true, OperandValueResolver.resolve(expression, java.util.Map.of("items", java.util.List.of())));
+        expression.getJSONArray("terms").getJSONObject(1).put("operand", JSON.parseObject("{\"kind\":\"REFERENCE\",\"refType\":\"EXTERNAL_API\",\"refId\":7,\"code\":\"unused\"}"));
+        Assert.assertEquals(1, OperandValueResolver.collectReferences(expression.toJSONString()).size());
+        Assert.assertEquals("items", OperandValueResolver.collectReferences(expression.toJSONString()).get(0).getString("value"));
+        Assert.assertEquals(Collections.singleton("items"), OperandValueResolver.collectPaths(expression.toJSONString()));
+        expression.getJSONArray("terms").getJSONObject(1).put("operator", "size_gt");
+        expression.getJSONArray("terms").getJSONObject(1).put("operand", com.alibaba.fastjson.JSON.parseObject("{\"kind\":\"LITERAL\",\"valueType\":\"NUMBER\",\"value\":1}"));
+        org.junit.Assert.assertEquals(true, OperandValueResolver.resolve(expression, java.util.Map.of("items", java.util.List.of("A", "B"))));
+    }
 
     @Test
     public void managedPathUsesStableIdAndRelativePathInsteadOfStaleDisplayCode() {

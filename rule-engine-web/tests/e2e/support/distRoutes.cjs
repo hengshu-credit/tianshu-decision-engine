@@ -10,6 +10,7 @@ const apiData = new Map([
   ['/api/rule/billing/summary/refresh', null],
   ['/api/rule/governance/workspaces', { records: [], total: 0 }],
   ['/api/auth/console/config', { loginEnabled: false }],
+  ['/api/auth/console/brand', {}],
   ['/api/auth/console/me', { username: 'e2e' }],
   ['/api/rule/console/accounts/project-options', [
     { id: 1, projectCode: 'e2e_project', projectName: 'E2E 项目', status: 1 }

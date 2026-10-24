@@ -9,11 +9,11 @@
       <div class="auth-card" role="main">
         <header class="auth-brand">
           <div class="auth-brand__icon" aria-hidden="true">
-            <img :src="brandLogoUrl" alt="logo" class="auth-logo-img" />
+            <img :src="brand.logoUrl" :alt="brand.systemName" class="auth-logo-img" />
           </div>
           <div>
-            <h1>{{ title }}</h1>
-            <p>{{ subtitle }}</p>
+            <h1>{{ title || brand.systemName }}</h1>
+            <p v-if="subtitle || brand.subtitle">{{ subtitle || brand.subtitle }}</p>
           </div>
         </header>
         <slot />
@@ -23,15 +23,16 @@
 </template>
 
 <script>
+import { systemBrand } from '@/system/systemBrand'
 export default {
   name: 'AuthPageShell',
   props: {
-    title: { type: String, default: '天枢决策引擎' },
-    subtitle: { type: String, default: '天工开物，枢衡定策' },
+    title: { type: String, default: '' },
+    subtitle: { type: String, default: '' },
   },
   data() {
     return {
-      brandLogoUrl: `${import.meta.env.BASE_URL || './'}images/hengshucredit_animated.svg`,
+      brand: systemBrand,
     }
   },
 }

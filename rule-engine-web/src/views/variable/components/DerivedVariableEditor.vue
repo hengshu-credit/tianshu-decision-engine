@@ -59,9 +59,13 @@
         </el-select>
       </el-form-item>
       <el-form-item label="主体 key">
-        <el-select multiple filterable :model-value="subjectKeys" placeholder="可选单字段或联合字段，如身份证 + 手机号" @update:model-value="setSubjects">
-          <el-option v-for="option in historyVars" :key="fieldKey(option)" :value="fieldKey(option)" :label="option.varLabel || option.varCode" />
-        </el-select>
+        <div class="subject-picker">
+          <div v-for="field in config.subjectFields" :key="`${field.refType}:${field.refId}`" class="subject-field">
+            <operand-value-display :operand="subjectOperand(field)" />
+            <el-button text :aria-label="'移除主体 ' + (field.code || field.refId)" @click="setSubjects(subjectKeys.filter(key => key !== `${field.refType}:${field.refId}`))">移除</el-button>
+          </div>
+          <var-picker :vars="historyVars" :selected-vars="config.subjectFields" value-key="reference" :allow-custom="false" placeholder="选择主体字段，可添加联合字段" @input="addSubject" />
+        </div>
       </el-form-item>
       <el-form-item label="重复主体取值">
         <el-select :model-value="config.recordMode" @update:model-value="patch({ recordMode: $event })">
@@ -69,9 +73,7 @@
         </el-select>
       </el-form-item>
       <el-form-item v-if="config.aggregate === 'CUSTOM'" label="聚合函数">
-        <el-select filterable :model-value="config.functionId" placeholder="函数接收一个统计值列表" @update:model-value="setFunction">
-          <el-option v-for="fn in functions" :key="fn.id" :value="fn.id" :label="fn.funcName || fn.funcCode" />
-        </el-select>
+        <resource-picker :value="config.functionId" :resources="functions" category="function" placeholder="函数接收一个统计值列表" @update:value="setFunction" />
       </el-form-item>
       <p class="derived-help">空主体不参与去重；空属性不参与聚合。无样本时计数与求和返回 0，均值/方差等返回空；样本统计不足两条返回空。字符串长度按 Unicode 字符数合计。单次窗口超过 10 万条会明确报错，不返回截断结果。</p>
       <p v-if="config.scope === 'RULE'" class="derived-help">当前规则范围请在规则测试中验证，单个变量预览没有所属根规则上下文。</p>
@@ -81,12 +83,16 @@
 
 <script>
 import OperandPicker from '@/components/common/OperandPicker.vue'
+import VarPicker from '@/components/common/VarPicker.vue'
+import ResourcePicker from '@/components/common/ResourcePicker.vue'
+import OperandValueDisplay from '@/components/common/OperandValueDisplay.vue'
+import { createReferenceOperand } from '@/utils/operand'
 import HistoryFilters from './HistoryFilters.vue'
 import { createDerivedConfig, DERIVED_OPERAND_KINDS, historyAggregateOptions, historyFieldEligible } from '@/utils/derivedVariable'
 
 export default {
   name: 'DerivedVariableEditor',
-  components: { OperandPicker, HistoryFilters },
+  components: { OperandPicker, VarPicker, ResourcePicker, OperandValueDisplay, HistoryFilters },
   props: { modelValue: { type: Object, default: createDerivedConfig }, vars: { type: Array, default: () => [] }, functions: { type: Array, default: () => [] }, resultType: { type: String, default: '' } },
   emits: ['update:modelValue', 'type-change'],
   data() {
@@ -117,9 +123,11 @@ export default {
       if (['MIN', 'MAX'].includes(aggregate)) this.$emit('type-change', type)
       else if (aggregate !== 'CUSTOM') this.$emit('type-change', 'NUMBER')
     },
-    setFunction(functionId) { this.patch({ functionId }); const fn = this.functions.find(item => item.id === functionId); if (fn?.returnType) this.$emit('type-change', fn.returnType) },
+    setFunction(functionId) { this.patch({ functionId }); const fn = this.functions.find(item => String(item.id) === String(functionId)); if (fn?.returnType) this.$emit('type-change', fn.returnType) },
     fieldKey(field) { return `${field._refType || field.refType}:${field._varId || field.id}` },
-    setSubjects(keys) { this.patch({ subjectFields: keys.map(key => { const field = this.vars.find(item => this.fieldKey(item) === key); return { kind: 'REFERENCE', refType: field._refType || field.refType, refId: field._varId || field.id, code: field.varCode, valueType: field.varType, resolved: true } }) }) },
+    addSubject(key) { if (key && !this.subjectKeys.includes(key)) this.setSubjects([...this.subjectKeys, key]) },
+    subjectOperand(field) { const item = this.vars.find(item => this.fieldKey(item) === `${field.refType}:${field.refId}`); return item ? createReferenceOperand(item) : field },
+    setSubjects(keys) { this.patch({ subjectFields: keys.map(key => { const field = this.vars.find(item => this.fieldKey(item) === key); return field ? createReferenceOperand(field) : this.config.subjectFields.find(item => `${item.refType}:${item.refId}` === key) }).filter(Boolean) }) },
     addStep() { this.patch({ steps: [...this.config.steps, { inputs: [null], fromFields: [null], fields: [null], filters: [] }] }) },
     removeStep(index) { this.patch({ steps: this.config.steps.slice(0, index) }) },
     patchStep(index, value) { this.patch({ steps: this.config.steps.map((step, i) => i === index ? { ...step, ...value } : step) }) },
@@ -133,6 +141,8 @@ export default {
 
 <style scoped>
 .derived-editor { width: 100%; min-width: 0; }
+.subject-picker { width: 100%; min-width: 0; }
+.subject-field { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .derived-help { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.7; margin: 8px 0 16px; }
 .history-steps { margin: 16px 0; }
 .history-step { border: 1px solid var(--el-border-color); border-radius: 6px; padding: 12px; margin: 12px 0; }

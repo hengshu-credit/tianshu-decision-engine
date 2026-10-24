@@ -22,6 +22,7 @@ public class RuleReferenceCatalog {
     private List<Map<String, Object>> rules = new ArrayList<>();
     private List<Map<String, Object>> apis = new ArrayList<>();
     private List<Map<String, Object>> lists = new ArrayList<>();
+    private List<Map<String, Object>> versionReferences = new ArrayList<>();
     private Map<String, String> displayLabels = new LinkedHashMap<>();
     private List<String> diagnostics = new ArrayList<>();
 }

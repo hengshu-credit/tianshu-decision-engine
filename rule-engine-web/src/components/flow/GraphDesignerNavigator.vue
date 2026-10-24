@@ -123,26 +123,6 @@ export default {
 .graph-tools > .el-select {
   width: 190px;
 }
-.toolbar-action {
-  border-color: var(--designer-toolbar-control-border, var(--tianshu-border));
-  background: var(--designer-toolbar-control-background, var(--tianshu-bg-surface));
-  color: var(--designer-toolbar-foreground, var(--tianshu-text-primary));
-  transition: background-color 0.15s ease, border-color 0.15s ease,
-    color 0.15s ease;
-}
-.toolbar-action:hover,
-.toolbar-action:focus {
-  border-color: var(--tianshu-designer-toolbar-accent, var(--el-color-primary));
-  background: var(--tianshu-bg-surface);
-  color: var(--tianshu-designer-toolbar-accent, var(--el-color-primary));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tianshu-designer-toolbar-accent, var(--el-color-primary)) 22%, transparent);
-}
-.toolbar-action:active {
-  border-color: var(--tianshu-designer-toolbar-accent, var(--el-color-primary));
-  background: var(--tianshu-designer-accent-bg);
-  color: var(--tianshu-designer-toolbar-accent, var(--el-color-primary));
-  box-shadow: none;
-}
 .graph-tools small {
   float: right;
   margin-left: 12px;

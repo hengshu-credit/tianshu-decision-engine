@@ -5,13 +5,17 @@ import {
 } from '@/utils/pickerCategories'
 
 describe('pickerCategories', () => {
-  test('字段选择器和表达式资源区共享四类引用', () => {
+  test('内容选择器和表达式资源区共享四类引用', () => {
     expect(REFERENCE_PICKER_CATEGORIES).toEqual([
       { key: 'standalone', label: '普通变量' },
       { key: 'constant', label: '常量' },
       { key: 'object', label: '数据对象' },
       { key: 'model', label: '模型' },
-      { key: 'external', label: '外数 API' }
+      { key: 'external', label: '外数 API' },
+      { key: 'rule', label: '规则' },
+      { key: 'list', label: '名单' },
+      { key: 'database', label: '数据库' },
+      { key: 'sftp', label: 'SFTP' }
     ])
     expect(pickerCategoryLabel('constant')).toBe('常量')
   })

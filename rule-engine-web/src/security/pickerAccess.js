@@ -1,8 +1,8 @@
 import { hasPermission } from './permissionState'
 import { operationPagePath, recordConsoleActivity } from './operationActivity'
 
-const modules = { VARIABLE: 'field', CONSTANT: 'field', DATA_OBJECT_ROOT: 'field', DATA_OBJECT: 'field', DATA_FIELD: 'field', DATA_OBJECT_FIELD: 'field', FIELD_VALIDATION: 'field', MODEL: 'model', MODEL_OUTPUT: 'model', FUNCTION: 'function', EXTERNAL_API: 'datasource', EXTERNAL_DATASOURCE: 'datasource', DATABASE: 'database', RULE: 'rule', RULE_PROJECT_BINDING: 'rule', LIST: 'list', LIST_LIBRARY: 'list', LIST_RECORD_BATCH: 'list', PROJECT: 'project', BILLING_CONFIG: 'billing', EXPERIMENT: 'experiment' }
-const types = { standalone: 'VARIABLE', constant: 'CONSTANT', object: 'DATA_OBJECT', model: 'MODEL', external: 'EXTERNAL_API', rule: 'RULE', list: 'LIST_LIBRARY', database: 'DATABASE', function: 'FUNCTION' }
+const modules = { SYSTEM_SETTING: 'system', VARIABLE: 'field', CONSTANT: 'field', DATA_OBJECT_ROOT: 'field', DATA_OBJECT: 'field', DATA_FIELD: 'field', DATA_OBJECT_FIELD: 'field', FIELD_VALIDATION: 'field', MODEL: 'model', MODEL_OUTPUT: 'model', FUNCTION: 'function', EXTERNAL_API: 'datasource', EXTERNAL_DATASOURCE: 'datasource', DATABASE: 'database', SFTP: 'database', RULE: 'rule', RULE_PROJECT_BINDING: 'rule', LIST: 'list', LIST_LIBRARY: 'list', LIST_RECORD_BATCH: 'list', PROJECT: 'project', BILLING_CONFIG: 'billing', EXPERIMENT: 'experiment' }
+const types = { standalone: 'VARIABLE', constant: 'CONSTANT', object: 'DATA_OBJECT', model: 'MODEL', external: 'EXTERNAL_API', rule: 'RULE', list: 'LIST_LIBRARY', database: 'DATABASE', sftp: 'SFTP', function: 'FUNCTION' }
 
 export function resourceViewPermission(type) { return modules[type] ? `${modules[type]}:view` : '' }
 export function resourceActionPermission(type, action) { return modules[type] ? `${modules[type]}:${action}` : '' }

@@ -819,6 +819,7 @@
                 :key="`${configForm.billingTarget}:${configForm.scope}:${configForm.projectId}`"
                 v-model:value="configForm.targetRefId"
                 :fetch-options="loadTargetOptions"
+                :content-type="({ ENGINE: 'RULE', API: 'EXTERNAL_API', DB: 'DATABASE' })[configForm.billingTarget]"
                 :selected-option="selectedTargetOption"
                 option-value-key="id"
                 option-label-key="displayName"

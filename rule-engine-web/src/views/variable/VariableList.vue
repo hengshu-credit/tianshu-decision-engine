@@ -1310,20 +1310,7 @@
         </template>
         <template v-if="!isObjectField && form.varSource === 'DB'">
           <el-form-item label="数据库源">
-            <el-select
-              v-model="form.dbDatasourceId"
-              filterable
-              clearable
-              placeholder="选择数据库"
-              style="width: 100%"
-            >
-              <el-option
-                v-for="db in sourceCatalog.databaseOptions"
-                :key="db.id"
-                :label="db.name ? db.name + ' / ' + db.code : db.code"
-                :value="db.id"
-              />
-            </el-select>
+            <resource-picker v-model:value="form.dbDatasourceId" :resources="sourceCatalog.databaseOptions" category="database" placeholder="选择数据库" />
           </el-form-item>
           <el-form-item label="查询 SQL">
             <monaco-editor
@@ -1375,9 +1362,7 @@
         </template>
         <template v-if="!isObjectField && form.varSource === 'SFTP'">
           <el-form-item label="SFTP 数据源">
-            <el-select v-model="form.sftpDatasourceId" filterable clearable placeholder="选择 SFTP 数据源" style="width: 100%">
-              <el-option v-for="item in sourceCatalog.sftpOptions" :key="item.id" :label="item.name ? item.name + ' / ' + item.code : item.code" :value="item.id" />
-            </el-select>
+            <resource-picker v-model:value="form.sftpDatasourceId" :resources="sourceCatalog.sftpOptions" category="sftp" placeholder="选择 SFTP 数据源" />
           </el-form-item>
           <el-form-item label="远端文件路径">
             <el-input v-model="form.sftpRemotePath" placeholder="/contracts/${customerId}/contract.pdf" />
@@ -1406,22 +1391,7 @@
         </template>
         <template v-if="!isObjectField && form.varSource === 'LIST'">
           <el-form-item label="名单库（多选）">
-            <el-select
-              v-model="form.listIds"
-              class="list-multi-select"
-              multiple
-              filterable
-              clearable
-              placeholder="选择一个或多个名单库"
-              style="width: 100%"
-            >
-              <el-option
-                v-for="item in sourceCatalog.listOptions"
-                :key="item.id"
-                :label="listOptionLabel(item)"
-                :value="item.id"
-              />
-            </el-select>
+            <resource-picker v-model:value="form.listIds" :resources="sourceCatalog.listOptions" category="list" multiple placeholder="选择一个或多个名单库" />
           </el-form-item>
           <el-form-item label="待匹配内容">
             <div
@@ -1455,7 +1425,7 @@
               >添加待匹配内容</el-button
             >
             <div class="field-help list-query-help">
-              选择要拿去匹配名单的字段，例如手机号、身份证号；也可在字段选择器中选择“fx 组合表达式”，使用计算结果匹配。多项内容按下方组合模式判断是否命中。
+              选择要拿去匹配名单的字段，例如手机号、身份证号；也可在内容选择器中选择“fx 组合表达式”，使用计算结果匹配。多项内容按下方组合模式判断是否命中。
             </div>
           </el-form-item>
           <el-form-item label="组合模式">
@@ -1529,7 +1499,7 @@
           />
           <div class="field-help">
             <span v-if="objectFieldReferenceMessage" class="reference-validation-success">{{ objectFieldReferenceMessage }}</span>
-            <span>使用统一字段选择器引用已启用资源，按稳定 ID 绑定。变量、常量在当前字段未传值时提供取值；数据对象用于复用字段结构。</span>
+            <span>使用统一内容选择器引用已启用资源，按稳定 ID 绑定。变量、常量在当前字段未传值时提供取值；数据对象用于复用字段结构。</span>
             <span v-if="objectFieldReferenceBlockedReason">{{ objectFieldReferenceBlockedReason }}</span>
           </div>
         </el-form-item>
@@ -1754,14 +1724,7 @@
             </template>
             <template v-if="objectForm.sourceType === 'DB'">
               <el-form-item label="数据库源">
-                <el-select v-model="objectForm.dbDatasourceId" filterable clearable placeholder="选择数据库源" style="width: 100%">
-                  <el-option
-                    v-for="db in dbDatasourceOptions"
-                    :key="db.id"
-                    :label="(db.datasourceName || db.name || db.datasourceCode || db.code) + (db.datasourceCode || db.code ? ' / ' + (db.datasourceCode || db.code) : '')"
-                    :value="db.id"
-                  />
-                </el-select>
+                <resource-picker v-model:value="objectForm.dbDatasourceId" :resources="dbDatasourceOptions" category="database" placeholder="选择数据库源" />
               </el-form-item>
               <el-form-item label="查询 SQL">
                 <monaco-editor

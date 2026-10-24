@@ -27,6 +27,9 @@ public final class ConsolePermissionCodes {
 
     private static List<PermissionDefinition> buildCatalog() {
         List<PermissionDefinition> definitions = new ArrayList<>();
+        addGovernedResource(definitions, "system", "系统配置", "/system/settings", 1100);
+        definitions.add(new PermissionDefinition("system:mail-test", "测试通知邮箱", "系统配置", "ACTION", null, 1103));
+        definitions.add(new PermissionDefinition("system:audit", "查看系统配置变更记录", "系统配置", "ACTION", null, 1104));
         addGovernedResource(definitions, "field", "字段管理", "/variable", 100);
         addGovernedResource(definitions, "model", "模型管理", "/model", 200);
         addGovernedResource(definitions, "datasource", "外数管理", "/datasource", 300);

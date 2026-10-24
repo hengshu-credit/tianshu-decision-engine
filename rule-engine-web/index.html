@@ -7,6 +7,7 @@
   <title>天枢决策引擎</title>
   <link rel="icon" href="./favicon.ico" sizes="any">
   <link rel="icon" type="image/svg+xml" href="./images/hengshucredit_animated.svg">
+  <link rel="stylesheet" href="./loading.css">
   <style>
     @font-face {
       font-family: 'AlimamaFangYuanTiVF';
@@ -18,7 +19,11 @@
   </style>
 </head>
 <body>
-  <div id="app"></div>
+  <div id="app">
+    <div class="app-bootstrap" role="status" aria-label="正在加载系统">
+      <span class="tianshu-loading" aria-hidden="true"></span>
+    </div>
+  </div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

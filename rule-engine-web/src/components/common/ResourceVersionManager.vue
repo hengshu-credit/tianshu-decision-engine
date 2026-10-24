@@ -2,7 +2,8 @@
   <span class="resource-version-entry">
     <el-button v-if="canView && showTrigger" link type="primary" data-action="version" size="small" @click.stop="open">版本</el-button>
     <el-drawer v-model="visible" title="版本管理" size="min(1120px, 100vw)" append-to-body destroy-on-close :before-close="close">
-      <div v-loading="loading" class="resource-version-manager">
+      <div v-loading="loading" class="resource-version-manager" :aria-busy="loading"
+        element-loading-background="transparent" element-loading-text="正在加载版本…">
         <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
         <div class="uiue-search-container uiue-filter-toolbar">
           <el-select v-model="selected" aria-label="查看版本" :disabled="editing || busy" @change="comparison = ''">
@@ -15,7 +16,7 @@
               <el-option v-for="draft in workspace.drafts || []" :key="draft.id" :label="`草稿 #${draft.id} · ${statusLabel(draft.status)}`" :value="'d:' + draft.id" />
             </el-option-group>
           </el-select>
-          <div class="version-actions">
+          <div class="version-actions uiue-action-group">
             <el-button :disabled="busy || editing" @click="load">刷新</el-button>
             <el-button v-if="hasLegacy" :disabled="busy || editing" @click="visible = false; $emit('legacy')">早期历史快照</el-button>
             <el-button v-if="canExport" :disabled="!snapshot || !!currentDraft || editing || busy || selectedVersionDeleted" @click="exportVersion">迁移此版本</el-button>
@@ -33,7 +34,7 @@
             <el-form-item v-for="field in editableFields" :key="field.key" :label="field.label"><el-input :model-value="String(editValue[field.key] ?? '')" :type="field.multiline ? 'textarea' : 'text'" :rows="field.multiline ? 3 : undefined" :aria-label="field.label" @update:model-value="editField(field.key, $event)" /></el-form-item>
             <el-collapse><el-collapse-item title="完整配置（结构与高级参数）" name="raw"><el-form-item label="版本内容"><MonacoEditor v-model:value="editJson" language="json" height="300px" aria-label="版本内容" :options="{ minimap: { enabled: false }, wordWrap: 'on' }" /></el-form-item></el-collapse-item></el-collapse>
           </el-form>
-          <div class="version-actions"><el-button :disabled="busy" @click="cancelEdit">取消编辑</el-button><el-button type="primary" :loading="busy" @click="save">保存草稿</el-button></div>
+          <div class="version-actions uiue-action-group"><el-button :disabled="busy" @click="cancelEdit">取消编辑</el-button><el-button type="primary" :loading="busy" @click="save">保存草稿</el-button></div>
         </template>
         <el-tabs v-else v-model="tab">
           <el-tab-pane label="预览与对比" name="preview">
@@ -45,8 +46,9 @@
               <el-descriptions :column="2" border class="version-preview-summary"><el-descriptions-item v-for="field in previewFields" :key="field.key" :label="field.label">{{ field.value }}</el-descriptions-item></el-descriptions>
               <el-collapse><el-collapse-item title="完整配置快照" name="raw"><pre class="version-preview">{{ pretty(snapshot) }}</pre></el-collapse-item></el-collapse>
             </template>
-            <el-empty v-else description="尚无生产版本，请先保存并发布资源" />
-            <div v-if="currentDraft" class="version-actions">
+            <el-empty v-else-if="!loading && !error" description="尚无生产版本，请先保存并发布资源" />
+            <div v-else class="version-preview-placeholder" aria-hidden="true" />
+            <div v-if="currentDraft" class="version-actions uiue-action-group">
               <el-button v-if="canReview" :disabled="busy" @click="review">查看审批详情</el-button>
               <el-button v-if="editableDraft && canEdit" type="danger" :disabled="busy" @click="discard">删除此草稿</el-button>
               <el-button v-if="editableDraft && canSubmit" type="primary" :loading="busy" @click="publish">提交发布审批</el-button>
@@ -207,8 +209,9 @@ export default {
 <style scoped>
 .resource-version-entry { display: inline-flex; vertical-align: middle; }
 .resource-version-manager { min-width: 0; }
+.version-preview-placeholder { min-height: 240px; }
 .uiue-filter-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-.version-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.version-actions { justify-content: flex-end; margin-left: auto; }
 .version-help { color: var(--tianshu-text-secondary); line-height: 1.6; margin: 16px 0; white-space: normal; }
 .el-select { width: 256px; max-width: 100%; }
 .version-preview { background: var(--tianshu-bg-secondary); color: var(--tianshu-text-primary); padding: 16px; max-height: 480px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }

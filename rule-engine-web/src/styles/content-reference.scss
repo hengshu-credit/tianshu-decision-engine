@@ -1,0 +1,18 @@
+/* 内容展示唯一色块规范：Vue、Monaco 注入文本和图形节点共享。 */
+.content-ref { display: inline-flex; vertical-align: middle; align-items: stretch; gap: 0; min-width: 0; max-width: 100%; font-size: 12px; line-height: 20px; white-space: nowrap; user-select: text; }
+.content-ref__segment { display: inline-block; vertical-align: middle; box-sizing: border-box; margin: 0; border: 0; border-radius: 0; padding: 0 5px; min-width: 0; max-width: 100%; line-height: inherit; font-size: inherit; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.content-ref__source, .content-ref__type { flex: 0 0 32px; width: 32px; padding: 0; text-align: center; font-size: 11px; font-weight: 600; }
+:is(.content-ref, .monaco-editor .view-lines) {
+.content-ref__source { color: var(--tianshu-primary-text); background: var(--tianshu-info-border); }
+.content-ref__type { color: var(--tianshu-info-text); background: var(--tianshu-info-bg); }
+.content-ref__type--number { color: var(--tianshu-success-text); background: var(--tianshu-success-bg); }
+.content-ref__type--collection { color: var(--tianshu-warning-text); background: var(--tianshu-warning-bg); }
+.content-ref__name { color: var(--tianshu-text-primary); background: var(--tianshu-bg-hover); }
+.content-ref__code { color: var(--tianshu-primary-text); background: var(--tianshu-border); font-family: Consolas, monospace; }
+.content-ref__version { flex-shrink: 0; color: var(--tianshu-text-secondary); background: var(--tianshu-bg-muted); }
+.content-ref__value, .content-ref__path { color: var(--tianshu-info-text); background: var(--tianshu-info-bg); }
+}
+.content-ref--wrap { white-space: normal; }
+.content-ref--wrap .content-ref__name, .content-ref--wrap .content-ref__code, .content-ref--wrap .content-ref__value, .content-ref--wrap .content-ref__path { white-space: pre-wrap; overflow-wrap: anywhere; }
+.monaco-editor .view-lines .content-ref__segment { display: inline; width: auto; height: auto; padding: 0; font: inherit; vertical-align: baseline; overflow: visible; max-width: none; }
+.monaco-editor .content-ref__code { padding: 0; text-decoration: underline; text-decoration-color: var(--el-color-primary); text-underline-offset: 2px; }

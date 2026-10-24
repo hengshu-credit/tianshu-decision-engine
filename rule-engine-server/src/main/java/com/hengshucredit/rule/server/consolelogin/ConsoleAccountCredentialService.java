@@ -49,12 +49,22 @@ public class ConsoleAccountCredentialService {
     private ConsoleMailService mailService;
     @Resource
     private RuleEngineConsoleLoginProperties properties;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.system.SystemSettingsService systemSettings;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.context.ApplicationEventPublisher systemEvents;
+
+    public String mailBaseUrl() { return systemSettings == null ? properties.getMail().getBaseUrl() : (String) systemSettings.access().get("baseUrl"); }
+    public boolean registrationEnabled() { return systemSettings == null ? properties.isRegistrationEnabled() : Boolean.TRUE.equals(systemSettings.access().get("registrationEnabled")); }
+    public boolean passwordRecoveryEnabled() { return systemSettings == null ? properties.isPasswordRecoveryEnabled() : Boolean.TRUE.equals(systemSettings.access().get("passwordRecoveryEnabled")); }
+    private int verificationTtlMinutes() { return systemSettings == null ? properties.getMail().getVerificationTtlMinutes() : ((Number) systemSettings.access().get("verificationTtlMinutes")).intValue(); }
+    private int passwordResetTtlMinutes() { return systemSettings == null ? properties.getMail().getPasswordResetTtlMinutes() : ((Number) systemSettings.access().get("passwordResetTtlMinutes")).intValue(); }
 
     @Resource
     private DatabaseConsoleAccountService databaseAccounts;
 
     public boolean mailConfigured() {
-        String base = properties.getMail().getBaseUrl();
+        String base = mailBaseUrl();
         if (!mailService.configured() || base == null || base.isBlank()) return false;
         try {
             java.net.URI uri = java.net.URI.create(base.trim());
@@ -74,7 +84,7 @@ public class ConsoleAccountCredentialService {
     @Transactional
     public void register(String username, String displayName, String email,
                          String password, String baseUrl, String requestIp) {
-        if (!properties.isRegistrationEnabled()) {
+        if (!registrationEnabled()) {
             throw new IllegalStateException("控制台注册未启用");
         }
         ensureMailConfigured("注册邮件服务未配置");
@@ -110,7 +120,7 @@ public class ConsoleAccountCredentialService {
         user.setUpdateBy(normalizedUsername);
         userMapper.insert(user);
         String token = issueToken(user.getId(), REGISTRATION_VERIFY,
-                properties.getMail().getVerificationTtlMinutes(), requestIp);
+                verificationTtlMinutes(), requestIp);
         mailService.sendVerification(normalizedEmail, user.getDisplayName(),
                 buildLink(baseUrl, "/register", token));
         appendAudit(user, "REGISTER_REQUEST", requestIp);
@@ -141,7 +151,7 @@ public class ConsoleAccountCredentialService {
     @Transactional
     public void requestPasswordReset(String identifier, String baseUrl,
                                       String requestIp) {
-        if (!properties.isPasswordRecoveryEnabled()) return;
+        if (!passwordRecoveryEnabled()) return;
         ensureMailConfigured("密码找回邮件服务未配置");
         lockAccounts();
         String value = identifier == null ? "" : identifier.trim();
@@ -158,7 +168,7 @@ public class ConsoleAccountCredentialService {
                 || user.getEmail().isBlank()
                 || user.getEmailVerifiedAt() == null) return;
         String token = issueToken(user.getId(), PASSWORD_RESET,
-                properties.getMail().getPasswordResetTtlMinutes(), requestIp);
+                passwordResetTtlMinutes(), requestIp);
         mailService.sendPasswordReset(user.getEmail(), user.getDisplayName(),
                 buildLink(baseUrl, "/password-reset", token));
         appendAudit(user, "PASSWORD_RESET_REQUEST", requestIp);
@@ -166,7 +176,7 @@ public class ConsoleAccountCredentialService {
 
     @Transactional
     public void resetPassword(String token, String password, String requestIp) {
-        if (!properties.isPasswordRecoveryEnabled()) throw new IllegalStateException("密码找回未启用");
+        if (!passwordRecoveryEnabled()) throw new IllegalStateException("密码找回未启用");
         requirePassword(password);
         lockAccounts();
         ConsoleAccountToken accountToken = requireToken(token, PASSWORD_RESET);
@@ -235,6 +245,7 @@ public class ConsoleAccountCredentialService {
             if (!Integer.valueOf(1).equals(role.getStatus())) { role.setStatus(1); roleMapper.updateById(role); }
         }
         appendAudit(user, "SUPER_ADMIN_ACCOUNT_RECOVERED", requestIp);
+        if (systemEvents != null) systemEvents.publishEvent(new com.hengshucredit.rule.server.system.SystemNotification("超级管理员恢复成功", "超级管理员账户已通过服务器恢复码完成恢复，请核对是否为授权操作。"));
     }
 
     public Profile profile(Long userId) {
@@ -280,7 +291,7 @@ public class ConsoleAccountCredentialService {
         appendAudit(user, "PROFILE_UPDATE", requestIp);
         if (emailChanged) {
             String token = issueToken(user.getId(), EMAIL_VERIFY,
-                    properties.getMail().getVerificationTtlMinutes(), requestIp);
+                    verificationTtlMinutes(), requestIp);
             mailService.sendVerification(normalizedEmail, user.getDisplayName(),
                     buildLink(baseUrl, "/register", token));
         }
@@ -340,7 +351,7 @@ public class ConsoleAccountCredentialService {
 
     @Transactional
     public void resendRegistration(String identifier, String baseUrl, String requestIp) {
-        if (!properties.isRegistrationEnabled()) throw new IllegalStateException("控制台注册未启用");
+        if (!registrationEnabled()) throw new IllegalStateException("控制台注册未启用");
         ensureMailConfigured("注册邮件服务未配置");
         lockAccounts();
         String value = identifier == null ? "" : identifier.trim();
@@ -350,7 +361,7 @@ public class ConsoleAccountCredentialService {
                 .eq(ConsoleUser::getRegistrationStatus, "PENDING").eq(ConsoleUser::getStatus, 0).last("LIMIT 2"));
         if (users.size() != 1) return;
         ConsoleUser user = users.get(0);
-        String token = issueToken(user.getId(), REGISTRATION_VERIFY, properties.getMail().getVerificationTtlMinutes(), requestIp);
+        String token = issueToken(user.getId(), REGISTRATION_VERIFY, verificationTtlMinutes(), requestIp);
         mailService.sendVerification(user.getEmail(), user.getDisplayName(), buildLink(baseUrl, "/register", token));
     }
 
@@ -362,7 +373,7 @@ public class ConsoleAccountCredentialService {
         if (!Integer.valueOf(1).equals(user.getStatus()) || user.getEmail() == null || user.getEmailVerifiedAt() != null) {
             throw new IllegalArgumentException("当前账户没有待验证邮箱");
         }
-        String token = issueToken(userId, EMAIL_VERIFY, properties.getMail().getVerificationTtlMinutes(), requestIp);
+        String token = issueToken(userId, EMAIL_VERIFY, verificationTtlMinutes(), requestIp);
         mailService.sendVerification(user.getEmail(), user.getDisplayName(), buildLink(baseUrl, "/register", token));
     }
 

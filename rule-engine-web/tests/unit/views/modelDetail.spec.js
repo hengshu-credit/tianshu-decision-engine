@@ -961,11 +961,11 @@ describe('ModelDetail — 版本管理', () => {
   beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.unmount() })
 
-  test('顶部使用公共版本管理并保留早期快照入口，不提供直接下线和删除操作', async () => {
+  test('详情顶部隐藏版本入口，保留历史能力且不提供直接下线和删除操作', async () => {
     await wrapper.setData({ model: { ...mockModel(), currentVersion: 3, publishedVersion: 1 } })
     const header = wrapper.find('.model-detail-header').element
     const manager = wrapper.findComponent({ name: 'ResourceVersionManager' })
-    expect(manager.props()).toMatchObject({ resourceType: 'MODEL', resourceId: 1, hasLegacy: true, showTrigger: true })
+    expect(manager.props()).toMatchObject({ resourceType: 'MODEL', resourceId: 1, hasLegacy: true, showTrigger: false })
     const directActions = Array.from(header.querySelector('.model-detail-actions').children).filter(element => element.tagName === 'EL-BUTTON-STUB').map(element => element.textContent)
     expect(directActions.join('')).not.toContain('下线')
     expect(directActions.join('')).not.toContain('删除')

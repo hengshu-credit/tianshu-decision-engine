@@ -90,15 +90,7 @@
                         class="palette-reference-child"
                         @click.stop="emitInsert(referenceTemplate(versionedItem(child)))"
                       >
-                        <code>{{ childRelativePath(child) }}</code>
-                        <span
-                          class="palette-type-badge"
-                          :class="
-                            'palette-type-badge--' + typeChar(child.varType)
-                          "
-                          >{{ typeChar(child.varType) }}</span
-                        >
-                        <span>{{ childDisplayName(child) }}</span>
+                        <content-reference :value="versionedItem(child)" />
                       </button>
                       <field-version-select :item="child" :selection="versionSelection(child)" @change="changeVersion(child, $event)" />
                     </div>
@@ -134,23 +126,7 @@
                 :key="referenceKey(item)"
                 @click="emitInsert(referenceTemplate(versionedItem(item)))"
               >
-                <td>
-                  <span
-                    class="palette-type-badge"
-                    :class="'palette-type-badge--' + typeChar(item.varType)"
-                    :title="typeLabel(item.varType)"
-                    >{{ typeChar(item.varType) }}</span
-                  >
-                </td>
-                <td class="palette-reference-code" :title="referenceCode(item)">
-                  {{ referenceCode(item) }}
-                </td>
-                <td
-                  class="palette-reference-name"
-                  :title="referenceLabel(item)"
-                >
-                  {{ referenceLabel(item) }}
-                </td>
+                <td colspan="3"><content-reference :value="versionedItem(item)" /></td>
                 <td class="palette-reference-version" @click.stop>
                   <field-version-select :item="item" :selection="versionSelection(item)" @change="changeVersion(item, $event)" />
                 </td>
@@ -162,8 +138,7 @@
         <template v-else-if="activeCategory === 'function'">
           <div v-for="fn in pagedItems" :key="functionKey(fn)" class="palette-result-row">
             <button class="palette-result" type="button" @click="emitInsert(functionTemplate(versionedFunction(fn)))">
-              <span>{{ fn.funcName || fn.functionLabel || functionCode(fn) }}</span>
-              <code>{{ functionCode(fn) }}()</code>
+              <content-reference :value="functionVersionItem(versionedFunction(fn))" />
             </button>
             <field-version-select :item="functionVersionItem(fn)" :selection="versionSelection(functionVersionItem(fn))" @change="changeVersion(functionVersionItem(fn), $event)" />
           </div>
@@ -239,6 +214,7 @@
 </template>
 
 <script>
+import ContentReference from '@/components/common/ContentReference.vue'
 import { markRaw } from 'vue'
 import {
   Collection as ElIconCollection,
@@ -255,14 +231,13 @@ import {
   createPathOperand,
   createReferenceOperand,
 } from '@/utils/operand'
-import { varTypeLabel } from '@/constants/varTypes'
 import {
   REFERENCE_PICKER_CATEGORIES,
   pickerReferenceCategory,
 } from '@/utils/pickerCategories'
 import { canViewPickerItem } from '@/security/pickerAccess'
 import { fieldPickerTags, matchesFieldTags } from '@/utils/fieldPickerPolicy'
-import { pickerTypeMatches } from '@/utils/fieldPicker'
+import { pickerFunctionTypeMatches, pickerTypeMatches } from '@/utils/fieldPicker'
 import {
   filterReferenceGroups,
   groupReferenceOptions,
@@ -272,22 +247,7 @@ import {
 import { createFunctionTemplate } from './expressionTree'
 import FieldVersionSelect from '@/components/common/FieldVersionSelect.vue'
 import { versionFields } from '@/utils/resourceVersion'
-
-const OPERATORS = [
-  '+',
-  '-',
-  '*',
-  '/',
-  '%',
-  '==',
-  '!=',
-  '>',
-  '>=',
-  '<',
-  '<=',
-  '&&',
-  '||',
-]
+import { operationOptions, operationLabel } from '@/utils/contentOperation'
 
 export default {
   data() {
@@ -298,7 +258,6 @@ export default {
       groupChildPages: {},
       page: 1,
       pageSize: 50,
-      operators: OPERATORS,
       categoryWidth: 128,
       contentWidth: 300,
       resizeTarget: '',
@@ -310,7 +269,7 @@ export default {
       ElIconSearch: markRaw(ElIconSearch),
     }
   },
-  components: {
+  components: { ContentReference,
     ElIconCollection,
     ElIconSearch,
     FieldVersionSelect,
@@ -322,10 +281,12 @@ export default {
     listOptions: { type: Array, default: () => [] },
     allowedKinds: { type: Array, default: () => [] },
     expectedType: { type: String, default: '' },
+    operationType: { type: String, default: null },
     visibleTags: { type: [Array, Object], default: null },
     selectableTags: { type: [Array, Object], default: null },
   },
   computed: {
+    operators() { return operationOptions(this.operationType ?? this.expectedType).map(item => item.value) },
     selectableVars() {
       return this.vars.filter(item => this.isSelectableReference(item))
     },
@@ -373,7 +334,7 @@ export default {
       return result
     },
     isReferenceCategory() {
-      return REFERENCE_PICKER_CATEGORIES.some(
+      return this.allows('REFERENCE') && REFERENCE_PICKER_CATEGORIES.some(
         (item) => item.key === this.activeCategory
       )
     },
@@ -402,8 +363,8 @@ export default {
       return this.operators.map((value) => ({
         key: value,
         value,
-        label: value,
-        searchTexts: [value, '运算符'],
+        label: operationLabel(value),
+        searchTexts: [value, operationLabel(value), '运算符'],
       }))
     },
     transformItems() {
@@ -523,7 +484,7 @@ export default {
     isSelectableFunction(fn) {
       const item = { _function: true, function: fn, varType: fn?.returnType || 'FUNCTION' }
       const tags = fieldPickerTags(item)
-      return pickerTypeMatches(item.varType, this.expectedType) && canViewPickerItem(item) && matchesFieldTags(tags, this.visibleTags) && matchesFieldTags(tags, this.selectableTags)
+      return pickerFunctionTypeMatches(fn?.returnType, this.expectedType) && canViewPickerItem(item) && matchesFieldTags(tags, this.visibleTags) && matchesFieldTags(tags, this.selectableTags)
     },
     allows(kind) {
       return !this.allowedKinds.length || this.allowedKinds.includes(kind)
@@ -713,26 +674,6 @@ export default {
         item.label ||
         this.referenceCode(item)
       )
-    },
-    typeLabel(type) {
-      return varTypeLabel(type)
-    },
-    typeChar(varType) {
-      const map = {
-        STRING: 's',
-        NUMBER: 'i',
-        INTEGER: 'i',
-        DOUBLE: 'i',
-        PROBABILITY: 'i',
-        BOOLEAN: 'b',
-        DATE: 'd',
-        ENUM: 'e',
-        OBJECT: 'o',
-        LIST: 'l',
-        MAP: 'm',
-        MODEL: 'M',
-      }
-      return map[varType] || '?'
     },
     startResize(target, event) {
       this.beginResize(target, event.clientX)

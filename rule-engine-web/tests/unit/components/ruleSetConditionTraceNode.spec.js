@@ -2,6 +2,12 @@ import { mount } from '@test-utils'
 import RuleSetConditionTraceNode from '@/components/common/RuleSetConditionTraceNode.vue'
 
 describe('RuleSetConditionTraceNode', () => {
+  test('一元判断的追踪不展示不存在的右侧阈值', () => {
+    const wrapper = mount(RuleSetConditionTraceNode, { props: { node: { kind: 'condition', contentOperand: { kind: 'REFERENCE', refId: 7, refType: 'VARIABLE', code: 'name', label: '姓名', valueType: 'STRING' }, hasThreshold: false, thresholdOperand: null, thresholdText: '为空', operatorText: '为空', result: true } } })
+    expect(wrapper.findAll('.content-ref__source').map(part => part.text())).toEqual(['变量'])
+    expect(wrapper.text()).not.toContain('阈值')
+    wrapper.unmount()
+  })
   test('输入回退值不伪装成已执行，缺失追踪与真正跳过明确区分', async () => {
     const node = { kind: 'condition', varCode: 'age', varName: '年龄', actualText: '32',
       actualSource: 'input', operatorText: '大于', thresholdText: '18', result: null, traceStatus: 'skipped' }

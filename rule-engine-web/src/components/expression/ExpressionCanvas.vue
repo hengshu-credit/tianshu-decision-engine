@@ -34,7 +34,6 @@
       >
         <div class="canvas-node-content">
         <template v-if="node">
-          <span class="canvas-kind">{{ kindName(node.kind) }}</span>
           <div v-if="editingManual" class="canvas-inline-editor" @click.stop>
             <template v-if="node.kind === 'LITERAL'">
               <el-select
@@ -104,7 +103,7 @@
               </div>
             </template>
           </div>
-          <strong v-else :title="summary(node)">{{ summary(node) }}</strong>
+          <content-reference v-else :value="node" :options="vars" wrap />
           <expression-node-options v-if="fieldPickerEnabled" :node="node" :list-options="listOptions" @patch="$emit('patchNode', { path: path.slice(), fields: $event })" />
         </template>
         <template v-else
@@ -148,12 +147,12 @@
             title="修改运算符"
             @keydown="handleOperatorKeydown(entry, $event)"
           >
-            {{ entry.operator }}<app-icon name="ArrowDown" />
+            <span>运算符</span><strong>{{ operatorLabel(entry.operator) }}</strong><code>{{ entry.operator }}</code><span class="canvas-operator-hint">{{ entry.noValue ? '无需右值' : '选择运算方式' }}</span><app-icon name="ArrowDown" />
           </button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item v-for="operator in operators" :key="operator" :command="operator">
-                {{ operator }}
+              <el-dropdown-item v-for="operator in operatorOptions(entry)" :key="operator.value" :command="operator.value">
+                {{ operator.label }} <code>{{ operator.value }}</code>
               </el-dropdown-item>
               <el-dropdown-item command="remove" divided>删除运算符及后一项</el-dropdown-item>
             </el-dropdown-menu>
@@ -161,7 +160,7 @@
         </el-dropdown>
         </div>
         <span v-else-if="node.kind !== 'OPERATION'" class="canvas-edge-label">{{ entry.label }}</span>
-        <expression-canvas
+        <expression-canvas v-if="!entry.noValue"
           :node="entry.value"
           :path="entry.path"
           :selected-path="selectedPath"
@@ -173,6 +172,7 @@
           :allow-operations="allowOperations"
           :append-expression="['FUNCTION', 'ACCESS', 'CAST'].includes(node.kind)"
           :list-options="listOptions"
+          :vars="vars"
           @requestField="$emit('requestField', $event)"
           @appendRow="$emit('appendRow', $event)"
           @select="$emit('select', $event)"
@@ -200,7 +200,8 @@
 
 <script>
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
-import { operandDisplay, OPERATION_OPERATORS } from '@/utils/operand'
+import ContentReference from '@/components/common/ContentReference.vue'
+import { operationLabel } from '@/utils/contentOperation'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import ExpressionNodeOptions from './ExpressionNodeOptions.vue'
 import {
@@ -208,11 +209,13 @@ import {
   expressionDescendantCount,
   expressionPathKey,
   pathsEqual,
+  expressionOperatorOptions,
 } from './expressionTree'
 
 export default {
   components: {
     MonacoEditor,
+    ContentReference,
     ExpressionNodeOptions,
     ElIconPlus,
   },
@@ -229,10 +232,10 @@ export default {
     allowOperations: { type: Boolean, default: true },
     appendExpression: Boolean,
     listOptions: { type: Array, default: () => [] },
+    vars: { type: Array, default: () => [] },
   },
   data() {
     return {
-      operators: OPERATION_OPERATORS,
       valueTypes: [
         { label: '文本', value: 'STRING' },
         { label: '数字', value: 'NUMBER' },
@@ -291,6 +294,8 @@ export default {
     else if (this.selected) this.focusCard()
   },
   methods: {
+    operatorLabel: operationLabel,
+    operatorOptions(entry) { return expressionOperatorOptions(this.node, entry.termIndex) },
     focusCard() {
       this.$nextTick(() => this.$el.querySelector('.canvas-node--selected')?.focus())
     },
@@ -380,24 +385,6 @@ export default {
         // Ignore unrelated native drag payloads.
       }
     },
-    summary(node) {
-      return operandDisplay(node) || '待配置'
-    },
-    kindName(kind) {
-      return (
-        {
-          LITERAL: '阈值',
-          PATH: '路径',
-          REFERENCE: '字段',
-          FUNCTION: '方法',
-          OPERATION: '运算',
-          ACCESS: '取值',
-          CAST: '转换',
-          ARRAY: '数组',
-          LIST_QUERY: '名单',
-        }[kind] || kind
-      )
-    },
     candidateKey(item) {
       const type =
         item._refType || item.refType || (item._ref && item._ref.refType) || ''
@@ -477,14 +464,7 @@ export default {
   border-style: dashed;
   color: var(--tianshu-text-tertiary);
 }
-.canvas-kind {
-  flex: none;
-  padding: 2px 5px;
-  border-radius: 4px;
-  background: var(--tianshu-designer-accent-bg);
-  color: var(--el-color-primary);
-  font-size: 11px;
-}
+
 .canvas-node strong {
   min-width: 0;
   overflow: visible;
@@ -570,7 +550,10 @@ export default {
   margin: 10px 0;
 }
 .canvas-child--operation { margin: 0; }
-.canvas-operator-row { display: flex; align-items: center; height: 32px; margin-left: 30px; }
+.canvas-operator-row { display: flex; align-items: stretch; min-height: 44px; margin: 8px 0 8px 30px; }
+.canvas-operator-row > .el-dropdown { display: flex; width: 100%; }
+.canvas-operator-hint { margin-left: auto; font-weight: 400; color: var(--tianshu-text-secondary); }
+
 .canvas-edge-label {
   display: block;
   margin-bottom: 4px;
@@ -580,13 +563,13 @@ export default {
 .canvas-edge-operator {
   display: inline-flex;
   box-sizing: border-box;
-  min-width: 40px;
-  height: 24px;
-  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  justify-content: flex-start;
   align-items: center;
-  gap: 4px;
+  gap: 12px;
   margin: 0;
-  padding: 0 8px;
+  padding: 0 12px;
   border-radius: 0;
   border: 1px solid var(--tianshu-border);
   background: var(--tianshu-designer-accent-bg);

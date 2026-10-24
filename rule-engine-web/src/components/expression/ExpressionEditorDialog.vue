@@ -43,6 +43,7 @@
           :list-options="listOptions"
           :allowed-kinds="effectiveAllowedKinds"
           :expected-type="expectedType || contextMeta.expectedType"
+          :operation-type="selectedOperationType"
           :visible-tags="visibleTags"
           :selectable-tags="selectableTags"
           @insert="insertTemplate"
@@ -68,6 +69,7 @@
           <div ref="canvasScroll" class="canvas-scroll">
             <expression-canvas
               :node="draft"
+              :vars="vars"
               :selected-path="selectedPath"
               :collapsed-path-keys="collapsedPathKeys"
               :expected-type="expectedType || contextMeta.expectedType"
@@ -139,6 +141,7 @@ import {
   createPathOperand,
   resolvePathOperand,
   validateOperand,
+  inferOperandType,
   functionArgumentExpectedType,
 } from '@/utils/operand'
 import { getExpressionContext } from '@/constants/expressionContexts'
@@ -148,6 +151,7 @@ import {
   existingCollapsedPaths,
   expressionAncestorKeys,
   expressionChildEntries,
+  expressionRightType,
   expressionPathKey,
   firstEditablePath,
   getExpressionNode,
@@ -218,6 +222,7 @@ export default {
     selectedNode() {
       return getExpressionNode(this.draft, this.selectedPath)
     },
+    selectedOperationType() { return this.selectedNode ? inferOperandType(this.selectedNode) : this.selectedExpectedType },
     pickerNode() { return getExpressionNode(this.draft, this.pickerPath) },
     canUndo() {
       return this.historyIndex > 0
@@ -230,6 +235,7 @@ export default {
     selectedExpectedType() {
       const path = this.selectedPath
       if (path.at(-2) === 'args') return functionArgumentExpectedType(getExpressionNode(this.draft, path.slice(0, -2)), path.at(-1))
+      if (path.at(-3) === 'terms' && path.at(-2) > 0) return expressionRightType(getExpressionNode(this.draft, path.slice(0, -3)), path.at(-2))
       return ''
     },
   },
@@ -363,7 +369,7 @@ export default {
       const paths = []
       const visit = (node, current = []) => {
         if (current.length || node?.kind !== 'OPERATION') paths.push(current)
-        if (!this.collapsedPathKeys.includes(expressionPathKey(current))) expressionChildEntries(node, current).forEach(entry => visit(entry.value, entry.path))
+        if (!this.collapsedPathKeys.includes(expressionPathKey(current))) expressionChildEntries(node, current).filter(entry => !entry.noValue).forEach(entry => visit(entry.value, entry.path))
       }
       visit(this.draft)
       const index = paths.findIndex(item => expressionPathKey(item) === expressionPathKey(path))

@@ -29,6 +29,9 @@ export const VAR_TYPE_FILTER_OPTIONS = [
 ]
 
 const LABELS = {
+  INTEGER: '整数', INT: '整数', LONG: '长整数', FLOAT: '浮点数', DECIMAL: '高精度数值', BIGDECIMAL: '高精度数值', PROBABILITY: '概率',
+  BOOL: '布尔', DATETIME: '日期时间', ARRAY: '数组',
+  FUNCTION: '方法', RULE: '规则', API: '接口', DATABASE: '数据库', SFTP: 'SFTP 文件', ANY: '动态类型',
   STRING: '字符串',
   NUMBER: '数值',
   DOUBLE: '双精度数值',

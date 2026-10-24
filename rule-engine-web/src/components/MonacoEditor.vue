@@ -86,6 +86,7 @@ export default {
       type: Boolean,
       default: true,
     },
+    versionReferences: { type: Array, default: () => [] },
     referenceVersions: {
       type: Object,
       default: () => ({}),
@@ -141,6 +142,7 @@ export default {
     completionItems: { deep: true, handler() { this.registerIntelligenceProviders(window.monaco) } },
     referenceVersions: { deep: true, handler() { this.refreshReferenceDecorations() } },
     referenceCatalogMode() { this.refreshReferenceDecorations() },
+    versionReferences: { deep: true, handler() { this.refreshReferenceDecorations() } },
     showReferenceDecorations() { this.refreshReferenceDecorations() },
   },
   async mounted() {
@@ -150,6 +152,7 @@ export default {
     )
     this.loadController = markRaw(new AbortController())
     const monaco = window.monaco || await waitForMonaco(this.loadController.signal)
+    if (!this.loadController.signal.aborted && !monaco) $emit(this, 'load-error')
     if (this.loadController.signal.aborted || !monaco || typeof window === 'undefined' || !this.$refs.container) return
     this.registerQlExpressLanguage(window.monaco)
     this.registerSqlLanguage(window.monaco)
@@ -253,7 +256,7 @@ export default {
       const matches = collectQlScriptReferences(
         this.editor.getValue?.() || this.value,
         this.normalizedReferenceItems(),
-        this.effectiveFunctions()
+        this.effectiveFunctions(), [], this.versionReferences
       )
       const decorations = buildQlReferenceDecorations(
         matches,
@@ -773,7 +776,7 @@ export default {
       return this.editor
     },
   },
-  emits: ['input', 'editor-ready', 'update:value', 'change', 'reference-select'],
+  emits: ['input', 'editor-ready', 'load-error', 'update:value', 'change', 'reference-select'],
 }
 </script>
 
@@ -788,68 +791,21 @@ export default {
 }
 
 /* 行内引擎引用使用主题语义色，保证浅色、深色和自定义主色下都有足够饱和度。 */
-.monaco-editor-container :deep(.se-reference-type),
-.monaco-editor-container :deep(.se-reference-code),
-.monaco-editor-container :deep(.se-reference-name),
-.monaco-editor-container :deep(.se-reference-version) {
-  border: none;
-  border-radius: 0;
-  padding: 0 2px;
-  line-height: inherit;
-  font-weight: 700;
-}
 
-.monaco-editor-container :deep(.se-reference-code) {
-  padding-left: 0;
-  padding-right: 0;
-}
 
-.monaco-editor-container :deep(.se-reference-type) {
-  display: inline-flex;
-  width: 22px;
-  height: 20px;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  padding-left: 0;
-  padding-right: 0;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--tianshu-info-text);
-  background: var(--tianshu-info-bg);
-}
 
-.monaco-editor-container :deep(.se-reference-type--number) {
-  color: var(--tianshu-success-text);
-  background: var(--tianshu-success-bg);
-}
 
-.monaco-editor-container :deep(.se-reference-type--collection) {
-  color: var(--tianshu-warning-text);
-  background: var(--tianshu-warning-bg);
-}
 
-.monaco-editor-container :deep(.se-reference-type--boolean) {
-  color: var(--tianshu-info-text);
-  background: var(--tianshu-info-bg);
-}
 
-.monaco-editor-container :deep(.se-reference-code) {
-  color: var(--tianshu-primary-text);
-  background: var(--tianshu-border);
-  text-decoration: underline;
-  text-decoration-color: var(--el-color-primary);
-  text-decoration-thickness: 2px;
-  text-underline-offset: 2px;
-}
 
-.monaco-editor-container :deep(.se-reference-name) {
-  color: var(--tianshu-text-secondary);
-  background: var(--tianshu-bg-hover);
-}
 
-.monaco-editor-container :deep(.se-reference-version) {
-  color: var(--tianshu-text-tertiary);
-  background: var(--tianshu-bg-muted);
-}
+
+
+
+
+
+
+
+
+
 </style>

@@ -2,7 +2,7 @@
   <div class="uiue-list-page database-detail-page">
     <div class="detail-header uiue-detail-header">
       <div class="uiue-detail-header__title">
-        <el-button link size="small" class="uiue-detail-back" @click="goBack">返回</el-button>
+        <el-button size="small" class="uiue-detail-back" aria-label="返回" title="返回数据库列表" @click="goBack"><app-icon name="Back" /></el-button>
         <div>
         <div class="detail-title">
           {{ isCreateMode ? '新建数据库数据源' : '编辑数据库数据源' }}

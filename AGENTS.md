@@ -134,8 +134,9 @@ docker compose --env-file .env.client --env-file .env.server -f docker/docker-co
 ### 数据库初始化
 
 - `schema.sql` 包含数据库表结构、逻辑执行日志视图和按变量唯一索引幂等补齐的系统常量；服务端启动时默认自动执行，脚本使用当前连接的数据库，不写死数据库名
-- Docker Compose 默认只启动 MySQL、Redis 和应用服务，不导入业务数据；启用 `example-data` profile 后等待 schema 完成并以 `INSERT IGNORE` 导入 `docker/rule-engine-mysql/data-tianshu-example.sql`
+- Docker Compose 默认只启动 MySQL、Redis 和应用服务，不导入业务数据；启用 `example-data` profile 后等待 schema 完成，再由 `docker/rule-engine-mysql/data-tianshu-example.sql` 按当前库真实 ID 补齐样例及引用，不能依赖自增顺序。
 - 可选初始配置通过 `RULE_ENGINE_INITIAL_DATA_ENABLED=true` 启用 `initial-data.sql`，仅插入缺失的全局变量/对象/字段，不覆盖已有配置；默认关闭。
+- 样例导入兼容未初始化、已执行可选初始化和旧版初始化。三个依赖演示名单/API/数据库的变量只由样例脚本创建；旧版默认配置只有在全部原始种子字段与配置均未改动时才校正引用。导入与服务端可选初始化共用数据库命名锁，样例在单连接事务中执行，遇错必须停止，不使用 `mysql --force`。
 - 手工演示环境准备顺序：启动服务自动执行 `schema.sql`，再按需导入 `docker/rule-engine-mysql/data-tianshu-example.sql`；该样例脚本不用于保留业务数据的数据库
 - 样例数据只保留 `docker/rule-engine-mysql/data-tianshu-example.sql`，不属于系统初始数据来源；服务端启动不自动导入样例数据
 - 功能边界以实际代码、测试和本文件下方的「仍需真实环境验证的边界」为准；本轮审查与实施状态见 `docs/audits/2026-10-22-engine-review.md`、对应优化计划和 `docs/audits/2026-10-23-optimization-completion.md`，不从历史功能清单推断能力缺失。

@@ -31,16 +31,7 @@ export function applyTheme(config, root = document.documentElement) {
   root.classList.toggle('theme-color-weak', normalized.colorWeak)
 
   setProperty(root, '--tianshu-brand-background', preset.background)
-  // 登录按钮加载时会淡化到 0.88；预留对比度，避免渐变较亮的一端文字难读。
-  const buttonTarget = relativeLuminance(preset.foreground) > 0.5 ? '#000000' : '#FFFFFF'
-  const buttonBackground = preset.background.replace(/#[\da-f]{6}/gi, color => {
-    for (let weight = 0; weight <= 100; weight++) {
-      const adjusted = mixThemeColors(color, buttonTarget, weight / 100)
-      if (contrastRatio(preset.foreground, adjusted) >= 7) return adjusted
-    }
-    return buttonTarget
-  })
-  setProperty(root, '--tianshu-brand-button-background', buttonBackground)
+  applyButtonPalette(root, 'primary', preset.background)
   setProperty(
     root,
     '--tianshu-brand-gradient',
@@ -72,8 +63,10 @@ export function applyTheme(config, root = document.documentElement) {
     setProperty(root, `--tianshu-action-${role}-rgb`, tone.rgb)
   }
   const dark = normalized.colorScheme === 'DARK'
-  const activeSurface = mixThemeColors(dark ? '#151D31' : '#FFFFFF', preset.primary, dark ? 0.2 : 0.1)
-  setProperty(root, '--tianshu-primary-text', ensureActionContrast(preset.primary, dark, [activeSurface]))
+  const actionSurfaces = [0.1, 0.14, 0.18, 0.22].map(weight =>
+    mixThemeColors(dark ? '#151D31' : '#FFFFFF', preset.primary, weight)
+  )
+  setProperty(root, '--tianshu-primary-text', ensureActionContrast(preset.primary, dark, actionSurfaces))
   applySemanticStatusPalette(root, normalized.colorScheme)
   setProperty(root, '--tianshu-focus-ring', `rgba(${scale.rgb}, 0.18)`)
   setProperty(root, '--tianshu-primary-shadow', `rgba(${scale.rgb}, 0.16)`)
@@ -186,6 +179,7 @@ function applySemanticStatusPalette(root, colorScheme) {
     }
     applyColorScale(root, `--el-color-${type}`, scale)
     if (type === 'danger') applyColorScale(root, '--el-color-error', scale)
+    applyButtonPalette(root, type, solid)
   }
 }
 
@@ -206,35 +200,52 @@ function createHintTone(scale, dark) {
   }
 }
 
+// 实心按钮按实际底色选择文字；渐变同时检查端点和中间色，交互状态不使用整块亮度滤镜。
+function applyButtonPalette(root, type, background) {
+  const colors = background.match(/#[\da-f]{6}/gi)
+  // 相对亮度 0.4 以下的中等/偏暗底色优先白字，避免饱和粉、红、紫仅因
+  // 深色字的对比度更高而失去实心按钮的视觉层级；再微调底色保证可读性。
+  // 含浅亮色的渐变仍按最弱对比度选字色，不能只看第一个色标。
+  const prefersWhiteText = colors.every(color => relativeLuminance(color) <= 0.4)
+  const foreground = prefersWhiteText ? '#FFFFFF' : ['#FFFFFF', '#19103B'].reduce((best, candidate) =>
+    minimumContrast(candidate, colors) > minimumContrast(best, colors) ? candidate : best
+  )
+  const contrastTarget = foreground === '#FFFFFF' ? '#000000' : '#FFFFFF'
+  const normal = readableButtonColors(colors, foreground, contrastTarget)
+  for (const [state, weight] of [['', 0], ['hover-', 0.08], ['active-', 0.16]]) {
+    const shifted = normal.map(color => mixThemeColors(color, foreground, weight))
+    const readable = readableButtonColors(shifted, foreground, contrastTarget)
+    let index = 0
+    setProperty(root, `--tianshu-button-${type}-${state}bg`, background.replace(/#[\da-f]{6}/gi, () => readable[index++]))
+    setProperty(root, `--tianshu-button-${type}-${state}text`, foreground)
+    setProperty(root, `--tianshu-button-${type}-${state}border`, readable[0])
+  }
+}
+
+function readableButtonColors(colors, foreground, target) {
+  for (let step = 0; step <= 100; step++) {
+    const adjusted = colors.map(color => mixThemeColors(color, target, step / 100))
+    if (minimumContrast(foreground, adjusted) >= 4.6) return adjusted
+  }
+  return colors.map(() => target)
+}
+
+function minimumContrast(foreground, colors) {
+  const samples = colors.flatMap((color, index) => index === 0 ? [color]
+    : Array.from({ length: 20 }, (_, step) => mixThemeColors(colors[index - 1], color, (step + 1) / 20)))
+  return Math.min(...samples.map(color => contrastRatio(foreground, color)))
+}
+
 function createActionPalette(primary, colorScheme) {
   const dark = colorScheme === 'DARK'
-  const colors = {
-    edit: ensureActionContrast(primary, dark),
-  }
-  colors.delete = selectActionColor(
-    'delete',
-    [
-      '#F00024',
-      '#B00000',
-      '#A60038',
-      '#FF3F00',
-      '#C02000',
-    ],
-    colors,
-    dark
+  const surfaces = [0.1, 0.14, 0.18, 0.22].map(weight =>
+    mixThemeColors(dark ? '#151D31' : '#FFFFFF', primary, weight)
   )
-
-  for (const role of actionAssignmentOrder) {
-    colors[role] = selectActionColor(
-      role,
-      preferredActionCandidates(role),
-      colors,
-      dark
-    )
-  }
+  const themeColor = ensureActionContrast(primary, dark, surfaces)
+  const dangerColor = ensureActionContrast(dark ? '#F87171' : '#DC2626', dark)
 
   return Object.fromEntries(actionRoles.map(role => {
-    const color = colors[role]
+    const color = role === 'delete' ? dangerColor : themeColor
     return [role, {
       color,
       rgb: createPrimaryScale(color).rgb,
@@ -289,112 +300,6 @@ const actionRoles = [
   'delete',
 ]
 
-const actionAssignmentOrder = [
-  'configure',
-  'detail',
-  'execute',
-  'global',
-  'inspect',
-  'reset',
-  'publish',
-  'disable',
-  'version',
-  'docs',
-  'add',
-  'compare',
-  'rollback',
-]
-
-const actionCandidateBases = [
-  '#0052FF',
-  '#2546F5',
-  '#5A1BFF',
-  '#8418FF',
-  '#B100FF',
-  '#D500E6',
-  '#F000B8',
-  '#F00083',
-  '#F0004F',
-  '#F00024',
-  '#FF3600',
-  '#FF6500',
-  // 发布加入多个操作组合后，补充明度不同的蓝紫候选，保留既有对比度和色差门槛。
-  '#9BC9FF',
-  '#D8B4FF',
-  // 版本入口出现在更多列表组合中，补充浅粉候选以保持同列操作的色差。
-  '#FFC9DD',
-]
-
-const preferredActionCandidateIndex = {
-  detail: 0,
-  execute: 11,
-  inspect: 6,
-  configure: 3,
-  version: 1,
-  compare: 10,
-  rollback: 8,
-  global: 7,
-  publish: 11,
-  reset: 0,
-  disable: 5,
-  add: 4,
-  docs: 6,
-}
-
-const coexistingActionGroups = [
-  ['edit', 'configure', 'reset', 'publish'],
-  ['edit', 'configure', 'reset', 'disable'],
-  ['configure', 'publish'],
-  ['configure', 'disable'],
-  ['version', 'edit', 'publish', 'delete'],
-  ['version', 'execute', 'detail', 'publish', 'delete'],
-  ['execute', 'edit', 'version', 'publish', 'delete'],
-  ['inspect', 'compare', 'rollback'],
-  ['version', 'detail', 'edit', 'publish', 'global', 'delete'],
-  ['detail', 'edit', 'disable', 'global', 'delete'],
-  ['version', 'edit', 'execute', 'inspect', 'publish', 'delete'],
-  ['version', 'edit', 'execute', 'add', 'publish', 'delete'],
-  ['version', 'edit', 'execute', 'publish', 'delete'],
-  ['version', 'detail', 'edit', 'publish', 'delete'],
-  ['version', 'edit', 'detail', 'execute', 'configure', 'global', 'publish', 'delete'],
-  ['version', 'edit', 'configure', 'publish', 'delete'],
-  ['version', 'edit', 'global', 'publish', 'delete'],
-  ['version', 'detail', 'inspect', 'publish', 'delete'],
-  ['version', 'edit', 'detail', 'configure', 'docs', 'publish', 'delete'],
-]
-
-function preferredActionCandidates(role) {
-  const start = preferredActionCandidateIndex[role]
-  return [
-    ...actionCandidateBases.slice(start),
-    ...actionCandidateBases.slice(0, start),
-  ]
-}
-
-function selectActionColor(role, candidates, selectedColors, dark) {
-  const neighborColors = coexistingActionGroups
-    .filter(group => group.includes(role))
-    .flatMap(group => group)
-    .filter(neighbor => neighbor !== role && selectedColors[neighbor])
-    .map(neighbor => selectedColors[neighbor])
-  const readableCandidates = [...new Set(
-    candidates.map(candidate => ensureActionContrast(candidate, dark))
-  )]
-  if (neighborColors.length === 0) return readableCandidates[0]
-
-  const distinctCandidate = readableCandidates.find(candidate =>
-    neighborColors.every(color => perceptualColorDistance(candidate, color) >= 18)
-  )
-  if (distinctCandidate) return distinctCandidate
-
-  return readableCandidates.reduce((best, candidate) => {
-    const distance = Math.min(...neighborColors.map(color =>
-      perceptualColorDistance(candidate, color)
-    ))
-    return distance > best.distance ? { color: candidate, distance } : best
-  }, { color: readableCandidates[0], distance: -1 }).color
-}
-
 function hasReadableActionContrast(color, dark, extraSurfaces) {
   const surface = dark ? '#151D31' : '#FFFFFF'
   const rowHoverSurface = dark ? '#26324D' : '#EEF2F7'
@@ -425,38 +330,6 @@ function relativeLuminance(color) {
       ? channel / 12.92
       : ((channel + 0.055) / 1.055) ** 2.4)
     .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0)
-}
-
-function perceptualColorDistance(first, second) {
-  const firstLab = labColor(first)
-  const secondLab = labColor(second)
-  return Math.sqrt(
-    (firstLab.lightness - secondLab.lightness) ** 2 +
-    (firstLab.a - secondLab.a) ** 2 +
-    (firstLab.b - secondLab.b) ** 2
-  )
-}
-
-function labColor(color) {
-  const [red, green, blue] = hexChannels(color).map(value => {
-    const channel = value / 255
-    return channel <= 0.04045
-      ? channel / 12.92
-      : ((channel + 0.055) / 1.055) ** 2.4
-  })
-  const [x, y, z] = [
-    (red * 0.4124 + green * 0.3576 + blue * 0.1805) / 0.95047,
-    red * 0.2126 + green * 0.7152 + blue * 0.0722,
-    (red * 0.0193 + green * 0.1192 + blue * 0.9505) / 1.08883,
-  ].map(value => value > 0.008856
-    ? Math.cbrt(value)
-    : 7.787 * value + 16 / 116)
-
-  return {
-    lightness: 116 * y - 16,
-    a: 500 * (x - y),
-    b: 200 * (y - z),
-  }
 }
 
 function hexChannels(color) {

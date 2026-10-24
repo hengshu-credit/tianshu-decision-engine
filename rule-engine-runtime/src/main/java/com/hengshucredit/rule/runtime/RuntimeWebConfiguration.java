@@ -22,6 +22,7 @@ public class RuntimeWebConfiguration implements WebMvcConfigurer {
                 .allowedOriginPatterns(configured.split(","))
                 .allowedMethods("POST", "OPTIONS")
                 .allowedHeaders("Authorization", "Content-Type", "X-Auth-Code")
+                .exposedHeaders("X-Trace-Id", "Retry-After", "X-Rule-Standard-Code", "X-Rule-Code-Mapping-Version")
                 .allowCredentials(false)
                 .maxAge(600);
     }
