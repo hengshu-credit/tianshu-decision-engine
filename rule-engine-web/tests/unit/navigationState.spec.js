@@ -1,6 +1,6 @@
 import { createMemoryHistory, createRouter, isNavigationFailure } from 'vue-router'
 import { flushPromises } from '@vue/test-utils'
-import { installNavigationFeedback, isHandledNavigationError, navigationState, preloadableView } from '@/router/navigationState'
+import { installNavigationFeedback, isHandledNavigationError, navigationState, preloadableView, preloadMenuRoutes, preloadRoute } from '@/router/navigationState'
 
 function deferred() {
   let resolve, reject
@@ -40,7 +40,7 @@ test('会话校验尚未完成时已经反馈目标页面并开始下载，不�
   expect(navigationState.pendingRoute).toBeNull()
 })
 
-test('旧导航结束不能移除后一次导航的骨架', async () => {
+test('旧导航结束不能移除后一次导航的状态', async () => {
   const first = deferred(), second = deferred()
   const router = makeRouter()
   await router.push('/')
@@ -56,6 +56,31 @@ test('旧导航结束不能移除后一次导航的骨架', async () => {
   await newNavigation
   expect(navigationState.pendingRoute).toBeNull()
   expect(router.currentRoute.value.path).toBe('/project')
+})
+
+test('悬停预加载只下载代码，不提前导航或创建页面，点击时复用下载', async () => {
+  const created = vi.fn()
+  const loader = vi.fn().mockResolvedValue({ created, template: '<p>规则页</p>' })
+  const router = makeRouter(loader)
+  await router.push('/')
+  await preloadRoute(router, '/rule')
+  await preloadRoute(router, '/rule')
+  expect(loader).toHaveBeenCalledTimes(1)
+  expect(created).not.toHaveBeenCalled()
+  expect(router.currentRoute.value.path).toBe('/')
+  await router.push('/rule')
+  expect(loader).toHaveBeenCalledTimes(1)
+})
+
+test('布局离开后取消尚未开始的菜单预加载', async () => {
+  vi.useFakeTimers()
+  const loader = vi.fn().mockResolvedValue({ template: '<p>规则页</p>' })
+  try {
+    const stop = preloadMenuRoutes(makeRouter(loader), ['/rule'])
+    stop()
+    await vi.runAllTimersAsync()
+    expect(loader).not.toHaveBeenCalled()
+  } finally { vi.useRealTimers() }
 })
 
 test('加载期间重新点击当前页可取消跳转并恢复内容', async () => {

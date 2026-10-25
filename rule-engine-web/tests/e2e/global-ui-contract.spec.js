@@ -317,7 +317,7 @@ test('期数和金额占比都无数据时隐藏占比整行但保留地图', as
 test('全局字体、业务文本选择和关键按钮语义可用', async ({ page }) => {
   const fontResponses = []
   page.on('response', response => {
-    if (new URL(response.url()).pathname === '/fonts/font.ttf') {
+    if (new URL(response.url()).pathname === '/fonts/font.woff2') {
       fontResponses.push(response.status())
     }
   })

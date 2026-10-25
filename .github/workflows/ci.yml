@@ -66,4 +66,12 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Run dist E2E
         run: npm run test:e2e:dist
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-browser-failures
+          path: rule-engine-web/test-results
+          if-no-files-found: ignore
+          retention-days: 7
 

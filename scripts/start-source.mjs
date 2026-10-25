@@ -63,9 +63,6 @@ try {
   if (buildCode !== 0) throw new Error(`Maven 编译失败：${buildCode}`)
 
   start('server', 'mvn', ['spring-boot:run', '-DskipTests'], path.join(root, 'rule-engine-server'))
-  start('http', 'mvn', ['spring-boot:run', '-DskipTests'], path.join(root, 'rule-engine-runtime'), {
-    ...clientEnv, SPRING_PROFILES_ACTIVE: 'http', SERVER_PORT: clientEnv.RUNTIME_HTTP_PORT || '7070'
-  })
   start('sdk', 'mvn', ['spring-boot:run', '-DskipTests'], path.join(root, 'rule-engine-runtime'), {
     ...clientEnv, SPRING_PROFILES_ACTIVE: 'sdk', SERVER_PORT: clientEnv.RUNTIME_SDK_PORT || '7071'
   })
@@ -78,7 +75,7 @@ try {
     if (installCode !== 0) throw new Error(`前端依赖安装失败：${installCode}`)
   }
   start('web', 'npm', ['run', 'dev'], web, serverEnv)
-  console.log(`源码服务启动中：server=${serverEnv.SERVER_PORT || 8080}, web=${serverEnv.VITE_PORT || 9090}, http=${clientEnv.RUNTIME_HTTP_PORT || 7070}, sdk=${clientEnv.RUNTIME_SDK_PORT || 7071}。按 Ctrl+C 停止全部服务。`)
+  console.log(`源码服务启动中：server=${serverEnv.SERVER_PORT || 8080}, web=${serverEnv.VITE_PORT || 9090}, sdk=${clientEnv.RUNTIME_SDK_PORT || 7071}。远程执行直接调用 Server API；按 Ctrl+C 停止全部服务。`)
 } catch (error) {
   console.error(error.message)
   stop(1)

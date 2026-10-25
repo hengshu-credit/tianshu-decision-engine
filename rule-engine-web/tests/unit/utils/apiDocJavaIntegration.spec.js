@@ -20,6 +20,11 @@ describe('Java 服务接入说明', () => {
     expect(element.textContent).toContain('project-code: "Credit_Code"')
     expect(element.textContent).toContain('ruleClient.execute("My_Rule", params)')
     expect(element.textContent).not.toContain('actual-secret')
+    expect(element.textContent).toContain('POST /api/rule/sync/execute/{ruleCode}')
+    expect(element.textContent).toContain('POST /api/rule/openapi/{ruleCode}')
+    expect(element.textContent).toContain('X-Auth-Code')
+    expect(element.textContent).not.toContain('rule-engine-client-http')
+    expect(element.textContent).not.toContain('7070')
     if (authType === 'API_KEY') {
       expect(element.textContent).toContain('api-key-placement: QUERY')
       expect(element.textContent).toContain('api-key-parameter-name: "X-Credit-Key"')

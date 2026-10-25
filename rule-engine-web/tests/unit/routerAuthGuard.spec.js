@@ -1,4 +1,5 @@
 import { createConsoleAuthGuard } from '../../src/router/authGuard.js'
+import { flushPromises } from '@vue/test-utils'
 import {
   clearCurrentUser,
   hasPermission,
@@ -15,6 +16,65 @@ function createRoute(path) {
 }
 
 describe('router console auth guard', () => {
+  test('异步复核发现权限版本改变时退出，不把新身份写入旧页面缓存', async () => {
+    const me = vi.fn().mockResolvedValueOnce({ code: '000000', data: { username: 'admin', permissionVersion: 1, permissions: ['project:view'] } })
+      .mockResolvedValueOnce({ code: '000000', data: { username: 'admin', permissionVersion: 2, permissions: ['project:view'] } })
+    const redirect = vi.fn()
+    const guard = createConsoleAuthGuard(async () => ({ code: '000000', data: { loginEnabled: true } }), me, () => true, { onRedirect: redirect })
+    await guard(createRoute('/project'), createRoute('/login'), vi.fn())
+    await guard(createRoute('/dashboard'), createRoute('/project'), vi.fn())
+    expect(getCurrentUser()).toBeNull()
+    expect(redirect).toHaveBeenCalledWith({ path: '/login', query: { redirect: '/dashboard' }, replace: true })
+  })
+
+  test('快速切换后旧页面的失败复核不能让当前有效会话退出', async () => {
+    let release
+    const pending = new Promise(resolve => { release = resolve })
+    const user = { code: '000000', data: { username: 'admin', permissions: ['project:view', 'rule:view'] } }
+    const me = vi.fn().mockResolvedValueOnce(user).mockReturnValueOnce(pending).mockResolvedValueOnce(user)
+    const redirect = vi.fn()
+    const guard = createConsoleAuthGuard(async () => ({ code: '000000', data: { loginEnabled: true } }), me, () => true, { onRedirect: redirect })
+    await guard(createRoute('/project'), createRoute('/login'), vi.fn())
+    const first = guard(createRoute('/rule'), createRoute('/project'), vi.fn())
+    await flushPromises()
+    await guard(createRoute('/project'), createRoute('/rule'), vi.fn())
+    release(null)
+    await first
+    expect(getCurrentUser()?.username).toBe('admin')
+    expect(redirect).not.toHaveBeenCalled()
+  })
+
+  test('已验证会话切换管理页立即进入，慢会话复核失败后仍退出登录', async () => {
+    let release
+    const pending = new Promise(resolve => { release = resolve })
+    const me = vi.fn().mockResolvedValueOnce({ code: '000000', data: { username: 'admin', permissions: ['project:view', 'experiment:view'] } }).mockReturnValueOnce(pending)
+    const redirect = vi.fn()
+    const guard = createConsoleAuthGuard(async () => ({ code: '000000', data: { loginEnabled: true } }), me, () => true, { onRedirect: redirect })
+    await guard(createRoute('/project'), createRoute('/login'), vi.fn())
+    const next = vi.fn()
+    guard(createRoute('/experiment'), createRoute('/project'), next)
+    expect(next).toHaveBeenCalledWith()
+    expect(redirect).not.toHaveBeenCalled()
+    release(null)
+    await flushPromises()
+    expect(getCurrentUser()).toBeNull()
+    expect(redirect).toHaveBeenCalledWith({ path: '/login', query: { redirect: '/experiment' }, replace: true })
+  })
+
+  test('快速切换仍按当前权限拒绝越权页面，不沿用已清除的身份', async () => {
+    const me = vi.fn().mockResolvedValue({ code: '000000', data: { username: 'viewer', permissions: ['project:view'] } })
+    const guard = createConsoleAuthGuard(async () => ({ code: '000000', data: { loginEnabled: true } }), me, () => true, { onRedirect: vi.fn() })
+    await guard(createRoute('/project'), createRoute('/login'), vi.fn())
+    const denied = vi.fn()
+    await guard(createRoute('/rule'), createRoute('/project'), denied)
+    expect(denied).toHaveBeenCalledWith({ path: '/dashboard', replace: true })
+    clearCurrentUser()
+    me.mockResolvedValue(null)
+    const loggedOut = vi.fn()
+    await guard(createRoute('/project'), createRoute('/dashboard'), loggedOut)
+    expect(loggedOut).toHaveBeenCalledWith({ path: '/login', query: { redirect: '/project' }, replace: true })
+  })
+
   test.each([false, true])('较早导航的会话请求晚返回（失败=%s）不会覆盖新身份', async fail => {
     let resolveOld, rejectOld
     const oldMe = new Promise((resolve, reject) => { resolveOld = resolve; rejectOld = reject })

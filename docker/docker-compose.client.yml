@@ -1,8 +1,8 @@
 # 方案：客户端 runtime Compose。服务端使用 docker-compose.server.yml 独立部署。
-# 本文件只启动 HTTP/SDK runtime，不启动 server/web；RULE_SERVER_URL 必须填写 IP+端口或 NPM 域名。
+# 本文件只启动 SDK runtime，不启动 server/web；RULE_SERVER_URL 必须填写 IP+端口或 NPM 域名。
 # 使用 .env.client；客户端可单独部署到其他机器并独立扩容。
-# runtime-http 512M/0.10C、runtime-sdk 768M/0.15C；默认各 1 个实例。
-# 本文件默认 runtime-http、runtime-sdk 各 1 个实例；客户端可独立扩容，SDK 连接 server 共用的 Redis。
+# runtime-sdk 768M/0.15C；默认 1 个实例。
+# 本文件默认 runtime-sdk 1 个实例；客户端可独立扩容，SDK 连接 server 共用的 Redis。
 name: ${DEPLOY_PROJECT:-tianshu-client}
 
 x-java: &java
@@ -42,46 +42,6 @@ x-runtime: &runtime
         create_host_path: false
 
 services:
-  runtime-http:
-    <<: *runtime
-    cpus: "0.10"
-    mem_limit: 512m
-    deploy:
-      resources:
-        limits:
-          cpus: "0.10"
-          memory: 512M
-    environment:
-      <<: *java-env
-      SPRING_PROFILES_ACTIVE: http
-      SERVER_PORT: 7070
-      RULE_SERVER_URL: "${RUNTIME_RULE_SERVER_URL:?Set RUNTIME_RULE_SERVER_URL to server IP:port or NPM URL}"
-      RULE_AUTH_TYPE: ${RULE_AUTH_TYPE:-GLOBAL_KEY}
-      PROJECT_ACCESS_TOKEN: ${RUNTIME_PROJECT_ACCESS_TOKEN:-}
-      RULE_GLOBAL_KEY_ID: ${RULE_GLOBAL_KEY_ID:-default}
-      RULE_GLOBAL_PRIVATE_KEY: ${RULE_GLOBAL_PRIVATE_KEY:-}
-      # GLOBAL_KEY 模式不需要白名单；切换项目模式时再填写 HTTP_RULE_ALLOWED_CODES。
-      RULE_ALLOWED_CODES: "${HTTP_RULE_ALLOWED_CODES:-}"
-      RULE_TRACE_ENABLED: ${RUNTIME_TRACE_ENABLED:-false}
-      RULE_HTTP_TIMEOUT_MS: ${RULE_HTTP_TIMEOUT_MS:-30000}
-      RUNTIME_ACCESS_TOKEN: "${HTTP_ACCESS_TOKEN:?Set HTTP_ACCESS_TOKEN}"
-      RUNTIME_APP_NAME: runtime-http
-      RUNTIME_CORS_ALLOWED_ORIGINS: "${RUNTIME_CORS_ALLOWED_ORIGINS:?Set RUNTIME_CORS_ALLOWED_ORIGINS}"
-      JAVA_TOOL_OPTIONS: ${RUNTIME_HTTP_JAVA_TOOL_OPTIONS:--Xms128m -Xmx512m -XX:MaxMetaspaceSize=128m -XX:MaxDirectMemorySize=128m -XX:+ExitOnOutOfMemoryError}
-      LOGGING_LEVEL_ROOT: ${RUNTIME_LOG_LEVEL:-WARN}
-    volumes:
-      - type: bind
-        source: ${RUNTIME_DIR:-./runtime}/runtime.jar
-        target: /app/app.jar
-        read_only: true
-        bind:
-          create_host_path: false
-      - runtime-http-logs:/data/logs
-    command: ["java", "-jar", "/app/app.jar"]
-    ports:
-      - "${APP_BIND_ADDRESS:-127.0.0.1}:${RUNTIME_HTTP_PORT:-7070}:7070"
-    expose: ["7070"]
-
   runtime-sdk:
     <<: *runtime
     cpus: "0.15"
@@ -140,7 +100,6 @@ services:
     expose: ["7071"]
 
 volumes:
-  runtime-http-logs:
   runtime-sdk-logs:
 
 networks:

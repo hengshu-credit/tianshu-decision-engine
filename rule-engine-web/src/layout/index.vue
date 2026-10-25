@@ -10,6 +10,7 @@
       :active-menu="activeMenuIndex"
       :menus="sidebarMenus"
       @navigate="navigateTo"
+      @preload="preloadPage"
       @toggle-collapse="toggleSidebar"
       @resize="handleSidebarResize"
       @resize-end="handleSidebarResizeEnd"
@@ -34,6 +35,8 @@
             :data-menu-path="menu.index"
             :aria-label="menu.label"
             @click="navigateTo(menu.index)"
+            @mouseenter="preloadPage(menu.index)"
+            @focus="preloadPage(menu.index)"
           >
             <app-icon :name="menu.icon" />
             <span>{{ menu.label }}</span>
@@ -46,6 +49,7 @@
           :active-path="activeTabPath"
           :pending-path="pendingRoute ? pendingRoute.fullPath : ''"
           @activate="activateTab"
+          @preload="preloadPage"
           @operate="handleTabOperation"
         />
       </header>
@@ -103,7 +107,6 @@
         </div>
       <project-context-bar />
       <main class="layout-main" :aria-busy="!!navigation.pendingRoute">
-        <route-page-skeleton v-if="navigation.pendingRoute" :title="navigation.pendingRoute.meta.title" />
         <el-alert v-if="navigation.error && !navigation.pendingRoute" type="error" title="页面加载失败，请重试" show-icon @close="navigation.error = null">
           <el-button size="small" @click="navigateTo(navigation.error.fullPath)">重新加载</el-button>
         </el-alert>
@@ -112,14 +115,12 @@
             <component
               :is="Component"
               v-if="$route.meta.keepAlive"
-              v-show="!navigation.pendingRoute"
               :key="currentViewKey"
             />
           </keep-alive>
           <component
             :is="Component"
             v-if="!$route.meta.keepAlive"
-            v-show="!navigation.pendingRoute"
             :key="currentViewKey"
           />
         </router-view>
@@ -163,8 +164,7 @@
 
 <script>
 import { isNavigationFailure } from 'vue-router'
-import { isHandledNavigationError, navigationState } from '@/router/navigationState'
-import RoutePageSkeleton from '@/components/common/RoutePageSkeleton.vue'
+import { isHandledNavigationError, navigationState, preloadMenuRoutes, preloadRoute } from '@/router/navigationState'
 import { systemBrand } from '@/system/systemBrand'
 import LayoutSidebar from '@/layout/components/LayoutSidebar.vue'
 import WorkspaceTabs from '@/layout/components/WorkspaceTabs.vue'
@@ -235,7 +235,6 @@ function browserLocalStorage() {
 export default {
   name: 'Layout',
   components: {
-    RoutePageSkeleton,
     LayoutSidebar,
     WorkspaceTabs,
     ProjectContextBar,
@@ -312,16 +311,20 @@ export default {
   created() {
     applyTheme(this.confirmedTheme)
     this.restoreWorkspaceTabs()
+    this.cancelMenuPreload = preloadMenuRoutes(this.$router, filterMenus(SIDEBAR_MENUS).map(menu => menu.index))
   },
   async mounted() {
     window.addEventListener('keydown', this.handleWorkspaceShortcut, true)
     await this.refreshAuthBar()
+    if (this.$.isUnmounted) return
     await this.syncProjectContext()
   },
   beforeUnmount() {
+    this.cancelMenuPreload?.()
     window.removeEventListener('keydown', this.handleWorkspaceShortcut, true)
   },
   methods: {
+    preloadPage(path) { return preloadRoute(this.$router, path) },
     routeTab(route) {
       const tab = routeToTab(route)
       if (!route || !['ExpressionEditor', 'ConfigurationExpressionEditor'].includes(route.name)) return tab

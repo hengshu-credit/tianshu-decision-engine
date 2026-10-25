@@ -1,12 +1,11 @@
 name: Publish frontend operation manual
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches:
       - master
-    paths:
-      - 'docs/**'
-      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:
@@ -21,6 +20,7 @@ concurrency:
 jobs:
   deploy:
     name: Deploy operation manual
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -28,6 +28,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

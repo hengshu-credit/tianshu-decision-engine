@@ -34,7 +34,8 @@ test('冻结 Monaco 脚本反解内置方法和固定版本引用，不借当前
   await page.goto('http://tianshu.local/#/designer/script/109')
   const lines = page.locator('.view-lines')
   await expect(lines.locator('.content-ref__source')).toHaveText(['方法', '变量'])
-  await expect(lines.locator('.content-ref__name')).toHaveText(['固定版本取值', '历史年龄'])
+  // Monaco 在不同字体度量下会把注入的留白拆成独立 span；只核对实际显示的名称。
+  await expect(lines.locator('.content-ref__name').filter({ hasText: /\S/ })).toHaveText(['固定版本取值', '历史年龄'])
   await expect(lines.locator('.content-ref__code')).toHaveText(['resourceVersionValue', 'age_old'])
   await expect(lines.locator('.content-ref__version')).toHaveText(['内置', 'v3'])
   await expect(lines).not.toContainText('其他版本年龄')

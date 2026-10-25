@@ -21,6 +21,8 @@
             :data-path="tab.fullPath"
             :aria-label="tab.title"
             @click="$emit('activate', tab.fullPath)"
+            @mouseenter="$emit('preload', tab.fullPath)"
+            @focus="$emit('preload', tab.fullPath)"
           >
             <span class="workspace-tab__title" :class="{ 'is-overflowing': overflowingPaths.includes(tab.fullPath) }">{{ tab.displayTitle }}</span>
           </button>
@@ -220,7 +222,7 @@ export default {
       }
     },
   },
-  emits: ['activate', 'operate'],
+  emits: ['activate', 'operate', 'preload'],
 }
 </script>
 

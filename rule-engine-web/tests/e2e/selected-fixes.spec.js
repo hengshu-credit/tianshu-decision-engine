@@ -79,8 +79,9 @@ for (const entry of ['project/1', 'rule?projectId=1']) {
       return { revision: { id: 901, definitionId: 101, state: 'DRAFT', lockVersion: 1, revisionNo: 1, modelJson: savedDraft.modelJson }, compileSuccess: true, issues: [] }
     })
     data.set('POST /api/rule/definition', ({ request }) => { submitted = request.postDataJSON(); return { id: 101 } })
-    const { requests, assertClean } = await installDistRoutes(page, { apiData: data })
-    await page.goto('http://tianshu.local/index.html#/' + entry)
+    const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+    const { requests, assertClean } = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data })
+    await page.goto(origin + '/index.html#/' + entry)
     if (entry.startsWith('project')) await page.getByRole('tab', { name: '项目规则', exact: true }).click()
     await page.getByRole('button', { name: '新建规则', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: '新建规则' })
@@ -143,7 +144,7 @@ test('A09 A11 数据库字段先保存草稿，显式发布才提交审批', asy
   await dialog.locator('.el-form-item').filter({ hasText: '字段名称' }).locator('input').fill('数据库评分')
   await dialog.getByPlaceholder('选择数据库', { exact: true }).click()
   await page.getByRole('dialog', { name: '内容选择器', exact: true }).getByRole('row').filter({ hasText: '风控只读库' }).dblclick()
-  await dialog.locator('.el-form-item').filter({ hasText: '查询 SQL' }).locator('.monaco-editor-container').click()
+  await dialog.locator('.el-form-item').filter({ hasText: '查询 SQL' }).getByRole('textbox', { name: /Editor content/ }).click()
   const sql = "/* query ; ? */ SELECT ? AS age, ? AS code;"
   await page.keyboard.insertText(sql)
   await dialog.getByRole('button', { name: '补齐参数', exact: true }).click()

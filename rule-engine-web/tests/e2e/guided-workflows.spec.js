@@ -462,7 +462,7 @@ test('数据库只读查询按 SQL 占位符引导填写参数并区分结果状
 
   const dialog = page.locator('.el-dialog:visible').last()
   await expect(dialog.getByText('只读查询', { exact: true })).toBeVisible()
-  const editor = dialog.locator('.monaco-editor-container')
+  const editor = dialog.getByRole('textbox', { name: /Editor content/ })
   await editor.click()
   await page.keyboard.insertText('SELECT ? AS score')
   await expect(dialog.getByText('已识别 1 个有效 ? 占位符', { exact: true }))

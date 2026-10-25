@@ -860,8 +860,10 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
     await expect(page.locator('.view-lines .content-ref__code').filter({ hasText: /^"age"$/ })).toHaveCount(1)
     await expect.poll(async () => (await page.locator('.view-lines .content-ref__code').allTextContents()).join('')).toContain('"TaxRequest.orders.amount"')
     const ageCode = page.locator('.view-lines .content-ref__code').filter({ hasText: /^age$/ }).first()
-    const ageBox = await ageCode.boundingBox()
-    await page.mouse.click(ageBox.x + ageBox.width - 1, ageBox.y + ageBox.height / 2)
+    await expect(page.locator('.monaco-editor-container .el-loading-mask')).toHaveCount(0)
+    await ageCode.click()
+    // 注入的版本标签可能与编码边缘共享像素，点选编码后用键盘定位到真实单词末尾。
+    await editor.press('Control+ArrowRight')
     await page.keyboard.insertText('X')
     await expect(editor).toHaveValue(/\+ ageX;/)
     await editor.press('Control+z')

@@ -17,6 +17,8 @@
         :title="compact ? menu.label : ''"
         :aria-label="menu.label"
         @click="$emit('navigate', menu.index)"
+        @mouseenter="$emit('preload', menu.index)"
+        @focus="$emit('preload', menu.index)"
       >
         <app-icon :name="menu.icon" class="menu-icon" />
         <span v-if="!compact" class="menu-label">{{ menu.label }}</span>
@@ -101,7 +103,7 @@ export default {
       window.removeEventListener('mouseup', this.finishResize)
     },
   },
-  emits: ['navigate', 'resize', 'resize-end', 'toggle-collapse'],
+  emits: ['navigate', 'preload', 'resize', 'resize-end', 'toggle-collapse'],
 }
 </script>
 

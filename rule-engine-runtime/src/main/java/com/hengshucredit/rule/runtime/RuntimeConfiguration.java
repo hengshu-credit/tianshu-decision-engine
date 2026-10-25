@@ -1,65 +1,15 @@
 package com.hengshucredit.rule.runtime;
 
 import com.hengshucredit.rule.client.auth.ClientAuthConfig;
-import com.hengshucredit.rule.client.http.RuleHttpClient;
-import com.hengshucredit.rule.model.dto.RuleResult;
-import org.springframework.boot.actuate.health.Health;
-import org.springframework.boot.actuate.health.HealthIndicator;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.Arrays;
-import java.util.function.BiFunction;
 
 @Configuration
 public class RuntimeConfiguration {
-    @Bean(destroyMethod = "close")
-    @Profile("http")
-    public RuleHttpClient httpClient(Environment env) {
-        return RuleHttpClient.builder()
-                .serverUrl(required(env, "RULE_SERVER_URL"))
-                .authConfig(projectAuth(env))
-                .appName(env.getProperty("RUNTIME_APP_NAME", "http-runtime"))
-                .timeoutMs(env.getProperty("RULE_HTTP_TIMEOUT_MS", Integer.class, 30000))
-                .traceEnabled(env.getProperty("RULE_TRACE_ENABLED", Boolean.class, true))
-                .build();
-    }
-
-    @Bean
-    @Profile("http")
-    public BiFunction<String, com.hengshucredit.rule.model.RuleExecutionRequest, RuleResult> httpExecutor(RuleHttpClient client) {
-        return client::executeRequest;
-    }
-
-    @Bean
-    @Profile("http")
-    public HealthIndicator upstreamHealthIndicator(Environment env) {
-        URI uri = URI.create(required(env, "RULE_SERVER_URL").replaceAll("/+$", "")
-                + "/actuator/health/readiness");
-        HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
-        return () -> {
-            try {
-                var response = client.send(HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(5)).GET().build(),
-                        HttpResponse.BodyHandlers.discarding());
-                return response.statusCode() == 200 ? Health.up().build() : Health.down().build();
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
-                return Health.down().build();
-            } catch (java.io.IOException error) {
-                return Health.down().build();
-            }
-        };
-    }
-
     static ClientAuthConfig projectAuth(Environment env) {
-        // HTTP 运行时与 HTTP SDK 使用同一组鉴权工厂；不实现另一套签名/Token 交换协议。
+        // SDK 运行时复用 Java SDK 的签名和 Token 交换协议。
         String type = env.getProperty("RULE_AUTH_TYPE", ClientAuthConfig.LEGACY_TOKEN)
                 .toUpperCase(java.util.Locale.ROOT);
         ClientAuthConfig auth = switch (type) {

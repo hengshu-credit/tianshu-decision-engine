@@ -90,7 +90,7 @@ API 返回 `body`（组装结果）、`response`（原始状态码、响应头�
 
 异步提交获得的 `taskId`/`traceId`、轮询上下文和提交回执会写入规则幂等检查点。外数变量配置的异常策略支持 `SKIP`、`BREAK`、`WAIT`、`RETRY`；`WAIT` 将订单置为 `WAITING_EXTERNAL`，恢复时只查询原任务，不重复提交。V2 多步链路保存已完成步骤和当前等待步骤，恢复会跳过已提交步骤；回调注册在等待期间保留，终态后清理。
 
-`GET /api/rule/runtime/executions/{traceId}` 是状态与结果统一接口：未完成时返回 `status`、`attemptNo`、来源状态和脱敏步骤中间状态，完成时在同一对象的 `result` 中返回结果。`POST /api/rule/runtime/executions/{traceId}/resume` 可不带请求体（检查点已保存原始入参时），也可带原订单完整入参；服务端校验摘要后恢复原 revision 的规则。Java SDK 和 HTTP-only SDK 均提供对应 `resumeExecution` 方法。
+`GET /api/rule/runtime/executions/{traceId}` 是状态与结果统一接口：未完成时返回 `status`、`attemptNo`、来源状态和脱敏步骤中间状态，完成时在同一对象的 `result` 中返回结果。`POST /api/rule/runtime/executions/{traceId}/resume` 可不带请求体（检查点已保存原始入参时），也可带原订单完整入参；服务端校验摘要后恢复原 revision 的规则。Java SDK 提供对应 `resumeExecution` 方法；直接接入方调用同一 Server API。
 
 ## 客户端缓存与高并发
 

@@ -1,6 +1,6 @@
 # Kafka 执行日志上报
 
-Kafka 用于完整 Java SDK **本地执行**后的日志上报。规则同步仍走 HTTP，变更通知仍走 Redis；HTTP-only SDK 和服务端执行不重复发送客户端日志。
+Kafka 用于完整 Java SDK **本地执行**后的日志上报。规则同步仍走 HTTP，变更通知仍走 Redis；Server API 执行不重复发送客户端日志。
 
 ## 通道选择与交付边界
 

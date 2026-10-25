@@ -39,7 +39,7 @@
           <div class="hero-main">
             <div class="eyebrow">TIANSHU DECISION ENGINE · JAVA INTEGRATION</div>
             <h1>让 Java 服务，接入<br /><em>可验证的决策执行链路。</em></h1>
-            <p class="hero-copy">根据规则依赖选择本地 SDK、服务端执行或 HTTP-only 交付，并把鉴权、追踪和错误处理放进业务服务边界。</p>
+            <p class="hero-copy">根据规则依赖选择直接调用 Server API 或本地 SDK 执行，并把鉴权、追踪和错误处理放进业务服务边界。</p>
             <div class="hero-actions">
               <a class="button button-quiet button-link" href="https://hengshucredit.com/" target="_blank" rel="noreferrer"><span class="button-icon button-icon-logo"><img src="project-usage/hengshucredit_animated.svg" alt="" /></span><span>官网</span></a>
               <a class="button button-quiet button-link" href="https://github.com/hengshu-credit/tianshu-decision-engine" target="_blank" rel="noreferrer"><span class="button-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4M9 18c-4.51 2-5-2-7-2" /></svg></span><span>开源</span></a>
@@ -61,8 +61,8 @@
         </section>
 
         <div class="notice notice-blue"><span class="notice-icon">i</span><div class="integration-intro"><strong>先确定交付模式，再复制对应配置。</strong>
-<p>对外公司或无需本地规则缓存执行的接入，可直接使用纯 HTTP 的 <code>rule-engine-client-http</code>，或部署 <code>rule-engine-runtime</code> 的 <code>http</code> profile；该方式不需要 Redis。</p>
-<p>以下第 1–5、7 节描述原有完整 SDK <code>rule-engine-client-sdk</code>，适用于需要本地规则缓存执行的内部系统；它仍依赖 Redis，会同步规则，不应与 HTTP-only SDK 的交付边界混淆。</p>
+<p>业务系统直接调用 Server API，不需要安装客户端、部署转发服务或连接 Redis。接口文档从项目「API」按钮下载。</p>
+<p>以下第 1–5、7 节描述可选 Java SDK <code>rule-engine-client-sdk</code>；只有本地执行模式需要 Redis 和规则同步。直接 HTTP 调用见第 6 节。</p>
 </div></div>
         <div class="deployment-body"><section class="manual-section deployment-section" id="mode" data-search="1. 确定规则范围与执行位置 项目规则：使用所属项目的凭据。 全局规则：先在调用项目中关联全局规则，再使用该项目凭据调用。全局不代表匿名可用，也不代表任何项目均可执行。 多项目：每个项目使用独立凭据与 SDK 实例； project-id 、 project-code 必须与凭据所属项目一致。不能通过业务请求中的项目字段扩大权限。 只有已发布规则可以通过开放接口访问；草稿、审核中及下线规则不可调用。 server-side-execution: true 表示 SDK 通过 HTTP 请求引擎服务端执行。涉及 API、数据库、名单、模型、派生变量或服务端函数等运行依赖时，应使用此模式。 server-side-execution: false 表示 Java 服务执行本地缓存的脚本。该模式不执行服务端变量解析流程，需要业务服务准备完整输入并提供所需函数和运行依赖；只有这个本地纯计算模式需要配置 Redis，SDK 启动时才会同步规则/函数并建立项目频道订阅。 server-side-execution: true 不下载规则、不订阅 Redis，通过 HTTP 调用服务端执行，实验和跨请求执行状态也仅在该模式可用。SDK 两种模式都不直连引擎 MySQL。"><h2>1. 确定规则范围与执行位置</h2>
 <ul>
@@ -220,9 +220,14 @@ public class DecisionController {
 </table>
 <p>两个开关独立：关闭追踪但保留上报时，可保留基础执行日志；开启追踪但关闭上报时，可在 Java 服务读取追踪而不从 SDK 上报。服务端执行不重复从客户端上报日志。服务端基础执行日志、鉴权审计、外数日志及计费不受 <code>log-report-enabled</code> 控制；两个开关都关闭不等于平台不留任何日志。</p>
 <p>本地上报默认使用有界 HTTP 异步队列。启用上报且有自定义 <code>ExecutionLogReporter</code> 时使用自定义实现，使用内置 Kafka 通道必须显式配置 <code>log-report-transport: KAFKA</code>，不会因存在 <code>KafkaTemplate</code> 自动切换。日志上报失败不应改变决策结果。程序化 Builder 支持 <code>.traceEnabled(false).logReportEnabled(false)</code>；即使显式传入 reporter，关闭上报仍然生效。</p>
-</section><section class="manual-section deployment-section" id="example" data-search="6. 运行现成示例 当前默认示例已改为 HTTP-only，配置 RULE_SERVER_URL 、 PROJECT_ACCESS_TOKEN 、 RULE_ALLOWED_CODES 即可接入，不再使用 RULE_PROJECT_ID 、 RULE_PROJECT_CODE 或 Redis。表达式追踪使用 RULE_TRACE_ENABLED ，默认关闭；没有本地日志上报。 在根目录运行 mvn -pl rule-engine-client-http -am clean install 生成对外 tar.gz。解压后复制配置模板，执行 start.ps1 或 sh start.sh ，访问默认 7070 端口的联调页。完整使用方法见 HTTP 接入示例 。原本依赖预置 SQL 和本地 Java/Bean 函数的示例保留在 本地 SDK 样例统一使用 rule-engine-runtime 的 sdk profile ，不随对外包交付。"><h2>6. 运行现成示例</h2>
-<p>当前默认示例已改为 HTTP-only，配置 <code>RULE_SERVER_URL</code>、<code>PROJECT_ACCESS_TOKEN</code>、<code>RULE_ALLOWED_CODES</code> 即可接入，不再使用 <code>RULE_PROJECT_ID</code>、<code>RULE_PROJECT_CODE</code> 或 Redis。表达式追踪使用 <code>RULE_TRACE_ENABLED</code>，默认关闭；没有本地日志上报。</p>
-<p>需要远程执行时直接使用 <code>rule-engine-client-http</code>，或部署 <code>rule-engine-runtime</code> 的 <code>http</code> profile；需要本地缓存执行时使用 <code>rule-engine-runtime</code> 的 <code>sdk</code> profile。</p>
+</section><section class="manual-section deployment-section" id="example" data-search="6. 直接调用 Server API 请求直接发往 Server（默认 8080，或反向代理后的 HTTPS 地址），不需要单独部署客户端服务。 标准执行： POST /api/rule/sync/execute/{ruleCode} ，请求体使用 params 、 clientAppName 和可选的 traceEnabled 。 开放接口执行： POST /api/rule/openapi/{ruleCode} ，需先启用并发布规则开放接口；携带项目调用凭据及匹配的 X-Auth-Code ，请求和响应按发布契约映射。 状态查询： GET /api/rule/runtime/executions/{traceId} ；恢复执行： POST /api/rule/runtime/executions/{traceId}/resume 。 项目「API」按钮继续下载包含字段、鉴权及多语言调用样例的 API 文档。凭据只保存在业务服务中，网络超时后先查询执行状态，避免盲目重放。"><h2>6. 直接调用 Server API</h2>
+<p>请求直接发往 Server（默认 8080，或反向代理后的 HTTPS 地址），不需要单独部署客户端服务。</p>
+<ul>
+<li>标准执行：<code>POST /api/rule/sync/execute/{ruleCode}</code>，请求体使用 <code>params</code>、<code>clientAppName</code> 和可选的 <code>traceEnabled</code>。</li>
+<li>开放接口执行：<code>POST /api/rule/openapi/{ruleCode}</code>，需先启用并发布规则开放接口；携带项目调用凭据及匹配的 <code>X-Auth-Code</code>，请求和响应按发布契约映射。</li>
+<li>状态查询：<code>GET /api/rule/runtime/executions/{traceId}</code>；恢复执行：<code>POST /api/rule/runtime/executions/{traceId}/resume</code>。</li>
+</ul>
+<p>项目「API」按钮继续下载包含字段、鉴权及多语言调用样例的 API 文档。凭据只保存在业务服务中，网络超时后先查询执行状态，避免盲目重放。</p>
 </section><section class="manual-section deployment-section" id="multi" data-search="7. 一个 Java 服务连接多个项目 不要修改共享客户端的项目或凭据来处理不同请求。为每个项目声明独立的 Spring Bean，通过 @Qualifier 在业务服务中选择；凭据从服务端配置读取，不接受业务请求直接传入。下面的方法可按不同 Bean 名重复声明： @Bean(name = &quot;creditRuleClient&quot;, initMethod = &quot;start&quot;, destroyMethod = &quot;close&quot;)
 RuleEngineClient creditRuleClient(RedisConnectionFactory redis, Environment env) {
     return RuleEngineClient.builder()

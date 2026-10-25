@@ -32,32 +32,21 @@ public class RuntimeControllerTest {
         assertEquals("100008", JSON.parseObject(response.getContentAsString()).getString("code"));
     }
 
-    @Test public void runtimeForwardsPerRequestOptionsWithoutChangingClientDefaults() throws Exception {
-        var received = new java.util.concurrent.atomic.AtomicReference<com.alibaba.fastjson.JSONObject>();
-        HttpServer upstream = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        upstream.createContext("/", exchange -> {
-            received.set(JSON.parseObject(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8)));
-            byte[] bytes = JSON.toJSONBytes(com.hengshucredit.rule.model.ApiResponse.ok(Map.of("success", true, "result", 42)));
-            exchange.sendResponseHeaders(200, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.close();
-        });
-        upstream.start();
-        try (var client = com.hengshucredit.rule.client.http.RuleHttpClient.builder()
-                .serverUrl("http://127.0.0.1:" + upstream.getAddress().getPort()).token("test-token").appName("default-app").traceEnabled(true).build()) {
-            var env = new MockEnvironment().withProperty("RULE_ALLOWED_CODES", "MixedCase").withProperty("RUNTIME_ACCESS_TOKEN", TOKEN);
-            var mvc = MockMvcBuilders.standaloneSetup(new RuntimeController(new RuntimeConfiguration().httpExecutor(client), env))
-                    .setControllerAdvice(new RuntimeExceptionHandler()).build();
-            var response = mvc.perform(post("/api/rule/execute/MixedCase").header("Authorization", "Bearer " + TOKEN)
-                    .contentType("application/json").content("{\"params\":{},\"traceEnabled\":false,\"clientAppName\":\"request-app\"}"))
-                    .andReturn().getResponse();
-            assertEquals(200, response.getStatus());
-            assertEquals(Boolean.FALSE, received.get().get("traceEnabled"));
-            assertEquals("request-app", received.get().getString("clientAppName"));
-            client.execute("MixedCase", Map.of());
-            assertEquals("default-app", received.get().getString("clientAppName"));
-            assertEquals(Boolean.TRUE, received.get().get("traceEnabled"));
-        } finally { upstream.stop(0); }
+    @Test public void runtimePassesPerRequestOptionsToSdkExecutor() throws Exception {
+        var received = new java.util.concurrent.atomic.AtomicReference<com.hengshucredit.rule.model.RuleExecutionRequest>();
+        var env = new MockEnvironment().withProperty("RULE_ALLOWED_CODES", "MixedCase").withProperty("RUNTIME_ACCESS_TOKEN", TOKEN);
+        RuleResult result = new RuleResult(); result.setSuccess(true);
+        var mvc = MockMvcBuilders.standaloneSetup(new RuntimeController((code, input) -> {
+            received.set(input); return result;
+        }, env)).setControllerAdvice(new RuntimeExceptionHandler()).build();
+        var response = mvc.perform(post("/api/rule/execute/MixedCase").header("Authorization", "Bearer " + TOKEN)
+                .contentType("application/json").content(JSON.toJSONString(Map.of("params", Map.of("Age", 18),
+                        "traceEnabled", false, "clientAppName", "request-app"))))
+                .andReturn().getResponse();
+        assertEquals(200, response.getStatus());
+        assertEquals(Boolean.FALSE, received.get().getTraceEnabled());
+        assertEquals("request-app", received.get().getClientAppName());
+        assertEquals(18, received.get().getParams().get("Age"));
     }
 
     @Test

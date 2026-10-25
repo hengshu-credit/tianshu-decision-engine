@@ -368,15 +368,14 @@ Java/Spring Bean 原生实现属于可信服务器代码能力，配置、导入
 | `rule-engine-server` | 管理、同步、执行与日志 API | 8080 |
 | `rule-engine-core` / `rule-engine-model` | 规则编译执行、公共实体与 DTO | — |
 | `rule-engine-client-sdk` | Java SDK，规则同步、缓存和执行 | — |
-| `rule-engine-client-http` | 对外纯 HTTP SDK，不同步规则、不依赖 Redis | — |
-| `rule-engine-runtime` | 正式 HTTP/SDK 运行时接入服务 | 7070 / 7071 |
+| `rule-engine-runtime` | 正式 SDK 本地执行运行时接入服务 | 7071 |
 | MySQL / Redis | 持久化配置、规则变更通知 | 3306 / 6379 |
 
 运行环境为 JDK 17、Maven 3.6+、MySQL 8、Redis 和 Node.js 20.19+。前端构建产物独立部署，业务系统通过服务端同步规则，不直连管理数据库。
 
-业务系统可通过开放 API 或 Java SDK 接入，按项目使用访问令牌、账号密码、API Key 或 HMAC-SHA256 鉴权；需要跨项目读取全部已发布规则时，可由 server 配置 Ed25519 公钥，HTTP/SDK 客户端使用配对私钥签名访问。
+业务系统可通过开放 API 或 Java SDK 接入，按项目使用访问令牌、账号密码、API Key 或 HMAC-SHA256 鉴权；需要跨项目读取全部已发布规则时，可由 server 配置 Ed25519 公钥，业务服务或 Java SDK使用配对私钥签名访问。
 
-管理接口、开放接口和 HTTP/SDK 统一使用 `rule-engine-model` 中的公共平台响应契约（包名 `com.hengshucredit.rule.model`）：成功结果码为字符串 `000000`，固定描述为“成功”；失败码按领域、子类和原因编码，具体原因放入 `detail`，HTTP 状态按统一字典映射。接口格式和升级要求见 [平台请求与响应契约](docs/platform-api-contract.md)。
+管理接口、开放接口和 Server API/SDK 统一使用 `rule-engine-model` 中的公共平台响应契约（包名 `com.hengshucredit.rule.model`）：成功结果码为字符串 `000000`，固定描述为“成功”；失败码按领域、子类和原因编码，具体原因放入 `detail`，HTTP 状态按统一字典映射。接口格式和升级要求见 [平台请求与响应契约](docs/platform-api-contract.md)。
 
 ```java
 RuleResult result = ruleEngineClient.execute("face_threshold_table", requestMap);
@@ -388,11 +387,11 @@ SDK 本地执行日志默认通过 HTTP 上报；需要 Kafka 时显式启用，
 
 完整环境变量、Docker Compose 启动命令、ONNX CPU/CUDA 配置和 SDK 接入示例见 [部署与接入说明](https://hengshu-credit.github.io/tianshu-decision-engine/deployment.html)；生产 JAR/dist 制品位于 `docker/runtime`。
 
-项目启动方式彼此独立：源码模式先启动 MySQL/Redis，再分别运行 server、web、HTTP 和 SDK；服务端默认在启动时自动执行包含表结构、逻辑执行日志视图和系统常量幂等补齐的 `schema.sql`，需要内置变量和数据对象时将 `RULE_ENGINE_INITIAL_DATA_ENABLED=true` 交给 server，启动时会按编码补齐 `sql/initial-data.sql` 且不覆盖已有修改；执行 `node scripts/package-runtime.mjs` 可把后端 JAR 和前端 `dist/` 统一生成到 `docker/runtime`；正式部署推荐使用 `docker/docker-compose.server.yml` + `.env.server` 启动 server/web，再使用 `docker/docker-compose.client.yml` + `.env.client` 独立启动 HTTP/SDK runtime，完整命令见 [`docker/README.md`](docker/README.md)。示例数据 `data-tianshu-example.sql` 位于 `docker/rule-engine-mysql`，默认不导入，需要时通过 `--profile example-data` 启用只插入导入；`docker-compose.full.yml` 保留用于自带 MySQL/Redis/Kafka 的单机模式。Kafka 主题绑定、账号和死信策略详见 [`docs/kafka-execution-logs.md`](docs/kafka-execution-logs.md)。
+项目启动方式彼此独立：源码模式先启动 MySQL/Redis，再分别运行 server、web 和 SDK；服务端默认在启动时自动执行包含表结构、逻辑执行日志视图和系统常量幂等补齐的 `schema.sql`，需要内置变量和数据对象时将 `RULE_ENGINE_INITIAL_DATA_ENABLED=true` 交给 server，启动时会按编码补齐 `sql/initial-data.sql` 且不覆盖已有修改；执行 `node scripts/package-runtime.mjs` 可把后端 JAR 和前端 `dist/` 统一生成到 `docker/runtime`；正式部署推荐使用 `docker/docker-compose.server.yml` + `.env.server` 启动 server/web，再使用 `docker/docker-compose.client.yml` + `.env.client` 独立启动 SDK runtime，完整命令见 [`docker/README.md`](docker/README.md)。示例数据 `data-tianshu-example.sql` 位于 `docker/rule-engine-mysql`，默认不导入，需要时通过 `--profile example-data` 启用只插入导入；`docker-compose.full.yml` 保留用于自带 MySQL/Redis/Kafka 的单机模式。Kafka 主题绑定、账号和死信策略详见 [`docs/kafka-execution-logs.md`](docs/kafka-execution-logs.md)。
 
 需要在 Docker 内一次生成后端、前端和可上传部署 ZIP 时执行 `node scripts/package-deployment.mjs`。公网部署使用 Nginx Proxy Manager 提供 HTTPS、证书和反向代理；Compose 不修改 Ubuntu 的防火墙和既有端口策略，MySQL、Redis、Kafka 按 `.env.server` 与现有安全组对外提供调试访问。
 
-外部公司接入可直接引入 `rule-engine-client-http`，或部署 `rule-engine-runtime` 的 `http` profile；该方式不需要 Redis，不在客户进程内同步或执行规则。
+外部公司或业务系统直接调用 Server API：`POST /api/rule/sync/execute/{ruleCode}`；启用并发布开放接口后可调用 `POST /api/rule/openapi/{ruleCode}`。接口文档从项目「API」按钮下载，不需要部署转发服务或连接 Redis。
 
 “业务端 → Java 服务 → 决策引擎”的完整配置、全局/项目规则访问、多项目客户端及日志追踪开关见 [Java 业务服务接入指南](https://hengshu-credit.github.io/tianshu-decision-engine/java-service-integration.html)。项目导出的 API 文档内也提供 Java 服务接入示例。
 

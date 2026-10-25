@@ -53,10 +53,9 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 |------|------|------|
 | `rule-engine-model` | 公共实体、DTO、全局请求响应契约、平台结果码和 HTTP 映射 | - |
 | `rule-engine-core` | 规则编译与执行核心 | - |
-| `rule-engine-server` | 管理端 REST API | 8080 |
+| `rule-engine-server` | 管理端与对外执行 REST API | 8080 |
 | `rule-engine-client-sdk` | 完整 Java SDK，本地缓存与执行 | - |
-| `rule-engine-client-http` | HTTP-only Java SDK，远程调用服务端执行 | - |
-| `rule-engine-runtime` | 可独立部署的 HTTP/SDK 执行运行时 | 7070 / 7071 |
+| `rule-engine-runtime` | 可独立部署的 SDK 本地执行运行时 | 7071 |
 | `rule-engine-web` | Vue 3 前端控制台（独立部署） | 9090（dev）|
 | `docker/rule-engine-mysql` | MySQL 配置、数据和日志（独立 Compose，可远程访问） | - |
 | `docker/rule-engine-redis` | Redis 配置、数据和日志（独立 Compose，可远程访问） | - |
@@ -118,8 +117,8 @@ npm run test:e2e:full # 设置 E2E_BASE_URL 后执行真实前后端联调
 
 ```bash
 # docker/docker-compose.mysql.yml / docker/docker-compose.redis.yml 可独立启动并远程提供 MySQL、Redis；
-# docker/docker-compose.yml 启动连接外部数据库的 server、web、HTTP、SDK；
-# docker/docker-compose.full.yml 一键启动 MySQL、Redis、server、web、HTTP、SDK。
+# docker/docker-compose.yml 启动连接外部数据库的 server、web、SDK；
+# docker/docker-compose.full.yml 一键启动 MySQL、Redis、server、web、SDK。
 cp .env.server.example .env.server
 cp .env.client.example .env.client  # PowerShell 使用 Copy-Item
 # 分别填写 .env.server 与 .env.client 的地址和凭据

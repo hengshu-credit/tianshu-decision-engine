@@ -15,6 +15,8 @@ Ubuntu 公网部署使用服务器上独立运行的 Nginx Proxy Manager 管理 
 
 默认执行日志通过 HTTP 上报；需要 Kafka 日志链路时，full Compose 和 `docker-compose.kafka.yml` 都可以启动单节点 KRaft Kafka，也可以改为接入外部 Kafka 集群。配置方法见本文末尾的 Kafka 小节和 [`docs/kafka-execution-logs.md`](../docs/kafka-execution-logs.md)。
 
+远程执行直接请求 Server：标准接口为 `POST /api/rule/sync/execute/{ruleCode}`，已启用并发布的开放接口为 `POST /api/rule/openapi/{ruleCode}`。接口文档仍从项目「API」按钮下载。已有部署升级时需停止并移除原 HTTP 转发容器，将业务请求改为 Server 地址、对应路径和项目调用凭据；原转发服务入口令牌不能用作 Server 项目凭据。SDK 本地执行服务按需保留。
+
 ## 共同准备
 
 在仓库根目录执行，生成 server JAR、runtime JAR 和前端 `dist`：
@@ -38,7 +40,7 @@ node scripts/package-deployment.mjs
 
 ```text
 server.jar       管理端 API
-runtime.jar      HTTP/SDK runtime，共用同一个 JAR，通过 profile 区分
+runtime.jar      SDK 本地执行 runtime，默认 sdk profile
 dist/            Vue 控制台静态文件
 ```
 
@@ -57,7 +59,7 @@ vi .env.server
 vi .env.client
 ```
 
-`.env.server` 只配置 server 多节点、web、控制台、MySQL、Redis、Kafka 和服务端密钥；`.env.client` 只配置 HTTP/SDK runtime、`RULE_SERVER_URL`、客户端令牌，以及 SDK 需要访问的 Redis。示例默认使用 `GLOBAL_KEY` 全局鉴权，直接同步全部已发布项目；切换项目级客户端时再填写项目凭据、项目 ID/编码和规则白名单。SDK runtime 必须连接与 server 共用的 Redis，才能接收规则和函数变更推送；启用 Kafka 日志时还要把 `KAFKA_BOOTSTRAP_SERVERS` 配成客户端可达地址。
+`.env.server` 只配置 server 多节点、web、控制台、MySQL、Redis、Kafka 和服务端密钥；`.env.client` 只配置 SDK runtime、`RULE_SERVER_URL`、客户端令牌，以及 SDK 需要访问的 Redis。示例默认使用 `GLOBAL_KEY` 全局鉴权，直接同步全部已发布项目；切换项目级客户端时再填写项目凭据、项目 ID/编码和规则白名单。SDK runtime 必须连接与 server 共用的 Redis，才能接收规则和函数变更推送；启用 Kafka 日志时还要把 `KAFKA_BOOTSTRAP_SERVERS` 配成客户端可达地址。
 
 服务端启动：
 
@@ -95,20 +97,19 @@ docker compose --project-name tianshu-client-2 --env-file .env.client-2 \
 
 ### 源码直接启动
 
-server 和 Vite 仅读取 `.env.server`，HTTP/SDK runtime 仅读取 `.env.client`，同名文件支持当前目录或上一级目录。系统环境变量和命令行参数优先；旧 `.env` 和 `.local` 不再加载，两类服务配置互不混入。
+server 和 Vite 仅读取 `.env.server`，SDK runtime 仅读取 `.env.client`，同名文件支持当前目录或上一级目录。系统环境变量和命令行参数优先；旧 `.env` 和 `.local` 不再加载，两类服务配置互不混入。
 
 源码运行时直接在两份配置中填写本机可访问的地址；容器运行时填写容器可访问的地址。`host.docker.internal` 面向容器访问宿主机，不能访问仅绑定到宿主机回环地址的服务。
 
 ```powershell
 # 仓库根目录编译；失败时不要继续启动
 mvn clean install -DskipTests -Ponnx-gpu
-# 分别在三个终端启动，无需手工导出配置
+# 分别在两个终端启动 Java 服务，无需手工导出配置
 mvn -f rule-engine-server/pom.xml spring-boot:run -Ponnx-gpu
-mvn -f rule-engine-runtime/pom.xml spring-boot:run '-Dspring-boot.run.profiles=http'
 mvn -f rule-engine-runtime/pom.xml spring-boot:run '-Dspring-boot.run.profiles=sdk'
 ```
 
-HTTP/SDK runtime 分别使用 `RUNTIME_HTTP_PORT` / `RUNTIME_SDK_PORT`、`HTTP_ACCESS_TOKEN` / `SDK_ACCESS_TOKEN` 和各自规则白名单；SDK 的 Redis 地址、密码和 database 必须与 server 一致。`node scripts/start-source.mjs` 会分别传递 server/client 配置，也可用 `start-dev.cmd` 只启动 server/web。
+SDK runtime 使用 `RUNTIME_SDK_PORT`、`SDK_ACCESS_TOKEN` 和 `SDK_RULE_ALLOWED_CODES`；SDK 的 Redis 地址、密码和 database 必须与 server 一致。`node scripts/start-source.mjs` 会分别传递 server/client 配置，也可用 `start-dev.cmd` 只启动 server/web。
 
 ## 方案一：JAR 包 + Nginx
 
@@ -149,20 +150,17 @@ curl -fsS http://127.0.0.1:8080/actuator/health/liveness
 curl -i http://127.0.0.1:8080/actuator/health/readiness
 ```
 
-### 3. 可选启动 HTTP/SDK runtime
+### 3. 可选启动 SDK runtime
 
-需要独立运行时接口时，在仓库根目录分别启动同一个 `runtime.jar` 的两个 profile：
+需要本地纯计算执行时，在仓库根目录启动 SDK runtime；远程执行直接调用 Server API：
 
 ```bash
-java -Dspring.profiles.active=http -Dserver.port=7070 \
-  -DRULE_SERVER_URL=http://127.0.0.1:8080 \
-  -jar docker/runtime/runtime.jar
 java -Dspring.profiles.active=sdk -Dserver.port=7071 \
   -DRULE_SERVER_URL=http://127.0.0.1:8080 \
   -jar docker/runtime/runtime.jar
 ```
 
-两个 runtime 的项目凭证、规则白名单和访问令牌通过环境变量或 `.env.client` 注入；生产环境不要把示例令牌直接用于业务流量。
+SDK runtime 的项目凭证、规则白名单和访问令牌通过环境变量或 `.env.client` 注入；生产环境不要把示例令牌直接用于业务流量。
 
 ### 4. 启动前端
 
@@ -200,23 +198,23 @@ docker run -d \
 
 运行时的 `RULE_SERVER_URL` 不使用 Compose 内部的 `server` 服务名。请填写客户端能够实际访问的服务端 IP+端口，例如 `http://192.168.1.10:8080`；跨机器部署时也可以填写 Nginx Proxy Manager 提供的 `https://api.example.com`。
 
-### 3. 启动 HTTP/SDK runtime（可选）
+### 3. 启动 SDK runtime（可选）
 
 ```bash
 docker run -d \
-  --name tianshu-http \
+  --name tianshu-sdk \
   --restart unless-stopped \
   --network tianshu-app \
   --env-file /opt/tianshu/runtime/.env.client \
-  -e SPRING_PROFILES_ACTIVE=http \
-  -e SERVER_PORT=7070 \
+  -e SPRING_PROFILES_ACTIVE=sdk \
+  -e SERVER_PORT=7071 \
   -e RULE_SERVER_URL=http://192.168.1.10:8080 \
-  -p 7070:7070 \
+  -p 7071:7071 \
   -v /opt/tianshu/runtime/runtime.jar:/app/app.jar:ro \
   eclipse-temurin:17-jre-jammy java -jar /app/app.jar
 ```
 
-SDK runtime 使用同样的命令，把容器名、profile 和端口改为 `tianshu-sdk`、`sdk`、`7071`。
+直接调用 Server API 的业务系统无需启动 SDK runtime。
 
 ### 4. 启动 Nginx 容器
 
@@ -272,13 +270,13 @@ docker run -d \
 停止或更新：
 
 ```bash
-docker stop tianshu-web tianshu-http tianshu-server
-docker rm tianshu-web tianshu-http tianshu-server
+docker stop tianshu-web tianshu-sdk tianshu-server
+docker rm tianshu-web tianshu-sdk tianshu-server
 ```
 
 ## 方案三：Docker Compose + 外接 MySQL/Redis
 
-`docker-compose.yml` 只启动 server、HTTP runtime、SDK runtime 和 web；它不会创建 MySQL 或 Redis。数据库地址必须从容器内可达：
+`docker-compose.yml` 只启动 server、SDK runtime 和 web；它不会创建 MySQL 或 Redis。数据库地址必须从容器内可达：
 
 ```dotenv
 DEPLOY_PROJECT=tianshu-external
@@ -297,7 +295,7 @@ docker compose --project-name tianshu-external --env-file .env.client --env-file
 docker compose --project-name tianshu-external --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.yml ps
 docker compose --project-name tianshu-external --env-file .env.client --env-file .env.server \
-  -f docker/docker-compose.yml logs --tail 200 server runtime-http runtime-sdk web
+  -f docker/docker-compose.yml logs --tail 200 server runtime-sdk web
 ```
 
 停止：
@@ -322,7 +320,7 @@ docker compose --project-name tianshu-kafka --env-file .env.server \
 
 ## 方案四：Docker Compose + 自带 MySQL/Redis/Kafka
 
-`docker-compose.full.yml` 是完整单机方案，包含 MySQL、Redis、Kafka、server、HTTP、SDK 和 web，都在同一个 Compose 项目和网络内。server 默认启动 2 个副本；不要先启动 `docker-compose.mysql.yml` 或 `docker-compose.redis.yml`。
+`docker-compose.full.yml` 是完整单机方案，包含 MySQL、Redis、Kafka、server、SDK 和 web，都在同一个 Compose 项目和网络内。server 默认启动 2 个副本；不要先启动 `docker-compose.mysql.yml` 或 `docker-compose.redis.yml`。
 
 ```bash
 docker compose --project-name tianshu-full --env-file .env.client --env-file .env.server \
@@ -379,7 +377,7 @@ docker compose --project-name tianshu-redis --env-file .env.client --env-file .e
 
 ## 可选：接入 Kafka 执行日志
 
-Kafka 只服务于完整 Java SDK 或 `rule-engine-runtime` 的本地执行日志，以及 server 对 Kafka 日志的消费。HTTP-only runtime、服务端本地执行和规则同步仍不依赖 Kafka。full Compose 会提供一个单节点 broker；生产环境也可以通过 `KAFKA_BOOTSTRAP_SERVERS` 接入外部 Kafka 集群。
+Kafka 只服务于完整 Java SDK 或 `rule-engine-runtime` 的本地执行日志，以及 server 对 Kafka 日志的消费。Server API 执行和规则同步仍不依赖 Kafka。full Compose 会提供一个单节点 broker；生产环境也可以通过 `KAFKA_BOOTSTRAP_SERVERS` 接入外部 Kafka 集群。
 
 两个 Compose 方案使用 Kafka 时，server 配置写入 `.env.server`，SDK 配置写入 `.env.client`。默认全局客户端不需要项目 ID、项目编码或规则白名单；只有切换到项目级鉴权并使用项目级 Kafka 日志时才填写实际项目 ID：
 
@@ -434,7 +432,6 @@ APP_BIND_ADDRESS=0.0.0.0
 SERVER_PUBLIC_BIND_ADDRESS=0.0.0.0
 FRONTEND_PORT=9090
 SERVER_PUBLIC_PORT=8080
-RUNTIME_HTTP_PORT=7070
 RUNTIME_SDK_PORT=7071
 ```
 
@@ -454,7 +451,6 @@ RUNTIME_RULE_SERVER_URL=http://192.168.1.10:8080
 |---|---|---|---:|
 | 控制台 | `console.example.com` | `192.168.1.10` | `9090` |
 | server API / `RULE_SERVER_URL` | `engine-api.example.com` | `192.168.1.10` | `8080` |
-| HTTP runtime | `api.example.com` | `192.168.1.10` | `7070` |
 | SDK runtime（确需公网访问时） | `sdk.example.com` | `192.168.1.10` | `7071` |
 
 每个 Proxy Host 在 SSL 页面申请对应证书，并启用 `Force SSL`、HTTP/2 和 HSTS。Advanced 配置保留以下转发头：
@@ -512,7 +508,7 @@ curl -I http://127.0.0.1:9090/
 
 ```bash
 docker compose --project-name tianshu-external --env-file .env.client --env-file .env.server \
-  -f docker/docker-compose.yml up -d --force-recreate server runtime-http runtime-sdk web
+  -f docker/docker-compose.yml up -d --force-recreate server runtime-sdk web
 ```
 
 数据库和 Redis 的更新、备份、恢复由其所属环境负责；应用方案之间不要共享同一宿主机端口或同一个 Compose 项目名。

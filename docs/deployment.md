@@ -49,7 +49,7 @@ docker compose --project-name tianshu-server --env-file .env.server -f docker/do
 | `REDIS_PASSWORD` | 空 | Redis 认证密码；所有 Docker Compose 运行模式都会强制要求非空。 |
 | `SERVER_LOG_LEVEL` / `RUNTIME_LOG_LEVEL` | `WARN` | 容器 stdout 日志级别，可设为 `ERROR`、`WARN`、`INFO`、`DEBUG`；生产建议使用 `WARN`。 |
 | `DOCKER_LOG_MAX_SIZE` / `DOCKER_LOG_MAX_FILES` | `10m` / `3` | Docker `json-file` 日志轮转上限；达到大小后自动轮转，避免 stdout 日志无限增长。 |
-| `RUNTIME_TRACE_ENABLED` | `false` | HTTP/SDK runtime 是否收集执行 trace；生产默认关闭，按请求仍可由业务侧显式开启时需评估日志量。 |
+| `RUNTIME_TRACE_ENABLED` | `false` | SDK runtime 是否收集执行 trace；生产默认关闭，按请求仍可由业务侧显式开启时需评估日志量。 |
 
 ### 1.2 鉴权、控制台与安全参数
 
@@ -59,7 +59,7 @@ docker compose --project-name tianshu-server --env-file .env.server -f docker/do
 | （自动生成） | `auto-<master-key-hash>` | 服务根据 `RULE_AUTH_MASTER_KEY` 稳定生成密钥版本 ID；不需要配置环境变量。同一主密钥在多节点上会得到相同 ID，并保留 `v2` 作为历史密文兼容别名。 |
 | `RULE_GLOBAL_ACCESS_ENABLED` | `true`（示例默认） | 是否启用 Ed25519 全局规则访问；启用后必须同时配置公钥、Key ID 和时间窗。关闭后客户端改用项目级凭据。 |
 | `RULE_GLOBAL_ACCESS_KEY_ID` | `default` | 全局访问公钥的 Key ID，客户端必须使用相同 ID。 |
-| `RULE_GLOBAL_ACCESS_PUBLIC_KEY` | 空 | Ed25519 X.509 公钥的 Base64 值；私钥只放在 HTTP/SDK 客户端。 |
+| `RULE_GLOBAL_ACCESS_PUBLIC_KEY` | 空 | Ed25519 X.509 公钥的 Base64 值；私钥只放在 业务服务或 Java SDK。 |
 | `RULE_GLOBAL_ACCESS_TIME_WINDOW_SECONDS` | `300` | 全局签名允许的时间偏差，服务端同时按 nonce 防重放。 |
 | `CORS_ALLOWED_ORIGIN_PATTERNS` | `*` | 允许访问后端的控制台来源，多个来源用英文逗号分隔；模板默认允许所有来源，生产建议改为实际 HTTPS 域名/IP。 |
 | 会话 Cookie Secure | 按请求协议自动设置 | HTTPS 请求自动带 `Secure`，HTTP 请求不带；域名 HTTPS 和 IP+端口 HTTP 不需要两套配置。 |
@@ -88,8 +88,8 @@ Compose 还会使用 `MYSQL_PUBLIC_PORT`、`REDIS_PUBLIC_PORT`、`CONSOLE_PUBLIC
 |---|---|---|---|
 | JAR 包 | 宿主机 Java + Nginx | 外接服务或依赖 Compose | [JAR 包 + Nginx](#四后管静态文件--jar-包部署) |
 | Docker | `docker run` 启动 server、runtime、Nginx | 外接服务或依赖 Compose | [Docker 运行时](#二docker-运行时部署) |
-| 外接数据库 Compose | server、HTTP runtime、SDK runtime、web | 外接 MySQL/Redis | [外接数据库 Compose](../docker/README.md#方案三docker-compose--外接-mysqlredis) |
-| 自带数据库 Compose | MySQL、Redis、server、HTTP、SDK、web | Compose 内置 | [完整 Compose](../docker/README.md#方案四docker-compose--自带-mysqlredis) |
+| 外接数据库 Compose | server、SDK runtime、web | 外接 MySQL/Redis | [外接数据库 Compose](../docker/README.md#方案三docker-compose--外接-mysqlredis) |
+| 自带数据库 Compose | MySQL、Redis、server、SDK、web | Compose 内置 | [完整 Compose](../docker/README.md#方案四docker-compose--自带-mysqlredis) |
 
 `docker-compose.mysql.yml` 和 `docker-compose.redis.yml` 只是可选依赖组件，适合给 JAR 或独立 Docker 提供 MySQL/Redis；它们不启动应用。不同环境并行运行时设置不同 `DEPLOY_PROJECT` 和宿主机端口，不要让 full Compose 与依赖组件 Compose 共用一套容器名、网络或端口。
 
@@ -412,15 +412,15 @@ docker compose --env-file .env.client --env-file .env.server -f docker/docker-co
 docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.redis.yml up -d
 ```
 
-**1.1 源码启动 server + web + SDK + HTTP。** 先完成第 0 步，再在一个终端运行统一启动脚本：
+**1.1 源码启动 server + web + SDK。** 先完成第 0 步，再在一个终端运行统一启动脚本：
 
 ```powershell
 node scripts/start-source.mjs
 ```
 
-脚本会先执行 Maven 编译，再启动 server、HTTP profile、SDK profile 和 Vite web；按 Ctrl+C 会停止本次启动的全部进程。SDK/HTTP 的项目凭证、规则白名单、Redis 地址和运行时令牌从 `.env.client` 或系统环境变量读取；源码启动时默认使用 `http://127.0.0.1:8080`，不要把 Compose 服务名 `server` 带到宿主机进程。
+脚本会先执行 Maven 编译，再启动 server、SDK profile 和 Vite web；按 Ctrl+C 会停止本次启动的全部进程。SDK 的项目凭证、规则白名单、Redis 地址和运行时令牌从 `.env.client` 或系统环境变量读取；源码启动时默认使用 `http://127.0.0.1:8080`，不要把 Compose 服务名 `server` 带到宿主机进程。
 
-**1.2 JAR + Nginx。** 编译后将三个 JAR/前端产物分别启动；SDK 与 HTTP 使用各自端口和 profile，前端由 Nginx 指向 `dist/`。
+**1.2 JAR + Nginx。** 编译后将server、SDK runtime 和前端分别启动；SDK 使用 7071 端口和 sdk profile，前端由 Nginx 指向 `dist/`。
 
 ```powershell
 mvn clean package -DskipTests
@@ -429,9 +429,8 @@ Copy-Item rule-engine-server/target/rule-engine-server-*.jar docker/runtime/serv
 Copy-Item rule-engine-runtime/target/rule-engine-runtime-*.jar docker/runtime/runtime.jar
 New-Item -ItemType Directory -Force docker/runtime/dist | Out-Null
 Copy-Item rule-engine-web/dist/* docker/runtime/dist -Recurse -Force
-# 分别在三个终端执行：
+# 分别在两个终端执行：
 java -jar docker/runtime/server.jar
-java -Dspring.profiles.active=http -Dserver.port=7070 -DRULE_SERVER_URL=http://127.0.0.1:8080 -jar docker/runtime/runtime.jar
 java -Dspring.profiles.active=sdk -Dserver.port=7071 -DRULE_SERVER_URL=http://127.0.0.1:8080 -jar docker/runtime/runtime.jar
 ```
 
@@ -444,7 +443,7 @@ docker compose --env-file .env.client --env-file .env.server -f docker/docker-co
 docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml ps
 ```
 
-**1.4 Docker 全量单机。** 这个文件自包含 MySQL、Redis、server、HTTP、SDK 和 web，一条命令即可启动，不需要先启动另外三个 Compose 文件。
+**1.4 Docker 全量单机。** 这个文件自包含 MySQL、Redis、server、SDK 和 web，一条命令即可启动，不需要先启动另外三个 Compose 文件。
 
 ```powershell
 docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml up -d
@@ -453,9 +452,9 @@ docker compose --env-file .env.client --env-file .env.server -f docker/docker-co
 
 完整模式启动 MySQL 和 Redis 后直接启动 server；server 默认自动执行 `schema.sql`。需要演示数据时，默认不导入；启动时增加 `--profile example-data` 会等待 schema 完成后只执行插入。完整模式与第 0 步的独立 MySQL/Redis 不要同时占用相同端口和容器名。
 
-所有 Compose 文件都设置了固定容器资源上限。完整模式按 2 个 server 副本计算，MySQL/Redis/Kafka/server/HTTP/SDK/web 合计约 7.38G 内存、1.95C CPU；启用 `example-data` profile 时额外增加 256M/0.05C。外部数据库应用模式按 2 个 server 副本合计约 4.50G/1.20C；再同时启动独立 MySQL/Redis/Kafka 时仍按 8G/2C 预算。
+所有 Compose 文件都设置了固定容器资源上限。完整模式按 2 个 server 副本计算，MySQL/Redis/Kafka/server/SDK/web 合计约 6.88G 内存、1.85C CPU；启用 `example-data` profile 时额外增加 256M/0.05C。外部数据库应用模式按 2 个 server 副本合计约 4.00G/1.10C；再同时启动独立 MySQL/Redis/Kafka 时仍按 8G/2C 预算。
 
-Ubuntu 公网部署使用 Nginx Proxy Manager 管理 HTTPS、证书和反向代理；本项目不安装或修改 UFW、Fail2ban、宿主机 Nginx 及现有端口规则。Compose 中 server/web/runtime 默认绑定本机，MySQL、Redis、Kafka 可通过 `.env.server` 绑定宿主机端口供远程调试，访问控制由现有安全组/防火墙策略负责。full Compose 提供单节点 Kafka，外接 Compose/JAR 使用外部 Broker 的 `KAFKA_BOOTSTRAP_SERVERS` 和可访问的 `advertised.listeners`。控制台账号密码在首次注册页面设置并以 BCrypt 摘要保存到数据库，项目执行必须使用至少 32 位的独立 runtime 接入令牌；NPM 应配置 HTTPS、访问控制和请求限流。
+Ubuntu 公网部署使用 Nginx Proxy Manager 管理 HTTPS、证书和反向代理；本项目不安装或修改 UFW、Fail2ban、宿主机 Nginx 及现有端口规则。Compose 中 server/web/runtime 默认绑定本机，MySQL、Redis、Kafka 可通过 `.env.server` 绑定宿主机端口供远程调试，访问控制由现有安全组/防火墙策略负责。full Compose 提供单节点 Kafka，外接 Compose/JAR 使用外部 Broker 的 `KAFKA_BOOTSTRAP_SERVERS` 和可访问的 `advertised.listeners`。控制台账号密码在首次注册页面设置并以 BCrypt 摘要保存到数据库，直接执行使用项目调用凭据；SDK runtime 使用至少 32 位的独立接入令牌；NPM 应配置 HTTPS、访问控制和请求限流。
 
 ### 3.2 构建制品
 
@@ -491,12 +490,12 @@ MySQL 数据目录为 docker/rule-engine-mysql/data，Redis 数据目录为 dock
 
 使用生产托管数据库时，把 MYSQL_HOST、MYSQL_PORT、REDIS_HOST、REDIS_PORT 改为生产地址，并确保服务端账号具备执行 `schema.sql` 的建表权限；如需跳过启动建表，可设置 `SPRING_SQL_INIT_MODE=never`。应用账号仍通过 MYSQL_USERNAME / MYSQL_PASSWORD 配置，Redis 密码通过 REDIS_PASSWORD 配置。
 
-默认入口为前端 http://localhost:9090、管理端 API http://localhost:8080、HTTP 运行时 http://localhost:7070、SDK 运行时 http://localhost:7071。Docker Compose 不构建镜像，也不挂载源码，升级时替换运行目录中的 JAR/dist 后执行：
+默认入口为前端 http://localhost:9090、Server API http://localhost:8080、SDK 运行时 http://localhost:7071。Docker Compose 不构建镜像，也不挂载源码，升级时替换运行目录中的 JAR/dist 后执行：
 
 ```powershell
 docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml up -d
 docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml ps
-docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml logs --tail 200 server runtime-http runtime-sdk
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml logs --tail 200 server runtime-sdk
 ```
 
 全量模式对应命令为：
@@ -665,7 +664,7 @@ curl -fsS http://127.0.0.1:8080/actuator/health/readiness
 
 ## 业务系统 SDK 集成
 
-外部客户可直接引入 `rule-engine-client-http`，或部署 `rule-engine-runtime` 的 `http` profile。以下配置属于完整 SDK `rule-engine-client-sdk`；HTTP-only SDK 不使用 Redis、规则同步、本地执行和本地日志上报。
+外部客户直接调用 Server API，接口与字段文档从项目「API」按钮下载。以下配置属于可选 Java SDK `rule-engine-client-sdk`，本地执行时才需要 Redis 和规则同步。
 
 从业务 HTTP 接口到引擎结果返回的完整示例、全局规则关联、多项目客户端及日志开关语义见 [Java 业务服务接入指南](java-service-integration.html)。
 

@@ -1,66 +1,41 @@
 package com.hengshucredit.rule.runtime;
 
-import com.hengshucredit.rule.client.http.RuleHttpClient;
+import com.hengshucredit.rule.client.auth.ClientRequestAuthenticator;
 import com.hengshucredit.rule.model.security.GlobalAccessSignature;
-import com.sun.net.httpserver.HttpServer;
+import okhttp3.Request;
 import org.junit.Test;
 import org.springframework.mock.env.MockEnvironment;
 
-import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.*;
 
 public class RuntimeAuthenticationTest {
     @Test
     public void basicAuthDoesNotRequireLegacyToken() throws Exception {
-        AtomicReference<String> authorization = new AtomicReference<>();
-        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/api/rule/sync/execute/R", exchange -> {
-            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
-            byte[] json = com.alibaba.fastjson.JSON.toJSONBytes(com.hengshucredit.rule.model.ApiResponse.ok(Map.of("success", true, "result", 12)));
-            exchange.sendResponseHeaders(200, json.length);
-            exchange.getResponseBody().write(json);
-            exchange.close();
-        });
-        server.start();
-        try {
-            MockEnvironment env = new MockEnvironment().withProperty("RULE_SERVER_URL", "http://127.0.0.1:" + server.getAddress().getPort())
-                    .withProperty("RULE_AUTH_TYPE", "BASIC").withProperty("RULE_USERNAME", "Caller")
-                    .withProperty("RULE_PASSWORD", "secret").withProperty("RULE_TOKEN_EXCHANGE_ENABLED", "false");
-            try (RuleHttpClient client = new RuntimeConfiguration().httpClient(env)) {
-                assertTrue(client.execute("R", Map.of()).isSuccess());
-                assertEquals("Basic " + Base64.getEncoder().encodeToString("Caller:secret".getBytes(StandardCharsets.UTF_8)),
-                        authorization.get());
-            }
-        } finally { server.stop(0); }
+        MockEnvironment env = new MockEnvironment().withProperty("RULE_AUTH_TYPE", "BASIC")
+                .withProperty("RULE_USERNAME", "Caller").withProperty("RULE_PASSWORD", "secret")
+                .withProperty("RULE_TOKEN_EXCHANGE_ENABLED", "false");
+        Request request = authenticate(env);
+        assertEquals("Basic " + Base64.getEncoder().encodeToString("Caller:secret".getBytes(StandardCharsets.UTF_8)),
+                request.header("Authorization"));
     }
 
     @Test
-    public void globalKeyAuthSignsRuntimeRequests() throws Exception {
+    public void globalKeyAuthSignsSdkSyncRequests() throws Exception {
         GlobalAccessSignature.AccessKeyPair pair = GlobalAccessSignature.generateKeyPair();
-        AtomicReference<String> signature = new AtomicReference<>();
-        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/api/rule/sync/execute/R", exchange -> {
-            signature.set(exchange.getRequestHeaders().getFirst(GlobalAccessSignature.SIGNATURE_HEADER));
-            byte[] json = com.alibaba.fastjson.JSON.toJSONBytes(com.hengshucredit.rule.model.ApiResponse.ok(Map.of("success", true, "result", 12)));
-            exchange.sendResponseHeaders(200, json.length);
-            exchange.getResponseBody().write(json);
-            exchange.close();
-        });
-        server.start();
-        try {
-            MockEnvironment env = new MockEnvironment()
-                    .withProperty("RULE_SERVER_URL", "http://127.0.0.1:" + server.getAddress().getPort())
-                    .withProperty("RULE_AUTH_TYPE", "GLOBAL_KEY")
-                    .withProperty("RULE_GLOBAL_PRIVATE_KEY", pair.privateKey());
-            try (RuleHttpClient client = new RuntimeConfiguration().httpClient(env)) {
-                assertTrue(client.execute("R", Map.of()).isSuccess());
-                assertNotNull(signature.get());
-            }
-        } finally { server.stop(0); }
+        MockEnvironment env = new MockEnvironment().withProperty("RULE_AUTH_TYPE", "GLOBAL_KEY")
+                .withProperty("RULE_GLOBAL_PRIVATE_KEY", pair.privateKey());
+        Request request = authenticate(env);
+        assertTrue(GlobalAccessSignature.verify(pair.publicKey(), request.method(), request.url().encodedPath(),
+                request.url().encodedQuery(), request.header(GlobalAccessSignature.TIMESTAMP_HEADER),
+                request.header(GlobalAccessSignature.NONCE_HEADER), new byte[0],
+                request.header(GlobalAccessSignature.SIGNATURE_HEADER)));
+    }
+
+    private Request authenticate(MockEnvironment env) throws Exception {
+        return new ClientRequestAuthenticator("http://127.0.0.1:8080", 1000, RuntimeConfiguration.projectAuth(env))
+                .authenticate(new Request.Builder().url("http://127.0.0.1:8080/api/rule/sync/all").get().build());
     }
 }

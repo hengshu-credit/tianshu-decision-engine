@@ -6,14 +6,14 @@ import { parseEnv } from 'node:util'
 import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto'
 
 const settings = { RUNTIME_RULE_SERVER_URL: 'http://127.0.0.1:8080', RULE_AUTH_TYPE: 'API_KEY', RULE_API_KEY: 'private-api-key',
-  HTTP_ACCESS_TOKEN: 'h'.repeat(32), SDK_ACCESS_TOKEN: 's'.repeat(32), HTTP_RULE_ALLOWED_CODES: 'CaseSensitive', SDK_RULE_ALLOWED_CODES: 'CaseSensitive',
+  SDK_ACCESS_TOKEN: 's'.repeat(32), SDK_RULE_ALLOWED_CODES: 'CaseSensitive',
   RUNTIME_RULE_PROJECT_ID: '9007199254740993', RUNTIME_RULE_PROJECT_CODE: 'Project_A',
   REDIS_HOST: '127.0.0.1', REDIS_PORT: '6379', REDIS_DATABASE: '0', REDIS_PASSWORD: 'private-redis-password' }
 
-test('HTTP 自检不要求 Redis；SDK 保留大整数项目 ID 并要求项目订阅配置', () => {
-  const http = { ...settings }; delete http.REDIS_PASSWORD; delete http.RUNTIME_RULE_PROJECT_CODE
-  assert.equal(checkRuntimeConfig(http, 'http').passed, true)
-  assert.equal(checkRuntimeConfig(http, 'sdk').passed, false)
+test('SDK 保留大整数项目 ID 并要求项目订阅配置，旧 HTTP 运行模式被拒绝', () => {
+  const missing = { ...settings }; delete missing.REDIS_PASSWORD; delete missing.RUNTIME_RULE_PROJECT_CODE
+  assert.throws(() => checkRuntimeConfig(settings, 'http'), /直接调用 Server API/)
+  assert.equal(checkRuntimeConfig(missing, 'sdk').passed, false)
   assert.equal(checkRuntimeConfig(settings, 'sdk').passed, true)
   assert.equal(settings.RUNTIME_RULE_PROJECT_ID, '9007199254740993')
 })
@@ -30,11 +30,11 @@ test('自检输出不包含任何原始凭据；全局模式仍必须有私钥',
   assert.equal(checkRuntimeConfig({ ...settings, RULE_AUTH_TYPE: 'GLOBAL_KEY', RULE_GLOBAL_PRIVATE_KEY: 'private-value', SDK_RULE_ALLOWED_CODES: '' }, 'sdk').passed, true)
 })
 
-test('快速试运行示例提供完整凭据，Redis 一致，两个运行时配置均可通过自检', () => {
+test('快速试运行示例提供完整凭据，Redis 一致，SDK 运行时配置可通过自检', () => {
   const examples = Object.fromEntries(['server', 'client'].map(service => [service,
     parseEnv(readFileSync(new URL(`../../../.env.${service}.example`, import.meta.url), 'utf8'))]))
   const fields = { server: ['MYSQL_PASSWORD', 'MYSQL_ROOT_PASSWORD', 'REDIS_PASSWORD', 'RULE_AUTH_MASTER_KEY', 'KAFKA_PASSWORD'],
-    client: ['HTTP_ACCESS_TOKEN', 'SDK_ACCESS_TOKEN', 'REDIS_PASSWORD'] }
+    client: ['SDK_ACCESS_TOKEN', 'REDIS_PASSWORD'] }
   for (const [service, keys] of Object.entries(fields)) {
     for (const key of keys) {
       const value = examples[service][key]
@@ -48,7 +48,6 @@ test('快速试运行示例提供完整凭据，Redis 一致，两个运行时�
   assert.equal(new Set(examples.server.RULE_AUTH_MASTER_KEY).size >= 8, true)
   assert.equal(examples.server.RULE_GLOBAL_ACCESS_ENABLED, 'true')
   assert.equal(examples.client.RULE_AUTH_TYPE, 'GLOBAL_KEY')
-  assert.equal(checkRuntimeConfig(examples.client, 'http').passed, true)
   assert.equal(checkRuntimeConfig(examples.client, 'sdk').passed, true)
 })
 

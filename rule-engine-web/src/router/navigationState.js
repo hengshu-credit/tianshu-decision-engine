@@ -13,8 +13,31 @@ export function preloadableView(loader) {
     if (!pending) pending = loader().catch(error => { pending = null; throw error })
     return pending
   }
-  load.preload = () => { load().catch(() => {}) }
+  load.preload = () => load().catch(() => {})
   return load
+}
+
+export function preloadRoute(router, path) {
+  return Promise.all(router.resolve(path).matched.map(record => record.components?.default?.preload?.()))
+}
+
+// 首屏完成后按空闲时段预热菜单代码，不创建页面组件或请求业务数据。
+export function preloadMenuRoutes(router, paths) {
+  const remaining = [...paths]
+  let stopped = false
+  let timer
+  const idle = typeof requestIdleCallback === 'function'
+  const schedule = () => {
+    if (stopped || !remaining.length) return
+    const run = () => { if (!stopped) preloadRoute(router, remaining.shift()).finally(schedule) }
+    timer = idle ? requestIdleCallback(run, { timeout: 1500 }) : setTimeout(run, 0)
+  }
+  schedule()
+  return () => {
+    stopped = true
+    if (idle) cancelIdleCallback(timer)
+    else clearTimeout(timer)
+  }
 }
 
 export function installNavigationFeedback(router) {

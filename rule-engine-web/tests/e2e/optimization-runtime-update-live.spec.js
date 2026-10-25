@@ -59,12 +59,10 @@ test('真实 UI 修改规则使回归证据失效，重新回归发布后独立�
   await page.getByRole('dialog', { name: '通过并立即生效', exact: true }).getByRole('button', { name: '确认', exact: true }).click()
   await expect(page.locator('.header-meta')).toContainText('已通过', { timeout: 30000 })
   if (process.env.E2E_SKIP_RUNTIME_PROBE !== 'true') {
-    for (const port of [17070, 17071]) {
-      await expect.poll(async () => {
-        const response = await page.request.post(`http://127.0.0.1:${port}/api/rule/execute/${config.ruleCode}`, { headers: { authorization: 'Bearer ' + config.runtimeToken }, data: { params: {} } })
-        return (await response.json()).data?.result
-      }, { timeout: 15000, message: '发布后运行时必须收到新版本' }).toBe(value)
-    }
+    await expect.poll(async () => {
+      const response = await page.request.post(`http://127.0.0.1:17071/api/rule/execute/${config.ruleCode}`, { headers: { authorization: 'Bearer ' + config.runtimeToken }, data: { params: {} } })
+      return (await response.json()).data?.result
+    }, { timeout: 15000, message: '发布后 SDK 运行时必须收到新版本' }).toBe(value)
   }
   fs.writeFileSync(testInfo.outputPath('runtime-rule-update.json'), JSON.stringify({ definitionId: config.definitionId, revisionId: revision.id, value }))
   expect(errors).toEqual([])

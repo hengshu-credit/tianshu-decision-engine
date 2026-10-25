@@ -1,8 +1,8 @@
 # Java 业务服务接入决策引擎
 
-对外公司或无需本地规则缓存执行的接入，可直接使用纯 HTTP 的 `rule-engine-client-http`，或部署 `rule-engine-runtime` 的 `http` profile；该方式不需要 Redis。
+对外公司或无需本地规则缓存执行的业务系统，直接调用 Server API，不需要安装客户端、部署转发服务或连接 Redis。接口文档从项目「API」按钮下载。
 
-以下第 1–5、7 节描述原有完整 SDK `rule-engine-client-sdk`，适用于需要本地规则缓存执行的内部系统；它仍依赖 Redis，会同步规则，不应与 HTTP-only SDK 的交付边界混淆。
+以下第 1–5、7 节描述可选 Java SDK `rule-engine-client-sdk`；只有本地执行模式需要 Redis 和规则同步。直接 HTTP 调用见第 6 节。
 
 ## 1. 确定规则范围与执行位置
 
@@ -76,15 +76,6 @@ System.out.println("publicKey=" + pair.publicKey());
 RULE_GLOBAL_ACCESS_ENABLED=true
 RULE_GLOBAL_ACCESS_KEY_ID=default
 RULE_GLOBAL_ACCESS_PUBLIC_KEY=<publicKey>
-```
-
-HTTP SDK：
-
-```java
-RuleHttpClient client = RuleHttpClient.builder()
-        .serverUrl(serverUrl)
-        .globalKeyAuth("default", privateKey)
-        .build();
 ```
 
 完整 SDK：
@@ -167,9 +158,24 @@ GET /api/rule/runtime/external-calls/{callId}
 
 本地上报默认使用有界 HTTP 异步队列。启用上报且有自定义 `ExecutionLogReporter` 时使用自定义实现；使用内置 Kafka 通道必须显式配置 `log-report-transport: KAFKA`，不会因宿主存在 `KafkaTemplate` 自动切换。Kafka 配置、项目隔离、失败补报与旧版迁移见 [Kafka 执行日志上报](kafka-execution-logs.md)。日志上报失败不应改变决策结果。程序化 Builder 支持 `.traceEnabled(false).logReportEnabled(false)`；即使显式传入 reporter，关闭上报仍然生效。
 
-## 6. HTTP-only 接入
+## 6. 直接调用 Server API
 
-配置 `RULE_SERVER_URL`、项目凭据和 `RULE_ALLOWED_CODES` 即可使用 HTTP-only SDK，不需要 `RULE_PROJECT_ID`、`RULE_PROJECT_CODE` 或 Redis。表达式追踪使用 `RULE_TRACE_ENABLED`，默认关闭；没有本地日志上报。也可以直接部署 `rule-engine-runtime` 的 `http` profile，对外提供 `/api/rule/execute/{ruleCode}`。
+请求直接发往 Server（默认 8080，或反向代理后的 HTTPS 地址），不需要单独部署客户端服务。
+
+- 标准规则执行：`POST /api/rule/sync/execute/{ruleCode}`，请求体为 `{"params":{},"clientAppName":"business-service","traceEnabled":false}`，实际字段以项目 API 文档为准。
+- 开放接口执行：`POST /api/rule/openapi/{ruleCode}`，需先启用并发布规则开放接口；携带项目调用凭据及匹配的 `X-Auth-Code`，请求和响应按发布契约映射。
+- 查询状态：`GET /api/rule/runtime/executions/{traceId}`；恢复等待中的执行：`POST /api/rule/runtime/executions/{traceId}/resume`。
+
+鉴权使用项目配置的兼容令牌、Basic、API Key、HMAC 或交换后的短期令牌；OpenAPI 契约入口还需对应项目鉴权配置的 `X-Auth-Code`。凭据不应下发浏览器。项目「API」按钮继续下载包含字段、鉴权及多语言调用样例的 API 文档。
+
+```bash
+curl -X POST 'https://engine-api.example.com/api/rule/sync/execute/RISK_RULE' \
+  -H 'Content-Type: application/json' \
+  -H 'X-Rule-Token: <项目调用令牌>' \
+  --data '{"params":{},"clientAppName":"business-service","traceEnabled":false}'
+```
+
+网络超时可能意味着执行状态未知；应按 traceId 查询状态，避免盲目重放产生重复外数调用或计费。
 
 ## 7. 一个 Java 服务连接多个项目
 

@@ -400,11 +400,12 @@ const router = createRouter({
 })
 
 /**
- * 若后端启用控制台登录，则每次进入受保护路由都校验会话；
- * 未启用时与改造前行为一致。
+ * 首次进入严格验证会话；已验证会话的站内导航先按当前权限进入，再异步复核。
  */
 installNavigationFeedback(router)
-router.beforeEach(createConsoleAuthGuard(fetchConsoleConfig, fetchMe, to => navigationState.pendingRoute === to))
+router.beforeEach(createConsoleAuthGuard(fetchConsoleConfig, fetchMe,
+  to => (navigationState.pendingRoute || router.currentRoute.value) === to,
+  { onRedirect: target => router.replace(target) }))
 router.afterEach((to, from, failure) => {
   if (!failure && to.path !== '/login') {
     import('@/security/operationActivity').then(({ recordPageVisit }) => {

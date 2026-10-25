@@ -9,7 +9,7 @@ import com.hengshucredit.rule.model.dto.RuleExperimentExecuteResult;
 import okhttp3.Response;
 import java.io.IOException;
 
-/** 两种 Java 客户端共用解析器，保留平台码、固定描述、trace 和重试信息。 */
+/** Java SDK 的服务端响应解析器，保留平台码、固定描述、trace 和重试信息。 */
 public final class PlatformHttpResponses {
     private PlatformHttpResponses() { }
 

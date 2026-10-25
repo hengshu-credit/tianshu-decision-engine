@@ -37,7 +37,7 @@ public class ConsoleRbacSchemaSqlTest {
         Assert.assertTrue(sql.contains(
                 "UNIQUE KEY `uk_console_user_permission_override` (`user_id`, `permission_id`)"));
         Assert.assertTrue(sql.contains(
-                "`effect` VARCHAR(8) NOT NULL COMMENT 'ALLOW or DENY'"));
+                "`effect` VARCHAR(8) NOT NULL COMMENT '账户权限覆盖效果：ALLOW=允许，DENY=拒绝'"));
         Assert.assertTrue(sql.contains("`email`              VARCHAR(256)"));
         Assert.assertTrue(sql.contains("`registration_status` VARCHAR(16)"));
         Assert.assertTrue(sql.contains(

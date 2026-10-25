@@ -104,7 +104,7 @@ public class ProductionConfigurationContractTest {
         Assert.assertTrue(appCompose.contains("REDIS_HOST:-host.docker.internal"));
         Assert.assertTrue(appCompose.contains("LOGGING_FILE_NAME: \"\""));
         Assert.assertTrue(appCompose.contains("RUNTIME_TRACE_ENABLED:-false"));
-        Assert.assertTrue(appCompose.contains("runtime-http:"));
+        Assert.assertFalse(appCompose.contains("runtime-http:"));
         Assert.assertTrue(appCompose.contains("runtime-sdk:"));
         Assert.assertTrue(appCompose.contains("./runtime"));
         Assert.assertTrue(appCompose.contains("RUNTIME_RULE_SERVER_URL:?Set RUNTIME_RULE_SERVER_URL"));
@@ -114,7 +114,7 @@ public class ProductionConfigurationContractTest {
         Assert.assertTrue(fullCompose.contains("redis:"));
         Assert.assertFalse(fullCompose.contains("mysql-init:"));
         Assert.assertTrue(fullCompose.contains("condition: service_healthy"));
-        Assert.assertTrue(fullCompose.contains("  http:"));
+        Assert.assertFalse(fullCompose.contains("  http:"));
         Assert.assertTrue(fullCompose.contains("  sdk:"));
         Assert.assertTrue(fullCompose.contains("RUNTIME_RULE_SERVER_URL:?Set RUNTIME_RULE_SERVER_URL"));
         Assert.assertFalse(fullCompose.contains("RUNTIME_RULE_SERVER_URL:-http://server:8080"));
@@ -142,7 +142,7 @@ public class ProductionConfigurationContractTest {
         Assert.assertTrue(serverCompose.contains("LOGGING_LEVEL_ROOT: ${SERVER_LOG_LEVEL:-WARN}"));
         Assert.assertTrue(serverCompose.contains("RULE_TRACE_MAX_PERSIST_BYTES: ${RULE_TRACE_MAX_PERSIST_BYTES:-0}"));
         Assert.assertFalse(serverCompose.contains("runtime-http:"));
-        Assert.assertTrue(clientCompose.contains("  runtime-http:"));
+        Assert.assertFalse(clientCompose.contains("  runtime-http:"));
         Assert.assertTrue(clientCompose.contains("  runtime-sdk:"));
         Assert.assertFalse(clientCompose.contains("  server:"));
         Assert.assertTrue(clientCompose.contains("SPRING_DATA_REDIS_HOST"));
@@ -154,8 +154,8 @@ public class ProductionConfigurationContractTest {
             YamlPropertiesFactoryBean yaml = new YamlPropertiesFactoryBean();
             yaml.setResources(new FileSystemResource(repositoryRoot().resolve("docker").resolve(name)));
             Properties values = yaml.getObject();
-            String[] services = name.contains("full") ? new String[]{"http", "sdk"}
-                    : new String[]{"runtime-http", "runtime-sdk"};
+            String[] services = name.contains("full") ? new String[]{"sdk"}
+                    : new String[]{"runtime-sdk"};
             for (String service : services) {
                 String key = "services." + service + ".healthcheck.";
                 Assert.assertEquals("CMD-SHELL", values.getProperty(key + "test[0]"));

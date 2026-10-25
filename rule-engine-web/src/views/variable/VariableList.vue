@@ -121,9 +121,10 @@
         </div>
 
         <!-- 1. 普通变量（系统新增） -->
-        <div v-if="standaloneVars.length > 0" class="var-list-section management-table-region">
+        <div class="var-list-section management-table-region">
           <el-table class="management-table" show-overflow-tooltip
             :data="standaloneVars"
+            empty-text="暂无字段，可点击「新建字段」或「批量导入」添加"
             border
             size="small"
             v-loading="loading"
@@ -301,10 +302,6 @@
           />
         </div>
 
-        <!-- 空状态 -->
-        <div v-if="!loading && standaloneVars.length === 0" class="tab-empty">
-          暂无字段，可点击「新建字段」或「批量导入」添加
-        </div>
       </el-tab-pane>
 
       <!-- Tab 2: Data Objects -->

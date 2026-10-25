@@ -2,6 +2,7 @@
   <div
     ref="container"
     class="monaco-editor-container"
+    v-loading="loading"
     :style="{ height: height }"
   />
 </template>
@@ -99,6 +100,7 @@ export default {
   data() {
     return {
       editor: null,
+      loading: true,
       loadController: null,
       intelligenceDisposables: [],
       referenceCommandDisposable: null,
@@ -152,6 +154,7 @@ export default {
     )
     this.loadController = markRaw(new AbortController())
     const monaco = window.monaco || await waitForMonaco(this.loadController.signal)
+    this.loading = false
     if (!this.loadController.signal.aborted && !monaco) $emit(this, 'load-error')
     if (this.loadController.signal.aborted || !monaco || typeof window === 'undefined' || !this.$refs.container) return
     this.registerQlExpressLanguage(window.monaco)
@@ -196,7 +199,6 @@ export default {
     )
     this.registerIntelligenceProviders(window.monaco)
     this.refreshReferenceDecorations()
-    $emit(this, 'editor-ready', this.editor)
 
     // 内容变化时同步到父组件（使用 _internalChangeFlag 标记区分用户输入）
     this.editor.onDidChangeModelContent(() => {
@@ -214,6 +216,8 @@ export default {
         this.format()
       }
     )
+    // 父组件会在 ready 中插入加载期间排队的字段，必须先安装内容监听。
+    $emit(this, 'editor-ready', this.editor)
   },
   beforeUnmount() {
     this.loadController?.abort()

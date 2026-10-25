@@ -62,7 +62,9 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
         await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme.toLowerCase())
         await page.mouse.move(0, 0)
         await standard.blur()
-        const reference = await appearance(standard)
+        let reference
+        // 项目上下文同步可能重建视图，不采样已经脱离文档的旧按钮。
+        await expect.poll(async () => { reference = await appearance(standard); return reference }).toMatchObject({ width: 32, height: 32 })
         await page.goto(`${origin}/#/designer/${route}/${id}`)
         const back = page.getByRole('button', { name: '返回', exact: true })
         await expect(back).toBeVisible()
@@ -73,9 +75,10 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
           if (state === 'focus') { await page.mouse.move(0, 0); await back.focus() }
           if (state === 'active') { await back.hover(); await page.mouse.down() }
           try {
-            const rendered = await appearance(back)
+            let rendered
+            await expect.poll(async () => { rendered = await appearance(back); return rendered }).toMatchObject({ width: 32, height: 32 })
             expect(rendered.backgroundAlpha, `${name} ${state} 必须有独立底色`).toBe(255)
-            expect(rendered.contrast, `${name} ${state} 图标对比度`).toBeGreaterThanOrEqual(4.5)
+            expect(rendered.contrast, `${name} ${state} 图标对比度 ${JSON.stringify(rendered)}`).toBeGreaterThanOrEqual(4.5)
           } finally {
             if (state === 'active') await page.mouse.move(0, 0)
             if (state === 'active') await page.mouse.up()

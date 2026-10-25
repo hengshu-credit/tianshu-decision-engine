@@ -99,9 +99,9 @@ function prepareStage() {
     '1. 使用两份配置：cp .env.server.example .env.server && cp .env.client.example .env.client。分别替换数据库、Redis、项目令牌和各类密钥；控制台账号密码通过首次注册页面设置。',
     '2. 启动服务端：docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml up -d --scale server=2。',
     '3. 需要本包 Kafka 时：docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.kafka.yml up -d。',
-    '4. 启动客户端：docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml up -d。',
-    '5. 在独立的 Nginx Proxy Manager 中使用服务器 IP+端口配置 console.example.com -> :9090、engine-api.example.com -> :8080、api.example.com -> :7070，并申请 HTTPS 证书。',
-    '6. 控制台访问 https://console.example.com/；项目执行入口为 https://api.example.com/api/rule/execute/{ruleCode}。',
+    '4. 需要本地纯计算执行时启动 SDK：docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml up -d。',
+    '5. 在独立的 Nginx Proxy Manager 中使用服务器 IP+端口配置 console.example.com -> :9090、engine-api.example.com -> :8080，并申请 HTTPS 证书。',
+    '6. 控制台访问 https://console.example.com/；标准执行入口为 https://engine-api.example.com/api/rule/sync/execute/{ruleCode}，开放接口为 https://engine-api.example.com/api/rule/openapi/{ruleCode}。',
     '7. 首次访问控制台注册超管，后续重启保留账户。忘记账号和密码时，在服务器运行 java -jar server.jar --console-admin-recovery-code，再使用一次性恢复码重设账号密码；详见 docs/deployment.md。',
     '',
     '完整安全说明和 Nginx Proxy Manager 配置见 docker/README.md；完整部署说明见 docs/deployment.md。'

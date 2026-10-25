@@ -9,6 +9,7 @@ describe('MonacoEditor', () => {
     delete window.monaco
     const wrapper = mount(MonacoEditor)
     try {
+      expect(wrapper.vm.loading).toBe(true)
       expect(vi.getTimerCount()).toBeGreaterThan(0)
       wrapper.unmount()
       expect(vi.getTimerCount()).toBe(0)
@@ -59,8 +60,22 @@ describe('MonacoEditor', () => {
       })
     )
     expect(editor.layout).not.toHaveBeenCalled()
+    expect(wrapper.vm.loading).toBe(false)
     expect(isProxy(wrapper.vm.editor)).toBe(false)
 
+    wrapper.unmount()
+  })
+
+  test('editor-ready 中插入排队内容时，内容监听已就绪并同步父组件', async () => {
+    let changed
+    editor.onDidChangeModelContent.mockImplementation(callback => { changed = callback })
+    editor.getValue.mockReturnValue('age')
+    const wrapper = mount(MonacoEditor, {
+      props: { value: '', onEditorReady: () => { changed?.() } },
+    })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('input').at(-1)).toEqual(['age'])
+    expect(wrapper.emitted('update:value')).toEqual([['age']])
     wrapper.unmount()
   })
 
