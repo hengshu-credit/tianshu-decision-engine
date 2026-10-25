@@ -27,10 +27,12 @@
     <!-- 选择模式 -->
     <template v-else>
       <div :class="{ 'select-input-row': !virtualRef }">
+        <!-- 显隐由本组件管理；声明更新监听，阻止 Element Plus 的失焦计时器自行隐藏浮层。 -->
         <el-popover
           v-if="groupedByCategory && (hasVarOptions || operandMode || !allowCustom)"
           ref="popover"
           :visible="popoverVisible"
+          @update:visible="() => {}"
           :virtual-ref="virtualRef"
           :virtual-triggering="!!virtualRef"
           placement="bottom-start"

@@ -152,6 +152,9 @@ test('阈值自动推荐、用户手选优先；路径、阈值与 fx 面板各�
   await expect(content).toHaveValue('678')
   await expect(panel.locator('.operand-type-recommendation')).toContainText('按你的选择：字符串')
   await panel.getByRole('button', { name: '写入路径', exact: true }).click()
+  // Monaco 卸载后的失焦关闭有 200ms 延迟；验证计时器执行后仍可继续编辑。
+  await page.waitForTimeout(350)
+  await expect(panel).toBeVisible()
   await page.mouse.move(5, 5)
   await panel.getByPlaceholder('选择变量、对象、模型或 API').click()
   const sourcePanel = page.locator('.fp-panel:visible').last()
@@ -165,6 +168,8 @@ test('阈值自动推荐、用户手选优先；路径、阈值与 fx 面板各�
   await expect(panel.locator('.operand-type-recommendation')).toContainText('按你的选择：字符串')
   await panel.getByRole('button', { name: 'ƒx 组合表达式', exact: true }).click()
   await expect(panel.locator('.expression-editor--compact')).toBeVisible()
+  await page.waitForTimeout(350)
+  await expect(panel).toBeVisible()
   await panel.getByRole('button', { name: '写入路径', exact: true }).click()
   await expect(path).toHaveValue('')
   await page.mouse.click(5, 5)
