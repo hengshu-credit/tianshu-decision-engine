@@ -95,6 +95,38 @@ test('LIVE目录与页签名复用一次定义查询，标题失败不会破坏�
   } finally { wrapper.unmount() }
 })
 
+test.each([0, '0', null, undefined])('全局规则 projectId=%s 从空历史目录切换后通过0加载当前字段', async projectId => {
+  definition.getDefinition.mockResolvedValue({ data: { id: '30', scope: 'GLOBAL', projectId } })
+  definition.getRuleReferenceCatalog.mockResolvedValue({ data: catalog(81, '', { variables: [] }) })
+  variable.listVariablesByProject.mockResolvedValue({ data: [{ id: '9', varCode: 'Global_Age', varLabel: '全局年龄', varType: 'NUMBER', varSource: 'INPUT' }] })
+  const wrapper = mountCatalog()
+  try {
+    const view = { state: 'VERSION', id: '81' }
+    await wrapper.vm.loadDesignerReferenceCatalog(view)
+    expect(wrapper.vm.referenceCatalogMode).toBe('FROZEN')
+    expect(wrapper.vm.projectRefs).toHaveLength(0)
+    expect(variable.listVariablesByProject).not.toHaveBeenCalled()
+    await wrapper.vm.loadDesignerReferenceCatalog(view, { livePreview: true })
+    expect(wrapper.vm.referenceCatalogMode).toBe('LIVE')
+    expect(wrapper.vm.projectIdForRefs).toBe(0)
+    expect(variable.listVariablesByProject).toHaveBeenCalledWith(0)
+    expect(object.getVariableTree).toHaveBeenCalledWith(0)
+    expect(wrapper.vm.varPickerOptions[0]).toMatchObject({ _varId: '9', _refType: 'VARIABLE', varCode: 'Global_Age' })
+  } finally { wrapper.unmount() }
+})
+
+test('项目规则缺失项目ID时提示加载失败，不能当成空的当前目录', async () => {
+  definition.getDefinition.mockResolvedValue({ data: { id: '30', scope: 'PROJECT', projectId: null } })
+  definition.getRuleReferenceCatalog.mockResolvedValue({ data: catalog(81, '', { variables: [], referenceNamespace: 'LOCAL' }) })
+  const wrapper = mountCatalog()
+  try {
+    await wrapper.vm.loadDesignerReferenceCatalog({ state: 'VERSION', id: '81' })
+    expect(wrapper.vm.referenceCatalogMode).toBe('UNAVAILABLE')
+    expect(wrapper.vm.referenceCatalogError).toContain('缺少所属项目')
+    expect(variable.listVariablesByProject).not.toHaveBeenCalled()
+  } finally { wrapper.unmount() }
+})
+
 test.each(['definition', 'variables'])('转当前资源时%s读取失败不能宣称LIVE或保留不完整目录', async failure => {
   definition.getRuleReferenceCatalog.mockResolvedValueOnce({ data: catalog(81, 'FrozenOnly') })
   const wrapper = mountCatalog()

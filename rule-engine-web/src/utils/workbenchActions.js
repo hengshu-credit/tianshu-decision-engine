@@ -1,5 +1,5 @@
 import { SIDEBAR_MENUS } from '@/layout/layoutState'
-import { hasPermission } from '@/security/permissionState'
+import { hasPermission, hasUnrestrictedPermissions } from '@/security/permissionState'
 
 const ACTION_ROUTES = {
   MANAGE_PROJECT: '/project',
@@ -20,7 +20,14 @@ export function workbenchActionRoute(actionCode) {
 }
 
 export function canUseWorkbenchAction(actionCode) {
-  if (['REFRESH_WORKBENCH', 'RETRY_WARMUP'].includes(actionCode)) return hasPermission('project:view')
+  if (actionCode === 'REFRESH_WORKBENCH') return hasPermission('project:view')
+  if (actionCode === 'RETRY_WARMUP') return hasUnrestrictedPermissions('rule:view', 'rule:submit')
   const menu = SIDEBAR_MENUS.find(item => item.index === workbenchActionRoute(actionCode))
   return Boolean(menu && hasPermission(menu.permission))
+}
+
+export function workbenchActionPermissionHint(actionCode) {
+  return actionCode === 'RETRY_WARMUP'
+    ? '重新验证影响当前节点所有项目，需要全局及全部项目的规则查看、提交权限'
+    : '当前账号没有此模块的访问权限'
 }

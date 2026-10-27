@@ -180,9 +180,9 @@
       <div
         ref="graphWrap"
         class="graph-wrap"
+        :aria-busy="loading"
         :style="{ height: graphHeight + 'px' }"
       >
-        <div v-if="loading" class="graph-loading-mask" aria-hidden="true">加载中…</div>
         <div v-if="!startNode" class="empty-graph">请选择起点后生成血缘图</div>
         <div ref="graphContainer" class="graph-canvas" :class="{ 'is-hidden': !startNode }" aria-label="血缘关系图" />
       </div>
@@ -1511,16 +1511,6 @@ export default {
     touch-action: none;
     cursor: grab;
     user-select: none;
-  }
-  .graph-loading-mask {
-    position: absolute;
-    inset: 0;
-    z-index: 5;
-    display: grid;
-    place-items: center;
-    color: var(--tianshu-text-secondary);
-    background: color-mix(in srgb, var(--tianshu-bg-soft) 76%, transparent);
-    pointer-events: all;
   }
   .empty-graph {
     color: var(--tianshu-text-tertiary);

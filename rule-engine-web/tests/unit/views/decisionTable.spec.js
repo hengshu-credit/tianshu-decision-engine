@@ -329,6 +329,15 @@ describe('DecisionTable — 操作方法', () => {
   beforeEach(async () => { wrapper = await mountAndWaitForRefs() })
   afterEach(() => { if (wrapper) wrapper.unmount() })
 
+  test('历史模型未保存命中策略时显示与编译器一致的首次命中，保留显式策略', () => {
+    delete wrapper.vm.model.hitPolicy
+    wrapper.vm.normalizeModel()
+    expect(wrapper.vm.model.hitPolicy).toBe('FIRST')
+    wrapper.vm.model.hitPolicy = 'UNIQUE'
+    wrapper.vm.normalizeModel()
+    expect(wrapper.vm.model.hitPolicy).toBe('UNIQUE')
+  })
+
   test('addRule 增加一条规则', () => {
     const initialCount = wrapper.vm.model.rules.length
     wrapper.vm.addRule()

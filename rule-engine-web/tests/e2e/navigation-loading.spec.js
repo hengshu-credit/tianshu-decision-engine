@@ -1,6 +1,7 @@
 const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createDetailApiData } = require('./support/detailFixtures.cjs')
+const { createDocsApiData } = require('./support/docsFixtures.cjs')
 const { DEFAULT_THEME_CONFIG } = require('../../src/theme/themeConfig.js')
 
 const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
@@ -12,7 +13,7 @@ function deferred() {
 }
 
 for (const navigationLayout of ['LEFT', 'TOP']) {
-  test(`${navigationLayout} 慢会话复核和数据请求不挡住分流实验实际页面，动画只在表格中央`, async ({ page }, testInfo) => {
+  test(`${navigationLayout} 慢会话复核和数据请求直接显示分流实验内容，不添加蒙版`, async ({ page }, testInfo) => {
     const auth = deferred(), data = deferred()
     let holdAuth = false, dataReturned = false
     const apiData = createDetailApiData()
@@ -39,12 +40,9 @@ for (const navigationLayout of ['LEFT', 'TOP']) {
       await expect(page.getByRole('columnheader', { name: '实验编码', exact: true })).toBeVisible()
       await expect(page.getByTestId('route-page-skeleton')).toHaveCount(0)
       const table = page.locator('.experiment-page .el-table')
-      const spinner = table.locator('.el-loading-spinner')
-      await expect(spinner).toBeVisible()
+      await expect(table).toHaveAttribute('aria-busy', 'true')
+      await expect(page.locator('.layout-main .el-loading-mask')).toHaveCount(0)
       await expect(table.locator('.el-table__empty-text')).toBeHidden()
-      const box = await table.boundingBox(), icon = await spinner.boundingBox()
-      expect(Math.abs(icon.x + icon.width / 2 - box.x - box.width / 2)).toBeLessThan(2)
-      expect(Math.abs(icon.y + icon.height / 2 - box.y - box.height / 2)).toBeLessThan(2)
       expect(dataReturned).toBe(false)
       await page.screenshot({ path: testInfo.outputPath(`real-page-loading-${navigationLayout}.png`) })
       await page.locator('.workspace-tab__main[data-path="/project"]').click()
@@ -69,7 +67,7 @@ const pages = [
   ['/log', '/api/rule/log/list'],
 ]
 for (const [path, endpoint] of pages) {
-  test(`${path} 首次进入直接展示筛选栏和表头，加载限定在表格内`, async ({ page }) => {
+  test(`${path} 首次进入直接展示筛选栏和表头，异步填充数据且没有蒙版`, async ({ page }) => {
     const data = deferred()
     let requested = false
     const apiData = createDetailApiData()
@@ -82,13 +80,93 @@ for (const [path, endpoint] of pages) {
       await expect(page).toHaveURL(`${origin}/#${path}`)
       await expect.poll(() => requested).toBe(true)
       await expect(page.locator('.layout-main .uiue-filter-toolbar:visible, .layout-main .tab-filter-row:visible').first()).toBeVisible()
-      const table = page.locator('.layout-main .el-table:visible:has(> .el-loading-mask)').first()
+      const table = page.locator('.layout-main .el-table[aria-busy="true"]:visible').first()
       await expect(table.locator('thead')).toBeVisible()
-      await expect(table.locator('.el-loading-spinner')).toBeVisible()
+      await expect(page.locator('.layout-main .el-loading-mask')).toHaveCount(0)
+      await expect(table.locator('.el-table__empty-text')).toBeHidden()
       await expect(page.getByTestId('route-page-skeleton')).toHaveCount(0)
       await page.locator('.workspace-tab__main[data-path="/project"]').click({ timeout: 1500 })
       await expect(page).toHaveURL(/#\/project$/)
       data.resolve()
+      assertClean()
+    } finally { data.resolve() }
+  })
+}
+
+test('数据看板慢请求期间直接显示指标和地图区域，数据返回后原位更新', async ({ page }, testInfo) => {
+  const data = deferred()
+  let requested = false
+  const { assertClean } = await installDistRoutes(page, { origin, liveStatic, apiData: new Map([
+    ['/api/rule/dashboard/applications', async () => {
+      requested = true
+      await data.promise
+      return { visible: true, summary: { applicationCount: 37, passCount: 30 }, geo: { points: [] } }
+    }]
+  ]) })
+  try {
+    await page.goto(`${origin}/#/project`)
+    await page.locator('[data-menu-path="/dashboard"]').click()
+    await expect.poll(() => requested).toBe(true)
+    const section = page.locator('.dashboard-section[aria-label="进件与决策"]')
+    await expect(section).toHaveAttribute('aria-busy', 'true')
+    await expect(section.locator('.dashboard-metrics')).toBeVisible()
+    await expect(section.getByText('进件数', { exact: true })).toBeVisible()
+    await expect(section.getByText('行政区进件分布地图', { exact: true })).toBeVisible()
+    await expect(page.locator('.el-loading-mask, [data-testid="route-page-skeleton"]')).toHaveCount(0)
+    await expect(section.getByText('正在加载', { exact: true })).toHaveCount(0)
+    await page.screenshot({ path: testInfo.outputPath('dashboard-before-data.png') })
+    data.resolve()
+    await expect(section).toHaveAttribute('aria-busy', 'false')
+    await expect(section.locator('.dashboard-metrics')).toContainText('37')
+    assertClean()
+  } finally { data.resolve() }
+})
+
+for (const [path, endpoint] of [
+  ['/sftp', '/api/rule/sftp/list'],
+  ['/approval', '/api/rule/governance/requests'],
+  ['/account', '/api/rule/console/accounts'],
+]) {
+  test(`${path} 数据请求等待期间展示真实表头且无蒙版`, async ({ page }) => {
+    const data = deferred()
+    const apiData = createDocsApiData()
+    const response = apiData.get(endpoint) || { records: [], total: 0 }
+    apiData.set(endpoint, async () => { await data.promise; return response })
+    const { assertClean } = await installDistRoutes(page, { origin, liveStatic, apiData })
+    try {
+      await page.goto(`${origin}/#/project`)
+      await page.locator(`[data-menu-path="${path}"]`).click()
+      const table = page.locator('.layout-main .el-table[aria-busy="true"]:visible').first()
+      await expect(table.locator('thead')).toBeVisible()
+      await expect(page.locator('.layout-main .el-loading-mask')).toHaveCount(0)
+      data.resolve()
+      await expect(page.locator('.layout-main .el-table[aria-busy="true"]')).toHaveCount(0)
+      assertClean()
+    } finally { data.resolve() }
+  })
+}
+
+for (const [path, endpoint] of [
+  ['/database/31', '/api/rule/database/31'],
+  ['/datasource/source/21', '/api/rule/datasource/21'],
+  ['/datasource/api/22', '/api/rule/datasource/api-config/22'],
+]) {
+  test(`${path} 详情慢请求先展示表单，数据就绪后才允许编辑`, async ({ page }) => {
+    const data = deferred()
+    const apiData = createDetailApiData()
+    const response = apiData.get(endpoint)
+    apiData.set(endpoint, async () => { await data.promise; return response })
+    const { assertClean } = await installDistRoutes(page, { origin, liveStatic, apiData })
+    try {
+      await page.goto(`${origin}/#${path}`)
+      const form = page.locator('.detail-form')
+      await expect(form).toBeVisible()
+      await expect(form).toHaveAttribute('aria-busy', 'true')
+      await expect(form.locator('input').first()).toBeDisabled()
+      await expect(page.locator('.el-loading-mask')).toHaveCount(0)
+      data.resolve()
+      await expect(form).toHaveAttribute('aria-busy', 'false')
+      await expect(form.locator('input').first()).toBeEnabled()
       assertClean()
     } finally { data.resolve() }
   })

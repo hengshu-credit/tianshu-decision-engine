@@ -1090,6 +1090,7 @@ CREATE TABLE IF NOT EXISTS `rule_execution_log` (
    KEY `idx_project_code` (`project_code`, `create_time`),
    KEY `idx_source` (`source`, `create_time`),
     KEY `idx_dashboard_execution_time_project` (`create_time`, `project_code`),
+    KEY `idx_execution_project_time` (`execution_project_id`, `create_time`, `id`),
     KEY `idx_dashboard_execution_rule_time` (`project_code`, `rule_code`, `create_time`),
     KEY `idx_execution_trace` (`trace_id`, `create_time`),
     KEY `idx_rule_set_stats_pending` (`rule_set_stats_version`, `id`, `create_time`),

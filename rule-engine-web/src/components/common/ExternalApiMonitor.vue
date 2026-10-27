@@ -10,18 +10,13 @@
       </div>
       <div class="uiue-btn-bar monitor-actions">
         <div class="btn-right">
-          <table-column-settings :columns="providerColumns" storage-key="tianshu:table-columns:external-api-monitor" />
-          <el-button size="small" :icon="ElIconRefresh" @click="loadStats">刷新指标</el-button>
+          <table-column-settings v-model="tableColumnOrders.providerColumns" :columns="providerColumns" storage-key="tianshu:table-columns:external-api-monitor" />
+          <el-button size="small" :icon="ElIconRefresh" :loading="statsLoading" @click="loadStats">刷新指标</el-button>
         </div>
       </div>
     </div>
-    <async-state
-      :loading="statsLoading"
-      :error="statsError"
-      :empty="externalStats.providers.length === 0"
-      empty-text="暂无 API 外数调用数据"
-      @retry="loadStats"
-    >
+    <div :aria-busy="statsLoading">
+      <el-alert v-if="statsError" :title="statsError" type="error" :closable="false" show-icon />
       <!--
             不使用 Element Plus el-row/el-col，也不依赖 scoped 样式是否被正确注入。
             关键布局直接写入内联样式，避免项目中的全局样式覆盖列宽。
@@ -189,26 +184,28 @@
         border
         size="small"
         class="provider-table"
+        empty-text="暂无 API 外数调用数据"
       >
-        <el-table-column
+        <template v-for="columnKey in (tableColumnOrders.providerColumns || providerColumns.map(column => column.key))" :key="columnKey">
+        <el-table-column v-if="columnKey === 'targetCode'"
           prop="targetCode"
           label="接口编码"
           min-width="140"
           show-overflow-tooltip
         />
-        <el-table-column
+        <el-table-column v-if="columnKey === 'targetName'"
           prop="targetName"
           label="接口名称"
           min-width="140"
           show-overflow-tooltip
         />
-        <el-table-column
+        <el-table-column v-if="columnKey === 'queryCount'"
           prop="queryCount"
           label="查询次数"
           width="90"
           align="right"
         />
-        <el-table-column
+        <el-table-column v-if="columnKey === 'requestSuccessRate'"
           prop="requestSuccessRate"
           label="成功率"
           width="90"
@@ -218,7 +215,7 @@
             formatRate(row.requestSuccessRate)
           }}</template>
         </el-table-column>
-        <el-table-column
+        <el-table-column v-if="columnKey === 'failureRate'"
           prop="failureRate"
           label="失败率"
           width="90"
@@ -228,7 +225,7 @@
             formatRate(row.failureRate)
           }}</template>
         </el-table-column>
-        <el-table-column
+        <el-table-column v-if="columnKey === 'foundRate'"
           prop="foundRate"
           label="查得率"
           width="90"
@@ -238,7 +235,7 @@
             formatRate(row.foundRate)
           }}</template>
         </el-table-column>
-        <el-table-column
+        <el-table-column v-if="columnKey === 'cacheHitRate'"
           prop="cacheHitRate"
           label="缓存命中率"
           width="110"
@@ -248,20 +245,21 @@
             formatRate(row.cacheHitRate)
           }}</template>
         </el-table-column>
-        <el-table-column
+        <el-table-column v-if="columnKey === 'p95CostTimeMs'"
           prop="p95CostTimeMs"
           label="P95(ms)"
           width="90"
           align="right"
         />
-        <el-table-column
+        <el-table-column v-if="columnKey === 'p99CostTimeMs'"
           prop="p99CostTimeMs"
           label="P99(ms)"
           width="90"
           align="right"
         />
+        </template>
       </el-table>
-    </async-state>
+    </div>
   </div>
 </template>
 
@@ -269,23 +267,27 @@
 import { markRaw } from 'vue'
 import { Refresh as ElIconRefresh } from '@element-plus/icons-vue'
 import { getExternalApiStats } from '@/api/runtimeLog'
-import AsyncState from '@/components/common/AsyncState.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 
 export default {
   name: 'ExternalApiMonitor',
-  components: { AsyncState, TableColumnSettings },
+  components: { TableColumnSettings },
   data() {
     return {
+      tableColumnOrders: { providerColumns: null },
       statsLoading: false,
       statsError: '',
       externalStats: { overview: {}, providers: [] },
       ElIconRefresh: markRaw(ElIconRefresh),
       providerColumns: [
-        { key: 'targetCode', label: '接口编码' }, { key: 'targetName', label: '接口名称' },
-        { key: 'queryCount', label: '查询次数' }, { key: 'requestSuccessRate', label: '成功率' },
-        { key: 'failureRate', label: '失败率' }, { key: 'foundRate', label: '查得率' },
-        { key: 'cacheHitRate', label: '缓存命中率' }, { key: 'p95CostTimeMs', label: 'P95(ms)' },
+        { key: 'targetCode', label: '接口编码' },
+        { key: 'targetName', label: '接口名称' },
+        { key: 'queryCount', label: '查询次数' },
+        { key: 'requestSuccessRate', label: '成功率' },
+        { key: 'failureRate', label: '失败率' },
+        { key: 'foundRate', label: '查得率' },
+        { key: 'cacheHitRate', label: '缓存命中率' },
+        { key: 'p95CostTimeMs', label: 'P95(ms)' },
         { key: 'p99CostTimeMs', label: 'P99(ms)' },
       ],
     }

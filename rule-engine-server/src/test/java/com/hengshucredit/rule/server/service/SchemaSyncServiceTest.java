@@ -16,6 +16,21 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class SchemaSyncServiceTest {
+    @org.junit.Test
+    public void workbenchExecutionIndexIsAddedOnlyWhenMissing() throws Exception {
+        FakeJdbcTemplate jdbc = new FakeJdbcTemplate("execution_project_id");
+        jdbc.missingIndexes.add("idx_execution_project_time");
+        SchemaSyncService service = new SchemaSyncService();
+        setField(service, "jdbcTemplate", jdbc);
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "ensureHistoricalFieldSnapshots");
+        assertTrue(jdbc.sqlList.contains("ALTER TABLE `rule_execution_log` ADD INDEX `idx_execution_project_time` (`execution_project_id`, `create_time`, `id`)"));
+        assertTrue(jdbc.sqlList.get(0).contains("ADD COLUMN `execution_project_id`"));
+        jdbc.sqlList.clear();
+        jdbc.missingColumns.clear();
+        jdbc.missingIndexes.clear();
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "ensureHistoricalFieldSnapshots");
+        assertTrue(jdbc.sqlList.isEmpty());
+    }
     @Test public void experimentExpressionColumnsAreExpandedWithoutRepeatedMigration() throws Exception {
         SchemaSyncService service = new SchemaSyncService();
         FakeJdbcTemplate jdbc = new FakeJdbcTemplate();

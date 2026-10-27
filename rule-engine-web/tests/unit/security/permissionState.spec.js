@@ -3,11 +3,21 @@ import {
   filterMenus,
   getCurrentUser,
   hasPermission,
+  hasUnrestrictedPermissions,
   setPermissionEnforcement,
   setCurrentUser
 } from '@/security/permissionState'
 
 describe('控制台最终权限状态', () => {
+  test('节点预热要求默认全局及所有项目权限，项目拒绝和全局只读不能绕过', () => {
+    const user = { permissions: ['model:view', 'model:edit'], projectAccessMode: 'ALL', globalEditable: true }
+    setCurrentUser(user)
+    expect(hasUnrestrictedPermissions('model:view', 'model:edit')).toBe(true)
+    for (const change of [{ projectAccessMode: 'SELECTED', projectIds: [1] }, { globalEditable: false }, { projectPermissionOverrides: { 2: { 'model:view': 'DENY' } } }]) {
+      setCurrentUser({ ...user, ...change })
+      expect(hasUnrestrictedPermissions('model:view', 'model:edit')).toBe(false)
+    }
+  })
   test('同一身份保留恢复内容，切换账号或权限版本时清除旧业务缓存', () => {
     setCurrentUser({ userId: 1, permissionVersion: 1, permissions: ['rule:view'] })
     window.sessionStorage.setItem('tianshu:rule-designer-recovery:9:1', 'private draft')

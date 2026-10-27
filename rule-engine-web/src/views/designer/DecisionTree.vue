@@ -442,6 +442,7 @@
 
     <!-- 测试执行弹窗 -->
     <designer-test-dialog
+      @locate="locateDesignerIssue"
       v-model:visible="testVisible"
       :execution-source="designerTestExecutionSource"
       :execution-source-name="viewRevisionLabel"

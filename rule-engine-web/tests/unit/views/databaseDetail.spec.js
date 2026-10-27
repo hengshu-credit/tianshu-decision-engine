@@ -314,7 +314,7 @@ describe('DatabaseDetail — 项目选择', () => {
     expect(wrapper.vm.configurationChecklist.find(item => item.key === 'connection-test').status).toBe('PENDING')
   })
 
-  test('编辑详情未返回时不开放表单，保存和连接测试均不能发请求', async () => {
+  test('编辑详情未返回时展示禁用表单，保存和连接测试均不能发请求', async () => {
     projectApi.listProjects.mockResolvedValue({ data: { records: [] } })
     let resolveDetail
     databaseApi.getDbDatasource.mockReturnValue(new Promise(resolve => { resolveDetail = resolve }))
@@ -324,6 +324,7 @@ describe('DatabaseDetail — 项目选择', () => {
     expect(databaseApi.getDbDatasource).toHaveBeenCalledTimes(1)
     const snapshot = {
       formVisible: wrapper.find('.detail-form').exists(),
+      formDisabled: wrapper.find('.detail-form').attributes('disabled'),
       saveDisabled: wrapper.find('[data-testid="save-database-datasource"]').attributes('disabled'),
       testDisabled: wrapper.find('[data-testid="test-database-connection"]').attributes('disabled'),
       preflightVisible: wrapper.findComponent({ name: 'ResourcePreflightPanel' }).exists(),
@@ -334,7 +335,7 @@ describe('DatabaseDetail — 项目选择', () => {
     resolveDetail({ data: { id: 1, jdbcUrl: 'jdbc:mysql://custom-host:3306/risk?custom=true' } })
     await flushPromises()
     try {
-      expect(snapshot).toEqual({ formVisible: false, saveDisabled: 'true', testDisabled: 'true', preflightVisible: false })
+      expect(snapshot).toEqual({ formVisible: true, formDisabled: 'true', saveDisabled: 'true', testDisabled: 'true', preflightVisible: false })
       expect(writes).toBe(0)
       expect(wrapper.find('.detail-form').exists()).toBe(true)
       expect(wrapper.vm.form.jdbcAutoBuild).toBe(false)

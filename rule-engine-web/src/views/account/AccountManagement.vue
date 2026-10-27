@@ -8,10 +8,10 @@
       </div>
       <div class="uiue-btn-bar account-actions">
         <div class="btn-right">
-      <table-column-settings
+      <table-column-settings v-model="tableColumnOrders[activeTab === 'accounts' ? 'accountColumns' : 'roleColumns']" :key="activeTab"
         v-if="activeTab !== 'logs'"
         :columns="activeTab === 'accounts' ? accountColumns : roleColumns"
-        storage-key="tianshu:table-columns:account-management"
+        :storage-key="`tianshu:table-columns:account-management-${activeTab}`"
       />
       <el-button
         v-if="activeTab === 'accounts'"
@@ -36,8 +36,9 @@
     <section class="content-card management-table-region">
       <el-tabs class="management-table-region" v-model="activeTab">
         <el-tab-pane v-if="canViewAccounts" class="management-table-region" label="账户" name="accounts">
-          <el-table class="management-table" show-overflow-tooltip v-loading="loading" :data="accounts" row-key="id">
-            <el-table-column label="账户" min-width="180">
+          <el-table class="management-table" show-overflow-tooltip :aria-busy="loading" :data="accounts" row-key="id">
+            <template v-for="columnKey in (tableColumnOrders.accountColumns || accountColumns.map(column => column.key))" :key="columnKey">
+            <el-table-column v-if="columnKey === 'account'" label="账户" min-width="180">
               <template #default="{ row }">
                 <div class="identity-cell">
                   <span class="identity-avatar">{{
@@ -50,7 +51,7 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="邮箱" min-width="220">
+            <el-table-column v-if="columnKey === 'email'" label="邮箱" min-width="220">
               <template #default="{ row }">
                 <div class="email-cell">
                   <span>{{ row.email || '未设置' }}</span>
@@ -60,7 +61,7 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="角色" min-width="220">
+            <el-table-column v-if="columnKey === 'roles'" label="角色" min-width="220">
               <template #default="{ row }">
                 <div class="tag-list">
                   <el-tag
@@ -77,26 +78,27 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="最终权限" width="110" align="right">
+            <el-table-column v-if="columnKey === 'permissions'" label="最终权限" width="110" align="right">
               <template #default="{ row }">
                 <strong>{{ (row.effectivePermissions || []).length }}</strong>
                 <span class="muted"> 项</span>
               </template>
             </el-table-column>
-            <el-table-column label="可访问项目" min-width="180">
+            <el-table-column v-if="columnKey === 'projectAccess'" label="可访问项目" min-width="180">
               <template #default="{ row }">
                 <span v-if="row.projectAccessMode !== 'SELECTED'">不限制项目</span>
                 <span v-else-if="!(row.projectIds || []).length" class="muted">仅全局内容</span>
                 <span v-else>{{ (row.projectIds || []).map(projectName).join('、') }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="状态" width="90">
+            <el-table-column v-if="columnKey === 'status'" label="状态" width="90">
               <template #default="{ row }">
                 <el-tag :type="row.status === 1 ? 'success' : 'info'">
                   {{ row.status === 1 ? '已启用' : '已停用' }}
                 </el-tag>
               </template>
             </el-table-column>
+            </template>
             <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '权限调整', '重置密码', '停用', '启用'])" fixed="right">
               <template #default="{ row }">
                 <el-button
@@ -141,23 +143,25 @@
         </el-tab-pane>
 
         <el-tab-pane v-if="canViewRoles" class="management-table-region" label="角色" name="roles">
-          <el-table class="management-table" show-overflow-tooltip v-loading="loading" :data="roles" row-key="id">
-            <el-table-column prop="roleName" label="角色名称" min-width="180" />
-            <el-table-column prop="roleCode" label="角色编码" min-width="160" />
-            <el-table-column label="已授权" width="110" align="right">
+          <el-table class="management-table" show-overflow-tooltip :aria-busy="loading" :data="roles" row-key="id">
+            <template v-for="columnKey in (tableColumnOrders.roleColumns || roleColumns.map(column => column.key))" :key="columnKey">
+            <el-table-column v-if="columnKey === 'roleName'" prop="roleName" label="角色名称" min-width="180" />
+            <el-table-column v-if="columnKey === 'roleCode'" prop="roleCode" label="角色编码" min-width="160" />
+            <el-table-column v-if="columnKey === 'authorized'" label="已授权" width="110" align="right">
               <template #default="{ row }">
                 <strong>{{ (row.permissionCodes || []).length }}</strong>
                 <span class="muted"> 项</span>
               </template>
             </el-table-column>
-            <el-table-column prop="memberCount" label="成员" width="90" align="right" />
-            <el-table-column label="状态" width="90">
+            <el-table-column v-if="columnKey === 'memberCount'" prop="memberCount" label="成员" width="90" align="right" />
+            <el-table-column v-if="columnKey === 'status'" label="状态" width="90">
               <template #default="{ row }">
                 <el-tag :type="row.status === 1 ? 'success' : 'info'">
                   {{ row.status === 1 ? '已启用' : '已停用' }}
                 </el-tag>
               </template>
             </el-table-column>
+            </template>
             <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['配置权限', '停用', '启用'])" fixed="right">
               <template #default="{ row }">
                 <el-button
@@ -447,13 +451,21 @@ export default {
   name: 'AccountManagement',
   data() {
     return {
+      tableColumnOrders: { accountColumns: null, roleColumns: null },
       accountColumns: [
-        { key: 'account', label: '账户' }, { key: 'email', label: '邮箱' }, { key: 'roles', label: '角色' },
-        { key: 'permissions', label: '最终权限' }, { key: 'status', label: '状态' },
+        { key: 'account', label: '账户' },
+        { key: 'email', label: '邮箱' },
+        { key: 'roles', label: '角色' },
+        { key: 'permissions', label: '最终权限' },
+        { key: 'projectAccess', label: '可访问项目' },
+        { key: 'status', label: '状态' },
       ],
       roleColumns: [
-        { key: 'roleName', label: '角色名称' }, { key: 'roleCode', label: '角色编码' },
-        { key: 'authorized', label: '已授权' }, { key: 'memberCount', label: '成员' }, { key: 'status', label: '状态' },
+        { key: 'roleName', label: '角色名称' },
+        { key: 'roleCode', label: '角色编码' },
+        { key: 'authorized', label: '已授权' },
+        { key: 'memberCount', label: '成员' },
+        { key: 'status', label: '状态' },
       ],
       activeTab: 'accounts',
       loading: false,

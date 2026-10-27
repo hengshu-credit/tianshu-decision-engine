@@ -20,6 +20,7 @@ import * as modelApi from '@/api/model'
 import * as ruleListApi from '@/api/ruleList'
 import * as datasourceApi from '@/api/datasource'
 import { API_MODULE_FIELDS } from '@/utils/apiExecution'
+import { PLATFORM_SUCCESS_CODE } from '@/utils/platformResponse'
 
 // ─── Mock 数据（传原始数组，由 axios 拦截器包成 { data: ... }） ─────
 const mockDefs = { id: 1, projectId: 1, scope: 'PROJECT' }
@@ -84,6 +85,17 @@ describe('varPickerMixin', () => {
     mountedWrappers.push(wrapper)
     return wrapper.vm
   }
+
+  test.each([false, true])('枚举选项从平台响应 data 解包，保持值和标签原样（对象字段=%s）', async objectField => {
+    const vm = mountMixinVM({ mixins: [varPickerMixin] })
+    const options = [{ optionValue: 'Keep_MixedCase', optionLabel: '业务自定标签' }]
+    const api = objectField ? dataObjectApi.getDataObjectFieldOptions : variableApi.getVariableOptions
+    api.mockResolvedValueOnce({ code: PLATFORM_SUCCESS_CODE, data: options })
+
+    await vm.loadVarOptionsForRef('customerType', { id: 7, objectField })
+
+    expect(vm.getVarOptions('customerType')).toEqual([{ value: 'Keep_MixedCase', label: '业务自定标签' }])
+  })
 
   /** 创建混入了 varPickerMixin 的 Vue 实例 */
   function createMixinVM() {

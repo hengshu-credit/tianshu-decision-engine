@@ -103,6 +103,10 @@ describe('MonacoEditor', () => {
     const result = await provider.provideCompletionItems(model, { lineNumber: 1, column: 6 })
     expect(result.suggestions.map(item => item.label)).toContain('riskScore')
     expect(result.suggestions[0].documentation).toEqual(expect.objectContaining({ value: expect.stringContaining('NUMBER') }))
+    expect(result.suggestions[0].detail).toBe('变量 · 数值 / NUMBER · 风险分 · riskScore · —')
+    await wrapper.setProps({ referenceVersions: { 'variable:8': { version: 3 } } })
+    const updated = await provider.provideCompletionItems(model, { lineNumber: 1, column: 6 })
+    expect(updated.suggestions[0].detail).toBe('变量 · 数值 / NUMBER · 风险分 · riskScore · v3')
 
     const hoverProvider = monaco.languages.registerHoverProvider.mock.calls.at(-1)[1]
     const hover = await hoverProvider.provideHover(model, { lineNumber: 1, column: 4 })
@@ -139,5 +143,40 @@ describe('MonacoEditor', () => {
     expect(decorations[2].options.before.content.trim()).toBe('风险分')
     expect(decorations[4].options.after.content.trim()).toBe('v4')
     wrapper.unmount()
+  })
+
+  test('连续输入即时同步源码，同一帧只更新一次标注并复用目录与提示服务', async () => {
+    let changed, frame
+    const frameSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { frame = callback; return 7 })
+    const cancelSpy = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+    editor.onDidChangeModelContent.mockImplementation(callback => { changed = callback })
+    editor.getModel.mockReturnValue({ getPositionAt: offset => ({ lineNumber: 1, column: offset + 1 }) })
+    editor.getValue.mockReturnValue('age')
+    const wrapper = mount(MonacoEditor, { props: {
+      value: 'age', language: 'ql', references: [{ refCode: 'age', varLabel: '年龄', varType: 'NUMBER', _varId: 1, _refType: 'VARIABLE' }],
+    } })
+    try {
+      const catalog = wrapper.vm.referenceCatalog
+      const normalized = vi.spyOn(wrapper.vm, 'normalizedReferenceItems')
+      const registrations = monaco.languages.registerCompletionItemProvider.mock.calls.length
+      editor.deltaDecorations.mockClear()
+      for (const value of [' age', '  age', '  age + 1']) {
+        editor.getValue.mockReturnValue(value)
+        changed()
+        await wrapper.setProps({ value })
+      }
+      expect(wrapper.emitted('update:value').map(event => event[0])).toEqual([' age', '  age', '  age + 1'])
+      expect(editor.deltaDecorations).not.toHaveBeenCalled()
+      expect(frameSpy).toHaveBeenCalledTimes(1)
+      frame(0)
+      expect(editor.deltaDecorations).toHaveBeenCalledTimes(1)
+      expect(editor.deltaDecorations.mock.calls[0][1].find(item => item.options.description === 'engine-content-code').range.startColumn).toBe(3)
+      expect(wrapper.vm.referenceCatalog).toBe(catalog)
+      expect(normalized).not.toHaveBeenCalled()
+      expect(monaco.languages.registerCompletionItemProvider.mock.calls.length).toBe(registrations)
+      changed()
+      wrapper.unmount()
+      expect(cancelSpy).toHaveBeenCalledWith(7)
+    } finally { if (wrapper.exists()) wrapper.unmount(); frameSpy.mockRestore(); cancelSpy.mockRestore() }
   })
 })

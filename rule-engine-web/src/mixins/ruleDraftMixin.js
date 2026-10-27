@@ -265,7 +265,7 @@ export default {
         this.$message.warning('校验结果不属于正在查看的修订，请重新校验')
         return
       }
-      const checkedModelJson = issue?.revisionId ? null : this.designerValidationReport?.checkedModelJson
+      const checkedModelJson = issue?.checkedModelJson || (issue?.revisionId ? null : this.designerValidationReport?.checkedModelJson)
       if (checkedModelJson && createDraftFingerprint(this.serializeDesignerDraft()) !== createDraftFingerprint(checkedModelJson)) {
         this.$message.warning('配置已变化，请重新检查')
         return

@@ -66,4 +66,26 @@ describe('TableColumnSettings', () => {
 
     expect(wrapper.emitted('update:modelValue')[0]).toEqual([['status', 'code']])
   })
+
+  test('显式隐藏全部非必选字段后，空偏好仍能恢复并继续编辑', async () => {
+    window.localStorage.setItem('test:table-columns', '[]')
+    const wrapper = mountSettings([])
+    await wrapper.setProps({ columns: columns.map(column => ({ ...column, required: false })) })
+    wrapper.vm.beginEdit()
+    expect(wrapper.vm.draftVisibleKeys).toEqual([])
+    wrapper.unmount()
+    const restored = mount(TableColumnSettings, { props: { columns: [{ key: 'name', label: '名称' }], storageKey: 'test:table-columns' }, shallow: true })
+    expect(restored.emitted('update:modelValue')[0]).toEqual([[]])
+    restored.unmount()
+  })
+
+  test('切换表格范围时使用新范围的偏好，不沿用上一个表格', async () => {
+    window.localStorage.setItem('test:other-columns', '["status"]')
+    const wrapper = mountSettings(['code', 'name'])
+    await wrapper.setProps({ storageKey: 'test:other-columns' })
+    expect(wrapper.emitted('update:modelValue').at(-1)).toEqual([['code', 'status']])
+    await wrapper.setProps({ storageKey: 'test:new-columns' })
+    expect(wrapper.emitted('update:modelValue').at(-1)).toEqual([['code', 'name', 'status']])
+    wrapper.unmount()
+  })
 })

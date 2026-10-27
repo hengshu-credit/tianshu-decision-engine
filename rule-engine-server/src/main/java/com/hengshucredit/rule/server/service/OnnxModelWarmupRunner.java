@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleModelVersion;
 import com.hengshucredit.rule.server.health.OnnxWarmupStatus;
+import com.hengshucredit.rule.server.health.OnnxWarmupState;
 import com.hengshucredit.rule.server.artifact.Sha256Digests;
 import com.hengshucredit.rule.server.mapper.RuleModelMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelVersionMapper;
@@ -20,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.Map;
 
 @Component
 public class OnnxModelWarmupRunner implements ApplicationRunner {
@@ -30,6 +32,7 @@ public class OnnxModelWarmupRunner implements ApplicationRunner {
     private final OnnxModelExecutionService executionService;
     private final OnnxWarmupStatus warmupStatus;
     @Resource private RuleModelVersionMapper versionMapper;
+    private final java.util.concurrent.atomic.AtomicBoolean running = new java.util.concurrent.atomic.AtomicBoolean();
 
     public OnnxModelWarmupRunner(RuleModelMapper modelMapper,
                                  OnnxModelExecutionService executionService,
@@ -41,6 +44,26 @@ public class OnnxModelWarmupRunner implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
+        warmup(false);
+    }
+
+    public Map<String, Object> retryWarmup() {
+        return warmup(true);
+    }
+
+    private Map<String, Object> warmup(boolean retry) {
+        if (!running.compareAndSet(false, true)) return warmupStatus.details();
+        try {
+            if (retry) warmupStatus.resetForRetry();
+            else if (warmupStatus.getState() != OnnxWarmupState.NOT_STARTED) return warmupStatus.details();
+            preloadPublishedModels();
+            return warmupStatus.details();
+        } finally {
+            running.set(false);
+        }
+    }
+
+    private void preloadPublishedModels() {
         List<RuleModel> candidates;
         try {
             candidates = modelMapper.selectList(new QueryWrapper<RuleModel>()
@@ -90,7 +113,7 @@ public class OnnxModelWarmupRunner implements ApplicationRunner {
                 log.info("ONNX 发布模型启动预加载成功: {}({}) version={}",
                         candidate.getModelName(), candidate.getModelCode(), candidate.getPublishedVersion());
             } catch (RuntimeException | LinkageError e) {
-                warmupStatus.recordFailure(e);
+                warmupStatus.recordFailure(e, candidate.getId(), candidate.getModelName(), candidate.getPublishedVersion());
                 log.error("ONNX 发布模型启动预加载失败: {}({}) version={}",
                         candidate.getModelName(), candidate.getModelCode(), candidate.getPublishedVersion(), e);
             }

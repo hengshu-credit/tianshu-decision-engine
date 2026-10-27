@@ -39,6 +39,7 @@ import java.util.function.Supplier;
 public class ProjectWorkbenchService {
     @Resource
     private com.hengshucredit.rule.server.security.ConsoleAccessGuard accessGuard;
+    @Resource private com.hengshucredit.rule.server.security.ConsoleProjectAccess consoleProjects;
 
     @Resource
     private RuleProjectMapper projectMapper;
@@ -154,14 +155,12 @@ public class ProjectWorkbenchService {
         metrics.setRecentExecutionCount(safeCount(result, "最近执行次数",
                 () -> executionLogMapper.selectLogicalCount(
                         new LambdaQueryWrapper<RuleExecutionLog>()
-                                .eq(RuleExecutionLog::getProjectCode,
-                                        project.getProjectCode())
+                                .eq(RuleExecutionLog::getExecutionProjectId, projectId)
                                 .ge(RuleExecutionLog::getCreateTime, recentBegin))));
         metrics.setRecentSuccessCount(safeCount(result, "最近成功次数",
                 () -> executionLogMapper.selectLogicalCount(
                         new LambdaQueryWrapper<RuleExecutionLog>()
-                                .eq(RuleExecutionLog::getProjectCode,
-                                        project.getProjectCode())
+                                .eq(RuleExecutionLog::getExecutionProjectId, projectId)
                                 .eq(RuleExecutionLog::getSuccess, 1)
                                 .ge(RuleExecutionLog::getCreateTime, recentBegin))));
         metrics.setRecentSuccessRate(successRate(
@@ -172,8 +171,7 @@ public class ProjectWorkbenchService {
                 () -> {
                     List<RuleExecutionLog> rows = executionLogMapper.selectLogicalList(
                             new LambdaQueryWrapper<RuleExecutionLog>()
-                                    .eq(RuleExecutionLog::getProjectCode,
-                                            project.getProjectCode())
+                                    .eq(RuleExecutionLog::getExecutionProjectId, projectId)
                                     .orderByDesc(RuleExecutionLog::getCreateTime)
                                     .orderByDesc(RuleExecutionLog::getId)
                                     .last("LIMIT 1"));
@@ -182,7 +180,8 @@ public class ProjectWorkbenchService {
         result.setRecentExecution(toRecentExecution(latest));
         result.setChecks(buildChecks(project, metrics, latest));
         if (ruleWarmupStatus != null && (accessGuard == null || accessGuard.can("rule:view"))) {
-            result.setWarmup(ruleWarmupStatus.details());
+            result.setWarmup(consoleProjects == null ? ruleWarmupStatus.details()
+                    : consoleProjects.globalStatusSummary(ruleWarmupStatus.details(), "rule:view"));
             result.getChecks().add(warmupCheck(ruleWarmupStatus.details()));
         }
         ProjectWorkbenchDTO.CheckItem fieldCheck = checkRuleFieldReferences(rules);

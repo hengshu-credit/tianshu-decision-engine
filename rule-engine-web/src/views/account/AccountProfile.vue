@@ -11,7 +11,7 @@
     <section class="profile-grid">
       <div class="content-card">
         <div class="card-heading"><h2>个人资料</h2><span>登录名创建后不可修改</span></div>
-        <el-form v-loading="loading" label-position="top" :model="profile">
+        <el-form :aria-busy="loading" :disabled="loading" label-position="top" :model="profile">
           <el-form-item label="用户名"><el-input :model-value="profile.username" disabled /></el-form-item>
           <el-form-item label="显示名称"><el-input v-model="profile.displayName" clearable /></el-form-item>
           <el-form-item label="注册邮箱">

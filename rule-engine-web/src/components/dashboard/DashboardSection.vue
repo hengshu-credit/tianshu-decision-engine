@@ -7,12 +7,11 @@
       </div>
       <slot name="actions" />
     </div>
-    <div v-if="loading && !loaded" class="dashboard-section__state" v-loading="true">正在加载</div>
-    <div v-else-if="error" class="dashboard-section__state">
+    <div v-if="error" class="dashboard-section__state">
       <el-alert :title="error" type="error" :closable="false" show-icon />
       <el-button @click="$emit('retry')">重试本区域</el-button>
     </div>
-    <div v-else v-loading="loading">
+    <div v-else>
       <slot />
     </div>
   </section>
@@ -26,7 +25,6 @@ export default {
     title: { type: String, required: true },
     description: { type: String, default: '' },
     loading: { type: Boolean, default: false },
-    loaded: { type: Boolean, default: false },
     error: { type: String, default: '' }
   }
 }

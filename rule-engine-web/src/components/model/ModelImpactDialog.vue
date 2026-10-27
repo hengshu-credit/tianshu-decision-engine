@@ -1,17 +1,17 @@
 <template>
   <el-dialog :model-value="modelValue" title="模型引用影响确认" width="680px" @update:model-value="$emit('update:modelValue', $event)">
-    <div v-loading="loading" class="impact-body">
+    <div :aria-busy="loading" class="impact-body">
       <el-alert title="旧的已发布决策制品包含模型固化副本，不会被此次操作改写。" type="info" :closable="false" show-icon />
       <div v-if="analysis" class="impact-summary">
         <span>影响摘要</span>
         <code>{{ analysis.impactDigest }}</code>
         <pre>{{ prettyReport }}</pre>
       </div>
-      <el-checkbox v-if="analysis" v-model="confirmed">我已核对当前引用关系，并确认继续</el-checkbox>
+      <el-checkbox v-if="analysis" v-model="confirmed" :disabled="loading">我已核对当前引用关系，并确认继续</el-checkbox>
     </div>
     <template #footer>
       <el-button @click="$emit('update:modelValue', false)">取消</el-button>
-      <el-button data-testid="confirm-impact" type="primary" :disabled="!analysis || !confirmed" @click="confirm">使用此影响分析继续</el-button>
+      <el-button data-testid="confirm-impact" type="primary" :disabled="loading || !analysis || !confirmed" @click="confirm">使用此影响分析继续</el-button>
     </template>
   </el-dialog>
 </template>

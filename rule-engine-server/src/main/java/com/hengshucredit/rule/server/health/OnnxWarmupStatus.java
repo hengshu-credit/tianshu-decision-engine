@@ -14,6 +14,18 @@ public class OnnxWarmupStatus {
     private int failureCount;
     private int cpuFallbackCount;
     private String lastErrorType;
+    private final java.util.List<Map<String, Object>> failures = new java.util.ArrayList<>();
+
+    public synchronized void resetForRetry() {
+        if (state == OnnxWarmupState.WARMING) throw new IllegalStateException("ONNX 模型仍在预热中");
+        state = OnnxWarmupState.NOT_STARTED;
+        targetCount = 0;
+        successCount = 0;
+        failureCount = 0;
+        cpuFallbackCount = 0;
+        lastErrorType = null;
+        failures.clear();
+    }
 
     public synchronized void start(int targets) {
         if (targets < 0) {
@@ -38,6 +50,18 @@ public class OnnxWarmupStatus {
         requireWarming();
         failureCount++;
         lastErrorType = failure == null ? "UnknownFailure" : failure.getClass().getSimpleName();
+    }
+
+    public synchronized void recordFailure(Throwable failure, Long modelId, String modelName, Integer version) {
+        recordFailure(failure);
+        if (failures.size() < 20) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("modelId", modelId);
+            item.put("modelName", modelName == null || modelName.isBlank() ? "模型 #" + modelId : modelName);
+            item.put("version", version);
+            item.put("errorType", lastErrorType);
+            failures.add(java.util.Collections.unmodifiableMap(item));
+        }
     }
 
     public synchronized void fail(Throwable failure) {
@@ -65,6 +89,7 @@ public class OnnxWarmupStatus {
         details.put("successCount", successCount);
         details.put("failureCount", failureCount);
         details.put("cpuFallbackCount", cpuFallbackCount);
+        details.put("failures", java.util.List.copyOf(failures));
         if (lastErrorType != null) {
             details.put("lastErrorType", lastErrorType);
         }

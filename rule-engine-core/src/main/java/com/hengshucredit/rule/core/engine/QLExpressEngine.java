@@ -67,8 +67,9 @@ public class QLExpressEngine {
     }
 
     private void registerDecisionTableFunctions() {
-        runner.addFunction("UNIQUE_HIT_POLICY_MATCHED_MULTIPLE_RULES", (Runnable) () -> {
-            throw new IllegalStateException("UNIQUE hit policy matched multiple rules");
+        runner.addFunction("UNIQUE_HIT_POLICY_MATCHED_MULTIPLE_RULES", (context, parameters) -> {
+            // 无参数调用兼容已发布的历史脚本。
+            throw new DecisionTableConflictException(parameters.size() == 0 ? null : String.valueOf(parameters.getValue(0)));
         });
     }
 
@@ -182,6 +183,16 @@ public class QLExpressEngine {
             log.error("QLExpress execution error: {}", e.getMessage(), e);
             ruleResult.setSuccess(false);
             ruleResult.setErrorMessage(e.getMessage());
+            Throwable cause = e;
+            while (cause != null) {
+                if (cause instanceof DecisionTableConflictException conflict) {
+                    ruleResult.setExecutionErrorDetail(e.getMessage());
+                    ruleResult.setErrorMessage(conflict.getMessage());
+                    ruleResult.setExecutionIssues(conflict.issues());
+                    break;
+                }
+                cause = cause.getCause();
+            }
         } finally {
             ruleResult.setExecuteTimeMs(System.currentTimeMillis() - start);
         }

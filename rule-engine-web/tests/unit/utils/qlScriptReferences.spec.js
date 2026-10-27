@@ -1,4 +1,4 @@
-import { collectQlScriptReferences, buildQlReferenceDecorations } from '@/utils/qlScriptReferences'
+import { collectQlScriptReferences, createQlReferenceCatalog, buildQlReferenceDecorations } from '@/utils/qlScriptReferences'
 
 const option = (code, id, type = 'NUMBER', extra = {}) => ({
   varCode: code, varLabelText: `名称${id}`, varType: type,
@@ -16,6 +16,20 @@ const options = [
 const functions = [{ id: '8', funcCode: 'risk', funcName: '风险计算', version: 2 }]
 
 describe('QL 脚本行内引擎引用', () => {
+  test('两万项目录在连续编辑时复用索引，不重新遍历无关资源', () => {
+    const unusedCode = vi.fn(() => 'unused')
+    const large = [...options, ...Array.from({ length: 20000 }, (_, index) => option('field' + index, index + 100)),
+      { ...option('unused', 30000), get varCode() { return unusedCode() } }]
+    const bindings = [{ refCode: 'age', refType: 'VARIABLE', varId: '1' }]
+    const catalog = createQlReferenceCatalog(large, functions, bindings)
+    unusedCode.mockClear()
+    for (let index = 0; index < 40; index++) {
+      const refs = collectQlScriptReferences(`age + risk(${index})`, large, functions, bindings, [], catalog)
+      expect(refs.map(ref => ref.code)).toEqual(['age', 'risk'])
+      expect(refs[0]).toMatchObject({ bound: true, option: { _varId: '1' } })
+    }
+    expect(unusedCode).not.toHaveBeenCalled()
+  })
   test('内置方法、普通方法和链式方法均逆向展示，不伪造函数 ID', () => {
     const script = 'return resourceVersionValue("VARIABLE", "548", "BUSINESS_VERSION:948", "") + obj.getName().trim();'
     const refs = collectQlScriptReferences(script)
@@ -129,8 +143,13 @@ describe('QL 脚本行内引擎引用', () => {
     expect(decorations[3].range).toEqual({ startLineNumber: 1, startColumn: 8, endLineNumber: 1, endColumn: 11 })
     expect(decorations[2].options.before.content.trim()).toBe('<b>年龄</b>')
     expect(decorations[4].options.after.content.trim()).toBe('v3')
-    expect(decorations[0].options.hoverMessage.isTrusted).toBe(false)
-    expect(decorations[0].options.hoverMessage.supportHtml).toBe(false)
+    expect(decorations[0].options.before.inlineClassName).toContain('content-ref__anchor-7')
+    expect(decorations[2].options.before.inlineClassName).toContain('content-ref__anchor-7')
+    expect(decorations[4].options.after.inlineClassName).toContain('content-ref__anchor-10')
+    expect(decorations[3].options.inlineClassName).not.toContain('content-ref__metadata')
+    expect(decorations.filter(item => item.options.hoverMessage)).toHaveLength(1)
+    expect(decorations[3].options.hoverMessage.isTrusted).toBe(false)
+    expect(decorations[3].options.hoverMessage.supportHtml).toBe(false)
   })
 
   test('通用编辑器模式按类型、编码、名称、版本展示引擎引用', () => {

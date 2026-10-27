@@ -1,19 +1,19 @@
 <template>
-  <div class="uiue-list-page system-settings-page" v-loading="loading">
+  <div class="uiue-list-page system-settings-page" :aria-busy="loading">
     <el-alert title="此处为全局配置，统一管理系统品牌、通知邮箱、账户访问与对外结果码。" type="info" :closable="false" show-icon />
     <el-tabs v-model="tab" :before-leave="beforeTabLeave" class="system-settings-tabs">
       <el-tab-pane label="基本信息" name="brand">
         <div v-if="form.brand" class="brand-columns">
-          <el-form label-position="top" :disabled="!canEdit || saving">
+          <el-form label-position="top" :disabled="!canEdit || saving || loading">
             <el-form-item label="系统名称" required><el-input v-model="form.brand.systemName" maxlength="40" show-word-limit /></el-form-item>
             <el-form-item label="系统副标题"><el-input v-model="form.brand.subtitle" maxlength="100" /><small>留空时隐藏副标题。</small></el-form-item>
             <el-form-item v-for="field in brandImageFields" :key="field.id" :label="field.label">
               <div class="brand-image-editor">
                 <div class="brand-image-input">
                   <el-input :model-value="form.brand[field.url]" :aria-label="field.label + '图片地址'" clearable placeholder="输入图片地址，或上传图片" @update:model-value="value => setAssetUrl(field, value)" />
-                  <el-upload :auto-upload="false" :show-file-list="false" :accept="imageAccept" :on-change="file => selectAsset(file, field.id)" :disabled="!canEdit || saving"><el-button :disabled="!canEdit || saving">上传图片</el-button></el-upload>
+                  <el-upload :auto-upload="false" :show-file-list="false" :accept="imageAccept" :on-change="file => selectAsset(file, field.id)" :disabled="!canEdit || saving || loading"><el-button :disabled="!canEdit || saving || loading">上传图片</el-button></el-upload>
                 </div>
-                <div class="brand-upload"><img :src="field.id === 'logoId' ? logoPreview : faviconPreview" :alt="field.label" /><span v-if="form.brand[field.id]">已上传图片</span><el-button link :disabled="!canEdit || saving" @click="restoreAsset(field.id)">{{ field.id === 'logoId' ? '恢复默认' : '使用系统 Logo' }}</el-button></div>
+                <div class="brand-upload"><img :src="field.id === 'logoId' ? logoPreview : faviconPreview" :alt="field.label" /><span v-if="form.brand[field.id]">已上传图片</span><el-button link :disabled="!canEdit || saving || loading" @click="restoreAsset(field.id)">{{ field.id === 'logoId' ? '恢复默认' : '使用系统 Logo' }}</el-button></div>
                 <small>{{ field.id === 'faviconId' ? '未单独设置时自动使用系统 Logo。' : '支持 JPG、PNG、SVG、GIF、WebP、BMP、ICO；上传最大 1 MB，宽高不超过 2048 像素。' }}</small>
               </div>
             </el-form-item>
@@ -26,7 +26,7 @@
             <login-page preview :preview-brand="previewBrand" />
           </div>
         </div>
-        <watermark-settings v-if="form.brand" v-model="form.brand" :disabled="!canEdit || saving" />
+        <watermark-settings v-if="form.brand" v-model="form.brand" :disabled="!canEdit || saving || loading" />
       </el-tab-pane>
       <el-tab-pane label="通知邮箱" name="mail">
         <el-alert v-if="managed.mail" title="通知邮箱由部署环境覆盖，请先移除环境覆盖再通过页面维护。" type="info" :closable="false" />
@@ -94,7 +94,7 @@ export default {
     canSubmit() { return this.writable && hasPermission('system:submit') && hasPermission('approval:submit') },
     hasApprovalView() { return hasPermission('approval:view') },
     draft() { return this.drafts[this.tab] },
-    writable() { return this.canEdit && !this.managed[this.tab] && (!this.draft || this.draft.status === 'EDITING') },
+    writable() { return !this.loading && this.canEdit && !this.managed[this.tab] && (!this.draft || this.draft.status === 'EDITING') },
     dirty() { return this.tab !== 'history' && (JSON.stringify(this.form[this.tab]) !== JSON.stringify(this.saved[this.tab]) || (this.tab === 'mail' && Boolean(this.mailPassword))) },
     watermarkPreviewConfig() { return this.tab === 'brand' && this.canEdit && this.dirty ? this.form.brand : null },
     logoPreview() { return this.assetPreviews.logoId || resolveBrandImages(this.form.brand).logoUrl },

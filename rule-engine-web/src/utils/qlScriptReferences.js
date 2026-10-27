@@ -126,14 +126,15 @@ function pinnedCallReference(code, tokens, index, pinned) {
     version: item.displayVersion ?? item.version, option, bound: true }
 }
 
-/** 只生成展示标注，不从编码反推或写入 scriptVarRefs。 */
-export function collectQlScriptReferences(script, options = [], functions = [], bindings = [], versionReferences = []) {
-  const tokens = tokenize(String(script || ''))
+// 目录仅在资源或稳定绑定变化时重建，键入时复用索引。
+export function createQlReferenceCatalog(options = [], functions = [], bindings = []) {
   const functionOptions = functions.map(fn => ({
     varCode: fn.funcCode, varLabelText: fn.funcName, varType: fn.returnType || 'FUNCTION',
     _varId: fn.id, _refType: 'FUNCTION', varObj: fn,
   }))
   const allOptions = [...options, ...functionOptions]
+  const byIdentity = new Map()
+  for (const option of allOptions) if (!byIdentity.has(identity(option))) byIdentity.set(identity(option), option)
   const boundByCode = new Map()
   for (const binding of bindings) {
     if (!binding.refCode || binding.varId == null || !binding.refType) continue
@@ -147,7 +148,7 @@ export function collectQlScriptReferences(script, options = [], functions = [], 
     const identities = new Set(refs.map(ref => `${ref.refType}:${ref.varId}`))
     if (identities.size !== 1) continue
     const binding = refs[0]
-    const option = allOptions.find(item => identity(item) === `${binding.refType}:${binding.varId}`)
+    const option = byIdentity.get(`${binding.refType}:${binding.varId}`)
     if (option) displayOptions.push({ ...option, varCode: code, binding })
   }
   const byRoot = new Map()
@@ -158,6 +159,19 @@ export function collectQlScriptReferences(script, options = [], functions = [], 
     group.push(option)
     byRoot.set(root, group)
   }
+  const functionsByCode = new Map()
+  for (const option of functionOptions) {
+    const group = functionsByCode.get(option.varCode) || []
+    group.push(option)
+    functionsByCode.set(option.varCode, group)
+  }
+  return { boundByCode, byRoot, functionsByCode }
+}
+
+/** 只生成展示标注，不从编码反推或写入 scriptVarRefs。 */
+export function collectQlScriptReferences(script, options = [], functions = [], bindings = [], versionReferences = [], catalog = createQlReferenceCatalog(options, functions, bindings)) {
+  const tokens = tokenize(String(script || ''))
+  const { boundByCode, byRoot, functionsByCode } = catalog
   const locals = new Set(tokens.filter((token, index) => token.identifier &&
     /^(var|boolean|byte|short|int|long|float|double|char|String|Object|List|Map)$/.test(tokens[index - 1]?.text)).map(token => token.text))
   const { keys: outputKeys, bodyTokens: resultBodyTokens } = resultObjectReferences(tokens)
@@ -173,8 +187,8 @@ export function collectQlScriptReferences(script, options = [], functions = [], 
     const path = outputKey ? { code, segments: [{ code, end: token.end }], call: false } : readPath(tokens, index, rootOptions)
     if (!outputKey && path.call && !syntaxCalls.has(path.code) && tokens[index - 1]?.text !== 'new') {
       const bindingsForCode = boundByCode.get(path.code)
-      const matches = tokens[index - 1]?.text === '.' ? [] : functionOptions.filter(item => item.varCode === path.code
-        && (!bindingsForCode || bindingsForCode.length === 1 && bindingsForCode[0].refType === 'FUNCTION' && String(bindingsForCode[0].varId) === String(item._varId)))
+      const matches = tokens[index - 1]?.text === '.' ? [] : (functionsByCode.get(path.code) || []).filter(item =>
+        !bindingsForCode || bindingsForCode.length === 1 && bindingsForCode[0].refType === 'FUNCTION' && String(bindingsForCode[0].varId) === String(item._varId))
       const known = matches.length === 1 ? matches[0] : null
       const builtin = Object.hasOwn(engineMethods, path.code)
       const option = known || { _refType: 'FUNCTION', varCode: path.code, varLabelText: builtin ? engineMethods[path.code] : path.code, varType: builtin ? 'ANY' : '', builtin }
@@ -224,12 +238,9 @@ function plainLabel(value) {
   return String(value || '').replace(/[\r\n\t]+/g, ' ')
 }
 
-// Monaco 按文档字符度量换行和定位光标；留白也必须是注入文本，不能用 CSS 宽度挤偏源码。
+// 内边距也交给 Monaco 度量；只注入显示文本，不给真实编码增加 CSS 水平宽度。
 function injectedContent(part) {
-  const text = plainLabel(part.text)
-  if (part.key === 'source') return ' ' + text
-  if (part.key === 'type') return text.padEnd(4, ' ')
-  return ' ' + text + ' '
+  return '\u00a0' + plainLabel(part.text) + '\u00a0'
 }
 
 export function referenceTypeDisplay(reference) {
@@ -253,25 +264,31 @@ export function buildQlReferenceDecorations(references, model, versions = {}, ca
     const state = versions[qlReferenceVersionKey(ref, catalogMode)]
     const version = state?.version ?? ref.version
     const parts = contentReferenceParts({ ...ref.option, varCode: ref.code, varLabelText: ref.label,
-      version, versionMode: ref.option.versionMode || (ref.option.binding?.versionMode === 'FIXED' ? 'FIXED' : undefined) })
+      version, versionMode: ref.option.versionMode || (ref.option.binding?.versionMode === 'FIXED' ? 'FIXED' : undefined) }, [], false, 'editor')
+      .filter(part => ['source', 'type', 'name', 'code', 'version'].includes(part.key))
     const versionPart = parts.find(part => part.key === 'version')
     if (versionPart && state?.loading && version == null) versionPart.text = '版本加载中'
     const start = model.getPositionAt(ref.start), end = model.getPositionAt(ref.end)
-    const bindingHint = ref.option.builtin ? '引擎内置方法，无需绑定资源 ID'
-      : ref.option._refType === 'FUNCTION' && ref.option._varId == null ? '脚本方法调用，未提供独立资源元信息'
-        : ref.bound ? '已绑定引擎引用' : '尚未绑定，请从左侧字段或代码补全中选择以记录引用'
-    const hoverMessage = { value: parts.map(part => escapeMarkdown(part.text)).join(' ') + (ref.outputKey ? '\n\n规则输出字段' : '')
-      + '\n\n' + bindingHint
+    const hoverParts = ['source', 'type', 'name', 'code', 'version'].map(key => {
+      const part = parts.find(part => part.key === key)
+      if (key === 'type' && part?.title) return part.title.replace(' · ', ' / ')
+      return part?.text || (key === 'version' && ref.option.builtin ? '内置' : '—')
+    })
+    const hoverMessage = { value: hoverParts.map(escapeMarkdown).join(' · ') + (ref.outputKey ? '\n\n规则输出字段' : '')
       + (state?.error ? '\n\n版本读取失败，可关闭后重新开启引用展示以重试。' : ''), isTrusted: false, supportHtml: false }
-    return parts.map(part => ({
+    return parts.map((part, index) => {
+      const className = contentPartClass(part) + ' content-ref__joined'
+        + (index === 0 ? ' content-ref__first' : '') + (index === parts.length - 1 ? ' content-ref__last' : '')
+      return {
       range: { startLineNumber: (part.key === 'version' ? end : start).lineNumber,
         startColumn: (part.key === 'version' ? end : start).column,
         endLineNumber: part.key === 'code' || part.key === 'version' ? end.lineNumber : start.lineNumber,
         endColumn: part.key === 'code' || part.key === 'version' ? end.column : start.column },
-      options: { description: 'engine-content-' + part.key, hoverMessage,
-        ...(part.key === 'code' && !ref.inlineMetadata ? { inlineClassName: contentPartClass(part) }
-          : { showIfCollapsed: true, [part.key === 'version' && !ref.inlineMetadata ? 'after' : 'before']: { content: injectedContent(part), inlineClassName: contentPartClass(part), inlineClassNameAffectsLetterSpacing: true } }),
+      options: { description: 'engine-content-' + part.key, ...(part.key === 'code' ? { hoverMessage } : {}),
+        ...(part.key === 'code' && !ref.inlineMetadata ? { inlineClassName: className + ` content-ref__range-${ref.start}-${ref.end}` }
+          : { showIfCollapsed: true, [part.key === 'version' && !ref.inlineMetadata ? 'after' : 'before']: { content: injectedContent(part), inlineClassName: className + ` content-ref__metadata content-ref__range-${ref.start}-${ref.end} content-ref__edge-${part.key === 'version' ? 'end' : 'start'} content-ref__anchor-` + (part.key === 'version' ? ref.end : ref.start), inlineClassNameAffectsLetterSpacing: true } }),
       },
-    }))
+      }
+    })
   })
 }

@@ -1,40 +1,26 @@
 # 天枢决策引擎 Docker 部署
 
-本目录支持四种相互独立的部署方案。每套方案只使用自己的进程、Compose 项目、网络、端口和数据目录；部署时选择一种即可。
+上传 ZIP、保护原配置、停机替换、启动验证及回退步骤见 [服务器部署与升级](../docs/server-upload.md)。所有服务操作直接使用完整的 `docker compose` 命令。推荐 server/client 分开管理，默认 server 2 副本、web 1 个、可选 SDK runtime 1 个；MySQL、Redis 复用现有服务。
 
-Ubuntu 公网部署使用服务器上独立运行的 Nginx Proxy Manager 管理 HTTPS、证书和反向代理；本项目不安装或修改 UFW、Fail2ban、宿主机 Nginx 及现有端口规则。NPM 直接使用服务器 IP 和宿主机端口配置 Proxy Host。MySQL、Redis 按 `.env.server` 绑定到 `0.0.0.0` 以便远程调试，访问控制由现有安全组/防火墙策略负责。
-
-| 方案 | 启动内容 | MySQL/Redis | 适用场景 |
-|---|---|---|---|
-| JAR 包 | 宿主机 Java + Nginx | 外接或先启动依赖 Compose | 已有 Java/Nginx 或 systemd |
-| Docker | `docker run` 启动 JAR、runtime、Nginx 容器 | 外接或先启动依赖 Compose | 不使用 Compose，按容器分别管理 |
-| 外接数据库 Compose | `docker-compose.yml` 的 server、runtime、web | 外接 MySQL/Redis | 应用容器化，数据库由云服务或其他环境提供 |
-| 自带数据库 Compose | `docker-compose.full.yml` 的全部服务 | Compose 内置 MySQL/Redis | 单机演示、测试或完整一体化部署 |
+Ubuntu 继续使用现有 Nginx Proxy Manager 管理 HTTPS、证书和反向代理。本项目不安装或修改 UFW、Fail2ban、宿主机 Nginx 和现有端口规则。NPM 通过服务器 IP 和已配置的宿主机端口转发。
 
 不要同时启动 `docker-compose.full.yml` 与 `docker-compose.mysql.yml`/`docker-compose.redis.yml`。如果确实需要多套环境并行运行，为每套环境设置不同的 `DEPLOY_PROJECT` 和宿主机端口。
 
-默认执行日志通过 HTTP 上报；需要 Kafka 日志链路时，full Compose 和 `docker-compose.kafka.yml` 都可以启动单节点 KRaft Kafka，也可以改为接入外部 Kafka 集群。配置方法见本文末尾的 Kafka 小节和 [`docs/kafka-execution-logs.md`](../docs/kafka-execution-logs.md)。
+默认执行日志通过 HTTP 上报；需要 Kafka 日志链路时，full Compose 和 `docker-compose.kafka.yml` 都可以启动单节点 KRaft Kafka，也可以改为接入外部 Kafka 集群。配置方法见本文的 Kafka 小节和 [`docs/kafka-execution-logs.md`](../docs/kafka-execution-logs.md)。
 
 远程执行直接请求 Server：标准接口为 `POST /api/rule/sync/execute/{ruleCode}`，已启用并发布的开放接口为 `POST /api/rule/openapi/{ruleCode}`。接口文档仍从项目「API」按钮下载。已有部署升级时需停止并移除原 HTTP 转发容器，将业务请求改为 Server 地址、对应路径和项目调用凭据；原转发服务入口令牌不能用作 Server 项目凭据。SDK 本地执行服务按需保留。
 
 ## 共同准备
 
-在仓库根目录执行，生成 server JAR、runtime JAR 和前端 `dist`：
-
-```powershell
-Copy-Item .env.server.example .env.server
-Copy-Item .env.client.example .env.client
-# 分别编辑 .env.server 和 .env.client，填写实际地址并轮换模板中的全部凭据
-node scripts/package-runtime.mjs
-```
-
-需要在 Docker 内完成构建并直接生成可上传 ZIP 时，执行：
+开发机在仓库根目录执行，使用 Docker 构建并运行后端测试、前端 lint 和单元测试：
 
 ```bash
-node scripts/package-deployment.mjs
+node scripts/package-deployment.mjs --with-tests
 ```
 
-该脚本使用 Maven、Node.js 和 zip 容器构建，不依赖宿主机的 JDK、Maven 或前端 `node_modules`；产物位于 `output/tianshu-deployment-*.zip`。
+开发机需要 Node.js、Git 和 Docker；JDK、Maven 和前端依赖均在 Docker 内使用。产物为 `output/tianshu-deployment-时间戳.zip`、同名 `.zip.sha256` 及独立暂存目录，历史 ZIP 保留。包内含逐文件 `SHA256SUMS.txt`、版本信息、对应源码 `source/` 与许可证。
+
+可选环境变量 `PACKAGE_CONFIG_DIR` 指定已有生产配置目录，复制其中的 `.env.server`、`.env.client`；默认只包含示例模板，不携带本机凭据。含生产凭据的 ZIP 不公开发布。服务器直接使用包内制品，无需 Maven/Node.js，不重新编译；包不含 Docker 镜像，首次启动需能拉取配置中的镜像。
 
 生成目录为 `docker/runtime/`：
 
@@ -50,7 +36,7 @@ dist/            Vue 控制台静态文件
 
 ## 推荐：server/client 分离部署
 
-正式部署建议把服务端和客户端 runtime 分开管理，分别使用两个配置文件：
+正式部署建议把服务端和客户端 runtime 分开管理。以下复制仅用于尚无配置的全新部署；已有环境保留原配置和主密钥：
 
 ```bash
 cp .env.server.example .env.server
@@ -86,193 +72,7 @@ docker compose --project-name tianshu-client --env-file .env.client \
   -f docker/docker-compose.client.yml ps
 ```
 
-客户端可以部署到其他服务器；同机运行多套客户端时使用不同项目名和宿主机端口：
-
-```bash
-docker compose --project-name tianshu-client-2 --env-file .env.client-2 \
-  -f docker/docker-compose.client.yml up -d
-```
-
 客户端部署在其他机器时，`RUNTIME_RULE_SERVER_URL` 使用服务端 IP+端口或 Nginx Proxy Manager 的 HTTPS 域名；`REDIS_HOST` 使用 server 侧 Redis 的可达 IP，不能填写客户端容器内的 `localhost`。
-
-### 源码直接启动
-
-server 和 Vite 仅读取 `.env.server`，SDK runtime 仅读取 `.env.client`，同名文件支持当前目录或上一级目录。系统环境变量和命令行参数优先；旧 `.env` 和 `.local` 不再加载，两类服务配置互不混入。
-
-源码运行时直接在两份配置中填写本机可访问的地址；容器运行时填写容器可访问的地址。`host.docker.internal` 面向容器访问宿主机，不能访问仅绑定到宿主机回环地址的服务。
-
-```powershell
-# 仓库根目录编译；失败时不要继续启动
-mvn clean install -DskipTests -Ponnx-gpu
-# 分别在两个终端启动 Java 服务，无需手工导出配置
-mvn -f rule-engine-server/pom.xml spring-boot:run -Ponnx-gpu
-mvn -f rule-engine-runtime/pom.xml spring-boot:run '-Dspring-boot.run.profiles=sdk'
-```
-
-SDK runtime 使用 `RUNTIME_SDK_PORT`、`SDK_ACCESS_TOKEN` 和 `SDK_RULE_ALLOWED_CODES`；SDK 的 Redis 地址、密码和 database 必须与 server 一致。`node scripts/start-source.mjs` 会分别传递 server/client 配置，也可用 `start-dev.cmd` 只启动 server/web。
-
-## 方案一：JAR 包 + Nginx
-
-适合已有 Java 17、Nginx 或 systemd 的服务器。MySQL 和 Redis 可以是云服务、物理机或依赖 Compose。
-
-### 1. 准备服务端配置
-
-宿主机运行 JAR 和外接数据库 Compose 统一使用 `MYSQL_HOST`、`MYSQL_PORT`、`REDIS_HOST`、`REDIS_PORT`。完整 Compose 会在容器内自动使用 `mysql:3306` 和 `redis:6379`。将配置保存到仓库根目录 `.env.server`（或按生产路径复制到 JAR 工作目录）：
-
-```dotenv
-SERVER_PORT=8080
-MYSQL_HOST=数据库地址
-MYSQL_PORT=3306
-MYSQL_DATABASE=rule_engine
-MYSQL_USERNAME=rule_engine_app
-MYSQL_PASSWORD=数据库账号密码
-REDIS_HOST=Redis地址
-REDIS_PORT=6379
-REDIS_PASSWORD=Redis密码
-SPRING_SQL_INIT_MODE=always
-RULE_ENGINE_INITIAL_DATA_ENABLED=false
-RULE_ENGINE_INITIAL_DATA_LOCATION=classpath:sql/initial-data.sql
-RULE_AUTH_MASTER_KEY=当前环境至少32位随机密钥
-CORS_ALLOWED_ORIGIN_PATTERNS=*
-```
-
-### 2. 启动 server
-
-```bash
-# 在仓库根目录运行，确保根目录 .env.server 被 Spring Boot 读取
-java -jar docker/runtime/server.jar
-```
-
-生产环境建议使用 systemd、Windows 服务或其他进程管理器。server readiness 返回 `UP` 后再接收流量：
-
-```bash
-curl -fsS http://127.0.0.1:8080/actuator/health/liveness
-curl -i http://127.0.0.1:8080/actuator/health/readiness
-```
-
-### 3. 可选启动 SDK runtime
-
-需要本地纯计算执行时，在仓库根目录启动 SDK runtime；远程执行直接调用 Server API：
-
-```bash
-java -Dspring.profiles.active=sdk -Dserver.port=7071 \
-  -DRULE_SERVER_URL=http://127.0.0.1:8080 \
-  -jar docker/runtime/runtime.jar
-```
-
-SDK runtime 的项目凭证、规则白名单和访问令牌通过环境变量或 `.env.client` 注入；生产环境不要把示例令牌直接用于业务流量。
-
-### 4. 启动前端
-
-Nginx 的 `/api/` 反向代理到 `http://127.0.0.1:8080`，静态根目录指向 `docker/runtime/dist`。必须保留 Monaco 的 `dist/vs/` 目录，并配置 `/vs/css!vs/`、`/vs/nls!vs/` 重写；完整配置见 `docs/deployment.md` 的 Nginx 示例。
-
-更新时先替换 JAR 或 `dist`，再重启 Java 服务或 reload Nginx。不要在运行中的 JAR 文件上直接覆盖写入。
-
-## 方案二：独立 Docker 容器
-
-此方案不使用 Compose。server、runtime 和 Nginx 分别由 `docker run` 管理，MySQL/Redis 使用外接地址或依赖 Compose。
-
-### 1. 创建应用网络和目录
-
-```bash
-docker network create tianshu-app
-mkdir -p /opt/tianshu/runtime /opt/tianshu/nginx
-```
-
-把 `docker/runtime/` 复制到 `/opt/tianshu/runtime/`，并把 server 配置保存为 `/opt/tianshu/runtime/.env.server`、runtime 配置保存为 `/opt/tianshu/runtime/.env.client`。容器内连接宿主机依赖时，Linux 需要使用 `host.docker.internal` 并通过 `--add-host` 映射；云数据库直接填写容器可访问的地址。
-
-### 2. 启动 server 容器
-
-```bash
-docker run -d \
-  --name tianshu-server \
-  --restart unless-stopped \
-  --network tianshu-app \
-  --add-host=host.docker.internal:host-gateway \
-  --env-file /opt/tianshu/runtime/.env.server \
-  -p 8080:8080 \
-  -v /opt/tianshu/runtime:/opt/tianshu/runtime:ro \
-  eclipse-temurin:17-jre-jammy \
-  java -jar /opt/tianshu/runtime/server.jar
-```
-
-运行时的 `RULE_SERVER_URL` 不使用 Compose 内部的 `server` 服务名。请填写客户端能够实际访问的服务端 IP+端口，例如 `http://192.168.1.10:8080`；跨机器部署时也可以填写 Nginx Proxy Manager 提供的 `https://api.example.com`。
-
-### 3. 启动 SDK runtime（可选）
-
-```bash
-docker run -d \
-  --name tianshu-sdk \
-  --restart unless-stopped \
-  --network tianshu-app \
-  --env-file /opt/tianshu/runtime/.env.client \
-  -e SPRING_PROFILES_ACTIVE=sdk \
-  -e SERVER_PORT=7071 \
-  -e RULE_SERVER_URL=http://192.168.1.10:8080 \
-  -p 7071:7071 \
-  -v /opt/tianshu/runtime/runtime.jar:/app/app.jar:ro \
-  eclipse-temurin:17-jre-jammy java -jar /app/app.jar
-```
-
-直接调用 Server API 的业务系统无需启动 SDK runtime。
-
-### 4. 启动 Nginx 容器
-
-先把下面配置保存为 `/opt/tianshu/nginx/default.conf`。其中 `proxy_pass` 使用服务端实际可访问的 `http://192.168.1.10:8080`，并保留 Monaco 编辑器资源重写：
-
-```nginx
-server {
-    listen 80;
-    server_name _;
-    root /usr/share/nginx/html;
-    index index.html;
-
-    location /api/ {
-        proxy_pass http://192.168.1.10:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location ~ ^/vs/css!vs/(.*)$ {
-        rewrite ^/vs/css!vs/(.*)$ /vs/$1 break;
-        try_files $uri =404;
-    }
-    location ~ ^/vs/nls!vs/(.*\.js)$ {
-        rewrite ^/vs/nls!vs/(.*\.js)$ /vs/$1 break;
-        try_files $uri =404;
-    }
-    location ~ ^/vs/nls!vs/(.*)$ {
-        rewrite ^/vs/nls!vs/(.*)$ /vs/$1.js break;
-        try_files $uri =404;
-    }
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}
-```
-
-然后启动容器：
-
-```bash
-docker run -d \
-  --name tianshu-web \
-  --restart unless-stopped \
-  --network tianshu-app \
-  -p 9090:80 \
-  -v /opt/tianshu/runtime/dist:/usr/share/nginx/html:ro \
-  -v /opt/tianshu/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro \
-  nginx:1.29.1-alpine
-```
-
-停止或更新：
-
-```bash
-docker stop tianshu-web tianshu-sdk tianshu-server
-docker rm tianshu-web tianshu-sdk tianshu-server
-```
 
 ## 方案三：Docker Compose + 外接 MySQL/Redis
 
@@ -332,7 +132,7 @@ docker compose --project-name tianshu-full --env-file .env.client --env-file .en
 docker compose --project-name tianshu-full --env-file .env.client --env-file .env.server \
   -f docker/docker-compose.full.yml ps
 docker compose --project-name tianshu-full --env-file .env.client --env-file .env.server \
-  -f docker/docker-compose.full.yml logs --tail 200 server http sdk web kafka
+  -f docker/docker-compose.full.yml logs --tail 200 server sdk web kafka
 ```
 
 数据库和 Redis 数据分别持久化到 `docker/rule-engine-mysql/data`、`docker/rule-engine-redis/data`；停止 Compose 不会删除数据目录。停止：
@@ -359,7 +159,7 @@ docker compose --project-name tianshu-full --profile example-data \
 
 ## 只启动依赖组件（可选）
 
-这两个文件只用于给 JAR 或独立 Docker 方案提供依赖，不能代替应用启动：
+仅当没有现有 MySQL/Redis 且需要单独提供依赖时使用；不能与 full 方案同时启动：
 
 ```bash
 docker compose --project-name tianshu-mysql --env-file .env.client --env-file .env.server \
@@ -412,7 +212,7 @@ docker compose --project-name tianshu-full --env-file .env.client --env-file .en
 docker compose --project-name tianshu-full --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml up -d sdk
 ```
 
-JAR 和独立 `docker run` 直接使用 Spring Boot 的 `SPRING_KAFKA_BOOTSTRAP_SERVERS`、`SPRING_APPLICATION_JSON` 或外部 YAML，不能直接使用上述两个 Compose JSON 别名。具体启动命令、TLS/SASL 配置、验收及关闭顺序见 [Kafka 部署接入](../docs/kafka-execution-logs.md#各部署方案的接入方式)。
+源码开发直接运行 JAR 时使用 Spring Boot 的 `SPRING_KAFKA_BOOTSTRAP_SERVERS`、`SPRING_APPLICATION_JSON` 或外部 YAML，不能直接使用上述两个 Compose JSON 别名。具体启动命令、TLS/SASL 配置、验收及关闭顺序见 [Kafka 部署接入](../docs/kafka-execution-logs.md#各部署方案的接入方式)。
 
 ## Ubuntu 与独立 Nginx Proxy Manager
 
@@ -462,39 +262,11 @@ proxy_set_header X-Forwarded-Proto $scheme;
 proxy_set_header Host $host;
 ```
 
-项目执行请求仍需携带 runtime 的 `Authorization: Bearer ...`。MySQL、Redis、Kafka 是 TCP 服务，不能通过 NPM 的普通 Proxy Host 代理；它们的访问范围由现有 Ubuntu 防火墙、云安全组和 Compose 端口绑定控制。Kafka 默认外部调试端口为 `9092`，生产环境应使用 SASL_SSL/TLS。
+Server 执行请求使用项目调用凭据；SDK runtime 入口使用独立的 `SDK_ACCESS_TOKEN`。MySQL、Redis、Kafka 是 TCP 服务，不能通过 NPM 的普通 Proxy Host 代理；它们的访问范围由现有 Ubuntu 防火墙、云安全组和 Compose 端口绑定控制。Kafka 默认外部调试端口为 `9092`，生产环境应使用 SASL_SSL/TLS。
 
 ### 服务器重启自动拉起
 
-完整 Compose 需要随 Ubuntu 启动时自动拉起时，可创建 `/etc/systemd/system/tianshu-compose.service`：
-
-```ini
-[Unit]
-Description=Tianshu Decision Engine Docker Compose
-Requires=docker.service
-After=docker.service network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-WorkingDirectory=/opt/tianshu
-ExecStart=/usr/bin/docker compose --project-name tianshu-full --env-file /opt/tianshu/.env.client --env-file /opt/tianshu/.env.server -f /opt/tianshu/docker/docker-compose.full.yml up -d --scale server=2
-ExecStop=/usr/bin/docker compose --project-name tianshu-full --env-file /opt/tianshu/.env.client --env-file /opt/tianshu/.env.server -f /opt/tianshu/docker/docker-compose.full.yml stop
-TimeoutStartSec=0
-TimeoutStopSec=180
-
-[Install]
-WantedBy=multi-user.target
-```
-
-启用服务：
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now tianshu-compose.service
-sudo systemctl status tianshu-compose.service
-```
+Compose 已配置 `restart: unless-stopped`，Docker 重启时会恢复未手工停止的容器，无需新增 systemd 包装服务。
 
 ## 常用验证和更新
 
@@ -504,7 +276,7 @@ curl -i http://127.0.0.1:8080/actuator/health/readiness
 curl -I http://127.0.0.1:9090/
 ```
 
-`readiness` 返回 `UP` 后再接收业务流量。更新时重新运行 `node scripts/package-runtime.mjs`，再替换 `RUNTIME_DIR` 中的 JAR/dist；Compose 只需重启应用服务：
+`readiness` 返回 `UP` 后再接收业务流量。更新时按 [上传指南](../docs/server-upload.md) 先备份、停止应用、替换制品，再重建容器。不要直接覆盖运行中的 JAR。以下外接方案命令须沿用原项目名：
 
 ```bash
 docker compose --project-name tianshu-external --env-file .env.client --env-file .env.server \

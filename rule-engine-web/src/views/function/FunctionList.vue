@@ -86,7 +86,7 @@
       </el-form>
       <div class="uiue-btn-bar">
         <div class="btn-right">
-          <table-column-settings :columns="functionColumns" storage-key="tianshu:table-columns:function-list" />
+          <table-column-settings v-model="tableColumnOrders.functionColumns" :columns="functionColumns" storage-key="tianshu:table-columns:function-list" />
           <governance-workspace-toolbar resource-type="FUNCTION" />
           <el-button
             v-permission="'function:edit'"
@@ -104,10 +104,11 @@
       :data="funcList"
       border
       size="small"
-      v-loading="loading"
+      :aria-busy="loading"
       style="width: 100%; margin-top: 12px"
     >
-      <el-table-column label="作用范围" width="90" align="center">
+      <template v-for="columnKey in (tableColumnOrders.functionColumns || functionColumns.map(column => column.key))" :key="columnKey">
+      <el-table-column v-if="columnKey === 'scope'" label="作用范围" width="90" align="center">
         <template v-slot="{ row }">
           <el-tag
             :class="row.scope === 'GLOBAL' ? 'el-tag--scope-global' : 'el-tag--scope-project'"
@@ -116,22 +117,22 @@
           >
         </template>
       </el-table-column>
-      <el-table-column label="项目名称" min-width="120" show-overflow-tooltip>
+      <el-table-column v-if="columnKey === 'projectName'" label="项目名称" min-width="120" show-overflow-tooltip>
         <template v-slot="{ row }">{{ row.projectName || '—' }}</template>
       </el-table-column>
-      <el-table-column
+      <el-table-column v-if="columnKey === 'funcCode'"
         prop="funcCode"
         label="函数编码"
         min-width="120"
         show-overflow-tooltip
       />
-      <el-table-column
+      <el-table-column v-if="columnKey === 'funcName'"
         prop="funcName"
         label="函数名称"
         min-width="120"
         show-overflow-tooltip
       />
-      <el-table-column
+      <el-table-column v-if="columnKey === 'returnType'"
         prop="returnType"
         label="返回类型"
         width="90"
@@ -141,7 +142,7 @@
           <el-tag size="small">{{ typeLabel(row.returnType) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column
+      <el-table-column v-if="columnKey === 'implType'"
         prop="implType"
         label="实现方式"
         width="110"
@@ -153,7 +154,7 @@
           }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="参数" min-width="150">
+      <el-table-column v-if="columnKey === 'params'" label="参数" min-width="150">
         <template v-slot="{ row }">
           <span v-if="row.paramsJson">
             <el-tag
@@ -169,18 +170,19 @@
           <span v-else style="color: var(--tianshu-text-tertiary)">无参</span>
         </template>
       </el-table-column>
-      <el-table-column label="更新时间" width="165" align="center">
+      <el-table-column v-if="columnKey === 'updateTime'" label="更新时间" width="165" align="center">
         <template v-slot="{ row }">{{
           formatUpdateTime(row.updateTime)
         }}</template>
       </el-table-column>
-      <el-table-column prop="status" label="状态" width="160" align="center">
+      <el-table-column v-if="columnKey === 'status'" prop="status" label="状态" width="160" align="center">
         <template v-slot="{ row }">
           <governance-resource-status resource-type="FUNCTION" :resource-id="row.id" :status="row.status"><el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{
             row.status === 1 ? '启用' : '停用'
           }}</el-tag></governance-resource-status>
         </template>
       </el-table-column>
+      </template>
       <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '测试', '版本', '发布', '删除'])" align="center">
         <template v-slot="{ row }">
           <el-button
@@ -604,11 +606,17 @@ export default {
   mixins: [governanceWorkspaceMixin],
   data() {
     return {
+      tableColumnOrders: { functionColumns: null },
       functionColumns: [
-        { key: 'scope', label: '作用范围' }, { key: 'projectName', label: '项目名称' },
-        { key: 'funcCode', label: '函数编码' }, { key: 'funcName', label: '函数名称' },
-        { key: 'returnType', label: '返回类型' }, { key: 'implType', label: '实现方式' },
-        { key: 'params', label: '参数' }, { key: 'updateTime', label: '更新时间' }, { key: 'status', label: '状态' },
+        { key: 'scope', label: '作用范围' },
+        { key: 'projectName', label: '项目名称' },
+        { key: 'funcCode', label: '函数编码' },
+        { key: 'funcName', label: '函数名称' },
+        { key: 'returnType', label: '返回类型' },
+        { key: 'implType', label: '实现方式' },
+        { key: 'params', label: '参数' },
+        { key: 'updateTime', label: '更新时间' },
+        { key: 'status', label: '状态' },
       ],
       projects: [],
       currentProjectId: null,

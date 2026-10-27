@@ -1,8 +1,8 @@
 <template>
-  <section class="validation-report" :aria-label="report.scope === 'GRAPH' ? '画布校验报告' : '发布前校验报告'">
+  <section class="validation-report" :aria-label="report.scope === 'EXECUTION' ? '执行问题定位' : report.scope === 'GRAPH' ? '画布校验报告' : '发布前校验报告'">
     <div class="validation-summary">
       <div>
-        <span class="summary-label">{{ report.scope === 'GRAPH' ? '画布配置校验' : '校验结果' }}</span>
+        <span class="summary-label">{{ report.scope === 'EXECUTION' ? '执行诊断' : report.scope === 'GRAPH' ? '画布配置校验' : '校验结果' }}</span>
         <strong>{{ report.valid ? '可继续' : '存在阻断项' }}</strong>
       </div>
       <el-tag :type="report.valid ? 'success' : 'danger'" size="small">
@@ -21,10 +21,10 @@
       <div v-for="(issue, index) in errors" :key="`error-${index}`" class="issue-row">
         <strong>{{ issueTitle(issue, '校验错误') }}</strong>
         <span>{{ issue.message }}</span>
-        <code v-if="issue.path">{{ issue.path }}</code>
+        <code v-if="issue.path && report.scope !== 'EXECUTION'">{{ issue.path }}</code>
         <div class="issue-repair">
           <span>{{ issue.nextAction || repairHint(issue) }}</span>
-          <el-button v-if="locatable" link type="primary" data-action="locate-issue" @click="$emit('locate', issue)">定位到规则设计</el-button>
+          <el-button v-if="locatable" link type="primary" data-action="locate-issue" @click="$emit('locate', issue)">{{ report.scope === 'EXECUTION' ? '定位到规则行' : '定位到规则设计' }}</el-button>
         </div>
       </div>
     </div>
@@ -86,4 +86,9 @@ export default {
 .issue-row code { color: var(--tianshu-text-tertiary); }
 .issue-repair { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; color: var(--tianshu-text-secondary); }
 .issue-repair > span { flex: 1; min-width: 200px; }
+@media (max-width: 700px) {
+  .issue-row { grid-template-columns: minmax(0, 1fr); }
+  .issue-row code { overflow-wrap: anywhere; }
+  .issue-repair > span { min-width: 0; }
+}
 </style>

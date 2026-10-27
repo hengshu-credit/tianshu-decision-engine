@@ -100,7 +100,9 @@
     />
 
     <el-form
-      v-if="configurationReady"
+      v-if="!detailError"
+      :disabled="!configurationReady"
+      :aria-busy="detailLoading"
       ref="form"
       :model="form"
       :rules="rules"

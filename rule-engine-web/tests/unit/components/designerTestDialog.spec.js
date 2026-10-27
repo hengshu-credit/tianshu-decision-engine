@@ -6,6 +6,16 @@ import { ElAlert } from 'element-plus/es/components/alert/index.mjs'
 const TraceTree = (await vi.importActual('../../../src/components/common/TraceTree.vue')).default
 
 describe('DesignerTestDialog unified schema', () => {
+  test('执行问题定位携带本次测试的画布快照并关闭弹窗', async () => {
+    const wrapper = shallowMount(DesignerTestDialog, { props: { definitionId: 7 } })
+    await wrapper.setData({ testedModelJson: '{"rules":[{},{}]}' })
+    wrapper.vm.locateExecutionIssue({ code: 'UNIQUE_CONFLICT', path: '$.rules[1]' })
+    expect(wrapper.emitted('locate')).toBeUndefined()
+    await wrapper.vm.emitPendingLocation()
+    expect(wrapper.emitted('locate').at(-1)).toEqual([{ code: 'UNIQUE_CONFLICT', path: '$.rules[1]', checkedModelJson: '{"rules":[{},{}]}' }])
+    expect(wrapper.emitted('update:visible').at(-1)).toEqual([false])
+    wrapper.unmount()
+  })
   test('来源提示复用业务版本标签，不把大ID或锁版本当成版本号', () => {
     const wrapper = shallowMount(DesignerTestDialog, { props: {
       definitionId: '7', executionSource: { sourceType: 'REVISION', sourceId: '9007199254740993', lockVersion: 7 },
@@ -230,7 +240,7 @@ describe('DesignerTestDialog expression trace', () => {
       } })
       await wrapper.vm.execute()
       expect(wrapper.find('.el-alert--warning').text()).toContain('容量受限')
-      expect(wrapper.find('.el-alert__description').text()).toContain('执行资源暂时不足，本次未完成决策，请稍后重试。')
+      expect(wrapper.find('.el-alert--warning .el-alert__description').text()).toContain('执行资源暂时不足，本次未完成决策，请稍后重试。')
       expect(wrapper.find('[name="error"]').attributes('label')).toBe('容量提示')
       expect(wrapper.find('.capacity-pre').text()).toBe('模型会话已满')
       expect(wrapper.find('.error-pre').exists()).toBe(false)

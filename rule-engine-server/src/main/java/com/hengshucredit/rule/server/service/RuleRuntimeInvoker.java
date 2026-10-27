@@ -224,7 +224,7 @@ public class RuleRuntimeInvoker {
         }
         RuleExecutionSession session = new RuleExecutionSession(
                 executionProjectId, projectCode, values, originalInput, testMode,
-                definition.getRuleCode(), rootTrace, rootOutputScriptNames, runtimeSnapshot);
+                definition.getRuleCode(), rootTrace, rootOutputScriptNames, runtimeSnapshot, currentSession.get());
         currentSession.set(session);
         session.bindContext();
         session.getRequestContext().setRootInput(session.getOriginalInput());
@@ -264,6 +264,11 @@ public class RuleRuntimeInvoker {
         if (session != null) session.setOfflineReplay(offlineReplay);
     }
 
+    public void setSourceExecutionPolicy(VariableResolveOptions options) {
+        RuleExecutionSession session = currentSession.get();
+        if (session != null) session.setSourceExecutionPolicy(options);
+    }
+
     public void completeRoot(RuleResult result) {
         RuleExecutionSession session = currentSession.get();
         if (session == null || result == null) {
@@ -282,8 +287,10 @@ public class RuleRuntimeInvoker {
 
     public void exit() {
         RuleExecutionSession session = currentSession.get();
-        if (session != null) session.closeContext();
-        currentSession.remove();
+        if (session == null) return;
+        session.closeContext();
+        if (session.getPreviousSession() == null) currentSession.remove();
+        else currentSession.set(session.getPreviousSession());
     }
 
     public Object executeRule(String ruleCode) {
@@ -462,9 +469,8 @@ public class RuleRuntimeInvoker {
             childRule.put("modelType", definition == null ? published.getModelType() : definition.getModelType());
             RuntimeContextBridge.setRuleContext(childRule, Collections.<String>emptyList());
 
-            VariableResolveOptions options = VariableResolveOptions.defaults();
+            VariableResolveOptions options = session.childSourceOptions();
             options.setInvocationCache(session.getInvocationCache());
-            options.setOfflineReplay(session.isOfflineReplay());
             options.setStatusReferenceKeys(SourceStatusUsage.scan(childModelJson));
             List<RuleDefinitionInputField> childFields = runtimeSnapshot == null
                     ? definitionService.listInputFields(targetDefinitionId)

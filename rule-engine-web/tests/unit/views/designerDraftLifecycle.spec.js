@@ -224,7 +224,7 @@ const explicitRevisionSources = [
 
 function configureQueryApis() {
   definitionApi.getDefinition.mockResolvedValue({
-    data: { id: 30, projectId: null, scope: 'PROJECT' },
+    data: { id: 30, projectId: 1, scope: 'PROJECT' },
   })
   definitionApi.listProjectDefinitions.mockResolvedValue({ data: [] })
   variableApi.listVariablesByProject.mockResolvedValue({ data: [] })

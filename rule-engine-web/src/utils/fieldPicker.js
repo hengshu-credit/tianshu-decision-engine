@@ -120,6 +120,29 @@ export function fieldAncestors(node) {
   return parents
 }
 
+/** 二级目录只组织当前有权查看的节点，不改变字段身份或真实父子关联。 */
+export function fieldCategoryGroups(tree) {
+  const groups = new Map()
+  const sourceLabels = { INPUT: '输入字段', DERIVED: '衍生字段', API: '外数接口字段', DB: '数据库字段', DATABASE: '数据库字段', LIST: '名单字段', SFTP: 'SFTP 字段', MODEL: '模型字段' }
+  for (const root of tree.roots) {
+    const item = root.item || {}, ref = item._ref || {}, value = item.varObj || {}
+    const resource = ['object', 'model', 'external'].includes(root.category)
+    const source = item.varSource || value.varSource || ref.varSource || 'INPUT'
+    const groupCode = item.groupCode || ref.groupCode || value.groupCode || 'default'
+    const implementation = item.function?.implType || item.implType || 'all'
+    const code = resource ? root.key : root.category === 'standalone' ? source : root.category === 'constant' ? groupCode : root.category === 'function' ? implementation : 'all'
+    const label = resource ? root.name : root.category === 'standalone' ? sourceLabels[source] || source
+      : root.category === 'constant' ? item.groupLabel || ref.groupLabel || value.groupLabel || '未分组常量'
+        : root.category === 'function' ? ({ SCRIPT: 'QL 脚本', JAVA: 'Java 方法', BEAN: 'Spring Bean', all: '全部内容' })[implementation] || implementation : '全部内容'
+    const key = `${root.category}:${code}`
+    if (!groups.has(key)) groups.set(key, { key, category: root.category, label, roots: [], count: 0 })
+    const group = groups.get(key)
+    group.roots.push(root)
+    group.count++
+  }
+  return [...groups.values()]
+}
+
 export function filterFieldTree(tree, expectedType) {
   if (!expectedType) return tree
   const nodes = new Map()

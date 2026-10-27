@@ -2,9 +2,22 @@
   <div class="uiue-list-page management-list-page sftp-log-page">
     <div class="module-hint"><div class="hint-title">SFTP 查询日志</div><div class="hint-text">记录变量或规则触发的 SFTP 文件读取、远端地址和 trace_id。预览会重新从连接池读取文件，页面不会保存文件副本。</div></div>
     <el-tabs model-value="logs" class="sftp-tabs" :before-leave="navigateTab"><el-tab-pane label="数据源配置" name="datasource" /><el-tab-pane label="查询日志" name="logs" /></el-tabs>
-    <div class="uiue-search-container uiue-filter-toolbar"><el-form :inline="true" size="small" @keyup.enter="handleQuery"><el-form-item label="项目编码"><project-filter-select v-model:value="query.projectCode" field="projectCode" placeholder="项目编码" style="width: 150px" /></el-form-item><el-form-item label="Trace ID"><el-input v-model="query.traceId" clearable placeholder="规则或模块 trace_id" style="width: 230px" /></el-form-item><el-form-item label="结果"><el-select v-model="query.success" clearable placeholder="全部" style="width: 100px"><el-option label="成功" :value="1" /><el-option label="失败" :value="0" /></el-select></el-form-item><el-form-item><el-button type="primary" @click="handleQuery">查询</el-button><el-button @click="reset">重置</el-button></el-form-item></el-form><div class="uiue-btn-bar"><div class="btn-right"><el-button size="small" @click="load">刷新</el-button></div></div></div>
+    <div class="uiue-search-container uiue-filter-toolbar"><el-form :inline="true" size="small" @keyup.enter="handleQuery"><el-form-item label="项目编码"><project-filter-select v-model:value="query.projectCode" field="projectCode" placeholder="项目编码" style="width: 150px" /></el-form-item><el-form-item label="Trace ID"><el-input v-model="query.traceId" clearable placeholder="规则或模块 trace_id" style="width: 230px" /></el-form-item><el-form-item label="结果"><el-select v-model="query.success" clearable placeholder="全部" style="width: 100px"><el-option label="成功" :value="1" /><el-option label="失败" :value="0" /></el-select></el-form-item><el-form-item><el-button type="primary" @click="handleQuery">查询</el-button><el-button @click="reset">重置</el-button></el-form-item></el-form><div class="uiue-btn-bar"><div class="btn-right"><table-column-settings v-model="logColumnOrder" :columns="logColumns" storage-key="tianshu:table-columns:sftp-logs" /><el-button size="small" @click="load">刷新</el-button></div></div></div>
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="loadError"><el-button link type="primary" :disabled="loading" @click="load">重新加载</el-button></el-alert>
-    <el-table class="management-table" :data="rows" border size="small" v-loading="loading" show-overflow-tooltip><el-table-column prop="actionType" label="触发动作" width="170"><template #default="{ row }">{{ actionLabel(row.actionType) }}</template></el-table-column><el-table-column prop="targetName" label="触发变量/数据源" min-width="150"><template #default="{ row }"><content-reference :value="{ refType: row.actionType === 'SFTP_VARIABLE_READ' ? 'VARIABLE' : 'SFTP', refId: row.actionType === 'SFTP_VARIABLE_READ' ? undefined : row.targetRefId, code: row.targetCode, label: row.targetName, version: row.targetVersion }" /></template></el-table-column><el-table-column label="文件路径" min-width="260" show-overflow-tooltip><template #default="{ row }"><code>{{ remotePath(row) }}</code></template></el-table-column><el-table-column prop="requestUrl" label="文件链接地址" min-width="260" show-overflow-tooltip /><el-table-column label="缓存/来源" width="150"><template #default="{ row }">{{ cacheSummary(row) }}</template></el-table-column><el-table-column label="重试" width="70" align="center"><template #default="{ row }">{{ responseValue(row, 'retryCount') ?? '—' }}</template></el-table-column><el-table-column prop="traceId" label="SFTP trace_id" min-width="190" show-overflow-tooltip /><el-table-column prop="ruleTraceId" label="规则 trace_id" min-width="190" show-overflow-tooltip /><el-table-column prop="success" label="结果" width="80" align="center"><template #default="{ row }"><el-tag size="small" :type="row.success === 1 ? 'success' : 'danger'">{{ row.success === 1 ? '成功' : '失败' }}</el-tag></template></el-table-column><el-table-column label="异常" min-width="220" show-overflow-tooltip><template #default="{ row }">{{ row.errorMessage || '—' }}</template></el-table-column><el-table-column prop="createTime" label="触发时间" width="170" /><el-table-column label="操作" width="90" fixed="right" align="center"><template #default="{ row }"><el-button link type="primary" size="small" :disabled="row.success !== 1" @click="preview(row)">预览</el-button></template></el-table-column></el-table>
+    <el-table class="management-table" :data="rows" border size="small" :aria-busy="loading" show-overflow-tooltip>
+      <el-table-column v-for="column in visibleLogColumns" :key="column.key" :prop="column.key" :label="column.label" :min-width="column.minWidth">
+        <template #default="{ row }">
+          <template v-if="column.key === 'actionType'">{{ actionLabel(row.actionType) }}</template>
+          <content-reference v-else-if="column.key === 'targetName'" :value="{ refType: row.actionType === 'SFTP_VARIABLE_READ' ? 'VARIABLE' : 'SFTP', refId: row.actionType === 'SFTP_VARIABLE_READ' ? undefined : row.targetRefId, code: row.targetCode, label: row.targetName, version: row.targetVersion }" />
+          <code v-else-if="column.key === 'remotePath'">{{ remotePath(row) }}</code>
+          <template v-else-if="column.key === 'cache'">{{ cacheSummary(row) }}</template>
+          <template v-else-if="column.key === 'retryCount'">{{ responseValue(row, 'retryCount') ?? '—' }}</template>
+          <el-tag v-else-if="column.key === 'success'" size="small" :type="row.success === 1 ? 'success' : 'danger'">{{ row.success === 1 ? '成功' : '失败' }}</el-tag>
+          <template v-else>{{ row[column.key] || '—' }}</template>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="90" fixed="right" align="center"><template #default="{ row }"><el-button link type="primary" size="small" :disabled="row.success !== 1" @click="preview(row)">预览</el-button></template></el-table-column>
+    </el-table>
     <el-pagination style="margin-top: 12px; text-align: right" :current-page="query.pageNum" :page-size="query.pageSize" :total="total" layout="total,sizes,prev,pager,next" :page-sizes="[10, 20, 30, 50]" @current-change="p => { query.pageNum = p; load() }" @size-change="s => { query.pageSize = s; query.pageNum = 1; load() }" />
     <el-dialog v-model="previewVisible" title="SFTP 文件预览" width="900px" destroy-on-close><div v-if="previewLoading" class="preview-state">正在从 SFTP 读取文件…</div><el-alert v-else-if="previewError" type="error" :title="previewError" :closable="false" show-icon /><template v-else-if="previewUrl"><img v-if="previewKind === 'image'" :src="previewUrl" class="preview-image" alt="SFTP 文件预览" /><iframe v-else-if="previewKind === 'pdf'" :src="previewUrl" class="preview-frame" title="PDF 文件预览" /><pre v-else-if="previewText" class="preview-text">{{ previewText }}</pre><div v-else class="preview-state">当前文件类型不支持内嵌预览。</div><a :href="previewUrl" download="sftp-file">下载文件</a></template><div v-else class="preview-state">暂无可预览内容。</div></el-dialog>
   </div>
@@ -12,6 +25,7 @@
 
 <script>
 import ContentReference from '@/components/common/ContentReference.vue'
+import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import { listRuntimeLogs } from '@/api/runtimeLog'
 import { previewSftpLog } from '@/api/sftp'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
@@ -19,8 +33,17 @@ import { routeProjectId, withProjectContext } from '@/utils/projectContext'
 
 export default {
   name: 'SftpQueryLog',
-  components: { ProjectFilterSelect, ContentReference },
-  data() { return { query: { pageNum: 1, pageSize: 20, moduleType: 'SFTP', projectCode: '', traceId: '', success: null }, rows: [], total: 0, loading: false, loadError: '', listRequestId: 0, previewVisible: false, previewLoading: false, previewError: '', previewRequestId: 0, previewController: null, previewUrl: '', previewKind: '', previewText: '' } },
+  components: { ProjectFilterSelect, ContentReference, TableColumnSettings },
+  data() { return { logColumns: [
+    { key: 'actionType', label: '触发动作', minWidth: 170 }, { key: 'targetName', label: '触发变量/数据源', minWidth: 150 },
+    { key: 'remotePath', label: '文件路径', minWidth: 260 }, { key: 'requestUrl', label: '文件链接地址', minWidth: 260 },
+    { key: 'cache', label: '缓存/来源', minWidth: 150 }, { key: 'retryCount', label: '重试', minWidth: 70 },
+    { key: 'traceId', label: 'SFTP trace_id', minWidth: 190, required: true }, { key: 'ruleTraceId', label: '规则 trace_id', minWidth: 190 },
+    { key: 'success', label: '结果', minWidth: 80 }, { key: 'errorMessage', label: '异常', minWidth: 220 }, { key: 'createTime', label: '触发时间', minWidth: 170 },
+  ], logColumnOrder: ['actionType', 'targetName', 'remotePath', 'requestUrl', 'cache', 'retryCount', 'traceId', 'ruleTraceId', 'success', 'errorMessage', 'createTime'], query: { pageNum: 1, pageSize: 20, moduleType: 'SFTP', projectCode: '', traceId: '', success: null }, rows: [], total: 0, loading: false, loadError: '', listRequestId: 0, previewVisible: false, previewLoading: false, previewError: '', previewRequestId: 0, previewController: null, previewUrl: '', previewKind: '', previewText: '' } },
+  computed: {
+    visibleLogColumns() { return this.logColumnOrder.map(key => this.logColumns.find(column => column.key === key)).filter(Boolean) },
+  },
   mounted() { this.query.projectId = routeProjectId(this.$route, this.$store?.state?.currentProject); this.load() },
   watch: { previewVisible: { flush: 'sync', handler(visible) { if (!visible) this.releasePreview() } } },
   beforeUnmount() { this.listRequestId++; this.releasePreview() },

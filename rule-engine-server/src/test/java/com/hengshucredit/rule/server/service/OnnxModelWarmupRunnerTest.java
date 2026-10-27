@@ -23,6 +23,46 @@ import java.util.function.Function;
 import static org.junit.Assert.*;
 
 public class OnnxModelWarmupRunnerTest {
+    @Test(timeout = 5000)
+    public void concurrentRetryReusesRunningWarmupInsteadOfResettingItsProgress() throws Exception {
+        Harness harness = new Harness();
+        RuleModel candidate = model(1);
+        harness.models.add(candidate); harness.versions.put(1L, version(candidate));
+        harness.run();
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        harness.loadContent = id -> {
+            entered.countDown();
+            try { if (!release.await(3, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("test timeout"); }
+            catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new IllegalStateException(interrupted); }
+            return harness.versions.get(1L);
+        };
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            var first = executor.submit(harness.runner::retryWarmup);
+            assertTrue(entered.await(2, java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals("WARMING", harness.runner.retryWarmup().get("state"));
+            assertEquals(2, harness.loadedSnapshotIds.size());
+            release.countDown();
+            assertEquals("READY", first.get(2, java.util.concurrent.TimeUnit.SECONDS).get("state"));
+        } finally { release.countDown(); executor.shutdownNow(); }
+    }
+    @Test
+    public void failedWarmupCanBeRetriedUsingPublishedSnapshotWithoutChangingModel() {
+        Harness harness = new Harness();
+        RuleModel candidate = model(1);
+        harness.models.add(candidate);
+        harness.versions.put(1L, version(candidate));
+        harness.loadContent = id -> { throw new IllegalStateException("temporary database error"); };
+        harness.run();
+        assertEquals(OnnxWarmupState.FAILED, harness.status.getState());
+        harness.loadContent = null;
+        Map<String, Object> retried = harness.runner.retryWarmup();
+        assertEquals("READY", retried.get("state"));
+        assertEquals(0, retried.get("failureCount"));
+        assertEquals(1, harness.preloaded.size());
+        assertEquals(Integer.valueOf(5), candidate.getPublishedVersion());
+    }
     @Test
     public void warmsOnlyEnabledPublishedModelsConfiguredForStartup() {
         Harness harness = new Harness();
@@ -255,6 +295,7 @@ public class OnnxModelWarmupRunnerTest {
         private Function<Long, RuleModelVersion> loadContent;
         private boolean failFirstPreload;
         private boolean cpuFallback;
+        private OnnxModelWarmupRunner runner;
 
         private void run() {
             RuleModelMapper modelsMapper = (RuleModelMapper) Proxy.newProxyInstance(
@@ -294,7 +335,7 @@ public class OnnxModelWarmupRunnerTest {
                     return cpuFallback ? PreloadOutcome.CPU_FALLBACK : PreloadOutcome.READY;
                 }
             };
-            OnnxModelWarmupRunner runner = new OnnxModelWarmupRunner(modelsMapper, executor, status);
+            runner = new OnnxModelWarmupRunner(modelsMapper, executor, status);
             ReflectionTestUtils.setField(runner, "versionMapper", versionsMapper);
             runner.run(null);
         }

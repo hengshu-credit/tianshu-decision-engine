@@ -161,13 +161,16 @@ describe('ApiDetail helpers', () => {
     const wrapper = mount(ApiDetail, { mocks: { $route: { params: { id: '20' }, query: {} } } })
     await flushPromises()
     try {
-      expect(wrapper.find('.detail-form').exists()).toBe(false)
+      expect(wrapper.get('.detail-form').attributes('aria-busy')).toBe('true')
+      expect(wrapper.get('.detail-form').attributes()).toHaveProperty('inert')
       expect(wrapper.find('[data-testid="api-detail-loading"]').exists()).toBe(true)
     } finally {
       finish({ data: { id: 20, endpointUrl: '/saved', apiCode: 'EXISTING_API', executionConfig: JSON.stringify(emptyExecution()) } })
       await flushPromises()
     }
     expect(wrapper.find('.detail-form').exists()).toBe(true)
+    expect(wrapper.get('.detail-form').attributes('aria-busy')).toBe('false')
+    expect(wrapper.get('.detail-form').attributes()).not.toHaveProperty('inert')
     expect(wrapper.vm.form.endpointUrl).toBe('/saved')
     wrapper.unmount()
   })

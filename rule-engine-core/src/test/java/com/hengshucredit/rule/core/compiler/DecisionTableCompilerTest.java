@@ -45,6 +45,23 @@ public class DecisionTableCompilerTest {
         return compiler.compile(json, ctx);
     }
 
+    @Test
+    public void legacyUniqueConflictCallWithoutRowArgumentsStillWorks() {
+        java.util.concurrent.atomic.AtomicInteger actions = new java.util.concurrent.atomic.AtomicInteger();
+        engine.getRunner().addFunction("recordLegacyDecision", (com.alibaba.qlexpress4.runtime.function.CustomFunction)
+                (context, parameters) -> actions.incrementAndGet());
+        // 历史脚本先执行命中行动作，再用无参数函数报告冲突。
+        RuleResult result = engine.execute("recordLegacyDecision(); recordLegacyDecision(); "
+                + "UNIQUE_HIT_POLICY_MATCHED_MULTIPLE_RULES();", new LinkedHashMap<>());
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("唯一命中"));
+        assertEquals(2, actions.get());
+        assertFalse(result.getErrorMessage().contains("本次未执行动作"));
+        assertTrue(result.getErrorMessage().contains("重新编译发布"));
+        assertTrue(result.getExecutionIssues().isEmpty());
+        assertNotNull(result.getExecutionErrorDetail());
+    }
+
     /** 无 rules 字段时返回失败 */
     @Test
     public void test空模型_返回失败() {
@@ -629,6 +646,10 @@ public class DecisionTableCompilerTest {
 
         assertFalse(result.isSuccess());
         assertTrue(result.getErrorMessage().contains("UNIQUE"));
+        assertTrue(result.getErrorMessage(), result.getErrorMessage().contains("第 1、2 行"));
+        assertEquals(java.util.List.of("$.rules[0]", "$.rules[1]"), result.getExecutionIssues().stream()
+                .map(com.hengshucredit.rule.model.dto.RuleValidationIssue::getPath).toList());
+        assertNotNull(result.getExecutionErrorDetail());
     }
 
     @Test
@@ -650,6 +671,79 @@ public class DecisionTableCompilerTest {
         assertTrue(result.getResult() instanceof Map);
         Map<?, ?> resultMap = (Map<?, ?>) result.getResult();
         assertEquals("PASS", resultMap.get("decision"));
+    }
+
+    @Test
+    public void uniquePolicyChecksAllMatchesBeforeInvokingAnyAction() {
+        java.util.concurrent.atomic.AtomicInteger actions = new java.util.concurrent.atomic.AtomicInteger();
+        engine.getRunner().addFunction("recordDecision", (com.alibaba.qlexpress4.runtime.function.CustomFunction)
+                (context, parameters) -> actions.incrementAndGet());
+        CompileResult compiled = compile("{\"hitPolicy\":\"UNIQUE\",\"rules\":["
+                + "{\"conditions\":[],\"actions\":[{\"varCode\":\"decision\",\"varType\":\"NUMBER\",\"value\":\"recordDecision()\"}]},"
+                + "{\"conditions\":[],\"actions\":[{\"varCode\":\"decision\",\"varType\":\"NUMBER\",\"value\":\"recordDecision()\"}]}]}");
+        assertTrue(compiled.getErrorMessage(), compiled.isSuccess());
+
+        RuleResult result = engine.execute(compiled.getCompiledScript(), new LinkedHashMap<>());
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("UNIQUE"));
+        assertEquals("冲突规则的动作不能先执行再报错", 0, actions.get());
+    }
+
+    @Test
+    public void uniquePolicyTemporaryVariablesDoNotShadowBusinessFields() {
+        CompileResult compiled = compile("{\"hitPolicy\":\"UNIQUE\",\"rules\":["
+                + "{\"conditions\":[{\"varCode\":\"_uniqueMatchedRow\",\"varType\":\"NUMBER\",\"operator\":\">\",\"value\":\"10\"}],"
+                + "\"actions\":[{\"varCode\":\"decision\",\"varType\":\"STRING\",\"value\":\"PASS\"}]}]}");
+        assertTrue(compiled.getErrorMessage(), compiled.isSuccess());
+        RuleResult result = engine.execute(compiled.getCompiledScript(),
+                new LinkedHashMap<>(Map.of("_uniqueMatchedRow", 20)));
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals("PASS", ((Map<?, ?>) result.getResult()).get("decision"));
+    }
+
+    @Test
+    public void uniqueTemporaryNamesAlsoAvoidUnusedFieldsInTheReferenceCatalog() {
+        VarContext context = variableContext(Map.of(7L, "decision", 8L, "_uniqueMatchedRows"));
+        CompileResult compiled = compile("{\"hitPolicy\":\"UNIQUE\",\"rules\":[{\"conditions\":[],\"actions\":["
+                + "{\"_varId\":7,\"_refType\":\"VARIABLE\",\"varCode\":\"decision\",\"varType\":\"STRING\",\"value\":\"PASS\"}]}]}", context);
+        assertTrue(compiled.getErrorMessage(), compiled.isSuccess());
+        Map<String, Object> values = new LinkedHashMap<>(Map.of("_uniqueMatchedRows", "Keep_MixedCase"));
+        RuleResult result = engine.execute(compiled.getCompiledScript(), values);
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals("Keep_MixedCase", values.get("_uniqueMatchedRows"));
+    }
+
+    @Test
+    public void uniquePolicyEvaluatesEachConditionOnceAndPreservesNoMatch() {
+        java.util.concurrent.atomic.AtomicInteger conditions = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger actions = new java.util.concurrent.atomic.AtomicInteger();
+        engine.getRunner().addFunction("readScore", (com.alibaba.qlexpress4.runtime.function.CustomFunction)
+                (context, parameters) -> { conditions.incrementAndGet(); return 70; });
+        engine.getRunner().addFunction("recordDecision", (com.alibaba.qlexpress4.runtime.function.CustomFunction)
+                (context, parameters) -> actions.incrementAndGet());
+        String model = "{\"hitPolicy\":\"UNIQUE\",\"rules\":["
+                + "{\"conditions\":[{\"varCode\":\"readScore()\",\"varType\":\"NUMBER\",\"operator\":\">=\",\"value\":\"60\"}],"
+                + "\"actions\":[{\"varCode\":\"decision\",\"varType\":\"NUMBER\",\"value\":\"recordDecision()\"}]},"
+                + "{\"conditions\":[{\"varCode\":\"readScore()\",\"varType\":\"NUMBER\",\"operator\":\">=\",\"value\":\"80\"}],"
+                + "\"actions\":[{\"varCode\":\"decision\",\"varType\":\"NUMBER\",\"value\":\"recordDecision()\"}]}]}";
+        CompileResult compiled = compile(model);
+        assertTrue(compiled.getErrorMessage(), compiled.isSuccess());
+        RuleResult result = engine.execute(compiled.getCompiledScript(), new LinkedHashMap<>());
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals(2, conditions.get());
+        assertEquals(1, actions.get());
+        assertEquals(1, ((Number) ((Map<?, ?>) result.getResult()).get("decision")).intValue());
+
+        conditions.set(0);
+        actions.set(0);
+        // 无命中仍是合法执行，输出为空值，不执行动作。
+        compiled = compile(model.replace("\"60\"", "\"90\""));
+        result = engine.execute(compiled.getCompiledScript(), new LinkedHashMap<>());
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals(2, conditions.get());
+        assertEquals(0, actions.get());
+        assertNull(((Map<?, ?>) result.getResult()).get("decision"));
     }
 
     @Test

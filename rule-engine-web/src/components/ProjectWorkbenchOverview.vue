@@ -45,14 +45,14 @@
         v-if="nextCheck.actionCode"
         type="primary"
         :disabled="!canUseAction(nextCheck.actionCode)"
-        :title="canUseAction(nextCheck.actionCode) ? '' : '当前账号没有此模块的访问权限'"
+        :title="canUseAction(nextCheck.actionCode) ? '' : actionPermissionHint(nextCheck.actionCode)"
         @click="$emit('action', nextCheck)"
       >
         {{ nextCheck.actionLabel || '立即处理' }}
       </el-button>
     </div>
 
-    <div class="metrics-grid" v-loading="loading">
+    <div class="metrics-grid" :aria-busy="loading">
       <div v-for="metric in metricItems" :key="metric.label" class="metric-card">
         <span>{{ metric.label }}</span>
         <strong>{{ metric.value }}</strong>
@@ -88,7 +88,7 @@
               link
               type="primary"
               :disabled="!canUseAction(item.actionCode)"
-              :title="canUseAction(item.actionCode) ? '' : '当前账号没有此模块的访问权限'"
+              :title="canUseAction(item.actionCode) ? '' : actionPermissionHint(item.actionCode)"
               @click="$emit('action', item)"
             >
               {{ item.actionLabel || '查看' }}
@@ -162,7 +162,7 @@
 </template>
 
 <script>
-import { canUseWorkbenchAction } from '@/utils/workbenchActions'
+import { canUseWorkbenchAction, workbenchActionPermissionHint } from '@/utils/workbenchActions'
 
 const STATUS_TEXT = {
   READY: '已就绪',
@@ -298,6 +298,7 @@ export default {
     },
   },
   methods: {
+    actionPermissionHint: workbenchActionPermissionHint,
     canUseAction: canUseWorkbenchAction,
     statusText(status) {
       return STATUS_TEXT[status] || status

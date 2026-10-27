@@ -55,7 +55,7 @@
       border
       size="small"
       style="margin-bottom: 16px"
-      v-loading="loading"
+      :aria-busy="loading"
     >
       <el-descriptions-item label="规则编码">{{
         rule.ruleCode
@@ -293,7 +293,7 @@
           border
           size="small"
           max-height="500"
-          v-loading="loading"
+          :aria-busy="loading"
           :row-class-name="inputRowClassName"
         >
           <el-table-column label="序号" width="60" align="center">
@@ -497,7 +497,7 @@
           border
           size="small"
           max-height="500"
-          v-loading="loading"
+          :aria-busy="loading"
           :row-class-name="outputRowClassName"
         >
           <el-table-column label="序号" width="60" align="center">
@@ -1254,7 +1254,7 @@
         :data="versions"
         border
         size="small"
-        v-loading="versionLoading"
+        :aria-busy="versionLoading"
         max-height="240"
       >
         <el-table-column prop="version" label="版本" width="140" align="center">
@@ -1349,7 +1349,7 @@
         show-icon
         class="version-compare-empty"
       />
-      <div v-loading="versionCompareLoading" class="version-compare-content">
+      <div :aria-busy="versionCompareLoading" class="version-compare-content">
         <rule-version-diff
           v-if="versionCompare && versionCompare.left && versionCompare.right"
           :model-type="rule.modelType"

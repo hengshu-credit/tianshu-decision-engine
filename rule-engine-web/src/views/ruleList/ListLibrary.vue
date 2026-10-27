@@ -88,7 +88,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
-          <table-column-settings :columns="listColumns" storage-key="tianshu:table-columns:list-library" />
+          <table-column-settings v-model="tableColumnOrders.listColumns" :columns="listColumns" storage-key="tianshu:table-columns:list-library" />
               <governance-workspace-toolbar resource-type="LIST_LIBRARY" />
               <el-button
                 v-permission="'list:edit'"
@@ -106,10 +106,11 @@
           :data="tableData"
           border
           size="small"
-          v-loading="loading"
+          :aria-busy="loading"
           style="width: 100%"
         >
-          <el-table-column label="作用范围" width="90" align="center">
+          <template v-for="columnKey in (tableColumnOrders.listColumns || listColumns.map(column => column.key))" :key="columnKey">
+          <el-table-column v-if="columnKey === 'scope'" label="作用范围" width="90" align="center">
             <template v-slot="{ row }">
               <el-tag
                 :type="row.scope === 'GLOBAL' ? 'warning' : 'success'"
@@ -118,7 +119,7 @@
               >
             </template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'projectName'"
             prop="projectName"
             label="项目名称"
             min-width="120"
@@ -126,38 +127,38 @@
           >
             <template v-slot="{ row }">{{ row.projectName || '—' }}</template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'listCode'"
             prop="listCode"
             label="名单编码"
             min-width="150"
             show-overflow-tooltip
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'listName'"
             prop="listName"
             label="名单名称"
             min-width="160"
             show-overflow-tooltip
           />
-          <el-table-column label="名单类型" width="100" align="center">
+          <el-table-column v-if="columnKey === 'listType'" label="名单类型" width="100" align="center">
             <template v-slot="{ row }">
               <el-tag size="small" :type="listTypeTag(row.listType)">{{
                 listTypeLabel(row.listType)
               }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'recordCount'"
             prop="recordCount"
             label="有效记录"
             width="90"
             align="right"
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'description'"
             prop="description"
             label="说明"
             min-width="180"
             show-overflow-tooltip
           />
-          <el-table-column label="状态" width="160" align="center">
+          <el-table-column v-if="columnKey === 'status'" label="状态" width="160" align="center">
             <template v-slot="{ row }">
               <governance-resource-status resource-type="LIST_LIBRARY" :resource-id="row.id" :status="row.status">
               <el-switch
@@ -170,6 +171,7 @@
               </governance-resource-status>
             </template>
           </el-table-column>
+          </template>
           <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['详情', '编辑', '版本', '发布', '删除'])" align="center">
             <template v-slot="{ row }">
               <el-button
@@ -340,11 +342,16 @@ export default {
   mixins: [governanceWorkspaceMixin],
   data() {
     return {
+      tableColumnOrders: { listColumns: null },
       listColumns: [
-        { key: 'scope', label: '作用范围' }, { key: 'projectName', label: '项目名称' },
-        { key: 'listCode', label: '名单编码' }, { key: 'listName', label: '名单名称' },
-        { key: 'listType', label: '名单类型' }, { key: 'recordCount', label: '有效记录' },
-        { key: 'description', label: '说明' }, { key: 'status', label: '状态' },
+        { key: 'scope', label: '作用范围' },
+        { key: 'projectName', label: '项目名称' },
+        { key: 'listCode', label: '名单编码' },
+        { key: 'listName', label: '名单名称' },
+        { key: 'listType', label: '名单类型' },
+        { key: 'recordCount', label: '有效记录' },
+        { key: 'description', label: '说明' },
+        { key: 'status', label: '状态' },
       ],
       loading: false,
       activeTab: 'list',

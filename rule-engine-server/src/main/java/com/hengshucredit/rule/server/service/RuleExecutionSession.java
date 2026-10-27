@@ -25,7 +25,17 @@ public class RuleExecutionSession {
     private final Map<String, Object> originalInput;
     private final boolean testMode;
     private boolean traceEnabled = true;
-    private boolean offlineReplay;
+    private final RuleExecutionSession previousSession;
+
+    RuleExecutionSession getPreviousSession() { return previousSession; }
+
+    void setSourceExecutionPolicy(VariableResolveOptions options) {
+        requestContext.setSourceExecutionPolicy(options.sourceExecutionPolicy());
+    }
+
+    VariableResolveOptions childSourceOptions() {
+        return VariableResolveOptions.fromSourceExecutionPolicy(requestContext.sourceExecutionPolicy());
+    }
     private final List<String> rootOutputScriptNames;
     private final Deque<String> ruleStack = new ArrayDeque<>();
     private final Map<String, com.hengshucredit.rule.model.entity.RulePublished> resolvedRules = new LinkedHashMap<>();
@@ -44,7 +54,9 @@ public class RuleExecutionSession {
                          Map<String, Object> originalInput, boolean testMode,
                          String rootRuleCode, RuleTraceFrame rootTrace,
                          List<String> rootOutputScriptNames,
-                         ArtifactRuntimeSnapshotService.RuntimeSnapshot artifactRuntimeSnapshot) {
+                         ArtifactRuntimeSnapshotService.RuntimeSnapshot artifactRuntimeSnapshot,
+                         RuleExecutionSession previousSession) {
+        this.previousSession = previousSession;
         this.currentProjectId = projectId;
         this.currentProjectCode = projectCode;
         this.values = values == null ? new LinkedHashMap<String, Object>() : values;
@@ -94,11 +106,13 @@ public class RuleExecutionSession {
     }
 
     public boolean isOfflineReplay() {
-        return offlineReplay;
+        return requestContext.sourceExecutionPolicy().offlineReplay();
     }
 
     void setOfflineReplay(boolean offlineReplay) {
-        this.offlineReplay = offlineReplay;
+        VariableResolveOptions options = childSourceOptions();
+        options.setOfflineReplay(offlineReplay);
+        setSourceExecutionPolicy(options);
     }
 
     void setTraceEnabled(boolean traceEnabled) {

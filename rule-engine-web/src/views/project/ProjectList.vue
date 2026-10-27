@@ -72,7 +72,7 @@
       :data="tableData"
       border
       size="small"
-      v-loading="loading"
+      :aria-busy="loading"
       style="width: 100%"
     >
       <el-table-column

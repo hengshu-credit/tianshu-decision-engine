@@ -110,7 +110,7 @@
           :data="records"
           border
           size="small"
-          v-loading="loading"
+          :aria-busy="loading"
           style="width: 100%"
         >
           <el-table-column
@@ -258,7 +258,7 @@
           :data="logs"
           border
           size="small"
-          v-loading="logLoading"
+          :aria-busy="logLoading"
           style="width: 100%"
         >
           <el-table-column

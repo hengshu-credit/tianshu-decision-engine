@@ -13,6 +13,65 @@ async function expectCompactSftpLayout(page) {
   expect(table.y - filter.y - filter.height).toBeLessThanOrEqual(20)
 }
 
+test('SFTP 未保存配置取消关闭后完整保留，确认放弃后清空且不产生草稿', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const harness = await installDistRoutes(page, {
+    origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL),
+    apiData: new Map([['/api/rule/sftp/list', { records: [], total: 0 }]]),
+  })
+  await page.goto(`${origin}/#/sftp`)
+  await page.getByRole('button', { name: '新建 SFTP 数据源', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '新建 SFTP 数据源', exact: true })
+  await dialog.getByRole('textbox', { name: /数据源名称/ }).fill('保留我的配置')
+  await dialog.getByRole('textbox', { name: '密码', exact: true }).fill('test-only-unsaved')
+  await dialog.getByRole('button', { name: '关闭此对话框' }).click()
+  const reminder = page.getByRole('dialog', { name: '未保存提醒', exact: true })
+  await expect(reminder).toBeVisible()
+  await reminder.getByRole('button', { name: '继续编辑', exact: true }).click()
+  await expect(dialog.getByRole('textbox', { name: /数据源名称/ })).toHaveValue('保留我的配置')
+  await expect(dialog.getByRole('textbox', { name: '密码', exact: true })).toHaveValue('test-only-unsaved')
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await reminder.getByRole('button', { name: '继续离开', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await page.getByRole('button', { name: '新建 SFTP 数据源', exact: true }).click()
+  await expect(dialog.getByRole('textbox', { name: /数据源名称/ })).toHaveValue('')
+  await expect(dialog.getByRole('textbox', { name: '密码', exact: true })).toHaveValue('')
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  expect(harness.requests.filter(item => item.method === 'POST' && item.url.includes('/governance/drafts'))).toEqual([])
+  harness.assertClean()
+})
+
+test('SFTP 配置与日志字段设置位于操作区首位，可隐藏字段并保持操作可用', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const harness = await installDistRoutes(page, {
+    origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL),
+    apiData: new Map([['/api/rule/sftp/list', { records: [], total: 0 }], ['/api/rule/runtime-log/list', { records: [], total: 0 }]]),
+  })
+  await page.goto(`${origin}/#/sftp`)
+  for (const field of ['认证用户', '文件链接地址']) {
+    const actions = page.locator('.uiue-filter-toolbar .btn-right')
+    await expect(actions.getByRole('button').first()).toHaveAccessibleName('设置表格显示字段')
+    await actions.getByRole('button', { name: '设置表格显示字段' }).click()
+    await page.getByRole('button', { name: `隐藏${field}`, exact: true }).click()
+    if (field === '认证用户') {
+      await page.locator('.table-column-settings__item').filter({ hasText: 'SFTP 地址' }).getByRole('button', { name: '上移字段', exact: true }).click()
+    }
+    await page.locator('.table-column-settings__panel').getByRole('button', { name: '应用', exact: true }).click()
+    await expect(page.getByRole('columnheader', { name: field, exact: true })).toBeHidden()
+    if (field === '认证用户') {
+      const headers = await page.getByRole('columnheader').allTextContents()
+      expect(headers.indexOf('SFTP 地址')).toBeLessThan(headers.indexOf('数据源名称'))
+    }
+    await page.reload()
+    await expect(page.getByRole('button', { name: '设置表格显示字段' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: field, exact: true })).toBeHidden()
+    await expect(actions.getByRole('button', { name: '刷新', exact: true })).toBeVisible()
+    if (field === '认证用户') await page.getByRole('tab', { name: '查询日志', exact: true }).click()
+  }
+  harness.assertClean()
+})
+
 test('SFTP 往返切换、工作区页签和浏览器历史保持选中项与页面内容一致', async ({ page }) => {
   const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
   const harness = await installDistRoutes(page, {

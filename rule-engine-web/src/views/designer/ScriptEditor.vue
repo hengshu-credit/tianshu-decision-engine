@@ -72,154 +72,29 @@
       class="se-body"
       :class="{ 'is-resizing': resizingVarPanel }"
     >
-      <!-- 左侧变量面板 -->
-      <div
-        class="se-var-panel"
-        :class="{ collapsed: varPanelCollapsed }"
-        :style="varPanelStyle"
-      >
-        <div
-          class="se-var-header"
-          @click="toggleVarPanel"
-        >
-          <span v-if="!varPanelCollapsed"
-            ><el-icon><el-icon-s-data /></el-icon> 项目变量</span
-          >
-          <app-icon :name="varPanelCollapsed ? 'ArrowRight' : 'ArrowLeft'" />
+      <aside class="se-var-panel" :class="{ collapsed: varPanelCollapsed }" :style="varPanelStyle">
+        <button v-if="varPanelCollapsed" class="se-var-header" type="button" aria-label="展开内容选择器" @click="toggleVarPanel">›</button>
+        <div v-if="varsLoadError && !varPanelCollapsed" class="se-picker-error">
+          内容加载失败 <el-button link size="small" @click="loadProjectVars($route.params.id)">重试</el-button>
         </div>
-        <div v-show="!varPanelCollapsed" class="se-var-list">
-          <div
-            v-if="loadingVars"
-            style="text-align: center; padding: 20px; color: var(--tianshu-text-tertiary)"
-          >
-            <el-icon><el-icon-loading /></el-icon> 加载中...
-          </div>
-          <div
-            v-else-if="varsLoadError"
-            class="text-danger"
-            style="text-align: center; padding: 20px"
-          >
-            <el-icon><el-icon-warning /></el-icon> 加载失败
-            <el-button
-              link
-              size="small"
-              @click="loadProjectVars($route.params.id)"
-              style="display: block; margin: 6px auto 0"
-              >重试</el-button
-            >
-          </div>
-          <div
-            v-else-if="varTree.length === 0"
-            style="text-align: center; padding: 20px; color: #bbb"
-          >
-            <el-icon><el-icon-folder-opened /></el-icon> 暂无项目变量
-          </div>
-          <template v-else>
-            <!-- 搜索过滤 -->
-            <div class="se-var-search">
-              <el-input
-                v-model="varSearchKey"
-                size="small"
-                placeholder="搜索变量..."
-                :prefix-icon="ElIconSearch"
-                clearable
-              />
-            </div>
-            <!-- 树形分组 -->
-            <div v-for="cat in filteredVarTree" :key="cat.key" class="se-cat">
-              <div class="se-cat-header" @click="toggleCat(cat.key)">
-                <app-icon
-                  :name="expandedCats[cat.key] ? 'CaretBottom' : 'CaretRight'"
-                  class="se-toggle-icon"
-                />
-                <app-icon :name="cat.icon" class="se-cat-icon" />
-                <span class="se-cat-label">{{ cat.label }}</span>
-                <span class="se-cat-count">{{ countLeaves(cat) }}</span>
-              </div>
-              <div v-show="expandedCats[cat.key]" class="se-cat-body">
-                <!-- 两级结构：一级分类 -> 直接叶子 -->
-                <template v-if="!cat.hasSubGroups">
-                  <div
-                    v-for="v in pagedScriptList(cat.key, cat.children)"
-                    :key="v.varCode"
-                    class="se-var-item"
-                    :title="'双击插入: ' + v.varCode"
-                    @dblclick="insertVar(v)"
-                  >
-                    <content-reference :value="v" />
-                  </div>
-                  <el-pagination
-                    v-if="scriptListNeedsPaging(cat.children)"
-                    class="se-var-pager"
-                    size="small"
-                    layout="prev,pager,next"
-                    :current-page="scriptListPage(cat.key)"
-                    :page-size="scriptVarPageSize"
-                    :total="cat.children.length"
-                    @current-change="(p) => onScriptListPageChange(cat.key, p)"
-                  />
-                </template>
-                <!-- 三级结构：一级分类 -> 二级组 -> 叶子 -->
-                <template v-else>
-                  <div
-                    v-for="group in cat.children"
-                    :key="cat.key + '.' + group.key"
-                    class="se-group"
-                  >
-                    <div
-                      class="se-group-header"
-                      @click="toggleGroup(cat.key + '.' + group.key)"
-                    >
-                      <app-icon
-                        :name="
-                          expandedGroups[cat.key + '.' + group.key]
-                            ? 'CaretBottom'
-                            : 'CaretRight'
-                        "
-                        class="se-toggle-icon"
-                      />
-                      <span class="se-group-label">{{ group.label }}</span>
-                      <span class="se-cat-count">{{
-                        group.children.length
-                      }}</span>
-                    </div>
-                    <div v-show="expandedGroups[cat.key + '.' + group.key]">
-                      <div
-                        v-for="v in pagedScriptList(
-                          cat.key + '.' + group.key,
-                          group.children
-                        )"
-                        :key="v.varCode"
-                        class="se-var-item se-var-indent"
-                        :title="'双击插入: ' + v.varCode"
-                        @dblclick="insertVar(v)"
-                      >
-                        <content-reference :value="v" />
-                      </div>
-                      <el-pagination
-                        v-if="scriptListNeedsPaging(group.children)"
-                        class="se-var-pager se-var-pager--group"
-                        size="small"
-                        layout="prev,pager,next"
-                        :current-page="
-                          scriptListPage(cat.key + '.' + group.key)
-                        "
-                        :page-size="scriptVarPageSize"
-                        :total="group.children.length"
-                        @current-change="
-                          (p) =>
-                            onScriptListPageChange(cat.key + '.' + group.key, p)
-                        "
-                      />
-                    </div>
-                  </div>
-                </template>
-              </div>
+        <field-picker-panel
+          embedded :visible="!varPanelCollapsed" :width="varPanelWidth" :items="scriptPickerItems"
+          :loading="loadingVars" :query="varSearchKey" :category="scriptPickerCategory"
+          :selected-key="scriptPickerSelection" :selected-keys="scriptPickerSelectedKeys" :recent-keys="scriptPickerRecentKeys"
+          :initial-page-size="scriptVarPageSize"
+          @search="varSearchKey = $event" @category="scriptPickerCategory = $event"
+          @select="insertPickerContent" @close="toggleVarPanel" @page-size="changePickerPageSize"
+        >
+          <template v-if="referenceCatalogMode === 'FROZEN' && !scriptPickerItems.length" #empty>
+            <div class="se-frozen-empty">
+              <strong>此历史版本未保存可选字段</strong>
+              <span v-if="canEnterDesignerLivePreview">可加载当前可用字段继续编辑，已发布版本不会被修改。</span>
+              <el-button v-if="canEnterDesignerLivePreview" type="primary" size="small" @click="runDesignerAction(enterDesignerLivePreview)">加载当前可用字段</el-button>
+              <span v-else>{{ designerReadOnlyReason || '当前只能查看此版本保存的资源。' }}</span>
             </div>
           </template>
-        </div>
-      </div>
-
+        </field-picker-panel>
+      </aside>
       <div
         v-show="!varPanelCollapsed"
         class="se-resizer"
@@ -273,7 +148,8 @@
             v-model:value="script"
             language="ql"
             height="100%"
-            :references="qlIntelligenceRefs()"
+            :references="qlReferenceItems"
+            :reference-matches="scriptReferences"
             :functions="projectFunctions"
             :show-reference-decorations="showEngineReferences"
             :reference-versions="referenceVersions"
@@ -288,7 +164,7 @@
         <!-- 底部提示 -->
         <div class="se-footer">
           <span class="se-footer-tip">
-            <el-icon><el-icon-edit-outline /></el-icon> 双击左侧字段插入引用，也可直接编辑代码；名称和版本仅用于展示，复制与保存仍为原始脚本
+            <el-icon><el-icon-edit-outline /></el-icon> 双击左侧内容插入引用，也可直接编辑代码；名称和版本仅用于展示，复制与保存仍为原始脚本
           </span>
         </div>
       </div>
@@ -296,6 +172,7 @@
 
     <!-- 测试弹窗 -->
     <designer-test-dialog
+      @locate="locateDesignerIssue"
       v-model:visible="testVisible"
       :execution-source="designerTestExecutionSource"
       :execution-source-name="viewRevisionLabel"
@@ -309,15 +186,14 @@
 </template>
 
 <script>
-import ContentReference from '@/components/common/ContentReference.vue'
-import ElIconLoading from '@/components/common/AppLoadingIcon.vue'
+import FieldPickerPanel from '@/components/common/FieldPickerPanel.vue'
+import { fieldIdentity } from '@/utils/fieldPicker'
+import { recentFieldKeys, rememberField } from '@/utils/fieldPickerHistory'
+import { preferredFieldPageSize, setPreferredFieldPageSize } from '@/utils/fieldPickerPreferences'
 import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { markRaw } from 'vue'
 import {
   EditPen as ElIconEditOutline,
-  DataAnalysis as ElIconSData,
-  Warning as ElIconWarning,
-  FolderOpened as ElIconFolderOpened,
   CircleCheckFilled as ElIconSuccess,
   CircleCloseFilled as ElIconError,
   InfoFilled as ElIconInfo,
@@ -325,7 +201,6 @@ import {
   Document as ElIconDocument,
   Cpu as ElIconCpu,
   VideoPlay as ElIconVideoPlay,
-  Search as ElIconSearch,
 } from '@element-plus/icons-vue'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ruleDraftMixin from '@/mixins/ruleDraftMixin'
@@ -333,6 +208,7 @@ import MonacoEditor from '@/components/MonacoEditor'
 import { listFieldVersions } from '@/api/fieldPickerVersion'
 import {
   collectQlScriptReferences,
+  createQlReferenceCatalog,
   buildQlReferenceDecorations,
   qlReferenceVersionIdentity,
   qlReferenceVersionKey,
@@ -350,8 +226,8 @@ import {
   buildQlSignatureHelp,
 } from '@/utils/qlEditorIntelligence'
 
-const VAR_PANEL_WIDTH_KEY = 'qlexpress.scriptEditor.varPanelWidth'
-const DEFAULT_VAR_PANEL_WIDTH = 300
+const VAR_PANEL_WIDTH_KEY = 'qlexpress.scriptEditor.contentPickerWidth'
+const DEFAULT_VAR_PANEL_WIDTH = 560
 
 export default {
   data() {
@@ -363,8 +239,8 @@ export default {
       compileMessage: '',
       varPanelCollapsed: false,
       varSearchKey: '',
-      expandedCats: {},
-      expandedGroups: {},
+      scriptPickerCategory: 'all',
+      scriptPickerSelection: '',
       /** 脚本中引用的变量映射：{refCode, varId}，与 modelJson.scriptVarRefs 保持同步 */
       scriptVarRefs: [],
       testVisible: false,
@@ -379,31 +255,25 @@ export default {
       referenceVersionRequest: 0,
       pendingVarInsertions: [],
       varPanelWidth: DEFAULT_VAR_PANEL_WIDTH,
-      varPanelMinWidth: 220,
-      varPanelMaxWidth: 560,
-      editorMinWidth: 420,
+      varPanelMinWidth: 420,
+      varPanelMaxWidth: 760,
+      editorMinWidth: 320,
       resizingVarPanel: false,
       resizeBodyCursor: '',
       resizeBodyUserSelect: '',
-      scriptVarPageSize: 100,
-      scriptVarPages: {},
+      scriptVarPageSize: preferredFieldPageSize.value,
       ElIconBack: markRaw(ElIconBack),
       ElIconDocument: markRaw(ElIconDocument),
       ElIconCpu: markRaw(ElIconCpu),
       ElIconVideoPlay: markRaw(ElIconVideoPlay),
-      ElIconSearch: markRaw(ElIconSearch),
     }
   },
-  components: { ContentReference,
+  components: { FieldPickerPanel,
     RuleDesignerActionBar,
     RuleDraftReadOnly,
     DesignerTestDialog,
     MonacoEditor,
     ElIconEditOutline,
-    ElIconSData,
-    ElIconLoading,
-    ElIconWarning,
-    ElIconFolderOpened,
     ElIconSuccess,
     ElIconError,
     ElIconInfo,
@@ -411,8 +281,10 @@ export default {
   name: 'ScriptEditor',
   mixins: [varPickerMixin, ruleDraftMixin],
   computed: {
+    qlReferenceItems() { return markRaw(this.qlIntelligenceRefs()) },
+    scriptReferenceCatalog() { return markRaw(createQlReferenceCatalog(this.varPickerOptions, this.projectFunctions, this.scriptVarRefs)) },
     scriptReferences() {
-      return collectQlScriptReferences(this.script, this.varPickerOptions, this.projectFunctions, this.scriptVarRefs, this.scriptVersionReferences)
+      return markRaw(collectQlScriptReferences(this.script, this.varPickerOptions, this.projectFunctions, this.scriptVarRefs, this.scriptVersionReferences, this.scriptReferenceCatalog))
     },
     varPanelStyle() {
       if (this.varPanelCollapsed) return {}
@@ -440,123 +312,18 @@ export default {
     lineCount() {
       return (this.script.match(/\n/g) || []).length + 1
     },
-    /** 将 varPickerOptions + projectFunctions 构建为三级树形结构 */
-    varTree() {
-      const tree = []
-      const refs = this.varPickerOptions
-
-      const standalone = refs.filter(
-        (v) => v._ref && v._ref.category === 'standalone'
-      )
-      if (standalone.length) {
-        tree.push({
-          key: '__standalone__',
-          label: '普通变量',
-          icon: 'DataAnalysis',
-          hasSubGroups: false,
-          children: standalone,
-        })
-      }
-
-      const constRefs = refs.filter(
-        (v) => v._ref && v._ref.category === 'constant'
-      )
-      if (constRefs.length) {
-        const byGroup = {}
-        constRefs.forEach((v) => {
-          const gc = v._ref.groupCode || '_ungrouped'
-          const gl = v._ref.groupLabel || gc
-          if (!byGroup[gc]) byGroup[gc] = { key: gc, label: gl, children: [] }
-          byGroup[gc].children.push(v)
-        })
-        tree.push({
-          key: '__constant__',
-          label: '常量',
-          icon: 'Collection',
-          hasSubGroups: true,
-          children: Object.values(byGroup),
-        })
-      }
-
-      const objRefs = refs.filter((v) => v._ref && v._ref.category === 'object')
-      if (objRefs.length) {
-        const byObj = {}
-        objRefs.forEach((v) => {
-          const oc = v._ref.objectCode || '_ungrouped'
-          const ol = v._ref.objectLabel || oc
-          if (!byObj[oc]) byObj[oc] = { key: oc, label: ol, children: [] }
-          byObj[oc].children.push(v)
-        })
-        tree.push({
-          key: '__object__',
-          label: '对象',
-          icon: 'Files',
-          hasSubGroups: true,
-          children: Object.values(byObj),
-        })
-      }
-
-      const modelRefs = refs.filter((v) => v._ref && v._ref.category === 'model')
-      if (modelRefs.length) {
-        tree.push({
-          key: '__model__',
-          label: '模型输出',
-          icon: 'DataAnalysis',
-          hasSubGroups: false,
-          children: modelRefs,
-        })
-      }
-
-      if (this.projectFunctions && this.projectFunctions.length) {
-        tree.push({
-          key: '__function__',
-          label: '自定义函数',
-          icon: 'ScaleToOriginal',
-          hasSubGroups: false,
-          children: this.projectFunctions.map((f) => ({
-            varCode: f.funcCode + '()',
-            refCode: f.funcCode,
-            _varId: f.id,
-            _refType: 'FUNCTION',
-            varLabel: f.funcName,
-            varType: f.returnType || 'FUNCTION',
-            version: f.currentVersion ?? f.version,
-          })),
-        })
-      }
-
-      return tree
+    scriptPickerItems() {
+      return [...this.varPickerOptions, ...(this.projectFunctions || []).map(fn => ({
+        varCode: fn.funcCode + '()', refCode: fn.funcCode, _varId: fn.id, _refType: 'FUNCTION',
+        _function: true, function: fn, catalogMode: fn.catalogMode,
+        varLabel: fn.funcName, varType: fn.returnType || 'FUNCTION', version: fn.currentVersion ?? fn.version,
+      }))].map(item => {
+        const version = this.referenceVersions?.[qlReferenceVersionKey({ option: item }, this.referenceCatalogMode)]?.version
+        return version == null ? item : { ...item, version }
+      })
     },
-    /** 搜索过滤后的树 */
-    filteredVarTree() {
-      const kw = (this.varSearchKey || '').trim().toLowerCase()
-      if (!kw) return this.varTree
-      return this.varTree
-        .map((cat) => {
-          if (!cat.hasSubGroups) {
-            const filtered = cat.children.filter(
-              (v) =>
-                (v.varCode && v.varCode.toLowerCase().includes(kw)) ||
-                (v.varLabel && v.varLabel.toLowerCase().includes(kw))
-            )
-            return filtered.length ? { ...cat, children: filtered } : null
-          }
-          const filteredGroups = cat.children
-            .map((group) => {
-              const filtered = group.children.filter(
-                (v) =>
-                  (v.varCode && v.varCode.toLowerCase().includes(kw)) ||
-                  (v.varLabel && v.varLabel.toLowerCase().includes(kw))
-              )
-              return filtered.length ? { ...group, children: filtered } : null
-            })
-            .filter(Boolean)
-          return filteredGroups.length
-            ? { ...cat, children: filteredGroups }
-            : null
-        })
-        .filter(Boolean)
-    },
+    scriptPickerSelectedKeys() { return this.scriptVarRefs.map(reference => `${reference.refType}:${reference.varId}`) },
+    scriptPickerRecentKeys() { return recentFieldKeys.value },
   },
   watch: {
     scriptReferences: {
@@ -569,33 +336,17 @@ export default {
       this.loadReferenceVersions()
     },
     referenceCatalogKey() { this.resetReferenceVersions() },
-    referenceCatalogMode() { this.resetReferenceVersions() },
+    referenceCatalogMode(mode) {
+      this.resetReferenceVersions()
+      if (mode === 'LIVE') {
+        this.scriptPickerCategory = 'all'
+        this.varSearchKey = ''
+        this.scriptPickerSelection = ''
+      }
+    },
     projectRefs() { this.resetReferenceVersions() },
     projectFunctions() { this.resetReferenceVersions() },
-    varSearchKey() {
-      this.scriptVarPages = {}
-    },
-    varTree: {
-      deep: true,
-      immediate: true,
 
-      handler(tree) {
-        if (!tree || !tree.length) return
-        const cats = { ...this.expandedCats }
-        const groups = { ...this.expandedGroups }
-        tree.forEach((cat) => {
-          if (cats[cat.key] === undefined) cats[cat.key] = true
-          if (cat.hasSubGroups) {
-            cat.children.forEach((g) => {
-              const gk = cat.key + '.' + g.key
-              if (groups[gk] === undefined) groups[gk] = true
-            })
-          }
-        })
-        this.expandedCats = cats
-        this.expandedGroups = groups
-      },
-    },
   },
   created() {
     this.definitionId = this.$route.params.id
@@ -636,7 +387,7 @@ export default {
           try {
             const response = await listFieldVersions(qlReferenceVersionIdentity(reference, this.referenceCatalogMode))
             if (request !== this.referenceVersionRequest) return
-            this.referenceVersions[key] = { version: response.data?.[0]?.version }
+            this.referenceVersions[key] = { version: response.data?.[0]?.displayVersion ?? response.data?.[0]?.version }
           } catch {
             if (request === this.referenceVersionRequest) this.referenceVersions[key] = { error: true }
           }
@@ -745,32 +496,6 @@ export default {
     toggleVarPanel() {
       this.varPanelCollapsed = !this.varPanelCollapsed
     },
-    toggleCat(key) {
-      this.expandedCats[key] = !this.expandedCats[key]
-    },
-    toggleGroup(key) {
-      this.expandedGroups[key] = !this.expandedGroups[key]
-    },
-    /** 统计一级分类下叶子节点总数 */
-    countLeaves(cat) {
-      if (!cat.hasSubGroups) return cat.children.length
-      return cat.children.reduce((sum, g) => sum + g.children.length, 0)
-    },
-    scriptListNeedsPaging(list) {
-      return Array.isArray(list) && list.length > this.scriptVarPageSize
-    },
-    scriptListPage(key) {
-      return this.scriptVarPages[key] || 1
-    },
-    pagedScriptList(key, list) {
-      if (!this.scriptListNeedsPaging(list)) return list || []
-      const page = this.scriptListPage(key)
-      const start = (page - 1) * this.scriptVarPageSize
-      return list.slice(start, start + this.scriptVarPageSize)
-    },
-    onScriptListPageChange(key, page) {
-      this.scriptVarPages[key] = page
-    },
     async loadContent() {
       try {
         if (this.draftGuardPromise) await this.draftGuardPromise
@@ -863,6 +588,12 @@ export default {
       const codes = collectScriptInputCodes(this.script, this.projectRefs)
       return buildSampleParamsFromCodes(Array.from(codes), this.projectRefs)
     },
+    insertPickerContent(item) {
+      this.scriptPickerSelection = fieldIdentity(item)
+      rememberField(item)
+      this.insertVar(item)
+    },
+    changePickerPageSize(size) { this.scriptVarPageSize = size; setPreferredFieldPageSize(size) },
     insertVar(v) {
       if (!v) return
       if (!this.monacoEditor) {
@@ -1089,6 +820,8 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.se-frozen-empty { display: flex; flex-direction: column; align-items: center; gap: 12px; line-height: 1.6; white-space: normal; }
+.se-frozen-empty strong { color: var(--tianshu-text-primary); font-weight: 500; }
 .se-designer {
   position: relative;
   background: var(--tianshu-bg-workspace);
@@ -1138,8 +871,8 @@ export default {
   overflow: hidden;
 }
 .se-var-panel {
-  width: 300px;
-  min-width: 220px;
+  width: 560px;
+  min-width: 420px;
   background: var(--tianshu-bg-surface);
   border-radius: 6px 0 0 6px;
   border: 1px solid var(--tianshu-border-subtle);
@@ -1170,129 +903,7 @@ export default {
     color: var(--tianshu-text-tertiary);
   }
 }
-.se-var-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  overscroll-behavior: contain;
-  padding: 0;
-}
-.se-var-search {
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--tianshu-border-subtle);
-  position: sticky;
-  top: 0;
-  background: var(--tianshu-bg-surface);
-  z-index: 1;
-}
-.se-cat-header {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 7px 10px;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--tianshu-text-primary);
-  background: var(--tianshu-bg-muted);
-  border-bottom: 1px solid var(--tianshu-border-subtle);
-  user-select: none;
-  &:hover {
-    background: var(--tianshu-bg-hover);
-  }
-}
-.se-toggle-icon {
-  font-size: 12px;
-  color: var(--tianshu-text-tertiary);
-  width: 14px;
-  text-align: center;
-  flex-shrink: 0;
-}
-.se-cat-icon {
-  font-size: 13px;
-  color: var(--tianshu-text-tertiary);
-  flex-shrink: 0;
-}
-.se-cat-label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.se-cat-count {
-  flex-shrink: 0;
-  font-size: 10px;
-  color: var(--tianshu-info-text);
-  background: var(--tianshu-info-bg);
-  border-radius: 8px;
-  padding: 0 5px;
-  line-height: 16px;
-  font-weight: normal;
-}
-.se-cat-body {
-}
-.se-group-header {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 10px 5px 22px;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--tianshu-text-secondary);
-  user-select: none;
-  border-bottom: 1px solid var(--tianshu-border-subtle);
-  &:hover {
-    background: var(--tianshu-bg-hover);
-  }
-}
-.se-group-label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.se-var-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px 4px 24px;
-  cursor: pointer;
-  font-size: 12px;
-  transition: background 0.15s;
-  &:hover {
-    background: var(--tianshu-bg-active);
-  }
-}
-.se-var-indent {
-  padding-left: 38px;
-}
-.var-type-tag {
-  flex-shrink: 0;
-}
-.var-code {
-  font-family: 'Consolas', monospace;
-  color: var(--tianshu-text-primary);
-  white-space: nowrap;
-}
-.var-label {
-  color: var(--tianshu-text-tertiary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.se-var-pager {
-  padding: 5px 8px;
-  text-align: right;
-  border-bottom: 1px solid var(--tianshu-border-subtle);
-  background: var(--tianshu-bg-surface);
-}
-.se-var-pager--group {
-  padding-left: 28px;
-}
+.se-picker-error { padding: 12px; color: var(--tianshu-danger-text); }
 .se-resizer {
   flex: 0 0 8px;
   cursor: col-resize;
@@ -1405,5 +1016,12 @@ export default {
 }
 .test-result {
   margin-top: 16px;
+}
+@media (max-width: 1100px) {
+  .se-body { flex-direction: column; overflow-y: auto; }
+  .se-editor-area { order: 1; flex: none; min-height: 320px; border-radius: 6px 6px 0 0; }
+  .se-var-panel { order: 2; flex: none; width: 100% !important; min-width: 0 !important; max-width: none !important; height: 360px; border-left: 1px solid var(--tianshu-border-subtle); border-radius: 0 0 6px 6px; }
+  .se-var-panel.collapsed { height: 36px; }
+  .se-resizer { display: none; }
 }
 </style>

@@ -55,6 +55,10 @@ export function applyTheme(config, root = document.documentElement) {
   applyColorScale(root, '--el-color-primary', scale)
   applyColorScale(root, '--tianshu-color-secondary', secondaryScale)
   applyColorScale(root, '--el-color-info', scale)
+  for (const [role, colors] of Object.entries(createContentReferencePalette(preset, normalized.colorScheme))) {
+    setProperty(root, `--tianshu-content-${role}-bg`, colors.background)
+    setProperty(root, `--tianshu-content-${role}-text`, colors.foreground)
+  }
   for (const [name, value] of Object.entries(infoTone)) {
     setProperty(root, `--tianshu-info-${name}`, value)
   }
@@ -198,6 +202,37 @@ function createHintTone(scale, dark) {
     text: mixThemeColors(scale.primary, '#111827', 0.55),
     foreground: readableForeground(scale.primary),
   }
+}
+
+// 色块由当前主题派生，交错明度避免相邻角色混成一片；不为任何主色写死另一套色相。
+export function createContentReferencePalette(accent, colorScheme = 'LIGHT') {
+  const roles = ['source', 'type', 'name', 'code', 'version']
+  const levels = [0.26, 0.5, 0.72, 0.38, 0.62]
+  const hueOffsets = [0, -18, 18, -9, 9]
+  const saturations = [1, 0.9, 0.75, 0.95, 0.85]
+  const gradient = accent.kind === 'gradient'
+  const stops = gradient ? accent.background.match(/#[\da-f]{6}/gi) : [accent.primary]
+  const sample = position => {
+    const index = position * (stops.length - 1)
+    const left = Math.min(stops.length - 1, Math.floor(index))
+    return mixThemeColors(stops[left], stops[Math.min(left + 1, stops.length - 1)], index - left)
+  }
+  return Object.fromEntries(roles.map((role, index) => {
+    const start = index / roles.length, end = (index + 1) / roles.length
+    const positions = gradient ? [start, ...stops.map((_, i) => i / (stops.length - 1)).filter(position => position > start && position < end), end] : [0]
+    const colors = positions.map(position => {
+      const base = hslColor(sample(position))
+      return hslToHex((base.hue + (gradient ? 0 : hueOffsets[index]) + 360) % 360,
+        base.saturation * saturations[index],
+        Math.max(0.18, Math.min(0.82, levels[index] + (colorScheme === 'DARK' ? 0.04 : 0) + (base.lightness - 0.5) * 0.06)))
+    })
+    const foreground = minimumContrast('#FFFFFF', colors) >= minimumContrast('#19103B', colors) ? '#FFFFFF' : '#19103B'
+    const readable = readableButtonColors(colors, foreground, foreground === '#FFFFFF' ? '#000000' : '#FFFFFF')
+    const background = gradient
+      ? accent.background.slice(0, accent.background.indexOf('#')) + readable.map((color, i) => `${color} ${Math.round((positions[i] - start) / (end - start) * 100)}%`).join(', ') + ')'
+      : readable[0]
+    return [role, { background, foreground, colors: readable }]
+  }))
 }
 
 // 实心按钮按实际底色选择文字；渐变同时检查端点和中间色，交互状态不使用整块亮度滤镜。

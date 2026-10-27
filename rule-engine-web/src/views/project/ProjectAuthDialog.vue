@@ -37,7 +37,7 @@
           >
         </div>
         <el-table show-overflow-tooltip
-          v-loading="authLoading"
+          :aria-busy="authLoading"
           :data="authList"
           border
           size="small"
@@ -175,7 +175,7 @@
         />
         <el-table show-overflow-tooltip
           v-if="selectedAuth"
-          v-loading="tokenLoading"
+          :aria-busy="tokenLoading"
           :data="tokenList"
           border
           size="small"
@@ -301,7 +301,7 @@
           >
         </el-form>
         <el-table show-overflow-tooltip
-          v-loading="logLoading"
+          :aria-busy="logLoading"
           :data="accessLogs"
           border
           size="small"

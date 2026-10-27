@@ -9,6 +9,22 @@ import java.util.Map;
 
 @Data
 public class VariableResolveOptions {
+    public com.hengshucredit.rule.core.engine.RequestContext.SourceExecutionPolicy sourceExecutionPolicy() {
+        return new com.hengshucredit.rule.core.engine.RequestContext.SourceExecutionPolicy(
+                offlineReplay, dryRun, skipApiSources, forceRefreshSource, listMatchTime);
+    }
+
+    public static VariableResolveOptions fromSourceExecutionPolicy(
+            com.hengshucredit.rule.core.engine.RequestContext.SourceExecutionPolicy policy) {
+        VariableResolveOptions options = defaults();
+        options.setOfflineReplay(policy.offlineReplay());
+        options.setDryRun(policy.dryRun());
+        options.setSkipApiSources(policy.skipApiSources());
+        options.setForceRefreshSource(policy.forceRefreshSource());
+        options.setListMatchTime(policy.listMatchTime());
+        return options;
+    }
+
     private boolean skipApiSources;
     /** 影子/空跑执行只允许计算，不提交名单等规则副作用。 */
     private boolean dryRun;

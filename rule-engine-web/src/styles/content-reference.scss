@@ -3,16 +3,20 @@
 .content-ref__segment { display: inline-block; vertical-align: middle; box-sizing: border-box; margin: 0; border: 0; border-radius: 0; padding: 0 5px; min-width: 0; max-width: 100%; line-height: inherit; font-size: inherit; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
 .content-ref__source, .content-ref__type { flex: 0 0 32px; width: 32px; padding: 0; text-align: center; font-size: 11px; font-weight: 600; }
 :is(.content-ref, .monaco-editor .view-lines) {
-.content-ref__source { color: var(--tianshu-primary-text); background: var(--tianshu-info-border); }
-.content-ref__type { color: var(--tianshu-info-text); background: var(--tianshu-info-bg); }
-.content-ref__type--number { color: var(--tianshu-success-text); background: var(--tianshu-success-bg); }
-.content-ref__type--collection { color: var(--tianshu-warning-text); background: var(--tianshu-warning-bg); }
-.content-ref__name { color: var(--tianshu-text-primary); background: var(--tianshu-bg-hover); }
-.content-ref__code { color: var(--tianshu-primary-text); background: var(--tianshu-border); font-family: Consolas, monospace; }
-.content-ref__version { flex-shrink: 0; color: var(--tianshu-text-secondary); background: var(--tianshu-bg-muted); }
+.content-ref__source { color: var(--tianshu-content-source-text, var(--tianshu-primary-text)); background: var(--tianshu-content-source-bg, var(--tianshu-info-border)); }
+.content-ref__type { color: var(--tianshu-content-type-text, var(--tianshu-info-text)); background: var(--tianshu-content-type-bg, var(--tianshu-info-bg)); }
+.content-ref__name { color: var(--tianshu-content-name-text, var(--tianshu-text-primary)); background: var(--tianshu-content-name-bg, var(--tianshu-bg-hover)); }
+.content-ref__code { color: var(--tianshu-content-code-text, var(--tianshu-primary-text)); background: var(--tianshu-content-code-bg, var(--tianshu-border)); font-family: Consolas, monospace; }
+.content-ref__version { flex-shrink: 0; color: var(--tianshu-content-version-text, var(--tianshu-text-secondary)); background: var(--tianshu-content-version-bg, var(--tianshu-bg-muted)); }
 .content-ref__value, .content-ref__path { color: var(--tianshu-info-text); background: var(--tianshu-info-bg); }
 }
 .content-ref--wrap { white-space: normal; }
 .content-ref--wrap .content-ref__name, .content-ref--wrap .content-ref__code, .content-ref--wrap .content-ref__value, .content-ref--wrap .content-ref__path { white-space: pre-wrap; overflow-wrap: anywhere; }
 .monaco-editor .view-lines .content-ref__segment { display: inline; width: auto; height: auto; padding: 0; font: inherit; vertical-align: baseline; overflow: visible; max-width: none; }
-.monaco-editor .content-ref__code { padding: 0; text-decoration: underline; text-decoration-color: var(--el-color-primary); text-underline-offset: 2px; }
+.monaco-editor .content-ref__code { padding: 0; text-decoration: underline; text-decoration-color: currentColor; text-underline-offset: 2px; }
+.monaco-editor .content-ref__metadata { user-select: none; cursor: default; }
+/* 外框不占水平宽度，五段相接时保持 Monaco 原始字符和鼠标定位一致。 */
+.monaco-editor .content-ref__joined { box-shadow: 0 -1px 0 var(--el-color-primary), 0 1px 0 var(--el-color-primary); }
+.monaco-editor .content-ref__first:not(.content-ref__first + .content-ref__first) { box-shadow: -1px 0 0 var(--el-color-primary), 0 -1px 0 var(--el-color-primary), 0 1px 0 var(--el-color-primary); }
+.monaco-editor .content-ref__last:not(:has(+ .content-ref__last)) { box-shadow: 1px 0 0 var(--el-color-primary), 0 -1px 0 var(--el-color-primary), 0 1px 0 var(--el-color-primary); }
+.monaco-editor-container.has-reference-decorations .cursors-layer .cursor { box-shadow: 0 0 0 1px var(--tianshu-content-code-text, #fff); }

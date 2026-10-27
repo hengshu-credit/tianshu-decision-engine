@@ -49,7 +49,7 @@ test('脚本下载前首屏就显示瑶光动画，脚本完成后正常进入�
 })
 
 for (const colorScheme of ['LIGHT', 'DARK']) {
-  test(`${colorScheme} 表格、候选下拉和抽屉共用扇叶动画，响应后自动消失`, async ({ page }, testInfo) => {
+  test(`${colorScheme} 表格与抽屉直接展示内容，候选下拉保留请求动画`, async ({ page }, testInfo) => {
     const data = deferred(), options = deferred(), versions = deferred()
     const project = { id: 1, projectCode: 'e2e_project', projectName: 'E2E 项目', status: 1 }
     const { assertClean } = await installDistRoutes(page, { origin, liveStatic, apiData: new Map([
@@ -64,27 +64,31 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
     try {
       await page.goto(`${origin}/#/project`)
       await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme.toLowerCase())
-      const spinner = page.locator('.el-table .el-loading-spinner').first()
-      await expectLoader(spinner)
+      const table = page.locator('.el-table').first()
+      await expect(table).toHaveAttribute('aria-busy', 'true')
+      await expect(table.locator('thead')).toBeVisible()
+      await expect(page.locator('.el-loading-mask')).toHaveCount(0)
       await page.screenshot({ path: testInfo.outputPath(`table-loading-${colorScheme}.png`) })
       data.resolve()
       await expect(page.getByRole('cell', { name: 'e2e_project', exact: true })).toBeVisible()
-      await expect(spinner).toBeHidden()
+      await expect(table).toHaveAttribute('aria-busy', 'false')
       const input = page.getByRole('textbox', { name: '项目编码', exact: true })
       await input.click()
       const suggestion = page.locator('.el-autocomplete-suggestion.is-loading .el-icon.is-loading')
       await expectLoader(suggestion)
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      expect(await suggestion.evaluate(element => getComputedStyle(element, '::before').animationName)).toBe('none')
       options.resolve()
       await expect(page.getByRole('option', { name: 'e2e_project', exact: true })).toBeVisible()
       await expect(suggestion).toBeHidden()
       await input.press('Escape')
       await page.getByRole('button', { name: '版本', exact: true }).click()
-      const drawerSpinner = page.getByRole('dialog', { name: '版本管理' }).locator('.el-loading-spinner')
-      await expectLoader(drawerSpinner)
-      await page.emulateMedia({ reducedMotion: 'reduce' })
-      expect(await drawerSpinner.evaluate(element => getComputedStyle(element, '::before').animationName)).toBe('none')
+      const drawer = page.getByRole('dialog', { name: '版本管理' })
+      await expect(drawer.locator('.resource-version-manager')).toHaveAttribute('aria-busy', 'true')
+      await expect(drawer.getByRole('tab', { name: '预览与对比' })).toBeVisible()
+      await expect(drawer.locator('.el-loading-mask')).toHaveCount(0)
       versions.resolve()
-      await expect(drawerSpinner).toBeHidden()
+      await expect(drawer.locator('.resource-version-manager')).toHaveAttribute('aria-busy', 'false')
       assertClean()
     } finally { data.resolve(); options.resolve(); versions.resolve() }
   })

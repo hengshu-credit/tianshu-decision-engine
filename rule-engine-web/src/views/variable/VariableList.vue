@@ -127,7 +127,7 @@
             empty-text="暂无字段，可点击「新建字段」或「批量导入」添加"
             border
             size="small"
-            v-loading="loading"
+            :aria-busy="loading"
             style="width: 100%"
           >
             <el-table-column v-if="isVariableColumnVisible('scope')" label="作用范围" width="90" align="center">
@@ -378,7 +378,7 @@
         >
           暂无数据对象，点击「新建对象」或「批量导入」添加
         </div>
-        <div class="management-table-region" v-else v-loading="objLoading">
+        <div class="management-table-region" v-else :aria-busy="objLoading">
           <el-table class="management-table data-object-table"
             data-testid="data-object-table"
             show-overflow-tooltip
@@ -712,7 +712,7 @@
           />
         </div>
         <el-table class="management-table" show-overflow-tooltip
-          v-loading="constLoading"
+          :aria-busy="constLoading"
           :data="constantRows"
           border
           size="small"
@@ -912,7 +912,7 @@
           />
         </div>
         <el-table class="management-table" show-overflow-tooltip
-          v-loading="validationLoading"
+          :aria-busy="validationLoading"
           :data="validationRows"
           border
           size="small"

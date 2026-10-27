@@ -1,6 +1,74 @@
 import AdvancedCrossTable from '@/views/designer/AdvancedCrossTable.vue'
 
 describe('AdvancedCrossTable', () => {
+  function matrixContext() {
+    const context = {
+      ...AdvancedCrossTable.data(),
+      model: { rowDimensions: [{ segments: [{ value: 'A' }, { value: 'B' }, { value: 'C' }] }], colDimensions: [{ segments: [{ value: 'X' }, { value: 'Y' }] }], resultVar: { varType: 'NUMBER' } },
+      cellData: [['AX', 'AY'], ['BX', 'BY'], ['CX', 'CY']].map(row => row.map(value => ({ kind: 'LITERAL', value, valueType: 'STRING' }))),
+      $confirm: vi.fn().mockResolvedValue(true),
+    }
+    for (const [name, method] of Object.entries(AdvancedCrossTable.methods)) context[name] = method.bind(context)
+    for (const name of ['rowCombinations', 'colCombinations', 'totalRowCount', 'totalColCount']) {
+      Object.defineProperty(context, name, { get: () => AdvancedCrossTable.computed[name].call(context) })
+    }
+    context.syncCellData(true)
+    return context
+  }
+
+  test('删除中间分段后结果仍跟随原条件组合，不按旧下标错配', () => {
+    const context = matrixContext()
+    context.model.rowDimensions[0].segments.splice(1, 1)
+    context.syncCellData()
+    expect(context.cellData.map(row => row.map(cell => cell.value))).toEqual([['AX', 'AY'], ['CX', 'CY']])
+  })
+
+  test('分段重排和插入保持原组合结果，新组合留空', () => {
+    const context = matrixContext()
+    context.model.rowDimensions[0].segments.reverse()
+    context.model.colDimensions[0].segments.splice(1, 0, { value: 'NEW' })
+    context.syncCellData()
+    expect(context.cellData.map(row => row.map(cell => cell.value))).toEqual([['CX', '', 'CY'], ['BX', '', 'BY'], ['AX', '', 'AY']])
+  })
+
+  test('删除有结果的分段可以取消，确认后只移除对应组合', async () => {
+    const context = matrixContext()
+    const dimension = context.model.rowDimensions[0]
+    context.$confirm.mockRejectedValueOnce('cancel')
+    await context.removeSegment(dimension, 1)
+    expect(dimension.segments.map(segment => segment.value)).toEqual(['A', 'B', 'C'])
+    await context.removeSegment(dimension, 1)
+    context.syncCellData()
+    expect(context.cellData.map(row => row.map(cell => cell.value))).toEqual([['AX', 'AY'], ['CX', 'CY']])
+    expect(context.$confirm).toHaveBeenLastCalledWith(expect.stringContaining('2'), expect.any(String), expect.any(Object))
+  })
+
+  test('自动同步枚举字段元信息不能重建业务分段或改变单元格含义', () => {
+    const segments = [
+      { label: '仅重点客户', operator: '==', value: 'VIP', valueOperand: { kind: 'LITERAL', value: 'VIP', valueType: 'STRING' } },
+      { label: '其余客户', operator: '!=', value: 'VIP', valueOperand: { kind: 'LITERAL', value: 'VIP', valueType: 'STRING' } },
+    ]
+    const dimension = {
+      varCode: 'customerType', varType: 'ENUM', _varId: 7, _refType: 'VARIABLE', segments,
+      operand: { kind: 'REFERENCE', refId: 7, refType: 'VARIABLE', code: 'customerType', label: '旧名称', valueType: 'ENUM' },
+    }
+    const context = {
+      model: { resultVar: {}, rowDimensions: [dimension], colDimensions: [] },
+      cellData: [[{ kind: 'LITERAL', value: '90', valueType: 'NUMBER' }]],
+      varPickerOptions: [{ id: 7, refType: 'VARIABLE', varCode: 'customerType', varLabel: '客户类型', varType: 'ENUM' }],
+      getVarOptions: () => [{ label: '普通', value: 'NORMAL' }, { label: '重点', value: 'VIP' }],
+    }
+    context.setDimensionOperand = AdvancedCrossTable.methods.setDimensionOperand.bind(context)
+    const originalCells = structuredClone(context.cellData)
+
+    AdvancedCrossTable.methods.syncAllOperands.call(context)
+
+    expect(dimension.operand.label).toBe('客户类型')
+    expect(dimension.segments).toEqual(segments)
+    expect(dimension.segments).toBe(segments)
+    expect(context.cellData).toEqual(originalCells)
+  })
+
   test('将维度、分段和结果字段统一转换为操作数', () => {
     const context = {
       model: {

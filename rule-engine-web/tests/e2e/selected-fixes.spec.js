@@ -1,3 +1,4 @@
+const { insertScriptReference } = require('./support/scriptPicker.cjs')
 const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createDetailApiData } = require('./support/detailFixtures.cjs')
@@ -93,7 +94,7 @@ for (const entry of ['project/1', 'rule?projectId=1']) {
     await expect(page).toHaveURL(/#\/designer\/script\/101\?projectId=1$/)
     expect(submitted.ruleCode).toBe('Mixed_Case_New')
     await expect(page.getByRole('button', { name: '保存', exact: true })).toBeVisible()
-    await page.locator('.se-var-item').filter({ hasText: 'age' }).first().dblclick()
+    await insertScriptReference(page, 'age')
     await expect(page.getByRole('textbox', { name: /Editor content/ })).toHaveValue('age')
     expect(requests.filter(request => request.method === 'POST')).toHaveLength(1)
     expect(savedDraft).toBeUndefined()

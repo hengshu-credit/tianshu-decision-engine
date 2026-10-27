@@ -59,6 +59,28 @@ public class ConsoleProjectAccess {
         if (scope != null && !scope.globalEditable()) throw new ConsoleAccessDeniedException("当前账户只允许查看全局内容");
     }
 
+    public void requireUnrestrictedPermissions(String... required) {
+        Scope scope = current();
+        if (scope == null) return;
+        for (String permission : required) {
+            if (!scope.globalCan(permission) || !scope.allProjectPermission(permission)) {
+                throw new ConsoleAccessDeniedException("此操作影响当前节点全部项目，需要全局及所有项目的权限: " + permission);
+            }
+        }
+    }
+
+    public java.util.Map<String, Object> globalStatusSummary(java.util.Map<String, Object> details, String permission) {
+        Scope scope = current();
+        if (scope == null || scope.globalCan(permission) && scope.allProjectPermission(permission)) return details;
+        java.util.Map<String, Object> summary = new java.util.LinkedHashMap<>();
+        for (String key : java.util.List.of("state", "targetCount", "preparedCount", "successCount", "failureCount", "cpuFallbackCount")) {
+            if (details.containsKey(key)) summary.put(key, details.get(key));
+        }
+        summary.put("detailsRestricted", true);
+        summary.put("failures", java.util.List.of());
+        return summary;
+    }
+
     public Runnable wrap(Runnable action) {
         Scope captured = current();
         if (captured == null) return action;

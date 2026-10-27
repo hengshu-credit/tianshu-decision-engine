@@ -2,6 +2,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import SftpDatasourceList from '@/views/sftp/SftpDatasourceList.vue'
 import * as sftpApi from '@/api/sftp'
 import { editableResource } from '@/api/governance'
+import { clearDesignerLeaveGuards, confirmDesignerPathsCanClose } from '@/utils/designerLeaveGuard'
 
 vi.mock('@/api/sftp', () => ({
   listSftpDatasources: vi.fn(), getSftpDatasource: vi.fn(),
@@ -20,11 +21,12 @@ describe('SFTP 数据源配置流程', () => {
   let wrapper
   beforeEach(async () => {
     vi.clearAllMocks()
+    editableResource.mockReset()
     sftpApi.listSftpDatasources.mockResolvedValue({ data: { records: [], total: 0 } })
     wrapper = mount(SftpDatasourceList, {
       shallow: true,
       global: {
-        mocks: { $router: { push: vi.fn() }, $message: { success: vi.fn(), error: vi.fn() }, $confirm: vi.fn().mockResolvedValue(true) },
+        mocks: { $route: { path: '/sftp' }, $router: { push: vi.fn() }, $message: { success: vi.fn(), error: vi.fn() }, $confirm: vi.fn().mockResolvedValue(true) },
         stubs: {
           'project-filter-select': true, 'governance-workspace-toolbar': true,
           'governance-resource-status': true, 'governance-publish-action': true, 'scope-project-fields': true,
@@ -34,7 +36,59 @@ describe('SFTP 数据源配置流程', () => {
     })
     await flushPromises()
   })
-  afterEach(() => wrapper.unmount())
+  afterEach(() => { wrapper.unmount(); clearDesignerLeaveGuards() })
+
+  it('取消关闭或关闭页签时保留未保存内容，确认后清除表单与凭据', async () => {
+    wrapper.vm.openCreate()
+    wrapper.vm.form.datasourceName = '尚未保存的配置'
+    wrapper.vm.form.password = 'only-in-memory'
+    wrapper.vm.$confirm.mockRejectedValueOnce('cancel')
+    expect(await confirmDesignerPathsCanClose(['/sftp'])).toBe(false)
+    expect(wrapper.vm.form.datasourceName).toBe('尚未保存的配置')
+    wrapper.vm.$confirm.mockRejectedValueOnce('cancel')
+    await wrapper.vm.closeDialog()
+    expect(wrapper.vm.dialogVisible).toBe(true)
+    expect(wrapper.vm.form.password).toBe('only-in-memory')
+    wrapper.vm.$confirm.mockResolvedValueOnce(true)
+    await wrapper.vm.closeDialog()
+    expect(wrapper.vm.dialogVisible).toBe(false)
+    expect(wrapper.vm.form.password).toBe('')
+    expect(wrapper.vm.configurationHasUnsavedChanges).toBe(false)
+  })
+
+  it('连续保存只提交一次，保存中不能关闭或替换表单', async () => {
+    wrapper.vm.openCreate()
+    wrapper.vm.form.datasourceCode = 'Keep_MixedCase'
+    const pending = deferred()
+    sftpApi.createSftpDatasource.mockReturnValueOnce(pending.promise)
+    const first = wrapper.vm.save()
+    const duplicate = wrapper.vm.save()
+    await flushPromises()
+    expect(sftpApi.createSftpDatasource).toHaveBeenCalledTimes(1)
+    await wrapper.vm.closeDialog()
+    wrapper.vm.openCreate()
+    expect(wrapper.vm.dialogVisible).toBe(true)
+    expect(wrapper.vm.form.datasourceCode).toBe('Keep_MixedCase')
+    expect(await confirmDesignerPathsCanClose(['/sftp'])).toBe(false)
+    pending.resolve({ data: { id: 81, status: 'DRAFT' } })
+    await Promise.all([first, duplicate])
+    expect(wrapper.vm.dialogVisible).toBe(false)
+    expect(wrapper.vm.saving).toBe(false)
+    expect(wrapper.vm.configurationHasUnsavedChanges).toBe(false)
+  })
+
+  it('迟到的编辑读取不能覆盖刚打开的新建表单', async () => {
+    const pending = deferred()
+    sftpApi.getSftpDatasource.mockReturnValueOnce(pending.promise)
+    editableResource.mockResolvedValueOnce({ id: 9, datasourceName: '旧配置' })
+    const editing = wrapper.vm.openEdit({ id: 9 })
+    wrapper.vm.openCreate()
+    wrapper.vm.form.datasourceName = '正在新建的配置'
+    pending.resolve({ data: { id: 9 } })
+    await editing
+    expect(wrapper.vm.form.id).toBeUndefined()
+    expect(wrapper.vm.form.datasourceName).toBe('正在新建的配置')
+  })
 
   it('查询新条件时从第一页开始，刷新保留当前页', async () => {
     wrapper.vm.query.pageNum = 4

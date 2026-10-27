@@ -139,7 +139,7 @@
         </el-form>
       <div class="uiue-btn-bar">
         <div class="btn-right">
-          <table-column-settings :columns="logColumns" storage-key="tianshu:table-columns:execution-log" />
+          <table-column-settings v-model="tableColumnOrders.logColumns" :columns="logColumns" storage-key="tianshu:table-columns:execution-log" />
         </div>
       </div>
       </div>
@@ -147,11 +147,12 @@
         :data="list"
         border
         size="small"
-        v-loading="loading"
+        :aria-busy="loading"
         :empty-text="loadError || '暂无数据'"
         style="width: 100%"
       >
-        <el-table-column
+        <template v-for="columnKey in (tableColumnOrders.logColumns || logColumns.map(column => column.key))" :key="columnKey">
+        <el-table-column v-if="columnKey === 'project'"
           prop="projectCode"
           label="项目"
           min-width="120"
@@ -161,7 +162,7 @@
             projectMap[row.projectCode] || row.projectCode || '-'
           }}</template>
         </el-table-column>
-        <el-table-column
+        <el-table-column v-if="columnKey === 'rule'"
           prop="ruleCode"
           label="规则编码"
           min-width="140"
@@ -171,13 +172,13 @@
             ruleMap[row.ruleCode] || row.ruleCode
           }}</template>
         </el-table-column>
-        <el-table-column
+        <el-table-column v-if="columnKey === 'traceId'"
           prop="traceId"
           label="会话 trace"
           min-width="190"
           show-overflow-tooltip
         />
-        <el-table-column
+        <el-table-column v-if="columnKey === 'model'"
           prop="modelType"
           label="模型类型"
           min-width="80"
@@ -187,7 +188,7 @@
             modelTypeMap[row.modelType] || row.modelType
           }}</template>
         </el-table-column>
-        <el-table-column
+        <el-table-column v-if="columnKey === 'source'"
           prop="source"
           label="来源"
           min-width="70"
@@ -201,7 +202,7 @@
             ></template
           >
         </el-table-column>
-        <el-table-column
+        <el-table-column v-if="columnKey === 'authCode'"
           prop="authCode"
           label="鉴权编码"
           min-width="130"
@@ -212,13 +213,13 @@
             <div class="auth-type-text">{{ authTypeLabel(row.authType) }}</div>
           </template>
         </el-table-column>
-        <el-table-column
+        <el-table-column v-if="columnKey === 'tokenCode'"
           prop="tokenCode"
           label="Token 编码"
           min-width="170"
           show-overflow-tooltip
         />
-        <el-table-column
+        <el-table-column v-if="columnKey === 'success'"
           prop="success"
           label="结果"
           min-width="65"
@@ -232,22 +233,22 @@
             ></template
           >
         </el-table-column>
-        <el-table-column
+        <el-table-column v-if="columnKey === 'executeTimeMs'"
           prop="executeTimeMs"
           label="耗时(ms)"
           min-width="80"
           align="center"
         />
-        <el-table-column
+        <el-table-column v-if="columnKey === 'clientAppName'"
           prop="clientAppName"
           label="客户端"
           min-width="110"
           show-overflow-tooltip
         />
-        <el-table-column prop="createTime" label="执行时间" width="150" fixed="right">
+        <el-table-column v-if="columnKey === 'createTime'" prop="createTime" label="执行时间" width="150" >
           <template v-slot="{ row }">{{ formatTime(row.createTime) }}</template>
         </el-table-column>
-        <el-table-column label="追踪" width="70" align="center" fixed="right">
+        <el-table-column v-if="columnKey === 'trace'" label="追踪" width="70" align="center" >
           <template v-slot="{ row }">
             <el-tag
               v-if="row.traceInfo"
@@ -258,6 +259,7 @@
             <span v-else style="color: var(--tianshu-text-tertiary)">-</span>
           </template>
         </el-table-column>
+        </template>
         <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['查看', '回放'])" align="center" fixed="right">
           <template v-slot="{ row }">
             <el-button link size="small" type="primary" @click="handleViewDetail(row)">详情</el-button>
@@ -346,7 +348,7 @@
         </el-form>
         <div class="uiue-btn-bar">
           <div class="btn-right">
-            <table-column-settings :columns="ruleSetStatsColumns" storage-key="tianshu:table-columns:execution-log-rule-set" />
+            <table-column-settings v-model="tableColumnOrders.ruleSetStatsColumns" :columns="ruleSetStatsColumns" storage-key="tianshu:table-columns:execution-log-rule-set" />
           </div>
         </div>
       </div>
@@ -454,29 +456,30 @@
               />
             </template>
           </el-table-column>
-          <el-table-column prop="ruleCode" label="规则集编码" min-width="150" />
-          <el-table-column prop="ruleName" label="规则集名称" min-width="180" />
-          <el-table-column
+          <template v-for="columnKey in (tableColumnOrders.ruleSetStatsColumns || ruleSetStatsColumns.map(column => column.key))" :key="columnKey">
+          <el-table-column v-if="columnKey === 'ruleCode'" prop="ruleCode" label="规则集编码" min-width="150" />
+          <el-table-column v-if="columnKey === 'ruleName'" prop="ruleName" label="规则集名称" min-width="180" />
+          <el-table-column v-if="columnKey === 'evaluationCount'"
             prop="evaluationCount"
             label="执行次数"
             min-width="90"
             align="right"
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'hitCount'"
             prop="hitCount"
             label="命中次数"
             min-width="90"
             align="right"
           />
-          <el-table-column label="命中率" min-width="90" align="right">
+          <el-table-column v-if="columnKey === 'hitRate'" label="命中率" min-width="90" align="right">
             <template v-slot="{ row }">{{ ratePercent(row.hitRate) }}</template>
           </el-table-column>
-          <el-table-column label="失败率" min-width="90" align="right">
+          <el-table-column v-if="columnKey === 'failureRate'" label="失败率" min-width="90" align="right">
             <template v-slot="{ row }">{{
               ratePercent(row.failureRate)
             }}</template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'avgCostTimeMs'"
             label="平均/P95/P99 耗时"
             min-width="190"
             align="right"
@@ -487,6 +490,7 @@
               {{ formatCost(row.p99CostTimeMs) }}</template
             >
           </el-table-column>
+          </template>
         </el-table>
       </async-state>
     </div>
@@ -638,17 +642,29 @@ RemoteFilterSelect,
   data() {
 
 return {
+      tableColumnOrders: { logColumns: null, ruleSetStatsColumns: null },
 logColumns: [
-{ key: 'project', label: '项目' }, { key: 'rule', label: '规则' },
-{ key: 'model', label: '模型类型' }, { key: 'source', label: '来源' },
-{ key: 'authType', label: '鉴权方式' }, { key: 'authCode', label: '鉴权编码' },
-{ key: 'tokenCode', label: 'Token 编码' }, { key: 'traceId', label: 'Trace ID' },
-{ key: 'createTime', label: '执行时间' }, { key: 'trace', label: '追踪' },
+  { key: 'project', label: '项目' },
+  { key: 'rule', label: '规则编码' },
+  { key: 'traceId', label: '会话 trace' },
+  { key: 'model', label: '模型类型' },
+  { key: 'source', label: '来源' },
+  { key: 'authCode', label: '鉴权编码' },
+  { key: 'tokenCode', label: 'Token 编码' },
+  { key: 'success', label: '结果' },
+  { key: 'executeTimeMs', label: '耗时(ms)' },
+  { key: 'clientAppName', label: '客户端' },
+  { key: 'createTime', label: '执行时间' },
+  { key: 'trace', label: '追踪' },
 ],
 ruleSetStatsColumns: [
-{ key: 'ruleCode', label: '规则集编码' }, { key: 'ruleName', label: '规则集名称' },
-{ key: 'evaluationCount', label: '执行次数' }, { key: 'hitCount', label: '命中次数' },
-{ key: 'hitRate', label: '命中率' }, { key: 'failureRate', label: '失败率' }, { key: 'avgCostTimeMs', label: '平均耗时' },
+  { key: 'ruleCode', label: '规则集编码' },
+  { key: 'ruleName', label: '规则集名称' },
+  { key: 'evaluationCount', label: '执行次数' },
+  { key: 'hitCount', label: '命中次数' },
+  { key: 'hitRate', label: '命中率' },
+  { key: 'failureRate', label: '失败率' },
+  { key: 'avgCostTimeMs', label: '平均/P95/P99 耗时' },
 ],
   activeView: 'logs',
 loading: false,

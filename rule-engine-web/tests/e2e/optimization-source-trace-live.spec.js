@@ -1,3 +1,4 @@
+const { insertScriptReference } = require('./support/scriptPicker.cjs')
 const { test, expect } = require('@playwright/test')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -30,7 +31,7 @@ test('通过 UI 建立外数字段与规则，核对真实缓存和根 trace 的
   await ui.createRule(page, runtime.projectId, 'QL脚本')
   const editor = page.locator('[role="code"].monaco-editor').getByRole('textbox', { name: /Editor content/ })
   await editor.click(); await editor.press('Control+A'); await editor.press('Backspace')
-  await page.locator('.se-var-item').filter({ hasText: code }).dblclick()
+  await insertScriptReference(page, code)
   await editor.press('End'); await editor.pressSequentially(';')
   const saved = await ui.save(page)
   expect(JSON.parse(saved.revision.modelJson).scriptVarRefs.some(ref => ref.refCode === code && ref.varId)).toBe(true)

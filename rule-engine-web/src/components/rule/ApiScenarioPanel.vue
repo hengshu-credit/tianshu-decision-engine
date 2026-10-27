@@ -5,6 +5,7 @@
         <div class="scenario-title">API 测试用例</div>
         <div class="scenario-hint">
           配置真实业务场景的请求与响应；仅勾选且版本匹配的场景会进入 API 文档。
+          调用生成响应会按规则配置访问真实来源或执行名单动作，并应用计费规则。
         </div>
       </div>
       <div>
@@ -34,7 +35,7 @@
     />
 
     <el-table show-overflow-tooltip
-      v-loading="loading"
+      :aria-busy="loading"
       :data="scenarios"
       border
       size="small"

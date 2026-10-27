@@ -2,8 +2,12 @@
   <div
     ref="container"
     class="monaco-editor-container"
-    v-loading="loading"
+    :class="{ 'has-reference-decorations': referenceDecorationIds.length > 0 }"
+    :aria-busy="loading"
     :style="{ height: height }"
+    @mousedown.capture="focusReferenceCode"
+    @dblclick.capture="focusReferenceCode"
+    @mouseup="normalizeReferenceCaret"
   />
 </template>
 
@@ -11,6 +15,7 @@
 import { markRaw } from 'vue'
 import { $emit } from '../utils/gogocodeTransfer'
 import { getMonacoScrollbarOptions, syncMonacoTheme } from '@/theme/monacoTheme'
+import { contentSourceIcon } from '@/utils/contentDisplay'
 import { waitForMonaco } from '@/utils/monacoLoader'
 import {
   buildQlCompletionItems,
@@ -20,6 +25,7 @@ import {
 import {
   buildQlReferenceDecorations,
   collectQlScriptReferences,
+  createQlReferenceCatalog,
   referenceTypeDisplay,
 } from '@/utils/qlScriptReferences'
 export default {
@@ -88,6 +94,8 @@ export default {
       default: true,
     },
     versionReferences: { type: Array, default: () => [] },
+    // 设计器已解析时共用结果，避免父子组件各扫描一次脚本。
+    referenceMatches: { type: Array, default: null },
     referenceVersions: {
       type: Object,
       default: () => ({}),
@@ -105,9 +113,13 @@ export default {
       intelligenceDisposables: [],
       referenceCommandDisposable: null,
       referenceDecorationIds: [],
+      movingReferenceCaret: false,
       // 防止 watch 在用户输入时重置内容 — 仅在父组件主动变更值时更新编辑器
       isInternalChange: false,
     }
+  },
+  computed: {
+    referenceCatalog() { return markRaw(createQlReferenceCatalog(this.normalizedReferenceItems(), this.effectiveFunctions())) },
   },
   watch: {
     value(val) {
@@ -122,7 +134,7 @@ export default {
         }
       }
       this._internalChangeFlag = false
-      this.$nextTick(() => this.refreshReferenceDecorations())
+      this.queueReferenceDecorations()
     },
     language(val) {
       if (this.editor && window.monaco) {
@@ -137,15 +149,16 @@ export default {
         this.editor.updateOptions({ readOnly: val })
       }
     },
-    references: { deep: true, handler() { this.registerIntelligenceProviders(window.monaco); this.refreshReferenceDecorations() } },
-    referenceItems: { deep: true, handler() { this.registerIntelligenceProviders(window.monaco); this.refreshReferenceDecorations() } },
-    functions: { deep: true, handler() { this.registerIntelligenceProviders(window.monaco); this.refreshReferenceDecorations() } },
-    functionItems: { deep: true, handler() { this.registerIntelligenceProviders(window.monaco); this.refreshReferenceDecorations() } },
+    references: { deep: true, handler() { this.registerIntelligenceProviders(window.monaco); this.queueReferenceDecorations() } },
+    referenceItems: { deep: true, handler() { this.registerIntelligenceProviders(window.monaco); this.queueReferenceDecorations() } },
+    functions: { deep: true, handler() { this.registerIntelligenceProviders(window.monaco); this.queueReferenceDecorations() } },
+    functionItems: { deep: true, handler() { this.registerIntelligenceProviders(window.monaco); this.queueReferenceDecorations() } },
     completionItems: { deep: true, handler() { this.registerIntelligenceProviders(window.monaco) } },
-    referenceVersions: { deep: true, handler() { this.refreshReferenceDecorations() } },
-    referenceCatalogMode() { this.refreshReferenceDecorations() },
-    versionReferences: { deep: true, handler() { this.refreshReferenceDecorations() } },
-    showReferenceDecorations() { this.refreshReferenceDecorations() },
+    referenceVersions: { deep: true, handler() { this.queueReferenceDecorations() } },
+    referenceCatalogMode() { this.queueReferenceDecorations() },
+    versionReferences: { deep: true, handler() { this.queueReferenceDecorations() } },
+    referenceMatches() { this.queueReferenceDecorations() },
+    showReferenceDecorations() { this.queueReferenceDecorations() },
   },
   async mounted() {
     window.addEventListener(
@@ -189,6 +202,7 @@ export default {
       quickSuggestions: { other: true, comments: false, strings: false },
       suggestOnTriggerCharacters: true,
       parameterHints: { enabled: true },
+      fixedOverflowWidgets: true,
       // 允许自定义快捷键不被拦截
       automaticallyFixSuggestions: false,
       ...this.options,
@@ -207,6 +221,7 @@ export default {
       $emit(this, 'input', newVal)
       $emit(this, 'update:value', newVal)
       $emit(this, 'change', newVal)
+      this.queueReferenceDecorations()
     })
 
     // 格式化快捷键
@@ -221,6 +236,7 @@ export default {
   },
   beforeUnmount() {
     this.loadController?.abort()
+    this.cancelReferenceDecorations()
     window.removeEventListener(
       'tianshu-theme-change',
       this.handleGlobalThemeChange
@@ -233,6 +249,63 @@ export default {
     this.disposeIntelligenceProviders()
   },
   methods: {
+    focusReferenceCode(event) {
+      if (!this.editor || this.movingReferenceCaret || event.button !== 0) return
+      let metadata = event.target?.closest?.('.content-ref__metadata')
+      let end
+      if (!metadata) {
+        for (const edge of this.$refs.container.querySelectorAll('.view-lines .content-ref__first, .view-lines .content-ref__last')) {
+          const rect = edge.getBoundingClientRect()
+          if (!rect.width || event.clientY < rect.top || event.clientY > rect.bottom) continue
+          const before = edge.classList.contains('content-ref__first') && event.clientX < rect.left && event.clientX >= rect.left - 3
+          const after = edge.classList.contains('content-ref__last') && event.clientX >= rect.right && event.clientX <= rect.right + 3
+          if (before || after) { metadata = edge; end = after; break }
+        }
+      }
+      if (!metadata) return
+      const range = [...metadata.classList].map(name => /^content-ref__range-(\d+)-(\d+)$/.exec(name)).find(Boolean)
+      if (!range) return
+      end ??= metadata.classList.contains('content-ref__edge-end')
+      event.preventDefault()
+      event.stopPropagation()
+      this.moveToReferenceCode(range[0], Number(range[end ? 2 : 1]), end)
+    },
+    async normalizeReferenceCaret(event) {
+      if (this.movingReferenceCaret || event.button !== 0
+        || event.target?.closest?.('.content-ref__segment, .monaco-hover, .suggest-widget, .scrollbar')) return
+      await this.$nextTick()
+      if (!this.editor?.hasTextFocus() || this.editor.getSelections().length !== 1 || !this.editor.getSelection().isEmpty()) return
+      const offset = this.editor.getModel().getOffsetAt(this.editor.getPosition())
+      for (const code of this.$refs.container.querySelectorAll('.view-lines .content-ref__code:not(.content-ref__metadata)')) {
+        const range = [...code.classList].map(name => /^content-ref__range-(\d+)-(\d+)$/.exec(name)).find(Boolean)
+        if (range && (offset === Number(range[1]) || offset === Number(range[2]))) {
+          this.moveToReferenceCode(range[0], offset, offset === Number(range[2]))
+          return
+        }
+      }
+    },
+    moveToReferenceCode(rangeClass, offset, end) {
+      if (!this.editor || this.movingReferenceCaret) return
+      const fragments = rangeClass ? [...this.$refs.container.querySelectorAll(`.view-lines .${rangeClass}.content-ref__code:not(.content-ref__metadata)`)]
+        .filter(element => element.textContent && element.getBoundingClientRect().width > 0) : []
+      const code = end ? fragments.at(-1) : fragments[0]
+      this.movingReferenceCaret = true
+      try {
+        this.editor.focus()
+        if (!code) {
+          this.editor.setPosition(this.editor.getModel().getPositionAt(offset))
+          return
+        }
+        // 源码列号在注入文本两侧相同，转发到可见编码边缘，让 Monaco 自己确定视图光标位置。
+        const rect = code.getBoundingClientRect()
+        for (const type of ['mousedown', 'mouseup']) code.dispatchEvent(new MouseEvent(type, {
+          bubbles: true, cancelable: true, view: window, button: 0, buttons: type === 'mousedown' ? 1 : 0,
+          detail: 1, clientX: end ? rect.right - 0.5 : rect.left + 0.5, clientY: rect.top + rect.height / 2,
+        }))
+      } finally {
+        this.movingReferenceCaret = false
+      }
+    },
     normalizedReferenceItems() {
       return this.effectiveReferences().map((reference) => ({
         ...reference,
@@ -250,17 +323,33 @@ export default {
       }
       this.referenceDecorationIds = []
     },
+    cancelReferenceDecorations() {
+      if (this._referenceDecorationFrame != null) window.cancelAnimationFrame(this._referenceDecorationFrame)
+      this._referenceDecorationFrame = null
+    },
+    queueReferenceDecorations() {
+      if (!this.editor || this.language !== 'ql' || !this.showReferenceDecorations) {
+        this.cancelReferenceDecorations()
+        this.clearReferenceDecorations()
+        return
+      }
+      if (this._referenceDecorationFrame != null) return
+      this._referenceDecorationFrame = window.requestAnimationFrame(() => {
+        this._referenceDecorationFrame = null
+        this.refreshReferenceDecorations()
+      })
+    },
     refreshReferenceDecorations() {
+      this.cancelReferenceDecorations()
       if (!this.editor || this.language !== 'ql' || !this.showReferenceDecorations) {
         this.clearReferenceDecorations()
         return
       }
       const model = this.editor.getModel?.()
       if (!model || typeof model.getPositionAt !== 'function' || typeof this.editor.deltaDecorations !== 'function') return
-      const matches = collectQlScriptReferences(
+      const matches = this.referenceMatches || collectQlScriptReferences(
         this.editor.getValue?.() || this.value,
-        this.normalizedReferenceItems(),
-        this.effectiveFunctions(), [], this.versionReferences
+        [], [], [], this.versionReferences, this.referenceCatalog
       )
       const decorations = buildQlReferenceDecorations(
         matches,
@@ -321,15 +410,20 @@ export default {
           endColumn: word.endColumn,
         }
       }
+      const referenceDetails = item => {
+        const version = this.referenceVersions[item.referenceVersionKey]?.version
+        return [item.referenceContentType || '引用', item.referenceDataType || item.referenceType || '?', item.referenceName || item.label,
+          item.refCode || item.label, version != null ? `v${version}` : item.referenceVersion || '—'].join(' · ')
+      }
       const toSuggestion = (item, range) => ({
         ...item,
         range,
         detail: item.referenceType
-          ? `${item.referenceType} ${item.refCode || item.label || ''} ${item.referenceName || ''} ${item.referenceVersion || '版本未提供'}`.trim()
+          ? referenceDetails(item)
           : item.detail,
         documentation: item.documentation && typeof item.documentation === 'string'
           ? { value: item.referenceType
-              ? `${item.referenceType} ${item.refCode || item.label || ''} ${item.referenceName || ''} ${item.referenceVersion || '版本未提供'}\n${item.documentation}`
+              ? `${referenceDetails(item)}\n${item.documentation}`
               : item.documentation }
           : item.documentation,
         kind: item.kind === 'FUNCTION'
@@ -373,6 +467,11 @@ export default {
         this.intelligenceDisposables.push(monaco.languages.registerHoverProvider(this.language, {
           provideHover: async (model, position) => {
             if (!currentModel(model)) return null
+            // 已渲染的引用由编码装饰统一提供完整提示，避免与通用悬浮信息重复。
+            if (!this.hoverProvider && this.showReferenceDecorations && model.getDecorationsInRange?.({
+              startLineNumber: position.lineNumber, endLineNumber: position.lineNumber,
+              startColumn: position.column, endColumn: position.column,
+            }).some(decoration => decoration.options.description === 'engine-content-code')) return null
             const context = { model, position, monaco, editor: this.editor }
             const custom = this.hoverProvider
               ? await this.hoverProvider(context)
@@ -394,13 +493,14 @@ export default {
               ?? matchedReference.varObj?.currentVersion
               ?? matchedReference.varObj?.version
             )
-            const versionLabel = version != null ? `v${version}` : '版本未提供'
+            const versionLabel = version != null ? `v${version}` : ''
             const typeLabel = referenceTypeDisplay({
               option: matchedReference || { _refType: custom.refType },
             })
             return {
               contents: [
-                { value: `**${typeLabel} · ${custom.refCode || ''} · ${custom.label || custom.refCode || ''} · ${versionLabel}**` },
+                { value: `**${[contentSourceIcon({ kind: 'REFERENCE', refType: custom.refType || 'VARIABLE' }), typeLabel,
+                  custom.label || custom.refCode, custom.refCode, versionLabel || '—'].join(' · ')}**` },
                 { value: `数据类型：\`${custom.valueType || matchedReference?.varType || 'OBJECT'}\`` },
               ],
             }

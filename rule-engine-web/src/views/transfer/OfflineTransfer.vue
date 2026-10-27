@@ -225,7 +225,7 @@
             </div>
             <el-button size="small" @click="loadLogs">刷新</el-button>
           </div>
-          <el-table v-loading="logsLoading" :data="logs" size="small" class="transfer-table">
+          <el-table :aria-busy="logsLoading" :data="logs" size="small" class="transfer-table">
             <el-table-column prop="operationType" label="操作" width="100">
               <template #default="{ row }">{{ row.operationType === 'EXPORT' ? '导出' : '导入' }}</template>
             </el-table-column>

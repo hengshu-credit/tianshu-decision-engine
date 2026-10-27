@@ -14,6 +14,19 @@ const snapshot = {
 }
 
 describe('ExecutionMetricsPanel', () => {
+  test('模型预热重试更新就绪状态，迟到的旧指标不能回写失败状态', async () => {
+    let finishMetrics
+    runtimeLogApi.getExecutionMetrics.mockImplementationOnce(() => new Promise(resolve => { finishMetrics = resolve }))
+    runtimeLogApi.retryModelWarmup.mockResolvedValueOnce({ data: { state: 'READY', targetCount: 1, successCount: 1, failureCount: 0, cpuFallbackCount: 0, failures: [] } })
+    const wrapper = mount(ExecutionMetricsPanel)
+    await wrapper.vm.retryModels()
+    finishMetrics({ data: { ...snapshot, onnxWarmup: { state: 'FAILED', failureCount: 1 } } })
+    await flushPromises()
+    expect(wrapper.vm.modelWarmup.state).toBe('READY')
+    expect(wrapper.vm.modelWarmupRetrying).toBe(false)
+    expect(wrapper.vm.loading).toBe(false)
+    wrapper.unmount()
+  })
   beforeEach(() => {
     runtimeLogApi.getExecutionMetrics.mockResolvedValue({ data: snapshot })
   })

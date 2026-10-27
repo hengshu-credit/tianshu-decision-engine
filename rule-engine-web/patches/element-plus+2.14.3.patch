@@ -1,3 +1,38 @@
+diff --git a/node_modules/element-plus/es/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.mjs b/node_modules/element-plus/es/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.mjs
+--- a/node_modules/element-plus/es/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.mjs
++++ b/node_modules/element-plus/es/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.mjs
+@@ -14,7 +14,7 @@
+ import { inputNumberEmits, inputNumberProps } from "./input-number.mjs";
+ import { isNil } from "lodash-unified";
+ import { ArrowDown, ArrowUp, Minus, Plus } from "@element-plus/icons-vue";
+-import { computed, createBlock, createCommentVNode, createElementBlock, createSlots, createVNode, defineComponent, normalizeClass, onMounted, onUpdated, openBlock, reactive, ref, renderSlot, unref, watch, withCtx, withDirectives, withKeys, withModifiers } from "vue";
++import { computed, createBlock, createCommentVNode, createElementBlock, createSlots, createVNode, defineComponent, normalizeClass, onMounted, openBlock, reactive, ref, renderSlot, unref, watch, withCtx, withDirectives, withKeys, withModifiers } from "vue";
+ //#region ../../packages/components/input-number/src/input-number.vue?vue&type=script&setup=true&lang.ts
+ const _hoisted_1 = ["aria-label"];
+ const _hoisted_2 = ["aria-label"];
+@@ -215,6 +215,7 @@
+ 		});
+-		onUpdated(() => {
++		watch([() => data.currentValue, inputNumberDisabled], () => {
+ 			(input.value?.input)?.setAttribute("aria-valuenow", `${data.currentValue ?? ""}`);
++			(input.value?.input)?.setAttribute("aria-disabled", String(inputNumberDisabled.value));
+-		});
++		}, { flush: "post" });
+ 		__expose({
+ 			/** @description get focus the input component */
+diff --git a/node_modules/element-plus/lib/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.js b/node_modules/element-plus/lib/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.js
+--- a/node_modules/element-plus/lib/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.js
++++ b/node_modules/element-plus/lib/components/input-number/src/input-number.vue_vue_type_script_setup_true_lang.js
+@@ -215,6 +215,7 @@
+ 		});
+-		(0, vue.onUpdated)(() => {
++		(0, vue.watch)([() => data.currentValue, inputNumberDisabled], () => {
+ 			(input.value?.input)?.setAttribute("aria-valuenow", `${data.currentValue ?? ""}`);
++			(input.value?.input)?.setAttribute("aria-disabled", String(inputNumberDisabled.value));
+-		});
++		}, { flush: "post" });
+ 		__expose({
+ 			/** @description get focus the input component */
 diff --git a/node_modules/element-plus/es/components/tabs/src/tab-nav.mjs b/node_modules/element-plus/es/components/tabs/src/tab-nav.mjs
 --- a/node_modules/element-plus/es/components/tabs/src/tab-nav.mjs
 +++ b/node_modules/element-plus/es/components/tabs/src/tab-nav.mjs

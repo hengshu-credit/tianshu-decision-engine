@@ -231,7 +231,8 @@ describe('flow designer style regressions', () => {
     expect(lineage).toContain('v-model="zoomInput"')
     expect(lineage).toContain('zoomPresets')
     expect(lineage).toContain('toolbar-edge-select')
-    expect(lineage).toContain('class="graph-loading-mask"')
+    expect(lineage).not.toContain('graph-loading-mask')
+    expect(lineage).toContain(':aria-busy="loading"')
     expect(lineage).not.toContain('v-loading="loading"')
     expect(lineage).toMatch(
       /\.lineage-canvas-header\s*\{[\s\S]*?flex-direction:\s*column;[\s\S]*?align-items:\s*center;/

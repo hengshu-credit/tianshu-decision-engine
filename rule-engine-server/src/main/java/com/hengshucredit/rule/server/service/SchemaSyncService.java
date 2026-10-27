@@ -271,6 +271,7 @@ public class SchemaSyncService {
             addColumnIfMissing("rule_execution_log", "history_fields", "`history_fields` LONGTEXT DEFAULT NULL");
             addColumnIfMissing("rule_execution_log", "attempt_no", "`attempt_no` INT DEFAULT NULL COMMENT '逻辑执行恢复尝试次数'");
             addIndexIfMissing("rule_execution_log", "idx_history_scope_time", "`execution_project_id`, `root_rule_id`, `started_at`");
+            addIndexIfMissing("rule_execution_log", "idx_execution_project_time", "`execution_project_id`, `create_time`, `id`");
         }
         if (tableExists("rule_runtime_call_log")) {
             addColumnIfMissing("rule_runtime_call_log", "root_trace_id", "`root_trace_id` CHAR(36) DEFAULT NULL");

@@ -73,13 +73,13 @@
       <div class="act-dim-panel">
         <div class="dim-panel-header">
           <el-icon style="color: var(--el-color-primary)"><el-icon-s-unfold /></el-icon> 行维度
-          <el-button size="small" :icon="ElIconPlus" @click="addDimension('row')"
+          <el-button size="small" :icon="ElIconPlus" @click="requestAddDimension('row')"
             >添加行维度</el-button
           >
         </div>
         <div
           v-for="(dim, di) in model.rowDimensions"
-          :key="'rd-' + di"
+          :key="matrixItemKey(dim)"
           class="dim-config-card"
         >
           <div class="dim-config-header">
@@ -92,7 +92,7 @@
               placeholder="选择维度字段或路径"
               width="100%"
               class="dim-field-var"
-              @input="(value) => setDimensionOperand(dim, value)"
+              @input="(value) => requestDimensionOperand(dim, value)"
             />
             <el-input
               v-model="dim.varLabel"
@@ -117,13 +117,14 @@
               size="small"
               :icon="ElIconDelete"
               style="color: #f76e6c"
-              @click="removeDimension('row', di)"
+              :aria-label="`删除行维度 ${di + 1}`"
+              @click="requestRemoveDimension('row', di)"
             />
           </div>
           <div class="segments-area">
             <div
               v-for="(seg, si) in dim.segments"
-              :key="si"
+              :key="matrixItemKey(seg)"
               class="segment-row"
             >
               <el-select
@@ -215,7 +216,8 @@
                 size="small"
                 :icon="ElIconClose"
                 style="color: #ccc"
-                @click="dim.segments.splice(si, 1)"
+                :aria-label="`删除行维度 ${di + 1} 分段 ${si + 1}`"
+                @click="removeSegment(dim, si)"
               />
             </div>
             <el-button
@@ -233,13 +235,13 @@
       <div class="act-dim-panel">
         <div class="dim-panel-header">
           <el-icon style="color: #52c41a"><el-icon-s-fold /></el-icon> 列维度
-          <el-button size="small" :icon="ElIconPlus" @click="addDimension('col')"
+          <el-button size="small" :icon="ElIconPlus" @click="requestAddDimension('col')"
             >添加列维度</el-button
           >
         </div>
         <div
           v-for="(dim, di) in model.colDimensions"
-          :key="'cd-' + di"
+          :key="matrixItemKey(dim)"
           class="dim-config-card"
         >
           <div class="dim-config-header">
@@ -252,7 +254,7 @@
               placeholder="选择维度字段或路径"
               width="100%"
               class="dim-field-var"
-              @input="(value) => setDimensionOperand(dim, value)"
+              @input="(value) => requestDimensionOperand(dim, value)"
             />
             <el-input
               v-model="dim.varLabel"
@@ -277,13 +279,14 @@
               size="small"
               :icon="ElIconDelete"
               style="color: #f76e6c"
-              @click="removeDimension('col', di)"
+              :aria-label="`删除列维度 ${di + 1}`"
+              @click="requestRemoveDimension('col', di)"
             />
           </div>
           <div class="segments-area">
             <div
               v-for="(seg, si) in dim.segments"
-              :key="si"
+              :key="matrixItemKey(seg)"
               class="segment-row"
             >
               <el-select
@@ -375,7 +378,8 @@
                 size="small"
                 :icon="ElIconClose"
                 style="color: #ccc"
-                @click="dim.segments.splice(si, 1)"
+                :aria-label="`删除列维度 ${di + 1} 分段 ${si + 1}`"
+                @click="removeSegment(dim, si)"
               />
             </div>
             <el-button
@@ -471,7 +475,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(rowCombo, ri) in rowCombinations" :key="'row-' + ri">
+            <tr v-for="(rowCombo, ri) in rowCombinations" :key="matrixRowKeys && matrixRowKeys[ri]">
               <!-- 多级行表头：每个行维度一列，使用 rowspan 合并 -->
               <td
                 v-for="cell in rowHeaderCells[ri]"
@@ -484,7 +488,7 @@
               </td>
               <td
                 v-for="(colCombo, ci) in colCombinations"
-                :key="'cell-' + ri + '-' + ci"
+                :key="matrixColumnKeys && matrixColumnKeys[ci]"
                 class="data-cell"
               >
                 <operand-picker
@@ -516,6 +520,7 @@
 
     <!-- 测试弹窗 -->
     <designer-test-dialog
+      @locate="locateDesignerIssue"
       v-model:visible="testVisible"
       :execution-source="designerTestExecutionSource"
       :execution-source-name="viewRevisionLabel"
@@ -581,6 +586,13 @@ import {
 import { formatConditionDescription } from '@/utils/expressionDisplay'
 
 const RANGE_BOUNDARIES = ['[)', '()', '[]', '(]']
+// 编辑会话内使用对象身份关联条件组合；不修改或持久化用户配置字段。
+const matrixItemIds = new WeakMap()
+let matrixItemSequence = 0
+function matrixItemKey(item) {
+  if (!matrixItemIds.has(item)) matrixItemIds.set(item, ++matrixItemSequence)
+  return matrixItemIds.get(item)
+}
 
 function dimensionType(dim) {
   return (
@@ -605,6 +617,8 @@ export default {
         cells: [],
       },
       cellData: [],
+      matrixRowKeys: null,
+      matrixColumnKeys: null,
       testVisible: false,
       testParamsTemplate: {},
       testParamsJson: '{}',
@@ -741,10 +755,10 @@ export default {
     },
   },
   watch: {
-    totalRowCount() {
+    rowCombinations() {
       this.syncCellData()
     },
-    totalColCount() {
+    colCombinations() {
       this.syncCellData()
     },
   },
@@ -753,6 +767,13 @@ export default {
     this.loadContent()
   },
   methods: {
+    matrixItemKey,
+    matrixAxisKeys(dimensions, combinations) {
+      return combinations.map(combination => dimensions
+        .map((dimension, index) => [matrixItemKey(dimension), matrixItemKey(combination[index])])
+        .sort((left, right) => left[0] - right[0])
+        .map(pair => pair.join(':')).join('|'))
+    },
     segmentSummary(dim, segment) {
       const leftOperand = dim.operand || operandFromReferenceFields(dim)
       const right = (field, legacy) => segment[field] || createLiteralOperand(segment[legacy], dimensionType(dim))
@@ -814,29 +835,19 @@ export default {
       }
       return result
     },
-    syncCellData() {
-      const rows = this.totalRowCount
-      const cols = this.totalColCount
-      if (rows === 0 || cols === 0) {
-        this.cellData = []
-        return
-      }
-      const newData = []
-      for (let r = 0; r < rows; r++) {
-        const row = []
-        for (let c = 0; c < cols; c++) {
-          row.push(
-            this.cellData[r] && this.cellData[r][c] != null
-              ? this.cellData[r][c]
-              : createLiteralOperand(
-                  '',
-                  this.model.resultVar.varType || 'STRING'
-                )
-          )
-        }
-        newData.push(row)
-      }
-      this.cellData = newData
+    syncCellData(preservePositions = false) {
+      const rowKeys = this.matrixAxisKeys(this.model.rowDimensions, this.rowCombinations)
+      const columnKeys = this.matrixAxisKeys(this.model.colDimensions, this.colCombinations)
+      const oldRows = new Map((this.matrixRowKeys || []).map((key, index) => [key, index]))
+      const oldColumns = new Map((this.matrixColumnKeys || []).map((key, index) => [key, index]))
+      const previous = this.cellData
+      this.cellData = rowKeys.map((rowKey, ri) => columnKeys.map((columnKey, ci) => {
+        const oldRow = preservePositions ? ri : oldRows.get(rowKey)
+        const oldColumn = preservePositions ? ci : oldColumns.get(columnKey)
+        return previous[oldRow]?.[oldColumn] ?? createLiteralOperand('', this.model.resultVar.varType || 'STRING')
+      }))
+      this.matrixRowKeys = rowKeys
+      this.matrixColumnKeys = columnKeys
     },
     async loadContent() {
       try {
@@ -852,7 +863,7 @@ export default {
       } finally {
         this.normalizeModel()
         this._syncModelVarRefs()
-        this.syncCellData()
+        this.syncCellData(true)
         this.contentLoaded = true
         this.$nextTick(() =>
           this.initializeDesignerDraftTracking(this.serializeDesignerDraft())
@@ -945,14 +956,14 @@ export default {
       ;(this.model.colDimensions || []).forEach((d) => fillRef(d))
       this.syncAllOperands()
     },
-    setDimensionOperand(dim, value) {
+    setDimensionOperand(dim, value, initializeSegments = true) {
       dim['operand'] = value
       dim.varCode = compileOperand(value)
       dim.varLabel = (value && (value.label || value.code || value.value)) || ''
       dim.varType = (value && value.valueType) || dim.varType || 'STRING'
       dim._varId = value && value.refId != null ? value.refId : null
       dim._refType = (value && value.refType) || null
-      if (dim.varType === 'ENUM') {
+      if (initializeSegments && dim.varType === 'ENUM') {
         const options = this.getVarOptions(dim.varCode)
         if (options.length > 0) {
           dim.segments = options.map((o) => ({
@@ -1064,13 +1075,14 @@ export default {
         if (result.changed) setter(result.operand)
       }
       sync(this.model.resultVar, 'operand', (value) =>
-        this.setDimensionOperand(this.model.resultVar, value)
+        this.setDimensionOperand(this.model.resultVar, value, false)
       )
       ;[
         ...(this.model.rowDimensions || []),
         ...(this.model.colDimensions || []),
       ].forEach((dim) => {
-        sync(dim, 'operand', (value) => this.setDimensionOperand(dim, value))
+        // 自动刷新只同步引用；已有分段顺序、条件和对应单元格必须保持原样。
+        sync(dim, 'operand', (value) => this.setDimensionOperand(dim, value, false))
         ;(dim.segments || []).forEach((segment) =>
           ['valueOperand', 'minOperand', 'maxOperand'].forEach((field) =>
             sync(segment, field, (value) =>
@@ -1084,6 +1096,37 @@ export default {
           sync(row, ci, (value) => this.setCellOperand(ri, ci, value))
         )
       )
+    },
+    filledMatrixCells(predicate = () => true) {
+      return this.cellData.reduce((total, row, ri) => total + row.filter((cell, ci) => predicate(ri, ci)
+        && cell && (cell.kind !== 'LITERAL' || (cell.value !== '' && cell.value != null))).length, 0)
+    },
+    async confirmMatrixChange(message, count = this.filledMatrixCells()) {
+      if (!count) return true
+      try {
+        await this.$confirm(`${message} 影响 ${count} 个已配置结果。`, '确认矩阵变更', {
+          type: 'warning', confirmButtonText: '继续变更', cancelButtonText: '保留配置',
+        })
+        return true
+      } catch { return false }
+    },
+    async requestAddDimension(type) {
+      if (await this.confirmMatrixChange('新增维度会改变条件组合，现有矩阵结果将清空，需要重新填写。')) this.addDimension(type)
+    },
+    async requestRemoveDimension(type, index) {
+      if (await this.confirmMatrixChange('删除维度会合并条件组合，现有矩阵结果将清空，需要重新填写。')) this.removeDimension(type, index)
+    },
+    async requestDimensionOperand(dimension, value) {
+      if (JSON.stringify(dimension.operand) === JSON.stringify(value)) return
+      if (!await this.confirmMatrixChange('更换维度字段会改变条件含义，现有矩阵结果将清空，需要重新填写。')) return
+      matrixItemIds.delete(dimension)
+      this.setDimensionOperand(dimension, value)
+      this.syncCellData()
+    },
+    async removeSegment(dimension, index) {
+      const segment = dimension.segments[index]
+      const count = this.filledMatrixCells((ri, ci) => this.rowCombinations[ri]?.includes(segment) || this.colCombinations[ci]?.includes(segment))
+      if (await this.confirmMatrixChange('删除该分段将移除对应组合的结果，其余组合保持不变。', count)) dimension.segments.splice(index, 1)
     },
     addDimension(type) {
       const dims =

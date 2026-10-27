@@ -92,7 +92,7 @@ describe('全局日夜主题样式契约', () => {
     expect(compiled('theme-buttons.scss')).toContain('background: var(--tianshu-button-solid-bg)')
     expect(css).toContain('max-width: 1440px')
     expect(css).not.toContain('.theme-sidebar--static')
-    expect(css).toContain('.layout-main .el-loading-mask')
+    expect(css).toContain('.el-table[aria-busy=true] .el-table__empty-text')
     expect(css).toContain('[data-theme=dark]')
     expect(css).toContain('.el-dialog')
     expect(css).toContain('.el-table')

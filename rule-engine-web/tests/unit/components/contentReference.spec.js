@@ -3,6 +3,18 @@ import { mount } from '@test-utils'
 import ContentReference from '@/components/common/ContentReference.vue'
 import { contentReferenceParts, renderContentReference } from '@/utils/contentReference'
 
+test('编辑器隐藏无实际版本的说明，有效版本及显式固定版本异常仍保留', () => {
+  const reference = { kind: 'REFERENCE', refType: 'VARIABLE', refId: 1, code: 'Original_Code', label: '原始名称', valueType: 'STRING' }
+  const versions = value => contentReferenceParts(value, [], false, 'editor').filter(part => part.key === 'version')
+  expect(versions(reference)).toEqual([])
+  expect(versions({ ...reference, version: 3 }).map(part => part.text)).toEqual(['v3'])
+  expect(versions({ ...reference, versionMode: 'LATEST' }).map(part => part.text)).toEqual(['最新'])
+  expect(versions({ ...reference, versionMode: 'FIXED' }).map(part => part.text)).toEqual(['版本未提供'])
+  expect(versions({ ...reference, refType: 'FUNCTION', builtin: true })).toEqual([])
+  expect(contentReferenceParts(reference).find(part => part.key === 'version').text).toBe('版本未提供')
+  expect(reference.code).toBe('Original_Code')
+})
+
 test('通用组件和图形适配使用同一来源、类型、名称、编码、版本分段', () => {
   const value = { kind: 'REFERENCE', refType: 'MODEL', refId: '9007199254740993', label: '风险模型', code: 'risk', valueType: 'OBJECT', versionMode: 'FIXED', version: 3 }
   const wrapper = mount(ContentReference, { props: { value } })

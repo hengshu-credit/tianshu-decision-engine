@@ -16,6 +16,10 @@ export function retryRuleWarmup() {
   return request({ url: '/rule/ops/rule-warmup/retry', method: 'post' })
 }
 
+export function retryModelWarmup() {
+  return request({ url: '/rule/ops/model-warmup/retry', method: 'post', timeout: 180000 })
+}
+
 export function getRuntimeCallPayload(id, projectId) {
   return request({
     url: `/rule/runtime-log/${id}/payload`,

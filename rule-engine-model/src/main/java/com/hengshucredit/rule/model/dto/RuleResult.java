@@ -29,6 +29,10 @@ public class RuleResult implements PlatformOutcome {
     private String artifactDigest;
     /** Present only for an explicitly selected management-test source. */
     private RuleTestExecutionIdentity executionIdentity;
+    /** 可定位到本次执行模型的业务诊断，不包含输入值或凭据。 */
+    private List<RuleValidationIssue> executionIssues;
+    /** 保留底层执行信息，控制台按需展开。 */
+    private String executionErrorDetail;
 
     @lombok.Getter(lombok.AccessLevel.NONE)
     @lombok.Setter(lombok.AccessLevel.NONE)

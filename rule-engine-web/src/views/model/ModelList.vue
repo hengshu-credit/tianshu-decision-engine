@@ -102,7 +102,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
-          <table-column-settings :columns="modelColumns" storage-key="tianshu:table-columns:model-list" />
+          <table-column-settings v-model="tableColumnOrders.modelColumns" :columns="modelColumns" storage-key="tianshu:table-columns:model-list" />
               <governance-workspace-toolbar resource-type="MODEL" />
               <el-button
                 v-permission="'model:edit'"
@@ -121,13 +121,14 @@
           :data="models"
           border
           size="small"
-          v-loading="loading"
+          :aria-busy="loading"
           style="width: 100%"
         >
           <template v-slot:empty>
             <div class="tab-empty">暂无模型，点击「上传模型」添加</div>
           </template>
-          <el-table-column label="作用范围" width="90" align="center">
+          <template v-for="columnKey in (tableColumnOrders.modelColumns || modelColumns.map(column => column.key))" :key="columnKey">
+          <el-table-column v-if="columnKey === 'scope'" label="作用范围" width="90" align="center">
             <template v-slot="{ row }">
               <el-tag
                 :class="
@@ -138,40 +139,40 @@
               >
             </template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'projectName'"
             label="项目名称"
             min-width="120"
             show-overflow-tooltip
           >
             <template v-slot="{ row }">{{ modelProjectName(row) }}</template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'modelCode'"
             prop="modelCode"
             label="模型编码"
             min-width="140"
             show-overflow-tooltip
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'modelName'"
             prop="modelName"
             label="模型名称"
             min-width="160"
             show-overflow-tooltip
           />
-          <el-table-column label="模型大类" min-width="170" align="center">
+          <el-table-column v-if="columnKey === 'modelType'" label="模型大类" min-width="170" align="center">
             <template v-slot="{ row }"
               ><el-tag size="small">{{
                 modelTypeLabel(row.modelType)
               }}</el-tag></template
             >
           </el-table-column>
-          <el-table-column label="模型格式" min-width="90" align="center">
+          <el-table-column v-if="columnKey === 'modelFormat'" label="模型格式" min-width="90" align="center">
             <template v-slot="{ row }"
               ><el-tag size="small" type="info">{{
                 row.modelFormat
               }}</el-tag></template
             >
           </el-table-column>
-          <el-table-column label="配置设备" min-width="90" align="center">
+          <el-table-column v-if="columnKey === 'provider'" label="配置设备" min-width="90" align="center">
             <template v-slot="{ row }">
               <el-tag
                 v-if="row.modelFormat === 'ONNX'"
@@ -185,7 +186,7 @@
               <span v-else>—</span>
             </template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'runtime'"
             label="实际运行状态"
             min-width="120"
             align="center"
@@ -203,31 +204,31 @@
               <span v-else>—</span>
             </template>
           </el-table-column>
-          <el-table-column label="启动预加载" min-width="90" align="center">
+          <el-table-column v-if="columnKey === 'preload'" label="启动预加载" min-width="90" align="center">
             <template v-slot="{ row }">{{
               row.modelFormat === 'ONNX' && row.preloadOnStartup === 1
                 ? '是'
                 : '否'
             }}</template>
           </el-table-column>
-          <el-table-column label="执行超时" min-width="90" align="center">
+          <el-table-column v-if="columnKey === 'timeout'" label="执行超时" min-width="90" align="center">
             <template v-slot="{ row }"
               >{{ row.executionTimeoutMs || 120000 }} ms</template
             >
           </el-table-column>
-          <el-table-column label="字段数" min-width="80" align="center">
+          <el-table-column v-if="columnKey === 'fieldCount'" label="字段数" min-width="80" align="center">
             <template v-slot="{ row }"
               >{{ row.inputFieldCount || 0 }}进 /
               {{ row.outputFieldCount || 0 }}出</template
             >
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'currentVersion'"
             prop="currentVersion"
             label="设计版本"
             min-width="70"
             align="center"
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'publishedVersion'"
             prop="publishedVersion"
             label="发布版本"
             min-width="70"
@@ -237,7 +238,7 @@
               row.publishedVersion || '-'
             }}</template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'status'"
             prop="status"
             label="状态"
             min-width="160"
@@ -251,6 +252,7 @@
               ></governance-resource-status></template
             >
           </el-table-column>
+          </template>
           <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['详情', '编辑', '版本', '发布', '转为全局', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
@@ -872,12 +874,22 @@ export default {
   mixins: [governanceWorkspaceMixin],
   data() {
     return {
+      tableColumnOrders: { modelColumns: null },
       modelColumns: [
-        { key: 'scope', label: '作用范围' }, { key: 'projectName', label: '项目名称' },
-        { key: 'modelCode', label: '模型编码' }, { key: 'modelName', label: '模型名称' },
-        { key: 'modelType', label: '模型大类' }, { key: 'modelFormat', label: '模型格式' },
-        { key: 'provider', label: '配置设备' }, { key: 'runtime', label: '实际运行状态' },
-        { key: 'preload', label: '启动预加载' }, { key: 'timeout', label: '执行超时' }, { key: 'fieldCount', label: '字段数' },
+        { key: 'scope', label: '作用范围' },
+        { key: 'projectName', label: '项目名称' },
+        { key: 'modelCode', label: '模型编码' },
+        { key: 'modelName', label: '模型名称' },
+        { key: 'modelType', label: '模型大类' },
+        { key: 'modelFormat', label: '模型格式' },
+        { key: 'provider', label: '配置设备' },
+        { key: 'runtime', label: '实际运行状态' },
+        { key: 'preload', label: '启动预加载' },
+        { key: 'timeout', label: '执行超时' },
+        { key: 'fieldCount', label: '字段数' },
+        { key: 'currentVersion', label: '设计版本' },
+        { key: 'publishedVersion', label: '发布版本' },
+        { key: 'status', label: '状态' },
       ],
       loading: false,
       pendingModel: {},

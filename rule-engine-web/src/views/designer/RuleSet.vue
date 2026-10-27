@@ -258,6 +258,7 @@
     />
 
     <designer-test-dialog
+      @locate="locateDesignerIssue"
       v-model:visible="testVisible"
       :execution-source="designerTestExecutionSource"
       :execution-source-name="viewRevisionLabel"
@@ -278,7 +279,7 @@
         :data="versions"
         border
         size="small"
-        v-loading="versionLoading"
+        :aria-busy="versionLoading"
         max-height="360"
       >
         <el-table-column prop="version" label="版本" width="80">

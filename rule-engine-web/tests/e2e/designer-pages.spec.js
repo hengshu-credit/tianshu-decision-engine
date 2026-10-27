@@ -1,3 +1,4 @@
+const { insertScriptReference } = require('./support/scriptPicker.cjs')
 const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createDesignerApiData } = require('./support/designerFixtures.cjs')
@@ -224,7 +225,7 @@ for (const designer of [...designers, { name: 'QL 脚本', path: '/designer/scri
       await page.getByRole('button', { name: designer.action, exact: true }).first().click()
       await expect(page.locator(designer.itemSelector)).toHaveCount(count + 1)
     } else {
-      await page.locator('.se-var-item').filter({ hasText: 'age' }).first().dblclick()
+      await insertScriptReference(page, 'age')
       await expect(page.getByRole('textbox', { name: /Editor content/ })).toHaveValue('age')
     }
     await expect(page.getByTestId('designer-info').getByRole('status')).toContainText('有未保存修改')
@@ -795,9 +796,7 @@ test('QL 脚本编辑器可加载变量、插入字段并保持工具栏可操�
   await expectDesignerShell(page, 'QL脚本编辑器', '编译')
   await expect(page.getByRole('button', { name: '保存' })).toBeVisible()
   await expect(page.getByRole('button', { name: '测试', exact: true })).toBeEnabled()
-  const variable = page.locator('.se-var-item').filter({ hasText: 'age' }).first()
-  await expect(variable).toBeVisible()
-  await variable.dblclick()
+  await insertScriptReference(page, 'age')
   await expect(page.locator('.monaco-editor-container')).toBeVisible()
   await expect.poll(async () => page.locator('.view-lines').textContent()).toContain('age')
   expect(pageErrors).toEqual([])
@@ -836,18 +835,19 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
     const editor = page.getByRole('textbox', { name: /Editor content/ })
     await expect(editor).toBeVisible()
     // 所有脚本编辑都通过键盘和字段列表完成，API 只保存 UI 实际提交的脚本。
-    await page.locator('.se-var-item').filter({ has: page.locator('.content-ref__code', { hasText: /^TaxRequest.orders$/ }) }).dblclick()
-    await editor.press('End')
+    await insertScriptReference(page, 'TaxRequest.orders')
+    await editor.press('Control+End')
     await page.keyboard.insertText('[0].amount + ')
-    await page.locator('.se-var-item').filter({ has: page.locator('.content-ref__code', { hasText: /^age$/ }) }).dblclick()
-    await editor.press('Home')
+    await insertScriptReference(page, 'age')
+    await editor.press('Control+Home')
     await page.keyboard.insertText('result = ')
-    await editor.press('End')
+    // 引用展示可能折行；这里要追加到原始脚本文档末尾，而不是当前视觉行末尾。
+    await editor.press('Control+End')
     await page.keyboard.insertText(';\ncalculated = ')
-    await page.locator('.se-var-item').filter({ hasText: 'risk()' }).dblclick()
+    await insertScriptReference(page, 'risk()')
     await editor.press('ArrowLeft')
     await page.keyboard.insertText('result')
-    await editor.press('End')
+    await editor.press('Control+End')
     await page.keyboard.insertText(';\n// age 与 TaxRequest.orders 不应渲染\n"age";\n_result = {"age": age, "TaxRequest.orders.amount": risk(age), "other": {"age": age}};\n_result')
     const script = 'result = TaxRequest.orders[0].amount + age;\ncalculated = risk(result);\n// age 与 TaxRequest.orders 不应渲染\n"age";\n_result = {"age": age, "TaxRequest.orders.amount": risk(age), "other": {"age": age}};\n_result'
     const labels = page.locator('.view-lines .content-ref__name').filter({ hasText: /\S/ })
@@ -875,10 +875,15 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
         const context = canvas.getContext('2d')
         context.fillStyle = style.backgroundColor
         context.fillRect(0, 0, 1, 1)
-        return { color: style.color, background: style.backgroundColor, alpha: context.getImageData(0, 0, 1, 1).data[3], border: style.borderWidth, radius: style.borderRadius }
+        const background = [...context.getImageData(0, 0, 1, 1).data]
+        context.fillStyle = style.color; context.fillRect(0, 0, 1, 1)
+        const foreground = [...context.getImageData(0, 0, 1, 1).data]
+        const luminance = rgb => rgb.slice(0, 3).map(value => value / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4).reduce((total, value, index) => total + value * [.2126, .7152, .0722][index], 0)
+        const first = luminance(background), second = luminance(foreground)
+        return { color: style.color, background: style.backgroundColor, alpha: background[3], contrast: (Math.max(first, second) + .05) / (Math.min(first, second) + .05), border: style.borderWidth, radius: style.borderRadius }
       }))
     const referenceStyles = await readReferenceStyles()
-    expect(new Set(referenceStyles.map(style => style.color)).size).toBe(3)
+    expect(referenceStyles.every(style => style.contrast >= 4.5)).toBe(true)
     expect(new Set(referenceStyles.map(style => style.background)).size).toBe(3)
     for (const style of referenceStyles) {
       expect(style.alpha).toBe(255)
@@ -914,8 +919,8 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
     await page.getByRole('button', { name: '本地用户的账户菜单' }).click()
     await page.getByRole('menuitem', { name: '主题设置' }).click()
     await page.locator('[data-accent="MIDNIGHT_PURPLE"]').click()
-    await expect.poll(async () => (await readReferenceStyles())[0].color).not.toBe(referenceStyles[0].color)
-    expect(new Set((await readReferenceStyles()).map(style => style.color)).size).toBe(3)
+    await expect.poll(async () => (await readReferenceStyles())[0].background).not.toBe(referenceStyles[0].background)
+    expect((await readReferenceStyles()).every(style => style.contrast >= 4.5)).toBe(true)
     expect(new Set((await readReferenceStyles()).map(style => style.background)).size).toBe(3)
     await page.getByRole('dialog', { name: '主题设置' }).getByRole('button', { name: '取消', exact: true }).click()
     await page.setViewportSize({ width: 1024, height: 768 })

@@ -90,19 +90,20 @@
         </el-form>
         <div class="uiue-btn-bar">
           <div class="btn-right">
-            <table-column-settings :columns="approvalColumns" storage-key="tianshu:table-columns:approval-list" />
+            <table-column-settings v-model="tableColumnOrders.approvalColumns" :columns="approvalColumns" storage-key="tianshu:table-columns:approval-list" />
           </div>
         </div>
       </div>
 
       <el-table show-overflow-tooltip
-        v-loading="loading"
+        :aria-busy="loading"
         :data="records"
         row-key="id"
         class="approval-table management-table"
         @row-click="openDetail"
       >
-        <el-table-column label="审批申请" min-width="250">
+        <template v-for="columnKey in (tableColumnOrders.approvalColumns || approvalColumns.map(column => column.key))" :key="columnKey">
+        <el-table-column v-if="columnKey === 'request'" label="审批申请" min-width="250">
           <template #default="{ row }">
             <div class="request-cell">
               <span class="request-icon">{{ moduleInitial(row.resourceType) }}</span>
@@ -113,29 +114,30 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="类型" width="110">
+        <el-table-column v-if="columnKey === 'type'" label="类型" width="110">
           <template #default="{ row }">
             {{ resourceTypeLabel(row.resourceType) }}
           </template>
         </el-table-column>
-        <el-table-column label="动作" width="100">
+        <el-table-column v-if="columnKey === 'action'" label="动作" width="100">
           <template #default="{ row }">
             <span class="action-label">{{ actionLabel(row.action) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="110">
+        <el-table-column v-if="columnKey === 'status'" label="状态" width="110">
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" effect="light">
               {{ statusLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="applicant" label="申请人" width="130" />
-        <el-table-column label="提交时间" width="172">
+        <el-table-column v-if="columnKey === 'applicant'" prop="applicant" label="申请人" width="130" />
+        <el-table-column v-if="columnKey === 'submitTime'" label="提交时间" width="172">
           <template #default="{ row }">
             {{ formatTime(row.submitTime || row.createTime) }}
           </template>
         </el-table-column>
+        </template>
         <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['查看'])" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click.stop="openDetail(row)">
@@ -226,10 +228,14 @@ export default {
   components: { RemoteFilterSelect, TableColumnSettings },
   data() {
     return {
+      tableColumnOrders: { approvalColumns: null },
       approvalColumns: [
-        { key: 'request', label: '审批申请' }, { key: 'type', label: '类型' },
-        { key: 'action', label: '动作' }, { key: 'status', label: '状态' },
-        { key: 'applicant', label: '申请人' }, { key: 'submitTime', label: '提交时间' },
+        { key: 'request', label: '审批申请' },
+        { key: 'type', label: '类型' },
+        { key: 'action', label: '动作' },
+        { key: 'status', label: '状态' },
+        { key: 'applicant', label: '申请人' },
+        { key: 'submitTime', label: '提交时间' },
       ],
       taskScopes: [
         { name: 'PENDING', label: '待处理' },

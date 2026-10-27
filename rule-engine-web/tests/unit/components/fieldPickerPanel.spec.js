@@ -1,8 +1,9 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import FieldPickerPanel from '@/components/common/FieldPickerPanel.vue'
-import { buildFieldTree, filterFieldTree, fieldIdentity, visibleFieldRows, fieldTypeIcon } from '@/utils/fieldPicker'
+import { buildFieldTree, filterFieldTree, fieldIdentity, fieldCategoryGroups, visibleFieldRows, fieldTypeIcon } from '@/utils/fieldPicker'
 import { recentFieldKeys, rememberField, selectedFieldKeys } from '@/utils/fieldPickerHistory'
+import { FIELD_PICKER_COLUMNS, fitFieldColumnWidths, resizeFieldColumnWidths, preferredFieldCategoryWidth, setPreferredFieldCategoryWidth, preferredFieldColumnWidths, setPreferredFieldColumnWidths } from '@/utils/fieldPickerPreferences'
 
 const variable = (id, extra = {}) => ({ id, _varId: id, _refType: 'VARIABLE', varCode: `field${id}`, varLabel: `字段${id}`, varType: 'NUMBER', ...extra })
 const objectField = (id, code, type = 'NUMBER', parentFieldId) => variable(id, { _refType: 'DATA_OBJECT', varCode: code, varType: type, parentFieldId, _ref: { category: 'object', objectId: '9223372036854775800', objectCode: 'report', objectLabel: '征信报告' } })
@@ -11,6 +12,81 @@ function panel(props = {}) {
 }
 
 describe('统一字段选择面板', () => {
+  test('四列表头调宽联动其他列，保持总宽与最小宽度，偏好可重置', () => {
+    const previous = preferredFieldColumnWidths.value
+    const wrapper = panel({ embedded: true, items: [variable(1)] })
+    try {
+      wrapper.vm.resetColumnWidths()
+      wrapper.vm.adjustColumnWidth('code', 48)
+      expect(preferredFieldColumnWidths.value).toEqual({ type: 64, name: 80, code: 168, version: 80 })
+      expect(JSON.parse(window.localStorage.getItem('tianshu-field-picker-column-widths')).code).toBe(168)
+      wrapper.vm.adjustColumnWidth('code', -1000)
+      expect(preferredFieldColumnWidths.value.code).toBe(96)
+      expect(Object.values(preferredFieldColumnWidths.value).reduce((sum, width) => sum + width, 0)).toBeCloseTo(392, 2)
+      wrapper.vm.resetColumnWidths()
+      expect(preferredFieldColumnWidths.value).toBeNull()
+    } finally { wrapper.unmount(); setPreferredFieldColumnWidths(previous) }
+  })
+  test('旧像素列宽在宽窄容器中始终填满可用空间，调整后保持新的比例', () => {
+    const saved = { type: 64, name: 104, code: 192, version: 88 }
+    for (const size of [320, 392, 600, 1200]) {
+      const fitted = fitFieldColumnWidths(saved, size)
+      expect(Object.values(fitted).reduce((sum, width) => sum + width, 0)).toBeCloseTo(size, 5)
+      for (const column of FIELD_PICKER_COLUMNS) expect(fitted[column.key]).toBeGreaterThanOrEqual(column.min)
+    }
+    expect(fitFieldColumnWidths(saved, 200)).toEqual({ type: 64, name: 80, code: 96, version: 80 })
+    const before = fitFieldColumnWidths(saved, 600)
+    const after = resizeFieldColumnWidths(before, 'code', 56)
+    expect(after.code).toBeCloseTo(before.code + 56, 5)
+    expect(after.name).toBeLessThan(before.name)
+    expect(Object.values(after).reduce((sum, width) => sum + width, 0)).toBeCloseTo(600, 5)
+    expect(fitFieldColumnWidths(after, 900).code / fitFieldColumnWidths(after, 900).name).toBeCloseTo(after.code / after.name, 4)
+  })
+  test('分类栏支持键盘和拖拽调宽，并保留宽度偏好', async () => {
+    const previous = preferredFieldCategoryWidth.value
+    setPreferredFieldCategoryWidth(144)
+    const wrapper = panel({ embedded: true, items: [variable(1)] })
+    try {
+      await wrapper.get('[aria-label="调整分类栏宽度"]').trigger('keydown', { key: 'ArrowRight' })
+      expect(wrapper.vm.categoryWidth).toBe(160)
+      wrapper.vm.startMotion({ button: 0, clientX: 100, clientY: 0, preventDefault() {} }, 'categories')
+      wrapper.vm.onMotion({ clientX: 180, clientY: 0 })
+      wrapper.vm.stopMotion()
+      expect(wrapper.vm.categoryWidth).toBe(240)
+      expect(window.localStorage.getItem('tianshu-field-picker-category-width')).toBe('240')
+      wrapper.vm.setCategoryWidth(10000)
+      expect(wrapper.vm.categoryWidth).toBe(320)
+    } finally { wrapper.unmount(); setPreferredFieldCategoryWidth(previous) }
+  })
+  test('没有子字段的对象仍以自身名称归类，方法按真实实现方式分类', () => {
+    const items = [{ _varId: 9, _refType: 'DATA_OBJECT_ROOT', rootReference: true, varCode: 'Empty', varLabel: '空对象', varType: 'OBJECT', _ref: { category: 'object', objectId: 9, objectCode: 'Empty', objectLabel: '空对象' } },
+      { _function: true, function: { id: 4, implType: 'JAVA' }, _refType: 'FUNCTION', _varId: 4, varCode: 'calculate()', varLabel: '计算', varType: 'NUMBER' }]
+    const groups = fieldCategoryGroups(buildFieldTree(items))
+    expect(groups.map(group => group.label)).toEqual(['空对象', 'Java 方法'])
+    expect(groups.map(group => group.count)).toEqual([1, 1])
+  })
+  test('二级对象分类按稳定身份过滤，查看字段不清除分类', async () => {
+    const first = objectField(11, 'report.score')
+    const second = objectField(12, 'other.score')
+    second._ref = { ...second._ref, objectId: '2', objectCode: 'other', objectLabel: '另一个报告' }
+    const wrapper = panel({ items: [first, second], category: 'object', embedded: true })
+    expect(wrapper.attributes('role')).toBe('complementary')
+    expect(wrapper.findAll('.fp-subcategory')).toHaveLength(2)
+    const group = wrapper.vm.categoryGroups.find(group => group.label === '征信报告')
+    wrapper.vm.selectGroup(group)
+    await nextTick()
+    expect(wrapper.vm.rows.some(row => row.node.code === 'report.score')).toBe(true)
+    expect(wrapper.vm.rows.some(row => row.node.code === 'other.score')).toBe(false)
+    wrapper.vm.inspect(wrapper.vm.tree.nodes.get('DATA_OBJECT:11'), { detail: 1 })
+    expect(wrapper.vm.selectedGroup).toBe(group.key)
+    wrapper.vm.search('score')
+    await wrapper.setProps({ query: 'score', visible: false })
+    await wrapper.setProps({ visible: true })
+    expect(wrapper.vm.selectedGroup).toBe(group.key)
+    expect(wrapper.vm.rows.some(row => row.node.code === 'other.score')).toBe(false)
+    expect(wrapper.findAll('[role="columnheader"]').map(cell => cell.text())).toEqual(['数据类型', '名称', '编码', '版本'])
+    wrapper.unmount()
+  })
   test('外部调整每页条数会保留当前位置并重算页码', async () => {
     const wrapper = panel({ items: Array.from({ length: 120 }, (_, i) => variable(i)), initialPageSize: 25 })
     wrapper.vm.setPage(3)
@@ -102,9 +178,13 @@ describe('统一字段选择面板', () => {
     expect(wrapper.find('.fp-located').text()).toContain('字段1')
     wrapper.unmount()
   })
-  test('对象分组行不重复计入字段分类数量', () => {
-    const wrapper = panel({ items: [objectField(1, 'report.score'), objectField(2, 'report.name')] })
-    expect(wrapper.vm.categories.find(item => item.key === 'object').count).toBe(2)
+  test('对象分类只计一级对象，子字段不重复计数也不在左侧目录列出', () => {
+    const wrapper = panel({ items: [objectField(1, 'report.score'), objectField(2, 'report.name')], category: 'object', selectedKeys: ['DATA_OBJECT:1', 'DATA_OBJECT:2'], recentKeys: ['DATA_OBJECT:1', 'DATA_OBJECT:2'] })
+    for (const category of ['object', 'all', 'selected', 'recent']) expect(wrapper.vm.categories.find(item => item.key === category).count).toBe(1)
+    expect(wrapper.findAll('.fp-subcategory').map(item => item.text())).toEqual(['征信报告'])
+    expect(wrapper.find('.fp-subcategory small').exists()).toBe(false)
+    expect(wrapper.find('.fp-categories').text()).not.toContain('report.score')
+    expect(wrapper.vm.tree.nodes.has('DATA_OBJECT:1')).toBe(true)
     wrapper.unmount()
   })
   test('完整字段预览使用可换行的受控提示，不依赖原生 title 滚动提示', async () => {

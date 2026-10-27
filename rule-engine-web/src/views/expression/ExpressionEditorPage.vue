@@ -104,7 +104,7 @@
           :title="message"
         />
         <el-form
-          v-loading="schemaLoading"
+          :aria-busy="schemaLoading"
           label-position="top"
           size="small"
           class="expression-test-form"

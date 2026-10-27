@@ -6,6 +6,8 @@ import com.alibaba.fastjson.JSONObject;
 
 import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 决策表：将 JSON 模型编译为 QLExpress 脚本。
@@ -55,8 +57,38 @@ public class DecisionTableCompiler implements RuleCompiler {
             StringBuilder script = new StringBuilder();
             boolean isFirst = "FIRST".equals(hitPolicy);
             boolean isUnique = "UNIQUE".equals(hitPolicy);
+            List<String> uniquePredicates = new ArrayList<>();
+            List<String> uniqueActions = new ArrayList<>();
+            String uniquePrefix = "_unique";
             if (isUnique) {
-                script.append("_uniqueHitCount = 0;\n");
+                StringBuilder businessExpressions = new StringBuilder();
+                if (varContext != null) businessExpressions.append(varContext.getReservedScriptExpressions());
+                for (int i = 0; i < rules.size(); i++) {
+                    JSONObject rule = rules.getJSONObject(i);
+                    JSONArray conditions = rule.getJSONArray("conditions");
+                    uniquePredicates.add(buildRulePredicate(rule,
+                            conditions == null ? new JSONArray() : conditions, legacyColumnDefs, varContext));
+                    JSONArray actions = rule.getJSONArray("actions");
+                    StringBuilder assignments = new StringBuilder();
+                    appendRuleAssignments(assignments, actions == null ? new JSONArray() : actions, globalActionDefs, varContext);
+                    uniqueActions.add(assignments.toString());
+                    businessExpressions.append(uniquePredicates.get(i)).append(assignments);
+                }
+                // 临时变量不得覆盖用户输入的字段，包括 VarContext 解析后的实际脚本名。
+                while (businessExpressions.indexOf(uniquePrefix) >= 0) uniquePrefix += "_";
+                script.append(uniquePrefix).append("HitCount = 0;\n").append(uniquePrefix).append("MatchedRow = -1;\n");
+                script.append(uniquePrefix).append("MatchedRows = \"\";\n");
+                // 先确认唯一命中，再执行动作；条件只计算一次，避免冲突时已产生函数调用等副作用。
+                for (int i = 0; i < rules.size(); i++) {
+                    script.append("if (").append(uniquePredicates.get(i)).append(") {\n    ")
+                            .append(uniquePrefix).append("HitCount = ").append(uniquePrefix).append("HitCount + 1;\n    ")
+                            .append(uniquePrefix).append("MatchedRow = ").append(i).append(";\n    if (")
+                            .append(uniquePrefix).append("HitCount <= 20) {\n        ")
+                            .append(uniquePrefix).append("MatchedRows = ").append(uniquePrefix).append("MatchedRows + \"")
+                            .append(i + 1).append(",\";\n    }\n}\n");
+                }
+                script.append("if (").append(uniquePrefix).append("HitCount > 1) {\n")
+                        .append("    UNIQUE_HIT_POLICY_MATCHED_MULTIPLE_RULES(").append(uniquePrefix).append("MatchedRows);\n}\n");
             }
 
             for (int i = 0; i < rules.size(); i++) {
@@ -67,30 +99,23 @@ public class DecisionTableCompiler implements RuleCompiler {
                 if (ruleConditions == null) ruleConditions = new JSONArray();
                 if (ruleActions == null) ruleActions = new JSONArray();
 
-                if (i == 0 || !isFirst) {
+                if (i == 0 || !(isFirst || isUnique)) {
                     script.append("if (");
                 } else {
                     script.append(" else if (");
                 }
 
-                script.append(buildRulePredicate(rule, ruleConditions, legacyColumnDefs, varContext));
+                script.append(isUnique ? uniquePrefix + "MatchedRow == " + i
+                        : buildRulePredicate(rule, ruleConditions, legacyColumnDefs, varContext));
                 script.append(") {\n");
 
-                if (isUnique) {
-                    script.append("    _uniqueHitCount = _uniqueHitCount + 1;\n");
-                }
-                appendRuleAssignments(script, ruleActions, globalActionDefs, varContext);
+                if (isUnique) script.append(uniqueActions.get(i));
+                else appendRuleAssignments(script, ruleActions, globalActionDefs, varContext);
 
                 script.append("}");
                 if (!isFirst) script.append("\n");
             }
             script.append("\n");
-            if (isUnique) {
-                script.append("if (_uniqueHitCount > 1) {\n");
-                script.append("    UNIQUE_HIT_POLICY_MATCHED_MULTIPLE_RULES();\n");
-                script.append("}\n");
-            }
-
             if (!outputVarCodes.isEmpty()) {
                 RuleScriptResultCollector.prependOutputNullInits(script, outputVarCodes);
                 RuleScriptResultCollector.appendResultMapReturn(script, outputVarCodes);

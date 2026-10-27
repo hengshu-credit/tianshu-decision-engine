@@ -32,7 +32,10 @@
       <el-button size="small" @click="initializeRoute">重新加载</el-button>
     </el-alert>
     <el-form
-      v-if="!initializing && !initializationError"
+      v-if="!initializationError"
+      :disabled="initializing"
+      :inert="initializing || undefined"
+      :aria-busy="initializing"
       ref="form"
       :model="form"
       :rules="rules"

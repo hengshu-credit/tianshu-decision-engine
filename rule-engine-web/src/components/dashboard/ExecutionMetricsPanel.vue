@@ -1,5 +1,5 @@
 <template>
-  <article class="execution-metrics-panel" aria-label="执行容量与持久化状态">
+  <article class="execution-metrics-panel" aria-label="执行容量与持久化状态" :aria-busy="loading">
     <header class="execution-metrics-panel__header">
       <div>
         <h2>执行容量与持久化状态</h2>
@@ -33,10 +33,7 @@
       show-icon
     />
 
-    <div v-if="loading && !loaded" class="execution-metrics-panel__state" v-loading="true">
-      正在加载执行指标
-    </div>
-    <div v-else-if="snapshotStatus === 'UNKNOWN'" class="execution-metrics-panel__state execution-metrics-panel__state--unknown">
+    <div v-if="!loading && snapshotStatus === 'UNKNOWN'" class="execution-metrics-panel__state execution-metrics-panel__state--unknown">
       暂无可用指标快照，请刷新重试
     </div>
     <div v-else class="execution-metrics-panel__content">
@@ -162,7 +159,7 @@
               {{ warmupLabel(ruleWarmup.state) }}
             </el-tag>
             <el-button
-              v-if="ruleWarmup.state === 'FAILED' || Number(ruleWarmup.failureCount) > 0"
+              v-if="canRetryRuleWarmup && (ruleWarmup.state === 'FAILED' || Number(ruleWarmup.failureCount) > 0)"
               v-permission="'rule:submit'"
               data-testid="execution-metrics-warmup-retry"
               size="small"
@@ -185,13 +182,35 @@
             <small>{{ failure.message || '未知预热错误' }}</small>
           </div>
         </div>
+        <p v-if="ruleWarmup.detailsRestricted" class="execution-metrics-panel__updated">当前账号仅可查看节点汇总，具体失败资源需要全部项目的规则查看权限。</p>
+      </section>
+      <section v-if="metrics.onnxWarmup" class="execution-metrics-group" data-testid="execution-metrics-model-warmup">
+        <div class="execution-metrics-group__heading">
+          <div><h3>模型预热</h3><p>只验证已发布且开启预加载的 ONNX 模型；失败时就绪检查保持关闭。</p></div>
+          <div class="execution-metrics-group__heading-actions">
+            <el-tag size="small" :type="warmupType(modelWarmup.state)">{{ warmupLabel(modelWarmup.state) }}</el-tag>
+            <el-button v-if="canRetryModelWarmup && (modelWarmup.state === 'FAILED' || Number(modelWarmup.failureCount) > 0)" data-testid="execution-metrics-model-warmup-retry" size="small" :loading="modelWarmupRetrying" :disabled="warmupRetrying" @click="retryModels">重新验证模型预热</el-button>
+          </div>
+        </div>
+        <div class="execution-metrics-grid">
+          <metric-item label="模型目标" :value="formatNumber(modelWarmup.targetCount)" />
+          <metric-item label="预热成功" :value="formatNumber(modelWarmup.successCount)" />
+          <metric-item label="预热失败" :value="formatNumber(modelWarmup.failureCount)" :tone="warningTone(modelWarmup.failureCount)" />
+          <metric-item label="CPU 回退" :value="formatNumber(modelWarmup.cpuFallbackCount)" :tone="warningTone(modelWarmup.cpuFallbackCount)" />
+        </div>
+        <p v-if="modelWarmup.detailsRestricted" class="execution-metrics-panel__updated">当前账号仅可查看节点汇总，具体失败资源需要全部项目的模型查看权限。</p>
+        <p v-else-if="modelWarmup.state === 'FAILED'">检查发布快照、数据库连接和模型运行库后，可重新验证当前节点，无需修改已发布模型。</p>
+        <div v-for="failure in modelWarmup.failures || []" :key="`${failure.modelId}-${failure.version}`" class="execution-metrics-failure">
+          <strong>{{ failure.modelName }}</strong><span>模型 {{ failure.modelId }} / 版本 {{ failure.version }}</span><small>{{ failure.errorType }}</small>
+        </div>
       </section>
     </div>
   </article>
 </template>
 
 <script>
-import { getExecutionMetrics, retryRuleWarmup } from '@/api/runtimeLog'
+import { getExecutionMetrics, retryRuleWarmup, retryModelWarmup } from '@/api/runtimeLog'
+import { hasUnrestrictedPermissions } from '@/security/permissionState'
 import ExecutionMetricsItem from './ExecutionMetricsItem.vue'
 
 export default {
@@ -205,10 +224,15 @@ export default {
       error: '',
       updatedAt: '',
       snapshotStatus: 'UNKNOWN',
-      warmupRetrying: false
+      warmupRetrying: false,
+      modelWarmupRetrying: false,
+      metricsRequestId: 0,
     }
   },
   computed: {
+    canRetryRuleWarmup() { return hasUnrestrictedPermissions('rule:view', 'rule:submit') },
+    canRetryModelWarmup() { return hasUnrestrictedPermissions('model:view', 'model:edit') },
+    modelWarmup() { return this.metrics.onnxWarmup || {} },
     persistence() { return this.metrics.persistence || {} },
     journal() { return this.persistence.journal || {} },
     journalStatusLabel() {
@@ -287,12 +311,16 @@ export default {
   mounted() {
     this.loadMetrics()
   },
+  beforeUnmount() { this.metricsRequestId++ },
   methods: {
     async loadMetrics() {
+      if (this.warmupRetrying || this.modelWarmupRetrying) return
+      const requestId = ++this.metricsRequestId
       this.loading = true
       this.error = ''
       try {
         const response = await getExecutionMetrics()
+        if (requestId !== this.metricsRequestId) return
         if (!this.isValidSnapshot(response && response.data)) {
           this.error = '执行指标快照不完整，请重试'
           this.snapshotStatus = this.loaded ? 'STALE' : 'UNKNOWN'
@@ -303,18 +331,22 @@ export default {
         this.snapshotStatus = 'CURRENT'
         this.updatedAt = new Date().toLocaleTimeString('zh-CN', { hour12: false })
       } catch (error) {
+        if (requestId !== this.metricsRequestId) return
         this.error = error.message || '执行指标加载失败'
         this.snapshotStatus = this.loaded ? 'STALE' : 'UNKNOWN'
       } finally {
-        this.loading = false
+        if (requestId === this.metricsRequestId) this.loading = false
       }
     },
     async retryWarmup() {
-      if (this.warmupRetrying) return
+      if (this.warmupRetrying || this.modelWarmupRetrying || !this.canRetryRuleWarmup) return
+      const requestId = ++this.metricsRequestId
+      this.loading = false
       this.warmupRetrying = true
       this.error = ''
       try {
         const response = await retryRuleWarmup()
+        if (requestId !== this.metricsRequestId) return
         const warmup = response && response.data
         if (warmup && typeof warmup === 'object' && !Array.isArray(warmup) && warmup.state) {
           this.metrics = { ...this.metrics, ruleWarmup: warmup }
@@ -322,14 +354,37 @@ export default {
           this.snapshotStatus = 'CURRENT'
           this.updatedAt = new Date().toLocaleTimeString('zh-CN', { hour12: false })
         } else {
+          this.warmupRetrying = false
           await this.loadMetrics()
         }
       } catch (error) {
+        if (requestId !== this.metricsRequestId) return
         this.error = error.message || '规则预热重试失败'
         this.snapshotStatus = this.loaded ? 'STALE' : 'UNKNOWN'
       } finally {
         this.warmupRetrying = false
       }
+    },
+    async retryModels() {
+      if (this.warmupRetrying || this.modelWarmupRetrying || !this.canRetryModelWarmup) return
+      const requestId = ++this.metricsRequestId
+      this.loading = false
+      this.modelWarmupRetrying = true
+      this.error = ''
+      try {
+        const response = await retryModelWarmup()
+        if (requestId !== this.metricsRequestId) return
+        const warmup = response?.data
+        if (!warmup || typeof warmup !== 'object' || !warmup.state) throw new Error('模型预热响应不完整，请刷新状态')
+        this.metrics = { ...this.metrics, onnxWarmup: warmup }
+        this.loaded = true
+        this.snapshotStatus = 'CURRENT'
+        this.updatedAt = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+      } catch (error) {
+        if (requestId !== this.metricsRequestId) return
+        this.error = error.message || '模型预热重试失败，请刷新状态'
+        this.snapshotStatus = this.loaded ? 'STALE' : 'UNKNOWN'
+      } finally { this.modelWarmupRetrying = false }
     },
     hasValue(value) {
       return value !== undefined && value !== null && value !== ''

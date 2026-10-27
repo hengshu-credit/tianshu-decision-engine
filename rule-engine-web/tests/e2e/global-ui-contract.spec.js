@@ -253,10 +253,12 @@ test('看板初始加载不拉伸说明区，查询保留图表和页面布局',
   })
   try {
     await page.goto('http://tianshu.local/index.html#/dashboard')
-    await expect(page.locator('.dashboard-section__state')).toHaveCount(3)
+    await expect(page.locator('.dashboard-section[aria-busy="true"]')).toHaveCount(3)
+    await expect(page.locator('.dashboard-section__state, .el-loading-mask')).toHaveCount(0)
+    await expect(page.locator('.dashboard-metrics')).toBeVisible()
     expect((await page.locator('.dashboard-heading').boundingBox()).height).toBeLessThan(70)
     release()
-    await expect(page.locator('.dashboard-section__state')).toHaveCount(0)
+    await expect(page.locator('.dashboard-section[aria-busy="true"]')).toHaveCount(0)
     const chart = page.locator('.dashboard-chart canvas').first()
     await expect(chart).toBeVisible()
     const canvas = await chart.elementHandle()
@@ -677,7 +679,7 @@ for (const appearance of [
   })
 }
 
-test('数据加载在透明遮罩中央显示统一的瑶光扇叶动画', async ({ page }) => {
+test('数据加载直接保留表头，不添加蒙版或提前显示空数据', async ({ page }) => {
   let releaseProjects
   const projectsReady = new Promise(resolve => { releaseProjects = resolve })
   const apiData = createManagementApiData()
@@ -690,31 +692,16 @@ test('数据加载在透明遮罩中央显示统一的瑶光扇叶动画', async
   try {
     await page.goto('http://tianshu.local/index.html#/project')
     const table = page.locator('.el-table').first()
-    const mask = table.locator('.el-loading-mask')
-    const spinner = mask.locator('.el-loading-spinner')
-    await expect(mask).toBeVisible()
-    await expect(spinner).toBeVisible()
-    await expect(spinner.locator('svg.circular')).toBeHidden()
-    expect(await spinner.evaluate(element => getComputedStyle(element, '::before').animationName)).toBe('tianshu-loader2')
-
-    const appearance = await Promise.all([
-      table.boundingBox(),
-      spinner.boundingBox(),
-      mask.evaluate(element => getComputedStyle(element).backgroundColor),
-    ])
-    const [tableBox, spinnerBox, backgroundColor] = appearance
-    expect(backgroundColor).toBe('rgba(0, 0, 0, 0)')
-    expect(Math.abs(
-      spinnerBox.x + spinnerBox.width / 2 - (tableBox.x + tableBox.width / 2)
-    )).toBeLessThanOrEqual(2)
-    expect(Math.abs(
-      spinnerBox.y + spinnerBox.height / 2 - (tableBox.y + tableBox.height / 2)
-    )).toBeLessThanOrEqual(2)
+    await expect(table).toHaveAttribute('aria-busy', 'true')
+    await expect(table.locator('thead')).toBeVisible()
+    await expect(table.locator('.el-table__empty-text')).toBeHidden()
+    await expect(page.locator('.el-loading-mask')).toHaveCount(0)
   } finally {
     releaseProjects()
   }
 
   await expect(page.locator('.el-loading-mask:visible')).toHaveCount(0)
+  await expect(page.locator('.el-table__empty-text').first()).toBeVisible()
   assertClean()
 })
 

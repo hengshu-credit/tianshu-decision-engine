@@ -18,7 +18,7 @@
       <div class="log-actions"><el-button type="primary" :loading="loading" @click="search">查询</el-button><el-button @click="reset">重置</el-button></div>
     </div>
     <p class="log-note">记录具体对象、页面路径、操作类型及结果。页面和字段访问由前端呈报；不记录正文或前后快照，未提交的输入不记为修改。</p>
-    <el-table v-loading="loading" :data="rows" row-key="id" show-overflow-tooltip class="management-table">
+    <el-table :aria-busy="loading" :data="rows" row-key="id" show-overflow-tooltip class="management-table">
       <el-table-column label="操作时间" min-width="175"><template #default="{ row }">{{ formatTime(row.createTime) }}</template></el-table-column>
       <el-table-column prop="username" label="操作账号" min-width="125" />
       <el-table-column label="模块" width="115"><template #default="{ row }">{{ modules[row.module] || row.module }}</template></el-table-column>
@@ -87,12 +87,16 @@ export default {
 </script>
 
 <style scoped>
+.operation-logs > .uiue-filter-toolbar { padding-bottom: 12px; }
 .log-filters { display: flex; flex: 1; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .log-filters > .el-input { width: 180px; }
 .log-filters > .el-select { width: 140px; }
-.log-filters > .el-date-editor { flex: 0 1 340px; width: 340px; max-width: 100%; min-width: 280px; }
+.log-filters > :deep(.el-date-editor) { flex: 0 1 340px; width: 340px; max-width: 100%; min-width: 0; }
 .log-actions { display: flex; gap: 8px; margin-left: auto; }
 .log-note { color: var(--tianshu-text-tertiary); font-size: 12px; line-height: 1.6; }
 .location-path { overflow-wrap: anywhere; }
 .el-pagination { margin-top: 16px; justify-content: flex-end; flex-wrap: wrap; }
+@media (max-width: 768px) {
+  .log-filters { flex-basis: 100%; }
+}
 </style>

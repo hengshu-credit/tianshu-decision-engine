@@ -86,7 +86,7 @@
       </el-form>
     </el-card>
 
-    <el-table :data="rows" border size="small" v-loading="loading">
+    <el-table :data="rows" border size="small" :aria-busy="loading">
       <el-table-column prop="label" label="指标字段" min-width="130" />
       <el-table-column label="引用字段" min-width="300">
         <template #default="{ row }">

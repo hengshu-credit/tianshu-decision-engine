@@ -46,6 +46,22 @@ function mountCachedHost() {
 }
 
 describe('ruleDraftMixin', () => {
+  test('定位执行问题允许当前已测试的未保存画布，但阻止测试后又变化的画布', async () => {
+    const target = { dataset: { validationPath: '$.rules[1]' }, scrollIntoView: vi.fn(), setAttribute: vi.fn(), focus: vi.fn() }
+    const context = {
+      designerHasUnsavedChanges: true,
+      serializeDesignerDraft: () => '{"rules":[{},{}]}',
+      $el: { querySelectorAll: () => [target] },
+      $nextTick: () => Promise.resolve(),
+      $message: { warning: vi.fn(), info: vi.fn() },
+    }
+    await ruleDraftMixin.methods.locateDesignerIssue.call(context, { path: '$.rules[1]', checkedModelJson: '{"rules":[{},{}]}' })
+    expect(target.focus).toHaveBeenCalledTimes(1)
+    context.serializeDesignerDraft = () => '{"rules":[{}]}'
+    await ruleDraftMixin.methods.locateDesignerIssue.call(context, { path: '$.rules[1]', checkedModelJson: '{"rules":[{},{}]}' })
+    expect(target.focus).toHaveBeenCalledTimes(1)
+    expect(context.$message.warning).toHaveBeenCalledWith('配置已变化，请重新检查')
+  })
   test('无冻结制品的本地历史版本按当前依赖预览，保留原版本作为来源', () => {
     const context = {
       viewRevision: { id: '301', sourceId: '301', state: 'VERSION' },

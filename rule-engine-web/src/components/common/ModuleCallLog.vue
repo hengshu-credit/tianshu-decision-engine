@@ -69,7 +69,7 @@
       </el-form>
       <div class="uiue-btn-bar">
         <div class="btn-right">
-          <table-column-settings :columns="moduleColumns" :storage-key="`tianshu:table-columns:module-log-${moduleType.toLowerCase()}`" />
+          <table-column-settings v-model="tableColumnOrders.moduleColumns" :columns="moduleColumns" :storage-key="`tianshu:table-columns:module-log-${moduleType.toLowerCase()}`" />
           <el-button size="small" :icon="ElIconRefresh" @click="load">刷新</el-button>
         </div>
       </div>
@@ -79,39 +79,40 @@
       :data="rows"
       border
       size="small"
-      v-loading="loading"
+      :aria-busy="loading"
       style="width: 100%"
     >
-      <el-table-column prop="actionType" label="动作" width="140">
+      <template v-for="columnKey in (tableColumnOrders.moduleColumns || moduleColumns.map(column => column.key))" :key="columnKey">
+      <el-table-column v-if="columnKey === 'actionType'" prop="actionType" label="动作" width="140">
         <template v-slot="{ row }">{{ actionLabel(row.actionType) }}</template>
       </el-table-column>
-      <el-table-column
+      <el-table-column v-if="columnKey === 'targetCode'"
         prop="targetCode"
         :label="profile.targetLabel"
         min-width="150"
         show-overflow-tooltip
       />
-      <el-table-column
+      <el-table-column v-if="columnKey === 'targetName'"
         prop="targetName"
         label="名称"
         min-width="150"
         show-overflow-tooltip
       />
-      <el-table-column
+      <el-table-column v-if="columnKey === 'traceId'"
         prop="traceId"
         label="模块 trace"
         min-width="190"
         show-overflow-tooltip
       />
       <el-table-column
-        v-if="profile.showMethod"
+        v-if="columnKey === 'requestMethod' && (profile.showMethod)"
         prop="requestMethod"
         :label="profile.methodLabel"
         width="90"
         align="center"
       />
       <el-table-column
-        v-if="profile.showResource"
+        v-if="columnKey === 'requestUrl' && (profile.showResource)"
         prop="requestUrl"
         :label="profile.resourceLabel"
         min-width="220"
@@ -122,20 +123,20 @@
         }}</template>
       </el-table-column>
       <el-table-column
-        v-if="profile.showProject"
+        v-if="columnKey === 'projectCode' && (profile.showProject)"
         prop="projectCode"
         label="项目编码"
         min-width="120"
         show-overflow-tooltip
       />
-      <el-table-column
+      <el-table-column v-if="columnKey === 'summary'"
         :label="profile.summaryLabel"
         min-width="180"
         show-overflow-tooltip
       >
         <template v-slot="{ row }">{{ rowSummary(row) }}</template>
       </el-table-column>
-      <el-table-column label="结果" width="70" align="center">
+      <el-table-column v-if="columnKey === 'success'" label="结果" width="70" align="center">
         <template v-slot="{ row }">
           <el-tag
             :type="row.success === 1 ? 'success' : 'danger'"
@@ -144,15 +145,16 @@
           >
         </template>
       </el-table-column>
-      <el-table-column
+      <el-table-column v-if="columnKey === 'costTimeMs'"
         prop="costTimeMs"
         label="耗时(ms)"
         width="90"
         align="center"
       />
-      <el-table-column prop="createTime" label="时间" width="160" fixed="right">
+      <el-table-column v-if="columnKey === 'createTime'" prop="createTime" label="时间" width="160" fixed="right">
         <template v-slot="{ row }">{{ formatTime(row.createTime) }}</template>
       </el-table-column>
+      </template>
       <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['详情'])" align="center" fixed="right">
         <template v-slot="{ row }">
           <el-button
@@ -495,6 +497,7 @@ const PROFILES = {
 export default {
   data() {
     return {
+      tableColumnOrders: { moduleColumns: null },
       loading: false,
       rows: [],
       total: 0,
@@ -578,7 +581,7 @@ export default {
         { key: 'summary', label: this.profile.summaryLabel },
         { key: 'success', label: '结果' },
         { key: 'costTimeMs', label: '耗时(ms)' },
-        { key: 'createTime', label: '时间' },
+        { key: 'createTime', label: '时间', fixed: 'right' },
       )
       return columns
     },

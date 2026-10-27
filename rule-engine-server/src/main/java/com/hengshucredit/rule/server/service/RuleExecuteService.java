@@ -238,6 +238,7 @@ public class RuleExecuteService {
         }
         runtimeRuleInvoker.enterTest(definition, executionProjectId, projectCode,
                 executeParams, originalInput, modelJson, outputFields);
+        runtimeRuleInvoker.setSourceExecutionPolicy(resolveOptions);
         bindInvocationCache(resolveOptions);
         long executionStart = System.currentTimeMillis();
         java.time.LocalDateTime historyStartedAt = RuntimeContextBridge.currentContext().startedAt();
@@ -483,7 +484,7 @@ public class RuleExecuteService {
                     executeParams, originalInput, false, runtimeModelJson, runtimeSnapshot, resumeTraceId);
         }
         bindInvocationCache(effectiveOptions);
-        runtimeRuleInvoker.setOfflineReplay(effectiveOptions.isOfflineReplay());
+        runtimeRuleInvoker.setSourceExecutionPolicy(effectiveOptions);
         if (idempotencyService != null && idempotencyService.current() != null) {
             var checkpointDecision = idempotencyService.current();
             idempotencyService.recordRequestParams(checkpointDecision, originalInput);

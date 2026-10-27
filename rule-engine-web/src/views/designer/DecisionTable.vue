@@ -65,7 +65,7 @@
         />
         <el-divider direction="vertical" />
         <span class="toolbar-label">命中策略</span>
-        <el-select v-model="model.hitPolicy" size="small" style="width: 110px">
+        <el-select v-model="model.hitPolicy" aria-label="命中策略" size="small" style="width: 110px">
           <el-option label="首次命中" value="FIRST" />
           <el-option label="全部执行" value="ALL" />
           <el-option label="唯一命中" value="UNIQUE" />
@@ -241,6 +241,7 @@
 
     <!-- 测试执行弹窗 -->
     <designer-test-dialog
+      @locate="locateDesignerIssue"
       v-model:visible="testVisible"
       :execution-source="designerTestExecutionSource"
       :execution-source-name="viewRevisionLabel"
@@ -338,7 +339,7 @@ export default {
       const map = {
         FIRST: '首次命中：从上到下匹配规则，返回第一条满足条件的规则结果',
         ALL: '全部执行：匹配所有满足条件的规则并依次执行，结果为最后一条',
-        UNIQUE: '唯一命中：期望有且仅有一条规则满足，否则报错',
+        UNIQUE: '唯一命中：最多允许一条规则满足；多条命中时报错，未命中或冲突时不执行动作',
       }
       return map[this.model.hitPolicy] || ''
     },
@@ -466,6 +467,7 @@ export default {
      * 规范化模型：废弃顶层 conditions/actions 列定义；条件树 + 每规则独立动作列表。
      */
     normalizeModel() {
+      if (this.model.hitPolicy == null) this.model.hitPolicy = 'FIRST'
       this.model.rules = this.model.rules || []
       const legacyCols = Array.isArray(this.model.conditions)
         ? [...this.model.conditions]

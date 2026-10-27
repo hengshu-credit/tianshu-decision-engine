@@ -131,7 +131,7 @@
       :data="list"
       border
       size="small"
-      v-loading="loading"
+      :aria-busy="loading"
       style="width: 100%"
     >
       <el-table-column
@@ -372,7 +372,7 @@
         :data="globalRuleList"
         border
         size="small"
-        v-loading="globalLoading"
+        :aria-busy="globalLoading"
         style="width: 100%"
         max-height="400"
       >

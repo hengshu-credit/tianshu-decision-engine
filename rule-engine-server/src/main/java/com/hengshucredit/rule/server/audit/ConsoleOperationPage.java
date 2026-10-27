@@ -77,6 +77,12 @@ public record ConsoleOperationPage(String module, String resourceType, String re
             return label == null ? null : new ConsoleOperationPage("rule", "RULE", id(parts[2]), label);
         }
         if ("test".equals(section)) return new ConsoleOperationPage("rule", "RULE", id(query.getOrDefault("definitionId", query.get("ruleId"))), "规则调试页");
+        if ("sftp".equals(section)) {
+            String label = parts.length == 1 ? "SFTP数据源配置页"
+                    : parts.length == 2 && "logs".equals(parts[1]) ? "SFTP查询日志页" : null;
+            // SFTP 与数据源接口共用数据库模块权限，页面本身不代表某个数据源 ID。
+            return label == null ? null : new ConsoleOperationPage("database", "SFTP", null, label);
+        }
         String name = MODULE_NAMES.get(section);
         if (name == null) return null;
         String module = "variable".equals(section) ? "field" : section;

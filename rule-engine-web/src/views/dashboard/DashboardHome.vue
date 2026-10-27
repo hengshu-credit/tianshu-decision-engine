@@ -86,7 +86,6 @@
         title="进件与决策"
         description="按所选项目、规则和时间范围统计；同一项目优先按请求编号、其次按 Trace ID 去重，保留最新一条。通过率=通过数/进件数，人审率=人审数/进件数；未分类记录也计入进件数。"
         :loading="sections.applications.loading"
-        :loaded="sections.applications.loaded"
         :error="sections.applications.error"
         @retry="loadApplications"
       >
@@ -236,7 +235,6 @@
         title="数据资源与调用"
         description="查询时效基于运行调用日志；外数只统计实际向供应商发起的 API 请求。"
         :loading="sections.operations.loading"
-        :loaded="sections.operations.loaded"
         :error="sections.operations.error"
         @retry="loadOperations"
       >
@@ -292,14 +290,13 @@
             </div>
           </chart-card>
         </div>
-        <el-empty v-else description="无相关模块查看权限" />
+        <el-empty v-else-if="sections.operations.loaded" description="无相关模块查看权限" />
       </dashboard-section>
 
       <dashboard-section
         title="规则命中与审批"
         description="规则集按命中次数排序取前 10；审批分布固定展示六种生命周期状态。"
         :loading="sections.governance.loading"
-        :loaded="sections.governance.loaded"
         :error="sections.governance.error"
         @retry="loadGovernance"
       >
@@ -322,7 +319,7 @@
             />
           </chart-card>
         </div>
-        <el-empty v-else description="无规则或审批查看权限" />
+        <el-empty v-else-if="sections.governance.loaded" description="无规则或审批查看权限" />
       </dashboard-section>
     </div>
   </div>

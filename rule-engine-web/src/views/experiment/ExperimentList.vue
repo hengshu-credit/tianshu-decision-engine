@@ -59,7 +59,7 @@
       </el-form>
       <div class="uiue-btn-bar">
         <div class="btn-right">
-          <table-column-settings :columns="experimentColumns" storage-key="tianshu:table-columns:experiment-list" />
+          <table-column-settings v-model="tableColumnOrders.experimentColumns" :columns="experimentColumns" storage-key="tianshu:table-columns:experiment-list" />
           <governance-workspace-toolbar resource-type="EXPERIMENT" />
           <el-button
             v-permission="'experiment:edit'"
@@ -73,36 +73,37 @@
       </div>
     </div>
 
-    <el-table class="management-table" show-overflow-tooltip :data="experiments" border size="small" v-loading="loading">
-      <el-table-column
+    <el-table class="management-table" show-overflow-tooltip :data="experiments" border size="small" :aria-busy="loading">
+      <template v-for="columnKey in (tableColumnOrders.experimentColumns || experimentColumns.map(column => column.key))" :key="columnKey">
+      <el-table-column v-if="columnKey === 'experimentCode'"
         prop="experimentCode"
         label="实验编码"
         min-width="150"
         show-overflow-tooltip
       />
-      <el-table-column
+      <el-table-column v-if="columnKey === 'experimentName'"
         prop="experimentName"
         label="实验名称"
         min-width="160"
         show-overflow-tooltip
       />
-      <el-table-column
+      <el-table-column v-if="columnKey === 'projectCode'"
         prop="projectCode"
         label="项目编码"
         min-width="120"
         show-overflow-tooltip
       />
-      <el-table-column label="冠军挑战" width="110" align="center">
+      <el-table-column v-if="columnKey === 'champion'" label="冠军挑战" width="110" align="center">
         <template v-slot="{ row }">{{
           routeModeLabel(row.routingMode)
         }}</template>
       </el-table-column>
-      <el-table-column label="测试分流" width="110" align="center">
+      <el-table-column v-if="columnKey === 'testRouting'" label="测试分流" width="110" align="center">
         <template v-slot="{ row }">{{
           routeModeLabel(row.testRoutingMode || 'CONDITION')
         }}</template>
       </el-table-column>
-      <el-table-column label="生产组" min-width="190">
+      <el-table-column v-if="columnKey === 'production'" label="生产组" min-width="190">
         <template v-slot="{ row }">
           <el-tag
             v-for="g in productionGroups(row)"
@@ -118,7 +119,7 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="测试组" min-width="160">
+      <el-table-column v-if="columnKey === 'test'" label="测试组" min-width="160">
         <template v-slot="{ row }">
           <el-tag
             v-for="g in testGroups(row)"
@@ -134,13 +135,14 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="160" align="center">
+      <el-table-column v-if="columnKey === 'status'" label="状态" width="160" align="center">
         <template v-slot="{ row }">
           <governance-resource-status resource-type="EXPERIMENT" :resource-id="row.id" :status="row.status"><el-tag size="small" :type="row.status === 1 ? 'success' : 'info'">{{
             row.status === 1 ? '启用' : '停用'
           }}</el-tag></governance-resource-status>
         </template>
       </el-table-column>
+      </template>
       <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['详情', '验证执行', '版本', '发布', '删除'])" align="center" fixed="right">
         <template v-slot="{ row }">
           <el-button
@@ -501,11 +503,16 @@ import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operati
 export default {
   data() {
     return {
+      tableColumnOrders: { experimentColumns: null },
       experimentColumns: [
-        { key: 'projectName', label: '项目名称' }, { key: 'experimentCode', label: '实验编码' },
-        { key: 'experimentName', label: '实验名称' }, { key: 'champion', label: '冠军挑战' },
-        { key: 'testRouting', label: '测试分流' }, { key: 'production', label: '生产组' },
-        { key: 'test', label: '测试组' }, { key: 'status', label: '状态' },
+        { key: 'experimentCode', label: '实验编码' },
+        { key: 'experimentName', label: '实验名称' },
+        { key: 'projectCode', label: '项目编码' },
+        { key: 'champion', label: '冠军挑战' },
+        { key: 'testRouting', label: '测试分流' },
+        { key: 'production', label: '生产组' },
+        { key: 'test', label: '测试组' },
+        { key: 'status', label: '状态' },
       ],
       loading: false,
       experiments: [],

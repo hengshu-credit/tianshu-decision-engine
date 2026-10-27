@@ -110,7 +110,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
-          <table-column-settings :columns="datasourceColumns" storage-key="tianshu:table-columns:datasource-list" />
+          <table-column-settings v-model="tableColumnOrders.datasourceColumns" :columns="datasourceColumns" storage-key="tianshu:table-columns:datasource-list" />
               <governance-workspace-toolbar resource-type="EXTERNAL_DATASOURCE" />
               <el-button
                 v-permission="'datasource:edit'"
@@ -128,10 +128,11 @@
           :data="datasourceList"
           border
           size="small"
-          v-loading="datasourceLoading"
+          :aria-busy="datasourceLoading"
           style="width: 100%"
         >
-          <el-table-column label="作用范围" width="90" align="center">
+          <template v-for="columnKey in (tableColumnOrders.datasourceColumns || datasourceColumns.map(column => column.key))" :key="columnKey">
+          <el-table-column v-if="columnKey === 'scope'" label="作用范围" width="90" align="center">
             <template v-slot="{ row }">
               <el-tag
                 :type="row.scope === 'GLOBAL' ? 'warning' : 'success'"
@@ -140,7 +141,7 @@
               >
             </template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'projectName'"
             prop="projectName"
             label="项目名称"
             min-width="120"
@@ -148,45 +149,45 @@
           >
             <template v-slot="{ row }">{{ row.projectName || '—' }}</template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'datasourceCode'"
             prop="datasourceCode"
             label="数据源编码"
             min-width="140"
             show-overflow-tooltip
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'datasourceName'"
             prop="datasourceName"
             label="数据源名称"
             min-width="150"
             show-overflow-tooltip
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'providerName'"
             prop="providerName"
             label="提供方"
             min-width="120"
             show-overflow-tooltip
           />
-          <el-table-column label="协议" width="110" align="center">
+          <el-table-column v-if="columnKey === 'protocol'" label="协议" width="110" align="center">
             <template v-slot="{ row }">
               <el-tag size="small" type="info">{{
                 optionLabel(protocolOptions, row.protocol)
               }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'baseUrl'"
             prop="baseUrl"
             label="基础地址"
             min-width="220"
             show-overflow-tooltip
           />
-          <el-table-column label="鉴权方式" width="110" align="center">
+          <el-table-column v-if="columnKey === 'authType'" label="鉴权方式" width="110" align="center">
             <template v-slot="{ row }">
               <el-tag size="small">{{
                 optionLabel(authTypeOptions, row.authType)
               }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="status" label="状态" width="160" align="center">
+          <el-table-column v-if="columnKey === 'status'" prop="status" label="状态" width="160" align="center">
             <template v-slot="{ row }">
               <governance-resource-status resource-type="EXTERNAL_DATASOURCE" :resource-id="row.id" :status="row.status"><el-tag
                 :type="row.status === 1 ? 'success' : 'info'"
@@ -195,6 +196,7 @@
               ></governance-resource-status>
             </template>
           </el-table-column>
+          </template>
           <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '测试', '版本', '发布', '加接口', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
@@ -341,7 +343,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
-          <table-column-settings :columns="apiColumns" storage-key="tianshu:table-columns:api-list" />
+          <table-column-settings v-model="tableColumnOrders.apiColumns" :columns="apiColumns" storage-key="tianshu:table-columns:api-list" />
               <governance-workspace-toolbar resource-type="EXTERNAL_API" />
               <el-button
                 v-permission="'datasource:edit'"
@@ -359,34 +361,35 @@
           :data="apiList"
           border
           size="small"
-          v-loading="apiLoading"
+          :aria-busy="apiLoading"
           style="width: 100%"
         >
-          <el-table-column
+          <template v-for="columnKey in (tableColumnOrders.apiColumns || apiColumns.map(column => column.key))" :key="columnKey">
+          <el-table-column v-if="columnKey === 'datasourceCode'"
             prop="datasourceCode"
             label="数据源"
             min-width="120"
             show-overflow-tooltip
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'apiCode'"
             prop="apiCode"
             label="接口编码"
             min-width="140"
             show-overflow-tooltip
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'apiName'"
             prop="apiName"
             label="接口名称"
             min-width="150"
             show-overflow-tooltip
           />
-          <el-table-column label="请求" min-width="180" show-overflow-tooltip>
+          <el-table-column v-if="columnKey === 'request'" label="请求" min-width="180" show-overflow-tooltip>
             <template v-slot="{ row }">
               <el-tag size="small" type="info">{{ row.requestMethod }}</el-tag>
               <span class="endpoint-text">{{ row.endpointUrl }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="模式" width="80" align="center">
+          <el-table-column v-if="columnKey === 'mode'" label="模式" width="80" align="center">
             <template v-slot="{ row }">
               <el-tag
                 :type="row.requestMode === 'ASYNC' ? 'warning' : 'success'"
@@ -395,24 +398,24 @@
               >
             </template>
           </el-table-column>
-          <el-table-column label="鉴权" width="110" align="center">
+          <el-table-column v-if="columnKey === 'auth'" label="鉴权" width="110" align="center">
             <template v-slot="{ row }">
               <el-tag size="small">{{
                 optionLabel(authModeOptions, row.authMode)
               }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="超时/重试" width="120" align="center">
+          <el-table-column v-if="columnKey === 'timeout'" label="超时/重试" width="120" align="center">
             <template v-slot="{ row }"
               >{{ row.timeoutMs }}ms / {{ row.retryCount || 0 }}次</template
             >
           </el-table-column>
-          <el-table-column label="响应缓存" width="100" align="center">
+          <el-table-column v-if="columnKey === 'cache'" label="响应缓存" width="100" align="center">
             <template v-slot="{ row }">{{
               formatCacheSeconds(row.responseCacheSeconds)
             }}</template>
           </el-table-column>
-          <el-table-column prop="status" label="状态" width="160" align="center">
+          <el-table-column v-if="columnKey === 'status'" prop="status" label="状态" width="160" align="center">
             <template v-slot="{ row }">
               <governance-resource-status resource-type="EXTERNAL_API" :resource-id="row.id" :status="row.status"><el-tag
                 :type="row.status === 1 ? 'success' : 'info'"
@@ -421,6 +424,7 @@
               ></governance-resource-status>
             </template>
           </el-table-column>
+          </template>
           <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '测试', '版本', '发布', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
@@ -609,16 +613,28 @@ import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operati
 export default {
   data() {
     return {
+      tableColumnOrders: { datasourceColumns: null, apiColumns: null },
       datasourceColumns: [
-        { key: 'scope', label: '作用范围' }, { key: 'projectName', label: '项目名称' },
-        { key: 'datasourceCode', label: '数据源编码' }, { key: 'datasourceName', label: '数据源名称' },
-        { key: 'providerName', label: '提供方' }, { key: 'protocol', label: '协议' },
-        { key: 'baseUrl', label: '基础地址' }, { key: 'authType', label: '鉴权方式' }, { key: 'status', label: '状态' },
+        { key: 'scope', label: '作用范围' },
+        { key: 'projectName', label: '项目名称' },
+        { key: 'datasourceCode', label: '数据源编码' },
+        { key: 'datasourceName', label: '数据源名称' },
+        { key: 'providerName', label: '提供方' },
+        { key: 'protocol', label: '协议' },
+        { key: 'baseUrl', label: '基础地址' },
+        { key: 'authType', label: '鉴权方式' },
+        { key: 'status', label: '状态' },
       ],
       apiColumns: [
-        { key: 'apiCode', label: '接口编码' }, { key: 'apiName', label: '接口名称' },
-        { key: 'request', label: '请求' }, { key: 'mode', label: '模式' }, { key: 'auth', label: '鉴权' },
-        { key: 'timeout', label: '超时/重试' }, { key: 'cache', label: '响应缓存' }, { key: 'status', label: '状态' },
+        { key: 'datasourceCode', label: '数据源' },
+        { key: 'apiCode', label: '接口编码' },
+        { key: 'apiName', label: '接口名称' },
+        { key: 'request', label: '请求' },
+        { key: 'mode', label: '模式' },
+        { key: 'auth', label: '鉴权' },
+        { key: 'timeout', label: '超时/重试' },
+        { key: 'cache', label: '响应缓存' },
+        { key: 'status', label: '状态' },
       ],
       apiGuideTemplates: [
         {

@@ -15,6 +15,25 @@ import static org.junit.Assert.assertEquals;
 public class RuntimeContextBridgeTest {
 
     @Test
+    public void workerPolicyIsCapturedBeforeCallerChangesAndDoesNotLeakBack() {
+        var policy = new RequestContext.SourceExecutionPolicy(true, true, true, true,
+                java.time.LocalDateTime.of(2026, 10, 27, 0, 0));
+        RuntimeContextBridge.currentContext().setSourceExecutionPolicy(policy);
+        var snapshot = RuntimeContextBridge.captureContext();
+        RuntimeContextBridge.currentContext().setSourceExecutionPolicy(RequestContext.SourceExecutionPolicy.DEFAULT);
+        try (var scope = RuntimeContextBridge.installContext(snapshot, null)) {
+            assertEquals(policy, RuntimeContextBridge.currentContext().sourceExecutionPolicy());
+            RuntimeContextBridge.currentContext().setSourceExecutionPolicy(
+                    new RequestContext.SourceExecutionPolicy(false, true, false, false, null));
+        }
+        assertEquals(RequestContext.SourceExecutionPolicy.DEFAULT,
+                RuntimeContextBridge.currentContext().sourceExecutionPolicy());
+        try (var scope = RuntimeContextBridge.installContext(snapshot, null)) {
+            assertEquals(policy, RuntimeContextBridge.currentContext().sourceExecutionPolicy());
+        }
+    }
+
+    @Test
     public void nestedSourceStateResolversRestoreParentAndDoNotLeakIntoWorkers() {
         List<String> calls = new ArrayList<>();
         var context = RuntimeContextBridge.currentContext();

@@ -1,31 +1,39 @@
 <template>
-  <section v-show="visible" ref="panel" class="fp-panel" :class="{ 'fp-panel--compact': width < 680, 'fp-panel--narrow': width < 520, 'fp-panel--editor': editorMode }" role="dialog" aria-label="内容选择器" :style="{ width: width + 'px', height: height + 'px' }">
+  <section v-show="visible" ref="panel" class="fp-panel" :class="{ 'fp-panel--compact': width < 680, 'fp-panel--narrow': width < 520, 'fp-panel--editor': editorMode, 'fp-panel--embedded': embedded }" :role="embedded ? 'complementary' : 'dialog'" :aria-label="embedded ? '天枢决策引擎内容选择器' : '内容选择器'" :style="[embedded ? {} : { width: width + 'px', height: height + 'px' }, tableStyle]">
     <header class="fp-header" @pointerdown="startMotion($event, 'move')">
-      <strong>{{ editorMode ? ({ LITERAL: '调整阈值', PATH: '写入路径', EXPRESSION: '组合表达式' })[editorKind] : '内容选择器' }}</strong>
+      <strong>{{ embedded ? '天枢决策引擎内容选择器' : editorMode ? ({ LITERAL: '调整阈值', PATH: '写入路径', EXPRESSION: '组合表达式' })[editorKind] : '内容选择器' }}</strong>
       <div v-if="editorMode || manualKinds.length || expression" class="fp-actions" role="toolbar" aria-label="配置面板" @pointerdown.stop>
         <button v-if="editorMode" type="button" @click="$emit('back')">返回内容</button>
         <button v-if="manualKinds.includes('LITERAL')" type="button" :aria-pressed="editorMode && editorKind === 'LITERAL'" @click="$emit('manual', 'LITERAL')">输入阈值</button>
         <button v-if="manualKinds.includes('PATH')" type="button" :aria-pressed="editorMode && editorKind === 'PATH'" @click="$emit('manual', 'PATH')">写入路径</button>
         <button v-if="expression" type="button" :aria-pressed="editorMode && editorKind === 'EXPRESSION'" title="在当前面板中配置组合表达式" @click="$emit('expression')">ƒx 组合表达式</button>
       </div>
-      <button type="button" aria-label="关闭内容选择器" @pointerdown.stop @click="$emit('close')">×</button>
+      <button type="button" :aria-label="embedded ? '收起内容选择器' : '关闭内容选择器'" @pointerdown.stop @click="$emit('close')">{{ embedded ? '‹' : '×' }}</button>
     </header>
     <div v-if="editorMode && editorKind === 'EXPRESSION'" class="fp-editor-tools"><slot name="editor-actions" /></div>
     <div v-show="editorMode" class="fp-editor"><slot name="editor" /></div>
     <div v-show="!editorMode" class="fp-body">
-      <nav class="fp-categories" aria-label="内容分类">
+      <nav class="fp-categories" aria-label="内容分类" :style="{ width: categoryWidth + 'px' }">
         <div class="fp-category-list">
-          <button v-for="entry in categories" :key="entry.key" type="button" :class="{ active: category === entry.key }" @click="changeCategory(entry.key)">
-            <span class="fp-category-icon" aria-hidden="true">{{ entry.icon }}</span><span>{{ entry.label }}</span><small>{{ entry.count }}</small>
-          </button>
+          <div v-for="entry in categories" :key="entry.key" class="fp-category-group">
+            <button type="button" :class="{ active: category === entry.key && !selectedGroup }" :aria-expanded="groupsFor(entry.key).length ? category === entry.key : undefined" @click="changeCategory(entry.key)">
+              <span class="fp-category-icon" aria-hidden="true">{{ entry.icon }}</span><span>{{ entry.label }}</span><small title="一级内容数量，不累加子字段">{{ entry.count }}</small>
+            </button>
+            <div v-if="category === entry.key" class="fp-subcategories">
+              <button v-for="group in groupsFor(entry.key)" :key="group.key" type="button" class="fp-subcategory" :class="{ active: selectedGroup === group.key }" :aria-label="`${entry.label}：${group.label}`" :title="group.label" @click="selectGroup(group)"><span>{{ group.label }}</span></button>
+            </div>
+          </div>
         </div>
       <div class="fp-sidebar-hint">单击查看或展开 · 双击 / Enter 选择</div>
       </nav>
+      <div class="fp-category-resizer" role="separator" aria-label="调整分类栏宽度" aria-orientation="vertical" :aria-valuenow="categoryWidth" :aria-valuemin="96" :aria-valuemax="maxCategoryWidth" tabindex="0" @pointerdown.prevent.stop="startMotion($event, 'categories')" @keydown.left.prevent="setCategoryWidth(categoryWidth - 16)" @keydown.right.prevent="setCategoryWidth(categoryWidth + 16)" @dblclick="setCategoryWidth(144)"><span /></div>
       <main class="fp-main">
         <div class="fp-search"><el-input :model-value="query" size="small" clearable aria-label="搜索内容名称或编码" placeholder="搜索内容名称或编码" @update:model-value="search" /></div>
         <div v-if="selectedOutsideSearch" class="fp-located"><span>当前已选（不在搜索结果中）</span><button type="button" @click="preview = selectedNode">{{ selectedNode.name }}</button></div>
-        <div class="fp-columns" role="row"><span>来源 / 类型</span><span>内容名称</span><span>内容编码</span><span>版本选择</span></div>
-        <div ref="viewport" class="fp-viewport" role="treegrid" aria-label="可选内容" :aria-rowcount="rows.length" @scroll="scrollTop = $event.target.scrollTop">
+        <div ref="viewport" class="fp-viewport" role="treegrid" aria-label="可选内容" :aria-rowcount="rows.length + 1" @scroll="scrollTop = $event.target.scrollTop">
+          <div ref="columnHeaders" class="fp-columns" role="row">
+            <span v-for="column in columns" :key="column.key" :data-column-key="column.key" role="columnheader" :aria-label="column.label">{{ column.label }}<span class="fp-column-resizer" role="separator" :aria-label="`调整${column.label}列宽`" aria-orientation="vertical" :aria-valuemin="column.min" :aria-valuenow="Math.round(columnWidths[column.key])" :aria-valuemax="Math.round(columnWidths[column.key] + columnResizeCapacity(column.key))" tabindex="0" title="拖拽或方向键调整列宽；双击恢复默认" @pointerdown.prevent.stop="startColumnResize($event, column.key)" @keydown.left.prevent="adjustColumnWidth(column.key, -16)" @keydown.right.prevent="adjustColumnWidth(column.key, 16)" @dblclick.stop="resetColumnWidths" /></span>
+          </div>
           <div class="fp-sticky">
             <field-picker-row v-for="node in stickyParents" :key="node.key" :node="node" :depth="ancestors(node).length" :selected="node.key === selectedKey" :expanded="true" @preview="inspect(node, $event)" @confirm="confirm(node)">
               <template #version><slot name="version" :item="node.item" :active="preview?.key === node.key"><span class="fp-no-version">{{ versionLabel(node) }}</span></slot></template>
@@ -36,7 +44,7 @@
             <template #version><slot name="version" :item="row.node.item" :active="preview?.key === row.node.key"><span class="fp-no-version" :title="versionLabel(row.node) === '—' ? '该字段没有独立的版本绑定' : '跟随当前目录版本'">{{ versionLabel(row.node) }}</span></slot></template>
           </field-picker-row>
           <div :style="{ height: Math.max(0, pageRows.length - virtualEnd) * rowHeight + 'px' }" />
-          <div v-if="!rows.length" class="fp-empty">{{ loading ? '正在加载字段…' : '没有符合条件的字段' }}</div>
+          <div v-if="!rows.length" class="fp-empty"><template v-if="loading">正在加载字段…</template><slot v-else name="empty">没有符合条件的字段</slot></div>
         </div>
         <el-tooltip
           v-if="previewText"
@@ -57,15 +65,15 @@
         </footer>
       </main>
     </div>
-    <span class="fp-resize" role="separator" aria-label="调整内容选择器大小" @pointerdown.prevent.stop="startMotion($event, 'resize')" />
+    <span v-if="!embedded" class="fp-resize" role="separator" aria-label="调整内容选择器大小" @pointerdown.prevent.stop="startMotion($event, 'resize')" />
   </section>
 </template>
 
 <script>
 import { markRaw } from 'vue'
 import FieldPickerRow from './FieldPickerRow.vue'
-import { buildFieldTree, filterFieldTree, fieldAncestors, FIELD_PAGE_SIZES, FIELD_ROW_HEIGHT, visibleFieldRows } from '@/utils/fieldPicker'
-import { normalizeFieldPageSize } from '@/utils/fieldPickerPreferences'
+import { buildFieldTree, filterFieldTree, fieldAncestors, fieldCategoryGroups, FIELD_PAGE_SIZES, FIELD_ROW_HEIGHT, visibleFieldRows } from '@/utils/fieldPicker'
+import { FIELD_PICKER_COLUMNS, fitFieldColumnWidths, resizeFieldColumnWidths, normalizeFieldPageSize, preferredFieldCategoryWidth, setPreferredFieldCategoryWidth, preferredFieldColumnWidths, setPreferredFieldColumnWidths } from '@/utils/fieldPickerPreferences'
 import { filterFieldTreeByTags } from '@/utils/fieldPickerPolicy'
 import { fieldPickerDetails } from '@/utils/fieldPickerDetails'
 import { canViewPickerItem, recordPickerActivity } from '@/security/pickerAccess'
@@ -79,6 +87,7 @@ export default {
   name: 'FieldPickerPanel',
   components: { FieldPickerRow },
   props: {
+    embedded: Boolean,
     items: { type: Array, default: () => [] }, selectedKey: { type: String, default: '' },
     selectedKeys: { type: Array, default: () => [] }, recentKeys: { type: Array, default: () => [] },
     query: { type: String, default: '' }, category: { type: String, default: 'all' },
@@ -90,17 +99,25 @@ export default {
     selectableTags: { type: [Array, Object], default: null },
   },
   emits: ['category', 'search', 'select', 'manual', 'expression', 'close', 'back', 'move', 'resize', 'page-size'],
-  data() { return { expanded: new Set(), page: 1, pageSize: normalizeFieldPageSize(this.initialPageSize), scrollTop: 0, viewportHeight: 300, preview: null, motion: null, locatePending: true, rowHeight: FIELD_ROW_HEIGHT, lastConfirmKey: '', lastConfirmAt: 0 } },
+  data() { return { expanded: new Set(), selectedGroup: '', page: 1, pageSize: normalizeFieldPageSize(this.initialPageSize), scrollTop: 0, viewportHeight: 300, viewportWidth: 0, panelClientWidth: this.width, layoutObserver: null, preview: null, motion: null, locatePending: true, rowHeight: FIELD_ROW_HEIGHT, lastConfirmKey: '', lastConfirmAt: 0 } },
   computed: {
+    columns() { return FIELD_PICKER_COLUMNS },
+    columnWidths() { return fitFieldColumnWidths(preferredFieldColumnWidths.value, this.viewportWidth ? this.viewportWidth - 16 : 0) },
+    tableStyle() {
+      // 让浏览器直接填满当前容器，不等待 ResizeObserver 回填上一帧的像素宽度。
+      const weights = preferredFieldColumnWidths.value
+      return { '--fp-table-columns': this.columns.map(column => `minmax(${column.min}px, ${weights?.[column.key] || column.width}fr)`).join(' '), '--fp-table-min-width': this.columns.reduce((sum, column) => sum + column.min, 16) + 'px' }
+    },
+    maxCategoryWidth() { return Math.max(96, Math.min(320, this.panelClientWidth - 216)) },
+    categoryWidth() { return Math.min(preferredFieldCategoryWidth.value, this.maxCategoryWidth) },
     pageSizes() { return [...new Set([...FIELD_PAGE_SIZES, this.pageSize])].sort((a, b) => a - b) },
     tree() { return markRaw(filterFieldTreeByTags(filterFieldTree(buildFieldTree(this.items.filter(canViewPickerItem)), this.expectedType), this.visibleTags, this.selectableTags)) },
+    categoryGroups() { return fieldCategoryGroups(this.tree) },
     categories() {
-      const counts = new Map([['all', 0], ['selected', this.availableSelected.length], ['recent', this.availableRecent.length]])
-      this.tree.nodes.forEach(node => {
-        // 对象/模型分组行只是目录结构，不应被计为可选内容数量。
-        if (node.item && (!node.item._versionGroup || node.item.rootReference)) counts.set(node.category, (counts.get(node.category) || 0) + 1)
-      })
-      counts.set('all', [...this.tree.nodes.values()].filter(node => node.item && node.selectable).length)
+      const countRoots = keys => new Set(keys.map(key => this.tree.nodes.get(key)).filter(Boolean)
+        .map(node => (fieldAncestors(node)[0] || node).key)).size
+      const counts = new Map([['all', this.tree.roots.length], ['selected', countRoots(this.availableSelected)], ['recent', countRoots(this.availableRecent)]])
+      this.tree.roots.forEach(node => counts.set(node.category, (counts.get(node.category) || 0) + 1))
       const persistentCategories = new Set(['recent', 'selected'])
       return Object.entries(categoryMeta)
         .filter(([key]) => persistentCategories.has(key) || (counts.get(key) || 0) > 0)
@@ -114,7 +131,8 @@ export default {
         const query = this.query.trim().toLowerCase()
         return keys.map(key => ({ node: this.tree.nodes.get(key), depth: 0 })).filter(({ node }) => !query || [node.name, node.code].some(text => text.toLowerCase().includes(query)))
       }
-      return visibleFieldRows(this.tree, this.expanded, this.category, this.query)
+      const group = this.categoryGroups.find(group => group.key === this.selectedGroup && group.category === this.category)
+      return visibleFieldRows(group ? { ...this.tree, roots: group.roots } : this.tree, this.expanded, this.category, this.query)
     },
     pageCount() { return Math.max(1, Math.ceil(this.rows.length / this.pageSize)) },
     pageRows() { return this.rows.slice((this.page - 1) * this.pageSize, this.page * this.pageSize) },
@@ -133,17 +151,41 @@ export default {
   },
   watch: {
     initialPageSize(value) { this.changePageSize(value, false) },
-    visible(value) { if (value) { this.locatePending = true; this.$nextTick(this.locate) } else this.stopMotion() },
+    visible(value) { if (value) { if (this.embedded) this.$nextTick(this.measure); else { this.locatePending = true; this.$nextTick(this.locate) } } else this.stopMotion() },
     selectedKey() { if (this.visible && this.locatePending) this.$nextTick(this.locate) },
     tree() { if (this.preview && !this.tree.nodes.has(this.preview.key)) this.preview = null; if (this.visible && this.locatePending) this.$nextTick(this.locate) },
     categories(value) { if (!value.some(item => item.key === this.category)) this.changeCategory('all') },
+    categoryGroups(value) { if (this.selectedGroup && !value.some(group => group.key === this.selectedGroup)) this.selectedGroup = '' },
     pageCount(value) { if (this.page > value) this.setPage(value) },
     height() { this.$nextTick(this.measure) },
     width() { this.$nextTick(this.measure) },
   },
-  mounted() { this.measure(); this.locate(); window.addEventListener('resize', this.clamp) },
-  beforeUnmount() { this.stopMotion(); window.removeEventListener('resize', this.clamp) },
+  mounted() {
+    this.measure(); this.locate(); window.addEventListener('resize', this.clamp)
+    if (typeof ResizeObserver === 'function') { this.layoutObserver = markRaw(new ResizeObserver(this.measure)); this.layoutObserver.observe(this.$refs.panel); this.layoutObserver.observe(this.$refs.viewport) }
+  },
+  beforeUnmount() { this.stopMotion(); this.layoutObserver?.disconnect(); window.removeEventListener('resize', this.clamp) },
   methods: {
+    currentColumnWidths() { return this.columnWidths },
+    columnResizeCapacity(key) { return this.columns.filter(column => column.key !== key).reduce((sum, column) => sum + this.columnWidths[column.key] - column.min, 0) },
+    startColumnResize(event, key) {
+      this.measure()
+      this.startMotion(event, 'columns')
+      if (this.motion) { this.motion.columnKey = key; this.motion.columnWidths = this.currentColumnWidths() }
+    },
+    adjustColumnWidth(key, delta) {
+      this.measure()
+      const widths = this.currentColumnWidths()
+      setPreferredFieldColumnWidths(resizeFieldColumnWidths(widths, key, delta))
+    },
+    resetColumnWidths() { setPreferredFieldColumnWidths(null) },
+    groupsFor(category) { return this.categoryGroups.filter(group => group.category === category) },
+    selectGroup(group) {
+      this.selectedGroup = group.key
+      this.locatePending = false
+      this.expanded = new Set([...this.expanded, ...group.roots.filter(node => node.children.length).map(node => node.key)])
+      this.setPage(1)
+    },
     versionLabel(node) {
       if (node.item?.versionMode === 'FIXED') return `${node.item.versionSource === 'FUNCTION_HISTORY' ? '旧' : ''}v${node.item.version}`
       if (node.item?.versionMode === 'LATEST' && node.item.version != null) return `最新·v${node.item.version}`
@@ -152,9 +194,10 @@ export default {
       return version != null ? `${frozen ? '' : '最新 · '}v${version}` : '—'
     },
     ancestors: fieldAncestors,
-    measure() { this.viewportHeight = this.$refs.viewport?.clientHeight || 300 },
-    search(value) { this.locatePending = false; this.$emit('search', value); this.$emit('category', 'all'); this.setPage(1) },
-    changeCategory(key) { this.locatePending = false; this.$emit('category', key); this.setPage(1) },
+    measure() { this.viewportHeight = this.$refs.viewport?.clientHeight || 300; this.viewportWidth = this.$refs.viewport?.clientWidth || 0; this.panelClientWidth = this.$refs.panel?.clientWidth || this.width },
+    setCategoryWidth(width, persist = true) { setPreferredFieldCategoryWidth(Math.max(96, Math.min(this.maxCategoryWidth, width)), persist ? undefined : null) },
+    search(value) { this.locatePending = false; this.$emit('search', value); if (!this.selectedGroup) this.$emit('category', 'all'); this.setPage(1) },
+    changeCategory(key) { this.locatePending = false; this.selectedGroup = ''; this.$emit('category', key); this.setPage(1) },
     setPage(value) { this.page = Math.max(1, Math.min(this.pageCount, Math.trunc(value) || 1)); this.scrollTop = 0; if (this.$refs.viewport) this.$refs.viewport.scrollTop = 0 },
     changePageSize(value, notify = true) {
       const size = normalizeFieldPageSize(value)
@@ -191,6 +234,7 @@ export default {
       const node = this.selectedNode
       if (!node) return
       this.locatePending = false
+      this.selectedGroup = ''
       this.preview = node
       this.$emit('category', node.category)
       this.expanded = new Set([...this.expanded, ...fieldAncestors(node).map(parent => parent.key)])
@@ -204,9 +248,9 @@ export default {
       if (this.$refs.viewport) this.$refs.viewport.scrollTop = this.scrollTop
     },
     startMotion(event, kind) {
-      if (event.button !== 0) return
+      if (this.embedded && !['categories', 'columns'].includes(kind) || event.button !== 0) return
       const rect = this.$refs.panel.getBoundingClientRect()
-      this.motion = { kind, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+      this.motion = { kind, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top, width: rect.width, height: rect.height, categoryWidth: this.categoryWidth }
       event.preventDefault()
       window.addEventListener('pointermove', this.onMotion)
       window.addEventListener('pointerup', this.stopMotion)
@@ -215,12 +259,15 @@ export default {
     onMotion(event) {
       if (!this.motion) return
       const m = this.motion, dx = event.clientX - m.x, dy = event.clientY - m.y
-      if (m.kind === 'move') this.$emit('move', { left: Math.max(0, Math.min(window.innerWidth - this.width, m.left + dx)), top: Math.max(0, Math.min(window.innerHeight - this.height, m.top + dy)) })
+      if (m.kind === 'categories') this.setCategoryWidth(m.categoryWidth + dx, false)
+      else if (m.kind === 'columns') setPreferredFieldColumnWidths(resizeFieldColumnWidths(m.columnWidths, m.columnKey, dx), null)
+      else if (m.kind === 'move') this.$emit('move', { left: Math.max(0, Math.min(window.innerWidth - this.width, m.left + dx)), top: Math.max(0, Math.min(window.innerHeight - this.height, m.top + dy)) })
       else this.$emit('resize', { width: Math.min(window.innerWidth - m.left, Math.max(Math.min(520, window.innerWidth), m.width + dx)), height: Math.min(window.innerHeight - m.top, Math.max(Math.min(300, window.innerHeight), m.height + dy)) })
     },
-    stopMotion() { this.motion = null; window.removeEventListener('pointermove', this.onMotion); window.removeEventListener('pointerup', this.stopMotion); window.removeEventListener('pointercancel', this.stopMotion) },
+    stopMotion() { if (this.motion?.kind === 'categories') this.setCategoryWidth(this.categoryWidth); if (this.motion?.kind === 'columns') setPreferredFieldColumnWidths(preferredFieldColumnWidths.value); this.motion = null; window.removeEventListener('pointermove', this.onMotion); window.removeEventListener('pointerup', this.stopMotion); window.removeEventListener('pointercancel', this.stopMotion) },
     clamp() {
       if (!this.visible || !this.$refs.panel) return
+      if (this.embedded) { this.measure(); return }
       const width = Math.min(this.width, window.innerWidth - 8), height = Math.min(this.height, window.innerHeight - 8)
       this.$emit('resize', { width, height })
       this.measure()
@@ -230,7 +277,12 @@ export default {
 </script>
 
 <style scoped>
-.fp-panel { display:flex; flex-direction:column; max-width:calc(100vw - 8px); max-height:calc(100vh - 8px); min-height:240px; color:var(--tianshu-text-primary); background:var(--tianshu-bg-surface); overflow:hidden; font-size:12px; }
+.fp-panel { --fp-table-columns: minmax(64px,64fr) minmax(80px,104fr) minmax(96px,136fr) minmax(80px,88fr); --fp-table-min-width: 336px; display:flex; flex-direction:column; max-width:calc(100vw - 8px); max-height:calc(100vh - 8px); min-height:240px; color:var(--tianshu-text-primary); background:var(--tianshu-bg-surface); overflow:hidden; font-size:12px; }
+.fp-panel--embedded { width:100%; height:100%; min-height:0; max-width:none; max-height:none; }
+.fp-panel--embedded .fp-header { display:flex; justify-content:space-between; cursor:default; padding:0 8px; min-height:40px; }
+.fp-panel--embedded .fp-sidebar-hint { display:none; }
+.fp-panel--embedded .fp-main { min-height:0; }
+.fp-panel--embedded .fp-pagination { justify-content:flex-start; }
 .fp-panel button,.fp-panel select,.fp-panel input { color:inherit; font:inherit; border:1px solid var(--tianshu-border); border-radius:0; background:var(--tianshu-bg-surface); }
 .fp-panel button { cursor:pointer; }
 .fp-panel button:disabled { cursor:default; opacity:.45; }
@@ -244,19 +296,29 @@ export default {
 .fp-editor-tools :deep(button) { height: 26px; min-width: 60px; padding: 0 8px; border: 1px solid var(--tianshu-border); border-radius: 0; background: var(--tianshu-bg-surface); color: var(--tianshu-text-primary); font: inherit; cursor: pointer; }
 .fp-actions :deep(button[aria-pressed="true"]) { box-shadow: inset 0 -2px var(--el-color-primary); font-weight: 600; }
 .fp-actions :deep(button) { color: var(--tianshu-primary-text, var(--el-color-primary)); font: inherit; border: 1px solid var(--tianshu-border); border-radius: 0; background: var(--tianshu-bg-surface); cursor: pointer; }
-.fp-categories { display:flex; flex-direction:column; width:148px; flex:none; min-height:0; overflow:hidden; border-right:1px solid var(--tianshu-border); }
+.fp-categories { display:flex; flex-direction:column; flex:none; min-height:0; overflow:hidden; }
+.fp-category-resizer { flex:0 0 6px; cursor:col-resize; display:flex; align-items:center; justify-content:center; background:var(--tianshu-bg-surface); border-inline:1px solid var(--tianshu-border-subtle); box-sizing:border-box; touch-action:none; }
+.fp-category-resizer > span { width:2px; height:32px; background:var(--tianshu-border); }
+.fp-category-resizer:hover > span,.fp-category-resizer:focus-visible > span { background:var(--el-color-primary); }
+.fp-category-resizer:focus-visible { outline:1px solid var(--el-color-primary); outline-offset:-1px; }
 .fp-category-list { flex:1; min-height:0; overflow-x:hidden; overflow-y:auto; padding:6px; }
 .fp-sidebar-hint { display:flex; align-items:center; justify-content:center; flex:none; min-height:36px; box-sizing:border-box; padding:8px 4px; border-top:1px solid var(--tianshu-border-subtle); color:var(--tianshu-text-secondary); font-size:11px; line-height:18px; text-align:center; white-space:normal; }
 .fp-categories button { display:flex; width:100%; align-items:center; gap:6px; height:34px; padding:0 6px; border:0; white-space:nowrap; }
+.fp-categories button > span:not(.fp-category-icon) { min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .fp-categories button.active { color:var(--tianshu-primary-text, var(--el-color-primary)); background:var(--tianshu-info-bg); font-weight:600; }
-.fp-categories small { margin-left:auto; font-size:10px; color:var(--tianshu-text-tertiary); }
+.fp-categories .fp-subcategory { height:30px; padding-left:20px; font-size:11px; }
+.fp-subcategory > span { overflow:hidden; text-overflow:ellipsis; }
+.fp-categories small { flex:none; margin-left:auto; font-size:10px; color:var(--tianshu-text-tertiary); }
 .fp-category-icon { width:20px; flex:none; text-align:center; }
 .fp-main { display:flex; flex:1; min-width:0; flex-direction:column; }
 .fp-search { padding:8px; }
 .fp-search :deep(.el-input__wrapper) { border-radius:0; }
-.fp-columns { display:grid; grid-template-columns:64px minmax(70px,1fr) minmax(70px,1.15fr) 130px 28px; align-items:center; min-height:30px; padding:0 8px; color:var(--tianshu-text-tertiary); border-bottom:1px solid var(--tianshu-border); }
+.fp-columns { display:grid; grid-template-columns:var(--fp-table-columns); width:100%; min-width:var(--fp-table-min-width); box-sizing:border-box; align-items:center; height:30px; padding:0 8px; position:sticky; top:0; z-index:3; color:var(--tianshu-text-secondary); background:var(--tianshu-bg-muted); border-bottom:1px solid var(--tianshu-border); }
+.fp-columns > span { position:relative; min-width:0; height:100%; display:flex; align-items:center; padding:0 6px; box-sizing:border-box; white-space:nowrap; font-weight:600; border-right:1px solid var(--tianshu-border-subtle); }
+.fp-column-resizer { position:absolute; right:-3px; top:0; bottom:0; width:6px; cursor:col-resize; touch-action:none; z-index:1; }
+.fp-column-resizer:hover,.fp-column-resizer:focus-visible { background:var(--tianshu-info-border); outline:1px solid var(--el-color-primary); }
 .fp-viewport { flex:1; min-height:0; overflow:auto; position:relative; overflow-anchor:none; }
-.fp-sticky { position:sticky; top:0; height:0; overflow:visible; z-index:2; }
+.fp-sticky { position:sticky; top:30px; height:0; overflow:visible; z-index:2; }
 .fp-sticky :deep(.fp-row) { background:var(--tianshu-bg-muted); box-shadow:0 1px var(--tianshu-border); }
 .fp-empty { padding:30px 10px; text-align:center; color:var(--tianshu-text-tertiary); }
 .fp-preview { min-height:28px; line-height:28px; padding:0 8px; border-top:1px solid var(--tianshu-border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--tianshu-text-secondary); }
@@ -286,5 +348,5 @@ export default {
 .fp-panel :deep(.rule-call-version > span:first-child),.fp-panel :deep(.rule-call-version > small) { display:none; }
 .fp-panel :deep(.rule-call-version .el-select) { width:100%; }
 .fp-panel :deep(.rule-call-version .el-select__wrapper) { border-radius:0; min-height:26px; font-size:11px; }
-@media(max-width:640px) { .fp-categories { width:112px; } .fp-category-icon { display:none; } .fp-columns { grid-template-columns:64px minmax(45px,1fr) minmax(45px,1fr) 96px 24px; } }
+@media(max-width:640px) { .fp-category-icon { display:none; } }
 </style>

@@ -574,7 +574,7 @@
           :data="logs"
           border
           size="small"
-          v-loading="logLoading"
+          :aria-busy="logLoading"
           style="width: 100%"
         >
           <el-table-column

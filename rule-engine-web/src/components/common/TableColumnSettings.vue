@@ -43,13 +43,14 @@
               {{ column.visible ? '✓' : '' }}
             </span>
             <span>{{ column.label }}</span>
-            <em v-if="column.required">必选</em>
+            <em v-if="column.fixed">{{ column.fixed === 'left' ? '固定左侧' : '固定右侧' }}</em>
+            <em v-else-if="column.required">必选</em>
           </button>
           <div class="table-column-settings__moves">
             <button
               type="button"
               aria-label="上移字段"
-              :disabled="index === 0"
+              :disabled="index === 0 || Boolean(column.fixed) || Boolean(draftColumns[index - 1]?.fixed)"
               @click="moveColumn(index, -1)"
             >
               ↑
@@ -57,7 +58,7 @@
             <button
               type="button"
               aria-label="下移字段"
-              :disabled="index === draftColumns.length - 1"
+              :disabled="index === draftColumns.length - 1 || Boolean(column.fixed) || Boolean(draftColumns[index + 1]?.fixed)"
               @click="moveColumn(index, 1)"
             >
               ↓
@@ -110,7 +111,7 @@ export default {
   name: 'TableColumnSettings',
   props: {
     columns: { type: Array, required: true },
-    modelValue: { type: Array, default: () => [] },
+    modelValue: { type: Array, default: null },
     storageKey: { type: String, required: true },
   },
   emits: ['update:modelValue', 'change'],
@@ -139,21 +140,27 @@ export default {
       return this.draftColumns.filter(column => column.visible).length
     },
   },
-  mounted() {
-    const saved = this.readSavedKeys()
-    if (saved.length > 0) {
-      const normalized = this.normalizeVisibleKeys(saved)
-      this.$emit('update:modelValue', normalized)
-      this.$emit('change', normalized)
-      this.$nextTick(() => this.applyDomVisibility(normalized))
-    }
+  mounted() { this.restorePreference() },
+  watch: {
+    storageKey() { this.open = false; this.restorePreference(true) },
   },
   methods: {
+    restorePreference(resetMissing = false) {
+      const saved = this.readSavedKeys()
+      if (saved === null && !resetMissing) return
+      const keys = this.normalizeVisibleKeys(saved === null ? this.availableKeys : saved)
+      this.$emit('update:modelValue', keys)
+      this.$emit('change', keys)
+    },
     normalizeKeys(keys) {
       const source = Array.isArray(keys) ? keys : []
-      const known = source.filter(key => this.availableKeys.includes(key))
+      const known = [...new Set(source.filter(key => this.availableKeys.includes(key)))]
       const missing = this.availableKeys.filter(key => !known.includes(key))
-      return [...known, ...missing]
+      return this.orderFixedColumns([...known, ...missing])
+    },
+    orderFixedColumns(keys) {
+      const fixed = key => this.columns.find(column => column.key === key)?.fixed
+      return [...keys.filter(key => fixed(key) === 'left'), ...keys.filter(key => !fixed(key)), ...keys.filter(key => fixed(key) === 'right')]
     },
     visibleKeys(keys) {
       const normalized = this.normalizeKeys(keys)
@@ -163,23 +170,23 @@ export default {
       })
     },
     readSavedKeys() {
-      if (typeof window === 'undefined' || !window.localStorage) return []
+      if (typeof window === 'undefined' || !window.localStorage) return null
       try {
         const value = JSON.parse(window.localStorage.getItem(this.storageKey) || 'null')
-        return Array.isArray(value) ? value : []
+        return Array.isArray(value) ? value : null
       } catch (error) {
-        return []
+        return null
       }
     },
     beginEdit() {
-      const visibleKeys = this.modelValue.length > 0
+      const visibleKeys = Array.isArray(this.modelValue)
         ? this.normalizeVisibleKeys(this.modelValue)
         : this.availableKeys
       this.draftKeys = this.normalizeKeys(visibleKeys)
       this.draftVisibleKeys = visibleKeys.filter(key => this.availableKeys.includes(key))
     },
     discardEdit() {
-      const visibleKeys = this.modelValue.length > 0
+      const visibleKeys = Array.isArray(this.modelValue)
         ? this.normalizeVisibleKeys(this.modelValue)
         : this.availableKeys
       this.draftKeys = this.normalizeKeys(visibleKeys)
@@ -195,6 +202,7 @@ export default {
     moveColumn(index, offset) {
       const nextIndex = index + offset
       if (nextIndex < 0 || nextIndex >= this.draftKeys.length) return
+      if (this.draftColumns[index]?.fixed || this.draftColumns[nextIndex]?.fixed) return
       const keys = this.draftKeys.slice()
       const [key] = keys.splice(index, 1)
       keys.splice(nextIndex, 0, key)
@@ -205,50 +213,19 @@ export default {
       this.draftVisibleKeys = this.availableKeys.slice()
     },
     normalizeVisibleKeys(keys) {
-      const known = (Array.isArray(keys) ? keys : [])
-        .filter(key => this.availableKeys.includes(key))
+      const known = [...new Set((Array.isArray(keys) ? keys : [])
+        .filter(key => this.availableKeys.includes(key)))]
       const required = this.columns
         .filter(column => column.required)
         .map(column => column.key)
-      return [...required.filter(key => !known.includes(key)), ...known]
+      return this.orderFixedColumns([...required.filter(key => !known.includes(key)), ...known])
     },
     apply() {
       const keys = this.visibleKeys(this.draftKeys)
       this.$emit('update:modelValue', keys)
       this.$emit('change', keys)
       this.persist(keys)
-      this.$nextTick(() => this.applyDomVisibility(keys))
       this.open = false
-    },
-    applyDomVisibility(keys) {
-      if (typeof document === 'undefined') return
-      const anchor = this.$el.querySelector?.('.table-column-settings__anchor')
-      const page = anchor?.closest('.management-list-page')
-      if (!page) return
-      const tables = [...page.querySelectorAll('.management-table')]
-        .filter(table => table.offsetParent !== null || table.getClientRects().length > 0)
-      const table = tables[0]
-      if (!table) return
-      const visible = new Set(this.normalizeVisibleKeys(keys))
-      const headers = [...table.querySelectorAll('.el-table__header-wrapper thead th')]
-      const labels = headers.map(header => header.textContent.trim())
-      const hiddenIndexes = this.columns
-        .filter(column => !visible.has(column.key))
-        .map(column => labels.indexOf(column.label))
-        .filter(index => index >= 0)
-      const cells = table.querySelectorAll(
-        '.el-table__header-wrapper th, .el-table__body-wrapper td, .el-table__fixed th, .el-table__fixed td'
-      )
-      cells.forEach(cell => {
-        const index = cell.cellIndex
-        cell.style.display = hiddenIndexes.includes(index) ? 'none' : ''
-      })
-      const cols = table.querySelectorAll(
-        '.el-table__header-wrapper colgroup col, .el-table__body-wrapper colgroup col, .el-table__fixed colgroup col'
-      )
-      cols.forEach((col, index) => {
-        col.style.display = hiddenIndexes.includes(index) ? 'none' : ''
-      })
     },
     persist(keys) {
       if (typeof window === 'undefined' || !window.localStorage) return

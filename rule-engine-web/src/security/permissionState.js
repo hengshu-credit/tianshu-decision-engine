@@ -98,3 +98,11 @@ export function filterMenus(menus, options = {}) {
       || hasPermission(menu.permission)
   )
 }
+
+export function hasUnrestrictedPermissions(...permissions) {
+  const user = currentUser.value
+  if (!user) return !permissionEnforcementEnabled.value
+  return user.projectAccessMode === 'ALL' && permissions.every(permission =>
+    hasPermission(permission, { scope: 'GLOBAL' }) && user.defaultPermissions.includes(permission)
+    && !Object.values(user.projectPermissionOverrides).some(override => override[permission] === 'DENY'))
+}

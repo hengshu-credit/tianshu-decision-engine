@@ -38,6 +38,71 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 public class RuleRuntimeInvokerTest {
+    @Test
+    public void nestedRootRestoresParentSessionAndRuntimeWrites() {
+        RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
+        Map<String, Object> parentValues = new LinkedHashMap<>();
+        invoker.enter("PARENT", 0L, null, parentValues);
+        RuleExecutionSession parent = invoker.currentSession();
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setDryRun(true);
+        invoker.setSourceExecutionPolicy(options);
+        try {
+            Map<String, Object> childValues = new LinkedHashMap<>();
+            invoker.enter("INTERNAL_DATASOURCE", 0L, null, childValues);
+            try {
+                RuntimeContextBridge.setValue("childResult", 2);
+                assertEquals(2, childValues.get("childResult"));
+            } finally { invoker.exit(); }
+            assertSame(parent, invoker.currentSession());
+            assertSame(parent.getRequestContext(), RuntimeContextBridge.currentContext());
+            assertTrue(invoker.currentSession().childSourceOptions().isDryRun());
+            RuntimeContextBridge.setValue("parentResult", 3);
+            assertEquals(3, parentValues.get("parentResult"));
+            assertFalse(parentValues.containsKey("childResult"));
+        } finally { invoker.exit(); }
+        assertEquals(null, invoker.currentSession());
+    }
+
+    @Test
+    public void nestedShadowRuleKeepsSourceRestrictionsAndCannotSubmitListWrites() {
+        RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
+        ReflectionTestUtils.setField(invoker, "definitionService", new ContextDefinitionService() {
+            @Override public RuleDefinitionContent getContent(Long id) {
+                RuleDefinitionContent content = super.getContent(id);
+                content.setCompiledScript("writeRuleList(\"{}\", [])");
+                return content;
+            }
+        });
+        ReflectionTestUtils.setField(invoker, "projectService", new GlobalProjectService());
+        VariableResolveOptions[] observed = new VariableResolveOptions[1];
+        ReflectionTestUtils.setField(invoker, "variableSourceResolver", new VariableSourceResolver() {
+            @Override public Map<String, Object> resolveInto(Long projectId, Map<String, Object> values, VariableResolveOptions options) {
+                observed[0] = options;
+                return values;
+            }
+        });
+        ReflectionTestUtils.setField(invoker, "ruleActions", new RuleActionRuntimeService());
+        ReflectionTestUtils.setField(invoker, "qlExpressEngine", new QLExpressEngine());
+        ReflectionTestUtils.setField(invoker, "executionParameterBinder", new ExecutionParameterBinder());
+        installPublishedFixture(invoker);
+        invoker.enter("PARENT", 0L, null, new LinkedHashMap<>(), true);
+        try {
+            VariableResolveOptions policy = VariableResolveOptions.defaults();
+            policy.setDryRun(true); policy.setSkipApiSources(true); policy.setForceRefreshSource(true);
+            policy.setListMatchTime(java.time.LocalDateTime.of(2026, 10, 27, 0, 0));
+            invoker.setSourceExecutionPolicy(policy);
+            assertEquals("SKIPPED_DRY_RUN", ((Map<?, ?>) invoker.executeRuleById("2")).get("status"));
+            assertNotNull(observed[0]);
+            assertTrue(observed[0].isSkipApiSources());
+            assertTrue(observed[0].isForceRefreshSource());
+            assertEquals(policy.getListMatchTime(), observed[0].getListMatchTime());
+            invoker.setOfflineReplay(true);
+            assertEquals("SKIPPED_REPLAY", ((Map<?, ?>) invoker.executeRuleById("2")).get("status"));
+            assertTrue(observed[0].isOfflineReplay());
+            assertTrue(observed[0].isDryRun());
+        } finally { invoker.exit(); }
+    }
 
     @Test
     public void nestedRuleResolvesItsReferencedModelOutput() {

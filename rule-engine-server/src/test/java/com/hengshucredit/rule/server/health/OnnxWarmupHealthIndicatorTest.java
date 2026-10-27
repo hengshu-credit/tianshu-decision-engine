@@ -8,6 +8,23 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 public class OnnxWarmupHealthIndicatorTest {
+    @Test
+    public void retryKeepsReadinessClosedUntilAllTargetsPassAndClearsPreviousFailure() {
+        OnnxWarmupStatus status = new OnnxWarmupStatus();
+        OnnxWarmupHealthIndicator indicator = new OnnxWarmupHealthIndicator(status);
+        status.start(1);
+        status.recordFailure(new IllegalStateException("temporary database error"));
+        status.complete();
+        status.resetForRetry();
+        assertEquals(Status.OUT_OF_SERVICE, indicator.health().getStatus());
+        assertEquals(0, status.details().get("failureCount"));
+        assertFalse(status.details().containsKey("lastErrorType"));
+        status.start(1);
+        org.junit.Assert.assertThrows(IllegalStateException.class, status::resetForRetry);
+        status.recordSuccess(false);
+        status.complete();
+        assertEquals(Status.UP, indicator.health().getStatus());
+    }
 
     @Test
     public void notStartedAndWarmingAreOutOfService() {

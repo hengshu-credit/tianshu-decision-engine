@@ -103,7 +103,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
-          <table-column-settings :columns="databaseColumns" storage-key="tianshu:table-columns:database-list" />
+          <table-column-settings v-model="tableColumnOrders.databaseColumns" :columns="databaseColumns" storage-key="tianshu:table-columns:database-list" />
               <governance-workspace-toolbar resource-type="DATABASE" />
               <el-button
                 v-permission="'database:edit'"
@@ -121,10 +121,11 @@
           :data="tableData"
           border
           size="small"
-          v-loading="loading"
+          :aria-busy="loading"
           style="width: 100%"
         >
-          <el-table-column label="作用范围" width="90" align="center">
+          <template v-for="columnKey in (tableColumnOrders.databaseColumns || databaseColumns.map(column => column.key))" :key="columnKey">
+          <el-table-column v-if="columnKey === 'scope'" label="作用范围" width="90" align="center">
             <template v-slot="{ row }">
               <el-tag
                 :type="row.scope === 'GLOBAL' ? 'warning' : 'success'"
@@ -133,7 +134,7 @@
               >
             </template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'projectName'"
             prop="projectName"
             label="项目名称"
             min-width="120"
@@ -141,19 +142,19 @@
           >
             <template v-slot="{ row }">{{ row.projectName || '—' }}</template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'datasourceCode'"
             prop="datasourceCode"
             label="数据源编码"
             min-width="140"
             show-overflow-tooltip
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'datasourceName'"
             prop="datasourceName"
             label="数据源名称"
             min-width="150"
             show-overflow-tooltip
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'dbType'"
             prop="dbType"
             label="类型"
             width="100"
@@ -163,7 +164,7 @@
               ><el-tag size="small">{{ row.dbType }}</el-tag></template
             >
           </el-table-column>
-          <el-table-column label="连接方式" width="100" align="center">
+          <el-table-column v-if="columnKey === 'connectionMode'" label="连接方式" width="100" align="center">
             <template v-slot="{ row }">
               <el-tag
                 :type="
@@ -174,32 +175,32 @@
               >
             </template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'address'"
             label="数据库地址"
             min-width="180"
             show-overflow-tooltip
           >
             <template v-slot="{ row }">{{ formatDbAddress(row) }}</template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'jdbcUrl'"
             prop="jdbcUrl"
             label="JDBC URL"
             min-width="260"
             show-overflow-tooltip
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'ssh'"
             label="SSH隧道"
             min-width="150"
             show-overflow-tooltip
           >
             <template v-slot="{ row }">{{ formatSshAddress(row) }}</template>
           </el-table-column>
-          <el-table-column label="连接池" width="120" align="center">
+          <el-table-column v-if="columnKey === 'pool'" label="连接池" width="120" align="center">
             <template v-slot="{ row }"
               >{{ row.minIdle || 1 }} / {{ row.maxPoolSize || 5 }}</template
             >
           </el-table-column>
-          <el-table-column prop="status" label="状态" width="160" align="center">
+          <el-table-column v-if="columnKey === 'status'" prop="status" label="状态" width="160" align="center">
             <template v-slot="{ row }">
               <governance-resource-status resource-type="DATABASE" :resource-id="row.id" :status="row.status"><el-tag
                 :type="row.status === 1 ? 'success' : 'info'"
@@ -208,6 +209,7 @@
               ></governance-resource-status>
             </template>
           </el-table-column>
+          </template>
           <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['查询', '编辑', '测试', '版本', '发布', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button v-permission="{ code: 'database:edit', projectId: row.projectId, scope: row.scope }"
@@ -466,12 +468,19 @@ import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operati
 export default {
   data() {
     return {
+      tableColumnOrders: { databaseColumns: null },
       databaseColumns: [
-        { key: 'scope', label: '作用范围' }, { key: 'projectName', label: '项目名称' },
-        { key: 'datasourceCode', label: '数据源编码' }, { key: 'datasourceName', label: '数据源名称' },
-        { key: 'dbType', label: '类型' }, { key: 'connectionMode', label: '连接方式' },
-        { key: 'address', label: '数据库地址' }, { key: 'jdbcUrl', label: 'JDBC URL' },
-        { key: 'ssh', label: 'SSH隧道' }, { key: 'pool', label: '连接池' }, { key: 'status', label: '状态' },
+        { key: 'scope', label: '作用范围' },
+        { key: 'projectName', label: '项目名称' },
+        { key: 'datasourceCode', label: '数据源编码' },
+        { key: 'datasourceName', label: '数据源名称' },
+        { key: 'dbType', label: '类型' },
+        { key: 'connectionMode', label: '连接方式' },
+        { key: 'address', label: '数据库地址' },
+        { key: 'jdbcUrl', label: 'JDBC URL' },
+        { key: 'ssh', label: 'SSH隧道' },
+        { key: 'pool', label: '连接池' },
+        { key: 'status', label: '状态' },
       ],
       databaseGuideCards: [
         {

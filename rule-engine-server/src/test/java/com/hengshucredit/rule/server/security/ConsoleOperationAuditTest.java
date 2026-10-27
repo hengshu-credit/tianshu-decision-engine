@@ -24,6 +24,45 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 public class ConsoleOperationAuditTest {
+    @Test public void sftpPageVisitsUseDatabasePermissionAndRecordBothPageLabels() throws Exception {
+        for (String[] sample : new String[][]{{"/sftp", "SFTP数据源配置页"}, {"/sftp/logs", "SFTP查询日志页"}}) {
+            var logs = new Logs();
+            var checked = new java.util.ArrayList<String>();
+            var permission = new ConsolePermissionService() {
+                @Override public boolean hasPermission(Long userId, String code) {
+                    checked.add(code);
+                    return "database:view".equals(code);
+                }
+            };
+            mvc(new Metadata(), logs, permission).perform(post("/api/rule/console/activity").session(session())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(JSON.toJSONString(Map.of("action", "PAGE_VIEW", "pagePath", sample[0], "name", "SFTP数据源配置"))))
+                    .andExpect(status().isOk()).andExpect(result -> Assert.assertTrue(JSON.parseObject(
+                            result.getResponse().getContentAsString(StandardCharsets.UTF_8)).getBooleanValue("success")));
+            Assert.assertEquals(List.of("database:view"), checked);
+            Assert.assertEquals("database", logs.saved.getModule());
+            Assert.assertEquals("PAGE_VIEW", logs.saved.getAction());
+            Assert.assertEquals(sample[0], logs.saved.getPagePath());
+            Assert.assertEquals("查看" + sample[1], logs.saved.getChangeSummary());
+            Assert.assertEquals("SUCCESS", logs.saved.getOutcome());
+            Assert.assertNull(logs.saved.getTargetId());
+            assertMetadataOnly(logs.saved);
+        }
+    }
+
+    @Test public void sftpPageVisitsStillRejectMissingDatabasePermission() throws Exception {
+        for (String page : List.of("/sftp", "/sftp/logs")) {
+            var metadata = new Metadata();
+            var logs = new Logs();
+            mvc(metadata, logs, false).perform(post("/api/rule/console/activity").session(session())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(JSON.toJSONString(Map.of("action", "PAGE_VIEW", "pagePath", page, "name", "SFTP数据源配置"))))
+                    .andExpect(status().isForbidden());
+            Assert.assertEquals("DENIED", logs.saved.getOutcome());
+            Assert.assertEquals(0, metadata.lookups);
+        }
+    }
+
     @Test public void pageVisitsResolveRuleIdentityAndDistinguishDetailFromDesigner() throws Exception {
         for (String[] sample : new String[][]{{"/rule/12", "规则详情页"}, {"/designer/table/12?sourceType=REVISION&sourceId=99&token=PRIVATE", "决策表设计页"}}) {
             var logs = new Logs();
@@ -171,8 +210,13 @@ public class ConsoleOperationAuditTest {
     }
 
     private MockMvc mvc(OperationLogMetadataResolver metadata, ConsoleOperationLogService logs, boolean allowed) {
+        return mvc(metadata, logs, new ConsolePermissionService() {
+            @Override public boolean hasPermission(Long userId, String code) { return allowed; }
+        });
+    }
+
+    private MockMvc mvc(OperationLogMetadataResolver metadata, ConsoleOperationLogService logs, ConsolePermissionService permission) {
         var properties = new RuleEngineConsoleLoginProperties(); properties.setEnabled(true);
-        var permission = new ConsolePermissionService() { @Override public boolean hasPermission(Long userId, String code) { return allowed; } };
         var audit = new ConsoleOperationAudit(metadata);
         return MockMvcBuilders.standaloneSetup(new TestController(), new ConsoleOperationLogController(logs, new ConsoleAccessGuard(properties, permission)))
                 .setControllerAdvice(new ConsoleOperationBodyAdvice(audit), new GlobalExceptionHandler())

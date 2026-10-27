@@ -1,4 +1,11 @@
 import { fieldTypeIcon } from '@/utils/fieldPicker'
+import { contentSourceIcon, contentDataType } from '@/utils/contentDisplay'
+import { resourceVersionIdentity } from '@/utils/resourceVersion'
+
+function versionKey(reference) {
+  const identity = resourceVersionIdentity(reference)
+  return identity ? `${identity.module}:${identity.ownerId}` : ''
+}
 
 function parseParams(value) {
   if (Array.isArray(value)) return value
@@ -19,7 +26,7 @@ function referenceVersion(ref) {
   const version = ref?.displayVersion ?? ref?.version ?? ref?.modelVersion ?? ref?.objectVersion
     ?? ref?._ref?.modelVersion ?? ref?._ref?.objectVersion
     ?? ref?.varObj?.currentVersion ?? ref?.varObj?.version
-  return version == null ? '版本未提供' : `v${version}`
+  return version == null ? '' : `v${version}`
 }
 
 export function buildQlCompletionItems(refs = [], functions = [], linePrefix = '') {
@@ -50,6 +57,9 @@ export function buildQlCompletionItems(refs = [], functions = [], linePrefix = '
         valueType: ref.varType || 'OBJECT',
         refCode: ref.refCode,
         referenceType: fieldTypeIcon(ref.varType || 'OBJECT'),
+        referenceDataType: contentDataType({ valueType: ref.varType || 'OBJECT' }).replace(' · ', ' / '),
+        referenceContentType: contentSourceIcon({ kind: 'REFERENCE', refType: ref._refType || ref.refType || 'VARIABLE' }),
+        referenceVersionKey: versionKey(ref),
         referenceName: ref.varLabel || ref.refCode,
         referenceVersion: referenceVersion(ref),
         kind: 'FIELD',
@@ -84,7 +94,10 @@ export function buildQlCompletionItems(refs = [], functions = [], linePrefix = '
           .map((param) => `${param.name || '-'}: ${param.type || 'OBJECT'}`)
           .join('\n'),
         kind: 'FUNCTION',
-        referenceType: fieldTypeIcon('FUNCTION'),
+        referenceType: fieldTypeIcon(func.returnType || 'OBJECT'),
+        referenceDataType: contentDataType({ valueType: func.returnType || 'OBJECT' }).replace(' · ', ' / '),
+        referenceContentType: '方法',
+        referenceVersionKey: versionKey({ _function: true, function: func }),
         referenceName: func.funcName || func.funcCode,
         referenceVersion: referenceVersion(func),
         snippet: true,

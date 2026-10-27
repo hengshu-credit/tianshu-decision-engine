@@ -65,7 +65,7 @@
       </div>
     </header>
 
-    <main v-loading="loading" class="detail-content">
+    <main :aria-busy="loading" class="detail-content">
       <template v-if="request">
         <el-alert v-if="pendingNewContent"
           title="新增内容正在待审批，须先由审批人驳回，才能删除草稿。审批通过前不会投入生产。"

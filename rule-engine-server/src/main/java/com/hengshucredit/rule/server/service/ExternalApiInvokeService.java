@@ -357,6 +357,10 @@ public class ExternalApiInvokeService {
         }
         int retryCount = configuredRetryLimit(apiConfig);
         int retryIntervalMs = apiConfig.getRetryIntervalMs() == null ? 0 : Math.max(apiConfig.getRetryIntervalMs(), 0);
+        // 内部规则结果受试运行/回放/历史时点限制影响，不得与正式请求共用缓存或 single-flight。
+        if (isRuleEngineDatasource(datasource) && !com.hengshucredit.rule.core.engine.RequestContext
+                .SourceExecutionPolicy.DEFAULT.equals(com.hengshucredit.rule.core.engine.RuntimeContextBridge
+                        .currentContext().sourceExecutionPolicy())) useResponseCache = false;
         int responseCacheSeconds = useResponseCache && apiConfig.getResponseCacheSeconds() != null
                 ? Math.max(apiConfig.getResponseCacheSeconds(), 0) : 0;
         Map<String, Object> invokeParams = normalizeRequestParams(params);
@@ -1688,8 +1692,16 @@ public class ExternalApiInvokeService {
         ExternalApiTrialContext.check();
         trace.requestIssued = true;
         Map<String, Object> executionParams = ruleParams;
-        RuleResult result = ExternalApiTrialContext.outside(() -> ruleExecuteService.executePublished(
-                published, executionParams, datasource.getProjectId(), "RULE_ENGINE_DATASOURCE"));
+        var policy = com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext().sourceExecutionPolicy();
+        RuleResult result = ExternalApiTrialContext.outside(() -> {
+            if (com.hengshucredit.rule.core.engine.RequestContext.SourceExecutionPolicy.DEFAULT.equals(policy)) {
+                return ruleExecuteService.executePublished(
+                        published, executionParams, datasource.getProjectId(), "RULE_ENGINE_DATASOURCE");
+            }
+            return ruleExecuteService.executePublishedWithOptions(published, executionParams,
+                    datasource.getProjectId(), "RULE_ENGINE_DATASOURCE",
+                    VariableResolveOptions.fromSourceExecutionPolicy(policy), "CLIENT_SERVER").getResult();
+        });
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("success", result.isSuccess());
         Object responseBody = executeResponseScript(apiConfig, params, result.getResult(),

@@ -9,6 +9,7 @@
         { label: '执行并查看追踪', detail: '核对结果、耗时和命中路径' },
       ]"
     />
+    <el-alert class="test-impact-notice" title="测试调用与写入说明" description="单次测试、固定用例和批量测试都会按所选版本真实执行。若配置了外数、数据库、SFTP 或名单动作，将按实际配置调用或写入，并应用计费规则。" type="info" :closable="false" show-icon />
     <div class="test-layout">
       <!-- 左侧：选择规则 + 参数输入 -->
       <div class="test-left">
@@ -458,6 +459,8 @@
             <div v-if="result.errorMessage" style="margin-bottom: 16px">
               <div class="result-section-title" :class="resultThrottled ? 'is-throttled' : 'is-error'">{{ resultThrottled ? '容量提示' : '错误信息' }}</div>
               <pre class="result-pre" :class="resultThrottled ? 'is-throttled' : 'is-error'">{{ result.errorMessage }}</pre>
+              <rule-validation-report v-if="result.executionIssues?.length" :report="{ scope: 'EXECUTION', valid: false, errors: result.executionIssues, warnings: [] }" />
+              <details v-if="result.executionErrorDetail"><summary>技术详情</summary><pre class="result-pre">{{ result.executionErrorDetail }}</pre></details>
             </div>
 
             <div style="margin-bottom: 16px">
@@ -575,6 +578,7 @@ import { getDataObjectFieldOptions } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
 import { getModel } from '@/api/model'
 import TraceTree from '@/components/common/TraceTree.vue'
+import RuleValidationReport from '@/components/rule/RuleValidationReport.vue'
 import AsyncState from '@/components/common/AsyncState.vue'
 import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
 import ExpectedOutputEditor from '@/components/test/ExpectedOutputEditor.vue'
@@ -597,7 +601,7 @@ import {
 } from '@/utils/testCaseTools'
 
 export default {
-  components: { ProjectResourceSelect, RemoteFilterSelect, RegressionReportDrawer,
+  components: { ProjectResourceSelect, RemoteFilterSelect, RegressionReportDrawer, RuleValidationReport,
     TraceTree,
     AsyncState,
     ConfigLayerGuide,
@@ -2094,6 +2098,7 @@ export default {
     flex: 0 0 auto;
   }
 }
+.test-impact-notice { flex-shrink: 0; margin-bottom: 12px; }
 .test-layout {
   display: flex;
   flex: 1;

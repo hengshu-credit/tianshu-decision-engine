@@ -92,7 +92,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
-          <table-column-settings :columns="billingColumns" storage-key="tianshu:table-columns:billing-list" />
+          <table-column-settings v-model="tableColumnOrders.billingColumns" :columns="billingColumns" storage-key="tianshu:table-columns:billing-list" />
               <governance-workspace-toolbar resource-type="BILLING_CONFIG" />
               <el-button
                 v-permission="'billing:edit'"
@@ -110,11 +110,12 @@
           :data="configList"
           border
           size="small"
-          v-loading="configLoading"
+          :aria-busy="configLoading"
           :empty-text="configError || '暂无数据'"
           style="width: 100%"
         >
-          <el-table-column label="作用范围" width="90" align="center">
+          <template v-for="columnKey in (tableColumnOrders.billingColumns || billingColumns.map(column => column.key))" :key="columnKey">
+          <el-table-column v-if="columnKey === 'scope'" label="作用范围" width="90" align="center">
             <template v-slot="{ row }">
               <el-tag
                 :type="row.scope === 'GLOBAL' ? 'warning' : 'success'"
@@ -123,7 +124,7 @@
               >
             </template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'projectName'"
             prop="projectName"
             label="项目名称"
             min-width="120"
@@ -131,36 +132,36 @@
           >
             <template v-slot="{ row }">{{ row.projectName || '—' }}</template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'billingCode'"
             prop="billingCode"
             label="计费编码"
             min-width="140"
             show-overflow-tooltip
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'billingName'"
             prop="billingName"
             label="计费名称"
             min-width="150"
             show-overflow-tooltip
           />
-          <el-table-column label="对象" width="90" align="center">
+          <el-table-column v-if="columnKey === 'billingTarget'" label="对象" width="90" align="center">
             <template v-slot="{ row }"
               ><el-tag size="small">{{
                 optionLabel(billingTargetOptions, row.billingTarget)
               }}</el-tag></template
             >
           </el-table-column>
-          <el-table-column label="方式" width="100" align="center">
+          <el-table-column v-if="columnKey === 'chargeType'" label="方式" width="100" align="center">
             <template v-slot="{ row }">{{
               optionLabel(chargeTypeOptions, row.chargeType)
             }}</template>
           </el-table-column>
-          <el-table-column label="单价" width="110" align="right">
+          <el-table-column v-if="columnKey === 'unitPrice'" label="单价" width="110" align="right">
             <template v-slot="{ row }"
               >{{ row.currency || 'CNY' }} {{ row.unitPrice || 0 }}</template
             >
           </el-table-column>
-          <el-table-column prop="status" label="状态" width="160" align="center">
+          <el-table-column v-if="columnKey === 'status'" prop="status" label="状态" width="160" align="center">
             <template v-slot="{ row }">
               <governance-resource-status resource-type="BILLING_CONFIG" :resource-id="row.id" :status="row.status"><el-tag
                 :type="row.status === 1 ? 'success' : 'info'"
@@ -169,6 +170,7 @@
               ></governance-resource-status>
             </template>
           </el-table-column>
+          </template>
           <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '版本', '发布', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
@@ -314,7 +316,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
-              <table-column-settings :columns="recordColumns" storage-key="tianshu:table-columns:billing-records" />
+              <table-column-settings v-model="tableColumnOrders.recordColumns" :columns="recordColumns" storage-key="tianshu:table-columns:billing-records" />
             </div>
           </div>
         </div>
@@ -323,70 +325,71 @@
           :data="recordList"
           border
           size="small"
-          v-loading="recordLoading"
+          :aria-busy="recordLoading"
           :empty-text="recordError || '暂无数据'"
           style="width: 100%"
         >
-          <el-table-column prop="occurTime" label="发生时间" min-width="160" />
-          <el-table-column
+          <template v-for="columnKey in (tableColumnOrders.recordColumns || recordColumns.map(column => column.key))" :key="columnKey">
+          <el-table-column v-if="columnKey === 'occurTime'" prop="occurTime" label="发生时间" min-width="160" />
+          <el-table-column v-if="columnKey === 'projectCode'"
             prop="projectCode"
             label="项目编码"
             min-width="120"
             show-overflow-tooltip
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'authCode'"
             prop="authCode"
             label="鉴权编码"
             min-width="135"
             show-overflow-tooltip
           />
-          <el-table-column label="鉴权方式" min-width="105"
+          <el-table-column v-if="columnKey === 'authType'" label="鉴权方式" min-width="105"
             ><template v-slot="{ row }">{{
               optionLabel(authTypeOptions, row.authType)
             }}</template></el-table-column
           >
-          <el-table-column
+          <el-table-column v-if="columnKey === 'tokenCode'"
             prop="tokenCode"
             label="Token 编码"
             min-width="180"
             show-overflow-tooltip
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'billingCode'"
             prop="billingCode"
             label="计费编码"
             min-width="130"
             show-overflow-tooltip
           />
-          <el-table-column prop="ruleVersion" label="执行版本" width="100" />
-          <el-table-column prop="revisionId" label="执行修订" width="110" />
-          <el-table-column prop="billingBasis" label="计费依据" min-width="130">
+          <el-table-column v-if="columnKey === 'ruleVersion'" prop="ruleVersion" label="执行版本" width="100" />
+          <el-table-column v-if="columnKey === 'revisionId'" prop="revisionId" label="执行修订" width="110" />
+          <el-table-column v-if="columnKey === 'billingBasis'" prop="billingBasis" label="计费依据" min-width="130">
             <template v-slot="{ row }">{{ billingBasisLabel(row.billingBasis) }}</template>
           </el-table-column>
-          <el-table-column prop="rootTraceId" label="关联 ID" min-width="300" show-overflow-tooltip />
-          <el-table-column label="对象" width="90" align="center">
+          <el-table-column v-if="columnKey === 'rootTraceId'" prop="rootTraceId" label="关联 ID" min-width="300" show-overflow-tooltip />
+          <el-table-column v-if="columnKey === 'billingTarget'" label="对象" width="90" align="center">
             <template v-slot="{ row }">{{
               optionLabel(billingTargetOptions, row.billingTarget)
             }}</template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'ruleCode'"
             prop="ruleCode"
             label="规则编码"
             min-width="130"
             show-overflow-tooltip
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'apiCode'"
             prop="apiCode"
             label="接口编码"
             min-width="130"
             show-overflow-tooltip
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'errorMessage'"
             prop="errorMessage"
             label="计费时提示"
             min-width="180"
             show-overflow-tooltip
           />
-          <el-table-column label="计费时执行情况" width="175" align="center">
+          <el-table-column v-if="columnKey === 'success'" label="计费时执行情况" width="175" align="center">
             <template v-slot="{ row }">
               <el-tag
                 :type="billingOutcomeType(row)"
@@ -395,7 +398,7 @@
               >
             </template>
           </el-table-column>
-          <el-table-column label="当前试运行状态" width="145" fixed="right">
+          <el-table-column v-if="columnKey === 'trialStatus'" label="当前试运行状态" width="145" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 v-if="row.billingBasis === 'DRAFT_TRIAL' && row.rootTraceId"
@@ -408,24 +411,25 @@
               <span v-else>{{ row.billingBasis === 'DRAFT_TRIAL' ? '未记录关联 ID' : '—' }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="unitPrice" label="单价" width="110" align="right" />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'unitPrice'" prop="unitPrice" label="单价" width="110" align="right" />
+          <el-table-column v-if="columnKey === 'quantity'"
             prop="quantity"
             label="数量"
             width="90"
             align="right"
           />
-          <el-table-column prop="amount" label="金额" width="110" align="right">
+          <el-table-column v-if="columnKey === 'amount'" prop="amount" label="金额" width="110" align="right">
             <template v-slot="{ row }"
               >{{ row.currency || 'CNY' }} {{ row.amount || 0 }}</template
             >
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'costTimeMs'"
             prop="costTimeMs"
             label="耗时(ms)"
             width="100"
             align="right"
           />
+          </template>
         </el-table>
         <el-pagination
           v-show="!recordError"
@@ -552,7 +556,7 @@
           </el-form>
           <div class="uiue-btn-bar">
             <div class="btn-right">
-              <table-column-settings :columns="summaryColumns" storage-key="tianshu:table-columns:billing-summary" />
+              <table-column-settings v-model="tableColumnOrders.summaryColumns" :columns="summaryColumns" storage-key="tianshu:table-columns:billing-summary" />
               <el-button
                 v-permission="'billing:edit'"
                 size="small"
@@ -580,64 +584,65 @@
           :data="summaryList"
           border
           size="small"
-          v-loading="summaryLoading"
+          :aria-busy="summaryLoading"
           :empty-text="summaryError || '暂无数据'"
           style="width: 100%"
         >
-          <el-table-column prop="summaryDate" label="汇总日期" width="110" />
-          <el-table-column
+          <template v-for="columnKey in (tableColumnOrders.summaryColumns || summaryColumns.map(column => column.key))" :key="columnKey">
+          <el-table-column v-if="columnKey === 'summaryDate'" prop="summaryDate" label="汇总日期" width="110" />
+          <el-table-column v-if="columnKey === 'projectCode'"
             prop="projectCode"
             label="项目编码"
             min-width="120"
             show-overflow-tooltip
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'authCode'"
             prop="authCode"
             label="鉴权编码"
             min-width="135"
             show-overflow-tooltip
           />
-          <el-table-column label="鉴权方式" min-width="105"
+          <el-table-column v-if="columnKey === 'authType'" label="鉴权方式" min-width="105"
             ><template v-slot="{ row }">{{
               optionLabel(authTypeOptions, row.authType)
             }}</template></el-table-column
           >
-          <el-table-column
+          <el-table-column v-if="columnKey === 'billingCode'"
             prop="billingCode"
             label="计费编码"
             min-width="130"
             show-overflow-tooltip
           />
-          <el-table-column label="对象" width="90" align="center">
+          <el-table-column v-if="columnKey === 'billingTarget'" label="对象" width="90" align="center">
             <template v-slot="{ row }">{{
               optionLabel(billingTargetOptions, row.billingTarget)
             }}</template>
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'totalCount'"
             prop="totalCount"
             label="总次数"
             width="90"
             align="right"
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'successCount'"
             prop="successCount"
             label="计费时成功"
             width="120"
             align="right"
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'failCount'"
             prop="failCount"
             label="计费时未成功"
             width="130"
             align="right"
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'totalQuantity'"
             prop="totalQuantity"
             label="计费数量"
             width="110"
             align="right"
           />
-          <el-table-column
+          <el-table-column v-if="columnKey === 'amount'"
             prop="totalAmount"
             label="总金额"
             width="120"
@@ -647,12 +652,13 @@
               >{{ row.currency || 'CNY' }} {{ row.totalAmount || 0 }}</template
             >
           </el-table-column>
-          <el-table-column
+          <el-table-column v-if="columnKey === 'avgCostTimeMs'"
             prop="avgCostTimeMs"
             label="平均耗时(ms)"
             width="130"
             align="right"
           />
+          </template>
         </el-table>
         <el-pagination
           v-show="!summaryError"
@@ -951,27 +957,52 @@ export default {
   mixins: [governanceWorkspaceMixin],
   data() {
     return {
+      tableColumnOrders: { billingColumns: null, recordColumns: null, summaryColumns: null },
       billingColumns: [
-        { key: 'scope', label: '作用范围' }, { key: 'projectName', label: '项目名称' },
-        { key: 'billingCode', label: '计费编码' }, { key: 'billingName', label: '计费名称' },
-        { key: 'billingTarget', label: '对象' }, { key: 'chargeType', label: '方式' },
-        { key: 'unitPrice', label: '单价' }, { key: 'status', label: '状态' },
+        { key: 'scope', label: '作用范围' },
+        { key: 'projectName', label: '项目名称' },
+        { key: 'billingCode', label: '计费编码' },
+        { key: 'billingName', label: '计费名称' },
+        { key: 'billingTarget', label: '对象' },
+        { key: 'chargeType', label: '方式' },
+        { key: 'unitPrice', label: '单价' },
+        { key: 'status', label: '状态' },
       ],
       summaryColumns: [
-        { key: 'summaryDate', label: '汇总日期' }, { key: 'projectCode', label: '项目编码' },
-        { key: 'authCode', label: '鉴权编码' }, { key: 'totalCount', label: '调用次数' },
-        { key: 'successCount', label: '计费时成功' }, { key: 'failCount', label: '计费时未成功' }, { key: 'amount', label: '金额' },
+        { key: 'summaryDate', label: '汇总日期' },
+        { key: 'projectCode', label: '项目编码' },
+        { key: 'authCode', label: '鉴权编码' },
+        { key: 'authType', label: '鉴权方式' },
+        { key: 'billingCode', label: '计费编码' },
+        { key: 'billingTarget', label: '对象' },
+        { key: 'totalCount', label: '总次数' },
+        { key: 'successCount', label: '计费时成功' },
+        { key: 'failCount', label: '计费时未成功' },
+        { key: 'totalQuantity', label: '计费数量' },
+        { key: 'amount', label: '总金额' },
+        { key: 'avgCostTimeMs', label: '平均耗时(ms)' },
       ],
       recordColumns: [
-        { key: 'occurTime', label: '发生时间' }, { key: 'projectCode', label: '项目编码' },
-        { key: 'authCode', label: '鉴权编码' }, { key: 'authType', label: '鉴权方式' },
-        { key: 'tokenCode', label: 'Token 编码' }, { key: 'billingCode', label: '计费编码' },
-        { key: 'billingTarget', label: '对象' }, { key: 'ruleCode', label: '规则编码' },
-        { key: 'billingBasis', label: '计费依据' }, { key: 'rootTraceId', label: '关联 ID' },
-        { key: 'apiCode', label: '接口编码' }, { key: 'errorMessage', label: '计费时提示' },
-        { key: 'success', label: '计费时执行情况' }, { key: 'trialStatus', label: '当前试运行状态' },
-        { key: 'unitPrice', label: '单价' }, { key: 'quantity', label: '数量' },
-        { key: 'amount', label: '金额' }, { key: 'costTimeMs', label: '耗时(ms)' },
+        { key: 'occurTime', label: '发生时间' },
+        { key: 'projectCode', label: '项目编码' },
+        { key: 'authCode', label: '鉴权编码' },
+        { key: 'authType', label: '鉴权方式' },
+        { key: 'tokenCode', label: 'Token 编码' },
+        { key: 'billingCode', label: '计费编码' },
+        { key: 'ruleVersion', label: '执行版本' },
+        { key: 'revisionId', label: '执行修订' },
+        { key: 'billingBasis', label: '计费依据' },
+        { key: 'rootTraceId', label: '关联 ID' },
+        { key: 'billingTarget', label: '对象' },
+        { key: 'ruleCode', label: '规则编码' },
+        { key: 'apiCode', label: '接口编码' },
+        { key: 'errorMessage', label: '计费时提示' },
+        { key: 'success', label: '计费时执行情况' },
+        { key: 'trialStatus', label: '当前试运行状态', fixed: 'right' },
+        { key: 'unitPrice', label: '单价' },
+        { key: 'quantity', label: '数量' },
+        { key: 'amount', label: '金额' },
+        { key: 'costTimeMs', label: '耗时(ms)' },
       ],
       activeTab: 'config',
       targetOptions: [],

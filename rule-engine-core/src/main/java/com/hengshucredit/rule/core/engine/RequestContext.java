@@ -26,6 +26,20 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public final class RequestContext {
 
+    /** 嵌套规则与来源工作线程共享的不可变执行限制，不包含请求数据或可变缓存。 */
+    public record SourceExecutionPolicy(boolean offlineReplay, boolean dryRun, boolean skipApiSources,
+                                        boolean forceRefreshSource, java.time.LocalDateTime listMatchTime) {
+        public static final SourceExecutionPolicy DEFAULT =
+                new SourceExecutionPolicy(false, false, false, false, null);
+    }
+
+    private SourceExecutionPolicy sourceExecutionPolicy = SourceExecutionPolicy.DEFAULT;
+
+    public SourceExecutionPolicy sourceExecutionPolicy() { return sourceExecutionPolicy; }
+    public void setSourceExecutionPolicy(SourceExecutionPolicy policy) {
+        sourceExecutionPolicy = Objects.requireNonNull(policy);
+    }
+
     private BiConsumer<String, Object> listener;
     private Map<String, Object> rule = Collections.emptyMap();
     private Map<String, Object> rootRule = Collections.emptyMap();
@@ -322,6 +336,7 @@ public final class RequestContext {
         child.startedAt = startedAt;
         child.matchedConditions = matchedConditions;
         child.sourceStates = sourceStates;
+        child.sourceExecutionPolicy = sourceExecutionPolicy;
         child.traceEventListener = listener;
         child.functions = functions;
         child.functionBindingsPresent = functionBindingsPresent;

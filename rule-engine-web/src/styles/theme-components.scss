@@ -113,12 +113,9 @@ body,
   background: var(--tianshu-mask);
 }
 
-.layout-main .el-loading-mask {
-  background-color: transparent !important;
-}
-
-// 数据尚未返回时只保留表头和加载状态，避免同时误报“暂无数据”。
-.el-table:has(> .el-loading-mask) .el-table__empty-text {
+// 数据异步填充时保留真实页面与表头，不提前显示“暂无数据”。
+.el-table[aria-busy="true"] .el-table__empty-text,
+[aria-busy="true"] .el-table .el-table__empty-text {
   visibility: hidden;
 }
 
@@ -443,6 +440,7 @@ body,
   border-color: var(--tianshu-status-danger-border) !important;
 }
 
+[data-validation-path]:focus,
 .el-button:focus-visible,
 .table-column-settings__button:focus-visible,
 .table-column-settings__visibility:focus-visible,

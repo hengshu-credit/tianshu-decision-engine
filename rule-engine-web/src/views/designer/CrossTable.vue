@@ -90,7 +90,7 @@
           :allowed-kinds="readOperandKinds"
           placeholder="选择行维度字段或路径"
           style="margin-bottom: 6px"
-          @input="(operand) => setDimOperand('rowVar', operand)"
+          @input="(operand) => requestDimOperand('rowVar', operand)"
         />
         <el-input
           v-model="model.rowVar.varLabel"
@@ -114,7 +114,7 @@
           :allowed-kinds="readOperandKinds"
           placeholder="选择列维度字段或路径"
           style="margin-bottom: 6px"
-          @input="(operand) => setDimOperand('colVar', operand)"
+          @input="(operand) => requestDimOperand('colVar', operand)"
         />
         <el-input
           v-model="model.colVar.varLabel"
@@ -205,7 +205,7 @@
                     class="delete-col-btn"
                     aria-label="删除此列"
                     title="删除此列"
-                    @click="removeColumn(ci)"
+                    @click="requestRemoveColumn(ci)"
                   />
                 </el-tooltip>
               </div>
@@ -249,7 +249,7 @@
                     class="delete-row-btn"
                     aria-label="删除此行"
                     title="删除此行"
-                    @click="removeRow(ri)"
+                    @click="requestRemoveRow(ri)"
                   />
                 </el-tooltip>
               </div>
@@ -326,6 +326,7 @@
     />
 
     <designer-test-dialog
+      @locate="locateDesignerIssue"
       v-model:visible="testVisible"
       :execution-source="designerTestExecutionSource"
       :execution-source-name="viewRevisionLabel"
@@ -421,6 +422,37 @@ export default {
     this.loadContent()
   },
   methods: {
+    filledMatrixCells(predicate = () => true) {
+      return this.model.cells.reduce((total, row, ri) => total + row.filter((value, ci) => {
+        if (!predicate(ri, ci)) return false
+        const operand = this.model.cellOperands[ri]?.[ci]
+        return operand && operand.kind !== 'LITERAL' || value !== '' && value != null
+      }).length, 0)
+    },
+    async confirmMatrixChange(message, count) {
+      if (!count) return true
+      try {
+        await this.$confirm(`${message} 影响 ${count} 个已配置结果。`, '确认矩阵变更', {
+          type: 'warning', confirmButtonText: '继续变更', cancelButtonText: '保留配置',
+        })
+        return true
+      } catch { return false }
+    },
+    async requestDimOperand(key, operand) {
+      if (JSON.stringify(this.model[key].operand) === JSON.stringify(operand)) return
+      if (!await this.confirmMatrixChange('更换维度字段会改变条件含义，现有矩阵结果将清空，需要重新填写。', this.filledMatrixCells())) return
+      this.setDimOperand(key, operand)
+      this.model.cells = this.model.cells.map(row => row.map(() => ''))
+      this.model.cellOperands = this.model.cellOperands.map(row => row.map(() => null))
+    },
+    async requestRemoveRow(index) {
+      if (this.model.rowHeaders.length <= 1) return this.removeRow(index)
+      if (await this.confirmMatrixChange('删除该行将移除这一行的结果，其他行保持不变。', this.filledMatrixCells(ri => ri === index))) this.removeRow(index)
+    },
+    async requestRemoveColumn(index) {
+      if (this.model.colHeaders.length <= 1) return this.removeColumn(index)
+      if (await this.confirmMatrixChange('删除该列将移除这一列的结果，其他列保持不变。', this.filledMatrixCells((_ri, ci) => ci === index))) this.removeColumn(index)
+    },
     collectSelectedVarItems() {
       const items = []
       const add = (operand) =>

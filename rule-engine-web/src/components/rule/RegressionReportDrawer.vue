@@ -11,7 +11,7 @@
     <el-alert v-if="checkError" :title="checkError" type="error" :closable="false" show-icon />
     <el-alert v-if="gate" :title="'本次复核：' + gate.message" :type="gate.allowed && gate.requiredCount ? 'success' : 'warning'" :closable="false" show-icon />
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
-    <el-table v-loading="loading" :data="rows" border size="small" show-overflow-tooltip empty-text="暂无回归报告，请选择固定用例执行">
+    <el-table :aria-busy="loading" :data="rows" border size="small" show-overflow-tooltip empty-text="暂无回归报告，请选择固定用例执行">
       <el-table-column prop="scenarioName" label="用例" min-width="140" />
       <el-table-column label="执行来源" min-width="135"><template #default="{ row }">{{ sourceLabel(row) }}</template></el-table-column>
       <el-table-column label="预期校验" min-width="110"><template #default="{ row }"><el-tag :type="validationTagType(row.validationStatus)">{{ validationLabel(row.validationStatus) }}</el-tag></template></el-table-column>
@@ -22,7 +22,7 @@
     </el-table>
     <el-pagination :current-page="page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="changePage" />
     <el-dialog v-model="detailVisible" title="回归报告详情" width="90%" append-to-body>
-      <div v-loading="detailLoading">
+      <div :aria-busy="detailLoading">
         <el-alert v-if="detailError" :title="detailError" type="error" :closable="false" />
         <template v-if="detail">
           <p>{{ detail.scenarioName }} · {{ sourceLabel(detail) }} · {{ evidenceLabel(detail) }}</p>

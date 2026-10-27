@@ -51,7 +51,7 @@ export function contentReferenceParts(value, options = [], sensitive = false, mo
     const rawVersion = node.versionMode === 'FIXED' ? node.displayVersion ?? node.version
       : option?.displayVersion ?? option?.version ?? option?._ref?.modelVersion ?? option?._ref?.objectVersion ?? option?.varObj?.version ?? node.displayVersion ?? node.version
     const protocol = node.protocolPath || node.refType === 'API_CONTEXT'
-    if (!protocol) {
+    if (!protocol && !(mode === 'editor' && (node.builtin || rawVersion == null && !node.versionMode))) {
       let text = match?.version || compactVersion({ ...node, version: rawVersion }) || (rawVersion != null ? `v${rawVersion}` : '版本未提供')
       if (node.builtin) text = '内置'
       let title = text

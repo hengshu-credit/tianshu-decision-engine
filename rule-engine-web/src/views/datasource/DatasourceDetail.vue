@@ -33,8 +33,9 @@
       <el-button @click="loadDetail">重新加载</el-button>
     </el-alert>
     <el-form
-      v-if="configurationReady"
-      :disabled="saving"
+      v-if="!detailError"
+      :disabled="!configurationReady || saving"
+      :aria-busy="detailLoading"
       ref="form"
       :model="form"
       :rules="rules"

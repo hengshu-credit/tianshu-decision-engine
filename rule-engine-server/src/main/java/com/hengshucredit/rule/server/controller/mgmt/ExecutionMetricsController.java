@@ -46,6 +46,9 @@ public class ExecutionMetricsController {
     private RuleWarmupStatus ruleWarmupStatus;
     @Resource
     private RuleScriptPreparationService ruleScriptPreparationService;
+    @Resource private com.hengshucredit.rule.server.health.OnnxWarmupStatus onnxWarmupStatus;
+    @Resource private com.hengshucredit.rule.server.service.OnnxModelWarmupRunner onnxWarmupRunner;
+    @Resource private com.hengshucredit.rule.server.security.ConsoleProjectAccess consoleProjects;
     @Resource
     private RulePublishOutboxService rulePublishOutboxService;
     @Resource
@@ -69,7 +72,9 @@ public class ExecutionMetricsController {
         result.put("externalCircuitBreakers", externalApiCircuitBreakerRegistry.snapshot());
         result.put("databasePools", dbConnectPools.snapshot());
         result.put("runtimeCallLog", runtimeCallLogAsyncWriter.snapshot());
-        result.put("ruleWarmup", ruleWarmupStatus.details());
+        result.put("ruleWarmup", consoleProjects == null ? ruleWarmupStatus.details()
+                : consoleProjects.globalStatusSummary(ruleWarmupStatus.details(), "rule:view"));
+        if (onnxWarmupStatus != null) result.put("onnxWarmup", consoleProjects.globalStatusSummary(onnxWarmupStatus.details(), "model:view"));
         result.put("publishOutbox", rulePublishOutboxService.snapshot());
         result.put("executionPersistenceOutbox", executionPersistenceOutboxService.snapshot());
         result.put("logRetention", logRetentionService == null ? java.util.Collections.emptyMap()
@@ -86,6 +91,14 @@ public class ExecutionMetricsController {
     @org.springframework.web.bind.annotation.PostMapping("/rule-warmup/retry")
     @RequirePermission("rule:submit")
     public ApiResponse<Map<String, Object>> retryRuleWarmup() {
+        if (consoleProjects != null) consoleProjects.requireUnrestrictedPermissions("rule:view", "rule:submit");
         return ApiResponse.ok(ruleScriptPreparationService.warmupPublishedRules());
+    }
+
+    @org.springframework.web.bind.annotation.PostMapping("/model-warmup/retry")
+    @RequirePermission("model:edit")
+    public ApiResponse<Map<String, Object>> retryModelWarmup() {
+        consoleProjects.requireUnrestrictedPermissions("model:view", "model:edit");
+        return ApiResponse.ok(onnxWarmupRunner.retryWarmup());
     }
 }

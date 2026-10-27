@@ -1,5 +1,6 @@
 export function validationRepairHint(issue) {
   const code = String(issue && issue.code || '')
+  if (code === 'UNIQUE_CONFLICT') return '请调整这些规则行的重叠条件，或选择合适的命中策略，再执行测试。'
   if (/REFERENCE|DEPENDENCY|MISSING_.*ID/.test(code)) return '请在问题位置重新选择已启用的字段或依赖；引用使用 ID，修改显示名称不能修复失效引用。'
   if (/SCHEMA|FIELD|TYPE/.test(code)) return '请核对输入、输出字段的类型和必填要求，修改后重新校验当前修订。'
   if (/COMPILE|MODEL_JSON/.test(code)) return '请检查条件、动作和模型内容是否完整，修复后点击“编译”。未完成配置可先点击“保存”保留草稿。'

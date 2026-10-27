@@ -3,7 +3,7 @@
     <div class="api-binding-toolbar"><strong>{{ apiName || 'API 取值配置' }}</strong><span v-if="!loading">{{ fields.filter(field => field.overridable).length }} 项可覆盖</span><a :href="apiLink" target="_blank" rel="noopener">配置 API 入参 ↗</a><el-button link size="small" :loading="loading" @click="loadContract">刷新</el-button></div>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <p>仅已开放的请求字段允许覆盖；未勾选时沿用 API 默认配置。相同 API 与相同入参在本次规则内共用结果。</p>
-    <div v-if="fields.length || loading" v-loading="loading" class="api-binding-table-wrap">
+    <div v-if="fields.length || loading" :aria-busy="loading" class="api-binding-table-wrap">
     <el-table :data="fields" border size="small" row-key="id" class="api-binding-table">
       <el-table-column label="覆盖位置" width="100"><template #default="{ row }"><span :title="requestFieldPosition(row).hint">{{ requestFieldPosition(row).label }}</span></template></el-table-column>
       <el-table-column label="数据格式" min-width="210"><template #default="{ row }"><span :title="requestFieldFormat(row).hint">{{ requestFieldFormat(row).label }}</span></template></el-table-column>

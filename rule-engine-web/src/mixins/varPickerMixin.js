@@ -358,13 +358,10 @@ export default {
             String(route.params.id) === String(definitionId) && def?.ruleName) {
           syncWorkspaceTabTitle(this.$store, route, def.ruleName)
         }
-        // projectId == null 表示规则数据不完整；projectId = 0 表示 GLOBAL 规则，需继续调用 API
-        if (!def || def.projectId == null) {
-          this.loadingVars = false
-          return
-        }
-        this.projectIdForRefs = def.projectId
-        const pid = def.projectId
+        // 全局规则统一使用 0 查询当前资源，兼容旧记录未填写 projectId 的情况。
+        const pid = def?.scope === 'GLOBAL' ? 0 : def?.projectId
+        if (pid == null) throw new Error('规则缺少所属项目，无法加载当前可用字段')
+        this.projectIdForRefs = pid
         const optionalDirectory = error => {
           if (options.managed) throw error
           return []
@@ -438,8 +435,8 @@ export default {
         const api = varObj.objectField ? getDataObjectFieldOptions : getVariableOptions
         const res = await api(varObj.id)
         if (!this.referenceRequestCurrent(requestId) || this.referenceCatalogMode !== 'LIVE') return
-        // request 拦截器已返回 res.data，直接使用
-        const opts = res || []
+        // request 保留平台响应外层；枚举数据位于 data，兼容直接返回数组的调用方。
+        const opts = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : [])
         this.varOptionsByCode[refCode] = opts
       } catch (e) {
         if (!this.referenceRequestCurrent(requestId)) return

@@ -68,7 +68,7 @@
       border
       size="small"
       style="margin-bottom: 16px"
-      v-loading="loading"
+      :aria-busy="loading"
     >
       <el-descriptions-item label="模型编码">{{
         model.modelCode
@@ -188,7 +188,7 @@
           border
           size="small"
           max-height="500"
-          v-loading="loading"
+          :aria-busy="loading"
           :row-class-name="inputRowClassName"
         >
           <!-- 序号 -->
@@ -364,7 +364,7 @@
           border
           size="small"
           max-height="500"
-          v-loading="loading"
+          :aria-busy="loading"
           :row-class-name="outputRowClassName"
         >
           <!-- 序号 -->
@@ -561,7 +561,7 @@
         :data="versionList"
         border
         size="small"
-        v-loading="versionLoading"
+        :aria-busy="versionLoading"
         style="width: 100%"
       >
         <el-table-column prop="version" label="版本" width="80" align="center">
@@ -2452,9 +2452,6 @@ export default {
 }
 :deep(.editing-row) {
   background-color: #f0f9eb;
-}
-:deep(.el-loading-mask.el-loading-fade-leave-active) {
-  pointer-events: none;
 }
 :deep(.el-table .editing-row td) {
   background-color: #f0f9eb;

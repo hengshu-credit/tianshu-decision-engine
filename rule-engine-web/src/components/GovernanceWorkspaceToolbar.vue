@@ -15,7 +15,7 @@
       </div>
       <p class="workspace-help">保存草稿后仍可编辑；发布审批通过后才生效。新增内容待审批时须先驳回才能删除。</p>
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
-      <el-table v-loading="loading" :data="rows" empty-text="当前范围没有草稿或审批申请">
+      <el-table :aria-busy="loading" :data="rows" empty-text="当前范围没有草稿或审批申请">
         <el-table-column label="内容" min-width="200" show-overflow-tooltip><template #default="{ row }">{{ title(row) }}</template></el-table-column>
         <el-table-column label="变更" width="90"><template #default="{ row }">{{ actionLabel(row.action) }}</template></el-table-column>
         <el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>

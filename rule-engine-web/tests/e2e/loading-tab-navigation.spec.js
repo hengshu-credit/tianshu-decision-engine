@@ -23,6 +23,7 @@ for (const entry of [...designers.map((kind, index) => ({ name: kind, id: 101 + 
       await page.getByRole('row').filter({ has: page.getByRole('cell', { name: definition.ruleCode, exact: true }) }).getByRole('button', { name: entry.button, exact: true }).click()
       await expect(page).toHaveURL(`${origin}/#${entry.path}`)
       await expect.poll(() => requested).toBe(true)
+      await expect(page.locator('.layout-main .el-loading-mask, .layout-main .graph-loading-mask')).toHaveCount(0)
       const tab = page.locator('.workspace-tab__main[data-path="/rule"]')
       expect(await tab.evaluate(element => Boolean(element.closest('[inert]')))).toBe(false)
       await tab.click({ timeout: 1500 })

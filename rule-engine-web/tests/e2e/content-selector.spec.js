@@ -55,7 +55,10 @@ test('内容选择器与 fx 统一展示来源类型图标，整行运算按左�
   await expect(editor.locator('.canvas-node .content-ref__type')).toHaveText('Abc')
   await expect(editor.locator('.canvas-node .content-ref')).toContainText('地址address')
   await expect(editor.locator('.canvas-node .content-ref')).toContainText('v3')
-  const segments = await editor.locator('.canvas-node .content-ref').evaluate(element => [...element.children].map(child => ({ key: child.dataset.contentPart, x: child.getBoundingClientRect().x, right: child.getBoundingClientRect().right, background: getComputedStyle(child).backgroundColor })))
+  const segments = await editor.locator('.canvas-node .content-ref').evaluate(element => [...element.children].map(child => {
+    const style = getComputedStyle(child)
+    return { key: child.dataset.contentPart, x: child.getBoundingClientRect().x, right: child.getBoundingClientRect().right, background: style.backgroundImage === 'none' ? style.backgroundColor : style.backgroundImage }
+  }))
   expect(segments.map(part => part.key)).toEqual(['source', 'type', 'name', 'code', 'version'])
   for (let i = 1; i < segments.length; i++) expect(Math.abs(segments[i].x - segments[i - 1].right)).toBeLessThanOrEqual(0.5)
   expect(new Set(segments.map(part => part.background)).size).toBeGreaterThanOrEqual(4)

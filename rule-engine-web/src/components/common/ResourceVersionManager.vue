@@ -2,11 +2,10 @@
   <span class="resource-version-entry">
     <el-button v-if="canView && showTrigger" link type="primary" data-action="version" size="small" @click.stop="open">版本</el-button>
     <el-drawer v-model="visible" title="版本管理" size="min(1120px, 100vw)" append-to-body destroy-on-close :before-close="close">
-      <div v-loading="loading" class="resource-version-manager" :aria-busy="loading"
-        element-loading-background="transparent" element-loading-text="正在加载版本…">
+      <div class="resource-version-manager" :aria-busy="loading">
         <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
         <div class="uiue-search-container uiue-filter-toolbar">
-          <el-select v-model="selected" aria-label="查看版本" :disabled="editing || busy" @change="comparison = ''">
+          <el-select v-model="selected" aria-label="查看版本" :disabled="loading || editing || busy" @change="comparison = ''">
             <el-option label="最新版（当前生产）" value="LATEST" :disabled="!workspace.latestVersionId" />
             <el-option-group label="业务版本">
               <el-option v-for="version in activeVersions" :key="version.versionId" :label="label(version)" :value="'r:' + version.versionId" />
@@ -20,7 +19,7 @@
             <el-button :disabled="busy || editing" @click="load">刷新</el-button>
             <el-button v-if="hasLegacy" :disabled="busy || editing" @click="visible = false; $emit('legacy')">早期历史快照</el-button>
             <el-button v-if="canExport" :disabled="!snapshot || !!currentDraft || editing || busy || selectedVersionDeleted" @click="exportVersion">迁移此版本</el-button>
-            <el-button v-if="canEdit" type="primary" :disabled="!snapshot || busy || editing || selectedVersionDeleted || !!currentDraft && !editableDraft" @click="edit">{{ editableDraft ? '编辑草稿' : '基于此版本编辑' }}</el-button>
+            <el-button v-if="canEdit" type="primary" :disabled="loading || !snapshot || busy || editing || selectedVersionDeleted || !!currentDraft && !editableDraft" @click="edit">{{ editableDraft ? '编辑草稿' : '基于此版本编辑' }}</el-button>
           </div>
         </div>
         <p class="version-help">草稿与生产并存。新增发布形成新版本；覆盖只更新指定版本，历史修订和变更记录保留。覆盖旧版本不会切换当前最新版。</p>

@@ -44,6 +44,68 @@ import static com.hengshucredit.rule.server.service.ExternalApiTestConfig.*;
 
 public class ExternalApiInvokeServiceTest {
 
+    @Test
+    public void internalRuleDatasourceKeepsWorkerPolicyAndSeparatesDryRunCache() throws Exception {
+        RuleExternalDatasource datasource = new RuleExternalDatasource();
+        datasource.setId(1L);
+        datasource.setProtocol("RULE_ENGINE");
+        datasource.setAuthType("NONE");
+        RuleExternalApiConfig config = basicApiConfig(9910L, 1L, "INTERNAL_RULE");
+        config.setResponseCacheSeconds(60);
+        RulePublished published = new RulePublished();
+        published.setId(1L); published.setRuleCode("INTERNAL_RULE"); published.setStatus(1);
+        List<VariableResolveOptions> observed = new ArrayList<>();
+        ExternalApiInvokeService service = configuredService(config, datasource);
+        ReflectionTestUtils.setField(service, "publishedMapper",
+                selectOneMapperProxy(RulePublishedMapper.class, published));
+        ReflectionTestUtils.setField(service, "ruleExecuteService", new RuleExecuteService() {
+            @Override public RuleResult executePublished(RulePublished rule, Map<String, Object> params,
+                                                        Long projectId, String clientAppName) {
+                return executePublishedWithOptions(rule, params, projectId, clientAppName,
+                        VariableResolveOptions.defaults(), "CLIENT_SERVER").getResult();
+            }
+            @Override public ExecutionOutcome executePublishedWithOptions(RulePublished rule,
+                    Map<String, Object> params, Long projectId, String clientAppName,
+                    VariableResolveOptions options, String source) {
+                observed.add(options);
+                RuleResult result = new RuleResult();
+                result.setSuccess(true);
+                result.setResult(Map.of("dryRun", options.isDryRun()));
+                return new ExecutionOutcome(result, params);
+            }
+        });
+        RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
+        invoker.enter("PARENT", 0L, null, new LinkedHashMap<>());
+        try {
+            Map<String, Object> live = service.invoke(config.getId(), Map.of("id", 1));
+            assertEquals(false, ((Map<?, ?>) live.get("body")).get("dryRun"));
+            VariableResolveOptions policy = VariableResolveOptions.defaults();
+            policy.setDryRun(true); policy.setSkipApiSources(true); policy.setForceRefreshSource(true);
+            policy.setListMatchTime(java.time.LocalDateTime.of(2026, 10, 27, 0, 0));
+            invoker.setSourceExecutionPolicy(policy);
+            var snapshot = RuntimeContextBridge.captureContext();
+            var worker = java.util.concurrent.Executors.newSingleThreadExecutor();
+            try {
+                Map<String, Object> dryRun = worker.submit(() -> {
+                    try (var scope = RuntimeContextBridge.installContext(snapshot, null)) {
+                        return service.invoke(config.getId(), Map.of("id", 1));
+                    }
+                }).get(10, java.util.concurrent.TimeUnit.SECONDS);
+                assertEquals(true, ((Map<?, ?>) dryRun.get("body")).get("dryRun"));
+                assertEquals("DISABLED", dryRun.get("cacheStatus"));
+                assertEquals(2, observed.size());
+                assertTrue(observed.get(1).isSkipApiSources());
+                assertTrue(observed.get(1).isForceRefreshSource());
+                assertEquals(policy.getListMatchTime(), observed.get(1).getListMatchTime());
+            } finally { worker.shutdownNow(); }
+            invoker.setSourceExecutionPolicy(VariableResolveOptions.defaults());
+            Map<String, Object> cachedLive = service.invoke(config.getId(), Map.of("id", 1));
+            assertEquals("HIT", cachedLive.get("cacheStatus"));
+            assertEquals(false, ((Map<?, ?>) cachedLive.get("body")).get("dryRun"));
+            assertEquals(2, observed.size());
+        } finally { invoker.exit(); }
+    }
+
     @Test public void retriedRequestWithoutResponseIsUnknownDespiteEarlierHttpError() throws Exception {
         AtomicInteger requests = new AtomicInteger();
         var release = new java.util.concurrent.CountDownLatch(1);

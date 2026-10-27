@@ -6,9 +6,11 @@
     width="760px"
     append-to-body
     :close-on-click-modal="false"
+    @closed="emitPendingLocation"
   >
     <div class="designer-test-dialog">
       <el-alert v-if="executionSource" :title="executionSourceLabel(executionSource, executionSourceName || resolvedIdentity)" type="info" :closable="false" show-icon style="margin-bottom: 10px" />
+      <el-alert title="测试调用与写入说明" description="画布预览按当前依赖真实执行。若配置了外数、数据库、SFTP 或名单动作，将按实际配置调用或写入，并应用计费规则。" type="info" :closable="false" show-icon style="margin-bottom: 10px" />
       <div
         style="
           margin-bottom: 10px;
@@ -47,7 +49,7 @@
       />
       <div v-if="jsonError" class="json-error">{{ jsonError }}</div>
 
-      <div v-if="result" class="test-result">
+      <div v-if="result" ref="testResult" class="test-result">
         <el-alert
           :title="resultThrottled ? executionStatusLabel(result.executionStatus) : result.success ? '执行成功' : '执行失败'"
           :type="resultThrottled ? 'warning' : result.success ? 'success' : 'error'"
@@ -75,6 +77,8 @@
           </el-tab-pane>
           <el-tab-pane v-if="result.errorMessage" :label="resultThrottled ? '容量提示' : '错误信息'" name="error">
             <pre class="result-pre" :class="resultThrottled ? 'capacity-pre' : 'error-pre'">{{ result.errorMessage }}</pre>
+            <rule-validation-report v-if="result.executionIssues?.length" :report="{ scope: 'EXECUTION', valid: false, errors: result.executionIssues, warnings: [] }" locatable @locate="locateExecutionIssue" />
+            <details v-if="result.executionErrorDetail" class="execution-error-detail"><summary>技术详情</summary><pre class="result-pre">{{ result.executionErrorDetail }}</pre></details>
           </el-tab-pane>
         </el-tabs>
         <div class="result-meta">耗时 {{ result.executeTimeMs || 0 }} ms</div>
@@ -105,6 +109,7 @@ import { executeRule, getRuleTestSchema } from '@/api/definition'
 import MonacoEditor from '@/components/MonacoEditor'
 import TraceTree from '@/components/common/TraceTree.vue'
 import DialogResizeHandle from '@/components/common/DialogResizeHandle.vue'
+import RuleValidationReport from '@/components/rule/RuleValidationReport.vue'
 import { normalizeTestResult, formatTestOutput } from '@/utils/testResult'
 import { executionStatusLabel, executionStatusHint } from '@/utils/executionStatus'
 import { executionSourceKey, executionSourceLabel, requireExecutionIdentity } from '@/utils/ruleTestExecutionSource'
@@ -116,6 +121,8 @@ export default {
       jsonError: '',
       result: null,
       lastInput: null,
+      testedModelJson: null,
+      pendingLocation: null,
       executing: false,
       editorKey: 1,
       activeTab: 'output',
@@ -133,7 +140,7 @@ export default {
     }
   },
   name: 'DesignerTestDialog',
-  components: { MonacoEditor, TraceTree, DialogResizeHandle },
+  components: { MonacoEditor, TraceTree, DialogResizeHandle, RuleValidationReport },
   props: {
     visible: {
       type: Boolean,
@@ -210,6 +217,17 @@ export default {
   },
   beforeUnmount() { this.invalidateRequests() },
   methods: {
+    locateExecutionIssue(issue) {
+      this.pendingLocation = { ...issue, checkedModelJson: this.testedModelJson }
+      this.close()
+    },
+    async emitPendingLocation() {
+      if (!this.pendingLocation) return
+      const target = this.pendingLocation
+      this.pendingLocation = null
+      await this.$nextTick()
+      this.$emit('locate', target)
+    },
     executionStatusLabel,
     executionStatusHint,
     executionSourceLabel,
@@ -232,6 +250,7 @@ export default {
       }
     },
     async open() {
+      this.pendingLocation = null
       this.executionRequestId++
       this.executing = false
       this.result = null
@@ -340,11 +359,13 @@ export default {
       this.result = null
       this.lastInput = params
       try {
+        const sourcePayload = this.executionSourcePayload()
+        this.testedModelJson = sourcePayload.modelJson || null
         const res = await executeRule(
           {
             definitionId: this.definitionId,
             projectId: Number(this.projectId) > 0 ? this.projectId : undefined,
-            ...this.executionSourcePayload(),
+            ...sourcePayload,
             params,
           },
           this.requestTimeoutMs
@@ -365,7 +386,14 @@ export default {
         })
         this.activeTab = 'error'
       } finally {
-        if (requestId === this.executionRequestId) this.executing = false
+        if (requestId === this.executionRequestId) {
+          this.executing = false
+          await this.$nextTick()
+          if (requestId === this.executionRequestId && this.visible && this.result) {
+            const resultElement = this.$refs.testResult
+            if (resultElement?.scrollIntoView) resultElement.scrollIntoView({ block: 'start' })
+          }
+        }
       }
     },
     close() {
@@ -398,7 +426,7 @@ export default {
       return formatTestOutput(value)
     },
   },
-  emits: ['update:visible'],
+  emits: ['update:visible', 'locate'],
 }
 </script>
 
