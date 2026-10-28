@@ -1,0 +1,2 @@
+# Shell 入口必须可在 macOS/Linux 直接解释，避免 Windows 检出引入 CRLF。
+scripts/package-deployment.sh text eol=lf

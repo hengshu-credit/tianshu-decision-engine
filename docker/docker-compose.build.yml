@@ -1,0 +1,27 @@
+# 仅供发布构建使用；不读取应用 .env，不启动或停止现有服务。
+services:
+  builder:
+    image: ${PACKAGE_BUILD_IMAGE:?Set by package-deployment.mjs}
+    platform: ${PACKAGE_PLATFORM:-linux/amd64}
+    working_dir: /tmp
+    entrypoint: []
+    environment:
+      HOME: /root
+    volumes:
+      - type: bind
+        source: ${PACKAGE_SOURCE_DIR:?Set by package-deployment.mjs}
+        target: /source
+        read_only: true
+      - type: bind
+        source: ${PACKAGE_ARTIFACT_DIR:?Set by package-deployment.mjs}
+        target: /artifacts
+      - type: bind
+        source: ${PACKAGE_OUTPUT_DIR:?Set by package-deployment.mjs}
+        target: /output
+      - maven-cache:/root/.m2
+      - npm-cache:/root/.npm
+volumes:
+  maven-cache:
+    name: tianshu-maven-cache
+  npm-cache:
+    name: tianshu-npm-cache

@@ -1,6 +1,8 @@
-# 上传服务器部署与升级（2026-10-26）
+# 上传服务器部署与升级（2026-10-28）
 
-本流程用于 **server 2 副本 + web 1 个 + 可选 SDK runtime 1 个 + 独立 Kafka 1 个**，复用服务器已有 MySQL、Redis 和 Nginx Proxy Manager。所有服务操作直接使用完整的 `docker compose` 命令。
+本流程用于 **server 2 副本 + web 1 个 + 可选 SDK runtime 1 个 + 独立 Kafka 1 个**，复用服务器已有 MySQL、Redis 和 Nginx Proxy Manager。所有服务操作直接使用完整的 `docker-compose` 命令。
+
+要求 `docker-compose` 为现代 Compose v2+（含 v5），不支持旧 Python v1。构建机器的三端入口见 [跨平台发布构建](release-packaging.md)；本页面向 Linux 服务器。
 
 部署包已包含 Docker 构建的 CPU 版 `server.jar`、`runtime.jar`、前端 `dist`、Compose、文档、许可证及对应源码 `source/`。服务器无需安装 Maven、Node.js 或重新编译；包内不含 Docker 镜像，首次启动需要能够拉取配置中的镜像。源码中的配置模板不包含本次生产凭据；向服务使用者提供与当前版本对应的源码获取入口，详见 `THIRD_PARTY_LICENSES.md`。
 
@@ -19,7 +21,7 @@ RELEASE_DIR=$(mktemp -d /root/tianshu-release-XXXXXXXX)
 unzip -q "$PACKAGE_ZIP" -d "$RELEASE_DIR"
 cd "$RELEASE_DIR"
 sha256sum -c SHA256SUMS.txt
-docker compose version
+docker-compose version
 ```
 
 任一校验失败即停止。以下步骤在同一 Bash 会话执行，继续使用 `RELEASE_DIR`。先暂存再停机替换，避免直接覆盖运行中的 JAR。
@@ -49,9 +51,9 @@ printf '本次应用备份目录：%s\n' "$BACKUP_DIR"
 
 ```bash
 # 仅旧 client Compose 的 config --services 确实包含 runtime-http 时执行
-docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml config --services
-docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml stop runtime-http
-docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml rm -f runtime-http
+docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml config --services
+docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml stop runtime-http
+docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml rm -f runtime-http
 ```
 
 新部署或已无此服务时跳过以上三条。旧版使用其他 Compose 方案时，必须沿用原方案的文件和项目名，不能拿本例操作另一套环境。
@@ -61,8 +63,8 @@ docker compose --project-name tianshu-client --env-file .env.client -f docker/do
 已有部署安排维护窗口，在原目录执行；首次安装跳过停止命令。若未部署 SDK，跳过客户端停止命令。
 
 ```bash
-docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml stop runtime-sdk
-docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml stop web server
+docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml stop runtime-sdk
+docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml stop web server
 ```
 
 Kafka、MySQL、Redis 保持原状。执行以下文件安装操作：
@@ -108,17 +110,17 @@ chmod 600 .env.server .env.client
 先解析配置；这一步不代表远程密码和连通性已经验证：
 
 ```bash
-docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml config --quiet
-docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml config --quiet
-docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.kafka.yml config --quiet
+docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml config --quiet
+docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml config --quiet
+docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.kafka.yml config --quiet
 ```
 
 首次需要本包 Kafka 时先启动；已有 Kafka 未改配置可跳过，沿用当前实例。SDK 为可选服务，只直接调用 Server API 时可跳过客户端启动。
 
 ```bash
-docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.kafka.yml up -d --wait --wait-timeout 300
-docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml up -d --force-recreate --scale server=2 --wait --wait-timeout 300
-docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml up -d --force-recreate --wait --wait-timeout 300
+docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.kafka.yml up -d --wait --wait-timeout 300
+docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml up -d --force-recreate --scale server=2 --wait --wait-timeout 300
+docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml up -d --force-recreate --wait --wait-timeout 300
 ```
 
 每条成功才执行下一条。升级可能同时重启两个 server，不承诺零停机。不要同时运行 full/mysql/redis 方案；两个文件分别操作同一项目可能提示 orphan，不要加 `--remove-orphans`，也不要执行 `down -v`。
@@ -126,16 +128,16 @@ docker compose --project-name tianshu-client --env-file .env.client -f docker/do
 ## 5. 状态、日志与浏览器验收
 
 ```bash
-docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml ps -a
-docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml ps -a
-docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.kafka.yml ps -a
-docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml logs --tail 100 server web
-docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml logs --tail 100 runtime-sdk
-docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.kafka.yml logs --tail 100 kafka
-docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T web nginx -t
-docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T server wget -qO- http://127.0.0.1:8080/actuator/health/readiness
-docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml exec -T runtime-sdk wget -qO- http://127.0.0.1:7071/actuator/health/readiness
-docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.kafka.yml exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:19092 --command-config /tmp/tianshu-client.properties --list
+docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml ps -a
+docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml ps -a
+docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.kafka.yml ps -a
+docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml logs --tail 100 server web
+docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml logs --tail 100 runtime-sdk
+docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.kafka.yml logs --tail 100 kafka
+docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T web nginx -t
+docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T server wget -qO- http://127.0.0.1:8080/actuator/health/readiness
+docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml exec -T runtime-sdk wget -qO- http://127.0.0.1:7071/actuator/health/readiness
+docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.kafka.yml exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:19092 --command-config /tmp/tianshu-client.properties --list
 ```
 
 `ps -a` 应显示两个 server 均 healthy；单次 exec 只抽查一个副本。未启动的可选服务不执行对应检查。Kafka 命令只验证内部监听和认证，外部广播地址还需由实际客户端验收。
@@ -145,7 +147,7 @@ NPM 沿用现有 Proxy Host：控制台域名代理到服务器 IP 和 `.env.ser
 打开控制台 HTTPS 地址，依次确认登录、项目列表、规则详情、设计器、规则测试与执行日志。已有库使用原账号；仅空库首次注册超级管理员。业务方验证真实项目鉴权、已发布规则执行、SDK 同步及日志上报后恢复流量。忘记超管账号密码时：
 
 ```bash
-docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T server java -jar /app/app.jar --console-admin-recovery-code
+docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T server java -jar /app/app.jar --console-admin-recovery-code
 ```
 
 在登录页“管理员应急恢复”使用30分钟一次性恢复码；不更换主密钥、不清空数据。
