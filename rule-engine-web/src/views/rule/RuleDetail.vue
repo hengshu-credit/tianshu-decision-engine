@@ -696,7 +696,7 @@
       </div>
     </el-tab-pane>
 
-    <el-tab-pane name="open-api">
+    <el-tab-pane name="open-api" lazy>
         <template v-slot:label>
           <span
             ><el-icon><el-icon-connection /></el-icon> 开放接口</span
@@ -992,7 +992,7 @@
         </div>
       </el-tab-pane>
 
-      <el-tab-pane name="api-scenarios">
+      <el-tab-pane name="api-scenarios" lazy>
         <template v-slot:label>
           <span
             ><el-icon><el-icon-document-checked /></el-icon> API 测试用例</span

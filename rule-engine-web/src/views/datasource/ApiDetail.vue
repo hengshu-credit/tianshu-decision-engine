@@ -176,7 +176,7 @@
         </button>
       </section>
 
-      <el-tabs v-model="activeConfigTab" lazy class="config-tabs" :before-leave="validateActiveEditors" @tab-change="syncConfigGroupForTab">
+      <el-tabs v-model="activeConfigTab" class="config-tabs" :before-leave="validateActiveEditors" @tab-change="syncConfigGroupForTab">
         <el-tab-pane
           v-if="isConfigTabVisible('auth')"
           label="接口鉴权"
@@ -1052,6 +1052,7 @@
 
         <el-tab-pane
           v-if="isConfigTabVisible('test')"
+          lazy
           label="接口测试"
           name="test"
         >
