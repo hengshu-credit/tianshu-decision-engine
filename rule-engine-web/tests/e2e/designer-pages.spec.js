@@ -770,13 +770,17 @@ test('判断节点只在菱形内部显示一次名称', async ({ page }) => {
   await page.goto('http://tianshu.local/index.html#/designer/tree/102')
 
   await page.getByRole('button', { name: '条件判断', exact: true }).click()
-  const gateway = page.locator('.lf-node').filter({ hasText: '条件判断' })
+  const miniature = page.locator('.lf-mini-map .lf-node').filter({ hasText: '条件判断' })
+  await expect(miniature).toHaveCount(1)
+  const gateway = page.locator('.lf-node:not(.lf-mini-map .lf-node)').filter({ hasText: '条件判断' })
   await expect(gateway).toBeVisible()
-  const labels = (await gateway.locator('text').allTextContents())
-    .map(text => text.trim())
-    .filter(Boolean)
-
-  expect(labels).toEqual(['条件判断'])
+  // 缩略图异步复制主画布；两个画布各自只应显示一次节点名称。
+  for (const node of [gateway, miniature]) {
+    const labels = (await node.locator('text').allTextContents())
+      .map(text => text.trim())
+      .filter(Boolean)
+    expect(labels).toEqual(['条件判断'])
+  }
   assertClean()
 })
 
