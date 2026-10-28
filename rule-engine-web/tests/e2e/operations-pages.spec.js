@@ -805,8 +805,10 @@ test('夜间模式下运行页面的提示区、代码块和血缘画布使用�
   await expectStyleUsesToken(
     page.locator('.current-node .content-ref__name'),
     'color',
-    '--tianshu-content-name-text'
+    '--tianshu-text-primary'
   )
+  await expect(page.locator('.current-node .content-ref__name')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await expectStyleUsesToken(page.locator('.graph-toolbar'), 'backgroundColor', '--tianshu-bg-surface')
 
   await page.goto('http://tianshu.local/index.html#/experiment')
   await expectStyleUsesToken(

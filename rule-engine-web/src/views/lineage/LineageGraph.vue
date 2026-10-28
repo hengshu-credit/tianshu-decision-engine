@@ -88,7 +88,7 @@
       <div v-if="startNode" class="graph-toolbar" @pointerdown.stop>
         <el-button size="small" :icon="ElIconDownload" aria-label="下载PNG血缘图" @click="downloadPng">下载 PNG</el-button>
         <el-button size="small" :icon="ElIconMagicStick" @click="resetToBestLayout">一键美化</el-button>
-        <el-button size="small" :icon="ElIconMapLocation" :class="{ 'is-tool-active': miniMapVisible }" @click="toggleMiniMap">小地图</el-button>
+        <el-button size="small" :icon="ElIconMapLocation" :class="{ 'is-tool-active': miniMapVisible }" :aria-pressed="miniMapVisible" @click="toggleMiniMap">小地图</el-button>
         <el-button-group size="small">
           <el-button :icon="ElIconZoomIn" aria-label="放大血缘图" title="放大" @click="zoomIn" />
           <el-button :icon="ElIconZoomOut" aria-label="缩小血缘图" title="缩小" @click="zoomOut" />
@@ -1532,19 +1532,21 @@ export default {
     height: 100%;
   }
   .graph-toolbar {
-    --designer-toolbar-foreground: var(--tianshu-brand-foreground);
-    --designer-toolbar-control-background: color-mix(in srgb, var(--designer-toolbar-foreground) 10%, transparent);
-    --designer-toolbar-control-border: color-mix(in srgb, var(--designer-toolbar-foreground) 42%, transparent);
-    --designer-toolbar-control-hover-background: color-mix(in srgb, var(--designer-toolbar-foreground) 20%, transparent);
+    --designer-toolbar-foreground: var(--tianshu-text-secondary);
+    --designer-toolbar-control-background: var(--tianshu-bg-surface);
+    --designer-toolbar-control-border: var(--tianshu-border);
+    --designer-toolbar-control-hover-background: var(--tianshu-bg-hover);
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
+    max-width: 100%;
+    box-sizing: border-box;
     padding: 6px 8px;
     border: 1px solid var(--designer-toolbar-control-border);
     border-radius: 6px;
-    background: var(--tianshu-brand-background);
-    box-shadow: var(--tianshu-shadow-medium);
+    background: var(--tianshu-bg-surface);
+    box-shadow: var(--tianshu-shadow-small);
     color: var(--designer-toolbar-foreground);
     z-index: 2;
   }
@@ -1561,12 +1563,12 @@ export default {
   .graph-toolbar button:hover,
   .graph-toolbar button:focus-visible {
     color: var(--designer-toolbar-foreground);
-    border-color: var(--tianshu-designer-toolbar-accent);
+    border-color: var(--el-color-primary-light-5);
     background: var(--designer-toolbar-control-hover-background);
     outline: none;
   }
   .graph-toolbar :deep(.el-button),
-  .graph-toolbar :deep(.el-select .el-input__wrapper) {
+  .graph-toolbar :deep(.el-select__wrapper) {
     border-color: var(--designer-toolbar-control-border);
     background: var(--designer-toolbar-control-background);
     color: var(--designer-toolbar-foreground);
@@ -1574,26 +1576,24 @@ export default {
   .graph-toolbar :deep(.el-button:hover),
   .graph-toolbar :deep(.el-button:focus-visible),
   .graph-toolbar :deep(.is-tool-active) {
-    border-color: var(--tianshu-designer-toolbar-accent);
-    color: var(--designer-toolbar-foreground);
+    border-color: var(--el-color-primary-light-5);
+    color: var(--el-color-primary);
     background: var(--designer-toolbar-control-hover-background);
   }
-  .graph-toolbar :deep(.el-button:focus:not(:focus-visible)) {
+  .graph-toolbar :deep(.el-button:not(.is-tool-active):focus:not(:focus-visible)) {
     border-color: var(--designer-toolbar-control-border);
     color: var(--designer-toolbar-foreground);
     background: var(--designer-toolbar-control-background);
     box-shadow: none;
   }
-  .graph-toolbar .best-layout-button {
-    margin-left: 4px;
-    color: var(--tianshu-brand-foreground);
-    background: var(--el-color-primary);
+  .graph-toolbar :deep(.el-button + .el-button) {
+    margin-left: 0;
   }
-  .graph-toolbar .best-layout-button:hover,
-  .graph-toolbar .best-layout-button:focus-visible {
-    color: var(--tianshu-brand-foreground);
-    border-color: var(--el-color-primary-dark-2);
-    background: var(--el-color-primary-dark-2);
+  .graph-toolbar :deep(.el-button) {
+    --tianshu-button-text: var(--tianshu-primary-text);
+    --tianshu-button-soft-hover-bg: var(--tianshu-bg-hover);
+    --tianshu-button-soft-active-bg: color-mix(in srgb, var(--el-color-primary) 8%, var(--tianshu-bg-surface));
+    --tianshu-button-border: var(--el-color-primary-light-5);
   }
   .graph-toolbar :deep(.toolbar-edge-select) {
     width: 120px;
