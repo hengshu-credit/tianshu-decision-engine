@@ -1,19 +1,20 @@
 <template>
-  <div class="uiue-list-page system-settings-page" :aria-busy="loading">
+  <div class="uiue-list-page system-settings-page" :aria-busy="loading || tabLoading">
     <el-alert title="此处为全局配置，统一管理系统品牌、通知邮箱、账户访问与对外结果码。" type="info" :closable="false" show-icon />
-    <el-tabs v-model="tab" :before-leave="beforeTabLeave" class="system-settings-tabs">
+    <el-alert v-if="tabError" :title="tabError" type="error" :closable="false" show-icon><el-button @click="refreshTab()">重新加载</el-button></el-alert>
+    <el-tabs v-model="tab" :before-leave="beforeTabLeave" @tab-change="refreshTab" class="system-settings-tabs">
       <el-tab-pane label="基本信息" name="brand">
         <div v-if="form.brand" class="brand-columns">
-          <el-form label-position="top" :disabled="!canEdit || saving || loading">
+          <el-form label-position="top" :disabled="!canEdit || saving || configurationUnavailable">
             <el-form-item label="系统名称" required><el-input v-model="form.brand.systemName" maxlength="40" show-word-limit /></el-form-item>
             <el-form-item label="系统副标题"><el-input v-model="form.brand.subtitle" maxlength="100" /><small>留空时隐藏副标题。</small></el-form-item>
             <el-form-item v-for="field in brandImageFields" :key="field.id" :label="field.label">
               <div class="brand-image-editor">
                 <div class="brand-image-input">
                   <el-input :model-value="form.brand[field.url]" :aria-label="field.label + '图片地址'" clearable placeholder="输入图片地址，或上传图片" @update:model-value="value => setAssetUrl(field, value)" />
-                  <el-upload :auto-upload="false" :show-file-list="false" :accept="imageAccept" :on-change="file => selectAsset(file, field.id)" :disabled="!canEdit || saving || loading"><el-button :disabled="!canEdit || saving || loading">上传图片</el-button></el-upload>
+                  <el-upload :auto-upload="false" :show-file-list="false" :accept="imageAccept" :on-change="file => selectAsset(file, field.id)" :disabled="!canEdit || saving || configurationUnavailable"><el-button :disabled="!canEdit || saving || configurationUnavailable">上传图片</el-button></el-upload>
                 </div>
-                <div class="brand-upload"><img :src="field.id === 'logoId' ? logoPreview : faviconPreview" :alt="field.label" /><span v-if="form.brand[field.id]">已上传图片</span><el-button link :disabled="!canEdit || saving || loading" @click="restoreAsset(field.id)">{{ field.id === 'logoId' ? '恢复默认' : '使用系统 Logo' }}</el-button></div>
+                <div class="brand-upload"><img :src="field.id === 'logoId' ? logoPreview : faviconPreview" :alt="field.label" /><span v-if="form.brand[field.id]">已上传图片</span><el-button link :disabled="!canEdit || saving || configurationUnavailable" @click="restoreAsset(field.id)">{{ field.id === 'logoId' ? '恢复默认' : '使用系统 Logo' }}</el-button></div>
                 <small>{{ field.id === 'faviconId' ? '未单独设置时自动使用系统 Logo。' : '支持 JPG、PNG、SVG、GIF、WebP、BMP、ICO；上传最大 1 MB，宽高不超过 2048 像素。' }}</small>
               </div>
             </el-form-item>
@@ -26,7 +27,7 @@
             <login-page preview :preview-brand="previewBrand" />
           </div>
         </div>
-        <watermark-settings v-if="form.brand" v-model="form.brand" :disabled="!canEdit || saving || loading" />
+        <watermark-settings v-if="form.brand" v-model="form.brand" :disabled="!canEdit || saving || configurationUnavailable" />
       </el-tab-pane>
       <el-tab-pane label="通知邮箱" name="mail">
         <el-alert v-if="managed.mail" title="通知邮箱由部署环境覆盖，请先移除环境覆盖再通过页面维护。" type="info" :closable="false" />
@@ -63,7 +64,7 @@
       </el-tab-pane>
       <el-tab-pane v-if="canAudit" label="变更记录" name="history"><el-table :data="history" border><el-table-column label="时间" min-width="160"><template #default="{ row }">{{ row.createTime ? String(row.createTime).replace('T', ' ').slice(0, 19) : '—' }}</template></el-table-column><el-table-column prop="username" label="操作人" min-width="120" /><el-table-column prop="changeSummary" label="变更内容" min-width="260" /><el-table-column label="结果" width="100"><template #default="{ row }">{{ { SUCCESS: '成功', FAILED: '失败', DENIED: '拒绝' }[row.outcome] || row.outcome }}</template></el-table-column></el-table><el-pagination v-model:current-page="historyPage" :page-size="20" :total="historyTotal" layout="total, prev, pager, next" @current-change="loadHistory" /></el-tab-pane>
     </el-tabs>
-    <div v-if="tab !== 'history'" class="settings-footer"><small>{{ draft ? draft.status === 'EDITING' ? '草稿已保存，尚未提交审批' : '审批处理中，已生效配置保持不变' : dirty ? '有未保存的修改' : '当前为已生效配置' }}</small><div><el-button :disabled="!dirty || saving" @click="cancelChanges">取消修改</el-button><el-button v-if="tab !== 'brand'" :disabled="!writable || !dirty" :loading="saving" @click="saveDraft">保存草稿</el-button><el-button v-if="tab === 'brand'" type="primary" :disabled="!writable || !dirty" :loading="saving" @click="saveBrand">保存配置</el-button><el-button v-else type="primary" :disabled="!canSubmit || (!dirty && !draft) || (draft && draft.status !== 'EDITING')" :loading="saving" @click="submit">提交审批</el-button><el-button v-if="draft && hasApprovalView" @click="$router.push('/approval/' + draft.id)">查看审批</el-button></div></div>
+    <div v-if="tab !== 'history'" class="settings-footer"><small>{{ draft ? draft.status === 'EDITING' ? '草稿已保存，尚未提交审批' : '审批处理中，已生效配置保持不变' : dirty ? '有未保存的修改' : '当前为已生效配置' }}</small><div><el-button :disabled="!dirty || saving || configurationUnavailable" @click="cancelChanges">取消修改</el-button><el-button v-if="tab !== 'brand'" :disabled="!writable || !dirty" :loading="saving" @click="saveDraft">保存草稿</el-button><el-button v-if="tab === 'brand'" type="primary" :disabled="!writable || !dirty" :loading="saving" @click="saveBrand">保存配置</el-button><el-button v-else type="primary" :disabled="!canSubmit || (!dirty && !draft) || (draft && draft.status !== 'EDITING')" :loading="saving" @click="submit">提交审批</el-button><el-button v-if="draft && hasApprovalView" @click="$router.push('/approval/' + draft.id)">查看审批</el-button></div></div>
     <el-dialog v-model="testDialog" title="发送测试邮件" width="460px" :close-on-click-modal="false"><el-form label-position="top"><el-form-item label="测试收件人" required><el-input v-model="testRecipient" type="email" placeholder="仅用于本次测试" /></el-form-item></el-form><p>将使用当前表单配置发送真实测试邮件。</p><template #footer><el-button :disabled="testing" @click="testDialog = false">取消</el-button><el-button type="primary" :loading="testing" @click="sendTest">发送测试邮件</el-button></template></el-dialog>
   </div>
 </template>
@@ -86,7 +87,7 @@ const groups = { brand: 1, mail: 2, access: 3, codes: 4 }
 export default {
   name: 'SystemSettings',
   components: { NavigationBrand, LoginPage, WatermarkSettings },
-  data: () => ({ imageAccept: BRAND_IMAGE_ACCEPT, brandImageFields: [{ id: 'logoId', url: 'logoUrl', label: '系统 Logo' }, { id: 'faviconId', url: 'faviconUrl', label: '浏览器图标' }], tab: 'brand', form: {}, saved: {}, drafts: {}, effectiveAccess: {}, catalog: [], managed: {}, history: [], historyPage: 1, historyTotal: 0, brand: systemBrand, loading: false, saving: false, mailPassword: '', assetPreviews: {}, codeSearch: '', codeGroup: '', codePage: 1, previewCode: '000000', testDialog: false, testRecipient: '', testing: false, mailResult: '', mailTemplate: 'reset', codeGroups: [{ value: '0', label: '成功' }, { value: '1', label: '请求参数' }, { value: '2', label: '规则与模型' }, { value: '3', label: '身份与权限' }, { value: '4', label: '执行与限流' }, { value: '5', label: '资源与额度' }, { value: '6', label: '外部调用' }, { value: '7', label: '治理与发布' }, { value: '9', label: '系统异常' }] }),
+  data: () => ({ tabLoading: false, tabError: '', tabRequestId: 0, imageAccept: BRAND_IMAGE_ACCEPT, brandImageFields: [{ id: 'logoId', url: 'logoUrl', label: '系统 Logo' }, { id: 'faviconId', url: 'faviconUrl', label: '浏览器图标' }], tab: 'brand', form: {}, saved: {}, drafts: {}, effectiveAccess: {}, catalog: [], managed: {}, history: [], historyPage: 1, historyTotal: 0, brand: systemBrand, loading: false, saving: false, mailPassword: '', assetPreviews: {}, codeSearch: '', codeGroup: '', codePage: 1, previewCode: '000000', testDialog: false, testRecipient: '', testing: false, mailResult: '', mailTemplate: 'reset', codeGroups: [{ value: '0', label: '成功' }, { value: '1', label: '请求参数' }, { value: '2', label: '规则与模型' }, { value: '3', label: '身份与权限' }, { value: '4', label: '执行与限流' }, { value: '5', label: '资源与额度' }, { value: '6', label: '外部调用' }, { value: '7', label: '治理与发布' }, { value: '9', label: '系统异常' }] }),
   computed: {
     canEdit() { return hasPermission('system:edit') },
     canAudit() { return hasPermission('system:audit') },
@@ -94,7 +95,8 @@ export default {
     canSubmit() { return this.writable && hasPermission('system:submit') && hasPermission('approval:submit') },
     hasApprovalView() { return hasPermission('approval:view') },
     draft() { return this.drafts[this.tab] },
-    writable() { return !this.loading && this.canEdit && !this.managed[this.tab] && (!this.draft || this.draft.status === 'EDITING') },
+    configurationUnavailable() { return this.loading || this.tabLoading || Boolean(this.tabError) },
+    writable() { return !this.configurationUnavailable && this.canEdit && !this.managed[this.tab] && (!this.draft || this.draft.status === 'EDITING') },
     dirty() { return this.tab !== 'history' && (JSON.stringify(this.form[this.tab]) !== JSON.stringify(this.saved[this.tab]) || (this.tab === 'mail' && Boolean(this.mailPassword))) },
     watermarkPreviewConfig() { return this.tab === 'brand' && this.canEdit && this.dirty ? this.form.brand : null },
     logoPreview() { return this.assetPreviews.logoId || resolveBrandImages(this.form.brand).logoUrl },
@@ -110,26 +112,62 @@ export default {
     watermarkPreviewConfig: { deep: true, immediate: true, handler(value) { setWatermarkPreview(value) } },
   },
   created() { this.load() },
-  beforeUnmount() { setWatermarkPreview(null); this.mailPassword = ''; Object.values(this.assetPreviews).forEach(URL.revokeObjectURL) },
+  beforeUnmount() { this.tabRequestId++; setWatermarkPreview(null); this.mailPassword = ''; Object.values(this.assetPreviews).forEach(URL.revokeObjectURL) },
   async beforeRouteLeave() { return this.confirmLeave() },
   methods: {
-    async load() { this.loading = true; try { const response = await getSystemSettings(); const data = response.data; this.effectiveAccess = clone(data.access); for (const group of Object.keys(groups)) this.form[group] = data[group]; this.saved = clone(this.form); this.catalog = data.codeCatalog; this.managed = data.deploymentManaged || {}; await this.loadDraft(this.tab) } catch (error) { this.showError(error) } finally { this.loading = false } },
+    async load() {
+      const requestId = ++this.tabRequestId
+      this.loading = true; this.tabError = ''
+      try {
+        const { data } = await getSystemSettings()
+        if (requestId !== this.tabRequestId) return
+        this.effectiveAccess = clone(data.access)
+        for (const group of Object.keys(groups)) this.form[group] = data[group]
+        this.saved = clone(this.form); this.catalog = data.codeCatalog; this.managed = data.deploymentManaged || {}
+      } catch (error) {
+        if (requestId === this.tabRequestId) { this.tabError = error.message || '系统配置加载失败'; this.showError(error) }
+        return
+      } finally { if (requestId === this.tabRequestId) this.loading = false }
+      if (requestId === this.tabRequestId) await this.refreshTab(this.tab)
+    },
+    refreshTab(tab = this.tab) {
+      if (this.loading) return
+      if (!this.form.brand) return this.load()
+      return this.loadDraft(tab).catch(error => this.showError(error))
+    },
     async loadDraft(tab) {
-      if (tab === 'brand') return
-      if (tab === 'history') { if (this.canAudit) await this.loadHistory(); return }
-      const effective = (await getSystemSettings()).data
-      this.effectiveAccess = clone(effective.access)
-      this.form[tab] = effective[tab]; this.saved[tab] = clone(this.form[tab])
-      const state = (effective.states || []).find(item => Number(item.resourceId) === groups[tab])
-      this.drafts[tab] = state && ['EDITING', 'PENDING'].includes(state.requestStatus) ? { id: state.requestId, status: state.requestStatus === 'EDITING' && !state.owned ? 'LOCKED' : state.requestStatus } : null
-      if (!this.canEdit) return
-      const draft = (await getWorkspaceDraft('SYSTEM_SETTING', groups[tab])).data
-      if (draft?.draftSnapshotJson) { this.drafts[tab] = draft; this.form[tab] = parseMetadataResponse(draft.draftSnapshotJson); this.saved[tab] = clone(this.form[tab]) }
+      const requestId = ++this.tabRequestId
+      this.tabLoading = tab !== 'brand'; this.tabError = ''
+      try {
+        if (tab === 'brand') return
+        if (tab === 'history') {
+          if (!this.canAudit) return
+          const response = await getSystemSettingsHistory({ pageNum: this.historyPage, pageSize: 20 })
+          if (requestId !== this.tabRequestId) return
+          this.history = response.data?.records || []; this.historyTotal = response.data?.total || 0
+          return
+        }
+        const effective = (await getSystemSettings()).data
+        if (requestId !== this.tabRequestId) return
+        const draft = this.canEdit ? (await getWorkspaceDraft('SYSTEM_SETTING', groups[tab])).data : null
+        if (requestId !== this.tabRequestId) return
+        const state = (effective.states || []).find(item => Number(item.resourceId) === groups[tab])
+        const snapshot = draft?.draftSnapshotJson ? parseMetadataResponse(draft.draftSnapshotJson) : effective[tab]
+        this.effectiveAccess = clone(effective.access)
+        this.managed = effective.deploymentManaged || {}
+        this.form[tab] = snapshot; this.saved[tab] = clone(snapshot)
+        this.drafts[tab] = draft?.draftSnapshotJson ? draft : state && ['EDITING', 'PENDING'].includes(state.requestStatus)
+          ? { id: state.requestId, status: state.requestStatus === 'EDITING' && !state.owned ? 'LOCKED' : state.requestStatus } : null
+      } catch (error) {
+        if (requestId !== this.tabRequestId) return
+        this.tabError = error.message || '系统配置加载失败'
+        throw error
+      } finally { if (requestId === this.tabRequestId) this.tabLoading = false }
     },
     async confirmLeave() { if (this.saving || this.testing) return false; if (!this.dirty) return true; try { await this.$confirm('当前配置尚未保存，是否放弃修改？', '未保存的修改'); this.cancelChanges(); return true } catch { return false } },
-    async beforeTabLeave(next) { if (!await this.confirmLeave()) return false; try { await this.loadDraft(next); return true } catch (error) { this.showError(error); return false } },
+    beforeTabLeave() { return this.confirmLeave() },
     cancelChanges() { this.form[this.tab] = clone(this.saved[this.tab]); this.mailPassword = ''; if (this.tab === 'brand') { Object.values(this.assetPreviews).forEach(URL.revokeObjectURL); this.assetPreviews = {} } },
-    async loadHistory() { const page = this.historyPage; try { const response = await getSystemSettingsHistory({ pageNum: page, pageSize: 20 }); if (page === this.historyPage) { this.history = response.data?.records || []; this.historyTotal = response.data?.total || 0 } } catch (error) { this.showError(error) } },
+    loadHistory() { return this.refreshTab('history') },
     async selectAsset(file, field) {
       if (!this.canEdit || this.saving) return
       this.saving = true

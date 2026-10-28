@@ -20,6 +20,78 @@ const settings = () => ({
 })
 
 describe('系统配置', () => {
+  test('首屏请求期间切换页签，初始化完成后读取当前页签草稿', async () => {
+    let release
+    api.getSystemSettings.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    const wrapper = shallowMount(SystemSettings)
+    wrapper.vm.tab = 'mail'; wrapper.vm.refreshTab('mail')
+    expect(wrapper.vm.loading).toBe(true)
+    release({ data: settings() }); await flushPromises()
+    expect(governance.getWorkspaceDraft).toHaveBeenCalledWith('SYSTEM_SETTING', 2)
+    expect(wrapper.vm.writable).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('离开组件后，未完成的页签请求不能继续写入状态', async () => {
+    const wrapper = shallowMount(SystemSettings); await flushPromises()
+    let release
+    api.getSystemSettings.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    wrapper.vm.tab = 'mail'; const pending = wrapper.vm.refreshTab('mail')
+    const form = wrapper.vm.form.mail
+    wrapper.unmount()
+    release({ data: { ...settings(), mail: { host: 'late.example.com' } } }); await pending
+    expect(wrapper.vm.form.mail).toBe(form)
+    expect(governance.getWorkspaceDraft).not.toHaveBeenCalled()
+  })
+
+  test('页签离开确认不等待配置请求，切换后加载期间禁止编辑', async () => {
+    const wrapper = shallowMount(SystemSettings); await flushPromises()
+    const calls = api.getSystemSettings.mock.calls.length
+    expect(await wrapper.vm.beforeTabLeave('mail')).toBe(true)
+    expect(api.getSystemSettings).toHaveBeenCalledTimes(calls)
+    let release
+    governance.getWorkspaceDraft.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    wrapper.vm.tab = 'mail'
+    const loading = wrapper.vm.refreshTab('mail'); await flushPromises()
+    expect(wrapper.vm.tabLoading).toBe(true)
+    expect(wrapper.vm.writable).toBe(false)
+    release({ data: null }); await loading
+    expect(wrapper.vm.writable).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('旧页签响应不能覆盖返回该页签后的输入', async () => {
+    const wrapper = shallowMount(SystemSettings); await flushPromises()
+    let release
+    governance.getWorkspaceDraft.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    wrapper.vm.tab = 'mail'; const old = wrapper.vm.refreshTab('mail'); await flushPromises()
+    wrapper.vm.tab = 'access'; await wrapper.vm.refreshTab('access')
+    wrapper.vm.tab = 'mail'; await wrapper.vm.refreshTab('mail')
+    wrapper.vm.form.mail.host = 'new-input.example.com'
+    release({ data: { status: 'EDITING', draftSnapshotJson: JSON.stringify({ ...settings().mail, host: 'stale.example.com' }) } }); await old
+    expect(wrapper.vm.form.mail.host).toBe('new-input.example.com')
+    expect(wrapper.vm.dirty).toBe(true)
+    expect(wrapper.vm.tabLoading).toBe(false)
+    wrapper.unmount()
+  })
+
+  test('页签请求失败保持只读，重试后恢复；未保存修改仍可取消离开', async () => {
+    const wrapper = shallowMount(SystemSettings); await flushPromises()
+    wrapper.vm.tab = 'mail'
+    api.getSystemSettings.mockRejectedValueOnce(new Error('读取失败'))
+    await wrapper.vm.refreshTab('mail')
+    expect(wrapper.vm.tabError).toBe('读取失败')
+    expect(wrapper.vm.writable).toBe(false)
+    await wrapper.vm.refreshTab('mail')
+    expect(wrapper.vm.tabError).toBe('')
+    expect(wrapper.vm.writable).toBe(true)
+    wrapper.vm.mailPassword = 'unsaved-secret'
+    wrapper.vm.$confirm = vi.fn().mockRejectedValue('cancel')
+    expect(await wrapper.vm.beforeTabLeave('access')).toBe(false)
+    expect(wrapper.vm.mailPassword).toBe('unsaved-secret')
+    wrapper.unmount()
+  })
+
   test('图片地址和上传资源互斥，浏览器图标留空跟随当前 Logo', async () => {
     const wrapper = shallowMount(SystemSettings); await flushPromises()
     wrapper.vm.form.brand.logoId = 'old-logo'

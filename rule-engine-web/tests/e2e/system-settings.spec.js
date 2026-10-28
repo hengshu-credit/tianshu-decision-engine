@@ -32,6 +32,43 @@ function fixture() {
   ]) }
 }
 
+test('系统配置页签立即切换，慢请求不阻挡导航且迟到响应不覆盖输入', async ({ page }) => {
+  const data = fixture()
+  let release, requested = false
+  const pending = new Promise(resolve => { release = resolve })
+  data.apiData.set('/api/rule/governance/workspaces/SYSTEM_SETTING/2', async () => {
+    requested = true
+    await pending
+    return null
+  })
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const { assertClean } = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data.apiData })
+  try {
+    await page.goto(`${origin}/#/system/settings`)
+    const name = page.getByRole('textbox', { name: /系统名称$/ })
+    await expect(name).toBeEnabled()
+    const mail = page.getByRole('tab', { name: '通知邮箱', exact: true })
+    await mail.click()
+    await expect(mail).toHaveAttribute('aria-selected', 'true', { timeout: 1000 })
+    await expect(page.locator('#pane-mail')).toBeVisible()
+    await expect.poll(() => requested).toBe(true)
+    await expect(page.locator('#pane-mail input[type="email"]')).toBeDisabled()
+    await expect(page.locator('.el-loading-mask')).toHaveCount(0)
+    await page.getByRole('tab', { name: '基本信息', exact: true }).click()
+    await expect(name).toBeEnabled({ timeout: 1000 })
+    await name.fill('正在编辑的系统名称')
+    release()
+    await expect(page.locator('.system-settings-page')).toHaveAttribute('aria-busy', 'false')
+    await expect(name).toHaveValue('正在编辑的系统名称')
+    await mail.click()
+    await expect(page.getByRole('dialog', { name: '未保存的修改' })).toBeVisible()
+    await page.getByRole('dialog', { name: '未保存的修改' }).getByRole('button', { name: '取消', exact: true }).click()
+    await expect(page.getByRole('tab', { name: '基本信息', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(name).toHaveValue('正在编辑的系统名称')
+    assertClean()
+  } finally { release() }
+})
+
 test('全局水印保存、跨页刷新、弹窗操作、身份变化及关闭', async ({ page }) => {
   const data = fixture()
   const { assertClean } = await installDistRoutes(page, { apiData: data.apiData })
