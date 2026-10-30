@@ -10,7 +10,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_db_datasource")
+@TableName(value = "rule_db_datasource", autoResultMap = true)
 public class RuleDbDatasource {
     @TableId(type = IdType.AUTO)
     private Long id;
@@ -27,12 +27,16 @@ public class RuleDbDatasource {
     private String driverClassName;
     private String jdbcUrl;
     private String username;
+    @TableField(typeHandler = com.hengshucredit.rule.model.security.EncryptedCredentialTypeHandler.class)
     private String password;
     private String sshHost;
     private Integer sshPort;
     private String sshUsername;
+    @TableField(typeHandler = com.hengshucredit.rule.model.security.EncryptedCredentialTypeHandler.class)
     private String sshPassword;
+    @TableField(typeHandler = com.hengshucredit.rule.model.security.EncryptedCredentialTypeHandler.class)
     private String sshPrivateKey;
+    @TableField(typeHandler = com.hengshucredit.rule.model.security.EncryptedCredentialTypeHandler.class)
     private String sshPassphrase;
     private Integer sshTimeoutMs;
     private Integer maxPoolSize;

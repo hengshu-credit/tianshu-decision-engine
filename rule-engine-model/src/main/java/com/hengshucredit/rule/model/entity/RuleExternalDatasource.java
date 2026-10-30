@@ -10,7 +10,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_external_datasource")
+@TableName(value = "rule_external_datasource", autoResultMap = true)
 public class RuleExternalDatasource {
     @TableId(type = IdType.AUTO)
     private Long id;
@@ -22,6 +22,7 @@ public class RuleExternalDatasource {
     private String protocol;
     private String baseUrl;
     private String authType;
+    @TableField(typeHandler = com.hengshucredit.rule.model.security.EncryptedJsonCredentialTypeHandler.class)
     private String authConfig;
     private Integer tokenCacheSeconds;
     private String description;

@@ -15,8 +15,8 @@ public class FunctionMethodCatalogServiceTest {
     private static int calls;
     public static class Methods {
         public Methods() { constructors++; }
-        public String choose(double value) { calls++; return "double"; }
-        public String choose(Object value) { calls++; return "object"; }
+        @com.hengshucredit.rule.core.function.ScriptCallable public String choose(double value) { calls++; return "double"; }
+        @com.hengshucredit.rule.core.function.ScriptCallable public String choose(Object value) { calls++; return "object"; }
     }
 
     @Test public void discoveryShowsOverloadsWithoutConstructingOrCallingThem() {

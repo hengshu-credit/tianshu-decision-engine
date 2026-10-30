@@ -11,7 +11,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_external_api_config")
+@TableName(value = "rule_external_api_config", autoResultMap = true)
 public class RuleExternalApiConfig {
     @TableId(type = IdType.AUTO)
     private Long id;
@@ -24,6 +24,7 @@ public class RuleExternalApiConfig {
     private String requestMode;
     private Long requestObjectId;
     private Long responseObjectId;
+    @TableField(typeHandler = com.hengshucredit.rule.model.security.EncryptedJsonCredentialTypeHandler.class)
     private String headerConfig;
     private String queryConfig;
     private String requestMapping;
@@ -42,6 +43,7 @@ public class RuleExternalApiConfig {
     /** API 请求/响应诊断报文留存策略 JSON；仅影响分析副本，不改变规则执行结果。 */
     private String payloadCaptureConfig;
     private String authMode;
+    @TableField(typeHandler = com.hengshucredit.rule.model.security.EncryptedJsonCredentialTypeHandler.class)
     private String authApiConfig;
     private Integer tokenCacheSeconds;
     private Integer responseCacheSeconds;
@@ -91,6 +93,7 @@ public class RuleExternalApiConfig {
     private Integer staleCacheSeconds;
     private String asyncResultMode;
     private String asyncPollConfig;
+    @TableField(typeHandler = com.hengshucredit.rule.model.security.EncryptedJsonCredentialTypeHandler.class)
     private String asyncCallbackConfig;
     private String asyncCallbackUrl;
     private String asyncResultPath;

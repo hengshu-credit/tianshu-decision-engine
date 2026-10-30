@@ -19,13 +19,18 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 
 public class RuleFunctionControllerTest {
+    public static class ApprovedMath {
+        @com.hengshucredit.rule.core.function.ScriptCallable
+        public static int max(int left, int right) { return Math.max(left, right); }
+    }
+
 
     @Test public void methodCatalogHttpResponseContainsExactTypesAndIsReadOnly() throws Exception {
         RuleFunctionController controller = new RuleFunctionController();
         ReflectionTestUtils.setField(controller, "methodCatalogService", new com.hengshucredit.rule.server.service.FunctionMethodCatalogService());
         var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller).build();
         RuleFunction function = new RuleFunction(); function.setFuncCode("maximum"); function.setImplType("JAVA");
-        function.setImplClass("java.lang.Math"); function.setImplMethod("max");
+        function.setImplClass(ApprovedMath.class.getName()); function.setImplMethod("max");
         function.setParamsJson("[{\"name\":\"left\",\"type\":\"NUMBER\",\"javaType\":\"int\"},{\"name\":\"right\",\"type\":\"NUMBER\",\"javaType\":\"int\"}]");
         var response = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/rule/function/methods")
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content(com.alibaba.fastjson.JSON.toJSONString(function)))
@@ -34,7 +39,7 @@ public class RuleFunctionControllerTest {
         var data = com.alibaba.fastjson.JSON.parseObject(response).getJSONObject("data");
         org.junit.Assert.assertTrue(data.getBooleanValue("valid"));
         assertEquals("max(int,int)", data.getString("signature"));
-        assertEquals("java.lang.Math", data.getString("resolvedClassName"));
+        assertEquals(ApprovedMath.class.getName(), data.getString("resolvedClassName"));
         assertEquals("function:view", RuleFunctionController.class.getMethod("inspectMethods", RuleFunction.class)
                 .getAnnotation(com.hengshucredit.rule.server.security.RequirePermission.class).value());
     }

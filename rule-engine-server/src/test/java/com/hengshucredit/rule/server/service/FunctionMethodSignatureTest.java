@@ -12,16 +12,16 @@ import static org.junit.Assert.*;
 
 public class FunctionMethodSignatureTest {
     public static class Overloads {
-        public String choose(double value) { return "double"; }
-        public String choose(int value) { return "int"; }
-        public String choose(Object value) { return "object"; }
-        public String unsafe() { return "wrong-zero-argument-method"; }
-        public String unsafe(Object value) { return "one-argument-method"; }
+        @com.hengshucredit.rule.core.function.ScriptCallable public String choose(double value) { return "double"; }
+        @com.hengshucredit.rule.core.function.ScriptCallable public String choose(int value) { return "int"; }
+        @com.hengshucredit.rule.core.function.ScriptCallable public String choose(Object value) { return "object"; }
+        @com.hengshucredit.rule.core.function.ScriptCallable public String unsafe() { return "wrong-zero-argument-method"; }
+        @com.hengshucredit.rule.core.function.ScriptCallable public String unsafe(Object value) { return "one-argument-method"; }
     }
 
     public static class StaticOnly {
         private StaticOnly() { throw new AssertionError("Static method must not construct its declaring class"); }
-        public static int triple(int value) { return value * 3; }
+        @com.hengshucredit.rule.core.function.ScriptCallable public static int triple(int value) { return value * 3; }
     }
 
     @Test public void publicStaticMethodDoesNotRequireAConstructor() {

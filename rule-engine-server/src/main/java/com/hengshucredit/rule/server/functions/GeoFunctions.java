@@ -14,6 +14,7 @@ public class GeoFunctions {
     private static final double EARTH_RADIUS_METERS = 6371008.8;
     private static final double ONE_KILOMETER_METERS = 1000.0;
 
+    @com.hengshucredit.rule.core.function.ScriptCallable
     public double distanceMeters(double longitude1, double latitude1,
                                  double longitude2, double latitude2) {
         validateCoordinates(longitude1, latitude1);
@@ -30,6 +31,7 @@ public class GeoFunctions {
                 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1.0 - haversine));
     }
 
+    @com.hengshucredit.rule.core.function.ScriptCallable
     public int dailyApplicantCount(double longitude, double latitude,
                                    Object records, String queryDate) {
         validateCoordinates(longitude, latitude);

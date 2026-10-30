@@ -16,6 +16,7 @@ public class ExternalApiFunctions {
         this.externalApiInvokeService = externalApiInvokeService;
     }
 
+    @com.hengshucredit.rule.core.function.ScriptCallable
     public Map<String, Object> invoke(Object apiConfigId, Object params) {
         final long id;
         try {

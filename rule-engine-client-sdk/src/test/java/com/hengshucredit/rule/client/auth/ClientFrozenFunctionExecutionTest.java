@@ -156,9 +156,9 @@ public class ClientFrozenFunctionExecutionTest {
 
     public static final class Versions {
         static final AtomicInteger newCalls = new AtomicInteger();
-        public int oldVersion() { Thread.yield(); return 1; }
-        public int newVersion() { newCalls.incrementAndGet(); Thread.yield(); return 2; }
-        public int interrupted() { Thread.currentThread().interrupt(); throw new IllegalStateException("受控取消"); }
+        @com.hengshucredit.rule.core.function.ScriptCallable public int oldVersion() { Thread.yield(); return 1; }
+        @com.hengshucredit.rule.core.function.ScriptCallable public int newVersion() { newCalls.incrementAndGet(); Thread.yield(); return 2; }
+        @com.hengshucredit.rule.core.function.ScriptCallable public int interrupted() { Thread.currentThread().interrupt(); throw new IllegalStateException("受控取消"); }
     }
 
     private static final class Fixture implements AutoCloseable {

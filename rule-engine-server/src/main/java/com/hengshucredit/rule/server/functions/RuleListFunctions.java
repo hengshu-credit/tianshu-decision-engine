@@ -20,21 +20,25 @@ public class RuleListFunctions {
         this.listMatchMatrix = listMatchMatrix;
     }
 
+    @com.hengshucredit.rule.core.function.ScriptCallable
     public boolean isInLists(Object value, Object listIds) {
         return listMatch(Collections.singletonList(value), listIds,
                 ListMatchMatrix.ANY_FIELD_ANY_LIST, "IN_LIST", Collections.emptyList());
     }
 
+    @com.hengshucredit.rule.core.function.ScriptCallable
     public int isInListsNumber(Object value, Object listIds) {
         return isInLists(value, listIds) ? 1 : 0;
     }
 
+    @com.hengshucredit.rule.core.function.ScriptCallable
     public boolean listMatch(Object values, Object listIds, String combinationMode,
                              String matchMode, Object itemTypes) {
         return listMatchMatrix.match(toLongList(listIds), toObjectList(values), combinationMode,
                 matchMode, toStringList(itemTypes), null);
     }
 
+    @com.hengshucredit.rule.core.function.ScriptCallable
     public int listMatchNumber(Object values, Object listIds, String combinationMode,
                                String matchMode, Object itemTypes) {
         return listMatch(values, listIds, combinationMode, matchMode, itemTypes) ? 1 : 0;

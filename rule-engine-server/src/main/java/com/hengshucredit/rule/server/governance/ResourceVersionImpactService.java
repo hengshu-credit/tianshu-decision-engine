@@ -15,6 +15,7 @@ import java.util.*;
 @Service
 public class ResourceVersionImpactService {
     @Resource private ResourceVersionConsumerMapper consumers;
+    @Resource private com.hengshucredit.rule.server.auth.StoredCredentialCodec storedCredentials;
     @Resource private RuleVersionBindingMapper ruleBindings;
     @Resource private RuleModelVersionMapper modelVersions;
     @Resource private RuleFunctionVersionMapper functionVersions;
@@ -54,6 +55,15 @@ public class ResourceVersionImpactService {
                 try { resourceVersions.assertNativeVersionAvailable(type, ownerId, business, nativeId); }
                 catch (IllegalArgumentException deleted) { continue; }
                 if ("FUNCTION".equals(type) && !Integer.valueOf(1).equals(JSON.parseObject(json).getInteger("status"))) continue;
+            }
+            if (storedCredentials != null && Set.of("EXTERNAL_API", "EXTERNAL_DATASOURCE").contains(type)) {
+                JSONObject snapshot = JSON.parseObject(json);
+                for (String field : List.of("authConfig", "authApiConfig", "asyncCallbackConfig")) {
+                    Object raw = snapshot.get(field);
+                    String text = raw instanceof String value ? value : JSON.toJSONString(raw);
+                    if (storedCredentials.isEncryptedJson(text)) snapshot.put(field, storedCredentials.decryptJson(text));
+                }
+                json = snapshot.toJSONString();
             }
             for (var dependency : SimpleEntityGovernedResourceAdapter.dependenciesIn(json)) {
                 DependencyVersionSelection selected = dependency.versionSelection();

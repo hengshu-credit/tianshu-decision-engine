@@ -13,6 +13,13 @@ import java.time.LocalDateTime;
 
 @Configuration
 public class MybatisPlusConfig {
+    @Bean
+    public com.baomidou.mybatisplus.autoconfigure.ConfigurationCustomizer credentialTypeHandlers(
+            com.hengshucredit.rule.server.auth.StoredCredentialCodec codec,
+            com.hengshucredit.rule.server.auth.CredentialStorageMigration migration) {
+        return codec::register;
+    }
+
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     @org.springframework.context.annotation.Lazy
     private com.hengshucredit.rule.server.security.ConsoleDataPermissionHandler consoleDataPermissionHandler;

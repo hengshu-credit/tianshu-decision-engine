@@ -22,6 +22,7 @@ public class TaxFunctions {
      * @param rate   税率
      * @return 税额（保留2位小数）
      */
+    @com.hengshucredit.rule.core.function.ScriptCallable
     public double calculateVAT(double amount, double rate) {
         double excludingTax = amount / (1 + rate);
         double tax = excludingTax * rate;
@@ -37,6 +38,7 @@ public class TaxFunctions {
      * @param rate   税率
      * @return 不含税金额（保留2位小数）
      */
+    @com.hengshucredit.rule.core.function.ScriptCallable
     public double excludingTax(double amount, double rate) {
         double result = amount / (1 + rate);
         return new BigDecimal(String.valueOf(result))
@@ -44,6 +46,7 @@ public class TaxFunctions {
                 .doubleValue();
     }
 
+    @com.hengshucredit.rule.core.function.ScriptCallable
     public String formatAmount(double amount) {
         return new DecimalFormat("#,##0.00").format(amount);
     }

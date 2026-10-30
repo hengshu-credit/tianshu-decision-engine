@@ -14,6 +14,24 @@ import java.util.*;
 import static org.junit.Assert.*;
 
 public class ResourceVersionImpactServiceTest {
+    @Test public void encryptedAuthenticationConfigurationStillBlocksDeletingReferencedVersion() {
+        var keys = new com.hengshucredit.rule.server.auth.ProjectAuthProperties();
+        keys.setActiveKeyId("test"); keys.setMasterKeys(Map.of("test", UUID.randomUUID().toString()));
+        var codec = new com.hengshucredit.rule.server.auth.StoredCredentialCodec(
+                new com.hengshucredit.rule.server.auth.CredentialCipher(keys));
+        var fixture = new Fixture();
+        ReflectionTestUtils.setField(fixture.service, "storedCredentials", codec);
+        var target = version("VARIABLE", 7L, 81L, 1, 1, "{\"id\":7}");
+        String encrypted = codec.encryptJson(fixed("VARIABLE", 7, 81, "BUSINESS_VERSION"));
+        fixture.current.add(source("EXTERNAL_DATASOURCE", 20L, com.alibaba.fastjson.JSON.toJSONString(
+                Map.of("authConfig", com.alibaba.fastjson.JSON.parseObject(encrypted)))));
+        fixture.current.add(source("EXTERNAL_API", 21L, com.alibaba.fastjson.JSON.toJSONString(Map.of("authApiConfig", encrypted))));
+        var issues = fixture.service.analyze(target, List.of(target));
+        assertEquals(2, issues.size());
+        assertTrue(issues.stream().anyMatch(issue -> issue.message().contains("EXTERNAL_DATASOURCE #20")));
+        assertTrue(issues.stream().anyMatch(issue -> issue.message().contains("EXTERNAL_API #21")));
+    }
+
     @Test public void onlyReferencesToTheDeletedLineBlockItIncludingAnOverwrittenAnchor() {
         var target = version("VARIABLE", 7L, 91L, 3, 1, "{\"id\":7}");
         var original = version("VARIABLE", 7L, 81L, 1, 1, "{\"id\":7}");

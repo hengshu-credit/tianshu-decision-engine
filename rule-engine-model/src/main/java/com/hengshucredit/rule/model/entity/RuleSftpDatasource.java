@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 
 /** SFTP 连接池数据源配置。敏感字段由治理层加密保存。 */
 @Data
-@TableName("rule_sftp_datasource")
+@TableName(value = "rule_sftp_datasource", autoResultMap = true)
 public class RuleSftpDatasource {
     @TableId(type = IdType.AUTO)
     private Long id;
@@ -24,9 +24,13 @@ public class RuleSftpDatasource {
     private Integer port;
     private String basePath;
     private String username;
+    @TableField(typeHandler = com.hengshucredit.rule.model.security.EncryptedCredentialTypeHandler.class)
     private String password;
+    @TableField(typeHandler = com.hengshucredit.rule.model.security.EncryptedCredentialTypeHandler.class)
     private String privateKey;
+    @TableField(typeHandler = com.hengshucredit.rule.model.security.EncryptedCredentialTypeHandler.class)
     private String passphrase;
+    @TableField(typeHandler = com.hengshucredit.rule.model.security.EncryptedCredentialTypeHandler.class)
     private String knownHosts;
     private Boolean strictHostKeyChecking;
     private Integer connectTimeoutMs;

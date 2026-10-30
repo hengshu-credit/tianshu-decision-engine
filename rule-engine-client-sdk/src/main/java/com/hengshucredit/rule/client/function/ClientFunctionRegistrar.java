@@ -439,6 +439,7 @@ public class ClientFunctionRegistrar {
         }
         Class<?> implementation = Class.forName(className, false, getClass().getClassLoader());
         Method method = FunctionParameterContract.resolveMethod(implementation, methodName, funcCode, function.getString("paramsJson"));
+        com.hengshucredit.rule.core.function.NativeFunctionSecurity.requireAllowed(method, funcCode);
         Object instance = Modifier.isStatic(method.getModifiers()) ? null : implementation.getDeclaredConstructor().newInstance();
         return new QMethodFunction(instance, method);
     }
@@ -455,8 +456,13 @@ public class ClientFunctionRegistrar {
             methodName = funcCode;
         }
         FunctionParameterContract.parse(function.getString("paramsJson"));
+        Class<?> implementation = applicationContext.getType(beanName, false);
+        if (implementation == null) throw new IllegalArgumentException("无法确认 Bean 方法的脚本授权");
+        Method declared = FunctionParameterContract.resolveMethod(implementation, methodName, funcCode, function.getString("paramsJson"));
+        com.hengshucredit.rule.core.function.NativeFunctionSecurity.requireAllowed(declared, funcCode);
         Object bean = applicationContext.getBean(beanName);
         Method method = FunctionParameterContract.resolveMethod(bean.getClass(), methodName, funcCode, function.getString("paramsJson"));
+        com.hengshucredit.rule.core.function.NativeFunctionSecurity.requireAllowed(method, funcCode);
         return new QMethodFunction(bean, method);
     }
 

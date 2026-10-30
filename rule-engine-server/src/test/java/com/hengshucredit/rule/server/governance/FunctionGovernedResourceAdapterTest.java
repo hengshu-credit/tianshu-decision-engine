@@ -22,8 +22,8 @@ import static org.junit.Assert.assertTrue;
 public class FunctionGovernedResourceAdapterTest {
 
     public static class NativeMethods {
-        public double choose(double amount) { return amount; }
-        public String text(double amount) { return String.valueOf(amount); }
+        @com.hengshucredit.rule.core.function.ScriptCallable public double choose(double amount) { return amount; }
+        @com.hengshucredit.rule.core.function.ScriptCallable public String text(double amount) { return String.valueOf(amount); }
     }
 
     @Test public void unresolvedTargetAndLegacyMappingAreVisibleWarningsNotClaimsOfExactValidation() {

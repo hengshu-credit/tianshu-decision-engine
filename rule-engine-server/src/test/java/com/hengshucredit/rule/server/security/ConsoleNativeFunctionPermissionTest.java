@@ -16,12 +16,14 @@ public class ConsoleNativeFunctionPermissionTest {
         });
         assertThrows(ConsoleAccessDeniedException.class, () -> service.inspect(nativeFunction()));
     }
-    @Test public void trustedGlobalNativePermissionAllowsExplicitNativeBinding() {
+    @Test public void evenGlobalNativePermissionCannotExposeEnvironment() {
         var service = new FunctionMethodCatalogService();
         ReflectionTestUtils.setField(service, "consoleProjects", new ConsoleProjectAccess() {
             @Override public Scope current() { return new Scope(1L, Set.of(), Set.of("function:view", "function:edit", "function:native", "account:manage", "role:manage"), true, true, Map.of()); }
         });
-        assertTrue(service.inspect(nativeFunction()).valid());
+        var result = service.inspect(nativeFunction());
+        assertFalse(result.valid());
+        assertTrue(result.message().contains("@ScriptCallable"));
     }
     private RuleFunction nativeFunction() {
         var function = new RuleFunction(); function.setFuncCode("nativeEnvironment"); function.setImplType("JAVA");

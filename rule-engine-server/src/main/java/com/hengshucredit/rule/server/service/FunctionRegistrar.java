@@ -132,14 +132,20 @@ public class FunctionRegistrar {
                 if ("JAVA".equals(key.type())) {
                     Class<?> implementation = loadFunctionClass(key.className());
                     method = FunctionParameterContract.resolveMethod(implementation, key.method(), function.getFuncCode(), key.params());
+                    com.hengshucredit.rule.core.function.NativeFunctionSecurity.requireAllowed(method, function.getFuncCode());
                     instance = Modifier.isStatic(method.getModifiers()) ? null : javaInstanceCache.computeIfAbsent(key.className(), name -> {
                         try { return implementation.getDeclaredConstructor().newInstance(); }
                         catch (Exception e) { throw new IllegalStateException("无法实例化 Java 类: " + name, e); }
                     });
                 } else {
                     FunctionParameterContract.parse(key.params());
+                    Class<?> implementation = applicationContext.getType(key.beanName(), false);
+                    if (implementation == null) throw new IllegalArgumentException("无法确认 Bean 方法的脚本授权");
+                    method = FunctionParameterContract.resolveMethod(implementation, key.method(), function.getFuncCode(), key.params());
+                    com.hengshucredit.rule.core.function.NativeFunctionSecurity.requireAllowed(method, function.getFuncCode());
                     instance = applicationContext.getBean(key.beanName());
                     method = FunctionParameterContract.resolveMethod(instance.getClass(), key.method(), function.getFuncCode(), key.params());
+                    com.hengshucredit.rule.core.function.NativeFunctionSecurity.requireAllowed(method, function.getFuncCode());
                 }
                 CustomFunction target = new QMethodFunction(instance, method);
                 if (targets.size() >= MAX_FUNCTION_TARGETS) targets.remove(targets.keySet().iterator().next());

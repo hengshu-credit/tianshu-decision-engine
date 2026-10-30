@@ -66,8 +66,8 @@ public class ClientFunctionRegistrarTest {
     }
 
     public static final class FrozenFunctions {
-        public int first() { return 1; }
-        public int second() { return 2; }
+        @com.hengshucredit.rule.core.function.ScriptCallable public int first() { return 1; }
+        @com.hengshucredit.rule.core.function.ScriptCallable public int second() { return 2; }
     }
 
 

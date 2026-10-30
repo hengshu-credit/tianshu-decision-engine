@@ -18,8 +18,8 @@ import static org.junit.Assert.assertTrue;
 
 public class FunctionRegistrarTest {
 
-    public static class VersionOne { public int value() { return 1; } }
-    public static class VersionTwo { public int value() { return 2; } }
+    public static class VersionOne { @com.hengshucredit.rule.core.function.ScriptCallable public int value() { return 1; } }
+    public static class VersionTwo { @com.hengshucredit.rule.core.function.ScriptCallable public int value() { return 2; } }
 
     @Test
     public void requestFunctionScopeRestoresParentBindingAfterNestedRule() {

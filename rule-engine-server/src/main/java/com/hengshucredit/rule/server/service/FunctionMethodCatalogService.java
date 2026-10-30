@@ -47,7 +47,7 @@ public class FunctionMethodCatalogService {
         try {
             for (Method method : implementation.getMethods()) {
                 if (method.getDeclaringClass() == Object.class || method.isBridge() || method.isSynthetic()) continue;
-                String unavailableReason = availability(implementation, method, javaClass);
+                String unavailableReason = availability(implementation, method, javaClass, function.getFuncCode());
                 List<FunctionMethodCatalog.ParameterOption> parameters = Arrays.stream(method.getParameters())
                         .map(parameter -> new FunctionMethodCatalog.ParameterOption(parameter.isNamePresent() ? parameter.getName() : null,
                                 parameter.getType().getName(), suggestedType(parameter.getType())))
@@ -71,7 +71,7 @@ public class FunctionMethodCatalogService {
             if (com.hengshucredit.rule.core.function.ManagedFunctionInvoker.NAME.equals(function.getFuncCode()))
                 return new FunctionMethodCatalog("AVAILABLE", "该函数编码由引擎内部使用，请更换函数编码", implementation.getName(), signature(selected), legacy, false, methods);
             // 候选默认隐藏 Object 的通用方法，但已有显式绑定仍按真实公开方法核对。
-            String unavailableReason = availability(implementation, selected, javaClass);
+            String unavailableReason = availability(implementation, selected, javaClass, function.getFuncCode());
             return new FunctionMethodCatalog("AVAILABLE", unavailableReason == null ? (legacy ? "当前配置沿用旧参数映射；选择具体方法可固定精确签名" : "方法签名已在当前管理服务核对") : unavailableReason,
                     implementation.getName(), signature(selected), legacy, unavailableReason == null, methods);
         } catch (IllegalArgumentException error) {
@@ -98,7 +98,9 @@ public class FunctionMethodCatalogService {
         catch (IllegalArgumentException error) { return false; }
     }
 
-    private String availability(Class<?> implementation, Method method, boolean javaClass) {
+    private String availability(Class<?> implementation, Method method, boolean javaClass, String functionCode) {
+        if (!com.hengshucredit.rule.core.function.NativeFunctionSecurity.isAllowed(method, functionCode))
+            return "该方法未授权脚本调用，部署代码需使用 @ScriptCallable 显式声明";
         if (!Modifier.isPublic(implementation.getModifiers()) || !Modifier.isPublic(method.getDeclaringClass().getModifiers()))
             return "实现类和方法声明类必须公开";
         if (!javaClass || Modifier.isStatic(method.getModifiers())) return null;

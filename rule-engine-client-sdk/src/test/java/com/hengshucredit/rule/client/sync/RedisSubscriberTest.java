@@ -302,7 +302,7 @@ public class RedisSubscriberTest {
         }
     }
 
-    public static class FunctionBean { public int value() { return 9; } }
+    public static class FunctionBean { @com.hengshucredit.rule.core.function.ScriptCallable public int value() { return 9; } }
 
     private static CachedRule rule(String code) {
         CachedRule rule = new CachedRule();
