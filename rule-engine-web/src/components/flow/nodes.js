@@ -12,6 +12,8 @@ import {
 import { renderContentReference } from '@/utils/contentReference'
 import { wouldCreateCycleFromNewEdge } from '@/utils/flowGraphCycle'
 import { normalizeEndScope, getEndNodeAppearance } from '@/utils/endNodeScope'
+import { LINEAGE_NODE_WIDTH, LINEAGE_NODE_HEIGHT, LINEAGE_NODE_COLORS } from './lineageNodeConstants'
+export { LINEAGE_NODE_WIDTH, LINEAGE_NODE_HEIGHT, LINEAGE_NODE_COLORS } from './lineageNodeConstants'
 
 // ============================================================
 // 工具函数
@@ -420,21 +422,6 @@ function JoinGatewayFactory(DiamondNode, DiamondNodeModel) {
 // ============================================================
 // 6. 血缘节点 - 与设计器复用 LogicFlow 画布和节点基类
 // ============================================================
-export const LINEAGE_NODE_WIDTH = 200
-export const LINEAGE_NODE_HEIGHT = 88
-export const LINEAGE_NODE_COLORS = {
-  PROJECT: '#2563EB',
-  VARIABLE: '#059669',
-  RULE: '#DC2626',
-  MODEL: '#7C3AED',
-  API: '#EA580C',
-  DB: '#0F766E',
-  LIST: '#C026D3',
-  DATASOURCE: '#64748B',
-  DATA_FIELD: '#0891B2',
-  DATA_OBJECT: '#0284C7',
-}
-
 const LINEAGE_ICON_PATHS = {
   PROJECT: 'M3 5h7l2 2h9v12H3z',
   VARIABLE: 'M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5',

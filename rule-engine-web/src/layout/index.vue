@@ -107,6 +107,10 @@
         </div>
       <project-context-bar />
       <main class="layout-main" :aria-busy="!!navigation.pendingRoute">
+        <div v-if="navigation.pendingRoute" class="route-loading-status" role="status" aria-live="polite" data-testid="route-loading-status">
+          <app-loading-icon />
+          <span>正在打开{{ navigation.pendingRoute.meta?.title || '页面' }}…</span>
+        </div>
         <el-alert v-if="navigation.error && !navigation.pendingRoute" type="error" title="页面加载失败，请重试" show-icon @close="navigation.error = null">
           <el-button size="small" @click="navigateTo(navigation.error.fullPath)">重新加载</el-button>
         </el-alert>
@@ -171,6 +175,7 @@ import WorkspaceTabs from '@/layout/components/WorkspaceTabs.vue'
 import ProjectContextBar from '@/components/ProjectContextBar.vue'
 import ThemeSettingsDrawer from '@/components/theme/ThemeSettingsDrawer.vue'
 import DesignerInputTooltip from '@/components/common/DesignerInputTooltip.vue'
+import AppLoadingIcon from '@/components/common/AppLoadingIcon.vue'
 import {
   SIDEBAR_COMPACT_THRESHOLD,
   SIDEBAR_MENUS,
@@ -235,6 +240,7 @@ function browserLocalStorage() {
 export default {
   name: 'Layout',
   components: {
+    AppLoadingIcon,
     LayoutSidebar,
     WorkspaceTabs,
     ProjectContextBar,
@@ -892,6 +898,22 @@ export default {
   padding: 8px;
   // 二维码保持白色底衬，避免暗色主题影响扫码对比度。
   background: var(--el-color-white);
+}
+.route-loading-status {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--tianshu-info-border);
+  border-radius: 6px;
+  background: var(--tianshu-info-bg);
+  color: var(--tianshu-info-text);
+  font-size: 13px;
+  pointer-events: none;
 }
 .layout-main {
   min-width: 0;

@@ -85,7 +85,7 @@
           <i :style="{ background: nodeColor(item.value) }" />{{ item.label }}
         </span>
       </div>
-      <div v-if="startNode" class="graph-toolbar" @pointerdown.stop>
+      <div v-if="startNode" class="graph-toolbar" :inert="!lf" @pointerdown.stop>
         <el-button size="small" :icon="ElIconDownload" aria-label="下载PNG血缘图" @click="downloadPng">下载 PNG</el-button>
         <el-button size="small" :icon="ElIconMagicStick" @click="resetToBestLayout">一键美化</el-button>
         <el-button size="small" :icon="ElIconMapLocation" :class="{ 'is-tool-active': miniMapVisible }" :aria-pressed="miniMapVisible" @click="toggleMiniMap">小地图</el-button>
@@ -180,10 +180,11 @@
       <div
         ref="graphWrap"
         class="graph-wrap"
-        :aria-busy="loading"
+        :aria-busy="loading || canvasLoading"
         :style="{ height: graphHeight + 'px' }"
       >
-        <div v-if="!startNode" class="empty-graph">请选择起点后生成血缘图</div>
+        <async-state v-if="startNode && (canvasLoading || canvasError)" class="canvas-load-state" :loading="canvasLoading" :error="canvasError" loading-text="正在加载血缘图…" @retry="loadCanvas" />
+        <div v-else-if="!startNode" class="empty-graph">请选择起点后生成血缘图</div>
         <div ref="graphContainer" class="graph-canvas" :class="{ 'is-hidden': !startNode }" aria-label="血缘关系图" />
       </div>
     </div>
@@ -192,6 +193,7 @@
 
 <script>
 import ContentReference from '@/components/common/ContentReference.vue'
+import AsyncState from '@/components/common/AsyncState.vue'
 import { markRaw } from 'vue'
 import {
   Share as ElIconShare,
@@ -203,11 +205,9 @@ import {
   RefreshLeft as ElIconRefreshLeft,
   Download as ElIconDownload,
 } from '@element-plus/icons-vue'
-import { createGraphCanvas } from '@/components/flow/graphCanvas'
-import { MiniMap, Snapshot } from '@logicflow/extension'
 import { getLineageGraph, listLineageOptions } from '@/api/lineage'
 import { lineageLayout } from '@/utils/lineageLayers'
-import { LINEAGE_NODE_COLORS, LINEAGE_NODE_WIDTH as CARD_W, LINEAGE_NODE_HEIGHT as CARD_H } from '@/components/flow/nodes'
+import { LINEAGE_NODE_COLORS, LINEAGE_NODE_WIDTH as CARD_W, LINEAGE_NODE_HEIGHT as CARD_H } from '@/components/flow/lineageNodeConstants'
 import GraphDesignerNavigator from '@/components/flow/GraphDesignerNavigator.vue'
 import CanvasBackgroundSettings from '@/components/flow/CanvasBackgroundSettings.vue'
 
@@ -245,6 +245,9 @@ export default {
         },
       ],
       loading: false,
+      canvasLoading: false,
+      canvasError: '',
+      canvasDisposed: false,
       optionLoading: false,
       options: [],
       startNode: null,
@@ -309,7 +312,7 @@ export default {
     }
   },
   name: 'LineageGraph',
-  components: { ContentReference, GraphDesignerNavigator, CanvasBackgroundSettings },
+  components: { ContentReference, AsyncState, GraphDesignerNavigator, CanvasBackgroundSettings },
   watch: {
     initialGraph: {
       deep: true,
@@ -344,6 +347,7 @@ export default {
     },
   },
   beforeUnmount() {
+    this.canvasDisposed = true
     window.removeEventListener('tianshu-theme-change', this.applyCanvasSettings)
     this.$refs.graphWrap?.removeEventListener('wheel', this.onCanvasWheel)
     this.resizeObserver?.disconnect()
@@ -352,7 +356,6 @@ export default {
     this.lf = null
   },
   mounted() {
-    this.initLogicFlow()
     window.addEventListener('tianshu-theme-change', this.applyCanvasSettings)
     this.resizeGraph()
     window.addEventListener('resize', this.resizeGraph)
@@ -637,7 +640,30 @@ export default {
     },
   },
   methods: {
-    initLogicFlow() {
+    async loadCanvas() {
+      if (this.canvasDisposed || this.canvasLoading || this.lf || !this.startNode || !this.$refs.graphContainer) return
+      this.canvasLoading = true
+      this.canvasError = ''
+      try {
+        const [{ createGraphCanvas }, { MiniMap, Snapshot }] = await Promise.all([
+          import('@/components/flow/graphCanvas'),
+          import('@logicflow/extension'),
+        ])
+        // 下载期间允许切换菜单或更换起点，离开的页面不得再创建画布。
+        if (this.canvasDisposed || !this.startNode || this.lf) return
+        this.initLogicFlow(createGraphCanvas, { MiniMap, Snapshot })
+        if (!this.lf) throw new Error('画布初始化失败')
+        this.renderLineageGraph()
+      } catch (error) {
+        if (this.canvasDisposed) return
+        this.lf?.destroy()
+        this.lf = null
+        this.canvasError = '血缘图加载失败，请重新加载'
+      } finally {
+        this.canvasLoading = false
+      }
+    },
+    initLogicFlow(createGraphCanvas, { MiniMap, Snapshot }) {
       this.lf = createGraphCanvas({
         container: this.$refs.graphContainer,
         plugins: [MiniMap, Snapshot],
@@ -771,7 +797,10 @@ export default {
       if (container?.clientWidth && container.clientHeight) this.lf.resize(container.clientWidth, container.clientHeight)
     },
     renderLineageGraph() {
-      if (!this.lf) return
+      if (!this.lf) {
+        if (!this.canvasError) this.loadCanvas()
+        return
+      }
       const data = this.graphData
       // LogicFlow 会规范化输入文本对象，避免反写 Vue 的 computed 结果。
       this.lf.render(JSON.parse(JSON.stringify(data)))
@@ -925,6 +954,7 @@ export default {
       this.loadOptions('')
     },
     resetGraph() {
+      this.canvasError = ''
       this.startNode = null
       this.upstreamRoots = []
       this.downstreamRoots = []
@@ -1288,6 +1318,13 @@ export default {
 
 <style lang="scss" scoped>
 .lineage-page {
+  .canvas-load-state {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+  }
   &.is-embedded {
     padding: 0;
 

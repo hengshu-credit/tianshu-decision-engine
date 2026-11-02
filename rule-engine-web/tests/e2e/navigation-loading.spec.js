@@ -198,7 +198,7 @@ test('首次未验证会话不请求业务数据，已登录会话失效仍返�
   } finally { auth.resolve() }
 })
 
-test('页面代码冷下载保留当前内容，完成后显示真实目标页，不插入骨架过渡页', async ({ page }) => {
+test('页面代码冷下载保留当前内容，完成后显示真实目标页，不插入骨架过渡页', async ({ page }, testInfo) => {
   const download = deferred()
   await installDistRoutes(page, { origin, liveStatic })
   await page.route(/\/(?:src\/views\/rule\/RuleList\.vue|assets\/RuleList-[^/]+\.js)(?:\?.*)?$/, async route => { await download.promise; await route.fallback() })
@@ -207,10 +207,13 @@ test('页面代码冷下载保留当前内容，完成后显示真实目标页�
     await expect(page.getByRole('cell', { name: 'e2e_project', exact: true })).toBeVisible()
     await page.locator('[data-menu-path="/rule"]').click()
     await expect(page.locator('.workspace-tab.is-active')).toContainText('规则管理')
+    await expect(page.getByTestId('route-loading-status')).toContainText('正在打开规则管理')
+    await page.screenshot({ path: testInfo.outputPath('route-loading-status.png') })
     await expect(page.getByRole('cell', { name: 'e2e_project', exact: true })).toBeVisible()
     await expect(page.getByTestId('route-page-skeleton')).toHaveCount(0)
     download.resolve()
     await expect(page).toHaveURL(/#\/rule$/)
+    await expect(page.getByTestId('route-loading-status')).toHaveCount(0)
     await expect(page.getByRole('textbox', { name: '规则编码', exact: true })).toBeVisible()
     await page.goBack()
     await expect(page).toHaveURL(/#\/project$/)

@@ -17,6 +17,7 @@
       <div class="flow-trace-canvas-wrap">
         <div class="flow-trace-canvas" data-testid="flow-trace-canvas"></div>
         <div v-if="!graphMounted" class="flow-trace-fallback" data-testid="flow-trace-fallback">
+          <async-state v-if="graphLoading || graphError" compact :loading="graphLoading" :error="graphError" loading-text="正在加载执行图…" @retry="renderGraph" />
           <div class="flow-trace-fallback__title">执行节点</div>
           <div class="flow-trace-fallback__list">
             <button
@@ -107,7 +108,7 @@
 
 <script>
 import ContentReference from './ContentReference.vue'
-import { createGraphCanvas } from '@/components/flow/graphCanvas'
+import AsyncState from './AsyncState.vue'
 
 const NODE_TYPES = {
   start: 'start-event',
@@ -142,7 +143,7 @@ const STATUS_STYLES = {
 }
 
 export default {
-  components: { ContentReference },
+  components: { ContentReference, AsyncState },
   name: 'FlowTraceGraph',
   props: {
     modelData: { type: Object, default: null },
@@ -152,6 +153,9 @@ export default {
     return {
       lf: null,
       graphMounted: false,
+      graphLoading: false,
+      graphError: '',
+      graphRequestId: 0,
       selected: null,
     }
   },
@@ -228,6 +232,7 @@ export default {
     this.renderGraph()
   },
   beforeUnmount() {
+    this.graphRequestId++
     if (this.lf && typeof this.lf.destroy === 'function') this.lf.destroy()
     this.lf = null
   },
@@ -322,13 +327,19 @@ export default {
       if (source.trace.status === 'miss') return 'skipped'
       return 'pending'
     },
-    renderGraph() {
+    async renderGraph() {
       const canvas = this.$el && this.$el.querySelector
         ? this.$el.querySelector('[data-testid="flow-trace-canvas"]')
         : null
       if (!canvas) return
-      if (this.lf && typeof this.lf.destroy === 'function') this.lf.destroy()
+      const requestId = ++this.graphRequestId
+      this.graphLoading = true
+      this.graphError = ''
       try {
+        // 追踪面板实际展示后才加载画布，不阻塞规则测试等页面的首次导航。
+        const { createGraphCanvas } = await import('@/components/flow/graphCanvas')
+        if (requestId !== this.graphRequestId) return
+        if (this.lf && typeof this.lf.destroy === 'function') this.lf.destroy()
         this.lf = createGraphCanvas({
           container: canvas,
           width: canvas.clientWidth || 820,
@@ -340,11 +351,14 @@ export default {
           keyboard: { enabled: false },
         })
       } catch (error) {
-        console.warn('决策流执行图初始化失败，回退为节点列表', error)
+        if (requestId !== this.graphRequestId) return
         this.lf = null
+      } finally {
+        if (requestId === this.graphRequestId) this.graphLoading = false
       }
       if (!this.lf) {
         this.graphMounted = false
+        this.graphError = '执行图加载失败，可重试或通过下方节点查看详情'
         return
       }
       this.graphMounted = true
