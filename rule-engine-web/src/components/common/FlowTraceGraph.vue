@@ -17,7 +17,7 @@
       <div class="flow-trace-canvas-wrap">
         <div class="flow-trace-canvas" data-testid="flow-trace-canvas"></div>
         <div v-if="!graphMounted" class="flow-trace-fallback" data-testid="flow-trace-fallback">
-          <async-state v-if="graphLoading || graphError" compact :loading="graphLoading" :error="graphError" loading-text="正在加载执行图…" @retry="renderGraph" />
+          <async-state v-if="graphLoading || graphError" compact :loading="graphLoading" :error="graphError" loading-text="正在加载执行图…" @retry="retryGraph" />
           <div class="flow-trace-fallback__title">执行节点</div>
           <div class="flow-trace-fallback__list">
             <button
@@ -155,6 +155,7 @@ export default {
       graphMounted: false,
       graphLoading: false,
       graphError: '',
+      graphImportFailed: false,
       graphRequestId: 0,
       selected: null,
     }
@@ -327,6 +328,11 @@ export default {
       if (source.trace.status === 'miss') return 'skipped'
       return 'pending'
     },
+    retryGraph() {
+      // 下载失败的模块可能被浏览器缓存；刷新前明确提示保留测试输入。
+      if (this.graphImportFailed) window.location.reload()
+      else this.renderGraph()
+    },
     async renderGraph() {
       const canvas = this.$el && this.$el.querySelector
         ? this.$el.querySelector('[data-testid="flow-trace-canvas"]')
@@ -335,9 +341,12 @@ export default {
       const requestId = ++this.graphRequestId
       this.graphLoading = true
       this.graphError = ''
+      this.graphImportFailed = false
+      let imported = false
       try {
         // 追踪面板实际展示后才加载画布，不阻塞规则测试等页面的首次导航。
         const { createGraphCanvas } = await import('@/components/flow/graphCanvas')
+        imported = true
         if (requestId !== this.graphRequestId) return
         if (this.lf && typeof this.lf.destroy === 'function') this.lf.destroy()
         this.lf = createGraphCanvas({
@@ -352,13 +361,16 @@ export default {
         })
       } catch (error) {
         if (requestId !== this.graphRequestId) return
+        this.graphImportFailed = !imported
         this.lf = null
       } finally {
         if (requestId === this.graphRequestId) this.graphLoading = false
       }
       if (!this.lf) {
         this.graphMounted = false
-        this.graphError = '执行图加载失败，可重试或通过下方节点查看详情'
+        this.graphError = this.graphImportFailed
+          ? '执行图资源下载失败，请保存测试输入后刷新页面；仍可通过下方节点查看详情'
+          : '执行图加载失败，可重试或通过下方节点查看详情'
         return
       }
       this.graphMounted = true

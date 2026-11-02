@@ -113,7 +113,7 @@ test('血缘画布下载期间可离开，下载完成后不重建已离开的�
   } finally { release() }
 })
 
-test('血缘图资源下载失败显示重试，恢复后可以生成图谱', async ({ page }) => {
+test('血缘图资源下载失败后明确刷新页面，保留起点并恢复图谱', async ({ page }) => {
   const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
   const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: createOperationsApiData() })
   let attempts = 0, unavailable = true
@@ -126,11 +126,13 @@ test('血缘图资源下载失败显示重试，恢复后可以生成图谱', as
   await page.getByRole('combobox', { name: '起点', exact: true }).click()
   await page.getByRole('option', { name: '年龄 (age)', exact: true }).click()
   await page.getByRole('button', { name: '生成血缘图', exact: true }).click()
-  await expect(page.getByText('血缘图加载失败，请重新加载', { exact: true })).toBeVisible()
+  await expect(page.getByText('血缘图资源下载失败，请刷新页面重新加载', { exact: true })).toBeVisible()
   const failedAttempts = attempts
   unavailable = false
   await page.getByRole('button', { name: '重新加载', exact: true }).click()
   await expect(page.locator('.current-node')).toBeVisible()
+  await expect(page).toHaveURL(/#\/lineage\?nodeType=VARIABLE&nodeId=1&direction=ALL$/)
+  await expect(page.locator('.query-panel .el-form-item').filter({ hasText: '起点' })).toContainText('年龄 (age)')
   expect(attempts).toBeGreaterThan(failedAttempts)
   expect(harness.pageErrors).toEqual([])
   expect(harness.unmatchedRequests).toEqual([])

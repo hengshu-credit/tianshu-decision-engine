@@ -290,6 +290,11 @@ const routes = [
         path: 'lineage',
         name: 'LineageGraph',
         component: () => import('@/views/lineage/LineageGraph.vue'),
+        props: route => ({
+          initialNodeType: typeof route.query.nodeType === 'string' ? route.query.nodeType : '',
+          initialNodeId: typeof route.query.nodeId === 'string' ? route.query.nodeId : '',
+          initialDirection: typeof route.query.direction === 'string' ? route.query.direction : 'ALL',
+        }),
         meta: { title: '血缘分析' }
       },
       {

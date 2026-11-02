@@ -1,7 +1,7 @@
 import { shallowMount, flushPromises } from '@test-utils'
 import LineageGraph from '@/views/lineage/LineageGraph.vue'
 import { createGraphCanvas } from '@/components/flow/graphCanvas'
-import { listLineageOptions } from '@/api/lineage'
+import { getLineageGraph, listLineageOptions } from '@/api/lineage'
 
 vi.mock('@/components/flow/graphCanvas', () => ({ createGraphCanvas: vi.fn() }))
 
@@ -32,6 +32,19 @@ test('空白血缘页只加载候选项，不初始化画布', async () => {
     expect(listLineageOptions).toHaveBeenCalledOnce()
     expect(createGraphCanvas).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('请选择起点后生成血缘图')
+  } finally { wrapper.unmount() }
+})
+
+test('刷新恢复的字符串起点ID加载图谱，并使用候选项的原始ID类型回显选择', async () => {
+  listLineageOptions.mockResolvedValue({ data: [{ id: 1, type: 'VARIABLE', displayName: '年龄 (age)' }] })
+  getLineageGraph.mockResolvedValue({ data: graph })
+  const wrapper = shallowMount(LineageGraph, { props: { initialNodeId: '1', initialNodeType: 'VARIABLE', initialDirection: 'DOWNSTREAM' } })
+  try {
+    await settle()
+    expect(getLineageGraph).toHaveBeenCalledWith({ nodeId: '1', nodeType: 'VARIABLE', direction: 'DOWNSTREAM', maxDepth: 2 })
+    expect(wrapper.vm.query.nodeId).toBe(1)
+    expect(wrapper.vm.startNode.id).toBe('VARIABLE:1')
+    expect(wrapper.vm.lf.render).toHaveBeenCalled()
   } finally { wrapper.unmount() }
 })
 

@@ -23,6 +23,8 @@ for (const scheme of ['LIGHT', 'DARK']) {
     for (const [route, tab] of pages) {
       await page.goto('http://tianshu.local/index.html#' + route)
       await expect(page.locator(`.workspace-tab[data-tab="${route}"]`)).toHaveClass(/is-active/)
+      // 页签在路由下载时就会高亮；等待目标页挂载后再测量其状态标签。
+      await expect(page.locator('.layout-main')).toHaveAttribute('aria-busy', 'false')
       if (tab) await page.getByRole('tab', { name: tab, exact: true }).click()
       const status = page.locator('.governance-resource-status:visible').first()
       await expect(status).toContainText('审批中')

@@ -183,7 +183,7 @@
         :aria-busy="loading || canvasLoading"
         :style="{ height: graphHeight + 'px' }"
       >
-        <async-state v-if="startNode && (canvasLoading || canvasError)" class="canvas-load-state" :loading="canvasLoading" :error="canvasError" loading-text="正在加载血缘图…" @retry="loadCanvas" />
+        <async-state v-if="startNode && (canvasLoading || canvasError)" class="canvas-load-state" :loading="canvasLoading" :error="canvasError" loading-text="正在加载血缘图…" @retry="retryCanvas" />
         <div v-else-if="!startNode" class="empty-graph">请选择起点后生成血缘图</div>
         <div ref="graphContainer" class="graph-canvas" :class="{ 'is-hidden': !startNode }" aria-label="血缘关系图" />
       </div>
@@ -247,6 +247,7 @@ export default {
       loading: false,
       canvasLoading: false,
       canvasError: '',
+      canvasImportFailed: false,
       canvasDisposed: false,
       optionLoading: false,
       options: [],
@@ -376,8 +377,9 @@ export default {
     if (this.initialDirection) this.query.direction = this.initialDirection
     if (this.initialGraph) {
       this.loadInitialGraph(this.initialGraph)
-    } else if (this.embedded && this.query.nodeId) {
+    } else if (this.query.nodeId) {
       this.loadGraph()
+      if (!this.embedded) this.loadOptions('')
     } else {
       this.loadOptions('')
     }
@@ -640,15 +642,31 @@ export default {
     },
   },
   methods: {
+    retryCanvas() {
+      if (!this.canvasImportFailed) return this.loadCanvas()
+      // 浏览器可能缓存失败的 ES 模块，重复 import 同一 URL 无法恢复。
+      // 用户明确刷新时保留独立血缘页的起点；嵌入图由父页面重新提供上下文。
+      if (!this.embedded) {
+        const target = this.$router.resolve({
+          path: this.$route.path,
+          query: { ...this.$route.query, nodeType: this.query.nodeType, nodeId: String(this.query.nodeId), direction: this.query.direction },
+        })
+        window.history.replaceState(window.history.state, '', target.href)
+      }
+      window.location.reload()
+    },
     async loadCanvas() {
       if (this.canvasDisposed || this.canvasLoading || this.lf || !this.startNode || !this.$refs.graphContainer) return
       this.canvasLoading = true
       this.canvasError = ''
+      this.canvasImportFailed = false
+      let imported = false
       try {
         const [{ createGraphCanvas }, { MiniMap, Snapshot }] = await Promise.all([
           import('@/components/flow/graphCanvas'),
           import('@logicflow/extension'),
         ])
+        imported = true
         // 下载期间允许切换菜单或更换起点，离开的页面不得再创建画布。
         if (this.canvasDisposed || !this.startNode || this.lf) return
         this.initLogicFlow(createGraphCanvas, { MiniMap, Snapshot })
@@ -658,7 +676,8 @@ export default {
         if (this.canvasDisposed) return
         this.lf?.destroy()
         this.lf = null
-        this.canvasError = '血缘图加载失败，请重新加载'
+        this.canvasImportFailed = !imported
+        this.canvasError = imported ? '血缘图加载失败，请重新加载' : '血缘图资源下载失败，请刷新页面重新加载'
       } finally {
         this.canvasLoading = false
       }
@@ -944,6 +963,8 @@ export default {
           keyword,
         })
         this.options = (res && res.data) || []
+        const selected = this.options.find(item => String(item.id) === String(this.query.nodeId))
+        if (selected) this.query.nodeId = selected.id
       } finally {
         this.optionLoading = false
       }
