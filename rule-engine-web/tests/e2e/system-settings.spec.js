@@ -351,8 +351,18 @@ test('引擎字体：本机选择、取消和保存后跨页生效', async ({ pa
   const data = fixture()
   const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
   const { assertClean } = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data.apiData })
-  await page.addInitScript(() => { window.queryLocalFonts = async () => [{ postscriptName: 'Arial', fullName: 'Arial' }] })
   await page.goto(`${origin}/#/system/settings`)
+  // Enumerating fonts is permission-controlled, but the chosen local face must really exist on the runner.
+  const localFont = await page.evaluate(async () => {
+    for (const family of ['Arial', 'Liberation Sans', 'Nimbus Sans', 'DejaVu Sans']) {
+      try {
+        await new FontFace('E2ELocalFontProbe', `local("${family}")`).load()
+        return family
+      } catch { /* Try the next installed font; do not substitute a web font or skip the test. */ }
+    }
+    throw new Error('No supported local test font is installed')
+  })
+  await page.evaluate(family => { window.queryLocalFonts = async () => [{ postscriptName: family, fullName: family }] }, localFont)
   const font = page.locator('.font-settings')
   const source = font.getByRole('combobox', { name: '字体来源', exact: true })
   const choose = async (combo, label) => { await combo.locator('xpath=ancestor::div[contains(@class, "el-select__wrapper")][1]').click(); await page.getByRole('option', { name: label, exact: true }).click() }
@@ -360,16 +370,16 @@ test('引擎字体：本机选择、取消和保存后跨页生效', async ({ pa
   expect(await variation()).toContain('600')
   await choose(source, '本机字体')
   await font.getByRole('button', { name: '读取本机字体' }).click()
-  await choose(font.getByRole('combobox', { name: '本机字体名称' }), 'Arial')
+  await choose(font.getByRole('combobox', { name: '本机字体名称' }), localFont)
   await expect.poll(variation).toBe('normal')
   expect(data.config.brand.font).toBeUndefined()
   await page.getByRole('button', { name: '取消修改', exact: true }).click()
   await expect.poll(variation).toContain('600')
   await choose(source, '本机字体')
-  await choose(font.getByRole('combobox', { name: '本机字体名称' }), 'Arial')
+  await choose(font.getByRole('combobox', { name: '本机字体名称' }), localFont)
   await page.getByRole('button', { name: '保存配置', exact: true }).click()
   await expect(page.getByRole('button', { name: '保存配置', exact: true })).toBeDisabled()
-  expect(data.config.brand.font).toMatchObject({ source: 'LOCAL', family: 'Arial' })
+  expect(data.config.brand.font).toMatchObject({ source: 'LOCAL', family: localFont })
   const other = await context.newPage()
   await installDistRoutes(other, { apiData: data.apiData })
   await other.goto('http://tianshu.local/#/login')

@@ -1,6 +1,41 @@
 const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 
+test('登录页账密初始为空，填入后只有主动提交才发送登录请求', async ({ page }) => {
+  let loginRequests = 0
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const { assertClean } = await installDistRoutes(page, {
+    origin,
+    liveStatic: Boolean(process.env.E2E_DEV_BASE_URL),
+    apiData: new Map([
+      ['/api/auth/console/config', { loginEnabled: true, initializationRequired: false }],
+      ['/api/auth/console/me', { userId: 1, username: 'e2e-user', permissions: ['project:view'], defaultPermissions: ['project:view'], projectAccessMode: 'ALL', globalEditable: true }],
+      ['/api/auth/console/preferences/theme', null],
+      ['POST /api/rule/console/activity', null],
+      ['POST /api/auth/console/login', ({ request }) => {
+        loginRequests++
+        expect(request.postDataJSON()).toEqual({ username: 'e2e-user', password: 'E2E-only-password-123' })
+        return null
+      }],
+    ]),
+  })
+  await page.goto(`${origin}/#/login`)
+  const username = page.getByRole('textbox', { name: /用户名$/ })
+  const password = page.getByLabel(/密码$/)
+  await expect(username).toHaveValue('')
+  await expect(password).toHaveValue('')
+  expect(loginRequests).toBe(0)
+  await username.fill('e2e-user')
+  await password.fill('E2E-only-password-123')
+  await password.blur()
+  await expect(page.getByRole('button', { name: '登录', exact: true })).toBeEnabled()
+  expect(loginRequests).toBe(0)
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await expect(page).toHaveURL(/#\/project$/)
+  expect(loginRequests).toBe(1)
+  assertClean()
+})
+
 test('根路由默认进入数据看板并完成三分区加载', async ({ page }) => {
   const { assertClean } = await installDistRoutes(page)
   await page.goto('http://tianshu.local/index.html#/')
