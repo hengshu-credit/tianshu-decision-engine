@@ -31,7 +31,7 @@ public class SystemSettingsServiceTest {
         properties.setMasterKeys(Map.of("test", "test-only-master-key-0123456789-abcdef"));
         login = new RuleEngineConsoleLoginProperties(); env = new StandardEnvironment();
         env.getPropertySources().remove("systemEnvironment"); env.getPropertySources().remove("systemProperties");
-        service = new SystemSettingsService(jdbc, new GovernanceSecretCodec(new CredentialCipher(properties)), login, env);
+        service = new SystemSettingsService(jdbc, new GovernanceSecretCodec(new CredentialCipher(properties)), login, env, new SystemFontService(jdbc));
     }
     @Test public void brandSaveIsVersionedAndPublicViewContainsNoOperationalSecrets() {
         Map<String, Object> brand = service.get("brand"); brand.put("systemName", "测试引擎");
@@ -39,8 +39,44 @@ public class SystemSettingsServiceTest {
         assertEquals(1L, ((Number) service.publicBrand().get("version")).longValue());
         assertThrows(IllegalArgumentException.class, () -> service.saveBrand(brand, "admin"));
         assertFalse(service.publicBrand().containsKey("password"));
-        assertEquals(10, service.publicBrand().size());
+        assertEquals(11, service.publicBrand().size());
     }
+    @Test public void fontsValidateInstancesAndPreserveSavedConfigForLegacyClients() throws Exception {
+        var fonts = new SystemFontService(jdbc);
+        byte[] bytes = java.nio.file.Files.readAllBytes(java.nio.file.Path.of("../rule-engine-web/public/fonts/font.ttf"));
+        var upload = fonts.upload(bytes, "admin");
+        String id = upload.get("id").toString();
+        var controller = new SystemSettingsController(service, null, null, null, null, null, null);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller, "fonts", fonts);
+        assertThrows(IllegalArgumentException.class, () -> controller.publicFont(id, 0));
+        assertEquals("DEFAULT", ((Map<?, ?>) service.publicBrand().get("font")).get("source"));
+        var parsed = new EngineFontFile(bytes);
+        assertTrue(parsed.faces().get(0).instances().stream().anyMatch(instance -> instance.name().equals("SemiBold")));
+        int semiBold = java.util.stream.IntStream.range(0, parsed.faces().get(0).instances().size())
+                .filter(i -> parsed.faces().get(0).instances().get(i).name().equals("SemiBold")).findFirst().orElseThrow();
+        var selection = Map.of("source", "UPLOAD", "family", "", "assetId", id, "face", 0, "instance", semiBold);
+        var brand = service.get("brand"); brand.put("font", selection);
+        Map<?, ?> saved = (Map<?, ?>) service.saveBrand(brand, "admin").get("font");
+        assertEquals(600.0, ((Map<?, ?>) saved.get("coordinates")).get("wght"));
+        assertEquals(80.0, ((Map<?, ?>) saved.get("coordinates")).get("BEVL"));
+        new EngineFontFile(fonts.face(id, 0)).validate();
+        assertArrayEquals(bytes, controller.publicFont(id, 0).getBody());
+        assertThrows(IllegalArgumentException.class, () -> controller.publicFont(id, 1));
+        var legacy = service.get("brand"); legacy.remove("font"); service.saveBrand(legacy, "admin");
+        assertEquals(id, ((Map<?, ?>) service.publicBrand().get("font")).get("assetId"));
+        for (var invalid : java.util.List.of(Map.entry("face", -1), Map.entry("face", 10), Map.entry("instance", 500), Map.entry("instance", 1.5), Map.entry("assetId", "missing"), Map.entry("coordinates", Map.of("wght", 900)))) {
+            var value = new LinkedHashMap<String, Object>(selection); value.put(invalid.getKey(), invalid.getValue());
+            var edit = service.get("brand"); edit.put("font", value);
+            assertThrows(IllegalArgumentException.class, () -> service.saveBrand(edit, "admin"));
+        }
+        var image = service.get("brand"); image.put("logoId", id);
+        assertThrows(IllegalArgumentException.class, () -> service.saveBrand(image, "admin"));
+        assertThrows(IllegalArgumentException.class, () -> fonts.upload("not a font".getBytes(java.nio.charset.StandardCharsets.UTF_8), "admin"));
+        var local = service.get("brand"); local.put("font", Map.of("source", "LOCAL", "family", "Microsoft YaHei", "assetId", "", "face", 0, "instance", 0));
+        assertEquals("Microsoft YaHei", ((Map<?, ?>) service.saveBrand(local, "admin").get("font")).get("family"));
+        assertThrows(IllegalArgumentException.class, () -> controller.publicFont(id, 0));
+    }
+
     @Test public void watermarkDefaultsOffPersistsAndSurvivesLegacyBrandEdits() {
         assertEquals(false, service.publicBrand().get("watermarkEnabled"));
         var brand = service.get("brand");

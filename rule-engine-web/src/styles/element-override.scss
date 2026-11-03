@@ -2,7 +2,7 @@
 @use "./variables.scss" as *;
 
 /* 全局字体：阿里妈妈方圆体 */
-$font-family-base: "AlimamaFangYuanTiVF", "PingFang SC", "Microsoft YaHei", sans-serif;
+$font-family-base: var(--tianshu-font-family);
 
 // Element Plus 全局字体覆盖
 .el-input__inner,
@@ -22,6 +22,7 @@ $font-family-base: "AlimamaFangYuanTiVF", "PingFang SC", "Microsoft YaHei", sans
 .el-card__header,
 .el-popover__title {
   font-family: $font-family-base;
+  font-variation-settings: var(--tianshu-font-variation);
 }
 
 $--color-primary: $tianshu-color-primary;
@@ -400,6 +401,7 @@ $info-color: #475569;
 .el-dialog__footer .el-button,
 .el-message-box__btns .el-button {
   font-family: $font-family-base;
+  font-variation-settings: var(--tianshu-font-variation);
 }
 
 /* ── 弹窗标题 ── */
@@ -411,6 +413,7 @@ $info-color: #475569;
 
 .el-dialog__title {
   font-family: $font-family-base;
+  font-variation-settings: var(--tianshu-font-variation);
   font-weight: 600;
   font-size: 16px;
   color: var(--tianshu-text-primary);
@@ -419,6 +422,7 @@ $info-color: #475569;
 /* ── 弹窗主体内容 ── */
 .el-dialog__body {
   font-family: $font-family-base;
+  font-variation-settings: var(--tianshu-font-variation);
   min-height: 0;
   overflow-y: auto;
 }
@@ -484,6 +488,7 @@ $info-color: #475569;
 /* ── 表格优化 ── */
 .el-table {
   font-family: $font-family-base;
+  font-variation-settings: var(--tianshu-font-variation);
 
   .cell {
     white-space: nowrap;
@@ -535,6 +540,7 @@ $info-color: #475569;
 /* ── 表格空状态样式 ── */
 .el-table__empty-text {
   font-family: $font-family-base;
+  font-variation-settings: var(--tianshu-font-variation);
   color: var(--tianshu-text-secondary);
   padding: 32px 0;
 }
@@ -542,17 +548,20 @@ $info-color: #475569;
 /* ── 分页信息文字 ── */
 .el-pagination__total {
   font-family: $font-family-base;
+  font-variation-settings: var(--tianshu-font-variation);
 }
 
 .el-pagination__sizes {
   .el-input__inner {
     font-family: $font-family-base;
+    font-variation-settings: var(--tianshu-font-variation);
   }
 }
 
 /* ── 表单项标签 ── */
 .el-form-item__label {
   font-family: $font-family-base;
+  font-variation-settings: var(--tianshu-font-variation);
   color: var(--tianshu-text-secondary);
   font-weight: 500;
 }
@@ -560,27 +569,32 @@ $info-color: #475569;
 /* ── 表单错误提示 ── */
 .el-form-item__error {
   font-family: $font-family-base;
+  font-variation-settings: var(--tianshu-font-variation);
 }
 
 /* ── 描述列表 ── */
 .el-descriptions__title {
   font-family: $font-family-base;
+  font-variation-settings: var(--tianshu-font-variation);
   font-weight: 600;
 }
 
 .el-descriptions__label {
   font-family: $font-family-base;
+  font-variation-settings: var(--tianshu-font-variation);
   background-color: var(--tianshu-bg-muted) !important;
   color: var(--tianshu-text-secondary);
 }
 
 .el-descriptions__content {
   font-family: $font-family-base;
+  font-variation-settings: var(--tianshu-font-variation);
 }
 
 /* ── 下拉菜单选项 ── */
 .el-select-dropdown__item {
   font-family: $font-family-base;
+  font-variation-settings: var(--tianshu-font-variation);
 }
 
 /* ── 消息提示样式优化 ── */

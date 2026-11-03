@@ -2199,9 +2199,9 @@ CREATE TABLE IF NOT EXISTS `rule_system_setting` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='全局系统配置生效快照';
 
 CREATE TABLE IF NOT EXISTS `rule_system_asset` (
-  `id` VARCHAR(36) NOT NULL COMMENT '品牌图片的全局唯一标识',
-  `content_type` VARCHAR(64) NOT NULL COMMENT '存储图片媒体类型，固定 image/png=便携式网络图像格式；上传后统一转码',
-  `content` MEDIUMBLOB NOT NULL COMMENT '品牌图片文件的二进制内容',
+  `id` VARCHAR(36) NOT NULL COMMENT '品牌图片或字体的全局唯一标识',
+  `content_type` VARCHAR(64) NOT NULL COMMENT '资源媒体类型，image/png=图片，font/sfnt=字体',
+  `content` LONGBLOB NOT NULL COMMENT '品牌图片或字体的二进制内容',
   `create_by` VARCHAR(128) COMMENT '创建人标识',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
   PRIMARY KEY (`id`)

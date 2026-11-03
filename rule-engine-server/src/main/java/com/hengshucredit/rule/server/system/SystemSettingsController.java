@@ -19,6 +19,8 @@ import java.util.Map;
 @RestController
 public class SystemSettingsController {
     private final SystemSettingsService settings;
+    @org.springframework.beans.factory.annotation.Autowired
+    private SystemFontService fonts;
     private final SystemSettingsAccess access;
     private final SystemBrandAssetService assets;
     private final ConsoleOperatorResolver operators;
@@ -40,6 +42,39 @@ public class SystemSettingsController {
     public ResponseEntity<byte[]> asset(@PathVariable String id) {
         return ResponseEntity.ok().contentType(MediaType.IMAGE_PNG).cacheControl(CacheControl.noCache())
                 .header("X-Content-Type-Options", "nosniff").body(assets.publicAsset(id));
+    }
+
+    @PostMapping("/api/rule/system/settings/fonts")
+    @RequirePermission("system:edit")
+    public ApiResponse<Map<String, Object>> uploadFont(@RequestParam MultipartFile file, HttpServletRequest request) throws java.io.IOException {
+        access.require(request, "system:edit");
+        if (file.isEmpty() || file.getSize() > EngineFontFile.MAX_BYTES) throw new IllegalArgumentException("字体大小应在 32 MB 以内");
+        return ApiResponse.ok(fonts.upload(file.getBytes(), operators.resolve()));
+    }
+
+    @GetMapping("/api/rule/system/settings/fonts/{id}")
+    @RequirePermission("system:view")
+    public ApiResponse<Map<String, Object>> fontMetadata(@PathVariable String id, HttpServletRequest request) {
+        access.require(request, "system:view"); return ApiResponse.ok(fonts.metadata(id));
+    }
+
+    @GetMapping("/api/rule/system/settings/fonts/{id}/{face}")
+    @RequirePermission("system:edit")
+    public ResponseEntity<byte[]> previewFont(@PathVariable String id, @PathVariable int face, HttpServletRequest request) {
+        access.require(request, "system:edit"); return fontResponse(id, face);
+    }
+
+    @GetMapping("/api/auth/console/brand/fonts/{id}/{face}")
+    public ResponseEntity<byte[]> publicFont(@PathVariable String id, @PathVariable int face) {
+        Object raw = settings.get("brand").get("font");
+        if (!(raw instanceof Map<?, ?> font) || !"UPLOAD".equals(font.get("source")) || !id.equals(font.get("assetId"))
+                || face != SystemSettingsService.number(font.get("face"), "子字体")) throw new IllegalArgumentException("字体未生效");
+        return fontResponse(id, face);
+    }
+
+    private ResponseEntity<byte[]> fontResponse(String id, int face) {
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType("font/sfnt")).cacheControl(CacheControl.noCache())
+                .header("X-Content-Type-Options", "nosniff").body(fonts.face(id, face));
     }
 
     @GetMapping("/api/rule/system/settings")

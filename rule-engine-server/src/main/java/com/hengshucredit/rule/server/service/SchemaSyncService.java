@@ -80,6 +80,9 @@ public class SchemaSyncService {
             ensureProjectAuthSchema();
             ensureConsoleRbacSchema();
             ensureTablesFromSchema(List.of("rule_system_setting", "rule_system_asset"));
+            if (!columnHasDataType("rule_system_asset", "content", "longblob")) {
+                jdbcTemplate.execute("ALTER TABLE rule_system_asset MODIFY COLUMN content LONGBLOB NOT NULL COMMENT '品牌图片或字体的二进制内容'");
+            }
             jdbcTemplate.update("INSERT IGNORE INTO rule_system_setting (id, config_json) VALUES (1, '{}'), (2, '{}'), (3, '{}'), (4, '{}')");
             jdbcTemplate.update("INSERT IGNORE INTO console_security_lock (id) VALUES (1)");
             addColumnIfMissing("console_user", "operator_name", "`operator_name` VARCHAR(64) DEFAULT NULL");

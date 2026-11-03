@@ -48,7 +48,7 @@ export default {
   justify-content: center;
   padding: 24px 16px;
   color: var(--tianshu-text-primary);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--tianshu-font-family);
   overflow-x: hidden;
 }
 .auth-bg {

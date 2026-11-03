@@ -51,7 +51,7 @@ public class SystemSettingsGovernanceTest {
         env.getPropertySources().remove("systemEnvironment");
         env.getPropertySources().remove("systemProperties");
         var login = new RuleEngineConsoleLoginProperties();
-        settings = new SystemSettingsService(jdbc, new GovernanceSecretCodec(new CredentialCipher(keys)), login, env);
+        settings = new SystemSettingsService(jdbc, new GovernanceSecretCodec(new CredentialCipher(keys)), login, env, new SystemFontService(jdbc));
         approvals = new ApprovalStore(new SystemSettingGovernedResourceAdapter(settings, new SystemSettingsAccess(null, login)));
     }
 

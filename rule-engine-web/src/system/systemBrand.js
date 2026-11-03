@@ -1,3 +1,4 @@
+import { DEFAULT_ENGINE_FONT, applyEngineFont } from '@/system/engineFont'
 import { reactive } from 'vue'
 import axios from 'axios'
 import { PLATFORM_SUCCESS_CODE } from '@/utils/platformResponse'
@@ -5,7 +6,7 @@ import { DEFAULT_WATERMARK_SETTINGS, resolveWatermarkSettings } from '@/system/w
 import { getCurrentUser } from '@/security/permissionState'
 
 const base = import.meta.env.BASE_URL || './'
-export const DEFAULT_BRAND = Object.freeze({ systemName: '天枢决策引擎', subtitle: '天工开物，枢衡定策', logoUrl: `${base}images/hengshucredit_animated.svg`, faviconUrl: `${base}images/hengshucredit_animated.svg`, ...DEFAULT_WATERMARK_SETTINGS })
+export const DEFAULT_BRAND = Object.freeze({ systemName: '天枢决策引擎', subtitle: '天工开物，枢衡定策', logoUrl: `${base}images/hengshucredit_animated.svg`, faviconUrl: `${base}images/hengshucredit_animated.svg`, ...DEFAULT_WATERMARK_SETTINGS, font: DEFAULT_ENGINE_FONT })
 export const systemBrand = reactive({ ...DEFAULT_BRAND })
 let pending = null
 let fetchedAt = 0
@@ -32,6 +33,8 @@ export function applySystemBrand(value) {
   systemBrand.systemName = value.systemName
   systemBrand.subtitle = typeof value.subtitle === 'string' ? value.subtitle : DEFAULT_BRAND.subtitle
   Object.assign(systemBrand, resolveBrandImages(value), resolveWatermarkSettings(value), { watermarkEnabled: value.watermarkEnabled === true })
+  systemBrand.font = value.font || DEFAULT_ENGINE_FONT
+  applyEngineFont(systemBrand.font)
   updateBrandDocument()
 }
 

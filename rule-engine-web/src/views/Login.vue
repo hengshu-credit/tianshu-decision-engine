@@ -143,8 +143,7 @@ $login-muted: var(--tianshu-text-tertiary);
   align-items: center;
   justify-content: center;
   padding: 24px 16px;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    sans-serif;
+  font-family: var(--tianshu-font-family);
   overflow-x: hidden;
 }
 .login-bg {

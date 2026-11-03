@@ -27,6 +27,7 @@
             <login-page preview :preview-brand="previewBrand" />
           </div>
         </div>
+        <font-settings v-if="form.brand" v-model="form.brand.font" :active="tab === 'brand' && dirty" :disabled="!canEdit || saving || configurationUnavailable" @busy="fontBusy = $event" @valid="fontValid = $event" />
         <watermark-settings v-if="form.brand" v-model="form.brand" :disabled="!canEdit || saving || configurationUnavailable" />
       </el-tab-pane>
       <el-tab-pane label="通知邮箱" name="mail">
@@ -64,7 +65,7 @@
       </el-tab-pane>
       <el-tab-pane v-if="canAudit" label="变更记录" name="history"><el-table :data="history" border><el-table-column label="时间" min-width="160"><template #default="{ row }">{{ row.createTime ? String(row.createTime).replace('T', ' ').slice(0, 19) : '—' }}</template></el-table-column><el-table-column prop="username" label="操作人" min-width="120" /><el-table-column prop="changeSummary" label="变更内容" min-width="260" /><el-table-column label="结果" width="100"><template #default="{ row }">{{ { SUCCESS: '成功', FAILED: '失败', DENIED: '拒绝' }[row.outcome] || row.outcome }}</template></el-table-column></el-table><el-pagination v-model:current-page="historyPage" :page-size="20" :total="historyTotal" layout="total, prev, pager, next" @current-change="loadHistory" /></el-tab-pane>
     </el-tabs>
-    <div v-if="tab !== 'history'" class="settings-footer"><small>{{ draft ? draft.status === 'EDITING' ? '草稿已保存，尚未提交审批' : '审批处理中，已生效配置保持不变' : dirty ? '有未保存的修改' : '当前为已生效配置' }}</small><div><el-button :disabled="!dirty || saving || configurationUnavailable" @click="cancelChanges">取消修改</el-button><el-button v-if="tab !== 'brand'" :disabled="!writable || !dirty" :loading="saving" @click="saveDraft">保存草稿</el-button><el-button v-if="tab === 'brand'" type="primary" :disabled="!writable || !dirty" :loading="saving" @click="saveBrand">保存配置</el-button><el-button v-else type="primary" :disabled="!canSubmit || (!dirty && !draft) || (draft && draft.status !== 'EDITING')" :loading="saving" @click="submit">提交审批</el-button><el-button v-if="draft && hasApprovalView" @click="$router.push('/approval/' + draft.id)">查看审批</el-button></div></div>
+    <div v-if="tab !== 'history'" class="settings-footer"><small>{{ draft ? draft.status === 'EDITING' ? '草稿已保存，尚未提交审批' : '审批处理中，已生效配置保持不变' : dirty ? '有未保存的修改' : '当前为已生效配置' }}</small><div><el-button :disabled="!dirty || saving || fontBusy || configurationUnavailable" @click="cancelChanges">取消修改</el-button><el-button v-if="tab !== 'brand'" :disabled="!writable || !dirty" :loading="saving" @click="saveDraft">保存草稿</el-button><el-button v-if="tab === 'brand'" type="primary" :disabled="!writable || !dirty || fontBusy || !fontValid" :loading="saving" @click="saveBrand">保存配置</el-button><el-button v-else type="primary" :disabled="!canSubmit || (!dirty && !draft) || (draft && draft.status !== 'EDITING')" :loading="saving" @click="submit">提交审批</el-button><el-button v-if="draft && hasApprovalView" @click="$router.push('/approval/' + draft.id)">查看审批</el-button></div></div>
     <el-dialog v-model="testDialog" title="发送测试邮件" width="460px" :close-on-click-modal="false"><el-form label-position="top"><el-form-item label="测试收件人" required><el-input v-model="testRecipient" type="email" placeholder="仅用于本次测试" /></el-form-item></el-form><p>将使用当前表单配置发送真实测试邮件。</p><template #footer><el-button :disabled="testing" @click="testDialog = false">取消</el-button><el-button type="primary" :loading="testing" @click="sendTest">发送测试邮件</el-button></template></el-dialog>
   </div>
 </template>
@@ -75,6 +76,7 @@ import { createResourceDraft, saveGovernanceDraft, submitGovernanceRequest, getW
 import { hasPermission } from '@/security/permissionState'
 import NavigationBrand from '@/components/common/NavigationBrand.vue'
 import LoginPage from '@/views/Login.vue'
+import FontSettings from '@/views/system/FontSettings.vue'
 import WatermarkSettings from '@/views/system/WatermarkSettings.vue'
 import { BRAND_IMAGE_ACCEPT, prepareBrandImage } from '@/system/brandImageUpload'
 import { systemBrand, resolveBrandImages, applySystemBrand, loadSystemBrand } from '@/system/systemBrand'
@@ -86,8 +88,8 @@ const groups = { brand: 1, mail: 2, access: 3, codes: 4 }
 
 export default {
   name: 'SystemSettings',
-  components: { NavigationBrand, LoginPage, WatermarkSettings },
-  data: () => ({ tabLoading: false, tabError: '', tabRequestId: 0, imageAccept: BRAND_IMAGE_ACCEPT, brandImageFields: [{ id: 'logoId', url: 'logoUrl', label: '系统 Logo' }, { id: 'faviconId', url: 'faviconUrl', label: '浏览器图标' }], tab: 'brand', form: {}, saved: {}, drafts: {}, effectiveAccess: {}, catalog: [], managed: {}, history: [], historyPage: 1, historyTotal: 0, brand: systemBrand, loading: false, saving: false, mailPassword: '', assetPreviews: {}, codeSearch: '', codeGroup: '', codePage: 1, previewCode: '000000', testDialog: false, testRecipient: '', testing: false, mailResult: '', mailTemplate: 'reset', codeGroups: [{ value: '0', label: '成功' }, { value: '1', label: '请求参数' }, { value: '2', label: '规则与模型' }, { value: '3', label: '身份与权限' }, { value: '4', label: '执行与限流' }, { value: '5', label: '资源与额度' }, { value: '6', label: '外部调用' }, { value: '7', label: '治理与发布' }, { value: '9', label: '系统异常' }] }),
+  components: { NavigationBrand, LoginPage, WatermarkSettings, FontSettings },
+  data: () => ({ fontBusy: false, fontValid: true, tabLoading: false, tabError: '', tabRequestId: 0, imageAccept: BRAND_IMAGE_ACCEPT, brandImageFields: [{ id: 'logoId', url: 'logoUrl', label: '系统 Logo' }, { id: 'faviconId', url: 'faviconUrl', label: '浏览器图标' }], tab: 'brand', form: {}, saved: {}, drafts: {}, effectiveAccess: {}, catalog: [], managed: {}, history: [], historyPage: 1, historyTotal: 0, brand: systemBrand, loading: false, saving: false, mailPassword: '', assetPreviews: {}, codeSearch: '', codeGroup: '', codePage: 1, previewCode: '000000', testDialog: false, testRecipient: '', testing: false, mailResult: '', mailTemplate: 'reset', codeGroups: [{ value: '0', label: '成功' }, { value: '1', label: '请求参数' }, { value: '2', label: '规则与模型' }, { value: '3', label: '身份与权限' }, { value: '4', label: '执行与限流' }, { value: '5', label: '资源与额度' }, { value: '6', label: '外部调用' }, { value: '7', label: '治理与发布' }, { value: '9', label: '系统异常' }] }),
   computed: {
     canEdit() { return hasPermission('system:edit') },
     canAudit() { return hasPermission('system:audit') },
@@ -164,7 +166,7 @@ export default {
         throw error
       } finally { if (requestId === this.tabRequestId) this.tabLoading = false }
     },
-    async confirmLeave() { if (this.saving || this.testing) return false; if (!this.dirty) return true; try { await this.$confirm('当前配置尚未保存，是否放弃修改？', '未保存的修改'); this.cancelChanges(); return true } catch { return false } },
+    async confirmLeave() { if (this.saving || this.testing || this.fontBusy) return false; if (!this.dirty) return true; try { await this.$confirm('当前配置尚未保存，是否放弃修改？', '未保存的修改'); this.cancelChanges(); return true } catch { return false } },
     beforeTabLeave() { return this.confirmLeave() },
     cancelChanges() { this.form[this.tab] = clone(this.saved[this.tab]); this.mailPassword = ''; if (this.tab === 'brand') { Object.values(this.assetPreviews).forEach(URL.revokeObjectURL); this.assetPreviews = {} } },
     loadHistory() { return this.refreshTab('history') },
@@ -181,7 +183,7 @@ export default {
     },
     restoreAsset(field) { if (this.assetPreviews[field]) URL.revokeObjectURL(this.assetPreviews[field]); delete this.assetPreviews[field]; this.form.brand[field] = ''; this.form.brand[field.replace('Id', 'Url')] = '' },
     setAssetUrl(field, value) { this.restoreAsset(field.id); this.form.brand[field.url] = value },
-    async saveBrand() { this.saving = true; try { const response = await saveSystemBrand(this.form.brand); applySystemBrand(response.data); Object.values(this.assetPreviews).forEach(URL.revokeObjectURL); this.assetPreviews = {}; await this.load(); this.$message.success('基本信息已保存并生效') } catch (error) { this.showError(error) } finally { this.saving = false } },
+    async saveBrand() { if (this.fontBusy || !this.fontValid) return; this.saving = true; try { const response = await saveSystemBrand(this.form.brand); applySystemBrand(response.data); Object.values(this.assetPreviews).forEach(URL.revokeObjectURL); this.assetPreviews = {}; await this.load(); this.$message.success('基本信息已保存并生效') } catch (error) { this.showError(error) } finally { this.saving = false } },
     draftPayload() { const value = clone(this.form[this.tab]); if (this.tab === 'mail' && this.mailPassword) value.password = this.mailPassword; return value },
     async persistDraft() { const value = this.draftPayload(); const response = this.draft?.status === 'EDITING' ? await saveGovernanceDraft(this.draft.id, { snapshotJson: JSON.stringify(value), expectedSnapshotDigest: this.draft.snapshotDigest, changeSummary: '修改系统配置' }) : await createResourceDraft('SYSTEM_SETTING', value, 'UPDATE', { changeSummary: '修改系统配置' }); this.drafts[this.tab] = response.data; this.mailPassword = ''; await this.loadDraft(this.tab); return this.drafts[this.tab] },
     async saveDraft() { this.saving = true; try { await this.persistDraft(); this.$message.success('草稿已保存，已生效配置保持不变') } catch (error) { this.showError(error) } finally { this.saving = false } },

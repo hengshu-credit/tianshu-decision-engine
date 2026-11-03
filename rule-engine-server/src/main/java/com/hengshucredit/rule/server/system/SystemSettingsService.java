@@ -26,6 +26,7 @@ public class SystemSettingsService {
             "watermarkEnabled", false, "watermarkContent", "{系统名称} {用户名} {登录时间}",
             "watermarkTransparency", 88, "watermarkLayout", "DIAGONAL", "watermarkDensity", "NORMAL");
     private final JdbcTemplate jdbc;
+    private final SystemFontService fonts;
     private final GovernanceSecretCodec secrets;
     private final RuleEngineConsoleLoginProperties login;
     private final ConfigurableEnvironment environment;
@@ -33,8 +34,8 @@ public class SystemSettingsService {
     private org.springframework.context.ApplicationEventPublisher events;
 
     public SystemSettingsService(JdbcTemplate jdbc, GovernanceSecretCodec secrets,
-                                 RuleEngineConsoleLoginProperties login, ConfigurableEnvironment environment) {
-        this.jdbc = jdbc; this.secrets = secrets; this.login = login; this.environment = environment;
+                                 RuleEngineConsoleLoginProperties login, ConfigurableEnvironment environment, SystemFontService fonts) {
+        this.fonts = fonts; this.jdbc = jdbc; this.secrets = secrets; this.login = login; this.environment = environment;
     }
 
     public long id(String group) {
@@ -88,6 +89,7 @@ public class SystemSettingsService {
                 "logoUrl", logo, "faviconUrl", favicon.isEmpty() ? logo : favicon,
                 "version", brand.get("configVersion")));
         WATERMARK_DEFAULTS.keySet().forEach(key -> result.put(key, brand.get(key)));
+        result.put("font", fonts.resolve(brand.get("font")));
         return result;
     }
 
@@ -102,6 +104,7 @@ public class SystemSettingsService {
         String group = group(id);
         // Older clients and saved configurations did not include image URL fields.
         if ("brand".equals(group)) {
+            if (!value.containsKey("font")) value.put("font", get("brand").get("font"));
             value.putIfAbsent("logoUrl", ""); value.putIfAbsent("faviconUrl", "");
             // 旧页面保存品牌时保留当前水印策略，避免遗漏字段导致意外关闭。
             if (WATERMARK_DEFAULTS.keySet().stream().anyMatch(key -> !value.containsKey(key))) {
@@ -127,6 +130,7 @@ public class SystemSettingsService {
         number(value.get("configVersion"), "配置版本");
         switch (group) {
             case "brand" -> {
+                fonts.resolve(value.get("font"));
                 bool(value, "watermarkEnabled");
                 text(value, "watermarkContent", 200, true);
                 long transparency = number(value.get("watermarkTransparency"), "水印透明度");
@@ -212,7 +216,7 @@ public class SystemSettingsService {
     private void requireAsset(Object id) {
         if (!(id instanceof String text)) throw new IllegalArgumentException("图片引用必须为资源 ID");
         if (text.isEmpty()) return;
-        if (jdbc.queryForObject("SELECT COUNT(*) FROM rule_system_asset WHERE id = ?", Long.class, text) != 1L) throw new IllegalArgumentException("图片资源不存在");
+        if (jdbc.queryForObject("SELECT COUNT(*) FROM rule_system_asset WHERE id = ? AND content_type = 'image/png'", Long.class, text) != 1L) throw new IllegalArgumentException("图片资源不存在");
     }
 
     private Map<String, Object> defaults(String group) {
@@ -220,6 +224,7 @@ public class SystemSettingsService {
             case "brand" -> {
                 Map<String, Object> brand = new LinkedHashMap<>(Map.of("systemName", "天枢决策引擎", "subtitle", "天工开物，枢衡定策", "logoId", "", "faviconId", "", "logoUrl", "", "faviconUrl", ""));
                 brand.putAll(WATERMARK_DEFAULTS);
+                brand.put("font", SystemFontService.DEFAULT);
                 yield brand;
             }
             case "mail" -> Map.of("email", login.getMail().getFrom(), "host", environment.getProperty("spring.mail.host", ""),

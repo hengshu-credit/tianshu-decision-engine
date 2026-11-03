@@ -1,7 +1,14 @@
+:root {
+  --tianshu-font-family: "AlimamaFangYuanTiVF", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --tianshu-font-variation: "wght" 600, "BEVL" 80;
+  --el-font-family: var(--tianshu-font-family);
+}
+
 body {
   margin: 0;
   padding: 0;
-  font-family: "AlimamaFangYuanTiVF", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: var(--tianshu-font-family);
+  font-variation-settings: var(--tianshu-font-variation);
   font-size: 14px;
   color: var(--tianshu-text-primary, #374151);
   background: var(--tianshu-bg-page);
