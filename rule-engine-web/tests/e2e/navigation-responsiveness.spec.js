@@ -57,6 +57,22 @@ test('逐一点击全部菜单与子页签，往返切换后仍可交互并记�
   apiData.set('/api/auth/console/preferences/theme', null)
   apiData.set('POST /api/rule/console/activity', null)
   apiData.set('/api/rule/sftp/list', { records: [], total: 0 })
+  const ledgerEvent = { id: 1, title: '策略调整验收', scope: 'GLOBAL', status: 'ACCEPTANCE', canEdit: false }
+  const ledgerTitle = '策略调整已发布，等待验收'
+  apiData.set('/api/rule/ledger/events', [ledgerEvent])
+  apiData.set('/api/rule/ledger/timeline', { records: [{
+    id: 11, articleId: 1, versionNo: 1, title: ledgerTitle, summary: '本周完成策略调整，下周验收。',
+    scope: 'GLOBAL', category: 'STRATEGY', activityTime: '2026-11-04T14:20:00', events: [ledgerEvent], actorName: '验收人员',
+  }], total: 1 })
+  apiData.set('/api/rule/ledger/articles', { records: [{
+    id: 1, title: ledgerTitle, scope: 'GLOBAL', category: 'STRATEGY', publishedVersion: 1,
+    publishedRevisionId: 11, hasDraft: false, canEdit: false, updateTime: '2026-11-04T14:20:00',
+  }], total: 1 })
+  apiData.set('/api/rule/ledger/assets', { records: [{
+    id: 1, name: '验收截图.png', scope: 'PRIVATE', scanStatus: 'PENDING', scanMessage: '等待安全检测',
+    sizeBytes: 1024, contentType: 'image/png', ownerName: '验收人员', canManage: false, contentUrl: null,
+    updateTime: '2026-11-04T14:20:00',
+  }], total: 1 })
   apiData.set('/api/rule/console/operation-logs', { records: [], total: 0 })
   apiData.set('/api/rule/system/settings', {
     brand: { systemName: '天枢决策引擎' }, mail: {}, access: {}, codes: { mappings: {} },
@@ -107,6 +123,9 @@ test('逐一点击全部菜单与子页签，往返切换后仍可交互并记�
       // SFTP / 执行日志使用空 pane 作为导航，正文位于 tabs 外。
       await expect(pane).toHaveAttribute('aria-hidden', 'false')
       await expect(pane).not.toHaveAttribute('inert', '')
+      if (menu.index === '/ledger') {
+        await expect(pane).toContainText(name.trim() === '素材库' ? '验收截图.png' : ledgerTitle)
+      }
       await record('tab', `${menu.label}/${name.trim()}`)
     }
     if (menu.index === '/project') continue

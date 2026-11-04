@@ -766,7 +766,7 @@ test('夜间模式下运行页面的提示区、代码块和血缘画布使用�
   await expectStyleUsesToken(
     page.locator('.expected-output-editor .el-radio-button:not(.is-active) .el-radio-button__inner').first(),
     'color',
-    '--tianshu-text-secondary'
+    '--tianshu-primary-text'
   )
   await expectStyleUsesToken(
     inputReady,
@@ -1024,7 +1024,7 @@ test('预期模式按钮在明暗实时预览后仍使用可读文字色', async
   for (const scheme of ['DARK', 'LIGHT']) {
     await drawer.locator(`[data-theme-scheme="${scheme}"]`).click()
     await expect.poll(() => page.locator('.expected-output-editor .el-radio-button:not(.is-active) .el-radio-button__inner').first().evaluate(element => {
-      const probe = document.createElement('span'); probe.style.color = 'var(--tianshu-text-secondary)'
+      const probe = document.createElement('span'); probe.style.color = 'var(--tianshu-primary-text)'
       element.appendChild(probe)
       const matches = getComputedStyle(element).color === getComputedStyle(probe).color
       probe.remove(); return matches

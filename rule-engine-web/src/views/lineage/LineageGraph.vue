@@ -1374,7 +1374,7 @@ export default {
   }
   .usage-guide {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
     gap: 12px;
     margin-bottom: 16px;
   }
@@ -1668,11 +1668,6 @@ export default {
     color: var(--designer-toolbar-foreground);
     font-size: 12px;
     text-align: center;
-  }
-  @media (max-width: 1200px) {
-    .usage-guide {
-      grid-template-columns: repeat(1, minmax(0, 1fr));
-    }
   }
   @media (max-width: 800px) {
     .lineage-node-panel {

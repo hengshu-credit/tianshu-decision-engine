@@ -56,3 +56,8 @@ node_modules
 */audits
 */.codex-*
 start-dev.cmd
+rule-engine-mysql
+rule-engine-redis
+rule-engine-builder-ui
+rule-engine-example
+rule-engine-client-http
