@@ -1,4 +1,5 @@
 export const ONNX_TASKS = [
+  { value: 'GENERIC', label: '通用推理（自动解析输入输出）', description: '按原始节点名传入数值或张量', supportsGpu: true },
   { value: 'YUNET_FACE_DETECTION', label: 'YuNet 人脸检测', description: '输出完整人脸列表与 5 个关键点', supportsGpu: true },
   { value: 'FACENOX_ANTISPOOF', label: 'facenox 活体检测', description: '按人脸输出原始 logits', supportsGpu: true },
   { value: 'MN3_ANTISPOOF', label: 'MN3 活体检测', description: '按人脸输出模型原始概率', supportsGpu: true },

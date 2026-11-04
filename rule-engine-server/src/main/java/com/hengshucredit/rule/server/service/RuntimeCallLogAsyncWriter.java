@@ -13,6 +13,8 @@ import java.util.List;
 
 @Component
 public class RuntimeCallLogAsyncWriter {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.security.ConsoleRecordOwnership recordOwnership;
 
     private final SqlSessionFactory sqlSessionFactory;
     private final BoundedAsyncLogWriter<RuleRuntimeCallLog> writer;
@@ -31,6 +33,7 @@ public class RuntimeCallLogAsyncWriter {
     }
 
     public boolean offer(RuleRuntimeCallLog log) {
+        if (recordOwnership != null) recordOwnership.capture(log);
         return writer.offer(copy(log));
     }
 
@@ -67,6 +70,7 @@ public class RuntimeCallLogAsyncWriter {
     private RuleRuntimeCallLog copy(RuleRuntimeCallLog source) {
         if (source == null) return null;
         RuleRuntimeCallLog target = new RuleRuntimeCallLog();
+        target.setActorUserId(source.getActorUserId());
         target.setTraceId(source.getTraceId());
         target.setCallId(source.getCallId());
         target.setRuleTraceId(source.getRuleTraceId());

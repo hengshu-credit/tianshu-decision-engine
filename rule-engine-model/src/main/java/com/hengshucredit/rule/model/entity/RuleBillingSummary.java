@@ -13,7 +13,9 @@ import java.time.LocalDateTime;
 
 @Data
 @TableName("rule_billing_summary")
-public class RuleBillingSummary {
+public class RuleBillingSummary implements AccountOwnedRecord {
+    @TableField(fill = FieldFill.INSERT, updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER)
+    private Long actorUserId;
     @TableId(type = IdType.AUTO)
     private Long id;
     private LocalDate summaryDate;

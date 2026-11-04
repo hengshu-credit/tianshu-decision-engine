@@ -6,7 +6,9 @@ import java.time.LocalDateTime;
 
 @Data
 @TableName("rule_definition_version")
-public class RuleDefinitionVersion {
+public class RuleDefinitionVersion implements AccountOwnedRecord {
+    @com.baomidou.mybatisplus.annotation.TableField(fill = com.baomidou.mybatisplus.annotation.FieldFill.INSERT, updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER)
+    private Long actorUserId;
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long definitionId;

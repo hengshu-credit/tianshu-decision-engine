@@ -69,6 +69,7 @@ public class ConsoleOperationAuditFilter extends OncePerRequestFilter {
                 entry.setResultCode(code);
                 entry.setOutcome(code == 401 || code == 403 ? "DENIED" : code >= 200 && code < 300 && !state.executionFailed ? "SUCCESS" : "FAILED");
                 entry.setDurationMs((System.nanoTime() - state.started) / 1_000_000);
+                entry.setLeaveTime(LocalDateTime.now());
                 audit.finish(request);
                 try { logs.append(entry); }
                 catch (RuntimeException error) { log.error("操作日志写入失败: actor={}, method={}, path={}", entry.getUsername(), entry.getRequestMethod(), entry.getRequestPath(), error); }

@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 
 public enum OnnxTaskType {
 
+    GENERIC(fields(), fields()),
     YUNET_FACE_DETECTION(
             fields(field("image", "图片 Base64", "STRING")),
             fields(field("faces", "人脸列表", "LIST"))),

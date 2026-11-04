@@ -33,6 +33,8 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 @Component
 public class DecisionExecutionPersistence implements AutoCloseable {
+    @Autowired(required = false)
+    private com.hengshucredit.rule.server.security.ConsoleRecordOwnership recordOwnership;
     private static final Logger log = LoggerFactory.getLogger(DecisionExecutionPersistence.class);
 
     private final RuleExecutionLogService logService;
@@ -97,6 +99,7 @@ public class DecisionExecutionPersistence implements AutoCloseable {
                       boolean success, Long costTimeMs, String errorMessage,
                       ProjectAuthContext authContext) {
         if (log == null && definition == null) return;
+        if (recordOwnership != null) recordOwnership.capture(log);
         offered.incrementAndGet();
         if (definition != null && log != null) {
             definition.setExecutionVersion(log.getRuleVersion());

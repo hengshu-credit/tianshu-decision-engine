@@ -143,6 +143,8 @@ public class ConsoleOperationAuditTest {
             Assert.assertEquals("actual-admin", row.getUsername()); Assert.assertEquals(Long.valueOf(7), row.getUserId());
             Assert.assertEquals("项目名称", row.getTargetName()); Assert.assertEquals("3", row.getTargetId());
             Assert.assertEquals("v4", row.getTargetVersion()); Assert.assertEquals("SUCCESS", row.getOutcome());
+            Assert.assertNotNull(row.getCreateTime()); Assert.assertNotNull(row.getLeaveTime());
+            Assert.assertFalse(row.getLeaveTime().isBefore(row.getCreateTime()));
             Assert.assertTrue(row.getChangeSummary().contains("修改项目「项目名称」 #3"));
             Assert.assertTrue(row.getChangeSummary().contains("项目详情页")); Assert.assertEquals("/project/3", row.getPagePath());
             assertMetadataOnly(row);

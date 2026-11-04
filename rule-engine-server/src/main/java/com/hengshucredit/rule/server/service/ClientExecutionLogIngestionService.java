@@ -114,6 +114,7 @@ public class ClientExecutionLogIngestionService {
     }
 
     private void sanitize(RuleExecutionLog log, ProjectAuthContext auth, RuleDefinition rule) {
+        log.setActorUserId(null);
         log.setId(null);
         log.setCreateTime(null);
         log.setProjectCode(auth.isGlobalAccess() && rule != null ? rule.getProjectCode() : auth.getProjectCode());

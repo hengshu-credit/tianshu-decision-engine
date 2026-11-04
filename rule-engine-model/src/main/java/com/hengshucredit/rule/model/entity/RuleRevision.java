@@ -9,7 +9,9 @@ import java.time.LocalDateTime;
 
 @Data
 @TableName("rule_revision")
-public class RuleRevision {
+public class RuleRevision implements AccountOwnedRecord {
+    @com.baomidou.mybatisplus.annotation.TableField(fill = com.baomidou.mybatisplus.annotation.FieldFill.INSERT, updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER)
+    private Long actorUserId;
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long definitionId;

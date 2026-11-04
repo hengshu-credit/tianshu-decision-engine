@@ -292,6 +292,8 @@ vi.mock('@/api/dashboard', () => ({
   getDashboardOperations: vi.fn(),
   getDashboardGovernance: vi.fn(),
   getDashboardSettings: vi.fn(),
+  getDashboardDefaults: vi.fn(),
+  saveDashboardDefaults: vi.fn(),
   saveDashboardSettings: vi.fn(),
   deleteDashboardSetting: vi.fn(),
   __esModule: true

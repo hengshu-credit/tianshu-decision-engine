@@ -19,7 +19,7 @@
       <el-tab-pane v-if="canViewRuntime" label="运行状态" name="runtime" />
     </el-tabs>
     <div class="management-table-region" v-if="activeView === 'logs'">
-      <p class="log-outcome-help">执行成功表示规则运行完成，不等于业务通过；通过、拒绝或人工审核等业务结论请查看输出结果。</p>
+      <p class="log-outcome-help">仅展示本人及明确授权的执行记录。执行成功表示规则运行完成，不等于业务通过；通过、拒绝或人工审核等业务结论请查看输出结果。</p>
       <div class="uiue-search-container uiue-filter-toolbar">
         <el-form :inline="true" size="small" @keyup.enter="handleQuery">
           <el-form-item label="来源" style="width: 150px">

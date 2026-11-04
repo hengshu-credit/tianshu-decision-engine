@@ -44,7 +44,8 @@ public class ConsolePermissionService {
         if (userId == null) return Collections.emptySet();
         Set<String> rolePermissions = rolePermissionCodes(userId);
         List<PermissionOverride> overrides = userOverrides(userId);
-        return merge(rolePermissions, overrides);
+        return merge(rolePermissions, overrides).stream().filter(ConsolePermissionCodes.allCodes()::contains)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     public boolean hasPermission(Long userId, String permissionCode) {

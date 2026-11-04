@@ -797,6 +797,8 @@
           </el-table-column>
           <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '版本', '发布', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
+              <el-tag v-if="row.systemConstant" size="small" type="info">系统常量 · 只读</el-tag>
+              <template v-else>
               <el-button
                 v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
                 link
@@ -817,6 +819,7 @@
                 @click="handleDelete(row)"
                 >删除</el-button
               >
+              </template>
             </template>
           </el-table-column>
         </el-table>
@@ -4826,6 +4829,7 @@ export default {
       })
     },
     handleEdit(row) {
+      if (row.systemConstant) { this.$message.warning('系统常量只读，不能编辑'); return }
       this.isObjectField = false
       this.isConstantCreate = false
       this.objectFieldParentId = null
@@ -4932,6 +4936,7 @@ export default {
       })
     },
     handleDelete(row) {
+      if (row.systemConstant) { this.$message.warning('系统常量只读，不能删除'); return }
       this.$confirm(`确定删除「${row.varLabel}」？`, '确认删除', {
         type: 'warning',
       })

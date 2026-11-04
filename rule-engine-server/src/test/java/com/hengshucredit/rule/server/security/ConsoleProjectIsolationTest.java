@@ -33,7 +33,7 @@ public class ConsoleProjectIsolationTest {
         jdbc = new JdbcTemplate(dataSource);
         String schema = new ClassPathResource("sql/schema.sql").getContentAsString(StandardCharsets.UTF_8);
         for (String table : List.of("rule_project", "rule_variable", "rule_variable_option", "governed_resource", "governed_resource_version",
-                "rule_definition", "rule_definition_ref", "rule_regression_evidence", "rule_regression_evidence_latest")) {
+                "rule_definition", "rule_definition_ref", "rule_revision", "governance_approval_request", "rule_regression_evidence", "rule_regression_evidence_latest")) {
             int start = schema.indexOf("CREATE TABLE IF NOT EXISTS `" + table + "`");
             String ddl = schema.substring(start, schema.indexOf(';', start) + 1).replaceFirst("\\) ENGINE=.*;", ")");
             // MySQL index names are table-local; H2 requires schema-wide uniqueness.
@@ -62,17 +62,18 @@ public class ConsoleProjectIsolationTest {
 
     @Test public void regressionReportsRequireBothRuleAndExecutionProjectVisibility() {
         jdbc.update("INSERT INTO rule_definition(id,project_id,scope,rule_code,rule_name,model_type) VALUES (21,1,'PROJECT','RA','RA','SCRIPT'),(22,2,'PROJECT','RB','RB','SCRIPT'),(23,0,'GLOBAL','RG','RG','SCRIPT')");
+        for (long id : new long[]{21,22,23}) jdbc.update("INSERT INTO rule_revision(id,definition_id,revision_no,state,model_json,create_by,update_by,actor_user_id) VALUES(?,?,1,'DRAFT','{}','owner','owner',7)", id, id);
         for (long[] row : List.of(new long[]{31,21,1}, new long[]{32,22,2}, new long[]{33,23,2}, new long[]{34,23,0})) {
-            jdbc.update("INSERT INTO rule_regression_evidence(id,definition_id,scenario_id,scenario_name,revision_id,project_id,scenario_digest,eligible,state,create_time) VALUES (?,?,?,?,1,?,'digest',1,'RUNNING',CURRENT_TIMESTAMP)", row[0], row[1], row[0], "case" + row[0], row[2]);
-            jdbc.update("INSERT INTO rule_regression_evidence_latest(definition_id,revision_id,scenario_id,evidence_id) VALUES (?,1,?,?)", row[1], row[0], row[0]);
+            jdbc.update("INSERT INTO rule_regression_evidence(id,definition_id,scenario_id,scenario_name,revision_id,project_id,scenario_digest,eligible,state,create_time) VALUES (?,?,?,?,?,?,'digest',1,'RUNNING',CURRENT_TIMESTAMP)", row[0], row[1], row[0], "case" + row[0], row[1], row[2]);
+            jdbc.update("INSERT INTO rule_regression_evidence_latest(definition_id,revision_id,scenario_id,evidence_id) VALUES (?,?,?,?)", row[1], row[1], row[0], row[0]);
         }
         permissions(false, Set.of(1L), true, Set.of("rule:view", "rule:edit"), Map.of());
         var reports = sessions.getMapper(com.hengshucredit.rule.server.mapper.RuleRegressionEvidenceMapper.class);
         Assert.assertEquals(Set.of(31L,34L), reports.selectList(null).stream().map(com.hengshucredit.rule.model.entity.RuleRegressionEvidence::getId).collect(java.util.stream.Collectors.toSet()));
-        Assert.assertEquals(List.of(34L), reports.latestByCase(23L,1L).stream().map(com.hengshucredit.rule.model.entity.RuleRegressionEvidence::getId).toList());
+        Assert.assertEquals(List.of(34L), reports.latestByCase(23L,23L).stream().map(com.hengshucredit.rule.model.entity.RuleRegressionEvidence::getId).toList());
         var forbidden = new com.hengshucredit.rule.model.entity.RuleRegressionEvidence();
         forbidden.setDefinitionId(23L); forbidden.setProjectId(2L);
-        forbidden.setScenarioId(99L); forbidden.setScenarioName("forbidden"); forbidden.setRevisionId(1L);
+        forbidden.setScenarioId(99L); forbidden.setScenarioName("forbidden"); forbidden.setRevisionId(23L);
         forbidden.setScenarioDigest("digest"); forbidden.setEligible(1); forbidden.setState("RUNNING"); forbidden.setCreateTime(java.time.LocalDateTime.now());
         Throwable failure = Assert.assertThrows(RuntimeException.class, () -> reports.insert(forbidden));
         while (failure.getCause() != null) failure = failure.getCause();
@@ -119,6 +120,25 @@ public class ConsoleProjectIsolationTest {
         assertEquals("B", jdbc.queryForObject("SELECT var_label FROM rule_variable WHERE id=12", String.class));
         var a = variables.selectById(11L); a.setVarLabel("allowed"); assertEquals(1,variables.updateById(a));
     }
+    @Test public void systemConstantsStayReadOnlyForFieldAdministratorsAndCannotBeForgedOnInsert() {
+        jdbc.update("UPDATE rule_variable SET system_constant=1 WHERE id=10");
+        permissions(true, Set.of(), true, Set.of("field:view", "field:edit"), Map.of());
+        var system = variables.selectById(10L);
+        assertTrue(system.getSystemConstant());
+        var boundary = new ConsoleResourceAccess(access, policy, jdbc);
+        assertThrows(IllegalArgumentException.class, () -> boundary.draftProject("VARIABLE", 10L, "{\"scope\":\"GLOBAL\",\"systemConstant\":false}"));
+        system.setSystemConstant(false); system.setVarCode("renamed"); system.setVarLabel("changed");
+        assertThrows(RuntimeException.class, () -> variables.updateById(system));
+        assertEquals(0, variables.deleteById(10L));
+        assertEquals("global", jdbc.queryForObject("SELECT var_code FROM rule_variable WHERE id=10", String.class));
+        var custom = new RuleVariable(); custom.setScope("GLOBAL"); custom.setProjectId(0L);
+        custom.setVarCode("USER_CONSTANT"); custom.setVarLabel("User constant"); custom.setVarSource("CONSTANT"); custom.setVarType("NUMBER"); custom.setDefaultValue("1"); custom.setSystemConstant(true);
+        assertEquals(1, variables.insert(custom));
+        assertFalse(variables.selectById(custom.getId()).getSystemConstant());
+        custom.setVarLabel("Edited user constant"); custom.setSystemConstant(false);
+        assertEquals(1, variables.updateById(custom));
+        assertEquals(1, variables.deleteById(custom.getId()));
+    }
     @Test public void globalReadOnlyDoesNotDisableProjectEditing() {
         permissions(true, Set.of(), false, Set.of("field:view", "field:edit"), Map.of());
         var global = variables.selectById(10L); global.setVarLabel("forbidden");
@@ -156,8 +176,8 @@ public class ConsoleProjectIsolationTest {
         assertThrows(ConsoleAccessDeniedException.class, () -> guard.preHandle(request, new org.springframework.mock.web.MockHttpServletResponse(), null));
     }
     @Test public void logVisibilityUsesStableProjectIdNotMutableCode() {
-        jdbc.execute("CREATE TABLE rule_execution_log(id BIGINT, execution_project_id BIGINT, project_code VARCHAR(64), create_time DATETIME)");
-        jdbc.update("INSERT INTO rule_execution_log VALUES(1,1,'Old-A',CURRENT_TIMESTAMP),(2,2,'A',CURRENT_TIMESTAMP),(3,NULL,'A',CURRENT_TIMESTAMP),(4,NULL,NULL,CURRENT_TIMESTAMP)");
+        jdbc.execute("CREATE TABLE rule_execution_log(id BIGINT, execution_project_id BIGINT, project_code VARCHAR(64), create_time DATETIME, actor_user_id BIGINT DEFAULT 7)");
+        jdbc.update("INSERT INTO rule_execution_log(id,execution_project_id,project_code,create_time) VALUES(1,1,'Old-A',CURRENT_TIMESTAMP),(2,2,'A',CURRENT_TIMESTAMP),(3,NULL,'A',CURRENT_TIMESTAMP),(4,NULL,NULL,CURRENT_TIMESTAMP)");
         permissions(false, Set.of(1L), true, Set.of("log:view"), Map.of());
         assertEquals(List.of(1L,4L), jdbc.queryForList(policy.filterSql("SELECT id FROM rule_execution_log ORDER BY id"),Long.class));
     }

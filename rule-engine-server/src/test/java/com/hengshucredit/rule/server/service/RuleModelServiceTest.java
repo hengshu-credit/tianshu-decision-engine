@@ -49,6 +49,18 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class RuleModelServiceTest {
+    @Test
+    public void detectsPmmlStructuralTypesWithoutConfusingRegressionAndClassification() {
+        var service = new RuleModelService();
+        assertEquals("GLM", ReflectionTestUtils.invokeMethod(service, "detectModelTypeFromModel",
+                new org.dmg.pmml.general_regression.GeneralRegressionModel()));
+        assertEquals("SVM", ReflectionTestUtils.invokeMethod(service, "detectModelTypeFromModel",
+                new org.dmg.pmml.support_vector_machine.SupportVectorMachineModel()));
+        assertEquals("REGRESSION", ReflectionTestUtils.invokeMethod(service, "detectModelTypeFromModel",
+                new org.dmg.pmml.regression.RegressionModel().setMiningFunction(org.dmg.pmml.MiningFunction.REGRESSION)));
+        assertEquals("LR", ReflectionTestUtils.invokeMethod(service, "detectModelTypeFromModel",
+                new org.dmg.pmml.regression.RegressionModel().setMiningFunction(org.dmg.pmml.MiningFunction.CLASSIFICATION)));
+    }
 
     @Test
     public void modelExecutionResultsRetainTypedCapacityResource() {

@@ -6,7 +6,9 @@ import java.time.LocalDateTime;
 
 @Data
 @TableName("rule_execution_log")
-public class RuleExecutionLog {
+public class RuleExecutionLog implements AccountOwnedRecord {
+    @com.baomidou.mybatisplus.annotation.TableField(fill = com.baomidou.mybatisplus.annotation.FieldFill.INSERT, updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER)
+    private Long actorUserId;
     @TableId(type = IdType.AUTO)
     private Long id;
     private String traceId;

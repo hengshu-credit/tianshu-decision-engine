@@ -1,5 +1,5 @@
 <template>
-  <div class="var-picker-wrap" :style="{ width: width || '100%' }">
+  <div class="var-picker-wrap" :class="{ 'var-picker-wrap--virtual': virtualRef }" :style="{ width: virtualRef ? '0' : width || '100%' }">
     <!-- 手动输入模式 -->
     <template v-if="!operandMode && customMode">
       <div class="custom-input-row">
@@ -172,6 +172,13 @@ import {
 } from '@/utils/operand'
 
 const openPickers = []
+const pickerParents = new WeakMap()
+function isPickerDescendant(picker, ancestor) {
+  for (let parent = pickerParents.get(picker); parent; parent = pickerParents.get(parent)) {
+    if (parent === ancestor) return true
+  }
+  return false
+}
 
 export default {
   data() {
@@ -1164,6 +1171,10 @@ export default {
       this.closePopover()
     },
     closePopover({ restoreFocus = true } = {}) {
+      for (const picker of [...openPickers].reverse()) {
+        if (isPickerDescendant(picker, this)) picker.closePopover({ restoreFocus: false })
+      }
+      pickerParents.delete(this)
       this.suppressFocusOpen = true
       if (restoreFocus) this.moveFocusBeforeClose()
       else if (this.getPopoverElement()?.contains(document.activeElement)) document.activeElement.blur()
@@ -1297,10 +1308,14 @@ export default {
       if (this.groupedByCategory && (this.hasVarOptions || this.operandMode || !this.allowCustom)) {
         var wasVisible = this.popoverVisible
         if (!wasVisible) {
-          // 当前引用框位于另一个选择器面板内时，它是该面板的子选择器。
-          // 切换单元格则关闭旧分支，草稿仍由各 OperandPicker 自己保留。
+          const anchor = this.getReferenceElement()
+          const parent = [...openPickers].reverse().find(picker => picker !== this &&
+            (picker.getPopoverElement()?.contains(anchor) || picker.getPopoverElement()?.contains(this.$el)))
+          if (parent) pickerParents.set(this, parent)
+          else pickerParents.delete(this)
+          // Teleport 使祖先面板与更深子面板成为 DOM 兄弟，必须保留完整归属链。
           for (const picker of [...openPickers]) {
-            if (picker !== this && !picker.getPopoverElement()?.contains(this.$el)) picker.closePopover({ restoreFocus: false })
+            if (picker !== this && !isPickerDescendant(this, picker)) picker.closePopover({ restoreFocus: false })
           }
         }
         this.setPickerInert(false)
@@ -1511,12 +1526,16 @@ export default {
           target &&
           target.closest &&
           target.closest('.var-picker-popover')) ||
-        (target && target.closest && target.closest('.fp-row'))
+        openPickers.some(picker => isPickerDescendant(picker, this) && picker.getPopoverElement()?.contains(target))
       ) {
         return
       }
       // 子选择器和下拉菜单会传送到 body，沿 ARIA 关联识别整条浮层分支。
       const popups = new Set(popper ? [popper] : [])
+      for (const picker of openPickers) {
+        const child = isPickerDescendant(picker, this) && picker.getPopoverElement()
+        if (child) popups.add(child)
+      }
       for (const popup of popups) {
         for (const control of popup.querySelectorAll('[aria-controls], [aria-owns], [aria-describedby]')) {
           const ids = ['aria-controls', 'aria-owns', 'aria-describedby'].map(name => control.getAttribute(name) || '').join(' ').trim().split(/\s+/)
@@ -1742,6 +1761,7 @@ export default {
   vertical-align: middle;
   max-width: 100%;
 }
+.var-picker-wrap--virtual { position: fixed; width: 0; height: 0; flex: none; }
 .var-picker-wrap :deep(.el-popover__reference-wrapper) {
   display: block;
   flex: 1;

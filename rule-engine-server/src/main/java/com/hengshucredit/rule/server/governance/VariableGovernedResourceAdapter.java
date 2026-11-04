@@ -19,6 +19,7 @@ public class VariableGovernedResourceAdapter
 
     private final RuleVariableOptionMapper optionMapper;
     private final VariableSourceReferenceValidator sourceValidator;
+    private final SimpleEntityGovernedResourceAdapter.EntityStore<RuleVariable> variableStore;
 
     @Resource
     private RuleDataObjectFieldMapper dataObjectFieldMapper;
@@ -50,6 +51,22 @@ public class VariableGovernedResourceAdapter
                 secretCodec));
         this.optionMapper = optionMapper;
         this.sourceValidator = sourceValidator;
+        this.variableStore = store;
+    }
+
+    @Override
+    public ResourceSnapshot normalizeDraft(ResourceSnapshot draft) {
+        var value = JSON.parseObject(draft.snapshotJson());
+        Long id = value.getLong("id");
+        if (id != null) com.hengshucredit.rule.server.service.SystemConstantPolicy.requireMutable(variableStore.load(id));
+        if (Boolean.TRUE.equals(value.getBoolean("systemConstant"))) throw new IllegalArgumentException("系统常量身份不能通过业务配置创建或修改");
+        return super.normalizeDraft(draft);
+    }
+
+    @Override
+    public AppliedResource apply(ApprovalApplyContext context) {
+        if (context.resourceId() != null) com.hengshucredit.rule.server.service.SystemConstantPolicy.requireMutable(variableStore.load(context.resourceId()));
+        return super.apply(context);
     }
 
     @Override

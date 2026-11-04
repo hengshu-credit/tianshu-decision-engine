@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.dashboard;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.hengshucredit.rule.core.compiler.ConstantValueCodec;
 import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleVariable;
@@ -52,6 +53,7 @@ public class DashboardMappingService {
     public DashboardMapping.ResolvedMappings resolve(Long userId,
                                                       Long projectId) {
         StoredPreference preference = load(userId);
+        var defaults = parseScope(JSON.parseObject(referenceRepository.findSystemDefaults().mappingsJson()));
         EnumMap<DashboardMetricField, DashboardMapping.ResolvedMapping> result =
                 new EnumMap<>(DashboardMetricField.class);
         Map<DashboardMetricField, DashboardMapping.StoredMapping> project =
@@ -69,7 +71,7 @@ public class DashboardMappingService {
                 mapping = preference.defaults.get(field);
                 source = USER_DEFAULT;
             } else {
-                mapping = systemDefault(field);
+                mapping = defaults.get(field);
                 source = SYSTEM_DEFAULT;
             }
             result.put(field, resolveOne(field, mapping, source, projectId,
@@ -120,6 +122,38 @@ public class DashboardMappingService {
                                                  boolean editable) {
         StoredPreference preference = load(userId);
         DashboardMapping.ResolvedMappings resolved = resolve(userId, projectId);
+        boolean projectOverride = projectId != null
+                && preference.projects.containsKey(String.valueOf(projectId));
+        return settings(resolved, projectId, editable, projectOverride, null);
+    }
+
+    public DashboardResponses.Settings systemSettings() {
+        var stored = referenceRepository.findSystemDefaults();
+        var defaults = parseScope(JSON.parseObject(stored.mappingsJson()));
+        var resolved = new EnumMap<DashboardMetricField, DashboardMapping.ResolvedMapping>(DashboardMetricField.class);
+        for (var field : DashboardMetricField.values()) {
+            resolved.put(field, resolveOne(field, defaults.get(field), SYSTEM_DEFAULT, null, true));
+        }
+        return settings(new DashboardMapping.ResolvedMappings(resolved), null, true, false, stored.version());
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public DashboardResponses.Settings saveSystemDefaults(String username, Long version,
+            Map<DashboardMetricField, DashboardMapping.StoredMapping> mappings) {
+        if (version == null || version < 0 || mappings == null) throw new IllegalArgumentException("公共默认配置或版本不能为空");
+        var validated = new EnumMap<DashboardMetricField, DashboardMapping.StoredMapping>(DashboardMetricField.class);
+        for (var entry : mappings.entrySet()) {
+            if (entry.getKey() == null || entry.getValue() == null) throw new IllegalArgumentException("字段映射包含空项");
+            var resolved = resolveOne(entry.getKey(), entry.getValue(), SYSTEM_DEFAULT, null, true);
+            if (!resolved.valid()) throw new IllegalArgumentException(resolved.errorMessage());
+            validated.put(entry.getKey(), normalizedStored(entry.getKey(), entry.getValue()));
+        }
+        referenceRepository.saveSystemDefaults(JSON.toJSONString(serializeScope(validated)), version, username);
+        return systemSettings();
+    }
+
+    private DashboardResponses.Settings settings(DashboardMapping.ResolvedMappings resolved,
+            Long projectId, boolean editable, boolean projectOverride, Long defaultVersion) {
         List<DashboardResponses.SettingField> fields = new ArrayList<>();
         for (DashboardMetricField field : DashboardMetricField.values()) {
             fields.add(new DashboardResponses.SettingField(field,
@@ -129,9 +163,9 @@ public class DashboardMappingService {
         for (RuleVariable variable
                 : referenceRepository.listVariables(projectId)) {
             options.add(new DashboardResponses.ReferenceOption(VARIABLE,
-                    variable.getId(), optionLabel(variable.getVarLabel(),
-                    variable.getVarCode()), variable.getVarType(),
-                    variable.getScope(), variable.getProjectId()));
+                    variable.getId(), displayLabel(variable.getVarLabel(), variable.getVarCode()), variable.getVarType(),
+                    variable.getScope(), variable.getProjectId(), variable.getVarCode(), variable.getVarSource(),
+                    "CONSTANT".equals(variable.getVarSource()) ? variable.getDefaultValue() : null));
         }
         for (RuleDataObjectField field
                 : referenceRepository.listDataObjectFields(projectId)) {
@@ -140,17 +174,16 @@ public class DashboardMappingService {
             if (object == null || !Integer.valueOf(1).equals(object.getStatus())) {
                 continue;
             }
-            String objectLabel = optionLabel(object.getObjectLabel(),
+            String objectLabel = displayLabel(object.getObjectLabel(),
                     object.getObjectCode());
             options.add(new DashboardResponses.ReferenceOption(
                     DATA_OBJECT_FIELD, field.getId(), objectLabel + "."
-                    + optionLabel(field.getVarLabel(), field.getVarCode()),
-                    field.getVarType(), field.getScope(), field.getProjectId()));
+                    + displayLabel(field.getVarLabel(), field.getVarCode()),
+                    field.getVarType(), field.getScope(), field.getProjectId(),
+                    String.join(".", objectFieldPath(object, field)), "INPUT", null));
         }
-        boolean projectOverride = projectId != null
-                && preference.projects.containsKey(String.valueOf(projectId));
         return new DashboardResponses.Settings(editable, projectId,
-                projectOverride, fields, options);
+                projectOverride, fields, options, defaultVersion);
     }
 
     public DashboardMapping.ResolvedMappings deleteField(
@@ -183,16 +216,26 @@ public class DashboardMappingService {
             DashboardMapping.MappingSource source,
             Long projectId,
             boolean personalDefault) {
-        if (mapping == null || mapping.refType() == null
+        if (mapping == null) {
+            return invalid(field, new DashboardMapping.StoredMapping(null, null, field.defaultJsonSource(), null),
+                    source, "公共默认尚未配置，请联系管理员或设置个人映射");
+        }
+        if (mapping.refType() == null
                 || mapping.refId() == null || mapping.refId() <= 0L
                 || mapping.jsonSource() == null) {
             return invalid(field, mapping, source, "字段引用不完整");
+        }
+        DashboardMapping.DecisionValues decisions;
+        try {
+            decisions = resolveDecisions(field, mapping.decisionValues(), projectId, personalDefault);
+        } catch (IllegalArgumentException error) {
+            return invalid(field, mapping, source, error.getMessage());
         }
         if (mapping.refType() == VARIABLE) {
             RuleVariable variable = referenceRepository.findVariable(
                     mapping.refId());
             if (variable == null || !Integer.valueOf(1).equals(variable.getStatus())) {
-                return invalid(field, mapping, source, "字段引用不存在或已停用");
+                return invalid(field, mapping, source, "字段引用不存在、已停用或无权访问");
             }
             String scopeError = scopeError(variable.getScope(),
                     variable.getProjectId(), projectId, personalDefault);
@@ -200,11 +243,11 @@ public class DashboardMappingService {
             if (!field.acceptsType(variable.getVarType())) {
                 return invalid(field, mapping, source, "字段类型不适用于该指标");
             }
-            String error = decisionError(field, mapping.decisionValues());
+            String error = decisionError(field, decisions);
             if (error != null) return invalid(field, mapping, source, error);
             return valid(field, mapping, source,
                     jsonPath(List.of(variable.getVarCode())),
-                    variable.getVarLabel());
+                    variable.getVarLabel(), decisions);
         }
 
         if (mapping.refType() == DATA_OBJECT_FIELD) {
@@ -212,7 +255,7 @@ public class DashboardMappingService {
                     .findDataObjectField(mapping.refId());
             if (dataField == null
                     || !Integer.valueOf(1).equals(dataField.getStatus())) {
-                return invalid(field, mapping, source, "字段引用不存在或已停用");
+                return invalid(field, mapping, source, "字段引用不存在、已停用或无权访问");
             }
             String scopeError = scopeError(dataField.getScope(),
                     dataField.getProjectId(), projectId, personalDefault);
@@ -226,10 +269,10 @@ public class DashboardMappingService {
                 return invalid(field, mapping, source, "字段所属数据对象不存在或已停用");
             }
             List<String> path = objectFieldPath(object, dataField);
-            String error = decisionError(field, mapping.decisionValues());
+            String error = decisionError(field, decisions);
             if (error != null) return invalid(field, mapping, source, error);
             return valid(field, mapping, source, jsonPath(path),
-                    object.getObjectLabel() + "." + dataField.getVarLabel());
+                    object.getObjectLabel() + "." + dataField.getVarLabel(), decisions);
         }
         return invalid(field, mapping, source, "不支持的字段引用类型");
     }
@@ -260,7 +303,7 @@ public class DashboardMappingService {
                               Long projectId, boolean personalDefault) {
         boolean global = "GLOBAL".equalsIgnoreCase(scope)
                 || Long.valueOf(0L).equals(referenceProjectId);
-        if (personalDefault && !global) return "个人默认只能引用全局字段";
+        if (personalDefault && !global) return "默认配置只能引用全局字段";
         if (!global && (projectId == null
                 || !projectId.equals(referenceProjectId))) {
             return "字段引用不属于当前项目";
@@ -292,10 +335,10 @@ public class DashboardMappingService {
             DashboardMapping.StoredMapping mapping,
             DashboardMapping.MappingSource source,
             String path,
-            String label) {
+            String label, DashboardMapping.DecisionValues decisions) {
         return new DashboardMapping.ResolvedMapping(field, mapping.refType(),
                 mapping.refId(), mapping.jsonSource(), path, label, source,
-                true, null, decisionValues(field, mapping.decisionValues()));
+                true, null, decisions);
     }
 
     private DashboardMapping.ResolvedMapping invalid(
@@ -331,7 +374,37 @@ public class DashboardMappingService {
             DashboardMapping.DecisionValues values) {
         return new DashboardMapping.DecisionValues(
                 normalizeSet(values.pass()), normalizeSet(values.review()),
-                normalizeSet(values.reject()));
+                normalizeSet(values.reject()), values.passRefIds(), values.reviewRefIds(), values.rejectRefIds());
+    }
+
+    private DashboardMapping.DecisionValues resolveDecisions(DashboardMetricField field,
+            DashboardMapping.DecisionValues values, Long projectId, boolean personalDefault) {
+        var normalized = decisionValues(field, values);
+        if (normalized == null) return null;
+        return new DashboardMapping.DecisionValues(
+                resolveConstants(normalized.passRefIds(), normalized.pass(), projectId, personalDefault),
+                resolveConstants(normalized.reviewRefIds(), normalized.review(), projectId, personalDefault),
+                resolveConstants(normalized.rejectRefIds(), normalized.reject(), projectId, personalDefault),
+                normalized.passRefIds(), normalized.reviewRefIds(), normalized.rejectRefIds());
+    }
+
+    private Set<String> resolveConstants(Set<Long> ids, Set<String> legacy, Long projectId, boolean personalDefault) {
+        if (ids.isEmpty()) return legacy;
+        Set<String> values = new LinkedHashSet<>();
+        for (Long id : ids) {
+            RuleVariable constant = id == null ? null : referenceRepository.findVariable(id);
+            if (constant == null || !Integer.valueOf(1).equals(constant.getStatus()) || !"CONSTANT".equals(constant.getVarSource())) {
+                throw new IllegalArgumentException("决策结果常量不存在、已停用或无权访问");
+            }
+            String scope = scopeError(constant.getScope(), constant.getProjectId(), projectId, personalDefault);
+            if (scope != null) throw new IllegalArgumentException(scope);
+            Object value = ConstantValueCodec.toRuntimeValue(constant.getVarType(), constant.getDefaultValue());
+            if (!(value instanceof String || value instanceof Number || value instanceof Boolean) || value.toString().isBlank()) {
+                throw new IllegalArgumentException("决策结果必须引用非空的文本、数值或布尔常量");
+            }
+            values.add(DashboardMapping.normalizeDecisionValue(String.valueOf(value)));
+        }
+        return values;
     }
 
     private Set<String> normalizeSet(Set<String> source) {
@@ -339,19 +412,11 @@ public class DashboardMappingService {
         if (source != null) {
             for (String value : source) {
                 if (value != null && !value.trim().isEmpty()) {
-                    normalized.add(value.trim().toUpperCase());
+                    normalized.add(DashboardMapping.normalizeDecisionValue(value));
                 }
             }
         }
         return normalized;
-    }
-
-    private DashboardMapping.StoredMapping systemDefault(
-            DashboardMetricField field) {
-        return new DashboardMapping.StoredMapping(VARIABLE,
-                field.defaultRefId(), field.defaultJsonSource(),
-                field == DashboardMetricField.DECISION_RESULT
-                        ? DEFAULT_DECISIONS : null);
     }
 
     private StoredPreference load(Long userId) {
@@ -409,7 +474,11 @@ public class DashboardMappingService {
         if (value == null) return null;
         return new DashboardMapping.DecisionValues(
                 jsonSet(value, "pass"), jsonSet(value, "review"),
-                jsonSet(value, "reject"));
+                jsonSet(value, "reject"), jsonIds(value, "passRefIds"), jsonIds(value, "reviewRefIds"), jsonIds(value, "rejectRefIds"));
+    }
+
+    private Set<Long> jsonIds(JSONObject value, String key) {
+        return value.getJSONArray(key) == null ? Set.of() : new LinkedHashSet<>(value.getJSONArray(key).toJavaList(Long.class));
     }
 
     private Set<String> jsonSet(JSONObject value, String key) {
@@ -445,9 +514,13 @@ public class DashboardMappingService {
             value.put("jsonSource", mapping.jsonSource().name());
             if (mapping.decisionValues() != null) {
                 Map<String, Object> decisions = new LinkedHashMap<>();
-                decisions.put("pass", mapping.decisionValues().pass());
-                decisions.put("review", mapping.decisionValues().review());
-                decisions.put("reject", mapping.decisionValues().reject());
+                var decisionsValue = mapping.decisionValues();
+                decisions.put("pass", new ArrayList<>(decisionsValue.passRefIds().isEmpty() ? decisionsValue.pass() : Set.of()));
+                decisions.put("review", new ArrayList<>(decisionsValue.reviewRefIds().isEmpty() ? decisionsValue.review() : Set.of()));
+                decisions.put("reject", new ArrayList<>(decisionsValue.rejectRefIds().isEmpty() ? decisionsValue.reject() : Set.of()));
+                decisions.put("passRefIds", new ArrayList<>(decisionsValue.passRefIds()));
+                decisions.put("reviewRefIds", new ArrayList<>(decisionsValue.reviewRefIds()));
+                decisions.put("rejectRefIds", new ArrayList<>(decisionsValue.rejectRefIds()));
                 value.put("decisionValues", decisions);
             }
             result.put(entry.getKey().name(), value);
@@ -469,10 +542,9 @@ public class DashboardMappingService {
         return path.toString();
     }
 
-    private String optionLabel(String label, String code) {
+    private String displayLabel(String label, String code) {
         if (label == null || label.isBlank()) return code;
-        if (code == null || code.isBlank() || label.equals(code)) return label;
-        return label + "（" + code + "）";
+        return label;
     }
 
     private static final class StoredPreference {

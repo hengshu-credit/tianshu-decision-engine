@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS `rule_project_auth_token` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目临时访问Token表';
 
 CREATE TABLE IF NOT EXISTS `rule_auth_access_log` (
+  `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `id`             BIGINT        NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`     BIGINT        DEFAULT NULL            COMMENT '项目ID',
   `project_code`   VARCHAR(128)  DEFAULT NULL            COMMENT '项目编码快照',
@@ -276,6 +277,7 @@ CREATE TABLE IF NOT EXISTS `governed_resource` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一治理资源表';
 
 CREATE TABLE IF NOT EXISTS `governed_resource_version` (
+  `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `id`                        BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `governed_resource_id`      BIGINT       NOT NULL                COMMENT '治理资源ID',
   `resource_type`             VARCHAR(32)  NOT NULL                COMMENT '治理资源类型：VARIABLE=变量，DATA_OBJECT=数据对象，MODEL=模型，EXTERNAL_DATASOURCE=外数数据源，EXTERNAL_API=外数接口，DATABASE=数据库，SFTP=文件数据源，FUNCTION=函数，RULE=规则，RULE_PROJECT_BINDING=规则项目关联，LIST_LIBRARY=名单库，LIST_RECORD_BATCH=名单变更批次，FIELD_VALIDATION=字段校验，BILLING_CONFIG=计费配置，EXPERIMENT=实验，PROJECT=项目，SYSTEM_SETTING=系统配置',
@@ -302,6 +304,7 @@ CREATE TABLE IF NOT EXISTS `governed_resource_version` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一治理不可变版本表';
 
 CREATE TABLE IF NOT EXISTS `governance_approval_request` (
+  `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `id`                        BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `request_no`                VARCHAR(64)  NOT NULL                COMMENT '审批单号',
   `resource_type`             VARCHAR(32)  NOT NULL                COMMENT '治理资源类型：VARIABLE=变量，DATA_OBJECT=数据对象，MODEL=模型，EXTERNAL_DATASOURCE=外数数据源，EXTERNAL_API=外数接口，DATABASE=数据库，SFTP=文件数据源，FUNCTION=函数，RULE=规则，RULE_PROJECT_BINDING=规则项目关联，LIST_LIBRARY=名单库，LIST_RECORD_BATCH=名单变更批次，FIELD_VALIDATION=字段校验，BILLING_CONFIG=计费配置，EXPERIMENT=实验，PROJECT=项目，SYSTEM_SETTING=系统配置',
@@ -545,6 +548,7 @@ CREATE TABLE IF NOT EXISTS `rule_definition_ref` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则关联表（用于项目关联全局规则）';
 
 CREATE TABLE IF NOT EXISTS `rule_definition_version` (
+  `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `definition_id`   BIGINT       NOT NULL                COMMENT '规则定义ID',
   `version`         INT          NOT NULL                COMMENT '版本号',
@@ -591,6 +595,7 @@ CREATE TABLE IF NOT EXISTS `rule_published` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='已发布规则表，供客户端同步执行';
 
 CREATE TABLE IF NOT EXISTS `rule_revision` (
+  `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `id`                       BIGINT        NOT NULL AUTO_INCREMENT COMMENT '主键标识',
   `definition_id`            BIGINT        NOT NULL COMMENT '规则定义标识，关联 rule_definition.id',
   `revision_no`              INT           NOT NULL COMMENT '规则内递增的修订序号',
@@ -840,6 +845,7 @@ CREATE TABLE IF NOT EXISTS `rule_data_object_field_option` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据对象字段枚举选项';
 
 CREATE TABLE IF NOT EXISTS `rule_variable` (
+  `system_constant` TINYINT NOT NULL DEFAULT 0 COMMENT '系统常量只读标记，业务接口不可修改',
   `record_result`    TINYINT NOT NULL DEFAULT 0 COMMENT '是否显式记录字段结果供历史统计：0=否，1=是',
   `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`        BIGINT       NOT NULL                COMMENT '所属项目ID',
@@ -945,6 +951,7 @@ CREATE TABLE IF NOT EXISTS `rule_list_action_receipt` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='异步名单动作幂等回执';
 
 CREATE TABLE IF NOT EXISTS `rule_list_record_log` (
+  `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `id`             BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `list_id`        BIGINT       NOT NULL                COMMENT '名单库ID',
   `record_id`      BIGINT       DEFAULT NULL            COMMENT '名单记录ID',
@@ -1040,6 +1047,7 @@ CREATE TABLE IF NOT EXISTS `rule_function` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='自定义函数定义表';
 
 CREATE TABLE IF NOT EXISTS `rule_function_version` (
+  `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `business_version` INT DEFAULT NULL COMMENT '业务版本号',
   `id`            BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键标识',
   `function_id`   BIGINT       NOT NULL                COMMENT '所属函数标识，关联 rule_function.id',
@@ -1054,6 +1062,7 @@ CREATE TABLE IF NOT EXISTS `rule_function_version` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='函数版本历史表';
 
 CREATE TABLE IF NOT EXISTS `rule_execution_log` (
+  `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `root_rule_id` BIGINT DEFAULT NULL COMMENT '根规则ID快照',
   `execution_project_id` BIGINT DEFAULT NULL COMMENT '执行项目ID快照',
   `started_at` DATETIME(6) DEFAULT NULL COMMENT '根请求开始时间',
@@ -1325,6 +1334,7 @@ CREATE TABLE IF NOT EXISTS `rule_model_output_field` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一模型输出字段表';
 
 CREATE TABLE IF NOT EXISTS `rule_model_version` (
+  `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `business_version`          INT DEFAULT NULL COMMENT '业务版本号',
   `execution_snapshot_json`   LONGTEXT DEFAULT NULL COMMENT '完整模型配置与冻结执行依赖',
   `execution_snapshot_digest` CHAR(64) DEFAULT NULL COMMENT '完整执行快照SHA256',
@@ -1468,6 +1478,7 @@ CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部API接口配置表';
 
 CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
+  `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `root_trace_id` CHAR(36) DEFAULT NULL COMMENT '根请求追踪 ID',
   `history_fields` LONGTEXT DEFAULT NULL COMMENT '逻辑外数调用的受管字段ID结果快照',
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -1573,6 +1584,7 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_group` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验组表';
 
 CREATE TABLE IF NOT EXISTS `rule_experiment_execution_log` (
+  `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `experiment_id`   BIGINT       NOT NULL                COMMENT '实验ID',
   `experiment_code` VARCHAR(128) NOT NULL                COMMENT '实验编码',
@@ -1647,6 +1659,7 @@ CREATE TABLE IF NOT EXISTS `rule_trace_registry` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='全局Trace编号注册表';
 
 CREATE TABLE IF NOT EXISTS `rule_experiment_version` (
+  `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `business_version` INT DEFAULT NULL COMMENT '业务版本号',
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键标识',
   `experiment_id`   BIGINT       NOT NULL                COMMENT '所属分流实验标识',
@@ -1759,6 +1772,7 @@ CREATE TABLE IF NOT EXISTS `rule_billing_config` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费配置表';
 
 CREATE TABLE IF NOT EXISTS `rule_billing_record` (
+  `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `billing_config_id` BIGINT     DEFAULT NULL COMMENT '计费项ID，历史明细可为空',
   `billing_basis`   VARCHAR(32)   DEFAULT NULL COMMENT '计费依据：EXECUTION_SNAPSHOT=执行时冻结快照，CURRENT_CONFIG=记账时配置，LEGACY_REPLAY=旧事件重放',
@@ -1828,6 +1842,7 @@ CREATE TABLE IF NOT EXISTS `rule_billing_summary_task` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费日汇总刷新任务';
 
 CREATE TABLE IF NOT EXISTS `rule_billing_summary` (
+  `actor_user_id` BIGINT DEFAULT NULL COMMENT '所属控制台账户，跨账户汇总不得混入个人结果',
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `summary_date`    DATE         NOT NULL                COMMENT '汇总日期',
   `project_id`      BIGINT       DEFAULT NULL            COMMENT '项目ID',
@@ -1848,7 +1863,7 @@ CREATE TABLE IF NOT EXISTS `rule_billing_summary` (
   `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_billing_summary_key` (`summary_date`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`, `auth_id`, `currency`),
+  UNIQUE KEY `uk_billing_summary_key` (`actor_user_id`, `summary_date`, `project_id`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`, `auth_id`, `currency`),
   KEY `idx_billing_summary_date` (`summary_date`),
   KEY `idx_billing_summary_target` (`billing_target`, `target_ref_id`),
   KEY `idx_billing_summary_auth` (`auth_id`, `summary_date`)
@@ -1994,6 +2009,11 @@ CREATE TABLE IF NOT EXISTS `rule_application_history` (
   KEY `idx_application_rule_time` (`root_rule_id`, `project_id`, `occurred_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='按字段标识保存的业务申请历史表';
 
+CREATE TABLE IF NOT EXISTS `console_operation_log_lock` (
+  `user_id` BIGINT NOT NULL COMMENT '控制台账户标识',
+  PRIMARY KEY (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='操作日志按账户串行追加锁';
+
 CREATE TABLE IF NOT EXISTS `console_operation_log` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键标识',
   `user_id` BIGINT DEFAULT NULL COMMENT '控制台账户标识，关联 console_user.id',
@@ -2011,10 +2031,12 @@ CREATE TABLE IF NOT EXISTS `console_operation_log` (
   `target_version` VARCHAR(64) DEFAULT NULL COMMENT '本次操作关联的业务版本标识',
   `change_summary` VARCHAR(160) DEFAULT NULL COMMENT '操作与变更摘要',
   `client_ip` VARCHAR(64) DEFAULT NULL COMMENT '操作客户端网络地址',
-  `duration_ms` BIGINT NOT NULL COMMENT '操作耗时，单位毫秒',
-  `create_time` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '记录创建时间',
+  `duration_ms` BIGINT NOT NULL COMMENT '连续相同操作累计耗时，单位毫秒',
+  `create_time` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '首次操作进入时间',
+  `leave_time` DATETIME(6) DEFAULT NULL COMMENT '连续相同操作最后一次完成的时间',
   PRIMARY KEY (`id`),
   KEY `idx_console_operation_time` (`create_time`, `id`),
+  KEY `idx_console_operation_user_last` (`user_id`, `id`),
   KEY `idx_console_operation_user_time` (`username`, `create_time`),
   KEY `idx_console_operation_module_time` (`module`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='控制台账户操作记录';
@@ -2027,6 +2049,7 @@ CREATE TABLE IF NOT EXISTS `offline_transfer_log_resource` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='迁移日志内容权限索引';
 
 CREATE TABLE IF NOT EXISTS `offline_transfer_log` (
+  `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键标识',
   `operation_type` VARCHAR(16) NOT NULL COMMENT '迁移操作：EXPORT=导出，IMPORT=导入',
   `status` VARCHAR(16) NOT NULL COMMENT '操作状态：SUCCESS=成功，FAILED=失败',
@@ -2046,94 +2069,95 @@ CREATE TABLE IF NOT EXISTS `offline_transfer_log` (
 -- 可选的业务初始变量和数据对象由 server 的 InitialDataInitializer 执行 sql/initial-data.sql，
 -- 通过 RULE_ENGINE_INITIAL_DATA_ENABLED 控制，避免结构 schema 默认写入业务配置。
 INSERT INTO `rule_variable`
-  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+  (`system_constant`, `project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
    `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
    `status`, `create_time`, `update_time`)
-SELECT 0, 'GLOBAL', 'NULL_VALUE', '空值', 'NULL_VALUE', 'OBJECT', 'CONSTANT',
+SELECT 1, 0, 'GLOBAL', 'NULL_VALUE', '空值', 'NULL_VALUE', 'OBJECT', 'CONSTANT',
        'null', NULL, 'null', '系统常量：缺失值。', -999, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-ON DUPLICATE KEY UPDATE `id` = `id`;
+ON DUPLICATE KEY UPDATE `system_constant` = 1;
 
 INSERT INTO `rule_variable`
-  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+  (`system_constant`, `project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
    `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
    `status`, `create_time`, `update_time`)
-SELECT 0, 'GLOBAL', 'EMPTY_STRING', '空字符串', 'EMPTY_STRING', 'STRING', 'CONSTANT',
+SELECT 1, 0, 'GLOBAL', 'EMPTY_STRING', '空字符串', 'EMPTY_STRING', 'STRING', 'CONSTANT',
        '', NULL, '', '系统常量：空字符串。', -998, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-ON DUPLICATE KEY UPDATE `id` = `id`;
+ON DUPLICATE KEY UPDATE `system_constant` = 1;
 
 INSERT INTO `rule_variable`
-  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+  (`system_constant`, `project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
    `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
    `status`, `create_time`, `update_time`)
-SELECT 0, 'GLOBAL', 'EMPTY_LIST', '空列表', 'EMPTY_LIST', 'LIST', 'CONSTANT',
+SELECT 1, 0, 'GLOBAL', 'EMPTY_LIST', '空列表', 'EMPTY_LIST', 'LIST', 'CONSTANT',
        '[]', NULL, '[]', '系统常量：空列表。', -997, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-ON DUPLICATE KEY UPDATE `id` = `id`;
+ON DUPLICATE KEY UPDATE `system_constant` = 1;
 
 INSERT INTO `rule_variable`
-  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+  (`system_constant`, `project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
    `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
    `status`, `create_time`, `update_time`)
-SELECT 0, 'GLOBAL', 'EMPTY_MAP', '空映射', 'EMPTY_MAP', 'MAP', 'CONSTANT',
+SELECT 1, 0, 'GLOBAL', 'EMPTY_MAP', '空映射', 'EMPTY_MAP', 'MAP', 'CONSTANT',
        '{}', NULL, '{}', '系统常量：空键值映射。', -996, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-ON DUPLICATE KEY UPDATE `id` = `id`;
+ON DUPLICATE KEY UPDATE `system_constant` = 1;
 
 INSERT INTO `rule_variable`
-  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+  (`system_constant`, `project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
    `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
    `status`, `create_time`, `update_time`)
-SELECT 0, 'GLOBAL', 'FALSE_VALUE', '布尔假', 'FALSE_VALUE', 'BOOLEAN', 'CONSTANT',
+SELECT 1, 0, 'GLOBAL', 'FALSE_VALUE', '布尔假', 'FALSE_VALUE', 'BOOLEAN', 'CONSTANT',
        'false', NULL, 'false', '系统常量：布尔假。', -995, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-ON DUPLICATE KEY UPDATE `id` = `id`;
+ON DUPLICATE KEY UPDATE `system_constant` = 1;
 
 INSERT INTO `rule_variable`
-  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+  (`system_constant`, `project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
    `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
    `status`, `create_time`, `update_time`)
-SELECT 0, 'GLOBAL', 'TRUE_VALUE', '布尔真', 'TRUE_VALUE', 'BOOLEAN', 'CONSTANT',
+SELECT 1, 0, 'GLOBAL', 'TRUE_VALUE', '布尔真', 'TRUE_VALUE', 'BOOLEAN', 'CONSTANT',
        'true', NULL, 'true', '系统常量：布尔真。', -994, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-ON DUPLICATE KEY UPDATE `id` = `id`;
+ON DUPLICATE KEY UPDATE `system_constant` = 1;
 
 INSERT INTO `rule_variable`
-  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+  (`system_constant`, `project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
    `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
    `status`, `create_time`, `update_time`)
-SELECT 0, 'GLOBAL', 'NEGATIVE_ONE', '负一', 'NEGATIVE_ONE', 'NUMBER', 'CONSTANT',
+SELECT 1, 0, 'GLOBAL', 'NEGATIVE_ONE', '负一', 'NEGATIVE_ONE', 'NUMBER', 'CONSTANT',
        '-1', NULL, '-1', '系统常量：数值负一。', -993, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-ON DUPLICATE KEY UPDATE `id` = `id`;
+ON DUPLICATE KEY UPDATE `system_constant` = 1;
 
 INSERT INTO `rule_variable`
-  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+  (`system_constant`, `project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
    `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
    `status`, `create_time`, `update_time`)
-SELECT 0, 'GLOBAL', 'ZERO', '零', 'ZERO', 'NUMBER', 'CONSTANT',
+SELECT 1, 0, 'GLOBAL', 'ZERO', '零', 'ZERO', 'NUMBER', 'CONSTANT',
        '0', NULL, '0', '系统常量：数值零。', -992, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-ON DUPLICATE KEY UPDATE `id` = `id`;
+ON DUPLICATE KEY UPDATE `system_constant` = 1;
 
 INSERT INTO `rule_variable`
-  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+  (`system_constant`, `project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
    `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
    `status`, `create_time`, `update_time`)
-SELECT 0, 'GLOBAL', 'ONE', '一', 'ONE', 'NUMBER', 'CONSTANT',
+SELECT 1, 0, 'GLOBAL', 'ONE', '一', 'ONE', 'NUMBER', 'CONSTANT',
        '1', NULL, '1', '系统常量：数值一。', -991, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-ON DUPLICATE KEY UPDATE `id` = `id`;
+ON DUPLICATE KEY UPDATE `system_constant` = 1;
 
 INSERT INTO `rule_variable`
-  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+  (`system_constant`, `project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
    `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
    `status`, `create_time`, `update_time`)
-SELECT 0, 'GLOBAL', 'NEGATIVE_INFINITY', '负无穷', 'NEGATIVE_INFINITY', 'DOUBLE', 'CONSTANT',
+SELECT 1, 0, 'GLOBAL', 'NEGATIVE_INFINITY', '负无穷', 'NEGATIVE_INFINITY', 'DOUBLE', 'CONSTANT',
        '-Infinity', NULL, '-Infinity', '系统常量：数值比较下界。', -1000, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-ON DUPLICATE KEY UPDATE `id` = `id`;
+ON DUPLICATE KEY UPDATE `system_constant` = 1;
 
 INSERT INTO `rule_variable`
-  (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+  (`system_constant`, `project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
    `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
    `status`, `create_time`, `update_time`)
-SELECT 0, 'GLOBAL', 'POSITIVE_INFINITY', '正无穷', 'POSITIVE_INFINITY', 'DOUBLE', 'CONSTANT',
+SELECT 1, 0, 'GLOBAL', 'POSITIVE_INFINITY', '正无穷', 'POSITIVE_INFINITY', 'DOUBLE', 'CONSTANT',
        'Infinity', NULL, 'Infinity', '系统常量：数值比较上界。', -990, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-ON DUPLICATE KEY UPDATE `id` = `id`;
+ON DUPLICATE KEY UPDATE `system_constant` = 1;
 
 -- 旧库缺少逻辑视图依赖字段时先跳过视图创建，SchemaSyncService 补齐字段后再创建；新库和已升级库直接创建。
+
 SET @schema_log_view_sql = IF(
   (SELECT COUNT(*) FROM information_schema.tables
    WHERE table_schema = DATABASE() AND table_name IN ('rule_execution_log', 'rule_execution_log_identity')) = 2
@@ -2183,6 +2207,16 @@ WHERE NULLIF(TRIM(statistics.trace_id), '''') IS NULL
 PREPARE schema_statistics_view_stmt FROM @schema_statistics_view_sql;
 EXECUTE schema_statistics_view_stmt;
 DEALLOCATE PREPARE schema_statistics_view_stmt;
+
+-- 看板公共默认只保存管理员显式选择的资源 ID，不依赖样例数据自增顺序。
+CREATE TABLE IF NOT EXISTS `rule_dashboard_default` (
+  `id` TINYINT NOT NULL COMMENT '公共默认单例 ID',
+  `mappings_json` LONGTEXT NOT NULL COMMENT '指标到资源 ID 的映射',
+  `version` BIGINT NOT NULL COMMENT '并发保存版本',
+  `update_by` VARCHAR(64) NOT NULL COMMENT '配置人',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据看板公共默认字段映射';
 
 -- 全局系统配置：固定分组 ID，业务接口只读取已生效快照。
 CREATE TABLE IF NOT EXISTS `rule_system_setting` (

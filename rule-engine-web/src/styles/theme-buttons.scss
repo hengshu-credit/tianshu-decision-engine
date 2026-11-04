@@ -64,9 +64,9 @@
 .el-button.el-button:not(.el-button--primary, .el-button--info, .el-button--success, .el-button--warning, .el-button--danger),
 .el-button.el-button--default,
 .uiue-button:not([class*='uiue-button--']) {
-  color: var(--tianshu-text-primary) !important;
-  background: var(--tianshu-bg-surface) !important;
-  border-color: var(--tianshu-border) !important;
+  color: var(--tianshu-primary-text) !important;
+  background: var(--tianshu-primary-soft-bg) !important;
+  border-color: var(--el-color-primary) !important;
 }
 
 .el-button.el-button.is-plain {
@@ -140,3 +140,39 @@
   outline: 2px solid var(--tianshu-primary-text);
   outline-offset: 2px;
 }
+
+// 分段选择与普通操作按钮共用品牌令牌，覆盖所有配置页和明暗主题。
+.el-radio-button .el-radio-button__inner,
+.tianshu-segmented > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--el-component-size-small, 32px);
+  padding: 6px 12px !important;
+  font: inherit;
+  font-weight: 500;
+  color: var(--tianshu-primary-text) !important;
+  background: var(--tianshu-primary-soft-bg) !important;
+  border: 1px solid var(--el-color-primary) !important;
+  box-shadow: none !important;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.el-radio-button:not(.is-disabled) .el-radio-button__inner:hover,
+.tianshu-segmented > button:not(:disabled):hover {
+  background: var(--tianshu-primary-soft-hover-bg) !important;
+}
+.el-radio-button.is-active:not(.is-disabled) .el-radio-button__inner,
+.tianshu-segmented > button.is-active:not(:disabled) {
+  color: var(--tianshu-button-primary-text) !important;
+  background: var(--tianshu-button-primary-bg) !important;
+  border-color: var(--tianshu-button-primary-border) !important;
+}
+.el-radio-button.is-disabled .el-radio-button__inner,
+.tianshu-segmented > button:disabled {
+  color: var(--tianshu-text-secondary) !important;
+  background: var(--tianshu-bg-muted) !important;
+  border-color: var(--tianshu-border-subtle) !important;
+  cursor: not-allowed;
+}
+.el-radio-button__original-radio:focus-visible + .el-radio-button__inner,
+.tianshu-segmented > button:focus-visible { outline: 2px solid var(--tianshu-primary-text); outline-offset: 2px; }

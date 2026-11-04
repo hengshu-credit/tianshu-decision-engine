@@ -1,9 +1,9 @@
 import { ONNX_TASKS, createOnnxConfig } from '@/constants/onnxTasks'
 
 describe('ONNX 任务配置', () => {
-  test('提供全部八类 ONNX 推理任务', () => {
+  test('默认通用推理并保留八类专用任务', () => {
     expect(ONNX_TASKS.map(item => item.value)).toEqual([
-      'YUNET_FACE_DETECTION', 'FACENOX_ANTISPOOF', 'MN3_ANTISPOOF',
+      'GENERIC', 'YUNET_FACE_DETECTION', 'FACENOX_ANTISPOOF', 'MN3_ANTISPOOF',
       'SCRFD_FACE_DETECTION', 'ARCFACE_RECOGNITION', 'LANDMARK_2D106',
       'LANDMARK_3D68', 'GENDER_AGE'
     ])

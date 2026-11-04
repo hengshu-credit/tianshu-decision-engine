@@ -7,6 +7,27 @@ vi.mock('@/api/consoleAccount', () => ({
 }))
 
 describe('账户操作日志', () => {
+  test('列表和详情分别展示进入与离开时间，缺失的历史离开时间显示横线', async() => {
+    const record = { id: '15', createTime: '2026-11-04T17:37:16', leaveTime: '2026-11-04T17:38:20' }
+    listConsoleOperationLogs.mockResolvedValue({ data: { records: [record], total: 1 } })
+    getConsoleOperationLog.mockResolvedValue({ data: record })
+    const wrapper = shallowMount(OperationLogs, { global: { stubs: {
+      'el-table-column': {
+        name: 'ElTableColumn', props: ['label'], data: () => ({ row: record }),
+        template: '<div :data-column="label"><slot :row="row" /></div>',
+      },
+    } } })
+    await flushPromises()
+    expect(wrapper.get('[data-column="进入时间"]').text()).toBe('2026-11-04 17:37:16')
+    expect(wrapper.get('[data-column="离开时间"]').text()).toBe('2026-11-04 17:38:20')
+    await wrapper.vm.openDetail(record)
+    expect(wrapper.get('.log-detail [label="进入时间"]').text()).toBe('2026-11-04 17:37:16')
+    expect(wrapper.get('.log-detail [label="离开时间"]').text()).toBe('2026-11-04 17:38:20')
+    getConsoleOperationLog.mockResolvedValue({ data: { id: '16', createTime: record.createTime } })
+    await wrapper.vm.openDetail({ id: '16' })
+    expect(wrapper.get('.log-detail [label="离开时间"]').text()).toBe('—')
+    wrapper.unmount()
+  })
   test('详情只展示版本和简短摘要，不展示旧的正文或前后对比', async() => {
     getConsoleOperationLog.mockResolvedValue({ data: {
       id: '13', targetVersion: 'v3', changeSummary: '更新模型输入字段配置',

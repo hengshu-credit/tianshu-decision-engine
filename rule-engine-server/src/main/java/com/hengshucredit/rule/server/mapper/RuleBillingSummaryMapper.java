@@ -20,16 +20,16 @@ public interface RuleBillingSummaryMapper extends BaseMapper<RuleBillingSummary>
     @Options(timeout = 120)
     @Insert("""
             INSERT INTO rule_billing_summary
-              (summary_date, project_id, project_code, billing_code, billing_target, target_ref_id,
+              (actor_user_id, summary_date, project_id, project_code, billing_code, billing_target, target_ref_id,
                auth_id, auth_code, auth_type, currency, total_count, success_count, fail_count,
                total_quantity, total_amount, avg_cost_time_ms)
-            SELECT #{date}, grouped.project_id, grouped.project_code, grouped.billing_code,
+            SELECT grouped.actor_user_id, #{date}, grouped.project_id, grouped.project_code, grouped.billing_code,
                    grouped.billing_target, grouped.target_ref_id, grouped.auth_id,
                    first_record.auth_code, first_record.auth_type, grouped.currency,
                    grouped.total_count, grouped.success_count, grouped.fail_count,
                    grouped.total_quantity, grouped.total_amount, grouped.avg_cost_time_ms
             FROM (
-              SELECT project_id, CAST(project_code AS BINARY) AS project_code,
+              SELECT actor_user_id, project_id, CAST(project_code AS BINARY) AS project_code,
                      CAST(billing_code AS BINARY) AS billing_code,
                      CAST(billing_target AS BINARY) AS billing_target, target_ref_id, auth_id,
                      CAST(currency AS BINARY) AS currency, MIN(id) AS first_id,
@@ -39,7 +39,7 @@ public interface RuleBillingSummaryMapper extends BaseMapper<RuleBillingSummary>
                      ROUND(SUM(COALESCE(cost_time_ms,0))/COUNT(*),2) AS avg_cost_time_ms
               FROM rule_billing_record
               WHERE occur_time >= #{begin} AND occur_time < #{end}
-              GROUP BY project_id, CAST(project_code AS BINARY), CAST(billing_code AS BINARY),
+              GROUP BY actor_user_id, project_id, CAST(project_code AS BINARY), CAST(billing_code AS BINARY),
                        CAST(billing_target AS BINARY), target_ref_id, auth_id, CAST(currency AS BINARY)
             ) grouped
             JOIN rule_billing_record first_record ON first_record.id=grouped.first_id

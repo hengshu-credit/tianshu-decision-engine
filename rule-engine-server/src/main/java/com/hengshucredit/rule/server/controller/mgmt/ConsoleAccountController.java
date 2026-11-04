@@ -37,7 +37,7 @@ public class ConsoleAccountController {
 
     @GetMapping
     @RequirePermission(value = "account:view",
-            anyOf = {"account:manage", "account:approve", "account:role-assign",
+            anyOf = {"account:manage", "account:role-assign",
                     "account:password-reset"})
     public ApiResponse<List<ConsoleAccountManagementService.ConsoleUserDetail>> list() {
         return ApiResponse.ok(accountService.listUsers());
@@ -45,7 +45,7 @@ public class ConsoleAccountController {
 
     @GetMapping("/{id}")
     @RequirePermission(value = "account:view",
-            anyOf = {"account:manage", "account:approve", "account:role-assign",
+            anyOf = {"account:manage", "account:role-assign",
                     "account:password-reset"})
     public ApiResponse<ConsoleAccountManagementService.ConsoleUserDetail> detail(
             @PathVariable Long id) {

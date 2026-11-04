@@ -13,7 +13,14 @@
 
 平台基于 **Spring Boot 3.5、QLExpress 4、Vue 3 和 Element Plus**，提供独立部署的管理控制台、服务端 API 和 Java 客户端 SDK，支持服务端执行与业务应用内执行。
 
+## 在线体验
+
+**体验地址：[https://rule.hengshucredit.com/](https://rule.hengshucredit.com/)**
+
+账户：`demo`　密码：`hengshucredit`
+
 <p align="center">
+  <a href="#在线体验">在线体验</a> ·
   <a href="#联系方式">联系方式</a> ·
   <a href="#功能总览">功能总览</a> ·
   <a href="#功能演示">功能演示</a> ·
@@ -26,10 +33,21 @@
 
 天枢决策引擎由上海衡枢真信科技有限公司维护。产品咨询、部署支持与商务合作可通过以下方式联系：
 
-| 微信 | 微信公众号 | 官网 | 邮箱 |
-|:----:|:----------:|:----:|:-----|
-| <img src="https://itlubber.art/upload/itlubber.png" alt="微信二维码" width="140"> | <img src="https://itlubber.art/upload/hengshucredit-com.png" alt="微信公众号二维码" width="140"> | [hengshucredit.com](https://hengshucredit.com/) | [hscredit@hengshucredit.com](mailto:hscredit@hengshucredit.com) |
-| itlubber | hengshucredit-com | 上海衡枢真信科技有限公司 | 工作日提供产品与接入咨询 |
+| 联系方式 | 入口与说明 |
+|:---------|:-----------|
+| 官网 | [hengshucredit.com](https://hengshucredit.com/) |
+| 产品咨询与合作 | [官网联系页](https://hengshucredit.com/contact/) |
+| 邮箱 | [hscredit@hengshucredit.com](mailto:hscredit@hengshucredit.com) |
+| 微信 | `itlubber`，可搜索微信号或扫描下方二维码 |
+| 微信公众号 | **衡枢风控**，关注后回复 **入群** 加入技术交流群 |
+
+<table>
+  <tr><th align="center">微信 · itlubber</th><th align="center">微信公众号 · 衡枢风控</th></tr>
+  <tr>
+    <td align="center"><a href="https://raw.githubusercontent.com/hengshu-credit/.github/main/profile/assets/wechat.svg"><img src="https://raw.githubusercontent.com/hengshu-credit/.github/main/profile/assets/wechat.svg" alt="微信 itlubber 二维码" width="200" height="200"></a><br>扫一扫，添加微信交流</td>
+    <td align="center"><a href="https://raw.githubusercontent.com/hengshu-credit/.github/main/profile/assets/wechat-official-account.svg"><img src="https://raw.githubusercontent.com/hengshu-credit/.github/main/profile/assets/wechat-official-account.svg" alt="微信公众号 衡枢风控 二维码" width="200" height="200"></a><br>扫一扫关注，回复「入群」</td>
+  </tr>
+</table>
 
 ## 功能总览
 
@@ -60,7 +78,7 @@
 
 ![数据看板：进件决策与分布分析](docs/project-usage/project-usage-18-dashboard.png)
 
-点击“看板设置”可关联统计字段，配置个人默认与项目覆盖；未配置项逐项继承默认值。地图支持中心经纬度、缩放和视角恢复；非法坐标排除出地图统计，原始日志保持不变。
+点击“看板设置”可关联统计字段，按“个人项目覆盖 → 个人默认 → 公共默认”逐项继承。具有全局 `system:edit` 权限的管理员可切换到“公共默认”，选择全局字段后保存；已有管理员个人配置可通过“载入我的默认配置”带入后再保存。未配置项会明确提示，不再猜测样例变量 ID；引用删除、停用或无权访问时仍报告不可用。公共默认保存在 `rule_dashboard_default`，启动时由 `schema.sql` 幂等建表，旧个人配置保留。字段映射使用统一的引擎引用选择器；通过、人审、拒绝分别选择引擎常量，保存常量 ID 并跟随当前生效值，不按名称反查。旧文本取值保留兼容展示，选择常量后替换。地图支持中心经纬度、缩放和视角恢复；非法坐标排除出地图统计，原始日志保持不变。
 
 ### 项目与规则管理
 
@@ -121,6 +139,10 @@
 
 模型管理提供入参、出参、执行测试、版本和调用日志。PMML/ONNX 模型按声明精确匹配字段；ONNX 支持按模型选择 CPU 或 CUDA 运行设备，CUDA 需部署对应运行环境。
 
+上传时模型大类可留空：PMML 按文件结构识别，通用 ONNX 无法确定训练算法时标为「通用模型」，手动分类仅用于展示与筛选。测试参数在模型详情的执行测试中填写和保存。
+
+ONNX 默认使用通用推理，按文件原始节点名解析多输入、多输出，支持标量、嵌套数组和动态批次；输入 Tensor 支持 FLOAT、DOUBLE、INT8/16/32/64、UINT8、BOOL、STRING，其他输入类型在上传时明确拒绝。输入须满足文件声明的元素类型与维度，不自动进行特征工程或图片预处理。需要图像预处理时可选择原有八类专用任务。详情测试显示节点类型与维度；例如两个形状为 `[动态, 2]` 的输入 `Feature.Input` 和 `Offset`，可传入 `{"Feature.Input": [[1, 2]], "Offset": [[10, 20]]}`。SDK 使用服务端执行模式调用这些模型，纯本地规则执行模式不增加 ONNX 运行时依赖。
+
 ![模型管理](docs/project-usage/project-usage-13-model.png)
 
 函数管理支持 QLExpress、Java 类和 Spring Bean，把可复用计算封装后用于规则与表达式。
@@ -178,6 +200,10 @@ API 配置中的“报文留存”可分别设置 `request` / `response`：`sour
 
 ### 审批、账户与离线迁移
 
+系统内置常量只读，不能编辑、停用、删除或恢复版本；自行新增的常量仍按原流程维护。日志、审批、版本和操作变更记录默认按账户 ID 隔离；查看其他账户记录需显式授予 `account:cross-record-view`，且仍需对应模块和项目权限。该权限不能通过项目覆盖授予，旧的 `account:approve` 兼容权限不再生效。
+
+已有数据库在部署本次账户隔离更新前，先执行 [账户记录隔离升级 SQL](rule-engine-server/src/main/resources/sql/migrations/2026-11-04-account-record-isolation.sql)，再启动服务；全新数据库直接使用 `schema.sql`。升级不推测历史记录的所属账户，来源不明的记录不会向普通账户默认开放。异步写入保留发起账户，计费汇总按账户分别聚合。
+
 审批管理覆盖规则、模型、函数和实验的变更申请、依赖预检、评审、批准、发布与历史版本恢复；账户管理按角色和单项权限计算最终权限，明确拒绝优先。离线迁移按资源血缘导出配置包，目标环境先预检资源冲突，再选择复用、追加后缀或覆盖策略导入；名单记录、执行日志和账单不会进入配置包。
 
 账户默认沿用角色及账户单项权限，不区分项目。账户管理的“权限调整”可选择某个项目，为该项目单独设置“继承默认／允许／拒绝”；项目覆盖只影响对应项目，全局内容仍使用默认模块权限。“项目范围”默认不限制，也可设为“仅指定项目”；指定清单为空时只能查看获授权的全局内容。全局内容默认允许编辑，可独立设为只读，该开关不会授予缺失的模块权限，也不影响已授权项目中的编辑。没有模块查看权限时，该模块的全局内容也不可见。
@@ -196,9 +222,11 @@ Java/Spring Bean 原生实现属于可信服务器代码能力，配置、导入
 
 后续普通用户的邮箱注册、邮件找回需配置 SMTP、发件人和可信的 `CONSOLE_MAIL_BASE_URL`，恢复链接不使用请求 Origin/Host。过期验证邮件可重发。改密、管理员重置、停用及邮箱变更撤销旧恢复令牌；旧会话也不能再访问个人资料或主题偏好接口。控制台凭证尝试与发信由 Redis 统一限速。
 
-普通用户注册仍采用邮箱验证激活，不设人工审核步骤；旧 `account:approve` 保留为“查看账户（旧权限兼容）”，已有授权继续有效。
+普通用户注册仍采用邮箱验证激活，不设人工审核步骤；账户查看使用明确的 `account:view` 权限，不再接受旧 `account:approve` 配置。
 
 账户管理的「操作日志」标签页需要 `account:audit` 权限，可按账号、模块、操作、结果、对象、页面路径、摘要和时间查询。日志记录对象名称与 ID、版本、页面路径及简短操作摘要，区分规则详情页、各设计页和调试页，以及新增、修改、删除、发布、调试、编译、审批等操作。路径只保留对象、版本、修订和页面焦点等定位参数；发布审批申请与实际发布在摘要中分别说明。仍不采集请求正文、响应内容、完整资源快照或变更前后对比。缓存页面及页签访问由前端呈报，对象身份由路径中的 ID 关联，未提交的输入不记为已修改。日志从功能启用后开始积累，不补造历史操作；没有可确认版本的操作显示「—」。
+
+同一账户连续且日志元信息完全一致的操作合并为一条：进入时间保留首次开始，离开时间更新为最后一次完成；账户自己的不同操作会打断合并，其他账户的操作不会打断。时间筛选按进入时间计算。离开时间表示操作完成时间，不代表浏览器关闭或页面停留时长。已有历史记录不批量合并，缺失的离开时间显示「—」。服务启动自动补齐所需表结构；需预先升级数据库时可执行 [操作日志区间升级脚本](rule-engine-server/src/main/resources/sql/migrations/2026-11-04-operation-log-intervals.sql)。
 
 ![审批管理](docs/project-usage/project-usage-21-approval.png)
 

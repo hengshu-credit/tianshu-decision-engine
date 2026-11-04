@@ -173,9 +173,11 @@ public class SchemaSyncService {
     }
 
     private void ensureConsoleOperationLogSchema() {
-        ensureTablesFromSchema(List.of("console_operation_log"));
+        ensureTablesFromSchema(List.of("console_operation_log", "console_operation_log_lock"));
         addColumnIfMissing("console_operation_log", "target_version", "`target_version` VARCHAR(64) DEFAULT NULL");
         addColumnIfMissing("console_operation_log", "change_summary", "`change_summary` VARCHAR(160) DEFAULT NULL");
+        addColumnIfMissing("console_operation_log", "leave_time", "`leave_time` DATETIME(6) DEFAULT NULL");
+        addIndexIfMissing("console_operation_log", "idx_console_operation_user_last", "`user_id`, `id`");
     }
 
     private void ensureModelVersionExecutionSchema() {
@@ -1047,10 +1049,10 @@ public class SchemaSyncService {
         String table = "rule_billing_summary";
         String index = "uk_billing_summary_key";
         if (!tableExists(table)) return;
-        List<String> expected = Arrays.asList("summary_date", "project_code", "billing_code",
+        List<String> expected = Arrays.asList("actor_user_id", "summary_date", "project_id", "project_code", "billing_code",
                 "billing_target", "target_ref_id", "auth_id", "currency");
         String definition = "ADD UNIQUE KEY `" + index
-                + "` (`summary_date`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`, `auth_id`, `currency`)";
+                + "` (`actor_user_id`, `summary_date`, `project_id`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`, `auth_id`, `currency`)";
         if (!indexExists(table, index)) {
             jdbcTemplate.execute("ALTER TABLE `" + table + "` " + definition);
         } else if (!sameColumns(indexColumns(table, index), expected)) {

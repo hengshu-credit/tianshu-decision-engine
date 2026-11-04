@@ -11,7 +11,9 @@ import java.time.LocalDateTime;
 
 @Data
 @TableName("rule_runtime_call_log")
-public class RuleRuntimeCallLog {
+public class RuleRuntimeCallLog implements AccountOwnedRecord {
+    @com.baomidou.mybatisplus.annotation.TableField(fill = com.baomidou.mybatisplus.annotation.FieldFill.INSERT, updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER)
+    private Long actorUserId;
     @TableId(type = IdType.AUTO)
     private Long id;
     private String traceId;

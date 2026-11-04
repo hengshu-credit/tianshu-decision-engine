@@ -207,7 +207,8 @@ public class DatabaseConsoleAccountService {
         }
         List<ConsolePermission> activePermissions = permissionMapper.selectList(
                 new LambdaQueryWrapper<ConsolePermission>()
-                        .eq(ConsolePermission::getStatus, 1));
+                        .eq(ConsolePermission::getStatus, 1)
+                        .in(ConsolePermission::getPermissionCode, ConsolePermissionCodes.allCodes()));
         List<ConsolePermission> createdPermissions = activePermissions.stream()
                 .filter(permission -> createdCodes.contains(
                         permission.getPermissionCode()))

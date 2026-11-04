@@ -382,6 +382,8 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
                .eq(RuleVariable::getProjectId, entity.getProjectId())
                .eq(RuleVariable::getVarCode, entity.getVarCode());
         RuleVariable existing = getBaseMapper().selectOne(wrapper);
+        SystemConstantPolicy.requireMutable(existing);
+        entity.setSystemConstant(false);
         if (existing != null) {
             entity.setId(existing.getId());
             return super.updateById(entity);
@@ -393,6 +395,7 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
     @Transactional
     public boolean updateById(RuleVariable entity) {
         RuleVariable current = entity != null && entity.getId() != null ? getById(entity.getId()) : null;
+        SystemConstantPolicy.requireMutable(current);
         if (current != null && SCOPE_PROJECT.equals(current.getScope())
                 && SCOPE_GLOBAL.equals(entity.getScope())) {
             String targetCode = entity.getVarCode() != null ? entity.getVarCode() : current.getVarCode();
@@ -580,6 +583,7 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
 
     @Transactional
     public void deleteWithOptions(Long id) {
+        SystemConstantPolicy.requireMutable(getById(id));
         removeById(id);
         LambdaQueryWrapper<RuleVariableOption> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(RuleVariableOption::getVariableId, id);
@@ -595,6 +599,7 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
 
     @Transactional
     public void saveOptions(Long variableId, List<RuleVariableOption> options) {
+        SystemConstantPolicy.requireMutable(getById(variableId));
         LambdaQueryWrapper<RuleVariableOption> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(RuleVariableOption::getVariableId, variableId);
         optionMapper.delete(wrapper);

@@ -238,6 +238,11 @@ Vitest 配置（`vitest.config.mjs`）关键点：
 
 ### 控制台项目与内容权限
 
+- 系统常量以数据库 `system_constant` 标识为准，所有业务写入、审批、导入、删除和版本恢复均须拒绝修改；不能信任请求中的标记或通过可变编码判断身份。
+- 审计记录按稳定账户 ID 隔离。`account:cross-record-view` 必须显式授予，并与模块及项目范围取交集；项目覆盖不能授予跨账户查看能力。旧 `account:approve` 权限不参与授权，未知历史归属不按用户名或缺省项目猜测放行。
+- 异步持久化前捕获账户归属，客户端日志上报不能声明控制台账户；账单汇总保留账户维度。已有数据库部署前执行 `sql/migrations/2026-11-04-account-record-isolation.sql`。
+
+
 - 默认权限来自角色及账户覆盖，默认 `projectAccessMode=ALL`、`globalEditable=true`；可逐项目配置权限覆盖。项目覆盖只作用该项目，不能用于授予账户/角色管理权限。
 - `SELECTED` 模式只允许分配的项目，空清单仅可访问获授权的全局内容。全局查看仍需默认模块权限，全局只读禁止该范围内的业务修改。
 - 业务内容读写统一经过 `ConsoleDataPermissionHandler`、`ConsoleDataWriteInterceptor` 和目标资源授权；新增 JDBC 查询应使用同一过滤逻辑，缓存与异步返回也要检查真实资源所属项目。

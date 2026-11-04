@@ -137,7 +137,7 @@
         <div v-else class="accent-editor custom-accent-panel">
           <div class="custom-color-row">
             <span>渐变色数量</span>
-            <div class="segmented-control" aria-label="渐变色数量">
+            <div class="segmented-control tianshu-segmented" aria-label="渐变色数量">
               <button
                 v-for="count in [2, 3]"
                 :key="count"
@@ -172,7 +172,7 @@
           </div>
           <div class="custom-color-row">
             <span>渐变方式</span>
-            <div class="segmented-control" aria-label="渐变方式">
+            <div class="segmented-control tianshu-segmented" aria-label="渐变方式">
               <button
                 v-for="option in gradientTypeOptions"
                 :key="option.value"
@@ -277,7 +277,7 @@
         <h3 id="content-layout-title">内容区域</h3>
         <div class="setting-row">
           <span>内容区宽度</span>
-          <div class="segmented-control" aria-label="内容区宽度">
+          <div class="segmented-control tianshu-segmented" aria-label="内容区宽度">
             <button
               v-for="option in contentWidthOptions"
               :key="option.value"
@@ -297,7 +297,7 @@
         <h3 id="table-scroll-title">列表表格</h3>
         <div class="setting-row">
           <span>滚动方式</span>
-          <div class="segmented-control" aria-label="列表表格滚动方式">
+          <div class="segmented-control tianshu-segmented" aria-label="列表表格滚动方式">
             <button
               v-for="option in tableScrollOptions"
               :key="option.value"

@@ -13,13 +13,15 @@
           <el-option label="成功" value="SUCCESS" /><el-option label="失败" value="FAILED" /><el-option label="无权访问" value="DENIED" />
         </el-select>
         <el-input v-model="query.keyword" clearable placeholder="对象名称、ID、路径或摘要" aria-label="操作对象" @keyup.enter="search" />
-        <el-date-picker v-model="timeRange" type="datetimerange" value-format="YYYY-MM-DD HH:mm:ss" start-placeholder="开始时间" end-placeholder="结束时间" />
+        <el-date-picker v-model="timeRange" type="datetimerange" value-format="YYYY-MM-DD HH:mm:ss" start-placeholder="进入时间起" end-placeholder="进入时间止" />
       </div>
       <div class="log-actions"><el-button type="primary" :loading="loading" @click="search">查询</el-button><el-button @click="reset">重置</el-button></div>
     </div>
     <p class="log-note">记录具体对象、页面路径、操作类型及结果。页面和字段访问由前端呈报；不记录正文或前后快照，未提交的输入不记为修改。</p>
+    <p class="log-note">同一账户连续且日志内容完全相同的操作合并为一条；进入时间为首次开始，离开时间为最后一次完成。中间发生其他操作后重新记录。</p>
     <el-table :aria-busy="loading" :data="rows" row-key="id" show-overflow-tooltip class="management-table">
-      <el-table-column label="操作时间" min-width="175"><template #default="{ row }">{{ formatTime(row.createTime) }}</template></el-table-column>
+      <el-table-column label="进入时间" min-width="175"><template #default="{ row }">{{ formatTime(row.createTime) }}</template></el-table-column>
+      <el-table-column label="离开时间" min-width="175"><template #default="{ row }">{{ formatTime(row.leaveTime) }}</template></el-table-column>
       <el-table-column prop="username" label="操作账号" min-width="125" />
       <el-table-column label="模块" width="115"><template #default="{ row }">{{ modules[row.module] || row.module }}</template></el-table-column>
       <el-table-column label="操作" width="115"><template #default="{ row }">{{ actions[row.action] || row.action }}</template></el-table-column>
@@ -35,15 +37,16 @@
     <el-dialog v-model="detailVisible" title="操作日志详情" width="min(760px, 94vw)">
       <div v-if="detail" class="log-detail">
         <el-descriptions :column="2" border>
+          <el-descriptions-item label="进入时间">{{ formatTime(detail.createTime) }}</el-descriptions-item>
+          <el-descriptions-item label="离开时间">{{ formatTime(detail.leaveTime) }}</el-descriptions-item>
           <el-descriptions-item label="操作账号">{{ detail.username }}（ID {{ detail.userId || '—' }}）</el-descriptions-item>
-          <el-descriptions-item label="操作时间">{{ formatTime(detail.createTime) }}</el-descriptions-item>
           <el-descriptions-item label="操作">{{ modules[detail.module] || detail.module }} · {{ actions[detail.action] || detail.action }}</el-descriptions-item>
           <el-descriptions-item label="结果">{{ outcomes[detail.outcome] }}（{{ detail.resultCode }}）</el-descriptions-item>
-          <el-descriptions-item label="页面路径" :span="2"><span class="location-path">{{ detail.pagePath || '—（接口调用）' }}</span></el-descriptions-item>
           <el-descriptions-item label="来源 IP">{{ detail.clientIp }}</el-descriptions-item>
+          <el-descriptions-item label="页面路径" :span="2"><span class="location-path">{{ detail.pagePath || '—（接口调用）' }}</span></el-descriptions-item>
           <el-descriptions-item label="对象">{{ detail.targetName || detail.targetType || '—' }} · {{ detail.targetId || '—' }}</el-descriptions-item>
           <el-descriptions-item label="版本">{{ detail.targetVersion || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="接口">{{ detail.requestMethod }} {{ detail.requestPath }}</el-descriptions-item>
+          <el-descriptions-item label="接口" :span="2">{{ detail.requestMethod }} {{ detail.requestPath }}</el-descriptions-item>
           <el-descriptions-item label="操作摘要" :span="2">{{ detail.changeSummary || '—' }}</el-descriptions-item>
         </el-descriptions>
       </div>

@@ -21,6 +21,8 @@ import java.util.Objects;
 /** 专用单连接写池，不借用规则查询池；接收回执、名单与审计在同一事务中提交。 */
 @Service
 public class RuleListActionWriter implements AutoCloseable {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.security.ConsoleRecordOwnership recordOwnership;
     private final HikariDataSource writePool;
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transaction;
@@ -114,8 +116,9 @@ public class RuleListActionWriter implements AutoCloseable {
         if (previous == null) jdbc.update("INSERT INTO rule_list_record (list_id,item_type,item_content,effective_time,expire_time,reason,last_operation,status) VALUES (?,?,?,?,?,?,?,1)", listId, type, content, start, end, reason, change);
         else if ("REMOVE".equals(operation)) jdbc.update("UPDATE rule_list_record SET status=0,last_operation='DELETE',reason=? WHERE id=?", reason, previous.get("id"));
         else jdbc.update("UPDATE rule_list_record SET effective_time=?,expire_time=?,reason=?,last_operation=?,status=1 WHERE id=?", start, end, reason, change, previous.get("id"));
-        jdbc.update("INSERT INTO rule_list_record_log (list_id,record_id,item_type,item_content,effective_time,expire_time,reason,operation,operator,task_id,root_trace_id,rule_code,rule_version,revision_id,artifact_digest) SELECT list_id,id,item_type,item_content,effective_time,expire_time,reason,last_operation,?,?,?,?,?,?,? FROM rule_list_record WHERE list_id=? AND item_type=? AND item_content=?",
-                "规则任务:" + taskId, taskId, rootTraceId, ruleCode, ruleVersion, revisionId, artifactDigest, listId, type, content);
+        jdbc.update("INSERT INTO rule_list_record_log (list_id,record_id,item_type,item_content,effective_time,expire_time,reason,operation,operator,task_id,root_trace_id,rule_code,rule_version,revision_id,artifact_digest,actor_user_id) SELECT list_id,id,item_type,item_content,effective_time,expire_time,reason,last_operation,?,?,?,?,?,?,?,? FROM rule_list_record WHERE list_id=? AND item_type=? AND item_content=?",
+                "规则任务:" + taskId, taskId, rootTraceId, ruleCode, ruleVersion, revisionId, artifactDigest,
+                recordOwnership == null ? null : recordOwnership.currentUserId(), listId, type, content);
         return 1;
     }
 

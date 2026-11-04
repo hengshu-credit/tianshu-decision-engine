@@ -19,6 +19,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/rule/billing")
 public class BillingController {
+    @Resource private com.hengshucredit.rule.server.security.ConsoleProjectAccess consoleProjects;
 
     @Resource
     private RuleBillingService billingService;
@@ -104,17 +105,30 @@ public class BillingController {
     public ApiResponse<RuleBillingSummaryTask> refreshSummary(@RequestBody(required = false) Map<String, String> body) {
         String dateText = body == null ? null : body.get("summaryDate");
         LocalDate date = dateText == null || dateText.trim().isEmpty() ? LocalDate.now() : LocalDate.parse(dateText);
-        return ApiResponse.ok(summaryTasks.submit(date));
+        return ApiResponse.ok(visibleTask(summaryTasks.submit(date)));
     }
 
     @GetMapping("/summary/refresh/{taskId}")
     public ApiResponse<RuleBillingSummaryTask> getSummaryTask(@PathVariable String taskId) {
-        return ApiResponse.ok(summaryTasks.get(taskId));
+        return ApiResponse.ok(visibleTask(summaryTasks.get(taskId)));
     }
 
     @GetMapping("/summary/refresh")
     public ApiResponse<RuleBillingSummaryTask> latestSummaryTask(@RequestParam(required = false) String summaryDate) {
         LocalDate date = summaryDate == null || summaryDate.isBlank() ? LocalDate.now() : LocalDate.parse(summaryDate);
-        return ApiResponse.ok(summaryTasks.latest(date));
+        return ApiResponse.ok(visibleTask(summaryTasks.latest(date)));
+    }
+
+    private RuleBillingSummaryTask visibleTask(RuleBillingSummaryTask task) {
+        if (task == null) return null;
+        var scope = consoleProjects == null ? null : consoleProjects.current();
+        if (scope != null && scope.globalCan("account:cross-record-view") && scope.globalCan("billing:view")
+                && scope.allProjectPermission("billing:view")) return task;
+        // 日期合并的后台维护任务可以展示进度，不能附带别人的身份和全库计数。
+        var visible = new RuleBillingSummaryTask();
+        org.springframework.beans.BeanUtils.copyProperties(task, visible);
+        visible.setApplicant(null); visible.setSummaryCount(null); visible.setRecordCount(null);
+        visible.setErrorMessage("FAILED".equals(task.getStatus()) ? "汇总处理失败，请联系有权限的管理员查看" : null);
+        return visible;
     }
 }

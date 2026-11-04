@@ -30,6 +30,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/rule/dashboard")
 public class DashboardController {
+    @jakarta.annotation.Resource
+    private com.hengshucredit.rule.server.system.SystemSettingsAccess systemSettingsAccess;
 
     private final DashboardAccessService accessService;
     private final DashboardCriteriaService criteriaService;
@@ -118,6 +120,29 @@ public class DashboardController {
         return ApiResponse.ok(mappingService.settings(access.userId(), projectId,
                 access.userId() != null));
     }
+
+    @GetMapping("/settings/defaults")
+    @com.hengshucredit.rule.server.security.RequirePermission("system:edit")
+    public ApiResponse<DashboardResponses.Settings> systemSettings(HttpServletRequest request) {
+        systemSettingsAccess.require(request, "system:edit");
+        return ApiResponse.ok(mappingService.systemSettings());
+    }
+
+    @PutMapping("/settings/defaults")
+    @com.hengshucredit.rule.server.security.RequirePermission("system:edit")
+    public ApiResponse<DashboardResponses.Settings> saveSystemSettings(
+            @RequestBody SystemSettingsUpdateRequest body, HttpServletRequest request) {
+        systemSettingsAccess.require(request, "system:edit");
+        DashboardAccessContext access = accessService.resolve(request);
+        if (access.userId() == null || access.username() == null) {
+            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.PERMISSION_DENIED, "请先登录控制台");
+        }
+        return ApiResponse.ok(mappingService.saveSystemDefaults(access.username(),
+                body == null ? null : body.version(), body == null ? null : body.mappings()));
+    }
+
+    public record SystemSettingsUpdateRequest(Long version,
+            Map<DashboardMetricField, DashboardMapping.StoredMapping> mappings) { }
 
     @PutMapping("/settings")
     public ApiResponse<DashboardResponses.Settings> saveSettings(

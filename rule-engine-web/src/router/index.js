@@ -349,7 +349,7 @@ const routes = [
         path: 'account',
         name: 'AccountManagement',
         component: () => import('@/views/account/AccountManagement.vue'),
-        meta: { title: '账户管理', permission: ['account:view', 'account:manage', 'account:approve', 'account:role-assign', 'account:password-reset', 'role:view', 'role:manage', 'account:audit'] }
+        meta: { title: '账户管理', permission: ['account:view', 'account:manage', 'account:role-assign', 'account:password-reset', 'role:view', 'role:manage', 'account:audit'] }
       },
       {
         path: 'account/profile',

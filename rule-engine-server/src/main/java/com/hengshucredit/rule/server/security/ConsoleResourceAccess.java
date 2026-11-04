@@ -19,7 +19,13 @@ public class ConsoleResourceAccess {
         if (access.current() == null) return;
         Long projectId = projectForResource(type, id);
         access.requirePermission(ConsoleAccessGuard.resourceModule(type) + ":view", projectId);
-        if (!"view".equals(action)) access.requirePermission(ConsoleAccessGuard.resourceModule(type) + ":" + action, projectId);
+        if (!"view".equals(action)) {
+            access.requirePermission(ConsoleAccessGuard.resourceModule(type) + ":" + action, projectId);
+            if ("rule_variable".equals(ConsoleDataPermissionHandler.resourceTable(type))) {
+                com.hengshucredit.rule.server.service.SystemConstantPolicy.requireMutableFlag(
+                        jdbc.queryForObject("SELECT system_constant FROM rule_variable WHERE id = ?", Boolean.class, id));
+            }
+        }
     }
 
     public void requirePermission(String type, Long id, String permission) {
@@ -50,6 +56,7 @@ public class ConsoleResourceAccess {
         String table = ConsoleDataPermissionHandler.resourceTable(type);
         if (id == null || id <= 0) throw new IllegalArgumentException("资源ID不能为空");
         String columns = switch (table) {
+            case "rule_system_setting" -> "0 AS project_id, 'GLOBAL' AS scope";
             case "rule_project" -> "id AS project_id";
             case "rule_external_api_config" -> "datasource_id";
             case "rule_list_change_batch" -> "list_id";

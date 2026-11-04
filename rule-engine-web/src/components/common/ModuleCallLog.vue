@@ -4,6 +4,7 @@
       <div>
         <div class="log-title">{{ title || profile.title }}</div>
         <div class="log-subtitle">{{ profile.subtitle }}</div>
+        <div class="log-subtitle">仅展示本人及明确授权的调用记录。</div>
       </div>
     </div>
 

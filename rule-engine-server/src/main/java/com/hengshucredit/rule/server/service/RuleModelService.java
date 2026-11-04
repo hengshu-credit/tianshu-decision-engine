@@ -17,6 +17,7 @@ import com.hengshucredit.rule.server.service.onnx.OnnxModelExecutionService;
 import com.hengshucredit.rule.server.service.onnx.OnnxRuntimeConfig;
 import com.hengshucredit.rule.server.service.onnx.OnnxTaskConfig;
 import com.hengshucredit.rule.server.service.onnx.OnnxTaskType;
+import com.hengshucredit.rule.server.service.onnx.GenericOnnxExecutor;
 import org.dmg.pmml.Model;
 import org.dmg.pmml.PMML;
 import org.jpmml.evaluator.*;
@@ -385,7 +386,7 @@ public class RuleModelService {
                                                   String requestedModelType, String testParams,
                                                   String onnxTaskType, String onnxConfig) {
         String modelFormat = detectFormat(fileName);
-        String modelType = requestedModelType;
+        String modelType = requestedModelType == null || requestedModelType.isBlank() ? null : requestedModelType;
         Map<String, Object> modelConfig = new LinkedHashMap<>();
         List<RuleModelInputField> inputFields;
         List<RuleModelOutputField> outputFields;
@@ -405,12 +406,36 @@ public class RuleModelService {
             } catch (RuntimeException e) {
                 throw new IllegalArgumentException("ONNX 配置不是有效 JSON", e);
             }
-            rawConfig.put("onnxTaskType", onnxTaskType);
+            rawConfig.put("onnxTaskType", onnxTaskType == null || onnxTaskType.isBlank() ? "GENERIC" : onnxTaskType);
             OnnxTaskConfig taskConfig = OnnxTaskConfig.parse(rawConfig.toJSONString());
             modelConfig.putAll(taskConfig.toJsonObject());
-            modelConfig.put("nodeMetadata", onnxSessionManager.inspect(fileBytes));
-            inputFields = buildOnnxInputFields(taskConfig.getTaskType());
-            outputFields = buildOnnxOutputFields(taskConfig.getTaskType());
+            Map<String, Object> metadata = onnxSessionManager.inspect(fileBytes);
+            modelConfig.put("nodeMetadata", metadata);
+            if (taskConfig.getTaskType() == OnnxTaskType.GENERIC) {
+                inputFields = new ArrayList<>();
+                for (var entry : ((Map<?, ?>) metadata.get("inputs")).entrySet()) {
+                    RuleModelInputField field = new RuleModelInputField();
+                    field.setFieldName((String) entry.getKey());
+                    field.setFieldLabel((String) entry.getKey());
+                    field.setFieldType(GenericOnnxExecutor.fieldType((Map<?, ?>) entry.getValue(), true));
+                    field.setDataType("CONTINUOUS");
+                    field.setTransformType("NONE");
+                    inputFields.add(field);
+                }
+                outputFields = new ArrayList<>();
+                for (var entry : ((Map<?, ?>) metadata.get("outputs")).entrySet()) {
+                    RuleModelOutputField field = new RuleModelOutputField();
+                    field.setFieldName((String) entry.getKey());
+                    field.setFieldLabel((String) entry.getKey());
+                    field.setFieldType(GenericOnnxExecutor.fieldType((Map<?, ?>) entry.getValue(), false));
+                    field.setIsProbability(0);
+                    outputFields.add(field);
+                }
+            } else {
+                inputFields = buildOnnxInputFields(taskConfig.getTaskType());
+                outputFields = buildOnnxOutputFields(taskConfig.getTaskType());
+            }
+            if (modelType == null) modelType = taskConfig.getTaskType() == OnnxTaskType.GENERIC ? "ML" : "NEURAL_NET";
         }
         if (testParams != null && !testParams.isEmpty()) {
             modelConfig.put("testParams", testParams);
@@ -1462,13 +1487,13 @@ public class RuleModelService {
         String className = model.getClass().getSimpleName();
         if (className.contains("XGBoost")) return "XGBOOST";
         if (className.contains("LightGBM")) return "LIGHTGBM";
-        if (className.contains("Regression")) return "LR";
+        if (className.contains("GeneralRegression")) return "GLM";
+        if (className.contains("Regression")) return org.dmg.pmml.MiningFunction.CLASSIFICATION.equals(model.getMiningFunction()) ? "LR" : "REGRESSION";
         if (className.contains("TreeModel")) return "TREE";
         if (className.contains("NeuralNetwork")) return "NEURAL_NET";
-        if (className.contains("SVM")) return "SVM";
+        if (className.contains("SupportVectorMachine")) return "SVM";
         if (className.contains("RandomForest")) return "RANDOM_FOREST";
         if (className.contains("NaiveBayes")) return "NAIVE_BAYES";
-        if (className.contains("GeneralRegression")) return "GLM";
         if (className.contains("MiningModel")) return "MINING";
 
         return "ML";

@@ -24,6 +24,7 @@ public class ResourceVersionManagementService {
     @Resource private RuleVersionBindingMapper ruleBindings;
     @Resource private ResourceVersionImpactService versionImpact;
     @Resource private ConsoleAccessGuard access;
+    @Resource private RuleVariableMapper variableMapper;
 
     public Map<String, Object> workspace(String type, Long id, String actor) {
         access.requireResource(type, "view");
@@ -89,6 +90,9 @@ public class ResourceVersionManagementService {
 
     @Transactional
     public void deleteVersion(String type, Long id, Long versionId, Long expectedSnapshotId, String actor) {
+        if ("VARIABLE".equalsIgnoreCase(type) || "CONSTANT".equalsIgnoreCase(type)) {
+            com.hengshucredit.rule.server.service.SystemConstantPolicy.requireMutable(variableMapper.selectById(id));
+        }
         access.requireResource(type, "edit");
         var resource = resources.selectOne(new LambdaQueryWrapper<GovernedResource>()
                 .eq(GovernedResource::getResourceType, type).eq(GovernedResource::getResourceId, id).last("FOR UPDATE"));

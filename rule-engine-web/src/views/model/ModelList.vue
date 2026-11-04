@@ -2,8 +2,7 @@
   <div class="uiue-list-page management-list-page">
     <!-- 提示信息 -->
     <div class="linkage-hint">
-      <el-icon><el-icon-info /></el-icon> 模型仅支持从 ONNX、PMML
-      格式文件导入；ONNX 当前按图像/人脸任务配置，用于在规则设计时调用机器学习模型进行预测。
+      <el-icon><el-icon-info /></el-icon> 支持导入 PMML、ONNX 模型，在规则中调用预测结果；上传后到详情页配置输入输出并执行测试。
     </div>
 
     <el-tabs class="management-table-region" v-model="activeTab">
@@ -56,6 +55,12 @@
                 <el-option label="RandomForest" value="RANDOM_FOREST" />
                 <el-option label="NeuralNet（神经网络）" value="NEURAL_NET" />
                 <el-option label="SVM" value="SVM" />
+                <el-option label="回归" value="REGRESSION" />
+                <el-option label="决策树" value="TREE" />
+                <el-option label="集成模型" value="MINING" />
+                <el-option label="广义线性模型" value="GLM" />
+                <el-option label="朴素贝叶斯" value="NAIVE_BAYES" />
+                <el-option label="通用模型" value="ML" />
               </el-select>
             </el-form-item>
             <el-form-item label="模型格式">
@@ -365,9 +370,8 @@
             placeholder="中文名称，如 信用评分模型"
           />
         </el-form-item>
-        <el-form-item label="模型大类" prop="modelType">
-          <el-select v-model="uploadForm.modelType" style="width: 100%">
-            <el-option label="PMML 自动识别" value="" />
+        <el-form-item label="模型大类（可选）" prop="modelType">
+          <el-select v-model="uploadForm.modelType" clearable placeholder="自动识别，可留空" style="width: 100%">
             <el-option label="LR（逻辑回归）" value="LR" />
             <el-option label="XGBoost" value="XGBOOST" />
             <el-option label="LightGBM" value="LIGHTGBM" />
@@ -376,6 +380,7 @@
             <el-option label="NeuralNet（神经网络）" value="NEURAL_NET" />
             <el-option label="SVM" value="SVM" />
           </el-select>
+          <div class="runtime-hint">仅用于分类与筛选。PMML 按文件识别；无法确定算法时标为通用模型，不影响推理。</div>
         </el-form-item>
         <el-form-item label="模型文件" prop="file">
           <el-upload
@@ -389,7 +394,7 @@
           >
             <el-button size="small" type="primary">选择文件</el-button>
             <template v-slot:tip>
-              <span class="el-upload__tip">仅支持 ONNX、PMML 格式；ONNX 需选择图像/人脸推理任务</span>
+              <span class="el-upload__tip">支持 .pmml、.onnx；自动解析输入输出字段，测试参数在详情页填写</span>
             </template>
           </el-upload>
         </el-form-item>
@@ -414,6 +419,9 @@
                 }}</span>
               </el-option>
             </el-select>
+          </el-form-item>
+          <el-form-item v-if="uploadForm.onnxTaskType === 'GENERIC'" label="输入方式">
+            <span>按模型原始节点名传入数值或嵌套 JSON 数组，保留原始输出；不自动处理图片或业务特征。图像预处理请选择对应专用任务。</span>
           </el-form-item>
           <template
             v-if="
@@ -560,17 +568,6 @@
             :rows="2"
             placeholder="简要描述本次变更内容"
           />
-        </el-form-item>
-        <el-form-item label="测试参数">
-          <monaco-editor
-            v-model:value="uploadForm.testParams"
-            language="json"
-            height="130px"
-          />
-          <div style="color: var(--tianshu-text-tertiary); font-size: 11px; margin-top: 2px">
-            可选。普通 JSON 对象作为输入；需校验预期输出时使用
-            { "$input": {...}, "$expectedOutput": {...} }
-          </div>
         </el-form-item>
         <el-form-item label="描述">
           <el-input
@@ -811,7 +808,6 @@ import {
   savePageState,
 } from '@/utils/pageStateCache'
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
-import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
@@ -834,6 +830,12 @@ const MODEL_TYPE_LABELS = {
   RANDOM_FOREST: 'RandomForest',
   NEURAL_NET: 'NeuralNet（神经网络）',
   SVM: 'SVM',
+  REGRESSION: '回归',
+  TREE: '决策树',
+  MINING: '集成模型',
+  GLM: '广义线性模型',
+  NAIVE_BAYES: '朴素贝叶斯',
+  ML: '通用模型',
 }
 
 const createUploadForm = () => ({
@@ -844,8 +846,7 @@ const createUploadForm = () => ({
   modelType: '',
   description: '',
   changeLog: '',
-  testParams: '',
-  onnxTaskType: '',
+  onnxTaskType: 'GENERIC',
   onnxConfig: {},
   preloadOnStartup: 0,
   executionTimeoutMs: 120000,
@@ -1039,7 +1040,6 @@ export default {
     GovernanceResourceStatus,
     TableColumnSettings,
     ModuleCallLog,
-    MonacoEditor,
     RemoteFilterSelect,
     ProjectFilterSelect,
     ModelImpactDialog,
@@ -1064,7 +1064,6 @@ export default {
       )
       return (
         this.editForm.modelFormat === 'ONNX' &&
-        this.editForm.modelType === 'NEURAL_NET' &&
         !!(task && task.supportsGpu)
       )
     },
@@ -1372,9 +1371,8 @@ export default {
       this.selectedFile = file.raw
       this.selectedFileName = fileName
       this.fileList = files.slice(-1)
-      if (this.isOnnxFile) this.uploadForm.modelType = 'NEURAL_NET'
       if (!this.isOnnxFile) {
-        this.uploadForm.onnxTaskType = ''
+        this.uploadForm.onnxTaskType = 'GENERIC'
         this.uploadForm.onnxConfig = {}
       }
     },
@@ -1409,10 +1407,9 @@ export default {
           formData.append('scope', this.uploadForm.scope)
           formData.append('modelCode', this.uploadForm.modelCode)
           formData.append('modelName', this.uploadForm.modelName)
-          formData.append('modelType', this.uploadForm.modelType)
+          if (this.uploadForm.modelType) formData.append('modelType', this.uploadForm.modelType)
           formData.append('description', this.uploadForm.description || '')
           formData.append('changeLog', this.uploadForm.changeLog || '')
-          formData.append('testParams', this.uploadForm.testParams || '')
           formData.append('preloadOnStartup', this.uploadForm.preloadOnStartup)
           formData.append(
             'executionTimeoutMs',

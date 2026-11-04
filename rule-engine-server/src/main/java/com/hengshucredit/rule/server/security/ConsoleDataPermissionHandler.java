@@ -43,9 +43,9 @@ public class ConsoleDataPermissionHandler implements MultiDataPermissionHandler 
 
     @Override public Expression getSqlSegment(Table table, Expression where, String statementId) {
         String name = table.getName().replace("`", "").toLowerCase(java.util.Locale.ROOT);
-        if (isGrantDirectory(statementId) || (name.startsWith("console_") && !name.equals("console_operation_log"))
+        if (isGrantDirectory(statementId) || (name.startsWith("console_") && !Set.of("console_operation_log", "console_security_audit_log").contains(name))
                 || !(name.startsWith("rule_") || name.startsWith("govern") || name.startsWith("artifact_")
-                || name.startsWith("decision_artifact") || name.equals("resource_impact_analysis") || name.equals("offline_transfer_log") || name.equals("console_operation_log"))) return null;
+                || name.startsWith("decision_artifact") || name.equals("resource_impact_analysis") || name.equals("offline_transfer_log") || Set.of("console_operation_log", "console_security_audit_log").contains(name))) return null;
         ConsoleProjectAccess.Scope scope = access.current();
         if (scope == null) return null;
         String alias = table.getAlias() == null ? table.getFullyQualifiedName() : table.getAlias().getName();
@@ -112,6 +112,33 @@ public class ConsoleDataPermissionHandler implements MultiDataPermissionHandler 
     }
 
     public String predicate(ConsoleProjectAccess.Scope scope, String table, String a, int depth) {
+        String resource = resourcePredicate(scope, table, a, depth);
+        String owner = recordOwner(scope, table, a);
+        return owner == null ? resource : resource == null ? owner : "(" + resource + ") AND (" + owner + ")";
+    }
+
+    private String recordOwner(ConsoleProjectAccess.Scope scope, String table, String a) {
+        if (scope.globalCan("account:cross-record-view")) return null;
+        String user = scope.userId() == null ? "NULL" : String.valueOf(scope.userId());
+        if (Set.of("console_operation_log", "console_security_audit_log").contains(table)) return a + ".user_id = " + user;
+        if ("governed_resource_version".equals(table)) return "(" + a + ".actor_user_id = " + user
+                + " OR EXISTS (SELECT 1 FROM governance_approval_request sec_owner_request WHERE sec_owner_request.id = "
+                + a + ".approval_request_id AND sec_owner_request.actor_user_id = " + user + "))";
+        if (Set.of("rule_execution_log", "rule_execution_log_current", "rule_runtime_call_log", "rule_billing_record",
+                "rule_experiment_execution_log", "rule_list_record_log", "offline_transfer_log", "governance_approval_request",
+                "rule_definition_version", "rule_model_version", "rule_function_version", "rule_experiment_version",
+                "rule_revision", "rule_auth_access_log", "rule_billing_summary").contains(table)) return a + ".actor_user_id = " + user;
+        if ("rule_version_binding".equals(table)) return "EXISTS (SELECT 1 FROM rule_definition_version sec_owner_snapshot WHERE sec_owner_snapshot.id = " + a + ".snapshot_id AND sec_owner_snapshot.actor_user_id = " + user + ")";
+        if ("rule_list_change_batch".equals(table)) return "EXISTS (SELECT 1 FROM governance_approval_request sec_owner_batch WHERE sec_owner_batch.id = " + a + ".approval_request_id AND sec_owner_batch.actor_user_id = " + user + ")";
+        if (Set.of("rule_lifecycle_event", "rule_regression_evidence").contains(table)) {
+            return "EXISTS (SELECT 1 FROM rule_revision sec_owner_revision WHERE sec_owner_revision.id = " + a
+                    + ".revision_id AND sec_owner_revision.actor_user_id = " + user + ")";
+        }
+        return null;
+    }
+
+    private String resourcePredicate(ConsoleProjectAccess.Scope scope, String table, String a, int depth) {
+        if ("rule_system_setting".equals(table)) return scope.globalCan(Boolean.TRUE.equals(mutation.get()) ? actionPermission("system") : "system:view") ? "1 = 1" : "1 = 0";
         String module = ROOT_MODULES.get(table);
         if (module != null) {
             String global = scope.globalCan(module + ":view") ? a + ".scope = 'GLOBAL'" : "1 = 0";
@@ -120,6 +147,7 @@ public class ConsoleDataPermissionHandler implements MultiDataPermissionHandler 
                 String action = actionPermission(module);
                 String globalWrite = scope.globalCan(action) ? a + ".scope = 'GLOBAL'" : "1 = 0";
                 own += " AND (" + globalWrite + " OR (" + a + ".scope = 'PROJECT' AND " + projectPermission(scope, a + ".project_id", action) + "))";
+                if ("rule_variable".equals(table)) own += " AND " + a + ".system_constant = 0";
             }
             if ("rule_data_object_field".equals(table)) own += " AND (" + a + ".object_id IS NULL OR " + a + ".object_id = 0 OR " + child(scope, a, "object_id", "rule_data_object", depth) + ")";
             return own;
@@ -169,9 +197,12 @@ public class ConsoleDataPermissionHandler implements MultiDataPermissionHandler 
             case "rule_execution_checkpoint" -> "EXISTS (SELECT 1 FROM rule_execution_state sec_state WHERE sec_state.root_trace_id = " + a + ".root_trace_id AND " + project(scope, "sec_state.project_id", true) + ")";
             // 汇总刷新为系统维护任务，不包含业务明细；响应另行去除全库计数和其他发起人身份。
             case "rule_billing_summary_task", "rule_billing_summary_lock" -> null;
+            // 公共默认仅含共享映射；字段本身仍经变量/对象查询逐项授权，修改入口须有 system:edit。
+            case "rule_dashboard_default" -> Boolean.TRUE.equals(mutation.get()) && !scope.globalCan("system:edit") ? "1 = 0" : null;
             case "offline_transfer_log" -> transferLog(scope, a, depth);
             case "console_operation_log" -> "(" + (scope.globalCan("system:audit") ? a + ".module = 'system' OR " : "") + a + ".target_type IN ('CONSOLE_USER','CONSOLE_ROLE','ACCOUNT','ROLE') OR ("
                     + a + ".target_id REGEXP '^[0-9]+$' AND " + resource(scope, a + ".target_type", a + ".target_id", depth) + "))";
+            case "console_security_audit_log" -> scope.globalCan("account:audit") ? null : "1 = 0";
             default -> table.startsWith("rule_") || table.startsWith("governance_") || table.startsWith("artifact_") ? "1 = 0" : null;
         };
     }
@@ -187,24 +218,23 @@ public class ConsoleDataPermissionHandler implements MultiDataPermissionHandler 
         String allowed = "((" + r + ".resource_id > 0 AND " + resource(scope, r + ".resource_type", r + ".resource_id", depth + 1)
                 + ") OR (" + r + ".resource_id = 0 AND " + resourceModule(scope, r + ".resource_type", "0") + ")"
                 + (scope.globalCan("transfer:view") ? " OR " + r + ".resource_type = 'TRANSFER_LOG'" : "") + ")";
-        return alias + ".operator COLLATE utf8mb4_unicode_ci IN (SELECT COALESCE(operator_name,username) FROM console_user WHERE id = " + scope.userId()
-                + " OR merged_into_user_id = " + scope.userId() + ")"
-                + " AND EXISTS (SELECT 1 FROM offline_transfer_log_resource " + r + " WHERE " + r + ".log_id = " + alias + ".id)"
+        return "EXISTS (SELECT 1 FROM offline_transfer_log_resource " + r + " WHERE " + r + ".log_id = " + alias + ".id)"
                 + " AND NOT EXISTS (SELECT 1 FROM offline_transfer_log_resource " + r + " WHERE " + r + ".log_id = " + alias + ".id AND NOT " + allowed + ")";
     }
 
     private String executionLog(ConsoleProjectAccess.Scope scope, String alias) {
-        return "(" + projectPermission(scope, alias + ".execution_project_id", "log:view")
+        String owner = recordOwner(scope, "rule_execution_log", alias);
+        return (owner == null ? "" : "(" + owner + ") AND ") + "(" + projectPermission(scope, alias + ".execution_project_id", "log:view")
                 + (scope.globalCan("log:view") ? " OR ((" + alias + ".execution_project_id IS NULL OR " + alias + ".execution_project_id = 0) AND ("
                 + alias + ".project_code IS NULL OR " + alias + ".project_code = ''))" : "")
-                + (scope.allProjectPermission("log:view") ? " OR " + alias + ".execution_project_id IS NULL OR " + alias + ".execution_project_id = 0" : "") + ")";
+                + ")";
     }
 
     private String logScope(ConsoleProjectAccess.Scope scope, String alias, String permission) {
         return "(" + projectPermission(scope, alias + ".project_id", permission)
                 + (scope.globalCan(permission) ? " OR ((" + alias + ".project_id IS NULL OR " + alias + ".project_id = 0) AND ("
                 + alias + ".project_code IS NULL OR " + alias + ".project_code = ''))" : "")
-                + (scope.allProjectPermission(permission) ? " OR " + alias + ".project_id IS NULL OR " + alias + ".project_id = 0" : "") + ")";
+                + ")";
     }
 
     public static String moduleForTable(String table) { return "rule_project".equals(table) ? "project" : ROOT_MODULES.get(table); }

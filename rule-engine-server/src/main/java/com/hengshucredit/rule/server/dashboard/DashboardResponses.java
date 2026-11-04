@@ -230,14 +230,22 @@ public final class DashboardResponses {
                                   String label,
                                   String valueType,
                                   String scope,
-                                  Long projectId) {
+                                  Long projectId,
+                                  String code,
+                                  String varSource,
+                                  Object constantValue) {
     }
 
     public record Settings(boolean editable,
                            Long projectId,
                            boolean projectOverride,
                            List<SettingField> fields,
-                           List<ReferenceOption> options) {
+                           List<ReferenceOption> options,
+                           Long defaultVersion) {
+        public Settings(boolean editable, Long projectId, boolean projectOverride,
+                        List<SettingField> fields, List<ReferenceOption> options) {
+            this(editable, projectId, projectOverride, fields, options, null);
+        }
         public Settings {
             fields = fields == null ? Collections.emptyList()
                     : List.copyOf(fields);

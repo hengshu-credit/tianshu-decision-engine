@@ -17,6 +17,17 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class DashboardApplicationServiceTest {
+    @Test
+    public void numericDecisionConstantsMatchEquivalentJsonNumberRepresentations() {
+        var result = service(List.of(
+                row(1L, "P1", "T1", "R1", "100.0", "D1", "1", "1", "120", "30", time(1)),
+                row(2L, "P1", "T2", "R2", "1.02e2", "D2", "1", "1", "120", "30", time(2)),
+                row(3L, "P1", "T3", "R3", "101.00", "D3", "1", "1", "120", "30", time(3))))
+                .analyze(criteria(), access("rule:view"), validMappings());
+        assertEquals(1, result.summary().passCount());
+        assertEquals(1, result.summary().reviewCount());
+        assertEquals(1, result.summary().rejectCount());
+    }
 
     @Test
     public void latestExecutionWinsAndDecisionDefaultsSupportBothValueFamilies() {
@@ -161,7 +172,7 @@ public class DashboardApplicationServiceTest {
                             Set.of("1", "101", "REJECT"))
                             : null;
             values.put(field, new DashboardMapping.ResolvedMapping(field,
-                    VARIABLE, field.defaultRefId(), INPUT,
+                    VARIABLE, (long) field.ordinal() + 1, INPUT,
                     "$.\"" + field.name() + "\"", field.name(),
                     SYSTEM_DEFAULT, true, null, decisions));
         }

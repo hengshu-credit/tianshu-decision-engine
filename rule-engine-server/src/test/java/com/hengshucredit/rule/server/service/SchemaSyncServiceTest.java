@@ -55,16 +55,21 @@ public class SchemaSyncServiceTest {
         assertTrue(containsSql(jdbc.sqlList, "ADD COLUMN `version_mode` VARCHAR(16)"));
         assertTrue(containsSql(jdbc.sqlList, "ADD COLUMN `version_binding_id` BIGINT"));
     }
-    @Test public void operationLogUpgradeOnlyAddsShortMetadataColumnsAndIsIdempotent() throws Exception {
+    @Test public void operationLogUpgradeAddsMetadataAndIntervalWithoutRewritingHistoryAndIsIdempotent() throws Exception {
         SchemaSyncService service = new SchemaSyncService();
-        FakeJdbcTemplate jdbc = new FakeJdbcTemplate("target_version", "change_summary");
+        FakeJdbcTemplate jdbc = new FakeJdbcTemplate("target_version", "change_summary", "leave_time");
+        jdbc.missingTables.add("console_operation_log_lock");
+        jdbc.missingIndexes.add("idx_console_operation_user_last");
         setField(service, "jdbcTemplate", jdbc);
         Method method = SchemaSyncService.class.getDeclaredMethod("ensureConsoleOperationLogSchema"); method.setAccessible(true);
         method.invoke(service);
-        assertEquals(2, jdbc.sqlList.size());
+        assertEquals(5, jdbc.sqlList.size());
         assertTrue(containsSql(jdbc.sqlList, "`target_version` VARCHAR(64)"));
         assertTrue(containsSql(jdbc.sqlList, "`change_summary` VARCHAR(160)"));
-        jdbc.missingColumns.clear(); jdbc.sqlList.clear();
+        assertTrue(containsSql(jdbc.sqlList, "`leave_time` DATETIME(6)"));
+        assertTrue(containsSql(jdbc.sqlList, "CREATE TABLE `console_operation_log_lock`"));
+        assertTrue(containsSql(jdbc.sqlList, "ADD INDEX `idx_console_operation_user_last` (`user_id`, `id`)"));
+        jdbc.missingColumns.clear(); jdbc.missingTables.clear(); jdbc.missingIndexes.clear(); jdbc.sqlList.clear();
         method.invoke(service);
         assertTrue(jdbc.sqlList.isEmpty());
     }
@@ -249,7 +254,7 @@ public class SchemaSyncServiceTest {
         assertTrue(containsSql(jdbcTemplate.sqlList,
                 "ALTER TABLE `rule_billing_summary` DROP INDEX `uk_billing_summary_key`"));
         assertTrue(containsSql(jdbcTemplate.sqlList,
-                "ADD UNIQUE KEY `uk_billing_summary_key` (`summary_date`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`, `auth_id`, `currency`)"));
+                "ADD UNIQUE KEY `uk_billing_summary_key` (`actor_user_id`, `summary_date`, `project_id`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`, `auth_id`, `currency`)"));
     }
 
     @Test

@@ -755,6 +755,15 @@
           style="margin-bottom: 12px"
         />
 
+        <template v-if="genericOnnxInputs.length">
+          <el-alert title="通用 ONNX：按以下节点类型和维度填写参数，动态维度可使用实际批次数；数组各行长度必须一致。" type="info" :closable="false" />
+          <el-table :data="genericOnnxInputs" size="small" border style="margin: 12px 0">
+            <el-table-column prop="name" label="原始输入节点" />
+            <el-table-column prop="type" label="元素类型" />
+            <el-table-column prop="shape" label="维度（含批次）" />
+          </el-table>
+        </template>
+
         <div v-if="testMode === 'manual'" class="test-form-wrapper">
           <div v-if="testFields.length > 0" class="test-form-grid">
             <div
@@ -811,6 +820,14 @@
                 style="width: 100%"
                 format="YYYY-MM-DD"
                 value-format="YYYY-MM-DD"
+              />
+              <el-input
+                v-else-if="['ARRAY', 'LIST', 'VECTOR', 'OBJECT', 'MAP'].includes(field.fieldType)"
+                :model-value="testStructuredText(testParams[field.fieldName])"
+                @update:model-value="testParams[field.fieldName] = $event"
+                type="textarea"
+                :rows="3"
+                :placeholder="['OBJECT', 'MAP'].includes(field.fieldType) ? 'JSON 对象，例如 {&quot;value&quot;: 1}' : 'JSON 数组，例如 [[1, 2]]'"
               />
               <el-input
                 v-else
@@ -985,7 +1002,11 @@ const MODEL_TYPE_LABELS = {
   CLASSIFICATION: '分类',
   REGRESSION: '回归',
   CLUSTERING: '聚类',
-  ML: '机器学习',
+  TREE: '决策树',
+  MINING: '集成模型',
+  GLM: '广义线性模型',
+  NAIVE_BAYES: '朴素贝叶斯',
+  ML: '通用模型',
 }
 
 export default {
@@ -1100,6 +1121,18 @@ export default {
         this.model &&
         (this.model.modelFormat === 'PMML' || this.model.modelFormat === 'ONNX')
       )
+    },
+    genericOnnxInputs() {
+      const model = this.testVersionContext?.model || this.model
+      const config = this.parseModelConfig(model.modelConfig)
+      if (model.modelFormat !== 'ONNX' || config.onnxTaskType !== 'GENERIC') return []
+      return Object.entries(config.nodeMetadata?.inputs || {}).map(([name, metadata]) => ({
+        name,
+        type: metadata.type,
+        shape: metadata.shape?.length
+          ? '[' + metadata.shape.map(size => size < 0 ? '动态' : size).join(', ') + ']'
+          : '标量',
+      }))
     },
     onnxTaskLabel() {
       return getOnnxTaskLabel(this.parsedModelConfig.onnxTaskType)
@@ -2154,6 +2187,9 @@ export default {
       const number = Number(text)
       return String(number) === text && (Number.isSafeInteger(number) || !Number.isInteger(number)) ? number : value
     },
+    testStructuredText(value) {
+      return typeof value === 'string' ? value : stringifyExactJson(value ?? null)
+    },
     buildModelTestParams() {
       const values = parseExactJson(this.testInputBaseJson || '{}')
       for (const field of this.testFields) {
@@ -2162,6 +2198,13 @@ export default {
         if (value === undefined) continue
         if (['NUMBER', 'DOUBLE', 'INTEGER', 'LONG', 'DECIMAL', 'FLOAT', 'PROBABILITY'].includes(field.fieldType) && value !== null && value !== '') {
           value = createExactNumber(this.testNumericText(value))
+        }
+        if (['ARRAY', 'LIST', 'VECTOR', 'OBJECT', 'MAP'].includes(field.fieldType) && value !== null) {
+          if (typeof value === 'string') value = parseExactJson(value)
+          const expectsArray = ['ARRAY', 'LIST', 'VECTOR'].includes(field.fieldType)
+          if (value !== null && (expectsArray ? !Array.isArray(value) : typeof value !== 'object' || Array.isArray(value) || isExactNumber(value))) {
+            throw new Error(`参数 ${path} 必须是 JSON ${expectsArray ? '数组' : '对象'}`)
+          }
         }
         const parts = Object.hasOwn(values, path) ? [path] : path.split('.')
         let target = values

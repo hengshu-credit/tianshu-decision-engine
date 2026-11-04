@@ -13,6 +13,9 @@ import java.time.LocalDateTime;
 
 @Configuration
 public class MybatisPlusConfig {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private com.hengshucredit.rule.server.security.ConsoleRecordOwnership recordOwnership;
     @Bean
     public com.baomidou.mybatisplus.autoconfigure.ConfigurationCustomizer credentialTypeHandlers(
             com.hengshucredit.rule.server.auth.StoredCredentialCodec codec,
@@ -43,6 +46,9 @@ public class MybatisPlusConfig {
         return new MetaObjectHandler() {
             @Override
             public void insertFill(MetaObject metaObject) {
+                if (recordOwnership != null && metaObject.getOriginalObject() instanceof com.hengshucredit.rule.model.entity.AccountOwnedRecord record) {
+                    recordOwnership.capture(record);
+                }
                 this.strictInsertFill(metaObject, "createTime", LocalDateTime.class, LocalDateTime.now());
                 this.strictInsertFill(metaObject, "updateTime", LocalDateTime.class, LocalDateTime.now());
             }

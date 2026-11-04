@@ -300,7 +300,7 @@
           </el-select>
           <el-button v-if="permissionScope !== 'DEFAULT'" link @click="resetProjectPermissions">此项目全部继承默认</el-button>
         </el-form-item>
-        <el-alert title="默认不区分项目。选择某个项目后，可单独允许或拒绝模块权限；未配置项继承默认权限。仅指定项目且清单为空时只能访问全局内容。" type="info" :closable="false" />
+        <el-alert title="项目权限决定可访问的业务范围；操作、日志及变更记录默认仅本人可见。查看其他账户的记录需要单独授予“跨账户查看记录”，项目权限覆盖不能授予该能力。" type="info" :closable="false" />
       </el-form>
       <el-table :data="permissionRows" max-height="420">
         <el-table-column prop="permissionGroup" label="模块" width="130" />
@@ -493,7 +493,7 @@ export default {
   },
   computed: {
     canViewAccounts() {
-      return hasPermission(['account:view', 'account:manage', 'account:approve', 'account:role-assign', 'account:password-reset'])
+      return hasPermission(['account:view', 'account:manage', 'account:role-assign', 'account:password-reset'])
     },
     canViewRoles() { return hasPermission(['role:view', 'role:manage']) },
     canLoadRoleOptions() { return this.canViewRoles || hasPermission(['account:manage', 'account:role-assign']) },

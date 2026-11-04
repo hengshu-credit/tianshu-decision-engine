@@ -4,7 +4,7 @@
       <div>
         <span class="page-eyebrow">LIFECYCLE GOVERNANCE</span>
         <h1>审批任务中心</h1>
-        <p>优先处理待审批事项，也可按申请人、资源和动作追踪完整变更记录。</p>
+        <p>优先处理待审批事项，也可按申请人、资源和动作追踪变更；仅展示本人及明确授权的记录。</p>
       </div>
       <div class="header-stat">
         <strong>{{ summary.pendingCount }}</strong>

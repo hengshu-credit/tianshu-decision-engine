@@ -23,12 +23,13 @@ public class ConsoleProjectAccess {
     public Scope current() {
         Scope async = ASYNC_SCOPE.get();
         if (async != null) return async;
-        if (!properties.isEnabled() || !(RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attrs)) return null;
+        if (!(RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attrs)) return null;
         var request = attrs.getRequest();
         String path = request.getRequestURI();
         if (!path.startsWith("/api/rule/") || path.startsWith("/api/rule/sync/")
                 || path.startsWith("/api/rule/openapi/") || path.startsWith("/api/rule/runtime/")
                 || path.equals("/api/rule/auth/token") || path.equals("/api/rule/log/report")) return null;
+        if (!properties.isEnabled()) return new Scope(null, Set.of(), Set.of());
         if (request.getAttribute(ATTRIBUTE) instanceof Scope scope) return scope;
         var session = request.getSession(false);
         Object identity = session == null ? null : session.getAttribute(properties.getSessionUserIdAttribute());

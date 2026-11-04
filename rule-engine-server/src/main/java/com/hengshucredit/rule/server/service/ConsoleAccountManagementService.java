@@ -321,6 +321,7 @@ public class ConsoleAccountManagementService {
         return permissionMapper.selectList(
                 new LambdaQueryWrapper<ConsolePermission>()
                         .eq(ConsolePermission::getStatus, 1)
+                        .in(ConsolePermission::getPermissionCode, com.hengshucredit.rule.server.security.ConsolePermissionCodes.allCodes())
                         .orderByAsc(ConsolePermission::getSortOrder));
     }
 
@@ -590,7 +591,8 @@ public class ConsoleAccountManagementService {
         LinkedHashSet<String> codes = new LinkedHashSet<>();
         for (ConsolePermission permission
                 : permissionMapper.selectByIds(permissionIds)) {
-            if (Integer.valueOf(1).equals(permission.getStatus())) {
+            if (Integer.valueOf(1).equals(permission.getStatus())
+                    && com.hengshucredit.rule.server.security.ConsolePermissionCodes.allCodes().contains(permission.getPermissionCode())) {
                 codes.add(permission.getPermissionCode());
             }
         }
@@ -606,7 +608,8 @@ public class ConsoleAccountManagementService {
         for (ConsolePermission permission : permissionMapper.selectByIds(
                 rows.stream().map(ConsoleUserPermissionOverride::getPermissionId)
                         .distinct().toList())) {
-            codes.put(permission.getId(), permission.getPermissionCode());
+            if (com.hengshucredit.rule.server.security.ConsolePermissionCodes.allCodes().contains(permission.getPermissionCode()))
+                codes.put(permission.getId(), permission.getPermissionCode());
         }
         Map<String, String> result = new LinkedHashMap<>();
         for (ConsoleUserPermissionOverride row : rows) {

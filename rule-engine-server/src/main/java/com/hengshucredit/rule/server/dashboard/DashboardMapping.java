@@ -29,18 +29,36 @@ public final class DashboardMapping {
 
     public record DecisionValues(Set<String> pass,
                                  Set<String> review,
-                                 Set<String> reject) {
+                                 Set<String> reject,
+                                 Set<Long> passRefIds,
+                                 Set<Long> reviewRefIds,
+                                 Set<Long> rejectRefIds) {
+        public DecisionValues(Set<String> pass, Set<String> review, Set<String> reject) {
+            this(pass, review, reject, Set.of(), Set.of(), Set.of());
+        }
         public DecisionValues {
             pass = immutable(pass);
             review = immutable(review);
             reject = immutable(reject);
+            passRefIds = immutable(passRefIds);
+            reviewRefIds = immutable(reviewRefIds);
+            rejectRefIds = immutable(rejectRefIds);
         }
 
-        private static Set<String> immutable(Set<String> values) {
+        private static <T> Set<T> immutable(Set<T> values) {
             return values == null
                     ? Collections.emptySet()
                     : Collections.unmodifiableSet(new LinkedHashSet<>(values));
         }
+    }
+
+    public static String normalizeDecisionValue(String value) {
+        String text = value.trim().toUpperCase(java.util.Locale.ROOT);
+        if (text.matches("-?(0|[1-9]\\d*)(\\.\\d+)?([Ee][+-]?\\d+)?")) {
+            try { return new java.math.BigDecimal(text).stripTrailingZeros().toEngineeringString(); }
+            catch (NumberFormatException ignored) { /* 保留非数值结果编码。 */ }
+        }
+        return text;
     }
 
     public record StoredMapping(RefType refType,

@@ -9,7 +9,6 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -223,7 +222,7 @@ public class DashboardApplicationService {
     private Decision classify(String value,
                               DashboardMapping.DecisionValues decisions) {
         if (!hasText(value) || decisions == null) return Decision.UNKNOWN;
-        String normalized = value.trim().toUpperCase(Locale.ROOT);
+        String normalized = DashboardMapping.normalizeDecisionValue(value);
         if (decisions.pass().contains(normalized)) return Decision.PASS;
         if (decisions.review().contains(normalized)) return Decision.REVIEW;
         if (decisions.reject().contains(normalized)) return Decision.REJECT;

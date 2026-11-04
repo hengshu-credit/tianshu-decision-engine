@@ -29,6 +29,9 @@ public class OnnxModelExecutionService {
 
     public Map<String, Object> execute(byte[] modelBytes, String configJson, Map<String, Object> params) {
         OnnxTaskConfig config = OnnxTaskConfig.parse(configJson);
+        if (config.getTaskType() == OnnxTaskType.GENERIC) {
+            return new GenericOnnxExecutor(sessionManager).execute(modelBytes, config.getRuntimeConfig(), params);
+        }
         String image = image(params);
         switch (config.getTaskType()) {
             case YUNET_FACE_DETECTION:

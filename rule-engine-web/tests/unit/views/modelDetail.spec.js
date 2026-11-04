@@ -785,6 +785,39 @@ describe('ModelDetail — 模型测试弹窗', () => {
   beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.unmount() })
 
+  test('表单张量参数提交为 JSON 数组并保留大整数，拒绝错误容器类型', () => {
+    wrapper.vm.testFields = [{ fieldName: 'features', fieldType: 'LIST' }, { fieldName: 'meta', fieldType: 'OBJECT' }]
+    wrapper.vm.testInputBaseJson = '{}'
+    wrapper.vm.testParams = { features: '[[9007199254740993, 2]]', meta: '{"label":"A"}' }
+    expect(wrapper.vm.buildJsonStr()).toContain('9007199254740993')
+    expect(wrapper.vm.buildJsonStr()).not.toContain('"[[9007199254740993')
+    expect(wrapper.vm.buildModelTestParams().meta).toEqual({ label: 'A' })
+    expect(wrapper.vm.testStructuredText([[1, 2]])).toBe('[[1,2]]')
+    wrapper.vm.testParams.features = '{}'
+    expect(() => wrapper.vm.buildModelTestParams()).toThrow('必须是 JSON 数组')
+    wrapper.vm.testParams.features = '[[1,2]]'
+    wrapper.vm.testParams.meta = '[]'
+    expect(() => wrapper.vm.buildModelTestParams()).toThrow('必须是 JSON 对象')
+    wrapper.vm.testParams.features = '[invalid'
+    expect(() => wrapper.vm.buildModelTestParams()).toThrow()
+  })
+
+  test('通用 ONNX 测试显示所选版本的真实节点类型与维度', async () => {
+    const model = { ...mockModel(), modelFormat: 'ONNX', modelConfig: JSON.stringify({
+      onnxTaskType: 'GENERIC', nodeMetadata: { inputs: {
+        'Feature.Input': { type: 'FLOAT', shape: [-1, 2] },
+        scalar: { type: 'DOUBLE', shape: [] },
+      } },
+    }) }
+    modelApi.getModelVersionTestContext.mockResolvedValue({ data: mockTestContext(model) })
+    await wrapper.vm.openTestDialog()
+    expect(wrapper.vm.genericOnnxInputs).toEqual([
+      { name: 'Feature.Input', type: 'FLOAT', shape: '[动态, 2]' },
+      { name: 'scalar', type: 'DOUBLE', shape: '标量' },
+    ])
+    expect(wrapper.vm.testReady).toBe(true)
+  })
+
   test('openTestDialog 打开弹窗并载入同版本冻结字段', async () => {
     modelApi.getModelVersionTestContext.mockResolvedValue({ data: mockTestContext(mockModel(), {
       inputs: [{ refId: 200, refType: 'DATA_OBJECT', scriptName: 'TaxRequest.amount', label: '税务请求/金额', valueType: 'NUMBER' }],

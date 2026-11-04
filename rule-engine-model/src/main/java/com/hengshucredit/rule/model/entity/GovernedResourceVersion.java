@@ -11,7 +11,9 @@ import java.time.LocalDateTime;
 
 @Data
 @TableName("governed_resource_version")
-public class GovernedResourceVersion {
+public class GovernedResourceVersion implements AccountOwnedRecord {
+    @com.baomidou.mybatisplus.annotation.TableField(fill = com.baomidou.mybatisplus.annotation.FieldFill.INSERT, updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER)
+    private Long actorUserId;
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long governedResourceId;

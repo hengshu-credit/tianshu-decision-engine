@@ -11,6 +11,16 @@ public interface DashboardMappingRepository {
 
     RuleVariable findVariable(Long id);
 
+    record SystemDefaults(String mappingsJson, long version) { }
+
+    default SystemDefaults findSystemDefaults() {
+        return new SystemDefaults("{}", 0L);
+    }
+
+    default void saveSystemDefaults(String mappingsJson, long version, String operator) {
+        throw new UnsupportedOperationException("公共默认存储未配置");
+    }
+
     default RuleDataObjectField findDataObjectField(Long id) {
         return null;
     }

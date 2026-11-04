@@ -464,14 +464,47 @@ describe('ModelList — 上传模型', () => {
     errorMessage.mockRestore()
   })
 
-  test('选择 ONNX 文件后显示任务配置并切换到神经网络类型', () => {
+  test('选择 ONNX 文件默认通用推理，不强制标注神经网络', () => {
     const file = { name: 'det_10g.onnx', raw: { name: 'det_10g.onnx' } }
     wrapper.vm.handleFileChange(file, [file])
     expect(wrapper.vm.isOnnxFile).toBe(true)
-    expect(wrapper.vm.uploadForm.modelType).toBe('NEURAL_NET')
+    expect(wrapper.vm.uploadForm.modelType).toBe('')
+    expect(wrapper.vm.uploadForm.onnxTaskType).toBe('GENERIC')
     wrapper.vm.onOnnxTaskChange('SCRFD_FACE_DETECTION')
     expect(wrapper.vm.uploadForm.onnxConfig).toMatchObject({ inputWidth: 640, inputHeight: 640 })
     expect(wrapper.vm.uploadSupportsGpu).toBe(true)
+  })
+
+  test('留空大类上传 PMML 时由后端识别，上传请求不再携带测试参数', async () => {
+    wrapper.vm.handleUpload()
+    Object.assign(wrapper.vm.uploadForm, { scope: 'GLOBAL', modelCode: 'regression', modelName: '回归' })
+    wrapper.vm.handleFileChange({ name: 'model.pmml', raw: new Blob(['pmml']) }, [])
+    modelApi.uploadModel.mockResolvedValue({ data: { id: 10 } })
+    wrapper.vm.handleDoUpload()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const payload = modelApi.uploadModel.mock.calls[0][0]
+    expect(payload.has('modelType')).toBe(false)
+    expect(payload.has('testParams')).toBe(false)
+    expect(payload.has('onnxTaskType')).toBe(false)
+    expect(wrapper.vm.uploadVisible).toBe(false)
+  })
+
+  test('通用 ONNX 不填写图片任务即可上传，手动大类保留', async () => {
+    wrapper.vm.handleUpload()
+    Object.assign(wrapper.vm.uploadForm, { scope: 'GLOBAL', modelCode: 'tree', modelName: '树模型', modelType: 'XGBOOST' })
+    wrapper.vm.handleFileChange({ name: 'tree.onnx', raw: new Blob(['onnx']) }, [])
+    modelApi.uploadModel.mockResolvedValue({ data: { id: 10 } })
+    wrapper.vm.handleDoUpload()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const payload = modelApi.uploadModel.mock.calls[0][0]
+    expect(payload.get('onnxTaskType')).toBe('GENERIC')
+    expect(payload.get('modelType')).toBe('XGBOOST')
+    expect(payload.has('testParams')).toBe(false)
+  })
+
+  test('未标注大类的通用 ONNX 仍可编辑 GPU 配置', () => {
+    wrapper.vm.handleEdit({ id: 1, modelFormat: 'ONNX', modelType: 'ML', modelConfig: '{"onnxTaskType":"GENERIC"}' })
+    expect(wrapper.vm.editSupportsGpu).toBe(true)
   })
 
   test('上传 ONNX 时提交任务类型、配置并更新进度', async () => {

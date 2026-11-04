@@ -11,7 +11,9 @@ import java.time.LocalDateTime;
 
 @Data
 @TableName("offline_transfer_log")
-public class OfflineTransferLog {
+public class OfflineTransferLog implements AccountOwnedRecord {
+    @com.baomidou.mybatisplus.annotation.TableField(fill = com.baomidou.mybatisplus.annotation.FieldFill.INSERT, updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER)
+    private Long actorUserId;
     @TableId(type = IdType.AUTO)
     private Long id;
     private String operationType;

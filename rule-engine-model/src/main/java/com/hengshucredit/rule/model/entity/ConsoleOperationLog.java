@@ -28,4 +28,6 @@ public class ConsoleOperationLog {
     private String clientIp;
     private Long durationMs;
     private LocalDateTime createTime;
+    /** 连续相同操作最后一次完成的时间。 */
+    private LocalDateTime leaveTime;
 }

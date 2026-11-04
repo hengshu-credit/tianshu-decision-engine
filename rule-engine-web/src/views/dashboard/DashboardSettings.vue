@@ -3,18 +3,25 @@
     <div class="module-hint dashboard-settings-heading">
       <div>
         <div class="hint-title">数据看板设置</div>
-        <div class="hint-text">字段关联始终保存资源 ID；项目覆盖未配置的字段会逐项继承个人默认，再回落到系统默认。</div>
+        <div class="hint-text">字段关联始终保存资源 ID；个人项目覆盖逐项继承个人默认，再继承管理员维护的公共默认。</div>
       </div>
       <el-button @click="$router.push('/dashboard')">返回看板</el-button>
     </div>
 
     <div class="uiue-search-container uiue-filter-toolbar">
       <el-form :inline="true" size="small">
-        <el-form-item label="配置范围">
+        <el-form-item v-if="canManageDefaults" label="配置类型">
+          <el-radio-group v-model="editSystemDefaults" :disabled="saving" @change="changeScope">
+            <el-radio-button :value="false">我的配置</el-radio-button>
+            <el-radio-button :value="true">公共默认</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="!editSystemDefaults" label="配置范围">
           <project-resource-select
             v-model="projectId"
             clearable
             filterable
+            :disabled="saving"
             placeholder="个人默认（仅全局字段）"
             style="width: 280px"
             @change="load"
@@ -22,16 +29,20 @@
         </el-form-item>
         <el-form-item>
           <el-tag :type="projectId ? 'success' : 'info'">
-            {{ projectId ? '项目覆盖' : '个人默认' }}
+            {{ editSystemDefaults ? '公共默认' : projectId ? '项目覆盖' : '个人默认' }}
           </el-tag>
           <el-tag v-if="projectId && settings.projectOverride" type="warning">已创建覆盖</el-tag>
         </el-form-item>
       </el-form>
+      <div v-if="editSystemDefaults" class="btn-right">
+        <el-button :disabled="saving || loading" @click="loadPersonalDefaults">载入我的默认配置</el-button>
+      </div>
     </div>
 
+    <el-alert v-if="editSystemDefaults" title="公共默认仅可关联全局字段，保存后供所有账户继承；已有个人或项目覆盖继续保留。清空字段后保存即可移除该项公共配置。" type="info" :closable="false" />
     <el-alert
       v-if="!settings.editable && !loading"
-      title="当前控制台未启用用户登录，仅可查看系统默认字段映射。"
+      title="当前控制台未启用用户登录，仅可查看公共默认字段映射。"
       type="info"
       :closable="false"
       show-icon
@@ -90,23 +101,16 @@
       <el-table-column prop="label" label="指标字段" min-width="130" />
       <el-table-column label="引用字段" min-width="300">
         <template #default="{ row }">
-          <el-select
-            v-model="row.referenceKey"
-            filterable
+          <var-picker
+            :value="fieldPickerKey(row)"
+            :vars="fieldPickerOptions(row)"
+            value-key="reference"
+            :allow-custom="false"
+            :auto-switch-custom="false"
             :disabled="!settings.editable"
-            placeholder="选择变量或对象字段"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="option in optionsFor(row)"
-              :key="optionKey(option)"
-              :label="option.label"
-              :value="optionKey(option)"
-            >
-              <span>{{ option.label }}</span>
-              <small class="dashboard-option-meta">{{ option.valueType }} · {{ scopeLabel(option.scope) }}</small>
-            </el-option>
-          </el-select>
+            placeholder="选择引擎字段或常量"
+            @input="selectFieldReference(row, $event)"
+          ><template #version>当前生效</template></var-picker>
         </template>
       </el-table-column>
       <el-table-column label="JSON 来源" width="140">
@@ -124,7 +128,8 @@
       </el-table-column>
       <el-table-column label="状态" width="130" align="center">
         <template #default="{ row }">
-          <el-tooltip v-if="!row.valid" :content="row.errorMessage" placement="top">
+          <el-tag v-if="!row.referenceKey" type="info" size="small">未配置</el-tag>
+          <el-tooltip v-else-if="!row.valid" :content="row.errorMessage" placement="top">
             <el-tag type="danger" size="small">映射失效</el-tag>
           </el-tooltip>
           <el-tag v-else type="success" size="small">可用</el-tag>
@@ -137,7 +142,7 @@
             type="primary"
             :disabled="!settings.editable || !canRestore(row)"
             @click="restore(row)"
-          >恢复继承</el-button>
+          >{{ editSystemDefaults ? '清除配置' : '恢复继承' }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -145,17 +150,24 @@
     <el-card v-if="decisionRow" shadow="never" class="dashboard-decision-values">
       <template #header>
         <strong>决策结果取值</strong>
-        <span>不区分大小写，使用英文逗号分隔；三组取值不可重叠。</span>
+        <span>选择引擎常量，按 ID 跟随当前生效值；三组取值不可重叠。</span>
       </template>
       <el-form label-width="90px" size="small">
-        <el-form-item label="通过">
-          <el-input v-model="decisionRow.passValues" :disabled="!settings.editable" placeholder="0,100,PASS" />
-        </el-form-item>
-        <el-form-item label="人审">
-          <el-input v-model="decisionRow.reviewValues" :disabled="!settings.editable" placeholder="2,102,REVIEW" />
-        </el-form-item>
-        <el-form-item label="拒绝">
-          <el-input v-model="decisionRow.rejectValues" :disabled="!settings.editable" placeholder="1,101,REJECT" />
+        <el-form-item v-for="group in decisionGroups" :key="group.key" :label="group.label">
+          <div class="dashboard-decision-references">
+            <div class="dashboard-reference-tags">
+              <el-tag v-for="id in decisionRow[group.key + 'RefIds']" :key="id" :closable="settings.editable" @close="removeDecisionReference(group.key, id)">
+                <content-reference :value="constantReference(id)" />
+              </el-tag>
+              <el-tag v-for="value in splitValues(decisionRow[group.key + 'Values'])" :key="'legacy:' + value" type="info">
+                <content-reference :value="{ kind: 'LITERAL', value, valueType: 'STRING' }" /><span>（历史值，选择常量后替换）</span>
+              </el-tag>
+            </div>
+            <var-picker :value="''" :vars="constantOptions" value-key="id" :allow-custom="false" :disabled="!settings.editable"
+              placeholder="选择引擎常量，可添加多个" @input="addDecisionReference(group.key, $event)">
+              <template #version>当前生效</template>
+            </var-picker>
+          </div>
         </el-form-item>
       </el-form>
     </el-card>
@@ -167,18 +179,23 @@
         @click="restoreAll"
       >恢复全部继承</el-button>
       <el-button :disabled="!settings.editable" @click="load">取消修改</el-button>
-      <el-button type="primary" :loading="saving" :disabled="!settings.editable" @click="save">保存设置</el-button>
+      <el-button type="primary" :loading="saving" :disabled="!settings.editable" @click="save">{{ editSystemDefaults ? '保存公共默认' : '保存设置' }}</el-button>
     </div>
   </div>
 </template>
 
 <script>
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
+import VarPicker from '@/components/common/VarPicker.vue'
+import ContentReference from '@/components/common/ContentReference.vue'
 import {
   deleteDashboardSetting,
   getDashboardSettings,
-  saveDashboardSettings
+  saveDashboardSettings,
+  getDashboardDefaults,
+  saveDashboardDefaults
 } from '@/api/dashboard'
+import { hasPermission } from '@/security/permissionState'
 import { listProjects } from '@/api/project'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import {
@@ -190,11 +207,15 @@ import {
 const NUMERIC_FIELDS = new Set(['LONGITUDE', 'LATITUDE', 'PERIOD', 'AMOUNT'])
 
 export default {
-  components: { ProjectResourceSelect },
+  components: { ProjectResourceSelect, VarPicker, ContentReference },
   name: 'DashboardSettings',
   data() {
     return {
+      decisionGroups: [{ key: 'pass', label: '通过' }, { key: 'review', label: '人审' }, { key: 'reject', label: '拒绝' }],
       projectId: null,
+      editSystemDefaults: false,
+      initialRows: [],
+      loadRequestId: 0,
       projects: [],
       settings: { editable: false, projectOverride: false, options: [], fields: [] },
       rows: [],
@@ -204,6 +225,10 @@ export default {
     }
   },
   computed: {
+    canManageDefaults() { return hasPermission('system:edit') },
+    constantOptions() {
+      return this.settings.options.filter(option => option.varSource === 'CONSTANT' && !['OBJECT', 'LIST', 'MAP', 'ARRAY'].includes(option.valueType)).map(this.pickerOption)
+    },
     decisionRow() {
       return this.rows.find(row => row.metricField === 'DECISION_RESULT')
     }
@@ -239,15 +264,36 @@ export default {
         this.projects = []
       }
     },
-    async load() {
+    changeScope() {
+      this.projectId = null
+      this.load()
+    },
+    async loadPersonalDefaults() {
+      const requestId = ++this.loadRequestId
       this.loading = true
       try {
-        const response = await getDashboardSettings({ projectId: this.projectId })
-        this.applySettings(response.data || {})
+        const response = await getDashboardSettings({ projectId: null })
+        if (requestId === this.loadRequestId && this.editSystemDefaults) {
+          this.applySettings({ ...response.data, defaultVersion: this.settings.defaultVersion })
+        }
       } catch (error) {
-        this.$message.error(error.message || '字段映射加载失败')
+        this.$message.error(error.message || '个人默认加载失败')
       } finally {
-        this.loading = false
+        if (requestId === this.loadRequestId) this.loading = false
+      }
+    },
+    async load() {
+      const requestId = ++this.loadRequestId
+      this.loading = true
+      try {
+        const response = this.editSystemDefaults
+          ? await getDashboardDefaults()
+          : await getDashboardSettings({ projectId: this.projectId })
+        if (requestId === this.loadRequestId) this.applySettings(response.data || {})
+      } catch (error) {
+        if (requestId === this.loadRequestId) this.$message.error(error.message || '字段映射加载失败')
+      } finally {
+        if (requestId === this.loadRequestId) this.loading = false
       }
     },
     applySettings(settings) {
@@ -270,16 +316,25 @@ export default {
           source: mapping.mappingSource,
           valid: mapping.valid !== false,
           errorMessage: mapping.errorMessage || '',
-          passValues: this.joinValues(values.pass),
-          reviewValues: this.joinValues(values.review),
-          rejectValues: this.joinValues(values.reject)
+          passRefIds: (values.passRefIds || []).map(String),
+          reviewRefIds: (values.reviewRefIds || []).map(String),
+          rejectRefIds: (values.rejectRefIds || []).map(String),
+          passValues: values.passRefIds?.length || !mapping.refId ? '' : this.joinValues(values.pass),
+          reviewValues: values.reviewRefIds?.length || !mapping.refId ? '' : this.joinValues(values.review),
+          rejectValues: values.rejectRefIds?.length || !mapping.refId ? '' : this.joinValues(values.reject)
         }
       })
+      this.initialRows = this.rows.map(row => ({ ...row }))
     },
     async save() {
-      if (!this.settings.editable) return
+      if (!this.settings.editable || this.loading) return
       const mappings = {}
       for (const row of this.rows) {
+        if (!row.referenceKey) continue
+        const ownSource = this.projectId ? 'PROJECT_OVERRIDE' : 'USER_DEFAULT'
+        const original = this.initialRows.find(item => item.metricField === row.metricField)
+        if (!this.editSystemDefaults && row.source !== ownSource && original &&
+          ['referenceKey', 'jsonSource', 'passValues', 'reviewValues', 'rejectValues', 'passRefIds', 'reviewRefIds', 'rejectRefIds'].every(key => JSON.stringify(row[key]) === JSON.stringify(original[key]))) continue
         const reference = this.parseReference(row.referenceKey)
         if (!reference) {
           this.$message.warning(`请选择${row.label}的引用字段`)
@@ -292,18 +347,21 @@ export default {
             ? {
                 pass: this.splitValues(row.passValues),
                 review: this.splitValues(row.reviewValues),
-                reject: this.splitValues(row.rejectValues)
+                reject: this.splitValues(row.rejectValues),
+                passRefIds: row.passRefIds,
+                reviewRefIds: row.reviewRefIds,
+                rejectRefIds: row.rejectRefIds
               }
             : null
         }
       }
       this.saving = true
       try {
-        const response = await saveDashboardSettings(
-          { projectId: this.projectId }, { mappings }
-        )
+        const response = this.editSystemDefaults
+          ? await saveDashboardDefaults({ mappings, version: this.settings.defaultVersion })
+          : await saveDashboardSettings({ projectId: this.projectId }, { mappings })
         this.applySettings(response.data || {})
-        this.$message.success('数据看板字段映射已保存')
+        this.$message.success(this.editSystemDefaults ? '公共默认已保存，未覆盖的账户将自动继承' : '数据看板字段映射已保存')
       } catch (error) {
         this.$message.error(error.message || '保存失败')
       } finally {
@@ -312,6 +370,7 @@ export default {
     },
     async restore(row) {
       if (!this.settings.editable) return
+      if (this.editSystemDefaults) { row.referenceKey = ''; return }
       try {
         const response = await deleteDashboardSetting(
           row.metricField, { projectId: this.projectId }
@@ -340,6 +399,40 @@ export default {
         this.saving = false
       }
     },
+    pickerOption(option) {
+      const refType = option.varSource === 'CONSTANT' ? 'CONSTANT' : option.refType === 'DATA_OBJECT_FIELD' ? 'DATA_OBJECT' : option.refType
+      return { id: option.refId, _varId: option.refId, _refType: refType, varCode: option.code || '', varLabel: option.label,
+        varType: option.valueType, varSource: option.varSource, constantValue: option.constantValue, versionMode: 'LATEST',
+        _ref: { category: refType === 'CONSTANT' ? 'constant' : refType === 'DATA_OBJECT' ? 'object' : 'standalone' } }
+    },
+    fieldPickerOptions(row) {
+      const options = this.optionsFor(row).map(this.pickerOption)
+      if (row.referenceKey && !this.settings.options.some(option => this.optionKey(option) === row.referenceKey)) {
+        const ref = this.parseReference(row.referenceKey)
+        if (ref) options.push({ ...this.pickerOption({ ...ref, label: '不可用的字段引用' }), disabled: true })
+      }
+      return options
+    },
+    fieldPickerKey(row) {
+      const key = row.referenceKey || ''
+      const option = this.settings.options.find(item => this.optionKey(item) === row.referenceKey)
+      return option?.varSource === 'CONSTANT' ? key.replace('VARIABLE:', 'CONSTANT:') : key.replace('DATA_OBJECT_FIELD:', 'DATA_OBJECT:')
+    },
+    selectFieldReference(row, value) {
+      row.referenceKey = String(value || '').replace('CONSTANT:', 'VARIABLE:').replace('DATA_OBJECT:', 'DATA_OBJECT_FIELD:')
+    },
+    constantReference(id) {
+      return this.constantOptions.find(option => String(option.id) === String(id)) || { kind: 'REFERENCE', refType: 'CONSTANT', refId: id, label: '不可用的常量引用', resolved: false }
+    },
+    addDecisionReference(group, id) {
+      if (id == null || id === '') return
+      const key = group + 'RefIds'
+      this.decisionRow[key] = Array.from(new Set([...this.decisionRow[key], String(id)]))
+      this.decisionRow[group + 'Values'] = ''
+    },
+    removeDecisionReference(group, id) {
+      this.decisionRow[group + 'RefIds'] = this.decisionRow[group + 'RefIds'].filter(value => String(value) !== String(id))
+    },
     optionsFor(row) {
       const options = this.settings.options || []
       if (!NUMERIC_FIELDS.has(row.metricField)) return options
@@ -347,7 +440,7 @@ export default {
     },
     parseReference(value) {
       const match = String(value || '').match(/^(VARIABLE|DATA_OBJECT_FIELD):(\d+)$/)
-      return match ? { refType: match[1], refId: Number(match[2]) } : null
+      return match ? { refType: match[1], refId: Number.isSafeInteger(Number(match[2])) ? Number(match[2]) : match[2] } : null
     },
     optionKey(option) { return `${option.refType}:${option.refId}` },
     joinValues(values) { return Array.isArray(values) ? values.join(',') : '' },
@@ -358,10 +451,9 @@ export default {
     projectLabel(project) {
       return `${project.projectName || project.projectCode}（${project.projectCode}）`
     },
-    scopeLabel(scope) { return scope === 'GLOBAL' ? '全局' : '项目' },
     sourceLabel(source) {
       return {
-        SYSTEM_DEFAULT: '系统默认',
+        SYSTEM_DEFAULT: '公共默认',
         USER_DEFAULT: '个人默认',
         PROJECT_OVERRIDE: '项目覆盖'
       }[source] || '未知'
@@ -370,6 +462,7 @@ export default {
       return { SYSTEM_DEFAULT: 'info', USER_DEFAULT: 'success', PROJECT_OVERRIDE: 'warning' }[source] || 'info'
     },
     canRestore(row) {
+      if (this.editSystemDefaults) return Boolean(row.referenceKey)
       return row.source === (this.projectId ? 'PROJECT_OVERRIDE' : 'USER_DEFAULT')
     }
   }
@@ -389,11 +482,9 @@ export default {
   gap: 16px;
 }
 
-.dashboard-option-meta {
-  float: right;
-  margin-left: 16px;
-  color: var(--el-text-color-secondary);
-}
+.dashboard-decision-references { width: 100%; }
+.dashboard-reference-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.dashboard-reference-tags :deep(.el-tag__content) { display: inline-flex; align-items: center; gap: 6px; }
 
 .dashboard-decision-values :deep(.el-card__header) {
   display: flex;

@@ -13,7 +13,9 @@ import java.time.LocalDateTime;
 
 @Data
 @TableName("governance_approval_request")
-public class GovernanceApprovalRequest {
+public class GovernanceApprovalRequest implements AccountOwnedRecord {
+    @com.baomidou.mybatisplus.annotation.TableField(fill = com.baomidou.mybatisplus.annotation.FieldFill.INSERT, updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER)
+    private Long actorUserId;
     @TableId(type = IdType.AUTO)
     private Long id;
     private String requestNo;

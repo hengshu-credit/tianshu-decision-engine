@@ -57,7 +57,7 @@ public class BillingSummaryCurrencyIntegrationTest {
             migrate.setAccessible(true);
             migrate.invoke(migration);
             assertEquals(1, migrationJdbc.alters);
-            assertEquals(List.of("summary_date", "project_code", "billing_code", "billing_target", "target_ref_id", "auth_id", "currency"), columns(jdbc));
+            assertEquals(List.of("actor_user_id", "summary_date", "project_id", "project_code", "billing_code", "billing_target", "target_ref_id", "auth_id", "currency"), columns(jdbc));
             migrate.invoke(migration);
             assertEquals("已迁移索引不能每次启动重建", 1, migrationJdbc.alters);
 

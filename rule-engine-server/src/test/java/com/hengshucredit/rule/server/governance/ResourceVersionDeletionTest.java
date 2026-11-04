@@ -22,6 +22,9 @@ public class ResourceVersionDeletionTest {
             TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "delete-version"), entity);
         var resource = new GovernedResource(); resource.setResourceType("VARIABLE"); resource.setResourceId(7L); resource.setEffectiveVersionId(82L);
         var old = version(81L, 1); var latest = version(82L, 2);
+        ReflectionTestUtils.setField(service, "variableMapper", Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{RuleVariableMapper.class}, (p, m, a) -> {
+            var variable = new RuleVariable(); variable.setId(7L); variable.setSystemConstant(false); return variable;
+        }));
         ReflectionTestUtils.setField(service, "access", new ConsoleAccessGuard(null, null) { @Override public boolean can(String permission) { return true; } });
         ReflectionTestUtils.setField(service, "resources", Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{GovernedResourceMapper.class}, (p, m, a) -> resource));
         ReflectionTestUtils.setField(service, "approvals", new GovernanceApprovalService() {

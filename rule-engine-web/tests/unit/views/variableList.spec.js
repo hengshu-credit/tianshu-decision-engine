@@ -2,6 +2,17 @@
 import { mount } from '@test-utils'
 import { nextTick } from 'vue'
 
+test('系统常量的编辑和删除入口均只读，不启动删除确认', async () => {
+  const { default: view } = await import('@/views/variable/VariableList.vue')
+  const context = { dialogVisible: false, $message: { warning: vi.fn() }, $confirm: vi.fn() }
+  const system = { id: 1, systemConstant: true, varCode: 'ONE' }
+  view.methods.handleEdit.call(context, system)
+  view.methods.handleDelete.call(context, system)
+  expect(context.dialogVisible).toBe(false)
+  expect(context.$confirm).not.toHaveBeenCalled()
+  expect(context.$message.warning).toHaveBeenCalledTimes(2)
+})
+
 // 使用真实 Element Plus（setup.js 的 element-ui mock 没有挂载到 Vue.prototype）
 // Mock API 模块
 vi.mock('@/api/variable', () => ({

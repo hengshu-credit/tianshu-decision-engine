@@ -27,7 +27,7 @@ describe('GraphDesignerNavigator', () => {
 
     expect(source.match(/class="toolbar-action"/g)).toHaveLength(2)
     expect(source).not.toContain('.toolbar-action:hover')
-    expect(theme).toContain('background: var(--tianshu-bg-surface)')
+    expect(theme).toContain('background: var(--tianshu-primary-soft-bg)')
     expect(theme).toContain('background: var(--tianshu-button-soft-hover-bg)')
     expect(theme).toContain('background: var(--tianshu-button-soft-active-bg)')
   })

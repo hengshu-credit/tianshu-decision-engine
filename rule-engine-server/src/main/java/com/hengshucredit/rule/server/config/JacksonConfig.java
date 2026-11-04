@@ -48,11 +48,22 @@ public class JacksonConfig {
                 }
             }
         }).serializerByType(RuleTestSchema.class, new TestSchemaSerializer())
+                .mixIn(com.hengshucredit.rule.model.entity.AccountOwnedRecord.class, AccountOwnershipMixin.class)
+                .mixIn(com.hengshucredit.rule.model.entity.RuleVariable.class, SystemConstantMixin.class)
                 .mixIn(com.hengshucredit.rule.model.entity.RuleExecutionLog.class, StatisticsInternalMixin.class);
     }
 
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties({"ruleSetStatsJson", "ruleSetStatsStatus", "ruleSetStatsVersion"})
     private abstract static class StatisticsInternalMixin { }
+
+    private abstract static class AccountOwnershipMixin {
+        @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public abstract Long getActorUserId();
+    }
+    private abstract static class SystemConstantMixin {
+        @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+        public abstract Boolean getSystemConstant();
+    }
 
     /** 仅测试结构把引用ID写为文本，保持其它业务实体的Long序列化规则不变。 */
     private static final class TestSchemaSerializer extends JsonSerializer<RuleTestSchema> {

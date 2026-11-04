@@ -19,6 +19,9 @@ public class RuleVariable {
     private String scriptName;
     private String varType;
     private String varSource;
+    /** 由系统初始化脚本标记；业务写入不能修改此身份。 */
+    @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
+    private Boolean systemConstant;
     /** API/DB 等外部来源的绑定配置JSON */
     private String sourceConfig;
     /** 显式记录运行结果，供后续进件的历史衍生统计使用。 */

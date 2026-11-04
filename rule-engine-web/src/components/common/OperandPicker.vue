@@ -1,5 +1,5 @@
 <template>
-  <div class="operand-picker">
+  <div class="operand-picker" :class="{ 'operand-picker--virtual': virtualRef }">
     <condition-range-input v-if="rangeMode" :value="value" :value-type="expectedType || value?.valueType || 'NUMBER'" @input="onEditorApply" />
     <condition-collection-input v-else-if="collectionMode" :value="value" :value-type="expectedType || 'STRING'" @input="onEditorApply" />
     <var-picker
@@ -627,6 +627,7 @@ export default {
   width: 100%;
   flex-wrap: wrap;
 }
+.operand-picker.operand-picker--virtual { position: fixed; width: 0; height: 0; }
 .operand-function-args { display:flex; flex-wrap:wrap; gap:4px; width:100%; order:1; }
 .operand-argument { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border:1px solid var(--tianshu-border); border-radius:0; background:var(--tianshu-bg-muted); color:var(--tianshu-primary-text, var(--el-color-primary)); padding:4px 8px; cursor:pointer; }
 .operand-picker > .var-picker-wrap { flex: 1; min-width: 0; }

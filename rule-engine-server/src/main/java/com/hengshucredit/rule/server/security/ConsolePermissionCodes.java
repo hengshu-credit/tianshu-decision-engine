@@ -64,7 +64,7 @@ public final class ConsolePermissionCodes {
         definitions.add(new PermissionDefinition(
                 "account:manage", "管理账户", "账户管理", "ACTION", null, 1001));
         definitions.add(new PermissionDefinition(
-                "account:approve", "查看账户（旧权限兼容）", "账户管理", "ACTION", null, 1002));
+                "account:cross-record-view", "跨账户查看记录（仍受模块及项目授权限制）", "账户管理", "ACTION", null, 1002));
         definitions.add(new PermissionDefinition(
                 "account:role-assign", "分配账户权限", "账户管理", "ACTION", null, 1003));
         definitions.add(new PermissionDefinition(

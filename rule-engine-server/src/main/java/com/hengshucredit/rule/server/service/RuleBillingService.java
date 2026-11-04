@@ -37,6 +37,8 @@ import java.util.Map;
 
 @Service
 public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, RuleBillingConfig> {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.security.ConsoleRecordOwnership recordOwnership;
 
     private static final String TARGET_ENGINE = "ENGINE";
     private static final String TARGET_API = "API";
@@ -261,6 +263,7 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         try {
             List<RuleBillingRecord> records = buildEngineExecutionRecords(definition, success, costTimeMs,
                     errorMessage, authContext, capturedAt, "EXECUTION_SNAPSHOT");
+            if (recordOwnership != null) records.forEach(recordOwnership::capture);
             snapshot = new EngineBillingSnapshot(1, capturedAt, records, null);
         } catch (RuntimeException unavailable) {
             String reason = unavailable.getMessage() == null ? unavailable.getClass().getSimpleName() : unavailable.getMessage();
