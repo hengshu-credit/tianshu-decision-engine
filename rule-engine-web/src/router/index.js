@@ -82,6 +82,10 @@ const routes = [
     component: Layout,
     redirect: '/dashboard',
     children: [
+      { path: 'ledger', name: 'LedgerHome', component: () => import('@/views/ledger/LedgerHome.vue'), meta: { title: '台账记录', keepAlive: true } },
+      { path: 'ledger/articles/new', name: 'LedgerArticleCreate', component: () => import('@/views/ledger/LedgerEditor.vue'), meta: { title: '新建台账文章', menu: '/ledger' } },
+      { path: 'ledger/articles/:id/edit', name: 'LedgerArticleEdit', component: () => import('@/views/ledger/LedgerEditor.vue'), meta: { title: '编辑台账文章', menu: '/ledger' } },
+      { path: 'ledger/articles/:id', name: 'LedgerArticleRead', component: () => import('@/views/ledger/LedgerReader.vue'), meta: { title: '台账文章', menu: '/ledger' } },
       {
         path: 'dashboard',
         name: 'DashboardHome',

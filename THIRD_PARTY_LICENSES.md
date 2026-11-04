@@ -62,3 +62,12 @@ ONNX Runtime 与 JPMML 的许可证不同；启用 `onnx-gpu` Maven profile 时�
 - 境外行政区：geoBoundaries gbOpen，CC BY 4.0，页面保留来源链接。
 - 具体版本、上游链接、处理方式及地图审核边界见 [地图来源说明](rule-engine-web/public/maps/README.md)；整理数据许可证见 [chinese-geodata-LICENSE.txt](rule-engine-web/public/maps/chinese-geodata-LICENSE.txt)。
 
+## 台账 Markdown 与图片处理
+
+- `vditor` 4.0.1：MIT，用于台账 Markdown 编辑与解析。上游：[Vanessa219/vditor](https://github.com/Vanessa219/vditor)；[许可证全文](rule-engine-web/public/licenses/vditor-MIT.txt)。
+- `dompurify` 3.4.17：MPL-2.0 或 Apache-2.0，用于净化 Markdown 渲染结果。保留上游的 [Apache-2.0](rule-engine-web/public/licenses/dompurify-Apache-2.0.txt) 与 [MPL-2.0](rule-engine-web/public/licenses/dompurify-MPL-2.0.txt) 许可文本；上游：[cure53/DOMPurify](https://github.com/cure53/DOMPurify)。
+- `diff-match-patch` 1.0.5：Apache-2.0，Vditor 的传递依赖；[许可证全文](rule-engine-web/public/licenses/diff-match-patch-Apache-2.0.txt)。
+- `com.twelvemonkeys.imageio:imageio-webp` 3.15.0：BSD，用于服务端 WebP 解码，未引入 SVG/Batik 解码器。上游：[haraldk/TwelveMonkeys](https://github.com/haraldk/TwelveMonkeys)；许可证随 Maven 依赖 JAR 保留。
+
+前端许可文本随 `public/licenses/` 复制到独立部署产物。ClamAV 是通过协议连接的外部扫描服务，不包含在本项目构建产物中。
+

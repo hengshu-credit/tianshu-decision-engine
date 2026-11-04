@@ -2240,3 +2240,106 @@ CREATE TABLE IF NOT EXISTS `rule_system_asset` (
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统品牌图片';
+
+-- 台账模块：正文草稿与发布版本分开保存；素材内容不通过静态目录公开。
+CREATE TABLE IF NOT EXISTS `rule_ledger_article` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `scope` VARCHAR(16) NOT NULL DEFAULT 'PRIVATE',
+  `project_id` BIGINT DEFAULT NULL,
+  `owner_user_id` BIGINT NOT NULL,
+  `owner_name` VARCHAR(128) NOT NULL,
+  `draft_user_id` BIGINT DEFAULT NULL,
+  `draft_scope` VARCHAR(16) DEFAULT 'PRIVATE',
+  `draft_project_id` BIGINT DEFAULT NULL,
+  `draft_json` LONGTEXT,
+  `has_draft` TINYINT NOT NULL DEFAULT 1,
+  `published_version` INT NOT NULL DEFAULT 0,
+  `lock_version` BIGINT NOT NULL DEFAULT 0,
+  `deleted` TINYINT NOT NULL DEFAULT 0,
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_ledger_article_scope` (`scope`,`project_id`,`deleted`),
+  KEY `idx_ledger_article_owner` (`owner_user_id`,`has_draft`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='台账文章及私有编辑草稿';
+
+CREATE TABLE IF NOT EXISTS `rule_ledger_revision` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `article_id` BIGINT NOT NULL,
+  `version_no` INT NOT NULL,
+  `title` VARCHAR(200) NOT NULL,
+  `summary` VARCHAR(400) NOT NULL,
+  `summary_auto` TINYINT NOT NULL DEFAULT 1,
+  `body` LONGTEXT NOT NULL,
+  `category` VARCHAR(32) NOT NULL,
+  `scope` VARCHAR(16) NOT NULL,
+  `project_id` BIGINT DEFAULT NULL,
+  `occurred_time` DATETIME NOT NULL,
+  `activity_time` DATETIME NOT NULL,
+  `publish_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `actor_user_id` BIGINT NOT NULL,
+  `actor_name` VARCHAR(128) NOT NULL,
+  `change_summary` VARCHAR(400) NOT NULL,
+  `content_digest` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ledger_revision` (`article_id`,`version_no`),
+  KEY `idx_ledger_revision_time` (`activity_time`,`id`),
+  KEY `idx_ledger_revision_scope` (`scope`,`project_id`,`activity_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='不可变台账发布版本，同时作为时间线记录';
+
+CREATE TABLE IF NOT EXISTS `rule_ledger_event` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `title` VARCHAR(200) NOT NULL,
+  `status` VARCHAR(24) NOT NULL DEFAULT 'FOLLOWING',
+  `scope` VARCHAR(16) NOT NULL,
+  `project_id` BIGINT DEFAULT NULL,
+  `owner_user_id` BIGINT NOT NULL,
+  `owner_name` VARCHAR(128) NOT NULL,
+  `lock_version` BIGINT NOT NULL DEFAULT 0,
+  `deleted` TINYINT NOT NULL DEFAULT 0,
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_ledger_event_scope` (`scope`,`project_id`,`deleted`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='台账事件';
+
+CREATE TABLE IF NOT EXISTS `rule_ledger_asset` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(255) NOT NULL,
+  `content_type` VARCHAR(64) NOT NULL,
+  `size_bytes` BIGINT NOT NULL,
+  `source_size` BIGINT NOT NULL,
+  `width` INT DEFAULT NULL,
+  `height` INT DEFAULT NULL,
+  `sha256` VARCHAR(64) NOT NULL,
+  `scope` VARCHAR(16) NOT NULL DEFAULT 'PRIVATE',
+  `project_id` BIGINT DEFAULT NULL,
+  `owner_user_id` BIGINT NOT NULL,
+  `owner_name` VARCHAR(128) NOT NULL,
+  `scan_status` VARCHAR(24) NOT NULL DEFAULT 'PENDING',
+  `scan_message` VARCHAR(255) DEFAULT NULL,
+  `raw_content` LONGBLOB,
+  `content` LONGBLOB,
+  `lock_version` BIGINT NOT NULL DEFAULT 0,
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_ledger_asset_owner` (`owner_user_id`,`scan_status`),
+  KEY `idx_ledger_asset_scope` (`scope`,`project_id`,`scan_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='私有暂存、病毒检测及按范围授权的台账图片素材';
+
+CREATE TABLE IF NOT EXISTS `rule_ledger_revision_reference` (
+  `revision_id` BIGINT NOT NULL,
+  `ref_type` VARCHAR(16) NOT NULL,
+  `ref_id` BIGINT NOT NULL,
+  PRIMARY KEY (`revision_id`,`ref_type`,`ref_id`),
+  KEY `idx_ledger_revision_ref` (`ref_type`,`ref_id`,`revision_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='发布版本对事件和素材的稳定 ID 引用';
+
+CREATE TABLE IF NOT EXISTS `rule_ledger_draft_reference` (
+  `article_id` BIGINT NOT NULL,
+  `ref_type` VARCHAR(16) NOT NULL,
+  `ref_id` BIGINT NOT NULL,
+  PRIMARY KEY (`article_id`,`ref_type`,`ref_id`),
+  KEY `idx_ledger_draft_ref` (`ref_type`,`ref_id`,`article_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='当前私有草稿引用，防止被引用素材遭删除';

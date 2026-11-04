@@ -138,6 +138,7 @@ public class ConsoleDataPermissionHandler implements MultiDataPermissionHandler 
     }
 
     private String resourcePredicate(ConsoleProjectAccess.Scope scope, String table, String a, int depth) {
+        if (table.startsWith("rule_ledger_")) return ledgerPredicate(scope, table, a, depth);
         if ("rule_system_setting".equals(table)) return scope.globalCan(Boolean.TRUE.equals(mutation.get()) ? actionPermission("system") : "system:view") ? "1 = 1" : "1 = 0";
         String module = ROOT_MODULES.get(table);
         if (module != null) {
@@ -210,6 +211,36 @@ public class ConsoleDataPermissionHandler implements MultiDataPermissionHandler 
     private String project(ConsoleProjectAccess.Scope s, String column, boolean global) {
         String assigned = s.allProjects() ? column + " > 0" : s.projectIds().isEmpty() ? "1 = 0" : column + " IN (" + s.projectSql() + ")";
         return global ? "(" + column + " IS NULL OR " + column + " = 0 OR " + assigned + ")" : "(" + assigned + ")";
+    }
+
+    /** 台账属于团队内容；私有草稿和待检素材不借用审计日志跨账户权限。 */
+    private String ledgerPredicate(ConsoleProjectAccess.Scope s, String table, String a, int depth) {
+        if (s.userId() == null) return "1 = 0";
+        String permission = Boolean.TRUE.equals(mutation.get()) ? "ledger:edit" : "ledger:view";
+        String own = a + ".owner_user_id = " + s.userId();
+        String shared = "((" + a + ".scope = 'GLOBAL' AND " + (s.globalCan(permission) ? "1 = 1" : "1 = 0")
+                + ") OR (" + a + ".scope = 'PROJECT' AND " + projectPermission(s, a + ".project_id", permission) + "))";
+        String privateAccess = "(" + a + ".scope = 'PRIVATE' AND " + own + " AND " + (s.can(permission) ? "1 = 1" : "1 = 0") + ")";
+        return switch (table) {
+            case "rule_ledger_article" -> a + ".deleted = 0 AND ((" + privateAccess + " AND " + ledgerDraftScope(s, a, permission) + ") OR " + shared + ")";
+            case "rule_ledger_asset" -> "(" + privateAccess + " OR (" + a + ".scan_status = 'CLEAN' AND " + shared + "))";
+            case "rule_ledger_event" -> a + ".deleted = 0 AND " + shared;
+            case "rule_ledger_revision" -> shared + " AND EXISTS (SELECT 1 FROM rule_ledger_article ledger_parent WHERE ledger_parent.id = " + a + ".article_id AND (" + ledgerPredicate(s, "rule_ledger_article", "ledger_parent", depth + 1) + "))";
+            case "rule_ledger_revision_reference" -> child(s, a, "revision_id", "rule_ledger_revision", depth);
+            case "rule_ledger_draft_reference" -> "EXISTS (SELECT 1 FROM rule_ledger_article ledger_draft WHERE ledger_draft.id = " + a
+                    + ".article_id AND ledger_draft.deleted = 0 AND ledger_draft.draft_user_id = " + s.userId()
+                    + " AND " + ledgerDraftScope(s, "ledger_draft", permission) + " AND (" + ledgerPredicate(s, "rule_ledger_article", "ledger_draft", depth + 1) + "))";
+            default -> "1 = 0";
+        };
+    }
+    private String ledgerDraftScope(ConsoleProjectAccess.Scope s, String a, String permission) {
+        return "((" + a + ".draft_scope IS NULL OR " + a + ".draft_scope='PRIVATE') OR (" + a + ".draft_scope='GLOBAL' AND "
+                + (s.globalCan(permission) ? "1 = 1" : "1 = 0") + ") OR (" + a + ".draft_scope='PROJECT' AND " + projectPermission(s, a + ".draft_project_id", permission) + "))";
+    }
+    public String ledgerDraftPredicate(String alias) {
+        var scope = access.current();
+        if (scope == null || scope.userId() == null) return "1 = 0";
+        return "(" + alias + ".draft_user_id=" + scope.userId() + " AND " + ledgerDraftScope(scope, alias, "ledger:view") + ")";
     }
 
     private String transferLog(ConsoleProjectAccess.Scope scope, String alias, int depth) {

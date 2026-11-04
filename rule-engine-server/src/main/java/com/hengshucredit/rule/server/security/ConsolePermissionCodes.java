@@ -27,6 +27,9 @@ public final class ConsolePermissionCodes {
 
     private static List<PermissionDefinition> buildCatalog() {
         List<PermissionDefinition> definitions = new ArrayList<>();
+        definitions.add(new PermissionDefinition("ledger:view", "查看台账记录", "台账记录", "MENU", "/ledger", 80));
+        definitions.add(new PermissionDefinition("ledger:edit", "编写文章及上传素材", "台账记录", "ACTION", null, 81));
+        definitions.add(new PermissionDefinition("ledger:manage", "管理团队已发布台账及素材", "台账记录", "ACTION", null, 82));
         addGovernedResource(definitions, "system", "系统配置", "/system/settings", 1100);
         definitions.add(new PermissionDefinition("system:mail-test", "测试通知邮箱", "系统配置", "ACTION", null, 1103));
         definitions.add(new PermissionDefinition("system:audit", "查看系统配置变更记录", "系统配置", "ACTION", null, 1104));

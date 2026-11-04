@@ -53,16 +53,17 @@ import {
   writeSidebarState
 } from '@/layout/layoutState'
 describe('Layout — 菜单与路由归属', () => {
-  test('包含 19 个路由唯一、图标唯一的平铺一级菜单项', () => {
-    expect(SIDEBAR_MENUS).toHaveLength(19)
-    expect(new Set(SIDEBAR_MENUS.map(item => item.index)).size).toBe(19)
-    expect(new Set(SIDEBAR_MENUS.map(item => item.icon)).size).toBe(19)
+  test('包含 20 个路由唯一、图标唯一的平铺一级菜单项', () => {
+    expect(SIDEBAR_MENUS).toHaveLength(20)
+    expect(new Set(SIDEBAR_MENUS.map(item => item.index)).size).toBe(20)
+    expect(new Set(SIDEBAR_MENUS.map(item => item.icon)).size).toBe(20)
     expect(SIDEBAR_MENUS[0].permission).toBe('')
   })
 
   test('菜单使用确认后的语义图标映射', () => {
     expect(SIDEBAR_MENUS).toEqual([
       { index: '/dashboard', label: '数据看板', icon: 'DataAnalysis', permission: '' },
+      { index: '/ledger', label: '台账记录', icon: 'DocumentCopy', permission: 'ledger:view' },
       { index: '/project', label: '项目管理', icon: 'FolderOpened', permission: 'project:view' },
       { index: '/rule', label: '规则管理', icon: 'Operation', permission: 'rule:view' },
       { index: '/variable', label: '变量管理', icon: 'Collection', permission: 'field:view' },
@@ -85,6 +86,8 @@ describe('Layout — 菜单与路由归属', () => {
   })
 
   test.each([
+    ['/ledger/articles/new', '/ledger'],
+    ['/ledger/articles/7/edit', '/ledger'],
     ['/designer/table/1', '/rule'],
     ['/designer/expression/1/session-1', '/rule'],
     ['/project/1', '/project'],
@@ -609,7 +612,7 @@ describe('Layout — 全局布局集成', () => {
 
     expect(wrapper.findComponent(LayoutSidebar).exists()).toBe(false)
     expect(wrapper.find('.layout-primary-topbar').exists()).toBe(true)
-    expect(wrapper.findAll('.top-navigation__item')).toHaveLength(19)
+    expect(wrapper.findAll('.top-navigation__item')).toHaveLength(20)
     expect(wrapper.find('.top-navigation__more').exists()).toBe(false)
     expect(wrapper.find('.layout-account').exists()).toBe(true)
     expect(wrapper.findComponent(WorkspaceTabs).exists()).toBe(true)

@@ -37,6 +37,10 @@ export default defineConfig(({ mode }) => {
       viteStaticCopy({
         targets: [
           {
+            src: normalizePath(path.resolve(projectRoot, 'node_modules/vditor/dist')),
+            dest: 'vendor/vditor'
+          },
+          {
             src: normalizePath(path.resolve(projectRoot, 'node_modules/monaco-editor/min/vs')),
             dest: '.'
           }

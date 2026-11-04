@@ -37,10 +37,16 @@
         <onnxruntime.version>1.26.0</onnxruntime.version>
         <onnxruntime.artifactId>onnxruntime</onnxruntime.artifactId>
         <opencv.version>4.9.0-0</opencv.version>
+        <twelvemonkeys.version>3.15.0</twelvemonkeys.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>com.twelvemonkeys.imageio</groupId>
+                <artifactId>imageio-webp</artifactId>
+                <version>${twelvemonkeys.version}</version>
+            </dependency>
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>

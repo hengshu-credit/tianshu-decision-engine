@@ -1,6 +1,7 @@
 const PROJECT_CONTEXT_KEY = 'tianshu:project-context'
 
 const CONTEXT_PATHS = new Set([
+  '/ledger',
   '/rule',
   '/variable',
   '/datasource',

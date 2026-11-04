@@ -64,6 +64,11 @@ spring:
       namespace: ${SESSION_REDIS_NAMESPACE:tianshu:session}
 
 rule-engine:
+  ledger:
+    # ClamD INSTREAM，仅连接可信内网扫描服务；未配置或不可用时保留待检，禁止读取和共享。
+    antivirus-host: ${LEDGER_ANTIVIRUS_HOST:}
+    antivirus-port: ${LEDGER_ANTIVIRUS_PORT:3310}
+    antivirus-timeout-ms: ${LEDGER_ANTIVIRUS_TIMEOUT_MS:10000}
   # 可选的变量与数据对象初始配置。启用后每次 server 启动执行幂等脚本，
   # 脚本只补齐缺失编码，已有配置（包括人工修改）不会被覆盖。
   initial-data:

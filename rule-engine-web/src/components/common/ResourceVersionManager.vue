@@ -1,17 +1,17 @@
 <template>
   <span class="resource-version-entry">
     <el-button v-if="canView && showTrigger" link type="primary" data-action="version" size="small" @click.stop="open">版本</el-button>
-    <el-drawer v-model="visible" title="版本管理" size="min(1120px, 100vw)" append-to-body destroy-on-close :before-close="close">
+    <el-drawer v-model="visible" :class="provider?.className" title="版本管理" size="min(1120px, 100vw)" append-to-body destroy-on-close :before-close="close">
       <div class="resource-version-manager" :aria-busy="loading">
         <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
         <div class="uiue-search-container uiue-filter-toolbar">
           <el-select v-model="selected" aria-label="查看版本" :disabled="loading || editing || busy" @change="comparison = ''">
-            <el-option label="最新版（当前生产）" value="LATEST" :disabled="!workspace.latestVersionId" />
+            <el-option :label="provider ? '最新发布版本' : '最新版（当前生产）'" value="LATEST" :disabled="!workspace.latestVersionId" />
             <el-option-group label="业务版本">
               <el-option v-for="version in activeVersions" :key="version.versionId" :label="label(version)" :value="'r:' + version.versionId" />
             </el-option-group>
             <el-option v-if="selected.startsWith('r:') && currentVersion && !activeVersions.some(row => String(row.versionId) === String(currentVersion.id))" :value="selected" :label="`v${currentVersion.versionNo} · 历史修订 ${currentVersion.revisionNo}`" />
-            <el-option-group label="草稿与审批">
+            <el-option-group :label="provider ? '我的草稿' : '草稿与审批'">
               <el-option v-for="draft in workspace.drafts || []" :key="draft.id" :label="`草稿 #${draft.id} · ${statusLabel(draft.status)}`" :value="'d:' + draft.id" />
             </el-option-group>
           </el-select>
@@ -22,7 +22,7 @@
             <el-button v-if="canEdit" type="primary" :disabled="loading || !snapshot || busy || editing || selectedVersionDeleted || !!currentDraft && !editableDraft" @click="edit">{{ editableDraft ? '编辑草稿' : '基于此版本编辑' }}</el-button>
           </div>
         </div>
-        <p class="version-help">草稿与生产并存。新增发布形成新版本；覆盖只更新指定版本，历史修订和变更记录保留。覆盖旧版本不会切换当前最新版。</p>
+        <p class="version-help">{{ provider?.help || '草稿与生产并存。新增发布形成新版本；覆盖只更新指定版本，历史修订和变更记录保留。覆盖旧版本不会切换当前最新版。' }}</p>
         <template v-if="editing">
           <el-form label-width="100px" class="version-edit-form">
             <el-form-item label="变更说明"><el-input v-model="changeSummary" maxlength="500" placeholder="说明本次修改及原因" /></el-form-item>
@@ -40,14 +40,16 @@
             <el-select v-model="comparison" clearable placeholder="选择另一版本对比" aria-label="对比版本">
               <el-option v-for="item in workspace.history || []" :key="item.id" :value="String(item.id)" :label="`v${item.versionNo} · 修订 ${item.revisionNo}`" />
             </el-select>
-            <json-version-diff v-if="comparison && snapshot" :original="compared?.snapshotJson || '{}'" :modified="snapshot" :original-label="`对比版本 v${compared?.versionNo}`" modified-label="当前所选版本" />
-            <template v-else-if="snapshot">
+            <slot v-if="comparison && snapshot" name="comparison" :original="compared?.snapshotJson || '{}'" :modified="snapshot" :original-version="compared" :modified-version="currentVersion">
+              <json-version-diff :original="compared?.snapshotJson || '{}'" :modified="snapshot" :original-label="`对比版本 v${compared?.versionNo}`" modified-label="当前所选版本" />
+            </slot>
+            <slot v-else-if="snapshot" name="preview" :snapshot="snapshot" :version="currentVersion" :draft="currentDraft">
               <el-descriptions :column="2" border class="version-preview-summary"><el-descriptions-item v-for="field in previewFields" :key="field.key" :label="field.label">{{ field.value }}</el-descriptions-item></el-descriptions>
               <el-collapse><el-collapse-item title="完整配置快照" name="raw"><pre class="version-preview">{{ pretty(snapshot) }}</pre></el-collapse-item></el-collapse>
-            </template>
+            </slot>
             <el-empty v-else-if="!loading && !error" description="尚无生产版本，请先保存并发布资源" />
             <div v-else class="version-preview-placeholder" aria-hidden="true" />
-            <div v-if="currentDraft" class="version-actions uiue-action-group">
+            <div v-if="currentDraft && !provider" class="version-actions uiue-action-group">
               <el-button v-if="canReview" :disabled="busy" @click="review">查看审批详情</el-button>
               <el-button v-if="editableDraft && canEdit" type="danger" :disabled="busy" @click="discard">删除此草稿</el-button>
               <el-button v-if="editableDraft && canSubmit" type="primary" :loading="busy" @click="publish">提交发布审批</el-button>
@@ -60,7 +62,7 @@
               <el-table-column prop="changeSummary" label="变更说明" min-width="200" />
               <el-table-column prop="createBy" label="发布人" width="110" />
               <el-table-column prop="createTime" label="发布时间" min-width="170" />
-              <el-table-column label="操作" :width="operationColumnWidth(['预览', '删除版本'])"><template #default="{ row }"><el-button link @click="selected = 'r:' + row.versionId; tab = 'preview'">预览</el-button><el-button v-if="canEdit && !row.latest && !row.deleted" link type="danger" :disabled="busy" @click="remove(row)">删除版本</el-button></template></el-table-column>
+              <el-table-column label="操作" :width="operationColumnWidth(provider ? ['预览'] : ['预览', '删除版本'])"><template #default="{ row }"><el-button link @click="selected = 'r:' + row.versionId; tab = 'preview'">预览</el-button><el-button v-if="!provider && canEdit && !row.latest && !row.deleted" link type="danger" :disabled="busy" @click="remove(row)">删除版本</el-button></template></el-table-column>
             </el-table>
             <el-table :data="workspace.history || []" row-key="id" class="version-history">
               <el-table-column label="历史修订" width="170"><template #default="{ row }">v{{ row.versionNo }} · 修订 {{ row.revisionNo }}</template></el-table-column>
@@ -103,7 +105,7 @@ const fields = [
 export default {
   name: 'ResourceVersionManager',
   components: { JsonVersionDiff, MonacoEditor },
-  props: { resourceType: { type: String, required: true }, resourceId: { type: [String, Number], required: true }, showTrigger: { type: Boolean, default: true }, hasLegacy: Boolean },
+  props: { resourceType: { type: String, required: true }, resourceId: { type: [String, Number], required: true }, showTrigger: { type: Boolean, default: true }, hasLegacy: Boolean, provider: { type: Object, default: null } },
   emits: ['changed', 'legacy'],
   data: () => ({ visible: false, loading: false, busy: false, sequence: 0, contextGeneration: 0, workspace: {}, events: [], error: '', selected: 'LATEST', tab: 'preview', comparison: '', editing: false, editJson: '', changeSummary: '', publishMode: 'NEW', targetVersionId: '' }),
   computed: {
@@ -111,18 +113,19 @@ export default {
     canView() { return hasPermission(resourceActionPermission(this.resourceType, 'view')) },
     permissionScope() { return Object.hasOwn(this.workspace, 'projectId') ? { projectId: this.workspace.projectId, scope: this.workspace.scope } : undefined },
     canEdit() {
+      if (this.provider) return this.workspace.canEdit === true && hasPermission(resourceActionPermission(this.resourceType, 'edit'))
       if (this.resourceType === 'FUNCTION') {
         try { if (['JAVA', 'BEAN'].includes(parseMetadataResponse(this.snapshot || '{}').implType) && !hasPermission('function:native')) return false } catch { return false }
       }
       return hasPermission(resourceActionPermission(this.resourceType, 'edit'), this.permissionScope)
     },
-    canSubmit() { return this.canEdit && hasPermission('approval:submit', this.permissionScope) && hasPermission(resourceActionPermission(this.resourceType, 'submit'), this.permissionScope) },
-    canReview() { return hasPermission('approval:view') },
-    canExport() { return hasPermission('transfer:export', this.permissionScope) },
+    canSubmit() { return !this.provider && this.canEdit && hasPermission('approval:submit', this.permissionScope) && hasPermission(resourceActionPermission(this.resourceType, 'submit'), this.permissionScope) },
+    canReview() { return !this.provider && hasPermission('approval:view') },
+    canExport() { return !this.provider && hasPermission('transfer:export', this.permissionScope) },
     activeVersions() { return (this.workspace.versions || []).filter(row => !row.deleted) },
     writableVersions() { return this.activeVersions.filter(row => !row.status || row.status === 'ACTIVE') },
     currentDraft() { return this.selected.startsWith('d:') ? (this.workspace.drafts || []).find(row => String(row.id) === this.selected.slice(2)) : null },
-    editableDraft() { return this.currentDraft?.status === 'EDITING' && (this.workspace.actorNames || [this.workspace.actor]).includes(this.currentDraft.applicant) },
+    editableDraft() { return this.currentDraft?.status === 'EDITING' && (this.provider ? this.workspace.actorUserId != null && String(this.currentDraft.actorUserId) === String(this.workspace.actorUserId) : (this.workspace.actorNames || [this.workspace.actor]).includes(this.currentDraft.applicant)) },
     currentVersion() { if (this.selected !== 'LATEST' && !this.selected.startsWith('r:')) return null; const id = this.selected === 'LATEST' ? this.workspace.latestVersionId : this.selected.slice(2); return (this.workspace.history || []).find(row => String(row.id) === String(id)) },
     selectedVersionDeleted() { return !!this.currentVersion && (this.workspace.versions || []).some(row => row.deleted && String(row.version) === String(this.currentVersion.versionNo)) },
     snapshot() { return this.currentDraft?.draftSnapshotJson || this.currentVersion?.snapshotJson || '' },
@@ -138,19 +141,31 @@ export default {
     label(row) { return `v${row.version}${row.latest ? ' · 最新' : ''}${row.deleted ? ' · 已删除' : ''}` },
     pretty(json) { try { return JSON.stringify(parseMetadataResponse(json), null, 2) } catch { return json } },
     statusLabel(value) { return { EDITING: '编辑中', PENDING: '审批中', CONFLICT: '审批冲突', REJECTED: '已驳回' }[value] || value },
-    eventLabel(value) { return { CREATE_DRAFT: '创建草稿', SAVE_DRAFT: '修改草稿', SUBMIT: '提交发布', APPROVE: '审批通过', REJECT: '驳回', CANCEL: '删除或撤回草稿', DELETE_VERSION: '删除版本' }[value] || value },
+    eventLabel(value) { return { CREATE_DRAFT: '创建草稿', SAVE_DRAFT: '修改草稿', SUBMIT: '提交发布', PUBLISH: '发布版本', APPROVE: '审批通过', REJECT: '驳回', CANCEL: '删除或撤回草稿', DELETE_VERSION: '删除版本' }[value] || value },
     async open() { if (!this.canView) return; this.visible = true; this.selected = 'LATEST'; this.editing = false; await this.load() },
     async load() {
       const sequence = ++this.sequence; this.loading = true; this.error = ''
       try {
-        const [versions, events] = await Promise.all([getResourceVersions(this.resourceType, this.resourceId), getResourceVersionEvents(this.resourceType, this.resourceId)])
+        const [versions, events] = await Promise.all(this.provider ? [this.provider.load(this.resourceId), this.provider.events(this.resourceId)] : [getResourceVersions(this.resourceType, this.resourceId), getResourceVersionEvents(this.resourceType, this.resourceId)])
         if (sequence !== this.sequence) return
         this.workspace = versions.data || {}; this.events = events.data || []
         if (!this.snapshot) this.selected = this.workspace.latestVersionId ? 'LATEST' : this.workspace.drafts?.length ? 'd:' + this.workspace.drafts[0].id : 'LATEST'
       } catch (error) { if (sequence === this.sequence) this.error = error.message || '版本读取失败，请重试' }
       finally { if (sequence === this.sequence) this.loading = false }
     },
-    edit() { this.editJson = this.pretty(this.snapshot); this.changeSummary = this.currentDraft?.changeSummary || ''; this.publishMode = 'NEW'; this.targetVersionId = ''; this.editing = true },
+    async edit() {
+      if (this.provider) {
+        if (this.busy || !this.canEdit) return
+        const context = this.contextGeneration; this.busy = true
+        try {
+          await this.provider.openEditor({ resourceId: this.resourceId, versionId: this.currentVersion?.id, draftId: this.currentDraft?.id, articleVersion: this.workspace.articleVersion, isCurrent: () => context === this.contextGeneration })
+          if (context === this.contextGeneration) { this.visible = false; this.$emit('changed') }
+        } catch (error) { if (context === this.contextGeneration) this.showError(error, '打开文章编辑失败') }
+        finally { if (context === this.contextGeneration) this.busy = false }
+        return
+      }
+      this.editJson = this.pretty(this.snapshot); this.changeSummary = this.currentDraft?.changeSummary || ''; this.publishMode = 'NEW'; this.targetVersionId = ''; this.editing = true
+    },
     editField(key, value) { this.editJson = JSON.stringify({ ...this.editValue, [key]: value }, null, 2) },
     async cancelEdit() { if (this.editJson !== this.pretty(this.snapshot)) { try { await this.$confirm('放弃当前未保存的修改？', '取消编辑') } catch { return } } this.editing = false },
     async close(done) { if (this.busy) return; if (this.editing) { await this.cancelEdit(); if (this.editing) return } done() },

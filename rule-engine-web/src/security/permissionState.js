@@ -78,7 +78,7 @@ export function hasPermission(permissionCode, resource) {
     const user = currentUser.value
     const projectId = resource.scope === 'GLOBAL' ? null : resource.projectId
     if (!projectId || Number(projectId) <= 0) {
-      const write = permissionCode.endsWith(':edit') || permissionCode.endsWith(':submit') || ['approval:approve', 'transfer:import'].includes(permissionCode)
+      const write = permissionCode.endsWith(':edit') || permissionCode.endsWith(':submit') || ['ledger:manage', 'approval:approve', 'transfer:import'].includes(permissionCode)
       return user.defaultPermissions.includes(permissionCode) && (!write || user.globalEditable)
     }
     if (user.projectAccessMode === 'SELECTED' && !user.projectIds.some(id => String(id) === String(projectId))) return false

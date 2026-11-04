@@ -20,6 +20,10 @@
 
     <dependencies>
         <dependency>
+            <groupId>com.twelvemonkeys.imageio</groupId>
+            <artifactId>imageio-webp</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.hengshucredit.rule</groupId>
             <artifactId>rule-engine-model</artifactId>
             <version>${project.version}</version>

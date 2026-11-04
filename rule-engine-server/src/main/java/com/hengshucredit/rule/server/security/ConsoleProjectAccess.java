@@ -159,6 +159,6 @@ public class ConsoleProjectAccess {
 
     public static boolean isProjectPermission(String code) { return code != null && !code.startsWith("account:") && !code.startsWith("role:") && !code.startsWith("system:") && !"function:native".equals(code); }
     public static boolean isContentMutation(String code) {
-        return isProjectPermission(code) && (code.endsWith(":edit") || code.endsWith(":submit") || code.equals("approval:approve") || code.equals("transfer:import"));
+        return isProjectPermission(code) && (code.endsWith(":edit") || code.endsWith(":submit") || code.equals("ledger:manage") || code.equals("approval:approve") || code.equals("transfer:import"));
     }
 }
