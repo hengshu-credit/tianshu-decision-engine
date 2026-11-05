@@ -37,18 +37,28 @@
         </template>
         <el-tabs v-else v-model="tab">
           <el-tab-pane label="预览与对比" name="preview">
-            <el-select v-model="comparison" clearable placeholder="选择另一版本对比" aria-label="对比版本">
-              <el-option v-for="item in workspace.history || []" :key="item.id" :value="String(item.id)" :label="`v${item.versionNo} · 修订 ${item.revisionNo}`" />
-            </el-select>
-            <slot v-if="comparison && snapshot" name="comparison" :original="compared?.snapshotJson || '{}'" :modified="snapshot" :original-version="compared" :modified-version="currentVersion">
-              <json-version-diff :original="compared?.snapshotJson || '{}'" :modified="snapshot" :original-label="`对比版本 v${compared?.versionNo}`" modified-label="当前所选版本" />
+            <div class="version-comparison-toolbar">
+              <label for="version-comparison">对照基准</label>
+              <el-select id="version-comparison" v-model="comparison" clearable placeholder="选择另一版本，左右对比" aria-label="对比版本" :disabled="loading || !snapshot">
+                <el-option v-for="item in workspace.history || []" :key="item.id" :value="String(item.id)" :label="versionLabel(item)" :disabled="String(item.id) === String(currentVersion?.id)" />
+              </el-select>
+              <el-button v-if="compared" :disabled="loading || !currentVersion" @click="swapComparison">交换左右</el-button>
+              <el-button v-if="compared" :disabled="loading" @click="comparison = ''">退出对比</el-button>
+            </div>
+            <slot v-if="compared && snapshot" name="comparison" :original="compared.snapshotJson" :modified="snapshot" :original-version="compared" :modified-version="currentVersion">
+              <resource-version-preview :resource-type="resourceType" :original="compared.snapshotJson" :snapshot="snapshot" comparing :original-label="versionLabel(compared)" :modified-label="selectedLabel" />
             </slot>
             <slot v-else-if="snapshot" name="preview" :snapshot="snapshot" :version="currentVersion" :draft="currentDraft">
-              <el-descriptions :column="2" border class="version-preview-summary"><el-descriptions-item v-for="field in previewFields" :key="field.key" :label="field.label">{{ field.value }}</el-descriptions-item></el-descriptions>
-              <el-collapse><el-collapse-item title="完整配置快照" name="raw"><pre class="version-preview">{{ pretty(snapshot) }}</pre></el-collapse-item></el-collapse>
+              <resource-version-preview :resource-type="resourceType" :snapshot="snapshot" :modified-label="selectedLabel" />
             </slot>
             <el-empty v-else-if="!loading && !error" description="尚无生产版本，请先保存并发布资源" />
             <div v-else class="version-preview-placeholder" aria-hidden="true" />
+            <el-collapse v-if="snapshot" :key="`${selected}:${comparison}`" v-model="rawPanels" class="version-raw-collapse">
+              <el-collapse-item title="查看原始 JSON（完整配置）" name="raw">
+                <json-version-diff v-if="rawPanels.includes('raw') && compared" :original="compared.snapshotJson" :modified="snapshot" :original-label="versionLabel(compared)" :modified-label="selectedLabel" />
+                <pre v-else-if="rawPanels.includes('raw')" class="version-preview">{{ pretty(snapshot) }}</pre>
+              </el-collapse-item>
+            </el-collapse>
             <div v-if="currentDraft && !provider" class="version-actions uiue-action-group">
               <el-button v-if="canReview" :disabled="busy" @click="review">查看审批详情</el-button>
               <el-button v-if="editableDraft && canEdit" type="danger" :disabled="busy" @click="discard">删除此草稿</el-button>
@@ -62,13 +72,13 @@
               <el-table-column prop="changeSummary" label="变更说明" min-width="200" />
               <el-table-column prop="createBy" label="发布人" width="110" />
               <el-table-column prop="createTime" label="发布时间" min-width="170" />
-              <el-table-column label="操作" :width="operationColumnWidth(provider ? ['预览'] : ['预览', '删除版本'])"><template #default="{ row }"><el-button link @click="selected = 'r:' + row.versionId; tab = 'preview'">预览</el-button><el-button v-if="!provider && canEdit && !row.latest && !row.deleted" link type="danger" :disabled="busy" @click="remove(row)">删除版本</el-button></template></el-table-column>
+              <el-table-column label="操作" :width="operationColumnWidth(provider ? ['预览'] : ['预览', '删除版本'])"><template #default="{ row }"><el-button link @click="previewVersion(row.versionId)">预览</el-button><el-button v-if="!provider && canEdit && !row.latest && !row.deleted" link type="danger" :disabled="busy" @click="remove(row)">删除版本</el-button></template></el-table-column>
             </el-table>
             <el-table :data="workspace.history || []" row-key="id" class="version-history">
               <el-table-column label="历史修订" width="170"><template #default="{ row }">v{{ row.versionNo }} · 修订 {{ row.revisionNo }}</template></el-table-column>
               <el-table-column prop="changeSummary" label="变更说明" />
               <el-table-column prop="createTime" label="时间" width="180" />
-              <el-table-column label="操作" :width="operationColumnWidth(['预览'])"><template #default="{ row }"><el-button link @click="selected = 'r:' + row.id; tab = 'preview'">预览</el-button></template></el-table-column>
+              <el-table-column label="操作" :width="operationColumnWidth(['预览'])"><template #default="{ row }"><el-button link @click="previewVersion(row.id)">预览</el-button></template></el-table-column>
             </el-table>
           </el-tab-pane>
           <el-tab-pane label="变更记录" name="events">
@@ -89,6 +99,7 @@ import { resourceActionPermission } from '@/security/pickerAccess'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import { parseMetadataResponse } from '@/utils/metadataResponse'
 import JsonVersionDiff from './JsonVersionDiff.vue'
+import ResourceVersionPreview from './ResourceVersionPreview.vue'
 
 const fields = [
   ['varCode', '变量编码'], ['varLabel', '变量名称'], ['varType', '数据类型'], ['defaultValue', '默认值'],
@@ -104,10 +115,10 @@ const fields = [
 
 export default {
   name: 'ResourceVersionManager',
-  components: { JsonVersionDiff, MonacoEditor },
+  components: { JsonVersionDiff, MonacoEditor, ResourceVersionPreview },
   props: { resourceType: { type: String, required: true }, resourceId: { type: [String, Number], required: true }, showTrigger: { type: Boolean, default: true }, hasLegacy: Boolean, provider: { type: Object, default: null } },
   emits: ['changed', 'legacy'],
-  data: () => ({ visible: false, loading: false, busy: false, sequence: 0, contextGeneration: 0, workspace: {}, events: [], error: '', selected: 'LATEST', tab: 'preview', comparison: '', editing: false, editJson: '', changeSummary: '', publishMode: 'NEW', targetVersionId: '' }),
+  data: () => ({ visible: false, loading: false, busy: false, sequence: 0, contextGeneration: 0, workspace: {}, events: [], error: '', selected: 'LATEST', tab: 'preview', comparison: '', rawPanels: [], editing: false, editJson: '', changeSummary: '', publishMode: 'NEW', targetVersionId: '' }),
   computed: {
     contextKey() { return `${this.resourceType}:${this.resourceId}` },
     canView() { return hasPermission(resourceActionPermission(this.resourceType, 'view')) },
@@ -132,23 +143,31 @@ export default {
     compared() { return (this.workspace.history || []).find(row => String(row.id) === this.comparison) },
     editValue() { try { return parseMetadataResponse(this.editJson) || {} } catch { return {} } },
     editableFields() { return fields.filter(field => field.key !== 'varType' && Object.hasOwn(this.editValue, field.key)) },
-    previewFields() { let value = {}; try { value = parseMetadataResponse(this.snapshot || '{}') } catch { /* raw content stays available */ } return fields.filter(field => Object.hasOwn(value, field.key)).map(field => ({ ...field, value: value[field.key] ?? '—' })) },
+    selectedLabel() { return this.currentDraft ? `草稿 #${this.currentDraft.id} · ${this.statusLabel(this.currentDraft.status)}` : this.versionLabel(this.currentVersion) },
   },
-  watch: { contextKey() { this.sequence++; this.contextGeneration++; this.visible = false; this.editing = false; this.workspace = {}; this.events = []; this.selected = 'LATEST'; this.loading = false; this.busy = false } },
+  watch: {
+    contextKey() { this.sequence++; this.contextGeneration++; this.visible = false; this.editing = false; this.workspace = {}; this.events = []; this.selected = 'LATEST'; this.loading = false; this.busy = false; this.comparison = ''; this.rawPanels = [] },
+    selected() { this.rawPanels = []; if (String(this.currentVersion?.id) === this.comparison) this.comparison = '' },
+    comparison() { this.rawPanels = [] },
+  },
   beforeUnmount() { this.sequence++; this.contextGeneration++ },
   methods: {
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     label(row) { return `v${row.version}${row.latest ? ' · 最新' : ''}${row.deleted ? ' · 已删除' : ''}` },
+    versionLabel(row) { return row ? `v${row.versionNo} · 修订 ${row.revisionNo}` : '未选择版本' },
+    previewVersion(id) { this.selected = 'r:' + id; this.comparison = ''; this.rawPanels = []; this.tab = 'preview' },
+    swapComparison() { if (!this.currentVersion || !this.compared) return; const id = String(this.currentVersion.id); this.selected = 'r:' + this.compared.id; this.comparison = id },
     pretty(json) { try { return JSON.stringify(parseMetadataResponse(json), null, 2) } catch { return json } },
     statusLabel(value) { return { EDITING: '编辑中', PENDING: '审批中', CONFLICT: '审批冲突', REJECTED: '已驳回' }[value] || value },
     eventLabel(value) { return { CREATE_DRAFT: '创建草稿', SAVE_DRAFT: '修改草稿', SUBMIT: '提交发布', PUBLISH: '发布版本', APPROVE: '审批通过', REJECT: '驳回', CANCEL: '删除或撤回草稿', DELETE_VERSION: '删除版本' }[value] || value },
-    async open() { if (!this.canView) return; this.visible = true; this.selected = 'LATEST'; this.editing = false; await this.load() },
+    async open() { if (!this.canView) return; this.visible = true; this.selected = 'LATEST'; this.editing = false; this.tab = 'preview'; this.comparison = ''; this.rawPanels = []; await this.load() },
     async load() {
       const sequence = ++this.sequence; this.loading = true; this.error = ''
       try {
         const [versions, events] = await Promise.all(this.provider ? [this.provider.load(this.resourceId), this.provider.events(this.resourceId)] : [getResourceVersions(this.resourceType, this.resourceId), getResourceVersionEvents(this.resourceType, this.resourceId)])
         if (sequence !== this.sequence) return
         this.workspace = versions.data || {}; this.events = events.data || []
+        if (!this.compared) this.comparison = ''
         if (!this.snapshot) this.selected = this.workspace.latestVersionId ? 'LATEST' : this.workspace.drafts?.length ? 'd:' + this.workspace.drafts[0].id : 'LATEST'
       } catch (error) { if (sequence === this.sequence) this.error = error.message || '版本读取失败，请重试' }
       finally { if (sequence === this.sequence) this.loading = false }
@@ -232,4 +251,8 @@ export default {
 .version-history { margin-top: 24px; }
 .version-preview-summary { margin: 16px 0; overflow-wrap: anywhere; }
 .version-edit-form :deep(.el-form-item__content) { gap: 12px; }
+.version-comparison-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 12px 0; }
+.version-comparison-toolbar label { font-size: 13px; color: var(--tianshu-text-secondary); }
+.version-comparison-toolbar .el-button + .el-button { margin-left: 0; }
+.version-raw-collapse { margin-top: 24px; }
 </style>

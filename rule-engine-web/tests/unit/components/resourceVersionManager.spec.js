@@ -17,6 +17,28 @@ beforeEach(() => {
 })
 afterEach(() => vi.restoreAllMocks())
 
+test('业务对比使用准确修订，交换左右后快照同步且原始 JSON 默认折叠', async () => {
+  const view = mount(); await view.vm.open(); await view.setData({ comparison: '1' })
+  let preview = view.findComponent({ name: 'ResourceVersionPreview' })
+  expect(preview.props()).toMatchObject({ comparing: true, original: '{"defaultValue":"old"}', snapshot: '{"defaultValue":"latest"}', originalLabel: 'v1 · 修订 1', modifiedLabel: 'v2 · 修订 2' })
+  expect(view.findComponent({ name: 'JsonVersionDiff' }).exists()).toBe(false)
+  await view.setData({ rawPanels: ['raw'] })
+  expect(view.findComponent({ name: 'JsonVersionDiff' }).exists()).toBe(true)
+  view.vm.swapComparison(); await view.vm.$nextTick()
+  preview = view.findComponent({ name: 'ResourceVersionPreview' })
+  expect(preview.props()).toMatchObject({ original: '{"defaultValue":"latest"}', snapshot: '{"defaultValue":"old"}' })
+  expect(view.vm.rawPanels).toEqual([])
+  await view.vm.open(); expect(view.vm.comparison).toBe(''); expect(view.vm.tab).toBe('preview')
+  view.unmount()
+})
+
+test('刷新移除的对比版本退出对比，不使用空对象冒充原版本', async () => {
+  const view = mount(); await view.vm.open(); await view.setData({ comparison: '1' })
+  versions.getResourceVersions.mockResolvedValueOnce({ data: { ...workspace, history: workspace.history.filter(row => row.id !== '1') } })
+  await view.vm.load(); expect(view.vm.comparison).toBe('')
+  view.unmount()
+})
+
 test('首次加载完成前不闪现无生产版本提示', async () => {
   let finish
   versions.getResourceVersions.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
@@ -39,7 +61,7 @@ test('刷新期间保留已加载的版本内容', async () => {
   const pending = view.vm.load()
   await view.vm.$nextTick()
   expect(view.vm.snapshot).toBe('{"defaultValue":"latest"}')
-  expect(view.find('.version-preview-summary').exists()).toBe(true)
+  expect(view.findComponent({ name: 'ResourceVersionPreview' }).props('snapshot')).toBe('{"defaultValue":"latest"}')
   expect(view.find('el-empty-stub').exists()).toBe(false)
   finish({ data: workspace })
   await pending

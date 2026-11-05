@@ -2,12 +2,117 @@ const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createDocsApiData } = require('./support/docsFixtures.cjs')
 
+async function setVersionTheme(page, colorScheme) {
+  await page.addInitScript(value => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify(value)), {
+    schemaVersion: 3, colorScheme, accentMode: 'PRESET', accentPreset: 'LIQUID_PURPLE',
+    customSolidColor: '#2639E9', customGradientColors: ['#2639E9', '#873FF2'],
+    customGradientType: 'LINEAR', customGradientAngle: 135, navigationLayout: 'LEFT',
+    sidebarTheme: 'DARK', contentWidth: 'FLUID', tableScrollMode: 'FIXED', fixedSidebar: true, colorWeak: false,
+  })
+}
+
+for (const [type, route, listUrl, snapshot, expected] of [
+  ['VARIABLE', '/variable', '/api/rule/variable/list', { varCode: 'risk_score', varLabel: '风险分', varType: 'NUMBER', varSource: 'DB', sourceConfig: '{"dbDatasourceId":1,"sql":"select score from risk","maxRows":1}', options: [{ value: 0, label: '低风险' }] }, ['数据库查询', '查询 SQL', '低风险']],
+  ['MODEL', '/model', '/api/rule/model/list', { modelCode: 'credit_model', modelName: '授信评分模型', modelType: 'PMML', inputFields: [{ fieldName: '年龄', fieldType: 'NUMBER', required: true }], outputFields: [{ fieldName: '违约概率', fieldType: 'NUMBER' }] }, ['输入字段', '年龄', '违约概率']],
+]) {
+  test(`${type} 版本入口展示业务字段和嵌套配置`, async ({ page }) => {
+    const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+    const data = createDocsApiData()
+    data.set(listUrl, { records: [{ ...snapshot, id: '9001', status: 1, scope: 'GLOBAL' }], total: 1 })
+    data.set(`/api/rule/resource-versions/${type}/9001`, { latestVersionId: '51', versions: [{ versionId: '51', version: 1, revision: 1, latest: true }], history: [{ id: '51', versionNo: 1, revisionNo: 1, snapshotJson: JSON.stringify(snapshot) }], drafts: [] })
+    data.set(`/api/rule/resource-versions/${type}/9001/events`, [])
+    const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data })
+    await page.goto(`${origin}/#${route}`)
+    await page.getByRole('button', { name: '版本', exact: true }).first().click()
+    const drawer = page.getByRole('dialog', { name: '版本管理', exact: true })
+    for (const text of expected) await expect(drawer.locator('.version-preview-summary')).toContainText(text)
+    await expect(drawer.locator('pre.version-preview')).toHaveCount(0)
+    harness.assertClean()
+  })
+}
+
+test('文章版本左右呈现排版后的正文，底部可展开原始 JSON', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const data = new Map()
+  const history = [1, 2].map(versionNo => ({ id: String(versionNo), versionNo, revisionNo: 1, snapshotJson: JSON.stringify({ title: '授信策略调整', body: `## 调整说明\n\n最低年龄 **${versionNo === 1 ? 18 : 21} 岁**。`, scope: 'GLOBAL' }) }))
+  data.set('/api/rule/ledger/articles/71/versions', { latestVersionId: '2', versions: history.map(item => ({ versionId: item.id, version: item.versionNo, revision: 1, latest: item.id === '2' })), history, drafts: [], canEdit: false })
+  data.set('/api/rule/ledger/articles/71/version-events', [])
+  data.set('/api/rule/ledger/revisions/2', { articleId: '71', title: '授信策略调整', body: '最低年龄 21 岁。', scope: 'GLOBAL' })
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data })
+  await page.goto(`${origin}/#/ledger/articles/71`)
+  await page.getByRole('button', { name: '版本', exact: true }).click()
+  const drawer = page.getByRole('dialog', { name: '版本管理', exact: true })
+  await expect(drawer.locator('.ledger-version-preview strong')).toHaveText('21 岁')
+  await drawer.locator('.version-comparison-toolbar .el-select').click()
+  await page.getByRole('option', { name: 'v1 · 修订 1', exact: true }).click()
+  await expect(drawer.locator('.ledger-version-columns section').first().getByRole('heading', { name: '调整说明' })).toBeVisible()
+  await expect(drawer.locator('.ledger-version-columns section').first().locator('strong')).toHaveText('18 岁')
+  await expect(drawer.locator('.ledger-version-columns section').last().locator('strong')).toHaveText('21 岁')
+  await drawer.getByRole('button', { name: '查看原始 JSON（完整配置）' }).click()
+  await expect(drawer.locator('.json-version-diff')).toBeVisible()
+  harness.assertClean()
+})
+
+for (const colorScheme of ['LIGHT', 'DARK']) {
+  test(`${colorScheme} 业务版本预览、左右对比和原始 JSON 可通过界面完整操作`, async ({ page }, testInfo) => {
+    const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+    await setVersionTheme(page, colorScheme)
+    const data = createDocsApiData()
+    const rule = data.get('/api/rule/definition/list').records[0]
+    const snapshot = threshold => JSON.stringify({ ruleCode: 'credit_entry', ruleName: '个人信贷准入', modelType: 'TABLE', description: '根据申请年龄判断是否进入授信流程', content: { modelJson: JSON.stringify({ hitPolicy: 'FIRST', rules: [{ ruleName: '成年客户准入', conditionRoot: { type: 'group', op: 'AND', children: [{ type: 'leaf', leftOperand: { kind: 'REFERENCE', refId: '101', refType: 'VARIABLE', label: '申请年龄' }, operator: '>=', rightOperand: { kind: 'LITERAL', value: threshold } }] }, actions: [{ targetOperand: { kind: 'REFERENCE', refId: '102', refType: 'VARIABLE', label: '准入结果' }, valueOperand: { kind: 'LITERAL', value: '允许申请' } }] }] }) }, inputFieldsJson: [{ varId: '101', fieldName: '申请年龄', required: true }], outputFieldsJson: [{ varId: '102', fieldName: '准入结果' }] })
+    data.set(`/api/rule/resource-versions/RULE/${rule.id}`, {
+      latestVersionId: '22', drafts: [], versions: [{ versionId: '22', version: 2, revision: 1, latest: true }, { versionId: '21', version: 1, revision: 1 }],
+      history: [{ id: '22', versionNo: 2, revisionNo: 1, snapshotJson: snapshot(21) }, { id: '21', versionNo: 1, revisionNo: 1, snapshotJson: snapshot(18) }],
+    })
+    data.set(`/api/rule/resource-versions/RULE/${rule.id}/events`, [])
+    const { assertClean } = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data })
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await page.goto(`${origin}/#/rule`)
+    await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme.toLowerCase())
+    await page.getByRole('button', { name: '版本', exact: true }).first().click()
+    const drawer = page.getByRole('dialog', { name: '版本管理', exact: true })
+    const preview = drawer.locator('.version-preview-summary')
+    await expect(preview).toContainText('个人信贷准入')
+    await expect(preview).toContainText('申请年龄')
+    await expect(preview).toContainText('允许申请')
+    await expect(drawer.locator('.version-preview')).toHaveCount(0)
+    await drawer.locator('.version-comparison-toolbar .el-select').click()
+    await page.getByRole('option', { name: 'v1 · 修订 1', exact: true }).click()
+    await expect(preview.locator('.business-preview-head')).toContainText('v1 · 修订 1')
+    const rules = preview.locator('[data-section="rule:rules"]')
+    await expect(rules.locator('.business-preview-card').first()).toContainText('18')
+    await expect(rules.locator('.business-preview-card').last()).toContainText('21')
+    await expect(rules).toHaveClass(/is-changed/)
+    await drawer.getByRole('button', { name: '交换左右' }).click()
+    await expect(rules.locator('.business-preview-card').first()).toContainText('21')
+    await expect(rules.locator('.business-preview-card').last()).toContainText('18')
+    for (const width of [1440, 768, 390]) {
+      await page.setViewportSize({ width, height: 1000 })
+      await expect(preview).toBeVisible()
+      expect(await preview.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+      expect(await drawer.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+      await rules.scrollIntoViewIfNeeded()
+      await page.screenshot({ path: testInfo.outputPath(`business-preview-${colorScheme}-${width}.png`) })
+    }
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await drawer.getByRole('button', { name: '查看原始 JSON（完整配置）' }).click()
+    await expect(drawer.locator('.json-version-diff')).toBeVisible()
+    await drawer.getByRole('button', { name: '退出对比' }).click()
+    await expect(drawer.locator('.json-version-diff')).toHaveCount(0)
+    await drawer.getByRole('button', { name: '查看原始 JSON（完整配置）' }).click()
+    await expect(drawer.locator('pre.version-preview')).toContainText('modelJson')
+    await drawer.getByRole('tab', { name: '版本与修订', exact: true }).click()
+    await drawer.getByRole('button', { name: '预览', exact: true }).first().click()
+    await expect(preview).toContainText('v2 · 修订 1')
+    await expect(drawer.locator('pre.version-preview')).toHaveCount(0)
+    assertClean()
+  })
+}
+
 for (const colorScheme of ['LIGHT', 'DARK']) {
   test(`${colorScheme} 版本管理加载无灰色蒙版且刷新保留预览`, async ({ page }, testInfo) => {
     const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
-    await page.addInitScript(scheme => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify({
-      schemaVersion: 1, colorScheme: scheme, accentPreset: 'LIQUID_PURPLE', sidebarTheme: 'DARK',
-    })), colorScheme)
+    await setVersionTheme(page, colorScheme)
     const data = createDocsApiData()
     const project = data.get('/api/rule/project/list').records[0]
     let release
@@ -22,6 +127,7 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
     const { assertClean } = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data })
     await page.setViewportSize({ width: 1440, height: 1000 })
     await page.goto(`${origin}/#/project`)
+    await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme.toLowerCase())
     await page.getByRole('button', { name: '版本', exact: true }).first().click()
     const drawer = page.getByRole('dialog', { name: '版本管理', exact: true })
     const content = drawer.locator('.resource-version-manager')

@@ -737,6 +737,11 @@ function buildSideSections(modelType, model) {
   return []
 }
 
+// Version previews share the same business interpretation as the rule comparison.
+export function buildRulePreviewSections(modelType, model) {
+  return buildSideSections(modelType, model)
+}
+
 function pairFields(left, right) {
   const leftMap = {}
   const rightMap = {}
