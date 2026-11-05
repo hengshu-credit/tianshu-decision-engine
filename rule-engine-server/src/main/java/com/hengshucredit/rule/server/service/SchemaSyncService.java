@@ -143,6 +143,7 @@ public class SchemaSyncService {
         } catch (IOException failure) { throw new IllegalStateException("无法创建规则集统计读视图", failure); }
         // 新事件的计费事实与恢复确认依赖这些列，缺失时不能继续接受执行。
         ensureExecutionBillingSnapshotSchema();
+        ensureLedgerCodesSchema();
         ensureApiScenarioExpectationSchema();
         ensureExternalApiTrialSchema();
         ensureModelVersionExecutionSchema();
@@ -178,6 +179,16 @@ public class SchemaSyncService {
         addColumnIfMissing("console_operation_log", "change_summary", "`change_summary` VARCHAR(160) DEFAULT NULL");
         addColumnIfMissing("console_operation_log", "leave_time", "`leave_time` DATETIME(6) DEFAULT NULL");
         addIndexIfMissing("console_operation_log", "idx_console_operation_user_last", "`user_id`, `id`");
+    }
+
+    private void ensureLedgerCodesSchema() {
+        ensureTablesFromSchema(List.of("rule_ledger_type", "rule_ledger_event"));
+        addColumnIfMissing("rule_ledger_type", "type_code", "`type_code` VARCHAR(128) DEFAULT NULL");
+        addColumnIfMissing("rule_ledger_event", "event_code", "`event_code` VARCHAR(128) DEFAULT NULL");
+        jdbcTemplate.update("UPDATE rule_ledger_type SET type_code=COALESCE(legacy_code,CONCAT('TYPE_',id)) WHERE type_code IS NULL");
+        jdbcTemplate.update("UPDATE rule_ledger_event SET event_code=CONCAT('EVENT_',id) WHERE event_code IS NULL");
+        if (!indexExists("rule_ledger_type", "uk_ledger_type_code")) jdbcTemplate.execute("ALTER TABLE rule_ledger_type ADD UNIQUE KEY uk_ledger_type_code (type_code)");
+        if (!indexExists("rule_ledger_event", "uk_ledger_event_code")) jdbcTemplate.execute("ALTER TABLE rule_ledger_event ADD UNIQUE KEY uk_ledger_event_code (event_code)");
     }
 
     private void ensureModelVersionExecutionSchema() {

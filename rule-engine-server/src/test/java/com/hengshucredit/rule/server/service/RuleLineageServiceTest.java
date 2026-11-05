@@ -54,6 +54,17 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class RuleLineageServiceTest {
+    @Test public void deniedIntermediateModuleStopsTraversalAndNextRequestRechecksPermissions() {
+        RuleLineageService service = serviceWithProjectBranch(false);
+        var denyRule = new java.util.concurrent.atomic.AtomicBoolean(true);
+        var guard = new com.hengshucredit.rule.server.security.ConsoleAccessGuard(null, null) {
+            @Override public boolean can(String permission) { return !denyRule.get() || !"rule:view".equals(permission); }
+        };
+        ReflectionTestUtils.setField(service, "accessGuard", guard);
+        assertEquals(Set.of("VARIABLE:1"), nodeIds(service.graph("VARIABLE", 1L, "DOWNSTREAM", 3)));
+        denyRule.set(false);
+        assertTrue(nodeIds(service.graph("VARIABLE", 1L, "DOWNSTREAM", 3)).contains("VARIABLE:3"));
+    }
     @Test
     public void graphCarriesExactVariableTypeForSharedContentDisplay() {
         RuleLineageService service = serviceWithProjectBranch(false);
@@ -368,17 +379,16 @@ public class RuleLineageServiceTest {
                         return args[0];
                     }
                     if ("selectList".equals(method.getName())) {
-                        @SuppressWarnings("unchecked")
-                        LambdaQueryWrapper<RuleModel> wrapper = (LambdaQueryWrapper<RuleModel>) args[0];
+                        var wrapper = (com.baomidou.mybatisplus.core.conditions.Wrapper<?>) args[0];
                         selections.add(wrapper.getSqlSelect());
-                        return Collections.emptyList();
+                        return Collections.singletonList(model(11L, "project_model"));
                     }
                     return defaultValue(method.getReturnType());
                 }));
         ReflectionTestUtils.setField(service, "modelMapper", mapper);
 
         service.options("MODEL", "", null);
-        service.graph("VARIABLE", 1L, "ALL", 2);
+        service.graph("MODEL", 11L, "UPSTREAM", 1);
 
         assertEquals(2, selections.size());
         for (int index = 0; index < selections.size(); index++) {

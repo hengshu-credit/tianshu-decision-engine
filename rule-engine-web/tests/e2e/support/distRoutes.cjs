@@ -5,6 +5,7 @@ const { platformResponse } = require('./platformResponse.cjs')
 const distRoot = process.env.E2E_DIST_DIR ? path.resolve(process.env.E2E_DIST_DIR) : path.resolve(__dirname, '../../../dist')
 
 const apiData = new Map([
+  ['/api/rule/ledger/types', [{ id: '6', value: '6', legacyCode: 'WORK', name: '日常工作', label: '日常工作', sortOrder: 60, version: 0, canManage: true }]],
   ['/api/rule/governance/workspaces/states', ({ url }) => (url.searchParams.get('ids') || '').split(',').filter(Boolean).map(resourceId => ({ resourceId, effectiveStatus: null, hasEffectiveVersion: false, requestId: null, requestStatus: null, owned: false, hasRuleDraft: false }))],
   ['/api/rule/governance/workspaces/draft-ids', []],
   ['/api/rule/billing/summary/refresh', null],

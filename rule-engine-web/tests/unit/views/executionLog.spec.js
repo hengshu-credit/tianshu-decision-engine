@@ -20,6 +20,24 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
+test('迟到的历史回放结果不能覆盖用户已打开的另一条日志', async () => {
+  const view = await mountAndWait()
+  const pending = deferred()
+  runtimeLogApi.replayExecutionLog.mockReturnValueOnce(pending.promise)
+  view.vm.ensureDetailMetadata = vi.fn().mockResolvedValue()
+  view.vm.loadVarMap = vi.fn().mockResolvedValue()
+  view.vm.loadFunctionNameMap = vi.fn().mockResolvedValue()
+  view.vm.loadModelJson = vi.fn().mockResolvedValue()
+  const replay = view.vm.handleReplay({ id: 7 })
+  await view.vm.handleViewDetail({ id: 8, traceId: 'new-trace' })
+  pending.resolve({ data: { replayed: true, traceId: 'old-trace', traceInfo: '[]' } })
+  await replay
+  expect(view.vm.detail.id).toBe(8)
+  expect(view.vm.detail.traceId).toBe('new-trace')
+  expect(view.vm.replayLoadingId).toBeNull()
+  view.unmount()
+})
+
 describe('ExecutionLog 历史设计快照', () => {
   let wrapper
   beforeEach(async () => { wrapper = await mountAndWait() })

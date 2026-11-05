@@ -10,7 +10,7 @@
     </template>
     <el-dialog v-model="publishDialog" title="文章发布配置" width="620px" class="ledger-dialog" :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy">
       <el-form label-width="95px" size="small" :disabled="busy">
-        <el-form-item label="内容类型" required><el-select v-model="content.category"><el-option v-for="item in categories" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
+        <el-form-item label="事件类型" required><el-select v-model="content.category"><el-option v-for="item in ledgerTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select><span v-if="ledgerTypesError" role="alert">{{ ledgerTypesError }}<el-button link @click="loadLedgerTypes">重试</el-button></span></el-form-item>
         <scope-project-fields v-model:scope="content.scope" v-model:project-id="content.projectId" scope-label="内容归属" @scope-change="dirty = true" @project-change="dirty = true" />
         <el-form-item label="发生时间" required><el-date-picker v-model="content.occurredAt" type="datetime" format="YYYY-MM-DD HH:mm:ss" value-format="YYYY-MM-DDTHH:mm:ss" style="width:100%" /></el-form-item>
         <el-form-item label="关联事件"><el-select v-model="content.eventIds" multiple filterable clearable remote :remote-method="searchEvents" placeholder="可选，可关联多个事件" style="width:100%"><el-option v-for="event in events" :key="event.id" :label="event.title" :value="event.id" /></el-select><el-button link type="primary" @click="newEvent">新建事件</el-button></el-form-item>
@@ -21,24 +21,26 @@
       <template #footer><el-button :disabled="busy" @click="publishDialog = false">取消</el-button><el-button type="primary" :loading="busy" @click="publish">{{ publishedVersion ? `发布为 v${Number(publishedVersion) + 1}` : '发布文章' }}</el-button></template>
     </el-dialog>
     <el-dialog v-model="assetPicker" title="素材库" width="min(1150px, 96vw)" class="ledger-dialog" destroy-on-close><ledger-assets picker @select="insertAsset" /></el-dialog>
-    <ledger-event-dialog v-model="eventDialog" :scope="content.scope" :project-id="content.projectId" @saved="eventSaved" />
+    <ledger-event-dialog v-model="eventDialog" :types="ledgerTypes" :scope="content.scope" :project-id="content.projectId" @saved="eventSaved" />
   </div>
 </template>
 <script>
 import ScopeProjectFields from '@/components/common/ScopeProjectFields.vue'
+import ledgerTypesMixin from '@/mixins/ledgerTypesMixin'
 import LedgerMarkdownEditor from '@/components/ledger/LedgerMarkdownEditor.vue'
 import LedgerAssets from '@/components/ledger/LedgerAssets.vue'
 import LedgerVersions from '@/components/ledger/LedgerVersions.vue'
 import LedgerEventDialog from '@/components/ledger/LedgerEventDialog.vue'
 import { getLedgerArticleDraft, saveLedgerDraft, publishLedgerArticle, listLedgerEvents, getLedgerEvent } from '@/api/ledger'
-import { newLedgerContent, LEDGER_CATEGORIES } from '@/utils/ledger'
+import { newLedgerContent } from '@/utils/ledger'
 import { routeProjectId } from '@/utils/projectContext'
 import { registerDesignerLeaveGuard } from '@/utils/designerLeaveGuard'
 import '@/styles/ledger.scss'
 const snippets = { table: '\n| 检查项 | 调整前 | 调整后 |\n| --- | --- | --- |\n| 指标 | 待填写 | 待填写 |\n', checklist: '\n- [ ] 核查实际效果\n- [ ] 补充验收结论\n', quote: '\n> 请填写需要团队关注的事项。\n', acceptance: '\n## 验收记录\n\n### 验收标准\n\n待填写\n\n### 实际结果\n\n待填写\n\n### 后续安排\n\n- [ ] 待跟进事项\n' }
 export default {
+  mixins: [ledgerTypesMixin],
   name: 'LedgerEditor', components: { ScopeProjectFields, LedgerMarkdownEditor, LedgerAssets, LedgerVersions, LedgerEventDialog },
-  data() { return { articleId: this.$route.params.id || null, version: null, publishedVersion: 0, content: newLedgerContent(routeProjectId(this.$route, this.$store.state.currentProject)), loading: false, loadError: '', busy: false, dirty: false, navigating: false, identityCleared: false, leaveApproved: false, unregisterLeaveGuard: null, generation: 0, eventGeneration: 0, events: [], publishDialog: false, assetPicker: false, eventDialog: false, snippet: '', categories: LEDGER_CATEGORIES } },
+  data() { return { articleId: this.$route.params.id || null, version: null, publishedVersion: 0, content: newLedgerContent(routeProjectId(this.$route, this.$store.state.currentProject)), loading: false, loadError: '', busy: false, dirty: false, navigating: false, identityCleared: false, leaveApproved: false, unregisterLeaveGuard: null, generation: 0, eventGeneration: 0, events: [], publishDialog: false, assetPicker: false, eventDialog: false, snippet: '' } },
   mounted() {
     this.load()
     this.unregisterLeaveGuard = registerDesignerLeaveGuard(this.$route.path, async () => {
@@ -75,8 +77,11 @@ export default {
     async load() {
       const generation = ++this.generation; this.loading = true; this.loadError = ''
       try {
+        await this.ledgerTypesPromise
+        if (generation !== this.generation) return
         if (this.articleId) { const response = await getLedgerArticleDraft(this.articleId); if (generation !== this.generation) return; this.version = response.data.version; this.publishedVersion = response.data.publishedVersion; this.content = { ...newLedgerContent(null), ...response.data.content }; if (this.content.summaryAuto === true) this.content.summary = '' }
         else { const ids = String(this.$route.query.eventIds || '').split(',').filter(value => /^[1-9]\d*$/.test(value)); this.content.eventIds = ids }
+        this.content.category = this.categoryId(this.content.category)
         await this.searchEvents(''); if (generation !== this.generation) return; this.dirty = false
         if (this.$route.query.publish === '1') this.publishDialog = true
       } catch (error) { if (generation === this.generation) this.loadError = error.message || '文章读取失败' }

@@ -195,6 +195,11 @@
 
     <el-dialog
       v-model="accountDialogVisible"
+      :inert="accountSaving"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!accountSaving"
+      :show-close="!accountSaving"
+      :before-close="done => closeConfigurationDialog('accountDialogVisible', done)"
       :title="accountForm.id ? '编辑账户' : '新增账户'"
       width="560px"
     >
@@ -241,13 +246,18 @@
         <el-form-item label="全局内容"><el-switch v-model="accountForm.globalEditable" active-text="允许编辑（仍需模块权限）" inactive-text="只读" /></el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="accountDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveAccount">保存</el-button>
+        <el-button :disabled="accountSaving" @click="closeConfigurationDialog('accountDialogVisible')">取消</el-button>
+        <el-button type="primary" :loading="accountSaving" @click="saveAccount">保存</el-button>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="permissionDialogVisible"
+      :inert="accountSaving"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!accountSaving"
+      :show-close="!accountSaving"
+      :before-close="done => closeConfigurationDialog('permissionDialogVisible', done)"
       title="账户权限调整"
       width="920px"
     >
@@ -335,13 +345,18 @@
         </el-table-column>
       </el-table>
       <template #footer>
-        <el-button @click="permissionDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="savePermissions">保存调整</el-button>
+        <el-button :disabled="accountSaving" @click="closeConfigurationDialog('permissionDialogVisible')">取消</el-button>
+        <el-button type="primary" :loading="accountSaving" @click="savePermissions">保存调整</el-button>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="roleDialogVisible"
+      :inert="accountSaving"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!accountSaving"
+      :show-close="!accountSaving"
+      :before-close="done => closeConfigurationDialog('roleDialogVisible', done)"
       :title="roleForm.id ? '配置角色' : '新增角色'"
       width="760px"
     >
@@ -377,12 +392,12 @@
         </section>
       </div>
       <template #footer>
-        <el-button @click="roleDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveRole">保存角色</el-button>
+        <el-button :disabled="accountSaving" @click="closeConfigurationDialog('roleDialogVisible')">取消</el-button>
+        <el-button type="primary" :loading="accountSaving" @click="saveRole">保存角色</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="passwordDialogVisible" title="重置密码" width="460px">
+    <el-dialog v-model="passwordDialogVisible" title="重置密码" width="460px" :inert="accountSaving" :close-on-click-modal="false" :close-on-press-escape="!accountSaving" :show-close="!accountSaving" :before-close="done => closeConfigurationDialog('passwordDialogVisible', done)">
       <el-alert
         title="保存后旧密码和既有登录会话立即失效，该账户需要重新登录。"
         type="warning"
@@ -394,8 +409,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="passwordDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="savePassword">确认重置</el-button>
+        <el-button :disabled="accountSaving" @click="closeConfigurationDialog('passwordDialogVisible')">取消</el-button>
+        <el-button type="primary" :loading="accountSaving" @click="savePassword">确认重置</el-button>
       </template>
     </el-dialog>
   </div>
@@ -404,6 +419,7 @@
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { hasPermission } from '@/security/permissionState'
+import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import OperationLogs from './OperationLogs.vue'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
@@ -447,6 +463,12 @@ function emptyRoleForm() {
 }
 
 export default {
+  mixins: [configurationDialogsMixin([
+    { visible: 'accountDialogVisible', draft: vm => vm.accountForm, busy: vm => vm.accountSaving },
+    { visible: 'roleDialogVisible', draft: vm => vm.roleForm, busy: vm => vm.accountSaving },
+    { visible: 'passwordDialogVisible', draft: vm => vm.newPassword, busy: vm => vm.accountSaving },
+    { visible: 'permissionDialogVisible', draft: vm => ({ roles: vm.permissionRoleIds, projects: vm.permissionProjectIds, mode: vm.permissionProjectAccessMode, global: vm.permissionGlobalEditable, defaults: vm.overrideDraft, overrides: vm.projectOverrideDraft }), busy: vm => vm.accountSaving },
+  ])],
   components: { TableColumnSettings, OperationLogs },
   name: 'AccountManagement',
   data() {
@@ -474,6 +496,8 @@ export default {
       permissionCatalog: [],
       projectOptions: [],
       accountDialogVisible: false,
+      accountSaving: false,
+      accountEditEpoch: 0,
       permissionDialogVisible: false,
       roleDialogVisible: false,
       passwordDialogVisible: false,
@@ -569,7 +593,16 @@ export default {
     this.activeTab = this.canViewAccounts ? 'accounts' : this.canViewRoles ? 'roles' : 'logs'
     this.loadData()
   },
+  beforeUnmount() { this.accountEditEpoch++; this.newPassword = ''; this.accountForm.password = '' },
   methods: {
+    async runAccountSave(request, complete) {
+      if (this.accountSaving) return
+      this.accountSaving = true
+      const epoch = this.accountEditEpoch
+      try { await request(); if (epoch === this.accountEditEpoch) await complete() }
+      catch (error) { if (epoch === this.accountEditEpoch && !error.requestErrorNotified) ElMessage.error(error.message || '保存失败，请重试') }
+      finally { if (epoch === this.accountEditEpoch) this.accountSaving = false }
+    },
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     async loadData() {
       this.loading = true
@@ -618,10 +651,12 @@ export default {
       this.accountDialogVisible = true
     },
     async saveAccount() {
-      await saveConsoleAccount(this.accountForm)
-      this.accountDialogVisible = false
-      ElMessage.success('账户已保存')
-      await this.loadData()
+      return this.runAccountSave(() => saveConsoleAccount(this.accountForm), async () => {
+        this.accountDialogVisible = false
+        this.accountForm.password = ''
+        ElMessage.success('账户已保存')
+        await this.loadData()
+      })
     },
     openPermissionDialog(account) {
       this.selectedAccount = account
@@ -644,7 +679,7 @@ export default {
       Object.entries(this.overrideDraft).forEach(([code, effect]) => {
         if (effect !== 'INHERIT') overrides[code] = effect
       })
-      await saveConsoleAccountPermissions(this.selectedAccount.id, {
+      return this.runAccountSave(() => saveConsoleAccountPermissions(this.selectedAccount.id, {
         roleIds: this.permissionRoleIds,
         projectIds: this.permissionProjectIds,
         projectAccessMode: this.permissionProjectAccessMode,
@@ -652,10 +687,11 @@ export default {
         projectPermissionOverrides: Object.fromEntries(Object.entries(this.projectOverrideDraft).map(([id, values]) => [id,
           Object.fromEntries(Object.entries(values).filter(([, effect]) => effect !== 'INHERIT'))])),
         permissionOverrides: overrides
-      })
+      }), async () => {
       this.permissionDialogVisible = false
       ElMessage.success('账户最终权限已更新')
       await this.loadData()
+      })
     },
     selectPermissionScope() {
       if (this.permissionScope === 'DEFAULT') return
@@ -682,12 +718,13 @@ export default {
       this.passwordDialogVisible = true
     },
     async savePassword() {
-      await resetConsoleAccountPassword(
+      return this.runAccountSave(() => resetConsoleAccountPassword(
         this.passwordAccount.id, this.newPassword
-      )
+      ), () => {
       this.passwordDialogVisible = false
       this.newPassword = ''
       ElMessage.success('密码已重置')
+      })
     },
     openRoleDialog(role) {
       this.roleForm = role
@@ -704,10 +741,11 @@ export default {
       this.roleDialogVisible = true
     },
     async saveRole() {
-      await saveConsoleRole(this.roleForm)
+      return this.runAccountSave(() => saveConsoleRole(this.roleForm), async () => {
       this.roleDialogVisible = false
       ElMessage.success('角色已保存')
       await this.loadData()
+      })
     },
     async toggleRole(role) {
       const next = role.status === 1 ? 0 : 1

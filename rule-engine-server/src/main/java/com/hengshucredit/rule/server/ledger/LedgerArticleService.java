@@ -21,14 +21,14 @@ import static com.hengshucredit.rule.server.ledger.LedgerAccess.number;
 @Service
 public class LedgerArticleService {
     static final String TABLE = "rule_ledger_article";
-    static final Set<String> CATEGORIES = Set.of("PRODUCT", "STRATEGY", "RELEASE", "INCIDENT", "MEETING", "WORK", "OTHER");
     private static final Pattern ASSET_REFERENCE = Pattern.compile("/api/rule/ledger/assets/([1-9][0-9]*)/content(?:\\b)");
     private final LedgerRepository repository;
     private final LedgerAccess access;
     private final LedgerAssetService assets;
     private final ObjectMapper json;
-    public LedgerArticleService(LedgerRepository repository, LedgerAccess access, LedgerAssetService assets, ObjectMapper json) {
-        this.repository = repository; this.access = access; this.assets = assets; this.json = json;
+    private final LedgerTypeService types;
+    public LedgerArticleService(LedgerRepository repository, LedgerAccess access, LedgerAssetService assets, ObjectMapper json, LedgerTypeService types) {
+        this.repository = repository; this.access = access; this.assets = assets; this.json = json; this.types = types;
     }
 
     public Page<Map<String, Object>> list(String status, String scope, Long projectId, String keyword, int page, int size) {
@@ -109,6 +109,7 @@ public class LedgerArticleService {
                 id, next, content.getTitle(), content.getSummary(), Boolean.TRUE.equals(content.getSummaryAuto()) ? 1 : 0, content.getBody(), content.getCategory(), content.getScope(), content.getProjectId(), content.getOccurredAt(), next == 1 ? content.getOccurredAt() : now, now, access.userId(), access.actor(), content.getChangeSummary(), digest);
         for (long eventId : content.getEventIds()) repository.update("INSERT INTO rule_ledger_revision_reference (revision_id,ref_type,ref_id) VALUES (?,'EVENT',?)", revisionId, eventId);
         for (long assetId : assetIds(content.getBody())) repository.update("INSERT INTO rule_ledger_revision_reference (revision_id,ref_type,ref_id) VALUES (?,'ASSET',?)", revisionId, assetId);
+        repository.update("INSERT INTO rule_ledger_revision_reference (revision_id,ref_type,ref_id) VALUES (?,'CATEGORY',?)", revisionId, Long.valueOf(content.getCategory()));
         repository.update("UPDATE rule_ledger_article SET scope=?,project_id=?,published_version=?,has_draft=0,draft_json=NULL,draft_user_id=NULL,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?",
                 content.getScope(), content.getProjectId(), next, id);
         repository.update("DELETE FROM rule_ledger_draft_reference WHERE article_id=?", id);
@@ -210,6 +211,7 @@ public class LedgerArticleService {
         repository.update("DELETE FROM rule_ledger_draft_reference WHERE article_id=?", id);
         for (long ref : content.getEventIds()) repository.update("INSERT INTO rule_ledger_draft_reference (article_id,ref_type,ref_id) VALUES (?,'EVENT',?)", id, ref);
         for (long ref : assetIds(content.getBody())) repository.update("INSERT INTO rule_ledger_draft_reference (article_id,ref_type,ref_id) VALUES (?,'ASSET',?)", id, ref);
+        if (content.getCategory() != null && !content.getCategory().isBlank()) repository.update("INSERT INTO rule_ledger_draft_reference (article_id,ref_type,ref_id) VALUES (?,'CATEGORY',?)", id, Long.valueOf(content.getCategory()));
     }
     static Set<Long> assetIds(String body) {
         // Markdown 反斜线、HTML 实体及 URL 会忽略的 ASCII 空白不能绕过素材引用与检测校验。
@@ -228,9 +230,9 @@ public class LedgerArticleService {
         if (value.getBody().getBytes(StandardCharsets.UTF_8).length > 1024 * 1024) throw new IllegalArgumentException("正文不能超过 1 MB");
         if (value.getEventIds() != null && (value.getEventIds().size() > 20 || value.getEventIds().stream().anyMatch(id -> id == null || id <= 0))) throw new IllegalArgumentException("请选择不超过 20 个有效事件");
         value.setEventIds(value.getEventIds() == null ? List.of() : value.getEventIds().stream().distinct().sorted().toList());
+        if (publishing || value.getCategory() != null && !value.getCategory().isBlank()) value.setCategory(String.valueOf(types.resolve(value.getCategory(), true).get("id")));
         if (publishing) {
             if (value.getTitle().isBlank() || value.getBody().isBlank()) throw new IllegalArgumentException("发布前请填写标题和正文");
-            if (value.getCategory() == null || !CATEGORIES.contains(value.getCategory())) throw new IllegalArgumentException("请选择内容类型");
             if (value.getOccurredAt() == null) throw new IllegalArgumentException("请选择发生时间");
             if (Boolean.TRUE.equals(value.getSummaryAuto()) || value.getSummary().isBlank()) { value.setSummaryAuto(true); value.setSummary(summary(value.getBody())); }
             if ("GLOBAL".equals(value.getScope())) value.setProjectId(null);

@@ -185,10 +185,13 @@
       :lifecycle-revision="lifecycleRevision"
       :validation-report="preflightReport"
       :online-artifact-digest="publishedRevision.artifactDigest || ''"
+      :online-revision="publishedRevision"
       :action-loading="forkingDesignerSource"
       :approval-request-id="lifecycleRevision.governanceRequestId"
       @action="handleLifecycleAction"
+      @show-regression="releaseReportsVisible = true"
     />
+    <regression-report-drawer v-if="releaseReportsVisible && rule.id" :key="rule.id" :definition-id="rule.id" :revision-id="lifecycleRevision.id" @close="releaseReportsVisible = false" />
     <el-card
       v-if="!loading && !revisions.length"
       data-testid="legacy-governance"
@@ -1460,6 +1463,7 @@ import {
 import ApiScenarioPanel from '@/components/rule/ApiScenarioPanel'
 import RuleVersionDiff from '@/components/rule/versionDiff/RuleVersionDiff.vue'
 import RuleLifecyclePanel from '@/components/rule/RuleLifecyclePanel.vue'
+import RegressionReportDrawer from '@/components/rule/RegressionReportDrawer.vue'
 import RuleValidationReport from '@/components/rule/RuleValidationReport.vue'
 import RuleLifecycleTimeline from '@/components/rule/RuleLifecycleTimeline.vue'
 import RuleFieldHierarchyDisplay from '@/components/rule/RuleFieldHierarchyDisplay.vue'
@@ -1582,6 +1586,7 @@ export default {
       lifecycleRevisionId: null,
       publishedRevision: {},
       preflightReport: null,
+      releaseReportsVisible: false,
       preflightRequestId: 0,
       lifecycleEvents: [],
       repairPreview: {},
@@ -1680,6 +1685,7 @@ export default {
     ApiScenarioPanel,
     RuleVersionDiff,
     RuleLifecyclePanel,
+    RegressionReportDrawer,
     RuleValidationReport,
     RuleLifecycleTimeline,
     RuleFieldHierarchyDisplay,

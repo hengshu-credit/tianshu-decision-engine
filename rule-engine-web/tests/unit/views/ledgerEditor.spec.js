@@ -2,7 +2,7 @@ import { shallowMount, flushPromises } from '@test-utils'
 import LedgerEditor from '@/views/ledger/LedgerEditor.vue'
 import * as api from '@/api/ledger'
 import { confirmDesignerPathsCanClose, clearDesignerLeaveGuards } from '@/utils/designerLeaveGuard'
-vi.mock('@/api/ledger', () => ({ getLedgerArticleDraft: vi.fn(), saveLedgerDraft: vi.fn(), publishLedgerArticle: vi.fn(), listLedgerEvents: vi.fn(), getLedgerEvent: vi.fn(), getLedgerVersions: vi.fn(), getLedgerVersionEvents: vi.fn(), restoreLedgerVersion: vi.fn(), listLedgerAssets: vi.fn(), uploadLedgerAsset: vi.fn(), updateLedgerAsset: vi.fn(), scanLedgerAsset: vi.fn(), deleteLedgerAssets: vi.fn(), getLedgerAssetReferences: vi.fn(), downloadLedgerAsset: vi.fn(), saveLedgerEvent: vi.fn() }))
+vi.mock('@/api/ledger', () => ({ listLedgerTypes: vi.fn().mockResolvedValue({ data: [] }), getLedgerArticleDraft: vi.fn(), saveLedgerDraft: vi.fn(), publishLedgerArticle: vi.fn(), listLedgerEvents: vi.fn(), getLedgerEvent: vi.fn(), getLedgerVersions: vi.fn(), getLedgerVersionEvents: vi.fn(), restoreLedgerVersion: vi.fn(), listLedgerAssets: vi.fn(), uploadLedgerAsset: vi.fn(), updateLedgerAsset: vi.fn(), scanLedgerAsset: vi.fn(), deleteLedgerAssets: vi.fn(), getLedgerAssetReferences: vi.fn(), downloadLedgerAsset: vi.fn(), saveLedgerEvent: vi.fn() }))
 vi.mock('@/utils/ledgerMarkdown', () => ({ Vditor: vi.fn(), loadLedgerMarkdown: vi.fn().mockResolvedValue(), ledgerEditorCdn: '/vendor/vditor', renderLedgerMarkdown: vi.fn().mockResolvedValue('') }))
 const body = { title: '原文章', body: '原正文', category: 'WORK', scope: 'PROJECT', projectId: '1', eventIds: [], occurredAt: '2026-11-05T10:20:30', summary: '', changeSummary: '' }
 function mount(id) {
@@ -26,7 +26,7 @@ test('工作区刷新取消保留正文，浏览器关闭也保护未保存内�
 test('身份失效后迟到的草稿读取不能恢复原账户正文', async () => {
   let resolve
   api.getLedgerArticleDraft.mockReturnValue(new Promise(done => { resolve = done }))
-  const view = mount('7'); view.vm.clearIdentity()
+  const view = mount('7'); await flushPromises(); view.vm.clearIdentity()
   resolve({ data: { version: 2, publishedVersion: 1, content: body } }); await flushPromises()
   view.vm.updateBody('已销毁编辑器的迟到同步')
   expect(view.vm.content.body).toBe('')

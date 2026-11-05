@@ -9,7 +9,8 @@
         { label: '执行并查看追踪', detail: '核对结果、耗时和命中路径' },
       ]"
     />
-    <el-alert class="test-impact-notice" title="测试调用与写入说明" description="单次测试、固定用例和批量测试都会按所选版本真实执行。若配置了外数、数据库、SFTP 或名单动作，将按实际配置调用或写入，并应用计费规则。" type="info" :closable="false" show-icon />
+    <execution-impact-panel v-if="selectedRuleId" :runtime-nodes="testRuntimeNodes" :model="definitionModel" :model-type="selectedRule?.modelType || ''" :loaded="!!inputExecutionIdentity && !!definitionModel" />
+    <el-alert v-else class="test-impact-notice" title="测试调用与写入说明" description="先选择版本来源，再核对执行模式和影响清单。本页单次、固定用例和批量测试均为真实联调。" type="info" :closable="false" show-icon />
     <div class="test-layout">
       <!-- 左侧：选择规则 + 参数输入 -->
       <div class="test-left">
@@ -58,7 +59,7 @@
                 @change="onRuleChange"
               />
             </el-form-item>
-            <el-form-item v-if="selectedRuleId" label="测试版本">
+            <el-form-item v-if="selectedRuleId" label="版本来源">
               <el-select v-model="selectedTestSourceValue" :loading="testSourcesLoading" :disabled="testSourcesLoading" style="width: 100%" data-testid="rule-test-source" @change="onTestSourceChange">
                 <el-option v-for="item in testSourceOptions" :key="item.value" :label="item.label" :value="item.value" />
               </el-select>
@@ -548,6 +549,7 @@ import ElIconLoading from '@/components/common/AppLoadingIcon.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import RegressionReportDrawer from '@/components/rule/RegressionReportDrawer.vue'
+import ExecutionImpactPanel from '@/components/test/ExecutionImpactPanel.vue'
 import { validationLabel, validationTagType } from '@/utils/testValidationStatus'
 import {
   Star as ElIconStarOff,
@@ -586,6 +588,7 @@ import MonacoEditor from '@/components/MonacoEditor'
 import { cloneExactJson, createExactNumber, exactNumberText, isExactNumber, parseExactJson, parseExecutionSnapshotJson, stringifyExactJson } from '@/utils/exactJson'
 import { sampleValueForVarType } from '@/utils/testParamTemplate'
 import { normalizeTestResult } from '@/utils/testResult'
+import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { executionStatusLabel, executionStatusHint } from '@/utils/executionStatus'
 import { revisionTestSource, executionSourceLabel, requireExecutionIdentity } from '@/utils/ruleTestExecutionSource'
 import { routeProjectId } from '@/utils/projectContext'
@@ -601,7 +604,7 @@ import {
 } from '@/utils/testCaseTools'
 
 export default {
-  components: { ProjectResourceSelect, RemoteFilterSelect, RegressionReportDrawer, RuleValidationReport,
+  components: { ExecutionImpactPanel, ProjectResourceSelect, RemoteFilterSelect, RegressionReportDrawer, RuleValidationReport,
     TraceTree,
     AsyncState,
     ConfigLayerGuide,
@@ -648,6 +651,7 @@ export default {
       inputLoadWarnings: [],
       inputLoadRequestId: 0,
       inputExecutionIdentity: null,
+      testRuntimeNodes: [],
       ruleContextRequestId: 0,
       executionRequestId: 0,
       contextWarnings: [],
@@ -997,7 +1001,7 @@ export default {
         if (!this.isActiveRuleContext(contextRequestId, ruleId)) return
         var content = r && r.data ? r.data : r
         if (content && content.modelJson) {
-          var model = JSON.parse(content.modelJson)
+          var model = parseDesignerModelJson(content.modelJson)
           this.definitionModel = model
           if (model.nodes && model.edges) {
             this.modelData = { nodes: model.nodes, edges: model.edges }
@@ -1378,6 +1382,7 @@ export default {
         if (!this.isActiveInputRequest(requestId, ruleId)) return
         if (source?.sourceType !== 'WORKSPACE' || schema.executionIdentity) requireExecutionIdentity(schema.executionIdentity, ruleId, source)
         this.inputExecutionIdentity = schema.executionIdentity || null
+        this.testRuntimeNodes = schema.runtimeNodes || []
         schemaSucceeded = true
         if (source && source.sourceType !== 'WORKSPACE') this.varMap = Object.fromEntries(schema.inputs.map(field => [field.scriptName || field.code, field.label || field.code || field.scriptName]))
         this.testOutputFields = schema.outputs || []
@@ -1874,6 +1879,7 @@ export default {
       return res
     },
     resetInputLoadState() {
+      this.testRuntimeNodes = []
       this.inputSampleJson = null
       this.inputExecutionIdentity = null
       ++this.inputLoadRequestId

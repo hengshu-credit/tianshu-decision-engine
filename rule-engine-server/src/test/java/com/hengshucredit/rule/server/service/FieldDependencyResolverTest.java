@@ -24,6 +24,14 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class FieldDependencyResolverTest {
+    @Test public void frozenSftpVariableRemainsARuntimeDependencyInTestSchema() {
+        var field = new RuleDefinitionInputField(); field.setVarId(7L); field.setRefType("VARIABLE"); field.setFieldName("remoteFile");
+        var variable = new RuleVariable(); variable.setId(7L); variable.setVarSource("SFTP"); variable.setStatus(1);
+        var plan = new FieldDependencyResolver().resolveRuleFields(List.of(field), List.of(), List.of(variable));
+        assertTrue(plan.getExternalInputs().isEmpty());
+        assertEquals("SFTP", plan.getRuntimeNodes().get(0).getSourceType());
+        assertEquals(Long.valueOf(7), plan.getRuntimeNodes().get(0).getRefId());
+    }
 
     @Test
     public void modelSchemaUsesReferencesInsideSourceOperandInsteadOfStaleLegacyField() {

@@ -248,7 +248,7 @@ public class FieldDependencyResolver {
         }
         String source = variable.getVarSource().trim().toUpperCase(Locale.ROOT);
         if (!"CONSTANT".equals(source) && !"LIST".equals(source) && !"API".equals(source)
-                && !"DB".equals(source) && !"DERIVED".equals(source)) {
+                && !"DB".equals(source) && !"SFTP".equals(source) && !"DERIVED".equals(source)) {
             return null;
         }
         if (!Integer.valueOf(1).equals(variable.getStatus())) {

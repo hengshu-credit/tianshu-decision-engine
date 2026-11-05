@@ -26,6 +26,9 @@ public class LedgerAccess {
         return scope.userId();
     }
     public String actor() { userId(); return operator.resolve(); }
+    public void requireRead() { userId(); if (!access.current().can("ledger:view")) throw new ConsoleAccessDeniedException("无台账查看权限"); }
+    public boolean canManageTypes() { return access.current() != null && access.current().globalEditable() && access.current().can("ledger:manage", null); }
+    public void requireTypeManagement() { userId(); if (!canManageTypes()) throw new ConsoleAccessDeniedException("维护事件类型需要全局台账管理权限"); }
     public void requireWrite() { userId(); if (!access.current().can("ledger:edit")) throw new ConsoleAccessDeniedException("无台账编辑权限"); }
     public void requireTarget(String scope, Long projectId) {
         userId();

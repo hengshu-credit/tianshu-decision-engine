@@ -60,6 +60,7 @@ test('逐一点击全部菜单与子页签，往返切换后仍可交互并记�
   const ledgerEvent = { id: 1, title: '策略调整验收', scope: 'GLOBAL', status: 'ACCEPTANCE', canEdit: false }
   const ledgerTitle = '策略调整已发布，等待验收'
   apiData.set('/api/rule/ledger/events', [ledgerEvent])
+  apiData.set('/api/rule/ledger/events/manage', { records: [ledgerEvent], total: 1 })
   apiData.set('/api/rule/ledger/timeline', { records: [{
     id: 11, articleId: 1, versionNo: 1, title: ledgerTitle, summary: '本周完成策略调整，下周验收。',
     scope: 'GLOBAL', category: 'STRATEGY', activityTime: '2026-11-04T14:20:00', events: [ledgerEvent], actorName: '验收人员',
@@ -124,7 +125,7 @@ test('逐一点击全部菜单与子页签，往返切换后仍可交互并记�
       await expect(pane).toHaveAttribute('aria-hidden', 'false')
       await expect(pane).not.toHaveAttribute('inert', '')
       if (menu.index === '/ledger') {
-        await expect(pane).toContainText(name.trim() === '素材库' ? '验收截图.png' : ledgerTitle)
+        await expect(pane).toContainText(name.trim() === '素材库' ? '验收截图.png' : name.trim() === '事件与类型' ? ledgerEvent.title : ledgerTitle)
       }
       await record('tab', `${menu.label}/${name.trim()}`)
     }

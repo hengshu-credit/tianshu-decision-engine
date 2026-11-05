@@ -5,6 +5,7 @@ import com.hengshucredit.rule.model.dto.LedgerRequests;
 import com.hengshucredit.rule.server.ledger.LedgerArticleService;
 import com.hengshucredit.rule.server.ledger.LedgerAssetService;
 import com.hengshucredit.rule.server.ledger.LedgerQueryService;
+import com.hengshucredit.rule.server.ledger.LedgerTypeService;
 import com.hengshucredit.rule.server.security.RequirePermission;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -28,6 +29,18 @@ public class LedgerController {
     private final LedgerArticleService articles;
     private final LedgerAssetService assets;
     private final LedgerQueryService queries;
+    private final LedgerTypeService types;
+
+    @GetMapping("/types")
+    public ApiResponse<?> types() { return ApiResponse.ok(types.list()); }
+    @PostMapping("/types") @RequirePermission("ledger:manage")
+    public ApiResponse<?> createType(@RequestBody LedgerRequests.EventType request) { return ApiResponse.ok(types.save(null,request)); }
+    @PutMapping("/types/{id}") @RequirePermission("ledger:manage")
+    public ApiResponse<?> updateType(@PathVariable long id,@RequestBody LedgerRequests.EventType request) { return ApiResponse.ok(types.save(id,request)); }
+    @DeleteMapping("/types/{id}") @RequirePermission("ledger:manage")
+    public ApiResponse<?> deleteType(@PathVariable long id,@RequestParam Long version) { types.delete(id,version); return ApiResponse.ok(); }
+    @GetMapping("/events/manage")
+    public ApiResponse<?> manageEvents(@RequestParam(required=false) String keyword,@RequestParam(required=false) Long typeId,@RequestParam(defaultValue="1") int pageNum,@RequestParam(defaultValue="20") int pageSize) { return ApiResponse.ok(queries.manageEvents(keyword,typeId,pageNum,pageSize)); }
 
     @GetMapping("/timeline")
     public ApiResponse<?> timeline(@RequestParam(required=false) String scope, @RequestParam(required=false) Long projectId,

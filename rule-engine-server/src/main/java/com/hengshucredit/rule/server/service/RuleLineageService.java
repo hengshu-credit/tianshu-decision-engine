@@ -58,6 +58,7 @@ import java.util.Set;
 
 @Service
 public class RuleLineageService {
+    private static final int MAX_DISPLAY_NODES = 1000;
     @Resource private com.hengshucredit.rule.server.mapper.RuleVersionBindingMapper ruleVersionBindings;
     @Resource private com.hengshucredit.rule.server.mapper.RuleDefinitionVersionMapper ruleVersionSnapshots;
     @Resource
@@ -186,11 +187,10 @@ public class RuleLineageService {
 
     public Map<String, Object> graph(String nodeType, Long nodeId, String direction, Integer maxDepth) {
         if (accessGuard != null) accessGuard.requireResource(normalizeType(nodeType), "view");
-        FullGraph full = buildFullGraph();
-        if (accessGuard != null) full.nodes.entrySet().removeIf(entry -> !accessGuard.can(
-                com.hengshucredit.rule.server.security.ConsoleAccessGuard.resourceModule(String.valueOf(entry.getValue().get("type"))) + ":view"));
+        Neighborhood request = new Neighborhood();
+        FullGraph full = request.graph;
         String startKey = nodeKey(normalizeType(nodeType), nodeId);
-        if (!full.nodes.containsKey(startKey)) {
+        if (!request.load(startKey)) {
             throw new IllegalArgumentException("血缘起点不存在");
         }
         String dir = normalizeDirection(direction);
@@ -199,12 +199,223 @@ public class RuleLineageService {
         Set<String> selectedEdges = new LinkedHashSet<>();
         selectedNodes.add(startKey);
         if ("ALL".equals(dir) || "UPSTREAM".equals(dir)) {
-            traverse(full, startKey, "UPSTREAM", depth, selectedNodes, selectedEdges);
+            request.traverse(startKey, "UPSTREAM", depth, selectedNodes, selectedEdges);
         }
         if ("ALL".equals(dir) || "DOWNSTREAM".equals(dir)) {
-            traverse(full, startKey, "DOWNSTREAM", depth, selectedNodes, selectedEdges);
+            request.traverse(startKey, "DOWNSTREAM", depth, selectedNodes, selectedEdges);
         }
+        // 边界节点只探测邻接关系以提供展开按钮，不把下一层加入返回图。
+        for (String key : selectedNodes) for (String side : List.of("UPSTREAM", "DOWNSTREAM")) {
+            if (!hasValidNeighbor(full, key, side)) request.expand(key, side, true);
+        }
+        enrichNodeVersions(full);
         return graphResult(full, startKey, selectedNodes, selectedEdges);
+    }
+
+    private record NodeSource<T>(BaseMapper<T> mapper, String code, String label, String valueType, String columns) { }
+
+    private NodeSource<?> nodeSource(String type) {
+        return switch (type) {
+            case "PROJECT" -> new NodeSource<>(projectMapper, "projectCode", "projectName", null, "id,project_code,project_name,status");
+            case "VARIABLE" -> new NodeSource<>(variableMapper, "varCode", "varLabel", "varType", "id,project_id,var_code,var_label,var_type,status,var_source,source_config");
+            case "DATA_OBJECT" -> new NodeSource<>(dataObjectMapper, "objectCode", "objectLabel", null, "id,project_id,object_code,object_label,status");
+            case "DATA_FIELD" -> new NodeSource<>(dataObjectFieldMapper, "varCode", "varLabel", "varType", "id,object_id,parent_field_id,project_id,script_name,var_code,var_label,var_type,status");
+            case "RULE" -> new NodeSource<>(definitionMapper, "ruleCode", "ruleName", null, "id,project_id,rule_code,rule_name,status");
+            case "MODEL" -> new NodeSource<>(modelMapper, "modelCode", "modelName", null, "id,project_id,model_code,model_name,status");
+            case "DATASOURCE" -> new NodeSource<>(externalDatasourceMapper, "datasourceCode", "datasourceName", null, "id,project_id,datasource_code,datasource_name,status");
+            case "API" -> new NodeSource<>(externalApiConfigMapper, "apiCode", "apiName", null, "id,datasource_id,api_code,api_name,status");
+            case "DB" -> new NodeSource<>(dbDatasourceMapper, "datasourceCode", "datasourceName", null, "id,project_id,datasource_code,datasource_name,status");
+            case "SFTP" -> new NodeSource<>(sftpDatasourceMapper, "datasourceCode", "datasourceName", null, "id,project_id,datasource_code,datasource_name,status");
+            case "LIST" -> new NodeSource<>(listLibraryMapper, "listCode", "listName", null, "id,project_id,list_code,list_name,status");
+            case "FUNCTION" -> new NodeSource<>(functionMapper, "funcCode", "funcName", "returnType", "id,project_id,func_code,func_name,return_type,status");
+            default -> null;
+        };
+    }
+
+    private Object property(Object value, String name) {
+        var meta = org.apache.ibatis.reflection.SystemMetaObject.forObject(value);
+        return meta.hasGetter(name) ? meta.getValue(name) : null;
+    }
+    private Long identity(Object value, String name) { return property(value, name) instanceof Number id ? id.longValue() : null; }
+    private String textProperty(Object value, String name) { Object field = property(value, name); return field == null ? null : String.valueOf(field); }
+    private <T> List<T> nodeRows(NodeSource<T> source, String column, Long id) {
+        if (source == null || source.mapper() == null) return List.of();
+        return source.mapper().selectList(new QueryWrapper<T>().select(source.columns().split(",")).eq(column, id).and(q -> q.isNull("status").or().ne("status", -1)).last("LIMIT " + (MAX_DISPLAY_NODES + 1)));
+    }
+
+    /** 每次请求独立缓存已授权节点，沿稳定 ID 扩展；不缓存其他账户的范围。 */
+    private final class Neighborhood {
+        private final FullGraph graph = new FullGraph();
+        private final Map<String, Object> entities = new LinkedHashMap<>();
+        private final Map<String, Object> prefetched = new LinkedHashMap<>();
+        private final Set<String> checked = new LinkedHashSet<>(), expanded = new LinkedHashSet<>(), edgeKeys = new LinkedHashSet<>();
+
+        private boolean load(String key) {
+            if (key == null) return false;
+            if (!checked.add(key)) return graph.nodes.containsKey(key);
+            int separator = key.indexOf(':');
+            String type = key.substring(0, separator);
+            Long id;
+            try { id = Long.valueOf(key.substring(separator + 1)); } catch (NumberFormatException error) { return false; }
+            if (id <= 0 || accessGuard != null && !accessGuard.can(com.hengshucredit.rule.server.security.ConsoleAccessGuard.resourceModule(type) + ":view")) return false;
+            NodeSource<?> source = nodeSource(type);
+            if (source == null) return false;
+            List<?> rows = prefetched.containsKey(key) ? List.of(prefetched.remove(key)) : nodeRows(source, "id", id);
+            for (Object row : rows) {
+                if (!id.equals(identity(row, "id")) || Integer.valueOf(-1).equals(property(row, "status"))) continue;
+                if (graph.nodes.size() >= MAX_DISPLAY_NODES) throw new IllegalArgumentException("血缘展示超过 " + MAX_DISPLAY_NODES + " 个节点，请选择更具体的资源起点或减小查询深度；未返回不完整图");
+                entities.put(key, row);
+                String code = "DATA_FIELD".equals(type) && hasText(textProperty(row, "scriptName")) ? textProperty(row, "scriptName") : textProperty(row, source.code());
+                if (source.valueType() == null) addNode(graph, type, id, code, textProperty(row, source.label()));
+                else addNode(graph, type, id, code, textProperty(row, source.label()), textProperty(row, source.valueType()));
+                if ("DATA_FIELD".equals(type)) {
+                    Long objectId = identity(row, "objectId");
+                    String objectKey = nodeKey("DATA_OBJECT", objectId);
+                    if (objectId != null && objectId > 0 && !load(objectKey)) {
+                        // 不可见/已删除对象的字段不能退化为项目字段而绕过对象权限。
+                        graph.nodes.remove(key); return false;
+                    }
+                    if (graph.nodes.containsKey(objectKey)) {
+                        graph.nodes.get(key).put("objectNodeId", objectKey);
+                        String parentKey = nodeKey("DATA_FIELD", identity(row, "parentFieldId"));
+                        boolean validParent = !key.equals(parentKey) && load(parentKey) && objectId.equals(identity(entities.get(parentKey), "objectId"));
+                        graph.nodes.get(key).put("parentNodeId", validParent ? parentKey : objectKey);
+                        graph.nodes.get(validParent ? parentKey : objectKey).put("hasFieldChildren", true);
+                    }
+                }
+                return true;
+            }
+            return false;
+        }
+
+        private void ownership(FullGraph candidate, String key) {
+            Object row = entities.get(key);
+            if (row == null) return;
+            String parent = (String) graph.nodes.get(key).get("parentNodeId");
+            if (parent != null) addEdge(candidate, parent, key, "包含字段");
+            else if (key.startsWith("API:")) addEdge(candidate, nodeKey("DATASOURCE", identity(row, "datasourceId")), key, "包含API");
+            else if (!key.startsWith("PROJECT:")) addProjectEdge(candidate, identity(row, "projectId"), key);
+        }
+
+        private void children(FullGraph candidate, String type, String column, Long id, String parentKey, boolean probe) {
+            for (Object child : nodeRows(nodeSource(type), column, id)) {
+                String key = nodeKey(type, identity(child, "id"));
+                prefetched.put(key, child);
+                if (load(key)) ownership(candidate, key);
+                if (probe && candidate.outgoingEdges.containsKey(parentKey)) return;
+            }
+        }
+
+        private List<String> refTypes(String type) {
+            return switch (type) {
+                case "VARIABLE" -> List.of("VARIABLE", "CONSTANT");
+                case "DATA_FIELD" -> List.of("DATA_FIELD", "DATA_OBJECT");
+                case "DATA_OBJECT" -> List.of("DATA_OBJECT_ROOT");
+                case "API" -> List.of("API", "EXTERNAL_API");
+                case "LIST" -> List.of("LIST", "LIST_LIBRARY");
+                default -> List.of(type);
+            };
+        }
+
+        private Map<Long, Long> outputOwners(List<JSONObject> references) {
+            Set<Long> ids = new LinkedHashSet<>();
+            for (JSONObject ref : references) if ("MODEL_OUTPUT".equalsIgnoreCase(ref.getString("refType")) && ref.getLong("refId") != null) ids.add(ref.getLong("refId"));
+            if (ids.isEmpty()) return Map.of();
+            var result = new LinkedHashMap<Long, Long>();
+            for (var field : modelOutputFieldMapper.selectList(new QueryWrapper<RuleModelOutputField>().select("id", "model_id").in("id", ids))) {
+                if (ids.contains(field.getId())) result.put(field.getId(), field.getModelId());
+            }
+            return result;
+        }
+
+        private void variableEdges(FullGraph candidate, RuleVariable variable) {
+            List<JSONObject> refs = new ArrayList<>();
+            for (var ref : OperandDependencyCollector.collectReferences(parseObject(variable.getSourceConfig()))) {
+                JSONObject value = new JSONObject(); value.put("refType", ref.getRefType()); value.put("refId", ref.getRefId()); refs.add(value);
+            }
+            addVariableSourceEdges(candidate, variable, outputOwners(refs));
+        }
+
+        private void expand(String key, String direction, boolean probe) {
+            if (!load(key) || !expanded.add(key + ":" + direction)) return;
+            String type = (String) graph.nodes.get(key).get("type");
+            Long id = (Long) graph.nodes.get(key).get("refId");
+            FullGraph candidate = new FullGraph();
+            if ("UPSTREAM".equals(direction)) ownership(candidate, key);
+            if ("DOWNSTREAM".equals(direction)) {
+                if ("PROJECT".equals(type)) {
+                    for (String child : List.of("VARIABLE", "DATA_OBJECT", "DATA_FIELD", "RULE", "MODEL", "DATASOURCE", "DB", "SFTP", "LIST", "FUNCTION")) {
+                        children(candidate, child, "project_id", id, key, probe);
+                        if (probe && candidate.outgoingEdges.containsKey(key)) break;
+                    }
+                } else if ("DATASOURCE".equals(type)) children(candidate, "API", "datasource_id", id, key, probe);
+                else if ("DATA_OBJECT".equals(type)) children(candidate, "DATA_FIELD", "object_id", id, key, probe);
+                else if ("DATA_FIELD".equals(type)) children(candidate, "DATA_FIELD", "parent_field_id", id, key, probe);
+            }
+
+            if (!Set.of("PROJECT", "DATASOURCE").contains(type)) {
+                var inputQuery = new QueryWrapper<RuleDefinitionInputField>().select("definition_id", "var_id", "ref_type");
+                var outputQuery = new QueryWrapper<RuleDefinitionOutputField>().select("definition_id", "var_id", "ref_type");
+                if ("RULE".equals(type)) { inputQuery.eq("definition_id", id); outputQuery.eq("definition_id", id); }
+                else { inputQuery.eq("var_id", id).in("ref_type", refTypes(type)); outputQuery.eq("var_id", id).in("ref_type", refTypes(type)); }
+                for (var field : definitionInputFieldMapper.selectList(inputQuery)) addEdge(candidate, refNodeKey(field.getRefType(), field.getVarId()), nodeKey("RULE", field.getDefinitionId()), "规则输入");
+                for (var field : definitionOutputFieldMapper.selectList(outputQuery)) addEdge(candidate, nodeKey("RULE", field.getDefinitionId()), refNodeKey(field.getRefType(), field.getVarId()), "规则输出");
+
+                var modelOutputs = new QueryWrapper<RuleModelOutputField>().select("id", "model_id", "ref_type", "var_id");
+                if ("MODEL".equals(type)) modelOutputs.eq("model_id", id);
+                else modelOutputs.eq("var_id", id).in("ref_type", refTypes(type));
+                var ownOutputs = modelOutputFieldMapper.selectList(modelOutputs);
+                List<Long> searchIds = new ArrayList<>(List.of(id));
+                if ("MODEL".equals(type)) for (var output : ownOutputs) if (id.equals(output.getModelId()) && output.getId() != null) searchIds.add(output.getId());
+                for (var field : ownOutputs) addEdge(candidate, nodeKey("MODEL", field.getModelId()), refNodeKey(field.getRefType(), field.getVarId()), "模型输出");
+                var modelInputs = new QueryWrapper<RuleModelInputField>().select("id", "model_id", "status", "source_operand", "default_operand", "ref_type", "var_id");
+                modelInputs.and(q -> {
+                    if ("MODEL".equals(type)) q.eq("model_id", id).or();
+                    q.and(ref -> ref.eq("var_id", id).in("ref_type", refTypes(type)));
+                    if ("MODEL".equals(type) && searchIds.size() > 1) q.or().and(ref -> ref.eq("ref_type", "MODEL_OUTPUT").in("var_id", searchIds.subList(1, searchIds.size())));
+                    for (Long searchId : searchIds) q.or().like("source_operand", String.valueOf(searchId)).or().like("default_operand", String.valueOf(searchId));
+                });
+                for (var field : modelInputFieldMapper.selectList(modelInputs)) {
+                    if (Integer.valueOf(0).equals(field.getStatus())) continue;
+                    List<JSONObject> refs = new ArrayList<>();
+                    collectOperandReferences(field.getSourceOperand(), refs); collectOperandReferences(field.getDefaultOperand(), refs);
+                    if (!hasText(field.getSourceOperand()) && !hasText(field.getDefaultOperand())) {
+                        JSONObject ref = new JSONObject(); ref.put("refType", field.getRefType()); ref.put("refId", field.getVarId()); refs.add(ref);
+                    }
+                    var owners = outputOwners(refs);
+                    for (JSONObject ref : refs) addEdge(candidate, modelInputRefNodeKey(ref.getString("refType"), ref.getLong("refId"), owners), nodeKey("MODEL", field.getModelId()), "模型输入");
+                }
+                if ("UPSTREAM".equals(direction) && entities.get(key) instanceof RuleVariable variable) variableEdges(candidate, variable);
+                // JSON 引用先按 ID 文本缩小候选，再按结构化 refType/refId 精确匹配；不按编码猜测。
+                var variables = new QueryWrapper<RuleVariable>().select("id", "var_source", "source_config", "status");
+                variables.and(q -> { for (int i = 0; i < searchIds.size(); i++) { if (i > 0) q.or(); q.like("source_config", String.valueOf(searchIds.get(i))); } });
+                if ("DOWNSTREAM".equals(direction)) for (var variable : variableMapper.selectList(variables)) if (!Integer.valueOf(-1).equals(variable.getStatus())) variableEdges(candidate, variable);
+            }
+            for (var edge : candidate.edges) {
+                String from = (String) edge.get("from"), to = (String) edge.get("to");
+                if (!("UPSTREAM".equals(direction) ? key.equals(to) : key.equals(from))) continue;
+                if (load(from) && load(to)) {
+                    if (edgeKeys.add(edgeKey(edge))) addEdge(graph, from, to, (String) edge.get("label"));
+                    if (probe) return;
+                }
+            }
+        }
+
+        private void traverse(String start, String direction, int depth, Set<String> selectedNodes, Set<String> selectedEdges) {
+            Set<String> visited = new LinkedHashSet<>(); Queue<TraversalStep> queue = new ArrayDeque<>();
+            visited.add(start); queue.add(new TraversalStep(start, 0));
+            while (!queue.isEmpty()) {
+                var step = queue.remove();
+                if (step.depth >= depth) continue;
+                expand(step.nodeKey, direction, false);
+                var edges = "UPSTREAM".equals(direction) ? graph.incomingEdges.getOrDefault(step.nodeKey, List.of()) : graph.outgoingEdges.getOrDefault(step.nodeKey, List.of());
+                for (var edge : edges) {
+                    String next = (String) edge.get("UPSTREAM".equals(direction) ? "from" : "to");
+                    selectedNodes.add(next); selectedEdges.add(edgeKey(edge));
+                    if (visited.add(next)) queue.add(new TraversalStep(next, step.depth + 1));
+                }
+            }
+        }
     }
 
     /** 治理按配置中持有的稳定ID判断消费者，与页面展示的数据流方向相互独立。 */
@@ -284,32 +495,6 @@ public class RuleLineageService {
             String target = Set.of("RULE", "FUNCTION").contains(type) ? nodeKey(type, reference.getRefId())
                     : "EXTERNAL_API".equals(type) ? nodeKey("API", reference.getRefId()) : refNodeKey(type, reference.getRefId());
             addReference(graph, target, nodeKey("RULE", ownerId));
-        }
-    }
-
-    private void traverse(FullGraph full, String startKey, String direction, int maxDepth,
-                          Set<String> selectedNodes, Set<String> selectedEdges) {
-        Set<String> visited = new LinkedHashSet<>();
-        Queue<TraversalStep> queue = new ArrayDeque<>();
-        visited.add(startKey);
-        queue.add(new TraversalStep(startKey, 0));
-        while (!queue.isEmpty()) {
-            TraversalStep step = queue.poll();
-            if (step.depth >= maxDepth) continue;
-            List<Map<String, Object>> related = "UPSTREAM".equals(direction)
-                    ? full.incomingEdges.getOrDefault(step.nodeKey, Collections.emptyList())
-                    : full.outgoingEdges.getOrDefault(step.nodeKey, Collections.emptyList());
-            for (Map<String, Object> edge : related) {
-                String next = "UPSTREAM".equals(direction)
-                        ? (String) edge.get("from")
-                        : (String) edge.get("to");
-                if (!full.nodes.containsKey(next)) continue;
-                selectedNodes.add(next);
-                selectedEdges.add(edgeKey(edge));
-                if (visited.add(next)) {
-                    queue.add(new TraversalStep(next, step.depth + 1));
-                }
-            }
         }
     }
 
@@ -496,12 +681,13 @@ public class RuleLineageService {
 
     /** 血缘节点与当前生效治理版本保持一致，避免只显示资源名称而无法判断依赖快照。 */
     private void enrichNodeVersions(FullGraph graph) {
-        if (governedResourceMapper == null) return;
+        if (governedResourceMapper == null || graph.nodes.isEmpty()) return;
         for (var resource : governedResourceMapper.selectList(new LambdaQueryWrapper<com.hengshucredit.rule.model.entity.GovernedResource>()
                 .select(com.hengshucredit.rule.model.entity.GovernedResource::getResourceType,
                         com.hengshucredit.rule.model.entity.GovernedResource::getResourceId,
                         com.hengshucredit.rule.model.entity.GovernedResource::getEffectiveVersionId,
-                        com.hengshucredit.rule.model.entity.GovernedResource::getEffectiveVersionNo))) {
+                        com.hengshucredit.rule.model.entity.GovernedResource::getEffectiveVersionNo)
+                .in(com.hengshucredit.rule.model.entity.GovernedResource::getResourceId, graph.nodes.values().stream().map(node -> node.get("refId")).distinct().toList()))) {
             if (resource.getResourceType() == null || resource.getResourceId() == null) continue;
             String key = nodeKey(graphNodeType(resource.getResourceType()), resource.getResourceId());
             Map<String, Object> node = graph.nodes.get(key);

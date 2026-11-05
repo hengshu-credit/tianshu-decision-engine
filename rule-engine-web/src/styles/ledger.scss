@@ -8,6 +8,10 @@
 }
 .ledger-page .uiue-filter-toolbar { align-items: flex-start; }
 .ledger-page .el-tabs__header { margin-bottom: 18px; }
+.ledger-dialog .el-dialog__body { padding-top: 16px; }
+.ledger-status-options { display: flex; flex-direction: column; gap: 8px; min-width: 0; width: 100%; }
+.ledger-status-option { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.ledger-status-options > .el-button { align-self: flex-start; }
 .ledger-help { color: var(--tianshu-text-secondary); font-size: 12px; line-height: 1.7; margin: 12px 0; }
 .ledger-table-summary { font-size: 12px; color: var(--tianshu-text-secondary); white-space: normal; line-height: 1.6; margin-top: 5px; }
 .ledger-axis { --ledger-axis-width: 18px; --ledger-axis-gap: 14px; position: relative; display: flex; flex-direction: column; gap: 12px; min-width: 0; }

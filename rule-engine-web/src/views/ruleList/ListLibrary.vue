@@ -236,10 +236,15 @@
       v-model="dialogVisible"
       width="640px"
       append-to-body
+      :close-on-click-modal="false"
+      :close-on-press-escape="!saving"
+      :show-close="!saving"
+      :before-close="done => closeConfigurationDialog('dialogVisible', done)"
     >
       <el-form
         ref="form"
         :model="form"
+        :disabled="saving"
         :rules="rules"
         label-width="100px"
         size="small"
@@ -306,8 +311,8 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button @click="dialogVisible = false">取消</el-button>
-          <el-button v-permission="'list:edit'" type="primary" @click="submit"
+          <el-button :disabled="saving" @click="closeConfigurationDialog('dialogVisible')">取消</el-button>
+          <el-button v-permission="'list:edit'" type="primary" :loading="saving" @click="submit"
             >保存草稿</el-button
           >
         </div>
@@ -317,6 +322,7 @@
 </template>
 
 <script>
+import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
@@ -339,7 +345,7 @@ import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
-  mixins: [governanceWorkspaceMixin],
+  mixins: [governanceWorkspaceMixin, configurationDialogsMixin([{ visible: 'dialogVisible', draft: vm => vm.form, busy: vm => vm.saving }])],
   data() {
     return {
       tableColumnOrders: { listColumns: null },
@@ -368,6 +374,7 @@ export default {
         keyword: '',
       },
       dialogVisible: false,
+      saving: false,
       form: this.emptyForm(),
       listTypeOptions: [
         { label: '黑名单', value: 'BLACK' },
@@ -453,8 +460,11 @@ export default {
     onScopeChange(scope) {
       if (scope === 'GLOBAL') this.form.projectId = 0
     },
-    submit() {
-      this.$refs.form.validate(async (valid) => {
+    async submit() {
+      if (this.saving) return
+      this.saving = true
+      try {
+        const valid = await new Promise(resolve => this.$refs.form.validate(resolve))
         if (!valid) return
         const payload = { ...this.form }
         if (payload.scope === 'GLOBAL') payload.projectId = 0
@@ -467,7 +477,7 @@ export default {
           : await createLibraryDraft(payload)
         this.dialogVisible = false
         await completeResourceChange(this, response, () => this.loadData())
-      })
+      } finally { this.saving = false }
     },
     async toggleStatus(row, requestedStatus) {
       const targetStatus = requestedStatus == null

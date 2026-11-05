@@ -644,6 +644,12 @@ public class SchemaSyncServiceTest {
         }
 
         @Override
+        public int update(String sql) {
+            sqlList.add(sql);
+            return 0;
+        }
+
+        @Override
         public <T> T queryForObject(String sql, Class<T> requiredType, Object... args) {
             if (sql.contains("INFORMATION_SCHEMA.TABLES") && args != null && args.length > 0
                     && missingTables.contains(String.valueOf(args[0]))) {

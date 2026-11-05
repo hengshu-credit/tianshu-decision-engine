@@ -505,6 +505,7 @@
       <div style="padding: 16px" v-if="detail">
         <el-tabs v-model="detailTab">
           <el-tab-pane label="基本信息" name="basic">
+            <execution-diagnosis-panel :detail="detail" @view-trace="detailTab = 'trace'" />
             <el-alert
               v-if="detail.replayWarnings && detail.replayWarnings.length"
               title="本次回溯存在数据缺口"
@@ -601,6 +602,7 @@
 
 <script>
 import ExecutionVersionFilter from '@/components/common/ExecutionVersionFilter.vue'
+import ExecutionDiagnosisPanel from '@/components/common/ExecutionDiagnosisPanel.vue'
 import { View as ElIconView, Connection as ElIconConnection } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import request from '@/api/request'
@@ -630,7 +632,7 @@ import { loadPagedCatalog } from '@/utils/pagedCatalog'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
-  components: { ExecutionVersionFilter,
+  components: { ExecutionDiagnosisPanel, ExecutionVersionFilter,
     TableColumnSettings,
     ExecutionMetricsPanel,
     TraceTree,
@@ -740,6 +742,7 @@ return [start, end];
 detailVis: false,
 detail: null,
 detailLoading: false,
+detailRequestId: 0,
 replayLoadingId: null,
 detailTab: 'basic',
 varMap: {},
@@ -811,6 +814,7 @@ return this.filteredRules.filter(function (rule) {
 watch: {
 detailVis: function (val) {
 if (val) this.detailTab = 'basic'
+else { this.detailRequestId++; this.detailLoading = false; this.replayLoadingId = null }
 },
 },
 created: async function () {
@@ -843,6 +847,7 @@ if (contextId) {
 this.load()
 },
 beforeUnmount() {
+this.detailRequestId++
 this.loadRequestId++
 this.ruleSetStatsRequestId++
 },
@@ -1206,25 +1211,32 @@ try {
 }
 },
 async handleViewDetail(row) {
+const requestId = ++this.detailRequestId
+this.replayLoadingId = null
 this.detailLoading = true
 this.detail = Object.assign({}, row)
 this.detailVis = true
 try {
   await this.ensureDetailMetadata(row)
+  if (requestId !== this.detailRequestId || !this.detailVis) return
   await this.loadVarMap()
+  if (requestId !== this.detailRequestId || !this.detailVis) return
   await this.loadFunctionNameMap()
+  if (requestId !== this.detailRequestId || !this.detailVis) return
   await this.loadModelJson()
 } catch (e) {
-  this.$message.error('加载日志详情失败')
+  if (requestId === this.detailRequestId) this.$message.error('加载日志详情失败')
 } finally {
-  this.detailLoading = false
+  if (requestId === this.detailRequestId) this.detailLoading = false
 }
 },
 async handleReplay(row) {
   if (!row || !row.id || this.replayLoadingId) return
   this.replayLoadingId = row.id
+  const requestId = ++this.detailRequestId
   try {
     var response = await replayExecutionLog(row.id)
+    if (requestId !== this.detailRequestId) return
     var replay = response && response.data ? response.data : response
     if (!replay || !replay.replayed) throw new Error('回溯没有返回执行结果')
     this.detail = Object.assign({}, row, replay, {
@@ -1235,8 +1247,11 @@ async handleReplay(row) {
     })
     this.detailVis = true
     await this.ensureDetailMetadata(this.detail)
+    if (requestId !== this.detailRequestId || !this.detailVis) return
     await this.loadVarMap()
+    if (requestId !== this.detailRequestId || !this.detailVis) return
     await this.loadFunctionNameMap()
+    if (requestId !== this.detailRequestId || !this.detailVis) return
     await this.loadModelJson()
     this.detailTab = 'trace'
     if (this.detail.replayWarnings.length) {
@@ -1249,9 +1264,9 @@ async handleReplay(row) {
     }
   } catch (error) {
     var message = error && error.message ? error.message : '历史规则回溯失败'
-    if (this.$message && typeof this.$message.error === 'function') this.$message.error(message)
+    if (requestId === this.detailRequestId && this.$message && typeof this.$message.error === 'function') this.$message.error(message)
   } finally {
-    this.replayLoadingId = null
+    if (requestId === this.detailRequestId) this.replayLoadingId = null
   }
 },
 /** formatParams: formatParams 的别名，内部实现委托给 fj */

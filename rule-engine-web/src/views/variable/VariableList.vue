@@ -1053,10 +1053,13 @@
     <el-dialog
       :title="validationForm.id ? '编辑字段校验' : '新建字段校验'"
       v-model="validationDialogVisible"
+      :close-on-press-escape="!validationSaving"
+      :show-close="!validationSaving"
+      :before-close="done => closeConfigurationDialog('validationDialogVisible', done)"
       width="600px"
       :close-on-click-modal="false"
     >
-      <el-form :model="validationForm" label-width="110px" size="small">
+      <el-form :model="validationForm" label-width="110px" size="small" :disabled="validationSaving">
         <scope-project-fields
           v-model:scope="validationForm.scope"
           v-model:project-id="validationForm.projectId"
@@ -1142,7 +1145,7 @@
       <template v-slot:footer>
         <managed-dialog-footer
           :loading="validationSaving"
-          @cancel="validationDialogVisible = false"
+          @cancel="closeConfigurationDialog('validationDialogVisible')"
           @submit="saveFieldValidation"
         />
       </template>
@@ -1153,6 +1156,9 @@
       :title="variableDialogTitle"
       class="resizable-config-dialog"
       v-model="dialogVisible"
+      :close-on-press-escape="!variableSubmitting && !objectFieldSubmitting"
+      :show-close="!variableSubmitting && !objectFieldSubmitting"
+      :before-close="done => closeConfigurationDialog('dialogVisible', done)"
       :width="form.varSource === 'LIST' ? '920px' : '820px'"
       :close-on-click-modal="false"
     >
@@ -1175,6 +1181,7 @@
       <el-form
         ref="form"
         :model="form"
+        :disabled="variableSubmitting || objectFieldSubmitting"
         :rules="rules"
         label-width="120px"
         size="small"
@@ -1623,10 +1630,10 @@
       </el-form>
       <template v-slot:footer>
         <managed-dialog-footer
-          :loading="isObjectField && (objectFieldReferenceValidating || objectFieldSubmitting)"
-          :disabled="isObjectField && (objectFieldReferenceLoading || objectFieldReferenceValidating || objectFieldSubmitting)"
+          :loading="variableSubmitting || isObjectField && (objectFieldReferenceValidating || objectFieldSubmitting)"
+          :disabled="variableSubmitting || isObjectField && (objectFieldReferenceLoading || objectFieldReferenceValidating || objectFieldSubmitting)"
           :submit-text="isObjectField ? '确定' : '保存草稿'"
-          @cancel="dialogVisible = false"
+          @cancel="closeConfigurationDialog('dialogVisible')"
           @submit="handleSubmit"
         />
       </template>
@@ -1637,6 +1644,9 @@
       :title="objectDialogTitle"
       class="resizable-config-dialog"
       v-model="objectDialogVisible"
+      :close-on-press-escape="!objectSubmitting"
+      :show-close="!objectSubmitting"
+      :before-close="done => closeConfigurationDialog('objectDialogVisible', done)"
       width="820px"
       :close-on-click-modal="false"
     >
@@ -1652,6 +1662,7 @@
       <el-form
         ref="objForm"
         :model="objectForm"
+        :disabled="objectSubmitting"
         :rules="objectRules"
         label-width="120px"
         size="small"
@@ -1768,7 +1779,7 @@
       <template v-slot:footer>
         <managed-dialog-footer
           :loading="objectSubmitting"
-          @cancel="objectDialogVisible = false"
+          @cancel="closeConfigurationDialog('objectDialogVisible')"
           @submit="handleObjectSubmit"
         />
       </template>
@@ -1778,6 +1789,9 @@
     <el-dialog
       title="枚举选项管理"
       v-model="optionDialogVisible"
+      :close-on-press-escape="!optionSaving"
+      :show-close="!optionSaving"
+      :before-close="done => closeConfigurationDialog('optionDialogVisible', done)"
       width="600px"
       :close-on-click-modal="false"
     >
@@ -1789,7 +1803,7 @@
           currentVar ? currentVar.varCode : ''
         }}</span>
       </div>
-      <el-table :data="optionList" border size="small" style="width: 100%">
+      <el-table :data="optionList" :inert="optionSaving" border size="small" style="width: 100%">
         <el-table-column label="选项值" min-width="160">
           <template v-slot="{ row }"
             ><el-input
@@ -1835,10 +1849,10 @@
       >
       <template v-slot:footer>
         <div>
-          <el-button size="small" @click="optionDialogVisible = false"
+          <el-button size="small" :disabled="optionSaving" @click="closeConfigurationDialog('optionDialogVisible')"
             >取消</el-button
           >
-          <el-button v-permission="'field:edit'" size="small" type="primary" @click="handleSaveOptions"
+          <el-button v-permission="'field:edit'" size="small" type="primary" :loading="optionSaving" @click="handleSaveOptions"
             >保存选项</el-button
           >
         </div>
@@ -1984,6 +1998,7 @@
     <el-dialog
       title="导入 Java 实体类"
       v-model="importJavaEntityVisible"
+      :before-close="done => closeConfigurationDialog('importJavaEntityVisible', done)"
       width="700px"
       :close-on-click-modal="false"
       :show-close="!importing"
@@ -2038,7 +2053,7 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" :disabled="importing" @click="importJavaEntityVisible = false"
+          <el-button size="small" :disabled="importing" @click="closeConfigurationDialog('importJavaEntityVisible')"
             >取消</el-button
           >
           <el-button v-permission="['field:edit', 'approval:submit']"
@@ -2056,6 +2071,7 @@
     <el-dialog
       title="导入 JSON 对象"
       v-model="importJsonObjectVisible"
+      :before-close="done => closeConfigurationDialog('importJsonObjectVisible', done)"
       width="700px"
       :close-on-click-modal="false"
       :show-close="!importing"
@@ -2103,7 +2119,7 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" :disabled="importing" @click="importJsonObjectVisible = false"
+          <el-button size="small" :disabled="importing" @click="closeConfigurationDialog('importJsonObjectVisible')"
             >取消</el-button
           >
           <el-button v-permission="['field:edit', 'approval:submit']"
@@ -2121,6 +2137,7 @@
     <el-dialog
       title="导入 DDL 建表语句"
       v-model="importDdlVisible"
+      :before-close="done => closeConfigurationDialog('importDdlVisible', done)"
       width="720px"
       :close-on-click-modal="false"
       :show-close="!importing"
@@ -2163,7 +2180,7 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" :disabled="importing" @click="importDdlVisible = false"
+          <el-button size="small" :disabled="importing" @click="closeConfigurationDialog('importDdlVisible')"
             >取消</el-button
           >
           <el-button v-permission="['field:edit', 'approval:submit']"
@@ -2181,6 +2198,7 @@
     <el-dialog
       title="导入 Java 常量类"
       v-model="importJavaConstVisible"
+      :before-close="done => closeConfigurationDialog('importJavaConstVisible', done)"
       width="700px"
       :close-on-click-modal="false"
       :show-close="!importing"
@@ -2228,7 +2246,7 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" :disabled="importing" @click="importJavaConstVisible = false"
+          <el-button size="small" :disabled="importing" @click="closeConfigurationDialog('importJavaConstVisible')"
             >取消</el-button
           >
           <el-button v-permission="['field:edit', 'approval:submit']"
@@ -2246,6 +2264,7 @@
     <el-dialog
       title="导入 JSON 常量"
       v-model="importJsonConstVisible"
+      :before-close="done => closeConfigurationDialog('importJsonConstVisible', done)"
       width="700px"
       :close-on-click-modal="false"
       :show-close="!importing"
@@ -2281,7 +2300,7 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" :disabled="importing" @click="importJsonConstVisible = false"
+          <el-button size="small" :disabled="importing" @click="closeConfigurationDialog('importJsonConstVisible')"
             >取消</el-button
           >
           <el-button v-permission="['field:edit', 'approval:submit']"
@@ -2456,13 +2475,20 @@ import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
 import ResourcePreflightPanel from '@/components/common/ResourcePreflightPanel.vue'
 import ScopeProjectFields from '@/components/common/ScopeProjectFields.vue'
 import ManagedDialogFooter from '@/components/common/ManagedDialogFooter.vue'
+import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
 import VariableSourceSelector from './components/VariableSourceSelector.vue'
 import VariableToolbarActions from './components/VariableToolbarActions.vue'
 import VariableImportHelp from './components/VariableImportHelp.vue'
 import { hasPermission } from '@/security/permissionState'
 
 export default {
-  mixins: [governanceWorkspaceMixin],
+  mixins: [governanceWorkspaceMixin, configurationDialogsMixin([
+    { visible: 'dialogVisible', draft: vm => vm.form, busy: vm => vm.variableSubmitting || vm.objectFieldSubmitting || vm.objectFieldReferenceValidating },
+    { visible: 'objectDialogVisible', draft: vm => vm.objectForm, busy: vm => vm.objectSubmitting },
+    { visible: 'validationDialogVisible', draft: vm => vm.validationForm, busy: vm => vm.validationSaving },
+    { visible: 'optionDialogVisible', draft: vm => vm.optionList, busy: vm => vm.optionSaving },
+    ...['importJavaEntityVisible', 'importJsonObjectVisible', 'importDdlVisible', 'importJavaConstVisible', 'importJsonConstVisible'].map(visible => ({ visible, draft: vm => vm.importForm, busy: vm => vm.importing })),
+  ])],
   data() {
     return {
       activeTab: 'list',
@@ -2620,6 +2646,9 @@ export default {
       objectFieldValidationRequestId: 0,
       objectFieldReferenceValidating: false,
       objectFieldSubmitting: false,
+      variableSubmitting: false,
+      optionSaving: false,
+      optionRequestId: 0,
       objectFieldReferenceMessage: '',
       objectFieldReferenceError: '',
       objectFieldExpandMap: {},
@@ -2780,7 +2809,8 @@ export default {
     ElIconSuccess,
   },
   name: 'VariableList',
-  beforeUnmount() { this.sourceOptionsRequestId++ },
+  beforeUnmount() { this.sourceOptionsRequestId++; this.optionRequestId++ },
+  deactivated() { this.optionRequestId++ },
   created() {
     this.currentProjectId =
       routeProjectId(
@@ -4382,9 +4412,11 @@ export default {
       if (['API', 'DB'].includes(source)) this.loadObjectSourceOptions()
     },
     /** 提交数据对象表单 */
-    handleObjectSubmit() {
+    async handleObjectSubmit() {
       if (this.objectSubmitting) return
-      this.$refs.objForm.validate(async (valid) => {
+      this.objectSubmitting = true
+      try {
+        const valid = await new Promise(resolve => this.$refs.objForm.validate(resolve))
         if (!valid) return
         if (!this.objectForm.scope) {
           this.$message.warning('请选择作用范围')
@@ -4433,8 +4465,6 @@ export default {
             queryTimeoutSeconds: 0,
           })
         }
-        try {
-          this.objectSubmitting = true
           const payload = {
             ...this.objectForm,
             sourceType,
@@ -4453,7 +4483,6 @@ export default {
         } finally {
           this.objectSubmitting = false
         }
-      })
     },
     /**
      * 在指定数据对象下新建字段（写入 rule_data_object_field）。
@@ -4735,6 +4764,7 @@ export default {
       if (preset) this.validationForm.validationValue = preset.pattern
     },
     async saveFieldValidation() {
+      if (this.validationSaving) return
       const form = this.validationForm
       if (!form.scope) {
         this.$message.warning('请选择作用范围')
@@ -4854,8 +4884,11 @@ export default {
     onVarScopeChange() {
       this.onVariableProjectChange()
     },
-    handleSubmit() {
-      this.$refs.form.validate(async (valid) => {
+    async handleSubmit() {
+      if (this.variableSubmitting) return
+      this.variableSubmitting = true
+      try {
+      const valid = await new Promise(resolve => this.$refs.form.validate(resolve))
         if (!valid) return
         if (this.isObjectField) {
           if (this.objectFieldReferenceLoading || this.objectFieldReferenceValidating || this.objectFieldSubmitting) return
@@ -4933,7 +4966,8 @@ export default {
         this.dialogVisible = false
         this.isConstantCreate = false
         if (wasConstant) this.activeTab = 'constants'
-      })
+      } catch (error) { if (!error.requestErrorNotified) this.$message.error(error.message || '保存失败') }
+      finally { this.variableSubmitting = false }
     },
     handleDelete(row) {
       if (row.systemConstant) { this.$message.warning('系统常量只读，不能删除'); return }
@@ -5346,19 +5380,26 @@ export default {
      * @param {boolean} isField - 是否为数据对象字段上的枚举
      */
     async handleOptions(row, isField) {
+      if (this.optionSaving) return
+      const requestId = ++this.optionRequestId
       this.currentVar = row
       this.optionTargetIsField = !!isField
       try {
         const res = isField
           ? await getDataObjectFieldOptions(row.id)
           : await getVariableOptions(row.id)
+        if (requestId !== this.optionRequestId) return
         this.optionList = res.data || []
       } catch (e) {
+        if (requestId !== this.optionRequestId) return
         this.optionList = []
       }
       this.optionDialogVisible = true
     },
     async handleSaveOptions() {
+      if (this.optionSaving) return
+      this.optionSaving = true
+      try {
       const invalid = this.optionList.some(
         (o) => !o.optionValue || !o.optionLabel
       )
@@ -5381,6 +5422,8 @@ export default {
       }
       this.openApproval(response, '字段选项变更已送审')
       this.optionDialogVisible = false
+      } catch (error) { if (!error.requestErrorNotified) this.$message.error(error.message || '保存选项失败') }
+      finally { this.optionSaving = false }
     },
     openApproval(response) {
       return completeResourceChange(this, response, () => Promise.all([this.loadData(), this.loadObjectTree(), this.loadFieldValidations()]))

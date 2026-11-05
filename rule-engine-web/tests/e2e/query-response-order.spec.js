@@ -121,6 +121,7 @@ for (const theme of ['LIGHT', 'DARK']) {
       await expect(page.getByRole('option').filter({ hasText: 'current_db' })).toBeVisible()
       await page.keyboard.press('Escape')
       await dialog.getByRole('button', { name: '取消', exact: true }).click()
+      await page.getByRole('dialog', { name: '未保存提醒', exact: true }).getByRole('button', { name: '继续离开', exact: true }).click()
       await expect(dialog).toBeHidden()
       await page.getByRole('button', { name: '新建计费项', exact: true }).click()
       await expect(target).not.toHaveClass(/is-disabled/)

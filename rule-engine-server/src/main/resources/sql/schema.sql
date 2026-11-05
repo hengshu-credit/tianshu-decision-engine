@@ -2242,6 +2242,26 @@ CREATE TABLE IF NOT EXISTS `rule_system_asset` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统品牌图片';
 
 -- 台账模块：正文草稿与发布版本分开保存；素材内容不通过静态目录公开。
+CREATE TABLE IF NOT EXISTS `rule_ledger_type` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `type_code` VARCHAR(128) DEFAULT NULL,
+  `legacy_code` VARCHAR(32) DEFAULT NULL,
+  `type_name` VARCHAR(100) NOT NULL,
+  `sort_order` INT NOT NULL DEFAULT 0,
+  `lock_version` BIGINT NOT NULL DEFAULT 0,
+  `deleted` TINYINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`), UNIQUE KEY `uk_ledger_type_legacy` (`legacy_code`), UNIQUE KEY `uk_ledger_type_code` (`type_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='台账事件类型，引用稳定ID';
+CREATE TABLE IF NOT EXISTS `rule_ledger_event_type` (
+  `event_id` BIGINT NOT NULL,
+  `type_id` BIGINT NOT NULL,
+  PRIMARY KEY (`event_id`), KEY `idx_ledger_event_type` (`type_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='事件与类型的稳定ID关联';
+CREATE TABLE IF NOT EXISTS `rule_ledger_event_state` (
+  `event_id` BIGINT NOT NULL,
+  `options_json` TEXT NOT NULL,
+  PRIMARY KEY (`event_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='每个事件独立配置的状态枚举';
 CREATE TABLE IF NOT EXISTS `rule_ledger_article` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,
   `scope` VARCHAR(16) NOT NULL DEFAULT 'PRIVATE',
@@ -2289,6 +2309,7 @@ CREATE TABLE IF NOT EXISTS `rule_ledger_revision` (
 
 CREATE TABLE IF NOT EXISTS `rule_ledger_event` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `event_code` VARCHAR(128) DEFAULT NULL,
   `title` VARCHAR(200) NOT NULL,
   `status` VARCHAR(24) NOT NULL DEFAULT 'FOLLOWING',
   `scope` VARCHAR(16) NOT NULL,
@@ -2301,6 +2322,7 @@ CREATE TABLE IF NOT EXISTS `rule_ledger_event` (
   `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_ledger_event_scope` (`scope`,`project_id`,`deleted`)
+  ,UNIQUE KEY `uk_ledger_event_code` (`event_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='台账事件';
 
 CREATE TABLE IF NOT EXISTS `rule_ledger_asset` (

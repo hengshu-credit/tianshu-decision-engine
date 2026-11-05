@@ -192,6 +192,7 @@ test('变量新建和编辑弹窗的高级设置居中且数字输入框无加�
     expect(defaultTop).toBeLessThan(sourceTop)
 
     await dialog.locator('.el-dialog__headerbtn').click()
+    await page.getByRole('dialog', { name: '未保存提醒', exact: true }).getByRole('button', { name: '继续离开', exact: true }).click()
     await expect(dialog).toBeHidden()
   }
 

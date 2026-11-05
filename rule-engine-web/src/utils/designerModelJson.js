@@ -36,7 +36,8 @@ export function parseDesignerModelJson(json) {
           || key.value === 'refId' && ['REFERENCE', 'PATH'].includes(kind)
           || key.value === 'functionId' && (kind === 'FUNCTION' || type === 'func-call')
           || ['ruleId', 'versionBindingId'].includes(key.value) && type === 'rule-call'
-          || key.value === 'listIds' && kind === 'LIST_QUERY'
+          || key.value === 'apiId' && type === 'api-call'
+          || key.value === 'listIds' && (kind === 'LIST_QUERY' || type === 'list-write')
           || key.value === 'varId' && (scriptReferences || !!field('refType'))
         pending.push({ node: value, identity: reference, scriptReferences: key.value === 'scriptVarRefs' })
       }

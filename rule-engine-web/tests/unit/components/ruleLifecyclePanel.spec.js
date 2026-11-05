@@ -2,6 +2,15 @@ import { mount } from '@test-utils'
 import RuleLifecyclePanel from '@/components/rule/RuleLifecyclePanel.vue'
 
 describe('RuleLifecyclePanel', () => {
+  test('只显示匹配当前修订和锁版本的回归证据', async () => {
+    const wrapper = mount(RuleLifecyclePanel, { props: { lifecycleRevision: { id: '9', revisionNo: 4, state: 'DRAFT', lockVersion: 2 }, onlineRevision: { id: '8', revisionNo: 3 }, validationReport: { revisionId: '9', lockVersion: 1, regression: { allowed: true, message: '旧报告通过' } } } })
+    expect(wrapper.vm.regression).toBeNull()
+    expect(wrapper.find('[aria-label="发布就绪概览"]').text()).toContain('尚未复核')
+    await wrapper.setProps({ validationReport: { revisionId: '9', lockVersion: 2, dependencyDigest: 'abcd', regression: { allowed: false, message: '证据过期', staleCount: 1 } } })
+    expect(wrapper.find('[aria-label="发布就绪概览"]').text()).toContain('证据过期')
+    expect(wrapper.find('[aria-label="发布就绪概览"]').text()).toContain('修订 v3')
+    wrapper.unmount()
+  })
   test.each([
     ['DRAFT', ['view-design', 'preflight', 'submit']],
     ['REVIEW', ['view-design', 'reject', 'approve']],

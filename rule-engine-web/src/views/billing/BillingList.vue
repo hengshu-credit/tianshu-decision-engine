@@ -731,11 +731,16 @@
       v-model="configDialogVisible"
       width="680px"
       append-to-body
+      :close-on-click-modal="false"
+      :close-on-press-escape="!configSaving"
+      :show-close="!configSaving"
+      :before-close="done => closeConfigurationDialog('configDialogVisible', done)"
       @close="closeConfigDialog"
     >
       <el-form
         ref="configForm"
         :model="configForm"
+        :disabled="configSaving"
         :rules="configRules"
         label-width="110px"
         size="small"
@@ -902,7 +907,7 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" @click="configDialogVisible = false"
+          <el-button size="small" :disabled="configSaving" @click="closeConfigurationDialog('configDialogVisible')"
             >取消</el-button
           >
           <el-button
@@ -926,6 +931,7 @@ import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
 import { completeResourceChange } from '@/utils/governanceWorkspace'
 import governanceWorkspaceMixin from '@/mixins/governanceWorkspaceMixin'
+import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
 import { markRaw } from 'vue'
 import {
   Plus as ElIconPlus,
@@ -954,7 +960,7 @@ import { trialStatusLabel, trialStatusType } from '@/utils/apiTrialStatus'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
-  mixins: [governanceWorkspaceMixin],
+  mixins: [governanceWorkspaceMixin, configurationDialogsMixin([{ visible: 'configDialogVisible', draft: vm => vm.configForm, busy: vm => vm.configSaving }])],
   data() {
     return {
       tableColumnOrders: { billingColumns: null, recordColumns: null, summaryColumns: null },
@@ -1387,8 +1393,11 @@ export default {
       this.loadTargetOptions()
       this.configDialogVisible = true
     },
-    handleSaveConfig() {
-      this.$refs.configForm.validate(async (valid) => {
+    async handleSaveConfig() {
+      if (this.configSaving) return
+      this.configSaving = true
+      try {
+        const valid = await new Promise(resolve => this.$refs.configForm.validate(resolve))
         if (!valid) return
         const data = this.normalizeConfig(this.configForm)
         if (
@@ -1399,8 +1408,6 @@ export default {
           this.$message.warning('生效时间不能晚于失效时间')
           return
         }
-        this.configSaving = true
-        try {
           let response
           if (!data.id) {
             response = await createBillingConfigDraft(data)
@@ -1418,7 +1425,6 @@ export default {
         } finally {
           this.configSaving = false
         }
-      })
     },
     handleDeleteConfig(row) {
       return this.$confirm(

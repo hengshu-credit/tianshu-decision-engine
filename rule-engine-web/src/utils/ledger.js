@@ -5,6 +5,7 @@ export const LEDGER_CATEGORIES = [
   ['PRODUCT', '产品改动'], ['STRATEGY', '策略改动'], ['RELEASE', '规则上线'],
   ['INCIDENT', '生产事故'], ['MEETING', '周会结论'], ['WORK', '日常工作'], ['OTHER', '其他'],
 ].map(([value, label]) => ({ value, label }))
+// 仅用于旧事件的兼容回显；新增事件由用户配置自己的状态枚举。
 export const LEDGER_EVENT_STATUSES = [{ value: 'FOLLOWING', label: '跟进中' }, { value: 'ACCEPTANCE', label: '待验收' }, { value: 'DONE', label: '已完成' }]
 export const LEDGER_ASSET_STATUSES = [{ value: 'CLEAN', label: '可用' }, { value: 'PENDING', label: '待检测' }, { value: 'QUARANTINED', label: '已隔离' }]
 export const ledgerCategoryLabel = value => LEDGER_CATEGORIES.find(item => item.value === value)?.label || value || '其他'

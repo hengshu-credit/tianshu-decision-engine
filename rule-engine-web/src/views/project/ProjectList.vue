@@ -158,6 +158,7 @@
       :close-on-click-modal="false"
       :close-on-press-escape="!submitting"
       :show-close="!submitting"
+      :before-close="done => closeConfigurationDialog('dialogVisible', done)"
     >
       <el-form
         ref="form"
@@ -187,7 +188,7 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" :disabled="submitting" @click="dialogVisible = false"
+          <el-button size="small" :disabled="submitting" @click="closeConfigurationDialog('dialogVisible')"
             >取消</el-button
           >
           <el-button v-permission="'project:edit'" size="small" type="primary" :loading="submitting" :disabled="submitting" @click="handleSubmit"
@@ -204,6 +205,7 @@
 </template>
 
 <script>
+import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
 import { systemBrand, DEFAULT_BRAND, loadSystemBrand } from '@/system/systemBrand'
 import { getCurrentUser } from '@/security/permissionState'
 import { PLATFORM_SUCCESS_CODE } from '@/utils/platformResponse'
@@ -234,7 +236,7 @@ import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import ProjectAuthDialog from './ProjectAuthDialog.vue'
 export default {
-  mixins: [governanceWorkspaceMixin],
+  mixins: [governanceWorkspaceMixin, configurationDialogsMixin([{ visible: 'dialogVisible', draft: vm => vm.form, busy: vm => vm.submitting }])],
   data() {
     return {
       loading: false,

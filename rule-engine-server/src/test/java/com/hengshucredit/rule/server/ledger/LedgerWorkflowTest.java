@@ -31,12 +31,14 @@ import static org.junit.Assert.*;
 
 public class LedgerWorkflowTest {
     private JdbcTemplate jdbc;
+    private final java.util.concurrent.atomic.AtomicInteger calendarQueries = new java.util.concurrent.atomic.AtomicInteger();
     private DriverManagerDataSource dataSource;
     private AtomicReference<ConsoleProjectAccess.Scope> identity;
     private AtomicReference<LedgerAntivirus.Result> scanResult;
     private LedgerArticleService articles;
     private LedgerAssetService assets;
     private LedgerQueryService queries;
+    private LedgerTypeService types;
     private ConsoleDataPermissionHandler policy;
     private ObjectMapper json;
     private org.springframework.context.annotation.AnnotationConfigApplicationContext repositoryContext;
@@ -48,7 +50,10 @@ public class LedgerWorkflowTest {
         String schema = new ClassPathResource("sql/schema.sql").getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
         String ledgerSchema = schema.substring(schema.indexOf("-- 台账模块："));
         new ResourceDatabasePopulator(new org.springframework.core.io.ByteArrayResource(ledgerSchema.getBytes(java.nio.charset.StandardCharsets.UTF_8))).execute(dataSource);
-        jdbc = new JdbcTemplate(dataSource);
+        jdbc = new JdbcTemplate(dataSource) {
+            @Override public List<Map<String, Object>> queryForList(String sql, Object... args) { calendarQueries.incrementAndGet(); return super.queryForList(sql, args); }
+            @Override public <T> List<T> queryForList(String sql, Class<T> type, Object... args) { calendarQueries.incrementAndGet(); return super.queryForList(sql, type, args); }
+        };
         jdbc.execute("CREATE TABLE rule_project (id BIGINT PRIMARY KEY,project_name VARCHAR(128))");
         jdbc.update("INSERT INTO rule_project VALUES (1,'项目一'),(2,'项目二')");
         identity = new AtomicReference<>(scope(10, Set.of(1L), true));
@@ -69,11 +74,123 @@ public class LedgerWorkflowTest {
         var builder = new org.springframework.http.converter.json.Jackson2ObjectMapperBuilder();
         new com.hengshucredit.rule.server.config.JacksonConfig().localDateTimeCustomizer().customize(builder);
         json = builder.featuresToDisable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS).build();
-        articles = transaction(new LedgerArticleService(repository, access, assets, json));
-        queries = transaction(new LedgerQueryService(repository, access, articles));
+        types = transaction(new LedgerTypeService(repository, access));
+        types.initializeLegacyTypes();
+        articles = transaction(new LedgerArticleService(repository, access, assets, json, types));
+        queries = transaction(new LedgerQueryService(repository, access, articles, types));
     }
+    private LedgerRequests.Event eventInput(String title, String status, String scope, Long project, Long version) { return eventInput(title,status,scope,project,version,null,null); }
+    private LedgerRequests.Event eventInput(String title, String status, String scope, Long project, Long version, Long type) { return eventInput(title,status,scope,project,version,type,null); }
+    private LedgerRequests.Event eventInput(String title, String status, String scope, Long project, Long version, Long type, List<LedgerRequests.StatusOption> options) { return new LedgerRequests.Event(title,status,scope,project,version,type,options,version == null ? "EV_" + UUID.randomUUID() : null); }
+    private LedgerRequests.EventType typeInput(String name, Integer order, Long version) { return new LedgerRequests.EventType(name,order,version,version == null ? "TYPE_" + UUID.randomUUID() : null); }
+
     private ConsoleProjectAccess.Scope scope(long user, Set<Long> projects, boolean editable) {
         return new ConsoleProjectAccess.Scope(user, projects, editable ? Set.of("ledger:view", "ledger:edit") : Set.of("ledger:view"), false, true, Map.of());
+    }
+
+    @Test public void eventAndTypeCodesAreRequiredUniqueAndPreserveUserSpelling() {
+        identity.set(new ConsoleProjectAccess.Scope(10L, Set.of(1L), Set.of("ledger:view", "ledger:edit", "ledger:manage"), false, true, Map.of()));
+        assertThrows(IllegalArgumentException.class, () -> types.save(null, new LedgerRequests.EventType("缺编码", 0, null)));
+        var type = types.save(null, new LedgerRequests.EventType("类型一", 0, null, "Keep_Type_Code"));
+        assertEquals("Keep_Type_Code", type.get("code"));
+        assertThrows(IllegalArgumentException.class, () -> types.save(null, new LedgerRequests.EventType("类型二", 0, null, "Keep_Type_Code")));
+        var event = queries.saveEvent(null, new LedgerRequests.Event("事件一", "FOLLOWING", "PROJECT", 1L, null, null, null, "Keep_Event_Code"));
+        assertEquals("Keep_Event_Code", event.get("code"));
+        assertThrows(IllegalArgumentException.class, () -> queries.saveEvent(null, new LedgerRequests.Event("事件二", "FOLLOWING", "GLOBAL", null, null, null, null, "Keep_Event_Code")));
+        assertThrows(IllegalArgumentException.class, () -> queries.saveEvent(null, new LedgerRequests.Event("缺编码", "FOLLOWING", "PROJECT", 1L, null)));
+    }
+
+    @Test public void typesAndEventsSupportCrudWithStableReferencesAndOptimisticVersions() {
+        identity.set(new ConsoleProjectAccess.Scope(10L, Set.of(1L), Set.of("ledger:view", "ledger:edit", "ledger:manage"), false, true, Map.of()));
+        var type = types.save(null, typeInput("验收分类", 5, null));
+        long typeId = number(type.get("id"));
+        var renamed = types.save(typeId, typeInput("新分类名称", 8, number(type.get("version"))));
+        assertThrows(PlatformException.class, () -> types.save(typeId, typeInput("过期覆盖", 1, 0L)));
+        var event = queries.saveEvent(null, eventInput("事件", "FOLLOWING", "PROJECT", 1L, null, typeId));
+        assertEquals("新分类名称", event.get("typeName"));
+        assertEquals(1, queries.manageEvents("事件", typeId, 1, 20).getTotal());
+        assertThrows(IllegalArgumentException.class, () -> types.delete(typeId, number(renamed.get("version"))));
+        long eventId = number(event.get("id"));
+        var edited = queries.saveEvent(eventId, eventInput("已修改事件", "DONE", "PROJECT", 1L, number(event.get("version")), typeId));
+        assertEquals("DONE", queries.event(eventId).get("status"));
+        identity.set(scope(11, Set.of(2L), true));
+        assertEquals(0, queries.manageEvents(null, null, 1, 20).getTotal());
+        assertThrows(ConsoleAccessDeniedException.class, () -> queries.deleteEvent(eventId, number(edited.get("version"))));
+        identity.set(new ConsoleProjectAccess.Scope(10L, Set.of(1L), Set.of("ledger:view", "ledger:edit", "ledger:manage"), false, true, Map.of()));
+        queries.deleteEvent(eventId, number(edited.get("version")));
+        types.delete(typeId, number(renamed.get("version")));
+        assertFalse(types.list().stream().anyMatch(item -> number(item.get("id")) == typeId));
+    }
+
+    @Test public void legacyTypeInitializationDoesNotUndoNamesOrDeletion() {
+        identity.set(new ConsoleProjectAccess.Scope(10L, Set.of(1L), Set.of("ledger:view", "ledger:edit", "ledger:manage"), false, true, Map.of()));
+        var type = types.resolve("PRODUCT", false);
+        long id = number(type.get("id"));
+        var changed = types.save(id, typeInput("自定产品分类", 1, 0L));
+        types.initializeLegacyTypes();
+        assertEquals("自定产品分类", types.resolve("PRODUCT", false).get("type_name"));
+        types.delete(id, number(changed.get("version")));
+        types.initializeLegacyTypes();
+        assertThrows(IllegalArgumentException.class, () -> types.resolve("PRODUCT", false));
+    }
+
+    @Test public void eachEventOwnsItsStatusOptionsAndCannotUseAnotherEventsStatus() {
+        var options = List.of(new LedgerRequests.StatusOption("OPEN", "待受理"), new LedgerRequests.StatusOption("VERIFY", "复核中"));
+        var event = queries.saveEvent(null, eventInput("自定流程", "OPEN", "PROJECT", 1L, null, null, options));
+        long id = number(event.get("id"));
+        assertEquals("待受理", event.get("statusLabel"));
+        assertEquals(options, event.get("statusOptions"));
+        var other = queries.saveEvent(null, eventInput("另一个流程", "完成", "PROJECT", 1L, null, null, List.of(new LedgerRequests.StatusOption("完成", ""))));
+        assertEquals("完成", other.get("statusLabel"));
+        assertThrows(IllegalArgumentException.class, () -> queries.saveEvent(id, eventInput("自定流程", "完成", "PROJECT", 1L, 0L)));
+        var updated = queries.saveEvent(id, eventInput("自定流程", "VERIFY", "PROJECT", 1L, 0L));
+        assertEquals(options, updated.get("statusOptions"));
+        assertEquals("复核中", updated.get("statusLabel"));
+        assertThrows(IllegalArgumentException.class, () -> queries.saveEvent(null, eventInput("重复枚举", "A", "PROJECT", 1L, null, null, List.of(new LedgerRequests.StatusOption("A", "一"), new LedgerRequests.StatusOption("A", "二")))));
+        assertThrows(IllegalArgumentException.class, () -> queries.saveEvent(null, eventInput("空枚举", "A", "PROJECT", 1L, null, null, List.of())));
+    }
+
+    @Test public void typeDeletionPreservesDraftsAndHistoricalCategoriesAndRequiresGlobalManagement() {
+        assertThrows(ConsoleAccessDeniedException.class, () -> types.save(null, typeInput("越权分类", 0, null)));
+        var work = types.resolve("WORK", false); String workId = String.valueOf(work.get("id"));
+        var pending = draft(content("分类兼容", "正文"));
+        assertEquals(workId, ((LedgerContent) articles.edit(number(pending.get("id"))).get("content")).getCategory());
+        var publication = publish(pending);
+        jdbc.update("UPDATE rule_ledger_revision SET category='WORK' WHERE id=?", publication.get("id"));
+        assertEquals(1, queries.timeline(new LedgerQueryService.Filter(null, null, List.of(), workId, null, null, null), 1, 20).getTotal());
+        identity.set(new ConsoleProjectAccess.Scope(10L, Set.of(1L), Set.of("ledger:view", "ledger:edit", "ledger:manage"), false, true, Map.of()));
+        assertThrows(IllegalArgumentException.class, () -> types.delete(number(work.get("id")), number(work.get("lock_version"))));
+        identity.set(new ConsoleProjectAccess.Scope(10L, Set.of(1L), Set.of("ledger:view", "ledger:edit", "ledger:manage"), false, false, Map.of()));
+        assertThrows(ConsoleAccessDeniedException.class, () -> types.save(null, typeInput("只读分类", 0, null)));
+    }
+
+    @Test public void timelineTypeFilterIncludesAssociatedEventsButNeverHiddenEvents() {
+        identity.set(new ConsoleProjectAccess.Scope(10L, Set.of(), Set.of("ledger:view", "ledger:edit", "ledger:manage"), true, true, Map.of()));
+        var type = types.save(null, typeInput("事件筛选类型", 0, null));
+        long typeId = number(type.get("id"));
+        var event = queries.saveEvent(null, eventInput("项目二事件", "FOLLOWING", "PROJECT", 2L, null, typeId));
+        var value = content("全局文章", "正文"); value.setScope("GLOBAL"); value.setProjectId(null); value.setEventIds(List.of(number(event.get("id"))));
+        publish(draft(value));
+        var filter = new LedgerQueryService.Filter(null, null, List.of(), String.valueOf(typeId), null, null, null);
+        assertEquals(1, queries.timeline(filter, 1, 20).getTotal());
+        identity.set(scope(11, Set.of(1L), true));
+        assertEquals("不可通过类型筛选反推不可见事件的关联", 0, queries.timeline(filter, 1, 20).getTotal());
+    }
+
+    @Test public void calendarBatchesMonthPreviewsAndEventsAndPreservesTimestampOrder() {
+        for (int day = 1; day <= 3; day++) for (int i = 9; i >= 1; i--) {
+            var item = content("文章" + day + "-" + i, "正文");
+            item.setOccurredAt(LocalDateTime.of(2026, 11, day, i, 0));
+            publish(draft(item));
+        }
+        calendarQueries.set(0);
+        var result = queries.calendar("2026-11", filter(List.of()));
+        assertEquals("月份查询不能随日期或文章数量增长", 3, calendarQueries.get());
+        assertEquals(3, result.size());
+        assertEquals(9L, number(result.get(0).get("count")));
+        assertEquals(List.of("文章1-9 · v1", "文章1-8 · v1", "文章1-7 · v1", "文章1-6 · v1", "文章1-5 · v1", "文章1-4 · v1", "文章1-3 · v1", "文章1-2 · v1"), result.get(0).get("titles"));
+        identity.set(scope(11, Set.of(2L), true));
+        assertTrue(queries.calendar("2026-11", filter(List.of())).isEmpty());
     }
     @SuppressWarnings("unchecked") private <T> T transaction(T target) {
         var factory = new ProxyFactory(target); factory.setProxyTargetClass(true);
@@ -135,8 +252,8 @@ public class LedgerWorkflowTest {
         assertEquals(false,articles.edit(id).get("hasDraft"));
     }
     @Test public void multiEventSelectionUsesUnionWithoutDuplicatingAnArticleVersionAndDatesKeepSeconds() {
-        long one=number(queries.saveEvent(null,new LedgerRequests.Event("事件一","FOLLOWING","PROJECT",1L,null)).get("id"));
-        long two=number(queries.saveEvent(null,new LedgerRequests.Event("事件二","FOLLOWING","PROJECT",1L,null)).get("id"));
+        long one=number(queries.saveEvent(null,eventInput("事件一","FOLLOWING","PROJECT",1L,null)).get("id"));
+        long two=number(queries.saveEvent(null,eventInput("事件二","FOLLOWING","PROJECT",1L,null)).get("id"));
         var body=content("双事件文章","共同内容");body.setEventIds(List.of(one,two));publish(draft(body));
         assertEquals(1,queries.timeline(filter(List.of(one,two)),1,20).getTotal());
         assertEquals(1,queries.calendar("2026-11",filter(List.of(one,two))).size());

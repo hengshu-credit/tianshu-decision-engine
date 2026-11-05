@@ -251,6 +251,10 @@
       v-model="dialogVisible"
       width="760px"
       append-to-body
+      :close-on-click-modal="false"
+      :close-on-press-escape="!functionSaving"
+      :show-close="!functionSaving"
+      :before-close="done => closeConfigurationDialog('dialogVisible', done)"
     >
       <function-impact-panel v-if="dialogVisible" :form="editForm" :params="editParams" />
       <el-form :model="editForm" label-width="90px" size="small" :disabled="functionSaving">
@@ -414,7 +418,7 @@
         </el-form-item>
       </el-form>
       <template v-slot:footer>
-        <el-button size="small" @click="dialogVisible = false">取消</el-button>
+        <el-button size="small" :disabled="functionSaving" @click="closeConfigurationDialog('dialogVisible')">取消</el-button>
         <el-button v-permission="'function:edit'" size="small" type="primary" :loading="functionSaving" @click="handleSave"
           >保存</el-button
         >
@@ -565,6 +569,7 @@ import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
 import governanceWorkspaceMixin from '@/mixins/governanceWorkspaceMixin'
+import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
 import { completeResourceChange } from '@/utils/governanceWorkspace'
 import { chooseVersionRestore, versionDisplayLabel } from '@/utils/versionRestore'
 import { markRaw } from 'vue'
@@ -603,7 +608,7 @@ import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operati
 import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
 
 export default {
-  mixins: [governanceWorkspaceMixin],
+  mixins: [governanceWorkspaceMixin, configurationDialogsMixin([{ visible: 'dialogVisible', draft: vm => ({ form: vm.editForm, params: vm.editParams }), busy: vm => vm.functionSaving }])],
   data() {
     return {
       tableColumnOrders: { functionColumns: null },

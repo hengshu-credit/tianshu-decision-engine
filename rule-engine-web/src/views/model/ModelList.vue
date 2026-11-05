@@ -331,10 +331,14 @@
       v-model="uploadVisible"
       width="700px"
       :close-on-click-modal="false"
+      :close-on-press-escape="!uploading"
+      :show-close="!uploading"
+      :before-close="done => closeConfigurationDialog('uploadVisible', done)"
     >
       <el-form
         ref="uploadForm"
         :model="uploadForm"
+        :disabled="uploading"
         :rules="uploadRules"
         label-width="120px"
         size="small"
@@ -584,7 +588,7 @@
             :percentage="uploadProgress"
             style="margin-bottom: 10px"
           />
-          <el-button size="small" @click="uploadVisible = false"
+          <el-button size="small" :disabled="uploading" @click="closeConfigurationDialog('uploadVisible')"
             >取消</el-button
           >
           <el-button v-permission="'model:edit'"
@@ -602,12 +606,16 @@
     <el-dialog
       title="转为全局模型"
       v-model="toGlobalVisible"
-      width="500px"
       :close-on-click-modal="false"
+      :close-on-press-escape="!toGlobalLoading"
+      :show-close="!toGlobalLoading"
+      :before-close="done => closeConfigurationDialog('toGlobalVisible', done)"
+      width="500px"
     >
       <el-form
         ref="toGlobalForm"
         :model="toGlobalForm"
+        :disabled="toGlobalLoading"
         :rules="toGlobalRules"
         label-width="110px"
         size="small"
@@ -627,7 +635,7 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" @click="toGlobalVisible = false"
+          <el-button size="small" :disabled="toGlobalLoading" @click="closeConfigurationDialog('toGlobalVisible')"
             >取消</el-button
           >
           <el-button v-permission="'model:edit'"
@@ -645,12 +653,16 @@
     <el-dialog
       title="编辑模型"
       v-model="editVisible"
-      width="600px"
       :close-on-click-modal="false"
+      :close-on-press-escape="!editLoading"
+      :show-close="!editLoading"
+      :before-close="done => closeConfigurationDialog('editVisible', done)"
+      width="600px"
     >
       <el-form
         ref="editForm"
         :model="editForm"
+        :disabled="editLoading"
         :rules="editRules"
         label-width="110px"
         size="small"
@@ -767,7 +779,7 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" @click="editVisible = false">取消</el-button>
+          <el-button size="small" :disabled="editLoading" @click="closeConfigurationDialog('editVisible')">取消</el-button>
           <el-button v-permission="'model:edit'"
             size="small"
             type="primary"
@@ -794,6 +806,7 @@ import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
 import governanceWorkspaceMixin from '@/mixins/governanceWorkspaceMixin'
+import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
 import { completeResourceChange } from '@/utils/governanceWorkspace'
 import { markRaw } from 'vue'
 import {
@@ -872,7 +885,11 @@ const createEditForm = () => ({
 })
 
 export default {
-  mixins: [governanceWorkspaceMixin],
+  mixins: [governanceWorkspaceMixin, configurationDialogsMixin([
+    { visible: 'uploadVisible', draft: vm => ({ form: vm.uploadForm, fileName: vm.selectedFileName }), busy: vm => vm.uploading },
+    { visible: 'editVisible', draft: vm => vm.editForm, busy: vm => vm.editLoading },
+    { visible: 'toGlobalVisible', draft: vm => vm.toGlobalForm, busy: vm => vm.toGlobalLoading },
+  ])],
   data() {
     return {
       tableColumnOrders: { modelColumns: null },
@@ -1357,6 +1374,7 @@ export default {
       })
     },
     handleFileChange(file, files) {
+      if (this.uploading) return
       const fileName = file.name || (file.raw && file.raw.name) || ''
       const lowerName = fileName.toLowerCase()
       if (!lowerName.endsWith('.onnx') && !lowerName.endsWith('.pmml')) {
@@ -1380,8 +1398,11 @@ export default {
       this.uploadForm.onnxTaskType = taskType
       this.uploadForm.onnxConfig = createOnnxConfig(taskType)
     },
-    handleDoUpload() {
-      this.$refs.uploadForm.validate(async (valid) => {
+    async handleDoUpload() {
+      if (this.uploading) return
+      this.uploading = true
+      try {
+        const valid = await new Promise(resolve => this.$refs.uploadForm.validate(resolve))
         if (!valid) return
         if (!this.selectedFile) {
           this.$message.warning('请选择模型文件')
@@ -1395,9 +1416,7 @@ export default {
           this.$message.warning('请选择 ONNX 推理任务')
           return
         }
-        this.uploading = true
         this.uploadProgress = 0
-        try {
           const formData = new FormData()
           formData.append('file', this.selectedFile)
           // 修复: projectId 为 null 时不添加到 FormData，避免被转成字符串 "null" 导致后端 Long 类型转换失败
@@ -1438,7 +1457,6 @@ export default {
         } finally {
           this.uploading = false
         }
-      })
     },
 
     handleDelete(row) {
@@ -1482,11 +1500,12 @@ export default {
         if (this.$refs.editForm) this.$refs.editForm.clearValidate()
       })
     },
-    handleDoEdit() {
-      this.$refs.editForm.validate(async (valid) => {
+    async handleDoEdit() {
+      if (this.editLoading) return
+      this.editLoading = true
+      try {
+        const valid = await new Promise(resolve => this.$refs.editForm.validate(resolve))
         if (!valid) return
-        this.editLoading = true
-        try {
           const payload = {
             id: this.editForm.id,
             modelName: this.editForm.modelName,
@@ -1510,7 +1529,6 @@ export default {
         } finally {
           this.editLoading = false
         }
-      })
     },
     handleToGlobal(row) {
       this.toGlobalModelInfo = {
@@ -1524,11 +1542,12 @@ export default {
         if (this.$refs.toGlobalForm) this.$refs.toGlobalForm.clearValidate()
       })
     },
-    handleDoToGlobal() {
-      this.$refs.toGlobalForm.validate(async (valid) => {
+    async handleDoToGlobal() {
+      if (this.toGlobalLoading) return
+      this.toGlobalLoading = true
+      try {
+        const valid = await new Promise(resolve => this.$refs.toGlobalForm.validate(resolve))
         if (!valid) return
-        this.toGlobalLoading = true
-        try {
           const response = await api.toGlobalModel(
             this.toGlobalModelInfo.id,
             this.toGlobalForm.modelCode.trim()
@@ -1542,7 +1561,6 @@ export default {
         } finally {
           this.toGlobalLoading = false
         }
-      })
     },
   },
 }

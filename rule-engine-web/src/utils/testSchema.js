@@ -5,6 +5,7 @@ export function normalizeTestSchema(response) {
   return {
     inputs: Array.isArray(schema.inputs) ? schema.inputs : [],
     outputs: Array.isArray(schema.outputs) ? schema.outputs : [],
+    runtimeNodes: Array.isArray(schema.runtimeNodes) ? schema.runtimeNodes : [],
     sampleParams: schema.sampleParams && typeof schema.sampleParams === 'object' ? schema.sampleParams : {},
     diagnostics: Array.isArray(schema.diagnostics) ? schema.diagnostics : [],
     ...(schema.executionIdentity ? { executionIdentity: schema.executionIdentity } : {}),

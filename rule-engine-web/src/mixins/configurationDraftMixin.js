@@ -1,7 +1,7 @@
 import { registerDesignerLeaveGuard } from '@/utils/designerLeaveGuard'
 
 // 与工作区关闭/刷新共用现有离开保护入口；配置和凭据仅留在组件内存中。
-export default function configurationDraftMixin(readDraft) {
+export default function configurationDraftMixin(readDraft, isSaving = () => false) {
   return {
     data() { return { configurationBaseline: null, configurationLeaveApproved: false, configurationGuardUnregister: null } },
     computed: {
@@ -34,7 +34,7 @@ export default function configurationDraftMixin(readDraft) {
       return this.confirmConfigurationLeave()
     },
     async beforeRouteUpdate(to, from) {
-      if (to.params?.id === from.params?.id) return true
+      if (JSON.stringify(to.params || {}) === JSON.stringify(from.params || {})) return true
       return this.confirmConfigurationLeave()
     },
     methods: {
@@ -51,8 +51,9 @@ export default function configurationDraftMixin(readDraft) {
           return accepted
         }, () => { this.configurationLeaveApproved = false })
       },
-      async confirmConfigurationLeave() {
-        if (!this.configurationHasUnsavedChanges) return true
+      async confirmConfigurationLeave(hasChanges = this.configurationHasUnsavedChanges) {
+        if (isSaving(this)) { this.$message.info('正在保存，请完成后再离开或刷新'); return false }
+        if (!hasChanges) return true
         try {
           await this.$confirm('当前配置有未保存修改，离开或刷新可能丢失这些修改。仍要继续吗？', '未保存提醒', {
             type: 'warning', confirmButtonText: '继续离开', cancelButtonText: '继续编辑',
@@ -61,7 +62,7 @@ export default function configurationDraftMixin(readDraft) {
         } catch { return false }
       },
       handleConfigurationBeforeUnload(event) {
-        if (!this.configurationHasUnsavedChanges) return
+        if (!this.configurationHasUnsavedChanges && !isSaving(this)) return
         event.preventDefault()
         event.returnValue = ''
       },
