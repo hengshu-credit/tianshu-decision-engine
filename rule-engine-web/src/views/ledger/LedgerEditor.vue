@@ -1,8 +1,8 @@
 <template>
   <div class="uiue-list-page ledger-page ledger-editor-page" :aria-busy="loading">
-    <div class="uiue-detail-header"><div class="uiue-detail-header__title"><el-button class="uiue-detail-back" size="small" aria-label="返回文章管理" @click="back"><app-icon name="Back" /></el-button><h2>{{ articleId ? '编辑文章' : '新建文章' }}</h2><el-tag v-if="publishedVersion" size="small">当前发布 v{{ publishedVersion }}</el-tag></div><div class="uiue-detail-header__actions"><ledger-versions v-if="articleId" :article-id="articleId" /><el-button size="small" :disabled="loading || busy" @click="saveDraft">保存草稿</el-button><el-button type="primary" size="small" :disabled="loading" :loading="busy" @click="configure">保存并发布</el-button></div></div>
+    <div class="uiue-detail-header"><div class="uiue-detail-header__title"><el-button class="uiue-detail-back" size="small" aria-label="返回文章管理" @click="back"><app-icon name="Back" /></el-button><h2>{{ articleId ? '编辑文章' : '新建文章' }}</h2><el-tag v-if="publishedVersion" size="small">当前发布 v{{ publishedVersion }}</el-tag></div><div class="uiue-detail-header__actions"><ledger-versions v-if="articleId" :article-id="articleId" /><el-button size="small" :disabled="loading || busy || !!loadError || identityCleared" @click="saveDraft">保存草稿</el-button><el-button type="primary" size="small" :disabled="loading || !!loadError || identityCleared" :loading="busy" @click="configure">保存并发布</el-button></div></div>
     <el-alert v-if="loadError" :title="loadError" type="error" :closable="false"><el-button link @click="load">重试</el-button></el-alert>
-    <template v-else>
+    <template v-else-if="!identityCleared">
       <el-input v-model="content.title" class="ledger-title-input" maxlength="200" placeholder="输入文章标题" aria-label="文章标题" :disabled="busy || loading" @input="dirty = true" />
       <div class="ledger-editor-toolbar"><el-button size="small" :disabled="busy" @click="assetPicker = true">素材库 / 插入图片</el-button><el-select v-model="snippet" size="small" placeholder="插入组件" style="width:145px" :disabled="busy" @change="insertSnippet"><el-option label="表格" value="table" /><el-option label="任务清单" value="checklist" /><el-option label="提示说明" value="quote" /><el-option label="验收记录" value="acceptance" /></el-select><span>支持直接粘贴截图；检测通过后自动插入正文</span></div>
       <ledger-markdown-editor ref="markdown" :model-value="content.body" :inert="busy || loading" @update:model-value="updateBody" @dirty="dirty = true" @asset-uploaded="assetUploaded" />
@@ -33,18 +33,45 @@ import LedgerEventDialog from '@/components/ledger/LedgerEventDialog.vue'
 import { getLedgerArticleDraft, saveLedgerDraft, publishLedgerArticle, listLedgerEvents, getLedgerEvent } from '@/api/ledger'
 import { newLedgerContent, LEDGER_CATEGORIES } from '@/utils/ledger'
 import { routeProjectId } from '@/utils/projectContext'
-import { getCurrentUser } from '@/security/permissionState'
+import { registerDesignerLeaveGuard } from '@/utils/designerLeaveGuard'
 import '@/styles/ledger.scss'
 const snippets = { table: '\n| 检查项 | 调整前 | 调整后 |\n| --- | --- | --- |\n| 指标 | 待填写 | 待填写 |\n', checklist: '\n- [ ] 核查实际效果\n- [ ] 补充验收结论\n', quote: '\n> 请填写需要团队关注的事项。\n', acceptance: '\n## 验收记录\n\n### 验收标准\n\n待填写\n\n### 实际结果\n\n待填写\n\n### 后续安排\n\n- [ ] 待跟进事项\n' }
 export default {
   name: 'LedgerEditor', components: { ScopeProjectFields, LedgerMarkdownEditor, LedgerAssets, LedgerVersions, LedgerEventDialog },
-  data() { return { articleId: this.$route.params.id || null, version: null, publishedVersion: 0, content: newLedgerContent(routeProjectId(this.$route, this.$store.state.currentProject)), loading: false, loadError: '', busy: false, dirty: false, navigating: false, generation: 0, eventGeneration: 0, events: [], publishDialog: false, assetPicker: false, eventDialog: false, snippet: '', categories: LEDGER_CATEGORIES } },
-  mounted() { this.load(); window.addEventListener('tianshu:identity-change', this.clearIdentity) },
-  watch: { content: { deep: true, handler() { if (!this.loading && getCurrentUser()) this.dirty = true } } },
-  beforeUnmount() { this.generation++; this.eventGeneration++; window.removeEventListener('tianshu:identity-change', this.clearIdentity) },
-  async beforeRouteLeave() { if (this.navigating || !getCurrentUser()) return true; if (this.busy) return false; if (!this.dirty) return true; try { await this.$confirm('有未保存的修改，离开后将丢失。可以先保存草稿。', '离开编辑页面'); return true } catch { return false } },
+  data() { return { articleId: this.$route.params.id || null, version: null, publishedVersion: 0, content: newLedgerContent(routeProjectId(this.$route, this.$store.state.currentProject)), loading: false, loadError: '', busy: false, dirty: false, navigating: false, identityCleared: false, leaveApproved: false, unregisterLeaveGuard: null, generation: 0, eventGeneration: 0, events: [], publishDialog: false, assetPicker: false, eventDialog: false, snippet: '', categories: LEDGER_CATEGORIES } },
+  mounted() {
+    this.load()
+    this.unregisterLeaveGuard = registerDesignerLeaveGuard(this.$route.path, async () => {
+      const accepted = await this.confirmLeave()
+      this.leaveApproved = accepted
+      return accepted
+    }, () => { this.leaveApproved = false })
+    window.addEventListener('beforeunload', this.beforeUnload)
+    window.addEventListener('tianshu:identity-change', this.clearIdentity)
+  },
+  watch: { content: { deep: true, handler() { if (!this.loading && !this.identityCleared) this.dirty = true } } },
+  beforeUnmount() { this.generation++; this.eventGeneration++; this.unregisterLeaveGuard?.(); window.removeEventListener('beforeunload', this.beforeUnload); window.removeEventListener('tianshu:identity-change', this.clearIdentity) },
+  async beforeRouteLeave() {
+    if (this.leaveApproved) { this.leaveApproved = false; return true }
+    return this.confirmLeave()
+  },
   methods: {
-    clearIdentity() { this.dirty = false; this.publishDialog = false; this.assetPicker = false; this.eventDialog = false; this.content = newLedgerContent(null); this.$refs.markdown?.editor?.setValue('') },
+    async confirmLeave() {
+      if (this.identityCleared || this.navigating) return true
+      if (this.busy) { this.$message.info('正在保存，请完成后再离开或刷新'); return false }
+      if (!this.dirty) return true
+      try {
+        await this.$confirm('有未保存的修改，离开或刷新后将丢失。可以先保存草稿。', '未保存提醒', { type: 'warning', confirmButtonText: '继续离开', cancelButtonText: '继续编辑' })
+        return true
+      } catch { return false }
+    },
+    beforeUnload(event) { if (!this.identityCleared && (this.dirty || this.busy)) { event.preventDefault(); event.returnValue = '' } },
+    clearIdentity() {
+      this.identityCleared = true; this.generation++; this.eventGeneration++
+      this.dirty = false; this.publishDialog = false; this.assetPicker = false; this.eventDialog = false
+      this.content = newLedgerContent(null); this.events = []; this.version = null; this.publishedVersion = 0
+      this.loading = false; this.loadError = ''
+    },
     async load() {
       const generation = ++this.generation; this.loading = true; this.loadError = ''
       try {
@@ -55,17 +82,25 @@ export default {
       } catch (error) { if (generation === this.generation) this.loadError = error.message || '文章读取失败' }
       finally { if (generation === this.generation) this.loading = false }
     },
-    updateBody(value) { if (value !== this.content.body) { this.content.body = value; if (!this.loading) this.dirty = true } },
+    updateBody(value) { if (!this.identityCleared && value !== this.content.body) { this.content.body = value; if (!this.loading) this.dirty = true } },
     syncBody() { const body = this.$refs.markdown?.getValue?.(); if (typeof body === 'string') this.content.body = body },
-    async persistDraft() { this.syncBody(); const response = await saveLedgerDraft(this.articleId, { version: this.version, content: { ...this.content, projectId: this.content.scope === 'PROJECT' ? this.content.projectId : null } }); this.articleId = response.data.id; this.version = response.data.version; this.publishedVersion = response.data.publishedVersion; this.dirty = false; return response.data },
-    async saveDraft() { if (this.busy) return; this.busy = true; const fresh = !this.articleId; try { await this.persistDraft(); this.$message.success('草稿已保存，可在文章管理中继续编辑'); if (fresh) { this.navigating = true; await this.$router.replace(`/ledger/articles/${this.articleId}/edit`) } } catch { /* request 已提示，保留当前正文。 */ } finally { this.busy = false } },
+    async persistDraft() {
+      const generation = this.generation
+      this.syncBody()
+      const response = await saveLedgerDraft(this.articleId, { version: this.version, content: { ...this.content, projectId: this.content.scope === 'PROJECT' ? this.content.projectId : null } })
+      if (generation !== this.generation || this.identityCleared) throw new Error('编辑会话已结束')
+      this.articleId = response.data.id; this.version = response.data.version; this.publishedVersion = response.data.publishedVersion; this.dirty = false
+      return response.data
+    },
+    async saveDraft() { if (this.busy || this.loading || this.loadError || this.identityCleared) return; this.busy = true; const fresh = !this.articleId; try { await this.persistDraft(); this.$message.success('草稿已保存，可在文章管理中继续编辑'); if (fresh) { this.navigating = true; await this.$router.replace(`/ledger/articles/${this.articleId}/edit`) } } catch { /* request 已提示，保留当前正文。 */ } finally { this.busy = false; this.navigating = false } },
     configure() { this.syncBody(); if (!this.content.title?.trim() || !this.content.body?.trim()) { this.$message.warning('请先填写标题和正文'); return } this.publishDialog = true },
     async publish() {
-      if (this.busy) return
+      if (this.busy || this.loading || this.loadError || this.identityCleared) return
       if (!this.content.scope || (this.content.scope === 'PROJECT' && !this.content.projectId) || !this.content.occurredAt) { this.$message.warning('请选择归属范围和发生时间'); return }
       this.busy = true
-      try { await this.persistDraft(); const response = await publishLedgerArticle(this.articleId, this.version); this.publishDialog = false; this.dirty = false; this.navigating = true; this.$message.success(`文章 v${response.data.versionNo} 已发布`); await this.$router.push({ path: `/ledger/articles/${this.articleId}`, query: { revisionId: response.data.id } }) }
-      catch { /* 发布失败时已保存的草稿仍保留，弹窗不关闭。 */ } finally { this.busy = false }
+      const generation = this.generation
+      try { await this.persistDraft(); const response = await publishLedgerArticle(this.articleId, this.version); if (generation !== this.generation || this.identityCleared) return; this.publishDialog = false; this.dirty = false; this.navigating = true; this.$message.success(`文章 v${response.data.versionNo} 已发布`); await this.$router.push({ path: `/ledger/articles/${this.articleId}`, query: { revisionId: response.data.id } }) }
+      catch { /* 发布失败时已保存的草稿仍保留，弹窗不关闭。 */ } finally { this.busy = false; this.navigating = false }
     },
     back() { this.$router.push({ path: '/ledger', query: { tab: 'articles' } }) },
     insertSnippet(value) { if (snippets[value]) this.$refs.markdown.insert(snippets[value]); this.snippet = '' },

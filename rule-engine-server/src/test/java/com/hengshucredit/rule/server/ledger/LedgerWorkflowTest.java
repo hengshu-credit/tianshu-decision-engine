@@ -7,6 +7,7 @@ import com.hengshucredit.rule.model.dto.LedgerRequests;
 import com.hengshucredit.rule.server.security.*;
 import com.hengshucredit.rule.server.service.ConsoleOperatorResolver;
 import org.junit.Before;
+import org.junit.After;
 import org.junit.Test;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.core.io.ClassPathResource;
@@ -38,6 +39,9 @@ public class LedgerWorkflowTest {
     private LedgerQueryService queries;
     private ConsoleDataPermissionHandler policy;
     private ObjectMapper json;
+    private org.springframework.context.annotation.AnnotationConfigApplicationContext repositoryContext;
+
+    @After public void closeRepositoryContext() { if (repositoryContext != null) repositoryContext.close(); }
 
     @Before public void setup() throws Exception {
         dataSource = new DriverManagerDataSource("jdbc:h2:mem:ledger" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
@@ -51,7 +55,14 @@ public class LedgerWorkflowTest {
         ConsoleProjectAccess projectAccess = new ConsoleProjectAccess() { @Override public Scope current() { return identity.get(); } };
         policy = new ConsoleDataPermissionHandler(projectAccess);
         var access = new LedgerAccess(projectAccess, new ConsoleDataWriteInterceptor(projectAccess, policy, jdbc), new ConsoleOperatorResolver() { @Override public String resolve() { return "作者" + identity.get().userId(); } }, jdbc);
-        var repository = new LedgerRepository(jdbc, policy);
+        repositoryContext = new org.springframework.context.annotation.AnnotationConfigApplicationContext();
+        repositoryContext.registerBean(JdbcTemplate.class, () -> jdbc);
+        repositoryContext.registerBean(ConsoleDataPermissionHandler.class, () -> policy);
+        repositoryContext.registerBean(org.springframework.dao.annotation.PersistenceExceptionTranslationPostProcessor.class);
+        repositoryContext.register(LedgerRepository.class);
+        repositoryContext.refresh();
+        var repository = repositoryContext.getBean(LedgerRepository.class);
+        assertTrue("生产环境的 @Repository 必须通过代理参与完整工作流测试", org.springframework.aop.support.AopUtils.isCglibProxy(repository));
         scanResult = new AtomicReference<>(new LedgerAntivirus.Result("PENDING", "等待扫描"));
         LedgerAntivirus antivirus = new LedgerAntivirus(new LedgerProperties()) { @Override public Result scan(byte[] bytes) { return scanResult.get(); } };
         assets = transaction(new LedgerAssetService(repository, access, antivirus));

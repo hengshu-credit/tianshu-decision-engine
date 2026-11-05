@@ -14,9 +14,14 @@ import java.util.Set;
 @Repository
 public class LedgerRepository {
     static final Set<String> TABLES = Set.of("rule_ledger_article", "rule_ledger_revision", "rule_ledger_event", "rule_ledger_asset");
-    final JdbcTemplate jdbc;
+    private final JdbcTemplate jdbc;
     private final ConsoleDataPermissionHandler policy;
     public LedgerRepository(JdbcTemplate jdbc, ConsoleDataPermissionHandler policy) { this.jdbc = jdbc; this.policy = policy; }
+    // Spring 会为 @Repository 创建异常转换代理；调用方必须通过方法访问目标实例。
+    public List<Map<String, Object>> queryForList(String sql, Object... args) { return jdbc.queryForList(sql, args); }
+    public <T> List<T> queryForList(String sql, Class<T> type, Object... args) { return jdbc.queryForList(sql, type, args); }
+    public <T> T queryForObject(String sql, Class<T> type, Object... args) { return jdbc.queryForObject(sql, type, args); }
+    public int update(String sql, Object... args) { return jdbc.update(sql, args); }
     public String visible(String table, String alias) { return "(" + policy.predicate(table, alias) + ")"; }
     public String visibleDraft(String alias) { return policy.ledgerDraftPredicate(alias); }
     public Map<String, Object> one(String table, long id, boolean lock) {

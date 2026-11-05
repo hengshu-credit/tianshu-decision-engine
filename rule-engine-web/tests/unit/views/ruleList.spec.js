@@ -10,13 +10,14 @@ vi.mock('@/api/definition', () => ({
 }))
 
 vi.mock('@/api/project', () => ({
-  listProjects: vi.fn()
+  listProjects: vi.fn(), listProjectOptions: vi.fn(), getProjectOption: vi.fn().mockResolvedValue({ data: null })
 }))
 
 import * as definitionApi from '@/api/definition'
 import * as projectApi from '@/api/project'
 import RuleList from '@/views/rule/RuleList.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import fs from 'fs'
 import path from 'path'
 
@@ -105,6 +106,37 @@ async function mountAndWait() {
   await new Promise(r => setTimeout(r, 100))
   return wrapper
 }
+
+test('新建规则取消关闭保留全部输入，确认放弃才重置保护基线', async () => {
+  const wrapper = await mountAndWait()
+  wrapper.vm.handleCreate(); wrapper.vm.form.ruleName = '未保存策略'
+  wrapper.vm.$confirm.mockRejectedValueOnce('cancel')
+  await wrapper.vm.closeCreate()
+  expect(wrapper.vm.dialogVisible).toBe(true)
+  expect(wrapper.vm.form.ruleName).toBe('未保存策略')
+  expect(wrapper.vm.configurationHasUnsavedChanges).toBe(true)
+  wrapper.vm.$confirm.mockResolvedValueOnce(true)
+  await wrapper.vm.closeCreate()
+  expect(wrapper.vm.dialogVisible).toBe(false)
+  expect(wrapper.vm.configurationHasUnsavedChanges).toBe(false)
+  wrapper.unmount()
+})
+
+test.each(['success', 'failure'])('规则快速查询忽略旧请求的 %s，不覆盖新结果和加载状态', async outcome => {
+  const wrapper = await mountAndWait()
+  let resolve, reject
+  definitionApi.listDefinitions.mockReturnValueOnce(new Promise((done, fail) => { resolve = done; reject = fail }))
+  const oldRequest = wrapper.vm.loadData()
+  definitionApi.listDefinitions.mockResolvedValueOnce({ data: { records: [{ id: 'new', ruleName: '最新结果' }], total: 1 } })
+  await wrapper.vm.loadData()
+  if (outcome === 'success') resolve({ data: { records: [{ id: 'old' }], total: 90 } })
+  else reject(new Error('旧请求失败'))
+  await oldRequest
+  expect(wrapper.vm.tableData).toEqual([{ id: 'new', ruleName: '最新结果' }])
+  expect(wrapper.vm.total).toBe(1)
+  expect(wrapper.vm.loading).toBe(false)
+  wrapper.unmount()
+})
 
 test('退出项目范围后重新加载全部规则，不恢复项目内筛选和页码', async () => {
   sessionStorage.clear()
@@ -198,8 +230,11 @@ describe('RuleList — 初始化与数据加载', () => {
   beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.unmount() })
 
-  test('mounted 后调用 listProjects', () => {
-    expect(projectApi.listProjects).toHaveBeenCalled()
+  test('不预读截断的项目列表，也不信任旧账户会话缓存', () => {
+    expect(projectApi.listProjects).not.toHaveBeenCalled()
+    expect(RuleList.components.ProjectResourceSelect).toBe(ProjectResourceSelect)
+    const source = fs.readFileSync(path.resolve(__dirname, '../../../src/views/rule/RuleList.vue'), 'utf8')
+    expect(source).not.toContain("sessionStorage.getItem('projectList')")
   })
 
   test('mounted 后调用 listDefinitions', () => {
@@ -275,20 +310,18 @@ describe('RuleList — 筛选与搜索', () => {
   beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.unmount() })
 
-  test('queryProjectCode 模糊匹配', () => {
-    wrapper.vm.projectList = mockProjects()
-    wrapper.vm.queryProjectCode('project_a')
-    expect(wrapper.vm.filteredProjectCodes.length).toBe(1)
-    wrapper.vm.queryProjectCode('')
-    expect(wrapper.vm.filteredProjectCodes.length).toBe(2)
+  test('项目编码筛选将关键词和分页交给统一项目查询', async () => {
+    const filter = mount(ProjectFilterSelect, { props: { field: 'projectCode' } })
+    await filter.vm.fetchOptions({ query: 'project_a', pageNum: 3, pageSize: 20 })
+    expect(projectApi.listProjectOptions).toHaveBeenCalledWith({ projectCode: 'project_a', pageNum: 3, pageSize: 20 })
+    filter.unmount()
   })
 
-  test('queryProjectName 模糊匹配', () => {
-    wrapper.vm.projectList = mockProjects()
-    wrapper.vm.queryProjectName('项目A')
-    expect(wrapper.vm.filteredProjectNames.length).toBe(1)
-    wrapper.vm.queryProjectName('')
-    expect(wrapper.vm.filteredProjectNames.length).toBe(2)
+  test('项目名称筛选可搜索后续页面，不局限本地缓存', async () => {
+    const filter = mount(ProjectFilterSelect, { props: { field: 'projectName' } })
+    await filter.vm.fetchOptions({ query: '项目A', pageNum: 51, pageSize: 20 })
+    expect(projectApi.listProjectOptions).toHaveBeenCalledWith({ projectName: '项目A', pageNum: 51, pageSize: 20 })
+    filter.unmount()
   })
 
   test('handleQuery 重置页码并重新加载', async () => {

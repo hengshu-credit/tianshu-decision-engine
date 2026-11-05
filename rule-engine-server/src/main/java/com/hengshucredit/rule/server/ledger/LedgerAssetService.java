@@ -83,7 +83,7 @@ public class LedgerAssetService {
                     result = new LedgerAntivirus.Result("QUARANTINED", "图片格式或尺寸校验失败，素材已隔离");
                 }
             }
-            repository.jdbc.update("UPDATE rule_ledger_asset SET scan_status=?,scan_message=?,content=?,raw_content=?,content_type=?,size_bytes=?,width=?,height=?,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?",
+            repository.update("UPDATE rule_ledger_asset SET scan_status=?,scan_message=?,content=?,raw_content=?,content_type=?,size_bytes=?,width=?,height=?,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?",
                     result.status(), result.message(), png, png == null ? bytes : null, png == null ? row.get("content_type") : "image/png", png == null ? number(row.get("source_size")) : png.length,
                     width, height, row.get("id"));
             return metadata(repository.one(TABLE, number(row.get("id")), false));
@@ -104,7 +104,7 @@ public class LedgerAssetService {
             else if (number(row.get("owner_user_id")) != access.userId()) throw new IllegalArgumentException("不能将他人的素材变更为私有");
         }
         if (!Set.of("PRIVATE", "GLOBAL", "PROJECT").contains(scope)) throw new IllegalArgumentException("无效素材范围");
-        repository.jdbc.update("UPDATE rule_ledger_asset SET name=?,scope=?,project_id=?,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?", name, scope, "PROJECT".equals(scope) ? projectId : null, id);
+        repository.update("UPDATE rule_ledger_asset SET name=?,scope=?,project_id=?,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?", name, scope, "PROJECT".equals(scope) ? projectId : null, id);
         return metadata(repository.one(TABLE, id, false));
     }
 
@@ -115,7 +115,7 @@ public class LedgerAssetService {
             var row = repository.one(TABLE, id, true); access.requireEdit(TABLE, row);
             if (repository.referenced("ASSET", id)) throw new IllegalArgumentException("素材已被草稿或历史版本引用，不能删除");
         }
-        for (long id : ids.stream().distinct().toList()) repository.jdbc.update("DELETE FROM rule_ledger_asset WHERE id=?", id);
+        for (long id : ids.stream().distinct().toList()) repository.update("DELETE FROM rule_ledger_asset WHERE id=?", id);
     }
 
     public byte[] content(long id) {
@@ -132,10 +132,10 @@ public class LedgerAssetService {
         if (!"CLEAN".equals(asset.get("scan_status"))) throw new IllegalArgumentException("文章含待检或隔离素材，不能发布");
         if ("PRIVATE".equals(asset.get("scope"))) {
             if (number(asset.get("owner_user_id")) != access.userId()) throw new IllegalArgumentException("不能发布他人的私有素材");
-            Long count = repository.jdbc.queryForObject("SELECT (SELECT COUNT(*) FROM rule_ledger_revision_reference WHERE ref_type='ASSET' AND ref_id=?) + (SELECT COUNT(*) FROM rule_ledger_draft_reference WHERE ref_type='ASSET' AND ref_id=? AND article_id<>?)", Long.class, id, id, articleId);
+            Long count = repository.queryForObject("SELECT (SELECT COUNT(*) FROM rule_ledger_revision_reference WHERE ref_type='ASSET' AND ref_id=?) + (SELECT COUNT(*) FROM rule_ledger_draft_reference WHERE ref_type='ASSET' AND ref_id=? AND article_id<>?)", Long.class, id, id, articleId);
             if (count != null && count > 0) throw new IllegalArgumentException("私有素材被其他草稿引用，请先在素材库明确共享范围");
             access.requireTarget(targetScope, projectId);
-            repository.jdbc.update("UPDATE rule_ledger_asset SET scope=?,project_id=?,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?", targetScope, "PROJECT".equals(targetScope) ? projectId : null, id);
+            repository.update("UPDATE rule_ledger_asset SET scope=?,project_id=?,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?", targetScope, "PROJECT".equals(targetScope) ? projectId : null, id);
         } else if (!"GLOBAL".equals(asset.get("scope")) && !("PROJECT".equals(targetScope) && number(asset.get("project_id")) == (projectId == null ? 0 : projectId))) {
             throw new IllegalArgumentException("项目素材不能在其他项目或全局文章中发布，请使用同范围或全局素材");
         }
@@ -157,7 +157,7 @@ public class LedgerAssetService {
     }
     private boolean canSharePrivate(Map<String, Object> row) {
         if (!"PRIVATE".equals(row.get("scope")) || number(row.get("owner_user_id")) != access.userId()) return false;
-        Long published = repository.jdbc.queryForObject("SELECT COUNT(*) FROM rule_ledger_revision_reference WHERE ref_type='ASSET' AND ref_id=?", Long.class, row.get("id"));
+        Long published = repository.queryForObject("SELECT COUNT(*) FROM rule_ledger_revision_reference WHERE ref_type='ASSET' AND ref_id=?", Long.class, row.get("id"));
         return published != null && published == 0;
     }
     static String filename(String name) {

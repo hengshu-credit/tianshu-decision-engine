@@ -7,7 +7,7 @@
     :style="{ height: height }"
     @mousedown.capture="focusReferenceCode"
     @dblclick.capture="focusReferenceCode"
-    @mouseup="normalizeReferenceCaret"
+    @mouseup.capture="normalizeReferenceCaret"
   />
 </template>
 
@@ -272,9 +272,31 @@ export default {
     },
     async normalizeReferenceCaret(event) {
       if (this.movingReferenceCaret || event.button !== 0
-        || event.target?.closest?.('.content-ref__segment, .monaco-hover, .suggest-widget, .scrollbar')) return
+        || event.target?.closest?.('.monaco-hover, .suggest-widget, .scrollbar')) return
       await this.$nextTick()
-      if (!this.editor?.hasTextFocus() || this.editor.getSelections().length !== 1 || !this.editor.getSelection().isEmpty()) return
+      if (!this.editor?.hasTextFocus() || this.editor.getSelections().length !== 1) return
+      const selection = this.editor.getSelection()
+      if (!selection.isEmpty()) {
+        const code = [...this.$refs.container.querySelectorAll('.view-lines .content-ref__code:not(.content-ref__metadata)')].find(element => {
+          const rect = element.getBoundingClientRect()
+          return rect.width > 0 && event.clientY >= rect.top && event.clientY <= rect.bottom
+            && (Math.abs(event.clientX - rect.left) <= 1.5 || Math.abs(event.clientX - rect.right) <= 1.5)
+        })
+        const range = code && [...code.classList].map(name => /^content-ref__range-(\d+)-(\d+)$/.exec(name)).find(Boolean)
+        if (!range) return
+        const rect = code.getBoundingClientRect()
+        const fragments = [...this.$refs.container.querySelectorAll(`.view-lines .${range[0]}.content-ref__code:not(.content-ref__metadata)`)]
+          .filter(element => element.textContent && element.getBoundingClientRect().width > 0)
+        const atStart = code === fragments[0] && Math.abs(event.clientX - rect.left) <= 1.5
+        const atEnd = code === fragments.at(-1) && Math.abs(event.clientX - rect.right) <= 1.5
+        if (!atStart && !atEnd) return
+        // 注入的展示标签会影响 Monaco 的像素命中；拖到编码边缘时按稳定源码区间补齐端点。
+        const position = this.editor.getModel().getPositionAt(Number(range[atEnd ? 2 : 1]))
+        this.editor.setSelection({ selectionStartLineNumber: selection.selectionStartLineNumber,
+          selectionStartColumn: selection.selectionStartColumn, positionLineNumber: position.lineNumber, positionColumn: position.column })
+        return
+      }
+      if (event.target?.closest?.('.content-ref__segment, .monaco-hover, .suggest-widget, .scrollbar')) return
       const offset = this.editor.getModel().getOffsetAt(this.editor.getPosition())
       for (const code of this.$refs.container.querySelectorAll('.view-lines .content-ref__code:not(.content-ref__metadata)')) {
         const range = [...code.classList].map(name => /^content-ref__range-(\d+)-(\d+)$/.exec(name)).find(Boolean)

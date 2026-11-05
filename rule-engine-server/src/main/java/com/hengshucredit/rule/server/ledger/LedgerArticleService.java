@@ -85,7 +85,7 @@ public class LedgerArticleService {
         } else {
             row = repository.one(TABLE, id, true);
             access.requireEdit(TABLE, row); access.requireDraft(row); LedgerAccess.version(row, request.version());
-            repository.jdbc.update("UPDATE rule_ledger_article SET draft_user_id=?,draft_json=?,draft_scope=?,draft_project_id=?,has_draft=1,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?",
+            repository.update("UPDATE rule_ledger_article SET draft_user_id=?,draft_json=?,draft_scope=?,draft_project_id=?,has_draft=1,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?",
                     access.userId(), encode(content), draftScope(content), "PROJECT".equals(content.getScope()) ? content.getProjectId() : null, id);
         }
         checkReferences(content, id, false);
@@ -107,11 +107,11 @@ public class LedgerArticleService {
         if (next > 1 && digest.equals(latest(row).get("content_digest"))) throw new IllegalArgumentException("文章内容未发生变化，无需新增发布版本");
         long revisionId = repository.insert("INSERT INTO rule_ledger_revision (article_id,version_no,title,summary,summary_auto,body,category,scope,project_id,occurred_time,activity_time,publish_time,actor_user_id,actor_name,change_summary,content_digest) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 id, next, content.getTitle(), content.getSummary(), Boolean.TRUE.equals(content.getSummaryAuto()) ? 1 : 0, content.getBody(), content.getCategory(), content.getScope(), content.getProjectId(), content.getOccurredAt(), next == 1 ? content.getOccurredAt() : now, now, access.userId(), access.actor(), content.getChangeSummary(), digest);
-        for (long eventId : content.getEventIds()) repository.jdbc.update("INSERT INTO rule_ledger_revision_reference (revision_id,ref_type,ref_id) VALUES (?,'EVENT',?)", revisionId, eventId);
-        for (long assetId : assetIds(content.getBody())) repository.jdbc.update("INSERT INTO rule_ledger_revision_reference (revision_id,ref_type,ref_id) VALUES (?,'ASSET',?)", revisionId, assetId);
-        repository.jdbc.update("UPDATE rule_ledger_article SET scope=?,project_id=?,published_version=?,has_draft=0,draft_json=NULL,draft_user_id=NULL,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?",
+        for (long eventId : content.getEventIds()) repository.update("INSERT INTO rule_ledger_revision_reference (revision_id,ref_type,ref_id) VALUES (?,'EVENT',?)", revisionId, eventId);
+        for (long assetId : assetIds(content.getBody())) repository.update("INSERT INTO rule_ledger_revision_reference (revision_id,ref_type,ref_id) VALUES (?,'ASSET',?)", revisionId, assetId);
+        repository.update("UPDATE rule_ledger_article SET scope=?,project_id=?,published_version=?,has_draft=0,draft_json=NULL,draft_user_id=NULL,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?",
                 content.getScope(), content.getProjectId(), next, id);
-        repository.jdbc.update("DELETE FROM rule_ledger_draft_reference WHERE article_id=?", id);
+        repository.update("DELETE FROM rule_ledger_draft_reference WHERE article_id=?", id);
         return revision(revisionId);
     }
 
@@ -120,8 +120,8 @@ public class LedgerArticleService {
         var row = repository.one(TABLE, id, true);
         access.requireEdit(TABLE, row); access.requireDraft(row); LedgerAccess.version(row, version);
         if (number(row.get("has_draft")) != 1) throw new IllegalArgumentException("文章没有待删除草稿");
-        repository.jdbc.update("DELETE FROM rule_ledger_draft_reference WHERE article_id=?", id);
-        repository.jdbc.update("UPDATE rule_ledger_article SET has_draft=0,draft_json=NULL,draft_user_id=NULL,deleted=?,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?",
+        repository.update("DELETE FROM rule_ledger_draft_reference WHERE article_id=?", id);
+        repository.update("UPDATE rule_ledger_article SET has_draft=0,draft_json=NULL,draft_user_id=NULL,deleted=?,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?",
                 number(row.get("published_version")) == 0 ? 1 : 0, id);
     }
 
@@ -141,7 +141,7 @@ public class LedgerArticleService {
 
     public Map<String, Object> workspace(long id) {
         var article = repository.one(TABLE, id, false);
-        List<Map<String, Object>> rows = repository.jdbc.queryForList("SELECT item.* FROM rule_ledger_revision item WHERE item.article_id=? AND " + repository.visible("rule_ledger_revision", "item") + " ORDER BY item.version_no DESC", id);
+        List<Map<String, Object>> rows = repository.queryForList("SELECT item.* FROM rule_ledger_revision item WHERE item.article_id=? AND " + repository.visible("rule_ledger_revision", "item") + " ORDER BY item.version_no DESC", id);
         var result = new LinkedHashMap<String, Object>();
         var history = new ArrayList<Map<String, Object>>(); var heads = new ArrayList<Map<String, Object>>();
         Long latestId = null;
@@ -166,7 +166,7 @@ public class LedgerArticleService {
 
     public List<Map<String, Object>> versionEvents(long id) {
         repository.one(TABLE, id, false);
-        return repository.jdbc.queryForList("SELECT item.id,item.version_no,item.publish_time,item.actor_name,item.change_summary FROM rule_ledger_revision item WHERE item.article_id=? AND " + repository.visible("rule_ledger_revision", "item") + " ORDER BY item.version_no DESC", id).stream().map(row -> {
+        return repository.queryForList("SELECT item.id,item.version_no,item.publish_time,item.actor_name,item.change_summary FROM rule_ledger_revision item WHERE item.article_id=? AND " + repository.visible("rule_ledger_revision", "item") + " ORDER BY item.version_no DESC", id).stream().map(row -> {
             var result = new LinkedHashMap<String, Object>(); result.put("id", row.get("id")); result.put("createTime", time(row.get("publish_time"))); result.put("actor", row.get("actor_name")); result.put("action", "PUBLISH"); result.put("comment", "发布 v" + row.get("version_no") + " · " + row.get("change_summary")); return (Map<String, Object>) result;
         }).toList();
     }
@@ -182,10 +182,10 @@ public class LedgerArticleService {
         return result;
     }
     private List<Map<String, Object>> visibleEvents(long revisionId) {
-        return repository.jdbc.queryForList("SELECT item.id,item.title,item.status FROM rule_ledger_event item JOIN rule_ledger_revision_reference ref ON ref.ref_id=item.id AND ref.ref_type='EVENT' WHERE ref.revision_id=? AND " + repository.visible("rule_ledger_event", "item") + " ORDER BY item.id", revisionId).stream().map(row -> Map.<String,Object>of("id",row.get("id"),"title",row.get("title"),"status",row.get("status"))).toList();
+        return repository.queryForList("SELECT item.id,item.title,item.status FROM rule_ledger_event item JOIN rule_ledger_revision_reference ref ON ref.ref_id=item.id AND ref.ref_type='EVENT' WHERE ref.revision_id=? AND " + repository.visible("rule_ledger_event", "item") + " ORDER BY item.id", revisionId).stream().map(row -> Map.<String,Object>of("id",row.get("id"),"title",row.get("title"),"status",row.get("status"))).toList();
     }
     private Map<String, Object> latest(Map<String, Object> article) {
-        var rows = repository.jdbc.queryForList("SELECT item.* FROM rule_ledger_revision item WHERE item.article_id=? AND item.version_no=? AND " + repository.visible("rule_ledger_revision", "item"), article.get("id"), article.get("published_version"));
+        var rows = repository.queryForList("SELECT item.* FROM rule_ledger_revision item WHERE item.article_id=? AND item.version_no=? AND " + repository.visible("rule_ledger_revision", "item"), article.get("id"), article.get("published_version"));
         if (rows.isEmpty()) throw new IllegalArgumentException("文章尚无可访问的发布版本");
         return rows.get(0);
     }
@@ -207,9 +207,9 @@ public class LedgerArticleService {
         for (long id : assetIds(content.getBody()).stream().sorted().toList()) assets.requireReference(id, content.getScope(), content.getProjectId(), publishing, articleId);
     }
     private void replaceDraftReferences(long id, LedgerContent content) {
-        repository.jdbc.update("DELETE FROM rule_ledger_draft_reference WHERE article_id=?", id);
-        for (long ref : content.getEventIds()) repository.jdbc.update("INSERT INTO rule_ledger_draft_reference (article_id,ref_type,ref_id) VALUES (?,'EVENT',?)", id, ref);
-        for (long ref : assetIds(content.getBody())) repository.jdbc.update("INSERT INTO rule_ledger_draft_reference (article_id,ref_type,ref_id) VALUES (?,'ASSET',?)", id, ref);
+        repository.update("DELETE FROM rule_ledger_draft_reference WHERE article_id=?", id);
+        for (long ref : content.getEventIds()) repository.update("INSERT INTO rule_ledger_draft_reference (article_id,ref_type,ref_id) VALUES (?,'EVENT',?)", id, ref);
+        for (long ref : assetIds(content.getBody())) repository.update("INSERT INTO rule_ledger_draft_reference (article_id,ref_type,ref_id) VALUES (?,'ASSET',?)", id, ref);
     }
     static Set<Long> assetIds(String body) {
         // Markdown 反斜线、HTML 实体及 URL 会忽略的 ASCII 空白不能绕过素材引用与检测校验。

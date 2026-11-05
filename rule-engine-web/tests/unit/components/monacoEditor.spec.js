@@ -45,6 +45,35 @@ describe('MonacoEditor', () => {
     vi.clearAllMocks()
   })
 
+  test.each([
+    { label: '正向拖到末端', x: 129, anchor: 1, end: 4, wrapped: false },
+    { label: '反向拖到起点', x: 100, anchor: 4, end: 1, wrapped: false },
+    { label: '编码中间保留部分选择', x: 115, anchor: 1, end: null, wrapped: false },
+    { label: '折行中间边缘不跳到整个引用末端', x: 129, anchor: 1, end: null, wrapped: true },
+  ])('$label', async ({ x, anchor, end, wrapped }) => {
+    const wrapper = mount(MonacoEditor)
+    await wrapper.vm.$nextTick()
+    editor.hasTextFocus = () => true
+    editor.getSelections = () => [{}]
+    editor.getSelection = () => ({ isEmpty: () => false, selectionStartLineNumber: 1, selectionStartColumn: anchor })
+    editor.getModel.mockReturnValue({ getPositionAt: offset => ({ lineNumber: 1, column: offset + 1 }) })
+    editor.setSelection = vi.fn()
+    const line = document.createElement('div'); line.className = 'view-lines'
+    const code = document.createElement('span'); code.className = 'content-ref__code content-ref__range-0-3'; code.textContent = wrapped ? 'ag' : 'age'
+    code.getBoundingClientRect = () => ({ left: 100, right: 130, top: 10, bottom: 30, width: 30 })
+    line.append(code)
+    if (wrapped) {
+      const continuation = code.cloneNode(true); continuation.textContent = 'e'
+      continuation.getBoundingClientRect = () => ({ left: 100, right: 110, top: 30, bottom: 50, width: 10 })
+      line.append(continuation)
+    }
+    wrapper.element.append(line)
+    await wrapper.vm.normalizeReferenceCaret({ button: 0, target: code, clientX: x, clientY: 20 })
+    if (end == null) expect(editor.setSelection).not.toHaveBeenCalled()
+    else expect(editor.setSelection).toHaveBeenCalledWith({ selectionStartLineNumber: 1, selectionStartColumn: anchor, positionLineNumber: 1, positionColumn: end })
+    wrapper.unmount()
+  })
+
   test('依赖 automaticLayout，不在挂载后重复执行无尺寸 layout', async () => {
     const wrapper = mount(MonacoEditor, {
       props: { value: 'result = true;' },

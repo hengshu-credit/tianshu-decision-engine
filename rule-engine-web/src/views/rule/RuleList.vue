@@ -223,6 +223,7 @@
       :close-on-click-modal="false"
       :show-close="!creating"
       :close-on-press-escape="!creating"
+      :before-close="closeCreate"
     >
       <el-form
         ref="formRef"
@@ -248,20 +249,12 @@
           label="项目名称"
           prop="projectId"
         >
-          <el-select
+          <project-resource-select
             v-model="form.projectId"
-            placeholder="请选择项目"
+            placeholder="搜索项目名称或编码"
             style="width: 100%"
-            filterable
             clearable
-          >
-            <el-option
-              v-for="p in projectList"
-              :key="p.id"
-              :label="p.projectName"
-              :value="p.id"
-            />
-          </el-select>
+          />
         </el-form-item>
         <el-form-item label="规则编码" prop="ruleCode"
           ><el-input
@@ -297,7 +290,7 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" :disabled="creating" @click="dialogVisible = false"
+          <el-button size="small" :disabled="creating" @click="closeCreate()"
             >取消</el-button
           >
           <el-button v-permission="'rule:edit'" size="small" :disabled="creating" @click="handleSubmit(false)"
@@ -322,7 +315,8 @@ import {
   createDefinition,
   deleteDefinition,
 } from '@/api/definition'
-import { listProjects } from '@/api/project'
+import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
+import configurationDraftMixin from '@/mixins/configurationDraftMixin'
 import {
   clearPageState,
   restorePageState,
@@ -336,16 +330,17 @@ import { ruleDesignerLocation } from '@/utils/ruleDesignerNavigation'
 import RuleModelTypeHelp from '@/components/rule/RuleModelTypeHelp.vue'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
+const creationDraft = configurationDraftMixin(vm => ({ form: vm.dialogVisible ? vm.form : null }))
+
 export default {
+  mixins: [creationDraft],
   data() {
     return {
       loading: false,
+      loadRequestId: 0,
       tableData: [],
       total: 0,
       contextProjectId: null,
-      projectList: [],
-      filteredProjectCodes: [],
-      filteredProjectNames: [],
       ruleColumns: [
         { key: 'scope', label: '作用范围', minWidth: 90, align: 'center', required: true },
         { key: 'projectName', label: '项目名称', minWidth: 130 },
@@ -420,6 +415,7 @@ export default {
   },
   name: 'RuleList',
   components: { GovernanceResourceStatus, GovernancePublishAction, GovernanceWorkspaceToolbar,
+    ProjectResourceSelect,
     RemoteFilterSelect,
     ProjectFilterSelect,
     RuleModelTypeHelp,
@@ -435,9 +431,16 @@ export default {
       this.queryParams.projectId = this.contextProjectId
     }
     this.loadData()
-    this.loadProjectList()
   },
+  beforeUnmount() { this.loadRequestId++ },
   methods: {
+    confirmConfigurationLeave() {
+      if (this.creating && this.dialogVisible) {
+        this.$message.warning('正在创建规则，请完成后再离开或刷新')
+        return Promise.resolve(false)
+      }
+      return creationDraft.methods.confirmConfigurationLeave.call(this)
+    },
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     restoreCachedState() {
       const state = restorePageState(projectPageStateKey('RuleList', this.contextProjectId))
@@ -446,32 +449,6 @@ export default {
     },
     saveCachedState() {
       savePageState(projectPageStateKey('RuleList', this.contextProjectId), { queryParams: this.queryParams })
-    },
-    async loadProjectList() {
-      // 项目列表会话级缓存，避免每次进页面都请求
-      const cached = sessionStorage.getItem('projectList')
-      if (cached) {
-        const list = JSON.parse(cached)
-        this.projectList = list
-        this.filteredProjectCodes = list.slice(0, 20)
-        this.filteredProjectNames = list.slice(0, 20)
-        return
-      }
-      try {
-        const res = await listProjects({ pageNum: 1, pageSize: 50, status: 1 })
-        if (res.data) {
-          const list = res.data.records || res.data || []
-          this.projectList = list
-          this.filteredProjectCodes = list.slice(0, 20)
-          this.filteredProjectNames = list.slice(0, 20)
-          sessionStorage.setItem('projectList', JSON.stringify(list))
-        }
-      } catch (e) {
-        console.error('加载项目列表失败:', e)
-        this.projectList = []
-        this.filteredProjectCodes = []
-        this.filteredProjectNames = []
-      }
     },
     fetchRuleCodeOptions({ query, pageNum, pageSize }) {
       const params = {
@@ -495,27 +472,8 @@ export default {
         ? listProjectDefinitions(this.contextProjectId, params)
         : listDefinitions(params)
     },
-    queryProjectCode(query) {
-      const q = (query || '').toLowerCase()
-      this.filteredProjectCodes = q
-        ? this.projectList
-            .filter(
-              (p) => p.projectCode && p.projectCode.toLowerCase().includes(q)
-            )
-            .slice(0, 20)
-        : this.projectList.slice(0, 20)
-    },
-    queryProjectName(query) {
-      const q = (query || '').toLowerCase()
-      this.filteredProjectNames = q
-        ? this.projectList
-            .filter(
-              (p) => p.projectName && p.projectName.toLowerCase().includes(q)
-            )
-            .slice(0, 20)
-        : this.projectList.slice(0, 20)
-    },
     async loadData() {
+      const requestId = ++this.loadRequestId
       this.loading = true
       try {
         this.saveCachedState()
@@ -532,6 +490,7 @@ export default {
         const res = this.contextProjectId
           ? await listProjectDefinitions(this.contextProjectId, params)
           : await listDefinitions(params)
+        if (requestId !== this.loadRequestId) return
 
         // 兼容后端返回 IPage（{ records, total }）和直接返回数组两种格式
         if (res.data) {
@@ -559,11 +518,12 @@ export default {
           this.total = 0
         }
       } catch (e) {
+        if (requestId !== this.loadRequestId) return
         console.error('加载数据失败:', e)
         this.tableData = []
         this.total = 0
       } finally {
-        this.loading = false
+        if (requestId === this.loadRequestId) this.loading = false
       }
     },
     handleQuery() {
@@ -599,6 +559,7 @@ export default {
       }
     },
     handleCreate() {
+      if (this.creating || this.dialogVisible) return
       this.form = {
         scope: this.contextProjectId ? 'PROJECT' : '',
         projectId: this.contextProjectId,
@@ -609,9 +570,16 @@ export default {
         status: 0,
       }
       this.dialogVisible = true
+      this.markConfigurationSaved()
       this.$nextTick(() => {
         if (this.$refs.formRef) this.$refs.formRef.clearValidate()
       })
+    },
+    async closeCreate(done) {
+      if (this.creating || !(await this.confirmConfigurationLeave())) return
+      this.dialogVisible = false
+      this.markConfigurationSaved()
+      if (typeof done === 'function') done()
     },
     async handleSubmit(continueEditing = false) {
       if (this.creating) return
@@ -630,6 +598,7 @@ export default {
         const response = await createDefinition({ ...this.form })
         this.$message.success('创建成功')
         this.dialogVisible = false
+        this.markConfigurationSaved()
         await this.loadData()
         const created = response && response.data
         if (continueEditing && created && created.id) {

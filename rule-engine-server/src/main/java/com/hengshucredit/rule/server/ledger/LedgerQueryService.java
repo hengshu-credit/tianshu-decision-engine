@@ -53,15 +53,15 @@ public class LedgerQueryService {
         YearMonth period;
         try { period = YearMonth.parse(month); } catch (RuntimeException error) { throw new IllegalArgumentException("月份格式应为 YYYY-MM"); }
         Query query = query(new Filter(filters.scope(), filters.projectId(), filters.eventIds(), filters.category(), filters.keyword(), period.atDay(1).atStartOfDay(), period.atEndOfMonth().atTime(23, 59, 59)));
-        var days = repository.jdbc.queryForList("SELECT CAST(item.activity_time AS DATE) AS activity_day,COUNT(*) AS total,SUM(CASE WHEN item.version_no=1 THEN 1 ELSE 0 END) AS created_count " + query.where() + " GROUP BY CAST(item.activity_time AS DATE) ORDER BY activity_day", query.args().toArray());
+        var days = repository.queryForList("SELECT CAST(item.activity_time AS DATE) AS activity_day,COUNT(*) AS total,SUM(CASE WHEN item.version_no=1 THEN 1 ELSE 0 END) AS created_count " + query.where() + " GROUP BY CAST(item.activity_time AS DATE) ORDER BY activity_day", query.args().toArray());
         var result = new ArrayList<Map<String, Object>>();
         for (var day : days) {
             var date = java.time.LocalDate.parse(day.get("activity_day").toString());
             var params = new ArrayList<>(query.args()); params.add(date.atStartOfDay()); params.add(date.plusDays(1).atStartOfDay());
-            var rows = repository.jdbc.queryForList("SELECT item.id,item.title,item.version_no " + query.where() + " AND item.activity_time>=? AND item.activity_time<? ORDER BY item.activity_time DESC,item.id DESC LIMIT 8", params.toArray());
+            var rows = repository.queryForList("SELECT item.id,item.title,item.version_no " + query.where() + " AND item.activity_time>=? AND item.activity_time<? ORDER BY item.activity_time DESC,item.id DESC LIMIT 8", params.toArray());
             var titles = new java.util.LinkedHashSet<String>();
             for (var row : rows) {
-                var names = repository.jdbc.queryForList("SELECT event.title FROM rule_ledger_event event JOIN rule_ledger_revision_reference link ON link.ref_id=event.id AND link.ref_type='EVENT' WHERE link.revision_id=? AND " + repository.visible("rule_ledger_event", "event") + " ORDER BY event.id", String.class, row.get("id"));
+                var names = repository.queryForList("SELECT event.title FROM rule_ledger_event event JOIN rule_ledger_revision_reference link ON link.ref_id=event.id AND link.ref_type='EVENT' WHERE link.revision_id=? AND " + repository.visible("rule_ledger_event", "event") + " ORDER BY event.id", String.class, row.get("id"));
                 if (names.isEmpty()) titles.add(row.get("title") + " · v" + row.get("version_no")); else titles.addAll(names);
             }
             result.add(Map.of("date", date.toString(), "count", number(day.get("total")), "created", number(day.get("created_count")), "modified", number(day.get("total")) - number(day.get("created_count")), "titles", titles.stream().limit(8).toList()));
@@ -73,7 +73,7 @@ public class LedgerQueryService {
         if (keyword != null && !keyword.isBlank()) { where += " AND item.title LIKE ?"; args.add("%" + keyword + "%"); }
         if (scope != null && !scope.isBlank()) { where += " AND item.scope=?"; args.add(scope); }
         if (projectId != null) { where += " AND item.project_id=?"; args.add(projectId); }
-        return repository.jdbc.queryForList("SELECT item.* FROM rule_ledger_event item" + where + " ORDER BY item.update_time DESC,item.id DESC LIMIT 200", args.toArray()).stream().map(this::eventView).toList();
+        return repository.queryForList("SELECT item.* FROM rule_ledger_event item" + where + " ORDER BY item.update_time DESC,item.id DESC LIMIT 200", args.toArray()).stream().map(this::eventView).toList();
     }
     public Map<String, Object> event(long id) { return eventView(repository.one("rule_ledger_event", id, false)); }
     @Transactional
@@ -88,7 +88,7 @@ public class LedgerQueryService {
         else {
             var row = repository.one("rule_ledger_event", id, true); access.requireEdit("rule_ledger_event", row); LedgerAccess.version(row, input.version());
             if ((!input.scope().equals(row.get("scope")) || number(row.get("project_id")) != (project == null ? 0 : project)) && repository.referenced("EVENT", id)) throw new IllegalArgumentException("事件已被文章引用，不能改变归属范围");
-            repository.jdbc.update("UPDATE rule_ledger_event SET title=?,status=?,scope=?,project_id=?,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?", title, input.status(), input.scope(), project, id);
+            repository.update("UPDATE rule_ledger_event SET title=?,status=?,scope=?,project_id=?,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?", title, input.status(), input.scope(), project, id);
         }
         return eventView(repository.one("rule_ledger_event", id, false));
     }
@@ -96,7 +96,7 @@ public class LedgerQueryService {
     public void deleteEvent(long id, Long version) {
         var row = repository.one("rule_ledger_event", id, true); access.requireEdit("rule_ledger_event", row); LedgerAccess.version(row, version);
         if (repository.referenced("EVENT", id)) throw new IllegalArgumentException("事件已被文章或历史版本引用，不能删除");
-        repository.jdbc.update("UPDATE rule_ledger_event SET deleted=1,lock_version=lock_version+1 WHERE id=?", id);
+        repository.update("UPDATE rule_ledger_event SET deleted=1,lock_version=lock_version+1 WHERE id=?", id);
     }
     private Map<String, Object> eventView(Map<String, Object> row) {
         var value = new LinkedHashMap<String, Object>();
@@ -105,9 +105,9 @@ public class LedgerQueryService {
     public List<Map<String, Object>> assetReferences(long id) {
         repository.one("rule_ledger_asset", id, false);
         var result = new ArrayList<Map<String, Object>>();
-        var rows = repository.jdbc.queryForList("SELECT item.id,item.article_id,item.version_no,item.title,item.publish_time FROM rule_ledger_revision item JOIN rule_ledger_revision_reference ref ON ref.revision_id=item.id AND ref.ref_type='ASSET' WHERE ref.ref_id=? AND " + repository.visible("rule_ledger_revision", "item") + " ORDER BY item.publish_time DESC LIMIT 100", id);
+        var rows = repository.queryForList("SELECT item.id,item.article_id,item.version_no,item.title,item.publish_time FROM rule_ledger_revision item JOIN rule_ledger_revision_reference ref ON ref.revision_id=item.id AND ref.ref_type='ASSET' WHERE ref.ref_id=? AND " + repository.visible("rule_ledger_revision", "item") + " ORDER BY item.publish_time DESC LIMIT 100", id);
         for (var row : rows) result.add(Map.of("articleId",row.get("article_id"),"revisionId",row.get("id"),"versionNo",row.get("version_no"),"title",row.get("title"),"type","PUBLISHED"));
-        var drafts = repository.jdbc.queryForList("SELECT item.id FROM rule_ledger_article item JOIN rule_ledger_draft_reference ref ON ref.article_id=item.id AND ref.ref_type='ASSET' WHERE ref.ref_id=? AND " + repository.visibleDraft("item") + " AND " + repository.visible("rule_ledger_article", "item"), id);
+        var drafts = repository.queryForList("SELECT item.id FROM rule_ledger_article item JOIN rule_ledger_draft_reference ref ON ref.article_id=item.id AND ref.ref_type='ASSET' WHERE ref.ref_id=? AND " + repository.visibleDraft("item") + " AND " + repository.visible("rule_ledger_article", "item"), id);
         for (var row : drafts) result.add(Map.of("articleId",row.get("id"),"title","我的草稿 #"+row.get("id"),"type","DRAFT"));
         return result;
     }
