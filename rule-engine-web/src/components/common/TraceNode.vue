@@ -1,7 +1,7 @@
 <template>
-  <div class="nd" :class="{ 'is-dim': !node.evaluated && !isSkipType }">
-    <template v-if="isInlineCompare">
-      <div class="nd-box">
+  <trace-branch :dimmed="!node.evaluated && !isSkipType" :show-heading="showSelf" :has-children="!isInlineCompare && kids.length > 0">
+    <template #heading>
+      <template v-if="isInlineCompare">
         <span class="nd-txt">
           <content-reference mode="trace" :value="traceContent(node.children[0], varMap)" /><span v-if="node.children[0].type === 'VARIABLE'">({{ valueFor(node.children[0]) }})</span>
           <span class="c-op">{{ opText }}</span>
@@ -11,37 +11,23 @@
           resText
         }}</span>
         <span class="nd-res is-skip" v-else>未执行</span>
-      </div>
-    </template>
-
-    <template v-else>
-      <div class="nd-box" v-if="showSelf">
+      </template>
+      <template v-else>
         <span class="nd-txt"><content-reference mode="trace" v-if="['VARIABLE', 'FUNCTION', 'METHOD', 'VALUE', 'PRIMARY'].includes(node.type)" :value="traceContent(node, varMap)" /><template v-else>{{ nodeLabel }}</template><span v-if="node.type === 'VARIABLE' && node.evaluated"> = {{ valueFor(node) }}</span></span>
         <span class="nd-res" :class="resCls" v-if="showRes">{{ resText }}</span>
         <span class="nd-res is-skip" v-else-if="!node.evaluated && !isSkipType"
           >未执行</span
         >
-      </div>
-      <div
-        class="nd-kids"
-        v-if="kids.length > 0"
-        :class="{ 'no-stem': !showSelf }"
-      >
-        <trace-node
-          v-for="(c, i) in kids"
-          :key="i"
-          :node="c"
-          :var-map="varMap"
-          :input-params="inputParams"
-        />
-      </div>
+      </template>
     </template>
-  </div>
+    <trace-node v-for="(child, index) in kids" :key="index" :node="child" :var-map="varMap" :input-params="inputParams" />
+  </trace-branch>
 </template>
 
 <script>
 import { traceContentValue } from '@/utils/contentReference'
 import ContentReference from './ContentReference.vue'
+import TraceBranch from './TraceBranch.vue'
 var OP_CN = {
   '||': '或',
   '&&': '且',
@@ -74,7 +60,7 @@ function fv(v) {
 }
 
 export default {
-  components: { ContentReference },
+  components: { ContentReference, TraceBranch },
   name: 'TraceNode',
   props: {
     node: { type: Object, required: true },
@@ -203,36 +189,6 @@ export default {
 </script>
 
 <style scoped>
-.nd {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 0 10px;
-}
-.nd.is-dim {
-  opacity: 0.7;
-}
-.nd.is-dim > .nd-box {
-  border-style: dashed;
-}
-.nd-box {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 6px 12px;
-  background: var(--tianshu-bg-surface);
-  border: 1px solid var(--tianshu-border);
-  border-radius: 6px;
-  font-size: 12px;
-  white-space: nowrap;
-  color: var(--tianshu-text-primary);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-}
-.nd-box:hover {
-  border-color: var(--tianshu-info-border);
-  box-shadow: 0 2px 6px var(--tianshu-primary-shadow);
-}
 .nd-txt {
   font-weight: 600;
 }
@@ -261,81 +217,5 @@ export default {
 .nd-res.is-skip {
   color: var(--tianshu-text-tertiary);
   font-weight: 400;
-}
-.nd-kids {
-  display: flex;
-  justify-content: center;
-  position: relative;
-  padding-top: 28px;
-}
-.nd-kids:not(.no-stem)::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 50%;
-  width: 1px;
-  height: 14px;
-  background: var(--tianshu-border);
-}
-.nd-kids > .nd {
-  position: relative;
-}
-.nd-kids > .nd::before {
-  content: '';
-  position: absolute;
-  top: -14px;
-  left: 50%;
-  width: 1px;
-  height: 14px;
-  background: var(--tianshu-border);
-}
-.nd-kids > .nd:first-child:not(:last-child)::after {
-  content: '';
-  position: absolute;
-  top: -14px;
-  left: 50%;
-  right: 0;
-  height: 1px;
-  background: var(--tianshu-border);
-}
-.nd-kids > .nd:last-child:not(:first-child)::after {
-  content: '';
-  position: absolute;
-  top: -14px;
-  left: 0;
-  right: 50%;
-  height: 1px;
-  background: var(--tianshu-border);
-}
-.nd-kids > .nd:not(:first-child):not(:last-child)::after {
-  content: '';
-  position: absolute;
-  top: -14px;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: var(--tianshu-border);
-}
-.nd:not(.is-dim) > .nd-kids:not(.no-stem)::before {
-  width: 2px;
-  margin-left: -0.5px;
-  background: var(--el-color-primary);
-}
-.nd-kids > .nd:not(.is-dim)::before {
-  width: 2px;
-  margin-left: -0.5px;
-  background: var(--el-color-primary);
-}
-.nd-kids > .nd:not(.is-dim):first-child:not(:last-child)::after {
-  height: 2px;
-  background: var(--el-color-primary);
-}
-.nd-kids > .nd:not(.is-dim):last-child:not(:first-child)::after {
-  height: 2px;
-  background: var(--el-color-primary);
-}
-.nd-kids > .nd:not(.is-dim):not(:first-child):not(:last-child)::after {
-  height: 2px;
-  background: var(--el-color-primary);
 }
 </style>

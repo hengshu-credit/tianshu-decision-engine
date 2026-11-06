@@ -10,7 +10,7 @@ import {
 // 根入口还会加载未使用的 ELK；按当前固定版本直接使用 Dagre 模块。
 import { Dagre } from '@logicflow/layout/es/dagre/index.js'
 
-import { FLOW_THEME_COLOR, addConnectedNode, blurActiveDesignerControl, createAnchorGesture, createDynamicGroup, createFlowNodeData, findToolbarNodePosition, getBusinessGraphData, getPersistableGraphData, isAnchorClickGesture, isDesignerInteractiveTarget, layoutGraphByAnchors, updateAnchorGesture } from '@/components/flow/flowDesignerGraph'
+import { convertLegacyModel, FLOW_THEME_COLOR, addConnectedNode, blurActiveDesignerControl, createAnchorGesture, createDynamicGroup, createFlowNodeData, findToolbarNodePosition, getBusinessGraphData, getPersistableGraphData, isAnchorClickGesture, isDesignerInteractiveTarget, layoutGraphByAnchors, updateAnchorGesture } from '@/components/flow/flowDesignerGraph'
 import { normalizeDefaultEdgeLineType, applyGlobalEdgeTypeToInheritedEdges, mergeEdgePropertiesFromForm } from '@/components/flow/edgeLineType'
 
 import {
@@ -891,49 +891,7 @@ export default {
     this.lf.redo()
   },
 
-  convertLegacyModel(old) {
-    const lfNodes = (old.nodes || []).map((n, i) => {
-      let type = 'script-task'
-      if (n.type === 'start') type = 'start-event'
-      else if (n.type === 'end') type = 'end-event'
-      else if (n.type === 'decision') type = 'exclusive-gateway'
-      else if (n.type === 'join') type = 'join-gateway'
-      const properties = {
-        nodeName: n.name || '',
-        nodeCode: n.id,
-        nodeDesc: '',
-        actionData: n.actionData || [],
-      }
-      if (type === 'end-event') {
-        properties.terminationScope = normalizeEndScope(n.terminationScope)
-        if (!properties.nodeName)
-          properties.nodeName = getEndNodeAppearance(
-            properties.terminationScope
-          ).name
-      }
-      return {
-        id: n.id,
-        type,
-        x: n.x || 160 + i * 200,
-        y: n.y || 300,
-        properties,
-      }
-    })
-    const lfEdges = (old.edges || []).map((e, i) => ({
-      id: 'edge_' + Date.now() + '_' + i,
-      type: 'polyline',
-      sourceNodeId: e.source,
-      targetNodeId: e.target,
-      properties: {
-        conditionName: e.conditionExpression || '',
-        conditionExpr: e.conditionExpression || '',
-        priority: Number.isFinite(Number(e.priority))
-          ? Number(e.priority)
-          : (i + 1) * 10,
-      },
-    }))
-    return { nodes: lfNodes, edges: lfEdges }
-  },
+  convertLegacyModel,
 
   lfTypeToBackend(lfType) {
     const map = {

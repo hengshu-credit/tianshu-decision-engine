@@ -569,7 +569,6 @@ import {
   collectOperandReferences,
   compileOperand,
   createLiteralOperand,
-  inferOperandType,
   operandFromReferenceFields,
   syncOperandReference,
 } from '@/utils/operand'
@@ -583,9 +582,9 @@ import {
   normalizeConditionOperator,
   normalizeVarType,
 } from '@/constants/conditionOperators'
-import { formatConditionDescription } from '@/utils/expressionDisplay'
+import { cartesianProduct, segmentSummary, dimensionType, RANGE_BOUNDARIES, flattenCells } from '@/utils/advancedCrossTable'
 
-const RANGE_BOUNDARIES = ['[)', '()', '[]', '(]']
+
 // 编辑会话内使用对象身份关联条件组合；不修改或持久化用户配置字段。
 const matrixItemIds = new WeakMap()
 let matrixItemSequence = 0
@@ -594,11 +593,7 @@ function matrixItemKey(item) {
   return matrixItemIds.get(item)
 }
 
-function dimensionType(dim) {
-  return (
-    inferOperandType(dim && dim.operand) || (dim && dim.varType) || 'STRING'
-  )
-}
+
 
 export default {
   data() {
@@ -774,25 +769,7 @@ export default {
         .sort((left, right) => left[0] - right[0])
         .map(pair => pair.join(':')).join('|'))
     },
-    segmentSummary(dim, segment) {
-      const leftOperand = dim.operand || operandFromReferenceFields(dim)
-      const right = (field, legacy) => segment[field] || createLiteralOperand(segment[legacy], dimensionType(dim))
-      const describe = (operator, rightOperand) => formatConditionDescription({ leftOperand, operator, rightOperand }, { includeLeft: false })
-      let summary
-      if (segment.operator === 'range') {
-        const min = right('minOperand', 'min'), max = right('maxOperand', 'max')
-        const missing = operand => operand.kind === 'LITERAL' && (operand.value == null || String(operand.value).trim() === '')
-        if (missing(min) || missing(max)) {
-          summary = '条件未完成：请填写区间' + (missing(min) ? '下界' : '上界')
-        } else {
-          const boundary = RANGE_BOUNDARIES.includes(segment.rangeBoundary) ? segment.rangeBoundary : '[)'
-          summary = describe(boundary.startsWith('[') ? '>=' : '>', min) + ' 且 ' + describe(boundary.endsWith(']') ? '<=' : '<', max)
-        }
-      } else {
-        summary = describe(segment.operator, right('valueOperand', 'value'))
-      }
-      return segment.label ? `${segment.label}（${summary}）` : summary
-    },
+    segmentSummary,
     collectSelectedVarItems() {
       const items = []
       const add = (operand) =>
@@ -819,22 +796,7 @@ export default {
       this.cellData.forEach((row) => row.forEach(add))
       return items
     },
-    cartesianProduct(dimensions) {
-      if (!dimensions || dimensions.length === 0) return []
-      let result = [[]]
-      for (const dim of dimensions) {
-        const segs = dim.segments || []
-        if (segs.length === 0) return []
-        const newResult = []
-        for (const existing of result) {
-          for (const seg of segs) {
-            newResult.push([...existing, seg])
-          }
-        }
-        result = newResult
-      }
-      return result
-    },
+    cartesianProduct,
     syncCellData(preservePositions = false) {
       const rowKeys = this.matrixAxisKeys(this.model.rowDimensions, this.rowCombinations)
       const columnKeys = this.matrixAxisKeys(this.model.colDimensions, this.colCombinations)
@@ -870,20 +832,7 @@ export default {
         )
       }
     },
-    flattenCells(cells) {
-      if (!Array.isArray(cells)) return []
-      return cells.map((row) => {
-        if (!Array.isArray(row)) return []
-        return row.map((cell) => {
-          if (Array.isArray(cell)) cell = cell[0]
-          if (cell && cell.kind) return cell
-          return createLiteralOperand(
-            cell != null ? cell : '',
-            (this.model.resultVar && this.model.resultVar.varType) || 'STRING'
-          )
-        })
-      })
-    },
+    flattenCells(cells) { return flattenCells(cells, this.model.resultVar?.varType || 'STRING') },
     normalizeModel() {
       if (!this.model.rowDimensions) this.model['rowDimensions'] = []
       if (!this.model.colDimensions) this.model['colDimensions'] = []

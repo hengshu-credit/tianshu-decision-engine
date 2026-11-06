@@ -1,8 +1,9 @@
 <template>
-  <div class="threshold-list" :class="{ 'is-compact': compact }">
+  <div class="threshold-list" :class="{ 'is-compact': compact, 'is-readonly': readOnly }">
     <div v-for="(threshold, index) in thresholds" :key="index" class="threshold-item">
       <div class="thresh-color-bar" :style="{ background: thresholdColor(index) }" />
-      <div class="thresh-range">
+      <div v-if="readOnly" class="thresh-range">{{ threshold.min ?? '未设置' }} ≤ 分数 &lt; {{ threshold.max ?? '未设置' }}</div>
+      <div v-else class="thresh-range">
         <el-input-number
           :model-value="threshold.min"
           :aria-label="`等级 ${index + 1} 最小分数`"
@@ -27,7 +28,7 @@
       <el-tag :color="thresholdColor(index)" effect="dark" size="small" class="thresh-badge">
         {{ threshold.result || '等级 ' + (index + 1) }}
       </el-tag>
-      <el-button link size="small" :icon="ElIconDelete" class="btn-delete"
+      <el-button v-if="!readOnly" link size="small" :icon="ElIconDelete" class="btn-delete"
         :aria-label="`删除等级 ${index + 1}`" @click="$emit('remove', index)" />
     </div>
     <slot v-if="thresholds.length === 0" name="empty" />
@@ -44,7 +45,7 @@ const THRESHOLD_COLORS = [
 
 export default {
   name: 'ScoreThresholdEditor',
-  props: { thresholds: { type: Array, required: true }, compact: Boolean },
+  props: { thresholds: { type: Array, required: true }, compact: Boolean, readOnly: Boolean },
   emits: ['change-min', 'change-max', 'remove'],
   data: () => ({ ElIconDelete: markRaw(ElIconDelete) }),
   methods: {
@@ -66,6 +67,7 @@ export default {
   background: var(--tianshu-bg-muted);
 }
 :where(.is-compact) .threshold-item { gap: 10px; padding: 8px 10px; }
+.is-readonly .threshold-item { flex-wrap: wrap; }
 .thresh-color-bar { width: 4px; height: 36px; border-radius: 2px; flex-shrink: 0; }
 .thresh-range { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .thresh-sep { font-size: 12px; color: #888; white-space: nowrap; }

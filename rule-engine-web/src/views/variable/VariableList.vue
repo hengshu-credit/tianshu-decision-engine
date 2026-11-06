@@ -1926,24 +1926,11 @@
             sourceDetailTarget.scriptName || sourceDetailTarget.varCode
           }}</el-descriptions-item>
         </el-descriptions>
-        <div class="source-summary-card">
-          <div class="source-summary-title">
-            {{ sourceBusinessTitle(sourceDetailTarget) }}
-          </div>
-          <div class="source-summary-desc">
-            {{ sourceBusinessDesc(sourceDetailTarget) }}
-          </div>
-          <div class="source-summary-grid">
-            <div
-              v-for="item in sourceSummaryRows(sourceDetailTarget)"
-              :key="item.label"
-              class="source-summary-item"
-            >
-              <div class="source-summary-label">{{ item.label }}</div>
-              <div class="source-summary-value">{{ item.value }}</div>
-            </div>
-          </div>
-        </div>
+        <source-summary-card
+          :title="sourceBusinessTitle(sourceDetailTarget)"
+          :description="sourceBusinessDesc(sourceDetailTarget)"
+          :rows="sourceSummaryRows(sourceDetailTarget)"
+        />
         <div class="source-detail-section">
           <div class="source-detail-title">依赖输入字段</div>
           <el-table show-overflow-tooltip
@@ -2478,6 +2465,7 @@ import ManagedDialogFooter from '@/components/common/ManagedDialogFooter.vue'
 import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
 import VariableSourceSelector from './components/VariableSourceSelector.vue'
 import VariableToolbarActions from './components/VariableToolbarActions.vue'
+import SourceSummaryCard from '@/components/common/SourceSummaryCard.vue'
 import VariableImportHelp from './components/VariableImportHelp.vue'
 import { hasPermission } from '@/security/permissionState'
 
@@ -2784,7 +2772,8 @@ export default {
       canEditFields: hasPermission('field:edit'),
     }
   },
-  components: { ProjectResourceSelect, GovernancePublishAction,
+  components: {
+    SourceSummaryCard, ProjectResourceSelect, GovernancePublishAction,
     GovernanceResourceStatus,
     ApiSourceBinding,
     ProtocolPathPicker,
@@ -5966,48 +5955,6 @@ export default {
   font-weight: 700;
   color: var(--tianshu-text-secondary);
   margin-bottom: 8px;
-}
-.source-summary-card {
-  margin-top: 14px;
-  padding: 14px;
-  border: 1px solid var(--tianshu-info-border);
-  background: var(--tianshu-info-bg);
-  border-radius: 6px;
-}
-.source-summary-title {
-  color: var(--tianshu-info-text);
-  font-weight: 700;
-  margin-bottom: 4px;
-}
-.source-summary-desc {
-  color: var(--tianshu-text-secondary);
-  font-size: 13px;
-  line-height: 1.6;
-  margin-bottom: 12px;
-}
-.source-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-.source-summary-item {
-  background: var(--tianshu-bg-surface);
-  border: 1px solid var(--tianshu-border-subtle);
-  border-radius: 4px;
-  padding: 8px 10px;
-  min-width: 0;
-}
-.source-summary-label {
-  color: var(--tianshu-text-tertiary);
-  font-size: 12px;
-  margin-bottom: 4px;
-}
-.source-summary-value {
-  color: var(--tianshu-text-primary);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.4;
-  word-break: break-all;
 }
 .source-tech-collapse {
   margin-top: 14px;

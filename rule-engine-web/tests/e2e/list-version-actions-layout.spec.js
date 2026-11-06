@@ -59,7 +59,7 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
     await setVersionTheme(page, colorScheme)
     const data = createDocsApiData()
     const rule = data.get('/api/rule/definition/list').records[0]
-    const snapshot = threshold => JSON.stringify({ ruleCode: 'credit_entry', ruleName: '个人信贷准入', modelType: 'TABLE', description: '根据申请年龄判断是否进入授信流程', content: { modelJson: JSON.stringify({ hitPolicy: 'FIRST', rules: [{ ruleName: '成年客户准入', conditionRoot: { type: 'group', op: 'AND', children: [{ type: 'leaf', leftOperand: { kind: 'REFERENCE', refId: '101', refType: 'VARIABLE', label: '申请年龄' }, operator: '>=', rightOperand: { kind: 'LITERAL', value: threshold } }] }, actions: [{ targetOperand: { kind: 'REFERENCE', refId: '102', refType: 'VARIABLE', label: '准入结果' }, valueOperand: { kind: 'LITERAL', value: '允许申请' } }] }] }) }, inputFieldsJson: [{ varId: '101', fieldName: '申请年龄', required: true }], outputFieldsJson: [{ varId: '102', fieldName: '准入结果' }] })
+    const snapshot = threshold => JSON.stringify({ ruleCode: 'credit_entry', ruleName: '个人信贷准入', modelType: 'TABLE', description: '根据申请年龄判断是否进入授信流程', content: { modelJson: JSON.stringify({ hitPolicy: 'FIRST', rules: [{ ruleName: '成年客户准入', conditionRoot: { type: 'group', op: 'AND', children: [{ type: 'leaf', leftOperand: { kind: 'REFERENCE', refId: '101', refType: 'VARIABLE', label: '申请年龄', code: 'age', valueType: 'NUMBER', version: 1 }, operator: '>=', rightOperand: { kind: 'LITERAL', value: threshold, valueType: 'NUMBER' } }] }, actions: [{ targetOperand: { kind: 'REFERENCE', refId: '102', refType: 'VARIABLE', label: '准入结果', code: 'decision', valueType: 'STRING', version: 1 }, valueOperand: { kind: 'LITERAL', value: '允许申请', valueType: 'STRING' } }] }] }) }, inputFieldsJson: [{ varId: '101', fieldName: '申请年龄', required: true }], outputFieldsJson: [{ varId: '102', fieldName: '准入结果' }] })
     data.set(`/api/rule/resource-versions/RULE/${rule.id}`, {
       latestVersionId: '22', drafts: [], versions: [{ versionId: '22', version: 2, revision: 1, latest: true }, { versionId: '21', version: 1, revision: 1 }],
       history: [{ id: '22', versionNo: 2, revisionNo: 1, snapshotJson: snapshot(21) }, { id: '21', versionNo: 1, revisionNo: 1, snapshotJson: snapshot(18) }],
@@ -80,6 +80,16 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
     await page.getByRole('option', { name: 'v1 · 修订 1', exact: true }).click()
     await expect(preview.locator('.business-preview-head')).toContainText('v1 · 修订 1')
     const rules = preview.locator('[data-section="rule:rules"]')
+    const branch = rules.locator('.business-preview-card').first()
+    await branch.getByRole('button', { name: /成年客户准入/ }).click()
+    await expect(branch.locator('.content-ref__name')).toHaveCount(0)
+    await expect(rules.locator('.business-preview-card').last().locator('.content-ref__name').first()).toBeVisible()
+    await branch.getByRole('button', { name: /成年客户准入/ }).click()
+    await preview.getByText('只看差异', { exact: true }).click()
+    await expect(preview.getByRole('heading', { name: '基本信息' })).toHaveCount(0)
+    await expect(rules).toBeVisible()
+    await drawer.screenshot({ path: testInfo.outputPath(`tree-comparison-${colorScheme}.png`), animations: 'disabled' })
+    await preview.getByText('只看差异', { exact: true }).click()
     await expect(rules.locator('.business-preview-card').first()).toContainText('18')
     await expect(rules.locator('.business-preview-card').last()).toContainText('21')
     await expect(rules).toHaveClass(/is-changed/)
@@ -108,6 +118,55 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
     assertClean()
   })
 }
+
+test('切换历史修订按各自配置还原矩阵、评分区间、流程画布和 QL 源码', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const data = createDocsApiData()
+  const rule = data.get('/api/rule/definition/list').records[0]
+  const models = [
+    ['CROSS', { rowHeaders: ['成年', '未成年'], colHeaders: ['低风险', '高风险'], cells: [[10, 0], [0, -5]] }],
+    ['SCORE', { scoreItems: [{ condition: '按期还款', score: 8, weight: 2 }], thresholds: [{ min: 60, max: 90, result: '人工审核' }] }],
+    ['FLOW', { nodes: [{ id: 'a', type: 'start', name: '申请开始' }, { id: 'review', type: 'task', name: '核定额度' }, { id: 'b', type: 'end', name: '完成审批' }], edges: [{ source: 'a', target: 'review' }, { source: 'review', target: 'b' }] }],
+    ['SCRIPT', { script: 'return 17;' }],
+    ['CROSS_ADV', { rowDimensions: [{ varCode: 'age', segments: [{ label: '青年' }, { label: '中年' }] }], colDimensions: [{ varCode: 'risk', segments: [{ label: '正常' }] }], cells: [[{ kind: 'LITERAL', value: 3 }], [{ kind: 'LITERAL', value: 6 }]] }],
+  ]
+  const history = models.map(([modelType, model], index) => ({
+    id: String(index + 1), versionNo: index + 1, revisionNo: 1,
+    snapshotJson: JSON.stringify({ ruleName: '版本样例', modelType, content: { modelJson: JSON.stringify(model) } }),
+  }))
+  data.set(`/api/rule/resource-versions/RULE/${rule.id}`, {
+    latestVersionId: '1', drafts: [], history,
+    versions: history.map(row => ({ versionId: row.id, version: row.versionNo, revision: 1, latest: row.id === '1' })),
+  })
+  data.set(`/api/rule/resource-versions/RULE/${rule.id}/events`, [])
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data })
+  await page.goto(`${origin}/#/rule`)
+  await page.getByRole('button', { name: '版本', exact: true }).first().click()
+  const drawer = page.getByRole('dialog', { name: '版本管理', exact: true })
+  const select = async version => {
+    await drawer.locator('.uiue-filter-toolbar .el-select').first().click()
+    await page.getByRole('option', { name: 'v' + version, exact: true }).click()
+  }
+  const matrix = drawer.locator('.result-matrix')
+  await expect(matrix.getByRole('columnheader', { name: '高风险' })).toBeVisible()
+  await expect(matrix.getByRole('row', { name: /未成年/ }).getByRole('cell').last()).toContainText('-5')
+  await select(2)
+  await expect(drawer.locator('[data-section="rule:scoreItems"] table').first()).toContainText('分值')
+  await expect(drawer.locator('.threshold-item')).toContainText('60 ≤ 分数 < 90')
+  await expect(drawer.locator('.threshold-item')).toContainText('人工审核')
+  await expect(drawer.locator('.threshold-item button, .threshold-item input')).toHaveCount(0)
+  await select(3)
+  await expect(drawer.locator('.snapshot-graph__canvas .lf-node')).toHaveCount(3)
+  await expect(drawer.locator('.snapshot-graph__canvas .lf-edge')).toHaveCount(2)
+  await expect(drawer.locator('.snapshot-graph__canvas')).toContainText('核定额度')
+  await drawer.getByText('节点配置（3）', { exact: true }).click()
+  await expect(drawer.locator('.graph-details')).toContainText('完成审批')
+  await select(4)
+  await expect(drawer.locator('[data-section="rule:script"] .view-lines')).toContainText('return')
+  await select(5)
+  await expect(matrix.getByRole('row', { name: /中年/ }).getByRole('cell')).toContainText('6')
+  harness.assertClean()
+})
 
 for (const colorScheme of ['LIGHT', 'DARK']) {
   test(`${colorScheme} 版本管理加载无灰色蒙版且刷新保留预览`, async ({ page }, testInfo) => {

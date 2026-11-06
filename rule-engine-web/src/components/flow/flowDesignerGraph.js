@@ -789,3 +789,47 @@ export function validateDesignerGraphStructure(graph, { treeMode = false } = {})
   }
   return errors
 }
+
+export function convertLegacyModel(old) {
+  const lfNodes = (old.nodes || []).map((n, i) => {
+    let type = 'script-task'
+    if (n.type === 'start') type = 'start-event'
+    else if (n.type === 'end') type = 'end-event'
+    else if (n.type === 'decision') type = 'exclusive-gateway'
+    else if (n.type === 'join') type = 'join-gateway'
+    const properties = {
+      nodeName: n.name || '',
+      nodeCode: n.id,
+      nodeDesc: '',
+      actionData: n.actionData || [],
+    }
+    if (type === 'end-event') {
+      properties.terminationScope = normalizeEndScope(n.terminationScope)
+      if (!properties.nodeName)
+        properties.nodeName = getEndNodeAppearance(
+          properties.terminationScope
+        ).name
+    }
+    return {
+      id: n.id,
+      type,
+      x: n.x || 160 + i * 200,
+      y: n.y || 300,
+      properties,
+    }
+  })
+  const lfEdges = (old.edges || []).map((e, i) => ({
+    id: 'edge_' + Date.now() + '_' + i,
+    type: 'polyline',
+    sourceNodeId: e.source,
+    targetNodeId: e.target,
+    properties: {
+      conditionName: e.conditionExpression || '',
+      conditionExpr: e.conditionExpression || '',
+      priority: Number.isFinite(Number(e.priority))
+        ? Number(e.priority)
+        : (i + 1) * 10,
+    },
+  }))
+  return { nodes: lfNodes, edges: lfEdges }
+}

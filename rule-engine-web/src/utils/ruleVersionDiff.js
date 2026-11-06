@@ -1,3 +1,5 @@
+import { cartesianProduct, segmentSummary, flattenCells } from './advancedCrossTable'
+
 const MODEL_TYPES = [
   'TABLE', 'TREE', 'FLOW', 'RULE_SET', 'CROSS',
   'SCORE', 'CROSS_ADV', 'SCORE_ADV', 'SCRIPT'
@@ -574,8 +576,8 @@ function matrixCellNodes(model) {
   const result = []
   cells.forEach((row, rowIndex) => {
     (row || []).forEach((cellValue, colIndex) => {
-      const rowText = operandText(rowOperands[rowIndex]) || valueText(rows[rowIndex])
-      const colText = operandText(colOperands[colIndex]) || valueText(cols[colIndex])
+      const rowText = rowOperands[rowIndex] ? operandText(rowOperands[rowIndex]) : valueText(rows[rowIndex])
+      const colText = colOperands[colIndex] ? operandText(colOperands[colIndex]) : valueText(cols[colIndex])
       const cell = cellOperands[rowIndex] && cellOperands[rowIndex][colIndex]
         ? cellOperands[rowIndex][colIndex]
         : literalOperand(cellValue)
@@ -739,7 +741,24 @@ function buildSideSections(modelType, model) {
 
 // Version previews share the same business interpretation as the rule comparison.
 export function buildRulePreviewSections(modelType, model) {
-  return buildSideSections(modelType, model)
+  const sections = buildSideSections(modelType, model)
+  const matrix = sections.find(section => section.key === 'cells')
+  if (matrix) {
+    const enhanced = modelType === 'CROSS_ADV'
+    const axis = (labels = [], operands = []) => labels.map((label, i) => operands[i] ? operandText(operands[i]) : valueText(label))
+    const segmentLabels = dimensions => cartesianProduct(dimensions)
+      .map(combination => combination.map((segment, i) => segmentSummary(dimensions[i], segment)).join(' × '))
+    const cells = model.cells || model.cellData || []
+    matrix.matrix = {
+      rows: enhanced ? segmentLabels(model.rowDimensions) : axis(model.rowHeaders, model.rowHeaderOperands),
+      columns: enhanced ? segmentLabels(model.colDimensions) : axis(model.colHeaders, model.colHeaderOperands),
+      cells: enhanced ? flattenCells(cells, model.resultVar?.varType || 'STRING') : cells.map((row, i) => row.map((value, j) => {
+        const operand = model.cellOperands?.[i]?.[j]
+        return operand || (value?.kind ? value : literalOperand(value))
+      })),
+    }
+  }
+  return sections
 }
 
 function pairFields(left, right) {

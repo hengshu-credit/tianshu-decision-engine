@@ -1,5 +1,18 @@
 <template>
-  <div class="cg" :class="{ 'cg--nested': depth > 0 }">
+  <trace-branch v-if="readOnly" snapshot :has-children="Boolean(group.children?.length)">
+    <template #heading><strong>{{ group.op === 'OR' ? '满足任一条件' : '同时满足全部条件' }}</strong></template>
+    <template v-for="(child, index) in group.children" :key="index">
+      <condition-group-editor v-if="child.type === 'group'" :group="child" read-only />
+      <trace-branch v-else snapshot>
+        <template #heading>
+          <operand-value-display :operand="child.leftOperand" />
+          <strong>{{ operatorLabel(child) }}</strong>
+          <operand-value-display v-if="operatorRequiresValue(child)" :operand="child.rightOperand" />
+        </template>
+      </trace-branch>
+    </template>
+  </trace-branch>
+  <div v-else class="cg" :class="{ 'cg--nested': depth > 0 }">
     <div class="cg-head">
       <span v-if="depth === 0" class="cg-title">条件</span>
       <el-button-group class="cg-op">
@@ -126,6 +139,8 @@
 </template>
 
 <script>
+import TraceBranch from '@/components/common/TraceBranch.vue'
+import OperandValueDisplay from '@/components/common/OperandValueDisplay.vue'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import {
   createEmptyGroup,
@@ -148,9 +163,10 @@ const READ_EXPRESSION_KINDS =
 
 export default {
   name: 'ConditionGroupEditor',
-  components: { OperandPicker },
+  components: { OperandPicker, OperandValueDisplay, TraceBranch },
   props: {
     group: { type: Object, required: true },
+    readOnly: Boolean,
     vars: { type: Array, default: () => [] },
     functions: { type: Array, default: () => [] },
     listOptions: { type: Array, default: () => [] },
@@ -164,6 +180,9 @@ export default {
     },
   },
   methods: {
+    operatorLabel(leaf) {
+      return findConditionOperator(leaf.operator, this.leftOperandType(leaf), leaf.leftOperand)?.label || leaf.operator
+    },
     setGroupOp(op) {
       this.group['op'] = op
       this.notifyChanged()

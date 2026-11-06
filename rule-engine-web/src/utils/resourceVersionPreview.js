@@ -77,17 +77,33 @@ function decode(key, value) {
 function node(key, value, title = labels[key] || key) {
   const decoded = decode(key, value)
   if (key === 'modelContent') return { title: '模型制品', text: value ? '已保存模型文件内容，可结合文件摘要与输入输出定义核对' : '未配置' }
-  if (Array.isArray(decoded)) return { title, children: decoded.map((item, index) => node('', item, `第 ${index + 1} 项`)), text: decoded.length ? '' : '暂无配置' }
+  if (Array.isArray(decoded)) return { key, title, list: true, children: decoded.map((item, index) => node('', item, `第 ${index + 1} 项`)), text: decoded.length ? '' : '暂无配置' }
   if (decoded && typeof decoded === 'object') {
     const children = Object.entries(decoded).filter(([name]) => !technical.has(name)).map(([name, item]) => node(name, item))
-    return { title, children, text: children.length ? '' : '暂无业务配置' }
+    return { key, title, children, text: children.length ? '' : '暂无业务配置' }
   }
-  return { title, text: previewText(key, decoded) }
+  return { key, title, text: previewText(key, decoded) }
+}
+
+function conditionModel(item) {
+  const fields = Object.fromEntries(item.fields.map(field => [field.key, field.value]))
+  if (item.kind === 'condition-group') {
+    return { type: 'group', op: fields.op, children: item.children.map(conditionModel) }
+  }
+  return { type: 'leaf', ...fields }
 }
 
 function ruleNode(item) {
-  return { title: item.title, text: item.subtitle, children: [
-    ...(item.fields || []).map(field => ({ title: field.label, text: enums[field.key]?.[field.value] || field.text })),
+  if (item.kind === 'condition-group' || item.kind === 'condition') {
+    const condition = conditionModel(item)
+    const group = condition.type === 'group' ? condition : { type: 'group', op: 'AND', children: [condition] }
+    return { title: item.title, group }
+  }
+  return { kind: item.kind, title: item.title, text: item.subtitle, children: [
+    ...(item.fields || []).map(field => ({
+      key: field.key, title: field.label, text: enums[field.key]?.[field.value] || field.text,
+      operand: field.value?.kind ? field.value : undefined,
+    })),
     ...(item.children || []).map(ruleNode),
   ] }
 }
@@ -110,20 +126,39 @@ export function buildResourcePreview(snapshot, resourceType) {
       if (resourceType === 'RULE' && (key === 'content' || key === 'modelJson')) continue
       const decoded = decode(key, raw)
       const item = node(key, raw)
-      const entry = { key, title: item.title, nodes: [item], signature: JSON.stringify(canonical(decoded)) }
-      if (decoded && typeof decoded === 'object' || structured.has(key) || key === 'modelContent') sections.push(entry)
+      const detail = decoded && typeof decoded === 'object' || structured.has(key) || ['modelContent', 'implScript', 'requestScript', 'responseScript'].includes(key)
+      const entry = { key, title: item.title, nodes: [item], basic: !detail, signature: JSON.stringify(canonical(decoded)) }
+      if (key === 'sourceConfig' && resourceType === 'VARIABLE' && item.children?.length) {
+        entry.sourceTitle = value.varSource ? previewText('varSource', value.varSource) : '取值配置'
+      }
+      if (detail) sections.push(entry)
       else basic.push(entry)
     }
     if (resourceType === 'RULE') {
       const content = decode('modelJson', value.content) || {}
-      const model = decode('modelJson', content.modelJson ?? value.modelJson)
+      let model = decode('modelJson', content.modelJson ?? value.modelJson)
+      if (value.modelType === 'SCRIPT' && typeof model === 'string') model = { script: model }
       try {
         if (!model || typeof model !== 'object' || Array.isArray(model)) throw new Error()
         const ruleSections = value.modelType === 'SCRIPT'
           ? [{ key: 'script', title: '脚本与引用', nodes: [node('script', model.script), node('scriptVarRefs', model.scriptVarRefs || [])] }]
           : buildRulePreviewSections(value.modelType, model).map(section => ({ ...section, nodes: section.nodes.map(ruleNode) }))
         if (!ruleSections.length) throw new Error()
-        for (const section of ruleSections) sections.push({ ...section, key: 'rule:' + section.key, signature: JSON.stringify(canonical(section.nodes)) })
+        for (const section of ruleSections) {
+          const preview = { ...section, key: 'rule:' + section.key }
+          if (section.key === 'nodes') {
+            preview.graph = model.logicflow ? { logicflow: model.logicflow } : { nodes: model.nodes, edges: model.edges }
+            preview.graph.defaultEdgeLineType = model.defaultEdgeLineType
+          }
+          if (section.key === 'thresholds') preview.thresholds = model.thresholds || []
+          if (section.key === 'scoreItems' && section.nodes.length) {
+            preview.nodes = [{ list: true, title: section.title, children: section.nodes.map(item => ({
+              ...item, children: [{ key: 'title', title: '评估维度', text: item.title }, ...item.children],
+            })) }]
+          }
+          preview.signature = JSON.stringify(canonical([section.nodes, section.matrix, preview.graph]))
+          sections.push(preview)
+        }
       } catch { warning = '此规则的业务结构暂时无法预览，请展开下方原始 JSON 核对。' }
     }
     return { sections: [...basic, ...sections], warning }
