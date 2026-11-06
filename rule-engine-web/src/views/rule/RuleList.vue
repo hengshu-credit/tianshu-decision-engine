@@ -178,7 +178,7 @@
               @click="handleView(row)"
               >查看</el-button
             >
-            <governance-publish-action resource-type="RULE" :resource-id="row.id" />
+            <governance-publish-action resource-type="RULE" :model-type="row.modelType" :resource-id="row.id" />
             <el-button
               v-permission="{ code: 'rule:edit', projectId: row.projectId, scope: row.scope }"
               link

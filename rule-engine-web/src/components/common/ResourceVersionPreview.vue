@@ -2,6 +2,10 @@
   <div class="version-preview-summary" :class="{ 'is-comparing': comparing }">
     <div class="preview-title">
       <strong>{{ comparing ? '业务内容对比' : '业务内容预览' }}</strong>
+      <el-select v-if="detailRows.length >= 3" :model-value="''" placeholder="定位配置项" aria-label="定位配置项"
+        filterable size="small" class="preview-jump" @change="jumpTo">
+        <el-option v-for="row in detailRows" :key="row.key" :label="(row.right || row.left).title" :value="row.key" />
+      </el-select>
       <template v-if="comparing">
         <el-tag :type="changeCount || warning ? 'warning' : 'info'" size="small">{{ statusText }}</el-tag>
         <el-checkbox v-if="changeCount && !warning" v-model="changesOnly">只看差异</el-checkbox>
@@ -10,6 +14,8 @@
     <div class="business-preview-head pane-grid">
       <div v-for="pane in panes" :key="pane.side">
         <span>{{ pane.caption }}</span><strong>{{ pane.label }}</strong>
+        <small v-if="pane.byline">{{ pane.byline }}</small>
+        <p v-if="pane.note">{{ pane.note }}</p>
       </div>
     </div>
     <el-alert v-if="warning" :title="warning" type="warning" :closable="false" show-icon />
@@ -27,12 +33,15 @@
         </div>
       </div>
     </section>
-    <section v-for="row in detailRows" :key="row.key" class="preview-section business-preview-row" :class="'is-' + row.status" :data-section="row.key">
+    <section v-for="row in detailRows" :key="row.key" :ref="element => registerSection(row.key, element)"
+      class="preview-section business-preview-row" :class="'is-' + row.status" :data-section="row.key">
       <h4>
-        {{ (row.right || row.left).title }}
+        <button type="button" class="section-toggle" :aria-expanded="!folded.has(row.key)" @click="toggleSection(row.key)">
+          <span aria-hidden="true">{{ folded.has(row.key) ? '▸' : '▾' }}</span>{{ (row.right || row.left).title }}
+        </button>
         <el-tag v-if="comparing && row.status !== 'same'" :type="tagType[row.status]" size="small">{{ changeLabel[row.status] }}</el-tag>
       </h4>
-      <div class="pane-grid">
+      <div v-if="!folded.has(row.key)" class="pane-grid">
         <version-config-section v-for="pane in panes" :key="pane.side" :section="row[pane.side]"
           :version-label="comparing ? pane.label : ''" absent-label="此版本未配置" />
       </div>
@@ -41,7 +50,7 @@
   </div>
 </template>
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { buildResourcePreview, pairPreviewSections } from '@/utils/resourceVersionPreview'
 import VersionConfigSection from './VersionConfigSection.vue'
 
@@ -49,15 +58,42 @@ const props = defineProps({
   resourceType: { type: String, required: true }, snapshot: { type: [String, Object], required: true },
   original: { type: [String, Object], default: '' }, comparing: Boolean,
   originalLabel: { type: String, default: '基准版本' }, modifiedLabel: { type: String, default: '当前版本' },
+  originalVersion: { type: Object, default: null }, modifiedVersion: { type: Object, default: null },
 })
 const tagType = { added: 'success', removed: 'danger', changed: 'warning' }
 const changeLabel = { added: '新增', removed: '移除', changed: '已修改' }
 const changesOnly = ref(false)
-watch(() => [props.original, props.snapshot, props.comparing], () => { changesOnly.value = false })
+const folded = ref(new Set())
+const sections = new Map()
+function registerSection(key, element) {
+  if (element) sections.set(key, element)
+  else sections.delete(key)
+}
+function toggleSection(key) {
+  if (folded.value.has(key)) folded.value.delete(key)
+  else folded.value.add(key)
+}
+async function jumpTo(key) {
+  folded.value.delete(key)
+  await nextTick()
+  sections.get(key)?.querySelector('.section-toggle')?.focus({ preventScroll: true })
+  sections.get(key)?.scrollIntoView({ block: 'start' })
+}
+watch(() => [props.original, props.snapshot, props.comparing, props.originalLabel, props.modifiedLabel], () => {
+  changesOnly.value = false
+  folded.value.clear()
+})
+
+function versionNotes(version) {
+  if (!version) return {}
+  const actor = version.publishBy || version.createBy || version.applicant
+  const time = version.publishTime || version.createTime
+  return { byline: [actor, time && String(time).replace('T', ' ')].filter(Boolean).join(' · '), note: version.changeSummary || version.changeLog }
+}
 
 const panes = computed(() => {
-  const current = { side: 'right', label: props.modifiedLabel, caption: props.comparing ? '右侧 · 当前所选版本' : '当前所选版本' }
-  return props.comparing ? [{ side: 'left', label: props.originalLabel, caption: '左侧 · 基准版本' }, current] : [current]
+  const current = { side: 'right', label: props.modifiedLabel, caption: props.comparing ? '右侧 · 对比版本' : '所选版本', ...versionNotes(props.modifiedVersion) }
+  return props.comparing ? [{ side: 'left', label: props.originalLabel, caption: '左侧 · 基准版本', ...versionNotes(props.originalVersion) }, current] : [current]
 })
 const left = computed(() => props.comparing ? buildResourcePreview(props.original, props.resourceType) : { sections: [] })
 const right = computed(() => buildResourcePreview(props.snapshot, props.resourceType))
@@ -88,6 +124,11 @@ const detailRows = computed(() => {
 .preview-title, .preview-section h4 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .preview-title { margin-bottom: 12px; font-size: 16px; }
 .preview-title .el-checkbox { margin-left: auto; }
+.preview-jump { width: 150px; max-width: 100%; }
+.section-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 3px 0; background: none; border: none; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.section-toggle span { color: var(--el-color-primary); }
+.business-preview-head small { margin-left: 12px; font-size: 12px; color: var(--tianshu-text-secondary); }
+.business-preview-head p { margin: 6px 0 0; font-size: 13px; white-space: pre-wrap; }
 .pane-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .is-comparing .pane-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .business-preview-head > div { padding: 10px 14px; border-left: 3px solid var(--el-color-primary); background: var(--tianshu-bg-soft); font-size: 14px; overflow-wrap: anywhere; }

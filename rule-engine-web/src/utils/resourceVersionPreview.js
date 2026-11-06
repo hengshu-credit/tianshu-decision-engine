@@ -15,6 +15,9 @@ const labels = {
   projectCode: '项目编码', projectName: '项目名称', scope: '作用范围', status: '启用状态', description: '业务说明',
   varCode: '变量编码', varLabel: '变量名称', varType: '数据类型', varSource: '取值来源', sourceType: '数据来源',
   defaultValue: '默认值', valueRange: '取值范围', exampleValue: '示例值', recordResult: '记录取值结果', systemConstant: '系统常量',
+  openApiConfigJson: '开放接口配置', sampleStatus: '样例验证状态',
+  requestMappings: '请求字段映射', responseMappings: '响应字段映射', sourcePath: '来源路径',
+  targetField: '对外字段', targetType: '目标类型', sourceRefType: '来源类型', sourceVarId: '来源字段 ID',
   ruleCode: '规则编码', ruleName: '规则名称', modelType: '模型类型', modelCode: '模型编码', modelName: '模型名称',
   modelFormat: '模型格式', modelFileName: '模型文件', modelFileSize: '文件大小（字节）', modelDigest: '文件摘要', modelVersion: '模型版本',
   inputFieldCount: '输入字段数', outputFieldCount: '输出字段数', preloadOnStartup: '启动时预加载', executionTimeoutMs: '执行超时（毫秒）',
@@ -121,7 +124,10 @@ export function buildResourcePreview(snapshot, resourceType) {
     const sections = []
     const basic = []
     let warning = ''
-    for (const [key, raw] of Object.entries(value)) {
+    const content = resourceType === 'RULE' ? decode('modelJson', value.content) : null
+    const configuration = content?.openApiConfigJson != null && value.openApiConfigJson == null
+      ? { ...value, openApiConfigJson: content.openApiConfigJson } : value
+    for (const [key, raw] of Object.entries(configuration)) {
       if (technical.has(key)) continue
       if (resourceType === 'RULE' && (key === 'content' || key === 'modelJson')) continue
       const decoded = decode(key, raw)
@@ -135,8 +141,7 @@ export function buildResourcePreview(snapshot, resourceType) {
       else basic.push(entry)
     }
     if (resourceType === 'RULE') {
-      const content = decode('modelJson', value.content) || {}
-      let model = decode('modelJson', content.modelJson ?? value.modelJson)
+      let model = decode('modelJson', content?.modelJson ?? value.modelJson)
       if (value.modelType === 'SCRIPT' && typeof model === 'string') model = { script: model }
       try {
         if (!model || typeof model !== 'object' || Array.isArray(model)) throw new Error()

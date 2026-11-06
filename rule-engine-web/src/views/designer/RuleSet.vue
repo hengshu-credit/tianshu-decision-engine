@@ -311,7 +311,7 @@
               size="small"
               type="info"
               :disabled="$index === versions.length - 1"
-              @click="compareVersion(row, versions[$index + 1])"
+              @click="compareVersion(versions[$index + 1], row)"
               >对比上一版</el-button
             >
             <el-button
@@ -332,28 +332,9 @@
         </el-table-column>
       </el-table>
 
-      <div v-if="versionCompare" class="version-compare">
-        <el-alert
-          :title="
-            'v' +
-            versionCompare.left.version +
-            ' 与 v' +
-            versionCompare.right.version +
-            ' 对比'
-          "
-          :type="
-            versionCompare.modelJsonChanged ||
-            versionCompare.compiledScriptChanged
-              ? 'warning'
-              : 'success'
-          "
-          :closable="false"
-        />
-        <div class="version-diff-grid">
-          <pre>{{ formatVersionJson(versionCompare.left.modelJson) }}</pre>
-          <pre>{{ formatVersionJson(versionCompare.right.modelJson) }}</pre>
-        </div>
-      </div>
+      <version-snapshot-panel v-if="versionCompare?.left && versionCompare?.right" historical comparing
+        resource-type="RULE" model-type="RULE_SET" :original="versionCompare.left" :snapshot="versionCompare.right"
+        :original-label="`v${versionCompare.left.version}`" :modified-label="`v${versionCompare.right.version}`" />
     </el-dialog>
 
     <el-dialog
@@ -362,12 +343,14 @@
       width="760px"
       append-to-body
     >
-      <pre class="version-json">{{ versionViewContent }}</pre>
+      <version-snapshot-panel v-if="versionViewContent" historical resource-type="RULE" model-type="RULE_SET"
+        :snapshot="versionViewContent" :modified-label="versionViewTitle" />
     </el-dialog>
   </div>
 </template>
 
 <script>
+import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
 import ElIconLoading from '@/components/common/AppLoadingIcon.vue'
 import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { markRaw } from 'vue'
@@ -387,7 +370,6 @@ import {
 } from '@element-plus/icons-vue'
 import {
   listVersions,
-  getVersion,
   compareVersions,
 } from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
@@ -442,6 +424,7 @@ export default {
       versionCompare: null,
       versionViewVisible: false,
       versionViewTitle: '',
+      versionReadId: 0,
       versionViewContent: '',
       ElIconBack: markRaw(ElIconBack),
       ElIconPlus: markRaw(ElIconPlus),
@@ -453,7 +436,7 @@ export default {
       ElIconBottom: markRaw(ElIconBottom),
     }
   },
-  components: {
+  components: { VersionSnapshotPanel,
     RuleDesignerActionBar,
     RuleDraftReadOnly,
     DesignerTestDialog,
@@ -835,6 +818,7 @@ export default {
       }
     },
     async openVersionDialog() {
+      this.versionReadId++
       this.versionVisible = true
       this.versionCompare = null
       await this.loadVersions()
@@ -855,29 +839,25 @@ export default {
         this.versionLoading = false
       }
     },
-    async viewVersion(row) {
-      if (!row || !row.version) return
-      try {
-        const res = await getVersion(this.definitionId, row.version)
-        const version = res && res.data ? res.data : res
-        this.versionViewTitle = '规则集版本 v' + row.version
-        this.versionViewContent = this.formatVersionJson(version.modelJson)
-        this.versionViewVisible = true
-      } catch (e) {
-        this.$message.error(e.message || '查看版本失败')
-      }
+    viewVersion(row) {
+      if (!row) return
+      this.versionReadId++
+      this.versionViewTitle = '规则集版本 v' + row.version
+      this.versionViewContent = row
+      this.versionViewVisible = true
     },
     async compareVersion(left, right) {
       if (!left || !right) return
+      const requestId = ++this.versionReadId
       try {
         const res = await compareVersions(
           this.definitionId,
           left.version,
           right.version
         )
-        this.versionCompare = res && res.data ? res.data : res
+        if (requestId === this.versionReadId) this.versionCompare = res?.data || res
       } catch (e) {
-        this.$message.error(e.message || '版本对比失败')
+        if (requestId === this.versionReadId) this.$message.error(e.message || '版本对比失败')
       }
     },
     async loadVersionInDesigner(row) {
@@ -903,14 +883,6 @@ export default {
     },
     formatVersionTime(value) {
       return value ? String(value).replace('T', ' ') : '-'
-    },
-    formatVersionJson(value) {
-      if (!value) return ''
-      try {
-        return JSON.stringify(JSON.parse(value), null, 2)
-      } catch (e) {
-        return String(value)
-      }
     },
   },
 }

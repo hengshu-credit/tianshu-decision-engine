@@ -528,11 +528,11 @@
     <el-dialog
       title="版本历史"
       v-model="versionVisible"
-      width="960px"
+      width="min(1120px, 96vw)"
       :close-on-click-modal="false"
     >
       <div class="version-compare-toolbar">
-        <el-select v-model="versionCompareLeft" size="small" placeholder="选择左侧版本">
+        <el-select v-model="versionCompareLeft" @change="viewVersion(null)" size="small" placeholder="选择左侧版本">
           <el-option
             v-for="item in versionList"
             :key="`left-${item.version}`"
@@ -541,7 +541,7 @@
           />
         </el-select>
         <span>对比</span>
-        <el-select v-model="versionCompareRight" size="small" placeholder="选择右侧版本">
+        <el-select v-model="versionCompareRight" @change="viewVersion(null)" size="small" placeholder="选择右侧版本">
           <el-option
             v-for="item in versionList"
             :key="`right-${item.version}`"
@@ -552,7 +552,7 @@
         <el-button
           size="small"
           type="primary"
-          :disabled="!versionCompareLeft || !versionCompareRight"
+          :disabled="!versionCompareLeft || !versionCompareRight || versionCompareLeft === versionCompareRight"
           @click="compareSelectedVersions"
           >查看具体差异</el-button
         >
@@ -579,8 +579,9 @@
             row.publishTime ? String(row.publishTime).replace('T', ' ') : '-'
           }}</template>
         </el-table-column>
-        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['对比上一版', '回滚'])" align="center">
+        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['预览', '对比上一版', '回滚'])" align="center">
           <template v-slot="{ row, $index }">
+            <el-button link type="primary" size="small" @click="viewVersion(row)">预览</el-button>
             <el-button
               link
               size="small"
@@ -599,32 +600,11 @@
           </template>
         </el-table-column>
       </el-table>
-      <div v-if="versionCompare" style="margin-top: 12px">
-        <el-alert
-          :title="
-            'v' +
-            versionCompare.left.version +
-            ' 与 v' +
-            versionCompare.right.version +
-            ' 对比'
-          "
-          :type="
-            versionCompare.modelContentChanged ||
-            versionCompare.modelConfigChanged
-              ? 'warning'
-              : 'success'
-          "
-          :closable="false"
-          show-icon
-        />
-        <json-version-diff
-          :original="modelVersionComparable(versionCompare.left)"
-          :modified="modelVersionComparable(versionCompare.right)"
-          :original-label="`v${versionCompare.left.version}`"
-          :modified-label="`v${versionCompare.right.version}`"
-          height="400px"
-        />
-      </div>
+      <version-snapshot-panel v-if="versionCompare?.left && versionCompare?.right" historical comparing
+        resource-type="MODEL" :original="versionCompare.left" :snapshot="versionCompare.right"
+        :original-label="versionDisplayLabel(versionCompare.left)" :modified-label="versionDisplayLabel(versionCompare.right)" />
+      <version-snapshot-panel v-else-if="versionPreview" historical resource-type="MODEL"
+        :snapshot="versionPreview" :modified-label="versionDisplayLabel(versionPreview)" />
     </el-dialog>
 
     <!-- 模型测试对话框 -->
@@ -932,6 +912,8 @@
 </template>
 
 <script>
+import { historicalVersionMethods } from '@/mixins/historicalVersionMixin'
+import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
 import { loadPagedCatalog } from '@/utils/pagedCatalog'
 import { hasPermission } from '@/security/permissionState'
 import { editableResource, submitGovernanceRequest } from '@/api/governance'
@@ -965,7 +947,6 @@ import OperandPicker from '@/components/common/OperandPicker.vue'
 import OperandValueDisplay from '@/components/common/OperandValueDisplay.vue'
 import ResourcePreflightPanel from '@/components/common/ResourcePreflightPanel.vue'
 import ModelImpactDialog from '@/components/model/ModelImpactDialog.vue'
-import JsonVersionDiff from '@/components/common/JsonVersionDiff.vue'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import {
   compileOperand,
@@ -1071,6 +1052,8 @@ export default {
       versionCompareLeft: null,
       versionCompareRight: null,
       versionCompare: null,
+      versionReadId: 0,
+      versionPreview: null,
       ElIconVideoPlay: markRaw(ElIconVideoPlay),
       ElIconBack: markRaw(ElIconBack),
       ElIconRefresh: markRaw(ElIconRefresh),
@@ -1078,13 +1061,12 @@ export default {
       ElIconDelete: markRaw(ElIconDelete),
     }
   },
-  components: {
+  components: { VersionSnapshotPanel,
     ResourceVersionManager,
     ResourcePicker,
     OperandPicker,
     OperandValueDisplay,
     ModelImpactDialog,
-    JsonVersionDiff,
     ElIconArrowDown,
     ElIconInfo,
     ElIconEdit,
@@ -1281,6 +1263,7 @@ export default {
     this.load()
   },
   methods: {
+    ...historicalVersionMethods,
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     versionDisplayLabel,
     openImpact(action) {
@@ -1909,14 +1892,17 @@ export default {
     // ========== 版本管理 ==========
     async openVersionDialog() {
       this.versionVisible = true
-      this.versionCompare = null
+      this.viewVersion(null)
+      this.versionList = []
       await this.loadVersions()
     },
     async loadVersions() {
       if (!this.model.id) return
       this.versionLoading = true
       try {
+        const requestId = this.versionReadId
         const res = await api.listVersions(this.model.id)
+        if (requestId !== this.versionReadId) return
         this.versionList = res.data || res || []
         this.versionCompareLeft = this.versionList[1]?.version || null
         this.versionCompareRight = this.versionList[0]?.version || null
@@ -1929,22 +1915,15 @@ export default {
     async compareWithNext(row, index) {
       const right = this.versionList[index + 1]
       if (!row || !right) return
-      this.versionCompareLeft = row.version
-      this.versionCompareRight = right.version
+      this.versionCompareLeft = right.version
+      this.versionCompareRight = row.version
       await this.compareSelectedVersions()
     },
     async compareSelectedVersions() {
-      if (!this.versionCompareLeft || !this.versionCompareRight) return
-      try {
-        const res = await api.compareVersions(
-          this.model.id,
-          this.versionCompareLeft,
-          this.versionCompareRight
-        )
-        this.versionCompare = res.data || res
-      } catch (e) {
-        this.$message.error(e.message || '版本对比失败')
-      }
+      const id = this.model.id
+      const left = this.versionCompareLeft
+      const right = this.versionCompareRight
+      if (id && left && right && left !== right) await this.compareHistoricalVersions(() => api.compareVersions(id, left, right))
     },
     async rollbackVersion(row) {
       if (!row) return
@@ -1959,14 +1938,6 @@ export default {
         await completeResourceChange(this, response, () => this.load())
       } catch (e) {
         if (e !== 'cancel') this.$message.error(e.message || '回滚失败')
-      }
-    },
-    formatVersionJson(text) {
-      if (!text) return ''
-      try {
-        return JSON.stringify(JSON.parse(text), null, 2)
-      } catch (e) {
-        return text
       }
     },
 
@@ -2097,30 +2068,6 @@ export default {
           '模型测试配置加载失败'
         )
         this.testReady = false
-      }
-    },
-    modelVersionComparable(snapshot) {
-      if (!snapshot) return {}
-      const parse = (value) => {
-        if (!value) return value
-        try {
-          return JSON.parse(value)
-        } catch {
-          return value
-        }
-      }
-      return {
-        modelFormat: snapshot.modelFormat,
-        modelFileName: snapshot.modelFileName,
-        modelFileSize: snapshot.modelFileSize,
-        modelDigest: snapshot.modelDigest,
-        modelConfig: parse(snapshot.modelConfig),
-        inputSchema: parse(snapshot.inputSchemaJson),
-        outputSchema: parse(snapshot.outputSchemaJson),
-        validationReport: parse(snapshot.validationReportJson),
-        runtimeConstraints: parse(snapshot.runtimeConstraintsJson),
-        sampleStatus: snapshot.sampleStatus,
-        status: snapshot.status,
       }
     },
     modelTestVersionLabel(version) {

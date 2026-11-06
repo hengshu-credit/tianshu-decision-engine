@@ -618,7 +618,8 @@ test('分流实验验证执行加载 Schema 表单并提交嵌套参数', async 
   await dialog.locator('.execution-context-form .el-form-item')
     .filter({ hasText: '进件时间' })
     .locator('input:visible').fill('2026-08-04T10:30:00')
-  await dialog.locator('.execution-identity').click()
+  // Commit the date by leaving the input on a non-interactive heading.
+  await dialog.getByText('实验验证', { exact: true }).click()
 
   const executeRequestPromise = page.waitForRequest(request =>
     request.method() === 'POST' &&

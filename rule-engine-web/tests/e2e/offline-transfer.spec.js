@@ -4,7 +4,9 @@ const { platformResponse } = require('./support/platformResponse.cjs')
 const baseUrl = process.env.TRANSFER_DEV_URL || 'http://tianshu.local/index.html'
 
 async function installTransferRoutes(page) {
-  const { assertClean } = await installDistRoutes(page)
+  const { assertClean } = await installDistRoutes(page, {
+    origin: new URL(baseUrl).origin, liveStatic: Boolean(process.env.TRANSFER_DEV_URL),
+  })
   const previews = []
   const imports = []
   const exports = []
@@ -27,6 +29,13 @@ async function installTransferRoutes(page) {
     else if (pathname === '/api/auth/console/me') data = { username: 'e2e' }
     else if (pathname === '/api/rule/project/list') data = {
       records: [{ id: 7, projectName: '授信项目', projectCode: 'credit' }], total: 1,
+    }
+    else if (pathname === '/api/rule/resource-versions/RULE/101') data = {
+      latestVersionId: '72', versions: [
+        { versionId: '72', version: 2, revision: 1, status: 'ACTIVE' },
+        { versionId: '71', version: 1, revision: 1, status: 'ACTIVE' },
+      ], history: [1, 2].map(version => ({ id: String(70 + version), versionNo: version, revisionNo: 1,
+        snapshotJson: JSON.stringify({ modelType: 'TABLE', ruleName: '授信历史 ' + version, modelJson: '{"rules":[]}' }) })),
     }
     else if (pathname === '/api/rule/transfer/resources') {
       const params = Object.fromEntries(new URL(request.url()).searchParams)
@@ -88,6 +97,26 @@ async function chooseScope(page, label) {
   await page.getByRole('combobox', { name: '目标范围', exact: true }).press('ArrowDown')
   await page.getByRole('option', { name: label, exact: true }).click()
 }
+
+test('导出前可只读预览所选资源的准确业务版本', async ({ page }) => {
+  const fixture = await installTransferRoutes(page)
+  await page.goto(baseUrl + '#/transfer')
+  const search = page.getByRole('combobox', { name: '第 1 项导出资源', exact: true })
+  await search.fill('授信')
+  await page.getByRole('option', { name: '授信判断 (risk_rule) · 授信项目 / credit', exact: true }).click()
+  const control = page.locator('.root-version').first()
+  await control.getByRole('button', { name: '预览' }).click()
+  const dialog = page.getByRole('dialog', { name: '所选版本预览' })
+  await expect(dialog).toContainText('授信历史 2')
+  await page.keyboard.press('Escape')
+  await control.locator('.el-select').click()
+  await page.getByRole('option', { name: '指定 v1 · 修订 1' }).click()
+  await control.getByRole('button', { name: '预览' }).click()
+  await expect(dialog).toContainText('授信历史 1')
+  await expect(dialog).not.toContainText('授信历史 2')
+  expect(fixture.exports).toHaveLength(0)
+  fixture.assertClean()
+})
 
 for (const width of [1440, 1280, 1024, 760, 560]) {
   test(`${width}px 导出资源输入框保持可用，选择版本和添加移除资源不挤压输入框`, async ({ page }, testInfo) => {

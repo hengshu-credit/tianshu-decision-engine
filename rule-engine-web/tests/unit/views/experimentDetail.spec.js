@@ -41,6 +41,7 @@ function createContext(overrides = {}) {
     versionList: [],
     versionCompare: null,
     versionPreview: '',
+    versionReadId: 0,
     ...overrides
   }
   Object.keys(ExperimentDetail.methods).forEach(name => {
@@ -253,7 +254,7 @@ describe('ExperimentDetail', () => {
 
   test('openVersionDialog loads versions and compareWithNext compares adjacent versions', async () => {
     listVersions.mockResolvedValue({ data: [{ version: 2 }, { version: 1 }] })
-    compareVersions.mockResolvedValue({ data: { left: { version: 2 }, right: { version: 1 }, groupsChanged: true } })
+    compareVersions.mockResolvedValue({ data: { left: { version: 1 }, right: { version: 2 }, groupsChanged: true } })
     const ctx = createContext()
     ctx.form.id = 9
 
@@ -262,7 +263,7 @@ describe('ExperimentDetail', () => {
 
     expect(ctx.versionVisible).toBe(true)
     expect(listVersions).toHaveBeenCalledWith(9)
-    expect(compareVersions).toHaveBeenCalledWith(9, 2, 1)
+    expect(compareVersions).toHaveBeenCalledWith(9, 1, 2)
     expect(ctx.versionCompare.groupsChanged).toBe(true)
   })
 

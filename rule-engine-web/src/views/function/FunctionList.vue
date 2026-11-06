@@ -471,11 +471,11 @@
     <el-dialog
       title="函数版本管理"
       v-model="versionVisible"
-      width="900px"
+      width="min(1120px, 96vw)"
       append-to-body
     >
       <div class="version-compare-toolbar">
-        <el-select v-model="versionCompareLeft" size="small" placeholder="选择左侧版本">
+        <el-select v-model="versionCompareLeft" @change="viewVersion(null)" size="small" placeholder="选择左侧版本">
           <el-option
             v-for="item in versionList"
             :key="`left-${item.version}`"
@@ -484,7 +484,7 @@
           />
         </el-select>
         <span>对比</span>
-        <el-select v-model="versionCompareRight" size="small" placeholder="选择右侧版本">
+        <el-select v-model="versionCompareRight" @change="viewVersion(null)" size="small" placeholder="选择右侧版本">
           <el-option
             v-for="item in versionList"
             :key="`right-${item.version}`"
@@ -495,7 +495,7 @@
         <el-button
           size="small"
           type="primary"
-          :disabled="!versionCompareLeft || !versionCompareRight"
+          :disabled="!versionCompareLeft || !versionCompareRight || versionCompareLeft === versionCompareRight"
           @click="compareSelectedVersions"
           >查看具体差异</el-button
         >
@@ -544,23 +544,18 @@
           </template>
         </el-table-column>
       </el-table>
-      <div v-if="versionCompare" class="version-compare">
-        <json-version-diff
-          :original="versionCompare.left.functionJson"
-          :modified="versionCompare.right.functionJson"
-          :original-label="`v${versionCompare.left.version}`"
-          :modified-label="`v${versionCompare.right.version}`"
-          height="380px"
-        />
-      </div>
-      <pre v-if="versionPreview" class="version-preview">{{
-        versionPreview
-      }}</pre>
+      <version-snapshot-panel v-if="versionCompare?.left && versionCompare?.right" historical comparing
+        resource-type="FUNCTION" :original="versionCompare.left" :snapshot="versionCompare.right"
+        :original-label="versionDisplayLabel(versionCompare.left)" :modified-label="versionDisplayLabel(versionCompare.right)" />
+      <version-snapshot-panel v-else-if="versionPreview" historical resource-type="FUNCTION"
+        :snapshot="versionPreview" :modified-label="versionDisplayLabel(versionPreview)" />
     </el-dialog>
   </div>
 </template>
 
 <script>
+import { historicalVersionMethods } from '@/mixins/historicalVersionMixin'
+import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
 import { hasPermission } from '@/security/permissionState'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import FunctionImpactPanel from '@/components/FunctionImpactPanel.vue'
@@ -600,7 +595,6 @@ import {
 import { sampleValueForVarType } from '@/utils/testParamTemplate'
 import { parseFunctionParameters, validatedFunctionParameters, explicitFunctionSignature, FUNCTION_JAVA_TYPES } from '@/utils/functionParameters'
 import MonacoEditor from '@/components/MonacoEditor'
-import JsonVersionDiff from '@/components/common/JsonVersionDiff.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
@@ -647,6 +641,7 @@ export default {
       versionCompareLeft: null,
       versionCompareRight: null,
       versionCompare: null,
+      versionReadId: 0,
       versionPreview: '',
       projectList: [],
       filteredProjectCodes: [],
@@ -692,11 +687,10 @@ export default {
       ElIconDelete: markRaw(ElIconDelete),
     }
   },
-  components: { FunctionImpactPanel, ProjectResourceSelect, ResourceVersionManager, GovernancePublishAction, GovernanceWorkspaceToolbar,
+  components: { VersionSnapshotPanel, FunctionImpactPanel, ProjectResourceSelect, ResourceVersionManager, GovernancePublishAction, GovernanceWorkspaceToolbar,
     GovernanceResourceStatus,
     TableColumnSettings,
     MonacoEditor,
-    JsonVersionDiff,
     RemoteFilterSelect,
     ProjectFilterSelect,
     ElIconInfo,
@@ -739,6 +733,7 @@ export default {
   },
   beforeUnmount() { this.methodRequestId++; this.editSessionId++ },
   methods: {
+    ...historicalVersionMethods,
     syncProjectContext() {
       this.currentProjectId = routeProjectId(this.$route, this.$store && this.$store.state.currentProject)
     },
@@ -1147,38 +1142,27 @@ export default {
     async openVersionDialog(row) {
       this.versionRow = row
       this.versionVisible = true
-      this.versionCompare = null
-      this.versionPreview = ''
+      this.viewVersion(null)
+      this.versionList = []
+      const id = this.versionReadId
       const res = await listVersions(row.id)
+      if (id !== this.versionReadId) return
       this.versionList = (res && res.data) || []
       this.versionCompareLeft = this.versionList[1]?.version || null
       this.versionCompareRight = this.versionList[0]?.version || null
     },
-    viewVersion(row) {
-      this.versionCompare = null
-      this.versionPreview = this.prettyVersionJson(row.functionJson)
-    },
     async compareWithNext(row, index) {
       const right = this.versionList[index + 1]
       if (!this.versionRow || !right) return
-      this.versionCompareLeft = row.version
-      this.versionCompareRight = right.version
+      this.versionCompareLeft = right.version
+      this.versionCompareRight = row.version
       await this.compareSelectedVersions()
     },
     async compareSelectedVersions() {
-      if (
-        !this.versionRow ||
-        !this.versionCompareLeft ||
-        !this.versionCompareRight
-      )
-        return
-      const res = await compareVersions(
-        this.versionRow.id,
-        this.versionCompareLeft,
-        this.versionCompareRight
-      )
-      this.versionCompare = (res && res.data) || null
-      this.versionPreview = ''
+      const id = this.versionRow?.id
+      const left = this.versionCompareLeft
+      const right = this.versionCompareRight
+      if (id && left && right && left !== right) await this.compareHistoricalVersions(() => compareVersions(id, left, right))
     },
     async rollbackFunctionVersion(row) {
       if (!this.versionRow || !row) return
@@ -1191,14 +1175,6 @@ export default {
       this.versionVisible = false
       await completeResourceChange(this, response, () => this.loadFunctions())
       await this.editWorkspace('FUNCTION', this.versionRow, this.handleEdit)
-    },
-    prettyVersionJson(text) {
-      if (!text) return ''
-      try {
-        return JSON.stringify(JSON.parse(text), null, 2)
-      } catch (e) {
-        return String(text)
-      }
     },
     async handleDelete(row) {
       try {

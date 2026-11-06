@@ -1274,8 +1274,9 @@
             formatVersionTime(row.publishTime)
           }}</template>
         </el-table-column>
-        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['对比上一版', '恢复并编辑', '查看设计'])" align="center">
+        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['预览', '对比上一版', '恢复并编辑', '查看设计'])" align="center">
           <template v-slot="{ row, $index }">
+            <el-button link size="small" type="primary" @click="previewPublishedVersion(row)">预览</el-button>
             <el-button
               link
               size="small"
@@ -1345,56 +1346,38 @@
         >
       </div>
       <el-alert
-        v-else-if="!versionLoading"
-        title="至少需要两个已发布版本才能进行对比"
+        v-else-if="!versionLoading && !versions.length"
+        title="暂无已发布版本"
         type="info"
         :closable="false"
         show-icon
         class="version-compare-empty"
       />
       <div :aria-busy="versionCompareLoading" class="version-compare-content">
-        <rule-version-diff
-          v-if="versionCompare && versionCompare.left && versionCompare.right"
-          :model-type="rule.modelType"
-          :left-version="versionCompare.left"
-          :right-version="versionCompare.right"
-            :references="ruleVersionReferences"
-            :functions="idempotencyFunctions"
-        />
+        <version-snapshot-panel v-if="previewedVersion" historical resource-type="RULE" :snapshot="previewedVersion"
+          :model-type="rule.modelType" :modified-label="versionDisplayLabel(previewedVersion)" />
+        <version-snapshot-panel v-else-if="versionCompare?.left && versionCompare?.right" historical comparing
+          resource-type="RULE" :model-type="rule.modelType" :snapshot="versionCompare.right" :original="versionCompare.left"
+          :original-label="versionDisplayLabel(versionCompare.left)" :modified-label="versionDisplayLabel(versionCompare.right)">
+          <template #detail>
+            <rule-version-diff :model-type="rule.modelType" :left-version="versionCompare.left" :right-version="versionCompare.right"
+              :references="ruleVersionReferences" :functions="idempotencyFunctions" />
+          </template>
+          <template #technical>
+            <div class="version-compare-grid">
+              <div v-for="side in ['left', 'right']" :key="side">
+                <strong>{{ versionDisplayLabel(versionCompare[side]) }} · 编译脚本</strong>
+                <pre>{{ versionCompare[side].compiledScript || '此版本未保存编译脚本' }}</pre>
+              </div>
+            </div>
+          </template>
+        </version-snapshot-panel>
         <div
           v-else-if="versions.length >= 2 && !versionCompareLoading"
           class="version-compare-placeholder"
         >
           请选择两个版本查看业务配置差异
         </div>
-      </div>
-      <div v-if="versionCompare && versionCompare.left && versionCompare.right">
-        <el-collapse class="version-tech-collapse">
-          <el-collapse-item title="技术内容（原始 JSON / 编译脚本）" name="raw">
-            <div class="version-compare-grid">
-              <div>
-                <div class="version-compare-title">左侧模型 JSON</div>
-                <pre>{{
-                  formatVersionJson(versionCompare.left.modelJson)
-                }}</pre>
-              </div>
-              <div>
-                <div class="version-compare-title">右侧模型 JSON</div>
-                <pre>{{
-                  formatVersionJson(versionCompare.right.modelJson)
-                }}</pre>
-              </div>
-              <div>
-                <div class="version-compare-title">左侧编译脚本</div>
-                <pre>{{ versionCompare.left.compiledScript || '' }}</pre>
-              </div>
-              <div>
-                <div class="version-compare-title">右侧编译脚本</div>
-                <pre>{{ versionCompare.right.compiledScript || '' }}</pre>
-              </div>
-            </div>
-          </el-collapse-item>
-        </el-collapse>
       </div>
       <template v-slot:footer>
         <div>
@@ -1416,6 +1399,7 @@
 </template>
 
 <script>
+import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
 import { loadPagedCatalog } from '@/utils/pagedCatalog'
 import { PLATFORM_CODES } from '@/utils/platformResponse'
 
@@ -1666,6 +1650,7 @@ export default {
       versionLoading: false,
       versions: [],
       versionCompare: null,
+      previewedVersion: null,
       leftVersionNumber: null,
       rightVersionNumber: null,
       versionCompareLoading: false,
@@ -1681,7 +1666,7 @@ export default {
       ElIconSetting: markRaw(ElIconSetting),
     }
   },
-  components: {
+  components: { VersionSnapshotPanel,
     ApiScenarioPanel,
     RuleVersionDiff,
     RuleLifecyclePanel,
@@ -3279,7 +3264,14 @@ export default {
     },
 
     // ========== 发布版本对比 ==========
+    previewPublishedVersion(row) {
+      this.versionCompareRequestId++
+      this.versionCompareLoading = false
+      this.versionCompare = null
+      this.previewedVersion = row
+    },
     async openVersionDialog() {
+      this.previewedVersion = null
       this.versionVisible = true
       this.versionCompare = null
       this.leftVersionNumber = null
@@ -3304,6 +3296,7 @@ export default {
         this.leftVersionNumber = null
         this.rightVersionNumber = null
         this.versionCompare = null
+        if (this.versions.length === 1) this.previewedVersion = this.versions[0]
         if (this.versions.length >= 2) {
           this.leftVersionNumber = this.versions[1].version
           this.rightVersionNumber = this.versions[0].version
@@ -3377,6 +3370,7 @@ export default {
       return this.loadSelectedVersionCompare()
     },
     async loadSelectedVersionCompare() {
+      this.previewedVersion = null
       if (this.leftVersionNumber == null || this.rightVersionNumber == null)
         return
       if (this.leftVersionNumber === this.rightVersionNumber) {

@@ -163,33 +163,13 @@
               />
             </el-select>
           </div>
-          <div
-            v-if="businessRuleComparison"
-            class="business-diff-panel"
-            data-testid="business-config-diff"
-          >
-            <div class="business-diff-heading">
-              <div>
-                <span class="section-kicker">BUSINESS CONFIGURATION</span>
-                <h3>业务配置差异</h3>
-              </div>
-              <span>按实际引擎配置渲染，变更项已高亮</span>
-            </div>
-            <rule-version-diff
-              :model-type="businessRuleComparison.modelType"
-              :left-version="businessRuleComparison.leftVersion"
-              :right-version="businessRuleComparison.rightVersion"
-            />
-          </div>
-          <div class="technical-diff-heading">技术内容（原始配置 JSON / 字段差异）</div>
-          <json-version-diff
-            :original="compareOriginal"
-            :modified="compareModified"
-            :original-label="compareLeftLabel"
-            :modified-label="compareRightLabel"
-            :show-header="false"
-            height="400px"
-          />
+          <version-snapshot-panel :resource-type="request.resourceType" :snapshot="compareModified"
+            :original="compareOriginal" :comparing="compareLeftKey !== compareRightKey" :original-label="compareLeftLabel" :modified-label="compareRightLabel">
+            <template v-if="compareLeftKey !== compareRightKey && businessRuleComparison" #detail>
+              <rule-version-diff data-testid="business-config-diff" :model-type="businessRuleComparison.modelType"
+                :left-version="businessRuleComparison.leftVersion" :right-version="businessRuleComparison.rightVersion" />
+            </template>
+          </version-snapshot-panel>
           <div v-if="isRequestComparison && changedFields.length" class="diff-list">
             <div v-if="changedFields.length > 50" class="diff-list-toolbar">
               <span>共 {{ changedFields.length }} 项变更，当前匹配 {{ filteredChangedFields.length }} 项</span>
@@ -392,12 +372,14 @@
       </template>
     </el-dialog>
     <el-dialog v-model="versionPreviewVisible" :title="versionPreviewTitle" width="760px">
-      <pre class="version-preview">{{ prettySnapshot(versionPreviewSnapshot) }}</pre>
+      <version-snapshot-panel v-if="versionPreviewVisible && request" :resource-type="request.resourceType"
+        :snapshot="versionPreviewSnapshot" :modified-label="versionPreviewTitle" />
     </el-dialog>
   </div>
 </template>
 
 <script>
+import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import { ElMessage } from 'element-plus'
 import { chooseVersionRestore } from '@/utils/versionRestore'
@@ -415,16 +397,17 @@ import {
 import { listRuleRevisions } from '@/api/definition'
 import { getCurrentUser, hasPermission } from '@/security/permissionState'
 import { resourceActionPermission } from '@/security/pickerAccess'
+import { formatSnapshotJson } from '@/utils/versionSnapshot'
+import { parseMetadataResponse } from '@/utils/metadataResponse'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import { resolveDesignerRouteName } from '@/utils/ruleDesignerNavigation'
-import JsonVersionDiff from '@/components/common/JsonVersionDiff.vue'
 import RuleVersionDiff from '@/components/rule/versionDiff/RuleVersionDiff.vue'
 import LineageGraph from '@/views/lineage/LineageGraph.vue'
 
 export default {
   name: 'ApprovalDetail',
   mixins: [workspaceTabTitleMixin(vm => vm.request ? vm.resourceTitle : '')],
-  components: { JsonVersionDiff, RuleVersionDiff, LineageGraph },
+  components: { VersionSnapshotPanel, RuleVersionDiff, LineageGraph },
   setup() {
     return {
       route: useRoute(),
@@ -500,6 +483,9 @@ export default {
     },
     businessRuleComparison() {
       if (!this.request || this.request.resourceType !== 'RULE') return null
+      const leftType = this.parseSnapshot(this.compareOriginal).modelType
+      const rightType = this.parseSnapshot(this.compareModified).modelType
+      if (leftType && rightType && leftType !== rightType) return null
       const modelType = this.ruleModelType()
       if (!modelType) return null
       return {
@@ -834,8 +820,8 @@ export default {
               this.request.draftSnapshotJson || '{}'
           : '{}'
       }
-      const id = Number(String(key || '').replace('VERSION:', ''))
-      const version = (this.detail.versions || []).find(item => item.id === id)
+      const id = String(key || '').replace('VERSION:', '')
+      const version = (this.detail.versions || []).find(item => String(item.id) === id)
       return version ? version.snapshotJson || '{}' : '{}'
     },
     comparisonLabel(key) {
@@ -846,7 +832,7 @@ export default {
       if (!snapshot) return {}
       if (typeof snapshot === 'object') return snapshot
       try {
-        const parsed = JSON.parse(snapshot)
+        const parsed = parseMetadataResponse(snapshot)
         return parsed && typeof parsed === 'object' ? parsed : {}
       } catch (error) {
         return {}
@@ -879,8 +865,8 @@ export default {
     },
     ruleComparisonVersion(key, modelType) {
       const snapshot = this.comparisonSnapshot(key)
-      const versionId = Number(String(key || '').replace('VERSION:', ''))
-      const source = (this.detail.versions || []).find(item => item.id === versionId)
+      const versionId = String(key || '').replace('VERSION:', '')
+      const source = (this.detail.versions || []).find(item => String(item.id) === versionId)
       const current = key === 'CURRENT'
       return {
         version: source ? source.versionNo : '',
@@ -895,14 +881,7 @@ export default {
         modelJson: this.ruleModelJson(snapshot, modelType)
       }
     },
-    prettySnapshot(snapshot) {
-      if (!snapshot) return '{}'
-      try {
-        return JSON.stringify(JSON.parse(snapshot), null, 2)
-      } catch (error) {
-        return String(snapshot)
-      }
-    },
+    prettySnapshot: formatSnapshotJson,
     requestSnapshot() {
       const text = this.request.submittedSnapshotJson || this.request.draftSnapshotJson
       try {

@@ -739,7 +739,7 @@
     <el-dialog
       title="分流实验版本管理"
       v-model="versionVisible"
-      width="900px"
+      width="min(1120px, 96vw)"
       append-to-body
     >
       <el-table show-overflow-tooltip :data="versionList" border size="small" style="width: 100%">
@@ -783,35 +783,18 @@
           </template>
         </el-table-column>
       </el-table>
-      <div v-if="versionCompare" class="version-compare">
-        <div class="version-compare-title">
-          版本对比：v{{ versionCompare.left.version }} / v{{
-            versionCompare.right.version
-          }}
-        </div>
-        <el-tag
-          size="small"
-          :type="
-            versionCompare.experimentChanged || versionCompare.groupsChanged
-              ? 'warning'
-              : 'success'
-          "
-        >
-          {{
-            versionCompare.experimentChanged || versionCompare.groupsChanged
-              ? '实验配置有变化'
-              : '实验配置无变化'
-          }}
-        </el-tag>
-      </div>
-      <pre v-if="versionPreview" class="version-preview">{{
-        versionPreview
-      }}</pre>
+      <version-snapshot-panel v-if="versionCompare?.left && versionCompare?.right" historical comparing
+        resource-type="EXPERIMENT" :original="versionCompare.left" :snapshot="versionCompare.right"
+        :original-label="versionDisplayLabel(versionCompare.left)" :modified-label="versionDisplayLabel(versionCompare.right)" />
+      <version-snapshot-panel v-else-if="versionPreview" historical resource-type="EXPERIMENT"
+        :snapshot="versionPreview" :modified-label="versionDisplayLabel(versionPreview)" />
     </el-dialog>
   </div>
 </template>
 
 <script>
+import { historicalVersionMethods } from '@/mixins/historicalVersionMixin'
+import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
 import { hasPermission } from '@/security/permissionState'
 import { editableResource } from '@/api/governance'
 import { completeResourceChange } from '@/utils/governanceWorkspace'
@@ -909,6 +892,7 @@ export default {
       versionVisible: false,
       versionList: [],
       versionCompare: null,
+      versionReadId: 0,
       versionPreview: '',
       nextUid: 1,
       rulesRequestId: 0,
@@ -918,7 +902,7 @@ export default {
     }
   },
   name: 'ExperimentDetail',
-  components: {
+  components: { VersionSnapshotPanel,
     ConditionGroupEditor,
     OperandPicker,
     ProjectResourceSelect,
@@ -1064,6 +1048,7 @@ export default {
     await this.loadLogs()
   },
   methods: {
+    ...historicalVersionMethods,
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     versionDisplayLabel,
     async applyProjectContext(projectId) {
@@ -1620,28 +1605,15 @@ export default {
     async openVersionDialog() {
       if (!this.form.id) return
       this.versionVisible = true
-      this.versionCompare = null
-      this.versionPreview = ''
-      const res = await listVersions(this.form.id)
-      this.versionList = (res && res.data) || []
-    },
-    viewVersion(row) {
-      this.versionCompare = null
-      this.versionPreview = this.prettyVersionJson({
-        experiment: this.parseVersionJson(row.experimentJson, null),
-        groups: this.parseVersionJson(row.groupsJson, []),
-      })
+      this.viewVersion(null)
+      this.versionList = []
+      const id = this.versionReadId
+      const response = await listVersions(this.form.id)
+      if (id === this.versionReadId) this.versionList = response?.data || []
     },
     async compareWithNext(row, index) {
-      const right = this.versionList[index + 1]
-      if (!this.form.id || !right) return
-      const res = await compareVersions(
-        this.form.id,
-        row.version,
-        right.version
-      )
-      this.versionCompare = (res && res.data) || null
-      this.versionPreview = ''
+      const previous = this.versionList[index + 1]
+      if (this.form.id && row && previous) await this.compareHistoricalVersions(() => compareVersions(this.form.id, previous.version, row.version))
     },
     async rollbackExperimentVersion(row) {
       if (!this.form.id || !row) return
@@ -1650,22 +1622,6 @@ export default {
       const response = await rollbackVersion(this.form.id, row.version, mode)
       this.versionVisible = false
       await completeResourceChange(this, response, () => this.loadDetail())
-    },
-    prettyVersionJson(value) {
-      if (!value) return ''
-      try {
-        return JSON.stringify(value, null, 2)
-      } catch (e) {
-        return String(value)
-      }
-    },
-    parseVersionJson(text, fallback) {
-      if (!text) return fallback
-      try {
-        return JSON.parse(text)
-      } catch (e) {
-        return fallback
-      }
     },
     async loadLogs() {
       if (!this.form.id) {

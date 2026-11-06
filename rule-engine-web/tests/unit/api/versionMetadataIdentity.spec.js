@@ -1,11 +1,27 @@
 vi.unmock('@/api/governance')
 vi.unmock('@/api/transfer')
+vi.unmock('@/api/experiment')
+vi.unmock('@/api/definition')
+vi.unmock('@/api/model')
 import request from '@/api/request'
 import * as governance from '@/api/governance'
 import * as transfer from '@/api/transfer'
+import * as definition from '@/api/definition'
+import * as experiment from '@/api/experiment'
+import * as model from '@/api/model'
 import { parseMetadataResponse } from '@/utils/metadataResponse'
 
 beforeEach(() => vi.clearAllMocks())
+
+test.each([definition, experiment, model])('历史对比保留左右记录的大整数 ID', async api => {
+  request.mockImplementationOnce(async config => {
+    const raw = '{"data":{"left":{"id":9007199254740992},"right":{"id":9007199254740993}}}'
+    return (config.transformResponse || [JSON.parse]).reduce((value, transform) => transform(value), raw)
+  })
+  const { data } = await api.compareVersions('7', 1, 2)
+  expect(data.left.id).toBe('9007199254740992')
+  expect(data.right.id).toBe('9007199254740993')
+})
 
 test('迁移 ID 映射字典保持精确，不转换业务数值', () => {
   const result = parseMetadataResponse('{"resourceIdMapping":{"RULE:7":9007199254740993},"fieldIdMapping":{"DATA_OBJECT:9":{"1":9007199254740995}},"amount":123.45}')

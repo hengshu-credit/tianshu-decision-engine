@@ -19,15 +19,7 @@
 <script>
 import MonacoDiffEditor from '@/components/rule/versionDiff/MonacoDiffEditor.vue'
 
-function prettyJson(value) {
-  if (value === null || value === undefined || value === '') return '{}'
-  if (typeof value !== 'string') return JSON.stringify(value, null, 2)
-  try {
-    return JSON.stringify(JSON.parse(value), null, 2)
-  } catch (error) {
-    return value
-  }
-}
+import { formatSnapshotJson } from '@/utils/versionSnapshot'
 
 export default {
   name: 'JsonVersionDiff',
@@ -42,10 +34,10 @@ export default {
   },
   computed: {
     originalText() {
-      return prettyJson(this.original)
+      return formatSnapshotJson(this.original)
     },
     modifiedText() {
-      return prettyJson(this.modified)
+      return formatSnapshotJson(this.modified)
     },
     changed() {
       return this.originalText !== this.modifiedText
@@ -61,7 +53,7 @@ export default {
   align-items: center;
   gap: 12px;
   margin-bottom: 10px;
-  color: #334155;
+  color: var(--tianshu-text-secondary);
   font-size: 13px;
 }
 .json-version-diff__head strong:last-child {

@@ -2,6 +2,14 @@ import { shallowMount } from '@test-utils'
 import JsonVersionDiff from '@/components/common/JsonVersionDiff.vue'
 
 describe('JsonVersionDiff', () => {
+  test('原始快照对比保留相邻长整型标识的每一位', () => {
+    const wrapper = shallowMount(JsonVersionDiff, { props: {
+      original: '{"id":9007199254740992}', modified: '{"id":9007199254740993}',
+    } })
+    expect(wrapper.vm.originalText).toContain('9007199254740992')
+    expect(wrapper.vm.modifiedText).toContain('9007199254740993')
+    expect(wrapper.vm.changed).toBe(true)
+  })
   test('格式化左右版本并把具体内容交给差异编辑器', () => {
     const wrapper = shallowMount(JsonVersionDiff, {
       props: {

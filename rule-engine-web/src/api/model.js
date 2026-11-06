@@ -203,11 +203,11 @@ export function listVersions(modelId) {
 }
 
 export function getVersion(modelId, version) {
-  return request({ url: `/rule/model/version/${modelId}/${version}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/model/version/${modelId}/${version}`, method: 'get' })
 }
 
 export function compareVersions(modelId, leftVersion, rightVersion) {
-  return request({ url: `/rule/model/versionCompare/${modelId}`, method: 'get', params: { leftVersion, rightVersion } })
+  return request({ ...metadataResponse, url: `/rule/model/versionCompare/${modelId}`, method: 'get', params: { leftVersion, rightVersion } })
 }
 
 export function rollbackVersion(modelId, version, restoreMode = 'NEW') {

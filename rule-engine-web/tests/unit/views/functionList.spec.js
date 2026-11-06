@@ -401,6 +401,21 @@ describe('FunctionList — 函数操作', () => {
     expect(wrapper.vm.$message.error).not.toHaveBeenCalled()
   })
 
+  test('快速切换为单版本预览后不被迟到的对比结果覆盖', async () => {
+    let finish
+    functionApi.compareVersions.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const old = { version: 1, functionJson: '{"funcName":"旧函数"}' }
+    const current = { version: 2, functionJson: '{"funcName":"现行函数"}' }
+    functionApi.listVersions.mockResolvedValueOnce({ data: [current, old] })
+    await wrapper.vm.openVersionDialog({ id: 1 })
+    const comparing = wrapper.vm.compareSelectedVersions()
+    wrapper.vm.viewVersion(old)
+    finish({ data: { left: old, right: current } })
+    await comparing
+    expect(wrapper.vm.versionCompare).toBeNull()
+    expect(wrapper.vm.versionPreview).toEqual(old)
+  })
+
   test('函数版本可以任意选择左右版本并显示具体内容差异', async () => {
     functionApi.listVersions.mockResolvedValueOnce({ data: [{ version: 2, functionJson: '{"a":2}' }, { version: 1, functionJson: '{"a":1}' }] })
     functionApi.compareVersions.mockResolvedValueOnce({ data: {

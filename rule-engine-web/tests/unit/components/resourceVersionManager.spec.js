@@ -9,7 +9,7 @@ const workspace = {
   history: [{ id: '1', versionNo: 1, revisionNo: 1, snapshotJson: '{"defaultValue":"old"}' }, { id: '2', versionNo: 2, revisionNo: 2, snapshotJson: '{"defaultValue":"latest"}' }, { id: '3', versionNo: 1, revisionNo: 3, snapshotJson: '{"defaultValue":"fixed"}' }],
   drafts: [],
 }
-const mount = () => shallowMount(ResourceVersionManager, { props: { resourceType: 'VARIABLE', resourceId: '7' } })
+const mount = () => shallowMount(ResourceVersionManager, { props: { resourceType: 'VARIABLE', resourceId: '7' }, global: { stubs: { VersionSnapshotPanel: false } } })
 beforeEach(() => {
   vi.spyOn(versions, 'getResourceVersions').mockResolvedValue({ data: structuredClone(workspace) })
   vi.spyOn(versions, 'getResourceVersionEvents').mockResolvedValue({ data: [] })
@@ -22,12 +22,13 @@ test('业务对比使用准确修订，交换左右后快照同步且原始 JSON
   let preview = view.findComponent({ name: 'ResourceVersionPreview' })
   expect(preview.props()).toMatchObject({ comparing: true, original: '{"defaultValue":"old"}', snapshot: '{"defaultValue":"latest"}', originalLabel: 'v1 · 修订 1', modifiedLabel: 'v2 · 修订 2' })
   expect(view.findComponent({ name: 'JsonVersionDiff' }).exists()).toBe(false)
-  await view.setData({ rawPanels: ['raw'] })
+  view.findComponent({ name: 'ElCollapse' }).vm.$emit('update:modelValue', ['raw'])
+  await view.vm.$nextTick()
   expect(view.findComponent({ name: 'JsonVersionDiff' }).exists()).toBe(true)
   view.vm.swapComparison(); await view.vm.$nextTick()
   preview = view.findComponent({ name: 'ResourceVersionPreview' })
   expect(preview.props()).toMatchObject({ original: '{"defaultValue":"latest"}', snapshot: '{"defaultValue":"old"}' })
-  expect(view.vm.rawPanels).toEqual([])
+  expect(view.findComponent({ name: 'JsonVersionDiff' }).exists()).toBe(false)
   await view.vm.open(); expect(view.vm.comparison).toBe(''); expect(view.vm.tab).toBe('preview')
   view.unmount()
 })

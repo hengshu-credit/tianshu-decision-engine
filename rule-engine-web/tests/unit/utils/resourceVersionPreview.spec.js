@@ -1,6 +1,16 @@
 import { buildResourcePreview, pairPreviewSections } from '@/utils/resourceVersionPreview'
 
 describe('版本业务预览', () => {
+  test('仅开放接口响应映射变化时也能从规则快照识别业务差异', () => {
+    const preview = targetField => buildResourcePreview({
+      modelType: 'TABLE', content: { modelJson: '{"rules":[]}', openApiConfigJson: JSON.stringify({ responseMappings: [{ targetField }] }) },
+    }, 'RULE')
+    const rows = pairPreviewSections(preview('old_score').sections, preview('new_score').sections)
+    expect(rows.filter(row => row.status !== 'same').map(row => row.key)).toEqual(['openApiConfigJson'])
+    const mapping = rows.find(row => row.key === 'openApiConfigJson').right.nodes[0].children[0]
+    expect(mapping.title).toBe('响应字段映射')
+    expect(mapping.children[0].children[0].text).toBe('new_score')
+  })
   test('嵌套来源与枚举可读，默认值保留原文，零值和 false 不丢失', () => {
     const result = buildResourcePreview(JSON.stringify({ varLabel: '风险分', varSource: 'DB', defaultValue: '{"原文":0}', recordResult: false, sourceConfig: '{"sql":"select score from risk","datasourceId":9223372036854775806}', options: [{ value: 0, label: '低风险' }] }), 'VARIABLE')
     const text = JSON.stringify(result)

@@ -292,7 +292,7 @@ describe('统一审批详情', () => {
 
   test('规则审批将评分卡按业务配置并排渲染并保留技术差异', async() => {
     const wrapper = shallowMount(ApprovalDetail, {
-      global: { directives: { permission: {} } }
+      global: { directives: { permission: {} }, stubs: { VersionSnapshotPanel: false } }
     })
     await flushPromises()
     const oldModel = {
@@ -329,6 +329,11 @@ describe('统一审批详情', () => {
     }
     await wrapper.vm.$nextTick()
 
+    expect(wrapper.findComponent({ name: 'ResourceVersionPreview' }).props('comparing')).toBe(true)
+    expect(wrapper.findComponent({ name: 'JsonVersionDiff' }).exists()).toBe(false)
+    const controls = wrapper.findComponent({ name: 'VersionSnapshotPanel' }).findComponent({ name: 'ElCollapse' })
+    controls.vm.$emit('update:modelValue', ['detail', 'raw'])
+    await wrapper.vm.$nextTick()
     const businessDiff = wrapper.findComponent({ name: 'RuleVersionDiff' })
     expect(businessDiff.exists()).toBe(true)
     expect(businessDiff.props('modelType')).toBe('SCORE')
@@ -340,11 +345,14 @@ describe('统一审批详情', () => {
 
   test('配置差异不重复渲染左右版本标题条', async() => {
     const wrapper = shallowMount(ApprovalDetail, {
-      global: { directives: { permission: {} } }
+      global: { directives: { permission: {} }, stubs: { VersionSnapshotPanel: false } }
     })
     await flushPromises()
 
     expect(wrapper.find('.diff-columns-head').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'JsonVersionDiff' }).exists()).toBe(false)
+    wrapper.findComponent({ name: 'VersionSnapshotPanel' }).findComponent({ name: 'ElCollapse' }).vm.$emit('update:modelValue', ['raw'])
+    await wrapper.vm.$nextTick()
     expect(wrapper.findComponent({ name: 'JsonVersionDiff' }).exists()).toBe(true)
   })
 

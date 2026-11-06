@@ -2,6 +2,50 @@ const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createDocsApiData } = require('./support/docsFixtures.cjs')
 
+for (const [type, route, api, makeVersion] of [
+  ['RULE', 'rule', 'definition', version => ({ modelJson: JSON.stringify({ rules: [{ ruleName: '准入门槛 ' + version, actions: [] }] }) })],
+  ['MODEL', 'model', 'model', version => ({ modelFileName: '授信模型-' + version + '.pmml', modelConfig: '{"threshold":60}' })],
+  ['EXPERIMENT', 'experiment', 'experiment', version => ({ experimentJson: '{"experimentName":"准入实验"}', groupsJson: JSON.stringify([{ groupName: '实验分组 ' + version, trafficRatio: version * 10 }]) })],
+  ['FUNCTION', 'function', 'function', version => ({ functionJson: JSON.stringify({ funcName: '授信计算 ' + version, description: '审核通过后执行' }) })],
+]) {
+  test(`${type} 可从列表版本入口查看早期版本并核对左右快照`, async ({ page }) => {
+    const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+    const data = createDocsApiData()
+    const row = data.get('/api/rule/' + api + '/list').records[0]
+    if (type === 'RULE') row.modelType = 'TABLE'
+    data.set(`/api/rule/resource-versions/${type}/${row.id}`, { versions: [], history: [], drafts: [] })
+    data.set(`/api/rule/resource-versions/${type}/${row.id}/events`, [])
+    const history = [2, 1].map(version => ({ version, ...makeVersion(version), changeLog: '修订说明 ' + version }))
+    data.set(`/api/rule/${api}/versions/${row.id}`, history)
+    data.set(`/api/rule/${api}/versionCompare/${row.id}`, { left: history[1], right: history[0] })
+    const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data })
+    await page.goto(`${origin}/#/${route}`)
+    await page.getByRole('button', { name: '版本', exact: true }).first().click()
+    let dialog = page.getByRole('dialog', { name: '版本管理', exact: true })
+    if (type === 'FUNCTION') {
+      await dialog.getByRole('button', { name: '早期历史快照' }).click()
+      dialog = page.getByRole('dialog', { name: '函数版本管理' })
+      await dialog.getByRole('button', { name: '查看', exact: true }).first().click()
+      await expect(dialog.locator('.version-preview-summary')).toContainText('授信计算 2')
+      await dialog.getByRole('button', { name: '对比', exact: true }).first().click()
+    } else {
+      await dialog.getByRole('tab', { name: '早期历史快照' }).click()
+      await expect(dialog.locator('.historical-browser .version-preview-summary')).toContainText('修订说明 2')
+      await dialog.locator('.historical-selectors .el-select').last().click()
+      await page.getByRole('option', { name: 'v1', exact: true }).click()
+    }
+    const preview = dialog.locator('.version-preview-summary:visible')
+    await expect(preview.locator('.business-preview-head > div').first()).toContainText('修订说明 1')
+    await expect(preview.locator('.business-preview-head > div').last()).toContainText('修订说明 2')
+    const value = { RULE: '准入门槛 2', MODEL: '授信模型-2.pmml', EXPERIMENT: '实验分组 2', FUNCTION: '授信计算 2' }[type]
+    await expect(preview).toContainText(value)
+    await expect(dialog.locator('.json-version-diff')).toHaveCount(0)
+    await dialog.getByRole('button', { name: '查看原始 JSON（完整配置）' }).click()
+    await expect(dialog.locator('.json-version-diff:visible')).toBeVisible()
+    harness.assertClean()
+  })
+}
+
 async function setVersionTheme(page, colorScheme) {
   await page.addInitScript(value => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify(value)), {
     schemaVersion: 3, colorScheme, accentMode: 'PRESET', accentPreset: 'LIQUID_PURPLE',
@@ -75,6 +119,12 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
     await expect(preview).toContainText('个人信贷准入')
     await expect(preview).toContainText('申请年龄')
     await expect(preview).toContainText('允许申请')
+    const rulesSection = preview.locator('[data-section="rule:rules"]')
+    await rulesSection.locator('.section-toggle').click()
+    await expect(rulesSection.locator('.business-preview-card')).toHaveCount(0)
+    await preview.locator('.preview-jump').click()
+    await page.getByRole('option', { name: '规则', exact: true }).click()
+    await expect(rulesSection.locator('.business-preview-card')).toBeVisible()
     await expect(drawer.locator('.version-preview')).toHaveCount(0)
     await drawer.locator('.version-comparison-toolbar .el-select').click()
     await page.getByRole('option', { name: 'v1 · 修订 1', exact: true }).click()

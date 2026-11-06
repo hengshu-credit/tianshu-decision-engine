@@ -252,7 +252,7 @@ export function createDraftFromSource(definitionId, data) {
 }
 
 export function compareVersions(definitionId, leftVersion, rightVersion) {
-  return request({ url: `/rule/definition/versionCompare/${definitionId}`, method: 'get', params: { leftVersion, rightVersion } })
+  return request({ ...metadataResponse, url: `/rule/definition/versionCompare/${definitionId}`, method: 'get', params: { leftVersion, rightVersion } })
 }
 
 export function rollbackVersion(definitionId, version) {
