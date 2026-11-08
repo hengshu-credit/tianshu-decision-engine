@@ -16,7 +16,7 @@ Docker 相关命令的单一入口是 [`docker/README.md`](../docker/README.md)�
 
 ```bash
 # 本仓库服务端 Compose：沿用原项目名和配置，只执行维护命令
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T server java -jar /app/app.jar --console-admin-recovery-code
+docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T server java -jar /app/app.jar --console-admin-recovery-code
 ```
 
 维护命令使用服务端原数据库连接，不启动第二个 Web 服务。它先确认并合并历史重复超管，再签发账户恢复令牌和记录安全审计，不修改业务内容。输出的随机恢复码30分钟有效、只能使用一次，再次签发会撤销旧码。到登录页的“管理员应急恢复”中填写恢复码、新用户名和新密码，无需原用户名；可以使用已合并超管原来的登录名，恢复仍更新同一个主账号，不新增账号。
@@ -78,7 +78,7 @@ Compose 还会使用 `MYSQL_PUBLIC_PORT`、`REDIS_PUBLIC_PORT`、`CONSOLE_PUBLIC
 
 ### 1.4 Compose 部署方案
 
-服务操作统一使用 `docker-compose`。选择一套拓扑，已有环境沿用原项目名和网络，不能直接改成另一套方案。
+服务操作统一使用 `docker compose`。选择一套拓扑，已有环境沿用原项目名和网络，不能直接改成另一套方案。
 
 | 方案 | 服务 | 数据库/Redis |
 |---|---|---|
@@ -116,12 +116,12 @@ Compose 还会使用 `MYSQL_PUBLIC_PORT`、`REDIS_PUBLIC_PORT`、`CONSOLE_PUBLIC
 cp .env.server.example .env.server
 cp .env.client.example .env.client
 # 编辑 .env.server，替换全部 replace-with-* 占位值
-docker-compose --env-file .env.client --env-file .env.server -f docker/docker-compose.mysql.yml up -d
-docker-compose --env-file .env.client --env-file .env.server -f docker/docker-compose.redis.yml up -d
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.mysql.yml up -d
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.redis.yml up -d
 # 选择外部数据库应用模式时单独执行：
-# docker-compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml up -d
+# docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.yml up -d
 # 选择完整单机模式时改为一条命令：
-# docker-compose --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml up -d
+# docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml up -d
 ```
 
 PowerShell 可使用 `Copy-Item .env.server.example .env.server
@@ -132,8 +132,8 @@ Copy-Item .env.client.example .env.client`。Compose 不再提供 MySQL/Redis �
 如果 MySQL 和 Redis 已由 Docker Compose 启动，不需要再次创建容器。确认端口和健康状态：
 
 ```powershell
-docker-compose --env-file .env.client --env-file .env.server -f docker/docker-compose.mysql.yml ps
-docker-compose --env-file .env.client --env-file .env.server -f docker/docker-compose.redis.yml ps
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.mysql.yml ps
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.redis.yml ps
 ```
 
 服务端在宿主机上用 Maven 启动时，将 `.env.server` 设置为：
@@ -262,17 +262,17 @@ node scripts/package-deployment.mjs --with-tests
 
 输出 `output/tianshu-deployment-时间戳.zip` 和 `.zip.sha256`；包内包含 JAR、前端 dist、Compose、对应源码、许可证与逐文件校验清单。`--with-tests` 运行后端测试、前端 lint 和单元测试。服务器不需要 Maven 或 Node.js，也不重新编译，但需要可拉取运行镜像的 Docker 环境。
 
-完整上传、校验、备份、停机替换、配置合并、启动与回退步骤见 [服务器部署与升级](server-upload.md)。已有配置不会被新包覆盖；`RULE_AUTH_MASTER_KEY`、数据卷、项目名及端口继续沿用原值。
+MySQL、Redis、Kafka 共用一套长期环境；普通更新只替换 JAR 和前端 dist，不覆盖 env、Compose 或基础设施。迁移 SQL 独立交付在发布包 `migrations/`，在停止旧应用并完成备份后、新版启动前按适用范围执行。完整上传、校验、更新、启动与回退步骤见 [服务器部署与升级](server-upload.md)。已有配置不会被新包覆盖；`RULE_AUTH_MASTER_KEY`、数据卷、项目名及端口继续沿用原值。
 
 ## 三、Docker Compose 启动
 
 以下以服务端/客户端分离为例，先编辑 `.env.server` 与 `.env.client`，外部 MySQL/Redis 必须从容器可达：
 
 ```bash
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml config --quiet
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml up -d --scale server=2 --wait --wait-timeout 300
-docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml config --quiet
-docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml up -d --wait --wait-timeout 300
+docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml config --quiet
+docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml up -d --scale server=2 --wait --wait-timeout 300
+docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml config --quiet
+docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml up -d --wait --wait-timeout 300
 ```
 
 直接调用 Server API 的业务可以跳过 SDK。完整单机、独立 Kafka 及外接数据库方案见 [Docker 部署](../docker/README.md)，不要同时启动不同方案占用同一端口。
@@ -281,11 +281,11 @@ docker-compose --project-name tianshu-client --env-file .env.client -f docker/do
 
 web 从 `RUNTIME_DIR/dist` 挂载前端，同时在 `FRONTEND_PORT` 提供控制台、在 `SERVER_PUBLIC_PORT` 提供集群 API 入口。两个 server 仅在容器网络内监听 8080，由 web 的 Docker DNS upstream 动态发现和均衡请求。
 
-NPM 沿用现有服务器 IP 和控制台宿主机端口，管理域名、HTTPS 和证书；同域 `/api/` 已有代理。不要修改宿主机 Nginx、UFW、Fail2ban 或现有安全组。Monaco 资源与压缩/缓存规则已包含在 `docker/nginx/default.conf` 中，升级时与 `dist` 一同部署。
+NPM 沿用现有服务器 IP 和控制台宿主机端口，管理域名、HTTPS 和证书；同域 `/api/` 已有代理。不要修改宿主机 Nginx、UFW、Fail2ban 或现有安全组。Monaco 资源与压缩/缓存规则已包含在 `docker/nginx/default.conf` 中，首次部署时安装，普通更新保留；版本确有兼容变更时单独说明。
 
 ```bash
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T web nginx -t
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml ps -a
+docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T web nginx -t
+docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml ps -a
 ```
 
 ## 五、多节点与就绪检查
@@ -293,8 +293,8 @@ docker-compose --project-name tianshu-server --env-file .env.server -f docker/do
 控制台使用 Spring Session Redis 共享会话。所有 server 必须连接相同 MySQL、Redis，使用相同 `RULE_AUTH_MASTER_KEY` 和 `SESSION_REDIS_NAMESPACE`；web 当前采用 `least_conn`，无需节点本地会话粘性。规则推送、鉴权与跨节点执行保护同样依赖共享 Redis。
 
 ```bash
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T server wget -qO- http://127.0.0.1:8080/actuator/health/readiness
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml logs --tail 100 server web
+docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T server wget -qO- http://127.0.0.1:8080/actuator/health/readiness
+docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml logs --tail 100 server web
 ```
 
 `ps -a` 应显示两个 server 均 healthy，单次 exec 只抽查一个副本。readiness 检查 MySQL、Redis、模型与规则预热；失败时先查看日志并恢复依赖，不要绕过检查或将节点接入流量。

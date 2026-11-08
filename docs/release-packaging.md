@@ -37,6 +37,7 @@ node scripts/package-deployment.mjs --with-tests
 - `docker/runtime/server.jar`、`runtime.jar`（CPU ONNX）及 `dist/`。
 - 应用 Compose、Nginx/Kafka 配置和两份 `.env.*.example` 模板。
 - `README-部署.md`、完整文档、许可证、`BUILD-INFO.txt`。
+- 独立的 `migrations/`：从后端 SQL 迁移目录原样复制脚本及执行说明，纳入逐文件校验；已有库按适用范围在停止旧应用后、新版启动前单独执行，不自动批量运行历史 SQL。
 - 与构建一致的 `source/` 和逐文件 `SHA256SUMS.txt`。
 
 历史包保留，不自动删除。默认不包含本机 `.env.server` / `.env.client`、数据库数据或日志。构建前冻结源码清单，再使用同一份快照编译和交付。解压后的 `source/` 含 `.release-source-files.json`，无需初始化 Git 即可使用相同入口重建；新增源码文件时需更新该清单，或将源码纳入 Git 管理。
@@ -55,4 +56,4 @@ Windows 用 `$env:PACKAGE_CONFIG_DIR = 'E:\private\production'`；macOS/Linux �
 
 ZIP 校验：Windows 用 `Get-FileHash -Algorithm SHA256 包文件名.zip`；macOS 用 `shasum -a 256 -c 包文件名.zip.sha256`；Linux 用 `sha256sum -c 包文件名.zip.sha256`。解压后 Linux 运行 `sha256sum -c SHA256SUMS.txt` 验证包内所有文件。
 
-服务器安装、升级、备份、启动、状态和回退按 [部署说明](server-upload.md) 执行，服务操作统一使用 `docker-compose`。
+服务器安装、升级、备份、启动、状态和回退按 [部署说明](server-upload.md) 执行，服务操作统一使用 `docker compose`。MySQL、Redis、Kafka 共用长期保留的一套环境；普通更新只替换 JAR 和前端 `dist/`，保留原 env、Compose、Nginx 配置及数据卷，不重新安装基础设施。

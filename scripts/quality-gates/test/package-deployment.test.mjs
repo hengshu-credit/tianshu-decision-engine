@@ -1,10 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { composeInvocation, releaseSourceFiles, testDescription } from '../../package-deployment.mjs'
+import { composeInvocation, releaseSourceFiles, testDescription, copyDeploymentMigrations } from '../../package-deployment.mjs'
 
 for (const platform of ['win32', 'darwin', 'linux']) test(`${platform} 使用 docker-compose 并把含空格路径作为独立参数传递`, () => {
   const result = composeInvocation('work space/docker/build.yml', 'work space/docker/build.env', ['run', '--rm', 'builder'], platform)
@@ -44,4 +44,22 @@ test('复用 Java 制品时构建记录不能声称执行了后端测试', () =>
   assert.match(testDescription(true, true), /未运行后端测试/)
   assert.match(testDescription(true, false), /^后端测试/)
   assert.match(testDescription(false, false), /跳过测试/)
+})
+
+test('部署包独立交付迁移 SQL 和执行说明，内容与构建源码一致且不混入初始化数据', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'tianshu migrations '))
+  try {
+    const source = path.join(directory, 'source')
+    const sql = path.join(source, 'rule-engine-server/src/main/resources/sql')
+    mkdirSync(path.join(sql, 'migrations'), { recursive: true })
+    writeFileSync(path.join(sql, 'schema.sql'), 'CREATE TABLE initial_only (id INT);')
+    writeFileSync(path.join(sql, 'initial-data.sql'), 'INSERT INTO initial_only VALUES (1);')
+    const migration = '-- 中文说明\r\nALTER TABLE existing ADD value INT;\r\n'
+    writeFileSync(path.join(sql, 'migrations/2026-11-08-example.sql'), migration)
+    writeFileSync(path.join(sql, 'migrations/README.md'), '备份并停止应用后执行适用迁移，再启动新版。')
+    copyDeploymentMigrations(source, directory)
+    assert.deepEqual(readdirSync(path.join(directory, 'migrations')).sort(), ['2026-11-08-example.sql', 'README.md'])
+    assert.equal(readFileSync(path.join(directory, 'migrations/2026-11-08-example.sql'), 'utf8'), migration)
+    assert.equal(readFileSync(path.join(directory, 'migrations/README.md'), 'utf8'), '备份并停止应用后执行适用迁移，再启动新版。')
+  } finally { rmSync(directory, { recursive: true, force: true }) }
 })

@@ -425,6 +425,8 @@ SDK 本地执行日志默认通过 HTTP 上报；需要 Kafka 时显式启用，
 
 需要在 Docker 内一次生成后端、前端和可上传部署 ZIP 时执行 `node scripts/package-deployment.mjs`。公网部署使用 Nginx Proxy Manager 提供 HTTPS、证书和反向代理；Compose 不修改 Ubuntu 的防火墙和既有端口策略，MySQL、Redis、Kafka 按 `.env.server` 与现有安全组对外提供调试访问。
 
+MySQL、Redis、Kafka 共用长期保留的一套环境。日常更新只替换 `docker/runtime/server.jar`、可选 SDK 的 `runtime.jar` 和前端 `dist/`，不删除安装目录、不重复复制 env、不覆盖 Compose/Nginx 或重建基础设施。数据库迁移独立交付在发布包 `migrations/`，按适用范围在停止旧应用并完成备份后、新版启动前执行；完整流程见 [应用更新说明](docs/server-upload.md)。
+
 外部公司或业务系统直接调用 Server API：`POST /api/rule/sync/execute/{ruleCode}`；启用并发布开放接口后可调用 `POST /api/rule/openapi/{ruleCode}`。接口文档从项目「API」按钮下载，不需要部署转发服务或连接 Redis。
 
 “业务端 → Java 服务 → 决策引擎”的完整配置、全局/项目规则访问、多项目客户端及日志追踪开关见 [Java 业务服务接入指南](https://hengshu-credit.github.io/tianshu-decision-engine/java-service-integration.html)。项目导出的 API 文档内也提供 Java 服务接入示例。

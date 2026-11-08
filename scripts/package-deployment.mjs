@@ -38,6 +38,11 @@ export function testDescription(withTests, skipJavaBuild) {
   return skipJavaBuild ? '前端 lint 和单元测试；复用 Java 产物，未运行后端测试' : '后端测试、前端 lint 和单元测试'
 }
 
+export function copyDeploymentMigrations(sourceRoot, stageRoot) {
+  cpSync(path.join(sourceRoot, 'rule-engine-server/src/main/resources/sql/migrations'),
+    path.join(stageRoot, 'migrations'), { recursive: true })
+}
+
 async function sha256(file) {
   const hash = createHash('sha256')
   for await (const chunk of createReadStream(file)) hash.update(chunk)
@@ -90,6 +95,7 @@ async function main() {
   for (const name of ['.env.server.example', '.env.client.example', 'README.md', 'LICENSE', 'NOTICE', 'THIRD_PARTY_LICENSES.md', 'docker', 'licenses', 'docs']) {
     cpSync(path.join(sourceRoot, name), path.join(stageRoot, name), { recursive: true })
   }
+  copyDeploymentMigrations(sourceRoot, stageRoot)
   writeFileSync(path.join(stageRoot, 'README-部署.md'), readFileSync(path.join(sourceRoot, 'docs', 'server-upload.md'), 'utf8')
     .replace('(release-packaging.md)', '(docs/release-packaging.md)'))
   if (configRoot) for (const name of ['.env.server', '.env.client']) cpSync(path.join(configRoot, name), path.join(stageRoot, name))
@@ -126,7 +132,9 @@ async function main() {
     `Java 产物：${skipJavaBuild ? '复用已有 target，未重新构建' : '本次 Docker Maven CPU 构建'}`,
     `构建平台：${buildPlatform}`, `构建镜像：${mavenImage} / ${nodeImage}`,
     `配置：${configRoot ? '附带指定配置；升级保留服务器现有配置' : '仅含示例模板，不含本机凭据'}`,
-    '部署入口：README-部署.md；HTTPS 继续由现有 Nginx Proxy Manager 管理。'
+    '部署入口：README-部署.md；HTTPS 继续由现有 Nginx Proxy Manager 管理。',
+    '日常更新：仅替换 docker/runtime 的 JAR 和 dist；保留原 env、Compose、MySQL、Redis、Kafka 及数据。',
+    '数据库迁移：独立目录 migrations/；按 README.md 选择尚未执行的适用脚本，在停止应用后、新版启动前执行。'
   ].join('\n') + '\n')
   const sums = []
   for (const file of listFiles(stageRoot)) sums.push(`${await sha256(file)}  ${path.relative(stageRoot, file).split(path.sep).join('/')}`)

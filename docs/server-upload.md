@@ -1,16 +1,31 @@
-# 上传服务器部署与升级（2026-10-28）
+# 上传服务器部署与应用更新
 
-本流程用于 **server 2 副本 + web 1 个 + 可选 SDK runtime 1 个 + 独立 Kafka 1 个**，复用服务器已有 MySQL、Redis 和 Nginx Proxy Manager。所有服务操作直接使用完整的 `docker-compose` 命令。
+部署分成长期运行的共享环境和应用制品：**MySQL、Redis、Kafka 共用一套，日常更新只替换 `server.jar`、可选 SDK 的 `runtime.jar` 和前端 `dist/`。** 原 `.env.server`、`.env.client`、Compose、Nginx 配置、数据库数据、Kafka 卷和恢复 journal 保留，不删除整个安装目录，不需要重新复制 env。
 
-要求 `docker-compose` 为现代 Compose v2+（含 v5），不支持旧 Python v1。构建机器的三端入口见 [跨平台发布构建](release-packaging.md)；本页面向 Linux 服务器。
+服务操作统一使用 `docker compose`。本页以 Linux 固定目录 `/root/tianshu-decision-engine`、服务端项目 `tianshu-server`、客户端项目 `tianshu-client` 为例；**已有部署沿用实际项目名、目录、网络、端口、数据卷和密钥**。Kafka 原属 `tianshu-kafka` 就继续保留，不能为统一名称重建。构建入口见 [跨平台发布构建](release-packaging.md)。
 
-部署包已包含 Docker 构建的 CPU 版 `server.jar`、`runtime.jar`、前端 `dist`、Compose、文档、许可证及对应源码 `source/`。服务器无需安装 Maven、Node.js 或重新编译；包内不含 Docker 镜像，首次启动需要能够拉取配置中的镜像。源码中的配置模板不包含本次生产凭据；向服务使用者提供与当前版本对应的源码获取入口，详见 `THIRD_PARTY_LICENSES.md`。
+```text
+tianshu-decision-engine/
+├── .env.server                 # 服务端与共享基础设施的长期配置
+├── .env.client                 # SDK 长期配置，连接同一套 Redis/Kafka
+├── docker/
+│   ├── docker-compose.*.yml    # 已安装的部署定义，普通更新不覆盖
+│   ├── nginx/                  # 已安装的前端代理配置
+│   ├── rule-engine-mysql/      # 原 MySQL 配置、数据和日志
+│   ├── rule-engine-redis/      # 原 Redis 配置、数据和日志
+│   ├── rule-engine-kafka/      # 原 Kafka 启动配置，数据在原命名卷
+│   └── runtime/               # 日常只替换这里的应用制品
+│       ├── server.jar
+│       ├── runtime.jar
+│       └── dist/
+└── backups/                    # 更新前的应用制品与版本记录
+```
 
-以下沿用目录 `/root/tianshu-decision-engine`、服务端项目 `tianshu-server`、客户端项目 `tianshu-client`。**已有部署必须沿用实际目录、项目名、网络、端口、数据卷和密钥**；如果 Kafka 原来属于 `tianshu-kafka`，下列 Kafka 命令的项目名应继续使用 `tianshu-kafka`，不能直接切换。
+新 ZIP 仍携带完整部署材料、源码和许可证，便于首次安装与重建。已有环境只取其中的应用制品和适用迁移；保留完整 ZIP 作为该版本源码与许可证的交付记录。首次安装需能拉取运行镜像，服务器不需要 Maven、Node.js 或重新编译。
 
-## 1. 上传、校验并解压到暂存目录
+## 1. 上传并校验新包
 
-将 ZIP 和同名 `.zip.sha256` 上传到 `/root/`，保持原文件名。把下面的 `包文件名.zip` 改为本次实际名称：
+把 ZIP 和同名 `.zip.sha256` 上传到 `/root/`，修改实际包文件名。以下步骤在同一 Bash 会话执行；任一命令失败即停止。
 
 ```bash
 set -euo pipefail
@@ -21,139 +36,132 @@ RELEASE_DIR=$(mktemp -d /root/tianshu-release-XXXXXXXX)
 unzip -q "$PACKAGE_ZIP" -d "$RELEASE_DIR"
 cd "$RELEASE_DIR"
 sha256sum -c SHA256SUMS.txt
-docker-compose version
+docker compose version
 ```
 
-任一校验失败即停止。以下步骤在同一 Bash 会话执行，继续使用 `RELEASE_DIR`。先暂存再停机替换，避免直接覆盖运行中的 JAR。
+不要直接解压覆盖运行目录。新包中的 `migrations/README.md` 列出独立数据库迁移的适用范围、顺序和执行时机；没有尚未执行的适用迁移就跳过迁移步骤。
 
-## 2. 保留配置与备份
+## 2. 首次安装（仅执行一次）
 
-已有系统先由数据库运维完成可恢复备份。包含决策制品的 MySQL 备份必须保留二进制内容（`mysqldump --hex-blob`，配合 `--result-file` 或容器内原始管道），恢复到不同且不存在的库，按逐表行数及内容验收。应用文件备份不能代替数据库备份。
+已有部署跳过本节，直接进入第 3 节。全新安装将已校验包放进固定目录，配置两份 env；仅部署 server/web 时不需要启用 SDK。
 
 ```bash
 mkdir -p /root/tianshu-decision-engine
 cd /root/tianshu-decision-engine
-BACKUP_DIR=$(mktemp -d /root/tianshu-backup-XXXXXXXX)
-chmod 700 "$BACKUP_DIR"
-for item in .env.server .env.client docker; do
-  if [ -e "$item" ]; then
-    tar --exclude='docker/rule-engine-mysql/data' \
-        --exclude='docker/rule-engine-mysql/logs' \
-        --exclude='docker/rule-engine-redis/data' \
-        --exclude='docker/rule-engine-redis/logs' \
-        -cpf "$BACKUP_DIR/$(basename "$item").tar" "$item"
-  fi
+# 防止把首次安装步骤误用于已有环境
+test ! -e docker
+test ! -e .env.server
+test ! -e .env.client
+cp -a "$RELEASE_DIR/." ./
+for name in .env.server .env.client; do
+  if [ ! -f "$name" ]; then cp "$name.example" "$name"; fi
 done
+chmod 600 .env.server .env.client
+vi .env.server
+vi .env.client
+```
+
+`.env.server` 管理服务端与共享 MySQL/Redis/Kafka；`.env.client` 的 Redis 地址、密码及 database 必须指向同一实例，启用 Kafka 时连接同一 broker。跨机器可使用不同的可达地址，但必须对应同一环境。保留服务端加密主密钥与配对签名密钥；正式部署替换公开体验凭据。`RUNTIME_DIR=./runtime` 相对于 `docker/` 中的 Compose 文件解析。
+
+已有 MySQL、Redis、Kafka 直接连接，不再创建。只有需要本项目首次创建这三项共享基础设施时，才执行下面的组合命令；它复用现有三个文件，不引入另一套环境：
+
+```bash
+docker compose --project-name tianshu-server --env-file .env.server \
+  -f docker/docker-compose.mysql.yml -f docker/docker-compose.redis.yml -f docker/docker-compose.kafka.yml \
+  up -d --wait --wait-timeout 300 mysql redis kafka
+```
+
+配置应用可达的 MySQL/Redis 地址、Kafka 广播地址，以及容器可达的 `RUNTIME_RULE_SERVER_URL`（Server 根地址，不带 `/api`）。然后按第 5 节解析并启动应用。空库由 `schema.sql` 初始化，不运行面向已有库的迁移，不导入样例数据。
+
+## 3. 更新准备与停止应用
+
+日常更新继续使用原安装目录和原 Compose。先阅读迁移说明，确认包与当前部署配置兼容；若某个版本确实需要新增必填环境变量、Compose 或 Nginx 配置，发布说明必须单独列明，按差异升级一次，不能把整目录覆盖当成日常更新。
+
+下面以 `RUNTIME_DIR=./runtime` 或 `/root/tianshu-decision-engine/docker/runtime` 为例。使用自定义 `RUNTIME_DIR` 时，把 `APP_RUNTIME_DIR` 改成该配置当前实际挂载的绝对目录；不能复制到另一个未被挂载的位置。
+
+```bash
+APP_DIR=/root/tianshu-decision-engine
+cd "$APP_DIR"
+APP_RUNTIME_DIR="$APP_DIR/docker/runtime"
+test -f "$APP_RUNTIME_DIR/server.jar"
+test -f "$RELEASE_DIR/docker/runtime/server.jar"
+test -f "$RELEASE_DIR/docker/runtime/runtime.jar"
+test -f "$RELEASE_DIR/docker/runtime/dist/index.html"
+mkdir -p backups
+BACKUP_DIR=$(mktemp -d "$APP_DIR/backups/update-XXXXXXXX")
+chmod 700 "$BACKUP_DIR"
+# 先完整复制到相邻暂存目录，旧应用此时仍可运行
+NEXT_RUNTIME_DIR=$(mktemp -d "$(dirname "$APP_RUNTIME_DIR")/runtime-next-XXXXXXXX")
+chmod 755 "$NEXT_RUNTIME_DIR"
+cp -a "$RELEASE_DIR/docker/runtime/server.jar" "$RELEASE_DIR/docker/runtime/runtime.jar" \
+  "$RELEASE_DIR/docker/runtime/dist" "$NEXT_RUNTIME_DIR/"
+cp "$RELEASE_DIR/BUILD-INFO.txt" "$BACKUP_DIR/new-BUILD-INFO.txt"
 printf '本次应用备份目录：%s\n' "$BACKUP_DIR"
 ```
 
-如果原系统仍有 `runtime-http`，先将调用方迁移到 Server：`POST /api/rule/sync/execute/{ruleCode}` 或已发布的 `POST /api/rule/openapi/{ruleCode}`，改用项目调用凭据。旧 HTTP runtime 的入口令牌不能用作 Server 项目凭据。迁移验收后，在**覆盖旧 Compose 文件之前**停止并移除该旧服务：
+安排维护窗口，暂停业务流量，停止旧应用。部署在其他机器的 server/SDK 也必须协调停止，尤其不能让旧节点在迁移时继续写同一个数据库。未部署 SDK 时跳过客户端命令。
 
 ```bash
-# 仅旧 client Compose 的 config --services 确实包含 runtime-http 时执行
-docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml config --services
-docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml stop runtime-http
-docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml rm -f runtime-http
+docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml stop runtime-sdk
+docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml stop web server
 ```
 
-新部署或已无此服务时跳过以上三条。旧版使用其他 Compose 方案时，必须沿用原方案的文件和项目名，不能拿本例操作另一套环境。
+MySQL、Redis、Kafka 保持运行。由数据库运维完成可恢复备份；包含决策制品时使用 `mysqldump --hex-blob` 配合 `--result-file` 或容器内原始管道，不能经文本解码中转。备份应有恢复到不同且不存在的库、逐表行数及内容校验的验收记录。
 
-## 3. 停止应用并安装新版文件
+## 4. 按需迁移数据库，然后替换应用制品
 
-已有部署安排维护窗口，在原目录执行；首次安装跳过停止命令。若未部署 SDK，跳过客户端停止命令。
+**迁移执行点就在这里：旧应用停止且数据库备份完成后、新版应用启动前。** 查看 `$RELEASE_DIR/migrations/README.md`，按当前版本与运维记录逐条选择尚未执行的适用 SQL。没有适用迁移则直接替换制品；不要循环执行全部历史脚本，也不要用 `schema.sql` 或样例数据代替增量迁移。
+
+例如，从尚未完成账户记录隔离的旧库升级时，使用原 MySQL 容器执行独立 SQL：
 
 ```bash
-docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml stop runtime-sdk
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml stop web server
+docker compose --project-name tianshu-server --env-file .env.server \
+  -f docker/docker-compose.mysql.yml exec -T mysql sh -ec \
+  'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql --default-character-set=utf8mb4 --binary-mode=1 --host=127.0.0.1 --user="$MYSQL_USER" --database="$MYSQL_DATABASE"' \
+  < "$RELEASE_DIR/migrations/2026-11-04-account-record-isolation.sql"
 ```
 
-Kafka、MySQL、Redis 保持原状。执行以下文件安装操作：
+确认容器内目标库/账号与 server 一致且有 DDL 权限。外部 MySQL 由运维使用受保护的客户端配置执行同一 SQL。每条成功后记录文件名、SHA256、目标库和结果。禁止 `mysql --force`；失败时保持应用停止，检查已完成的 DDL，不继续启动新版。
+
+适用迁移全部成功后，替换应用目录；原目录作为备份保留，因此旧前端文件不会混进新版本：
 
 ```bash
-cd /root/tianshu-decision-engine
-# 移走旧制品，避免旧前端资源混入新版；本次包只包含应用配置及制品，不包含数据库数据。
-if [ -d docker/runtime ]; then
-  mv docker/runtime "$BACKUP_DIR/runtime"
+mv "$APP_RUNTIME_DIR" "$BACKUP_DIR/runtime"
+if ! mv "$NEXT_RUNTIME_DIR" "$APP_RUNTIME_DIR"; then
+  mv "$BACKUP_DIR/runtime" "$APP_RUNTIME_DIR"
+  exit 1
 fi
-cp -a "$RELEASE_DIR/docker" ./
-cp -a "$RELEASE_DIR/docs" "$RELEASE_DIR/licenses" "$RELEASE_DIR/source" ./
-cp -a "$RELEASE_DIR/BUILD-INFO.txt" "$RELEASE_DIR/SHA256SUMS.txt" \
-      "$RELEASE_DIR/README-部署.md" "$RELEASE_DIR/LICENSE" \
-      "$RELEASE_DIR/NOTICE" "$RELEASE_DIR/THIRD_PARTY_LICENSES.md" ./
-cp -a "$RELEASE_DIR/.env.server.example" "$RELEASE_DIR/.env.client.example" ./
-for name in .env.server .env.client; do
-  if [ ! -f "$name" ]; then
-    if [ -f "$RELEASE_DIR/$name" ]; then
-      cp "$RELEASE_DIR/$name" "$name"
-    else
-      cp "$RELEASE_DIR/$name.example" "$name"
-    fi
-  fi
-done
-chmod 600 .env.server .env.client
 ```
 
-安装不会覆盖已有 `.env.server`、`.env.client`。在暂存目录校验完整包；安装目录保留原配置，不能要求其 env 摘要与新包一致。对照 `.example` 补充所需参数，不要整份覆盖已有配置，也不要 `source` 环境文件。
+整个更新过程不复制或覆盖 env、Compose、Nginx、MySQL、Redis、Kafka 文件。`server-logs` / `runtime-sdk-logs` 卷中可能包含故障恢复数据，也必须保留。独立机器上的 SDK 只需按其原挂载路径备份并替换 `runtime.jar`，连接这套共享环境。
 
-检查两份配置：
+## 5. 启动应用并验收
 
-- `RUNTIME_DIR` 指向 `/root/tianshu-decision-engine/docker/runtime`，或使用相对 Compose 文件的 `./runtime`。
-- MySQL 使用原地址、库名、账号及密码；两端 Redis 指向同一实例、密码及 database。
-- 已有数据库必须保留原 `RULE_AUTH_MASTER_KEY`。全局 Ed25519 公私钥继续成对保留，SDK 入口令牌保持与调用端一致。`.example` 是公开的体验配置，新生产环境必须替换。
-- `RUNTIME_RULE_SERVER_URL` 使用客户端容器可达的 Server 根地址，不带 `/api`，不能使用指向客户端自身的 `127.0.0.1`。
-- 保留 `DEPLOY_PROJECT`、`ENGINE_NETWORK`、端口绑定。`--project-name` 不会覆盖显式 `ENGINE_NETWORK`；不要随意改名。
-- Kafka 保留原 `KAFKA_PASSWORD`、广播地址和卷；使用 Kafka 日志时还须同步两端 SASL 配置及真实项目主题绑定。跨项目 SDK 默认仍通过 HTTP 上报。
-- `SPRING_SQL_INIT_MODE=always`、`RULE_ENGINE_INITIAL_DATA_ENABLED=false`；正常启动幂等更新结构。生产不导入样例、不启用 `example-data`。
-
-## 4. 解析配置并分步启动
-
-先解析配置；这一步不代表远程密码和连通性已经验证：
+先解析原配置，再重建应用容器以重新挂载新版文件；**不能只执行 `restart`**。每条成功才执行下一条，未部署 SDK 时跳过客户端命令。副本数沿用 `.env.server` 的 `SERVER_REPLICAS`（默认 2）；原部署使用命令行覆盖副本数的，继续显式保留原值。
 
 ```bash
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml config --quiet
-docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml config --quiet
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.kafka.yml config --quiet
+docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml config --quiet
+docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml config --quiet
+docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml up -d --force-recreate --wait --wait-timeout 300 server web
+docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml up -d --force-recreate --wait --wait-timeout 300 runtime-sdk
+docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml ps -a
+docker compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml ps -a
+docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml logs --tail 100 server web
+docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T web nginx -t
 ```
 
-首次需要本包 Kafka 时先启动；已有 Kafka 未改配置可跳过，沿用当前实例。SDK 为可选服务，只直接调用 Server API 时可跳过客户端启动。
+所有 server 副本均应 healthy。打开控制台，验证登录、项目、规则详情、设计器、规则测试和执行日志，并由业务侧验收项目鉴权、SDK 同步及日志上报后恢复流量。本流程可能同时重启两个副本，不承诺零停机。不同 Compose 文件操作同一项目可能提示 orphan，不能加 `--remove-orphans` 或执行 `down -v`。
+
+Nginx Proxy Manager 继续管理 HTTPS、证书与原端口，不改宿主机 Nginx、UFW、Fail2ban 或安全组。管理员恢复仍通过原 server 执行下列维护命令，不更换主密钥、不清空数据：
 
 ```bash
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.kafka.yml up -d --wait --wait-timeout 300
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml up -d --force-recreate --scale server=2 --wait --wait-timeout 300
-docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml up -d --force-recreate --wait --wait-timeout 300
+docker compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T server java -jar /app/app.jar --console-admin-recovery-code
 ```
 
-每条成功才执行下一条。升级可能同时重启两个 server，不承诺零停机。不要同时运行 full/mysql/redis 方案；两个文件分别操作同一项目可能提示 orphan，不要加 `--remove-orphans`，也不要执行 `down -v`。
+## 6. 回退与旧部署兼容
 
-## 5. 状态、日志与浏览器验收
+启动失败先保留日志并核对依赖和迁移结果。确认数据库兼容旧版后，在维护窗口用第 3 节命令停止应用，把失败版 runtime 移到一个新的保留目录，再将 `$BACKUP_DIR/runtime` 恢复到原 `APP_RUNTIME_DIR`，执行第 5 节启动和验收。文件回退不会撤销 SQL；不兼容时使用验收过的备份恢复到新库，再安排应用回退。保留旧制品、完整发布包、迁移记录与数据库备份直到验收结束。
 
-```bash
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml ps -a
-docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml ps -a
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.kafka.yml ps -a
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml logs --tail 100 server web
-docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml logs --tail 100 runtime-sdk
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.kafka.yml logs --tail 100 kafka
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T web nginx -t
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T server wget -qO- http://127.0.0.1:8080/actuator/health/readiness
-docker-compose --project-name tianshu-client --env-file .env.client -f docker/docker-compose.client.yml exec -T runtime-sdk wget -qO- http://127.0.0.1:7071/actuator/health/readiness
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.kafka.yml exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:19092 --command-config /tmp/tianshu-client.properties --list
-```
-
-`ps -a` 应显示两个 server 均 healthy；单次 exec 只抽查一个副本。未启动的可选服务不执行对应检查。Kafka 命令只验证内部监听和认证，外部广播地址还需由实际客户端验收。
-
-NPM 沿用现有 Proxy Host：控制台域名代理到服务器 IP 和 `.env.server` 的 `FRONTEND_PORT`；同域 `/api/` 已由 web 代理到 server。公网 HTTPS、证书和访问控制继续由 NPM 管理，不改 UFW、Fail2ban、宿主机 Nginx 或原安全组。API 专用入口使用 `SERVER_PUBLIC_PORT`，不要在公网暴露 actuator。
-
-打开控制台 HTTPS 地址，依次确认登录、项目列表、规则详情、设计器、规则测试与执行日志。已有库使用原账号；仅空库首次注册超级管理员。业务方验证真实项目鉴权、已发布规则执行、SDK 同步及日志上报后恢复流量。忘记超管账号密码时：
-
-```bash
-docker-compose --project-name tianshu-server --env-file .env.server -f docker/docker-compose.server.yml exec -T server java -jar /app/app.jar --console-admin-recovery-code
-```
-
-在登录页“管理员应急恢复”使用30分钟一次性恢复码；不更换主密钥、不清空数据。
-
-## 6. 启动失败与回退
-
-先保留日志，核对数据库权限、两端 Redis、原主密钥、配对签名密钥、容器可达地址和端口占用。不要用删除卷或重新导入样例排障。结构升级已经写入数据库时，先评估旧版兼容性；需要数据库回退时使用经过验收的备份恢复到新库，不能只换旧 JAR 就宣称回退完成。
-
-确认数据库兼容后，在维护窗口停止应用，将第 2 步的应用/config 备份恢复，再用原项目的 `up -d --force-recreate --wait` 启动并重复第 5 步。原 Kafka 数据卷、MySQL 和 Redis 不随应用文件回退删除。保留本次 ZIP、哈希、配置备份及数据库备份，直到服务器验收完成。
+- 旧环境使用 `docker-compose.full.yml` 或 `docker-compose.yml` 时，继续使用原项目和文件，停止/重建时只指定应用服务，并在 `up` 加 `--no-deps`，防止依赖被带起或重建；full 的 SDK 服务名是 `sdk`，external 是 `runtime-sdk`。不要直接切换部署方案。
+- 原系统仍有 `runtime-http` 时，先把调用方迁移到 Server API 和项目凭据，按旧 Compose 停止并移除这个旧服务，再单独升级部署定义；这属于一次性兼容迁移，不在普通 JAR/dist 更新中自动执行。
+- MySQL/Redis 的数据目录是相对原 Compose 文件的绑定挂载；Kafka 使用原项目的命名卷。它们只维护一套，不能随着应用包迁移目录、改项目名或重复启动 full 方案。
