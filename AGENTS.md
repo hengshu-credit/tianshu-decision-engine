@@ -146,6 +146,8 @@ docker compose --env-file .env.client --env-file .env.server -f docker/docker-co
 
 ### 发布、凭据与恢复验收
 
+- 推荐用发布包 `deploy.py` 完成校验、备份、应用制品替换、重建和健康检查，日常更新入口保持 3～5 行命令。部署与构建自动兼容现代 `docker compose` 和 `docker-compose`；优先前者，不支持旧 Python Compose v1。迁移通过显式 `--migration-script` 在停应用后、替换前执行，失败不得启动新版。
+
 - MySQL、Redis、Kafka 共用长期保留的一套环境。普通应用更新只替换 JAR 和前端 `dist/`，保留原 env、Compose、Nginx、项目名、网络、端口及数据卷；不删除整个安装目录或重复部署基础设施。部署定义确需改变时，在发布说明单独列出兼容变更。
 - 已有库的增量迁移独立维护在 `rule-engine-server/src/main/resources/sql/migrations/`，同步维护该目录的 README；打包原样交付到顶层 `migrations/` 并纳入校验。执行点为停止旧应用并完成数据库备份后、新版启动前；只执行尚未完成的适用脚本，失败不得继续启动，不自动遍历全部历史 SQL。
 

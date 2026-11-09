@@ -6,7 +6,7 @@
 <p><a href="deployment.html">返回部署参数与业务接入</a></p>
 <h1>上传服务器部署与应用更新</h1>
 <p>部署分成长期运行的共享环境和应用制品：<strong>MySQL、Redis、Kafka 共用一套，日常更新只替换 <code>server.jar</code>、可选 SDK 的 <code>runtime.jar</code> 和前端 <code>dist/</code>。</strong> 原 <code>.env.server</code>、<code>.env.client</code>、Compose、Nginx 配置、数据库数据、Kafka 卷和恢复 journal 保留，不删除整个安装目录，不需要重新复制 env。</p>
-<p>服务操作统一使用 <code>docker compose</code>。本页以 Linux 固定目录 <code>/root/tianshu-decision-engine</code>、服务端项目 <code>tianshu-server</code>、客户端项目 <code>tianshu-client</code> 为例；<strong>已有部署沿用实际项目名、目录、网络、端口、数据卷和密钥</strong>。Kafka 原属 <code>tianshu-kafka</code> 就继续保留，不能为统一名称重建。构建入口见 <a href="release-packaging.md">跨平台发布构建</a>。</p>
+<p>自动部署入口优先使用 <code>docker compose</code>，不可用时使用 <code>docker-compose</code>；两者均要求现代 Compose v2+（支持 <code>config --format json</code>、<code>up --wait</code>），不支持旧 Python Compose v1。服务器还需 Python 3.8+，不需安装第三方 Python 包。本页以 Linux 固定目录 <code>/root/tianshu-decision-engine</code>、服务端项目 <code>tianshu-server</code>、客户端项目 <code>tianshu-client</code> 为例；<strong>已有部署沿用实际项目名、目录、网络、端口、数据卷和密钥</strong>。Kafka 原属 <code>tianshu-kafka</code> 就继续保留，不能为统一名称重建。构建入口见 <a href="release-packaging.md">跨平台发布构建</a>。</p>
 <pre><code class="language-text">tianshu-decision-engine/
 ├── .env.server                 # 服务端与共享基础设施的长期配置
 ├── .env.client                 # SDK 长期配置，连接同一套 Redis/Kafka
@@ -23,6 +23,22 @@
 └── backups/                    # 更新前的应用制品与版本记录
 </code></pre>
 <p>新 ZIP 仍携带完整部署材料、源码和许可证，便于首次安装与重建。已有环境只取其中的应用制品和适用迁移；保留完整 ZIP 作为该版本源码与许可证的交付记录。首次安装需能拉取运行镜像，服务器不需要 Maven、Node.js 或重新编译。</p>
+<h2>快速更新：三行命令（推荐）</h2>
+<p>新发布包自带 <code>deploy.py</code>。将 ZIP 与同名 <code>.zip.sha256</code> 上传到 <code>/root/</code>，下面替换包名和本次解压目录；每次用一个新的解压目录，不能直接覆盖运行目录。</p>
+<pre><code class="language-bash">cd /root &amp;&amp; sha256sum -c 包文件名.zip.sha256 &amp;&amp;
+unzip -q 包文件名.zip -d tianshu-update-本次版本 &amp;&amp;
+python3 tianshu-update-本次版本/deploy.py --target /root/tianshu-decision-engine
+</code></pre>
+<p>脚本自动完成逐文件校验、读取原 env/Compose、识别原项目名与副本数、备份旧 JAR/dist、停止应用、替换制品、重建应用容器和等待健康检查。MySQL、Redis、Kafka 不停不重建；env、Nginx、Compose、数据卷不覆盖。已有 SDK 自动一起更新；独立 SDK 机器在末尾加 <code>--client-only</code>。</p>
+<p><strong>首次部署</strong>：共享 MySQL/Redis/Kafka 已就绪时，解压到全新的固定目录，填写一次 env 即可，以后不用再复制：</p>
+<pre><code class="language-bash">unzip -q 包文件名.zip -d /root/tianshu-decision-engine
+cd /root/tianshu-decision-engine &amp;&amp; cp -n .env.server.example .env.server
+vi .env.server
+python3 deploy.py
+</code></pre>
+<p>首次还需 SDK 时，同样准备 <code>.env.client</code>，最后一行改为 <code>python3 deploy.py --sdk</code>。脚本默认只启动应用，不创建第二套基础设施。首次没有容器记录时使用 env 中的项目名；已有容器则从 Docker 标签恢复原项目名，包括原来通过 <code>-p</code> 指定的名称。使用额外 Compose 文件的现有部署按容器记录保留，缺失文件会在停止应用前报错。</p>
+<p><strong>有数据库迁移时</strong>，在最后一条命令加 <code>--migration-script /root/本次迁移.sh</code>。脚本停止本机应用后、替换制品前运行此 Bash 脚本；迁移脚本负责先完成数据库备份，再执行已选定的 SQL，遇错必须非零退出。跨机器旧节点需提前协调停止。脚本可读取 <code>TIANSHU_RELEASE_DIR</code>、<code>TIANSHU_DEPLOY_DIR</code>、<code>TIANSHU_BACKUP_DIR</code>，不自动遍历历史 SQL。若发布包提供 <code>migrations/upgrade.sh</code>，未显式指定迁移脚本时会在停机前阻止更新，避免漏跑。</p>
+<p>备份位于原安装目录 <code>backups/update-*</code>。健康检查失败会停止新应用并恢复原制品，但不会自动启动旧版，因为数据库可能已升级。中断后若遗留 <code>.deploy.lock</code>，确认没有其他部署进程后再移除锁。详细迁移、手工更新与回退步骤如下，仅排障或特殊部署时需要。</p>
 <h2>1. 上传并校验新包</h2>
 <p>把 ZIP 和同名 <code>.zip.sha256</code> 上传到 <code>/root/</code>，修改实际包文件名。以下步骤在同一 Bash 会话执行；任一命令失败即停止。</p>
 <pre><code class="language-bash">set -euo pipefail

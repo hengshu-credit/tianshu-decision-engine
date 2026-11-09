@@ -2,7 +2,7 @@
 
 部署分成长期运行的共享环境和应用制品：**MySQL、Redis、Kafka 共用一套，日常更新只替换 `server.jar`、可选 SDK 的 `runtime.jar` 和前端 `dist/`。** 原 `.env.server`、`.env.client`、Compose、Nginx 配置、数据库数据、Kafka 卷和恢复 journal 保留，不删除整个安装目录，不需要重新复制 env。
 
-服务操作统一使用 `docker compose`。本页以 Linux 固定目录 `/root/tianshu-decision-engine`、服务端项目 `tianshu-server`、客户端项目 `tianshu-client` 为例；**已有部署沿用实际项目名、目录、网络、端口、数据卷和密钥**。Kafka 原属 `tianshu-kafka` 就继续保留，不能为统一名称重建。构建入口见 [跨平台发布构建](release-packaging.md)。
+自动部署入口优先使用 `docker compose`，不可用时使用 `docker-compose`；两者均要求现代 Compose v2+（支持 `config --format json`、`up --wait`），不支持旧 Python Compose v1。服务器还需 Python 3.8+，不需安装第三方 Python 包。本页以 Linux 固定目录 `/root/tianshu-decision-engine`、服务端项目 `tianshu-server`、客户端项目 `tianshu-client` 为例；**已有部署沿用实际项目名、目录、网络、端口、数据卷和密钥**。Kafka 原属 `tianshu-kafka` 就继续保留，不能为统一名称重建。构建入口见 [跨平台发布构建](release-packaging.md)。
 
 ```text
 tianshu-decision-engine/
@@ -22,6 +22,33 @@ tianshu-decision-engine/
 ```
 
 新 ZIP 仍携带完整部署材料、源码和许可证，便于首次安装与重建。已有环境只取其中的应用制品和适用迁移；保留完整 ZIP 作为该版本源码与许可证的交付记录。首次安装需能拉取运行镜像，服务器不需要 Maven、Node.js 或重新编译。
+
+## 快速更新：三行命令（推荐）
+
+新发布包自带 `deploy.py`。将 ZIP 与同名 `.zip.sha256` 上传到 `/root/`，下面替换包名和本次解压目录；每次用一个新的解压目录，不能直接覆盖运行目录。
+
+```bash
+cd /root && sha256sum -c 包文件名.zip.sha256 &&
+unzip -q 包文件名.zip -d tianshu-update-本次版本 &&
+python3 tianshu-update-本次版本/deploy.py --target /root/tianshu-decision-engine
+```
+
+脚本自动完成逐文件校验、读取原 env/Compose、识别原项目名与副本数、备份旧 JAR/dist、停止应用、替换制品、重建应用容器和等待健康检查。MySQL、Redis、Kafka 不停不重建；env、Nginx、Compose、数据卷不覆盖。已有 SDK 自动一起更新；独立 SDK 机器在末尾加 `--client-only`。
+
+**首次部署**：共享 MySQL/Redis/Kafka 已就绪时，解压到全新的固定目录，填写一次 env 即可，以后不用再复制：
+
+```bash
+unzip -q 包文件名.zip -d /root/tianshu-decision-engine
+cd /root/tianshu-decision-engine && cp -n .env.server.example .env.server
+vi .env.server
+python3 deploy.py
+```
+
+首次还需 SDK 时，同样准备 `.env.client`，最后一行改为 `python3 deploy.py --sdk`。脚本默认只启动应用，不创建第二套基础设施。首次没有容器记录时使用 env 中的项目名；已有容器则从 Docker 标签恢复原项目名，包括原来通过 `-p` 指定的名称。使用额外 Compose 文件的现有部署按容器记录保留，缺失文件会在停止应用前报错。
+
+**有数据库迁移时**，在最后一条命令加 `--migration-script /root/本次迁移.sh`。脚本停止本机应用后、替换制品前运行此 Bash 脚本；迁移脚本负责先完成数据库备份，再执行已选定的 SQL，遇错必须非零退出。跨机器旧节点需提前协调停止。脚本可读取 `TIANSHU_RELEASE_DIR`、`TIANSHU_DEPLOY_DIR`、`TIANSHU_BACKUP_DIR`，不自动遍历历史 SQL。若发布包提供 `migrations/upgrade.sh`，未显式指定迁移脚本时会在停机前阻止更新，避免漏跑。
+
+备份位于原安装目录 `backups/update-*`。健康检查失败会停止新应用并恢复原制品，但不会自动启动旧版，因为数据库可能已升级。中断后若遗留 `.deploy.lock`，确认没有其他部署进程后再移除锁。详细迁移、手工更新与回退步骤如下，仅排障或特殊部署时需要。
 
 ## 1. 上传并校验新包
 

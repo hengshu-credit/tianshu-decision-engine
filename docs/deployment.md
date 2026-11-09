@@ -262,7 +262,7 @@ node scripts/package-deployment.mjs --with-tests
 
 输出 `output/tianshu-deployment-时间戳.zip` 和 `.zip.sha256`；包内包含 JAR、前端 dist、Compose、对应源码、许可证与逐文件校验清单。`--with-tests` 运行后端测试、前端 lint 和单元测试。服务器不需要 Maven 或 Node.js，也不重新编译，但需要可拉取运行镜像的 Docker 环境。
 
-MySQL、Redis、Kafka 共用一套长期环境；普通更新只替换 JAR 和前端 dist，不覆盖 env、Compose 或基础设施。迁移 SQL 独立交付在发布包 `migrations/`，在停止旧应用并完成备份后、新版启动前按适用范围执行。完整上传、校验、更新、启动与回退步骤见 [服务器部署与升级](server-upload.md)。已有配置不会被新包覆盖；`RULE_AUTH_MASTER_KEY`、数据卷、项目名及端口继续沿用原值。
+MySQL、Redis、Kafka 共用一套长期环境；普通更新只替换 JAR 和前端 dist，不覆盖 env、Compose 或基础设施。迁移 SQL 独立交付在发布包 `migrations/`，在停止旧应用并完成备份后、新版启动前按适用范围执行。推荐运行发布包 `python3 deploy.py --target 原安装目录`，自动兼容两种现代 Compose 命令。完整上传、校验、更新、启动与回退步骤见 [服务器部署与升级](server-upload.md)。已有配置不会被新包覆盖；`RULE_AUTH_MASTER_KEY`、数据卷、项目名及端口继续沿用原值。
 
 ## 三、Docker Compose 启动
 

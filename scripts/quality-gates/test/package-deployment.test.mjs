@@ -6,10 +6,20 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { composeInvocation, releaseSourceFiles, testDescription, copyDeploymentMigrations } from '../../package-deployment.mjs'
 
-for (const platform of ['win32', 'darwin', 'linux']) test(`${platform} 使用 docker-compose 并把含空格路径作为独立参数传递`, () => {
-  const result = composeInvocation('work space/docker/build.yml', 'work space/docker/build.env', ['run', '--rm', 'builder'], platform)
-  assert.equal(result.command, platform === 'win32' ? 'docker-compose.exe' : 'docker-compose')
-  assert.deepEqual(result.args, ['--project-name', 'tianshu-build', '--env-file', 'work space/docker/build.env', '-f', 'work space/docker/build.yml', 'run', '--rm', 'builder'])
+for (const platform of ['win32', 'darwin', 'linux']) for (const plugin of [true, false]) test(`${platform} 自动选择 ${plugin ? 'docker compose' : 'docker-compose'} 并保留含空格路径`, () => {
+  const probes = []
+  const result = composeInvocation('work space/docker/build.yml', 'work space/docker/build.env', ['run', '--rm', 'builder'], platform, (command, args) => {
+    probes.push([command, args])
+    return args[0] === 'compose' && !plugin ? { status: 1, stdout: '' } : { status: 0, stdout: 'v5.1.4\n' }
+  })
+  const executable = plugin ? 'docker' : 'docker-compose'
+  assert.equal(result.command, executable + (platform === 'win32' ? '.exe' : ''))
+  assert.equal(probes.length, plugin ? 1 : 2)
+  assert.deepEqual(result.args, [...(plugin ? ['compose'] : []), '--project-name', 'tianshu-build', '--env-file', 'work space/docker/build.env', '-f', 'work space/docker/build.yml', 'run', '--rm', 'builder'])
+})
+
+test('构建拒绝只有旧 Python Compose v1 的环境', () => {
+  assert.throws(() => composeInvocation('build.yml', 'build.env', [], 'linux', () => ({ status: 0, stdout: '1.29.2' })), /不支持旧 Python/)
 })
 
 test('Git 工作区包含未提交源码，排除本地配置、忽略目录及已删除文件', () => {

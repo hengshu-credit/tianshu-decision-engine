@@ -8,9 +8,15 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const sourceManifest = '.release-source-files.json'
 const normalizedPath = value => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value)
 
-export function composeInvocation(composeFile, envFile, args, platform = process.platform) {
-  return { command: platform === 'win32' ? 'docker-compose.exe' : 'docker-compose',
-    args: ['--project-name', 'tianshu-build', '--env-file', envFile, '-f', composeFile, ...args] }
+export function composeInvocation(composeFile, envFile, args, platform = process.platform, run = spawnSync) {
+  for (const [command, prefix] of [[platform === 'win32' ? 'docker.exe' : 'docker', ['compose']],
+    [platform === 'win32' ? 'docker-compose.exe' : 'docker-compose', []]]) {
+    const version = run(command, [...prefix, 'version', '--short'], { encoding: 'utf8' })
+    if (!version.error && version.status === 0 && Number(version.stdout.trim().replace(/^v/, '').split('.')[0]) >= 2) {
+      return { command, args: [...prefix, '--project-name', 'tianshu-build', '--env-file', envFile, '-f', composeFile, ...args] }
+    }
+  }
+  throw new Error('需要现代 Compose v2+：docker compose 或 docker-compose，不支持旧 Python Compose v1')
 }
 
 export function releaseSourceFiles(directory) {
@@ -58,7 +64,7 @@ function listFiles(directory) {
 
 async function main() {
   if (process.argv.includes('--help')) {
-    console.log('用法：node scripts/package-deployment.mjs [--with-tests]\nWindows: ./scripts/package-deployment.ps1\nmacOS/Linux: sh scripts/package-deployment.sh\n需要 Node.js 20.19+、Docker Linux 容器和 docker-compose v2+（含 v5）。\n输出 output/tianshu-deployment-*.zip 及 .zip.sha256；不覆盖本地 target、dist 或 docker/runtime。')
+    console.log('用法：node scripts/package-deployment.mjs [--with-tests]\nWindows: ./scripts/package-deployment.ps1\nmacOS/Linux: sh scripts/package-deployment.sh\n需要 Node.js 20.19+、Docker Linux 容器和现代 docker compose 或 docker-compose。\n输出 output/tianshu-deployment-*.zip 及 .zip.sha256；包内 deploy.py 用于服务器一键更新。')
     return
   }
   for (const arg of process.argv.slice(2)) if (arg !== '--with-tests') throw new Error(`未知参数：${arg}`)
@@ -76,10 +82,6 @@ async function main() {
   const buildPlatform = process.env.PACKAGE_PLATFORM || 'linux/amd64'
   if (!['linux/amd64', 'linux/arm64'].includes(buildPlatform)) throw new Error('PACKAGE_PLATFORM 仅支持 linux/amd64 或 linux/arm64')
   const invocation = composeInvocation(path.join(root, 'docker', 'docker-compose.build.yml'), path.join(root, 'docker', 'build.env'), [])
-  const version = spawnSync(invocation.command, ['version', '--short'], { encoding: 'utf8' })
-  if (version.error || version.status !== 0 || !(Number(version.stdout.trim().replace(/^v/, '').split('.')[0]) >= 2)) {
-    throw new Error('需要可直接执行的 docker-compose v2+（含 v5），不支持旧 Python Compose v1')
-  }
   if (configRoot) for (const name of ['.env.server', '.env.client']) {
     if (!statSync(path.join(configRoot, name)).isFile()) throw new Error(`配置目录缺少 ${name}`)
   }
@@ -96,6 +98,7 @@ async function main() {
     cpSync(path.join(sourceRoot, name), path.join(stageRoot, name), { recursive: true })
   }
   copyDeploymentMigrations(sourceRoot, stageRoot)
+  cpSync(path.join(sourceRoot, 'scripts/deploy.py'), path.join(stageRoot, 'deploy.py'))
   writeFileSync(path.join(stageRoot, 'README-部署.md'), readFileSync(path.join(sourceRoot, 'docs', 'server-upload.md'), 'utf8')
     .replace('(release-packaging.md)', '(docs/release-packaging.md)'))
   if (configRoot) for (const name of ['.env.server', '.env.client']) cpSync(path.join(configRoot, name), path.join(stageRoot, name))
@@ -106,7 +109,7 @@ async function main() {
   const owner = `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`
   function runBuild(image, command) {
     const args = [...invocation.args, 'run', '--rm', '--no-deps', '-T', 'builder', ...command]
-    console.log(`\n> ${invocation.command} --project-name tianshu-build ... run --rm --no-deps -T builder (${image})`)
+    console.log(`\n> ${invocation.command}${invocation.args[0] === 'compose' ? ' compose' : ''} --project-name tianshu-build ... run --rm --no-deps -T builder (${image})`)
     const result = spawnSync(invocation.command, args, { cwd: root, env: { ...env, PACKAGE_BUILD_IMAGE: image }, stdio: 'inherit' })
     if (result.error) throw result.error
     if (result.status !== 0) throw new Error(`Docker Compose 构建失败，退出码：${result.status ?? 'unknown'}`)
@@ -128,11 +131,11 @@ async function main() {
   writeFileSync(path.join(stageRoot, 'BUILD-INFO.txt'), [
     `构建时间：${new Date().toISOString()}`, `基础提交：${git.status === 0 ? git.stdout.trim() : 'source archive'}`,
     `工作区修改：${status.status === 0 ? (status.stdout.trim() ? '有' : '无') : '无 Git 元数据'}；精确构建源码见 source/`,
-    `构建模式：docker-compose（${testDescription(withTests, skipJavaBuild)}）`,
+    `构建模式：Docker Compose（${testDescription(withTests, skipJavaBuild)}）`,
     `Java 产物：${skipJavaBuild ? '复用已有 target，未重新构建' : '本次 Docker Maven CPU 构建'}`,
     `构建平台：${buildPlatform}`, `构建镜像：${mavenImage} / ${nodeImage}`,
     `配置：${configRoot ? '附带指定配置；升级保留服务器现有配置' : '仅含示例模板，不含本机凭据'}`,
-    '部署入口：README-部署.md；HTTPS 继续由现有 Nginx Proxy Manager 管理。',
+    '部署入口：python3 deploy.py --target 原安装目录；详细说明见 README-部署.md。',
     '日常更新：仅替换 docker/runtime 的 JAR 和 dist；保留原 env、Compose、MySQL、Redis、Kafka 及数据。',
     '数据库迁移：独立目录 migrations/；按 README.md 选择尚未执行的适用脚本，在停止应用后、新版启动前执行。'
   ].join('\n') + '\n')

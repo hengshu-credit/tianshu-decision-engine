@@ -1,6 +1,6 @@
 # 天枢决策引擎 Docker 部署
 
-MySQL、Redis、Kafka 共用长期保留的一套环境；日常只替换 JAR 与前端 dist，保留原 env、Compose、Nginx 配置及数据。独立迁移 SQL 随包交付到 migrations/，在停止旧应用并完成备份后、新版启动前按需执行。上传、更新与回退步骤见 [服务器部署与升级](../docs/server-upload.md)。所有服务操作直接使用完整的 `docker compose` 命令。推荐 server/client 分开管理，默认 server 2 副本、web 1 个、可选 SDK runtime 1 个；MySQL、Redis 复用现有服务。
+MySQL、Redis、Kafka 共用长期保留的一套环境；日常只替换 JAR 与前端 dist，保留原 env、Compose、Nginx 配置及数据。独立迁移 SQL 随包交付到 migrations/，在停止旧应用并完成备份后、新版启动前按需执行。上传、更新与回退步骤见 [服务器部署与升级](../docs/server-upload.md)。推荐使用包内 `python3 deploy.py --target 原安装目录` 一次完成校验、备份、替换与重启；自动兼容 `docker compose` 和 `docker-compose`。以下完整 Compose 命令用于手工运维。推荐 server/client 分开管理，默认 server 2 副本、web 1 个、可选 SDK runtime 1 个；MySQL、Redis 复用现有服务。
 
 Ubuntu 继续使用现有 Nginx Proxy Manager 管理 HTTPS、证书和反向代理。本项目不安装或修改 UFW、Fail2ban、宿主机 Nginx 和现有端口规则。NPM 通过服务器 IP 和已配置的宿主机端口转发。
 
@@ -18,7 +18,7 @@ Ubuntu 继续使用现有 Nginx Proxy Manager 管理 HTTPS、证书和反向代�
 node scripts/package-deployment.mjs --with-tests
 ```
 
-开发机需要 Node.js 20.19+、Git、Docker Linux 容器及构建脚本使用的独立 `docker-compose` v2+（含 v5）。JDK、Maven 和前端依赖均在 Docker 内使用。Windows、macOS、Linux 的入口、架构与配置见 [跨平台发布构建](../docs/release-packaging.md)。产物为 `output/tianshu-deployment-时间戳.zip`、同名 `.zip.sha256` 及独立暂存目录，历史 ZIP 保留。包内含逐文件 `SHA256SUMS.txt`、版本信息、对应源码 `source/` 与许可证。
+开发机需要 Node.js 20.19+、Git、Docker Linux 容器及现代 `docker compose` 或 `docker-compose`（自动探测）。JDK、Maven 和前端依赖均在 Docker 内使用。Windows、macOS、Linux 的入口、架构与配置见 [跨平台发布构建](../docs/release-packaging.md)。产物为 `output/tianshu-deployment-时间戳.zip`、同名 `.zip.sha256` 及独立暂存目录，历史 ZIP 保留。包内含逐文件 `SHA256SUMS.txt`、版本信息、对应源码 `source/` 与许可证。
 
 可选环境变量 `PACKAGE_CONFIG_DIR` 指定已有生产配置目录，复制其中的 `.env.server`、`.env.client`；默认只包含示例模板，不携带本机凭据。含生产凭据的 ZIP 不公开发布。服务器直接使用包内制品，无需 Maven/Node.js，不重新编译；包不含 Docker 镜像，首次启动需能拉取配置中的镜像。
 
