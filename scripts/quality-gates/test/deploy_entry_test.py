@@ -19,12 +19,13 @@ class DeployTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
         self.target = self.root / 'installation'
-        self.release = self.root / 'release'
+        self.release = self.target / 'releases/release'
         self.commands = []
         self.fail_start = False
         self.fail_migration = False
         self.files = {
             '.env.server': 'secret-server', '.env.client': 'secret-client',
+            'uploaded-package.zip': 'keep-uploaded-archive',
             'docker/docker-compose.server.yml': 'original-compose',
             'docker/docker-compose.client.yml': 'original-client-compose',
             'docker/nginx/default.conf': 'original-nginx',
@@ -100,6 +101,20 @@ class DeployTest(unittest.TestCase):
         with patch.object(deployment, 'run', return_value=subprocess.CompletedProcess([], 0, '1.29.2', '')):
             self.assertRaises(deployment.DeployError, deployment.detect_compose)
 
+    def test_deployment_layout_keeps_release_under_installation(self):
+        deployment.validate_layout(self.release, self.target)
+        deployment.validate_layout(self.target, self.target)
+        self.assertRaises(deployment.DeployError, deployment.validate_layout, self.root / 'release', self.target)
+        self.assertRaises(deployment.DeployError, deployment.validate_layout, self.target / 'docker/runtime', self.target)
+        self.assertRaises(deployment.DeployError, deployment.validate_layout, self.release, Path.home().resolve())
+        self.assertRaises(deployment.DeployError, deployment.validate_layout, self.release, Path(self.target.anchor))
+
+    def test_outside_release_fails_before_docker_or_file_updates(self):
+        with patch.object(deployment, 'run', side_effect=self.fake_run):
+            self.assertRaises(deployment.DeployError, deployment.deploy, self.root / 'release', self.target, ['docker', 'compose'])
+        self.assertFalse(self.commands)
+        self.assertFalse((self.target / 'backups').exists())
+
     def test_integrity_and_extra_frontend_files(self):
         deployment.verify_release(self.release)
         self.write(self.release / 'docker/runtime/dist/stale.js', 'unexpected')
@@ -131,6 +146,7 @@ class DeployTest(unittest.TestCase):
         self.assertEqual((self.target / 'docker/runtime/runtime.jar').read_text(), 'new-runtime')
         self.assertFalse((self.target / 'docker/runtime/dist/obsolete.js').exists())
         self.assertEqual((self.target / 'docker/runtime/dist/new.js').read_text(), 'new-asset')
+        self.assertEqual((self.release / 'docker/runtime/server.jar').read_text(), 'new-server')
         backups = list((self.target / 'backups').glob('update-*'))
         self.assertEqual(len(backups), 1)
         self.assertTrue(any(p.read_text() == 'old-server' for p in backups[0].glob('*server.jar')))

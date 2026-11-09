@@ -57,4 +57,4 @@ Windows 用 `$env:PACKAGE_CONFIG_DIR = 'E:\private\production'`；macOS/Linux �
 
 ZIP 校验：Windows 用 `Get-FileHash -Algorithm SHA256 包文件名.zip`；macOS 用 `shasum -a 256 -c 包文件名.zip.sha256`；Linux 用 `sha256sum -c 包文件名.zip.sha256`。解压后 Linux 运行 `sha256sum -c SHA256SUMS.txt` 验证包内所有文件。
 
-服务器安装、升级、备份、启动、状态和回退按 [部署说明](server-upload.md) 执行，推荐直接运行 `python3 deploy.py --target 原安装目录`，自动兼容两种现代 Compose 命令。MySQL、Redis、Kafka 共用长期保留的一套环境；普通更新只替换 JAR 和前端 `dist/`，保留原 env、Compose、Nginx 配置及数据卷，不重新安装基础设施。
+ZIP 和同名 `.zip.sha256` 上传到 `/root/tianshu-decision-engine`，更新时解压到其下独立的 `releases/` 子目录，备份留在 `backups/`，不要把 `/root` 当部署目录。服务器安装、升级、备份、启动、状态和回退按 [部署说明](server-upload.md) 执行，推荐直接运行 `python3 deploy.py --target 原安装目录`，自动兼容两种现代 Compose 命令。MySQL、Redis、Kafka 共用长期保留的一套环境；普通更新只替换 JAR 和前端 `dist/`，保留原 env、Compose、Nginx 配置及数据卷，不重新安装基础设施。

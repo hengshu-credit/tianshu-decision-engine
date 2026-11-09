@@ -46,6 +46,9 @@ scripts/quality-gates/fixtures/request.local.json
 /.codex-validation/
 /.playwright-cli/
 /output/
+/releases/
+/backups/
+/.deploy.lock/
 
 /**/target/
 /docker/runtime/*.jar

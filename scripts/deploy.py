@@ -23,6 +23,13 @@ class DeployError(Exception):
     pass
 
 
+def validate_layout(release, target):
+    if target == Path(target.anchor) or target == Path.home().resolve():
+        raise DeployError('部署目标不能是文件系统根目录或用户主目录；请使用 /root/tianshu-decision-engine。')
+    if release != target and release.parent != target / 'releases':
+        raise DeployError('新包必须解压到部署目录下独立的 releases/ 子目录，再指定该部署目录为 --target。')
+
+
 def run(command, cwd=None, check=True, env=None):
     result = subprocess.run(command, cwd=cwd, env=env, text=True, encoding='utf-8',
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1800)
@@ -205,6 +212,7 @@ def start_apps(plans, target):
 
 
 def deploy(release, target, command, sdk=False, client_only=False, migration=None):
+    validate_layout(release, target)
     plans = discover_plans(command, target, sdk, client_only)
     backup_root = target / 'backups'
     backup_root.mkdir(exist_ok=True)
@@ -264,6 +272,7 @@ def main():
     options = parser.parse_args()
     release = Path(__file__).resolve().parent
     target = options.target.resolve()
+    validate_layout(release, target)
     verify_release(release)
     command = detect_compose()
     print('[1/5] 发布包校验通过；使用 ' + ' '.join(command), flush=True)

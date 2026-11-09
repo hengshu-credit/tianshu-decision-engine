@@ -146,6 +146,8 @@ docker compose --env-file .env.client --env-file .env.server -f docker/docker-co
 
 ### 发布、凭据与恢复验收
 
+- ZIP 与 `.zip.sha256` 上传到固定部署目录 `/root/tianshu-decision-engine`；新包解压到该目录下独立的 `releases/` 子目录，备份在 `backups/`。不得将 `/root` 当部署目标或在其下散放更新文件，不删除整个部署目录；日常更新保持五行命令。
+
 - 推荐用发布包 `deploy.py` 完成校验、备份、应用制品替换、重建和健康检查，日常更新入口保持 3～5 行命令。部署与构建自动兼容现代 `docker compose` 和 `docker-compose`；优先前者，不支持旧 Python Compose v1。迁移通过显式 `--migration-script` 在停应用后、替换前执行，失败不得启动新版。
 
 - MySQL、Redis、Kafka 共用长期保留的一套环境。普通应用更新只替换 JAR 和前端 `dist/`，保留原 env、Compose、Nginx、项目名、网络、端口及数据卷；不删除整个安装目录或重复部署基础设施。部署定义确需改变时，在发布说明单独列出兼容变更。

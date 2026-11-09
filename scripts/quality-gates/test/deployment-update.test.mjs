@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 const doc = readFileSync(path.join(root, 'docs/server-upload.md'), 'utf8')
@@ -12,6 +13,48 @@ const blocks = [...doc.matchAll(/```bash\r?\n([\s\S]*?)```/g)].map(match => matc
 const prepare = blocks.find(block => block.includes('NEXT_RUNTIME_DIR='))
 const replace = blocks.find(block => block.includes('mv "$APP_RUNTIME_DIR"'))
 const bash = process.platform === 'win32' ? 'C:/Program Files/Git/bin/bash.exe' : 'bash'
+
+for (const valid of [true, false]) test(`部署目录内的五行更新命令：${valid ? '重复解压使用独立子目录且保留原配置' : '校验失败不解压或启动'}`, () => {
+  const fixture = mkdtempSync(path.join(os.tmpdir(), 'tianshu upload '))
+  try {
+    const installation = path.join(fixture, 'installation')
+    mkdirSync(path.join(installation, 'docker'), { recursive: true })
+    mkdirSync(path.join(installation, 'releases'))
+    writeFileSync(path.join(installation, '.env.server'), 'keep-env')
+    writeFileSync(path.join(installation, 'docker/keep'), 'keep-data')
+    writeFileSync(path.join(fixture, 'neighbor'), 'keep-neighbor')
+    const archive = path.join(installation, 'package.zip')
+    const zip = spawnSync(process.platform === 'win32' ? 'python' : 'python3', ['-B', '-c',
+      'import sys,zipfile; z=zipfile.ZipFile(sys.argv[1],"w"); z.writestr("deploy.py","# deployment entry"); z.close()', archive])
+    assert.ifError(zip.error)
+    assert.equal(zip.status, 0)
+    const checksum = createHash('sha256').update(readFileSync(archive)).digest('hex')
+    writeFileSync(archive + '.sha256', `${valid ? checksum : '0'.repeat(64)}  package.zip\n`)
+    const quick = blocks.find(block => block.includes('PKG=包文件名.zip') && block.includes('mktemp'))
+    assert.ok(quick)
+    assert.equal(quick.trim().split(/\r?\n/).length, 5)
+    const input = 'set -euo pipefail\nFIXTURE_ROOT="$PWD"\npython3() { printf "%s\\n" "$@" > "$FIXTURE_ROOT/call.txt"; }\n'
+      + quick.replace('cd /root/tianshu-decision-engine', 'cd "$FIXTURE_ROOT/installation"').replace('PKG=包文件名.zip', 'PKG=package.zip')
+    for (let attempt = 0; attempt < (valid ? 2 : 1); attempt++) {
+      const result = spawnSync(bash, ['--noprofile', '--norc', '-s'], { cwd: fixture, input, encoding: 'utf8' })
+      assert.ifError(result.error)
+      assert.equal(result.status === 0, valid, result.stderr)
+    }
+    const releases = readdirSync(path.join(installation, 'releases'))
+    assert.equal(releases.length, valid ? 2 : 0)
+    if (valid) {
+      for (const name of releases) assert.equal(readFileSync(path.join(installation, 'releases', name, 'deploy.py'), 'utf8'), '# deployment entry')
+      const args = readFileSync(path.join(fixture, 'call.txt'), 'utf8').trim().split('\n')
+      assert.equal(args[1], '--target')
+      assert.ok(args[0].startsWith(args[2] + '/releases/update-'))
+      assert.ok(args[2].endsWith('/installation'))
+    } else assert.equal(existsSync(path.join(fixture, 'call.txt')), false)
+    assert.equal(readFileSync(path.join(installation, '.env.server'), 'utf8'), 'keep-env')
+    assert.equal(readFileSync(path.join(installation, 'docker/keep'), 'utf8'), 'keep-data')
+    assert.equal(readFileSync(path.join(fixture, 'neighbor'), 'utf8'), 'keep-neighbor')
+    assert.equal(createHash('sha256').update(readFileSync(archive)).digest('hex'), checksum)
+  } finally { rmSync(fixture, { recursive: true, force: true }) }
+})
 
 for (const existing of ['docker', '.env.server', '.env.client']) test(`首次安装步骤拒绝覆盖已有 ${existing}`, () => {
   const fixture = mkdtempSync(path.join(os.tmpdir(), 'tianshu install '))
@@ -27,7 +70,7 @@ for (const existing of ['docker', '.env.server', '.env.client']) test(`首次安
     const sentinel = existing === 'docker' ? 'docker/keep' : existing
     mkdirSync(path.dirname(path.join(target, sentinel)), { recursive: true })
     writeFileSync(path.join(target, sentinel), 'original')
-    const install = blocks.find(block => block.includes('test ! -e docker'))
+    const install = blocks.find(block => block.includes('cp -a "$RELEASE_DIR/."'))
     assert.ok(install)
     const result = spawnSync(bash, ['--noprofile', '--norc', '-s'], {
       cwd: fixture, encoding: 'utf8',
