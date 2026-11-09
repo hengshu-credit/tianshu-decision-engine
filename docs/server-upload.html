@@ -5,6 +5,7 @@
 <body class="deployment-page"><main class="content"><section class="manual-section deployment-section">
 <p><a href="deployment.html">返回部署参数与业务接入</a></p>
 <h1>共享环境与应用版本部署</h1>
+<p><strong>当前实现为重启式更新，会中断应用。</strong> 针对 16 GB / 4 核或更高配置，目标方案采用常驻网关和蓝绿双版本，设计及实施缺口见 <a href="blue-green-deployment-design.md">蓝绿部署设计</a>。本页命令尚不具备在线切流能力。</p>
 <p>固定外层目录为 <code>/root/tianshu-decision-engine</code>。外层原有 <code>.env.server</code>、<code>.env.client</code> 只是备份，<strong>不作为启动配置</strong>；当前运行配置来自旧 <code>deploy-prod</code> 内的 env。一次性整理后，生效配置放到外层 <code>config/</code>，MySQL、Redis、Kafka 和固定部署定义放到外层 <code>docker/</code>，内层只管理应用版本。</p>
 <pre><code class="language-text">/root/tianshu-decision-engine/
 ├── .env.server / .env.client        # 原来的备份，保留不改、不用于启动

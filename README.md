@@ -427,6 +427,8 @@ SDK 本地执行日志默认通过 HTTP 上报；需要 Kafka 时显式启用，
 
 MySQL、Redis、Kafka 共用长期保留的一套环境。外层 `config/` 放生效配置，`docker/` 管理共享服务，外层原 env 仅作备份。应用放在 `deploy-prod/current/`，更新成功后旧版保存到 `previous/`，更早版本留在 `history/`；新包解压到 `deploy-prod/releases/`。现有旧 deploy-prod 用 `--adopt-layout` 一次性整理，以内层原 env 为准；之后只更新 JAR/前端，不覆盖固定配置或重建基础设施。数据库迁移独立交付在发布包 `migrations/`，按适用范围在停止旧应用并完成备份后、新版启动前执行；推荐使用包内 `python3 deploy.py --target 原安装目录`，自动兼容 `docker compose` / `docker-compose`，完整流程见 [应用更新说明](docs/server-upload.md)。
 
+当前发布脚本仍采用停止应用后重启的方式，不承诺不停机。16 GB / 4 核或更高环境的目标架构见 [蓝绿部署设计](docs/blue-green-deployment-design.md)：常驻网关、不可变版本、兼容迁移和受控切流。该文档为待实现方案，不能将现有部署命令当作蓝绿发布。
+
 外部公司或业务系统直接调用 Server API：`POST /api/rule/sync/execute/{ruleCode}`；启用并发布开放接口后可调用 `POST /api/rule/openapi/{ruleCode}`。接口文档从项目「API」按钮下载，不需要部署转发服务或连接 Redis。
 
 “业务端 → Java 服务 → 决策引擎”的完整配置、全局/项目规则访问、多项目客户端及日志追踪开关见 [Java 业务服务接入指南](https://hengshu-credit.github.io/tianshu-decision-engine/java-service-integration.html)。项目导出的 API 文档内也提供 Java 服务接入示例。

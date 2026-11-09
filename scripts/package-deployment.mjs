@@ -101,6 +101,7 @@ async function main() {
   cpSync(path.join(sourceRoot, 'scripts/deploy.py'), path.join(stageRoot, 'deploy.py'))
   writeFileSync(path.join(stageRoot, 'README-部署.md'), readFileSync(path.join(sourceRoot, 'docs', 'server-upload.md'), 'utf8')
     .replace('(release-packaging.md)', '(docs/release-packaging.md)')
+    .replace('(blue-green-deployment-design.md)', '(docs/blue-green-deployment-design.md)')
     .replace('(../docker/README.md)', '(docker/README.md)')
     .replace('(deployment-flat-legacy.md)', '(docs/deployment-flat-legacy.md)'))
   if (configRoot) for (const name of ['.env.server', '.env.client']) cpSync(path.join(configRoot, name), path.join(stageRoot, name))

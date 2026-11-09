@@ -1,5 +1,7 @@
 # 共享环境与应用版本部署
 
+**当前实现为重启式更新，会中断应用。** 针对 16 GB / 4 核或更高配置，目标方案采用常驻网关和蓝绿双版本，设计及实施缺口见 [蓝绿部署设计](blue-green-deployment-design.md)。本页命令尚不具备在线切流能力。
+
 固定外层目录为 `/root/tianshu-decision-engine`。外层原有 `.env.server`、`.env.client` 只是备份，**不作为启动配置**；当前运行配置来自旧 `deploy-prod` 内的 env。一次性整理后，生效配置放到外层 `config/`，MySQL、Redis、Kafka 和固定部署定义放到外层 `docker/`，内层只管理应用版本。
 
 ```text
