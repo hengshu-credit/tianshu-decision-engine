@@ -1,5 +1,7 @@
 # 天枢决策引擎 Docker 部署
 
+生产环境采用外层共享服务、内层应用版本布局：`config/.env.server`、`config/.env.client` 是生效配置，根目录原 env 仅为备份；应用位于 `deploy-prod/current`，上一版在 `previous`。已有 deploy-prod 先按 [一次性目录整理](../docs/server-upload.md) 操作，之后五行命令完成更新。本文下方是源码检出/旧平铺模式的 Compose 参考；已整理环境手工运维时，env 参数必须改用 `--env-file config/.env.server` 或 `config/.env.client`，并沿用原项目名。
+
 MySQL、Redis、Kafka 共用长期保留的一套环境；日常只替换 JAR 与前端 dist，保留原 env、Compose、Nginx 配置及数据。独立迁移 SQL 随包交付到 migrations/，在停止旧应用并完成备份后、新版启动前按需执行。上传、更新与回退步骤见 [服务器部署与升级](../docs/server-upload.md)。推荐使用包内 `python3 deploy.py --target 原安装目录` 一次完成校验、备份、替换与重启；自动兼容 `docker compose` 和 `docker-compose`。以下完整 Compose 命令用于手工运维。推荐 server/client 分开管理，默认 server 2 副本、web 1 个、可选 SDK runtime 1 个；MySQL、Redis 复用现有服务。
 
 Ubuntu 继续使用现有 Nginx Proxy Manager 管理 HTTPS、证书和反向代理。本项目不安装或修改 UFW、Fail2ban、宿主机 Nginx 和现有端口规则。NPM 通过服务器 IP 和已配置的宿主机端口转发。

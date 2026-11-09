@@ -2,7 +2,7 @@
 
 这里是已有数据库的增量迁移脚本唯一维护位置。发布时原样复制到 ZIP 顶层的 `migrations/`，并纳入 `SHA256SUMS.txt`；无需解开 JAR 或从源码中寻找 SQL。本目录不是初始化或样例数据，服务不会自动遍历执行这些文件。
 
-自动部署时用 `python3 deploy.py --target 原安装目录 --migration-script /绝对路径/本次迁移.sh` 接入已选定的迁移脚本，在停应用后、替换前执行；Bash 脚本须先完成数据库备份，遇错非零退出。可通过 `TIANSHU_RELEASE_DIR` 访问本包 SQL，`TIANSHU_DEPLOY_DIR` 访问原 env/Compose，`TIANSHU_BACKUP_DIR` 记录备份与迁移结果。不要把所有历史 SQL 自动拼接运行。
+自动部署时用 `python3 deploy.py --target 原安装目录 --migration-script /绝对路径/本次迁移.sh` 接入已选定的迁移脚本，在停应用后、替换前执行；Bash 脚本须先完成数据库备份，遇错非零退出。可通过 `TIANSHU_RELEASE_DIR` 访问本包 SQL，`TIANSHU_DEPLOY_DIR` 访问外层 `config/` 生效 env 与 `docker/` Compose，`TIANSHU_BACKUP_DIR` 记录备份与迁移结果。不要把所有历史 SQL 自动拼接运行。
 
 ## 执行时机
 
@@ -24,10 +24,10 @@
 
 ## 执行示例（Linux）
 
-在固定部署目录执行，`RELEASE_DIR` 是已校验的新包解压目录。以下仅示范执行第一条适用迁移，已执行过则跳过。使用当前 MySQL 所属的 Compose 项目名、文件与配置，不能为迁移新建另一套 MySQL。
+在已整理的外层固定部署目录执行（旧平铺模式仍使用原 env 路径），`RELEASE_DIR` 是已校验的新包解压目录。以下仅示范执行第一条适用迁移，已执行过则跳过。使用当前 MySQL 所属的 Compose 项目名、文件与配置，不能为迁移新建另一套 MySQL。
 
 ```bash
-docker compose --project-name tianshu-server --env-file .env.server \
+docker compose --project-name tianshu-server --env-file config/.env.server \
   -f docker/docker-compose.mysql.yml exec -T mysql sh -ec \
   'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql --default-character-set=utf8mb4 --binary-mode=1 --host=127.0.0.1 --user="$MYSQL_USER" --database="$MYSQL_DATABASE"' \
   < "$RELEASE_DIR/migrations/2026-11-04-account-record-isolation.sql"

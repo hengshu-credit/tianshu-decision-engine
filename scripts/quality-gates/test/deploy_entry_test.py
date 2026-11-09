@@ -23,6 +23,10 @@ class DeployTest(unittest.TestCase):
         self.commands = []
         self.fail_start = False
         self.fail_migration = False
+        self.layout_mode = False
+        self.fail_layout_service = None
+        self.fail_new_config = False
+        self.keep_old_data_path = False
         self.files = {
             '.env.server': 'secret-server', '.env.client': 'secret-client',
             'uploaded-package.zip': 'keep-uploaded-archive',
@@ -67,18 +71,43 @@ class DeployTest(unittest.TestCase):
         if command[1:3] == ['ps', '-aq']:
             output = ' '.join(str(i) for i in range(len(self.containers)))
         elif command[1] == 'inspect':
-            self.assertIn('{{json .Config.Labels}}', command)
-            output = '\n'.join(json.dumps(c['Config']['Labels']) for c in self.containers)
+            if '{{json .Mounts}}' in command:
+                output = json.dumps(self.live_mounts[int(command[-1])])
+            else:
+                self.assertIn('{{json .Config.Labels}}', command)
+                output = '\n'.join(json.dumps(c['Config']['Labels']) for c in self.containers)
         elif 'config' in command:
             services = ['runtime-sdk'] if any('docker-compose.client.yml' in str(x) for x in command) else ['server', 'web']
             config = {'name': 'env-default-project', 'services': {}}
+            base = Path(command[command.index('-f') + 1]).parent.parent
+            if self.layout_mode and self.fail_new_config and base == self.target:
+                raise deployment.DeployError('new config failed')
+            runtime = self.target / 'docker/runtime'
+            if self.layout_mode:
+                runtime = self.target / 'deploy-prod/current' if base == self.target else base / 'docker/runtime'
             for service in services:
                 name, mount = deployment.ARTIFACTS[service]
-                config['services'][service] = {'volumes': [{'type': 'bind', 'source': str(self.target / 'docker/runtime' / name), 'target': mount}]}
-            config['services']['mysql'] = {'image': 'must-not-start'}
+                config['services'][service] = {'volumes': [{'type': 'bind', 'source': str(runtime / name), 'target': mount}]}
+            if self.layout_mode and 'server' in services:
+                config['services']['mysql'] = {'volumes': [{'type': 'bind', 'source': str(base / 'docker/rule-engine-mysql/data'), 'target': '/var/lib/mysql'}]}
+                if self.keep_old_data_path and base == self.target:
+                    config['services']['mysql']['volumes'][0]['source'] = str(self.target / 'deploy-prod/docker/rule-engine-mysql/data')
+                config['services']['redis'] = {'volumes': [{'type': 'bind', 'source': str(base / 'docker/rule-engine-redis/data'), 'target': '/data'}]}
+                config['services']['kafka'] = {'volumes': [{'type': 'volume', 'source': 'kafka-data', 'target': '/var/lib/kafka/data'}]}
+                config['volumes'] = {'kafka-data': {'name': 'original-server_kafka-data'}}
+            else:
+                config['services']['mysql'] = {'image': 'must-not-start'}
             output = json.dumps(config)
         elif 'up' in command and self.fail_start and command[-1] == 'web':
             raise deployment.DeployError('readiness failed')
+        elif 'up' in command and self.layout_mode:
+            base = Path(command[command.index('-f') + 1]).parent.parent
+            if command[-1] == self.fail_layout_service and base == self.target:
+                raise deployment.DeployError('infrastructure start failed')
+            for item in self.containers:
+                labels = item['Config']['Labels']
+                if labels['com.docker.compose.service'] == command[-1]:
+                    labels['com.docker.compose.project.config_files'] = str(base / 'docker' / Path(labels['com.docker.compose.project.config_files']).name)
         elif command[0] == 'bash':
             self.assertEqual((self.target / 'docker/runtime/server.jar').read_text(), 'old-server')
             self.assertTrue(any('stop' in c for c in self.commands))
@@ -90,6 +119,136 @@ class DeployTest(unittest.TestCase):
     def deploy(self, **kwargs):
         with patch.object(deployment, 'run', side_effect=self.fake_run):
             deployment.deploy(self.release, self.target, ['docker', 'compose'], **kwargs)
+
+    def make_nested_legacy(self):
+        self.layout_mode = True
+        legacy = self.target / 'deploy-prod'
+        legacy.mkdir()
+        (self.target / 'docker').rename(legacy / 'docker')
+        (self.target / 'releases').rename(legacy / 'releases')
+        self.release = legacy / 'releases/release'
+        self.write(legacy / '.env.server', 'MYSQL_PASSWORD=active-secret\nRUNTIME_DIR=./runtime\n')
+        self.write(legacy / '.env.client', 'SDK_ACCESS_TOKEN=active-sdk\nRUNTIME_DIR=./runtime\n')
+        self.write(legacy / 'BUILD-INFO.txt', 'old-version')
+        self.write(legacy / 'docs/keep', 'old-docs')
+        self.containers.extend([self.container(s) for s in ('mysql', 'redis', 'kafka')])
+        self.live_mounts = []
+        for item in self.containers:
+            labels = item['Config']['Labels']
+            labels['com.docker.compose.project.config_files'] = str(legacy / 'docker' / Path(labels['com.docker.compose.project.config_files']).name)
+            service = labels['com.docker.compose.service']
+            if service in deployment.ARTIFACTS:
+                name, dest = deployment.ARTIFACTS[service]
+                mounts = [{'Type': 'bind', 'Source': str(legacy / 'docker/runtime' / name), 'Destination': dest}]
+            elif service == 'kafka':
+                mounts = [{'Type': 'volume', 'Name': 'original-server_kafka-data', 'Destination': '/var/lib/kafka/data'}]
+            else:
+                dest = '/var/lib/mysql' if service == 'mysql' else '/data'
+                mounts = [{'Type': 'bind', 'Source': str(legacy / 'docker' / ('rule-engine-' + service) / 'data'), 'Destination': dest}]
+            self.live_mounts.append(mounts)
+        return legacy
+
+    def adopt(self):
+        with patch.object(deployment, 'run', side_effect=self.fake_run):
+            deployment.adopt_layout(self.target, ['docker', 'compose'])
+
+    def test_adopt_uses_active_inner_env_and_preserves_outer_backup_and_data(self):
+        legacy = self.make_nested_legacy()
+        self.adopt()
+        self.assertEqual((self.target / '.env.server').read_text(), 'secret-server')
+        self.assertEqual((self.target / '.env.client').read_text(), 'secret-client')
+        active = (self.target / 'config/.env.server').read_text()
+        self.assertIn('MYSQL_PASSWORD=active-secret', active)
+        self.assertIn('RUNTIME_DIR=../deploy-prod/current', active)
+        self.assertEqual((self.target / 'docker/rule-engine-mysql/data/keep').read_text(), 'mysql-data')
+        self.assertEqual((self.target / 'docker/rule-engine-redis/data/keep').read_text(), 'redis-data')
+        self.assertEqual((legacy / 'current/server.jar').read_text(), 'old-server')
+        self.assertEqual((legacy / 'current/BUILD-INFO.txt').read_text(), 'old-version')
+        self.assertEqual(set(p.name for p in legacy.iterdir()), {'current', 'releases'})
+        archive = next((self.target / 'legacy').glob('before-layout-*'))
+        self.assertIn('active-secret', (archive / '.env.server').read_text())
+        self.assertEqual((archive / 'docs/keep').read_text(), 'old-docs')
+        state = json.loads((self.target / deployment.LAYOUT_FILE).read_text())
+        self.assertEqual({p['project'] for p in state['projects']}, {'original-server', 'original-client'})
+        self.assertEqual([c[-1] for c in self.commands if 'up' in c], ['mysql', 'redis', 'kafka', 'server', 'web', 'runtime-sdk'])
+        self.assertFalse(any('down' in c or 'rm' in c for c in self.commands))
+
+    def test_nested_legacy_is_not_started_using_outer_env_backups(self):
+        self.make_nested_legacy()
+        self.assertRaises(deployment.DeployError, self.deploy)
+        self.assertFalse(self.commands)
+
+    def test_missing_layout_record_never_falls_back_to_outer_env_backup(self):
+        self.make_nested_legacy()
+        self.adopt()
+        (self.target / deployment.LAYOUT_FILE).unlink()
+        self.commands.clear()
+        self.assertRaises(deployment.DeployError, self.deploy)
+        self.assertFalse(self.commands)
+
+    def test_adopt_refuses_changed_live_mounts_before_stopping(self):
+        self.make_nested_legacy()
+        self.live_mounts[-1][0]['Name'] = 'different-kafka-volume'
+        self.assertRaises(deployment.DeployError, self.adopt)
+        self.assertFalse(any('stop' in c for c in self.commands))
+        self.assertFalse((self.target / 'docker').exists())
+
+    def test_adopt_failure_restores_old_paths_and_restarts_original_projects(self):
+        legacy = self.make_nested_legacy()
+        self.fail_layout_service = 'redis'
+        self.assertRaises(deployment.DeployError, self.adopt)
+        self.assertTrue((legacy / 'docker/runtime/server.jar').is_file())
+        self.assertFalse((legacy / 'docker/runtime/BUILD-INFO.txt').exists())
+        self.assertEqual((legacy / 'docker/rule-engine-mysql/data/keep').read_text(), 'mysql-data')
+        self.assertFalse((self.target / 'config').exists())
+        self.assertFalse((self.target / 'docker').exists())
+        self.assertFalse((self.target / deployment.LAYOUT_FILE).exists())
+        self.assertEqual((self.target / '.env.server').read_text(), 'secret-server')
+        self.assertIn('original-client', [c for c in self.commands if 'up' in c][-1])
+
+    def test_adopt_config_failure_after_move_restores_without_using_missing_old_files(self):
+        legacy = self.make_nested_legacy()
+        self.fail_new_config = True
+        self.assertRaises(deployment.DeployError, self.adopt)
+        self.assertTrue((legacy / 'docker/runtime/server.jar').is_file())
+        self.assertTrue((legacy / '.env.server').is_file())
+        self.assertFalse((self.target / 'config').exists())
+        self.assertFalse((self.target / deployment.LAYOUT_FILE).exists())
+        for command in (c for c in self.commands if 'up' in c):
+            self.assertEqual(Path(command[command.index('-f') + 1]).parent, legacy / 'docker')
+
+    def test_adopt_rejects_hardcoded_old_data_path_before_starting_new_containers(self):
+        legacy = self.make_nested_legacy()
+        self.keep_old_data_path = True
+        self.assertRaises(deployment.DeployError, self.adopt)
+        self.assertEqual((legacy / 'docker/rule-engine-mysql/data/keep').read_text(), 'mysql-data')
+        self.assertFalse((self.target / deployment.LAYOUT_FILE).exists())
+        for command in (c for c in self.commands if 'up' in c):
+            self.assertEqual(Path(command[command.index('-f') + 1]).parent, legacy / 'docker')
+
+    def test_versioned_updates_previous_only_after_success_and_never_restarts_infrastructure(self):
+        legacy = self.make_nested_legacy()
+        self.adopt()
+        self.commands.clear()
+        self.deploy()
+        self.assertEqual((legacy / 'current/server.jar').read_text(), 'new-server')
+        self.assertEqual((legacy / 'previous/server.jar').read_text(), 'old-server')
+        self.assertEqual((legacy / 'previous/BUILD-INFO.txt').read_text(), 'old-version')
+        self.assertEqual((legacy / 'current/BUILD-INFO.txt').read_text(), 'version')
+        self.assertEqual([c[-1] for c in self.commands if 'up' in c], ['server', 'web', 'runtime-sdk'])
+        for command in (c for c in self.commands if 'up' in c):
+            self.assertEqual(Path(command[command.index('--env-file') + 1]).parent, self.target / 'config')
+        self.write(self.release / 'docker/runtime/server.jar', 'third-server')
+        self.commands.clear()
+        self.fail_start = True
+        self.assertRaises(deployment.DeployError, self.deploy)
+        self.assertEqual((legacy / 'current/server.jar').read_text(), 'new-server')
+        self.assertEqual((legacy / 'previous/server.jar').read_text(), 'old-server')
+        self.fail_start = False
+        self.deploy()
+        self.assertEqual((legacy / 'current/server.jar').read_text(), 'third-server')
+        self.assertEqual((legacy / 'previous/server.jar').read_text(), 'new-server')
+        self.assertTrue(any(p.read_text() == 'old-server' for p in (legacy / 'history').glob('*/older-previous/server.jar')))
 
     def test_auto_selects_both_compose_commands_and_rejects_v1(self):
         for plugin in (True, False):

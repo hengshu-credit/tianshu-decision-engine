@@ -425,7 +425,7 @@ SDK 本地执行日志默认通过 HTTP 上报；需要 Kafka 时显式启用，
 
 需要在 Docker 内一次生成后端、前端和可上传部署 ZIP 时执行 `node scripts/package-deployment.mjs`。公网部署使用 Nginx Proxy Manager 提供 HTTPS、证书和反向代理；Compose 不修改 Ubuntu 的防火墙和既有端口策略，MySQL、Redis、Kafka 按 `.env.server` 与现有安全组对外提供调试访问。
 
-MySQL、Redis、Kafka 共用长期保留的一套环境。日常更新只替换 `docker/runtime/server.jar`、可选 SDK 的 `runtime.jar` 和前端 `dist/`，不删除安装目录、不重复复制 env、不覆盖 Compose/Nginx 或重建基础设施。数据库迁移独立交付在发布包 `migrations/`，按适用范围在停止旧应用并完成备份后、新版启动前执行；推荐使用包内 `python3 deploy.py --target 原安装目录`，自动兼容 `docker compose` / `docker-compose`，完整流程见 [应用更新说明](docs/server-upload.md)。
+MySQL、Redis、Kafka 共用长期保留的一套环境。外层 `config/` 放生效配置，`docker/` 管理共享服务，外层原 env 仅作备份。应用放在 `deploy-prod/current/`，更新成功后旧版保存到 `previous/`，更早版本留在 `history/`；新包解压到 `deploy-prod/releases/`。现有旧 deploy-prod 用 `--adopt-layout` 一次性整理，以内层原 env 为准；之后只更新 JAR/前端，不覆盖固定配置或重建基础设施。数据库迁移独立交付在发布包 `migrations/`，按适用范围在停止旧应用并完成备份后、新版启动前执行；推荐使用包内 `python3 deploy.py --target 原安装目录`，自动兼容 `docker compose` / `docker-compose`，完整流程见 [应用更新说明](docs/server-upload.md)。
 
 外部公司或业务系统直接调用 Server API：`POST /api/rule/sync/execute/{ruleCode}`；启用并发布开放接口后可调用 `POST /api/rule/openapi/{ruleCode}`。接口文档从项目「API」按钮下载，不需要部署转发服务或连接 Redis。
 

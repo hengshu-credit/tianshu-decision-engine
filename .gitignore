@@ -49,6 +49,11 @@ scripts/quality-gates/fixtures/request.local.json
 /releases/
 /backups/
 /.deploy.lock/
+/deploy-prod/
+/legacy/
+/config/.env.server
+/config/.env.client
+/.deployment-layout.json
 
 /**/target/
 /docker/runtime/*.jar

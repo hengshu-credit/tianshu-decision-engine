@@ -9,7 +9,8 @@ import { createHash } from 'node:crypto'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 const doc = readFileSync(path.join(root, 'docs/server-upload.md'), 'utf8')
-const blocks = [...doc.matchAll(/```bash\r?\n([\s\S]*?)```/g)].map(match => match[1])
+const legacyDoc = readFileSync(path.join(root, 'docs/deployment-flat-legacy.md'), 'utf8')
+const blocks = [...(doc + '\n' + legacyDoc).matchAll(/```bash\r?\n([\s\S]*?)```/g)].map(match => match[1])
 const prepare = blocks.find(block => block.includes('NEXT_RUNTIME_DIR='))
 const replace = blocks.find(block => block.includes('mv "$APP_RUNTIME_DIR"'))
 const bash = process.platform === 'win32' ? 'C:/Program Files/Git/bin/bash.exe' : 'bash'
@@ -19,7 +20,7 @@ for (const valid of [true, false]) test(`部署目录内的五行更新命令：
   try {
     const installation = path.join(fixture, 'installation')
     mkdirSync(path.join(installation, 'docker'), { recursive: true })
-    mkdirSync(path.join(installation, 'releases'))
+    mkdirSync(path.join(installation, 'deploy-prod/releases'), { recursive: true })
     writeFileSync(path.join(installation, '.env.server'), 'keep-env')
     writeFileSync(path.join(installation, 'docker/keep'), 'keep-data')
     writeFileSync(path.join(fixture, 'neighbor'), 'keep-neighbor')
@@ -40,13 +41,13 @@ for (const valid of [true, false]) test(`部署目录内的五行更新命令：
       assert.ifError(result.error)
       assert.equal(result.status === 0, valid, result.stderr)
     }
-    const releases = readdirSync(path.join(installation, 'releases'))
+    const releases = readdirSync(path.join(installation, 'deploy-prod/releases'))
     assert.equal(releases.length, valid ? 2 : 0)
     if (valid) {
-      for (const name of releases) assert.equal(readFileSync(path.join(installation, 'releases', name, 'deploy.py'), 'utf8'), '# deployment entry')
+      for (const name of releases) assert.equal(readFileSync(path.join(installation, 'deploy-prod/releases', name, 'deploy.py'), 'utf8'), '# deployment entry')
       const args = readFileSync(path.join(fixture, 'call.txt'), 'utf8').trim().split('\n')
       assert.equal(args[1], '--target')
-      assert.ok(args[0].startsWith(args[2] + '/releases/update-'))
+      assert.ok(args[0].startsWith(args[2] + '/deploy-prod/releases/update-'))
       assert.ok(args[2].endsWith('/installation'))
     } else assert.equal(existsSync(path.join(fixture, 'call.txt')), false)
     assert.equal(readFileSync(path.join(installation, '.env.server'), 'utf8'), 'keep-env')

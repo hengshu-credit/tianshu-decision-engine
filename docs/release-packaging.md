@@ -57,4 +57,4 @@ Windows 用 `$env:PACKAGE_CONFIG_DIR = 'E:\private\production'`；macOS/Linux �
 
 ZIP 校验：Windows 用 `Get-FileHash -Algorithm SHA256 包文件名.zip`；macOS 用 `shasum -a 256 -c 包文件名.zip.sha256`；Linux 用 `sha256sum -c 包文件名.zip.sha256`。解压后 Linux 运行 `sha256sum -c SHA256SUMS.txt` 验证包内所有文件。
 
-ZIP 和同名 `.zip.sha256` 上传到 `/root/tianshu-decision-engine`，更新时解压到其下独立的 `releases/` 子目录，备份留在 `backups/`，不要把 `/root` 当部署目录。服务器安装、升级、备份、启动、状态和回退按 [部署说明](server-upload.md) 执行，推荐直接运行 `python3 deploy.py --target 原安装目录`，自动兼容两种现代 Compose 命令。MySQL、Redis、Kafka 共用长期保留的一套环境；普通更新只替换 JAR 和前端 `dist/`，保留原 env、Compose、Nginx 配置及数据卷，不重新安装基础设施。
+ZIP 和同名 `.zip.sha256` 上传到 `/root/tianshu-decision-engine`，更新时解压到 `deploy-prod/releases/`；生效配置放在外层 `config/`，共享服务在外层 `docker/`，应用在 `deploy-prod/current/`，成功更新前的应用留在 `previous/`，更早的留在 `history/`，不要把 `/root` 当部署目录。服务器安装、升级、备份、启动、状态和回退按 [部署说明](server-upload.md) 执行，旧 deploy-prod 首次用 `--adopt-layout` 整理，外层原 env 备份保持原样；之后运行 `python3 deploy.py --target 外层安装目录`，自动兼容两种现代 Compose 命令。MySQL、Redis、Kafka 共用长期保留的一套环境；普通更新只替换 JAR 和前端 `dist/`，保留原 env、Compose、Nginx 配置及数据卷，不重新安装基础设施。
