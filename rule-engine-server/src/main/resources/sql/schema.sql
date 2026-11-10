@@ -2156,6 +2156,33 @@ SELECT 1, 0, 'GLOBAL', 'POSITIVE_INFINITY', '正无穷', 'POSITIVE_INFINITY', 'D
        'Infinity', NULL, 'Infinity', '系统常量：数值比较上界。', -990, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 ON DUPLICATE KEY UPDATE `system_constant` = 1;
 
+-- 决策结果系统常量：默认初始化即提供，不依赖可选业务数据或样例导入。
+-- 已有同名业务字段不自动改值、改 ID 或改为系统常量；冲突须由管理员核对。
+INSERT INTO `rule_variable`
+  (`system_constant`, `project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+   `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
+   `status`, `create_time`, `update_time`)
+SELECT 1, 0, 'GLOBAL', 'DECISION_PASS', '通过', 'DECISION_PASS', 'NUMBER', 'CONSTANT',
+       '0', NULL, '0', '系统常量：决策结果为通过。', -989, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+ON DUPLICATE KEY UPDATE `id` = `id`;
+
+INSERT INTO `rule_variable`
+  (`system_constant`, `project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+   `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
+   `status`, `create_time`, `update_time`)
+SELECT 1, 0, 'GLOBAL', 'DECISION_REVIEW', '人审', 'DECISION_REVIEW', 'NUMBER', 'CONSTANT',
+       '2', NULL, '2', '系统常量：决策结果为人审。', -988, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+ON DUPLICATE KEY UPDATE `id` = `id`;
+
+INSERT INTO `rule_variable`
+  (`system_constant`, `project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`,
+   `default_value`, `value_range`, `example_value`, `description`, `sort_order`,
+   `status`, `create_time`, `update_time`)
+SELECT 1, 0, 'GLOBAL', 'DECISION_REJECT', '拒绝', 'DECISION_REJECT', 'NUMBER', 'CONSTANT',
+       '1', NULL, '1', '系统常量：决策结果为拒绝。', -987, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+ON DUPLICATE KEY UPDATE `id` = `id`;
+-- 决策结果系统常量结束。
+
 -- 旧库缺少逻辑视图依赖字段时先跳过视图创建，SchemaSyncService 补齐字段后再创建；新库和已升级库直接创建。
 
 SET @schema_log_view_sql = IF(
