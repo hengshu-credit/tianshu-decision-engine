@@ -111,7 +111,7 @@
                   编辑
                 </el-button>
                 <el-button
-                  v-permission="{ anyOf: ['account:role-assign', 'account:manage'] }"
+                  v-permission="'account:role-assign'"
                   link
                   data-action="configure"
                   type="primary"
@@ -120,7 +120,7 @@
                   权限调整
                 </el-button>
                 <el-button
-                  v-permission="{ anyOf: ['account:password-reset', 'account:manage'] }"
+                  v-permission="passwordResetRequirement(row)"
                   link
                   data-action="reset"
                   @click="openPasswordDialog(row)"
@@ -217,10 +217,10 @@
         <el-form-item label="邮箱">
           <el-input v-model="accountForm.email" type="email" placeholder="用于找回密码，可留空" />
         </el-form-item>
-        <el-form-item :label="accountForm.id ? '新密码（留空不修改）' : '初始密码'">
+        <el-form-item v-if="!accountForm.id || canResetAccountPassword(accountForm)" :label="accountForm.id ? '新密码（留空不修改）' : '初始密码'">
           <el-input v-model="accountForm.password" type="password" show-password />
         </el-form-item>
-        <el-form-item label="角色">
+        <el-form-item v-if="canAssignPermissions" label="角色">
           <el-select v-model="accountForm.roleIds" multiple clearable>
             <el-option
               v-for="role in enabledRoles"
@@ -232,18 +232,18 @@
           </el-select>
           <span class="muted">超级管理员为系统唯一身份，不能分配给其他账户。</span>
         </el-form-item>
-        <el-form-item label="项目范围">
+        <el-form-item v-if="canAssignPermissions" label="项目范围">
           <el-radio-group v-model="accountForm.projectAccessMode">
             <el-radio-button value="ALL">不限制项目</el-radio-button>
             <el-radio-button value="SELECTED">仅指定项目</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="accountForm.projectAccessMode === 'SELECTED'" label="可访问项目">
+        <el-form-item v-if="canAssignPermissions && accountForm.projectAccessMode === 'SELECTED'" label="可访问项目">
           <el-select v-model="accountForm.projectIds" multiple filterable clearable placeholder="不分配项目，仅可访问获授权的全局内容">
             <el-option v-for="project in projectOptions" :key="project.id" :label="project.projectName + ' (' + project.projectCode + ')'" :value="project.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="全局内容"><el-switch v-model="accountForm.globalEditable" active-text="允许编辑（仍需模块权限）" inactive-text="只读" /></el-form-item>
+        <el-form-item v-if="canAssignPermissions" label="全局内容"><el-switch v-model="accountForm.globalEditable" active-text="允许编辑（仍需模块权限）" inactive-text="只读" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button :disabled="accountSaving" @click="closeConfigurationDialog('accountDialogVisible')">取消</el-button>
@@ -418,7 +418,7 @@
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { hasPermission } from '@/security/permissionState'
+import { getCurrentUser, hasPermission } from '@/security/permissionState'
 import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import OperationLogs from './OperationLogs.vue'
@@ -516,6 +516,8 @@ export default {
     }
   },
   computed: {
+    canAssignPermissions() { return hasPermission('account:role-assign') },
+    canResetPassword() { return hasPermission('account:password-reset') },
     canViewAccounts() {
       return hasPermission(['account:view', 'account:manage', 'account:role-assign', 'account:password-reset'])
     },
@@ -595,6 +597,14 @@ export default {
   },
   beforeUnmount() { this.accountEditEpoch++; this.newPassword = ''; this.accountForm.password = '' },
   methods: {
+    passwordResetRequirement(account) {
+      return String(account.id) === String(getCurrentUser()?.userId)
+        ? ['account:password-reset', 'account:password-change'] : 'account:password-reset'
+    },
+    canResetAccountPassword(account) {
+      const requirement = this.passwordResetRequirement(account)
+      return (Array.isArray(requirement) ? requirement : [requirement]).every(code => hasPermission(code))
+    },
     async runAccountSave(request, complete) {
       if (this.accountSaving) return
       this.accountSaving = true
@@ -651,7 +661,12 @@ export default {
       this.accountDialogVisible = true
     },
     async saveAccount() {
-      return this.runAccountSave(() => saveConsoleAccount(this.accountForm), async () => {
+      const payload = { ...this.accountForm }
+      if (!this.canAssignPermissions) {
+        for (const key of ['roleIds', 'permissionOverrides', 'projectIds', 'projectAccessMode', 'globalEditable', 'projectPermissionOverrides']) delete payload[key]
+      }
+      if (payload.id && !this.canResetAccountPassword(payload)) delete payload.password
+      return this.runAccountSave(() => saveConsoleAccount(payload), async () => {
         this.accountDialogVisible = false
         this.accountForm.password = ''
         ElMessage.success('账户已保存')

@@ -61,8 +61,7 @@ public class ConsoleAccountController {
     }
 
     @PutMapping("/{id}/permissions")
-    @RequirePermission(value = "account:role-assign",
-            anyOf = {"account:manage"})
+    @RequirePermission("account:role-assign")
     public ApiResponse<ConsoleAccountManagementService.ConsoleUserDetail> permissions(
             @PathVariable Long id,
             @RequestBody ConsoleUserPermissionRequest request) {
@@ -79,8 +78,7 @@ public class ConsoleAccountController {
     }
 
     @PutMapping("/{id}/password")
-    @RequirePermission(value = "account:password-reset",
-            anyOf = {"account:manage"})
+    @RequirePermission("account:password-reset")
     public ApiResponse<Void> resetPassword(
             @PathVariable Long id,
             @RequestBody ConsolePasswordResetRequest request) {

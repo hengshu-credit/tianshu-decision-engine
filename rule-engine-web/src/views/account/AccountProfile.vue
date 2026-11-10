@@ -30,7 +30,8 @@
 
       <div class="content-card">
         <div class="card-heading"><h2>修改密码</h2><span>修改后需要重新登录</span></div>
-        <el-form ref="passwordForm" label-position="top" :model="passwordForm" :rules="passwordRules">
+        <el-alert v-if="!canChangePassword" title="当前账户无修改本人密码权限，请联系管理员。" type="info" :closable="false" />
+        <el-form v-else ref="passwordForm" label-position="top" :model="passwordForm" :rules="passwordRules">
           <el-form-item label="当前密码" prop="currentPassword"><el-input v-model="passwordForm.currentPassword" type="password" show-password autocomplete="current-password" /></el-form-item>
           <el-form-item label="新密码" prop="password"><el-input v-model="passwordForm.password" type="password" show-password autocomplete="new-password" /></el-form-item>
           <el-form-item label="确认新密码" prop="confirmPassword"><el-input v-model="passwordForm.confirmPassword" type="password" show-password autocomplete="new-password" /></el-form-item>
@@ -44,10 +45,13 @@
 <script>
 import { ElMessage } from 'element-plus'
 import { changeConsolePassword, getConsoleProfile, updateConsoleProfile, resendConsoleEmailVerification } from '@/api/auth'
-import { clearCurrentUser } from '@/security/permissionState'
+import { clearCurrentUser, hasPermission } from '@/security/permissionState'
 
 export default {
   name: 'AccountProfile',
+  computed: {
+    canChangePassword() { return hasPermission('account:password-change') },
+  },
   data() {
     const validateConfirm = (rule, value, callback) => value !== this.passwordForm.password ? callback(new Error('两次输入的密码不一致')) : callback()
     return {
@@ -79,6 +83,7 @@ export default {
       try { const response = await updateConsoleProfile({ displayName: this.profile.displayName, email: this.profile.email }); this.profile = { ...this.profile, ...(response.data || {}) }; ElMessage.success(this.profile.emailVerifiedAt ? '个人资料已保存' : '资料已保存，验证邮件已发送') } finally { this.savingProfile = false }
     },
     changePassword() {
+      if (!this.canChangePassword) return
       this.$refs.passwordForm.validate(async valid => {
         if (!valid) return
         this.changingPassword = true

@@ -142,6 +142,7 @@ docker compose --env-file .env.client --env-file .env.server -f docker/docker-co
 - Compose 不提供共享默认密码；全新数据卷根据 `MYSQL_USERNAME` / `MYSQL_PASSWORD` 创建应用账号，已有数据卷需由数据库管理员预先创建或更新最小权限账号
 - 环境文件仅使用 `.env.server` 和 `.env.client`，保留对应 `.example` 模板；不加载旧 `.env` 或 `.local` 覆盖。Maven/JAR 的 server 及 Vite 读取 `.env.server`，runtime 读取 `.env.client`，系统环境变量和命令行参数优先。
 - 控制台账号密码不从环境变量或配置文件初始化。首次访问注册页面创建超管，数据库永久记录初始化状态。忘记账号和密码时，在服务器运行 `java -jar server.jar --console-admin-recovery-code` 生成30分钟一次性恢复码，再到恢复页面设置新的用户名和密码；不得清空业务表、删除数据卷或更换项目加密主密钥来重置账户。
+- 密码权限独立生效：`account:password-change` 控制本人改密和邮件找回，`account:password-reset` 控制管理员重置账户密码，`account:role-assign` 控制角色及项目授权调整；`account:manage` 不隐含这些能力，普通账户保存也须校验敏感字段。新本人改密权限由登录时目录同步补齐，仅自动授予超管角色，普通账户需显式授权；未授权的演示账户不能改密，已有找回链接在权限撤销后也不能使用。
 - 系统仅保留一个 `SUPER_ADMIN` 身份。启动及恢复命令通过账户安全锁合并历史重复超管，保留主账号 ID、授权和各原操作人名称的业务归属；重复账号归档，不能登录、重新启用或在账户列表显示。恢复新用户名仍更新主账号，不创建新超管；账户管理禁止给其他账号授予超管角色，也不能停用或移除唯一超管。普通业务管理员仍按模块和项目权限授权。
 
 ### 发布、凭据与恢复验收

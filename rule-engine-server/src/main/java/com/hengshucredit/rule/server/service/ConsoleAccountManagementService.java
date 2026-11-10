@@ -23,6 +23,7 @@ import com.hengshucredit.rule.server.mapper.ConsoleAccountTokenMapper;
 import com.hengshucredit.rule.model.entity.ConsoleAccountToken;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.hengshucredit.rule.server.security.ConsolePermissionService;
+import com.hengshucredit.rule.server.security.ConsoleAccessGuard;
 import jakarta.annotation.Resource;
 import lombok.Data;
 import org.springframework.stereotype.Service;
@@ -60,6 +61,10 @@ public class ConsoleAccountManagementService {
     @Resource
     private ConsolePermissionService permissionService;
     @Resource
+    private ConsoleAccessGuard accessGuard;
+    @Resource
+    private com.hengshucredit.rule.server.security.ConsoleProjectAccess projectAccess;
+    @Resource
     private ConsoleAccountTokenMapper tokenMapper;
     @Resource
     private com.hengshucredit.rule.server.mapper.ConsoleUserProjectMapper userProjectMapper;
@@ -86,6 +91,20 @@ public class ConsoleAccountManagementService {
     public ConsoleUserDetail saveUser(ConsoleUserSaveRequest request,
                                       String operator) {
         lockAccounts();
+        if (accessGuard != null) {
+            accessGuard.require(ACCOUNT_MANAGE);
+            if (request != null) {
+                // 普通账户编辑不能成为授权调整或密码重置的旁路；创建时的初始密码仍属于开户操作。
+                if (request.getRoleIds() != null || request.getPermissionOverrides() != null
+                        || request.getProjectIds() != null || request.getProjectAccessMode() != null
+                        || request.getGlobalEditable() != null || request.getProjectPermissionOverrides() != null) {
+                    accessGuard.require("account:role-assign");
+                }
+                if (request.getId() != null && request.getPassword() != null && !request.getPassword().isBlank()) {
+                    requirePasswordResetPermission(request.getId());
+                }
+            }
+        }
         if (request == null || request.getUsername() == null
                 || request.getUsername().isBlank()) {
             throw new IllegalArgumentException("用户名不能为空");
@@ -190,6 +209,7 @@ public class ConsoleAccountManagementService {
             ConsoleUserPermissionRequest request,
             String operator) {
         lockAccounts();
+        if (accessGuard != null) accessGuard.require("account:role-assign");
         ConsoleUser user = requireUser(userId);
         if (request != null) applyProjectPolicy(user, request.getProjectAccessMode(), request.getGlobalEditable());
         replaceUserPermissions(userId,
@@ -225,12 +245,22 @@ public class ConsoleAccountManagementService {
     @Transactional
     public void resetPassword(Long userId, String rawPassword, String operator) {
         lockAccounts();
+        requirePasswordResetPermission(userId);
         if (rawPassword == null || rawPassword.length() < 8) {
             throw new IllegalArgumentException("密码不能少于8位");
         }
         ConsoleUser user = requireUser(userId);
         persistPasswordHash(user, BCrypt.hashpw(rawPassword), operator);
         appendAudit(userId, user.getUsername(), "ACCOUNT_PASSWORD_RESET", null);
+    }
+
+    private void requirePasswordResetPermission(Long userId) {
+        if (accessGuard == null) return;
+        accessGuard.require("account:password-reset");
+        var scope = projectAccess == null ? null : projectAccess.current();
+        if (scope != null && java.util.Objects.equals(scope.userId(), userId)) {
+            accessGuard.require("account:password-change");
+        }
     }
 
     public List<ConsoleRoleDetail> listRoles() {

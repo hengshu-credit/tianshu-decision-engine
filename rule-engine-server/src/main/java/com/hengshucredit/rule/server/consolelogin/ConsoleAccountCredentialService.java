@@ -49,6 +49,8 @@ public class ConsoleAccountCredentialService {
     private ConsoleMailService mailService;
     @Resource
     private RuleEngineConsoleLoginProperties properties;
+    @Resource
+    private com.hengshucredit.rule.server.security.ConsolePermissionService permissionService;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.hengshucredit.rule.server.system.SystemSettingsService systemSettings;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -166,7 +168,7 @@ public class ConsoleAccountCredentialService {
         ConsoleUser user = matches.size() == 1 ? matches.get(0) : null;
         if (user == null || user.getEmail() == null
                 || user.getEmail().isBlank()
-                || user.getEmailVerifiedAt() == null) return;
+                || user.getEmailVerifiedAt() == null || !canChangePassword(user.getId())) return;
         String token = issueToken(user.getId(), PASSWORD_RESET,
                 passwordResetTtlMinutes(), requestIp);
         mailService.sendPasswordReset(user.getEmail(), user.getDisplayName(),
@@ -185,6 +187,7 @@ public class ConsoleAccountCredentialService {
                 || !accountToken.getTargetEmail().equals(user.getEmail()) || user.getEmailVerifiedAt() == null) {
             throw new IllegalArgumentException("账户状态或邮箱已变更，请重新申请重置链接");
         }
+        requirePasswordChangePermission(user.getId());
         consume(accountToken);
         user.setPasswordHash(BCrypt.hashpw(password));
         user.setPermissionVersion(nextVersion(user));
@@ -200,6 +203,7 @@ public class ConsoleAccountCredentialService {
         requirePassword(password);
         lockAccounts();
         ConsoleUser user = requireUser(userId);
+        requirePasswordChangePermission(userId);
         if (!Integer.valueOf(1).equals(user.getStatus())
                 || !BCrypt.checkpw(currentPassword == null ? "" : currentPassword,
                 user.getPasswordHash())) {
@@ -211,6 +215,16 @@ public class ConsoleAccountCredentialService {
         userMapper.updateById(user);
         revokeTokens(userId);
         appendAudit(user, "PASSWORD_CHANGE", requestIp);
+    }
+
+    private boolean canChangePassword(Long userId) {
+        return permissionService.hasPermission(userId, "account:password-change");
+    }
+
+    private void requirePasswordChangePermission(Long userId) {
+        if (!canChangePassword(userId)) {
+            throw new com.hengshucredit.rule.server.security.ConsoleAccessDeniedException("当前账户无修改本人密码权限，请联系管理员");
+        }
     }
 
     @Transactional

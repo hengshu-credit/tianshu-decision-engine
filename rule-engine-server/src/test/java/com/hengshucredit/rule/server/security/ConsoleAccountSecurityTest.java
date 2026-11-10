@@ -77,6 +77,7 @@ public class ConsoleAccountSecurityTest {
             props.setEnabled(true); props.setRegistrationEnabled(true); props.setPasswordRecoveryEnabled(true);
             ReflectionTestUtils.setField(credential, "properties", props);
             ReflectionTestUtils.setField(credential, "mailService", mail);
+            ReflectionTestUtils.setField(credential, "permissionService", permissions);
             ReflectionTestUtils.setField(accounts, "permissionService", permissions);
             ReflectionTestUtils.setField(login, "permissionService", permissions);
             credential = transactional(credential, ConsoleAccountCredentialService.class, ds);
@@ -90,6 +91,11 @@ public class ConsoleAccountSecurityTest {
         }
         String recoveryCode() throws Exception {
             try (var connection = jdbc.getDataSource().getConnection()) { return ConsoleAdministratorRecovery.issue(connection); }
+        }
+        void allowPasswordChange(ConsoleUser user) {
+            var request = new ConsoleUserPermissionRequest();
+            request.setPermissionOverrides(Map.of("account:password-change", "ALLOW"));
+            accounts.saveUserPermissions(user.getId(), request, "admin");
         }
         private <T> T transactional(T target, Class<T> type, javax.sql.DataSource dataSource) {
             var proxy = new org.springframework.aop.framework.ProxyFactory(target);
@@ -151,7 +157,9 @@ public class ConsoleAccountSecurityTest {
     }
     @Test public void adminResetMustInvalidateOutstandingResetLink() throws Exception {
         try (var f = new Fixture()) {
+            f.initialize();
             var user = f.user("alice");
+            f.allowPasswordChange(user);
             f.credential.requestPasswordReset("alice", "https://console.example.test", "127.0.0.1");
             String oldToken = f.mail.token();
             f.accounts.resetPassword(user.getId(), "AdminNew123!", "admin");
@@ -260,7 +268,8 @@ public class ConsoleAccountSecurityTest {
     }
     @Test public void controlBogusAndConsumedTokensAreRejected() throws Exception {
         try (var f = new Fixture()) {
-            f.user("alice");
+            f.initialize();
+            f.allowPasswordChange(f.user("alice"));
             assertThrows(IllegalArgumentException.class, () -> f.credential.resetPassword("bogus", "NewPass123!", "127.0.0.1"));
             f.credential.requestPasswordReset("alice", "https://console.example.test", "127.0.0.1");
             String token = f.mail.token();

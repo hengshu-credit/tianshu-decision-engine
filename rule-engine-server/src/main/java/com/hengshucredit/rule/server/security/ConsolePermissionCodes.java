@@ -78,6 +78,8 @@ public final class ConsolePermissionCodes {
                 "role:manage", "管理角色", "账户管理", "ACTION", null, 1006));
         definitions.add(new PermissionDefinition(
                 "account:audit", "查看操作日志", "账户管理", "ACTION", null, 1007));
+        definitions.add(new PermissionDefinition(
+                "account:password-change", "修改本人密码（含邮件找回）", "账户管理", "ACTION", null, 1008));
         return Collections.unmodifiableList(definitions);
     }
 

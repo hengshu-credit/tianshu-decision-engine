@@ -10,7 +10,8 @@ import static org.junit.Assert.*;
 public class ConsoleAccountConcurrencyTest {
     @Test public void resetLinkCanOnlyBeConsumedOnceAcrossTransactions() throws Exception {
         try (var f = new ConsoleAccountSecurityTest.Fixture()) {
-            f.user("alice");
+            f.initialize();
+            f.allowPasswordChange(f.user("alice"));
             f.credential.requestPasswordReset("alice", "https://console.example.test", "127.0.0.1");
             String token = f.mail.token();
             AtomicInteger successes = new AtomicInteger();
