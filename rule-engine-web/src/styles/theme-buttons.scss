@@ -141,34 +141,54 @@
   outline-offset: 2px;
 }
 
-// 分段选择与普通操作按钮共用品牌令牌，覆盖所有配置页和明暗主题。
-.tianshu-segmented > button { font: inherit; }
-
+// 分段选择与普通操作按钮共用尺寸和品牌令牌，覆盖所有配置页和明暗主题。
 .el-radio-button .el-radio-button__inner,
 .tianshu-segmented > button {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: var(--el-component-size-small, 32px);
   padding: 6px 12px !important;
-  // radio-group 用 0 字号消除间隙；只继承字体族，保留组件自身的字号和行高。
+  // 不继承 radio-group 的 0 字号及表单行高，统一管理台的 32px / 14px 规格。
   font-family: inherit;
+  font-size: var(--el-font-size-base, 14px);
+  line-height: 1;
   font-weight: 500;
   color: var(--tianshu-primary-text) !important;
   background: var(--tianshu-primary-soft-bg) !important;
   border: 1px solid var(--el-color-primary) !important;
+  outline: none;
   box-shadow: none !important;
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 .el-radio-button:not(.is-disabled) .el-radio-button__inner:hover,
+.el-radio-button:not(.is-disabled) .el-radio-button__original-radio:focus-visible + .el-radio-button__inner,
 .tianshu-segmented > button:not(:disabled):hover {
   background: var(--tianshu-primary-soft-hover-bg) !important;
+}
+.el-radio-button:not(.is-disabled) .el-radio-button__inner:active,
+.tianshu-segmented > button:not(:disabled):active {
+  background: var(--tianshu-primary-soft-active-bg) !important;
 }
 .el-radio-button.is-active:not(.is-disabled) .el-radio-button__inner,
 .tianshu-segmented > button.is-active:not(:disabled) {
   color: var(--tianshu-button-primary-text) !important;
   background: var(--tianshu-button-primary-bg) !important;
   border-color: var(--tianshu-button-primary-border) !important;
+}
+.el-radio-button.is-active:not(.is-disabled) .el-radio-button__inner:hover,
+.el-radio-button.is-active:not(.is-disabled) .el-radio-button__original-radio:focus-visible + .el-radio-button__inner,
+.tianshu-segmented > button.is-active:not(:disabled):is(:hover, :focus-visible) {
+  color: var(--tianshu-button-primary-hover-text) !important;
+  background: var(--tianshu-button-primary-hover-bg) !important;
+  border-color: var(--tianshu-button-primary-hover-border) !important;
+}
+.el-radio-button.is-active:not(.is-disabled) .el-radio-button__inner:active,
+.tianshu-segmented > button.is-active:not(:disabled):active {
+  color: var(--tianshu-button-primary-active-text) !important;
+  background: var(--tianshu-button-primary-active-bg) !important;
+  border-color: var(--tianshu-button-primary-active-border) !important;
 }
 .el-radio-button.is-disabled .el-radio-button__inner,
 .tianshu-segmented > button:disabled {
@@ -179,3 +199,50 @@
 }
 .el-radio-button__original-radio:focus-visible + .el-radio-button__inner,
 .tianshu-segmented > button:focus-visible { outline: 2px solid var(--tianshu-primary-text); outline-offset: 2px; }
+
+// 配置开关保留开关语义，选中底色、滑块和文字使用同一套可读主题配色。
+.el-switch--small {
+  height: var(--el-component-size-small, 32px);
+  font-size: var(--el-font-size-base, 14px);
+}
+.el-switch--small .el-switch__label {
+  height: 20px;
+  font-size: var(--el-font-size-base, 14px);
+}
+.el-switch--small .el-switch__label * { font-size: inherit; }
+.el-switch .el-switch__label { white-space: nowrap; }
+.el-switch .el-switch__label.is-active { color: var(--tianshu-primary-text); }
+.el-switch .el-switch__core { transition: border-color 160ms ease, box-shadow 160ms ease; }
+.el-switch .el-switch__action { transition: left 160ms ease; }
+.el-switch.is-checked .el-switch__core {
+  color: var(--tianshu-button-primary-text);
+  background: var(--tianshu-button-primary-bg);
+  border-color: var(--tianshu-button-primary-border);
+}
+.el-switch.is-checked .el-switch__action {
+  color: var(--tianshu-button-primary-border);
+  background: var(--tianshu-button-primary-text);
+}
+.el-switch.is-checked:not(.is-disabled):hover .el-switch__core,
+.el-switch.is-checked:not(.is-disabled) .el-switch__input:focus-visible ~ .el-switch__core {
+  color: var(--tianshu-button-primary-hover-text);
+  background: var(--tianshu-button-primary-hover-bg);
+  border-color: var(--tianshu-button-primary-hover-border);
+}
+.el-switch.is-checked:not(.is-disabled):active .el-switch__core {
+  color: var(--tianshu-button-primary-active-text);
+  background: var(--tianshu-button-primary-active-bg);
+  border-color: var(--tianshu-button-primary-active-border);
+}
+.el-switch__input:focus-visible ~ .el-switch__core {
+  outline: 2px solid var(--tianshu-primary-text);
+  outline-offset: 2px;
+}
+.el-switch.is-disabled { opacity: 1; }
+.el-switch.is-disabled .el-switch__core {
+  color: var(--tianshu-text-secondary);
+  background: var(--tianshu-bg-muted);
+  border-color: var(--tianshu-border-subtle);
+}
+.el-switch.is-disabled .el-switch__action { background: var(--tianshu-text-secondary); }
+.el-switch.is-disabled .el-switch__label { color: var(--tianshu-text-secondary); }

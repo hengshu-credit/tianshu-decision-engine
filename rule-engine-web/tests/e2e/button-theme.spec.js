@@ -3,6 +3,7 @@ const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createManagementApiData } = require('./support/managementFixtures.cjs')
 const { createOperationsApiData } = require('./support/operationsFixtures.cjs')
 const { createDetailApiData } = require('./support/detailFixtures.cjs')
+const { createDocsApiData } = require('./support/docsFixtures.cjs')
 const { DEFAULT_THEME_CONFIG } = require('../../src/theme/themeConfig.js')
 
 const themes = [
@@ -63,12 +64,191 @@ async function expectReadableRadioGroup(group, labels) {
         controlHeight: Number.parseFloat(style.getPropertyValue('--el-component-size-small')),
       }
     })
-    expect(geometry.fontSize).toBeGreaterThanOrEqual(12)
+    expect(geometry.fontSize).toBe(14)
     expect(geometry.textWidth).toBeGreaterThan(0)
     expect(geometry.textHeight).toBeGreaterThan(0)
     expect(geometry.textInside).toBe(true)
     expect(geometry.height).toBe(geometry.controlHeight)
     expect((await appearance(button)).ratio).toBeGreaterThanOrEqual(4.5)
+  }
+}
+
+async function expectThemePalette(control, selected, state = '') {
+  await expect(async () => {
+    const colors = await control.evaluate((element, { selected, state }) => {
+      const probe = document.createElement('span')
+      const prefix = `--tianshu-button-primary-${state ? `${state}-` : ''}`
+      probe.style.color = `var(${state === 'disabled' ? '--tianshu-text-secondary' : selected ? `${prefix}text` : '--tianshu-primary-text'})`
+      probe.style.background = `var(${state === 'disabled' ? '--tianshu-bg-muted' : selected ? `${prefix}bg` : `--tianshu-primary-soft-${state ? `${state}-` : ''}bg`})`
+      probe.style.borderColor = `var(${state === 'disabled' ? '--tianshu-border-subtle' : selected ? `${prefix}border` : '--el-color-primary'})`
+      document.body.appendChild(probe)
+      const read = node => {
+        const style = getComputedStyle(node)
+        return { color: style.color, background: style.backgroundColor, image: style.backgroundImage, border: style.borderColor }
+      }
+      const result = { actual: read(element), expected: read(probe) }
+      probe.remove()
+      return result
+    }, { selected, state })
+    expect(colors.actual).toEqual(colors.expected)
+    expect((await appearance(control)).ratio).toBeGreaterThanOrEqual(4.5)
+  }).toPass({ timeout: 2000 })
+}
+
+for (const colorScheme of ['LIGHT', 'DARK']) {
+  test(`${colorScheme} 规则、API、分流和账户配置共用主题按钮且保留配置交互`, async ({ page }, testInfo) => {
+    test.setTimeout(90000)
+    page.setDefaultTimeout(7000)
+    const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+    await page.addInitScript(theme => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify(theme)), {
+      ...DEFAULT_THEME_CONFIG, colorScheme, accentPreset: 'PEACH_PINK_GRADIENT',
+    })
+    const apiData = new Map([...createDocsApiData(), ...createDetailApiData(), ...createOperationsApiData()])
+    apiData.set('/api/rule/console/permissions', [{ permissionCode: 'field:view', permissionName: '查看字段管理', permissionGroup: '字段管理' }])
+    const apiConfig = apiData.get('/api/rule/datasource/api-config/22')
+    let releaseConfig
+    const configReady = new Promise(resolve => { releaseConfig = resolve })
+    apiData.set('/api/rule/datasource/api-config/22', async () => { await configReady; return apiConfig })
+    const { assertClean } = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData })
+    await page.goto(`${origin}/#/test`)
+    const inputMode = page.getByRole('radiogroup', { name: '输入方式' })
+    await expectReadableRadioGroup(inputMode, ['表单填写', 'JSON 编辑'])
+    await inputMode.getByText('JSON 编辑', { exact: true }).click()
+    await expect(inputMode.getByRole('radio', { name: 'JSON 编辑' })).toBeChecked()
+    await inputMode.getByText('表单填写', { exact: true }).click()
+    await page.screenshot({ path: testInfo.outputPath(`rule-controls-${colorScheme}.png`) })
+
+    await page.goto(`${origin}/#/datasource/api/22`)
+    const requestMode = page.locator('.el-form-item').filter({ has: page.locator('.el-form-item__label').filter({ hasText: /^调用模式$/ }) }).locator('.el-radio-group')
+    try {
+      await expect(page.locator('.detail-form')).toHaveAttribute('aria-busy', 'true')
+      await expect(requestMode.getByRole('radio', { name: '同步' })).toBeDisabled()
+      await expectReadableRadioGroup(requestMode, ['同步', '异步'])
+      for (const control of await requestMode.locator('.el-radio-button__inner').all()) await expectThemePalette(control, false, 'disabled')
+    } finally { releaseConfig() }
+    await expect(page.locator('.detail-form')).toHaveAttribute('aria-busy', 'false')
+    await expectReadableRadioGroup(requestMode, ['同步', '异步'])
+    await requestMode.getByText('异步', { exact: true }).click()
+    await expect(requestMode.getByRole('radio', { name: '异步' })).toBeChecked()
+    await requestMode.getByText('同步', { exact: true }).click()
+    await page.getByRole('button', { name: /业务配置/ }).click()
+    await page.getByRole('tab', { name: '接口鉴权', exact: true }).click()
+    const refresh = page.locator('.el-form-item').filter({ hasText: '鉴权失败刷新' }).getByRole('switch')
+    if (!(await refresh.isChecked())) await refresh.check()
+    const failure = page.locator('.el-form-item').filter({ has: page.locator('.el-form-item__label').filter({ hasText: /^Token 失效条件$/ }) }).locator('.el-radio-group')
+    await expectReadableRadioGroup(failure, ['HTTP 401 / 403', '自定义条件'])
+    await failure.getByText('自定义条件', { exact: true }).click()
+    await expect(failure.getByRole('radio', { name: '自定义条件' })).toBeChecked()
+    await failure.getByText('HTTP 401 / 403', { exact: true }).click()
+    await page.getByRole('tab', { name: '报文留存', exact: true }).click()
+    for (const [index, labels] of [[0, ['实际发送内容', '处理中间副本']], [1, ['原始内容', '处理中间副本']]]) {
+      const card = page.locator('.payload-capture-card').nth(index)
+      await expectReadableRadioGroup(card.locator('.el-radio-group'), labels)
+      await card.getByText('处理中间副本', { exact: true }).click()
+      await expect(card.getByRole('radio', { name: '处理中间副本' })).toBeChecked()
+      await card.getByRole('button', { name: '添加路径', exact: true }).click()
+      await expect(card.locator('.payload-path-row')).toHaveCount(1)
+      await card.getByRole('button', { name: '添加路径', exact: true }).hover()
+      await expectThemePalette(card.getByRole('button', { name: '添加路径', exact: true }), false, 'hover')
+      await card.getByRole('button', { name: '删除', exact: true }).click()
+      await expect(card.locator('.payload-path-row')).toHaveCount(0)
+      await card.getByRole('button', { name: '添加超长字段', exact: true }).click()
+      await expect(card.locator('.oversized-field-row')).toHaveCount(1)
+      await card.getByRole('button', { name: '删除', exact: true }).click()
+    }
+    await page.screenshot({ path: testInfo.outputPath(`payload-controls-${colorScheme}.png`) })
+
+    await page.goto(`${origin}/#/experiment/detail/61`)
+    await page.getByRole('tab', { name: '空跑测试', exact: true }).click()
+    const mode = page.locator('.test-mode')
+    await expectReadableRadioGroup(mode.locator('.el-radio-group'), ['随机分流', '条件分流'])
+    await mode.getByText('条件分流', { exact: true }).click()
+    const mutual = mode.getByRole('switch')
+    await mutual.check()
+    await page.mouse.move(0, 0)
+    await mutual.blur()
+    await expectThemePalette(mode.locator('.el-switch__core'), true)
+    await mode.locator('.el-switch__core').click()
+    await expect(mutual).not.toBeChecked()
+    await mutual.press('Enter')
+    await expect(mutual).toBeChecked()
+    await expectThemePalette(mode.locator('.el-switch__core'), true, 'hover')
+    const checkModeLayout = async () => {
+      expect(await mode.locator('.el-radio-button__inner').evaluateAll(elements => new Set(elements.map(element => Math.round(element.getBoundingClientRect().top))).size)).toBe(1)
+      for (const label of await mode.locator('.el-switch__label').all()) {
+        await expect(label).toHaveCSS('white-space', 'nowrap')
+        expect(await label.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+      }
+    }
+    await checkModeLayout()
+    await page.screenshot({ path: testInfo.outputPath(`experiment-controls-${colorScheme}.png`) })
+    await page.setViewportSize({ width: 760, height: 900 })
+    await checkModeLayout()
+    await page.setViewportSize({ width: 1280, height: 720 })
+
+    await page.goto(`${origin}/#/account`)
+    await page.getByRole('button', { name: '权限调整', exact: true }).first().click()
+    const dialog = page.getByRole('dialog', { name: '账户权限调整', exact: true })
+    await expect(dialog).toBeVisible()
+    const projectScope = dialog.locator('.el-form .el-radio-group').first()
+    await expectReadableRadioGroup(projectScope, ['不限制项目', '仅指定项目'])
+    await projectScope.getByText('仅指定项目', { exact: true }).click()
+    await expect(projectScope.getByRole('radio', { name: '仅指定项目' })).toBeChecked()
+    await expect(dialog.locator('.el-form-item').filter({ has: page.locator('.el-form-item__label').filter({ hasText: /^可访问项目$/ }) }).locator('.el-select')).toBeVisible()
+    const override = dialog.locator('.el-table .el-radio-group').first()
+    await expectReadableRadioGroup(override, ['继承', '允许', '拒绝'])
+    await override.getByText('拒绝', { exact: true }).click()
+    await expect(override.getByRole('radio', { name: '拒绝' })).toBeChecked()
+    await expect(dialog.locator('.el-table__body tr').first().locator('.el-tag').last()).toHaveText('拒绝')
+    await override.getByText('允许', { exact: true }).click()
+    await expect(dialog.locator('.el-table__body tr').first().locator('.el-tag').last()).toHaveText('允许')
+    await page.screenshot({ path: testInfo.outputPath(`account-controls-${colorScheme}.png`) })
+    assertClean()
+  })
+
+  for (const [name, overrides] of themes) {
+    test(`${colorScheme} ${name} 分段配置按钮使用完整主题交互状态`, async ({ page }) => {
+      const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+      await page.addInitScript(theme => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify(theme)), { ...DEFAULT_THEME_CONFIG, colorScheme, ...overrides })
+      const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: new Map([...createDetailApiData(), ...createOperationsApiData()]) })
+      await page.goto(`${origin}/#/test`)
+      const group = page.locator('.test-left .el-radio-group').first()
+      await expectReadableRadioGroup(group, ['全部', '项目级', '全局'])
+      const selected = group.locator('.is-active .el-radio-button__inner')
+      const inactive = group.getByText('全局', { exact: true })
+      await expectThemePalette(selected, true)
+      await expectThemePalette(inactive, false)
+      for (const [control, active] of [[inactive, false], [selected, true]]) {
+        await control.hover()
+        await expectThemePalette(control, active, 'hover')
+        await page.mouse.down()
+        try { await expectThemePalette(control, active, 'active') }
+        finally { await page.mouse.up() }
+        await group.getByText('全部', { exact: true }).click()
+        await page.mouse.move(0, 0)
+      }
+      await group.getByRole('radio', { name: '全部', exact: true }).press('ArrowRight')
+      await expect(group.getByRole('radio', { name: '项目级', exact: true })).toBeChecked()
+      await expectThemePalette(selected, true, 'hover')
+      await expect(selected).toHaveCSS('outline-style', 'solid')
+      await expect(selected).toHaveCSS('outline-width', '2px')
+      await page.goto(`${origin}/#/experiment/detail/61`)
+      await page.getByRole('tab', { name: '空跑测试', exact: true }).click()
+      const mode = page.locator('.test-mode')
+      await mode.getByText('条件分流', { exact: true }).click()
+      const mutual = mode.getByRole('switch')
+      await mutual.check()
+      await mutual.blur()
+      await page.mouse.move(0, 0)
+      const core = mode.locator('.el-switch__core')
+      await expectThemePalette(core, true)
+      await core.hover()
+      await expectThemePalette(core, true, 'hover')
+      await page.mouse.down()
+      try { await expectThemePalette(core, true, 'active') }
+      finally { await page.mouse.up() }
+      harness.assertClean()
+    })
   }
 }
 

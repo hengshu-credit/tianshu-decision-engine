@@ -1074,7 +1074,7 @@ export default {
   align-items: flex-start;
   gap: 12px;
   padding: 0 0 16px;
-  border-bottom: 1px solid #e2e6ec;
+  border-bottom: 1px solid var(--tianshu-border-subtle);
 }
 
 .header-main {
@@ -1109,7 +1109,7 @@ export default {
 }
 
 .header-meta span {
-  color: #6c7686;
+  color: var(--tianshu-text-secondary);
   font-size: 13px;
 }
 
@@ -1130,14 +1130,14 @@ export default {
   flex-direction: column;
   justify-content: center;
   padding: 17px 20px;
-  border: 1px solid #e1e6ed;
+  border: 1px solid var(--tianshu-border-subtle);
   border-radius: 4px;
   background: var(--tianshu-bg-surface);
 }
 
 .overview-grid span {
   margin-bottom: 8px;
-  color: #7b8595;
+  color: var(--tianshu-text-tertiary);
   font-size: 12px;
 }
 
@@ -1146,7 +1146,7 @@ export default {
 }
 
 .overview-grid .danger {
-  color: #c93636;
+  color: var(--tianshu-danger-text);
 }
 
 .terminal-notice {
@@ -1167,10 +1167,10 @@ export default {
 }
 
 .content-card {
-  border: 1px solid #e1e6ed;
+  border: 1px solid var(--tianshu-border-subtle);
   border-radius: 4px;
   background: var(--tianshu-bg-surface);
-  box-shadow: 0 1px 3px rgb(23 36 58 / 5%);
+  box-shadow: 0 1px 3px var(--tianshu-shadow-color);
 }
 
 .diff-section {
@@ -1201,7 +1201,7 @@ export default {
 }
 
 .section-heading > span {
-  color: #727c8b;
+  color: var(--tianshu-text-secondary);
   font-size: 13px;
 }
 
@@ -1318,7 +1318,7 @@ export default {
 
 .diff-row {
   overflow: hidden;
-  border: 1px solid #e3e7ed;
+  border: 1px solid var(--tianshu-border-subtle);
   border-radius: 9px;
 }
 
@@ -1327,13 +1327,13 @@ export default {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-bottom: 1px solid #e8ebf0;
-  background: #fafbfc;
+  border-bottom: 1px solid var(--tianshu-border-subtle);
+  background: var(--tianshu-bg-soft);
 }
 
 .diff-row code {
   flex: 1;
-  color: #4e596a;
+  color: var(--tianshu-text-secondary);
   font-size: 12px;
 }
 
@@ -1341,15 +1341,25 @@ export default {
 .sensitive-badge {
   padding: 3px 7px;
   border-radius: 5px;
-  background: #fff0db;
-  color: #9a5800;
+  background: var(--tianshu-warning-bg);
+  color: var(--tianshu-warning-text);
   font-size: 11px;
   font-weight: 700;
 }
 
+.is-added .change-badge {
+  background: var(--tianshu-success-bg);
+  color: var(--tianshu-success-text);
+}
+
+.is-removed .change-badge {
+  background: var(--tianshu-danger-bg);
+  color: var(--tianshu-danger-text);
+}
+
 .sensitive-badge {
-  background: #edf1f7;
-  color: #596579;
+  background: var(--tianshu-bg-muted);
+  color: var(--tianshu-text-secondary);
 }
 
 .diff-values {
@@ -1362,7 +1372,7 @@ export default {
   margin: 0;
   padding: 12px 14px;
   overflow: auto;
-  color: #344052;
+  color: var(--tianshu-text-primary);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   line-height: 1.55;
@@ -1370,18 +1380,18 @@ export default {
 }
 
 .diff-values pre:first-child {
-  border-right: 1px solid #e8ebf0;
-  background: #fff8f8;
+  border-right: 1px solid var(--tianshu-border-subtle);
+  background: var(--tianshu-danger-bg);
 }
 
 .diff-values pre:last-child {
-  background: #f5fbf7;
+  background: var(--tianshu-success-bg);
 }
 
 .no-diff,
 .table-empty {
   padding: 32px;
-  color: #8993a2;
+  color: var(--tianshu-text-tertiary);
   text-align: center;
 }
 
@@ -1404,12 +1414,12 @@ export default {
   flex-direction: column;
   gap: 4px;
   padding: 11px 13px;
-  border-left: 3px solid #c93636;
-  background: #fff7f7;
+  border-left: 3px solid var(--tianshu-danger-text);
+  background: var(--tianshu-danger-bg);
 }
 
 .issue-item strong {
-  color: #a52727;
+  color: var(--tianshu-danger-text);
   font-size: 13px;
 }
 
@@ -1427,7 +1437,7 @@ export default {
 }
 
 .issue-item code {
-  color: #7d6b6b;
+  color: var(--tianshu-danger-text);
   font-size: 11px;
 }
 
@@ -1440,7 +1450,7 @@ export default {
 .timeline li {
   position: relative;
   padding: 0 0 20px 18px;
-  border-left: 1px solid #dfe4eb;
+  border-left: 1px solid var(--tianshu-border-subtle);
 }
 
 .timeline li:last-child {
@@ -1454,20 +1464,20 @@ export default {
   left: -5px;
   width: 9px;
   height: 9px;
-  border: 2px solid #fff;
+  border: 2px solid var(--tianshu-bg-surface);
   border-radius: 50%;
   background: var(--el-color-primary);
-  box-shadow: 0 0 0 1px #8ba9e3;
+  box-shadow: 0 0 0 1px var(--tianshu-primary-text);
 }
 
 .timeline p {
   margin: 5px 0;
-  color: #616d7d;
+  color: var(--tianshu-text-secondary);
   font-size: 13px;
 }
 
 .timeline small {
-  color: #929baa;
+  color: var(--tianshu-text-tertiary);
 }
 
 .versions-card {
@@ -1530,7 +1540,7 @@ export default {
 
   .diff-values pre:first-child {
     border-right: 0;
-    border-bottom: 1px solid #e8ebf0;
+    border-bottom: 1px solid var(--tianshu-border-subtle);
   }
 }
 </style>

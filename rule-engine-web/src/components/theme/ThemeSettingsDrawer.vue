@@ -928,20 +928,8 @@ export default {
 
   button {
     min-width: 48px;
-    padding: 4px 8px;
-    color: var(--tianshu-text-tertiary, #64748b);
-    font: inherit;
-    font-size: 12px;
-    background: transparent;
-    border: 0;
     border-radius: 4px;
     cursor: pointer;
-
-    &.is-active {
-      color: var(--tianshu-text-primary, #1e293b);
-      background: var(--tianshu-bg-elevated, #ffffff);
-      box-shadow: 0 1px 3px var(--tianshu-shadow-color, rgba(15, 23, 42, 0.12));
-    }
   }
 }
 

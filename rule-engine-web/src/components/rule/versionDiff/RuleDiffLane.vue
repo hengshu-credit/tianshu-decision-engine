@@ -230,28 +230,28 @@ export default {
   font-size: 12px;
 }
 .is-modified {
-  border-color: #f5dab1;
-  background: #fdf6ec;
+  border-color: var(--tianshu-warning-border);
+  background: var(--tianshu-warning-bg);
 }
 .is-modified .rule-diff-marker,
 .is-modified .rule-diff-field-change {
-  color: #b88230;
+  color: var(--tianshu-warning-text);
 }
 .is-added {
-  border-color: #c2e7b0;
-  background: #f0f9eb;
+  border-color: var(--tianshu-success-border);
+  background: var(--tianshu-success-bg);
 }
 .is-added .rule-diff-marker,
 .is-added .rule-diff-field-change {
-  color: #529b2e;
+  color: var(--tianshu-success-text);
 }
 .is-removed {
-  border-color: #fbc4c4;
-  background: #fef0f0;
+  border-color: var(--tianshu-danger-border);
+  background: var(--tianshu-danger-bg);
 }
 .is-removed .rule-diff-marker,
 .is-removed .rule-diff-field-change {
-  color: #c45656;
+  color: var(--tianshu-danger-text);
 }
 .is-empty {
   border-style: dashed;

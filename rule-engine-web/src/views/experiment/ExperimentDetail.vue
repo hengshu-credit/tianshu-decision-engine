@@ -1787,10 +1787,29 @@ export default {
 
   .tab-toolbar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     margin-bottom: 12px;
+  }
+
+  .tab-toolbar > div:first-child {
+    flex: 1 1 260px;
+    min-width: 0;
+  }
+
+  .test-mode {
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    max-width: 100%;
+
+    :deep(.el-radio-group),
+    :deep(.el-switch) {
+      flex-shrink: 0;
+    }
+
+    :deep(.el-radio-group) { flex-wrap: nowrap; }
   }
 
   .tab-title {

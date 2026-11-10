@@ -3,6 +3,7 @@ const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createOperationsApiData } = require('./support/operationsFixtures.cjs')
 const { createDetailApiData } = require('./support/detailFixtures.cjs')
 const { withTestExecutionIdentity } = require('./support/testExecutionFixtures.cjs')
+const { DEFAULT_THEME_CONFIG } = require('../../src/theme/themeConfig.js')
 
 async function expectNoRootOverflow(page) {
   const metrics = await page.evaluate(() => ({
@@ -888,6 +889,54 @@ test('夜间模式下运行页面的提示区、代码块和血缘画布使用�
   )
   assertClean()
 })
+
+for (const colorScheme of ['LIGHT', 'DARK']) {
+  test(`${colorScheme} 审批字段差异卡片与新增删除提示随主题切换`, async ({ page }, testInfo) => {
+    const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+    await page.addInitScript(theme => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify(theme)), { ...DEFAULT_THEME_CONFIG, colorScheme, accentPreset: 'PEACH_PINK_GRADIENT' })
+    const fixtures = createDetailApiData()
+    fixtures.set('/api/rule/governance/requests/91', {
+      request: { id: 91, requestNo: 'GOV-THEME-91', resourceType: 'UNKNOWN', resourceId: 7, action: 'UPDATE', status: 'PENDING', applicant: 'e2e-applicant', baseVersionNo: 1, submittedSnapshotJson: '{"timeout":60,"sourceConfig":{"source":"DERIVED"}}' },
+      diff: { summary: '共 3 项变更', fields: [
+        { key: '$.timeout', leftValue: 30, rightValue: 60, changeType: 'MODIFIED', changed: true },
+        { key: '$.sourceConfig', leftValue: null, rightValue: { source: 'DERIVED' }, changeType: 'ADDED', changed: true },
+        { key: '$.options', leftValue: ['A'], rightValue: null, changeType: 'REMOVED', changed: true },
+      ] },
+      events: [{ id: 1, action: 'SUBMIT', actor: 'e2e-applicant', comment: '提交主题检查', createTime: '2026-11-10T19:00:00' }],
+      dependencies: [], versions: [{ id: 100, versionNo: 1, snapshotJson: '{"timeout":30,"options":["A"]}' }],
+    })
+    const { assertClean } = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: fixtures })
+    await page.goto(`${origin}/#/approval/91`)
+    await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme.toLowerCase())
+    const rows = page.locator('.diff-list .diff-row')
+    await expect(rows).toHaveCount(3)
+    const inspect = async () => {
+      for (const row of await rows.all()) {
+        await expectStyleUsesToken(row, 'borderTopColor', '--tianshu-border-subtle')
+        await expectStyleUsesToken(row.locator('header'), 'backgroundColor', '--tianshu-bg-soft')
+        await expectStyleUsesToken(row.locator('code'), 'color', '--tianshu-text-secondary')
+        await expectStyleUsesToken(row.locator('pre').first(), 'backgroundColor', '--tianshu-danger-bg')
+        await expectStyleUsesToken(row.locator('pre').last(), 'backgroundColor', '--tianshu-success-bg')
+        await expectStyleUsesToken(row.locator('pre').first(), 'color', '--tianshu-text-primary')
+      }
+      for (const [type, tone] of [['modified', 'warning'], ['added', 'success'], ['removed', 'danger']]) {
+        await expectStyleUsesToken(page.locator(`.diff-row.is-${type} .change-badge`), 'backgroundColor', `--tianshu-${tone}-bg`)
+        await expectStyleUsesToken(page.locator(`.diff-row.is-${type} .change-badge`), 'color', `--tianshu-${tone}-text`)
+      }
+    }
+    await inspect()
+    await page.locator('.diff-list').screenshot({ path: testInfo.outputPath(`approval-diff-${colorScheme}.png`) })
+    await page.getByRole('button', { name: '本地用户的账户菜单' }).click()
+    await page.getByRole('menuitem', { name: '主题设置' }).click()
+    const drawer = page.getByRole('dialog', { name: '主题设置', exact: true })
+    await drawer.locator(`[data-theme-scheme="${colorScheme === 'DARK' ? 'LIGHT' : 'DARK'}"]`).click()
+    await inspect()
+    await drawer.getByRole('button', { name: '取消', exact: true }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme.toLowerCase())
+    await inspect()
+    assertClean()
+  })
+}
 
 test('夜间模式下审批与修订字段区域使用主题表面色', async ({ page }) => {
   await page.addInitScript(() => {
