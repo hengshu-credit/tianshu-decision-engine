@@ -37,9 +37,11 @@ node scripts/package-deployment.mjs --with-tests
 - `docker/runtime/server.jar`、`runtime.jar`（CPU ONNX）及 `dist/`。
 - 应用 Compose、Nginx/Kafka 配置和两份 `.env.*.example` 模板。
 - `deploy.py`：服务器自动校验、备份、更新应用和重启，使用 Python 3.8+ 标准库。
-- `README-部署.md`、完整文档、许可证、`BUILD-INFO.txt`。
+- `README-DEPLOY.md`、完整文档、许可证、`BUILD-INFO.txt`。
 - 独立的 `migrations/`：从后端 SQL 迁移目录原样复制脚本及执行说明，纳入逐文件校验；已有库按适用范围在停止旧应用后、新版启动前单独执行，不自动批量运行历史 SQL。
 - 与构建一致的 `source/` 和逐文件 `SHA256SUMS.txt`。
+
+部署入口文档只使用 ASCII 文件名，中文正文仍按 UTF-8 保存。服务器推荐 `python3 -X utf8 -m zipfile -e 包文件名.zip 新目录` 解压；旧包中文入口文件名乱码时，也可用该方式重新解压恢复原名，不改写或跳过 SHA256 校验。
 
 历史包保留，不自动删除。默认不包含本机 `.env.server` / `.env.client`、数据库数据或日志。构建前冻结源码清单，再使用同一份快照编译和交付。解压后的 `source/` 含 `.release-source-files.json`，无需初始化 Git 即可使用相同入口重建；新增源码文件时需更新该清单，或将源码纳入 Git 管理。
 

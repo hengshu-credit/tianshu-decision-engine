@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSyn
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { composeInvocation, releaseSourceFiles, testDescription, copyDeploymentMigrations } from '../../package-deployment.mjs'
+import { composeInvocation, releaseSourceFiles, testDescription, copyDeploymentMigrations, writeDeploymentReadme } from '../../package-deployment.mjs'
 
 for (const platform of ['win32', 'darwin', 'linux']) for (const plugin of [true, false]) test(`${platform} 自动选择 ${plugin ? 'docker compose' : 'docker-compose'} 并保留含空格路径`, () => {
   const probes = []
@@ -20,6 +20,18 @@ for (const platform of ['win32', 'darwin', 'linux']) for (const plugin of [true,
 
 test('构建拒绝只有旧 Python Compose v1 的环境', () => {
   assert.throws(() => composeInvocation('build.yml', 'build.env', [], 'linux', () => ({ status: 0, stdout: '1.29.2' })), /不支持旧 Python/)
+})
+
+test('部署说明使用 ASCII 文件名，保留中文正文并正确链接包内文档', () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'tianshu readme '))
+  try {
+    const source = path.join(directory, 'source')
+    mkdirSync(path.join(source, 'docs'), { recursive: true })
+    writeFileSync(path.join(source, 'docs/server-upload.md'), '# 部署说明\n[构建](release-packaging.md)\n[设计](blue-green-deployment-design.md)\n[Docker](../docker/README.md)\n[旧版](deployment-flat-legacy.md)\n')
+    writeDeploymentReadme(source, directory)
+    assert.deepEqual(readdirSync(directory).sort(), ['README-DEPLOY.md', 'source'])
+    assert.equal(readFileSync(path.join(directory, 'README-DEPLOY.md'), 'utf8'), '# 部署说明\n[构建](docs/release-packaging.md)\n[设计](docs/blue-green-deployment-design.md)\n[Docker](docker/README.md)\n[旧版](docs/deployment-flat-legacy.md)\n')
+  } finally { rmSync(directory, { recursive: true, force: true }) }
 })
 
 test('Git 工作区包含未提交源码，排除本地配置、忽略目录及已删除文件', () => {

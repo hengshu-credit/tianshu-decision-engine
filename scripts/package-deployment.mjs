@@ -49,6 +49,15 @@ export function copyDeploymentMigrations(sourceRoot, stageRoot) {
     path.join(stageRoot, 'migrations'), { recursive: true })
 }
 
+export function writeDeploymentReadme(sourceRoot, stageRoot) {
+  // 入口路径使用 ASCII，兼容对 ZIP UTF-8 文件名支持不一致的解压工具。
+  writeFileSync(path.join(stageRoot, 'README-DEPLOY.md'), readFileSync(path.join(sourceRoot, 'docs', 'server-upload.md'), 'utf8')
+    .replace('(release-packaging.md)', '(docs/release-packaging.md)')
+    .replace('(blue-green-deployment-design.md)', '(docs/blue-green-deployment-design.md)')
+    .replace('(../docker/README.md)', '(docker/README.md)')
+    .replace('(deployment-flat-legacy.md)', '(docs/deployment-flat-legacy.md)'))
+}
+
 async function sha256(file) {
   const hash = createHash('sha256')
   for await (const chunk of createReadStream(file)) hash.update(chunk)
@@ -99,11 +108,7 @@ async function main() {
   }
   copyDeploymentMigrations(sourceRoot, stageRoot)
   cpSync(path.join(sourceRoot, 'scripts/deploy.py'), path.join(stageRoot, 'deploy.py'))
-  writeFileSync(path.join(stageRoot, 'README-部署.md'), readFileSync(path.join(sourceRoot, 'docs', 'server-upload.md'), 'utf8')
-    .replace('(release-packaging.md)', '(docs/release-packaging.md)')
-    .replace('(blue-green-deployment-design.md)', '(docs/blue-green-deployment-design.md)')
-    .replace('(../docker/README.md)', '(docker/README.md)')
-    .replace('(deployment-flat-legacy.md)', '(docs/deployment-flat-legacy.md)'))
+  writeDeploymentReadme(sourceRoot, stageRoot)
   if (configRoot) for (const name of ['.env.server', '.env.client']) cpSync(path.join(configRoot, name), path.join(stageRoot, name))
   mkdirSync(runtimeRoot, { recursive: true })
   const env = { ...process.env, PACKAGE_SOURCE_DIR: sourceRoot.replaceAll('\\', '/'),
@@ -138,7 +143,7 @@ async function main() {
     `Java 产物：${skipJavaBuild ? '复用已有 target，未重新构建' : '本次 Docker Maven CPU 构建'}`,
     `构建平台：${buildPlatform}`, `构建镜像：${mavenImage} / ${nodeImage}`,
     `配置：${configRoot ? '附带指定配置；升级保留服务器现有配置' : '仅含示例模板，不含本机凭据'}`,
-    '部署入口：python3 deploy.py --target 原安装目录；详细说明见 README-部署.md。',
+    '部署入口：python3 deploy.py --target 原安装目录；详细说明见 README-DEPLOY.md。',
     '目录布局：外层 config/docker 管理生效配置和共享服务，deploy-prod/current 为当前应用，previous 保留上一版。',
     '旧 deploy-prod 首次使用 --adopt-layout 整理；外层原 env 仅为备份，不参与启动。普通更新不重启共享基础设施。',
     '数据库迁移：独立目录 migrations/；按 README.md 选择尚未执行的适用脚本，在停止应用后、新版启动前执行。'

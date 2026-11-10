@@ -45,9 +45,11 @@ ZIP 和同名校验文件上传到外层固定目录。完成下面“一次性�
 cd /root/tianshu-decision-engine &&
 PKG=包文件名.zip &&
 sha256sum -c "$PKG.sha256" && test ! -L deploy-prod && mkdir -p deploy-prod/releases && test ! -L deploy-prod/releases &&
-RELEASE_DIR=$(mktemp -d "$PWD/deploy-prod/releases/update-XXXXXXXX") && unzip -q "$PKG" -d "$RELEASE_DIR" &&
-python3 "$RELEASE_DIR/deploy.py" --target "$PWD"
+RELEASE_DIR=$(mktemp -d "$PWD/deploy-prod/releases/update-XXXXXXXX") && python3 -X utf8 -m zipfile -e "$PKG" "$RELEASE_DIR" &&
+python3 -X utf8 "$RELEASE_DIR/deploy.py" --target "$PWD"
 ```
+
+新包入口文档使用 ASCII 文件名 `README-DEPLOY.md`，正文仍为 UTF-8 中文。推荐按上述命令用 Python 标准库解压，避免解压工具与 locale 对中文文件名处理不一致。旧包若报 `README-部署.md` 缺失或校验失败，先核对 ZIP 的 SHA256，再用上述命令重新解压到新的 releases 子目录；不要覆盖运行目录、手工修改校验清单或跳过校验。
 
 脚本读取 `config/` 内的 env 和外层固定 Compose；只替换 `deploy-prod/current` 的 JAR、前端及版本信息，按原项目名和副本数重建应用并等待健康检查。MySQL、Redis、Kafka 不停止、不重建，外层 env 备份不复制、不比对、不覆盖。
 
@@ -60,13 +62,13 @@ python3 "$RELEASE_DIR/deploy.py" --target "$PWD"
 先按上面的前四行校验并解压新包，然后把第五行改为：
 
 ```bash
-python3 "$RELEASE_DIR/deploy.py" --target "$PWD" --adopt-layout
+python3 -X utf8 "$RELEASE_DIR/deploy.py" --target "$PWD" --adopt-layout
 ```
 
 整理完成后，在同一会话执行普通更新即可：
 
 ```bash
-python3 "$RELEASE_DIR/deploy.py" --target "$PWD"
+python3 -X utf8 "$RELEASE_DIR/deploy.py" --target "$PWD"
 ```
 
 整理过程会：

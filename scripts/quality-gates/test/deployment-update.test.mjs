@@ -26,7 +26,7 @@ for (const valid of [true, false]) test(`部署目录内的五行更新命令：
     writeFileSync(path.join(fixture, 'neighbor'), 'keep-neighbor')
     const archive = path.join(installation, 'package.zip')
     const zip = spawnSync(process.platform === 'win32' ? 'python' : 'python3', ['-B', '-c',
-      'import sys,zipfile; z=zipfile.ZipFile(sys.argv[1],"w"); z.writestr("deploy.py","# deployment entry"); z.close()', archive])
+      'import sys,zipfile; z=zipfile.ZipFile(sys.argv[1],"w"); z.writestr("deploy.py","# deployment entry"); z.writestr("README-部署.md","中文部署说明".encode("utf-8")); z.close()', archive])
     assert.ifError(zip.error)
     assert.equal(zip.status, 0)
     const checksum = createHash('sha256').update(readFileSync(archive)).digest('hex')
@@ -34,7 +34,8 @@ for (const valid of [true, false]) test(`部署目录内的五行更新命令：
     const quick = blocks.find(block => block.includes('PKG=包文件名.zip') && block.includes('mktemp'))
     assert.ok(quick)
     assert.equal(quick.trim().split(/\r?\n/).length, 5)
-    const input = 'set -euo pipefail\nFIXTURE_ROOT="$PWD"\npython3() { printf "%s\\n" "$@" > "$FIXTURE_ROOT/call.txt"; }\n'
+    const interpreter = process.platform === 'win32' ? 'python' : 'python3'
+    const input = `set -euo pipefail\nFIXTURE_ROOT="$PWD"\npython3() { if [ "$3" = "-m" ]; then command ${interpreter} "$@"; else printf "%s\\n" "$@" > "$FIXTURE_ROOT/call.txt"; fi; }\n`
       + quick.replace('cd /root/tianshu-decision-engine', 'cd "$FIXTURE_ROOT/installation"').replace('PKG=包文件名.zip', 'PKG=package.zip')
     for (let attempt = 0; attempt < (valid ? 2 : 1); attempt++) {
       const result = spawnSync(bash, ['--noprofile', '--norc', '-s'], { cwd: fixture, input, encoding: 'utf8' })
@@ -44,8 +45,12 @@ for (const valid of [true, false]) test(`部署目录内的五行更新命令：
     const releases = readdirSync(path.join(installation, 'deploy-prod/releases'))
     assert.equal(releases.length, valid ? 2 : 0)
     if (valid) {
-      for (const name of releases) assert.equal(readFileSync(path.join(installation, 'deploy-prod/releases', name, 'deploy.py'), 'utf8'), '# deployment entry')
+      for (const name of releases) {
+        assert.equal(readFileSync(path.join(installation, 'deploy-prod/releases', name, 'deploy.py'), 'utf8'), '# deployment entry')
+        assert.equal(readFileSync(path.join(installation, 'deploy-prod/releases', name, 'README-部署.md'), 'utf8'), '中文部署说明')
+      }
       const args = readFileSync(path.join(fixture, 'call.txt'), 'utf8').trim().split('\n')
+      assert.deepEqual(args.splice(0, 2), ['-X', 'utf8'])
       assert.equal(args[1], '--target')
       assert.ok(args[0].startsWith(args[2] + '/deploy-prod/releases/update-'))
       assert.ok(args[2].endsWith('/installation'))

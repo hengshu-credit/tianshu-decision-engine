@@ -287,6 +287,15 @@ class DeployTest(unittest.TestCase):
             stream.write('0' * 64 + '  ../outside\n')
         self.assertRaises(deployment.DeployError, deployment.verify_release, self.release)
 
+    def test_garbled_legacy_filename_does_not_bypass_integrity_verification(self):
+        filename = 'README-部署.md'
+        self.write(self.release / filename, 'original UTF-8 content')
+        with (self.release / 'SHA256SUMS.txt').open('a', encoding='utf-8') as stream:
+            stream.write(hashlib.sha256(b'original UTF-8 content').hexdigest() + '  ' + filename + '\n')
+        deployment.verify_release(self.release)
+        (self.release / filename).rename(self.release / filename.encode('utf-8').decode('cp437'))
+        self.assertRaises(deployment.DeployError, deployment.verify_release, self.release)
+
     def test_private_package_allows_editing_env_but_still_checks_artifacts(self):
         self.write(self.release / '.env.server', 'initial')
         with (self.release / 'SHA256SUMS.txt').open('a') as stream:

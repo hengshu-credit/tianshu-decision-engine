@@ -42,18 +42,19 @@
 <pre><code class="language-bash">cd /root/tianshu-decision-engine &amp;&amp;
 PKG=包文件名.zip &amp;&amp;
 sha256sum -c &quot;$PKG.sha256&quot; &amp;&amp; test ! -L deploy-prod &amp;&amp; mkdir -p deploy-prod/releases &amp;&amp; test ! -L deploy-prod/releases &amp;&amp;
-RELEASE_DIR=$(mktemp -d &quot;$PWD/deploy-prod/releases/update-XXXXXXXX&quot;) &amp;&amp; unzip -q &quot;$PKG&quot; -d &quot;$RELEASE_DIR&quot; &amp;&amp;
-python3 &quot;$RELEASE_DIR/deploy.py&quot; --target &quot;$PWD&quot;
+RELEASE_DIR=$(mktemp -d &quot;$PWD/deploy-prod/releases/update-XXXXXXXX&quot;) &amp;&amp; python3 -X utf8 -m zipfile -e &quot;$PKG&quot; &quot;$RELEASE_DIR&quot; &amp;&amp;
+python3 -X utf8 &quot;$RELEASE_DIR/deploy.py&quot; --target &quot;$PWD&quot;
 </code></pre>
+<p>新包入口文档使用 ASCII 文件名 <code>README-DEPLOY.md</code>，正文仍为 UTF-8 中文。推荐按上述命令用 Python 标准库解压，避免解压工具与 locale 对中文文件名处理不一致。旧包若报 <code>README-部署.md</code> 缺失或校验失败，先核对 ZIP 的 SHA256，再用上述命令重新解压到新的 releases 子目录；不要覆盖运行目录、手工修改校验清单或跳过校验。</p>
 <p>脚本读取 <code>config/</code> 内的 env 和外层固定 Compose；只替换 <code>deploy-prod/current</code> 的 JAR、前端及版本信息，按原项目名和副本数重建应用并等待健康检查。MySQL、Redis、Kafka 不停止、不重建，外层 env 备份不复制、不比对、不覆盖。</p>
 <p><strong>只有新版健康检查通过，更新前的 current 才成为 previous。</strong> 已有 previous 移到本次 <code>history/update-*/older-previous/</code>，不自动删除。升级失败会恢复当前应用文件并保持应用停止，previous 保持原样；文件恢复不代表数据库回退。无 SDK 的环境不启动 SDK，已有 SDK 自动更新；独立 SDK 可使用 <code>--client-only</code>。</p>
 <h2>一次性目录整理：适用于现有 deploy-prod 环境</h2>
 <p>这一步只搬迁目录并恢复原来正在部署的版本，<strong>不安装新 JAR，不运行本次包的数据库迁移脚本</strong>。不要把外层备份 env 复制进 deploy-prod。</p>
 <p>先按上面的前四行校验并解压新包，然后把第五行改为：</p>
-<pre><code class="language-bash">python3 &quot;$RELEASE_DIR/deploy.py&quot; --target &quot;$PWD&quot; --adopt-layout
+<pre><code class="language-bash">python3 -X utf8 &quot;$RELEASE_DIR/deploy.py&quot; --target &quot;$PWD&quot; --adopt-layout
 </code></pre>
 <p>整理完成后，在同一会话执行普通更新即可：</p>
-<pre><code class="language-bash">python3 &quot;$RELEASE_DIR/deploy.py&quot; --target &quot;$PWD&quot;
+<pre><code class="language-bash">python3 -X utf8 &quot;$RELEASE_DIR/deploy.py&quot; --target &quot;$PWD&quot;
 </code></pre>
 <p>整理过程会：</p>
 <ol>
