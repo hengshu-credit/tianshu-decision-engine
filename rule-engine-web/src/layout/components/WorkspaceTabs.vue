@@ -20,10 +20,12 @@
             class="workspace-tab__main"
             :data-path="tab.fullPath"
             :aria-label="tab.title"
+            :aria-busy="pendingPath === tab.fullPath"
             @click="$emit('activate', tab.fullPath)"
             @mouseenter="$emit('preload', tab.fullPath)"
             @focus="$emit('preload', tab.fullPath)"
           >
+            <app-loading-icon v-if="pendingPath === tab.fullPath" aria-label="页面加载中" />
             <span class="workspace-tab__title" :class="{ 'is-overflowing': overflowingPaths.includes(tab.fullPath) }">{{ tab.displayTitle }}</span>
           </button>
         </el-tooltip>
@@ -72,6 +74,7 @@
 
 <script>
 import { Close as ElIconClose } from '@element-plus/icons-vue'
+import AppLoadingIcon from '@/components/common/AppLoadingIcon.vue'
 import { $emit } from '../../utils/gogocodeTransfer'
 import { SIDEBAR_MENUS } from '@/layout/layoutState'
 const TAB_TITLE_LABELS = {
@@ -82,6 +85,7 @@ const TAB_TITLE_LABELS = {
 }
 export default {
   components: {
+    AppLoadingIcon,
     ElIconClose,
   },
   name: 'WorkspaceTabs',

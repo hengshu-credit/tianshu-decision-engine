@@ -1,6 +1,6 @@
 import { createMemoryHistory, createRouter, isNavigationFailure } from 'vue-router'
 import { flushPromises } from '@vue/test-utils'
-import { installNavigationFeedback, isHandledNavigationError, navigationState, preloadableView, preloadMenuRoutes, preloadRoute } from '@/router/navigationState'
+import { installNavigationFeedback, isHandledNavigationError, navigationState, preloadableView, preloadRoute } from '@/router/navigationState'
 
 function deferred() {
   let resolve, reject
@@ -70,17 +70,6 @@ test('悬停预加载只下载代码，不提前导航或创建页面，点击�
   expect(router.currentRoute.value.path).toBe('/')
   await router.push('/rule')
   expect(loader).toHaveBeenCalledTimes(1)
-})
-
-test('布局离开后取消尚未开始的菜单预加载', async () => {
-  vi.useFakeTimers()
-  const loader = vi.fn().mockResolvedValue({ template: '<p>规则页</p>' })
-  try {
-    const stop = preloadMenuRoutes(makeRouter(loader), ['/rule'])
-    stop()
-    await vi.runAllTimersAsync()
-    expect(loader).not.toHaveBeenCalled()
-  } finally { vi.useRealTimers() }
 })
 
 test('加载期间重新点击当前页可取消跳转并恢复内容', async () => {

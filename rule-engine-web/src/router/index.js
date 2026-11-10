@@ -1,7 +1,6 @@
 import { PLATFORM_SUCCESS_CODE } from '@/utils/platformResponse'
 import { createRouter, createWebHashHistory } from 'vue-router'
 import axios from 'axios'
-import Layout from '@/layout/index.vue'
 import { createConsoleAuthGuard } from './authGuard'
 import { installNavigationFeedback, navigationState, preloadableView } from './navigationState'
 
@@ -38,6 +37,21 @@ function fetchMe() {
   return authAxios.get('/auth/console/me')
     .then(function (res) { return res.data })
     .catch(function () { return null })
+}
+
+// 工作台下载完成后，将全部一级入口注册为已就绪组件（含直接打开详情的情况）。
+// 共享模块单独分包，公开登录/恢复页面不承担整个工作台的下载成本。
+function loadMenuViews() {
+  return import('./menuViews').then(views => {
+    router.getRoutes().forEach(record => {
+      if (Object.hasOwn(views, record.name)) record.components.default = views[record.name]
+    })
+    return views
+  })
+}
+
+function menuView(name) {
+  return () => loadMenuViews().then(views => views[name])
 }
 
 const routes = [
@@ -79,17 +93,17 @@ const routes = [
   },
   {
     path: '/',
-    component: Layout,
+    component: () => Promise.all([import('@/layout/index.vue'), loadMenuViews()]).then(([layout]) => layout),
     redirect: '/dashboard',
     children: [
-      { path: 'ledger', name: 'LedgerHome', component: () => import('@/views/ledger/LedgerHome.vue'), meta: { title: '台账记录', keepAlive: true } },
+      { path: 'ledger', name: 'LedgerHome', component: menuView('LedgerHome'), meta: { title: '台账记录', keepAlive: true } },
       { path: 'ledger/articles/new', name: 'LedgerArticleCreate', component: () => import('@/views/ledger/LedgerEditor.vue'), meta: { title: '新建台账文章', menu: '/ledger', permission: 'ledger:edit' } },
       { path: 'ledger/articles/:id/edit', name: 'LedgerArticleEdit', component: () => import('@/views/ledger/LedgerEditor.vue'), meta: { title: '编辑台账文章', menu: '/ledger', permission: 'ledger:edit' } },
       { path: 'ledger/articles/:id', name: 'LedgerArticleRead', component: () => import('@/views/ledger/LedgerReader.vue'), meta: { title: '台账文章', menu: '/ledger' } },
       {
         path: 'dashboard',
         name: 'DashboardHome',
-        component: () => import('@/views/dashboard/DashboardHome.vue'),
+        component: menuView('DashboardHome'),
         meta: { title: '数据看板' }
       },
       {
@@ -101,13 +115,13 @@ const routes = [
       {
         path: 'project',
         name: 'ProjectList',
-        component: () => import('@/views/project/ProjectList.vue'),
+        component: menuView('ProjectList'),
         meta: { title: '项目管理' }
       },
       {
         path: 'rule',
         name: 'RuleList',
-        component: () => import('@/views/rule/RuleList.vue'),
+        component: menuView('RuleList'),
         meta: { title: '规则管理' }
       },
       {
@@ -191,13 +205,13 @@ const routes = [
       {
         path: 'variable',
         name: 'VariableList',
-        component: () => import('@/views/variable/VariableList.vue'),
+        component: menuView('VariableList'),
         meta: { title: '变量管理', keepAlive: true }
       },
       {
         path: 'list',
         name: 'ListLibrary',
-        component: () => import('@/views/ruleList/ListLibrary.vue'),
+        component: menuView('ListLibrary'),
         meta: { title: '名单管理' }
       },
       {
@@ -209,7 +223,7 @@ const routes = [
       {
         path: 'datasource',
         name: 'DatasourceList',
-        component: () => import('@/views/datasource/DatasourceList.vue'),
+        component: menuView('DatasourceList'),
         meta: { title: '外数管理' }
       },
       {
@@ -239,7 +253,7 @@ const routes = [
       {
         path: 'database',
         name: 'DatabaseList',
-        component: () => import('@/views/database/DatabaseList.vue'),
+        component: menuView('DatabaseList'),
         meta: { title: '数据库管理' }
       },
       {
@@ -257,7 +271,7 @@ const routes = [
       {
         path: 'sftp',
         name: 'SftpDatasourceList',
-        component: () => import('@/views/sftp/SftpDatasourceList.vue'),
+        component: menuView('SftpDatasourceList'),
         meta: { title: 'SFTP数据源配置', keepAlive: true }
       },
       {
@@ -269,7 +283,7 @@ const routes = [
       {
         path: 'model',
         name: 'ModelList',
-        component: () => import('@/views/model/ModelList.vue'),
+        component: menuView('ModelList'),
         meta: { title: '模型管理' }
       },
       {
@@ -281,19 +295,19 @@ const routes = [
       {
         path: 'function',
         name: 'FunctionList',
-        component: () => import('@/views/function/FunctionList.vue'),
+        component: menuView('FunctionList'),
         meta: { title: '函数管理' }
       },
       {
         path: 'test',
         name: 'RuleTest',
-        component: () => import('@/views/test/RuleTest.vue'),
+        component: menuView('RuleTest'),
         meta: { title: '规则测试' }
       },
       {
         path: 'lineage',
         name: 'LineageGraph',
-        component: () => import('@/views/lineage/LineageGraph.vue'),
+        component: menuView('LineageGraph'),
         props: route => ({
           initialNodeType: typeof route.query.nodeType === 'string' ? route.query.nodeType : '',
           initialNodeId: typeof route.query.nodeId === 'string' ? route.query.nodeId : '',
@@ -304,7 +318,7 @@ const routes = [
       {
         path: 'experiment',
         name: 'ExperimentList',
-        component: () => import('@/views/experiment/ExperimentList.vue'),
+        component: menuView('ExperimentList'),
         meta: { title: '分流实验' }
       },
       {
@@ -322,25 +336,25 @@ const routes = [
       {
         path: 'log',
         name: 'ExecutionLog',
-        component: () => import('@/views/log/ExecutionLog.vue'),
+        component: menuView('ExecutionLog'),
         meta: { title: '执行日志' }
       },
       {
         path: 'billing',
         name: 'BillingList',
-        component: () => import('@/views/billing/BillingList.vue'),
+        component: menuView('BillingList'),
         meta: { title: '账单管理' }
       },
       {
         path: 'approval',
         name: 'ApprovalList',
-        component: () => import('@/views/approval/ApprovalList.vue'),
+        component: menuView('ApprovalList'),
         meta: { title: '审批管理', permission: 'approval:view' }
       },
       {
         path: 'transfer',
         name: 'OfflineTransfer',
-        component: () => import('@/views/transfer/OfflineTransfer.vue'),
+        component: menuView('OfflineTransfer'),
         meta: { title: '离线迁移', permission: 'transfer:view' }
       },
       {
@@ -352,7 +366,7 @@ const routes = [
       {
         path: 'account',
         name: 'AccountManagement',
-        component: () => import('@/views/account/AccountManagement.vue'),
+        component: menuView('AccountManagement'),
         meta: { title: '账户管理', permission: ['account:view', 'account:manage', 'account:role-assign', 'account:password-reset', 'role:view', 'role:manage', 'account:audit'] }
       },
       {
@@ -364,7 +378,7 @@ const routes = [
       {
         path: 'system/settings',
         name: 'SystemSettings',
-        component: () => import('@/views/system/SystemSettings.vue'),
+        component: menuView('SystemSettings'),
         meta: { title: '系统配置', permission: 'system:view' }
       }
     ]
@@ -395,7 +409,7 @@ function inferRoutePermission(path) {
 routes.forEach(route => {
   if (typeof route.component === 'function') route.component = preloadableView(route.component)
   ;(route.children || []).forEach(child => {
-    child.component = preloadableView(child.component)
+    if (typeof child.component === 'function') child.component = preloadableView(child.component)
     if (!child.meta) child.meta = {}
     if (!child.meta.permission && !child.meta.authOnly) {
       child.meta.permission = inferRoutePermission(child.path)

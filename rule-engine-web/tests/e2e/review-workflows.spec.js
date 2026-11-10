@@ -69,10 +69,16 @@ test('只读台账用户直接打开编辑链接时返回可访问页面，不�
   const data = new Map([
     ['/api/auth/console/config', { loginEnabled: true }],
     ['/api/auth/console/me', { userId: '91', username: 'viewer', permissionVersion: 1, permissions: ['ledger:view'] }],
+    ['/api/auth/console/preferences/theme', null],
+    ['POST /api/rule/console/activity', true],
   ])
   const harness = await prepare(page, data)
   await page.goto(`${origin}/#/ledger/articles/new`)
   await expect(page).toHaveURL(/#\/dashboard$/)
+  await expect(page.getByRole('button', { name: 'viewer的账户菜单' })).toBeVisible()
+  // 等待布局初始化请求到达，避免只检查 URL 时漏掉延迟发出的越权请求。
+  await expect.poll(() => ['/api/auth/console/preferences/theme', '/api/rule/console/activity']
+    .every(path => harness.requests.some(item => new URL(item.url).pathname === path))).toBe(true)
   expect(harness.requests.some(item => item.url.includes('/api/rule/ledger/'))).toBe(false)
   harness.assertClean()
 })

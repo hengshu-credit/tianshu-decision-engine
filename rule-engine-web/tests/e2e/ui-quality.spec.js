@@ -233,7 +233,9 @@ test('关键控件的默认、hover、focus 与语义色均保持清晰反馈', 
   })
   await page.goto('http://tianshu.local/index.html#/project')
 
-  const contrast = await page.evaluate(() => {
+  const firstInput = page.locator('input[placeholder]').first()
+  await expect(firstInput).toBeVisible()
+  const contrast = await firstInput.evaluate((input) => {
     const parseRgb = (value) => {
       const match = String(value).match(
         /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/
@@ -262,7 +264,6 @@ test('关键控件的默认、hover、focus 与语义色均保持清晰反馈', 
       )
     }
 
-    const input = document.querySelector('input[placeholder]')
     const placeholderColor = parseRgb(
       getComputedStyle(input, '::placeholder').color
     )
@@ -281,7 +282,6 @@ test('关键控件的默认、hover、focus 与语义色均保持清晰反馈', 
   )
   expect(queryHover).not.toBe(queryBefore)
 
-  const firstInput = page.locator('input[placeholder]').first()
   await firstInput.focus()
   const focusShadow = await firstInput
     .locator('xpath=..')

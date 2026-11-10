@@ -187,6 +187,8 @@ docker compose --env-file .env.client --env-file .env.server -f docker/docker-co
 
 ## 前端关键路径
 
+- **菜单切换验收**：工作台首次显示（含直达详情）时一级菜单组件须全部就绪，切换不得依赖后续代码下载或空闲预热；业务数据仍按页面异步加载。不得恢复 header 下挤动内容的“正在打开”横条；详情/设计器下载反馈放在页签内。修改路由或拆包时，必须覆盖禁用预热、暂停后续脚本下载、左侧/顶部导航、慢会话复核、未保存确认及缓存返回场景，见 `navigation-loading.spec.js` 和 `menuRouteReadiness.spec.js`。复盘见 `docs/audits/2026-11-10-menu-navigation.md`。
+
 - 设计器视图: `src/views/designer/`（9 个单文件组件）
 - 页面视图: `src/views/`（project、rule、variable、model、function、test、log、billing、database、datasource、lineage、experiment、ruleList 等）
 - API 层: `src/api/`（auth、billing、database、datasource、dataObject、definition、experiment、function、lineage、model、project、request、ruleList、runtimeLog、variable）

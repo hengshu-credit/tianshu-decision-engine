@@ -13,6 +13,48 @@ function deferred() {
 }
 
 for (const navigationLayout of ['LEFT', 'TOP']) {
+  for (const initialPath of ['/project', '/rule/101']) {
+    test(`${navigationLayout} 从 ${initialPath} 首次点击菜单无需再下载页面代码，直接显示目标页面`, async ({ page }) => {
+      // 禁止空闲预热，避免缓存掩盖首次切换时的路由下载等待。
+      await page.addInitScript(() => {
+        window.requestIdleCallback = () => 1
+        window.cancelIdleCallback = () => {}
+      })
+      const apiData = createDetailApiData()
+      apiData.set('/api/auth/console/config', { loginEnabled: true })
+      apiData.set('/api/auth/console/me', { username: 'admin', permissions: ['project:view', 'rule:view', 'field:view', 'lineage:view'] })
+      apiData.set('/api/auth/console/preferences/theme', { ...DEFAULT_THEME_CONFIG, navigationLayout })
+      apiData.set('POST /api/rule/console/activity', true)
+      const harness = await installDistRoutes(page, { origin, liveStatic, apiData })
+      await page.goto(`${origin}/#${initialPath}`)
+      if (initialPath === '/project') await expect(page.getByRole('cell', { name: 'e2e_project', exact: true })).toBeVisible()
+      else await expect(page.getByTestId('rule-detail-content')).toHaveAttribute('aria-busy', 'false')
+      await expect(page.getByRole('button', { name: 'admin的账户菜单' })).toBeVisible()
+      const download = deferred()
+      const pendingScripts = []
+      await page.route(/\.(?:js|vue)(?:\?.*)?$/, async route => {
+        pendingScripts.push(route.request().url())
+        await download.promise
+        await route.fallback()
+      })
+      try {
+        for (const [path, selector] of [
+          ['/rule', '[placeholder="规则编码"]'], ['/lineage', '.query-panel'],
+          ['/test', '.test-left'], ['/variable', '[placeholder="变量编码"]'],
+          ['/project', '.layout-main .uiue-filter-toolbar'], ['/rule', '[placeholder="规则编码"]'],
+        ]) {
+          await page.locator(`[data-menu-path="${path}"]`).click()
+          await expect(page).toHaveURL(`${origin}/#${path}`, { timeout: 1500 })
+          await expect(page.locator(selector)).toBeVisible({ timeout: 1500 })
+          await expect(page.getByTestId('route-loading-status')).toHaveCount(0)
+          await expect(page.locator('.layout-main .el-loading-mask')).toHaveCount(0)
+        }
+        expect(pendingScripts).toEqual([])
+        harness.assertClean()
+      } finally { download.resolve() }
+    })
+  }
+
   test(`${navigationLayout} 慢会话复核和数据请求直接显示分流实验内容，不添加蒙版`, async ({ page }, testInfo) => {
     const auth = deferred(), data = deferred()
     let holdAuth = false, dataReturned = false
@@ -198,25 +240,31 @@ test('首次未验证会话不请求业务数据，已登录会话失效仍返�
   } finally { auth.resolve() }
 })
 
-test('页面代码冷下载保留当前内容，完成后显示真实目标页，不插入骨架过渡页', async ({ page }, testInfo) => {
+test('详情代码冷下载只在页签反馈，不挤动当前内容，完成后显示真实详情', async ({ page }, testInfo) => {
   const download = deferred()
-  await installDistRoutes(page, { origin, liveStatic })
-  await page.route(/\/(?:src\/views\/rule\/RuleList\.vue|assets\/RuleList-[^/]+\.js)(?:\?.*)?$/, async route => { await download.promise; await route.fallback() })
+  const harness = await installDistRoutes(page, { origin, liveStatic, apiData: createDetailApiData() })
+  await page.route(/\/(?:src\/views\/rule\/RuleDetail\.vue|assets\/RuleDetail-[^/]+\.js)(?:\?.*)?$/, async route => { await download.promise; await route.fallback() })
   try {
-    await page.goto(`${origin}/#/project`)
-    await expect(page.getByRole('cell', { name: 'e2e_project', exact: true })).toBeVisible()
-    await page.locator('[data-menu-path="/rule"]').click()
-    await expect(page.locator('.workspace-tab.is-active')).toContainText('规则管理')
-    await expect(page.getByTestId('route-loading-status')).toContainText('正在打开规则管理')
-    await page.screenshot({ path: testInfo.outputPath('route-loading-status.png') })
-    await expect(page.getByRole('cell', { name: 'e2e_project', exact: true })).toBeVisible()
-    await expect(page.getByTestId('route-page-skeleton')).toHaveCount(0)
-    download.resolve()
-    await expect(page).toHaveURL(/#\/rule$/)
+    await page.goto(`${origin}/#/rule`)
+    const filter = page.getByRole('textbox', { name: '规则编码', exact: true })
+    await expect(filter).toBeVisible()
+    const before = await filter.boundingBox()
+    await page.getByRole('button', { name: '详情', exact: true }).first().click()
+    const pendingTab = page.locator('.workspace-tab.is-active .workspace-tab__main')
+    await expect(pendingTab).toHaveAttribute('aria-busy', 'true')
+    await expect(pendingTab).toHaveAttribute('data-path', '/rule/101')
     await expect(page.getByTestId('route-loading-status')).toHaveCount(0)
-    await expect(page.getByRole('textbox', { name: '规则编码', exact: true })).toBeVisible()
+    await expect(filter).toBeVisible()
+    expect((await filter.boundingBox()).y).toBe(before.y)
+    await expect(page.getByTestId('route-page-skeleton')).toHaveCount(0)
+    await page.screenshot({ path: testInfo.outputPath('detail-tab-loading.png') })
+    download.resolve()
+    await expect(page).toHaveURL(/#\/rule\/101$/)
+    await expect(pendingTab).toHaveAttribute('aria-busy', 'false')
+    await expect(page.getByTestId('rule-detail-content')).toBeVisible()
     await page.goBack()
-    await expect(page).toHaveURL(/#\/project$/)
+    await expect(page).toHaveURL(/#\/rule$/)
+    harness.assertClean()
   } finally { download.resolve() }
 })
 
