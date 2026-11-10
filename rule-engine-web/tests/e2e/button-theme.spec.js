@@ -1,6 +1,9 @@
 const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createManagementApiData } = require('./support/managementFixtures.cjs')
+const { createOperationsApiData } = require('./support/operationsFixtures.cjs')
+const { createDetailApiData } = require('./support/detailFixtures.cjs')
+const { DEFAULT_THEME_CONFIG } = require('../../src/theme/themeConfig.js')
 
 const themes = [
   ['深紫', { accentPreset: 'MIDNIGHT_PURPLE' }],
@@ -40,6 +43,73 @@ async function appearance(button) {
       return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
     })
     return { ratio: Math.min(...ratios), color: style.color, background: style.backgroundColor, image: style.backgroundImage, filter: style.filter, opacity: style.opacity }
+  })
+}
+
+async function expectReadableRadioGroup(group, labels) {
+  const buttons = group.locator('.el-radio-button__inner')
+  await expect(buttons).toHaveText(labels)
+  for (const button of await buttons.all()) {
+    const geometry = await button.evaluate(element => {
+      const style = getComputedStyle(element)
+      const box = element.getBoundingClientRect()
+      const range = document.createRange()
+      range.selectNodeContents(element)
+      const text = range.getBoundingClientRect()
+      return {
+        fontSize: Number.parseFloat(style.fontSize), height: box.height,
+        textWidth: text.width, textHeight: text.height,
+        textInside: text.left >= box.left && text.right <= box.right && text.top >= box.top && text.bottom <= box.bottom,
+        controlHeight: Number.parseFloat(style.getPropertyValue('--el-component-size-small')),
+      }
+    })
+    expect(geometry.fontSize).toBeGreaterThanOrEqual(12)
+    expect(geometry.textWidth).toBeGreaterThan(0)
+    expect(geometry.textHeight).toBeGreaterThan(0)
+    expect(geometry.textInside).toBe(true)
+    expect(geometry.height).toBe(geometry.controlHeight)
+    expect((await appearance(button)).ratio).toBeGreaterThanOrEqual(4.5)
+  }
+}
+
+for (const colorScheme of ['LIGHT', 'DARK']) {
+  test(`${colorScheme} 真实单选按钮文字可见、尺寸一致，方向切换和跨页复用正常`, async ({ page }, testInfo) => {
+    const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+    await page.addInitScript(theme => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify(theme)), { ...DEFAULT_THEME_CONFIG, colorScheme })
+    const apiData = new Map([...createDetailApiData(), ...createOperationsApiData()])
+    const { assertClean } = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData })
+    await page.goto(`${origin}/#/lineage`)
+    const direction = page.locator('.query-panel .el-radio-group')
+    await expectReadableRadioGroup(direction, ['全部', '上游', '下游'])
+    await expect(direction.getByRole('radio', { name: '全部', exact: true })).toBeChecked()
+    await page.getByRole('combobox', { name: '起点', exact: true }).click()
+    await page.getByRole('option', { name: '年龄 (age)', exact: true }).click()
+    await page.getByRole('button', { name: '生成血缘图', exact: true }).click()
+    await expect(page.locator('.graph-canvas .lf-node')).toHaveCount(2)
+    await direction.getByText('上游', { exact: true }).click()
+    await expect(direction.getByRole('radio', { name: '上游', exact: true })).toBeChecked()
+    await expect(page.locator('.graph-canvas .lf-node')).toHaveCount(1)
+    await expectReadableRadioGroup(direction, ['全部', '上游', '下游'])
+    await direction.getByRole('radio', { name: '上游', exact: true }).press('ArrowRight')
+    await expect(direction.getByRole('radio', { name: '下游', exact: true })).toBeChecked()
+    await expect(page.locator('.graph-canvas .lf-node')).toHaveCount(2)
+    await direction.getByText('全部', { exact: true }).click()
+    await expect(direction.getByRole('radio', { name: '全部', exact: true })).toBeChecked()
+    await direction.screenshot({ path: testInfo.outputPath(`direction-control-${colorScheme}.png`) })
+    await page.screenshot({ path: testInfo.outputPath(`lineage-direction-${colorScheme}.png`) })
+    await page.setViewportSize({ width: 560, height: 900 })
+    await expectReadableRadioGroup(direction, ['全部', '上游', '下游'])
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
+    await page.screenshot({ path: testInfo.outputPath(`lineage-direction-narrow-${colorScheme}.png`) })
+    await page.setViewportSize({ width: 1280, height: 720 })
+    await page.locator('[data-menu-path="/test"]').click()
+    await expectReadableRadioGroup(page.locator('.test-left .el-radio-group').first(), ['全部', '项目级', '全局'])
+    await page.goto(`${origin}/#/database/new`)
+    const connection = page.locator('.detail-form .el-radio-group').first()
+    await expectReadableRadioGroup(connection, ['直连', 'SSH隧道'])
+    await connection.getByText('SSH隧道', { exact: true }).click()
+    await expect(connection.getByRole('radio', { name: 'SSH隧道', exact: true })).toBeChecked()
+    assertClean()
   })
 }
 
