@@ -5,6 +5,7 @@ import * as projectApi from '@/api/project'
 import { setCurrentUser, clearCurrentUser } from '@/security/permissionState'
 import DashboardSettings from '@/views/dashboard/DashboardSettings.vue'
 import ContentReference from '@/components/common/ContentReference.vue'
+import { createReferenceOperand } from '@/utils/operand'
 import { DASHBOARD_MAP_VIEW_KEY } from '@/utils/dashboardFilters'
 
 const settings = {
@@ -53,18 +54,54 @@ describe('DashboardSettings', () => {
     expect(display.text()).toContain('决策结果')
     expect(display.text()).toContain('最新')
     expect(wrapper.vm.constantOptions).toHaveLength(3)
-    wrapper.vm.addDecisionReference('pass', 501)
-    wrapper.vm.addDecisionReference('pass', 501)
-    wrapper.vm.addDecisionReference('review', 502)
-    wrapper.vm.addDecisionReference('reject', 503)
-    expect(wrapper.vm.decisionRow.passValues).toBe('')
+    for (const [index, group] of ['pass', 'review', 'reject'].entries()) {
+      wrapper.vm.removeDecisionOperand(group, 0)
+      wrapper.vm.addDecisionOperand(group, createReferenceOperand(wrapper.vm.constantOptions[index]))
+    }
+    const constants = wrapper.vm.constantOptions
     await wrapper.vm.save()
     expect(dashboardApi.saveDashboardSettings.mock.calls[0][1].mappings.DECISION_RESULT).toEqual({
       refType: 'VARIABLE', refId: 500, jsonSource: 'OUTPUT', decisionValues: {
-        pass: [], review: [], reject: [], passRefIds: ['501'], reviewRefIds: ['502'], rejectRefIds: ['503'],
+        passOperands: [createReferenceOperand(constants[0])],
+        reviewOperands: [createReferenceOperand(constants[1])],
+        rejectOperands: [createReferenceOperand(constants[2])],
       },
     })
     display.unmount()
+    wrapper.unmount()
+  })
+
+  test('三组阈值和路径表达式可编辑、删除、保存并重载，逗号和大小写原样保留', async () => {
+    const wrapper = shallowMount(DashboardSettings)
+    await flushPromises()
+    const configured = { ...settings, fields: [{ metricField: 'DECISION_RESULT', label: '决策结果', mapping: {
+      refType: 'VARIABLE', refId: 3, jsonSource: 'OUTPUT', mappingSource: 'SYSTEM_DEFAULT',
+      decisionValues: { pass: ['allow,Case'], review: ['review'], reject: ['reject'] },
+    } }] }
+    wrapper.vm.applySettings(configured)
+    expect(wrapper.vm.decisionRow.passOperands[0].value).toBe('allow,Case')
+    const path = { kind: 'PATH', refType: 'VARIABLE', refId: '9007199254740993', code: 'response', relativePath: '.decision', valueType: 'STRING' }
+    const expression = { kind: 'OPERATION', terms: [{ operand: { kind: 'LITERAL', value: '1', valueType: 'NUMBER' } }, { operator: '+', operand: { kind: 'LITERAL', value: '2', valueType: 'NUMBER' } }] }
+    wrapper.vm.updateDecisionOperand('review', 0, path)
+    wrapper.vm.updateDecisionOperand('reject', 0, expression)
+    wrapper.vm.addDecisionOperand('pass', { kind: 'LITERAL', value: '0', valueType: 'NUMBER' })
+    wrapper.vm.removeDecisionOperand('pass', 1)
+    expect(wrapper.vm.initialRows[0].reviewOperands[0].value).toBe('review')
+    dashboardApi.saveDashboardSettings.mockImplementation(async (scope, body) => ({ data: {
+      ...configured, fields: [{ ...configured.fields[0], mapping: { ...body.mappings.DECISION_RESULT, mappingSource: 'USER_DEFAULT' } }],
+    } }))
+    await wrapper.vm.save()
+    expect(wrapper.vm.decisionRow.reviewOperands).toEqual([path])
+    expect(wrapper.vm.decisionRow.rejectOperands).toEqual([expression])
+    expect(wrapper.vm.decisionRow.passOperands[0].value).toBe('allow,Case')
+    expect(wrapper.vm.decisionKinds).toEqual(expect.arrayContaining(['LITERAL', 'PATH', 'OPERATION']))
+    wrapper.vm.editSystemDefaults = true
+    wrapper.vm.settings.defaultVersion = 2
+    dashboardApi.saveDashboardDefaults.mockResolvedValue({ data: settings })
+    await wrapper.vm.restore(wrapper.vm.decisionRow)
+    expect(wrapper.vm.decisionRow.passOperands).toEqual([])
+    await wrapper.vm.save()
+    expect(dashboardApi.saveDashboardDefaults).toHaveBeenCalledWith({ version: 2, mappings: {} })
     wrapper.unmount()
   })
 

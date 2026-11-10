@@ -20,6 +20,61 @@ import static org.junit.Assert.assertThrows;
 
 public class DashboardMappingServiceTest {
     @Test
+    public void decisionOperandsRoundTripAndResolveCurrentIdsWithoutPersistingEvaluatedValues() {
+        var decision = variable(500L, 0L, "GLOBAL", "decision", "STRING");
+        var constant = constant(501L, "old_code", "allow");
+        var source = variable(502L, 0L, "GLOBAL", "payload", "OBJECT");
+        var references = repository(decision, constant, source);
+        var service = service(new HashMap<>(), references);
+        var values = operandValues(
+                "{kind:'REFERENCE',refType:'CONSTANT',refId:501,code:'old_code'}",
+                "{kind:'PATH',refType:'VARIABLE',refId:502,code:'old_payload',relativePath:'.review'}",
+                "{kind:'OPERATION',terms:[{operand:{kind:'LITERAL',value:'100',valueType:'NUMBER'}},{operator:'+',operand:{kind:'LITERAL',value:'1',valueType:'NUMBER'}}]}");
+        var mapping = new DashboardMapping.StoredMapping(VARIABLE, 500L, INPUT, values);
+        service.saveSystemDefaults("admin", 0L, Map.of(DashboardMetricField.DECISION_RESULT, mapping));
+        assertFalse(references.findSystemDefaults().mappingsJson().contains("allow"));
+        constant.setDefaultValue("APPROVE");
+        constant.setVarCode("renamed");
+        source.setVarCode("new_payload");
+        var resolved = service.resolve(8L, null).get(DashboardMetricField.DECISION_RESULT);
+        org.junit.Assert.assertTrue(resolved.errorMessage(), resolved.valid());
+        assertEquals(java.util.Set.of("APPROVE"), resolved.decisionValues().pass());
+        assertEquals(java.util.Set.of("101"), resolved.decisionValues().reject());
+        assertEquals(java.util.Set.of("REVIEW"), resolved.decisionExpressions().values(
+                Map.of("new_payload", Map.of("review", "review")), false).get(1));
+        var settings = service.systemSettings().fields().stream()
+                .filter(field -> field.metricField() == DashboardMetricField.DECISION_RESULT).findFirst().orElseThrow();
+        assertEquals(values.passOperands(), settings.mapping().decisionValues().passOperands());
+        assertEquals(java.util.Set.of(), settings.mapping().decisionValues().pass());
+    }
+
+    @Test
+    public void decisionOperandsRejectOverlapsUnboundPathsAndUnauthorizedReferences() {
+        var decision = variable(500L, 0L, "GLOBAL", "decision", "STRING");
+        var foreign = variable(501L, 9L, "PROJECT", "private", "STRING");
+        var service = service(new HashMap<>(), repository(decision, foreign));
+        for (String pass : java.util.List.of(
+                "{kind:'LITERAL',value:'review',valueType:'STRING'}",
+                "{kind:'PATH',code:'secret'}",
+                "{kind:'PATH',refType:'VARIABLE',refId:501,code:'private'}",
+                "{kind:'FUNCTION',functionId:1,functionCode:'invoke'}",
+                "{kind:'OPERATION',terms:[{operand:{kind:'LITERAL',value:'1',valueType:'NUMBER'}},{operator:'/',operand:{kind:'LITERAL',value:'0',valueType:'NUMBER'}}]}",
+                "{kind:'REFERENCE',refType:'VARIABLE',refId:500,code:'decision',versionMode:'FIXED',versionId:1}",
+                "{kind:'PATH',refType:'VARIABLE',refId:500,code:'decision',relativePath:'[*]'}")) {
+            var values = operandValues(pass, "{kind:'LITERAL',value:'REVIEW',valueType:'STRING'}", "{kind:'LITERAL',value:'REJECT',valueType:'STRING'}");
+            assertThrows(pass, IllegalArgumentException.class, () -> service.saveSystemDefaults("admin", 0L,
+                    Map.of(DashboardMetricField.DECISION_RESULT, new DashboardMapping.StoredMapping(VARIABLE, 500L, INPUT, values))));
+        }
+    }
+
+    private DashboardMapping.DecisionValues operandValues(String pass, String review, String reject) {
+        return new DashboardMapping.DecisionValues(null, null, null, null, null, null,
+                java.util.List.of(com.alibaba.fastjson.JSON.parseObject(pass)),
+                java.util.List.of(com.alibaba.fastjson.JSON.parseObject(review)),
+                java.util.List.of(com.alibaba.fastjson.JSON.parseObject(reject)));
+    }
+
+    @Test
     public void decisionConstantsAreStoredByIdAndFollowCurrentValuesWithoutNameMatching() {
         var decision = variable(500L, 0L, "GLOBAL", "decision", "STRING");
         var pass = constant(501L, "PASS_CODE", "PASS");

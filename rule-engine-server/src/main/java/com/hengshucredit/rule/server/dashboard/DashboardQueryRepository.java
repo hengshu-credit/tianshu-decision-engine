@@ -43,6 +43,10 @@ public class DashboardQueryRepository {
         String period = jsonValue(mappings.get(PERIOD), parameters);
         String amount = jsonValue(mappings.get(AMOUNT), parameters);
         String decision = jsonValue(mappings.get(DECISION_RESULT), parameters);
+        var decisionMapping = mappings.get(DECISION_RESULT);
+        String decisionContext = decisionMapping != null && decisionMapping.valid()
+                && decisionMapping.decisionExpressions() != null && decisionMapping.decisionExpressions().dynamic()
+                ? (decisionMapping.jsonSource() == DashboardMapping.JsonSource.INPUT ? "input_params" : "output_result") : "NULL";
 
         StringBuilder sql = new StringBuilder()
                 .append("WITH extracted AS (")
@@ -53,7 +57,8 @@ public class DashboardQueryRepository {
                 .append(latitude).append(" AS latitude_value, ")
                 .append(period).append(" AS period_value, ")
                 .append(amount).append(" AS amount_value, ")
-                .append(decision).append(" AS decision_value ")
+                .append(decision).append(" AS decision_value, ")
+                .append(decisionContext).append(" AS decision_context ")
                 .append(" FROM rule_execution_log_current execution ")
                 .append(" WHERE create_time >= ? AND create_time <= ? ");
         parameters.add(criteria.startTime());
@@ -75,7 +80,7 @@ public class DashboardQueryRepository {
                 .append(" ORDER BY create_time DESC, id DESC) AS ranking_index ")
                 .append(" FROM extracted)")
                 .append(" SELECT id, project_code, trace_id, request_value, ")
-                .append(" decision_value, device_value, period_value, ")
+                .append(" decision_value, decision_context, device_value, period_value, ")
                 .append(" amount_value, longitude_value, latitude_value, ")
                 .append(" create_time FROM ranked WHERE ranking_index = 1");
 
@@ -368,7 +373,7 @@ public class DashboardQueryRepository {
                 resultSet.getString("amount_value"),
                 resultSet.getString("longitude_value"),
                 resultSet.getString("latitude_value"),
-                resultSet.getTimestamp("create_time").toLocalDateTime());
+                resultSet.getTimestamp("create_time").toLocalDateTime(), resultSet.getString("decision_context"));
     }
 
     public record ApplicationRow(Long id,
@@ -381,7 +386,12 @@ public class DashboardQueryRepository {
                                  String amount,
                                  String longitude,
                                  String latitude,
-                                 LocalDateTime createTime) {
+                                 LocalDateTime createTime, String decisionContext) {
+        public ApplicationRow(Long id, String projectCode, String traceId, String requestId, String decision,
+                              String device, String period, String amount, String longitude, String latitude,
+                              LocalDateTime createTime) {
+            this(id, projectCode, traceId, requestId, decision, device, period, amount, longitude, latitude, createTime, null);
+        }
     }
 
     public record RuntimeCall(boolean success,

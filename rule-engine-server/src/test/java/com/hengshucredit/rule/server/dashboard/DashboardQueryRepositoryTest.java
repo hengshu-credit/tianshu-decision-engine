@@ -14,6 +14,27 @@ import static org.junit.Assert.assertTrue;
 public class DashboardQueryRepositoryTest {
 
     @Test
+    public void dynamicDecisionContextUsesSelectedJsonSourceAndStaticMappingsDoNotLoadPayloads() {
+        var jdbc = new CapturingJdbcTemplate();
+        var repository = new DashboardQueryRepository(jdbc);
+        var operand = com.alibaba.fastjson.JSON.parseObject("{kind:'REFERENCE',refType:'VARIABLE',refId:9,code:'payload'}");
+        var values = new DashboardMapping.DecisionValues(null, null, null, null, null, null, List.of(operand), null, null);
+        var expressions = DashboardDecisionExpressions.prepare(values,
+                node -> new DashboardDecisionExpressions.Binding(List.of("payload"), null));
+        for (var source : DashboardMapping.JsonSource.values()) {
+            var mapping = new DashboardMapping.ResolvedMapping(DashboardMetricField.DECISION_RESULT,
+                    DashboardMapping.RefType.VARIABLE, 1L, source, "$.decision", "结果",
+                    DashboardMapping.MappingSource.USER_DEFAULT, true, null, values, expressions);
+            repository.applicationRows(criteria(), new DashboardMapping.ResolvedMappings(
+                    java.util.Map.of(DashboardMetricField.DECISION_RESULT, mapping)));
+            assertTrue(jdbc.sql.contains((source == DashboardMapping.JsonSource.INPUT ? "input_params" : "output_result") + " AS decision_context"));
+            assertTrue(jdbc.sql.contains("ranking_index = 1"));
+        }
+        repository.applicationRows(criteria(), new DashboardMapping.ResolvedMappings(null));
+        assertTrue(jdbc.sql.contains("NULL AS decision_context"));
+    }
+
+    @Test
     public void applicationQueryDoesNotUseWindowFunctionNameAsAlias() {
         CapturingJdbcTemplate jdbcTemplate = new CapturingJdbcTemplate();
         DashboardQueryRepository repository =

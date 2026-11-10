@@ -150,23 +150,19 @@
     <el-card v-if="decisionRow" shadow="never" class="dashboard-decision-values">
       <template #header>
         <strong>决策结果取值</strong>
-        <span>选择引擎常量，按 ID 跟随当前生效值；三组取值不可重叠。</span>
+        <span>输入阈值、选择字段或配置表达式；计算结果与决策结果值匹配，三组取值不可重叠。路径读取上方所选 JSON 来源。</span>
       </template>
       <el-form label-width="90px" size="small">
         <el-form-item v-for="group in decisionGroups" :key="group.key" :label="group.label">
           <div class="dashboard-decision-references">
-            <div class="dashboard-reference-tags">
-              <el-tag v-for="id in decisionRow[group.key + 'RefIds']" :key="id" :closable="settings.editable" @close="removeDecisionReference(group.key, id)">
-                <content-reference :value="constantReference(id)" />
-              </el-tag>
-              <el-tag v-for="value in splitValues(decisionRow[group.key + 'Values'])" :key="'legacy:' + value" type="info">
-                <content-reference :value="{ kind: 'LITERAL', value, valueType: 'STRING' }" /><span>（历史值，选择常量后替换）</span>
-              </el-tag>
+            <div v-for="(operand, index) in decisionRow[group.key + 'Operands']" :key="index" class="dashboard-decision-operand">
+              <operand-picker :value="operand" :vars="decisionOptions" :allowed-kinds="decisionKinds" :disabled="!settings.editable"
+                @input="updateDecisionOperand(group.key, index, $event)" />
+              <el-button :disabled="!settings.editable" link type="danger" :aria-label="`删除${group.label}取值 ${index + 1}`" @click="removeDecisionOperand(group.key, index)">删除</el-button>
             </div>
-            <var-picker :value="''" :vars="constantOptions" value-key="id" :allow-custom="false" :disabled="!settings.editable"
-              placeholder="选择引擎常量，可添加多个" @input="addDecisionReference(group.key, $event)">
-              <template #version>当前生效</template>
-            </var-picker>
+            <operand-picker :key="group.key + ':' + decisionRow[group.key + 'Operands'].length" :value="null" :vars="decisionOptions"
+              :allowed-kinds="decisionKinds" :disabled="!settings.editable" :placeholder="`添加${group.label}取值：阈值、路径或表达式`"
+              @select="addDecisionOperand(group.key, $event)" />
           </div>
         </el-form-item>
       </el-form>
@@ -187,7 +183,8 @@
 <script>
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import VarPicker from '@/components/common/VarPicker.vue'
-import ContentReference from '@/components/common/ContentReference.vue'
+import OperandPicker from '@/components/common/OperandPicker.vue'
+import { createLiteralOperand, createReferenceOperand } from '@/utils/operand'
 import {
   deleteDashboardSetting,
   getDashboardSettings,
@@ -207,10 +204,11 @@ import {
 const NUMERIC_FIELDS = new Set(['LONGITUDE', 'LATITUDE', 'PERIOD', 'AMOUNT'])
 
 export default {
-  components: { ProjectResourceSelect, VarPicker, ContentReference },
+  components: { ProjectResourceSelect, VarPicker, OperandPicker },
   name: 'DashboardSettings',
   data() {
     return {
+      decisionKinds: ['LITERAL', 'REFERENCE', 'PATH', 'OPERATION', 'ACCESS', 'CAST', 'ARRAY'],
       decisionGroups: [{ key: 'pass', label: '通过' }, { key: 'review', label: '人审' }, { key: 'reject', label: '拒绝' }],
       projectId: null,
       editSystemDefaults: false,
@@ -226,6 +224,7 @@ export default {
   },
   computed: {
     canManageDefaults() { return hasPermission('system:edit') },
+    decisionOptions() { return this.settings.options.map(this.pickerOption) },
     constantOptions() {
       return this.settings.options.filter(option => option.varSource === 'CONSTANT' && !['OBJECT', 'LIST', 'MAP', 'ARRAY'].includes(option.valueType)).map(this.pickerOption)
     },
@@ -316,28 +315,34 @@ export default {
           source: mapping.mappingSource,
           valid: mapping.valid !== false,
           errorMessage: mapping.errorMessage || '',
-          passRefIds: (values.passRefIds || []).map(String),
-          reviewRefIds: (values.reviewRefIds || []).map(String),
-          rejectRefIds: (values.rejectRefIds || []).map(String),
-          passValues: values.passRefIds?.length || !mapping.refId ? '' : this.joinValues(values.pass),
-          reviewValues: values.reviewRefIds?.length || !mapping.refId ? '' : this.joinValues(values.review),
-          rejectValues: values.rejectRefIds?.length || !mapping.refId ? '' : this.joinValues(values.reject)
+          passOperands: this.decisionOperands(values, 'pass', mapping.refId),
+          reviewOperands: this.decisionOperands(values, 'review', mapping.refId),
+          rejectOperands: this.decisionOperands(values, 'reject', mapping.refId)
         }
       })
-      this.initialRows = this.rows.map(row => ({ ...row }))
+      this.initialRows = JSON.parse(JSON.stringify(this.rows))
     },
     async save() {
       if (!this.settings.editable || this.loading) return
       const mappings = {}
       for (const row of this.rows) {
+        if (row.metricField === 'DECISION_RESULT' && !row.referenceKey &&
+          this.decisionGroups.some(group => row[group.key + 'Operands'].length)) {
+          this.$message.warning('请先选择决策结果的引用字段')
+          return
+        }
         if (!row.referenceKey) continue
         const ownSource = this.projectId ? 'PROJECT_OVERRIDE' : 'USER_DEFAULT'
         const original = this.initialRows.find(item => item.metricField === row.metricField)
         if (!this.editSystemDefaults && row.source !== ownSource && original &&
-          ['referenceKey', 'jsonSource', 'passValues', 'reviewValues', 'rejectValues', 'passRefIds', 'reviewRefIds', 'rejectRefIds'].every(key => JSON.stringify(row[key]) === JSON.stringify(original[key]))) continue
+          ['referenceKey', 'jsonSource', 'passOperands', 'reviewOperands', 'rejectOperands'].every(key => JSON.stringify(row[key]) === JSON.stringify(original[key]))) continue
         const reference = this.parseReference(row.referenceKey)
         if (!reference) {
           this.$message.warning(`请选择${row.label}的引用字段`)
+          return
+        }
+        if (row.metricField === 'DECISION_RESULT' && this.decisionGroups.some(group => !row[group.key + 'Operands'].length)) {
+          this.$message.warning('通过、人审和拒绝取值均不能为空')
           return
         }
         mappings[row.metricField] = {
@@ -345,12 +350,9 @@ export default {
           jsonSource: row.jsonSource,
           decisionValues: row.metricField === 'DECISION_RESULT'
             ? {
-                pass: this.splitValues(row.passValues),
-                review: this.splitValues(row.reviewValues),
-                reject: this.splitValues(row.rejectValues),
-                passRefIds: row.passRefIds,
-                reviewRefIds: row.reviewRefIds,
-                rejectRefIds: row.rejectRefIds
+                passOperands: row.passOperands,
+                reviewOperands: row.reviewOperands,
+                rejectOperands: row.rejectOperands
               }
             : null
         }
@@ -370,7 +372,7 @@ export default {
     },
     async restore(row) {
       if (!this.settings.editable) return
-      if (this.editSystemDefaults) { row.referenceKey = ''; return }
+      if (this.editSystemDefaults) { this.selectFieldReference(row, ''); return }
       try {
         const response = await deleteDashboardSetting(
           row.metricField, { projectId: this.projectId }
@@ -402,7 +404,7 @@ export default {
     pickerOption(option) {
       const refType = option.varSource === 'CONSTANT' ? 'CONSTANT' : option.refType === 'DATA_OBJECT_FIELD' ? 'DATA_OBJECT' : option.refType
       return { id: option.refId, _varId: option.refId, _refType: refType, varCode: option.code || '', varLabel: option.label,
-        varType: option.valueType, varSource: option.varSource, constantValue: option.constantValue, versionMode: 'LATEST',
+        varType: option.valueType, varSource: option.varSource, constantValue: option.constantValue, versionMode: 'LATEST', catalogMode: 'FROZEN',
         _ref: { category: refType === 'CONSTANT' ? 'constant' : refType === 'DATA_OBJECT' ? 'object' : 'standalone' } }
     },
     fieldPickerOptions(row) {
@@ -420,18 +422,30 @@ export default {
     },
     selectFieldReference(row, value) {
       row.referenceKey = String(value || '').replace('CONSTANT:', 'VARIABLE:').replace('DATA_OBJECT:', 'DATA_OBJECT_FIELD:')
+      if (!row.referenceKey && row.metricField === 'DECISION_RESULT') {
+        this.decisionGroups.forEach(group => { row[group.key + 'Operands'] = [] })
+      }
     },
-    constantReference(id) {
-      return this.constantOptions.find(option => String(option.id) === String(id)) || { kind: 'REFERENCE', refType: 'CONSTANT', refId: id, label: '不可用的常量引用', resolved: false }
+    decisionOperands(values, group, refId) {
+      if (!refId) return []
+      if (values[group + 'Operands']?.length) return JSON.parse(JSON.stringify(values[group + 'Operands']))
+      const ids = values[group + 'RefIds'] || []
+      if (ids.length) return ids.map(id => createReferenceOperand(this.constantOptions.find(option => String(option.id) === String(id)) || {
+        _varId: id, _refType: 'CONSTANT', varCode: '不可用的常量引用', varLabel: '不可用的常量引用', versionMode: 'LATEST',
+      }))
+      return (values[group] || []).map(value => createLiteralOperand(value, 'STRING'))
     },
-    addDecisionReference(group, id) {
-      if (id == null || id === '') return
-      const key = group + 'RefIds'
-      this.decisionRow[key] = Array.from(new Set([...this.decisionRow[key], String(id)]))
-      this.decisionRow[group + 'Values'] = ''
+    addDecisionOperand(group, operand) {
+      if (!this.settings.editable || !operand) return
+      this.decisionRow[group + 'Operands'].push(JSON.parse(JSON.stringify(operand)))
     },
-    removeDecisionReference(group, id) {
-      this.decisionRow[group + 'RefIds'] = this.decisionRow[group + 'RefIds'].filter(value => String(value) !== String(id))
+    updateDecisionOperand(group, index, operand) {
+      if (!this.settings.editable) return
+      if (!operand) { this.removeDecisionOperand(group, index); return }
+      this.decisionRow[group + 'Operands'].splice(index, 1, JSON.parse(JSON.stringify(operand)))
+    },
+    removeDecisionOperand(group, index) {
+      if (this.settings.editable) this.decisionRow[group + 'Operands'].splice(index, 1)
     },
     optionsFor(row) {
       const options = this.settings.options || []
@@ -443,11 +457,6 @@ export default {
       return match ? { refType: match[1], refId: Number.isSafeInteger(Number(match[2])) ? Number(match[2]) : match[2] } : null
     },
     optionKey(option) { return `${option.refType}:${option.refId}` },
-    joinValues(values) { return Array.isArray(values) ? values.join(',') : '' },
-    splitValues(value) {
-      return Array.from(new Set(String(value || '').split(',')
-        .map(item => item.trim().toUpperCase()).filter(Boolean)))
-    },
     projectLabel(project) {
       return `${project.projectName || project.projectCode}（${project.projectCode}）`
     },
@@ -483,8 +492,8 @@ export default {
 }
 
 .dashboard-decision-references { width: 100%; }
-.dashboard-reference-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
-.dashboard-reference-tags :deep(.el-tag__content) { display: inline-flex; align-items: center; gap: 6px; }
+.dashboard-decision-operand { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.dashboard-decision-operand > .operand-picker { flex: 1; min-width: 0; }
 
 .dashboard-decision-values :deep(.el-card__header) {
   display: flex;

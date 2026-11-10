@@ -157,7 +157,7 @@ public class DashboardMappingService {
         List<DashboardResponses.SettingField> fields = new ArrayList<>();
         for (DashboardMetricField field : DashboardMetricField.values()) {
             fields.add(new DashboardResponses.SettingField(field,
-                    field.displayName(), resolved.get(field)));
+                    field.displayName(), settingsMapping(resolved.get(field))));
         }
         List<DashboardResponses.ReferenceOption> options = new ArrayList<>();
         for (RuleVariable variable
@@ -226,8 +226,15 @@ public class DashboardMappingService {
             return invalid(field, mapping, source, "字段引用不完整");
         }
         DashboardMapping.DecisionValues decisions;
+        DashboardDecisionExpressions.Prepared expressions;
         try {
             decisions = resolveDecisions(field, mapping.decisionValues(), projectId, personalDefault);
+            expressions = decisions == null ? null : DashboardDecisionExpressions.prepare(decisions,
+                    node -> decisionBinding(node, projectId, personalDefault));
+            if (expressions != null) {
+                var staticValues = expressions.values(Map.of(), true);
+                decisions = withExpressionValues(decisions, staticValues);
+            }
         } catch (IllegalArgumentException error) {
             return invalid(field, mapping, source, error.getMessage());
         }
@@ -247,7 +254,7 @@ public class DashboardMappingService {
             if (error != null) return invalid(field, mapping, source, error);
             return valid(field, mapping, source,
                     jsonPath(List.of(variable.getVarCode())),
-                    variable.getVarLabel(), decisions);
+                    variable.getVarLabel(), decisions, expressions);
         }
 
         if (mapping.refType() == DATA_OBJECT_FIELD) {
@@ -272,7 +279,7 @@ public class DashboardMappingService {
             String error = decisionError(field, decisions);
             if (error != null) return invalid(field, mapping, source, error);
             return valid(field, mapping, source, jsonPath(path),
-                    object.getObjectLabel() + "." + dataField.getVarLabel(), decisions);
+                    object.getObjectLabel() + "." + dataField.getVarLabel(), decisions, expressions);
         }
         return invalid(field, mapping, source, "不支持的字段引用类型");
     }
@@ -317,8 +324,9 @@ public class DashboardMappingService {
             return null;
         }
         DashboardMapping.DecisionValues normalized = normalize(values);
-        if (normalized.pass().isEmpty() || normalized.review().isEmpty()
-                || normalized.reject().isEmpty()) {
+        if (normalized.pass().isEmpty() && normalized.passOperands().isEmpty()
+                || normalized.review().isEmpty() && normalized.reviewOperands().isEmpty()
+                || normalized.reject().isEmpty() && normalized.rejectOperands().isEmpty()) {
             return "通过、人审和拒绝取值均不能为空";
         }
         Set<String> all = new LinkedHashSet<>();
@@ -335,10 +343,10 @@ public class DashboardMappingService {
             DashboardMapping.StoredMapping mapping,
             DashboardMapping.MappingSource source,
             String path,
-            String label, DashboardMapping.DecisionValues decisions) {
+            String label, DashboardMapping.DecisionValues decisions, DashboardDecisionExpressions.Prepared expressions) {
         return new DashboardMapping.ResolvedMapping(field, mapping.refType(),
                 mapping.refId(), mapping.jsonSource(), path, label, source,
-                true, null, decisions);
+                true, null, decisions, expressions);
     }
 
     private DashboardMapping.ResolvedMapping invalid(
@@ -374,7 +382,8 @@ public class DashboardMappingService {
             DashboardMapping.DecisionValues values) {
         return new DashboardMapping.DecisionValues(
                 normalizeSet(values.pass()), normalizeSet(values.review()),
-                normalizeSet(values.reject()), values.passRefIds(), values.reviewRefIds(), values.rejectRefIds());
+                normalizeSet(values.reject()), values.passRefIds(), values.reviewRefIds(), values.rejectRefIds(),
+                values.passOperands(), values.reviewOperands(), values.rejectOperands());
     }
 
     private DashboardMapping.DecisionValues resolveDecisions(DashboardMetricField field,
@@ -385,7 +394,61 @@ public class DashboardMappingService {
                 resolveConstants(normalized.passRefIds(), normalized.pass(), projectId, personalDefault),
                 resolveConstants(normalized.reviewRefIds(), normalized.review(), projectId, personalDefault),
                 resolveConstants(normalized.rejectRefIds(), normalized.reject(), projectId, personalDefault),
-                normalized.passRefIds(), normalized.reviewRefIds(), normalized.rejectRefIds());
+                normalized.passRefIds(), normalized.reviewRefIds(), normalized.rejectRefIds(),
+                normalized.passOperands(), normalized.reviewOperands(), normalized.rejectOperands());
+    }
+
+    private DashboardMapping.ResolvedMapping settingsMapping(DashboardMapping.ResolvedMapping mapping) {
+        if (mapping == null || mapping.decisionExpressions() == null) return mapping;
+        var values = mapping.decisionValues();
+        var configured = new DashboardMapping.DecisionValues(
+                values.passOperands().isEmpty() ? values.pass() : Set.of(),
+                values.reviewOperands().isEmpty() ? values.review() : Set.of(),
+                values.rejectOperands().isEmpty() ? values.reject() : Set.of(),
+                values.passRefIds(), values.reviewRefIds(), values.rejectRefIds(),
+                values.passOperands(), values.reviewOperands(), values.rejectOperands());
+        return new DashboardMapping.ResolvedMapping(mapping.metricField(), mapping.refType(), mapping.refId(),
+                mapping.jsonSource(), mapping.jsonPath(), mapping.referenceLabel(), mapping.mappingSource(),
+                mapping.valid(), mapping.errorMessage(), configured);
+    }
+
+    private DashboardMapping.DecisionValues withExpressionValues(DashboardMapping.DecisionValues values, List<Set<String>> evaluated) {
+        return new DashboardMapping.DecisionValues(
+                values.passOperands().isEmpty() ? values.pass() : evaluated.get(0),
+                values.reviewOperands().isEmpty() ? values.review() : evaluated.get(1),
+                values.rejectOperands().isEmpty() ? values.reject() : evaluated.get(2),
+                values.passRefIds(), values.reviewRefIds(), values.rejectRefIds(),
+                values.passOperands(), values.reviewOperands(), values.rejectOperands());
+    }
+
+    private DashboardDecisionExpressions.Binding decisionBinding(JSONObject node, Long projectId, boolean personalDefault) {
+        String type = node.getString("refType");
+        Long id = node.getLong("refId");
+        if ("VARIABLE".equals(type) || "CONSTANT".equals(type)) {
+            RuleVariable variable = referenceRepository.findVariable(id);
+            if (variable == null || !Integer.valueOf(1).equals(variable.getStatus()))
+                throw new IllegalArgumentException("决策结果引用不存在、已停用或无权访问");
+            String error = scopeError(variable.getScope(), variable.getProjectId(), projectId, personalDefault);
+            if (error != null) throw new IllegalArgumentException(error);
+            if ("CONSTANT".equals(variable.getVarSource()))
+                return new DashboardDecisionExpressions.Binding(null, ConstantValueCodec.toRuntimeValue(variable.getVarType(), variable.getDefaultValue()));
+            if ("CONSTANT".equals(type)) throw new IllegalArgumentException("决策结果常量引用类型不匹配");
+            return new DashboardDecisionExpressions.Binding(List.of(variable.getVarCode()), null);
+        }
+        if ("DATA_OBJECT".equals(type)) {
+            RuleDataObjectField field = referenceRepository.findDataObjectField(id);
+            if (field == null || !Integer.valueOf(1).equals(field.getStatus()))
+                throw new IllegalArgumentException("决策结果字段不存在、已停用或无权访问");
+            String error = scopeError(field.getScope(), field.getProjectId(), projectId, personalDefault);
+            if (error != null) throw new IllegalArgumentException(error);
+            RuleDataObject object = referenceRepository.findDataObject(field.getObjectId());
+            if (object == null || !Integer.valueOf(1).equals(object.getStatus()))
+                throw new IllegalArgumentException("决策结果字段所属对象不可用");
+            error = scopeError(object.getScope(), object.getProjectId(), projectId, personalDefault);
+            if (error != null) throw new IllegalArgumentException(error);
+            return new DashboardDecisionExpressions.Binding(objectFieldPath(object, field), null);
+        }
+        throw new IllegalArgumentException("看板只支持变量、常量和数据对象字段引用");
     }
 
     private Set<String> resolveConstants(Set<Long> ids, Set<String> legacy, Long projectId, boolean personalDefault) {
@@ -474,7 +537,12 @@ public class DashboardMappingService {
         if (value == null) return null;
         return new DashboardMapping.DecisionValues(
                 jsonSet(value, "pass"), jsonSet(value, "review"),
-                jsonSet(value, "reject"), jsonIds(value, "passRefIds"), jsonIds(value, "reviewRefIds"), jsonIds(value, "rejectRefIds"));
+                jsonSet(value, "reject"), jsonIds(value, "passRefIds"), jsonIds(value, "reviewRefIds"), jsonIds(value, "rejectRefIds"),
+                jsonOperands(value, "passOperands"), jsonOperands(value, "reviewOperands"), jsonOperands(value, "rejectOperands"));
+    }
+
+    private List<JSONObject> jsonOperands(JSONObject value, String key) {
+        return value.getJSONArray(key) == null ? List.of() : value.getJSONArray(key).toJavaList(JSONObject.class);
     }
 
     private Set<Long> jsonIds(JSONObject value, String key) {
@@ -521,6 +589,9 @@ public class DashboardMappingService {
                 decisions.put("passRefIds", new ArrayList<>(decisionsValue.passRefIds()));
                 decisions.put("reviewRefIds", new ArrayList<>(decisionsValue.reviewRefIds()));
                 decisions.put("rejectRefIds", new ArrayList<>(decisionsValue.rejectRefIds()));
+                decisions.put("passOperands", new ArrayList<>(decisionsValue.passOperands()));
+                decisions.put("reviewOperands", new ArrayList<>(decisionsValue.reviewOperands()));
+                decisions.put("rejectOperands", new ArrayList<>(decisionsValue.rejectOperands()));
                 value.put("decisionValues", decisions);
             }
             result.put(entry.getKey().name(), value);

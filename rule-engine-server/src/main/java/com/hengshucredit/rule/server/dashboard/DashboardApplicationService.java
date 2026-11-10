@@ -62,11 +62,17 @@ public class DashboardApplicationService {
 
         DashboardMapping.ResolvedMapping decisionMapping = mappings.get(
                 DashboardMetricField.DECISION_RESULT);
-        DashboardMapping.DecisionValues decisions = decisionMapping == null
-                ? null : decisionMapping.decisionValues();
 
+        long invalidDecisionExpressions = 0;
         for (DashboardQueryRepository.ApplicationRow row : rows) {
-            Decision classification = classify(row.decision(), decisions);
+            Decision classification = Decision.UNKNOWN;
+            if (decisionMapping != null && decisionMapping.valid()) {
+                try {
+                    classification = classify(row, decisionMapping);
+                } catch (RuntimeException error) {
+                    invalidDecisionExpressions++;
+                }
+            }
             if (classification == Decision.PASS) pass++;
             if (classification == Decision.REVIEW) review++;
             if (classification == Decision.REJECT) reject++;
@@ -110,10 +116,13 @@ public class DashboardApplicationService {
                 count - coordinateExclusions.values().stream()
                         .mapToLong(Long::longValue).sum(),
                 coordinateExclusions);
+        List<DashboardResponses.MappingIssue> issues = new ArrayList<>(mappingIssues(mappings));
+        if (invalidDecisionExpressions > 0) issues.add(new DashboardResponses.MappingIssue(
+                DashboardMetricField.DECISION_RESULT, invalidDecisionExpressions + " 条记录的决策取值缺失、计算失败或组间重叠，已计入未分类"));
         return new DashboardResponses.Applications(true,
                 DashboardResponses.Metadata.from(criteria), summary,
                 periodDistribution, amountDistribution, geo,
-                mappingIssues(mappings));
+                issues);
     }
 
     private List<DashboardQueryRepository.ApplicationRow> latest(
@@ -217,6 +226,20 @@ public class DashboardApplicationService {
                 .map(value -> new DashboardResponses.MappingIssue(
                         value.metricField(), value.errorMessage()))
                 .toList();
+    }
+
+    private Decision classify(DashboardQueryRepository.ApplicationRow row, DashboardMapping.ResolvedMapping mapping) {
+        var values = mapping.decisionValues();
+        var expressions = mapping.decisionExpressions();
+        if (expressions == null || !expressions.dynamic()) return classify(row.decision(), values);
+        var context = row.decisionContext() == null ? null : com.alibaba.fastjson.JSON.parseObject(row.decisionContext());
+        var evaluated = expressions.values(context == null ? Map.of() : context, false);
+        var pass = values.passOperands().isEmpty() ? values.pass() : evaluated.get(0);
+        var review = values.reviewOperands().isEmpty() ? values.review() : evaluated.get(1);
+        var reject = values.rejectOperands().isEmpty() ? values.reject() : evaluated.get(2);
+        if (!java.util.Collections.disjoint(pass, review) || !java.util.Collections.disjoint(pass, reject)
+                || !java.util.Collections.disjoint(review, reject)) throw new IllegalArgumentException("决策取值组间重叠");
+        return classify(row.decision(), new DashboardMapping.DecisionValues(pass, review, reject));
     }
 
     private Decision classify(String value,

@@ -18,6 +18,31 @@ import static org.junit.Assert.assertTrue;
 
 public class DashboardApplicationServiceTest {
     @Test
+    public void dynamicDecisionValuesClassifyLogsAndReportMissingOrOverlappingResults() {
+        var path = com.alibaba.fastjson.JSON.parseObject("{kind:'PATH',refType:'VARIABLE',refId:9,code:'old',relativePath:'.pass'}");
+        var values = new DashboardMapping.DecisionValues(Set.of(), Set.of("REVIEW"), Set.of("REJECT"),
+                null, null, null, List.of(path), null, null);
+        var prepared = DashboardDecisionExpressions.prepare(values,
+                node -> new DashboardDecisionExpressions.Binding(List.of("payload"), null));
+        var mappings = new EnumMap<DashboardMetricField, DashboardMapping.ResolvedMapping>(DashboardMetricField.class);
+        mappings.putAll(validMappings().values());
+        mappings.put(DashboardMetricField.DECISION_RESULT, new DashboardMapping.ResolvedMapping(
+                DashboardMetricField.DECISION_RESULT, VARIABLE, 1L, INPUT, "$.decision", "结果", SYSTEM_DEFAULT,
+                true, null, values, prepared));
+        var contexts = List.of("{payload:{pass:'ALLOW'}}", "{payload:{pass:'ALLOW'}}",
+                "{payload:{pass:'REVIEW'}}", "{}", "{broken");
+        var decisions = List.of("ALLOW", "REVIEW", "REVIEW", "ALLOW", "ALLOW");
+        var rows = new ArrayList<DashboardQueryRepository.ApplicationRow>();
+        for (int i = 0; i < contexts.size(); i++) rows.add(new DashboardQueryRepository.ApplicationRow(
+                (long) i + 1, "P1", "T" + i, "R" + i, decisions.get(i), "D1", "1", "1", "120", "30", time(i + 1), contexts.get(i)));
+        var result = service(rows).analyze(criteria(), access("rule:view"), new DashboardMapping.ResolvedMappings(mappings));
+        assertEquals(1, result.summary().passCount());
+        assertEquals(1, result.summary().reviewCount());
+        assertEquals(3, result.summary().unclassifiedCount());
+        assertTrue(result.mappingIssues().stream().anyMatch(issue -> issue.message().contains("3 条记录")));
+    }
+
+    @Test
     public void numericDecisionConstantsMatchEquivalentJsonNumberRepresentations() {
         var result = service(List.of(
                 row(1L, "P1", "T1", "R1", "100.0", "D1", "1", "1", "120", "30", time(1)),

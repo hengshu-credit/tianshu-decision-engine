@@ -1,8 +1,11 @@
 package com.hengshucredit.rule.server.dashboard;
 
+import com.alibaba.fastjson.JSONObject;
+
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -32,7 +35,14 @@ public final class DashboardMapping {
                                  Set<String> reject,
                                  Set<Long> passRefIds,
                                  Set<Long> reviewRefIds,
-                                 Set<Long> rejectRefIds) {
+                                 Set<Long> rejectRefIds,
+                                 List<JSONObject> passOperands,
+                                 List<JSONObject> reviewOperands,
+                                 List<JSONObject> rejectOperands) {
+        public DecisionValues(Set<String> pass, Set<String> review, Set<String> reject,
+                              Set<Long> passRefIds, Set<Long> reviewRefIds, Set<Long> rejectRefIds) {
+            this(pass, review, reject, passRefIds, reviewRefIds, rejectRefIds, List.of(), List.of(), List.of());
+        }
         public DecisionValues(Set<String> pass, Set<String> review, Set<String> reject) {
             this(pass, review, reject, Set.of(), Set.of(), Set.of());
         }
@@ -43,6 +53,14 @@ public final class DashboardMapping {
             passRefIds = immutable(passRefIds);
             reviewRefIds = immutable(reviewRefIds);
             rejectRefIds = immutable(rejectRefIds);
+            passOperands = copyOperands(passOperands);
+            reviewOperands = copyOperands(reviewOperands);
+            rejectOperands = copyOperands(rejectOperands);
+        }
+
+        private static List<JSONObject> copyOperands(List<JSONObject> values) {
+            return values == null ? List.of() : values.stream()
+                    .map(value -> JSONObject.parseObject(JSONObject.toJSONString(value))).toList();
         }
 
         private static <T> Set<T> immutable(Set<T> values) {
@@ -76,7 +94,15 @@ public final class DashboardMapping {
                                   MappingSource mappingSource,
                                   boolean valid,
                                   String errorMessage,
-                                  DecisionValues decisionValues) {
+                                  DecisionValues decisionValues,
+                                  @com.fasterxml.jackson.annotation.JsonIgnore DashboardDecisionExpressions.Prepared decisionExpressions) {
+        public ResolvedMapping(DashboardMetricField metricField, RefType refType, Long refId,
+                               JsonSource jsonSource, String jsonPath, String referenceLabel,
+                               MappingSource mappingSource, boolean valid, String errorMessage,
+                               DecisionValues decisionValues) {
+            this(metricField, refType, refId, jsonSource, jsonPath, referenceLabel, mappingSource,
+                    valid, errorMessage, decisionValues, null);
+        }
     }
 
     public static final class ResolvedMappings {

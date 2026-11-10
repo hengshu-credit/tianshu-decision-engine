@@ -1,5 +1,6 @@
 import { shallowMount } from '@test-utils'
 import ActionSideEffectEditor from '@/components/flow/ActionSideEffectEditor.vue'
+import OperandPicker from '@/components/common/OperandPicker.vue'
 import { newBlock } from '@/utils/actionDataCodegen'
 
 describe('外数与名单动作面板', () => {
@@ -23,6 +24,15 @@ describe('外数与名单动作面板', () => {
     wrapper.vm.removeEntry(1)
     expect(block.entries).toEqual([{ itemType: 'EMAIL', valueOperand: { kind: 'REFERENCE', refId: 11, refType: 'VARIABLE' } }])
     expect(editor.sync).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+  test('名单内容允许手输阈值并将原始固定值交给动作编辑器', () => {
+    const { wrapper, block, editor } = mount('list-write')
+    const picker = wrapper.findComponent(OperandPicker)
+    expect(picker.props('allowedKinds')).toContain('LITERAL')
+    const value = { kind: 'LITERAL', value: '00123456789', valueType: 'STRING' }
+    picker.vm.$emit('input', value)
+    expect(editor.setOperand).toHaveBeenCalledWith(block.entries[0], 'valueOperand', value)
     wrapper.unmount()
   })
 })
