@@ -78,6 +78,10 @@ python3 -X utf8 "$RELEASE_DIR/deploy.py" --target "$PWD"
 3. 在维护窗口先停应用，再停本机相关 MySQL/Redis/Kafka。将原 `deploy-prod/docker` 移到外层 `docker`，其中 runtime 移到 `deploy-prod/current`；MySQL/Redis 数据随原目录迁移，不重新初始化，Kafka 继续使用原命名卷。
 4. 再次核对搬迁后的挂载路径；若配置仍写死旧数据绝对路径则恢复旧布局，避免创建空数据目录。使用原项目名先恢复基础设施，再恢复原应用并检查健康；旧 env、文档、源码及许可证归档到外层 `legacy/`。原服务端和 SDK journal 命名卷保留。目录切换失败时，先停止新容器，再恢复旧目录和原部署；若停止或恢复失败，保留现场并明确报错，不删除数据。
 
+如果旧 `runtime-sdk` 的容器仍绑定外层 `docker/runtime/runtime.jar`，而这个宿主机路径已消失，脚本支持恢复该已确认的历史布局：在停止任何服务前，先核对各 SDK 副本的 JAR 摘要和当前运行参数，再通过无 TTY 的二进制流从仍运行的容器取回 JAR，复核摘要后保存原内层 JAR 与 env，修正内层 `.env.client` 的 `RUNTIME_DIR=./runtime` 并继续整理。**以内核中仍挂载的运行版 JAR 为准，不能用摘要不同的发布目录 JAR 冒充旧版本。** 多个副本版本不同、复制摘要不符、运行参数与配置不符或其他自定义路径，仍在停机前拒绝处理。不要先停止/删除旧 SDK 容器，也不要直接改路径后强制重建。
+
+原文件与恢复摘要保存在 `legacy/before-layout-*/sdk-mount-recovery/`，不会覆盖外层 env 备份。若 SDK 恢复已成功、后续目录整理失败，回退到旧目录时仍保留取回的运行版 JAR 和修正后的有效路径；不能再把 SDK 指向已失效的外层路径。原内层文件与配置始终保留在恢复备份中。此恢复不修改新发布包或其校验清单。
+
 **第一次整理会有维护窗口，以后的普通更新只动应用。** 提前完成数据库可恢复备份；二进制决策制品的 MySQL 备份使用 `--hex-blob` 配合 `--result-file` 或容器内原始管道。外部 MySQL/Redis/Kafka 不会被此命令管理；只整理本机旧目录对应的容器。自定义制品路径、目录外 override、外层已有 docker/config 或其他非标准结构会被拒绝，避免覆盖现有环境。
 
 整理后正常运维用 `--env-file config/.env.server` 或 `config/.env.client`，Compose 文件仍在 `docker/`。项目名以原部署和 `.deployment-layout.json` 记录为准，不能改名，也不要执行 `down -v` 或 `--remove-orphans`。Nginx Proxy Manager、HTTPS、端口和主密钥保持原值。

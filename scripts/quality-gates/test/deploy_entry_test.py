@@ -27,6 +27,11 @@ class DeployTest(unittest.TestCase):
         self.fail_layout_service = None
         self.fail_new_config = False
         self.keep_old_data_path = False
+        self.orphan_sdk = False
+        self.corrupt_sdk_copy = False
+        self.sdk_payload = b'container-sdk-version'
+        self.sdk_env = ['SDK_ACCESS_TOKEN=active-sdk']
+        self.sdk_payloads = {}
         self.files = {
             '.env.server': 'secret-server', '.env.client': 'secret-client',
             'uploaded-package.zip': 'keep-uploaded-archive',
@@ -73,6 +78,8 @@ class DeployTest(unittest.TestCase):
         elif command[1] == 'inspect':
             if '{{json .Mounts}}' in command:
                 output = json.dumps(self.live_mounts[int(command[-1])])
+            elif '{{json .Config.Env}}' in command:
+                output = json.dumps(self.sdk_env)
             else:
                 self.assertIn('{{json .Config.Labels}}', command)
                 output = '\n'.join(json.dumps(c['Config']['Labels']) for c in self.containers)
@@ -85,9 +92,15 @@ class DeployTest(unittest.TestCase):
             runtime = self.target / 'docker/runtime'
             if self.layout_mode:
                 runtime = self.target / 'deploy-prod/current' if base == self.target else base / 'docker/runtime'
+                if self.orphan_sdk and services == ['runtime-sdk'] and base != self.target:
+                    env_file = Path(command[command.index('--env-file') + 1])
+                    if 'RUNTIME_DIR=./runtime' not in env_file.read_text():
+                        runtime = self.target / 'docker/runtime'
             for service in services:
                 name, mount = deployment.ARTIFACTS[service]
                 config['services'][service] = {'volumes': [{'type': 'bind', 'source': str(runtime / name), 'target': mount}]}
+                if service == 'runtime-sdk':
+                    config['services'][service]['environment'] = {'SDK_ACCESS_TOKEN': 'active-sdk'}
             if self.layout_mode and 'server' in services:
                 config['services']['mysql'] = {'volumes': [{'type': 'bind', 'source': str(base / 'docker/rule-engine-mysql/data'), 'target': '/var/lib/mysql'}]}
                 if self.keep_old_data_path and base == self.target:
@@ -98,6 +111,8 @@ class DeployTest(unittest.TestCase):
             else:
                 config['services']['mysql'] = {'image': 'must-not-start'}
             output = json.dumps(config)
+        elif command[:2] == ['docker', 'exec'] and 'sha256sum' in command:
+            output = hashlib.sha256(self.sdk_payloads.get(command[2], self.sdk_payload)).hexdigest() + '  /app/app.jar\n'
         elif 'up' in command and self.fail_start and command[-1] == 'web':
             raise deployment.DeployError('readiness failed')
         elif 'up' in command and self.layout_mode:
@@ -149,8 +164,80 @@ class DeployTest(unittest.TestCase):
         return legacy
 
     def adopt(self):
-        with patch.object(deployment, 'run', side_effect=self.fake_run):
+        def copy(container, destination):
+            self.commands.append(['docker', 'exec', container, 'cat', '/app/app.jar'])
+            destination.write_bytes(b'corrupt' if self.corrupt_sdk_copy else self.sdk_payload)
+        with patch.object(deployment, 'run', side_effect=self.fake_run), patch.object(deployment, 'copy_container_file', side_effect=copy):
             deployment.adopt_layout(self.target, ['docker', 'compose'])
+
+    def make_orphan_sdk(self):
+        legacy = self.make_nested_legacy()
+        self.orphan_sdk = True
+        self.write(legacy / '.env.client', 'SDK_ACCESS_TOKEN=active-sdk\nRUNTIME_DIR=' + str(self.target / 'docker/runtime') + '\n')
+        self.live_mounts[3][0]['Source'] = str(self.target / 'docker/runtime/runtime.jar')
+        return legacy
+
+    def test_adopt_recovers_orphan_sdk_from_container_instead_of_using_different_bundled_jar(self):
+        legacy = self.make_orphan_sdk()
+        self.adopt()
+        self.assertEqual((legacy / 'current/runtime.jar').read_bytes(), self.sdk_payload)
+        archive = next((self.target / 'legacy').glob('before-layout-*'))
+        self.assertEqual((archive / 'sdk-mount-recovery/runtime-before-recovery.jar').read_text(), 'old-runtime')
+        self.assertEqual((archive / 'sdk-mount-recovery/runtime-from-container.jar').read_bytes(), self.sdk_payload)
+        self.assertIn(str(self.target / 'docker/runtime'), (archive / 'sdk-mount-recovery/env-original/.env.client').read_text())
+        self.assertEqual((self.target / '.env.client').read_text(), 'secret-client')
+        copy_index = next(i for i,c in enumerate(self.commands) if 'cat' in c)
+        stop_index = next(i for i,c in enumerate(self.commands) if 'stop' in c)
+        self.assertLess(copy_index, stop_index)
+
+    def test_orphan_sdk_copy_hash_failure_does_not_stop_services_or_change_old_files(self):
+        legacy = self.make_orphan_sdk()
+        self.corrupt_sdk_copy = True
+        env_before = (legacy / '.env.client').read_bytes()
+        self.assertRaises(deployment.DeployError, self.adopt)
+        self.assertFalse(any('stop' in c for c in self.commands))
+        self.assertEqual((legacy / 'docker/runtime/runtime.jar').read_text(), 'old-runtime')
+        self.assertEqual((legacy / '.env.client').read_bytes(), env_before)
+        self.assertTrue(any('cat' in c for c in self.commands))
+
+    def test_container_jar_copy_uses_raw_binary_without_tty_or_text_decoding(self):
+        payload = b'PK\x03\x04\x00\xff\xfe\r\n'
+        destination = self.root / 'captured.jar'
+        def invoke(command, **kwargs):
+            self.assertEqual(command, ['docker', 'exec', 'sdk-id', 'cat', '/app/app.jar'])
+            self.assertNotIn('text', kwargs)
+            self.assertNotIn('encoding', kwargs)
+            kwargs['stdout'].write(payload)
+            return subprocess.CompletedProcess(command, 0, b'', b'')
+        with patch.object(deployment.subprocess, 'run', side_effect=invoke):
+            deployment.copy_container_file('sdk-id', destination)
+        self.assertEqual(destination.read_bytes(), payload)
+
+    def test_orphan_sdk_layout_failure_keeps_recovered_live_version_and_working_path(self):
+        legacy = self.make_orphan_sdk()
+        self.fail_layout_service = 'redis'
+        self.assertRaises(deployment.DeployError, self.adopt)
+        self.assertEqual((legacy / 'docker/runtime/runtime.jar').read_bytes(), self.sdk_payload)
+        self.assertIn('RUNTIME_DIR=./runtime', (legacy / '.env.client').read_text())
+        self.assertFalse((self.target / deployment.LAYOUT_FILE).exists())
+
+    def test_orphan_sdk_parameter_mismatch_is_rejected_without_disclosing_values(self):
+        legacy = self.make_orphan_sdk()
+        self.sdk_env = ['SDK_ACCESS_TOKEN=private-live-value']
+        with self.assertRaises(deployment.DeployError) as result:
+            self.adopt()
+        self.assertIn('SDK_ACCESS_TOKEN', str(result.exception))
+        self.assertNotIn('private-live-value', str(result.exception))
+        self.assertFalse(any('cat' in c or 'stop' in c for c in self.commands))
+        self.assertEqual((legacy / 'docker/runtime/runtime.jar').read_text(), 'old-runtime')
+
+    def test_orphan_sdk_replicas_with_different_jars_are_not_merged(self):
+        self.make_orphan_sdk()
+        self.containers.append(json.loads(json.dumps(self.containers[3])))
+        self.live_mounts.append(json.loads(json.dumps(self.live_mounts[3])))
+        self.sdk_payloads[str(len(self.containers) - 1)] = b'another-running-sdk'
+        self.assertRaises(deployment.DeployError, self.adopt)
+        self.assertFalse(any('cat' in c or 'stop' in c for c in self.commands))
 
     def test_adopt_uses_active_inner_env_and_preserves_outer_backup_and_data(self):
         legacy = self.make_nested_legacy()

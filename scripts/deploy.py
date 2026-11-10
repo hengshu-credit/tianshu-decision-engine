@@ -274,6 +274,113 @@ def check_live_mounts(plans):
                         raise DeployError('实际数据卷名称与旧 Compose 不一致，停止整理：' + service)
 
 
+def replace_file(source, destination):
+    handle, name = tempfile.mkstemp(prefix='.' + destination.name + '-recovery-', dir=destination.parent)
+    os.close(handle)
+    temporary = Path(name)
+    try:
+        shutil.copy2(source, temporary)
+        temporary.replace(destination)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def copy_container_file(container_id, destination):
+    # 孤立 bind mount 的宿主机源路径已不存在，docker cp 可能无法重新解析挂载。
+    # 从仍运行的容器直接读取；不分配 TTY、不做文本解码，确保 JAR 字节原样落盘。
+    with destination.open('xb') as output:
+        result = subprocess.run(['docker', 'exec', container_id, 'cat', '/app/app.jar'],
+                                stdout=output, stderr=subprocess.PIPE, timeout=1800)
+    if result.returncode:
+        raise DeployError('无法从运行中的 SDK 取回 JAR；请保留旧容器，不要停止或删除。')
+
+
+def recover_orphan_sdk(command, legacy, plans, indexes, archive):
+    """恢复迁移目录后仅存于容器挂载中的 SDK，绝不以发布目录的另一版 JAR 代替。"""
+    sdk_plans = [p for p in plans if any(s in ('runtime-sdk', 'sdk') for s in p['services'])]
+    if len(indexes) != 1 or len(sdk_plans) != 1:
+        raise DeployError('存在多套 SDK 制品，无法自动合并到同一 current；请先核对各自版本。')
+    index = indexes[0]
+    plan = plans[index]
+    if plan['services'] != ['runtime-sdk'] or plan['files'] != [legacy / 'docker/docker-compose.client.yml']:
+        raise DeployError('旧 SDK 使用非标准 Compose，不能自动修复失效挂载。')
+    env_file = legacy / '.env.client'
+    canonical = legacy / 'docker/runtime/runtime.jar'
+    if not env_file.is_file() or env_file.resolve() != env_file or not canonical.is_file() or canonical.resolve() != canonical:
+        raise DeployError('缺少真实的内层 SDK 配置/制品，不能修复失效挂载。')
+    containers = plan['containers']
+    if not containers:
+        raise DeployError('缺少旧 SDK 容器，无法取回正在运行的 JAR。')
+
+    def mounted_digest(item):
+        result = run(['docker', 'exec', item['_id'], 'sha256sum', '/app/app.jar'])
+        match = re.fullmatch(r'([0-9a-fA-F]{64})\s+\*?/app/app.jar', result.stdout.strip())
+        if not match:
+            raise DeployError('无法确认容器内 SDK JAR 的摘要。')
+        return match[1].lower()
+
+    digests = {mounted_digest(item) for item in containers}
+    if len(digests) != 1:
+        raise DeployError('SDK 各副本正在运行不同 JAR，不能自动选择版本。')
+    expected = digests.pop()
+    # 修复路径不能顺带改变正在运行的凭据/参数；只比较配置指定的键，不输出值。
+    configured = plan['config']['services']['runtime-sdk'].get('environment', {})
+    for item in containers:
+        values = json.loads(run(['docker', 'inspect', '--format', '{{json .Config.Env}}', item['_id']]).stdout)
+        live = dict(value.split('=', 1) for value in values or [] if '=' in value)
+        changed = [key for key, value in configured.items() if value is not None
+                   and live.get(key) != (str(value).lower() if isinstance(value, bool) else str(value))]
+        if changed:
+            raise DeployError('SDK 运行参数与内层配置不同，请先核对这些键：' + ', '.join(sorted(changed)))
+    recovery = archive / 'sdk-mount-recovery'
+    recovery.mkdir(mode=0o700)
+    (recovery / 'env-original').mkdir(mode=0o700)
+    candidate_env_root = recovery / 'env-fixed'
+    candidate_env_root.mkdir(mode=0o700)
+    captured = recovery / 'runtime-from-container.jar'
+    copy_container_file(containers[0]['_id'], captured)
+    if not captured.is_file() or captured.is_symlink() or digest(captured) != expected:
+        raise DeployError('取回的 SDK JAR 摘要不一致，未停止服务或替换原文件。')
+    if any(mounted_digest(item) != expected for item in containers):
+        raise DeployError('取回期间 SDK JAR 已变化，未停止服务。')
+    original_jar = recovery / 'runtime-before-recovery.jar'
+    original_env = recovery / 'env-original/.env.client'
+    shutil.copy2(canonical, original_jar)
+    shutil.copy2(env_file, original_env)
+    original_env.chmod(0o600)
+    before_digest = digest(original_jar)
+    lines = [line for line in env_file.read_text(encoding='utf-8').splitlines()
+             if not re.match(r'^\s*(?:export\s+)?RUNTIME_DIR\s*=', line)]
+    candidate_env = candidate_env_root / '.env.client'
+    candidate_env.write_text('\n'.join(lines) + '\nRUNTIME_DIR=./runtime\n', encoding='utf-8')
+    candidate_env.chmod(0o600)
+    normalized = compose_plan(command, legacy, plan['files'], plan['project'], containers,
+                              selected=plan['services'], env_root=candidate_env_root)
+    mounts = normalized['config']['services']['runtime-sdk'].get('volumes', [])
+    if not any(m.get('type') == 'bind' and m.get('target') == '/app/app.jar'
+               and Path(m['source']).resolve() == canonical for m in mounts):
+        raise DeployError('修正 RUNTIME_DIR 后 SDK 仍未指向内层制品，未停止服务。')
+    if normalized['config']['services']['runtime-sdk'].get('environment', {}) != configured:
+        raise DeployError('路径修复意外改变了 SDK 运行参数，未停止服务。')
+    if digest(canonical) != before_digest or env_file.read_bytes() != original_env.read_bytes():
+        raise DeployError('SDK 文件或配置在检查期间发生变化，未停止服务。')
+    record = {'container_ids': [item['_id'] for item in containers],
+              'running_sha256': expected, 'previous_local_sha256': before_digest,
+              'runtime_dir': './runtime'}
+    (recovery / 'recovery.json').write_text(json.dumps(record, indent=2) + '\n', encoding='utf-8')
+    try:
+        replace_file(captured, canonical)
+        replace_file(candidate_env, env_file)
+    except BaseException:
+        replace_file(original_jar, canonical)
+        replace_file(original_env, env_file)
+        raise
+    normalized['args'] = [str(env_file) if arg == str(candidate_env) else arg for arg in normalized['args']]
+    plans[index] = normalized
+    print('已取回正在运行的 SDK JAR 并修复旧挂载路径，SHA256=' + expected + '；原 JAR 和配置保留在 ' + str(recovery), flush=True)
+
+
 def adopt_layout(target, command):
     """一次性整理用户已有 deploy-prod 布局，不安装新版应用或执行 SQL。"""
     legacy = target / 'deploy-prod'
@@ -300,7 +407,8 @@ def adopt_layout(target, command):
         selected = [item['Config']['Labels']['com.docker.compose.service'] for item in items]
         old_plans.append(compose_plan(command, legacy, list(files), project, items, selected=selected))
     check_live_mounts(old_plans)
-    for plan in old_plans:
+    orphan_sdk_indexes = []
+    for plan_index, plan in enumerate(old_plans):
         for service in plan['services']:
             for mount in plan['config']['services'][service].get('volumes', []):
                 if mount['type'] != 'bind':
@@ -316,11 +424,21 @@ def adopt_layout(target, command):
             expected = legacy / 'docker/runtime' / artifact
             if not any(m.get('target') == destination and m.get('type') == 'bind'
                        and Path(m['source']).resolve() == expected for m in mounts):
-                raise DeployError('旧应用使用自定义制品路径，不能自动搬迁：' + service)
+                orphan_source = target / 'docker/runtime/runtime.jar'
+                if service == 'runtime-sdk' and not orphan_source.exists() and any(
+                        m.get('target') == destination and m.get('type') == 'bind'
+                        and Path(m['source']).resolve() == orphan_source for m in mounts):
+                    orphan_sdk_indexes.append(plan_index)
+                else:
+                    actual = [m.get('source') for m in mounts if m.get('target') == destination]
+                    raise DeployError('旧应用使用自定义制品路径，不能自动搬迁：' + service
+                                      + '；期望 ' + str(expected) + '；实际 ' + str(actual))
     archive_root = target / 'legacy'
     archive_root.mkdir(exist_ok=True)
     archive = Path(tempfile.mkdtemp(prefix='before-layout-', dir=archive_root))
     archive.chmod(0o700)
+    if orphan_sdk_indexes:
+        recover_orphan_sdk(command, legacy, old_plans, orphan_sdk_indexes, archive)
     config = archive / 'config-next'
     config.mkdir(mode=0o700)
     for name in ('.env.server', '.env.client'):
