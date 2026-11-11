@@ -1,19 +1,16 @@
-/* 复用瑶光营销系统 console/index.html 的 loader2：52px 画布、5px 圆点、24px 扇叶、1.35s 周期。
-   按 em 等比缩放，让首屏、组件及 Element Plus 的所有加载图标共用同一动画。 */
+/* 首屏、组件及 Element Plus 共用瑶光扇叶动画。52px 画布上，外圈线宽和圆点半径均为 2px。 */
 :root { --tianshu-loading-color: #7763f1; }
 
 .tianshu-loading,
 .el-icon.el-icon.is-loading,
 .el-loading-spinner.el-loading-spinner {
+  --tianshu-loading-stroke: 0.038462em;
   position: relative;
   display: inline-block;
   flex: none;
   width: 1em;
   height: 1em;
   vertical-align: middle;
-  background-image: radial-gradient(circle at 50% 0.5em, var(--tianshu-loading-color) 0 0.048077em, transparent 0.048077em);
-  background-size: 100% 1em;
-  background-repeat: no-repeat;
   animation: none;
 }
 
@@ -24,34 +21,33 @@
 .el-loading-spinner.el-loading-spinner::before,
 .el-loading-spinner.el-loading-spinner::after {
   position: absolute;
-  box-sizing: border-box;
-  width: 0.461538em;
-  height: 0.461538em;
+  top: 0.5em;
+  left: 50%;
+  translate: -50% -50%;
   content: '';
-  background: color-mix(in srgb, var(--tianshu-loading-color) 8%, transparent);
-  animation: tianshu-loader2 1.35s linear infinite;
+  border: var(--tianshu-loading-stroke) solid var(--tianshu-loading-color);
+  border-radius: 50%;
 }
 
 .tianshu-loading::before,
 .el-icon.el-icon.is-loading::before,
 .el-loading-spinner.el-loading-spinner::before {
-  top: 0.028846em;
-  left: calc(50% - 0.009615em);
-  border-top: 0.038462em solid var(--tianshu-loading-color);
-  border-right: 0.038462em solid var(--tianshu-loading-color);
-  border-radius: 0 0.538462em 0 0;
-  transform-origin: 0 100%;
+  box-sizing: border-box;
+  width: 0.923077em;
+  height: 0.923077em;
+  background: color-mix(in srgb, var(--tianshu-loading-color) 8%, transparent);
+  /* 取圆盘的右上和左下两个象限，同轴旋转。 */
+  clip-path: polygon(50% 50%, 50% 0, 100% 0, 100% 50%, 50% 50%, 50% 100%, 0 100%, 0 50%);
+  animation: tianshu-loader2 1.35s linear infinite;
 }
 
 .tianshu-loading::after,
 .el-icon.el-icon.is-loading::after,
 .el-loading-spinner.el-loading-spinner::after {
-  top: 0.490385em;
-  right: calc(50% - 0.009615em);
-  border-bottom: 0.038462em solid var(--tianshu-loading-color);
-  border-left: 0.038462em solid var(--tianshu-loading-color);
-  border-radius: 0 0 0 0.538462em;
-  transform-origin: 100% 0;
+  /* 零内容尺寸让实心圆点的半径始终等于浏览器实际绘制的边框宽度。 */
+  box-sizing: content-box;
+  width: 0;
+  height: 0;
 }
 
 /* 仅替换图形，保留 Element Plus 的禁用、遮罩、文本和请求生命周期。 */
@@ -88,9 +84,6 @@
 @keyframes tianshu-loader2 { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   .tianshu-loading::before,
-  .tianshu-loading::after,
   .el-icon.el-icon.is-loading::before,
-  .el-icon.el-icon.is-loading::after,
-  .el-loading-spinner.el-loading-spinner::before,
-  .el-loading-spinner.el-loading-spinner::after { animation: none; }
+  .el-loading-spinner.el-loading-spinner::before { animation: none; }
 }

@@ -18,16 +18,25 @@ async function expectLoader(locator) {
   })).toBe(1)
   const style = await locator.evaluate(element => {
     const root = getComputedStyle(element)
-    const before = getComputedStyle(element, '::before')
-    const after = getComputedStyle(element, '::after')
-    return { animation: root.animationName, dot: root.backgroundImage,
-      before: before.animationName, after: after.animationName, duration: before.animationDuration,
-      width: parseFloat(before.width), height: parseFloat(after.height), fontSize: parseFloat(root.fontSize) }
+    const blades = getComputedStyle(element, '::before')
+    const dot = getComputedStyle(element, '::after')
+    return {
+      animation: root.animationName, blades: blades.animationName, duration: blades.animationDuration,
+      width: parseFloat(blades.width), height: parseFloat(blades.height), fontSize: parseFloat(root.fontSize),
+      stroke: parseFloat(blades.borderTopWidth), dotAnimation: dot.animationName, dotRadius: dot.borderRadius,
+      dotSize: [dot.width, dot.height], dotBorders: [dot.borderTopWidth, dot.borderRightWidth, dot.borderBottomWidth, dot.borderLeftWidth].map(parseFloat),
+      dotColor: dot.borderTopColor, strokeColor: blades.borderTopColor,
+      dotCenter: [dot.left, dot.top, dot.translate], bladeCenter: [blades.left, blades.top, blades.translate],
+    }
   })
-  expect(style).toMatchObject({ animation: 'none', before: 'tianshu-loader2', after: 'tianshu-loader2', duration: '1.35s' })
-  expect(style.dot).toContain('radial-gradient')
-  expect(style.width / style.fontSize).toBeCloseTo(24 / 52, 1)
-  expect(style.height / style.fontSize).toBeCloseTo(24 / 52, 1)
+  expect(style).toMatchObject({
+    animation: 'none', blades: 'tianshu-loader2', duration: '1.35s', dotAnimation: 'none',
+    dotRadius: '50%', dotSize: ['0px', '0px'], dotColor: style.strokeColor, dotCenter: style.bladeCenter,
+  })
+  expect(style.stroke).toBeGreaterThan(0)
+  expect(style.dotBorders).toEqual(Array(4).fill(style.stroke))
+  expect(style.width / style.fontSize).toBeCloseTo(48 / 52, 2)
+  expect(style.height / style.fontSize).toBeCloseTo(48 / 52, 2)
   await expect(locator.locator('svg:visible')).toHaveCount(0)
 }
 
