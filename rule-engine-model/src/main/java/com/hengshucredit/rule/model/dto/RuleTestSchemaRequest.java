@@ -12,6 +12,8 @@ public class RuleTestSchemaRequest {
     private String modelType;
     private String modelJson;
     private RuleTestExecutionSource executionSource;
+    /** 规则测试页需要与输入及执行身份同一次解析的设计内容。 */
+    private boolean includeDesign;
     private String versionMode;
     private Long versionId;
 }

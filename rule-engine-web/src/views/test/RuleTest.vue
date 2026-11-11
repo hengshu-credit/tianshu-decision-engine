@@ -9,7 +9,7 @@
         { label: '执行并查看追踪', detail: '核对结果、耗时和命中路径' },
       ]"
     />
-    <execution-impact-panel v-if="selectedRuleId" :runtime-nodes="testRuntimeNodes" :model="definitionModel" :model-type="selectedRule?.modelType || ''" :loaded="!!inputExecutionIdentity && !!definitionModel" />
+    <execution-impact-panel v-if="selectedRuleId" :runtime-nodes="testRuntimeNodes" :model="definitionModel" :model-type="inputExecutionIdentity?.modelType || selectedRule?.modelType || ''" :loaded="!!inputExecutionIdentity && !!definitionModel" />
     <el-alert v-else class="test-impact-notice" title="测试调用与写入说明" description="先选择版本来源，再核对执行模式和影响清单。本页单次、固定用例和批量测试均为真实联调。" type="info" :closable="false" show-icon />
     <div class="test-layout">
       <!-- 左侧：选择规则 + 参数输入 -->
@@ -304,7 +304,7 @@
                 link
                 size="small"
                 :loading="batchExecuting"
-                :disabled="selectedTestCaseIds.length === 0"
+                :disabled="!testContextReady || selectedTestCaseIds.length === 0"
                 @click="executeSelectedTestCases"
                 v-permission="'rule:edit'"
                 ><el-icon><el-icon-video-play /></el-icon> 批量执行</el-button
@@ -404,7 +404,7 @@
           <el-button
             type="primary"
             :loading="executing"
-            :disabled="!selectedRuleId || testCaseLoading || testSourcesLoading || !!testSourcesError || (!!selectedExecutionSource && inputLoadState === 'ERROR')"
+            :disabled="!testContextReady || testCaseLoading"
             @click="handleExecute"
             v-permission="'rule:edit'"
           >
@@ -517,20 +517,19 @@
                   class="trace-pane trace-tree-pane"
                 >
                   <div class="trace-tree-wrap">
+                    <p v-if="!traceDesignMatches" role="status">执行时生效的版本已变化，以下展示本次执行返回的追踪记录。重新加载测试输入可查看当前版本的设计。</p>
                     <trace-tree
                       :trace-info="traceInfoJson"
                       :var-map="varMap"
                       :function-name-map="functionNameMap"
-                      :model-type="selectedRule ? selectedRule.modelType : ''"
+                      :model-type="result.executionIdentity?.modelType || selectedRule?.modelType || ''"
                       :input-params="inputParamsJson"
                       :output-result="outputResultJson"
                       :rule-name="selectedRule ? selectedRule.ruleName : ''"
-                      :rule-version="
-                        selectedRule ? selectedRule.currentVersion : ''
-                      "
+                      :rule-version="result.executionIdentity ? result.executionIdentity.versionNo ?? '' : selectedRule?.currentVersion ?? ''"
                       :execute-time-ms="result.executeTimeMs"
-                      :model-data="modelData"
-                      :definition-model="definitionModel"
+                      :model-data="traceDesignMatches ? modelData : null"
+                      :definition-model="traceDesignMatches ? definitionModel : null"
                     />
                   </div>
                 </el-tab-pane>
@@ -563,11 +562,8 @@ import { listProjects } from '@/api/project'
 import {
   listDefinitions,
   listProjectDefinitions,
-  getContent,
   listRuleRevisions,
   listPublishedVersions,
-  getRuleRevision,
-  getVersionById,
   listInputFields,
   getRuleTestSchema,
   listApiScenarios,
@@ -716,6 +712,14 @@ export default {
     this.ruleListRequestId++
   },
   computed: {
+    testContextReady() {
+      return !!this.selectedRuleId && !this.testSourcesLoading && !this.testSourcesError
+        && this.inputLoadState !== 'LOADING' && !(this.selectedExecutionSource && this.inputLoadState === 'ERROR')
+    },
+    traceDesignMatches() {
+      const digest = this.result?.executionIdentity?.modelDigest
+      return !digest || digest === this.inputExecutionIdentity?.modelDigest
+    },
     inputJsonError() {
       if (this.inputMode !== 'json') return ''
       try { this.parseInputJson(); return '' } catch (error) { return error.message }
@@ -848,7 +852,7 @@ export default {
       this.batchExecutionRequestId++
       this.batchExecuting = false
       this.batchResults = []
-      await Promise.all([this.loadModelJson(contextRequestId), this.loadFunctionNameMap(contextRequestId), this.loadVarMap(contextRequestId), this.loadVariables()])
+      await Promise.all([this.loadFunctionNameMap(contextRequestId), this.loadVarMap(contextRequestId), this.loadVariables()])
     },
     executionStatusLabel,
     executionStatusHint,
@@ -989,30 +993,16 @@ export default {
         }
       }
     },
-    async loadModelJson(contextRequestId) {
+    applyTestDesign(modelJson) {
       this.modelData = null
       this.definitionModel = null
-      if (!this.selectedRuleId || !this.selectedRule) return
-      const ruleId = this.selectedRuleId
+      if (!modelJson) return
       try {
-        const source = this.selectedExecutionSource
-        var r = source?.sourceType === 'VERSION' ? await getVersionById(ruleId, source.sourceId)
-          : source?.sourceType === 'REVISION' ? await getRuleRevision(ruleId, source.sourceId) : await getContent(ruleId)
-        if (!this.isActiveRuleContext(contextRequestId, ruleId)) return
-        var content = r && r.data ? r.data : r
-        if (content && content.modelJson) {
-          var model = parseDesignerModelJson(content.modelJson)
-          this.definitionModel = model
-          if (model.nodes && model.edges) {
-            this.modelData = { nodes: model.nodes, edges: model.edges }
-          }
-        }
-      } catch (e) {
-        if (this.isActiveRuleContext(contextRequestId, ruleId)) {
-          this.addContextWarning(
-            '规则设计内容加载失败，图形化追踪可能不可用'
-          )
-        }
+        const model = parseDesignerModelJson(modelJson)
+        this.definitionModel = model
+        if (model?.nodes && model.edges) this.modelData = { nodes: model.nodes, edges: model.edges }
+      } catch {
+        this.addContextWarning('所选版本的设计内容无法解析，图形化追踪暂不可用')
       }
     },
     async onScopeChange() {
@@ -1077,7 +1067,6 @@ export default {
       this.resetInputLoadState()
       if (!await this.loadExecutionSources() || !this.isActiveRuleContext(contextRequestId, this.selectedRuleId)) return
       await Promise.all([
-        this.loadModelJson(contextRequestId),
         this.loadFunctionNameMap(contextRequestId),
         this.loadVarMap(contextRequestId),
         this.loadVariables(),
@@ -1253,7 +1242,7 @@ export default {
       }
     },
     async executeSelectedTestCases() {
-      if (this.batchExecuting || this.testSourcesLoading || this.testSourcesError || (this.selectedExecutionSource && this.inputLoadState === 'ERROR')) return
+      if (this.batchExecuting || !this.testContextReady) return
       const selected = this.testCases.filter(
         (testCase) => this.selectedTestCaseIds.indexOf(testCase.id) >= 0
       ).map(testCase => ({ ...testCase }))
@@ -1367,6 +1356,9 @@ export default {
       const warnings = []
       let schemaSucceeded = false
       this.inputLoadState = 'LOADING'
+      this.inputExecutionIdentity = null
+      this.testRuntimeNodes = []
+      this.applyTestDesign(null)
       this.inputLoadError = ''
       this.inputLoadSource = ''
       this.inputLoadWarnings = []
@@ -1375,7 +1367,7 @@ export default {
           await getRuleTestSchema({
             targetType: 'RULE',
             targetId: ruleId,
-            ...(source ? { executionSource: source } : {}),
+            ...(source ? { executionSource: source, includeDesign: true } : {}),
             ...(source && this.selectedProjectId ? { projectId: this.selectedProjectId } : {}),
           })
         )
@@ -1383,6 +1375,7 @@ export default {
         if (source?.sourceType !== 'WORKSPACE' || schema.executionIdentity) requireExecutionIdentity(schema.executionIdentity, ruleId, source)
         this.inputExecutionIdentity = schema.executionIdentity || null
         this.testRuntimeNodes = schema.runtimeNodes || []
+        this.applyTestDesign(schema.modelJson)
         schemaSucceeded = true
         if (source && source.sourceType !== 'WORKSPACE') this.varMap = Object.fromEntries(schema.inputs.map(field => [field.scriptName || field.code, field.label || field.code || field.scriptName]))
         this.testOutputFields = schema.outputs || []
@@ -1808,8 +1801,7 @@ export default {
       this.resetExecutionState()
     },
     async handleExecute() {
-      if (!this.selectedRuleId || this.testCaseLoading) return
-      if (this.testSourcesLoading || this.testSourcesError || (this.selectedExecutionSource && this.inputLoadState === 'ERROR')) return
+      if (!this.testContextReady || this.testCaseLoading || this.executing) return
       const editorCheck = this.$refs.expectationEditor?.validate?.()
       if (editorCheck && !editorCheck.valid) { this.notifyWarning(editorCheck.errors[0]); return }
       const ruleId = this.selectedRuleId
@@ -1879,6 +1871,7 @@ export default {
       return res
     },
     resetInputLoadState() {
+      this.applyTestDesign(null)
       this.testRuntimeNodes = []
       this.inputSampleJson = null
       this.inputExecutionIdentity = null

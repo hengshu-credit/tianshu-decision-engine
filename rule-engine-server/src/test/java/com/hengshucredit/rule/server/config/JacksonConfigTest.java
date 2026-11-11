@@ -69,6 +69,10 @@ public class JacksonConfigTest {
         schema.setSampleParams(Map.of("amount", new BigInteger("9007199254740993")));
         ObjectMapper mapper = mapper();
         var tree = mapper.readTree(mapper.writeValueAsString(schema));
+        org.junit.Assert.assertFalse(tree.has("modelJson"));
+        String design = "{\"refId\":9007199254740993}";
+        schema.setModelJson(design);
+        assertEquals(design, mapper.readTree(mapper.writeValueAsString(schema)).path("modelJson").textValue());
         org.junit.Assert.assertTrue("Schema引用ID在进入浏览器前必须是字符串", tree.path("outputs").path(0).path("refId").isTextual());
         assertEquals("9007199254740993", tree.path("outputs").path(0).path("refId").asText());
         var originalField = mapper.valueToTree(field); ((com.fasterxml.jackson.databind.node.ObjectNode) originalField).put("refId", "9007199254740993");

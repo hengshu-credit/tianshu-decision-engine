@@ -54,6 +54,17 @@ describe('ApiScenarioPanel', () => {
     if (wrapper) wrapper.unmount()
   })
 
+  test('业务码候选来自当前响应，嵌套字段、数组及含点键可直接选择，旧路径原样保留', async () => {
+    const json = '{"data":{"items":[{"risk.code":9007199254740993}],"ok":false}}'
+    await wrapper.vm.openEdit({ id: 71, scenarioName: '业务码', requestJson: '{}', responseJson: json, businessCodePath: 'old.path' })
+    expect(wrapper.vm.businessCodeFields.map(field => field.value)).toEqual(['data.items[0]["risk.code"]', 'data.ok'])
+    wrapper.vm.draft.businessCodePath = 'data.items[0]["risk.code"]'
+    expect(wrapper.vm.draftPayload()).toMatchObject({ responseJson: json, businessCodePath: 'data.items[0]["risk.code"]' })
+    wrapper.vm.draft.responseJson = '{'
+    expect(wrapper.vm.businessCodeFields).toEqual([])
+    expect(wrapper.vm.draft.businessCodePath).toBe('data.items[0]["risk.code"]')
+  })
+
   test('当前修订来源同时用于场景表单和实际调用，不能退回管理投影', async () => {
     const source = { sourceType: 'REVISION', sourceId: '12', lockVersion: 3 }
     const executionIdentity = { ...source, definitionId: '7', revisionId: '12' }

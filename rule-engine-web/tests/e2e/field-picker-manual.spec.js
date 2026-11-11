@@ -10,6 +10,42 @@ async function replaceThreshold(content, value) {
   await content.fill(value)
 }
 
+test('决策表从已声明子字段选择条件，保存重开按字段 ID 回显', async ({ page }) => {
+  const data = createDesignerApiData()
+  const object = data.get('/api/rule/dataobject/tree/1')[0]
+  object.variables.push({ id: '9007199254740993', varCode: 'LimitRaw', varLabel: '审批上限', varType: 'NUMBER' })
+  const revision = data.get('/api/rule/definition/101/revisions')[0]
+  let saved
+  data.set('POST /api/rule/definition/101/designer/drafts', ({ request }) => {
+    saved = JSON.parse(request.postDataJSON().modelJson)
+    Object.assign(revision, { modelJson: JSON.stringify(saved), lockVersion: revision.lockVersion + 1 })
+    return { revision, compileSuccess: true, issues: [] }
+  })
+  data.set('/api/rule/definition/101/revisions/2101', () => revision)
+  const { assertClean } = await installDistRoutes(page, { apiData: data })
+  await page.goto(testOrigin + '/#/designer/table/101')
+  await page.getByRole('button', { name: '添加行', exact: true }).click()
+  const condition = page.getByPlaceholder('选择左操作数...').first()
+  await condition.click()
+  await page.getByRole('button', { name: '写入路径', exact: true }).click()
+  await page.getByPlaceholder('选择变量、对象、模型或 API').click()
+  const source = page.locator('.fp-panel:visible').last()
+  await source.getByRole('textbox', { name: '搜索内容名称或编码' }).fill('TaxRequest')
+  await source.getByRole('gridcell', { name: 'TaxRequest', exact: true }).click()
+  await source.getByRole('button', { name: '选用此项' }).click()
+  await page.getByRole('combobox', { name: '直接选用已声明字段' }).click()
+  await page.getByRole('option', { name: /审批上限/ }).click()
+  await expect(condition).toHaveValue(/LimitRaw/)
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page).toHaveURL(/sourceType=REVISION.*sourceId=2101/)
+  expect(saved.rules[0].conditionRoot.children[0].leftOperand).toMatchObject({
+    kind: 'REFERENCE', refType: 'DATA_OBJECT', refId: '9007199254740993', valueType: 'NUMBER',
+  })
+  await page.reload()
+  await expect(condition).toHaveValue(/LimitRaw/)
+  assertClean()
+})
+
 test('子路径最长匹配展示名称编码版本，保存重载后仍保留来源 ID', async ({ page }, testInfo) => {
   const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
   const data = createDesignerApiData()

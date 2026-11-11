@@ -19,6 +19,7 @@
     <el-tabs v-model="activeProjectTab" class="project-detail-tabs">
       <el-tab-pane label="项目工作台" name="workbench">
         <project-workbench-overview
+          :project-id="pid"
           :workbench="workbench"
           :loading="workbenchLoading"
           :error="workbenchError"
@@ -565,7 +566,7 @@ export default {
     },
     async openWorkbenchAction(item) {
       if (!item || !item.actionCode) return
-      if (!canUseWorkbenchAction(item.actionCode)) {
+      if (!canUseWorkbenchAction(item.actionCode, this.pid)) {
         this.$message.warning('当前账号没有对应模块的访问权限，请联系项目管理员')
         return
       }

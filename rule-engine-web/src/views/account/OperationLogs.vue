@@ -63,7 +63,7 @@ export default {
   data() {
     return {
       query: emptyQuery(), timeRange: [], loading: false, rows: [], total: 0, detail: null, detailVisible: false, requestId: 0,
-      modules: { project: '项目管理', rule: '规则管理', field: '变量与数据对象', list: '名单管理', datasource: '外数管理', database: '数据库管理', model: '模型管理', function: '函数管理', experiment: '分流实验', log: '执行日志', billing: '账单管理', approval: '审批管理', transfer: '离线迁移', lineage: '血缘分析', account: '账户管理', dashboard: '数据看板' },
+      modules: { project: '项目管理', rule: '规则管理', field: '变量与数据对象', list: '名单管理', datasource: '外数管理', database: '数据库管理', model: '模型管理', function: '函数管理', experiment: '分流实验', log: '执行日志', billing: '账单管理', approval: '审批管理', ledger: '台账记录', transfer: '离线迁移', lineage: '血缘分析', account: '账户管理', dashboard: '数据看板', system: '系统配置' },
       actions: { READ: '查看', CREATE: '新增', UPDATE: '修改', DELETE: '删除', PUBLISH: '发布', DEBUG: '调试', COMPILE: '编译', OFFLINE: '下线', ROLLBACK: '回滚', RESTORE: '恢复版本', ENABLE: '启用', DISABLE: '停用', EXECUTE: '执行', IMPORT: '导入', EXPORT: '导出', SUBMIT: '提交审批', APPROVE: '审批通过', REJECT: '审批拒绝', CANCEL: '取消', PAGE_VIEW: '查看页面', FIELD_VIEW: '查看字段', FIELD_SELECT: '选择字段', LOGIN: '登录', LOGOUT: '退出登录' },
       outcomes: { SUCCESS: '成功', FAILED: '失败', DENIED: '无权访问' },
     }

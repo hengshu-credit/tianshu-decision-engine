@@ -78,6 +78,7 @@ public class JacksonConfig {
             generator.writeStringField("sampleParamsJson", mapper.writeValueAsString(schema.getSampleParams()));
             generator.writeObjectField("diagnostics", schema.getDiagnostics());
             if (schema.getExecutionIdentity() != null) generator.writeObjectField("executionIdentity", schema.getExecutionIdentity());
+            if (schema.getModelJson() != null) generator.writeStringField("modelJson", schema.getModelJson());
             generator.writeEndObject();
         }
 

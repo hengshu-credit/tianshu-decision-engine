@@ -95,6 +95,16 @@ public class RuleApiDocScenarioServiceTest {
     }
 
     @Test
+    public void extractsSelectedBusinessCodeFromArrayAndLiteralDottedKey() {
+        String response = "{\"code\":200,\"data\":[{\"risk.code\":\"REVIEW\"}]}";
+        ApiDocScenarioSaveRequest request = request("数组业务码", "{}", response);
+        request.setBusinessCodePath("data[0][\"risk.code\"]");
+        RuleApiDocScenario saved = service.create(7L, request);
+        assertEquals("REVIEW", saved.getBusinessCode());
+        assertEquals(response, saved.getResponseJson());
+    }
+
+    @Test
     public void createDoesNotInferBusinessCodeWithoutConfiguredPath() {
         ApiDocScenarioSaveRequest request = request("通过", "{}",
                 "{\"code\":200,\"data\":{\"result\":{\"code\":\"PASS\"}}}");

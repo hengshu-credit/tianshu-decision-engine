@@ -115,6 +115,8 @@ public class ConsoleOperationAudit implements HandlerInterceptor {
             case "MODEL_OUTPUT_FIELD", "MODEL_OUTPUT" -> "模型输出字段";
             case "DATA_OBJECT_FIELD", "DATA_FIELD" -> "对象字段";
             case "EXTERNAL_API" -> "外数 API";
+            case "LEDGER_ARTICLE" -> "台账文章";
+            case "LEDGER_PROJECT" -> "台账所属项目";
             case "APPROVAL_REQUEST" -> "审批申请";
             default -> "";
         };
@@ -122,7 +124,7 @@ public class ConsoleOperationAudit implements HandlerInterceptor {
                 Map.entry("project", "项目"), Map.entry("rule", "规则"), Map.entry("field", "变量或数据对象"),
                 Map.entry("list", "名单"), Map.entry("model", "模型"), Map.entry("function", "函数"),
                 Map.entry("database", "数据库配置"), Map.entry("datasource", "外数配置"), Map.entry("experiment", "分流实验"),
-                Map.entry("billing", "账单"), Map.entry("approval", "审批申请"), Map.entry("account", "账户或角色"),
+                Map.entry("billing", "账单"), Map.entry("approval", "审批申请"), Map.entry("account", "账户或角色"), Map.entry("ledger", "台账"),
                 Map.entry("transfer", "迁移配置"), Map.entry("log", "执行日志"), Map.entry("lineage", "血缘"), Map.entry("dashboard", "看板"))
                 .getOrDefault(record.getModule(), "对象");
         ConsoleOperationPage page = ConsoleOperationPage.resolve(record.getPagePath());

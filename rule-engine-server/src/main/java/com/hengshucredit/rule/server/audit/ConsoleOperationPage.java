@@ -77,6 +77,18 @@ public record ConsoleOperationPage(String module, String resourceType, String re
             return label == null ? null : new ConsoleOperationPage("rule", "RULE", id(parts[2]), label);
         }
         if ("test".equals(section)) return new ConsoleOperationPage("rule", "RULE", id(query.getOrDefault("definitionId", query.get("ruleId"))), "规则调试页");
+        if ("ledger".equals(section)) {
+            String projectId = id(query.get("projectId"));
+            String entryType = projectId == null ? "LEDGER_PAGE" : "LEDGER_PROJECT";
+            if (parts.length == 1) return new ConsoleOperationPage("ledger", entryType, projectId, "台账记录页");
+            if (!"articles".equals(parts[1])) return null;
+            if (parts.length == 3 && "new".equals(parts[2])) return new ConsoleOperationPage("ledger", entryType, projectId, "新建台账文章页");
+            String articleId = parts.length >= 3 ? id(parts[2]) : null;
+            if (articleId == null) return null;
+            if (parts.length == 3) return new ConsoleOperationPage("ledger", "LEDGER_ARTICLE", articleId, "台账文章详情页");
+            return parts.length == 4 && "edit".equals(parts[3])
+                    ? new ConsoleOperationPage("ledger", "LEDGER_ARTICLE", articleId, "编辑台账文章页") : null;
+        }
         if ("sftp".equals(section)) {
             String label = parts.length == 1 ? "SFTP数据源配置页"
                     : parts.length == 2 && "logs".equals(parts[1]) ? "SFTP查询日志页" : null;

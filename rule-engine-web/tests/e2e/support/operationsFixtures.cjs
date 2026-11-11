@@ -147,6 +147,8 @@ function createOperationsApiData() {
       }
     }
     return {
+      ...(payload.includeDesign && payload.executionSource?.sourceType === 'REVISION' && String(payload.executionSource.sourceId) === String(revision.id)
+        ? { modelJson: routes.get(`/api/rule/definition/${revision.definitionId}/revisions/${revision.id}`).modelJson } : {}),
       inputs: [
         {
           refId: 1,

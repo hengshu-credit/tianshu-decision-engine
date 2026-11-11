@@ -40,6 +40,11 @@
               <var-picker class="operand-path-source" :value="manualPathSource" :vars="manualReferences" :allowed-kinds="['REFERENCE']" operand-mode
                 :writable-only="writableOnly" :visible-tags="pickerVisibleTags" :selectable-tags="pickerSelectableTags"
                 placeholder="选择变量、对象、模型或 API" @input="selectPathSource" />
+              <template v-if="declaredFieldOptions.length">
+                <label class="operand-content-label">直接选用已声明字段</label>
+                <el-select-v2 class="operand-path-source" :model-value="null" :options="declaredFieldOptions" filterable
+                  aria-label="直接选用已声明字段" placeholder="按字段名称或编码选择" @update:model-value="useDeclaredField" />
+              </template>
             </template>
             <label class="operand-content-label">{{ manualKind === 'PATH' ? '子路径（可选）' : '阈值内容' }}</label>
             <monaco-editor v-if="manualKind === 'LITERAL'" ref="manualCode" :value="manualInputText" :language="manualJson ? 'json' : 'plaintext'" height="210px" :options="{ ariaLabel: '阈值内容', minimap: { enabled: false }, wordWrap: 'on', autoSurround: 'never', formatOnType: false, formatOnPaste: false }" @input="updateManualValue" @editor-ready="onManualEditorReady" />
@@ -80,6 +85,7 @@
 <script>
 import { $emit } from '../../utils/gogocodeTransfer'
 import VarPicker from './VarPicker.vue'
+import { ElSelectV2 } from 'element-plus/es/components/select-v2/index.mjs'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import ConditionRangeInput from './ConditionRangeInput.vue'
 import ConditionCollectionInput from './ConditionCollectionInput.vue'
@@ -91,6 +97,7 @@ import {
   createLiteralOperand,
   createListQueryOperand,
   createPathOperand,
+  createReferenceOperand,
   createRelativePathOperand,
   pathOperandSource,
   resolvePathOperand,
@@ -100,9 +107,11 @@ import {
 } from '@/utils/operand'
 import { createFunctionTemplate, functionParameters } from '@/components/expression/expressionTree'
 import { fieldPickerTags, matchesFieldTags } from '@/utils/fieldPickerPolicy'
-import { canViewPickerItem } from '@/security/pickerAccess'
-import { matchPathContent } from '@/utils/pathContentMatch'
-import { resourceVersionIdentity } from '@/utils/resourceVersion'
+import { canViewPickerItem, recordPickerActivity } from '@/security/pickerAccess'
+import { declaredPathFields, matchPathContent } from '@/utils/pathContentMatch'
+import { fieldIdentity, pickerTypeMatches } from '@/utils/fieldPicker'
+import { rememberField } from '@/utils/fieldPickerHistory'
+import { resourceVersionIdentity, versionFields } from '@/utils/resourceVersion'
 import { getFieldVersionFields } from '@/api/fieldPickerVersion'
 import { LITERAL_TYPE_OPTIONS, literalTypeCompatible, literalTypeFamily, literalValidationError, recommendLiteralType, arrayLiteralDraft } from '@/utils/literalType'
 import {
@@ -124,6 +133,7 @@ let operandPickerSequence = 0
 
 export default {
   components: {
+    ElSelectV2,
     ExpressionEditorDialog,
     VarPicker,
     MonacoEditor,
@@ -184,8 +194,19 @@ export default {
   computed: {
     pickerVisibleTags() { return this.visibleTags ?? (this.editorContext === 'WRITE_TARGET' ? ['write'] : null) },
     pickerSelectableTags() { return this.selectableTags ?? (this.editorContext === 'WRITE_TARGET' ? ['write'] : null) },
-    manualReferences() { return this.vars.filter(item => !item.disabled && canViewPickerItem(item) && matchesFieldTags(fieldPickerTags(item), this.pickerVisibleTags) && matchesFieldTags(fieldPickerTags(item), this.pickerSelectableTags) && (!this.writableOnly || fieldPickerTags(item).includes('write'))) },
+    manualReferences() { return this.vars.filter(this.canSelectPathField) },
     manualPathMatch() { return matchPathContent(this.manualOperand, [...this.manualReferences, ...this.manualVersionReferences]) },
+    declaredFieldOptions() {
+      if (this.manualKind !== 'PATH' || !this.manualPathSource || !this.allowedKinds.includes('REFERENCE')) return []
+      const fields = declaredPathFields(this.manualPathSource, [...this.manualReferences, ...this.manualVersionReferences.filter(this.canSelectPathField)])
+      const options = new Map()
+      for (const item of fields) {
+        if (!pickerTypeMatches(item.varType || item.valueType, this.expectedType)) continue
+        const key = fieldIdentity(item)
+        options.set(key, { value: key, label: `${this.candidateLabel(item)} · ${this.candidateCode(item)}`, item })
+      }
+      return [...options.values()]
+    },
     manualJson() { return this.manualKind === 'LITERAL' && ['LIST', 'OBJECT'].includes(literalTypeFamily(this.manualOperand?.valueType)) },
     valueTypes() { const type = this.manualOperand?.valueType; return type && !LITERAL_TYPE_OPTIONS.some(item => item.value === type) ? [...LITERAL_TYPE_OPTIONS, { value: type, label: type }] : LITERAL_TYPE_OPTIONS },
     manualTypeLabel() { return this.valueTypes.find(type => type.value === this.manualOperand?.valueType)?.label || this.manualOperand?.valueType || '' },
@@ -488,11 +509,23 @@ export default {
         const group = response.data
         const kind = identity.module === 'model' ? 'model' : 'object'
         this.manualVersionReferences = (group.fields || []).map(field => ({
-          ...source, ...field, _varId: field.refId, _refType: field.refType, varCode: field.code,
+          ...versionFields(source), ...field, _varId: field.refId, _refType: field.refType, varCode: field.code,
           varLabelText: field.label, varType: field.valueType, version: group.version, displayVersion: group.displayVersion,
-          _ref: { [`${kind}Id`]: identity.ownerId },
+          versionOwnerId: identity.ownerId, _ref: { category: kind, [`${kind}Id`]: identity.ownerId },
         }))
       } catch (error) { if (request === this.pathDirectoryRequest) this.pathDirectoryError = '该版本字段目录加载失败，保留已有路径；重新选择来源可重试。' }
+    },
+    canSelectPathField(item) {
+      const tags = fieldPickerTags(item)
+      return !item.disabled && canViewPickerItem(item) && matchesFieldTags(tags, this.pickerVisibleTags)
+        && matchesFieldTags(tags, this.pickerSelectableTags) && (!this.writableOnly || tags.includes('write'))
+    },
+    useDeclaredField(key) {
+      const option = this.declaredFieldOptions.find(field => field.value === key)
+      if (!option) return
+      rememberField(option.item)
+      recordPickerActivity('FIELD_SELECT', option.item, this.$route)
+      this.onEditorApply(createReferenceOperand(option.item))
     },
     updateSubpath(path) {
       this.manualSubpathInput = path

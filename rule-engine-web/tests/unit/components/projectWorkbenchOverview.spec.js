@@ -1,5 +1,6 @@
 import { shallowMount } from '@test-utils'
 import ProjectWorkbenchOverview from '@/components/ProjectWorkbenchOverview.vue'
+import { clearCurrentUser, setCurrentUser } from '@/security/permissionState'
 
 const workbench = {
   metrics: {
@@ -44,6 +45,16 @@ const workbench = {
 }
 
 describe('ProjectWorkbenchOverview', () => {
+  test('被阻塞的操作仅在其他项目可访问时，优先建议当前项目可处理的事项', () => {
+    setCurrentUser({ permissions: ['rule:view', 'log:view'], defaultPermissions: ['rule:view', 'log:view'],
+      projectPermissionOverrides: { 7: { 'rule:view': 'DENY' } } })
+    const wrapper = shallowMount(ProjectWorkbenchOverview, { props: { projectId: 7,
+      workbench: { checks: [...workbench.checks, { code: 'LOG', status: 'ATTENTION', actionCode: 'VIEW_LOGS' }] } } })
+    try {
+      expect(wrapper.vm.nextCheck.code).toBe('LOG')
+      expect(wrapper.vm.remainingCount).toBe(3)
+    } finally { wrapper.unmount(); clearCurrentUser() }
+  })
   test.each([
     [{ loading: true }, '正在检查'],
     [{ error: '连接失败' }, '状态读取失败'],

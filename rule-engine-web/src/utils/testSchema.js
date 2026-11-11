@@ -9,6 +9,7 @@ export function normalizeTestSchema(response) {
     sampleParams: schema.sampleParams && typeof schema.sampleParams === 'object' ? schema.sampleParams : {},
     diagnostics: Array.isArray(schema.diagnostics) ? schema.diagnostics : [],
     ...(schema.executionIdentity ? { executionIdentity: schema.executionIdentity } : {}),
+    ...(typeof schema.modelJson === 'string' ? { modelJson: schema.modelJson } : {}),
     ...(typeof schema.sampleParamsJson === 'string' ? { sampleParamsJson: schema.sampleParamsJson } : {})
   }
 }

@@ -201,11 +201,29 @@ public class ConsoleDataPermissionHandler implements MultiDataPermissionHandler 
             // 公共默认仅含共享映射；字段本身仍经变量/对象查询逐项授权，修改入口须有 system:edit。
             case "rule_dashboard_default" -> Boolean.TRUE.equals(mutation.get()) && !scope.globalCan("system:edit") ? "1 = 0" : null;
             case "offline_transfer_log" -> transferLog(scope, a, depth);
-            case "console_operation_log" -> "(" + (scope.globalCan("system:audit") ? a + ".module = 'system' OR " : "") + a + ".target_type IN ('CONSOLE_USER','CONSOLE_ROLE','ACCOUNT','ROLE') OR ("
+            case "console_operation_log" -> "(" + (scope.globalCan("system:audit") ? a + ".module = 'system' OR " : "")
+                    + ledgerVisitPredicate(scope, a) + a + ".target_type IN ('CONSOLE_USER','CONSOLE_ROLE','ACCOUNT','ROLE') OR ("
                     + a + ".target_id REGEXP '^[0-9]+$' AND " + resource(scope, a + ".target_type", a + ".target_id", depth) + "))";
             case "console_security_audit_log" -> scope.globalCan("account:audit") ? null : "1 = 0";
             default -> table.startsWith("rule_") || table.startsWith("governance_") || table.startsWith("artifact_") ? "1 = 0" : null;
         };
+    }
+
+    private String ledgerVisitPredicate(ConsoleProjectAccess.Scope scope, String a) {
+        if (scope.userId() == null || !scope.can("ledger:view")) return "";
+        // 首页及新建页没有文章归属。受限账号只查看自己无项目参数的入口事件。
+        String entry = a + ".target_type = 'LEDGER_PAGE' AND " + a + ".target_id IS NULL";
+        if (!scope.allProjectPermission("ledger:view")) {
+            entry += " AND " + a + ".user_id = " + scope.userId()
+                    + " AND " + a + ".page_path IN ('/ledger','/ledger/articles/new')";
+        }
+        String project = a + ".target_type = 'LEDGER_PROJECT' AND " + a + ".target_id REGEXP '^[0-9]+$' AND "
+                + projectPermission(scope, a + ".target_id", "ledger:view");
+        String article = a + ".target_type = 'LEDGER_ARTICLE' AND " + a + ".target_id REGEXP '^[0-9]+$'"
+                + " AND EXISTS (SELECT 1 FROM rule_ledger_article audit_article WHERE audit_article.id = " + a + ".target_id AND ("
+                + ledgerPredicate(scope, "rule_ledger_article", "audit_article", 0) + "))";
+        return "(" + a + ".module = 'ledger' AND " + a + ".action = 'PAGE_VIEW' AND (("
+                + entry + ") OR (" + project + ") OR (" + article + "))) OR ";
     }
 
     private String project(ConsoleProjectAccess.Scope s, String column, boolean global) {

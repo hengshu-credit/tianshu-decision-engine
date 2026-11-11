@@ -230,6 +230,28 @@ describe('RuleTest — 初始化与数据加载', () => {
     expect(definitionApi.executeApiScenarioValidated).not.toHaveBeenCalled()
   })
 
+  test.each(['LATEST', 'BUSINESS_VERSION'])('%s 的输入与设计来自同一版本，等待期间不能提交真实联调', async kind => {
+    const source = kind === 'LATEST' ? { sourceType: kind } : { sourceType: kind, sourceId: '71' }
+    const identity = { ...source, definitionId: '1', revisionId: '25', modelType: 'FLOW', modelDigest: 'published' }
+    await wrapper.setData({ selectedRuleId: 1, selectedRule: mockRules()[0], selectedTestSourceValue: 'source',
+      testSourceOptions: [{ value: 'source', source }], testCases: [{ id: 5 }], selectedTestCaseIds: [5] })
+    let finish
+    definitionApi.getRuleTestSchema.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const loading = wrapper.vm.onTestSourceChange()
+    expect(wrapper.vm.testContextReady).toBe(false)
+    await wrapper.vm.handleExecute()
+    await wrapper.vm.executeSelectedTestCases()
+    expect(definitionApi.executeApiScenarioValidated).not.toHaveBeenCalled()
+    finish({ data: { executionIdentity: identity, inputs: [], modelJson: '{"nodes":[{"id":"published"}],"edges":[]}' } })
+    await loading
+    expect(definitionApi.getRuleTestSchema).toHaveBeenCalledWith(expect.objectContaining({ executionSource: source, includeDesign: true }))
+    expect(definitionApi.getContent).not.toHaveBeenCalled()
+    expect(wrapper.vm.modelData.nodes[0].id).toBe('published')
+    expect(wrapper.vm.testContextReady).toBe(true)
+    await wrapper.setData({ result: { success: true, executionIdentity: { ...identity, modelDigest: 'new-generation' } } })
+    expect(wrapper.vm.traceDesignMatches).toBe(false)
+  })
+
   test('卸载后迟到的测试版本列表不能写回页面状态', async () => {
     let finish
     definitionApi.listRuleRevisions.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))

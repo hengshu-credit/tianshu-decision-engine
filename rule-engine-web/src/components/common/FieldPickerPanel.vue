@@ -24,7 +24,7 @@
             </div>
           </div>
         </div>
-      <div class="fp-sidebar-hint">单击查看或展开 · 双击 / Enter 选择</div>
+      <div class="fp-sidebar-hint">单击预览，双击或按 Enter 直接选用</div>
       </nav>
       <div class="fp-category-resizer" role="separator" aria-label="调整分类栏宽度" aria-orientation="vertical" :aria-valuenow="categoryWidth" :aria-valuemin="96" :aria-valuemax="maxCategoryWidth" tabindex="0" @pointerdown.prevent.stop="startMotion($event, 'categories')" @keydown.left.prevent="setCategoryWidth(categoryWidth - 16)" @keydown.right.prevent="setCategoryWidth(categoryWidth + 16)" @dblclick="setCategoryWidth(144)"><span /></div>
       <main class="fp-main">
@@ -46,6 +46,7 @@
           <div :style="{ height: Math.max(0, pageRows.length - virtualEnd) * rowHeight + 'px' }" />
           <div v-if="!rows.length" class="fp-empty"><template v-if="loading">正在加载字段…</template><slot v-else name="empty">没有符合条件的字段</slot></div>
         </div>
+        <div class="fp-preview-bar">
         <el-tooltip
           v-if="previewText"
           :content="previewText"
@@ -56,6 +57,8 @@
           <div class="fp-preview">{{ previewText }}</div>
         </el-tooltip>
         <div v-else class="fp-preview">选择内容可查看完整名称、编码和数据类型</div>
+        <button type="button" class="fp-use" :disabled="!confirmablePreview" @click="confirm(confirmablePreview)">选用此项</button>
+        </div>
         <footer class="fp-pagination">
           <span>共 {{ rows.length }} 项</span>
           <label>每页 <select :value="pageSize" aria-label="每页字段数" @change="changePageSize(Number($event.target.value))"><option v-for="size in pageSizes" :key="size" :value="size">{{ size }} 条</option></select></label>
@@ -147,7 +150,12 @@ export default {
     },
     selectedNode() { return this.tree.nodes.get(this.selectedKey) },
     selectedOutsideSearch() { return this.selectedNode && this.query && !this.rows.some(row => row.node.key === this.selectedKey) },
-    previewText() { return fieldPickerDetails(this.preview, this.preview ? this.versionLabel(this.preview) : '') },
+    previewNode() { return this.preview && this.tree.nodes.get(this.preview.key) },
+    previewText() { return fieldPickerDetails(this.previewNode, this.previewNode ? this.versionLabel(this.previewNode) : '') },
+    confirmablePreview() {
+      const node = this.previewNode
+      return node?.selectable && (this.pageRows.some(row => row.node.key === node.key) || this.stickyParents.includes(node)) ? node : null
+    },
   },
   watch: {
     initialPageSize(value) { this.changePageSize(value, false) },
@@ -219,7 +227,7 @@ export default {
       this.expanded = expanded
     },
     confirm(node) {
-      if (node.item && node.selectable && canViewPickerItem(node.item)) {
+      if (node?.item && node.selectable && canViewPickerItem(node.item)) {
         const now = Date.now()
         if (this.lastConfirmKey === node.key && now - this.lastConfirmAt < 300) return
         this.lastConfirmKey = node.key
@@ -321,7 +329,9 @@ export default {
 .fp-sticky { position:sticky; top:30px; height:0; overflow:visible; z-index:2; }
 .fp-sticky :deep(.fp-row) { background:var(--tianshu-bg-muted); box-shadow:0 1px var(--tianshu-border); }
 .fp-empty { padding:30px 10px; text-align:center; color:var(--tianshu-text-tertiary); }
-.fp-preview { min-height:28px; line-height:28px; padding:0 8px; border-top:1px solid var(--tianshu-border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--tianshu-text-secondary); }
+.fp-preview-bar { display:flex; align-items:center; gap:8px; padding:4px 8px; border-top:1px solid var(--tianshu-border); }
+.fp-preview { flex:1; min-width:0; line-height:24px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--tianshu-text-secondary); }
+.fp-preview-bar .fp-use { flex:none; padding:3px 8px; color:var(--tianshu-primary-text); background:var(--tianshu-primary-soft-bg); }
 :global(.field-picker-preview-tooltip.el-popper) { max-width:min(720px,calc(100vw - 24px)); white-space:normal; overflow-wrap:anywhere; }
 .fp-pagination { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:6px; padding:6px 8px; border-top:1px solid var(--tianshu-border); font-size:11px; }
 .fp-pagination > span { margin-right:auto; }

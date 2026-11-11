@@ -12,6 +12,20 @@ function panel(props = {}) {
 }
 
 describe('统一字段选择面板', () => {
+  test('单击预览后显式选用，仅可提交当前目录中可选且可见的项', async () => {
+    const wrapper = panel({ items: [variable(1), variable(2)] })
+    const use = wrapper.get('.fp-use')
+    expect(use.element.disabled).toBe(true)
+    await wrapper.findAll('.fp-row')[0].trigger('click')
+    expect(wrapper.emitted('select')).toBeUndefined()
+    await use.trigger('click')
+    expect(wrapper.emitted('select')[0][0]).toMatchObject({ _varId: 1, _refType: 'VARIABLE' })
+    await wrapper.setProps({ query: 'field2' })
+    expect(use.element.disabled).toBe(true)
+    await wrapper.setProps({ query: '', items: [variable(1, { disabled: true })] })
+    expect(use.element.disabled).toBe(true)
+    wrapper.unmount()
+  })
   test('四列表头调宽联动其他列，保持总宽与最小宽度，偏好可重置', () => {
     const previous = preferredFieldColumnWidths.value
     const wrapper = panel({ embedded: true, items: [variable(1)] })

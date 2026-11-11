@@ -24,6 +24,31 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 public class ConsoleOperationAuditTest {
+    @Test public void ledgerVisitsUseTheLedgerModuleAndIdentifyArticlesByRoute() throws Exception {
+        var logs = new Logs();
+        var checked = new java.util.ArrayList<String>();
+        var permission = new ConsolePermissionService() {
+            @Override public boolean hasPermission(Long userId, String code) {
+                checked.add(code);
+                return "ledger:view".equals(code);
+            }
+        };
+        mvc(new Metadata(), logs, permission).perform(post("/api/rule/console/activity").session(session())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"action\":\"PAGE_VIEW\",\"pagePath\":\"/ledger\"}"))
+                .andExpect(status().isOk()).andExpect(result -> Assert.assertTrue(JSON.parseObject(
+                        result.getResponse().getContentAsString(StandardCharsets.UTF_8)).getBooleanValue("success")));
+        Assert.assertEquals(List.of("ledger:view"), checked);
+        Assert.assertEquals("查看台账记录页", logs.saved.getChangeSummary());
+        for (String suffix : List.of("", "/edit")) {
+            var page = ConsoleOperationPage.resolve("/ledger/articles/19" + suffix);
+            Assert.assertEquals("LEDGER_ARTICLE", page.resourceType());
+            Assert.assertEquals("19", page.resourceId());
+        }
+        Assert.assertNull(ConsoleOperationPage.resolve("/ledger/articles/new").resourceId());
+        Assert.assertEquals(new ConsoleOperationPage("ledger", "LEDGER_PROJECT", "9", "台账记录页"),
+                ConsoleOperationPage.resolve("/ledger?projectId=9"));
+        Assert.assertNull(ConsoleOperationPage.resolve("/ledger/articles/unknown"));
+    }
     @Test public void sftpPageVisitsUseDatabasePermissionAndRecordBothPageLabels() throws Exception {
         for (String[] sample : new String[][]{{"/sftp", "SFTP数据源配置页"}, {"/sftp/logs", "SFTP查询日志页"}}) {
             var logs = new Logs();

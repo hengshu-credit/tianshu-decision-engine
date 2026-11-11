@@ -164,10 +164,8 @@
           </el-form-item>
         </div>
         <el-form-item label="业务码路径">
-          <el-input
-            v-model="draft.businessCodePath"
-            placeholder="可选，例如 data.result.code；留空则不生成内层业务码"
-          />
+          <protocol-path-picker v-model:value="draft.businessCodePath" :paths="businessCodeFields"
+            context-label="当前测试用例 · 响应报文" placeholder="从响应报文选择业务码字段（可选）" />
         </el-form-item>
       </el-form>
 
@@ -298,6 +296,8 @@ import {
 } from '@element-plus/icons-vue'
 import { $emit } from '../../utils/gogocodeTransfer'
 import MonacoEditor from '@/components/MonacoEditor'
+import ProtocolPathPicker from '@/components/common/ProtocolPathPicker.vue'
+import { samplePathOptions } from '@/utils/apiExecution'
 import {
   DEFAULT_RULE_REQUEST_TIMEOUT_MS,
   listApiScenarios,
@@ -370,7 +370,7 @@ export default {
     }
   },
   name: 'ApiScenarioPanel',
-  components: { MonacoEditor },
+  components: { MonacoEditor, ProtocolPathPicker },
   props: {
     executionSource: { type: Object, default: null },
     executionSourceName: { type: String, default: '' },
@@ -380,6 +380,20 @@ export default {
     },
   },
   computed: {
+    responseFields() {
+      if (!this.draftVisible) return []
+      try {
+        // 这里只读取结构；原始数字和报文始终由 draft.responseJson 保存。
+        const body = JSON.parse(this.draft.responseJson)
+        return isRecord(body) ? samplePathOptions(body, '$').filter(field => !['LIST', 'OBJECT'].includes(field.type)) : []
+      } catch { return [] }
+    },
+    businessCodeFields() {
+      return this.responseFields.map(field => {
+        const path = field.value.startsWith('$.') && !this.draft.businessCodePath?.startsWith('$') ? field.value.slice(2) : field.value
+        return { ...field, value: path, label: path, category: 'api-response' }
+      })
+    },
     responseOutdated() {
       return this.draft.responseSource === 'EXECUTED' && (
         (this.executedRequestJson !== null && this.executedRequestJson !== this.draft.requestJson)

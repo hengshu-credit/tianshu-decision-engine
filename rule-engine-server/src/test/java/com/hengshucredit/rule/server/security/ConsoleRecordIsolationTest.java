@@ -62,12 +62,36 @@ public class ConsoleRecordIsolationTest {
         jdbc.execute("INSERT INTO governance_approval_request VALUES (1,8,'VARIABLE',9),(2,7,'VARIABLE',9)");
         jdbc.execute("CREATE TABLE console_operation_log (id BIGINT,user_id BIGINT,module VARCHAR(32),target_type VARCHAR(32),target_id VARCHAR(32))");
         jdbc.execute("INSERT INTO console_operation_log VALUES (1,8,'account','ACCOUNT','8'),(2,7,'account','ACCOUNT','7')");
-        @SuppressWarnings("unchecked") var tables = (Map<String, String>) ReflectionTestUtils.getField(ConsoleDataPermissionHandler.class, "RESOURCE_TABLES");
-        var referencedTables = new java.util.HashSet<>(tables.values()); referencedTables.add("rule_revision"); referencedTables.add("governed_resource"); referencedTables.add("rule_definition_version");
-        TestSchemaTables.create(jdbc, referencedTables);
+        createResourceTables(jdbc);
         var own = handler(scope(false));
         assertEquals(List.of(1L), jdbc.queryForList(own.filterSql("SELECT id FROM governance_approval_request"), Long.class));
         assertEquals(List.of(1L), jdbc.queryForList(own.filterSql("SELECT id FROM console_operation_log"), Long.class));
+    }
+
+    @Test
+    public void ledgerPageAuditIntersectsActorProjectAndPrivateArticleScope() throws Exception {
+        var jdbc = new JdbcTemplate(new DriverManagerDataSource("jdbc:h2:mem:ledgerVisits" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", ""));
+        createResourceTables(jdbc);
+        jdbc.execute("CREATE TABLE console_operation_log (id BIGINT,user_id BIGINT,module VARCHAR(32),action VARCHAR(32),target_type VARCHAR(32),target_id VARCHAR(32),page_path VARCHAR(100))");
+        jdbc.execute("CREATE TABLE rule_ledger_article (id BIGINT,deleted INT,scope VARCHAR(16),project_id BIGINT,owner_user_id BIGINT,draft_scope VARCHAR(16),draft_project_id BIGINT)");
+        jdbc.execute("INSERT INTO rule_ledger_article VALUES (11,0,'PRIVATE',NULL,8,NULL,NULL),(12,0,'PRIVATE',NULL,7,NULL,NULL)");
+        jdbc.execute("INSERT INTO console_operation_log VALUES (1,8,'ledger','PAGE_VIEW','LEDGER_PAGE',NULL,'/ledger'),"
+                + "(2,7,'ledger','PAGE_VIEW','LEDGER_PAGE',NULL,'/ledger'),(3,8,'ledger','PAGE_VIEW','LEDGER_PROJECT','10','/ledger?projectId=10'),"
+                + "(4,7,'ledger','PAGE_VIEW','LEDGER_PROJECT','9','/ledger?projectId=9'),(5,8,'ledger','PAGE_VIEW','LEDGER_ARTICLE','11','/ledger/articles/11'),"
+                + "(6,7,'ledger','PAGE_VIEW','LEDGER_ARTICLE','12','/ledger/articles/12')");
+        String query = "SELECT id FROM console_operation_log ORDER BY id";
+        var own = handler(new ConsoleProjectAccess.Scope(8L, Set.of(9L), Set.of("account:audit", "ledger:view")));
+        assertEquals(List.of(1L, 5L), jdbc.queryForList(own.filterSql(query), Long.class));
+        var cross = handler(new ConsoleProjectAccess.Scope(8L, Set.of(9L), Set.of("account:audit", "ledger:view", "account:cross-record-view")));
+        assertEquals(List.of(1L, 4L, 5L), jdbc.queryForList(cross.filterSql(query), Long.class));
+        assertTrue(jdbc.queryForList(handler(scope(true)).filterSql(query), Long.class).isEmpty());
+    }
+
+    private static void createResourceTables(JdbcTemplate jdbc) throws Exception {
+        @SuppressWarnings("unchecked") var tables = (Map<String, String>) ReflectionTestUtils.getField(ConsoleDataPermissionHandler.class, "RESOURCE_TABLES");
+        var referencedTables = new java.util.HashSet<>(tables.values());
+        referencedTables.addAll(List.of("rule_revision", "governed_resource", "rule_definition_version"));
+        TestSchemaTables.create(jdbc, referencedTables);
     }
     @Test
     public void identityCannotBeInjectedByJsonAndSurvivesBackgroundPersistence() throws Exception {

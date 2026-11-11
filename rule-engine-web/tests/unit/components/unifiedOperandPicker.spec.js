@@ -24,6 +24,36 @@ function mountPicker(propsData = {}, options = {}) {
 }
 
 describe('统一 OperandPicker', () => {
+  test('直接选用同一对象的子字段，保留字段 ID、类型并排除同名其他对象', () => {
+    const field = { _refType: 'DATA_OBJECT', _varId: '9007199254740999', varCode: 'report.score',
+      varLabelText: '信用分', varType: 'NUMBER', _ref: { category: 'object', objectId: '7' } }
+    const wrapper = mountPicker({ vars: [field, { ...field, _varId: '8', _ref: { category: 'object', objectId: '17' } },
+      { ...field, _varId: '9', varType: 'STRING' }, { ...field, _varId: '10', disabled: true }],
+      expectedType: 'NUMBER' })
+    wrapper.vm.openManualInput('PATH')
+    wrapper.vm.selectPathSource({ kind: 'REFERENCE', refId: '7', refType: 'DATA_OBJECT_ROOT', code: 'report', valueType: 'OBJECT' })
+    expect(wrapper.vm.declaredFieldOptions.map(option => option.label)).toEqual(['信用分 · report.score'])
+    wrapper.vm.useDeclaredField(wrapper.vm.declaredFieldOptions[0].value)
+    expect(wrapper.emitted().input.at(-1)[0]).toMatchObject({ kind: 'REFERENCE', refType: 'DATA_OBJECT', refId: field._varId, valueType: 'NUMBER' })
+    wrapper.unmount()
+  })
+  test('固定版本的已声明子字段绑定该版本的字段 ID 和所属模型', async () => {
+    const read = vi.spyOn(fieldVersions, 'getFieldVersionFields').mockResolvedValue({ data: { version: 4, displayVersion: 2, fields: [
+      { refId: '91', refType: 'MODEL_OUTPUT', code: 'risk.score', label: '历史分数', valueType: 'NUMBER' },
+    ] } })
+    const wrapper = mountPicker({ expectedType: 'NUMBER', vars: [{ _varId: '92', _refType: 'MODEL_OUTPUT',
+      varCode: 'risk.score', varType: 'NUMBER', varLabel: '当前分数', _ref: { category: 'model', modelId: '7' } }] })
+    try {
+      wrapper.vm.openManualInput('PATH')
+      wrapper.vm.selectPathSource({ kind: 'REFERENCE', refType: 'MODEL', refId: '7', code: 'risk',
+        valueType: 'OBJECT', versionMode: 'FIXED', versionId: '31', versionSource: 'BUSINESS_VERSION' })
+      await Promise.resolve()
+      expect(wrapper.vm.declaredFieldOptions.map(option => option.label)).toEqual(['历史分数 · risk.score'])
+      wrapper.vm.useDeclaredField(wrapper.vm.declaredFieldOptions[0].value)
+      expect(wrapper.emitted().input.at(-1)[0]).toMatchObject({ kind: 'REFERENCE', refType: 'MODEL_OUTPUT', refId: '91',
+        versionMode: 'FIXED', versionId: '31', versionSource: 'BUSINESS_VERSION', versionOwnerId: '7', displayVersion: 2 })
+    } finally { wrapper.unmount(); read.mockRestore() }
+  })
   test('最长匹配读取固定版本字段，应用时保留根引用及历史展示信息', async () => {
     const read = vi.spyOn(fieldVersions, 'getFieldVersionFields').mockResolvedValue({ data: { version: 2, fields: [
       { refId: '12', refType: 'DATA_OBJECT', code: 'old.customer', label: '历史客户', valueType: 'OBJECT' },

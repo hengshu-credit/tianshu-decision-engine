@@ -19,11 +19,12 @@ export function workbenchActionRoute(actionCode) {
   return ACTION_ROUTES[actionCode] || null
 }
 
-export function canUseWorkbenchAction(actionCode) {
-  if (actionCode === 'REFRESH_WORKBENCH') return hasPermission('project:view')
+export function canUseWorkbenchAction(actionCode, projectId) {
+  const resource = projectId ? { scope: 'PROJECT', projectId } : undefined
+  if (actionCode === 'REFRESH_WORKBENCH') return hasPermission('project:view', resource)
   if (actionCode === 'RETRY_WARMUP') return hasUnrestrictedPermissions('rule:view', 'rule:submit')
   const menu = SIDEBAR_MENUS.find(item => item.index === workbenchActionRoute(actionCode))
-  return Boolean(menu && hasPermission(menu.permission))
+  return Boolean(menu && hasPermission(menu.permission, resource))
 }
 
 export function workbenchActionPermissionHint(actionCode) {

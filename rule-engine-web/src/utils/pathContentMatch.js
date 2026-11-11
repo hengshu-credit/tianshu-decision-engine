@@ -29,18 +29,42 @@ function versionLabel(value, option) {
   return value.versionMode ? compactVersion({ ...value, version: number, displayVersion: number }) : number != null ? `v${number}` : value.refId != null ? '最新' : ''
 }
 
-/** 目录仅用于展示；只在已选资源和已选版本内部寻找最长已知路径，绝不重新绑定 ID。 */
-export function matchPathContent(value, options = []) {
-  if (!value || value.kind !== 'PATH' || value.refId == null) return null
+function pathDirectory(value, options) {
   const compatible = item => value.versionMode === 'FIXED'
     ? item.versionMode === 'FIXED' && sameId(item.versionId, value.versionId) && (item.versionSource || '') === (value.versionSource || '')
     : item.versionMode !== 'FIXED'
   const directory = options.filter(item => !item.disabled && compatible(item))
+  const sourcePath = value.kind === 'PATH' ? value.anchorRelativePath : value.relativePath
   const source = directory.find(item => sameId(idOf(item), value.refId) && typeOf(item) === value.refType
-    && (!['EXTERNAL_API', 'API_CONTEXT'].includes(value.refType) || (item.relativePath || item._ref?.relativePath || '') === (value.anchorRelativePath || '')))
+    && (!['EXTERNAL_API', 'API_CONTEXT'].includes(value.refType) || (item.relativePath || item._ref?.relativePath || '') === (sourcePath || '')))
   const full = value.code || value.value || ''
   const anchor = value.anchorPath || (value.relativePath && full.endsWith(value.relativePath) ? full.slice(0, -value.relativePath.length) : full)
   const root = codeOf(source) || anchor
+  const scoped = item => {
+    const type = typeOf(item)
+    if (value.refType === 'DATA_OBJECT_ROOT') return type === 'DATA_OBJECT' && sameId(ownerOf(item, 'object'), value.refId)
+    if (value.refType === 'DATA_OBJECT') return type === 'DATA_OBJECT' && sameId(ownerOf(item, 'object'), ownerOf(source, 'object'))
+    if (value.refType === 'MODEL') return type === 'MODEL_OUTPUT' && sameId(ownerOf(item, 'model'), value.refId)
+    if (value.refType === 'MODEL_OUTPUT') return type === 'MODEL_OUTPUT' && sameId(ownerOf(item, 'model'), ownerOf(source, 'model'))
+    if (value.refType === 'API_CONTEXT') return type === 'API_CONTEXT' && sameId(ownerOf(item, 'api'), ownerOf(source, 'api'))
+    return type === value.refType && sameId(idOf(item), value.refId)
+  }
+  const children = directory.filter(item => {
+    const code = codeOf(item)
+    return root && code !== root && within(code, root) && scoped(item)
+  })
+  return { source, root, anchor, full, children }
+}
+
+export function declaredPathFields(reference, options) {
+  if (reference?.refId == null) return []
+  return pathDirectory(reference, options).children
+}
+
+/** 路径回显只使用同资源、同版本的目录，保留原有的引用 ID。 */
+export function matchPathContent(value, options = []) {
+  if (!value || value.kind !== 'PATH' || value.refId == null) return null
+  const { source, root, anchor, full, children } = pathDirectory(value, options)
   const suffix = within(full, anchor) ? full.slice(anchor.length) : ''
   const path = root + suffix
   const parts = tokens(suffix)
@@ -52,18 +76,8 @@ export function matchPathContent(value, options = []) {
   if (value.versionMode === 'FIXED' && saved?.sourceKey === sourceKey && within(path, saved.matchedPath || saved.code)) {
     Object.assign(base, saved, { suffix: path.slice((saved.matchedPath || saved.code).length) })
   }
-  const scoped = item => {
-    const type = typeOf(item)
-    if (value.refType === 'DATA_OBJECT_ROOT') return type === 'DATA_OBJECT' && sameId(ownerOf(item, 'object'), value.refId)
-    if (value.refType === 'DATA_OBJECT') return type === 'DATA_OBJECT' && sameId(ownerOf(item, 'object'), ownerOf(source, 'object'))
-    if (value.refType === 'MODEL') return type === 'MODEL_OUTPUT' && sameId(ownerOf(item, 'model'), value.refId)
-    if (value.refType === 'MODEL_OUTPUT') return type === 'MODEL_OUTPUT' && sameId(ownerOf(item, 'model'), ownerOf(source, 'model'))
-    if (value.refType === 'API_CONTEXT') return type === 'API_CONTEXT'
-    return type === value.refType && sameId(idOf(item), value.refId)
-  }
-  const matches = directory.flatMap(item => {
+  const matches = children.flatMap(item => {
     const code = codeOf(item)
-    if (!scoped(item) || code === root || !within(code, root)) return []
     const keys = tokens(code.slice(root.length))
     if (!keys?.length || keys.length > parts.length || keys.some((part, index) => part.key !== parts[index].key)) return []
     return [{ item, code, size: keys.length, suffix: suffix.slice(parts[keys.length - 1].end) }]

@@ -2,6 +2,8 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.dto.ResolutionPlan;
 import com.hengshucredit.rule.model.dto.ResolvedField;
+import com.hengshucredit.rule.model.dto.RuleTestExecutionIdentity;
+import com.hengshucredit.rule.model.dto.RuleTestExecutionSource;
 import com.hengshucredit.rule.model.dto.RuleTestSchema;
 import com.hengshucredit.rule.model.dto.RuleTestSchemaRequest;
 import org.junit.Test;
@@ -9,13 +11,44 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class RuleTestSchemaServiceTest {
+
+    @Test
+    public void includesOnlyTheResolvedDesignWhenRequested() {
+        RuleTestSchemaRequest request = new RuleTestSchemaRequest();
+        request.setTargetType("RULE");
+        request.setTargetId(7L);
+        RuleTestExecutionSource latest = new RuleTestExecutionSource();
+        latest.setSourceType("LATEST");
+        request.setExecutionSource(latest);
+        RuleTestExecutionIdentity identity = new RuleTestExecutionIdentity();
+        identity.setRevisionId("19");
+        String productionModel = "{\"nodes\":[{\"id\":\"published-node\"}]}";
+        RuleTestTargetResolver.Target published = new RuleTestTargetResolver.Target(null, 1L, productionModel, "FLOW", null,
+                new RuleFieldAnalyzer.ResolvedFields(List.of(), List.of()), null, null, identity);
+        RuleTestSchemaService service = new RuleTestSchemaService();
+        ReflectionTestUtils.setField(service, "fieldDependencyResolver", new FieldDependencyResolver());
+        ReflectionTestUtils.setField(service, "testTargetResolver", new RuleTestTargetResolver() {
+            @Override public Target resolve(Long definitionId, RuleTestExecutionSource source, String preview, String type, Long projectId) {
+                assertEquals(Long.valueOf(7L), definitionId);
+                assertEquals("LATEST", source.getSourceType());
+                return published;
+            }
+        });
+        assertNull(service.build(request).getModelJson());
+        request.setIncludeDesign(true);
+        RuleTestSchema schema = service.build(request);
+        assertEquals(productionModel, schema.getModelJson());
+        assertEquals("19", schema.getExecutionIdentity().getRevisionId());
+    }
 
     @Test
     public void configuredSampleNumbersAndSpecialObjectKeysRemainExactBeforeSerialization() {

@@ -176,6 +176,7 @@ const STATUS_TEXT = {
 export default {
   name: 'ProjectWorkbenchOverview',
   props: {
+    projectId: { type: [String, Number], default: null },
     workbench: {
       type: Object,
       default: null,
@@ -248,7 +249,7 @@ export default {
         'UNAVAILABLE',
       ]
       return priority
-        .map((status) => this.checks.find((item) => item.status === status))
+        .map((status) => this.checks.find((item) => item.status === status && item.actionCode && this.canUseAction(item.actionCode)))
         .find(Boolean)
     },
     metricItems() {
@@ -299,7 +300,7 @@ export default {
   },
   methods: {
     actionPermissionHint: workbenchActionPermissionHint,
-    canUseAction: canUseWorkbenchAction,
+    canUseAction(actionCode) { return canUseWorkbenchAction(actionCode, this.projectId) },
     statusText(status) {
       return STATUS_TEXT[status] || status
     },

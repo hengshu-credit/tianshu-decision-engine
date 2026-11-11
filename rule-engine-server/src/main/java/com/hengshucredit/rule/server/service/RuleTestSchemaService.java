@@ -29,7 +29,11 @@ public class RuleTestSchemaService {
 
     public RuleTestSchema build(RuleTestSchemaRequest request) {
         if (request != null && "RULE".equalsIgnoreCase(request.getTargetType()) && request.getExecutionSource() != null) {
-            return build(testTargetResolver.resolve(request.getTargetId(), request.getExecutionSource(), request.getModelJson(), request.getModelType(), request.getProjectId()));
+            RuleTestTargetResolver.Target target = testTargetResolver.resolve(request.getTargetId(), request.getExecutionSource(),
+                    request.getModelJson(), request.getModelType(), request.getProjectId());
+            RuleTestSchema schema = build(target);
+            if (request.isIncludeDesign()) schema.setModelJson(target.modelJson());
+            return schema;
         }
         return build(fieldDependencyResolver.resolve(request));
     }
