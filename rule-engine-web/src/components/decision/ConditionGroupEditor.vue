@@ -1,5 +1,16 @@
 <template>
-  <trace-branch v-if="readOnly" snapshot :has-children="Boolean(group.children?.length)">
+  <div v-if="readOnly && compact" class="condition-summary">
+    <span class="condition-summary__label">{{ !group.children?.length ? '无附加条件' : group.op === 'OR' ? '满足任一条件' : '同时满足全部条件' }}</span>
+    <template v-for="(child, index) in group.children" :key="index">
+      <condition-group-editor v-if="child.type === 'group'" :group="child" read-only compact />
+      <div v-else class="condition-summary__leaf">
+        <operand-value-display :operand="child.leftOperand" compact />
+        <span>{{ operatorLabel(child) }}</span>
+        <operand-value-display v-if="operatorRequiresValue(child)" :operand="child.rightOperand" compact />
+      </div>
+    </template>
+  </div>
+  <trace-branch v-else-if="readOnly" snapshot :has-children="Boolean(group.children?.length)">
     <template #heading><strong>{{ group.op === 'OR' ? '满足任一条件' : '同时满足全部条件' }}</strong></template>
     <template v-for="(child, index) in group.children" :key="index">
       <condition-group-editor v-if="child.type === 'group'" :group="child" read-only />
@@ -167,6 +178,7 @@ export default {
   props: {
     group: { type: Object, required: true },
     readOnly: Boolean,
+    compact: Boolean,
     vars: { type: Array, default: () => [] },
     functions: { type: Array, default: () => [] },
     listOptions: { type: Array, default: () => [] },
@@ -298,6 +310,10 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.condition-summary { display: grid; gap: 8px; font-size: 13px; }
+.condition-summary__label { color: var(--tianshu-text-secondary); font-size: 12px; }
+.condition-summary__leaf { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; line-height: 1.6; }
+.condition-summary > .condition-summary { border-left: 2px solid var(--tianshu-border-subtle); padding-left: 12px; }
 .cg {
   font-size: 13px;
   width: 100%;

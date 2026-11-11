@@ -7,6 +7,14 @@ import org.junit.Assert;
 import org.junit.Test;
 
 public class GovernanceApprovalRequestMappingTest {
+    @Test
+    public void clearingPreflightEvidenceIsPersistedToDatabase() throws Exception {
+        for (String field : new String[]{"validationReportJson", "dependencyDigest"}) {
+            TableField mapping = GovernanceApprovalRequest.class.getDeclaredField(field).getAnnotation(TableField.class);
+            Assert.assertNotNull(field, mapping);
+            Assert.assertEquals(field, FieldStrategy.ALWAYS, mapping.updateStrategy());
+        }
+    }
 
     @Test
     public void terminalRequestCanReleaseActiveResourceKey() throws Exception {

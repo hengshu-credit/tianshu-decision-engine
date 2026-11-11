@@ -10,7 +10,7 @@
             <tr v-for="(label, i) in rowLabels" :key="i">
               <th scope="row">{{ label }}</th>
               <td v-for="(_, j) in columnLabels" :key="j">
-                <operand-value-display :operand="section.matrix.cells[i]?.[j]" empty-text="—" />
+                <operand-value-display :operand="section.matrix.cells[i]?.[j]" empty-text="—" compact />
               </td>
             </tr>
           </tbody>
@@ -18,12 +18,9 @@
       </div>
       <score-threshold-editor v-else-if="section.thresholds?.length" :thresholds="section.thresholds" read-only compact>
         <template #result="{ threshold }">
-          <operand-value-display v-if="threshold.resultOperand" :operand="threshold.resultOperand" />
+          <operand-value-display v-if="threshold.resultOperand" :operand="threshold.resultOperand" compact />
         </template>
       </score-threshold-editor>
-      <source-summary-card v-else-if="section.sourceTitle" :title="section.sourceTitle" :rows="sourceRows">
-        <template #value="{ item }"><version-business-node :node="item.node" bare /></template>
-      </source-summary-card>
       <template v-else-if="section.graph">
         <rule-snapshot-canvas :graph="section.graph" />
         <details v-if="section.nodes.length" class="graph-details">
@@ -47,7 +44,6 @@ import { computed, defineAsyncComponent } from 'vue'
 import ScoreThresholdEditor from '@/components/decision/ScoreThresholdEditor.vue'
 import OperandValueDisplay from './OperandValueDisplay.vue'
 import VersionBusinessNode from './VersionBusinessNode.vue'
-import SourceSummaryCard from './SourceSummaryCard.vue'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 const RuleSnapshotCanvas = defineAsyncComponent(() => import('@/components/flow/RuleSnapshotCanvas.vue'))
 
@@ -56,7 +52,6 @@ const props = defineProps({
   absentLabel: { type: String, default: '' },
   versionLabel: { type: String, default: '' },
 })
-const sourceRows = computed(() => props.section.nodes[0].children.map(node => ({ key: node.key, label: node.title, node })))
 const columnLabels = computed(() => {
   const { columns, cells } = props.section.matrix
   const count = cells.reduce((count, row) => Math.max(count, row.length), columns.length)

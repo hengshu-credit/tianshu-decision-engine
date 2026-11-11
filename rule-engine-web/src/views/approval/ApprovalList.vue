@@ -264,6 +264,7 @@ export default {
       pageSize: 20,
       total: 0,
       loading: false,
+      requestSequence: 0,
       contextProjectId: null,
     }
   },
@@ -330,6 +331,7 @@ export default {
     this.loadSummary()
     this.loadRequests()
   },
+  beforeUnmount() { this.requestSequence++ },
   methods: {
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     fetchKeywordOptions({ query, pageNum, pageSize }) {
@@ -351,6 +353,7 @@ export default {
       this.summary = { ...this.summary, ...(response.data || {}) }
     },
     async loadRequests() {
+      const sequence = ++this.requestSequence
       this.loading = true
       try {
         const response = await listGovernanceRequests({
@@ -365,10 +368,11 @@ export default {
           pageSize: this.pageSize
         })
         const page = response.data || {}
+        if (sequence !== this.requestSequence) return
         this.records = page.records || []
         this.total = Number(page.total || 0)
       } finally {
-        this.loading = false
+        if (sequence === this.requestSequence) this.loading = false
       }
     },
     changeScope() {

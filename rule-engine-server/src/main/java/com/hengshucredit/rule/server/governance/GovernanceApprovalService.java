@@ -361,6 +361,7 @@ public class GovernanceApprovalService {
                     normalized.secretPayloadCiphertext());
             active.setSecretDigest(normalized.secretDigest());
             active.setChangeSummary(draft.getChangeSummary());
+            invalidateDraftPreflight(active);
             persistRequest(active);
             saveDraftDependencies(active, normalized);
             appendEvent(active, "SAVE_DRAFT", active.getStatus(),
@@ -441,6 +442,7 @@ public class GovernanceApprovalService {
                 normalized.secretPayloadCiphertext());
         request.setSecretDigest(normalized.secretDigest());
         request.setChangeSummary(draft.getChangeSummary());
+        invalidateDraftPreflight(request);
         persistRequest(request);
         saveDraftDependencies(request, normalized);
         appendEvent(request, "SAVE_DRAFT", request.getStatus(), actor,
@@ -465,6 +467,7 @@ public class GovernanceApprovalService {
         request.setSecretDigest(normalized.secretDigest());
         request.setSnapshotDigest(
                 Sha256Digests.text(normalized.snapshotJson()));
+        invalidateDraftPreflight(request);
         persistRequest(request);
         saveDraftDependencies(request, normalized);
         appendEvent(request, "SAVE_DRAFT", request.getStatus(), actor,
@@ -1516,6 +1519,11 @@ public class GovernanceApprovalService {
                 requireAdapter(request.getResourceType()).collectDependencies(snapshot), List.of());
         if (!report.valid()) throw new GovernanceStateException("GOVERNANCE_DEPENDENCY_NOT_PUBLISHED", firstErrorMessage(report));
         return report;
+    }
+
+    private void invalidateDraftPreflight(GovernanceApprovalRequest request) {
+        request.setValidationReportJson(null);
+        request.setDependencyDigest(null);
     }
 
     private void saveDraftDependencies(GovernanceApprovalRequest request, ResourceSnapshot snapshot) {

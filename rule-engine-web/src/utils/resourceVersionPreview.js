@@ -57,6 +57,9 @@ const enums = {
   executionMode: { SERIAL: '顺序执行', PARALLEL: '并行执行' },
   op: { AND: '同时满足全部条件', OR: '满足任一条件' },
   operator: { '>=': '大于或等于', '<=': '小于或等于', '>': '大于', '<': '小于', '==': '等于', '!=': '不等于' },
+  operation: { MERGE: '加入并合并有效期', OVERWRITE: '加入并覆盖有效期', ADD_ONLY: '仅新增', REMOVE: '从名单剔除' },
+  expiryMode: { DURATION: '执行后指定时长', UNTIL: '指定失效时间', PERMANENT: '永久有效' },
+  durationUnit: { DAYS: '天', HOURS: '小时', MINUTES: '分钟' },
 }
 const technical = new Set(['id', 'createTime', 'updateTime', 'createBy', 'updateBy', 'lockVersion', 'compiledScript', 'publishedVersion', 'currentVersion', 'businessVersion', 'definitionId'])
 const structured = new Set(Object.keys(labels).filter(key => /Json$|Config$|Mapping$|Schema$/.test(key)).concat(['sourceContent', 'modelJson']))
@@ -82,7 +85,12 @@ function node(key, value, title = labels[key] || key) {
   if (key === 'modelContent') return { title: '模型制品', text: value ? '已保存模型文件内容，可结合文件摘要与输入输出定义核对' : '未配置' }
   if (Array.isArray(decoded)) return { key, title, list: true, children: decoded.map((item, index) => node('', item, `第 ${index + 1} 项`)), text: decoded.length ? '' : '暂无配置' }
   if (decoded && typeof decoded === 'object') {
-    const children = Object.entries(decoded).filter(([name]) => !technical.has(name)).map(([name, item]) => node(name, item))
+    // Only the resource envelope has technical metadata. Nested keys belong to
+    // the saved configuration, including literal payloads and provider fields.
+    if (decoded.kind === 'LITERAL' || decoded.kind && ['REFERENCE', 'PATH', 'FUNCTION', 'OPERATION', 'ACCESS', 'CAST', 'ARRAY', 'LIST_QUERY'].includes(decoded.kind)) {
+      return { key, title, operand: decoded }
+    }
+    const children = Object.entries(decoded).map(([name, item]) => node(name, item))
     return { key, title, children, text: children.length ? '' : '暂无业务配置' }
   }
   return { key, title, text: previewText(key, decoded) }
@@ -102,11 +110,12 @@ function ruleNode(item) {
     const group = condition.type === 'group' ? condition : { type: 'group', op: 'AND', children: [condition] }
     return { title: item.title, group }
   }
-  return { kind: item.kind, title: item.title, text: item.subtitle, children: [
-    ...(item.fields || []).map(field => ({
-      key: field.key, title: field.label, text: enums[field.key]?.[field.value] || field.text,
-      operand: field.value?.kind ? field.value : undefined,
-    })),
+  return { kind: item.kind, list: item.kind === 'list-entries', title: item.title, text: item.subtitle, children: [
+    ...(item.fields || []).map(field => {
+      if (field.key === 'listIds' && Array.isArray(field.value)) return { key: field.key, title: field.label, text: field.value.map(id => `名单 #${id}`).join('、') || '未配置' }
+      if (field.value && typeof field.value === 'object') return node(field.key, field.value, field.label)
+      return { key: field.key, title: field.label, text: enums[field.key]?.[field.value] || field.text }
+    }),
     ...(item.children || []).map(ruleNode),
   ] }
 }
@@ -121,6 +130,7 @@ export function buildResourcePreview(snapshot, resourceType) {
   try {
     const value = parseMetadataResponse(snapshot)
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error()
+    if (!Object.keys(value).length) return { sections: [], warning: '' }
     const sections = []
     const basic = []
     let warning = ''

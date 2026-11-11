@@ -85,7 +85,7 @@
           <article>
             <span>依赖状态</span>
             <strong :class="{ danger: preflightErrors.length }">
-              {{ preflightErrors.length ? `${preflightErrors.length} 个冲突` : '检查通过' }}
+              {{ preflightStatusLabel }}
             </strong>
           </article>
           <article>
@@ -170,37 +170,38 @@
                 :left-version="businessRuleComparison.leftVersion" :right-version="businessRuleComparison.rightVersion" />
             </template>
           </version-snapshot-panel>
-          <div v-if="isRequestComparison && changedFields.length" class="diff-list">
-            <div v-if="changedFields.length > 50" class="diff-list-toolbar">
-              <span>共 {{ changedFields.length }} 项变更，当前匹配 {{ filteredChangedFields.length }} 项</span>
-              <el-input v-model="fieldQuery" clearable placeholder="搜索变更字段路径" @input="fieldPage = 1" />
-            </div>
-            <article
-              v-for="field in visibleChangedFields"
-              :key="field.key"
-              class="diff-row"
-              :class="`is-${String(field.changeType || '').toLowerCase()}`"
-            >
-              <header>
-                <code>{{ field.key }}</code>
-                <span v-if="field.sensitive" class="sensitive-badge">
-                  敏感内容受保护
-                </span>
-                <span v-else class="change-badge">
-                  {{ changeLabel(field.changeType) }}
-                </span>
-              </header>
-              <div class="diff-values">
-                <pre>{{ displayValue(field.leftValue, field.sensitive) }}</pre>
-                <pre>{{ displayValue(field.rightValue, field.sensitive) }}</pre>
+          <el-collapse v-if="isRequestComparison && changedFields.length" v-model="fieldPanels" class="approval-field-details">
+            <el-collapse-item :title="`字段变更明细（${changedFields.length} 项）`" name="fields">
+              <div v-if="fieldPanels.includes('fields')" class="diff-list">
+                <div v-if="changedFields.length > 50" class="diff-list-toolbar">
+                  <span>共 {{ changedFields.length }} 项变更，当前匹配 {{ filteredChangedFields.length }} 项</span>
+                  <el-input v-model="fieldQuery" clearable placeholder="搜索变更字段路径" @input="fieldPage = 1" />
+                </div>
+                <article
+                  v-for="field in visibleChangedFields"
+                  :key="field.key"
+                  class="diff-row"
+                  :class="`is-${String(field.changeType || '').toLowerCase()}`"
+                >
+                  <header>
+                    <code>{{ field.key }}</code>
+                    <span v-if="field.sensitive" class="sensitive-badge">
+                      敏感内容受保护
+                    </span>
+                    <span v-else class="change-badge">
+                      {{ changeLabel(field.changeType) }}
+                    </span>
+                  </header>
+                  <div class="diff-values">
+                    <pre>{{ displayValue(field.leftValue, field.sensitive) }}</pre>
+                    <pre>{{ displayValue(field.rightValue, field.sensitive) }}</pre>
+                  </div>
+                </article>
+                <div v-if="!filteredChangedFields.length" class="no-diff">未找到匹配的变更字段</div>
+                <el-pagination v-if="filteredChangedFields.length > 50" v-model:current-page="fieldPage" :page-size="50" :total="filteredChangedFields.length" layout="total, prev, pager, next" />
               </div>
-            </article>
-            <div v-if="!filteredChangedFields.length" class="no-diff">未找到匹配的变更字段</div>
-            <el-pagination v-if="filteredChangedFields.length > 50" v-model:current-page="fieldPage" :page-size="50" :total="filteredChangedFields.length" layout="total, prev, pager, next" />
-          </div>
-          <div v-else-if="isRequestComparison && !changedFields.length" class="no-diff">
-            基准版本与提交内容一致
-          </div>
+            </el-collapse-item>
+          </el-collapse>
         </section>
 
         <section class="two-column-grid">
@@ -428,6 +429,7 @@ export default {
       versionPreviewTitle: '',
       versionPreviewSnapshot: '',
       fieldQuery: '',
+      fieldPanels: [],
       fieldPage: 1
     }
   },
@@ -456,8 +458,11 @@ export default {
         ? '当前审批（编辑中草稿）'
         : '当前审批（冻结快照）'
       return [
+        ...((this.detail.versions || []).some(version => String(version.id) === String(this.request?.baseVersionId)) ? [] : [
+          { label: this.request?.baseVersionId ? '基准快照不可用' : '空配置（新资源）', value: 'EMPTY' },
+        ]),
         ...(this.detail.versions || []).map(version => ({
-          label: `历史生效 V${version.versionNo}`,
+          label: this.governanceVersionLabel(version),
           value: `VERSION:${version.id}`
         })),
         { label: currentLabel, value: 'CURRENT' }
@@ -499,7 +504,7 @@ export default {
         String(version.id) === String(this.request?.baseVersionId)
       )
       return this.compareRightKey === 'CURRENT' &&
-        (!base || this.compareLeftKey === `VERSION:${base.id}`)
+        (base ? this.compareLeftKey === `VERSION:${base.id}` : this.compareLeftKey === 'EMPTY')
     },
     lineageNodeType() {
       const type = this.request && this.request.resourceType
@@ -560,9 +565,13 @@ export default {
         value.validationName || value.billingName ||
         `${this.resourceTypeLabel(this.request.resourceType)} #${this.request.resourceId}`
     },
-    preflightErrors() {
-      const report = this.parseReport(this.request && this.request.validationReportJson)
-      return report.errors || []
+    preflightReport() { return this.parseReport(this.request?.validationReportJson) },
+    preflightErrors() { return this.preflightReport.errors || [] },
+    preflightStatusLabel() {
+      if (this.preflightErrors.length) return `${this.preflightErrors.length} 个冲突`
+      if (this.preflightReport.valid === true) return '上次预检通过'
+      if (this.preflightReport.valid === false) return '预检未通过'
+      return '尚未预检'
     },
     canManageDraft() {
       if (!this.request) return false
@@ -607,11 +616,11 @@ export default {
         {
           label: '影响依赖',
           value: dependencies ? `${dependencies} 个依赖` : '无外部依赖',
-          detail: this.preflightErrors.length ? `${this.preflightErrors.length} 个阻断问题待处理` : '依赖预检通过',
+          detail: this.preflightErrors.length ? `${this.preflightErrors.length} 个阻断问题待处理` : `${this.preflightStatusLabel}；提交时重新检查`,
         },
         {
           label: '生效条件',
-          value: status === 'PENDING' ? '批准后生效' : status === 'EDITING' ? '提交审批后生效' : '按当前状态继续',
+          value: ['PENDING', 'EDITING'].includes(status) ? '审批通过后生效' : '按当前状态继续',
           detail: this.request?.publishMode === 'OVERWRITE'
             ? `审批通过后覆盖指定业务版本（目标记录 #${this.request.expectedTargetSnapshotId}），历史修订保留；覆盖旧版不会倒退最新版`
             : this.request?.publishMode === 'NEW' ? '审批通过后新增业务版本；其他版本的草稿和审批继续保留'
@@ -731,9 +740,10 @@ export default {
         this.detail = response.data || {}
         const base = (this.detail.versions || []).find(version =>
           String(version.id) === String(this.detail.request?.baseVersionId)
-        ) || (this.detail.versions || [])[0]
-        this.compareLeftKey = base ? `VERSION:${base.id}` : 'CURRENT'
+        )
+        this.compareLeftKey = base ? `VERSION:${base.id}` : 'EMPTY'
         this.compareRightKey = 'CURRENT'
+        this.fieldPanels = []
       } finally {
         this.loading = false
       }
@@ -809,11 +819,12 @@ export default {
       this.compareRightKey = 'CURRENT'
     },
     viewGovernanceVersion(version) {
-      this.versionPreviewTitle = `历史生效 V${version.versionNo}`
+      this.versionPreviewTitle = this.governanceVersionLabel(version)
       this.versionPreviewSnapshot = version.snapshotJson || ''
       this.versionPreviewVisible = true
     },
     comparisonSnapshot(key) {
+      if (key === 'EMPTY') return '{}'
       if (key === 'CURRENT') {
         return this.request
           ? this.request.submittedSnapshotJson ||
@@ -827,6 +838,9 @@ export default {
     comparisonLabel(key) {
       const option = this.compareOptions.find(item => item.value === key)
       return option ? option.label : '空配置'
+    },
+    governanceVersionLabel(version) {
+      return `历史生效 V${version.versionNo}${version.revisionNo != null ? ` · 修订 ${version.revisionNo}` : ''}`
     },
     parseSnapshot(snapshot) {
       if (!snapshot) return {}
@@ -873,7 +887,7 @@ export default {
         versionLabel: current
           ? this.comparisonLabel(key)
           : source
-            ? `历史生效 V${source.versionNo}`
+            ? this.governanceVersionLabel(source)
             : '空配置',
         publishTime: source && source.createTime,
         publishBy: source && source.createBy,
@@ -960,7 +974,8 @@ export default {
     },
     parseReport(text) {
       try {
-        return text ? JSON.parse(text) : {}
+        const report = text ? JSON.parse(text) : null
+        return report && typeof report === 'object' && !Array.isArray(report) ? report : {}
       } catch (error) {
         return {}
       }

@@ -896,7 +896,7 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
     await page.addInitScript(theme => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify(theme)), { ...DEFAULT_THEME_CONFIG, colorScheme, accentPreset: 'PEACH_PINK_GRADIENT' })
     const fixtures = createDetailApiData()
     fixtures.set('/api/rule/governance/requests/91', {
-      request: { id: 91, requestNo: 'GOV-THEME-91', resourceType: 'UNKNOWN', resourceId: 7, action: 'UPDATE', status: 'PENDING', applicant: 'e2e-applicant', baseVersionNo: 1, submittedSnapshotJson: '{"timeout":60,"sourceConfig":{"source":"DERIVED"}}' },
+      request: { id: 91, requestNo: 'GOV-THEME-91', resourceType: 'UNKNOWN', resourceId: 7, action: 'UPDATE', status: 'PENDING', applicant: 'e2e-applicant', baseVersionId: 100, baseVersionNo: 1, submittedSnapshotJson: '{"timeout":60,"sourceConfig":{"source":"DERIVED"}}' },
       diff: { summary: '共 3 项变更', fields: [
         { key: '$.timeout', leftValue: 30, rightValue: 60, changeType: 'MODIFIED', changed: true },
         { key: '$.sourceConfig', leftValue: null, rightValue: { source: 'DERIVED' }, changeType: 'ADDED', changed: true },
@@ -909,6 +909,8 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
     await page.goto(`${origin}/#/approval/91`)
     await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme.toLowerCase())
     const rows = page.locator('.diff-list .diff-row')
+    await expect(rows).toHaveCount(0)
+    await page.getByRole('button', { name: '字段变更明细（3 项）' }).click()
     await expect(rows).toHaveCount(3)
     const inspect = async () => {
       for (const row of await rows.all()) {

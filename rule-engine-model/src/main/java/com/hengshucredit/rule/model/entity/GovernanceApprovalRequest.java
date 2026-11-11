@@ -38,7 +38,9 @@ public class GovernanceApprovalRequest implements AccountOwnedRecord {
     private String snapshotDigest;
     private String secretPayloadCiphertext;
     private String secretDigest;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String dependencyDigest;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String validationReportJson;
     private String changeSummary;
     private String submitComment;

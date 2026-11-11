@@ -25,6 +25,26 @@ import router from '@/router'
 import * as governanceApi from '@/api/governance'
 
 describe('统一审批列表', () => {
+  test('旧查询晚返回不能覆盖新页签，旧查询结束不能提前清除加载状态', async () => {
+    const wrapper = shallowMount(ApprovalList)
+    await flushPromises()
+    let resolveOld, resolveNew
+    governanceApi.listGovernanceRequests.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
+      .mockImplementationOnce(() => new Promise(resolve => { resolveNew = resolve }))
+    const old = wrapper.vm.loadRequests()
+    wrapper.vm.activeScope = 'COMPLETED'
+    const latest = wrapper.vm.loadRequests()
+    resolveOld({ data: { records: [{ id: 'old' }], total: 99 } })
+    await old
+    expect(wrapper.vm.loading).toBe(true)
+    expect(wrapper.vm.records).not.toEqual([{ id: 'old' }])
+    resolveNew({ data: { records: [{ id: 'latest' }], total: 1 } })
+    await latest
+    expect(wrapper.vm.records).toEqual([{ id: 'latest' }])
+    expect(wrapper.vm.total).toBe(1)
+    expect(wrapper.vm.loading).toBe(false)
+    wrapper.unmount()
+  })
   test('系统配置审批标题使用配置分组名称', async () => {
     const wrapper = shallowMount(ApprovalList)
     await flushPromises()

@@ -1,4 +1,6 @@
 import { cartesianProduct, segmentSummary, flattenCells } from './advancedCrossTable'
+import { LIST_ITEM_TYPES } from '@/constants/listMatchModes'
+import { parseMetadataResponse } from './metadataResponse'
 
 const MODEL_TYPES = [
   'TABLE', 'TREE', 'FLOW', 'RULE_SET', 'CROSS',
@@ -46,7 +48,9 @@ const FIELD_LABELS = {
   _refType: '引用类型',
   rangeBoundary: '区间边界',
   expression: '表达式',
-  script: '脚本'
+  script: '脚本',
+  listIds: '目标名单', operation: '执行操作', expiryMode: '有效期', duration: '有效时长', durationUnit: '时长单位', expireTime: '失效时间',
+  apiId: '外数 API ID', itemType: '内容类型', entries: '名单内容',
 }
 
 const IGNORED_COMPARE_KEYS = new Set([
@@ -59,18 +63,18 @@ export function parseRuleVersionModel(value) {
     return { model: value, raw: JSON.stringify(value), error: '' }
   }
   try {
-    return { model: JSON.parse(value), raw: value, error: '' }
+    return { model: parseMetadataResponse(value), raw: value, error: '' }
   } catch (e) {
     return { model: {}, raw: String(value), error: '版本内容无法解析' }
   }
 }
 
-function comparableValue(value) {
-  if (Array.isArray(value)) return value.map(comparableValue)
+function comparableValue(value, literal = false) {
+  if (Array.isArray(value)) return value.map(item => comparableValue(item, literal))
   if (!value || typeof value !== 'object') return value
   const result = {}
   Object.keys(value).sort().forEach(key => {
-    if (!IGNORED_COMPARE_KEYS.has(key)) result[key] = comparableValue(value[key])
+    if (literal || !IGNORED_COMPARE_KEYS.has(key)) result[key] = comparableValue(value[key], literal || value.kind === 'LITERAL' && key === 'value')
   })
   return result
 }
@@ -298,13 +302,14 @@ function genericBusinessFields(item, excluded = []) {
   return Object.keys(item || {}).filter(key => !skip.has(key) && !IGNORED_COMPARE_KEYS.has(key)).map(key => {
     const value = item[key]
     if (value && typeof value === 'object' && !Array.isArray(value)) return referenceField(key, FIELD_LABELS[key], value)
-    if (!Array.isArray(value)) return field(key, FIELD_LABELS[key], value)
-    return null
+    return field(key, FIELD_LABELS[key], value)
   }).filter(Boolean)
 }
 
 const ACTION_TYPE_LABELS = {
   assign: '赋值',
+  'api-call': '调用外数 API',
+  'list-write': '名单落库',
   'if-block': '条件分支',
   'switch-block': 'Switch 匹配',
   'func-call': '函数调用',
@@ -357,13 +362,21 @@ function actionNode(action, index, path) {
   const actionType = item.actionDataType || item.actionType || item.type || item.kind || 'assign'
   const identity = item.id != null ? 'action:' + item.id : (item.uid ? 'action:' + item.uid : '')
   const targetKey = referenceKey(target)
-  const fields = [
-    field('actionType', '动作类型', actionType, ACTION_TYPE_LABELS[actionType] || actionType),
-    referenceField('targetOperand', '赋值目标', target),
-    referenceField('valueOperand', '赋值内容', value)
-  ]
-  genericBusinessFields(item, ['targetOperand', 'valueOperand', 'operand', 'value', 'varCode', 'varLabel', 'varType', '_varId', '_refType', 'type', 'kind', 'actionDataType', 'actionType']).forEach(itemField => fields.push(itemField))
+  const sideEffect = ['api-call', 'list-write'].includes(actionType)
+  const fields = [field('actionType', '动作类型', actionType, ACTION_TYPE_LABELS[actionType] || actionType)]
+  if (!sideEffect || target) fields.push(referenceField('targetOperand', '赋值目标', target))
+  if (!sideEffect) fields.push(referenceField('valueOperand', '赋值内容', value))
+  genericBusinessFields(item, ['targetOperand', 'valueOperand', 'operand', 'value', 'varCode', 'varLabel', 'varType', '_varId', '_refType', 'type', 'kind', 'actionDataType', 'actionType',
+    'branches', 'cases', 'defaultActions', 'args', 'inOperands', 'parts', ...(actionType === 'list-write' ? ['entries'] : [])]).forEach(itemField => fields.push(itemField))
   const children = []
+  if (actionType === 'list-write') {
+    children.push(semanticNode('list-entries', '名单内容', {
+      children: (item.entries || []).map((entry, entryIndex) => semanticNode('list-entry', `内容 ${entryIndex + 1}`, {
+        fields: [field('itemType', '内容类型', entry.itemType, LIST_ITEM_TYPES.find(type => type.value === entry.itemType)?.label || entry.itemType),
+          referenceField('valueOperand', '写入内容', entry.valueOperand)],
+      })),
+    }))
+  }
   ;(item.branches || []).forEach((branch, branchIndex) => children.push(actionBranchNode(branch, branchIndex, path + '.branch.' + branchIndex)))
   ;(item.cases || []).forEach((branch, branchIndex) => children.push(actionCaseNode(branch, branchIndex, path + '.case.' + branchIndex)))
   if ((item.defaultActions || []).length) {

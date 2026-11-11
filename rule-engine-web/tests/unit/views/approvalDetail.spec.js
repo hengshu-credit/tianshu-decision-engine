@@ -10,6 +10,7 @@ vi.mock('@/api/governance', () => ({
         status: 'PENDING',
         applicant: 'same-user',
         baseVersionNo: 2,
+        baseVersionId: 3,
         submittedSnapshotJson: '{"host":"db-new","port":3306}'
       },
       diff: {
@@ -70,6 +71,31 @@ import { clearCurrentUser, setCurrentUser } from '@/security/permissionState'
 import ApprovalDetail from '@/views/approval/ApprovalDetail.vue'
 
 describe('统一审批详情', () => {
+  test('新建资源使用空配置基准，报告缺失不能显示预检通过', async () => {
+    const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
+    await flushPromises()
+    await wrapper.setData({ detail: { request: { id: 12, resourceType: 'RULE', action: 'CREATE', status: 'EDITING', baseVersionId: null, submittedSnapshotJson: null, draftSnapshotJson: '{"ruleName":"新规则"}' }, versions: [] }, compareLeftKey: 'EMPTY' })
+    expect(wrapper.vm.compareOriginal).toBe('{}')
+    expect(wrapper.vm.compareStatusLabel).toBe('内容有差异')
+    expect(wrapper.vm.compareLeftLabel).toBe('空配置（新资源）')
+    expect(wrapper.vm.preflightStatusLabel).toBe('尚未预检')
+    expect(wrapper.vm.releaseExplanation[2].detail).not.toContain('通过')
+    wrapper.unmount()
+  })
+  test('审批选择器和预览标题标识历史修订，报告状态区分失败与通过', async () => {
+    const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
+    await flushPromises()
+    const versions = [{ id: 1, versionNo: 1, revisionNo: 1 }, { id: 2, versionNo: 1, revisionNo: 2 }]
+    await wrapper.setData({ detail: { ...wrapper.vm.detail, versions } })
+    expect(new Set(wrapper.vm.compareOptions.map(row => row.label)).size).toBe(wrapper.vm.compareOptions.length)
+    wrapper.vm.viewGovernanceVersion(versions[1])
+    expect(wrapper.vm.versionPreviewTitle).toBe('历史生效 V1 · 修订 2')
+    await wrapper.setData({ detail: { request: { validationReportJson: '{"valid":false,"errors":[]}' } } })
+    expect(wrapper.vm.preflightStatusLabel).toBe('预检未通过')
+    await wrapper.setData({ detail: { request: { validationReportJson: '{"valid":true,"errors":[]}' } } })
+    expect(wrapper.vm.preflightStatusLabel).toBe('上次预检通过')
+    wrapper.unmount()
+  })
   test('合并超管后可管理保留历史归属名的草稿，普通账号不能认领', async () => {
     setCurrentUser({ username: 'primary', operatorName: 'primary', operatorNames: ['primary', 'same-user'], permissions: ['database:edit'] })
     const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
@@ -161,6 +187,8 @@ describe('统一审批详情', () => {
     await flushPromises()
     await wrapper.setData({ detail: { request: { id: 80, resourceType: 'EXTERNAL_API', resourceId: 0, status: 'EDITING', submittedSnapshotJson: null, draftSnapshotJson: '{"apiName":"华融三步查询"}' }, diff: { fields: Array.from({ length: 10001 }, (_, index) => ({ key: `$.sample.QY_${index}`, changed: true, changeType: 'ADDED', rightValue: 0 })) }, versions: [] } })
     expect(wrapper.vm.resourceTitle).toBe('华融三步查询')
+    expect(wrapper.findAll('.diff-row')).toHaveLength(0)
+    await wrapper.setData({ fieldPanels: ['fields'], compareLeftKey: 'EMPTY' })
     expect(wrapper.findAll('.diff-row')).toHaveLength(50)
     await wrapper.setData({ fieldQuery: 'QY_9999' })
     expect(wrapper.findAll('.diff-row')).toHaveLength(1)
@@ -197,6 +225,7 @@ describe('统一审批详情', () => {
     expect(wrapper.text()).toContain('基准版本')
     expect(wrapper.vm.compareLeftLabel).toBe('历史生效 V2')
     expect(wrapper.vm.compareRightLabel).toBe('当前审批（冻结快照）')
+    await wrapper.setData({ fieldPanels: ['fields'] })
     expect(wrapper.text()).toContain('db-old')
     expect(wrapper.text()).toContain('db-new')
   })
@@ -207,6 +236,7 @@ describe('统一审批详情', () => {
     })
     await flushPromises()
 
+    await wrapper.setData({ fieldPanels: ['fields'] })
     expect(wrapper.text()).toContain('敏感内容受保护')
     expect(wrapper.text()).toContain('same-user')
     expect(wrapper.text()).not.toContain('top-secret')

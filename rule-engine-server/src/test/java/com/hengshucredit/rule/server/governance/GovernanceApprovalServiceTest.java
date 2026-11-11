@@ -19,6 +19,28 @@ import java.util.List;
 
 public class GovernanceApprovalServiceTest {
     @Test
+    public void everyDraftSaveInvalidatesPreflightUntilCheckedAgain() {
+        for (String entrypoint : List.of("createDraft", "saveDraft", "saveDraftSnapshot")) {
+            TestService service = new TestService();
+            service.createDraft(createRuleDraft("review", "原规则"), "owner");
+            GovernanceApprovalRequest request = service.request;
+            service.preflight(request.getId(), "owner");
+            Assert.assertNotNull(request.getValidationReportJson());
+            Assert.assertEquals("dep-digest", request.getDependencyDigest());
+            GovernanceDraftRequest changed = createRuleDraft("review", "修改后规则");
+            if ("createDraft".equals(entrypoint)) service.createDraft(changed, "owner");
+            else if ("saveDraft".equals(entrypoint)) service.saveDraft(request.getId(), changed, "owner");
+            else service.saveDraftSnapshot(request.getId(), changed.getSnapshotJson(), "owner");
+            Assert.assertNull(entrypoint, request.getValidationReportJson());
+            Assert.assertNull(entrypoint, request.getDependencyDigest());
+            Assert.assertTrue(request.getDraftSnapshotJson().contains("修改后规则"));
+            service.preflight(request.getId(), "owner");
+            Assert.assertTrue(request.getValidationReportJson().contains("\"valid\":true"));
+            Assert.assertEquals("dep-digest", request.getDependencyDigest());
+        }
+    }
+
+    @Test
     public void trialCredentialsUseOnlyActorsEditableWorkspace() {
         TestService service = new TestService();
         service.request.setId(12L);

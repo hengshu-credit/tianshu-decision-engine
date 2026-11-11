@@ -1,6 +1,41 @@
 import { buildResourcePreview, pairPreviewSections } from '@/utils/resourceVersionPreview'
+import { buildRuleVersionDiff } from '@/utils/ruleVersionDiff'
 
 describe('版本业务预览', () => {
+  test.each(['listIds', 'entries'])('名单落库仅修改 %s 时预览和逐项对比都识别变化', changedKey => {
+    const action = { type: 'list-write', listIds: ['101'], operation: 'MERGE', expiryMode: 'DURATION', duration: 30, durationUnit: 'DAYS', entries: [{ itemType: 'MOBILE', valueOperand: { kind: 'LITERAL', value: '13800000001', valueType: 'STRING' } }] }
+    const original = { rules: [{ ruleName: '名单写入', actionData: [action] }] }
+    const changed = structuredClone(original)
+    if (changedKey === 'listIds') changed.rules[0].actionData[0].listIds = ['202']
+    else changed.rules[0].actionData[0].entries[0].valueOperand.value = '13900000002'
+    const preview = model => buildResourcePreview({ modelType: 'RULE_SET', content: { modelJson: JSON.stringify(model) } }, 'RULE')
+    const left = preview(original)
+    const right = preview(changed)
+    expect(left.warning).toBe('')
+    expect(JSON.stringify(left.sections)).toContain('名单 #101')
+    expect(JSON.stringify(left.sections)).toContain('13800000001')
+    expect(JSON.stringify(left.sections)).not.toContain('赋值目标')
+    expect(pairPreviewSections(left.sections, right.sections).filter(row => row.status === 'changed').map(row => row.key)).toEqual(['rule:rules'])
+    expect(buildRuleVersionDiff({ modelType: 'RULE_SET', leftModelJson: original, rightModelJson: changed }).summary.total).toBeGreaterThan(0)
+  })
+  test('只过滤资源顶层元信息，嵌套请求对象和自定义字段原样保留', () => {
+    const payload = { id: 'customer-42', createTime: '2026-01-01', status: 0, nested: { id: 'child' } }
+    const result = buildResourcePreview({ id: 71, createTime: 'metadata', sourceConfig: { requestOverrides: { customer: { kind: 'LITERAL', valueType: 'OBJECT', value: payload } }, extra: { id: 'business-id', createTime: 'business-time' } } }, 'VARIABLE')
+    expect(result.sections.map(section => section.key)).toEqual(['sourceConfig'])
+    const nodes = result.sections[0].nodes[0].children
+    expect(nodes[0].children[0].operand.value).toEqual(payload)
+    expect(nodes[1].children.map(child => child.text)).toEqual(['business-id', 'business-time'])
+  })
+  test('新资源的空基准不会产生规则损坏告警', () => {
+    expect(buildResourcePreview('{}', 'RULE')).toEqual({ sections: [], warning: '' })
+  })
+  test('动作字面量中的坐标和嵌套业务键不被当作画布布局丢弃', () => {
+    const model = x => ({ rules: [{ actionData: [{ type: 'assign', targetOperand: { kind: 'REFERENCE', refType: 'VARIABLE', refId: '7' }, valueOperand: { kind: 'LITERAL', value: { x, y: 0, logicflow: '业务值' }, valueType: 'OBJECT' } }] }] })
+    const preview = value => buildResourcePreview({ modelType: 'RULE_SET', modelJson: JSON.stringify(model(value)) }, 'RULE')
+    expect(JSON.stringify(preview(1))).toContain('业务值')
+    expect(pairPreviewSections(preview(1).sections, preview(2).sections).some(row => row.status === 'changed')).toBe(true)
+    expect(buildRuleVersionDiff({ modelType: 'RULE_SET', leftModelJson: model(1), rightModelJson: model(2) }).summary.total).toBeGreaterThan(0)
+  })
   test('仅开放接口响应映射变化时也能从规则快照识别业务差异', () => {
     const preview = targetField => buildResourcePreview({
       modelType: 'TABLE', content: { modelJson: '{"rules":[]}', openApiConfigJson: JSON.stringify({ responseMappings: [{ targetField }] }) },

@@ -21,17 +21,12 @@
     <el-alert v-if="warning" :title="warning" type="warning" :closable="false" show-icon />
     <section v-if="basicRows.length" class="preview-section">
       <h4>基本信息</h4>
-      <div class="pane-grid">
-        <div v-for="pane in panes" :key="pane.side" class="overview-pane">
-          <span v-if="comparing" class="narrow-version-label">{{ pane.label }}</span>
-          <el-descriptions :column="comparing ? 1 : 2" border size="small">
-            <el-descriptions-item v-for="row in basicRows" :key="row.key" :label="(row.right || row.left).title">
-              <span>{{ row[pane.side]?.nodes[0].text ?? '此版本未配置' }}</span>
-              <el-tag v-if="comparing && row.status !== 'same'" size="small" :type="tagType[row.status]">{{ changeLabel[row.status] }}</el-tag>
-            </el-descriptions-item>
-          </el-descriptions>
+      <dl class="basic-fields">
+        <div v-for="row in basicRows" :key="row.key" class="basic-field" :class="'is-' + row.status">
+          <dt>{{ (row.right || row.left).title }} <el-tag v-if="comparing && row.status !== 'same'" size="small" :type="tagType[row.status]">{{ changeLabel[row.status] }}</el-tag></dt>
+          <dd v-for="pane in panes" :key="pane.side"><span v-if="comparing" class="narrow-version-label">{{ pane.label }}</span>{{ row[pane.side]?.nodes[0].text ?? '此版本未配置' }}</dd>
         </div>
-      </div>
+      </dl>
     </section>
     <section v-for="row in detailRows" :key="row.key" :ref="element => registerSection(row.key, element)"
       class="preview-section business-preview-row" :class="'is-' + row.status" :data-section="row.key">
@@ -62,7 +57,7 @@ const props = defineProps({
 })
 const tagType = { added: 'success', removed: 'danger', changed: 'warning' }
 const changeLabel = { added: '新增', removed: '移除', changed: '已修改' }
-const changesOnly = ref(false)
+const changesOnly = ref(true)
 const folded = ref(new Set())
 const sections = new Map()
 function registerSection(key, element) {
@@ -80,7 +75,7 @@ async function jumpTo(key) {
   sections.get(key)?.scrollIntoView({ block: 'start' })
 }
 watch(() => [props.original, props.snapshot, props.comparing, props.originalLabel, props.modifiedLabel], () => {
-  changesOnly.value = false
+  changesOnly.value = true
   folded.value.clear()
 })
 
@@ -135,19 +130,20 @@ const detailRows = computed(() => {
 .business-preview-head span { margin-right: 12px; font-size: 12px; color: var(--tianshu-text-secondary); }
 .preview-section { margin-top: 16px; }
 .preview-section h4 { margin: 0; padding: 8px 0; font-size: 14px; }
-.business-preview-card { padding: 12px; border: 1px solid var(--tianshu-border); border-radius: 6px; }
+.business-preview-card { padding: 12px; border: 1px solid var(--tianshu-border-subtle); border-radius: 4px; }
 .is-changed .business-preview-card { border-color: var(--tianshu-warning-border); }
 .is-added .business-preview-card { border-color: var(--tianshu-success-border); }
 .is-removed .business-preview-card { border-color: var(--tianshu-danger-border); }
-.overview-pane { min-width: 0; }
-.overview-pane :deep(.el-descriptions__table) { table-layout: fixed; }
-.overview-pane :deep(.el-descriptions__label) { width: 7em; }
-.overview-pane :deep(td) { overflow-wrap: anywhere; white-space: pre-wrap; }
-.overview-pane :deep(.el-tag) { margin-left: 6px; }
+.basic-fields { margin: 0; font-size: 13px; }
+.basic-field { display: grid; grid-template-columns: minmax(100px, 20%) minmax(0, 1fr); gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--tianshu-border-subtle); line-height: 1.6; }
+.is-comparing .basic-field { grid-template-columns: minmax(100px, 20%) repeat(2, minmax(0, 1fr)); }
+.basic-field dt { color: var(--tianshu-text-secondary); }
+.basic-field dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.basic-field dt .el-tag { margin-left: 4px; }
 .narrow-version-label { display: none; }
 @media (max-width: 640px) {
   .is-comparing .pane-grid { grid-template-columns: minmax(0, 1fr); }
   .narrow-version-label { display: block; font-size: 12px; color: var(--tianshu-text-secondary); margin: 0 0 6px; }
-  .overview-pane :deep(.el-descriptions__label) { width: auto; }
+  .is-comparing .basic-field { grid-template-columns: minmax(0, 1fr); gap: 8px; }
 }
 </style>
