@@ -284,6 +284,8 @@ test('看板地图可切换到市级和县级行政层级', async ({ page }) => 
   const { assertClean } = await installDistRoutes(page)
   await page.goto('http://tianshu.local/index.html#/dashboard')
 
+  await page.locator('.dashboard-map-toolbar .el-select').first().click()
+  await page.getByRole('option', { name: '中国', exact: true }).click()
   const level = page.locator('.dashboard-map-toolbar .el-select').nth(1)
   await expect(level).toBeVisible()
   await level.click()

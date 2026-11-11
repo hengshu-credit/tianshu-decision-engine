@@ -6,6 +6,7 @@ import {
   dashboardRegionNames,
   dashboardWorldCountries,
   filterDashboardRegionFeatures,
+  prepareDashboardWorld,
   prioritizeChinaBoundary
 } from '@/utils/dashboardMapLayers'
 
@@ -28,7 +29,7 @@ describe('dashboard administrative map layers', () => {
     ] }
     expect(world['美国']).toBe('USA')
     expect(dashboardCountryOptions(catalog, world)).toEqual(expect.arrayContaining([
-      { code: 'USA', name: '美国', layers: [{ level: 'ADM2' }] },
+      { code: 'USA', name: '美国', layers: [{ level: 'ADM0' }, { level: 'ADM2' }] },
       { code: 'MCO', name: 'Monaco', layers: [{ level: 'ADM0' }] }
     ]))
   })
@@ -49,6 +50,26 @@ describe('dashboard administrative map layers', () => {
       ] }
     }] })
     expect(bounds.USA).toEqual([[-131, 52.5], [-59, 22.5]])
+  })
+
+  test('缺少目录或共用 ISO 编码的地区独立定位和统计', () => {
+    const area = (name, code, x, size) => ({
+      properties: { NAME_ZH: name, ADM0_A3: code },
+      geometry: { type: 'Polygon', coordinates: [[[x, 0], [x + size, 0], [x, size], [x, 0]]] }
+    })
+    const world = prepareDashboardWorld({ type: 'FeatureCollection', features: [
+      area('离岛', 'AAA', 50, 1), area('国家主体', 'AAA', 10, 10),
+      area('地区甲', '-99', 30, 1), area('地区乙', '-99', 45, 1)
+    ] })
+    const countries = dashboardWorldCountries(world)
+    expect(new Set(Object.values(countries)).size).toBe(4)
+    expect(countries['国家主体']).toBe('AAA')
+    const options = dashboardCountryOptions(null, countries)
+    expect(options.find(country => country.name === '地区甲').layers).toEqual([{ level: 'ADM0' }])
+    const { regions } = dashboardRegionActivity(world, [
+      { longitude: 30.2, latitude: 0.2, count: 3 }, { longitude: 45.2, latitude: 0.2, count: 1 }
+    ])
+    expect(regions.map(({ id, count }) => [id, count])).toEqual([[countries['地区甲'], 3], [countries['地区乙'], 1]])
   })
 
   test('拒绝空边界、重复标识和缺失必要字段的数据', () => {

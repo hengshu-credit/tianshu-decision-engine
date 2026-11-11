@@ -183,12 +183,12 @@
                   size="small"
                   @click="drillUpMap"
                 >返回上一级</el-button>
-                <el-button v-if="mapCountry !== 'CHN'" size="small" @click="changeMapCountry('CHN')">中国全图</el-button>
-                <span>{{ mapCountry
-                  ? (nextMapLayer
-                    ? `${mapRegionPathLabel ? `当前：${mapRegionPathLabel} · ` : ''}点击区域下钻到${nextMapLayer.label || adminLevelLabels[nextMapLayer.level]}`
-                    : '已是最细行政区层级。')
-                  : '悬停查看区域名称，点击国家可查看行政区。' }}</span>
+                <span>
+                  <template v-if="mapRegionPathLabel">当前：{{ mapRegionPathLabel }} · </template>
+                  {{ !mapCountry ? '点击国家或地区查看详情。' : nextMapLayer
+                    ? `点击区域下钻到${nextMapLayer.label || adminLevelLabels[nextMapLayer.level]}`
+                    : '点击区域居中查看。' }}
+                </span>
               </div>
               <div v-if="mapCatalogError" class="dashboard-map-error">
                 <el-alert :title="mapCatalogError" type="warning" :closable="false" show-icon />
@@ -196,12 +196,14 @@
               </div>
               <div v-if="mapError" class="dashboard-map-error">
                 <el-alert :title="mapError" type="warning" :closable="false" show-icon />
-                <el-button size="small" @click="loadMap">重试地图</el-button>
+                <el-button size="small" @click="loadMap()">重试地图</el-button>
               </div>
               <dashboard-heatmap
                 :key="mapViewVersion"
                 aria-label="进件地图热力图"
                 :boundaries="mapGeoJson"
+                :world="mapCountry ? worldMapData : null"
+                @country-click="changeMapCountry"
                 :regions="regionStats"
                 :points="mapPoints"
                 :palette="mapPalette"
@@ -215,7 +217,7 @@
                 · 市县：天地图来源整理数据 · 本地加载
                 <span v-if="mapLevel === 'ADM3'"> · 台湾省区县级资料暂缺，保留已有市县边界。</span>
               </p>
-              <p v-else-if="mapCountry && mapLayer" class="dashboard-map-source">
+              <p v-else-if="mapCountry && mapLayer?.year && !mapLoading && !mapError && !(mapLevel === 'ADM0' && countryBoundary)" class="dashboard-map-source">
                 边界年份：{{ mapLayer.year }} · 数据来源：
                 <a href="https://www.geoboundaries.org" target="_blank" rel="noopener noreferrer">geoBoundaries</a>
                 （CC BY 4.0，按需在线加载）
@@ -365,13 +367,12 @@ import {
   dashboardRegionNames,
   dashboardWorldCountries,
   filterDashboardRegionFeatures,
+  prepareDashboardWorld,
   prioritizeChinaBoundary
 } from '@/utils/dashboardMapLayers'
 import {
-  DASHBOARD_MAP_VIEW_KEY,
   dashboardQuickRange,
   defaultDashboardFilters,
-  defaultDashboardGlobalMapView,
   readDashboardMapView,
   readDashboardFilters,
   validateDashboardRange,
@@ -409,17 +410,17 @@ export default {
       mapCatalogError: '',
       mapCatalog: null,
       catalogLoading: false,
-      mapCountry: 'CHN',
-      mapLevel: 'ADM1',
+      mapCountry: '',
+      mapLevel: 'ADM0',
       mapRegionPath: [],
       mapRegionNames: {},
       mapGeoJson: null,
       mapFeatureIndex: {},
+      worldMapData: null,
       worldCountries: {},
       worldCountryBounds: {},
       adminLevelLabels: ADMIN_LEVEL_LABELS,
       mapView,
-      mapViewConfigured: Boolean(window.sessionStorage.getItem(DASHBOARD_MAP_VIEW_KEY)),
       mapViewVersion: 0,
       themeVersion: 0,
       sections: {
@@ -476,20 +477,17 @@ export default {
     mapPoints() {
       return this.mapActivity.points
     },
+    countryBoundary() {
+      const feature = this.worldMapData?.features.find(item => item.properties.worldKey === this.mapCountry)
+      if (!feature) return null
+      return { ...feature, properties: { ...feature.properties, shapeID: this.mapCountry, shapeName: feature.properties.NAME_ZH } }
+    },
     mapCamera() {
-      const fallbackBounds = this.mapCountry === 'CHN'
-        ? CHINA_MAP_BOUNDS
-        : this.worldCountryBounds[this.mapCountry]
-      const globalMapView = this.mapViewConfigured
-        ? this.mapView
-        : defaultDashboardGlobalMapView()
-      return this.mapCountry
-        ? dashboardMapView(this.mapGeoJson, fallbackBounds)
-        : {
-            bounds: undefined,
-            center: [globalMapView.longitude, globalMapView.latitude],
-            zoom: globalMapView.zoom
-          }
+      if (!this.mapCountry) return { center: [this.mapView.longitude, this.mapView.latitude], zoom: this.mapView.zoom }
+      const parent = this.mapRegionPath.at(-1)
+      if (parent) return dashboardMapView({ features: [parent.feature] })
+      const bounds = this.mapCountry === 'CHN' ? CHINA_MAP_BOUNDS : this.worldCountryBounds[this.mapCountry]
+      return bounds ? dashboardMapView(null, bounds) : dashboardMapView(this.mapGeoJson)
     },
     mapRegionPathLabel() {
       return this.mapRegionPath.map(region => region.name).filter(Boolean).join(' / ')
@@ -506,10 +504,6 @@ export default {
     nextMapLayer() {
       const index = this.mapLayerOptions.findIndex(layer => layer.level === this.mapLevel)
       return index >= 0 ? this.mapLayerOptions[index + 1] || null : null
-    },
-    previousMapLayer() {
-      const index = this.mapLayerOptions.findIndex(layer => layer.level === this.mapLevel)
-      return index > 0 ? this.mapLayerOptions[index - 1] || null : null
     },
     listCategoryOption() {
       void this.themeVersion
@@ -548,65 +542,68 @@ export default {
     ruleSetCoverageHint,
     resetMapView() {
       this.mapView = readDashboardMapView(window.sessionStorage)
-      this.mapViewConfigured = Boolean(window.sessionStorage.getItem(DASHBOARD_MAP_VIEW_KEY))
       this.mapViewVersion += 1
     },
-    async loadMap() {
+    showMap(geoJson) {
+      const regions = this.mapCountry ? geoJson.features.filter(feature => !feature.properties?.mapRole) : []
+      this.mapRegionNames = regions.length ? dashboardRegionNames(geoJson) : {}
+      this.mapFeatureIndex = markRaw(Object.fromEntries(regions.map(feature => [feature.properties.shapeID, feature])))
+      this.mapGeoJson = markRaw(geoJson)
+      this.mapReady = true
+    },
+    async loadMap(chooseCountryLevel = false) {
       this.mapLoadController?.abort()
       const controller = new AbortController()
       this.mapLoadController = controller
       const timeout = window.setTimeout(() => controller.abort(), 45000)
-      this.mapReady = false
+      const country = this.mapCountry
+      const parent = this.mapRegionPath.at(-1)
+      const focus = parent?.feature || this.countryBoundary
       this.mapLoading = true
       this.mapError = ''
-      this.mapGeoJson = null
-      this.mapFeatureIndex = {}
       try {
-        if (this.mapCountry && !this.mapLayer) throw new Error('当前国家暂无该层级的边界数据')
-        const country = this.mapCountry
-        let geoJson
-        if (!country || (country !== 'CHN' && this.mapLevel === 'ADM0')) {
+        // 先用已选边界居中；在线子边界加载失败时仍能查看当前区域和进件。
+        if (focus) this.showMap({ type: 'FeatureCollection', features: [focus] })
+        else if (country || !this.worldMapData) {
+          this.mapReady = false
+          this.mapGeoJson = null
+        }
+        if (!country) {
           const world = await this.loadWorldMap()
-          geoJson = country ? {
-            type: 'FeatureCollection',
-            features: world.features.filter(feature => feature.properties.ADM0_A3 === country).map(feature => ({
-              ...feature, properties: { ...feature.properties, shapeID: country, shapeName: feature.properties.NAME_ZH }
-            }))
-          } : world
-        } else {
-          const response = await fetch(mapAssetUrl(this.mapLayer.url), { signal: controller.signal })
-          if (!response.ok) throw new Error('地图资源加载失败')
-          geoJson = await response.json()
+          if (this.mapLoadController === controller) this.showMap(world)
+          return
+        }
+        if (chooseCountryLevel) {
+          if (country !== 'CHN' && !this.mapCatalog) await this.loadMapCatalog()
           if (this.mapLoadController !== controller) return
-          if (country !== 'CHN') {
-            if (!this.chinaLandGeometry) {
-              const chinaResponse = await fetch(mapAssetUrl('/maps/dashboard-china-land.geojson'), { signal: controller.signal })
-              if (!chinaResponse.ok) throw new Error('中国边界校验数据加载失败')
-              this.chinaLandGeometry = markRaw((await chinaResponse.json()).features[0].geometry)
-            }
-            geoJson = prioritizeChinaBoundary(geoJson, this.chinaLandGeometry)
+          const layers = this.mapLayerOptions
+          this.mapLevel = (layers.find(layer => layer.level !== 'ADM0') || layers[0])?.level || 'ADM0'
+        }
+        if (parent?.level === this.mapLevel || (this.mapLevel === 'ADM0' && focus)) return
+        const layer = this.mapLayer
+        if (!layer?.url) throw new Error('当前层级缺少边界')
+        const response = await fetch(mapAssetUrl(layer.url), { signal: controller.signal })
+        if (!response.ok) throw new Error('地图资源加载失败')
+        let geoJson = await response.json()
+        if (this.mapLoadController !== controller) return
+        if (country !== 'CHN') {
+          if (!this.chinaLandGeometry) {
+            const chinaResponse = await fetch(mapAssetUrl('/maps/dashboard-china-land.geojson'), { signal: controller.signal })
+            if (!chinaResponse.ok) throw new Error('中国边界校验数据加载失败')
+            this.chinaLandGeometry = markRaw((await chinaResponse.json()).features[0].geometry)
           }
+          geoJson = prioritizeChinaBoundary(geoJson, this.chinaLandGeometry)
         }
         if (this.mapLoadController !== controller) return
-        if (this.mapRegionPath.length) {
-          const parent = this.mapRegionPath[this.mapRegionPath.length - 1]
-          geoJson = filterDashboardRegionFeatures(geoJson, parent.feature)
+        if (parent) geoJson = filterDashboardRegionFeatures(geoJson, parent.feature)
+        if (!geoJson.features.length) {
+          this.mapError = '当前区域暂无该层级的边界数据。'
+          return
         }
-        if (this.mapRegionPath.length && !geoJson.features?.length) {
-          throw new Error('当前区域暂无下一级行政区边界')
-        }
-        this.mapFeatureIndex = markRaw(Object.fromEntries(geoJson.features
-          .filter(feature => !feature.properties?.mapRole && feature.properties?.shapeID)
-          .map(feature => [feature.properties.shapeID, feature])))
-        this.mapRegionNames = country ? dashboardRegionNames(geoJson) : {}
-        this.mapGeoJson = markRaw(geoJson)
-        this.mapViewVersion += 1
-        this.mapReady = true
-      } catch (error) {
+        this.showMap(geoJson)
+      } catch {
         if (this.mapLoadController !== controller) return
-        this.mapError = this.mapCountry
-          ? '行政区边界加载失败，请检查网络后重试，或返回全球地图。'
-          : '本地地图加载失败，请重试。'
+        this.mapError = country ? '行政区边界加载失败，可重试或返回全球。' : '本地地图加载失败，请重试。'
       } finally {
         window.clearTimeout(timeout)
         if (this.mapLoadController === controller) this.mapLoading = false
@@ -619,22 +616,22 @@ export default {
       this.mapCatalogError = ''
       const loadCountries = async () => {
         if (this.mapCatalog) return
-        const response = await fetch(mapAssetUrl('/maps/dashboard-boundaries.json'))
+        const response = await fetch(mapAssetUrl('/maps/dashboard-boundaries.json'), { signal: AbortSignal.timeout(45000) })
         if (!response.ok) throw new Error('目录加载失败')
         this.mapCatalog = markRaw(await response.json())
       }
       // 两者并行，目录一旦可用即可选择；世界地图与全球视图共用同一个请求。
       this.catalogRequest = Promise.all([loadCountries(), this.loadWorldMap()]).catch(() => {
-        this.mapCatalogError = '其他国家的行政区目录加载失败，仍可浏览中国地图。'
+        this.mapCatalogError = '行政区目录加载失败，仍可点击全球底图定位国家和地区。'
       }).finally(() => { this.catalogLoading = false; this.catalogRequest = null })
       return this.catalogRequest
     },
     loadWorldMap() {
       if (this.worldMapData) return Promise.resolve(this.worldMapData)
       if (!this.worldRequest) {
-        this.worldRequest = fetch(mapAssetUrl('/maps/dashboard-world.geojson')).then(async response => {
+        this.worldRequest = fetch(mapAssetUrl('/maps/dashboard-world.geojson'), { signal: AbortSignal.timeout(45000) }).then(async response => {
           if (!response.ok) throw new Error('全球地图加载失败')
-          const geoJson = markRaw(await response.json())
+          const geoJson = markRaw(prepareDashboardWorld(await response.json()))
           this.worldCountries = dashboardWorldCountries(geoJson)
           this.worldCountryBounds = dashboardCountryBounds(geoJson)
           this.worldMapData = geoJson
@@ -643,17 +640,11 @@ export default {
       }
       return this.worldRequest
     },
-    async changeMapCountry(country) {
+    changeMapCountry(country) {
       this.mapCountry = country
       this.mapRegionPath = []
-      if (!country) this.loadMapCatalog()
-      else if (country !== 'CHN' && !this.mapCatalog) {
-        await this.loadMapCatalog()
-        if (this.mapCountry !== country) return
-      }
-      const layers = this.mapLayerOptions
-      this.mapLevel = (layers.find(layer => layer.level === 'ADM1') || layers[0])?.level || 'ADM0'
-      return this.loadMap()
+      this.mapLevel = 'ADM0'
+      return this.loadMap(true)
     },
     changeMapLevel(level) {
       this.mapRegionPath = []
@@ -661,36 +652,29 @@ export default {
       return this.loadMap()
     },
     drillUpMap() {
-      const previousLayer = this.previousMapLayer
-      if (!this.mapRegionPath.length || !previousLayer) return Promise.resolve()
+      const parent = this.mapRegionPath.at(-1)
+      if (!parent) return this.changeMapCountry('')
       this.mapRegionPath = this.mapRegionPath.slice(0, -1)
-      this.mapLevel = previousLayer.level
+      this.mapLevel = parent.level
       return this.loadMap()
     },
-    async openMapCountry(name) {
-      if (this.mapCountry) {
-        if (!this.nextMapLayer) {
-          this.$message.info('已是最细行政区层级')
-          return
-        }
-        const feature = this.mapFeatureIndex[name]
-        if (!feature) {
-          this.$message.info('当前区域暂无可用的下一级行政区边界')
-          return
-        }
-        this.mapRegionPath = [...this.mapRegionPath, {
-          level: this.mapLevel,
-          name: this.mapRegionNames[name] || name,
-          feature
-        }]
-        this.mapLevel = this.nextMapLayer.level
-        return this.loadMap()
+    openMapCountry(name) {
+      if (!this.mapCountry) {
+        const country = this.worldCountries[name]
+        if (country) return this.changeMapCountry(country)
+        return
       }
-      if (!this.mapCatalog) await this.loadMapCatalog()
-      if (this.mapCountry) return
-      const country = this.worldCountries[name]
-      if (this.mapCountryOptions.some(item => item.code === country)) this.changeMapCountry(country)
-      else this.$message.info('该国家或地区暂无可用的行政区边界')
+      if (this.mapLoading || this.mapError) return
+      const feature = this.mapFeatureIndex[name]
+      if (!feature) return
+      const next = this.nextMapLayer
+      if (!next && (this.mapLevel === 'ADM0' || this.mapRegionPath.at(-1)?.feature === feature)) {
+        this.resetMapView()
+        return
+      }
+      this.mapRegionPath = [...this.mapRegionPath, { level: this.mapLevel, name: this.mapRegionNames[name], feature }]
+      if (next) this.mapLevel = next.level
+      return this.loadMap()
     },
     queryParams() {
       return {

@@ -92,9 +92,9 @@ describe('dashboard filters', () => {
     ).message).toContain('90天')
   })
 
-  test('地图视角默认展示中国并只在当前会话保存', () => {
+  test('地图视角默认展示全球并只在当前会话保存', () => {
     expect(dashboardSession.defaultDashboardMapView).toBeTypeOf('function')
-    expect(dashboardSession.defaultDashboardGlobalMapView()).toEqual({
+    expect(dashboardSession.defaultDashboardMapView()).toEqual({
       longitude: 0,
       latitude: 0,
       zoom: 1
@@ -105,9 +105,9 @@ describe('dashboard filters', () => {
     }
 
     expect(dashboardSession.readDashboardMapView(storage)).toEqual({
-      longitude: 104,
-      latitude: 35,
-      zoom: 1.5
+      longitude: 0,
+      latitude: 0,
+      zoom: 1
     })
 
     const result = dashboardSession.writeDashboardMapView(storage, {
@@ -122,7 +122,7 @@ describe('dashboard filters', () => {
     )
   })
 
-  test('地图视角拒绝非法数值并在缓存损坏时回退中国', () => {
+  test('地图视角拒绝非法数值并在缓存损坏时回退全球', () => {
     expect(dashboardSession.validateDashboardMapView({
       longitude: 104,
       latitude: null,
@@ -145,6 +145,6 @@ describe('dashboard filters', () => {
     })).toEqual({ valid: false, message: '缩放比例须在 0.5 至 10 之间' })
     expect(dashboardSession.readDashboardMapView({
       getItem: () => '{bad'
-    })).toEqual({ longitude: 104, latitude: 35, zoom: 1.5 })
+    })).toEqual({ longitude: 0, latitude: 0, zoom: 1 })
   })
 })

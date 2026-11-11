@@ -11,6 +11,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { dashboardFeatureAt } from '@/utils/dashboardMapLayers'
 import { mixThemeColors } from '@/theme/themeConfig'
 
 const props = defineProps({
@@ -18,12 +19,13 @@ const props = defineProps({
   empty: Boolean,
   emptyDescription: { type: String, required: true },
   boundaries: { type: Object, default: null },
+  world: { type: Object, default: null },
   view: { type: Object, required: true },
   points: { type: Array, required: true },
   regions: { type: Array, required: true },
   palette: { type: Object, required: true }
 })
-const emit = defineEmits(['region-click'])
+const emit = defineEmits(['region-click', 'country-click'])
 const host = ref(null)
 const ready = ref(false)
 const error = ref('')
@@ -31,14 +33,44 @@ const hover = ref('')
 const rampColors = ['#421eb2', '#8c1eb2', '#f27deb', '#fff598', '#f7b74a', '#ff4818']
 const gradient = `linear-gradient(to right, ${rampColors.join(',')})`
 const regionIndex = computed(() => new Map(props.regions.map(region => [region.id, region])))
-let scene, fill, outline, heat
+let scene, fill, outline, heat, HeatmapLayer
 let disposed = false
+let starting = false
+
+// 外围底图也参与拾取，拖到相邻国家后可直接点击切换，统计仍只取当前行政区。
+const mapFeatures = computed(() => {
+  const context = (props.world?.features || []).map(feature => ({
+    ...feature, properties: { ...feature.properties, contextCountry: feature.properties.worldKey, regionId: '' }
+  }))
+  const active = (props.boundaries?.features || []).map(feature => {
+    const p = feature.properties
+    return { ...feature, properties: { ...p, regionId: p.shapeID || p.worldKey || p.NAME_ZH } }
+  })
+  const features = [...context, ...active]
+  return {
+    areas: { type: 'FeatureCollection', features: features.filter(feature => !feature.properties.mapRole) },
+    lines: { type: 'FeatureCollection', features }
+  }
+})
+
+function applyCamera() {
+  const { bounds, center, zoom } = props.view
+  if (bounds) {
+    const [[west, north], [east, south]] = bounds
+    // 墨卡托投影不能表示极点，南极洲的几何范围可达到南纬 90 度。
+    scene.fitBounds([[west, Math.max(south, -85.051129)], [east, Math.min(north, 85.051129)]], { duration: 0 })
+  } else {
+    const worldSize = Math.max(1, Math.min(host.value.clientWidth, host.value.clientHeight))
+    scene.setZoomAndCenter(Math.log2(worldSize * zoom / 512), center)
+  }
+}
 
 function shadeRegions() {
   const { surface, primary, border, chartAccent } = props.palette
   const base = mixThemeColors(surface, primary, 0.16)
   const max = props.regions[0]?.count || 1
   fill.color('regionId', id => {
+    if (!id) return mixThemeColors(surface, primary, 0.06)
     const count = regionIndex.value.get(id)?.count || 0
     return mixThemeColors(base, primary, 0.55 * count / max)
   }).active({ color: chartAccent })
@@ -47,43 +79,46 @@ function shadeRegions() {
 
 function updateHeat() {
   hover.value = ''
-  const max = props.points.reduce((value, point) => Math.max(value, point.count), 1)
-  heat.size('count', count => Math.max(0.08, count / max))
-  heat.setData(props.points)
+  if (heat && !heat.inited) return
+  if (heat) scene.removeLayer(heat)
+  heat = null
+  const points = props.points
+  if (!points.length) return
+  // L7 的二维热力图持有独立帧缓冲；替换数据时一并替换图层，避免重绘半初始化的模型。
+  const max = points.reduce((value, point) => Math.max(value, point.count), 1)
+  heat = new HeatmapLayer({ zIndex: 2, enablePicking: false })
+    .source(points, { parser: { type: 'json', x: 'longitude', y: 'latitude' } })
+    .shape('heatmap').size('count', count => Math.max(0.08, count / max))
+    .style({ intensity: 2, radius: 20, rampColors: { colors: rampColors, positions: [0, 0.2, 0.4, 0.6, 0.8, 1] } })
+  heat.once('inited', () => {
+    if (!disposed && points !== props.points) queueMicrotask(() => { if (!disposed) updateHeat() })
+  })
+  scene.addLayer(heat)
 }
 
-onMounted(async () => {
-  if (props.empty || !props.boundaries) return
+async function startScene() {
+  if (props.empty || !props.boundaries || scene || starting) return
+  starting = true
   try {
-    const { Scene, BaseMap, HeatmapLayer, LineLayer, PolygonLayer, supportsWebGL } = await import('./dashboardL7')
+    const l7 = await import('./dashboardL7')
+    const { Scene, BaseMap, LineLayer, PolygonLayer, supportsWebGL } = l7
+    HeatmapLayer = l7.HeatmapLayer
     if (disposed) return
     if (!supportsWebGL()) {
       error.value = '当前浏览器无法使用 WebGL，请开启硬件加速后重试。'
       return
     }
-    const { center, zoom, bounds } = props.view
-    // 会话保存的是相对全图的缩放倍数。L7 在第 0 级用 512 像素表示一周经度。
-    const worldSize = Math.max(1, Math.min(host.value.clientWidth, host.value.clientHeight))
-    const initialZoom = bounds ? 1 : Math.log2(worldSize * zoom / 512)
     scene = new Scene({
       id: host.value, logoVisible: false,
-      map: new BaseMap({ center, zoom: initialZoom, minZoom: -3, maxZoom: 19, renderWorldCopies: false })
+      map: new BaseMap({ center: props.view.center || [0, 0], zoom: 0, minZoom: -3, maxZoom: 19, renderWorldCopies: false })
     })
     scene.on('webglcontextlost', () => { error.value = '地图绘制已中断，请点击恢复视角重新加载。' })
     scene.on('loaded', () => {
       if (disposed) return
-      if (bounds) {
-        const [[west, north], [east, south]] = bounds
-        scene.fitBounds([[west, south], [east, north]], { duration: 0 })
-      }
-      const features = props.boundaries.features.filter(feature => !feature.properties.mapRole)
-        .map(feature => {
-          const p = feature.properties
-          return { ...feature, properties: { ...p, regionId: p.shapeID || p.ADM0_A3 || p.NAME_ZH } }
-        })
-      fill = new PolygonLayer({ zIndex: 0 }).source({ type: 'FeatureCollection', features }).shape('fill')
+      applyCamera()
+      fill = new PolygonLayer({ zIndex: 0 }).source(mapFeatures.value.areas).shape('fill')
       outline = new LineLayer({ zIndex: 1, enablePicking: false })
-        .source(props.boundaries).shape('line').size(0.8)
+        .source(mapFeatures.value.lines).shape('line').size(0.8)
       shadeRegions()
       fill.on('mousemove', ({ feature }) => {
         const p = feature?.properties
@@ -93,25 +128,33 @@ onMounted(async () => {
           : p?.shapeName || p?.NAME_ZH || ''
       })
       fill.on('mouseout', () => { hover.value = '' })
-      fill.on('click', ({ feature }) => {
-        const key = feature?.properties?.shapeID || feature?.properties?.NAME_ZH
-        if (key) emit('region-click', key)
+      scene.map.on('click', ({ lngLat }) => {
+        const p = dashboardFeatureAt(mapFeatures.value.areas.features, lngLat.lng, lngLat.lat)?.properties
+        if (!p) return
+        if (p.contextCountry) emit('country-click', p.contextCountry)
+        else emit('region-click', p.shapeID || p.NAME_ZH)
       })
-      heat = new HeatmapLayer({ zIndex: 2, enablePicking: false })
-        .source(props.points, { parser: { type: 'json', x: 'longitude', y: 'latitude' } })
-        .shape('heatmap')
-        .style({ intensity: 2, radius: 20, rampColors: { colors: rampColors, positions: [0, 0.2, 0.4, 0.6, 0.8, 1] } })
-      updateHeat()
       scene.addLayer(fill)
       scene.addLayer(outline)
-      scene.addLayer(heat)
+      updateHeat()
       ready.value = true
     })
   } catch {
     if (!disposed) error.value = '地图组件加载失败，请点击恢复视角重试。'
+  } finally {
+    starting = false
   }
-})
+}
 
+onMounted(startScene)
+watch(() => props.empty, empty => { if (!empty) startScene() }, { flush: 'post' })
+watch(mapFeatures, ({ areas, lines }) => {
+  if (!ready.value || props.empty) return
+  hover.value = ''
+  fill.setData(areas)
+  outline.setData(lines)
+})
+watch(() => props.view, () => { if (ready.value && !props.empty) applyCamera() }, { flush: 'post' })
 watch([() => props.palette, regionIndex], () => {
   if (ready.value) { shadeRegions(); scene.render() }
 })

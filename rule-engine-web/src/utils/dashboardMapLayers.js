@@ -22,49 +22,63 @@ export const ADMIN_LEVEL_LABELS = {
   ADM5: '五级行政区'
 }
 
-export function dashboardWorldCountries(geoJson) {
-  return Object.fromEntries((geoJson.features || []).map(feature => {
-    const properties = feature.properties
-    return [properties.NAME_ZH, properties.ADM0_A3]
-  }))
+function largestRing(feature) {
+  const { type, coordinates } = feature.geometry
+  const polygons = type === 'MultiPolygon' ? coordinates : [coordinates]
+  let largest = []
+  let maxArea = 0
+  for (const [ring] of polygons) {
+    const area = ringArea(ring)
+    if (area > maxArea) {
+      largest = ring
+      maxArea = area
+    }
+  }
+  return largest
 }
 
-// 离岛跨越日期变更线时，全域包围盒会把省市县压缩到很小；初始视角聚焦主体陆地，仍可漫游。
+// 世界底图里部分属地共用 ISO 编码，另有多个地区使用 -99。让每个可点击元素有独立标识，
+// 仅把国家主体关联到该 ISO 编码的行政区目录。
+export function prepareDashboardWorld(geoJson) {
+  const primary = new Map()
+  for (const feature of geoJson.features) {
+    const code = feature.properties.ADM0_A3
+    if (!/^[A-Z]{3}$/.test(code)) continue
+    const other = primary.get(code)
+    if (!other || ringArea(largestRing(feature)) > ringArea(largestRing(other))) primary.set(code, feature)
+  }
+  return { ...geoJson, features: geoJson.features.map(feature => {
+    const p = feature.properties
+    const worldKey = primary.get(p.ADM0_A3) === feature ? p.ADM0_A3 : `world:${p.NAME_ZH}`
+    return { ...feature, properties: { ...p, worldKey } }
+  }) }
+}
+
+export function dashboardWorldCountries(geoJson) {
+  return Object.fromEntries(geoJson.features.map(({ properties: p }) => [p.NAME_ZH, p.worldKey || p.ADM0_A3]))
+}
+
+// 跨洲国家聚焦主体陆地，离岛仍可漫游查看。
 export function dashboardCountryBounds(geoJson) {
   const bounds = {}
-  for (const feature of geoJson.features || []) {
-    const polygons = feature.geometry.type === 'MultiPolygon'
-      ? feature.geometry.coordinates : [feature.geometry.coordinates]
-    const ringArea = ring => Math.abs(ring.reduce((area, point, index) => {
-      const next = ring[(index + 1) % ring.length]
-      return area + point[0] * next[1] - next[0] * point[1]
-    }, 0))
-    const ring = polygons.map(polygon => polygon[0]).filter(Boolean)
-      .sort((a, b) => ringArea(b) - ringArea(a))[0]
-    if (!ring?.length) continue
-    const xs = ring.map(point => point[0])
-    const ys = ring.map(point => point[1])
-    const west = Math.min(...xs)
-    const east = Math.max(...xs)
-    const south = Math.min(...ys)
-    const north = Math.max(...ys)
-    const paddingX = (east - west) * 0.1
-    const paddingY = (north - south) * 0.1
-    bounds[feature.properties.ADM0_A3] = [
-      [Math.max(-180, west - paddingX), Math.min(90, north + paddingY)],
-      [Math.min(180, east + paddingX), Math.max(-90, south - paddingY)]
-    ]
+  for (const feature of geoJson.features) {
+    const ring = largestRing(feature)
+    if (!ring.length) continue
+    bounds[feature.properties.worldKey || feature.properties.ADM0_A3] = paddedBounds(geometryBounds(ring), 0.1)
   }
   return bounds
 }
 
 export function dashboardCountryOptions(catalog, worldCountries) {
-  const names = Object.fromEntries(Object.entries(worldCountries).map(([name, code]) => [code, name]))
-  const countries = (catalog?.countries || []).filter(country => !CHINA_CODES.has(country.code)).map(country => ({
-    ...country,
-    name: names[country.code] || country.name
-  })).sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
-  return [CHINA_MAP_LAYERS, ...countries]
+  const countries = new Map((catalog?.countries || [])
+    .filter(country => !CHINA_CODES.has(country.code)).map(country => [country.code, country]))
+  for (const [name, code] of Object.entries(worldCountries)) {
+    if (CHINA_CODES.has(code)) continue
+    const layers = countries.get(code)?.layers || []
+    countries.set(code, { code, name, layers: layers.some(layer => layer.level === 'ADM0')
+      ? layers : [{ level: 'ADM0' }, ...layers] })
+  }
+  return [CHINA_MAP_LAYERS, ...Array.from(countries.values()).sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))]
 }
 
 export function prioritizeChinaBoundary(geoJson, chinaGeometry) {
@@ -103,6 +117,24 @@ export function filterDashboardRegionFeatures(geoJson, parentFeature) {
   }
 }
 
+const cachedBounds = new WeakMap()
+function featureBounds(geometry) {
+  if (!cachedBounds.has(geometry)) cachedBounds.set(geometry, geometryBounds(geometry.coordinates))
+  return cachedBounds.get(geometry)
+}
+
+function containsPoint(geometry, point) {
+  const [west, south, east, north] = featureBounds(geometry)
+  const [lng, lat] = point
+  return lng >= west && lng <= east && lat >= south && lat <= north && pointInGeometry(point, geometry)
+}
+
+// 按绘制顺序从上往下拾取，优先命中行政区，其次是周边国家。
+export function dashboardFeatureAt(features, longitude, latitude) {
+  const point = [longitude, latitude]
+  return features.findLast(feature => containsPoint(feature.geometry, point))
+}
+
 /** 一次归属判定同时生成热力点和侧栏统计，装饰边界不参与统计。 */
 export function dashboardRegionActivity(geoJson, points = []) {
   if (!Array.isArray(points) || !points.length) return { points: [], regions: [] }
@@ -110,8 +142,7 @@ export function dashboardRegionActivity(geoJson, points = []) {
     .filter(feature => !feature.properties?.mapRole && feature.geometry)
     .map(feature => ({
       feature,
-      bounds: geometryBounds(feature.geometry.coordinates),
-      id: feature.properties?.shapeID || feature.properties?.ADM0_A3 || feature.properties?.NAME_ZH,
+      id: feature.properties?.shapeID || feature.properties?.worldKey || feature.properties?.ADM0_A3 || feature.properties?.NAME_ZH,
       name: feature.properties?.shapeName || feature.properties?.NAME_ZH || feature.properties?.shapeID
     }))
     .filter(region => region.id && region.name)
@@ -129,9 +160,8 @@ export function dashboardRegionActivity(geoJson, points = []) {
     const latitude = point?.latitude
     const count = Number(point?.count || 0)
     if (!Number.isFinite(longitude) || !Number.isFinite(latitude) || !Number.isFinite(count) || count <= 0) continue
-    const index = regions.findIndex(({ bounds: [west, south, east, north], feature }) =>
-      longitude >= west && longitude <= east && latitude >= south && latitude <= north &&
-      pointInGeometry([longitude, latitude], feature.geometry))
+    const pointLocation = [longitude, latitude]
+    const index = regions.findIndex(({ feature }) => containsPoint(feature.geometry, pointLocation))
     if (index < 0) continue
     visiblePoints.push(point)
     const target = totals[index]
@@ -153,12 +183,7 @@ export function dashboardRegionActivity(geoJson, points = []) {
   return { points: visiblePoints, regions: statistics }
 }
 
-/**
- * 根据当前已加载的行政区边界计算地图视角。
- *
- * 下钻后的 GeoJSON 只包含当前层级（或当前父级）边界，使用它计算
- * boundingCoords 才能避免继续沿用国家级范围，导致地图偏小或不在中心。
- */
+// 优先按选中的几何范围取景；缺少几何时使用已计算的国家边界。
 export function dashboardMapView(geoJson, fallbackBounds) {
   const coordinates = (geoJson?.features || [])
     .filter(feature => !feature.properties?.mapRole && feature.geometry?.coordinates)
@@ -178,9 +203,9 @@ export function dashboardMapView(geoJson, fallbackBounds) {
   }
 }
 
-function paddedBounds([west, south, east, north]) {
-  const paddingX = (east - west) * 0.08
-  const paddingY = (north - south) * 0.08
+function paddedBounds([west, south, east, north], padding = 0.08) {
+  const paddingX = (east - west) * padding
+  const paddingY = (north - south) * padding
   return [
     [Math.max(-180, west - paddingX), Math.min(90, north + paddingY)],
     [Math.min(180, east + paddingX), Math.max(-90, south - paddingY)]

@@ -199,23 +199,23 @@ describe('DashboardSettings', () => {
     wrapper.unmount()
   })
 
-  test('地图视角在当前会话保存并可一键恢复中国默认值', async () => {
+  test('地图视角在当前会话保存并可一键恢复全球默认值', async () => {
     const wrapper = shallowMount(DashboardSettings)
     await flushPromises()
 
     expect(wrapper.find('.dashboard-map-view-settings').exists()).toBe(true)
     expect(wrapper.text()).toContain('保存地图视角')
-    expect(wrapper.vm.mapView).toEqual({ longitude: 104, latitude: 35, zoom: 1.5 })
+    expect(wrapper.vm.mapView).toEqual({ longitude: 0, latitude: 0, zoom: 1 })
 
     wrapper.vm.mapView = { longitude: 112, latitude: 31, zoom: 2.4 }
     await wrapper.vm.saveMapView()
     expect(JSON.parse(window.sessionStorage.getItem(DASHBOARD_MAP_VIEW_KEY)))
       .toEqual({ longitude: 112, latitude: 31, zoom: 2.4 })
 
-    await wrapper.vm.restoreChinaMapView()
-    expect(wrapper.vm.mapView).toEqual({ longitude: 104, latitude: 35, zoom: 1.5 })
+    await wrapper.vm.restoreGlobalMapView()
+    expect(wrapper.vm.mapView).toEqual({ longitude: 0, latitude: 0, zoom: 1 })
     expect(JSON.parse(window.sessionStorage.getItem(DASHBOARD_MAP_VIEW_KEY)))
-      .toEqual({ longitude: 104, latitude: 35, zoom: 1.5 })
+      .toEqual({ longitude: 0, latitude: 0, zoom: 1 })
     wrapper.unmount()
   })
 })

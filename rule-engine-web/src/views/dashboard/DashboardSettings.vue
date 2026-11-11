@@ -59,7 +59,7 @@
       <template #header>
         <div>
           <strong>地图初始视角</strong>
-          <span>仅在当前浏览器会话中保存；未配置时默认展示中国。</span>
+          <span>仅在当前浏览器会话中保存；未配置时默认展示全球。</span>
         </div>
       </template>
       <el-form :inline="true" size="small">
@@ -91,7 +91,7 @@
           />
         </el-form-item>
         <el-form-item class="dashboard-map-view-actions">
-          <el-button @click="restoreChinaMapView">恢复中国默认值</el-button>
+          <el-button @click="restoreGlobalMapView">恢复全球默认值</el-button>
           <el-button type="primary" @click="saveMapView">保存地图视角</el-button>
         </el-form-item>
       </el-form>
@@ -248,9 +248,9 @@ export default {
     saveMapView() {
       return this.persistMapView('地图初始视角已保存')
     },
-    restoreChinaMapView() {
+    restoreGlobalMapView() {
       this.mapView = defaultDashboardMapView()
-      return this.persistMapView('已恢复中国默认视角')
+      return this.persistMapView('已恢复全球默认视角')
     },
 
     changeScope() {

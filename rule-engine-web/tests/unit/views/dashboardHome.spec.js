@@ -6,11 +6,14 @@ import * as projectApi from '@/api/project'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import DashboardHome from '@/views/dashboard/DashboardHome.vue'
 import { DASHBOARD_MAP_VIEW_KEY } from '@/utils/dashboardFilters'
-import { CHINA_MAP_BOUNDS } from '@/utils/dashboardMapLayers'
 
 const chinaMap = { type: 'FeatureCollection', features: [{
   type: 'Feature', properties: { shapeID: '156710000', shapeName: '台湾省' },
   geometry: { type: 'Polygon', coordinates: [[[70, 0], [140, 0], [140, 60], [70, 60], [70, 0]]] }
+}] }
+
+const worldMap = { type: 'FeatureCollection', features: [{
+  ...chinaMap.features[0], properties: { ADM0_A3: 'CHN', NAME_ZH: '中国' }
 }] }
 
 function applications() {
@@ -43,7 +46,7 @@ describe('DashboardHome', () => {
     dashboardApi.getDashboardGovernance.mockResolvedValue({ data: {} })
     vi.stubGlobal('fetch', vi.fn().mockImplementation(async url => ({
       ok: true,
-      json: () => Promise.resolve(url.includes('dashboard-china') ? chinaMap : { type: 'FeatureCollection', features: [] })
+      json: () => Promise.resolve(url.includes('dashboard-world') ? worldMap : url.includes('dashboard-china') ? chinaMap : { countries: [] })
     })))
   })
 
@@ -230,7 +233,6 @@ describe('DashboardHome', () => {
       }
     })
     await flushPromises()
-    await wrapper.vm.changeMapCountry('')
 
     expect(wrapper.vm.mapCamera.center).toEqual([112, 31])
     expect(wrapper.vm.mapCamera.zoom).toBe(2.4)
@@ -257,9 +259,9 @@ describe('DashboardHome', () => {
 
       const map = wrapper.findComponent({ name: 'DashboardHeatmap' })
       expect(map.props('empty')).toBe(false)
-      expect(wrapper.vm.mapCountry).toBe('CHN')
-      expect(map.props('view').center).toEqual([105, 30])
-      expect(map.props('view').bounds).not.toEqual(CHINA_MAP_BOUNDS)
+      expect(wrapper.vm.mapCountry).toBe('')
+      expect(map.props('view').center).toEqual([0, 0])
+      expect(map.props('view').bounds).toBeUndefined()
       expect(map.props('points')).toEqual([])
       expect(wrapper.text()).toContain('暂无合法经纬度记录，展示初始视角')
       wrapper.unmount()
@@ -277,7 +279,7 @@ describe('DashboardHome', () => {
     expect(map.props('empty')).toBe(true)
     expect(map.props('emptyDescription')).toBe('本地地图正在加载')
 
-    finish({ ok: true, json: async () => chinaMap })
+    finish({ ok: true, json: async () => worldMap })
     await flushPromises()
     expect(wrapper.findComponent({ name: 'DashboardHeatmap' }).props('empty')).toBe(false)
     wrapper.unmount()
@@ -334,7 +336,6 @@ describe('DashboardHome', () => {
     }))
     const wrapper = mount(DashboardHome, { global: { stubs: { DashboardHeatmap: true, DashboardChart: true } } })
     await flushPromises()
-    await wrapper.vm.changeMapCountry('')
     await wrapper.vm.$nextTick()
     const map = wrapper.findComponent({ name: 'DashboardHeatmap' })
     map.vm.$emit('region-click', '美国')
@@ -343,7 +344,7 @@ describe('DashboardHome', () => {
     expect(wrapper.vm.mapLevel).toBe('ADM1')
     expect(wrapper.vm.mapGeoJson.features[0].properties.shapeID).toBe('region-1')
     expect(wrapper.vm.mapCamera.center).toEqual([-95, 35])
-    expect(wrapper.vm.mapCamera.bounds).toEqual([[-100.8, 40.8], [-89.2, 29.2]])
+    expect(wrapper.vm.mapCamera.bounds).toEqual([[-101, 41], [-89, 29]])
     expect(wrapper.vm.mapLayerOptions.map(layer => layer.level)).toEqual(['ADM0', 'ADM1', 'ADM2'])
     expect(wrapper.text()).toContain('geoBoundaries')
     await wrapper.vm.openMapCountry('region-1')
@@ -403,8 +404,8 @@ describe('DashboardHome', () => {
     expect(wrapper.vm.mapLevel).toBe('ADM2')
     expect(wrapper.vm.mapRegionPathLabel).toBe('州一')
     expect(Object.keys(wrapper.vm.mapFeatureIndex)).toEqual(['county-1'])
-    expect(wrapper.vm.mapCamera.center).toEqual([-97.5, 5])
-    expect(wrapper.vm.mapCamera.bounds).toEqual([[-100.4, 10.8], [-94.6, -0.8]])
+    expect(wrapper.vm.mapCamera.center).toEqual([-95, 10])
+    expect(wrapper.vm.mapCamera.bounds).toEqual([[-100.8, 21.6], [-89.2, -1.6]])
     wrapper.vm.sections.applications.data.geo = {
       points: [
         { longitude: -98, latitude: 5, count: 2 },
@@ -413,10 +414,50 @@ describe('DashboardHome', () => {
     }
     await wrapper.vm.$nextTick()
     expect(wrapper.vm.mapPoints).toEqual([{ longitude: -98, latitude: 5, count: 2 }])
+    await wrapper.vm.openMapCountry('county-1')
+    expect(wrapper.vm.mapRegionPathLabel).toBe('州一 / 县一')
+    expect(wrapper.vm.mapCamera.center).toEqual([-97.5, 5])
+    expect(wrapper.vm.mapCamera.bounds).toEqual([[-100.4, 10.8], [-94.6, -0.8]])
+    await wrapper.vm.drillUpMap()
+    expect(wrapper.vm.mapRegionPathLabel).toBe('州一')
+    expect(wrapper.vm.mapLevel).toBe('ADM2')
     await wrapper.vm.drillUpMap()
     await flushPromises()
     expect(wrapper.vm.mapLevel).toBe('ADM1')
     expect(wrapper.vm.mapRegionPath).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  test('明细未返回或失败时继续显示选中边界，延迟响应不能带回旧国家', async () => {
+    const country = (code, name, west) => ({
+      type: 'Feature', properties: { ADM0_A3: code, NAME_ZH: name },
+      geometry: { type: 'Polygon', coordinates: [[[west, 0], [west + 10, 0], [west, 10], [west, 0]]] }
+    })
+    const world = { type: 'FeatureCollection', features: [country('AAA', '甲国', 10), country('BBB', '乙国', 50)] }
+    let finish
+    fetch.mockImplementation(async url => {
+      if (url === '/states.json') return new Promise(resolve => { finish = resolve })
+      return { ok: true, json: async () => url.includes('world') ? world :
+        { countries: [{ code: 'AAA', name: '甲国', layers: [{ level: 'ADM1', url: '/states.json' }] }] } }
+    })
+    const wrapper = shallowMount(DashboardHome)
+    await flushPromises()
+    const pending = wrapper.vm.openMapCountry('甲国')
+    await flushPromises()
+    expect(wrapper.vm.mapCamera.center).toEqual([15, 5])
+    expect(wrapper.vm.mapGeoJson.features[0].properties.shapeName).toBe('甲国')
+    finish({ ok: false })
+    await pending
+    expect(wrapper.vm.mapReady).toBe(true)
+    expect(wrapper.vm.mapError).toContain('行政区边界加载失败')
+    const retry = wrapper.vm.loadMap()
+    await wrapper.vm.changeMapCountry('BBB')
+    finish({ ok: false })
+    await retry
+    expect(wrapper.vm.mapCountry).toBe('BBB')
+    expect(wrapper.vm.mapCamera.center).toEqual([55, 5])
+    expect(wrapper.vm.mapGeoJson.features[0].properties.shapeName).toBe('乙国')
+    expect(wrapper.vm.mapError).toBe('')
     wrapper.unmount()
   })
 
