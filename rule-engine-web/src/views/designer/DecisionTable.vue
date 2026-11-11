@@ -665,7 +665,7 @@ export default {
       this.normalizeModel()
       const result = await this.saveDraftModel(JSON.stringify(this.model))
       if (!result) return false
-      this.refreshProjectRefs()
+      this.refreshProjectRefs({ afterSave: true })
       this.$message.success('草稿已保存')
       return result
 

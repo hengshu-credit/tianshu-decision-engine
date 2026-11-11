@@ -150,7 +150,7 @@
                 <dd>{{ recentExecution.createTime || '-' }}</dd>
               </div>
             </dl>
-            <el-button link type="primary" :disabled="!canUseAction(logAction.actionCode)" @click="$emit('action', logAction)">
+            <el-button link type="primary" :disabled="!canUseAction(logAction.actionCode)" @click="$emit('action', { ...logAction, traceId: recentExecution.traceId })">
               查看执行日志
             </el-button>
           </template>

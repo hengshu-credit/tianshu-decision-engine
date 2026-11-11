@@ -10,6 +10,7 @@
 
 import { mount } from '@test-utils'
 import varPickerMixin from '@/mixins/varPickerMixin'
+import { setCurrentUser, clearCurrentUser } from '@/security/permissionState'
 
 // 直接 import setup.js 预置的 mock
 import * as definitionApi from '@/api/definition'
@@ -85,6 +86,26 @@ describe('varPickerMixin', () => {
     mountedWrappers.push(wrapper)
     return wrapper.vm
   }
+
+  test('保存后复核修订但复用同一项目目录，授权版本变化时重新加载', async () => {
+    for (const sourceId of ['7', '8', '8']) {
+      definitionApi.getRuleReferenceCatalog.mockResolvedValueOnce({ data: { status: 'AVAILABLE', localEditingAllowed: true,
+        referenceNamespace: 'LOCAL', variables: [], objectTree: [], models: [], functions: [], rules: [], apis: [], lists: [],
+        executionIdentity: { definitionId: '1', sourceType: 'REVISION', sourceId } } })
+    }
+    setCurrentUser({ userId: 3, permissionVersion: 1, permissions: ['field:view'] })
+    const vm = mountMixinVM({ mixins: [varPickerMixin], data: () => ({ definitionId: 1, draftGuardActive: true, usesDesignerReferenceCatalog: true }) })
+    try {
+      await vm.loadDesignerReferenceCatalog({ id: '7', state: 'DRAFT' })
+      await vm.loadDesignerReferenceCatalog({ id: '8', state: 'DRAFT' }, { afterSave: true })
+      expect(definitionApi.getRuleReferenceCatalog).toHaveBeenCalledTimes(2)
+      expect(variableApi.listVariablesByProject).toHaveBeenCalledTimes(1)
+      expect(vm.projectRefs.some(field => field.refCode === 'age')).toBe(true)
+      setCurrentUser({ userId: 3, permissionVersion: 2, permissions: ['field:view'] })
+      await vm.loadDesignerReferenceCatalog({ id: '8', state: 'DRAFT' }, { afterSave: true })
+      expect(variableApi.listVariablesByProject).toHaveBeenCalledTimes(2)
+    } finally { clearCurrentUser() }
+  })
 
   test.each([false, true])('枚举选项从平台响应 data 解包，保持值和标签原样（对象字段=%s）', async objectField => {
     const vm = mountMixinVM({ mixins: [varPickerMixin] })

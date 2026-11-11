@@ -24,6 +24,24 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 public class ConsoleOperationAuditTest {
+    @Test public void testSchemaRecordsAReadAgainstItsActualTarget() throws Exception {
+        var logs = new Logs();
+        var mvc = mvc(new Metadata(), logs, true);
+        for (var target : Map.of("RULE", "rule", "MODEL", "model", "VARIABLE", "field", "EXPERIMENT", "experiment").entrySet()) {
+            mvc.perform(post("/api/rule/test-schema").session(session()).contentType(MediaType.APPLICATION_JSON)
+                    .content(JSON.toJSONString(Map.of("targetType", target.getKey(), "targetId", 12, "modelJson", "PRIVATE_DESIGN"))))
+                    .andExpect(status().isOk());
+            Assert.assertEquals("READ", logs.saved.getAction());
+            Assert.assertEquals(target.getValue(), logs.saved.getModule());
+            Assert.assertEquals(target.getKey(), logs.saved.getTargetType());
+            Assert.assertEquals("12", logs.saved.getTargetId());
+            assertMetadataOnly(logs.saved);
+        }
+        mvc.perform(post("/api/rule/definition/12/revisions/18/preflight").session(session())).andExpect(status().isOk());
+        Assert.assertEquals("READ", logs.saved.getAction());
+        Assert.assertEquals("rule", logs.saved.getModule());
+        Assert.assertEquals("12", logs.saved.getTargetId());
+    }
     @Test public void ledgerVisitsUseTheLedgerModuleAndIdentifyArticlesByRoute() throws Exception {
         var logs = new Logs();
         var checked = new java.util.ArrayList<String>();
@@ -278,6 +296,10 @@ public class ConsoleOperationAuditTest {
         public String getSourceConfig() { throw new AssertionError("不能读取操作内容"); }
     }
     @RestController static class TestController {
+        @PostMapping("/api/rule/definition/{definitionId}/revisions/{revisionId}/preflight") @RequirePermission("rule:view")
+        public ApiResponse<Void> preflight() { return ApiResponse.ok(); }
+        @PostMapping("/api/rule/test-schema") @RequirePermission("rule:view")
+        public ApiResponse<Void> schema(@RequestBody com.hengshucredit.rule.model.dto.RuleTestSchemaRequest body) { return ApiResponse.ok(); }
         @PostMapping("/api/rule/definition/save") public ApiResponse<Map<String, Object>> createRule(@RequestBody Map<String, Object> body) { return ApiResponse.ok(Map.of("id", 22, "ruleName", "新规则")); }
         @DeleteMapping("/api/rule/definition/{id}") public ApiResponse<Void> deleteRule() { return ApiResponse.ok(); }
         @PostMapping("/api/rule/governance/rules/{id}/delete") @RequirePermission("rule:edit")

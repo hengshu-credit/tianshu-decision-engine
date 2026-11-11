@@ -755,6 +755,7 @@ ruleOptionsLoading: false,
 projectOptionsLoaded: false,
 ruleOptionsLoaded: false,
 contextProjectId: null,
+focusedTrace: false,
 contextProjectCode: '',
 contextError: '',
 ruleSetStatsLoading: false,
@@ -818,13 +819,19 @@ else { this.detailRequestId++; this.detailLoading = false; this.replayLoadingId 
 },
 },
 created: async function () {
-this.initDefaultTimeRange()
 var contextId = routeProjectId(
   this.$route,
   this.$store && this.$store.state.currentProject
 )
 this.contextProjectId = contextId
-this.restoreCachedState()
+const trace = this.$route?.query?.traceId
+this.focusedTrace = typeof trace === 'string' && Boolean(trace.trim())
+if (this.focusedTrace) {
+  this.qp.traceId = trace
+} else {
+  this.initDefaultTimeRange()
+  this.restoreCachedState()
+}
 if (contextId) {
   var currentProject = this.$store && this.$store.state.currentProject
   if (currentProject && Number(currentProject.id) === contextId && currentProject.projectCode) {
@@ -921,6 +928,7 @@ this.qp.pageNum = Number.isInteger(pageNum) && pageNum > 0 ? pageNum : 1
 this.qp.pageSize = allowedPageSizes.indexOf(pageSize) >= 0 ? pageSize : 20
 },
 saveCachedState: function () {
+if (this.focusedTrace) return
 savePageState(projectPageStateKey('ExecutionLog', this.contextProjectId), {
   qp: this.qp,
   timeRange: this.timeRange,
@@ -935,6 +943,10 @@ try {
   this.normalizePagination()
   this.saveCachedState()
   var params = Object.assign({}, this.qp)
+  if (this.contextProjectId) {
+    params.projectId = this.contextProjectId
+    if (this.focusedTrace && params.projectCode === this.contextProjectCode) delete params.projectCode
+  }
   if (this.timeRange && this.timeRange.length === 2) {
     params.startTime = this.timeRange[0]
     params.endTime = this.timeRange[1]
@@ -1303,7 +1315,7 @@ this.qp.tokenCode = ''
 this.qp.traceId = ''
 this.qp.pageNum = 1
 this.initDefaultTimeRange()
-clearPageState(projectPageStateKey('ExecutionLog', this.contextProjectId))
+if (!this.focusedTrace) clearPageState(projectPageStateKey('ExecutionLog', this.contextProjectId))
 if (this.activeView === 'ruleSetStats') this.loadRuleSetStats()
 else this.load()
 },

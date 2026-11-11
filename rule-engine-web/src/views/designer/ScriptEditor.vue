@@ -555,7 +555,7 @@ export default {
       this.compileStatus = result.compileSuccess ? 1 : 2
       this.compileMessage = result.compileMessage || ''
       this.$message.success('草稿已保存')
-      this.refreshProjectRefs()
+      this.refreshProjectRefs({ afterSave: true })
       return result
     },
     handleSave() {

@@ -112,7 +112,7 @@ public class RuleTestTargetResolver {
         RuleFieldAnalyzer.ResolvedFields fields = fieldSnapshotResolver.resolveRevision(revision, artifact);
         var error = fields.getDiagnostics().stream().filter(issue -> "ERROR".equals(issue.getSeverity())).findFirst();
         if (error.isPresent()) throw new IllegalArgumentException("所选修订无法执行：" + error.get().getMessage());
-        ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot = runtimeSnapshots.load(artifactId, definitionId, projectId);
+        ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot = runtimeSnapshots.loadFromArtifact(artifact, definitionId, projectId);
         if (snapshot.getCompiledScript() == null || snapshot.getCompiledScript().isBlank()
                 || snapshot.getModelJson() == null || snapshot.getModelJson().isBlank())
             throw new IllegalArgumentException("所选修订的制品缺少完整执行内容，不能改用当前规则执行");

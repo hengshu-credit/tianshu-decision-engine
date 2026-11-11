@@ -166,14 +166,6 @@ public class RuleFieldAnalyzer {
         }
         List<RuleDefinitionInputField> inputFields = extractInputFields(modelJson, modelType);
         List<RuleDefinitionOutputField> outputFields = extractOutputFields(modelJson, modelType);
-        Map<String, Long> existingInputVarMap = definitionId == null
-                ? Collections.emptyMap() : getExistingVarIdMap(definitionId, true);
-        Map<String, Long> existingOutputVarMap = definitionId == null
-                ? Collections.emptyMap() : getExistingVarIdMap(definitionId, false);
-        Map<String, String> existingInputRefTypeMap = definitionId == null
-                ? Collections.emptyMap() : getExistingRefTypeMap(definitionId, true);
-        Map<String, String> existingOutputRefTypeMap = definitionId == null
-                ? Collections.emptyMap() : getExistingRefTypeMap(definitionId, false);
         Map<String, RuleDefinitionInputField> existingInputFieldMap = definitionId == null
                 ? Collections.emptyMap() : getExistingInputFieldMap(definitionId);
         Map<String, FieldRef> explicitRefMap = collectExplicitRefs(modelJson);
@@ -183,7 +175,7 @@ public class RuleFieldAnalyzer {
         List<RuleDefinitionInputField> preparedInputFields = new ArrayList<>();
         for (RuleDefinitionInputField field : inputFields) {
             applyExplicitRef(field, explicitRefMap);
-            enrichFieldFromMeta(field, varMetaMap, existingInputVarMap, existingInputRefTypeMap);
+            enrichFieldFromMeta(field, varMetaMap);
             preparedInputFields.add(field);
         }
         preparedInputFields.addAll(ruleCallFields.getInputFields());
@@ -194,7 +186,7 @@ public class RuleFieldAnalyzer {
                 Collections.newSetFromMap(new IdentityHashMap<>());
         for (RuleDefinitionOutputField field : outputFields) {
             applyExplicitRef(field, explicitRefMap);
-            enrichFieldFromMeta(field, varMetaMap, existingOutputVarMap, existingOutputRefTypeMap);
+            enrichFieldFromMeta(field, varMetaMap);
             preparedOutputFields.add(field);
         }
         for (RuleDefinitionOutputField field : ruleCallFields.getOutputFields()) {
@@ -977,7 +969,7 @@ public class RuleFieldAnalyzer {
         Map<String, Map<String, Object>> varMetaMap = buildVarMetaMap(projectId);
         List<RuleDefinitionInputField> prepared = new ArrayList<>();
         for (RuleDefinitionInputField field : fields) {
-            enrichFieldFromMeta(field, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
+            enrichFieldFromMeta(field, varMetaMap);
             prepared.add(field);
         }
         return expandModelInputFields(prepared, varMetaMap);
@@ -1044,7 +1036,7 @@ public class RuleFieldAnalyzer {
         for (RuleModelInputField field : root.getInputFields()) {
             if (Integer.valueOf(0).equals(field.getStatus())) continue;
             for (RuleDefinitionInputField input : frozen.copyModelInputFields(field)) {
-                frozen.enrichFieldFromMeta(input, metadata, Collections.emptyMap(), Collections.emptyMap());
+                frozen.enrichFieldFromMeta(input, metadata);
                 inputs.add(input);
             }
         }
@@ -1378,12 +1370,10 @@ public class RuleFieldAnalyzer {
 
     /**
      * 用变量元信息丰富字段：fieldLabel / varType / scriptName / varId。
-     * 已有用户关联的 varId 保留；若未关联但 metaMap 中有对应变量，则自动填充 varId。
+     * 只按已有的 ID 和引用类型补齐显示信息。
      */
     private void enrichFieldFromMeta(RuleDefinitionInputField field,
-            Map<String, Map<String, Object>> varMetaMap,
-            Map<String, Long> existingVarMap,
-            Map<String, String> existingRefTypeMap) {
+            Map<String, Map<String, Object>> varMetaMap) {
         Map<String, Object> meta = findMetaById(field.getVarId(), field.getRefType(), varMetaMap);
         if (meta != null) {
             // 补充变量元信息
@@ -1408,9 +1398,7 @@ public class RuleFieldAnalyzer {
      * 用变量元信息丰富输出字段。
      */
     private void enrichFieldFromMeta(RuleDefinitionOutputField field,
-            Map<String, Map<String, Object>> varMetaMap,
-            Map<String, Long> existingVarMap,
-            Map<String, String> existingRefTypeMap) {
+            Map<String, Map<String, Object>> varMetaMap) {
         Map<String, Object> meta = findMetaById(field.getVarId(), field.getRefType(), varMetaMap);
         if (meta != null) {
             if (field.getFieldLabel() == null || field.getFieldLabel().isEmpty() || field.getFieldLabel().equals(field.getFieldName())) {
@@ -1642,7 +1630,7 @@ public class RuleFieldAnalyzer {
             List<RuleDefinitionInputField> listDependencies =
                     buildListDependencyFields(field, varMetaMap);
             for (RuleDefinitionInputField listDependency : listDependencies) {
-                enrichFieldFromMeta(listDependency, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
+                enrichFieldFromMeta(listDependency, varMetaMap);
                 expandFieldRecursive(listDependency, varMetaMap, seen, visited, result);
             }
             if (listDependencies.isEmpty()) {
@@ -1715,7 +1703,7 @@ public class RuleFieldAnalyzer {
                 hasResolvedDependency = true;
             }
             for (RuleDefinitionInputField expanded : expandedFields) {
-                enrichFieldFromMeta(expanded, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
+                enrichFieldFromMeta(expanded, varMetaMap);
                 expandFieldRecursive(expanded, varMetaMap, seen, visited, result);
             }
         }
@@ -1807,7 +1795,7 @@ public class RuleFieldAnalyzer {
             depField.setFieldType(inferFieldType(depName));
             depField.setStatus(1);
             depField.setCreateTime(LocalDateTime.now());
-            enrichFieldFromMeta(depField, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
+            enrichFieldFromMeta(depField, varMetaMap);
             Map<String, Object> depMeta = findFieldMeta(depField, varMetaMap);
             if (depField.getRefType() == null && depMeta != null && depMeta.get("refType") != null) {
                 depField.setRefType(normalizeRefType(String.valueOf(depMeta.get("refType"))));
@@ -2104,61 +2092,6 @@ public class RuleFieldAnalyzer {
         }
     }
 
-    /**
-     * 收集已存在的 varId 映射（scriptName -> varId）
-     */
-    private Map<String, Long> getExistingVarIdMap(Long definitionId, boolean isInput) {
-        Map<String, Long> map = new HashMap<>();
-        if (isInput) {
-            List<RuleDefinitionInputField> fields = inputFieldMapper.selectList(
-                    new LambdaQueryWrapper<RuleDefinitionInputField>()
-                            .eq(RuleDefinitionInputField::getDefinitionId, definitionId)
-                            .isNotNull(RuleDefinitionInputField::getVarId));
-            for (RuleDefinitionInputField f : fields) {
-                if (f.getScriptName() != null && f.getVarId() != null) {
-                    map.put(f.getScriptName(), f.getVarId());
-                }
-            }
-        } else {
-            List<RuleDefinitionOutputField> fields = outputFieldMapper.selectList(
-                    new LambdaQueryWrapper<RuleDefinitionOutputField>()
-                            .eq(RuleDefinitionOutputField::getDefinitionId, definitionId)
-                            .isNotNull(RuleDefinitionOutputField::getVarId));
-            for (RuleDefinitionOutputField f : fields) {
-                if (f.getScriptName() != null && f.getVarId() != null) {
-                    map.put(f.getScriptName(), f.getVarId());
-                }
-            }
-        }
-        return map;
-    }
-
-    private Map<String, String> getExistingRefTypeMap(Long definitionId, boolean isInput) {
-        Map<String, String> map = new HashMap<>();
-        if (isInput) {
-            List<RuleDefinitionInputField> fields = inputFieldMapper.selectList(
-                    new LambdaQueryWrapper<RuleDefinitionInputField>()
-                            .eq(RuleDefinitionInputField::getDefinitionId, definitionId)
-                            .isNotNull(RuleDefinitionInputField::getVarId));
-            for (RuleDefinitionInputField f : fields) {
-                if (f.getScriptName() != null && f.getVarId() != null) {
-                    map.put(f.getScriptName(), normalizeRefType(f.getRefType()));
-                }
-            }
-        } else {
-            List<RuleDefinitionOutputField> fields = outputFieldMapper.selectList(
-                    new LambdaQueryWrapper<RuleDefinitionOutputField>()
-                            .eq(RuleDefinitionOutputField::getDefinitionId, definitionId)
-                            .isNotNull(RuleDefinitionOutputField::getVarId));
-            for (RuleDefinitionOutputField f : fields) {
-                if (f.getScriptName() != null && f.getVarId() != null) {
-                    map.put(f.getScriptName(), normalizeRefType(f.getRefType()));
-                }
-            }
-        }
-        return map;
-    }
-
     private Map<String, FieldRef> collectExplicitRefs(String modelJson) {
         Map<String, FieldRef> refs = new HashMap<>();
         try {
@@ -2392,7 +2325,7 @@ public class RuleFieldAnalyzer {
         for (RuleDefinitionInputField field : fields) {
             // 脚本语法中的访问路径不可重写；其引用在脚本解析阶段已校验。
             if (!"SCRIPT".equalsIgnoreCase(modelType)) {
-                enrichFieldFromMeta(field, metadata, Collections.emptyMap(), Collections.emptyMap());
+                enrichFieldFromMeta(field, metadata);
             }
         }
         return fields;

@@ -24,6 +24,7 @@ beforeEach(() => {
   api.compileDesignerModel.mockReset()
   api.getDesignerCompileTask.mockReset()
   api.waitForDesignerCompileTask.mockReset().mockResolvedValue({ data: true })
+  api.preflightRuleRevision.mockReset().mockResolvedValue({ data: { revisionId: draft.id, lockVersion: draft.lockVersion, valid: true, errors: [], warnings: [] } })
   api.compileDesignerModel.mockResolvedValue({ data: { compileSuccess: true, compiledScript: 'new;', preflightReport: { valid: true, errors: [] } } })
   api.saveDesignerDraft.mockImplementation(async (_id, data) => ({ data: { revision: { ...draft, id: data.saveMode === 'NEW' ? '88' : draft.id, lockVersion: 5, modelJson: data.modelJson }, compileSuccess: true, issues: [] } }))
 })
@@ -318,6 +319,8 @@ test('发布覆盖请求使用已保存修订锁和业务绑定代次，取消�
   const pending = wrapper.vm.handlePublish()
   await flushPromises()
   expect(wrapper.vm.designerChoice.kind).toBe('publish')
+  expect(api.preflightRuleRevision).toHaveBeenCalledWith('30', draft.id)
+  expect(api.compileDesignerModel).not.toHaveBeenCalled()
   wrapper.vm.resolveDesignerChoice({ action: 'publish', publishMode: 'OVERWRITE', targetVersionId: '8001', comment: '更新额度' })
   await flushPromises()
   expect(wrapper.vm.designerChoice).toMatchObject({ kind: 'submitted', approvalRequestId: '19' })
@@ -330,15 +333,36 @@ test('发布覆盖请求使用已保存修订锁和业务绑定代次，取消�
   wrapper.unmount()
 })
 
+test('从已发布版本另存后测试已保存草稿，继续编辑才切回预览', async () => {
+  const wrapper = await host({ ...draft, state: 'PUBLISHED' })
+  wrapper.vm.designerReferencePreview = true
+  const saved = await wrapper.vm.saveDraftModel(wrapper.vm.modelJson, { saveMode: 'NEW' })
+  expect(wrapper.vm.designerTestExecutionSource).toEqual({ sourceType: 'REVISION', sourceId: saved.revision.id, lockVersion: 5 })
+  wrapper.vm.modelJson = '{"script":"next-edit"}'
+  wrapper.vm.captureDesignerDraftState()
+  expect(wrapper.vm.designerTestExecutionSource).toEqual({ sourceType: 'PREVIEW', baseSourceType: 'REVISION', baseSourceId: saved.revision.id })
+  wrapper.unmount()
+})
+
 test.each([{ allowed: true, requiredCount: 0, message: '暂无启用的固定用例' },
   { allowed: false, requiredCount: 1, message: '固定用例尚未回归' }])('回归状态在发布确认中明确展示且取消不提交：$message', async regression => {
   const wrapper = await host()
   wrapper.vm.modelJson = draft.modelJson
-  api.compileDesignerModel.mockResolvedValueOnce({ data: { compileSuccess: true, preflightReport: { valid: true, errors: [], warnings: [], regression } } })
+  const report = { revisionId: draft.id, lockVersion: 4, valid: regression.allowed, errors: [], warnings: [], regression }
+  if (regression.allowed) api.preflightRuleRevision.mockResolvedValueOnce({ data: report })
+  else {
+    report.errors.push({ code: 'REGRESSION_REQUIRED', message: regression.message })
+    api.preflightRuleRevision.mockRejectedValueOnce({ response: { data: { data: report } } })
+  }
   const pending = wrapper.vm.handlePublish()
   await flushPromises()
-  expect(wrapper.vm.designerChoice.warnings).toEqual([expect.objectContaining({ message: regression.message })])
-  wrapper.vm.resolveDesignerChoice({ action: 'cancel' })
+  if (regression.allowed) {
+    expect(wrapper.vm.designerChoice.warnings).toEqual([expect.objectContaining({ message: regression.message })])
+    wrapper.vm.resolveDesignerChoice({ action: 'cancel' })
+  } else {
+    expect(wrapper.vm.designerChoice).toBeNull()
+    expect(wrapper.vm.designerValidationReport).toMatchObject({ autoOpen: true, errors: report.errors })
+  }
   await pending
   expect(api.publishDesignerDraft).not.toHaveBeenCalled()
   wrapper.unmount()

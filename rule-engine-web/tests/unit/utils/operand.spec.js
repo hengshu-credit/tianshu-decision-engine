@@ -22,6 +22,13 @@ import {
 } from '@/utils/operand'
 
 describe('operand', () => {
+  test('冻结目录切到实时目录时，同一稳定 ID 的数字表示不改写画布', () => {
+    const item = { _varId: 15, _refType: 'VARIABLE', varCode: 'CycleScore', varLabelText: '分数', varType: 'NUMBER' }
+    const selected = createReferenceOperand({ ...item, _varId: '15' })
+    expect(syncOperandReference(selected, [item])).toEqual({ operand: selected, changed: false })
+    expect(syncOperandReference(selected, [{ ...item, varCode: 'RenamedScore' }]).operand)
+      .toMatchObject({ refId: '15', code: 'RenamedScore' })
+  })
   test('指定业务版本生成脚本时保留版本来源，与不可变历史快照区分', () => {
     const operand = { kind: 'REFERENCE', refType: 'VARIABLE', refId: '3', versionMode: 'FIXED', versionId: '8', versionSource: 'BUSINESS_VERSION' }
     expect(compileOperand(operand)).toBe('resourceVersionValue("VARIABLE", "3", "BUSINESS_VERSION:8", "")')

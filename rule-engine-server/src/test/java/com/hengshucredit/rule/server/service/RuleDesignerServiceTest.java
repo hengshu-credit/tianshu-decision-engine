@@ -176,13 +176,21 @@ public class RuleDesignerServiceTest {
         @Override protected String actor() { return "editor"; }
         @Override protected RuleDesignerSaveOperation findOperation(Long id, String key) { return operations.get(key); }
         @Override protected void insertOperation(RuleDesignerSaveOperation operation) { operations.put(operation.getRequestId(), operation); }
-        @Override protected RuleRevision prepare(Long id, RuleDesignerCompileRequest request) {
-            RuleRevision revision = new RuleRevision();
-            revision.setDefinitionId(id);
-            revision.setState("DRAFT");
-            revision.setLockVersion(0);
-            revision.setModelJson(request.getModelJson());
-            return revision;
+        Fixture() {
+            // 通过实际草稿准备入口验证入队、同步编译和保存前的来源检查。
+            var lifecycle = new RuleLifecycleService() {
+                @Override protected RuleDefinition loadDefinition(Long id) {
+                    var definition = new RuleDefinition(); definition.setId(id); return definition;
+                }
+                @Override protected RuleDefinitionContent loadContent(Long id) { return null; }
+                @Override protected void requireLocalWorkspace(RuleDefinition definition, RuleDefinitionContent content) {
+                    assertNull(content);
+                }
+                @Override protected void requireLocalNamespace(RuleDefinition definition, RuleRevision revision) {
+                    Fixture.this.requireLocalNamespace(revision);
+                }
+            };
+            org.springframework.test.util.ReflectionTestUtils.setField(this, "lifecycleService", lifecycle);
         }
         @Override protected RulePreflightReport preview(RuleRevision revision) {
             previewCalls++;

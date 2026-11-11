@@ -1122,7 +1122,7 @@ export default {
     async performDesignerSave() {
       const result = await this.saveDraftModel(this.serializeDesignerDraft())
       if (!result) return false
-      this.refreshProjectRefs()
+      this.refreshProjectRefs({ afterSave: true })
 
       this.$message.success('草稿已保存')
       return result

@@ -30,7 +30,12 @@ import { makeRefLabel } from '@/utils/varDisplay'
 import { buildPickerOptions, buildReferenceCatalog } from '@/utils/referenceCatalog'
 import { collectOperandReferences, syncOperandReference } from '@/utils/operand'
 import { requireExecutionIdentity } from '@/utils/ruleTestExecutionSource'
-import { hasPermission } from '@/security/permissionState'
+import { getCurrentUser, hasPermission } from '@/security/permissionState'
+
+function catalogOwner() {
+  const user = getCurrentUser()
+  return user?.userId == null ? null : `${user.userId}:${user.permissionVersion ?? 0}`
+}
 
 function designerCatalogRequest(view, definitionId, refreshToken) {
   const source = view?.state === 'VERSION'
@@ -60,6 +65,7 @@ export default {
       frozenReferenceCatalog: null,
       referenceCatalogPromise: null,
       referenceCatalogKey: '',
+      liveCatalogOwner: null,
       referenceCatalogRequestId: 0,
       referenceCatalogError: '',
     }
@@ -126,7 +132,7 @@ export default {
       this.projectLists = []; this.projectApis = []; this.varOptionsByCode = {}
       this.projectIdForRefs = null
       this.referenceCatalogMode = 'UNAVAILABLE'; this.frozenReferenceCatalog = null
-      this.referenceCatalogError = ''; this.referenceCatalogKey = ''
+      this.referenceCatalogError = ''; this.referenceCatalogKey = ''; this.liveCatalogOwner = null
       if (typeof this.invalidateRuleCallOptions === 'function') this.invalidateRuleCallOptions()
     },
     referenceRequestCurrent(requestId) {
@@ -146,11 +152,20 @@ export default {
       }).catch(() => { /* 标题读取失败不影响已验证的冻结引用；LIVE加载仍等待同一请求并处理失败。 */ })
       return pending
     },
-    loadDesignerReferenceCatalog(view, { livePreview = false } = {}) {
+    loadDesignerReferenceCatalog(view, { livePreview = false, afterSave = false } = {}) {
       const definitionId = String(this.definitionId || this.$route?.params?.id || '')
       const { source, key } = designerCatalogRequest(view, definitionId, this.viewRefreshToken)
       const previous = this.frozenReferenceCatalog
       const previousKey = this.referenceCatalogKey
+      // 保存只修改当前规则。重新确认来源、账号和项目后可继续使用当前页已经加载的业务目录。
+      const owner = this.liveCatalogOwner
+      const priorProject = this.projectIdForRefs
+      const liveFields = afterSave && owner && owner === catalogOwner() && !this.loadingVars && !this.varsLoadError
+        && view?.state === 'DRAFT' && this.referenceCatalogMode === 'LIVE' && previous?.localEditingAllowed
+        && String(previous.executionIdentity?.definitionId) === definitionId ? {
+          projectVars: this.projectVars, projectRefs: this.projectRefs, projectFunctions: this.projectFunctions,
+          projectApis: this.projectApis, projectLists: this.projectLists, varOptionsByCode: this.varOptionsByCode,
+        } : null
       this.clearReferenceCatalog()
       const requestId = this.referenceCatalogRequestId
       this.referenceCatalogKey = key
@@ -174,7 +189,21 @@ export default {
           if (live && catalog.localEditingAllowed !== true) throw new Error('该来源尚未建立可验证的本地引用，请先通过离线迁移处理')
           if (live) {
             this.referenceCatalogMode = 'LIVE'
-            await this.loadProjectVars(definitionId, { requestId, managed: true, definitionPromise })
+            const res = liveFields ? await definitionPromise : null
+            if (!this.referenceRequestCurrent(requestId)) return null
+            const definition = res?.data || res
+            const project = definition?.scope === 'GLOBAL' ? 0 : definition?.projectId
+            if (liveFields && catalogOwner() === owner && String(definition?.id) === definitionId
+                && project != null && String(project) === String(priorProject)) {
+              Object.assign(this, liveFields)
+              this.projectIdForRefs = project
+              this.liveCatalogOwner = owner
+              this._trySyncModelVarRefs()
+            } else {
+              const loadingOwner = catalogOwner()
+              await this.loadProjectVars(definitionId, { requestId, managed: true, definitionPromise })
+              if (this.referenceRequestCurrent(requestId) && !this.varsLoadError && loadingOwner === catalogOwner()) this.liveCatalogOwner = loadingOwner
+            }
             if (this.referenceRequestCurrent(requestId) && typeof this.loadRuleCallOptions === 'function') {
               await this.loadRuleCallOptions(definitionId, { catalogReady: true })
             }
@@ -448,9 +477,9 @@ export default {
      * 刷新项目变量/函数列表（设计器保存后调用）。
      * 重新拉取当前项目下的所有数据，更新 projectVars、projectRefs、projectFunctions。
      */
-    async refreshProjectRefs() {
+    async refreshProjectRefs({ afterSave = false } = {}) {
       if (this.usesDesignerReferenceCatalog) return this.viewRevision
-        ? this.loadDesignerReferenceCatalog(this.viewRevision, { livePreview: this.designerReferencePreview }) : null
+        ? this.loadDesignerReferenceCatalog(this.viewRevision, { livePreview: this.designerReferencePreview, afterSave }) : null
       if (this.projectIdForRefs == null) return
       this.loadingVars = true
       this.varsLoadError = false

@@ -57,10 +57,12 @@ public class RuleGovernanceSubmissionService {
         }
         revision.setPublishMode(request.getPublishMode());
         revision.setTargetVersionId(request.getTargetVersionId()); revision.setTargetGeneration(request.getTargetGeneration());
-        publicationValidator.validate(revision);
         lifecycleService.persistRevisionSnapshot(revision);
         RuleLifecycleActionRequest action = new RuleLifecycleActionRequest(); action.setComment(request.getComment());
-        return submit(revision.getId(), action);
+        // submit 在规则锁内完成当前修订的预检和固定用例门禁，并回填本次字段契约。
+        RuleRevision review = lifecycleService.submit(revision.getId(), action);
+        publicationValidator.validateVersionGraph(review);
+        return createApproval(review, action);
     }
 
     public RuleGovernanceSubmissionService(
@@ -80,8 +82,10 @@ public class RuleGovernanceSubmissionService {
     public RuleRevision submit(
             Long revisionId,
             RuleLifecycleActionRequest action) {
-        RuleRevision revision =
-                lifecycleService.submit(revisionId, action);
+        return createApproval(lifecycleService.submit(revisionId, action), action);
+    }
+
+    private RuleRevision createApproval(RuleRevision revision, RuleLifecycleActionRequest action) {
         String actor = operatorResolver.resolve();
         ResourceSnapshot snapshot = adapterRegistry
                 .require(GovernanceResourceTypes.RULE)

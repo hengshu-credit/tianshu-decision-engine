@@ -139,6 +139,25 @@ public class RuleReferenceNamespaceGuardTest {
         }
     }
 
+    @Test public void sameRevisionReusesVerifiedBytesButChecksEveryVersionBinding() {
+        int[] reads = {0};
+        Fixture guard = new Fixture() {
+            @Override protected DecisionArtifact loadArtifact(Long id) { reads[0]++; return super.loadArtifact(id); }
+        };
+        var local = guard.artifactRevision(7L, false);
+        guard.version(70L, local);
+        var second = guard.version(71L, local);
+        var branch = guard.revision(8L, "DRAFT");
+        branch.setSourceType("VERSION"); branch.setSourceId(71L);
+        var root = guard.revision(9L, "DRAFT");
+        root.setSourceType("VERSION"); root.setSourceId(70L); root.setBaseRevisionId(8L);
+        guard.requireLocalNamespace(guard.definition, root);
+        assertEquals(1, reads[0]);
+        second.setArtifactDigest("stale-digest");
+        assertRejected("REFERENCE_NAMESPACE_UNVERIFIABLE", () -> guard.requireLocalNamespace(guard.definition, root));
+        assertEquals(2, reads[0]);
+    }
+
     @Test public void legacyLocalVersionWithoutAnyArtifactStillWorks() {
         Fixture guard = new Fixture();
         RuleDefinitionVersion legacy = new RuleDefinitionVersion(); legacy.setId(70L); legacy.setDefinitionId(30L);

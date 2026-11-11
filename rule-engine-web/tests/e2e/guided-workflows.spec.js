@@ -95,6 +95,30 @@ test('工作台显示执行失败建议并携带项目范围进入日志', async
   assertClean()
 })
 
+test('从最近执行按 trace 和项目 ID 查询，旧日期和规则筛选仅属于普通日志页', async ({ page }) => {
+  const fixtures = workflowFixtures()
+  const trace = 'workbench-current-trace'
+  fixtures.set('/api/rule/project/1/workbench', { checks: [], metrics: {},
+    recentExecution: { traceId: trace, success: 1, ruleCode: 'age_rule', executeTimeMs: 3 } })
+  const { requests, assertClean } = await installDistRoutes(page, { apiData: fixtures })
+  await page.goto('http://tianshu.local/index.html#/project/1')
+  const key = 'qlexpress.pageState.ExecutionLog:project:1'
+  const cached = { qp: { traceId: 'other-trace', ruleCode: 'old_rule', pageNum: 3 }, timeRange: ['2020-01-01 00:00:00', '2020-01-02 00:00:00'] }
+  await page.evaluate(([key, value]) => sessionStorage.setItem(key, JSON.stringify(value)), [key, cached])
+  await page.locator('.recent-panel').getByRole('button', { name: '查看执行日志' }).click()
+  await expect(page.getByPlaceholder('完整 trace_id')).toHaveValue(trace)
+  await expect.poll(() => requests.filter(item => new URL(item.url).pathname === '/api/rule/log/list').length).toBeGreaterThan(0)
+  const params = new URL(requests.filter(item => new URL(item.url).pathname === '/api/rule/log/list').at(-1).url).searchParams
+  expect(params.get('projectId')).toBe('1')
+  expect(params.get('traceId')).toBe(trace)
+  expect(params.get('pageNum')).toBe('1')
+  expect(params.get('ruleCode') || '').toBe('')
+  expect(params.has('startTime')).toBe(false)
+  expect(params.has('endTime')).toBe(false)
+  expect(await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)), key)).toEqual(cached)
+  assertClean()
+})
+
 for (const entry of ['project', 'rule']) {
   test(`${entry} 新建规则按业务说明选型并保留输入内容和类型`, async ({ page }, testInfo) => {
     const fixtures = workflowFixtures()

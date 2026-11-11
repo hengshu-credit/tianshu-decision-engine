@@ -38,6 +38,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 @Service
 public class RuleDesignerService {
@@ -64,17 +65,21 @@ public class RuleDesignerService {
 
     public RuleDesignerCompileResponse compile(Long definitionId, RuleDesignerCompileRequest request) {
         requirePayload(request);
-        return compile(prepare(definitionId, request));
+        return compilePrepared(prepare(definitionId, request));
     }
 
     /** 提交后台编译任务，避免设计器请求被长时间的预检或脚本解析阻塞。 */
     public RuleDesignerCompileTaskResponse submitCompile(Long definitionId,
                                                           RuleDesignerCompileRequest request) {
+        return submitCompile(definitionId, request, null);
+    }
+
+    public RuleDesignerCompileTaskResponse submitCompile(Long definitionId, RuleDesignerCompileRequest request,
+                                                          Consumer<RuleDesignerCompileTaskResponse> onComplete) {
         long submittedAt = System.currentTimeMillis();
         requirePayload(request);
         pruneCompileTasks();
         RuleRevision revision = prepare(definitionId, request);
-        requireLocalNamespace(revision);
         CompileTask task = new CompileTask(UUID.randomUUID().toString(), definitionId);
         task.submittedAt = submittedAt;
         task.queuedAt = System.currentTimeMillis();
@@ -82,7 +87,7 @@ public class RuleDesignerService {
         compileTasks.put(task.taskId, task);
         persistCompileTask(task);
         try {
-            Runnable compile = () -> runCompileTask(task, revision);
+            Runnable compile = () -> runCompileTask(task, revision, onComplete);
             compileExecutor.execute(consoleProjects == null ? compile : consoleProjects.wrap(compile));
         } catch (RejectedExecutionException e) {
             compileTasks.remove(task.taskId);
@@ -109,13 +114,15 @@ public class RuleDesignerService {
         throw error(404, "COMPILE_TASK_NOT_FOUND", "编译任务不存在或已过期");
     }
 
-    private void runCompileTask(CompileTask task, RuleRevision revision) {
+    private void runCompileTask(CompileTask task, RuleRevision revision, Consumer<RuleDesignerCompileTaskResponse> onComplete) {
         task.startedAt = System.currentTimeMillis();
         task.status = "RUNNING";
         persistCompileTask(task);
         String terminalStatus = "SUCCEEDED";
         try {
-            task.result = compile(revision);
+            // 排队期间来源可能变化，后台执行前再次核对。
+            requireLocalNamespace(revision);
+            task.result = compilePrepared(revision);
         } catch (Exception e) {
             task.errorMessage = e.getMessage() == null ? "后台编译失败" : e.getMessage();
             terminalStatus = "FAILED";
@@ -123,6 +130,10 @@ public class RuleDesignerService {
             task.completedAt = System.currentTimeMillis();
             task.status = terminalStatus;
             persistCompileTask(task);
+            if (onComplete != null) {
+                try { onComplete.accept(task.snapshot()); }
+                catch (RuntimeException disconnected) { LOG.debug("Compile response closed for task {}", task.taskId, disconnected); }
+            }
             LOG.info("Rule compile taskId={} definitionId={} status={} prepareMs={} queueMs={} executionMs={}",
                     task.taskId, task.definitionId, task.status, task.queuedAt - task.submittedAt,
                     task.startedAt - task.queuedAt, task.completedAt - task.startedAt);
@@ -146,8 +157,7 @@ public class RuleDesignerService {
         }
     }
 
-    private RuleDesignerCompileResponse compile(RuleRevision revision) {
-        requireLocalNamespace(revision);
+    private RuleDesignerCompileResponse compilePrepared(RuleRevision revision) {
         RulePreflightReport report = preview(revision);
         boolean compiled = report.getCompiledScript() != null && report.getErrors().stream()
                 .noneMatch(issue -> "COMPILE_FAILED".equals(issue.getCode()));
@@ -195,6 +205,7 @@ public class RuleDesignerService {
                     || !revision.getId().equals(request.getSourceId()))) {
                 throw error(400, "SOURCE_REVISION_MISMATCH", "覆盖来源必须是当前草稿");
             }
+            requireLocalNamespace(revision);
         } else {
             revision = prepare(definitionId, request);
             if ("REUSE".equals(request.getRestoreMode())) {
@@ -205,10 +216,9 @@ public class RuleDesignerService {
                 throw error(400, "RESTORE_MODE_INVALID", "恢复方式无效");
             }
         }
-        requireLocalNamespace(revision);
         revision.setModelJson(request.getModelJson());
         RuleDesignerCompileResponse compiled = reuseCompileTask(definitionId, request, revision);
-        if (compiled == null) compiled = compile(revision);
+        if (compiled == null) compiled = compilePrepared(revision);
         if (!overwrite) insertDraft(revision);
 
         RuleDraftSaveRequest save = new RuleDraftSaveRequest();
@@ -345,7 +355,8 @@ public class RuleDesignerService {
         if (lifecycleService.lockDefinition(definitionId) == null)
             throw error(400, "DEFINITION_NOT_FOUND", "规则定义不存在");
     }
-    protected RuleRevision prepare(Long id, RuleDesignerCompileRequest request) {
+    private RuleRevision prepare(Long id, RuleDesignerCompileRequest request) {
+        // prepareDesignerDraft 已校验工作区或显式版本的完整引用来源链。
         RuleRevision revision = lifecycleService.prepareDesignerDraft(id, request.getSourceType(), request.getSourceId());
         revision.setModelJson(request.getModelJson());
         return revision;

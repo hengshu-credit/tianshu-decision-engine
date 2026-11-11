@@ -483,6 +483,8 @@ export function syncOperandReference(operand, options = []) {
   if (!match) return { operand, changed: false }
 
   const current = createReferenceOperand(match)
+  // 冻结目录与实时目录可能分别以字符串、数字传递同一 ID。刷新展示信息时保留模型中已经绑定的原值。
+  current.refId = operand.refId
   const next = operand.kind === OPERAND_KINDS.PATH
     ? {
       ...operand,

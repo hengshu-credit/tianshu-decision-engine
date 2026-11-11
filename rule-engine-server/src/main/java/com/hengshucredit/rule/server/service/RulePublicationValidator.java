@@ -20,6 +20,12 @@ public class RulePublicationValidator {
     @Resource private RuleRegressionEvidenceService regressionEvidence;
 
     public String previewCycle(Long definitionId, String modelJson) {
+        try {
+            if (OperandDependencyCollector.collectReferences(JSON.parse(modelJson)).stream()
+                    .noneMatch(ref -> "RULE".equals(ref.getRefType()) && ref.getRefId() != null)) return null;
+        } catch (RuntimeException invalid) {
+            return "被引用规则版本不存在或缺少有效配置";
+        }
         RuleRevision candidate = new RuleRevision(); candidate.setDefinitionId(definitionId);
         candidate.setPublishMode("NEW"); candidate.setModelJson(modelJson);
         List<RuleVersionBinding> active = bindings.selectList(new LambdaQueryWrapper<RuleVersionBinding>().eq(RuleVersionBinding::getStatus, 1));
@@ -30,6 +36,10 @@ public class RulePublicationValidator {
 
     public void validate(RuleRevision candidate) {
         regressionEvidence.requirePublication(candidate);
+        validateVersionGraph(candidate);
+    }
+
+    void validateVersionGraph(RuleRevision candidate) {
         // Current reads serialize activation checks, so simultaneous publications cannot introduce a cycle.
         List<RuleVersionBinding> active = bindings.selectList(new LambdaQueryWrapper<RuleVersionBinding>()
                 .eq(RuleVersionBinding::getStatus, 1).orderByAsc(RuleVersionBinding::getId).last("FOR UPDATE"));

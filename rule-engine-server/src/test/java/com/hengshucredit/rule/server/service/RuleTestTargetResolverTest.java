@@ -171,7 +171,7 @@ public class RuleTestTargetResolverTest {
                 @Override protected RuleRevision loadTargetRevision(Long id) { return revisions.get(id); }
             });
             ReflectionTestUtils.setField(resolver, "runtimeSnapshots", new ArtifactRuntimeSnapshotService() {
-                @Override protected DecisionArtifact loadArtifact(Long id) { return artifacts.get(id); }
+                @Override protected DecisionArtifact loadArtifact(Long id) { throw new AssertionError("同一次测试解析不应重复读取制品包"); }
                 @Override protected ArtifactDeployment loadDeployment(Long artifactId, Long definitionId) { return deployment; }
                 @Override protected List<ArtifactResourceBinding> loadBindings(Long id) { return List.of(); }
             });

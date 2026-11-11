@@ -35,7 +35,12 @@ function fixtures(id) {
     drafts.set(revisionId, draft)
     return { revision: draft, compileSuccess: true, issues: [], designVersion: 999 }
   })
-  for (const revisionId of ['9001', '9002']) apiData.set(`${base}/revisions/${revisionId}`, () => drafts.get(revisionId))
+  for (const revisionId of ['9001', '9002']) {
+    apiData.set(`${base}/revisions/${revisionId}`, () => drafts.get(revisionId))
+    apiData.set(`POST ${base}/revisions/${revisionId}/preflight`, () => ({
+      revisionId, lockVersion: drafts.get(revisionId).lockVersion, valid: true, errors: [], warnings: [],
+    }))
+  }
   apiData.set('POST /api/rule/test-schema', withTestExecutionIdentity({ inputs: [], runtimeNodes: [], sampleParams: {}, diagnostics: [] }))
   apiData.set('POST /api/rule/definition/execute', withTestExecutionIdentity(({ request }) => {
     executed.push(request.postDataJSON())

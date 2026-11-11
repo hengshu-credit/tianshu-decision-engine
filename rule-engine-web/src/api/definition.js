@@ -2,7 +2,7 @@ import request from './request'
 import { metadataResponse } from '@/utils/metadataResponse'
 
 export function compileDesignerModel(id, data) {
-  return request({ acceptExecutionFailure: true, url: `/rule/definition/${id}/designer/compile`, method: 'post', data })
+  return request({ acceptExecutionFailure: true, url: `/rule/definition/${id}/designer/compile`, method: 'post', headers: { Prefer: 'wait=1' }, data })
 }
 
 export function getDesignerCompileTask(id, taskId) {

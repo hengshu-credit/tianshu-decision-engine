@@ -97,7 +97,9 @@ public class ConsoleOperationAuditFilter extends OncePerRequestFilter {
     static String action(String method, String path) {
         if (path.equals("/api/auth/console/login")) return "LOGIN";
         if (path.equals("/api/auth/console/logout")) return "LOGOUT";
-        if (path.startsWith("/api/rule/transfer/preview") || path.equals("/api/rule/expression/schema") || path.equals("/api/rule/function/methods")) return "READ";
+        if (path.startsWith("/api/rule/transfer/preview") || path.equals("/api/rule/expression/schema")
+                || path.equals("/api/rule/test-schema") || path.equals("/api/rule/function/methods")
+                || path.matches("/api/rule/definition/[0-9]+/revisions/[0-9]+/preflight")) return "READ";
         if (path.equals("/api/rule/variable/preview")) return "DEBUG";
         if ("GET".equals(method) || "HEAD".equals(method)) return path.contains("download") || path.endsWith("/export") ? "EXPORT" : "READ";
         String lower = path.toLowerCase(Locale.ROOT);

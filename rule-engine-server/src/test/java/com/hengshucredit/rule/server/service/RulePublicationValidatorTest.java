@@ -5,6 +5,11 @@ import java.util.*;
 import static org.junit.Assert.*;
 
 public class RulePublicationValidatorTest {
+    @Test public void previewWithOnlyFieldReferencesNeedsNoPublishedVersionDirectory() {
+        var validator = new RulePublicationValidator();
+        assertNull(validator.previewCycle(17L, "{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":\"12\"}"));
+        assertNotNull(validator.previewCycle(17L, "{invalid"));
+    }
     @Test public void finalActivationRechecksRegressionEvidence() {
         var validator = new RulePublicationValidator();
         org.springframework.test.util.ReflectionTestUtils.setField(validator, "regressionEvidence", new RuleRegressionEvidenceService() {

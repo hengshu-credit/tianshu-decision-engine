@@ -1750,9 +1750,9 @@ public class RuleFieldAnalyzerTest {
         varMetaMap.put("riskfactor", meta);
 
         Method enrich = RuleFieldAnalyzer.class.getDeclaredMethod("enrichFieldFromMeta",
-                RuleDefinitionInputField.class, Map.class, Map.class, Map.class);
+                RuleDefinitionInputField.class, Map.class);
         enrich.setAccessible(true);
-        enrich.invoke(analyzer, field, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
+        enrich.invoke(analyzer, field, varMetaMap);
 
         assertEquals("NUMBER", field.getFieldType());
     }
@@ -1764,11 +1764,9 @@ public class RuleFieldAnalyzerTest {
         varMetaMap.put("riskfactor", leafMeta("riskFactor", "INPUT", 241L));
 
         Method enrich = RuleFieldAnalyzer.class.getDeclaredMethod("enrichFieldFromMeta",
-                RuleDefinitionInputField.class, Map.class, Map.class, Map.class);
+                RuleDefinitionInputField.class, Map.class);
         enrich.setAccessible(true);
-        enrich.invoke(analyzer, field, varMetaMap,
-                Collections.singletonMap("riskFactor", 241L),
-                Collections.singletonMap("riskFactor", "VARIABLE"));
+        enrich.invoke(analyzer, field, varMetaMap);
 
         assertNull(field.getVarId());
         assertNull(field.getRefType());

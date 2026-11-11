@@ -175,11 +175,21 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
                                             String traceId, String authType, String authCode, String tokenCode,
                                             LocalDateTime startTime, LocalDateTime endTime,
                                             com.hengshucredit.rule.model.dto.ExecutionVersionQuery versionQuery) {
+        return pageList(pageNum, pageSize, modelType, source, projectCode, projectName, ruleCode, traceId,
+                authType, authCode, tokenCode, startTime, endTime, versionQuery, null);
+    }
+
+    public IPage<RuleExecutionLog> pageList(int pageNum, int pageSize, String modelType, String source,
+                                            String projectCode, String projectName, String ruleCode,
+                                            String traceId, String authType, String authCode, String tokenCode,
+                                            LocalDateTime startTime, LocalDateTime endTime,
+                                            com.hengshucredit.rule.model.dto.ExecutionVersionQuery versionQuery, Long projectId) {
         ProjectFilterService.ProjectMatches projectMatches = projectFilterService.resolve(null, projectName);
         if (projectMatches.isActive() && projectMatches.isEmpty()) {
             return new Page<>(pageNum, pageSize);
         }
         LambdaQueryWrapper<RuleExecutionLog> wrapper = new LambdaQueryWrapper<>();
+        if (projectId != null) wrapper.eq(RuleExecutionLog::getExecutionProjectId, projectId);
         if (versionQuery != null) {
             Integer number = executionVersionFilter.resolve(versionQuery);
             wrapper.eq(versionQuery.getRuleId() != null, RuleExecutionLog::getRootRuleId, versionQuery.getRuleId());

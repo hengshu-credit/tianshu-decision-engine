@@ -249,6 +249,11 @@ export default {
   },
   methods: {
     async enterDesignerLivePreview() {
+      if (this.designerReferencePreview && this.loadingVars && this.referenceCatalogPromise) {
+        const action = this.designerActionSnapshot()
+        await this.referenceCatalogPromise
+        if (!this.isCurrentViewAction(action)) throw new Error('规则来源已变化，请重新操作')
+      }
       if (!this.designerLocalEditingAllowed) throw new Error(this.designerReadOnlyReason || '该来源需要先通过离线迁移建立本地引用')
       if (this.referenceCatalogMode === 'UNAVAILABLE') throw new Error(this.referenceCatalogError || '引用目录尚未就绪')
       if (this.referenceCatalogMode !== 'FROZEN') return
@@ -873,6 +878,7 @@ export default {
       if (!this.isCurrentViewAction(action)) return false
       this.draftRevision = result.revision
       this.viewRevision = result.revision
+      this.designerReferencePreview = false
       this.viewExactRevisionId = String(result.revision.id)
       this.draftIssues = Array.isArray(result.issues) ? result.issues : []
       this.designerRevisions = [result.revision, ...this.designerRevisions.filter(item => String(item.id) !== String(result.revision.id))]
@@ -923,7 +929,11 @@ export default {
         const result = await this.waitForDesignerCompile(definitionId, submitted, action)
         if (result === false) return false
         this.captureDesignerDraftState()
-        if (!this.designerConfigurationMatches(action, modelJson)) return false
+        if (!this.isCurrentViewAction(action)) return false
+        if (!this.designerConfigurationMatches(action, modelJson)) {
+          this.$message.warning('校验期间配置已变化，请重新检查当前内容')
+          return false
+        }
         if (!checkOnly) this.designerCompileResult = result
         const report = result?.preflightReport || (checkOnly ? {
           valid: false,
@@ -957,22 +967,67 @@ export default {
         params,
       }))
     },
+    async savedDraftPublicationReport(definitionId, { id, lockVersion }) {
+      let report
+      try {
+        report = unwrap(await definitionApi.preflightRuleRevision(definitionId, id))
+      } catch (error) {
+        report = error.response?.data?.data
+        if (!report || report.valid !== false) throw error
+      }
+      if (String(report?.revisionId) !== String(id) || report?.lockVersion == null
+          || String(report.lockVersion) !== String(lockVersion)) {
+        throw new Error('校验结果与当前草稿版本不一致，请刷新后重试')
+      }
+      return report
+    },
     handlePublish() {
       return this.runDesignerAction(async () => {
         if (!hasPermission('rule:edit') || !hasPermission('rule:submit')) throw new Error('没有提交规则发布审批的权限')
         if (this.designerBusy) return false
+        if (!this.canEditDraft) throw new Error('当前规则未就绪或没有编辑权限')
+        this.captureDesignerDraftState()
         this.designerBusy = true
         try {
-          let compiled = await this.compileDesignerDraft()
-          if (!compiled?.compileSuccess || !compiled.preflightReport?.valid) return false
-          let saved = await this.saveDraftModel(this.serializeDesignerDraft())
-          if (!saved) return false
-          this.designerVersions = this.normalizeDesignerVersions(await definitionApi.listPublishedVersions(String(this.definitionId || this.$route.params.id)))
+          const definitionId = String(this.definitionId || this.$route.params.id)
+          const initialJson = this.serializeDesignerDraft()
+          const revision = this.viewRevision
+          let saved, report
+          if (revision?.state === 'DRAFT' && initialJson === revision.modelJson && this.designerDraftTrackingReady
+              && createDraftFingerprint(initialJson) === this.designerBaselineFingerprint) {
+            const initialAction = this.designerActionSnapshot()
+            const [checked, versions] = await Promise.all([
+              this.savedDraftPublicationReport(definitionId, revision), definitionApi.listPublishedVersions(definitionId),
+            ])
+            if (!this.isCurrentViewAction(initialAction)) return false
+            if (!this.designerConfigurationMatches(initialAction, initialJson) || String(this.viewRevision.lockVersion) !== String(checked.lockVersion)) {
+              throw new Error('发布准备期间草稿已变化，请重新发布')
+            }
+            if (!checked.valid) {
+              this.designerValidationReport = { ...checked, checkedModelJson: initialJson, autoOpen: true }
+              this.designerActionState = 'CHECK_FAILED'
+              return false
+            }
+            saved = { revision }
+            report = checked
+            this.designerVersions = this.normalizeDesignerVersions(versions)
+          } else {
+            const compiled = await this.compileDesignerDraft()
+            if (!compiled?.compileSuccess || !compiled.preflightReport?.valid) return false
+            report = compiled.preflightReport
+            saved = await this.saveDraftModel(this.serializeDesignerDraft())
+            if (!saved) return false
+            const savedAction = this.designerActionSnapshot()
+            const versions = await definitionApi.listPublishedVersions(definitionId)
+            if (!this.isCurrentViewAction(savedAction) || this.designerHasUnsavedChanges) return false
+            this.designerVersions = this.normalizeDesignerVersions(versions)
+          }
           const action = this.designerActionSnapshot()
           const modelJson = this.serializeDesignerDraft()
-          const regression = compiled.preflightReport?.regression
-          const warnings = [...(compiled.preflightReport?.warnings || [])]
-          if (regression && (!regression.allowed || regression.requiredCount === 0)) warnings.push({ code: 'REGRESSION_STATUS', message: regression.message })
+          const regression = report.regression
+          const warnings = [...(report.warnings || [])]
+          if (regression && (!regression.allowed || regression.requiredCount === 0)
+              && !warnings.some(issue => issue.message === regression.message)) warnings.push({ code: 'REGRESSION_STATUS', message: regression.message })
           const choice = await this.requestDesignerChoice('publish', {
             warnings,
             publishMode: saved.revision.publishMode || 'NEW',
@@ -980,7 +1035,7 @@ export default {
           })
           if (choice.action !== 'publish' || !this.isCurrentViewAction(action)) return false
           if (!this.designerConfigurationMatches(action, modelJson)) {
-            compiled = await this.compileDesignerDraft()
+            const compiled = await this.compileDesignerDraft()
             if (!compiled?.compileSuccess || !compiled.preflightReport?.valid) return false
             saved = await this.saveDraftModel(this.serializeDesignerDraft())
             if (!saved) return false

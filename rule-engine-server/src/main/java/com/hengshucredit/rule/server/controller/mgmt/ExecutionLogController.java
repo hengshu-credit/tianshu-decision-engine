@@ -27,6 +27,7 @@ public class ExecutionLogController {
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize,
             @RequestParam(required = false) String modelType,
             @RequestParam(required = false) String source,
+            @RequestParam(required = false) Long projectId,
             @RequestParam(required = false) String projectCode,
             @RequestParam(required = false) String projectName,
             @RequestParam(required = false) String ruleCode,
@@ -38,7 +39,7 @@ public class ExecutionLogController {
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime,
             @ModelAttribute com.hengshucredit.rule.model.dto.ExecutionVersionQuery versionQuery) {
         return ApiResponse.ok(logService.pageList(pageNum, pageSize, modelType, source, projectCode, projectName,
-                ruleCode, traceId, authType, authCode, tokenCode, startTime, endTime, versionQuery));
+                ruleCode, traceId, authType, authCode, tokenCode, startTime, endTime, versionQuery, projectId));
     }
 
     @GetMapping("/rule-set-stats")

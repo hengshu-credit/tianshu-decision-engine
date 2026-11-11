@@ -18,6 +18,23 @@ public class OperationLogMetadataResolver {
 
     public void request(ConsoleOperationLog log, HttpServletRequest request, Object body) {
         String path = request.getRequestURI().replaceFirst("^/api/rule/", "");
+        if (path.equals("test-schema") && body instanceof com.hengshucredit.rule.model.dto.RuleTestSchemaRequest schema) {
+            String type = Objects.toString(schema.getTargetType(), "").trim().toUpperCase(Locale.ROOT);
+            String module = switch (type) {
+                case "RULE" -> "rule";
+                case "MODEL" -> "model";
+                case "VARIABLE" -> "field";
+                case "EXPERIMENT" -> "experiment";
+                default -> null;
+            };
+            if (module != null) {
+                log.setModule(module);
+                log.setTargetType(type);
+                log.setTargetId(identifier(schema.getTargetId()));
+                log.setTargetVersion(sourceVersion(schema.getExecutionSource()));
+            }
+            return;
+        }
         if (path.startsWith("system/settings")) {
             log.setTargetType("SYSTEM_SETTING");
             String group = path.split("/").length > 2 ? path.split("/")[2] : "brand";

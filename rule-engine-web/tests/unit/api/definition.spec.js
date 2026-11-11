@@ -108,7 +108,7 @@ describe('definition API', () => {
     await getDesignerCompileTask(16, 'task-1')
 
     expect(request).toHaveBeenNthCalledWith(1, {
-      url: '/rule/definition/16/designer/compile', method: 'post', data: payload, acceptExecutionFailure: true
+      url: '/rule/definition/16/designer/compile', method: 'post', headers: { Prefer: 'wait=1' }, data: payload, acceptExecutionFailure: true
     })
     expect(request).toHaveBeenNthCalledWith(2, {
       url: '/rule/definition/16/designer/compile/task-1', method: 'get', acceptExecutionFailure: true

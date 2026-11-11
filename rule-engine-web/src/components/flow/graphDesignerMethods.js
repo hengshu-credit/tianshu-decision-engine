@@ -1012,7 +1012,7 @@ export default {
     const modelJson = JSON.stringify(model)
     const result = await this.saveDraftModel(modelJson)
     if (!result) return false
-    this.refreshProjectRefs()
+    this.refreshProjectRefs({ afterSave: true })
 
     this.$message.success('草稿已保存')
     return result

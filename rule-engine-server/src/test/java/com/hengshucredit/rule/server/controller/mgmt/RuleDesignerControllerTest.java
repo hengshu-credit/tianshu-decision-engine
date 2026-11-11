@@ -19,6 +19,40 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 public class RuleDesignerControllerTest {
+    @Test public void preferredWaitReturnsTheResultOrTheSamePollableTaskOnTimeout() throws Exception {
+        var controller = new RuleDesignerController();
+        var finish = new java.util.concurrent.atomic.AtomicReference<java.util.function.Consumer<RuleDesignerCompileTaskResponse>>();
+        ReflectionTestUtils.setField(controller, "designerService", new RuleDesignerService() {
+            @Override public RuleDesignerCompileTaskResponse submitCompile(Long id, RuleDesignerCompileRequest request,
+                    java.util.function.Consumer<RuleDesignerCompileTaskResponse> onComplete) {
+                assertEquals(Long.valueOf(30), id);
+                finish.set(onComplete);
+                var task = new RuleDesignerCompileTaskResponse();
+                task.setTaskId("same-task"); task.setStatus("PENDING");
+                return task;
+            }
+        });
+        var mvc = MockMvcBuilders.standaloneSetup(controller).build();
+        for (boolean timeout : new boolean[]{false, true}) {
+            var pending = mvc.perform(post("/api/rule/definition/30/designer/compile")
+                    .header("Prefer", "wait=1").contentType("application/json").content("{\"modelJson\":\"{}\"}"))
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.request().asyncStarted()).andReturn();
+            if (timeout) {
+                var context = (org.springframework.mock.web.MockAsyncContext) pending.getRequest().getAsyncContext();
+                for (var listener : context.getListeners()) listener.onTimeout(new jakarta.servlet.AsyncEvent(context));
+            }
+            var terminal = new RuleDesignerCompileTaskResponse();
+            terminal.setTaskId("same-task"); terminal.setStatus("SUCCEEDED");
+            var compiled = new com.hengshucredit.rule.model.dto.RuleDesignerCompileResponse();
+            compiled.setCompiledScript("return 7;"); terminal.setResult(compiled);
+            finish.get().accept(terminal);
+            var body = mvc.perform(asyncDispatch(pending)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            var task = JSON.parseObject(body).getJSONObject("data");
+            assertEquals("same-task", task.getString("taskId"));
+            assertEquals(timeout ? "PENDING" : "SUCCEEDED", task.getString("status"));
+            if (!timeout) assertEquals("return 7;", task.getJSONObject("result").getString("compiledScript"));
+        }
+    }
     @Test public void completionWaitsWithoutBlockingAndReturnsOnlyAHint() throws Exception {
         RuleDesignerController controller = new RuleDesignerController();
         var notifier = new com.hengshucredit.rule.server.service.RuleCompileCompletionNotifier();

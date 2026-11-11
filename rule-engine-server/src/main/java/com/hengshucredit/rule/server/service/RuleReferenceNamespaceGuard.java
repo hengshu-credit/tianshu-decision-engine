@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.HashSet;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -34,6 +36,7 @@ public class RuleReferenceNamespaceGuard {
     private static final class Traversal {
         final Set<Long> path = new HashSet<>();
         final Set<Long> completed = new HashSet<>();
+        final Map<Long, String> verifiedDigests = new HashMap<>();
         RuleRevision frozenSource;
         NamespaceProof proof() { return new NamespaceProof(frozenSource != null, frozenSource); }
     }
@@ -132,11 +135,10 @@ public class RuleReferenceNamespaceGuard {
         }
         RuleRevision revision = loadRevision(version.getRevisionId());
         if (revision == null || !Objects.equals(version.getArtifactId(), revision.getArtifactId())) throw unverifiable();
-        if (version.getArtifactId() != null) {
-            DecisionArtifact artifact = loadArtifact(version.getArtifactId());
-            if (artifact == null || !Objects.equals(version.getArtifactDigest(), artifact.getArtifactDigest())) throw unverifiable();
-        } else if (version.getArtifactDigest() != null) throw unverifiable();
+        if (version.getArtifactId() == null && version.getArtifactDigest() != null) throw unverifiable();
         visitRevision(definitionId, revision, traversal);
+        if (version.getArtifactId() != null && (!traversal.verifiedDigests.containsKey(version.getArtifactId())
+                || !Objects.equals(version.getArtifactDigest(), traversal.verifiedDigests.get(version.getArtifactId())))) throw unverifiable();
     }
 
     private void verifyArtifact(Long definitionId, RuleRevision revision, Traversal traversal) {
@@ -145,6 +147,7 @@ public class RuleReferenceNamespaceGuard {
         if (artifact == null) throw unverifiable();
         RuleFieldAnalyzer.ResolvedFields fields = verifyRevision(revision, artifact);
         if (fields == null || fields.getDiagnostics().stream().anyMatch(issue -> "ERROR".equals(issue.getSeverity()))) throw unverifiable();
+        traversal.verifiedDigests.put(artifact.getId(), artifact.getArtifactDigest());
         // Package verification above validates source metadata and (for imports) the target deployment.
         // Equal numbers in a foreign manifest are not a local ownership proof.
         if (!definitionId.equals(artifact.getDefinitionId()) || !revision.getId().equals(artifact.getRevisionId())) {
@@ -171,7 +174,12 @@ public class RuleReferenceNamespaceGuard {
     }
 
     protected RuleRevision loadRevision(Long id) { return revisionMapper.selectById(id); }
-    protected RuleDefinitionVersion loadVersion(Long id) { return versionMapper.selectById(id); }
+    protected RuleDefinitionVersion loadVersion(Long id) {
+        return versionMapper.selectOne(new LambdaQueryWrapper<RuleDefinitionVersion>()
+                .select(RuleDefinitionVersion::getId, RuleDefinitionVersion::getDefinitionId, RuleDefinitionVersion::getRevisionId,
+                        RuleDefinitionVersion::getArtifactId, RuleDefinitionVersion::getArtifactDigest)
+                .eq(RuleDefinitionVersion::getId, id));
+    }
     protected DecisionArtifact loadArtifact(Long id) { return artifactMapper.selectById(id); }
     protected RuleDefinitionContent loadContent(Long id) {
         return contentMapper.selectOne(new LambdaQueryWrapper<RuleDefinitionContent>()

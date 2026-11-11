@@ -11,6 +11,7 @@ import com.hengshucredit.rule.server.service.RuleDesignerService;
 import com.hengshucredit.rule.server.service.RuleLifecycleService;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.context.request.async.DeferredResult;
 
 @RestController
 @RequestMapping("/api/rule/definition")
@@ -24,6 +25,16 @@ public class RuleDesignerController {
     public ApiResponse<RuleDesignerCompileTaskResponse> compile(@PathVariable Long id,
                                                       @RequestBody RuleDesignerCompileRequest request) {
         return ApiResponse.ok(designerService.submitCompile(id, request));
+    }
+
+    /** 短任务直接返回完整结果，超过一秒仍按原任务 ID 查询；等待不占用请求线程。 */
+    @PostMapping(value = "/{id}/designer/compile", headers = "Prefer=wait=1")
+    public DeferredResult<ApiResponse<RuleDesignerCompileTaskResponse>> compileAndWait(
+            @PathVariable Long id, @RequestBody RuleDesignerCompileRequest request) {
+        var response = new DeferredResult<ApiResponse<RuleDesignerCompileTaskResponse>>(1000L);
+        var submitted = designerService.submitCompile(id, request, task -> response.setResult(ApiResponse.ok(task)));
+        response.onTimeout(() -> response.setResult(ApiResponse.ok(submitted)));
+        return response;
     }
 
     @GetMapping("/{id}/designer/compile/{taskId}")

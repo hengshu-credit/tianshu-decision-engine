@@ -56,7 +56,16 @@ public class ArtifactRuntimeSnapshotService {
     private long modelContentBytes;
 
     public RuntimeSnapshot load(Long artifactId, Long definitionId, Long executionProjectId) {
-        DecisionArtifact artifact = loadArtifact(artifactId);
+        return materialize(loadArtifact(artifactId), artifactId, definitionId, executionProjectId);
+    }
+
+    /** 测试目标已经读取和核对了制品实体，继续使用同一份字节解析执行快照。 */
+    public RuntimeSnapshot loadFromArtifact(DecisionArtifact artifact, Long definitionId, Long executionProjectId) {
+        if (artifact == null || artifact.getId() == null) throw new IllegalStateException("已发布规则缺少不可变决策制品");
+        return materialize(artifact, artifact.getId(), definitionId, executionProjectId);
+    }
+
+    private RuntimeSnapshot materialize(DecisionArtifact artifact, Long artifactId, Long definitionId, Long executionProjectId) {
         if (artifact == null || artifact.getPackageContent() == null) {
             throw new IllegalStateException("已发布规则缺少不可变决策制品");
         }
