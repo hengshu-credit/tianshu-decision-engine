@@ -12,6 +12,54 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  schema-comments:
+    name: Schema comments (MySQL 8)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      mysql:
+        image: mysql:8.4.6
+        env:
+          MYSQL_DATABASE: schema_check
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+        options: >-
+          --health-cmd="mysql --protocol=tcp -h127.0.0.1 -uroot -Dschema_check -e 'SELECT 1'"
+          --health-interval=3s --health-timeout=3s --health-retries=40
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check comments on all tables and columns
+        env:
+          MYSQL_CONTAINER: ${{ job.services.mysql.id }}
+        run: |
+          mysql=(docker exec -i "$MYSQL_CONTAINER" mysql -uroot --default-character-set=utf8mb4 --batch --skip-column-names schema_check)
+          "${mysql[@]}" < rule-engine-server/src/main/resources/sql/schema.sql > /dev/null
+          missing=$("${mysql[@]}" < scripts/quality-gates/check-schema-comments.sql)
+          if [[ -n "$missing" ]]; then
+            printf '缺少中文注释的表或字段\n%s\n' "$missing"
+            exit 1
+          fi
+      - name: Verify comment migration preserves existing column definitions
+        env:
+          MYSQL_CONTAINER: ${{ job.services.mysql.id }}
+        run: |
+          mysql=(docker exec -i "$MYSQL_CONTAINER" mysql -uroot --default-character-set=utf8mb4 --batch --skip-column-names schema_check)
+          dump=(docker exec "$MYSQL_CONTAINER" mysqldump -uroot --no-data --skip-triggers --no-tablespaces --set-gtid-purged=OFF schema_check)
+          sql_dir=rule-engine-server/src/main/resources/sql
+          generate=(python3 "$sql_dir/migrations/2026-11-11-schema-comments.py" "$sql_dir/schema.sql" "$RUNNER_TEMP/schema-dump.sql")
+          column="update_by VARCHAR(83) COLLATE utf8mb4_bin NOT NULL DEFAULT 'legacy\\\\path'"
+          comment=$("${mysql[@]}" -e "SELECT QUOTE(COLUMN_COMMENT) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='rule_dashboard_default' AND COLUMN_NAME='update_by'")
+          "${mysql[@]}" -e "ALTER TABLE rule_dashboard_default MODIFY $column COMMENT $comment"
+          expected=$("${mysql[@]}" -e 'SHOW CREATE TABLE rule_dashboard_default')
+          "${mysql[@]}" -e "ALTER TABLE rule_dashboard_default COMMENT='dashboard', MODIFY $column COMMENT 'operator'"
+          "${dump[@]}" > "$RUNNER_TEMP/schema-dump.sql"
+          "${generate[@]}" > "$RUNNER_TEMP/schema-comments.sql"
+          "${mysql[@]}" --init-command="SET SESSION sql_mode=CONCAT_WS(',',NULLIF(@@SESSION.sql_mode,''),'NO_BACKSLASH_ESCAPES')" < "$RUNNER_TEMP/schema-comments.sql"
+          actual=$("${mysql[@]}" -e 'SHOW CREATE TABLE rule_dashboard_default')
+          [[ "$actual" == "$expected" ]]
+          "${dump[@]}" > "$RUNNER_TEMP/schema-dump.sql"
+          "${generate[@]}" > "$RUNNER_TEMP/schema-comments.sql"
+          test ! -s "$RUNNER_TEMP/schema-comments.sql"
+
   quality-gates:
     name: Runtime quality-gate scripts (Node 22)
     runs-on: ubuntu-24.04

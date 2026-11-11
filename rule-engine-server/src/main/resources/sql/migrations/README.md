@@ -21,6 +21,7 @@
 | 2 | `2026-11-04-operation-log-intervals.sql` | 已有 `console_operation_log` 表且尚未完成操作日志区间升级的数据库；可在新版启动前预先执行，保留历史记录及未知离开时间。 |
 | 3 | `2026-11-11-decision-result-system-constants.sql` | 已有库缺少通过、人审、拒绝系统常量时执行；要求 `rule_variable.system_constant` 及唯一索引已存在。幂等插入 `DECISION_PASS=0`、`DECISION_REVIEW=2`、`DECISION_REJECT=1`；保留已有同名字段的 ID、取值和系统标记。执行后核对末尾查询结果，同名业务字段冲突由管理员处理，不自动覆盖。 |
 | 4 | [2026-11-11-er-foreign-keys.sql](2026-11-11-er-foreign-keys.sql) | 为已有业务表增加客户端 ER 图所读取的物理外键。要求 MySQL 8、InnoDB、稳定 ID 列及父表已就绪，操作见下节。 |
+| 5 | [2026-11-11-schema-comments.py](2026-11-11-schema-comments.py) | 已有库的表或字段缺少中文注释，或使用本次修订的四条旧表注释时执行。使用 Python 3.8+ 标准库，按目标库的实际字段定义生成 SQL，步骤见「已有库中文注释」。 |
 
 前两份脚本检查列/索引是否存在，第三份按唯一索引幂等补齐缺失常量；可在确认失败原因已修复后重试。这一性质不代表未来所有迁移都可重复执行。涉及历史数据变更时，须在对应脚本说明前置版本、预检、执行顺序及回退限制。每次新增迁移同步更新本表，已发布脚本不改写，修正另加新脚本。
 
@@ -40,6 +41,28 @@ ORDER BY TABLE_NAME, COLUMN_NAME;
 ```
 
 对有有效引用的主记录，`RESTRICT` 阻止物理删除。标为 `CASCADE` 的从属关系在父记录物理删除时清理，例如规则内容、变量选项、项目凭据及其令牌。业务的状态变更和逻辑删除不会触发级联。
+
+## 已有库中文注释
+
+第 5 项从本次发布的 `docker/runtime/server.jar` 读取权威中文注释，从目标库的结构导出读取实际列定义。同名表、列缺少中文注释时生成 `ALTER TABLE`，并更新四条能精确识别的旧表注释。已有自定义中文说明、额外列及尚未建表的旧版模块均保留原状。
+
+停止写入、完成备份及前面适用的结构迁移后，在同一维护窗口导出、生成并执行。MySQL 的 `MODIFY COLUMN` 需要重述列定义，因此每次执行和失败重试都要重新导出目标库。下面的 `RELEASE_DIR` 指向本次解压目录，`BACKUP_DIR` 指向此次维护的备份目录。
+
+```bash
+set -e
+docker compose --project-name tianshu-server --env-file config/.env.server \
+  -f docker/docker-compose.mysql.yml exec -T mysql sh -ec \
+  'MYSQL_PWD="$MYSQL_PASSWORD" exec mysqldump --default-character-set=utf8mb4 --no-data --skip-triggers --no-tablespaces --set-gtid-purged=OFF --host=127.0.0.1 --user="$MYSQL_USER" "$MYSQL_DATABASE"' \
+  > "$BACKUP_DIR/schema-before.sql"
+python3 "$RELEASE_DIR/migrations/2026-11-11-schema-comments.py" \
+  "$RELEASE_DIR/docker/runtime/server.jar" "$BACKUP_DIR/schema-before.sql" > "$BACKUP_DIR/schema-comments.sql"
+docker compose --project-name tianshu-server --env-file config/.env.server \
+  -f docker/docker-compose.mysql.yml exec -T mysql sh -ec \
+  'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql --default-character-set=utf8mb4 --binary-mode=1 --host=127.0.0.1 --user="$MYSQL_USER" --database="$MYSQL_DATABASE"' \
+  < "$BACKUP_DIR/schema-comments.sql"
+```
+
+执行后重新导出结构并再次生成，输出文件应为零字节。全新库由 `schema.sql` 直接创建，仓库的 `scripts/quality-gates/check-schema-comments.sql` 可在 MySQL 8 中列出缺少中文注释的基本表和字段。
 
 ## 执行示例（Linux）
 

@@ -85,15 +85,15 @@ public class SchemaSyncService {
             }
             jdbcTemplate.update("INSERT IGNORE INTO rule_system_setting (id, config_json) VALUES (1, '{}'), (2, '{}'), (3, '{}'), (4, '{}')");
             jdbcTemplate.update("INSERT IGNORE INTO console_security_lock (id) VALUES (1)");
-            addColumnIfMissing("console_user", "operator_name", "`operator_name` VARCHAR(64) DEFAULT NULL");
-            addColumnIfMissing("console_user", "merged_into_user_id", "`merged_into_user_id` BIGINT DEFAULT NULL");
-            addColumnIfMissing("console_user", "merged_username", "`merged_username` VARCHAR(64) DEFAULT NULL");
+            addColumnIfMissing("console_user", "operator_name", "`operator_name` VARCHAR(64) DEFAULT NULL COMMENT '固定业务归属标识，恢复改名时保留'");
+            addColumnIfMissing("console_user", "merged_into_user_id", "`merged_into_user_id` BIGINT DEFAULT NULL COMMENT '合并归档后的主账户ID'");
+            addColumnIfMissing("console_user", "merged_username", "`merged_username` VARCHAR(64) DEFAULT NULL COMMENT '合并前登录名，保留给主账户恢复使用'");
             jdbcTemplate.update("UPDATE console_user SET operator_name=username WHERE operator_name IS NULL");
             if (!indexExists("console_user", "uk_console_user_operator_name")) {
                 jdbcTemplate.execute("ALTER TABLE console_user ADD UNIQUE KEY uk_console_user_operator_name (operator_name)");
             }
-            addColumnIfMissing("console_security_lock", "initialized_at", "`initialized_at` DATETIME DEFAULT NULL");
-            addColumnIfMissing("console_security_lock", "administrator_user_id", "`administrator_user_id` BIGINT DEFAULT NULL");
+            addColumnIfMissing("console_security_lock", "initialized_at", "`initialized_at` DATETIME DEFAULT NULL COMMENT '首次初始化完成时间，不能因重启或账户停用清除'");
+            addColumnIfMissing("console_security_lock", "administrator_user_id", "`administrator_user_id` BIGINT DEFAULT NULL COMMENT '超管恢复目标，关联稳定账户ID'");
             jdbcTemplate.update("""
                     UPDATE console_security_lock SET initialized_at=CURRENT_TIMESTAMP,
                     administrator_user_id=(SELECT MIN(u.id) FROM console_user u
@@ -101,9 +101,9 @@ public class SchemaSyncService {
                       WHERE r.role_code='SUPER_ADMIN')
                     WHERE id=1 AND initialized_at IS NULL AND EXISTS (SELECT 1 FROM console_user)
                     """);
-            addColumnIfMissing("console_account_token", "target_email", "`target_email` VARCHAR(256) DEFAULT NULL");
-            addColumnIfMissing("console_user", "project_access_mode", "`project_access_mode` VARCHAR(16) NOT NULL DEFAULT 'ALL'");
-            addColumnIfMissing("console_user", "global_editable", "`global_editable` TINYINT NOT NULL DEFAULT 1");
+            addColumnIfMissing("console_account_token", "target_email", "`target_email` VARCHAR(256) DEFAULT NULL COMMENT '签发时的邮箱，防止链接验证其他邮箱'");
+            addColumnIfMissing("console_user", "project_access_mode", "`project_access_mode` VARCHAR(16) NOT NULL DEFAULT 'ALL' COMMENT '项目访问模式：ALL=默认不限制项目，SELECTED=仅授权项目'");
+            addColumnIfMissing("console_user", "global_editable", "`global_editable` TINYINT NOT NULL DEFAULT 1 COMMENT '是否允许编辑全局内容：0=只读，1=可编辑；仍需对应模块权限'");
             ensureGovernanceSchema();
             ensureRuleGovernanceEffectiveStatus();
             ensureRuleGovernanceLink();
@@ -127,7 +127,7 @@ public class SchemaSyncService {
                     "rule_execution_persistence_outbox",
                     "rule_execution_checkpoint", "rule_experiment_execution_state"));
             if (tableExists("rule_execution_state")) {
-                addColumnIfMissing("rule_execution_state", "result_json", "`result_json` LONGTEXT DEFAULT NULL");
+                addColumnIfMissing("rule_execution_state", "result_json", "`result_json` LONGTEXT DEFAULT NULL COMMENT '已完成执行的结果快照，JSON 格式'");
                 addColumnIfMissing("rule_execution_state", "expire_time",
                         "`expire_time` DATETIME(6) DEFAULT NULL COMMENT '幂等结果保留截止时间'");
                 addIndexIfMissing("rule_execution_state", "idx_execution_state_expire", "`expire_time`");
@@ -167,7 +167,7 @@ public class SchemaSyncService {
         ensureTablesFromSchema(List.of("rule_execution_statistics", "rule_set_statistics_event"));
         addColumnIfMissing("rule_execution_statistics", "format_version", "`format_version` INT NOT NULL DEFAULT 1 COMMENT '统计提取格式版本'");
         addIndexIfMissing("rule_execution_statistics", "idx_execution_statistics_scope", "`format_version`,`project_code`,`create_time`,`trace_id`,`rule_set_stats_status`");
-        addColumnIfMissing("rule_set_statistics_event", "order_key", "`order_key` VARBINARY(22) GENERATED ALWAYS AS (UNHEX(CONCAT(LPAD(HEX(TO_SECONDS(`create_time`)),12,'0'),LPAD(HEX(`log_id`),16,'0'),LPAD(HEX(`frame_index`),8,'0'),LPAD(HEX(`item_index`),8,'0')))) STORED");
+        addColumnIfMissing("rule_set_statistics_event", "order_key", "`order_key` VARBINARY(22) GENERATED ALWAYS AS (UNHEX(CONCAT(LPAD(HEX(TO_SECONDS(`create_time`)),12,'0'),LPAD(HEX(`log_id`),16,'0'),LPAD(HEX(`frame_index`),8,'0'),LPAD(HEX(`item_index`),8,'0')))) STORED COMMENT '由执行时间、日志标识、帧序号和项序号生成的稳定排序键'");
         if (!indexExists("rule_set_statistics_event", "uk_rule_set_event_order")) {
             jdbcTemplate.execute("ALTER TABLE `rule_set_statistics_event` ADD UNIQUE KEY `uk_rule_set_event_order` (`order_key`)");
         }
@@ -175,16 +175,16 @@ public class SchemaSyncService {
 
     private void ensureConsoleOperationLogSchema() {
         ensureTablesFromSchema(List.of("console_operation_log", "console_operation_log_lock"));
-        addColumnIfMissing("console_operation_log", "target_version", "`target_version` VARCHAR(64) DEFAULT NULL");
-        addColumnIfMissing("console_operation_log", "change_summary", "`change_summary` VARCHAR(160) DEFAULT NULL");
-        addColumnIfMissing("console_operation_log", "leave_time", "`leave_time` DATETIME(6) DEFAULT NULL");
+        addColumnIfMissing("console_operation_log", "target_version", "`target_version` VARCHAR(64) DEFAULT NULL COMMENT '本次操作关联的业务版本标识'");
+        addColumnIfMissing("console_operation_log", "change_summary", "`change_summary` VARCHAR(160) DEFAULT NULL COMMENT '操作与变更摘要'");
+        addColumnIfMissing("console_operation_log", "leave_time", "`leave_time` DATETIME(6) DEFAULT NULL COMMENT '连续相同操作最后一次完成的时间'");
         addIndexIfMissing("console_operation_log", "idx_console_operation_user_last", "`user_id`, `id`");
     }
 
     private void ensureLedgerCodesSchema() {
         ensureTablesFromSchema(List.of("rule_ledger_type", "rule_ledger_event"));
-        addColumnIfMissing("rule_ledger_type", "type_code", "`type_code` VARCHAR(128) DEFAULT NULL");
-        addColumnIfMissing("rule_ledger_event", "event_code", "`event_code` VARCHAR(128) DEFAULT NULL");
+        addColumnIfMissing("rule_ledger_type", "type_code", "`type_code` VARCHAR(128) DEFAULT NULL COMMENT '台账类型的业务编码'");
+        addColumnIfMissing("rule_ledger_event", "event_code", "`event_code` VARCHAR(128) DEFAULT NULL COMMENT '台账事件的业务编码'");
         jdbcTemplate.update("UPDATE rule_ledger_type SET type_code=COALESCE(legacy_code,CONCAT('TYPE_',id)) WHERE type_code IS NULL");
         jdbcTemplate.update("UPDATE rule_ledger_event SET event_code=CONCAT('EVENT_',id) WHERE event_code IS NULL");
         if (!indexExists("rule_ledger_type", "uk_ledger_type_code")) jdbcTemplate.execute("ALTER TABLE rule_ledger_type ADD UNIQUE KEY uk_ledger_type_code (type_code)");
@@ -281,17 +281,17 @@ public class SchemaSyncService {
                     "`record_result` TINYINT NOT NULL DEFAULT 0 COMMENT '显式记录字段结果供历史统计'");
         }
         if (tableExists("rule_execution_log")) {
-            addColumnIfMissing("rule_execution_log", "root_rule_id", "`root_rule_id` BIGINT DEFAULT NULL");
-            addColumnIfMissing("rule_execution_log", "execution_project_id", "`execution_project_id` BIGINT DEFAULT NULL");
-            addColumnIfMissing("rule_execution_log", "started_at", "`started_at` DATETIME(6) DEFAULT NULL");
-            addColumnIfMissing("rule_execution_log", "history_fields", "`history_fields` LONGTEXT DEFAULT NULL");
+            addColumnIfMissing("rule_execution_log", "root_rule_id", "`root_rule_id` BIGINT DEFAULT NULL COMMENT '根规则ID快照'");
+            addColumnIfMissing("rule_execution_log", "execution_project_id", "`execution_project_id` BIGINT DEFAULT NULL COMMENT '执行项目ID快照'");
+            addColumnIfMissing("rule_execution_log", "started_at", "`started_at` DATETIME(6) DEFAULT NULL COMMENT '根请求开始时间'");
+            addColumnIfMissing("rule_execution_log", "history_fields", "`history_fields` LONGTEXT DEFAULT NULL COMMENT '按ID存储的请求和显式记录结果快照'");
             addColumnIfMissing("rule_execution_log", "attempt_no", "`attempt_no` INT DEFAULT NULL COMMENT '逻辑执行恢复尝试次数'");
             addIndexIfMissing("rule_execution_log", "idx_history_scope_time", "`execution_project_id`, `root_rule_id`, `started_at`");
             addIndexIfMissing("rule_execution_log", "idx_execution_project_time", "`execution_project_id`, `create_time`, `id`");
         }
         if (tableExists("rule_runtime_call_log")) {
-            addColumnIfMissing("rule_runtime_call_log", "root_trace_id", "`root_trace_id` CHAR(36) DEFAULT NULL");
-            addColumnIfMissing("rule_runtime_call_log", "history_fields", "`history_fields` LONGTEXT DEFAULT NULL");
+            addColumnIfMissing("rule_runtime_call_log", "root_trace_id", "`root_trace_id` CHAR(36) DEFAULT NULL COMMENT '根请求追踪 ID'");
+            addColumnIfMissing("rule_runtime_call_log", "history_fields", "`history_fields` LONGTEXT DEFAULT NULL COMMENT '逻辑外数调用的受管字段ID结果快照'");
             addIndexIfMissing("rule_runtime_call_log", "idx_history_root_api", "`root_trace_id`, `action_type`, `target_ref_id`");
         }
     }
@@ -471,30 +471,30 @@ public class SchemaSyncService {
         ensureUtf8mb4Table("rule_list_record_log");
         if (!tableExists("rule_list_action_receipt")) {
             jdbcTemplate.execute("CREATE TABLE `rule_list_action_receipt` ("
-                    + "`task_id` VARCHAR(64) NOT NULL,"
-                    + "`project_id` BIGINT DEFAULT NULL,"
-                    + "`root_trace_id` CHAR(36) DEFAULT NULL,"
-                    + "`rule_code` VARCHAR(128) DEFAULT NULL,"
-                    + "`rule_version` VARCHAR(32) DEFAULT NULL,"
-                    + "`revision_id` VARCHAR(64) DEFAULT NULL,"
-                    + "`artifact_digest` CHAR(64) DEFAULT NULL,"
-                    + "`changed_count` INT NOT NULL DEFAULT 0,"
-                    + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                    + "`task_id` VARCHAR(64) NOT NULL COMMENT '名单动作任务唯一标识，用于幂等去重',"
+                    + "`project_id` BIGINT DEFAULT NULL COMMENT '所属项目标识，关联 rule_project.id；0 表示全局资源',"
+                    + "`root_trace_id` CHAR(36) DEFAULT NULL COMMENT '本次逻辑执行的根追踪标识',"
+                    + "`rule_code` VARCHAR(128) DEFAULT NULL COMMENT '规则编码快照',"
+                    + "`rule_version` VARCHAR(32) DEFAULT NULL COMMENT '执行时的规则业务版本号',"
+                    + "`revision_id` VARCHAR(64) DEFAULT NULL COMMENT '规则修订标识，关联 rule_revision.id',"
+                    + "`artifact_digest` CHAR(64) DEFAULT NULL COMMENT '决策制品的 SHA-256 摘要',"
+                    + "`changed_count` INT NOT NULL DEFAULT 0 COMMENT '已实际变更的名单记录数量',"
+                    + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',"
                     + "PRIMARY KEY (`task_id`)"
                     + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='异步名单动作幂等回执'");
         }
         ensureUtf8mb4Table("rule_list_action_receipt");
-        addColumnIfMissing("rule_list_action_receipt", "root_trace_id", "`root_trace_id` CHAR(36) DEFAULT NULL");
-        addColumnIfMissing("rule_list_action_receipt", "rule_code", "`rule_code` VARCHAR(128) DEFAULT NULL");
-        addColumnIfMissing("rule_list_action_receipt", "rule_version", "`rule_version` VARCHAR(32) DEFAULT NULL");
-        addColumnIfMissing("rule_list_action_receipt", "revision_id", "`revision_id` VARCHAR(64) DEFAULT NULL");
-        addColumnIfMissing("rule_list_action_receipt", "artifact_digest", "`artifact_digest` CHAR(64) DEFAULT NULL");
-        addColumnIfMissing("rule_list_record_log", "task_id", "`task_id` VARCHAR(64) DEFAULT NULL");
-        addColumnIfMissing("rule_list_record_log", "root_trace_id", "`root_trace_id` CHAR(36) DEFAULT NULL");
-        addColumnIfMissing("rule_list_record_log", "rule_code", "`rule_code` VARCHAR(128) DEFAULT NULL");
-        addColumnIfMissing("rule_list_record_log", "rule_version", "`rule_version` VARCHAR(32) DEFAULT NULL");
-        addColumnIfMissing("rule_list_record_log", "revision_id", "`revision_id` VARCHAR(64) DEFAULT NULL");
-        addColumnIfMissing("rule_list_record_log", "artifact_digest", "`artifact_digest` CHAR(64) DEFAULT NULL");
+        addColumnIfMissing("rule_list_action_receipt", "root_trace_id", "`root_trace_id` CHAR(36) DEFAULT NULL COMMENT '本次逻辑执行的根追踪标识'");
+        addColumnIfMissing("rule_list_action_receipt", "rule_code", "`rule_code` VARCHAR(128) DEFAULT NULL COMMENT '规则编码快照'");
+        addColumnIfMissing("rule_list_action_receipt", "rule_version", "`rule_version` VARCHAR(32) DEFAULT NULL COMMENT '执行时的规则业务版本号'");
+        addColumnIfMissing("rule_list_action_receipt", "revision_id", "`revision_id` VARCHAR(64) DEFAULT NULL COMMENT '规则修订标识，关联 rule_revision.id'");
+        addColumnIfMissing("rule_list_action_receipt", "artifact_digest", "`artifact_digest` CHAR(64) DEFAULT NULL COMMENT '决策制品的 SHA-256 摘要'");
+        addColumnIfMissing("rule_list_record_log", "task_id", "`task_id` VARCHAR(64) DEFAULT NULL COMMENT '规则名单动作任务ID'");
+        addColumnIfMissing("rule_list_record_log", "root_trace_id", "`root_trace_id` CHAR(36) DEFAULT NULL COMMENT '规则根追踪 ID'");
+        addColumnIfMissing("rule_list_record_log", "rule_code", "`rule_code` VARCHAR(128) DEFAULT NULL COMMENT '规则编码'");
+        addColumnIfMissing("rule_list_record_log", "rule_version", "`rule_version` VARCHAR(32) DEFAULT NULL COMMENT '规则版本'");
+        addColumnIfMissing("rule_list_record_log", "revision_id", "`revision_id` VARCHAR(64) DEFAULT NULL COMMENT '规则修订ID'");
+        addColumnIfMissing("rule_list_record_log", "artifact_digest", "`artifact_digest` CHAR(64) DEFAULT NULL COMMENT '规则制品摘要'");
     }
 
     private void ensureListIndexes() {
@@ -548,7 +548,7 @@ public class SchemaSyncService {
                     + "`reason` VARCHAR(512) DEFAULT NULL COMMENT '原因',"
                     + "`remark` VARCHAR(512) DEFAULT NULL COMMENT '备注',"
                     + "`target_status` TINYINT DEFAULT NULL COMMENT '目标状态',"
-                    + "`validation_status` VARCHAR(16) NOT NULL COMMENT 'VALID/DUPLICATE/INVALID',"
+                    + "`validation_status` VARCHAR(16) NOT NULL COMMENT '行校验结果：VALID=有效，DUPLICATE=重复，INVALID=无效',"
                     + "`validation_message` VARCHAR(512) DEFAULT NULL COMMENT '校验信息',"
                     + "`baseline_digest` CHAR(64) DEFAULT NULL COMMENT '目标记录基线SHA-256',"
                     + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',"
@@ -761,16 +761,16 @@ public class SchemaSyncService {
     private void ensureTraceSchema() {
         if (!tableExists("rule_trace_registry")) {
             jdbcTemplate.execute("CREATE TABLE `rule_trace_registry` ("
-                    + "`trace_id` CHAR(36) NOT NULL,"
-                    + "`trace_type` CHAR(2) NOT NULL,"
-                    + "`scope_type` CHAR(1) NOT NULL,"
-                    + "`scope_code` CHAR(4) NOT NULL,"
-                    + "`project_id` BIGINT DEFAULT NULL,"
-                    + "`resource_type` VARCHAR(32) NOT NULL,"
-                    + "`resource_id` BIGINT DEFAULT NULL,"
-                    + "`resource_code` VARCHAR(128) DEFAULT NULL,"
-                    + "`parent_trace_id` CHAR(36) DEFAULT NULL,"
-                    + "`create_time` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),"
+                    + "`trace_id` CHAR(36) NOT NULL COMMENT '全局唯一追踪 ID',"
+                    + "`trace_type` CHAR(2) NOT NULL COMMENT '追踪类型：TB=决策表，TR=决策树，DF=决策流，RS=规则集，CT=交叉表，SC=评分卡，AC=复杂交叉表，AS=复杂评分卡，QL=脚本，AP=外数接口，DB=数据库，SF=远程文件，LS=名单，MD=模型，EX=实验',"
+                    + "`scope_type` CHAR(1) NOT NULL COMMENT '追踪作用域：G=全局，P=项目级',"
+                    + "`scope_code` CHAR(4) NOT NULL COMMENT '四位三十六进制作用域码；全局为 0000，项目级由项目标识编码',"
+                    + "`project_id` BIGINT DEFAULT NULL COMMENT '项目ID',"
+                    + "`resource_type` VARCHAR(32) NOT NULL COMMENT '追踪资源类型：RULE=规则，DATASOURCE=外数接口，DATABASE=数据库，SFTP=远程文件，LIST=名单，MODEL=模型，EXPERIMENT=实验',"
+                    + "`resource_id` BIGINT DEFAULT NULL COMMENT '资源ID',"
+                    + "`resource_code` VARCHAR(128) DEFAULT NULL COMMENT '资源编码快照',"
+                    + "`parent_trace_id` CHAR(36) DEFAULT NULL COMMENT '父规则追踪 ID',"
+                    + "`create_time` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',"
                     + "PRIMARY KEY (`trace_id`),"
                     + "KEY `idx_trace_parent` (`parent_trace_id`),"
                     + "KEY `idx_trace_resource` (`resource_type`, `resource_id`, `create_time`)"
@@ -946,14 +946,14 @@ public class SchemaSyncService {
                 "`resource_type`, `resource_id`, `id`");
         addColumnIfMissing("governance_approval_request", "restore_mode",
                 "`restore_mode` VARCHAR(16) DEFAULT NULL COMMENT '历史恢复方式 NEW/REUSE'");
-        addColumnIfMissing("governance_approval_request", "publish_mode", "`publish_mode` VARCHAR(16) DEFAULT NULL");
-        addColumnIfMissing("governance_approval_request", "target_version_id", "`target_version_id` BIGINT DEFAULT NULL");
-        addColumnIfMissing("governance_approval_request", "expected_target_snapshot_id", "`expected_target_snapshot_id` BIGINT DEFAULT NULL");
-        addColumnIfMissing("governed_resource_version", "deleted", "`deleted` TINYINT NOT NULL DEFAULT 0");
-        addColumnIfMissing("rule_billing_record", "rule_id", "`rule_id` BIGINT DEFAULT NULL");
-        addColumnIfMissing("rule_billing_record", "rule_version", "`rule_version` INT DEFAULT NULL");
-        addColumnIfMissing("rule_billing_record", "revision_id", "`revision_id` BIGINT DEFAULT NULL");
-        addColumnIfMissing("rule_billing_record", "artifact_digest", "`artifact_digest` VARCHAR(64) DEFAULT NULL");
+        addColumnIfMissing("governance_approval_request", "publish_mode", "`publish_mode` VARCHAR(16) DEFAULT NULL COMMENT '发布方式：NEW=新建业务版本，OVERWRITE=覆盖指定业务版本'");
+        addColumnIfMissing("governance_approval_request", "target_version_id", "`target_version_id` BIGINT DEFAULT NULL COMMENT '目标规则业务版本绑定标识，关联 rule_version_binding.id'");
+        addColumnIfMissing("governance_approval_request", "expected_target_snapshot_id", "`expected_target_snapshot_id` BIGINT DEFAULT NULL COMMENT '预期目标版本的快照标识，用于检测并发覆盖'");
+        addColumnIfMissing("governed_resource_version", "deleted", "`deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '是否已逻辑删除：0=未删除，1=已删除'");
+        addColumnIfMissing("rule_billing_record", "rule_id", "`rule_id` BIGINT DEFAULT NULL COMMENT '规则定义标识，关联 rule_definition.id'");
+        addColumnIfMissing("rule_billing_record", "rule_version", "`rule_version` INT DEFAULT NULL COMMENT '执行时的规则业务版本号'");
+        addColumnIfMissing("rule_billing_record", "revision_id", "`revision_id` BIGINT DEFAULT NULL COMMENT '规则修订标识，关联 rule_revision.id'");
+        addColumnIfMissing("rule_billing_record", "artifact_digest", "`artifact_digest` VARCHAR(64) DEFAULT NULL COMMENT '决策制品的 SHA-256 摘要'");
         addColumnIfMissing("governed_resource_version", "business_version",
                 "`business_version` INT DEFAULT NULL COMMENT '业务版本号，可复用；version_no为快照序号'");
         for (String table : List.of("rule_function_version", "rule_experiment_version")) {
@@ -1001,29 +1001,29 @@ public class SchemaSyncService {
     private void ensureApiDocScenarioSchema() {
         if (!tableExists("rule_api_doc_scenario")) {
             jdbcTemplate.execute("CREATE TABLE `rule_api_doc_scenario` ("
-                    + "`id` BIGINT NOT NULL AUTO_INCREMENT,"
-                    + "`definition_id` BIGINT NOT NULL,"
-                    + "`scenario_name` VARCHAR(128) NOT NULL,"
-                    + "`description` VARCHAR(512) DEFAULT NULL,"
-                    + "`request_json` LONGTEXT NOT NULL,"
-                    + "`response_json` LONGTEXT NOT NULL,"
-                    + "`response_source` VARCHAR(16) NOT NULL DEFAULT 'MANUAL',"
-                    + "`outer_code` INT DEFAULT NULL,"
-                    + "`business_code_path` VARCHAR(256) DEFAULT NULL,"
-                    + "`business_code` VARCHAR(256) DEFAULT NULL,"
-                    + "`rule_version` INT NOT NULL,"
-                    + "`revision_id` BIGINT DEFAULT NULL,"
-                    + "`artifact_digest` CHAR(64) DEFAULT NULL,"
-                    + "`include_in_doc` TINYINT NOT NULL DEFAULT 0,"
-                    + "`sort_order` INT NOT NULL DEFAULT 0,"
-                    + "`status` TINYINT NOT NULL DEFAULT 1,"
-                    + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-                    + "`update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
+                    + "`id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',"
+                    + "`definition_id` BIGINT NOT NULL COMMENT '规则定义ID',"
+                    + "`scenario_name` VARCHAR(128) NOT NULL COMMENT '场景名称',"
+                    + "`description` VARCHAR(512) DEFAULT NULL COMMENT '场景说明',"
+                    + "`request_json` LONGTEXT NOT NULL COMMENT '完整请求报文',"
+                    + "`response_json` LONGTEXT NOT NULL COMMENT '完整响应报文',"
+                    + "`response_source` VARCHAR(16) NOT NULL DEFAULT 'MANUAL' COMMENT '响应来源：MANUAL=手工填写，EXECUTED=实际执行采集',"
+                    + "`outer_code` INT DEFAULT NULL COMMENT '平台外层响应码',"
+                    + "`business_code_path` VARCHAR(256) DEFAULT NULL COMMENT '内层业务码路径',"
+                    + "`business_code` VARCHAR(256) DEFAULT NULL COMMENT '内层业务码展示值',"
+                    + "`rule_version` INT NOT NULL COMMENT '保存时规则版本',"
+                    + "`revision_id` BIGINT DEFAULT NULL COMMENT '测试场景绑定的规则修订ID',"
+                    + "`artifact_digest` CHAR(64) DEFAULT NULL COMMENT '测试场景绑定的不可变制品摘要',"
+                    + "`include_in_doc` TINYINT NOT NULL DEFAULT 0 COMMENT '是否纳入接口文档：0=否，1=是',"
+                    + "`sort_order` INT NOT NULL DEFAULT 0 COMMENT '展示顺序',"
+                    + "`status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态：0-停用，1-启用',"
+                    + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',"
+                    + "`update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',"
                     + "PRIMARY KEY (`id`),"
                     + "UNIQUE KEY `uk_api_doc_scenario_name` (`definition_id`, `scenario_name`),"
                     + "KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`),"
                     + "KEY `idx_api_doc_scenario_revision` (`definition_id`, `revision_id`)"
-                    + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Rule API documentation scenarios'");
+                    + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则 API 文档测试场景'");
             return;
         }
         ensureLongTextColumn("rule_api_doc_scenario", "request_json", "完整请求报文");

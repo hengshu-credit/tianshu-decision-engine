@@ -1,0 +1,18 @@
+-- 在 schema.sql 初始化的库中执行，每行给出一个缺少中文注释的表或字段。
+SELECT '当前数据库没有基本表' AS missing_comment
+WHERE NOT EXISTS (
+    SELECT 1 FROM information_schema.TABLES
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'
+)
+UNION ALL
+SELECT t.TABLE_NAME
+FROM information_schema.TABLES t
+WHERE t.TABLE_SCHEMA = DATABASE() AND t.TABLE_TYPE = 'BASE TABLE'
+  AND NOT REGEXP_LIKE(COALESCE(t.TABLE_COMMENT, ''), '[[:script=Han:]]')
+UNION ALL
+SELECT CONCAT(c.TABLE_NAME, '.', c.COLUMN_NAME)
+FROM information_schema.COLUMNS c
+JOIN information_schema.TABLES t USING (TABLE_SCHEMA, TABLE_NAME)
+WHERE c.TABLE_SCHEMA = DATABASE() AND t.TABLE_TYPE = 'BASE TABLE'
+  AND NOT REGEXP_LIKE(COALESCE(c.COLUMN_COMMENT, ''), '[[:script=Han:]]')
+ORDER BY missing_comment;

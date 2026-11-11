@@ -2328,7 +2328,7 @@ CREATE TABLE IF NOT EXISTS `rule_dashboard_default` (
   `mappings_json` LONGTEXT NOT NULL COMMENT '指标到资源 ID 的映射',
   `version` BIGINT NOT NULL COMMENT '并发保存版本',
   `update_by` VARCHAR(64) NOT NULL COMMENT '配置人',
-  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '看板公共默认字段映射最后保存时间',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据看板公共默认字段映射';
 
@@ -2353,32 +2353,32 @@ CREATE TABLE IF NOT EXISTS `rule_system_asset` (
   `create_by` VARCHAR(128) COMMENT '创建人标识',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统品牌图片';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统品牌图片与字体文件';
 
 -- 台账模块：正文草稿与发布版本分开保存；素材内容不通过静态目录公开。
 CREATE TABLE IF NOT EXISTS `rule_ledger_type` (
-  `id` BIGINT NOT NULL AUTO_INCREMENT,
-  `type_code` VARCHAR(128) DEFAULT NULL,
-  `legacy_code` VARCHAR(32) DEFAULT NULL,
-  `type_name` VARCHAR(100) NOT NULL,
-  `sort_order` INT NOT NULL DEFAULT 0,
-  `lock_version` BIGINT NOT NULL DEFAULT 0,
-  `deleted` TINYINT NOT NULL DEFAULT 0,
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '台账类型 ID，供事件和文章分类引用',
+  `type_code` VARCHAR(128) DEFAULT NULL COMMENT '台账类型的业务编码',
+  `legacy_code` VARCHAR(32) DEFAULT NULL COMMENT '内置台账类型的旧编码，兼容历史分类引用',
+  `type_name` VARCHAR(100) NOT NULL COMMENT '台账类型显示名称',
+  `sort_order` INT NOT NULL DEFAULT 0 COMMENT '类型显示顺序，数值小的排在前面',
+  `lock_version` BIGINT NOT NULL DEFAULT 0 COMMENT '并发修改校验用的乐观锁版本号',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除标记，0=正常，1=已删除',
   PRIMARY KEY (`id`), UNIQUE KEY `uk_ledger_type_legacy` (`legacy_code`), UNIQUE KEY `uk_ledger_type_code` (`type_code`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='台账事件类型，引用稳定ID';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='台账类型，供事件归类和文章分类引用';
 CREATE TABLE IF NOT EXISTS `rule_ledger_event` (
-  `id` BIGINT NOT NULL AUTO_INCREMENT,
-  `event_code` VARCHAR(128) DEFAULT NULL,
-  `title` VARCHAR(200) NOT NULL,
-  `status` VARCHAR(24) NOT NULL DEFAULT 'FOLLOWING',
-  `scope` VARCHAR(16) NOT NULL,
-  `project_id` BIGINT DEFAULT NULL,
-  `owner_user_id` BIGINT NOT NULL,
-  `owner_name` VARCHAR(128) NOT NULL,
-  `lock_version` BIGINT NOT NULL DEFAULT 0,
-  `deleted` TINYINT NOT NULL DEFAULT 0,
-  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '台账事件 ID',
+  `event_code` VARCHAR(128) DEFAULT NULL COMMENT '台账事件的业务编码',
+  `title` VARCHAR(200) NOT NULL COMMENT '事件标题',
+  `status` VARCHAR(24) NOT NULL DEFAULT 'FOLLOWING' COMMENT '事件当前状态值，对应本事件配置的状态选项',
+  `scope` VARCHAR(16) NOT NULL COMMENT '事件可见范围，GLOBAL=全局，PROJECT=所属项目',
+  `project_id` BIGINT DEFAULT NULL COMMENT '所属项目 ID，仅项目范围有值',
+  `owner_user_id` BIGINT NOT NULL COMMENT '所有者的控制台账户 ID',
+  `owner_name` VARCHAR(128) NOT NULL COMMENT '所有者的操作人名称快照',
+  `lock_version` BIGINT NOT NULL DEFAULT 0 COMMENT '并发修改校验用的乐观锁版本号',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除标记，0=正常，1=已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录最后更新时间',
   PRIMARY KEY (`id`),
   KEY `idx_ledger_event_scope` (`scope`,`project_id`,`deleted`)
   ,UNIQUE KEY `uk_ledger_event_code` (`event_code`),
@@ -2386,34 +2386,34 @@ CREATE TABLE IF NOT EXISTS `rule_ledger_event` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='台账事件';
 
 CREATE TABLE IF NOT EXISTS `rule_ledger_event_type` (
-  `event_id` BIGINT NOT NULL,
-  `type_id` BIGINT NOT NULL,
+  `event_id` BIGINT NOT NULL COMMENT '所属台账事件 ID',
+  `type_id` BIGINT NOT NULL COMMENT '事件关联的台账类型 ID',
   PRIMARY KEY (`event_id`), KEY `idx_ledger_event_type` (`type_id`),
   CONSTRAINT `fk_ledger_event_type_event` FOREIGN KEY (`event_id`) REFERENCES `rule_ledger_event` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_ledger_event_type_type` FOREIGN KEY (`type_id`) REFERENCES `rule_ledger_type` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='事件与类型的稳定ID关联';
 CREATE TABLE IF NOT EXISTS `rule_ledger_event_state` (
-  `event_id` BIGINT NOT NULL,
-  `options_json` TEXT NOT NULL,
+  `event_id` BIGINT NOT NULL COMMENT '所属台账事件 ID',
+  `options_json` TEXT NOT NULL COMMENT '事件可选状态的 JSON 数组，每项包含状态值 value 和显示名称 label',
   PRIMARY KEY (`event_id`),
   CONSTRAINT `fk_ledger_event_state_event` FOREIGN KEY (`event_id`) REFERENCES `rule_ledger_event` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='每个事件独立配置的状态枚举';
 CREATE TABLE IF NOT EXISTS `rule_ledger_article` (
-  `id` BIGINT NOT NULL AUTO_INCREMENT,
-  `scope` VARCHAR(16) NOT NULL DEFAULT 'PRIVATE',
-  `project_id` BIGINT DEFAULT NULL,
-  `owner_user_id` BIGINT NOT NULL,
-  `owner_name` VARCHAR(128) NOT NULL,
-  `draft_user_id` BIGINT DEFAULT NULL,
-  `draft_scope` VARCHAR(16) DEFAULT 'PRIVATE',
-  `draft_project_id` BIGINT DEFAULT NULL,
-  `draft_json` LONGTEXT,
-  `has_draft` TINYINT NOT NULL DEFAULT 1,
-  `published_version` INT NOT NULL DEFAULT 0,
-  `lock_version` BIGINT NOT NULL DEFAULT 0,
-  `deleted` TINYINT NOT NULL DEFAULT 0,
-  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '台账文章 ID，各次发布共用',
+  `scope` VARCHAR(16) NOT NULL DEFAULT 'PRIVATE' COMMENT '文章当前可见范围，首次发布前为 PRIVATE，发布后为 GLOBAL 或 PROJECT',
+  `project_id` BIGINT DEFAULT NULL COMMENT '所属项目 ID，仅项目范围有值',
+  `owner_user_id` BIGINT NOT NULL COMMENT '所有者的控制台账户 ID',
+  `owner_name` VARCHAR(128) NOT NULL COMMENT '所有者的操作人名称快照',
+  `draft_user_id` BIGINT DEFAULT NULL COMMENT '当前私有草稿的编辑账户 ID',
+  `draft_scope` VARCHAR(16) DEFAULT 'PRIVATE' COMMENT '草稿拟发布的范围，PRIVATE=尚未指定，GLOBAL=全局，PROJECT=项目',
+  `draft_project_id` BIGINT DEFAULT NULL COMMENT '草稿拟发布到的项目 ID，仅项目范围有值',
+  `draft_json` LONGTEXT COMMENT '私有草稿内容快照，JSON 格式',
+  `has_draft` TINYINT NOT NULL DEFAULT 1 COMMENT '是否有待发布草稿，0=无，1=有',
+  `published_version` INT NOT NULL DEFAULT 0 COMMENT '最近一次发布的文章版本号，0 表示尚未发布',
+  `lock_version` BIGINT NOT NULL DEFAULT 0 COMMENT '并发修改校验用的乐观锁版本号',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除标记，0=正常，1=已删除',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录最后更新时间',
   PRIMARY KEY (`id`),
   KEY `idx_ledger_article_scope` (`scope`,`project_id`,`deleted`),
   KEY `idx_ledger_article_owner` (`owner_user_id`,`has_draft`),
@@ -2422,23 +2422,23 @@ CREATE TABLE IF NOT EXISTS `rule_ledger_article` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='台账文章及私有编辑草稿';
 
 CREATE TABLE IF NOT EXISTS `rule_ledger_revision` (
-  `id` BIGINT NOT NULL AUTO_INCREMENT,
-  `article_id` BIGINT NOT NULL,
-  `version_no` INT NOT NULL,
-  `title` VARCHAR(200) NOT NULL,
-  `summary` VARCHAR(400) NOT NULL,
-  `summary_auto` TINYINT NOT NULL DEFAULT 1,
-  `body` LONGTEXT NOT NULL,
-  `category` VARCHAR(32) NOT NULL,
-  `scope` VARCHAR(16) NOT NULL,
-  `project_id` BIGINT DEFAULT NULL,
-  `occurred_time` DATETIME NOT NULL,
-  `activity_time` DATETIME NOT NULL,
-  `publish_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `actor_user_id` BIGINT NOT NULL,
-  `actor_name` VARCHAR(128) NOT NULL,
-  `change_summary` VARCHAR(400) NOT NULL,
-  `content_digest` VARCHAR(64) NOT NULL,
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '文章发布版本 ID',
+  `article_id` BIGINT NOT NULL COMMENT '所属台账文章 ID',
+  `version_no` INT NOT NULL COMMENT '文章内的发布版本号，从 1 开始',
+  `title` VARCHAR(200) NOT NULL COMMENT '发布时的文章标题',
+  `summary` VARCHAR(400) NOT NULL COMMENT '发布时的文章摘要',
+  `summary_auto` TINYINT NOT NULL DEFAULT 1 COMMENT '摘要生成方式，0=手工填写，1=从正文自动提取',
+  `body` LONGTEXT NOT NULL COMMENT '发布时的 Markdown 正文',
+  `category` VARCHAR(32) NOT NULL COMMENT '发布时的文章分类，存台账类型 ID 的字符串，历史记录可为旧编码',
+  `scope` VARCHAR(16) NOT NULL COMMENT '版本发布时的可见范围，GLOBAL=全局，PROJECT=所属项目',
+  `project_id` BIGINT DEFAULT NULL COMMENT '所属项目 ID，仅项目范围有值',
+  `occurred_time` DATETIME NOT NULL COMMENT '作者填写的业务发生时间',
+  `activity_time` DATETIME NOT NULL COMMENT '时间线排序时间，首版取业务发生时间，后续版本取本次发布时间',
+  `publish_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '本版本的实际发布时间',
+  `actor_user_id` BIGINT NOT NULL COMMENT '本版本发布人的控制台账户 ID',
+  `actor_name` VARCHAR(128) NOT NULL COMMENT '发布时的操作人名称快照',
+  `change_summary` VARCHAR(400) NOT NULL COMMENT '本次发布的变更说明',
+  `content_digest` VARCHAR(64) NOT NULL COMMENT '发布内容快照的 SHA-256 摘要，用于识别重复发布',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_ledger_revision` (`article_id`,`version_no`),
   KEY `idx_ledger_revision_time` (`activity_time`,`id`),
@@ -2447,25 +2447,25 @@ CREATE TABLE IF NOT EXISTS `rule_ledger_revision` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='不可变台账发布版本，同时作为时间线记录';
 
 CREATE TABLE IF NOT EXISTS `rule_ledger_asset` (
-  `id` BIGINT NOT NULL AUTO_INCREMENT,
-  `name` VARCHAR(255) NOT NULL,
-  `content_type` VARCHAR(64) NOT NULL,
-  `size_bytes` BIGINT NOT NULL,
-  `source_size` BIGINT NOT NULL,
-  `width` INT DEFAULT NULL,
-  `height` INT DEFAULT NULL,
-  `sha256` VARCHAR(64) NOT NULL,
-  `scope` VARCHAR(16) NOT NULL DEFAULT 'PRIVATE',
-  `project_id` BIGINT DEFAULT NULL,
-  `owner_user_id` BIGINT NOT NULL,
-  `owner_name` VARCHAR(128) NOT NULL,
-  `scan_status` VARCHAR(24) NOT NULL DEFAULT 'PENDING',
-  `scan_message` VARCHAR(255) DEFAULT NULL,
-  `raw_content` LONGBLOB,
-  `content` LONGBLOB,
-  `lock_version` BIGINT NOT NULL DEFAULT 0,
-  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '台账图片素材 ID',
+  `name` VARCHAR(255) NOT NULL COMMENT '素材文件名',
+  `content_type` VARCHAR(64) NOT NULL COMMENT '当前图片的媒体类型，重新编码后为 image/png',
+  `size_bytes` BIGINT NOT NULL COMMENT '当前图片大小（字节），重新编码后取 PNG 大小',
+  `source_size` BIGINT NOT NULL COMMENT '原始上传文件大小（字节）',
+  `width` INT DEFAULT NULL COMMENT '解码后的图片宽度（像素）',
+  `height` INT DEFAULT NULL COMMENT '解码后的图片高度（像素）',
+  `sha256` VARCHAR(64) NOT NULL COMMENT '原始上传文件的 SHA-256 摘要',
+  `scope` VARCHAR(16) NOT NULL DEFAULT 'PRIVATE' COMMENT '素材可见范围，PRIVATE=私有，GLOBAL=全局，PROJECT=所属项目',
+  `project_id` BIGINT DEFAULT NULL COMMENT '所属项目 ID，仅项目范围有值',
+  `owner_user_id` BIGINT NOT NULL COMMENT '所有者的控制台账户 ID',
+  `owner_name` VARCHAR(128) NOT NULL COMMENT '所有者的操作人名称快照',
+  `scan_status` VARCHAR(24) NOT NULL DEFAULT 'PENDING' COMMENT '素材检测状态，PENDING=待检测，CLEAN=已通过，QUARANTINED=已隔离',
+  `scan_message` VARCHAR(255) DEFAULT NULL COMMENT '最近一次素材检测的结果说明',
+  `raw_content` LONGBLOB COMMENT '原始上传文件的二进制内容，检测并成功转码后清空',
+  `content` LONGBLOB COMMENT '通过检测并重新编码的 PNG 图片二进制内容',
+  `lock_version` BIGINT NOT NULL DEFAULT 0 COMMENT '并发修改校验用的乐观锁版本号',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录最后更新时间',
   PRIMARY KEY (`id`),
   KEY `idx_ledger_asset_owner` (`owner_user_id`,`scan_status`),
   KEY `idx_ledger_asset_scope` (`scope`,`project_id`,`scan_status`),
@@ -2473,19 +2473,19 @@ CREATE TABLE IF NOT EXISTS `rule_ledger_asset` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='私有暂存、病毒检测及按范围授权的台账图片素材';
 
 CREATE TABLE IF NOT EXISTS `rule_ledger_revision_reference` (
-  `revision_id` BIGINT NOT NULL,
-  `ref_type` VARCHAR(16) NOT NULL,
-  `ref_id` BIGINT NOT NULL,
+  `revision_id` BIGINT NOT NULL COMMENT '持有引用的文章发布版本 ID',
+  `ref_type` VARCHAR(16) NOT NULL COMMENT '引用目标类型，EVENT=台账事件，ASSET=图片素材，CATEGORY=台账类型',
+  `ref_id` BIGINT NOT NULL COMMENT '由引用类型指定的事件、素材或类型 ID',
   PRIMARY KEY (`revision_id`,`ref_type`,`ref_id`),
   KEY `idx_ledger_revision_ref` (`ref_type`,`ref_id`,`revision_id`),
   CONSTRAINT `fk_ledger_revision_reference_revision` FOREIGN KEY (`revision_id`) REFERENCES `rule_ledger_revision` (`id`) ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='发布版本对事件和素材的稳定 ID 引用';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='文章发布版本引用的事件、图片素材和台账类型';
 
 CREATE TABLE IF NOT EXISTS `rule_ledger_draft_reference` (
-  `article_id` BIGINT NOT NULL,
-  `ref_type` VARCHAR(16) NOT NULL,
-  `ref_id` BIGINT NOT NULL,
+  `article_id` BIGINT NOT NULL COMMENT '持有草稿引用的台账文章 ID',
+  `ref_type` VARCHAR(16) NOT NULL COMMENT '引用目标类型，EVENT=台账事件，ASSET=图片素材，CATEGORY=台账类型',
+  `ref_id` BIGINT NOT NULL COMMENT '由引用类型指定的事件、素材或类型 ID',
   PRIMARY KEY (`article_id`,`ref_type`,`ref_id`),
   KEY `idx_ledger_draft_ref` (`ref_type`,`ref_id`,`article_id`),
   CONSTRAINT `fk_ledger_draft_reference_article` FOREIGN KEY (`article_id`) REFERENCES `rule_ledger_article` (`id`) ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='当前私有草稿引用，防止被引用素材遭删除';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='文章当前草稿引用的事件、图片素材和台账类型';

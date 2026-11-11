@@ -132,6 +132,7 @@ docker compose --env-file .env.client --env-file .env.server -f docker/docker-co
 
 ### 数据库初始化
 
+- 每次新增或修改数据库 schema，所有表及其每个字段都必须有准确说明业务含义的中文 `COMMENT`。初始化、兼容建表和增量迁移都要保留相应注释。提交前在 MySQL 中全量检查，包括生成列、分区表的列。
 - `schema.sql` 包含数据库表结构、逻辑执行日志视图和按变量唯一索引幂等补齐的系统常量；服务端启动时默认自动执行，脚本使用当前连接的数据库，不写死数据库名
 - Docker Compose 默认只启动 MySQL、Redis 和应用服务，不导入业务数据；启用 `example-data` profile 后等待 schema 完成，再由 `docker/rule-engine-mysql/data-tianshu-example.sql` 按当前库真实 ID 补齐样例及引用，不能依赖自增顺序。
 - 可选初始配置通过 `RULE_ENGINE_INITIAL_DATA_ENABLED=true` 启用 `initial-data.sql`，仅插入缺失的全局变量/对象/字段，不覆盖已有配置；默认关闭。

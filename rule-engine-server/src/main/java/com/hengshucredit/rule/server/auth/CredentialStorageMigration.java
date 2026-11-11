@@ -40,7 +40,7 @@ public class CredentialStorageMigration {
                 String type = jdbc.queryForObject("SELECT DATA_TYPE FROM information_schema.COLUMNS "
                         + "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?", String.class, columns.table(), column);
                 if (!"longtext".equalsIgnoreCase(type)) jdbc.execute("ALTER TABLE `" + columns.table()
-                        + "` MODIFY COLUMN `" + column + "` LONGTEXT DEFAULT NULL COMMENT 'AES-GCM encrypted credential'");
+                        + "` MODIFY COLUMN `" + column + "` LONGTEXT DEFAULT NULL COMMENT '连接凭据的 AES-GCM 密文'");
             }
             long cursor = 0;
             while (true) {
