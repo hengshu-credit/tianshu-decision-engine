@@ -1,56 +1,32 @@
-/* 首屏、组件及 Element Plus 共用瑶光扇叶动画。52px 画布上，外圈线宽和圆点半径均为 2px。 */
-:root { --tianshu-loading-color: #7763f1; }
+/* 首屏、业务组件、Element Plus 和 Monaco 共用同一张 SVG，动画和减少动态效果的静态图都在文件内。 */
+.tianshu-loading,
+.el-icon.el-icon.is-loading,
+.el-loading-spinner.el-loading-spinner,
+.codicon.codicon-loading::before,
+.codicon.codicon-tree-item-loading::before {
+  background: url("./images/hscredit-loading.svg") center top / 1em 1em no-repeat;
+}
 
 .tianshu-loading,
 .el-icon.el-icon.is-loading,
-.el-loading-spinner.el-loading-spinner {
-  --tianshu-loading-stroke: 0.038462em;
-  position: relative;
+.codicon.codicon-loading::before,
+.codicon.codicon-tree-item-loading::before {
   display: inline-block;
-  flex: none;
   width: 1em;
   height: 1em;
   vertical-align: middle;
-  animation: none;
 }
+.tianshu-loading,
+.el-icon.el-icon.is-loading { flex: none; }
 
-.tianshu-loading::before,
-.tianshu-loading::after,
-.el-icon.el-icon.is-loading::before,
-.el-icon.el-icon.is-loading::after,
-.el-loading-spinner.el-loading-spinner::before,
-.el-loading-spinner.el-loading-spinner::after {
-  position: absolute;
-  top: 0.5em;
-  left: 50%;
-  translate: -50% -50%;
-  content: '';
-  border: var(--tianshu-loading-stroke) solid var(--tianshu-loading-color);
-  border-radius: 50%;
-}
+/* 图标的旋转由 SVG 绘制。遮罩文字仍由 Element Plus 排在图标下方。 */
+.el-icon.el-icon.is-loading,
+.codicon.codicon-loading.codicon-modifier-spin,
+.codicon.monaco-tl-twistie.codicon-tree-item-loading::before { animation: none; }
 
-.tianshu-loading::before,
-.el-icon.el-icon.is-loading::before,
-.el-loading-spinner.el-loading-spinner::before {
-  box-sizing: border-box;
-  width: 0.923077em;
-  height: 0.923077em;
-  background: color-mix(in srgb, var(--tianshu-loading-color) 8%, transparent);
-  /* 取圆盘的右上和左下两个象限，同轴旋转。 */
-  clip-path: polygon(50% 50%, 50% 0, 100% 0, 100% 50%, 50% 50%, 50% 100%, 0 100%, 0 50%);
-  animation: tianshu-loader2 1.35s linear infinite;
-}
+.codicon.codicon-loading::before,
+.codicon.codicon-tree-item-loading::before { content: ''; }
 
-.tianshu-loading::after,
-.el-icon.el-icon.is-loading::after,
-.el-loading-spinner.el-loading-spinner::after {
-  /* 零内容尺寸让实心圆点的半径始终等于浏览器实际绘制的边框宽度。 */
-  box-sizing: content-box;
-  width: 0;
-  height: 0;
-}
-
-/* 仅替换图形，保留 Element Plus 的禁用、遮罩、文本和请求生命周期。 */
 .el-icon.el-icon.is-loading > svg,
 .el-loading-spinner.el-loading-spinner > svg { display: none; }
 
@@ -69,9 +45,6 @@
 }
 .el-loading-mask.is-fullscreen .el-loading-spinner { margin: 0; }
 
-/* 有色按钮沿用文字的对比色，造型和转速保持一致。 */
-.el-button { --tianshu-loading-color: currentColor; }
-
 .app-bootstrap {
   position: fixed;
   inset: 0;
@@ -80,10 +53,3 @@
   background: var(--tianshu-bg-page, #fff);
 }
 .app-bootstrap .tianshu-loading { font-size: 52px; }
-
-@keyframes tianshu-loader2 { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .tianshu-loading::before,
-  .el-icon.el-icon.is-loading::before,
-  .el-loading-spinner.el-loading-spinner::before { animation: none; }
-}

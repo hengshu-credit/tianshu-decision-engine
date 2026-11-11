@@ -16,31 +16,14 @@ async function expectLoader(locator) {
     for (let node = element; node; node = node.parentElement) opacity *= Number(getComputedStyle(node).opacity)
     return opacity
   })).toBe(1)
-  const style = await locator.evaluate(element => {
-    const root = getComputedStyle(element)
-    const blades = getComputedStyle(element, '::before')
-    const dot = getComputedStyle(element, '::after')
-    return {
-      animation: root.animationName, blades: blades.animationName, duration: blades.animationDuration,
-      width: parseFloat(blades.width), height: parseFloat(blades.height), fontSize: parseFloat(root.fontSize),
-      stroke: parseFloat(blades.borderTopWidth), dotAnimation: dot.animationName, dotRadius: dot.borderRadius,
-      dotSize: [dot.width, dot.height], dotBorders: [dot.borderTopWidth, dot.borderRightWidth, dot.borderBottomWidth, dot.borderLeftWidth].map(parseFloat),
-      dotColor: dot.borderTopColor, strokeColor: blades.borderTopColor,
-      dotCenter: [dot.left, dot.top, dot.translate], bladeCenter: [blades.left, blades.top, blades.translate],
-    }
-  })
-  expect(style).toMatchObject({
-    animation: 'none', blades: 'tianshu-loader2', duration: '1.35s', dotAnimation: 'none',
-    dotRadius: '50%', dotSize: ['0px', '0px'], dotColor: style.strokeColor, dotCenter: style.bladeCenter,
-  })
-  expect(style.stroke).toBeGreaterThan(0)
-  expect(style.dotBorders).toEqual(Array(4).fill(style.stroke))
-  expect(style.width / style.fontSize).toBeCloseTo(48 / 52, 2)
-  expect(style.height / style.fontSize).toBeCloseTo(48 / 52, 2)
+  await expect(locator).toHaveCSS('background-image', `url("${origin}/images/hscredit-loading.svg")`)
+  await expect(locator).toHaveCSS('animation-name', 'none')
+  const size = await locator.evaluate(element => getComputedStyle(element).fontSize)
+  await expect(locator).toHaveCSS('background-size', `${size} ${size}`)
   await expect(locator.locator('svg:visible')).toHaveCount(0)
 }
 
-test('脚本下载前首屏就显示瑶光动画，脚本完成后正常进入页面', async ({ page }) => {
+test('脚本下载前首屏就加载 HSCredit 动图，脚本完成后正常进入页面', async ({ page }) => {
   const script = deferred()
   const { assertClean } = await installDistRoutes(page, { origin, liveStatic })
   await page.route(/\/(?:src\/main\.js|assets\/index-[^/]+\.js)(?:\?.*)?$/, async route => {
@@ -48,7 +31,11 @@ test('脚本下载前首屏就显示瑶光动画，脚本完成后正常进入�
     await route.fallback()
   })
   try {
+    const image = page.waitForResponse(`${origin}/images/hscredit-loading.svg`)
     await page.goto(`${origin}/#/project`, { waitUntil: 'commit' })
+    const response = await image
+    expect(response.ok()).toBe(true)
+    expect(response.headers()['content-type']).toContain('image/svg+xml')
     await expectLoader(page.locator('.app-bootstrap .tianshu-loading'))
     script.resolve()
     await expect(page.getByRole('cell', { name: 'e2e_project', exact: true })).toBeVisible()
@@ -85,8 +72,6 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
       await input.click()
       const suggestion = page.locator('.el-autocomplete-suggestion.is-loading .el-icon.is-loading')
       await expectLoader(suggestion)
-      await page.emulateMedia({ reducedMotion: 'reduce' })
-      expect(await suggestion.evaluate(element => getComputedStyle(element, '::before').animationName)).toBe('none')
       options.resolve()
       await expect(page.getByRole('option', { name: 'e2e_project', exact: true })).toBeVisible()
       await expect(suggestion).toBeHidden()
@@ -103,7 +88,7 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
   })
 }
 
-test('登录按钮使用等比缩放的扇叶且保持禁用状态和文字对比色', async ({ page }, testInfo) => {
+test('登录按钮显示 HSCredit 动图，提交期间保持禁用状态和文字颜色', async ({ page }, testInfo) => {
   const login = deferred()
   const { assertClean } = await installDistRoutes(page, { origin, liveStatic, apiData: new Map([
     ['/api/auth/console/config', { loginEnabled: true }],
@@ -115,12 +100,14 @@ test('登录按钮使用等比缩放的扇叶且保持禁用状态和文字对�
     await page.goto(`${origin}/#/login`)
     await page.locator('input[autocomplete="username"]').fill('visual-test-user')
     await page.locator('input[autocomplete="current-password"]').fill('visual-test-password')
-    await page.getByRole('button', { name: '登录', exact: true }).click()
     const button = page.locator('.login-btn')
+    const textColor = await button.evaluate(element => getComputedStyle(element).color)
+    await page.getByRole('button', { name: '登录', exact: true }).click()
     const spinner = button.locator('.el-icon.is-loading')
     await expectLoader(spinner)
+    await expect(button).toHaveAccessibleName('登录中…')
     await expect(button).toBeDisabled()
-    expect(await spinner.evaluate(element => getComputedStyle(element, '::before').borderTopColor)).toBe(await button.evaluate(element => getComputedStyle(element).color))
+    await expect(button).toHaveCSS('color', textColor)
     await page.screenshot({ path: testInfo.outputPath('button-loading.png') })
     login.resolve()
     await expect(page).not.toHaveURL(/#\/login$/)
@@ -128,7 +115,7 @@ test('登录按钮使用等比缩放的扇叶且保持禁用状态和文字对�
   } finally { login.resolve() }
 })
 
-test('独立状态图标也使用统一扇叶，完成邮箱验证后消失', async ({ page }) => {
+test('独立状态图标显示 HSCredit 动图，完成邮箱验证后消失', async ({ page }) => {
   const verification = deferred()
   const { assertClean } = await installDistRoutes(page, { origin, liveStatic, apiData: new Map([
     ['/api/auth/console/config', { loginEnabled: true, initializationRequired: false }],
@@ -145,4 +132,14 @@ test('独立状态图标也使用统一扇叶，完成邮箱验证后消失', as
     await expect(icon).toHaveCount(0)
     assertClean()
   } finally { verification.resolve() }
+})
+
+test('减少动态效果时同一个 SVG 显示完整静态标志', async ({ page }) => {
+  await installDistRoutes(page, { origin, liveStatic })
+  await page.goto(`${origin}/images/hscredit-loading.svg`)
+  await expect(page.locator('#motion')).toBeVisible()
+  await expect(page.locator('#still')).toBeHidden()
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await expect(page.locator('#motion')).toBeHidden()
+  await expect(page.locator('#still')).toBeVisible()
 })

@@ -7,7 +7,7 @@
       </div>
       <el-alert v-else-if="navigation.error" title="页面加载失败，请刷新重试" type="error" :closable="false" />
     </router-view>
-    <console-watermark />
+    <console-watermark v-if="$route.matched.length" />
   </div>
 </template>
 
