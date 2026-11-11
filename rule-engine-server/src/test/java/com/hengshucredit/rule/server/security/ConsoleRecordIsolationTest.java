@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.security;
 
+import com.hengshucredit.rule.server.sql.TestSchemaTables;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.config.JacksonConfig;
@@ -57,20 +58,13 @@ public class ConsoleRecordIsolationTest {
     @Test
     public void approvalsAndOperationHistoryDoNotBecomeSharedThroughModulePermissions() throws Exception {
         var jdbc = new JdbcTemplate(new DriverManagerDataSource("jdbc:h2:mem:approvals" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", ""));
-        jdbc.execute("CREATE TABLE governance_approval_request (id BIGINT, actor_user_id BIGINT, resource_type VARCHAR(32), project_id BIGINT)");
+        jdbc.execute("CREATE TABLE governance_approval_request (id BIGINT PRIMARY KEY, actor_user_id BIGINT, resource_type VARCHAR(32), project_id BIGINT)");
         jdbc.execute("INSERT INTO governance_approval_request VALUES (1,8,'VARIABLE',9),(2,7,'VARIABLE',9)");
         jdbc.execute("CREATE TABLE console_operation_log (id BIGINT,user_id BIGINT,module VARCHAR(32),target_type VARCHAR(32),target_id VARCHAR(32))");
         jdbc.execute("INSERT INTO console_operation_log VALUES (1,8,'account','ACCOUNT','8'),(2,7,'account','ACCOUNT','7')");
-        String schema = new org.springframework.core.io.ClassPathResource("sql/schema.sql").getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
         @SuppressWarnings("unchecked") var tables = (Map<String, String>) ReflectionTestUtils.getField(ConsoleDataPermissionHandler.class, "RESOURCE_TABLES");
         var referencedTables = new java.util.HashSet<>(tables.values()); referencedTables.add("rule_revision"); referencedTables.add("governed_resource"); referencedTables.add("rule_definition_version");
-        for (String table : referencedTables) {
-            int start = schema.indexOf("CREATE TABLE IF NOT EXISTS `" + table + "`");
-            String ddl = schema.substring(start, schema.indexOf(';', start) + 1).replaceFirst("(?s)\\) ENGINE=.*;", ")");
-            ddl = ddl.replaceAll("(VARCHAR\\(\\d+\\)) GENERATED ALWAYS AS .* STORED COMMENT '[^']*'", "$1");
-            ddl = ddl.replaceAll("(?i)(\\b(?:KEY|INDEX)\\s+`)([^`]+)(`)", "$1" + table + "_$2$3");
-            jdbc.execute(ddl);
-        }
+        TestSchemaTables.create(jdbc, referencedTables);
         var own = handler(scope(false));
         assertEquals(List.of(1L), jdbc.queryForList(own.filterSql("SELECT id FROM governance_approval_request"), Long.class));
         assertEquals(List.of(1L), jdbc.queryForList(own.filterSql("SELECT id FROM console_operation_log"), Long.class));

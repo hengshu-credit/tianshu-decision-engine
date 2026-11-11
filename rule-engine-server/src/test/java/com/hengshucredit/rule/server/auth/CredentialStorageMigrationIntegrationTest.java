@@ -1,10 +1,9 @@
 package com.hengshucredit.rule.server.auth;
 
+import com.hengshucredit.rule.server.sql.TestSchemaTables;
 import org.junit.*;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -33,11 +32,7 @@ public class CredentialStorageMigrationIntegrationTest {
         admin.execute("CREATE DATABASE `" + database + "`");
         var datasource = new DriverManagerDataSource(url + database, "root", password);
         var jdbc = new JdbcTemplate(datasource);
-        String schema = new ClassPathResource("sql/schema.sql").getContentAsString(StandardCharsets.UTF_8);
-        for (String table : List.of("rule_db_datasource", "rule_sftp_datasource", "rule_external_datasource", "rule_external_api_config")) {
-            int start = schema.indexOf("CREATE TABLE IF NOT EXISTS `" + table + "`");
-            jdbc.execute(schema.substring(start, schema.indexOf(';', start) + 1));
-        }
+        TestSchemaTables.create(jdbc, List.of("rule_db_datasource", "rule_sftp_datasource", "rule_external_datasource", "rule_external_api_config"));
         // Simulate former schema capacity and data, including null, empty, multibyte and maximum-length secrets.
         jdbc.execute("ALTER TABLE rule_db_datasource MODIFY password VARCHAR(512)");
         String secret = "旧密码".repeat(160);

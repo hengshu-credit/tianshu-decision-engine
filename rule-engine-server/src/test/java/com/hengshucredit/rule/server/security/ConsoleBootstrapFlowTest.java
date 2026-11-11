@@ -43,7 +43,8 @@ public class ConsoleBootstrapFlowTest {
             assertEquals(owner.userId(), restarted.authenticate("admin", "AdminPass123!").userId());
             assertThrows(com.hengshucredit.rule.model.PlatformException.class,
                     () -> f.login.initializeAdministrator("other", "Other", "AnotherPass123!"));
-            f.jdbc.update("DELETE FROM console_user");
+            f.jdbc.update("DELETE FROM console_user_role WHERE user_id=?", owner.userId());
+            assertEquals(1, f.jdbc.update("DELETE FROM console_user"));
             assertFalse("deleting accounts must not reopen anonymous bootstrap", restarted.initializationRequired());
         }
     }

@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.ledger;
 
+import com.hengshucredit.rule.server.sql.TestSchemaTables;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hengshucredit.rule.model.PlatformException;
 import com.hengshucredit.rule.model.dto.LedgerContent;
@@ -49,6 +50,10 @@ public class LedgerWorkflowTest {
         dataSource = new DriverManagerDataSource("jdbc:h2:mem:ledger" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
         String schema = new ClassPathResource("sql/schema.sql").getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
         String ledgerSchema = schema.substring(schema.indexOf("-- 台账模块："));
+        var accounts = new JdbcTemplate(dataSource);
+        TestSchemaTables.create(accounts, List.of("console_user"));
+        accounts.update("INSERT INTO console_user(id, username, display_name, password_hash) VALUES "
+                + "(10,'author10','作者10','fixture'),(11,'author11','作者11','fixture')");
         new ResourceDatabasePopulator(new org.springframework.core.io.ByteArrayResource(ledgerSchema.getBytes(java.nio.charset.StandardCharsets.UTF_8))).execute(dataSource);
         jdbc = new JdbcTemplate(dataSource) {
             @Override public List<Map<String, Object>> queryForList(String sql, Object... args) { calendarQueries.incrementAndGet(); return super.queryForList(sql, args); }

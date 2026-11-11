@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.server.sql.TestSchemaTables;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.config.GlobalConfig;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
@@ -12,18 +13,17 @@ import org.junit.Assume;
 import org.junit.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.core.ResolvableType;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.Assert.*;
@@ -52,18 +52,17 @@ public class RuleLineageScaleIntegrationTest {
             var sf = factory.getObject(); assertNotNull(sf);
             var sessions = new SqlSessionTemplate(sf);
             RuleLineageService service = new RuleLineageService();
-            String schema = new ClassPathResource("sql/schema.sql").getContentAsString(StandardCharsets.UTF_8);
+            Set<String> tables = new LinkedHashSet<>();
             for (var field : RuleLineageService.class.getDeclaredFields()) {
                 if (!BaseMapper.class.isAssignableFrom(field.getType())) continue;
                 configuration.addMapper(field.getType());
                 Class<?> entity = ResolvableType.forClass(field.getType()).as(BaseMapper.class).getGeneric(0).resolve();
                 String table = TableInfoHelper.getTableInfo(entity).getTableName();
-                int start = schema.indexOf("CREATE TABLE IF NOT EXISTS `" + table + "`");
-                assertTrue("缺少表结构: " + table, start >= 0);
-                jdbc.execute(schema.substring(start, schema.indexOf(';', start) + 1));
+                tables.add(table);
                 ReflectionTestUtils.setField(service, field.getName(), sessions.getMapper(field.getType()));
             }
-            jdbc.update("INSERT INTO rule_project(id,project_code,project_name) VALUES (1,'scale','scale')");
+            TestSchemaTables.create(jdbc, tables);
+            jdbc.update("INSERT INTO rule_project(id,project_code,project_name) VALUES (1,'scale','scale'), (2,'other','other')");
             int previous = 0;
             for (int count : new int[]{1000, 10000, 50000}) {
                 List<Integer> additions = java.util.stream.IntStream.rangeClosed(previous + 1, count).boxed().toList();

@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.security;
 
+import com.hengshucredit.rule.server.sql.TestSchemaTables;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.config.GlobalConfig;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
@@ -11,11 +12,9 @@ import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
 import com.hengshucredit.rule.server.mapper.RuleVariableOptionMapper;
 import org.apache.ibatis.logging.nologging.NoLoggingImpl;
 import org.mybatis.spring.SqlSessionTemplate;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.junit.*;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import static org.junit.Assert.*;
 
@@ -31,15 +30,8 @@ public class ConsoleProjectIsolationTest {
     @Before public void setup() throws Exception {
         var dataSource = new DriverManagerDataSource("jdbc:h2:mem:project" + UUID.randomUUID().toString().replace("-", "") + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
         jdbc = new JdbcTemplate(dataSource);
-        String schema = new ClassPathResource("sql/schema.sql").getContentAsString(StandardCharsets.UTF_8);
-        for (String table : List.of("rule_project", "rule_variable", "rule_variable_option", "governed_resource", "governed_resource_version",
-                "rule_definition", "rule_definition_ref", "rule_revision", "governance_approval_request", "rule_regression_evidence", "rule_regression_evidence_latest")) {
-            int start = schema.indexOf("CREATE TABLE IF NOT EXISTS `" + table + "`");
-            String ddl = schema.substring(start, schema.indexOf(';', start) + 1).replaceFirst("\\) ENGINE=.*;", ")");
-            // MySQL index names are table-local; H2 requires schema-wide uniqueness.
-            ddl = ddl.replaceAll("(?i)(\\b(?:KEY|INDEX)\\s+`)([^`]+)(`)", "$1" + table + "_$2$3");
-            jdbc.execute(ddl);
-        }
+        TestSchemaTables.create(jdbc, List.of("rule_project", "rule_variable", "rule_variable_option", "governed_resource", "governed_resource_version",
+                "rule_definition", "rule_definition_ref", "rule_revision", "governance_approval_request", "rule_regression_evidence", "rule_regression_evidence_latest"));
         jdbc.update("INSERT INTO rule_project(id,project_code,project_name) VALUES (1,'A','Project A'),(2,'B','Project B')");
         jdbc.update("INSERT INTO rule_variable(id,project_id,scope,var_code,var_label,var_type,var_source) VALUES (10,0,'GLOBAL','global','Global','STRING','INPUT'),(11,1,'PROJECT','a','A','STRING','INPUT'),(12,2,'PROJECT','b','B','STRING','INPUT')");
         jdbc.update("INSERT INTO rule_variable_option(id,variable_id,option_value,option_label) VALUES (1,11,'a','A'),(2,12,'b','B')");

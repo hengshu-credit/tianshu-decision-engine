@@ -20,8 +20,26 @@
 | 1 | `2026-11-04-account-record-isolation.sql` | 已有业务库升级到账户记录隔离版本前执行；要求旧版业务表已存在。补齐账户归属字段、系统常量标记及账单汇总索引，不推测历史记录归属。 |
 | 2 | `2026-11-04-operation-log-intervals.sql` | 已有 `console_operation_log` 表且尚未完成操作日志区间升级的数据库；可在新版启动前预先执行，保留历史记录及未知离开时间。 |
 | 3 | `2026-11-11-decision-result-system-constants.sql` | 已有库缺少通过、人审、拒绝系统常量时执行；要求 `rule_variable.system_constant` 及唯一索引已存在。幂等插入 `DECISION_PASS=0`、`DECISION_REVIEW=2`、`DECISION_REJECT=1`；保留已有同名字段的 ID、取值和系统标记。执行后核对末尾查询结果，同名业务字段冲突由管理员处理，不自动覆盖。 |
+| 4 | [2026-11-11-er-foreign-keys.sql](2026-11-11-er-foreign-keys.sql) | 为已有业务表增加客户端 ER 图所读取的物理外键。要求 MySQL 8、InnoDB、稳定 ID 列及父表已就绪，操作见下节。 |
 
 前两份脚本检查列/索引是否存在，第三份按唯一索引幂等补齐缺失常量；可在确认失败原因已修复后重试。这一性质不代表未来所有迁移都可重复执行。涉及历史数据变更时，须在对应脚本说明前置版本、预检、执行顺序及回退限制。每次新增迁移同步更新本表，已发布脚本不改写，修正另加新脚本。
+
+## 数据库客户端 ER 图
+
+备份并暂停写入后，使用支持 `DELIMITER` 的 MySQL 客户端，在选中的业务库内执行第 4 项。迁移账号需要读取表结构与数据、`ALTER`、`REFERENCES`、`CREATE TEMPORARY TABLES` 及创建、调用、删除迁移过程的权限。保持 `FOREIGN_KEY_CHECKS=1`。旧版本尚未创建的子表由新版服务按 `schema.sql` 首次建表。
+
+脚本先检查整份关系清单。如果存在孤立引用，结果会列出子表、子列、父表以及一个失配的 ID，随后在业务表变更前退出。项目引用使用原 `project_id` 核对，允许全局值 0 或 NULL。应按业务记录核实并修复引用；脚本不会删行或猜测归属。同名异义或已有其他外键约束同一列时，先核对该约束定义。DDL 阶段中断后可在修复原因后重跑，已安装的匹配约束会被识别。为大表添加存储生成列、校验外键和建立索引可能重建或锁定表，应在维护窗口为操作预留时间和磁盘空间。
+
+迁移成功后，脚本末尾返回已安装的关系列表。也可以在客户端执行以下查询，随后刷新表元数据，重新打开 ER 图。检查某条连线时可按 `TABLE_NAME` 过滤，例如 `rule_definition` 或 `rule_data_object_field`。
+
+```sql
+SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+FROM information_schema.KEY_COLUMN_USAGE
+WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL
+ORDER BY TABLE_NAME, COLUMN_NAME;
+```
+
+对有有效引用的主记录，`RESTRICT` 阻止物理删除。标为 `CASCADE` 的从属关系在父记录物理删除时清理，例如规则内容、变量选项、项目凭据及其令牌。业务的状态变更和逻辑删除不会触发级联。
 
 ## 执行示例（Linux）
 

@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS `rule_project_auth` (
   UNIQUE KEY `uk_project_auth_code` (`auth_code`),
   UNIQUE KEY `uk_project_auth_lookup` (`lookup_key`),
   KEY `idx_project_auth_project` (`project_id`, `status`),
-  KEY `idx_project_auth_type` (`auth_type`, `status`)
+  KEY `idx_project_auth_type` (`auth_type`, `status`),
+  CONSTRAINT `fk_project_auth_project` FOREIGN KEY (`project_id`) REFERENCES `rule_project` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目鉴权配置表';
 
 CREATE TABLE IF NOT EXISTS `rule_project_auth_token` (
@@ -66,7 +67,9 @@ CREATE TABLE IF NOT EXISTS `rule_project_auth_token` (
   UNIQUE KEY `uk_project_auth_token_code` (`token_code`),
   UNIQUE KEY `uk_project_auth_token_lookup` (`lookup_key`),
   KEY `idx_project_auth_token_auth` (`auth_id`, `status`),
-  KEY `idx_project_auth_token_project` (`project_id`, `status`)
+  KEY `idx_project_auth_token_project` (`project_id`, `status`),
+  CONSTRAINT `fk_project_auth_token_auth` FOREIGN KEY (`auth_id`) REFERENCES `rule_project_auth` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_project_auth_token_project` FOREIGN KEY (`project_id`) REFERENCES `rule_project` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目临时访问Token表';
 
 CREATE TABLE IF NOT EXISTS `rule_auth_access_log` (
@@ -125,18 +128,22 @@ CREATE TABLE IF NOT EXISTS `console_user` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_console_user_username` (`username`),
   UNIQUE KEY `uk_console_user_operator_name` (`operator_name`),
-  KEY `idx_console_user_status` (`status`)
+  KEY `idx_console_user_status` (`status`),
+  CONSTRAINT `fk_console_user_merged_into_user` FOREIGN KEY (`merged_into_user_id`) REFERENCES `console_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台账户表';
 
 CREATE TABLE IF NOT EXISTS `console_user_project` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键标识',
   `user_id` BIGINT NOT NULL COMMENT '控制台账户标识，关联 console_user.id',
   `project_id` BIGINT NOT NULL COMMENT '所属项目标识，关联 rule_project.id；0 表示全局资源',
+  `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
   `create_by` VARCHAR(64) DEFAULT NULL COMMENT '创建人标识',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_console_user_project` (`user_id`, `project_id`),
-  KEY `idx_console_project_user` (`project_id`, `user_id`)
+  KEY `idx_console_project_user` (`project_id`, `user_id`),
+  CONSTRAINT `fk_console_user_project_project_ref` FOREIGN KEY (`project_ref_id`) REFERENCES `rule_project` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_console_user_project_user` FOREIGN KEY (`user_id`) REFERENCES `console_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台账户可访问项目；无分配仅能访问获授权的全局内容';
 
 CREATE TABLE IF NOT EXISTS `console_account_token` (
@@ -151,17 +158,9 @@ CREATE TABLE IF NOT EXISTS `console_account_token` (
   `create_time`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_console_account_token_hash` (`token_hash`),
-  KEY `idx_console_account_token_user_purpose` (`user_id`, `purpose`, `consumed_at`, `expires_at`)
+  KEY `idx_console_account_token_user_purpose` (`user_id`, `purpose`, `consumed_at`, `expires_at`),
+  CONSTRAINT `fk_console_account_token_user` FOREIGN KEY (`user_id`) REFERENCES `console_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台账户邮箱验证及密码找回令牌';
-
-CREATE TABLE IF NOT EXISTS `console_user_project_permission` (
-  `id` BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '主键标识',
-  `user_id` BIGINT NOT NULL COMMENT '控制台账户标识，关联 console_user.id',
-  `project_id` BIGINT NOT NULL COMMENT '所属项目标识，关联 rule_project.id；0 表示全局资源',
-  `permission_id` BIGINT NOT NULL COMMENT '功能权限标识，关联 console_permission.id',
-  `effect` VARCHAR(8) NOT NULL COMMENT '项目权限效果：ALLOW=允许，DENY=拒绝；无记录时继承账户默认权限',
-  UNIQUE KEY `uk_console_project_permission` (`user_id`, `project_id`, `permission_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='按项目覆盖账户模块权限';
 
 CREATE TABLE IF NOT EXISTS `console_user_preference` (
   `id`               BIGINT      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -174,7 +173,8 @@ CREATE TABLE IF NOT EXISTS `console_user_preference` (
   `update_time`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_console_user_preference` (`user_id`, `preference_key`),
-  KEY `idx_console_user_preference_user` (`user_id`)
+  KEY `idx_console_user_preference_user` (`user_id`),
+  CONSTRAINT `fk_console_user_preference_user` FOREIGN KEY (`user_id`) REFERENCES `console_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台用户偏好表';
 
 CREATE TABLE IF NOT EXISTS `console_role` (
@@ -209,6 +209,19 @@ CREATE TABLE IF NOT EXISTS `console_permission` (
   KEY `idx_console_permission_group` (`permission_group`, `permission_type`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台功能权限表';
 
+CREATE TABLE IF NOT EXISTS `console_user_project_permission` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '主键标识',
+  `user_id` BIGINT NOT NULL COMMENT '控制台账户标识，关联 console_user.id',
+  `project_id` BIGINT NOT NULL COMMENT '所属项目标识，关联 rule_project.id；0 表示全局资源',
+  `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
+  `permission_id` BIGINT NOT NULL COMMENT '功能权限标识，关联 console_permission.id',
+  `effect` VARCHAR(8) NOT NULL COMMENT '项目权限效果：ALLOW=允许，DENY=拒绝；无记录时继承账户默认权限',
+  UNIQUE KEY `uk_console_project_permission` (`user_id`, `project_id`, `permission_id`),
+  CONSTRAINT `fk_console_user_project_permission_project_ref` FOREIGN KEY (`project_ref_id`) REFERENCES `rule_project` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_console_user_project_permission_user` FOREIGN KEY (`user_id`) REFERENCES `console_user` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_console_user_project_permission_permission` FOREIGN KEY (`permission_id`) REFERENCES `console_permission` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='按项目覆盖账户模块权限';
+
 CREATE TABLE IF NOT EXISTS `console_user_role` (
   `id`          BIGINT      NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id`     BIGINT      NOT NULL                COMMENT '账户ID',
@@ -217,7 +230,9 @@ CREATE TABLE IF NOT EXISTS `console_user_role` (
   `create_time` DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_console_user_role` (`user_id`, `role_id`),
-  KEY `idx_console_user_role_role` (`role_id`)
+  KEY `idx_console_user_role_role` (`role_id`),
+  CONSTRAINT `fk_console_user_role_user` FOREIGN KEY (`user_id`) REFERENCES `console_user` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_console_user_role_role` FOREIGN KEY (`role_id`) REFERENCES `console_role` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台账户角色关系表';
 
 CREATE TABLE IF NOT EXISTS `console_role_permission` (
@@ -228,7 +243,9 @@ CREATE TABLE IF NOT EXISTS `console_role_permission` (
   `create_time`   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_console_role_permission` (`role_id`, `permission_id`),
-  KEY `idx_console_role_permission_permission` (`permission_id`)
+  KEY `idx_console_role_permission_permission` (`permission_id`),
+  CONSTRAINT `fk_console_role_permission_role` FOREIGN KEY (`role_id`) REFERENCES `console_role` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_console_role_permission_permission` FOREIGN KEY (`permission_id`) REFERENCES `console_permission` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台角色权限关系表';
 
 CREATE TABLE IF NOT EXISTS `console_user_permission_override` (
@@ -242,7 +259,9 @@ CREATE TABLE IF NOT EXISTS `console_user_permission_override` (
   `update_time`   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_console_user_permission_override` (`user_id`, `permission_id`),
-  KEY `idx_console_user_permission_override_permission` (`permission_id`)
+  KEY `idx_console_user_permission_override_permission` (`permission_id`),
+  CONSTRAINT `fk_console_user_permission_override_user` FOREIGN KEY (`user_id`) REFERENCES `console_user` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_console_user_permission_override_permission` FOREIGN KEY (`permission_id`) REFERENCES `console_permission` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台账户权限覆盖表';
 
 CREATE TABLE IF NOT EXISTS `console_security_audit_log` (
@@ -300,7 +319,8 @@ CREATE TABLE IF NOT EXISTS `governed_resource_version` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_governed_resource_version_no` (`governed_resource_id`, `version_no`),
   UNIQUE KEY `uk_governed_version_legacy_source` (`legacy_source_type`, `legacy_source_id`),
-  KEY `idx_governed_version_resource` (`resource_type`, `resource_id`, `version_no`)
+  KEY `idx_governed_version_resource` (`resource_type`, `resource_id`, `version_no`),
+  CONSTRAINT `fk_governed_resource_version_governed_resource` FOREIGN KEY (`governed_resource_id`) REFERENCES `governed_resource` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一治理不可变版本表';
 
 CREATE TABLE IF NOT EXISTS `governance_approval_request` (
@@ -356,7 +376,8 @@ CREATE TABLE IF NOT EXISTS `governance_approval_event` (
   `details_json` LONGTEXT      DEFAULT NULL            COMMENT '事件详情JSON',
   `create_time`  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发生时间',
   PRIMARY KEY (`id`),
-  KEY `idx_governance_event_request` (`request_id`, `create_time`)
+  KEY `idx_governance_event_request` (`request_id`, `create_time`),
+  CONSTRAINT `fk_governance_approval_event_request` FOREIGN KEY (`request_id`) REFERENCES `governance_approval_request` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一生命周期审批历史事件';
 
 CREATE TABLE IF NOT EXISTS `governance_dependency_snapshot` (
@@ -380,12 +401,15 @@ CREATE TABLE IF NOT EXISTS `governance_dependency_snapshot` (
   `create_time`            DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   KEY `idx_governance_dependency_request` (`request_id`, `id`),
-  KEY `idx_governance_dependency_target` (`target_resource_type`, `target_resource_id`)
+  KEY `idx_governance_dependency_target` (`target_resource_type`, `target_resource_id`),
+  CONSTRAINT `fk_governance_dependency_snapshot_request` FOREIGN KEY (`request_id`) REFERENCES `governance_approval_request` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_governance_dependency_snapshot_version` FOREIGN KEY (`version_id`) REFERENCES `governed_resource_version` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一生命周期审批依赖快照';
 
 CREATE TABLE IF NOT EXISTS `rule_definition` (
   `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`        BIGINT       NOT NULL                COMMENT '所属项目ID',
+  `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
   `project_code`      VARCHAR(64)  DEFAULT NULL             COMMENT '所属项目编码',
   `project_name`      VARCHAR(128) DEFAULT NULL             COMMENT '所属项目名称',
   `rule_code`         VARCHAR(128) NOT NULL                COMMENT '规则编码（客户端调用标识）',
@@ -407,7 +431,8 @@ CREATE TABLE IF NOT EXISTS `rule_definition` (
   KEY `idx_project_id` (`project_id`),
   KEY `idx_model_type` (`model_type`),
   KEY `idx_dashboard_definition_project_status_scope` (`project_id`, `status`, `scope`),
-  KEY `idx_status` (`status`)
+  KEY `idx_status` (`status`),
+  CONSTRAINT `fk_definition_project_ref` FOREIGN KEY (`project_ref_id`) REFERENCES `rule_project` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则定义表';
 
 CREATE TABLE IF NOT EXISTS `rule_definition_input_field` (
@@ -433,7 +458,8 @@ CREATE TABLE IF NOT EXISTS `rule_definition_input_field` (
   PRIMARY KEY (`id`),
   KEY `idx_definition_id` (`definition_id`),
   KEY `idx_var_id` (`var_id`),
-  KEY `idx_ref_type_var_id` (`ref_type`, `var_id`)
+  KEY `idx_ref_type_var_id` (`ref_type`, `var_id`),
+  CONSTRAINT `fk_definition_input_field_definition` FOREIGN KEY (`definition_id`) REFERENCES `rule_definition` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则输入字段表';
 
 CREATE TABLE IF NOT EXISTS `rule_definition_output_field` (
@@ -455,7 +481,8 @@ CREATE TABLE IF NOT EXISTS `rule_definition_output_field` (
   PRIMARY KEY (`id`),
   KEY `idx_definition_id` (`definition_id`),
   KEY `idx_var_id` (`var_id`),
-  KEY `idx_ref_type_var_id` (`ref_type`, `var_id`)
+  KEY `idx_ref_type_var_id` (`ref_type`, `var_id`),
+  CONSTRAINT `fk_definition_output_field_definition` FOREIGN KEY (`definition_id`) REFERENCES `rule_definition` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则输出字段表';
 
 CREATE TABLE IF NOT EXISTS `rule_api_doc_scenario` (
@@ -481,7 +508,8 @@ CREATE TABLE IF NOT EXISTS `rule_api_doc_scenario` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_api_doc_scenario_name` (`definition_id`, `scenario_name`),
   KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`),
-  KEY `idx_api_doc_scenario_revision` (`definition_id`, `revision_id`)
+  KEY `idx_api_doc_scenario_revision` (`definition_id`, `revision_id`),
+  CONSTRAINT `fk_api_doc_scenario_definition` FOREIGN KEY (`definition_id`) REFERENCES `rule_definition` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则 API 文档测试场景';
 
 CREATE TABLE IF NOT EXISTS `rule_regression_evidence` (
@@ -518,7 +546,8 @@ CREATE TABLE IF NOT EXISTS `rule_regression_evidence_latest` (
   `scenario_id` BIGINT NOT NULL COMMENT '固定测试用例标识，关联 rule_api_doc_scenario.id',
   `evidence_id` BIGINT NOT NULL COMMENT '最新有效回归尝试标识，关联 rule_regression_evidence.id',
   PRIMARY KEY (`definition_id`, `revision_id`, `scenario_id`),
-  KEY `idx_regression_latest_report` (`evidence_id`)
+  KEY `idx_regression_latest_report` (`evidence_id`),
+  CONSTRAINT `fk_regression_evidence_latest_evidence` FOREIGN KEY (`evidence_id`) REFERENCES `rule_regression_evidence` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='每个修订和固定用例的最新有效回归尝试';
 
 CREATE TABLE IF NOT EXISTS `rule_definition_content` (
@@ -534,7 +563,8 @@ CREATE TABLE IF NOT EXISTS `rule_definition_content` (
   `open_api_config_json` LONGTEXT DEFAULT NULL             COMMENT '对外规则接口草稿配置JSON',
   `update_time`     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_definition_id` (`definition_id`)
+  UNIQUE KEY `uk_definition_id` (`definition_id`),
+  CONSTRAINT `fk_definition_content_definition` FOREIGN KEY (`definition_id`) REFERENCES `rule_definition` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则内容表（设计态数据和编译产物）';
 
 CREATE TABLE IF NOT EXISTS `rule_definition_ref` (
@@ -544,7 +574,9 @@ CREATE TABLE IF NOT EXISTS `rule_definition_ref` (
   `create_time`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_definition_project` (`definition_id`, `project_id`),
-  KEY `idx_project_id` (`project_id`)
+  KEY `idx_project_id` (`project_id`),
+  CONSTRAINT `fk_definition_ref_definition` FOREIGN KEY (`definition_id`) REFERENCES `rule_definition` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_definition_ref_project` FOREIGN KEY (`project_id`) REFERENCES `rule_project` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则关联表（用于项目关联全局规则）';
 
 CREATE TABLE IF NOT EXISTS `rule_definition_version` (
@@ -591,7 +623,8 @@ CREATE TABLE IF NOT EXISTS `rule_published` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_rule_code` (`rule_code`),
   KEY `idx_status` (`status`),
-  KEY `idx_definition_id` (`definition_id`)
+  KEY `idx_definition_id` (`definition_id`),
+  CONSTRAINT `fk_published_definition` FOREIGN KEY (`definition_id`) REFERENCES `rule_definition` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='已发布规则表，供客户端同步执行';
 
 CREATE TABLE IF NOT EXISTS `rule_revision` (
@@ -635,7 +668,10 @@ CREATE TABLE IF NOT EXISTS `rule_revision` (
   UNIQUE KEY `uk_rule_revision` (`definition_id`, `revision_no`),
   KEY `idx_revision_lifecycle` (`definition_id`, `state`, `revision_no`),
   KEY `idx_revision_artifact` (`artifact_id`),
-  KEY `idx_revision_governance_request` (`governance_request_id`)
+  KEY `idx_revision_governance_request` (`governance_request_id`),
+  CONSTRAINT `fk_revision_definition` FOREIGN KEY (`definition_id`) REFERENCES `rule_definition` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_revision_base_revision` FOREIGN KEY (`base_revision_id`) REFERENCES `rule_revision` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_revision_governance_request` FOREIGN KEY (`governance_request_id`) REFERENCES `governance_approval_request` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则修订生命周期表';
 
 CREATE TABLE IF NOT EXISTS `rule_designer_save_operation` (
@@ -647,7 +683,8 @@ CREATE TABLE IF NOT EXISTS `rule_designer_save_operation` (
   `create_by` VARCHAR(64) NOT NULL COMMENT '创建人标识',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_designer_save_request` (`definition_id`, `request_id`)
+  UNIQUE KEY `uk_designer_save_request` (`definition_id`, `request_id`),
+  CONSTRAINT `fk_designer_save_operation_definition` FOREIGN KEY (`definition_id`) REFERENCES `rule_definition` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则设计器保存幂等记录及原始响应表';
 
 CREATE TABLE IF NOT EXISTS `rule_lifecycle_event` (
@@ -668,7 +705,8 @@ CREATE TABLE IF NOT EXISTS `rule_lifecycle_event` (
   `create_time`              DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
   PRIMARY KEY (`id`),
   KEY `idx_lifecycle_revision` (`revision_id`, `create_time`),
-  KEY `idx_lifecycle_definition` (`definition_id`, `create_time`)
+  KEY `idx_lifecycle_definition` (`definition_id`, `create_time`),
+  CONSTRAINT `fk_lifecycle_event_revision` FOREIGN KEY (`revision_id`) REFERENCES `rule_revision` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则生命周期事件追加记录表';
 
 CREATE TABLE IF NOT EXISTS `decision_artifact` (
@@ -708,7 +746,8 @@ CREATE TABLE IF NOT EXISTS `decision_artifact_component` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_artifact_component` (`artifact_id`, `component_id`),
   UNIQUE KEY `uk_artifact_component_path` (`artifact_id`, `package_path`),
-  KEY `idx_component_source` (`source_type`, `source_id`, `source_version`)
+  KEY `idx_component_source` (`source_type`, `source_id`, `source_version`),
+  CONSTRAINT `fk_decision_artifact_component_artifact` FOREIGN KEY (`artifact_id`) REFERENCES `decision_artifact` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='决策制品组件及来源表';
 
 CREATE TABLE IF NOT EXISTS `artifact_deployment` (
@@ -726,7 +765,8 @@ CREATE TABLE IF NOT EXISTS `artifact_deployment` (
   `create_time`               DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
   PRIMARY KEY (`id`),
   KEY `idx_deployment_artifact` (`artifact_id`, `create_time`),
-  KEY `idx_deployment_target` (`target_definition_id`, `create_time`)
+  KEY `idx_deployment_target` (`target_definition_id`, `create_time`),
+  CONSTRAINT `fk_artifact_deployment_artifact` FOREIGN KEY (`artifact_id`) REFERENCES `decision_artifact` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='决策制品部署历史表';
 
 CREATE TABLE IF NOT EXISTS `artifact_resource_binding` (
@@ -739,7 +779,8 @@ CREATE TABLE IF NOT EXISTS `artifact_resource_binding` (
   `create_time`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_deployment_binding` (`deployment_id`, `component_id`),
-  KEY `idx_binding_target` (`resource_type`, `target_resource_id`)
+  KEY `idx_binding_target` (`resource_type`, `target_resource_id`),
+  CONSTRAINT `fk_artifact_resource_binding_deployment` FOREIGN KEY (`deployment_id`) REFERENCES `artifact_deployment` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='决策制品与目标资源显式绑定表';
 
 CREATE TABLE IF NOT EXISTS `resource_impact_analysis` (
@@ -781,13 +822,16 @@ CREATE TABLE IF NOT EXISTS `rule_publish_outbox` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_publish_operation` (`operation_id`),
   KEY `idx_outbox_poll` (`delivery_status`, `next_retry_time`),
-  KEY `idx_outbox_revision` (`revision_id`)
+  KEY `idx_outbox_revision` (`revision_id`),
+  CONSTRAINT `fk_publish_outbox_revision` FOREIGN KEY (`revision_id`) REFERENCES `rule_revision` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_publish_outbox_artifact` FOREIGN KEY (`artifact_id`) REFERENCES `decision_artifact` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则发布通知可靠投递事务发件箱';
 
 CREATE TABLE IF NOT EXISTS `rule_data_object` (
   `lazy_load_references` TINYINT NOT NULL DEFAULT 0 COMMENT '是否对引用型叶子字段按需取值：0=否，1=是',
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`       BIGINT       NOT NULL                COMMENT '所属项目ID',
+  `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
   `scope`             VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL=全局，PROJECT=项目级',
   `object_code`      VARCHAR(128) NOT NULL                COMMENT '对象编码（Java类名/JSON键名）',
   `object_label`     VARCHAR(128) DEFAULT NULL             COMMENT '对象中文名称',
@@ -801,8 +845,38 @@ CREATE TABLE IF NOT EXISTS `rule_data_object` (
   `update_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_scope_project_object` (`scope`, `project_id`, `object_code`),
-  KEY `idx_project_id` (`project_id`)
+  KEY `idx_project_id` (`project_id`),
+  CONSTRAINT `fk_data_object_project_ref` FOREIGN KEY (`project_ref_id`) REFERENCES `rule_project` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_data_object_parent_object` FOREIGN KEY (`parent_object_id`) REFERENCES `rule_data_object` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据对象定义表（Java实体类/JSON对象）';
+
+CREATE TABLE IF NOT EXISTS `rule_variable` (
+  `system_constant` TINYINT NOT NULL DEFAULT 0 COMMENT '系统常量只读标记，业务接口不可修改',
+  `record_result`    TINYINT NOT NULL DEFAULT 0 COMMENT '是否显式记录字段结果供历史统计：0=否，1=是',
+  `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `project_id`        BIGINT       NOT NULL                COMMENT '所属项目ID',
+  `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
+  `scope`             VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL=全局，PROJECT=项目级',
+  `var_code`          VARCHAR(128) NOT NULL                COMMENT '变量编码',
+  `var_label`         VARCHAR(128) NOT NULL                COMMENT '变量中文名称',
+  `script_name`       VARCHAR(128) DEFAULT NULL             COMMENT '脚本引用名称，原样保留用户配置，不自动转换大小写或命名格式',
+  `var_type`          VARCHAR(32)  NOT NULL                COMMENT '变量或对象字段数据类型：STRING=字符串，NUMBER=数值，INTEGER=整数，DOUBLE=双精度数值，BOOLEAN=布尔，DATE=日期，ENUM=枚举，OBJECT=对象，LIST=列表，MAP=映射',
+  `var_source`        VARCHAR(32)  NOT NULL DEFAULT 'INPUT' COMMENT '变量来源：INPUT=请求输入，COMPUTED=计算变量，CONSTANT=常量，DB=数据库，API=外数接口，LIST=名单匹配，SFTP=远程文件，DERIVED=历史派生统计',
+  `source_config`     JSON         DEFAULT NULL             COMMENT '外部来源配置JSON：API/DB/LIST变量绑定接口、SQL、入参映射、结果路径等',
+  `default_value`     TEXT         DEFAULT NULL             COMMENT '默认值（常量必填，可为较长 JSON）',
+  `value_range`       VARCHAR(512) DEFAULT NULL             COMMENT '取值范围描述',
+  `example_value`     VARCHAR(256) DEFAULT NULL             COMMENT '示例值',
+  `description`       VARCHAR(512) DEFAULT NULL             COMMENT '变量说明',
+  `sort_order`        INT          NOT NULL DEFAULT 0       COMMENT '排序序号',
+  `status`            TINYINT      NOT NULL DEFAULT 1       COMMENT '资源状态：-1=已逻辑删除，0=停用，1=启用',
+  `create_time`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_scope_project_var` (`scope`, `project_id`, `var_code`),
+  KEY `idx_project_id` (`project_id`),
+  KEY `idx_var_source` (`var_source`),
+  CONSTRAINT `fk_variable_project_ref` FOREIGN KEY (`project_ref_id`) REFERENCES `rule_project` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则变量表（普通变量与常量）';
 
 CREATE TABLE IF NOT EXISTS `rule_data_object_field` (
   `reference_mode` VARCHAR(16) NOT NULL DEFAULT 'VALUE' COMMENT '引用方式：VALUE=缺失值时引用取值，STRUCTURE=仅复用结构定义',
@@ -831,7 +905,10 @@ CREATE TABLE IF NOT EXISTS `rule_data_object_field` (
   KEY `idx_project_id` (`project_id`),
   KEY `idx_object_id` (`object_id`),
   KEY `idx_ref_object_id` (`ref_object_id`),
-  KEY `idx_ref_variable_id` (`ref_variable_id`)
+  KEY `idx_ref_variable_id` (`ref_variable_id`),
+  CONSTRAINT `fk_data_object_field_object` FOREIGN KEY (`object_id`) REFERENCES `rule_data_object` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_data_object_field_ref_object` FOREIGN KEY (`ref_object_id`) REFERENCES `rule_data_object` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_data_object_field_ref_variable` FOREIGN KEY (`ref_variable_id`) REFERENCES `rule_variable` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据对象字段表';
 
 CREATE TABLE IF NOT EXISTS `rule_data_object_field_option` (
@@ -841,38 +918,14 @@ CREATE TABLE IF NOT EXISTS `rule_data_object_field_option` (
   `option_label` VARCHAR(256) NOT NULL                COMMENT '选项中文标签',
   `sort_order`   INT          NOT NULL DEFAULT 0       COMMENT '排序序号',
   PRIMARY KEY (`id`),
-  KEY `idx_field_id` (`field_id`)
+  KEY `idx_field_id` (`field_id`),
+  CONSTRAINT `fk_data_object_field_option_field` FOREIGN KEY (`field_id`) REFERENCES `rule_data_object_field` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据对象字段枚举选项';
-
-CREATE TABLE IF NOT EXISTS `rule_variable` (
-  `system_constant` TINYINT NOT NULL DEFAULT 0 COMMENT '系统常量只读标记，业务接口不可修改',
-  `record_result`    TINYINT NOT NULL DEFAULT 0 COMMENT '是否显式记录字段结果供历史统计：0=否，1=是',
-  `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `project_id`        BIGINT       NOT NULL                COMMENT '所属项目ID',
-  `scope`             VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL=全局，PROJECT=项目级',
-  `var_code`          VARCHAR(128) NOT NULL                COMMENT '变量编码',
-  `var_label`         VARCHAR(128) NOT NULL                COMMENT '变量中文名称',
-  `script_name`       VARCHAR(128) DEFAULT NULL             COMMENT '脚本引用名称，原样保留用户配置，不自动转换大小写或命名格式',
-  `var_type`          VARCHAR(32)  NOT NULL                COMMENT '变量或对象字段数据类型：STRING=字符串，NUMBER=数值，INTEGER=整数，DOUBLE=双精度数值，BOOLEAN=布尔，DATE=日期，ENUM=枚举，OBJECT=对象，LIST=列表，MAP=映射',
-  `var_source`        VARCHAR(32)  NOT NULL DEFAULT 'INPUT' COMMENT '变量来源：INPUT=请求输入，COMPUTED=计算变量，CONSTANT=常量，DB=数据库，API=外数接口，LIST=名单匹配，SFTP=远程文件，DERIVED=历史派生统计',
-  `source_config`     JSON         DEFAULT NULL             COMMENT '外部来源配置JSON：API/DB/LIST变量绑定接口、SQL、入参映射、结果路径等',
-  `default_value`     TEXT         DEFAULT NULL             COMMENT '默认值（常量必填，可为较长 JSON）',
-  `value_range`       VARCHAR(512) DEFAULT NULL             COMMENT '取值范围描述',
-  `example_value`     VARCHAR(256) DEFAULT NULL             COMMENT '示例值',
-  `description`       VARCHAR(512) DEFAULT NULL             COMMENT '变量说明',
-  `sort_order`        INT          NOT NULL DEFAULT 0       COMMENT '排序序号',
-  `status`            TINYINT      NOT NULL DEFAULT 1       COMMENT '资源状态：-1=已逻辑删除，0=停用，1=启用',
-  `create_time`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `update_time`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_scope_project_var` (`scope`, `project_id`, `var_code`),
-  KEY `idx_project_id` (`project_id`),
-  KEY `idx_var_source` (`var_source`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则变量表（普通变量与常量）';
 
 CREATE TABLE IF NOT EXISTS `rule_field_validation` (
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`       BIGINT       NOT NULL DEFAULT 0       COMMENT '所属项目ID，0表示全局',
+  `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
   `scope`            VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL=全局，PROJECT=项目级',
   `validation_code`  VARCHAR(128) NOT NULL                 COMMENT '校验编码',
   `validation_name`  VARCHAR(128) NOT NULL                 COMMENT '校验名称',
@@ -886,7 +939,8 @@ CREATE TABLE IF NOT EXISTS `rule_field_validation` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_field_validation_scope_code` (`scope`, `project_id`, `validation_code`),
   KEY `idx_field_validation_project` (`project_id`),
-  KEY `idx_field_validation_type_status` (`validation_type`, `status`)
+  KEY `idx_field_validation_type_status` (`validation_type`, `status`),
+  CONSTRAINT `fk_field_validation_project_ref` FOREIGN KEY (`project_ref_id`) REFERENCES `rule_project` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='字段校验规则库';
 
 CREATE TABLE IF NOT EXISTS `rule_variable_option` (
@@ -896,12 +950,14 @@ CREATE TABLE IF NOT EXISTS `rule_variable_option` (
   `option_label` VARCHAR(256) NOT NULL                COMMENT '选项中文标签',
   `sort_order`   INT          NOT NULL DEFAULT 0       COMMENT '排序序号',
   PRIMARY KEY (`id`),
-  KEY `idx_variable_id` (`variable_id`)
+  KEY `idx_variable_id` (`variable_id`),
+  CONSTRAINT `fk_variable_option_variable` FOREIGN KEY (`variable_id`) REFERENCES `rule_variable` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则变量选项表（枚举变量的可选值）';
 
 CREATE TABLE IF NOT EXISTS `rule_list_library` (
   `id`           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`   BIGINT       NOT NULL DEFAULT 0       COMMENT '所属项目ID，0 表示全局',
+  `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
   `scope`        VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL=全局，PROJECT=项目级',
   `list_code`    VARCHAR(128) NOT NULL                 COMMENT '名单库编码',
   `list_name`    VARCHAR(128) NOT NULL                 COMMENT '名单库名称',
@@ -913,7 +969,8 @@ CREATE TABLE IF NOT EXISTS `rule_list_library` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_list_scope_project_code` (`scope`, `project_id`, `list_code`),
   KEY `idx_list_project_id` (`project_id`),
-  KEY `idx_list_type_status` (`list_type`, `status`)
+  KEY `idx_list_type_status` (`list_type`, `status`),
+  CONSTRAINT `fk_list_library_project_ref` FOREIGN KEY (`project_ref_id`) REFERENCES `rule_project` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单库配置表';
 
 CREATE TABLE IF NOT EXISTS `rule_list_record` (
@@ -934,7 +991,8 @@ CREATE TABLE IF NOT EXISTS `rule_list_record` (
   KEY `idx_list_record_lookup` (`list_id`, `item_type`, `item_content`, `status`),
   KEY `idx_list_record_content_status` (`list_id`, `item_content`, `status`),
   KEY `idx_list_record_effective_lookup` (`list_id`, `status`, `effective_time`, `expire_time`),
-  KEY `idx_list_record_effective` (`effective_time`, `expire_time`)
+  KEY `idx_list_record_effective` (`effective_time`, `expire_time`),
+  CONSTRAINT `fk_list_record_list` FOREIGN KEY (`list_id`) REFERENCES `rule_list_library` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单当前记录表';
 
 CREATE TABLE IF NOT EXISTS `rule_list_action_receipt` (
@@ -998,7 +1056,9 @@ CREATE TABLE IF NOT EXISTS `rule_list_change_batch` (
   `update_time`         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   KEY `idx_list_change_batch_list_status` (`list_id`, `status`),
-  KEY `idx_list_change_batch_approval` (`approval_request_id`)
+  KEY `idx_list_change_batch_approval` (`approval_request_id`),
+  CONSTRAINT `fk_list_change_batch_list` FOREIGN KEY (`list_id`) REFERENCES `rule_list_library` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_list_change_batch_approval_request` FOREIGN KEY (`approval_request_id`) REFERENCES `governance_approval_request` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单变更暂存批次';
 
 CREATE TABLE IF NOT EXISTS `rule_list_change_item` (
@@ -1021,12 +1081,14 @@ CREATE TABLE IF NOT EXISTS `rule_list_change_item` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_list_change_item_row` (`batch_id`, `source_row`),
   KEY `idx_list_change_item_batch_status` (`batch_id`, `validation_status`),
-  KEY `idx_list_change_item_target` (`target_record_id`)
+  KEY `idx_list_change_item_target` (`target_record_id`),
+  CONSTRAINT `fk_list_change_item_batch` FOREIGN KEY (`batch_id`) REFERENCES `rule_list_change_batch` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单变更暂存明细';
 
 CREATE TABLE IF NOT EXISTS `rule_function` (
   `id`            BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`    BIGINT       NOT NULL                COMMENT '所属项目ID',
+  `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
   `scope`         VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL=全局，PROJECT=项目级',
   `func_code`     VARCHAR(128) NOT NULL                COMMENT '函数编码（QLExpress 中的函数名）',
   `func_name`     VARCHAR(128) NOT NULL                COMMENT '函数中文名称',
@@ -1043,7 +1105,8 @@ CREATE TABLE IF NOT EXISTS `rule_function` (
   `update_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_scope_project_func` (`scope`, `project_id`, `func_code`),
-  KEY `idx_project_id` (`project_id`)
+  KEY `idx_project_id` (`project_id`),
+  CONSTRAINT `fk_function_project_ref` FOREIGN KEY (`project_ref_id`) REFERENCES `rule_project` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='自定义函数定义表';
 
 CREATE TABLE IF NOT EXISTS `rule_function_version` (
@@ -1246,6 +1309,7 @@ CREATE TABLE IF NOT EXISTS `rule_model` (
   `runtime_constraints_json` LONGTEXT    DEFAULT NULL       COMMENT '运行环境与依赖版本约束，JSON 格式',
   `id`                 BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`         BIGINT       DEFAULT NULL             COMMENT '所属项目ID（全局模型可为空）',
+  `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
   `project_code`       VARCHAR(64)  DEFAULT NULL             COMMENT '所属项目编码',
   `project_name`       VARCHAR(128) DEFAULT NULL             COMMENT '所属项目名称',
   `scope`              VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL=全局，PROJECT=项目级',
@@ -1279,7 +1343,8 @@ CREATE TABLE IF NOT EXISTS `rule_model` (
   KEY `idx_project_id` (`project_id`),
   KEY `idx_scope` (`scope`),
   KEY `idx_model_format` (`model_format`),
-  KEY `idx_model_type` (`model_type`)
+  KEY `idx_model_type` (`model_type`),
+  CONSTRAINT `fk_model_project_ref` FOREIGN KEY (`project_ref_id`) REFERENCES `rule_project` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一模型主表';
 
 CREATE TABLE IF NOT EXISTS `rule_model_input_field` (
@@ -1306,7 +1371,8 @@ CREATE TABLE IF NOT EXISTS `rule_model_input_field` (
   PRIMARY KEY (`id`),
   KEY `idx_model_id` (`model_id`),
   KEY `idx_var_id` (`var_id`),
-  KEY `idx_ref_type_var_id` (`ref_type`, `var_id`)
+  KEY `idx_ref_type_var_id` (`ref_type`, `var_id`),
+  CONSTRAINT `fk_model_input_field_model` FOREIGN KEY (`model_id`) REFERENCES `rule_model` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一模型输入字段表';
 
 CREATE TABLE IF NOT EXISTS `rule_model_output_field` (
@@ -1330,7 +1396,8 @@ CREATE TABLE IF NOT EXISTS `rule_model_output_field` (
   PRIMARY KEY (`id`),
   KEY `idx_model_id` (`model_id`),
   KEY `idx_var_id` (`var_id`),
-  KEY `idx_ref_type_var_id` (`ref_type`, `var_id`)
+  KEY `idx_ref_type_var_id` (`ref_type`, `var_id`),
+  CONSTRAINT `fk_model_output_field_model` FOREIGN KEY (`model_id`) REFERENCES `rule_model` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一模型输出字段表';
 
 CREATE TABLE IF NOT EXISTS `rule_model_version` (
@@ -1357,7 +1424,8 @@ CREATE TABLE IF NOT EXISTS `rule_model_version` (
   `publish_by`      VARCHAR(64)  DEFAULT NULL             COMMENT '发布人',
   `publish_time`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发布时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_model_version` (`model_id`, `version`)
+  UNIQUE KEY `uk_model_version` (`model_id`, `version`),
+  CONSTRAINT `fk_model_version_model` FOREIGN KEY (`model_id`) REFERENCES `rule_model` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型版本历史表';
 
 CREATE TABLE IF NOT EXISTS `rule_model_ref` (
@@ -1367,12 +1435,15 @@ CREATE TABLE IF NOT EXISTS `rule_model_ref` (
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_model_project` (`model_id`, `project_id`),
-  KEY `idx_project_id` (`project_id`)
+  KEY `idx_project_id` (`project_id`),
+  CONSTRAINT `fk_model_ref_model` FOREIGN KEY (`model_id`) REFERENCES `rule_model` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_model_ref_project` FOREIGN KEY (`project_id`) REFERENCES `rule_project` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型关联表（用于项目关联全局模型）';
 
 CREATE TABLE IF NOT EXISTS `rule_external_datasource` (
   `id`                  BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`          BIGINT       NOT NULL DEFAULT 0      COMMENT '所属项目ID，0表示全局',
+  `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
   `scope`               VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL=全局，PROJECT=项目级',
   `datasource_code`     VARCHAR(128) NOT NULL                COMMENT '外数数据源编码',
   `datasource_name`     VARCHAR(128) NOT NULL                COMMENT '外数数据源名称',
@@ -1389,7 +1460,8 @@ CREATE TABLE IF NOT EXISTS `rule_external_datasource` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_ext_ds_scope_project_code` (`scope`, `project_id`, `datasource_code`),
   KEY `idx_ext_ds_project_id` (`project_id`),
-  KEY `idx_ext_ds_status` (`status`)
+  KEY `idx_ext_ds_status` (`status`),
+  CONSTRAINT `fk_external_datasource_project_ref` FOREIGN KEY (`project_ref_id`) REFERENCES `rule_project` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部API数据源定义表';
 
 CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
@@ -1474,7 +1546,10 @@ CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
   UNIQUE KEY `uk_ext_api_datasource_code` (`datasource_id`, `api_code`),
   KEY `idx_ext_api_datasource_id` (`datasource_id`),
   KEY `idx_ext_api_request_mode` (`request_mode`),
-  KEY `idx_ext_api_status` (`status`)
+  KEY `idx_ext_api_status` (`status`),
+  CONSTRAINT `fk_external_api_config_datasource` FOREIGN KEY (`datasource_id`) REFERENCES `rule_external_datasource` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_external_api_config_request_object` FOREIGN KEY (`request_object_id`) REFERENCES `rule_data_object` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_external_api_config_response_object` FOREIGN KEY (`response_object_id`) REFERENCES `rule_data_object` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部API接口配置表';
 
 CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
@@ -1539,6 +1614,7 @@ CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
 CREATE TABLE IF NOT EXISTS `rule_experiment` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`      BIGINT       DEFAULT NULL            COMMENT '所属项目ID',
+  `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
   `project_code`    VARCHAR(128) DEFAULT NULL            COMMENT '所属项目编码',
   `experiment_code` VARCHAR(128) NOT NULL                COMMENT '实验编码',
   `experiment_name` VARCHAR(128) NOT NULL                COMMENT '实验名称',
@@ -1555,7 +1631,8 @@ CREATE TABLE IF NOT EXISTS `rule_experiment` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_experiment_code` (`experiment_code`),
   KEY `idx_experiment_project` (`project_id`),
-  KEY `idx_experiment_status` (`status`)
+  KEY `idx_experiment_status` (`status`),
+  CONSTRAINT `fk_experiment_project_ref` FOREIGN KEY (`project_ref_id`) REFERENCES `rule_project` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验定义表';
 
 CREATE TABLE IF NOT EXISTS `rule_experiment_group` (
@@ -1580,7 +1657,9 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_group` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_experiment_group_code` (`experiment_id`, `group_code`),
   KEY `idx_experiment_group_rule` (`rule_id`),
-  KEY `idx_experiment_group_type` (`experiment_id`, `group_type`, `status`)
+  KEY `idx_experiment_group_type` (`experiment_id`, `group_type`, `status`),
+  CONSTRAINT `fk_experiment_group_experiment` FOREIGN KEY (`experiment_id`) REFERENCES `rule_experiment` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_experiment_group_rule` FOREIGN KEY (`rule_id`) REFERENCES `rule_definition` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验组表';
 
 CREATE TABLE IF NOT EXISTS `rule_experiment_execution_log` (
@@ -1677,6 +1756,7 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_version` (
 CREATE TABLE IF NOT EXISTS `rule_db_datasource` (
   `id`                    BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`            BIGINT       NOT NULL DEFAULT 0      COMMENT '所属项目ID，0表示全局',
+  `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
   `scope`                 VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL=全局，PROJECT=项目级',
   `datasource_code`       VARCHAR(128) NOT NULL                COMMENT '数据库数据源编码',
   `datasource_name`       VARCHAR(128) NOT NULL                COMMENT '数据库数据源名称',
@@ -1709,12 +1789,14 @@ CREATE TABLE IF NOT EXISTS `rule_db_datasource` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_db_ds_scope_project_code` (`scope`, `project_id`, `datasource_code`),
   KEY `idx_db_ds_project_id` (`project_id`),
-  KEY `idx_db_ds_status` (`status`)
+  KEY `idx_db_ds_status` (`status`),
+  CONSTRAINT `fk_db_datasource_project_ref` FOREIGN KEY (`project_ref_id`) REFERENCES `rule_project` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部数据库数据源定义表';
 
 CREATE TABLE IF NOT EXISTS `rule_sftp_datasource` (
   `id`                       BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`               BIGINT       NOT NULL DEFAULT 0      COMMENT '所属项目ID，0表示全局',
+  `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
   `scope`                    VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL=全局，PROJECT=项目级',
   `datasource_code`          VARCHAR(128) NOT NULL                COMMENT 'SFTP数据源编码',
   `datasource_name`          VARCHAR(128) NOT NULL                COMMENT 'SFTP数据源名称',
@@ -1745,12 +1827,14 @@ CREATE TABLE IF NOT EXISTS `rule_sftp_datasource` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_sftp_ds_scope_project_code` (`scope`, `project_id`, `datasource_code`),
   KEY `idx_sftp_ds_project_id` (`project_id`),
-  KEY `idx_sftp_ds_status` (`status`)
+  KEY `idx_sftp_ds_status` (`status`),
+  CONSTRAINT `fk_sftp_datasource_project_ref` FOREIGN KEY (`project_ref_id`) REFERENCES `rule_project` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='SFTP连接池数据源定义表';
 
 CREATE TABLE IF NOT EXISTS `rule_billing_config` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`      BIGINT       NOT NULL DEFAULT 0      COMMENT '所属项目ID，0表示全局',
+  `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
   `scope`           VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL=全局，PROJECT=项目级',
   `billing_code`    VARCHAR(128) NOT NULL                COMMENT '计费项编码',
   `billing_name`    VARCHAR(128) NOT NULL                COMMENT '计费项名称',
@@ -1768,7 +1852,8 @@ CREATE TABLE IF NOT EXISTS `rule_billing_config` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_billing_scope_project_code` (`scope`, `project_id`, `billing_code`),
   KEY `idx_billing_target` (`billing_target`, `target_ref_id`),
-  KEY `idx_billing_status` (`status`)
+  KEY `idx_billing_status` (`status`),
+  CONSTRAINT `fk_billing_config_project_ref` FOREIGN KEY (`project_ref_id`) REFERENCES `rule_project` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费配置表';
 
 CREATE TABLE IF NOT EXISTS `rule_billing_record` (
@@ -1992,7 +2077,8 @@ CREATE TABLE IF NOT EXISTS `rule_version_binding` (
   `status` INT NOT NULL DEFAULT 1 COMMENT '业务版本状态：0=不可用，1=可用',
   `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '记录最后更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_rule_business_version` (`definition_id`, `version_no`)
+  UNIQUE KEY `uk_rule_business_version` (`definition_id`, `version_no`),
+  CONSTRAINT `fk_version_binding_definition` FOREIGN KEY (`definition_id`) REFERENCES `rule_definition` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则业务版本与不可变快照绑定表';
 
 CREATE TABLE IF NOT EXISTS `rule_application_history` (
@@ -2041,13 +2127,6 @@ CREATE TABLE IF NOT EXISTS `console_operation_log` (
   KEY `idx_console_operation_module_time` (`module`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='控制台账户操作记录';
 
-CREATE TABLE IF NOT EXISTS `offline_transfer_log_resource` (
-  `log_id` BIGINT NOT NULL COMMENT '迁移日志标识，关联 offline_transfer_log.id',
-  `resource_type` VARCHAR(32) NOT NULL COMMENT '迁移资源类型：PROJECT=项目，RULE=规则，RULE_VERSION=规则版本，VARIABLE=变量，DATA_OBJECT=对象，FUNCTION=函数，DATABASE=数据库，SFTP=文件数据源，EXTERNAL_DATASOURCE=外数数据源，EXTERNAL_API=外数接口，LIST_LIBRARY=名单库，LIST_RECORD_BATCH=名单批次，MODEL=模型，EXPERIMENT=实验，FIELD_VALIDATION=字段校验',
-  `resource_id` BIGINT NOT NULL COMMENT '本地资源ID；0代表用户上传包中的全局内容',
-  PRIMARY KEY (`log_id`, `resource_type`, `resource_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='迁移日志内容权限索引';
-
 CREATE TABLE IF NOT EXISTS `offline_transfer_log` (
   `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键标识',
@@ -2064,6 +2143,14 @@ CREATE TABLE IF NOT EXISTS `offline_transfer_log` (
   KEY `idx_offline_transfer_log_time` (`create_time`),
   KEY `idx_offline_transfer_log_operation` (`operation_type`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='离线资源迁移操作日志表';
+
+CREATE TABLE IF NOT EXISTS `offline_transfer_log_resource` (
+  `log_id` BIGINT NOT NULL COMMENT '迁移日志标识，关联 offline_transfer_log.id',
+  `resource_type` VARCHAR(32) NOT NULL COMMENT '迁移资源类型：PROJECT=项目，RULE=规则，RULE_VERSION=规则版本，VARIABLE=变量，DATA_OBJECT=对象，FUNCTION=函数，DATABASE=数据库，SFTP=文件数据源，EXTERNAL_DATASOURCE=外数数据源，EXTERNAL_API=外数接口，LIST_LIBRARY=名单库，LIST_RECORD_BATCH=名单批次，MODEL=模型，EXPERIMENT=实验，FIELD_VALIDATION=字段校验',
+  `resource_id` BIGINT NOT NULL COMMENT '本地资源ID；0代表用户上传包中的全局内容',
+  PRIMARY KEY (`log_id`, `resource_type`, `resource_id`),
+  CONSTRAINT `fk_offline_transfer_log_resource_log` FOREIGN KEY (`log_id`) REFERENCES `offline_transfer_log` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='迁移日志内容权限索引';
 
 -- 系统常量依赖 uk_scope_project_var 唯一索引幂等补齐；已有常量的 ID 和配置保持不变。
 -- 可选的业务初始变量和数据对象由 server 的 InitialDataInitializer 执行 sql/initial-data.sql，
@@ -2279,15 +2366,37 @@ CREATE TABLE IF NOT EXISTS `rule_ledger_type` (
   `deleted` TINYINT NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`), UNIQUE KEY `uk_ledger_type_legacy` (`legacy_code`), UNIQUE KEY `uk_ledger_type_code` (`type_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='台账事件类型，引用稳定ID';
+CREATE TABLE IF NOT EXISTS `rule_ledger_event` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `event_code` VARCHAR(128) DEFAULT NULL,
+  `title` VARCHAR(200) NOT NULL,
+  `status` VARCHAR(24) NOT NULL DEFAULT 'FOLLOWING',
+  `scope` VARCHAR(16) NOT NULL,
+  `project_id` BIGINT DEFAULT NULL,
+  `owner_user_id` BIGINT NOT NULL,
+  `owner_name` VARCHAR(128) NOT NULL,
+  `lock_version` BIGINT NOT NULL DEFAULT 0,
+  `deleted` TINYINT NOT NULL DEFAULT 0,
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_ledger_event_scope` (`scope`,`project_id`,`deleted`)
+  ,UNIQUE KEY `uk_ledger_event_code` (`event_code`),
+  CONSTRAINT `fk_ledger_event_owner_user` FOREIGN KEY (`owner_user_id`) REFERENCES `console_user` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='台账事件';
+
 CREATE TABLE IF NOT EXISTS `rule_ledger_event_type` (
   `event_id` BIGINT NOT NULL,
   `type_id` BIGINT NOT NULL,
-  PRIMARY KEY (`event_id`), KEY `idx_ledger_event_type` (`type_id`)
+  PRIMARY KEY (`event_id`), KEY `idx_ledger_event_type` (`type_id`),
+  CONSTRAINT `fk_ledger_event_type_event` FOREIGN KEY (`event_id`) REFERENCES `rule_ledger_event` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_ledger_event_type_type` FOREIGN KEY (`type_id`) REFERENCES `rule_ledger_type` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='事件与类型的稳定ID关联';
 CREATE TABLE IF NOT EXISTS `rule_ledger_event_state` (
   `event_id` BIGINT NOT NULL,
   `options_json` TEXT NOT NULL,
-  PRIMARY KEY (`event_id`)
+  PRIMARY KEY (`event_id`),
+  CONSTRAINT `fk_ledger_event_state_event` FOREIGN KEY (`event_id`) REFERENCES `rule_ledger_event` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='每个事件独立配置的状态枚举';
 CREATE TABLE IF NOT EXISTS `rule_ledger_article` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,
@@ -2307,7 +2416,9 @@ CREATE TABLE IF NOT EXISTS `rule_ledger_article` (
   `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_ledger_article_scope` (`scope`,`project_id`,`deleted`),
-  KEY `idx_ledger_article_owner` (`owner_user_id`,`has_draft`)
+  KEY `idx_ledger_article_owner` (`owner_user_id`,`has_draft`),
+  CONSTRAINT `fk_ledger_article_owner_user` FOREIGN KEY (`owner_user_id`) REFERENCES `console_user` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_ledger_article_draft_user` FOREIGN KEY (`draft_user_id`) REFERENCES `console_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='台账文章及私有编辑草稿';
 
 CREATE TABLE IF NOT EXISTS `rule_ledger_revision` (
@@ -2331,26 +2442,9 @@ CREATE TABLE IF NOT EXISTS `rule_ledger_revision` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_ledger_revision` (`article_id`,`version_no`),
   KEY `idx_ledger_revision_time` (`activity_time`,`id`),
-  KEY `idx_ledger_revision_scope` (`scope`,`project_id`,`activity_time`)
+  KEY `idx_ledger_revision_scope` (`scope`,`project_id`,`activity_time`),
+  CONSTRAINT `fk_ledger_revision_article` FOREIGN KEY (`article_id`) REFERENCES `rule_ledger_article` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='不可变台账发布版本，同时作为时间线记录';
-
-CREATE TABLE IF NOT EXISTS `rule_ledger_event` (
-  `id` BIGINT NOT NULL AUTO_INCREMENT,
-  `event_code` VARCHAR(128) DEFAULT NULL,
-  `title` VARCHAR(200) NOT NULL,
-  `status` VARCHAR(24) NOT NULL DEFAULT 'FOLLOWING',
-  `scope` VARCHAR(16) NOT NULL,
-  `project_id` BIGINT DEFAULT NULL,
-  `owner_user_id` BIGINT NOT NULL,
-  `owner_name` VARCHAR(128) NOT NULL,
-  `lock_version` BIGINT NOT NULL DEFAULT 0,
-  `deleted` TINYINT NOT NULL DEFAULT 0,
-  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_ledger_event_scope` (`scope`,`project_id`,`deleted`)
-  ,UNIQUE KEY `uk_ledger_event_code` (`event_code`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='台账事件';
 
 CREATE TABLE IF NOT EXISTS `rule_ledger_asset` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,
@@ -2374,7 +2468,8 @@ CREATE TABLE IF NOT EXISTS `rule_ledger_asset` (
   `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_ledger_asset_owner` (`owner_user_id`,`scan_status`),
-  KEY `idx_ledger_asset_scope` (`scope`,`project_id`,`scan_status`)
+  KEY `idx_ledger_asset_scope` (`scope`,`project_id`,`scan_status`),
+  CONSTRAINT `fk_ledger_asset_owner_user` FOREIGN KEY (`owner_user_id`) REFERENCES `console_user` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='私有暂存、病毒检测及按范围授权的台账图片素材';
 
 CREATE TABLE IF NOT EXISTS `rule_ledger_revision_reference` (
@@ -2382,7 +2477,8 @@ CREATE TABLE IF NOT EXISTS `rule_ledger_revision_reference` (
   `ref_type` VARCHAR(16) NOT NULL,
   `ref_id` BIGINT NOT NULL,
   PRIMARY KEY (`revision_id`,`ref_type`,`ref_id`),
-  KEY `idx_ledger_revision_ref` (`ref_type`,`ref_id`,`revision_id`)
+  KEY `idx_ledger_revision_ref` (`ref_type`,`ref_id`,`revision_id`),
+  CONSTRAINT `fk_ledger_revision_reference_revision` FOREIGN KEY (`revision_id`) REFERENCES `rule_ledger_revision` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='发布版本对事件和素材的稳定 ID 引用';
 
 CREATE TABLE IF NOT EXISTS `rule_ledger_draft_reference` (
@@ -2390,5 +2486,6 @@ CREATE TABLE IF NOT EXISTS `rule_ledger_draft_reference` (
   `ref_type` VARCHAR(16) NOT NULL,
   `ref_id` BIGINT NOT NULL,
   PRIMARY KEY (`article_id`,`ref_type`,`ref_id`),
-  KEY `idx_ledger_draft_ref` (`ref_type`,`ref_id`,`article_id`)
+  KEY `idx_ledger_draft_ref` (`ref_type`,`ref_id`,`article_id`),
+  CONSTRAINT `fk_ledger_draft_reference_article` FOREIGN KEY (`article_id`) REFERENCES `rule_ledger_article` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='当前私有草稿引用，防止被引用素材遭删除';

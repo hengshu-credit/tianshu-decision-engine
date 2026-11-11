@@ -396,6 +396,14 @@ Java/Spring Bean 原生实现属于可信服务器代码能力，配置、导入
 
 ## 部署与系统接入
 
+### 在数据库客户端查看 ER 图
+
+全新 MySQL 库由服务启动时的 `schema.sql` 创建物理外键。已有库在维护窗口执行[外键迁移 SQL](rule-engine-server/src/main/resources/sql/migrations/2026-11-11-er-foreign-keys.sql)，预检、权限和重试步骤见[迁移说明](rule-engine-server/src/main/resources/sql/migrations/README.md#数据库客户端-er-图)。
+
+在 DBeaver 刷新业务库，打开「表」目录的 ER 图，点击「自动排列」。查看单个业务域时，可多选相关表打开关系图。例如从 `rule_project`、`rule_definition`、`rule_definition_content`、`rule_definition_input_field` 和 `rule_definition_output_field` 开始，就能看到项目、规则、设计内容及出入参的关系。布局由客户端保存。[DBeaver 图表操作说明](https://dbeaver.com/docs/dbeaver/ER-Diagrams/)
+
+项目级资源通过数据库计算的 `project_ref_id` 指向项目。应用继续读写 `project_id`，全局资源的 `0` 或 `NULL` 在外键列中均为 `NULL`。按 `ref_type` 解析的多态引用、JSON 内的引用、跨库来源和独立留存的日志快照保留为逻辑关系。MySQL 的 InnoDB 分区表也不能参与物理外键，例如 `rule_execution_log` 和 `rule_definition_version`。[MySQL 外键约束说明](https://dev.mysql.com/doc/refman/8.4/en/create-table-foreign-keys.html)
+
 | 组件 | 职责 | 默认端口 |
 |------|------|----------|
 | `rule-engine-web` | Vue 控制台，独立构建部署 | 9090（开发） |

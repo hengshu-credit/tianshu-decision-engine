@@ -42,11 +42,11 @@ public class SchemaSyncService {
 
     private static final List<String> CONSOLE_RBAC_TABLES = Arrays.asList(
             "console_security_lock",
-            "console_user_project",
-            "console_user_project_permission",
             "console_user",
             "console_role",
             "console_permission",
+            "console_user_project",
+            "console_user_project_permission",
             "console_user_role",
             "console_role_permission",
             "console_user_permission_override",
@@ -148,7 +148,7 @@ public class SchemaSyncService {
         ensureExternalApiTrialSchema();
         ensureModelVersionExecutionSchema();
         ensureConsoleOperationLogSchema();
-        ensureTablesFromSchema(List.of("rule_billing_summary_lock", "rule_billing_summary_task", "offline_transfer_log_resource"));
+        ensureTablesFromSchema(List.of("rule_billing_summary_lock", "rule_billing_summary_task", "offline_transfer_log", "offline_transfer_log_resource"));
         // 不能在重复超管合并失败后继续启动为可用；只变更账户身份，业务表保持原样。
         jdbcTemplate.execute((org.springframework.jdbc.core.ConnectionCallback<Void>) connection -> {
             com.hengshucredit.rule.server.consolelogin.ConsoleAdministratorMerge.consolidate(connection);

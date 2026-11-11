@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.security;
 
+import com.hengshucredit.rule.server.sql.TestSchemaTables;
 import cn.hutool.crypto.digest.BCrypt;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.config.GlobalConfig;
@@ -52,12 +53,7 @@ public class ConsoleAccountSecurityTest {
         Fixture() throws Exception {
             var ds = new DriverManagerDataSource("jdbc:h2:mem:audit" + UUID.randomUUID().toString().replace("-", "") + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
             jdbc = new JdbcTemplate(ds);
-            String schema = new org.springframework.core.io.ClassPathResource("sql/schema.sql").getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
-            for (String table : List.of("rule_project", "console_user_project", "console_user_project_permission", "console_security_lock", "console_user", "console_account_token", "console_role", "console_permission", "console_user_role", "console_role_permission", "console_user_permission_override", "console_security_audit_log")) {
-                int start = schema.indexOf("CREATE TABLE IF NOT EXISTS `" + table + "`");
-                String ddl = schema.substring(start, schema.indexOf(';', start) + 1).replaceFirst("\\) ENGINE=.*;", ")");
-                jdbc.execute(ddl);
-            }
+            TestSchemaTables.create(jdbc, List.of("rule_project", "console_user_project", "console_user_project_permission", "console_security_lock", "console_user", "console_account_token", "console_role", "console_permission", "console_user_role", "console_role_permission", "console_user_permission_override", "console_security_audit_log"));
             jdbc.update("INSERT INTO console_security_lock (id) VALUES (1)");
             var config = new MybatisConfiguration();
             config.setMapUnderscoreToCamelCase(true);

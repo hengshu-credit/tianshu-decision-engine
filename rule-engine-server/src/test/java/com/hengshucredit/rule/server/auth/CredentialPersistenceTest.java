@@ -1,16 +1,15 @@
 package com.hengshucredit.rule.server.auth;
 
+import com.hengshucredit.rule.server.sql.TestSchemaTables;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.hengshucredit.rule.model.entity.*;
 import com.hengshucredit.rule.server.mapper.*;
 import org.junit.*;
 import org.mybatis.spring.SqlSessionTemplate;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -26,14 +25,7 @@ public class CredentialPersistenceTest {
         var datasource = new DriverManagerDataSource("jdbc:h2:mem:credentials" + UUID.randomUUID()
                 + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
         jdbc = new JdbcTemplate(datasource);
-        String schema = new ClassPathResource("sql/schema.sql").getContentAsString(StandardCharsets.UTF_8);
-        for (String table : List.of("rule_db_datasource", "rule_sftp_datasource", "rule_external_datasource", "rule_external_api_config")) {
-            int start = schema.indexOf("CREATE TABLE IF NOT EXISTS `" + table + "`");
-            String ddl = schema.substring(start, schema.indexOf(';', start) + 1).replaceFirst("\\) ENGINE=.*;", ")")
-                    .replaceAll("(?i)\\bJSON\\b", "LONGTEXT")
-                    .replaceAll("(?i)(\\b(?:KEY|INDEX)\\s+`)([^`]+)(`)", "$1" + table + "_$2$3");
-            jdbc.execute(ddl);
-        }
+        TestSchemaTables.create(jdbc, List.of("rule_db_datasource", "rule_sftp_datasource", "rule_external_datasource", "rule_external_api_config"));
         var properties = new ProjectAuthProperties(); properties.setActiveKeyId("test");
         properties.setMasterKeys(Map.of("test", UUID.randomUUID().toString()));
         cipher = new CredentialCipher(properties); codec = new StoredCredentialCodec(cipher);
