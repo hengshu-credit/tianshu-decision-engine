@@ -22,6 +22,23 @@ beforeEach(() => {
 })
 
 describe('workspaceTabs store', () => {
+  test('台账内部切换复用工作区和刷新版本，同时隔离其他项目及事件筛选', async () => {
+    const store = createTestStore()
+    const first = '/ledger?projectId=3'
+    const second = '/ledger?projectId=3&tab=articles'
+    await store.dispatch('workspaceTabs/open', tab(first))
+    await store.dispatch('workspaceTabs/refresh', first)
+    const key = store.getters['workspaceTabs/viewKey'](first)
+    await store.dispatch('workspaceTabs/open', tab(second))
+    expect(store.getters['workspaceTabs/tabs'].map(item => item.fullPath)).toEqual([second])
+    expect(store.getters['workspaceTabs/viewKey'](second)).toBe(key)
+    for (const other of ['/ledger?projectId=4&tab=articles', '/ledger?projectId=3&eventIds=7']) {
+      await store.dispatch('workspaceTabs/open', tab(other))
+      expect(store.getters['workspaceTabs/viewKey'](other)).not.toBe(key)
+    }
+    expect(store.getters['workspaceTabs/tabs']).toHaveLength(3)
+  })
+
   test('异步业务标题只更新对应页签，切换回来和刷新恢复后仍保留', async() => {
     const store = createTestStore()
     const detail = tab('/rule/7', '规则详情')

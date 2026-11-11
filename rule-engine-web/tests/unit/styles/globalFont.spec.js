@@ -17,7 +17,7 @@ describe('global font resources', () => {
 
   test('body uses the bundled font family defined in index.html', () => {
     expect(indexHtml).toContain("font-family: 'AlimamaFangYuanTiVF'")
-    expect(indexHtml).toContain("src: url('./fonts/font.woff2') format('woff2'), url('./fonts/font.ttf') format('truetype')")
+    expect(indexHtml).toContain("src: local('AlimamaFangYuanTiVF-Thin'), local('Alimama FangYuanTi VF'), url('./fonts/font.woff2') format('woff2'), url('./fonts/font.ttf') format('truetype')")
     expect(globalStyle).toContain('--tianshu-font-family: "AlimamaFangYuanTiVF"')
     expect(indexHtml).toContain("font-weight: 100 900")
     expect(globalStyle).toMatch(

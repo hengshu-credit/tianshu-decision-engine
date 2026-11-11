@@ -13,7 +13,7 @@ let route
 beforeEach(() => {
   applySystemBrand({ ...DEFAULT_BRAND, watermarkEnabled: true })
   setCurrentUser(user)
-  route = reactive({ path: '/dashboard' })
+  route = reactive({ path: '/dashboard', matched: [{ path: '/dashboard' }] })
   wrapper = mount(ConsoleWatermark, { global: { mocks: { $route: route }, stubs: { 'el-watermark': watermarkStub } } })
 })
 afterEach(() => {
@@ -37,6 +37,13 @@ test('单行显示系统名称、登录用户名及毫秒级登录时间，路�
   expect(content()).toContain('新系统名称 another-user')
   expect(content()).not.toContain('reviewer')
   expect(content()).toContain(dayjs('2026-10-24T03:00:00Z').format('YYYY:MM:DD HH:mm:ss.SSS'))
+})
+
+test('初始鉴权已经返回但工作台路由尚未就绪时不挂载水印', async () => {
+  route.matched = []; await nextTick()
+  expect(document.querySelector('.console-watermark')).toBeNull()
+  route.matched = [{ path: '/dashboard' }]; await nextTick()
+  expect(document.querySelector('.console-watermark')).not.toBeNull()
 })
 
 test('关闭水印或进入登录相关页面时不显示身份', async () => {

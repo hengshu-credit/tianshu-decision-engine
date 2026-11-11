@@ -319,12 +319,12 @@ test('期数和金额占比都无数据时隐藏占比整行但保留地图', as
 test('全局字体、业务文本选择和关键按钮语义可用', async ({ page }) => {
   const fontResponses = []
   page.on('response', response => {
-    if (new URL(response.url()).pathname === '/fonts/font.woff2') {
+    if (/^\/(?:assets\/font-[a-f0-9]{16}|fonts\/font)\.woff2$/.test(new URL(response.url()).pathname)) {
       fontResponses.push(response.status())
     }
   })
 
-  const { assertClean } = await installDistRoutes(page)
+  const { assertClean } = await installDistRoutes(page, { bundledFontOnly: true })
   await page.goto('http://tianshu.local/index.html#/project')
 
   await expect(page.getByText('E2E 项目', { exact: true })).toBeVisible()

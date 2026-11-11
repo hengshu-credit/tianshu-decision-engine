@@ -37,11 +37,13 @@ describe('系统配置', () => {
     let release
     api.getSystemSettings.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
     wrapper.vm.tab = 'mail'; const pending = wrapper.vm.refreshTab('mail')
+    expect(governance.getWorkspaceDraft).toHaveBeenCalledWith('SYSTEM_SETTING', 2)
     const form = wrapper.vm.form.mail
     wrapper.unmount()
     release({ data: { ...settings(), mail: { host: 'late.example.com' } } }); await pending
     expect(wrapper.vm.form.mail).toBe(form)
-    expect(governance.getWorkspaceDraft).not.toHaveBeenCalled()
+    expect(wrapper.vm.drafts.mail).toBeUndefined()
+    expect(governance.getWorkspaceDraft).toHaveBeenCalledTimes(1)
   })
 
   test('页签离开确认不等待配置请求，切换后加载期间禁止编辑', async () => {

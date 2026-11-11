@@ -293,3 +293,39 @@ for (const moduleCase of [
     assertClean()
   })
 }
+
+test('台账切换子页签只初始化新面板一次，返回时间线只重新读取一次', async ({ page }) => {
+  const data = new Map([
+    ['/api/rule/ledger/timeline', { records: [], total: 0 }],
+    ['/api/rule/ledger/articles', { records: [], total: 0 }],
+    ['/api/rule/ledger/assets', { records: [], total: 0 }],
+    ['/api/rule/ledger/events', []],
+    ['/api/rule/ledger/events/manage', { records: [], total: 0 }],
+  ])
+  const { requests, assertClean } = await installDistRoutes(page, { apiData: data })
+  const calls = name => requests.filter(r => new URL(r.url).pathname === '/api/rule/ledger/' + name).length
+  await page.goto('http://tianshu.local/#/ledger')
+  await expect.poll(() => calls('timeline')).toBe(1)
+  for (const [title, endpoint] of [['文章管理', 'articles'], ['素材库', 'assets'], ['事件与类型', 'events/manage']]) {
+    await activateTab(page, title)
+    await expect.poll(() => calls(endpoint)).toBe(1)
+  }
+  await activateTab(page, '时间线')
+  await expect.poll(() => calls('timeline')).toBe(2)
+  expect(calls('events')).toBe(2)
+  expect(calls('types')).toBe(3)
+  await expect(page.locator('.workspace-tab__main').filter({ hasText: '台账记录' })).toHaveCount(1)
+  assertClean()
+})
+
+for (const [path, logTab] of [['/list', '名单日志'], ['/database', '调用日志'], ['/model', '模型执行日志']]) {
+  test(path + ' 首屏不读取隐藏的日志，打开后正常加载', async ({ page }) => {
+    const { requests } = await installDistRoutes(page, { apiData: createManagementApiData() })
+    const calls = () => requests.filter(r => new URL(r.url).pathname === '/api/rule/runtime-log/list').length
+    await page.goto('http://tianshu.local/#' + path)
+    await expect(page.getByRole('tab', { name: logTab, exact: true })).toBeVisible()
+    expect(calls()).toBe(0)
+    await activateTab(page, logTab)
+    await expect.poll(calls).toBe(1)
+  })
+}

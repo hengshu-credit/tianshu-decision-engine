@@ -38,8 +38,13 @@ describe('DatasourceList helpers', () => {
     expect(data.apiQuery.projectId).toBe('')
   })
 
-  test('created loads api config list on first entry', () => {
-    expect(DatasourceList.created.toString()).toContain('this.loadApiConfigs()')
+  test.each(['datasource', 'api', 'monitor', 'logs'])('首次进入 %s 只请求当前页签的数据', async tab => {
+    const ctx = createContext({ $route: { query: { tab } }, activeTab: 'datasource' })
+    ctx.loadDatasources = vi.fn()
+    ctx.loadApiConfigs = vi.fn()
+    await DatasourceList.created.call(ctx)
+    expect(ctx.loadDatasources).toHaveBeenCalledTimes(tab === 'datasource' ? 1 : 0)
+    expect(ctx.loadApiConfigs).toHaveBeenCalledTimes(tab === 'api' ? 1 : 0)
   })
 
   test('project context scopes datasource and API queries by stable project identity', () => {
@@ -63,16 +68,13 @@ describe('DatasourceList helpers', () => {
       $store: { state: { currentProject: null } },
       $message: { error: vi.fn() },
     })
-    ctx.loadProjects = vi.fn()
     ctx.loadDatasources = vi.fn()
     ctx.loadApiConfigs = vi.fn()
-    ctx.loadDatasourceOptions = vi.fn()
     ctx.loadDataObjectOptions = vi.fn()
 
     await DatasourceList.created.call(ctx)
 
     expect(ctx.contextProjectId).toBe(7)
-    expect(ctx.loadProjects).toHaveBeenCalled()
     expect(ctx.loadDatasources).not.toHaveBeenCalled()
     expect(ctx.loadApiConfigs).not.toHaveBeenCalled()
     expect(ctx.$message.error).toHaveBeenCalled()

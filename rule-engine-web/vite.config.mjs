@@ -1,4 +1,6 @@
 import path from 'node:path'
+import { readFileSync, readdirSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, normalizePath } from 'vite'
 import { loadSourceEnvironment } from '../scripts/lib/source-environment.mjs'
@@ -9,7 +11,23 @@ const projectRoot = path.dirname(fileURLToPath(import.meta.url))
 const variablesFile = normalizePath(path.resolve(projectRoot, 'src/styles/variables.scss'))
 const elementOverrideFile = normalizePath(path.resolve(projectRoot, 'src/styles/element-override.scss'))
 
-export default defineConfig(({ mode }) => {
+// 使用现有 /assets/ 长缓存与 JSON gzip。原 public 路径仍供旧版页面使用。
+function versionedPublicAssets() {
+  const publicDir = path.join(projectRoot, 'public')
+  const paths = readdirSync(path.join(publicDir, 'maps'))
+    .filter(name => /^dashboard-.*\.(geojson|json)$/.test(name)).map(name => 'maps/' + name)
+  return [...paths, 'fonts/font.woff2'].map(file => {
+    const source = readFileSync(path.join(publicDir, file))
+    const digest = createHash('sha256').update(source).digest('hex').slice(0, 16)
+    const { name, ext } = path.parse(file)
+    return { url: '/' + file, fileName: `assets/${name}-${digest}${ext === '.geojson' ? '.json' : ext}`, source }
+  })
+}
+
+export default defineConfig(({ mode, command }) => {
+  const staticAssets = command === 'build' ? versionedPublicAssets() : []
+  const mapAssets = Object.fromEntries(staticAssets.filter(asset => asset.url.startsWith('/maps/'))
+    .map(asset => [asset.url, '/' + asset.fileName]))
   // 仅用于开发服务器配置，不将根目录中的凭据注入浏览器。
   const env = loadSourceEnvironment(path.resolve(projectRoot, '..'), 'server')
 
@@ -19,7 +37,8 @@ export default defineConfig(({ mode }) => {
     // Monaco 的 AMD loader 会暴露全局 define；LogicFlow 的部分依赖仍包含 UMD
     // 分支，懒加载设计器时不能让这些已打包依赖再次向 Monaco 注册匿名模块。
     define: {
-      'define.amd': 'false'
+      'define.amd': 'false',
+      'import.meta.env.TIANSHU_MAP_ASSETS': JSON.stringify(mapAssets),
     },
     optimizeDeps: {
       // LogicFlow 由血缘、决策树和决策流路由懒加载；依赖图变化后强制刷新
@@ -34,6 +53,17 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       vue(),
+      {
+        name: 'versioned-dashboard-assets',
+        apply: 'build',
+        generateBundle() {
+          for (const { fileName, source } of staticAssets) this.emitFile({ type: 'asset', fileName, source })
+        },
+        transformIndexHtml(html) {
+          const font = staticAssets.find(asset => asset.url === '/fonts/font.woff2')
+          return html.replace('./fonts/font.woff2', './' + font.fileName)
+        },
+      },
       viteStaticCopy({
         targets: [
           {

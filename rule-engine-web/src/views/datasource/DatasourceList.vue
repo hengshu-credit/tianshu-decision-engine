@@ -18,7 +18,7 @@
       </div>
     </div>
 
-    <el-tabs class="management-table-region" v-model="activeTab" @tab-click="onTabChange">
+    <el-tabs class="management-table-region" v-model="activeTab" @tab-change="onTabChange">
       <el-tab-pane class="management-table-region" label="数据源" name="datasource">
         <div class="uiue-search-container uiue-filter-toolbar">
           <el-form
@@ -262,7 +262,7 @@
         />
       </el-tab-pane>
 
-      <el-tab-pane class="management-table-region" label="API 接口" name="api">
+      <el-tab-pane class="management-table-region" label="API 接口" name="api" lazy>
         <div class="uiue-search-container uiue-filter-toolbar">
           <el-form :inline="true" size="small" @keyup.enter="handleApiQuery">
             <el-form-item label="项目编码">
@@ -599,7 +599,7 @@ import {
   invokeApiConfig,
   testDatasourceAuth,
 } from '@/api/datasource'
-import { getProject, listProjects } from '@/api/project'
+import { getProject } from '@/api/project'
 import { collectOperandInputPaths, setPathValue } from '@/utils/testParamTemplate'
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 import ExternalApiMonitor from '@/components/common/ExternalApiMonitor.vue'
@@ -652,9 +652,7 @@ export default {
       ],
       activeTab: 'datasource',
       contextProjectId: null,
-      projects: [],
       datasourceList: [],
-      datasourceOptions: [],
       datasourceTotal: 0,
       datasourceLoading: false,
       datasourceQuery: {
@@ -752,11 +750,7 @@ export default {
         this.$message.error(e.message || '加载项目范围失败')
       }
     }
-    this.loadProjects()
-    if (!contextReady) return
-    this.loadDatasources()
-    this.loadApiConfigs()
-    this.loadDatasourceOptions()
+    if (contextReady) this.onTabChange()
   },
   methods: {
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
@@ -766,14 +760,6 @@ export default {
       this.datasourceQuery.projectId = this.contextProjectId
       this.apiQuery.projectId = this.contextProjectId
       if (project.projectCode) this.apiQuery.projectCode = project.projectCode
-    },
-    async loadProjects() {
-      try {
-        const res = await listProjects({ pageNum: 1, pageSize: 500, status: 1 })
-        this.projects = (res.data && res.data.records) || []
-      } catch (e) {
-        this.projects = []
-      }
     },
     async loadDatasources() {
       this.datasourceLoading = true
@@ -801,17 +787,6 @@ export default {
         pageSize,
         datasourceName: query || '',
       })
-    },
-    async loadDatasourceOptions() {
-      const res = await listDatasources({
-        pageNum: 1,
-        pageSize: 500,
-        status: 1,
-        ...(this.contextProjectId
-          ? { projectId: this.contextProjectId }
-          : {}),
-      })
-      this.datasourceOptions = (res.data && res.data.records) || []
     },
     async loadApiConfigs() {
       this.apiLoading = true
@@ -850,7 +825,6 @@ export default {
     },
     onTabChange() {
       if (this.activeTab === 'api') {
-        this.loadDatasourceOptions()
         this.loadApiConfigs()
       } else if (this.activeTab === 'datasource') {
         this.loadDatasources()

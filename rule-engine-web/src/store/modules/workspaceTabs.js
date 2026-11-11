@@ -14,10 +14,19 @@ function sessionStorageRef() {
   }
 }
 
+// 台账子页签由同一个页面承载；项目、事件筛选和其他查询参数仍区分工作区。
+function ledgerTabKey(fullPath) {
+  if (typeof fullPath !== 'string' || !fullPath.startsWith('/ledger?')) return fullPath
+  const params = new URLSearchParams(fullPath.slice('/ledger?'.length))
+  params.delete('tab')
+  const search = params.toString()
+  return search ? '/ledger?' + search : '/ledger'
+}
+
 function workspaceTabKey(tab) {
   const path = tab && typeof tab.path === 'string' ? tab.path : ''
   if (/^\/designer\/(?!expression\/)[^/]+\/[^/]+$/.test(path)) return path
-  return tab && tab.fullPath
+  return ledgerTabKey(tab && tab.fullPath)
 }
 
 function workspaceViewKey(fullPath) {
@@ -25,7 +34,7 @@ function workspaceViewKey(fullPath) {
   const path = value.split('?')[0]
   return /^\/designer\/(?!expression\/)[^/]+\/[^/]+$/.test(path)
     ? path
-    : value
+    : ledgerTabKey(value)
 }
 
 function uniqueTabs(tabs) {
@@ -81,7 +90,7 @@ const getters = {
   tabs: state => state.tabs,
   activePath: state => state.activePath,
   viewKey: state => fullPath =>
-    `${workspaceViewKey(fullPath)}::${state.refreshVersions[fullPath] || 0}`
+    `${workspaceViewKey(fullPath)}::${state.refreshVersions[ledgerTabKey(fullPath)] || 0}`
 }
 
 const mutations = {
@@ -117,8 +126,9 @@ const mutations = {
     state.activePath = payload.nextPath
     const retained = {}
     payload.tabs.forEach(tab => {
-      if (state.refreshVersions[tab.fullPath]) {
-        retained[tab.fullPath] = state.refreshVersions[tab.fullPath]
+      const key = ledgerTabKey(tab.fullPath)
+      if (state.refreshVersions[key]) {
+        retained[key] = state.refreshVersions[key]
       }
     })
     state.refreshVersions = retained
@@ -127,7 +137,7 @@ const mutations = {
     if (!state.tabs.some(tab => tab.fullPath === fullPath)) return
     state.refreshVersions = {
       ...state.refreshVersions,
-      [fullPath]: (state.refreshVersions[fullPath] || 0) + 1
+      [ledgerTabKey(fullPath)]: (state.refreshVersions[ledgerTabKey(fullPath)] || 0) + 1
     }
   }
 }

@@ -33,6 +33,17 @@ public class SystemSettingsServiceTest {
         env.getPropertySources().remove("systemEnvironment"); env.getPropertySources().remove("systemProperties");
         service = new SystemSettingsService(jdbc, new GovernanceSecretCodec(new CredentialCipher(properties)), login, env, new SystemFontService(jdbc));
     }
+    @Test public void groupedSettingsUseTheSamePublicSnapshotsAsSingleGroupReads() {
+        env.getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource("smtp-test",
+                Map.of("spring.mail.password", "fixture-smtp-password")));
+        Map<String, Object> grouped = service.getGroups();
+        assertEquals(SystemSettingsService.GROUPS.size(), grouped.size());
+        for (String group : SystemSettingsService.GROUPS.values()) assertEquals(service.get(group), grouped.get(group));
+        assertFalse(grouped.toString().contains("fixture-smtp-password"));
+        jdbc.update("DELETE FROM rule_system_setting WHERE id=4");
+        assertThrows(IllegalStateException.class, service::getGroups);
+    }
+
     @Test public void brandSaveIsVersionedAndPublicViewContainsNoOperationalSecrets() {
         Map<String, Object> brand = service.get("brand"); brand.put("systemName", "测试引擎");
         assertEquals("测试引擎", service.saveBrand(brand, "admin").get("systemName"));

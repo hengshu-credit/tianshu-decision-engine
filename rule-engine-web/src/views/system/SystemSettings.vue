@@ -149,9 +149,12 @@ export default {
           this.history = response.data?.records || []; this.historyTotal = response.data?.total || 0
           return
         }
-        const effective = (await getSystemSettings()).data
-        if (requestId !== this.tabRequestId) return
-        const draft = this.canEdit ? (await getWorkspaceDraft('SYSTEM_SETTING', groups[tab])).data : null
+        const [settings, workspace] = await Promise.all([
+          getSystemSettings(),
+          this.canEdit ? getWorkspaceDraft('SYSTEM_SETTING', groups[tab]) : null,
+        ])
+        const effective = settings.data
+        const draft = workspace?.data
         if (requestId !== this.tabRequestId) return
         const state = (effective.states || []).find(item => Number(item.resourceId) === groups[tab])
         const snapshot = draft?.draftSnapshotJson ? parseMetadataResponse(draft.draftSnapshotJson) : effective[tab]

@@ -22,7 +22,7 @@ export default {
   computed: {
     user() { return getCurrentUser() },
     config() { return this.$route.path === '/system/settings' && hasPermission('system:edit') ? getWatermarkPreview(this.user) || this.brand : this.brand },
-    visible() { return this.config.watermarkEnabled && Boolean(this.user?.username) && !PUBLIC_AUTH_PATHS.has(this.$route.path) },
+    visible() { return this.$route.matched.length > 0 && this.config.watermarkEnabled && Boolean(this.user?.username) && !PUBLIC_AUTH_PATHS.has(this.$route.path) },
   },
   mounted() {
     document.addEventListener('fullscreenchange', this.syncFullscreen)

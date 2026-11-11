@@ -725,7 +725,8 @@ export default {
   created() {
     this.syncProjectContext()
     this.restoreCachedState()
-    this.loadProjects().then(() => this.loadFunctions())
+    this.loadProjects()
+    this.loadFunctions()
   },
   watch: {
     dialogVisible(visible) { if (!visible) { this.methodRequestId++; this.editSessionId++; this.methodLoading = false } },

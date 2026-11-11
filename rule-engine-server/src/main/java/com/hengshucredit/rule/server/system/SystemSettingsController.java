@@ -13,7 +13,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
@@ -81,8 +80,7 @@ public class SystemSettingsController {
     @RequirePermission("system:view")
     public ApiResponse<Map<String, Object>> get(HttpServletRequest request) {
         access.require(request, "system:view");
-        Map<String, Object> value = new LinkedHashMap<>();
-        for (String group : new String[]{"brand", "mail", "access", "codes"}) value.put(group, settings.get(group));
+        Map<String, Object> value = settings.getGroups();
         value.put("deploymentManaged", Map.of("mail", settings.deploymentManaged("mail"), "access", settings.deploymentManaged("access")));
         value.put("codeCatalog", Arrays.stream(PlatformCode.values()).map(code -> Map.of("code", code.code(), "message", code.message(), "httpStatus", code.httpStatus())).toList());
         value.put("states", approvals.resourceStates(SystemSettingsService.RESOURCE_TYPE, java.util.List.of(2L, 3L, 4L), operators.resolve()));

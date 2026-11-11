@@ -320,7 +320,7 @@
           "
         />
       </el-tab-pane>
-      <el-tab-pane class="management-table-region" label="模型执行日志" name="logs">
+      <el-tab-pane class="management-table-region" label="模型执行日志" name="logs" lazy>
         <module-call-log class="management-table-region" module-type="MODEL" title="模型执行日志" />
       </el-tab-pane>
     </el-tabs>
@@ -1205,6 +1205,7 @@ export default {
         : this.allModelNames.slice(0, 20)
     },
     async load() {
+      const capabilities = this.loadRuntimeCapabilities()
       this.loading = true
       try {
         this.saveCachedState()
@@ -1231,7 +1232,7 @@ export default {
       } finally {
         this.loading = false
       }
-      await this.loadRuntimeCapabilities()
+      await capabilities
     },
     handleQuery() {
       this.qp.pageNum = 1

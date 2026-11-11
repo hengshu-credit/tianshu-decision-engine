@@ -273,7 +273,7 @@
           "
         />
       </el-tab-pane>
-      <el-tab-pane class="management-table-region" label="调用日志" name="logs">
+      <el-tab-pane class="management-table-region" label="调用日志" name="logs" lazy>
         <module-call-log class="management-table-region" module-type="DATABASE" title="数据库调用日志" />
       </el-tab-pane>
     </el-tabs>

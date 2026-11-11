@@ -25,7 +25,7 @@
             placeholder="个人默认（仅全局字段）"
             style="width: 280px"
             @change="load"
-           :projects="projects" />
+          />
         </el-form-item>
         <el-form-item>
           <el-tag :type="projectId ? 'success' : 'info'">
@@ -193,7 +193,6 @@ import {
   saveDashboardDefaults
 } from '@/api/dashboard'
 import { hasPermission } from '@/security/permissionState'
-import { listProjects } from '@/api/project'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import {
   defaultDashboardMapView,
@@ -214,7 +213,6 @@ export default {
       editSystemDefaults: false,
       initialRows: [],
       loadRequestId: 0,
-      projects: [],
       settings: { editable: false, projectOverride: false, options: [], fields: [] },
       rows: [],
       mapView: readDashboardMapView(window.sessionStorage),
@@ -233,7 +231,6 @@ export default {
     }
   },
   mounted() {
-    this.loadProjects()
     this.load()
   },
   methods: {
@@ -255,14 +252,7 @@ export default {
       this.mapView = defaultDashboardMapView()
       return this.persistMapView('已恢复中国默认视角')
     },
-    async loadProjects() {
-      try {
-        const response = await listProjects({ pageNum: 1, pageSize: 1000, status: 1 })
-        this.projects = (response.data && response.data.records) || []
-      } catch (error) {
-        this.projects = []
-      }
-    },
+
     changeScope() {
       this.projectId = null
       this.load()

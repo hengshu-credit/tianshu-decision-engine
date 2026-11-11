@@ -226,7 +226,7 @@
           "
         />
       </el-tab-pane>
-      <el-tab-pane class="management-table-region" label="名单日志" name="logs">
+      <el-tab-pane class="management-table-region" label="名单日志" name="logs" lazy>
         <module-call-log class="management-table-region" module-type="LIST" title="名单匹配日志" />
       </el-tab-pane>
     </el-tabs>

@@ -180,6 +180,12 @@ function normalizeMonacoPluginPath(pathname) {
 }
 
 async function installDistRoutes(page, options = {}) {
+  if (options.bundledFontOnly) {
+    const cdp = await page.context().newCDPSession(page)
+    await cdp.send('DOM.enable')
+    await cdp.send('CSS.enable')
+    await cdp.send('CSS.setLocalFontsEnabled', { enabled: false })
+  }
   const routeApiData = new Map()
   addApiFixtures(routeApiData, apiData)
   const customApiData = options.apiData instanceof Map

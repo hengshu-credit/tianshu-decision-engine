@@ -25,7 +25,7 @@
             filterable
             placeholder="全部有权限项目"
             style="width: 190px"
-           :projects="projects" />
+          />
         </el-form-item>
         <el-form-item label="规则编码">
           <remote-filter-select
@@ -151,6 +151,8 @@
                   placeholder="全球国家／地区"
                   filterable
                   size="small"
+                  @visible-change="open => open && loadMapCatalog()"
+                  :loading="catalogLoading && !mapCatalog"
                   @change="changeMapCountry"
                 >
                   <el-option label="全球国家／地区" value="" />
@@ -326,6 +328,7 @@
 </template>
 
 <script>
+import { markRaw } from 'vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import { ruleSetCoverageHint } from '@/utils/ruleSetStatistics'
 import {
@@ -334,7 +337,6 @@ import {
   getDashboardOperations
 } from '@/api/dashboard'
 import { listDefinitions, listProjectDefinitions } from '@/api/definition'
-import { listProjects } from '@/api/project'
 import {
   distributionBarOption,
   distributionPieOption,
@@ -375,6 +377,8 @@ import {
   writeDashboardFilters
 } from '@/utils/dashboardFilters'
 
+const mapAssetUrl = url => import.meta.env.TIANSHU_MAP_ASSETS?.[url] || url
+
 export default {
   name: 'DashboardHome',
   components: { ProjectResourceSelect,
@@ -396,13 +400,13 @@ export default {
         { text: '近7天', value: () => dashboardQuickRange(7) },
         { text: '近30天', value: () => dashboardQuickRange(30) }
       ],
-      projects: [],
       rangeError: '',
       mapReady: false,
       mapLoading: false,
       mapError: '',
       mapCatalogError: '',
       mapCatalog: null,
+      catalogLoading: false,
       mapCountry: 'CHN',
       mapLevel: 'ADM1',
       mapRegionPath: [],
@@ -536,9 +540,7 @@ export default {
   },
   mounted() {
     window.addEventListener('tianshu-theme-change', this.handleThemeChange)
-    this.loadProjects()
     this.loadMap()
-    this.loadMapCatalog()
     this.refreshAll()
   },
   beforeUnmount() {
@@ -552,14 +554,6 @@ export default {
       this.mapView = readDashboardMapView(window.sessionStorage)
       this.mapViewConfigured = Boolean(window.sessionStorage.getItem(DASHBOARD_MAP_VIEW_KEY))
       this.mapViewVersion += 1
-    },
-    async loadProjects() {
-      try {
-        const response = await listProjects({ pageNum: 1, pageSize: 1000, status: 1 })
-        this.projects = (response.data && response.data.records) || []
-      } catch (error) {
-        this.projects = []
-      }
     },
     async loadMap() {
       this.mapLoadController?.abort()
@@ -584,15 +578,15 @@ export default {
             }))
           } : world
         } else {
-          const response = await fetch(this.mapLayer.url, { signal: controller.signal })
+          const response = await fetch(mapAssetUrl(this.mapLayer.url), { signal: controller.signal })
           if (!response.ok) throw new Error('地图资源加载失败')
           geoJson = await response.json()
           if (this.mapLoadController !== controller) return
           if (country !== 'CHN') {
             if (!this.chinaLandGeometry) {
-              const chinaResponse = await fetch('/maps/dashboard-china-land.geojson', { signal: controller.signal })
+              const chinaResponse = await fetch(mapAssetUrl('/maps/dashboard-china-land.geojson'), { signal: controller.signal })
               if (!chinaResponse.ok) throw new Error('中国边界校验数据加载失败')
-              this.chinaLandGeometry = (await chinaResponse.json()).features[0].geometry
+              this.chinaLandGeometry = markRaw((await chinaResponse.json()).features[0].geometry)
             }
             geoJson = prioritizeChinaBoundary(geoJson, this.chinaLandGeometry)
           }
@@ -608,19 +602,17 @@ export default {
         this.mapDecorations = geoJson.features.filter(feature => feature.properties.mapRole).map(feature => ({
           id: feature.properties.shapeID, role: feature.properties.mapRole
         }))
-        this.mapFeatureIndex = Object.fromEntries(geoJson.features
+        this.mapFeatureIndex = markRaw(Object.fromEntries(geoJson.features
           .filter(feature => !feature.properties?.mapRole && feature.properties?.shapeID)
-          .map(feature => [feature.properties.shapeID, feature]))
+          .map(feature => [feature.properties.shapeID, feature])))
         if (country) {
           this.mapRegionNames = dashboardRegionNames(geoJson)
           registerDashboardMap(geoJson, DASHBOARD_REGION_MAP_NAME)
         } else {
-          this.worldCountries = dashboardWorldCountries(geoJson)
-          this.worldCountryBounds = dashboardCountryBounds(geoJson)
           this.mapRegionNames = {}
           registerDashboardMap(geoJson)
         }
-        this.mapGeoJson = geoJson
+        this.mapGeoJson = markRaw(geoJson)
         this.mapViewVersion += 1
         this.mapReady = true
       } catch (error) {
@@ -633,29 +625,45 @@ export default {
         if (this.mapLoadController === controller) this.mapLoading = false
       }
     },
-    async loadMapCatalog() {
+    loadMapCatalog() {
+      if (this.catalogRequest) return this.catalogRequest
+      if (this.mapCatalog && this.worldMapData) return Promise.resolve()
+      this.catalogLoading = true
       this.mapCatalogError = ''
-      try {
-        const [response] = await Promise.all([fetch('/maps/dashboard-boundaries.json'), this.loadWorldMap()])
+      const loadCountries = async () => {
+        if (this.mapCatalog) return
+        const response = await fetch(mapAssetUrl('/maps/dashboard-boundaries.json'))
         if (!response.ok) throw new Error('目录加载失败')
-        this.mapCatalog = await response.json()
-      } catch (error) {
-        this.mapCatalogError = '其他国家的行政区目录加载失败，仍可浏览中国地图。'
+        this.mapCatalog = markRaw(await response.json())
       }
+      // 两者并行，目录一旦可用即可选择；世界地图与全球视图共用同一个请求。
+      this.catalogRequest = Promise.all([loadCountries(), this.loadWorldMap()]).catch(() => {
+        this.mapCatalogError = '其他国家的行政区目录加载失败，仍可浏览中国地图。'
+      }).finally(() => { this.catalogLoading = false; this.catalogRequest = null })
+      return this.catalogRequest
     },
-    async loadWorldMap() {
-      if (this.worldMapData) return this.worldMapData
-      const response = await fetch('/maps/dashboard-world.geojson')
-      if (!response.ok) throw new Error('全球地图加载失败')
-      const geoJson = await response.json()
-      this.worldMapData = geoJson
-      this.worldCountries = dashboardWorldCountries(geoJson)
-      this.worldCountryBounds = dashboardCountryBounds(geoJson)
-      return geoJson
+    loadWorldMap() {
+      if (this.worldMapData) return Promise.resolve(this.worldMapData)
+      if (!this.worldRequest) {
+        this.worldRequest = fetch(mapAssetUrl('/maps/dashboard-world.geojson')).then(async response => {
+          if (!response.ok) throw new Error('全球地图加载失败')
+          const geoJson = markRaw(await response.json())
+          this.worldCountries = dashboardWorldCountries(geoJson)
+          this.worldCountryBounds = dashboardCountryBounds(geoJson)
+          this.worldMapData = geoJson
+          return geoJson
+        }).finally(() => { this.worldRequest = null })
+      }
+      return this.worldRequest
     },
-    changeMapCountry(country) {
+    async changeMapCountry(country) {
       this.mapCountry = country
       this.mapRegionPath = []
+      if (!country) this.loadMapCatalog()
+      else if (country !== 'CHN' && !this.mapCatalog) {
+        await this.loadMapCatalog()
+        if (this.mapCountry !== country) return
+      }
       const layers = this.mapLayerOptions
       this.mapLevel = (layers.find(layer => layer.level === 'ADM1') || layers[0])?.level || 'ADM0'
       return this.loadMap()
@@ -672,7 +680,7 @@ export default {
       this.mapLevel = previousLayer.level
       return this.loadMap()
     },
-    openMapCountry(name) {
+    async openMapCountry(name) {
       if (this.mapCountry) {
         if (!this.nextMapLayer) {
           this.$message.info('已是最细行政区层级')
@@ -691,6 +699,8 @@ export default {
         this.mapLevel = this.nextMapLayer.level
         return this.loadMap()
       }
+      if (!this.mapCatalog) await this.loadMapCatalog()
+      if (this.mapCountry) return
       const country = this.worldCountries[name]
       if (this.mapCountryOptions.some(item => item.code === country)) this.changeMapCountry(country)
       else this.$message.info('该国家或地区暂无可用的行政区边界')
@@ -737,16 +747,19 @@ export default {
     },
     async loadSection(key, loader) {
       const section = this.sections[key]
+      const requestId = (section.requestId || 0) + 1
+      section.requestId = requestId
       section.loading = true
       section.error = ''
       try {
         const response = await loader(this.queryParams())
+        if (section.requestId !== requestId) return
         section.data = response.data || {}
         section.loaded = true
       } catch (error) {
-        section.error = error.message || '加载失败'
+        if (section.requestId === requestId) section.error = error.message || '加载失败'
       } finally {
-        section.loading = false
+        if (section.requestId === requestId) section.loading = false
       }
     },
     resetFilters() {

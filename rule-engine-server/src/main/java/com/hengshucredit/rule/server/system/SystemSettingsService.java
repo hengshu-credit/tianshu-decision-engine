@@ -47,7 +47,23 @@ public class SystemSettingsService {
         String group = group(id);
         var rows = jdbc.queryForList("SELECT config_json, secret_ciphertext, secret_digest, version FROM rule_system_setting WHERE id = ?", id);
         if (rows.isEmpty()) throw new IllegalStateException("系统配置表尚未初始化");
-        var row = rows.get(0);
+        return snapshot(id, group, rows.get(0));
+    }
+
+    public Map<String, Object> getGroups() {
+        var rows = jdbc.queryForList("SELECT id, config_json, secret_ciphertext, secret_digest, version "
+                + "FROM rule_system_setting WHERE id IN (1, 2, 3, 4) ORDER BY id");
+        if (rows.size() != GROUPS.size()) throw new IllegalStateException("系统配置表尚未初始化");
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (var row : rows) {
+            long id = ((Number) row.get("id")).longValue();
+            String group = group(id);
+            result.put(group, CanonicalJson.readMap(snapshot(id, group, row).snapshotJson()));
+        }
+        return result;
+    }
+
+    private ResourceSnapshot snapshot(long id, String group, Map<String, Object> row) {
         Map<String, Object> value = new LinkedHashMap<>(defaults(group));
         boolean managed = deploymentManaged(group);
         if (!managed) value.putAll(CanonicalJson.readMap((String) row.get("config_json")));

@@ -305,7 +305,7 @@
       </el-tab-pane>
 
       <!-- Tab 2: Data Objects -->
-      <el-tab-pane label="数据对象" name="objects" class="management-table-region">
+      <el-tab-pane label="数据对象" lazy name="objects" class="management-table-region">
         <div class="tab-filter-row" @keyup.enter="onObjFilterChange">
           <div class="tab-filter-fields">
           <el-select
@@ -634,7 +634,7 @@
       </el-tab-pane>
 
       <!-- Tab 3: 常量列表（与变量列表相同分页模型，必须有默认值） -->
-      <el-tab-pane label="常量列表" name="constants" class="management-table-region">
+      <el-tab-pane label="常量列表" lazy name="constants" class="management-table-region">
         <div class="tab-filter-row" @keyup.enter="handleConstQuery">
           <div class="tab-filter-fields">
           <el-select
@@ -846,7 +846,7 @@
         />
       </el-tab-pane>
 
-      <el-tab-pane label="字段校验" name="validations" class="management-table-region">
+      <el-tab-pane label="字段校验" lazy name="validations" class="management-table-region">
         <el-alert
           title="字段校验保存为草稿，发布审批通过后才能引用。新增草稿无下游引用可直接删除；待审批时须先驳回。"
           type="info"
@@ -2816,7 +2816,7 @@ export default {
   mounted() {
     this.loadData()
     this.loadObjectTree()
-    this.loadConstants()
+    if (this.activeTab === 'constants') this.loadConstants()
     if (this.activeTab === 'validations') this.loadFieldValidations()
   },
   watch: {

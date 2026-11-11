@@ -49,4 +49,11 @@ router.beforeEach(to => {
 app.use(router)
 app.use(ElementTabFocusGuard)
 app.mount('#app')
+// 先绘制可操作的首屏，再启用完整品牌字体。慢网下载期间沿用系统字体。
+router.isReady().then(() => {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const font = document.getElementById('engine-default-font')
+    if (font) font.media = 'all'
+  }))
+}).catch(() => { /* 初次导航失败时仍可使用系统字体显示错误。 */ })
 app.onUnmount(initializeSystemBrand(router))
