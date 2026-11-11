@@ -1,6 +1,6 @@
 import { DEFAULT_ENGINE_FONT, applyEngineFont } from '@/system/engineFont'
 import { reactive } from 'vue'
-import axios from 'axios'
+import { getPublicConsoleResource } from '@/api/consoleBootstrap'
 import { PLATFORM_SUCCESS_CODE } from '@/utils/platformResponse'
 import { DEFAULT_WATERMARK_SETTINGS, resolveWatermarkSettings } from '@/system/watermark'
 import { getCurrentUser } from '@/security/permissionState'
@@ -48,14 +48,14 @@ export function updateBrandDocument(title = routeTitle) {
   icons.slice(1).forEach(item => item.remove())
   icon.removeAttribute('type')
   icon.removeAttribute('sizes')
-  icon.href = systemBrand.faviconUrl
+  if (icon.getAttribute('href') !== systemBrand.faviconUrl) icon.href = systemBrand.faviconUrl
 }
 
 export function loadSystemBrand(force = false) {
   if (pending) return pending
   if (!force && Date.now() - fetchedAt < 30000) return Promise.resolve(systemBrand)
   const requestRevision = appliedRevision
-  pending = axios.get('/api/auth/console/brand', { timeout: 5000 }).then(response => {
+  pending = getPublicConsoleResource('/auth/console/brand').then(response => {
     // 保存成功后的新配置不能被较早发起的刷新请求覆盖。
     if (response.data?.code === PLATFORM_SUCCESS_CODE && requestRevision === appliedRevision) { applySystemBrand(response.data.data); fetchedAt = Date.now() }
     return systemBrand

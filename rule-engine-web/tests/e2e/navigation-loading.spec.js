@@ -287,3 +287,38 @@ test('未保存配置仍需确认，缓存页返回保留筛选输入', async ({
   await expect(code).toHaveValue('保留筛选')
   assertClean()
 })
+
+test('未登录访问工作台时只加载登录页，登录及刷新首帧使用已验证的用户名', async ({ page }) => {
+  let loggedIn = false
+  const account = { username: 'startup-user', permissions: ['project:view'] }
+  const apiData = createDocsApiData()
+  apiData.set('/api/auth/console/config', { loginEnabled: true })
+  apiData.set('/api/auth/console/me', () => loggedIn ? account : null)
+  apiData.set('POST /api/auth/console/login', () => { loggedIn = true; return account })
+  apiData.set('/api/auth/console/preferences/theme', DEFAULT_THEME_CONFIG)
+  const { pageErrors, consoleErrors } = await installDistRoutes(page, { origin, liveStatic, apiData })
+  const resources = []
+  page.on('request', request => resources.push(new URL(request.url()).pathname))
+  await page.addInitScript(() => {
+    window.accountLabels = []
+    new MutationObserver(() => {
+      const label = document.querySelector('.layout-account-name')?.textContent.trim()
+      if (label && window.accountLabels.at(-1) !== label) window.accountLabels.push(label)
+    }).observe(document, { childList: true, subtree: true, characterData: true })
+  })
+  await page.goto(origin + '/#/project')
+  await page.getByPlaceholder('请输入用户名').fill('startup-user')
+  expect(resources.some(path => /menuViews|workspaceUi/.test(path))).toBe(false)
+  expect(resources.filter(path => path === '/api/auth/console/config')).toHaveLength(1)
+  await page.getByPlaceholder('请输入密码').fill('test-login')
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await expect(page.locator('.layout-account-name')).toHaveText('startup-user')
+  await expect.poll(() => page.evaluate(() => window.accountLabels)).toEqual(['startup-user'])
+  expect(resources.filter(path => path === '/api/auth/console/me')).toHaveLength(2)
+  await page.reload()
+  await expect(page.locator('.layout-account-name')).toHaveText('startup-user')
+  await expect.poll(() => page.evaluate(() => window.accountLabels)).toEqual(['startup-user'])
+  expect(resources.filter(path => path === '/api/auth/console/me')).toHaveLength(3)
+  expect(pageErrors).toEqual([])
+  expect(consoleErrors).toEqual([])
+})

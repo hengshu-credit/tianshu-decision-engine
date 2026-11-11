@@ -60,7 +60,7 @@ export function createConsoleAuthGuard(loadConfig, loadCurrentUser, isCurrentNav
       body = await loadConfig()
     } catch (e) { /* fail closed below */ }
     if (!isCurrent()) return next(false)
-    var configLoaded = Boolean(body && body.code === PLATFORM_SUCCESS_CODE && body.data)
+    var configLoaded = Boolean(body && body.code === PLATFORM_SUCCESS_CODE && typeof body.data?.loginEnabled === 'boolean')
     var loginEnabled = configLoaded && body.data.loginEnabled === true
     if (loginEnabled && body.data.initializationRequired === true && to.path !== '/register') {
       setPermissionEnforcement(true)

@@ -38,6 +38,7 @@ vi.mock('@/router', () => ({
 
 // 2. mock Element Plus 的全局服务；组件在测试中使用 VTU stub。
 vi.mock('element-plus', () => ({
+  ...Object.fromEntries(['ElAlert', 'ElButton', 'ElForm', 'ElFormItem', 'ElIcon', 'ElInput', 'ElResult'].map(name => [name, { name }])),
   ElMessage: Object.assign(vi.fn(), {
     success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn()
   }),

@@ -1,10 +1,16 @@
 import request from './request'
+import { fetchConsoleConfig } from './consoleBootstrap'
+import { PLATFORM_SUCCESS_CODE } from '@/utils/platformResponse'
 
 /**
  * 是否启用控制台用户名密码登录（与后端 rule-engine.console-login.enabled 一致）。
  */
-export function getConsoleAuthConfig() {
-  return request.get('/auth/console/config')
+export async function getConsoleAuthConfig() {
+  const body = await fetchConsoleConfig()
+  if (body?.code !== PLATFORM_SUCCESS_CODE || typeof body.data?.loginEnabled !== 'boolean') {
+    throw new Error('登录配置加载失败')
+  }
+  return body
 }
 
 /**

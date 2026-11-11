@@ -20,6 +20,10 @@ function changeIdentity(identity) {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event('tianshu:identity-change'))
 }
 
+export function isPermissionEnforced() {
+  return permissionEnforcementEnabled.value
+}
+
 export function setPermissionEnforcement(enabled) {
   permissionEnforcementEnabled.value = Boolean(enabled)
 }

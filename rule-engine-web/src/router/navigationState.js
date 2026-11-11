@@ -21,12 +21,12 @@ export function preloadRoute(router, path) {
   return Promise.all(router.resolve(path).matched.map(record => record.components?.default?.preload?.()))
 }
 
-export function installNavigationFeedback(router) {
+export function installNavigationFeedback(router, canPreload = () => true) {
   // 在组件离开确认之后、会话校验之前更新反馈，不卸载旧页面或绕过鉴权。
   router.beforeEach(to => {
     navigationState.pendingRoute = to
     navigationState.error = null
-    to.matched.forEach(record => record.components?.default?.preload?.())
+    if (canPreload(to)) to.matched.forEach(record => record.components?.default?.preload?.())
   })
   router.afterEach((to, _from, failure) => {
     // 被新导航取代的旧请求不能清除新页面的加载状态。

@@ -13,13 +13,13 @@
 </template>
 
 <script>
-import { ElMessage } from 'element-plus'
+import { ElAlert, ElButton, ElForm, ElFormItem, ElInput, ElMessage } from 'element-plus'
 import AuthPageShell from '@/components/auth/AuthPageShell.vue'
 import { emergencyResetConsolePassword } from '@/api/auth'
 
 export default {
   name: 'AdminRecovery',
-  components: { AuthPageShell },
+  components: { ElAlert, ElButton, ElForm, ElFormItem, ElInput, AuthPageShell },
   data() {
     const validateConfirm = (rule, value, callback) => value !== this.form.password ? callback(new Error('两次输入的密码不一致')) : callback()
     return { loading: false, form: { username: '', recoveryKey: '', password: '', confirmPassword: '' }, rules: { username: [{ required: true, message: '请设置新用户名', trigger: 'blur' }, { min: 3, max: 64, message: '用户名长度必须为3到64位', trigger: 'blur' }], recoveryKey: [{ required: true, message: '请输入一次性恢复码', trigger: 'blur' }], password: [{ required: true, message: '请输入新密码', trigger: 'blur' }, { min: 8, message: '密码不能少于8位', trigger: 'blur' }], confirmPassword: [{ required: true, message: '请确认密码', trigger: 'blur' }, { validator: validateConfirm, trigger: 'blur' }] } }

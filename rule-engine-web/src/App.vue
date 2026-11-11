@@ -12,12 +12,13 @@
 </template>
 
 <script>
+import { ElAlert } from 'element-plus'
 import { navigationState } from '@/router/navigationState'
 import ConsoleWatermark from '@/components/common/ConsoleWatermark.vue'
 
 export default {
   name: 'App',
-  components: { ConsoleWatermark },
+  components: { ElAlert, ConsoleWatermark },
   data() { return { navigation: navigationState } },
 }
 </script>

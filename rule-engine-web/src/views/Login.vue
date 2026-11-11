@@ -36,7 +36,6 @@
               autocomplete="username"
               clearable
               placeholder="请输入用户名"
-              @keyup.enter="submit"
             />
           </el-form-item>
           <el-form-item label="密码" prop="password">
@@ -46,7 +45,6 @@
               autocomplete="current-password"
               show-password
               placeholder="请输入密码"
-              @keyup.enter="submit"
             />
           </el-form-item>
           <el-form-item class="login-form__actions">
@@ -60,6 +58,9 @@
             </el-button>
           </el-form-item>
         </el-form>
+        <el-alert v-if="configFailed" type="warning" :closable="false" title="登录配置暂时无法加载">
+          <el-button link @click="loadConfig">重新加载配置</el-button>
+        </el-alert>
         <div v-if="registrationEnabled || passwordRecoveryEnabled || breakGlassRecoveryEnabled" class="login-links">
           <router-link v-if="registrationEnabled" to="/register">注册账号</router-link>
           <span v-if="registrationEnabled && (passwordRecoveryEnabled || breakGlassRecoveryEnabled)" aria-hidden="true">·</span>
@@ -73,16 +74,19 @@
 </template>
 
 <script>
+import { ElAlert, ElButton, ElForm, ElFormItem, ElInput } from 'element-plus'
 import { consoleLogin, getConsoleAuthConfig } from '@/api/auth'
 import { systemBrand } from '@/system/systemBrand'
 
 export default {
+  components: { ElAlert, ElButton, ElForm, ElFormItem, ElInput },
   name: 'Login',
   props: { preview: Boolean, previewBrand: { type: Object, default: null } },
   computed: { brand() { return this.previewBrand || systemBrand } },
   data() {
     return {
       loading: false,
+      configFailed: false,
       registrationEnabled: false,
       passwordRecoveryEnabled: false,
       breakGlassRecoveryEnabled: false,
@@ -95,26 +99,31 @@ export default {
       },
     }
   },
-  async created() {
-    try {
-      const response = await getConsoleAuthConfig()
-      this.registrationEnabled = response.data?.registrationEnabled === true
-      this.passwordRecoveryEnabled = response.data?.passwordRecoveryEnabled === true
-      this.breakGlassRecoveryEnabled = response.data?.breakGlassRecoveryEnabled === true
-    } catch (e) {
-      this.registrationEnabled = false
-      this.passwordRecoveryEnabled = false
-      this.breakGlassRecoveryEnabled = false
-    }
+  created() {
+    if (!this.preview) this.loadConfig()
   },
   methods: {
+    async loadConfig() {
+      this.configFailed = false
+      try {
+        const { data } = await getConsoleAuthConfig()
+        if (this.$.isUnmounted) return
+        if (data.initializationRequired) return this.$router.replace('/register')
+        if (data.loginEnabled === false) return this.$router.replace(this.$route.query.redirect || '/dashboard')
+        this.registrationEnabled = data.registrationEnabled === true
+        this.passwordRecoveryEnabled = data.passwordRecoveryEnabled === true
+        this.breakGlassRecoveryEnabled = data.breakGlassRecoveryEnabled === true
+      } catch {
+        this.configFailed = true
+      }
+    },
     /**
      * 校验表单并调用登录接口，成功后跳回 redirect 或首页。
      */
     submit() {
       if (this.preview) return
       this.$refs.form.validate(async (valid) => {
-        if (!valid) return
+        if (!valid || this.loading) return
         this.loading = true
         try {
           await consoleLogin({

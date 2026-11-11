@@ -1,5 +1,6 @@
 import { createApp, defineAsyncComponent } from 'vue'
-import ElementPlus from 'element-plus'
+import { provideGlobalConfig } from 'element-plus'
+import { PUBLIC_AUTH_PATHS } from '@/router/authGuard'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'element-plus/dist/index.css'
 import App from './App.vue'
@@ -26,16 +27,26 @@ import { bootstrapLocalTheme } from '@/theme/themeRuntime'
 bootstrapLocalTheme(window.localStorage, document.documentElement)
 
 // 全局注册 Monaco Editor 组件
-import AppIcon from '@/components/common/AppIcon.vue'
 const app = createApp(App)
 
 app.component('MonacoEditor', defineAsyncComponent(() => import('@/components/MonacoEditor.vue')))
-app.component('AppIcon', AppIcon)
 app.directive('permission', permissionDirective)
 document.addEventListener('click', event => recordTabVisit(event, router.currentRoute.value))
 app.use(store)
+provideGlobalConfig({ size: 'small', locale: zhCn }, app, true)
+let workspaceUi
+router.beforeEach(to => {
+  if (PUBLIC_AUTH_PATHS.has(to.path)) return
+  if (!workspaceUi) {
+    // 此守卫位于身份校验之后，与首个工作台页面并行下载完整组件库。
+    to.matched.forEach(record => record.components?.default?.preload?.())
+    workspaceUi = import('./plugins/workspaceUi').then(({ default: plugin }) => {
+      app.use(plugin)
+    }).catch(error => { workspaceUi = null; throw error })
+  }
+  return workspaceUi
+})
 app.use(router)
-app.use(ElementPlus, { size: 'small', locale: zhCn })
 app.use(ElementTabFocusGuard)
 app.mount('#app')
 app.onUnmount(initializeSystemBrand(router))

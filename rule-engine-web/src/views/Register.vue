@@ -35,14 +35,14 @@
 </template>
 
 <script>
-import { ElMessage } from 'element-plus'
+import { ElAlert, ElButton, ElForm, ElFormItem, ElIcon, ElInput, ElResult, ElMessage } from 'element-plus'
 import Loading from '@/components/common/AppLoadingIcon.vue'
 import AuthPageShell from '@/components/auth/AuthPageShell.vue'
 import { consoleRegister, verifyConsoleRegistration, resendConsoleRegistration, getConsoleAuthConfig, initializeConsoleAdministrator } from '@/api/auth'
 
 export default {
   name: 'Register',
-  components: { AuthPageShell, Loading },
+  components: { ElAlert, ElButton, ElForm, ElFormItem, ElIcon, ElInput, ElResult, AuthPageShell, Loading },
   data() {
     const validateConfirm = (rule, value, callback) => {
       if (value !== this.form.password) callback(new Error('两次输入的密码不一致'))

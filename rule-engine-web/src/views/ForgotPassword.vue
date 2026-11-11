@@ -14,12 +14,13 @@
 </template>
 
 <script>
+import { ElButton, ElForm, ElFormItem, ElInput, ElResult } from 'element-plus'
 import AuthPageShell from '@/components/auth/AuthPageShell.vue'
 import { getConsoleAuthConfig, requestConsolePasswordRecovery } from '@/api/auth'
 
 export default {
   name: 'ForgotPassword',
-  components: { AuthPageShell },
+  components: { ElButton, ElForm, ElFormItem, ElInput, ElResult, AuthPageShell },
   data() {
     return { loading: false, sent: false, breakGlassRecoveryEnabled: false, form: { identifier: '' }, rules: { identifier: [{ required: true, message: '请输入用户名或邮箱', trigger: 'blur' }] } }
   },

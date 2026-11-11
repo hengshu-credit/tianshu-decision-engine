@@ -1,43 +1,10 @@
-import { PLATFORM_SUCCESS_CODE } from '@/utils/platformResponse'
+import { fetchConsoleConfig, fetchMe } from '@/api/consoleBootstrap'
+import { getCurrentUser } from '@/security/permissionState'
 import { createRouter, createWebHashHistory } from 'vue-router'
-import axios from 'axios'
-import { createConsoleAuthGuard } from './authGuard'
+import { createConsoleAuthGuard, PUBLIC_AUTH_PATHS } from './authGuard'
 import { installNavigationFeedback, navigationState, preloadableView } from './navigationState'
 
-/**
- * 与后端会话 Cookie 配合的裸 axios，避免与 response 封装循环依赖。
- */
-const authAxios = axios.create({
-  baseURL: '/api',
-  timeout: 15000,
-  withCredentials: true
-})
-
-/**
- * 只缓存成功的登录配置；后端短暂不可用后允许再次登录重试。
- */
-var _consoleConfigPromise = null
-var _consoleConfigFetchedAt = 0
-
-export function fetchConsoleConfig() {
-  if (Date.now() - _consoleConfigFetchedAt > 10000) _consoleConfigPromise = null
-  if (!_consoleConfigPromise) {
-    _consoleConfigPromise = authAxios.get('/auth/console/config')
-      .then(function (res) {
-        _consoleConfigFetchedAt = Date.now()
-        if (res.data?.code !== PLATFORM_SUCCESS_CODE || !res.data.data || res.data.data.initializationRequired === true) _consoleConfigPromise = null
-        return res.data
-      })
-      .catch(function () { _consoleConfigPromise = null; return null })
-  }
-  return _consoleConfigPromise
-}
-
-function fetchMe() {
-  return authAxios.get('/auth/console/me')
-    .then(function (res) { return res.data })
-    .catch(function () { return null })
-}
+export { fetchConsoleConfig }
 
 // 工作台下载完成后，将全部一级入口注册为已就绪组件（含直接打开详情的情况）。
 // 共享模块单独分包，公开登录/恢复页面不承担整个工作台的下载成本。
@@ -425,7 +392,7 @@ const router = createRouter({
 /**
  * 首次进入严格验证会话；已验证会话的站内导航先按当前权限进入，再异步复核。
  */
-installNavigationFeedback(router)
+installNavigationFeedback(router, to => PUBLIC_AUTH_PATHS.has(to.path) || Boolean(getCurrentUser()))
 router.beforeEach(createConsoleAuthGuard(fetchConsoleConfig, fetchMe,
   to => (navigationState.pendingRoute || router.currentRoute.value) === to,
   { onRedirect: target => router.replace(target) }))

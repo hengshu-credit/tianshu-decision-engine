@@ -91,6 +91,9 @@ jobs:
   frontend:
     name: Frontend (Node 22)
     runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.1-noble
+      options: --shm-size=1g
     timeout-minutes: 45
     defaults:
       run:
@@ -110,8 +113,8 @@ jobs:
         run: npm run lint
       - name: Build production bundle
         run: npm run build
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Verify bundled Chromium
+        run: node -e "const fs = require('node:fs'); fs.accessSync(require('playwright').chromium.executablePath(), fs.constants.X_OK)"
       - name: Run dist E2E
         run: npm run test:e2e:dist
       - name: Upload browser failure evidence

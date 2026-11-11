@@ -55,6 +55,7 @@
       </header>
       <div class="layout-account">
           <el-dropdown
+            v-if="accountDisplayName"
             trigger="click"
             placement="bottom-end"
             popper-class="layout-account-dropdown layout-popup-menu"
@@ -188,9 +189,7 @@ import {
 import { confirmDesignerPathsCanClose } from '@/utils/designerLeaveGuard'
 import { readWorkspaceTabs } from '@/store/modules/workspaceTabs'
 import {
-  getConsoleAuthConfig,
   consoleLogout,
-  getConsoleMe,
   getConsoleThemePreference,
   saveConsoleThemePreference,
 } from '@/api/auth'
@@ -204,7 +203,7 @@ import {
   clearCurrentUser,
   filterMenus,
   getCurrentUser,
-  setCurrentUser,
+  isPermissionEnforced,
 } from '@/security/permissionState'
 import {
   DEFAULT_THEME_CONFIG,
@@ -248,9 +247,6 @@ export default {
       navigation: navigationState,
       sidebarWidth: sidebarState.width,
       lastExpandedWidth: sidebarState.lastExpandedWidth,
-      sidebarMenus: SIDEBAR_MENUS,
-      loginEnabled: false,
-      username: '',
       confirmedTheme: initialTheme,
       activeTheme: initialTheme,
       brand: systemBrand,
@@ -298,8 +294,11 @@ export default {
     avatarInitial() {
       return getAvatarInitial(this.accountDisplayName)
     },
+    loginEnabled() { return isPermissionEnforced() },
+    username() { return getCurrentUser()?.username || '' },
+    sidebarMenus() { return filterMenus(SIDEBAR_MENUS, { hidePublicWhenEmpty: true }) },
     accountDisplayName() {
-      return this.loginEnabled ? this.username || '用户' : '本地用户'
+      return this.loginEnabled ? this.username : '本地用户'
     },
   },
   watch: {
@@ -314,9 +313,7 @@ export default {
   },
   async mounted() {
     window.addEventListener('keydown', this.handleWorkspaceShortcut, true)
-    await this.refreshAuthBar()
-    if (this.$.isUnmounted) return
-    await this.syncProjectContext()
+    await Promise.all([this.loadAccountTheme(), this.syncProjectContext()])
   },
   beforeUnmount() {
     window.removeEventListener('keydown', this.handleWorkspaceShortcut, true)
@@ -547,44 +544,22 @@ export default {
         this.themeSaving = false
       }
     },
-    async refreshAuthBar() {
+    async loadAccountTheme() {
+      if (!this.loginEnabled || !this.username) return
+      const user = getCurrentUser()
+      const sameSession = () => {
+        const active = getCurrentUser()
+        return !this.$.isUnmounted && active && active.userId === user.userId &&
+          active.username === user.username && active.permissionVersion === user.permissionVersion
+      }
       try {
-        const cfg = await getConsoleAuthConfig()
-        this.loginEnabled = !!(cfg.data && cfg.data.loginEnabled)
-        if (!this.loginEnabled) {
-          this.username = ''
-          clearCurrentUser()
-          this.sidebarMenus = filterMenus(SIDEBAR_MENUS)
-          this.confirmTheme(readLocalTheme(browserLocalStorage()))
-          return
-        }
-        const me = await getConsoleMe()
-        this.username = (me.data && me.data.username) || ''
-        if (me.data && Array.isArray(me.data.permissions)) {
-          setCurrentUser(me.data)
-        } else {
-          clearCurrentUser()
-        }
-        this.sidebarMenus = filterMenus(SIDEBAR_MENUS, {
-          hidePublicWhenEmpty: getCurrentUser()?.permissions?.length === 0
-        })
-        try {
-          const theme = await getConsoleThemePreference()
-          this.confirmTheme(theme && theme.data
-            ? theme.data
-            : DEFAULT_THEME_CONFIG)
-        } catch (themeError) {
+        const theme = await getConsoleThemePreference()
+        if (sameSession()) this.confirmTheme(theme?.data || DEFAULT_THEME_CONFIG)
+      } catch (error) {
+        if (sameSession()) {
           this.confirmTheme(DEFAULT_THEME_CONFIG)
-          this.$message.warning(
-            themeError.message || '加载主题设置失败，已使用默认主题'
-          )
+          this.$message.warning(error.message || '加载主题设置失败，已使用默认主题')
         }
-      } catch (e) {
-        this.loginEnabled = false
-        this.username = ''
-        clearCurrentUser()
-        this.$store.commit('SET_CURRENT_PROJECT', null)
-        this.sidebarMenus = filterMenus(SIDEBAR_MENUS)
       }
     },
     async doLogout() {

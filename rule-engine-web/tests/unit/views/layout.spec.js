@@ -12,6 +12,7 @@ import { nextTick } from 'vue'
 import { createStore } from 'vuex'
 import { flushPromises, shallowMount } from '@test-utils'
 import * as authApi from '@/api/auth'
+import { clearCurrentUser, setCurrentUser, setPermissionEnforcement } from '@/security/permissionState'
 import * as projectApi from '@/api/project'
 import Layout from '@/layout/index.vue'
 
@@ -290,9 +291,9 @@ function createRoute(fullPath, title = '规则管理') {
   }
 }
 
-function mountLayout(route = createRoute('/rule')) {
+function mountLayout(route = createRoute('/rule'), currentProject = null) {
   const store = createStore({
-    state: { currentProject: null, projectContextGeneration: 0 },
+    state: { currentProject, projectContextGeneration: 0 },
     mutations: {
       INVALIDATE_PROJECT_CONTEXT_REQUESTS(state) {
         state.projectContextGeneration += 1
@@ -341,8 +342,8 @@ describe('Layout — 全局布局集成', () => {
     document.documentElement.removeAttribute('data-sidebar-theme')
     document.documentElement.className = ''
     document.documentElement.removeAttribute('style')
-    authApi.getConsoleAuthConfig.mockResolvedValue({ data: { loginEnabled: false } })
-    authApi.getConsoleMe.mockResolvedValue({ data: { username: 'admin' } })
+    clearCurrentUser()
+    setPermissionEnforcement(false)
     authApi.consoleLogout.mockResolvedValue({ data: true })
     authApi.getConsoleThemePreference.mockResolvedValue({
       data: { ...DEFAULT_THEME_CONFIG }
@@ -455,15 +456,11 @@ describe('Layout — 全局布局集成', () => {
       data: { id: 9, projectCode: 'RISK', projectName: '新名称', status: 1 }
     })
     const { wrapper, store } = mountLayout(
-      createRoute('/rule?projectId=9', '规则管理')
+      createRoute('/rule?projectId=9', '规则管理'),
+      { id: 9, projectCode: 'RISK', projectName: '旧名称' }
     )
-    store.commit('SET_CURRENT_PROJECT', {
-      id: 9,
-      projectCode: 'RISK',
-      projectName: '旧名称'
-    })
 
-    await wrapper.vm.syncProjectContext()
+    await flushPromises()
 
     expect(projectApi.getProject).toHaveBeenCalledWith(9)
     expect(store.state.currentProject.projectName).toBe('新名称')
@@ -522,14 +519,16 @@ describe('Layout — 全局布局集成', () => {
   })
 
   test('登录启用后展示用户名并生成头像首字母', async() => {
-    authApi.getConsoleAuthConfig.mockResolvedValue({ data: { loginEnabled: true } })
-    authApi.getConsoleMe.mockResolvedValue({ data: { username: '张三' } })
+    setPermissionEnforcement(true)
+    setCurrentUser({ username: '张三', permissions: [] })
     const { wrapper } = mountLayout()
-
-    await wrapper.vm.refreshAuthBar()
+    expect(wrapper.find('.layout-account-name').text()).toBe('张三')
+    await flushPromises()
 
     expect(wrapper.vm.loginEnabled).toBe(true)
     expect(wrapper.vm.username).toBe('张三')
+    expect(authApi.getConsoleAuthConfig).not.toHaveBeenCalled()
+    expect(authApi.getConsoleMe).not.toHaveBeenCalled()
     expect(wrapper.vm.avatarInitial).toBe('Z')
     expect(wrapper.find('.layout-account-name').exists()).toBe(true)
     expect(wrapper.find('.layout-account-name').text()).toBe('张三')
@@ -603,6 +602,8 @@ describe('Layout — 全局布局集成', () => {
   })
 
   test('顶部菜单保持全部一级入口平铺且账户区仍位于右上角', async() => {
+    setPermissionEnforcement(true)
+    setCurrentUser({ username: 'admin', permissions: SIDEBAR_MENUS.flatMap(menu => menu.permission).filter(Boolean) })
     writeLocalTheme(window.localStorage, {
       ...DEFAULT_THEME_CONFIG,
       navigationLayout: 'TOP'
@@ -622,7 +623,7 @@ describe('Layout — 全局布局集成', () => {
   test('关闭登录时显示本地用户并保留主题设置和退出账号', async() => {
     const { wrapper } = mountLayout()
 
-    await wrapper.vm.refreshAuthBar()
+    await flushPromises()
     await nextTick()
 
     expect(wrapper.find('.layout-account-name').exists()).toBe(true)
@@ -635,10 +636,10 @@ describe('Layout — 全局布局集成', () => {
   })
 
   test('账户菜单的用户设置进入个人设置页面', async() => {
-    authApi.getConsoleAuthConfig.mockResolvedValue({ data: { loginEnabled: true } })
-    authApi.getConsoleMe.mockResolvedValue({ data: { username: 'admin' } })
+    setPermissionEnforcement(true)
+    setCurrentUser({ username: 'admin', permissions: [] })
     const { wrapper, router } = mountLayout()
-    await wrapper.vm.refreshAuthBar()
+    await flushPromises()
 
     const dropdown = wrapper.findComponent({ name: 'ElDropdown' })
     expect(dropdown.exists()).toBe(true)
@@ -662,10 +663,10 @@ describe('Layout — 全局布局集成', () => {
   })
 
   test('账户菜单的退出账号执行原有退出流程', async() => {
-    authApi.getConsoleAuthConfig.mockResolvedValue({ data: { loginEnabled: true } })
-    authApi.getConsoleMe.mockResolvedValue({ data: { username: 'admin' } })
+    setPermissionEnforcement(true)
+    setCurrentUser({ username: 'admin', permissions: [] })
     const { wrapper, router } = mountLayout()
-    await wrapper.vm.refreshAuthBar()
+    await flushPromises()
 
     const dropdown = wrapper.findComponent({ name: 'ElDropdown' })
     expect(dropdown.exists()).toBe(true)
@@ -679,7 +680,7 @@ describe('Layout — 全局布局集成', () => {
 
   test('本地用户也可从账户菜单执行退出流程', async() => {
     const { wrapper, store, router } = mountLayout()
-    await wrapper.vm.refreshAuthBar()
+    await flushPromises()
     store.commit('SET_CURRENT_PROJECT', { id: 1, projectName: '测试项目' })
 
     const dropdown = wrapper.findComponent({ name: 'ElDropdown' })
@@ -703,14 +704,12 @@ describe('Layout — 全局布局集成', () => {
       colorScheme: 'DARK',
       accentPreset: 'NEBULA_GRADIENT'
     }
-    authApi.getConsoleAuthConfig.mockResolvedValue({ data: { loginEnabled: true } })
-    authApi.getConsoleMe.mockResolvedValue({
-      data: { userId: 9, username: 'alice', permissions: [] }
-    })
+    setPermissionEnforcement(true)
+    setCurrentUser({ userId: 9, username: 'alice', permissions: [] })
     authApi.getConsoleThemePreference.mockResolvedValue({ data: serverTheme })
     const { wrapper } = mountLayout()
 
-    await wrapper.vm.refreshAuthBar()
+    await flushPromises()
 
     expect(wrapper.vm.confirmedTheme).toEqual(serverTheme)
     expect(document.documentElement.dataset.theme).toBe('dark')
@@ -722,10 +721,9 @@ describe('Layout — 全局布局集成', () => {
   test('关闭登录时使用浏览器保存的主题且不请求用户主题接口', async() => {
     const localTheme = { ...DEFAULT_THEME_CONFIG, colorScheme: 'DARK' }
     writeLocalTheme(window.localStorage, localTheme)
-    authApi.getConsoleAuthConfig.mockResolvedValue({ data: { loginEnabled: false } })
     const { wrapper } = mountLayout()
 
-    await wrapper.vm.refreshAuthBar()
+    await flushPromises()
 
     expect(wrapper.vm.confirmedTheme).toEqual(localTheme)
     expect(authApi.getConsoleThemePreference).not.toHaveBeenCalled()
@@ -760,8 +758,8 @@ describe('Layout — 全局布局集成', () => {
   test('登录用户保存成功后更新权威配置并镜像到浏览器', async() => {
     const { wrapper } = mountLayout()
     const darkTheme = { ...DEFAULT_THEME_CONFIG, colorScheme: 'DARK' }
-    wrapper.vm.loginEnabled = true
-    wrapper.vm.username = 'alice'
+    setPermissionEnforcement(true)
+    setCurrentUser({ username: 'alice', permissions: [] })
     wrapper.vm.themeDrawerOpen = true
 
     await wrapper.vm.saveTheme(darkTheme)
@@ -778,8 +776,8 @@ describe('Layout — 全局布局集成', () => {
       new Error('保存主题失败')
     )
     const { wrapper } = mountLayout()
-    wrapper.vm.loginEnabled = true
-    wrapper.vm.username = 'alice'
+    setPermissionEnforcement(true)
+    setCurrentUser({ username: 'alice', permissions: [] })
     wrapper.vm.themeDrawerOpen = true
 
     await wrapper.vm.saveTheme({ ...DEFAULT_THEME_CONFIG, colorScheme: 'DARK' })
