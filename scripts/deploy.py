@@ -91,6 +91,36 @@ def verify_release(release):
     actual = {file.relative_to(release).as_posix() for file in frontend if file.is_file()}
     if not actual.issubset(verified):
         raise DeployError('dist 存在未校验的文件，请解压到一个新的空目录。')
+    return verified
+
+
+def install_app_definitions(release, target, verified, sdk=False):
+    """既有安装沿用原部署定义。新安装只补应用 Compose 与 Web 配置。"""
+    if (target / LAYOUT_FILE).is_file():
+        return
+    if any((target / name).exists() for name in ('config', 'deploy-prod/current', 'deploy-prod/docker')):
+        raise DeployError('请核对旧部署布局，再执行应用安装。')
+    required_envs = ['.env.server'] + (['.env.client'] if sdk else [])
+    for name in required_envs:
+        if not (target / name).is_file():
+            raise DeployError('请在安装目录配置实际的 ' + name + '，模板在 ' + str(release / (name + '.example')))
+    # 明确存在应用定义即视为已有安装；不向自定义或 full 拓扑混入新定义。
+    if any((target / 'docker' / file).exists() for file in (
+            'docker-compose.server.yml', 'docker-compose.full.yml', 'docker-compose.yml')):
+        return
+    names = ('docker/nginx/default.conf', 'docker/nginx/proxy.conf',
+             'docker/docker-compose.client.yml', 'docker/docker-compose.server.yml')
+    for name in names:
+        destination = target / name
+        if name not in verified or destination.resolve() != destination:
+            raise DeployError('无效的应用配置路径或缺少包内校验：' + name)
+        if destination.exists() and not destination.is_file():
+            raise DeployError('应用配置目标不是文件：' + name)
+    for name in names:
+        destination = target / name
+        if not destination.exists():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            replace_file(release / name, destination)
 
 
 def compose_plan(command, target, files, project=None, containers=(), sdk=False, selected=None, env_root=None):
@@ -590,6 +620,7 @@ def deploy(release, target, command, sdk=False, client_only=False, migration=Non
 def main():
     parser = argparse.ArgumentParser(description='校验、备份、更新 JAR/dist 并重启应用；保留共享基础设施。')
     parser.add_argument('--target', type=Path, default=Path.cwd(), help='固定安装目录，默认当前目录')
+    parser.add_argument('--install-app', action='store_true', help='在已配置数据库和 Redis 的新安装目录准备应用部署文件')
     parser.add_argument('--sdk', action='store_true', help='首次同时启动 SDK；已有 SDK 自动更新')
     parser.add_argument('--client-only', action='store_true', help='仅部署独立 SDK 机器')
     parser.add_argument('--adopt-layout', action='store_true', help='一次性整理旧 deploy-prod：共享服务和生效配置移到外层，保留原应用版本')
@@ -598,7 +629,7 @@ def main():
     release = Path(__file__).resolve().parent
     target = options.target.resolve()
     validate_layout(release, target)
-    verify_release(release)
+    verified = verify_release(release)
     command = detect_compose()
     print('[1/5] 发布包校验通过；使用 ' + ' '.join(command), flush=True)
     if not target.is_dir():
@@ -606,6 +637,8 @@ def main():
     migration = options.migration_script.resolve() if options.migration_script else None
     if options.adopt_layout and migration:
         raise DeployError('--adopt-layout 只整理目录；数据库迁移请在后续应用更新时执行。')
+    if options.install_app and (options.adopt_layout or options.client_only):
+        raise DeployError('应用安装入口用于 server/web；独立 SDK 或旧目录整理请直接使用 deploy.py。')
     if migration and not migration.is_file():
         raise DeployError('迁移脚本不存在：' + str(migration))
     if not options.adopt_layout and (release / 'migrations/upgrade.sh').exists() and migration is None:
@@ -619,6 +652,8 @@ def main():
         if options.adopt_layout:
             adopt_layout(target, command)
         else:
+            if options.install_app:
+                install_app_definitions(release, target, verified, options.sdk)
             deploy(release, target, command, options.sdk, options.client_only, migration)
     finally:
         lock.rmdir()

@@ -231,6 +231,7 @@ test('审批详情配置差异只显示一组编辑器版本标题', async ({ pa
       status: 'PENDING',
       applicant: 'e2e-applicant',
       baseVersionNo: 1,
+      baseVersionId: 100,
       submittedSnapshotJson: '{"timeout":60}'
     },
     diff: {
@@ -266,8 +267,10 @@ test('审批详情配置差异只显示一组编辑器版本标题', async ({ pa
   await expect(page.locator('.diff-columns-head')).toHaveCount(0)
   await expect(page.locator('.json-version-diff__head')).toHaveCount(0)
   const comparison = page.locator('.version-preview-summary')
-  await expect(comparison.locator('.overview-pane').first()).toContainText('30')
-  await expect(comparison.locator('.overview-pane').last()).toContainText('60')
+  const timeout = comparison.locator('.basic-field').filter({ has: page.locator('dt', { hasText: 'timeout' }) })
+  await expect(timeout.locator('dd')).toHaveCount(2)
+  await expect(timeout.locator('dd').first()).toContainText('30')
+  await expect(timeout.locator('dd').last()).toContainText('60')
   await page.locator('.approval-version-actions').getByRole('button', { name: '查看' }).click()
   const preview = page.getByRole('dialog', { name: '历史生效 V1' })
   await expect(preview.locator('.version-preview-summary')).toContainText('30')

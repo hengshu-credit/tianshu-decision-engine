@@ -449,6 +449,35 @@ class DeployTest(unittest.TestCase):
         self.assertIn('env-default-project', updates[0])
         self.assertEqual((self.target / 'docker/runtime/runtime.jar').read_text(), 'old-runtime')
 
+    def test_bootstrap_only_installs_app_files_and_preserves_existing_infrastructure(self):
+        destination = self.root / 'fresh'
+        self.write(destination / '.env.server', 'existing credentials')
+        self.write(destination / 'docker/docker-compose.mysql.yml', 'existing MySQL')
+        self.write(destination / 'docker/nginx/proxy.conf', 'custom proxy')
+        names = {'docker/nginx/default.conf', 'docker/nginx/proxy.conf',
+                 'docker/docker-compose.server.yml', 'docker/docker-compose.client.yml'}
+        for name in names:
+            self.write(self.release / name, 'release file')
+        deployment.install_app_definitions(self.release, destination, names)
+        self.assertEqual((destination / 'docker/docker-compose.server.yml').read_text(), 'release file')
+        self.assertEqual((destination / 'docker/nginx/proxy.conf').read_text(), 'custom proxy')
+        self.assertEqual((destination / 'docker/docker-compose.mysql.yml').read_text(), 'existing MySQL')
+        self.assertEqual((destination / '.env.server').read_text(), 'existing credentials')
+        self.assertFalse((destination / 'docker/rule-engine-mysql').exists())
+        self.write(destination / 'docker/docker-compose.server.yml', 'installed definition')
+        deployment.install_app_definitions(self.release, destination, names)
+        self.assertEqual((destination / 'docker/docker-compose.server.yml').read_text(), 'installed definition')
+
+    def test_bootstrap_fails_before_writing_if_env_or_checked_files_missing(self):
+        destination = self.root / 'unconfigured'
+        destination.mkdir()
+        with self.assertRaisesRegex(deployment.DeployError, '.env.server'):
+            deployment.install_app_definitions(self.release, destination, set())
+        self.write(destination / '.env.server', 'existing credentials')
+        with self.assertRaisesRegex(deployment.DeployError, '校验'):
+            deployment.install_app_definitions(self.release, destination, set())
+        self.assertFalse((destination / 'docker').exists())
+
 
 if __name__ == '__main__':
     unittest.main()

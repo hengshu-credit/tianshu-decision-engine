@@ -108,6 +108,7 @@ async function main() {
   }
   copyDeploymentMigrations(sourceRoot, stageRoot)
   cpSync(path.join(sourceRoot, 'scripts/deploy.py'), path.join(stageRoot, 'deploy.py'))
+  cpSync(path.join(sourceRoot, 'scripts/install-release.sh'), path.join(stageRoot, 'install-release.sh'))
   writeDeploymentReadme(sourceRoot, stageRoot)
   if (configRoot) for (const name of ['.env.server', '.env.client']) cpSync(path.join(configRoot, name), path.join(stageRoot, name))
   mkdirSync(runtimeRoot, { recursive: true })
