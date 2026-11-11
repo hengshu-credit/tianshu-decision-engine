@@ -1,6 +1,5 @@
 import polygonClipping from 'polygon-clipping'
 
-export const DASHBOARD_REGION_MAP_NAME = 'dashboard-administrative-region'
 export const CHINA_MAP_BOUNDS = [[72, 55], [137, 2]]
 const CHINA_CODES = new Set(['CHN', 'TWN', 'HKG', 'MAC'])
 const CHINA_MAP_LAYERS = {
@@ -104,33 +103,14 @@ export function filterDashboardRegionFeatures(geoJson, parentFeature) {
   }
 }
 
-/**
- * 过滤掉当前地图边界外的热力点。
- * 地图装饰线（outline/boundary）不参与点位判定，避免全中国外框把海上点
- * 或当前下钻区域外的点重新带回来。
- */
-export function dashboardPointsInGeoJson(points = [], geoJson) {
-  const boundaries = (geoJson?.features || [])
-    .filter(feature => !feature.properties?.mapRole && feature.geometry)
-  if (!boundaries.length) return []
-  return points.filter(point => {
-    const longitude = Number(point?.longitude)
-    const latitude = Number(point?.latitude)
-    if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return false
-    return boundaries.some(feature => pointInGeometry([longitude, latitude], feature.geometry))
-  })
-}
-
-/**
- * 将经纬度网格聚合到当前地图的行政区边界，用于侧栏的地区统计。
- * 统计沿用服务端返回的网格计数和决策分类计数，切换行政层级或下钻后
- * 只保留当前 GeoJSON 范围内的进件，避免侧栏与地图颜色使用不同口径。
- */
-export function dashboardRegionStatistics(geoJson, geo = {}) {
+/** 一次归属判定同时生成热力点和侧栏统计，装饰边界不参与统计。 */
+export function dashboardRegionActivity(geoJson, points = []) {
+  if (!Array.isArray(points) || !points.length) return { points: [], regions: [] }
   const regions = (geoJson?.features || [])
     .filter(feature => !feature.properties?.mapRole && feature.geometry)
     .map(feature => ({
       feature,
+      bounds: geometryBounds(feature.geometry.coordinates),
       id: feature.properties?.shapeID || feature.properties?.ADM0_A3 || feature.properties?.NAME_ZH,
       name: feature.properties?.shapeName || feature.properties?.NAME_ZH || feature.properties?.shapeID
     }))
@@ -143,14 +123,17 @@ export function dashboardRegionStatistics(geoJson, geo = {}) {
     reviewCount: 0,
     rejectCount: 0
   }))
-  const points = Array.isArray(geo?.points) ? geo.points : []
+  const visiblePoints = []
   for (const point of points) {
-    const longitude = Number(point?.longitude)
-    const latitude = Number(point?.latitude)
+    const longitude = point?.longitude
+    const latitude = point?.latitude
     const count = Number(point?.count || 0)
     if (!Number.isFinite(longitude) || !Number.isFinite(latitude) || !Number.isFinite(count) || count <= 0) continue
-    const index = regions.findIndex(region => pointInGeometry([longitude, latitude], region.feature.geometry))
+    const index = regions.findIndex(({ bounds: [west, south, east, north], feature }) =>
+      longitude >= west && longitude <= east && latitude >= south && latitude <= north &&
+      pointInGeometry([longitude, latitude], feature.geometry))
     if (index < 0) continue
+    visiblePoints.push(point)
     const target = totals[index]
     target.count += count
     target.passCount += nonNegativeCount(point?.passCount)
@@ -158,14 +141,16 @@ export function dashboardRegionStatistics(geoJson, geo = {}) {
     target.rejectCount += nonNegativeCount(point?.rejectCount)
   }
   const total = totals.reduce((sum, region) => sum + region.count, 0)
-  return totals
+  const statistics = totals
     .filter(region => region.count > 0)
     .sort((first, second) => second.count - first.count || first.name.localeCompare(second.name, 'zh-CN'))
     .map(region => ({
       ...region,
       rate: total ? region.count / total : 0,
-      rejectRate: region.count ? region.rejectCount / region.count : 0
+      passRate: region.passCount / region.count,
+      rejectRate: region.rejectCount / region.count
     }))
+  return { points: visiblePoints, regions: statistics }
 }
 
 /**

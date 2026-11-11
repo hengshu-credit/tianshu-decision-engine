@@ -2,8 +2,7 @@ import {
   dashboardCountryBounds,
   dashboardCountryOptions,
   dashboardMapView,
-  dashboardPointsInGeoJson,
-  dashboardRegionStatistics,
+  dashboardRegionActivity,
   dashboardRegionNames,
   dashboardWorldCountries,
   filterDashboardRegionFeatures,
@@ -112,11 +111,11 @@ describe('dashboard administrative map layers', () => {
 
   test('热力点只保留当前地图边界内的坐标', () => {
     const geoJson = { type: 'FeatureCollection', features: [region('region-1', '区域一')] }
-    expect(dashboardPointsInGeoJson([
+    expect(dashboardRegionActivity(geoJson, [
       { longitude: 0.2, latitude: 0.2, count: 2 },
       { longitude: 2, latitude: 2, count: 3 },
       { longitude: 'bad', latitude: 0, count: 4 }
-    ], geoJson)).toEqual([{ longitude: 0.2, latitude: 0.2, count: 2 }])
+    ]).points).toEqual([{ longitude: 0.2, latitude: 0.2, count: 2 }])
   })
 
   test('按当前行政区边界聚合进件数和引擎决策结果', () => {
@@ -128,20 +127,18 @@ describe('dashboard administrative map layers', () => {
         type: 'Polygon', coordinates: [[[2, 0], [3, 0], [2, 1], [2, 0]]]
       } }
     ] }
-    expect(dashboardRegionStatistics(geoJson, {
-      points: [
-        { longitude: 0.2, latitude: 0.2, count: 4, passCount: 2, reviewCount: 1, rejectCount: 1 },
-        { longitude: 2.2, latitude: 0.2, count: 2, passCount: 0, reviewCount: 1, rejectCount: 1 },
-        { longitude: 9, latitude: 9, count: 8, passCount: 8 }
-      ]
-    })).toEqual([
+    expect(dashboardRegionActivity(geoJson, [
+      { longitude: 0.2, latitude: 0.2, count: 4, passCount: 2, reviewCount: 1, rejectCount: 1 },
+      { longitude: 2.2, latitude: 0.2, count: 2, passCount: 0, reviewCount: 1, rejectCount: 1 },
+      { longitude: 9, latitude: 9, count: 8, passCount: 8 }
+    ]).regions).toEqual([
       {
         id: 'region-1', name: '区域一', count: 4, rate: 2 / 3,
-        passCount: 2, reviewCount: 1, rejectCount: 1, rejectRate: 1 / 4
+        passCount: 2, reviewCount: 1, rejectCount: 1, passRate: 1 / 2, rejectRate: 1 / 4
       },
       {
         id: 'region-2', name: '区域二', count: 2, rate: 1 / 3,
-        passCount: 0, reviewCount: 1, rejectCount: 1, rejectRate: 1 / 2
+        passCount: 0, reviewCount: 1, rejectCount: 1, passRate: 0, rejectRate: 1 / 2
       }
     ])
   })

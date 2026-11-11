@@ -198,13 +198,16 @@
                 <el-alert :title="mapError" type="warning" :closable="false" show-icon />
                 <el-button size="small" @click="loadMap">重试地图</el-button>
               </div>
-              <dashboard-chart
+              <dashboard-heatmap
                 :key="mapViewVersion"
                 aria-label="进件地图热力图"
-                height="clamp(560px, 70vh, 800px)"
+                :boundaries="mapGeoJson"
+                :regions="regionStats"
+                :points="mapPoints"
+                :palette="mapPalette"
                 :empty="!mapReady"
                 :empty-description="mapError || (mapCountry && mapCountry !== 'CHN' ? '行政区边界正在加载' : '本地地图正在加载')"
-                :option="geoOption"
+                :view="mapCamera"
                 @region-click="openMapCountry"
               />
               <p v-if="mapCountry === 'CHN'" class="dashboard-map-source">
@@ -218,7 +221,7 @@
                 （CC BY 4.0，按需在线加载）
               </p>
               </chart-card>
-              <chart-card class="dashboard-map-side dashboard-map-side--right" title="地区引擎通过 / 拒绝" note="通过、拒绝及拒绝率">
+              <chart-card class="dashboard-map-side dashboard-map-side--right" title="地区引擎通过 / 拒绝" note="通过率、拒绝率均按地区总进件数计算">
                 <dashboard-chart
                   aria-label="地区引擎通过拒绝统计"
                   height="clamp(420px, 62vh, 700px)"
@@ -340,12 +343,12 @@ import { listDefinitions, listProjectDefinitions } from '@/api/definition'
 import {
   distributionBarOption,
   distributionPieOption,
-  geoHeatmapOption,
+  createDashboardPalette,
   regionalApplicationOption,
   regionalDecisionOption,
-  registerDashboardMap,
   ruleSetHitOption
 } from '@/charts/dashboardCharts'
+import DashboardHeatmap from '@/components/dashboard/DashboardHeatmap.vue'
 import DashboardChart from '@/components/dashboard/DashboardChart.vue'
 import ChartCard from '@/components/dashboard/DashboardChartCard.vue'
 import MetricCard from '@/components/dashboard/DashboardMetricCard.vue'
@@ -355,12 +358,10 @@ import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import {
   ADMIN_LEVEL_LABELS,
   CHINA_MAP_BOUNDS,
-  DASHBOARD_REGION_MAP_NAME,
   dashboardCountryBounds,
   dashboardCountryOptions,
   dashboardMapView,
-  dashboardPointsInGeoJson,
-  dashboardRegionStatistics,
+  dashboardRegionActivity,
   dashboardRegionNames,
   dashboardWorldCountries,
   filterDashboardRegionFeatures,
@@ -383,6 +384,7 @@ export default {
   name: 'DashboardHome',
   components: { ProjectResourceSelect,
     DashboardChart,
+    DashboardHeatmap,
     DashboardSection,
     RemoteFilterSelect,
     MetricCard,
@@ -411,7 +413,6 @@ export default {
       mapLevel: 'ADM1',
       mapRegionPath: [],
       mapRegionNames: {},
-      mapDecorations: [],
       mapGeoJson: null,
       mapFeatureIndex: {},
       worldCountries: {},
@@ -456,9 +457,10 @@ export default {
       void this.themeVersion
       return distributionBarOption((this.applications.amounts || {}).items || [])
     },
-    regionStats() {
-      return dashboardRegionStatistics(this.mapGeoJson, this.applications.geo || {})
+    mapActivity() {
+      return dashboardRegionActivity(this.mapGeoJson, this.applications.geo?.points)
     },
+    regionStats() { return this.mapActivity.regions },
     regionalApplicationOption() {
       void this.themeVersion
       return regionalApplicationOption(this.regionStats)
@@ -467,33 +469,27 @@ export default {
       void this.themeVersion
       return regionalDecisionOption(this.regionStats)
     },
-    geoOption() {
+    mapPalette() {
       void this.themeVersion
-      const points = dashboardPointsInGeoJson((this.applications.geo || {}).points || [], this.mapGeoJson)
+      return createDashboardPalette()
+    },
+    mapPoints() {
+      return this.mapActivity.points
+    },
+    mapCamera() {
       const fallbackBounds = this.mapCountry === 'CHN'
         ? CHINA_MAP_BOUNDS
         : this.worldCountryBounds[this.mapCountry]
       const globalMapView = this.mapViewConfigured
         ? this.mapView
         : defaultDashboardGlobalMapView()
-      const mapView = this.mapCountry
+      return this.mapCountry
         ? dashboardMapView(this.mapGeoJson, fallbackBounds)
         : {
             bounds: undefined,
             center: [globalMapView.longitude, globalMapView.latitude],
             zoom: globalMapView.zoom
           }
-      return geoHeatmapOption(points, {
-        center: mapView.center,
-        zoom: mapView.zoom,
-        mapName: this.mapCountry ? DASHBOARD_REGION_MAP_NAME : undefined,
-        nameProperty: this.mapCountry ? 'shapeID' : 'NAME_ZH',
-        regionNames: this.mapRegionNames,
-        bounds: mapView.bounds,
-        decorations: this.mapDecorations,
-        regionData: this.regionStats,
-        fitRegion: Boolean(this.mapCountry)
-      })
     },
     mapRegionPathLabel() {
       return this.mapRegionPath.map(region => region.name).filter(Boolean).join(' / ')
@@ -599,19 +595,10 @@ export default {
         if (this.mapRegionPath.length && !geoJson.features?.length) {
           throw new Error('当前区域暂无下一级行政区边界')
         }
-        this.mapDecorations = geoJson.features.filter(feature => feature.properties.mapRole).map(feature => ({
-          id: feature.properties.shapeID, role: feature.properties.mapRole
-        }))
         this.mapFeatureIndex = markRaw(Object.fromEntries(geoJson.features
           .filter(feature => !feature.properties?.mapRole && feature.properties?.shapeID)
           .map(feature => [feature.properties.shapeID, feature])))
-        if (country) {
-          this.mapRegionNames = dashboardRegionNames(geoJson)
-          registerDashboardMap(geoJson, DASHBOARD_REGION_MAP_NAME)
-        } else {
-          this.mapRegionNames = {}
-          registerDashboardMap(geoJson)
-        }
+        this.mapRegionNames = country ? dashboardRegionNames(geoJson) : {}
         this.mapGeoJson = markRaw(geoJson)
         this.mapViewVersion += 1
         this.mapReady = true
@@ -943,7 +930,7 @@ export default {
 .dashboard-map-layout {
   display: grid;
   grid-column: 1 / -1;
-  grid-template-columns: minmax(220px, 0.86fr) minmax(520px, 1.8fr) minmax(220px, 0.86fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 1fr);
   gap: 14px;
   align-items: stretch;
 }
@@ -1003,7 +990,7 @@ export default {
 }
 
 .dashboard-map-toolbar .el-select {
-  width: 240px;
+  width: min(210px, 100%);
 }
 
 .dashboard-map-toolbar > span,
@@ -1094,11 +1081,18 @@ export default {
 
 .billing-amounts strong { color: var(--el-color-primary); }
 
+.dashboard-chart-grid { container-type: inline-size; }
+@container (max-width: 1100px) {
+  .dashboard-map-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-map-center { grid-column: 1 / -1 !important; grid-row: 1; }
+}
+@container (max-width: 620px) {
+  .dashboard-map-layout { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 1200px) {
   .dashboard-metrics { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
   .dashboard-operation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .dashboard-map-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .dashboard-map-center { grid-column: 1 / -1 !important; }
+
 }
 
 @media (max-width: 760px) {

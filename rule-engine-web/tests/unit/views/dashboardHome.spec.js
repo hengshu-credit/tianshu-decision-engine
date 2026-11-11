@@ -78,7 +78,7 @@ describe('DashboardHome', () => {
       }
     })
     const wrapper = mount(DashboardHome, {
-      global: { stubs: { DashboardChart: true } }
+      global: { stubs: { DashboardHeatmap: true, DashboardChart: true } }
     })
     await flushPromises()
 
@@ -94,7 +94,7 @@ describe('DashboardHome', () => {
 
   test('期数和金额都没有有效数据时隐藏占比整行，有任一数据时恢复', async () => {
     const wrapper = mount(DashboardHome, {
-      global: { stubs: { DashboardChart: true } }
+      global: { stubs: { DashboardHeatmap: true, DashboardChart: true } }
     })
     await flushPromises()
 
@@ -121,7 +121,7 @@ describe('DashboardHome', () => {
     const wrapper = mount(DashboardHome, {
       global: {
         stubs: {
-          DashboardChart: true
+          DashboardHeatmap: true, DashboardChart: true
         }
       }
     })
@@ -137,7 +137,7 @@ describe('DashboardHome', () => {
     const wrapper = mount(DashboardHome, {
       global: {
         stubs: {
-          DashboardChart: true
+          DashboardHeatmap: true, DashboardChart: true
         }
       }
     })
@@ -152,7 +152,7 @@ describe('DashboardHome', () => {
 
   test('再次查询期间保留指标和图表实例，完成后更新原有内容', async () => {
     const wrapper = mount(DashboardHome, {
-      global: { stubs: { DashboardChart: true } }
+      global: { stubs: { DashboardHeatmap: true, DashboardChart: true } }
     })
     await flushPromises()
     const chart = wrapper.findComponent({ name: 'DashboardChart' }).vm
@@ -181,7 +181,7 @@ describe('DashboardHome', () => {
     const wrapper = mount(DashboardHome, {
       global: {
         stubs: {
-          DashboardChart: true
+          DashboardHeatmap: true, DashboardChart: true
         }
       }
     })
@@ -225,24 +225,23 @@ describe('DashboardHome', () => {
     const wrapper = mount(DashboardHome, {
       global: {
         stubs: {
-          DashboardChart: true
+          DashboardHeatmap: true, DashboardChart: true
         }
       }
     })
     await flushPromises()
     await wrapper.vm.changeMapCountry('')
 
-    expect(wrapper.vm.geoOption.geo.center).toEqual([112, 31])
-    expect(wrapper.vm.geoOption.geo.zoom).toBe(2.4)
-    expect(wrapper.findAllComponents({ name: 'DashboardChart' })
-      .find(chart => chart.props('ariaLabel') === '进件地图热力图').props('empty')).toBe(false)
+    expect(wrapper.vm.mapCamera.center).toEqual([112, 31])
+    expect(wrapper.vm.mapCamera.zoom).toBe(2.4)
+    expect(wrapper.findComponent({ name: 'DashboardHeatmap' }).props('empty')).toBe(false)
     expect(wrapper.find('[data-testid="dashboard-map-reset"]').exists()).toBe(true)
 
     const version = wrapper.vm.mapViewVersion
     await wrapper.find('[data-testid="dashboard-map-reset"]').trigger('click')
     expect(wrapper.vm.mapViewVersion).toBe(version + 1)
-    expect(wrapper.vm.geoOption.geo.center).toEqual([112, 31])
-    expect(wrapper.vm.geoOption.geo.zoom).toBe(2.4)
+    expect(wrapper.vm.mapCamera.center).toEqual([112, 31])
+    expect(wrapper.vm.mapCamera.zoom).toBe(2.4)
     wrapper.unmount()
   })
 
@@ -252,17 +251,16 @@ describe('DashboardHome', () => {
         data: { ...applications(), geo }
       })
       const wrapper = mount(DashboardHome, {
-        global: { stubs: { DashboardChart: true } }
+        global: { stubs: { DashboardHeatmap: true, DashboardChart: true } }
       })
       await flushPromises()
 
-      const map = wrapper.findAllComponents({ name: 'DashboardChart' })
-        .find(chart => chart.props('ariaLabel') === '进件地图热力图')
+      const map = wrapper.findComponent({ name: 'DashboardHeatmap' })
       expect(map.props('empty')).toBe(false)
       expect(wrapper.vm.mapCountry).toBe('CHN')
-      expect(map.props('option').geo.center).toEqual([105, 30])
-      expect(map.props('option').geo.boundingCoords).not.toEqual(CHINA_MAP_BOUNDS)
-      expect(map.props('option').series[0].data).toEqual([])
+      expect(map.props('view').center).toEqual([105, 30])
+      expect(map.props('view').bounds).not.toEqual(CHINA_MAP_BOUNDS)
+      expect(map.props('points')).toEqual([])
       expect(wrapper.text()).toContain('暂无合法经纬度记录，展示初始视角')
       wrapper.unmount()
     }
@@ -272,34 +270,31 @@ describe('DashboardHome', () => {
     let finish
     fetch.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
     const wrapper = mount(DashboardHome, {
-      global: { stubs: { DashboardChart: true } }
+      global: { stubs: { DashboardHeatmap: true, DashboardChart: true } }
     })
     await flushPromises()
-    const map = wrapper.findAllComponents({ name: 'DashboardChart' })
-      .find(chart => chart.props('ariaLabel') === '进件地图热力图')
+    const map = wrapper.findComponent({ name: 'DashboardHeatmap' })
     expect(map.props('empty')).toBe(true)
     expect(map.props('emptyDescription')).toBe('本地地图正在加载')
 
     finish({ ok: true, json: async () => chinaMap })
     await flushPromises()
-    expect(wrapper.findAllComponents({ name: 'DashboardChart' })
-      .find(chart => chart.props('ariaLabel') === '进件地图热力图').props('empty')).toBe(false)
+    expect(wrapper.findComponent({ name: 'DashboardHeatmap' }).props('empty')).toBe(false)
     wrapper.unmount()
   })
 
   test('主题切换与查询结果变化后同步更新地图', async () => {
     const wrapper = mount(DashboardHome, {
-      global: { stubs: { DashboardChart: true } }
+      global: { stubs: { DashboardHeatmap: true, DashboardChart: true } }
     })
     await flushPromises()
-    const map = wrapper.findAllComponents({ name: 'DashboardChart' })
-      .find(chart => chart.props('ariaLabel') === '进件地图热力图')
-    const before = map.props('option').geo.itemStyle.areaColor
+    const map = wrapper.findComponent({ name: 'DashboardHeatmap' })
+    const before = map.props('palette').primary
     try {
       document.documentElement.style.setProperty('--el-color-primary', '#873FF2')
       window.dispatchEvent(new Event('tianshu-theme-change'))
       await wrapper.vm.$nextTick()
-      expect(map.props('option').geo.itemStyle.areaColor).not.toBe(before)
+      expect(map.props('palette').primary).not.toBe(before)
 
       dashboardApi.getDashboardApplications.mockResolvedValueOnce({
         data: { ...applications(), geo: {
@@ -307,14 +302,14 @@ describe('DashboardHome', () => {
         } }
       })
       await wrapper.vm.refreshAll()
-      expect(map.props('option').series[0].data).toEqual([[120, 30, 4]])
-      expect(map.props('option').visualMap.show).toBe(true)
+      expect(map.props('points')).toEqual([{ longitude: 120, latitude: 30, count: 4 }])
+      expect(Boolean(map.props('points').length)).toBe(true)
       expect(wrapper.text()).not.toContain('暂无合法经纬度记录，展示初始视角')
 
       await wrapper.vm.refreshAll()
       expect(map.props('empty')).toBe(false)
-      expect(map.props('option').series[0].data).toEqual([])
-      expect(map.props('option').visualMap.show).toBe(false)
+      expect(map.props('points')).toEqual([])
+      expect(Boolean(map.props('points').length)).toBe(false)
     } finally {
       document.documentElement.style.removeProperty('--el-color-primary')
       wrapper.unmount()
@@ -337,19 +332,18 @@ describe('DashboardHome', () => {
     fetch.mockImplementation(async url => ({ ok: true, json: async () =>
       url.includes('dashboard-boundaries') ? catalog : url.includes('dashboard-world') ? world : url.includes('china-land') ? chinaMap : administrative
     }))
-    const wrapper = mount(DashboardHome, { global: { stubs: { DashboardChart: true } } })
+    const wrapper = mount(DashboardHome, { global: { stubs: { DashboardHeatmap: true, DashboardChart: true } } })
     await flushPromises()
     await wrapper.vm.changeMapCountry('')
     await wrapper.vm.$nextTick()
-    const map = wrapper.findAllComponents({ name: 'DashboardChart' })
-      .find(chart => chart.props('ariaLabel') === '进件地图热力图')
+    const map = wrapper.findComponent({ name: 'DashboardHeatmap' })
     map.vm.$emit('region-click', '美国')
     await flushPromises()
     expect(wrapper.vm.mapCountry).toBe('USA')
     expect(wrapper.vm.mapLevel).toBe('ADM1')
-    expect(wrapper.vm.geoOption.geo.nameProperty).toBe('shapeID')
-    expect(wrapper.vm.geoOption.geo.center).toEqual([-95, 35])
-    expect(wrapper.vm.geoOption.geo.boundingCoords).toEqual([[-100.8, 40.8], [-89.2, 29.2]])
+    expect(wrapper.vm.mapGeoJson.features[0].properties.shapeID).toBe('region-1')
+    expect(wrapper.vm.mapCamera.center).toEqual([-95, 35])
+    expect(wrapper.vm.mapCamera.bounds).toEqual([[-100.8, 40.8], [-89.2, 29.2]])
     expect(wrapper.vm.mapLayerOptions.map(layer => layer.level)).toEqual(['ADM0', 'ADM1', 'ADM2'])
     expect(wrapper.text()).toContain('geoBoundaries')
     await wrapper.vm.openMapCountry('region-1')
@@ -360,9 +354,9 @@ describe('DashboardHome', () => {
     expect(wrapper.vm.mapReady).toBe(true)
 
     await wrapper.vm.changeMapCountry('')
-    expect(wrapper.vm.geoOption.geo.nameProperty).toBe('NAME_ZH')
-    expect(wrapper.vm.geoOption.geo.center).toEqual([0, 0])
-    expect(wrapper.vm.geoOption.geo.zoom).toBe(1)
+    expect(wrapper.vm.mapGeoJson.features[0].properties.NAME_ZH).toBe('美国')
+    expect(wrapper.vm.mapCamera.center).toEqual([0, 0])
+    expect(wrapper.vm.mapCamera.zoom).toBe(1)
     expect(wrapper.vm.mapReady).toBe(true)
     wrapper.unmount()
   })
@@ -396,12 +390,11 @@ describe('DashboardHome', () => {
       if (url.includes('usa-counties')) return counties
       return chinaMap
     } }))
-    const wrapper = mount(DashboardHome, { global: { stubs: { DashboardChart: true } } })
+    const wrapper = mount(DashboardHome, { global: { stubs: { DashboardHeatmap: true, DashboardChart: true } } })
     await flushPromises()
     await wrapper.vm.changeMapCountry('')
     await flushPromises()
-    const map = wrapper.findAllComponents({ name: 'DashboardChart' })
-      .find(chart => chart.props('ariaLabel') === '进件地图热力图')
+    const map = wrapper.findComponent({ name: 'DashboardHeatmap' })
     map.vm.$emit('region-click', '美国')
     await flushPromises()
     await wrapper.vm.openMapCountry('state-1')
@@ -410,8 +403,8 @@ describe('DashboardHome', () => {
     expect(wrapper.vm.mapLevel).toBe('ADM2')
     expect(wrapper.vm.mapRegionPathLabel).toBe('州一')
     expect(Object.keys(wrapper.vm.mapFeatureIndex)).toEqual(['county-1'])
-    expect(wrapper.vm.geoOption.geo.center).toEqual([-97.5, 5])
-    expect(wrapper.vm.geoOption.geo.boundingCoords).toEqual([[-100.4, 10.8], [-94.6, -0.8]])
+    expect(wrapper.vm.mapCamera.center).toEqual([-97.5, 5])
+    expect(wrapper.vm.mapCamera.bounds).toEqual([[-100.4, 10.8], [-94.6, -0.8]])
     wrapper.vm.sections.applications.data.geo = {
       points: [
         { longitude: -98, latitude: 5, count: 2 },
@@ -419,7 +412,7 @@ describe('DashboardHome', () => {
       ]
     }
     await wrapper.vm.$nextTick()
-    expect(wrapper.vm.geoOption.series[0].data).toEqual([[-98, 5, 2]])
+    expect(wrapper.vm.mapPoints).toEqual([{ longitude: -98, latitude: 5, count: 2 }])
     await wrapper.vm.drillUpMap()
     await flushPromises()
     expect(wrapper.vm.mapLevel).toBe('ADM1')
@@ -428,7 +421,7 @@ describe('DashboardHome', () => {
   })
 
   test('行政区加载失败可重试，快速切换后旧请求不覆盖新视图', async () => {
-    const wrapper = mount(DashboardHome, { global: { stubs: { DashboardChart: true } } })
+    const wrapper = mount(DashboardHome, { global: { stubs: { DashboardHeatmap: true, DashboardChart: true } } })
     await flushPromises()
     wrapper.vm.mapCatalog = { countries: [{ code: 'USA', name: '美国', layers: [
       { level: 'ADM1', url: '/states.json' }

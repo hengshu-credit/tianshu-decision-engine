@@ -1,30 +1,24 @@
-import { init, registerMap, use } from 'echarts/core'
-import { BarChart, HeatmapChart, MapChart, PieChart, LineChart } from 'echarts/charts'
+import { init, use } from 'echarts/core'
+import { BarChart, PieChart, LineChart } from 'echarts/charts'
 import {
-  GeoComponent,
+  DataZoomComponent,
   GridComponent,
   LegendComponent,
-  TooltipComponent,
-  VisualMapComponent
+  TooltipComponent
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { mixThemeColors } from '@/theme/themeConfig'
 
 use([
   BarChart,
-  HeatmapChart,
-  MapChart,
   PieChart,
   LineChart,
-  GeoComponent,
+  DataZoomComponent,
   GridComponent,
   LegendComponent,
   TooltipComponent,
-  VisualMapComponent,
   CanvasRenderer
 ])
-
-export const DASHBOARD_MAP_NAME = 'dashboard-world'
 
 function css(root, name, fallback) {
   if (!root || typeof getComputedStyle !== 'function') return fallback
@@ -77,10 +71,6 @@ export function createDashboardPalette(root = document.documentElement) {
 
 export function createChartInstance(element) {
   return init(element, null, { renderer: 'canvas' })
-}
-
-export function registerDashboardMap(geoJson, mapName = DASHBOARD_MAP_NAME) {
-  registerMap(mapName, geoJson)
 }
 
 function tooltip(palette) {
@@ -173,6 +163,7 @@ export function regionalApplicationOption(regions = [], options = {}) {
     color: palette.chartColors.slice(0, 3),
     tooltip: {
       ...tooltip(palette),
+      renderMode: 'richText',
       trigger: 'axis',
       formatter: params => {
         const index = Array.isArray(params) ? params[0]?.dataIndex : params?.dataIndex
@@ -185,7 +176,11 @@ export function regionalApplicationOption(regions = [], options = {}) {
       textStyle: { color: palette.muted },
       data: ['进件数', '占比', '累计占比']
     },
-    grid: { left: 78, right: 58, top: 42, bottom: 34 },
+    grid: { left: 4, right: regions.length > 12 ? 24 : 10, top: 54, bottom: 20, outerBoundsMode: 'same' },
+    dataZoom: regions.length > 12 ? [{
+      type: 'slider', yAxisIndex: 0, startValue: 0, endValue: 11,
+      width: 10, right: 0, showDetail: false, brushSelect: false
+    }] : [],
     xAxis: [
       {
         type: 'value',
@@ -207,7 +202,7 @@ export function regionalApplicationOption(regions = [], options = {}) {
       type: 'category',
       data: labels,
       inverse: true,
-      axisLabel: { color: palette.muted },
+      axisLabel: { color: palette.muted, width: 68, overflow: 'truncate' },
       axisLine: { lineStyle: { color: palette.border } }
     },
     series: [
@@ -221,135 +216,45 @@ export function regionalApplicationOption(regions = [], options = {}) {
 export function regionalDecisionOption(regions = [], options = {}) {
   const palette = createDashboardPalette(options.root)
   const labels = regions.map(region => region.name)
+  const passRates = regions.map(region => Number(region.passRate || 0) * 100)
   const rejectRates = regions.map(region => Number(region.rejectRate || 0) * 100)
   return {
-    color: [palette.success, palette.danger, palette.chartAccent],
+    color: [palette.success, palette.danger],
     tooltip: {
       ...tooltip(palette),
+      renderMode: 'richText',
       trigger: 'axis',
       formatter: params => {
         const index = Array.isArray(params) ? params[0]?.dataIndex : params?.dataIndex
         const region = regions[index] || {}
-        return `${region.name || ''}\n通过：${Number(region.passCount || 0).toLocaleString('zh-CN')}\n拒绝：${Number(region.rejectCount || 0).toLocaleString('zh-CN')}\n拒绝率：${Number(rejectRates[index] || 0).toFixed(2)}%`
+        return `${region.name || ''}\n通过：${Number(region.passCount || 0).toLocaleString('zh-CN')}（${Number(passRates[index] || 0).toFixed(2)}%）\n拒绝：${Number(region.rejectCount || 0).toLocaleString('zh-CN')}（${Number(rejectRates[index] || 0).toFixed(2)}%）`
       }
     },
     legend: {
       top: 0,
       textStyle: { color: palette.muted },
-      data: ['通过', '拒绝', '拒绝率']
+      data: ['通过率', '拒绝率']
     },
-    grid: { left: 78, right: 58, top: 42, bottom: 34 },
-    xAxis: [
-      {
-        type: 'value',
-        name: '进件数',
-        nameTextStyle: { color: palette.muted },
-        axisLabel: { color: palette.muted },
-        splitLine: { lineStyle: { color: palette.border } }
-      },
-      {
-        type: 'value',
-        name: '拒绝率',
-        min: 0,
-        max: 100,
-        axisLabel: { color: palette.muted, formatter: '{value}%' },
-        splitLine: { show: false }
-      }
-    ],
+    grid: { left: 4, right: regions.length > 12 ? 24 : 10, top: 54, bottom: 20, outerBoundsMode: 'same' },
+    dataZoom: regions.length > 12 ? [{
+      type: 'slider', yAxisIndex: 0, startValue: 0, endValue: 11,
+      width: 10, right: 0, showDetail: false, brushSelect: false
+    }] : [],
+    xAxis: {
+      type: 'value', min: 0, max: 100,
+      axisLabel: { color: palette.muted, formatter: '{value}%' },
+      splitLine: { lineStyle: { color: palette.border } }
+    },
     yAxis: {
       type: 'category',
       data: labels,
       inverse: true,
-      axisLabel: { color: palette.muted },
+      axisLabel: { color: palette.muted, width: 68, overflow: 'truncate' },
       axisLine: { lineStyle: { color: palette.border } }
     },
     series: [
-      { name: '通过', type: 'bar', xAxisIndex: 0, data: regions.map(region => region.passCount || 0), barMaxWidth: 18, barGap: '8%', itemStyle: { borderRadius: [0, 5, 5, 0] } },
-      { name: '拒绝', type: 'bar', xAxisIndex: 0, data: regions.map(region => region.rejectCount || 0), barMaxWidth: 18, itemStyle: { borderRadius: [0, 5, 5, 0] } },
-      { name: '拒绝率', type: 'line', xAxisIndex: 1, data: rejectRates, smooth: true, symbol: 'circle', symbolSize: 6 }
-    ]
-  }
-}
-
-export function geoHeatmapOption(points = [], options = {}) {
-  const palette = createDashboardPalette(options.root)
-  const mapBackground = mixThemeColors(palette.surface, palette.primary, 0.16)
-  const regionData = Array.isArray(options.regionData) ? options.regionData : []
-  const max = Math.max(1, ...points.map(point => point.count || 0), ...regionData.map(region => region.count || 0))
-  const center = Array.isArray(options.center) ? options.center : [104, 35]
-  const zoom = Number.isFinite(options.zoom) ? options.zoom : (options.fitRegion ? 1 : 1.5)
-  const regionLabel = params => options.regionNames?.[params.name] || params.name || ''
-  const regionById = new Map(regionData.map(region => [region.id, region]))
-  const tooltipText = params => {
-    if (Array.isArray(params.value)) return `${params.value[0]}, ${params.value[1]}：${params.value[2]}`
-    const region = regionById.get(params.name)
-    if (!region) return regionLabel(params)
-    return `${regionLabel(params)}\n进件数：${Number(region.count || 0).toLocaleString('zh-CN')}\n占比：${(Number(region.rate || 0) * 100).toFixed(2)}%\n通过：${Number(region.passCount || 0).toLocaleString('zh-CN')} · 拒绝：${Number(region.rejectCount || 0).toLocaleString('zh-CN')}`
-  }
-  return {
-    tooltip: {
-      ...tooltip(palette),
-      renderMode: 'richText',
-      formatter: tooltipText
-    },
-    visualMap: {
-      show: points.length > 0 || regionData.some(region => Number(region.count || 0) > 0),
-      min: 0,
-      max,
-      calculable: true,
-      left: 16,
-      bottom: 12,
-      textStyle: { color: palette.muted },
-      inRange: {
-        color: [mixThemeColors(palette.surface, palette.primary, 0.2), palette.primary, palette.chartAccent]
-      }
-    },
-    geo: {
-      map: options.mapName || DASHBOARD_MAP_NAME,
-      nameProperty: options.nameProperty || 'NAME_ZH',
-      tooltip: { show: true, formatter: regionLabel },
-      roam: true,
-      center,
-      zoom,
-      boundingCoords: options.fitRegion ? options.bounds : undefined,
-      regions: (options.decorations || []).map(decoration => ({
-        name: decoration.id,
-        silent: true,
-        tooltip: { show: false },
-        label: { show: false },
-        emphasis: { disabled: true, label: { show: false } },
-        ...(decoration.role === 'boundary' ? { itemStyle: { areaColor: palette.primary, borderColor: palette.primary } } : {})
-      })),
-      itemStyle: {
-        areaColor: mapBackground,
-        borderColor: mixThemeColors(palette.border, palette.primary, 0.25)
-      },
-      emphasis: {
-        label: { show: true, color: palette.text, formatter: regionLabel },
-        itemStyle: {
-          areaColor: palette.chartAccent,
-          borderColor: palette.chartAccent,
-          borderWidth: 2
-        }
-      }
-    },
-    series: [
-      {
-        type: 'heatmap',
-        coordinateSystem: 'geo',
-        pointSize: 10,
-        blurSize: 16,
-        data: points.map(point => [point.longitude, point.latitude, point.count])
-      },
-      ...(options.mapName && regionData.length ? [{
-        type: 'map',
-        map: options.mapName,
-        geoIndex: 0,
-        nameProperty: options.nameProperty,
-        data: regionData.map(region => ({ name: region.id, value: region.count })),
-        itemStyle: { areaColor: mapBackground, borderColor: mixThemeColors(palette.border, palette.primary, 0.25) },
-        emphasis: { label: { show: true }, itemStyle: { areaColor: palette.chartAccent, borderWidth: 2, borderColor: palette.chartAccent } }
-      }] : [])
+      { name: '通过率', type: 'bar', data: passRates, barMaxWidth: 16 },
+      { name: '拒绝率', type: 'bar', data: rejectRates, barMaxWidth: 16 }
     ]
   }
 }
