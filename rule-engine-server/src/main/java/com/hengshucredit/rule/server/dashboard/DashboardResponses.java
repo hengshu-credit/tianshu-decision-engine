@@ -24,6 +24,9 @@ public final class DashboardResponses {
 
     public record MappingIssue(DashboardMetricField metricField,
                                String message) {
+        public String getMetricLabel() {
+            return metricField.displayName();
+        }
     }
 
     public record ApplicationSummary(long applicationCount,

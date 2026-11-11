@@ -90,13 +90,12 @@
         @retry="loadApplications"
       >
         <template v-if="applications.visible !== false">
-          <div v-if="applications.mappingIssues && applications.mappingIssues.length" class="dashboard-warning">
-            <el-alert
-              title="部分字段映射已失效，对应指标暂不统计，请前往字段映射设置处理。"
-              type="warning"
-              :closable="false"
-              show-icon
-            />
+          <div v-if="mappingWarnings.length" class="dashboard-warning">
+            <el-alert title="进件指标提示" type="warning" :closable="false" show-icon>
+              <ul>
+                <li v-for="item in mappingWarnings" :key="item.message">{{ item.fields.join('、') }}：{{ item.message }}</li>
+              </ul>
+            </el-alert>
           </div>
           <div class="dashboard-metrics">
             <metric-card label="进件数" :value="number(summary.applicationCount)" />
@@ -433,6 +432,16 @@ export default {
   computed: {
     applications() { return this.sections.applications.data || {} },
     summary() { return this.applications.summary || {} },
+    mappingWarnings() {
+      const groups = new Map()
+      for (const issue of this.applications.mappingIssues || []) {
+        const message = issue.message || '请检查该指标的字段映射'
+        const field = issue.metricLabel || issue.metricField || '指标'
+        if (!groups.has(message)) groups.set(message, new Set())
+        groups.get(message).add(field)
+      }
+      return Array.from(groups, ([message, fields]) => ({ message, fields: [...fields] }))
+    },
     operations() { return this.sections.operations.data || {} },
     governance() { return this.sections.governance.data || {} },
     hasOperations() {

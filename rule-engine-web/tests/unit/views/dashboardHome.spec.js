@@ -55,6 +55,27 @@ describe('DashboardHome', () => {
     vi.unstubAllGlobals()
   })
 
+  test('看板按接口原因归并指标，区分未配置、无效引用和执行数据问题', async () => {
+    const missing = '公共默认尚未配置，请联系管理员或设置个人映射'
+    const removed = '字段引用不存在、已停用或无权访问'
+    const dataIssue = '3 条记录的决策取值缺失、计算失败或组间重叠，已计入未分类'
+    dashboardApi.getDashboardApplications.mockResolvedValueOnce({ data: { ...applications(), mappingIssues: [
+      { metricField: 'REQUEST_ID', metricLabel: '请求编号', message: missing },
+      { metricField: 'DEVICE_ID', metricLabel: '设备编号', message: missing },
+      { metricField: 'PERIOD', metricLabel: '期数', message: removed },
+      { metricField: 'DECISION_RESULT', metricLabel: '决策结果', message: dataIssue },
+    ] } })
+    const wrapper = shallowMount(DashboardHome, { global: { stubs: {
+      'el-alert': { props: ['title'], template: '<div role="alert">{{ title }}<slot /></div>' },
+      DashboardSection: { template: '<section><slot /></section>' },
+    } } })
+    await flushPromises()
+    const issues = wrapper.findAll('.dashboard-warning li').map(item => item.text())
+    expect(issues).toEqual(['请求编号、设备编号：' + missing, '期数：' + removed, '决策结果：' + dataIssue])
+    expect(wrapper.find('.dashboard-warning').text()).not.toContain('部分字段映射已失效')
+    wrapper.unmount()
+  })
+
   test('首次进入并行加载三个独立区域', async () => {
     const wrapper = shallowMount(DashboardHome)
     await flushPromises()

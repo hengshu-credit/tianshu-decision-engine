@@ -1,4 +1,5 @@
-const { expect, test } = require('@playwright/test')
+const { expect, test: base } = require('@playwright/test')
+const { observeNavigationErrors } = require('./support/navigationErrorLog.cjs')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createDocsApiData } = require('./support/docsFixtures.cjs')
 const { createDetailApiData } = require('./support/detailFixtures.cjs')
@@ -6,6 +7,20 @@ const { SIDEBAR_MENUS } = require('../../src/layout/layoutState.js')
 const catalog = require('../../src/constants/platformResponseCodes.json')
 
 const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+const test = base.extend({
+  navigationAudit: async ({ page }, use, testInfo) => {
+    const audit = await observeNavigationErrors(page, origin)
+    try {
+      await use(audit)
+    } finally {
+      const report = await audit.finish(testInfo)
+      if (testInfo.status === 'passed') {
+        const failures = report.issues.filter(issue => !['cancelled', 'console.warning', 'ui-warning', 'validation'].includes(issue.kind))
+        expect(failures, '逐页报错见 navigation-audit.json').toEqual([])
+      }
+    }
+  },
+})
 test.use({ actionTimeout: 5000 })
 
 test('规则详情只在打开对应页签时初始化编辑器和请求 API 场景', async ({ page }) => {
@@ -47,7 +62,7 @@ test('外数接口详情的测试编辑器按页签加载，切换后保留测�
   harness.assertClean()
 })
 
-test('逐一点击全部菜单与子页签，往返切换后仍可交互并记录响应耗时', async ({ page }, testInfo) => {
+test('逐一点击全部菜单与子页签，往返切换后仍可交互并记录响应耗时', async ({ page, navigationAudit }, testInfo) => {
   test.setTimeout(180000)
   const apiData = createDocsApiData()
   const projectCode = apiData.get('/api/rule/project/list').records[0].projectCode
@@ -91,7 +106,7 @@ test('逐一点击全部菜单与子页签，往返切换后仍可交互并记�
       window.switchAudit.tasks.push(...list.getEntries().map(entry => ({ start: entry.startTime, duration: entry.duration })))
     }).observe({ type: 'longtask', buffered: true })
   })
-  const measurements = []
+  const measurements = navigationAudit.timings
   async function record(kind, name) {
     const metric = await page.evaluate(async () => {
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
@@ -100,14 +115,17 @@ test('逐一点击全部菜单与子页签，往返切换后仍可交互并记�
     })
     measurements.push({ kind, name, ...metric })
   }
+  navigationAudit.step('/project', '首次打开项目列表')
   await page.goto(`${origin}/#/project`)
   await expect(page.getByRole('cell', { name: projectCode, exact: true })).toBeVisible()
   for (const menu of SIDEBAR_MENUS) {
     // 避免把重复点击当前页记成一次页面切换。
     if (menu.index === '/project') {
+      navigationAudit.step('/rule', '从当前项目页离开')
       await page.locator('[data-menu-path="/rule"]').click()
       await expect(page).toHaveURL(`${origin}/#/rule`)
     }
+    navigationAudit.step(menu.index, `点击${menu.label}`)
     await page.locator(`[data-menu-path="${menu.index}"]`).click()
     await expect(page).toHaveURL(`${origin}/#${menu.index}`)
     await expect(page.locator('.layout-main > div').first()).toBeVisible()
@@ -117,6 +135,7 @@ test('逐一点击全部菜单与子页签，往返切换后仍可交互并记�
     // 默认页签最后再点击，测量真实切换，并验证返回默认页签的交互。
     for (const name of [...tabs.slice(1), ...tabs.slice(0, 1)]) {
       const tab = page.locator('.layout-main').getByRole('tab', { name: name.trim(), exact: true })
+      navigationAudit.step(menu.index, `切换${name.trim()}`)
       await tab.click()
       await expect(tab).toHaveAttribute('aria-selected', 'true')
       const paneId = await tab.getAttribute('aria-controls')
@@ -130,6 +149,7 @@ test('逐一点击全部菜单与子页签，往返切换后仍可交互并记�
       await record('tab', `${menu.label}/${name.trim()}`)
     }
     if (menu.index === '/project') continue
+    navigationAudit.step('/project', `从${menu.label}返回项目列表`)
     await page.locator('.workspace-tab__main[data-path="/project"]').click()
     await expect(page).toHaveURL(`${origin}/#/project`)
     await expect(page.getByRole('cell', { name: projectCode, exact: true })).toBeVisible()

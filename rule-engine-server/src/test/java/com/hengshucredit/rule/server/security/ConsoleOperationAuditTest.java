@@ -67,6 +67,20 @@ public class ConsoleOperationAuditTest {
                 ConsoleOperationPage.resolve("/ledger?projectId=9"));
         Assert.assertNull(ConsoleOperationPage.resolve("/ledger/articles/unknown"));
     }
+    @Test public void ledgerTabVisitsAreAcceptedAndPreserveTheTabInTheAuditLog() throws Exception {
+        var logs = new Logs();
+        var endpoint = mvc(new Metadata(), logs, true);
+        for (String tab : List.of("时间线", "文章管理", "素材库", "事件与类型")) {
+            endpoint.perform(post("/api/rule/console/activity").session(session()).contentType(MediaType.APPLICATION_JSON)
+                    .content(JSON.toJSONString(Map.of("action", "PAGE_VIEW", "pagePath", "/ledger", "name", "页签 · " + tab))))
+                    .andExpect(status().isOk());
+            Assert.assertEquals("ledger", logs.saved.getModule());
+            Assert.assertEquals("/ledger", logs.saved.getPagePath());
+            Assert.assertEquals("SUCCESS", logs.saved.getOutcome());
+            Assert.assertEquals("查看台账记录页 / 页签「" + tab + "」", logs.saved.getChangeSummary());
+        }
+    }
+
     @Test public void sftpPageVisitsUseDatabasePermissionAndRecordBothPageLabels() throws Exception {
         for (String[] sample : new String[][]{{"/sftp", "SFTP数据源配置页"}, {"/sftp/logs", "SFTP查询日志页"}}) {
             var logs = new Logs();

@@ -1,0 +1,272 @@
+{
+  "origin": "https://rule.hengshucredit.com",
+  "entry": "/assets/index-D0PQftqn.js",
+  "timeZone": "UTC",
+  "samples": [
+    {
+      "phase": "菜单、页签与查询",
+      "start": "2026-11-11T17:52:44.136Z",
+      "end": "2026-11-11T17:53:48.129Z",
+      "pages": 20,
+      "tabs": 40,
+      "completedXhrEnvelopes": 165,
+      "events": [
+        {
+          "at": "2026-11-11T17:52:44.136Z",
+          "page": "/dashboard",
+          "action": "打开看板",
+          "kind": "ui-warning",
+          "message": "部分字段映射已失效，对应指标暂不统计，请前往字段映射设置处理。",
+          "count": 1
+        },
+        {
+          "at": "2026-11-11T17:53:27.573Z",
+          "page": "/ledger",
+          "action": "点击台账记录",
+          "kind": "http",
+          "method": "POST",
+          "path": "/api/rule/console/activity",
+          "status": 400,
+          "count": 1
+        },
+        {
+          "at": "2026-11-11T17:53:28.137Z",
+          "page": "/ledger",
+          "action": "切换时间线",
+          "kind": "http",
+          "method": "POST",
+          "path": "/api/rule/console/activity",
+          "status": 400,
+          "count": 1
+        },
+        {
+          "at": "2026-11-11T17:53:28.864Z",
+          "page": "/ledger",
+          "action": "切换文章管理",
+          "kind": "http",
+          "method": "POST",
+          "path": "/api/rule/console/activity",
+          "status": 400,
+          "count": 2
+        },
+        {
+          "at": "2026-11-11T17:53:29.547Z",
+          "page": "/ledger",
+          "action": "切换素材库",
+          "kind": "http",
+          "method": "POST",
+          "path": "/api/rule/console/activity",
+          "status": 400,
+          "count": 2
+        },
+        {
+          "at": "2026-11-11T17:53:30.267Z",
+          "page": "/ledger",
+          "action": "切换事件与类型",
+          "kind": "http",
+          "method": "POST",
+          "path": "/api/rule/console/activity",
+          "status": 400,
+          "count": 3
+        },
+        {
+          "at": "2026-11-11T17:53:31.380Z",
+          "page": "/ledger",
+          "action": "查询或刷新",
+          "kind": "http",
+          "method": "POST",
+          "path": "/api/rule/console/activity",
+          "status": 400,
+          "count": 1
+        },
+        {
+          "at": "2026-11-11T17:53:43.670Z",
+          "page": "/dashboard",
+          "action": "返回看板",
+          "kind": "ui-warning",
+          "message": "部分字段映射已失效，对应指标暂不统计，请前往字段映射设置处理。",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "phase": "定向复现",
+      "activityResponses": {
+        "count": 3,
+        "method": "POST",
+        "path": "/api/rule/console/activity",
+        "status": 400,
+        "code": "100001",
+        "message": "入参校验失败",
+        "detail": "不支持的页面"
+      },
+      "dashboardApplications": {
+        "observations": 2,
+        "metricFields": [
+          "REQUEST_ID",
+          "DEVICE_ID",
+          "LONGITUDE",
+          "LATITUDE",
+          "PERIOD",
+          "AMOUNT",
+          "DECISION_RESULT"
+        ],
+        "reasonForEach": "公共默认尚未配置，请联系管理员或设置个人映射"
+      }
+    },
+    {
+      "phase": "首次表单检查",
+      "start": "2026-11-11T18:00:08.573Z",
+      "end": "2026-11-11T18:00:20.808Z",
+      "completedXhrEnvelopes": 17,
+      "opened": [
+        "看板设置",
+        "新建项目",
+        "新建规则",
+        "新建字段"
+      ],
+      "coverageNote": "新建字段取消后采集器未确认关闭，本轮到此停止",
+      "events": [
+        {
+          "at": "2026-11-11T18:00:08.574Z",
+          "page": "/dashboard",
+          "action": "打开看板",
+          "kind": "ui-warning",
+          "message": "部分字段映射已失效，对应指标暂不统计，请前往字段映射设置处理。",
+          "count": 1
+        },
+        {
+          "at": "2026-11-11T18:00:09.389Z",
+          "page": "/dashboard",
+          "action": "看板设置",
+          "kind": "ui-warning",
+          "message": "经纬度仅在统计时接受有限数字，且经度须在 [-180, 180]、纬度须在 [-90, 90]；执行日志中的原始值不会被修改或删除。",
+          "count": 1
+        },
+        {
+          "at": "2026-11-11T18:00:18.603Z",
+          "page": "/dashboard",
+          "action": "返回看板",
+          "kind": "ui-warning",
+          "message": "部分字段映射已失效，对应指标暂不统计，请前往字段映射设置处理。",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "phase": "其余表单检查",
+      "start": "2026-11-11T18:03:02.405Z",
+      "end": "2026-11-11T18:03:33.327Z",
+      "completedXhrEnvelopes": 54,
+      "opened": [
+        "新建名单库",
+        "新建数据源",
+        "新建数据库",
+        "新建 SFTP 数据源",
+        "上传模型",
+        "新建函数",
+        "手动添加",
+        "生成血缘图",
+        "新建实验",
+        "新建计费项",
+        "添加根资源"
+      ],
+      "coverageNote": "台账当前页签未显示新建事件，另行补测",
+      "events": [
+        {
+          "at": "2026-11-11T18:03:02.405Z",
+          "page": "/dashboard",
+          "action": "打开看板",
+          "kind": "ui-warning",
+          "message": "部分字段映射已失效，对应指标暂不统计，请前往字段映射设置处理。",
+          "count": 1
+        },
+        {
+          "at": "2026-11-11T18:03:21.464Z",
+          "page": "/lineage",
+          "action": "生成血缘图",
+          "kind": "ui-warning",
+          "message": "请先选择血缘起点",
+          "count": 1
+        },
+        {
+          "at": "2026-11-11T18:03:28.544Z",
+          "page": "/ledger",
+          "action": "进入台账记录",
+          "kind": "http",
+          "method": "POST",
+          "path": "/api/rule/console/activity",
+          "status": 400,
+          "count": 1
+        },
+        {
+          "at": "2026-11-11T18:03:31.330Z",
+          "page": "/dashboard",
+          "action": "返回看板",
+          "kind": "ui-warning",
+          "message": "部分字段映射已失效，对应指标暂不统计，请前往字段映射设置处理。",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "phase": "台账事件补测",
+      "end": "2026-11-11T18:07:05.690Z",
+      "completedXhrEnvelopes": 27,
+      "opened": [
+        "新建事件"
+      ],
+      "events": [
+        {
+          "at": "2026-11-11T18:06:59.695Z",
+          "page": "/dashboard",
+          "action": "打开看板",
+          "kind": "ui-warning",
+          "message": "部分字段映射已失效，对应指标暂不统计，请前往字段映射设置处理。",
+          "count": 1
+        },
+        {
+          "at": "2026-11-11T18:07:00.458Z",
+          "page": "/ledger",
+          "action": "进入台账记录",
+          "kind": "http",
+          "method": "POST",
+          "path": "/api/rule/console/activity",
+          "status": 400,
+          "count": 3
+        },
+        {
+          "at": "2026-11-11T18:07:03.470Z",
+          "page": "/dashboard",
+          "action": "返回看板",
+          "kind": "ui-warning",
+          "message": "部分字段映射已失效，对应指标暂不统计，请前往字段映射设置处理。",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "phase": "刷新看板",
+      "source": "Resource Timing",
+      "page": "/dashboard",
+      "firstResponses": [
+        {
+          "path": "/api/auth/console/brand",
+          "status": 200,
+          "ms": 238
+        },
+        {
+          "path": "/api/auth/console/config",
+          "status": 200,
+          "ms": 294
+        },
+        {
+          "path": "/api/auth/console/me",
+          "status": 200,
+          "ms": 331
+        }
+      ],
+      "retainedResponsesAtOrAbove400": 0
+    }
+  ]
+}

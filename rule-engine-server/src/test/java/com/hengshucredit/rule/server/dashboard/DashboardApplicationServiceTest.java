@@ -18,6 +18,15 @@ import static org.junit.Assert.assertTrue;
 
 public class DashboardApplicationServiceTest {
     @Test
+    public void mappingIssueResponseIncludesTheMetricLabelAndOriginalReason() throws Exception {
+        var issue = new DashboardResponses.MappingIssue(DashboardMetricField.REQUEST_ID, "公共默认尚未配置");
+        var json = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(issue);
+        assertEquals("REQUEST_ID", json.get("metricField").asText());
+        assertEquals("请求编号", json.get("metricLabel").asText());
+        assertEquals("公共默认尚未配置", json.get("message").asText());
+    }
+
+    @Test
     public void dynamicDecisionValuesClassifyLogsAndReportMissingOrOverlappingResults() {
         var path = com.alibaba.fastjson.JSON.parseObject("{kind:'PATH',refType:'VARIABLE',refId:9,code:'old',relativePath:'.pass'}");
         var values = new DashboardMapping.DecisionValues(Set.of(), Set.of("REVIEW"), Set.of("REJECT"),

@@ -117,6 +117,14 @@ jobs:
         run: node -e "const fs = require('node:fs'); fs.accessSync(require('playwright').chromium.executablePath(), fs.constants.X_OK)"
       - name: Run dist E2E
         run: npm run test:e2e:dist
+      - name: Upload navigation timings and errors
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: navigation-audit
+          path: rule-engine-web/test-results/**/navigation-audit.json
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload browser failure evidence
         if: failure()
         uses: actions/upload-artifact@v4
