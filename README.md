@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="rule-engine-web/public/images/hscredit-loading.svg" alt="衡枢真信" width="120"><br>
+  <img src="rule-engine-web/public/images/hscredit-loading.svg#readme" alt="衡枢真信" width="292" height="438"><br>
   <strong>天工开物，枢衡定策</strong><br>
   <sub>Creating Possibilities. Calibrating Decisions.</sub>
 </p>

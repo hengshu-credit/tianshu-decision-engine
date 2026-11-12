@@ -1,6 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="-328 -328 656 656" role="img" aria-labelledby="title" shape-rendering="geometricPrecision">
+<svg xmlns="http://www.w3.org/2000/svg" width="512" viewBox="-328 -328 656 656" role="img" aria-labelledby="title" shape-rendering="geometricPrecision">
 <title id="title">HSCredit</title><desc>The S is drawn, the H strokes join it, and CREDIT rises into place before the mark turns. The sequence repeats every 9.2 seconds.</desc>
 <style>#still{display:none}@media(prefers-reduced-motion:reduce){#motion{display:none}#still{display:inline}}</style>
+<view id="readme" viewBox="-190 -273 380 570"/>
 <defs><linearGradient id="ink" gradientUnits="userSpaceOnUse" x1="-165" y1="-267" x2="190" y2="170">
 <stop stop-color="#00eafa"/><stop offset=".5" stop-color="#7941f6"/><stop offset="1" stop-color="#ee12cf"/></linearGradient>
 <linearGradient id="type-ink" x2="100%" y2="100%"><stop stop-color="#00eafa"/><stop offset=".5" stop-color="#7941f6"/><stop offset="1" stop-color="#ee12cf"/></linearGradient>
