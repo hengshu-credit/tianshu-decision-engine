@@ -109,7 +109,7 @@ public class ConsoleMailService {
             if (!("https".equals(uri.getScheme()) || "http".equals(uri.getScheme())) || uri.getHost() == null || uri.getUserInfo() != null) throw new IllegalArgumentException("邮件操作链接无效");
         }
         String button = link == null ? "" : "<p style=\"padding:10px 12px;background:#f3f3ff;border-left:3px solid #2934ea\">链接有效期：" + ttl
-                + " 分钟</p><p><a href=\"" + escape(link) + "\" style=\"display:block;padding:12px;background:#2934ea;color:#fff;text-align:center;text-decoration:none;border-radius:4px\">"
+                + " 分钟</p><p><a href=\"" + escape(link) + "\" style=\"display:block;padding:12px;background:#2934ea;color:#fff;text-align:center;text-decoration:none;border-radius:0\">"
                 + escape(action) + "</a></p><p style=\"font-size:12px;color:#657087\">若非您本人操作，请忽略此邮件。请勿向他人转发此链接。</p>";
         String template = new ClassPathResource("brand/notification.html").getContentAsString(StandardCharsets.UTF_8);
         Map<String, String> values = Map.of("name", escape(name), "subtitle", escape(subtitle), "title", escape(title),

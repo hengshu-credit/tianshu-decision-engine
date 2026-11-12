@@ -27,7 +27,7 @@
           <span>正在进入工作台…</span>
         </div>
         <el-alert v-else-if="workspaceError" title="工作台加载失败" type="error" :closable="false">
-          <el-button link @click="enterWorkspace">重新加载工作台</el-button>
+          <el-button link @click="reloadWorkspace">重新加载工作台</el-button>
         </el-alert>
         <el-form v-else
           ref="form"
@@ -147,6 +147,13 @@ export default {
       } finally {
         this.loading = false
       }
+    },
+    reloadWorkspace() {
+      // 浏览器可能缓存失败的模块导入。重新加载目标路由，让新文档使用已有会话重新下载。
+      const target = new URL(window.location.href)
+      target.hash = this.$router.resolve(this.$route.query.redirect || '/project').fullPath
+      window.history.replaceState(null, '', target)
+      window.location.reload()
     },
     async enterWorkspace() {
       if (this.enteringWorkspace) return

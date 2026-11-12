@@ -208,7 +208,7 @@ export default {
 .brand-columns, .mail-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; padding: 12px 0; }
 .brand-upload { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; width: 100%; }
 .brand-upload img { width: 56px; height: 56px; object-fit: contain; }
-.preview-button { display: block; padding: 10px 16px; border-radius: 6px; background: var(--tianshu-brand-background); color: var(--tianshu-brand-foreground); text-align: center; margin-top: 14px; }
+.preview-button { display: block; padding: 10px 16px; border-radius: 0; background: var(--tianshu-brand-background); color: var(--tianshu-brand-foreground); text-align: center; margin-top: 14px; }
 .brand-columns { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
 .brand-image-editor { width: 100%; }
 .brand-image-input { display: flex; gap: 12px; width: 100%; margin-bottom: 12px; }
@@ -224,7 +224,7 @@ export default {
 .settings-pair > * { min-width: 0; }
 .mail-preview-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
 .mail-preview-heading .el-select { width: 140px; }
-.mail-letter { border: 1px solid var(--tianshu-border-subtle); border-radius: 8px; padding: 20px; font-size: 13px; line-height: 1.8; }
+.mail-letter { border: 1px solid var(--tianshu-border-subtle); border-radius: 0; padding: 20px; font-size: 13px; line-height: 1.8; }
 .mail-letter header { display: flex; justify-content: space-between; gap: 18px; align-items: center; border-bottom: 2px solid var(--el-color-primary); padding-bottom: 16px; }
 .mail-brand { display: flex; gap: 8px; align-items: center; font-size: 12px; }
 .mail-brand small { font-size: 11px; margin: 0; }
