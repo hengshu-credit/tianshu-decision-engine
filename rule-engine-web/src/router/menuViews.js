@@ -1,7 +1,7 @@
 // 首次进入工作台时一起加载一级菜单，随后切换不再依赖网络或空闲预热。
 // 仅导入组件，不提前挂载页面或请求业务数据；详情、设计器和画布仍按需加载。
 export { default as LedgerHome } from '@/views/ledger/LedgerHome.vue'
-export { default as DashboardHome } from '@/views/dashboard/DashboardHome.vue'
+export { default as DashboardHome } from '@/views/dashboard/DashboardEntry.vue'
 export { default as ProjectList } from '@/views/project/ProjectList.vue'
 export { default as RuleList } from '@/views/rule/RuleList.vue'
 export { default as VariableList } from '@/views/variable/VariableList.vue'

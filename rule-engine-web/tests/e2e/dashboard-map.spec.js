@@ -72,3 +72,96 @@ test('L7 热力图、地区决策占比和行政区下钻使用相同范围', as
   expect((await left.boundingBox()).y).toBeLessThan((await right.boundingBox()).y)
   assertClean()
 })
+
+test('真实国内边界可从浙江省下钻至杭州市和西湖区，按上级下载且能逐级返回', async ({ page }) => {
+  const { assertClean } = await installDistRoutes(page)
+  const boundaries = []
+  page.on('request', request => {
+    const file = new URL(request.url()).pathname.split('/').at(-1)
+    if (file.startsWith('dashboard-china-ADM')) boundaries.push(file)
+  })
+  await page.goto('http://tianshu.local/index.html#/dashboard')
+  const toolbar = page.locator('.dashboard-map-toolbar')
+  await toolbar.locator('.el-select').first().click()
+  await page.getByRole('option', { name: '中国', exact: true }).click()
+
+  async function choose(name) {
+    const picker = toolbar.getByRole('combobox', { name: '选择行政区' })
+    await picker.fill(name)
+    await page.getByRole('option', { name, exact: true }).click()
+  }
+  await choose('浙江省')
+  await expect(toolbar).toContainText('当前：浙江省')
+  await choose('杭州市')
+  await expect(toolbar).toContainText('当前：浙江省 / 杭州市')
+  await choose('西湖区')
+  await expect(toolbar).toContainText('当前：浙江省 / 杭州市 / 西湖区')
+  expect(boundaries.some(file => file.startsWith('dashboard-china-ADM2-156330000-'))).toBe(true)
+  expect(boundaries.some(file => file.startsWith('dashboard-china-ADM3-156330100-'))).toBe(true)
+  expect(boundaries.filter(file => /^dashboard-china-ADM[23]-[a-f0-9]{16}\.json$/.test(file))).toEqual([])
+  await toolbar.getByRole('button', { name: '返回上一级' }).click()
+  await expect(toolbar).not.toContainText('杭州市 / 西湖区')
+  await expect(toolbar.getByRole('combobox', { name: '选择行政区' })).toBeEnabled()
+  const map = page.getByRole('img', { name: '进件地图热力图' })
+  await expect(async () => {
+    await map.hover()
+    await expect(page.locator('.heatmap-tooltip')).toContainText(/区|县|市/, { timeout: 800 })
+  }).toPass({ timeout: 8000 })
+  const county = (await page.locator('.heatmap-tooltip').innerText()).split(' · ')[0]
+  await map.click()
+  await expect(toolbar).toContainText('浙江省 / 杭州市 / ' + county)
+  await toolbar.getByRole('button', { name: '返回全球' }).click()
+  await expect(toolbar.locator('.el-select')).toHaveCount(1)
+  assertClean()
+})
+
+for (const destination of ['/dashboard', '/project']) {
+  test(`登录目标 ${destination} 时，看板内容懒加载且工作台可操作`, async ({ page }) => {
+    let loggedIn = false
+    const account = { username: 'dashboard-qa', permissions: ['project:view'] }
+    const apiData = new Map([
+      ['/api/auth/console/config', { loginEnabled: true }],
+      ['/api/auth/console/preferences/theme', null],
+      ['/api/auth/console/me', () => loggedIn ? account : null],
+      ['POST /api/auth/console/login', () => { loggedIn = true; return account }],
+      ['POST /api/rule/console/activity', null]
+    ])
+    const { assertClean } = await installDistRoutes(page, { apiData })
+    let resume
+    const hold = new Promise(resolve => { resume = resolve })
+    let downloading = false
+    const dataRequests = []
+    page.on('request', request => {
+      if (request.url().includes('/api/rule/dashboard/')) dataRequests.push(request.url())
+    })
+    await page.route(/\/assets\/DashboardHome-[^/]+\.js$/, async route => {
+      downloading = true
+      await hold
+      await route.fallback()
+    })
+    try {
+      await page.goto('http://tianshu.local/index.html#' + destination)
+      await page.getByPlaceholder('请输入用户名').fill('dashboard-qa')
+      await page.getByPlaceholder('请输入密码').fill('test-login')
+      expect(downloading).toBe(false)
+      await page.getByRole('button', { name: '登录', exact: true }).click()
+      await expect(page).toHaveURL('http://tianshu.local/index.html#' + destination)
+      await expect(page.locator('.layout-account-name')).toHaveText('dashboard-qa')
+      if (destination === '/project') {
+        await expect(page.getByRole('cell', { name: 'e2e_project', exact: true })).toBeVisible()
+        expect(downloading).toBe(false)
+        expect(dataRequests).toEqual([])
+        await page.locator('[data-menu-path="/dashboard"]').click()
+      }
+      await expect.poll(() => downloading).toBe(true)
+      await expect(page.locator('.dashboard-entry')).toBeVisible()
+      expect(dataRequests).toEqual([])
+      await page.locator('[data-menu-path="/project"]').click()
+      await expect(page.getByRole('cell', { name: 'e2e_project', exact: true })).toBeVisible()
+    } finally { resume() }
+    await page.locator('[data-menu-path="/dashboard"]').click()
+    await expect(page.locator('.dashboard-metrics')).toBeVisible()
+    await expect.poll(() => dataRequests.length).toBeGreaterThan(0)
+    assertClean()
+  })
+}

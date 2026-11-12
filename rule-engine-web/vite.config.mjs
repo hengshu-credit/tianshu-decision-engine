@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, normalizePath } from 'vite'
 import { loadSourceEnvironment } from '../scripts/lib/source-environment.mjs'
+import { chinaChildAssets } from './scripts/dashboard-china-child-assets.mjs'
 import vue from '@vitejs/plugin-vue'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 
@@ -12,15 +13,15 @@ const variablesFile = normalizePath(path.resolve(projectRoot, 'src/styles/variab
 const elementOverrideFile = normalizePath(path.resolve(projectRoot, 'src/styles/element-override.scss'))
 
 // 使用现有 /assets/ 长缓存与 JSON gzip。原 public 路径仍供旧版页面使用。
+const publicDir = path.join(projectRoot, 'public')
 function versionedPublicAssets() {
-  const publicDir = path.join(projectRoot, 'public')
   const paths = readdirSync(path.join(publicDir, 'maps'))
     .filter(name => /^dashboard-.*\.(geojson|json)$/.test(name)).map(name => 'maps/' + name)
-  return [...paths, 'fonts/font.woff2'].map(file => {
-    const source = readFileSync(path.join(publicDir, file))
+  const assets = [...paths, 'fonts/font.woff2'].map(file => ({ url: '/' + file, source: readFileSync(path.join(publicDir, file)) }))
+  return [...assets, ...chinaChildAssets(publicDir)].map(({ url, source }) => {
     const digest = createHash('sha256').update(source).digest('hex').slice(0, 16)
-    const { name, ext } = path.parse(file)
-    return { url: '/' + file, fileName: `assets/${name}-${digest}${ext === '.geojson' ? '.json' : ext}`, source }
+    const { name, ext } = path.parse(url)
+    return { url, fileName: `assets/${name}-${digest}${ext === '.geojson' ? '.json' : ext}`, source }
   })
 }
 
@@ -53,6 +54,24 @@ export default defineConfig(({ mode, command }) => {
     },
     plugins: [
       vue(),
+      {
+        name: 'dashboard-china-child-maps-dev',
+        apply: 'serve',
+        configureServer(server) {
+          let children
+          server.watcher.on('change', file => {
+            if (/dashboard-china-ADM[123]\.geojson$/.test(file)) children = null
+          })
+          server.middlewares.use((req, res, next) => {
+            const url = req.url.split('?')[0]
+            if (!/^\/maps\/dashboard-china-ADM[23]-\d+\.json$/.test(url)) return next()
+            children ??= new Map(chinaChildAssets(publicDir).map(asset => [asset.url, asset.source]))
+            if (!children.has(url)) { res.statusCode = 404; res.end(); return }
+            res.setHeader('Content-Type', 'application/json; charset=utf-8')
+            res.end(children.get(url))
+          })
+        }
+      },
       {
         name: 'versioned-dashboard-assets',
         apply: 'build',

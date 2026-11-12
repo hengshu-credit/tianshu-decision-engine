@@ -176,6 +176,17 @@
                     :value="layer.level"
                   />
                 </el-select>
+                <el-select-v2
+                  v-if="mapCountry && mapLevel !== 'ADM0' && !focusedLeaf"
+                  :model-value="null"
+                  :options="mapRegionOptions"
+                  :disabled="mapLoading || !!mapError"
+                  filterable
+                  size="small"
+                  aria-label="选择行政区"
+                  :placeholder="nextMapLayer ? '选择区域下钻' : '选择区域定位'"
+                  @change="openMapCountry"
+                />
                 <el-button v-if="mapCountry" size="small" @click="changeMapCountry('')">返回全球</el-button>
                 <el-button
                   v-if="mapCountry && mapRegionPath.length"
@@ -184,7 +195,7 @@
                 >返回上一级</el-button>
                 <span>
                   <template v-if="mapRegionPathLabel">当前：{{ mapRegionPathLabel }} · </template>
-                  {{ !mapCountry ? '点击国家或地区查看详情。' : nextMapLayer
+                  {{ mapLoading ? '正在加载行政区边界…' : !mapCountry ? '点击国家或地区查看详情。' : nextMapLayer
                     ? `点击区域下钻到${nextMapLayer.label || adminLevelLabels[nextMapLayer.level]}`
                     : '点击区域居中查看。' }}
                 </span>
@@ -333,6 +344,7 @@
 
 <script>
 import { markRaw } from 'vue'
+import { ElSelectV2 } from 'element-plus/es/components/select-v2/index.mjs'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import { ruleSetCoverageHint } from '@/utils/ruleSetStatistics'
 import {
@@ -383,6 +395,7 @@ const mapAssetUrl = url => import.meta.env.TIANSHU_MAP_ASSETS?.[url] || url
 export default {
   name: 'DashboardHome',
   components: { ProjectResourceSelect,
+    ElSelectV2,
     DashboardChart,
     DashboardHeatmap,
     DashboardSection,
@@ -498,6 +511,15 @@ export default {
       const bounds = this.mapCountry === 'CHN' ? CHINA_MAP_BOUNDS : this.worldCountryBounds[this.mapCountry]
       return bounds ? dashboardMapView(null, bounds) : dashboardMapView(this.mapGeoJson)
     },
+    focusedLeaf() {
+      return this.mapRegionPath.at(-1)?.level === this.mapLevel
+    },
+    mapRegionOptions() {
+      return Object.entries(this.mapFeatureIndex).map(([value, { properties }]) => {
+        const parent = !this.mapRegionPath.length && [properties.province, properties.city?.trim()].filter(Boolean).join(' / ')
+        return { value, label: parent ? `${properties.shapeName}（${parent}）` : properties.shapeName }
+      })
+    },
     mapRegionPathLabel() {
       return this.mapRegionPath.map(region => region.name).filter(Boolean).join(' / ')
     },
@@ -591,7 +613,11 @@ export default {
         if (parent?.level === this.mapLevel || (this.mapLevel === 'ADM0' && focus)) return
         const layer = this.mapLayer
         if (!layer?.url) throw new Error('当前层级缺少边界')
-        const response = await fetch(mapAssetUrl(layer.url), { signal: controller.signal })
+        const scopedChinaLayer = country === 'CHN' && parent && ['ADM2', 'ADM3'].includes(this.mapLevel)
+        const url = scopedChinaLayer
+          ? `/maps/dashboard-china-${this.mapLevel}-${parent.feature.properties.shapeID}.json`
+          : layer.url
+        const response = await fetch(mapAssetUrl(url), { signal: controller.signal })
         if (!response.ok) throw new Error('地图资源加载失败')
         let geoJson = await response.json()
         if (this.mapLoadController !== controller) return
@@ -604,7 +630,7 @@ export default {
           geoJson = prioritizeChinaBoundary(geoJson, this.chinaLandGeometry)
         }
         if (this.mapLoadController !== controller) return
-        if (parent) geoJson = filterDashboardRegionFeatures(geoJson, parent.feature)
+        if (parent && country !== 'CHN') geoJson = filterDashboardRegionFeatures(geoJson, parent.feature)
         if (!geoJson.features.length) {
           this.mapError = '当前区域暂无该层级的边界数据。'
           return
@@ -982,7 +1008,8 @@ export default {
   margin-bottom: 12px;
 }
 
-.dashboard-map-toolbar .el-select {
+.dashboard-map-toolbar .el-select,
+.dashboard-map-toolbar .el-select-v2 {
   width: min(210px, 100%);
 }
 

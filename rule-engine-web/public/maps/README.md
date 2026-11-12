@@ -21,6 +21,8 @@
 | `dashboard-china-land.geojson` | 从 DataV 中国全图中排除断续线面片，供境外数据重叠校正 |
 | `dashboard-world.geojson` | 中文世界地图 239 个国家/地区要素，以 DataV 中国全图替换其中中国几何，并校正其他国家与中国的重叠 |
 
+中国市县下钻使用 `shapeID` 国标码定位上级。开发服务和生产构建均按省输出市级边界包、按市输出区县边界包。全国层级切换仍使用对应的完整文件。可通过地图点击或搜索当前范围的行政区逐级进入，返回上一级时恢复原来的范围。
+
 DataV 源文件（获取日期 2026-09-16）：
 
 - https://geo.datav.aliyun.com/areas_v3/bound/100000.json

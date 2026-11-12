@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { chinaChildAssets } from '../../../scripts/dashboard-china-child-assets.mjs'
 import { CHINA_MAP_BOUNDS, dashboardCountryOptions } from '@/utils/dashboardMapLayers'
 
 const read = name => JSON.parse(readFileSync(`public/maps/${name}`, 'utf8'))
@@ -61,6 +62,21 @@ describe('中国边界资源', () => {
     expect(regions.some(feature => feature.properties.province === '台湾省')).toBe(true)
     expect(new Set(regions.map(feature => feature.properties.shapeID)).size).toBe(regions.length)
     expect(regions.every(feature => feature.properties.shapeName)).toBe(true)
+  })
+
+  test('按上级国标码分包覆盖每个真实市县一次，兼容直辖市、直管县和同名区', () => {
+    const files = chinaChildAssets('public')
+    const groups = new Map(files.map(({ url, source }) => [url, JSON.parse(source).features]))
+    for (const level of [2, 3]) {
+      const all = [...groups.entries()].filter(([url]) => url.includes(`ADM${level}-`)).flatMap(([, features]) => features)
+      const ids = features => features.map(f => f.properties.shapeID).sort()
+      expect(ids(all)).toEqual(ids(read(`dashboard-china-ADM${level}.geojson`).features.filter(f => !f.properties.mapRole)))
+    }
+    const children = parent => groups.get(`/maps/dashboard-china-ADM3-${parent}.json`).map(f => f.properties.shapeID)
+    expect(children('156110000')).toContain('156110108') // 北京市海淀区
+    expect(children('156419001')).toEqual(['156419001']) // 省直管济源市
+    expect(children('156330100')).toContain('156330106') // 杭州西湖区
+    expect(children('156330100')).not.toContain('156360103') // 南昌同名区
   })
 
   test('海外目录不能再覆盖中国层级或把台湾港澳单列', () => {
