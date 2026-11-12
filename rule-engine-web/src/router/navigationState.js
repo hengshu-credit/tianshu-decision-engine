@@ -21,6 +21,16 @@ export function preloadRoute(router, path) {
   return Promise.all(router.resolve(path).matched.map(record => record.components?.default?.preload?.()))
 }
 
+export function loadWorkspaceUi() {
+  return import('@/plugins/workspaceUi')
+}
+
+// 登录成功即下载布局、一级菜单和组件库，与首次会话复核并行。业务页面由路由守卫放行后挂载。
+export function preloadWorkspaceAfterLogin(router) {
+  preloadRoute(router, '/')
+  loadWorkspaceUi().catch(() => {}) // 真正导航时仍可重试，并由路由处理加载错误。
+}
+
 export function installNavigationFeedback(router, canPreload = () => true) {
   // 在组件离开确认之后、会话校验之前更新反馈，不卸载旧页面或绕过鉴权。
   router.beforeEach(to => {

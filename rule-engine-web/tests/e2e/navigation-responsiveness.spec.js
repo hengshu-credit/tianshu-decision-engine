@@ -150,6 +150,11 @@ test('逐一点击全部菜单与子页签，往返切换后仍可交互并记�
     await expect(page).toHaveURL(`${origin}/#${menu.index}`)
     await expect(page.locator('.layout-main > div').first()).toBeVisible()
     await record('menu', menu.label)
+    if (menu.index === '/test' || menu.index === '/lineage') {
+      const label = menu.index === '/test' ? '筛选范围' : '方向'
+      await expect(page.getByRole('radiogroup', { name: label, exact: true })).toBeVisible()
+      expect(await page.locator('main label[for]').evaluateAll(labels => labels.filter(item => !item.control).map(item => item.textContent))).toEqual([])
+    }
     if (menu.index === '/billing' || menu.index === '/system/settings') {
       await expect(page.locator('.layout-main [role="tabpanel"]')).toHaveCount(1)
     }

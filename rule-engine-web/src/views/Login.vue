@@ -22,7 +22,14 @@
           </div>
         </header>
 
-        <el-form
+        <div v-if="enteringWorkspace" class="login-transition" role="status">
+          <span class="tianshu-loading" aria-hidden="true" />
+          <span>正在进入工作台…</span>
+        </div>
+        <el-alert v-else-if="workspaceError" title="工作台加载失败" type="error" :closable="false">
+          <el-button link @click="enterWorkspace">重新加载工作台</el-button>
+        </el-alert>
+        <el-form v-else
           ref="form"
           class="login-form"
           :model="form"
@@ -58,10 +65,11 @@
             </el-button>
           </el-form-item>
         </el-form>
+        <el-alert v-if="loginError" :title="loginError" type="error" :closable="false" />
         <el-alert v-if="configFailed" type="warning" :closable="false" title="登录配置暂时无法加载">
           <el-button link @click="loadConfig">重新加载配置</el-button>
         </el-alert>
-        <div v-if="registrationEnabled || passwordRecoveryEnabled || breakGlassRecoveryEnabled" class="login-links">
+        <div v-if="!enteringWorkspace && !workspaceError && (registrationEnabled || passwordRecoveryEnabled || breakGlassRecoveryEnabled)" class="login-links">
           <router-link v-if="registrationEnabled" to="/register">注册账号</router-link>
           <span v-if="registrationEnabled && (passwordRecoveryEnabled || breakGlassRecoveryEnabled)" aria-hidden="true">·</span>
           <router-link v-if="passwordRecoveryEnabled" to="/forgot-password">忘记密码</router-link>
@@ -77,6 +85,7 @@
 import { ElAlert, ElButton, ElForm, ElFormItem, ElInput } from 'element-plus'
 import { consoleLogin, getConsoleAuthConfig } from '@/api/auth'
 import { systemBrand } from '@/system/systemBrand'
+import { preloadWorkspaceAfterLogin } from '@/router/navigationState'
 
 export default {
   components: { ElAlert, ElButton, ElForm, ElFormItem, ElInput },
@@ -86,6 +95,9 @@ export default {
   data() {
     return {
       loading: false,
+      enteringWorkspace: false,
+      workspaceError: false,
+      loginError: '',
       configFailed: false,
       registrationEnabled: false,
       passwordRecoveryEnabled: false,
@@ -120,22 +132,35 @@ export default {
     /**
      * 校验表单并调用登录接口，成功后跳回 redirect 或首页。
      */
-    submit() {
-      if (this.preview) return
-      this.$refs.form.validate(async (valid) => {
-        if (!valid || this.loading) return
-        this.loading = true
-        try {
-          await consoleLogin({
-            username: this.form.username,
-            password: this.form.password,
-          })
-          const redirect = this.$route.query.redirect || '/project'
-          this.$router.replace(redirect)
-        } finally {
-          this.loading = false
-        }
-      })
+    async submit() {
+      if (this.preview || this.loading || this.enteringWorkspace) return
+      this.loading = true
+      this.loginError = ''
+      try {
+        if (!await this.$refs.form.validate().catch(() => false)) return
+        await consoleLogin({ username: this.form.username, password: this.form.password })
+        if (this.$.isUnmounted) return
+        this.form.password = ''
+        await this.enterWorkspace()
+      } catch (error) {
+        if (!error?.requestErrorNotified) this.loginError = error?.message || '登录失败，请重试'
+      } finally {
+        this.loading = false
+      }
+    },
+    async enterWorkspace() {
+      if (this.enteringWorkspace) return
+      this.enteringWorkspace = true
+      this.workspaceError = false
+      try {
+        preloadWorkspaceAfterLogin(this.$router)
+        await this.$router.replace(this.$route.query.redirect || '/project')
+        if (this.$route.path === '/login') this.loginError = '会话验证未通过，请重新登录'
+      } catch {
+        this.workspaceError = true
+      } finally {
+        this.enteringWorkspace = false
+      }
     },
   },
 }
@@ -312,6 +337,14 @@ $login-muted: var(--tianshu-text-tertiary);
 }
 .login-form {
   margin-top: 4px;
+}
+.login-transition {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  gap: 12px;
+  color: var(--tianshu-text-secondary);
 }
 .login-form__actions {
   margin-bottom: 0;

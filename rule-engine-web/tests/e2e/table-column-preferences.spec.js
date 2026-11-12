@@ -36,6 +36,10 @@ for (const [title, path, tab, key] of cases) test(`${title}：字段目录、排
   apiData.set('/api/rule/console/permissions', [])
   apiData.set('/api/rule/runtime-log/external-api-stats', { overview: {}, providers: [{ targetCode: 'quality_api', targetName: '质量验收接口', queryCount: 10, requestSuccessRate: 0.9, failureRate: 0.1, foundRate: 0.8, cacheHitRate: 0.3, p95CostTimeMs: 40, p99CostTimeMs: 60 }] })
   const harness = await installDistRoutes(page, { apiData })
+  await page.addInitScript(key => {
+    const storageKey = 'tianshu:table-columns:' + key
+    if (localStorage.getItem(storageKey) === null) localStorage.setItem(storageKey, '[]')
+  }, key)
   await page.goto(`http://tianshu.local/#${path}`)
   const enterTab = async () => {
     if (tab) await page.getByRole('tab', { name: tab, exact: true }).click()

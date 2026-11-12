@@ -40,5 +40,5 @@ python3 -X utf8 -m zipfile -e "$archive" "$release"
 echo "已校验并解压至 $release"
 
 # 空库由应用 schema.sql 初始化，更新时同一脚本按已有结构幂等运行。
-export RULE_ENGINE_INITIAL_DATA_ENABLED=false SPRING_SQL_INIT_MODE=always
+export SPRING_SQL_INIT_MODE=always
 exec python3 -X utf8 "$release/deploy.py" --target "$target" --install-app "$@"

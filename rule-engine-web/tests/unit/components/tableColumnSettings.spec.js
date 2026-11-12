@@ -62,7 +62,7 @@ describe('TableColumnSettings', () => {
       ['code', 'status'],
     ])
     expect(JSON.parse(window.localStorage.getItem('test:table-columns')))
-      .toEqual(['code', 'status'])
+      .toEqual({ version: 2, visibleKeys: ['code', 'status'] })
   })
 
   test('必选字段不能隐藏，恢复默认会重新显示全部字段', () => {
@@ -85,12 +85,19 @@ describe('TableColumnSettings', () => {
     expect(wrapper.emitted('update:modelValue')[0]).toEqual([['status', 'code']])
   })
 
+  test.each([[[]], [['code']], [['retired']]])('旧偏好只剩必选列或失效字段时采用页面默认值 %j', legacy => {
+    window.localStorage.setItem('test:table-columns', JSON.stringify(legacy))
+    const view = mountSettings()
+    expect(view.emitted('update:modelValue')).toBeUndefined()
+    view.unmount()
+  })
+
   test('显式隐藏全部非必选字段后，空偏好仍能恢复并继续编辑', async () => {
-    window.localStorage.setItem('test:table-columns', '[]')
     const wrapper = mountSettings([])
     await wrapper.setProps({ columns: columns.map(column => ({ ...column, required: false })) })
     wrapper.vm.beginEdit()
     expect(wrapper.vm.draftVisibleKeys).toEqual([])
+    wrapper.vm.apply()
     wrapper.unmount()
     const restored = mount(TableColumnSettings, { props: { columns: [{ key: 'name', label: '名称' }], storageKey: 'test:table-columns' }, shallow: true })
     expect(restored.emitted('update:modelValue')[0]).toEqual([[]])

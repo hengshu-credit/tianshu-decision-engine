@@ -294,10 +294,15 @@ test('未保存配置仍需确认，缓存页返回保留筛选输入', async ({
 
 test('未登录访问工作台时只加载登录页，登录及刷新首帧使用已验证的用户名', async ({ page }) => {
   let loggedIn = false
+  const verifySession = deferred()
   const account = { username: 'startup-user', permissions: ['project:view'] }
   const apiData = createDocsApiData()
   apiData.set('/api/auth/console/config', { loginEnabled: true })
-  apiData.set('/api/auth/console/me', () => loggedIn ? account : null)
+  apiData.set('/api/auth/console/me', async () => {
+    if (!loggedIn) return null
+    await verifySession.promise
+    return account
+  })
   apiData.set('POST /api/auth/console/login', () => { loggedIn = true; return account })
   apiData.set('/api/auth/console/preferences/theme', DEFAULT_THEME_CONFIG)
   const { pageErrors, consoleErrors } = await installDistRoutes(page, { origin, liveStatic, apiData })
@@ -316,6 +321,13 @@ test('未登录访问工作台时只加载登录页，登录及刷新首帧使�
   expect(resources.filter(path => path === '/api/auth/console/config')).toHaveLength(1)
   await page.getByPlaceholder('请输入密码').fill('test-login')
   await page.getByRole('button', { name: '登录', exact: true }).click()
+  try {
+    await expect(page.getByRole('status').filter({ hasText: '正在进入工作台' })).toBeVisible()
+    await expect.poll(() => resources.some(path => path.includes('menuViews'))).toBe(true)
+    await expect.poll(() => resources.some(path => path.includes('workspaceUi'))).toBe(true)
+    expect(resources.filter(path => path === '/api/rule/project/list')).toHaveLength(0)
+    await expect(page.locator('.layout-account-name')).toHaveCount(0)
+  } finally { verifySession.resolve() }
   await expect(page.locator('.layout-account-name')).toHaveText('startup-user')
   await expect.poll(() => page.evaluate(() => window.accountLabels)).toEqual(['startup-user'])
   expect(resources.filter(path => path === '/api/auth/console/me')).toHaveLength(2)
@@ -325,4 +337,29 @@ test('未登录访问工作台时只加载登录页，登录及刷新首帧使�
   expect(resources.filter(path => path === '/api/auth/console/me')).toHaveLength(3)
   expect(pageErrors).toEqual([])
   expect(consoleErrors).toEqual([])
+})
+
+test('登录后的工作台脚本下载失败可以重试，重试沿用已建立的会话', async ({ page }) => {
+  test.skip(liveStatic, '按生产文件名拦截工作台分块')
+  const account = { username: 'retry-user', permissions: ['project:view'] }
+  let logins = 0
+  const data = createDocsApiData()
+  data.set('/api/auth/console/config', { loginEnabled: true })
+  data.set('POST /api/auth/console/login', () => { logins++; return account })
+  data.set('/api/auth/console/me', () => logins ? account : null)
+  data.set('/api/auth/console/preferences/theme', DEFAULT_THEME_CONFIG)
+  data.set('POST /api/rule/console/activity', null)
+  await installDistRoutes(page, { origin, apiData: data })
+  const chunk = /\/workspaceUi-[^/]+\.js$/
+  await page.route(chunk, route => route.abort('failed'))
+  await page.goto(origin + '/#/login?redirect=/project')
+  await page.getByPlaceholder('请输入用户名').fill(account.username)
+  await page.getByPlaceholder('请输入密码').fill('test-login')
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  const retry = page.getByRole('button', { name: '重新加载工作台' })
+  await expect(retry).toBeVisible()
+  await page.unroute(chunk)
+  await retry.click()
+  await expect(page.locator('.layout-account-name')).toHaveText(account.username)
+  expect(logins).toBe(1)
 })

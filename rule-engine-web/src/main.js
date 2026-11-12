@@ -1,6 +1,7 @@
 import { createApp, defineAsyncComponent } from 'vue'
 import { provideGlobalConfig } from 'element-plus'
 import { PUBLIC_AUTH_PATHS } from '@/router/authGuard'
+import { loadWorkspaceUi } from '@/router/navigationState'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'element-plus/dist/index.css'
 import App from './App.vue'
@@ -40,7 +41,7 @@ router.beforeEach(to => {
   if (!workspaceUi) {
     // 此守卫位于身份校验之后，与首个工作台页面并行下载完整组件库。
     to.matched.forEach(record => record.components?.default?.preload?.())
-    workspaceUi = import('./plugins/workspaceUi').then(({ default: plugin }) => {
+    workspaceUi = loadWorkspaceUi().then(({ default: plugin }) => {
       app.use(plugin)
     }).catch(error => { workspaceUi = null; throw error })
   }

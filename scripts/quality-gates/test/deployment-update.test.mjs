@@ -22,26 +22,31 @@ test('归档入口绑定指定 ZIP 的校验值，同一命令可初始化和重
     const entry = path.join(directory, 'install-release.sh')
     writeFileSync(entry, readFileSync(path.join(root, 'scripts/install-release.sh')))
     const archive = path.join(directory, 'release.zip')
-    const probe = "import os,sys; from pathlib import Path; assert os.environ['RULE_ENGINE_INITIAL_DATA_ENABLED']=='false'; assert os.environ['SPRING_SQL_INIT_MODE']=='always'; assert '--install-app' in sys.argv; Path('result.txt').write_text(str(Path(__file__).parent))"
+    const probe = "import os,sys; from pathlib import Path; assert os.getenv('RULE_ENGINE_INITIAL_DATA_ENABLED', 'from-env-file') == os.environ['EXPECTED_INITIAL_DATA']; assert os.environ['SPRING_SQL_INIT_MODE']=='always'; assert '--install-app' in sys.argv; Path('result.txt').write_text(str(Path(__file__).parent))"
     const zip = spawnSync(interpreter, ['-c', 'import sys,zipfile; z=zipfile.ZipFile(sys.argv[1],"w"); z.writestr("deploy.py",sys.argv[2]); z.close()', archive, probe])
     assert.equal(zip.status, 0)
     const digest = createHash('sha256').update(readFileSync(archive)).digest('hex')
     // Git Bash on Windows has python.exe rather than python3.
     if (process.platform === 'win32') writeFileSync(path.join(directory, 'python3'), '#!/bin/sh\nexec python "$@"\n')
     const setup = process.platform === 'win32' ? 'export PATH="$PWD:$PATH"; ' : ''
-    const run = () => spawnSync(bash, ['-c', setup + 'bash install-release.sh release.zip'], { cwd: directory, encoding: 'utf8' })
+    const run = initialData => {
+      const env = { ...process.env, EXPECTED_INITIAL_DATA: initialData ?? 'from-env-file' }
+      if (initialData === undefined) delete env.RULE_ENGINE_INITIAL_DATA_ENABLED
+      else env.RULE_ENGINE_INITIAL_DATA_ENABLED = initialData
+      return spawnSync(bash, ['-c', setup + 'bash install-release.sh release.zip'], { cwd: directory, encoding: 'utf8', env })
+    }
     for (const contents of [digest + '  other.zip', '0'.repeat(64) + '  release.zip']) {
       writeFileSync(archive + '.sha256', contents + '\n')
       assert.notEqual(run().status, 0)
       assert.ok(!existsSync(path.join(directory, 'releases')))
     }
     writeFileSync(archive + '.sha256', digest + '  release.zip\n')
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const result = run()
+    for (const initialData of [undefined, 'true', 'false']) {
+      const result = run(initialData)
       assert.equal(result.status, 0, result.stderr)
       assert.ok(existsSync(path.join(directory, 'result.txt')))
     }
-    assert.equal(readdirSync(path.join(directory, 'releases')).length, 2)
+    assert.equal(readdirSync(path.join(directory, 'releases')).length, 3)
   } finally { rmSync(directory, { recursive: true, force: true }) }
 })
 

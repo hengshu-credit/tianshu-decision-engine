@@ -165,3 +165,60 @@ diff --git a/node_modules/element-plus/lib/components/select/src/select-dropdown
  		});
  		return {
  			ns,
+diff --git a/node_modules/element-plus/es/components/radio/src/radio-group.vue_vue_type_script_setup_true_lang.mjs b/node_modules/element-plus/es/components/radio/src/radio-group.vue_vue_type_script_setup_true_lang.mjs
+--- a/node_modules/element-plus/es/components/radio/src/radio-group.vue_vue_type_script_setup_true_lang.mjs
++++ b/node_modules/element-plus/es/components/radio/src/radio-group.vue_vue_type_script_setup_true_lang.mjs
+@@ -27,7 +27,7 @@
+ 		const radioId = useId();
+ 		const radioGroupRef = ref();
+ 		const { formItem } = useFormItem();
+-		const { inputId: groupId, isLabeledByFormItem } = useFormItemInputId(props, { formItemContext: formItem });
++		const { inputId: groupId, isLabeledByFormItem } = useFormItemInputId(props, { formItemContext: formItem, disableIdManagement: ref(true) });
+ 		const changeEvent = (value) => {
+ 			emit(UPDATE_MODEL_EVENT, value);
+ 			nextTick(() => emit(CHANGE_EVENT, value));
+diff --git a/node_modules/element-plus/lib/components/radio/src/radio-group.vue_vue_type_script_setup_true_lang.js b/node_modules/element-plus/lib/components/radio/src/radio-group.vue_vue_type_script_setup_true_lang.js
+--- a/node_modules/element-plus/lib/components/radio/src/radio-group.vue_vue_type_script_setup_true_lang.js
++++ b/node_modules/element-plus/lib/components/radio/src/radio-group.vue_vue_type_script_setup_true_lang.js
+@@ -28,7 +28,7 @@
+ 		const radioId = require_index$1.useId();
+ 		const radioGroupRef = (0, vue.ref)();
+ 		const { formItem } = require_use_form_item.useFormItem();
+-		const { inputId: groupId, isLabeledByFormItem } = require_use_form_item.useFormItemInputId(props, { formItemContext: formItem });
++		const { inputId: groupId, isLabeledByFormItem } = require_use_form_item.useFormItemInputId(props, { formItemContext: formItem, disableIdManagement: vue.ref(true) });
+ 		const changeEvent = (value) => {
+ 			emit(require_event.UPDATE_MODEL_EVENT, value);
+ 			(0, vue.nextTick)(() => emit(require_event.CHANGE_EVENT, value));
+diff --git a/node_modules/element-plus/es/components/checkbox/src/checkbox-group.vue_vue_type_script_setup_true_lang.mjs b/node_modules/element-plus/es/components/checkbox/src/checkbox-group.vue_vue_type_script_setup_true_lang.mjs
+--- a/node_modules/element-plus/es/components/checkbox/src/checkbox-group.vue_vue_type_script_setup_true_lang.mjs
++++ b/node_modules/element-plus/es/components/checkbox/src/checkbox-group.vue_vue_type_script_setup_true_lang.mjs
+@@ -8,7 +8,7 @@
+ import checkbox_button_default from "./checkbox-button.mjs";
+ import { checkboxDefaultProps, checkboxGroupEmits, checkboxGroupProps } from "./checkbox-group.mjs";
+ import { isEqual, omit, pick } from "lodash-unified";
+-import { Fragment, computed, createBlock, createElementBlock, defineComponent, mergeProps, nextTick, normalizeClass, openBlock, provide, renderList, renderSlot, resolveDynamicComponent, toRefs, unref, watch, withCtx } from "vue";
++import { Fragment, computed, createBlock, createElementBlock, defineComponent, mergeProps, nextTick, normalizeClass, openBlock, provide, ref, renderList, renderSlot, resolveDynamicComponent, toRefs, unref, watch, withCtx } from "vue";
+ //#region ../../packages/components/checkbox/src/checkbox-group.vue?vue&type=script&setup=true&lang.ts
+ var checkbox_group_vue_vue_type_script_setup_true_lang_default = /* @__PURE__ */ defineComponent({
+ 	name: "ElCheckboxGroup",
+@@ -21,7 +21,7 @@
+ 		const ns = useNamespace("checkbox");
+ 		const checkboxDisabled = useFormDisabled();
+ 		const { formItem } = useFormItem();
+-		const { inputId: groupId, isLabeledByFormItem } = useFormItemInputId(props, { formItemContext: formItem });
++		const { inputId: groupId, isLabeledByFormItem } = useFormItemInputId(props, { formItemContext: formItem, disableIdManagement: ref(true) });
+ 		const changeEvent = async (value) => {
+ 			emit(UPDATE_MODEL_EVENT, value);
+ 			await nextTick();
+diff --git a/node_modules/element-plus/lib/components/checkbox/src/checkbox-group.vue_vue_type_script_setup_true_lang.js b/node_modules/element-plus/lib/components/checkbox/src/checkbox-group.vue_vue_type_script_setup_true_lang.js
+--- a/node_modules/element-plus/lib/components/checkbox/src/checkbox-group.vue_vue_type_script_setup_true_lang.js
++++ b/node_modules/element-plus/lib/components/checkbox/src/checkbox-group.vue_vue_type_script_setup_true_lang.js
+@@ -22,7 +22,7 @@
+ 		const ns = require_index.useNamespace("checkbox");
+ 		const checkboxDisabled = require_use_form_common_props.useFormDisabled();
+ 		const { formItem } = require_use_form_item.useFormItem();
+-		const { inputId: groupId, isLabeledByFormItem } = require_use_form_item.useFormItemInputId(props, { formItemContext: formItem });
++		const { inputId: groupId, isLabeledByFormItem } = require_use_form_item.useFormItemInputId(props, { formItemContext: formItem, disableIdManagement: vue.ref(true) });
+ 		const changeEvent = async (value) => {
+ 			emit(require_event.UPDATE_MODEL_EVENT, value);
+ 			await (0, vue.nextTick)();

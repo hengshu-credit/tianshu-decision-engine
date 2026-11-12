@@ -175,7 +175,10 @@ export default {
       if (typeof window === 'undefined' || !window.localStorage) return null
       try {
         const value = JSON.parse(window.localStorage.getItem(this.storageKey) || 'null')
-        return Array.isArray(value) ? value : null
+        if (value?.version === 2 && Array.isArray(value.visibleKeys)) return value.visibleKeys
+        if (!Array.isArray(value)) return null
+        // 旧版可能在弹层初始化前保存空数组或仅有必选列。恢复页面自己的默认列和顺序。
+        return this.columns.some(column => !column.required && value.includes(column.key)) ? value : null
       } catch (error) {
         return null
       }
@@ -225,7 +228,7 @@ export default {
     persist(keys) {
       if (typeof window === 'undefined' || !window.localStorage) return
       try {
-        window.localStorage.setItem(this.storageKey, JSON.stringify(keys))
+        window.localStorage.setItem(this.storageKey, JSON.stringify({ version: 2, visibleKeys: keys }))
       } catch (error) {
         // 存储不可用时仍保留当前页面的字段设置。
       }

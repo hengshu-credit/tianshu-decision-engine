@@ -46,7 +46,7 @@ cd /root/tianshu-decision-engine
 bash install-release.sh tianshu-deployment-具体版本.zip
 ```
 
-首次安装会补齐 server/web 的 Compose 和 Nginx 文件。重建空库时，server 启动后执行 `schema.sql`，创建表和系统常量，随后在控制台注册首个超管。入口关闭可选初始数据，不启用样例导入。已存在的安装沿用原 Compose 配置和项目名。部署脚本在本机已有的 MySQL、Redis 等基础设施之上启动应用。
+首次安装会补齐 server/web 的 Compose 和 Nginx 文件。重建空库时，server 启动后执行 `schema.sql`，创建表和系统常量，随后在控制台注册首个超管。可选初始变量和对象由生效的服务端 env 中的 `RULE_ENGINE_INITIAL_DATA_ENABLED` 控制，默认关闭，开启后只补齐缺失配置。使用过强制关闭该开关的旧版入口时，更新 ZIP 和校验文件的同时替换外层 `install-release.sh`。已存在的安装沿用原 Compose 配置和项目名。部署脚本在本机已有的 MySQL、Redis 等基础设施之上启动应用。
 
 后续上传新 ZIP 和对应校验文件，使用同一命令指定新文件名即可。更新会短暂停应用，先备份旧制品，再重建并等待就绪。已有库跨版本升级时，按包内 `migrations/README.md` 判断 SQL，仅在需要时追加 `--migration-script /绝对路径/本次迁移.sh`。空库首次启动直接走建表流程。
 
