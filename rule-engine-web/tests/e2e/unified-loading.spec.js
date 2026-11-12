@@ -88,7 +88,7 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
   })
 }
 
-test('登录按钮显示 HSCredit 动图，提交期间保持禁用状态和文字颜色', async ({ page }, testInfo) => {
+test('登录按钮显示旋转圆圈，提交期间保持禁用状态和文字颜色', async ({ page }, testInfo) => {
   const login = deferred()
   const { assertClean } = await installDistRoutes(page, { origin, liveStatic, apiData: new Map([
     ['/api/auth/console/config', { loginEnabled: true }],
@@ -103,12 +103,23 @@ test('登录按钮显示 HSCredit 动图，提交期间保持禁用状态和文�
     const button = page.locator('.login-btn')
     const textColor = await button.evaluate(element => getComputedStyle(element).color)
     await page.getByRole('button', { name: '登录', exact: true }).click()
-    const spinner = button.locator('.el-icon.is-loading')
-    await expectLoader(spinner)
+    const spinner = button.locator('.login-spinner')
+    await expect(spinner).toBeVisible()
+    await expect(spinner).toHaveCSS('color', textColor)
+    await expect(spinner).toHaveCSS('background-image', 'none')
+    const arc = await spinner.evaluate(el => {
+      const style = getComputedStyle(el, '::before')
+      return { animation: style.animationName, count: style.animationIterationCount, stroke: style.borderTopColor }
+    })
+    expect(arc.animation).not.toBe('none')
+    expect(arc.count).toBe('infinite')
+    expect(arc.stroke).toBe(textColor)
     await expect(button).toHaveAccessibleName('登录中…')
     await expect(button).toBeDisabled()
     await expect(button).toHaveCSS('color', textColor)
     await page.screenshot({ path: testInfo.outputPath('button-loading.png') })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await expect.poll(() => spinner.evaluate(el => getComputedStyle(el, '::before').animationName)).toBe('none')
     login.resolve()
     await expect(page).not.toHaveURL(/#\/login$/)
     assertClean()

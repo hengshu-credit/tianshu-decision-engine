@@ -52,4 +52,4 @@
   place-items: center;
   background: var(--tianshu-bg-page, #fff);
 }
-.app-bootstrap .tianshu-loading { font-size: 52px; }
+.app-bootstrap .tianshu-loading { font-size: clamp(96px, 10vw, 160px); }

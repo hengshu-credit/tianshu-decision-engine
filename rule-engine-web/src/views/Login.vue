@@ -1,5 +1,8 @@
 <template>
-  <div class="login-page" :class="{ 'is-preview': preview }">
+  <div v-if="enteringWorkspace" class="app-bootstrap" role="status" aria-label="正在进入工作台">
+    <span class="tianshu-loading" aria-hidden="true" />
+  </div>
+  <div v-else class="login-page" :class="{ 'is-preview': preview }">
     <div class="login-bg" aria-hidden="true">
       <div class="login-bg__mesh" />
       <div class="login-bg__orb login-bg__orb--a" />
@@ -22,11 +25,7 @@
           </div>
         </header>
 
-        <div v-if="enteringWorkspace" class="login-transition" role="status">
-          <span class="tianshu-loading" aria-hidden="true" />
-          <span>正在进入工作台…</span>
-        </div>
-        <el-alert v-else-if="workspaceError" title="工作台加载失败" type="error" :closable="false">
+        <el-alert v-if="workspaceError" title="工作台加载失败" type="error" :closable="false">
           <el-button link @click="reloadWorkspace">重新加载工作台</el-button>
         </el-alert>
         <el-form v-else
@@ -61,6 +60,7 @@
               :loading="loading"
               native-type="submit"
             >
+              <template #loading><span class="login-spinner" aria-hidden="true" /></template>
               {{ loading ? '登录中…' : '登录' }}
             </el-button>
           </el-form-item>
@@ -69,7 +69,7 @@
         <el-alert v-if="configFailed" type="warning" :closable="false" title="登录配置暂时无法加载">
           <el-button link @click="loadConfig">重新加载配置</el-button>
         </el-alert>
-        <div v-if="!enteringWorkspace && !workspaceError && (registrationEnabled || passwordRecoveryEnabled || breakGlassRecoveryEnabled)" class="login-links">
+        <div v-if="!workspaceError && (registrationEnabled || passwordRecoveryEnabled || breakGlassRecoveryEnabled)" class="login-links">
           <router-link v-if="registrationEnabled" to="/register">注册账号</router-link>
           <span v-if="registrationEnabled && (passwordRecoveryEnabled || breakGlassRecoveryEnabled)" aria-hidden="true">·</span>
           <router-link v-if="passwordRecoveryEnabled" to="/forgot-password">忘记密码</router-link>
@@ -345,14 +345,6 @@ $login-muted: var(--tianshu-text-tertiary);
 .login-form {
   margin-top: 4px;
 }
-.login-transition {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 160px;
-  gap: 12px;
-  color: var(--tianshu-text-secondary);
-}
 .login-form__actions {
   margin-bottom: 0;
   margin-top: 8px;
@@ -436,6 +428,38 @@ $login-muted: var(--tianshu-text-tertiary);
 }
 .login-btn.is-loading::before {
   background-color: transparent;
+}
+.login-spinner {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  margin-inline-end: 8px;
+}
+.login-spinner::before,
+.login-spinner::after {
+  content: '';
+  grid-area: 1 / 1;
+  border-radius: 50%;
+}
+.login-spinner::before {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  clip-path: polygon(50% 50%, 50% 0, 100% 0, 100% 50%, 50% 50%, 50% 100%, 0 100%, 0 50%);
+  animation: login-spin 1.35s linear infinite;
+}
+.login-spinner::after {
+  width: 4px;
+  height: 4px;
+  background: currentColor;
+}
+@keyframes login-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .login-spinner::before { animation: none; }
 }
 .login-btn:not(.is-loading):hover {
   box-shadow: 0 10px 28px var(--tianshu-primary-shadow);

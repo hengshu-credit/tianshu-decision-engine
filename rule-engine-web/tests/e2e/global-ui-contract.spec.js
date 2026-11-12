@@ -524,7 +524,7 @@ test('登录按钮加载时保留主题背景并保持文字对比度', async ({
       opacity: Number(buttonStyle.opacity),
       resolvedThemeBackground,
       resolvedThemeForeground,
-      spinnerVisible: Boolean(button.querySelector('.el-icon.is-loading')),
+      spinnerVisible: Boolean(button.querySelector('.login-spinner')?.getBoundingClientRect().width),
       text: button.textContent.trim(),
     }
   })
