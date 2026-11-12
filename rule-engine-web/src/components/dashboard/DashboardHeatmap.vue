@@ -4,7 +4,8 @@
     <el-empty v-if="empty || error" :description="error || emptyDescription" />
     <div v-if="hover && !empty" class="heatmap-tooltip">{{ hover }}</div>
     <div v-if="points.length && ready && !empty && !error" class="heatmap-legend">
-      进件密度 <span>低</span><i :style="{ background: gradient }" /><span>高</span>
+      <span class="legend-title">进件密度</span>
+      <span>低</span><i class="legend-ramp" aria-hidden="true" :style="{ background: gradient }" /><span>高</span>
     </div>
   </div>
 </template>
@@ -30,8 +31,11 @@ const host = ref(null)
 const ready = ref(false)
 const error = ref('')
 const hover = ref('')
-const rampColors = ['#421eb2', '#8c1eb2', '#f27deb', '#fff598', '#f7b74a', '#ff4818']
-const gradient = `linear-gradient(to right, ${rampColors.join(',')})`
+const heatRamp = computed(() => {
+  const colors = props.palette.heatColors
+  return { colors, positions: colors.map((_, index) => index / (colors.length - 1)) }
+})
+const gradient = computed(() => `linear-gradient(to right, ${heatRamp.value.colors.join(',')})`)
 const regionIndex = computed(() => new Map(props.regions.map(region => [region.id, region])))
 let scene, fill, outline, heat, HeatmapLayer
 let disposed = false
@@ -66,15 +70,21 @@ function applyCamera() {
 }
 
 function shadeRegions() {
-  const { surface, primary, border, chartAccent } = props.palette
-  const base = mixThemeColors(surface, primary, 0.16)
+  const { surface, primary, border, text } = props.palette
+  const land = mixThemeColors(surface, border, 0.6)
   const max = props.regions[0]?.count || 1
   fill.color('regionId', id => {
-    if (!id) return mixThemeColors(surface, primary, 0.06)
+    if (!id) return mixThemeColors(surface, border, 0.34)
     const count = regionIndex.value.get(id)?.count || 0
-    return mixThemeColors(base, primary, 0.55 * count / max)
-  }).active({ color: chartAccent })
-  outline.color(mixThemeColors(border, primary, 0.35))
+    return mixThemeColors(land, primary, 0.16 * count / max)
+  }).active({ color: mixThemeColors(land, primary, 0.27) })
+  outline.color(mixThemeColors(border, text, 0.13))
+}
+
+function styleHeat() {
+  if (!heat) return
+  const radius = Math.max(14, Math.min(24, 14 + scene.getZoom() * 1.5))
+  heat.style({ radius, intensity: 1.9, opacity: 0.86, rampColors: heatRamp.value })
 }
 
 function updateHeat() {
@@ -88,8 +98,8 @@ function updateHeat() {
   const max = points.reduce((value, point) => Math.max(value, point.count), 1)
   heat = new HeatmapLayer({ zIndex: 2, enablePicking: false })
     .source(points, { parser: { type: 'json', x: 'longitude', y: 'latitude' } })
-    .shape('heatmap').size('count', count => Math.max(0.08, count / max))
-    .style({ intensity: 2, radius: 20, rampColors: { colors: rampColors, positions: [0, 0.2, 0.4, 0.6, 0.8, 1] } })
+    .shape('heatmap').size('count', count => Math.max(0.14, Math.sqrt(count / max)))
+  styleHeat()
   heat.once('inited', () => {
     if (!disposed && points !== props.points) queueMicrotask(() => { if (!disposed) updateHeat() })
   })
@@ -118,8 +128,11 @@ async function startScene() {
       applyCamera()
       fill = new PolygonLayer({ zIndex: 0 }).source(mapFeatures.value.areas).shape('fill')
       outline = new LineLayer({ zIndex: 1, enablePicking: false })
-        .source(mapFeatures.value.lines).shape('line').size(0.8)
+        .source(mapFeatures.value.lines).shape('line').size(0.6)
       shadeRegions()
+      scene.map.on('zoomend', () => {
+        if (heat && !disposed) { styleHeat(); scene.render() }
+      })
       fill.on('mousemove', ({ feature }) => {
         const p = feature?.properties
         const region = regionIndex.value.get(p?.regionId)
@@ -155,8 +168,11 @@ watch(mapFeatures, ({ areas, lines }) => {
   outline.setData(lines)
 })
 watch(() => props.view, () => { if (ready.value && !props.empty) applyCamera() }, { flush: 'post' })
-watch([() => props.palette, regionIndex], () => {
-  if (ready.value) { shadeRegions(); scene.render() }
+watch([() => props.palette, regionIndex], ([palette], [previousPalette]) => {
+  if (!ready.value) return
+  shadeRegions()
+  if (palette !== previousPalette) styleHeat()
+  scene.render()
 })
 watch(() => props.points, () => { if (ready.value) updateHeat() })
 onBeforeUnmount(() => {
@@ -169,8 +185,24 @@ onBeforeUnmount(() => {
 .heatmap-shell { position: relative; isolation: isolate; height: clamp(360px, 54vh, 660px); overflow: hidden; background: var(--el-bg-color); border-radius: 8px; }
 .heatmap-canvas { position: absolute; inset: 0; }
 .heatmap-canvas :deep(canvas) { position: absolute; inset: 0; pointer-events: none; }
-.heatmap-legend, .heatmap-tooltip { position: absolute; z-index: 4; left: 12px; padding: 6px 10px; border-radius: 5px; background: var(--el-bg-color); color: var(--el-text-color-primary); font-size: 12px; pointer-events: none; }
-.heatmap-tooltip { top: 12px; white-space: pre-line; }
-.heatmap-legend { bottom: 12px; display: flex; align-items: center; gap: 6px; }
-.heatmap-legend i { width: 64px; height: 6px; border-radius: 3px; }
+.heatmap-legend, .heatmap-tooltip {
+  position: absolute;
+  z-index: 4;
+  left: 12px;
+  box-sizing: border-box;
+  max-width: calc(100% - 24px);
+  padding: 6px 10px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+  box-shadow: 0 2px 8px rgb(21 36 59 / 8%);
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+.heatmap-tooltip { top: 12px; white-space: pre-line; font-variant-numeric: tabular-nums; }
+.heatmap-legend { bottom: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--el-text-color-secondary); }
+.legend-title { margin-right: 2px; color: var(--el-text-color-primary); font-weight: 600; }
+.legend-ramp { width: 64px; height: 6px; border-radius: 3px; }
 </style>

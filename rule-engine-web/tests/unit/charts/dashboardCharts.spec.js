@@ -69,6 +69,31 @@ describe('dashboard charts', () => {
     expect(distributionPieOption().color).toEqual(palette.chartColors)
   })
 
+  test('热力色阶跟随纯色、渐变中间色和深浅主题', () => {
+    const colors = options => {
+      applyTheme({ ...DEFAULT_THEME_CONFIG, ...options })
+      return createDashboardPalette().heatColors
+    }
+    const green = colors({ accentMode: 'CUSTOM_SOLID', customSolidColor: '#008800' })
+    const blue = colors({ accentMode: 'CUSTOM_SOLID', customSolidColor: '#000088' })
+    expect(green).not.toEqual(blue)
+    const rgb = hex => hex.slice(1).match(/../g).map(channel => Number.parseInt(channel, 16))
+    for (const [red, g, b] of green.map(rgb)) expect(g).toBeGreaterThan(Math.max(red, b))
+
+    const config = { accentMode: 'CUSTOM_GRADIENT', customGradientColors: ['#3749DB', '#008800', '#A83791'] }
+    const gradient = colors(config)
+    const otherMiddle = colors({ ...config, customGradientColors: ['#3749DB', '#FF8800', '#A83791'] })
+    expect(gradient[0]).toBe(otherMiddle[0])
+    expect(gradient.at(-1)).toBe(otherMiddle.at(-1))
+    expect(gradient).not.toEqual(otherMiddle)
+
+    document.documentElement.style.setProperty('--el-bg-color', '#151D31')
+    document.documentElement.style.setProperty('--el-text-color-primary', '#EDF2FF')
+    const dark = colors({ ...config, colorScheme: 'DARK' })
+    expect(dark).not.toEqual(gradient)
+    expect(Math.max(...rgb(dark.at(-1)))).toBeGreaterThan(Math.max(...rgb(dark[0])))
+  })
+
   test('规则集 TOP 悬浮信息包含进件、命中和命中率', () => {
     const option = ruleSetHitOption([{
       ruleCode: 'R1', ruleName: '规则一', applicationCount: 20,

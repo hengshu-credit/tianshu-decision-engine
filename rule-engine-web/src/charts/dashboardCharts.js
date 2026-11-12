@@ -55,8 +55,17 @@ export function createDashboardPalette(root = document.documentElement) {
     palette.surface,
     dark ? 0.18 : 0.42
   )
+  // 主题运行时将当前渐变的全部色标写入此变量，纯色主题使用 primary。
+  const stops = css(root, '--tianshu-brand-gradient', '').match(/#[a-f\d]{6}/gi) || [palette.primary]
+  const anchors = [stops[0], ...stops, stops.at(-1)]
+  const heatColors = anchors.map((color, index) => {
+    const strength = index / (anchors.length - 1)
+    const ink = mixThemeColors(color, palette.text, strength * (dark ? 0.55 : 0.28))
+    return mixThemeColors(palette.surface, ink, 0.28 + 0.72 * strength)
+  })
   return {
     ...palette,
+    heatColors,
     chartAccent,
     chartColors: [
       palette.primary,
