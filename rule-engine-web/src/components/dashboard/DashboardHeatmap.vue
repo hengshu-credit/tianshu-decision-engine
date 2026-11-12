@@ -70,15 +70,15 @@ function applyCamera() {
 }
 
 function shadeRegions() {
-  const { surface, primary, border, text } = props.palette
-  const land = mixThemeColors(surface, border, 0.6)
+  const { surface, primary, border, chartAccent } = props.palette
+  const land = mixThemeColors(surface, primary, 0.16)
   const max = props.regions[0]?.count || 1
   fill.color('regionId', id => {
-    if (!id) return mixThemeColors(surface, border, 0.34)
+    if (!id) return mixThemeColors(surface, primary, 0.11)
     const count = regionIndex.value.get(id)?.count || 0
     return mixThemeColors(land, primary, 0.16 * count / max)
-  }).active({ color: mixThemeColors(land, primary, 0.27) })
-  outline.color(mixThemeColors(border, text, 0.13))
+  }).active({ color: chartAccent })
+  outline.color(mixThemeColors(border, primary, 0.22))
 }
 
 function styleHeat() {
@@ -128,7 +128,7 @@ async function startScene() {
       applyCamera()
       fill = new PolygonLayer({ zIndex: 0 }).source(mapFeatures.value.areas).shape('fill')
       outline = new LineLayer({ zIndex: 1, enablePicking: false })
-        .source(mapFeatures.value.lines).shape('line').size(0.6)
+        .source(mapFeatures.value.lines).shape('line').size(0.5)
       shadeRegions()
       scene.map.on('zoomend', () => {
         if (heat && !disposed) { styleHeat(); scene.render() }
