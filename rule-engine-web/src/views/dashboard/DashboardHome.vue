@@ -134,71 +134,68 @@
                   :option="regionalApplicationOption"
                 />
               </chart-card>
-              <chart-card class="dashboard-chart-card--wide dashboard-map-center" title="行政区进件分布地图" :note="geoNote">
-              <template #actions>
+              <chart-card class="dashboard-chart-card--wide dashboard-map-center" title="行政区进件分布地图">
+              <div class="dashboard-map-toolbar">
+                <div class="dashboard-map-filters">
+                  <el-select
+                    :model-value="mapCountry"
+                    aria-label="地图国家或地区"
+                    placeholder="全球国家／地区"
+                    filterable
+                    size="small"
+                    @visible-change="open => open && loadMapCatalog()"
+                    :loading="catalogLoading && !mapCatalog"
+                    @change="changeMapCountry"
+                  >
+                    <el-option label="全球国家／地区" value="" />
+                    <el-option
+                      v-for="country in mapCountryOptions"
+                      :key="country.code"
+                      :label="country.name"
+                      :value="country.code"
+                    />
+                  </el-select>
+                  <el-select
+                    v-if="mapCountry"
+                    :model-value="mapLevel"
+                    aria-label="地图行政层级"
+                    size="small"
+                    @change="changeMapLevel"
+                  >
+                    <el-option
+                      v-for="layer in mapLayerOptions"
+                      :key="layer.level"
+                      :label="layer.label || adminLevelLabels[layer.level]"
+                      :value="layer.level"
+                    />
+                  </el-select>
+                  <el-select-v2
+                    v-if="mapCountry && mapLevel !== 'ADM0' && !focusedLeaf"
+                    :model-value="null"
+                    :options="mapRegionOptions"
+                    :disabled="mapLoading || !!mapError"
+                    filterable
+                    size="small"
+                    aria-label="选择行政区"
+                    :placeholder="nextMapLayer ? '选择区域下钻' : '选择区域定位'"
+                    @change="openMapCountry"
+                  />
+                </div>
+                <div v-if="mapCountry" class="dashboard-map-navigation">
+                  <el-button size="small" @click="changeMapCountry('')">返回全球</el-button>
+                  <el-button
+                    v-if="mapRegionPath.length"
+                    size="small"
+                    @click="drillUpMap"
+                  >返回上一级</el-button>
+                </div>
                 <el-button
+                  class="dashboard-map-reset"
                   data-testid="dashboard-map-reset"
                   size="small"
-                  :disabled="mapLoading"
+                  title="返回全球并恢复已设置的初始视角"
                   @click="resetMapView"
                 >恢复视角</el-button>
-              </template>
-              <div class="dashboard-map-toolbar">
-                <el-select
-                  :model-value="mapCountry"
-                  aria-label="地图国家或地区"
-                  placeholder="全球国家／地区"
-                  filterable
-                  size="small"
-                  @visible-change="open => open && loadMapCatalog()"
-                  :loading="catalogLoading && !mapCatalog"
-                  @change="changeMapCountry"
-                >
-                  <el-option label="全球国家／地区" value="" />
-                  <el-option
-                    v-for="country in mapCountryOptions"
-                    :key="country.code"
-                    :label="country.name"
-                    :value="country.code"
-                  />
-                </el-select>
-                <el-select
-                  v-if="mapCountry"
-                  :model-value="mapLevel"
-                  aria-label="地图行政层级"
-                  size="small"
-                  @change="changeMapLevel"
-                >
-                  <el-option
-                    v-for="layer in mapLayerOptions"
-                    :key="layer.level"
-                    :label="layer.label || adminLevelLabels[layer.level]"
-                    :value="layer.level"
-                  />
-                </el-select>
-                <el-select-v2
-                  v-if="mapCountry && mapLevel !== 'ADM0' && !focusedLeaf"
-                  :model-value="null"
-                  :options="mapRegionOptions"
-                  :disabled="mapLoading || !!mapError"
-                  filterable
-                  size="small"
-                  aria-label="选择行政区"
-                  :placeholder="nextMapLayer ? '选择区域下钻' : '选择区域定位'"
-                  @change="openMapCountry"
-                />
-                <el-button v-if="mapCountry" size="small" @click="changeMapCountry('')">返回全球</el-button>
-                <el-button
-                  v-if="mapCountry && mapRegionPath.length"
-                  size="small"
-                  @click="drillUpMap"
-                >返回上一级</el-button>
-                <span>
-                  <template v-if="mapRegionPathLabel">当前：{{ mapRegionPathLabel }} · </template>
-                  {{ mapLoading ? '正在加载行政区边界…' : !mapCountry ? '点击国家或地区查看详情。' : nextMapLayer
-                    ? `点击区域下钻到${nextMapLayer.label || adminLevelLabels[nextMapLayer.level]}`
-                    : '点击区域居中查看。' }}
-                </span>
               </div>
               <div v-if="mapCatalogError" class="dashboard-map-error">
                 <el-alert :title="mapCatalogError" type="warning" :closable="false" show-icon />
@@ -209,10 +206,17 @@
                 <el-button size="small" @click="loadMap()">重试地图</el-button>
               </div>
               <dashboard-heatmap
+                ref="heatmap"
                 :key="mapViewVersion"
                 aria-label="进件地图热力图"
                 :boundaries="mapGeoJson"
                 :world="mapCountry ? worldMapData : null"
+                :country="mapCountry"
+                :location-path="mapLocationPath"
+                :geo="applications.geo"
+                :data-status="sections.applications.error ? '进件数据加载失败' : sections.applications.loading ? '正在加载进件数据' : ''"
+                :query-note="geoNote"
+                :source="mapSource"
                 @country-click="changeMapCountry"
                 :regions="regionStats"
                 :points="mapPoints"
@@ -222,16 +226,6 @@
                 :view="mapCamera"
                 @region-click="openMapCountry"
               />
-              <p v-if="mapCountry === 'CHN'" class="dashboard-map-source">
-                中国边界：<a href="https://datav.aliyun.com/portal/school/atlas/area_selector" target="_blank" rel="noopener noreferrer">DataV GeoAtlas</a>
-                · 市县：天地图来源整理数据 · 本地加载
-                <span v-if="mapLevel === 'ADM3'"> · 台湾省区县级资料暂缺，保留已有市县边界。</span>
-              </p>
-              <p v-else-if="mapCountry && mapLayer?.year && !mapLoading && !mapError && !(mapLevel === 'ADM0' && countryBoundary)" class="dashboard-map-source">
-                边界年份：{{ mapLayer.year }} · 数据来源：
-                <a href="https://www.geoboundaries.org" target="_blank" rel="noopener noreferrer">geoBoundaries</a>
-                （CC BY 4.0，按需在线加载）
-              </p>
               </chart-card>
               <chart-card class="dashboard-map-side dashboard-map-side--right" title="地区引擎通过 / 拒绝" note="通过率、拒绝率均按地区总进件数计算">
                 <dashboard-chart
@@ -520,8 +514,23 @@ export default {
         return { value, label: parent ? `${properties.shapeName}（${parent}）` : properties.shapeName }
       })
     },
-    mapRegionPathLabel() {
-      return this.mapRegionPath.map(region => region.name).filter(Boolean).join(' / ')
+    mapLocationPath() {
+      const country = this.mapCountryOptions.find(item => item.code === this.mapCountry)
+      return [country?.name, ...this.mapRegionPath.map(region => region.name)].filter(Boolean)
+    },
+    mapSource() {
+      const level = this.mapLoading || this.mapError ? this.mapRegionPath.at(-1)?.level || 'ADM0' : this.mapLevel
+      if (this.mapCountry === 'CHN') {
+        const detailed = ['ADM2', 'ADM3'].includes(level)
+        const taiwan = level === 'ADM3' && (!this.mapRegionPath.length || this.mapRegionPath.some(region => String(region.feature.properties.shapeID).startsWith('15671')))
+        const note = taiwan ? '市县：天地图来源整理数据；台湾省保留已有市县边界' : '市县：天地图来源整理数据'
+        return { label: 'DataV GeoAtlas', url: 'https://datav.aliyun.com/portal/school/atlas/area_selector', note: detailed ? note : '' }
+      }
+      const layer = this.mapLayerOptions.find(item => item.level === level)
+      if (layer?.year && !(level === 'ADM0' && this.countryBoundary)) {
+        return { label: 'geoBoundaries', url: 'https://www.geoboundaries.org', note: layer.year + ' · CC BY 4.0' }
+      }
+      return null
     },
     mapCountryOptions() {
       return dashboardCountryOptions(this.mapCatalog, this.worldCountries)
@@ -555,7 +564,7 @@ export default {
       const geo = this.applications.geo || {}
       const counts = `合法记录 ${this.number(geo.validCount)}，排除 ${this.number(geo.excludedCount)}`
       return this.mapReady && !(geo.points || []).length
-        ? `${counts} · 暂无合法经纬度记录，展示初始视角`
+        ? `${counts} · 暂无合法经纬度记录`
         : counts
     }
   },
@@ -573,7 +582,8 @@ export default {
     ruleSetCoverageHint,
     resetMapView() {
       this.mapView = readDashboardMapView(window.sessionStorage)
-      this.mapViewVersion += 1
+      if (this.$refs.heatmap?.error) this.mapViewVersion += 1
+      return this.changeMapCountry('')
     },
     showMap(geoJson) {
       const regions = this.mapCountry ? geoJson.features.filter(feature => !feature.properties?.mapRole) : []
@@ -704,7 +714,7 @@ export default {
       if (!feature) return
       const next = this.nextMapLayer
       if (!next && (this.mapLevel === 'ADM0' || this.mapRegionPath.at(-1)?.feature === feature)) {
-        this.resetMapView()
+        this.$refs.heatmap?.recenter?.()
         return
       }
       this.mapRegionPath = [...this.mapRegionPath, { level: this.mapLevel, name: this.mapRegionNames[name], feature }]
@@ -1000,27 +1010,25 @@ export default {
   min-height: 420px;
 }
 
-.dashboard-map-toolbar {
+.dashboard-map-center { container: map-controls / inline-size; }
+.dashboard-map-toolbar, .dashboard-map-filters, .dashboard-map-navigation {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 6px;
 }
-
-.dashboard-map-toolbar .el-select,
-.dashboard-map-toolbar .el-select-v2 {
-  width: min(210px, 100%);
+.dashboard-map-toolbar { margin-bottom: 12px; }
+.dashboard-map-filters { flex: 1; min-width: 0; }
+.dashboard-map-filters > .el-select, .dashboard-map-filters > .el-select-v2 {
+  flex: 1;
+  min-width: 0;
+  max-width: 210px;
 }
+.dashboard-map-toolbar .el-button { margin-left: 0; padding-inline: 8px; }
+.dashboard-map-toolbar .dashboard-map-reset { margin-left: auto; }
 
-.dashboard-map-toolbar > span,
-.dashboard-map-source {
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-
-.dashboard-map-source a {
-  color: var(--el-color-primary);
+@container map-controls (max-width: 500px) {
+  .dashboard-map-toolbar { flex-wrap: wrap; }
+  .dashboard-map-navigation { order: 1; flex-basis: 100%; }
 }
 
 .dashboard-map-error {
