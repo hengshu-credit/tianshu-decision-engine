@@ -34,11 +34,26 @@ function arrivalConfig(url, extra = {}) {
 
 test('constant arrival scheduling sends the planned count independently of response duration', async t => {
   let received = 0
-  const url = await arrivalServer(t, (_request, response) => {
+  let firstResponse
+  const success = '{"code":"000000","success":true}'
+  const url = await arrivalServer(t, (request, response) => {
+    if (request.method === 'HEAD') {
+      response.writeHead(204).end()
+      return
+    }
     received++
-    setTimeout(() => response.end('{"code":"000000","success":true}'), 35)
+    if (received === 1) {
+      firstResponse = response
+      return
+    }
+    if (received === 2) firstResponse.end(success)
+    setTimeout(() => response.end(success), 35)
   })
+  // Prime Node's HTTP client before the short measurement window starts.
+  const ready = await fetch(url, { method: 'HEAD' })
+  assert.equal(ready.status, 204)
   const result = await runCapacityScenario(arrivalConfig(url), { method: 'POST' })
+  assert.ok(result.summary.loadGeneration.maxInFlight >= 2)
   assert.equal(received, 6)
   assert.equal(result.summary.total, 6)
   assert.equal(result.summary.loadGeneration.scheduled, 6)

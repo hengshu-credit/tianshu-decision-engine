@@ -39,13 +39,13 @@
 | 产品咨询与合作 | [官网联系页](https://hengshucredit.com/contact/) |
 | 邮箱 | [hscredit@hengshucredit.com](mailto:hscredit@hengshucredit.com) |
 | 微信 | `itlubber`，可搜索微信号或扫描下方二维码 |
-| 微信公众号 | **衡枢风控**，关注后回复 **入群** 加入技术交流群 |
+| 公众号 | **衡枢风控实验室**，关注后回复 **入群** 加入技术交流群 |
 
 <table>
-  <tr><th align="center">微信 · itlubber</th><th align="center">微信公众号 · 衡枢风控</th></tr>
+  <tr><th align="center">微信 · itlubber</th><th align="center">公众号：衡枢风控实验室</th></tr>
   <tr>
     <td align="center"><a href="https://raw.githubusercontent.com/hengshu-credit/.github/main/profile/assets/wechat.svg"><img src="https://raw.githubusercontent.com/hengshu-credit/.github/main/profile/assets/wechat.svg" alt="微信 itlubber 二维码" width="200" height="200"></a><br>扫一扫，添加微信交流</td>
-    <td align="center"><a href="https://raw.githubusercontent.com/hengshu-credit/.github/main/profile/assets/wechat-official-account.svg"><img src="https://raw.githubusercontent.com/hengshu-credit/.github/main/profile/assets/wechat-official-account.svg" alt="微信公众号 衡枢风控 二维码" width="200" height="200"></a><br>扫一扫关注，回复「入群」</td>
+    <td align="center"><a href="docs/project-usage/hscreditlab.png"><img src="docs/project-usage/hscreditlab.png" alt="衡枢风控实验室公众号二维码" width="200" height="200"></a><br>扫一扫关注，回复「入群」</td>
   </tr>
 </table>
 
