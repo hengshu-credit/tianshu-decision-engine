@@ -35,7 +35,7 @@ export function setCurrentUser(user) {
   }
   const identity = `${user.userId ?? user.username ?? ''}:${user.permissionVersion ?? 0}`
   if (storedIdentity() !== identity) changeIdentity(identity)
-  currentUser.value = {
+  const nextUser = {
     ...user,
     operatorNames: Array.isArray(user.operatorNames) ? Array.from(new Set(user.operatorNames)) : [user.operatorName || user.username].filter(Boolean),
     roleCodes: Array.isArray(user.roleCodes) ? user.roleCodes.slice() : [],
@@ -48,6 +48,8 @@ export function setCurrentUser(user) {
     globalEditable: user.globalEditable !== false,
     projectPermissionOverrides: Object.fromEntries(Object.entries(user.projectPermissionOverrides || {}).map(([id, values]) => [id, { ...values }]))
   }
+  // 每次导航仍复核服务端完整快照。内容相同时无需唤醒整页的权限指令。
+  if (JSON.stringify(currentUser.value) !== JSON.stringify(nextUser)) currentUser.value = nextUser
 }
 
 export function clearCurrentUser() {

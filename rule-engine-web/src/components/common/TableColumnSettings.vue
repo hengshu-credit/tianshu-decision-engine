@@ -6,8 +6,7 @@
     :width="312"
     trigger="click"
     :teleported="true"
-    @show="beginEdit"
-    @hide="discardEdit"
+    :persistent="false"
   >
     <div class="table-column-settings__panel">
       <div class="table-column-settings__heading">
@@ -142,6 +141,9 @@ export default {
   },
   mounted() { this.restorePreference() },
   watch: {
+    open(value) {
+      if (value) this.beginEdit()
+    },
     storageKey() { this.open = false; this.restorePreference(true) },
   },
   methods: {
@@ -179,13 +181,6 @@ export default {
       }
     },
     beginEdit() {
-      const visibleKeys = Array.isArray(this.modelValue)
-        ? this.normalizeVisibleKeys(this.modelValue)
-        : this.availableKeys
-      this.draftKeys = this.normalizeKeys(visibleKeys)
-      this.draftVisibleKeys = visibleKeys.filter(key => this.availableKeys.includes(key))
-    },
-    discardEdit() {
       const visibleKeys = Array.isArray(this.modelValue)
         ? this.normalizeVisibleKeys(this.modelValue)
         : this.availableKeys

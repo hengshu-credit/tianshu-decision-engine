@@ -30,7 +30,7 @@
         <font-settings v-if="form.brand" v-model="form.brand.font" :active="tab === 'brand' && dirty" :disabled="!canEdit || saving || configurationUnavailable" @busy="fontBusy = $event" @valid="fontValid = $event" />
         <watermark-settings v-if="form.brand" v-model="form.brand" :disabled="!canEdit || saving || configurationUnavailable" />
       </el-tab-pane>
-      <el-tab-pane label="通知邮箱" name="mail">
+      <el-tab-pane lazy label="通知邮箱" name="mail">
         <el-alert v-if="managed.mail" title="通知邮箱由部署环境覆盖，请先移除环境覆盖再通过页面维护。" type="info" :closable="false" />
         <div v-if="form.mail" class="mail-columns">
           <el-form label-position="top" :disabled="!writable">
@@ -43,7 +43,7 @@
           <div class="mail-preview"><div class="mail-preview-heading"><small>邮件效果预览</small><el-select v-model="mailTemplate" size="small"><el-option label="密码重置" value="reset" /><el-option label="注册验证" value="verify" /><el-option label="系统通知" value="notice" /></el-select></div><article class="mail-letter"><header><strong>{{ mailPreview.title }}</strong><div class="mail-brand"><img :src="brand.logoUrl" :alt="brand.systemName" /><div><b>{{ brand.systemName }}</b><small>{{ brand.subtitle }}</small></div></div></header><p>尊敬的{{ mailTemplate === 'notice' ? '管理员' : '用户' }}：</p><p>{{ mailPreview.text }}</p><div v-if="mailPreview.highlight" class="mail-highlight">{{ mailPreview.highlight }}</div><span v-if="mailPreview.action" class="preview-button">{{ mailPreview.action }}</span><p v-if="mailPreview.action" class="mail-note">若非您本人操作，请忽略此邮件。请勿转发验证或重置链接。</p><footer><span>上海衡枢真信科技有限公司</span><a href="https://www.hengshucredit.com" target="_blank" rel="noopener noreferrer">www.hengshucredit.com</a></footer></article></div>
         </div>
       </el-tab-pane>
-      <el-tab-pane label="登录与安全" name="access">
+      <el-tab-pane lazy label="登录与安全" name="access">
         <el-alert v-if="managed.access" title="访问策略由部署环境覆盖，请先移除环境覆盖再通过页面维护。" type="info" :closable="false" />
         <el-form v-if="form.access" label-position="top" class="access-form" :disabled="!writable">
           <el-form-item label="允许新用户注册"><el-switch v-model="form.access.registrationEnabled" /><small>验证邮箱后激活，由管理员分配业务权限。</small></el-form-item>
@@ -53,7 +53,7 @@
           <el-alert title="超级管理员的服务器一次性恢复码不受邮箱设置影响。" type="info" :closable="false" show-icon />
         </el-form>
       </el-tab-pane>
-      <el-tab-pane label="对外结果码" name="codes">
+      <el-tab-pane lazy label="对外结果码" name="codes">
         <template v-if="form.codes">
           <el-alert title="一个对外 code 可对应多个系统码。只转换对外 code 和描述，内部成功/失败、HTTP 状态与重试语义保持不变。" type="info" :closable="false" show-icon />
           <div class="uiue-search-container uiue-filter-toolbar code-toolbar"><div class="code-filters"><el-input v-model="codeSearch" clearable placeholder="搜索系统码、对外 code 或描述" @input="codePage = 1" /><el-select v-model="codeGroup" clearable placeholder="全部分类" @change="codePage = 1"><el-option v-for="item in codeGroups" :key="item.value" :label="item.label" :value="item.value" /></el-select></div><div class="code-actions"><span>启用对外映射</span><el-switch v-model="form.codes.enabled" :disabled="!writable" /></div></div>
@@ -63,7 +63,7 @@
           <div class="mapping-preview"><div><strong>返回效果预览</strong><el-select v-model="previewCode"><el-option v-for="row in catalog" :key="row.code" :label="`${row.code} · ${row.message}`" :value="row.code" /></el-select></div><div class="settings-pair"><section><small>系统默认</small><pre>{{ mappingPreview.original }}</pre></section><section><small>对外返回 · HTTP {{ mappingPreview.httpStatus }}</small><pre>{{ mappingPreview.external }}</pre></section></div></div>
         </template>
       </el-tab-pane>
-      <el-tab-pane v-if="canAudit" label="变更记录" name="history"><el-table :data="history" border><el-table-column label="时间" min-width="160"><template #default="{ row }">{{ row.createTime ? String(row.createTime).replace('T', ' ').slice(0, 19) : '—' }}</template></el-table-column><el-table-column prop="username" label="操作人" min-width="120" /><el-table-column prop="changeSummary" label="变更内容" min-width="260" /><el-table-column label="结果" width="100"><template #default="{ row }">{{ { SUCCESS: '成功', FAILED: '失败', DENIED: '拒绝' }[row.outcome] || row.outcome }}</template></el-table-column></el-table><el-pagination v-model:current-page="historyPage" :page-size="20" :total="historyTotal" layout="total, prev, pager, next" @current-change="loadHistory" /></el-tab-pane>
+      <el-tab-pane lazy v-if="canAudit" label="变更记录" name="history"><el-table :data="history" border><el-table-column label="时间" min-width="160"><template #default="{ row }">{{ row.createTime ? String(row.createTime).replace('T', ' ').slice(0, 19) : '—' }}</template></el-table-column><el-table-column prop="username" label="操作人" min-width="120" /><el-table-column prop="changeSummary" label="变更内容" min-width="260" /><el-table-column label="结果" width="100"><template #default="{ row }">{{ { SUCCESS: '成功', FAILED: '失败', DENIED: '拒绝' }[row.outcome] || row.outcome }}</template></el-table-column></el-table><el-pagination v-model:current-page="historyPage" :page-size="20" :total="historyTotal" layout="total, prev, pager, next" @current-change="loadHistory" /></el-tab-pane>
     </el-tabs>
     <div v-if="tab !== 'history'" class="settings-footer"><small>{{ draft ? draft.status === 'EDITING' ? '草稿已保存，尚未提交审批' : '审批处理中，已生效配置保持不变' : dirty ? '有未保存的修改' : '当前为已生效配置' }}</small><div><el-button :disabled="!dirty || saving || fontBusy || configurationUnavailable" @click="cancelChanges">取消修改</el-button><el-button v-if="tab !== 'brand'" :disabled="!writable || !dirty" :loading="saving" @click="saveDraft">保存草稿</el-button><el-button v-if="tab === 'brand'" type="primary" :disabled="!writable || !dirty || fontBusy || !fontValid" :loading="saving" @click="saveBrand">保存配置</el-button><el-button v-else type="primary" :disabled="!canSubmit || (!dirty && !draft) || (draft && draft.status !== 'EDITING')" :loading="saving" @click="submit">提交审批</el-button><el-button v-if="draft && hasApprovalView" @click="$router.push('/approval/' + draft.id)">查看审批</el-button></div></div>
     <el-dialog v-model="testDialog" title="发送测试邮件" width="460px" :close-on-click-modal="false"><el-form label-position="top"><el-form-item label="测试收件人" required><el-input v-model="testRecipient" type="email" placeholder="仅用于本次测试" /></el-form-item></el-form><p>将使用当前表单配置发送真实测试邮件。</p><template #footer><el-button :disabled="testing" @click="testDialog = false">取消</el-button><el-button type="primary" :loading="testing" @click="sendTest">发送测试邮件</el-button></template></el-dialog>

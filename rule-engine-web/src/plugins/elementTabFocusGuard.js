@@ -1,3 +1,5 @@
+import { onMounted, onUpdated } from 'vue'
+
 function isTabPane(vm) {
   return vm.$options && vm.$options.name === 'ElTabPane'
 }
@@ -25,7 +27,7 @@ function syncPaneAccessibility(vm) {
   if (!pane || !pane.setAttribute) return
   const active = pane.getAttribute('aria-hidden') !== 'true'
   if (active) {
-    pane.removeAttribute('inert')
+    if (pane.hasAttribute('inert')) pane.removeAttribute('inert')
     return
   }
   const focused = typeof document === 'undefined' ? null : document.activeElement
@@ -34,28 +36,18 @@ function syncPaneAccessibility(vm) {
     if (target && typeof target.focus === 'function') target.focus()
     else if (typeof focused.blur === 'function') focused.blur()
   }
-  pane.setAttribute('inert', '')
+  if (!pane.hasAttribute('inert')) pane.setAttribute('inert', '')
 }
 
 export default {
   install(app) {
     app.mixin({
-      mounted() {
+      created() {
         if (!isTabPane(this)) return
-        syncPaneAccessibility(this)
-        this._tabFocusGuardObserver = new MutationObserver(() => {
-          syncPaneAccessibility(this)
-        })
-        this._tabFocusGuardObserver.observe(this.$el, {
-          attributes: true,
-          attributeFilter: ['aria-hidden']
-        })
-      },
-      beforeUnmount() {
-        if (this._tabFocusGuardObserver) {
-          this._tabFocusGuardObserver.disconnect()
-          this._tabFocusGuardObserver = null
-        }
+        // lazy 页签初始只有注释节点，实际面板会在首次选中时创建。
+        const sync = () => syncPaneAccessibility(this)
+        onMounted(sync)
+        onUpdated(sync)
       }
     })
   }

@@ -142,7 +142,7 @@
           </el-table>
         </el-tab-pane>
 
-        <el-tab-pane v-if="canViewRoles" class="management-table-region" label="角色" name="roles">
+        <el-tab-pane lazy v-if="canViewRoles" class="management-table-region" label="角色" name="roles">
           <el-table class="management-table" show-overflow-tooltip :aria-busy="loading" :data="roles" row-key="id">
             <template v-for="columnKey in (tableColumnOrders.roleColumns || roleColumns.map(column => column.key))" :key="columnKey">
             <el-table-column v-if="columnKey === 'roleName'" prop="roleName" label="角色名称" min-width="180" />

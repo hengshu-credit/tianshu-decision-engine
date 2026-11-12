@@ -40,7 +40,7 @@
       <el-alert v-if="connectionTestStatus !== 'idle'" :type="connectionTestOutdated ? 'warning' : connectionTestStatus" :title="connectionTestOutdated ? '连接配置已变更，请重新测试' : connectionTestMessage" :closable="false" show-icon />
       <p class="field-help">先选择范围并填写连接信息，再测试连接和保存草稿。保存后仍需提交审批，通过后才生效。</p>
       <el-form ref="formRef" :model="form" :rules="rules" :disabled="saving" label-width="130px" size="small">
-        <scope-project-fields v-model:scope="form.scope" v-model:project-id="form.projectId" :projects="projects" project-label="项目名称" project-prop="projectId" />
+        <scope-project-fields v-model:scope="form.scope" v-model:project-id="form.projectId" project-label="项目名称" project-prop="projectId" />
         <el-form-item label="数据源编码" prop="datasourceCode"><el-input v-model="form.datasourceCode" :disabled="!!form.id" /></el-form-item>
         <el-form-item label="数据源名称" prop="datasourceName"><el-input v-model="form.datasourceName" /></el-form-item>
         <div class="form-section"><div class="section-title">连接方式</div><el-row :gutter="12"><el-col :xs="24" :sm="16"><el-form-item label="主机" prop="host"><el-input v-model="form.host" placeholder="sftp.example.com" /></el-form-item></el-col><el-col :xs="24" :sm="8"><el-form-item label="端口"><el-input-number v-model="form.port" :min="1" :max="65535" controls-position="right" style="width: 100%" /></el-form-item></el-col></el-row><el-form-item label="远端根目录"><el-input v-model="form.basePath" placeholder="/upload/contracts" /></el-form-item><el-form-item label="用户名" prop="username"><el-input v-model="form.username" autocomplete="off" /></el-form-item><el-form-item label="密码"><el-input v-model="form.password" :disabled="isCredentialCleared('password')" type="password" show-password autocomplete="new-password" :placeholder="credentialPlaceholder('password', '使用私钥时可留空')" /><el-checkbox v-if="hasStoredCredential('password') || isCredentialCleared('password')" :model-value="isCredentialCleared('password')" @change="setCredentialCleared('password', $event)">清除已存密码</el-checkbox></el-form-item><el-form-item label="私钥"><el-input v-model="form.privateKey" :disabled="isCredentialCleared('privateKey')" type="textarea" :rows="3" :placeholder="credentialPlaceholder('privateKey', 'PEM 私钥内容；使用密码时可留空')" /><el-checkbox v-if="hasStoredCredential('privateKey') || isCredentialCleared('privateKey')" :model-value="isCredentialCleared('privateKey')" @change="setCredentialCleared('privateKey', $event)">清除已存私钥</el-checkbox></el-form-item><el-form-item label="私钥口令"><el-input v-model="form.passphrase" :disabled="isCredentialCleared('passphrase')" :placeholder="credentialPlaceholder('passphrase', '私钥的解密口令')" type="password" show-password autocomplete="new-password" /><el-checkbox v-if="hasStoredCredential('passphrase') || isCredentialCleared('passphrase')" :model-value="isCredentialCleared('passphrase')" @change="setCredentialCleared('passphrase', $event)">清除已存私钥口令</el-checkbox></el-form-item><el-form-item label="主机指纹校验"><el-switch v-model="form.strictHostKeyChecking" /><span class="field-help">开启后需填写 known_hosts；关闭时使用 JSch 默认的非交互连接模式。</span></el-form-item><el-form-item v-if="form.strictHostKeyChecking" label="known_hosts"><el-input v-model="form.knownHosts" :disabled="isCredentialCleared('knownHosts')" type="textarea" :rows="2" :placeholder="credentialPlaceholder('knownHosts', 'known_hosts 文件内容')" /><el-checkbox v-if="hasStoredCredential('knownHosts') || isCredentialCleared('knownHosts')" :model-value="isCredentialCleared('knownHosts')" @change="setCredentialCleared('knownHosts', $event)">清除已存主机指纹</el-checkbox></el-form-item></div>
@@ -56,7 +56,6 @@
 
 <script>
 import { createSftpDatasource, deleteSftpDatasource, getSftpDatasource, listSftpDatasources, testSftpDatasource, testSftpDatasourceDraft, updateSftpDatasource } from '@/api/sftp'
-import { listProjects } from '@/api/project'
 import { editableResource } from '@/api/governance'
 import { completeResourceChange } from '@/utils/governanceWorkspace'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
@@ -85,7 +84,7 @@ export default {
       { key: 'datasourceCode', label: '数据源编码', minWidth: 150, required: true }, { key: 'datasourceName', label: '数据源名称', minWidth: 150 },
       { key: 'address', label: 'SFTP 地址', minWidth: 220 }, { key: 'username', label: '认证用户', minWidth: 110 },
       { key: 'pool', label: '连接池', minWidth: 120, align: 'center' }, { key: 'status', label: '状态', minWidth: 150, align: 'center' },
-    ], datasourceColumnOrder: ['scope', 'projectName', 'datasourceCode', 'datasourceName', 'address', 'username', 'pool', 'status'], query: { pageNum: 1, pageSize: 20, projectCode: '', projectName: '', datasourceCode: '', status: null }, rows: [], total: 0, loading: false, loadError: '', listRequestId: 0, editRequestId: 0, projects: [], dialogVisible: false, form: emptyForm(), saving: false, testing: false, connectionTestStatus: 'idle', connectionTestSignature: '', connectionTestMessage: '', testRequestId: 0, rules: { projectId: [{ validator: (_rule, value, callback) => callback(this.form.scope === 'PROJECT' && !(Number(value) > 0) ? new Error('请选择所属项目') : undefined), trigger: 'change' }], minIdle: [{ validator: (_rule, value, callback) => callback(Number(value) > Number(this.form.maxPoolSize) ? new Error('最小空闲连接数不能超过最大连接数') : undefined), trigger: 'change' }], datasourceCode: [{ required: true, message: '请输入数据源编码', trigger: 'blur' }], datasourceName: [{ required: true, message: '请输入数据源名称', trigger: 'blur' }], host: [{ required: true, message: '请输入 SFTP 主机', trigger: 'blur' }], username: [{ required: true, message: '请输入用户名', trigger: 'blur' }] } }
+    ], datasourceColumnOrder: ['scope', 'projectName', 'datasourceCode', 'datasourceName', 'address', 'username', 'pool', 'status'], query: { pageNum: 1, pageSize: 20, projectCode: '', projectName: '', datasourceCode: '', status: null }, rows: [], total: 0, loading: false, loadError: '', listRequestId: 0, editRequestId: 0, dialogVisible: false, form: emptyForm(), saving: false, testing: false, connectionTestStatus: 'idle', connectionTestSignature: '', connectionTestMessage: '', testRequestId: 0, rules: { projectId: [{ validator: (_rule, value, callback) => callback(this.form.scope === 'PROJECT' && !(Number(value) > 0) ? new Error('请选择所属项目') : undefined), trigger: 'change' }], minIdle: [{ validator: (_rule, value, callback) => callback(Number(value) > Number(this.form.maxPoolSize) ? new Error('最小空闲连接数不能超过最大连接数') : undefined), trigger: 'change' }], datasourceCode: [{ required: true, message: '请输入数据源编码', trigger: 'blur' }], datasourceName: [{ required: true, message: '请输入数据源名称', trigger: 'blur' }], host: [{ required: true, message: '请输入 SFTP 主机', trigger: 'blur' }], username: [{ required: true, message: '请输入用户名', trigger: 'blur' }] } }
   },
   beforeUnmount() { this.listRequestId++; this.testRequestId++; this.editRequestId++ },
   watch: { dialogVisible: { flush: 'sync', handler(visible) { if (!visible) this.resetConnectionTest() } } },
@@ -94,7 +93,7 @@ export default {
     connectionTestOutdated() { return Boolean(this.connectionTestSignature && this.connectionTestSignature !== JSON.stringify(this.normalize(this.form))) },
   },
   created() { this.query.projectId = routeProjectId(this.$route, this.$store?.state?.currentProject) },
-  async mounted() { await Promise.all([this.load(), this.loadProjects()]) },
+  mounted() { this.load() },
   methods: {
     async load() {
       const requestId = ++this.listRequestId
@@ -115,7 +114,6 @@ export default {
       }
     },
     handleQuery() { this.query.pageNum = 1; return this.load() },
-    async loadProjects() { try { const res = await listProjects({ pageNum: 1, pageSize: 500 }); this.projects = res.data?.records || [] } catch (e) { this.projects = [] } },
     async navigateTab(name) {
       if (name === 'logs') await this.$router.push(withProjectContext('/sftp/logs', this.query.projectId))
       // 标签用于路由导航，不切换本页空面板，避免缓存离开时的错误选中项。

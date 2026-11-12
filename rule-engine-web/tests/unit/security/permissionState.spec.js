@@ -1,3 +1,4 @@
+import { watchSyncEffect } from 'vue'
 import {
   clearCurrentUser,
   filterMenus,
@@ -9,6 +10,21 @@ import {
 } from '@/security/permissionState'
 
 describe('控制台最终权限状态', () => {
+  test('重复的会话快照不刷新权限控件，同版本的项目授权变化仍立即生效', () => {
+    const user = { userId: 2, permissionVersion: 1, permissions: ['field:edit'] }
+    setCurrentUser(user)
+    const changes = []
+    const stop = watchSyncEffect(() => changes.push(hasPermission('field:edit', { projectId: 3 })))
+    try {
+      setCurrentUser({ ...user, permissions: [...user.permissions] })
+      expect(changes).toEqual([true])
+      setCurrentUser({ ...user, projectPermissionOverrides: { 3: { 'field:edit': 'DENY' } } })
+      expect(changes).toEqual([true, false])
+    } finally {
+      stop()
+      clearCurrentUser()
+    }
+  })
   test('节点预热要求默认全局及所有项目权限，项目拒绝和全局只读不能绕过', () => {
     const user = { permissions: ['model:view', 'model:edit'], projectAccessMode: 'ALL', globalEditable: true }
     setCurrentUser(user)

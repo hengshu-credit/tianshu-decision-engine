@@ -17,8 +17,9 @@ function mountSettings(modelValue = columns.map(column => column.key)) {
     global: {
       stubs: {
         'el-popover': {
+          name: 'ElPopover',
           props: ['visible'],
-          emits: ['update:visible'],
+          emits: ['update:visible', 'show'],
           template: '<div><slot name="reference" /><slot /></div>',
         },
         'el-button': {
@@ -31,6 +32,23 @@ function mountSettings(modelValue = columns.map(column => column.key)) {
 
 describe('TableColumnSettings', () => {
   beforeEach(() => window.localStorage.clear())
+
+  test('打开时即按已应用字段勾选，显示动画完成保留新选择，取消后重开还原', async () => {
+    const wrapper = mountSettings(['code', 'name'])
+    const popover = wrapper.getComponent({ name: 'ElPopover' })
+    popover.vm.$emit('update:visible', true)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.vm.draftVisibleKeys).toEqual(['code', 'name'])
+    await wrapper.get('button[aria-label="隐藏名称"]').trigger('click')
+    popover.vm.$emit('show')
+    expect(wrapper.vm.draftVisibleKeys).toEqual(['code'])
+    await wrapper.get('.table-column-settings__footer button').trigger('click')
+    popover.vm.$emit('update:visible', true)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.vm.draftVisibleKeys).toEqual(['code', 'name'])
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    wrapper.unmount()
+  })
 
   test('支持隐藏字段并按新顺序应用', async () => {
     const wrapper = mountSettings()

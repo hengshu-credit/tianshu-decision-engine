@@ -177,7 +177,11 @@ test('离线迁移页面展示导出、目标范围和冲突策略流程', async
   await expect(page.getByRole('button', { name: '预览冲突' })).toBeDisabled()
   await expect(page.getByRole('button', { name: '确认导入' })).toBeDisabled()
   await expect(page.locator('.menu-label', { hasText: '离线迁移' })).toBeVisible()
-  expect(logRequests).toEqual([{ pageNum: '1', pageSize: '20' }])
+  expect(logRequests).toHaveLength(0)
+  await page.getByRole('tab', { name: '迁移日志', exact: true }).click()
+  await expect.poll(() => logRequests).toEqual([{ pageNum: '1', pageSize: '20' }])
+  await page.getByRole('tab', { name: '配置迁移', exact: true }).click()
+  await expect(page.getByPlaceholder('新项目编码（可覆盖源编码）')).toBeVisible()
   await assertClean()
 })
 

@@ -4285,7 +4285,8 @@ export default {
         // 铁律四：构建 id→objectCode 映射，供前端展示 refObjectId 对应的对象名
         this.objectIdMap = rawData.objectIdMap || {}
         this.objectTree = tree
-        await this.loadObjectReferenceVariablesForTree(tree)
+        // 对象树也用于生成测试样例，只有对象页签会展示引用变量的标签。
+        if (this.activeTab === 'objects') await this.loadObjectReferenceVariablesForTree(tree)
         this.normalizeObjectFieldPages()
         this.objectMap = {}
         this.objectTree.forEach((n) => {

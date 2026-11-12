@@ -220,7 +220,7 @@
         />
       </el-tab-pane>
 
-      <el-tab-pane class="management-table-region" label="计费明细" name="record">
+      <el-tab-pane lazy class="management-table-region" label="计费明细" name="record">
         <div class="uiue-search-container uiue-filter-toolbar">
           <el-form :inline="true" size="small" @keyup.enter="handleRecordQuery">
             <el-form-item label="项目编码">
@@ -455,7 +455,7 @@
         />
       </el-tab-pane>
 
-      <el-tab-pane class="management-table-region" label="计费汇总" name="summary">
+      <el-tab-pane lazy class="management-table-region" label="计费汇总" name="summary">
         <el-alert
           data-testid="billing-summary-basis"
           title="成功和未成功按计费时记录统计，不代表试运行最终成功率；后续状态请在计费明细中查看。"

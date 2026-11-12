@@ -1,7 +1,7 @@
 <template>
   <resource-version-manager v-if="resourceId" ref="versions" :resource-type="resourceType" :resource-id="resourceId" :show-trigger="showVersions" :model-type="modelType" />
   <el-button v-if="showPublish" link type="success" data-action="publish" size="small" :disabled="disabled" :loading="busy" @click="publish">发布</el-button>
-  <el-dialog v-model="issueVisible" title="发布前检查未通过" width="min(640px, 100vw)" append-to-body>
+  <el-dialog v-if="preflightErrors.length" v-model="issueVisible" title="发布前检查未通过" width="min(640px, 100vw)" append-to-body>
     <p>当前草稿尚未提交，请修复以下问题后重新发布。</p>
     <ul><li v-for="(issue, index) in preflightErrors" :key="index">{{ issue.message }}<small v-if="issue.referencePath">（{{ issue.referencePath }}）</small></li></ul>
     <template #footer><el-button @click="issueVisible = false">关闭</el-button><el-button v-if="canViewApproval" type="primary" @click="openPreflight">查看预检详情</el-button></template>

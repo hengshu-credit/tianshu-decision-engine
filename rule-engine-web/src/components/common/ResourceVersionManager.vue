@@ -1,7 +1,7 @@
 <template>
   <span class="resource-version-entry">
     <el-button v-if="canView && showTrigger" link type="primary" data-action="version" size="small" @click.stop="open">版本</el-button>
-    <el-drawer v-model="visible" :class="provider?.className" title="版本管理" size="min(1120px, 100vw)" append-to-body destroy-on-close :before-close="close">
+    <el-drawer v-if="drawerMounted" v-model="visible" :class="provider?.className" title="版本管理" size="min(1120px, 100vw)" append-to-body destroy-on-close :before-close="close">
       <div class="resource-version-manager" :aria-busy="loading">
         <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
         <div class="uiue-search-container uiue-filter-toolbar">
@@ -120,7 +120,7 @@ export default {
   components: { VersionSnapshotPanel, MonacoEditor, HistoricalVersionBrowser },
   props: { modelType: { type: String, default: '' }, resourceType: { type: String, required: true }, resourceId: { type: [String, Number], required: true }, showTrigger: { type: Boolean, default: true }, hasLegacy: Boolean, provider: { type: Object, default: null } },
   emits: ['changed', 'legacy'],
-  data: () => ({ visible: false, loading: false, busy: false, sequence: 0, contextGeneration: 0, workspace: {}, events: [], error: '', selected: 'LATEST', tab: 'preview', comparison: '', editing: false, editJson: '', changeSummary: '', publishMode: 'NEW', targetVersionId: '' }),
+  data: () => ({ drawerMounted: false, visible: false, loading: false, busy: false, sequence: 0, contextGeneration: 0, workspace: {}, events: [], error: '', selected: 'LATEST', tab: 'preview', comparison: '', editing: false, editJson: '', changeSummary: '', publishMode: 'NEW', targetVersionId: '' }),
   computed: {
     contextKey() { return `${this.resourceType}:${this.resourceId}` },
     canView() { return hasPermission(resourceActionPermission(this.resourceType, 'view')) },
@@ -161,7 +161,16 @@ export default {
     pretty(json) { try { return JSON.stringify(parseMetadataResponse(json), null, 2) } catch { return json } },
     statusLabel(value) { return { EDITING: '编辑中', PENDING: '审批中', CONFLICT: '审批冲突', REJECTED: '已驳回' }[value] || value },
     eventLabel(value) { return { CREATE_DRAFT: '创建草稿', SAVE_DRAFT: '修改草稿', SUBMIT: '提交发布', PUBLISH: '发布版本', APPROVE: '审批通过', REJECT: '驳回', CANCEL: '删除或撤回草稿', DELETE_VERSION: '删除版本' }[value] || value },
-    async open() { if (!this.canView) return; this.visible = true; this.selected = 'LATEST'; this.editing = false; this.tab = 'preview'; this.comparison = ''; await this.load() },
+    async open() {
+      if (!this.canView) return
+      this.drawerMounted = true
+      this.visible = true
+      this.selected = 'LATEST'
+      this.editing = false
+      this.tab = 'preview'
+      this.comparison = ''
+      await this.load()
+    },
     async load() {
       const sequence = ++this.sequence; this.loading = true; this.error = ''
       try {

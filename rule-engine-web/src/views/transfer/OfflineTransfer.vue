@@ -216,7 +216,7 @@
     </section>
 
       </el-tab-pane>
-      <el-tab-pane label="迁移日志" name="logs">
+      <el-tab-pane lazy label="迁移日志" name="logs">
         <section class="transfer-card transfer-log-card">
           <div class="card-heading">
             <div>
@@ -394,7 +394,6 @@ export default {
   watch: {
     options: { deep: true, flush: 'sync', handler() { this.invalidatePreview() } }
   },
-  created() { this.loadLogs() },
   beforeUnmount() { this.invalidatePreview() },
   methods: {
     onTabChange(tab) { if (tab === 'logs') this.loadLogs() },

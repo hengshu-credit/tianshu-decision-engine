@@ -23,6 +23,25 @@ const test = base.extend({
 })
 test.use({ actionTimeout: 5000 })
 
+test('变量列表不预取各项目引用，打开对象字段仍显示其引用变量', async ({ page }) => {
+  const apiData = createDocsApiData()
+  const variable = apiData.get('/api/rule/variable/project/1')[0]
+  const object = apiData.get('/api/rule/dataobject/tree').tree[0]
+  object.variables[0].refVariableId = variable.id
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData })
+  const referenceCalls = () => harness.requests.filter(request => new URL(request.url).pathname === '/api/rule/variable/project/1')
+  await page.goto(origin + '/#/variable')
+  await expect(page.getByRole('cell', { name: variable.varCode, exact: true }).first()).toBeVisible()
+  expect(referenceCalls()).toHaveLength(0)
+  await page.getByRole('tab', { name: '数据对象', exact: true }).click()
+  await page.getByTestId('data-object-table').getByText(object.object.objectCode, { exact: true }).first().click()
+  const reference = page.locator('.reference-variable-cell').first()
+  await expect(reference).toContainText(variable.varLabel)
+  await expect(reference).toContainText(variable.scriptName)
+  expect(referenceCalls()).toHaveLength(1)
+  harness.assertClean()
+})
+
 test('规则详情只在打开对应页签时初始化编辑器和请求 API 场景', async ({ page }) => {
   const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: createDetailApiData() })
   await page.goto(`${origin}/#/rule`)
@@ -126,10 +145,19 @@ test('逐一点击全部菜单与子页签，往返切换后仍可交互并记�
       await expect(page).toHaveURL(`${origin}/#/rule`)
     }
     navigationAudit.step(menu.index, `点击${menu.label}`)
+    const requestStart = harness.requests.length
     await page.locator(`[data-menu-path="${menu.index}"]`).click()
     await expect(page).toHaveURL(`${origin}/#${menu.index}`)
     await expect(page.locator('.layout-main > div').first()).toBeVisible()
     await record('menu', menu.label)
+    if (menu.index === '/billing' || menu.index === '/system/settings') {
+      await expect(page.locator('.layout-main [role="tabpanel"]')).toHaveCount(1)
+    }
+    if (menu.index === '/sftp') {
+      const requests = harness.requests.slice(requestStart).map(request => new URL(request.url).pathname)
+      expect(requests).not.toContain('/api/rule/project/list')
+      expect(requests).not.toContain('/api/rule/project/options')
+    }
     // 从真实可见标签取得目标，不直接调用组件方法或绕过点击。
     const tabs = await page.locator('.layout-main [role="tab"]:visible:not([aria-disabled="true"])').allTextContents()
     // 默认页签最后再点击，测量真实切换，并验证返回默认页签的交互。
@@ -147,6 +175,10 @@ test('逐一点击全部菜单与子页签，往返切换后仍可交互并记�
         await expect(pane).toContainText(name.trim() === '素材库' ? '验收截图.png' : name.trim() === '事件与类型' ? ledgerEvent.title : ledgerTitle)
       }
       await record('tab', `${menu.label}/${name.trim()}`)
+      if (menu.index === '/billing' || menu.index === '/system/settings') {
+        const hiddenPanes = page.locator('.layout-main [role="tabpanel"][aria-hidden="true"]')
+        for (const hidden of await hiddenPanes.all()) await expect(hidden).toHaveAttribute('inert', '')
+      }
     }
     if (menu.index === '/project') continue
     navigationAudit.step('/project', `从${menu.label}返回项目列表`)
