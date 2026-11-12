@@ -9,9 +9,7 @@
 
 # 天枢决策引擎
 
-天枢决策引擎是一套面向风控与业务决策的可视化平台，将变量、名单、外部数据、模型和函数连接到统一的规则流程。业务人员可以通过九类设计器配置决策逻辑，使用样例验证结果，完成审核发布，并从执行日志追溯每次决策的条件、动作和输出。
-
-平台基于 **Spring Boot 3.5、QLExpress 4、Vue 3 和 Element Plus**，提供独立部署的管理控制台、服务端 API 和 Java 客户端 SDK，支持服务端执行与业务应用内执行。
+天枢决策引擎面向风控、策略和业务运营团队。以人脸核验为例，策略人员可以把“活体分和相似度达到多少才通过”配置成决策表，用样例核对结果，审核通过后发布。业务系统调用已发布的规则后，运营人员既能看到整体通过率，也能查清某一笔申请用了哪个版本、命中了哪些条件。
 
 ## 在线体验
 
@@ -51,403 +49,160 @@
 
 ## 功能总览
 
-| 能力 | 说明 |
-|------|------|
-| 可视化决策 | 决策表、决策树、决策流、规则集、交叉表、评分卡、复杂交叉表、复杂评分卡和 QL 脚本 |
-| 数据准备 | 输入、计算、常量、API、数据库和名单变量；Java 实体、JSON、DDL 导入；数据对象字段与变量引用 |
-| 模型与函数 | 模型字段配置、执行测试、版本管理；PMML/ONNX 推理；QLExpress、Java 类与 Spring Bean 函数 |
-| 测试与追踪 | 按规则生成输入结构，收藏测试用例，查看命中条件、分支路径、评分明细与执行追踪 |
-| 发布与治理 | 草稿、审核、批准、发布、下线；版本对比与回滚；依赖校验和不可变决策制品 |
-| 运行分析 | 数据看板、血缘分析、分流实验、规则及外部资源调用日志、账单明细与汇总 |
-| 审批与迁移 | 规则/模型/函数/实验审批；制品导入导出；按血缘生成配置包并在目标环境预检冲突 |
-| 权限与体验 | 账户、角色和权限覆盖；多页签工作台；白天/夜间主题、自定义渐变与导航布局 |
-| 系统配置 | 全局品牌、统一通知邮箱与 HTML 品牌邮件、账户访问策略、支持多对一的对外结果码映射和变更记录，见 [系统配置](docs/system-settings.md) |
-| 系统集成 | 项目调用鉴权、开放接口说明、Java SDK、规则同步与 Redis 变更推送 |
+| 业务环节 | 平台上的工作 |
+| --- | --- |
+| 准备数据 | 在项目中整理申请资料、名单、外部核验结果和模型评分。多个规则可共用同一个字段、名单或计算公式。 |
+| 制定策略 | 用决策表表达准入条件，用树或流程图安排分支，用评分卡划分风险等级。规则还可以在命中后查询外部数据或更新名单。 |
+| 验证与发布 | 把典型申请存为固定用例。调整策略后批量复测，比较版本、检查受影响的规则，经审批后发布。 |
+| 观察与调整 | 从看板观察通过率、人审率和执行耗时，从单笔日志追溯判断依据与外部调用，再通过分流实验比较新旧策略。 |
+| 团队协作 | 按项目和角色分配权限，用台账记录策略调整的背景和时间，把相关配置一并迁移到目标环境。 |
 
 ## 功能演示
 
-以下界面截图采集于 **2026-10-01**，来自当前前端生产构建和固定业务样例。管理页面展示供应商、API、审批、账户、离线迁移等真实页面状态；九类规则的测试结果与表达式追踪来自本地 QLExpress 引擎执行同一份示例配置，演示数值不代表生产业务指标。重新生成方法见 [`scripts/docs/README.md`](scripts/docs/README.md)。
+界面以人脸核验项目为例，点击截图可查看原图。[完整操作手册](http://tianshu.hengshucredit.com/)
 
-### 控制台登录界面
+### 在项目中核对规则的输入和输出
 
-![控制台登录](docs/project-usage/project-usage-01-login.png)
+一个项目集中管理一项业务用到的规则、变量和模型。从项目列表进入人脸核验项目的工作台，打开规则详情，就能核对业务系统需要提供哪些字段，以及核验结束后会收到哪些结果。也可以从规则列表直接查找已有策略。[项目列表](docs/project-usage/project-usage-02-project-list.png) · [规则列表](docs/project-usage/project-usage-02-rule-list.png)
 
-### 数据看板
+| **项目工作台** | **规则详情** |
+| :--- | :--- |
+| [![项目工作台，查看人脸核验项目及其规则](docs/project-usage/project-usage-07-project-detail.png)](docs/project-usage/project-usage-07-project-detail.png) | [![规则详情，核对输入、输出和当前版本](docs/project-usage/project-usage-08-rule-detail.png)](docs/project-usage/project-usage-08-rule-detail.png) |
+| 查看人脸核验项目及其规则 | 核对输入、输出和当前版本 |
 
-按项目、规则编码/名称和时间查询进件数、通过率、人审率、设备数及分布情况，并查看资源调用、执行耗时、规则集命中、审批和账单。各模块按当前账户权限展示。
+### 把供应商结果变成规则能用的数据
 
-![数据看板：进件决策与分布分析](docs/project-usage/project-usage-18-dashboard.png)
+供应商返回的活体分和人脸相似度，可以分别对应到两个业务字段。配置一次，决策表、评分卡和其他规则便可引用同一口径。上线前可单独测试取数，确认返回值和字段对应无误，再测试整条规则。
 
-点击“看板设置”可关联统计字段，按“个人项目覆盖 → 个人默认 → 公共默认”逐项继承。具有全局 `system:edit` 权限的管理员可切换到“公共默认”，选择全局字段后保存；已有管理员个人配置可通过“载入我的默认配置”带入后再保存。未配置项会明确提示，不再猜测样例变量 ID；引用删除、停用或无权访问时仍报告不可用。公共默认保存在 `rule_dashboard_default`，启动时由 `schema.sql` 幂等建表，旧个人配置保留。默认初始化提供三个全局只读系统常量：`DECISION_PASS`（通过，0）、`DECISION_REVIEW`（人审，2）、`DECISION_REJECT`（拒绝，1），无需启用业务初始数据或导入样例。已有环境可通过新版启动幂等补齐，或执行 `migrations/2026-11-11-decision-result-system-constants.sql`；同名业务字段不会被覆盖。字段映射使用统一的引擎引用选择器；通过、人审、拒绝均可添加多个阈值、字段/常量引用、子路径或组合表达式，支持编辑和删除；表达式结果与决策结果值匹配，不作为布尔条件执行。引用按 ID 解析当前生效资源，路径从该指标选定的输入参数或输出结果读取，旧常量 ID 和文本取值兼容保留。看板只读取已有执行日志与常量，支持组合运算、取属性和类型转换，不调用用户函数或外部服务。静态取值重叠时拒绝保存；动态取值缺失、计算失败或组间重叠时计入未分类并提示原因。地图支持中心经纬度、缩放和视角恢复；非法坐标排除出地图统计，原始日志保持不变。
-
-### 项目与规则管理
-
-项目集中管理规则及相关资源，提供项目工作台、访问鉴权和接口说明。规则列表支持进入设计、执行测试与生命周期管理；项目列表可导出可读 HTML API 文档，打开文档后可一键导出 OpenAPI 3.1 JSON，便于导入 Postman、Apifox 或网关工具。
-
-![项目管理](docs/project-usage/project-usage-02-project-list.png)
+| **外数接口** | **变量管理** |
+| :--- | :--- |
+| [![外数接口，按供应商找到核验服务](docs/project-usage/project-usage-10-api-list.png)](docs/project-usage/project-usage-10-api-list.png) | [![变量管理，查看规则可用的业务字段](docs/project-usage/project-usage-03-variable.png)](docs/project-usage/project-usage-03-variable.png) |
+| 按供应商找到核验服务 | 查看规则可用的业务字段 |
 
 <details>
-<summary>查看项目工作台与规则列表</summary>
+<summary>更多数据来源与可复用的计算</summary>
 
-![项目工作台](docs/project-usage/project-usage-07-project-detail.png)
+数据对象把一组相关字段放在一起，例如一份申请中的客户资料。名单可按记录匹配准入或风险标签。内部业务数据可通过只读数据库查询，合作方提供的文件可通过 SFTP 查询。模型可以先独立试算，再把输出用于策略判断。多条规则共用的计算公式可保存为函数。
 
-![规则列表](docs/project-usage/project-usage-02-rule-list.png)
+| **数据对象** | **名单管理** |
+| :--- | :--- |
+| [![数据对象，按层级组织字段](docs/project-usage/project-usage-03-data-object.png)](docs/project-usage/project-usage-03-data-object.png) | [![名单管理，查看项目下的名单库](docs/project-usage/project-usage-09-list.png)](docs/project-usage/project-usage-09-list.png) |
+| 按层级组织字段 | 查看项目下的名单库 |
+
+| **模型管理** | **函数管理** |
+| :--- | :--- |
+| [![模型管理，查找项目使用的模型](docs/project-usage/project-usage-13-model.png)](docs/project-usage/project-usage-13-model.png) | [![函数管理，在多条规则中复用同一公式](docs/project-usage/project-usage-04-function.png)](docs/project-usage/project-usage-04-function.png) |
+| 查找项目使用的模型 | 在多条规则中复用同一公式 |
 
 </details>
 
-### 变量与数据对象
+### 用样例验证，再审批发布
 
-在同一入口维护变量、数据对象、常量和字段校验。API、数据库与名单变量支持在线测试和取数详情，便于核对参数、返回值和依赖关系。
+在人脸核验决策表中，一行就能写清通过条件。示例要求活体分至少 **0.95**、相似度至少 **0.90**。输入 **0.98** 和 **0.936**，测试结果为“核验通过、低风险”。点开测试追踪，可以对照每个条件的实际取值，看出结果来自哪一行。
 
-![变量管理](docs/project-usage/project-usage-03-variable.png)
+| **决策表设计** | **决策表测试追踪** |
+| :--- | :--- |
+| [![决策表设计，同一行配置两个门槛和通过后的动作](docs/project-usage/project-usage-designer-table.png)](docs/project-usage/project-usage-designer-table.png) | [![决策表测试追踪，核对实际命中行和输出](docs/project-usage/project-usage-rule-table-trace.png)](docs/project-usage/project-usage-rule-table-trace.png) |
+| 同一行配置两个门槛和通过后的动作 | 核对实际命中行和输出 |
 
-数据对象支持 Java 实体、JSON、DDL 导入及手动配置，也可绑定 API 外数或数据库查询。API 对象可选择整体响应结果，或为每个字段配置响应路径；数据库对象按查询结果首行绑定整体对象，或按列名/路径逐字段绑定。展开对象可按层级维护字段，在“引用变量”中选择已有变量：调用方未传入对象字段时，从来源或引用变量取值；已显式传入时优先使用当前字段值。列表元素内的字段不直接引用变量，可在 LIST 字段上整体引用。
+调整门槛后，可以用已收藏的正常、临界和异常样例一起复测。保存草稿后，线上继续使用已发布版本。提交审批时可核对依赖和改动。发布前，已启用的固定用例须全部通过。发布记录保留版本，后续可对比差异或回滚。
 
-![数据对象字段配置](docs/project-usage/project-usage-03-data-object.png)
+<details>
+<summary>查看发布前检查与已发布版本</summary>
 
-字段、变量和模型通过稳定 ID 关联，编码与导入字段名原样保留，名称调整不会依赖文本猜测重建引用。
+| **发布前检查** | **发布记录** |
+| :--- | :--- |
+| [![发布前检查，核对依赖和检查结果](docs/project-usage/project-usage-08-rule-release-preflight.png)](docs/project-usage/project-usage-08-rule-release-preflight.png) | [![发布记录，确认已生效的规则版本](docs/project-usage/project-usage-08-rule-release-published.png)](docs/project-usage/project-usage-08-rule-release-published.png) |
+| 核对依赖和检查结果 | 确认已生效的规则版本 |
 
-字段校验规则为可选配置：规则输入字段和开放规则 API 入参可直接绑定校验规则；分流实验按稳定字段键（`refType:refId`，无资源 ID 时使用 `PATH:path`）绑定；V2 外数 API 的请求字段、请求分支和多步请求字段也可绑定。配置保存、审批发布和运行时均会检查规则 ID 的作用域与启用状态，执行失败会返回具体字段和校验规则信息；未绑定规则的字段保持原有执行行为。
+</details>
 
-### 名单管理
+### 回看线上决策的结果、时间与费用
 
-规则集、决策树及决策流支持“调用外数”和“名单落库”动作：完整外数结果可赋值给变量/对象，名单支持多库多字段、合并/覆盖有效期、仅新增与剔除；名单写入采用独立连接池、持久化恢复队列和幂等重试，详见 [规则外数与名单动作](docs/rule-side-effect-actions.md)。
+看板按项目、规则和时段汇总进件量、通过率、人审率及地区分布。“通过”“人审”“拒绝”可关联项目实际使用的结果值。若某天人审率升高，可先缩小到对应规则与时段，再从执行日志打开一笔申请，核对当时的输入、规则版本和执行路径。
 
-维护名单库和记录，支持导入、导出与匹配日志，可用于风险名单、准入名单及业务标签判断。
+| **数据看板** | **执行日志** |
+| :--- | :--- |
+| [![数据看板，按时段观察进件与决策分布](docs/project-usage/project-usage-18-dashboard.png)](docs/project-usage/project-usage-18-dashboard.png) | [![执行日志，找到同一时段的单笔执行记录](docs/project-usage/project-usage-06-execution-log.png)](docs/project-usage/project-usage-06-execution-log.png) |
+| 按时段观察进件与决策分布 | 找到同一时段的单笔执行记录 |
 
-![名单管理](docs/project-usage/project-usage-09-list.png)
+排查慢请求时，平均耗时反映整体水平，P95 耗时表示约 95% 的执行在这个时间内完成。遇到耗时较长的申请，可结合外数调用追踪核对供应商请求、重试和返回结果。
 
-### 外数与数据库
+同一条规则反复执行时，引擎可以复用已编译的规则。外数结果若允许在一段时间内复用，也可以设置有效期，减少向供应商重复查询。账单按计费项汇总引擎执行和外部调用费用，并保留明细供核对。
 
-外数管理集中配置 API 数据源、鉴权、请求与响应映射、超时、重试、缓存及计费。请求头、Query 和映射支持表单与 JSON 配置；复杂签名或响应处理可使用 QL 脚本。
+<details>
+<summary>查看外数调用追踪与账单</summary>
 
-![外数管理](docs/project-usage/project-usage-10-datasource.png)
+| **外数调用追踪** | **账单管理** |
+| :--- | :--- |
+| [![外数调用追踪，从供应商返回值追到业务字段](docs/project-usage/project-usage-10-external-call-trace.png)](docs/project-usage/project-usage-10-external-call-trace.png) | [![账单管理，按计费项核对调用费用](docs/project-usage/project-usage-16-billing.png)](docs/project-usage/project-usage-16-billing.png) |
+| 从供应商返回值追到业务字段 | 按计费项核对调用费用 |
 
-外数配置按“供应商数据源 → API 接口 → 规则变量”串联。数据源页记录供应商、协议、基础地址和 OAuth2/API Key 等鉴权方式；API 页记录请求方法、路径、调用模式、超时、重试、请求体和响应字段映射。
+</details>
 
-![外数 API 列表：供应商与接口编码](docs/project-usage/project-usage-10-api-list.png)
+### 比较新旧策略，再决定是否推广
 
-执行日志中的外数调用追踪会按顺序展示请求拼装、供应商鉴权、HTTP 调用和响应映射，并保留 `callId`、引用 ID、写入路径和受控报文，便于从规则结果定位到具体供应商调用。
+调整核验门槛前，血缘图可以从一个字段或模型找到引用它的规则。分流实验可按条件或流量把申请分给现行策略与候选策略，也可让测试组试跑。复盘单笔实验时，可以看到分组原因、实际命中的组，以及该组规则给出的结果。
 
-![外数调用追踪：供应商请求到变量赋值](docs/project-usage/project-usage-10-external-call-trace.png)
+| **血缘分析** | **实验追踪** |
+| :--- | :--- |
+| [![血缘分析，查看资源之间的上下游关系](docs/project-usage/project-usage-14-lineage.png)](docs/project-usage/project-usage-14-lineage.png) | [![实验追踪，沿命中组查看实际执行的规则](docs/project-usage/project-usage-15-experiment-trace.png)](docs/project-usage/project-usage-15-experiment-trace.png) |
+| 查看资源之间的上下游关系 | 沿命中组查看实际执行的规则 |
 
-数据库管理提供连接配置、连接测试、查询 SQL、结果映射和调用日志。SQL 可直接配置，数据源应使用只读账号和查询类语句。
+团队可将调高门槛的原因、实验结论和上线时间记入台账。跨环境交付时，离线迁移可连同依赖一起导出规则配置，在目标环境先检查冲突。项目负责人、审核人和运营人员按各自权限查看记录、处理变更。
 
-![数据库管理](docs/project-usage/project-usage-11-database.png)
+<details>
+<summary>查看审批记录与跨环境迁移</summary>
 
-### 模型与函数
+| 审批管理 | 离线迁移 |
+| :--- | :--- |
+| [![审批管理中的变更申请](docs/project-usage/project-usage-21-approval.png)](docs/project-usage/project-usage-21-approval.png) | [![离线配置包的导出和导入](docs/project-usage/project-usage-22-transfer.png)](docs/project-usage/project-usage-22-transfer.png) |
+| 核对待审批的变更 | 导出配置，在目标环境预检后导入 |
 
-模型管理提供入参、出参、执行测试、版本和调用日志。PMML/ONNX 模型按声明精确匹配字段；ONNX 支持按模型选择 CPU 或 CUDA 运行设备，CUDA 需部署对应运行环境。
-
-上传时模型大类可留空：PMML 按文件结构识别，通用 ONNX 无法确定训练算法时标为「通用模型」，手动分类仅用于展示与筛选。测试参数在模型详情的执行测试中填写和保存。
-
-ONNX 默认使用通用推理，按文件原始节点名解析多输入、多输出，支持标量、嵌套数组和动态批次；输入 Tensor 支持 FLOAT、DOUBLE、INT8/16/32/64、UINT8、BOOL、STRING，其他输入类型在上传时明确拒绝。输入须满足文件声明的元素类型与维度，不自动进行特征工程或图片预处理。需要图像预处理时可选择原有八类专用任务。详情测试显示节点类型与维度；例如两个形状为 `[动态, 2]` 的输入 `Feature.Input` 和 `Offset`，可传入 `{"Feature.Input": [[1, 2]], "Offset": [[10, 20]]}`。SDK 使用服务端执行模式调用这些模型，纯本地规则执行模式不增加 ONNX 运行时依赖。
-
-![模型管理](docs/project-usage/project-usage-13-model.png)
-
-函数管理支持 QLExpress、Java 类和 Spring Bean，把可复用计算封装后用于规则与表达式。
-
-![函数管理](docs/project-usage/project-usage-04-function.png)
-
-### 血缘与分流实验
-
-血缘分析从变量、规则、模型、外数、数据库和名单等资源查看上下游依赖，辅助评估变更影响。结构化引用可追踪，脚本中的复杂动态引用仅作静态识别。
-
-![资源血缘分析](docs/project-usage/project-usage-14-lineage.png)
-
-分流实验支持冠军、挑战和测试组，可按条件或流量路由，并查看实验配置、执行情况与历史版本。
-
-![分流实验](docs/project-usage/project-usage-15-experiment.png)
-
-分流日志会同时记录实验 `experiment_trace_id`、实际命中的组、子规则 `child_trace_id` 和分流原因。打开详情后可看到随机值/条件分支、命中组以及实际规则执行追踪，测试组的空跑结果也按同一结构保留。
-
-![分流实验追踪树](docs/project-usage/project-usage-15-experiment-trace.png)
-
-### 执行日志与账单
-
-执行日志关联规则、耗时、输入输出及追踪信息，支持回看具体决策。外数 API、数据库、名单和模型调用分别记录其请求与响应内容。
-
-外数 API 的逻辑调用会生成稳定 `callId`，同一次调用的重试 attempt 共用该 ID。普通日志列表中的 `requestBody` / `responseBody` 是脱敏或脚本处理后的展示字段；业务分析需要原始供应商报文时，使用受控接口按关联键查询：
-
-```text
-GET /api/rule/runtime-log/{id}/payload
-GET /api/rule/runtime-log/payload/by-call-id?callId={callId}
-GET /api/rule/runtime-log/payload/by-root-trace-id?rootTraceId={rootTraceId}
-GET /api/rule/runtime/external-calls/{callId}
-```
-
-返回中的 `requestBody` / `responseBody` 在 `rawRequestAvailable` / `rawResponseAvailable` 为 `true` 时分别是原始请求体和原始响应体；同时返回 `callId、traceId、rootTraceId、ruleTraceId、requestId、targetRefId、responseStatus、attemptNo`，外部系统可直接按 `callId` 或根 Trace 关联，不需要根据缓存、重试或响应映射状态自行判断。
-
-其中 `/api/rule/runtime/external-calls/{callId}` 面向业务系统的项目令牌，按 `callId` 做项目隔离后返回同一 payload；规则执行返回值中的 `externalCall.callId`、`externalCall.rootTraceId`、`externalCall.request.rawBody`、`externalCall.rawResponseBody`、`externalCall.rawRequestAvailable`/`rawResponseAvailable` 和顶层 `rawRequestBody`、`rawResponseBody` 可直接用于实时分析。payload 的 `traceSteps` 按同一调用返回规则入参、请求拼装、脱敏鉴权、外部请求、响应处理、字段映射和实际 API 变量赋值步骤；缓存命中时不会虚构一次供应商请求，原始请求体可能为空，调用方可通过 `dataOrigin` / `cacheStatus` 判断报文是否来自真实上游请求。
-
-API 配置中的“报文留存”可分别设置 `request` / `response`：`source` 为 `ORIGINAL`（供应商实际报文）或 `PROCESSED`（请求脚本通过 `state.logRequestBody`、响应脚本通过 `state.logResponseBody` 显式提供的中间副本），`excludePaths` 排除 JSONPath 字段，`maxFieldBytes` 按单字段大小自动省略；`decrypt` 支持 `BASE64` 和 `TRIPLE_DES_BASE64`，后者从接口鉴权配置的敏感脚本变量读取密钥。策略只处理日志和外部分析副本，实时规则结果不变；`originalRequestBody` / `originalResponseBody` 永久保留供应商实际报文，`rawRequestMetadata` / `rawResponseMetadata` 说明解密、过滤、省略或失败状态。
-
-生产表达式追踪可通过 `RULE_TRACE_MASK_PATHS` 配置持久化遮罩路径，例如 `$.input.idCard,$.items[*].phone`；遮罩只作用于执行日志中的 `trace_info`，不会改变本次规则结果或内存追踪。
-
-数据库日志和计费写入、数据库恢复 outbox 同时不可用时，服务会把未完成事件 fsync 到本地 NDJSON 写前日志，数据库恢复后自动重放。生产应将 `RULE_EXECUTION_PERSISTENCE_JOURNAL_DIR` 指向独立持久化盘，限制目录访问权限并纳入备份、磁盘容量告警、断电和节点重启演练；日志目录不是跨节点共享复制，也不能替代备份。可通过 `RULE_EXECUTION_PERSISTENCE_JOURNAL_ENABLED`、`RULE_EXECUTION_PERSISTENCE_JOURNAL_MAX_ENTRY_BYTES` 和 `RULE_EXECUTION_PERSISTENCE_JOURNAL_REPLAY_DELAY_MS` 调整策略。
-
-新增journal记录含版本与载荷摘要；单条字节上限包含JSON封装和换行。旧NDJSON仍可恢复，但没有逐条摘要可供核对，运行指标中的`integritySampleStatus`只描述本次有界采样。目录由单进程独占，损坏或写入失败后停止继续确认新记录，保留故障位置与未恢复字节；不要将采样通过或进程重启验证等同于断电零丢失保证。
-
-![规则执行日志](docs/project-usage/project-usage-06-execution-log.png)
-
-账单管理支持引擎执行、API 调用和数据库调用的计费配置、明细与聚合汇总。
-
-服务端引擎在接受执行事件时冻结计费项ID、价格、数量、金额和发生时间，恢复期间改价、停用或新增计费项不会重算该事件。读取价格失败与“当时无计费项”分开保存：前者保留待处理事件及原因，需要核对原始计费依据。旧无快照事件标注`LEGACY_REPLAY`，客户端日志接收及其他直接计费标注`CURRENT_CONFIG`，二者不能用来证明执行当时的价格。
-
-有计费项ID的引擎明细按根Trace与计费项ID去重，全局和项目的同编码计费项互不覆盖。同一根Trace若已有缺计费项ID的历史引擎账单，新事件会保留待核对状态，不按编码猜测归属或重复收费；旧节点并发写入的升级过程仍需单独演练。
-
-![账单管理](docs/project-usage/project-usage-16-billing.png)
-
-### 审批、账户与离线迁移
-
-系统内置常量只读，不能编辑、停用、删除或恢复版本；自行新增的常量仍按原流程维护。日志、审批、版本和操作变更记录默认按账户 ID 隔离；查看其他账户记录需显式授予 `account:cross-record-view`，且仍需对应模块和项目权限。该权限不能通过项目覆盖授予，旧的 `account:approve` 兼容权限不再生效。
-
-已有数据库在部署本次账户隔离更新前，先执行 [账户记录隔离升级 SQL](rule-engine-server/src/main/resources/sql/migrations/2026-11-04-account-record-isolation.sql)，再启动服务；全新数据库直接使用 `schema.sql`。升级不推测历史记录的所属账户，来源不明的记录不会向普通账户默认开放。异步写入保留发起账户，计费汇总按账户分别聚合。
-
-审批管理覆盖规则、模型、函数和实验的变更申请、依赖预检、评审、批准、发布与历史版本恢复；账户管理按角色和单项权限计算最终权限，明确拒绝优先。离线迁移按资源血缘导出配置包，目标环境先预检资源冲突，再选择复用、追加后缀或覆盖策略导入；名单记录、执行日志和账单不会进入配置包。
-
-账户默认沿用角色及账户单项权限，不区分项目。账户管理的“权限调整”可选择某个项目，为该项目单独设置“继承默认／允许／拒绝”；项目覆盖只影响对应项目，全局内容仍使用默认模块权限。“项目范围”默认不限制，也可设为“仅指定项目”；指定清单为空时只能查看获授权的全局内容。全局内容默认允许编辑，可独立设为只读，该开关不会授予缺失的模块权限，也不影响已授权项目中的编辑。没有模块查看权限时，该模块的全局内容也不可见。
-
-上述范围在服务端同时约束列表、分页总数、详情、子资源、历史、审批、统计、引用选择和内容导出，以及写入目标。名单、执行日志、账单、血缘和迁移仍有独立权限；审批提交和处理、测试与导入导出还会核对目标项目内的操作权限。新建项目要求不受项目范围限制的默认项目管理权限。授权调整使原会话失效，切换身份或权限版本后清理浏览器中的旧业务缓存；系统角色编码不可修改。新增功能权限仅补充给系统超级管理员角色，自定义角色由管理员按需授权。
-
-执行日志以稳定项目 ID 判断可见性；无法确定项目归属的历史记录，只允许拥有所有项目对应查看权限的账号读取，受项目限制的账号不会按可变项目编码猜测归属。全局历史聚合预览要求所有项目的日志查看权限，权限不足时明确拒绝。SDK/OpenAPI 继续使用自身项目凭证，与控制台账号权限分离。
-
-Java/Spring Bean 原生实现属于可信服务器代码能力，配置、导入或测试未发布的原生实现需要 `function:native`、账户管理及角色管理权限，并要求不限项目、全局可编辑；不能通过项目覆盖授予这项能力。系统内置函数的固定实现及已有已发布函数的正常调用保持兼容。脚本函数仍按其所属项目的模块权限管理。
-
-首次访问控制台会进入注册页面，由部署方设置超级管理员用户名、显示名称和密码，不需要 SMTP，也不读取环境中的管理员凭证。初始化状态及 BCrypt 密码摘要保存在数据库，重启不会覆盖账户或再次开放初始化；已有系统升级也保持原账户与数据。
-
-系统只保留一个超级管理员身份。升级启动时，历史上重复创建的超管自动合并到已有主账号，保留主账号 ID；其余超管归档，不再出现在账户列表，也不能登录或重新启用。原账号的草稿和迁移记录归属由主账号继承，业务内容不删除。账户管理不能再向其他账号授予超级管理员角色，也不能停用或移除唯一超管；普通账号仍可按业务需要分配管理权限。
-
-若超管用户名和密码都忘记，可在服务器执行 `java -jar server.jar --console-admin-recovery-code`，将生成的30分钟一次性恢复码输入“管理员应急恢复”页面，同时设置新用户名和新密码。恢复保留原账户ID、授权及引擎业务内容，原有草稿和迁移记录继续归属同一账户；旧会话和旧恢复链接失效，再次签发恢复码会撤销前一个码。具体 JAR/Compose 命令见 [部署恢复说明](docs/deployment.md#管理员初始化与恢复)。
-
-后续普通用户的邮箱注册、邮件找回需配置 SMTP、发件人和可信的 `CONSOLE_MAIL_BASE_URL`，恢复链接不使用请求 Origin/Host。过期验证邮件可重发。改密、管理员重置、停用及邮箱变更撤销旧恢复令牌；旧会话也不能再访问个人资料或主题偏好接口。控制台凭证尝试与发信由 Redis 统一限速。
-
-普通用户注册仍采用邮箱验证激活，不设人工审核步骤；账户查看使用明确的 `account:view` 权限，不再接受旧 `account:approve` 配置。
-
-账户管理的「操作日志」标签页需要 `account:audit` 权限，可按账号、模块、操作、结果、对象、页面路径、摘要和时间查询。日志记录对象名称与 ID、版本、页面路径及简短操作摘要，区分规则详情页、各设计页和调试页，以及新增、修改、删除、发布、调试、编译、审批等操作。路径只保留对象、版本、修订和页面焦点等定位参数；发布审批申请与实际发布在摘要中分别说明。仍不采集请求正文、响应内容、完整资源快照或变更前后对比。缓存页面及页签访问由前端呈报，对象身份由路径中的 ID 关联，未提交的输入不记为已修改。日志从功能启用后开始积累，不补造历史操作；没有可确认版本的操作显示「—」。
-
-同一账户连续且日志元信息完全一致的操作合并为一条：进入时间保留首次开始，离开时间更新为最后一次完成；账户自己的不同操作会打断合并，其他账户的操作不会打断。时间筛选按进入时间计算。离开时间表示操作完成时间，不代表浏览器关闭或页面停留时长。已有历史记录不批量合并，缺失的离开时间显示「—」。服务启动自动补齐所需表结构；需预先升级数据库时可执行 [操作日志区间升级脚本](rule-engine-server/src/main/resources/sql/migrations/2026-11-04-operation-log-intervals.sql)。
-
-![审批管理](docs/project-usage/project-usage-21-approval.png)
-
-![账户与角色管理](docs/project-usage/project-usage-23-account.png)
-
-![离线配置迁移](docs/project-usage/project-usage-22-transfer.png)
-
-### 台账事件与类型
-
-台账的“事件与类型”Tab 集中维护事件和事件类型，支持新增、编辑、删除。事件和类型均须填写编码与名称，编码在各自类别中唯一；引用使用稳定 ID，修改编码或名称不会断开文章关联。已被事件、草稿或历史文章引用的内容不能直接删除。
-
-新增事件时配置该事件自己的状态枚举，再选择当前状态；状态值必须唯一，显示名称可选。类型维护需要全局台账管理权限，事件仍按项目及作者权限控制。升级会补齐缺失的历史编码并保留旧状态含义。发布、测试、日志排障和血缘查询的本轮改进及验证结果见[实施记录](docs/research/2026-11-05-workflow-implementation.md)。
+</details>
 
 ## 九类规则配置与测试追踪
 
-规则设计的一般流程为：**配置输入输出 → 编辑条件与动作 → 保存草稿 → 编译检查 → 执行测试 → 审核发布**。“保存”只写入草稿；“编译”生成脚本并运行发布前检查；保存、编译、测试都不会自动发布线上规则。
+同一项业务可以有不同的表达方式。例如，核验人员核对两项门槛时，决策表便于逐行检查。讨论“何时转人审”时，决策树更容易看清分支。需要解释一个风险等级时，评分卡可以列出各项分数。表中的配置与追踪对应同一类规则，可以对照查看设计和执行结果。
 
-规则测试页面可加载输入字段、手动填写样例、收藏固定用例并批量执行。在“表达式追踪树”页签中，系统按规则类型展示命中行、分支路径、矩阵单元格、评分明细或脚本表达式。可以按状态与关键字筛选，同时查看原始 JSON 追踪。
+| 规则类型 | 适合表达的判断 | 示例配置与结果 |
+| --- | --- | --- |
+| 决策表 | 按行列出条件与动作，适合逐项核对准入门槛。 | [配置](docs/project-usage/project-usage-designer-table.png) · [命中行](docs/project-usage/project-usage-rule-table-trace.png) |
+| 决策树 | 逐层判断，让通过和转人审走向不同分支。 | [配置](docs/project-usage/project-usage-designer-tree.png) · [判断路径](docs/project-usage/project-usage-rule-tree-trace.png) |
+| 决策流 | 编排多个判断和动作，不同分支可以汇入同一个后续步骤。 | [配置](docs/project-usage/project-usage-designer-flow.png) · [执行节点](docs/project-usage/project-usage-rule-flow-trace.png) |
+| 规则集 | 按优先级评估多条检查项，可取首次命中或收集全部命中。 | [配置](docs/project-usage/project-usage-designer-ruleset.png) · [命中清单](docs/project-usage/project-usage-rule-ruleset-trace.png) |
+| 交叉表 | 用两个取值定位一个结果，例如用活体分和风险等级查出是否通过。 | [配置](docs/project-usage/project-usage-designer-cross.png) · [命中单元格](docs/project-usage/project-usage-rule-cross-trace.png) |
+| 复杂交叉表 | 先划分区间或类别，再按多个维度组合查表。 | [配置](docs/project-usage/project-usage-designer-cross-adv.png) · [分段与结果](docs/project-usage/project-usage-rule-cross-adv-trace.png) |
+| 评分卡 | 把命中项按权重计入总分。示例中，活体分达标计入 60 分。 | [配置](docs/project-usage/project-usage-designer-score.png) · [评分明细](docs/project-usage/project-usage-rule-score-trace.png) |
+| 复杂评分卡 | 分别为多个维度评分，再把总分映射到等级。示例中，100 分对应低风险。 | [配置](docs/project-usage/project-usage-designer-score-adv.png) · [得分与等级](docs/project-usage/project-usage-rule-score-adv-trace.png) |
+| QL 脚本 | 用自定义表达式处理特殊判断，可逐步查看参与计算的值。 | [配置](docs/project-usage/project-usage-designer-script.png) · [表达式追踪](docs/project-usage/project-usage-rule-script-trace.png) |
 
-下面每一类都按“作用说明 → 设计页面 → 表达式追踪树”展示；规则详情页负责输入/输出字段、版本、开放接口、生命周期和 API 测试用例，设计器负责模型配置，追踪树负责核对实际执行证据。
-
-![规则详情：输入输出、版本与生命周期](docs/project-usage/project-usage-08-rule-detail.png)
-
-以下示例以人脸核验为业务背景，`livenessScore` 表示活体检测分，`faceSimilarity` 表示人脸相似度，`verified` 与 `riskLevel` 表示决策输出。每类规则均提供对应配置及测试截图。
-
-### 1. 决策表
-
-按行配置条件组合与动作，并选择首次命中、全部命中或唯一命中策略。示例在活体分 ≥ 0.95 且相似度 ≥ 0.90 时输出通过与低风险；输入 `0.98 / 0.936` 后，该行命中。
-
-![决策表：条件与动作配置](docs/project-usage/project-usage-designer-table.png)
-
-<details open>
-<summary>测试追踪：命中行、条件与输出</summary>
-
-![决策表测试追踪](docs/project-usage/project-usage-rule-table-trace.png)
-
-</details>
-
-### 2. 决策树
-
-通过开始、判断、动作和结束节点组织分支，适合层次清晰的准入判断。树分支不允许汇合。示例沿活体与相似度达标的路径执行“核验通过”，其余路径转人工复核。
-
-![决策树：分支与动作配置](docs/project-usage/project-usage-designer-tree.png)
-
-<details>
-<summary>测试追踪：命中路径与跳过分支</summary>
-
-![决策树测试追踪](docs/project-usage/project-usage-rule-tree-trace.png)
-
-</details>
-
-### 3. 决策流
-
-通过图形节点编排条件、动作和公共后续流程，支持无环分支汇合。示例的“通过”和“复核”动作完成后进入公共结束节点，便于将不同分支接入统一后续处理。
-
-![决策流：分支汇合配置](docs/project-usage/project-usage-designer-flow.png)
-
-<details>
-<summary>测试追踪：执行路径与动作结果</summary>
-
-![决策流测试追踪](docs/project-usage/project-usage-rule-flow-trace.png)
-
-</details>
-
-### 4. 规则集
-
-配置独立规则的名称、优先级、条件及动作。先按优先级降序、再按页面顺序执行；串行模式首次命中后停止，并行模式收集全部命中项。示例先判断相似度不足，再判断活体达标，返回命中的 `FACE_LIVENESS_PASS`。
-
-![规则集：优先级与规则条件配置](docs/project-usage/project-usage-designer-ruleset.png)
-
-<details>
-<summary>测试追踪：逐条判断与命中规则</summary>
-
-![规则集测试追踪](docs/project-usage/project-usage-rule-ruleset-trace.png)
-
-</details>
-
-### 5. 交叉表
-
-配置行变量、列变量及交叉单元格的结果，适合有限枚举组合。简单交叉表按行列值匹配；示例用活体分 `0.95` 与风险等级 `LOW` 定位返回 `true` 的单元格。
-
-![交叉表：行列与结果配置](docs/project-usage/project-usage-designer-cross.png)
-
-<details>
-<summary>测试追踪：行列匹配与单元格结果</summary>
-
-![交叉表测试追踪](docs/project-usage/project-usage-rule-cross-trace.png)
-
-</details>
-
-### 6. 评分卡
-
-设置初始分、评分项条件、分数和权重，将命中项的加权分累加到总分。示例初始分为 0，活体分达标增加 60 分，权重为 1，输出 `totalScore = 60`。
-
-![评分卡：评分项与权重配置](docs/project-usage/project-usage-designer-score.png)
-
-<details>
-<summary>测试追踪：命中评分项与总分</summary>
-
-![评分卡测试追踪](docs/project-usage/project-usage-rule-score-trace.png)
-
-</details>
-
-### 7. 复杂交叉表
-
-行列可由多个维度及分段组合构成，适合区间与枚举共同参与的决策矩阵。示例按活体分“达标/待复核”和风险等级“低风险/需复核”划分组合；`0.98 / LOW` 命中通过单元格。
-
-![复杂交叉表：维度分段与矩阵配置](docs/project-usage/project-usage-designer-cross-adv.png)
-
-<details>
-<summary>测试追踪：维度判断与矩阵命中</summary>
-
-![复杂交叉表测试追踪](docs/project-usage/project-usage-rule-cross-adv-trace.png)
-
-</details>
-
-### 8. 复杂评分卡
-
-按维度组配置评分维度、条件、分数和权重，并映射等级区间。每个维度只采用第一条命中规则，维度间累加。示例活体分达标获得 100 分，落入 `[90, 101)`，输出等级 `LOW`。
-
-![复杂评分卡：维度评分与等级区间配置](docs/project-usage/project-usage-designer-score-adv.png)
-
-<details>
-<summary>测试追踪：维度得分、总分与等级</summary>
-
-![复杂评分卡测试追踪](docs/project-usage/project-usage-rule-score-adv-trace.png)
-
-</details>
-
-复杂评分卡等级区间采用左闭右开 `[min, max)`；例如 90 分属于 `[90, 101)`，不属于 `[60, 90)`。边界配置应与业务分数范围一致。
-
-### 9. QL 脚本
-
-直接编写 QLExpress 脚本，适合需要灵活表达的逻辑；可从变量选择器插入字段并保留引用关系。示例执行活体与相似度判断，显式返回 `verified` 和 `riskLevel`。
-
-![QL 脚本配置](docs/project-usage/project-usage-designer-script.png)
-
-<details>
-<summary>测试追踪：表达式求值与分支结果</summary>
-
-![QL 脚本测试追踪](docs/project-usage/project-usage-rule-script-trace.png)
-
-</details>
+| 决策树 · 核验在哪一步转人审 | 复杂评分卡 · 风险等级如何得出 |
+| :--- | :--- |
+| [![决策树中的通过与复核分支](docs/project-usage/project-usage-designer-tree.png)](docs/project-usage/project-usage-designer-tree.png) | [![复杂评分卡测试中的维度得分与等级](docs/project-usage/project-usage-rule-score-adv-trace.png)](docs/project-usage/project-usage-rule-score-adv-trace.png) |
 
 ## 主题与工作台
 
-点击右上角**账户菜单 → 主题设置**，即时预览界面外观。支持白天/夜间模式、8 个纯色与 4 个渐变预设、自定义纯色、两色/三色渐变、线性/径向渐变、深浅导航、流式/定宽内容区和色弱模式。
+多页签工作台可以同时打开规则、测试和日志，方便对照策略与执行结果。账户菜单中的“主题设置”支持明暗模式、色弱模式、纯色或渐变配色，以及顶部或左侧导航。查看较长的记录列表时，可选择在表格内滚动，让表头和分页保持可见。[主题预设](docs/project-usage/project-usage-19-theme-presets.png) · [自定义渐变](docs/project-usage/project-usage-19-theme-custom.png)
 
-在**列表表格 → 滚动方式**中，可选择默认的“随内容增高”，或“表格内滚动”。后者让管理列表填满主内容区剩余高度，表头和底部分页保持可见，50 行等大分页可在表格内部上下滚动。设置支持即时预览、取消还原和账户保存；窗口过小时仍可滚动访问筛选项与分页。
-
-![主题设置：白天模式与预设](docs/project-usage/project-usage-19-theme-presets.png)
-
-<details>
-<summary>查看夜间模式、自定义渐变与顶部导航</summary>
-
-![主题设置：夜间模式](docs/project-usage/project-usage-19-theme-dark.png)
-
-![主题设置：自定义三色径向渐变](docs/project-usage/project-usage-19-theme-custom.png)
-
-![主题设置：顶部平铺导航](docs/project-usage/project-usage-19-theme-top.png)
-
-</details>
-
-菜单可放在左侧或顶部，一级入口始终平铺；顶部空间不足时横向滚动访问。多页签工作台支持在业务页面间切换。
-
-点击“保存设置”持久化；点击“取消”、关闭按钮或按 Esc 恢复打开前的设置。“恢复默认”先预览，再保存。启用登录时设置按账户保存，可跨设备恢复；未启用登录时保存在当前浏览器。设计器未保存内容支持同一浏览器会话内恢复，恢复后仍需保存并编译。
+| **夜间主题** | **顶部导航** |
+| :--- | :--- |
+| [![夜间主题，在深色界面预览配色](docs/project-usage/project-usage-19-theme-dark.png)](docs/project-usage/project-usage-19-theme-dark.png) | [![顶部导航，从顶部菜单切换业务模块](docs/project-usage/project-usage-19-theme-top.png)](docs/project-usage/project-usage-19-theme-top.png) |
+| 在深色界面预览配色 | 从顶部菜单切换业务模块 |
 
 ## 部署与系统接入
 
-### 在数据库客户端查看 ER 图
+控制台与决策服务独立部署。策略人员通过浏览器管理规则，业务系统按项目授权调用已发布版本。MySQL 保存配置、版本和执行记录，Redis 通知客户端同步变更。Java 客户端可在业务应用内缓存并执行适合本地计算的规则，依赖外部取数或模型推理的规则可交给服务端执行。
 
-全新 MySQL 库由服务启动时的 `schema.sql` 创建物理外键。已有库在维护窗口执行[外键迁移 SQL](rule-engine-server/src/main/resources/sql/migrations/2026-11-11-er-foreign-keys.sql)，预检、权限和重试步骤见[迁移说明](rule-engine-server/src/main/resources/sql/migrations/README.md#数据库客户端-er-图)。
-
-在 DBeaver 刷新业务库，打开「表」目录的 ER 图，点击「自动排列」。查看单个业务域时，可多选相关表打开关系图。例如从 `rule_project`、`rule_definition`、`rule_definition_content`、`rule_definition_input_field` 和 `rule_definition_output_field` 开始，就能看到项目、规则、设计内容及出入参的关系。布局由客户端保存。[DBeaver 图表操作说明](https://dbeaver.com/docs/dbeaver/ER-Diagrams/)
-
-项目级资源通过数据库计算的 `project_ref_id` 指向项目。应用继续读写 `project_id`，全局资源的 `0` 或 `NULL` 在外键列中均为 `NULL`。按 `ref_type` 解析的多态引用、JSON 内的引用、跨库来源和独立留存的日志快照保留为逻辑关系。MySQL 的 InnoDB 分区表也不能参与物理外键，例如 `rule_execution_log` 和 `rule_definition_version`。[MySQL 外键约束说明](https://dev.mysql.com/doc/refman/8.4/en/create-table-foreign-keys.html)
-
-| 组件 | 职责 | 默认端口 |
-|------|------|----------|
-| `rule-engine-web` | Vue 控制台，独立构建部署 | 9090（开发） |
-| `rule-engine-server` | 管理、同步、执行与日志 API | 8080 |
-| `rule-engine-core` / `rule-engine-model` | 规则编译执行、公共实体与 DTO | — |
-| `rule-engine-client-sdk` | Java SDK，规则同步、缓存和执行 | — |
-| `rule-engine-runtime` | 正式 SDK 本地执行运行时接入服务 | 7071 |
-| MySQL / Redis | 持久化配置、规则变更通知 | 3306 / 6379 |
-
-运行环境为 JDK 17、Maven 3.6+、MySQL 8、Redis 和 Node.js 20.19+。前端构建产物独立部署，业务系统通过服务端同步规则，不直连管理数据库。
-
-业务系统可通过开放 API 或 Java SDK 接入，按项目使用访问令牌、账号密码、API Key 或 HMAC-SHA256 鉴权；需要跨项目读取全部已发布规则时，可由 server 配置 Ed25519 公钥，业务服务或 Java SDK使用配对私钥签名访问。
-
-管理接口、开放接口和 Server API/SDK 统一使用 `rule-engine-model` 中的公共平台响应契约（包名 `com.hengshucredit.rule.model`）：成功结果码为字符串 `000000`，固定描述为“成功”；失败码按领域、子类和原因编码，具体原因放入 `detail`，HTTP 状态按统一字典映射。接口格式和升级要求见 [平台请求与响应契约](docs/platform-api-contract.md)。
-
-```java
-RuleResult result = ruleEngineClient.execute("face_threshold_table", requestMap);
-```
-
-SDK 默认通过 Ed25519 全局鉴权同步全部已发布项目规则与函数，并订阅 Redis 变更通知；项目级模式下配置 `project-code`、项目 ID 和规则白名单，只加载授权项目。`app-name` 只标识调用应用。规则依赖 API、数据库或名单取数时，使用服务端执行配置。
-
-SDK 本地执行日志默认通过 HTTP 上报；需要 Kafka 时显式启用，并在服务端按主题绑定项目 ID。配置、失败补报、死信处理和旧版迁移见 [Kafka 执行日志上报](docs/kafka-execution-logs.md)。
-
-完整环境变量、Docker Compose 启动命令、ONNX CPU/CUDA 配置和 SDK 接入示例见 [部署与接入说明](https://hengshu-credit.github.io/tianshu-decision-engine/deployment.html)；生产 JAR/dist 制品位于 `docker/runtime`。
-
-项目启动方式彼此独立：源码模式先启动 MySQL/Redis，再分别运行 server、web 和 SDK；服务端默认在启动时自动执行包含表结构、逻辑执行日志视图和系统常量幂等补齐的 `schema.sql`，需要内置变量和数据对象时将 `RULE_ENGINE_INITIAL_DATA_ENABLED=true` 交给 server，启动时会按编码补齐 `sql/initial-data.sql` 且不覆盖已有修改；执行 `node scripts/package-runtime.mjs` 可把后端 JAR 和前端 `dist/` 统一生成到 `docker/runtime`；正式部署推荐使用 `docker/docker-compose.server.yml` + `.env.server` 启动 server/web，再使用 `docker/docker-compose.client.yml` + `.env.client` 独立启动 SDK runtime，完整命令见 [`docker/README.md`](docker/README.md)。示例数据 `data-tianshu-example.sql` 位于 `docker/rule-engine-mysql`，默认不导入，需要时通过 `--profile example-data` 启用只插入导入；`docker-compose.full.yml` 保留用于自带 MySQL/Redis/Kafka 的单机模式。Kafka 主题绑定、账号和死信策略详见 [`docs/kafka-execution-logs.md`](docs/kafka-execution-logs.md)。
-
-需要在 Docker 内一次生成后端、前端和可上传部署 ZIP 时执行 `node scripts/package-deployment.mjs`。公网部署使用 Nginx Proxy Manager 提供 HTTPS、证书和反向代理；Compose 不修改 Ubuntu 的防火墙和既有端口策略，MySQL、Redis、Kafka 按 `.env.server` 与现有安全组对外提供调试访问。
-
-MySQL、Redis、Kafka 共用长期保留的一套环境。外层 `config/` 放生效配置，`docker/` 管理共享服务，外层原 env 仅作备份。应用放在 `deploy-prod/current/`，更新成功后旧版保存到 `previous/`，更早版本留在 `history/`；新包解压到 `deploy-prod/releases/`。现有旧 deploy-prod 用 `--adopt-layout` 一次性整理，以内层原 env 为准；之后只更新 JAR/前端，不覆盖固定配置或重建基础设施。数据库迁移独立交付在发布包 `migrations/`，按适用范围在停止旧应用并完成备份后、新版启动前执行；推荐使用包内 `python3 deploy.py --target 原安装目录`，自动兼容 `docker compose` / `docker-compose`，完整流程见 [应用更新说明](docs/server-upload.md)。
-
-当前发布脚本仍采用停止应用后重启的方式，不承诺不停机。16 GB / 4 核或更高环境的目标架构见 [蓝绿部署设计](docs/blue-green-deployment-design.md)：常驻网关、不可变版本、兼容迁移和受控切流。该文档为待实现方案，不能将现有部署命令当作蓝绿发布。
-
-外部公司或业务系统直接调用 Server API：`POST /api/rule/sync/execute/{ruleCode}`；启用并发布开放接口后可调用 `POST /api/rule/openapi/{ruleCode}`。接口文档从项目「API」按钮下载，不需要部署转发服务或连接 Redis。
-
-“业务端 → Java 服务 → 决策引擎”的完整配置、全局/项目规则访问、多项目客户端及日志追踪开关见 [Java 业务服务接入指南](https://hengshu-credit.github.io/tianshu-decision-engine/java-service-integration.html)。项目导出的 API 文档内也提供 Java 服务接入示例。
-
-导出 API 文档右侧的在线调用台采用浏览器直连，跨域环境需要在服务端通过 `CORS_ALLOWED_ORIGIN_PATTERNS` 配置文档来源；从 `file://` 打开的离线文档若被浏览器拦截，可直接复制调用台生成的 cURL，在能访问目标服务的网络环境执行。
-
+| 使用场景 | 入口 |
+| --- | --- |
+| 首次部署 | 使用 Docker Compose 部署控制台和服务端，按需部署独立执行服务。首次打开控制台时创建管理员。[部署步骤](docker/README.md) · [配置与账户恢复](docs/deployment.md) |
+| 对接业务系统 | 从项目的“API”入口导出接口文档，获取请求样例。支持直接调用服务端接口或集成 Java SDK。[接口约定](docs/platform-api-contract.md) · [Java 接入示例](docs/java-service-integration.md) |
+| 更新已有环境 | 构建发布包，备份并停止旧应用，按需执行适用的数据库迁移，再启动新版。沿用原有配置与数据卷。[发布包构建](docs/release-packaging.md) · [应用更新](docs/server-upload.md) · [数据库迁移](rule-engine-server/src/main/resources/sql/migrations/README.md) |
+| 运行维护 | 客户端默认通过 HTTP 上报执行日志，可选 Kafka。品牌、通知邮箱和登录策略由管理员统一配置。[日志上报](docs/kafka-execution-logs.md) · [系统配置](docs/system-settings.md) |
 
 ## 许可证与相关项目
 
 项目许可证见 [LICENSE](LICENSE)，第三方组件与交付要求见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。包含 JPMML 的制品或网络服务按 AGPL-3.0 要求提供对应源代码、许可证和重建材料。
 
 相关项目：[QLExpress](https://github.com/alibaba/QLExpress) · [qlexpress-rule](https://github.com/xiachongbu/qlexpress-rule)
-
-
