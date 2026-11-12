@@ -143,11 +143,11 @@
           </template>
           <img class="layout-footer-qr-image" src="https://hengshucredit.com/images/itlubber.svg" alt="微信 itlubber 二维码" width="220" height="220" />
         </el-popover>
-        <el-popover placement="top" :width="244" :trigger="['hover', 'focus']" :show-after="150" :persistent="false" title="公众号：itlubber_art">
+        <el-popover placement="top" :width="244" :trigger="['hover', 'focus']" :show-after="150" :persistent="false" title="公众号：hscreditlab">
           <template #reference>
-            <button type="button" class="layout-footer-contact">公众号：itlubber_art</button>
+            <button type="button" class="layout-footer-contact">公众号：hscreditlab</button>
           </template>
-          <img class="layout-footer-qr-image" src="https://hengshucredit.com/images/itlubber_art.svg" alt="公众号 itlubber_art 二维码" width="220" height="220" />
+          <img class="layout-footer-qr-image" src="./hscreditlab.png" alt="公众号 hscreditlab 二维码" width="220" height="220" />
         </el-popover>
       </footer>
     </section>

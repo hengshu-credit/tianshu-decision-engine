@@ -134,7 +134,7 @@ for (const width of [1920, 560]) {
     const { assertClean } = await installDistRoutes(page, {
       origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL),
     })
-    await page.route('https://hengshucredit.com/images/*.svg', route => route.fulfill({
+    await page.route('https://hengshucredit.com/images/itlubber.svg', route => route.fulfill({
       contentType: 'image/svg+xml',
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220"><rect width="220" height="220" fill="white" /></svg>',
     }))
@@ -144,7 +144,7 @@ for (const width of [1920, 560]) {
     await expect(footer).toBeInViewport()
     const copyright = await footer.locator('.layout-footer-copyright').boundingBox()
     const wechat = page.getByRole('button', { name: '微信：itlubber', exact: true })
-    const official = page.getByRole('button', { name: '公众号：itlubber_art', exact: true })
+    const official = page.getByRole('button', { name: '公众号：hscreditlab', exact: true })
     if (width === 1920) {
       for (const item of [wechat, official, footer.getByRole('link', { name: 'github.com/itlubber', exact: true })]) {
         expect(Math.abs((await item.boundingBox()).y - copyright.y)).toBeLessThanOrEqual(1)
@@ -157,15 +157,15 @@ for (const width of [1920, 560]) {
     expect((await page.locator('.layout-main').boundingBox()).y + (await page.locator('.layout-main').boundingBox()).height)
       .toBeLessThanOrEqual((await footer.boundingBox()).y + 1)
 
-    for (const [button, alt, filename] of [
-      [wechat, '微信 itlubber 二维码', 'itlubber.svg'],
-      [official, '公众号 itlubber_art 二维码', 'itlubber_art.svg'],
+    for (const [button, alt, expectedSrc] of [
+      [wechat, '微信 itlubber 二维码', 'https://hengshucredit.com/images/itlubber.svg'],
+      [official, '公众号 hscreditlab 二维码', /\/hscreditlab(?:-[\w-]+)?\.png$/],
     ]) {
       const image = page.getByRole('img', { name: alt, exact: true })
       await expect(image).toBeHidden()
       await button.hover()
       await expect(image).toBeVisible()
-      await expect(image).toHaveAttribute('src', `https://hengshucredit.com/images/${filename}`)
+      await expect(image).toHaveAttribute('src', expectedSrc)
       await expect.poll(() => image.evaluate(el => el.naturalWidth)).toBeGreaterThan(0)
       const imageBox = await image.boundingBox()
       expect(imageBox.y).toBeGreaterThanOrEqual(0)

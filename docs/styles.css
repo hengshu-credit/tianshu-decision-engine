@@ -338,6 +338,7 @@ html, body { overflow-x: hidden; }
 .footer-social { display: flex; flex: 0 0 auto; gap: 16px; }
 .footer-qr { display: flex; align-items: center; flex-direction: column; gap: 3px; }
 .footer-qr img { display: block; width: 58px; height: 58px; border: 0; border-radius: 0; background: transparent; object-fit: contain; filter: drop-shadow(0 0 9px rgba(165,110,255,.28)); }
+.footer-qr--official img { min-width: 74px; min-height: 74px; background: white; image-rendering: pixelated; }
 .footer-qr span { color: #d39aff; font-size: 10px; }
 
 @media (max-width: 1120px) {
