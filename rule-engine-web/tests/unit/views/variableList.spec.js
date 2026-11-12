@@ -212,6 +212,63 @@ describe('VariableList — 初始化与数据加载', () => {
     expect(wrapper.vm.standaloneVars.length).toBeGreaterThan(0)
   })
 
+  test('连续超时最多重试一次，仅同一页同一条件保留上次结果', async () => {
+    const rows = wrapper.vm.tableData
+    const total = wrapper.vm.total
+    const timeout = Object.assign(new Error('timeout of 15000ms exceeded'), { code: 'ECONNABORTED' })
+    const list = variableApi.listVariables.mockClear().mockRejectedValue(timeout)
+    await wrapper.vm.loadData()
+    expect(list).toHaveBeenCalledTimes(2)
+    expect(wrapper.vm.tableData).toBe(rows)
+    expect(wrapper.vm.total).toBe(total)
+    expect(wrapper.vm.variableListError).toContain('仍显示上次查询结果')
+    wrapper.vm.qp.pageNum++
+    await wrapper.vm.loadData()
+    expect(list).toHaveBeenCalledTimes(4)
+    expect(wrapper.vm.lastVariableQuery).toBe('')
+    expect(wrapper.vm.tableData).toEqual([])
+    expect(wrapper.vm.variableListError).toContain('请重新加载')
+  })
+
+  test('迟到的旧超时不再重试或清空新查询结果', async () => {
+    let rejectOld
+    const list = variableApi.listVariables.mockClear()
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectOld = reject }))
+      .mockResolvedValueOnce({ data: { records: mockVars().slice(0, 1), total: 1 } })
+    const old = wrapper.vm.loadData()
+    wrapper.vm.qp.varCode = 'age'
+    await wrapper.vm.loadData()
+    expect(list.mock.calls[0][1].signal.aborted).toBe(true)
+    rejectOld(Object.assign(new Error('旧查询超时'), { code: 'ETIMEDOUT' }))
+    await old
+    expect(list).toHaveBeenCalledTimes(2)
+    expect(wrapper.vm.tableData.map(v => v.varCode)).toEqual(['age'])
+    expect(wrapper.vm.total).toBe(1)
+    expect(wrapper.vm.variableListError).toBe('')
+    expect(wrapper.vm.loading).toBe(false)
+  })
+
+  test('追加批次超时后沿用已提交条件和原批次恢复，不丢失已加载字段', async () => {
+    const rows = Array.from({ length: 50 }, (_, i) => ({ id: i + 1, varCode: 'field_' + i }))
+    wrapper.vm.qp.pageNum = 1
+    wrapper.vm.qp.pageSize = 100
+    wrapper.vm.qp.varCode = 'field'
+    const list = variableApi.listVariables.mockClear().mockResolvedValueOnce({ data: { records: rows, total: 51 } })
+    await wrapper.vm.loadData()
+    wrapper.vm.qp.varCode = '未提交的筛选'
+    const timeout = Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' })
+    list.mockRejectedValueOnce(timeout).mockRejectedValueOnce(timeout)
+    await wrapper.vm.loadData(true)
+    expect(wrapper.vm.retryVariableAppend).toBe(true)
+    expect(wrapper.vm.tableData).toHaveLength(50)
+    list.mockResolvedValueOnce({ data: { records: [{ id: 51, varCode: 'field_50' }], total: 51 } })
+    await wrapper.vm.loadData(true)
+    expect(list.mock.calls.slice(1).map(([params]) => [params.varCode, params.pageNum, params.pageSize]))
+      .toEqual([['field', 2, 50], ['field', 2, 50], ['field', 2, 50]])
+    expect(wrapper.vm.tableData.map(row => row.id)).toEqual([...rows.map(row => row.id), 51])
+    expect(wrapper.vm.nextVariablePage).toBeNull()
+  })
+
   test('activeTab 默认为 list', () => {
     expect(wrapper.vm.activeTab).toBe('list')
   })
@@ -221,7 +278,8 @@ describe('VariableList — 初始化与数据加载', () => {
 
     expect(contextWrapper.vm.currentProjectId).toBe(2)
     expect(variableApi.listVariables).toHaveBeenCalledWith(
-      expect.objectContaining({ projectId: 2, standaloneOnly: true })
+      expect.objectContaining({ projectId: 2, standaloneOnly: true }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     )
     contextWrapper.vm.handleCreate()
     expect(contextWrapper.vm.form.scope).toBe('PROJECT')

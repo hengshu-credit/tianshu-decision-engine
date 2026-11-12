@@ -1,14 +1,15 @@
 import request from './request'
 import { createResourceDraft } from './governance'
 import { hasPermission } from '@/security/permissionState'
+import { metadataResponse } from '@/utils/metadataResponse'
 
 /** 健康检查，验证变量管理接口可用性 */
 export function checkVariableHealth() {
   return request({ url: '/rule/variable/health', method: 'get' })
 }
 
-export function listVariables(params) {
-  return request({ url: '/rule/variable/list', method: 'get', params })
+export function listVariables(params, options = {}) {
+  return request({ ...metadataResponse, ...options, url: '/rule/variable/list', method: 'get', params })
 }
 
 export function listVariablesByProject(projectId) {

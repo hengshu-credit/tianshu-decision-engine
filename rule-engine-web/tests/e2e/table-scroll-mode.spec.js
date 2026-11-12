@@ -1,5 +1,6 @@
 const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
+const { createDocsApiData } = require('./support/docsFixtures.cjs')
 const { createOperationsApiData } = require('./support/operationsFixtures.cjs')
 
 const listCases = [
@@ -101,6 +102,75 @@ for (const [index, [route, api]] of listCases.entries()) {
     assertClean()
   })
 }
+
+for (const mode of ['FIXED', 'AUTO']) test(`变量每页 500 条在 ${mode} 模式滚动分批请求，末行操作和下一页仍使用正确 ID`, async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const data = createDocsApiData()
+  const calls = []
+  const records = Array.from({ length: 507 }, (_, index) => ({
+    id: index + 1, varCode: 'field_' + (index + 1), varLabel: '字段' + (index + 1), varType: 'STRING', varSource: 'INPUT', scope: 'GLOBAL', status: 1,
+  }))
+  data.set('/api/rule/variable/list', ({ url }) => {
+    const size = Number(url.searchParams.get('pageSize')), num = Number(url.searchParams.get('pageNum'))
+    calls.push([num, size])
+    return { records: records.slice((num - 1) * size, num * size), total: records.length }
+  })
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(origin + '/#/variable')
+  const pane = page.locator('#pane-list'), table = pane.locator('.management-table')
+  const pager = pane.locator('.el-pagination')
+  if (mode === 'AUTO') await chooseMode(page, 'AUTO')
+  await pager.locator('.el-select').click()
+  await page.getByRole('option', { name: '500条/页', exact: true }).click()
+  await expect(pager).toContainText('500条/页')
+  await expect(table.getByText('field_1', { exact: true }).first()).toBeVisible()
+  expect(calls).toEqual([[1, 20], [1, 50]])
+  expect(harness.requests.some(r => new URL(r.url).pathname === '/api/rule/dataobject/tree')).toBe(false)
+  const wrap = mode === 'FIXED' ? table.locator('.el-scrollbar__wrap').first() : page.locator('.layout-main')
+  for (let chunk = 2; chunk <= 10; chunk++) {
+    await wrap.evaluate(el => { el.scrollTop = el.scrollHeight })
+    await expect.poll(() => calls.at(-1)).toEqual([chunk, 50])
+    await expect(table).toHaveAttribute('aria-busy', 'false')
+    expect(await table.locator('.el-table__row').count()).toBeLessThanOrEqual(50)
+  }
+  await wrap.evaluate(el => { el.scrollTop = el.scrollHeight })
+  const last = table.getByRole('row').filter({ hasText: 'field_500' })
+  await expect(last).toBeVisible()
+  await last.getByRole('button', { name: '版本', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: '版本管理' })).toBeVisible()
+  expect(harness.requests.some(r => new URL(r.url).pathname.endsWith('/resource-versions/VARIABLE/500'))).toBe(true)
+  await page.keyboard.press('Escape')
+  await pager.locator('.btn-next').click()
+  await expect(table).toContainText('field_507')
+  await expect(table.locator('.el-table__row')).toHaveCount(7)
+  expect(calls.at(-1)).toEqual([11, 50])
+  await expect(pager).toContainText('共 507 条')
+  harness.assertClean()
+})
+
+test('大型对象的子字段在展开后按可见区渲染，滚动可以抵达最后一项', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const data = createDocsApiData()
+  const node = data.get('/api/rule/dataobject/tree').tree[0]
+  node.variables = [{ id: 100, varCode: 'root', varLabel: '根字段', varType: 'OBJECT',
+    children: Array.from({ length: 5000 }, (_, i) => ({ id: i + 101, varCode: 'child_' + i, varLabel: '子字段' + i, varType: 'STRING' })),
+  }]
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data })
+  await page.goto(origin + '/#/variable')
+  await page.getByRole('tab', { name: '数据对象', exact: true }).click()
+  await page.getByTestId('data-object-table').getByText(node.object.objectCode, { exact: true }).first().click()
+  const fields = page.locator('.object-field-expansion .el-table')
+  await expect(fields.locator('.el-table__row')).toHaveCount(1)
+  await page.getByRole('button', { name: '展开全部' }).click()
+  await expect(fields.getByText('child_0', { exact: true })).toBeVisible()
+  expect(await fields.locator('.el-table__row').count()).toBeLessThan(50)
+  await fields.locator('.el-scrollbar__wrap').evaluate(el => { el.scrollTop = el.scrollHeight })
+  await expect(fields.getByText('child_4999', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '收起全部' }).click()
+  await expect(fields.locator('.el-table__row')).toHaveCount(1)
+  harness.assertClean()
+})
 
 test('固定表格模式支持空结果、弹窗和较小窗口', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })

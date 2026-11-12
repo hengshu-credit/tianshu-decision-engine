@@ -20,6 +20,50 @@ async function select(page, container, label, option) {
   await page.getByRole('option', { name: option, exact: true }).click()
 }
 
+test('变量列表真实超时后自动恢复，查询失败时可原地重试', async ({ page }) => {
+  test.setTimeout(55000)
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const data = createDocsApiData()
+  const record = data.get('/api/rule/variable/project/1')[0]
+  const retry = deferred()
+  let attempts = 0
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data })
+  await page.route('**/api/rule/variable/list?**', async route => {
+    if (new URL(route.request().url()).searchParams.get('standaloneOnly') !== 'true') return route.fallback()
+    attempts++
+    if (attempts === 1) return // 挂起首个响应，让浏览器触发实际的 XHR 超时。
+    if (attempts === 2) await retry.promise
+    const response = attempts === 3 ? platformResponse(null, 'SYSTEM_ERROR', '验收查询失败')
+      : platformResponse({ records: [record], total: 194 })
+    await route.fulfill({ status: attempts === 3 ? 500 : 200, contentType: 'application/json', body: JSON.stringify(response) })
+  })
+  try {
+    await page.goto(origin + '/#/variable')
+    const pane = page.locator('#pane-list')
+    const total = pane.locator('.el-pagination__total')
+    await expect(pane.getByText('变量列表查询超时，正在重试…', { exact: true })).toBeVisible({ timeout: 22000 })
+    await expect(total).toHaveCount(0)
+    await expect(pane.getByText(/暂无字段/)).toHaveCount(0)
+    expect(harness.requests.some(r => new URL(r.url).pathname === '/api/rule/dataobject/tree')).toBe(false)
+    await expect(page.locator('.el-message--error')).toHaveCount(0)
+    retry.resolve()
+    await expect(total).toHaveText('共 194 条')
+    await expect(pane.getByRole('cell', { name: record.varCode, exact: true }).first()).toBeVisible()
+    await pane.getByRole('button', { name: '查询', exact: true }).click()
+    await expect(pane.getByRole('alert')).toContainText('验收查询失败')
+    await expect(pane.getByText(/暂无字段/)).toHaveCount(0)
+    await expect(total).toHaveCount(0)
+    await expect(page.locator('.el-message--error')).toHaveCount(0)
+    await pane.getByRole('button', { name: '重新加载' }).click()
+    await expect(total).toHaveText('共 194 条')
+    await expect(pane.getByRole('alert')).toHaveCount(0)
+    expect(attempts).toBe(4)
+    expect(harness.unmatchedRequests).toEqual([])
+    expect(harness.pageErrors).toEqual([])
+    expect(harness.consoleErrors).toEqual([expect.stringMatching(/Failed to load resource:.*\b500\b/)])
+  } finally { retry.resolve() }
+})
+
 for (const theme of ['LIGHT', 'DARK']) {
   test.describe(theme, () => {
     test.beforeEach(async ({ page }) => {

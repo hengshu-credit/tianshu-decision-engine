@@ -122,9 +122,16 @@
 
         <!-- 1. 普通变量（系统新增） -->
         <div class="var-list-section management-table-region">
-          <el-table class="management-table" show-overflow-tooltip
+          <el-alert v-if="variableListError || variableListRetrying" :closable="false" show-icon
+            :type="variableListError ? 'error' : 'info'"
+            :title="variableListError || '变量列表查询超时，正在重试…'">
+            <el-button v-if="variableListError" link type="primary" @click="loadData(retryVariableAppend)">重新加载</el-button>
+          </el-alert>
+          <lazy-field-table class="management-table" show-overflow-tooltip row-key="id"
             :data="standaloneVars"
-            empty-text="暂无字段，可点击「新建字段」或「批量导入」添加"
+            :more="Boolean(nextVariablePage) && !loading && !variableListError"
+            @load-more="loadData(true)"
+            :empty-text="variableListError || variableListRetrying ? ' ' : loading ? '正在加载变量…' : '暂无字段，可点击「新建字段」或「批量导入」添加'"
             border
             size="small"
             :aria-busy="loading"
@@ -278,8 +285,9 @@
                 >
               </template>
             </el-table-column>
-          </el-table>
+          </lazy-field-table>
           <el-pagination
+            v-if="lastVariableQuery"
             style="margin-top: 12px; text-align: right"
             :current-page="qp.pageNum"
             :page-size="qp.pageSize"
@@ -400,7 +408,7 @@
                       <span>共 {{ objectFieldTotal(node) }} 个字段；点击字段行展开层级，每页保留完整子树。</span>
                     </div>
                     <div class="object-field-expansion__actions">
-                    <el-button size="small" :disabled="!objectFieldBranchIds(node).length" @click="setObjectFieldExpansion(node, true)">展开全部</el-button>
+                    <el-button size="small" :disabled="!paginatedObjectFields(node).some(field => field.children?.length)" @click="setObjectFieldExpansion(node, true)">展开全部</el-button>
                     <el-button size="small" :disabled="!objectFieldExpandedKeys(node).length" @click="setObjectFieldExpansion(node, false)">收起全部</el-button>
                     <el-button
                       v-permission="{ code: 'field:edit', projectId: (node.object || node).projectId, scope: (node.object || node).scope }"
@@ -412,52 +420,60 @@
                     >
                     </div>
                   </div>
-              <el-table show-overflow-tooltip
+              <lazy-field-table show-overflow-tooltip
                 :data="paginatedObjectFields(node)"
-                :expand-row-keys="objectFieldExpandedKeys(node).map(String)"
-                :indent="24"
+                :expanded-keys="objectFieldExpandedKeys(node)"
                 max-height="480"
-                @expand-change="(field, expanded) => handleObjectFieldExpandChange(node, field, expanded)"
-                @row-click="(field, column, event) => handleObjectFieldRowClick(node, field, event)"
+                @row-click="(item, column, event) => handleObjectFieldRowClick(node, item.field, event)"
                 size="small"
                 border
-                row-key="id"
-                :tree-props="{ children: 'children' }"
+                row-key="field.id"
                 style="width: 100%"
               >
                 <el-table-column
-                  prop="varCode"
+                  prop="field.varCode"
                   label="字段编码"
                   min-width="140"
                   show-overflow-tooltip
-                />
+                >
+                  <template #default="{ row: item }">
+                    <span :style="{ paddingInlineStart: item.depth * 24 + 'px' }">
+                      <button v-if="item.field.children?.length" type="button" class="object-field-toggle"
+                        :aria-expanded="item.expanded"
+                        :aria-label="'展开或收起 ' + item.field.varCode"
+                        @click.stop="handleObjectFieldExpandChange(node, item.field, !item.expanded)"
+                      >{{ item.expanded ? '▾' : '▸' }}</button>
+                      {{ item.field.varCode }}
+                    </span>
+                  </template>
+                </el-table-column>
                 <el-table-column
-                  prop="varLabel"
+                  prop="field.varLabel"
                   label="名称"
                   min-width="120"
                   show-overflow-tooltip
                 />
                 <el-table-column label="脚本名称" min-width="140">
-                  <template v-slot="{ row }">
+                  <template v-slot="{ row: { field: row } }">
                     <code class="script-name-code">{{
                       row.scriptName || '—'
                     }}</code>
                   </template>
                 </el-table-column>
                 <el-table-column
-                  prop="varType"
+                  prop="field.varType"
                   label="类型"
                   min-width="80"
                   align="center"
                 >
-                  <template v-slot="{ row }"
+                  <template v-slot="{ row: { field: row } }"
                     ><el-tag size="small" :type="typeTagColor(row.varType)">{{
                       typeLabel(row.varType)
                     }}</el-tag></template
                   >
                 </el-table-column>
                 <el-table-column label="引用变量" min-width="220" show-overflow-tooltip>
-                  <template v-slot="{ row }">
+                  <template v-slot="{ row: { field: row } }">
                     <span v-if="row.refVariableId || row.refObjectId || row.refObjectCode" class="reference-variable-cell">
                       <strong>{{ objectFieldReferenceLabel(row) }}</strong>
                       <code>{{ objectFieldReferenceScriptName(row) }}</code>
@@ -466,7 +482,7 @@
                   </template>
                 </el-table-column>
                 <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '选项', '删除'])" align="center">
-                  <template v-slot="{ row }">
+                  <template v-slot="{ row: { field: row } }">
                     <el-button
                       v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
                       link
@@ -498,7 +514,7 @@
                     >
                   </template>
                 </el-table-column>
-              </el-table>
+              </lazy-field-table>
               <el-pagination
                 v-if="objectFieldNeedsPaging(node)"
                 style="margin-top: 8px; text-align: right"
@@ -571,7 +587,7 @@
             <el-table-column label="字段数" width="80" align="center">
               <template v-slot="{ row: node }">
                 <span v-if="node && node.object">{{
-                  countObjectFields(node.variables)
+                  objectFieldTotal(node)
                 }}</span>
               </template>
             </el-table-column>
@@ -711,7 +727,7 @@
             @update:column-settings-model-value="constantColumnOrder = $event"
           />
         </div>
-        <el-table class="management-table" show-overflow-tooltip
+        <lazy-field-table row-key="id" class="management-table" show-overflow-tooltip
           :aria-busy="constLoading"
           :data="constantRows"
           border
@@ -822,7 +838,7 @@
               </template>
             </template>
           </el-table-column>
-        </el-table>
+        </lazy-field-table>
         <el-pagination
           style="margin-top: 12px; text-align: right"
           :current-page="constQp.pageNum"
@@ -914,7 +930,7 @@
             @update:column-settings-model-value="validationColumnOrder = $event"
           />
         </div>
-        <el-table class="management-table" show-overflow-tooltip
+        <lazy-field-table row-key="id" class="management-table" show-overflow-tooltip
           :aria-busy="validationLoading"
           :data="validationRows"
           border
@@ -1025,7 +1041,7 @@
               >
             </template>
           </el-table-column>
-        </el-table>
+        </lazy-field-table>
         <el-pagination
           style="margin-top: 12px; text-align: right"
           :current-page="validationQp.pageNum"
@@ -2465,9 +2481,14 @@ import ManagedDialogFooter from '@/components/common/ManagedDialogFooter.vue'
 import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
 import VariableSourceSelector from './components/VariableSourceSelector.vue'
 import VariableToolbarActions from './components/VariableToolbarActions.vue'
+import LazyFieldTable from './components/LazyFieldTable.vue'
 import SourceSummaryCard from '@/components/common/SourceSummaryCard.vue'
 import VariableImportHelp from './components/VariableImportHelp.vue'
 import { hasPermission } from '@/security/permissionState'
+
+function isVariableListTimeout(error) {
+  return error?.code === 'ECONNABORTED' || error?.code === 'ETIMEDOUT'
+}
 
 export default {
   mixins: [governanceWorkspaceMixin, configurationDialogsMixin([
@@ -2483,6 +2504,11 @@ export default {
       currentProjectId: '',
       projects: [],
       loading: false,
+      variableListError: '',
+      variableListRetrying: false,
+      lastVariableQuery: '',
+      nextVariablePage: null,
+      retryVariableAppend: false,
       tableData: [],
       total: 0,
       qp: {
@@ -2624,6 +2650,7 @@ export default {
       // Data objects
       objLoading: false,
       objectTree: [],
+      objectTreeRequestId: 0,
       objectMap: {},
       objectFieldOwner: null,
       objectFieldNode: null,
@@ -2788,6 +2815,7 @@ export default {
     ProjectFilterSelect,
     VariableSourceSelector,
     VariableToolbarActions,
+    LazyFieldTable,
     VariableImportHelp,
     DialogResizeHandle,
     ConfigLayerGuide,
@@ -2798,7 +2826,7 @@ export default {
     ElIconSuccess,
   },
   name: 'VariableList',
-  beforeUnmount() { this.sourceOptionsRequestId++; this.optionRequestId++ },
+  beforeUnmount() { this.variableListController?.abort(); this.objectTreeRequestId++; this.sourceOptionsRequestId++; this.optionRequestId++ },
   deactivated() { this.optionRequestId++ },
   created() {
     this.currentProjectId =
@@ -2811,11 +2839,11 @@ export default {
       this.qp.projectId = this.currentProjectId
       this.validationQp.projectId = this.currentProjectId
     }
-    this.loadProjects()
   },
   mounted() {
     this.loadData()
-    this.loadObjectTree()
+    this.loadProjects()
+    if (this.activeTab === 'objects') this.loadObjectTree()
     if (this.activeTab === 'constants') this.loadConstants()
     if (this.activeTab === 'validations') this.loadFieldValidations()
   },
@@ -3957,22 +3985,21 @@ export default {
       this.saveCachedState()
     },
     handleObjectFieldExpandChange(node, field, expanded) {
-      const keys = new Set(this.objectFieldExpandedKeys(node))
-      if (expanded) keys.add(field.id)
-      else keys.delete(field.id)
-      this.objectFieldExpandMap[node.object.id] = [...keys]
+      const keys = this.objectFieldExpandedKeys(node).filter(id => String(id) !== String(field.id))
+      if (expanded) keys.push(field.id)
+      this.objectFieldExpandMap[node.object.id] = keys
       this.saveCachedState()
     },
     handleObjectFieldRowClick(node, field, event) {
       if (!field.children || !field.children.length || this.isObjectRowControl(event)) return
-      this.handleObjectFieldExpandChange(node, field, !this.objectFieldExpandedKeys(node).includes(field.id))
+      this.handleObjectFieldExpandChange(node, field, !this.objectFieldExpandedKeys(node).some(id => String(id) === String(field.id)))
     },
     handleObjPageChange(p) {
       this.objPageNum = p
       this.saveCachedState()
     },
     objectFieldTotal(node) {
-      return this.countObjectFields(node && node.variables)
+      return node?.fieldCount ?? this.countObjectFields(node?.variables)
     },
     objectFieldRootTotal(node) {
       return (node && node.variables || []).length
@@ -4011,17 +4038,25 @@ export default {
       this.objectFieldPageMap = next
     },
     countObjectFields(rows) {
-      if (!Array.isArray(rows)) return 0
-      return rows.reduce(
-        (sum, row) => sum + 1 + this.countObjectFields(row.children),
-        0
-      )
+      const lists = [rows || []]
+      let count = 0
+      while (lists.length) {
+        const fields = lists.pop()
+        count += fields.length
+        for (const field of fields) if (field.children?.length) lists.push(field.children)
+      }
+      return count
     },
     flattenObjectFields(rows) {
-      return (rows || []).flatMap((row) => [
-        row,
-        ...this.flattenObjectFields(row.children),
-      ])
+      const result = []
+      const stack = [...(rows || [])].reverse()
+      while (stack.length) {
+        const field = stack.pop()
+        result.push(field)
+        const children = field.children || []
+        for (let i = children.length - 1; i >= 0; i--) stack.push(children[i])
+      }
+      return result
     },
     objectFieldReferenceTypeCompatible(fieldType, variableType) {
       const normalize = (value) => String(value || '').trim().toUpperCase()
@@ -4163,11 +4198,12 @@ export default {
         if (requestId === this.objectFieldReferenceRequestId) this.objectFieldReferenceLoading = false
       }
     },
-    async loadObjectReferenceVariablesForTree(tree) {
+    async loadObjectReferenceVariablesForTree(tree, requestId) {
       ;(tree || []).forEach(node => { this.objectReferenceObjectMap[node.object.id] = node.object })
       const projectIds = new Set()
       ;(tree || []).forEach((node) => {
         const object = node && node.object
+        if (!this.flattenObjectFields(node.variables).some(field => field.refVariableId)) return
         projectIds.add(
           String(object && object.scope).toUpperCase() === 'GLOBAL'
             ? 0
@@ -4180,11 +4216,12 @@ export default {
             listVariablesByProject(projectId)
           )
         )
+        if (requestId !== this.objectTreeRequestId) return
         responses.forEach((response) =>
           this.mergeObjectReferenceVariables(this.variableRows(response))
         )
       } catch (error) {
-        this.objectReferenceVariableMap = {}
+        if (requestId === this.objectTreeRequestId) this.objectReferenceVariableMap = {}
       }
     },
     onObjectFieldTypeChange() {
@@ -4200,28 +4237,60 @@ export default {
       }
       if (!['LIST', 'ARRAY', 'SET'].includes(this.form.varType)) this.form.genericType = null
     },
-    async loadData() {
+    async loadData(append = false) {
+      if (append === true && (this.loading || !this.nextVariablePage)) return
+      this.variableListController?.abort()
+      const controller = new AbortController()
+      this.variableListController = controller
+      const options = { signal: controller.signal, inlineError: true }
       this.loading = true
+      this.variableListRetrying = false
+      this.variableListError = ''
+      this.retryVariableAppend = false
       try {
-        this.saveCachedState()
-        const params = { ...this.qp, standaloneOnly: true }
-        if (!params.projectId) delete params.projectId
-        if (!params.varType) delete params.varType
-        if (!params.keyword) delete params.keyword
-        if (!params.scope) delete params.scope
-        if (!params.projectCode) delete params.projectCode
-        if (!params.projectName) delete params.projectName
-        if (!params.varSource) delete params.varSource
-        if (!params.varCode) delete params.varCode
-        if (!params.varLabel) delete params.varLabel
-        const res = await listVariables(params)
-        const data = res.data || {}
-        this.tableData = data.records || []
-        this.total = data.total != null ? data.total : 0
+        if (!append) this.saveCachedState()
+        const params = append ? JSON.parse(this.lastVariableQuery) : {
+          ...Object.fromEntries(Object.entries(this.qp).filter(([, value]) => Boolean(value))),
+          standaloneOnly: true,
+        }
+        const queryKey = JSON.stringify(params)
+        if (this.lastVariableQuery !== queryKey) {
+          this.lastVariableQuery = ''
+          this.nextVariablePage = null
+          this.tableData = []
+          this.total = 0
+        }
+        // 大页按现有分页接口拆成 50 条，后续批次沿用已提交的筛选条件。
+        const size = Number(params.pageSize)
+        const batch = size > 50 && size % 50 === 0 ? 50 : size
+        const firstPage = (Number(params.pageNum) - 1) * (size / batch) + 1
+        const page = append === true ? this.nextVariablePage : firstPage
+        const batchParams = { ...params, pageNum: page, pageSize: batch }
+        let res
+        try {
+          res = await listVariables(batchParams, options)
+        } catch (error) {
+          if (controller.signal.aborted || !isVariableListTimeout(error)) throw error
+          this.variableListRetrying = true
+          res = await listVariables(batchParams, options)
+        }
+        if (controller.signal.aborted) return
+        const data = res.data
+        if (!Array.isArray(data?.records) || data.total == null) throw new Error('变量列表分页数据不完整，请重新加载')
+        if (append === true) {
+          const byId = new Map(this.tableData.map(row => [row.id, row]))
+          data.records.forEach(row => byId.set(row.id, row))
+          this.tableData = [...byId.values()]
+        } else {
+          this.tableData = data.records
+        }
+        this.total = data.total
+        this.nextVariablePage = data.records.length === batch && page * batch < Math.min(params.pageNum * size, this.total) ? page + 1 : null
+        this.lastVariableQuery = queryKey
         // 加载变量编码/名称列表供筛选下拉
         const codeSet = new Set(),
           labelSet = new Set()
-        ;(data.records || []).forEach((r) => {
+        this.tableData.forEach((r) => {
           if (r.varCode) codeSet.add(r.varCode)
           if (r.varLabel) labelSet.add(r.varLabel)
         })
@@ -4230,11 +4299,24 @@ export default {
         this.filteredVarCodes = this.allVarCodes.slice(0, 20)
         this.filteredVarLabels = this.allVarLabels.slice(0, 20)
       } catch (err) {
-        this.$message.error('加载变量列表失败')
-        this.tableData = []
-        this.total = 0
+        if (controller.signal.aborted) return
+        if (isVariableListTimeout(err)) {
+          this.retryVariableAppend = append === true
+          this.variableListError = this.lastVariableQuery
+            ? '变量列表查询超时，仍显示上次查询结果'
+            : '变量列表查询超时，请重新加载'
+        } else {
+          this.lastVariableQuery = ''
+          this.nextVariablePage = null
+          this.tableData = []
+          this.total = 0
+          this.variableListError = err?.message || '变量列表加载失败'
+        }
       } finally {
-        this.loading = false
+        if (!controller.signal.aborted) {
+          this.loading = false
+          this.variableListRetrying = false
+        }
       }
     },
     handleQuery() {
@@ -4260,7 +4342,16 @@ export default {
     },
 
     // ── Objects ──
-    async loadObjectTree() {
+    loadObjectTree() {
+      this.pendingObjectTree = this.readObjectTree()
+      return this.pendingObjectTree
+    },
+    prepareSampleTree(row) {
+      if (!['API', 'DB', 'SFTP', 'LIST'].includes(row.varSource)) return null
+      return this.pendingObjectTree || this.loadObjectTree()
+    },
+    async readObjectTree() {
+      const requestId = ++this.objectTreeRequestId
       this.objLoading = true
       try {
         this.saveCachedState()
@@ -4279,14 +4370,21 @@ export default {
         let res = await request.get('/rule/dataobject/tree', {
           params: buildParams(),
         })
+        if (requestId !== this.objectTreeRequestId) return
         // 铁律四：API 返回 { tree, objectIdMap } 结构
         let rawData = res.data || {}
         let tree = rawData.tree || []
         // 铁律四：构建 id→objectCode 映射，供前端展示 refObjectId 对应的对象名
         this.objectIdMap = rawData.objectIdMap || {}
-        this.objectTree = tree
+        this.objectTree = tree.map(node => ({
+          ...node,
+          // 字段草稿单独编辑；服务器刷新时整体替换，表格无需深度侦听所有子字段。
+          variables: markRaw(node.variables || []),
+          fieldCount: this.countObjectFields(node.variables),
+        }))
         // 对象树也用于生成测试样例，只有对象页签会展示引用变量的标签。
-        if (this.activeTab === 'objects') await this.loadObjectReferenceVariablesForTree(tree)
+        if (this.activeTab === 'objects') await this.loadObjectReferenceVariablesForTree(tree, requestId)
+        if (requestId !== this.objectTreeRequestId) return
         this.normalizeObjectFieldPages()
         this.objectMap = {}
         this.objectTree.forEach((n) => {
@@ -4300,10 +4398,12 @@ export default {
         this.allObjectNames = Array.from(nameSet)
         this.filteredObjectNames = this.allObjectNames.slice(0, 20)
       } catch (e) {
+        if (requestId !== this.objectTreeRequestId) return
+        this.pendingObjectTree = null
         this.objectTree = []
         this.objectIdMap = {}
       } finally {
-        this.objLoading = false
+        if (requestId === this.objectTreeRequestId) this.objLoading = false
       }
     },
     async onObjectTypeChange(obj) {
@@ -4863,6 +4963,13 @@ export default {
       this.applySourceConfigToForm()
       this.resetDraftPreview()
       this.draftPreviewParamsText = this.buildTestParamTemplate(row)
+      const editing = this.form
+      const initialSample = this.draftPreviewParamsText
+      this.prepareSampleTree(row)?.then(() => {
+        if (!this.$.isUnmounted && this.dialogVisible && this.form === editing && this.draftPreviewParamsText === initialSample) {
+          this.draftPreviewParamsText = this.buildTestParamTemplate(row)
+        }
+      })
       this.loadVariableSourceCatalog(true)
       if (this.form.varSource === 'API') this.loadListExpressionOptions(true)
       if (['LIST', 'DB', 'DERIVED'].includes(this.form.varSource)) this.loadListExpressionOptions(true)
@@ -5047,12 +5154,11 @@ export default {
         if (requestId === this.sourceOptionsRequestId) this.$message.warning('测试字段结构加载失败，请核对当前配置生成的样例')
       }
       if (requestId !== this.sourceOptionsRequestId) return
+      const hasSchema = schema && (schema.inputs.length || Object.keys(schema.sampleParams).length)
+      if (!hasSchema) await this.prepareSampleTree(row)
+      if (requestId !== this.sourceOptionsRequestId) return
       this.testTarget = row
-      this.variableTestParamsText =
-        schema &&
-        (schema.inputs.length || Object.keys(schema.sampleParams).length)
-          ? this.formatJson(schema.sampleParams)
-          : this.buildTestParamTemplate(row)
+      this.variableTestParamsText = hasSchema ? this.formatJson(schema.sampleParams) : this.buildTestParamTemplate(row)
       this.variableTestResult = null
       this.variableTestVisible = true
     },
@@ -5416,7 +5522,11 @@ export default {
       finally { this.optionSaving = false }
     },
     openApproval(response) {
-      return completeResourceChange(this, response, () => Promise.all([this.loadData(), this.loadObjectTree(), this.loadFieldValidations()]))
+      return completeResourceChange(this, response, () => Promise.all([
+        this.loadData(),
+        this.activeTab === 'objects' || this.pendingObjectTree ? this.loadObjectTree() : null,
+        this.loadFieldValidations(),
+      ]))
     },
 
     // ── Import ──
@@ -5744,6 +5854,14 @@ export default {
 .list-multi-select :deep(.el-select__tags-text) {
   white-space: normal;
   overflow-wrap: anywhere;
+}
+.object-field-toggle {
+  border: 0;
+  padding: 0 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
 }
 .var-list-section {
   margin-bottom: 24px;

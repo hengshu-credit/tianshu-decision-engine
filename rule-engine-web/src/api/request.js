@@ -12,6 +12,9 @@ export function isRequestErrorNotified(error) {
 }
 
 function showRequestError(message, error) {
+  // 局部查询面板负责重试和错误反馈。会话失效跳转后仍需全局提示。
+  if (error?.config?.inlineError && error.response?.status !== 401 &&
+      ![PLATFORM_CODES.LOGIN_REQUIRED.code, PLATFORM_CODES.TOKEN_INVALID.code].includes(error.code)) return
   if (error) error.requestErrorNotified = true
   const text = message || '请求失败'
   const now = Date.now()
