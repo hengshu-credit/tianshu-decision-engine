@@ -279,7 +279,7 @@
         :model="fm"
         :disabled="creating"
         :rules="{
-          ruleCode: [{ required: true, message: '必填', trigger: 'blur' }],
+          ruleCode: [reservedCodeRule, { required: true, message: '必填', trigger: 'blur' }],
           ruleName: [{ required: true, message: '必填', trigger: 'blur' }],
           modelType: [{ required: true, message: '必选', trigger: 'change' }],
         }"
@@ -452,6 +452,7 @@
 </template>
 
 <script>
+import { reservedCodeRule } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
@@ -535,6 +536,9 @@ export default {
     this.loadProject()
     this.loadWorkbench()
     this.load()
+  },
+  computed: {
+    reservedCodeRule() { return reservedCodeRule },
   },
   methods: {
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },

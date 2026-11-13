@@ -304,6 +304,7 @@
 </template>
 
 <script>
+import { reservedCodeRule } from '@/utils/reservedContentCode'
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
@@ -393,6 +394,7 @@ export default {
           { required: true, message: '请选择作用范围', trigger: 'change' },
         ],
         ruleCode: [
+          reservedCodeRule,
           { required: true, message: '请输入规则编码', trigger: 'blur' },
         ],
         ruleName: [

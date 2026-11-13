@@ -43,7 +43,7 @@
             @change="onNodeChange"
           />
         </el-form-item>
-        <el-form-item label="节点编码">
+        <el-form-item label="节点编码" :error="reservedCodeError(nodeProps.nodeCode)">
           <el-input
             v-model="nodeProps.nodeCode"
             placeholder="节点编码"
@@ -270,6 +270,7 @@
 </template>
 
 <script>
+import { reservedCodeError } from '@/utils/reservedContentCode'
 import { markRaw } from 'vue'
 import {
   Close as ElIconClose,
@@ -370,6 +371,7 @@ export default {
     },
   },
   methods: {
+    reservedCodeError,
     loadVariables() {
       try {
         const vars = new Set()

@@ -1086,11 +1086,11 @@
           project-label="所属项目"
           @scope-change="onFieldValidationScopeChange"
         />
-        <el-form-item label="校验编码" required
+        <el-form-item label="校验编码" required :error="reservedCodeError(validationForm.validationCode)"
           ><el-input
             v-model="validationForm.validationCode"
             placeholder="稳定标识，保存时原样保留"
-            :disabled="!!validationForm.id"
+            :disabled="!!validationForm.id && !repairValidationCode"
         /></el-form-item>
         <el-form-item label="校验名称" required
           ><el-input
@@ -1225,7 +1225,7 @@
           <el-input
             v-model="form.varCode"
             placeholder="英文标识，如 taxAmount"
-            :disabled="!!form.id"
+            :disabled="!!form.id && !repairVarCode"
           />
         </el-form-item>
         <el-form-item label="字段名称" prop="varLabel">
@@ -1697,7 +1697,7 @@
           <el-input
             v-model="objectForm.objectCode"
             placeholder="英文标识，如 TaxRequest"
-            :disabled="!!objectForm.id"
+            :disabled="!!objectForm.id && !repairObjectCode"
           />
         </el-form-item>
         <el-form-item label="对象名称" prop="objectLabel">
@@ -2103,7 +2103,7 @@
             filterable
            :projects="projects" />
         </el-form-item>
-        <el-form-item label="对象编码"
+        <el-form-item label="对象编码" :error="reservedCodeError(importForm.objectCode)"
           ><el-input
             v-model="importForm.objectCode"
             placeholder="如 TaxRequest"
@@ -2366,6 +2366,7 @@
 </template>
 
 <script>
+import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
@@ -2504,6 +2505,9 @@ export default {
   ])],
   data() {
     return {
+      repairValidationCode: false,
+      repairObjectCode: false,
+      repairVarCode: false,
       activeTab: 'list',
       currentProjectId: '',
       projects: [],
@@ -2631,7 +2635,9 @@ export default {
         scope: [
           { required: true, message: '请选择作用范围', trigger: 'change' },
         ],
+        scriptName: [reservedCodeRule],
         varCode: [
+          reservedCodeRule,
           { required: true, message: '请输入字段编码', trigger: 'blur' },
         ],
         varLabel: [
@@ -2724,7 +2730,9 @@ export default {
         scope: [
           { required: true, message: '请选择作用范围', trigger: 'change' },
         ],
+        scriptName: [reservedCodeRule],
         objectCode: [
+          reservedCodeRule,
           { required: true, message: '请输入对象编码', trigger: 'blur' },
         ],
         objectLabel: [
@@ -3169,6 +3177,7 @@ export default {
     },
   },
   methods: {
+    reservedCodeError,
     canEditResource(resource) { return hasPermission('field:edit', resource) },
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     changeVariableApi(id) {
@@ -4454,6 +4463,7 @@ export default {
     },
     /** 编辑数据对象（从行内操作） */
     handleEditObject(obj) {
+      this.repairObjectCode = Boolean(reservedCodeError(obj.objectCode))
       const sourceConfig = this.parseJsonSafe(obj.sourceContent, {})
       this.objectForm = {
         apiRequestOverrides: sourceConfig.requestOverrides || {},
@@ -4618,6 +4628,7 @@ export default {
      * 编辑数据对象下的字段行。
      */
     handleEditObjectField(row, node) {
+      this.repairVarCode = Boolean(reservedCodeError(row.varCode))
       this.isObjectField = true
       this.isConstantCreate = false
       this.objectFieldParentId = node.object.id
@@ -4836,6 +4847,7 @@ export default {
       return this.loadFieldValidations()
     },
     editFieldValidation(row) {
+      this.repairValidationCode = !row.builtIn && Boolean(reservedCodeError(row.validationCode))
       if (row.builtIn) {
         this.$message.warning('系统内置校验规则不可编辑')
         return
@@ -4860,6 +4872,8 @@ export default {
     async saveFieldValidation() {
       if (this.validationSaving) return
       const form = this.validationForm
+      const codeError = reservedCodeError(form.validationCode)
+      if (codeError) { this.$message.warning(codeError); return }
       if (!form.scope) {
         this.$message.warning('请选择作用范围')
         return
@@ -4953,6 +4967,7 @@ export default {
       })
     },
     handleEdit(row) {
+      this.repairVarCode = Boolean(reservedCodeError(row.varCode))
       if (row.systemConstant) { this.$message.warning('系统常量只读，不能编辑'); return }
       this.isObjectField = false
       this.isConstantCreate = false
@@ -5603,6 +5618,8 @@ export default {
     async doImportJsonObject() {
       if (this.importing) return
       if (!this.ensureImportScope()) return
+      const codeError = reservedCodeError(this.importForm.objectCode)
+      if (codeError) { this.$message.warning(codeError); return }
       if (!this.importForm.objectCode.trim()) {
         this.$message.warning('请输入对象编码')
         return

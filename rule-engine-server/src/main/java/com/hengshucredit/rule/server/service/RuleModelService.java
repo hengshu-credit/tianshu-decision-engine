@@ -324,6 +324,7 @@ public class RuleModelService {
     private String validateModelIdentity(String modelCode, String modelName,
                                          String scope, Long projectId, Long excludeId,
                                          boolean checkConflict) {
+        ReservedContentCode.requireAllowed(modelCode);
         if (modelCode == null || modelCode.trim().isEmpty()) {
             throw new IllegalArgumentException("模型编码不能为空");
         }

@@ -265,13 +265,22 @@ public final class AggregateBuiltinFunctionRegistry {
         } catch (NoSuchMethodException error) { throw new IllegalStateException("平台函数方法不存在: " + code, error); }
     }
 
+    public static java.util.Set<String> managementCodes() {
+        ensureManagementCatalog();
+        return java.util.Set.copyOf(MANAGEMENT_METHODS.keySet());
+    }
+
     public static Method managementMethod(String code) {
+        ensureManagementCatalog();
+        return code == null ? null : MANAGEMENT_METHODS.get(code);
+    }
+
+    private static void ensureManagementCatalog() {
         if (!managementCatalogReady) {
             synchronized (AggregateBuiltinFunctionRegistry.class) {
                 if (!managementCatalogReady) { registerConfiguredMethods(null, true); managementCatalogReady = true; }
             }
         }
-        return code == null ? null : MANAGEMENT_METHODS.get(code);
     }
 
     public static boolean matchesManagementMethod(String code, String className, String methodName, String paramsJson) {

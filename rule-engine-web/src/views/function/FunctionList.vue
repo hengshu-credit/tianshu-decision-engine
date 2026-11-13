@@ -281,7 +281,7 @@
             filterable
            :projects="projects" />
         </el-form-item>
-        <el-form-item label="函数编码" required>
+        <el-form-item label="函数编码" required :error="functionCodeError">
           <el-input
             v-model="editForm.funcCode"
             maxlength="128"
@@ -357,12 +357,11 @@
             :key="pi"
             class="function-parameter-row"
           >
-            <el-input
-              v-model="p.name"
-              size="small"
-              placeholder="参数名"
-              :aria-label="`参数 ${pi + 1} 名称`"
-            />
+            <div>
+              <el-input v-model="p.name" size="small" placeholder="参数名" :aria-label="`参数 ${pi + 1} 名称`"
+                :aria-invalid="Boolean(parameterCodeError(p.name))" />
+              <span v-if="parameterCodeError(p.name)" role="alert" class="code-error">{{ parameterCodeError(p.name) }}</span>
+            </div>
             <el-select
               v-model="p.type"
               size="small"
@@ -554,6 +553,7 @@
 </template>
 
 <script>
+import { reservedCodeError, isManagedFunction } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { historicalVersionMethods } from '@/mixins/historicalVersionMixin'
 import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
@@ -668,6 +668,8 @@ export default {
       methodRequestId: 0,
       editSessionId: 0,
       originalBindingKey: '',
+      originalBuiltinCode: null,
+      originalBuiltinParams: [],
       nativeManual: false,
       functionSaving: false,
       functionJavaTypes: FUNCTION_JAVA_TYPES,
@@ -698,6 +700,10 @@ export default {
   },
   name: 'FunctionList',
   computed: {
+    functionCodeError() {
+      if (this.originalBuiltinCode === this.editForm.funcCode && this.editForm.scope === 'GLOBAL') return ''
+      return reservedCodeError(this.editForm.funcCode)
+    },
     canManageNative() { return hasPermission('function:native') },
     isNativeFunction() { return ['JAVA', 'BEAN'].includes(this.editForm.implType) },
     nativeBindingKey() { return this.functionBindingKey() },
@@ -735,6 +741,10 @@ export default {
   },
   beforeUnmount() { this.methodRequestId++; this.editSessionId++ },
   methods: {
+    parameterCodeError(name) {
+      if (this.originalBuiltinCode === this.editForm.funcCode && this.editForm.scope === 'GLOBAL' && this.originalBuiltinParams.includes(name)) return ''
+      return reservedCodeError(name)
+    },
     ...historicalVersionMethods,
     syncProjectContext() {
       this.currentProjectId = routeProjectId(this.$route, this.$store && this.$store.state.currentProject)
@@ -975,6 +985,8 @@ export default {
       return { SCRIPT: '', JAVA: 'warning', BEAN: 'success' }[type] || 'info'
     },
     handleCreate() {
+      this.originalBuiltinCode = null
+      this.originalBuiltinParams = []
       this.resetMethodEditor()
       this.editForm = {
         funcCode: '',
@@ -995,10 +1007,12 @@ export default {
       this.dialogVisible = true
     },
     handleEdit(row) {
+      this.originalBuiltinCode = row.id && row.scope === 'GLOBAL' && Number(row.projectId) === 0 && isManagedFunction(row.funcCode) ? row.funcCode : null
       this.resetMethodEditor()
       this.editForm = { ...row, scope: row.scope || 'PROJECT' }
       try { this.editParams = parseFunctionParameters(row.paramsJson) }
       catch (error) { this.editParams = []; this.parameterConfigError = error.message }
+      this.originalBuiltinParams = this.originalBuiltinCode ? this.editParams.map(param => param.name) : []
       if (this.editParams.length === 0 && !this.isNativeFunction)
         this.editParams = [{ name: '', type: 'STRING', label: '' }]
       this.originalBindingKey = this.functionDeclarationKey()
@@ -1092,6 +1106,7 @@ export default {
     },
     async handleSave() {
       if (this.functionSaving) return
+      if (this.functionCodeError) { this.$message.warning(this.functionCodeError); return }
       if (!this.editForm.funcCode || !this.editForm.funcName) {
         this.$message.warning('请填写函数编码和名称')
         return
@@ -1106,7 +1121,7 @@ export default {
       let params
       try {
         if (this.parameterConfigError) throw new Error(this.parameterConfigError)
-        params = validatedFunctionParameters(this.editParams)
+        params = validatedFunctionParameters(this.editParams, this.originalBuiltinCode === this.editForm.funcCode && this.editForm.scope === 'GLOBAL' ? this.originalBuiltinParams : [])
       } catch (error) { this.$message.warning(error.message); return }
       const payload = { ...this.editForm, projectId: this.editForm.scope === 'GLOBAL' ? 0 : this.editForm.projectId, paramsJson: JSON.stringify(params) }
       this.functionSaving = true
@@ -1251,6 +1266,7 @@ export default {
 .function-method-selection, .function-parameters { width: 100%; min-width: 0; }
 .function-method-help { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--tianshu-text-secondary); font-size: 12px; line-height: 1.6; margin-top: 6px; overflow-wrap: anywhere; }
 .function-parameter-row { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(130px, 1fr) minmax(90px, 1fr) 28px; gap: 6px; margin-bottom: 10px; }
+.code-error { color: var(--el-color-danger); font-size: 12px; }
 .function-parameter-row > * { min-width: 0; }
 .function-parameter-java-type { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--tianshu-text-secondary); font-size: 12px; }
 .function-parameter-java-type code { overflow-wrap: anywhere; }

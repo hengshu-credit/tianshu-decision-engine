@@ -1,3 +1,4 @@
+import { reservedCodeError } from '@/utils/reservedContentCode'
 /** 函数参数不能因解析失败或缺少名称而静默变成零参。 */
 export function parseFunctionParameters(json) {
   if (json == null || typeof json === 'string' && !json.trim()) return []
@@ -9,7 +10,7 @@ export function parseFunctionParameters(json) {
   return params
 }
 
-export function validatedFunctionParameters(rows) {
+export function validatedFunctionParameters(rows, builtinNames = []) {
   const params = parseFunctionParameters(rows)
   if (params.length === 1 && Object.keys(params[0]).every(key => ['name', 'type', 'label'].includes(key))
     && !params[0].name && !params[0].label && (!params[0].type || params[0].type === 'STRING')) return []
@@ -21,6 +22,8 @@ export function validatedFunctionParameters(rows) {
       throw new Error(`请填写第 ${index + 1} 个参数的有效名称，不会自动丢弃未填写的参数`)
     }
     const name = param.name.trim()
+    const error = reservedCodeError(name)
+    if (error && !builtinNames.includes(name)) throw new Error(`第 ${index + 1} 个参数：${error}`)
     if (names.has(name)) throw new Error(`参数名称重复：${name}`)
     names.add(name)
     if (param.type != null && typeof param.type !== 'string') throw new Error(`参数 ${name} 的业务类型无效`)

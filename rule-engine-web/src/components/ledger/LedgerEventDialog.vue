@@ -1,7 +1,7 @@
 <template>
   <el-dialog :model-value="modelValue" :title="form.id ? '编辑事件' : '新建事件'" width="560px" class="ledger-dialog" :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy" :before-close="close" @closed="$emit('closed')">
     <el-form label-width="90px" size="small" :disabled="busy">
-      <el-form-item label="事件编码" required><el-input v-model="form.code" maxlength="128" aria-label="事件编码" placeholder="请输入唯一编码" /></el-form-item>
+      <el-form-item label="事件编码" required :error="reservedCodeError(form.code)"><el-input v-model="form.code" maxlength="128" aria-label="事件编码" placeholder="请输入唯一编码" /></el-form-item>
       <el-form-item label="事件名称" required><el-input v-model="form.title" maxlength="200" aria-label="事件名称" /></el-form-item>
       <el-form-item label="事件类型"><el-select v-model="form.typeId" clearable placeholder="未分类" aria-label="事件类型"><el-option v-for="type in types" :key="type.id" :value="String(type.id)" :label="type.name" /></el-select></el-form-item>
       <scope-project-fields v-model:scope="form.scope" v-model:project-id="form.projectId" />
@@ -22,6 +22,7 @@
   </el-dialog>
 </template>
 <script>
+import { reservedCodeError } from '@/utils/reservedContentCode'
 import ScopeProjectFields from '@/components/common/ScopeProjectFields.vue'
 import { saveLedgerEvent } from '@/api/ledger'
 import { LEDGER_EVENT_STATUSES } from '@/utils/ledger'
@@ -46,6 +47,7 @@ export default {
   } } },
   beforeUnmount() { this.generation++ },
   methods: {
+    reservedCodeError,
     async close(done) {
       if (this.busy) return
       if (JSON.stringify(this.form) !== this.baseline) {
@@ -57,6 +59,8 @@ export default {
     },
     async save() {
       if (this.busy) return
+      const codeError = reservedCodeError(this.form.code)
+      if (codeError) { this.$message.warning(codeError); return }
       if (!this.form.code?.trim()) { this.$message.warning('请填写唯一的事件编码'); return }
       if (!this.form.title?.trim() || !this.form.scope || (this.form.scope === 'PROJECT' && !this.form.projectId)) { this.$message.warning('请填写事件名称和归属范围'); return }
       if (!this.statuses.length || this.statuses.length !== this.form.statusOptions.length || this.statuses.length > 50) { this.$message.warning('请配置 1 至 50 个非空状态值'); return }

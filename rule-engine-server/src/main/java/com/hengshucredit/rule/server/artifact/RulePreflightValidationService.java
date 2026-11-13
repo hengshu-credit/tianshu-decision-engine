@@ -1,5 +1,9 @@
 package com.hengshucredit.rule.server.artifact;
 
+import com.hengshucredit.rule.server.service.ReservedContentCode;
+
+import com.hengshucredit.rule.server.governance.ResourceCodeValidation;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.core.compiler.CompileResult;
 import com.hengshucredit.rule.model.dto.RulePreflightReport;
@@ -93,6 +97,11 @@ public class RulePreflightValidationService {
             report.setValid(false);
             return new Analysis(report, null, null, null);
         }
+
+        String ruleCodeError = ReservedContentCode.error(definition.getRuleCode());
+        if (ruleCodeError != null) report.getErrors().add(RuleValidationIssue.error("RESERVED_CONTENT_CODE", "$.ruleCode", ruleCodeError));
+        for (var issue : ResourceCodeValidation.designer(definition.getModelType(), revision.getModelJson()))
+            report.getErrors().add(RuleValidationIssue.error("RESERVED_CONTENT_CODE", issue.path(), issue.message()));
 
         long stage = System.nanoTime();
         RuleFieldAnalyzer.ResolvedFields fields = resolveFields(definition, revision);

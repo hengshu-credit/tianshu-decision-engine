@@ -30,12 +30,13 @@
     </section>
     <ledger-event-dialog ref="eventEditor" v-model="eventVisible" :event="editingEvent" :types="ledgerTypes" :scope="projectId ? 'PROJECT' : ''" :project-id="projectId" @saved="loadEvents" @closed="eventClosing = false" />
     <el-dialog v-model="typeVisible" :title="typeForm.id ? '编辑事件类型' : '新增事件类型'" width="min(500px, 95vw)" :close-on-click-modal="false" :close-on-press-escape="!typeSaving" :show-close="!typeSaving" :before-close="closeType" @closed="typeClosing = false">
-      <el-form label-width="90px" :disabled="typeSaving"><el-form-item label="类型编码" required><el-input v-model="typeForm.code" maxlength="128" placeholder="请输入唯一编码" /></el-form-item><el-form-item label="类型名称" required><el-input v-model="typeForm.name" maxlength="100" /></el-form-item><el-form-item label="排序"><el-input-number v-model="typeForm.sortOrder" :precision="0" :min="-2147483648" :max="2147483647" /></el-form-item></el-form>
+      <el-form label-width="90px" :disabled="typeSaving"><el-form-item label="类型编码" required :error="reservedCodeError(typeForm.code)"><el-input v-model="typeForm.code" maxlength="128" placeholder="请输入唯一编码" /></el-form-item><el-form-item label="类型名称" required><el-input v-model="typeForm.name" maxlength="100" /></el-form-item><el-form-item label="排序"><el-input-number v-model="typeForm.sortOrder" :precision="0" :min="-2147483648" :max="2147483647" /></el-form-item></el-form>
       <template #footer><el-button :disabled="typeSaving" @click="closeType()">取消</el-button><el-button type="primary" :loading="typeSaving" @click="saveType">保存</el-button></template>
     </el-dialog>
   </section>
 </template>
 <script>
+import { reservedCodeError } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import LedgerEventDialog from './LedgerEventDialog.vue'
 import ledgerTypesMixin from '@/mixins/ledgerTypesMixin'
@@ -58,6 +59,7 @@ export default {
   mounted() { this.loadEvents() },
   beforeUnmount() { this.generation++; this.mutationGeneration++ },
   methods: {
+    reservedCodeError,
     statusName(value) { return LEDGER_EVENT_STATUSES.find(item => item.value === value)?.label || value },
     async loadEvents() { const generation = ++this.generation; this.loading = true; this.error = ''; try { const response = await manageLedgerEvents({ keyword: this.keyword, typeId: this.typeId || undefined, pageNum: this.page, pageSize: 20 }); if (generation === this.generation) { this.events = response.data.records || []; this.total = response.data.total || 0 } } catch (error) { if (generation === this.generation) this.error = error.message || '事件读取失败' } finally { if (generation === this.generation) this.loading = false } },
     search() { this.page = 1; this.loadEvents() }, changePage(page) { this.page = page; this.loadEvents() },
@@ -66,6 +68,8 @@ export default {
     async closeType(done) { if (!(await this.confirmConfigurationLeave())) return; this.typeVisible = false; this.markConfigurationSaved(); if (typeof done === 'function') done() },
     async saveType() {
       if (this.typeSaving) return
+      const codeError = reservedCodeError(this.typeForm.code)
+      if (codeError) { this.$message.warning(codeError); return }
       if (!this.typeForm.code?.trim()) { this.$message.warning('请填写唯一的类型编码'); return }
       if (!this.typeForm.name?.trim()) { this.$message.warning('请填写类型名称'); return }
       const generation = this.mutationGeneration; this.typeSaving = true

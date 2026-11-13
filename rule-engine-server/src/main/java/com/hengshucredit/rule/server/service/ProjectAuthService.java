@@ -239,6 +239,7 @@ public class ProjectAuthService {
         auth.setAuthCode(StringUtils.hasText(request.getAuthCode())
                 ? request.getAuthCode().trim()
                 : "AUTH_" + UUID.randomUUID().toString().replace("-", "").toUpperCase(Locale.ROOT));
+        ReservedContentCode.requireAllowed(auth.getAuthCode());
         if (findAuthByCode(auth.getAuthCode()) != null) {
             throw new IllegalArgumentException("Authentication code already exists");
         }

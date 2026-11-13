@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.governance;
 
+import com.hengshucredit.rule.server.service.ReservedContentCode;
+
 import static com.hengshucredit.rule.server.governance.SnapshotValues.longValue;
 import static com.hengshucredit.rule.server.governance.SnapshotValues.integerValue;
 import static com.hengshucredit.rule.server.governance.SnapshotValues.stringValue;
@@ -127,7 +129,7 @@ public class RuleListLibraryGovernedResourceAdapter
         } else if (current != null && (!Objects.equals(
                 current.getProjectId(), projectId)
                 || !Objects.equals(current.getScope(), scope)
-                || !Objects.equals(current.getListCode(), code))) {
+                || !ReservedContentCode.sameOrRepaired(current.getListCode(), code))) {
             issues.add(error("LIST_IDENTITY_CHANGED",
                     "名单库编码和作用范围创建后不可修改", id, "$"));
         }

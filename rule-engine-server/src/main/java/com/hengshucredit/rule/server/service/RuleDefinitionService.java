@@ -132,6 +132,7 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
 
     @Transactional
     public RuleDefinition createWithContent(RuleDefinition definition) {
+        ReservedContentCode.requireAllowed(definition.getRuleCode());
         // 全局规则 projectId 为 0，自动填充 scope
         if (definition.getProjectId() == null || definition.getProjectId() == 0) {
             definition.setProjectId(0L);
@@ -171,6 +172,7 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
      */
     @Transactional
     public void updateWithProjectInfo(RuleDefinition definition) {
+        ReservedContentCode.requireAllowed(definition.getRuleCode());
         if (lifecycleService != null && definition.getId() != null) {
             lifecycleService.requireEditableDraft(definition.getId());
         }

@@ -646,6 +646,7 @@
 </template>
 
 <script>
+import { reservedCodeRule } from '@/utils/reservedContentCode'
 import { markRaw } from 'vue'
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
@@ -692,6 +693,7 @@ export default {
       authPolicy: this.emptyAccessPolicy(),
       authRules: {
         authCode: [
+          { ...reservedCodeRule, validator: (rule, value, callback) => this.authForm.id ? callback() : reservedCodeRule.validator(rule, value, callback) },
           { required: true, message: '请输入鉴权编码', trigger: 'blur' },
         ],
         authName: [

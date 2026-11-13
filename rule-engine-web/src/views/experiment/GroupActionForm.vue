@@ -10,7 +10,7 @@
       </el-col>
       <el-col :span="showType ? 8 : 12">
         <div class="field-label">组编码</div>
-        <el-input v-model="row.groupCode" size="small" />
+        <el-form-item :error="reservedCodeError(row.groupCode)"><el-input v-model="row.groupCode" size="small" /></el-form-item>
       </el-col>
       <el-col :span="showType ? 8 : 12">
         <div class="field-label">组名称</div>
@@ -61,6 +61,7 @@
 </template>
 
 <script>
+import { reservedCodeError } from '@/utils/reservedContentCode'
 import RuleExecutionSelector from '@/components/common/RuleExecutionSelector.vue'
 import RuleCallVersionSelect from '@/components/flow/RuleCallVersionSelect.vue'
 
@@ -75,6 +76,7 @@ export default {
     showInvoke: { type: Boolean, default: false },
   },
   methods: {
+    reservedCodeError,
     onRuleSelect(rule) {
       if (String(this.row.ruleId) !== String(rule?.id)) { this.row['versionMode'] = 'LATEST'; this.row['versionBindingId'] = null }
       this.row['ruleId'] = rule ? rule.id : null

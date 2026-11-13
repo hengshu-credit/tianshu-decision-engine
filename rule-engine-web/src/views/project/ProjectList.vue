@@ -169,7 +169,7 @@
         size="small"
       >
         <el-form-item label="项目编码" prop="projectCode"
-          ><el-input v-model="form.projectCode" :disabled="!!form.id"
+          ><el-input v-model="form.projectCode" :disabled="!!form.id && !repairProjectCode"
         /></el-form-item>
         <el-form-item label="项目名称" prop="projectName"
           ><el-input v-model="form.projectName"
@@ -205,6 +205,7 @@
 </template>
 
 <script>
+import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
 import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
 import { systemBrand, DEFAULT_BRAND, loadSystemBrand } from '@/system/systemBrand'
 import { getCurrentUser } from '@/security/permissionState'
@@ -239,6 +240,7 @@ export default {
   mixins: [governanceWorkspaceMixin, configurationDialogsMixin([{ visible: 'dialogVisible', draft: vm => vm.form, busy: vm => vm.submitting }])],
   data() {
     return {
+      repairProjectCode: false,
       loading: false,
       tableData: [],
       total: 0,
@@ -283,6 +285,7 @@ export default {
       },
       rules: {
         projectCode: [
+          reservedCodeRule,
           { required: true, message: '请输入项目编码', trigger: 'blur' },
         ],
         projectName: [
@@ -406,6 +409,7 @@ export default {
       this.dialogVisible = true
     },
     handleEdit(row) {
+      this.repairProjectCode = Boolean(reservedCodeError(row.projectCode))
       this.form = { ...row }
       this.dialogVisible = true
     },

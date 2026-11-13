@@ -158,10 +158,13 @@
             />
             <el-input
               v-model="rule.ruleCode"
+              :title="reservedCodeError(rule.ruleCode)"
+              :aria-invalid="Boolean(reservedCodeError(rule.ruleCode))"
               size="small"
               class="rule-code"
               placeholder="规则编码"
             />
+            <span v-if="reservedCodeError(rule.ruleCode)" role="alert" class="code-error">{{ reservedCodeError(rule.ruleCode) }}</span>
             <el-input
               v-model="rule.ruleName"
               size="small"
@@ -350,6 +353,7 @@
 </template>
 
 <script>
+import { reservedCodeError } from '@/utils/reservedContentCode'
 import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
 import ElIconLoading from '@/components/common/AppLoadingIcon.vue'
 import { parseDesignerModelJson } from '@/utils/designerModelJson'
@@ -486,6 +490,7 @@ export default {
     this.loadContent()
   },
   methods: {
+    reservedCodeError,
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     async loadContent() {
       try {
@@ -726,6 +731,10 @@ export default {
       return 'rs-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
     },
     async performDesignerSave() {
+      for (const rule of this.model.rules || []) {
+        const error = reservedCodeError(rule.ruleCode)
+        if (error) { this.$message.warning(error); return false }
+      }
       this.normalizeModel()
       this.repairLegacyRuleCallRefs(this.model)
       const model = this.serializeModel()
@@ -1124,4 +1133,5 @@ export default {
     padding: 12px;
   }
 }
+.code-error { color: var(--el-color-danger); font-size: 12px; }
 </style>

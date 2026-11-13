@@ -12,7 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-final class BuiltinFunctionCatalog {
+public final class BuiltinFunctionCatalog {
 
     private static final String AGGREGATE_CLASS = "com.hengshucredit.rule.core.function.AggregateBuiltinFunctions";
     private static final String DECISION_CLASS = "com.hengshucredit.rule.core.function.DecisionBuiltinFunctions";
@@ -22,6 +22,20 @@ final class BuiltinFunctionCatalog {
     private static final String IMAGE_CLASS = "com.hengshucredit.rule.core.function.ImageInputFunctions";
 
     private BuiltinFunctionCatalog() {
+    }
+
+    private static final class Codes {
+        static final Map<String, List<String>> PARAMETERS = definitions().stream().collect(
+                java.util.stream.Collectors.toUnmodifiableMap(RuleFunction::getFuncCode,
+                        function -> com.hengshucredit.rule.core.function.FunctionParameterContract.names(function.getParamsJson())));
+    }
+
+    public static boolean contains(String code) {
+        return Codes.PARAMETERS.containsKey(code);
+    }
+
+    public static List<String> parameterNames(String code) {
+        return Codes.PARAMETERS.getOrDefault(code, List.of());
     }
 
     static List<RuleFunction> definitions() {

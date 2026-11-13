@@ -107,7 +107,9 @@
           <div class="project-create-fields" :class="{ 'is-enabled': options.targetScope === 'PROJECT' && options.createProject }">
             <div class="project-create-fields__heading">新建项目配置</div>
             <div v-show="options.targetScope === 'PROJECT' && options.createProject" class="project-create-fields__inputs">
-              <el-input v-model="options.projectCode" aria-label="新项目编码" placeholder="新项目编码（可覆盖源编码）" />
+              <el-form-item :error="reservedCodeError(options.projectCode)">
+                <el-input v-model="options.projectCode" aria-label="新项目编码" placeholder="新项目编码（可覆盖源编码）" />
+              </el-form-item>
               <el-input v-model="options.projectName" aria-label="新项目名称" placeholder="新项目名称（可覆盖源名称）" />
             </div>
             <span v-show="!(options.targetScope === 'PROJECT' && options.createProject)" class="project-create-fields__placeholder">开启“导入时新建项目”后，在此填写目标项目编码和名称。</span>
@@ -264,6 +266,7 @@
 </template>
 
 <script>
+import { reservedCodeError } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import TransferVersionBindingRow from '@/components/transfer/TransferVersionBindingRow.vue'
 import ResourceVersionSelect from '@/components/common/ResourceVersionSelect.vue'
@@ -397,6 +400,7 @@ export default {
   },
   beforeUnmount() { this.invalidatePreview() },
   methods: {
+    reservedCodeError,
     onTabChange(tab) { if (tab === 'logs') this.loadLogs() },
     async loadLogs() {
       this.logsLoading = true
@@ -696,6 +700,10 @@ export default {
       return options
     },
     validateTargetOptions() {
+      if (this.options.targetScope === 'PROJECT' && this.options.createProject) {
+        const error = reservedCodeError(this.options.projectCode)
+        if (error) { this.$message.warning(error); return false }
+      }
       if (this.options.targetScope === 'PROJECT' && !this.options.createProject
         && !/^[1-9]\d*$/.test(String(this.options.targetProjectId || ''))) {
         ElMessage.warning('项目级导入请选择目标项目，或勾选导入时新建项目')

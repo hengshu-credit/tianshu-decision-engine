@@ -6,7 +6,7 @@
       <el-button data-testid="retry-artifact-options" size="small" :loading="optionsLoading" @click="loadOptions">重新读取制品</el-button>
     </div>
     <el-form v-if="modelValue" label-width="130px" class="deployment-form">
-      <el-form-item label="环境编码"><el-input v-model="form.environmentCode" /></el-form-item>
+      <el-form-item label="环境编码" :error="reservedCodeError(form.environmentCode)"><el-input v-model="form.environmentCode" /></el-form-item>
       <el-form-item label="部署方式">
         <el-radio-group v-model="targetMode">
           <el-radio-button value="existing">部署到现有规则</el-radio-button>
@@ -48,7 +48,7 @@
         <span v-if="ruleOptionsError" role="alert" class="deployment-picker-error">{{ ruleOptionsError }}</span>
       </el-form-item>
       <template v-else>
-        <el-form-item label="目标规则编码"><el-input v-model="form.targetRuleCode" /></el-form-item>
+        <el-form-item label="目标规则编码" :error="reservedCodeError(form.targetRuleCode)"><el-input v-model="form.targetRuleCode" /></el-form-item>
         <el-form-item label="目标规则名称"><el-input v-model="form.targetRuleName" /></el-form-item>
       </template>
       <el-form-item label="目标模型类型">
@@ -74,6 +74,7 @@
 </template>
 
 <script>
+import { reservedCodeError } from '@/utils/reservedContentCode'
 import { getArtifactDeploymentOptions } from '@/api/artifact'
 import { listTransferResources } from '@/api/transfer'
 import { listProjects } from '@/api/project'
@@ -140,6 +141,7 @@ export default {
       }))
     },
     ready() {
+      if (reservedCodeError(this.form.environmentCode) || (this.targetMode === 'create' && reservedCodeError(this.form.targetRuleCode))) return false
       const targetReady = this.targetMode === 'existing'
         ? hasTargetId(this.form.targetDefinitionId)
         : Boolean(this.form.targetRuleCode.trim()
@@ -191,6 +193,7 @@ export default {
   },
   beforeUnmount() { this.invalidateOptions() },
   methods: {
+    reservedCodeError,
     invalidateOptions() {
       this.optionsRequestId += 1
       this.options = { requirements: [], modelType: '' }

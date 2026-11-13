@@ -69,6 +69,7 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
      */
     @Transactional
     public String createProjectWithToken(RuleProject project) {
+        ReservedContentCode.requireAllowed(project.getProjectCode());
         // 生成UUID Token
         String token = UUID.randomUUID().toString().replace("-", "");
         

@@ -780,7 +780,7 @@
               <el-input
                 v-model="configForm.billingCode"
                 placeholder="如 ENGINE_COUNT"
-                :disabled="!!configForm.id"
+                :disabled="!!configForm.id && !repairBillingCode"
               />
             </el-form-item>
           </el-col>
@@ -925,6 +925,7 @@
 </template>
 
 <script>
+import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ExecutionVersionFilter from '@/components/common/ExecutionVersionFilter.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
@@ -964,6 +965,7 @@ export default {
   mixins: [governanceWorkspaceMixin, configurationDialogsMixin([{ visible: 'configDialogVisible', draft: vm => vm.configForm, busy: vm => vm.configSaving }])],
   data() {
     return {
+      repairBillingCode: false,
       tableColumnOrders: { billingColumns: null, recordColumns: null, summaryColumns: null },
       billingColumns: [
         { key: 'scope', label: '作用范围' },
@@ -1038,6 +1040,7 @@ export default {
       configForm: this.emptyConfigForm(),
       configRules: {
         billingCode: [
+          reservedCodeRule,
           { required: true, message: '请输入计费编码', trigger: 'blur' },
         ],
         billingName: [
@@ -1388,6 +1391,7 @@ export default {
       this.configDialogVisible = true
     },
     handleEditConfig(row) {
+      this.repairBillingCode = Boolean(reservedCodeError(row.billingCode))
       this.configForm = { ...this.emptyConfigForm(), ...row }
       this.configOriginalStatus = row.status
       this.targetOptions = []

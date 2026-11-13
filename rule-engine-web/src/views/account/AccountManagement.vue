@@ -365,7 +365,7 @@
           <el-form-item label="角色名称">
             <el-input v-model="roleForm.roleName" />
           </el-form-item>
-          <el-form-item label="角色编码">
+          <el-form-item label="角色编码" :error="roleForm.systemRole === 1 ? '' : reservedCodeError(roleForm.roleCode)">
             <el-input v-model="roleForm.roleCode" :disabled="roleForm.systemRole === 1" />
           </el-form-item>
         </div>
@@ -417,6 +417,7 @@
 </template>
 
 <script>
+import { reservedCodeError } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getCurrentUser, hasPermission } from '@/security/permissionState'
@@ -598,6 +599,7 @@ export default {
   },
   beforeUnmount() { this.accountEditEpoch++; this.newPassword = ''; this.accountForm.password = '' },
   methods: {
+    reservedCodeError,
     passwordResetRequirement(account) {
       return String(account.id) === String(getCurrentUser()?.userId)
         ? ['account:password-reset', 'account:password-change'] : 'account:password-reset'
@@ -757,6 +759,8 @@ export default {
       this.roleDialogVisible = true
     },
     async saveRole() {
+      const codeError = this.roleForm.systemRole === 1 ? '' : reservedCodeError(this.roleForm.roleCode)
+      if (codeError) { this.$message.warning(codeError); return }
       return this.runAccountSave(() => saveConsoleRole(this.roleForm), async () => {
       this.roleDialogVisible = false
       ElMessage.success('角色已保存')

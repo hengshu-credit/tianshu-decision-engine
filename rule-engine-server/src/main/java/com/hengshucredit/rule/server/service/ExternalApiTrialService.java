@@ -35,6 +35,7 @@ public class ExternalApiTrialService {
     public Map<String, Object> create(String owner, String requestKey, RuleExternalApiConfig config,
                                        Map<String, Object> params) {
         if (config == null || config.getId() != null) throw new IllegalArgumentException("新建试运行不能指定正式 API ID");
+        ReservedContentCode.requireAllowed(config.getApiCode());
         if (params == null) throw new IllegalArgumentException("试运行参数必须是 JSON 对象");
         if (requestKey == null || !UUID.fromString(requestKey).toString().equalsIgnoreCase(requestKey)) {
             throw new IllegalArgumentException("试运行请求标识必须是 UUID");

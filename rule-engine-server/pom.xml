@@ -134,6 +134,15 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>../rule-engine-web/src/constants</directory>
+                <includes><include>reserved-codes.json</include></includes>
+            </resource>
+        </resources>
         <testResources>
             <testResource>
                 <directory>${project.basedir}/src/test/resources</directory>

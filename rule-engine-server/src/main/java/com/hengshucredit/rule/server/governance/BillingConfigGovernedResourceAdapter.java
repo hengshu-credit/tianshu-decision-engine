@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.governance;
 
+import com.hengshucredit.rule.server.service.ReservedContentCode;
+
 import static com.hengshucredit.rule.server.governance.SnapshotValues.longValue;
 import static com.hengshucredit.rule.server.governance.SnapshotValues.integerValue;
 import static com.hengshucredit.rule.server.governance.SnapshotValues.stringValue;
@@ -188,7 +190,7 @@ public class BillingConfigGovernedResourceAdapter
         } else if (current != null) {
             if (!Objects.equals(current.getProjectId(), projectId)
                     || !Objects.equals(current.getScope(), scope)
-                    || !Objects.equals(current.getBillingCode(), code)) {
+                    || !ReservedContentCode.sameOrRepaired(current.getBillingCode(), code)) {
                 issues.add(error("BILLING_IDENTITY_CHANGED",
                         "计费编码和作用范围创建后不可修改", id, "$"));
             }

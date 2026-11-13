@@ -27,7 +27,10 @@ public final class ExternalApiAuthConfig {
         }
         for (String field : List.of("headers", "body")) if (values.get(field) != null) object(values.get(field), paths);
         if (values.get("scriptVariables") instanceof Iterable<?> rows) for (Object row : rows) {
-            if (row instanceof Map<?, ?> value) operand(value.get("value"), paths);
+            if (row instanceof Map<?, ?> value) {
+                if (value.get("name") instanceof String name) ReservedContentCode.requireAllowed(name);
+                operand(value.get("value"), paths);
+            }
         }
     }
 

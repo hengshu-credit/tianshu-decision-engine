@@ -793,6 +793,7 @@
 </template>
 
 <script>
+import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { historicalVersionMethods } from '@/mixins/historicalVersionMixin'
 import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
@@ -869,6 +870,7 @@ export default {
           { required: true, message: '请选择项目', trigger: 'change' },
         ],
         experimentCode: [
+          reservedCodeRule,
           { required: true, message: '请输入实验编码', trigger: 'blur' },
         ],
         experimentName: [
@@ -1459,6 +1461,10 @@ export default {
       })
     },
     validateGroups() {
+      for (const group of this.form.groups) {
+        const error = reservedCodeError(group.groupCode)
+        if (error) return error
+      }
       const champions = this.productionFormGroups.filter(
         (g) => g.groupType === 'CHAMPION'
       )

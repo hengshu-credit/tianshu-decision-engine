@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.server.governance.ResourceCodeValidation;
+
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.hengshucredit.rule.core.compiler.CompileResult;
 import com.hengshucredit.rule.model.dto.RuleDraftSaveRequest;
@@ -97,6 +99,7 @@ public class RuleDraftService {
                     "只能保存 DRAFT 状态的规则修订");
         }
         requireLocalNamespace(definition, revision);
+        ResourceCodeValidation.requireValid(ResourceCodeValidation.designer(definition.getModelType(), request.getModelJson()));
 
         List<RuleValidationIssue> issues = new ArrayList<>();
         addReferenceDiagnostics(definition, request.getModelJson(),

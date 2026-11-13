@@ -30,8 +30,8 @@
               <el-radio-group v-model="publishMode"><el-radio value="NEW">新增版本</el-radio><el-radio value="OVERWRITE">覆盖指定版本</el-radio></el-radio-group>
               <el-select v-if="publishMode === 'OVERWRITE'" v-model="targetVersionId" aria-label="覆盖目标版本"><el-option v-for="version in writableVersions" :key="version.versionId" :value="String(version.versionId)" :label="label(version)" /></el-select>
             </el-form-item>
-            <el-form-item v-for="field in editableFields" :key="field.key" :label="field.label"><el-input :model-value="String(editValue[field.key] ?? '')" :type="field.multiline ? 'textarea' : 'text'" :rows="field.multiline ? 3 : undefined" :aria-label="field.label" @update:model-value="editField(field.key, $event)" /></el-form-item>
-            <el-collapse><el-collapse-item title="完整配置（结构与高级参数）" name="raw"><el-form-item label="版本内容"><MonacoEditor v-model:value="editJson" language="json" height="300px" aria-label="版本内容" :options="{ minimap: { enabled: false }, wordWrap: 'on' }" /></el-form-item></el-collapse-item></el-collapse>
+            <el-form-item v-for="field in editableFields" :key="field.key" :label="field.label" :error="editCodeIssue?.field === field.key ? editCodeIssue.message : ''"><el-input :model-value="String(editValue[field.key] ?? '')" :type="field.multiline ? 'textarea' : 'text'" :rows="field.multiline ? 3 : undefined" :aria-label="field.label" @update:model-value="editField(field.key, $event)" /></el-form-item>
+            <el-collapse><el-collapse-item title="完整配置（结构与高级参数）" name="raw"><el-form-item label="版本内容" :error="editCodeIssue?.message"><MonacoEditor v-model:value="editJson" language="json" height="300px" aria-label="版本内容" :options="{ minimap: { enabled: false }, wordWrap: 'on' }" /></el-form-item></el-collapse-item></el-collapse>
           </el-form>
           <div class="version-actions uiue-action-group"><el-button :disabled="busy" @click="cancelEdit">取消编辑</el-button><el-button type="primary" :loading="busy" @click="save">保存草稿</el-button></div>
         </template>
@@ -92,6 +92,7 @@
   </span>
 </template>
 <script>
+import { resourceCodeIssue } from '@/utils/reservedContentCode'
 import { getResourceVersions, getResourceVersionEvents, getVersionDeletionImpact, createVersionDraft, deleteResourceVersion } from '@/api/resourceVersions'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import { saveGovernanceDraft, submitGovernanceRequest, cancelGovernanceRequest } from '@/api/governance'
@@ -144,6 +145,11 @@ export default {
     snapshot() { return this.currentDraft?.draftSnapshotJson || this.currentVersion?.snapshotJson || '' },
     compared() { return (this.workspace.history || []).find(row => String(row.id) === this.comparison) },
     editValue() { try { return parseMetadataResponse(this.editJson) || {} } catch { return {} } },
+    editCodeIssue() {
+      let original
+      try { original = parseMetadataResponse(this.snapshot || '{}') } catch { original = {} }
+      return resourceCodeIssue(this.resourceType, this.editValue, original)
+    },
     editableFields() { return fields.filter(field => field.key !== 'varType' && Object.hasOwn(this.editValue, field.key)) },
     selectedLabel() { return this.currentDraft ? `草稿 #${this.currentDraft.id} · ${this.statusLabel(this.currentDraft.status)}` : this.versionLabel(this.currentVersion) },
   },
@@ -205,6 +211,7 @@ export default {
       if (this.busy || !this.canEdit) return
       const target = this.writableVersions.find(row => String(row.versionId) === this.targetVersionId)
       if (!this.currentDraft && this.publishMode === 'OVERWRITE' && !target) { this.$message.warning('请选择覆盖目标版本'); return }
+      if (this.editCodeIssue) { this.$message.warning(this.editCodeIssue.message); return }
       try { const value = parseMetadataResponse(this.editJson); if (!value || Array.isArray(value) || typeof value !== 'object') throw new Error() } catch { this.$message.error('版本内容必须是有效的 JSON 对象'); return }
       const context = this.contextGeneration; this.busy = true
       try {

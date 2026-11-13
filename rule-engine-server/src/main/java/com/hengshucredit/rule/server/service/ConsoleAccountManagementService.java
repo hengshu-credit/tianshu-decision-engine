@@ -288,6 +288,7 @@ public class ConsoleAccountManagementService {
         validateStatus(request.getStatus());
         if (request.getId() == null) {
             if ("SUPER_ADMIN".equalsIgnoreCase(request.getRoleCode().trim())) throw new IllegalArgumentException("系统角色编码不可用于新建角色");
+            ReservedContentCode.requireAllowed(request.getRoleCode());
             role = new ConsoleRole();
             role.setRoleCode(request.getRoleCode().trim());
             role.setRoleName(request.getRoleName().trim());
@@ -302,6 +303,7 @@ public class ConsoleAccountManagementService {
             if (!"SUPER_ADMIN".equals(role.getRoleCode()) && "SUPER_ADMIN".equalsIgnoreCase(request.getRoleCode().trim())) {
                 throw new IllegalArgumentException("系统角色编码不可用于其他角色");
             }
+            if (!Integer.valueOf(1).equals(role.getSystemRole())) ReservedContentCode.requireAllowed(request.getRoleCode());
             if (Integer.valueOf(1).equals(role.getSystemRole()) && !role.getRoleCode().equals(request.getRoleCode().trim())) {
                 throw new IllegalArgumentException("系统角色编码不可修改");
             }

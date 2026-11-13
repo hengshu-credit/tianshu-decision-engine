@@ -801,6 +801,7 @@
 </template>
 
 <script>
+import { reservedCodeRule } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
@@ -958,6 +959,7 @@ export default {
       uploadForm: createUploadForm(),
       uploadRules: {
         modelCode: [
+          reservedCodeRule,
           {
             required: true,
             message: '请输入模型编码',
@@ -1011,6 +1013,7 @@ export default {
       toGlobalForm: { modelCode: '' },
       toGlobalRules: {
         modelCode: [
+          reservedCodeRule,
           {
             required: true,
             message: '请填写新的全局模型编码',

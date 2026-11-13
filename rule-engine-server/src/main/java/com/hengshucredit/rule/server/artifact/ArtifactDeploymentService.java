@@ -1,5 +1,8 @@
 package com.hengshucredit.rule.server.artifact;
 
+import com.hengshucredit.rule.server.service.ReservedContentCode;
+import com.hengshucredit.rule.server.governance.ResourceCodeValidation;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.dto.ArtifactDeployRequest;
 import com.hengshucredit.rule.model.dto.ArtifactImportResult;
@@ -167,6 +170,9 @@ public class ArtifactDeploymentService {
         DecisionArtifactPackageCodec.DecodedPackage decoded = decodeStoredArtifact(artifact);
         requireNativePackagePermission(decoded.getArtifactPackage());
         String modelType = packageModelType(decoded.getArtifactPackage());
+        var model = decoded.getArtifactPackage().getComponent("rule/model.json");
+        if (model != null) ResourceCodeValidation.requireValid(ResourceCodeValidation.designer(modelType,
+                new String(model.getContent(), java.nio.charset.StandardCharsets.UTF_8)));
         if (!blank(request.getTargetModelType()) && !modelType.equals(normalizeModelType(request.getTargetModelType()))) {
             throw new IllegalArgumentException("目标模型类型必须与制品一致，请使用制品提供的类型");
         }
@@ -450,6 +456,8 @@ public class ArtifactDeploymentService {
             throw new IllegalArgumentException("artifactId 不能为空");
         }
         boolean create = Boolean.TRUE.equals(request.getCreateRule());
+        ReservedContentCode.requireAllowed(request.getEnvironmentCode());
+        if (create) ReservedContentCode.requireAllowed(request.getTargetRuleCode());
         if (create == (request.getTargetDefinitionId() != null)) {
             throw new IllegalArgumentException("必须且只能选择 createRule=true 或显式 targetDefinitionId");
         }

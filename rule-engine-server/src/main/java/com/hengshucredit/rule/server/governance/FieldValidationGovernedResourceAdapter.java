@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.governance;
 
+import com.hengshucredit.rule.server.service.ReservedContentCode;
+
 import static com.hengshucredit.rule.server.governance.SnapshotValues.longValue;
 import static com.hengshucredit.rule.server.governance.SnapshotValues.integerValue;
 import static com.hengshucredit.rule.server.governance.SnapshotValues.stringValue;
@@ -160,7 +162,7 @@ public class FieldValidationGovernedResourceAdapter
                         "系统内置校验规则不可变更", id, "$"));
             } else if (!Objects.equals(current.getProjectId(), projectId)
                     || !Objects.equals(current.getScope(), scope)
-                    || !Objects.equals(current.getValidationCode(), code)) {
+                    || !ReservedContentCode.sameOrRepaired(current.getValidationCode(), code)) {
                 issues.add(error("FIELD_VALIDATION_IDENTITY_CHANGED",
                         "校验编码和作用范围创建后不可修改", id, "$"));
             }

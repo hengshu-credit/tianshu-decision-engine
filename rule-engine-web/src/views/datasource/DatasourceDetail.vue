@@ -168,6 +168,7 @@
 </template>
 
 <script>
+import { reservedCodeRule } from '@/utils/reservedContentCode'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import { hasPermission } from '@/security/permissionState'
 import { loadApiReferenceCatalog } from '@/utils/apiReferenceCatalog'
@@ -205,6 +206,7 @@ export default {
       apiPickerFunctions: [],
       rules: {
         datasourceCode: [
+          reservedCodeRule,
           { required: true, message: '请输入数据源编码', trigger: 'blur' },
         ],
         datasourceName: [

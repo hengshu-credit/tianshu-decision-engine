@@ -1,3 +1,4 @@
+import { reservedCodeError } from '@/utils/reservedContentCode'
 import { createGraphCanvas } from '@/components/flow/graphCanvas'
 
 import {
@@ -1008,6 +1009,10 @@ export default {
 
   async performDesignerSave() {
     const model = this.buildBackendModel()
+    for (const node of model.logicflow?.nodes || []) {
+      const error = reservedCodeError(node.properties?.nodeCode)
+      if (error) { this.$message.warning(error); return false }
+    }
     this.repairLegacyRuleCallRefs(model)
     const modelJson = JSON.stringify(model)
     const result = await this.saveDraftModel(modelJson)

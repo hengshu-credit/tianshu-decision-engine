@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.governance;
 
+import com.hengshucredit.rule.server.service.BuiltinFunctionCatalog;
+
 import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -1177,6 +1179,9 @@ public class GovernanceApprovalService {
                 requireAdapter(request.getResourceType());
         List<GovernanceIssue> issues = new ArrayList<>(
                 adapter.validate(snapshot, request.getAction()));
+        for (var issue : codeIssues(request, snapshot))
+            issues.add(GovernanceIssue.error("RESERVED_CONTENT_CODE", issue.message(), request.getResourceType(),
+                    request.getResourceId(), issue.path()));
         if (impactService != null) {
             issues.addAll(impactService.analyze(
                     request.getResourceType(),
@@ -1482,7 +1487,27 @@ public class GovernanceApprovalService {
         return resource != null && resource.getEffectiveVersionId() == null && "DRAFT".equals(resource.getEffectiveStatus());
     }
 
+    private List<ResourceCodeValidation.Issue> codeIssues(GovernanceApprovalRequest request, ResourceSnapshot snapshot) {
+        // Deletion never introduces a new code. Other actions can apply a submitted snapshot.
+        if ("DELETE".equals(request.getAction())) return List.of();
+        boolean ownBuiltin = false;
+        if (GovernanceResourceTypes.FUNCTION.equals(request.getResourceType()) && !"CREATE".equals(request.getAction())
+                && request.getResourceId() != null && request.getResourceId() > 0) {
+            Map<String, Object> draft = CanonicalJson.readMap(snapshot.snapshotJson());
+            Object code = draft.get("funcCode");
+            if (code instanceof String name && BuiltinFunctionCatalog.contains(name) && "GLOBAL".equals(draft.get("scope"))
+                    && "0".equals(String.valueOf(draft.get("projectId")))) {
+                ResourceSnapshot stored = requireAdapter(GovernanceResourceTypes.FUNCTION).loadEffective(request.getResourceId());
+                Map<String, Object> original = CanonicalJson.readMap(stored.snapshotJson());
+                ownBuiltin = name.equals(original.get("funcCode")) && "GLOBAL".equals(original.get("scope"))
+                        && "0".equals(String.valueOf(original.get("projectId")));
+            }
+        }
+        return ResourceCodeValidation.inspect(request.getResourceType(), snapshot, ownBuiltin);
+    }
+
     private ResourceSnapshot saveWorkspace(GovernanceApprovalRequest request, ResourceSnapshot snapshot, String actor) {
+        ResourceCodeValidation.requireValid(codeIssues(request, snapshot));
         GovernedResourceAdapter adapter = requireAdapter(request.getResourceType());
         if (!"CREATE".equals(request.getAction()) || !adapter.supportsDraftWorkspace()) return snapshot;
         Long id = request.getResourceId();

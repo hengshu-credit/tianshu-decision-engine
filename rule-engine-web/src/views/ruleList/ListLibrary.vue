@@ -276,7 +276,7 @@
             <el-form-item label="名单编码" prop="listCode">
               <el-input
                 v-model="form.listCode"
-                :disabled="!!form.id"
+                :disabled="!!form.id && !repairListCode"
                 placeholder="如 mobile_black_list"
               />
             </el-form-item>
@@ -322,6 +322,7 @@
 </template>
 
 <script>
+import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
@@ -349,6 +350,7 @@ export default {
   mixins: [governanceWorkspaceMixin, configurationDialogsMixin([{ visible: 'dialogVisible', draft: vm => vm.form, busy: vm => vm.saving }])],
   data() {
     return {
+      repairListCode: false,
       tableColumnOrders: { listColumns: null },
       listColumns: [
         { key: 'scope', label: '作用范围' },
@@ -385,6 +387,7 @@ export default {
       ],
       rules: {
         listCode: [
+          reservedCodeRule,
           { required: true, message: '请输入名单编码', trigger: 'blur' },
         ],
         listName: [
@@ -455,6 +458,7 @@ export default {
       this.dialogVisible = true
     },
     handleEdit(row) {
+      this.repairListCode = Boolean(reservedCodeError(row.listCode))
       this.form = { ...this.emptyForm(), ...row }
       this.dialogVisible = true
     },

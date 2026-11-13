@@ -417,7 +417,7 @@
             >
               <el-table-column label="变量名" min-width="180">
                 <template v-slot="{ row }">
-                  <el-input v-model="row.name" placeholder="如 appSecret" />
+                  <el-form-item :error="reservedCodeError(row.name)"><el-input v-model="row.name" placeholder="如 appSecret" /></el-form-item>
                 </template>
               </el-table-column>
               <el-table-column label="变量值" min-width="280">
@@ -1210,6 +1210,7 @@
 </template>
 
 <script>
+import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import { getDatasource } from '@/api/datasource'
 import { hasPermission } from '@/security/permissionState'
@@ -1352,6 +1353,7 @@ export default {
           { required: true, message: '请选择数据源', trigger: 'change' },
         ],
         apiCode: [
+          reservedCodeRule,
           { required: true, message: '请输入接口编码', trigger: 'blur' },
         ],
         apiName: [
@@ -1583,6 +1585,7 @@ export default {
     this.invalidateTestRequests()
   },
   methods: {
+    reservedCodeError,
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     emptyPayloadCaptureConfig() {
       return emptyPayloadCaptureConfig()
@@ -2038,6 +2041,8 @@ export default {
             '脚本变量名仅支持字母、数字和下划线，且不能以数字开头：' + name
           )
         }
+        const error = reservedCodeError(name)
+        if (error) throw new Error(error)
         if (names[name]) throw new Error('脚本变量名不能重复：' + name)
         names[name] = true
         result.push({

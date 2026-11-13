@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.ledger;
 
+import com.hengshucredit.rule.server.service.ReservedContentCode;
+
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hengshucredit.rule.model.dto.LedgerRequests;
 import org.springframework.stereotype.Service;
@@ -119,6 +121,7 @@ public class LedgerQueryService {
         var current = id == null ? null : repository.one("rule_ledger_event", id, false);
         String code = LedgerArticleService.text(input.code() == null && current != null ? String.valueOf(current.get("event_code")) : input.code(), 128, "事件编码");
         if (code.isBlank()) throw new IllegalArgumentException("请填写唯一的事件编码");
+        ReservedContentCode.requireAllowed(code);
         if (number(repository.queryForObject("SELECT COUNT(*) FROM rule_ledger_event WHERE event_code=? AND id<>?", Long.class, code, id == null ? 0L : id)) > 0) throw new IllegalArgumentException("事件编码已存在或已使用，请更换编码");
         List<LedgerRequests.StatusOption> options = input.statusOptions();
         if (options == null) {

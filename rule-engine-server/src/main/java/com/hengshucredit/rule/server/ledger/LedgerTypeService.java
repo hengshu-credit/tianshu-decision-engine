@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.ledger;
 
+import com.hengshucredit.rule.server.service.ReservedContentCode;
+
 import com.hengshucredit.rule.model.dto.LedgerRequests;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,6 +48,7 @@ public class LedgerTypeService {
         var current = id == null ? null : resolve(String.valueOf(id), true);
         String code = LedgerArticleService.text(input.code() == null && current != null ? String.valueOf(current.get("type_code")) : input.code(), 128, "类型编码");
         if (code.isBlank()) throw new IllegalArgumentException("请填写唯一的类型编码");
+        ReservedContentCode.requireAllowed(code);
         if (number(repository.queryForObject("SELECT COUNT(*) FROM rule_ledger_type WHERE type_code=? AND id<>?", Long.class, code, id == null ? 0L : id)) > 0) throw new IllegalArgumentException("类型编码已存在或已使用，请更换编码");
         int order = input.sortOrder() == null ? 0 : input.sortOrder();
         try {
