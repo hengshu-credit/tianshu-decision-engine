@@ -28,13 +28,20 @@ export function contentDataTypeIcon(value, options = []) {
   const type = contentTypeCode(value, options)
   return type ? fieldTypeIcon(type) : ''
 }
+export function currentReferenceOption(refId, refType, relativePath, options) {
+  if (refId == null || !refType) return undefined
+  return options.find(item => item.versionMode !== 'FIXED'
+    && String(item._varId ?? item.refId ?? item.id) === String(refId)
+    && (item._refType || item.refType) === refType
+    && (!['EXTERNAL_API', 'API_CONTEXT'].includes(refType) || (item.relativePath || item._ref?.relativePath || '') === (relativePath || '')))
+}
+
 function contentTypeCode(value, options) {
   if (!value) return ''
   let type = value.valueType || value.varType
   if (value.kind === 'OPERATION') type = inferOperandType(value)
   if (value.kind === 'REFERENCE' && value.refId != null && value.refType && value.versionMode !== 'FIXED') {
-    const item = options.find(option => String(option._varId ?? option.id) === String(value.refId) && (option._refType || option.refType) === value.refType
-      && (!['EXTERNAL_API', 'API_CONTEXT'].includes(value.refType) || (option.relativePath || option._ref?.relativePath || '') === (value.relativePath || '')))
+    const item = currentReferenceOption(value.refId, value.refType, value.relativePath, options)
     type = item?.varType || type
   }
   type = String(type || inferOperandType(value) || '').toUpperCase()

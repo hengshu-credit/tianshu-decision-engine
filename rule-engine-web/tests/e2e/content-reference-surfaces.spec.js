@@ -497,8 +497,10 @@ test('规则开放接口与模型入出参均复用通用色块', async ({ page 
   await checkBlocks(page.locator('.open-api-section .content-ref').first())
   await page.goto('http://tianshu.local/#/model/41')
   await checkBlocks(page.locator('.operand-value-display').first())
+  await expect(page.locator('.operand-value-display .content-ref__version').first()).toHaveText('最新')
   await page.getByRole('tab', { name: /输出字段/ }).click()
   await checkBlocks(page.locator('.el-tab-pane:visible .operand-value-display').first())
+  await expect(page.locator('.el-tab-pane:visible .operand-value-display .content-ref__version').first()).toHaveText('最新')
   assertClean()
 })
 

@@ -1,5 +1,5 @@
 import { createReferenceOperand, inferOperandType } from './operand'
-import { contentSourceIcon, contentDataTypeIcon, contentDataType, contentSummary } from './contentDisplay'
+import { contentSourceIcon, contentDataTypeIcon, contentDataType, contentSummary, currentReferenceOption } from './contentDisplay'
 import { operandKindMeta } from './operand'
 import { compactVersion } from './resourceVersion'
 import { matchPathContent } from './pathContentMatch'
@@ -14,13 +14,15 @@ export function contentReferenceValue(value = {}, options = []) {
     || (value.modelCode ? 'MODEL' : value.objectCode ? 'DATA_OBJECT_ROOT' : value.apiCode ? 'EXTERNAL_API' : value.ruleCode ? 'RULE' : value.funcCode || value.functionCode ? 'FUNCTION' : value.listCode ? 'LIST_LIBRARY' : 'VARIABLE')
   const refType = ({ API: 'EXTERNAL_API', DB: 'DATABASE', LIST: 'LIST_LIBRARY', DATASOURCE: 'EXTERNAL_DATASOURCE' })[rawType] || rawType
   const id = value._varId ?? value.refId ?? value.varId ?? value.id ?? value.function?.id ?? value.function?.functionId
-  const selected = id != null && options.find(item => String(item._varId ?? item.refId ?? item.id) === String(id) && (item._refType || item.refType) === refType)
-  const source = value.versionMode === 'FIXED' ? value : { ...selected, ...value }
+  const source = value.versionMode === 'FIXED' ? value : {
+    ...currentReferenceOption(id, refType, value.relativePath ?? value._ref?.relativePath, options), ...value,
+  }
   return { ...createReferenceOperand({ ...source, _varId: id, _refType: refType,
     varCode: source.varCode || source.refCode || source.fieldCode || source.fieldPath || source.modelCode || source.objectCode || source.apiCode || source.ruleCode || source.funcCode || source.functionCode || source.listCode || source.code || source.fieldName || '',
     varLabel: source.varLabelText || source.varLabel || source.refLabel?.label || source.fieldLabel || source.fieldName || source.modelName || source.objectLabel || source.objectName || source.apiName || source.ruleName || source.funcName || source.functionLabel || source.listName || source.name || source.label || '',
     varType: source.varType || source.valueType || source.fieldType || source.returnType || '',
-  }), builtin: source.builtin, version: source.displayVersion ?? source.version ?? source._ref?.modelVersion ?? source._ref?.objectVersion ?? source.varObj?.version ?? source.resource?.version ?? source.function?.version,
+  }), builtin: source.builtin, resolvedVersion: source.resolvedVersion,
+    version: source.displayVersion ?? source.version ?? source._ref?.modelVersion ?? source._ref?.objectVersion ?? source.varObj?.version ?? source.resource?.version ?? source.function?.version,
   }
 }
 
@@ -31,7 +33,8 @@ export function contentTypeFamily(type) {
   return 'text'
 }
 
-export function contentReferenceParts(value, options = [], sensitive = false, mode = 'configuration') {
+export function contentReferenceParts(value, catalog = [], sensitive = false, mode = 'configuration') {
+  const options = mode === 'trace' ? [] : catalog
   const node = contentReferenceValue(value, options)
   const meta = operandKindMeta(node)
   const parts = [
@@ -43,19 +46,20 @@ export function contentReferenceParts(value, options = [], sensitive = false, mo
     parts.push({ key: 'value', text: sensitive ? '••••••••' : literal === '' ? '""' : literal })
   } else if (['REFERENCE', 'PATH', 'FUNCTION'].includes(node.kind)) {
     const match = matchPathContent(node, options)
-    const option = node.refId != null && node.refType && node.versionMode !== 'FIXED' && options.find(item => String(item._varId ?? item.id) === String(node.refId) && (item._refType || item.refType) === node.refType
-      && (!['EXTERNAL_API', 'API_CONTEXT'].includes(node.refType) || (item.relativePath || item._ref?.relativePath || '') === (node.relativePath || '')))
+    const option = node.versionMode !== 'FIXED' && currentReferenceOption(node.refId, node.refType, node.relativePath, options)
     const code = match?.code || option?.varCode || node.functionCode || node.code || node.value || ''
     const name = match?.label || option?.varLabelText || option?.varLabel || node.label || code
     parts.push({ key: 'name', text: name }, { key: 'code', text: code })
     const rawVersion = node.versionMode === 'FIXED' ? node.displayVersion ?? node.version
       : option?.displayVersion ?? option?.version ?? option?._ref?.modelVersion ?? option?._ref?.objectVersion ?? option?.varObj?.version ?? node.displayVersion ?? node.version
     const protocol = node.protocolPath || node.refType === 'API_CONTEXT'
-    if (!protocol && !(mode === 'editor' && (node.builtin || rawVersion == null && !node.versionMode))) {
-      let text = match?.version || compactVersion({ ...node, version: rawVersion }) || (rawVersion != null ? `v${rawVersion}` : '版本未提供')
+    const unbound = node.refId == null && node.functionId == null
+    if (!protocol && !(mode === 'editor' && (node.builtin || unbound && rawVersion == null && !node.versionMode))) {
+      const fallback = node.versionMode === 'FIXED' ? '版本未提供' : '最新'
+      let text = match?.version || compactVersion({ ...node, version: rawVersion }) || (rawVersion != null ? `v${rawVersion}` : fallback)
       if (node.builtin) text = '内置'
       let title = text
-      if (mode === 'trace' && node.versionMode === 'LATEST') {
+      if (mode === 'trace' && !node.builtin && (node.versionMode === 'LATEST' || !node.versionMode && (rawVersion == null || node.resolvedVersion != null))) {
         text = node.resolvedVersion != null ? `v${node.resolvedVersion}` : '跟随最新'
         title = node.resolvedVersion != null ? '执行时解析的实际版本' : '执行时跟随最新；日志未记录解析后的版本号，不能用配置时的版本号替代'
       } else if (mode === 'trace' && node.versionMode === 'FIXED') { text = '固定 ' + text; title = '本次执行配置保存的版本绑定' }
@@ -70,7 +74,7 @@ export function contentReferenceParts(value, options = [], sensitive = false, mo
 
 export const contentPartClass = part => `content-ref__segment content-ref__${part.key}${part.family ? ' content-ref__type--' + part.family : ''}`
 
-/** 追踪仅使用日志已有身份；旧记录缺少类型或版本时明确显示未知，不能借同名内容补造关联。 */
+/** 追踪仅使用日志已有身份和版本证据。 */
 export function traceContentValue(node, labels = {}) {
   if (node?.kind) return node
   const label = labels[node?.token]

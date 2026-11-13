@@ -58,8 +58,9 @@ test('关闭展示仅移除装饰，不替换源码、不触发编辑或保存',
   view.referenceDecorationIds = []
   ScriptEditor.methods.refreshReferenceDecorations.call(view)
   const decorations = view.monacoEditor.deltaDecorations.mock.calls[0][1]
-  expect(decorations).toHaveLength(8)
-  expect(decorations.some(item => item.options.description === 'engine-content-version')).toBe(false)
+  expect(decorations).toHaveLength(10)
+  const versions = decorations.filter(item => item.options.description === 'engine-content-version')
+  expect(versions.map(item => item.options.after.content.trim())).toEqual(['最新', '最新'])
   view.showEngineReferences = false
   ScriptEditor.methods.refreshReferenceDecorations.call(view)
   expect(view.monacoEditor.deltaDecorations).toHaveBeenLastCalledWith(['decoration'], [])
