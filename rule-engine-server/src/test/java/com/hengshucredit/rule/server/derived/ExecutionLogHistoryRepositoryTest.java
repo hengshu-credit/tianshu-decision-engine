@@ -121,6 +121,23 @@ public class ExecutionLogHistoryRepositoryTest {
         assertTrue(error.getMessage().contains("100000"));
     }
 
+    @Test
+    public void incompleteSpatialPairsUseStableFieldsFromTheOriginalRootAndApiReceipts() {
+        var jdbc = new CapturingJdbc();
+        jdbc.roots = List.of(Map.of("1", 1L, "2", "root", "3", Timestamp.valueOf("2026-09-22 12:00:00"),
+                "4", "{\"version\":1,\"fields\":{\"VARIABLE:1\":120},\"apiIds\":[8]}"));
+        jdbc.apis = List.of(Map.of("root_trace_id", "root", "target_ref_id", 8L,
+                "history_fields", "{\"VARIABLE:1\":77,\"VARIABLE:2\":34}"));
+        var before = LocalDateTime.of(2026,9,23,0,0);
+        var selection = new IndexedHistoryCount.Selection("PROJECT", 3L, null, before,
+                new IndexedHistoryCount.Region("VARIABLE:1", "VARIABLE:2",120,34,1000));
+        var history = new ExecutionLogHistoryRepository(jdbc);
+        var recovered = history.spatialExceptions(selection,before.minusDays(1),true);
+        assertEquals(Map.of("VARIABLE:1",120,"VARIABLE:2",34),recovered.get(0).fields());
+        jdbc.apis = List.of();
+        assertThrows(IllegalStateException.class, () -> history.spatialExceptions(selection,before.minusDays(1),true));
+    }
+
     private static Map<String, Object> root(String snapshot) {
         return Map.of("id", 1L, "trace_id", "root", "started_at", Timestamp.valueOf("2026-09-22 12:00:00"), "history_fields", snapshot);
     }

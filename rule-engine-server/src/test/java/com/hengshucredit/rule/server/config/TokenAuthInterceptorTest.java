@@ -172,8 +172,8 @@ public class TokenAuthInterceptorTest {
         ProjectAuthContext context = ProjectAuthContext.direct(7L, "credit", 9L,
                 "BASIC_MAIN", ProjectAuthType.BASIC, policy);
         TokenAuthInterceptor interceptor = interceptor(service(context));
-        MockHttpServletRequest first = new MockHttpServletRequest("POST", "/api/rule/openapi/RISK");
-        MockHttpServletRequest second = new MockHttpServletRequest("POST", "/api/rule/openapi/RISK");
+        MockHttpServletRequest first = new MockHttpServletRequest("POST", "/api/rule/runtime/executions/RISK/resume");
+        MockHttpServletRequest second = new MockHttpServletRequest("POST", "/api/rule/runtime/executions/RISK/resume");
 
         assertTrue(interceptor.preHandle(first, new MockHttpServletResponse(), new Object()));
         MockHttpServletResponse limited = new MockHttpServletResponse();
@@ -207,6 +207,24 @@ public class TokenAuthInterceptorTest {
     }
 
     @Test
+    public void durableSubmissionsCanReachRegistrationWhileTheExecutionPermitIsOccupied() throws Exception {
+        ProjectAccessPolicy policy = new ProjectAccessPolicy();
+        policy.setMaxConcurrent(1);
+        var context = ProjectAuthContext.direct(7L, "credit", 9L, "BASIC_MAIN", ProjectAuthType.BASIC, policy);
+        var interceptor = interceptor(service(context));
+        var held = new MockHttpServletRequest("POST", "/api/rule/runtime/executions/original/resume");
+        assertTrue(interceptor.preHandle(held, new MockHttpServletResponse(), new Object()));
+        try {
+            for (String uri : new String[]{"/api/rule/openapi/RISK", "/api/rule/sync/execute/RISK", "/api/rule/runtime/experiment/execute/RISK"}) {
+                var submit = new MockHttpServletRequest("POST", uri);
+                assertTrue(uri, interceptor.preHandle(submit, new MockHttpServletResponse(), new Object()));
+                assertEquals(Long.valueOf(7), ProjectAuthContext.from(submit).getProjectId());
+                interceptor.afterCompletion(submit, new MockHttpServletResponse(), new Object(), null);
+            }
+        } finally { interceptor.afterCompletion(held, new MockHttpServletResponse(), new Object(), null); }
+    }
+
+    @Test
     public void rejectsExecutionWhenDistributedGuardIsUnavailable() throws Exception {
         ProjectAccessPolicy policy = new ProjectAccessPolicy();
         policy.setMaxConcurrent(1);
@@ -217,7 +235,7 @@ public class TokenAuthInterceptorTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         assertFalse(interceptor.preHandle(
-                new MockHttpServletRequest("POST", "/api/rule/openapi/RISK"),
+                new MockHttpServletRequest("POST", "/api/rule/runtime/executions/RISK/resume"),
                 response, new Object()));
         assertEquals(429, response.getStatus());
         assertTrue(response.getContentAsString().contains("\"code\":\"400001\""));

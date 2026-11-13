@@ -1,5 +1,10 @@
 package com.hengshucredit.rule.server.controller.sync;
 
+import com.hengshucredit.rule.server.service.ExecutionDispatch;
+import com.hengshucredit.rule.server.service.ExecutionQueue;
+import com.hengshucredit.rule.server.auth.ProjectExecutionGuard;
+import com.hengshucredit.rule.server.openapi.OpenApiContractService;
+
 import com.hengshucredit.rule.model.ApiResponse;
 
 import com.hengshucredit.rule.model.dto.RuleExperimentExecuteRequest;
@@ -35,6 +40,7 @@ import java.util.LinkedHashMap;
 public class RuleRuntimeController {
     @Resource
     private RuleExperimentService experimentService;
+    @Resource private ExecutionQueue executionQueue;
 
     @Resource
     private RuleExecutionStateService stateService;
@@ -56,17 +62,26 @@ public class RuleRuntimeController {
 
     @Resource
     private RuleIdempotencyService idempotencyService;
+    @Resource private OpenApiContractService openContracts;
 
     @PostMapping("/experiment/execute/{experimentCode}")
     public ApiResponse<RuleExperimentExecuteResult> executeExperiment(
             @PathVariable String experimentCode,
             @RequestBody(required = false) RuleExperimentExecuteRequest request,
             HttpServletRequest httpRequest) {
+        return executeExperiment(experimentCode, request == null ? new RuleExperimentExecuteRequest() : request, httpRequest, null);
+    }
+
+    private ApiResponse<RuleExperimentExecuteResult> executeExperiment(String experimentCode, RuleExperimentExecuteRequest request,
+                                                                      HttpServletRequest httpRequest, String resumeTrace) {
         ProjectAuthContext auth = ProjectAuthContext.from(httpRequest);
         if (auth == null || (!auth.isGlobalAccess() && auth.getProjectId() == null)) {
-            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.TOKEN_INVALID, "Unauthorized project token");
+            return ApiResponse.fail(PlatformCode.TOKEN_INVALID, "Unauthorized project token");
         }
         RuleExperimentExecutionStateService.Decision activeDecision = null;
+        boolean admitted = false;
+        ProjectExecutionGuard.Permit permit = null;
+        String acceptedTrace = null;
         try {
             var experiment = experimentService.getOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.hengshucredit.rule.model.entity.RuleExperiment>()
                     .eq(com.hengshucredit.rule.model.entity.RuleExperiment::getExperimentCode, experimentCode)
@@ -78,9 +93,14 @@ public class RuleRuntimeController {
             }
             String recoveryMode = com.hengshucredit.rule.server.openapi.OpenApiContract.IdempotencyConfig.requireRecoveryMode(
                     httpRequest.getParameter("externalRecoveryMode"));
-            var decision = experimentStateService.begin(executionProjectId, experiment.getId(), experimentCode,
-                    request, experimentService.executionFingerprint(experimentCode, executionProjectId), null);
-            decision.setExternalRecoveryMode(recoveryMode);
+            String digest = "FIXED".equals(request.getVersionMode()) ? experimentService.fixedFingerprint(experiment,request.getVersionId())
+                    : experimentService.executionFingerprint(experiment);
+            boolean submit = executionQueue != null && resumeTrace == null;
+            var decision = submit
+                    ? experimentStateService.enqueue(executionProjectId, experiment.getId(), experimentCode, request, digest,
+                        ExecutionDispatch.of(auth, request.getClientAppName(), true, recoveryMode))
+                    : experimentStateService.begin(executionProjectId, experiment.getId(), experimentCode, request, digest, resumeTrace);
+            acceptedTrace = decision.getTraceId();
             activeDecision = decision.isClaimed() ? decision : null;
             if (decision.getStatus() == RuleExperimentExecutionStateService.Status.COMPLETED) {
                 return ApiResponse.ok(decision.getResult());
@@ -89,19 +109,50 @@ public class RuleRuntimeController {
                 return ApiResponse.fail(PlatformCode.IDEMPOTENCY_CONFLICT, null);
             }
             if (decision.getStatus() == RuleExperimentExecutionStateService.Status.IN_PROGRESS) {
-                return ApiResponse.fail(PlatformCode.EXECUTION_IN_PROGRESS, null);
+                var response = ApiResponse.<RuleExperimentExecuteResult>fail(PlatformCode.EXECUTION_IN_PROGRESS,null);
+                response.setTraceId(acceptedTrace);
+                return response;
             }
-            RuleExperimentExecuteResult result = experimentStateService.withLease(decision, () -> experimentService.executeForProject(
-                    experimentCode, executionProjectId, request, decision.getTraceId()));
+            if (submit) {
+                admitted = executionQueue.enter();
+                if (!admitted) return executionQueue.defer(true, acceptedTrace);
+                permit = executionQueue.permit(auth);
+            }
+            if (decision.getStatus() == RuleExperimentExecutionStateService.Status.QUEUED) {
+                var claim = experimentStateService.claimAccepted(decision.getStateId(),decision.getAttemptNo(),acceptedTrace);
+                if (claim == null) {
+                    var existing = experimentStateService.byTrace(acceptedTrace);
+                    if (existing != null && "SUCCEEDED".equals(existing.status()) && existing.resultJson() != null)
+                        return ApiResponse.ok(JSON.parseObject(existing.resultJson(),RuleExperimentExecuteResult.class));
+                    return ExecutionQueue.pending(acceptedTrace);
+                }
+                decision = claim;
+                activeDecision = claim;
+            }
+            decision.setExternalRecoveryMode(submit ? decision.acceptedRecoveryMode() : recoveryMode);
+            final var running = decision;
+            RuleExperimentExecuteResult result = experimentStateService.withLease(running, () -> experimentService.executeForProject(
+                    experimentCode, executionProjectId, request, running.getTraceId()));
             experimentStateService.complete(decision, result);
             activeDecision = null;
             return ApiResponse.ok(result);
+        } catch (RuleExperimentExecutionStateService.StrategyInProgress running) {
+            if (activeDecision != null) experimentStateService.awaitStrategy(activeDecision);
+            return ExecutionQueue.pending(acceptedTrace);
+        } catch (ProjectExecutionGuard.Rejected busy) {
+            return acceptedTrace == null ? ApiResponse.fail(PlatformCode.CAPACITY_EXCEEDED,null)
+                    : executionQueue.defer(true, acceptedTrace);
         } catch (IllegalArgumentException e) {
             if (activeDecision != null) experimentStateService.release(activeDecision, e.getMessage());
             return ApiResponse.fail(e);
         } catch (RuntimeException e) {
             if (activeDecision != null) experimentStateService.release(activeDecision, e.getMessage());
-            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.SYSTEM_ERROR, "实验执行异常");
+            var failed = ApiResponse.<RuleExperimentExecuteResult>fail(com.hengshucredit.rule.model.PlatformCode.SYSTEM_ERROR, "实验执行异常");
+            failed.setTraceId(acceptedTrace);
+            return failed;
+        } finally {
+            if (permit != null) permit.close();
+            if (admitted) executionQueue.leave();
         }
     }
 
@@ -243,13 +294,19 @@ public class RuleRuntimeController {
             if (experiment != null) {
                 if (experiment.request() == null) return ApiResponse.fail(PlatformCode.RESOURCE_CONFLICT, "历史实验未保存原请求，请按原订单号重试");
                 if (params != null) experiment.request().setParams(params);
-                return executeExperiment(experiment.experimentCode(), experiment.request(), httpRequest);
+                return executeExperiment(experiment.experimentCode(), experiment.request(), httpRequest, traceId);
             }
         }
         if (state == null || (!auth.isGlobalAccess() && !sameProject(state, auth.getProjectId()))) {
             return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "Execution state not found");
         }
+        var originalDispatch = state.dispatch();
+        if (originalDispatch != null && originalDispatch.openContract()) {
+            try { openContracts.resolve(auth.getAuthId(), auth.getAuthCode(), state.ruleCode()); }
+            catch (com.hengshucredit.rule.server.openapi.OpenApiException denied) { return ApiResponse.fail(PlatformCode.PERMISSION_DENIED, null); }
+        }
         if (state.resultJson() != null && !state.resultJson().isBlank() && isTerminalSuccess(state)) {
+            if (params != null && !idempotencyService.sameRequest(state, params)) return ApiResponse.fail(PlatformCode.IDEMPOTENCY_CONFLICT, null);
             return ApiResponse.ok(publicRuleResult(state.resultJson()));
         }
         var publishedQuery = new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<RulePublished>()
@@ -277,7 +334,9 @@ public class RuleRuntimeController {
             RuleResult result = idempotencyService.withDecision(decision,
                     () -> executeService.executePublished(published,
                             resumeParams,
-                            state.projectId(), "RUNTIME_RESUME", auth, true, true));
+                            state.projectId(), originalDispatch == null ? "RUNTIME_RESUME" : originalDispatch.clientAppName(), auth,
+                            originalDispatch == null || originalDispatch.traceEnabled(),
+                            originalDispatch == null || (originalDispatch.recordTrace() == null ? originalDispatch.traceEnabled() : originalDispatch.recordTrace())));
             idempotencyService.complete(decision, result, null);
             return ApiResponse.ok(result);
         } catch (RuntimeException error) {

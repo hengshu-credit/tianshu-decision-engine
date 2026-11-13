@@ -396,7 +396,7 @@ public class SftpConnectPools implements DisposableBean {
 
     private final class SftpPoolHolder {
         private final RuleSftpDatasource datasource;
-        private final java.util.concurrent.BlockingQueue<PooledChannel> idle = new java.util.concurrent.LinkedBlockingQueue<>();
+        private final java.util.ArrayDeque<PooledChannel> idle = new java.util.ArrayDeque<>();
         private int total;
         private int active;
         private int waiting;
@@ -412,38 +412,44 @@ public class SftpConnectPools implements DisposableBean {
         }
 
         private PooledChannel borrow() throws Exception {
-            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(datasource.getBorrowTimeoutMs());
+            int budget = Math.min(datasource.getBorrowTimeoutMs(), RequestDeadlineContext.remainingMillis());
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(budget);
             while (true) {
-                PooledChannel pooled = idle.poll();
-                if (pooled != null) {
-                    synchronized (this) { active++; }
-                    if (isExpired(pooled)) { synchronized (this) { active--; } discard(pooled); continue; }
-                    return pooled;
-                }
                 synchronized (this) {
                     if (closed) throw new IllegalStateException("SFTP连接池已关闭");
-                    if (total < datasource.getMaxPoolSize()) {
-                        PooledChannel created = createChannel(datasource);
-                        total++;
-                        active++;
-                        return created;
+                    PooledChannel pooled = idle.poll();
+                    if (pooled != null) {
+                        if (isConnected(pooled) && !isExpired(pooled)) {
+                            active++;
+                            return pooled;
+                        }
+                        total--;
+                        closeQuietly(pooled);
+                        continue;
                     }
-                }
-                long remaining = deadline - System.nanoTime();
-                if (remaining <= 0) throw new IllegalStateException("SFTP连接池借用超时");
-                synchronized (this) { waiting++; }
-                PooledChannel waited;
-                try {
-                    waited = idle.poll(remaining, TimeUnit.NANOSECONDS);
-                } finally {
-                    synchronized (this) { waiting = Math.max(0, waiting - 1); }
-                }
-                if (waited != null) {
-                    synchronized (this) { active++; }
-                    if (isExpired(waited)) { synchronized (this) { active--; } discard(waited); continue; }
-                    return waited;
+                    long left = deadline - System.nanoTime();
+                    if (left <= 0) throw new IllegalStateException("SFTP连接池借用超时");
+                    if (total < datasource.getMaxPoolSize()) {
+                        total++; // Reserve capacity before opening the network connection outside the monitor.
+                        active++;
+                        break;
+                    }
+                    waiting++;
+                    try { TimeUnit.NANOSECONDS.timedWait(this, left); }
+                    finally { waiting--; }
                 }
             }
+            PooledChannel created;
+            try { created = createChannel(datasource); }
+            catch (Exception | Error failure) {
+                synchronized (this) { total--; active--; notifyAll(); }
+                throw failure;
+            }
+            synchronized (this) {
+                if (!closed) return created;
+            }
+            release(created, false);
+            throw new IllegalStateException("SFTP连接池已关闭");
         }
 
         private void release(PooledChannel pooled, boolean reusable) {
@@ -452,16 +458,12 @@ public class SftpConnectPools implements DisposableBean {
                 if (reusable && !closed && !isExpired(pooled) && isConnected(pooled)) {
                     pooled.lastUsed = System.currentTimeMillis();
                     idle.offer(pooled);
+                    notifyAll();
                     return;
                 }
                 total = Math.max(0, total - 1);
+                notifyAll();
             }
-            closeQuietly(pooled);
-        }
-
-        private synchronized void discard(PooledChannel pooled) {
-            if (pooled == null) return;
-            total = Math.max(0, total - 1);
             closeQuietly(pooled);
         }
 
@@ -470,7 +472,7 @@ public class SftpConnectPools implements DisposableBean {
         }
 
         private boolean isConnected(PooledChannel pooled) {
-            return pooled != null && pooled.session.isConnected() && pooled.channel.isConnected();
+            return pooled != null && pooled.session.isConnected() && pooled.channel.isConnected() && !pooled.channel.isClosed();
         }
 
         private synchronized Map<String, Object> snapshot() {
@@ -486,8 +488,9 @@ public class SftpConnectPools implements DisposableBean {
         private synchronized void close() {
             if (closed) return;
             closed = true;
-            List<PooledChannel> channels = new ArrayList<>();
-            idle.drainTo(channels);
+            List<PooledChannel> channels = new ArrayList<>(idle);
+            idle.clear();
+            notifyAll();
             channels.forEach(SftpConnectPools::closeQuietly);
             total = active;
         }

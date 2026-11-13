@@ -25,4 +25,9 @@ public class RuleExperimentGroupResult {
     private long executeTimeMs;
     private List<Object> traces;
     private Map<String, Object> resolvedParams;
+    @lombok.Getter(lombok.AccessLevel.NONE)
+    @lombok.Setter(lombok.AccessLevel.NONE)
+    private transient boolean waitingForSource;
+    public void markWaitingForSource(boolean waiting) { waitingForSource = waiting; }
+    public boolean waitsForSource() { return waitingForSource; }
 }

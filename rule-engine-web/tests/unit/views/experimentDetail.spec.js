@@ -106,6 +106,15 @@ describe('ExperimentDetail', () => {
     expect(ctx.loadRules).toHaveBeenCalledWith(9)
   })
 
+  test('空跑组默认关闭外数，载入已明确开启的旧分组时保留配置', () => {
+    const ctx = createContext()
+    const group = ctx.newGroup('TEST', 'shadow', '测试', 0)
+    expect(group.invokeExternalSource).toBe(0)
+    expect(ctx.normalizeGroupForEdit({ ...group, invokeExternalSource: null }).invokeExternalSource).toBe(0)
+    expect(ctx.normalizeGroupForEdit({ ...group, invokeExternalSource: 1 }).invokeExternalSource).toBe(1)
+    expect(ctx.newGroup('CHAMPION', 'live', '生产', 100).invokeExternalSource).toBe(1)
+  })
+
   test('允许调整冠军组类型，但保存前必须只有一个冠军组', () => {
     const ctx = createContext()
     ctx.form.groups[0].ruleCode = 'rule_challenger'

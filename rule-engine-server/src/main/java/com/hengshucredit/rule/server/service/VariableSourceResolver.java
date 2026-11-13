@@ -1229,9 +1229,14 @@ public class VariableSourceResolver {
             Map<String, String> paths = options != null ? options.getDerivedReferencePaths() : null;
             if (paths == null && variableService != null) paths = variableService.buildRefScriptNameMap(variable.getProjectId());
             collectApiOperandDependencies(config.get("requestOverrides"), paths, dependencies);
-            collectApiConfigDependencies(config.get("apiConfigId"), paths, dependencies);
-            RuleExternalApiConfig api = apiConfigMapper == null ? null : apiConfigMapper.selectById(longValue(config.get("apiConfigId")));
-            if (api != null) collectApiOperandDependencies(effectiveApiInputs(ExternalApiRequestPlan.specification(api), config.get("requestOverrides")), paths, dependencies);
+            Long apiId = longValue(config.get("apiConfigId"));
+            var cache = options == null ? null : options.getInvocationCache();
+            RuleExternalApiConfig api = apiConfigMapper == null ? null : cache == null ? apiConfigMapper.selectById(apiId)
+                    : cache.api(apiId, apiConfigMapper::selectById);
+            if (api != null) {
+                collectApiConfigDependencies(api, paths, dependencies, cache);
+                collectApiOperandDependencies(effectiveApiInputs(ExternalApiRequestPlan.specification(api), config.get("requestOverrides")), paths, dependencies);
+            }
         } else if ("DB".equals(varSource)) {
             Object configured = config.get("params");
             if (configured instanceof Iterable<?> values) {
@@ -1264,19 +1269,13 @@ public class VariableSourceResolver {
         return dependencies;
     }
 
-    private void collectApiConfigDependencies(Object apiConfigIdValue, Map<String, String> paths, Set<String> dependencies) {
-        Long apiConfigId = longValue(apiConfigIdValue);
-        if (apiConfigId == null || apiConfigMapper == null) {
-            return;
-        }
-        RuleExternalApiConfig apiConfig = apiConfigMapper.selectById(apiConfigId);
-        if (apiConfig == null) {
-            return;
-        }
+    private void collectApiConfigDependencies(RuleExternalApiConfig apiConfig, Map<String, String> paths, Set<String> dependencies,
+                                              VariableResolutionInvocationCache cache) {
         collectApiOperandDependencies(ExternalApiAuthConfig.inputs(apiConfig.getAuthApiConfig()), paths, dependencies);
         if (externalApiInvokeService != null) collectApiOperandDependencies(externalApiInvokeService.linkedRequestInputs(apiConfig), paths, dependencies);
         if ((apiConfig.getAuthMode() == null || "INHERIT".equals(apiConfig.getAuthMode())) && externalDatasourceMapper != null) {
-            RuleExternalDatasource datasource = externalDatasourceMapper.selectById(apiConfig.getDatasourceId());
+            RuleExternalDatasource datasource = cache == null ? externalDatasourceMapper.selectById(apiConfig.getDatasourceId())
+                    : cache.datasource(apiConfig.getDatasourceId(), externalDatasourceMapper::selectById);
             if (datasource != null) collectApiOperandDependencies(ExternalApiAuthConfig.inputs(datasource.getAuthConfig()), paths, dependencies);
         }
     }

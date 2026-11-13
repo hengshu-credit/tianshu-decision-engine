@@ -145,6 +145,9 @@ public class SchemaSyncServiceTest {
         assertEquals(1, jdbcTemplate.sqlList.size());
         assertEquals("ALTER TABLE `rule_list_record` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci",
                 jdbcTemplate.sqlList.get(0));
+        jdbcTemplate.normalizedTables.add("rule_list_record");
+        method.invoke(service, "rule_list_record");
+        assertEquals("已符合排序规则的表在重启时不能重复重建", 1, jdbcTemplate.sqlList.size());
     }
 
     @Test
@@ -631,6 +634,7 @@ public class SchemaSyncServiceTest {
         private final List<String> sqlList = new ArrayList<>();
         private final Set<String> missingColumns;
         private final Set<String> missingTables = new HashSet<>();
+        private final Set<String> normalizedTables = new HashSet<>();
         private final Set<String> missingIndexes = new HashSet<>();
         private final Set<String> nonLongTextColumns = new HashSet<>();
 
@@ -651,6 +655,8 @@ public class SchemaSyncServiceTest {
 
         @Override
         public <T> T queryForObject(String sql, Class<T> requiredType, Object... args) {
+            if (sql.contains("t.table_collation") && (normalizedTables.contains(args[0]) || missingTables.contains(args[0])))
+                return requiredType.cast(Integer.valueOf(0));
             if (sql.contains("INFORMATION_SCHEMA.TABLES") && args != null && args.length > 0
                     && missingTables.contains(String.valueOf(args[0]))) {
                 return requiredType.cast(Integer.valueOf(0));

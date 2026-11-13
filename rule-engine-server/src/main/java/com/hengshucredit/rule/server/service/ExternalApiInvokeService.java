@@ -457,7 +457,8 @@ public class ExternalApiInvokeService {
                 } else {
                     result = doInvoke(apiConfig, datasource, invokeParams, trace);
                 }
-                RequestDeadlineContext.check();
+                // A received response must be receipted even if the HTTP caller has just exhausted its budget.
+                if (trace.progress == null) RequestDeadlineContext.check();
                 long cost = System.currentTimeMillis() - start;
                 result.put("costTimeMs", cost);
                 result.put("cached", false);
@@ -493,6 +494,13 @@ public class ExternalApiInvokeService {
                 if (e instanceof ExternalApiFileInputs.FileInputException) {
                     recordTraceStep(trace, "FILE_INPUT", "请求文件校验与编码", "FAILED", null, Map.of("errorMessage", e.getMessage()), apiConfig.getId());
                     break;
+                }
+                if (trace.progress != null && trace.requestIssued && trace.pendingAsyncSnapshot() == null
+                        && (trace.responseStatus == null || trace.responseStatus / 100 == 2
+                        && findCause(e, BusinessResponseException.class) == null)) {
+                    // Transport ambiguity or local post-processing failure cannot authorize another paid request.
+                    throw new ApiInvokeException("外数已发送，结果需核实，已保留原调用", e, responseCacheSeconds > 0,
+                            trace.cacheStatus, true, null, apiConfig.getExceptionStrategy(), true);
                 }
                 RuleExternalApiConfig retryPolicy = retryPolicy(apiConfig, trace, e);
                 if (e instanceof TokenRefreshRejectedException
@@ -552,7 +560,7 @@ public class ExternalApiInvokeService {
             try { trace.billed = recordInvocationBilling(apiConfig, datasource, false, cost, message); }
             catch (RuntimeException failure) { throw billingFailure(apiConfig, datasource, trace, null, failure, cost); }
         }
-        if (ExternalApiTrialContext.current() != null && trace.pendingAsyncSnapshot() != null) {
+        if ((ExternalApiTrialContext.current() != null || trace.progress != null) && trace.pendingAsyncSnapshot() != null) {
             ExternalApiTrialContext.checkpoint(trace.pendingAsyncSnapshot());
             logDatasourceCall(apiConfig, datasource, trace, false, null, message, cost);
             throw new ApiInvokeException(message, lastError, false, trace.cacheStatus,
@@ -1099,7 +1107,8 @@ public class ExternalApiInvokeService {
         RuleExternalApiConfig template = linkedId == null ? root : invocationApi(linkedId);
         if (template == null || template.getStatus() != null && template.getStatus() != 1) throw new IllegalArgumentException("步骤 API 不存在或已停用");
         RuleExternalDatasource rootSource = invocationDatasource(root.getDatasourceId());
-        RuleExternalDatasource linkedSource = invocationDatasource(template.getDatasourceId());
+        RuleExternalDatasource linkedSource = java.util.Objects.equals(template.getDatasourceId(), root.getDatasourceId())
+                ? rootSource : invocationDatasource(template.getDatasourceId());
         if (linkedSource == null || linkedSource.getStatus() != null && linkedSource.getStatus() != 1
                 || !"GLOBAL".equals(linkedSource.getScope()) && !java.util.Objects.equals(linkedSource.getProjectId(), rootSource.getProjectId())) {
             throw new IllegalArgumentException("步骤 API 不属于当前可用范围");
@@ -1146,7 +1155,7 @@ public class ExternalApiInvokeService {
         config.put("executionConfig", stageSpec.toJSONString());
         RuleExternalApiConfig stage = config.toJavaObject(RuleExternalApiConfig.class);
         if (ExternalApiTrialContext.current() != null) stage.setId(ExternalApiTrialContext.current().stepIdentity(step.getString("id")));
-        Map<String, String> paths = invocationPaths(invocationDatasource(root.getDatasourceId()).getProjectId());
+        Map<String, String> paths = invocationPaths(rootSource.getProjectId());
         ExternalApiRequestPlan plan = ExternalApiRequestPlan.prepare(
                 selectRequestBranch(stage, context), context, Map.of(), paths);
         validateRequestPlan(plan);
@@ -1769,7 +1778,7 @@ public class ExternalApiInvokeService {
         UriComponentsBuilder initialBuilder = httpUrlBuilder(url);
         applyQueryParams(initialBuilder, apiConfig.getQueryConfig(), params, nullPolicy, nonJsonPolicy);
         AppliedAuth appliedAuth = applyAuth(initialBuilder, headers, datasource, apiConfig, params,
-                invocationPaths(datasource.getProjectId()), preview, previewToken, forceTokenRefresh, nonJsonPolicy);
+                preview, previewToken, forceTokenRefresh, nonJsonPolicy);
         String token = appliedAuth.token;
 
         Map<String, Object> scriptHeaders = headersForScript(headers);
@@ -2019,7 +2028,7 @@ public class ExternalApiInvokeService {
 
     private AppliedAuth applyAuth(UriComponentsBuilder builder, HttpHeaders headers,
                                   RuleExternalDatasource datasource, RuleExternalApiConfig apiConfig,
-                                  Map<String, Object> params, Map<String, String> paths,
+                                  Map<String, Object> params,
                                   boolean preview, String previewToken,
                                   boolean forceTokenRefresh, NonJsonNullPolicy nonJsonPolicy) {
         String authMode = firstText(apiConfig.getAuthMode(), "INHERIT")
@@ -2033,6 +2042,7 @@ public class ExternalApiInvokeService {
         if (authMode == null || "NONE".equals(authMode)) {
             return new AppliedAuth("", null, null);
         }
+        Map<String, String> paths = invocationPaths(datasource.getProjectId());
         ExternalApiAuthConfig.validate(authConfig, paths);
         Map<String, Object> config = parseJsonMap(authConfig);
         NonJsonAction authMissingPolicy = NonJsonAction.parse(config.get("nullPolicy"), NonJsonAction.FAIL);

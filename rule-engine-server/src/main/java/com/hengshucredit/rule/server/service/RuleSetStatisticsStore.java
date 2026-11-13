@@ -25,6 +25,7 @@ public class RuleSetStatisticsStore {
             throw new IllegalStateException("规则集统计快照未写入");
         }
         jdbc.update("DELETE FROM rule_set_statistics_event WHERE log_id=? AND create_time=?", id, time);
+        if ("[]".equals(json)) return;
         // 只在写入时展开一次JSON；父帧和规则项采用显式kind，读取时直接使用结构化字段。
         jdbc.update("""
             INSERT INTO rule_set_statistics_event

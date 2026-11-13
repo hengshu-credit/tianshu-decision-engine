@@ -1,5 +1,9 @@
 package com.hengshucredit.rule.server.controller.open;
 
+import com.hengshucredit.rule.server.service.ExecutionDispatch;
+import com.hengshucredit.rule.server.service.ExecutionQueue;
+import com.hengshucredit.rule.server.auth.ProjectExecutionGuard;
+
 import com.hengshucredit.rule.core.trace.TraceIdGenerator;
 import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
 import com.hengshucredit.rule.model.dto.RuleResult;
@@ -58,6 +62,7 @@ public class OpenRuleController {
 
     @Resource
     private RuleIdempotencyService idempotencyService;
+    @Resource private ExecutionQueue executionQueue;
 
     @PostMapping("/{ruleCode}")
     public ResponseEntity<Object> execute(@PathVariable String ruleCode,
@@ -67,6 +72,8 @@ public class OpenRuleController {
         OpenApiContractService.ResolvedContract resolved = null;
         String traceId = null;
         RuleIdempotencyService.Decision activeIdempotency = null;
+        boolean admitted = false;
+        ProjectExecutionGuard.Permit permit = null;
         try {
             ProjectAuthContext authContext = ProjectAuthContext.from(request);
             if (authContext == null) {
@@ -78,7 +85,11 @@ public class OpenRuleController {
                     firstHeaders(headers), resolved.getInputReferences());
             fieldValidationService.validateInputFields(resolved.getInputFields(), params);
             RuleIdempotencyService.Decision idempotency = idempotencyService == null ? null
-                    : idempotencyService.begin(resolved.getPublished(), resolved.getProject().getId(), params);
+                    : executionQueue == null ? idempotencyService.begin(resolved.getPublished(), resolved.getProject().getId(), params)
+                    : idempotencyService.enqueue(resolved.getPublished(), resolved.getProject().getId(), params,
+                        ExecutionDispatch.open(authContext,
+                            resolved.getContract().isRecordTrace() || resolved.getContract().isReturnTrace(), resolved.getContract().isRecordTrace()));
+            if (idempotency != null && hasText(idempotency.getRootTraceId())) traceId = idempotency.getRootTraceId();
             activeIdempotency = idempotency != null && idempotency.isClaimed() ? idempotency : null;
             if (idempotency == null) {
                 OpenApiContractService.ResolvedContract executionContract = resolved;
@@ -109,13 +120,24 @@ public class OpenRuleController {
                         traceId, errorValues("相同幂等键的请求正在执行"));
             }
             OpenApiContractService.ResolvedContract executionContract = resolved;
-            RuleResult result = executionExecutor.execute(() -> idempotencyService.withDecision(idempotency,
+            if (executionQueue != null) {
+                admitted = executionQueue.enter();
+                if (!admitted) return deferOpen(resolved, traceId);
+                permit = executionQueue.permit(authContext);
+                idempotency = idempotencyService.resumeAccepted(idempotency.state(), resolved.getPublished(), params);
+                if (!idempotency.isClaimed()) return render(resolved.getContract(), new OpenApiStatus(PlatformCode.RESULT_PENDING, null), traceId,
+                        errorValues("订单已接收，可按追踪号查询执行结果"));
+                activeIdempotency = idempotency;
+            }
+            var decision = idempotency;
+            java.util.function.Supplier<RuleResult> run = () -> idempotencyService.withDecision(decision,
                     () -> executeService.executePublished(
                             executionContract.getPublished(), params, executionContract.getProject().getId(),
                             "OPEN_API", authContext,
                             executionContract.getContract().isRecordTrace()
                                     || executionContract.getContract().isReturnTrace(),
-                            executionContract.getContract().isRecordTrace())));
+                            executionContract.getContract().isRecordTrace()));
+            RuleResult result = executionQueue == null ? executionExecutor.execute(run::get) : run.get();
             if (hasText(result.getTraceId())) traceId = result.getTraceId();
             idempotencyService.complete(idempotency, result, null);
             activeIdempotency = null;
@@ -124,6 +146,8 @@ public class OpenRuleController {
             }
             return render(resolved.getContract(), OpenApiStatuses.success(),
                     traceId, outputValues(resolved, result));
+        } catch (ProjectExecutionGuard.Rejected busy) {
+            return deferOpen(resolved, traceId);
         } catch (OpenRuleExecutionExecutor.TimedOut e) {
             releaseIdempotency(activeIdempotency, e.getMessage());
             return renderSafely(resolved, OpenApiStatuses.requestTimeout(),
@@ -151,7 +175,16 @@ public class OpenRuleController {
             }
             return renderSafely(resolved, OpenApiStatuses.systemError(),
                     traceId, errorValues("系统执行异常"));
+        } finally {
+            if (permit != null) permit.close();
+            if (admitted) executionQueue.leave();
         }
+    }
+
+    private ResponseEntity<Object> deferOpen(OpenApiContractService.ResolvedContract resolved, String traceId) {
+        executionQueue.defer(false, traceId);
+        return render(resolved.getContract(), new OpenApiStatus(PlatformCode.RESULT_PENDING, null), traceId,
+                errorValues("订单已接收，可按追踪号查询执行结果"));
     }
 
     private void releaseIdempotency(RuleIdempotencyService.Decision decision, String message) {

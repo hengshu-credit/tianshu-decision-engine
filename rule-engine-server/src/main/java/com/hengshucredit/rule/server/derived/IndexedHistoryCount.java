@@ -30,6 +30,7 @@ public class IndexedHistoryCount {
     private final com.github.benmanes.caffeine.cache.Cache<SpatialWindow, Long> closedWindows =
             com.github.benmanes.caffeine.cache.Caffeine.newBuilder().maximumSize(32768).build();
     private final JdbcTemplate jdbc;
+    @Autowired private ExecutionLogHistoryRepository history;
     @Autowired(required = false) private ConsoleDataPermissionHandler permissions;
     public IndexedHistoryCount(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
@@ -66,9 +67,8 @@ public class IndexedHistoryCount {
                     " AND ((f.field_key=? AND (f.value_kind='Z' OR f.numeric_value BETWEEN -180 AND 180))"
                             + " OR (f.field_key=? AND (f.value_kind='Z' OR f.numeric_value BETWEEN -90 AND 90)))",
                     List.of(region.longitudeKey(), region.latitudeKey()));
-            for (int i = 0; i < windows.size(); i++) {
-                if (valid[i] != candidates[i] * 2L) return Map.of();
-            }
+            boolean needsRecovery = false;
+            for (int i = 0; i < windows.size(); i++) needsRecovery |= valid[i] != candidates[i] * 2L;
             List<Object> args = new ArrayList<>();
             args.add(region.latitudeKey());
             args.add(region.longitudeKey());
@@ -105,6 +105,19 @@ public class IndexedHistoryCount {
             String table = spatialTable("GLOBAL".equals(selection.scope()) ? "idx_history_value_global" : "idx_history_value_project");
             matches = useBuckets ? spatialTotals(table, selection, windows, filter.toString(), args)
                     : totals(table, "f", selection, earliest, windows, filter.toString(), args);
+            if (needsRecovery) {
+                if (history == null) return Map.of();
+                var geo = new GeoFunctions();
+                for (var row : history.spatialExceptions(selection, earliest, useBuckets)) {
+                    Object lon = row.fields().get(region.longitudeKey());
+                    Object lat = row.fields().get(region.latitudeKey());
+                    if (lon == null || lat == null) continue;
+                    if (geo.distanceMeters(region.longitude(), region.latitude(), HistoryQuery.number(lon).doubleValue(),
+                            HistoryQuery.number(lat).doubleValue()) <= region.radius() + 0.000001) {
+                        for (int i = 0; i < windows.size(); i++) if (!row.occurredAt().isBefore(windows.get(i))) matches[i]++;
+                    }
+                }
+            }
         }
         Map<LocalDateTime, Count> result = new LinkedHashMap<>();
         for (int i = 0; i < windows.size(); i++) result.put(windows.get(i), new Count(candidates[i], matches[i]));

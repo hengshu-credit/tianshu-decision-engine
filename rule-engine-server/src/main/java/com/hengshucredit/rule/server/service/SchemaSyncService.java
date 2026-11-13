@@ -126,6 +126,10 @@ public class SchemaSyncService {
             ensureTablesFromSchema(List.of("rule_history_bucket", "rule_history_index_state", "rule_history_root", "rule_history_numeric_field", "rule_application_history", "rule_execution_state",
                     "rule_execution_persistence_outbox",
                     "rule_execution_checkpoint", "rule_experiment_execution_state"));
+            for (String table : List.of("rule_execution_state", "rule_experiment_execution_state")) {
+                addColumnIfMissing(table, "dispatch_json", "`dispatch_json` JSON DEFAULT NULL COMMENT '服务端接单上下文，保存鉴权标识、执行方式及恢复选项，不含凭据'");
+            }
+            addColumnIfMissing("rule_experiment_execution_state", "request_json", "`request_json` LONGTEXT DEFAULT NULL COMMENT '实验订单原始请求，供按追踪号恢复时校验入参'");
             if (tableExists("rule_execution_state")) {
                 addColumnIfMissing("rule_execution_state", "result_json", "`result_json` LONGTEXT DEFAULT NULL COMMENT '已完成执行的结果快照，JSON 格式'");
                 addColumnIfMissing("rule_execution_state", "expire_time",
@@ -609,7 +613,7 @@ public class SchemaSyncService {
                     + "`condition_value` VARCHAR(128) DEFAULT NULL COMMENT '条件分流返回值',"
                     + "`condition_expression` LONGTEXT DEFAULT NULL COMMENT '条件分流命中表达式',"
                     + "`condition_config` LONGTEXT DEFAULT NULL COMMENT '可视化条件配置JSON',"
-                    + "`invoke_external_source` TINYINT NOT NULL DEFAULT 1 COMMENT '测试组是否调用API外数',"
+                    + "`invoke_external_source` TINYINT NOT NULL DEFAULT 0 COMMENT '测试组是否实际调用外数接口：0=否，1=是',"
                     + "`status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态',"
                     + "`sort_order` INT NOT NULL DEFAULT 0 COMMENT '排序',"
                     + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',"
@@ -640,8 +644,8 @@ public class SchemaSyncService {
                     + "`rule_code` VARCHAR(128) DEFAULT NULL COMMENT '执行规则编码',"
                     + "`route_reason` VARCHAR(512) DEFAULT NULL COMMENT '分流原因',"
                     + "`success` TINYINT NOT NULL DEFAULT 1 COMMENT '执行结果',"
-                    + "`input_params` TEXT DEFAULT NULL COMMENT '解析后入参',"
-                    + "`output_result` TEXT DEFAULT NULL COMMENT '执行结果',"
+                    + "`input_params` LONGTEXT DEFAULT NULL COMMENT '分流实验组解析后的完整输入参数，JSON格式',"
+                    + "`output_result` LONGTEXT DEFAULT NULL COMMENT '分流实验组的完整业务执行结果，JSON格式',"
                     + "`trace_info` LONGTEXT DEFAULT NULL COMMENT '执行轨迹',"
                     + "`error_message` VARCHAR(1024) DEFAULT NULL COMMENT '错误信息',"
                     + "`execute_time_ms` BIGINT DEFAULT NULL COMMENT '执行耗时',"
@@ -1365,8 +1369,14 @@ public class SchemaSyncService {
     }
 
     private void ensureUtf8mb4Table(String tableName) {
-        if (!tableExists(tableName)) return;
-        jdbcTemplate.execute("ALTER TABLE `" + tableName + "` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+        Integer needsConversion = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM information_schema.tables t
+                WHERE t.table_schema=DATABASE() AND t.table_name=? AND (t.table_collation<>'utf8mb4_unicode_ci'
+                    OR EXISTS (SELECT 1 FROM information_schema.columns c WHERE c.table_schema=t.table_schema
+                        AND c.table_name=t.table_name AND c.collation_name<>'utf8mb4_unicode_ci' AND c.data_type<>'json'))
+                """, Integer.class, tableName);
+        if (Integer.valueOf(1).equals(needsConversion))
+            jdbcTemplate.execute("ALTER TABLE `" + tableName + "` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     }
 
     private boolean indexExists(String tableName, String indexName) {

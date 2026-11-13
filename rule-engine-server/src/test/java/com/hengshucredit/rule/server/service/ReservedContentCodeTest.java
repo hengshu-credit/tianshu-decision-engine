@@ -21,7 +21,11 @@ public class ReservedContentCodeTest {
     @Test
     public void shippedCatalogAgreesWithRegisteredFunctionsAndSeededConstants() throws Exception {
         var mapper = new ObjectMapper();
-        var catalog = mapper.readTree(getClass().getResource("/reserved-codes.json"));
+        com.fasterxml.jackson.databind.JsonNode catalog;
+        try (var input = getClass().getResourceAsStream("/reserved-codes.json")) {
+            assertNotNull(input);
+            catalog = mapper.readTree(input);
+        }
         var managed = BuiltinFunctionCatalog.definitions().stream().map(row -> row.getFuncCode()).collect(Collectors.toSet());
         List<String> advertised = mapper.readerForListOf(String.class).readValue(catalog.get("managedFunctions"));
         assertEquals(managed, Set.copyOf(advertised));

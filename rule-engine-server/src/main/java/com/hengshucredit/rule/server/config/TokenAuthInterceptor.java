@@ -102,15 +102,18 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
             return false;
         }
         if (isExecutionPath(uri)) {
-            if (admission != null && !admission.enter(requestStartedAt, policy.getRequestTimeoutMs())) {
-                request.setAttribute(ADMISSION_ATTRIBUTE + ".depth", admission.depth());
-                writeError(request, response, OpenApiStatuses.qpsConcurrencyExceeded());
-                return false;
-            }
-            if (admission != null) request.setAttribute(ADMISSION_ATTRIBUTE, Boolean.TRUE);
             try {
-                ProjectExecutionGuard.Permit permit = executionGuard.acquire(context.getAuthId(), policy);
-                request.setAttribute(PERMIT_ATTRIBUTE, permit);
+                boolean registerFirst = deferredExecution(uri);
+                if (!registerFirst && admission != null) {
+                    if (!admission.enter(requestStartedAt, policy.getRequestTimeoutMs())) {
+                        request.setAttribute(ADMISSION_ATTRIBUTE + ".depth", admission.depth());
+                        writeError(request, response, OpenApiStatuses.qpsConcurrencyExceeded());
+                        return false;
+                    }
+                    request.setAttribute(ADMISSION_ATTRIBUTE, Boolean.TRUE);
+                }
+                // A durable submission is authenticated here. Its project permit is acquired when execution actually starts.
+                if (!registerFirst) request.setAttribute(PERMIT_ATTRIBUTE, executionGuard.acquire(context.getAuthId(), policy));
                 RequestDeadlineContext.startAt(requestStartedAt, policy.getRequestTimeoutMs());
             } catch (ProjectExecutionGuard.Rejected e) {
                 releaseAdmission(request);
@@ -181,6 +184,11 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
         String limitName = OpenApiStatuses.QPS_CONCURRENCY_EXCEEDED.equals(status.getCode())
                 ? "project-execution-guard" : "token-request-rate";
         response.setHeader("X-Rule-Limit-Name", queued == null ? limitName : "server-execution");
+    }
+
+    private static boolean deferredExecution(String uri) {
+        return uri.startsWith("/api/rule/runtime/experiment/execute/") || uri.startsWith("/api/rule/sync/execute/")
+                || uri.startsWith("/api/rule/openapi/");
     }
 
     static boolean isExecutionPath(String uri) {

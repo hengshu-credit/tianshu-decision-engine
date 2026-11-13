@@ -1097,7 +1097,7 @@ export default {
         conditionValue: code,
         conditionExpression: '',
         conditionConfig: this.createConditionRoot(),
-        invokeExternalSource: 1,
+        invokeExternalSource: type === 'TEST' ? 0 : 1,
         status: 1,
         sortOrder: 0,
       }
@@ -1121,7 +1121,7 @@ export default {
         copy.invokeExternalSource === null ||
         copy.invokeExternalSource === undefined
       ) {
-        copy.invokeExternalSource = 1
+        copy.invokeExternalSource = copy.groupType === 'TEST' ? 0 : 1
       }
       if (copy.trafficRatio === null || copy.trafficRatio === undefined) {
         copy.trafficRatio = 0

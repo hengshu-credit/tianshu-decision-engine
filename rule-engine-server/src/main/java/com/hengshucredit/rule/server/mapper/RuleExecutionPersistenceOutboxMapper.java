@@ -9,18 +9,22 @@ import org.apache.ibatis.annotations.Select;
 
 @Mapper
 public interface RuleExecutionPersistenceOutboxMapper extends BaseMapper<RuleExecutionPersistenceOutbox> {
-    @Select("SELECT * FROM rule_execution_persistence_outbox WHERE delivery_status = 'PENDING' "
-            + "AND (next_retry_time IS NULL OR next_retry_time <= CURRENT_TIMESTAMP) "
-            + "ORDER BY id LIMIT #{limit} FOR UPDATE SKIP LOCKED")
-    java.util.List<RuleExecutionPersistenceOutbox> lockDueBatch(@Param("limit") int limit);
+    // The candidate scan is non-locking. Lock actual events only by primary key, so two consumers never hold
+    // each other's secondary-index entries while one of them is writing shared history/billing rows.
+    @Select("SELECT o.* FROM (SELECT id FROM rule_execution_persistence_outbox WHERE delivery_status='PENDING' "
+            + "AND (next_retry_time IS NULL OR next_retry_time<=CURRENT_TIMESTAMP) ORDER BY id LIMIT #{candidates}) candidate "
+            + "STRAIGHT_JOIN rule_execution_persistence_outbox o FORCE INDEX (PRIMARY) ON o.id=candidate.id "
+            + "WHERE o.delivery_status='PENDING' AND (o.next_retry_time IS NULL OR o.next_retry_time<=CURRENT_TIMESTAMP) "
+            + "ORDER BY o.id LIMIT #{limit} FOR UPDATE OF o SKIP LOCKED")
+    java.util.List<RuleExecutionPersistenceOutbox> lockDueBatch(@Param("limit") int limit, @Param("candidates") int candidates);
 
-    @Select("<script>SELECT * FROM rule_execution_persistence_outbox WHERE delivery_status = 'PENDING' "
+    @Select("<script>SELECT * FROM rule_execution_persistence_outbox FORCE INDEX (PRIMARY) WHERE delivery_status = 'PENDING' "
             + "AND (next_retry_time IS NULL OR next_retry_time &lt;= CURRENT_TIMESTAMP) AND id IN "
             + "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach> "
             + "ORDER BY id FOR UPDATE SKIP LOCKED</script>")
     java.util.List<RuleExecutionPersistenceOutbox> lockPendingBatch(@Param("ids") java.util.List<Long> ids);
 
-    @Update("<script>UPDATE rule_execution_persistence_outbox SET log_pending = 0, billing_pending = 0, "
+    @Update("<script>UPDATE rule_execution_persistence_outbox FORCE INDEX (PRIMARY) SET log_pending = 0, billing_pending = 0, "
             + "log_json = NULL, definition_json = NULL, billing_snapshot_json = NULL, delivery_status = 'DELIVERED', "
             + "next_retry_time = NULL, last_error = NULL, delivered_time = CURRENT_TIMESTAMP, "
             + "claim_token = NULL, lease_until = NULL, update_time = CURRENT_TIMESTAMP "

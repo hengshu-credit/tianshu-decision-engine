@@ -1,5 +1,9 @@
 package com.hengshucredit.rule.server.controller.sync;
 
+import com.hengshucredit.rule.server.service.ExecutionDispatch;
+import com.hengshucredit.rule.server.service.ExecutionQueue;
+import com.hengshucredit.rule.server.auth.ProjectExecutionGuard;
+
 import com.hengshucredit.rule.model.ApiResponse;
 
 import com.hengshucredit.rule.model.dto.RuleResult;
@@ -70,6 +74,7 @@ public class RuleSyncController {
 
     @Resource
     private RuleIdempotencyService idempotencyService;
+    @Resource private ExecutionQueue executionQueue;
 
     @GetMapping("/{ruleCode}")
     public ApiResponse<RulePublished> getByCode(@PathVariable String ruleCode, HttpServletRequest request) {
@@ -147,8 +152,14 @@ public class RuleSyncController {
         Map<String, Object> params = input.getParams();
         String clientAppName = input.getClientAppName();
         boolean traceEnabled = input.getTraceEnabled() == null || input.getTraceEnabled();
-        RuleIdempotencyService.Decision idempotency = idempotencyService == null
-                ? null : idempotencyService.begin(published, executionProjectId, params);
+        ProjectAuthContext auth = ProjectAuthContext.from(request);
+        String mode;
+        try { mode = OpenApiContract.IdempotencyConfig.requireRecoveryMode(request.getParameter("externalRecoveryMode")); }
+        catch (IllegalArgumentException invalid) { return ApiResponse.fail(invalid); }
+        RuleIdempotencyService.Decision idempotency = idempotencyService == null ? null
+                : executionQueue == null ? idempotencyService.begin(published,executionProjectId,params)
+                : idempotencyService.enqueue(published,executionProjectId,params,
+                    ExecutionDispatch.of(auth,clientAppName,traceEnabled,mode));
         if (idempotency == null) {
             return ApiResponse.ok(executeService.executePublished(published, params, executionProjectId, clientAppName,
                     ProjectAuthContext.from(request), traceEnabled, traceEnabled));
@@ -164,15 +175,36 @@ public class RuleSyncController {
             response.setData(idempotencyStatus(idempotency, "IN_PROGRESS"));
             return response;
         }
+        boolean admitted = false;
+        ProjectExecutionGuard.Permit permit = null;
+        String acceptedTrace = idempotency.getRootTraceId();
         try {
+            if (executionQueue != null) {
+                admitted = executionQueue.enter();
+                if (!admitted) return acceptedTrace == null ? ApiResponse.fail(PlatformCode.CAPACITY_EXCEEDED,null)
+                        : executionQueue.defer(false, acceptedTrace);
+                permit = executionQueue.permit(auth);
+            }
+            if (idempotency.getStatus() == RuleIdempotencyService.Status.QUEUED) {
+                idempotency = idempotencyService.resumeAccepted(idempotency.state(),published,params);
+                if (!idempotency.isClaimed()) return ExecutionQueue.pending(acceptedTrace);
+            }
+            var dispatch = idempotency.state() == null ? null : idempotency.state().dispatch();
+            idempotency.setExternalRecoveryMode(dispatch == null ? mode : dispatch.externalRecoveryMode());
             RuleResult result = idempotencyService.withDecision(idempotency, () -> executeService.executePublished(
                     published, params, executionProjectId, clientAppName,
                     ProjectAuthContext.from(request), traceEnabled, traceEnabled));
             idempotencyService.complete(idempotency, result, null);
             return ApiResponse.ok(result);
+        } catch (ProjectExecutionGuard.Rejected busy) {
+            return acceptedTrace == null ? ApiResponse.fail(PlatformCode.CAPACITY_EXCEEDED,null)
+                    : executionQueue.defer(false, acceptedTrace);
         } catch (RuntimeException error) {
             idempotencyService.release(idempotency, error.getMessage());
             throw error;
+        } finally {
+            if (permit != null) permit.close();
+            if (admitted) executionQueue.leave();
         }
     }
 

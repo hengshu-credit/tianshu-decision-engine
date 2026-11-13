@@ -68,6 +68,8 @@ docker compose --project-name tianshu-server --env-file config/.env.server \
 
 已有库升级断点和空间统计缓存时，在停应用、完成备份后执行 [2026-11-13-history-recovery.sql](2026-11-13-history-recovery.sql)。该迁移沿用现有历史字段索引，增加小时变更版本表及实验原始请求列，允许重复执行。已有实验缺少原请求时仍可携原请求和订单号重试。
 
+升级到持久执行队列时，在上述迁移后执行 [2026-11-13-execution-queue.sql](2026-11-13-execution-queue.sql)。旧订单继续按已有断点恢复，后台仅领取新版本登记的待执行订单。
+
 ## 执行示例（Linux）
 
 在已整理的外层固定部署目录执行（旧平铺模式仍使用原 env 路径），`RELEASE_DIR` 是已校验的新包解压目录。以下仅示范执行第一条适用迁移，已执行过则跳过。使用当前 MySQL 所属的 Compose 项目名、文件与配置，不能为迁移新建另一套 MySQL。

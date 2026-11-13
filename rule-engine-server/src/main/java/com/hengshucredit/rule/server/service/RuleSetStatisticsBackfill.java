@@ -44,7 +44,9 @@ public class RuleSetStatisticsBackfill {
         try {
             worker.execute(() -> {
                 try {
+                    long started = System.nanoTime();
                     for (int batch = 0; batch < 50 && !Thread.currentThread().isInterrupted(); batch++) {
+                        if (batch > 0 && System.nanoTime() - started >= java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(200)) break;
                         if (processBatch() == 0) break;
                     }
                 } catch (Exception failure) { log.error("规则集统计历史补齐失败，未提交记录将在下轮重试", failure); }
@@ -59,7 +61,7 @@ public class RuleSetStatisticsBackfill {
     int processBatch() {
         Integer changed = transaction.execute(status -> {
             var rows = jdbc.query("SELECT id,create_time,trace_info FROM rule_execution_log "
-                            + "WHERE rule_set_stats_version IS NULL OR rule_set_stats_version<2 ORDER BY id,create_time LIMIT 10 FOR UPDATE SKIP LOCKED",
+                            + "WHERE rule_set_stats_version IS NULL OR rule_set_stats_version<2 ORDER BY rule_set_stats_version,id,create_time LIMIT 10 FOR UPDATE SKIP LOCKED",
                     (result, row) -> new Source(result.getLong("id"), result.getTimestamp("create_time"), result.getString("trace_info")));
             for (Source row : rows) {
                 RuleSetTraceSummary summary = RuleSetTraceSummary.fromTrace(row.trace());

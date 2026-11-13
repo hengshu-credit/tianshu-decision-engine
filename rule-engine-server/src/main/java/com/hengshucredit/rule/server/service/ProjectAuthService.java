@@ -774,6 +774,29 @@ public class ProjectAuthService {
         return directContext(auth);
     }
 
+    /** Recheck project scope and credential status when a different server takes over accepted work. */
+    ProjectAuthContext queuedContext(long projectId, ExecutionDispatch dispatch) {
+        if (dispatch.globalKeyId() != null) {
+            var global = properties.getGlobalAccess();
+            var project = findProjectById(projectId);
+            return global != null && global.isEnabled() && dispatch.globalKeyId().equals(global.getKeyId())
+                    && project != null && Integer.valueOf(1).equals(project.getStatus())
+                    ? ProjectAuthContext.global(global.getKeyId(), new ProjectAccessPolicy()) : null;
+        }
+        var auth = findAuthById(dispatch.authId());
+        if (auth == null || !Integer.valueOf(1).equals(auth.getStatus()) || !java.util.Objects.equals(auth.getProjectId(), projectId)) return null;
+        var context = directContext(auth);
+        if (context == null || dispatch.tokenId() == null) return context;
+        var token = findTokenById(dispatch.tokenId());
+        if (token == null || !Integer.valueOf(1).equals(token.getStatus()) || !auth.getId().equals(token.getAuthId())
+                || !auth.getProjectId().equals(token.getProjectId()) || token.getExpireTime() == null || token.getGraceExpireTime() == null
+                || currentDateTime().isAfter(token.getGraceExpireTime())) return null;
+        return ProjectAuthContext.temporary(projectId, context.getProjectCode(), auth.getId(), auth.getAuthCode(),
+                auth.getAuthType(), token.getId(), token.getTokenCode(),
+                currentDateTime().isAfter(token.getExpireTime()) ? "GRACE" : "VALID",
+                context.getAccessPolicy(), context.isAsyncAccessLogEnabled());
+    }
+
     private ProjectAuthContext directContext(RuleProjectAuth auth) {
         RuleProject project = findProjectById(auth.getProjectId());
         if (project == null || !Integer.valueOf(1).equals(project.getStatus())) return null;

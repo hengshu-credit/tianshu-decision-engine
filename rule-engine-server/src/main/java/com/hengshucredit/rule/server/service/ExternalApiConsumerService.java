@@ -49,11 +49,11 @@ public class ExternalApiConsumerService {
             options.getInvocationCache().recordReplayMissing("EXTERNAL_API", "API:" + apiId, String.valueOf(apiId));
             return Map.of("success", false, "status", Map.of("outcome", "NOT_EXECUTED"));
         }
-        RuleExternalApiConfig api = snapshot == null ? apiConfigMapper.selectById(apiId) : snapshot;
+        RuleExternalApiConfig api = snapshot == null ? options.getInvocationCache().api(apiId, apiConfigMapper::selectById) : snapshot;
         if (api == null || api.getStatus() != null && api.getStatus() != 1) throw new IllegalArgumentException("外数 API 不存在或已停用: " + apiId);
         com.hengshucredit.rule.model.entity.RuleExternalDatasource datasource = null;
         if (datasourceMapper != null) {
-            datasource = datasourceMapper.selectById(api.getDatasourceId());
+            datasource = options.getInvocationCache().datasource(api.getDatasourceId(), datasourceMapper::selectById);
             if (datasource == null || !Integer.valueOf(1).equals(datasource.getStatus()) || !"GLOBAL".equals(datasource.getScope())
                     && !java.util.Objects.equals(projectId, datasource.getProjectId())) throw new IllegalArgumentException("外数 API 不属于当前项目可用范围");
         }
@@ -63,9 +63,9 @@ public class ExternalApiConsumerService {
         Map<String, Object> overrides = binding.get("requestOverrides") instanceof Map<?, ?> raw
                 ? JSON.parseObject(JSON.toJSONString(raw)) : Map.of();
         RuleExternalApiConfig selected = invokeService.selectRequestBranch(api, values);
-        if (ExternalApiRequestPlan.specification(api) != null && ExternalApiRequestPlan.specification(api).getJSONArray("requestBranches") != null) {
-            var declared = new java.util.ArrayList<>(ExternalApiRequestPlan.fields(ExternalApiRequestPlan.specification(api)));
-            var specification = ExternalApiRequestPlan.specification(api);
+        var specification = overrides.isEmpty() ? null : ExternalApiRequestPlan.specification(api);
+        if (specification != null && specification.getJSONArray("requestBranches") != null) {
+            var declared = new java.util.ArrayList<>(ExternalApiRequestPlan.fields(specification));
             for (Object raw : specification.getJSONArray("requestBranches")) declared.addAll(ExternalApiRequestPlan.fields(JSON.parseObject(JSON.toJSONString(raw))));
             for (String id : overrides.keySet()) {
                 if (declared.stream().noneMatch(field -> id.equals(field.getString("id")) && field.getBooleanValue("overridable"))) throw new IllegalArgumentException("API 参数不能覆盖: " + id);

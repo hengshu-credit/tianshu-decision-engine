@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 
 /** Queue unstarted server requests before they acquire a project permit or issue any chargeable work. */
 @Component
-final class ExecutionAdmission {
+public final class ExecutionAdmission {
     private final Semaphore executing;
     private final Semaphore waiting;
     private final long waitMillis;
@@ -22,7 +22,7 @@ final class ExecutionAdmission {
         this.waitMillis = waitMillis;
     }
 
-    boolean enter(long started, int projectBudgetMillis) {
+    public boolean enter(long started, int projectBudgetMillis) {
         try {
             if (executing.tryAcquire(0, TimeUnit.MILLISECONDS)) return true;
             if (!waiting.tryAcquire()) return false;
@@ -39,5 +39,16 @@ final class ExecutionAdmission {
     }
 
     int depth() { return executing.getQueueLength(); }
-    void leave() { executing.release(); }
+    public long waitMillis() { return waitMillis; }
+
+    public boolean enterWorker() {
+        try {
+            executing.acquire();
+            return true;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+    public void leave() { executing.release(); }
 }

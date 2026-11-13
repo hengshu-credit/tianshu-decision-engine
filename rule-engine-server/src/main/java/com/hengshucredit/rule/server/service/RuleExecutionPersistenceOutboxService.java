@@ -168,8 +168,8 @@ public class RuleExecutionPersistenceOutboxService {
         transaction.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
         try {
             List<RuleExecutionPersistenceOutbox> completed = transaction.execute(status -> {
-                // 选取与加锁必须在同一条 SQL 中完成，才能越过整批已锁住的队首。
-                List<RuleExecutionPersistenceOutbox> events = mapper.lockDueBatch(DELIVERY_BATCH_SIZE);
+                // 多取候选以越过其他副本持有的队首；领取时按主键复核到期条件，仅锁实际交付的行。
+                List<RuleExecutionPersistenceOutbox> events = mapper.lockDueBatch(DELIVERY_BATCH_SIZE, DELIVERY_BATCH_SIZE * 8);
                 for (RuleExecutionPersistenceOutbox event : events) selectedIds.add(event.getId());
                 return completeLockedEvents(events);
             });

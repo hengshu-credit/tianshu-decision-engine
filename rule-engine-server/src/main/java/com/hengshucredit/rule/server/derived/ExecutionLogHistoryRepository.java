@@ -97,6 +97,69 @@ public class ExecutionLogHistoryRepository {
         return rows;
     }
 
+    /** Only rows missing a usable coordinate pair need their recorded root/API fields materialized. */
+    List<HistoryQuery.Row> spatialExceptions(IndexedHistoryCount.Selection selection, LocalDateTime from, boolean useBuckets) {
+        var region = selection.region();
+        StringBuilder sql = new StringBuilder("SELECT r.log_id,r.trace_id,r.started_at,l.history_fields FROM ");
+        List<Object> args = new ArrayList<>();
+        if (useBuckets) {
+            // Materialize only the suspect buckets first. The date range can then use the root time index.
+            sql.append("(SELECT b.bucket_hour,b.execution_project_id,b.root_rule_id FROM rule_history_bucket b "
+                    + "LEFT JOIN rule_history_bucket x ON x.execution_project_id=b.execution_project_id AND x.bucket_hour=b.bucket_hour AND x.root_rule_id=b.root_rule_id AND x.field_key=? "
+                    + "LEFT JOIN rule_history_bucket y ON y.execution_project_id=b.execution_project_id AND y.bucket_hour=b.bucket_hour AND y.root_rule_id=b.root_rule_id AND y.field_key=? "
+                    + "WHERE b.field_key='' AND b.bucket_hour>=? AND b.bucket_hour<? "
+                    + "AND (COALESCE(x.numeric_count+x.null_count,0)<>b.sample_count OR COALESCE(y.numeric_count+y.null_count,0)<>b.sample_count "
+                    + "OR x.min_value < -180 OR x.max_value > 180 OR y.min_value < -90 OR y.max_value > 90) ");
+            args.add(region.longitudeKey());
+            args.add(region.latitudeKey());
+            args.add(Timestamp.valueOf(from.truncatedTo(java.time.temporal.ChronoUnit.HOURS)));
+            args.add(Timestamp.valueOf(selection.before()));
+            if (!"GLOBAL".equals(selection.scope())) { sql.append(" AND b.execution_project_id=?"); args.add(selection.projectId()); }
+            if ("RULE".equals(selection.scope())) { sql.append(" AND b.root_rule_id=?"); args.add(selection.ruleId()); }
+            sql.append(" GROUP BY b.bucket_hour,b.execution_project_id,b.root_rule_id) suspect STRAIGHT_JOIN rule_history_root r "
+                    + "ON r.started_at>=suspect.bucket_hour AND r.started_at<TIMESTAMPADD(HOUR,1,suspect.bucket_hour) "
+                    + "AND COALESCE(r.execution_project_id,0)=suspect.execution_project_id AND COALESCE(r.root_rule_id,0)=suspect.root_rule_id ");
+        } else sql.append("rule_history_root r ");
+        sql.append("LEFT JOIN rule_history_numeric_field x ON x.log_id=r.log_id AND x.log_create_time=r.log_create_time AND x.field_key=? "
+                + "LEFT JOIN rule_history_numeric_field y ON y.log_id=r.log_id AND y.log_create_time=r.log_create_time AND y.field_key=? "
+                + "JOIN rule_execution_log l ON l.id=r.log_id AND l.create_time=r.log_create_time "
+                + "WHERE r.started_at>=? AND r.started_at<? AND (x.log_id IS NULL OR y.log_id IS NULL OR x.value_kind='X' OR y.value_kind='X' "
+                + "OR x.numeric_value NOT BETWEEN -180 AND 180 OR y.numeric_value NOT BETWEEN -90 AND 90)");
+        args.add(region.longitudeKey());
+        args.add(region.latitudeKey());
+        args.add(Timestamp.valueOf(from));
+        args.add(Timestamp.valueOf(selection.before()));
+        if (!"GLOBAL".equals(selection.scope())) { sql.append(" AND r.execution_project_id=?"); args.add(selection.projectId()); }
+        if ("RULE".equals(selection.scope())) { sql.append(" AND r.root_rule_id=?"); args.add(selection.ruleId()); }
+        if (consoleDataScope != null) sql.append(" AND (").append(consoleDataScope.predicate("rule_history_root", "r")).append(')');
+        sql.append(" LIMIT ").append(MAX_QUERY_ROWS + 1);
+        Map<String, HistoryQuery.Row> byTrace = new LinkedHashMap<>();
+        Map<String, Set<Long>> expected = new LinkedHashMap<>();
+        long[] bytes = {0L};
+        List<HistoryQuery.Row> rows = jdbc.query(connection -> {
+            var ps = connection.prepareStatement(sql.toString());
+            ps.setQueryTimeout(10);
+            for (int i=0; i<args.size(); i++) ps.setObject(i+1,args.get(i));
+            return ps;
+        }, (rs,i) -> {
+            if (i>=MAX_QUERY_ROWS) throw new IllegalStateException("历史坐标待回溯记录超过 100000 条，未返回截断统计值");
+            var snapshot = parseSnapshot(rs.getString(4), bytes);
+            if (snapshot.getIntValue("version")!=1 || snapshot.getJSONObject("fields")==null)
+                throw new IllegalStateException("历史字段快照版本无效");
+            String trace = rs.getString(2);
+            var row = new HistoryQuery.Row(rs.getLong(1),rs.getTimestamp(3).toLocalDateTime(),new LinkedHashMap<>(snapshot.getJSONObject("fields")));
+            if (!row.fields().containsKey(region.longitudeKey()) || !row.fields().containsKey(region.latitudeKey())) {
+                byTrace.put(trace,row);
+                Set<Long> apis = new LinkedHashSet<>();
+                if (snapshot.getJSONArray("apiIds")!=null) for (Object id : snapshot.getJSONArray("apiIds")) apis.add(((Number)id).longValue());
+                expected.put(trace,apis);
+            }
+            return row;
+        });
+        if (!byTrace.isEmpty()) loadApiFields(byTrace,expected,bytes,Set.of(region.longitudeKey(),region.latitudeKey()));
+        return rows;
+    }
+
     private JSONObject parseSnapshot(String json, long[] bytesRead) {
         if (json == null || json.isBlank()) throw new IllegalStateException("历史结果日志缺少字段快照，统计不完整");
         bytesRead[0] += json.length() * 2L;

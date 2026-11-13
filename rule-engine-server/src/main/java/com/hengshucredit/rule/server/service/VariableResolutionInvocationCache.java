@@ -1,5 +1,8 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
+import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
+
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.derived.IndexedHistoryCount;
 import java.time.LocalDateTime;
@@ -33,6 +36,18 @@ public class VariableResolutionInvocationCache {
     private final ConcurrentHashMap<String, CompletableFuture<byte[]>> sftpFiles =
             new ConcurrentHashMap<>();
     private List<RuleVariable> rootVariables = List.of();
+    private final Map<Long, RuleExternalApiConfig> apis = new ConcurrentHashMap<>();
+    private final Map<Long, RuleExternalDatasource> datasources = new ConcurrentHashMap<>();
+
+    RuleExternalApiConfig api(Long id,
+            java.util.function.Function<Long, RuleExternalApiConfig> load) {
+        return id == null ? null : apis.computeIfAbsent(id, load);
+    }
+
+    RuleExternalDatasource datasource(Long id,
+            java.util.function.Function<Long, RuleExternalDatasource> load) {
+        return id == null ? null : datasources.computeIfAbsent(id, load);
+    }
 
     public List<RuleVariable> rootVariables() { return rootVariables; }
 
