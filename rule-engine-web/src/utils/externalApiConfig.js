@@ -31,7 +31,8 @@ export function isPayloadCapturePath(value) {
 
 function normalizePayloadCaptureSide(value, label) {
   const side = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
-  const source = side.source == null || side.source === '' ? 'ORIGINAL' : String(side.source)
+  const defaultSource = side.storageMode === 'PROCESSED_ONLY' && !side.decrypt?.enabled ? 'PROCESSED' : 'ORIGINAL'
+  const source = side.source == null || side.source === '' ? defaultSource : String(side.source)
   if (!PAYLOAD_CAPTURE_SOURCES.includes(source)) {
     throw new Error(label + '留存来源只能是 ORIGINAL 或 PROCESSED')
   }
@@ -61,6 +62,8 @@ function normalizePayloadCaptureSide(value, label) {
     if (item.store != null && typeof item.store !== 'boolean') throw new Error(label + '超长字段保存标记必须是布尔值')
     oversizedFields.push({ path, store: item.store !== false })
   })
+  const storageMode = side.storageMode || 'LEGACY'
+  if (!['LEGACY', 'ORIGINAL_ONLY', 'PROCESSED_ONLY', 'BOTH'].includes(storageMode)) throw new Error(label + '报文保存方式无效')
   if (side.saveOriginal != null && typeof side.saveOriginal !== 'boolean') throw new Error(label + '保留原文必须是布尔值')
   const saveOriginal = side.saveOriginal !== false
   const rawDecrypt = side.decrypt && typeof side.decrypt === 'object' && !Array.isArray(side.decrypt)
@@ -76,6 +79,7 @@ function normalizePayloadCaptureSide(value, label) {
   if (!isPayloadCapturePath(decrypt.path)) throw new Error(label + '解密路径格式不合法：' + decrypt.path)
   if (decrypt.enabled && decrypt.mode === 'TRIPLE_DES_BASE64' && !decrypt.keyVariable) throw new Error(label + '3DES解密必须填写密钥变量名')
   const result = { source, saveOriginal, excludePaths, maxFieldBytes: rawMaxFieldBytes, oversizedFields }
+  if (storageMode !== 'LEGACY') result.storageMode = storageMode
   if (decrypt.enabled || decrypt.keyVariable || decrypt.path !== '$' || decrypt.mode !== 'BASE64') result.decrypt = decrypt
   return result
 }

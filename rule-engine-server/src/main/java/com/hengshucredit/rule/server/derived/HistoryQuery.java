@@ -188,7 +188,7 @@ public final class HistoryQuery {
         return result;
     }
 
-    private static BigDecimal number(Object value) {
+    static BigDecimal number(Object value) {
         require(value instanceof Number, "数值统计只支持数值字段，不会自动把字符串转成数值");
         try { return new BigDecimal(value.toString()); }
         catch (NumberFormatException exception) { throw new IllegalArgumentException("统计值必须是有限数值", exception); }

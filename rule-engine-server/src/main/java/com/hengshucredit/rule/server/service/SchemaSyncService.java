@@ -123,7 +123,7 @@ public class SchemaSyncService {
             ensureHistoricalFieldSnapshots();
             ensurePublishOutboxSchema();
             ensureExecutionPersistenceOutboxSchema();
-            ensureTablesFromSchema(List.of("rule_application_history", "rule_execution_state",
+            ensureTablesFromSchema(List.of("rule_history_bucket", "rule_history_index_state", "rule_history_root", "rule_history_numeric_field", "rule_application_history", "rule_execution_state",
                     "rule_execution_persistence_outbox",
                     "rule_execution_checkpoint", "rule_experiment_execution_state"));
             if (tableExists("rule_execution_state")) {

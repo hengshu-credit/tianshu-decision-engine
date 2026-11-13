@@ -905,24 +905,33 @@
                   <div class="field-help">
                     选择留存实际发送内容，或脚本显式写入 state.logRequestBody 的处理中间副本。
                   </div>
-                  <el-form-item label="留存来源">
+                  <el-form-item label="报文保存方式">
+                    <el-select :model-value="payloadCapture.request.storageMode || 'LEGACY'" @update:model-value="setPayloadStorage('request', $event)">
+                      <el-option label="沿用原留存设置" value="LEGACY" />
+                      <el-option label="仅原始报文" value="ORIGINAL_ONLY" />
+                      <el-option label="仅分析副本（可解码）" value="PROCESSED_ONLY" />
+                      <el-option label="原始报文和分析副本" value="BOTH" />
+                    </el-select>
+                    <div v-if="payloadCapture.request.storageMode === 'PROCESSED_ONLY'" class="field-help">解码失败仅记录失败原因。分析副本可选择原始内容解码，或选择脚本处理结果。</div>
+                  </el-form-item>
+                  <el-form-item v-if="payloadCapture.request.storageMode !== 'ORIGINAL_ONLY'" label="留存来源">
                     <el-radio-group v-model="payloadCapture.request.source" size="small">
                       <el-radio-button value="ORIGINAL">实际发送内容</el-radio-button>
                       <el-radio-button value="PROCESSED">处理中间副本</el-radio-button>
                     </el-radio-group>
                   </el-form-item>
-                  <el-form-item label="保留供应商原文">
+                  <el-form-item v-if="!payloadCapture.request.storageMode || payloadCapture.request.storageMode === 'LEGACY'" label="保留供应商原文">
                     <el-switch v-model="payloadCapture.request.saveOriginal" active-text="保留" inactive-text="不保留" />
                     <div class="field-help">关闭后只保存处理副本；解密或留存处理失败时系统仍会保留原文并标记原因。</div>
                   </el-form-item>
-                  <el-form-item label="留存解密副本">
+                  <el-form-item v-if="payloadCapture.request.storageMode !== 'ORIGINAL_ONLY'" label="留存解密副本">
                     <el-switch v-model="payloadCapture.request.decrypt.enabled" active-text="启用" inactive-text="关闭" />
                     <el-select v-if="payloadCapture.request.decrypt.enabled" v-model="payloadCapture.request.decrypt.mode" size="small" style="width: 170px; margin-left: 8px">
                       <el-option label="Base64 解码" value="BASE64" />
                       <el-option label="3DES Base64 解密" value="TRIPLE_DES_BASE64" />
                     </el-select>
                   </el-form-item>
-                  <template v-if="payloadCapture.request.decrypt.enabled">
+                  <template v-if="payloadCapture.request.storageMode !== 'ORIGINAL_ONLY' && payloadCapture.request.decrypt.enabled">
                     <el-form-item label="解密路径">
                       <el-input v-model="payloadCapture.request.decrypt.path" placeholder="$ 或 $.payload" />
                     </el-form-item>
@@ -977,24 +986,33 @@
                   <div class="field-help">
                     选择供应商原始内容，或 响应后置脚本之后、响应组装之前的处理中间副本。
                   </div>
-                  <el-form-item label="留存来源">
+                  <el-form-item label="报文保存方式">
+                    <el-select :model-value="payloadCapture.response.storageMode || 'LEGACY'" @update:model-value="setPayloadStorage('response', $event)">
+                      <el-option label="沿用原留存设置" value="LEGACY" />
+                      <el-option label="仅原始报文" value="ORIGINAL_ONLY" />
+                      <el-option label="仅分析副本（可解码）" value="PROCESSED_ONLY" />
+                      <el-option label="原始报文和分析副本" value="BOTH" />
+                    </el-select>
+                    <div v-if="payloadCapture.response.storageMode === 'PROCESSED_ONLY'" class="field-help">解码失败仅记录失败原因。分析副本可选择原始内容解码，或选择脚本处理结果。</div>
+                  </el-form-item>
+                  <el-form-item v-if="payloadCapture.response.storageMode !== 'ORIGINAL_ONLY'" label="留存来源">
                     <el-radio-group v-model="payloadCapture.response.source" size="small">
                       <el-radio-button value="ORIGINAL">原始内容</el-radio-button>
                       <el-radio-button value="PROCESSED">处理中间副本</el-radio-button>
                     </el-radio-group>
                   </el-form-item>
-                  <el-form-item label="保留供应商原文">
+                  <el-form-item v-if="!payloadCapture.response.storageMode || payloadCapture.response.storageMode === 'LEGACY'" label="保留供应商原文">
                     <el-switch v-model="payloadCapture.response.saveOriginal" active-text="保留" inactive-text="不保留" />
                     <div class="field-help">关闭后可避免保存大型 Base64/密文原文；解密失败会强制留存并标明回退原因。</div>
                   </el-form-item>
-                  <el-form-item label="留存解密副本">
+                  <el-form-item v-if="payloadCapture.response.storageMode !== 'ORIGINAL_ONLY'" label="留存解密副本">
                     <el-switch v-model="payloadCapture.response.decrypt.enabled" active-text="启用" inactive-text="关闭" />
                     <el-select v-if="payloadCapture.response.decrypt.enabled" v-model="payloadCapture.response.decrypt.mode" size="small" style="width: 170px; margin-left: 8px">
                       <el-option label="Base64 解码" value="BASE64" />
                       <el-option label="3DES Base64 解密" value="TRIPLE_DES_BASE64" />
                     </el-select>
                   </el-form-item>
-                  <template v-if="payloadCapture.response.decrypt.enabled">
+                  <template v-if="payloadCapture.response.storageMode !== 'ORIGINAL_ONLY' && payloadCapture.response.decrypt.enabled">
                     <el-form-item label="解密路径">
                       <el-input v-model="payloadCapture.response.decrypt.path" placeholder="$ 或 $.payload" />
                     </el-form-item>
@@ -1002,8 +1020,8 @@
                       <el-input v-model="payloadCapture.response.decrypt.keyVariable" placeholder="脚本变量中的密钥名，如 desKey" />
                     </el-form-item>
                   </template>
-                  <div v-if="payloadCapture.response.source === 'PROCESSED' && !String(form.responseScript || '').trim()" class="field-help payload-capture-warning">
-                    当前未配置响应后置脚本，仍可选择 PROCESSED；留存内容将依赖脚本显式写入 state.logResponseBody。
+                  <div v-if="payloadCapture.response.storageMode !== 'ORIGINAL_ONLY' && payloadCapture.response.source === 'PROCESSED' && !String(form.responseScript || '').trim()" class="field-help payload-capture-warning">
+                    未配置响应后置脚本时使用已解析的响应体；如需解码其中的字段，可启用留存解密副本。
                   </div>
                   <el-form-item label="排除路径">
                     <div class="payload-path-list">
@@ -1863,6 +1881,11 @@ export default {
         this.payloadCapture = emptyPayloadCaptureConfig()
         this.payloadCaptureError = error.message || '报文留存配置格式不正确'
       }
+    },
+    setPayloadStorage(side, mode) {
+      const config = this.payloadCapture[side]
+      config.storageMode = mode
+      if (mode === 'PROCESSED_ONLY' && !config.decrypt.enabled) config.source = 'PROCESSED'
     },
     buildPayloadCaptureConfig() {
       return stringifyPayloadCaptureConfig(this.payloadCapture)

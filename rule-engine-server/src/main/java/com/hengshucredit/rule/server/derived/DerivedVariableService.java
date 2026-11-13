@@ -23,6 +23,7 @@ import java.util.Map;
 public class DerivedVariableService {
     @Resource
     private ApplicationHistoryRepository historyRepository;
+    @Resource private IndexedHistoryCount indexedCounts;
     @Resource
     private ExecutionLogHistoryRepository executionLogHistoryRepository;
     @Resource
@@ -103,6 +104,12 @@ public class DerivedVariableService {
 
     public Object resolve(RuleVariable variable, Map<String, Object> values, Map<String, String> paths,
                           Map<Long, RuleFunction> functions, Map<String, HistoricalFieldDefinition> definitions) {
+        return resolve(variable, values, paths, functions, definitions, null);
+    }
+
+    public Object resolve(RuleVariable variable, Map<String, Object> values, Map<String, String> paths,
+                          Map<Long, RuleFunction> functions, Map<String, HistoricalFieldDefinition> definitions,
+                          VariableResolveOptions options) {
         JSONObject config = JSON.parseObject(variable.getSourceConfig());
         DerivedVariableConfig.validate(config);
         Map<String, Object> references = new LinkedHashMap<>();
@@ -143,14 +150,63 @@ public class DerivedVariableService {
                         "历史字段未开启结果记录；默认仅支持请求入参和三方调用结果: " + key);
             }
         }
+        if (indexedCounts != null && simpleCount(config)) {
+            JSONObject geo = config.getJSONObject("geo");
+            IndexedHistoryCount.Region region = geo == null ? null : new IndexedHistoryCount.Region(
+                    DerivedVariableConfig.fieldKey(geo.getJSONObject("longitudeField")),
+                    DerivedVariableConfig.fieldKey(geo.getJSONObject("latitudeField")),
+                    HistoryQuery.number(input.apply(geo.getJSONObject("longitude"))).doubleValue(),
+                    HistoryQuery.number(input.apply(geo.getJSONObject("latitude"))).doubleValue(),
+                    HistoryQuery.number(input.apply(geo.getJSONObject("radiusMeters"))).doubleValue());
+            var selection = new IndexedHistoryCount.Selection(config.getString("scope"), projectId, rootRuleId, before, region);
+            java.util.function.Supplier<Map<LocalDateTime, IndexedHistoryCount.Count>> load =
+                    () -> indexedCounts.count(selection, countWindows(config, options, before, from));
+            var count = options == null || options.getInvocationCache() == null ? load.get().get(from)
+                    : options.getInvocationCache().historyCount(selection, from, load);
+            if (count != null) {
+                recordHistory(variable, config, from, before, count.candidates());
+                return checkedValue(variable, count.matched());
+            }
+        }
         List<HistoryQuery.Row> history = executionLogHistoryRepository == null
                 ? historyRepository.query(config.getString("scope"), projectId, rootRuleId, from, before)
                 : executionLogHistoryRepository.query(config.getString("scope"), projectId, rootRuleId,
                 from, before, historyKeys, definitions == null ? Map.of() : definitions);
         Object result = HistoryQuery.evaluate(config, history, input, invoker);
-        RuntimeContextBridge.addTraceEvent(new LinkedHashMap<>(Map.of("type", "DERIVED_HISTORY", "variableId", variable.getId() == null ? 0L : variable.getId(),
-                "scope", config.getString("scope"), "from", from.toString(), "before", before.toString(), "candidateCount", history.size())));
+        recordHistory(variable, config, from, before, history.size());
         return checkedValue(variable, result);
+    }
+
+    private void recordHistory(RuleVariable variable, JSONObject config, LocalDateTime from, LocalDateTime before, long candidates) {
+        RuntimeContextBridge.addTraceEvent(new LinkedHashMap<>(Map.of("type", "DERIVED_HISTORY", "variableId", variable.getId() == null ? 0L : variable.getId(),
+                "scope", config.getString("scope"), "from", from.toString(), "before", before.toString(), "candidateCount", candidates)));
+    }
+
+    private static boolean simpleCount(JSONObject config) {
+        return "HISTORY".equals(config.getString("mode")) && "COUNT".equals(config.getString("aggregate"))
+                && !"LATEST_PER_SUBJECT".equals(config.getString("recordMode"))
+                && DerivedVariableConfig.objects(config,"steps").isEmpty() && DerivedVariableConfig.objects(config,"filters").isEmpty();
+    }
+
+    private static List<LocalDateTime> countWindows(JSONObject config, VariableResolveOptions options,
+                                                     LocalDateTime before, LocalDateTime from) {
+        var windows = new java.util.LinkedHashSet<LocalDateTime>();
+        windows.add(from);
+        if (options != null && options.getRuntimeSnapshot() != null) {
+            List<RuleVariable> variables = options.getInvocationCache() == null ? List.of() : options.getInvocationCache().rootVariables();
+            if (variables.isEmpty()) variables = options.getRuntimeSnapshot().getVariables();
+            for (RuleVariable other : variables) {
+                if (!"DERIVED".equals(other.getVarSource())) continue;
+                var candidate = JSON.parseObject(other.getSourceConfig());
+                if (candidate != null && simpleCount(candidate)
+                        && java.util.Objects.equals(candidate.get("geo"),config.get("geo"))
+                        && java.util.Objects.equals(candidate.get("scope"),config.get("scope"))) {
+                    windows.add(historyStart(before,candidate.getLongValue("window"),candidate.getString("windowUnit")));
+                    if (windows.size() == 32) break;
+                }
+            }
+        }
+        return List.copyOf(windows);
     }
 
     static LocalDateTime historyStart(LocalDateTime before, long window, String unit) {

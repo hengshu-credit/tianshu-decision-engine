@@ -29,10 +29,25 @@ final class ExternalApiPayloadCapturePolicy {
         parseConfig(configJson);
     }
 
+    enum StorageMode { LEGACY, ORIGINAL_ONLY, PROCESSED_ONLY, BOTH }
+
+    static StorageMode storageMode(String configJson, String phase) {
+        return mode(phaseConfig(parseConfig(configJson), phase));
+    }
+
+    private static StorageMode mode(JSONObject side) {
+        String value = side.getString("storageMode");
+        return value == null ? StorageMode.LEGACY : StorageMode.valueOf(value);
+    }
+
     static String originalBody(String configJson, String phase, String originalBody, Capture capture) {
         if (originalBody == null) return null;
         JSONObject config = parseConfig(configJson);
         JSONObject phaseConfig = phaseConfig(config, phase);
+        StorageMode mode = mode(phaseConfig);
+        if (mode == StorageMode.PROCESSED_ONLY) return null;
+        if (mode == StorageMode.ORIGINAL_ONLY) return capture == null ? null : capture.capturedBody();
+        if (mode == StorageMode.BOTH) return sanitizeOriginalBody(phaseConfig, originalBody, capture);
         Object configured = phaseConfig.get("saveOriginal");
         boolean saveOriginal = configured == null || Boolean.TRUE.equals(configured);
         if (saveOriginal) return sanitizeOriginalBody(phaseConfig, originalBody, capture);
@@ -71,7 +86,12 @@ final class ExternalApiPayloadCapturePolicy {
         try {
             JSONObject config = parseConfig(configJson);
             JSONObject phaseConfig = phaseConfig(config, phase);
-            String source = text(phaseConfig.get("source"), "ORIGINAL").toUpperCase(java.util.Locale.ROOT);
+            StorageMode storage = mode(phaseConfig);
+            JSONObject decoder = phaseConfig.getJSONObject("decrypt");
+            String defaultSource = storage == StorageMode.PROCESSED_ONLY && (decoder == null || !decoder.getBooleanValue("enabled"))
+                    ? "PROCESSED" : "ORIGINAL";
+            String source = text(phaseConfig.get("source"), defaultSource).toUpperCase(java.util.Locale.ROOT);
+            if (storage == StorageMode.ORIGINAL_ONLY) source = "ORIGINAL";
             if (!"ORIGINAL".equals(source) && !"PROCESSED".equals(source)) {
                 throw new IllegalArgumentException("报文留存 source 只能是 ORIGINAL 或 PROCESSED");
             }
@@ -86,7 +106,7 @@ final class ExternalApiPayloadCapturePolicy {
 
             Set<String> omitted = new LinkedHashSet<>();
             JSONObject decrypt = phaseConfig.getJSONObject("decrypt");
-            if (decrypt != null && Boolean.TRUE.equals(decrypt.getBoolean("enabled"))) {
+            if (storage != StorageMode.ORIGINAL_ONLY && decrypt != null && Boolean.TRUE.equals(decrypt.getBoolean("enabled"))) {
                 String path = text(decrypt.get("path"), "$");
                 String mode = text(decrypt.get("mode"), "BASE64").toUpperCase(java.util.Locale.ROOT);
                 String key = null;
@@ -107,7 +127,7 @@ final class ExternalApiPayloadCapturePolicy {
             }
 
             Object structured = selected;
-            if (selected instanceof String) {
+            if (selected instanceof String && (hasFilters(phaseConfig) || storage != StorageMode.ORIGINAL_ONLY && !"$".equals(pathOf(phaseConfig, "decrypt")))) {
                 String text = (String) selected;
                 Object parsed = parseJson(text);
                 if (parsed != null && (!"$".equals(pathOf(phaseConfig, "decrypt")) || hasFilters(phaseConfig))) {
@@ -178,6 +198,7 @@ final class ExternalApiPayloadCapturePolicy {
                 });
             }
         }
+        mode(result);
         if (result.get("saveOriginal") != null && !(result.get("saveOriginal") instanceof Boolean)) {
             throw new IllegalArgumentException("报文留存 " + phase + " saveOriginal 必须是布尔值");
         }

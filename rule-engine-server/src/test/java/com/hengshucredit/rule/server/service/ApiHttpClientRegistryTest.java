@@ -8,6 +8,25 @@ import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertSame;
 
 public class ApiHttpClientRegistryTest {
+    @Test public void retiringPoolKeepsEveryOutstandingLeaseUsable() throws Exception {
+        var server = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", exchange -> {
+            try (exchange) {
+                exchange.sendResponseHeaders(200, 2);
+                exchange.getResponseBody().write(new byte[]{'o', 'k'});
+            }
+        });
+        server.start();
+        var registry = new ApiHttpClientRegistry();
+        try (var remaining = registry.acquire("orders", 1000, 2000)) {
+            try (var first = registry.acquire("orders", 1000, 2000)) {
+                registry.invalidate("orders");
+            }
+            assertEquals("ok", remaining.getRestTemplate().getForObject(
+                    "http://127.0.0.1:" + server.getAddress().getPort() + "/", String.class));
+        } finally { registry.close(); server.stop(0); }
+    }
+
 
     @Test
     public void reusesClientForSameConfigurationAndReplacesItWhenTimeoutChanges() {

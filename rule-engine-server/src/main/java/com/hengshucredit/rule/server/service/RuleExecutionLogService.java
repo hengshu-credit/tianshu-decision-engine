@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.annotation.Resource;
+import com.hengshucredit.rule.server.derived.HistoryFieldIndex;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -33,6 +34,7 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
     private RulePublishedMapper publishedMapper;
     @Resource
     private RuleSetStatisticsStore statisticsStore;
+    @Resource private HistoryFieldIndex historyIndex;
 
     public void applyPublishedAttribution(RuleExecutionLog log, String authenticatedProjectCode) {
         if (log == null || !hasText(log.getRuleCode())) return;
@@ -61,9 +63,10 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
             if (log != null && !save(log)) {
                 throw new IllegalStateException("执行日志未写入");
             }
-            if (log != null && statisticsStore != null) {
+            if (log != null && (statisticsStore != null || historyIndex != null)) {
                 log.setCreateTime(baseMapper.selectPhysicalCreateTime(log.getId()));
                 persistStatistics(log);
+                if (historyIndex != null) historyIndex.replace(null, log);
             }
             return;
         }
@@ -97,6 +100,7 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
             if (created) {
                 log.setCreateTime(existing.getCreateTime());
                 persistStatistics(log);
+                if (historyIndex != null) historyIndex.replace(null, log);
                 return;
             }
         } else {
@@ -111,6 +115,7 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
                 .eq(RuleExecutionLog::getCreateTime, existing.getCreateTime())
                 .eq(RuleExecutionLog::getTraceId, log.getTraceId())
                 .apply("COALESCE(attempt_no, 1) <= {0}", attempt(log))
+                .set(log.getHistoryFields() == null, RuleExecutionLog::getHistoryFields, null)
                 .set(log.getOutputResult() == null, RuleExecutionLog::getOutputResult, null)
                 .set(log.getTraceInfo() == null, RuleExecutionLog::getTraceInfo, null)
                 .set(log.getErrorMessage() == null, RuleExecutionLog::getErrorMessage, null);
@@ -120,6 +125,7 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
             throw new IllegalStateException("执行日志更新未生效");
         }
         persistStatistics(log);
+        if (historyIndex != null) historyIndex.replace(existing, log);
     }
 
     private void persistStatistics(RuleExecutionLog log) {

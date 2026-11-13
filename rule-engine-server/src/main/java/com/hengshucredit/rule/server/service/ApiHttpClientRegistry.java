@@ -131,7 +131,7 @@ public class ApiHttpClientRegistry {
         if (entry.activeCount > 0) {
             entry.activeCount--;
         }
-        if (entry.retired) {
+        if (entry.retired && entry.activeCount == 0) {
             shutdown(entry);
         }
     }

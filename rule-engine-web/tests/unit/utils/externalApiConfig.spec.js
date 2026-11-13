@@ -55,6 +55,18 @@ describe('external API payload capture config', () => {
     })).toThrow('响应单字段上限')
   })
 
+  test('请求与响应独立保存留存方式，旧配置继续沿用原设置', () => {
+    const config = { request: { storageMode: 'ORIGINAL_ONLY' }, response: {
+      storageMode: 'PROCESSED_ONLY', source: 'ORIGINAL', decrypt: { enabled: true, mode: 'BASE64', path: '$.data' }
+    } }
+    const saved = parsePayloadCaptureConfig(stringifyPayloadCaptureConfig(config))
+    expect(saved.request.storageMode).toBe('ORIGINAL_ONLY')
+    expect(saved.response.storageMode).toBe('PROCESSED_ONLY')
+    expect(saved.response.decrypt.path).toBe('$.data')
+    expect(parsePayloadCaptureConfig({ response: { saveOriginal: false } }).response.storageMode).toBeUndefined()
+    expect(() => stringifyPayloadCaptureConfig({ response: { storageMode: 'INVALID' } })).toThrow('保存方式无效')
+  })
+
   test('支持按路径配置 Base64 或 3DES 留存解密', () => {
     const value = parsePayloadCaptureConfig({
       response: {

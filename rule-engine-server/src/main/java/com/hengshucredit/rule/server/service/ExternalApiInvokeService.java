@@ -850,7 +850,8 @@ public class ExternalApiInvokeService {
             trace.rawRequestMetadata = copyStringKeyedMap(requestMetadata);
         }
         Object raw = cached.get("rawResponseBody");
-        trace.rawResponseBody = raw == null ? rawPayload(cached.get("body")) : String.valueOf(raw);
+        trace.rawResponseBody = raw == null && !cached.containsKey("rawResponseMetadata")
+                ? rawPayload(cached.get("body")) : stringOrNull(raw);
         trace.originalRequestBody = stringOrNull(cached.get("originalRequestBody"));
         trace.originalResponseBody = stringOrNull(cached.get("originalResponseBody"));
         Object responseMetadata = cached.get("rawResponseMetadata");
@@ -1576,10 +1577,11 @@ public class ExternalApiInvokeService {
         } catch (RuntimeException error) {
             serialized = String.valueOf(value);
         }
-        if (serialized.getBytes(StandardCharsets.UTF_8).length <= 32768) return value;
+        int byteLength = serialized.getBytes(StandardCharsets.UTF_8).length;
+        if (byteLength <= 32768) return value;
         Map<String, Object> omitted = new LinkedHashMap<>();
         omitted.put("truncated", true);
-        omitted.put("bytes", serialized.getBytes(StandardCharsets.UTF_8).length);
+        omitted.put("bytes", byteLength);
         omitted.put("reason", "阶段追踪字段超过32KiB，仅保留摘要");
         return omitted;
     }
@@ -1700,7 +1702,7 @@ public class ExternalApiInvokeService {
             }
             return ruleExecuteService.executePublishedWithOptions(published, executionParams,
                     datasource.getProjectId(), "RULE_ENGINE_DATASOURCE",
-                    VariableResolveOptions.fromSourceExecutionPolicy(policy), "CLIENT_SERVER").getResult();
+                    VariableResolveOptions.fromSourceExecutionPolicy(policy), "INTERNAL_RULE").getResult();
         });
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("success", result.isSuccess());
@@ -3418,6 +3420,7 @@ public class ExternalApiInvokeService {
         log.setErrorType(success ? null : "TOKEN_FETCH_FAILED");
         log.setErrorMessage(errorMessage);
         log.setCostTimeMs(costTimeMs);
+        applyPayloadStorage(apiConfig, log);
         runtimeCallLogService.safeSave(log);
     }
 
@@ -3434,6 +3437,8 @@ public class ExternalApiInvokeService {
         }
         log.setModuleType("DATASOURCE");
         log.setActionType(ExternalApiTrialContext.current() == null ? "API_ATTEMPT" : "API_DRAFT_ATTEMPT");
+        Object rootId = com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext().rootRule().get("traceId");
+        if (rootId != null) log.setRootTraceId(String.valueOf(rootId));
         log.setProjectId(resolveRuntimeProjectId(datasource));
         log.setDatasourceId(datasource.getId());
         log.setRequestId(prepared.headers.getFirst("X-Request-Id"));
@@ -3457,7 +3462,7 @@ public class ExternalApiInvokeService {
         ExternalApiPayloadCapturePolicy.Capture requestCapture = capturePayload(
                 apiConfig, "request", rawRequestPayload(prepared.requestBody, prepared.headers.getContentType()),
                 trace.processedRequestBody, prepared.sourceParams);
-        log.setRequestBody(runtimeCallLogService.toJson(maskSensitiveForLog(
+        if (!compactPayload(apiConfig, "request")) log.setRequestBody(runtimeCallLogService.toJson(maskSensitiveForLog(
                 payloadForLog(prepared.requestBody, requestCapture.capturedBody(), requestCapture.metadata()))));
         log.setRawRequestBody(requestCapture.capturedBody());
         log.setRawRequestMetadata(runtimeCallLogService.toJson(requestCapture.metadata()));
@@ -3467,7 +3472,7 @@ public class ExternalApiInvokeService {
         log.setResponseStatus(responseStatus);
         ExternalApiPayloadCapturePolicy.Capture responseCapture = capturePayload(
                 apiConfig, "response", rawResponseBody, trace.processedResponseBody, prepared.sourceParams);
-        log.setResponseBody(runtimeCallLogService.toJson(maskSensitiveForLog(
+        if (!compactPayload(apiConfig, "response")) log.setResponseBody(runtimeCallLogService.toJson(maskSensitiveForLog(
                 payloadForLog(responseBody, responseCapture.capturedBody(), responseCapture.metadata()))));
         log.setRawResponseBody(responseCapture.capturedBody());
         log.setRawResponseMetadata(runtimeCallLogService.toJson(responseCapture.metadata()));
@@ -3477,6 +3482,7 @@ public class ExternalApiInvokeService {
         log.setErrorType(errorType(error));
         log.setErrorMessage(error == null ? null : error.getMessage());
         log.setCostTimeMs(costTimeMs);
+        applyPayloadStorage(apiConfig, log);
         runtimeCallLogService.safeSave(log);
     }
 
@@ -3523,6 +3529,37 @@ public class ExternalApiInvokeService {
             return body.toString();
         }
         return rawPayload(value);
+    }
+
+    private boolean compactPayload(RuleExternalApiConfig api, String side) {
+        return api.getPayloadCaptureConfig() != null && ExternalApiPayloadCapturePolicy.storageMode(api.getPayloadCaptureConfig(), side)
+                != ExternalApiPayloadCapturePolicy.StorageMode.LEGACY;
+    }
+
+    private void applyPayloadStorage(RuleExternalApiConfig api, RuleRuntimeCallLog log) {
+        if (api == null || !hasText(api.getPayloadCaptureConfig())) return;
+        for (String side : List.of("request", "response")) {
+            var mode = ExternalApiPayloadCapturePolicy.storageMode(api.getPayloadCaptureConfig(), side);
+            if (mode == ExternalApiPayloadCapturePolicy.StorageMode.LEGACY) continue;
+            boolean request = "request".equals(side);
+            String rawMetadata = request ? log.getRawRequestMetadata() : log.getRawResponseMetadata();
+            var metadata = rawMetadata == null ? new JSONObject() : JSON.parseObject(rawMetadata);
+            metadata.put("storageMode", mode.name());
+            boolean originalOnly = mode == ExternalApiPayloadCapturePolicy.StorageMode.ORIGINAL_ONLY;
+            boolean processedOnly = mode == ExternalApiPayloadCapturePolicy.StorageMode.PROCESSED_ONLY;
+            if (request) {
+                log.setRequestBody(null);
+                log.setRequestParams(null);
+                if (originalOnly) log.setRawRequestBody(null);
+                if (processedOnly) log.setOriginalRequestBody(null);
+                log.setRawRequestMetadata(metadata.toJSONString());
+            } else {
+                log.setResponseBody(null);
+                if (originalOnly) log.setRawResponseBody(null);
+                if (processedOnly) log.setOriginalResponseBody(null);
+                log.setRawResponseMetadata(metadata.toJSONString());
+            }
+        }
     }
 
     private Object payloadForLog(Object original, String capturedBody, Map<String, Object> metadata) {
@@ -3603,11 +3640,14 @@ public class ExternalApiInvokeService {
         }
         if (trace != null) log.setCallId(trace.callId);
         log.setModuleType("DATASOURCE");
-        log.setActionType(ExternalApiTrialContext.current() == null ? "API_INVOKE" : "API_DRAFT_INVOKE");
+        log.setActionType(ExternalApiTrialContext.current() != null ? "API_DRAFT_INVOKE"
+                : apiConfig.isBillingSuppressed() ? "API_WORKFLOW_STEP" : "API_INVOKE");
         var context = com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext();
         Object rootTraceId = context.rootRule().get("traceId");
         if (rootTraceId != null) {
             log.setRootTraceId(String.valueOf(rootTraceId));
+        }
+        if (rootTraceId != null && !apiConfig.isBillingSuppressed()) {
             Map<String, Object> fields = new LinkedHashMap<>();
             context.externalFieldPaths(apiConfig.getId()).forEach((key, path) ->
                     fields.put(key, response == null ? null : VariableSourceResolver.readPath(response, path)));
@@ -3637,7 +3677,7 @@ public class ExternalApiInvokeService {
             log.setTokenCacheStatus(trace.tokenCacheStatus);
             log.setRequestHeaders(runtimeCallLogService.toJson(trace.requestHeaders));
             log.setRequestParams(runtimeCallLogService.toJson(maskSensitiveForLog(trace.requestParams)));
-            log.setRequestBody(runtimeCallLogService.toJson(maskSensitiveForLog(
+            if (!compactPayload(apiConfig, "request")) log.setRequestBody(runtimeCallLogService.toJson(maskSensitiveForLog(
                     payloadForLog(trace.requestBody, trace.rawRequestBody, trace.rawRequestMetadata))));
             log.setRawRequestBody(trace.rawRequestBody);
             log.setRawRequestMetadata(runtimeCallLogService.toJson(trace.rawRequestMetadata));
@@ -3650,14 +3690,15 @@ public class ExternalApiInvokeService {
             log.setCacheKey(trace.cacheKey);
         }
         Object responseForLog = response != null ? response : (trace == null ? null : trace.responseBody);
-        if (trace != null) responseForLog = payloadForLog(responseForLog, trace.rawResponseBody, trace.rawResponseMetadata);
-        log.setResponseBody(runtimeCallLogService.toJson(maskSensitiveForLog(responseForLog)));
+        if (trace != null && !compactPayload(apiConfig, "response")) responseForLog = payloadForLog(responseForLog, trace.rawResponseBody, trace.rawResponseMetadata);
+        if (!compactPayload(apiConfig, "response")) log.setResponseBody(runtimeCallLogService.toJson(maskSensitiveForLog(responseForLog)));
         log.setRawResponseBody(trace == null ? null : trace.rawResponseBody);
         log.setRawResponseMetadata(runtimeCallLogService.toJson(trace == null ? null : trace.rawResponseMetadata));
         log.setOriginalResponseBody(trace == null ? null : trace.originalResponseBody);
         log.setErrorType(errorMessage == null ? null : "API_INVOKE_FAILED");
         log.setErrorMessage(errorMessage);
         log.setCostTimeMs(costTimeMs);
+        applyPayloadStorage(apiConfig, log);
         runtimeCallLogService.safeSave(log);
     }
 
@@ -3678,7 +3719,7 @@ public class ExternalApiInvokeService {
     }
 
     private Map<String, Object> conditionResponse(Map<String, Object> response, InvokeTrace trace) {
-        Map<String, Object> result = response == null ? new LinkedHashMap<>() : copyResponse(response);
+        Map<String, Object> result = response == null ? new LinkedHashMap<>() : new LinkedHashMap<>(response);
         if (trace != null && trace.responseStatus != null) {
             result.putIfAbsent("httpStatus", trace.responseStatus);
             result.putIfAbsent("responseStatus", trace.responseStatus);
@@ -3766,7 +3807,8 @@ public class ExternalApiInvokeService {
         if (status == null && response != null) {
             status = response.get("responseStatus");
         }
-        Integer httpStatus = status instanceof Number ? ((Number) status).intValue() : parseIndex(stringValue(status));
+        if (status instanceof Number number) return number.intValue() >= 200 && number.intValue() < 300;
+        Integer httpStatus = parseIndex(stringValue(status));
         return httpStatus == null ? success : httpStatus >= 200 && httpStatus < 300;
     }
 

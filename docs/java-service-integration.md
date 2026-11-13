@@ -145,7 +145,7 @@ GET /api/rule/runtime/external-calls/{callId}
 
 该接口只返回调用所属项目的报文；缓存命中没有真实的供应商请求，`rawRequestAvailable=false` 属于正常情况，响应仍可通过 `callId` 关联。
 
-外数接口的报文留存策略还可以在控制台按请求/响应分别配置：选择实际报文或脚本显式写入的 `state.logRequestBody`/`state.logResponseBody` 中间副本，配置 JSONPath 排除字段和单字段字节上限；Base64、3DES Base64 解密只生成分析副本，失败时不会回退覆盖未处理密文，`originalRequestBody`/`originalResponseBody` 仍保存供应商实际报文，规则实时结果不受影响。
+控制台可分别设置请求与响应的报文保存方式。仅原始报文、仅分析副本及双份留存的配置和 Base64 解码示例见[外数 API 报文留存](api-execution-unification.md#大报文保存方式)。实时请求、业务映射及规则执行均沿用既有契约。
 
 ## 5. 日志追踪开关
 

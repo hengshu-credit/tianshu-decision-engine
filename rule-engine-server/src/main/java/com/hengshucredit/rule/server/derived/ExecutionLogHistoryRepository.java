@@ -46,7 +46,7 @@ public class ExecutionLogHistoryRepository {
                 "SELECT l.id, l.trace_id, l.started_at, l.history_fields "
                         + "FROM rule_execution_log_current l "
                         + "WHERE l.started_at >= ? AND l.started_at < ? AND l.success = 1 "
-                        + "AND l.source = 'CLIENT_SERVER' AND l.history_fields IS NOT NULL ");
+                        + "AND l.source IN ('CLIENT_SERVER','EXPERIMENT_LIVE') AND l.history_fields IS NOT NULL ");
         List<Object> parameters = new ArrayList<>();
         parameters.add(Timestamp.valueOf(from));
         parameters.add(Timestamp.valueOf(before));
@@ -90,7 +90,10 @@ public class ExecutionLogHistoryRepository {
         }));
         // API bindings (and even source kinds) can change after an application.
         // Read that root's logical logs (including explicit API nodes), then match stored field IDs.
-        if (!requiredFields.isEmpty() && !rows.isEmpty()) loadApiFields(rowsByTrace, expectedApis, bytesRead);
+        if (!requiredFields.isEmpty()) {
+            rowsByTrace.entrySet().removeIf(entry -> entry.getValue().fields().keySet().containsAll(requiredFields));
+            if (!rowsByTrace.isEmpty()) loadApiFields(rowsByTrace, expectedApis, bytesRead, requiredFields);
+        }
         return rows;
     }
 
@@ -103,17 +106,39 @@ public class ExecutionLogHistoryRepository {
         return JSON.parseObject(json);
     }
 
+    private record ApiResult(String trace, JSONObject fields, boolean workflow, String callId) {}
+
+    private boolean ownsSteps(ApiResult summary, List<ApiResult> calls) {
+        if (summary.callId() == null) return false;
+        var traces = jdbc.queryForList(secured("SELECT trace_steps FROM rule_runtime_call_log WHERE "
+                + "action_type='API_INVOKE' AND call_id=? AND root_trace_id=?"), String.class,
+                summary.callId(), summary.trace());
+        if (traces.size() != 1 || traces.get(0) == null) return false;
+        Set<String> childIds = new LinkedHashSet<>();
+        for (Object raw : JSON.parseArray(traces.get(0))) {
+            if (!(raw instanceof JSONObject step) || !"WORKFLOW_STEP".equals(step.getString("type"))) continue;
+            if (step.get("output") instanceof JSONObject output && output.getString("callId") != null)
+                childIds.add(output.getString("callId"));
+            if (step.get("children") instanceof List<?> children) {
+                for (Object child : children) if (child instanceof JSONObject event) childIds.add(event.getString("callId"));
+            }
+        }
+        childIds.remove(null);
+        return calls.stream().allMatch(call -> call == summary || childIds.contains(call.callId()));
+    }
+
     private void loadApiFields(Map<String, HistoryQuery.Row> rows, Map<String, Set<Long>> expected,
-                                long[] bytesRead) {
+                                long[] bytesRead, Set<String> requiredFields) {
         List<String> traces = new ArrayList<>(rows.keySet());
         Set<String> seen = new LinkedHashSet<>();
         long deadline = System.nanoTime() + 10_000_000_000L;
         for (int offset = 0; offset < traces.size(); offset += 500) {
             if (System.nanoTime() >= deadline) throw new IllegalStateException("历史外数结果查询超时");
             List<String> batch = traces.subList(offset, Math.min(offset + 500, traces.size()));
-            String sql = "SELECT root_trace_id, target_ref_id, history_fields FROM rule_runtime_call_log "
+            String sql = "SELECT root_trace_id, target_ref_id, history_fields, call_id, JSON_EXTRACT(IF(JSON_VALID(trace_steps),trace_steps,NULL), '$[*].type') AS step_types FROM rule_runtime_call_log "
                     + "WHERE action_type = 'API_INVOKE' AND module_type = 'DATASOURCE' AND root_trace_id IN ("
                     + String.join(",", java.util.Collections.nCopies(batch.size(), "?")) + ") ORDER BY id";
+            Map<String, List<ApiResult>> results = new LinkedHashMap<>();
             jdbc.query(connection -> {
                 var statement = connection.prepareStatement(secured(sql));
                 statement.setQueryTimeout(Math.max(1, (int) ((deadline - System.nanoTime()) / 1_000_000_000L)));
@@ -123,16 +148,36 @@ public class ExecutionLogHistoryRepository {
             }, (result, index) -> {
                 String trace = result.getString("root_trace_id");
                 Long api = result.getLong("target_ref_id");
-                if (!seen.add(trace + ":" + api)) throw new IllegalStateException("同一进件同一接口存在多个逻辑结果，无法唯一回溯");
-                JSONObject fields = parseSnapshot(result.getString("history_fields"), bytesRead);
-                var snapshot = rows.get(trace).fields();
-                fields.forEach((key, value) -> {
-                    if (!snapshot.containsKey(key)) snapshot.put(key, value);
-                });
+                // Older versions labelled workflow transports as API_INVOKE. Only an identified
+                // workflow summary can supersede them; genuinely ambiguous logical results still fail.
+                boolean workflow = false;
+                String types = result.getString("step_types");
+                if (types != null) workflow = JSON.parseArray(types).contains("WORKFLOW_STEP");
+                String owner = trace + ":" + api;
+                results.computeIfAbsent(owner, ignored -> new ArrayList<>()).add(
+                        new ApiResult(trace, parseSnapshot(result.getString("history_fields"), bytesRead), workflow,
+                                result.getString("call_id")));
                 return 0;
             });
+            for (var group : results.entrySet()) {
+                List<ApiResult> calls = group.getValue();
+                ApiResult selected = calls.get(0);
+                if (calls.size() > 1) {
+                    var summaries = calls.stream().filter(ApiResult::workflow).toList();
+                    if (summaries.size() != 1 || !ownsSteps(summaries.get(0), calls)) {
+                        throw new IllegalStateException("同一进件同一接口存在多个逻辑结果，无法唯一回溯");
+                    }
+                    selected = summaries.get(0);
+                }
+                seen.add(group.getKey());
+                var fields = rows.get(selected.trace()).fields();
+                for (String key : requiredFields) {
+                    if (!fields.containsKey(key) && selected.fields().containsKey(key)) fields.put(key, selected.fields().get(key));
+                }
+            }
         }
         for (var entry : expected.entrySet()) {
+            if (!rows.containsKey(entry.getKey())) continue;
             for (Long api : entry.getValue()) {
                 if (!seen.contains(entry.getKey() + ":" + api)) {
                     throw new IllegalStateException("历史外数逻辑结果日志缺失，统计不完整: " + entry.getKey());

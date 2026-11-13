@@ -11,7 +11,7 @@ import java.util.Set;
 /** 可通过函数管理绑定的 GPS 距离与当日进件去重统计，不开放脚本反射权限。 */
 @Service("geoFunctions")
 public class GeoFunctions {
-    private static final double EARTH_RADIUS_METERS = 6371008.8;
+    public static final double EARTH_RADIUS_METERS = 6371008.8;
     private static final double ONE_KILOMETER_METERS = 1000.0;
 
     @com.hengshucredit.rule.core.function.ScriptCallable

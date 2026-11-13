@@ -122,7 +122,7 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
     private Map<String, Object> payloadByCallId(String callId, Long projectId, boolean includeTrial) {
         if (!hasText(callId)) return Collections.emptyMap();
         List<RuleRuntimeCallLog> logs = payloadLogsByCallId(callId, projectId, includeTrial
-                ? new String[]{"API_INVOKE", "API_DRAFT_INVOKE"} : new String[]{"API_INVOKE"});
+                ? new String[]{"API_INVOKE", "API_WORKFLOW_STEP", "API_DRAFT_INVOKE"} : new String[]{"API_INVOKE", "API_WORKFLOW_STEP"});
         if (logs.isEmpty()) {
             logs = payloadLogsByCallId(callId, projectId, includeTrial
                     ? new String[]{"API_ATTEMPT", "API_DRAFT_ATTEMPT"} : new String[]{"API_ATTEMPT"});
@@ -190,7 +190,7 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
                         .or().eq(RuleRuntimeCallLog::getRuleTraceId, rootTraceId)
                         .or().eq(RuleRuntimeCallLog::getTraceId, rootTraceId))
                 .eq(RuleRuntimeCallLog::getModuleType, "DATASOURCE")
-                .in(RuleRuntimeCallLog::getActionType, "API_INVOKE", "API_DRAFT_INVOKE")
+                .in(RuleRuntimeCallLog::getActionType, "API_INVOKE", "API_WORKFLOW_STEP", "API_DRAFT_INVOKE")
                 .orderByAsc(RuleRuntimeCallLog::getCreateTime)
                 .orderByAsc(RuleRuntimeCallLog::getId);
         if (projectId != null) {

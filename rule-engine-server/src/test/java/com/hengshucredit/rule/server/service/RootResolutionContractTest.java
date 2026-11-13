@@ -29,7 +29,8 @@ public class RootResolutionContractTest {
         ReflectionTestUtils.setField(resolver, "derivedVariableService", new DerivedVariableService() {
             @Override public Object resolve(RuleVariable variable, Map<String, Object> values,
                     Map<String, String> paths, Map<Long, RuleFunction> functions,
-                    Map<String, com.hengshucredit.rule.server.derived.HistoricalFieldDefinition> definitions) {
+                    Map<String, com.hengshucredit.rule.server.derived.HistoricalFieldDefinition> definitions,
+                    VariableResolveOptions resolveOptions) {
                 calls.incrementAndGet();
                 return null;
             }

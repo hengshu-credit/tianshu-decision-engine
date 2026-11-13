@@ -388,6 +388,7 @@
             :content="pretty(detail.requestParams)"
           />
           <detail-block
+            v-if="apiPayload.rawRequestMetadata?.storageMode !== 'ORIGINAL_ONLY'"
             :title="apiPayload.rawRequestAvailable ? '分析请求报文（按配置留存）' : '请求报文（未生成分析副本）'"
             :content="pretty(apiPayload.requestBody || detail.requestBody)"
           />
@@ -397,6 +398,7 @@
             :content="pretty(apiPayload.originalRequestBody)"
           />
           <detail-block
+            v-if="apiPayload.rawResponseMetadata?.storageMode !== 'ORIGINAL_ONLY'"
             :title="apiPayload.rawResponseAvailable ? '分析响应报文（按配置留存）' : '响应内容（未生成分析副本）'"
             :content="pretty(apiPayload.responseBody || detail.responseBody)"
           />
@@ -519,6 +521,7 @@ export default {
       detailRequestSeq: 0,
       actionMap: {
         API_INVOKE: 'API调用',
+        API_WORKFLOW_STEP: '外数链路步骤',
         API_DRAFT_INVOKE: '草稿试运行',
         API_DRAFT_ATTEMPT: '试运行请求',
         AUTH_TEST: '鉴权测试',
@@ -604,6 +607,7 @@ export default {
     actionOptions() {
       const datasource = [
         { label: 'API调用', value: 'API_INVOKE' },
+        { label: '外数链路步骤', value: 'API_WORKFLOW_STEP' },
         { label: '草稿试运行', value: 'API_DRAFT_INVOKE' },
         { label: '试运行请求', value: 'API_DRAFT_ATTEMPT' },
         { label: '鉴权测试', value: 'AUTH_TEST' },

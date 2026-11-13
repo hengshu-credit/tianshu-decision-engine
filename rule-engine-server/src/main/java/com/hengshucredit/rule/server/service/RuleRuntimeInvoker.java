@@ -197,6 +197,9 @@ public class RuleRuntimeInvoker {
         }
         RuleTraceFrame rootTrace = createTraceFrame(definition, projectCode, null, modelJson,
                 forcedRootTraceId);
+        rootTrace.setRuleVersion(definition.getExecutionVersion());
+        rootTrace.setRevisionId(definition.getExecutionRevisionId());
+        rootTrace.setArtifactDigest(definition.getExecutionArtifactDigest());
         if (forcedRootTraceId != null && !forcedRootTraceId.isBlank()) {
             if (forcedRootTraceId.length() < 7) {
                 throw new IllegalArgumentException("恢复执行的 trace_id 格式无效");
@@ -225,6 +228,7 @@ public class RuleRuntimeInvoker {
         RuleExecutionSession session = new RuleExecutionSession(
                 executionProjectId, projectCode, values, originalInput, testMode,
                 definition.getRuleCode(), rootTrace, rootOutputScriptNames, runtimeSnapshot, currentSession.get());
+        if (runtimeSnapshot != null) session.getInvocationCache().setRootVariables(runtimeSnapshot.getVariables());
         currentSession.set(session);
         session.bindContext();
         session.getRequestContext().setRootInput(session.getOriginalInput());

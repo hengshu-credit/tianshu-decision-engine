@@ -919,7 +919,7 @@ public class VariableSourceResolver {
             } else if ("DERIVED".equals(varSource)) {
                 value = derivedVariableService.resolve(variable, resolvedParams,
                         effectiveOptions.getDerivedReferencePaths(), effectiveOptions.getDerivedFunctions(),
-                        effectiveOptions.getHistoryFieldDefinitions());
+                        effectiveOptions.getHistoryFieldDefinitions(), effectiveOptions);
             } else if ("SFTP".equals(varSource)) {
                 value = resolveSftpVariable(variable, config, resolvedParams, effectiveOptions);
             } else {

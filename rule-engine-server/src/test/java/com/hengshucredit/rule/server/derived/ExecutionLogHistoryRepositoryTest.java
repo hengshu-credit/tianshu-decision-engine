@@ -34,6 +34,17 @@ public class ExecutionLogHistoryRepositoryTest {
         }
     }
     @Test
+    public void completeRootFieldsAvoidUnrelatedWorkflowHistoryReads() {
+        CapturingJdbc jdbc = new CapturingJdbc();
+        jdbc.roots = List.of(root("{\"version\":1,\"fields\":{\"VARIABLE:2\":2},\"apiIds\":[7]}"));
+        var rows = new ExecutionLogHistoryRepository(jdbc).query("PROJECT", 3L, null,
+                LocalDateTime.now().minusHours(4), LocalDateTime.now(), Set.of("VARIABLE:2"), Map.of());
+        assertEquals(2, rows.get(0).fields().get("VARIABLE:2"));
+        assertTrue(jdbc.sql.contains("EXPERIMENT_LIVE"));
+        assertFalse(jdbc.sql.contains("API_INVOKE"));
+    }
+
+    @Test
     public void changingSourceOrApiDoesNotHidePreviouslyRecordedFieldResults() {
         for (String source : List.of("INPUT", "API")) {
             CapturingJdbc jdbc = new CapturingJdbc();

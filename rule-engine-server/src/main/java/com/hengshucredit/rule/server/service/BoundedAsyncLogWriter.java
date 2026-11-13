@@ -77,12 +77,9 @@ class BoundedAsyncLogWriter<T> implements AutoCloseable {
         while (running || !detailQueue.isEmpty() || !metadataQueue.isEmpty()) {
             try {
                 List<T> batch = new ArrayList<>(batchSize);
-                T first = metadataFirst
-                        ? metadataQueue.poll(flushMillis, TimeUnit.MILLISECONDS)
-                        : detailQueue.poll(flushMillis, TimeUnit.MILLISECONDS);
-                if (first == null) {
-                    first = metadataFirst ? detailQueue.poll() : metadataQueue.poll();
-                }
+                T first = metadataFirst ? metadataQueue.poll() : detailQueue.poll();
+                if (first == null) first = metadataFirst ? detailQueue.poll() : metadataQueue.poll();
+                if (first == null) first = detailQueue.poll(flushMillis, TimeUnit.MILLISECONDS);
                 metadataFirst = !metadataFirst;
                 if (first == null) continue;
                 batch.add(first);

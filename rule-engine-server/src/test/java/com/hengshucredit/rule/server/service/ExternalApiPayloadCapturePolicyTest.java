@@ -10,6 +10,21 @@ import java.util.Map;
 
 public class ExternalApiPayloadCapturePolicyTest {
 
+    @Test public void explicitStorageModesPreserveOnlyTheSelectedFormEvenOnDecodeFailure() {
+        String encoded = Base64.getEncoder().encodeToString("{\"score\":83}".getBytes(StandardCharsets.UTF_8));
+        String decodedOnly = "{\"response\":{\"storageMode\":\"PROCESSED_ONLY\",\"decrypt\":{\"enabled\":true,\"mode\":\"BASE64\",\"path\":\"$\"}}}";
+        var good = ExternalApiPayloadCapturePolicy.capture(decodedOnly, "response", encoded, null);
+        Assert.assertEquals("{\"score\":83}", good.capturedBody());
+        Assert.assertNull(ExternalApiPayloadCapturePolicy.originalBody(decodedOnly, "response", encoded, good));
+        var failed = ExternalApiPayloadCapturePolicy.capture(decodedOnly, "response", "invalid%", null);
+        Assert.assertNull(failed.capturedBody());
+        Assert.assertEquals("FAILED", failed.metadata().get("status"));
+        Assert.assertNull(ExternalApiPayloadCapturePolicy.originalBody(decodedOnly, "response", "invalid%", failed));
+        String rawOnly = decodedOnly.replace("PROCESSED_ONLY", "ORIGINAL_ONLY");
+        var raw = ExternalApiPayloadCapturePolicy.capture(rawOnly, "response", encoded, "processed");
+        Assert.assertEquals(encoded, ExternalApiPayloadCapturePolicy.originalBody(rawOnly, "response", encoded, raw));
+    }
+
     @Test
     public void keepsOriginalBodyByteForByteWithoutFilters() {
         String original = "{\"message\": \"a  b\",\"file\":\"BASE64\"}";

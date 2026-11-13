@@ -182,7 +182,9 @@ public class ConsoleDataPermissionHandler implements MultiDataPermissionHandler 
             case "governed_resource_version" -> child(scope, a, "governed_resource_id", "governed_resource", depth);
             case "governance_approval_event", "governance_dependency_snapshot" -> child(scope, a, "request_id", "governance_approval_request", depth);
             case "resource_impact_analysis" -> resource(scope, a + ".resource_type", a + ".resource_id", depth);
-            case "rule_execution_log", "rule_execution_log_current" -> executionLog(scope, a);
+            case "rule_execution_log", "rule_execution_log_current", "rule_history_root" -> executionLog(scope, a);
+            case "rule_history_numeric_field" -> "EXISTS (SELECT 1 FROM rule_history_root sec_history WHERE sec_history.log_id = "
+                    + a + ".log_id AND sec_history.log_create_time = " + a + ".log_create_time AND " + executionLog(scope, "sec_history") + ")";
             case "rule_execution_statistics", "rule_execution_statistics_current" -> "EXISTS (SELECT 1 FROM rule_execution_log sec_log WHERE sec_log.id = "
                     + a + ".id AND sec_log.create_time = " + a + ".create_time AND " + executionLog(scope, "sec_log") + ")";
             case "rule_set_statistics_event" -> "EXISTS (SELECT 1 FROM rule_execution_log sec_log WHERE sec_log.id = " + a

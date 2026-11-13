@@ -360,7 +360,8 @@ public class RuleExecuteService {
                                        ProjectAuthContext authContext, boolean collectTrace,
                                        boolean recordTrace) {
         return executePublishedWithOptions(published, params, projectId, clientAppName,
-                VariableResolveOptions.defaults(), "CLIENT_SERVER", authContext,
+                VariableResolveOptions.defaults(), "RULE_ENGINE_DATASOURCE".equals(clientAppName)
+                        && !RuntimeContextBridge.currentContext().rootRule().isEmpty() ? "INTERNAL_RULE" : "CLIENT_SERVER", authContext,
                 collectTrace, recordTrace).getResult();
     }
 
@@ -593,7 +594,8 @@ public class RuleExecuteService {
             definition.setExecutionAttemptNo(result.getAttemptNo());
         }
         if (persistExecution) {
-            persistExecution(isExperimentSource(source) ? null : log, definition, result, authContext);
+            persistExecution(isExperimentSource(source) && !"EXPERIMENT_LIVE".equals(source) ? null : log,
+                    definition, result, authContext);
         }
 
         return new ExecutionOutcome(result, executeParams);

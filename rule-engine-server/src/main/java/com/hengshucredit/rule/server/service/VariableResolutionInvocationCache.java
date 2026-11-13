@@ -1,5 +1,8 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.model.entity.RuleVariable;
+import com.hengshucredit.rule.server.derived.IndexedHistoryCount;
+import java.time.LocalDateTime;
 import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -29,6 +32,30 @@ public class VariableResolutionInvocationCache {
     /** 同一根规则内共享的 SFTP 文件字节；不进入跨请求检查点，避免持久化文件内容。 */
     private final ConcurrentHashMap<String, CompletableFuture<byte[]>> sftpFiles =
             new ConcurrentHashMap<>();
+    private List<RuleVariable> rootVariables = List.of();
+
+    public List<RuleVariable> rootVariables() { return rootVariables; }
+
+    void setRootVariables(List<RuleVariable> variables) {
+        rootVariables = List.copyOf(variables);
+    }
+
+    private final Map<IndexedHistoryCount.Selection, Map<LocalDateTime, IndexedHistoryCount.Count>> historicalCounts =
+            new ConcurrentHashMap<>();
+
+    public IndexedHistoryCount.Count historyCount(
+            IndexedHistoryCount.Selection selection, LocalDateTime from,
+            Supplier<Map<LocalDateTime, IndexedHistoryCount.Count>> loader) {
+        return historicalCounts.compute(selection, (ignored, previous) -> {
+            if (previous != null && previous.containsKey(from)) return previous;
+            var loaded = loader.get();
+            if (previous == null || previous.isEmpty()) return loaded;
+            var combined = new LinkedHashMap<>(previous);
+            combined.putAll(loaded);
+            return Map.copyOf(combined);
+        }).get(from);
+    }
+
     private final Map<String, HistoricalFieldDefinition> historyDefinitions = new ConcurrentHashMap<>();
     private final Map<String, HistoricalFieldDefinition> historyDefaults = new ConcurrentHashMap<>();
     private final Map<String, Object> fieldResults = new ConcurrentHashMap<>();

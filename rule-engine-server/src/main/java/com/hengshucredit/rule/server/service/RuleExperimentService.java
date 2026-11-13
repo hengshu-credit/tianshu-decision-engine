@@ -378,6 +378,11 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
 
     public RuleExperimentExecuteResult execute(String experimentCode, RuleExperimentExecuteRequest request,
                                                 String forcedExperimentTraceId) {
+        return execute(experimentCode, request, forcedExperimentTraceId, false);
+    }
+
+    private RuleExperimentExecuteResult execute(String experimentCode, RuleExperimentExecuteRequest request,
+                                                String forcedExperimentTraceId, boolean runtimeRequest) {
         long start = System.currentTimeMillis();
         RuleExperiment experiment = findEnabledExperiment(experimentCode);
         if (experiment == null) {
@@ -428,7 +433,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         RouteChoice productionChoice = chooseProductionGroup(experiment, groups, params, requestKey, clientAppName);
         RuleExperimentGroupResult productionResult = runGroup(experiment, productionChoice.group, copyParams(params),
                 requestKey, requestTime, clientAppName, "PRODUCTION", productionChoice.reason, true,
-                experimentTraceId, configDigest, productionChoice.routeTrace);
+                experimentTraceId, configDigest, productionChoice.routeTrace, runtimeRequest);
         result.setProductionGroup(productionResult);
         result.getTags().add(productionChoice.group.getGroupCode());
 
@@ -499,7 +504,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 || !experiment.getProjectId().equals(projectId)) {
             throw new IllegalArgumentException("分流实验不存在、未启用或不属于当前项目: " + experimentCode);
         }
-        return execute(experimentCode, request, forcedExperimentTraceId);
+        return execute(experimentCode, request, forcedExperimentTraceId, true);
     }
 
     public String executionFingerprint(String experimentCode, Long projectId) {
@@ -778,7 +783,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                                                boolean invokeExternalSource,
                                                String experimentTraceId,
                                                String configDigest,
-                                               List<Map<String, Object>> routeTrace) {
+                                               List<Map<String, Object>> routeTrace, boolean runtimeProduction) {
         RulePublished published = findPublishedRule(experiment, group);
         VariableResolveOptions options = VariableResolveOptions.defaults();
         options.setSkipApiSources(!invokeExternalSource);
@@ -790,7 +795,8 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         try (var versions = resourceVersions == null ? null
                 : resourceVersions.bind(experiment.getProjectId(), params, options)) {
             outcome = executeService.executePublishedWithOptions(
-                    published, params, experiment.getProjectId(), clientAppName, options, "EXPERIMENT_" + stage);
+                    published, params, experiment.getProjectId(), clientAppName, options,
+                    runtimeProduction ? "EXPERIMENT_LIVE" : "EXPERIMENT_" + stage);
         }
         RuleExperimentGroupResult groupResult = toGroupResult(group, outcome, stage, routeReason);
         groupResult.setRuleId(published.getDefinitionId());
@@ -814,7 +820,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                                                    List<Map<String, Object>> routeTrace) {
         try {
             return runGroup(experiment, group, params, requestKey, requestTime, clientAppName,
-                    "TEST", routeReason, invokeExternalSource, experimentTraceId, configDigest, routeTrace);
+                    "TEST", routeReason, invokeExternalSource, experimentTraceId, configDigest, routeTrace, false);
         } catch (RuntimeException error) {
             RuleExperimentGroupResult failed = failedTestResult(group,
                     error.getMessage() == null ? "实验测试执行失败" : error.getMessage());
