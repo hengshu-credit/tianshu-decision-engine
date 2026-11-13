@@ -57,6 +57,17 @@ public class OpenApiContract {
         /** 多字段幂等配置；每个元素可直接是 Operand 或 {"operand": Operand}。 */
         private List<Object> components = new ArrayList<>();
         private int ttlSeconds = 86400;
+        private String externalRecoveryMode = "ORIGINAL_ONLY";
+
+        public String getExternalRecoveryMode() { return externalRecoveryMode; }
+        public void setExternalRecoveryMode(String mode) {
+            externalRecoveryMode = mode == null ? "ORIGINAL_ONLY" : requireRecoveryMode(mode);
+        }
+        public static String requireRecoveryMode(String mode) {
+            if (mode != null && !mode.equals("ORIGINAL_ONLY") && !mode.equals("CACHE_THEN_CALL"))
+                throw new IllegalArgumentException("外数恢复方式必须为 ORIGINAL_ONLY 或 CACHE_THEN_CALL");
+            return mode;
+        }
 
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }

@@ -235,8 +235,15 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
         Map<String, Object> source = JSON.parseObject(JSON.toJSONString(api));
         source.remove("createTime"); source.remove("updateTime"); source.remove("testSampleParams");
         source.remove("executionCallId");
-        return "API_CHAIN:" + api.getId() + ":" + Sha256Digests.text(CanonicalJson.write(source))
-                + ":" + Sha256Digests.text(CanonicalJson.write(fields));
+        return checkpointIdentity("API_CHAIN:" + api.getId() + ":" + Sha256Digests.text(CanonicalJson.write(source))
+                + ":" + Sha256Digests.text(CanonicalJson.write(fields)));
+    }
+
+    // 兼容旧断点的双摘要键；库中 step_id 最多 128 字符。
+    static String checkpointIdentity(String key) {
+        if (key == null || !key.startsWith("API_CHAIN:") || key.length() <= 128) return key;
+        int idEnd = key.indexOf(':', "API_CHAIN:".length());
+        return idEnd < 0 ? key : key.substring(0, idEnd + 1) + Sha256Digests.text(key.substring(idEnd + 1));
     }
 
     private static String required(String value, String label) {

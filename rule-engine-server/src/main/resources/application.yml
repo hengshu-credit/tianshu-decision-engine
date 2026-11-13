@@ -88,6 +88,10 @@ rule-engine:
     max-persist-bytes: ${RULE_TRACE_MAX_PERSIST_BYTES:0}
     # 仅遮罩持久化追踪副本，逗号分隔 JSONPath，例如 $.input.idCard,$.items[*].phone。
     mask-paths: ${RULE_TRACE_MASK_PATHS:}
+  execution-admission:
+    parallelism: ${RULE_EXECUTION_PARALLELISM:0}
+    queue-capacity: ${RULE_EXECUTION_QUEUE_CAPACITY:256}
+    wait-ms: ${RULE_EXECUTION_QUEUE_WAIT_MS:90000}
   source-resolution:
     parallelism: ${SOURCE_RESOLUTION_PARALLELISM:4}
   database:

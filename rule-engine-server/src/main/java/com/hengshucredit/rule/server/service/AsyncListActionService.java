@@ -80,10 +80,13 @@ public class AsyncListActionService implements AutoCloseable {
     }
 
     public Object submit(Long projectId, JSONObject config, Object values, LocalDateTime now) {
+        return submit(projectId, config, values, now, UUID.randomUUID().toString());
+    }
+
+    Object submit(Long projectId, JSONObject config, Object values, LocalDateTime now, String taskId) {
         List<?> copiedValues = JSON.parseArray(JSON.toJSONString(values));
         // 不可恢复的内容错误在持久化交接前反馈，避免坏数据堵住有序恢复队列。
         RuleListActionWriter.validateRequest(config, copiedValues, now);
-        String taskId = UUID.randomUUID().toString();
         JSONObject payload = new JSONObject(true);
         payload.put("config", config); payload.put("values", copiedValues); payload.put("actionTime", now.toString());
         payload.put("rule", RuntimeContextBridge.currentRule());

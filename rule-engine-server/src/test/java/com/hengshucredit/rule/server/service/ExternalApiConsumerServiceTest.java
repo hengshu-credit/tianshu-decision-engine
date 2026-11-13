@@ -86,6 +86,20 @@ public class ExternalApiConsumerServiceTest {
         assertEquals("222", ExternalApiConsumerService.select(service.resolve(1L, 9L, binding, input, options), "body.phone"));
         service.resolve(1L, 9L, binding, input, options); assertEquals(2, calls.get());
     }
+    @Test public void uncertainSupplierResponseDoesNotStartAnotherCall() {
+        AtomicInteger calls = new AtomicInteger();
+        var consumer = service(calls, false);
+        var options = options();
+        options.getInvocationCache().setSourceStepListener(step -> { });
+        var key = ExternalApiRequestPlan.prepare(api(), Map.of("applicant", "111"), Map.of(),
+                options.getDerivedReferencePaths()).identity();
+        options.getInvocationCache().completeStep(new VariableResolutionInvocationCache.SourceStep(key, "EXTERNAL_API",
+                null, null, null, "UNKNOWN", null, null, Map.of(), Map.of("apiConfigId", 9L)));
+        assertThrows(ExternalApiWaitingException.class, () -> consumer.resolve(1L, 9L, Map.of(),
+                Map.of("applicant", "111"), options));
+        assertEquals(0, calls.get());
+    }
+
     @Test public void failuresAreRememberedAndRequiredValidationNeverCallsProvider() {
         AtomicInteger calls = new AtomicInteger(); var service = service(calls, true); var options = options();
         assertThrows(IllegalArgumentException.class, () -> service.resolve(1L, 9L, Map.of(), Map.of(), options)); assertEquals(0, calls.get());

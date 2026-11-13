@@ -71,6 +71,34 @@ public class VariableResolutionInvocationCache {
     /** 离线回溯中没有历史快照而被置为 null 的来源。 */
     private final Map<String, Map<String, Object>> replayMissingSources = new ConcurrentHashMap<>();
     private volatile SourceStepListener sourceStepListener;
+    private String rootOrderTrace;
+    private VariableResolutionInvocationCache inheritedCalls;
+
+    void inheritPaidCalls(VariableResolutionInvocationCache route) {
+        this.inheritedCalls = route;
+    }
+
+    SourceStep originalCall(String key) {
+        SourceStep own = completedStep(key);
+        return own != null || inheritedCalls == null ? own : inheritedCalls.completedStep(key);
+    }
+    private final Map<String, Integer> actionVisits = new ConcurrentHashMap<>();
+    void setOrderTrace(String trace) { rootOrderTrace = trace; }
+    String listTaskId(Long project, Map<String,Object> rule, Object config, Object values) {
+        if (rootOrderTrace == null) return null;
+        var identity = java.util.Arrays.asList(rootOrderTrace, project, rule.get("id"), rule.get("revisionId"), config, values);
+        String key = sha256(CanonicalJson.write(identity));
+        int visit = actionVisits.merge(key, 1, Integer::sum);
+        return java.util.UUID.nameUUIDFromBytes((key + ":" + visit).getBytes(StandardCharsets.UTF_8)).toString();
+    }
+
+    private boolean freshExternalCalls;
+    private VariableResolutionInvocationCache originalCalls;
+    VariableResolutionInvocationCache originalCalls() { return originalCalls == null ? this : originalCalls; }
+    void shareOriginalCalls(VariableResolutionInvocationCache parent) { originalCalls = parent.originalCalls(); }
+
+    void setFreshExternalCalls(boolean fresh) { freshExternalCalls = fresh; }
+    boolean freshExternalCalls() { return freshExternalCalls; }
     private static final Object NULL_VALUE = new Object();
 
     public List<Map<String, Object>> completedApiCalls() {
@@ -244,14 +272,18 @@ public class VariableResolutionInvocationCache {
                     if (!owners.isEmpty()) continue;
                     responseSourceKeys.remove(responseKey);
                 }
-                apiResponses.remove(responseKey);
+                if (!responseKey.startsWith("API_CHAIN:") || !hasSourceStepListener()) apiResponses.remove(responseKey);
             }
         }
     }
 
-    public Map<String, Object> snapshotCompletedSteps() {
+    public Map<String, Object> snapshotCompletedSteps() { return snapshotCompletedSteps(false); }
+
+    Map<String, Object> snapshotCompletedSteps(boolean separateReceipts) {
         Map<String, Object> result = new LinkedHashMap<>();
-        completedSteps.forEach((key, step) -> result.put(key, step.toMap()));
+        completedSteps.forEach((key, step) -> {
+            if (!separateReceipts || !"EXTERNAL_API".equals(step.getSourceType())) result.put(key, step.toMap());
+        });
         return result;
     }
 
@@ -275,9 +307,11 @@ public class VariableResolutionInvocationCache {
     public void restoreCompletedSteps(Map<String, ?> values) {
         if (values == null) return;
         values.forEach((key, value) -> {
-            SourceStep step = SourceStep.fromMap(String.valueOf(key), value);
+            String identity = ExternalApiRequestPlan.checkpointIdentity(String.valueOf(key));
+            SourceStep step = SourceStep.fromMap(identity, value);
             if (step == null) return;
-            completedSteps.put(String.valueOf(key), step);
+            completedSteps.put(identity, step);
+            if ("EXTERNAL_API".equals(step.getSourceType()) && !"SUCCESS".equals(step.getStatus())) apiResponses.remove(identity);
             if ("VARIABLE".equalsIgnoreCase(step.getSourceType())
                     && "SUCCESS".equalsIgnoreCase(step.getStatus())) {
                 Object scriptName = step.getMetadata().get("scriptName");
@@ -352,9 +386,12 @@ public class VariableResolutionInvocationCache {
     }
 
     /** 返回已完成的 API/模型响应；未完成或失败的 Future 不进入检查点。 */
-    public Map<String, Object> snapshotResponses() {
+    public Map<String, Object> snapshotResponses() { return snapshotResponses(false); }
+
+    Map<String, Object> snapshotResponses(boolean separateReceipts) {
         Map<String, Object> result = new LinkedHashMap<>();
         apiResponses.forEach((key, future) -> {
+            if (separateReceipts && key.startsWith("API_CHAIN:") && completedSteps.containsKey(key)) return;
             if (future != null && future.isDone() && !future.isCompletedExceptionally()) {
                 result.put(key, copyMap(future.getNow(null)));
             }
@@ -422,14 +459,14 @@ public class VariableResolutionInvocationCache {
         values.forEach((source, rawKeys) -> {
             if (!(rawKeys instanceof Iterable<?> iterable)) return;
             for (Object rawKey : iterable) {
-                if (rawKey != null) associateResponse(source, String.valueOf(rawKey));
+                if (rawKey != null) associateResponse(source, ExternalApiRequestPlan.checkpointIdentity(String.valueOf(rawKey)));
             }
         });
     }
 
     public void restoreResponse(String key, Map<String, Object> value) {
         if (key == null || value == null) return;
-        apiResponses.putIfAbsent(key, CompletableFuture.completedFuture(copyMap(value)));
+        apiResponses.put(ExternalApiRequestPlan.checkpointIdentity(key), CompletableFuture.completedFuture(copyMap(value)));
     }
 
     public void restoreVariableResult(String key, String scriptName, Object value) {

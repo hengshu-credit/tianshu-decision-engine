@@ -330,13 +330,24 @@ public class ExternalApiInvokeService {
 
     private Map<String, Object> invoke(RuleExternalApiConfig apiConfig, Map<String, Object> params,
                                        boolean useResponseCache, Map<String, Object> pendingAsync) {
+        return invoke(apiConfig, params, useResponseCache, pendingAsync, null);
+    }
+
+    Map<String, Object> invokeCheckpointed(ExternalApiRequestPlan plan, Map<String, Object> pending,
+                                           java.util.function.Consumer<Map<String, Object>> persist) {
+        return invoke(plan.config(), plan.params(), pending == null, pending, persist);
+    }
+
+    private Map<String, Object> invoke(RuleExternalApiConfig apiConfig, Map<String, Object> params, boolean useResponseCache,
+                                       Map<String, Object> pending, java.util.function.Consumer<Map<String, Object>> persist) {
         try (var versions = bindResourceVersions(apiConfig, params)) {
-            return invokeSelected(ExternalApiExecutionConfig.forInvocation(apiConfig), params, useResponseCache, pendingAsync);
+            return invokeSelected(ExternalApiExecutionConfig.forInvocation(apiConfig), params, useResponseCache, pending, persist);
         }
     }
 
     private Map<String, Object> invokeSelected(RuleExternalApiConfig apiConfig, Map<String, Object> params,
-                                               boolean useResponseCache, Map<String, Object> pendingAsync) {
+                                               boolean useResponseCache, Map<String, Object> pendingAsync,
+                                               java.util.function.Consumer<Map<String, Object>> persist) {
         if (apiConfig == null) {
             throw new IllegalArgumentException("API接口配置不能为空");
         }
@@ -370,6 +381,7 @@ public class ExternalApiInvokeService {
                 ? null : externalApiResponseCache.get(apiConfig, responseCacheKey);
         long start = System.currentTimeMillis();
         InvokeTrace trace = new InvokeTrace();
+        trace.progress = persist;
         trace.pendingAsync = pendingAsync == null ? null : new LinkedHashMap<>(pendingAsync);
         if (pendingAsync != null && "WORKFLOW".equalsIgnoreCase(String.valueOf(pendingAsync.get("kind")))) {
             trace.workflowResume = new LinkedHashMap<>(pendingAsync);
@@ -490,6 +502,7 @@ public class ExternalApiInvokeService {
                     break;
                 }
                 if ("ASYNC".equals(apiConfig.getRequestMode())
+                        || trace.progress != null && trace.requestIssued && trace.responseStatus == null
                         || !retryAllowedForMethod(retryPolicy)
                         || i >= (retryPolicy.getRetryCount() == null ? 0 : retryPolicy.getRetryCount())
                         || retryPolicy == apiConfig && !shouldRetry(retryPolicy, e)) {
@@ -1008,7 +1021,12 @@ public class ExternalApiInvokeService {
                                         Boolean.FALSE.equals(response.get("success")) ? "FAILED" : "SUCCESS",
                                         Map.of("stepId", step.getString("id")), response, apiConfig.getId());
                             }
-                        }, trace.workflowResume);
+                        }, trace.workflowResume, point -> {
+                            if (trace.progress != null) {
+                                trace.workflowPending = point;
+                                trace.progress.accept(trace.pendingAsyncSnapshot());
+                            }
+                        });
                 result.put("authentication", new ArrayList<>(authenticationCalls.get()));
                 if (hasText(apiConfig.getExceptionCondition())
                         && matchesResponseCondition(apiConfig.getExceptionCondition(), result)) {
@@ -4008,6 +4026,7 @@ public class ExternalApiInvokeService {
         private Map<String, Object> pendingAsync;
         private Map<String, Object> workflowResume;
         private Map<String, Object> workflowPending;
+        private java.util.function.Consumer<Map<String, Object>> progress;
         private boolean resumed;
         private final List<Map<String, Object>> traceSteps = new ArrayList<>();
 

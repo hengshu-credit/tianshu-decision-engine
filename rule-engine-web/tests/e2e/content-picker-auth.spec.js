@@ -165,6 +165,34 @@ test('多步链路鉴权切换页签保留所选 ID，预览只提交当前鉴�
   assertClean()
 })
 
+test('规则断点的默认外数策略与显式重新调用均能保存并回显', async ({ page }) => {
+  const data = createDetailApiData()
+  const revisions = data.get('/api/rule/definition/101/revisions')
+  const draft = { ...revisions[0], id: 42, revisionNo: 8, state: 'DRAFT', baseRevisionId: 41 }
+  data.set('/api/rule/definition/101/revisions', [draft, ...revisions])
+  data.set('/api/rule/definition/101/revisions/42', draft)
+  let saved
+  data.set('POST /api/rule/definition/save', ({ request }) => {
+    saved = request.postDataJSON()
+    Object.assign(draft, saved, { lockVersion: draft.lockVersion + 1 })
+    return { revision: draft, issues: [], compileSuccess: true }
+  })
+  const { assertClean } = await installDistRoutes(page, { apiData: data })
+  await page.goto('http://tianshu.local/index.html#/rule/101')
+  const tab = page.getByRole('tab', { name: '执行配置' })
+  await tab.click()
+  const pick = page.getByRole('combobox', { name: '断点恢复外数' })
+  await expect(pick.locator('..').locator('..')).toContainText('优先沿用原调用')
+  await page.locator('.el-select').filter({ has: pick }).click()
+  await page.getByRole('option', { name: '先查接口缓存，未命中重新调用' }).click()
+  await page.getByRole('button', { name: '保存执行配置' }).click()
+  await expect.poll(() => saved && JSON.parse(saved.openApiConfigJson).idempotency.externalRecoveryMode).toBe('CACHE_THEN_CALL')
+  await page.reload()
+  await tab.click()
+  await expect(pick.locator('..').locator('..')).toContainText('先查接口缓存')
+  assertClean()
+})
+
 test('规则开放 API 从样例选择带点号的键并保存当前契约', async ({ page }) => {
   const data = createDetailApiData()
   const revisions = data.get('/api/rule/definition/101/revisions')

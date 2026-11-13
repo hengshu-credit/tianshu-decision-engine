@@ -76,6 +76,8 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 thread.setDaemon(true);
                 return thread;
             }, new ThreadPoolExecutor.AbortPolicy());
+    @Resource private RuleIdempotencyService idempotencyService;
+    @Resource private RuleExperimentExecutionStateService experimentStates;
     @Resource private RuleCompileService compileService;
     @Resource private FunctionRegistrar functionRegistrar;
     @Resource private RuleVersionBindingService versionBindings;
@@ -414,7 +416,11 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                     experiment.getProjectId(), experiment.getInputValidationConfig(),
                     experimentInputs, params);
         }
-        params = resolveRoutingParams(experiment, groups, params);
+        VariableResolutionInvocationCache routeCache = null;
+        if (runtimeRequest && hasText(forcedExperimentTraceId) && request != null && hasText(request.getRequestKey()) && experimentStates != null) {
+            routeCache = experimentStates.routingCache(experimentTraceId);
+        }
+        params = resolveRoutingParams(experiment, groups, params, routeCache);
         try (var versions = resourceVersions == null ? null : resourceVersions.bind(experiment.getProjectId(), params, VariableResolveOptions.defaults())) {
         String requestKey = resolveRequestKey(experiment, request, params);
         LocalDateTime requestTime = resolveRequestTime(request, params);
@@ -427,7 +433,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         if (selectedVersion != null) { result.setVersionId(selectedVersion.getId()); result.setVersion(selectedVersion.getDisplayVersion()); }
         result.setRequestKey(requestKey);
 
-        RouteChoice productionChoice = chooseProductionGroup(experiment, groups, params, requestKey, clientAppName, conditions);
+        RouteChoice productionChoice = chooseProductionGroup(experiment, groups, params, requestKey, clientAppName, conditions, routeCache);
         RuleExperimentGroupResult productionResult = runGroup(experiment, productionChoice.group, copyParams(params),
                 requestKey, requestTime, clientAppName, "PRODUCTION", productionChoice.reason, true,
                 experimentTraceId, configDigest, productionChoice.routeTrace, runtimeRequest);
@@ -571,10 +577,18 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     private Map<String, Object> resolveRoutingParams(RuleExperiment experiment,
                                                       List<RuleExperimentGroup> groups,
                                                       Map<String, Object> params) {
+        return resolveRoutingParams(experiment, groups, params, null);
+    }
+
+    private Map<String, Object> resolveRoutingParams(RuleExperiment experiment, List<RuleExperimentGroup> groups,
+                                                      Map<String, Object> params, VariableResolutionInvocationCache routeCache) {
         if (variableSourceResolver == null || experiment == null) {
             return params;
         }
         Set<String> required = new LinkedHashSet<>();
+        boolean hasReference = hasText(experiment.getRequestKeyPath())
+                || ROUTING_CONDITION.equals(experiment.getRoutingMode()) || ROUTING_CONDITION.equals(experiment.getTestRoutingMode());
+        if (!hasReference) return params;
         Map<String, String> referencePaths = derivedVariableService != null ? derivedVariableService.referencePaths(experiment.getProjectId())
                 : variableService == null ? Map.of() : variableService.buildRefScriptNameMap(experiment.getProjectId());
 
@@ -619,6 +633,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         if (required.isEmpty()) return params;
         VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setInvocationCache(routeCache);
         options.setRequiredScriptNames(required);
         options.setRequiredNamesUpstreamOnly(true);
         return variableSourceResolver.resolve(experiment.getProjectId(), params, options);
@@ -663,6 +678,12 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     private RouteChoice chooseProductionGroup(RuleExperiment experiment, List<RuleExperimentGroup> groups,
                                               Map<String, Object> params, String requestKey, String clientAppName,
                                               RouteConditions conditions) {
+        return chooseProductionGroup(experiment, groups, params, requestKey, clientAppName, conditions, null);
+    }
+
+    private RouteChoice chooseProductionGroup(RuleExperiment experiment, List<RuleExperimentGroup> groups,
+            Map<String, Object> params, String requestKey, String clientAppName, RouteConditions conditions,
+            VariableResolutionInvocationCache routeCache) {
         List<RuleExperimentGroup> productionGroups = productionGroups(groups);
         RuleExperimentGroup champion = championGroup(groups);
         List<Map<String, Object>> routeTrace = routingStart("PRODUCTION", experiment.getRoutingMode());
@@ -686,9 +707,10 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         if (ROUTING_CONDITION.equals(experiment.getRoutingMode()) && hasText(experiment.getConditionRuleCode())) {
             RulePublished routingRule = findPublishedRule(experiment, experiment.getConditionRuleCode());
+            var options = VariableResolveOptions.defaults();
+            options.setInvocationCache(routeCache);
             RuleExecuteService.ExecutionOutcome outcome = executeService.executePublishedWithOptions(
-                    routingRule, params, experiment.getProjectId(), clientAppName,
-                    VariableResolveOptions.defaults(), "EXPERIMENT_ROUTE");
+                    routingRule, params, experiment.getProjectId(), clientAppName, options, "EXPERIMENT_ROUTE");
             Map<String, Object> conditionRuleTrace = new LinkedHashMap<>();
             conditionRuleTrace.put("type", "CONDITION_RULE");
             conditionRuleTrace.put("ruleCode", experiment.getConditionRuleCode());
@@ -791,9 +813,28 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         RuleExecuteService.ExecutionOutcome outcome;
         try (var versions = resourceVersions == null ? null
                 : resourceVersions.bind(experiment.getProjectId(), params, options)) {
-            outcome = executeService.executePublishedWithOptions(
-                    published, params, experiment.getProjectId(), clientAppName, options,
-                    runtimeProduction ? "EXPERIMENT_LIVE" : "EXPERIMENT_" + stage);
+            if (runtimeProduction && hasText(requestKey) && idempotencyService != null) {
+                var order = idempotencyService.beginExperiment(published, experiment.getProjectId(), params, experimentTraceId);
+                order.setExternalRecoveryMode(experimentStates == null ? null : experimentStates.externalRecoveryMode());
+                if (experimentStates != null) order.setRoutingCalls(experimentStates.routingCache(experimentTraceId));
+                if (order.getStatus() == RuleIdempotencyService.Status.COMPLETED) {
+                    outcome = new RuleExecuteService.ExecutionOutcome(order.getResult(), order.experimentParams(params));
+                } else if (!order.isClaimed()) {
+                    throw new IllegalStateException("分流实验的生产策略正在恢复或原订单入参已变更");
+                } else {
+                    try {
+                        outcome = idempotencyService.withDecision(order, () -> executeService.executePublishedWithOptions(
+                                published, params, experiment.getProjectId(), clientAppName, options, "EXPERIMENT_LIVE"));
+                        idempotencyService.completeExperimentGroup(order, outcome);
+                    } catch (RuntimeException error) {
+                        idempotencyService.release(order, error.getMessage());
+                        throw error;
+                    }
+                }
+            } else {
+                outcome = executeService.executePublishedWithOptions(published, params, experiment.getProjectId(), clientAppName,
+                        options, runtimeProduction ? "EXPERIMENT_LIVE" : "EXPERIMENT_" + stage);
+            }
         }
         RuleExperimentGroupResult groupResult = toGroupResult(group, outcome, stage, routeReason);
         groupResult.setRuleId(published.getDefinitionId());

@@ -302,8 +302,26 @@ public class VariableSourceResolver {
                                           VariableResolveOptions options) {
         if (cache == null || idempotencyService == null || idempotencyService.current() == null
                 || !idempotencyService.current().isClaimed()) return;
-        Map<String, String> current = sourceFingerprints(variables, models);
+        Map<String, String> current;
+        if (options.getRuntimeSnapshot() == null) {
+            current = sourceFingerprints(variables, models);
+        } else {
+            // Pinned payloads and the order's input/dependency digests identify a child source. Repeatedly querying
+            // every linked DB, list and model here both breaks snapshot isolation and multiplies SQL per order.
+            current = new LinkedHashMap<>();
+            for (var variable : variables) {
+                if (variable.getId() != null) current.put(fingerprintKey(variable), digestFingerprint(java.util.Arrays.asList(
+                        variable.getVarSource(), variable.getSourceConfig(), variable.getScriptName(), variable.getDefaultValue(), variable.getRecordResult())));
+            }
+            for (var model : models) {
+                if (model.getId() != null) current.put("MODEL:" + model.getId(), digestFingerprint(java.util.Arrays.asList(
+                        model.getModelDigest(), model.getCurrentVersion(), model.getModelConfig(), model.getInputFields(), model.getOutputFields())));
+            }
+        }
+        // Each child artifact has only its own dependencies. Another child's absent fields are still valid.
+        boolean partial = options.getRuntimeSnapshot() != null;
         Set<String> changed = cache.invalidateMismatchedSources(current);
+        if (partial) changed.retainAll(current.keySet());
         Set<String> invalidated = invalidateDependentSources(cache, changed, resolvedParams,
                 variables, models, options);
         Map<String, String> stalePaths = new LinkedHashMap<>();
@@ -329,7 +347,8 @@ public class VariableSourceResolver {
             // retained in the durable step metadata so stale values are removed as well.
             stalePaths.values().forEach(resolvedParams::remove);
         }
-        cache.replaceSourceFingerprints(current);
+        if (partial) current.forEach(cache::recordSourceFingerprint);
+        else cache.replaceSourceFingerprints(current);
     }
 
     /** Invalidate all cached source steps that depend on a changed source. */

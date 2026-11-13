@@ -26,6 +26,9 @@ public class IndexedHistoryCount {
     }
     public record Selection(String scope, Long projectId, Long ruleId, LocalDateTime before, Region region) {}
     public record Count(long candidates, long matched) {}
+    private record SpatialWindow(String scope, Long projectId, Long ruleId, Region region, LocalDateTime hour, long revision) {}
+    private final com.github.benmanes.caffeine.cache.Cache<SpatialWindow, Long> closedWindows =
+            com.github.benmanes.caffeine.cache.Caffeine.newBuilder().maximumSize(32768).build();
     private final JdbcTemplate jdbc;
     @Autowired(required = false) private ConsoleDataPermissionHandler permissions;
     public IndexedHistoryCount(JdbcTemplate jdbc) { this.jdbc = jdbc; }
@@ -99,12 +102,93 @@ public class IndexedHistoryCount {
             args.add(region.latitude());
             args.add(region.longitude());
             args.add(region.radius() + 0.000001);
-            matches = totals("rule_history_numeric_field f JOIN rule_history_numeric_field lat ON lat.log_id=f.log_id"
-                    + " AND lat.log_create_time=f.log_create_time", "f", selection, earliest, windows, filter.toString(), args);
+            String table = spatialTable("GLOBAL".equals(selection.scope()) ? "idx_history_value_global" : "idx_history_value_project");
+            matches = useBuckets ? spatialTotals(table, selection, windows, filter.toString(), args)
+                    : totals(table, "f", selection, earliest, windows, filter.toString(), args);
         }
         Map<LocalDateTime, Count> result = new LinkedHashMap<>();
         for (int i = 0; i < windows.size(); i++) result.put(windows.get(i), new Count(candidates[i], matches[i]));
         return Map.copyOf(result);
+    }
+
+    private static String spatialTable(String index) {
+        return "rule_history_numeric_field f FORCE INDEX (" + index + ") STRAIGHT_JOIN rule_history_numeric_field lat "
+                + "FORCE INDEX (PRIMARY) ON lat.log_id=f.log_id AND lat.log_create_time=f.log_create_time";
+    }
+
+    private long[] spatialTotals(String table, Selection selection, List<LocalDateTime> windows, String filter, List<Object> args) {
+        var end = selection.before().truncatedTo(java.time.temporal.ChronoUnit.HOURS);
+        var earliest = windows.stream().min(LocalDateTime::compareTo).orElseThrow().truncatedTo(java.time.temporal.ChronoUnit.HOURS);
+        var versions = new java.util.TreeMap<LocalDateTime, Long>();
+        StringBuilder sql = new StringBuilder("SELECT b.bucket_hour,COALESCE(SUM(v.revision),0) FROM rule_history_bucket b "
+                + "LEFT JOIN rule_history_bucket_revision v ON v.execution_project_id=b.execution_project_id AND v.root_rule_id=b.root_rule_id "
+                + "AND v.bucket_hour=b.bucket_hour WHERE b.field_key='' AND b.bucket_hour>=? AND b.bucket_hour<?");
+        List<Object> params = new ArrayList<>(List.of(Timestamp.valueOf(earliest), Timestamp.valueOf(end)));
+        if (!"GLOBAL".equals(selection.scope())) { sql.append(" AND b.execution_project_id=?"); params.add(selection.projectId()); }
+        if ("RULE".equals(selection.scope())) { sql.append(" AND b.root_rule_id=?"); params.add(selection.ruleId()); }
+        jdbc.query(sql + " GROUP BY b.bucket_hour", rs -> {
+            versions.put(rs.getTimestamp(1).toLocalDateTime(), rs.getLong(2));
+        }, params.toArray());
+        var hourly = new java.util.TreeMap<LocalDateTime, Long>();
+        var missing = new java.util.TreeMap<LocalDateTime, SpatialWindow>();
+        versions.forEach((hour, revision) -> {
+            var key = new SpatialWindow(selection.scope(), "GLOBAL".equals(selection.scope()) ? null : selection.projectId(),
+                    "RULE".equals(selection.scope()) ? selection.ruleId() : null, selection.region(), hour, revision);
+            Long cached = closedWindows.getIfPresent(key);
+            if (cached == null) missing.put(hour, key); else hourly.put(hour, cached);
+        });
+        // Read adjacent missing hours together; split sparse ranges to avoid rescanning already cached history.
+        String partialTable = spatialTable("idx_history_field_window");
+        while (!missing.isEmpty()) {
+            LocalDateTime first = missing.firstKey(), until = first.plusHours(1);
+            while (missing.containsKey(until) && until.isBefore(first.plusDays(7))) until = until.plusHours(1);
+            var bucketRows = spatialHours(until.equals(first.plusHours(1)) ? partialTable : table, selection, first, until, filter, args);
+            for (var it = missing.headMap(until, false).entrySet().iterator(); it.hasNext();) {
+                var entry = it.next();
+                long count = bucketRows.getOrDefault(entry.getKey(), 0L);
+                closedWindows.put(entry.getValue(), count);
+                hourly.put(entry.getKey(), count);
+                it.remove();
+            }
+        }
+        long tail = end.isBefore(selection.before()) ? totals(partialTable, "f", selection, end, List.of(end), filter, args)[0] : 0;
+        long[] result = new long[windows.size()];
+        for (int i = 0; i < windows.size(); i++) {
+            var start = windows.get(i);
+            if (!start.isBefore(end)) {
+                result[i] = start.equals(end) ? tail : totals(partialTable, "f", selection, start, List.of(start), filter, args)[0];
+                continue;
+            }
+            var floor = start.truncatedTo(java.time.temporal.ChronoUnit.HOURS);
+            var firstHour = start.equals(floor) ? floor : floor.plusHours(1);
+            long count = tail;
+            count += hourly.tailMap(firstHour).values().stream().mapToLong(Long::longValue).sum();
+            if (!start.equals(floor)) {
+                var boundary = new Selection(selection.scope(), selection.projectId(), selection.ruleId(), firstHour, selection.region());
+                count += totals(partialTable, "f", boundary, start, List.of(start), filter, args)[0];
+            }
+            result[i] = count;
+        }
+        return result;
+    }
+
+    private Map<LocalDateTime, Long> spatialHours(String table, Selection selection, LocalDateTime from, LocalDateTime until,
+                                                  String filter, List<Object> arguments) {
+        StringBuilder sql = new StringBuilder("SELECT DATE_FORMAT(f.started_at,'%Y-%m-%d %H:00:00') AS h,COUNT(*) FROM ").append(table);
+        if ("RULE".equals(selection.scope())) sql.append(" JOIN rule_history_root r ON r.log_id=f.log_id AND r.log_create_time=f.log_create_time");
+        sql.append(" WHERE f.started_at>=? AND f.started_at<?");
+        List<Object> params = new ArrayList<>(List.of(Timestamp.valueOf(from), Timestamp.valueOf(until)));
+        if (!"GLOBAL".equals(selection.scope())) { sql.append(" AND f.execution_project_id=?"); params.add(selection.projectId()); }
+        if ("RULE".equals(selection.scope())) { sql.append(" AND r.root_rule_id=?"); params.add(selection.ruleId()); }
+        sql.append(filter).append(" GROUP BY h"); params.addAll(arguments);
+        Map<LocalDateTime, Long> rows = new LinkedHashMap<>();
+        jdbc.query(connection -> {
+            var ps = connection.prepareStatement(sql.toString());
+            ps.setQueryTimeout(10);
+            for (int i = 0; i < params.size(); i++) ps.setObject(i + 1, params.get(i));
+            return ps;
+        }, (org.springframework.jdbc.core.RowCallbackHandler) rs -> rows.put(rs.getTimestamp(1).toLocalDateTime(), rs.getLong(2)));
+        return rows;
     }
 
     private long[] bucketTotals(Selection selection, LocalDateTime earliest, List<LocalDateTime> windows, Region region) {

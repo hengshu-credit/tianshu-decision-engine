@@ -100,6 +100,17 @@ public class IdempotencyKeyCalculatorTest {
     }
 
     @Test
+    public void globalDoubleBoundsDoNotBreakAnUnrelatedOrderKey() {
+        var configuration = config(reference(1, "orderId"));
+        var paths = Map.of("VARIABLE:1", "orderId");
+        var clean = IdempotencyKeyCalculator.calculate(configuration, Map.of("orderId", "A1"), paths);
+        var bounded = IdempotencyKeyCalculator.calculate(configuration, Map.of("orderId", "A1",
+                "trusted", Map.of("min", Double.NEGATIVE_INFINITY, "max", Double.POSITIVE_INFINITY)), paths);
+        assertEquals(clean.keyHash(), bounded.keyHash());
+        assertNotEquals(clean.inputDigest(), bounded.inputDigest());
+    }
+
+    @Test
     public void sameValueFromDifferentFieldIdsDoesNotCollide() {
         var left = IdempotencyKeyCalculator.calculate(config(reference(1, "value")),
                 Map.of("value", "A"), Map.of("VARIABLE:1", "value"));

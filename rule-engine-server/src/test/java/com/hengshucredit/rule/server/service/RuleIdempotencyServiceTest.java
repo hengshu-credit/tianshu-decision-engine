@@ -19,6 +19,7 @@ public class RuleIdempotencyServiceTest {
 
         String checkpoint = service.withDecision(decision, () -> {
             service.recordRequestParams(decision, Map.of("orderNo", "A-1", "amount", 88));
+            service.recordRequestParams(decision, Map.of("orderNo", "A-1", "amount", 88.0, "projected", true));
             return service.snapshotCheckpoint(new VariableResolutionInvocationCache(), Map.of("orderNo", "A-1"));
         });
         RuleExecutionStateService.State saved = new RuleExecutionStateService.State(

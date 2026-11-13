@@ -41,7 +41,7 @@ public class HistoryFieldIndex {
                 current.getId(), time, current.getTraceId(), current.getExecutionProjectId(), current.getProjectCode(),
                 current.getActorUserId(), current.getRootRuleId(), started);
         var fields = snapshot.getJSONObject("fields");
-        var entries = fields.entrySet();
+        var entries = new TreeMap<>(fields).entrySet();
         jdbc.batchUpdate("INSERT INTO rule_history_numeric_field (log_id,log_create_time,field_key,numeric_value,"
                         + "value_kind,execution_project_id,started_at) VALUES (?,?,?,?,?,?,?)", entries, 256,
                 (ps, entry) -> {
@@ -62,6 +62,9 @@ public class HistoryFieldIndex {
         var hour = Timestamp.valueOf(log.getStartedAt().truncatedTo(java.time.temporal.ChronoUnit.HOURS));
         long project = log.getExecutionProjectId() == null ? 0 : log.getExecutionProjectId();
         long rule = log.getRootRuleId() == null ? 0 : log.getRootRuleId();
+        // Version and summaries commit with the logical row, including replacements in a closed hour.
+        jdbc.update("INSERT INTO rule_history_bucket_revision(execution_project_id,bucket_hour,root_rule_id,revision)"
+                + " VALUES (?,?,?,1) ON DUPLICATE KEY UPDATE revision=revision+1", project, hour, rule);
         // All writers acquire a bucket's root first and then its field keys in a consistent order.
         Map<String, Object> keys = new LinkedHashMap<>();
         keys.put("", null);

@@ -39,6 +39,16 @@ public class RuleIdempotencyService {
         }
         IdempotencyKeyCalculator.Result calculatedKey = resolveKey(published, projectId, params, config);
         String keyHash = calculatedKey.keyHash();
+        return begin(published, projectId, params, keyHash, config.getTtlSeconds());
+    }
+
+    Decision beginExperiment(RulePublished published, Long projectId, Map<String, Object> params, String experimentTrace) {
+        Decision decision = begin(published, projectId, params, sha256("EXPERIMENT:" + experimentTrace), 86400);
+        decision.receiptsOnly = true;
+        return decision;
+    }
+
+    private Decision begin(RulePublished published, Long projectId, Map<String, Object> params, String keyHash, int ttlSeconds) {
         String requestHash = sha256(CanonicalJson.write(params == null ? Map.of() : params));
         Long stateProjectId = projectId == null ? 0L : projectId;
         int leaseSeconds = executionLeaseSeconds();
@@ -50,12 +60,16 @@ public class RuleIdempotencyService {
                 String owner = UUID.randomUUID().toString();
                 RuleExecutionStateService.Creation creation = stateService.create(stateProjectId, published.getDefinitionId(), published.getRuleCode(), keyHash,
                         requestHash, rootTraceId, published.getRevisionId(), published.getArtifactDigest(), owner, leaseSeconds,
-                        config.getTtlSeconds());
+                        ttlSeconds);
                 state = creation.state();
                 if (creation.inserted()) {
-                    Decision decision = Decision.claimed(state, owner, config.getTtlSeconds(), leaseSeconds,
+                    Decision decision = Decision.claimed(state, owner, ttlSeconds, leaseSeconds,
                             published.getRevisionId(), published.getArtifactDigest());
                     current.set(decision);
+                    recordRequestParams(decision, params);
+                    decision.checkpointJson = CanonicalJson.write(Map.of("version", 3, "requestParams", decision.requestParams));
+                    stateService.checkpoint(state.id(), owner, "RUNNING", decision.checkpointJson, published.getRevisionId(),
+                            published.getArtifactDigest(), null, leaseSeconds);
                     return decision;
                 }
             }
@@ -71,7 +85,7 @@ public class RuleIdempotencyService {
                 return decision;
             }
             String owner = UUID.randomUUID().toString();
-            boolean claimed = stateService.claim(state.id(), owner, leaseSeconds, config.getTtlSeconds(),
+            boolean claimed = stateService.claim(state.id(), owner, leaseSeconds, ttlSeconds,
                     published.getRevisionId(), published.getArtifactDigest());
             if (!claimed) {
                 current.remove();
@@ -80,9 +94,10 @@ public class RuleIdempotencyService {
             RuleExecutionStateService.State claimedState = stateService.find(
                     stateProjectId, published.getDefinitionId(), keyHash);
             if (claimedState != null) state = claimedState;
-            Decision decision = Decision.claimed(state, owner, config.getTtlSeconds(), leaseSeconds,
+            Decision decision = Decision.claimed(state, owner, ttlSeconds, leaseSeconds,
                     published.getRevisionId(), published.getArtifactDigest());
             current.set(decision);
+            recordRequestParams(decision, params);
             return decision;
         } catch (RuntimeException error) {
             current.remove();
@@ -94,8 +109,8 @@ public class RuleIdempotencyService {
 
     /** 记录原始订单入参，支持仅凭 trace_id 跨节点恢复；不改变幂等摘要。 */
     public void recordRequestParams(Decision decision, Map<String, Object> params) {
-        if (decision == null || !decision.claimed) return;
-        decision.requestParams = params == null ? new LinkedHashMap<>() : new LinkedHashMap<>(params);
+        if (decision == null || !decision.claimed || decision.requestParams != null) return;
+        decision.requestParams = params == null ? new LinkedHashMap<>() : CanonicalJson.readMap(CanonicalJson.write(params));
     }
 
     @SuppressWarnings("unchecked")
@@ -129,6 +144,7 @@ public class RuleIdempotencyService {
         Decision decision = Decision.claimed(claimed == null ? state : claimed, owner, ttlSeconds,
                 leaseSeconds, published.getRevisionId(), published.getArtifactDigest());
         current.set(decision);
+        recordRequestParams(decision, params);
         return decision;
     }
 
@@ -170,7 +186,8 @@ public class RuleIdempotencyService {
                                   Map<String, Map<String, Object>> sourceStates) {
         Decision decision = current.get();
         if (decision == null || !decision.claimed) return;
-        checkpoint(decision, snapshotCheckpoint(cache, values, sourceStates),
+        // Paid calls have their own transactionally fenced receipts. Coalesce intermediate root snapshots.
+        if (decision.markCheckpointDue()) checkpoint(decision, snapshotCheckpoint(cache, values, sourceStates),
                 decision.currentRevisionId, decision.currentArtifactDigest);
     }
 
@@ -183,8 +200,10 @@ public class RuleIdempotencyService {
     @SuppressWarnings("unchecked")
     public void restoreCheckpoint(Decision decision, VariableResolutionInvocationCache cache,
                                   Map<String, Object> values, VariableResolveOptions options) {
-        if (decision == null || decision.getCheckpointJson() == null || cache == null) return;
-        JSONObject checkpoint = JSON.parseObject(decision.getCheckpointJson());
+        if (decision == null || cache == null || decision.getAttemptNo() < 2 && decision.getCheckpointJson() == null) return;
+        JSONObject checkpoint = decision.getCheckpointJson() == null ? new JSONObject() : JSON.parseObject(decision.getCheckpointJson());
+        com.hengshucredit.rule.core.engine.RuntimeContextBridge.restoreRandomValues(checkpoint.getObject("randomValues", Map.class));
+        if (cache.freshExternalCalls()) return;
         // 只恢复外数/名单/数据库/模型等不可重复来源的输出；纯 QL 赋值必须随新规则重新计算。
         Map<String, Object> resolved = checkpoint.getObject("resolvedValues", Map.class);
         if ("SOURCE".equalsIgnoreCase(checkpoint.getString("resolvedValuesScope"))
@@ -203,8 +222,9 @@ public class RuleIdempotencyService {
         cache.restoreSourceResponseKeys(sourceResponseKeys);
         Map<String, Object> steps = checkpoint.getObject("steps", Map.class);
         cache.restoreCompletedSteps(steps);
-        Map<String, Object> randomValues = checkpoint.getObject("randomValues", Map.class);
-        com.hengshucredit.rule.core.engine.RuntimeContextBridge.restoreRandomValues(randomValues);
+        if (stateService != null && decision.getAttemptNo() > 1) {
+            cache.restoreCompletedSteps(stateService.externalSteps(decision.getRootTraceId()));
+        }
         if (options != null) {
             Map<String, Map<String, Object>> sourceStates = checkpoint.getObject("sourceStates", Map.class);
             options.mergeSourceStates(sourceStates);
@@ -223,15 +243,16 @@ public class RuleIdempotencyService {
     public String snapshotCheckpoint(VariableResolutionInvocationCache cache, Map<String, Object> values,
                                      Map<String, Map<String, Object>> sourceStates) {
         Map<String, Object> checkpoint = new LinkedHashMap<>();
-        checkpoint.put("version", 2);
+        boolean separateReceipts = cache != null && cache.hasSourceStepListener();
+        checkpoint.put("version", separateReceipts ? 3 : 2);
         checkpoint.put("resolvedValuesScope", "SOURCE");
         checkpoint.put("resolvedValues", cache == null ? Map.of() : cache.snapshotSourceValues());
-        checkpoint.put("responses", cache == null ? Map.of() : cache.snapshotResponses());
+        checkpoint.put("responses", cache == null ? Map.of() : cache.snapshotResponses(separateReceipts));
         checkpoint.put("variables", cache == null ? Map.of() : cache.snapshotVariableResults());
         checkpoint.put("fieldResults", cache == null ? Map.of() : cache.snapshotFieldResults());
         checkpoint.put("sourceFingerprints", cache == null ? Map.of() : cache.snapshotSourceFingerprints());
         checkpoint.put("sourceResponseKeys", cache == null ? Map.of() : cache.snapshotSourceResponseKeys());
-        checkpoint.put("steps", cache == null ? Map.of() : cache.snapshotCompletedSteps());
+        checkpoint.put("steps", cache == null ? Map.of() : cache.snapshotCompletedSteps(separateReceipts));
         checkpoint.put("randomValues", com.hengshucredit.rule.core.engine.RuntimeContextBridge.randomSnapshot());
         checkpoint.put("sourceStates", sourceStates == null ? Map.of() : sourceStates);
         Decision decision = current.get();
@@ -242,6 +263,20 @@ public class RuleIdempotencyService {
     }
 
     public void complete(Decision decision, RuleResult result, String checkpointJson) {
+        if (result != null && decision != null && decision.executionParams != null) {
+            JSONObject stored = (JSONObject) JSON.toJSON(result);
+            stored.put("experimentResolvedParams", decision.executionParams);
+            completeStored(decision, result, checkpointJson, CanonicalJson.write(stored));
+        } else completeStored(decision, result, checkpointJson, JSON.toJSONString(result));
+    }
+
+    void completeExperimentGroup(Decision decision, RuleExecuteService.ExecutionOutcome outcome) {
+        JSONObject stored = (JSONObject) JSON.toJSON(outcome.getResult());
+        stored.put("experimentResolvedParams", outcome.getExecuteParams());
+        completeStored(decision, outcome.getResult(), null, CanonicalJson.write(stored));
+    }
+
+    private void completeStored(Decision decision, RuleResult result, String checkpointJson, String resultJson) {
         if (decision == null || !decision.claimed) {
             clear(decision);
             return;
@@ -253,7 +288,7 @@ public class RuleIdempotencyService {
                 ? "UNKNOWN_RETRYABLE" : "FAILED_RETRYABLE";
         String effectiveCheckpoint = checkpointJson == null ? decision.checkpointJson : checkpointJson;
         stateService.finish(decision.state.id(), decision.owner, status, effectiveCheckpoint,
-                JSON.toJSONString(result), result == null ? "规则执行结果为空" : result.getErrorMessage());
+                resultJson, result == null ? "规则执行结果为空" : result.getErrorMessage());
         stateService.persistCheckpoint(decision.state.rootTraceId(), effectiveCheckpoint,
                 decision.currentRevisionId, decision.currentArtifactDigest, status);
         current.remove();
@@ -261,7 +296,8 @@ public class RuleIdempotencyService {
 
     public void persistStep(Decision decision, VariableResolutionInvocationCache.SourceStep step) {
         if (decision == null || !decision.claimed || step == null) return;
-        stateService.persistSourceStep(decision.state.rootTraceId(), step,
+        if (decision.receiptsOnly && !"EXTERNAL_API".equals(step.getSourceType())) return;
+        stateService.persistLeasedStep(decision.state.id(), decision.owner, decision.state.rootTraceId(), step,
                 decision.currentRevisionId, decision.currentArtifactDigest);
     }
 
@@ -298,10 +334,12 @@ public class RuleIdempotencyService {
         if (idempotency == null) idempotency = json;
         Map<String, Object> values = new LinkedHashMap<>();
         if (params != null) values.putAll(params);
-        if (variableService != null) {
+        var referenced = OpenApiContractCodec.idempotencyReferences(OpenApiContractCodec.parse(published.getOpenApiConfigJson()));
+        if (variableService != null && referenced.stream().anyMatch(key -> key.startsWith("CONSTANT:"))) {
             Map<String, Object> constants = variableService.buildRefConstantValueMap(projectId);
             Map<String, Object> trusted = new LinkedHashMap<>();
             for (Map.Entry<String, Object> entry : constants.entrySet()) {
+                if (!referenced.contains(entry.getKey())) continue;
                 String path = "__idempotencyConstants." + entry.getKey().replace(':', '_');
                 paths.put(entry.getKey(), path);
                 trusted.put(entry.getKey().replace(':', '_'), entry.getValue());
@@ -351,8 +389,17 @@ public class RuleIdempotencyService {
         private final int leaseSeconds;
         private final Long currentRevisionId;
         private final String currentArtifactDigest;
+        private String externalRecoveryMode;
         private String checkpointJson;
+        private long lastCheckpointNanos;
+        private boolean receiptsOnly;
         private Map<String, Object> requestParams;
+        private Map<String, Object> executionParams;
+
+        void recordExecutionParams(Map<String, Object> values) { executionParams = values; }
+        private VariableResolutionInvocationCache routingCalls;
+        void setRoutingCalls(VariableResolutionInvocationCache calls) { routingCalls = calls; }
+        VariableResolutionInvocationCache routingCalls() { return routingCalls; }
 
         private Decision(boolean claimed, RuleExecutionStateService.State state, String owner,
                          RuleResult result, Status status, int ttlSeconds, int leaseSeconds,
@@ -387,7 +434,20 @@ public class RuleIdempotencyService {
                     state == null ? null : state.artifactDigest());
         }
         public Status getStatus() { return status; }
+        synchronized boolean markCheckpointDue() {
+            long now = System.nanoTime();
+            if (lastCheckpointNanos != 0 && now - lastCheckpointNanos < java.util.concurrent.TimeUnit.SECONDS.toNanos(10)) return false;
+            lastCheckpointNanos = now;
+            return true;
+        }
         public RuleResult getResult() { return result; }
+        public void setExternalRecoveryMode(String mode) { externalRecoveryMode = OpenApiContract.IdempotencyConfig.requireRecoveryMode(mode); }
+        public String getExternalRecoveryMode() { return externalRecoveryMode; }
+        Map<String, Object> experimentParams(Map<String, Object> fallback) {
+            if (state == null || state.resultJson() == null) return fallback;
+            var values = JSON.parseObject(state.resultJson()).getJSONObject("experimentResolvedParams");
+            return values == null ? fallback : values;
+        }
         public String getRootTraceId() { return state == null ? null : state.rootTraceId(); }
         public String getExecutionStatus() { return status == Status.IN_PROGRESS ? "IN_PROGRESS" : null; }
         public String getCheckpointJson() { return state == null ? null : state.checkpointJson(); }

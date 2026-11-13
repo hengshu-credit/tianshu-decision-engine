@@ -103,8 +103,10 @@ public class RuleExecutionStateService {
                         + "current_artifact_digest = COALESCE(?, current_artifact_digest), "
                         + "expire_time = DATE_ADD(NOW(6), INTERVAL ? SECOND), result_json = NULL, "
                         + "finish_time = NULL, update_time = NOW(6) "
-                        + "WHERE id = ? AND (lease_until IS NULL OR lease_until < NOW(6) OR lease_owner = ?)",
-                owner, leaseSeconds, currentRevisionId, currentArtifactDigest, retentionSeconds, id, owner) == 1;
+                        + "WHERE id = ? AND (status <> 'SUCCEEDED' OR NOT (current_revision_id <=> ? AND current_artifact_digest <=> ?)) "
+                        + "AND (lease_until IS NULL OR lease_until < NOW(6) OR lease_owner = ?)",
+                owner, leaseSeconds, currentRevisionId, currentArtifactDigest, retentionSeconds, id,
+                currentRevisionId, currentArtifactDigest, owner) == 1;
     }
 
     public void checkpoint(Long id, String owner, String status, String checkpointJson,
@@ -117,13 +119,14 @@ public class RuleExecutionStateService {
                            Long currentRevisionId, String currentArtifactDigest, String errorMessage,
                            int leaseSeconds) {
         int effectiveLeaseSeconds = Math.max(30, Math.min(3600, leaseSeconds));
-        jdbcTemplate.update(
+        int changed = jdbcTemplate.update(
                 "UPDATE rule_execution_state SET status = ?, checkpoint_json = ?, "
                         + "current_revision_id = ?, current_artifact_digest = ?, error_message = ?, update_time = NOW(6) "
                         + ", lease_until = DATE_ADD(NOW(6), INTERVAL ? SECOND) "
                         + "WHERE id = ? AND lease_owner = ? AND lease_until > NOW(6)",
                 status, checkpointJson, currentRevisionId, currentArtifactDigest, errorMessage,
                 effectiveLeaseSeconds, id, owner);
+        if (changed != 1) throw new IllegalStateException("执行租约已失效，已停止写入旧断点");
     }
 
     public void persistCheckpoint(String rootTraceId, String checkpointJson,
@@ -143,30 +146,70 @@ public class RuleExecutionStateService {
 
     public void persistSourceStep(String rootTraceId, SourceStep step,
                                   Long revisionId, String artifactDigest) {
+        writeStep(null, null, rootTraceId, step, revisionId, artifactDigest, false);
+    }
+
+    private void writeStep(Long stateId, String owner, String rootTraceId, SourceStep step, Long revisionId, String artifactDigest, boolean experiment) {
         if (rootTraceId == null || step == null || step.getSourceKey() == null) return;
-        jdbcTemplate.update(
+        var args = new java.util.ArrayList<>(java.util.Arrays.asList(rootTraceId, step.getSourceKey(), step.getSourceType(),
+                step.getStatus(), step.getInputDigest(), step.getDependencyDigest(), revisionId, artifactDigest,
+                JSON.toJSONString(step.getValue()), encodeResponse(step), CanonicalJson.write(step.getMetadata())));
+        String source = " SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6), NOW(6)";
+        if (stateId != null) {
+            source += (experiment ? " FROM rule_experiment_execution_state" : " FROM rule_execution_state")
+                    + " WHERE id=? AND lease_owner=? AND lease_until>NOW(6)";
+            args.add(stateId); args.add(owner);
+        }
+        int changed = jdbcTemplate.update(
                 "INSERT INTO rule_execution_checkpoint "
                         + "(root_trace_id, step_id, step_type, step_status, input_digest, dependency_digest, "
                         + "source_revision_id, source_artifact_digest, resolved_value, external_result, attempt_history, update_time, create_time) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6), NOW(6)) "
-                        + "ON DUPLICATE KEY UPDATE step_type = VALUES(step_type), step_status = VALUES(step_status), "
+                        + source + " ON DUPLICATE KEY UPDATE step_type = VALUES(step_type), step_status = VALUES(step_status), "
                         + "input_digest = VALUES(input_digest), dependency_digest = VALUES(dependency_digest), "
                         + "source_revision_id = VALUES(source_revision_id), source_artifact_digest = VALUES(source_artifact_digest), "
                         + "resolved_value = VALUES(resolved_value), external_result = VALUES(external_result), "
                         + "attempt_history = VALUES(attempt_history), update_time = NOW(6)",
-                rootTraceId, step.getSourceKey(), step.getSourceType(), step.getStatus(),
-                step.getInputDigest(), step.getDependencyDigest(), revisionId, artifactDigest,
-                JSON.toJSONString(step.getValue()), JSON.toJSONString(step.getResponse()),
-                CanonicalJson.write(step.getMetadata()));
+                args.toArray());
+        if (stateId != null && changed == 0) throw new IllegalStateException("订单执行租约已失效，无法记录外数步骤");
+    }
+
+    private static String encodeResponse(SourceStep step) {
+        return "EXTERNAL_API".equals(step.getSourceType()) ? ExternalResponseReceipt.encode(step.getResponse())
+                : JSON.toJSONString(step.getResponse());
+    }
+
+    void persistLeasedStep(Long stateId, String owner, String trace, SourceStep step, Long revision, String digest) {
+        writeStep(stateId, owner, trace, step, revision, digest, false);
+    }
+
+    void persistExperimentStep(Long stateId, String owner, String trace, SourceStep step) {
+        writeStep(stateId, owner, trace, step, null, null, true);
+    }
+
+    /** Reconcile receipts written by parallel suppliers after the most recent root snapshot. */
+    public java.util.Map<String, Object> externalSteps(String traceId) {
+        java.util.Map<String, Object> steps = new java.util.LinkedHashMap<>();
+        jdbcTemplate.query("SELECT step_id,step_status,external_result,attempt_history FROM rule_execution_checkpoint "
+                        + "WHERE root_trace_id=? AND step_type='EXTERNAL_API'", rs -> {
+            String key = ExternalApiRequestPlan.checkpointIdentity(rs.getString(1));
+            var step = new java.util.LinkedHashMap<String,Object>();
+            step.put("sourceType", "EXTERNAL_API");
+            step.put("status", rs.getString(2));
+            step.put("response", ExternalResponseReceipt.decode(rs.getString(3)));
+            step.put("metadata", JSON.parse(rs.getString(4)));
+            steps.put(key, step);
+        }, traceId);
+        return steps;
     }
 
     public void finish(Long id, String owner, String status, String checkpointJson, String resultJson,
                        String errorMessage) {
-        jdbcTemplate.update(
+        int changed = jdbcTemplate.update(
                 "UPDATE rule_execution_state SET status = ?, checkpoint_json = ?, result_json = ?, error_message = ?, "
                         + "lease_owner = NULL, lease_until = NULL, finish_time = NOW(6), update_time = NOW(6) "
                         + "WHERE id = ? AND lease_owner = ? AND lease_until > NOW(6)",
                 status, checkpointJson, resultJson, errorMessage, id, owner);
+        if (changed != 1) throw new IllegalStateException("执行租约已失效，无法提交旧尝试结果");
     }
 
     public record State(Long id, Long projectId, Long definitionId, String ruleCode,

@@ -39,7 +39,11 @@ public class RuleExecutionSession {
     private final List<String> rootOutputScriptNames;
     private final Deque<String> ruleStack = new ArrayDeque<>();
     private final Map<String, com.hengshucredit.rule.model.entity.RulePublished> resolvedRules = new LinkedHashMap<>();
-    private final VariableResolutionInvocationCache invocationCache = new VariableResolutionInvocationCache();
+    private VariableResolutionInvocationCache invocationCache = new VariableResolutionInvocationCache();
+    void useInvocationCache(VariableResolutionInvocationCache cache) {
+        cache.setRootVariables(invocationCache.rootVariables());
+        this.invocationCache = cache;
+    }
 
     Map<String, com.hengshucredit.rule.model.entity.RulePublished> getResolvedRules() { return resolvedRules; }
     VariableResolutionInvocationCache getInvocationCache() { return invocationCache; }

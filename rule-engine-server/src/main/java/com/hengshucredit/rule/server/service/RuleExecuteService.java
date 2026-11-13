@@ -484,20 +484,26 @@ public class RuleExecuteService {
             else runtimeRuleInvoker.enterArtifact(executionDefinition, executionProjectId, projectCode,
                     executeParams, originalInput, false, runtimeModelJson, runtimeSnapshot, resumeTraceId);
         }
+        if ("EXPERIMENT_ROUTE".equals(source) && effectiveOptions.getInvocationCache() != null && runtimeRuleInvoker.currentSession() != null) {
+            runtimeRuleInvoker.currentSession().useInvocationCache(effectiveOptions.getInvocationCache());
+        }
         bindInvocationCache(effectiveOptions);
         runtimeRuleInvoker.setSourceExecutionPolicy(effectiveOptions);
         if (idempotencyService != null && idempotencyService.current() != null) {
             var checkpointDecision = idempotencyService.current();
-            idempotencyService.recordRequestParams(checkpointDecision, originalInput);
+            effectiveOptions.getInvocationCache().setOrderTrace(checkpointDecision.getRootTraceId());
+            effectiveOptions.getInvocationCache().inheritPaidCalls(checkpointDecision.routingCalls());
+            idempotencyService.recordRequestParams(checkpointDecision, params);
             effectiveOptions.getInvocationCache().setSourceStepListener(step ->
                     idempotencyService.persistStep(checkpointDecision, step));
+            var recoveryMode = com.hengshucredit.rule.server.openapi.OpenApiContractCodec.parse(published.getOpenApiConfigJson())
+                    .getIdempotency().getExternalRecoveryMode();
+            if (checkpointDecision.getExternalRecoveryMode() != null) recoveryMode = checkpointDecision.getExternalRecoveryMode();
+            effectiveOptions.getInvocationCache().setFreshExternalCalls(checkpointDecision.getAttemptNo() > 1 && "CACHE_THEN_CALL".equals(recoveryMode));
             idempotencyService.restoreCheckpoint(idempotencyService.current(),
                     effectiveOptions.getInvocationCache(), executeParams, effectiveOptions);
-            RuntimeContextBridge.bindCheckpointListener(() -> idempotencyService.checkpoint(
-                    checkpointDecision,
-                    idempotencyService.snapshotCheckpoint(effectiveOptions.getInvocationCache(), executeParams,
-                            RuntimeContextBridge.currentSourceStates()),
-                    published.getRevisionId(), published.getArtifactDigest()));
+            RuntimeContextBridge.bindCheckpointListener(() -> idempotencyService.checkpointCurrent(
+                    effectiveOptions.getInvocationCache(), executeParams, RuntimeContextBridge.currentSourceStates()));
         }
         runtimeRuleInvoker.setTraceEnabled(collectTrace);
         long executionStart = System.currentTimeMillis();
@@ -538,13 +544,15 @@ public class RuleExecuteService {
             result.setExecuteTimeMs(System.currentTimeMillis() - executionStart);
             collectDeclaredOutputsIfNeeded(result, runtimeModelType);
             runtimeRuleInvoker.completeRoot(result);
-            if (idempotencyService != null && idempotencyService.current() != null) {
-                idempotencyService.checkpoint(idempotencyService.current(),
-                        idempotencyService.snapshotCheckpoint(effectiveOptions.getInvocationCache(), executeParams,
-                                effectiveOptions.getSourceStates()),
-                        published.getRevisionId(), published.getArtifactDigest());
+            try {
+                if (idempotencyService != null && idempotencyService.current() != null) {
+                    idempotencyService.checkpoint(idempotencyService.current(),
+                            idempotencyService.snapshotCheckpoint(effectiveOptions.getInvocationCache(), executeParams,
+                                    effectiveOptions.getSourceStates()), published.getRevisionId(), published.getArtifactDigest());
+                }
+            } finally {
+                runtimeRuleInvoker.exit();
             }
-            runtimeRuleInvoker.exit();
         }
 
         RuleExecutionLog log = new RuleExecutionLog();
@@ -582,6 +590,7 @@ public class RuleExecuteService {
         result.setArtifactDigest(published.getArtifactDigest());
         if (idempotencyService != null && idempotencyService.current() != null) {
             var recovery = idempotencyService.current();
+            recovery.recordExecutionParams(executeParams);
             result.setResumed(recovery.getAttemptNo() > 1);
             result.setAttemptNo(recovery.getAttemptNo());
             if (result.getExecutionStatus() == null || result.getExecutionStatus().isBlank()) {

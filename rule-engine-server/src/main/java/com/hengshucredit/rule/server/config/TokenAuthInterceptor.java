@@ -39,6 +39,9 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
     @Autowired(required = false)
     private com.hengshucredit.rule.server.system.SystemResponseMapping responseMapping;
 
+    @Autowired private ExecutionAdmission admission;
+    private static final String ADMISSION_ATTRIBUTE = TokenAuthInterceptor.class.getName() + ".admitted";
+
     private static final String PERMIT_ATTRIBUTE = TokenAuthInterceptor.class.getName() + ".permit";
     
     // 需要验证Token的路径（同步API）
@@ -99,14 +102,24 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
             return false;
         }
         if (isExecutionPath(uri)) {
+            if (admission != null && !admission.enter(requestStartedAt, policy.getRequestTimeoutMs())) {
+                request.setAttribute(ADMISSION_ATTRIBUTE + ".depth", admission.depth());
+                writeError(request, response, OpenApiStatuses.qpsConcurrencyExceeded());
+                return false;
+            }
+            if (admission != null) request.setAttribute(ADMISSION_ATTRIBUTE, Boolean.TRUE);
             try {
                 ProjectExecutionGuard.Permit permit = executionGuard.acquire(context.getAuthId(), policy);
                 request.setAttribute(PERMIT_ATTRIBUTE, permit);
                 RequestDeadlineContext.startAt(requestStartedAt, policy.getRequestTimeoutMs());
             } catch (ProjectExecutionGuard.Rejected e) {
+                releaseAdmission(request);
                 projectAuthService.recordAccess(request, context, false, e.getReason().name());
                 writeError(request, response, OpenApiStatuses.qpsConcurrencyExceeded());
                 return false;
+            } catch (RuntimeException error) {
+                releaseAdmission(request);
+                throw error;
             }
         }
         if ("GRACE".equals(context.getAuthPhase())) {
@@ -115,8 +128,13 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
         if (tokenRequest) {
             projectAuthService.clearTokenFailures(request);
         }
-        projectAuthService.recordAccess(request, context, true, null);
-        return true;
+        try {
+            projectAuthService.recordAccess(request, context, true, null);
+            return true;
+        } catch (RuntimeException error) {
+            afterCompletion(request, response, handler, error);
+            throw error;
+        }
     }
 
     @Override
@@ -127,7 +145,15 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
             ((ProjectExecutionGuard.Permit) permit).close();
             request.removeAttribute(PERMIT_ATTRIBUTE);
         }
+        releaseAdmission(request);
         RequestDeadlineContext.clear();
+    }
+
+    private void releaseAdmission(HttpServletRequest request) {
+        if (Boolean.TRUE.equals(request.getAttribute(ADMISSION_ATTRIBUTE))) {
+            request.removeAttribute(ADMISSION_ATTRIBUTE);
+            admission.leave();
+        }
     }
 
     private void writeError(HttpServletRequest request, HttpServletResponse response,
@@ -150,16 +176,18 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
                                     OpenApiStatus status) {
         if (status == null || status.getHttpStatus() != 429) return;
         response.setHeader("Retry-After", "1");
-        response.setHeader("X-Rule-Queue-Depth", "0");
+        Object queued = request.getAttribute(ADMISSION_ATTRIBUTE + ".depth");
+        response.setHeader("X-Rule-Queue-Depth", queued == null ? "0" : queued.toString());
         String limitName = OpenApiStatuses.QPS_CONCURRENCY_EXCEEDED.equals(status.getCode())
                 ? "project-execution-guard" : "token-request-rate";
-        response.setHeader("X-Rule-Limit-Name", limitName);
+        response.setHeader("X-Rule-Limit-Name", queued == null ? limitName : "server-execution");
     }
 
     static boolean isExecutionPath(String uri) {
         return uri != null && (uri.startsWith("/api/rule/openapi/")
                 || uri.startsWith("/api/rule/sync/execute/")
-                || uri.startsWith("/api/rule/runtime/experiment/execute/"));
+                || uri.startsWith("/api/rule/runtime/experiment/execute/")
+                || uri.startsWith("/api/rule/runtime/executions/") && uri.endsWith("/resume"));
     }
 
     static boolean isProtectedPath(String uri) {

@@ -692,6 +692,15 @@
             </el-alert>
           </div>
           <el-empty v-else description="幂等未启用" :image-size="50" />
+          <el-form-item label="断点恢复外数" label-width="110px">
+            <el-select v-model="openApiForm.idempotency.externalRecoveryMode" :disabled="!canEditDraft" aria-label="断点恢复外数">
+              <el-option label="优先沿用原调用（默认）" value="ORIGINAL_ONLY" />
+              <el-option label="先查接口缓存，未命中重新调用" value="CACHE_THEN_CALL" />
+            </el-select>
+            <div class="open-api-help">{{ openApiForm.idempotency.externalRecoveryMode === 'CACHE_THEN_CALL'
+              ? '恢复时允许再次请求供应商并产生费用。'
+              : '已有结果直接复用；已受理任务继续查询，受理状态不明时暂停。' }}</div>
+          </el-form-item>
           <el-form-item label="保留时间" label-width="110px">
             <el-input-number :key="canEditDraft ? 'editable' : 'readonly'" :disabled="!canEditDraft" v-model="openApiForm.idempotency.ttlSeconds" :min="60" :max="604800" :step="60" />
             <span class="open-api-help" style="margin-left: 8px">秒</span>
@@ -1547,6 +1556,7 @@ function createDefaultOpenApiContract() {
       operand: null,
       components: [],
       ttlSeconds: 86400,
+      externalRecoveryMode: 'ORIGINAL_ONLY',
     },
   }
 }
@@ -2685,6 +2695,7 @@ export default {
             .map(item => item && item.operand ? { operand: item.operand } : null)
             .filter(Boolean),
           ttlSeconds: Number(this.openApiForm.idempotency.ttlSeconds || 86400),
+          externalRecoveryMode: this.openApiForm.idempotency.externalRecoveryMode || 'ORIGINAL_ONLY',
         },
       }
     },

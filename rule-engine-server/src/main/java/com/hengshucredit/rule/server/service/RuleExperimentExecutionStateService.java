@@ -18,6 +18,33 @@ import java.util.UUID;
 @Service
 public class RuleExperimentExecutionStateService {
     @Resource private JdbcTemplate jdbcTemplate;
+    @Resource private RuleExecutionStateService ruleStates;
+    private final ThreadLocal<Decision> active = new ThreadLocal<>();
+
+    public <T> T withLease(Decision decision, java.util.function.Supplier<T> job) {
+        Decision previous = active.get();
+        try {
+            active.set(decision);
+            return job.get();
+        } finally {
+            if (previous == null) active.remove(); else active.set(previous);
+        }
+    }
+
+    VariableResolutionInvocationCache routingCache(String traceId) {
+        Decision decision = active.get();
+        if (decision == null || !decision.isClaimed() || !traceId.equals(decision.getTraceId())) return null;
+        if (decision.routingCalls != null) return decision.routingCalls;
+        var cache = new VariableResolutionInvocationCache();
+        if (decision.getAttemptNo() > 1 && !"CACHE_THEN_CALL".equals(decision.externalRecoveryMode)) cache.restoreCompletedSteps(ruleStates.externalSteps(traceId));
+        cache.setSourceStepListener(step -> {
+            if ("EXTERNAL_API".equals(step.getSourceType())) ruleStates.persistExperimentStep(decision.state.id(), decision.owner, traceId, step);
+        });
+        decision.routingCalls = cache;
+        return cache;
+    }
+
+    String externalRecoveryMode() { return active.get() == null ? null : active.get().externalRecoveryMode; }
 
     public Decision begin(Long projectId, Long experimentId, String experimentCode,
                           RuleExperimentExecuteRequest request, String configDigest,
@@ -25,7 +52,8 @@ public class RuleExperimentExecutionStateService {
         String requestKey = request == null ? null : request.getRequestKey();
         if (requestKey == null || requestKey.isBlank()) return Decision.disabled();
         String keyHash = sha256(requestKey.trim());
-        String requestDigest = sha256(CanonicalJson.write(request == null ? Map.of() : request));
+        String requestJson = CanonicalJson.write(request);
+        String requestDigest = sha256(requestJson);
         deleteExpired(projectId, experimentId, keyHash);
         State state = find(projectId, experimentId, keyHash);
         if (state == null) {
@@ -34,11 +62,11 @@ public class RuleExperimentExecutionStateService {
                     com.hengshucredit.rule.core.trace.TraceIdGenerator.moduleTypeCode("EXPERIMENT"), "P",
                     com.hengshucredit.rule.core.trace.TraceIdGenerator.projectScopeCode(projectId)) : traceId;
             int inserted = jdbcTemplate.update("INSERT IGNORE INTO rule_experiment_execution_state "
-                            + "(project_id, experiment_id, experiment_code, request_key_hash, request_digest, "
+                            + "(project_id, experiment_id, experiment_code, request_key_hash, request_digest, request_json, "
                             + "experiment_trace_id, config_digest, status, attempt_no, lease_owner, lease_until, expire_time) "
-                            + "VALUES (?, ?, ?, ?, ?, ?, ?, 'RUNNING', 1, ?, DATE_ADD(NOW(6), INTERVAL 120 SECOND), "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', 1, ?, DATE_ADD(NOW(6), INTERVAL 120 SECOND), "
                             + "DATE_ADD(NOW(6), INTERVAL 86400 SECOND))",
-                    projectId, experimentId, experimentCode, keyHash, requestDigest, rootTrace, configDigest, owner);
+                    projectId, experimentId, experimentCode, keyHash, requestDigest, requestJson, rootTrace, configDigest, owner);
             state = find(projectId, experimentId, keyHash);
             if (inserted == 1) return Decision.claimed(state, owner, configDigest);
         }
@@ -49,21 +77,23 @@ public class RuleExperimentExecutionStateService {
         String owner = UUID.randomUUID().toString();
         boolean claimed = jdbcTemplate.update("UPDATE rule_experiment_execution_state SET lease_owner=?, "
                         + "lease_until=DATE_ADD(NOW(6), INTERVAL 120 SECOND), expire_time=DATE_ADD(NOW(6), INTERVAL 86400 SECOND), "
-                        + "attempt_no=attempt_no+1, config_digest=?, status='RUNNING', result_json=NULL, finish_time=NULL "
-                        + "WHERE id=? AND (lease_until IS NULL OR lease_until<NOW(6) OR lease_owner=?)",
-                owner, configDigest, state.id(), owner) == 1;
+                        + "attempt_no=attempt_no+1, config_digest=?, request_json=COALESCE(request_json,?), status='RUNNING', result_json=NULL, finish_time=NULL "
+                        + "WHERE id=? AND (status<>'SUCCEEDED' OR config_digest<>?) "
+                        + "AND (lease_until IS NULL OR lease_until<NOW(6) OR lease_owner=?)",
+                owner, configDigest, requestJson, state.id(), configDigest, owner) == 1;
         if (!claimed) return Decision.inProgress();
         return Decision.claimed(find(projectId, experimentId, keyHash), owner, configDigest);
     }
 
     public void complete(Decision decision, RuleExperimentExecuteResult result) {
         if (decision == null || !decision.claimed) return;
-        jdbcTemplate.update("UPDATE rule_experiment_execution_state SET status=?, result_json=?, "
+        int changed = jdbcTemplate.update("UPDATE rule_experiment_execution_state SET status=?, result_json=?, "
                         + "error_message=?, lease_owner=NULL, lease_until=NULL, finish_time=NOW(6) "
                         + "WHERE id=? AND lease_owner=? AND lease_until>NOW(6)",
                 result != null && result.isSuccess() ? "SUCCEEDED" : "FAILED_RETRYABLE",
                 JSON.toJSONString(result), result == null ? "实验结果为空" : result.getErrorMessage(),
                 decision.state.id(), decision.owner);
+        if (changed != 1) throw new IllegalStateException("实验执行租约已失效，无法提交旧尝试结果");
     }
 
     public void release(Decision decision, String errorMessage) {
@@ -72,6 +102,18 @@ public class RuleExperimentExecutionStateService {
                         + "error_message=?, lease_owner=NULL, lease_until=NULL, finish_time=NOW(6) "
                         + "WHERE id=? AND lease_owner=? AND lease_until>NOW(6)",
                 errorMessage, decision.state.id(), decision.owner);
+    }
+
+    public record TraceRequest(Long projectId, String experimentCode, RuleExperimentExecuteRequest request, String status,
+                               int attemptNo, String resultJson, String error, LocalDateTime expireTime) {}
+
+    public TraceRequest byTrace(String traceId) {
+        return jdbcTemplate.query("SELECT project_id,experiment_code,request_json,status,attempt_no,result_json,error_message,expire_time "
+                + "FROM rule_experiment_execution_state WHERE experiment_trace_id=? AND expire_time>NOW(6)",
+                (rs, ignored) -> new TraceRequest(rs.getLong(1), rs.getString(2),
+                        JSON.parseObject(rs.getString(3), RuleExperimentExecuteRequest.class), rs.getString(4),
+                        rs.getInt(5), rs.getString(6), rs.getString(7), rs.getObject(8, LocalDateTime.class)), traceId)
+                .stream().findFirst().orElse(null);
     }
 
     public State find(Long projectId, Long experimentId, String keyHash) {
@@ -105,6 +147,9 @@ public class RuleExperimentExecutionStateService {
     public enum Status { DISABLED, CLAIMED, COMPLETED, CONFLICT, IN_PROGRESS }
 
     public static final class Decision {
+        private String externalRecoveryMode;
+        private VariableResolutionInvocationCache routingCalls;
+        public void setExternalRecoveryMode(String mode) { externalRecoveryMode = mode; }
         private final boolean claimed;
         private final State state;
         private final String owner;

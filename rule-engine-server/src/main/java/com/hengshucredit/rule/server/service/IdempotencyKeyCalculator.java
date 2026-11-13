@@ -285,6 +285,8 @@ public final class IdempotencyKeyCalculator {
 
     private static Object normalized(Object value) {
         if (value == null) return null;
+        if (value instanceof Double d && !Double.isFinite(d) || value instanceof Float f && !Float.isFinite(f))
+            return value;
         if (value instanceof Number) return number(value).stripTrailingZeros();
         if (value instanceof Map) {
             Map<String, Object> ordered = new TreeMap<>();

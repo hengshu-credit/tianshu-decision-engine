@@ -9,6 +9,14 @@ import java.util.Map;
 import static org.junit.Assert.*;
 
 public class ExternalApiRequestPlanTest {
+    @Test public void oldChargeIdentityFitsDurableStepWithoutAliasingDistinctOrders() {
+        String prefix = "API_CHAIN:9223372036854775807:" + "a".repeat(64) + ":";
+        String first = ExternalApiRequestPlan.checkpointIdentity(prefix + "b".repeat(64));
+        assertTrue(first.length() <= 128);
+        assertEquals(first, ExternalApiRequestPlan.checkpointIdentity(first));
+        assertNotEquals(first, ExternalApiRequestPlan.checkpointIdentity(prefix + "c".repeat(64)));
+    }
+
     @Test public void stepAuthenticationFromChainInputAlsoIsolatesTheResponseCache() {
         var api = ExternalApiTestConfig.api();
         api.setId(9L); api.setAuthMode("NONE");

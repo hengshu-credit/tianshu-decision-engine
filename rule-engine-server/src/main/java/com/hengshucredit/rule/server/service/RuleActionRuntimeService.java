@@ -37,7 +37,11 @@ public class RuleActionRuntimeService {
                     var config = JSON.parseObject(configJson);
                     var ids = config.getJSONArray("listIds");
                     for (int i = 0; i < ids.size(); i++) ids.set(i, bound(snapshot, "LIST_LIBRARY", ids.getLong(i)));
-                    result = listActions.submit(projectId, config, values, RuntimeContextBridge.currentContext().startedAt());
+                    String taskId = options.getInvocationCache() == null ? null : options.getInvocationCache().listTaskId(
+                            projectId, RuntimeContextBridge.currentRule(), config, values);
+                    var now = RuntimeContextBridge.currentContext().startedAt();
+                    result = taskId == null ? listActions.submit(projectId, config, values, now)
+                            : listActions.submit(projectId, config, values, now, taskId);
                     if (result instanceof Map<?, ?> status && "REJECTED".equals(status.get("status"))) {
                         rejected = new IllegalStateException(String.valueOf(status.get("error")));
                     }

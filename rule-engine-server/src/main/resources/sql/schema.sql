@@ -1702,6 +1702,7 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_execution_state` (
   `experiment_code` VARCHAR(128) NOT NULL COMMENT '实验编码快照',
   `request_key_hash` CHAR(64) NOT NULL COMMENT '请求幂等键的 SHA-256 摘要',
   `request_digest` CHAR(64) NOT NULL COMMENT '请求内容的 SHA-256 摘要，用于检查幂等重试内容是否相同',
+  `request_json` LONGTEXT NULL COMMENT '用于按实验追踪号恢复的原始实验请求，旧记录可能为空',
   `experiment_trace_id` CHAR(36) NOT NULL COMMENT '分流实验本次逻辑执行的唯一追踪标识',
   `config_digest` CHAR(64) NOT NULL COMMENT '本次实验配置的 SHA-256 摘要',
   `status` VARCHAR(32) NOT NULL COMMENT '幂等执行状态：RUNNING=执行中，SUCCEEDED=已成功，FAILED_RETRYABLE=失败可重试',
@@ -2086,6 +2087,15 @@ CREATE TABLE IF NOT EXISTS `rule_history_index_state` (
   `ready_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '历史索引完成初始化或回填的时间',
   PRIMARY KEY (`format_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='历史字段索引就绪记录，用于防止部分回填数据参与统计';
+
+CREATE TABLE IF NOT EXISTS `rule_history_bucket_revision` (
+  `bucket_hour` DATETIME NOT NULL COMMENT '历史进件开始时间所在的本地小时',
+  `execution_project_id` BIGINT NOT NULL COMMENT '根进件所属项目标识，无项目时为零',
+  `root_rule_id` BIGINT NOT NULL COMMENT '根进件实际执行的规则标识，无归属时为零',
+  `revision` BIGINT NOT NULL COMMENT '该小时根进件新增、替换或失效的累计变更序号',
+  PRIMARY KEY (`execution_project_id`,`bucket_hour`,`root_rule_id`),
+  KEY `idx_history_revision_time` (`bucket_hour`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='历史小时统计变更版本，用于验证精确空间统计缓存';
 
 CREATE TABLE IF NOT EXISTS `rule_history_bucket` (
   `bucket_hour` DATETIME NOT NULL COMMENT '按根进件开始时间截整的本地小时',

@@ -34,6 +34,13 @@ public final class ExternalApiWorkflow {
             BiPredicate<Object, Map<String, Object>> condition,
             java.util.function.BiConsumer<JSONObject, Map<String, Object>> observer,
             Map<String, Object> resume) throws java.util.concurrent.TimeoutException {
+        return execute(specification, input, transport, callbacks, condition, observer, resume, ignored -> { });
+    }
+
+    static Map<String, Object> execute(JSONObject specification, Map<String, Object> input,
+            Transport transport, ExternalApiCallbackStore callbacks, BiPredicate<Object, Map<String, Object>> condition,
+            java.util.function.BiConsumer<JSONObject, Map<String, Object>> observer, Map<String, Object> resume,
+            java.util.function.Consumer<Map<String, Object>> persist) throws java.util.concurrent.TimeoutException {
         Map<String, Object> context = new LinkedHashMap<>();
         context.putAll(input);
         context.put("input", input);
@@ -77,7 +84,8 @@ public final class ExternalApiWorkflow {
                 currentStepId = id;
                 if (resume != null && !id.equals(resume.get("stepId")) && results.containsKey(id)) {
                     Object stored = results.get(id);
-                    if (stored instanceof Map<?, ?> map) {
+                    if (stored instanceof Map<?, ?> map && !"SKIPPED".equals(map.get("status"))) {
+                        last = new LinkedHashMap<>();
                         for (Map.Entry<?, ?> entry : map.entrySet()) {
                             last.put(String.valueOf(entry.getKey()), entry.getValue());
                         }
@@ -142,6 +150,7 @@ public final class ExternalApiWorkflow {
                 checkpoint.put("registrations", registrations);
                 checkpoint.put("callbacks", callbackUrls);
                 ExternalApiTrialContext.checkpoint(checkpoint);
+                persist.accept(checkpoint);
                 observer.accept(step, stored);
                 last = response;
             }

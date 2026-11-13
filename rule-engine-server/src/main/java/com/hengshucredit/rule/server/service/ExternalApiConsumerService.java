@@ -81,28 +81,43 @@ public class ExternalApiConsumerService {
             fieldValidationService.validateApiPlan(projectId, plan);
         }
         String key = plan.identity();
-        VariableResolutionInvocationCache cache = options.getInvocationCache();
+        VariableResolutionInvocationCache cache = options.getInvocationCache().originalCalls();
         // 检查点与 single-flight 使用同一请求身份，变量/对象换取值路径或增加中间值不会重复提交。
-        VariableResolutionInvocationCache.SourceStep pending = cache.pendingStep(key);
-        final Map<String, Object> pendingMetadata = pending == null ? null : pending.getMetadata();
+        VariableResolutionInvocationCache.SourceStep previous = cache.originalCall(key);
+        final Map<String, Object> pendingMetadata = previous != null && "WAITING_EXTERNAL".equals(previous.getStatus())
+                ? previous.getMetadata() : null;
         if (sourceKey != null) cache.associateResponse(sourceKey, key);
         try {
             return cache.resolve(key, () -> {
                 try {
-                    Map<String, Object> response = pendingMetadata == null
-                            ? invokeService.invokePlanned(plan) : invokeService.invokePending(plan, pendingMetadata);
-                    if (pendingMetadata != null) {
-                        cache.completeStep(new VariableResolutionInvocationCache.SourceStep(
-                                key, "EXTERNAL_API", null, null, null, "SUCCESS", null, response,
-                                Map.of(), Map.of("apiConfigId", apiId)));
+                    if (previous != null && "SUCCESS".equals(previous.getStatus())) {
+                        var original = previous.getResponse();
+                        if (original != null) return original;
+                    }
+                    Map<String, Object> response;
+                    if (cache.hasSourceStepListener()) {
+                        if (previous != null && "UNKNOWN".equals(previous.getStatus())) {
+                            throw new ExternalApiWaitingException("原外数请求的受理状态尚未确认，已阻止重复提交", null);
+                        }
+                        if (pendingMetadata == null) {
+                            // 先记录发送意图。进程中断且缺少回执时，恢复方据此阻止第二次提交。
+                            saveCall(cache, key, "UNKNOWN", null, Map.of("apiConfigId", apiId));
+                        }
+                        response = invokeService.invokeCheckpointed(plan, pendingMetadata,
+                                receipt -> saveCall(cache, key, "WAITING_EXTERNAL", null, receipt));
+                        saveCall(cache, key, Boolean.FALSE.equals(response.get("success")) ? "FAILED" : "SUCCESS",
+                                response, Map.of("apiConfigId", apiId));
+                    } else {
+                        response = pendingMetadata == null ? invokeService.invokePlanned(plan) : invokeService.invokePending(plan, pendingMetadata);
+                        if (pendingMetadata != null) saveCall(cache, key, "SUCCESS", response, Map.of("apiConfigId", apiId));
                     }
                     return response;
                 } catch (ExternalApiInvokeService.ApiInvokeException error) {
                     Map<String, Object> pendingCall = error.getPendingAsync();
                     if (pendingCall != null && !pendingCall.isEmpty()) {
-                        cache.completeStep(new VariableResolutionInvocationCache.SourceStep(
-                                key, "EXTERNAL_API", null, null, null, "WAITING_EXTERNAL", null, null,
-                                Map.of(), pendingCall));
+                        saveCall(cache, key, "WAITING_EXTERNAL", null, pendingCall);
+                    } else if (cache.hasSourceStepListener() && !error.isUnknown() && pendingMetadata == null) {
+                        saveCall(cache, key, "FAILED", null, Map.of("apiConfigId", apiId));
                     }
                     throw error;
                 }
@@ -116,6 +131,12 @@ public class ExternalApiConsumerService {
             }
             throw error;
         }
+    }
+
+    private static void saveCall(VariableResolutionInvocationCache cache, String key, String status,
+                                 Map<String, Object> result, Map<String, Object> metadata) {
+        cache.completeStep(new VariableResolutionInvocationCache.SourceStep(key, "EXTERNAL_API", null, null, null,
+                status, null, result, Map.of(), metadata));
     }
 
     public static Object select(Map<String, Object> response, String path) {

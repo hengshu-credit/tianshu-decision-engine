@@ -517,6 +517,7 @@ public class ResourceVersionService {
         VariableResolveOptions target = new VariableResolveOptions();
         if (source != null) org.springframework.beans.BeanUtils.copyProperties(source, target);
         target.setInvocationCache(new VariableResolutionInvocationCache());
+        if (source != null && source.getInvocationCache() != null) target.getInvocationCache().shareOriginalCalls(source.getInvocationCache());
         target.setRequiredNamesUpstreamOnly(true); target.setExecutionProjectId(projectId);
         target.setSourceStates(new LinkedHashMap<>()); target.setHistoryFieldDefinitions(null);
         return target;
