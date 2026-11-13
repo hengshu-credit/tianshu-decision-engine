@@ -292,7 +292,7 @@ test('未保存配置仍需确认，缓存页返回保留筛选输入', async ({
   assertClean()
 })
 
-test('未登录访问工作台时只加载登录页，登录及刷新首帧使用已验证的用户名', async ({ page }) => {
+test('未登录访问工作台时只加载登录页，登录及刷新首帧使用已验证的用户名', async ({ page }, testInfo) => {
   let loggedIn = false
   const verifySession = deferred()
   const account = { username: 'startup-user', permissions: ['project:view'] }
@@ -320,6 +320,7 @@ test('未登录访问工作台时只加载登录页，登录及刷新首帧使�
   expect(resources.some(path => /menuViews|workspaceUi/.test(path))).toBe(false)
   expect(resources.filter(path => path === '/api/auth/console/config')).toHaveLength(1)
   await page.getByPlaceholder('请输入密码').fill('test-login')
+  const backdrop = await page.locator('.login-bg').elementHandle()
   await page.getByRole('button', { name: '登录', exact: true }).click()
   try {
     const transition = page.getByRole('status', { name: '正在进入工作台' })
@@ -328,10 +329,13 @@ test('未登录访问工作台时只加载登录页，登录及刷新首帧使�
     await expect(logo).toHaveCSS('background-image', `url("${origin}/images/hscredit-loading.svg")`)
     await expect(transition).toHaveText('')
     await expect(page.locator('.login-card')).toHaveCount(0)
+    expect(await backdrop.evaluate(el => el.isConnected)).toBe(true)
+    await expect(page.locator('.login-bg__mesh')).toBeVisible()
     const box = await logo.boundingBox()
     const viewport = page.viewportSize()
     expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(1)
     expect(Math.abs(box.y + box.height / 2 - viewport.height / 2)).toBeLessThanOrEqual(1)
+    await page.screenshot({ path: testInfo.outputPath('login-loading.png') })
     await expect.poll(() => resources.some(path => path.includes('menuViews'))).toBe(true)
     await expect.poll(() => resources.some(path => path.includes('workspaceUi'))).toBe(true)
     expect(resources.filter(path => path === '/api/rule/project/list')).toHaveLength(0)

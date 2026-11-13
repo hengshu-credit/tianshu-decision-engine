@@ -37,6 +37,7 @@ test('脚本下载前首屏就加载 HSCredit 动图，脚本完成后正常进�
     expect(response.ok()).toBe(true)
     expect(response.headers()['content-type']).toContain('image/svg+xml')
     await expectLoader(page.locator('.app-bootstrap .tianshu-loading'))
+    await expect(page.locator('.app-bootstrap .login-bg')).toHaveCSS('background-image', /radial-gradient/)
     script.resolve()
     await expect(page.getByRole('cell', { name: 'e2e_project', exact: true })).toBeVisible()
     await expect(page.locator('.app-bootstrap')).toHaveCount(0)

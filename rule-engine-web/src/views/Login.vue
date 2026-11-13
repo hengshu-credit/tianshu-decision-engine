@@ -1,15 +1,10 @@
 <template>
-  <div v-if="enteringWorkspace" class="app-bootstrap" role="status" aria-label="正在进入工作台">
-    <span class="tianshu-loading" aria-hidden="true" />
-  </div>
-  <div v-else class="login-page" :class="{ 'is-preview': preview }">
-    <div class="login-bg" aria-hidden="true">
-      <div class="login-bg__mesh" />
-      <div class="login-bg__orb login-bg__orb--a" />
-      <div class="login-bg__orb login-bg__orb--b" />
+  <div class="login-page" :class="{ 'is-preview': preview }">
+    <div class="login-bg" aria-hidden="true"><div class="login-bg__mesh" /></div>
+    <div v-if="enteringWorkspace" class="app-bootstrap" role="status" aria-label="正在进入工作台">
+      <span class="tianshu-loading" aria-hidden="true" />
     </div>
-
-    <div class="login-shell" :inert="preview">
+    <div v-else class="login-shell" :inert="preview">
       <div class="login-card" role="main">
         <header class="login-brand">
           <div class="login-brand__icon" aria-hidden="true">
@@ -187,87 +182,7 @@ $login-muted: var(--tianshu-text-tertiary);
   font-family: var(--tianshu-font-family);
   overflow-x: hidden;
 }
-.login-bg {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  background:
-    radial-gradient(
-      circle at 8% 12%,
-      rgba(var(--el-color-primary-rgb), 0.14),
-      transparent 38%
-    ),
-    radial-gradient(
-      circle at 92% 88%,
-      rgba(var(--tianshu-color-secondary-rgb), 0.1),
-      transparent 42%
-    ),
-    linear-gradient(145deg, var(--tianshu-bg-page), var(--tianshu-bg-workspace));
-}
-.login-bg__mesh {
-  position: absolute;
-  inset: 0;
-  opacity: 0.3;
-  background-image: radial-gradient(
-      circle at 20% 30%,
-      rgba(var(--el-color-primary-rgb), 0.16) 0%,
-      transparent 45%
-    ),
-    radial-gradient(
-      circle at 80% 70%,
-      rgba(var(--el-color-primary-rgb), 0.09) 0%,
-      transparent 40%
-    ),
-    linear-gradient(rgba(var(--el-color-primary-rgb), 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(var(--el-color-primary-rgb), 0.04) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
-  animation: mesh-drift 28s ease-in-out infinite alternate;
-}
-.login-bg__orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(64px);
-  opacity: 0.55;
-  animation: orb-float 18s ease-in-out infinite;
-}
-.login-bg__orb--a {
-  width: min(42vw, 360px);
-  height: min(42vw, 360px);
-  top: -8%;
-  left: -5%;
-  background: rgba(var(--el-color-primary-rgb), 0.24);
-  animation-delay: 0s;
-}
-.login-bg__orb--b {
-  width: min(50vw, 420px);
-  height: min(50vw, 420px);
-  bottom: -12%;
-  right: -8%;
-  background: rgba(var(--el-color-primary-rgb), 0.14);
-  animation-delay: -6s;
-}
-@keyframes mesh-drift {
-  from {
-    transform: scale(1) translate(0, 0);
-  }
-  to {
-    transform: scale(1.04) translate(-1%, 1%);
-  }
-}
-@keyframes orb-float {
-  0%,
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
-  50% {
-    transform: translate(2%, 3%) scale(1.05);
-  }
-}
 @media (prefers-reduced-motion: reduce) {
-  .login-bg__mesh,
-  .login-bg__orb {
-    animation: none !important;
-  }
   .login-card {
     animation: none !important;
   }
@@ -498,5 +413,5 @@ $login-muted: var(--tianshu-text-tertiary);
   overflow: hidden;
 }
 .is-preview .login-bg { position: absolute; }
-.is-preview .login-card, .is-preview .login-bg__mesh, .is-preview .login-bg__orb { animation: none; }
+.is-preview .login-card, .is-preview .login-bg__mesh, .is-preview .login-bg::before, .is-preview .login-bg::after { animation: none; }
 </style>

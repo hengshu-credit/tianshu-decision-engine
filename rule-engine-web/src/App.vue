@@ -3,6 +3,7 @@
     <router-view v-slot="{ Component }">
       <component :is="Component" v-if="Component" />
       <div v-else-if="navigation.pendingRoute" class="app-bootstrap" role="status" aria-label="正在加载系统">
+        <div class="login-bg" aria-hidden="true"><div class="login-bg__mesh"></div></div>
         <span class="tianshu-loading" aria-hidden="true" />
       </div>
       <el-alert v-else-if="navigation.error" title="页面加载失败，请刷新重试" type="error" :closable="false" />
