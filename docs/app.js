@@ -19,7 +19,7 @@
       kicker: '01 · NAVIGATION LAYER',
       title: '先找到正确的入口',
       description: '从标题栏一级菜单进入项目、规则、变量与运行治理，每个入口都保持清晰可见。',
-      stat: '20 个一级入口',
+      stat: '13 个一级入口',
       tag: 'ENTRY MAP',
       footer: '下一步：确认项目上下文',
       caption: 'MAP / PROJECT / RULE / RUNTIME'

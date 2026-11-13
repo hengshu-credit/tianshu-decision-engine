@@ -40,7 +40,7 @@ function captureFileName(name) {
 }
 
 // 只写入文档实际引用的截图，避免重复运行后重新产生已清理的旧图。
-function referencedScreenshots({ includeManual = true } = {}) {
+function referencedScreenshots() {
   const names = new Set()
   const read = file => {
     const content = fs.readFileSync(file, 'utf8')
@@ -54,7 +54,7 @@ function referencedScreenshots({ includeManual = true } = {}) {
     }
   }
   read(path.join(root, 'README.md'))
-  if (includeManual) visit(path.join(root, 'docs'))
+  visit(path.join(root, 'docs'))
   return new Set([...names].filter(name => name !== '*.png'))
 }
 
