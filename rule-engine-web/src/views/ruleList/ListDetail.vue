@@ -277,6 +277,10 @@
           <el-table-column prop="ruleCode" label="来源规则" min-width="150" show-overflow-tooltip>
             <template v-slot="{ row }">{{ row.ruleCode || '-' }}</template>
           </el-table-column>
+          <el-table-column label="执行来源" min-width="245">
+            <template #default="{ row }">{{ actionSourceLabel(row) }}</template>
+          </el-table-column>
+          <el-table-column prop="rootTraceId" label="根追踪 ID" min-width="180" />
           <el-table-column prop="ruleVersion" label="规则版本" width="90" />
           <el-table-column label="有效期" min-width="230" show-overflow-tooltip>
             <template v-slot="{ row }">{{ formatPeriod(row) }}</template>
@@ -702,6 +706,16 @@ export default {
     },
     formatTime(value) {
       return value ? String(value).replace('T', ' ') : ''
+    },
+    actionSourceLabel(row) {
+      if (!row.taskId) return row.operator || '—'
+      const source = typeof row.actionSource === 'string' ? JSON.parse(row.actionSource) : row.actionSource
+      const group = { TEST: '测试组', CHAMPION: '冠军组', CHALLENGER: '挑战组' }
+      const parts = [source?.id ? `规则 #${source.id}` : '规则动作']
+      if (source?.groupId) parts.push(`实验 #${source.experimentId} · ${group[source.groupType] || '实验组'} #${source.groupId}`)
+      if (source?.outcome) parts.push(source.outcome === 'SUCCESS' ? '根规则成功' : '根规则失败')
+      if (source?.traceId && source.traceId !== row.rootTraceId) parts.push(`触发追踪 ${source.traceId}`)
+      return parts.join(' · ')
     },
     formatPeriod(row) {
       if (!row) return '立即 至 长期'

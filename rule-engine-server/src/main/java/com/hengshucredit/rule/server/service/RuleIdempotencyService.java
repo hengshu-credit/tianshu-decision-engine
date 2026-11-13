@@ -239,6 +239,10 @@ public class RuleIdempotencyService {
         if (decision == null || cache == null || decision.getAttemptNo() < 2 && decision.getCheckpointJson() == null) return;
         JSONObject checkpoint = decision.getCheckpointJson() == null ? new JSONObject() : JSON.parseObject(decision.getCheckpointJson());
         com.hengshucredit.rule.core.engine.RuntimeContextBridge.restoreRandomValues(checkpoint.getObject("randomValues", Map.class));
+        if (java.util.Objects.equals(checkpoint.getLong("listActionRevision"), decision.getCurrentRevisionId())
+                && java.util.Objects.equals(checkpoint.getString("listActionArtifact"), decision.getCurrentArtifactDigest())) {
+            cache.listActions().restore(checkpoint.getJSONArray("pendingListActions"));
+        }
         if (cache.freshExternalCalls()) return;
         // 只恢复外数/名单/数据库/模型等不可重复来源的输出；纯 QL 赋值必须随新规则重新计算。
         Map<String, Object> resolved = checkpoint.getObject("resolvedValues", Map.class);
@@ -291,6 +295,11 @@ public class RuleIdempotencyService {
         checkpoint.put("randomValues", com.hengshucredit.rule.core.engine.RuntimeContextBridge.randomSnapshot());
         checkpoint.put("sourceStates", sourceStates == null ? Map.of() : sourceStates);
         Decision decision = current.get();
+        if (decision != null && cache != null && !cache.listActions().isEmpty()) {
+            checkpoint.put("listActionRevision", decision.getCurrentRevisionId());
+            checkpoint.put("listActionArtifact", decision.getCurrentArtifactDigest());
+            checkpoint.put("pendingListActions", cache.listActions().snapshot());
+        }
         if (decision != null && decision.requestParams != null) {
             checkpoint.put("requestParams", decision.requestParams.params());
             if (!decision.requestParams.files().isEmpty()) checkpoint.put("requestFiles", decision.requestParams.files());

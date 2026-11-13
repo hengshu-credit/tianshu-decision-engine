@@ -465,6 +465,7 @@ public class SchemaSyncService {
                     + "`remark` VARCHAR(512) DEFAULT NULL COMMENT '插入备注',"
                     + "`operation` VARCHAR(16) NOT NULL COMMENT '执行操作：ADD/UPDATE/DELETE',"
                     + "`operator` VARCHAR(64) DEFAULT NULL COMMENT '操作人',"
+                    + "`action_source` JSON DEFAULT NULL COMMENT '规则名单动作来源快照，含触发规则ID与追踪ID、实验组及根规则执行结果',"
                     + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',"
                     + "PRIMARY KEY (`id`),"
                     + "KEY `idx_list_log_list_record` (`list_id`, `record_id`),"
@@ -483,17 +484,20 @@ public class SchemaSyncService {
                     + "`revision_id` VARCHAR(64) DEFAULT NULL COMMENT '规则修订标识，关联 rule_revision.id',"
                     + "`artifact_digest` CHAR(64) DEFAULT NULL COMMENT '决策制品的 SHA-256 摘要',"
                     + "`changed_count` INT NOT NULL DEFAULT 0 COMMENT '已实际变更的名单记录数量',"
+                    + "`action_source` JSON DEFAULT NULL COMMENT '规则名单动作来源快照，含触发规则ID与追踪ID、实验组及根规则执行结果',"
                     + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',"
                     + "PRIMARY KEY (`task_id`)"
                     + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='异步名单动作幂等回执'");
         }
         ensureUtf8mb4Table("rule_list_action_receipt");
+        addColumnIfMissing("rule_list_action_receipt", "action_source", "`action_source` JSON DEFAULT NULL COMMENT '规则名单动作来源快照，含触发规则ID与追踪ID、实验组及根规则执行结果'");
         addColumnIfMissing("rule_list_action_receipt", "root_trace_id", "`root_trace_id` CHAR(36) DEFAULT NULL COMMENT '本次逻辑执行的根追踪标识'");
         addColumnIfMissing("rule_list_action_receipt", "rule_code", "`rule_code` VARCHAR(128) DEFAULT NULL COMMENT '规则编码快照'");
         addColumnIfMissing("rule_list_action_receipt", "rule_version", "`rule_version` VARCHAR(32) DEFAULT NULL COMMENT '执行时的规则业务版本号'");
         addColumnIfMissing("rule_list_action_receipt", "revision_id", "`revision_id` VARCHAR(64) DEFAULT NULL COMMENT '规则修订标识，关联 rule_revision.id'");
         addColumnIfMissing("rule_list_action_receipt", "artifact_digest", "`artifact_digest` CHAR(64) DEFAULT NULL COMMENT '决策制品的 SHA-256 摘要'");
         addColumnIfMissing("rule_list_record_log", "task_id", "`task_id` VARCHAR(64) DEFAULT NULL COMMENT '规则名单动作任务ID'");
+        addColumnIfMissing("rule_list_record_log", "action_source", "`action_source` JSON DEFAULT NULL COMMENT '规则名单动作来源快照，含触发规则ID与追踪ID、实验组及根规则执行结果'");
         addColumnIfMissing("rule_list_record_log", "root_trace_id", "`root_trace_id` CHAR(36) DEFAULT NULL COMMENT '规则根追踪 ID'");
         addColumnIfMissing("rule_list_record_log", "rule_code", "`rule_code` VARCHAR(128) DEFAULT NULL COMMENT '规则编码'");
         addColumnIfMissing("rule_list_record_log", "rule_version", "`rule_version` VARCHAR(32) DEFAULT NULL COMMENT '规则版本'");

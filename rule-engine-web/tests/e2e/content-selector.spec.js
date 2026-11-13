@@ -176,6 +176,11 @@ test('看板三组取值通过 UI 配置阈值、路径和表达式，保存重�
 test('名单落库可以从界面添加固定阈值并保存原始手机号', async ({ page }) => {
   const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
   const data = createDesignerApiData()
+  const library = { id: '84', listCode: 'policyAudit', listName: '策略验证名单', status: 1 }
+  data.set('/api/rule/list/library', { records: [library], total: 1 })
+  const catalogPath = '/api/rule/definition/104/reference-catalog'
+  const catalog = data.get(catalogPath)
+  data.set(catalogPath, context => ({ ...catalog(context), lists: [library] }))
   const revision = data.get('/api/rule/definition/104/revisions')[0]
   let saved
   data.set('POST /api/rule/definition/104/designer/drafts', ({ request }) => {
@@ -189,6 +194,14 @@ test('名单落库可以从界面添加固定阈值并保存原始手机号', as
   await page.getByRole('button', { name: '添加规则', exact: true }).click()
   await page.getByRole('button', { name: '添加动作块', exact: true }).last().click()
   await page.getByRole('menuitem', { name: '名单落库', exact: true }).click()
+  await page.getByPlaceholder('选择一个或多个名单').click()
+  await page.locator('.fp-panel:visible').getByRole('row').filter({ has: page.getByRole('gridcell', { name: 'policyAudit', exact: true }) }).dblclick()
+  const testGroup = page.getByRole('checkbox', { name: '分流实验测试组允许写入' })
+  const onFailure = page.getByRole('checkbox', { name: '根规则执行失败时仍写入' })
+  await expect(testGroup).not.toBeChecked()
+  await expect(onFailure).not.toBeChecked()
+  await page.getByText('分流实验测试组允许写入', { exact: true }).click()
+  await page.getByText('根规则执行失败时仍写入', { exact: true }).click()
   await page.getByPlaceholder('选择内容、输入阈值或配置表达式', { exact: true }).click()
   const panel = page.locator('.fp-panel:visible')
   await panel.getByRole('button', { name: '输入阈值', exact: true }).click()
@@ -201,8 +214,12 @@ test('名单落库可以从界面添加固定阈值并保存原始手机号', as
   await expect.poll(() => saved?.modelJson).toContain('00123456789')
   const model = JSON.parse(saved.modelJson)
   const block = model.rules.flatMap(rule => rule.actionData || []).find(action => action.type === 'list-write')
+  expect(block.listIds.map(String)).toEqual(['84'])
+  expect(block).toMatchObject({ writeInTestGroup: true, writeOnFailure: true })
   expect(block.entries[0].valueOperand).toMatchObject({ kind: 'LITERAL', value: '00123456789', valueType: 'STRING' })
   await page.reload()
+  await expect(testGroup).toBeChecked()
+  await expect(onFailure).toBeChecked()
   await expect(page.getByPlaceholder('选择内容、输入阈值或配置表达式', { exact: true })).toHaveValue('00123456789')
   assertClean()
 })

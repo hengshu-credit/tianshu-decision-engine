@@ -30,6 +30,9 @@
         </div>
         <el-date-picker v-if="block.expiryMode === 'UNTIL'" v-model="block.expireTime" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" placeholder="选择失效时间" @change="editor.sync()" />
       </template>
+      <label>执行条件</label>
+      <el-checkbox :model-value="block.writeInTestGroup === true" @change="value => setPolicy('writeInTestGroup', value)">分流实验测试组允许写入</el-checkbox>
+      <el-checkbox :model-value="block.writeOnFailure !== false" @change="value => setPolicy('writeOnFailure', value)">根规则执行失败时仍写入</el-checkbox>
       <label>名单内容</label>
       <div v-for="(entry, index) in block.entries" :key="index" class="content-row">
         <el-select v-model="entry.itemType" :aria-label="`内容类型 ${index + 1}`" @change="editor.sync()"><el-option v-for="type in itemTypes" :key="type.value" :label="type.label" :value="type.value" /></el-select>
@@ -37,7 +40,7 @@
         <el-button link type="danger" :aria-label="`删除内容 ${index + 1}`" @click="removeEntry(index)">删除</el-button>
       </div>
       <el-button @click="addEntry">添加内容字段</el-button>
-      <p>合并保留更早生效时间和更晚失效时间，永久有效优先；空值不写入。任务持久化后异步落库，失败自动重试，不阻塞后续规则；后续查询不保证立即读到本次写入。</p>
+      <p>合并保留更早生效时间和更晚失效时间，永久有效优先；空值不写入。已配置执行条件的动作在根规则结束时提交，后台异步写库。后续查询可能暂时读不到本次变更。</p>
     </template>
   </div>
 </template>
@@ -57,6 +60,11 @@ export default {
     contentFields() { return this.editor.vars.filter(item => !['OBJECT', 'MAP', 'LIST', 'ARRAY', 'COLLECTION', 'SET'].includes(item.varType || item.valueType || item.type)) },
   },
   methods: {
+    setPolicy(key, value) {
+      this.block.writeOnFailure ??= true
+      this.block[key] = value
+      this.editor.sync()
+    },
     addEntry() { this.block.entries.push({ itemType: 'MOBILE', valueOperand: null }); this.editor.sync() },
     removeEntry(index) { this.block.entries.splice(index, 1); this.editor.sync() },
   },

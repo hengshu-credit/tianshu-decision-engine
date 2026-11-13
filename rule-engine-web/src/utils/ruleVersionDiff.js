@@ -367,9 +367,11 @@ function actionNode(action, index, path) {
   if (!sideEffect || target) fields.push(referenceField('targetOperand', '赋值目标', target))
   if (!sideEffect) fields.push(referenceField('valueOperand', '赋值内容', value))
   genericBusinessFields(item, ['targetOperand', 'valueOperand', 'operand', 'value', 'varCode', 'varLabel', 'varType', '_varId', '_refType', 'type', 'kind', 'actionDataType', 'actionType',
-    'branches', 'cases', 'defaultActions', 'args', 'inOperands', 'parts', ...(actionType === 'list-write' ? ['entries'] : [])]).forEach(itemField => fields.push(itemField))
+    'branches', 'cases', 'defaultActions', 'args', 'inOperands', 'parts', ...(actionType === 'list-write' ? ['entries', 'writeInTestGroup', 'writeOnFailure'] : [])]).forEach(itemField => fields.push(itemField))
   const children = []
   if (actionType === 'list-write') {
+    fields.push(field('writeInTestGroup', '分流实验测试组允许写入', item.writeInTestGroup === true, item.writeInTestGroup ? '是' : '否'),
+      field('writeOnFailure', '根规则执行失败时仍写入', item.writeOnFailure !== false, item.writeOnFailure === false ? '否' : '是'))
     children.push(semanticNode('list-entries', '名单内容', {
       children: (item.entries || []).map((entry, entryIndex) => semanticNode('list-entry', `内容 ${entryIndex + 1}`, {
         fields: [field('itemType', '内容类型', entry.itemType, LIST_ITEM_TYPES.find(type => type.value === entry.itemType)?.label || entry.itemType),

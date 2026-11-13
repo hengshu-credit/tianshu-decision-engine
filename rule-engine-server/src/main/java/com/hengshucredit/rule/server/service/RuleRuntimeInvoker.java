@@ -470,6 +470,9 @@ public class RuleRuntimeInvoker {
             childRule.put("projectId", projectId);
             childRule.put("projectCode", projectCode);
             childRule.put("traceId", childTrace.getTraceId());
+            childRule.put("version", published.getVersion());
+            childRule.put("revisionId", published.getRevisionId());
+            childRule.put("artifactDigest", published.getArtifactDigest());
             childRule.put("modelType", definition == null ? published.getModelType() : definition.getModelType());
             RuntimeContextBridge.setRuleContext(childRule, Collections.<String>emptyList());
 

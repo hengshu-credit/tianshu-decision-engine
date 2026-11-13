@@ -116,7 +116,7 @@ public class ExternalApiInvokeService {
         ExternalApiRequestPlan plan = ExternalApiRequestPlan.prepare(selectRequestBranch(config, params), params, Map.of(), paths, invocationDatasource(config.getDatasourceId()).getAuthConfig(), linkedRequestInputs(config));
         validateRequestPlan(plan);
         return pending == null || pending.isEmpty()
-                ? invoke(plan.config(), plan.params(), false)
+                ? invokePlan(plan, false, null, null)
                 : invokePending(plan, pending);
     }
 
@@ -254,7 +254,7 @@ public class ExternalApiInvokeService {
             ExternalApiRequestPlan plan = ExternalApiRequestPlan.prepare(
                     selectRequestBranch(apiConfig, params), params, Map.of(), paths, owner.getAuthConfig(), linkedRequestInputs(apiConfig));
             validateRequestPlan(plan);
-            return invoke(plan.config(), plan.params(), useResponseCache);
+            return invokePlan(plan, useResponseCache, null, null);
         }
         throw new IllegalArgumentException("外数 API 必须配置 executionConfig");
         }
@@ -272,7 +272,7 @@ public class ExternalApiInvokeService {
     }
 
     Map<String, Object> invokePlanned(ExternalApiRequestPlan plan) {
-        return invoke(plan.config(), plan.params(), true);
+        return invokePlan(plan, true, null, null);
     }
 
     /**
@@ -291,7 +291,7 @@ public class ExternalApiInvokeService {
         if (!workflowPending && (pending.get("taskId") == null || String.valueOf(pending.get("taskId")).isBlank())) {
             throw new IllegalArgumentException("异步外数恢复信息缺少任务号");
         }
-        return invoke(plan.config(), plan.params(), false, pending);
+        return invokePlan(plan, false, pending, null);
     }
 
     private void validateRequestPlan(ExternalApiRequestPlan plan) {
@@ -323,31 +323,22 @@ public class ExternalApiInvokeService {
         return source;
     }
 
-    private Map<String, Object> invoke(RuleExternalApiConfig apiConfig, Map<String, Object> params,
-                                       boolean useResponseCache) {
-        return invoke(apiConfig, params, useResponseCache, null);
-    }
-
-    private Map<String, Object> invoke(RuleExternalApiConfig apiConfig, Map<String, Object> params,
-                                       boolean useResponseCache, Map<String, Object> pendingAsync) {
-        return invoke(apiConfig, params, useResponseCache, pendingAsync, null);
-    }
-
     Map<String, Object> invokeCheckpointed(ExternalApiRequestPlan plan, Map<String, Object> pending,
                                            java.util.function.Consumer<Map<String, Object>> persist) {
-        return invoke(plan.config(), plan.params(), pending == null, pending, persist);
+        return invokePlan(plan, pending == null, pending, persist);
     }
 
-    private Map<String, Object> invoke(RuleExternalApiConfig apiConfig, Map<String, Object> params, boolean useResponseCache,
-                                       Map<String, Object> pending, java.util.function.Consumer<Map<String, Object>> persist) {
-        try (var versions = bindResourceVersions(apiConfig, params)) {
-            return invokeSelected(ExternalApiExecutionConfig.forInvocation(apiConfig), params, useResponseCache, pending, persist);
+    private Map<String, Object> invokePlan(ExternalApiRequestPlan plan, boolean useResponseCache,
+                                           Map<String, Object> pending, java.util.function.Consumer<Map<String, Object>> persist) {
+        try (var versions = bindResourceVersions(plan.config(), plan.params())) {
+            return invokeSelected(ExternalApiExecutionConfig.forInvocation(plan.config()), plan, useResponseCache, pending, persist);
         }
     }
 
-    private Map<String, Object> invokeSelected(RuleExternalApiConfig apiConfig, Map<String, Object> params,
+    private Map<String, Object> invokeSelected(RuleExternalApiConfig apiConfig, ExternalApiRequestPlan plan,
                                                boolean useResponseCache, Map<String, Object> pendingAsync,
                                                java.util.function.Consumer<Map<String, Object>> persist) {
+        Map<String, Object> params = plan.params();
         if (apiConfig == null) {
             throw new IllegalArgumentException("API接口配置不能为空");
         }
@@ -375,8 +366,9 @@ public class ExternalApiInvokeService {
         int responseCacheSeconds = useResponseCache && apiConfig.getResponseCacheSeconds() != null
                 ? Math.max(apiConfig.getResponseCacheSeconds(), 0) : 0;
         Map<String, Object> invokeParams = normalizeRequestParams(params);
-        String responseCacheKey = responseCacheSeconds > 0
+        String configuredKey = responseCacheSeconds > 0
                 ? buildResponseCacheKey(apiConfig.getId(), apiConfig.getCacheKeyConfig(), invokeParams) : null;
+        String responseCacheKey = configuredKey == null ? null : apiConfig.getId() + ":" + sha256(plan.identity() + ":" + configuredKey);
         ExternalApiResponseCache.Lookup cachedResponse = responseCacheKey == null
                 ? null : externalApiResponseCache.get(apiConfig, responseCacheKey);
         long start = System.currentTimeMillis();
@@ -441,50 +433,22 @@ public class ExternalApiInvokeService {
                     if (!fileInputs.files().isEmpty()) recordTraceStep(trace, "FILE_INPUT", "请求文件校验与编码", "SUCCESS", null, fileInputs.files(), apiConfig.getId());
                 }
                 Map<String, Object> result;
-                if (responseCacheSeconds > 0 && responseCacheKey != null) {
-                    ExternalApiResponseCache.LoadResult loaded = externalApiResponseCache.singleFlight(
-                            apiConfig, responseCacheKey,
-                            () -> {
-                                Map<String, Object> loadedResult = doInvoke(apiConfig, datasource, invokeParams, trace);
-                                // 把领导请求的报文摘要一并放入共享结果，等待者才能恢复完整排查信息。
-                                return attachExternalCall(loadedResult, trace);
-                            });
+                if (responseCacheKey == null) {
+                    result = invokeAndRecord(apiConfig, datasource, invokeParams, trace, start, responseCacheSeconds > 0);
+                } else {
+                    var loaded = externalApiResponseCache.singleFlight(apiConfig, responseCacheKey,
+                            () -> invokeAndRecord(apiConfig, datasource, invokeParams, trace, start, true));
                     result = loaded.getResponse();
                     if (loaded.isShared()) {
                         trace.cacheStatus = "COALESCED";
                         restoreTraceMetadata(result, trace);
+                        trace.billed = false;
+                        result.put("cacheStatus", trace.cacheStatus);
+                        result.put("costTimeMs", System.currentTimeMillis() - start);
+                        attachExternalCall(result, trace);
                     }
-                } else {
-                    result = doInvoke(apiConfig, datasource, invokeParams, trace);
                 }
-                // A received response must be receipted even if the HTTP caller has just exhausted its budget.
-                if (trace.progress == null) RequestDeadlineContext.check();
-                long cost = System.currentTimeMillis() - start;
-                result.put("costTimeMs", cost);
-                result.put("cached", false);
-                result.put("cacheConfigured", responseCacheSeconds > 0);
-                result.put("cacheStatus", trace.cacheStatus);
-                result.put("dataOrigin", "LIVE");
-                result.put("sourceOutcome", !result.containsKey("success") || booleanValue(result.get("success"))
-                        ? "SUCCESS" : "ERROR");
-                attachExternalCall(result, trace);
-                if (ExternalApiRequestPlan.specification(apiConfig) != null) {
-                    Object mappingInput = result.get("body");
-                    result = assembleResponse(apiConfig, result, invokeParams);
-                    result.put("responseMapped", true);
-                    recordTraceStep(trace, "RESPONSE_MAPPING", "组装响应结果", "SUCCESS", mappingInput,
-                            result.get("body"), apiConfig.getId());
-                }
-                if (!apiConfig.isBillingSuppressed() && billingService != null && shouldRecordSuccessBilling(apiConfig, result)) {
-                    try { trace.billed = recordInvocationBilling(apiConfig, datasource, true, cost, null); }
-                    catch (RuntimeException failure) { throw billingFailure(apiConfig, datasource, trace, result, failure, cost); }
-                }
-                if (responseCacheSeconds > 0 && responseCacheKey != null
-                        && (!result.containsKey("success") || booleanValue(result.get("success")))) {
-                    externalApiResponseCache.put(apiConfig, responseCacheKey, result);
-                }
-                attachExternalCall(result, trace);
-                logDatasourceCall(apiConfig, datasource, trace, true, result, null, cost);
+                logDatasourceCall(apiConfig, datasource, trace, true, result, null, System.currentTimeMillis() - start);
                 return result;
             } catch (Exception e) {
                 if (e instanceof BillingPersistenceException billingFailure) throw billingFailure;
@@ -1004,6 +968,41 @@ public class ExternalApiInvokeService {
             return new LinkedHashMap<>();
         }
         return JSON.parseObject(com.hengshucredit.rule.server.artifact.CanonicalJson.write(response), LinkedHashMap.class);
+    }
+
+    /** 完成组装、计费和缓存后才唤醒同一请求的等待方。 */
+    private Map<String, Object> invokeAndRecord(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,
+                                                Map<String, Object> invokeParams, InvokeTrace trace, long start,
+                                                boolean cacheConfigured) throws Exception {
+        Map<String, Object> result = doInvoke(apiConfig, datasource, invokeParams, trace);
+        // A received response must be receipted even if the HTTP caller has just exhausted its budget.
+        if (trace.progress == null) RequestDeadlineContext.check();
+        long cost = System.currentTimeMillis() - start;
+        result.put("costTimeMs", cost);
+        result.put("cached", false);
+        result.put("cacheConfigured", cacheConfigured);
+        result.put("cacheStatus", trace.cacheStatus);
+        result.put("dataOrigin", "LIVE");
+        result.put("sourceOutcome", !result.containsKey("success") || booleanValue(result.get("success"))
+                ? "SUCCESS" : "ERROR");
+        attachExternalCall(result, trace);
+        if (ExternalApiRequestPlan.specification(apiConfig) != null) {
+            Object mappingInput = result.get("body");
+            result = assembleResponse(apiConfig, result, invokeParams);
+            result.put("responseMapped", true);
+            recordTraceStep(trace, "RESPONSE_MAPPING", "组装响应结果", "SUCCESS", mappingInput,
+                    result.get("body"), apiConfig.getId());
+        }
+        if (!apiConfig.isBillingSuppressed() && billingService != null && shouldRecordSuccessBilling(apiConfig, result)) {
+            try { trace.billed = recordInvocationBilling(apiConfig, datasource, true, cost, null); }
+            catch (RuntimeException failure) { throw billingFailure(apiConfig, datasource, trace, result, failure, cost); }
+        }
+        if (cacheConfigured && trace.cacheKey != null
+                && (!result.containsKey("success") || booleanValue(result.get("success")))) {
+            externalApiResponseCache.put(apiConfig, trace.cacheKey, result);
+        }
+        attachExternalCall(result, trace);
+        return result;
     }
 
     private Map<String, Object> doInvoke(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,

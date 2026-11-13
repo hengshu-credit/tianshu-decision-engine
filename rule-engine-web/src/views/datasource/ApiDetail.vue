@@ -793,7 +793,7 @@
                 <div>
                   <div class="section-title">缓存键</div>
                   <div class="field-help">
-                    配置字段时按顺序组合并生成脱敏摘要；未配置时默认对全部请求参数生成摘要。
+                    缓存按接口配置版本和实际请求内容隔离。配置的字段用于进一步区分请求，留空时取全部请求参数。
                     已配置字段任一缺失时绕过响应缓存，并记录 CACHE_KEY_INCOMPLETE。
                   </div>
                 </div>

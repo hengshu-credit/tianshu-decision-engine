@@ -21,8 +21,6 @@ import java.util.Objects;
 /** 专用单连接写池，不借用规则查询池；接收回执、名单与审计在同一事务中提交。 */
 @Service
 public class RuleListActionWriter implements AutoCloseable {
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.hengshucredit.rule.server.security.ConsoleRecordOwnership recordOwnership;
     private final HikariDataSource writePool;
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transaction;
@@ -52,14 +50,23 @@ public class RuleListActionWriter implements AutoCloseable {
               LocalDateTime actionTime, JSONObject rule) {
         LocalDateTime expires = validateRequest(config, values, actionTime);
         List<Long> ids = config.getJSONArray("listIds").stream().map(id -> ListWriteConfig.positiveLong(id, "名单 ID")).distinct().sorted().toList();
-        String rootTraceId = rule == null ? null : rule.getString("traceId");
+        String rootTraceId = rule == null ? null : rule.getString(rule.containsKey("rootTraceId") ? "rootTraceId" : "traceId");
         String ruleCode = rule == null ? null : rule.getString("code");
         String ruleVersion = rule == null || rule.get("version") == null ? null : String.valueOf(rule.get("version"));
         String revisionId = rule == null ? null : rule.getString("revisionId");
         String artifactDigest = rule == null ? null : rule.getString("artifactDigest");
+        // 附加来源保存稳定 ID 的字符串快照，避免前端大整数舍入，也兼容无来源的旧任务。
+        JSONObject source = new JSONObject(true);
+        if (rule != null) {
+            for (String key : List.of("id", "traceId", "experimentId", "groupId", "groupType", "experimentTraceId", "outcome")) {
+                if (rule.get(key) != null) source.put(key, rule.getString(key));
+            }
+        }
+        String sourceJson = source.isEmpty() ? null : source.toJSONString();
+        Long actorUserId = rule == null ? null : rule.getLong("actorUserId");
         Integer count = transaction.execute(status -> {
-            int accepted = jdbc.update("INSERT IGNORE INTO rule_list_action_receipt (task_id, project_id, root_trace_id, rule_code, rule_version, revision_id, artifact_digest) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    taskId, projectId, rootTraceId, ruleCode, ruleVersion, revisionId, artifactDigest);
+            int accepted = jdbc.update("INSERT IGNORE INTO rule_list_action_receipt (task_id, project_id, root_trace_id, rule_code, rule_version, revision_id, artifact_digest, action_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    taskId, projectId, rootTraceId, ruleCode, ruleVersion, revisionId, artifactDigest, sourceJson);
             if (accepted == 0) return 0;
             for (Long id : ids) {
                 var libraries = jdbc.queryForList("SELECT scope, project_id, status FROM rule_list_library WHERE id = ? FOR UPDATE", id);
@@ -73,7 +80,7 @@ public class RuleListActionWriter implements AutoCloseable {
                 Object value = values.get(i);
                 if (MissingValueSemantics.isMissing(value)) continue;
                 changed += writeRecord(id, config.getJSONArray("itemTypes").getString(i), String.valueOf(value), config.getString("operation"), actionTime, expires,
-                        taskId, rootTraceId, ruleCode, ruleVersion, revisionId, artifactDigest);
+                        taskId, rootTraceId, ruleCode, ruleVersion, revisionId, artifactDigest, sourceJson, actorUserId);
             }
             jdbc.update("UPDATE rule_list_action_receipt SET changed_count = ? WHERE task_id = ?", changed, taskId);
             return changed;
@@ -98,7 +105,7 @@ public class RuleListActionWriter implements AutoCloseable {
     private int writeRecord(Long listId, String type, String content, String operation,
                             LocalDateTime now, LocalDateTime expires, String taskId,
                             String rootTraceId, String ruleCode, String ruleVersion,
-                            String revisionId, String artifactDigest) {
+                            String revisionId, String artifactDigest, String sourceJson, Long actorUserId) {
         var rows = jdbc.queryForList("SELECT id, status, effective_time, expire_time FROM rule_list_record WHERE list_id = ? AND item_type = ? AND item_content = ? FOR UPDATE", listId, type, content);
         Map<String, Object> previous = rows.isEmpty() ? null : rows.get(0);
         boolean enabled = previous != null && ((Number) previous.get("status")).intValue() == 1;
@@ -116,9 +123,9 @@ public class RuleListActionWriter implements AutoCloseable {
         if (previous == null) jdbc.update("INSERT INTO rule_list_record (list_id,item_type,item_content,effective_time,expire_time,reason,last_operation,status) VALUES (?,?,?,?,?,?,?,1)", listId, type, content, start, end, reason, change);
         else if ("REMOVE".equals(operation)) jdbc.update("UPDATE rule_list_record SET status=0,last_operation='DELETE',reason=? WHERE id=?", reason, previous.get("id"));
         else jdbc.update("UPDATE rule_list_record SET effective_time=?,expire_time=?,reason=?,last_operation=?,status=1 WHERE id=?", start, end, reason, change, previous.get("id"));
-        jdbc.update("INSERT INTO rule_list_record_log (list_id,record_id,item_type,item_content,effective_time,expire_time,reason,operation,operator,task_id,root_trace_id,rule_code,rule_version,revision_id,artifact_digest,actor_user_id) SELECT list_id,id,item_type,item_content,effective_time,expire_time,reason,last_operation,?,?,?,?,?,?,?,? FROM rule_list_record WHERE list_id=? AND item_type=? AND item_content=?",
+        jdbc.update("INSERT INTO rule_list_record_log (list_id,record_id,item_type,item_content,effective_time,expire_time,reason,operation,operator,task_id,root_trace_id,rule_code,rule_version,revision_id,artifact_digest,action_source,actor_user_id) SELECT list_id,id,item_type,item_content,effective_time,expire_time,reason,last_operation,?,?,?,?,?,?,?,?,? FROM rule_list_record WHERE list_id=? AND item_type=? AND item_content=?",
                 "规则任务:" + taskId, taskId, rootTraceId, ruleCode, ruleVersion, revisionId, artifactDigest,
-                recordOwnership == null ? null : recordOwnership.currentUserId(), listId, type, content);
+                sourceJson, actorUserId, listId, type, content);
         return 1;
     }
 

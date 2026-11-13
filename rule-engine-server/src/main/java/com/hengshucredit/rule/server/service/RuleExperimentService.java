@@ -79,6 +79,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             }, new ThreadPoolExecutor.AbortPolicy());
     @Resource private RuleIdempotencyService idempotencyService;
     @Resource private RuleExperimentExecutionStateService experimentStates;
+    @Resource private com.hengshucredit.rule.server.security.ConsoleProjectAccess consoleProjects;
     @Resource private RuleCompileService compileService;
     @Resource private FunctionRegistrar functionRegistrar;
     @Resource private RuleVersionBindingService versionBindings;
@@ -462,10 +463,11 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 RouteChoice queuedChoice = testChoice;
                 RuleExperimentGroup queuedGroup = testGroup;
                 queuedChoices.add(queuedChoice);
-                queuedResults.add(testExecutor.submit(() -> runTestGroup(executionExperiment, queuedGroup,
+                java.util.concurrent.Callable<RuleExperimentGroupResult> task = () -> runTestGroup(executionExperiment, queuedGroup,
                         copyParams(executionParams), requestKey, requestTime, clientAppName,
                         queuedChoice.reason, invokeExternal, experimentTraceId, configDigest,
-                        queuedChoice.routeTrace, durableTest)));
+                        queuedChoice.routeTrace, durableTest);
+                queuedResults.add(testExecutor.submit(consoleProjects == null ? task : consoleProjects.wrap(task)));
             } catch (RejectedExecutionException rejected) {
                 queuedChoices.remove(queuedChoices.size() - 1);
                 result.getTestGroups().add(skippedTestResult(testGroup, "实验测试队列已满，未执行空跑"));
@@ -829,6 +831,8 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         boolean runtimeProduction = durableExecution && !"TEST".equals(stage);
         if (runtimeProduction && experimentStates != null) experimentStates.pinStrategy(group.getId(), published);
         VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setExperimentGroup(new VariableResolveOptions.ExperimentGroup(
+                experiment.getId(), group.getId(), group.getGroupType(), experimentTraceId));
         options.setSkipApiSources(!invokeExternalSource);
         if (GROUP_TEST.equals(group.getGroupType())) {
             options.setDryRun(true);

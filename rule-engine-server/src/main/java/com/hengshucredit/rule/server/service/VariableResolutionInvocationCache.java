@@ -97,6 +97,9 @@ public class VariableResolutionInvocationCache {
         SourceStep own = completedStep(key);
         return own != null || inheritedCalls == null ? own : inheritedCalls.completedStep(key);
     }
+    private final PendingListActions listActions = new PendingListActions();
+    PendingListActions listActions() { return listActions; }
+
     private final Map<String, Integer> actionVisits = new ConcurrentHashMap<>();
     void setOrderTrace(String trace) { rootOrderTrace = trace; }
     String listTaskId(Long project, Map<String,Object> rule, Object config, Object values) {

@@ -270,6 +270,7 @@ public class RuleExecuteService {
         } finally {
             result.setExecuteTimeMs(System.currentTimeMillis() - executionStart);
             collectDeclaredOutputsIfNeeded(result, modelType);
+            if (ruleActions != null) ruleActions.finishListWrites(resolveOptions, result);
             runtimeRuleInvoker.completeRoot(result);
             runtimeRuleInvoker.exit();
         }
@@ -488,6 +489,7 @@ public class RuleExecuteService {
             runtimeRuleInvoker.currentSession().useInvocationCache(effectiveOptions.getInvocationCache());
         }
         bindInvocationCache(effectiveOptions);
+        effectiveOptions.getInvocationCache().listActions().experiment = effectiveOptions.getExperimentGroup();
         runtimeRuleInvoker.setSourceExecutionPolicy(effectiveOptions);
         if (idempotencyService != null && idempotencyService.current() != null) {
             var checkpointDecision = idempotencyService.current();
@@ -543,6 +545,7 @@ public class RuleExecuteService {
         } finally {
             result.setExecuteTimeMs(System.currentTimeMillis() - executionStart);
             collectDeclaredOutputsIfNeeded(result, runtimeModelType);
+            if (ruleActions != null) ruleActions.finishListWrites(effectiveOptions, result);
             runtimeRuleInvoker.completeRoot(result);
             try {
                 if (idempotencyService != null && idempotencyService.current() != null) {

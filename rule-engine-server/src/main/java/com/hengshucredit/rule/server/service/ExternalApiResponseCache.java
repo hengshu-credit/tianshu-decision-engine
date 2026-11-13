@@ -118,6 +118,14 @@ public class ExternalApiResponseCache {
             return new LoadResult(copy(await(existing)), true);
         }
         try {
+            // 首次查缓存后若被挂起，前一个请求可能已在此期间发布结果并释放 inFlight。
+            CachedResponse ready = apiCache.cache.getIfPresent(cacheKey);
+            if (ready != null && currentTimeMillis.getAsLong() <= ready.expiresAtMillis) {
+                coalesced.incrementAndGet();
+                Map<String, Object> response = copy(ready.response);
+                created.complete(copy(response));
+                return new LoadResult(response, true);
+            }
             Map<String, Object> loaded = loader.call();
             created.complete(copy(loaded));
             return new LoadResult(loaded, false);

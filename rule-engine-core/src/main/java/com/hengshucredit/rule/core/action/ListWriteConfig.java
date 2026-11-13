@@ -12,7 +12,7 @@ public final class ListWriteConfig {
 
     public static JSONObject fromAction(JSONObject action) {
         JSONObject config = new JSONObject(true);
-        for (String key : new String[]{"listIds", "operation", "expiryMode", "duration", "durationUnit", "expireTime"}) {
+        for (String key : new String[]{"listIds", "operation", "expiryMode", "duration", "durationUnit", "expireTime", "writeInTestGroup", "writeOnFailure"}) {
             if (action.containsKey(key)) config.put(key, action.get(key));
         }
         JSONArray entries = action.getJSONArray("entries");
@@ -24,6 +24,11 @@ public final class ListWriteConfig {
     }
 
     public static void validate(JSONObject config) {
+        for (String key : new String[]{"writeInTestGroup", "writeOnFailure"}) {
+            if (config.containsKey(key) && !(config.get(key) instanceof Boolean)) {
+                throw new IllegalArgumentException("名单执行条件必须是布尔值");
+            }
+        }
         JSONArray ids = config.getJSONArray("listIds");
         if (ids == null || ids.isEmpty()) throw new IllegalArgumentException("名单落库请至少选择一个名单");
         for (Object id : ids) positiveLong(id, "名单 ID");

@@ -28,6 +28,7 @@ public class RuleListRecordLog implements AccountOwnedRecord {
     private String operation;
     private String operator;
     private String taskId;
+    private String actionSource;
     private String rootTraceId;
     private String ruleCode;
     private String ruleVersion;

@@ -28,6 +28,8 @@ public class VariableResolveOptions {
     private boolean skipApiSources;
     /** 影子/空跑执行只允许计算，不提交名单等规则副作用。 */
     private boolean dryRun;
+    public record ExperimentGroup(Long experimentId, Long groupId, String groupType, String traceId) {}
+    private ExperimentGroup experimentGroup;
     /** 仅使用已装载的历史来源结果；缺失来源写入 null，禁止访问线上数据源。 */
     private boolean offlineReplay;
     private boolean forceRefreshSource;

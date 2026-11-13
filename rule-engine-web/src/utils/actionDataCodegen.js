@@ -39,7 +39,7 @@ function generateBlock(block, indent) {
     case 'list-write': {
       if (!block.listIds?.length || !block.entries?.length || block.entries.some(entry => !entry.valueOperand)) return ''
       const config = {}
-      for (const key of ['listIds', 'operation', 'expiryMode', 'duration', 'durationUnit', 'expireTime']) {
+      for (const key of ['listIds', 'operation', 'expiryMode', 'duration', 'durationUnit', 'expireTime', 'writeInTestGroup', 'writeOnFailure']) {
         if (block[key] !== undefined) config[key] = block[key]
       }
       config.listIds.forEach(quoteId)
@@ -343,7 +343,7 @@ export function newBlock(type) {
     case 'api-call':
       return { type: 'api-call', apiId: null, targetOperand: null }
     case 'list-write':
-      return { type: 'list-write', listIds: [], operation: 'MERGE', expiryMode: 'DURATION', duration: 30, durationUnit: 'DAYS', entries: [{ itemType: 'MOBILE', valueOperand: null }] }
+      return { type: 'list-write', listIds: [], writeInTestGroup: false, writeOnFailure: false, operation: 'MERGE', expiryMode: 'DURATION', duration: 30, durationUnit: 'DAYS', entries: [{ itemType: 'MOBILE', valueOperand: null }] }
     case 'assign':
       return newAssignment()
     case 'if-block':

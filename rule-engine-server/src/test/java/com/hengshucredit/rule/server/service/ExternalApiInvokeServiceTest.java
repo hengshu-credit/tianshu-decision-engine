@@ -344,6 +344,66 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
+    public void coalescedCallBillsOnlyTheSenderAndUsesEffectiveRequestAndVersion() throws Exception {
+        var arrived = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var calls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/echo", exchange -> {
+            calls.incrementAndGet();
+            arrived.countDown();
+            try { release.await(8, java.util.concurrent.TimeUnit.SECONDS); }
+            catch (InterruptedException error) { Thread.currentThread().interrupt(); }
+            byte[] body = exchange.getRequestBody().readAllBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var api = basicApiConfig(99L, 1L, "/echo");
+            api.setRequestMethod("POST");
+            api.setTimeoutMs(10000);
+            api.setResponseCacheSeconds(60);
+            api.setCacheKeyConfig("{\"components\":[{\"path\":\"tenant\"}]}");
+            api.setExecutionConfig("""
+                {"version":2,"requestFields":[{"id":"person","location":"JSON","path":"person",
+                "value":{"kind":"REFERENCE","refType":"VARIABLE","refId":1}}]}
+                """);
+            var service = configuredService(api, httpDatasource(server));
+            var bills = new RecordingBillingService();
+            ReflectionTestUtils.setField(service, "billingService", bills);
+            var cache = (ExternalApiResponseCache) ReflectionTestUtils.getField(service, "externalApiResponseCache");
+            Map<String, Object> first = Map.of("tenant", "demo", "mobile_no", "A");
+            var sender = pool.submit(() -> service.invoke(api.getId(), first));
+            assertTrue(arrived.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            var waiter = pool.submit(() -> service.invoke(api.getId(), first));
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+            while (((Number) cache.snapshot().get("coalesced")).longValue() == 0 && System.nanoTime() < deadline) Thread.sleep(5);
+            release.countDown();
+            assertEquals("A", ExternalApiRequestPlan.read(sender.get(), "body.person"));
+            var shared = waiter.get();
+            assertEquals("COALESCED", shared.get("cacheStatus"));
+            assertEquals(false, ExternalApiRequestPlan.read(shared, "status.billed"));
+            assertEquals(1, calls.get());
+            assertEquals(1, bills.recordCount.get());
+
+            var other = service.invoke(api.getId(), Map.of("tenant", "demo", "mobile_no", "B"));
+            assertEquals("B", ExternalApiRequestPlan.read(other, "body.person"));
+            branches(api, List.of(responseBranch("updated", Map.of(), "updatedPerson", path("response.body.person"))));
+            var updated = service.invoke(api.getId(), first);
+            assertEquals("A", ExternalApiRequestPlan.read(updated, "body.updatedPerson"));
+            assertEquals(3, calls.get());
+            assertEquals(3, bills.recordCount.get());
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+            server.stop(0);
+        }
+    }
+
+    @Test
     public void responseCacheRetainsUnifiedResponseAssembly() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);

@@ -83,14 +83,49 @@ public class AsyncListActionService implements AutoCloseable {
         return submit(projectId, config, values, now, UUID.randomUUID().toString());
     }
 
-    Object submit(Long projectId, JSONObject config, Object values, LocalDateTime now, String taskId) {
-        List<?> copiedValues = JSON.parseArray(JSON.toJSONString(values));
-        // 不可恢复的内容错误在持久化交接前反馈，避免坏数据堵住有序恢复队列。
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.hengshucredit.rule.server.security.ConsoleRecordOwnership recordOwnership;
+
+    JSONObject prepare(Long projectId, JSONObject config, Object values, LocalDateTime now, String taskId,
+                       VariableResolveOptions.ExperimentGroup experiment) {
+        var copiedValues = JSON.parseArray(JSON.toJSONString(values));
         RuleListActionWriter.validateRequest(config, copiedValues, now);
-        JSONObject payload = new JSONObject(true);
-        payload.put("config", config); payload.put("values", copiedValues); payload.put("actionTime", now.toString());
-        payload.put("rule", RuntimeContextBridge.currentRule());
-        var entry = new DurableExecutionPersistenceJournal.Entry(taskId, payload.toJSONString(), null, true,
+        JSONObject rule = new JSONObject(new java.util.LinkedHashMap<>(RuntimeContextBridge.currentRule()));
+        Object rootTraceId = RuntimeContextBridge.currentContext().rootRule().get("traceId");
+        if (rootTraceId != null) rule.put("rootTraceId", rootTraceId);
+        Long actor = recordOwnership == null ? null : recordOwnership.currentUserId();
+        if (actor != null) rule.put("actorUserId", actor);
+        if (experiment != null) {
+            rule.put("experimentId", experiment.experimentId());
+            rule.put("groupId", experiment.groupId());
+            rule.put("groupType", experiment.groupType());
+            rule.put("experimentTraceId", experiment.traceId());
+        }
+        JSONObject task = new JSONObject(true);
+        task.put("taskId", taskId == null ? UUID.randomUUID().toString() : taskId);
+        task.put("projectId", projectId);
+        task.put("config", config);
+        task.put("values", copiedValues);
+        task.put("actionTime", now.toString());
+        task.put("rule", rule);
+        return task;
+    }
+
+    Object submit(Long projectId, JSONObject config, Object values, LocalDateTime now, String taskId) {
+        return submitTask(prepare(projectId, config, values, now, taskId, null));
+    }
+
+    Map<String, Object> submitTask(JSONObject task) {
+        return append(task.getString("taskId"), task.getLong("projectId"), task);
+    }
+
+    Map<String, Object> submitBatch(List<JSONObject> tasks) {
+        // 一次 fsync 交接整批。恢复时按原顺序重放，已提交的每个子任务由数据库回执去重。
+        return append(tasks.get(0).getString("taskId"), tasks.get(0).getLong("projectId"), Map.of("tasks", tasks));
+    }
+
+    private Map<String, Object> append(String taskId, Long projectId, Object payload) {
+        var entry = new DurableExecutionPersistenceJournal.Entry(taskId, JSON.toJSONString(payload), null, true,
                 null, null, projectId, null, null, null, null, null, null, null, true, false);
         if (closed || journals.isEmpty() || !journals.get(0).append(entry)) {
             log.error("名单动作持久化交接失败 taskId={} projectId={}", taskId, projectId);
@@ -107,16 +142,11 @@ public class AsyncListActionService implements AutoCloseable {
                 for (var entry : journal.read(100)) {
                     if (closed) break;
                     var payload = JSON.parseObject(entry.logJson());
-                    JSONObject rule = payload.getJSONObject("rule");
-                    boolean hasRuleIdentity = rule != null && (rule.get("traceId") != null
-                            || rule.get("code") != null || rule.get("revisionId") != null
-                            || rule.get("artifactDigest") != null);
-                    if (!hasRuleIdentity) {
-                        writer.write(entry.eventId(), entry.projectId(), payload.getJSONObject("config"),
-                                payload.getJSONArray("values"), LocalDateTime.parse(payload.getString("actionTime")));
-                    } else {
-                        writer.write(entry.eventId(), entry.projectId(), payload.getJSONObject("config"),
-                                payload.getJSONArray("values"), LocalDateTime.parse(payload.getString("actionTime")), rule);
+                    var tasks = payload.getJSONArray("tasks");
+                    if (tasks == null) writeTask(entry.eventId(), entry.projectId(), payload);
+                    else for (int i = 0; i < tasks.size(); i++) {
+                        JSONObject task = tasks.getJSONObject(i);
+                        writeTask(task.getString("taskId"), task.getLong("projectId"), task);
                     }
                     journal.replacePrefix(1, List.of());
                     failures = 0;
@@ -129,6 +159,15 @@ public class AsyncListActionService implements AutoCloseable {
             retryAt = System.currentTimeMillis() + Math.min(60000, 1000L << failures);
             log.error("名单动作暂未落库，任务保留并将在恢复后重试", error);
         }
+    }
+
+    private void writeTask(String taskId, Long projectId, JSONObject task) {
+        JSONObject rule = task.getJSONObject("rule");
+        var config = task.getJSONObject("config");
+        var values = task.getJSONArray("values");
+        var time = LocalDateTime.parse(task.getString("actionTime"));
+        if (rule == null || rule.isEmpty()) writer.write(taskId, projectId, config, values, time);
+        else writer.write(taskId, projectId, config, values, time, rule);
     }
 
     public Map<String, Object> snapshot() {
