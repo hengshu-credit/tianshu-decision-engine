@@ -3,13 +3,13 @@
     class="uiue-list-page lineage-page"
     :class="{ 'is-embedded': embedded }"
   >
-    <div v-if="!embedded" class="module-hint">
+    <dismissible-guidance guide-id="lineage.intro" label="血缘分析提示" v-if="!embedded" class="module-hint">
       <div class="hint-title">血缘分析</div>
       <div class="hint-text">
         从变量、规则、项目、API、数据库、名单或模型出发，查看上游依赖与下游引用关系。
       </div>
-    </div>
-    <div v-if="!embedded" class="usage-guide">
+    </dismissible-guidance>
+    <dismissible-guidance guide-id="lineage.steps" label="血缘分析引导" v-if="!embedded" class="usage-guide">
       <div
         v-for="item in lineageGuideCards"
         :key="item.title"
@@ -18,7 +18,7 @@
         <div class="guide-title">{{ item.title }}</div>
         <div class="guide-text">{{ item.text }}</div>
       </div>
-    </div>
+    </dismissible-guidance>
 
     <div v-if="!embedded" class="query-panel">
       <el-form :inline="true" size="small">
@@ -192,6 +192,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ContentReference from '@/components/common/ContentReference.vue'
 import AsyncState from '@/components/common/AsyncState.vue'
 import { markRaw } from 'vue'
@@ -313,7 +314,7 @@ export default {
     }
   },
   name: 'LineageGraph',
-  components: { ContentReference, AsyncState, GraphDesignerNavigator, CanvasBackgroundSettings },
+  components: { DismissibleGuidance, ContentReference, AsyncState, GraphDesignerNavigator, CanvasBackgroundSettings },
   watch: {
     initialGraph: {
       deep: true,

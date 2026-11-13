@@ -10,7 +10,7 @@
       </el-form>
       <div class="uiue-btn-bar"><div class="btn-right"><table-column-settings v-model="columns" :columns="columnOptions" storage-key="tianshu:table-columns:ledger-assets" /><el-button size="small" @click="load">刷新</el-button><el-button v-if="canWrite && !picker" size="small" :disabled="!selection.length" type="danger" @click="remove(selection)">删除所选</el-button><el-button v-if="canWrite" size="small" type="primary" :loading="uploading" @click="$refs.upload.click()">上传素材</el-button></div></div>
     </div>
-    <p class="ledger-help">图片先私有暂存，安全检测通过后可预览和引用。支持 5 MB 以内 PNG、JPEG、WebP；已引用素材不能删除；私有素材可由上传者明确共享范围，已共享素材被引用后不能改范围。</p>
+    <dismissible-guidance tag="p" guide-id="ledger.assets" label="台账素材说明" class="ledger-help">图片先私有暂存，安全检测通过后可预览和引用。支持 5 MB 以内 PNG、JPEG、WebP；已引用素材不能删除；私有素材可由上传者明确共享范围，已共享素材被引用后不能改范围。</dismissible-guidance>
     <input ref="upload" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden @change="upload">
     <el-table :data="records" row-key="id" class="management-table" size="small" border :aria-busy="loading" @selection-change="selection = $event">
       <el-table-column v-if="!picker" type="selection" width="42" :selectable="row => row.canManage && !row.referenced" />
@@ -30,6 +30,7 @@
   </section>
 </template>
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import { listLedgerAssets, uploadLedgerAsset, updateLedgerAsset, scanLedgerAsset, deleteLedgerAssets, getLedgerAssetReferences, downloadLedgerAsset } from '@/api/ledger'
@@ -37,7 +38,7 @@ import { hasPermission, getCurrentUser } from '@/security/permissionState'
 import { LEDGER_ASSET_STATUSES, ledgerSize, ledgerTime } from '@/utils/ledger'
 import { operationColumnWidth } from '@/utils/operationColumnWidth'
 export default {
-  name: 'LedgerAssets', components: { ProjectResourceSelect, TableColumnSettings },
+  name: 'LedgerAssets', components: { DismissibleGuidance, ProjectResourceSelect, TableColumnSettings },
   props: { projectId: { type: [String, Number], default: null }, picker: Boolean }, emits: ['select', 'uploaded'],
   data() { return { filters: { scope: this.projectId ? 'PROJECT' : '', projectId: this.projectId, status: '', keyword: '' }, records: [], selection: [], loading: false, generation: 0, page: 1, size: 20, total: 0, uploading: false, scanning: null, saving: false, editVisible: false, form: {}, referencesVisible: false, referenceRows: [], statuses: LEDGER_ASSET_STATUSES, columns: ['name', 'scope', 'status', 'owner', 'time'], columnOptions: [{ key: 'name', label: '素材' }, { key: 'scope', label: '归属' }, { key: 'status', label: '安全状态' }, { key: 'owner', label: '上传者' }, { key: 'time', label: '更新时间' }] } },
   computed: { canWrite() { return hasPermission('ledger:edit') }, userId() { return getCurrentUser()?.userId }, globalEditable() { return hasPermission('ledger:edit', { scope: 'GLOBAL' }) } },

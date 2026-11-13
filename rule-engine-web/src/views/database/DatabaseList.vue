@@ -1,12 +1,12 @@
 <template>
   <div class="uiue-list-page database-page management-list-page">
-    <div class="module-hint">
+    <dismissible-guidance guide-id="database.intro" label="数据库管理提示" class="module-hint">
       <div class="hint-title">数据库管理</div>
       <div class="hint-text">
         统一维护可复用的数据库连接，在变量管理中选择“数据库查询”来获取业务数据。
       </div>
-    </div>
-    <div class="usage-guide">
+    </dismissible-guidance>
+    <dismissible-guidance guide-id="database.steps" label="数据库引导" class="usage-guide">
       <div
         v-for="item in databaseGuideCards"
         :key="item.title"
@@ -15,7 +15,7 @@
         <div class="guide-title">{{ item.title }}</div>
         <div class="guide-text">{{ item.text }}</div>
       </div>
-    </div>
+    </dismissible-guidance>
 
     <el-tabs class="management-table-region" v-model="activeTab">
       <el-tab-pane class="management-table-region" label="数据源配置" name="datasource">
@@ -448,6 +448,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
@@ -575,7 +576,7 @@ export default {
     }
   },
   name: 'DatabaseList',
-  components: { GovernancePublishAction, GovernanceWorkspaceToolbar,
+  components: { DismissibleGuidance, GovernancePublishAction, GovernanceWorkspaceToolbar,
     GovernanceResourceStatus,
     TableColumnSettings,
     ModuleCallLog,

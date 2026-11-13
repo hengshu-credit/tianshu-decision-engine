@@ -1,18 +1,18 @@
 <template>
   <div class="uiue-list-page list-library-page management-list-page">
-    <div class="module-hint">
+    <dismissible-guidance guide-id="list.intro" label="名单管理提示" class="module-hint">
       <div class="hint-title">名单管理</div>
       <div class="hint-text">
         管理黑名单、灰名单、白名单及其他名单库，名单类型仅用于标识和筛选，规则执行通过名单查询变量命中有效期内记录。
       </div>
-    </div>
+    </dismissible-guidance>
 
-    <div class="approval-guide" role="note">
+    <dismissible-guidance guide-id="list.approval" label="名单审批流程" class="approval-guide" role="note">
       <div class="approval-guide-title">变更先审批，再生效</div>
       <div class="approval-guide-text">
         保存后为草稿，发布时提交审批。新增草稿无下游引用可直接删除；待审批的新增内容须先驳回。
       </div>
-    </div>
+    </dismissible-guidance>
 
     <el-tabs class="management-table-region" v-model="activeTab">
       <el-tab-pane class="management-table-region" label="名单管理" name="list">
@@ -322,6 +322,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
@@ -394,7 +395,7 @@ export default {
     }
   },
   name: 'ListLibrary',
-  components: { GovernancePublishAction, GovernanceWorkspaceToolbar,  GovernanceResourceStatus, ModuleCallLog, RemoteFilterSelect, ProjectFilterSelect, ProjectResourceSelect, TableColumnSettings },
+  components: { DismissibleGuidance, GovernancePublishAction, GovernanceWorkspaceToolbar,  GovernanceResourceStatus, ModuleCallLog, RemoteFilterSelect, ProjectFilterSelect, ProjectResourceSelect, TableColumnSettings },
   created() {
     this.loadData()
   },

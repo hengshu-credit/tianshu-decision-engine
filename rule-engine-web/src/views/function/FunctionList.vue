@@ -1,9 +1,9 @@
 <template>
   <div class="uiue-list-page management-list-page">
-    <div class="linkage-hint">
+    <dismissible-guidance guide-id="function.intro" label="函数管理提示" class="linkage-hint">
       <el-icon><el-icon-info /></el-icon>
       自定义函数可在规则设计器的函数选择器中使用，无需手写调用表达式。支持脚本、Java 类或 Spring Bean 实现。
-    </div>
+    </dismissible-guidance>
 
     <div v-if="currentProjectId" class="function-context-hint">
       当前项目：<strong>{{ currentProjectName || currentProjectId }}</strong>。列表包含全局函数和当前项目函数，新建默认保存为项目级函数。
@@ -554,6 +554,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { historicalVersionMethods } from '@/mixins/historicalVersionMixin'
 import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
 import { hasPermission } from '@/security/permissionState'
@@ -687,7 +688,7 @@ export default {
       ElIconDelete: markRaw(ElIconDelete),
     }
   },
-  components: { VersionSnapshotPanel, FunctionImpactPanel, ProjectResourceSelect, ResourceVersionManager, GovernancePublishAction, GovernanceWorkspaceToolbar,
+  components: { DismissibleGuidance, VersionSnapshotPanel, FunctionImpactPanel, ProjectResourceSelect, ResourceVersionManager, GovernancePublishAction, GovernanceWorkspaceToolbar,
     GovernanceResourceStatus,
     TableColumnSettings,
     MonacoEditor,

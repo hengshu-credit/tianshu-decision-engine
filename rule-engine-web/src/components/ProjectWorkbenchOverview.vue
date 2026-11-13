@@ -2,7 +2,7 @@
   <section class="workbench-overview" aria-label="项目工作台">
     <div class="overview-heading">
       <div>
-        <p>集中查看配置进度、待处理事项和最近运行情况。</p>
+        <dismissible-guidance tag="p" guide-id="project.workbench" label="项目工作台说明">集中查看配置进度、待处理事项和最近运行情况。</dismissible-guidance>
         <p v-if="workbench && workbench.observedAt">检查时间：{{ workbench.observedAt }}；来源统计仅含项目自有配置，未执行网络连通性测试。</p>
       </div>
       <div class="overview-status" aria-live="polite">
@@ -162,6 +162,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { canUseWorkbenchAction, workbenchActionPermissionHint } from '@/utils/workbenchActions'
 
 const STATUS_TEXT = {
@@ -174,6 +175,7 @@ const STATUS_TEXT = {
 }
 
 export default {
+  components: { DismissibleGuidance },
   name: 'ProjectWorkbenchOverview',
   props: {
     projectId: { type: [String, Number], default: null },

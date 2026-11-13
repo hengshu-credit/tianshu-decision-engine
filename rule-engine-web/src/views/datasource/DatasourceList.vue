@@ -1,13 +1,13 @@
 <template>
   <div class="uiue-list-page datasource-page management-list-page">
-    <div class="module-hint">
+    <dismissible-guidance guide-id="datasource.intro" label="外数管理提示" class="module-hint">
       <div class="hint-title">外数管理</div>
       <div class="hint-text">
         集中配置第三方
         API、鉴权流程、入参与响应映射、同步/异步调用、超时和重试策略，供接口变量使用。
       </div>
-    </div>
-    <div class="usage-guide">
+    </dismissible-guidance>
+    <dismissible-guidance guide-id="datasource.steps" label="外数引导" class="usage-guide">
       <div
         v-for="item in apiGuideTemplates"
         :key="item.title"
@@ -16,7 +16,7 @@
         <div class="guide-title">{{ item.title }}</div>
         <div class="guide-text">{{ item.text }}</div>
       </div>
-    </div>
+    </dismissible-guidance>
 
     <el-tabs class="management-table-region" v-model="activeTab" @tab-change="onTabChange">
       <el-tab-pane class="management-table-region" label="数据源" name="datasource">
@@ -585,6 +585,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
@@ -720,7 +721,7 @@ export default {
     }
   },
   name: 'DatasourceList',
-  components: { GovernancePublishAction, GovernanceWorkspaceToolbar,
+  components: { DismissibleGuidance, GovernancePublishAction, GovernanceWorkspaceToolbar,
     GovernanceResourceStatus,
     TableColumnSettings,
     ModuleCallLog,

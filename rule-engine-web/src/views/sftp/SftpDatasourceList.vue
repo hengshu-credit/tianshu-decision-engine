@@ -1,9 +1,9 @@
 <template>
   <div class="uiue-list-page management-list-page sftp-page">
-    <div class="module-hint">
+    <dismissible-guidance guide-id="sftp.intro" label="SFTP 数据源提示" class="module-hint">
       <div class="hint-title">SFTP 数据源配置</div>
       <div class="hint-text">维护可复用的 SFTP 连接池。规则执行时的 SFTP 文件读取会沿用当前规则 trace_id，并在查询日志中保留远端文件地址。</div>
-    </div>
+    </dismissible-guidance>
 
     <el-tabs model-value="datasource" class="sftp-tabs" :before-leave="navigateTab">
       <el-tab-pane label="数据源配置" name="datasource" />
@@ -55,6 +55,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { createSftpDatasource, deleteSftpDatasource, getSftpDatasource, listSftpDatasources, testSftpDatasource, testSftpDatasourceDraft, updateSftpDatasource } from '@/api/sftp'
 import { editableResource } from '@/api/governance'
 import { completeResourceChange } from '@/utils/governanceWorkspace'
@@ -77,7 +78,7 @@ function emptyForm() {
 export default {
   name: 'SftpDatasourceList',
   mixins: [credentialEditMixin, draftProtection],
-  components: { ProjectFilterSelect, GovernanceWorkspaceToolbar, GovernanceResourceStatus, GovernancePublishAction, ScopeProjectFields, TableColumnSettings },
+  components: { DismissibleGuidance, ProjectFilterSelect, GovernanceWorkspaceToolbar, GovernanceResourceStatus, GovernancePublishAction, ScopeProjectFields, TableColumnSettings },
   data() {
     return { datasourceColumns: [
       { key: 'scope', label: '作用范围', minWidth: 90, align: 'center' }, { key: 'projectName', label: '项目名称', minWidth: 130 },

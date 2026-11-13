@@ -1,6 +1,8 @@
 <template>
   <div class="uiue-list-page system-settings-page" :aria-busy="loading || tabLoading">
-    <el-alert title="此处为全局配置，统一管理系统品牌、通知邮箱、账户访问与对外结果码。" type="info" :closable="false" show-icon />
+    <dismissible-guidance guide-id="system.intro" label="系统设置说明" class="guidance-alert">
+      <el-alert title="此处为全局配置，统一管理系统品牌、通知邮箱、账户访问与对外结果码。" type="info" :closable="false" show-icon />
+    </dismissible-guidance>
     <el-alert v-if="tabError" :title="tabError" type="error" :closable="false" show-icon><el-button @click="refreshTab()">重新加载</el-button></el-alert>
     <el-tabs v-model="tab" :before-leave="beforeTabLeave" @tab-change="refreshTab" class="system-settings-tabs">
       <el-tab-pane label="基本信息" name="brand">
@@ -50,12 +52,16 @@
           <el-form-item label="允许通过邮箱找回密码"><el-switch v-model="form.access.passwordRecoveryEnabled" /></el-form-item>
           <el-form-item label="控制台访问地址"><el-input v-model="form.access.baseUrl" placeholder="https://engine.example.com" /><small>用于注册验证和密码重置邮件中的链接。</small></el-form-item>
           <div class="settings-pair"><el-form-item label="注册验证有效期（分钟）"><el-input-number v-model="form.access.verificationTtlMinutes" :min="5" :max="1440" /></el-form-item><el-form-item label="密码重置有效期（分钟）"><el-input-number v-model="form.access.passwordResetTtlMinutes" :min="5" :max="1440" /></el-form-item></div>
-          <el-alert title="超级管理员的服务器一次性恢复码不受邮箱设置影响。" type="info" :closable="false" show-icon />
+          <dismissible-guidance guide-id="system.recovery" label="恢复码说明" class="guidance-alert">
+            <el-alert title="超级管理员的服务器一次性恢复码不受邮箱设置影响。" type="info" :closable="false" show-icon />
+          </dismissible-guidance>
         </el-form>
       </el-tab-pane>
       <el-tab-pane lazy label="对外结果码" name="codes">
         <template v-if="form.codes">
-          <el-alert title="一个对外 code 可对应多个系统码。只转换对外 code 和描述，内部成功/失败、HTTP 状态与重试语义保持不变。" type="info" :closable="false" show-icon />
+          <dismissible-guidance guide-id="system.result-codes" label="对外结果码说明" class="guidance-alert">
+            <el-alert title="一个对外 code 可对应多个系统码。只转换对外 code 和描述，内部成功/失败、HTTP 状态与重试语义保持不变。" type="info" :closable="false" show-icon />
+          </dismissible-guidance>
           <div class="uiue-search-container uiue-filter-toolbar code-toolbar"><div class="code-filters"><el-input v-model="codeSearch" clearable placeholder="搜索系统码、对外 code 或描述" @input="codePage = 1" /><el-select v-model="codeGroup" clearable placeholder="全部分类" @change="codePage = 1"><el-option v-for="item in codeGroups" :key="item.value" :label="item.label" :value="item.value" /></el-select></div><div class="code-actions"><span>启用对外映射</span><el-switch v-model="form.codes.enabled" :disabled="!writable" /></div></div>
           <el-table :data="visibleCodes" border size="small"><el-table-column prop="code" label="系统 code" width="110" /><el-table-column prop="message" label="系统描述" min-width="160" /><el-table-column label="对外 code" min-width="150"><template #default="{ row }"><el-input :model-value="mappingValue(row.code, 'code')" :placeholder="row.code" maxlength="64" :disabled="!writable" @update:model-value="value => changeMapping(row.code, 'code', value)" /></template></el-table-column><el-table-column label="对外描述" min-width="200"><template #default="{ row }"><el-input :model-value="mappingValue(row.code, 'message')" :placeholder="row.message" maxlength="120" :disabled="!writable" @update:model-value="value => changeMapping(row.code, 'message', value)" /></template></el-table-column><el-table-column label="操作" width="74"><template #default="{ row }"><el-button link :disabled="!writable || !form.codes.mappings[row.code]" @click="restoreMapping(row.code)">恢复</el-button></template></el-table-column></el-table>
           <el-pagination v-model:current-page="codePage" :page-size="10" :total="filteredCodes.length" layout="total, prev, pager, next" />
@@ -71,6 +77,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { getSystemSettings, saveSystemBrand, uploadSystemAsset, testSystemMail, getSystemSettingsHistory } from '@/api/systemSettings'
 import { createResourceDraft, saveGovernanceDraft, submitGovernanceRequest, getWorkspaceDraft } from '@/api/governance'
 import { hasPermission } from '@/security/permissionState'
@@ -88,7 +95,7 @@ const groups = { brand: 1, mail: 2, access: 3, codes: 4 }
 
 export default {
   name: 'SystemSettings',
-  components: { NavigationBrand, LoginPage, WatermarkSettings, FontSettings },
+  components: { DismissibleGuidance, NavigationBrand, LoginPage, WatermarkSettings, FontSettings },
   data: () => ({ fontBusy: false, fontValid: true, tabLoading: false, tabError: '', tabRequestId: 0, imageAccept: BRAND_IMAGE_ACCEPT, brandImageFields: [{ id: 'logoId', url: 'logoUrl', label: '系统 Logo' }, { id: 'faviconId', url: 'faviconUrl', label: '浏览器图标' }], tab: 'brand', form: {}, saved: {}, drafts: {}, effectiveAccess: {}, catalog: [], managed: {}, history: [], historyPage: 1, historyTotal: 0, brand: systemBrand, loading: false, saving: false, mailPassword: '', assetPreviews: {}, codeSearch: '', codeGroup: '', codePage: 1, previewCode: '000000', testDialog: false, testRecipient: '', testing: false, mailResult: '', mailTemplate: 'reset', codeGroups: [{ value: '0', label: '成功' }, { value: '1', label: '请求参数' }, { value: '2', label: '规则与模型' }, { value: '3', label: '身份与权限' }, { value: '4', label: '执行与限流' }, { value: '5', label: '资源与额度' }, { value: '6', label: '外部调用' }, { value: '7', label: '治理与发布' }, { value: '9', label: '系统异常' }] }),
   computed: {
     canEdit() { return hasPermission('system:edit') },

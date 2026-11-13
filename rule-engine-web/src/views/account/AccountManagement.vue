@@ -4,7 +4,7 @@
       <div>
         <span class="page-eyebrow">CONSOLE ACCESS</span>
         <h1>账户管理</h1>
-        <p>通过角色批量授权，并可对单个账户设置额外允许或明确拒绝。</p>
+        <dismissible-guidance tag="p" guide-id="accounts.intro" label="账户管理说明">通过角色批量授权，并可对单个账户设置额外允许或明确拒绝。</dismissible-guidance>
       </div>
       <div class="uiue-btn-bar account-actions">
         <div class="btn-right">
@@ -417,6 +417,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getCurrentUser, hasPermission } from '@/security/permissionState'
 import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
@@ -469,7 +470,7 @@ export default {
     { visible: 'passwordDialogVisible', draft: vm => vm.newPassword, busy: vm => vm.accountSaving },
     { visible: 'permissionDialogVisible', draft: vm => ({ roles: vm.permissionRoleIds, projects: vm.permissionProjectIds, mode: vm.permissionProjectAccessMode, global: vm.permissionGlobalEditable, defaults: vm.overrideDraft, overrides: vm.projectOverrideDraft }), busy: vm => vm.accountSaving },
   ])],
-  components: { TableColumnSettings, OperationLogs },
+  components: { DismissibleGuidance, TableColumnSettings, OperationLogs },
   name: 'AccountManagement',
   data() {
     return {

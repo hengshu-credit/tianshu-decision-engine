@@ -1,6 +1,6 @@
 <template>
   <div class="uiue-list-page dashboard-page">
-    <div class="module-hint dashboard-heading">
+    <dismissible-guidance guide-id="dashboard.intro" label="数据看板提示" class="module-hint dashboard-heading">
       <div class="dashboard-heading-line">
         <span class="hint-title">数据看板</span>
         <span class="dashboard-heading-divider" aria-hidden="true" />
@@ -9,7 +9,7 @@
           title="基于执行、外数、名单、数据库与账单日志自动聚合，仅展示当前用户有权限的模块。"
         >基于执行、外数、名单、数据库与账单日志自动聚合，仅展示当前用户有权限的模块。</span>
       </div>
-    </div>
+    </dismissible-guidance>
 
     <div class="uiue-search-container uiue-filter-toolbar dashboard-filters">
       <el-form
@@ -337,6 +337,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { markRaw } from 'vue'
 import { ElSelectV2 } from 'element-plus/es/components/select-v2/index.mjs'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
@@ -388,7 +389,7 @@ const mapAssetUrl = url => import.meta.env.TIANSHU_MAP_ASSETS?.[url] || url
 
 export default {
   name: 'DashboardHome',
-  components: { ProjectResourceSelect,
+  components: { DismissibleGuidance, ProjectResourceSelect,
     ElSelectV2,
     DashboardChart,
     DashboardHeatmap,

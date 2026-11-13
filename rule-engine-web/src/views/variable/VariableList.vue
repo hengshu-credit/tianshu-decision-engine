@@ -1,13 +1,14 @@
 <template>
   <div class="uiue-list-page management-list-page">
-    <div class="linkage-hint">
+    <dismissible-guidance guide-id="variable.intro" label="变量管理提示" class="linkage-hint">
       <el-icon><el-icon-info /></el-icon> 变量在规则设计时使用，<router-link
         to="/test"
         >规则测试</router-link
       >中可加载项目变量作为入参。支持从 Java 实体类、JSON、建表 DDL 批量导入。
-    </div>
+    </dismissible-guidance>
 
     <config-layer-guide
+      guide-id="variable.steps"
       title="变量配置步骤"
       test-id="variable-config-layers"
       :items="[
@@ -1180,6 +1181,7 @@
     >
       <dialog-resize-handle :visible="dialogVisible" :min-width="720" :min-height="520" />
       <config-layer-guide
+        guide-id="variable.field"
         v-if="!isObjectField"
         class="variable-config-guide"
         title="按业务取值方式完成字段配置"
@@ -1668,6 +1670,7 @@
     >
       <dialog-resize-handle :visible="objectDialogVisible" :min-width="720" :min-height="520" />
       <config-layer-guide
+        guide-id="variable.object"
         class="variable-config-guide object-config-guide"
         title="按业务对象完成基础配置"
         description="先确定对象归属和定义，再设置来源与引用加载方式。"
@@ -2363,6 +2366,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
@@ -2799,7 +2803,7 @@ export default {
       canEditFields: hasPermission('field:edit'),
     }
   },
-  components: {
+  components: { DismissibleGuidance,
     SourceSummaryCard, ProjectResourceSelect, GovernancePublishAction,
     GovernanceResourceStatus,
     ApiSourceBinding,

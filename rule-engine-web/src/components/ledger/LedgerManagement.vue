@@ -23,7 +23,7 @@
     </section>
     <section aria-label="事件类型管理">
       <h3>事件类型管理</h3>
-      <p class="ledger-help">类型名称可调整，文章与事件仍按稳定 ID 关联。已被事件、草稿或历史文章引用的类型不能删除。</p>
+      <dismissible-guidance tag="p" guide-id="ledger.types" label="台账类型说明" class="ledger-help">类型名称可调整，文章与事件仍按稳定 ID 关联。已被事件、草稿或历史文章引用的类型不能删除。</dismissible-guidance>
       <div class="uiue-search-container uiue-filter-toolbar"><el-form inline size="small"><el-form-item label="类型名称"><el-input v-model="typeKeyword" clearable placeholder="筛选编码或名称" /></el-form-item></el-form><div class="uiue-btn-bar"><div class="btn-right"><el-button size="small" @click="loadLedgerTypes">刷新</el-button><el-button v-if="canManageTypes" type="primary" size="small" :disabled="typeSaving || typeClosing" @click="openType()">新增事件类型</el-button></div></div></div>
       <el-alert v-if="ledgerTypesError" :title="ledgerTypesError" type="error" :closable="false" />
       <el-table :data="visibleTypes" border size="small" row-key="id"><el-table-column prop="code" label="类型编码" min-width="170" /><el-table-column prop="name" label="类型名称" min-width="180" /><el-table-column prop="sortOrder" label="排序" width="100" /><el-table-column label="操作" width="150" fixed="right"><template #default="{row}"><el-button v-if="canManageTypes && row.canManage" link type="primary" :disabled="deleting || typeSaving || typeClosing" @click="openType(row)">编辑</el-button><el-button v-if="canManageTypes && row.canManage" link type="danger" :disabled="deleting" @click="removeType(row)">删除</el-button></template></el-table-column></el-table>
@@ -36,6 +36,7 @@
   </section>
 </template>
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import LedgerEventDialog from './LedgerEventDialog.vue'
 import ledgerTypesMixin from '@/mixins/ledgerTypesMixin'
 import configurationDraftMixin from '@/mixins/configurationDraftMixin'
@@ -44,7 +45,7 @@ import { LEDGER_EVENT_STATUSES } from '@/utils/ledger'
 import { hasPermission } from '@/security/permissionState'
 
 export default {
-  components: { LedgerEventDialog },
+  components: { DismissibleGuidance, LedgerEventDialog },
   props: { projectId: { type: [String, Number], default: null } },
   mixins: [ledgerTypesMixin, configurationDraftMixin(vm => ({ event: vm.eventVisible ? vm.$refs.eventEditor?.form : null, type: vm.typeVisible ? vm.typeForm : null }), vm => vm.typeSaving || vm.deleting || Boolean(vm.eventVisible && vm.$refs.eventEditor?.busy))],
   data: () => ({ keyword: '', typeKeyword: '', typeId: null, page: 1, total: 0, events: [], loading: false, error: '', generation: 0, mutationGeneration: 0, deleting: false, editingEvent: null, eventVisible: false, eventClosing: false, typeVisible: false, typeClosing: false, typeForm: {}, typeSaving: false }),

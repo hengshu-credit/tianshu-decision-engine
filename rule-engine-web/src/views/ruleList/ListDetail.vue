@@ -13,6 +13,7 @@
     </div>
 
     <config-layer-guide
+      guide-id="list-detail.steps"
       title="名单内容变更流程"
        description="审批通过前，当前有效记录和变更日志都不会改变；重复数据会自动跳过，错误行会明确提示。Excel 导出包含记录 ID，修改或删除时可保留该列。"
       :items="[

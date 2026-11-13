@@ -28,11 +28,11 @@
       </el-tab-pane>
       <el-tab-pane label="项目规则" name="rules">
 
-    <div class="rule-section-heading">
+    <dismissible-guidance guide-id="project.rules" label="项目规则说明" class="rule-section-heading">
       <div>
         <p>管理项目自有规则以及当前项目引用的全局规则。</p>
       </div>
-    </div>
+    </dismissible-guidance>
 
     <!-- 筛选条件 -->
     <div class="uiue-search-container uiue-filter-toolbar">
@@ -452,6 +452,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
@@ -481,7 +482,7 @@ import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operati
 export default {
   name: 'ProjectDetail',
   mixins: [workspaceTabTitleMixin(vm => vm.project?.projectName)],
-  components: { GovernanceWorkspaceToolbar, GovernancePublishAction, GovernanceResourceStatus, ProjectWorkbenchOverview, RuleModelTypeHelp, RemoteFilterSelect },
+  components: { DismissibleGuidance, GovernanceWorkspaceToolbar, GovernancePublishAction, GovernanceResourceStatus, ProjectWorkbenchOverview, RuleModelTypeHelp, RemoteFilterSelect },
   data() {
     return {
       pid: null,

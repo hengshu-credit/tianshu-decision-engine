@@ -4,7 +4,7 @@
       <div>
         <span class="page-eyebrow">CROSS ENVIRONMENT</span>
         <h1>离线配置迁移</h1>
-        <p>按血缘导出配置，上传到其他环境后预检冲突并确认导入。名单记录、日志和账单不会进入配置包。</p>
+        <dismissible-guidance tag="p" guide-id="transfer.intro" label="离线配置迁移说明">按血缘导出配置，上传到其他环境后预检冲突并确认导入。名单记录、日志和账单不会进入配置包。</dismissible-guidance>
       </div>
       <el-tag type="info" effect="plain">配置包即时生成</el-tag>
     </header>
@@ -264,6 +264,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import TransferVersionBindingRow from '@/components/transfer/TransferVersionBindingRow.vue'
 import ResourceVersionSelect from '@/components/common/ResourceVersionSelect.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -297,7 +298,7 @@ const newRoot = (key, fetch) => ({ key, resourceType: 'RULE', resourceId: '', ve
 
 export default {
   name: 'OfflineTransfer',
-  components: { RemoteFilterSelect, LineageGraph, TransferAssociationPanel, TransferVersionBindingRow, ResourceVersionSelect },
+  components: { DismissibleGuidance, RemoteFilterSelect, LineageGraph, TransferAssociationPanel, TransferVersionBindingRow, ResourceVersionSelect },
   data() {
     return {
       roots: [newRoot(1, this.fetchRootOptionsByKey)],

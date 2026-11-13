@@ -3,7 +3,7 @@
     <div class="module-hint dashboard-settings-heading">
       <div>
         <div class="hint-title">数据看板设置</div>
-        <div class="hint-text">字段关联始终保存资源 ID；个人项目覆盖逐项继承个人默认，再继承管理员维护的公共默认。</div>
+        <dismissible-guidance guide-id="dashboard-settings.intro" label="看板设置说明" class="hint-text">字段关联始终保存资源 ID；个人项目覆盖逐项继承个人默认，再继承管理员维护的公共默认。</dismissible-guidance>
       </div>
       <el-button @click="$router.push('/dashboard')">返回看板</el-button>
     </div>
@@ -181,6 +181,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import VarPicker from '@/components/common/VarPicker.vue'
 import OperandPicker from '@/components/common/OperandPicker.vue'
@@ -203,7 +204,7 @@ import {
 const NUMERIC_FIELDS = new Set(['LONGITUDE', 'LATITUDE', 'PERIOD', 'AMOUNT'])
 
 export default {
-  components: { ProjectResourceSelect, VarPicker, OperandPicker },
+  components: { DismissibleGuidance, ProjectResourceSelect, VarPicker, OperandPicker },
   name: 'DashboardSettings',
   data() {
     return {

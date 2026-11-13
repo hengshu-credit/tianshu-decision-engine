@@ -4,7 +4,7 @@
       <div>
         <span class="page-eyebrow">PERSONAL SETTINGS</span>
         <h1>个人设置</h1>
-        <p>管理个人资料和控制台登录密码。</p>
+        <dismissible-guidance tag="p" guide-id="profile.intro" label="个人设置说明">管理个人资料和控制台登录密码。</dismissible-guidance>
       </div>
     </header>
 
@@ -38,18 +38,26 @@
           <el-button type="primary" :loading="changingPassword" @click="changePassword">修改密码</el-button>
         </el-form>
       </div>
+      <div class="content-card">
+        <div class="card-heading"><h2>页面提示与引导</h2></div>
+        <el-button :disabled="!hasHiddenGuidance" @click="restorePageGuidance">恢复已关闭的提示与引导</el-button>
+      </div>
     </section>
   </div>
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
+import { hasHiddenGuidance, restoreGuidance } from '@/utils/pageGuidance'
 import { ElMessage } from 'element-plus'
 import { changeConsolePassword, getConsoleProfile, updateConsoleProfile, resendConsoleEmailVerification } from '@/api/auth'
 import { clearCurrentUser, hasPermission } from '@/security/permissionState'
 
 export default {
+  components: { DismissibleGuidance },
   name: 'AccountProfile',
   computed: {
+    hasHiddenGuidance() { return hasHiddenGuidance.value },
     canChangePassword() { return hasPermission('account:password-change') },
   },
   data() {
@@ -70,6 +78,10 @@ export default {
   },
   mounted() { this.loadProfile() },
   methods: {
+    restorePageGuidance() {
+      restoreGuidance()
+      ElMessage.success('已恢复当前浏览器中的页面提示与引导')
+    },
     async resendVerification() {
       this.resending = true
       try { await resendConsoleEmailVerification(); ElMessage.success('验证邮件已发送') } finally { this.resending = false }

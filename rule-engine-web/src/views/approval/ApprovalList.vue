@@ -4,7 +4,7 @@
       <div>
         <span class="page-eyebrow">LIFECYCLE GOVERNANCE</span>
         <h1>审批任务中心</h1>
-        <p>优先处理待审批事项，也可按申请人、资源和动作追踪变更；仅展示本人及明确授权的记录。</p>
+        <dismissible-guidance tag="p" guide-id="approvals.intro" label="审批任务说明">优先处理待审批事项，也可按申请人、资源和动作追踪变更；仅展示本人及明确授权的记录。</dismissible-guidance>
       </div>
       <div class="header-stat">
         <strong>{{ summary.pendingCount }}</strong>
@@ -168,6 +168,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import router from '@/router'
 import {
   getGovernanceSummary,
@@ -225,7 +226,7 @@ const RESOURCE_OPTIONS = [
 
 export default {
   name: 'ApprovalList',
-  components: { RemoteFilterSelect, TableColumnSettings },
+  components: { DismissibleGuidance, RemoteFilterSelect, TableColumnSettings },
   data() {
     return {
       tableColumnOrders: { approvalColumns: null },

@@ -25,7 +25,7 @@
       </div>
     </div>
 
-    <div class="usage-guide">
+    <dismissible-guidance guide-id="experiment-detail.steps" label="实验配置引导" class="usage-guide">
       <div
         v-for="item in experimentGuideCards"
         :key="item.title"
@@ -34,7 +34,7 @@
         <div class="guide-title">{{ item.title }}</div>
         <div class="guide-text">{{ item.text }}</div>
       </div>
-    </div>
+    </dismissible-guidance>
 
     <el-form
       ref="form"
@@ -793,6 +793,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { historicalVersionMethods } from '@/mixins/historicalVersionMixin'
 import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
 import { hasPermission } from '@/security/permissionState'
@@ -902,7 +903,7 @@ export default {
     }
   },
   name: 'ExperimentDetail',
-  components: { VersionSnapshotPanel,
+  components: { DismissibleGuidance, VersionSnapshotPanel,
     ConditionGroupEditor,
     OperandPicker,
     ProjectResourceSelect,

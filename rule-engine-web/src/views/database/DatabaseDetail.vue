@@ -70,6 +70,7 @@
     </el-alert>
 
     <config-layer-guide
+      guide-id="database-detail.steps"
       v-if="configurationReady"
       title="配置检查"
       description="按作用范围、连接参数、连接测试、保存草稿的顺序完成；高级连接池参数通常保持默认值。"

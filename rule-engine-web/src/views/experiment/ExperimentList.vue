@@ -3,13 +3,15 @@
     <div class="page-head">
       <div>
         <h2>分流实验</h2>
-        <div class="page-subtitle">
-          配置冠军挑战和测试组空跑，执行结果会返回实验标签并写入实验明细日志。
-        </div>
-        <div class="page-tip">
-          冠军组和挑战组参与生产分流；测试组在生产组执行后空跑，可按条件命中、互斥执行，并可控制是否调用
-          API 外数。
-        </div>
+        <dismissible-guidance guide-id="experiment.intro" label="分流实验说明">
+          <div class="page-subtitle">
+            配置冠军挑战和测试组空跑，执行结果会返回实验标签并写入实验明细日志。
+          </div>
+          <div class="page-tip">
+            冠军组和挑战组参与生产分流；测试组在生产组执行后空跑，可按条件命中、互斥执行，并可控制是否调用
+            API 外数。
+          </div>
+        </dismissible-guidance>
       </div>
     </div>
 
@@ -469,6 +471,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ResourceVersionSelect from '@/components/common/ResourceVersionSelect.vue'
 import { formatExperimentJson } from '@/utils/experimentResponse'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
@@ -551,7 +554,7 @@ export default {
     }
   },
   name: 'ExperimentList',
-  components: { ResourceVersionSelect, GovernancePublishAction, GovernanceWorkspaceToolbar,
+  components: { DismissibleGuidance, ResourceVersionSelect, GovernancePublishAction, GovernanceWorkspaceToolbar,
     GovernanceResourceStatus,
     TableColumnSettings,
     MonacoEditor,

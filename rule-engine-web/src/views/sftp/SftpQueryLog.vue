@@ -1,6 +1,6 @@
 <template>
   <div class="uiue-list-page management-list-page sftp-log-page">
-    <div class="module-hint"><div class="hint-title">SFTP 查询日志</div><div class="hint-text">记录变量或规则触发的 SFTP 文件读取、远端地址和 trace_id。预览会重新从连接池读取文件，页面不会保存文件副本。</div></div>
+    <dismissible-guidance guide-id="sftp-log.intro" label="SFTP 查询日志提示" class="module-hint"><div class="hint-title">SFTP 查询日志</div><div class="hint-text">记录变量或规则触发的 SFTP 文件读取、远端地址和 trace_id。预览会重新从连接池读取文件，页面不会保存文件副本。</div></dismissible-guidance>
     <el-tabs model-value="logs" class="sftp-tabs" :before-leave="navigateTab"><el-tab-pane label="数据源配置" name="datasource" /><el-tab-pane label="查询日志" name="logs" /></el-tabs>
     <div class="uiue-search-container uiue-filter-toolbar"><el-form :inline="true" size="small" @keyup.enter="handleQuery"><el-form-item label="项目编码"><project-filter-select v-model:value="query.projectCode" field="projectCode" placeholder="项目编码" style="width: 150px" /></el-form-item><el-form-item label="Trace ID"><el-input v-model="query.traceId" clearable placeholder="规则或模块 trace_id" style="width: 230px" /></el-form-item><el-form-item label="结果"><el-select v-model="query.success" clearable placeholder="全部" style="width: 100px"><el-option label="成功" :value="1" /><el-option label="失败" :value="0" /></el-select></el-form-item><el-form-item><el-button type="primary" @click="handleQuery">查询</el-button><el-button @click="reset">重置</el-button></el-form-item></el-form><div class="uiue-btn-bar"><div class="btn-right"><table-column-settings v-model="logColumnOrder" :columns="logColumns" storage-key="tianshu:table-columns:sftp-logs" /><el-button size="small" @click="load">刷新</el-button></div></div></div>
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="loadError"><el-button link type="primary" :disabled="loading" @click="load">重新加载</el-button></el-alert>
@@ -24,6 +24,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ContentReference from '@/components/common/ContentReference.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import { listRuntimeLogs } from '@/api/runtimeLog'
@@ -33,7 +34,7 @@ import { routeProjectId, withProjectContext } from '@/utils/projectContext'
 
 export default {
   name: 'SftpQueryLog',
-  components: { ProjectFilterSelect, ContentReference, TableColumnSettings },
+  components: { DismissibleGuidance, ProjectFilterSelect, ContentReference, TableColumnSettings },
   data() { return { logColumns: [
     { key: 'actionType', label: '触发动作', minWidth: 170 }, { key: 'targetName', label: '触发变量/数据源', minWidth: 150 },
     { key: 'remotePath', label: '文件路径', minWidth: 260 }, { key: 'requestUrl', label: '文件链接地址', minWidth: 260 },

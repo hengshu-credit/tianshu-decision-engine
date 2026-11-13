@@ -44,6 +44,7 @@
       class="detail-form"
     >
       <config-layer-guide
+        guide-id="api.steps"
         title="配置检查"
         description="按基础信息、数据映射、请求预览、草稿试运行、审批生效的顺序完成；高级参数已有安全默认值。"
         aria-label="外数 API 配置进度"

@@ -1,5 +1,5 @@
 <template>
-  <section class="config-layer-guide" :data-testid="testId" :aria-label="title">
+  <dismissible-guidance tag="section" :guide-id="guideId" :label="title" class="config-layer-guide" :data-testid="testId" :aria-label="title">
     <div class="config-layer-guide__heading">
       <div>
         <div class="config-layer-guide__title">{{ title }}</div>
@@ -31,13 +31,16 @@
         </component>
       </li>
     </ol>
-  </section>
+  </dismissible-guidance>
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 export default {
+  components: { DismissibleGuidance },
   name: 'ConfigLayerGuide',
   props: {
+    guideId: { type: String, required: true },
     title: { type: String, default: '配置步骤' },
     description: { type: String, default: '' },
     items: { type: Array, default: () => [] },

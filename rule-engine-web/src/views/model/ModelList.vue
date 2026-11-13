@@ -1,9 +1,9 @@
 <template>
   <div class="uiue-list-page management-list-page">
     <!-- 提示信息 -->
-    <div class="linkage-hint">
+    <dismissible-guidance guide-id="model.intro" label="模型管理提示" class="linkage-hint">
       <el-icon><el-icon-info /></el-icon> 支持导入 PMML、ONNX 模型，在规则中调用预测结果；上传后到详情页配置输入输出并执行测试。
-    </div>
+    </dismissible-guidance>
 
     <el-tabs class="management-table-region" v-model="activeTab">
       <el-tab-pane class="management-table-region" label="模型管理" name="list">
@@ -801,6 +801,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
@@ -1053,7 +1054,7 @@ export default {
       ElIconUpload2: markRaw(ElIconUpload2),
     }
   },
-  components: { ProjectResourceSelect, GovernancePublishAction, GovernanceWorkspaceToolbar,
+  components: { DismissibleGuidance, ProjectResourceSelect, GovernancePublishAction, GovernanceWorkspaceToolbar,
     GovernanceResourceStatus,
     TableColumnSettings,
     ModuleCallLog,

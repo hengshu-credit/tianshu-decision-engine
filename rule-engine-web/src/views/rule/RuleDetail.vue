@@ -99,6 +99,7 @@
       <p class="revision-scope-note">发布与审批状态来自版本记录。当前页面的管理测试不作为该修订的测试证据。</p>
     </el-card>
     <config-layer-guide
+      guide-id="rule.release"
       v-else
       title="工作区发布准备"
       :description="releaseProgressSummary"

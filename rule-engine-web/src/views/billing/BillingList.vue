@@ -1,12 +1,12 @@
 <template>
   <div class="uiue-list-page billing-page management-list-page">
-    <div class="module-hint">
+    <dismissible-guidance guide-id="billing.intro" label="账单管理提示" class="module-hint">
       <div class="hint-title">账单管理</div>
       <div class="hint-text">
         统一配置规则执行、外数 API
         和数据库查询的计费项，查看调用明细并按日生成汇总。
       </div>
-    </div>
+    </dismissible-guidance>
 
     <el-tabs class="management-table-region" v-model="activeTab" @tab-click="onTabChange">
       <el-tab-pane class="management-table-region" label="计费配置" name="config">
@@ -925,6 +925,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ExecutionVersionFilter from '@/components/common/ExecutionVersionFilter.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
@@ -1135,7 +1136,7 @@ export default {
     }
   },
   name: 'BillingList',
-  components: { ExecutionVersionFilter, GovernancePublishAction, GovernanceWorkspaceToolbar,
+  components: { DismissibleGuidance, ExecutionVersionFilter, GovernancePublishAction, GovernanceWorkspaceToolbar,
     GovernanceResourceStatus, ProjectFilterSelect, ProjectResourceSelect, RemoteFilterSelect, TableColumnSettings },
   computed: {
     selectedTargetOption() {

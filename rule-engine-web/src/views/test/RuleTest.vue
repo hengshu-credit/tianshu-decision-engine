@@ -1,6 +1,7 @@
 <template>
   <div class="uiue-list-page rule-test-page">
     <config-layer-guide
+      guide-id="rule-test.steps"
       title="规则测试步骤"
       test-id="rule-test-layers"
       :items="[
@@ -10,7 +11,9 @@
       ]"
     />
     <execution-impact-panel v-if="selectedRuleId" :runtime-nodes="testRuntimeNodes" :model="definitionModel" :model-type="inputExecutionIdentity?.modelType || selectedRule?.modelType || ''" :loaded="!!inputExecutionIdentity && !!definitionModel" />
-    <el-alert v-else class="test-impact-notice" title="测试调用与写入说明" description="先选择版本来源，再核对执行模式和影响清单。本页单次、固定用例和批量测试均为真实联调。" type="info" :closable="false" show-icon />
+    <dismissible-guidance v-else guide-id="rule-test.notice" label="测试调用与写入说明" class="guidance-alert">
+      <el-alert class="test-impact-notice" title="测试调用与写入说明" description="先选择版本来源，再核对执行模式和影响清单。本页单次、固定用例和批量测试均为真实联调。" type="info" :closable="false" show-icon />
+    </dismissible-guidance>
     <div class="test-layout">
       <!-- 左侧：选择规则 + 参数输入 -->
       <div class="test-left">
@@ -544,6 +547,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ElIconLoading from '@/components/common/AppLoadingIcon.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
@@ -600,7 +604,7 @@ import {
 } from '@/utils/testCaseTools'
 
 export default {
-  components: { ExecutionImpactPanel, ProjectResourceSelect, RemoteFilterSelect, RegressionReportDrawer, RuleValidationReport,
+  components: { DismissibleGuidance, ExecutionImpactPanel, ProjectResourceSelect, RemoteFilterSelect, RegressionReportDrawer, RuleValidationReport,
     TraceTree,
     AsyncState,
     ConfigLayerGuide,
