@@ -626,85 +626,37 @@
         </table>
       </div>
 
-      <!-- ========== 决策表追踪 ========== -->
-      <!-- TABLE：七种模型中本类型无独立顶部标题区，仅表格列头 -->
-      <div v-else-if="effectiveType === 'TABLE'" class="mv-table">
-        <table class="rt-table">
-          <thead>
-            <tr>
-              <th>规则号</th>
-              <th>规则名称</th>
-              <template v-if="!tableUseCondSummary">
-                <th v-for="c in ruleCols" :key="c"><content-reference mode="trace" :value="{ varCode: c, varLabel: varMap[c] }" /></th>
-              </template>
-              <th>条件</th>
-              <th v-for="a in actionCols" :key="a"><content-reference mode="trace" :value="{ varCode: a, varLabel: varMap[a] }" /></th>
-              <th>状态</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="r in tableRules"
-              :key="r.no"
-              :class="{
-                'rt-hit': r.hit,
-                'rt-skipped': r.status === 'skipped',
-              }"
-            >
-              <td>R{{ r.no }}</td>
-              <td>{{ r.ruleName || '-' }}</td>
-              <template v-if="!tableUseCondSummary">
-                <td v-for="c in ruleCols" :key="c">
-                  <strong v-if="r.hit">{{ r.conds[c] || '-' }}</strong
-                  ><template v-else>{{ r.conds[c] || '-' }}</template>
-                </td>
-              </template>
-              <td class="rt-cond-cell">{{ tableCondSummaryText(r) }}</td>
-              <td v-for="a in actionCols" :key="a">{{ r.acts[a] || '-' }}</td>
-              <td>
-                <span v-if="r.status === 'hit'" class="rt-badge">命中</span>
-                <span v-else-if="r.status === 'miss'" class="rt-badge rt-badge--miss">
-                  未命中
-                </span>
-                <span v-else class="rt-badge rt-badge--skipped">
-                  {{ r.statusText }}
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- ========== 规则集追踪：一行一规则，规则之间独立展示 ========== -->
-      <div v-else-if="effectiveType === 'RULE_SET'" class="mv-ruleset">
+      <!-- 决策表和规则集共用逐条规则的追踪布局。 -->
+      <div v-else-if="effectiveType === 'TABLE' || effectiveType === 'RULE_SET'" class="mv-ruleset" :class="{ 'dt-trace': effectiveType === 'TABLE' }">
         <div
           class="rs-trace-summary"
-          :class="{ 'is-empty': ruleSetHitRows.length === 0 }"
+          :class="{ 'is-empty': traceHitRows.length === 0 }"
         >
           <span class="rs-summary-label">命中规则</span>
-          <template v-if="ruleSetHitRows.length">
+          <template v-if="traceHitRows.length">
             <span
-              v-for="row in ruleSetHitRows"
+              v-for="row in traceHitRows"
               :key="row.key"
               class="rs-hit-pill"
             >
               {{ row.ruleCode }} {{ row.ruleName }}
             </span>
           </template>
-          <span v-else class="rs-summary-empty">无命中</span>
+          <span v-else class="rs-summary-empty">{{ traceSummaryEmpty }}</span>
+          <span v-if="effectiveType === 'TABLE' && tablePolicyLabel" class="dt-trace-policy">命中策略 · {{ tablePolicyLabel }}</span>
         </div>
         <table class="rt-table rs-table">
           <thead>
             <tr>
               <th>规则</th>
               <th>条件明细</th>
-              <th>动作</th>
+              <th>{{ effectiveType === 'TABLE' ? '配置动作' : '动作' }}</th>
               <th>状态</th>
             </tr>
           </thead>
           <tbody>
             <tr
-              v-for="row in ruleSetRows"
+              v-for="row in traceRuleRows"
               :key="row.key"
               :class="{
                 'rt-hit': row.hit,
@@ -713,8 +665,8 @@
             >
               <td class="rs-rule-cell">
                 <div class="rs-rule-code">{{ row.ruleCode }}</div>
-                <div class="rs-rule-name">{{ row.ruleName }}</div>
-                <div class="rs-rule-meta">
+                <div v-if="row.ruleName" class="rs-rule-name">{{ row.ruleName }}</div>
+                <div v-if="row.priority != null" class="rs-rule-meta">
                   优先级 {{ row.priority }} / 顺序 {{ row.order }}
                 </div>
               </td>
@@ -723,7 +675,7 @@
                   v-if="row.conditionTree"
                   :node="row.conditionTree"
                 />
-                <div v-else-if="row.conditions.length" class="rs-cond-tree">
+                <div v-else-if="row.conditions?.length" class="rs-cond-tree">
                   <template
                     v-for="(item, idx) in row.conditions"
                     :key="item.key || idx"
@@ -768,17 +720,19 @@
                     </div>
                   </template>
                 </div>
-                <span v-else>-</span>
+                <span v-else>{{ row.conditionText || '—' }}</span>
               </td>
               <td class="rs-action-cell">
+                <span v-if="effectiveType === 'TABLE'" class="dt-action-heading">配置动作</span>
                 <div v-if="row.actions.length" class="rs-action-list">
                   <div
                     v-for="(action, ai) in row.actions"
                     :key="row.key + '-act-' + ai"
                     class="rs-action-line"
                   >
-                    <code>{{ action.targetCode }}</code>
-                    <span>{{ action.targetName }}</span>
+                    <content-reference v-if="action.targetOperand" mode="trace" :value="action.targetOperand" wrap />
+                    <code v-else>{{ action.targetCode }}</code>
+                    <span v-if="action.targetName">{{ action.targetName }}</span>
                     <strong>= {{ action.valueText }}</strong>
                   </div>
                 </div>
@@ -922,7 +876,7 @@
 
 <script>
 import ContentReference from './ContentReference.vue'
-import { conditionOperatorRequiresValue } from '@/constants/conditionOperators'
+import { findConditionOperator, isSourceStatusOperator } from '@/constants/conditionOperators'
 import {
   FullScreen as ElIconFullScreen,
   Close as ElIconClose,
@@ -933,10 +887,11 @@ import DecisionTreeTraceNode from './DecisionTreeTraceNode.vue'
 import RuleSetConditionTraceNode from './RuleSetConditionTraceNode.vue'
 import ExternalCallTrace from './ExternalCallTrace.vue'
 import FlowTraceGraph from './FlowTraceGraph.vue'
+import { traceContentValue } from '@/utils/contentReference'
 import { compileOperand, operandDisplay } from '@/utils/operand'
 import { resolveTraceReferences } from '@/utils/traceReference'
 import { executionStatusLabel, executionStatusHint } from '@/utils/executionStatus'
-import { formatConditionDescription, formatConditionTreeDescription, formatExpressionFormula } from '@/utils/expressionDisplay'
+import { formatConditionTreeDescription, formatExpressionFormula } from '@/utils/expressionDisplay'
 
 /** 运算符中文映射 */
 var OP_CN = {
@@ -1332,53 +1287,68 @@ export default {
       }
     },
 
-    // ─── 决策表 / 交叉表 ───
+    // 交叉表按编译顺序将 if 链映射到矩阵单元格。
     tableRules: function () {
-      var stmts = this._getStatements()
-      var ifNode = this._findFirstIf(stmts)
-      var traceRules = ifNode ? this._walkIfChain(ifNode) : []
-      var hitPolicy =
-        this.definitionModel && this.definitionModel.hitPolicy
-      var modelRules =
-        !hitPolicy || hitPolicy === 'FIRST' ? this._modelTableRules() : []
-      var configuredRules = modelRules.length ? modelRules : traceRules
-      var merged = []
-      var priorHit = false
-      for (var i = 0; i < configuredRules.length; i++) {
-        var configured = modelRules[i] || {}
-        var traced = traceRules[i] || null
-        var status = this._tableRuleStatus(traced)
-        var skippedByFirst =
-          status === 'skipped' &&
-          this.definitionModel &&
-          (!hitPolicy || hitPolicy === 'FIRST') &&
-          priorHit
-        var conds =
-          configured.conds && Object.keys(configured.conds).length
-            ? configured.conds
-            : (traced && traced.conds) || {}
-        var acts =
-          configured.acts && Object.keys(configured.acts).length
-            ? configured.acts
-            : (traced && traced.acts) || {}
-        merged.push({
-          no: i + 1,
-          ruleName: configured.ruleName || '',
-          conds: conds,
-          condNode: traced ? traced.condNode : null,
-          configuredConditionText:
-            configured.configuredConditionText || '',
-          configuredHasOr: configured.configuredHasOr === true,
-          configuredNeedsSummary: configured.configuredNeedsSummary === true,
-          acts: acts,
-          evaluated: traced ? traced.evaluated : false,
-          hit: status === 'hit',
-          status: status,
-          statusText: this._tableRuleStatusText(status, skippedByFirst),
-        })
-        if (status === 'hit') priorHit = true
-      }
-      return merged
+      const first = this._findFirstIf(this._getStatements())
+      return first ? this._walkIfChain(first) : []
+    },
+    tablePolicyLabel() {
+      if (!Array.isArray(this.definitionModel?.rules)) return ''
+      return { FIRST: '首次命中', ALL: '全部执行', UNIQUE: '唯一命中' }[this.tablePolicy] || ''
+    },
+    tablePolicy() {
+      return String(this.definitionModel?.hitPolicy || 'FIRST').trim().toUpperCase()
+    },
+    decisionTableRows() {
+      const model = this.definitionModel || {}
+      const rules = Array.isArray(model.rules) ? model.rules : []
+      const branches = this._getStatements().filter(node => node.type === 'IF')
+      // UNIQUE 先逐行评估条件，再检查冲突，最后才按行号执行动作。
+      const guard = branches.findIndex(node =>
+        node.children?.[1]?.children?.some(child => child.token === 'UNIQUE_HIT_POLICY_MATCHED_MULTIPLE_RULES'))
+      const unique = this.tablePolicy === 'UNIQUE' || guard >= 0
+      const predicates = unique ? branches.slice(0, guard >= 0 ? guard : rules.length) : branches
+      const traceRows = predicates.flatMap(node => this._walkIfChain(node))
+      const uniqueActions = unique && guard >= 0 ? this._walkIfChain(branches[guard + 1]) : []
+      let priorHit = false
+      return Array.from({ length: rules.length || traceRows.length }, (_, index) => {
+        const rule = rules[index]
+        const trace = traceRows[index]
+        const condition = trace?.condNode
+        const firstStopped = !unique && this.tablePolicy === 'FIRST' && priorHit && branches.length === 1
+        let status = 'missing'
+        if (trace?.evaluated === false || (!trace && firstStopped)) status = 'skipped'
+        else if (trace?.evaluated && (typeof condition?.value === 'boolean' || trace.defaultBranch)) status = trace.hit ? 'hit' : 'miss'
+        const root = rule ? rule.conditionRoot || this._legacyTableConditionRoot(rule, model) : this._tableConditionFromTrace(condition)
+        const conditionTree = root && (root.type !== 'group' || root.children?.length)
+          ? this._buildRuleSetConditionTree(root, condition || (status === 'skipped' ? { evaluated: false } : null))
+          : null
+        let conditionText = ''
+        if (!conditionTree) {
+          if (root) conditionText = this._modelConditionText(root)
+          else if (condition) conditionText = this._traceCondText(condition)
+          else conditionText = trace?.defaultBranch ? '默认规则' : '未记录条件'
+        }
+        const tracedActions = unique ? uniqueActions[index]?.actionBlock : trace?.actionBlock
+        priorHit ||= status === 'hit'
+        return {
+          key: index, ruleCode: 'R' + (index + 1), ruleName: rule?.ruleName || rule?.name || rule?.ruleCode || '',
+          status, statusText: this._tableRuleStatusText(status, firstStopped), hit: status === 'hit',
+          conditionTree, conditionText,
+          actions: this._tableTraceActions(rule, model, tracedActions),
+        }
+      })
+    },
+    traceRuleRows() {
+      return this.effectiveType === 'TABLE' ? this.decisionTableRows : this.ruleSetRows
+    },
+    traceHitRows() {
+      return this.effectiveType === 'TABLE' ? this.decisionTableRows.filter(row => row.hit) : this.ruleSetHitRows
+    },
+    traceSummaryEmpty() {
+      if (this.effectiveType === 'TABLE' && (!this.decisionTableRows.length ||
+          this.decisionTableRows.some(row => row.status === 'missing'))) return '未记录命中结果'
+      return '无命中'
     },
     ruleCols: function () {
       var cols = [],
@@ -1407,36 +1377,6 @@ export default {
         }
       }
       return cols
-    },
-    hitRuleNo: function () {
-      for (var i = 0; i < this.tableRules.length; i++) {
-        if (this.tableRules[i].hit) return this.tableRules[i].no
-      }
-      return null
-    },
-    /**
-     * 或、重复字段与组合左值不能无损按变量分列，使用完整条件摘要。
-     */
-    tableUseCondSummary: function () {
-      var rules = this.tableRules
-      for (var i = 0; i < rules.length; i++) {
-        if (
-          rules[i].configuredHasOr || rules[i].configuredNeedsSummary ||
-          this._condHasOr(rules[i].condNode)
-        )
-          return true
-      }
-      return false
-    },
-    tableInputText: function () {
-      var self = this
-      return this.ruleCols
-        .map(function (c) {
-          var label = self.varMap[c] || c
-          var val = self.getInputValue(c)
-          return val !== undefined ? label + ' = ' + val : label
-        })
-        .join(' + ')
     },
     ruleSetModelRules: function () {
       var m = this.definitionModel
@@ -2634,142 +2574,53 @@ export default {
     },
 
     // ─── 决策表/交叉表解析 ───
-    _modelTableRules: function () {
-      var model = this.definitionModel
-      var rules = model && Array.isArray(model.rules) ? model.rules : []
-      var result = []
-      for (var i = 0; i < rules.length; i++) {
-        var rule = rules[i] || {}
-        var conds = this._modelConditionCells(rule, model)
-        result.push({
-          no: i + 1,
-          ruleName:
-            rule.ruleName || rule.name || rule.ruleCode || 'R' + (i + 1),
-          conds: conds,
-          configuredConditionText:
-            this._modelConditionText(rule.conditionRoot) ||
-            this._modelLegacyConditionText(conds),
-          configuredHasOr: this._modelConditionHasOr(rule.conditionRoot),
-          configuredNeedsSummary: this._modelConditionNeedsSummary(rule.conditionRoot),
-          acts: this._modelActionCells(rule, model),
-        })
+    _tableConditionFromTrace(node) {
+      if (node?.type !== 'OPERATOR' || node.children?.length !== 2) return null
+      if (node.token === '&&' || node.token === '||') {
+        const children = node.children.map(child => this._tableConditionFromTrace(child))
+        return children.every(Boolean) ? { type: 'group', op: node.token === '&&' ? 'AND' : 'OR', children } : null
       }
-      return result
+      if (!['==', '!=', '>', '>=', '<', '<='].includes(node.token) ||
+          !node.children.every(child => ['VARIABLE', 'VALUE', 'PRIMARY'].includes(child?.type))) return null
+      return { type: 'leaf', operator: node.token, leftOperand: traceContentValue(node.children[0], this.varMap),
+        rightOperand: traceContentValue(node.children[1], this.varMap) }
     },
-    _modelConditionCells: function (rule, model) {
-      var cells = {}
-      if (rule && rule.conditionRoot) {
-        this._appendModelConditionCells(rule.conditionRoot, cells)
-        return cells
-      }
-      var definitions =
-        model && Array.isArray(model.conditions) ? model.conditions : []
-      var conditions =
-        rule && Array.isArray(rule.conditions) ? rule.conditions : []
-      for (var i = 0; i < conditions.length; i++) {
-        var condition = conditions[i] || {}
-        var definition = definitions[i] || {}
-        var code = condition.varCode || definition.varCode || ''
-        if (!code) continue
-        var operator = condition.operator || definition.operator || ''
-        var value =
-          condition.value !== undefined ? condition.value : definition.value
-        cells[code] = this._modelConditionValue(operator, value)
-      }
-      return cells
+    _legacyTableConditionRoot(rule, model) {
+      return { type: 'group', op: 'AND', children: (rule.conditions || []).map((condition, index) => ({
+        ...(model.conditions?.[index] || condition), type: 'leaf', operator: condition.operator || '==', value: condition.value,
+      })) }
     },
-    _appendModelConditionCells: function (node, cells) {
-      if (!node) return
-      if (node.type === 'group') {
-        var children = Array.isArray(node.children) ? node.children : []
-        for (var i = 0; i < children.length; i++) {
-          this._appendModelConditionCells(children[i], cells)
-        }
-        return
-      }
-      var code = this._modelOperandCode(node.leftOperand) || node.varCode || ''
-      if (!code) return
-      cells[code] = formatConditionDescription(node, { includeLeft: false, labels: this.varMap })
-    },
-    _modelConditionValue: function (operator, value) {
-      if (operator === '*') return '任意'
-      var operatorText = OP_CN[operator] || operator || ''
-      var valueText = value === undefined ? '' : this._displayVal(value)
-      return (operatorText + ' ' + valueText).trim() || '-'
-    },
-    _modelConditionText: function (node) {
-      if (!node) return ''
+    _modelConditionText(node) {
       return formatConditionTreeDescription(node, { labels: this.varMap })
     },
-    _modelLegacyConditionText: function (cells) {
-      var keys = Object.keys(cells || {})
-      if (!keys.length) return '默认规则'
-      var self = this
-      return keys
-        .map(function (key) {
-          return (self.varMap[key] || key) + ' ' + cells[key]
-        })
-        .join(' 且 ')
-    },
-    _modelConditionHasOr: function (node) {
-      if (!node || node.type !== 'group') return false
-      if (node.op === 'OR') return true
-      var children = Array.isArray(node.children) ? node.children : []
-      for (var i = 0; i < children.length; i++) {
-        if (this._modelConditionHasOr(children[i])) return true
+    _traceOperandLabel(operand) {
+      const code = operand?.code || operand?.value
+      if (code && operand.label?.endsWith(' ' + code)) {
+        return { ...operand, label: operand.label.slice(0, -(String(code).length + 1)).trim() || code }
       }
-      return false
+      return operand
     },
-    _modelConditionNeedsSummary: function (node) {
-      const seen = new Set()
-      const visit = condition => {
-        if (!condition) return false
-        if (condition.type === 'group') return condition.op === 'OR' || (condition.children || []).some(visit)
-        if (condition.leftOperand && !['REFERENCE', 'PATH'].includes(condition.leftOperand.kind)) return true
-        const code = this._modelOperandCode(condition.leftOperand) || condition.varCode
-        if (!code || seen.has(code)) return true
-        seen.add(code)
-        return false
-      }
-      return visit(node)
-    },
-    _modelActionCells: function (rule, model) {
-      var cells = {}
-      var definitions =
-        model && Array.isArray(model.actions) ? model.actions : []
-      var actions = rule && Array.isArray(rule.actions) ? rule.actions : []
-      for (var i = 0; i < actions.length; i++) {
-        var action = actions[i] || {}
-        var definition = definitions[i] || {}
-        var code =
-          this._modelOperandCode(action.targetOperand) ||
-          action.varCode ||
-          definition.varCode ||
-          ''
-        if (!code) continue
-        var value = action.valueOperand
-          ? this._modelOperandText(action.valueOperand)
-          : action.value
-        cells[code] = value === undefined ? '-' : this._displayVal(value)
-      }
-      return cells
-    },
-    _modelOperandCode: function (operand) {
-      if (!operand) return ''
-      return operand.code || operand.value || operand.varCode || ''
+    _tableTraceActions(rule, model, traced) {
+      if (!rule) return this._extractAssigns(traced).map(action => ({
+        targetOperand: { varCode: action.varName, varLabel: this.varMap[action.varName] },
+        valueText: action.value === undefined ? this._formatExprReadable(action.rhs) : this._displayVal(action.value),
+      }))
+      return (rule.actions || []).flatMap((action, index) => {
+        const target = action.targetOperand || (action.varCode ? action : model.actions?.[index])
+        if (!target) return []
+        const value = action.valueOperand ? this._modelOperandText(action.valueOperand) : action.value
+        return [{ targetOperand: this._traceOperandLabel(target), valueText: value === '' ? '""' : this._displayVal(value) }]
+      })
     },
     _modelOperandText: function (operand) {
       if (!operand) return ''
       if (operand.kind === 'LITERAL') return operand.value
       return formatExpressionFormula(operand, { humanReadable: true })
     },
-    _tableRuleStatus: function (rule) {
-      if (!rule || rule.evaluated === false) return 'skipped'
-      return rule.hit ? 'hit' : 'miss'
-    },
     _tableRuleStatusText: function (status, skippedByFirst) {
       if (status === 'hit') return '命中'
       if (status === 'miss') return '未命中'
+      if (status === 'missing') return '未记录追踪'
       return skippedByFirst ? '未执行（首次命中后终止）' : '未执行'
     },
     _walkIfChain: function (node) {
@@ -2788,6 +2639,7 @@ export default {
           conds: this._extractConds(condNode),
           condNode: condNode,
           acts: this._extractActMap(thenNode),
+          actionBlock: thenNode,
           evaluated: evaluated,
           hit: hit,
         })
@@ -2800,8 +2652,10 @@ export default {
           rules.push({
             no: no++,
             conds: { _default: '其他' },
+            defaultBranch: true,
             condNode: null,
             acts: this._extractActMap(elseNode),
+            actionBlock: elseNode,
             evaluated: isEvaled,
             hit: isEvaled && !this._anyHit(rules),
           })
@@ -2874,6 +2728,7 @@ export default {
           var ch = n.children || []
           acts.push({
             varName: ch[0] ? ch[0].token : '',
+            rhs: ch[1],
             value:
               n.value !== undefined ? n.value : ch[1] ? ch[1].value : undefined,
           })
@@ -2970,7 +2825,7 @@ export default {
       for (var i = 0; i < sourceChildren.length; i++) {
         var child = this._buildRuleSetConditionTree(
           sourceChildren[i],
-          childTraces[i] || null
+          childTraces[i] || (traceNode?.evaluated === false ? traceNode : null)
         )
         if (child) children.push(child)
       }
@@ -3016,6 +2871,9 @@ export default {
     },
     _buildRuleSetConditionLeaf: function (leaf, traceNode) {
       var varCode = this._ruleSetLeafCode(leaf)
+      const valueType = leaf.leftOperand?.valueType || leaf.varType
+      const option = findConditionOperator(leaf.operator, valueType, leaf.leftOperand || leaf)
+      const hasThreshold = !option?.noValue && !isSourceStatusOperator(leaf.operator)
       var skipped = traceNode && traceNode.evaluated === false
       var operands = this._ruleSetTraceOperands(leaf, traceNode)
       var actual = skipped ? undefined : this._traceOperandValue(operands[0])
@@ -3028,21 +2886,25 @@ export default {
         ? traceNode.value : null
       return {
         kind: 'condition',
-        hasThreshold: conditionOperatorRequiresValue(leaf.operator, leaf.varType),
-        contentOperand: leaf.leftOperand || { ...leaf, refType: leaf._refType || 'VARIABLE', refId: leaf._varId },
-        thresholdOperand: conditionOperatorRequiresValue(leaf.operator, leaf.varType) ? leaf.rightOperand || (leaf.valueKind === 'VAR' ? { refType: leaf.rightRefType || 'VARIABLE', refId: leaf.rightVarId, code: leaf.value, label: leaf.rightVarLabel } : { kind: 'LITERAL', value: leaf.value, valueType: leaf.varType }) : null,
+        hasThreshold,
+        contentOperand: this._traceOperandLabel(leaf.leftOperand) || { ...leaf, refType: leaf._refType || 'VARIABLE', refId: leaf._varId },
+        thresholdOperand: hasThreshold ? leaf.rightOperand || (leaf.valueKind === 'VAR' ? { refType: leaf._rightRefType || leaf.rightRefType || 'VARIABLE', refId: leaf._rightVarId ?? leaf.rightVarId, code: leaf.value, label: leaf.rightVarLabel } : { kind: 'LITERAL', value: leaf.value, valueType: leaf.varType }) : null,
         varCode: varCode || '?',
         varName: this._ruleSetVarName(leaf),
         actualText: actual === undefined ? (skipped ? '未执行' : '未记录') : this.fmtVal(actual),
         actualSource: actualSource,
         traceStatus: skipped ? 'skipped' : result === null ? 'missing' : 'evaluated',
-        operatorText: this._ruleSetOperatorText(leaf.operator, leaf.varType),
+        operatorText: option?.label || this._ruleSetOperatorText(leaf.operator, leaf.varType),
         thresholdText: this._ruleSetThresholdText(leaf, skipped ? [] : operands),
         result: result,
       }
     },
     _ruleSetTraceOperands: function (leaf, traceNode) {
       var node = traceNode
+      if (isSourceStatusOperator(leaf.operator)) return []
+      // 否定条件编译为 !isBlank(left) && !predicate，读取保护判断中的原始操作数。
+      const guard = node?.token === '&&' && node.children?.[0]
+      if (guard?.token === '!' && guard.children?.[0]?.token === 'isBlank') return guard.children[0].children || []
       if (node && node.type === 'OPERATOR' && node.token === '!') node = (node.children || [])[0]
       if ((leaf.operator === 'between' || leaf.operator === 'not_between') &&
           node && node.token === '&&') node = (node.children || [])[0]
@@ -3050,7 +2912,11 @@ export default {
       var children = node.children || []
       if (leaf.operator === 'in_array' || leaf.operator === 'not_in_array')
         return [children[1], children[0]]
-      return children
+      const dateComparison = ['DATE', 'DATETIME', 'TIMESTAMP', 'LOCALDATE', 'LOCALDATETIME'].includes(
+        String(leaf.leftOperand?.valueType || leaf.varType || '').toUpperCase())
+      return children.map(child => child?.type === 'FUNCTION' &&
+        ((dateComparison && child.token === 'dateToMillis') || (leaf.operator?.startsWith('size_') && child.token === 'sizeOfValue'))
+        ? child.children?.[0] : child)
     },
     _traceOperandValue: function (node) {
       if (!node || node.evaluated === false) return undefined
@@ -3388,36 +3254,6 @@ export default {
       return parts.join('，') || '-'
     },
     /**
-     * 追踪节点中是否出现「或」运算（决策表含 OR 时列摊平不可用）。
-     */
-    _condHasOr: function (node) {
-      if (!node) return false
-      if (node.type === 'OPERATOR' && node.token === '||') return true
-      if (node.children) {
-        for (var i = 0; i < node.children.length; i++) {
-          if (this._condHasOr(node.children[i])) return true
-        }
-      }
-      return false
-    },
-    /**
-     * 决策表追踪表格：条件列展示（含与/或嵌套的递归文案）。
-     */
-    tableCondSummaryText: function (r) {
-      if (!r) return '-'
-      if (r.status === 'skipped' && r.configuredConditionText)
-        return r.configuredConditionText
-      var traced = '-'
-      if (r.condNode) {
-        traced = this._condHasOr(r.condNode)
-          ? this._traceCondText(r.condNode)
-          : this._condTextSimple(r.condNode)
-      }
-      return traced && traced !== '-'
-        ? traced
-        : r.configuredConditionText || '-'
-    },
-    /**
      * 递归将条件追踪节点格式化为可读中文（支持 && 与 ||）。
      */
     _traceCondText: function (node) {
@@ -3458,7 +3294,7 @@ export default {
             : '?'
         return label + ' ' + opCn + ' ' + this._displayVal(val)
       }
-      return '-'
+      return this._formatExprReadable(node)
     },
     _findThresholdResult: function (stmts, fromIdx) {
       for (var i = fromIdx; i < stmts.length; i++) {
@@ -3689,6 +3525,7 @@ export default {
           }
           assigns.push({
             varName: ch[0] ? ch[0].token : '',
+            rhs: ch[1],
             value:
               s.value !== undefined ? s.value : ch[1] ? ch[1].value : undefined,
           })
@@ -5553,6 +5390,43 @@ export default {
 .mv-ruleset {
   padding: 12px 0;
 }
+.dt-trace {
+  container-type: inline-size;
+  overflow-wrap: anywhere;
+}
+.dt-trace-policy {
+  margin-left: auto;
+  color: var(--tianshu-text-secondary);
+  font-size: 12px;
+}
+.dt-action-heading { display: none; }
+.dt-trace :deep(.rs-trace-leaf-var) { flex-basis: 100%; }
+.dt-trace :deep(.content-ref--wrap) { flex-wrap: wrap; }
+.dt-trace :deep(.content-ref__code), .dt-trace :deep(.content-ref__name) { flex: 0 1 auto; }
+.dt-trace .rs-action-line { align-items: flex-start; flex-direction: column; gap: 2px; }
+.dt-trace .rs-table { table-layout: fixed; }
+.dt-trace .rs-table th:first-child { width: 12%; }
+.dt-trace .rs-table th:nth-child(3) { width: 22%; }
+.dt-trace .rs-table th:last-child { width: 14%; }
+.dt-trace .rs-status { height: auto; min-height: 24px; padding: 2px 8px; }
+@container (max-width: 720px) {
+  .dt-trace .rs-table, .dt-trace tbody { display: block; }
+  .dt-trace thead { position: absolute; clip-path: inset(50%); }
+  .dt-trace tbody { display: grid; gap: 10px; }
+  .dt-trace tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 10px;
+    gap: 8px;
+    border: 1px solid var(--tianshu-border);
+    border-radius: 8px;
+  }
+  .dt-trace .rs-table td { padding: 0; border: 0; background: transparent; }
+  .dt-trace .rs-row-skipped { background: var(--tianshu-bg-muted); }
+  .dt-trace .rs-status-cell { grid-area: 1 / 2; }
+  .dt-trace .rs-cond-cell, .dt-trace .rs-action-cell { grid-column: 1 / -1; min-width: 0; }
+  .dt-trace .dt-action-heading { display: block; margin-bottom: 4px; font-weight: 600; color: var(--tianshu-text-secondary); }
+}
 .rs-trace-summary {
   display: flex;
   align-items: center;
@@ -5743,6 +5617,7 @@ export default {
   background: var(--tianshu-danger-bg);
   color: var(--tianshu-danger-text);
 }
+.rs-status--missing,
 .rs-status--skipped {
   background: var(--tianshu-bg-muted);
   color: var(--tianshu-text-tertiary);
@@ -5787,12 +5662,6 @@ export default {
   color: var(--tianshu-success-text);
   font-weight: 700;
   white-space: nowrap;
-}
-.rt-badge--miss {
-  color: var(--tianshu-text-tertiary);
-}
-.rt-badge--skipped {
-  color: var(--tianshu-warning-text);
 }
 .rt-footer {
   text-align: center;

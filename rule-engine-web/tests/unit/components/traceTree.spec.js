@@ -397,18 +397,21 @@ describe('TraceTree', () => {
       traceInfo: JSON.stringify([firstIf])
     })
 
-    expect(wrapper.vm.tableRules).toHaveLength(2)
-    expect(wrapper.vm.tableRules[0]).toMatchObject({
+    expect(wrapper.vm.decisionTableRows).toHaveLength(2)
+    expect(wrapper.vm.decisionTableRows[0]).toMatchObject({
       ruleName: '高分通过', status: 'hit', statusText: '命中'
     })
-    expect(wrapper.vm.tableRules[1]).toMatchObject({
+    expect(wrapper.vm.decisionTableRows[1]).toMatchObject({
       ruleName: '中分复核',
       status: 'skipped',
       statusText: '未执行（首次命中后终止）'
     })
-    expect(wrapper.vm.tableRules[1].acts).toEqual({ decision: 'REVIEW' })
-    expect(wrapper.vm.tableRules[1].configuredConditionText).toContain('60')
-    expect(wrapper.vm.tableCondSummaryText(wrapper.vm.tableRules[1])).toContain('60')
+    expect(wrapper.vm.decisionTableRows[1].actions).toMatchObject([{ targetOperand: { code: 'decision' }, valueText: 'REVIEW' }])
+    expect(wrapper.vm.decisionTableRows[1].conditionTree.children[0]).toMatchObject({
+      thresholdText: '60', result: null, traceStatus: 'skipped'
+    })
+    expect(wrapper.find('.rs-hit-pill').text()).toBe('R1 高分通过')
+    expect(wrapper.findAll('th').map(th => th.text())).toEqual(['规则', '条件明细', '配置动作', '状态'])
     expect(wrapper.text()).toContain('未执行（首次命中后终止）')
   })
 
@@ -438,7 +441,7 @@ describe('TraceTree', () => {
       traceInfo: JSON.stringify([firstIf])
     })
 
-    expect(wrapper.vm.tableRules.map(rule => rule.status))
+    expect(wrapper.vm.decisionTableRows.map(rule => rule.status))
       .toEqual(['miss', 'hit', 'skipped'])
   })
 
@@ -460,7 +463,7 @@ describe('TraceTree', () => {
         )
       ])
     })
-    expect(noHit.vm.tableRules.map(rule => rule.status)).toEqual(['miss', 'miss'])
+    expect(noHit.vm.decisionTableRows.map(rule => rule.status)).toEqual(['miss', 'miss'])
     noHit.unmount()
 
     const defaultHit = mountTraceTree({
@@ -484,10 +487,51 @@ describe('TraceTree', () => {
         )
       ])
     })
-    expect(defaultHit.vm.tableRules.map(rule => rule.status)).toEqual(['miss', 'hit'])
-    expect(defaultHit.vm.tableRules[1]).toMatchObject({
-      ruleName: '默认拒绝', acts: { decision: 'REJECT' }
+    expect(defaultHit.vm.decisionTableRows.map(rule => rule.status)).toEqual(['miss', 'hit'])
+    expect(defaultHit.vm.decisionTableRows[1]).toMatchObject({
+      ruleName: '默认拒绝', conditionText: '无条件（始终满足）', actions: [{ targetOperand: { code: 'decision' }, valueText: 'REJECT' }]
     })
+  })
+
+  test('ALL 逐行展示多条命中，并保留同一目标的多次赋值', () => {
+    const root = tableCondition('score', '>=', 60)
+    const rules = [
+      { conditionRoot: root, actions: [tableAction('decision', 'REVIEW'), tableAction('decision', 'PASS')] },
+      { conditionRoot: root, actions: [] },
+    ]
+    const branches = rules.map(() => tableIfNode(compareNode('score', '>=', 75, 60, true), 'PASS'))
+    const wrapper = mountTraceTree({ modelType: 'TABLE', definitionModel: { hitPolicy: 'ALL', rules },
+      traceInfo: JSON.stringify(branches) })
+    expect(wrapper.findAll('.rs-hit-pill').map(pill => pill.text())).toEqual(['R1', 'R2'])
+    expect(wrapper.vm.decisionTableRows[0].actions.map(action => action.valueText)).toEqual(['REVIEW', 'PASS'])
+    wrapper.unmount()
+  })
+
+  test('UNIQUE 的冲突检查和动作分派不会被计入业务规则', () => {
+    const predicates = [false, true].map((hit, i) => tableIfNode(compareNode('age', '>=', 30, i ? 18 : 60, hit), 1))
+    const guard = { type: 'IF', children: [compareNode('_uniqueHitCount', '>', 1, 1, false),
+      { type: 'BLOCK', children: [{ type: 'FUNCTION', token: 'UNIQUE_HIT_POLICY_MATCHED_MULTIPLE_RULES' }] }] }
+    const dispatch = tableIfNode(compareNode('_uniqueMatchedRow', '==', 1, 0, false), 'REVIEW',
+      tableIfNode(compareNode('_uniqueMatchedRow', '==', 1, 1, true), 'PASS'))
+    // 历史日志只含表达式追踪，仍可识别编译器生成的三个阶段。
+    const wrapper = mountTraceTree({ modelType: 'TABLE', traceInfo: JSON.stringify([...predicates, guard, dispatch]) })
+    expect(wrapper.vm.decisionTableRows.map(row => row.status)).toEqual(['miss', 'hit'])
+    expect(wrapper.vm.decisionTableRows[1].actions).toMatchObject([{ targetOperand: { varCode: 'decision' }, valueText: 'PASS' }])
+    expect(wrapper.vm.decisionTableRows[1].conditionTree).toMatchObject({ varCode: 'age', actualText: '30', thresholdText: '18' })
+    expect(wrapper.text()).not.toContain('_unique')
+    wrapper.unmount()
+  })
+
+  test('旧列式决策表保留重复条件，缺少行追踪时不宣称未执行或无命中', () => {
+    const definitionModel = { conditions: [{ varCode: 'age' }, { varCode: 'age' }], rules: [
+      { conditions: [{ operator: '>=', value: 18 }, { operator: '<', value: 60 }] },
+    ] }
+    const wrapper = mountTraceTree({ modelType: 'TABLE', definitionModel, traceInfo: JSON.stringify([assignNode('init', 0)]) })
+    const row = wrapper.vm.decisionTableRows[0]
+    expect(row.conditionTree.children.map(leaf => [leaf.varCode, leaf.thresholdText])).toEqual([['age', '18'], ['age', '60']])
+    expect(row.statusText).toBe('未记录追踪')
+    expect(wrapper.find('.rs-summary-empty').text()).toBe('未记录命中结果')
+    wrapper.unmount()
   })
 
   test('决策流对象参数和结果显示为可读 JSON', () => {

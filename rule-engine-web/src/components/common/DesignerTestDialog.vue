@@ -69,6 +69,7 @@
               <trace-tree
                 :trace-info="traceInfoJson"
                 :model-type="modelType"
+                :definition-model="testedTableModel"
                 :input-params="JSON.stringify(lastInput)"
                 :output-result="outputResultJson"
                 :execute-time-ms="result.executeTimeMs"
@@ -102,6 +103,7 @@
 </template>
 
 <script>
+import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { markRaw } from 'vue'
 import { VideoPlay as ElIconVideoPlay } from '@element-plus/icons-vue'
 import { $emit } from '../../utils/gogocodeTransfer'
@@ -178,6 +180,10 @@ export default {
     },
   },
   computed: {
+    testedTableModel() {
+      if (this.modelType !== 'TABLE' || !this.testedModelJson) return null
+      try { return parseDesignerModelJson(this.testedModelJson) } catch { return null }
+    },
     resultThrottled() {
       return Boolean(this.result && this.result.executionStatus === 'THROTTLED')
     },

@@ -48,13 +48,15 @@ test('结构化追踪的集合成员与精确数值转换均能解释而非显�
   } finally { wrapper.unmount() }
 })
 
-test('相同字段的多项AND条件使用摘要列，避免分列只剩最后一个边界', () => {
+test('相同字段的多项 AND 条件按顺序展示两个边界', () => {
   const wrapper = shallowMount(TraceTree, { props: { modelType: 'TABLE', definitionModel: { hitPolicy: 'FIRST', rules: [{
     conditionRoot: { type: 'group', op: 'AND', children: [leaf('age', '>=', '18'), leaf('age', '<=', '60')] }, actions: [],
   }] } } })
   try {
-    expect(wrapper.vm.tableUseCondSummary).toBe(true)
-    expect(wrapper.vm.tableCondSummaryText(wrapper.vm.tableRules[0])).toContain('age 大于等于 18 且 age 小于等于 60')
+    const tree = wrapper.vm.decisionTableRows[0].conditionTree
+    expect(tree.operator).toBe('AND')
+    expect(tree.children.map(child => [child.varCode, child.operatorText, child.thresholdText]))
+      .toEqual([['age', '大于等于', '18'], ['age', '小于等于', '60']])
   } finally { wrapper.unmount() }
 })
 

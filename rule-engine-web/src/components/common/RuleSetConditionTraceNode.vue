@@ -16,14 +16,14 @@
   </div>
   <div v-else class="rs-trace-leaf" :class="resultClass">
     <div class="rs-trace-leaf-var">
-      <content-reference mode="trace" :value="node.contentOperand || { varCode: node.varCode, varLabel: node.varName, varType: node.varType }" />
+      <content-reference mode="trace" wrap :value="node.contentOperand || { varCode: node.varCode, varLabel: node.varName, varType: node.varType }" />
     </div>
     <span class="rs-trace-leaf-part"
       >{{ node.actualSource === 'input' ? '输入值' : '实际值' }} <strong>{{ node.actualText }}</strong></span
     >
     <span class="rs-trace-leaf-op">{{ node.operatorText }}</span>
     <span v-if="node.hasThreshold !== false" class="rs-trace-leaf-part"
-      ><content-reference mode="trace" v-if="node.thresholdOperand" :value="node.thresholdOperand" /><template v-else>阈值 <strong>{{ node.thresholdText }}</strong></template></span
+      ><content-reference mode="trace" wrap v-if="node.thresholdOperand" :value="node.thresholdOperand" /><template v-else>阈值 <strong>{{ node.thresholdText }}</strong></template></span
     >
     <span class="rs-trace-leaf-result">{{ resultText }}</span>
   </div>
@@ -127,7 +127,8 @@ export default {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-width: 180px;
+  min-width: min(180px, 100%);
+  max-width: 100%;
 }
 .rs-trace-leaf-var code {
   padding: 1px 6px;
@@ -142,6 +143,7 @@ export default {
   color: var(--tianshu-text-secondary);
   font-size: 12px;
 }
+.rs-trace-leaf-part { max-width: 100%; overflow-wrap: anywhere; }
 .rs-trace-leaf-part strong,
 .rs-trace-leaf-op {
   color: var(--tianshu-text-primary);
