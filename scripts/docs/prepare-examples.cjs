@@ -14,15 +14,15 @@ const examples = slugs.map((slug, index) => {
   if (slug === 'tree' || slug === 'flow') {
     model.nodes = [
       { id: 'start', type: 'start', name: '开始', x: 100, y: 270 },
-      { id: 'check', type: 'decision', name: '活体与相似度判断', x: 330, y: 270 },
+      { id: 'verifyThresholds', type: 'decision', name: '活体与相似度判断', x: 330, y: 270 },
       { id: 'pass', type: 'task', name: '核验通过 · 低风险', x: 600, y: 160, actionData: [assign(4, 'verified', 'BOOLEAN', true), assign(5, 'riskLevel', 'STRING', 'LOW')] },
       { id: 'review', type: 'task', name: '转人工复核', x: 600, y: 410, actionData: [assign(4, 'verified', 'BOOLEAN', false), assign(5, 'riskLevel', 'STRING', 'REVIEW')] },
       { id: 'end', type: 'end', name: '结束', x: 860, y: 160, terminationScope: 'CURRENT_BRANCH' }
     ]
     model.edges = [
-      { source: 'start', target: 'check' },
-      { source: 'check', target: 'pass', conditionExpression: 'livenessScore >= 0.95 && faceSimilarity >= 0.90' },
-      { source: 'check', target: 'review', conditionExpression: 'livenessScore < 0.95 || faceSimilarity < 0.90' },
+      { source: 'start', target: 'verifyThresholds' },
+      { source: 'verifyThresholds', target: 'pass', conditionExpression: 'livenessScore >= 0.95 && faceSimilarity >= 0.90' },
+      { source: 'verifyThresholds', target: 'review', conditionExpression: 'livenessScore < 0.95 || faceSimilarity < 0.90' },
       { source: 'pass', target: 'end' }
     ]
     if (slug === 'tree') {
@@ -39,6 +39,7 @@ const examples = slugs.map((slug, index) => {
   }
   // Keep a score output numeric and the 100-point boundary inside the LOW grade.
   if (slug === 'score-adv') {
+    model.levelVar = model.resultVar
     model.resultVar = JSON.parse(routes.get('/api/rule/definition/content/106').modelJson).resultVar
     model.thresholds[2].max = 101
   }

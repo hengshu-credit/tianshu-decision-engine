@@ -11,7 +11,7 @@
 
 天枢决策引擎是一套面向风控与业务决策的可视化平台，将变量、名单、外部数据、模型和函数连接到统一的规则流程。业务人员可以通过九类设计器配置决策逻辑，使用样例验证结果，完成审核发布，并从执行日志追溯每次决策的条件、动作和输出。
 
-平台基于 **Spring Boot 3.5、QLExpress 4、Vue 3 和 Element Plus**，提供独立部署的管理控制台、服务端 API 和 Java 客户端 SDK，支持服务端执行与业务应用内执行。
+项目目前处于未发布阶段。平台基于 **Spring Boot 3.5、QLExpress 4、Vue 3 和 Element Plus**，提供独立部署的管理控制台、服务端 API 和 Java 客户端 SDK，支持服务端执行与业务应用内执行。
 
 ## 在线体验
 
@@ -66,7 +66,7 @@
 
 ## 功能演示
 
-以下界面截图采集于 **2026-10-01**，来自当前前端生产构建和固定业务样例。管理页面展示供应商、API、审批、账户、离线迁移等真实页面状态；九类规则的测试结果与表达式追踪来自本地 QLExpress 引擎执行同一份示例配置，演示数值不代表生产业务指标。重新生成方法见 [`scripts/docs/README.md`](scripts/docs/README.md)。
+以下界面截图采集于 **2026-11-14**，来自当前前端生产构建和固定业务样例。管理页面展示供应商、API、审批、账户、离线迁移等真实页面状态；九类规则的测试结果与表达式追踪来自本地 QLExpress 引擎执行同一份示例配置，演示数值不代表生产业务指标。重新生成方法见 [`scripts/docs/README.md`](scripts/docs/README.md)。
 
 ### 控制台登录界面
 
@@ -125,11 +125,11 @@
 
 外数配置按“供应商数据源 → API 接口 → 规则变量”串联。数据源页记录供应商、协议、基础地址和 OAuth2/API Key 等鉴权方式；API 页记录请求方法、路径、调用模式、超时、重试、请求体和响应字段映射。
 
-![外数 API 列表：供应商与接口编码](docs/project-usage/project-usage-10-api-list.png)
+![外数 API 配置：业务变量与供应商请求字段](docs/project-usage/project-usage-10-api-config.png)
 
-执行日志中的外数调用追踪会按顺序展示请求拼装、供应商鉴权、HTTP 调用和响应映射，并保留 `callId`、引用 ID、写入路径和受控报文，便于从规则结果定位到具体供应商调用。
+在同一 API 的“接口测试”中运行样例，展开“完整外数调用链”可查看请求拼装、供应商鉴权、HTTP 调用和响应映射。执行日志还保留 `callId`、引用 ID、写入路径和受控报文，便于从规则结果定位到具体供应商调用。
 
-![外数调用追踪：供应商请求到变量赋值](docs/project-usage/project-usage-10-external-call-trace.png)
+![API 测试追踪：供应商请求到响应映射](docs/project-usage/project-usage-10-api-execution-trace.png)
 
 数据库管理提供连接配置、连接测试、查询 SQL、结果映射和调用日志。SQL 可直接配置，数据源应使用只读账号和查询类语句。
 
@@ -157,7 +157,7 @@ ONNX 默认使用通用推理，按文件原始节点名解析多输入、多输
 
 分流实验支持冠军、挑战和测试组，可按条件或流量路由，并查看实验配置、执行情况与历史版本。
 
-![分流实验](docs/project-usage/project-usage-15-experiment.png)
+![分流实验配置：分组与流量比例](docs/project-usage/project-usage-15-experiment-config.png)
 
 分流日志会同时记录实验 `experiment_trace_id`、实际命中的组、子规则 `child_trace_id` 和分流原因。打开详情后可看到随机值/条件分支、命中组以及实际规则执行追踪，测试组的空跑结果也按同一结构保留。
 
@@ -176,11 +176,11 @@ GET /api/rule/runtime-log/payload/by-root-trace-id?rootTraceId={rootTraceId}
 GET /api/rule/runtime/external-calls/{callId}
 ```
 
-返回中的 `requestBody` / `responseBody` 在 `rawRequestAvailable` / `rawResponseAvailable` 为 `true` 时分别是原始请求体和原始响应体；同时返回 `callId、traceId、rootTraceId、ruleTraceId、requestId、targetRefId、responseStatus、attemptNo`，外部系统可直接按 `callId` 或根 Trace 关联，不需要根据缓存、重试或响应映射状态自行判断。
+返回中的 `requestBody` / `responseBody` 优先取按策略留存的内容，缺失时回退到日志展示值；`rawRequestAvailable` / `rawResponseAvailable` 表示对应留存内容是否可用；同时返回 `callId、traceId、rootTraceId、ruleTraceId、requestId、targetRefId、responseStatus、attemptNo`，外部系统可直接按 `callId` 或根 Trace 关联，不需要根据缓存、重试或响应映射状态自行判断。
 
 其中 `/api/rule/runtime/external-calls/{callId}` 面向业务系统的项目令牌，按 `callId` 做项目隔离后返回同一 payload；规则执行返回值中的 `externalCall.callId`、`externalCall.rootTraceId`、`externalCall.request.rawBody`、`externalCall.rawResponseBody`、`externalCall.rawRequestAvailable`/`rawResponseAvailable` 和顶层 `rawRequestBody`、`rawResponseBody` 可直接用于实时分析。payload 的 `traceSteps` 按同一调用返回规则入参、请求拼装、脱敏鉴权、外部请求、响应处理、字段映射和实际 API 变量赋值步骤；缓存命中时不会虚构一次供应商请求，原始请求体可能为空，调用方可通过 `dataOrigin` / `cacheStatus` 判断报文是否来自真实上游请求。
 
-API 配置中的“报文留存”可分别设置 `request` / `response`：`source` 为 `ORIGINAL`（供应商实际报文）或 `PROCESSED`（请求脚本通过 `state.logRequestBody`、响应脚本通过 `state.logResponseBody` 显式提供的中间副本），`excludePaths` 排除 JSONPath 字段，`maxFieldBytes` 按单字段大小自动省略；`decrypt` 支持 `BASE64` 和 `TRIPLE_DES_BASE64`，后者从接口鉴权配置的敏感脚本变量读取密钥。策略只处理日志和外部分析副本，实时规则结果不变；`originalRequestBody` / `originalResponseBody` 永久保留供应商实际报文，`rawRequestMetadata` / `rawResponseMetadata` 说明解密、过滤、省略或失败状态。
+API 配置中的“报文留存”可分别设置 `request` / `response`：`source` 为 `ORIGINAL`（供应商实际报文）或 `PROCESSED`（请求脚本通过 `state.logRequestBody`、响应脚本通过 `state.logResponseBody` 显式提供的中间副本），`excludePaths` 排除 JSONPath 字段，`maxFieldBytes` 按单字段大小自动省略；`decrypt` 支持 `BASE64` 和 `TRIPLE_DES_BASE64`，后者从接口鉴权配置的敏感脚本变量读取密钥。策略只处理日志和外部分析副本，实时规则结果不变；原文是否留存取决于请求和响应各自的保存方式，可通过 `originalRequestAvailable` / `originalResponseAvailable` 判断，`rawRequestMetadata` / `rawResponseMetadata` 说明解密、过滤、省略或失败状态。
 
 生产表达式追踪可通过 `RULE_TRACE_MASK_PATHS` 配置持久化遮罩路径，例如 `$.input.idCard,$.items[*].phone`；遮罩只作用于执行日志中的 `trace_info`，不会改变本次规则结果或内存追踪。
 
@@ -375,7 +375,7 @@ Java/Spring Bean 原生实现属于可信服务器代码能力，配置、导入
 
 点击右上角**账户菜单 → 主题设置**，即时预览界面外观。支持白天/夜间模式、8 个纯色与 4 个渐变预设、自定义纯色、两色/三色渐变、线性/径向渐变、深浅导航、流式/定宽内容区和色弱模式。
 
-在**列表表格 → 滚动方式**中，可选择默认的“随内容增高”，或“表格内滚动”。后者让管理列表填满主内容区剩余高度，表头和底部分页保持可见，50 行等大分页可在表格内部上下滚动。设置支持即时预览、取消还原和账户保存；窗口过小时仍可滚动访问筛选项与分页。
+在**列表表格 → 滚动方式**中，默认使用“表格内滚动”，也可选择“随内容增高”。表格内滚动让管理列表填满主内容区剩余高度，表头和底部分页保持可见，50 行等大分页可在表格内部上下滚动。设置支持即时预览、取消还原和账户保存；窗口过小时仍可滚动访问筛选项与分页。
 
 ![主题设置：白天模式与预设](docs/project-usage/project-usage-19-theme-presets.png)
 
@@ -415,7 +415,7 @@ Java/Spring Bean 原生实现属于可信服务器代码能力，配置、导入
 
 运行环境为 JDK 17、Maven 3.6+、MySQL 8、Redis 和 Node.js 20.19+。前端构建产物独立部署，业务系统通过服务端同步规则，不直连管理数据库。
 
-业务系统可通过开放 API 或 Java SDK 接入，按项目使用访问令牌、账号密码、API Key 或 HMAC-SHA256 鉴权；需要跨项目读取全部已发布规则时，可由 server 配置 Ed25519 公钥，业务服务或 Java SDK使用配对私钥签名访问。
+业务系统可通过开放 API 或 Java SDK 接入，按项目使用访问令牌、账号密码、API Key 或 HMAC-SHA256 鉴权；需要跨项目读取全部已发布规则时，可由 server 配置 Ed25519 公钥，业务服务或 Java SDK 使用配对私钥签名访问。
 
 管理接口、开放接口和 Server API/SDK 统一使用 `rule-engine-model` 中的公共平台响应契约（包名 `com.hengshucredit.rule.model`）：成功结果码为字符串 `000000`，固定描述为“成功”；失败码按领域、子类和原因编码，具体原因放入 `detail`，HTTP 状态按统一字典映射。接口格式和升级要求见 [平台请求与响应契约](docs/platform-api-contract.md)。
 
