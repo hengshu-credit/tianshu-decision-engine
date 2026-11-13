@@ -6,9 +6,9 @@ services:
     restart: unless-stopped
     init: true
     scale: 1
-    cpus: "0.25"
-    mem_limit: 1g
-    memswap_limit: 1g
+    cpus: "${KAFKA_CPU_LIMIT:-0.25}"
+    mem_limit: "${KAFKA_MEMORY_LIMIT:-1g}"
+    memswap_limit: "${KAFKA_MEMORY_LIMIT:-1g}"
     pids_limit: 256
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]

@@ -1,18 +1,18 @@
 # 依赖组件 Compose：只启动 MySQL，供 JAR、单容器 Docker 或外接数据库应用 Compose 使用。
 # 它不启动 server/web，也不依赖其它 Compose；使用 DEPLOY_PROJECT 隔离多套环境。
-# 固定上限：1536M 内存、0.40C CPU；与应用/Redis/Kafka Compose 同时运行时按 8G/2C 预算。
+# 容器 CPU 和内存上限由 .env.server 设置。
 name: ${DEPLOY_PROJECT:-tianshu}
 
 services:
   mysql:
     image: ${MYSQL_IMAGE:-mysql:8.4.6}
-    cpus: "0.40"
-    mem_limit: 1536m
+    cpus: "${MYSQL_CPU_LIMIT:-0.40}"
+    mem_limit: "${MYSQL_MEMORY_LIMIT:-1536m}"
     deploy:
       resources:
         limits:
-          cpus: "0.40"
-          memory: 1536M
+          cpus: "${MYSQL_CPU_LIMIT:-0.40}"
+          memory: "${MYSQL_MEMORY_LIMIT:-1536m}"
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}"

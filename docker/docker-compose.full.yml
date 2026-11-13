@@ -1,9 +1,7 @@
 # 方案 D：一键完整 Compose，包含 MySQL + Redis + server + SDK + web。
 # 本文件独立启动所有依赖，不需要先启动 mysql/redis Compose；用 DEPLOY_PROJECT 隔离多套环境。
 # 默认拓扑：server 2 个副本；SDK runtime、MySQL、Redis、Kafka、web 各 1 个。
-# 资源硬上限：mysql 1.5G/0.40C、redis 384M/0.10C、kafka 1G/0.25C、
-# 每个 server 1.5G/0.45C、sdk 768M/0.15C、web 256M/0.05C；
-# 2 个 server 时合计约 6.88G 内存、1.85C CPU；启用 example-data profile 后增加 256M/0.05C。
+# 容器 CPU 和内存上限由 .env.server 设置，server 按副本计。
 name: ${DEPLOY_PROJECT:-tianshu}
 
 x-java: &java
@@ -45,13 +43,13 @@ x-runtime: &runtime
 services:
   mysql:
     image: ${MYSQL_IMAGE:-mysql:8.4.6}
-    cpus: "0.40"
-    mem_limit: 1536m
+    cpus: "${MYSQL_CPU_LIMIT:-0.40}"
+    mem_limit: "${MYSQL_MEMORY_LIMIT:-1536m}"
     deploy:
       resources:
         limits:
-          cpus: "0.40"
-          memory: 1536M
+          cpus: "${MYSQL_CPU_LIMIT:-0.40}"
+          memory: "${MYSQL_MEMORY_LIMIT:-1536m}"
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}"
@@ -123,17 +121,17 @@ services:
 
   redis:
     image: ${REDIS_IMAGE:-redis:8.2.1}
-    cpus: "0.10"
-    mem_limit: 384m
+    cpus: "${REDIS_CPU_LIMIT:-0.10}"
+    mem_limit: "${REDIS_MEMORY_LIMIT:-384m}"
     deploy:
       resources:
         limits:
-          cpus: "0.10"
-          memory: 384M
+          cpus: "${REDIS_CPU_LIMIT:-0.10}"
+          memory: "${REDIS_MEMORY_LIMIT:-384m}"
     restart: unless-stopped
     environment:
       REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"
-      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-512mb}
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-256mb}
       TZ: Asia/Shanghai
     command:
       - sh
@@ -163,9 +161,9 @@ services:
     restart: unless-stopped
     init: true
     scale: 1
-    cpus: "0.25"
-    mem_limit: 1g
-    memswap_limit: 1g
+    cpus: "${KAFKA_CPU_LIMIT:-0.25}"
+    mem_limit: "${KAFKA_MEMORY_LIMIT:-1g}"
+    memswap_limit: "${KAFKA_MEMORY_LIMIT:-1g}"
     pids_limit: 256
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
@@ -198,13 +196,13 @@ services:
   server:
     <<: *java
     scale: ${SERVER_REPLICAS:-2}
-    cpus: "0.45"
-    mem_limit: 1536m
+    cpus: "${SERVER_CPU_LIMIT:-0.45}"
+    mem_limit: "${SERVER_MEMORY_LIMIT:-1536m}"
     deploy:
       resources:
         limits:
-          cpus: "0.45"
-          memory: 1536M
+          cpus: "${SERVER_CPU_LIMIT:-0.45}"
+          memory: "${SERVER_MEMORY_LIMIT:-1536m}"
     depends_on:
       mysql:
         condition: service_healthy
@@ -330,13 +328,13 @@ services:
 
   web:
     image: ${NGINX_IMAGE:-nginx:1.29.1-alpine}
-    cpus: "0.05"
-    mem_limit: 256m
+    cpus: "${WEB_CPU_LIMIT:-0.05}"
+    mem_limit: "${WEB_MEMORY_LIMIT:-256m}"
     deploy:
       resources:
         limits:
-          cpus: "0.05"
-          memory: 256M
+          cpus: "${WEB_CPU_LIMIT:-0.05}"
+          memory: "${WEB_MEMORY_LIMIT:-256m}"
     restart: unless-stopped
     init: true
     depends_on:

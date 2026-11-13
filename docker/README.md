@@ -36,6 +36,8 @@ dist/            Vue 控制台静态文件
 
 生产 Compose 默认只把日志写到 Docker stdout，不再在 runtime 的 `/data/logs/application.log` 生成文件；Docker 日志默认按 `10m × 3` 轮转。`SERVER_LOG_LEVEL` 和 `RUNTIME_LOG_LEVEL` 支持 `ERROR`、`WARN`、`INFO`、`DEBUG`，生产建议保持 `WARN`，临时排障再调高。客户端 runtime 默认关闭执行 trace（可通过 `RUNTIME_TRACE_ENABLED=true` 开启），服务端持久化 trace 默认不限制大小，可用 `RULE_TRACE_MAX_PERSIST_BYTES` 设置正数上限。执行恢复 journal 属于故障恢复数据，数据库正常时会自动消费和压缩，不应当作普通日志删除。
 
+服务端的应用副本、MySQL、Redis、Nginx 和自建 Kafka 均支持在生效的 `.env.server` 中分别调整 CPU 与内存。资源变量、整机预算及已有安装的生效方式见[部署手册的服务端容器配额](../docs/deployment.md#服务端容器配额)。
+
 ## 推荐：server/client 分离部署
 
 正式部署建议把服务端和客户端 runtime 分开管理。以下复制仅用于尚无配置的全新部署；已有环境保留原配置和主密钥：

@@ -1,8 +1,7 @@
 # 方案 C：应用 Compose（外部 MySQL/Redis）。数据库地址使用统一的 MYSQL_HOST/MYSQL_PORT、REDIS_HOST/REDIS_PORT。
 # 本文件独立启动 server、SDK runtime 和 web，不创建 MySQL/Redis。
 # 使用 DEPLOY_PROJECT 为每套部署隔离 Compose 项目、网络和卷；不要与 full Compose 共用同一个项目名。
-# 资源硬上限：每个 server 1.5G/0.45C、runtime-sdk 768M/0.15C、web 256M/0.05C；
-# 本文件按 2 个 server 副本合计约 4.00G 内存、1.10C CPU；外接 Kafka/MySQL/Redis 时整体按 8G/2C 预算。
+# 容器 CPU 和内存上限由 .env.server 设置，server 按副本计。
 name: ${DEPLOY_PROJECT:-tianshu}
 
 x-java: &java
@@ -45,13 +44,13 @@ services:
   server:
     <<: *java
     scale: ${SERVER_REPLICAS:-2}
-    cpus: "0.45"
-    mem_limit: 1536m
+    cpus: "${SERVER_CPU_LIMIT:-0.45}"
+    mem_limit: "${SERVER_MEMORY_LIMIT:-1536m}"
     deploy:
       resources:
         limits:
-          cpus: "0.45"
-          memory: 1536M
+          cpus: "${SERVER_CPU_LIMIT:-0.45}"
+          memory: "${SERVER_MEMORY_LIMIT:-1536m}"
     environment:
       <<: *java-env
       SERVER_PORT: 8080
@@ -170,13 +169,13 @@ services:
 
   web:
     image: ${NGINX_IMAGE:-nginx:1.29.1-alpine}
-    cpus: "0.05"
-    mem_limit: 256m
+    cpus: "${WEB_CPU_LIMIT:-0.05}"
+    mem_limit: "${WEB_MEMORY_LIMIT:-256m}"
     deploy:
       resources:
         limits:
-          cpus: "0.05"
-          memory: 256M
+          cpus: "${WEB_CPU_LIMIT:-0.05}"
+          memory: "${WEB_MEMORY_LIMIT:-256m}"
     restart: unless-stopped
     init: true
     depends_on:

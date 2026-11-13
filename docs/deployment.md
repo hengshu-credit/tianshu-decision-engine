@@ -88,6 +88,26 @@ Compose 还会使用 `MYSQL_PUBLIC_PORT`、`REDIS_PUBLIC_PORT`、`CONSOLE_PUBLIC
 
 远程执行直接调用 Server API，当前不再提供 HTTP 转发 runtime。旧调用方迁移及旧容器清理顺序见 [上传指南](server-upload.md)。
 
+#### 服务端容器配额
+
+在生效的 `.env.server` 中可以分别设置以下上限。CPU 以核计，内存以 MiB 或 GiB 计。每个 server 副本按同一上限分别计量。下表第二列是未设置变量时的 Compose 取值，第三列是全新复制服务端示例配置时的取值。
+
+| 服务 | 未设置配额时 | 新部署示例 | CPU、内存变量 |
+| --- | --- | --- | --- |
+| server，每副本 | 0.45 核 / 1536 MiB | 2 核 / 3 GiB | `SERVER_CPU_LIMIT`、`SERVER_MEMORY_LIMIT` |
+| MySQL | 0.40 核 / 1536 MiB | 2 核 / 4 GiB | `MYSQL_CPU_LIMIT`、`MYSQL_MEMORY_LIMIT` |
+| Redis | 0.10 核 / 384 MiB | 0.5 核 / 512 MiB | `REDIS_CPU_LIMIT`、`REDIS_MEMORY_LIMIT` |
+| Nginx web / API 代理 | 0.05 核 / 256 MiB | 0.5 核 / 512 MiB | `WEB_CPU_LIMIT`、`WEB_MEMORY_LIMIT` |
+| 自建 Kafka | 0.25 核 / 1 GiB | 1 核 / 2 GiB | `KAFKA_CPU_LIMIT`、`KAFKA_MEMORY_LIMIT` |
+
+同机运行两个 server、MySQL、Redis 和 web 时，新示例的上限之和为 7 核和 11 GiB。自建 Kafka 另计 1 核和 2 GiB。选择宿主机容量时还要计入操作系统及同机其他服务。JVM 堆通过 `SERVER_JAVA_TOOL_OPTIONS` 调整，InnoDB 缓冲池通过 `MYSQL_BUFFER_POOL_SIZE` 调整。新示例分别设为 1536 MiB，并为 JVM 堆外内存、MySQL 连接和缓存预留空间。Redis 数据内存通过 `REDIS_MAXMEMORY` 控制，示例为 256 MiB。
+
+对于与本次压测相似的业务，可先保留原内存、JVM 堆和 InnoDB 缓冲池，只提高两个应用副本与数据库的 CPU。测试中仅将 `SERVER_CPU_LIMIT=2`、`MYSQL_CPU_LIMIT=2` 就使 32 并发持续吞吐达到 1.22 正确单/秒。需要处理更大突发且宿主机有余量时，在新示例基础上把这两项改为 `4`，两副本与 MySQL、Redis、web 的 CPU 上限合计 13 核。
+
+已有安装需要在实际使用的 Compose 文件中合入相应服务的 CPU 和内存变量，再修改生效环境文件。目录整理后的安装使用外层 `docker/` 及 `config/.env.server`。在原项目名下运行对应拓扑的 `config --quiet` 验证配置，再按维护窗口用同一拓扑的 `up -d` 重建变更的服务。外接托管 MySQL 或 Redis 的配额在对应实例上调整。
+
+[服务端扩容压测数据和适用负载](quality-gates/server-resource-scaling.md)
+
 ### 1.5 可选 Kafka 执行日志
 
 系统默认通过 HTTP 上报客户端执行日志；需要 Kafka 日志链路时，可使用部署包中的单节点 KRaft Kafka Compose，或接入外部 Kafka 集群，并配置生产者、服务端消费者、项目主题绑定和 TLS/SASL/ACL。Kafka 的独立 Compose 使用 `KAFKA_ADVERTISED_HOST`、`KAFKA_USERNAME`、`KAFKA_PASSWORD`，full Compose 会同时启动一个 broker。
