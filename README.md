@@ -1,208 +1,170 @@
 <p align="center">
-  <img src="rule-engine-web/public/images/hscredit-loading.svg#readme" alt="衡枢真信" width="146" height="219"><br>
-  <strong>天工开物，枢衡定策</strong><br>
-  <sub>Creating Possibilities. Calibrating Decisions.</sub>
+  <img src="rule-engine-web/public/images/hscredit-loading.svg#readme" alt="衡枢真信" width="150">
 </p>
+<h1 align="center">天枢决策引擎</h1>
 <p align="center">
-  <img src="docs/project-usage/brand-values.svg" alt="鉴真伪 · 斟信用 · 衡风险 · 枢定策" width="292">
+  <img src="https://img.shields.io/badge/Java-17-3776AB?style=flat-square" alt="Java 17">
+  <a href="https://github.com/hengshu-credit/tianshu-decision-engine/actions/workflows/ci.yml"><img src="https://github.com/hengshu-credit/tianshu-decision-engine/actions/workflows/ci.yml/badge.svg?branch=master" alt="master 构建与测试"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-green?style=flat-square" alt="Apache License 2.0"></a>
 </p>
+<p align="center"><strong>面向风控策略团队的可视化规则配置、执行与追踪平台</strong></p>
+<p align="center"><a href="https://rule.hengshucredit.com/">在线体验</a> · <a href="https://hengshu-credit.github.io/tianshu-decision-engine/">操作手册</a> · <a href="#功能展示">功能展示</a> · <a href="#部署与系统接入">部署与接入</a></p>
 
-# 天枢决策引擎
+一笔申请被转入人工复核，策略人员需要知道是哪项条件触发了分支，接入方需要核对引擎当时收到的数据。天枢把规则版本、输入输出和表达式追踪树关联起来，双方可以沿同一笔执行记录复核判断依据。
 
-天枢决策引擎面向风控、策略和业务运营团队。以人脸核验为例，策略人员可以把“活体分和相似度达到多少才通过”配置成决策表，用样例核对结果，审核通过后发布。业务系统调用已发布的规则后，运营人员既能看到整体通过率，也能查清某一笔申请用了哪个版本、命中了哪些条件。
+项目处于**未发布阶段**。在线体验账户为 `demo`，密码为 `hengshucredit`。自建环境首次访问时自行注册管理员。
 
-## 在线体验
+```mermaid
+flowchart LR
+    A["策略人员 · Web 控制台"] --> B["配置规则、测试与审批"]
+    B --> C["已发布规则"]
+    D["业务系统"] --> E["服务端执行"]
+    C --> E
+    E --> F["决策结果"]
+    E --> G["执行日志与追踪树"]
+    E --> H["按需调用外数、数据库、名单与模型"]
+```
 
-**体验地址：[https://rule.hengshucredit.com/](https://rule.hengshucredit.com/)**
+## 为什么选天枢？
 
-账户：`demo`　密码：`hengshucredit`
+同一条核验政策，策略人员可以用决策表规定通过条件，用评分卡输出连续分数，也可以让两版策略在分流实验中并行观察。上线前用固定用例验证边界，上线后在执行日志中找到当时的版本、命中条件和调用成本。
 
-<p align="center">
-  <a href="#在线体验">在线体验</a> ·
-  <a href="#联系方式">联系方式</a> ·
-  <a href="#功能总览">功能总览</a> ·
-  <a href="#功能演示">功能演示</a> ·
-  <a href="#九类规则配置与测试追踪">规则配置与追踪</a> ·
-  <a href="#主题与工作台">主题与工作台</a> ·
-  <a href="#部署与系统接入">部署与接入</a>
-</p>
+## 功能展示
 
-## 联系方式
+下面以人脸核验为例。每组左图是配置，右图是同一示例的执行依据。点击预览图可查看完整界面。
 
-天枢决策引擎由上海衡枢真信科技有限公司维护。产品咨询、部署支持与商务合作可通过以下方式联系：
+### 决策表 · 人脸阈值决策表
 
-| 联系方式 | 入口与说明 |
-|:---------|:-----------|
-| 官网 | [hengshucredit.com](https://hengshucredit.com/) |
-| 产品咨询与合作 | [官网联系页](https://hengshucredit.com/contact/) |
-| 邮箱 | [hscredit@hengshucredit.com](mailto:hscredit@hengshucredit.com) |
-| 微信 | `itlubber`，可搜索微信号或扫描下方二维码 |
-| 公众号 | **衡枢风控实验室**，关注后回复 **入群** 加入技术交流群 |
+每行配置一组条件及对应动作，本例采用首次命中策略。活体检测分为 0.98、人脸相似度为 0.936 时，追踪树标出命中行，两项输出分别为 `verified=true`、`riskLevel=LOW`。
 
-<table>
-  <tr><th align="center">微信 · itlubber</th><th align="center">公众号：衡枢风控实验室</th></tr>
-  <tr>
-    <td align="center"><a href="https://raw.githubusercontent.com/hengshu-credit/.github/main/profile/assets/wechat.svg"><img src="https://raw.githubusercontent.com/hengshu-credit/.github/main/profile/assets/wechat.svg" alt="微信 itlubber 二维码" width="200" height="200"></a><br>扫一扫，添加微信交流</td>
-    <td align="center"><a href="docs/project-usage/hscreditlab.png"><img src="docs/project-usage/hscreditlab.png" alt="衡枢风控实验室公众号二维码" width="200" height="200"></a><br>扫一扫关注，回复「入群」</td>
-  </tr>
-</table>
+| 决策表配置 | 决策表表达式追踪树 |
+| :---: | :---: |
+| [<img src="docs/project-usage/thumbs/project-usage-designer-table.webp" width="450" alt="人脸阈值决策表 · 决策表配置">](docs/project-usage/project-usage-designer-table.png) | [<img src="docs/project-usage/thumbs/project-usage-rule-table-trace.webp" width="450" alt="人脸阈值决策表 · 决策表表达式追踪树">](docs/project-usage/project-usage-rule-table-trace.png) |
 
-## 功能总览
+### 决策树 · 人脸复核决策树
 
-| 业务环节 | 平台上的工作 |
+核验分数同时达标时走通过分支，任一项偏低时转人工复核。沿着本次高亮的分支，可以从根节点读到“核验通过 · 低风险”。
+
+| 决策树配置 | 决策树表达式追踪树 |
+| :---: | :---: |
+| [<img src="docs/project-usage/thumbs/project-usage-designer-tree.webp" width="450" alt="人脸复核决策树 · 决策树配置">](docs/project-usage/project-usage-designer-tree.png) | [<img src="docs/project-usage/thumbs/project-usage-rule-tree-trace.webp" width="450" alt="人脸复核决策树 · 决策树表达式追踪树">](docs/project-usage/project-usage-rule-tree-trace.png) |
+
+### 决策流 · 人脸识别决策流
+
+通过和人工复核两个分支各自写入结果，再汇合到结束节点。对照执行路径，可以核实这笔请求经过了哪个任务、写入了什么值。
+
+| 决策流配置 | 决策流表达式追踪树 |
+| :---: | :---: |
+| [<img src="docs/project-usage/thumbs/project-usage-designer-flow.webp" width="450" alt="人脸识别决策流 · 决策流配置">](docs/project-usage/project-usage-designer-flow.png) | [<img src="docs/project-usage/thumbs/project-usage-rule-flow-trace.webp" width="450" alt="人脸识别决策流 · 决策流表达式追踪树">](docs/project-usage/project-usage-rule-flow-trace.png) |
+
+### 规则集 · 人脸风险规则集
+
+给检查项设置优先级，再从命中清单核对实际执行顺序。本例命中“活体检测通过”，规则编码为 `FACE_LIVENESS_PASS`，优先级为 10。
+
+| 规则集配置 | 规则集表达式追踪树 |
+| :---: | :---: |
+| [<img src="docs/project-usage/thumbs/project-usage-designer-ruleset.webp" width="450" alt="人脸风险规则集 · 规则集配置">](docs/project-usage/project-usage-designer-ruleset.png) | [<img src="docs/project-usage/thumbs/project-usage-rule-ruleset-trace.webp" width="450" alt="人脸风险规则集 · 规则集表达式追踪树">](docs/project-usage/project-usage-rule-ruleset-trace.png) |
+
+### 交叉表 · 渠道风险交叉表
+
+用活体检测分选行、风险等级选列。输入 0.95 和 `LOW` 时，追踪树定位到返回 `verified=true` 的单元格。
+
+| 交叉表配置 | 交叉表表达式追踪树 |
+| :---: | :---: |
+| [<img src="docs/project-usage/thumbs/project-usage-designer-cross.webp" width="450" alt="渠道风险交叉表 · 交叉表配置">](docs/project-usage/project-usage-designer-cross.png) | [<img src="docs/project-usage/thumbs/project-usage-rule-cross-trace.webp" width="450" alt="渠道风险交叉表 · 交叉表表达式追踪树">](docs/project-usage/project-usage-rule-cross-trace.png) |
+
+### 复杂交叉表 · 设备风险复杂交叉表
+
+为行列维度设置分段条件。活体检测分 0.98、风险等级 `LOW` 落入哪两个分段、交点为什么返回通过，都可以在矩阵中核对。
+
+| 复杂交叉表配置 | 复杂交叉表表达式追踪树 |
+| :---: | :---: |
+| [<img src="docs/project-usage/thumbs/project-usage-designer-cross-adv.webp" width="450" alt="设备风险复杂交叉表 · 复杂交叉表配置">](docs/project-usage/project-usage-designer-cross-adv.png) | [<img src="docs/project-usage/thumbs/project-usage-rule-cross-adv-trace.webp" width="450" alt="设备风险复杂交叉表 · 复杂交叉表表达式追踪树">](docs/project-usage/project-usage-rule-cross-adv-trace.png) |
+
+### 评分卡 · 人脸质量评分卡
+
+按活体检测分命中的评分项计算核验总分。输入 0.98 时输出 `totalScore=60`，追踪明细展示基础分和评分项。
+
+| 评分卡配置 | 评分卡表达式追踪树 |
+| :---: | :---: |
+| [<img src="docs/project-usage/thumbs/project-usage-designer-score.webp" width="450" alt="人脸质量评分卡 · 评分卡配置">](docs/project-usage/project-usage-designer-score.png) | [<img src="docs/project-usage/thumbs/project-usage-rule-score-trace.webp" width="450" alt="人脸质量评分卡 · 评分卡表达式追踪树">](docs/project-usage/project-usage-rule-score-trace.png) |
+
+### 复杂评分卡 · 人脸欺诈复杂评分卡
+
+把指标按维度分组，先计算质量分，再按总分区间映射等级。本例得到 `faceQualityScore=100`，对应 `riskLevel=LOW`。
+
+| 复杂评分卡配置 | 复杂评分卡表达式追踪树 |
+| :---: | :---: |
+| [<img src="docs/project-usage/thumbs/project-usage-designer-score-adv.webp" width="450" alt="人脸欺诈复杂评分卡 · 复杂评分卡配置">](docs/project-usage/project-usage-designer-score-adv.png) | [<img src="docs/project-usage/thumbs/project-usage-rule-score-adv-trace.webp" width="450" alt="人脸欺诈复杂评分卡 · 复杂评分卡表达式追踪树">](docs/project-usage/project-usage-rule-score-adv-trace.png) |
+
+### QL 脚本 · 人脸兜底脚本
+
+在 QLExpress 中直接写条件、赋值和返回值。脚本将活体检测分与 0.95、人脸相似度与 0.90 比较，追踪树展示此次进入的分支及其返回结果。
+
+| QL 脚本配置 | QL 脚本表达式追踪树 |
+| :---: | :---: |
+| [<img src="docs/project-usage/thumbs/project-usage-designer-script.webp" width="450" alt="人脸兜底脚本 · QL 脚本配置">](docs/project-usage/project-usage-designer-script.png) | [<img src="docs/project-usage/thumbs/project-usage-rule-script-trace.webp" width="450" alt="人脸兜底脚本 · QL 脚本表达式追踪树">](docs/project-usage/project-usage-rule-script-trace.png) |
+
+### 外数 API · 人脸活体与一致性检测
+
+在“请求字段”把业务变量绑定到供应商的 `image_url` 和 `id_number`。在同一接口的“接口测试”运行样例后，沿“完整外数调用链”核对请求拼装、供应商鉴权、HTTP 调用和响应映射，最终得到活体检测分 0.982、人脸相似度 0.936。
+
+| API 配置 · 请求字段 | API 追踪树 · 完整外数调用链 |
+| :---: | :---: |
+| [<img src="docs/project-usage/thumbs/project-usage-10-api-config.webp" width="450" alt="人脸活体与一致性检测 · API 配置 · 请求字段">](docs/project-usage/project-usage-10-api-config.png) | [<img src="docs/project-usage/thumbs/project-usage-10-api-execution-trace.webp" width="450" alt="人脸活体与一致性检测 · API 追踪树 · 完整外数调用链">](docs/project-usage/project-usage-10-api-execution-trace.png) |
+
+### 分流实验 · 冠军组与挑战组
+
+为同一实验配置生产组及流量比例，再打开分流日志。示例的随机值 0.36 落入占比 90% 的冠军组“V2 稳定策略”。展开下层规则追踪，可以继续核对该组为何返回 `verified=true`、`riskLevel=LOW`。
+
+| 分流实验配置 | 分流追踪树 · 命中组与子规则 |
+| :---: | :---: |
+| [<img src="docs/project-usage/thumbs/project-usage-15-experiment-config.webp" width="450" alt="冠军组与挑战组 · 分流实验配置">](docs/project-usage/project-usage-15-experiment-config.png) | [<img src="docs/project-usage/thumbs/project-usage-15-experiment-trace.webp" width="450" alt="冠军组与挑战组 · 分流追踪树 · 命中组与子规则">](docs/project-usage/project-usage-15-experiment-trace.png) |
+
+九类规则的输出与表达式追踪来自本地核心引擎执行。API 和分流使用固定文档样例，分别展示同一接口和同一实验的配置与追踪。[截图与样例生成方法](scripts/docs/README.md)
+
+## 核心功能
+
+| 业务任务 | 在天枢中怎样完成 |
 | --- | --- |
-| 准备数据 | 在项目中整理申请资料、名单、外部核验结果和模型评分。多个规则可共用同一个字段、名单或计算公式。 |
-| 制定策略 | 用决策表表达准入条件，用树或流程图安排分支，用评分卡划分风险等级。规则还可以在命中后查询外部数据或更新名单。 |
-| 验证与发布 | 把典型申请存为固定用例。调整策略后批量复测，比较版本、检查受影响的规则，经审批后发布。 |
-| 观察与调整 | 从看板观察通过率、人审率和执行耗时，从单笔日志追溯判断依据与外部调用，再通过分流实验比较新旧策略。 |
-| 团队协作 | 按项目和角色分配权限，用台账记录策略调整的背景和时间，把相关配置一并迁移到目标环境。 |
+| 编写准入和评分策略 | 在九类设计器中组合条件、矩阵、评分项或脚本，通过表达式追踪树查看每种规则的判断过程。 |
+| 准备决策数据 | 从业务请求、外数 API、数据库、SFTP 或名单取得输入，复用变量、数据对象和函数，接入 PMML 或 ONNX 模型。 |
+| 验证并发布版本 | 选择草稿或指定修订试算，保留固定用例，经依赖预检和审批发布。已启用的固定用例须全部通过。 |
+| 比较两套策略 | 让冠军组和挑战组按条件或比例分配流量，测试组可空跑。按实验日志查看每次分组及其子规则。 |
+| 复盘效果和成本 | 用看板观察决策分布，在日志中查单笔输出，用血缘图定位受影响的策略，并按账单明细核对外数和引擎费用。 |
 
-## 功能演示
+## 快速体验
 
-界面以人脸核验项目为例，点击截图可查看原图。[完整操作手册](http://tianshu.hengshucredit.com/)
-
-### 在项目中核对规则的输入和输出
-
-一个项目集中管理一项业务用到的规则、变量和模型。从项目列表进入人脸核验项目的工作台，打开规则详情，就能核对业务系统需要提供哪些字段，以及核验结束后会收到哪些结果。也可以从规则列表直接查找已有策略。[项目列表](docs/project-usage/project-usage-02-project-list.png) · [规则列表](docs/project-usage/project-usage-02-rule-list.png)
-
-| **项目工作台** | **规则详情** |
-| :--- | :--- |
-| [![项目工作台，查看人脸核验项目及其规则](docs/project-usage/project-usage-07-project-detail.png)](docs/project-usage/project-usage-07-project-detail.png) | [![规则详情，核对输入、输出和当前版本](docs/project-usage/project-usage-08-rule-detail.png)](docs/project-usage/project-usage-08-rule-detail.png) |
-| 查看人脸核验项目及其规则 | 核对输入、输出和当前版本 |
-
-### 把供应商结果变成规则能用的数据
-
-供应商返回的活体分和人脸相似度，可以分别对应到两个业务字段。配置一次，决策表、评分卡和其他规则便可引用同一口径。上线前可单独测试取数，确认返回值和字段对应无误，再测试整条规则。
-
-| **外数接口** | **变量管理** |
-| :--- | :--- |
-| [![外数接口，按供应商找到核验服务](docs/project-usage/project-usage-10-api-list.png)](docs/project-usage/project-usage-10-api-list.png) | [![变量管理，查看规则可用的业务字段](docs/project-usage/project-usage-03-variable.png)](docs/project-usage/project-usage-03-variable.png) |
-| 按供应商找到核验服务 | 查看规则可用的业务字段 |
-
-<details>
-<summary>更多数据来源与可复用的计算</summary>
-
-数据对象把一组相关字段放在一起，例如一份申请中的客户资料。名单可按记录匹配准入或风险标签。内部业务数据可通过只读数据库查询，合作方提供的文件可通过 SFTP 查询。模型可以先独立试算，再把输出用于策略判断。多条规则共用的计算公式可保存为函数。
-
-| **数据对象** | **名单管理** |
-| :--- | :--- |
-| [![数据对象，按层级组织字段](docs/project-usage/project-usage-03-data-object.png)](docs/project-usage/project-usage-03-data-object.png) | [![名单管理，查看项目下的名单库](docs/project-usage/project-usage-09-list.png)](docs/project-usage/project-usage-09-list.png) |
-| 按层级组织字段 | 查看项目下的名单库 |
-
-| **模型管理** | **函数管理** |
-| :--- | :--- |
-| [![模型管理，查找项目使用的模型](docs/project-usage/project-usage-13-model.png)](docs/project-usage/project-usage-13-model.png) | [![函数管理，在多条规则中复用同一公式](docs/project-usage/project-usage-04-function.png)](docs/project-usage/project-usage-04-function.png) |
-| 查找项目使用的模型 | 在多条规则中复用同一公式 |
-
-</details>
-
-### 用样例验证，再审批发布
-
-在人脸核验决策表中，一行就能写清通过条件。示例要求活体分至少 **0.95**、相似度至少 **0.90**。输入 **0.98** 和 **0.936**，测试结果为“核验通过、低风险”。点开测试追踪，可以对照每个条件的实际取值，看出结果来自哪一行。
-
-| **决策表设计** | **决策表测试追踪** |
-| :--- | :--- |
-| [![决策表设计，同一行配置两个门槛和通过后的动作](docs/project-usage/project-usage-designer-table.png)](docs/project-usage/project-usage-designer-table.png) | [![决策表测试追踪，核对实际命中行和输出](docs/project-usage/project-usage-rule-table-trace.png)](docs/project-usage/project-usage-rule-table-trace.png) |
-| 同一行配置两个门槛和通过后的动作 | 核对实际命中行和输出 |
-
-调整门槛后，可以用已收藏的正常、临界和异常样例一起复测。保存草稿后，线上继续使用已发布版本。提交审批时可核对依赖和改动。发布前，已启用的固定用例须全部通过。发布记录保留版本，后续可对比差异或回滚。
-
-<details>
-<summary>查看发布前检查与已发布版本</summary>
-
-| **发布前检查** | **发布记录** |
-| :--- | :--- |
-| [![发布前检查，核对依赖和检查结果](docs/project-usage/project-usage-08-rule-release-preflight.png)](docs/project-usage/project-usage-08-rule-release-preflight.png) | [![发布记录，确认已生效的规则版本](docs/project-usage/project-usage-08-rule-release-published.png)](docs/project-usage/project-usage-08-rule-release-published.png) |
-| 核对依赖和检查结果 | 确认已生效的规则版本 |
-
-</details>
-
-### 回看线上决策的结果、时间与费用
-
-看板按项目、规则和时段汇总进件量、通过率、人审率及地区分布。“通过”“人审”“拒绝”可关联项目实际使用的结果值。若某天人审率升高，可先缩小到对应规则与时段，再从执行日志打开一笔申请，核对当时的输入、规则版本和执行路径。
-
-| **数据看板** | **执行日志** |
-| :--- | :--- |
-| [![数据看板，按时段观察进件与决策分布](docs/project-usage/project-usage-18-dashboard.png)](docs/project-usage/project-usage-18-dashboard.png) | [![执行日志，找到同一时段的单笔执行记录](docs/project-usage/project-usage-06-execution-log.png)](docs/project-usage/project-usage-06-execution-log.png) |
-| 按时段观察进件与决策分布 | 找到同一时段的单笔执行记录 |
-
-排查慢请求时，平均耗时反映整体水平，P95 耗时表示约 95% 的执行在这个时间内完成。遇到耗时较长的申请，可结合外数调用追踪核对供应商请求、重试和返回结果。
-
-同一条规则反复执行时，引擎可以复用已编译的规则。外数结果若允许在一段时间内复用，也可以设置有效期，减少向供应商重复查询。账单按计费项汇总引擎执行和外部调用费用，并保留明细供核对。
-
-<details>
-<summary>查看外数调用追踪与账单</summary>
-
-| **外数调用追踪** | **账单管理** |
-| :--- | :--- |
-| [![外数调用追踪，从供应商返回值追到业务字段](docs/project-usage/project-usage-10-external-call-trace.png)](docs/project-usage/project-usage-10-external-call-trace.png) | [![账单管理，按计费项核对调用费用](docs/project-usage/project-usage-16-billing.png)](docs/project-usage/project-usage-16-billing.png) |
-| 从供应商返回值追到业务字段 | 按计费项核对调用费用 |
-
-</details>
-
-### 比较新旧策略，再决定是否推广
-
-调整核验门槛前，血缘图可以从一个字段或模型找到引用它的规则。分流实验可按条件或流量把申请分给现行策略与候选策略，也可让测试组试跑。复盘单笔实验时，可以看到分组原因、实际命中的组，以及该组规则给出的结果。
-
-| **血缘分析** | **实验追踪** |
-| :--- | :--- |
-| [![血缘分析，查看资源之间的上下游关系](docs/project-usage/project-usage-14-lineage.png)](docs/project-usage/project-usage-14-lineage.png) | [![实验追踪，沿命中组查看实际执行的规则](docs/project-usage/project-usage-15-experiment-trace.png)](docs/project-usage/project-usage-15-experiment-trace.png) |
-| 查看资源之间的上下游关系 | 沿命中组查看实际执行的规则 |
-
-团队可将调高门槛的原因、实验结论和上线时间记入台账。跨环境交付时，离线迁移可连同依赖一起导出规则配置，在目标环境先检查冲突。项目负责人、审核人和运营人员按各自权限查看记录、处理变更。
-
-<details>
-<summary>查看审批记录与跨环境迁移</summary>
-
-| 审批管理 | 离线迁移 |
-| :--- | :--- |
-| [![审批管理中的变更申请](docs/project-usage/project-usage-21-approval.png)](docs/project-usage/project-usage-21-approval.png) | [![离线配置包的导出和导入](docs/project-usage/project-usage-22-transfer.png)](docs/project-usage/project-usage-22-transfer.png) |
-| 核对待审批的变更 | 导出配置，在目标环境预检后导入 |
-
-</details>
-
-## 九类规则配置与测试追踪
-
-同一项业务可以有不同的表达方式。例如，核验人员核对两项门槛时，决策表便于逐行检查。讨论“何时转人审”时，决策树更容易看清分支。需要解释一个风险等级时，评分卡可以列出各项分数。表中的配置与追踪对应同一类规则，可以对照查看设计和执行结果。
-
-| 规则类型 | 适合表达的判断 | 示例配置与结果 |
-| --- | --- | --- |
-| 决策表 | 按行列出条件与动作，适合逐项核对准入门槛。 | [配置](docs/project-usage/project-usage-designer-table.png) · [命中行](docs/project-usage/project-usage-rule-table-trace.png) |
-| 决策树 | 逐层判断，让通过和转人审走向不同分支。 | [配置](docs/project-usage/project-usage-designer-tree.png) · [判断路径](docs/project-usage/project-usage-rule-tree-trace.png) |
-| 决策流 | 编排多个判断和动作，不同分支可以汇入同一个后续步骤。 | [配置](docs/project-usage/project-usage-designer-flow.png) · [执行节点](docs/project-usage/project-usage-rule-flow-trace.png) |
-| 规则集 | 按优先级评估多条检查项，可取首次命中或收集全部命中。 | [配置](docs/project-usage/project-usage-designer-ruleset.png) · [命中清单](docs/project-usage/project-usage-rule-ruleset-trace.png) |
-| 交叉表 | 用两个取值定位一个结果，例如用活体分和风险等级查出是否通过。 | [配置](docs/project-usage/project-usage-designer-cross.png) · [命中单元格](docs/project-usage/project-usage-rule-cross-trace.png) |
-| 复杂交叉表 | 先划分区间或类别，再按多个维度组合查表。 | [配置](docs/project-usage/project-usage-designer-cross-adv.png) · [分段与结果](docs/project-usage/project-usage-rule-cross-adv-trace.png) |
-| 评分卡 | 把命中项按权重计入总分。示例中，活体分达标计入 60 分。 | [配置](docs/project-usage/project-usage-designer-score.png) · [评分明细](docs/project-usage/project-usage-rule-score-trace.png) |
-| 复杂评分卡 | 分别为多个维度评分，再把总分映射到等级。示例中，100 分对应低风险。 | [配置](docs/project-usage/project-usage-designer-score-adv.png) · [得分与等级](docs/project-usage/project-usage-rule-score-adv-trace.png) |
-| QL 脚本 | 用自定义表达式处理特殊判断，可逐步查看参与计算的值。 | [配置](docs/project-usage/project-usage-designer-script.png) · [表达式追踪](docs/project-usage/project-usage-rule-script-trace.png) |
-
-| 决策树 · 核验在哪一步转人审 | 复杂评分卡 · 风险等级如何得出 |
-| :--- | :--- |
-| [![决策树中的通过与复核分支](docs/project-usage/project-usage-designer-tree.png)](docs/project-usage/project-usage-designer-tree.png) | [![复杂评分卡测试中的维度得分与等级](docs/project-usage/project-usage-rule-score-adv-trace.png)](docs/project-usage/project-usage-rule-score-adv-trace.png) |
-
-## 主题与工作台
-
-多页签工作台可以同时打开规则、测试和日志，方便对照策略与执行结果。账户菜单中的“主题设置”支持明暗模式、色弱模式、纯色或渐变配色，以及顶部或左侧导航。查看较长的记录列表时，可选择在表格内滚动，让表头和分页保持可见。[主题预设](docs/project-usage/project-usage-19-theme-presets.png) · [自定义渐变](docs/project-usage/project-usage-19-theme-custom.png)
-
-| **夜间主题** | **顶部导航** |
-| :--- | :--- |
-| [![夜间主题，在深色界面预览配色](docs/project-usage/project-usage-19-theme-dark.png)](docs/project-usage/project-usage-19-theme-dark.png) | [![顶部导航，从顶部菜单切换业务模块](docs/project-usage/project-usage-19-theme-top.png)](docs/project-usage/project-usage-19-theme-top.png) |
-| 在深色界面预览配色 | 从顶部菜单切换业务模块 |
+1. 登录[演示控制台](https://rule.hengshucredit.com/)，在“规则管理”打开一条规则，查看输入、输出和设计器中的条件。
+2. 进入“规则测试”，选择同一项目、规则和待测版本，填写样例参数并执行。
+3. 对照实际输出打开“表达式追踪树”。决策表按行展示命中情况，决策树按路径展示分支，评分卡列出得分项。可对照上方同类型的演示核对读图方法。
 
 ## 部署与系统接入
 
-控制台与决策服务独立部署。策略人员通过浏览器管理规则，业务系统按项目授权调用已发布版本。MySQL 保存配置、版本和执行记录，Redis 通知客户端同步变更。Java 客户端可在业务应用内缓存并执行适合本地计算的规则，依赖外部取数或模型推理的规则可交给服务端执行。
-
-| 使用场景 | 入口 |
+| 需要完成的工作 | 入口 |
 | --- | --- |
-| 首次部署 | 使用 Docker Compose 部署控制台和服务端，按需部署独立执行服务。首次打开控制台时创建管理员。[部署步骤](docker/README.md) · [配置与账户恢复](docs/deployment.md) |
-| 对接业务系统 | 从项目的“API”入口导出接口文档，获取请求样例。支持直接调用服务端接口或集成 Java SDK。[接口约定](docs/platform-api-contract.md) · [Java 接入示例](docs/java-service-integration.md) |
-| 更新已有环境 | 构建发布包，备份并停止旧应用，按需执行适用的数据库迁移，再启动新版。沿用原有配置与数据卷。[发布包构建](docs/release-packaging.md) · [应用更新](docs/server-upload.md) · [数据库迁移](rule-engine-server/src/main/resources/sql/migrations/README.md) |
-| 运行维护 | 客户端默认通过 HTTP 上报执行日志，可选 Kafka。品牌、通知邮箱和登录策略由管理员统一配置。[日志上报](docs/kafka-execution-logs.md) · [系统配置](docs/system-settings.md) |
+| 本地开发 | 准备 JDK 17、Maven 3.6+、Node.js 20.19+、MySQL 8 和 Redis。服务端使用 `.env.server`，独立客户端使用 `.env.client`。[环境与参数](docs/deployment.md) |
+| 部署或升级 | 首次部署选择完整单机或外部数据库模式。已有环境按发布包说明备份、迁移、更新和检查就绪状态。[Docker 部署](docker/README.md) · [构建发布包](docs/release-packaging.md) · [服务器更新](docs/server-upload.md) |
+| 从业务系统调用 | HTTP 调用已发布的规则。Java SDK 也可在业务进程缓存并执行纯计算规则，涉及外数、历史统计或模型时使用服务端执行。[Java 接入](docs/java-service-integration.md) · [接口契约](docs/platform-api-contract.md) |
 
-## 许可证与相关项目
+如果项目使用令牌鉴权，且已发布上例决策表，可用下面的请求核对结果。将 `ENGINE_URL` 设为自己的服务地址，`PROJECT_TOKEN` 设为获授该规则的项目令牌。
 
-项目许可证见 [LICENSE](LICENSE)，第三方组件与交付要求见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。包含 JPMML 的制品或网络服务按 AGPL-3.0 要求提供对应源代码、许可证和重建材料。
+```bash
+curl -X POST "$ENGINE_URL/api/rule/sync/execute/face_threshold_table" \
+  -H "X-Rule-Token: $PROJECT_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"clientAppName":"risk-service","traceEnabled":true,"params":{"livenessScore":0.98,"faceSimilarity":0.936}}'
+```
 
-相关项目：[QLExpress](https://github.com/alibaba/QLExpress) · [qlexpress-rule](https://github.com/xiachongbu/qlexpress-rule)
+## 交流与关注
+
+维护方为上海衡枢真信科技有限公司。产品与部署咨询可发邮件至 [hscredit@hengshucredit.com](mailto:hscredit@hengshucredit.com)，或通过[官网联系页](https://hengshucredit.com/contact/)联系。
+
+| 微信 · itlubber | 公众号 · 衡枢风控实验室 |
+| :---: | :---: |
+| <img src="docs/project-usage/itlubber.svg" width="135" alt="微信 itlubber 二维码"> | <img src="docs/project-usage/hscreditlab.png" width="135" alt="衡枢风控实验室公众号二维码"> |
+| 添加微信交流 | 关注后回复「入群」 |
+
+## 文档与许可
+
+完整的操作步骤、数据源配置、上线验收和恢复流程见[文档索引](docs/README.md)。项目采用 Apache License 2.0。对外提供包含 JPMML 的制品或网络服务时，还需按 AGPL-3.0 提供对应版本的完整源代码、许可证与重建材料。[项目许可证](LICENSE) · [第三方组件与交付要求](THIRD_PARTY_LICENSES.md)

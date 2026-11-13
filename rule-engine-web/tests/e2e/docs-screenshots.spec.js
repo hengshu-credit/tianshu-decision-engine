@@ -5,13 +5,15 @@ const { createDocsApiData } = require('./support/docsFixtures.cjs')
 const { screenshotRoot, screenshotViewport, referencedScreenshots } = require('../../../scripts/docs/screenshot-files.cjs')
 
 const publishedScreenshots = referencedScreenshots()
+const readmeScreenshots = referencedScreenshots({ includeManual: false })
 
 async function openPage(page, route, apiData = createDocsApiData()) {
   await page.setViewportSize(screenshotViewport)
   const routing = await installDistRoutes(page, { apiData })
   await page.goto('about:blank')
   await page.goto(`http://tianshu.local/index.html#${route}`)
-  await expect(page.getByRole('main')).toBeVisible()
+  const main = route === '/login' ? page.getByRole('main') : page.locator('main.layout-main')
+  await expect(main).toBeVisible()
   await page.waitForTimeout(900)
   return routing
 }
@@ -27,7 +29,8 @@ async function screenshot(page, fileName) {
     })
   })
   await page.screenshot({
-    path: path.join(screenshotRoot, fileName),
+    // The README pairs are published together with their previews and engine traces.
+    path: readmeScreenshots.has(fileName) ? test.info().outputPath(fileName) : path.join(screenshotRoot, fileName),
     animations: 'disabled'
   })
 }
@@ -344,7 +347,7 @@ test('生成九类规则设计器最终截图', async ({ browser }) => {
     if (action) {
       await page.getByRole('button', { name: action, exact: true }).first().click()
     }
-    await expect(page.getByRole('main')).toBeVisible()
+    await expect(page.locator('.rule-designer-actions__compile')).toBeVisible()
     await screenshot(page, fileName)
     routing.assertClean()
     await context.close()

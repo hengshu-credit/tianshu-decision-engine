@@ -139,7 +139,7 @@ docker compose --env-file .env.client --env-file .env.server -f docker/docker-co
 - 样例导入兼容未初始化、已执行可选初始化和旧版初始化。三个依赖演示名单/API/数据库的变量只由样例脚本创建；旧版默认配置只有在全部原始种子字段与配置均未改动时才校正引用。导入与服务端可选初始化共用数据库命名锁，样例在单连接事务中执行，遇错必须停止，不使用 `mysql --force`。
 - 手工演示环境准备顺序：启动服务自动执行 `schema.sql`，再按需导入 `docker/rule-engine-mysql/data-tianshu-example.sql`；该样例脚本不用于保留业务数据的数据库
 - 样例数据只保留 `docker/rule-engine-mysql/data-tianshu-example.sql`，不属于系统初始数据来源；服务端启动不自动导入样例数据
-- 功能边界以实际代码、测试和本文件下方的「仍需真实环境验证的边界」为准；本轮审查与实施状态见 `docs/audits/2026-10-22-engine-review.md`、对应优化计划和 `docs/audits/2026-10-23-optimization-completion.md`，不从历史功能清单推断能力缺失。
+- 功能边界以实际代码、测试和本文件下方的「仍需真实环境验证的边界」为准；产品与运维说明见 `docs/README.md`，不从历史功能清单推断能力缺失。
 - Compose 不提供共享默认密码；全新数据卷根据 `MYSQL_USERNAME` / `MYSQL_PASSWORD` 创建应用账号，已有数据卷需由数据库管理员预先创建或更新最小权限账号
 - 环境文件仅使用 `.env.server` 和 `.env.client`，保留对应 `.example` 模板；不加载旧 `.env` 或 `.local` 覆盖。Maven/JAR 的 server 及 Vite 读取 `.env.server`，runtime 读取 `.env.client`，系统环境变量和命令行参数优先。
 - 控制台账号密码不从环境变量或配置文件初始化。首次访问注册页面创建超管，数据库永久记录初始化状态。忘记账号和密码时，在服务器运行 `java -jar server.jar --console-admin-recovery-code` 生成30分钟一次性恢复码，再到恢复页面设置新的用户名和密码；不得清空业务表、删除数据卷或更换项目加密主密钥来重置账户。
