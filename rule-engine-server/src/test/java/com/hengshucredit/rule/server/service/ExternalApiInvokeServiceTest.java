@@ -510,7 +510,11 @@ public class ExternalApiInvokeServiceTest {
         try {
             RuleExternalApiConfig config = basicApiConfig(1L, 1L, "/submit");
             config.setRequestMode("ASYNC");
-            config.setExecutionConfig(ExternalApiTestConfig.pollingResult("/submit", "/result/${steps.submit.body.taskId}", "body.status", "SUCCESS", 3, 1, "body.data"));
+            var workflow = com.alibaba.fastjson.JSON.parseObject(ExternalApiTestConfig.pollingResult(
+                    "/submit", "/result/${steps.submit.body.taskId}", "body.status", "SUCCESS", 3, 1, "body.data"));
+            workflow.getJSONArray("steps").getJSONObject(0).put("successConditionTree", Map.of("field", "body.taskId", "operator", "exists"));
+            workflow.getJSONArray("steps").getJSONObject(1).put("responseSample", Map.of("status", "SAMPLE_ONLY"));
+            config.setExecutionConfig(workflow.toJSONString());
             config.setPayloadCaptureConfig("{\"response\":{\"source\":\"ORIGINAL\",\"saveOriginal\":true}}");
             Map<String, Object> result = configuredService(config, httpDatasource(server)).invoke(1L, Map.of());
             assertEquals(680, ((Map<?, ?>) result.get("body")).get("score"));

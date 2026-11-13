@@ -21,7 +21,8 @@ import java.util.Set;
  */
 final class ExternalApiPayloadCapturePolicy {
     private static final int MAX_FIELD_BYTES = 50 * 1024 * 1024;
-    private static final String WILDCARD = "[*]";
+    private static final java.util.regex.Pattern SIMPLE_FIELD = java.util.regex.Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
+    private static final Object WILDCARD = new Object();
 
     private ExternalApiPayloadCapturePolicy() { }
 
@@ -326,12 +327,25 @@ final class ExternalApiPayloadCapturePolicy {
                 tokens.add(value.substring(index + 1, end));
                 index = end;
             } else if (current == '[') {
+                if (index + 1 < value.length() && (value.charAt(index + 1) == '"' || value.charAt(index + 1) == '\'')) {
+                    int start = index + 1;
+                    char quote = value.charAt(start);
+                    int cursor = start + 1;
+                    for (; cursor < value.length(); cursor++) {
+                        if (value.charAt(cursor) == '\\') cursor++;
+                        else if (value.charAt(cursor) == quote) break;
+                    }
+                    if (cursor + 1 >= value.length() || value.charAt(cursor + 1) != ']') return Collections.emptyList();
+                    try { tokens.add(JSON.parseObject(value.substring(start, cursor + 1), String.class)); }
+                    catch (RuntimeException invalid) { return Collections.emptyList(); }
+                    index = cursor + 2;
+                    continue;
+                }
                 int end = value.indexOf(']', index);
                 if (end < 0) return Collections.emptyList();
                 String token = value.substring(index + 1, end);
                 if ("*".equals(token)) tokens.add(WILDCARD);
                 else if (token.matches("\\d+")) tokens.add(Integer.valueOf(token));
-                else if (token.length() >= 2 && token.charAt(0) == '\'' && token.charAt(token.length() - 1) == '\'') tokens.add(token.substring(1, token.length() - 1));
                 else return Collections.emptyList();
                 index = end + 1;
             } else return Collections.emptyList();
@@ -343,9 +357,14 @@ final class ExternalApiPayloadCapturePolicy {
                                      String originalPath, Set<String> omitted) {
         if (index == tokens.size() - 1) return;
         Object token = tokens.get(index + 1);
-        if (token instanceof String && WILDCARD.equals(token)) {
+        if (token == WILDCARD) {
             if (current instanceof List) {
                 List<?> values = (List<?>) current;
+                if (index + 1 == tokens.size() - 1) {
+                    if (!values.isEmpty()) omitted.add(originalPath);
+                    values.clear();
+                    return;
+                }
                 for (int i = values.size() - 1; i >= 0; i--) {
                     removeAtPath(values.get(i), tokens, index + 1, originalPath, omitted);
                 }
@@ -393,13 +412,18 @@ final class ExternalApiPayloadCapturePolicy {
                                          Set<String> preservedPaths) {
         if (index + 1 >= tokens.size()) return;
         Object token = tokens.get(index + 1);
-        if (token instanceof String && WILDCARD.equals(token)) {
+        if (token == WILDCARD) {
             if (current instanceof Map<?, ?> map) {
                 for (Object key : new ArrayList<>(map.keySet())) {
                     applyFieldPolicy(map.get(key), policy, tokens, index + 1,
-                            path + "." + key, omitted, preservedPaths);
+                            childPath(path, key), omitted, preservedPaths);
                 }
             } else if (current instanceof List<?> list) {
+                if (index + 1 == tokens.size() - 1) {
+                    if (policy.store) preservedPaths.add(path);
+                    else { list.clear(); omitted.add(policy.path); }
+                    return;
+                }
                 for (int i = 0; i < list.size(); i++) {
                     applyFieldPolicy(list.get(i), policy, tokens, index + 1,
                             path + "[" + i + "]", omitted, preservedPaths);
@@ -410,7 +434,7 @@ final class ExternalApiPayloadCapturePolicy {
         if (index + 1 == tokens.size() - 1) {
             Object value = readChild(current, token);
             if (value == null) return;
-            String actualPath = path + (token instanceof Integer ? "[" + token + "]" : "." + token);
+            String actualPath = childPath(path, token);
             if (policy.store) {
                 preservedPaths.add(actualPath);
             } else if (current instanceof Map<?, ?> map && token instanceof String) {
@@ -428,7 +452,7 @@ final class ExternalApiPayloadCapturePolicy {
         Object next = readChild(current, token);
         if (next != null) {
             applyFieldPolicy(next, policy, tokens, index + 1,
-                    path + (token instanceof Integer ? "[" + token + "]" : "." + token),
+                    childPath(path, token),
                     omitted, preservedPaths);
         }
     }
@@ -438,7 +462,7 @@ final class ExternalApiPayloadCapturePolicy {
         if (current instanceof Map<?, ?> map) {
             for (Object key : new ArrayList<>(map.keySet())) {
                 Object value = map.get(key);
-                String childPath = path + "." + key;
+                String childPath = childPath(path, key);
                 if (JSON.toJSONString(value).getBytes(StandardCharsets.UTF_8).length > maxBytes
                         && !isPreserved(childPath, preservedPaths)) { map.remove(key); omitted.add(childPath); }
                 else trimLargeFields(value, maxBytes, childPath, omitted, preservedPaths);
@@ -453,8 +477,14 @@ final class ExternalApiPayloadCapturePolicy {
         }
     }
 
+    private static String childPath(String parent, Object key) {
+        if (key instanceof Integer) return parent + "[" + key + "]";
+        String name = String.valueOf(key);
+        return SIMPLE_FIELD.matcher(name).matches() ? parent + "." + name : parent + "[" + JSON.toJSONString(name) + "]";
+    }
+
     private static boolean isPreserved(String path, Set<String> preservedPaths) {
-        return preservedPaths.stream().anyMatch(p -> path.equals(p) || path.startsWith(p + ".") || path.startsWith(p + "["));
+        return preservedPaths.stream().anyMatch(p -> path.equals(p) || path.startsWith(p + ".") || path.startsWith(p + "[") || p.startsWith(path + ".") || p.startsWith(path + "["));
     }
 
     private static Object readChild(Object current, Object token) {

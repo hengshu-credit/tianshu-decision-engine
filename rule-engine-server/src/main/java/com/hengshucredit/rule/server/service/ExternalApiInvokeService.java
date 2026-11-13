@@ -331,7 +331,7 @@ public class ExternalApiInvokeService {
     private Map<String, Object> invoke(RuleExternalApiConfig apiConfig, Map<String, Object> params,
                                        boolean useResponseCache, Map<String, Object> pendingAsync) {
         try (var versions = bindResourceVersions(apiConfig, params)) {
-            return invokeSelected(apiConfig, params, useResponseCache, pendingAsync);
+            return invokeSelected(ExternalApiExecutionConfig.forInvocation(apiConfig), params, useResponseCache, pendingAsync);
         }
     }
 
@@ -685,7 +685,7 @@ public class ExternalApiInvokeService {
                         preview.put("validationError", missingSample.getMessage());
                     }
                 } else preview.put("callback", callbacks.get(step.getString("id")));
-                Object sample = step.get("sample");
+                Object sample = step.getOrDefault("responseSample", step.get("sample"));
                 if (sample == null && step.getJSONArray("responseBranches") != null && !step.getJSONArray("responseBranches").isEmpty()) sample = step.getJSONArray("responseBranches").getJSONObject(0).get("sample");
                 preview.put("body", sample);
                 preview.put("response", Map.of("body", sample == null ? Map.of() : sample));
@@ -1113,9 +1113,9 @@ public class ExternalApiInvokeService {
             config.put("authApiConfig", settings.toJSONString());
         }
         config.put("requestMode", "SYNC");
-        if (step.getJSONObject("successConditionTree") != null && !step.getJSONObject("successConditionTree").getJSONArray("children").isEmpty()) config.put("successCondition", step.getJSONObject("successConditionTree").toJSONString());
-        if (step.getJSONObject("exceptionConditionTree") != null && !step.getJSONObject("exceptionConditionTree").getJSONArray("children").isEmpty()) config.put("exceptionCondition", step.getJSONObject("exceptionConditionTree").toJSONString());
-        if (step.getJSONObject("retryConditionTree") != null && !step.getJSONObject("retryConditionTree").getJSONArray("children").isEmpty()) config.put("retryCondition", step.getJSONObject("retryConditionTree").toJSONString());
+        if (ExternalApiExecutionConfig.hasCondition(step.get("successConditionTree"))) config.put("successCondition", step.getJSONObject("successConditionTree").toJSONString());
+        if (ExternalApiExecutionConfig.hasCondition(step.get("exceptionConditionTree"))) config.put("exceptionCondition", step.getJSONObject("exceptionConditionTree").toJSONString());
+        if (ExternalApiExecutionConfig.hasCondition(step.get("retryConditionTree"))) config.put("retryCondition", step.getJSONObject("retryConditionTree").toJSONString());
         config.put("billingSuppressed", true);
         config.put("responseMapping", null);
         JSONObject stageSpec = new JSONObject();

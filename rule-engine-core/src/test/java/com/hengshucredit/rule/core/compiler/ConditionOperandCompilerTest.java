@@ -9,6 +9,16 @@ import static org.junit.Assert.assertEquals;
 public class ConditionOperandCompilerTest {
 
     @Test
+    public void requiredRouteResolvesFunctionByIdWhenDisplayCodeIsAbsent() {
+        var root = JSON.parseObject("""
+                {"type":"leaf","operator":"is_true","leftOperand":{"kind":"FUNCTION","functionId":15,"args":[],"valueType":"BOOLEAN"}}
+                """);
+        var context = new VarContext(java.util.Map.of(), java.util.Map.of(), java.util.Map.of(), java.util.Map.of(),
+                java.util.Map.of(15L, "matchesRoute"), java.util.Map.of(15L, 0));
+        assertEquals("matchesRoute() == true", ConditionCompiler.compileRequired(root, context));
+    }
+
+    @Test
     public void listOperatorsCompileListQueryWithTheSelectedLeftExpression() {
         JSONObject leaf = JSON.parseObject("{\"leftOperand\":{\"kind\":\"REFERENCE\",\"refId\":1,\"refType\":\"VARIABLE\",\"code\":\"request.mobile\"},"
                 + "\"operator\":\"in_list\",\"rightOperand\":{\"kind\":\"LIST_QUERY\",\"listIds\":[10,20],"

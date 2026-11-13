@@ -4,6 +4,10 @@ import static com.hengshucredit.rule.server.service.SafeLogJson.toJsonSafely;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.hengshucredit.rule.core.compiler.ConditionCompiler;
+import com.hengshucredit.rule.core.compiler.VarContext;
+import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
+import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -72,6 +76,8 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 thread.setDaemon(true);
                 return thread;
             }, new ThreadPoolExecutor.AbortPolicy());
+    @Resource private RuleCompileService compileService;
+    @Resource private FunctionRegistrar functionRegistrar;
     @Resource private RuleVersionBindingService versionBindings;
     @Resource private com.hengshucredit.rule.server.artifact.PublishedRuleFieldSnapshotResolver publishedFields;
     @Resource private ResourceVersionService resourceVersions;
@@ -257,17 +263,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         List<Map<String, Object>> nodes = new ArrayList<>();
         for (RuleExperimentGroup group : experiment.getGroups() == null ? Collections.<RuleExperimentGroup>emptyList() : experiment.getGroups()) {
-            Map<String, Object> node = new LinkedHashMap<>();
-            if (hasText(group.getConditionConfig())) {
-                try {
-                    node.put("conditionConfig", JSON.parseObject(group.getConditionConfig()));
-                } catch (Exception e) {
-                    node.put("conditionExpression", group.getConditionConfig());
-                }
-            }
-            if (hasText(group.getConditionExpression())) {
-                node.put("conditionExpression", group.getConditionExpression());
-            }
+            Map<String, Object> node = routeConditionNode(group);
             if (!node.isEmpty()) nodes.add(node);
         }
         if (!nodes.isEmpty()) {
@@ -410,6 +406,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         Map<String, Object> params = request == null || request.getParams() == null
                 ? Collections.emptyMap()
                 : request.getParams();
+        var conditions = prepareRouteConditions(experiment, groups);
         List<RuleDefinitionInputField> experimentInputs = resolveTestFields(experiment).getInputFields();
         params = executionParameterBinder.bindRuleInputsPreservingMissing(experimentInputs, params);
         if (fieldValidationService != null) {
@@ -430,14 +427,14 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         if (selectedVersion != null) { result.setVersionId(selectedVersion.getId()); result.setVersion(selectedVersion.getDisplayVersion()); }
         result.setRequestKey(requestKey);
 
-        RouteChoice productionChoice = chooseProductionGroup(experiment, groups, params, requestKey, clientAppName);
+        RouteChoice productionChoice = chooseProductionGroup(experiment, groups, params, requestKey, clientAppName, conditions);
         RuleExperimentGroupResult productionResult = runGroup(experiment, productionChoice.group, copyParams(params),
                 requestKey, requestTime, clientAppName, "PRODUCTION", productionChoice.reason, true,
                 experimentTraceId, configDigest, productionChoice.routeTrace, runtimeRequest);
         result.setProductionGroup(productionResult);
         result.getTags().add(productionChoice.group.getGroupCode());
 
-        List<RouteChoice> testChoices = chooseTestGroups(experiment, groups, params, requestKey);
+        List<RouteChoice> testChoices = chooseTestGroups(experiment, groups, params, requestKey, conditions);
         List<RouteChoice> queuedChoices = new ArrayList<>();
         List<Future<RuleExperimentGroupResult>> queuedResults = new ArrayList<>();
         RuleExperiment executionExperiment = experiment;
@@ -578,9 +575,8 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             return params;
         }
         Set<String> required = new LinkedHashSet<>();
-        Map<String, String> referencePaths = variableService == null
-                ? Collections.emptyMap() : variableService.buildRefScriptNameMap(experiment.getProjectId());
-        if (derivedVariableService != null) referencePaths = derivedVariableService.referencePaths(experiment.getProjectId());
+        Map<String, String> referencePaths = derivedVariableService != null ? derivedVariableService.referencePaths(experiment.getProjectId())
+                : variableService == null ? Map.of() : variableService.buildRefScriptNameMap(experiment.getProjectId());
 
         boolean productionCondition = ROUTING_CONDITION.equals(experiment.getRoutingMode());
         boolean testCondition = ROUTING_CONDITION.equals(experiment.getTestRoutingMode());
@@ -593,17 +589,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 boolean test = GROUP_TEST.equals(group.getGroupType());
                 if ((production && !productionCondition) || (test && !testCondition)) continue;
                 if (isFallbackGroup(group)) continue;
-                Map<String, Object> node = new LinkedHashMap<>();
-                if (hasText(group.getConditionConfig())) {
-                    try {
-                        node.put("conditionConfig", JSON.parseObject(group.getConditionConfig()));
-                    } catch (Exception e) {
-                        node.put("conditionExpression", group.getConditionConfig());
-                    }
-                }
-                if (hasText(group.getConditionExpression())) {
-                    node.put("conditionExpression", group.getConditionExpression());
-                }
+                Map<String, Object> node = routeConditionNode(group);
                 if (!node.isEmpty()) conditionNodes.add(node);
             }
             if (!conditionNodes.isEmpty()) {
@@ -671,6 +657,12 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     private RouteChoice chooseProductionGroup(RuleExperiment experiment, List<RuleExperimentGroup> groups,
                                               Map<String, Object> params, String requestKey,
                                               String clientAppName) {
+        return chooseProductionGroup(experiment, groups, params, requestKey, clientAppName, prepareRouteConditions(experiment, groups));
+    }
+
+    private RouteChoice chooseProductionGroup(RuleExperiment experiment, List<RuleExperimentGroup> groups,
+                                              Map<String, Object> params, String requestKey, String clientAppName,
+                                              RouteConditions conditions) {
         List<RuleExperimentGroup> productionGroups = productionGroups(groups);
         RuleExperimentGroup champion = championGroup(groups);
         List<Map<String, Object>> routeTrace = routingStart("PRODUCTION", experiment.getRoutingMode());
@@ -683,7 +675,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                     }
                     continue;
                 }
-                if (matchesConditionGroup(group, params, routeTrace)) {
+                if (matchesConditionGroup(group, params, routeTrace, conditions)) {
                     return routeChoice(group, "冠军挑战条件分流命中: " + group.getGroupCode(), routeTrace);
                 }
             }
@@ -725,6 +717,11 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
 
     private List<RouteChoice> chooseTestGroups(RuleExperiment experiment, List<RuleExperimentGroup> groups,
                                                Map<String, Object> params, String requestKey) {
+        return chooseTestGroups(experiment, groups, params, requestKey, prepareRouteConditions(experiment, groups));
+    }
+
+    private List<RouteChoice> chooseTestGroups(RuleExperiment experiment, List<RuleExperimentGroup> groups,
+                                              Map<String, Object> params, String requestKey, RouteConditions conditions) {
         List<RuleExperimentGroup> testGroups = activeGroups(groups, GROUP_TEST);
         if (testGroups.isEmpty()) {
             return Collections.emptyList();
@@ -751,7 +748,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 }
                 continue;
             }
-            if (!matchesConditionGroup(testGroup, params, routeTrace)) {
+            if (!matchesConditionGroup(testGroup, params, routeTrace, conditions)) {
                 continue;
             }
             choices.add(routeChoice(testGroup, "测试组条件命中", routeTrace));
@@ -969,21 +966,86 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         return event;
     }
 
-    private boolean matchesConditionGroup(RuleExperimentGroup group, Map<String, Object> params) {
-        return matchesConditionGroup(group, params, null);
+    private record RouteConditions(Map<RuleExperimentGroup, String> expressions, List<RuleFunction> functions) { }
+
+    private JSONObject visualCondition(RuleExperimentGroup group) {
+        try {
+            JSONObject tree = JSON.parseObject(group.getConditionConfig());
+            if (tree == null) throw new IllegalArgumentException();
+            return tree;
+        } catch (RuntimeException invalid) {
+            throw new IllegalArgumentException("分组 " + group.getGroupCode() + " 的条件结构无效", invalid);
+        }
+    }
+
+    private Map<String, Object> routeConditionNode(RuleExperimentGroup group) {
+        if (hasText(group.getConditionConfig())) return Map.of("conditionConfig", visualCondition(group));
+        return hasText(group.getConditionExpression()) ? Map.of("conditionExpression", group.getConditionExpression()) : Map.of();
+    }
+
+    private RouteConditions prepareRouteConditions(RuleExperiment experiment, List<RuleExperimentGroup> groups) {
+        Map<RuleExperimentGroup, JSONObject> trees = new LinkedHashMap<>();
+        Set<Long> functionIds = new LinkedHashSet<>();
+        boolean needsFieldCatalog = false;
+        for (RuleExperimentGroup group : groups) {
+            String mode = GROUP_TEST.equals(group.getGroupType()) ? experiment.getTestRoutingMode() : experiment.getRoutingMode();
+            if (!isActive(group) || !ROUTING_CONDITION.equals(mode)) continue;
+            if (!hasText(group.getConditionConfig())) {
+                if (!hasText(group.getConditionExpression()) && (GROUP_TEST.equals(group.getGroupType())
+                        || !hasText(experiment.getConditionRuleCode()) || hasInlineConditionGroups(productionGroups(groups)))) {
+                    throw new IllegalArgumentException("分组 " + group.getGroupCode() + " 缺少命中条件或兜底标记");
+                }
+                continue;
+            }
+            JSONObject tree = visualCondition(group);
+            if (Boolean.TRUE.equals(tree.getBoolean("fallback"))) continue;
+            trees.put(group, tree);
+            needsFieldCatalog |= group.getConditionConfig().contains("\"_varId\"");
+            for (var ref : OperandDependencyCollector.collectReferences(tree)) {
+                if (ref.getVersionId() != null) continue;
+                if ("FUNCTION".equals(ref.getRefType())) functionIds.add(ref.getRefId());
+                else needsFieldCatalog = true;
+            }
+        }
+        if (trees.isEmpty()) return new RouteConditions(Map.of(), List.of());
+        Long projectId = experiment.getProjectId();
+        List<RuleFunction> available = functionIds.isEmpty() ? List.of() : ruleFunctionService.listByProject(projectId);
+        List<RuleFunction> direct = available.stream().filter(f -> functionIds.contains(f.getId())).toList();
+        // SCRIPT 方法可以继续调用当前项目可见的其它方法，沿用规则执行的函数作用域。
+        List<RuleFunction> functions = direct.stream().anyMatch(f -> "SCRIPT".equals(f.getImplType())) ? available : direct;
+        var metadata = ruleFunctionService.compileMetadata(functions);
+        VarContext context = needsFieldCatalog ? compileService.buildVarContext(projectId, metadata)
+                : new VarContext(Map.of(), Map.of(), Map.of(), Map.of(), metadata.codes(), metadata.arities(), metadata.nativeIds());
+        Map<RuleExperimentGroup, String> expressions = new java.util.IdentityHashMap<>();
+        trees.forEach((group, tree) -> {
+            try {
+                if (resourceVersions != null) resourceVersions.validate(tree, projectId);
+                expressions.put(group, ConditionCompiler.compileRequired(tree, context));
+            } catch (RuntimeException error) {
+                throw new IllegalArgumentException("分组 " + group.getGroupCode() + "：" + error.getMessage(), error);
+            }
+        });
+        return new RouteConditions(expressions, functions);
     }
 
     private boolean matchesConditionGroup(RuleExperimentGroup group, Map<String, Object> params,
-                                          List<Map<String, Object>> routeTrace) {
-        if (!hasText(group.getConditionExpression())) {
-            return true;
+                                          List<Map<String, Object>> routeTrace, RouteConditions conditions) {
+        String expression = conditions.expressions().getOrDefault(group, group.getConditionExpression());
+        if (!hasText(expression)) return true;
+        RuleResult result;
+        if (conditions.functions().isEmpty() || !conditions.expressions().containsKey(group)) {
+            result = qlExpressEngine.execute(expression, params, true);
+        } else {
+            try (var ignored = RuntimeContextBridge.currentContext().bindFunctions(
+                    functionRegistrar.prepareFunctions(conditions.functions(), qlExpressEngine.getRunner()))) {
+                result = qlExpressEngine.execute(functionRegistrar.buildScriptFunctionPrefix(conditions.functions()) + expression, params, true);
+            }
         }
-        RuleResult result = qlExpressEngine.execute(group.getConditionExpression(), params, true);
         Object value = result.getResult();
         boolean matched = result.isSuccess() && Boolean.TRUE.equals(value);
         if (routeTrace != null) {
             Map<String, Object> condition = routeEvent("CONDITION_EVALUATED", "groupCode", group.getGroupCode());
-            condition.put("expression", group.getConditionExpression());
+            condition.put("expression", expression);
             condition.put("matched", matched);
             condition.put("result", value);
             condition.put("trace", result.getTraces());
@@ -1087,6 +1149,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 ? Collections.emptyList()
                 : experiment.getGroups();
         validateRuntimeGroups(experiment, groups);
+        prepareRouteConditions(experiment, groups);
     }
 
     private void validateRuntimeGroups(RuleExperiment experiment, List<RuleExperimentGroup> groups) {

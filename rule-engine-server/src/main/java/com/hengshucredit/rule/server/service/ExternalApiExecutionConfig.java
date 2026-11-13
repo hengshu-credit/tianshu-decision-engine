@@ -53,6 +53,49 @@ public final class ExternalApiExecutionConfig {
             });
         } else if (node instanceof Iterable<?> list) list.forEach(child -> bindReferences(child, paths));
     }
+    /** 真实调用只携带执行配置。预览、字段目录和调用身份仍读取完整的原配置。 */
+    static RuleExternalApiConfig forInvocation(RuleExternalApiConfig api) {
+        if (api == null) return null;
+        String execution = api.getExecutionConfig();
+        String capture = api.getPayloadCaptureConfig();
+        boolean hasSamples = execution != null && (execution.contains("\"responseSample\"") || execution.contains("\"requestSample\"")
+                || execution.contains("\"sample\"") || execution.contains("\"samples\""));
+        boolean hasCaptureSample = capture != null && capture.contains("\"processedSample\"");
+        if (!hasSamples && !hasCaptureSample) return api;
+        RuleExternalApiConfig runtime = new RuleExternalApiConfig();
+        org.springframework.beans.BeanUtils.copyProperties(api, runtime);
+        if (hasSamples) {
+            JSONObject spec = JSON.parseObject(execution);
+            if (spec != null) {
+                removeSamples(spec);
+                var steps = spec.getJSONArray("steps");
+                if (steps != null) for (int i = 0; i < steps.size(); i++) removeSamples(steps.getJSONObject(i));
+                runtime.setExecutionConfig(JSON.toJSONString(spec, com.alibaba.fastjson.serializer.SerializerFeature.WriteMapNullValue));
+            }
+        }
+        if (hasCaptureSample) {
+            JSONObject config = JSON.parseObject(capture);
+            if (config != null) {
+                for (String side : Set.of("request", "response")) {
+                    if (config.get(side) instanceof JSONObject policy) policy.remove("processedSample");
+                }
+                runtime.setPayloadCaptureConfig(JSON.toJSONString(config, com.alibaba.fastjson.serializer.SerializerFeature.WriteMapNullValue));
+            }
+        }
+        return runtime;
+    }
+
+    private static void removeSamples(JSONObject config) {
+        config.remove("requestSample");
+        config.remove("responseSample");
+        config.remove("sample");
+        config.remove("samples");
+        for (String key : new String[]{"requestBranches", "responseBranches", "exceptionBranches", "billingBranches", "retryBranches"}) {
+            var branches = config.getJSONArray(key);
+            if (branches != null) for (int i = 0; i < branches.size(); i++) branches.getJSONObject(i).remove("sample");
+        }
+    }
+
     public static void validate(RuleExternalApiConfig api) {
         JSONObject spec = ExternalApiRequestPlan.specification(api);
         if (spec == null) return;
@@ -117,7 +160,7 @@ public final class ExternalApiExecutionConfig {
                 if (api.getAsyncTimeoutMs() != null && api.getAsyncTimeoutMs() == 0 && maxAttempts > 0) {
                     throw new IllegalArgumentException("异步等待超时为 0 时，步骤 maxAttempts 必须为 0 才能持续等待");
                 }
-                if (poll.get("until") == null) throw new IllegalArgumentException("轮询步骤必须配置完成条件");
+                if (!hasCondition(poll.get("until"))) throw new IllegalArgumentException("轮询步骤必须配置完成条件");
                 validateConditionIfPresent(poll.get("until"), "轮询完成条件");
                 validateConditionIfPresent(poll.get("failure"), "轮询失败条件");
                 if (poll.get("failureMode") != null && !Set.of("CONTINUE", "TERMINATE")
@@ -139,7 +182,7 @@ public final class ExternalApiExecutionConfig {
         ExternalApiConfigValidator.validateCondition(raw, label);
     }
 
-    private static boolean hasCondition(Object raw) {
+    static boolean hasCondition(Object raw) {
         if (raw instanceof String text) {
             if (text.isBlank()) return false;
             try {
@@ -214,7 +257,9 @@ public final class ExternalApiExecutionConfig {
     }
 
     private static void validateStepReferences(Object value, Set<String> prior, String ownId) {
-        if (value instanceof java.util.Map<?, ?> map) map.values().forEach(child -> validateStepReferences(child, prior, ownId));
+        if (value instanceof java.util.Map<?, ?> map) map.forEach((key, child) -> {
+            if (!Set.of("responseSample", "requestSample", "sample", "samples").contains(String.valueOf(key))) validateStepReferences(child, prior, ownId);
+        });
         else if (value instanceof Iterable<?> list) list.forEach(child -> validateStepReferences(child, prior, ownId));
         else if (value instanceof String text) {
             var matcher = java.util.regex.Pattern.compile("(?:\\$\\.|\\$\\{)?steps\\.([A-Za-z0-9_-]+)\\.").matcher(text);

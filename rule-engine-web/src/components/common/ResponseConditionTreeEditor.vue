@@ -41,7 +41,7 @@
         @remove="removeChild(index)"
       />
       <div v-else class="condition-row">
-        <api-value-editor v-if="operandMode" :value="child.left || pathOperand(child.path)" :vars="vars" :functions="functions" :modules="pathOptions" @update:value="child.left = $event" />
+        <api-value-editor v-if="operandMode" :value="child.left || pathOperand(child.path)" :vars="vars" :functions="functions" :modules="pathOptions" @update:value="updateLeft(child, $event)" />
         <protocol-path-picker v-else v-model:value="child.path" :paths="pathOptions" context-label="当前外数 API · HTTP 响应" placeholder="响应字段路径" />
         <el-select
           v-model="child.operator"
@@ -146,15 +146,27 @@ export default {
   },
   methods: {
     pathOperand(path) { return path ? { kind: 'PATH', value: path, protocolPath: true, resolved: true } : null },
-    literalOperand(value) { return value == null ? null : { kind: 'LITERAL', valueType: 'STRING', value: String(value) } },
+    literalOperand(value) {
+      if (value == null) return null
+      const valueType = typeof value === 'number' ? 'NUMBER' : typeof value === 'boolean' ? 'BOOLEAN' : 'STRING'
+      return { kind: 'LITERAL', valueType, value: String(value) }
+    },
+    updateLeft(condition, operand) {
+      condition.left = operand
+      delete condition.path
+      delete condition.varCode
+      delete condition.field
+    },
     rightOperand(condition) {
       if (condition.right != null) return condition.right
       const value = condition.values ?? condition.value
+      if (condition.valueKind === 'VAR' && typeof value === 'string') return this.pathOperand(value)
       if (Array.isArray(value)) return { kind: 'LITERAL', valueType: 'LIST', value: JSON.stringify(value) }
       return this.literalOperand(value)
     },
     updateRight(condition, operand) {
       condition.right = operand
+      delete condition.valueKind
       delete condition.values
       delete condition.value
     },

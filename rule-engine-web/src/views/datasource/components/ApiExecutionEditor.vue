@@ -16,6 +16,7 @@
         </el-card>
       </template></el-tab-pane>
       <el-tab-pane label="响应结构" name="response"><template v-if="tab === 'response'">
+        <api-request-sample-editor v-model:value="config.responseSample" kind="响应" title="最终响应样例与字段目录" />
         <p class="field-help">按顺序选择首个命中分支，空条件作为兜底。原始响应始终保留在 response.body，组装结果存入 body。</p>
         <el-button @click="addBranch('responseBranches')">添加响应条件分支</el-button>
         <el-card v-for="(branch, index) in config.responseBranches" :key="branch.id" shadow="never" class="branch-card" draggable="true" @dragstart="startBranchDrag('responseBranches', index, $event)" @dragover.prevent @drop="dropBranch('responseBranches', index, $event)">
@@ -34,6 +35,7 @@
         <el-card v-for="(step, index) in config.steps" :key="step.id" shadow="never" class="api-workflow-step" :data-step-id="step.id">
           <div class="panel-toolbar"><strong>{{ index + 1 }} · {{ step.type === 'HTTP' ? '主动请求' : '等待回调' }}</strong><el-input v-model="step.name" placeholder="步骤名称" /><el-button :disabled="index === 0" @click="moveStep(index, -1)">上移</el-button><el-button :disabled="index === config.steps.length - 1" @click="moveStep(index, 1)">下移</el-button><el-button link type="danger" @click="config.steps.splice(index, 1)">删除</el-button></div>
           <div class="field-help">步骤引用：<code>steps.{{ step.id }}</code></div>
+          <api-request-sample-editor v-model:value="step.responseSample" kind="响应" :title="step.type === 'CALLBACK' ? '回调样例与字段目录' : '本步骤响应样例与字段目录'" />
           <el-collapse><el-collapse-item title="执行条件（为空时执行）"><response-condition-tree-editor operand-mode :functions="functions" :group="step.when" :path-options="stepModules(index)" /></el-collapse-item></el-collapse>
           <template v-if="step.type === 'HTTP'">
             <el-form-item label="关联 API"><resource-picker v-model:value="step.apiConfigId" :resources="apis" placeholder="可选，复用 API 配置" /></el-form-item>
@@ -74,7 +76,7 @@
             <el-form-item label="回调地址模板"><el-input v-model="step.callback.url" :placeholder="callbackPlaceholder" /></el-form-item>
             <el-form-item label="签名 Header"><el-input v-model="step.callback.signatureHeader" /></el-form-item>
             <el-form-item label="签名密钥"><el-input v-model="step.callback.signatureSecret" type="password" show-password /></el-form-item>
-            <el-form-item label="状态路径"><protocol-path-picker v-model:value="step.callback.statusPath" :paths="rawResponseModules" :context-label="(step.name || step.id) + ' · 回调响应'" /></el-form-item>
+            <el-form-item label="状态路径"><protocol-path-picker v-model:value="step.callback.statusPath" :paths="stepConditionModules(index)" :context-label="(step.name || step.id) + ' · 回调响应'" /></el-form-item>
             <el-form-item label="成功值"><el-input v-model="step.callback.successValue" /></el-form-item>
             <el-form-item label="失败值"><el-input v-model="step.callback.failureValue" /></el-form-item>
             <el-collapse><el-collapse-item title="回调条件树（配置成功条件后优先使用）"><el-form-item label="成功条件"><response-condition-tree-editor operand-mode :group="step.callback.successCondition" :path-options="stepConditionModules(index)" :functions="functions" /></el-form-item><el-form-item label="失败条件"><response-condition-tree-editor operand-mode :group="step.callback.failureCondition" :path-options="stepConditionModules(index)" :functions="functions" /></el-form-item></el-collapse-item></el-collapse>
@@ -99,8 +101,8 @@
         <el-card v-for="(sample, index) in config.samples" :key="sample.id" shadow="never"><div class="panel-toolbar"><el-input v-model="sample.name" placeholder="样例名称" /><el-button @click="$emit('select-sample', sample.params)">用于调用测试</el-button><el-button link type="danger" @click="config.samples.splice(index, 1)">删除</el-button></div><MonacoEditor :value="JSON.stringify(sample.params, null, 2)" language="json" height="150px" :options="{ minimap: { enabled: false }, wordWrap: 'on' }" @change="setSample(sample, $event)" /></el-card>
       </template></el-tab-pane>
     </el-tabs>
-    <el-dialog v-model="sampleVisible" title="导入响应样例" append-to-body width="760px"><p>粘贴供应商响应 JSON，字段名称与类型保持原样。超过 200 个叶子字段时，默认整体保留响应，避免逐字段重复映射。</p><el-radio-group v-model="sampleStrategy"><el-radio-button value="AUTO">自动选择</el-radio-button><el-radio-button value="VALUE">整体取值</el-radio-button><el-radio-button value="FIELDS">逐字段生成</el-radio-button></el-radio-group><MonacoEditor v-model:value="sampleText" language="json" height="280px" :options="{ minimap: { enabled: false }, wordWrap: 'on' }" /><template #footer><el-button @click="sampleVisible = false">取消</el-button><el-button type="primary" @click="importSample">生成结构</el-button></template></el-dialog>
-    <el-dialog v-model="configImportVisible" title="导入链路配置" append-to-body width="760px"><p>粘贴 version=2 的链路 JSON。导入会替换当前链路配置，并根据步骤切换同步或异步模式，不会发起外数请求。</p><MonacoEditor v-model:value="configImportText" language="json" height="340px" :options="{ minimap: { enabled: false }, wordWrap: 'on' }" /><template #footer><el-button @click="configImportVisible = false">取消</el-button><el-button type="primary" @click="importConfig">导入并检查</el-button></template></el-dialog>
+    <el-dialog v-model="sampleVisible" title="导入响应样例" append-to-body width="760px"><p>粘贴供应商响应 JSON，字段名称与类型保持原样。超过 200 个叶子字段时，默认整体保留响应，避免逐字段重复映射。</p><el-radio-group v-model="sampleStrategy"><el-radio-button value="AUTO">自动选择</el-radio-button><el-radio-button value="VALUE">整体取值</el-radio-button><el-radio-button value="FIELDS">逐字段生成</el-radio-button></el-radio-group><textarea v-model="sampleText" class="el-textarea__inner" rows="12" aria-label="供应商响应 JSON 样例" spellcheck="false" wrap="off" /><template #footer><el-button @click="sampleVisible = false">取消</el-button><el-button type="primary" @click="importSample">生成结构</el-button></template></el-dialog>
+    <el-dialog v-model="configImportVisible" title="导入链路配置" append-to-body width="760px"><p>粘贴 version=2 的链路 JSON。导入会替换当前链路配置，并根据步骤切换同步或异步模式，不会发起外数请求。</p><textarea v-model="configImportText" class="el-textarea__inner" rows="15" aria-label="链路配置 JSON" spellcheck="false" wrap="off" /><template #footer><el-button @click="configImportVisible = false">取消</el-button><el-button type="primary" @click="importConfig">导入并检查</el-button></template></el-dialog>
   </section>
 </template>
 <script>
@@ -129,7 +131,6 @@ export default {
     policies: [{ key: 'exceptionBranches', label: '异常判断' }, { key: 'retryBranches', label: '重试条件' }] } },
   computed: {
     requestPaths() { return this.requestPathsFor(this.config) },
-    rawResponseModules() { return apiStagePaths(this.config, 'STEP_CONDITION') },
 
   },
   watch: {

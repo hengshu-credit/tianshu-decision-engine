@@ -10,6 +10,31 @@ import java.util.Map;
 
 public class ExternalApiPayloadCapturePolicyTest {
 
+    @Test public void appliesPickerPathsWithQuotedKeysAndAllArrayItems() {
+        String body = "{\"x.y]\":[{\"token\":\"a\",\"ok\":1},{\"token\":\"b\",\"ok\":2}],\"[*]\":\"literal\"}";
+        String config = com.alibaba.fastjson.JSON.toJSONString(Map.of("response", Map.of("excludePaths",
+                java.util.List.of("$[\"x.y]\"][*].token", "$[\"[*]\"]"))));
+        var captured = ExternalApiPayloadCapturePolicy.capture(config, "response", body, null);
+        var actual = com.alibaba.fastjson.JSON.parseObject(captured.capturedBody());
+        Assert.assertFalse(actual.containsKey("[*]"));
+        var array = actual.getJSONArray("x.y]");
+        Assert.assertEquals(2, array.size());
+        for (int i = 0; i < array.size(); i++) {
+            Assert.assertFalse(array.getJSONObject(i).containsKey("token"));
+            Assert.assertEquals(i+1,array.getJSONObject(i).getIntValue("ok"));
+        }
+    }
+
+    @Test public void preservingALiteralDottedFieldDoesNotExemptTheNestedFieldWithTheSameSpelling() {
+        String config = com.alibaba.fastjson.JSON.toJSONString(Map.of("response", Map.of("maxFieldBytes", 10,
+                "oversizedFields", java.util.List.of(Map.of("path", "$.rows[*][\"a.b\"]", "store", true)))));
+        String original = "{\"rows\":[{\"a.b\":\"keep this long value\",\"a\":{\"b\":\"drop this long value\"}}]}";
+        var capture = ExternalApiPayloadCapturePolicy.capture(config, "response", original, null);
+        var row = com.alibaba.fastjson.JSON.parseObject(capture.capturedBody()).getJSONArray("rows").getJSONObject(0);
+        Assert.assertEquals("keep this long value", row.getString("a.b"));
+        Assert.assertFalse(row.containsKey("a"));
+    }
+
     @Test public void explicitStorageModesPreserveOnlyTheSelectedFormEvenOnDecodeFailure() {
         String encoded = Base64.getEncoder().encodeToString("{\"score\":83}".getBytes(StandardCharsets.UTF_8));
         String decodedOnly = "{\"response\":{\"storageMode\":\"PROCESSED_ONLY\",\"decrypt\":{\"enabled\":true,\"mode\":\"BASE64\",\"path\":\"$\"}}}";

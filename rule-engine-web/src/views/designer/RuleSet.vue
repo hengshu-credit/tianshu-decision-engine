@@ -535,7 +535,7 @@ export default {
             migrated.children = [createEmptyLeaf()]
           rule['conditionRoot'] = migrated
         }
-        normalizeConditionTreeOperands(rule.conditionRoot)
+        rule.conditionRoot = normalizeConditionTreeOperands(rule.conditionRoot)
         const actionData = actionDataToBlocks(rule.actionData)
         rule['actionData'] = actionData.length
           ? actionData

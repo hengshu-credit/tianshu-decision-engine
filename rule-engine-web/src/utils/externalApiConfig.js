@@ -80,6 +80,7 @@ function normalizePayloadCaptureSide(value, label) {
   if (decrypt.enabled && decrypt.mode === 'TRIPLE_DES_BASE64' && !decrypt.keyVariable) throw new Error(label + '3DES解密必须填写密钥变量名')
   const result = { source, saveOriginal, excludePaths, maxFieldBytes: rawMaxFieldBytes, oversizedFields }
   if (storageMode !== 'LEGACY') result.storageMode = storageMode
+  if (Object.hasOwn(side, 'processedSample')) result.processedSample = side.processedSample
   if (decrypt.enabled || decrypt.keyVariable || decrypt.path !== '$' || decrypt.mode !== 'BASE64') result.decrypt = decrypt
   return result
 }

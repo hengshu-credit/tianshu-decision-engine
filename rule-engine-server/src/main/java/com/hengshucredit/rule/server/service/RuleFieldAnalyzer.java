@@ -467,20 +467,10 @@ public class RuleFieldAnalyzer {
     @SuppressWarnings("unchecked")
     private ObjectShapeIndex loadApiExecutionShape(JSONObject execution, String binding) {
         Map<String, Object> sampleResult = new LinkedHashMap<>();
-        if (execution.getJSONArray("responseBranches") != null) {
-            for (Object raw : execution.getJSONArray("responseBranches")) {
-                JSONObject branch = JSON.parseObject(JSON.toJSONString(raw));
-                Object sample = branch.get("sample");
-                Map<String, Object> envelope = new LinkedHashMap<>();
-                envelope.put("response", Map.of("body", sample == null ? Map.of() : sample));
-                envelope.put("body", sample);
-                Object assembled = ExternalApiResponseSchema.sampleValue(branch);
-                Map<String, Object> mapped = new LinkedHashMap<>(envelope);
-                mapped.put("body", assembled);
-                String path = parseObject(binding).getString("resultPath");
-                Object selected = ExternalApiConsumerService.select(mapped, path);
-                if (selected instanceof Map<?, ?> fields) fields.forEach((key, value) -> sampleResult.putIfAbsent(String.valueOf(key), value));
-            }
+        String path = parseObject(binding).getString("resultPath");
+        for (Map<String, Object> envelope : ExternalApiResponseSchema.sampleEnvelopes(execution)) {
+            Object selected = ExternalApiConsumerService.select(envelope, path);
+            if (selected instanceof Map<?, ?> fields) fields.forEach((key, value) -> sampleResult.putIfAbsent(String.valueOf(key), value));
         }
         Map<String, Object> schema = apiSampleSchema(sampleResult);
         Map<String, Map<String, Object>> indexed = new LinkedHashMap<>();

@@ -136,7 +136,7 @@ describe('ExperimentDetail', () => {
     expect(groups[0].conditionConfig).toBe('')
   })
 
-  test('条件分流按左条件右动作保存可执行表达式和兜底动作', () => {
+  test('条件分流按左条件右动作保存完整条件树和兜底动作', () => {
     const ctx = createContext()
     ctx.form.routingMode = 'CONDITION'
     ctx.form.groups[0].ruleCode = 'champion_rule'
@@ -146,7 +146,10 @@ describe('ExperimentDetail', () => {
 
     const groups = ctx.prepareGroupsForSave()
 
-    expect(groups[0].conditionExpression).toBe('(amount >= 1000)')
+    expect(groups[0].conditionExpression).toBe('')
+    expect(JSON.parse(groups[0].conditionConfig).children[0]).toMatchObject({
+      operator: '>=', leftOperand: { value: 'amount' }, rightOperand: { value: '1000' },
+    })
     expect(JSON.parse(groups[1].conditionConfig).fallback).toBe(true)
   })
 
@@ -367,7 +370,10 @@ describe('ExperimentDetail — 从旧列表迁移的分组行为', () => {
 
     const groups = ctx.prepareGroupsForSave()
 
-    expect(groups[0].conditionExpression).toBe('(amount >= 1000)')
+    expect(groups[0].conditionExpression).toBe('')
+    expect(JSON.parse(groups[0].conditionConfig).children[0]).toMatchObject({
+      operator: '>=', leftOperand: { value: 'amount' }, rightOperand: { value: '1000' },
+    })
     expect(JSON.parse(groups[0].conditionConfig).children[0].leftOperand.value).toBe('amount')
     expect(groups[1].conditionExpression).toBe('')
     expect(JSON.parse(groups[1].conditionConfig).fallback).toBe(true)

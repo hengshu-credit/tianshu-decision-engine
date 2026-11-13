@@ -39,6 +39,37 @@ public class RuleExperimentServiceTest {
     }
 
     @Test
+    public void visualTreeUsesStableFieldIdsAndTakesPriorityOverAbsentOrStaleScripts() throws Exception {
+        var experiment = experiment("CONDITION", "CONDITION");
+        experiment.setProjectId(3L);
+        var visual = group("visual", "CHAMPION", 100, 0, null, """
+                {"type":"leaf","operator":"==","leftOperand":{"kind":"REFERENCE","refType":"VARIABLE","refId":37,
+                "code":"oldChannel","valueType":"STRING"},"rightOperand":{"kind":"LITERAL","valueType":"STRING","value":"REVIEW"}}
+                """);
+        var fallback = group("fallback", "CHALLENGER", 0, 1, "", "{\"fallback\":true}");
+        var testGroup = group("test", "TEST", 0, 0, "false", visual.getConditionConfig());
+        var groups = List.of(visual, fallback, testGroup);
+        setField(service, "ruleFunctionService", new RuleFunctionService());
+        setField(service, "compileService", new RuleCompileService() {
+            @Override com.hengshucredit.rule.core.compiler.VarContext buildVarContext(Long project, RuleFunctionService.CompileMetadata metadata) {
+                assertEquals(Long.valueOf(3), project);
+                return new com.hengshucredit.rule.core.compiler.VarContext(Map.of(), Map.of(), Map.of("VARIABLE:37", "channel"));
+            }
+        });
+        for (String stale : new String[]{null, "oldChannel == \"NORMAL\""}) {
+            visual.setConditionExpression(stale);
+            assertEquals("fallback", routeGroup(chooseProductionGroup(experiment, groups, Map.of("channel","NORMAL","oldChannel","NORMAL"))).getGroupCode());
+            assertEquals("visual", routeGroup(chooseProductionGroup(experiment, groups, Map.of("channel","REVIEW"))).getGroupCode());
+        }
+        assertEquals("test", routeGroup(chooseTestGroups(experiment, groups, Map.of("channel","REVIEW")).get(0)).getGroupCode());
+        assertTrue(chooseTestGroups(experiment, groups, Map.of("channel","NORMAL")).isEmpty());
+        visual.setConditionConfig("{\"type\":\"group\",\"op\":\"AND\",\"children\":[]}");
+        experiment.setGroups(List.of(visual, fallback));
+        var error = org.junit.Assert.assertThrows(IllegalArgumentException.class, () -> service.validateExperiment(experiment));
+        assertTrue(error.getMessage().contains("visual"));
+    }
+
+    @Test
     public void conditionProductionUsesFirstMatchAndFallback() throws Exception {
         RuleExperiment experiment = experiment("CONDITION", "CONDITION");
         List<RuleExperimentGroup> groups = new ArrayList<>();

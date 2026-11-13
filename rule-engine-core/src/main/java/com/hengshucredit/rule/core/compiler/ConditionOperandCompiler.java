@@ -16,6 +16,10 @@ final class ConditionOperandCompiler {
     }
 
     static boolean hasUsableCondition(JSONObject leaf) {
+        return hasUsableCondition(leaf, null);
+    }
+
+    static boolean hasUsableCondition(JSONObject leaf, VarContext context) {
         if (!supports(leaf)) return false;
         String operator = leaf.getString("operator");
         JSONObject collection = typedCollection(leaf);
@@ -25,12 +29,12 @@ final class ConditionOperandCompiler {
             return SourceStatusExpressionBuilder.hasStableReference(leaf.getJSONObject("leftOperand"));
         }
         JSONObject leftOperand = leaf.getJSONObject("leftOperand");
-        String left = leftOperand == null && collection != null ? "" : OperandCompiler.compile(leftOperand, null);
+        String left = leftOperand == null && collection != null ? "" : OperandCompiler.compile(leftOperand, context);
         requireRangeLeft(operator, left);
         requireCollectionLeft(collection, left);
         if (empty(left) || "*".equals(operator)) return false;
         if (isNoValueOperator(operator)) return true;
-        return !empty(OperandCompiler.compile(leaf.getJSONObject("rightOperand"), null));
+        return !empty(OperandCompiler.compile(leaf.getJSONObject("rightOperand"), context));
     }
 
     static String compile(JSONObject leaf, VarContext varContext) {
@@ -122,7 +126,7 @@ final class ConditionOperandCompiler {
         if (collection != null && empty(left)) throw new IllegalArgumentException("集合判断必须选择比较字段");
     }
 
-    private static boolean isNoValueOperator(String operator) {
+    static boolean isNoValueOperator(String operator) {
         return "is_null".equals(operator) || "not_null".equals(operator)
                 || "is_empty".equals(operator) || "not_empty".equals(operator)
                 || "is_true".equals(operator) || "is_false".equals(operator)

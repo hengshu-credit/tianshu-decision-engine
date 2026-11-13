@@ -1,6 +1,6 @@
 <template>
   <div class="api-value-editor">
-    <operand-picker lazy-catalog :value="value" :sensitive="sensitive" :vars="pickerVars" :functions="pureFunctions" :expected-type="expectedType" @input="update" />
+    <operand-picker lazy-catalog :value="pickerValue" :sensitive="sensitive" :vars="pickerVars" :functions="pureFunctions" :expected-type="expectedType" @input="update" />
     <div v-if="error" class="api-binding-error" role="alert">{{ error }}</div>
   </div>
 </template>
@@ -15,6 +15,13 @@ export default {
   emits: ['update:value'],
   data: () => ({ error: '' }),
   computed: {
+    pickerValue() {
+      const value = this.value
+      if (value?.kind === 'PATH' && value.refId == null && !value.protocolPath && this.modules.some(field => field.value === value.value)) {
+        return { ...value, protocolPath: true, resolved: true }
+      }
+      return value
+    },
     pureFunctions() { return this.functions.filter(item => ['AggregateBuiltinFunctions', 'DecisionBuiltinFunctions', 'DigestBuiltinFunctions'].some(name => item.implClass?.endsWith('.' + name))) },
     pickerVars() { return [...this.vars, ...apiProtocolFields(this.modules, this.contextLabel)] },
   },

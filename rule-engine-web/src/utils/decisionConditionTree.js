@@ -99,7 +99,7 @@ export function normalizeConditionTreeOperands(node) {
     ['varCode', 'varLabel', 'varType', 'value', 'valueKind', '_varId', '_refType',
       'rightVarLabel', 'rightVarType', '_rightVarId', '_rightRefType'].forEach(key => delete leaf[key])
   })
-  return node
+  return node?.type === 'leaf' ? { type: 'group', op: 'AND', children: [node] } : node
 }
 
 export function hasUsableConditionLeaf(node) {
@@ -115,6 +115,21 @@ export function hasUsableConditionLeaf(node) {
     usable = !!compileOperand(leaf.rightOperand)
   })
   return usable
+}
+
+export function requiredConditionError(node, position = '条件') {
+  if (node?.type === 'group') {
+    if (node.op && !['AND', 'OR'].includes(node.op)) return position + '组的关系必须为 AND 或 OR'
+    if (!Array.isArray(node.children) || !node.children.length) return position + '组至少需要一个条件'
+    for (const [index, child] of node.children.entries()) {
+      const error = requiredConditionError(child, position + '.' + (index + 1))
+      if (error) return error
+    }
+    return ''
+  }
+  try {
+    return node?.type === 'leaf' && node.operator && hasUsableConditionLeaf(node) ? '' : position + '未配置完整'
+  } catch (error) { return position + '：' + error.message }
 }
 
 export function compileConditionTreeExpression(node) {

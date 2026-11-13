@@ -1,6 +1,6 @@
 <template>
   <div class="protocol-path-picker">
-    <var-picker :value="value" :vars="fields" :visible-tags="['http-context']" :selectable-tags="['http-context']" :auto-switch-custom="false" :allow-custom="allowCustom" :disabled="disabled" :edit-on-input="allowCustom" :placeholder="placeholder" @input="$emit('update:value', $event)" />
+    <var-picker :value="value" :vars="fields" :visible-tags="['http-context']" :selectable-tags="['http-context']" :auto-switch-custom="false" :allow-custom="allowCustom" :disabled="disabled" :placeholder="placeholder" @input="$emit('update:value', $event)" />
     <span v-if="value && !isKnownPath" class="protocol-path-picker__hint" role="status">{{ removed ? '所选路径已从当前结构移除，请核对或重新选择。' : '自定义路径：当前结构未声明，请用样例验证取值。' }}</span>
     <span v-else-if="typeMismatch" class="protocol-path-picker__hint" role="status">所选结果类型与目标字段类型不一致，请核对取值路径。</span>
     <span v-else-if="selectedLabel" class="protocol-path-picker__label">{{ selectedLabel }}</span>
@@ -14,7 +14,7 @@ export default {
   name: 'ProtocolPathPicker',
   components: { VarPicker },
   props: {
-    value: { type: String, default: '' }, placeholder: { type: String, default: '选择或输入取值路径' },
+    value: { type: String, default: '' }, placeholder: { type: String, default: '选择字段' },
     contextLabel: { type: String, default: '鉴权 API · HTTP 上下文' },
     apiId: { type: [String, Number], default: 'current-api' },
     allowCustom: { type: Boolean, default: true },

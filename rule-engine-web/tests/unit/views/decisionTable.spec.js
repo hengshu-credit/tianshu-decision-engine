@@ -9,6 +9,20 @@ import * as dataObjectApi from '@/api/dataObject'
 import * as functionApi from '@/api/function'
 import DecisionTable from '@/views/designer/DecisionTable.vue'
 
+test('单叶条件重新加载和保存仍有原字段身份和阈值', () => {
+  const leaf = { type: 'leaf', operator: '<',
+    leftOperand: { kind: 'REFERENCE', refId: 37, refType: 'VARIABLE', code: 'score', valueType: 'NUMBER' },
+    rightOperand: { kind: 'LITERAL', valueType: 'NUMBER', value: 550 } }
+  const expected = structuredClone(leaf)
+  const model = { rules: [{ conditionRoot: leaf, actions: [] }] }
+  const open = data => DecisionTable.methods.normalizeModel.call({ model: data,
+    ensureRuleActionsShape: DecisionTable.methods.ensureRuleActionsShape })
+  open(model)
+  const reopened = JSON.parse(JSON.stringify(model))
+  open(reopened)
+  expect(reopened.rules[0].conditionRoot).toEqual({ type: 'group', op: 'AND', children: [expected] })
+})
+
 afterEach(() => { vi.clearAllMocks() })
 
 // ─── Mock 数据 ───────────────────────────────────────────

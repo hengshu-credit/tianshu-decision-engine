@@ -824,8 +824,7 @@ import {
   createEmptyGroup,
   createEmptyLeaf,
   walkConditionLeaves,
-  hasUsableConditionLeaf,
-  compileConditionTreeExpression,
+  requiredConditionError,
   normalizeConditionTreeOperands,
 } from '@/utils/decisionConditionTree'
 import {
@@ -1417,6 +1416,14 @@ export default {
       return new Promise((resolve) => {
         this.$refs.form.validate(async (valid) => {
           if (!valid) return resolve(false)
+          for (const group of this.form.groups) {
+            if (!this.isConditionModeForGroup(group) || this.isFallbackGroup(group) || !group.conditionConfig) continue
+            const error = this.conditionError(group)
+            if (error) {
+              this.$message.error('分组 ' + group.groupCode + '：' + error)
+              return resolve(false)
+            }
+          }
           if (this.form.requestKeyOperand) {
             const operandErrors = validateOperand(this.form.requestKeyOperand, {
               allowedKinds: this.requestKeyKinds,
@@ -1492,10 +1499,11 @@ export default {
     validateConditionGroups(groups, label) {
       if (!groups.some((g) => this.isFallbackGroup(g)))
         return label + '条件分流必须配置兜底动作'
-      const invalid = groups.find(
-        (g) => !this.isFallbackGroup(g) && !this.hasCondition(g)
-      )
-      if (invalid) return label + '条件分流的非兜底规则必须配置条件'
+      for (const group of groups) {
+        if (this.isFallbackGroup(group)) continue
+        const error = this.conditionError(group)
+        if (error) return label + '分组 ' + group.groupCode + '：' + error
+      }
       return ''
     },
     findDuplicateGroupCode() {
@@ -1508,10 +1516,9 @@ export default {
       }
       return ''
     },
-    hasCondition(group) {
-      if (group.conditionConfig)
-        return hasUsableConditionLeaf(group.conditionConfig)
-      return !!group.conditionExpression
+    conditionError(group) {
+      if (group.conditionConfig) return requiredConditionError(group.conditionConfig)
+      return group.conditionExpression?.trim() ? '' : '非兜底规则必须配置条件'
     },
     isFallbackGroup(group) {
       return !!(
@@ -1533,9 +1540,7 @@ export default {
         }
         if (this.isConditionModeForGroup(copy)) {
           if (copy.conditionConfig) {
-            copy.conditionExpression = compileConditionTreeExpression(
-              copy.conditionConfig
-            )
+            copy.conditionExpression = ''
             copy.conditionConfig = JSON.stringify(copy.conditionConfig)
           }
         } else {

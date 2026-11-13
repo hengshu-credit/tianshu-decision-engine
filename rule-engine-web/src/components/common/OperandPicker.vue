@@ -40,6 +40,11 @@
               <var-picker class="operand-path-source" :value="manualPathSource" :vars="manualReferences" :allowed-kinds="['REFERENCE']" operand-mode
                 :writable-only="writableOnly" :visible-tags="pickerVisibleTags" :selectable-tags="pickerSelectableTags"
                 placeholder="选择变量、对象、模型或 API" @input="selectPathSource" />
+              <template v-if="sampleSubpaths.length">
+                <label class="operand-content-label">从示例值选择子字段</label>
+                <el-select-v2 :model-value="null" :options="sampleSubpaths" filterable aria-label="示例子字段"
+                  placeholder="搜索字段名称" @update:model-value="useSampleSubpath" />
+              </template>
               <template v-if="declaredFieldOptions.length">
                 <label class="operand-content-label">直接选用已声明字段</label>
                 <el-select-v2 class="operand-path-source" :model-value="null" :options="declaredFieldOptions" filterable
@@ -84,6 +89,7 @@
 
 <script>
 import { $emit } from '../../utils/gogocodeTransfer'
+import { samplePathOptions } from '@/utils/apiExecution'
 import VarPicker from './VarPicker.vue'
 import { ElSelectV2 } from 'element-plus/es/components/select-v2/index.mjs'
 import MonacoEditor from '@/components/MonacoEditor.vue'
@@ -196,6 +202,20 @@ export default {
     pickerSelectableTags() { return this.selectableTags ?? (this.editorContext === 'WRITE_TARGET' ? ['write'] : null) },
     manualReferences() { return this.vars.filter(this.canSelectPathField) },
     manualPathMatch() { return matchPathContent(this.manualOperand, [...this.manualReferences, ...this.manualVersionReferences]) },
+    sampleSubpaths() {
+      const ref = this.manualPathSource
+      if (this.manualKind !== 'PATH' || ref?.refType !== 'VARIABLE' || ref.versionMode === 'FIXED' ||
+        !['OBJECT', 'MAP', 'LIST', 'ARRAY'].includes(ref.valueType)) return []
+      const item = this.manualReferences.find(field => String(field._varId ?? field.id) === String(ref.refId) &&
+        (field._refType || field.refType) === ref.refType)
+      const example = item?.exampleValue ?? item?.varObj?.exampleValue ?? item?._ref?.varObj?.exampleValue
+      if (!example) return []
+      let sample
+      try { sample = typeof example === 'string' ? JSON.parse(example) : example } catch { return [] }
+      return samplePathOptions(sample, '$').slice(1)
+        .filter(field => pickerTypeMatches(field.type, this.expectedType))
+        .map(field => ({ value: field.value.slice(1), label: field.value.replace(/^\$\.?/, ''), type: field.type }))
+    },
     declaredFieldOptions() {
       if (this.manualKind !== 'PATH' || !this.manualPathSource || !this.allowedKinds.includes('REFERENCE')) return []
       const fields = declaredPathFields(this.manualPathSource, [...this.manualReferences, ...this.manualVersionReferences.filter(this.canSelectPathField)])
@@ -519,6 +539,10 @@ export default {
       const tags = fieldPickerTags(item)
       return !item.disabled && canViewPickerItem(item) && matchesFieldTags(tags, this.pickerVisibleTags)
         && matchesFieldTags(tags, this.pickerSelectableTags) && (!this.writableOnly || tags.includes('write'))
+    },
+    useSampleSubpath(path) {
+      const field = this.sampleSubpaths.find(item => item.value === path)
+      if (field) this.onEditorApply(createRelativePathOperand(this.manualPathSource, path, field.type))
     },
     useDeclaredField(key) {
       const option = this.declaredFieldOptions.find(field => field.value === key)

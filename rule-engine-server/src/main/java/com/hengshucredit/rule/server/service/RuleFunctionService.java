@@ -153,6 +153,10 @@ public class RuleFunctionService {
     /** One authorized catalog read supplies all three compiler maps. */
     public CompileMetadata buildCompileMetadata(Long projectId) {
         List<RuleFunction> functions = listByProject(projectId);
+        return compileMetadata(functions);
+    }
+
+    CompileMetadata compileMetadata(List<RuleFunction> functions) {
         return new CompileMetadata(functionCodeMap(functions), functionArityMap(functions), nativeFunctionIds(functions));
     }
 

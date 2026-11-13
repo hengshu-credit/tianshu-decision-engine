@@ -2,6 +2,17 @@ import { shallowMount } from '@test-utils'
 import ApiValueEditor from '@/components/common/ApiValueEditor.vue'
 
 describe('API operand binding', () => {
+  test('重开旧配置的已声明协议路径时直接定位字段目录，业务路径和固定 ID 保留原有编辑方式', async () => {
+    const value = { kind: 'PATH', value: 'steps.submit.body.ticket' }
+    const wrapper = shallowMount(ApiValueEditor, { props: { value, modules: [{ value: value.value, type: 'STRING' }] } })
+    expect(wrapper.vm.pickerValue).toMatchObject({ ...value, protocolPath: true })
+    expect(wrapper.emitted('update:value')).toBeUndefined()
+    const business = { ...value, refId: 7, refType: 'VARIABLE' }
+    await wrapper.setProps({ value: business })
+    expect(wrapper.vm.pickerValue).toEqual(business)
+    wrapper.unmount()
+  })
+
   test('只提供后端允许的无副作用函数，不把网络文件函数列为可用', () => {
     const wrapper = shallowMount(ApiValueEditor, { props: { functions: [
       { funcCode: 'nvl', implClass: 'com.hengshucredit.rule.core.function.DecisionBuiltinFunctions' },

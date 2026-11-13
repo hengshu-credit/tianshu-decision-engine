@@ -2,6 +2,17 @@ import { vi } from 'vitest'
 import { emptyExecution, newApiId, parseExecution, sampleFields, validateExecution, validateConditionTree, prepareResponseSample, samplePathOptions } from '@/utils/apiExecution'
 
 describe('统一外数配置', () => {
+  it('已发布的单条件轮询可以直接校验，重新编辑保留判断值和请求配置', () => {
+    const leaf = { path: 'body.state', operator: '==', value: 'DONE' }
+    const spec = { ...emptyExecution(), steps: [{ id: 'query', type: 'HTTP', endpointUrl: '/query',
+      requestFields: [], poll: { until: leaf, maxAttempts: 3, intervalMs: 70 } }] }
+    expect(validateExecution(spec, 'ASYNC')).toBe('')
+    const reopened = parseExecution(JSON.stringify(spec))
+    expect(reopened.steps[0].poll.until).toEqual({ type: 'group', operator: 'AND', children: [leaf] })
+    expect(validateExecution(reopened, 'ASYNC')).toBe('')
+    reopened.steps[0].poll.until.children = []
+    expect(validateExecution(reopened, 'ASYNC')).toContain('完成条件')
+  })
   it('万字段征信响应默认整体绑定，保留结构与原始字段名供搜索', () => {
     const securityComputingResult = Object.fromEntries(Array.from({ length: 9937 }, (_, index) => [`QY_FIELD_${index}`, index % 3 === 0 ? '' : index % 3 === 1 ? 0 : false]))
     const sample = { code: '0000', data: { securityComputingResult } }

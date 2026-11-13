@@ -71,11 +71,11 @@ public class ExternalApiCallbackStore {
         envelope.put("response", Map.of("httpStatus", 200, "headers", headers, "body", parsed));
         Object status = path(envelope, config.getString("statusPath"));
         boolean continueOnFailure = "CONTINUE".equalsIgnoreCase(config.getString("failureMode"));
-        boolean tree = ExternalApiWorkflow.hasCondition(config.get("successCondition"));
+        boolean tree = ExternalApiExecutionConfig.hasCondition(config.get("successCondition"));
         boolean failure = false;
         if (tree) {
             boolean success = invokeService.matchesResponseCondition(JSON.toJSONString(config.get("successCondition")), envelope);
-            failure = ExternalApiWorkflow.hasCondition(config.get("failureCondition"))
+            failure = ExternalApiExecutionConfig.hasCondition(config.get("failureCondition"))
                     && invokeService.matchesResponseCondition(JSON.toJSONString(config.get("failureCondition")), envelope);
             if (!success && !failure) return;
         } else {

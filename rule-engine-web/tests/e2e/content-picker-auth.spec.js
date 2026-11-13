@@ -72,7 +72,7 @@ test('步骤请求导入自己的样例并选择特殊路径，保存刷新后�
   await page.getByRole('tab', { name: '多步链路', exact: true }).click()
   const step = page.locator('.api-workflow-step[data-step-id="submit"]')
   await step.getByText('本步骤请求样例与字段目录', { exact: true }).click()
-  await typeMonaco(page, step.locator('.api-request-sample-editor .monaco-editor:visible'), '{"Mobile.Number":"sample-only","Customer":{"Age":18}}')
+  await step.getByRole('textbox', { name: '请求 JSON 样例', exact: true }).fill('{"Mobile.Number":"sample-only","Customer":{"Age":18}}')
   await step.getByRole('button', { name: '导入请求字段目录', exact: true }).click()
   await chooseReference(page, step.locator('.api-parameter-fields .protocol-path-picker input').first(), '["Mobile.Number"]')
   await page.getByRole('button', { name: '保存草稿', exact: true }).click()
@@ -84,6 +84,41 @@ test('步骤请求导入自己的样例并选择特殊路径，保存刷新后�
   await page.reload()
   await page.getByRole('tab', { name: '多步链路', exact: true }).click()
   await expect(step.locator('.api-parameter-fields .protocol-path-picker input').first()).toHaveValue('["Mobile.Number"]')
+  assertClean()
+})
+
+test('八千字段步骤样例可整体导入，轮询从目录选择末尾字段并保存', async ({ page }) => {
+  const data = createDetailApiData()
+  const api = data.get('/api/rule/datasource/api-config/22')
+  api.requestMode = 'ASYNC'
+  let saved
+  data.set('POST /api/rule/governance/drafts', ({ request }) => {
+    saved = JSON.parse(request.postDataJSON().snapshotJson)
+    Object.assign(api, saved)
+    return { resourceId: 22, resourceType: 'EXTERNAL_API', state: 'DRAFT' }
+  })
+  const { assertClean } = await installDistRoutes(page, { apiData: data })
+  await page.goto('http://tianshu.local/index.html#/datasource/api/22?projectId=1')
+  await page.getByRole('tab', { name: '响应结构', exact: true }).click()
+  await page.getByRole('button', { name: '导入链路配置', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '导入链路配置' })
+  const responseSample = Object.fromEntries(Array.from({ length: 8000 }, (_, i) => ['field_' + i, i]))
+  const specification = { version: 2, steps: [{ id: 'poll', type: 'HTTP', endpointUrl: '/poll', responseSample,
+    poll: { intervalMs: 50, maxAttempts: 0, until: { path: 'body.field_0', operator: 'exists' } } }] }
+  await dialog.getByRole('textbox', { name: '链路配置 JSON' }).fill(JSON.stringify(specification))
+  await dialog.getByRole('button', { name: '导入并检查' }).click()
+  await page.getByRole('tab', { name: '多步链路', exact: true }).click()
+  const row = page.locator('[data-step-id="poll"] .el-form-item').filter({ has: page.getByText('完成条件', { exact: true }) })
+  await row.locator('.operand-picker input[aria-label="打开内容选择器"]').first().click()
+  const picker = page.locator('.fp-panel:visible')
+  await picker.getByRole('textbox', { name: '搜索内容名称或编码' }).fill('field_7999')
+  await picker.locator('.fp-row').filter({ has: page.getByText('body.field_7999', { exact: true }) }).dblclick()
+  await page.getByRole('button', { name: '保存草稿', exact: true }).click()
+  await expect.poll(() => saved).toBeTruthy()
+  const [step] = JSON.parse(saved.executionConfig).steps
+  expect(Object.keys(step.responseSample)).toHaveLength(8000)
+  expect(step.poll.until.children[0].left).toMatchObject({ kind: 'PATH', value: 'body.field_7999' })
+  expect(step.responseBranches).toEqual([])
   assertClean()
 })
 

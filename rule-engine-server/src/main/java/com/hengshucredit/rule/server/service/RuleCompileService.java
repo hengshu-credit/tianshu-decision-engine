@@ -224,9 +224,12 @@ public class RuleCompileService {
     }
 
     private VarContext buildVarContext(Long projectId) {
+        return buildVarContext(projectId, functionService.buildCompileMetadata(projectId));
+    }
+
+    VarContext buildVarContext(Long projectId, RuleFunctionService.CompileMetadata functions) {
         Map<String, String> refIdToScriptName = variableService.buildRefScriptNameMap(projectId);
         Map<Long, String> constantIdToExpression = variableService.buildRefConstantExpressionMap(projectId);
-        RuleFunctionService.CompileMetadata functions = functionService.buildCompileMetadata(projectId);
         return new VarContext(Collections.<Long, String>emptyMap(), Collections.<String, String>emptyMap(),
                 refIdToScriptName, constantIdToExpression,
                 functions.codes(), functions.arities(), functions.nativeIds());

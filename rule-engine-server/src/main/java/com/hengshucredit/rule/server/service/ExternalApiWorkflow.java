@@ -101,7 +101,7 @@ public final class ExternalApiWorkflow {
                     } while (response == null);
                     JSONObject callback = step.getJSONObject("callback");
                     Object status = ExternalApiRequestPlan.read(response, callback.getString("statusPath"));
-                    boolean accepted = hasCondition(callback.get("successCondition"))
+                    boolean accepted = ExternalApiExecutionConfig.hasCondition(callback.get("successCondition"))
                             ? condition.test(callback.get("successCondition"), response) : String.valueOf(status).equals(callback.getString("successValue"));
                     if (!accepted) {
                         response.put("success", false);
@@ -120,7 +120,7 @@ public final class ExternalApiWorkflow {
                         Map<String, Object> observed = new LinkedHashMap<>(context);
                         observed.putAll(response);
                         if (poll == null || poll.get("until") == null || condition.test(poll.get("until"), observed)) break;
-                    if (hasCondition(poll.get("failure")) && condition.test(poll.get("failure"), observed)
+                    if (ExternalApiExecutionConfig.hasCondition(poll.get("failure")) && condition.test(poll.get("failure"), observed)
                             && !continueOnFailure) {
                             throw new IllegalStateException("外数步骤失败条件命中: " + id);
                         }
@@ -192,15 +192,6 @@ public final class ExternalApiWorkflow {
             result.put("callbacks", callbacks);
             return result;
         }
-    }
-
-    static boolean hasCondition(Object condition) {
-        if (!(condition instanceof Map<?, ?> map) || map.isEmpty()) return false;
-        if (map.get("children") instanceof Iterable<?> children) {
-            for (Object child : children) if (hasCondition(child)) return true;
-            return false;
-        }
-        return map.get("path") != null && !String.valueOf(map.get("path")).isBlank() || map.get("left") != null;
     }
 
     private static void pause(long milliseconds) throws java.util.concurrent.TimeoutException {

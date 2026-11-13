@@ -280,6 +280,7 @@ import {
   createEmptyLeaf,
   createEmptyActionItem,
   migrateRuleConditionsToTree,
+  normalizeConditionTreeOperands,
   collectVarCodesFromConditionTree,
   walkConditionLeaves,
 } from '@/utils/decisionConditionTree'
@@ -480,10 +481,8 @@ export default {
       this.model.rules.forEach((r) => {
         this.ensureRuleActionsShape(r, legacyGlobalActions)
 
-        const hasTree =
-          r.conditionRoot &&
-          r.conditionRoot.type === 'group' &&
-          Array.isArray(r.conditionRoot.children)
+        const hasTree = r.conditionRoot?.type === 'leaf' ||
+          (r.conditionRoot?.type === 'group' && Array.isArray(r.conditionRoot.children))
         if (!hasTree) {
           const migrated = migrateRuleConditionsToTree(
             r.conditions || [],
@@ -491,26 +490,7 @@ export default {
           )
           r['conditionRoot'] = migrated
         }
-        walkConditionLeaves(r.conditionRoot, (leaf) => {
-          if (!leaf.leftOperand && leaf.varCode)
-            leaf['leftOperand'] = operandFromReferenceFields(leaf)
-          if (!leaf.rightOperand && leaf.value !== undefined) {
-            if (leaf.valueKind === 'VAR') {
-              leaf['rightOperand'] = operandFromReferenceFields({
-                varCode: leaf.value,
-                varLabel: leaf.rightVarLabel,
-                varType: leaf.rightVarType,
-                _varId: leaf._rightVarId,
-                _refType: leaf._rightRefType,
-              })
-            } else {
-              leaf['rightOperand'] = createLiteralOperand(
-                leaf.value,
-                leaf.varType || 'STRING'
-              )
-            }
-          }
-        })
+        r.conditionRoot = normalizeConditionTreeOperands(r.conditionRoot)
         if (r.conditions !== undefined) delete r.conditions
       })
       this.model.conditions = []

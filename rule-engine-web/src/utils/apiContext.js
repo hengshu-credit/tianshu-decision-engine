@@ -1,4 +1,4 @@
-import { API_MODULE_FIELDS, samplePathOptions } from './apiExecution'
+import { API_MODULE_FIELDS, samplePathOptions, hasCondition } from './apiExecution'
 
 const rawResponse = Object.freeze([
   { value: 'httpStatus', label: 'HTTP 状态码', type: 'INTEGER' },
@@ -8,8 +8,9 @@ const rawResponse = Object.freeze([
 export const uniqueApiPaths = paths => Object.freeze([...new Map(paths.filter(item => item?.value).map(item => [item.value, item])).values()])
 const protocolFieldsCache = new WeakMap()
 
-function responseStructure(branch, prefix = '') {
-  const samples = Object.hasOwn(branch, 'sample') ? samplePathOptions(branch.sample) : []
+function responseStructure(branch, prefix = '', inheritedSample) {
+  const sample = Object.hasOwn(branch, 'sample') ? branch.sample : inheritedSample
+  const samples = sample === undefined ? [] : samplePathOptions(sample)
   const sampleByPath = new Map(samples.map(field => [field.value, field]))
   const outputs = branch.mode === 'VALUE' ? [{ path: branch.outputPath || '', value: branch.value }] : branch.outputFields || []
   return [...samples.map(field => ({ ...field, value: prefix + field.value })), ...outputs.flatMap(field => {
@@ -27,9 +28,19 @@ function responseStructure(branch, prefix = '') {
   })]
 }
 
+// Response samples describe the protocol even when the API forwards the entire body unchanged.
+function sampleFieldsAt(config, prefix, passthrough) {
+  if (!config || !Object.hasOwn(config, 'responseSample')) return []
+  const raw = samplePathOptions(config.responseSample, prefix + 'response.body')
+  return passthrough && !config.responseBranches?.length
+    ? [...raw, ...samplePathOptions(config.responseSample, prefix + 'body')]
+    : raw
+}
+
 export function apiStagePaths(config = {}, stage = 'RESULT', index = 0, branch = null) {
   if (stage === 'REQUEST') return []
   if (stage === 'STEP_CONDITION' || stage === 'CALLBACK') return uniqueApiPaths([...rawResponse,
+    ...(Object.hasOwn(config.steps?.[index] || {}, 'responseSample') ? samplePathOptions(config.steps[index].responseSample, 'body') : []),
     ...(config.steps?.[index]?.responseBranches || []).flatMap(item => Object.hasOwn(item, 'sample') ? samplePathOptions(item.sample, 'body').map(field => ({ ...field, category: 'api-response' })) : [])])
   if (stage === 'RETRY') return uniqueApiPaths([...rawResponse.filter(field => field.value !== 'headers'), ...API_MODULE_FIELDS.filter(field => field.value === 'response' || field.value.startsWith('response.')),
     { value: 'errorMessage', label: '异常信息', type: 'STRING' }])
@@ -38,7 +49,8 @@ export function apiStagePaths(config = {}, stage = 'RESULT', index = 0, branch =
   const stepPaths = completed.flatMap(step => [
     { value: `steps.${step.id}`, label: step.name || step.id, type: 'OBJECT' },
     ...API_MODULE_FIELDS.map(field => ({ ...field, value: `steps.${step.id}.${field.value}`, label: `${step.name || step.id} · ${field.label}` })),
-    ...(step.responseBranches || []).flatMap(response => responseStructure(response, `steps.${step.id}.`)),
+    ...sampleFieldsAt(step, `steps.${step.id}.`, true),
+    ...(step.responseBranches || []).flatMap(response => responseStructure(response, `steps.${step.id}.`, step.responseSample)),
   ])
   const requestFields = [...(config.requestFields || []), ...(config.requestBranches || []).flatMap(branch => branch.requestFields || [])]
   const requestPaths = requestFields.map(field => ({ value: `input.__apiFields.${field.id}`, label: `链路入参 · ${field.path}`, type: field.value?.valueType || 'OBJECT' }))
@@ -52,8 +64,43 @@ export function apiStagePaths(config = {}, stage = 'RESULT', index = 0, branch =
     const suffix = field.location === 'JSON' ? (field.path?.startsWith('[') ? '' : '.') + field.path : `[${JSON.stringify(field.path)}]`
     return { value: root && field.path ? root + suffix : '', label: field.remark || field.path, type: field.value?.valueType || 'STRING' }
   })
-  return uniqueApiPaths([...base, ...actualRequest, ...stepPaths, ...(['STEP_RESPONSE', 'STEP_POLL'].includes(stage) ? [...requestPaths, ...callbacks] : []),
-    ...(branch && Object.hasOwn(branch, 'sample') ? samplePathOptions(branch.sample) : []), ...outputBranches.flatMap(response => responseStructure(response))])
+  const target = ['STEP_RESPONSE', 'STEP_POLL'].includes(stage) ? steps[index] : config
+  const samples = sampleFieldsAt(target, '', true)
+  if (['RESULT', 'POLICY'].includes(stage) && !config.responseBranches?.length && !Object.hasOwn(config, 'responseSample')) {
+    // The last completed workflow step supplies the final envelope in passthrough mode.
+    for (let i = steps.length - 1; i >= 0; i--) {
+      const step = steps[i]
+      samples.push(...sampleFieldsAt(step, '', true), ...(step.responseBranches || []).flatMap(response => responseStructure(response, '', step.responseSample)))
+      if (!hasCondition(step.when)) break
+    }
+  }
+  return uniqueApiPaths([...base, ...actualRequest, ...stepPaths, ...samples, ...(['STEP_RESPONSE', 'STEP_POLL'].includes(stage) ? [...requestPaths, ...callbacks] : []),
+    ...(branch && Object.hasOwn(branch, 'sample') ? samplePathOptions(branch.sample) : []), ...outputBranches.flatMap(response => responseStructure(response, '', target?.responseSample))])
+}
+
+/** Capture paths are relative to the payload, independent of the runtime envelope. */
+export function captureFieldPaths(samples, { arrays = false, root = false } = {}) {
+  const paths = new Map()
+  if (root) paths.set('$', { value: '$', label: '整个报文', type: 'OBJECT' })
+  const add = (value, type) => paths.set(value, { value, label: value, type })
+  function visit(item, path, allPath) {
+    const type = item === null ? 'NULL' : Array.isArray(item) ? 'LIST' : typeof item === 'object' ? 'OBJECT'
+      : typeof item === 'number' ? 'NUMBER' : typeof item === 'boolean' ? 'BOOLEAN' : 'STRING'
+    if (path !== '$') {
+      add(path, type)
+      if (arrays && path !== allPath) add(allPath, type)
+    }
+    if (Array.isArray(item)) {
+      item.forEach((value, index) => visit(value, path + '[' + index + ']', allPath + '[*]'))
+    } else if (item && typeof item === 'object') {
+      Object.entries(item).forEach(([key, value]) => {
+        const segment = /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) ? '.' + key : '[' + JSON.stringify(key) + ']'
+        visit(value, path + segment, allPath + segment)
+      })
+    }
+  }
+  samples.forEach(sample => { if (sample !== undefined) visit(sample, '$', '$') })
+  return Object.freeze([...paths.values()])
 }
 
 /** 协议路径保留原文；补齐结构父级，只有实际可取值的路径允许选择。 */

@@ -1353,7 +1353,9 @@ export default {
           this.scrollCurrentValueIntoView()
           return true
         }
-        option = this.findOptionByIdentity(this.value.refId, this.value.refType)
+        option = this.value.kind === 'PATH' && this.value.protocolPath
+          ? this.vars.find(item => item._refType === 'API_CONTEXT' && item.varCode === this.value.value)
+          : this.findOptionByIdentity(this.value.refId, this.value.refType)
       } else {
         option =
           this.valueKey === 'reference'

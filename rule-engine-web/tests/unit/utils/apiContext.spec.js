@@ -1,7 +1,35 @@
-import { apiStagePaths, apiProtocolFields, isAvailableApiPath } from '@/utils/apiContext'
+import { captureFieldPaths, apiStagePaths, apiProtocolFields, isAvailableApiPath } from '@/utils/apiContext'
 import { buildFieldTree, fieldAncestors, visibleFieldRows, filterFieldTree } from '@/utils/fieldPicker'
 
 describe('API 各阶段可用上下文', () => {
+  it('独立响应样例可供绑定、轮询及后续步骤选择，目录不改变映射', () => {
+    const steps = [{ id: 'submit', responseSample: { ticket: 'x' } },
+      { id: 'poll', responseSample: { state: 'DONE', 'x.y': 1 } }]
+    const paths = stage => apiStagePaths({ steps }, stage, 1).map(p => p.value)
+    expect(paths('STEP_REQUEST')).toContain('steps.submit.body.ticket')
+    expect(paths('STEP_REQUEST')).not.toContain('steps.poll.body.state')
+    expect(paths('STEP_POLL')).toContain('body.state')
+    expect(paths('RESULT')).toContain('body["x.y"]')
+    expect(paths('RESULT')).not.toContain('body.ticket')
+    expect(steps[0].responseBranches).toBeUndefined()
+  })
+
+  it('分支从所在步骤的样例选取对象时，后续步骤可继续选择组装后的子字段', () => {
+    const steps = [{ id: 'first', responseSample: { data: { 'Risk.Score': 82 } }, responseBranches: [
+      { mode: 'VALUE', value: { kind: 'PATH', value: 'body.data' } },
+    ] }, { id: 'second' }]
+    expect(apiStagePaths({ steps }, 'STEP_REQUEST', 1)).toContainEqual(expect.objectContaining({
+      value: 'steps.first.body["Risk.Score"]', type: 'NUMBER',
+    }))
+  })
+
+  it('报文目录保留特殊键和具体下标，批量策略也能选数组的全部项', () => {
+    const sample = { 'a.b': [{ 'x[0]':1 }, { token:'ok' }] }
+    const options = captureFieldPaths([sample], { arrays:true }).map(o=>o.value)
+    expect(options).toEqual(expect.arrayContaining(['$["a.b"][0]["x[0]"]','$["a.b"][*]["x[0]"]','$["a.b"][1].token','$["a.b"][*].token']))
+    expect(options).not.toContain('$')
+    expect(captureFieldPaths([sample], { root:true }).map(o=>o.value)).not.toContain('$["a.b"][*]')
+  })
   it('分类直接展示协议字段，不再增加当前 API 的目录行；类型过滤仍能找到子字段', () => {
     const fields = apiProtocolFields([{ value: 'response.body.Payload.Score', label: '评分', type: 'NUMBER' }])
     const tree = buildFieldTree(fields)

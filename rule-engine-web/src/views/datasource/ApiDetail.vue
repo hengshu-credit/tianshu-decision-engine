@@ -925,6 +925,8 @@
                     <el-switch v-model="payloadCapture.request.saveOriginal" active-text="保留" inactive-text="不保留" />
                     <div class="field-help">关闭后只保存处理副本；解密或留存处理失败时系统仍会保留原文并标记原因。</div>
                   </el-form-item>
+                  <api-request-sample-editor v-if="payloadCapture.request.storageMode !== 'ORIGINAL_ONLY' && payloadCapture.request.source === 'PROCESSED'"
+                    v-model:value="payloadCapture.request.processedSample" kind="处理后请求" title="处理后请求样例与字段目录" />
                   <el-form-item v-if="payloadCapture.request.storageMode !== 'ORIGINAL_ONLY'" label="留存解密副本">
                     <el-switch v-model="payloadCapture.request.decrypt.enabled" active-text="启用" inactive-text="关闭" />
                     <el-select v-if="payloadCapture.request.decrypt.enabled" v-model="payloadCapture.request.decrypt.mode" size="small" style="width: 170px; margin-left: 8px">
@@ -934,7 +936,7 @@
                   </el-form-item>
                   <template v-if="payloadCapture.request.storageMode !== 'ORIGINAL_ONLY' && payloadCapture.request.decrypt.enabled">
                     <el-form-item label="解密路径">
-                      <el-input v-model="payloadCapture.request.decrypt.path" placeholder="$ 或 $.payload" />
+                      <protocol-path-picker v-model:value="payloadCapture.request.decrypt.path" :paths="captureCatalogs.request.decrypt" context-label="请求报文" placeholder="选择解密字段或整个报文" />
                     </el-form-item>
                     <el-form-item v-if="payloadCapture.request.decrypt.mode === 'TRIPLE_DES_BASE64'" label="密钥变量名">
                       <el-input v-model="payloadCapture.request.decrypt.keyVariable" placeholder="脚本变量中的密钥名，如 desKey" />
@@ -947,14 +949,11 @@
                         :key="`request-path-${index}`"
                         class="payload-path-row"
                       >
-                        <el-input
-                          v-model="payloadCapture.request.excludePaths[index]"
-                          placeholder="如 $.items[*].base64 或 $['含点.字段']"
-                        />
+                        <protocol-path-picker v-model:value="payloadCapture.request.excludePaths[index]" :paths="captureCatalogs.request.filter" context-label="请求报文" placeholder="选择要排除的字段" />
                         <el-button link size="small" class="btn-delete" @click="removePayloadCapturePath('request', index)">删除</el-button>
                       </div>
                       <el-button size="small" @click="addPayloadCapturePath('request')">添加路径</el-button>
-                      <div class="field-help">每行填写一个 JSONPath；保留原大小写，支持 $.x、[0]、[*] 和 ['含点.字段']。</div>
+                      <div class="field-help">从字段目录选择；数组可选择单项或全部项。</div>
                     </div>
                   </el-form-item>
                   <el-form-item label="单字段上限（字节）">
@@ -971,7 +970,7 @@
                   <el-form-item label="超长字段策略">
                     <div class="payload-path-list">
                       <div v-for="(policy, index) in payloadCapture.request.oversizedFields" :key="`request-long-${index}`" class="payload-path-row oversized-field-row">
-                        <el-input v-model="policy.path" placeholder="字段路径，如 $.authorizationFile" />
+                        <protocol-path-picker v-model:value="policy.path" :paths="captureCatalogs.request.filter" context-label="请求报文" placeholder="选择超长字段" />
                         <el-switch v-model="policy.store" active-text="保存" inactive-text="省略" />
                         <el-button link size="small" class="btn-delete" @click="removePayloadCapturePolicy('request', index)">删除</el-button>
                       </div>
@@ -1006,6 +1005,8 @@
                     <el-switch v-model="payloadCapture.response.saveOriginal" active-text="保留" inactive-text="不保留" />
                     <div class="field-help">关闭后可避免保存大型 Base64/密文原文；解密失败会强制留存并标明回退原因。</div>
                   </el-form-item>
+                  <api-request-sample-editor v-if="payloadCapture.response.storageMode !== 'ORIGINAL_ONLY' && payloadCapture.response.source === 'PROCESSED'"
+                    v-model:value="payloadCapture.response.processedSample" kind="处理后响应" title="处理后响应样例与字段目录" />
                   <el-form-item v-if="payloadCapture.response.storageMode !== 'ORIGINAL_ONLY'" label="留存解密副本">
                     <el-switch v-model="payloadCapture.response.decrypt.enabled" active-text="启用" inactive-text="关闭" />
                     <el-select v-if="payloadCapture.response.decrypt.enabled" v-model="payloadCapture.response.decrypt.mode" size="small" style="width: 170px; margin-left: 8px">
@@ -1015,7 +1016,7 @@
                   </el-form-item>
                   <template v-if="payloadCapture.response.storageMode !== 'ORIGINAL_ONLY' && payloadCapture.response.decrypt.enabled">
                     <el-form-item label="解密路径">
-                      <el-input v-model="payloadCapture.response.decrypt.path" placeholder="$ 或 $.payload" />
+                      <protocol-path-picker v-model:value="payloadCapture.response.decrypt.path" :paths="captureCatalogs.response.decrypt" context-label="响应报文" placeholder="选择解密字段或整个报文" />
                     </el-form-item>
                     <el-form-item v-if="payloadCapture.response.decrypt.mode === 'TRIPLE_DES_BASE64'" label="密钥变量名">
                       <el-input v-model="payloadCapture.response.decrypt.keyVariable" placeholder="脚本变量中的密钥名，如 desKey" />
@@ -1031,14 +1032,11 @@
                         :key="`response-path-${index}`"
                         class="payload-path-row"
                       >
-                        <el-input
-                          v-model="payloadCapture.response.excludePaths[index]"
-                          placeholder="如 $.items[*].base64 或 $['含点.字段']"
-                        />
+                        <protocol-path-picker v-model:value="payloadCapture.response.excludePaths[index]" :paths="captureCatalogs.response.filter" context-label="响应报文" placeholder="选择要排除的字段" />
                         <el-button link size="small" class="btn-delete" @click="removePayloadCapturePath('response', index)">删除</el-button>
                       </div>
                       <el-button size="small" @click="addPayloadCapturePath('response')">添加路径</el-button>
-                      <div class="field-help">每行填写一个 JSONPath；保留原大小写，支持 $.x、[0]、[*] 和 ['含点.字段']。</div>
+                      <div class="field-help">从字段目录选择；数组可选择单项或全部项。</div>
                     </div>
                   </el-form-item>
                   <el-form-item label="单字段上限（字节）">
@@ -1055,7 +1053,7 @@
                   <el-form-item label="超长字段策略">
                     <div class="payload-path-list">
                       <div v-for="(policy, index) in payloadCapture.response.oversizedFields" :key="`response-long-${index}`" class="payload-path-row oversized-field-row">
-                        <el-input v-model="policy.path" placeholder="字段路径，如 $.reportFile" />
+                        <protocol-path-picker v-model:value="policy.path" :paths="captureCatalogs.response.filter" context-label="响应报文" placeholder="选择超长字段" />
                         <el-switch v-model="policy.store" active-text="保存" inactive-text="省略" />
                         <el-button link size="small" class="btn-delete" @click="removePayloadCapturePolicy('response', index)">删除</el-button>
                       </div>
@@ -1252,7 +1250,8 @@ import {
   previewApiConfigRequest,
   updateApiConfig,
 } from '@/api/datasource'
-import { apiStagePaths } from '@/utils/apiContext'
+import { apiStagePaths, captureFieldPaths } from '@/utils/apiContext'
+import ApiRequestSampleEditor from '@/components/common/ApiRequestSampleEditor.vue'
 import ResponseConditionTreeEditor from '@/components/common/ResponseConditionTreeEditor.vue'
 import ResourcePreflightPanel from '@/components/common/ResourcePreflightPanel.vue'
 import MonacoEditor from '@/components/MonacoEditor'
@@ -1397,6 +1396,7 @@ export default {
   mixins: [configurationDraftMixin(vm => ({ form: vm.form, apiAuthConfig: vm.apiAuthConfig, scriptVariableRows: vm.scriptVariableRows, cacheKeyRows: vm.cacheKeyRows, successConditionRoot: vm.successConditionRoot, exceptionConditionRoot: vm.exceptionConditionRoot, retryConditionRoot: vm.retryConditionRoot, tokenFailureMode: vm.tokenFailureMode, tokenFailureConditionRoot: vm.tokenFailureConditionRoot, billingConfig: vm.billingConfig, payloadCapture: vm.payloadCapture })), workspaceTabTitleMixin(vm => vm.form.apiName)],
   components: { RemoteFilterSelect,
     ProtocolPathPicker,
+    ApiRequestSampleEditor,
     ConfigLayerGuide,
     ApiExecutionEditor,
     ExternalCallTrace,
@@ -1436,6 +1436,25 @@ export default {
       return !this.$route.params.id || this.$route.params.id === 'new'
     },
     requestPathOptions() { return this.apiPickerVars.map(field => ({ value: field.varCode, label: field.varLabelText || field.varLabel, type: field.varType })) },
+    captureCatalogs() {
+      const config = parseExecution(this.form.executionConfig)
+      const catalogs = {}
+      for (const side of ['request', 'response']) {
+        const capture = this.payloadCapture[side]
+        const processed = capture.storageMode !== 'ORIGINAL_ONLY' && capture.source === 'PROCESSED'
+        const entries = [config, ...(config.steps || [])]
+        let samples
+        if (processed && Object.hasOwn(capture, 'processedSample')) samples = [capture.processedSample]
+        else if (processed && String(this.form[side + 'Script'] || '').trim()) samples = []
+        else if (side === 'request') samples = entries.map(entry => entry.requestSample)
+        else samples = entries.flatMap(entry => [entry.responseSample, ...(entry.responseBranches || []).map(branch => branch.sample)])
+        catalogs[side] = {
+          decrypt: captureFieldPaths(samples, { root: true }),
+          filter: captureFieldPaths(samples, { arrays: true }),
+        }
+      }
+      return catalogs
+    },
     responsePathOptions() { return apiStagePaths(parseExecution(this.form.executionConfig), 'RESULT') },
     visibleConfigTabs() {
       return this.configTabs.filter((item) => {

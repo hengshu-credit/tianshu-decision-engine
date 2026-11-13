@@ -24,6 +24,23 @@ function mountPicker(propsData = {}, options = {}) {
 }
 
 describe('统一 OperandPicker', () => {
+  test('SFTP 对象变量按示例选择子字段时保存稳定 ID、原始键名和类型', async () => {
+    const field = { _refType: 'VARIABLE', _varId: '9007199254741001', varCode: 'report', varType: 'OBJECT',
+      _ref: { category: 'variable', varObj: { varSource: 'SFTP', exampleValue: '{"Rows":[{"Risk.Score":82,"note":"x"}]}' } } }
+    const source = { kind: 'REFERENCE', refType: 'VARIABLE', refId: field._varId, code: 'report', valueType: 'OBJECT' }
+    const wrapper = mountPicker({ vars: [field], expectedType: 'NUMBER' })
+    wrapper.vm.openManualInput('PATH')
+    wrapper.vm.selectPathSource(source)
+    const path = '.Rows[0]["Risk.Score"]'
+    expect(wrapper.vm.sampleSubpaths.map(item => item.value)).toEqual([path])
+    wrapper.vm.useSampleSubpath(path)
+    expect(wrapper.emitted().input.at(-1)[0]).toMatchObject({ kind: 'PATH', refId: source.refId, relativePath: path, valueType: 'NUMBER' })
+    wrapper.vm.openManualInput('PATH')
+    wrapper.vm.selectPathSource({ ...source, versionMode: 'FIXED', versionId: '9' })
+    expect(wrapper.vm.sampleSubpaths).toEqual([])
+    wrapper.unmount()
+  })
+
   test('直接选用同一对象的子字段，保留字段 ID、类型并排除同名其他对象', () => {
     const field = { _refType: 'DATA_OBJECT', _varId: '9007199254740999', varCode: 'report.score',
       varLabelText: '信用分', varType: 'NUMBER', _ref: { category: 'object', objectId: '7' } }

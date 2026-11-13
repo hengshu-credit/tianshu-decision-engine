@@ -33,6 +33,31 @@ export const newApiId = () => {
   return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`
 }
 export const emptyExecution = () => ({ version: 2, nullPolicy: 'OMIT', requestFields: [], requestBranches: [], responseBranches: [], exceptionBranches: [], billingBranches: [], retryBranches: [], steps: [], samples: [] })
+function editableCondition(value) {
+  if (!value) return newCondition()
+  if (typeof value === 'string') {
+    try { return editableCondition(JSON.parse(value)) } catch { return value }
+  }
+  function normalizeNode(node) {
+    if (Array.isArray(node?.children)) {
+      return { ...node, type: 'group', operator: node.operator || node.op || 'AND', children: node.children.map(normalizeNode) }
+    }
+    if (node && !node.path && (node.varCode || node.field)) return { ...node, path: node.varCode || node.field }
+    return node
+  }
+  const node = normalizeNode(value)
+  if (Array.isArray(node?.children)) return node
+  return Object.keys(value).length ? { ...newCondition(), children: [node] } : newCondition()
+}
+
+export function hasCondition(value) {
+  if (typeof value === 'string') {
+    try { return hasCondition(JSON.parse(value)) } catch { return false }
+  }
+  return Array.isArray(value?.children) ? value.children.some(hasCondition)
+    : !!(value?.left || value?.path || value?.field || value?.varCode)
+}
+
 export function parseExecution(text) {
   let parsed = {}
   let parseError = ''
@@ -47,14 +72,19 @@ export function parseExecution(text) {
   const config = { ...emptyExecution(), ...parsed }
   if (parseError) Object.defineProperty(config, '__parseError', { value: parseError, enumerable: false })
   if (!config.nullPolicy || config.nullPolicy === 'DEFAULT') config.nullPolicy = 'OMIT'
+  const freezeSample = owner => {
+    const sample = owner?.responseSample
+    if (sample && typeof sample === 'object') Object.freeze(sample)
+  }
+  freezeSample(config)
   const normalizeBranch = branch => ({
-    condition: newCondition(),
     requestFields: [],
     outputFields: [],
     retryCount: 0,
     retryIntervalMs: 200,
     retryBackoffMultiplier: 2,
     ...branch,
+    condition: editableCondition(branch?.condition),
     ...(branch?.sample && typeof branch.sample === 'object' ? { sample: Object.freeze(branch.sample) } : {}),
   })
   const normalizeRequestFields = fields => (fields || []).map(field => ({
@@ -70,7 +100,21 @@ export function parseExecution(text) {
   config.exceptionBranches = (config.exceptionBranches || []).map(normalizeBranch)
   config.billingBranches = (config.billingBranches || []).map(normalizeBranch)
   config.retryBranches = (config.retryBranches || []).map(normalizeBranch)
-  config.steps = (config.steps || []).map(step => ({ successConditionTree: newCondition(), exceptionConditionTree: newCondition(), retryConditionTree: newCondition(), ...step, when: step.when || newCondition(), requestFields: normalizeRequestFields(step?.requestFields), responseBranches: (step.responseBranches || []).map(normalizeBranch), ...(step.callback ? { callback: { successCondition: newCondition(), failureCondition: newCondition(), ...step.callback } } : {}), ...(step.poll ? { poll: { failure: newCondition(), ...step.poll } } : {}) }))
+  config.steps = (config.steps || []).map(step => ({
+    ...step,
+    when: editableCondition(step.when),
+    successConditionTree: editableCondition(step.successConditionTree),
+    exceptionConditionTree: editableCondition(step.exceptionConditionTree),
+    retryConditionTree: editableCondition(step.retryConditionTree),
+    requestFields: normalizeRequestFields(step.requestFields),
+    responseBranches: (step.responseBranches || []).map(normalizeBranch),
+    ...(step.callback ? { callback: { ...step.callback,
+      successCondition: editableCondition(step.callback.successCondition),
+      failureCondition: editableCondition(step.callback.failureCondition) } } : {}),
+    ...(step.poll ? { poll: { ...step.poll, until: editableCondition(step.poll.until),
+      failure: editableCondition(step.poll.failure) } } : {}),
+  }))
+  config.steps.forEach(freezeSample)
   return config
 }
 export const newApiField = () => ({ id: newApiId(), location: 'JSON', path: '', value: null, required: false, nullPolicy: 'DEFAULT', overridable: false, validationRuleIds: [] })
@@ -252,7 +296,6 @@ export function validateExecution(spec, requestMode) {
     if (step.type === 'HTTP' && !step.apiConfigId && !step.endpointUrl) return '请填写步骤请求地址或关联 API'
     if (!['HTTP', 'CALLBACK'].includes(step.type)) return `第 ${index + 1} 个步骤类型无效`
     if (step.type === 'CALLBACK' && !/^https?:\/\/.+\/api\/external-callback\/\$\{invocationId\}$/.test(step.callback?.url || '')) return '回调步骤需要填写公网回调地址模板'
-    if (step.type === 'HTTP' && step.poll && !step.poll.until?.children?.length) return `第 ${index + 1} 个轮询步骤必须配置完成条件`
     error = validateFields(step.requestFields, `第 ${index + 1} 个步骤请求字段`)
     if (error) return error
     for (const [name, tree] of [['执行条件', step.when], ['成功条件', step.successConditionTree], ['异常条件', step.exceptionConditionTree], ['重试条件', step.retryConditionTree]]) {
@@ -261,7 +304,7 @@ export function validateExecution(spec, requestMode) {
     }
     if (step.poll) {
       error = validateConditionTree(step.poll.until, `第 ${index + 1} 个步骤轮询完成条件`)
-      if (error || !step.poll.until?.children?.length) return error || `第 ${index + 1} 个步骤轮询必须配置完成条件`
+      if (error || !hasCondition(step.poll.until)) return error || `第 ${index + 1} 个步骤轮询必须配置完成条件`
       error = validateConditionTree(step.poll.failure, `第 ${index + 1} 个步骤轮询失败条件`)
       if (error) return error
     }
@@ -274,7 +317,7 @@ export function validateExecution(spec, requestMode) {
       error = validateResponseBranch(branch, `第 ${index + 1} 个步骤响应分支 ${branchIndex + 1}`)
       if (error) return error
     }
-    const text = JSON.stringify(step)
+    const text = JSON.stringify(step, (key, value) => ['responseSample', 'requestSample', 'sample', 'samples'].includes(key) ? undefined : value)
     const matcher = /(?:\$\.|\$\{)?steps\.([A-Za-z0-9_-]+)\./g
     let match
     while ((match = matcher.exec(text)) !== null) {
