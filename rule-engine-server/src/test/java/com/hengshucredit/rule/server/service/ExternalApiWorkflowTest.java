@@ -84,6 +84,24 @@ public class ExternalApiWorkflowTest {
         } finally { RequestDeadlineContext.clear(); RequestDeadlineContext.resetNanoTimeSource(); }
     }
 
+    @Test public void recoveryCannotRepeatAnUnacknowledgedSecondPaidStep() throws Exception {
+        var spec = JSON.parseObject("{\"steps\":[{\"id\":\"verify\",\"type\":\"HTTP\"},{\"id\":\"submit\",\"type\":\"HTTP\"}]}");
+        var saved = new java.util.concurrent.atomic.AtomicReference<Map<String,Object>>();
+        var calls = new ArrayList<String>();
+        ExternalApiWorkflow.Transport transport = (step, context) -> {
+            calls.add(step.getString("id"));
+            if ("submit".equals(step.getString("id"))) throw new AssertionError("模拟发送成功后实例中断");
+            return Map.of("success", true);
+        };
+        var callbacks = new ExternalApiCallbackStore(null,null);
+        assertThrows(AssertionError.class, () -> ExternalApiWorkflow.execute(spec, Map.of(), transport, callbacks,
+                (a,b) -> true, (a,b) -> {}, null, point -> saved.set(JSON.parseObject(JSON.toJSONString(point)))));
+        assertNotNull(saved.get());
+        assertThrows(ExternalApiWaitingException.class, () -> ExternalApiWorkflow.execute(spec, Map.of(), transport, callbacks,
+                (a,b) -> true, (a,b) -> {}, saved.get(), point -> fail("不应为已发送而缺回执的步骤再次登记发送")));
+        assertEquals(List.of("verify","submit"), calls);
+    }
+
     private static Throwable expiredDeadline() {
         try { RequestDeadlineContext.check(); throw new AssertionError("测试时钟必须已超过本地deadline"); }
         catch (java.util.concurrent.TimeoutException expected) { return new IllegalStateException("内部包装", expected); }
@@ -125,6 +143,19 @@ public class ExternalApiWorkflowTest {
             assertEquals(3, ((Map<?, ?>) result.get("steps")).size());
         }
     }
+    @Test public void configurablePollingFailureTakesPrecedenceAndCanContinueToTheNextResponse() throws Exception {
+        var spec = JSON.parseObject("{\"steps\":[{\"id\":\"p\",\"type\":\"HTTP\",\"poll\":{\"maxAttempts\":3,\"intervalMs\":1,\"until\":{\"path\":\"settled\"},\"failure\":{\"path\":\"denied\"}}}]}");
+        var count = new java.util.concurrent.atomic.AtomicInteger();
+        ExternalApiWorkflow.Transport response = (step, context) -> Map.of("settled",true, "denied",count.incrementAndGet()==1);
+        java.util.function.BiPredicate<Object,Map<String,Object>> match = (node,context) -> Boolean.TRUE.equals(context.get(((Map<?,?>)node).get("path")));
+        var callbacks = new ExternalApiCallbackStore(null,null);
+        assertThrows(IllegalStateException.class, () -> ExternalApiWorkflow.execute(spec, Map.of(),response,callbacks,match));
+        count.set(0);
+        spec.getJSONArray("steps").getJSONObject(0).getJSONObject("poll").put("failureMode","CONTINUE");
+        assertEquals(true,ExternalApiWorkflow.execute(spec,Map.of(),response,callbacks,match).get("success"));
+        assertEquals(2,count.get());
+    }
+
     @Test public void failureDoesNotReplayCompletedSubmission() {
         var spec = JSON.parseObject("{\"steps\":[{\"id\":\"one\",\"type\":\"HTTP\"},{\"id\":\"two\",\"type\":\"HTTP\"},{\"id\":\"three\",\"type\":\"HTTP\"}]}");
         List<String> calls = new ArrayList<>();

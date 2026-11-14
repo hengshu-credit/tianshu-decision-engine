@@ -34,13 +34,15 @@ public final class ExternalApiWorkflow {
             BiPredicate<Object, Map<String, Object>> condition,
             java.util.function.BiConsumer<JSONObject, Map<String, Object>> observer,
             Map<String, Object> resume) throws java.util.concurrent.TimeoutException {
-        return execute(specification, input, transport, callbacks, condition, observer, resume, ignored -> { });
+        return execute(specification, input, transport, callbacks, condition, observer, resume, null);
     }
 
     static Map<String, Object> execute(JSONObject specification, Map<String, Object> input,
             Transport transport, ExternalApiCallbackStore callbacks, BiPredicate<Object, Map<String, Object>> condition,
             java.util.function.BiConsumer<JSONObject, Map<String, Object>> observer, Map<String, Object> resume,
             java.util.function.Consumer<Map<String, Object>> persist) throws java.util.concurrent.TimeoutException {
+        if (resume != null && resume.get("blockedStepId") != null)
+            throw ExternalApiWaitingException.manualReview("原外数步骤 " + resume.get("blockedStepId") + " 的受理状态未确认");
         Map<String, Object> context = new LinkedHashMap<>();
         context.putAll(input);
         context.put("input", input);
@@ -73,7 +75,7 @@ public final class ExternalApiWorkflow {
                 if (!"CALLBACK".equals(step.getString("type"))) continue;
                 String id = step.getString("id");
                 JSONObject callback = step.getJSONObject("callback");
-                String invocationId = callbacks.register(callback);
+                String invocationId = callbacks.register(callback, persist != null);
                 registrations.put(id, invocationId);
                 callbackUrls.put(id, Map.of("url", callback.getString("url").replace("${invocationId}", invocationId)));
             }
@@ -98,7 +100,7 @@ public final class ExternalApiWorkflow {
                     continue;
                 }
                 Map<String, Object> response;
-            int attempts = 0;
+                int attempts = 0;
                 if ("CALLBACK".equals(step.getString("type"))) {
                     String invocationId = registrations.get(id);
                     do {
@@ -108,13 +110,13 @@ public final class ExternalApiWorkflow {
                         if (response == null) pause(100);
                     } while (response == null);
                     JSONObject callback = step.getJSONObject("callback");
-                    Object status = ExternalApiRequestPlan.read(response, callback.getString("statusPath"));
                     boolean accepted = ExternalApiExecutionConfig.hasCondition(callback.get("successCondition"))
-                            ? condition.test(callback.get("successCondition"), response) : String.valueOf(status).equals(callback.getString("successValue"));
-                    if (!accepted) {
+                            ? condition.test(callback.get("successCondition"), response)
+                            : String.valueOf(ExternalApiRequestPlan.read(response, callback.getString("statusPath"))).equals(callback.getString("successValue"));
+                    if (!accepted || Boolean.FALSE.equals(response.get("success"))) {
                         response.put("success", false);
                         observer.accept(step, response);
-                        throw new IllegalStateException("回调步骤返回失败状态: " + id);
+                        throw new CallbackRejected(id);
                     }
                 } else {
                     JSONObject poll = step.getJSONObject("poll");
@@ -123,16 +125,40 @@ public final class ExternalApiWorkflow {
                     while (true) {
                         ExternalApiTrialContext.check();
                         RequestDeadlineContext.check();
-                        response = transport.request(step, context);
+                        boolean fenced = persist != null && (poll == null || poll.get("until") == null);
+                        if (fenced) {
+                            var intent = checkpoint(id, results, registrations, callbackUrls);
+                            intent.put("blockedStepId", id);
+                            persist.accept(intent);
+                        }
+                        try {
+                            response = transport.request(step, context);
+                        } catch (ExternalApiInvokeService.ApiInvokeException failure) {
+                            if (persist != null && !failure.isUnknown() && failure.getRequestIssued() != null) {
+                                // Preserve earlier receipts, allowing just this confirmed failed/unsent step to be retried.
+                                var retry = checkpoint(id, results, registrations, callbackUrls);
+                                retry.put("manualRetry", !RequestDeadlineContext.isDeadlineExceeded(failure));
+                                persist.accept(retry);
+                                pending = true;
+                            }
+                            throw failure;
+                        }
                         attempts++;
                         Map<String, Object> observed = new LinkedHashMap<>(context);
                         observed.putAll(response);
-                        if (poll == null || poll.get("until") == null || condition.test(poll.get("until"), observed)) break;
-                    if (ExternalApiExecutionConfig.hasCondition(poll.get("failure")) && condition.test(poll.get("failure"), observed)
-                            && !continueOnFailure) {
-                            throw new IllegalStateException("外数步骤失败条件命中: " + id);
+                        if (poll == null || poll.get("until") == null) break;
+                        boolean failed = ExternalApiExecutionConfig.hasCondition(poll.get("failure")) && condition.test(poll.get("failure"), observed);
+                        if (!failed && condition.test(poll.get("until"), observed)) break;
+                        if (failed && !continueOnFailure || limit > 0 && attempts >= limit) {
+                            if (persist != null) {
+                                var stopped = checkpoint(id, results, registrations, callbackUrls);
+                                stopped.put("manualRetry", true);
+                                persist.accept(stopped);
+                                pending = true;
+                            }
+                            throw new IllegalStateException(failed && !continueOnFailure ? "外数步骤失败条件命中: " + id
+                                    : "外数步骤轮询次数已用尽: " + id);
                         }
-                    if (limit > 0 && attempts >= limit) throw new IllegalStateException("外数步骤轮询次数已用尽: " + id);
                         long interval = ExternalApiConfigValidator.positive(poll, "intervalMs", 1000);
                         double backoff = poll.get("backoffMultiplier") == null ? 1 : poll.getDoubleValue("backoffMultiplier");
                         long maximum = poll.get("maxIntervalMs") == null ? 60000 : poll.getLongValue("maxIntervalMs");
@@ -143,14 +169,9 @@ public final class ExternalApiWorkflow {
                 stored.put("stepId", id);
                 stored.put("pollAttempts", attempts);
                 results.put(id, stored);
-                Map<String, Object> checkpoint = new LinkedHashMap<>();
-                checkpoint.put("kind", "WORKFLOW");
-                checkpoint.put("stepId", "__NEXT__");
-                checkpoint.put("results", results);
-                checkpoint.put("registrations", registrations);
-                checkpoint.put("callbacks", callbackUrls);
+                Map<String, Object> checkpoint = checkpoint("__NEXT__", results, registrations, callbackUrls);
                 ExternalApiTrialContext.checkpoint(checkpoint);
-                persist.accept(checkpoint);
+                if (persist != null) persist.accept(checkpoint);
                 observer.accept(step, stored);
                 last = response;
             }
@@ -174,6 +195,21 @@ public final class ExternalApiWorkflow {
         } finally {
             if (!pending) for (String registration : registrations.values()) callbacks.close(registration);
         }
+    }
+
+    private static Map<String,Object> checkpoint(String step, Map<String,Object> results, Map<String,String> registrations,
+                                                 Map<String,Object> callbacks) {
+        var point = new LinkedHashMap<String,Object>();
+        point.put("kind", "WORKFLOW");
+        point.put("stepId", step);
+        point.put("results", new LinkedHashMap<>(results));
+        point.put("registrations", new LinkedHashMap<>(registrations));
+        point.put("callbacks", new LinkedHashMap<>(callbacks));
+        return point;
+    }
+
+    static final class CallbackRejected extends IllegalStateException {
+        CallbackRejected(String stepId) { super("回调步骤返回失败状态: " + stepId); }
     }
 
     public static final class PendingException extends RuntimeException {

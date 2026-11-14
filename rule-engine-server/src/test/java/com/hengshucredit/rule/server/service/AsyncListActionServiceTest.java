@@ -71,6 +71,30 @@ public class AsyncListActionServiceTest {
         } finally { release.countDown(); RuntimeContextBridge.clear(); }
     }
 
+    @Test public void runningReplicaTakesOverPendingListJournalAfterOriginalOwnerStops() throws Exception {
+        var dir = Files.createTempDirectory("list-replica-");
+        var saved = new CountDownLatch(1);
+        var writer = new RuleListActionWriter(null, null) {
+            @Override int write(String id, Long project, JSONObject config, List<?> values, LocalDateTime at) {
+                saved.countDown(); return 1;
+            }
+        };
+        try (var survivor = new AsyncListActionService(writer, dir.resolve("survivor").toString(),true)) {
+            survivor.start();
+            try (var dead = new AsyncListActionService(new RuleListActionWriter(null,null) {
+                @Override int write(String id, Long project, JSONObject config, List<?> values, LocalDateTime at) {
+                    throw new IllegalStateException("数据库暂时离线");
+                }
+            },dir.resolve("old-replica").toString())) {
+                dead.start();
+                var receipt = (Map<?,?>)dead.submit(1L,config(),List.of("original"),LocalDateTime.now());
+                assertEquals("QUEUED",receipt.get("status"));
+                assertFalse(saved.await(150,TimeUnit.MILLISECONDS));
+            }
+            assertTrue("还在运行的副本应接管旧目录",saved.await(8,TimeUnit.SECONDS));
+        }
+    }
+
     @Test public void failedTaskSurvivesRestartWithSameIdentityAndExpirationOrigin() throws Exception {
         String directory = Files.createTempDirectory("list-action-recovery-").toString();
         var attempted = new CountDownLatch(1); var recovered = new CountDownLatch(1);

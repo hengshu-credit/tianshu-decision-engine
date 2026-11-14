@@ -5,6 +5,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /** 保存、审批、预览和真实调用共用 V2 结构校验。 */
@@ -130,9 +131,15 @@ public final class ExternalApiExecutionConfig {
                         || !callback.getString("url").matches("https?://.+/api/external-callback/\\$\\{invocationId}")) {
                     throw new IllegalArgumentException("回调步骤需要有效的公网回调地址模板");
                 }
-                for (String key : new String[]{"signatureHeader", "signatureSecret", "statusPath", "successValue"}) {
+                boolean tree = hasCondition(callback.get("successCondition"));
+                for (String key : tree ? List.of("signatureHeader", "signatureSecret")
+                        : List.of("signatureHeader", "signatureSecret", "statusPath", "successValue")) {
                     if (callback.getString(key) == null || callback.getString(key).isBlank()) throw new IllegalArgumentException("回调步骤缺少 " + key);
                 }
+                validateConditionIfPresent(callback.get("successCondition"), "回调成功条件");
+                validateConditionIfPresent(callback.get("failureCondition"), "回调失败条件");
+                if (callback.get("failureMode") != null && !Set.of("CONTINUE", "TERMINATE").contains(callback.getString("failureMode")))
+                    throw new IllegalArgumentException("回调失败处理必须为 CONTINUE 或 TERMINATE");
             } else if (step.getLong("apiConfigId") == null && (step.getString("endpointUrl") == null || step.getString("endpointUrl").isBlank())) {
                 throw new IllegalArgumentException("HTTP 步骤需要关联 API 或填写请求地址");
             }

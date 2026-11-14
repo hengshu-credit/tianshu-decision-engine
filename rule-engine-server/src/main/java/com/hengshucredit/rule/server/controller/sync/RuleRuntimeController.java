@@ -136,6 +136,11 @@ public class RuleRuntimeController {
             experimentStateService.complete(decision, result);
             activeDecision = null;
             return ApiResponse.ok(result);
+        } catch (RuleExperimentExecutionStateService.ConfigurationConflict mismatch) {
+            if (activeDecision != null) experimentStateService.release(activeDecision, mismatch.getMessage());
+            var response = ApiResponse.<RuleExperimentExecuteResult>fail(PlatformCode.RESOURCE_CONFLICT, mismatch.getMessage());
+            response.setTraceId(acceptedTrace);
+            return response;
         } catch (RuleExperimentExecutionStateService.StrategyInProgress running) {
             if (activeDecision != null) experimentStateService.awaitStrategy(activeDecision);
             return ExecutionQueue.pending(acceptedTrace);
@@ -144,7 +149,9 @@ public class RuleRuntimeController {
                     : executionQueue.defer(true, acceptedTrace);
         } catch (IllegalArgumentException e) {
             if (activeDecision != null) experimentStateService.release(activeDecision, e.getMessage());
-            return ApiResponse.fail(e);
+            var response = ApiResponse.<RuleExperimentExecuteResult>fail(e);
+            response.setTraceId(acceptedTrace);
+            return response;
         } catch (RuntimeException e) {
             if (activeDecision != null) experimentStateService.release(activeDecision, e.getMessage());
             var failed = ApiResponse.<RuleExperimentExecuteResult>fail(com.hengshucredit.rule.model.PlatformCode.SYSTEM_ERROR, "实验执行异常");
@@ -309,6 +316,12 @@ public class RuleRuntimeController {
             if (params != null && !idempotencyService.sameRequest(state, params)) return ApiResponse.fail(PlatformCode.IDEMPOTENCY_CONFLICT, null);
             return ApiResponse.ok(publicRuleResult(state.resultJson()));
         }
+        var groupOptions = state.groupOptions();
+        if (state.parentExperimentTrace() != null && groupOptions == null) {
+            var response = ApiResponse.fail(PlatformCode.RESOURCE_CONFLICT, "历史组订单缺少执行选项，请使用原实验追踪号恢复");
+            response.setTraceId(state.parentExperimentTrace());
+            return response;
+        }
         var publishedQuery = new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<RulePublished>()
                 .eq(RulePublished::getDefinitionId, state.definitionId()).eq(RulePublished::getStatus, 1);
         if (state.currentRevisionId() != null) {
@@ -318,6 +331,8 @@ public class RuleRuntimeController {
         }
         RulePublished published = publishedMapper.selectOne(publishedQuery);
         if (published == null) return ApiResponse.fail(PlatformCode.RULE_NOT_FOUND, "Published rule not found");
+        if (state.artifactDigest() != null && !state.artifactDigest().equals(published.getArtifactDigest()))
+            return ApiResponse.fail(PlatformCode.RESOURCE_CONFLICT, "原订单的策略制品已变化，请核对策略修订后恢复");
         Map<String, Object> resumeParams = params == null ? idempotencyService.requestParams(state) : params;
         if (resumeParams == null) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_CONFLICT, "订单检查点未保存原始入参，请提供原订单入参恢复");
         RuleIdempotencyService.Decision decision;
@@ -331,12 +346,18 @@ public class RuleRuntimeController {
         }
         if (!decision.isClaimed()) return ApiResponse.fail(PlatformCode.EXECUTION_IN_PROGRESS, "相同订单正在其他节点恢复执行");
         try {
-            RuleResult result = idempotencyService.withDecision(decision,
-                    () -> executeService.executePublished(published,
+            RuleResult result = idempotencyService.withDecision(decision, () -> {
+                if (groupOptions != null) {
+                    var saved = JSON.parseObject(state.dispatchJson());
+                    return executeService.executePublishedWithOptions(published, resumeParams, state.projectId(), saved.getString("clientAppName"),
+                            groupOptions, groupOptions.isDryRun() ? "EXPERIMENT_TEST" : "EXPERIMENT_LIVE").getResult();
+                }
+                return executeService.executePublished(published,
                             resumeParams,
                             state.projectId(), originalDispatch == null ? "RUNTIME_RESUME" : originalDispatch.clientAppName(), auth,
                             originalDispatch == null || originalDispatch.traceEnabled(),
-                            originalDispatch == null || (originalDispatch.recordTrace() == null ? originalDispatch.traceEnabled() : originalDispatch.recordTrace())));
+                            originalDispatch == null || (originalDispatch.recordTrace() == null ? originalDispatch.traceEnabled() : originalDispatch.recordTrace()));
+            });
             idempotencyService.complete(decision, result, null);
             return ApiResponse.ok(result);
         } catch (RuntimeException error) {

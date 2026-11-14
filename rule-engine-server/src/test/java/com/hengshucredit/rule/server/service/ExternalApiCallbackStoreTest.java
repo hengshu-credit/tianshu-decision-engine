@@ -95,6 +95,18 @@ public class ExternalApiCallbackStoreTest {
         assertEquals(730, ExternalApiCallbackStore.path(store.result(id), "body.report.score"));
     }
 
+    @Test public void durableOrderCallbackRemainsAvailableBeyondTheNextRecoveryScan() {
+        var redis = new MemoryRedis();
+        var properties = new ProjectAuthProperties();
+        properties.setActiveKeyId("v1");
+        properties.setMasterKeys(Map.of("v1", "unit-test-encryption-key-0123456789abcdef"));
+        var callbacks = new ExternalApiCallbackStore(redis, new CredentialCipher(properties));
+        try (var deadline = RequestDeadlineContext.limit(10)) {
+            callbacks.register(protocol(), true);
+            assertTrue(redis.lastTtl >= TimeUnit.DAYS.toMillis(1));
+        }
+    }
+
     @Test public void trialCallbackLifetimeOutlivesOneHttpSliceAndRegistrationIsDurableBeforeReturn() {
         MemoryRedis redis = new MemoryRedis();
         ProjectAuthProperties properties = new ProjectAuthProperties();

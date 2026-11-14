@@ -339,6 +339,8 @@ public class ExternalApiInvokeService {
                                                boolean useResponseCache, Map<String, Object> pendingAsync,
                                                java.util.function.Consumer<Map<String, Object>> persist) {
         Map<String, Object> params = plan.params();
+        if (pendingAsync != null && pendingAsync.get("blockedStepId") != null)
+            throw ExternalApiWaitingException.manualReview("原外数步骤 " + pendingAsync.get("blockedStepId") + " 的受理状态未确认，已阻止重复提交");
         if (apiConfig == null) {
             throw new IllegalArgumentException("API接口配置不能为空");
         }
@@ -377,6 +379,8 @@ public class ExternalApiInvokeService {
         trace.pendingAsync = pendingAsync == null ? null : new LinkedHashMap<>(pendingAsync);
         if (pendingAsync != null && "WORKFLOW".equalsIgnoreCase(String.valueOf(pendingAsync.get("kind")))) {
             trace.workflowResume = new LinkedHashMap<>(pendingAsync);
+            // A polling transport failure cannot erase a ticket received in an earlier attempt.
+            trace.workflowPending = new LinkedHashMap<>(pendingAsync);
         }
         Object resumedCallId = pendingAsync == null ? null : pendingAsync.get("callId");
         trace.callId = resumedCallId == null || String.valueOf(resumedCallId).isBlank()
@@ -523,6 +527,11 @@ public class ExternalApiInvokeService {
         if (!apiConfig.isBillingSuppressed() && billingService != null && shouldRecordFailedBilling(apiConfig, trace)) {
             try { trace.billed = recordInvocationBilling(apiConfig, datasource, false, cost, message); }
             catch (RuntimeException failure) { throw billingFailure(apiConfig, datasource, trace, null, failure, cost); }
+        }
+        if (lastError instanceof ExternalApiWorkflow.CallbackRejected) {
+            logDatasourceCall(apiConfig, datasource, trace, false, null, message, cost);
+            throw new ApiInvokeException(message, lastError, responseCacheSeconds > 0, trace.cacheStatus, false, null,
+                    apiConfig.getExceptionStrategy(), trace.requestIssued);
         }
         if ((ExternalApiTrialContext.current() != null || trace.progress != null) && trace.pendingAsyncSnapshot() != null) {
             ExternalApiTrialContext.checkpoint(trace.pendingAsyncSnapshot());
@@ -1028,11 +1037,13 @@ public class ExternalApiInvokeService {
                                         Boolean.FALSE.equals(response.get("success")) ? "FAILED" : "SUCCESS",
                                         Map.of("stepId", step.getString("id")), response, apiConfig.getId());
                             }
-                        }, trace.workflowResume, point -> {
-                            if (trace.progress != null) {
-                                trace.workflowPending = point;
-                                trace.progress.accept(trace.pendingAsyncSnapshot());
+                        }, trace.workflowResume, trace.progress == null ? null : point -> {
+                            trace.workflowPending = point;
+                            if (point.containsKey("blockedStepId")) {
+                                trace.requestIssued = false;
+                                trace.responseStatus = null;
                             }
+                            trace.progress.accept(trace.pendingAsyncSnapshot());
                         });
                 result.put("authentication", new ArrayList<>(authenticationCalls.get()));
                 if (hasText(apiConfig.getExceptionCondition())
@@ -1079,7 +1090,15 @@ public class ExternalApiInvokeService {
     private Map<String, Object> invokeWorkflowStep(RuleExternalApiConfig root, JSONObject step,
                                                     Map<String, Object> context, InvokeTrace trace) {
         ExternalApiRequestPlan plan = prepareWorkflowStep(root, step, context);
-        Map<String, Object> result = invokePlanned(plan);
+        // The enclosing workflow alone owns durable step identities; propagate transport uncertainty to it.
+        Map<String,Object> result;
+        try {
+            result = trace.progress == null ? invokePlanned(plan) : invokeCheckpointed(plan, null, ignored -> { });
+        } catch (ApiInvokeException failure) {
+            trace.requestIssued |= Boolean.TRUE.equals(failure.getRequestIssued());
+            if (failure.isUnknown()) trace.responseStatus = null;
+            throw failure;
+        }
         restoreTraceMetadata(result, trace);
         if (result.get("authentication") instanceof Iterable<?> calls) {
             for (Object call : calls) authenticationCalls.get().add(parseNestedMap(call));
@@ -1097,7 +1116,9 @@ public class ExternalApiInvokeService {
         trace.workflowResults.put(step.getString("id"), result);
         recordTraceStep(trace, "WORKFLOW_STEP", step.getString("name") == null ? step.getString("id") : step.getString("name"),
                 Boolean.FALSE.equals(result.get("success")) ? "FAILED" : "SUCCESS", Map.of("stepId", step.getString("id")), result, plan.config().getId());
-        if (Boolean.FALSE.equals(result.get("success"))) throw new IllegalStateException("外数步骤 " + step.getString("id") + " 失败: " + result.get("errorMessage"));
+        if (Boolean.FALSE.equals(result.get("success")))
+            throw new ApiInvokeException("外数步骤 " + step.getString("id") + " 失败: " + result.get("errorMessage"),
+                    null, false, trace.cacheStatus, false, null, root.getExceptionStrategy(), trace.requestIssued);
         return result;
     }
 
@@ -1113,6 +1134,10 @@ public class ExternalApiInvokeService {
             throw new IllegalArgumentException("步骤 API 不属于当前可用范围");
         }
         JSONObject config = JSON.parseObject(JSON.toJSONString(template));
+        if (linkedId == null) {
+            // The workflow's final response may have a completely different schema from its submit/poll responses.
+            for (String condition : List.of("successCondition", "exceptionCondition", "retryCondition")) config.remove(condition);
+        }
         for (String key : new String[]{"endpointUrl", "requestMethod", "contentType",
                 "requestScript", "responseScript", "successCondition", "exceptionCondition", "retryCondition", "retryCount", "retryIntervalMs",
                 "retryBackoffMultiplier", "retryMaxIntervalMs", "retryNonIdempotent", "retryStatusCodes", "retryOnTimeout", "retryOnConnectionError",

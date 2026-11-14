@@ -248,6 +248,8 @@ describe('ExperimentDetail', () => {
   test('新建保存后进入同一资源的草稿编辑页，发布前不进入审批', async () => {
     saveExperiment.mockResolvedValue({ data: { id: 12, resourceId: 23, status: 'EDITING' } })
     const ctx = createContext()
+    expect(ctx.form.routingErrorPolicy).toBe('PAUSE')
+    ctx.form.routingErrorPolicy = 'FALLBACK'
     ctx.form.projectId = 1
     ctx.form.experimentCode = 'EXP_A'
     ctx.form.experimentName = '实验A'
@@ -257,7 +259,7 @@ describe('ExperimentDetail', () => {
 
     await ctx.handleSave()
 
-    expect(saveExperiment).toHaveBeenCalled()
+    expect(saveExperiment.mock.calls[0][0].routingErrorPolicy).toBe('FALLBACK')
     expect(ctx.$router.push).not.toHaveBeenCalled()
     expect(ctx.$router.replace).toHaveBeenCalledWith('/experiment/detail/23')
     expect(ctx.form.id).toBe(23)

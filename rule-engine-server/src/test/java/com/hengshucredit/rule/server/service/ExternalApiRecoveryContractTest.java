@@ -121,9 +121,31 @@ public class ExternalApiRecoveryContractTest {
         assertSame(failure, thrown);
     }
 
+    @Test public void receiptSurvivesAConnectionLossWhilePollingOnALaterAttempt() throws Exception {
+        try (var fixture = new Fixture()) {
+            var first = fixture.options();
+            first.getInvocationCache().setSourceStepListener(step -> {});
+            var input = Map.<String,Object>of("mobile","111");
+            assertThrows(ExternalApiWaitingException.class, () -> fixture.consumer.resolve(1L,9L,Map.of(),input,first,"VARIABLE:7"));
+            fixture.failNextPoll.set(true);
+            var second = fixture.options();
+            second.getInvocationCache().restoreCompletedSteps(first.getInvocationCache().snapshotCompletedSteps());
+            second.getInvocationCache().setSourceStepListener(step -> {});
+            assertThrows(ExternalApiWaitingException.class, () -> fixture.consumer.resolve(1L,9L,Map.of(),input,second,"VARIABLE:7"));
+            var third = fixture.options();
+            third.getInvocationCache().restoreCompletedSteps(second.getInvocationCache().snapshotCompletedSteps());
+            third.getInvocationCache().setSourceStepListener(step -> {});
+            var response = fixture.consumer.resolve(1L,9L,Map.of(),input,third,"VARIABLE:7");
+            assertEquals(699,ExternalApiConsumerService.select(response,"body.score"));
+            assertEquals(1,fixture.submissions.get());
+            assertEquals(3,fixture.polls.get());
+        }
+    }
+
     private static final class Fixture implements AutoCloseable {
         final AtomicInteger submissions = new AtomicInteger();
         final AtomicInteger polls = new AtomicInteger();
+        final java.util.concurrent.atomic.AtomicBoolean failNextPoll = new java.util.concurrent.atomic.AtomicBoolean();
         final HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         final ExternalApiConsumerService consumer = new ExternalApiConsumerService();
         final ExternalApiInvokeService invoke = new ExternalApiInvokeService();
@@ -138,7 +160,9 @@ public class ExternalApiRecoveryContractTest {
                 exchange.sendResponseHeaders(202, body.length); exchange.getResponseBody().write(body); exchange.close();
             });
             server.createContext("/poll/task-1", exchange -> {
-                String result = polls.incrementAndGet() == 1 ? "{\"status\":\"PENDING\"}"
+                int attempt = polls.incrementAndGet();
+                if (failNextPoll.getAndSet(false)) { exchange.close(); return; }
+                String result = attempt == 1 ? "{\"status\":\"PENDING\"}"
                         : "{\"status\":\"DONE\",\"data\":{\"score\":699}}";
                 byte[] body = result.getBytes(StandardCharsets.UTF_8);
                 exchange.sendResponseHeaders(200, body.length); exchange.getResponseBody().write(body); exchange.close();

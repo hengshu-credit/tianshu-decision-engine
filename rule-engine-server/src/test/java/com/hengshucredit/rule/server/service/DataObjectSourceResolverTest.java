@@ -94,7 +94,8 @@ public class DataObjectSourceResolverTest {
     @Test public void childParameterOverrideRetainsOtherObjectOverridesAndMapsRawResponse() {
         DataObjectSourceResolver resolver = new DataObjectSourceResolver();
         ReflectionTestUtils.setField(resolver, "externalApiConsumerService", new ExternalApiConsumerService() {
-            @Override public Map<String, Object> resolve(Long project, Long api, Map<String, Object> binding, Map<String, Object> values, VariableResolveOptions options) {
+            @Override public Map<String, Object> resolve(Long project, Long api, Map<String, Object> binding, Map<String, Object> values, VariableResolveOptions options, String sourceKey) {
+                assertEquals("DATA_OBJECT:100", sourceKey);
                 assertEquals(Map.of("phone", "contact", "channel", "object-channel"), binding.get("requestOverrides"));
                 return Map.of("body", Map.of(), "response", Map.of("body", Map.of("mobile", "222")));
             }
@@ -246,7 +247,8 @@ public class DataObjectSourceResolverTest {
         ReflectionTestUtils.setField(resolver, "externalApiConsumerService", new ExternalApiConsumerService() {
             @Override
             public Map<String, Object> resolve(Long project, Long api, Map<String, Object> binding,
-                                                Map<String, Object> values, VariableResolveOptions current) {
+                                                Map<String, Object> values, VariableResolveOptions current, String sourceKey) {
+                assertEquals("DATA_OBJECT:100", sourceKey);
                 throw new ExternalApiInvokeService.ApiInvokeException("pending", new java.util.concurrent.TimeoutException("pending"),
                         false, "DISABLED", false, Map.of("taskId", "task-50"), "WAIT");
             }

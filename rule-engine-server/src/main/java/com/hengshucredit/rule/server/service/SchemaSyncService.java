@@ -586,6 +586,7 @@ public class SchemaSyncService {
                     + "`experiment_name` VARCHAR(128) NOT NULL COMMENT '实验名称',"
                     + "`description` VARCHAR(512) DEFAULT NULL COMMENT '说明',"
                     + "`routing_mode` VARCHAR(32) NOT NULL DEFAULT 'RATIO' COMMENT '分流方式',"
+                    + "`routing_error_policy` VARCHAR(16) NOT NULL DEFAULT 'FALLBACK' COMMENT '生产分流异常策略：FALLBACK执行兜底组，PAUSE保留订单等待修复后恢复',"
                     + "`test_routing_mode` VARCHAR(32) NOT NULL DEFAULT 'CONDITION' COMMENT '测试组分流方式',"
                     + "`condition_rule_code` VARCHAR(128) DEFAULT NULL COMMENT '条件分流规则编码',"
                     + "`request_key_path` LONGTEXT DEFAULT NULL COMMENT '请求唯一键路径或组合表达式JSON',"
@@ -601,6 +602,7 @@ public class SchemaSyncService {
         }
         ensureUtf8mb4Table("rule_experiment");
         ensureLongTextColumn("rule_experiment", "request_key_path", true, "请求唯一键路径或组合表达式JSON");
+        addColumnIfMissing("rule_experiment", "routing_error_policy", "`routing_error_policy` VARCHAR(16) NOT NULL DEFAULT 'FALLBACK' COMMENT '生产分流异常策略：FALLBACK执行兜底组，PAUSE保留订单等待修复后恢复'");
         addColumnIfMissing("rule_experiment", "test_routing_mode",
                 "`test_routing_mode` VARCHAR(32) NOT NULL DEFAULT 'CONDITION' COMMENT '测试组分流方式' AFTER `routing_mode`");
         addColumnIfMissing("rule_experiment", "input_validation_config",

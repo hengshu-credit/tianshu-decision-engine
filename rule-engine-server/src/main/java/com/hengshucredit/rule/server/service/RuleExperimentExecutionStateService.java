@@ -50,12 +50,24 @@ public class RuleExperimentExecutionStateService {
 
     String activeTrace() { return hasLease() ? active.get().getTraceId() : null; }
 
+    public static class ConfigurationConflict extends IllegalStateException {
+        ConfigurationConflict(String message) { super(message); }
+    }
+
     void verifyConfig(String digest) {
         if (hasLease() && !java.util.Objects.equals(active.get().configDigest, digest))
-            throw new IllegalStateException("接单时的实验配置已变更，请核对原版本后恢复");
+            throw new ConfigurationConflict("接单时的实验配置已变更，请核对原版本后恢复");
     }
 
     void pinStrategy(Long groupId, com.hengshucredit.rule.model.entity.RulePublished rule) {
+        pinStrategy("$.strategy", groupId, rule);
+    }
+
+    void pinTestStrategy(Long groupId, com.hengshucredit.rule.model.entity.RulePublished rule) {
+        pinStrategy("$.testStrategy" + groupId, groupId, rule);
+    }
+
+    private void pinStrategy(String path, Long groupId, com.hengshucredit.rule.model.entity.RulePublished rule) {
         if (!hasLease()) return;
         Decision decision = active.get();
         var selection = new java.util.LinkedHashMap<String,Object>();
@@ -65,11 +77,11 @@ public class RuleExperimentExecutionStateService {
         selection.put("artifactDigest", rule.getArtifactDigest());
         String pin = CanonicalJson.write(selection);
         // Lease and selection are checked in the same write, before any group source or action starts.
-        int changed = jdbcTemplate.update("UPDATE rule_experiment_execution_state SET dispatch_json=JSON_SET(COALESCE(dispatch_json,JSON_OBJECT()),'$.strategy',CAST(? AS JSON)), "
+        int changed = jdbcTemplate.update("UPDATE rule_experiment_execution_state SET dispatch_json=JSON_SET(COALESCE(dispatch_json,JSON_OBJECT()),?,CAST(? AS JSON)), "
                         + "lease_until=DATE_ADD(NOW(6),INTERVAL 120 SECOND) WHERE id=? AND lease_owner=? AND lease_until>NOW(6) "
-                        + "AND (JSON_EXTRACT(dispatch_json,'$.strategy') IS NULL OR JSON_EXTRACT(dispatch_json,'$.strategy')=CAST(? AS JSON))",
-                pin, decision.state.id(), decision.owner, pin);
-        if (changed != 1) throw new IllegalStateException("实验订单执行权或原生产分组、策略修订已变更，请核对后恢复");
+                        + "AND (JSON_EXTRACT(dispatch_json,?) IS NULL OR JSON_EXTRACT(dispatch_json,?)=CAST(? AS JSON))",
+                path, pin, decision.state.id(), decision.owner, path, path, pin);
+        if (changed != 1) throw new ConfigurationConflict("实验订单执行权、分组或策略修订已变更，请核对后恢复");
     }
 
     void explicitFreshPolicy() {
@@ -98,7 +110,7 @@ public class RuleExperimentExecutionStateService {
         if (!digest.equals(state.requestDigest())) return Decision.conflict();
         if ("SUCCEEDED".equals(state.status()) && state.resultJson() != null)
             return Decision.completed(state, com.alibaba.fastjson.JSON.parseObject(state.resultJson(), RuleExperimentExecuteResult.class));
-        if (!configDigest.equals(state.configDigest()) && state.dispatchJson()!=null) return Decision.conflict();
+        if (!configDigest.equals(state.configDigest()) && state.dispatchJson()!=null && !canAdoptRoutingRepair(state, request)) return Decision.conflict();
         if ("QUEUED".equals(state.status()) || "RUNNING".equals(state.status()) && Boolean.TRUE.equals(jdbcTemplate.queryForObject(
                 "SELECT lease_until<NOW(6) FROM rule_experiment_execution_state WHERE id=?", Boolean.class, state.id())))
             return Decision.queued(state);
@@ -143,12 +155,14 @@ public class RuleExperimentExecutionStateService {
         if ("SUCCEEDED".equals(state.status()) && state.resultJson() != null) {
             return Decision.completed(state, JSON.parseObject(state.resultJson(), RuleExperimentExecuteResult.class));
         }
+        if (!configDigest.equals(state.configDigest()) && state.dispatchJson() != null && !canAdoptRoutingRepair(state, request)) return Decision.conflict();
         String owner = UUID.randomUUID().toString();
         boolean claimed = jdbcTemplate.update("UPDATE rule_experiment_execution_state SET lease_owner=?, "
                         + "lease_until=DATE_ADD(NOW(6), INTERVAL 120 SECOND), expire_time=DATE_ADD(NOW(6), INTERVAL 86400 SECOND), "
                         + "attempt_no=attempt_no+1, config_digest=?, request_json=COALESCE(request_json,?), status='RUNNING', result_json=NULL, finish_time=NULL "
                         + "WHERE id=? AND (status<>'SUCCEEDED' OR config_digest<>?) "
-                        + "AND (lease_owner IS NULL OR lease_until<NOW(6) OR lease_owner=?) AND attempt_no=? AND (dispatch_json IS NULL OR config_digest=?)",
+                        + "AND (lease_owner IS NULL OR lease_until<NOW(6) OR lease_owner=?) AND attempt_no=? "
+                        + "AND (dispatch_json IS NULL OR config_digest=? OR (status='PAUSED_ROUTING' AND JSON_EXTRACT(dispatch_json,'$.strategy') IS NULL))",
                 owner, configDigest, requestJson, state.id(), configDigest, owner, state.attemptNo(), configDigest) == 1;
         if (!claimed && !configDigest.equals(state.configDigest())) return Decision.conflict();
         if (!claimed) return Decision.inProgress(state);
@@ -175,35 +189,35 @@ public class RuleExperimentExecutionStateService {
 
     public static class StrategyInProgress extends RuntimeException {}
 
+    boolean canPollOriginal(String trace, RuleExperimentExecuteResult result) {
+        if (result == null || result.routingPaused() || result.platformStatus() != com.hengshucredit.rule.model.PlatformCode.RESULT_PENDING) return false;
+        String child = result.getProductionGroup() == null ? trace : result.getProductionGroup().getTraceId();
+        return child != null && ruleStates.canPollOriginal(trace, child);
+    }
+
     public void complete(Decision decision, RuleExperimentExecuteResult result) {
         if (decision == null || !decision.claimed) return;
         int changed = jdbcTemplate.update("UPDATE rule_experiment_execution_state SET status=?, result_json=?, "
                         + "error_message=?, lease_owner=NULL, lease_until=CASE WHEN ? THEN DATE_ADD(NOW(6),INTERVAL 30 SECOND) ELSE NULL END, finish_time=NOW(6) "
                         + "WHERE id=? AND lease_owner=? AND lease_until>NOW(6)",
                 result != null && result.isSuccess() ? "SUCCEEDED"
+                        : result != null && result.routingPaused() ? "PAUSED_ROUTING"
                         : result != null && result.platformStatus() == com.hengshucredit.rule.model.PlatformCode.RESULT_PENDING
                         ? "WAITING_EXTERNAL" : "FAILED_RETRYABLE",
                 JSON.toJSONString(result), result == null ? "实验结果为空" : result.getErrorMessage(),
-                canPollOriginal(decision, result), decision.state.id(), decision.owner);
+                !"CACHE_THEN_CALL".equals(decision.externalRecoveryMode) && canPollOriginal(decision.getTraceId(), result), decision.state.id(), decision.owner);
         if (changed != 1) throw new IllegalStateException("实验执行租约已失效，无法提交旧尝试结果");
     }
 
-    private boolean canPollOriginal(Decision decision, RuleExperimentExecuteResult result) {
-        if (result == null || result.platformStatus() != com.hengshucredit.rule.model.PlatformCode.RESULT_PENDING
-                || "CACHE_THEN_CALL".equals(decision.externalRecoveryMode) || result.getProductionGroup()==null) return false;
-        String child = result.getProductionGroup().getTraceId();
-        return child != null && Boolean.TRUE.equals(jdbcTemplate.queryForObject(
-                "SELECT EXISTS(SELECT 1 FROM rule_execution_checkpoint WHERE root_trace_id IN (?,?) AND step_type='EXTERNAL_API' "
-                        + "AND step_status='WAITING_EXTERNAL' AND JSON_LENGTH(attempt_history,'$.completedStepIds')>0) "
-                        + "AND NOT EXISTS(SELECT 1 FROM rule_execution_checkpoint WHERE root_trace_id IN (?,?) "
-                        + "AND step_type='EXTERNAL_API' AND step_status IN ('UNKNOWN','FAILED'))", Boolean.class,
-                child,decision.getTraceId(),child,decision.getTraceId()));
+    private boolean canAdoptRoutingRepair(State state, RuleExperimentExecuteRequest request) {
+        return "PAUSED_ROUTING".equals(state.status()) && request != null && !"FIXED".equals(request.getVersionMode())
+                && state.dispatchJson() != null && JSON.parseObject(state.dispatchJson()).get("strategy") == null;
     }
 
     public void release(Decision decision, String errorMessage) {
         if (decision == null || !decision.claimed) return;
         jdbcTemplate.update("UPDATE rule_experiment_execution_state SET status='FAILED_RETRYABLE', "
-                        + "error_message=?, lease_owner=NULL, lease_until=CASE WHEN ? THEN DATE_ADD(NOW(6),INTERVAL 30 SECOND) ELSE NULL END, finish_time=NOW(6) "
+                        + "error_message=?, lease_owner=NULL, lease_until=NULL, finish_time=NOW(6) "
                         + "WHERE id=? AND lease_owner=? AND lease_until>NOW(6)",
                 errorMessage, decision.state.id(), decision.owner);
     }

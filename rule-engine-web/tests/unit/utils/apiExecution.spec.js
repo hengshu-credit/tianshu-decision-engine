@@ -2,6 +2,17 @@ import { vi } from 'vitest'
 import { emptyExecution, newApiId, parseExecution, sampleFields, validateExecution, validateConditionTree, prepareResponseSample, samplePathOptions } from '@/utils/apiExecution'
 
 describe('统一外数配置', () => {
+  it('回调成功条件树无需额外状态路径，空条件需要状态字段并拒绝未知失败处理方式', () => {
+    const callback = { url: 'https://provider.example/api/external-callback/${invocationId}', signatureHeader: 'X-Signature', signatureSecret: 'test', successCondition: { path: 'body.decision', operator: '==', value: 'ACCEPTED' } }
+    const spec = parseExecution(JSON.stringify({ version: 2, requestFields: [], steps: [{ id: 'notify', type: 'CALLBACK', callback }] }))
+    expect(validateExecution(spec, 'ASYNC')).toBe('')
+    spec.steps[0].callback.failureMode = 'UNKNOWN'
+    expect(validateExecution(spec, 'ASYNC')).toContain('回调失败处理')
+    spec.steps[0].callback.failureMode = 'CONTINUE'
+    spec.steps[0].callback.successCondition = { type: 'group', operator: 'AND', children: [] }
+    expect(validateExecution(spec, 'ASYNC')).toContain('状态路径')
+  })
+
   it('已发布的单条件轮询可以直接校验，重新编辑保留判断值和请求配置', () => {
     const leaf = { path: 'body.state', operator: '==', value: 'DONE' }
     const spec = { ...emptyExecution(), steps: [{ id: 'query', type: 'HTTP', endpointUrl: '/query',

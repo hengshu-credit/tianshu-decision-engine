@@ -18,6 +18,11 @@ public class RuleExperimentExecuteResult implements PlatformOutcome {
     private boolean success;
     private String errorMessage;
     private String platformCode;
+    @lombok.Getter(lombok.AccessLevel.NONE)
+    @lombok.Setter(lombok.AccessLevel.NONE)
+    private transient boolean routingPaused;
+    public boolean routingPaused() { return routingPaused; }
+    public void pauseRouting() { routingPaused = true; }
     private long executeTimeMs;
     private RuleExperimentGroupResult productionGroup;
     private List<RuleExperimentGroupResult> testGroups = new ArrayList<>();

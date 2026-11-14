@@ -68,6 +68,7 @@
             <el-form-item label="轮询此步骤"><el-switch :model-value="!!step.poll" @update:model-value="togglePoll(step, $event)" /></el-form-item>
             <template v-if="step.poll">
               <el-form-item label="失败条件"><response-condition-tree-editor operand-mode :functions="functions" :group="step.poll.failure" :path-options="stepResponseModules(index)" /></el-form-item><el-form-item label="完成条件"><response-condition-tree-editor operand-mode :functions="functions" :group="step.poll.until" :path-options="stepResponseModules(index)" /></el-form-item>
+              <el-form-item label="命中失败条件"><el-select v-model="step.poll.failureMode" aria-label="轮询失败处理"><el-option label="结束本次执行" value="TERMINATE" /><el-option label="继续查询原任务" value="CONTINUE" /></el-select></el-form-item>
               <div class="policy-row"><el-form-item label="轮询间隔毫秒"><el-input-number v-model="step.poll.intervalMs" :min="1" /></el-form-item><el-form-item label="最多尝试"><el-input-number v-model="step.poll.maxAttempts" :min="0" /><div class="field-help">0表示不限制查询次数，仍受等待超时约束</div></el-form-item><el-form-item label="退避倍数"><el-input-number v-model="step.poll.backoffMultiplier" :min="1" :max="10" /></el-form-item></div>
             </template>
             <div class="policy-row"><el-form-item label="失败重试次数"><el-input-number v-model="step.retryCount" :min="0" :max="10" /></el-form-item><el-form-item label="重试间隔毫秒"><el-input-number v-model="step.retryIntervalMs" :min="0" /></el-form-item><el-form-item label="退避倍数"><el-input-number v-model="step.retryBackoffMultiplier" :min="1" :max="10" /></el-form-item><el-checkbox :model-value="step.retryNonIdempotent === 1" @update:model-value="step.retryNonIdempotent = $event ? 1 : 0">允许非幂等请求重试</el-checkbox></div>
@@ -76,9 +77,12 @@
             <el-form-item label="回调地址模板"><el-input v-model="step.callback.url" :placeholder="callbackPlaceholder" /></el-form-item>
             <el-form-item label="签名 Header"><el-input v-model="step.callback.signatureHeader" /></el-form-item>
             <el-form-item label="签名密钥"><el-input v-model="step.callback.signatureSecret" type="password" show-password /></el-form-item>
+            <template v-if="!hasCondition(step.callback.successCondition)">
             <el-form-item label="状态路径"><protocol-path-picker v-model:value="step.callback.statusPath" :paths="stepConditionModules(index)" :context-label="(step.name || step.id) + ' · 回调响应'" /></el-form-item>
             <el-form-item label="成功值"><el-input v-model="step.callback.successValue" /></el-form-item>
             <el-form-item label="失败值"><el-input v-model="step.callback.failureValue" /></el-form-item>
+            </template>
+            <el-form-item label="命中失败条件"><el-select v-model="step.callback.failureMode" aria-label="回调失败处理"><el-option label="结束本次执行" value="TERMINATE" /><el-option label="继续等待回调" value="CONTINUE" /></el-select></el-form-item>
             <el-collapse><el-collapse-item title="回调条件树（配置成功条件后优先使用）"><el-form-item label="成功条件"><response-condition-tree-editor operand-mode :group="step.callback.successCondition" :path-options="stepConditionModules(index)" :functions="functions" /></el-form-item><el-form-item label="失败条件"><response-condition-tree-editor operand-mode :group="step.callback.failureCondition" :path-options="stepConditionModules(index)" :functions="functions" /></el-form-item></el-collapse-item></el-collapse>
           </template>
         </el-card>
@@ -117,7 +121,7 @@ import ProtocolPathPicker from '@/components/common/ProtocolPathPicker.vue'
 import ApiSampleStructure from '@/components/common/ApiSampleStructure.vue'
 import ResponseConditionTreeEditor from '@/components/common/ResponseConditionTreeEditor.vue'
 import MonacoEditor from '@/components/MonacoEditor.vue'
-import { newApiId, newCondition, parseExecution, prepareResponseSample, validateExecution, apiTargetPaths } from '@/utils/apiExecution'
+import { hasCondition, newApiId, newCondition, parseExecution, prepareResponseSample, validateExecution, apiTargetPaths } from '@/utils/apiExecution'
 import { apiStagePaths } from '@/utils/apiContext'
 import { getVariableSourceOptions, listAvailableFieldValidations } from '@/api/variable'
 import { loadApiReferenceCatalog } from '@/utils/apiReferenceCatalog'
@@ -143,6 +147,7 @@ export default {
   },
   beforeUnmount() { this.loadNumber++; if (this.emitTimer) clearTimeout(this.emitTimer) },
   methods: {
+    hasCondition,
     apiTargetPaths,
     requestPathsFor(config) { return apiTargetPaths(config.requestSample).map(path => ({ ...path, location: 'JSON' })) },
     readApiAuthConfig,
@@ -195,11 +200,11 @@ export default {
       if (!list || from === index) { this.draggingBranch = null; return }
       const [branch] = list.splice(from, 1); list.splice(Math.min(index, list.length), 0, branch); this.draggingBranch = null
     },
-    addStep(type) { this.config.steps.push({ id: newApiId(), name: '', type, when: newCondition(), successConditionTree: newCondition(), exceptionConditionTree: newCondition(), retryConditionTree: newCondition(), apiConfigId: null, endpointUrl: '', requestMethod: 'POST', contentType: 'application/json', authMode: 'INHERIT', requestFields: [], retryCount: 0, retryIntervalMs: 200, retryBackoffMultiplier: 2, retryNonIdempotent: 0, callback: { url: '', signatureHeader: 'X-Signature', signatureSecret: '', statusPath: 'body.status', successValue: 'SUCCESS', failureValue: 'FAILED', successCondition: newCondition(), failureCondition: newCondition() } }) },
+    addStep(type) { this.config.steps.push({ id: newApiId(), name: '', type, when: newCondition(), successConditionTree: newCondition(), exceptionConditionTree: newCondition(), retryConditionTree: newCondition(), apiConfigId: null, endpointUrl: '', requestMethod: 'POST', contentType: 'application/json', authMode: 'INHERIT', requestFields: [], retryCount: 0, retryIntervalMs: 200, retryBackoffMultiplier: 2, retryNonIdempotent: 0, callback: { url: '', signatureHeader: 'X-Signature', signatureSecret: '', statusPath: 'body.status', successValue: 'SUCCESS', failureValue: 'FAILED', failureMode: 'TERMINATE', successCondition: newCondition(), failureCondition: newCondition() } }) },
     newCondition,
     addStepResponse(step) { if (!step.responseBranches) step.responseBranches = []; step.responseBranches.push({ id: newApiId(), name: '', mode: 'FIELDS', condition: newCondition(), outputFields: [] }) },
     moveStep(index, direction) { const [step] = this.config.steps.splice(index, 1); this.config.steps.splice(index + direction, 0, step) },
-    togglePoll(step, enabled) { step.poll = enabled ? { intervalMs: 1000, maxAttempts: 20, backoffMultiplier: 1, until: newCondition(), failure: newCondition() } : null },
+    togglePoll(step, enabled) { step.poll = enabled ? { intervalMs: 1000, maxAttempts: 20, backoffMultiplier: 1, failureMode: 'TERMINATE', until: newCondition(), failure: newCondition() } : null },
     stagePaths(stage, index = 0, branchId = '') {
       const key = `${stage}:${index}:${branchId}`
       if (!this.pathCatalogs.has(key)) this.pathCatalogs.set(key, computed(() => {

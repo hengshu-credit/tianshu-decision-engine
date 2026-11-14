@@ -16,6 +16,19 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertFalse;
 
 public class VariableResolutionInvocationCacheTest {
+    @org.junit.Test public void orderRecoveryRequiresTheOriginalIdentityForEachRecordedConsumer() {
+        var cache = new VariableResolutionInvocationCache();
+        cache.restoreCompletedSteps(java.util.Map.of("API_CHAIN:9:original", java.util.Map.of(
+                "sourceType","EXTERNAL_API", "status","WAITING_EXTERNAL", "metadata",java.util.Map.of("orderSourceKey","VARIABLE:42"))));
+        org.junit.Assert.assertThrows(ExternalApiWaitingException.class,
+                () -> cache.requireOriginalIdentity("VARIABLE:42",9L,"API_CHAIN:9:changed"));
+        cache.requireOriginalIdentity("VARIABLE:42",9L,"API_CHAIN:9:original");
+        cache.requireOriginalIdentity("VARIABLE:43",9L,"API_CHAIN:9:new");
+        cache.restoreCompletedSteps(java.util.Map.of("API_CHAIN:9:original", java.util.Map.of(
+                "sourceType","EXTERNAL_API", "status","FAILED", "metadata",java.util.Map.of("orderSourceKey","VARIABLE:42"))));
+        cache.requireOriginalIdentity("VARIABLE:42",9L,"API_CHAIN:9:repaired");
+    }
+
 
     @Test
     public void concurrentCallersForSameKeyShareOneInvocationAndReceiveCopies() throws Exception {

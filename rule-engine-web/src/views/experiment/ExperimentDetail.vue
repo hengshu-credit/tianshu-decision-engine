@@ -131,6 +131,14 @@
           </el-radio-group>
         </div>
 
+        <el-form-item v-if="form.routingMode === 'CONDITION'" label="分流条件异常">
+          <el-select v-model="form.routingErrorPolicy" aria-label="分流条件异常" style="width: 240px">
+            <el-option label="暂停订单，修复后继续" value="PAUSE" />
+            <el-option label="执行兜底组" value="FALLBACK" />
+          </el-select>
+          <span class="field-help">条件求值失败时生效。兜底使用已配置的兜底组，独立路由未指定兜底组时使用冠军组。</span>
+        </el-form-item>
+
         <el-alert
           v-if="form.routingMode === 'RATIO' && ratioTotal !== 100"
           type="warning"
@@ -1070,6 +1078,7 @@ export default {
         experimentName: '',
         description: '',
         routingMode: 'RATIO',
+        routingErrorPolicy: 'PAUSE',
         testRoutingMode: 'CONDITION',
         conditionRuleCode: '',
         requestKeyPath: '',
@@ -1147,6 +1156,7 @@ export default {
       this.form = {
         ...this.emptyForm(),
         ...JSON.parse(JSON.stringify(data)),
+        routingErrorPolicy: data.routingErrorPolicy || 'FALLBACK',
         requestKeyOperand: this.parseRequestKeyOperand(data.requestKeyPath),
         groups: (data.groups || []).map((g) => this.normalizeGroupForEdit(g)),
       }

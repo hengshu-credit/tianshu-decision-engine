@@ -235,7 +235,7 @@ public class DataObjectSourceResolver {
             Long apiId = longValue(owner.config.get("apiConfigId"));
             if (apiId == null) throw new IllegalArgumentException("数据对象 API 来源缺少 apiConfigId");
             ExternalApiRequestPlan.validateBinding(owner.config);
-            return externalApiConsumerService.resolve(projectId, apiId, owner.config, values, options);
+            return externalApiConsumerService.resolve(projectId, apiId, owner.config, values, options, "DATA_OBJECT:" + owner.id());
         }
         Long datasourceId = longValue(firstNonNull(owner.config.get("dbDatasourceId"), owner.config.get("datasourceId")));
         String sql = text(owner.config.get("sql"));

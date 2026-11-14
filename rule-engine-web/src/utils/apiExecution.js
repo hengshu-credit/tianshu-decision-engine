@@ -108,10 +108,10 @@ export function parseExecution(text) {
     retryConditionTree: editableCondition(step.retryConditionTree),
     requestFields: normalizeRequestFields(step.requestFields),
     responseBranches: (step.responseBranches || []).map(normalizeBranch),
-    ...(step.callback ? { callback: { ...step.callback,
+    ...(step.callback ? { callback: { failureMode: 'TERMINATE', ...step.callback,
       successCondition: editableCondition(step.callback.successCondition),
       failureCondition: editableCondition(step.callback.failureCondition) } } : {}),
-    ...(step.poll ? { poll: { ...step.poll, until: editableCondition(step.poll.until),
+    ...(step.poll ? { poll: { failureMode: 'TERMINATE', ...step.poll, until: editableCondition(step.poll.until),
       failure: editableCondition(step.poll.failure) } } : {}),
   }))
   config.steps.forEach(freezeSample)
@@ -302,7 +302,15 @@ export function validateExecution(spec, requestMode) {
       error = validateConditionTree(tree, `第 ${index + 1} 个步骤${name}`)
       if (error) return error
     }
+    if (step.type === 'CALLBACK') {
+      const cb = step.callback
+      if (!hasCondition(cb.successCondition) && (!cb.statusPath?.trim() || !String(cb.successValue ?? '').trim())) return '回调步骤需要成功条件，或状态路径和成功值'
+      error = validateConditionTree(cb.successCondition, '回调成功条件') || validateConditionTree(cb.failureCondition, '回调失败条件')
+      if (error) return error
+      if (cb.failureMode && !['TERMINATE', 'CONTINUE'].includes(cb.failureMode)) return '回调失败处理无效'
+    }
     if (step.poll) {
+      if (step.poll.failureMode && !['TERMINATE', 'CONTINUE'].includes(step.poll.failureMode)) return '轮询失败处理无效'
       error = validateConditionTree(step.poll.until, `第 ${index + 1} 个步骤轮询完成条件`)
       if (error || !hasCondition(step.poll.until)) return error || `第 ${index + 1} 个步骤轮询必须配置完成条件`
       error = validateConditionTree(step.poll.failure, `第 ${index + 1} 个步骤轮询失败条件`)

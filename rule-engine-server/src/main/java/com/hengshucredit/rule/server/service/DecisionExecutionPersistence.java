@@ -46,6 +46,8 @@ public class DecisionExecutionPersistence implements AutoCloseable {
     private PlatformTransactionManager transactionManager;
     @Value("${rule-engine.execution-persistence.journal-replay-batch-size:1000}")
     private int journalReplayBatchSize = 1000;
+    @Value("${rule-engine.execution-persistence.journal-scan-parent:false}")
+    private boolean journalScanParent;
     private final ArrayBlockingQueue<Long> queue;
     private final int queueCapacity;
     private final ExecutorService executor;
@@ -259,37 +261,40 @@ public class DecisionExecutionPersistence implements AutoCloseable {
     public void replayJournal() {
         if (journal == null || !replayingJournal.compareAndSet(false, true)) return;
         try {
-            List<DurableExecutionPersistenceJournal.Entry> entries = journal.read(
-                    Math.max(1, journalReplayBatchSize));
-            if (entries.isEmpty()) {
-                // 只含空白行的完整前缀也可安全前进，避免一直重扫同一字节预算。
-                journal.replacePrefix(0, List.of());
-                return;
-            }
-            List<DurableExecutionPersistenceJournal.Entry> remaining = new ArrayList<>();
-            int processed = 0;
-            for (DurableExecutionPersistenceJournal.Entry entry : entries) {
-                if (recoveryOutbox != null) {
-                    try {
-                        // 先提交同一身份的 outbox 事件，之后才能从 journal 移除；崩溃重放可去重。
-                        recoveryOutbox.accept(entry);
-                        processed++;
-                        continue;
-                    } catch (RuntimeException unavailable) {
-                        // 不让持续数据库故障阻塞整个批次；未尝试的尾部仍留在原文件。
-                        break;
-                    }
-                }
-                processed++;
-                Event event = fromJournalEntry(entry);
-                persist(event);
-                if (event.logPending || event.billingPending) remaining.add(toJournalEntry(event));
-            }
-            // 文件锁只用于短时间读写，恢复期间 append 可继续写入，replacePrefix保留新增尾部。
-            if (processed > 0) journal.replacePrefix(processed, remaining);
-        } finally {
-            replayingJournal.set(false);
+            if (journalScanParent) journal.replaySiblings(this::replayJournalBatch);
+            replayJournalBatch(journal);
+        } finally { replayingJournal.set(false); }
+    }
+
+    private void replayJournalBatch(DurableExecutionPersistenceJournal source) {
+        List<DurableExecutionPersistenceJournal.Entry> entries = source.read(
+                Math.max(1, journalReplayBatchSize));
+        if (entries.isEmpty()) {
+            // 只含空白行的完整前缀也可安全前进，避免一直重扫同一字节预算。
+            source.replacePrefix(0, List.of());
+            return;
         }
+        List<DurableExecutionPersistenceJournal.Entry> remaining = new ArrayList<>();
+        int processed = 0;
+        for (DurableExecutionPersistenceJournal.Entry entry : entries) {
+            if (recoveryOutbox != null) {
+                try {
+                    // 先提交同一身份的 outbox 事件，之后才能从 journal 移除；崩溃重放可去重。
+                    recoveryOutbox.accept(entry);
+                    processed++;
+                    continue;
+                } catch (RuntimeException unavailable) {
+                    // 不让持续数据库故障阻塞整个批次；未尝试的尾部仍留在原文件。
+                    break;
+                }
+            }
+            processed++;
+            Event event = fromJournalEntry(entry);
+            persist(event);
+            if (event.logPending || event.billingPending) remaining.add(toJournalEntry(event));
+        }
+        // 文件锁只用于短时间读写，恢复期间 append 可继续写入，replacePrefix保留新增尾部。
+        if (processed > 0) source.replacePrefix(processed, remaining);
     }
 
     private DurableExecutionPersistenceJournal.Entry toJournalEntry(Event event) {

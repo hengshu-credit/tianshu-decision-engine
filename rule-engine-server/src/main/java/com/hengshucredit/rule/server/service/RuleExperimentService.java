@@ -86,6 +86,10 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     @Resource private com.hengshucredit.rule.server.artifact.PublishedRuleFieldSnapshotResolver publishedFields;
     @Resource private ResourceVersionService resourceVersions;
 
+    private static final class RoutingFailure extends IllegalStateException {
+        RoutingFailure(String message) { super(message); }
+    }
+
     private static final String ROUTING_RATIO = "RATIO";
     private static final String ROUTING_CONDITION = "CONDITION";
     private static final String GROUP_CHAMPION = "CHAMPION";
@@ -413,7 +417,6 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         Map<String, Object> params = request == null || request.getParams() == null
                 ? Collections.emptyMap()
                 : request.getParams();
-        var conditions = prepareRouteConditions(experiment, groups);
         List<RuleDefinitionInputField> experimentInputs = resolveTestFields(experiment).getInputFields();
         params = executionParameterBinder.bindRuleInputsPreservingMissing(experimentInputs, params);
         if (fieldValidationService != null) {
@@ -425,65 +428,123 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         if (runtimeRequest && hasText(forcedExperimentTraceId) && experimentStates != null) {
             routeCache = experimentStates.routingCache(experimentTraceId);
         }
-        params = resolveRoutingParams(experiment, groups, params, routeCache);
-        try (var versions = resourceVersions == null ? null : resourceVersions.bind(experiment.getProjectId(), params, VariableResolveOptions.defaults())) {
-        String requestKey = resolveRequestKey(experiment, request, params);
-        LocalDateTime requestTime = resolveRequestTime(request, params);
-        String clientAppName = request == null ? null : request.getClientAppName();
-
         RuleExperimentExecuteResult result = new RuleExperimentExecuteResult();
         result.setExperimentTraceId(experimentTraceId);
         result.setExperimentCode(experiment.getExperimentCode());
         result.setExperimentName(experiment.getExperimentName());
         if (selectedVersion != null) { result.setVersionId(selectedVersion.getId()); result.setVersion(selectedVersion.getDisplayVersion()); }
-        result.setRequestKey(requestKey);
+        String clientAppName = request == null ? null : request.getClientAppName();
+        result.setRequestKey(request == null ? null : request.getRequestKey());
+        List<Map<String,Object>> routeTrace = routingStart("PRODUCTION", experiment.getRoutingMode());
+        RouteChoice productionChoice = null;
+        RouteConditions conditions = null;
+        try {
+            try {
+                conditions = prepareRouteConditions(experiment, productionGroups(groups));
+                params = resolveRoutingParams(experiment, productionGroups(groups), new LinkedHashMap<>(params), routeCache);
+            } catch (RuntimeException error) {
+                productionChoice = routeOnError(experiment, groups, routeTrace, error);
+            }
+            try (var versions = resourceVersions == null ? null : resourceVersions.bind(experiment.getProjectId(), params, VariableResolveOptions.defaults())) {
+                String requestKey = request == null ? null : request.getRequestKey();
+                if (productionChoice == null) {
+                    try {
+                        requestKey = resolveRequestKey(experiment, request, params);
+                        result.setRequestKey(requestKey);
+                        productionChoice = chooseProductionGroup(experiment, groups, params, requestKey, clientAppName, conditions, routeCache, routeTrace);
+                    } catch (RuntimeException error) {
+                        productionChoice = routeOnError(experiment, groups, routeTrace, error);
+                    }
+                }
+                LocalDateTime requestTime = resolveRequestTime(request, params);
+                RuleExperimentGroupResult productionResult = runGroup(experiment, productionChoice.group, copyParams(params),
+                        requestKey, requestTime, clientAppName, "PRODUCTION", productionChoice.reason, true,
+                        experimentTraceId, configDigest, productionChoice.routeTrace, runtimeRequest, routeCache,
+                        experimentStates == null ? null : experimentStates.externalRecoveryMode(), null);
+                result.setProductionGroup(productionResult);
+                result.getTags().add(productionChoice.group.getGroupCode());
 
-        RouteChoice productionChoice = chooseProductionGroup(experiment, groups, params, requestKey, clientAppName, conditions, routeCache);
-        RuleExperimentGroupResult productionResult = runGroup(experiment, productionChoice.group, copyParams(params),
-                requestKey, requestTime, clientAppName, "PRODUCTION", productionChoice.reason, true,
-                experimentTraceId, configDigest, productionChoice.routeTrace, runtimeRequest);
-        result.setProductionGroup(productionResult);
-        result.getTags().add(productionChoice.group.getGroupCode());
+                runTestGroups(experiment, groups, params, requestKey, requestTime, clientAppName, experimentTraceId,
+                        configDigest, runtimeRequest, routeCache, result);
+                result.setSuccess(productionResult.isSuccess());
+                if (productionResult.waitsForSource()) result.setPlatformCode(com.hengshucredit.rule.model.PlatformCode.RESULT_PENDING.code());
+                result.setErrorMessage(productionResult.getErrorMessage());
+                result.setExecuteTimeMs(System.currentTimeMillis() - start);
+                return result;
+            }
+        } catch (RoutingFailure failure) {
+            result.pauseRouting();
+            result.setPlatformCode(com.hengshucredit.rule.model.PlatformCode.RESULT_PENDING.code());
+            result.setErrorMessage(failure.getMessage());
+            result.setExecuteTimeMs(System.currentTimeMillis() - start);
+            return result;
+        } catch (com.hengshucredit.rule.core.engine.RuleSuspensionSignal waiting) {
+            result.setPlatformCode((ExternalApiWaitingException.requiresReview(waiting) ? com.hengshucredit.rule.model.PlatformCode.EXECUTION_UNKNOWN
+                    : com.hengshucredit.rule.model.PlatformCode.RESULT_PENDING).code());
+            result.setErrorMessage(waiting.getMessage());
+            result.setExecuteTimeMs(System.currentTimeMillis() - start);
+            return result;
+        }
+    }
 
-        List<RouteChoice> testChoices = chooseTestGroups(experiment, groups, params, requestKey, conditions);
-        List<RouteChoice> queuedChoices = new ArrayList<>();
+    private void runTestGroups(RuleExperiment experiment, List<RuleExperimentGroup> groups, Map<String,Object> params,
+                               String requestKey, LocalDateTime requestTime, String clientAppName, String experimentTraceId,
+                               String configDigest, boolean runtimeRequest, VariableResolutionInvocationCache routeCache,
+                               RuleExperimentExecuteResult result) {
+        List<RouteChoice> testChoices = chooseTestGroups(experiment, groups, params, requestKey, routeCache, result.getTestGroups());
+        List<RouteChoice> choices = new ArrayList<>();
         List<Future<RuleExperimentGroupResult>> queuedResults = new ArrayList<>();
-        RuleExperiment executionExperiment = experiment;
-        Map<String, Object> executionParams = params;
+        boolean durable = runtimeRequest && experimentStates != null && experimentStates.hasLease();
+        String recoveryMode = experimentStates == null ? null : experimentStates.externalRecoveryMode();
         for (RouteChoice testChoice : testChoices) {
             RuleExperimentGroup testGroup = testChoice.group;
-            if (hasExecutedTestGroup(experiment.getId(), testGroup.getId(), requestKey, configDigest)) {
+            if (!durable && hasExecutedTestGroup(experiment.getId(), testGroup.getId(), requestKey, configDigest)) {
                 RuleExperimentGroupResult skipped = skippedTestResult(testGroup, "同一请求已执行过测试组，跳过重复空跑");
                 result.getTestGroups().add(skipped);
                 continue;
             }
             boolean invokeExternal = Integer.valueOf(1).equals(testGroup.getInvokeExternalSource());
-            boolean durableTest = runtimeRequest && experimentStates != null && experimentStates.hasLease();
             try {
-                RouteChoice queuedChoice = testChoice;
-                RuleExperimentGroup queuedGroup = testGroup;
-                queuedChoices.add(queuedChoice);
-                java.util.concurrent.Callable<RuleExperimentGroupResult> task = () -> runTestGroup(executionExperiment, queuedGroup,
-                        copyParams(executionParams), requestKey, requestTime, clientAppName,
-                        queuedChoice.reason, invokeExternal, experimentTraceId, configDigest,
-                        queuedChoice.routeTrace, durableTest);
-                queuedResults.add(testExecutor.submit(consoleProjects == null ? task : consoleProjects.wrap(task)));
+                choices.add(testChoice);
+                var binding = durable ? findPublishedRule(experiment, testGroup) : null;
+                if (binding != null) experimentStates.pinTestStrategy(testGroup.getId(), binding);
+                java.util.concurrent.Callable<RuleExperimentGroupResult> task = () -> runTestGroup(experiment, testGroup,
+                        copyParams(testChoice.values == null ? params : testChoice.values), requestKey, requestTime, clientAppName,
+                        testChoice.reason, invokeExternal, experimentTraceId, configDigest,
+                        testChoice.routeTrace, durable, routeCache, recoveryMode, binding);
+                var groupTask = new java.util.concurrent.FutureTask<>(consoleProjects == null ? task : consoleProjects.wrap(task));
+                try {
+                    testExecutor.execute(groupTask);
+                } catch (RejectedExecutionException full) {
+                    if (!durable || testExecutor.isShutdown()) throw full;
+                    // 已接收的订单在当前执行槽继续，队满不能漏掉已选中的组。
+                    groupTask.run();
+                }
+                queuedResults.add(groupTask);
+            } catch (RuleExperimentExecutionStateService.ConfigurationConflict changed) {
+                throw changed;
+            } catch (IllegalArgumentException missingTestRule) {
+                choices.remove(choices.size() - 1);
+                result.getTestGroups().add(failedTestResult(testGroup, missingTestRule.getMessage()));
             } catch (RejectedExecutionException rejected) {
-                queuedChoices.remove(queuedChoices.size() - 1);
+                if (durable) throw new RuleExperimentExecutionStateService.StrategyInProgress();
+                choices.remove(choices.size() - 1);
                 result.getTestGroups().add(skippedTestResult(testGroup, "实验测试队列已满，未执行空跑"));
                 log.warn("实验测试队列已满，跳过测试组: experiment={}, group={}",
                         experiment.getExperimentCode(), testGroup.getGroupCode());
             }
         }
         for (int index = 0; index < queuedResults.size(); index++) {
-            RouteChoice choice = queuedChoices.get(index);
+            RouteChoice choice = choices.get(index);
             RuleExperimentGroupResult testResult;
             try {
                 testResult = queuedResults.get(index).get();
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
+                if (durable) throw new RuleExperimentExecutionStateService.StrategyInProgress();
                 testResult = failedTestResult(choice.group, "实验测试线程被中断");
             } catch (ExecutionException failed) {
+                if (failed.getCause() instanceof RuleExperimentExecutionStateService.StrategyInProgress pending) throw pending;
                 testResult = failedTestResult(choice.group, failed.getCause() == null
                         ? "实验测试执行失败" : failed.getCause().getMessage());
             }
@@ -491,13 +552,6 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             if (testResult.isMatched() && !testResult.isSkipped()) {
                 result.getTags().add(choice.group.getGroupCode());
             }
-        }
-
-        result.setSuccess(productionResult.isSuccess());
-        if (productionResult.waitsForSource()) result.setPlatformCode(com.hengshucredit.rule.model.PlatformCode.RESULT_PENDING.code());
-        result.setErrorMessage(productionResult.getErrorMessage());
-        result.setExecuteTimeMs(System.currentTimeMillis() - start);
-        return result;
         }
     }
 
@@ -543,6 +597,8 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         // Jackson sorts object keys, so two replicas and both hydrated and unhydrated entities agree.
         var fields = (JSONObject) JSON.toJSON(experiment);
         fields.remove("groups");
+        if (experiment.getRoutingErrorPolicy() == null || "FALLBACK".equals(experiment.getRoutingErrorPolicy()))
+            fields.remove("routingErrorPolicy"); // Preserve fingerprints issued before this field existed.
         return sha256(com.hengshucredit.rule.server.artifact.CanonicalJson.write(Map.of("experiment", fields,
                 "groups", groups == null ? Collections.emptyList() : groups)));
     }
@@ -606,6 +662,11 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
 
     private Map<String, Object> resolveRoutingParams(RuleExperiment experiment, List<RuleExperimentGroup> groups,
                                                       Map<String, Object> params, VariableResolutionInvocationCache routeCache) {
+        return resolveRoutingParams(experiment, groups, params, routeCache, true, false);
+    }
+
+    private Map<String,Object> resolveRoutingParams(RuleExperiment experiment, List<RuleExperimentGroup> groups,
+            Map<String,Object> params, VariableResolutionInvocationCache routeCache, boolean includeRequestKey, boolean skipApi) {
         if (variableSourceResolver == null || experiment == null) {
             return params;
         }
@@ -645,7 +706,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         // 独立路由规则由已发布执行器解析自己的冻结依赖，不提前回读实时草稿。
 
-        if (hasText(experiment.getRequestKeyPath())) {
+        if (includeRequestKey && hasText(experiment.getRequestKeyPath())) {
             for (JSONObject operand : OperandValueResolver.collectReferences(experiment.getRequestKeyPath())) {
                 if ("FIXED".equals(operand.getString("versionMode"))) continue;
                 String refType = firstNonBlank(operand.getString("refType"), "VARIABLE");
@@ -658,6 +719,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         if (required.isEmpty()) return params;
         VariableResolveOptions options = VariableResolveOptions.defaults();
         options.setInvocationCache(routeCache);
+        options.setSkipApiSources(skipApi);
         options.setRequiredScriptNames(required);
         options.setRequiredNamesUpstreamOnly(true);
         return variableSourceResolver.resolve(experiment.getProjectId(), params, options);
@@ -702,15 +764,15 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     private RouteChoice chooseProductionGroup(RuleExperiment experiment, List<RuleExperimentGroup> groups,
                                               Map<String, Object> params, String requestKey, String clientAppName,
                                               RouteConditions conditions) {
-        return chooseProductionGroup(experiment, groups, params, requestKey, clientAppName, conditions, null);
+        return chooseProductionGroup(experiment, groups, params, requestKey, clientAppName, conditions, null,
+                routingStart("PRODUCTION", experiment.getRoutingMode()));
     }
 
     private RouteChoice chooseProductionGroup(RuleExperiment experiment, List<RuleExperimentGroup> groups,
             Map<String, Object> params, String requestKey, String clientAppName, RouteConditions conditions,
-            VariableResolutionInvocationCache routeCache) {
+            VariableResolutionInvocationCache routeCache, List<Map<String,Object>> routeTrace) {
         List<RuleExperimentGroup> productionGroups = productionGroups(groups);
         RuleExperimentGroup champion = championGroup(groups);
-        List<Map<String, Object>> routeTrace = routingStart("PRODUCTION", experiment.getRoutingMode());
         if (ROUTING_CONDITION.equals(experiment.getRoutingMode()) && hasInlineConditionGroups(productionGroups)) {
             RuleExperimentGroup fallback = null;
             for (RuleExperimentGroup group : productionGroups) {
@@ -742,6 +804,12 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             conditionRuleTrace.put("result", outcome.getResult().getResult());
             conditionRuleTrace.put("trace", outcome.getResult().getTraces());
             routeTrace.add(conditionRuleTrace);
+            if (!outcome.getResult().isSuccess()) {
+                String detail = "分流规则 " + routingRule.getRuleCode() + " 执行失败：" + outcome.getResult().getErrorMessage();
+                if ("UNKNOWN".equals(outcome.getResult().getExecutionStatus())) throw ExternalApiWaitingException.manualReview(detail);
+                if ("WAITING_EXTERNAL".equals(outcome.getResult().getExecutionStatus())) throw new ExternalApiWaitingException(detail);
+                throw new RoutingFailure(detail);
+            }
             String groupCode = extractRouteGroupCode(outcome.getResult().getResult());
             RuleExperimentGroup matched = findGroupByRouteValue(productionGroups, groupCode);
             if (matched != null) {
@@ -761,13 +829,30 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         return routeChoice(champion, "比例分流未命中有效区间，回退冠军组", routeTrace);
     }
 
-    private List<RouteChoice> chooseTestGroups(RuleExperiment experiment, List<RuleExperimentGroup> groups,
-                                               Map<String, Object> params, String requestKey) {
-        return chooseTestGroups(experiment, groups, params, requestKey, prepareRouteConditions(experiment, groups));
+    private RouteChoice routeOnError(RuleExperiment experiment, List<RuleExperimentGroup> groups,
+                                     List<Map<String,Object>> trace, RuntimeException error) {
+        // Supplier acceptance/transport waits keep their original ticket independent of business routing policy.
+        if (error instanceof com.hengshucredit.rule.core.engine.RuleSuspensionSignal wait) throw wait;
+        if (error instanceof org.springframework.dao.DataAccessException || error instanceof SecurityException
+                || error instanceof RuleExperimentExecutionStateService.ConfigurationConflict
+                || error instanceof RuleExperimentExecutionStateService.StrategyInProgress) throw error;
+        if (com.hengshucredit.rule.core.engine.ExecutionCapacityException.find(error) != null) throw error;
+        String detail = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+        if (!ROUTING_CONDITION.equals(experiment.getRoutingMode()) || "PAUSE".equals(experiment.getRoutingErrorPolicy()))
+            throw new RoutingFailure(detail);
+        var fallback = productionGroups(groups).stream().filter(this::isFallbackGroup).findFirst().orElseGet(() -> championGroup(groups));
+        trace.add(routeEvent("ROUTING_ERROR", "detail", detail));
+        return routeChoice(fallback, "分流条件异常，按配置执行兜底组", trace);
     }
 
     private List<RouteChoice> chooseTestGroups(RuleExperiment experiment, List<RuleExperimentGroup> groups,
-                                              Map<String, Object> params, String requestKey, RouteConditions conditions) {
+                                               Map<String, Object> params, String requestKey) {
+        return chooseTestGroups(experiment, groups, params, requestKey, null, new ArrayList<>());
+    }
+
+    private List<RouteChoice> chooseTestGroups(RuleExperiment experiment, List<RuleExperimentGroup> groups,
+                                              Map<String, Object> params, String requestKey, VariableResolutionInvocationCache routeCache,
+                                              List<RuleExperimentGroupResult> failures) {
         List<RuleExperimentGroup> testGroups = activeGroups(groups, GROUP_TEST);
         if (testGroups.isEmpty()) {
             return Collections.emptyList();
@@ -786,6 +871,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         List<RouteChoice> choices = new ArrayList<>();
         List<Map<String, Object>> routeTrace = routingStart("TEST", experiment.getTestRoutingMode());
         RuleExperimentGroup fallback = null;
+        boolean conditionFailed = false;
         boolean exclusive = experiment.getTestExclusive() == null || experiment.getTestExclusive() == 1;
         for (RuleExperimentGroup testGroup : testGroups) {
             if (isFallbackGroup(testGroup)) {
@@ -794,15 +880,26 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 }
                 continue;
             }
-            if (!matchesConditionGroup(testGroup, params, routeTrace, conditions)) {
+            try {
+                boolean skipApi = !Integer.valueOf(1).equals(testGroup.getInvokeExternalSource());
+                var values = resolveRoutingParams(experiment, List.of(testGroup), new LinkedHashMap<>(params),
+                        skipApi ? new VariableResolutionInvocationCache() : routeCache, false, skipApi);
+                var testConditions = prepareRouteConditions(experiment, List.of(testGroup));
+                if (!matchesConditionGroup(testGroup, values, routeTrace, testConditions)) continue;
+                var choice = routeChoice(testGroup, "测试组条件命中", routeTrace);
+                choice.values = values;
+                choices.add(choice);
+            } catch (RuntimeException failure) {
+                failures.add(failedTestResult(testGroup, failure.getMessage()));
+                conditionFailed = true;
+                if (exclusive) break;
                 continue;
             }
-            choices.add(routeChoice(testGroup, "测试组条件命中", routeTrace));
             if (exclusive) {
                 break;
             }
         }
-        if (choices.isEmpty() && fallback != null) {
+        if (choices.isEmpty() && !conditionFailed && fallback != null) {
             choices.add(routeChoice(fallback, "测试组条件未命中，执行兜底动作", routeTrace));
         }
         return choices;
@@ -826,8 +923,9 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                                                boolean invokeExternalSource,
                                                String experimentTraceId,
                                                String configDigest,
-                                               List<Map<String, Object>> routeTrace, boolean durableExecution) {
-        RulePublished published = findPublishedRule(experiment, group);
+                                               List<Map<String, Object>> routeTrace, boolean durableExecution,
+                                               VariableResolutionInvocationCache routingCalls, String recoveryMode, RulePublished bound) {
+        RulePublished published = bound != null ? bound : findPublishedRule(experiment, group);
         boolean runtimeProduction = durableExecution && !"TEST".equals(stage);
         if (runtimeProduction && experimentStates != null) experimentStates.pinStrategy(group.getId(), published);
         VariableResolveOptions options = VariableResolveOptions.defaults();
@@ -839,18 +937,20 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             options.setListMatchTime(requestTime);
         }
         RuleExecuteService.ExecutionOutcome outcome;
+        boolean reusedSuccess = false;
         try (var versions = resourceVersions == null ? null
                 : resourceVersions.bind(experiment.getProjectId(), params, options)) {
             if (durableExecution && idempotencyService != null) {
                 String groupOrder = runtimeProduction ? experimentTraceId : experimentTraceId + ":TEST:" + group.getId();
-                var order = idempotencyService.beginExperiment(published, experiment.getProjectId(), params, groupOrder);
-                order.setExternalRecoveryMode(experimentStates == null ? null : experimentStates.externalRecoveryMode());
+                var order = idempotencyService.beginExperiment(published, experiment.getProjectId(), params, groupOrder, options, clientAppName);
+                order.setExternalRecoveryMode(recoveryMode);
                 var replayPolicy = OpenApiContractCodec.parse(published.getOpenApiConfigJson()).getIdempotency();
                 if (runtimeProduction && experimentStates != null && order.getExternalRecoveryMode() == null
                         && replayPolicy != null && "CACHE_THEN_CALL".equals(replayPolicy.getExternalRecoveryMode()))
                     experimentStates.explicitFreshPolicy();
-                if (experimentStates != null) order.setRoutingCalls(experimentStates.routingCache(experimentTraceId));
+                order.setRoutingCalls(routingCalls);
                 if (order.getStatus() == RuleIdempotencyService.Status.COMPLETED) {
+                    reusedSuccess = true;
                     outcome = new RuleExecuteService.ExecutionOutcome(order.getResult(), order.experimentParams(params));
                 } else if (order.getStatus() == RuleIdempotencyService.Status.IN_PROGRESS) {
                     throw new RuleExperimentExecutionStateService.StrategyInProgress();
@@ -875,6 +975,12 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         groupResult.setRuleId(published.getDefinitionId());
         groupResult.setRuleVersion(published.getVersion());
         groupResult.setRevisionId(outcome.getResult().getRevisionId());
+        if (reusedSuccess && executionLogMapper.selectCount(new LambdaQueryWrapper<RuleExperimentExecutionLog>()
+                .eq(RuleExperimentExecutionLog::getExperimentTraceId, experimentTraceId)
+                .eq(RuleExperimentExecutionLog::getGroupId, group.getId())
+                .eq(RuleExperimentExecutionLog::getStage, stage)
+                .eq(RuleExperimentExecutionLog::getChildTraceId, groupResult.getTraceId())
+                .eq(RuleExperimentExecutionLog::getSuccess, 1)) > 0) return groupResult;
         try {
             saveExecutionLog(experiment, group, groupResult, params, requestKey, stage, routeReason,
                     experimentTraceId, configDigest, routeTrace);
@@ -891,11 +997,13 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                                                    LocalDateTime requestTime, String clientAppName,
                                                    String routeReason, boolean invokeExternalSource,
                                                    String experimentTraceId, String configDigest,
-                                                   List<Map<String, Object>> routeTrace, boolean durable) {
+                                                   List<Map<String, Object>> routeTrace, boolean durable, VariableResolutionInvocationCache routingCalls,
+                                                   String recoveryMode, RulePublished bound) {
         try {
             return runGroup(experiment, group, params, requestKey, requestTime, clientAppName,
-                    "TEST", routeReason, invokeExternalSource, experimentTraceId, configDigest, routeTrace, durable);
+                    "TEST", routeReason, invokeExternalSource, experimentTraceId, configDigest, routeTrace, durable, routingCalls, recoveryMode, bound);
         } catch (RuntimeException error) {
+            if (error instanceof RuleExperimentExecutionStateService.StrategyInProgress pending) throw pending;
             RuleExperimentGroupResult failed = failedTestResult(group,
                     error.getMessage() == null ? "实验测试执行失败" : error.getMessage());
             try {
@@ -1130,6 +1238,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             condition.put("errorMessage", result.getErrorMessage());
             routeTrace.add(condition);
         }
+        if (!result.isSuccess()) throw new RoutingFailure("分组 " + group.getGroupCode() + " 条件执行失败：" + result.getErrorMessage());
         return matched;
     }
 
@@ -1231,6 +1340,8 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     }
 
     private void validateRuntimeGroups(RuleExperiment experiment, List<RuleExperimentGroup> groups) {
+        if (experiment.getRoutingErrorPolicy() != null && !Set.of("FALLBACK", "PAUSE").contains(experiment.getRoutingErrorPolicy()))
+            throw new IllegalArgumentException("分流异常策略必须选择执行兜底组或等待修复");
         for (RuleExperimentGroup group : groups) {
             BigDecimal ratio = group == null ? null : group.getTrafficRatio();
             if (ratio != null && (ratio.signum() < 0 || ratio.compareTo(ONE_HUNDRED) > 0 || ratio.stripTrailingZeros().scale() > 2))
@@ -1586,6 +1697,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         RuleExperiment experiment = JSON.parseObject(snapshot.getExperimentJson(), RuleExperiment.class);
         experiment.setId(experimentId);
+        if (experiment.getRoutingErrorPolicy() == null) experiment.setRoutingErrorPolicy("FALLBACK");
         experiment.setGroups(null);
         updateById(experiment);
         groupMapper.delete(new LambdaQueryWrapper<RuleExperimentGroup>()
@@ -1639,6 +1751,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
 
     private static class RouteChoice {
         private final RuleExperimentGroup group;
+        private Map<String,Object> values;
         private final String reason;
         private final List<Map<String, Object>> routeTrace;
 

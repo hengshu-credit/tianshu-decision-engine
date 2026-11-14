@@ -49,7 +49,9 @@ public class DurableExecutionPersistenceJournal implements AutoCloseable {
     private String failureReason;
 
     @PostConstruct
-    public synchronized void initialize() {
+    public synchronized void initialize() { initialize(false); }
+
+    private synchronized void initialize(boolean recoveringPeer) {
         if (!"NOT_INITIALIZED".equals(status)) return;
         if (!enabled) {
             status = "DISABLED";
@@ -63,7 +65,8 @@ public class DurableExecutionPersistenceJournal implements AutoCloseable {
             file = dir.resolve(DEFAULT_FILE);
             // 某些平台关闭同文件的其他 channel 会释放 JVM 所持锁，先在进程内拒绝重复打开。
             if (!OWNED_DIRECTORIES.add(dir)) {
-                fail("OWNERSHIP_CONFLICT", null, new IOException("journal 目录已被本进程其他实例占用"));
+                if (recoveringPeer) status = "OWNERSHIP_CONFLICT";
+                else fail("OWNERSHIP_CONFLICT", null, new IOException("journal 目录已被本进程其他实例占用"));
                 return;
             }
             ownedDirectory = dir;
@@ -78,7 +81,8 @@ public class DurableExecutionPersistenceJournal implements AutoCloseable {
                 return;
             }
             if (ownershipLock == null) {
-                fail("OWNERSHIP_CONFLICT", null, new IOException("journal 目录已被其他进程占用"));
+                if (recoveringPeer) status = "OWNERSHIP_CONFLICT";
+                else fail("OWNERSHIP_CONFLICT", null, new IOException("journal 目录已被其他进程占用"));
                 releaseOwnership();
                 return;
             }
@@ -113,7 +117,35 @@ public class DurableExecutionPersistenceJournal implements AutoCloseable {
         }
     }
 
+    /** 借用已退出副本的目录锁。每个目录处理一批即释放，原副本重新启动时可重新取得写入权。 */
+    List<java.util.Map<String,Object>> replaySiblings(java.util.function.Consumer<DurableExecutionPersistenceJournal> replay) {
+        var observed = new java.util.ArrayList<java.util.Map<String,Object>>();
+        if (!enabled) return List.of();
+        Path primary = Path.of(directory).toAbsolutePath().normalize();
+        Path parent = primary.getParent();
+        if (parent == null || !Files.isDirectory(parent)) return List.of();
+        try (var directories = Files.list(parent)) {
+            for (Path dir : directories.filter(path -> !path.equals(primary) && Files.isRegularFile(path.resolve(DEFAULT_FILE))).toList()) {
+                try (var peer = new DurableExecutionPersistenceJournal(dir.toString())) {
+                    peer.maxEntryBytes = maxEntryBytes;
+                    peer.initialize(true);
+                    if (peer.readable()) {
+                        replay.accept(peer);
+                        observed.add(peer.snapshot());
+                    }
+                }
+            }
+        } catch (IOException error) {
+            log.warn("扫描已退出副本的恢复目录失败，将在下一轮重试", error);
+        }
+        return List.copyOf(observed);
+    }
+
     public synchronized boolean append(Entry entry) {
+        if ("OWNERSHIP_CONFLICT".equals(status)) {
+            status = "NOT_INITIALIZED";
+            initialize(true);
+        }
         if (!available() || JournalRecordReader.validate(entry) != null) return false;
         long offset = confirmedBytes;
         try {

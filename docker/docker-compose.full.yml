@@ -244,6 +244,7 @@ services:
       RULE_EXECUTION_PERSISTENCE_JOURNAL_DIR: /data/logs/execution-persistence-journal
       RULE_LIST_ACTION_JOURNAL_DIR: /data/logs/list-action-journal
       RULE_LIST_ACTION_JOURNAL_SCAN_PARENT: "true"
+      RULE_EXECUTION_PERSISTENCE_JOURNAL_SCAN_PARENT: "true"
     volumes:
       - type: bind
         source: ${RUNTIME_DIR:-./runtime}/server.jar

@@ -68,6 +68,8 @@ docker compose --project-name tianshu-server --env-file config/.env.server \
 
 已有库升级断点和空间统计缓存时，在停应用、完成备份后执行 [2026-11-13-history-recovery.sql](2026-11-13-history-recovery.sql)。该迁移沿用现有历史字段索引，增加小时变更版本表及实验原始请求列，允许重复执行。已有实验缺少原请求时仍可携原请求和订单号重试。
 
+升级生产分流异常策略时，执行 [2026-11-14-experiment-routing-error-policy.sql](2026-11-14-experiment-routing-error-policy.sql)。已有配置沿用兜底行为，新增实验可在冠军挑战页选择等待修复或执行兜底组。
+
 升级名单动作执行条件和来源追踪时，执行 [2026-11-14-list-action-source.sql](2026-11-14-list-action-source.sql)，为变更日志和幂等回执补齐来源快照字段。历史记录保留原值。
 
 升级到持久执行队列时，在上述迁移后执行 [2026-11-13-execution-queue.sql](2026-11-13-execution-queue.sql)。旧订单继续按已有断点恢复，后台仅领取新版本登记的待执行订单。

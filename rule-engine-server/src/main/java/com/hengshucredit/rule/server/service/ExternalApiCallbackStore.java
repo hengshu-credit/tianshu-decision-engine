@@ -32,13 +32,16 @@ public class ExternalApiCallbackStore {
         this.cipher = cipher;
     }
 
-    public String register(JSONObject config) {
+    public String register(JSONObject config) { return register(config, false); }
+
+    String register(JSONObject config, boolean durable) {
         ExternalApiTrialContext.check();
         String id = UUID.randomUUID().toString();
         ExternalApiTrialContext trial = ExternalApiTrialContext.current();
-        redis.opsForValue().set(PREFIX + id, cipher.encrypt(config.toJSONString()),
-                trial == null ? Math.max(1, RequestDeadlineContext.remainingMillis()) + 30000L
-                        : Math.max(1, trial.expiresAt - System.currentTimeMillis()), TimeUnit.MILLISECONDS);
+        long ttl = Math.max(1, RequestDeadlineContext.remainingMillis()) + 30000L;
+        if (durable) ttl = Math.max(ttl, TimeUnit.DAYS.toMillis(1));
+        if (trial != null) ttl = Math.max(1, trial.expiresAt - System.currentTimeMillis());
+        redis.opsForValue().set(PREFIX + id, cipher.encrypt(config.toJSONString()), ttl, TimeUnit.MILLISECONDS);
         if (trial != null) {
             try { trial.callback(id); }
             catch (RuntimeException failure) { close(id); throw failure; }
@@ -69,7 +72,6 @@ public class ExternalApiCallbackStore {
         envelope.put("body", parsed);
         envelope.put("headers", headers);
         envelope.put("response", Map.of("httpStatus", 200, "headers", headers, "body", parsed));
-        Object status = path(envelope, config.getString("statusPath"));
         boolean continueOnFailure = "CONTINUE".equalsIgnoreCase(config.getString("failureMode"));
         boolean tree = ExternalApiExecutionConfig.hasCondition(config.get("successCondition"));
         boolean failure = false;
@@ -79,13 +81,17 @@ public class ExternalApiCallbackStore {
                     && invokeService.matchesResponseCondition(JSON.toJSONString(config.get("failureCondition")), envelope);
             if (!success && !failure) return;
         } else {
+            Object status = path(envelope, config.getString("statusPath"));
             if (status == null) throw new IllegalArgumentException("回调缺少状态字段");
             boolean success = String.valueOf(status).equals(config.getString("successValue"));
-            failure = String.valueOf(status).equals(config.getString("failureValue"));
+            failure = ExternalApiExecutionConfig.hasCondition(config.get("failureCondition"))
+                    ? invokeService.matchesResponseCondition(JSON.toJSONString(config.get("failureCondition")), envelope)
+                    : String.valueOf(status).equals(config.getString("failureValue"));
             if (!success && !failure) return;
         }
         Long ttl = redis.getExpire(PREFIX + id, TimeUnit.MILLISECONDS);
         if (ttl == null || ttl <= 0) throw new IllegalArgumentException("回调等待已结束");
+        envelope.put("success", !failure);
         String encoded = cipher.encrypt(JSON.toJSONString(envelope));
         redis.opsForValue().set(PREFIX + id + ":latest", encoded, ttl, TimeUnit.MILLISECONDS);
         if (!failure || !continueOnFailure) {

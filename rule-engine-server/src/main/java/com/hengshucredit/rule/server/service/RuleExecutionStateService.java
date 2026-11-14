@@ -70,9 +70,7 @@ public class RuleExecutionStateService {
 
     Creation create(Long projectId, Long definitionId, String ruleCode, String keyHash, String requestDigest,
                     String rootTraceId, Long revisionId, String artifactDigest, String owner,
-                    int leaseSeconds, int retentionSeconds, String experimentScope) {
-        String parent = experimentScope == null ? null : experimentScope.split(":", 2)[0];
-        String dispatch = parent == null ? null : CanonicalJson.write(java.util.Map.of("parentExperimentTrace", parent));
+                    int leaseSeconds, int retentionSeconds, String dispatch) {
         int inserted = jdbcTemplate.update(
                     "INSERT IGNORE INTO rule_execution_state "
                             + "(project_id, definition_id, rule_code, idempotency_key_hash, request_digest, "
@@ -97,7 +95,7 @@ public class RuleExecutionStateService {
 
     boolean queueRetry(State state, Long revision, String artifact, ExecutionDispatch dispatch) {
         return jdbcTemplate.update("UPDATE rule_execution_state SET status='QUEUED',current_revision_id=?,"
-                        + "current_artifact_digest=?,dispatch_json=?,finish_time=NULL "
+                        + "current_artifact_digest=?,dispatch_json=?,lease_until=NULL,finish_time=NULL "
                         + "WHERE id=? AND status=? AND attempt_no=? AND lease_owner IS NULL AND current_artifact_digest <=> ?",
                 revision, artifact, CanonicalJson.write(dispatch), state.id(), state.status(), state.attemptNo(), state.artifactDigest()) == 1;
     }
@@ -123,11 +121,11 @@ public class RuleExecutionStateService {
 
     public boolean claim(Long id, String owner, int leaseSeconds, int retentionSeconds,
                          Long currentRevisionId, String currentArtifactDigest) {
-        return claim(id,owner,leaseSeconds,retentionSeconds,currentRevisionId,currentArtifactDigest,null);
+        return claimAttempt(id,owner,leaseSeconds,retentionSeconds,currentRevisionId,currentArtifactDigest,null,false);
     }
 
-    boolean claim(Long id, String owner, int leaseSeconds, int retentionSeconds, Long currentRevisionId,
-                  String currentArtifactDigest, Integer acceptedAttempt) {
+    boolean claimAttempt(Long id, String owner, int leaseSeconds, int retentionSeconds, Long currentRevisionId,
+                         String currentArtifactDigest, Integer expectedAttempt, boolean queuedOnly) {
         return jdbcTemplate.update(
                 "UPDATE rule_execution_state SET lease_owner = ?, lease_until = DATE_ADD(NOW(6), INTERVAL ? SECOND), "
                         + "attempt_no = attempt_no + 1, status = 'RUNNING', "
@@ -136,10 +134,10 @@ public class RuleExecutionStateService {
                         + "expire_time = DATE_ADD(NOW(6), INTERVAL ? SECOND), result_json = NULL, "
                         + "finish_time = NULL, update_time = NOW(6) "
                         + "WHERE id = ? AND (status <> 'SUCCEEDED' OR NOT (current_revision_id <=> ? AND current_artifact_digest <=> ?)) "
-                        + "AND (lease_until IS NULL OR lease_until <= NOW(6) OR lease_owner = ?) "
-                        + "AND (? IS NULL OR (attempt_no=? AND status IN ('QUEUED','RUNNING')))",
+                        + "AND (lease_owner IS NULL OR lease_until <= NOW(6) OR lease_owner = ?) "
+                        + "AND (? IS NULL OR attempt_no=?) AND (NOT ? OR status IN ('QUEUED','RUNNING') OR status='WAITING_EXTERNAL' AND lease_until<=NOW(6))",
                 owner, leaseSeconds, currentRevisionId, currentArtifactDigest, retentionSeconds, id,
-                currentRevisionId, currentArtifactDigest, owner, acceptedAttempt, acceptedAttempt) == 1;
+                currentRevisionId, currentArtifactDigest, owner, expectedAttempt, expectedAttempt, queuedOnly) == 1;
     }
 
     public void checkpoint(Long id, String owner, String status, String checkpointJson,
@@ -261,11 +259,29 @@ public class RuleExecutionStateService {
     @org.springframework.transaction.annotation.Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public void finish(Long id, String owner, String status, String checkpointJson, String resultJson,
                        String errorMessage) {
+        finish(id, owner, status, checkpointJson, resultJson, errorMessage, false);
+    }
+
+    boolean canPollOriginal(String trace, String child) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                "SELECT EXISTS(SELECT 1 FROM rule_execution_checkpoint WHERE root_trace_id IN (?,?) AND step_type='EXTERNAL_API' "
+                        + "AND step_status='WAITING_EXTERNAL' AND JSON_EXTRACT(attempt_history,'$.blockedStepId') IS NULL "
+                        + "AND COALESCE(JSON_EXTRACT(attempt_history,'$.manualRetry'),false)=false "
+                        + "AND (JSON_LENGTH(attempt_history,'$.completedStepIds')>0 OR JSON_LENGTH(attempt_history,'$.registrations')>0)) "
+                        + "AND NOT EXISTS(SELECT 1 FROM rule_execution_checkpoint WHERE root_trace_id IN (?,?) AND step_type='EXTERNAL_API' "
+                        + "AND (step_status IN ('UNKNOWN','FAILED') OR JSON_EXTRACT(attempt_history,'$.blockedStepId') IS NOT NULL))",
+                Boolean.class, trace, child, trace, child));
+    }
+
+    @org.springframework.transaction.annotation.Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+    public void finish(Long id, String owner, String status, String checkpointJson, String resultJson, String errorMessage,
+                       boolean pollOriginal) {
         int changed = jdbcTemplate.update(
                 "UPDATE rule_execution_state SET status = ?, checkpoint_json = ?, result_json = ?, error_message = ?, "
-                        + "lease_owner = NULL, lease_until = NULL, finish_time = NOW(6), update_time = NOW(6) "
+                        + "lease_owner=NULL,lease_until=CASE WHEN ? THEN DATE_ADD(NOW(6),INTERVAL 30 SECOND) ELSE NULL END, "
+                        + "finish_time = NOW(6), update_time = NOW(6) "
                         + "WHERE id = ? AND lease_owner = ? AND lease_until > NOW(6)",
-                status, checkpointJson, resultJson, errorMessage, id, owner);
+                status, checkpointJson, resultJson, errorMessage, pollOriginal, id, owner);
         if (changed != 1) throw new IllegalStateException("执行租约已失效，无法提交旧尝试结果");
         persistCheckpoint(id);
     }
@@ -305,6 +321,24 @@ public class RuleExecutionStateService {
             this(id, projectId, definitionId, ruleCode, keyHash, requestDigest, rootTraceId, status, attemptNo, initialRevisionId,
                     currentRevisionId, artifactDigest, checkpointJson, resultJson, leaseOwner, leaseUntil, errorMessage, expireTime, null);
         }
+        public String parentExperimentTrace() {
+            return dispatchJson == null ? null : JSON.parseObject(dispatchJson).getString("parentExperimentTrace");
+        }
+
+        public VariableResolveOptions groupOptions() {
+            if (parentExperimentTrace() == null) return null;
+            var saved = JSON.parseObject(dispatchJson);
+            var group = saved.getObject("experimentGroup", VariableResolveOptions.ExperimentGroup.class);
+            if (group == null) return null;
+            var options = VariableResolveOptions.defaults();
+            options.setExperimentGroup(group);
+            options.setDryRun(saved.getBooleanValue("dryRun"));
+            options.setSkipApiSources(saved.getBooleanValue("skipApiSources"));
+            String at = saved.getString("listMatchTime");
+            if (at != null) options.setListMatchTime(LocalDateTime.parse(at));
+            return options;
+        }
+
         public ExecutionDispatch dispatch() { return dispatchJson == null || JSON.parseObject(dispatchJson).containsKey("parentExperimentTrace") ? null : JSON.parseObject(dispatchJson, ExecutionDispatch.class); }
     }
 

@@ -119,10 +119,9 @@ public class ExecutionQueue {
     private void recoverOne(boolean experiment) {
         String table = experiment ? "rule_experiment_execution_state" : "rule_execution_state";
         String traceField = experiment ? "experiment_trace_id" : "root_trace_id";
-        String resumable = experiment ? "status IN ('RUNNING','WAITING_EXTERNAL')" : "status='RUNNING'";
         var candidates = jdbc.query("SELECT id,project_id," + traceField + ",status,attempt_no,dispatch_json FROM " + table
                             + " WHERE dispatch_json IS NOT NULL AND (JSON_EXTRACT(dispatch_json,'$.authId') IS NOT NULL OR JSON_EXTRACT(dispatch_json,'$.globalKeyId') IS NOT NULL) AND ((status='QUEUED' AND (lease_until<=NOW(6) OR (lease_until IS NULL AND update_time<TIMESTAMPADD(MICROSECOND,-?,NOW(6))))) "
-                            + "OR (" + resumable + " AND lease_until<=NOW(6))) ORDER BY update_time,id LIMIT 8",
+                            + "OR (status IN ('RUNNING','WAITING_EXTERNAL') AND lease_until<=NOW(6))) ORDER BY update_time,id LIMIT 8",
                     (rs,n) -> new Work(rs.getLong(1),rs.getLong(2),rs.getString(3),rs.getString(4),rs.getInt(5),
                             JSON.parseObject(rs.getString(6), ExecutionDispatch.class)), (admission.waitMillis() + 1000) * 1000);
         for (Work work : candidates) {
@@ -175,6 +174,11 @@ public class ExecutionQueue {
             failBeforeStart("rule_experiment_execution_state", work, "缺少可恢复的原始实验请求");
             return;
         }
+        if ("WAITING_EXTERNAL".equals(work.status()) && !experiments.canPollOriginal(work.trace(),
+                JSON.parseObject(state.resultJson(), RuleExperimentExecuteResult.class))) {
+            failBeforeStart("rule_experiment_execution_state", work, "原外数回执缺失或状态不明，需核实后恢复");
+            return;
+        }
         var claim = experiments.claimAccepted(work.id(),work.attempt(),work.trace());
         if (claim == null) return;
         claim.setExternalRecoveryMode("WAITING_EXTERNAL".equals(work.status()) ? "ORIGINAL_ONLY" : work.dispatch().externalRecoveryMode());
@@ -184,6 +188,10 @@ public class ExecutionQueue {
     private void recoverRule(Work work, ProjectAuthContext auth) {
         var state = states.findByRootTraceId(work.trace());
         if (state == null || state.attemptNo()!=work.attempt() || !work.status().equals(state.status())) return;
+        if ("WAITING_EXTERNAL".equals(work.status()) && !states.canPollOriginal(work.trace(), null)) {
+            failBeforeStart("rule_execution_state", work, "原外数回执缺失或状态不明，需核实后恢复");
+            return;
+        }
         var published = publishedRules.selectOne(new LambdaQueryWrapper<RulePublished>()
                 .eq(RulePublished::getDefinitionId,state.definitionId()).eq(state.currentRevisionId()!=null,RulePublished::getRevisionId,state.currentRevisionId())
                 .eq(RulePublished::getStatus,1).last("LIMIT 1"));
@@ -207,7 +215,7 @@ public class ExecutionQueue {
         if (!claim.isClaimed()) return;
         try {
             boolean trace = work.dispatch().traceEnabled();
-            claim.setExternalRecoveryMode(work.dispatch().externalRecoveryMode());
+            claim.setExternalRecoveryMode("WAITING_EXTERNAL".equals(work.status()) ? "ORIGINAL_ONLY" : work.dispatch().externalRecoveryMode());
             RuleResult result = orders.withDecision(claim, () -> rules.executePublished(published,params,work.project(),
                     work.dispatch().clientAppName(), auth, trace, work.dispatch().recordTrace() == null ? trace : work.dispatch().recordTrace()));
             orders.complete(claim,result,null);

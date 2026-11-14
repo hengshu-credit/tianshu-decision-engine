@@ -93,6 +93,21 @@ public class VariableResolutionInvocationCache {
         this.inheritedCalls = route;
     }
 
+    private final Set<String> recoveredCalls = ConcurrentHashMap.newKeySet();
+    private final Map<String,Set<String>> recoveredConsumers = new ConcurrentHashMap<>();
+
+    void requireOriginalIdentity(String source, long apiId, String identity) {
+        if (recoveredCalls.contains(identity)) return;
+        String prefix = "API_CHAIN:" + apiId + ":";
+        for (String key : recoveredCalls) {
+            var previous = completedStep(key);
+            if (previous == null || "FAILED".equals(previous.getStatus())) continue;
+            var consumers = recoveredConsumers.getOrDefault(key, Set.of());
+            if (source != null && consumers.contains(source) || consumers.isEmpty() && key.startsWith(prefix))
+                throw ExternalApiWaitingException.manualReview("原订单的外数请求身份已变化，请核对原接口配置和入参后恢复");
+        }
+    }
+
     SourceStep originalCall(String key) {
         SourceStep own = completedStep(key);
         return own != null || inheritedCalls == null ? own : inheritedCalls.completedStep(key);
@@ -329,6 +344,11 @@ public class VariableResolutionInvocationCache {
             SourceStep step = SourceStep.fromMap(identity, value);
             if (step == null) return;
             completedSteps.put(identity, step);
+            if ("EXTERNAL_API".equals(step.getSourceType())) {
+                recoveredCalls.add(identity);
+                Object consumer = step.getMetadata().get("orderSourceKey");
+                if (consumer instanceof String name) recoveredConsumers.computeIfAbsent(identity, ignored -> ConcurrentHashMap.newKeySet()).add(name);
+            }
             if ("EXTERNAL_API".equals(step.getSourceType()) && !"SUCCESS".equals(step.getStatus())) apiResponses.remove(identity);
             if ("VARIABLE".equalsIgnoreCase(step.getSourceType())
                     && "SUCCESS".equalsIgnoreCase(step.getStatus())) {
@@ -477,7 +497,11 @@ public class VariableResolutionInvocationCache {
         values.forEach((source, rawKeys) -> {
             if (!(rawKeys instanceof Iterable<?> iterable)) return;
             for (Object rawKey : iterable) {
-                if (rawKey != null) associateResponse(source, ExternalApiRequestPlan.checkpointIdentity(String.valueOf(rawKey)));
+                if (rawKey != null) {
+                    String identity = ExternalApiRequestPlan.checkpointIdentity(String.valueOf(rawKey));
+                    associateResponse(source, identity);
+                    if (!source.equals(identity)) recoveredConsumers.computeIfAbsent(identity, ignored -> ConcurrentHashMap.newKeySet()).add(source);
+                }
             }
         });
     }

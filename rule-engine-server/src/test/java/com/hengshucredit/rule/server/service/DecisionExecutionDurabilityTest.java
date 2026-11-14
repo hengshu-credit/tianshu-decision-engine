@@ -41,6 +41,29 @@ public class DecisionExecutionDurabilityTest {
         } finally { restartedJournal.close(); }
     }
 
+    @Test public void survivingReplicaRecoversBillingFromReleasedSiblingDirectoryOnlyOnce() throws Exception {
+        var parent = journalFolder.newFolder().toPath();
+        var billing = new SnapshotBilling();
+        var logs = new RuleExecutionLogService();
+        try (var local = journal(parent.resolve("survivor"));
+             var survivor = new DecisionExecutionPersistence(logs, billing, 100)) {
+            ReflectionTestUtils.setField(survivor, "journal", local);
+            ReflectionTestUtils.setField(survivor, "journalScanParent", true);
+            try (var peer = journal(parent.resolve("gone"));
+                 var original = new DecisionExecutionPersistence(logs, billing, 100)) {
+                ReflectionTestUtils.setField(original, "journal", peer);
+                original.offer(null, billingDefinition(), true, 250L, null, null);
+                survivor.replayJournal();
+                assertTrue(billing.records.isEmpty());
+                assertEquals(1, peer.read(1).size());
+            }
+            survivor.replayJournal();
+            survivor.replayJournal();
+            assertEquals(1, billing.records.size());
+            assertEquals(new java.math.BigDecimal("0.250000"), billing.records.get(0).getAmount());
+        }
+    }
+
     private static DurableExecutionPersistenceJournal journal(java.nio.file.Path directory) {
         DurableExecutionPersistenceJournal journal = new DurableExecutionPersistenceJournal();
         ReflectionTestUtils.setField(journal, "directory", directory.toString());

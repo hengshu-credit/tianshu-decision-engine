@@ -39,6 +39,16 @@ public class RuleExperimentServiceTest {
     }
 
     @Test
+    public void failedConditionEvaluationIsReportedToTheSelectedRoutingPolicy() throws Exception {
+        var experiment = experiment("CONDITION", "CONDITION");
+        var broken = group("challenger", "CHALLENGER", 0, 0, "1 / (income - income) > 1", null);
+        var fallback = group("champion", "CHAMPION", 100, 1, "", "{\"fallback\":true}");
+        var failure = org.junit.Assert.assertThrows(java.lang.reflect.InvocationTargetException.class,
+                () -> chooseProductionGroup(experiment, List.of(broken, fallback), Map.of("income", 10)));
+        assertTrue(failure.getCause().getMessage().contains("challenger"));
+    }
+
+    @Test
     public void visualTreeUsesStableFieldIdsAndTakesPriorityOverAbsentOrStaleScripts() throws Exception {
         var experiment = experiment("CONDITION", "CONDITION");
         experiment.setProjectId(3L);

@@ -67,16 +67,25 @@ public class RuleIdempotencyService {
         return Decision.inProgress(state);
     }
 
-    Decision beginExperiment(RulePublished published, Long projectId, Map<String, Object> params, String experimentTrace) {
-        return begin(published, projectId, params, sha256("EXPERIMENT:" + experimentTrace), 86400, experimentTrace);
+    Decision beginExperiment(RulePublished published, Long projectId, Map<String, Object> params, String groupOrder,
+                             VariableResolveOptions options, String appName) {
+        var group = options.getExperimentGroup();
+        var dispatch = new LinkedHashMap<String,Object>();
+        dispatch.put("parentExperimentTrace", group.traceId());
+        dispatch.put("experimentGroup", group);
+        dispatch.put("dryRun", options.isDryRun());
+        dispatch.put("skipApiSources", options.isSkipApiSources());
+        dispatch.put("clientAppName", appName);
+        dispatch.put("listMatchTime", options.getListMatchTime());
+        return begin(published, projectId, params, sha256("EXPERIMENT:" + groupOrder), 86400, CanonicalJson.write(dispatch));
     }
 
-    private Decision begin(RulePublished published, Long projectId, Map<String, Object> params, String keyHash, int ttlSeconds, String experimentTrace) {
+    private Decision begin(RulePublished published, Long projectId, Map<String, Object> params, String keyHash, int ttlSeconds, String groupDispatch) {
         String requestHash = sha256(CanonicalJson.write(ExecutionRequestSnapshot.capture(params).digestInput()));
         Long stateProjectId = projectId == null ? 0L : projectId;
         int leaseSeconds = executionLeaseSeconds();
         // An experiment trace is unique for its lifetime, including a long wait for repair.
-        if (experimentTrace == null) stateService.deleteExpired(stateProjectId, published.getDefinitionId(), keyHash);
+        if (groupDispatch == null) stateService.deleteExpired(stateProjectId, published.getDefinitionId(), keyHash);
         RuleExecutionStateService.State state = stateService.find(stateProjectId, published.getDefinitionId(), keyHash);
         try {
             if (state == null) {
@@ -84,7 +93,7 @@ public class RuleIdempotencyService {
                 String owner = UUID.randomUUID().toString();
                 RuleExecutionStateService.Creation creation = stateService.create(stateProjectId, published.getDefinitionId(), published.getRuleCode(), keyHash,
                         requestHash, rootTraceId, published.getRevisionId(), published.getArtifactDigest(), owner, leaseSeconds,
-                        ttlSeconds, experimentTrace);
+                        ttlSeconds, groupDispatch);
                 state = creation.state();
                 if (creation.inserted()) {
                     Decision decision = Decision.claimed(state, owner, ttlSeconds, leaseSeconds,
@@ -109,8 +118,9 @@ public class RuleIdempotencyService {
                 return decision;
             }
             String owner = UUID.randomUUID().toString();
-            boolean claimed = stateService.claim(state.id(), owner, leaseSeconds, ttlSeconds,
-                    published.getRevisionId(), published.getArtifactDigest());
+            if (!samePublished && groupDispatch != null) return Decision.conflict();
+            boolean claimed = stateService.claimAttempt(state.id(), owner, leaseSeconds, ttlSeconds,
+                    published.getRevisionId(), published.getArtifactDigest(), state.attemptNo(), false);
             if (!claimed) {
                 current.remove();
                 return Decision.inProgress(state);
@@ -169,8 +179,8 @@ public class RuleIdempotencyService {
         int ttlSeconds = config == null ? 86400 : config.getTtlSeconds();
         String owner = UUID.randomUUID().toString();
         int leaseSeconds = executionLeaseSeconds();
-        if (!stateService.claim(state.id(), owner, leaseSeconds, ttlSeconds,
-                published.getRevisionId(), published.getArtifactDigest(), accepted ? state.attemptNo() : null)) {
+        if (!stateService.claimAttempt(state.id(), owner, leaseSeconds, ttlSeconds,
+                published.getRevisionId(), published.getArtifactDigest(), state.attemptNo(), accepted)) {
             return Decision.inProgress(state);
         }
         RuleExecutionStateService.State claimed = stateService.find(state.projectId(), state.definitionId(), state.keyHash());
@@ -332,8 +342,10 @@ public class RuleIdempotencyService {
                 : result != null && "UNKNOWN".equals(result.getExecutionStatus())
                 ? "UNKNOWN_RETRYABLE" : "FAILED_RETRYABLE";
         String effectiveCheckpoint = checkpointJson == null ? decision.checkpointJson : checkpointJson;
+        boolean pollOriginal = "WAITING_EXTERNAL".equals(status) && decision.state.dispatch() != null
+                && !"CACHE_THEN_CALL".equals(decision.externalRecoveryMode) && stateService.canPollOriginal(decision.getRootTraceId(), null);
         stateService.finish(decision.state.id(), decision.owner, status, effectiveCheckpoint,
-                resultJson, result == null ? "规则执行结果为空" : result.getErrorMessage());
+                resultJson, result == null ? "规则执行结果为空" : result.getErrorMessage(), pollOriginal);
         current.remove();
     }
 

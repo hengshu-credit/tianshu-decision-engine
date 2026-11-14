@@ -501,6 +501,7 @@ public class RuleExecuteService {
             var recoveryMode = com.hengshucredit.rule.server.openapi.OpenApiContractCodec.parse(published.getOpenApiConfigJson())
                     .getIdempotency().getExternalRecoveryMode();
             if (checkpointDecision.getExternalRecoveryMode() != null) recoveryMode = checkpointDecision.getExternalRecoveryMode();
+            checkpointDecision.setExternalRecoveryMode(recoveryMode);
             effectiveOptions.getInvocationCache().setFreshExternalCalls(checkpointDecision.getAttemptNo() > 1 && "CACHE_THEN_CALL".equals(recoveryMode));
             idempotencyService.restoreCheckpoint(idempotencyService.current(),
                     effectiveOptions.getInvocationCache(), executeParams, effectiveOptions);
@@ -658,6 +659,7 @@ public class RuleExecuteService {
             result.setRetryAfterMs(ExecutionCapacityException.RETRY_AFTER_MS);
             result.setErrorMessage(capacity.getMessage());
         } else if (isCapacityRejectedExternalFailure(error)) result.setExecutionStatus("THROTTLED");
+        else if (ExternalApiWaitingException.requiresReview(error)) result.setExecutionStatus("UNKNOWN");
         else if (isWaitingExternalFailure(error)) result.setExecutionStatus("WAITING_EXTERNAL");
         else if (isUnknownExternalFailure(error)) result.setExecutionStatus("UNKNOWN");
         if (result.getExecutionStatus() != null) {
