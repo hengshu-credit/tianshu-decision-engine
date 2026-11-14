@@ -1,4 +1,6 @@
 import { generateApiDocHtml, generateOpenApiDocument } from '@/utils/apiDoc'
+import { loadApiDocFont } from '@/utils/apiDoc/font'
+import { DEFAULT_ENGINE_FONT_VARIATION } from '@/system/engineFont'
 import { DEFAULT_THEME_CONFIG } from '@/theme/themeConfig'
 
 describe('完整 API 文档生成器', () => {
@@ -291,6 +293,57 @@ describe('完整 API 文档生成器', () => {
     expect(html).toContain('new FormData()')
     expect(html).not.toContain('monaco')
     expect(html).not.toContain('<script src=')
+  })
+
+  test('导出内嵌默认字体和已发布上传子字体，保留命名样式和品牌字体回退', async () => {
+    const fetchFont = vi.fn(async url => {
+      const uploaded = url.startsWith('/api/')
+      return { ok: true, headers: new Headers(), blob: async () => new Blob([uploaded ? 'selected-face' : 'wOF2']) }
+    })
+    vi.stubGlobal('fetch', fetchFont)
+    try {
+      const font = await loadApiDocFont({ source: 'UPLOAD', assetId: 'saved-font', face: 2, instance: 3,
+        coordinates: { wght: 760, BEVL: 40 }, previewUrl: 'blob:unsaved-preview' })
+      const html = generateApiDocHtml(doc, { logoSvg: '<svg></svg>', font })
+      const style = new DOMParser().parseFromString(html, 'text/html').getElementById('engine-document-font').textContent
+      expect(fetchFont.mock.calls.map(([url]) => url)).toEqual([expect.stringMatching(/\/fonts\/font\.woff2$/), '/api/auth/console/brand/fonts/saved-font/2'])
+      expect(style).toContain('data:font/woff2;base64,d09GMg==')
+      expect(style).toContain('data:font/sfnt;base64,c2VsZWN0ZWQtZmFjZQ==')
+      expect(style).toContain('--tianshu-font-family:"TianshuDocumentFont", "AlimamaFangYuanTiVF"')
+      expect(style).toContain('--tianshu-font-variation:"wght" 760, "BEVL" 40')
+      expect(style).not.toMatch(/blob:|\/api\//)
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  test('本机字体按名称匹配，缺字或未安装时有内嵌默认字体可回退', () => {
+    const font = { font: { source: 'LOCAL', family: 'Example "Local"' }, defaultData: 'data:font/woff2;base64,d09GMg==' }
+    const html = generateApiDocHtml(doc, { logoSvg: '<svg></svg>', font })
+    const style = new DOMParser().parseFromString(html, 'text/html').getElementById('engine-document-font').textContent
+    expect(style).toContain('src:local("Example \\"Local\\"")')
+    expect(style).toContain('data:font/woff2;base64,d09GMg==')
+    expect(style).toContain('font-variation-settings:' + DEFAULT_ENGINE_FONT_VARIATION)
+    expect(style).toContain('--tianshu-font-variation:normal')
+  })
+
+  test('首选 WOFF2 或上传子字体不可读时，以内嵌的默认 TTF 完成导出', async () => {
+    vi.stubGlobal('fetch', vi.fn(async url => url.endsWith('fonts/font.ttf')
+      ? { ok: true, headers: new Headers(), blob: async () => new Blob(['ttf']) }
+      : { ok: false }))
+    try {
+      const font = await loadApiDocFont({ source: 'UPLOAD', assetId: 'missing', face: 1 })
+      const html = generateApiDocHtml(doc, { logoSvg: '<svg></svg>', font })
+      const style = new DOMParser().parseFromString(html, 'text/html').getElementById('engine-document-font').textContent
+      expect(font.uploadedData).toBeNull()
+      expect(style).toContain('data:font/ttf;base64,dHRm')
+      expect(style).toContain('--tianshu-font-variation:' + DEFAULT_ENGINE_FONT_VARIATION)
+      expect(style).not.toContain('TianshuDocumentFont')
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  test('字体资源加载失败时导出返回错误', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, headers: new Headers({ 'Content-Type': 'text/html' }) })))
+    try { await expect(loadApiDocFont()).rejects.toThrow('无法读取引擎字体') }
+    finally { vi.unstubAllGlobals() }
   })
 
   test('导出文档沿用当前主题的模式和强调色', () => {

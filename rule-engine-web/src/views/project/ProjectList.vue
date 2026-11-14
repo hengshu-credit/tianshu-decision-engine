@@ -207,7 +207,7 @@
 <script>
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
 import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
-import { systemBrand, DEFAULT_BRAND, loadSystemBrand } from '@/system/systemBrand'
+import { DEFAULT_BRAND, loadSystemBrand } from '@/system/systemBrand'
 import { getCurrentUser } from '@/security/permissionState'
 import { PLATFORM_SUCCESS_CODE } from '@/utils/platformResponse'
 
@@ -231,6 +231,7 @@ import {
   savePageState,
 } from '@/utils/pageStateCache'
 import { generateApiDocHtml } from '@/utils/apiDoc'
+import { loadApiDocFont } from '@/utils/apiDoc/font'
 import { readLocalTheme } from '@/theme/themeRuntime'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
@@ -448,20 +449,16 @@ export default {
       this.currentAuthProject = row
       this.authDialogVisible = true
     },
-    async loadApiDocLogo() {
-      await loadSystemBrand(true)
-        if (/^https?:\/\//.test(systemBrand.logoUrl)) return systemBrand.logoUrl
-      if (systemBrand.logoUrl.startsWith('/api/auth/console/brand/assets/')) {
-        const image = await fetch(systemBrand.logoUrl)
+    async loadApiDocLogo(logoUrl) {
+      if (/^https?:\/\//.test(logoUrl)) return logoUrl
+      if (logoUrl.startsWith('/api/auth/console/brand/assets/')) {
+        const image = await fetch(logoUrl)
         if (!image.ok) throw new Error('加载系统 Logo 失败')
         const blob = await image.blob()
         return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob) })
       }
-        if (systemBrand.logoUrl !== DEFAULT_BRAND.logoUrl && systemBrand.logoUrl.startsWith('/')) return new URL(systemBrand.logoUrl, window.location.origin).href
-        const baseUrl = import.meta.env.BASE_URL || './'
-      const response = await fetch(
-        `${baseUrl}images/hengshucredit_animated.svg`
-      )
+      if (logoUrl !== DEFAULT_BRAND.logoUrl && logoUrl.startsWith('/')) return new URL(logoUrl, window.location.origin).href
+      const response = await fetch(`${import.meta.env.BASE_URL || './'}images/hengshucredit_animated.svg`)
       if (!response.ok) throw new Error('加载 hengshucredit Logo 失败')
       return response.text()
     },
@@ -473,15 +470,14 @@ export default {
     async handleExportDoc(row) {
       let objectUrl = ''
       try {
-        const [res, logoSvg] = await Promise.all([
-          exportApiDoc(row.id),
-          this.loadApiDocLogo(),
-        ])
+        const [res, brand] = await Promise.all([exportApiDoc(row.id), loadSystemBrand(true)])
         if (res.code === PLATFORM_SUCCESS_CODE && res.data) {
           const doc = res.data
+          const { systemName, subtitle, logoUrl, font: savedFont } = brand
+          const [logoSvg, font] = await Promise.all([this.loadApiDocLogo(logoUrl), loadApiDocFont(savedFont)])
           const html = generateApiDocHtml(doc, {
-            logoSvg,
-            brand: { systemName: systemBrand.systemName, subtitle: systemBrand.subtitle },
+            logoSvg, font,
+            brand: { systemName, subtitle },
             theme: this.getApiDocTheme(),
           })
           const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
@@ -492,6 +488,7 @@ export default {
           document.body.appendChild(a)
           a.click()
           document.body.removeChild(a)
+          if (savedFont?.source === 'UPLOAD' && !font.uploadedData) this.$message.warning('当前上传字体暂时无法读取，文档已使用内嵌的天枢默认字体。')
         }
       } catch (e) {
         this.$message.error('导出文档失败')

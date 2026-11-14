@@ -276,14 +276,14 @@ describe('ProjectList — 项目操作', () => {
     expect(projectApi.deleteProject).toHaveBeenCalledWith(1)
   })
 
-  test('handleExportDoc 使用模块化生成器并内嵌 hengshucredit SVG', async () => {
+  test('handleExportDoc 将已生效字体和 hengshucredit SVG 一并传给离线文档生成器', async () => {
     const doc = { project: { projectCode: 'project_a' }, authentications: [], rules: [] }
     const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     projectApi.exportApiDoc.mockResolvedValue({ code: '000000', data: doc })
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: vi.fn().mockResolvedValue('<svg id="hengshucredit"></svg>')
-    })
+    const originalFetch = global.fetch
+    global.fetch = vi.fn(async url => url.endsWith('/fonts/font.woff2')
+      ? { ok: true, headers: new Headers({ 'Content-Type': 'font/woff2' }), blob: async () => new Blob(['wOF2']) }
+      : { ok: true, text: async () => '<svg id="hengshucredit"></svg>' })
     global.URL.createObjectURL = vi.fn(() => 'blob:api-doc')
     global.URL.revokeObjectURL = vi.fn()
 
@@ -291,12 +291,15 @@ describe('ProjectList — 项目操作', () => {
 
     expect(projectApi.exportApiDoc).toHaveBeenCalledWith(1)
     expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('images/hengshucredit_animated.svg'))
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringMatching(/\/fonts\/font\.woff2$/))
     expect(apiDoc.generateApiDocHtml).toHaveBeenCalledWith(doc, expect.objectContaining({
+      font: expect.objectContaining({ defaultData: 'data:font/woff2;base64,d09GMg==', font: expect.objectContaining({ source: 'DEFAULT' }) }),
       logoSvg: '<svg id="hengshucredit"></svg>',
       theme: expect.objectContaining({ colorScheme: expect.any(String) })
     }))
     expect(global.URL.revokeObjectURL).toHaveBeenCalledWith('blob:api-doc')
     expect(wrapper.vm.generateDocHtml).toBeUndefined()
+    global.fetch = originalFetch
     anchorClick.mockRestore()
   })
 

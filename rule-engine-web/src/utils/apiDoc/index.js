@@ -8,6 +8,7 @@ import { renderLayoutScript, renderResizeHandles } from './layout'
 import { renderCodeEditorScript } from './editor'
 import { buildEndpointScenarios, renderAuthentication, renderResponseContract, renderRuleEndpoint, renderExperimentEndpoint, renderRecovery, idempotencyDescription } from './sections'
 import { apiDocStyles } from './styles'
+import { renderApiDocFont } from './font'
 import { renderJavaIntegration } from './javaIntegration'
 import {
   createPrimaryScale,
@@ -168,6 +169,7 @@ export function generateApiDocHtml(doc, options = {}) {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <title>${escapeHtml(title)}</title>
+  ${renderApiDocFont(options.font)}
   <style>${apiDocStyles}</style>
   ${renderThemeStyles(options.theme)}
 </head>
