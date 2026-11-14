@@ -3,6 +3,8 @@ import { escapeAttribute, escapeHtml } from './escape'
 import { buildExampleBody } from './model'
 import { EXAMPLE_CREDENTIALS, generateCodeSamples } from './codeSamples'
 import { renderFieldTreeRows } from './fieldTree'
+import { executionStates, experimentParameters, experimentPath, recoveryParameter, runtimeOperations } from './runtimeContract'
+import { responseCodes } from './responseCodes'
 
 function prettyJson(value) {
   if (typeof value === 'string') {
@@ -78,6 +80,7 @@ export function renderAuthentication(doc) {
     <p class="lead">以下内容根据项目当前启用的鉴权方式生成，描述的是实际传递位置与签名规则。</p>
     <div class="notice"><strong>安全提示：</strong>文档中的账号、密码、Token、Access Key 与密钥均仅为示例占位值；生产环境请以平台单独提供的账号密码、Token 或 Key 为准。</div>
     ${content}
+    ${authentications.some(auth => auth.authType !== 'BEARER_TOKEN') ? '<h3>换取临时令牌</h3><p><code>POST /api/rule/auth/token</code> 使用已启用的项目基础凭据，请求体留空。从 <code>data.accessToken</code> 取令牌，后续发送 <code>Authorization: Bearer &lt;accessToken&gt;</code>。有效期与宽限期见 <code>expiresAt</code> 和 <code>graceExpiresAt</code>。开放接口还需要同一配置的 <code>X-Auth-Code</code>。</p>' : ''}
   </section>`
 }
 
@@ -179,8 +182,12 @@ export function renderRuleEndpoint(rule, authentications, active = false) {
     { path: 'traceId', type: 'STRING', label: '请求追踪标识，用于关联日志', exampleValue: 'trace-example' },
     { path: 'data', type: 'OBJECT', label: '规则执行数据；鉴权或请求失败时可为空' },
     { path: 'data.traceId', type: 'STRING', label: '规则执行追踪标识', exampleValue: 'trace-example' },
-    { path: 'data.result', type: 'OBJECT', label: '规则业务输出，字段由已发布规则决定', exampleValue: {} },
+    { path: 'data.result', type: 'JSON', label: '由已发布规则决定，可为对象、数组或单值', exampleValue: {} },
     { path: 'data.executeTimeMs', type: 'LONG', label: '规则执行耗时（毫秒）', exampleValue: 12 },
+    { path: 'data.resumed', type: 'BOOLEAN', label: '本次是否从断点恢复', exampleValue: false },
+    { path: 'data.attemptNo', type: 'INTEGER', label: '执行尝试序号', exampleValue: 1 },
+    { path: 'data.reusedCount', type: 'INTEGER', label: '复用的执行步骤数', exampleValue: 0 },
+    { path: 'data.reexecutedCount', type: 'INTEGER', label: '重新执行的步骤数', exampleValue: 0 },
     { path: 'data.traces', type: 'ARRAY', label: '表达式追踪明细，由 traceEnabled 控制', exampleValue: [] }
   )
   const schemaNotice = rule.schemaTrust === 'UNVERIFIED'
@@ -192,6 +199,7 @@ export function renderRuleEndpoint(rule, authentications, active = false) {
     <div class="endpoint-meta">${rule.publishedVersion != null ? `<span class="badge">发布版本 ${escapeHtml(rule.publishedVersion)}</span>` : ''}${rule.publishedRevisionId != null ? `<span class="badge">修订 ${escapeHtml(rule.publishedRevisionId)}</span>` : ''}${rule.modelTypeLabel ? `<span class="badge">${escapeHtml(rule.modelTypeLabel)}</span>` : ''}</div>
     <p class="lead">${escapeHtml(rule.description || '执行已发布规则并返回统一平台响应。')}</p>${rule.openApiEnabled ? '<div class="notice">该规则同时提供普通同步执行和 OpenAPI 契约执行两种入口。</div>' : ''}${schemaNotice}
     <h3>请求头 Header</h3><div class="table-wrap"><table><thead><tr><th>名称</th><th>必填</th><th>说明</th></tr></thead><tbody><tr><td><code>Content-Type</code></td><td>是</td><td><code>application/json</code></td></tr><tr><td>鉴权字段</td><td>是</td><td>选择一种已启用的<a href="#authentication">认证鉴权</a>方式传递</td></tr></tbody></table></div>
+    <p>${escapeHtml(idempotencyDescription(rule))} <a href="#execution-recovery">执行状态与断点恢复</a></p>
     ${renderFields('请求体 Body', normalFields)}
     <h3>参数结构</h3><pre><code>${escapeHtml(body)}</code></pre>
     <h3>响应头 Header</h3><div class="table-wrap"><table><thead><tr><th>名称</th><th>说明</th></tr></thead><tbody><tr><td><code>Content-Type</code></td><td><code>application/json</code></td></tr></tbody></table></div>
@@ -204,8 +212,11 @@ export function renderRuleEndpoint(rule, authentications, active = false) {
 function renderOpenApiEndpoint(rule, authentications, responseFields) {
   const path = '/api/rule/openapi/' + encodeURIComponent(rule.ruleCode)
   const fields = rule.openApiRequestFields || []
-  const body = prettyJson(buildExampleBody(fields))
-  const endpoint = { method: 'POST', path, baseUrl: 'https://api.example.com', body }
+  const example = buildExampleBody(fields)
+  const body = example === undefined ? '' : JSON.stringify(example, null, 2)
+  const endpoint = { method: 'POST', path, baseUrl: 'https://api.example.com', body, headers: rule.openApiHeaderFields }
+  const headers = (rule.openApiHeaderFields || []).map(item => ({ path: item.name, type: 'STRING', required: item.required, label: item.description, exampleValue: item.example }))
+  const contract = rule.openApiContract || {}
   const openFields = [
     ...responseFields.filter(field => ['code', 'message'].includes(field.path)),
     { path: 'success', type: 'BOOLEAN', required: true, label: '平台操作是否成功', exampleValue: true },
@@ -217,9 +228,63 @@ function renderOpenApiEndpoint(rule, authentications, responseFields) {
     '<h2>OpenAPI 契约执行入口</h2>' +
     '<div class="notice">仅在规则已启用 OpenAPI 服务时生成。该入口使用已发布契约的请求映射、响应模板、幂等和错误码。</div>' +
     '<div class="endpoint-head"><span class="method">POST</span><code class="path">' + escapeHtml(path) + '</code><span class="badge">OpenAPI</span></div>' +
+    renderFields('契约请求头 Header', headers) +
     renderFields('Body 映射字段', fields) +
+    (example === undefined ? '<p>数组下标较大，请按所列 JSONPath 填写请求体。</p>' : '') +
     '<pre><code>' + escapeHtml(body) + '</code></pre>' +
     renderFields('OpenAPI 响应体', openFields) +
-    '<h3>OpenAPI 代码示例</h3>' + renderCodeTabs(rule, authentications || [], endpoint) +
+    ['successDataTemplate', 'errorDataTemplate'].filter(key => contract[key] != null).map(key =>
+      '<h3>' + (key === 'successDataTemplate' ? '成功' : '异常') + '响应的 data 模板</h3><pre><code>' + escapeHtml(JSON.stringify(contract[key], null, 2)) + '</code></pre>').join('') +
+    ((contract.responseMappings || []).length ? '<p>模板中 <code>${response}</code> 的字段为 ' + contract.responseMappings.map(item => '<code>' + escapeHtml(item.targetField) + '</code>').join('、') + '。</p>' : '') +
+    ((contract.responseHeaderNames || []).length ? '<p>契约响应头 ' + contract.responseHeaderNames.map(name => '<code>' + escapeHtml(name) + '</code>').join('、') + '。</p>' : '') +
+    (example === undefined ? '' : '<h3>OpenAPI 代码示例</h3>' + renderCodeTabs(rule, authentications || [], endpoint)) +
     '</div>'
+}
+
+export function idempotencyDescription(rule) {
+  const config = rule.openApiContract?.idempotency
+  const keys = (config?.components?.length ? config.components : [config?.operand]).map(item => item?.operand || item)
+  const fieldNames = keys.filter(item => item?.kind === 'REFERENCE').map(item => item.code || item.value).filter(name => typeof name === 'string' && name.length)
+  const keyText = fieldNames.length ? '已发布幂等键引用 ' + fieldNames.join('、') + '。' : ''
+  const reuse = config?.enabled ? '幂等已启用。同一业务键与相同参数可在保留期内复用执行，保留期为 ' + (config.ttlSeconds ?? 86400) + ' 秒。' : '当前规则未配置跨请求幂等键，再次提交可创建独立执行。'
+  return reuse + (config?.enabled ? keyText : '') + '外数恢复策略为 ' + (config?.externalRecoveryMode || 'ORIGINAL_ONLY') + '。'
+}
+
+export function renderExperimentEndpoint(experiment, auths, active) {
+  const path = experimentPath(experiment.experimentCode)
+  const endpoint = { method: 'POST', path, body: JSON.stringify(experiment.exampleBody, null, 2) }
+  const fields = Object.entries(experimentParameters).map(([key, schema]) => ({
+    path: key, type: schema.type, label: schema.description, exampleValue: experiment.exampleBody[key]
+  }))
+  const mode = experiment.routingMode === 'CONDITION'
+    ? '生产按条件分流。条件执行异常时，' + (experiment.routingErrorPolicy === 'PAUSE' ? '暂停进件，修复后按原实验追踪号恢复。' : '执行配置的兜底组，未指定兜底组时使用冠军组。')
+    : '生产分流方式为 ' + (experiment.routingMode || '当前实验配置') + '。'
+  return `<section class="panel endpoint-panel${active ? ' active' : ''}" data-endpoint-value="${escapeAttribute(experiment.id)}">
+    <h2>${escapeHtml(experiment.experimentName || experiment.experimentCode)}</h2>
+    <div class="endpoint-head"><span class="method">POST</span><code class="path">${escapeHtml(path)}</code></div>
+    <p>${escapeHtml(experiment.description)} ${escapeHtml(mode)}</p>
+    ${renderFields('请求体 Body', [...fields, { path: 'params', type: 'OBJECT', label: '当前版本的进件字段。各组所需字段可能不同。' }, ...experiment.requestFields])}
+    ${experiment.inputFieldsAvailable ? '' : '<div class="notice">实验输入字段快照不可用。请核对实验组绑定的已发布规则版本后重新导出。</div>'}
+    <p>每笔新进件请替换示例订单号。同一进件重试保留完整请求，包括 requestTime 与版本。分流取值仅决定分组。</p>
+    <h3>读取实验结果</h3><p>用 <code>data.experimentTraceId</code> 跟踪整笔实验。正式决策取 <code>data.productionGroup.result</code>，组内追踪号在 <code>data.productionGroup.traceId</code>。<code>data.testGroups</code> 记录测试组的命中、跳过和执行结果。</p>
+    <p><a href="#execution-recovery">执行状态与断点恢复</a></p>
+    ${renderCodeTabs({ ruleCode: experiment.id }, auths, endpoint)}</section>`
+}
+
+export function renderRecovery(mapping) {
+  const rows = responseCodes(mapping)
+  const code = systemCode => escapeHtml(rows.find(item => item.systemCode === systemCode)?.code || systemCode)
+  const statusRows = Object.entries(executionStates).map(([state, action]) =>
+    '<tr><td><code>' + state + '</code></td><td>' + action + '</td></tr>').join('')
+  return `<section id="execution-recovery" class="panel"><h2>执行状态与断点恢复</h2>
+    <p>提交后保存根追踪号。规则可从响应的 <code>traceId</code> 或 <code>data.traceId</code> 读取，实验还可从 <code>data.experimentTraceId</code> 读取。开放接口也返回 <code>X-Trace-Id</code>。用同项目凭据查询原订单。</p>
+    <div class="table-wrap"><table><thead><tr><th>提交或查询响应</th><th>调用方处理</th></tr></thead><tbody>
+      <tr><td>HTTP 202 · ${code('400006')} / ${code('400008')}</td><td>等待外数或最终结果。保留原追踪号，间隔查询执行状态。</td></tr>
+      <tr><td>HTTP 409 · ${code('400005')} / ${code('400004')}</td><td>执行中时查询原订单。幂等冲突时核对原键、参数及版本。对外码合并时结合 detail 和可用的 X-Rule-Standard-Code 区分。</td></tr>
+      <tr><td>HTTP 429 / 504 或客户端断线</td><td>有追踪号先查状态。限流按 Retry-After（若返回）退避。若没有追踪号，仅在已配置幂等的保留期内用相同键和原请求重试。</td></tr>
+    </tbody></table></div>
+    ${runtimeOperations.map(item => '<h3>' + escapeHtml(item.title) + '</h3><code>' + item.method.toUpperCase() + ' ' + escapeHtml(item.path) + '</code><p>' + escapeHtml(item.description) + '</p>').join('')}
+    <p><code>externalRecoveryMode</code> 是标准规则执行、实验执行和断点恢复的可选 Query 参数。${escapeHtml(recoveryParameter.description)}</p>
+    <div class="table-wrap"><table><thead><tr><th>data.status</th><th>含义与下一步</th></tr></thead><tbody>${statusRows}</tbody></table></div>
+  </section>`
 }

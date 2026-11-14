@@ -1,3 +1,9 @@
+import { parseRestrictedJsonPath } from '../restrictedJsonPath'
+import { managedHeaderNames } from './codeSamples'
+import { buildExampleBody, typeSchema } from './fieldSchema'
+
+export { buildExampleBody } from './fieldSchema'
+
 function arrayOf(value) {
   return Array.isArray(value) ? value : []
 }
@@ -148,34 +154,54 @@ function normalizeAuthentication(auth) {
     authType: text(auth && auth.authType),
     placement: text(auth && auth.placement),
     parameterName: text(auth && auth.parameterName),
+    managedHeaderNames: managedHeaderNames(auth),
     tokenTtlSeconds: auth && auth.tokenTtlSeconds,
     tokenGraceSeconds: auth && auth.tokenGraceSeconds
   }
 }
 
-function contractPath(path) {
-  const value = text(path).trim()
-  if (!value || value === '$') return ''
-  return value.replace(/^\$\.?/, '').replace(/\['([^']+)'\]/g, '.$1').replace(/^\./, '')
+function publishedFieldsByRef(variables, objects) {
+  const byRef = new Map()
+  for (const item of arrayOf(variables)) if (item.id != null) byRef.set((item.varSource === 'DATA_OBJECT' ? 'DATA_OBJECT' : 'VARIABLE') + ':' + item.id, item)
+  for (const object of arrayOf(objects)) for (const field of arrayOf(object.fields)) if (field.id != null) byRef.set('DATA_OBJECT:' + field.id, field)
+  return byRef
 }
 
-function openApiRequestFields(contract) {
-  return arrayOf(contract && contract.requestMappings)
-    .filter(item => item && text(item.sourceType).toUpperCase() === 'BODY')
-    .map(item => ({
-      path: contractPath(item.sourcePath),
-      type: text(item.targetType) || 'STRING',
-      required: Boolean(item.required),
-      label: text(item.sourcePath),
-      description: text(item.defaultValue) ? `默认值：${item.defaultValue}` : '',
-      exampleValue: item.defaultValue ?? ''
-    }))
-    .filter(item => item.path)
+function openApiRequestFields(contract, inputs) {
+  return arrayOf(contract.requestMappings).filter(item => item?.sourceType === 'BODY').flatMap(item => {
+    const parts = parseRestrictedJsonPath(item.sourcePath)
+    if (!parts) return []
+    const type = item.targetType || 'STRING'
+    const hasDefault = item.defaultValue != null && String(item.defaultValue).trim() !== ''
+    const input = inputs.get(item.targetRefType + ':' + item.targetVarId)
+    const value = sampleValue({ varType: type, defaultValue: item.defaultValue, exampleValue: hasDefault ? undefined : input?.exampleValue })
+    return [{ path: item.sourcePath, parts, type, required: Boolean(item.required && !hasDefault),
+      label: hasDefault ? '省略时使用已配置的默认值' : '请求体中的字段',
+      exampleValue: value === '' ? 'example' : value }]
+  })
+}
+
+function openApiHeaders(contract) {
+  const rows = new Map([['x-auth-code', { name: 'X-Auth-Code', required: true, example: '<AUTH_CODE>',
+    description: '与本次项目凭据匹配的鉴权配置编码' }]])
+  for (const item of arrayOf(contract.requestMappings)) {
+    if (item?.sourceType !== 'HEADER' || !item.sourcePath) continue
+    const key = item.sourcePath.toLowerCase()
+    const required = Boolean(item.required && !item.hasDefault && !text(item.defaultValue).trim())
+    const row = rows.get(key)
+    if (row) row.required ||= required
+    else rows.set(key, { name: item.sourcePath, required, example: '<HEADER_VALUE>', description: '按已发布契约转换为 ' + (item.targetType || 'STRING') })
+  }
+  return [...rows.values()]
 }
 
 function normalizeRule(rule) {
   const openApiContract = rule && rule.openApiContract ? rule.openApiContract : {}
   const openApiEnabled = Boolean(rule && rule.openApiEnabled)
+  const requestFields = flattenRequestFields(rule)
+  const inputs = publishedFieldsByRef(rule?.inputVariables, rule?.inputDataObjects)
+  const outputs = publishedFieldsByRef(rule?.outputVariables, rule?.outputDataObjects)
+  const bodyFields = openApiEnabled ? openApiRequestFields(openApiContract, inputs) : []
   return {
     id: rule && rule.id,
     ruleCode: text(rule && rule.ruleCode),
@@ -188,6 +214,13 @@ function normalizeRule(rule) {
     publishedRevisionId: rule && rule.publishedRevisionId,
     publishedArtifactDigest: text(rule && rule.publishedArtifactDigest),
     openApiEnabled,
+    mappedResponseFields: arrayOf(openApiContract.responseMappings).map(item => {
+      const field = outputs.get(item.sourceRefType + ':' + item.sourceVarId)
+      const schema = field?.varType ? typeSchema(field.varType) : {}
+      if (schema.type) schema.type = [schema.type, 'null']
+      return { name: item.targetField, schema }
+    }),
+    openApiHeaderFields: openApiEnabled ? openApiHeaders(openApiContract) : [],
     openApiContract,
     schemaTrust: text(rule && rule.schemaTrust),
     schemaDiagnostics: arrayOf(rule && rule.schemaDiagnostics).map(item => text(item)),
@@ -195,8 +228,10 @@ function normalizeRule(rule) {
     outputSchema: rule && rule.outputSchema ? rule.outputSchema : {},
     status: rule && rule.status,
     statusLabel: text(rule && rule.statusLabel),
-    requestFields: flattenRequestFields(rule),
-    openApiRequestFields: openApiEnabled ? openApiRequestFields(openApiContract) : [],
+    requestFields,
+    exampleBody: { clientAppName: 'api-doc-example', params: buildExampleBody(requestFields).params || {} },
+    openApiRequestFields: bodyFields,
+    openApiExample: openApiEnabled ? buildExampleBody(bodyFields) : undefined,
     responseFields: flattenResponseFields(rule),
     scenarios: documentedScenarios(rule)
   }
@@ -214,22 +249,16 @@ export function normalizeApiDoc(doc) {
       status: project.status
     },
     authentications: arrayOf(doc && doc.authentications).map(normalizeAuthentication),
+    experiments: arrayOf(doc?.experiments).map(item => {
+      const requestFields = flattenRequestFields(item)
+      const experimentCode = text(item.experimentCode)
+      return {
+        id: 'experiment:' + experimentCode, experimentCode, experimentName: text(item.experimentName),
+        description: text(item.description), routingMode: text(item.routingMode), routingErrorPolicy: item.routingErrorPolicy || 'FALLBACK',
+        requestFields, inputFieldsAvailable: item.inputFieldsAvailable === true,
+        exampleBody: { requestKey: '<UNIQUE_ORDER_ID>', clientAppName: 'api-doc-example', params: buildExampleBody(requestFields).params || {} }
+      }
+    }),
     rules: arrayOf(doc && doc.rules).map(rule => ({ ...normalizeRule(rule), codeMapping: doc?.codeMapping }))
   }
-}
-
-export function buildExampleBody(fields) {
-  const root = {}
-  arrayOf(fields).forEach(field => {
-    const parts = text(field.path).split('.').filter(Boolean)
-    let current = root
-    parts.forEach((part, index) => {
-      if (index === parts.length - 1) current[part] = field.exampleValue
-      else {
-        if (!current[part] || typeof current[part] !== 'object') current[part] = {}
-        current = current[part]
-      }
-    })
-  })
-  return root
 }

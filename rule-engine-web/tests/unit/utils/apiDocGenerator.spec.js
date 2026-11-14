@@ -29,6 +29,34 @@ describe('完整 API 文档生成器', () => {
     expect(open.responses['200'].content['application/json'].example).toBeUndefined()
     expect(open.responses['200'].content['application/json'].schema.properties.data).toEqual({})
   })
+  test('开放契约保留 JSONPath 数组下标、带点键及根值，所有示例符合发布映射和模板', () => {
+    const contract = {
+      requestMappings: [
+        { sourceType: 'BODY', sourcePath: '$.rows[1]["case.id"]', required: true, targetType: 'INTEGER', targetRefType: 'VARIABLE', targetVarId: 3 },
+        { sourceType: 'HEADER', sourcePath: 'X-Channel', required: true, targetType: 'STRING' }
+      ],
+      responseMappings: [{ targetField: 'quote', sourceVarId: 8, sourceRefType: 'VARIABLE' }],
+      successDataTemplate: { values: ['${response}', '${traceId}'] }, errorDataTemplate: { error: '${status.message}' }
+    }
+    const rule = { ruleCode: 'QUOTE', openApiEnabled: true, openApiContract: contract,
+      inputVariables: [{ id: 3, varCode: 'amount', varType: 'INTEGER', exampleValue: '17' }],
+      outputVariables: [{ id: 8, varCode: 'price', varType: 'DECIMAL' }] }
+    const build = () => generateOpenApiDocument({ project: {}, rules: [rule] }).paths['/api/rule/openapi/QUOTE'].post
+    const open = build()
+    expect(open.parameters.map(({ name, required }) => [name, required])).toEqual([['X-Auth-Code', true], ['X-Channel', true]])
+    const body = open.requestBody.content['application/json']
+    expect(body.example).toEqual({ rows: [null, { 'case.id': 17 }] })
+    expect(body.schema.required).toEqual(['rows'])
+    expect(body.schema.properties.rows.prefixItems[1].properties['case.id'].type).toBe('integer')
+    const success = open.responses['200'].content['application/json'].schema.properties.data
+    expect(success.properties.values.prefixItems[0].properties.quote.type).toEqual(['number','null'])
+    expect(open.responses['400'].content['application/json'].schema.properties.data).toMatchObject({ properties: { error: {} } })
+    contract.requestMappings = [{ sourceType: 'BODY', sourcePath: '$', targetType: 'BOOLEAN', required: true, defaultValue: 'false' }]
+    expect(build().requestBody).toMatchObject({ required: false, content: { 'application/json': { example: false, schema: { type: 'boolean' } } } })
+    contract.requestMappings = [{ sourceType: 'BODY', sourcePath: '$[2000000000]', targetType: 'INTEGER', required: true }]
+    expect(build().requestBody.content['application/json']).toMatchObject({ example: undefined, schema: { type: 'array', minItems: 2000000001 } })
+  })
+
   test('导出使用品牌与多对一结果码映射，保留 success 和 HTTP 语义', () => {
     const doc = { project: {}, rules: [{ ruleCode: 'RISK' }], codeMapping: { version: 2, enabled: true, mappings: { '000000': { code: '0000', message: '处理完成' }, '100001': { code: 'ERR', message: '参数错误' }, '100002': { code: 'ERR', message: '参数错误' } } } }
     const responses = generateOpenApiDocument(doc).paths['/api/rule/sync/execute/RISK'].post.responses
@@ -89,6 +117,10 @@ describe('完整 API 文档生成器', () => {
     expect(scheme.name).toBe('X-Rule-Access-Key')
     expect(scheme.description).toContain('X-Rule-Timestamp')
     expect(scheme.description).toContain('X-Rule-Signature')
+    const [signature] = openApi.paths['/api/rule/auth/token'].post.security
+    expect(Object.keys(signature).map(key => openApi.components.securitySchemes[key].name)).toEqual([
+      'X-Rule-Access-Key', 'X-Rule-Timestamp', 'X-Rule-Nonce', 'X-Rule-Signature'
+    ])
   })
 
   test('已启用开放接口契约的规则导出 open 路径并标记契约状态', () => {
@@ -106,7 +138,7 @@ describe('完整 API 文档生成器', () => {
       }]
     })
 
-    expect(openApi.paths['/api/rule/sync/execute/OPEN_RULE']).toBeTruthy()
+    expect(openApi.paths['/api/rule/sync/execute/OPEN_RULE'].post.security).toEqual([{ projectCredential: [] }])
     const operation = openApi.paths['/api/rule/openapi/OPEN_RULE'].post
     expect(operation['x-open-api-contract-enabled']).toBe(true)
     expect(operation['x-rule-schema-trust']).toBe('VERIFIED')

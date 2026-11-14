@@ -11,7 +11,7 @@ export function buildFieldTreeRows(fields) {
   const nodes = new Map()
 
   ;(fields || []).forEach(field => {
-    const parts = String(field.path || '').split('.').filter(Boolean)
+    const parts = field.parts ? [field.path] : String(field.path || '').split('.').filter(Boolean)
     let parent = null
     parts.forEach((name, depth) => {
       const path = parts.slice(0, depth + 1).join('.')

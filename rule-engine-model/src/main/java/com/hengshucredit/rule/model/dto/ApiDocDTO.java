@@ -13,6 +13,8 @@ public class ApiDocDTO {
     private ProjectInfo project;
     /** 规则列表 */
     private java.util.List<RuleInfo> rules;
+    /** 当前项目可调用的分流实验。 */
+    private java.util.List<ExperimentInfo> experiments;
     /** 项目已启用鉴权方式的安全摘要，不包含任何凭据 */
     private java.util.List<AuthenticationInfo> authentications;
     /** 变量列表 */
@@ -66,6 +68,17 @@ public class ApiDocDTO {
         private java.util.List<DataObjectInfo> outputDataObjects;
         /** 用户明确选择且与已发布版本匹配的 API 测试场景 */
         private java.util.List<ScenarioInfo> scenarios;
+    }
+
+    @Data
+    public static class ExperimentInfo {
+        private String experimentCode;
+        private String experimentName;
+        private String description;
+        private String routingMode;
+        private String routingErrorPolicy;
+        private java.util.List<VariableInfo> inputVariables;
+        private boolean inputFieldsAvailable;
     }
 
     @Data

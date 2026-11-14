@@ -1,4 +1,5 @@
 import { renderCodeEditor } from './editor'
+import { runtimeOperations } from './runtimeContract'
 
 export function renderOnlineRunner() {
   return `<button id="runner-toggle" class="button primary runner-toggle" type="button" aria-controls="online-runner">在线调用</button>
@@ -7,12 +8,13 @@ export function renderOnlineRunner() {
     <div class="runner-config-grid">
       <label class="runner-base-url-field">服务地址 / Base URL<input id="runner-base-url" value="https://api.example.com" placeholder="https://api.example.com 或 https://gateway.example.com/risk" autocomplete="off" spellcheck="false"></label>
       <label>接口<select id="runner-endpoint"></select></label>
-      <label>执行入口<select id="runner-entry"><option value="sync">同步执行</option><option value="open">OpenAPI 契约</option></select></label>
+      <label>执行入口<select id="runner-entry"><option value="sync">同步执行</option><option value="open">OpenAPI 契约</option><option value="experiment" hidden>执行分流实验</option>${runtimeOperations.map(item => `<option value="${item.id}">${item.title}</option>`).join('')}</select></label>
+      <label id="runner-identifier-field" hidden><span id="runner-identifier-label"></span><input id="runner-identifier" autocomplete="off" spellcheck="false"></label>
       <label>鉴权方式<select id="runner-auth"></select></label>
       <label>超时（毫秒）<input id="runner-timeout" type="number" min="1000" max="180000" value="30000"></label>
     </div>
     <div class="runner-connection-bar"><span class="runner-connection-dot" aria-hidden="true"></span><span id="runner-connection-help">浏览器会直接请求目标地址；目标服务需要允许当前文档来源的 CORS。</span><button id="runner-use-page-origin" class="button secondary" type="button" hidden>使用当前域名</button></div>
-    <div class="runner-request-bar"><span class="method">POST</span><code id="runner-path">/api/rule/sync/execute/</code></div>
+    <div class="runner-request-bar"><span class="method" id="runner-method">POST</span><code id="runner-path">/api/rule/sync/execute/</code></div>
     <div class="runner-actions"><button id="runner-copy-curl" class="button secondary" type="button">复制 cURL</button><button id="runner-send" class="button primary" type="button">发送请求</button><button id="runner-cancel" class="button secondary" type="button" disabled>取消请求</button></div>
     <details class="runner-auth-details"><summary>鉴权凭据 <span id="runner-auth-summary" class="muted"></span></summary><div id="runner-credentials"></div></details>
     <div class="runner-tabs tabs" data-tabs="runner-params">
@@ -71,10 +73,25 @@ export function renderOnlineRunnerScript() {
     base.hash = '';
     return base;
   }
-  function currentEndpoint() { return doc.rules.find(function (rule) { return text(rule.id || rule.ruleCode) === state.endpointId; }) || doc.rules[0]; }
-  function currentAuth() { var index = Number(elements.auth.value); return doc.authentications[index] || null; }
+  var endpoints = doc.rules.concat(doc.experiments || []);
+  var runnerAuths = doc.authentications.slice();
+  if (runnerAuths.length && !runnerAuths.some(function (auth) { return auth.authType === 'BEARER_TOKEN'; })) {
+    runnerAuths.push({ authName: '临时 Bearer Token', authType: 'BEARER_TOKEN', managedHeaderNames: ['authorization','content-type','accept'] });
+  }
+  var operations = ${JSON.stringify(runtimeOperations.map(({ id, method, path, idName }) => ({ id, method: method.toUpperCase(), path, idName })))};
+  var traceValue = '', callValue = '';
+  function currentEndpoint() { return endpoints.find(function (item) { return text(item.id || item.ruleCode) === state.endpointId; }) || endpoints[0]; }
+  function currentOperation() { return operations.find(function (item) { return item.id === elements.entry.value; }); }
+  function currentAuth() { var index = Number(elements.auth.value); return runnerAuths[index] || null; }
   function isOpenEntry(rule) { return Boolean(rule && rule.openApiEnabled && elements.entry.value === 'open'); }
   function endpointPath(rule) {
+    var op = currentOperation();
+    if (op) {
+      var id = byId('runner-identifier').value.trim();
+      return id ? op.path.replace('{' + op.idName + '}', function () { return encodeURIComponent(id); }) : op.path;
+    }
+    if (!rule) return '/api/rule/sync/execute/';
+    if (rule.experimentCode) return '/api/rule/runtime/experiment/execute/' + encodeURIComponent(rule.experimentCode);
     const prefix = isOpenEntry(rule) ? '/api/rule/openapi/' : '/api/rule/sync/execute/'
     return prefix + encodeURIComponent(rule.ruleCode)
   }
@@ -82,19 +99,14 @@ export function renderOnlineRunnerScript() {
   function escapeMarkup(value) { return text(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   function exampleValue(field) { return field && field.exampleValue !== undefined ? field.exampleValue : ''; }
   function formValue(value) { return value != null && typeof value === 'object' ? JSON.stringify(value) : text(value); }
-  function setPath(target, path, value) {
-    var parts = text(path).split('.').filter(Boolean);
-    var current = target;
-    parts.forEach(function (part, index) {
-      if (index === parts.length - 1) current[part] = value;
-      else { if (!current[part] || typeof current[part] !== 'object') current[part] = {}; current = current[part]; }
-    });
-  }
+  var orderKeys = new Map();
   function buildBody(rule) {
-    var value = isOpenEntry(rule) ? {} : { clientAppName: 'api-doc-example', params: {} };
-    var fields = isOpenEntry(rule) ? (rule.openApiRequestFields || []) : (rule.requestFields || []);
-    fields.forEach(function (field) { setPath(value, field.path, exampleValue(field)); });
-    return value;
+    if (!rule.experimentCode) return isOpenEntry(rule) ? rule.openApiExample : rule.exampleBody;
+    if (!orderKeys.has(rule.id)) {
+      var suffix = window.crypto?.randomUUID?.() || (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2));
+      orderKeys.set(rule.id, 'doc-' + suffix);
+    }
+    return Object.assign({}, rule.exampleBody, { requestKey: orderKeys.get(rule.id) });
   }
   function newFormRow(field) {
     return { id: state.nextFormRowId++, enabled: true, name: field ? field.path : '', type: 'TEXT', value: field ? formValue(exampleValue(field)) : '', description: field ? (field.label || field.description || '') : '', file: null };
@@ -114,15 +126,34 @@ export function renderOnlineRunnerScript() {
   }
   function renderEndpoint() {
     var rule = currentEndpoint();
-    if (!rule) { elements.path.textContent = '/api/rule/sync/execute/'; return; }
-    state.endpointId = text(rule.id || rule.ruleCode);
-    elements.entry.querySelector('[value="open"]').disabled = !rule.openApiEnabled;
-    if (!rule.openApiEnabled) elements.entry.value = 'sync';
+    var experiment = Boolean(rule && rule.experimentCode);
+    var sync = elements.entry.querySelector('[value="sync"]'), open = elements.entry.querySelector('[value="open"]');
+    var exp = elements.entry.querySelector('[value="experiment"]');
+    sync.disabled = !rule || experiment;
+    open.disabled = !rule || !rule.openApiEnabled;
+    exp.hidden = exp.disabled = !experiment;
+    if (!currentOperation() && (!rule || elements.entry.selectedOptions[0]?.disabled)) {
+      elements.entry.value = experiment ? 'experiment' : rule ? 'sync' : 'getExecutionStatus';
+    }
+    var op = currentOperation();
+    byId('runner-identifier-field').hidden = !op;
+    if (op) {
+      byId('runner-identifier-label').textContent = op.idName === 'callId' ? '外数调用号 callId' : '原订单根追踪号 traceId';
+      byId('runner-identifier').value = op.idName === 'callId' ? callValue : traceValue;
+    }
+    byId('runner-method').textContent = op ? op.method : 'POST';
     elements.path.textContent = endpointPath(rule);
     window.ApiDocEditors.set('runner-query', '', true);
-    window.ApiDocEditors.set('runner-headers', '', true);
-    window.ApiDocEditors.set('runner-body', JSON.stringify(buildBody(rule), null, 2), true);
-    resetFormRows(rule);
+    var managed = currentAuth()?.managedHeaderNames || [];
+    var headers = isOpenEntry(rule) ? rule.openApiHeaderFields.filter(function (header) { return !managed.includes(header.name.toLowerCase()); }) : [];
+    window.ApiDocEditors.set('runner-headers', headers.map(function (h) { return h.name + '=' + h.example; }).join('\\n'), true);
+    var example = op || !rule ? undefined : buildBody(rule);
+    window.ApiDocEditors.set('runner-body', example === undefined ? '' : JSON.stringify(example, null, 2), true);
+    var canSendForm = !op && !experiment && !isOpenEntry(rule);
+    document.querySelector('[data-body-type="form-data"]').disabled = !canSendForm;
+    document.querySelector('[data-body-type="json"]').disabled = op && op.method === 'GET';
+    setBodyType(op ? 'none' : 'json');
+    if (rule) resetFormRows(rule);
   }
   function credentialField(name, label, secret) {
     return '<label for="credential-' + name + '">' + label + '</label><input id="credential-' + name + '" ' + (secret ? 'type="password" ' : '') + 'autocomplete="off" value="' + escapeMarkup(state.credentialValues[name] || '') + '">';
@@ -171,7 +202,7 @@ export function renderOnlineRunnerScript() {
     if (!copied) throw new Error('当前浏览器不允许访问剪贴板，请手动复制');
   }
   function curlCommand(request) {
-    var command = 'curl -X POST ' + shellQuote(request.url.toString());
+    var command = 'curl -X ' + request.method + ' ' + shellQuote(request.url.toString());
     request.headers.forEach(function (value, name) { command += ' \\\n  -H ' + shellQuote(name + ': ' + value); });
     if (state.bodyType === 'form-data') {
       state.formRows.forEach(function (row) {
@@ -259,7 +290,9 @@ export function renderOnlineRunnerScript() {
   }
   async function prepareRequest() {
     var rule = currentEndpoint();
-    if (!rule) throw new Error('当前没有可调用的接口');
+    var op = currentOperation();
+    if (!op && !rule) throw new Error('当前没有可调用的接口');
+    if (op && !byId('runner-identifier').value.trim()) throw new Error('请填写 ' + op.idName);
     var queryError = window.ApiDocEditors.validate('runner-query');
     if (queryError) throw new Error(queryError);
     var headerError = window.ApiDocEditors.validate('runner-headers');
@@ -270,8 +303,9 @@ export function renderOnlineRunnerScript() {
     parseRows(window.ApiDocEditors.get('runner-headers')).forEach(function (row) { headers.set(row.name, row.value); });
     var auth = currentAuth();
     var prepared = await prepareBody(headers, auth, url);
-    await applyAuthentication(auth, url, headers, 'POST', prepared.signingBody);
-    return { rule: rule, url: url, headers: headers, auth: auth, prepared: prepared };
+    var method = op ? op.method : 'POST';
+    await applyAuthentication(auth, url, headers, method, prepared.signingBody);
+    return { method: method, operation: op, rule: rule, url: url, headers: headers, auth: auth, prepared: prepared };
   }
   function showState(message, kind) { elements.status.className = kind ? 'status ' + kind : 'runner-empty'; elements.status.textContent = message; }
   async function copyCurl() {
@@ -309,28 +343,41 @@ export function renderOnlineRunnerScript() {
     try {
       var request = await prepareRequest();
       if (controller.signal.aborted) throw new DOMException('Request aborted', 'AbortError');
-      var requestOptions = { method: 'POST', headers: request.headers, mode: 'cors', credentials: 'omit', signal: controller.signal };
+      var requestOptions = { method: request.method, headers: request.headers, mode: 'cors', credentials: 'omit', signal: controller.signal };
       if (request.prepared.body !== undefined) requestOptions.body = request.prepared.body;
+      if (!request.operation && currentEndpoint() === request.rule) traceValue = '';
       sending = true;
       showState('请求发送中…', 'warning');
       connectionHelp('正在请求 ' + request.url.origin + '，请保持当前页面打开。');
       var response = await fetch(request.url.toString(), requestOptions);
       var responseText = await response.text();
-      var responseValue;
-      try { responseValue = JSON.stringify(JSON.parse(responseText), null, 2); } catch (error) { responseValue = responseText; }
+      var responseValue, envelope;
+      try { envelope = JSON.parse(responseText); responseValue = JSON.stringify(envelope, null, 2); } catch (error) { responseValue = responseText; }
+      var data = envelope && envelope.data;
+      var trace = (data && (data.experimentTraceId || data.traceId)) || (envelope && envelope.traceId) || response.headers.get('X-Trace-Id');
+      if (trace && !request.operation && currentEndpoint() === request.rule) traceValue = text(trace);
       var headerLines = [];
       response.headers.forEach(function (value, name) { headerLines.push(name + ': ' + value); });
       elements.responseHeaders.textContent = headerLines.join('\\n') || '—';
       elements.responseBody.textContent = responseValue || '（空响应）';
       var duration = Math.round(performance.now() - started);
       elements.responseMeta.innerHTML = '<span class="badge">HTTP ' + response.status + '</span><span class="badge">' + duration + ' ms</span>';
-      showState(response.ok ? '请求完成' : '服务端返回非成功 HTTP 状态', response.ok ? 'success' : 'danger');
-      connectionHelp(response.ok ? '请求已完成；响应内容保留在当前页面。' : '服务端已返回响应，请根据 HTTP 状态和响应内容排查。', !response.ok);
+      if (response.status === 202) {
+        showState('已受理，结果尚未就绪', 'warning');
+        connectionHelp('请切换到查询执行状态，使用原订单根追踪号。');
+      } else if (response.status === 409 || response.status === 504) {
+        showState('请核对原订单状态', 'warning');
+        connectionHelp('请结合 detail 与原订单状态处理执行中、冲突或超时。');
+      } else {
+        var ok = response.ok && (!envelope || envelope.success !== false);
+        showState(ok ? '请求完成' : '服务端返回错误', ok ? 'success' : 'danger');
+        connectionHelp(ok ? '请求已完成，响应内容保留在当前页面。' : '请根据 HTTP 状态和响应内容排查。', !ok);
+      }
     } catch (error) {
       if (controller.signal.aborted) {
         var abortMessage = state.abortReason === 'timeout' ? '请求超时' : '请求已取消';
         showState(abortMessage, 'danger');
-        connectionHelp(abortMessage + '，可调整参数后重新发送。');
+        connectionHelp(abortMessage + '。服务端可能仍在执行，请先查询原订单状态。');
       }
       else if (!sending) showState(error.message || '请求参数不正确', 'danger');
       else { showState(networkFailureMessage(error), 'danger'); connectionHelp(networkFailureMessage(error), true); }
@@ -354,15 +401,23 @@ export function renderOnlineRunnerScript() {
   }
   function initialize() {
     elements = { baseUrl: byId('runner-base-url'), endpoint: byId('runner-endpoint'), auth: byId('runner-auth'), entry: byId('runner-entry'), authSummary: byId('runner-auth-summary'), credentials: byId('runner-credentials'), path: byId('runner-path'), timeout: byId('runner-timeout'), send: byId('runner-send'), cancel: byId('runner-cancel'), copyCurl: byId('runner-copy-curl'), copyResponse: byId('runner-copy-response'), usePageOrigin: byId('runner-use-page-origin'), connectionState: byId('runner-connection-state'), connectionHelp: byId('runner-connection-help'), formRows: byId('runner-form-data-rows'), formAdd: byId('runner-form-data-add'), status: byId('runner-status'), responseMeta: byId('runner-response-meta'), responseHeaders: byId('runner-response-headers'), responseBody: byId('runner-response-body') };
-    elements.endpoint.innerHTML = doc.rules.map(function (rule) { return '<option value="' + escapeMarkup(rule.id || rule.ruleCode) + '">' + escapeMarkup(rule.ruleName || rule.ruleCode) + ' · ' + escapeMarkup(rule.ruleCode) + '</option>'; }).join('');
-    elements.auth.innerHTML = doc.authentications.length ? doc.authentications.map(function (auth, index) { return '<option value="' + index + '">' + escapeMarkup(auth.authName || auth.authType) + '</option>'; }).join('') : '<option value="-1">未配置鉴权</option>';
+    elements.endpoint.innerHTML = endpoints.map(function (rule) { return '<option value="' + escapeMarkup(rule.id || rule.ruleCode) + '">' + escapeMarkup(rule.experimentName || rule.ruleName || rule.ruleCode) + ' · ' + escapeMarkup(rule.experimentCode || rule.ruleCode) + '</option>'; }).join('');
+    elements.auth.innerHTML = runnerAuths.length ? runnerAuths.map(function (auth, index) { return '<option value="' + index + '">' + escapeMarkup(auth.authName || auth.authType) + '</option>'; }).join('') : '<option value="-1">未配置鉴权</option>';
     state.endpointId = elements.endpoint.value;
     renderEndpoint();
     renderCredentials();
     var canUsePageOrigin = location.protocol === 'http:' || location.protocol === 'https:';
     elements.usePageOrigin.hidden = !canUsePageOrigin;
     if (!canUsePageOrigin) connectionHelp('当前文档通过本地文件打开，浏览器直连目标服务需要允许 Origin: null；跨域失败时可复制 cURL。');
-    elements.endpoint.addEventListener('change', function () { state.endpointId = elements.endpoint.value; renderEndpoint(); });
+    elements.endpoint.addEventListener('change', function () {
+      state.endpointId = elements.endpoint.value;
+      elements.entry.value = currentEndpoint()?.experimentCode ? 'experiment' : 'sync';
+      traceValue = ''; callValue = ''; renderEndpoint();
+    });
+    byId('runner-identifier').addEventListener('input', function () {
+      if (currentOperation()?.idName === 'callId') callValue = this.value; else traceValue = this.value;
+      elements.path.textContent = endpointPath(currentEndpoint());
+    });
     elements.auth.addEventListener('change', renderCredentials);
     elements.entry.addEventListener('change', renderEndpoint);
     elements.send.addEventListener('click', sendRequest);

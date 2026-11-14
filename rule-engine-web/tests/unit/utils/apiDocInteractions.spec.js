@@ -7,6 +7,7 @@ const doc = {
     { authType: 'API_KEY', authName: 'API Key', parameterName: 'X-Partner-Key' },
     { authType: 'BASIC', authName: 'Basic' }
   ],
+  experiments: [{ experimentCode: 'EXP', experimentName: '分流实验', inputFieldsAvailable: true, inputVariables: [{ varCode: 'amount', varType: 'INTEGER' }] }],
   rules: [
     { id: 8, ruleCode: 'RISK', ruleName: '风险决策', inputVariables: [{ varCode: 'customer.age', varType: 'INTEGER', exampleValue: 17 }], openApiEnabled: true, openApiContract: { requestMappings: [{ sourceType: 'BODY', sourcePath: '$.age', targetType: 'INTEGER', defaultValue: 18 }] } },
     { id: 9, ruleCode: 'SECOND', ruleName: '第二接口', inputVariables: [{ varCode: 'amount', varType: 'INTEGER', exampleValue: 100 }] }
@@ -38,6 +39,37 @@ describe('导出 API 文档真实脚本交互', () => {
   })
 
   afterEach(() => dom.window.close())
+
+  test('实验受理后沿用根追踪号查询和恢复，不会自动重发进件', async () => {
+    const page = dom.window.document
+    const select = page.getElementById('runner-entry')
+    const selectEntry = value => { select.value = value; select.dispatchEvent(new dom.window.Event('change')) }
+    const send = async (response, status, calls) => {
+      dom.window.fetch.mockResolvedValueOnce(new Response(JSON.stringify(response), { status }))
+      page.getElementById('runner-send').click()
+      await vi.waitFor(() => expect(dom.window.fetch).toHaveBeenCalledTimes(calls))
+      await vi.waitFor(() => expect(page.getElementById('runner-send').disabled).toBe(false))
+      return dom.window.fetch.mock.calls[calls - 1]
+    }
+    // 选择同一项目的实验，使用实际 DOM 编辑器完成提交。
+    page.querySelector('[data-endpoint-nav="experiment:EXP"]').click()
+    expect(page.getElementById('runner-path').textContent).toBe('/api/rule/runtime/experiment/execute/EXP')
+    dom.window.ApiDocEditors.set('runner-body', '{"requestKey":"order-70","params":{"amount":10}}')
+    await send({ success: false, code: '400008', traceId: 'root-70' }, 202, 1)
+    expect(page.getElementById('runner-status').textContent).toContain('结果尚未就绪')
+    selectEntry('getExecutionStatus')
+    expect(page.getElementById('runner-identifier').value).toBe('root-70')
+    const [statusUrl, options] = await send({ success: true, data: { status: 'RUNNING' } }, 200, 2)
+    expect(statusUrl).toMatch(/\/executions\/root-70$/)
+    expect(options.method).toBe('GET')
+    expect(options.body).toBeUndefined()
+    selectEntry('resumeExecution')
+    const [url, resume] = await send({ success: true, data: { experimentTraceId: 'root-70' } }, 200, 3)
+    expect(url).toMatch(/\/executions\/root-70\/resume$/)
+    expect(resume.method).toBe('POST')
+    expect(resume.body).toBeUndefined()
+    expect(errors).toEqual([])
+  })
 
   test('目录支持名称和编码搜索，清空恢复所有接口且无结果时给出提示', () => {
     const page = dom.window.document
@@ -242,7 +274,11 @@ describe('导出 API 文档真实脚本交互', () => {
     reader.readAsText(createUrl.mock.calls[0][0])
     const exported = JSON.parse(await content)
     expect(exported.openapi).toBe('3.1.0')
-    expect(Object.keys(exported.paths)).toEqual(['/api/rule/sync/execute/RISK', '/api/rule/openapi/RISK', '/api/rule/sync/execute/SECOND'])
+    expect(Object.keys(exported.paths)).toEqual([
+      '/api/rule/sync/execute/RISK', '/api/rule/openapi/RISK', '/api/rule/sync/execute/SECOND',
+      '/api/rule/runtime/experiment/execute/EXP', '/api/rule/runtime/executions/{traceId}', '/api/rule/runtime/executions/{traceId}/result',
+      '/api/rule/runtime/executions/{traceId}/resume', '/api/rule/runtime/external-calls/{callId}', '/api/rule/auth/token'
+    ])
     await vi.waitFor(() => expect(dom.window.URL.revokeObjectURL).toHaveBeenCalledWith('blob:api-doc'))
     expect(errors).toEqual([])
   })

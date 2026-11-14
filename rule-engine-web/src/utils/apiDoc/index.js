@@ -1,10 +1,12 @@
+import { fieldsSchema, templateSchema } from './fieldSchema'
+import { addRuntimePaths, apiResponseHeaders, recoveryParameter, runtimeSchemas } from './runtimeContract'
 import { responseCodes } from './responseCodes'
 import { escapeHtml, serializeForScript } from './escape'
 import { buildExampleBody, normalizeApiDoc } from './model'
 import { renderOnlineRunner, renderOnlineRunnerScript } from './onlineRunner'
 import { renderLayoutScript, renderResizeHandles } from './layout'
 import { renderCodeEditorScript } from './editor'
-import { buildEndpointScenarios, renderAuthentication, renderResponseContract, renderRuleEndpoint } from './sections'
+import { buildEndpointScenarios, renderAuthentication, renderResponseContract, renderRuleEndpoint, renderExperimentEndpoint, renderRecovery, idempotencyDescription } from './sections'
 import { apiDocStyles } from './styles'
 import { renderJavaIntegration } from './javaIntegration'
 import {
@@ -45,17 +47,18 @@ function renderOverview(doc) {
     <div class="section-kicker">开发者文档 / API REFERENCE</div>
     <h1>${escapeHtml(doc.project.projectName || 'API 接口文档')}</h1>
     <p class="lead"><code>${escapeHtml(doc.project.projectCode)}</code></p>
-    <p>${escapeHtml(doc.project.description || '本文档描述项目已发布规则的调用方式。')}</p>
+    <p>${escapeHtml(doc.project.description || '本文档描述本项目的规则、分流实验与执行查询接口。')}</p>
     <div class="notice">本文档中的全部凭据与参数值均为样例；生产环境请以平台单独提供的账号密码、Token、API Key 或 HMAC 密钥为准。</div>
-    <div class="overview-metrics"><span><strong>${doc.rules.length}</strong> 已发布规则</span><span><strong>${doc.authentications.length}</strong> 鉴权方式</span><span><strong>JSON</strong> 请求与响应</span></div>
+    <div class="overview-metrics"><span><strong>${doc.rules.length}</strong> 已发布规则</span><span><strong>${doc.experiments.length}</strong> 已启用实验</span><span><strong>${doc.authentications.length}</strong> 鉴权方式</span><span><strong>JSON</strong> 请求与响应</span></div>
     <h2>快速接入</h2>
-    <ol class="quick-start"><li><strong>确认服务地址</strong><span>将示例域名替换为实际部署地址，保留网关路径前缀。</span></li><li><strong>配置鉴权与参数</strong><span>从左侧选择接口，按<a href="#authentication">认证鉴权</a>配置凭据，并填写 Body。</span></li><li><strong>调用并核对结果</strong><span>通过 success 判断接口状态，再读取 data 中的业务结果；排查时记录 traceId。</span></li></ol>
+    <ol class="quick-start"><li><strong>确认服务地址</strong><span>将示例域名替换为实际部署地址，保留网关路径前缀。</span></li><li><strong>配置鉴权与参数</strong><span>从左侧选择接口，按<a href="#authentication">认证鉴权</a>配置凭据，并填写 Body。</span></li><li><strong>调用并核对结果</strong><span>保存根追踪号。执行成功后读取业务结果，收到 HTTP 202 时查询原执行。</span></li></ol>
     <div class="overview-actions"><button class="button primary" type="button" data-export-openapi>导出 OpenAPI 3.1</button><span class="muted">可直接导入 Postman 或 Apifox 进行接口管理</span></div>
   </section>`
 }
 
 function renderNavigation(doc, logoSvg, brand) {
-  const endpointLinks = doc.rules.map((rule, index) => `<button class="nav-link endpoint-link${index === 0 ? ' active' : ''}" type="button" data-endpoint-nav="${escapeHtml(rule.id || rule.ruleCode)}" title="${escapeHtml(rule.ruleName || rule.ruleCode)} · ${escapeHtml(rule.ruleCode)}"><span class="nav-method">POST</span><span class="nav-endpoint-text"><span>${escapeHtml(rule.ruleName || rule.ruleCode)}</span><code>${escapeHtml(rule.ruleCode)}</code></span></button>`).join('')
+  const endpoints = [...doc.rules.map(rule => ({ value: rule.id || rule.ruleCode, name: rule.ruleName, code: rule.ruleCode })), ...doc.experiments.map(item => ({ value: item.id, name: item.experimentName, code: item.experimentCode }))]
+  const endpointLinks = endpoints.map((item, index) => `<button class="nav-link endpoint-link${index === 0 ? ' active' : ''}" type="button" data-endpoint-nav="${escapeHtml(item.value)}" title="${escapeHtml(item.name || item.code)} · ${escapeHtml(item.code)}"><span class="nav-method">POST</span><span class="nav-endpoint-text"><span>${escapeHtml(item.name || item.code)}</span><code>${escapeHtml(item.code)}</code></span></button>`).join('')
   return `<nav class="nav" aria-label="文档目录">
   <div class="brand">
     <div class="brand-header-title">
@@ -64,8 +67,8 @@ function renderNavigation(doc, logoSvg, brand) {
     </div>
     <div class="brand-project"><strong>${escapeHtml(doc.project.projectName || '未命名项目')}</strong><code>${escapeHtml(doc.project.projectCode || '-')}</code></div>
   </div>
-  <div class="nav-group"><div class="nav-title">接入说明</div><a class="nav-link" href="#overview">基础项目信息</a><a class="nav-link" href="#response-contract">通用响应约定与码表</a><a class="nav-link" href="#authentication">认证鉴权</a><a class="nav-link" href="#java-integration">Java 服务接入</a></div>
-    <div class="nav-group"><div class="nav-title">API 接口 <span>${doc.rules.length}</span></div><label class="nav-search"><span class="sr-only">搜索接口名称或编码</span><input id="endpoint-search" type="search" placeholder="搜索名称或编码" autocomplete="off"></label>${endpointLinks || '<div class="empty">暂无已发布接口</div>'}<p id="endpoint-search-empty" class="muted" hidden>没有匹配的接口</p></div>
+  <div class="nav-group"><div class="nav-title">接入说明</div><a class="nav-link" href="#overview">基础项目信息</a><a class="nav-link" href="#response-contract">通用响应约定与码表</a><a class="nav-link" href="#authentication">认证鉴权</a><a class="nav-link" href="#execution-recovery">执行状态与断点恢复</a><a class="nav-link" href="#java-integration">Java 服务接入</a></div>
+    <div class="nav-group"><div class="nav-title">API 接口 <span>${endpoints.length}</span></div><label class="nav-search"><span class="sr-only">搜索接口名称或编码</span><input id="endpoint-search" type="search" placeholder="搜索名称或编码" autocomplete="off"></label>${endpointLinks || '<div class="empty">暂无已发布接口</div>'}<p id="endpoint-search-empty" class="muted" hidden>没有匹配的接口</p></div>
   </nav>`
 }
 
@@ -152,7 +155,10 @@ export function generateApiDocHtml(doc, options = {}) {
   if (png || imageUrl) logoSvg = `<img src="${escapeHtml(logoSvg)}" alt="${escapeHtml(brand.systemName)}" style="width:40px;height:40px;object-fit:contain">`
   const normalized = normalizeApiDoc(doc)
   const openApiDocument = generateOpenApiDocument(doc)
-  const endpointPanels = normalized.rules.map((rule, index) => renderRuleEndpoint(rule, normalized.authentications, index === 0)).join('')
+  const endpointPanels = [
+    ...normalized.rules.map((rule, index) => renderRuleEndpoint(rule, normalized.authentications, index === 0)),
+    ...normalized.experiments.map((item, index) => renderExperimentEndpoint(item, normalized.authentications, !normalized.rules.length && index === 0))
+  ].join('')
   const resizeHandles = renderResizeHandles()
   const title = `${normalized.project.projectName || normalized.project.projectCode || '项目'} API 文档`
   return `<!DOCTYPE html>
@@ -171,6 +177,7 @@ export function generateApiDocHtml(doc, options = {}) {
     ${resizeHandles.nav}
     <main class="content">
       ${renderOverview(normalized)}
+      ${renderRecovery(normalized.codeMapping)}
       ${renderResponseContract(normalized.codeMapping)}
       ${renderAuthentication(normalized)}
       ${renderJavaIntegration(normalized)}
@@ -183,43 +190,6 @@ export function generateApiDocHtml(doc, options = {}) {
   <script>${renderInteractionScript()}\n${renderCodeEditorScript()}\n${renderOnlineRunnerScript()}\n${renderLayoutScript()}</script>
 </body>
 </html>`
-}
-
-function openApiType(value) {
-  const type = String(value || 'STRING').toUpperCase()
-  if (['INTEGER', 'INT', 'LONG'].includes(type)) return { type: 'integer' }
-  if (['NUMBER', 'DOUBLE', 'FLOAT', 'DECIMAL', 'PROBABILITY'].includes(type)) return { type: 'number' }
-  if (['BOOLEAN', 'BOOL'].includes(type)) return { type: 'boolean' }
-  if (['ARRAY', 'LIST', 'VECTOR'].includes(type)) return { type: 'array', items: {} }
-  if (['OBJECT', 'MAP'].includes(type)) return { type: 'object' }
-  return { type: 'string' }
-}
-
-function setOpenApiField(root, field, prefix = '') {
-  const rawPath = String(field && field.path || '')
-  const path = (prefix && rawPath.startsWith(`${prefix}.`) ? rawPath.slice(prefix.length + 1) : rawPath).split('.').filter(Boolean)
-  if (!path.length) return
-  let current = root
-  path.forEach((part, index) => {
-    if (index === path.length - 1) {
-      current.properties = current.properties || {}
-      const schema = openApiType(field.type)
-      if (field.label || field.description) schema.description = [field.label, field.description].filter(Boolean).join('；')
-      if (field.exampleValue != null && field.exampleValue !== '') schema.example = field.exampleValue
-      current.properties[part] = schema
-      if (field.required) current.required = Array.from(new Set([...(current.required || []), part]))
-      return
-    }
-    current.properties = current.properties || {}
-    current.properties[part] = current.properties[part] || { type: 'object', properties: {} }
-    current = current.properties[part]
-  })
-}
-
-function fieldsSchema(fields, prefix = '') {
-  const schema = { type: 'object', properties: {} }
-  ;(fields || []).forEach(field => setOpenApiField(schema, field, prefix))
-  return schema
 }
 
 function openApiSecurity(authentications) {
@@ -238,9 +208,26 @@ function openApiSecurity(authentications) {
     }
     else if (type === 'BEARER_TOKEN') schemes[name] = { type: 'http', scheme: 'bearer' }
     else schemes[name] = { type: 'apiKey', in: 'header', name: 'X-Rule-Token' }
-    alternatives.push({ [name]: [] })
+    const requirement = { [name]: [] }
+    if (type === 'HMAC_SHA256') {
+      for (const suffix of ['Timestamp', 'Nonce', 'Signature']) {
+        const companion = name + suffix
+        schemes[companion] = { type: 'apiKey', in: 'header', name: 'X-Rule-' + suffix }
+        requirement[companion] = []
+      }
+    }
+    alternatives.push(requirement)
   })
-  return { schemes, alternatives }
+  const base = alternatives.filter((_, index) => authentications[index].authType !== 'BEARER_TOKEN')
+  if (!alternatives.length) {
+    schemes.projectCredential = { type: 'http', scheme: 'bearer', description: '接入需要项目凭据。导出时未启用鉴权，请先联系项目管理员配置。' }
+    alternatives.push({ projectCredential: [] })
+  }
+  if (base.length && !Object.values(schemes).some(scheme => scheme.scheme === 'bearer')) {
+    schemes.temporaryBearer = { type: 'http', scheme: 'bearer' }
+    alternatives.push({ temporaryBearer: [] })
+  }
+  return { schemes, alternatives, base }
 }
 
 /** Generate an importable OpenAPI 3.1 document from the same normalized doc as the HTML export. */
@@ -256,12 +243,13 @@ export function generateOpenApiDocument(doc) {
     paths[path] = { post: {
       operationId: `execute_${rule.ruleCode}`,
       summary: rule.ruleName || rule.ruleCode,
-      description: [rule.description || '执行已发布规则并返回统一平台响应。', schemaNote].filter(Boolean).join('\n\n'),
+      description: [rule.description || '执行已发布规则并返回统一平台响应。', idempotencyDescription(rule), schemaNote].filter(Boolean).join('\n\n'),
       'x-rule-schema-trust': rule.schemaTrust || 'UNKNOWN',
       'x-rule-schema-diagnostics': rule.schemaDiagnostics || [],
       'x-open-api-contract-enabled': false,
       'x-open-api-contract': undefined,
       security: security.alternatives,
+      parameters: [recoveryParameter],
       requestBody: { required: true, content: { 'application/json': { example: { clientAppName: 'api-doc-example', params: buildExampleBody(rule.requestFields).params || {} }, schema: { type: 'object', properties: {
             clientAppName: { type: 'string', description: '调用方应用名' }, traceEnabled: { type: 'boolean', default: true, description: '是否采集表达式追踪；false 不关闭服务端基础日志与审计' }, params: fieldsSchema(rule.requestFields, 'params')
           }, required: ['params'] }
@@ -269,7 +257,7 @@ export function generateOpenApiDocument(doc) {
       responses: {
         '200': { description: '规则执行完成', content: { 'application/json': { schema: {
           type: 'object', properties: { code: { type: 'string', pattern: '^[0-9]{6}$', example: '000000' }, message: { type: 'string', example: '成功' }, detail: { type: ['string', 'null'] }, success: { type: 'boolean' }, traceId: { type: ['string', 'null'] }, data: { type: 'object', properties: {
-            success: { type: 'boolean' }, traceId: { type: 'string' }, revisionId: { type: 'integer' }, artifactDigest: { type: 'string' }, errorMessage: { type: ['string', 'null'] }, executeTimeMs: { type: 'integer', description: '规则执行耗时（毫秒）' }, traces: { type: 'array', items: {} }, result: fieldsSchema(rule.responseFields, 'data.result')
+            ...runtimeSchemas.RuleResult.properties, result: rule.responseFields.length ? fieldsSchema(rule.responseFields, 'data.result') : {}
           } } }
         } } } },
         '400': { description: '请求参数或规则执行失败' }, '401': { description: '鉴权失败' }, '404': { description: '规则不存在' }, '409': { description: '幂等请求冲突或执行中' }, '429': { description: '限流或并发超过限制' }
@@ -290,6 +278,7 @@ export function generateOpenApiDocument(doc) {
       }
       paths[path].post.responses[httpStatus] = {
         description: codes.map(item => item.code + ' ' + item.message).join('；'),
+        headers: apiResponseHeaders(normalized.codeMapping, httpStatus),
         content: { 'application/json': { schema: responseSchema } },
       }
     }
@@ -303,21 +292,28 @@ export function generateOpenApiDocument(doc) {
       openOperation.operationId = `execute_openapi_${rule.ruleCode}`
       openOperation['x-open-api-contract-enabled'] = true
       openOperation['x-open-api-contract'] = rule.openApiContract
-      openOperation.requestBody.content['application/json'].schema = fieldsSchema(rule.openApiRequestFields || [], '')
+      openOperation.parameters = rule.openApiHeaderFields.filter(header => !['authorization','content-type','accept'].includes(header.name.toLowerCase())).map(header => ({
+        in: 'header', name: header.name, required: header.required, schema: { type: 'string' }, example: header.example, description: header.description
+      }))
+      openOperation.requestBody.required = rule.openApiRequestFields.some(field => field.required)
+      openOperation.requestBody.content['application/json'].schema = rule.openApiRequestFields.length ? fieldsSchema(rule.openApiRequestFields) : {}
       openOperation.requestBody.content['application/json'].example = buildExampleBody(rule.openApiRequestFields || [])
       // 开放接口 data 由发布模板决定，不能复用同步执行 DTO 的内部字段。
-      for (const response of Object.values(openOperation.responses)) {
-        response.content['application/json'].schema.properties.data = {}
+      for (const [status, response] of Object.entries(openOperation.responses)) {
+        const template = status === '200' ? rule.openApiContract.successDataTemplate : rule.openApiContract.errorDataTemplate
+        response.content['application/json'].schema.properties.data = template == null ? {} : templateSchema(template, rule.mappedResponseFields)
         delete response.content['application/json'].example
+        response.headers = { ...response.headers, ...Object.fromEntries(['X-Trace-Id', ...(rule.openApiContract.responseHeaderNames || [])].map(name => [name, { schema: { type: 'string' } }])) }
       }
       paths[openPath] = { post: openOperation }
     }
   })
+  addRuntimePaths(paths, normalized, security)
   return {
     openapi: '3.1.0',
     info: { title: normalized.project.projectName || normalized.project.projectCode || '天枢决策 API', description: normalized.project.description || '天枢决策引擎已发布规则接口', version: 'published' },
     servers: [{ url: 'https://api.example.com' }], paths,
-    components: { securitySchemes: security.schemes }
+    components: { securitySchemes: security.schemes, schemas: runtimeSchemas }
   }
 }
 

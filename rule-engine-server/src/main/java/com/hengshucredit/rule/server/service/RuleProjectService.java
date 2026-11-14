@@ -189,6 +189,13 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
     private RuleApiDocScenarioService apiDocScenarioService;
 
     @Resource
+    private RuleExperimentMapper experimentMapper;
+
+    @Resource
+    @org.springframework.context.annotation.Lazy
+    private RuleExperimentService experimentService;
+
+    @Resource
     private RulePublishedMapper publishedMapper;
 
     @Resource
@@ -521,8 +528,37 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
             funcInfos.add(funcInfo);
         }
         doc.setFunctions(funcInfos);
+        doc.setExperiments(exportExperiments(projectId, varIdMap, dataObjectFieldIdMap));
 
         return doc;
+    }
+
+    private List<ApiDocDTO.ExperimentInfo> exportExperiments(Long projectId, Map<Long, ApiDocDTO.VariableInfo> variables,
+                                                            Map<Long, RuleDataObjectField> objectFields) {
+        List<RuleExperiment> experiments = experimentMapper.selectList(new LambdaQueryWrapper<RuleExperiment>()
+                .eq(RuleExperiment::getProjectId, projectId).eq(RuleExperiment::getStatus, 1)
+                .orderByAsc(RuleExperiment::getExperimentCode));
+        List<ApiDocDTO.ExperimentInfo> result = new ArrayList<>();
+        for (RuleExperiment experiment : experiments) {
+            ApiDocDTO.ExperimentInfo info = new ApiDocDTO.ExperimentInfo();
+            info.setExperimentCode(experiment.getExperimentCode());
+            info.setExperimentName(experiment.getExperimentName());
+            info.setDescription(experiment.getDescription());
+            info.setRoutingMode(experiment.getRoutingMode());
+            info.setRoutingErrorPolicy(Objects.requireNonNullElse(experiment.getRoutingErrorPolicy(), "FALLBACK"));
+            try {
+                var fields = experimentService.resolveTestFields(experiment.getId()).getInputFields();
+                info.setInputVariables(fields.stream().filter(field -> isPublishedRequestField(field, variables))
+                        .map(field -> toFrozenInputInfo(field, variables, objectFields)).toList());
+                info.setInputFieldsAvailable(true);
+            } catch (IllegalArgumentException | IllegalStateException unavailable) {
+                // 某组的绑定版本或字段快照不可用时，只标记该实验。
+                log.warn("Experiment {} input fields unavailable for API export", experiment.getId(), unavailable);
+                info.setInputVariables(List.of());
+            }
+            result.add(info);
+        }
+        return result;
     }
 
     private void appendProjectRuleScope(LambdaQueryWrapper<RuleDefinition> wrapper, Long projectId) {
@@ -712,8 +748,9 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
     private ApiDocDTO.VariableInfo toFrozenInputInfo(RuleDefinitionInputField field,
                                                        Map<Long, ApiDocDTO.VariableInfo> variableById,
                                                        Map<Long, RuleDataObjectField> dataObjectFieldById) {
-        ApiDocDTO.VariableInfo base = variableById.get(field.getVarId());
-        RuleDataObjectField dataField = dataObjectFieldById.get(field.getVarId());
+        boolean object = "DATA_OBJECT".equalsIgnoreCase(field.getRefType());
+        ApiDocDTO.VariableInfo base = object ? null : variableById.get(field.getVarId());
+        RuleDataObjectField dataField = object ? dataObjectFieldById.get(field.getVarId()) : null;
         ApiDocDTO.VariableInfo info = copyVariableInfo(base);
         if (dataField != null) {
             info.setVarCode(firstNonBlank(field.getFieldName(), dataField.getVarCode()));
@@ -738,19 +775,15 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
     private ApiDocDTO.VariableInfo toFrozenOutputInfo(RuleDefinitionOutputField field,
                                                         Map<Long, ApiDocDTO.VariableInfo> variableById,
                                                         Map<Long, RuleDataObjectField> dataObjectFieldById) {
-        ApiDocDTO.VariableInfo base = variableById.get(field.getVarId());
-        RuleDataObjectField dataField = dataObjectFieldById.get(field.getVarId());
+        boolean object = "DATA_OBJECT".equalsIgnoreCase(field.getRefType());
+        ApiDocDTO.VariableInfo base = object ? null : variableById.get(field.getVarId());
+        RuleDataObjectField dataField = object ? dataObjectFieldById.get(field.getVarId()) : null;
         ApiDocDTO.VariableInfo info = copyVariableInfo(base);
-        if (dataField != null) {
-            info.setVarCode(firstNonBlank(field.getFieldName(), dataField.getVarCode()));
-            info.setVarLabel(firstNonBlank(field.getFieldLabel(), dataField.getVarLabel()));
-            info.setVarType(firstNonBlank(field.getFieldType(), dataField.getVarType()));
-        } else {
-            info.setVarCode(firstNonBlank(field.getFieldName(), info.getVarCode()));
-            info.setVarLabel(firstNonBlank(field.getFieldLabel(), info.getVarLabel()));
-            info.setVarType(firstNonBlank(field.getFieldType(), info.getVarType()));
-        }
+        info.setVarCode(firstNonBlank(field.getFieldName(), dataField == null ? info.getVarCode() : dataField.getVarCode()));
+        info.setVarLabel(firstNonBlank(field.getFieldLabel(), dataField == null ? info.getVarLabel() : dataField.getVarLabel()));
+        info.setVarType(firstNonBlank(field.getFieldType(), dataField == null ? info.getVarType() : dataField.getVarType()));
         info.setId(field.getVarId());
+        if (object) info.setVarSource("DATA_OBJECT");
         info.setVarTypeLabel(getVarTypeLabel(info.getVarType()));
         info.setScriptName(firstNonBlank(field.getScriptName(), info.getScriptName()));
         info.setRequired(true);
@@ -812,6 +845,20 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
             String normalized = OpenApiContractCodec.validateAndNormalize(configJson);
             com.alibaba.fastjson.JSONObject object = JSON.parseObject(normalized);
             if (object == null) return Collections.emptyMap();
+            if (!object.getBooleanValue("enabled")) {
+                return Map.of("idempotency", object.getJSONObject("idempotency"));
+            }
+            var mappings = object.getJSONArray("requestMappings");
+            if (mappings != null) {
+                for (int i = 0; i < mappings.size(); i++) {
+                    var mapping = mappings.getJSONObject(i);
+                    if ("HEADER".equalsIgnoreCase(mapping.getString("sourceType"))) {
+                        // Header 默认值可能是合作方凭据。对调用方只说明是否可省略。
+                        mapping.put("hasDefault", StringUtils.hasText(mapping.getString("defaultValue")));
+                        mapping.remove("defaultValue");
+                    }
+                }
+            }
             com.alibaba.fastjson.JSONObject headers = object.getJSONObject("responseHeaders");
             if (headers != null) {
                 object.remove("responseHeaders");

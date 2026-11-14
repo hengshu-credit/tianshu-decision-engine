@@ -20,6 +20,7 @@ function endpointValues(endpoint, auth) {
     : ''
   const query = queryName ? `${encodeURIComponent(queryName)}=${encodeURIComponent(EXAMPLE_CREDENTIALS.API_KEY)}` : ''
   return {
+    headers: (endpoint?.headers || []).filter(item => !managedHeaderNames(auth).includes(item.name.toLowerCase())),
     method,
     baseUrl,
     path,
@@ -27,6 +28,13 @@ function endpointValues(endpoint, auth) {
     query,
     url: `${baseUrl}${path}${query ? `?${query}` : ''}`
   }
+}
+
+export function managedHeaderNames(auth) {
+  const names = ['content-type', 'accept']
+  if (auth?.authType === 'HMAC_SHA256') names.push('x-rule-access-key', 'x-rule-timestamp', 'x-rule-nonce', 'x-rule-signature')
+  if (auth?.authType === 'BASIC') names.push('authorization')
+  return names.concat(headerValues(auth).map(item => item.name.toLowerCase()))
 }
 
 function headerValues(auth) {
@@ -46,6 +54,7 @@ function shellQuote(value) {
 function shellSample(endpoint, auth) {
   const value = endpointValues(endpoint, auth)
   const type = String((auth && auth.authType) || 'LEGACY_TOKEN')
+  const extra = value.headers.map(item => `  -H ${shellQuote(`${item.name}: ${item.example}`)} \\\n`).join('')
   if (type === 'HMAC_SHA256') {
     return `BODY=${shellQuote(value.body)}
 TIMESTAMP=$(date +%s)
@@ -56,7 +65,7 @@ SIGNATURE=$(printf '%s' "$CANONICAL" | openssl dgst -sha256 -hmac '${EXAMPLE_CRE
 
 curl -X ${value.method} ${shellQuote(value.url)} \\
   -H 'Content-Type: application/json' \\
-  -H 'X-Rule-Access-Key: ${EXAMPLE_CREDENTIALS.ACCESS_KEY}' \\
+${extra}  -H 'X-Rule-Access-Key: ${EXAMPLE_CREDENTIALS.ACCESS_KEY}' \\
   -H "X-Rule-Timestamp: $TIMESTAMP" \\
   -H "X-Rule-Nonce: $NONCE" \\
   -H "X-Rule-Signature: $SIGNATURE" \\
@@ -68,7 +77,7 @@ curl -X ${value.method} ${shellQuote(value.url)} \\
     : ''
   return `curl -X ${value.method} ${shellQuote(value.url)} \\
   -H 'Content-Type: application/json' \\
-${headers}${basic}  --data-binary ${shellQuote(value.body)}`
+${headers}${extra}${basic}  --data-binary ${shellQuote(value.body)}`
 }
 
 function javaHeaderLines(auth) {
@@ -120,21 +129,29 @@ import java.security.MessageDigest;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
-String body = ${JSON.stringify(value.body)};
+public class ApiExample {
+    public static void main(String[] args) throws Exception {
+${`String body = ${JSON.stringify(value.body)};
 HttpURLConnection connection = (HttpURLConnection) new URL(${JSON.stringify(value.url)}).openConnection();
 connection.setRequestMethod("${value.method}");
 connection.setRequestProperty("Content-Type", "application/json");
 connection.setDoOutput(true);
+${value.headers.map(item => `connection.setRequestProperty(${JSON.stringify(item.name)}, ${JSON.stringify(item.example)});`).join('\n')}
 ${hmacSetup}
 try (OutputStream output = connection.getOutputStream()) {
     output.write(body.getBytes(StandardCharsets.UTF_8));
 }
 int status = connection.getResponseCode();
+System.out.println(status);
 InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
-try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-    for (String line; (line = reader.readLine()) != null;) System.out.println(line);
-}
-${helpers}`
+if (stream != null) {
+    try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+        for (String line; (line = reader.readLine()) != null;) System.out.println(line);
+    }
+}`.split('\n').map(line => '        ' + line).join('\n')}
+    }
+${helpers.split('\n').map(line => line ? '    ' + line : '').join('\n')}
+}`
 }
 
 function pythonSample(endpoint, auth) {
@@ -166,12 +183,18 @@ import hashlib
 import hmac
 import time
 import uuid
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 body = ${JSON.stringify(value.body)}.encode('utf-8')
 ${setup}
+${value.headers.map(item => `headers[${JSON.stringify(item.name)}] = ${JSON.stringify(item.example)}`).join('\n')}
 request = Request(${JSON.stringify(value.url)}, data=body, headers=headers, method='${value.method}')
-with urlopen(request, timeout=30) as response:
+try:
+    response = urlopen(request, timeout=30)
+except HTTPError as error:
+    response = error
+with response:
     print(response.status)
     print(response.read().decode('utf-8'))`
 }
@@ -205,6 +228,7 @@ headers['X-Rule-Signature'] = signature;`
 ${querySetup}
 const headers = { 'Content-Type': 'application/json' };
 ${authSetup}
+${value.headers.map(item => `headers[${JSON.stringify(item.name)}] = ${JSON.stringify(item.example)};`).join('\n')}
 const response = await fetch(url, { method: '${value.method}', headers, body });
 console.log(response.status, await response.text());`
 }
@@ -233,13 +257,10 @@ request.Header.Set("X-Rule-Signature", hex.EncodeToString(mac.Sum(nil)))`
 
 import (
     "bytes"
-    "crypto/hmac"
-    "crypto/sha256"
-    "encoding/hex"
+    ${type === 'HMAC_SHA256' ? '"crypto/hmac"\n    "crypto/sha256"\n    "encoding/hex"\n    "strconv"' : ''}
     "fmt"
     "io"
     "net/http"
-    "strconv"
     "time"
 )
 
@@ -248,6 +269,7 @@ func main() {
     request, _ := http.NewRequest("${value.method}", ${JSON.stringify(value.url)}, bytes.NewBufferString(body))
     request.Header.Set("Content-Type", "application/json")
     ${authSetup}
+    ${value.headers.map(item => `request.Header.Set(${JSON.stringify(item.name)}, ${JSON.stringify(item.example)})`).join('\n    ')}
     response, err := (&http.Client{Timeout: 30 * time.Second}).Do(request)
     if err != nil { panic(err) }
     defer response.Body.Close()

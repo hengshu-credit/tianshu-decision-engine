@@ -7,6 +7,8 @@ import com.hengshucredit.rule.model.dto.ApiDocDTO;
 import com.hengshucredit.rule.model.dto.ProjectAuthDTO;
 import com.hengshucredit.rule.model.entity.RuleApiDocScenario;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
+import com.hengshucredit.rule.model.entity.RuleExperiment;
+import com.hengshucredit.rule.server.mapper.RuleExperimentMapper;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RuleProjectAuth;
 import com.hengshucredit.rule.model.entity.RulePublished;
@@ -228,7 +230,8 @@ public class RuleProjectServiceTest {
         RuleProjectService service = new RuleProjectService();
         Method method = RuleProjectService.class.getDeclaredMethod("openApiContractProjection", String.class);
         method.setAccessible(true);
-        String json = "{\"enabled\":true,\"requestMappings\":[{\"targetRefType\":\"VARIABLE\",\"targetVarId\":7,\"sourceType\":\"BODY\",\"sourcePath\":\"$.age\",\"required\":true,\"targetType\":\"INTEGER\"}],"
+        String json = "{\"enabled\":true,\"requestMappings\":[{\"targetRefType\":\"VARIABLE\",\"targetVarId\":7,\"sourceType\":\"BODY\",\"sourcePath\":\"$.age\",\"required\":true,\"targetType\":\"INTEGER\"},"
+                + "{\"sourceType\":\"HEADER\",\"sourcePath\":\"X-Partner-Key\",\"required\":true,\"targetType\":\"STRING\",\"targetRefType\":\"VARIABLE\",\"targetVarId\":9,\"defaultValue\":\"partner-secret\"}],"
                 + "\"responseMappings\":[{\"sourceRefType\":\"VARIABLE\",\"sourceVarId\":8,\"targetField\":\"decision\"}],"
                 + "\"successDataTemplate\":\"${response}\","
                 + "\"errorDataTemplate\":{\"message\":\"${status.message}\"},\"responseHeaders\":{\"X-Trace\":\"secret-value\"}}";
@@ -240,7 +243,67 @@ public class RuleProjectServiceTest {
         assertTrue(projection.containsKey("responseMappings"));
         assertTrue(projection.containsKey("responseHeaderNames"));
         assertFalse(projection.containsKey("responseHeaders"));
-        assertFalse(JSON.toJSONString(projection).contains("secret-value"));
+        String encoded = JSON.toJSONString(projection);
+        assertFalse(encoded.contains("secret-value"));
+        assertFalse(encoded.contains("partner-secret"));
+        assertTrue(JSON.parseObject(encoded).getJSONArray("requestMappings").getJSONObject(1).getBooleanValue("hasDefault"));
+        Object disabled = method.invoke(service, json.replace("\"enabled\":true", "\"enabled\":false"));
+        assertEquals(java.util.Set.of("idempotency"), ((java.util.Map<?, ?>) disabled).keySet());
+    }
+
+    @Test
+    public void exportExperimentsUsesActiveProjectScopeAndOnlyCallerInputs() {
+        var fixture = exportFixture();
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new com.baomidou.mybatisplus.core.MybatisConfiguration(), ""), RuleExperiment.class);
+        RuleExperiment ready = new RuleExperiment();
+        ready.setId(81L);
+        ready.setExperimentCode("intake");
+        ready.setRoutingErrorPolicy("PAUSE");
+        RuleExperiment unavailable = new RuleExperiment();
+        unavailable.setId(82L);
+        unavailable.setExperimentCode("old_binding");
+        ReflectionTestUtils.setField(fixture.service, "experimentMapper", mapper(RuleExperimentMapper.class,
+                (proxy, method, args) -> {
+                    var query = (LambdaQueryWrapper<?>) args[0];
+                    String sql = query.getSqlSegment();
+                    assertTrue(sql, sql.contains("project_id ="));
+                    assertTrue(sql.contains("status ="));
+                    assertTrue(query.getParamNameValuePairs().containsValue(7L));
+                    assertTrue(query.getParamNameValuePairs().containsValue(1));
+                    return List.of(ready, unavailable);
+                }));
+        RuleVariable caller = new RuleVariable();
+        caller.setId(31L); caller.setVarSource("INPUT"); caller.setVarCode("applyAmount");
+        var other = new com.hengshucredit.rule.model.entity.RuleDataObjectField();
+        other.setId(31L); other.setObjectId(44L); other.setVarCode("unrelated");
+        var unrelated = new com.hengshucredit.rule.model.entity.RuleDataObject();
+        unrelated.setId(44L); unrelated.setObjectCode("OBJECT");
+        ReflectionTestUtils.setField(fixture.service, "dataObjectMapper", listMapper(RuleDataObjectMapper.class, List.of(unrelated)));
+        ReflectionTestUtils.setField(fixture.service, "fieldMapper", listMapper(RuleDataObjectFieldMapper.class, List.of(other)));
+        RuleVariable supplier = new RuleVariable();
+        supplier.setId(32L); supplier.setVarSource("API"); supplier.setVarCode("providerScore");
+        ReflectionTestUtils.setField(fixture.service, "variableMapper", listMapper(RuleVariableMapper.class, List.of(caller, supplier)));
+        ReflectionTestUtils.setField(fixture.service, "experimentService", new RuleExperimentService() {
+            @Override public RuleFieldAnalyzer.ResolvedFields resolveTestFields(Long id) {
+                if (id.equals(unavailable.getId())) throw new IllegalArgumentException("旧版本不可用");
+                var fields = List.of(caller, supplier).stream().map(variable -> {
+                    var field = new RuleDefinitionInputField();
+                    field.setVarId(variable.getId()); field.setRefType("VARIABLE");
+                    field.setScriptName(variable.getVarCode()); field.setFieldType("INTEGER");
+                    return field;
+                }).toList();
+                return new RuleFieldAnalyzer.ResolvedFields(fields, List.of());
+            }
+        });
+        var result = fixture.service.exportApiDoc(7L).getExperiments();
+        assertEquals(2, result.size());
+        assertEquals("PAUSE", result.get(0).getRoutingErrorPolicy());
+        assertTrue(result.get(0).isInputFieldsAvailable());
+        assertEquals(List.of("applyAmount"), result.get(0).getInputVariables().stream().map(ApiDocDTO.VariableInfo::getScriptName).toList());
+        assertEquals("INPUT", result.get(0).getInputVariables().get(0).getVarSource());
+        assertEquals("FALLBACK", result.get(1).getRoutingErrorPolicy());
+        assertFalse(result.get(1).isInputFieldsAvailable());
+        assertTrue(result.get(1).getInputVariables().isEmpty());
     }
 
     private ExportFixture exportFixture() {
@@ -294,6 +357,8 @@ public class RuleProjectServiceTest {
         ReflectionTestUtils.setField(service, "contentMapper", listMapper(RuleDefinitionContentMapper.class, Collections.emptyList()));
         ReflectionTestUtils.setField(service, "inputFieldMapper", listMapper(RuleDefinitionInputFieldMapper.class, Collections.emptyList()));
         ReflectionTestUtils.setField(service, "outputFieldMapper", listMapper(RuleDefinitionOutputFieldMapper.class, Collections.emptyList()));
+        ReflectionTestUtils.setField(service, "experimentMapper", listMapper(
+                RuleExperimentMapper.class, List.of()));
         ReflectionTestUtils.setField(service, "functionMapper", listMapper(RuleFunctionMapper.class, Collections.emptyList()));
         ReflectionTestUtils.setField(service, "ruleModelVarParser", new RuleModelVarParser());
 

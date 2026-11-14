@@ -22,6 +22,19 @@ describe('API 文档五语言代码示例', () => {
     expect(samples.java).not.toContain('HttpClient.newHttpClient')
   })
 
+  test.each(['BASIC', 'HMAC_SHA256', 'API_KEY'])('%s 的五种开放契约示例均保留必需的调用头', authType => {
+    const headers = [{ name: 'X-Auth-Code', example: '<AUTH_CODE>' }, { name: 'X-Channel', example: '<HEADER_VALUE>' }]
+    const samples = generateCodeSamples({ ...endpoint, headers }, { authType, placement: 'HEADER', parameterName: 'X-Partner-Key' })
+    expect(Object.keys(samples)).toEqual(['shell', 'java', 'python', 'javascript', 'go'])
+    for (const sample of Object.values(samples)) {
+      expect(sample).toContain('X-Auth-Code')
+      expect(sample).toContain('<AUTH_CODE>')
+      expect(sample).toContain('X-Channel')
+    }
+    expect(samples.java).toContain('public static void main(String[] args)')
+    expect(samples.go.includes('"crypto/hmac"')).toBe(authType === 'HMAC_SHA256')
+  })
+
   test.each([
     ['LEGACY_TOKEN', 'X-Rule-Token', '<PROJECT_TOKEN>'],
     ['API_KEY', 'X-Partner-Key', '<API_KEY>'],
