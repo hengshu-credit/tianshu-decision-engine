@@ -268,6 +268,34 @@ proxy_set_header Host $host;
 
 Server 执行请求使用项目调用凭据；SDK runtime 入口使用独立的 `SDK_ACCESS_TOKEN`。MySQL、Redis、Kafka 是 TCP 服务，不能通过 NPM 的普通 Proxy Host 代理；它们的访问范围由现有 Ubuntu 防火墙、云安全组和 Compose 端口绑定控制。Kafka 默认外部调试端口为 `9092`，生产环境应使用 SASL_SSL/TLS。
 
+### 项目鉴权日志的客户端 IP
+
+`rule_auth_access_log.client_ip` 记录发起本次项目 API 调用的一方。浏览器直接调用时通常是用户出口 IP；SDK 在容器里主动同步规则、上报日志时，容器地址或其 NAT 出口就是实际调用方。
+
+直连 web 的部署可以留空 `WEB_TRUSTED_PROXY`。经 NPM 的部署，在生效的 `config/.env.server`（源码部署为 `.env.server`）设置以下两项。地址仅为示例。配置前经 NPM 发一次请求，按路径和时间查看天枢 web 访问日志中的连接来源，确认该地址专属于 NPM 后填入。
+
+```dotenv
+WEB_TRUSTED_PROXY=192.0.2.10
+WEB_REAL_IP_HEADER=X-Real-IP
+```
+
+NPM 应覆盖所选地址头。若上游维护的是 `X-Forwarded-For` 链，则将 `WEB_REAL_IP_HEADER` 改为 `X-Forwarded-For`，web 从右往左跳过受信代理。可信范围可填写单个 IP 或仅由受控代理使用的 CIDR。若 NPM 和普通调用方经 NAT 后共用一个源地址，应先为代理提供可区分的入口。若 NPM 自己看到的也是网关地址，需从更外层保留客户端来源。
+
+已有安装的日常更新会保留外层 `docker/`。请从新版合并当前 Compose 的 **web.environment 和 default.conf 模板挂载目标**，以及 `docker/nginx/default.conf`、`docker/nginx/proxy.conf` 的对应改动，再重建 web。以下以标准分离部署为例，在安装根目录执行，项目名和 Compose 文件沿用现场值。
+
+```bash
+docker compose --project-name tianshu-server --env-file config/.env.server -f docker/docker-compose.server.yml up -d --no-deps --force-recreate --wait web
+docker compose --project-name tianshu-server --env-file config/.env.server -f docker/docker-compose.server.yml exec -T web nginx -t
+```
+
+通过实际入口发一次项目 API 请求，附上唯一的 `X-Request-Id`，用同一个值核对新记录。已有行的原始来源只能与当时保留的代理日志关联确认。
+
+```sql
+SELECT request_id, request_uri, client_ip, create_time
+FROM rule_auth_access_log
+WHERE request_id = '替换为本次请求的标识';
+```
+
 ### 服务器重启自动拉起
 
 Compose 已配置 `restart: unless-stopped`，Docker 重启时会恢复未手工停止的容器，无需新增 systemd 包装服务。

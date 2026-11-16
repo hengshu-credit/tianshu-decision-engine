@@ -169,6 +169,11 @@ services:
     expose: ["7071"]
 
   web:
+    environment:
+      # unix: 仅匹配 Unix 套接字，本服务的两个 TCP 入口默认按直连来源记录。
+      WEB_TRUSTED_PROXY: "${WEB_TRUSTED_PROXY:-unix:}"
+      WEB_REAL_IP_HEADER: "${WEB_REAL_IP_HEADER:-X-Real-IP}"
+      NGINX_ENVSUBST_FILTER: "^WEB_(TRUSTED_PROXY|REAL_IP_HEADER)$"
     image: ${NGINX_IMAGE:-nginx:1.29.1-alpine}
     cpus: "${WEB_CPU_LIMIT:-0.05}"
     mem_limit: "${WEB_MEMORY_LIMIT:-256m}"
@@ -191,7 +196,7 @@ services:
           create_host_path: false
       - type: bind
         source: ./nginx/default.conf
-        target: /etc/nginx/conf.d/default.conf
+        target: /etc/nginx/templates/default.conf.template
         read_only: true
         bind:
           create_host_path: false
