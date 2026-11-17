@@ -147,7 +147,7 @@ async function main() {
     '部署入口：python3 deploy.py --target 原安装目录；详细说明见 README-DEPLOY.md。',
     '目录布局：外层 config/docker 管理生效配置和共享服务，deploy-prod/current 为当前应用，previous 保留上一版。',
     '旧 deploy-prod 首次使用 --adopt-layout 整理；外层原 env 仅为备份，不参与启动。普通更新不重启共享基础设施。',
-    '数据库迁移：独立目录 migrations/；按 README.md 选择尚未执行的适用脚本，在停止应用后、新版启动前执行。'
+    '数据库迁移：server 启动时按包内 schema.sql 比对、升级和复核实际表结构；过程见 [SchemaUpgrade] 日志。历史回填等显式迁移按 migrations/README.md 在停应用、备份后执行。'
   ].join('\n') + '\n')
   const sums = []
   for (const file of listFiles(stageRoot)) sums.push(`${await sha256(file)}  ${path.relative(stageRoot, file).split(path.sep).join('/')}`)

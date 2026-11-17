@@ -971,7 +971,7 @@ CREATE TABLE IF NOT EXISTS `rule_list_library` (
   KEY `idx_list_project_id` (`project_id`),
   KEY `idx_list_type_status` (`list_type`, `status`),
   CONSTRAINT `fk_list_library_project_ref` FOREIGN KEY (`project_ref_id`) REFERENCES `rule_project` (`id`) ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单库配置表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='名单库配置表';
 
 CREATE TABLE IF NOT EXISTS `rule_list_record` (
   `id`             BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -993,7 +993,7 @@ CREATE TABLE IF NOT EXISTS `rule_list_record` (
   KEY `idx_list_record_effective_lookup` (`list_id`, `status`, `effective_time`, `expire_time`),
   KEY `idx_list_record_effective` (`effective_time`, `expire_time`),
   CONSTRAINT `fk_list_record_list` FOREIGN KEY (`list_id`) REFERENCES `rule_list_library` (`id`) ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单当前记录表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='名单当前记录表';
 
 CREATE TABLE IF NOT EXISTS `rule_list_action_receipt` (
   `task_id` VARCHAR(64) NOT NULL COMMENT '名单动作任务唯一标识，用于幂等去重',
@@ -1007,7 +1007,7 @@ CREATE TABLE IF NOT EXISTS `rule_list_action_receipt` (
   `changed_count` INT NOT NULL DEFAULT 0 COMMENT '已实际变更的名单记录数量',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
   PRIMARY KEY (`task_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='异步名单动作幂等回执';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='异步名单动作幂等回执';
 
 CREATE TABLE IF NOT EXISTS `rule_list_record_log` (
   `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
@@ -1035,7 +1035,7 @@ CREATE TABLE IF NOT EXISTS `rule_list_record_log` (
   KEY `idx_list_log_content` (`list_id`, `item_type`, `item_content`),
   KEY `idx_list_log_task_trace` (`task_id`, `root_trace_id`, `create_time`),
   KEY `idx_list_log_time` (`create_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单变更日志表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='名单变更日志表';
 
 CREATE TABLE IF NOT EXISTS `rule_list_change_batch` (
   `id`                  BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -1061,7 +1061,7 @@ CREATE TABLE IF NOT EXISTS `rule_list_change_batch` (
   KEY `idx_list_change_batch_approval` (`approval_request_id`),
   CONSTRAINT `fk_list_change_batch_list` FOREIGN KEY (`list_id`) REFERENCES `rule_list_library` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_list_change_batch_approval_request` FOREIGN KEY (`approval_request_id`) REFERENCES `governance_approval_request` (`id`) ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单变更暂存批次';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='名单变更暂存批次';
 
 CREATE TABLE IF NOT EXISTS `rule_list_change_item` (
   `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -1085,7 +1085,7 @@ CREATE TABLE IF NOT EXISTS `rule_list_change_item` (
   KEY `idx_list_change_item_batch_status` (`batch_id`, `validation_status`),
   KEY `idx_list_change_item_target` (`target_record_id`),
   CONSTRAINT `fk_list_change_item_batch` FOREIGN KEY (`batch_id`) REFERENCES `rule_list_change_batch` (`id`) ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单变更暂存明细';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='名单变更暂存明细';
 
 CREATE TABLE IF NOT EXISTS `rule_function` (
   `id`            BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -1611,7 +1611,7 @@ CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
   KEY `idx_runtime_trace` (`trace_id`, `rule_trace_id`),
   KEY `idx_runtime_call_id` (`call_id`),
   KEY `idx_runtime_log_success` (`success`, `create_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='运行时调用诊断日志表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='运行时调用诊断日志表';
 
 CREATE TABLE IF NOT EXISTS `rule_experiment` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -1636,7 +1636,7 @@ CREATE TABLE IF NOT EXISTS `rule_experiment` (
   KEY `idx_experiment_project` (`project_id`),
   KEY `idx_experiment_status` (`status`),
   CONSTRAINT `fk_experiment_project_ref` FOREIGN KEY (`project_ref_id`) REFERENCES `rule_project` (`id`) ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验定义表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='分流实验定义表';
 
 CREATE TABLE IF NOT EXISTS `rule_experiment_group` (
   `version_mode`          VARCHAR(16) DEFAULT 'LATEST' COMMENT '规则版本选择：LATEST=最新发布版本，FIXED=指定业务版本',
@@ -1663,7 +1663,7 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_group` (
   KEY `idx_experiment_group_type` (`experiment_id`, `group_type`, `status`),
   CONSTRAINT `fk_experiment_group_experiment` FOREIGN KEY (`experiment_id`) REFERENCES `rule_experiment` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_experiment_group_rule` FOREIGN KEY (`rule_id`) REFERENCES `rule_definition` (`id`) ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验组表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='分流实验组表';
 
 CREATE TABLE IF NOT EXISTS `rule_experiment_execution_log` (
   `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
@@ -1696,7 +1696,7 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_execution_log` (
   KEY `idx_exp_trace` (`experiment_trace_id`, `child_trace_id`),
   KEY `idx_exp_root_trace` (`root_trace_id`, `create_time`),
   KEY `idx_exp_log_create` (`create_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验执行明细表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='分流实验执行明细表';
 
 CREATE TABLE IF NOT EXISTS `rule_experiment_execution_state` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键标识',
@@ -2336,7 +2336,7 @@ SELECT 1, 0, 'GLOBAL', 'DECISION_REJECT', '拒绝', 'DECISION_REJECT', 'NUMBER',
 ON DUPLICATE KEY UPDATE `id` = `id`;
 -- 决策结果系统常量结束。
 
--- 旧库缺少逻辑视图依赖字段时先跳过视图创建，SchemaSyncService 补齐字段后再创建；新库和已升级库直接创建。
+-- 服务端自动升级先补齐依赖字段，再执行视图语句；以下守卫也兼容手工运行初始化脚本。
 
 SET @schema_log_view_sql = IF(
   (SELECT COUNT(*) FROM information_schema.tables

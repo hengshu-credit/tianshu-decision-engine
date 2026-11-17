@@ -22,6 +22,7 @@ class DeployTest(unittest.TestCase):
         self.release = self.target / 'releases/release'
         self.commands = []
         self.fail_start = False
+        self.schema_logs = ''
         self.fail_migration = False
         self.layout_mode = False
         self.fail_layout_service = None
@@ -73,7 +74,9 @@ class DeployTest(unittest.TestCase):
     def fake_run(self, command, cwd=None, check=True, env=None):
         self.commands.append(command)
         output = ''
-        if command[1:3] == ['ps', '-aq']:
+        if 'logs' in command:
+            output = self.schema_logs
+        elif command[1:3] == ['ps', '-aq']:
             output = ' '.join(str(i) for i in range(len(self.containers)))
         elif command[1] == 'inspect':
             if '{{json .Mounts}}' in command:
@@ -317,7 +320,10 @@ class DeployTest(unittest.TestCase):
         legacy = self.make_nested_legacy()
         self.adopt()
         self.commands.clear()
+        self.schema_logs = 'server-1 | c.h.r.server.schema.MysqlSchemaUpgrade : [SchemaUpgrade] 结构就绪 applied=2\nother private output'
         self.deploy()
+        self.assertEqual([p.read_text(encoding='utf-8').strip() for p in (legacy / 'history').glob('*/schema-upgrade.log')],
+                         [self.schema_logs.splitlines()[0]])
         self.assertEqual((legacy / 'current/server.jar').read_text(), 'new-server')
         self.assertEqual((legacy / 'previous/server.jar').read_text(), 'old-server')
         self.assertEqual((legacy / 'previous/BUILD-INFO.txt').read_text(), 'old-version')
@@ -328,10 +334,14 @@ class DeployTest(unittest.TestCase):
         self.write(self.release / 'docker/runtime/server.jar', 'third-server')
         self.commands.clear()
         self.fail_start = True
+        self.schema_logs = 'server-2 | c.h.r.server.schema.MysqlSchemaUpgrade : [SchemaUpgrade] 升级失败 step=orders\nother private output'
         self.assertRaises(deployment.DeployError, self.deploy)
+        self.assertIn(self.schema_logs.splitlines()[0], [p.read_text(encoding='utf-8').strip()
+                      for p in (legacy / 'history').glob('*/schema-upgrade.log')])
         self.assertEqual((legacy / 'current/server.jar').read_text(), 'new-server')
         self.assertEqual((legacy / 'previous/server.jar').read_text(), 'old-server')
         self.fail_start = False
+        self.schema_logs = 'server-1 | c.h.r.server.schema.MysqlSchemaUpgrade : [SchemaUpgrade] 结构就绪 applied=0'
         self.deploy()
         self.assertEqual((legacy / 'current/server.jar').read_text(), 'third-server')
         self.assertEqual((legacy / 'previous/server.jar').read_text(), 'new-server')

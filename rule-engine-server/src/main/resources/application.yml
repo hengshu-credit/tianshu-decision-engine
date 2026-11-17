@@ -193,3 +193,10 @@ management:
           include: livenessState,ping
         readiness:
           include: readinessState,db,redis,onnxWarmup,ruleWarmup
+
+# 生产 Compose 默认根级别 WARN；升级进度和逐表结果仍应进入 server 标准日志。
+logging:
+  level:
+    com.hengshucredit.rule.server.schema: INFO
+    com.hengshucredit.rule.server.config.SchemaInitializationConfig: INFO
+    com.hengshucredit.rule.server.service.SchemaSyncService: INFO

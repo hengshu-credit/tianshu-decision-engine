@@ -1,47 +1,81 @@
 package com.hengshucredit.rule.server.config;
 
+import com.hengshucredit.rule.server.schema.MysqlSchemaUpgrade;
+import com.hengshucredit.rule.server.service.SchemaSyncService;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.UUID;
 import javax.sql.DataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.sql.init.SqlDataSourceScriptDatabaseInitializer;
 import org.springframework.boot.autoconfigure.sql.init.SqlInitializationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(SqlInitializationProperties.class)
 public class SchemaInitializationConfig {
+    private static final Logger log = LoggerFactory.getLogger(SchemaInitializationConfig.class);
+
     @Bean
-    SqlDataSourceScriptDatabaseInitializer dataSourceScriptDatabaseInitializer(DataSource source, SqlInitializationProperties properties) {
+    public SqlDataSourceScriptDatabaseInitializer dataSourceScriptDatabaseInitializer(DataSource source, SqlInitializationProperties properties) {
         return new SqlDataSourceScriptDatabaseInitializer(source, properties) {
+            private boolean schemaGroupProcessed;
+
             @Override protected void runScripts(Scripts scripts) {
-                // MySQL's IF NOT EXISTS does not serialize concurrent metadata/FK locks taken by different replicas.
                 try (Connection connection = source.getConnection()) {
-                    String lock = "tianshu:schema:" + java.util.UUID.nameUUIDFromBytes(
-                            connection.getCatalog().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    String catalog = connection.getCatalog();
+                    if (catalog == null || catalog.isBlank()) throw new SQLException("未选择目标数据库");
+                    String lock = "tianshu:schema:" + UUID.nameUUIDFromBytes(catalog.getBytes(StandardCharsets.UTF_8));
+                    log.info("[SchemaUpgrade] 等待数据库结构锁 database={}", catalog);
                     try (var acquire = connection.prepareStatement("SELECT GET_LOCK(?,120)")) {
                         acquire.setString(1, lock);
                         try (var result = acquire.executeQuery()) {
-                            if (!result.next() || result.getInt(1) != 1) throw new SQLException("获取数据库结构初始化锁超时");
+                            if (!result.next() || result.getInt(1) != 1) {
+                                log.error("[SchemaUpgrade] 升级失败 database={} 等待结构锁超时或未能取得锁，本实例未执行 DDL", catalog);
+                                throw new SQLException("未能获取数据库结构初始化锁");
+                            }
                         }
                     }
                     try {
-                        var populator = new ResourceDatabasePopulator();
-                        populator.setContinueOnError(scripts.isContinueOnError());
-                        populator.setSeparator(scripts.getSeparator());
-                        if (scripts.getEncoding() != null) populator.setSqlScriptEncoding(scripts.getEncoding().name());
-                        scripts.forEach(populator::addScript);
-                        customize(populator);
-                        populator.populate(connection);
+                        boolean packaged = false;
+                        var canonical = new ClassPathResource("sql/schema.sql");
+                        for (var resource : scripts) {
+                            if (resource.getURL().equals(canonical.getURL())) {
+                                new MysqlSchemaUpgrade(connection).run(resource.getContentAsString(StandardCharsets.UTF_8));
+                                packaged = true;
+                            } else {
+                                var populator = new ResourceDatabasePopulator();
+                                populator.setContinueOnError(scripts.isContinueOnError());
+                                populator.setSeparator(scripts.getSeparator());
+                                if (scripts.getEncoding() != null) populator.setSqlScriptEncoding(scripts.getEncoding().name());
+                                populator.addScript(resource);
+                                customize(populator);
+                                populator.populate(connection);
+                            }
+                        }
+                        if (!schemaGroupProcessed) {
+                            SchemaSyncService.finishInitialization(connection, packaged);
+                            schemaGroupProcessed = true;
+                        }
                         if (!connection.getAutoCommit()) connection.commit();
+                        log.info("[SchemaUpgrade] 初始化完成 database={}", catalog);
                     } finally {
                         try (var release = connection.prepareStatement("SELECT RELEASE_LOCK(?)")) {
                             release.setString(1, lock); release.execute();
                         }
                     }
                 } catch (SQLException error) {
+                    log.error("[SchemaUpgrade] 初始化未完成，停止启动 SQLState={} MySQL={}", error.getSQLState(), error.getErrorCode());
+                    throw new IllegalStateException("数据库结构初始化失败", error);
+                } catch (IOException | RuntimeException error) {
+                    log.error("[SchemaUpgrade] 初始化未完成，停止启动 cause={}", error.getClass().getSimpleName());
                     throw new IllegalStateException("数据库结构初始化失败", error);
                 }
             }

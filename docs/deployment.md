@@ -65,10 +65,10 @@ docker compose --project-name tianshu-server --env-file .env.server -f docker/do
 
 | 参数名 | 默认值 | 含义与具体作用 |
 |---|---:|---|
-| `SPRING_SQL_INIT_MODE` | `always` | Spring 启动时是否执行 `schema.sql`；默认每次启动幂等执行结构、视图和系统常量补齐，已有数据库可临时设为 `never`。 |
+| `SPRING_SQL_INIT_MODE` | `always` | 默认每次启动按包内 schema 比对、升级并复核结构，再初始化视图和常量。`never` 跳过结构升级，要求数据库已准备好。 |
 | `RULE_ENGINE_INITIAL_DATA_ENABLED` | `false` | 可选：设为 `true` 后，server 每次启动按编码执行 `sql/initial-data.sql`，补齐内置变量、数据对象及字段，不覆盖已有修改。 |
 | `RULE_ENGINE_INITIAL_DATA_LOCATION` | `classpath:sql/initial-data.sql` | 可选：替换初始配置脚本位置；自定义脚本也必须按编码幂等插入。 |
-| `SPRING_SQL_INIT_CONTINUE_ON_ERROR` | `false` | 初始化 SQL 出错时是否继续；生产保持 `false`，让错误阻止启动。 |
+| `SPRING_SQL_INIT_CONTINUE_ON_ERROR` | `false` | 仅对自定义初始化脚本有效；包内 schema 升级失败始终阻止启动。 |
 | `RULE_TRACE_MAX_PERSIST_BYTES` | `0` | 单条持久化追踪 JSON 的大小上限，单位是字节（Bytes）；`0` 表示不限制，设置为正数时只截断持久化副本，不截断本次请求结果。 |
 | `SHUTDOWN_TIMEOUT` | `120s` | 容器停止时，Spring 每个生命周期阶段等待正在处理的请求、队列和资源释放的最长时间；可设 `30s`-`300s`。 |
 | `RULE_TRACE_MASK_PATHS` | 空 | 持久化追踪副本的 JSONPath 脱敏列表，逗号分隔，例如 `$.input.idCard,$.items[*].phone`。 |
@@ -183,7 +183,30 @@ mvn spring-boot:run
 
 `MYSQL_HOST`、`MYSQL_PORT` 由 `application.yml` 读取；Redis 已通过 `REDIS_HOST`、`REDIS_PORT` 读取。不要在 `.env.server` 中写入 Spring 风格的 `${NAME:default}` 表达式，因为 Docker Compose 会把它解析为非法模板；`.env.server` 中应使用已经展开的实际值。
 
-`schema.sql` 包含数据库表结构、逻辑执行日志视图和按变量唯一索引幂等补齐的系统常量，不创建用户、不修改 root 账号、也不执行全局授权；服务端启动时默认由 Spring 执行 classpath 中的 `schema.sql`。示例数据脚本 `data-tianshu-example.sql` 放在 `docker/rule-engine-mysql/`，只在需要演示数据时手工导入，不随服务端启动自动导入。项目鉴权、临时 Token 及其访问审计数据与部署主密钥绑定，不写入示例数据；服务启动后会把项目表中的兼容访问令牌按当前主密钥迁移为默认鉴权记录。
+### 数据库结构自动升级
+
+上传更新包后照常更新并重启 server；默认 `SPRING_SQL_INIT_MODE=always`。每个 server 在同一个 MySQL 连接上获取目标库的命名锁（最多等待 120 秒），读取 JAR 内的 `sql/schema.sql`，通过会话临时表让当前 MySQL 归一化列和索引定义，再与当前库实际比较。不创建影子数据库，不扫描或修改业务配置中的外部数据源。即便包版本没变，也会发现后来丢失的列或索引。
+
+| 差异 | 启动行为 |
+|---|---|
+| 缺表、可空列、有默认值的必填列、生成列、索引或外键 | 按依赖顺序补齐。先建表和键，后加外键；唯一键和外键由 MySQL 校验已有数据。 |
+| 同类型变长字段扩容、整数或文本类型安全扩容、兼容的小数精度、默认值、中文注释、可空性、普通或同为唯一的索引定义 | 同表变更合并为一条 ALTER；收紧可空性前检查有没有 NULL。只接受能够无损执行的修改。 |
+| 实际库中多出的表、列和自定义索引 | 保留，不猜测删除或重命名；只有明确识别的历史兼容规则例外。 |
+| 缩短字段、非空表新增无默认值的必填列、不同生成表达式、主键替换、索引唯一性切换、同名外键改义、字符集/显式排序规则或分区布局改变 | 停止启动，日志指出对象。先停写、备份，在维护窗口完成数据核对和显式迁移，再重启。不要通过放宽 MySQL 严格模式、关闭外键检查或设为 `never` 来跳过修复。 |
+
+结构复核通过后才执行系统常量、视图与原有业务初始化。历史回填、清洗、拆表和发布说明明确要求的脚本仍走 [migrations](../rule-engine-server/src/main/resources/sql/migrations/README.md)；不会自动遍历历史脚本。分区表在新库按 schema 创建，已有库核对 HASH 或 RANGE 的键、数量及边界，不自动搬迁审计行。正式升级前应备份数据库：多条 MySQL DDL 不共享一次回滚，失败后已经成功的步骤保留；解决原因再启动会重新比对，只做剩余差异。
+
+运行账号在**当前业务库**除原有表/索引/视图及业务读写权限外，还需 `CREATE TEMPORARY TABLES` 和建立外键的 `REFERENCES`。未显式指定排序规则的表沿用目标库该表已有的同字符集排序规则。使用 MySQL 8 的严格模式、外键/唯一性检查和标准 MySQL 引号转义方式。自定义替换 Spring schema 资源的部署沿用自定义脚本兼容流程；自动比对的权威来源是发布包内的 schema。
+
+在已整理的外层部署目录查看日志（替换为实际 Compose 项目名）：
+
+```bash
+docker compose --project-name tianshu-server --env-file config/.env.server -f docker/docker-compose.server.yml logs --since 30m server | grep -F '[SchemaUpgrade]'
+```
+
+日志包含目标库、schema SHA256、计划数、执行对象/动作、耗时和已成功的 DDL 数。重复启动时 `planned=0`、`applied=0` 表示受管业务表结构已经符合要求。遇到重复键、孤儿外键或权限不足，会给出失败步骤、SQLState 和 MySQL 错误码。通过发布包的 `deploy.py` 更新时，本次健康检查结束后还会将结构日志保存到该次备份目录的 `schema-upgrade.log`，即使启动失败也会尝试归档。升级大表时为 DDL 预留维护窗口和健康检查时间。
+
+`schema.sql` 包含数据库表结构、逻辑执行日志视图和按变量唯一索引幂等补齐的系统常量，不创建用户、不修改 root 账号、也不执行全局授权；服务端默认按上述启动流程使用 classpath 中的 `schema.sql`。示例数据脚本 `data-tianshu-example.sql` 放在 `docker/rule-engine-mysql/`，只在需要演示数据时手工导入，不随服务端启动自动导入。项目鉴权、临时 Token 及其访问审计数据与部署主密钥绑定，不写入示例数据；服务启动后会把项目表中的兼容访问令牌按当前主密钥迁移为默认鉴权记录。
 
 需要手工准备演示环境时，固定顺序为：启动服务自动执行 `schema.sql`，再按需执行 `docker/rule-engine-mysql/data-tianshu-example.sql`。示例数据脚本会写入演示数据，因此不得直接用于需要保留现有业务数据的数据库。
 
@@ -426,7 +449,7 @@ SDK 行为：
 
 计费日汇总按原始币种分别统计。同一天、同一计费对象和鉴权配置下的 CNY 与 USD 会产生两条汇总，金额和调用次数各自对应原始明细。
 
-升级后，服务启动时由 `SchemaSyncService` 为 `rule_billing_summary.uk_billing_summary_key` 加入 `currency`。旧索引通过一条 `ALTER TABLE` 替换，已符合要求的索引保持原状。启动迁移只调整约束，不改写计费明细，也不自动重算历史日期。
+升级后，服务启动时依据包内 schema 为 `rule_billing_summary.uk_billing_summary_key` 加入 `currency`。旧索引通过一条 `ALTER TABLE` 替换，已符合要求的索引保持原状。启动迁移只调整约束，不改写计费明细，也不自动重算历史日期。
 
 如果旧版本曾在同一天更改计费项币种，需要重建受影响日期：
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """发布包的 Linux 应用部署入口；只使用 Python 3 标准库。"""
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -274,6 +275,30 @@ def start_apps(plans, target):
             if service in plan['counts']:
                 args += ['--scale', service + '=' + str(plan['counts'][service])]
             run(plan['args'] + args + [service], cwd=target)
+
+
+def save_schema_upgrade_log(plans, target, backup, since):
+    """Archive this startup's tagged messages only, also when the health check failed."""
+    for plan in plans:
+        if 'server' not in plan['services']:
+            continue
+        try:
+            result = run(plan['args'] + ['logs', '--no-color', '--since', since, 'server'], cwd=target, check=False)
+            lines = [line for line in (result.stdout + '\n' + result.stderr).splitlines() if re.search(
+                r'(?:SchemaInitializationConfig|MysqlSchemaUpgrade|SchemaSyncService)\s+:\s+\[SchemaUpgrade\] ', line)]
+            if result.returncode or not lines:
+                print('本次未取得 server 结构升级日志，请核对初始化模式及容器日志。', file=sys.stderr)
+                continue
+            log = backup / 'schema-upgrade.log'
+            with log.open('a', encoding='utf-8') as out:
+                out.write('\n'.join(lines) + '\n')
+            print('数据库升级记录：' + str(log), flush=True)
+            for line in lines:
+                if '结构就绪' in line or '升级失败' in line:
+                    print(line, flush=True)
+        except (OSError, UnicodeError, subprocess.TimeoutExpired) as error:
+            # 不因日志采集失败遮盖原启动错误，或回退已经健康的应用。
+            print('无法归档数据库升级日志：' + type(error).__name__, file=sys.stderr)
 
 
 def host_path(value):
@@ -584,7 +609,11 @@ def deploy(release, target, command, sdk=False, client_only=False, migration=Non
                 raise
             item['installed'] = True
         print('[4/5] 应用制品已替换，正在重启并等待健康检查。', flush=True)
-        start_apps(plans, target)
+        since = datetime.now(timezone.utc).isoformat()
+        try:
+            start_apps(plans, target)
+        finally:
+            save_schema_upgrade_log(plans, target, backup, since)
         if versioned:
             previous = app_root / 'previous'
             if previous.exists():

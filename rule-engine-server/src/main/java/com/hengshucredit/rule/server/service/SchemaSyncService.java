@@ -9,6 +9,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StreamUtils;
 
 import jakarta.annotation.PostConstruct;
+import java.sql.Connection;
+import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
+import org.springframework.boot.autoconfigure.sql.init.SqlInitializationProperties;
+import org.springframework.boot.sql.init.DatabaseInitializationMode;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -18,16 +23,20 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Regenerates specific DDL blocks in schema.sql to keep them
- * in sync with the current table structure definitions.
+ * Schema inspection and business backfills. The historical DDL adapter is only
+ * used with an operator-supplied init script, never after the packaged schema upgrade.
  */
 @Service
+@DependsOnDatabaseInitialization
 public class SchemaSyncService {
 
     private static final Logger log = LoggerFactory.getLogger(SchemaSyncService.class);
 
     @Autowired(required = false)
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private SqlInitializationProperties initialization;
 
     private static final Pattern TABLE_BLOCK_PATTERN = Pattern.compile(
             "(-- =+\\s*\\n-- \\d+\\. %s -[^\n]*\\n-- =+\\s*\\n)(CREATE TABLE IF NOT EXISTS `%s`[\\s\\S]*?;)",
@@ -62,7 +71,60 @@ public class SchemaSyncService {
             "governance_dependency_snapshot"
     );
 
-    @PostConstruct
+    /** Use the lock owner's physical connection for compatibility DML and external script upgrades. */
+    public static void finishInitialization(Connection connection, boolean packaged) {
+        var service = new SchemaSyncService();
+        service.jdbcTemplate = new JdbcTemplate(new SingleConnectionDataSource(connection, true));
+        if (!packaged) {
+            log.info("[SchemaUpgrade] 使用外部初始化脚本，执行旧版兼容步骤");
+            service.ensureRuntimeSchema();
+            return;
+        }
+        service.initializeBusinessRows();
+    }
+
+    private void initializeBusinessRows() {
+        log.info("[SchemaUpgrade] 核对系统配置及历史业务归属");
+        seedSystemRows();
+        jdbcTemplate.update("UPDATE console_user SET operator_name=username WHERE operator_name IS NULL");
+        backfillSecurityLock();
+        backfillRegistration();
+        backfillLedgerCodes();
+        backfillProjectTraceCodes();
+        ensureRuleGovernanceEffectiveStatus();
+        ensureModelScopeConsistency();
+    }
+
+    private void seedSystemRows() {
+        jdbcTemplate.update("INSERT IGNORE INTO rule_system_setting (id, config_json) VALUES (1, '{}'), (2, '{}'), (3, '{}'), (4, '{}')");
+        jdbcTemplate.update("INSERT IGNORE INTO console_security_lock (id) VALUES (1)");
+    }
+
+    private void backfillSecurityLock() {
+        jdbcTemplate.update("""
+                UPDATE console_security_lock SET initialized_at=CURRENT_TIMESTAMP,
+                administrator_user_id=(SELECT MIN(u.id) FROM console_user u
+                  JOIN console_user_role ur ON ur.user_id=u.id JOIN console_role r ON r.id=ur.role_id
+                  WHERE r.role_code='SUPER_ADMIN')
+                WHERE id=1 AND initialized_at IS NULL AND EXISTS (SELECT 1 FROM console_user)
+                """);
+    }
+
+    private void backfillLedgerCodes() {
+        jdbcTemplate.update("UPDATE rule_ledger_type SET type_code=COALESCE(legacy_code,CONCAT('TYPE_',id)) WHERE type_code IS NULL");
+        jdbcTemplate.update("UPDATE rule_ledger_event SET event_code=CONCAT('EVENT_',id) WHERE event_code IS NULL");
+    }
+
+    private void backfillProjectTraceCodes() {
+        jdbcTemplate.execute("UPDATE `rule_project` SET `trace_scope_code` = LPAD(UPPER(CONV(`id`, 10, 36)), 4, '0') "
+                + "WHERE `trace_scope_code` IS NULL AND `id` BETWEEN 1 AND 1679615");
+    }
+
+    private void backfillRegistration() {
+        jdbcTemplate.update("UPDATE `console_user` SET `registration_status` = 'ACTIVE' WHERE `registration_status` IS NULL OR `registration_status` = ''");
+        jdbcTemplate.update("UPDATE `console_user` SET `registration_source` = 'ADMIN' WHERE `registration_source` IS NULL OR `registration_source` = ''");
+    }
+
     public void ensureRuntimeSchema() {
         if (jdbcTemplate == null) return;
         try {
@@ -83,8 +145,7 @@ public class SchemaSyncService {
             if (!columnHasDataType("rule_system_asset", "content", "longblob")) {
                 jdbcTemplate.execute("ALTER TABLE rule_system_asset MODIFY COLUMN content LONGBLOB NOT NULL COMMENT '品牌图片或字体的二进制内容'");
             }
-            jdbcTemplate.update("INSERT IGNORE INTO rule_system_setting (id, config_json) VALUES (1, '{}'), (2, '{}'), (3, '{}'), (4, '{}')");
-            jdbcTemplate.update("INSERT IGNORE INTO console_security_lock (id) VALUES (1)");
+            seedSystemRows();
             addColumnIfMissing("console_user", "operator_name", "`operator_name` VARCHAR(64) DEFAULT NULL COMMENT '固定业务归属标识，恢复改名时保留'");
             addColumnIfMissing("console_user", "merged_into_user_id", "`merged_into_user_id` BIGINT DEFAULT NULL COMMENT '合并归档后的主账户ID'");
             addColumnIfMissing("console_user", "merged_username", "`merged_username` VARCHAR(64) DEFAULT NULL COMMENT '合并前登录名，保留给主账户恢复使用'");
@@ -94,13 +155,7 @@ public class SchemaSyncService {
             }
             addColumnIfMissing("console_security_lock", "initialized_at", "`initialized_at` DATETIME DEFAULT NULL COMMENT '首次初始化完成时间，不能因重启或账户停用清除'");
             addColumnIfMissing("console_security_lock", "administrator_user_id", "`administrator_user_id` BIGINT DEFAULT NULL COMMENT '超管恢复目标，关联稳定账户ID'");
-            jdbcTemplate.update("""
-                    UPDATE console_security_lock SET initialized_at=CURRENT_TIMESTAMP,
-                    administrator_user_id=(SELECT MIN(u.id) FROM console_user u
-                      JOIN console_user_role ur ON ur.user_id=u.id JOIN console_role r ON r.id=ur.role_id
-                      WHERE r.role_code='SUPER_ADMIN')
-                    WHERE id=1 AND initialized_at IS NULL AND EXISTS (SELECT 1 FROM console_user)
-                    """);
+            backfillSecurityLock();
             addColumnIfMissing("console_account_token", "target_email", "`target_email` VARCHAR(256) DEFAULT NULL COMMENT '签发时的邮箱，防止链接验证其他邮箱'");
             addColumnIfMissing("console_user", "project_access_mode", "`project_access_mode` VARCHAR(16) NOT NULL DEFAULT 'ALL' COMMENT '项目访问模式：ALL=默认不限制项目，SELECTED=仅授权项目'");
             addColumnIfMissing("console_user", "global_editable", "`global_editable` TINYINT NOT NULL DEFAULT 1 COMMENT '是否允许编辑全局内容：0=只读，1=可编辑；仍需对应模块权限'");
@@ -137,7 +192,7 @@ public class SchemaSyncService {
                 addIndexIfMissing("rule_execution_state", "idx_execution_state_expire", "`expire_time`");
             }
         } catch (Exception e) {
-            log.warn("运行时数据库结构同步失败，请检查 sql/schema.sql 与当前数据库: {}", e.getMessage());
+            throw new IllegalStateException("旧版兼容数据库结构同步失败", e);
         }
         // 该视图是日志、看板及历史派生的共同读模型；缺失时不能静默启动为可用状态。
         ensureRuleSetStatisticsSchema();
@@ -153,7 +208,16 @@ public class SchemaSyncService {
         ensureModelVersionExecutionSchema();
         ensureConsoleOperationLogSchema();
         ensureTablesFromSchema(List.of("rule_billing_summary_lock", "rule_billing_summary_task", "offline_transfer_log", "offline_transfer_log_resource"));
-        // 不能在重复超管合并失败后继续启动为可用；只变更账户身份，业务表保持原样。
+    }
+
+    @PostConstruct
+    void consolidateAdministrators() {
+        // 账户安全约束独立于是否启用结构自动升级；使用已有账户安全行锁。
+        if (initialization.getMode() == DatabaseInitializationMode.NEVER) {
+            log.info("[SchemaUpgrade] 初始化模式为 never，跳过表结构比对与更新");
+            // 手工准备结构的部署仍需初始化账户锁和系统配置；此路径不执行 DDL。
+            initializeBusinessRows();
+        }
         jdbcTemplate.execute((org.springframework.jdbc.core.ConnectionCallback<Void>) connection -> {
             com.hengshucredit.rule.server.consolelogin.ConsoleAdministratorMerge.consolidate(connection);
             return null;
@@ -189,8 +253,7 @@ public class SchemaSyncService {
         ensureTablesFromSchema(List.of("rule_ledger_type", "rule_ledger_event"));
         addColumnIfMissing("rule_ledger_type", "type_code", "`type_code` VARCHAR(128) DEFAULT NULL COMMENT '台账类型的业务编码'");
         addColumnIfMissing("rule_ledger_event", "event_code", "`event_code` VARCHAR(128) DEFAULT NULL COMMENT '台账事件的业务编码'");
-        jdbcTemplate.update("UPDATE rule_ledger_type SET type_code=COALESCE(legacy_code,CONCAT('TYPE_',id)) WHERE type_code IS NULL");
-        jdbcTemplate.update("UPDATE rule_ledger_event SET event_code=CONCAT('EVENT_',id) WHERE event_code IS NULL");
+        backfillLedgerCodes();
         if (!indexExists("rule_ledger_type", "uk_ledger_type_code")) jdbcTemplate.execute("ALTER TABLE rule_ledger_type ADD UNIQUE KEY uk_ledger_type_code (type_code)");
         if (!indexExists("rule_ledger_event", "uk_ledger_event_code")) jdbcTemplate.execute("ALTER TABLE rule_ledger_event ADD UNIQUE KEY uk_ledger_event_code (event_code)");
     }
@@ -790,8 +853,7 @@ public class SchemaSyncService {
         if (tableExists("rule_project")) {
             addColumnIfMissing("rule_project", "trace_scope_code",
                     "`trace_scope_code` CHAR(4) DEFAULT NULL COMMENT 'Trace项目作用域码' AFTER `project_code`");
-            jdbcTemplate.execute("UPDATE `rule_project` SET `trace_scope_code` = LPAD(UPPER(CONV(`id`, 10, 36)), 4, '0') "
-                    + "WHERE `trace_scope_code` IS NULL AND `id` BETWEEN 1 AND 1679615");
+            backfillProjectTraceCodes();
             if (!indexExists("rule_project", "uk_project_trace_scope")) {
                 jdbcTemplate.execute("ALTER TABLE `rule_project` ADD UNIQUE KEY `uk_project_trace_scope` (`trace_scope_code`)");
             }
@@ -943,8 +1005,7 @@ public class SchemaSyncService {
                     "`registration_status` VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT '注册状态：PENDING/ACTIVE'");
             addColumnIfMissing("console_user", "registration_source",
                     "`registration_source` VARCHAR(16) NOT NULL DEFAULT 'ADMIN' COMMENT '账户来源：ADMIN/SELF_REGISTER'");
-            jdbcTemplate.update("UPDATE `console_user` SET `registration_status` = 'ACTIVE' WHERE `registration_status` IS NULL OR `registration_status` = ''");
-            jdbcTemplate.update("UPDATE `console_user` SET `registration_source` = 'ADMIN' WHERE `registration_source` IS NULL OR `registration_source` = ''");
+            backfillRegistration();
         }
     }
 

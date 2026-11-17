@@ -66,6 +66,8 @@ python3 -X utf8 "$RELEASE_DIR/deploy.py" --target "$PWD"
 
 脚本读取 `config/` 内的 env 和外层固定 Compose；只替换 `deploy-prod/current` 的 JAR、前端及版本信息，按原项目名和副本数重建应用并等待健康检查。MySQL、Redis、Kafka 不停止、不重建，外层 env 备份不复制、不比对、不覆盖。
 
+普通结构变更随 server 启动自动执行，无需额外调用 MySQL。请核对生效 `config/.env.server` 的 `SPRING_SQL_INIT_MODE=always`、目标库的 `CREATE TEMPORARY TABLES` 权限，并在升级前备份。查看 server 日志中的 `[SchemaUpgrade]` 可见逐表操作、失败位置与耗时；`applied=0` 表示受管表无需变更。部署入口在健康检查成功或失败时，都会尝试将此次 server 的结构日志单独归档到本次 `deploy-prod/history/update-*/schema-upgrade.log`；可直接从终端提示的备份目录查看。涉及数据回填、缩容或分区调整时，仍按本次发布说明使用适用的独立迁移。
+
 **只有新版健康检查通过，更新前的 current 才成为 previous。** 已有 previous 移到本次 `history/update-*/older-previous/`，不自动删除。升级失败会恢复当前应用文件并保持应用停止，previous 保持原样；文件恢复不代表数据库回退。无 SDK 的环境不启动 SDK，已有 SDK 自动更新；独立 SDK 可使用 `--client-only`。
 
 ## 一次性目录整理：适用于现有 deploy-prod 环境
