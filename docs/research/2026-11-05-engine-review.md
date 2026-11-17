@@ -118,7 +118,7 @@ flowchart LR
 
 - 使用用户指定的 Docker Compose 项目 `rule-engine` 的 MySQL/Redis，未重建容器或卷。
 - 本机 WSL relay 占用回环 3306/6379，验证进程改用本机网卡访问 Docker 映射；未停止其他项目的服务。数据库凭据只在验证进程内复用，未输出或写入报告。
-- 旧测试库缺少 `system_constant` 等升级字段。先用 `mysqldump --single-transaction --hex-blob --result-file` 完整备份，再执行仓库已有 `2026-11-04-account-record-isolation.sql`；未按名称回填历史归属。
+- 旧测试库缺少 `system_constant` 等升级字段。先用 `mysqldump --single-transaction --hex-blob --result-file` 完整备份，再执行当时发布的账户记录隔离迁移脚本；未按名称回填历史归属。
 - 本地备份：`.codex-validation/review-20261105/database-before.sql`，2,414,941,921 字节，SHA256 `5D0E33FD170EE24A35D43B04AC05840752C5987FAE6D54487CFED4686EFFCAAB`。这是升级前备份，不代表完成恢复演练。
 - 通过 UI 创建测试规则 `Review_UI_20261105`（综合风控示例项目，未发布），事件和文章 `本地流程验收_20261105`；文章 v1 已发布并出现在时间线。均为本地验收记录，未修改已有业务规则。
 - 用户自行登录；未保存浏览器 cookies 或 storageState。最终台账浏览器 warn/error 为空。

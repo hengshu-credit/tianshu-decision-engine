@@ -150,13 +150,13 @@ MySQL、Redis、Kafka 保持运行。由数据库运维完成可恢复备份；�
 
 **迁移执行点就在这里：旧应用停止且数据库备份完成后、新版应用启动前。** 查看 `$RELEASE_DIR/migrations/README.md`，按当前版本与运维记录逐条选择尚未执行的适用 SQL。没有适用迁移则直接替换制品；不要循环执行全部历史脚本，也不要用 `schema.sql` 或样例数据代替增量迁移。
 
-例如，从尚未完成账户记录隔离的旧库升级时，使用原 MySQL 容器执行独立 SQL：
+例如，旧库已有逻辑执行日志视图和稳定字段快照，需要回填历史统计索引时，使用原 MySQL 容器执行对应脚本。
 
 ```bash
 docker compose --project-name tianshu-server --env-file .env.server \
   -f docker/docker-compose.mysql.yml exec -T mysql sh -ec \
   'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql --default-character-set=utf8mb4 --binary-mode=1 --host=127.0.0.1 --user="$MYSQL_USER" --database="$MYSQL_DATABASE"' \
-  < "$RELEASE_DIR/migrations/2026-11-04-account-record-isolation.sql"
+  < "$RELEASE_DIR/migrations/2026-11-13-history-field-index.sql"
 ```
 
 确认容器内目标库/账号与 server 一致且有 DDL 权限。外部 MySQL 由运维使用受保护的客户端配置执行同一 SQL。每条成功后记录文件名、SHA256、目标库和结果。禁止 `mysql --force`；失败时保持应用停止，检查已完成的 DDL，不继续启动新版。

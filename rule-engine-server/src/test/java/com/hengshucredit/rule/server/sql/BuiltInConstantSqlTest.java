@@ -20,9 +20,8 @@ import java.util.regex.Pattern;
 public class BuiltInConstantSqlTest {
 
     @Test
-    public void defaultSchemaAndUpgradeSeedReadOnlyDecisionConstantsIdempotently() throws Exception {
-        String seed = decisionSeed(readResource("sql/schema.sql"));
-        Assert.assertEquals(seed, decisionSeed(readResource("sql/migrations/2026-11-11-decision-result-system-constants.sql")));
+    public void packagedSchemaSeedsReadOnlyDecisionConstantsIdempotently() throws Exception {
+        String seed = decisionSeed();
         JdbcTemplate jdbc = decisionDatabase();
         executeSeed(jdbc, seed);
         var before = jdbc.queryForList("SELECT * FROM rule_variable ORDER BY sort_order");
@@ -56,8 +55,11 @@ public class BuiltInConstantSqlTest {
         jdbc.update("INSERT INTO rule_variable (id, project_id, scope, var_code, var_label, var_type, var_source, default_value, system_constant, status) "
                 + "VALUES (42, 9, 'PROJECT', 'DECISION_REVIEW', '项目自定义', 'STRING', 'CONSTANT', 'MANUAL', 0, 1)");
         var existing = jdbc.queryForList("SELECT * FROM rule_variable ORDER BY id");
-        executeSeed(jdbc, decisionSeed(readResource("sql/schema.sql")));
-        executeSeed(jdbc, decisionSeed(readResource("sql/migrations/2026-11-11-decision-result-system-constants.sql")));
+        String seed = decisionSeed();
+        executeSeed(jdbc, seed);
+        var afterFirstStartup = jdbc.queryForList("SELECT * FROM rule_variable ORDER BY id");
+        executeSeed(jdbc, seed);
+        Assert.assertEquals(afterFirstStartup, jdbc.queryForList("SELECT * FROM rule_variable ORDER BY id"));
         Assert.assertEquals(existing, jdbc.queryForList("SELECT * FROM rule_variable WHERE id IN (41, 42) ORDER BY id"));
         Assert.assertEquals(Integer.valueOf(4), jdbc.queryForObject("SELECT COUNT(*) FROM rule_variable", Integer.class));
     }
@@ -74,10 +76,11 @@ public class BuiltInConstantSqlTest {
         return jdbc;
     }
 
-    private String decisionSeed(String sql) {
+    private String decisionSeed() throws Exception {
+        String sql = readResource("sql/schema.sql");
         int start = sql.indexOf("-- 决策结果系统常量：");
         int end = sql.indexOf("-- 决策结果系统常量结束。", start);
-        Assert.assertTrue("Decision constants must be in default schema and upgrade script", start >= 0 && end > start);
+        Assert.assertTrue("Decision constants must be in the packaged schema", start >= 0 && end > start);
         return sql.substring(start, end).replace("\r\n", "\n");
     }
 

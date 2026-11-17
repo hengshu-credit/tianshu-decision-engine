@@ -2,7 +2,7 @@
 
 这里是已有数据库的增量迁移脚本唯一维护位置。发布时原样复制到 ZIP 顶层的 `migrations/`，并纳入 `SHA256SUMS.txt`；无需解开 JAR 或从源码中寻找 SQL。本目录不是初始化或样例数据，服务不会自动遍历执行这些文件。常规的新增表/字段/索引、无损扩容、结构注释等随 server 启动对照包内 schema 自动升级；需要依赖数据语义的变更仍在此提供显式迁移。
 
-自动部署时用 `python3 deploy.py --target 原安装目录 --migration-script /绝对路径/本次迁移.sh` 接入已选定的迁移脚本，在停应用后、替换前执行；Bash 脚本须先完成数据库备份，遇错非零退出。可通过 `TIANSHU_RELEASE_DIR` 访问本包 SQL，`TIANSHU_DEPLOY_DIR` 访问外层 `config/` 生效 env 与 `docker/` Compose，`TIANSHU_BACKUP_DIR` 记录备份与迁移结果。不要把所有历史 SQL 自动拼接运行。
+自动部署时在安装目录用 `bash install-release.sh 发布包.zip --migration-script /绝对路径/本次迁移.sh` 接入已选定的迁移脚本，在停应用后、替换前执行；Bash 脚本须先完成数据库备份，遇错非零退出。可通过 `TIANSHU_RELEASE_DIR` 访问本包 SQL，`TIANSHU_DEPLOY_DIR` 访问外层 `config/` 生效 env 与 `docker/` Compose，`TIANSHU_BACKUP_DIR` 记录备份与迁移结果。不要把所有历史 SQL 自动拼接运行。
 
 ## 执行时机
 
@@ -17,23 +17,21 @@
 
 默认部署只更新包并重启 server。名单、实验和调用日志的十张表已将旧版启动程序要求的 `utf8mb4_unicode_ci` 明确写入建表定义。已经由旧版正常启动并完成排序规则修正的库不需要为此执行 SQL；只用旧初始化脚本手工建过表的库，应检查本次日志指出的表。若排序规则不同，先核对现有唯一键在目标排序规则下有无冲突、外键两端以及自定义列的排序要求，再在维护窗口迁移。不要对整个库统一转换字符集。逻辑分区调整、历史数据回填、不能无损推导的改名等仍应交付独立版本脚本，不能仅删除或更名 schema 中的字段来搬移旧数据。
 
-## 已有脚本与顺序
+## 现有脚本及适用条件
 
-历史统计索引升级需在停应用并备份后执行 [2026-11-13-history-field-index.sql](2026-11-13-history-field-index.sql)，从当前逻辑执行日志回填稳定字段索引。旧实验日志缺少完整的字段身份快照，从升级后的正式实验开始计入。
+统一入口 `bash install-release.sh 发布包.zip` 启动 server 后，会按包内 `schema.sql` 补齐账户归属和账单汇总键、操作日志区间、决策结果系统常量、执行队列、断点恢复结构、分流异常策略及名单动作来源。旧记录缺少的归属和来源继续为空，已有实验组保留其外数调用开关。
 
-| 顺序 | 脚本 | 适用范围与执行要求 |
-|---|---|---|
-| 1 | `2026-11-04-account-record-isolation.sql` | 已有业务库升级到账户记录隔离版本前执行；要求旧版业务表已存在。补齐账户归属字段、系统常量标记及账单汇总索引，不推测历史记录归属。 |
-| 2 | `2026-11-04-operation-log-intervals.sql` | 已有 `console_operation_log` 表且尚未完成操作日志区间升级的数据库；可在新版启动前预先执行，保留历史记录及未知离开时间。 |
-| 3 | `2026-11-11-decision-result-system-constants.sql` | 已有库缺少通过、人审、拒绝系统常量时执行；要求 `rule_variable.system_constant` 及唯一索引已存在。幂等插入 `DECISION_PASS=0`、`DECISION_REVIEW=2`、`DECISION_REJECT=1`；保留已有同名字段的 ID、取值和系统标记。执行后核对末尾查询结果，同名业务字段冲突由管理员处理，不自动覆盖。 |
-| 4 | [2026-11-11-er-foreign-keys.sql](2026-11-11-er-foreign-keys.sql) | 为已有业务表增加客户端 ER 图所读取的物理外键。要求 MySQL 8、InnoDB、稳定 ID 列及父表已就绪，操作见下节。 |
-| 5 | [2026-11-11-schema-comments.py](2026-11-11-schema-comments.py) | 已有库的表或字段缺少中文注释，或使用本次修订的四条旧表注释时执行。使用 Python 3.8+ 标准库，按目标库的实际字段定义生成 SQL，步骤见「已有库中文注释」。 |
+| 文件 | 使用场景 |
+|---|---|
+| [历史字段索引回填](2026-11-13-history-field-index.sql) | 已有可读的逻辑执行日志视图、稳定字段快照，且历史索引尚未完整建立时，在停写维护窗口运行。脚本从历史行重建统计汇总，完成后登记就绪版本。缺少字段身份快照的旧实验从升级后的正式执行开始计入。 |
+| [外键整库预检与迁移](2026-11-11-er-foreign-keys.sql) | 需要在添加第一条外键前检查整批旧关系并定位孤立引用时使用，见下节。常规建表与外键补齐由启动升级执行。 |
+| [中文注释工具](2026-11-11-schema-comments.py) | 需要沿用目标库的实际列定义、只补中文注释时使用，见「已有库中文注释」。 |
 
-前两份脚本检查列/索引是否存在，第三份按唯一索引幂等补齐缺失常量；可在确认失败原因已修复后重试。这一性质不代表未来所有迁移都可重复执行。涉及历史数据变更时，须在对应脚本说明前置版本、预检、执行顺序及回退限制。每次新增迁移同步更新本表，已发布脚本不改写，修正另加新脚本。
+新增显式迁移时在此记录前置版本、预检、执行顺序和回退限制。历史版本的手工脚本随对应版本的发布包和 Git 提交保留。
 
 ## 数据库客户端 ER 图
 
-备份并暂停写入后，使用支持 `DELIMITER` 的 MySQL 客户端，在选中的业务库内执行第 4 项。迁移账号需要读取表结构与数据、`ALTER`、`REFERENCES`、`CREATE TEMPORARY TABLES` 及创建、调用、删除迁移过程的权限。保持 `FOREIGN_KEY_CHECKS=1`。旧版本尚未创建的子表由新版服务按 `schema.sql` 首次建表。
+备份并暂停写入后，使用支持 `DELIMITER` 的 MySQL 客户端，在选中的业务库内执行外键预检脚本。迁移账号需要读取表结构与数据、`ALTER`、`REFERENCES`、`CREATE TEMPORARY TABLES` 及创建、调用、删除迁移过程的权限。保持 `FOREIGN_KEY_CHECKS=1`。旧版本尚未创建的子表由新版服务按 `schema.sql` 首次建表。
 
 脚本先检查整份关系清单。如果存在孤立引用，结果会列出子表、子列、父表以及一个失配的 ID，随后在业务表变更前退出。项目引用使用原 `project_id` 核对，允许全局值 0 或 NULL。应按业务记录核实并修复引用；脚本不会删行或猜测归属。同名异义或已有其他外键约束同一列时，先核对该约束定义。DDL 阶段中断后可在修复原因后重跑，已安装的匹配约束会被识别。为大表添加存储生成列、校验外键和建立索引可能重建或锁定表，应在维护窗口为操作预留时间和磁盘空间。
 
@@ -50,9 +48,9 @@ ORDER BY TABLE_NAME, COLUMN_NAME;
 
 ## 已有库中文注释
 
-第 5 项从本次发布的 `docker/runtime/server.jar` 读取权威中文注释，从目标库的结构导出读取实际列定义。同名表、列缺少中文注释时生成 `ALTER TABLE`，并更新四条能精确识别的旧表注释。已有自定义中文说明、额外列及尚未建表的旧版模块均保留原状。
+注释工具从本次发布的 `docker/runtime/server.jar` 读取权威中文注释，从目标库的结构导出读取实际列定义。同名表、列缺少中文注释时生成 `ALTER TABLE`，并更新四条能精确识别的旧表注释。已有自定义中文说明、额外列及尚未建表的旧版模块均保留原状。
 
-停止写入、完成备份及前面适用的结构迁移后，在同一维护窗口导出、生成并执行。MySQL 的 `MODIFY COLUMN` 需要重述列定义，因此每次执行和失败重试都要重新导出目标库。下面的 `RELEASE_DIR` 指向本次解压目录，`BACKUP_DIR` 指向此次维护的备份目录。
+停止写入、完成备份及适用的结构迁移后，在同一维护窗口导出、生成并执行。MySQL 的 `MODIFY COLUMN` 需要重述列定义，因此每次执行和失败重试都要重新导出目标库。下面的 `RELEASE_DIR` 指向本次解压目录，`BACKUP_DIR` 指向此次维护的备份目录。
 
 ```bash
 set -e
@@ -70,23 +68,15 @@ docker compose --project-name tianshu-server --env-file config/.env.server \
 
 执行后重新导出结构并再次生成，输出文件应为零字节。全新库由 `schema.sql` 直接创建，仓库的 `scripts/quality-gates/check-schema-comments.sql` 可在 MySQL 8 中列出缺少中文注释的基本表和字段。
 
-已有库升级断点和空间统计缓存时，在停应用、完成备份后执行 [2026-11-13-history-recovery.sql](2026-11-13-history-recovery.sql)。该迁移沿用现有历史字段索引，增加小时变更版本表及实验原始请求列，允许重复执行。已有实验缺少原请求时仍可携原请求和订单号重试。
-
-升级生产分流异常策略时，执行 [2026-11-14-experiment-routing-error-policy.sql](2026-11-14-experiment-routing-error-policy.sql)。已有配置沿用兜底行为，新增实验可在冠军挑战页选择等待修复或执行兜底组。
-
-升级名单动作执行条件和来源追踪时，执行 [2026-11-14-list-action-source.sql](2026-11-14-list-action-source.sql)，为变更日志和幂等回执补齐来源快照字段。历史记录保留原值。
-
-升级到持久执行队列时，在上述迁移后执行 [2026-11-13-execution-queue.sql](2026-11-13-execution-queue.sql)。旧订单继续按已有断点恢复，后台仅领取新版本登记的待执行订单。
-
 ## 执行示例（Linux）
 
-在已整理的外层固定部署目录执行（旧平铺模式仍使用原 env 路径），`RELEASE_DIR` 是已校验的新包解压目录。以下仅示范执行第一条适用迁移，已执行过则跳过。使用当前 MySQL 所属的 Compose 项目名、文件与配置，不能为迁移新建另一套 MySQL。
+在已整理的外层固定部署目录执行（旧平铺模式仍使用原 env 路径），`RELEASE_DIR` 是已校验的新包解压目录。以下示例适用于已有稳定字段快照、需要回填历史统计索引的库。使用当前 MySQL 所属的 Compose 项目名、文件与配置，不能为迁移新建另一套 MySQL。
 
 ```bash
 docker compose --project-name tianshu-server --env-file config/.env.server \
   -f docker/docker-compose.mysql.yml exec -T mysql sh -ec \
   'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql --default-character-set=utf8mb4 --binary-mode=1 --host=127.0.0.1 --user="$MYSQL_USER" --database="$MYSQL_DATABASE"' \
-  < "$RELEASE_DIR/migrations/2026-11-04-account-record-isolation.sql"
+  < "$RELEASE_DIR/migrations/2026-11-13-history-field-index.sql"
 ```
 
 以上使用现有容器内的应用账号，需有对应 DDL 权限，且其数据库/账号应与 server 的实际连接一致；已有卷的实际账号以数据库为准。外部 MySQL 由运维使用受保护的客户端连接配置执行同一 SQL，勿输出密码或把 `.env.server` 当 Shell 脚本执行。后续适用脚本逐条执行，确认返回码为 0 再继续。

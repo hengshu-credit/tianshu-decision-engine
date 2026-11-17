@@ -146,6 +146,49 @@ public class MysqlSchemaUpgradeIntegrationTest {
         assertEquals("legacy", scalar("SELECT auth_config->>'$.mode' FROM rule_external_datasource WHERE id=7"));
         assertEquals(0, upgrade(schema));
     }
+
+    @Test public void packagedSchemaUpgradesLegacyAuditAndExecutionDataOnRestart() throws Exception {
+        String schema = new ClassPathResource("sql/schema.sql").getContentAsString(StandardCharsets.UTF_8);
+        upgrade(schema);
+        execute("ALTER TABLE rule_billing_summary DROP INDEX uk_billing_summary_key, DROP COLUMN actor_user_id, "
+                + "ADD UNIQUE KEY uk_billing_summary_key(summary_date,project_code,billing_code,billing_target,target_ref_id,auth_id,currency)");
+        execute("ALTER TABLE console_operation_log DROP INDEX idx_console_operation_user_last, DROP COLUMN leave_time");
+        execute("DROP TABLE console_operation_log_lock, rule_history_bucket_revision");
+        execute("ALTER TABLE rule_execution_state DROP COLUMN dispatch_json");
+        execute("ALTER TABLE rule_experiment_execution_state DROP COLUMN dispatch_json, DROP COLUMN request_json");
+        execute("ALTER TABLE rule_experiment DROP COLUMN routing_error_policy");
+        execute("ALTER TABLE rule_experiment_group ALTER COLUMN invoke_external_source SET DEFAULT 1");
+        execute("ALTER TABLE rule_experiment_execution_log MODIFY input_params TEXT, MODIFY output_result TEXT");
+        execute("ALTER TABLE rule_list_action_receipt DROP COLUMN action_source");
+        execute("ALTER TABLE rule_list_record_log DROP COLUMN action_source");
+        execute("DELETE FROM rule_variable WHERE var_code='DECISION_REVIEW'");
+
+        execute("INSERT INTO rule_billing_summary(summary_date,billing_code,billing_target,total_count) VALUES ('2026-11-01','fee','ENGINE',9)");
+        execute("INSERT INTO console_operation_log(username,module,action,request_method,request_path,outcome,result_code,duration_ms) "
+                + "VALUES ('legacy','rule','VIEW','GET','/rule','SUCCESS',200,8)");
+        execute("INSERT INTO rule_experiment(id,experiment_code,experiment_name) VALUES (17,'trial','旧实验')");
+        String newGroup = "INSERT INTO rule_experiment_group(experiment_id,group_code,group_name,group_type,rule_code) ";
+        execute(newGroup + "VALUES (17,'old','旧组','TEST','test_rule')");
+        execute("INSERT INTO rule_experiment_execution_log(experiment_id,experiment_code,stage,input_params,output_result) "
+                + "VALUES (17,'trial','TEST','legacy-input','legacy-output')");
+        execute("INSERT INTO rule_list_action_receipt(task_id,changed_count) VALUES ('legacy-receipt',3)");
+
+        assertTrue(upgrade(schema) > 0);
+        assertEquals("1", scalar("SELECT COUNT(*) FROM rule_billing_summary WHERE total_count=9 AND actor_user_id IS NULL"));
+        assertEquals("actor_user_id,summary_date,project_id,project_code,billing_code,billing_target,target_ref_id,auth_id,currency",
+                scalar("SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index) FROM information_schema.statistics "
+                        + "WHERE table_schema=DATABASE() AND table_name='rule_billing_summary' AND index_name='uk_billing_summary_key' AND non_unique=0"));
+        assertEquals("1", scalar("SELECT COUNT(*) FROM console_operation_log WHERE username='legacy' AND leave_time IS NULL AND duration_ms=8"));
+        assertEquals("FALLBACK", scalar("SELECT routing_error_policy FROM rule_experiment WHERE id=17"));
+        execute(newGroup + "VALUES (17,'new','新组','TEST','test_rule')");
+        assertEquals("1", scalar("SELECT invoke_external_source FROM rule_experiment_group WHERE group_code='old'"));
+        assertEquals("0", scalar("SELECT invoke_external_source FROM rule_experiment_group WHERE group_code='new'"));
+        assertEquals("legacy-input:legacy-output", scalar("SELECT CONCAT(input_params,':',output_result) FROM rule_experiment_execution_log WHERE experiment_id=17"));
+        assertEquals("1", scalar("SELECT COUNT(*) FROM rule_list_action_receipt WHERE task_id='legacy-receipt' AND action_source IS NULL AND changed_count=3"));
+        assertEquals("2", scalar("SELECT default_value FROM rule_variable WHERE scope='GLOBAL' AND project_id=0 AND var_code='DECISION_REVIEW' AND system_constant=1"));
+        assertEquals(0, upgrade(schema));
+    }
+
     private int upgrade(String schema) throws SQLException { return new MysqlSchemaUpgrade(connection).run(schema); }
     private void execute(String sql) throws SQLException { try (var stmt = connection.createStatement()) { stmt.execute(sql); } }
     private String scalar(String sql) throws SQLException {

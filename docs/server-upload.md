@@ -112,7 +112,7 @@ bash install-release.sh "$PKG"
 
 迁移脚本在应用停止后、替换制品前执行，须先完成数据库备份，遇错非零退出；跨机器旧节点须提前停止。Bash 脚本可读取 `TIANSHU_RELEASE_DIR`、`TIANSHU_DEPLOY_DIR`、`TIANSHU_BACKUP_DIR`。共享基础设施在普通更新和 SQL 迁移期间保持运行，不自动遍历历史 SQL。若本包有 `migrations/upgrade.sh` 而没有显式指定迁移脚本，普通更新会在停机前拒绝继续。
 
-目录整理参数 `--adopt-layout` 不能与数据库迁移参数一起使用。历史迁移说明见包内 `migrations/README.md`；例如尚未完成 2026-11-04 账户记录隔离的旧库，升级前需执行对应 SQL。
+目录整理参数 `--adopt-layout` 不能与数据库迁移参数一起使用。适用的历史数据回填脚本和前置条件见包内 `migrations/README.md`。
 
 ## 验收与回退
 
