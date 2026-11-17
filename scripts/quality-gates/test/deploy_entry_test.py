@@ -1,6 +1,8 @@
 import hashlib
 import importlib.util
+import io
 import json
+from contextlib import redirect_stdout
 from pathlib import Path
 import subprocess
 import tempfile
@@ -320,10 +322,20 @@ class DeployTest(unittest.TestCase):
         legacy = self.make_nested_legacy()
         self.adopt()
         self.commands.clear()
-        self.schema_logs = 'server-1 | c.h.r.server.schema.MysqlSchemaUpgrade : [SchemaUpgrade] 结构就绪 applied=2\nother private output'
-        self.deploy()
+        change = 'server-1 | c.h.r.server.schema.MysqlSchemaUpgrade : [SchemaUpgrade] 执行 object=rule_project action=新增索引'
+        summary = 'server-1 | c.h.r.server.schema.MysqlSchemaUpgrade : [SchemaUpgrade] 结构就绪 applied=2'
+        self.schema_logs = '\n'.join([change, summary, 'other private output'])
+        terminal = io.StringIO()
+        with redirect_stdout(terminal):
+            self.deploy()
+        self.assertIn(change, terminal.getvalue())
+        self.assertIn(summary, terminal.getvalue())
+        self.assertNotIn('other private output', terminal.getvalue())
+        read_log = next(i for i, command in enumerate(self.commands) if 'logs' in command)
+        start_web = next(i for i, command in enumerate(self.commands) if 'up' in command and command[-1] == 'web')
+        self.assertLess(read_log, start_web)
         self.assertEqual([p.read_text(encoding='utf-8').strip() for p in (legacy / 'history').glob('*/schema-upgrade.log')],
-                         [self.schema_logs.splitlines()[0]])
+                         [change + '\n' + summary])
         self.assertEqual((legacy / 'current/server.jar').read_text(), 'new-server')
         self.assertEqual((legacy / 'previous/server.jar').read_text(), 'old-server')
         self.assertEqual((legacy / 'previous/BUILD-INFO.txt').read_text(), 'old-version')

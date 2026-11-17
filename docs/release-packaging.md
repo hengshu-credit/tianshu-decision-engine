@@ -32,16 +32,16 @@ node scripts/package-deployment.mjs --with-tests
 
 ## 输出与配置
 
-`output/` 中生成独立的时间戳目录、同名 ZIP 和 `.zip.sha256`。ZIP 包含：
+`output/` 中生成时间戳目录、同名 ZIP、`.zip.sha256` 和可直接上传的 `install-release.sh`。ZIP 包含：
 
 - `docker/runtime/server.jar`、`runtime.jar`（CPU ONNX）及 `dist/`。
 - 应用 Compose、Nginx/Kafka 配置和两份 `.env.*.example` 模板。
-- `deploy.py`：服务器自动校验、备份、更新应用和重启，使用 Python 3.8+ 标准库。
+- `install-release.sh` 是首次部署和更新的统一入口，内容与 ZIP 旁的脚本一致。它校验并解压 ZIP，调用包内的 `deploy.py` 完成部署和健康检查。
 - `README-DEPLOY.md`、完整文档、许可证、`BUILD-INFO.txt`。
 - 独立的 `migrations/`：从后端 SQL 迁移目录原样复制脚本及执行说明，纳入逐文件校验；已有库按适用范围在停止旧应用后、新版启动前单独执行，不自动批量运行历史 SQL。
 - 与构建一致的 `source/` 和逐文件 `SHA256SUMS.txt`。
 
-部署入口文档只使用 ASCII 文件名，中文正文仍按 UTF-8 保存。服务器推荐 `python3 -X utf8 -m zipfile -e 包文件名.zip 新目录` 解压；旧包中文入口文件名乱码时，也可用该方式重新解压恢复原名，不改写或跳过 SHA256 校验。
+部署入口文档只使用 ASCII 文件名，中文正文仍按 UTF-8 保存。统一入口使用 Python 标准库将包解压到独立目录；旧包中文入口文件名乱码时，也可用该方式重新解压恢复原名，不改写或跳过 SHA256 校验。
 
 历史包保留，不自动删除。默认不包含本机 `.env.server` / `.env.client`、数据库数据或日志。构建前冻结源码清单，再使用同一份快照编译和交付。解压后的 `source/` 含 `.release-source-files.json`，无需初始化 Git 即可使用相同入口重建；新增源码文件时需更新该清单，或将源码纳入 Git 管理。
 
@@ -59,4 +59,4 @@ Windows 用 `$env:PACKAGE_CONFIG_DIR = 'E:\private\production'`；macOS/Linux �
 
 ZIP 校验：Windows 用 `Get-FileHash -Algorithm SHA256 包文件名.zip`；macOS 用 `shasum -a 256 -c 包文件名.zip.sha256`；Linux 用 `sha256sum -c 包文件名.zip.sha256`。解压后 Linux 运行 `sha256sum -c SHA256SUMS.txt` 验证包内所有文件。
 
-ZIP 和同名 `.zip.sha256` 上传到 `/root/tianshu-decision-engine`，更新时解压到 `deploy-prod/releases/`；生效配置放在外层 `config/`，共享服务在外层 `docker/`，应用在 `deploy-prod/current/`，成功更新前的应用留在 `previous/`，更早的留在 `history/`，不要把 `/root` 当部署目录。服务器安装、升级、备份、启动、状态和回退按 [部署说明](server-upload.md) 执行，旧 deploy-prod 首次用 `--adopt-layout` 整理，外层原 env 备份保持原样；之后运行 `python3 deploy.py --target 外层安装目录`，自动兼容两种现代 Compose 命令。MySQL、Redis、Kafka 共用长期保留的一套环境；普通更新只替换 JAR 和前端 `dist/`，保留原 env、Compose、Nginx 配置及数据卷，不重新安装基础设施。
+ZIP 和同名 `.zip.sha256` 上传到 `/root/tianshu-decision-engine`，更新时解压到 `deploy-prod/releases/`；生效配置放在外层 `config/`，共享服务在外层 `docker/`，应用在 `deploy-prod/current/`，成功更新前的应用留在 `previous/`，更早的留在 `history/`，不要把 `/root` 当部署目录。服务器安装、升级、备份、启动、状态和回退按 [部署说明](server-upload.md) 执行，旧 deploy-prod 首次用 `--adopt-layout` 整理，外层原 env 备份保持原样；之后在安装目录运行 `bash install-release.sh 发布包.zip`，自动兼容两种现代 Compose 命令。MySQL、Redis、Kafka 共用长期保留的一套环境；普通更新只替换 JAR 和前端 `dist/`，保留原 env、Compose、Nginx 配置及数据卷，不重新安装基础设施。

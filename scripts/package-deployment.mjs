@@ -73,7 +73,7 @@ function listFiles(directory) {
 
 async function main() {
   if (process.argv.includes('--help')) {
-    console.log('用法：node scripts/package-deployment.mjs [--with-tests]\nWindows: ./scripts/package-deployment.ps1\nmacOS/Linux: sh scripts/package-deployment.sh\n需要 Node.js 20.19+、Docker Linux 容器和现代 docker compose 或 docker-compose。\n输出 output/tianshu-deployment-*.zip 及 .zip.sha256；包内 deploy.py 用于服务器一键更新。')
+    console.log('用法：node scripts/package-deployment.mjs [--with-tests]\nWindows: ./scripts/package-deployment.ps1\nmacOS/Linux: sh scripts/package-deployment.sh\n需要 Node.js 20.19+、Docker Linux 容器和现代 docker compose 或 docker-compose。\n输出 output/ 下的 ZIP、.zip.sha256 和统一入口 install-release.sh。')
     return
   }
   for (const arg of process.argv.slice(2)) if (arg !== '--with-tests') throw new Error(`未知参数：${arg}`)
@@ -144,7 +144,7 @@ async function main() {
     `Java 产物：${skipJavaBuild ? '复用已有 target，未重新构建' : '本次 Docker Maven CPU 构建'}`,
     `构建平台：${buildPlatform}`, `构建镜像：${mavenImage} / ${nodeImage}`,
     `配置：${configRoot ? '附带指定配置；升级保留服务器现有配置' : '仅含示例模板，不含本机凭据'}`,
-    '部署入口：python3 deploy.py --target 原安装目录；详细说明见 README-DEPLOY.md。',
+    `首次部署和日常更新在安装目录执行 bash install-release.sh ${archiveName}.zip，详细说明见 README-DEPLOY.md。`,
     '目录布局：外层 config/docker 管理生效配置和共享服务，deploy-prod/current 为当前应用，previous 保留上一版。',
     '旧 deploy-prod 首次使用 --adopt-layout 整理；外层原 env 仅为备份，不参与启动。普通更新不重启共享基础设施。',
     '数据库迁移：server 启动时按包内 schema.sql 比对、升级和复核实际表结构；过程见 [SchemaUpgrade] 日志。历史回填等显式迁移按 migrations/README.md 在停应用、备份后执行。'
@@ -156,7 +156,9 @@ async function main() {
   const archive = path.join(outputRoot, `${archiveName}.zip`)
   const digest = await sha256(archive)
   writeFileSync(`${archive}.sha256`, `${digest}  ${path.basename(archive)}\n`)
-  console.log(`\n部署包：${archive}\nSHA256：${digest}\n校验文件：${archive}.sha256`)
+  const entry = path.join(outputRoot, 'install-release.sh')
+  cpSync(path.join(stageRoot, 'install-release.sh'), entry)
+  console.log(`\n部署包：${archive}\nSHA256：${digest}\n校验文件：${archive}.sha256\n部署与更新入口：${entry}\n在安装目录执行 bash install-release.sh ${path.basename(archive)}`)
 }
 
 if (process.argv[1] && normalizedPath(process.argv[1]) === normalizedPath(fileURLToPath(import.meta.url))) {

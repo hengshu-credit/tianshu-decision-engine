@@ -98,6 +98,7 @@ def verify_release(release):
 def install_app_definitions(release, target, verified, sdk=False):
     """既有安装沿用原部署定义。新安装只补应用 Compose 与 Web 配置。"""
     if (target / LAYOUT_FILE).is_file():
+        print('识别为已有部署，按布局记录更新应用。', flush=True)
         return
     if any((target / name).exists() for name in ('config', 'deploy-prod/current', 'deploy-prod/docker')):
         raise DeployError('请核对旧部署布局，再执行应用安装。')
@@ -108,6 +109,7 @@ def install_app_definitions(release, target, verified, sdk=False):
     # 明确存在应用定义即视为已有安装；不向自定义或 full 拓扑混入新定义。
     if any((target / 'docker' / file).exists() for file in (
             'docker-compose.server.yml', 'docker-compose.full.yml', 'docker-compose.yml')):
+        print('识别为已有部署，使用现有 Compose 更新应用。', flush=True)
         return
     names = ('docker/nginx/default.conf', 'docker/nginx/proxy.conf',
              'docker/docker-compose.client.yml', 'docker/docker-compose.server.yml')
@@ -122,6 +124,7 @@ def install_app_definitions(release, target, verified, sdk=False):
         if not destination.exists():
             destination.parent.mkdir(parents=True, exist_ok=True)
             replace_file(release / name, destination)
+    print('识别为首次部署，应用配置已就绪。', flush=True)
 
 
 def compose_plan(command, target, files, project=None, containers=(), sdk=False, selected=None, env_root=None):
@@ -265,7 +268,7 @@ def stop_apps(plans, target):
                 run(plan['args'] + ['stop', service], cwd=target)
 
 
-def start_apps(plans, target):
+def start_apps(plans, target, backup=None):
     for service in SERVICE_ORDER:
         for plan in plans:
             if service not in plan['services']:
@@ -274,31 +277,35 @@ def start_apps(plans, target):
             args = ['up', '-d', '--no-deps', '--no-build', '--force-recreate', '--wait', '--wait-timeout', '300']
             if service in plan['counts']:
                 args += ['--scale', service + '=' + str(plan['counts'][service])]
-            run(plan['args'] + args + [service], cwd=target)
+            if service == 'server' and backup is not None:
+                since = datetime.now(timezone.utc).isoformat()
+                try:
+                    run(plan['args'] + args + [service], cwd=target)
+                finally:
+                    save_schema_upgrade_log(plan, target, backup, since)
+            else:
+                run(plan['args'] + args + [service], cwd=target)
 
 
-def save_schema_upgrade_log(plans, target, backup, since):
+def save_schema_upgrade_log(plan, target, backup, since):
     """Archive this startup's tagged messages only, also when the health check failed."""
-    for plan in plans:
-        if 'server' not in plan['services']:
-            continue
-        try:
-            result = run(plan['args'] + ['logs', '--no-color', '--since', since, 'server'], cwd=target, check=False)
-            lines = [line for line in (result.stdout + '\n' + result.stderr).splitlines() if re.search(
-                r'(?:SchemaInitializationConfig|MysqlSchemaUpgrade|SchemaSyncService)\s+:\s+\[SchemaUpgrade\] ', line)]
-            if result.returncode or not lines:
-                print('本次未取得 server 结构升级日志，请核对初始化模式及容器日志。', file=sys.stderr)
-                continue
-            log = backup / 'schema-upgrade.log'
-            with log.open('a', encoding='utf-8') as out:
-                out.write('\n'.join(lines) + '\n')
-            print('数据库升级记录：' + str(log), flush=True)
-            for line in lines:
-                if '结构就绪' in line or '升级失败' in line:
-                    print(line, flush=True)
-        except (OSError, UnicodeError, subprocess.TimeoutExpired) as error:
-            # 不因日志采集失败遮盖原启动错误，或回退已经健康的应用。
-            print('无法归档数据库升级日志：' + type(error).__name__, file=sys.stderr)
+    try:
+        result = run(plan['args'] + ['logs', '--no-color', '--since', since, 'server'], cwd=target, check=False)
+        lines = [line for line in (result.stdout + '\n' + result.stderr).splitlines() if re.search(
+            r'(?:SchemaInitializationConfig|MysqlSchemaUpgrade|SchemaSyncService)\s+:\s+\[SchemaUpgrade\] ', line)]
+        if result.returncode or not lines:
+            print('本次未取得 server 结构升级日志，请核对初始化模式及容器日志。', file=sys.stderr)
+            return
+        log = backup / 'schema-upgrade.log'
+        with log.open('a', encoding='utf-8') as out:
+            out.write('\n'.join(lines) + '\n')
+        print('数据库升级记录：' + str(log), flush=True)
+        for line in lines:
+            if any(item in line for item in ('执行 object=', '结构就绪', '升级失败', '初始化未完成')):
+                print(line, flush=True)
+    except (OSError, UnicodeError, subprocess.TimeoutExpired) as error:
+        # 不因日志采集失败遮盖原启动错误，或回退已经健康的应用。
+        print('无法归档数据库升级日志：' + type(error).__name__, file=sys.stderr)
 
 
 def host_path(value):
@@ -609,11 +616,7 @@ def deploy(release, target, command, sdk=False, client_only=False, migration=Non
                 raise
             item['installed'] = True
         print('[4/5] 应用制品已替换，正在重启并等待健康检查。', flush=True)
-        since = datetime.now(timezone.utc).isoformat()
-        try:
-            start_apps(plans, target)
-        finally:
-            save_schema_upgrade_log(plans, target, backup, since)
+        start_apps(plans, target, backup)
         if versioned:
             previous = app_root / 'previous'
             if previous.exists():

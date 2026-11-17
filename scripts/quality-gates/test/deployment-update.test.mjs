@@ -22,18 +22,25 @@ test('归档入口绑定指定 ZIP 的校验值，同一命令可初始化和重
     const entry = path.join(directory, 'install-release.sh')
     writeFileSync(entry, readFileSync(path.join(root, 'scripts/install-release.sh')))
     const archive = path.join(directory, 'release.zip')
-    const probe = "import os,sys; from pathlib import Path; assert os.getenv('RULE_ENGINE_INITIAL_DATA_ENABLED', 'from-env-file') == os.environ['EXPECTED_INITIAL_DATA']; assert os.environ['SPRING_SQL_INIT_MODE']=='always'; assert '--install-app' in sys.argv; Path('result.txt').write_text(str(Path(__file__).parent))"
+    const probe = `import json, os, sys
+from pathlib import Path
+assert os.getenv('RULE_ENGINE_INITIAL_DATA_ENABLED', 'from-env-file') == os.environ['EXPECTED_INITIAL_DATA']
+assert os.environ['SPRING_SQL_INIT_MODE'] == 'always'
+assert sys.argv[1] == '--target' and Path(sys.argv[2]).resolve() == Path.cwd().resolve()
+assert sys.argv[3] == '--install-app'
+Path('result.txt').write_text(json.dumps([str(Path(__file__).resolve().parent.relative_to(Path.cwd().resolve())), sys.argv[4:]]))
+`
     const zip = spawnSync(interpreter, ['-c', 'import sys,zipfile; z=zipfile.ZipFile(sys.argv[1],"w"); z.writestr("deploy.py",sys.argv[2]); z.close()', archive, probe])
     assert.equal(zip.status, 0)
     const digest = createHash('sha256').update(readFileSync(archive)).digest('hex')
     // Git Bash on Windows has python.exe rather than python3.
     if (process.platform === 'win32') writeFileSync(path.join(directory, 'python3'), '#!/bin/sh\nexec python "$@"\n')
     const setup = process.platform === 'win32' ? 'export PATH="$PWD:$PATH"; ' : ''
-    const run = initialData => {
-      const env = { ...process.env, EXPECTED_INITIAL_DATA: initialData ?? 'from-env-file' }
+    const run = (initialData, ...options) => {
+      const env = { ...process.env, SPRING_SQL_INIT_MODE: 'never', EXPECTED_INITIAL_DATA: initialData ?? 'from-env-file' }
       if (initialData === undefined) delete env.RULE_ENGINE_INITIAL_DATA_ENABLED
       else env.RULE_ENGINE_INITIAL_DATA_ENABLED = initialData
-      return spawnSync(bash, ['-c', setup + 'bash install-release.sh release.zip'], { cwd: directory, encoding: 'utf8', env })
+      return spawnSync(bash, ['-c', setup + 'bash install-release.sh release.zip "$@"', 'test', ...options], { cwd: directory, encoding: 'utf8', env })
     }
     for (const contents of [digest + '  other.zip', '0'.repeat(64) + '  release.zip']) {
       writeFileSync(archive + '.sha256', contents + '\n')
@@ -47,6 +54,13 @@ test('归档入口绑定指定 ZIP 的校验值，同一命令可初始化和重
       assert.ok(existsSync(path.join(directory, 'result.txt')))
     }
     assert.equal(readdirSync(path.join(directory, 'releases')).length, 3)
+    writeFileSync(path.join(directory, '.deployment-layout.json'), '{}')
+    const migration = '本次迁移 selected.sh'
+    const result = run(undefined, '--migration-script', migration)
+    assert.equal(result.status, 0, result.stderr)
+    const [location, forwarded] = JSON.parse(readFileSync(path.join(directory, 'result.txt'), 'utf8'))
+    assert.equal(path.dirname(location), path.join('deploy-prod', 'releases'))
+    assert.deepEqual(forwarded, ['--migration-script', migration])
   } finally { rmSync(directory, { recursive: true, force: true }) }
 })
 

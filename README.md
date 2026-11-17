@@ -433,7 +433,7 @@ SDK 本地执行日志默认通过 HTTP 上报；需要 Kafka 时显式启用，
 
 需要在 Docker 内一次生成后端、前端和可上传部署 ZIP 时执行 `node scripts/package-deployment.mjs`。公网部署使用 Nginx Proxy Manager 提供 HTTPS、证书和反向代理；Compose 不修改 Ubuntu 的防火墙和既有端口策略，MySQL、Redis、Kafka 按 `.env.server` 与现有安全组对外提供调试访问。
 
-MySQL、Redis、Kafka 共用长期保留的一套环境。外层 `config/` 放生效配置，`docker/` 管理共享服务，外层原 env 仅作备份。应用放在 `deploy-prod/current/`，更新成功后旧版保存到 `previous/`，更早版本留在 `history/`；新包解压到 `deploy-prod/releases/`。现有旧 deploy-prod 用 `--adopt-layout` 一次性整理，以内层原 env 为准；之后只更新 JAR/前端，不覆盖固定配置或重建基础设施。数据库迁移独立交付在发布包 `migrations/`，按适用范围在停止旧应用并完成备份后、新版启动前执行；推荐使用包内 `python3 deploy.py --target 原安装目录`，自动兼容 `docker compose` / `docker-compose`，完整流程见 [应用更新说明](docs/server-upload.md)。
+MySQL、Redis、Kafka 共用长期保留的一套环境。外层 `config/` 放生效配置，`docker/` 管理共享服务，外层原 env 仅作备份。应用放在 `deploy-prod/current/`，更新成功后旧版保存到 `previous/`，更早版本留在 `history/`；新包解压到 `deploy-prod/releases/`。现有旧 deploy-prod 用 `--adopt-layout` 一次性整理，以内层原 env 为准；之后只更新 JAR/前端，不覆盖固定配置或重建基础设施。数据库迁移独立交付在发布包 `migrations/`，按适用范围在停止旧应用并完成备份后、新版启动前执行；日常更新和首次部署都在安装目录运行 `bash install-release.sh 发布包.zip`，脚本自动识别安装状态，兼容 `docker compose` / `docker-compose`，完整流程见 [应用更新说明](docs/server-upload.md)。
 
 当前发布脚本仍采用停止应用后重启的方式，不承诺不停机。16 GB / 4 核或更高环境的目标架构见 [蓝绿部署设计](docs/blue-green-deployment-design.md)：常驻网关、不可变版本、兼容迁移和受控切流。该文档为待实现方案，不能将现有部署命令当作蓝绿发布。
 

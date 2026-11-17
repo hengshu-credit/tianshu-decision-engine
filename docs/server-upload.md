@@ -37,22 +37,25 @@
 
 Compose 自动兼容现代 `docker compose` 与 `docker-compose`，优先前者；要求支持 `config --format json`、`up --wait`，不支持旧 Python Compose v1。服务器需要 Python 3.8+ 标准库和 Docker，无需 Maven、Node.js 或第三方 Python 包。构建入口见 [跨平台发布构建](release-packaging.md)。
 
-## 日常更新：五行命令
+## 首次部署和日常更新
 
-已建好业务 MySQL 库、Redis 可用时，可以直接使用包内的 `install-release.sh`。将 ZIP、同名 `.zip.sha256` 和入口脚本上传到安装目录。对于平铺安装，先确认根目录原有 `.env.server` 中的 `MYSQL_DATABASE` 指向这次要启动的业务库，MySQL 和 Redis 连接信息正确。已有 SDK 继续使用原 `.env.client`。全新安装需先填写实际 env 和主密钥。
+在安装目录运行同一个 `install-release.sh`。首次将发布包旁的入口脚本、ZIP 和同名 `.zip.sha256` 上传到该目录并准备实际的服务端 env、主密钥和可连接的 MySQL、Redis。安装目录已有当前入口时，以后只需上传新 ZIP 和校验文件，替换命令中的包名即可。
 
 ```bash
 cd /root/tianshu-decision-engine
 bash install-release.sh tianshu-deployment-具体版本.zip
 ```
 
+入口先校验指定 ZIP，再调用这次包内的 `deploy.py`。首次部署补齐应用 Compose 和 Nginx 配置，空库由 server 创建表和系统常量，随后在控制台注册超管。已有安装按原项目名和副本数更新 JAR 与前端。平铺目录读取根目录的有效 env，已整理布局读取 `config/`。可选变量和对象由生效 env 中的 `RULE_ENGINE_INITIAL_DATA_ENABLED` 控制。仍在使用强制关闭该开关的旧版入口时，可用本次随包脚本替换一次。
+
+入口为本次运行启用 `SPRING_SQL_INIT_MODE=always`。server 根据新包中的 `schema.sql` 自动检查目标库。更新前请备份数据库并确认应用账号有 `CREATE TEMPORARY TABLES` 和所需 DDL 权限。server 健康检查结束时，终端显示实际改表对象和结果，`applied=0` 表示受管表已符合要求。完整的 `[SchemaUpgrade]` 日志在终端列出的本次备份目录里，文件名为 `schema-upgrade.log`。平铺安装的备份在 `backups/update-*/`，已整理布局在 `deploy-prod/history/update-*/`。发布说明要求回填历史数据等显式迁移时，在同一命令后追加 `--migration-script /绝对路径/本次迁移.sh`。
+
 经 Nginx Proxy Manager 部署时，首次配置 web 或修复已有鉴权日志的客户端 IP，请同步合并外层 Nginx 与 Compose 的模板挂载改动，设置生效 env 中的 `WEB_TRUSTED_PROXY` 后单独重建 web。具体配置和按请求核对入库地址的步骤见包内 `docker/README.md` 的「项目鉴权日志的客户端 IP」。
 
-首次安装会补齐 server/web 的 Compose 和 Nginx 文件。重建空库时，server 启动后执行 `schema.sql`，创建表和系统常量，随后在控制台注册首个超管。可选初始变量和对象由生效的服务端 env 中的 `RULE_ENGINE_INITIAL_DATA_ENABLED` 控制，默认关闭，开启后只补齐缺失配置。使用过强制关闭该开关的旧版入口时，更新 ZIP 和校验文件的同时替换外层 `install-release.sh`。已存在的安装沿用原 Compose 配置和项目名。部署脚本在本机已有的 MySQL、Redis 等基础设施之上启动应用。
+**只有新版健康检查通过，更新前的 current 才成为 previous。** 已有 previous 移到本次 `history/update-*/older-previous/`，不自动删除。升级失败会恢复当前应用文件并保持应用停止，previous 保持原样；文件恢复不代表数据库回退。已有 SDK 随应用一起更新。独立 SDK 机器使用已解压包的 `deploy.py --client-only`。
 
-后续上传新 ZIP 和对应校验文件，使用同一命令指定新文件名即可。更新会短暂停应用，先备份旧制品，再重建并等待就绪。已有库跨版本升级时，按包内 `migrations/README.md` 判断 SQL，仅在需要时追加 `--migration-script /绝对路径/本次迁移.sh`。空库首次启动直接走建表流程。
-
-ZIP 和同名校验文件上传到外层固定目录。完成下面“一次性目录整理”后，每次更新只需要这五行，替换包文件名即可：
+<details>
+<summary>已整理布局的手工解包步骤，供维护时直接调用包内工具</summary>
 
 ```bash
 cd /root/tianshu-decision-engine &&
@@ -62,28 +65,24 @@ RELEASE_DIR=$(mktemp -d "$PWD/deploy-prod/releases/update-XXXXXXXX") && python3 
 python3 -X utf8 "$RELEASE_DIR/deploy.py" --target "$PWD"
 ```
 
-新包入口文档使用 ASCII 文件名 `README-DEPLOY.md`，正文仍为 UTF-8 中文。推荐按上述命令用 Python 标准库解压，避免解压工具与 locale 对中文文件名处理不一致。旧包若报 `README-部署.md` 缺失或校验失败，先核对 ZIP 的 SHA256，再用上述命令重新解压到新的 releases 子目录；不要覆盖运行目录、手工修改校验清单或跳过校验。
+`README-DEPLOY.md` 的正文使用 UTF-8。每次手工解压使用独立目录，并沿用安装目录中的配置和项目名。
 
-脚本读取 `config/` 内的 env 和外层固定 Compose；只替换 `deploy-prod/current` 的 JAR、前端及版本信息，按原项目名和副本数重建应用并等待健康检查。MySQL、Redis、Kafka 不停止、不重建，外层 env 备份不复制、不比对、不覆盖。
-
-普通结构变更随 server 启动自动执行，无需额外调用 MySQL。请核对生效 `config/.env.server` 的 `SPRING_SQL_INIT_MODE=always`、目标库的 `CREATE TEMPORARY TABLES` 权限，并在升级前备份。查看 server 日志中的 `[SchemaUpgrade]` 可见逐表操作、失败位置与耗时；`applied=0` 表示受管表无需变更。部署入口在健康检查成功或失败时，都会尝试将此次 server 的结构日志单独归档到本次 `deploy-prod/history/update-*/schema-upgrade.log`；可直接从终端提示的备份目录查看。涉及数据回填、缩容或分区调整时，仍按本次发布说明使用适用的独立迁移。
-
-**只有新版健康检查通过，更新前的 current 才成为 previous。** 已有 previous 移到本次 `history/update-*/older-previous/`，不自动删除。升级失败会恢复当前应用文件并保持应用停止，previous 保持原样；文件恢复不代表数据库回退。无 SDK 的环境不启动 SDK，已有 SDK 自动更新；独立 SDK 可使用 `--client-only`。
+</details>
 
 ## 一次性目录整理：适用于现有 deploy-prod 环境
 
 这一步只搬迁目录并恢复原来正在部署的版本，**不安装新 JAR，不运行本次包的数据库迁移脚本**。不要把外层备份 env 复制进 deploy-prod。
 
-先按上面的前四行校验并解压新包，然后把第五行改为：
+展开上面的手工解包步骤，在同一 Bash 会话执行前四行，再运行目录整理命令。
 
 ```bash
 python3 -X utf8 "$RELEASE_DIR/deploy.py" --target "$PWD" --adopt-layout
 ```
 
-整理完成后，在同一会话执行普通更新即可：
+整理完成后，在同一安装目录运行统一入口。
 
 ```bash
-python3 -X utf8 "$RELEASE_DIR/deploy.py" --target "$PWD"
+bash install-release.sh "$PKG"
 ```
 
 整理过程会：
@@ -101,11 +100,11 @@ python3 -X utf8 "$RELEASE_DIR/deploy.py" --target "$PWD"
 
 整理后正常运维用 `--env-file config/.env.server` 或 `config/.env.client`，Compose 文件仍在 `docker/`。项目名以原部署和 `.deployment-layout.json` 记录为准，不能改名，也不要执行 `down -v` 或 `--remove-orphans`。Nginx Proxy Manager、HTTPS、端口和主密钥保持原值。
 
-本页的自动整理面向已经运行的旧 deploy-prod 安装。尚未安装的机器先按 [Docker 部署说明](../docker/README.md) 初始化原部署；旧平铺安装的手工操作与回退保留在 [旧版维护说明](deployment-flat-legacy.md)，不要把其中根目录 env 的用法套到整理后的环境。
+目录整理适用于已经运行的旧 deploy-prod 安装。新机器按 [Docker 部署说明](../docker/README.md) 准备共享服务后，直接使用本页的统一入口。旧平铺安装的手工操作与回退见 [旧版维护说明](deployment-flat-legacy.md)。
 
 ## 有数据库迁移的应用更新
 
-迁移 SQL 单独位于本次包的 `migrations/`。选择适用且尚未执行的脚本后，在普通更新的最后一行追加：
+迁移 SQL 单独位于本次包的 `migrations/`。选择适用且尚未执行的脚本后，在 `bash install-release.sh 发布包.zip` 后追加以下参数。
 
 ```text
 --migration-script /root/tianshu-decision-engine/本次迁移.sh

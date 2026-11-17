@@ -3,7 +3,7 @@
 set -euo pipefail
 
 if (( $# < 1 )); then
-  echo '用法：bash install-release.sh 发布包.zip [--sdk] [--migration-script 迁移脚本]' >&2
+  echo '在安装目录执行 bash install-release.sh 发布包.zip [--sdk] [--migration-script 迁移脚本]，首次部署和更新使用同一命令。' >&2
   exit 2
 fi
 
@@ -37,8 +37,9 @@ fi
 mkdir -p -- "$releases"
 release=$(mktemp -d "$releases/update-XXXXXXXX")
 python3 -X utf8 -m zipfile -e "$archive" "$release"
-echo "已校验并解压至 $release"
+printf '已校验并解压至 %s\n' "$release"
+echo '正在识别安装环境。server 启动时会按本包 schema.sql 核对数据库并输出结构升级记录。'
 
-# 空库由应用 schema.sql 初始化，更新时同一脚本按已有结构幂等运行。
+# 两条路径都由已校验的新包执行，启动升级开关只作用于本次部署。
 export SPRING_SQL_INIT_MODE=always
 exec python3 -X utf8 "$release/deploy.py" --target "$target" --install-app "$@"
