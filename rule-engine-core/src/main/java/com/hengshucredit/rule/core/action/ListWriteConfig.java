@@ -44,7 +44,7 @@ public final class ListWriteConfig {
         if ("PERMANENT".equals(mode)) return;
         if ("DURATION".equals(mode)) {
             positiveLong(config.get("duration"), "名单有效时长");
-            if (!Set.of("MINUTES", "HOURS", "DAYS").contains(config.getString("durationUnit") == null ? "" : config.getString("durationUnit"))) throw new IllegalArgumentException("名单有效时长单位无效");
+            if (!Set.of("MINUTES", "HOURS", "DAYS", "MONTHS").contains(config.getString("durationUnit") == null ? "" : config.getString("durationUnit"))) throw new IllegalArgumentException("名单有效时长单位无效");
         } else if ("UNTIL".equals(mode)) {
             try { LocalDateTime.parse(config.getString("expireTime").replace(' ', 'T')); }
             catch (RuntimeException error) { throw new IllegalArgumentException("请设置有效的名单失效时间", error); }
@@ -66,6 +66,7 @@ public final class ListWriteConfig {
         return switch (config.getString("durationUnit")) {
             case "MINUTES" -> now.plusMinutes(duration);
             case "HOURS" -> now.plusHours(duration);
+            case "MONTHS" -> now.plusMonths(duration);
             default -> now.plusDays(duration);
         };
     }

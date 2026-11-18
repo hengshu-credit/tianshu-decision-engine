@@ -59,7 +59,7 @@ const enums = {
   operator: { '>=': '大于或等于', '<=': '小于或等于', '>': '大于', '<': '小于', '==': '等于', '!=': '不等于' },
   operation: { MERGE: '加入并合并有效期', OVERWRITE: '加入并覆盖有效期', ADD_ONLY: '仅新增', REMOVE: '从名单剔除' },
   expiryMode: { DURATION: '执行后指定时长', UNTIL: '指定失效时间', PERMANENT: '永久有效' },
-  durationUnit: { DAYS: '天', HOURS: '小时', MINUTES: '分钟' },
+  durationUnit: { DAYS: '天', MONTHS: '自然月', HOURS: '小时', MINUTES: '分钟' },
 }
 const technical = new Set(['id', 'createTime', 'updateTime', 'createBy', 'updateBy', 'lockVersion', 'compiledScript', 'publishedVersion', 'currentVersion', 'businessVersion', 'definitionId'])
 const structured = new Set(Object.keys(labels).filter(key => /Json$|Config$|Mapping$|Schema$/.test(key)).concat(['sourceContent', 'modelJson']))

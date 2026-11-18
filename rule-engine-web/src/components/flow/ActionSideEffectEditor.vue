@@ -26,7 +26,12 @@
         </el-select>
         <div v-if="block.expiryMode === 'DURATION'" class="duration-row">
           <el-input-number v-model="block.duration" aria-label="有效时长" :min="1" :precision="0" @change="editor.sync()" />
-          <el-select v-model="block.durationUnit" aria-label="时长单位" @change="editor.sync()"><el-option label="天" value="DAYS" /><el-option label="小时" value="HOURS" /><el-option label="分钟" value="MINUTES" /></el-select>
+          <el-select v-model="block.durationUnit" aria-label="时长单位" @change="editor.sync()">
+            <el-option label="天" value="DAYS" />
+            <el-option label="自然月" value="MONTHS" />
+            <el-option label="小时" value="HOURS" />
+            <el-option label="分钟" value="MINUTES" />
+          </el-select>
         </div>
         <el-date-picker v-if="block.expiryMode === 'UNTIL'" v-model="block.expireTime" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" placeholder="选择失效时间" @change="editor.sync()" />
       </template>

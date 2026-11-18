@@ -3,11 +3,13 @@ package com.hengshucredit.rule.core.compiler;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.hengshucredit.rule.core.action.ListWriteConfig;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import org.junit.After;
 import org.junit.Test;
 
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -54,6 +56,18 @@ public class RuleSideEffectActionTest {
 
     @Test public void externalCallRequiresStableApiIdentity() {
         assertThrows(IllegalArgumentException.class, () -> ActionDataCompiler.compile(JSON.parseArray("[{\"type\":\"api-call\",\"apiCode\":\"credit\"}]")));
+    }
+
+    @Test public void listExpiryAddsCalendarMonthsToTheOriginalActionTime() {
+        var config = JSON.parseObject("{\"listIds\":[1],\"operation\":\"MERGE\",\"itemTypes\":[\"MOBILE\"],\"expiryMode\":\"DURATION\",\"durationUnit\":\"MONTHS\",\"duration\":12}");
+        ListWriteConfig.validate(config);
+        assertEquals(LocalDateTime.parse("2025-02-28T23:59:59"),
+                ListWriteConfig.expiresAt(config, LocalDateTime.parse("2024-02-29T23:59:59")));
+        config.put("duration", 30);
+        assertEquals(LocalDateTime.parse("2024-02-29T23:59:59"),
+                ListWriteConfig.expiresAt(config, LocalDateTime.parse("2021-08-31T23:59:59")));
+        assertEquals(LocalDateTime.parse("2029-05-30T23:59:59"),
+                ListWriteConfig.expiresAt(config, LocalDateTime.parse("2026-11-30T23:59:59")));
     }
 
     @Test public void externalFieldsUseResultPathWithoutDisplayPrefix() {
