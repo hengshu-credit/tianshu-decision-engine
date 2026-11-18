@@ -55,13 +55,30 @@ public final class DerivedVariableConfig {
         return fields;
     }
 
+    static List<Long> selectedRuleIds(JSONObject config) {
+        Object raw = config.get("ruleIds");
+        require(raw instanceof List<?> ids && !ids.isEmpty(), "请至少选择一条统计规则");
+        var ids = new java.util.TreeSet<Long>();
+        for (Object entry : (List<?>) raw) {
+            try {
+                long id = Long.parseLong(String.valueOf(entry));
+                require(id > 0, "统计规则 ID 必须为正整数");
+                ids.add(id);
+            } catch (NumberFormatException invalid) {
+                throw new IllegalArgumentException("统计规则 ID 必须为正整数", invalid);
+            }
+        }
+        return List.copyOf(ids);
+    }
+
     public static void validate(JSONObject config) {
         require(config != null, "请配置衍生逻辑");
         if ("EXPRESSION".equals(config.getString("mode"))) {
             require(config.getJSONObject("expression") != null, "请配置衍生表达式");
         } else {
             require("HISTORY".equals(config.getString("mode")), "衍生方式必须是表达式或历史进件统计");
-            require(config.getString("scope") != null && Set.of("RULE", "PROJECT", "GLOBAL").contains(config.getString("scope")), "请选择历史统计范围");
+            require(config.getString("scope") != null && Set.of("RULE", "SELECTED_RULES", "PROJECT", "GLOBAL").contains(config.getString("scope")), "请选择历史统计范围");
+            if ("SELECTED_RULES".equals(config.getString("scope"))) selectedRuleIds(config);
             Long window = config.getLong("window");
             require(window != null && window > 0 && window <= 36500, "时间窗口必须是 1 至 36500 的整数");
             require(new java.math.BigDecimal(String.valueOf(config.get("window"))).compareTo(java.math.BigDecimal.valueOf(window)) == 0,

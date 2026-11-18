@@ -137,6 +137,10 @@ public class DerivedVariableService {
         Map<String, Object> root = context.rootRule();
         Long projectId = root.get("projectId") instanceof Number n ? n.longValue() : variable.getProjectId();
         Long rootRuleId = root.get("id") instanceof Number n ? n.longValue() : null;
+        String scopeType = config.getString("scope");
+        HistoryScope scope = "SELECTED_RULES".equals(scopeType)
+                ? new HistoryScope(scopeType, projectId, DerivedVariableConfig.selectedRuleIds(config))
+                : HistoryScope.current(scopeType, projectId, rootRuleId);
         LocalDateTime before = root.isEmpty() ? LocalDateTime.now() : context.startedAt();
         long window = config.getLongValue("window");
         LocalDateTime from = historyStart(before, window, config.getString("windowUnit"));
@@ -158,7 +162,7 @@ public class DerivedVariableService {
                     HistoryQuery.number(input.apply(geo.getJSONObject("longitude"))).doubleValue(),
                     HistoryQuery.number(input.apply(geo.getJSONObject("latitude"))).doubleValue(),
                     HistoryQuery.number(input.apply(geo.getJSONObject("radiusMeters"))).doubleValue());
-            var selection = new IndexedHistoryCount.Selection(config.getString("scope"), projectId, rootRuleId, before, region);
+            var selection = new IndexedHistoryCount.Selection(scope, before, region);
             java.util.function.Supplier<Map<LocalDateTime, IndexedHistoryCount.Count>> load =
                     () -> indexedCounts.count(selection, countWindows(config, options, before, from));
             var count = options == null || options.getInvocationCache() == null ? load.get().get(from)
@@ -169,8 +173,8 @@ public class DerivedVariableService {
             }
         }
         List<HistoryQuery.Row> history = executionLogHistoryRepository == null
-                ? historyRepository.query(config.getString("scope"), projectId, rootRuleId, from, before)
-                : executionLogHistoryRepository.query(config.getString("scope"), projectId, rootRuleId,
+                ? historyRepository.query(scope, from, before)
+                : executionLogHistoryRepository.query(scope,
                 from, before, historyKeys, definitions == null ? Map.of() : definitions);
         Object result = HistoryQuery.evaluate(config, history, input, invoker);
         recordHistory(variable, config, from, before, history.size());
@@ -200,7 +204,8 @@ public class DerivedVariableService {
                 var candidate = JSON.parseObject(other.getSourceConfig());
                 if (candidate != null && simpleCount(candidate)
                         && java.util.Objects.equals(candidate.get("geo"),config.get("geo"))
-                        && java.util.Objects.equals(candidate.get("scope"),config.get("scope"))) {
+                        && java.util.Objects.equals(candidate.get("scope"),config.get("scope"))
+                        && java.util.Objects.equals(candidate.get("ruleIds"), config.get("ruleIds"))) {
                     windows.add(historyStart(before,candidate.getLongValue("window"),candidate.getString("windowUnit")));
                     if (windows.size() == 32) break;
                 }

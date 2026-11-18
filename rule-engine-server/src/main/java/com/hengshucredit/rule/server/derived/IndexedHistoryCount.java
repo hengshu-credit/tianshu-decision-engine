@@ -24,9 +24,13 @@ public class IndexedHistoryCount {
             new GeoFunctions().distanceMeters(longitude, latitude, longitude, latitude);
         }
     }
-    public record Selection(String scope, Long projectId, Long ruleId, LocalDateTime before, Region region) {}
+    public record Selection(HistoryScope scope, LocalDateTime before, Region region) {
+        Selection(String type, Long projectId, Long ruleId, LocalDateTime before, Region region) {
+            this(HistoryScope.current(type, projectId, ruleId), before, region);
+        }
+    }
     public record Count(long candidates, long matched) {}
-    private record SpatialWindow(String scope, Long projectId, Long ruleId, Region region, LocalDateTime hour, long revision) {}
+    private record SpatialWindow(HistoryScope scope, Region region, LocalDateTime hour, long revision) {}
     private final com.github.benmanes.caffeine.cache.Cache<SpatialWindow, Long> closedWindows =
             com.github.benmanes.caffeine.cache.Caffeine.newBuilder().maximumSize(32768).build();
     private final JdbcTemplate jdbc;
@@ -48,7 +52,7 @@ public class IndexedHistoryCount {
     @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
     public Map<LocalDateTime, Count> count(Selection selection, List<LocalDateTime> windows) {
         if (windows.isEmpty()) throw new IllegalArgumentException("缺少历史统计窗口");
-        if (permissions != null) permissions.requireHistoryScope(selection.scope(), selection.projectId());
+        if (permissions != null) permissions.requireHistoryScope(selection.scope().type(), selection.scope().projectId());
         if (jdbc.queryForList("SELECT format_version FROM rule_history_index_state WHERE format_version=1", Integer.class).isEmpty())
             return Map.of();
         var earliest = windows.stream().min(LocalDateTime::compareTo).orElseThrow();
@@ -73,9 +77,9 @@ public class IndexedHistoryCount {
             args.add(region.latitudeKey());
             args.add(region.longitudeKey());
             StringBuilder filter = new StringBuilder(" AND lat.field_key=? AND f.field_key=? ");
-            if (!"GLOBAL".equals(selection.scope())) {
+            if (selection.scope().projectId() != null) {
                 filter.append(" AND lat.execution_project_id=? ");
-                args.add(selection.projectId());
+                args.add(selection.scope().projectId());
             }
             double angle = (region.radius() + 0.000001) / GeoFunctions.EARTH_RADIUS_METERS;
             double latitudeSpan = Math.toDegrees(angle) + 1e-8;
@@ -102,7 +106,7 @@ public class IndexedHistoryCount {
             args.add(region.latitude());
             args.add(region.longitude());
             args.add(region.radius() + 0.000001);
-            String table = spatialTable("GLOBAL".equals(selection.scope()) ? "idx_history_value_global" : "idx_history_value_project");
+            String table = spatialTable(selection.scope().projectId() == null ? "idx_history_value_global" : "idx_history_value_project");
             matches = useBuckets ? spatialTotals(table, selection, windows, filter.toString(), args)
                     : totals(table, "f", selection, earliest, windows, filter.toString(), args);
             if (needsRecovery) {
@@ -137,16 +141,15 @@ public class IndexedHistoryCount {
                 + "LEFT JOIN rule_history_bucket_revision v ON v.execution_project_id=b.execution_project_id AND v.root_rule_id=b.root_rule_id "
                 + "AND v.bucket_hour=b.bucket_hour WHERE b.field_key='' AND b.bucket_hour>=? AND b.bucket_hour<?");
         List<Object> params = new ArrayList<>(List.of(Timestamp.valueOf(earliest), Timestamp.valueOf(end)));
-        if (!"GLOBAL".equals(selection.scope())) { sql.append(" AND b.execution_project_id=?"); params.add(selection.projectId()); }
-        if ("RULE".equals(selection.scope())) { sql.append(" AND b.root_rule_id=?"); params.add(selection.ruleId()); }
+        if (selection.scope().projectId() != null) { sql.append(" AND b.execution_project_id=?"); params.add(selection.scope().projectId()); }
+        selection.scope().appendRuleFilter(sql, params, "b.root_rule_id");
         jdbc.query(sql + " GROUP BY b.bucket_hour", rs -> {
             versions.put(rs.getTimestamp(1).toLocalDateTime(), rs.getLong(2));
         }, params.toArray());
         var hourly = new java.util.TreeMap<LocalDateTime, Long>();
         var missing = new java.util.TreeMap<LocalDateTime, SpatialWindow>();
         versions.forEach((hour, revision) -> {
-            var key = new SpatialWindow(selection.scope(), "GLOBAL".equals(selection.scope()) ? null : selection.projectId(),
-                    "RULE".equals(selection.scope()) ? selection.ruleId() : null, selection.region(), hour, revision);
+            var key = new SpatialWindow(selection.scope(), selection.region(), hour, revision);
             Long cached = closedWindows.getIfPresent(key);
             if (cached == null) missing.put(hour, key); else hourly.put(hour, cached);
         });
@@ -177,7 +180,7 @@ public class IndexedHistoryCount {
             long count = tail;
             count += hourly.tailMap(firstHour).values().stream().mapToLong(Long::longValue).sum();
             if (!start.equals(floor)) {
-                var boundary = new Selection(selection.scope(), selection.projectId(), selection.ruleId(), firstHour, selection.region());
+                var boundary = new Selection(selection.scope(), firstHour, selection.region());
                 count += totals(partialTable, "f", boundary, start, List.of(start), filter, args)[0];
             }
             result[i] = count;
@@ -188,11 +191,11 @@ public class IndexedHistoryCount {
     private Map<LocalDateTime, Long> spatialHours(String table, Selection selection, LocalDateTime from, LocalDateTime until,
                                                   String filter, List<Object> arguments) {
         StringBuilder sql = new StringBuilder("SELECT DATE_FORMAT(f.started_at,'%Y-%m-%d %H:00:00') AS h,COUNT(*) FROM ").append(table);
-        if ("RULE".equals(selection.scope())) sql.append(" JOIN rule_history_root r ON r.log_id=f.log_id AND r.log_create_time=f.log_create_time");
+        if (selection.scope().filtersRules()) sql.append(" JOIN rule_history_root r ON r.log_id=f.log_id AND r.log_create_time=f.log_create_time");
         sql.append(" WHERE f.started_at>=? AND f.started_at<?");
         List<Object> params = new ArrayList<>(List.of(Timestamp.valueOf(from), Timestamp.valueOf(until)));
-        if (!"GLOBAL".equals(selection.scope())) { sql.append(" AND f.execution_project_id=?"); params.add(selection.projectId()); }
-        if ("RULE".equals(selection.scope())) { sql.append(" AND r.root_rule_id=?"); params.add(selection.ruleId()); }
+        if (selection.scope().projectId() != null) { sql.append(" AND f.execution_project_id=?"); params.add(selection.scope().projectId()); }
+        selection.scope().appendRuleFilter(sql, params, "r.root_rule_id");
         sql.append(filter).append(" GROUP BY h"); params.addAll(arguments);
         Map<LocalDateTime, Long> rows = new LinkedHashMap<>();
         jdbc.query(connection -> {
@@ -229,14 +232,10 @@ public class IndexedHistoryCount {
             params.add(region.longitudeKey());
             params.add(region.latitudeKey());
         }
-        if (!"GLOBAL".equals(selection.scope())) {
-            DerivedVariableConfig.require(selection.projectId() != null && selection.projectId() > 0, "当前项目范围需要明确执行项目");
-            sql.append(" AND execution_project_id=?"); params.add(selection.projectId());
+        if (selection.scope().projectId() != null) {
+            sql.append(" AND execution_project_id=?"); params.add(selection.scope().projectId());
         }
-        if ("RULE".equals(selection.scope())) {
-            DerivedVariableConfig.require(selection.ruleId() != null, "当前规则范围需要根规则标识");
-            sql.append(" AND root_rule_id=?"); params.add(selection.ruleId());
-        }
+        selection.scope().appendRuleFilter(sql, params, "root_rule_id");
         long[] result = counts(sql.toString(), params, windows.size());
         // Rows in either partial hour are counted exactly, with the same cutoff as the full hours.
         String table = region == null ? "rule_history_root r" : "rule_history_numeric_field f";
@@ -254,7 +253,7 @@ public class IndexedHistoryCount {
                 result[i] += endCount;
                 var floor = start.truncatedTo(java.time.temporal.ChronoUnit.HOURS);
                 if (!start.equals(floor)) {
-                    var boundary = new Selection(selection.scope(), selection.projectId(), selection.ruleId(), floor.plusHours(1), region);
+                    var boundary = new Selection(selection.scope(), floor.plusHours(1), region);
                     result[i] += totals(table, alias, boundary, start, List.of(start), valid, keys)[0];
                 }
             }
@@ -272,17 +271,13 @@ public class IndexedHistoryCount {
             params.add(Timestamp.valueOf(from));
         }
         sql.append(" FROM ").append(table);
-        if ("RULE".equals(selection.scope()) && "f".equals(alias))
+        if (selection.scope().filtersRules() && "f".equals(alias))
             sql.append(" JOIN rule_history_root r ON r.log_id=f.log_id AND r.log_create_time=f.log_create_time");
         sql.append(" WHERE ").append(alias).append(".started_at>=? AND ").append(alias).append(".started_at<?");
         params.add(Timestamp.valueOf(earliest)); params.add(Timestamp.valueOf(selection.before()));
-        if (!"GLOBAL".equals(selection.scope())) {
-            DerivedVariableConfig.require(selection.projectId() != null && selection.projectId() > 0,"当前项目范围需要明确执行项目");
-            sql.append(" AND ").append(alias).append(".execution_project_id=?"); params.add(selection.projectId());
-            if ("RULE".equals(selection.scope())) {
-                DerivedVariableConfig.require(selection.ruleId() != null,"当前规则范围需要从规则测试或正式规则入口执行");
-                sql.append(" AND r.root_rule_id=?"); params.add(selection.ruleId());
-            }
+        if (selection.scope().projectId() != null) {
+            sql.append(" AND ").append(alias).append(".execution_project_id=?"); params.add(selection.scope().projectId());
+            selection.scope().appendRuleFilter(sql, params, "r.root_rule_id");
         }
         if (permissions != null) sql.append(" AND (").append(permissions.predicate(
                 "r".equals(alias) ? "rule_history_root" : "rule_history_numeric_field", alias)).append(')');

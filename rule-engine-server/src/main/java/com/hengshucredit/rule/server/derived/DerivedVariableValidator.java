@@ -20,6 +20,8 @@ import static com.hengshucredit.rule.server.derived.DerivedVariableConfig.*;
 
 @Service
 public class DerivedVariableValidator {
+    @Resource @org.springframework.context.annotation.Lazy
+    private com.hengshucredit.rule.server.service.RuleDefinitionService rules;
     @Resource private com.hengshucredit.rule.server.service.ResourceVersionService resourceVersions;
     private static final Set<String> NUMERIC = Set.of("NUMBER", "DOUBLE", "INTEGER", "LONG", "FLOAT", "DECIMAL", "PROBABILITY", "INT");
     @Resource
@@ -49,6 +51,12 @@ public class DerivedVariableValidator {
         }
         checkCycle(variable, variable, new HashSet<>());
         if (!"HISTORY".equals(config.getString("mode"))) return;
+        if ("SELECTED_RULES".equals(config.getString("scope"))) {
+            for (Long id : selectedRuleIds(config)) {
+                require(rules.isDefinitionAvailableInProject(id, variable.getProjectId()),
+                        "所选统计规则不存在或不在当前可用范围: " + id);
+            }
+        }
         for (JSONObject historical : DerivedVariableConfig.historicalFields(config)) {
             require(canReadHistory(historical, new HashSet<>()),
                     "历史统计默认仅支持请求入参和三方结果；请先为所选字段开启结果记录: " + fieldKey(historical));

@@ -11,6 +11,25 @@ import java.util.function.Supplier;
 import static org.junit.Assert.*;
 
 public class IndexedHistoryCountTest {
+    @Test public void selectedRuleSetIsRequiredAndCanonicalInSqlAndCacheKeys() {
+        var config = com.alibaba.fastjson.JSON.parseObject("""
+                {"mode":"HISTORY","scope":"SELECTED_RULES","window":7,"windowUnit":"DAY","aggregate":"COUNT"}
+                """);
+        assertThrows(IllegalArgumentException.class, () -> DerivedVariableConfig.validate(config));
+        config.put("ruleIds", java.util.List.of(7, "9007199254740993", 7));
+        DerivedVariableConfig.validate(config);
+        var scope = new HistoryScope("SELECTED_RULES", 2L, DerivedVariableConfig.selectedRuleIds(config));
+        var sql = new StringBuilder();
+        var args = new java.util.ArrayList<>();
+        scope.appendRuleFilter(sql, args, "r.root_rule_id");
+        assertEquals(" AND r.root_rule_id IN (?,?)", sql.toString());
+        assertEquals(java.util.List.of(7L, 9007199254740993L), args);
+        assertEquals(scope, new HistoryScope("SELECTED_RULES", 2L, java.util.List.of(9007199254740993L, 7L)));
+        assertNotEquals(scope, new HistoryScope("SELECTED_RULES", 2L, java.util.List.of(7L)));
+        config.put("ruleIds", java.util.List.of("1.5"));
+        assertThrows(IllegalArgumentException.class, () -> DerivedVariableConfig.validate(config));
+    }
+
     @Test public void sameSnapshotSharesWindowsButNotDifferentCentresOrScopes() {
         var now = LocalDateTime.of(2026, 9, 21, 12, 0);
         var region = new IndexedHistoryCount.Region("VARIABLE:31", "DATA_OBJECT:9", 120.1, 34, 800);

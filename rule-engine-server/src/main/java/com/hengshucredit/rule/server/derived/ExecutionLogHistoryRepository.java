@@ -41,7 +41,12 @@ public class ExecutionLogHistoryRepository {
     public List<HistoryQuery.Row> query(String scope, Long projectId, Long rootRuleId,
             LocalDateTime from, LocalDateTime before, Set<String> requiredFields,
             Map<String, HistoricalFieldDefinition> definitions) {
-        if (consoleDataScope != null) consoleDataScope.requireHistoryScope(scope, projectId);
+        return query(HistoryScope.current(scope, projectId, rootRuleId), from, before, requiredFields, definitions);
+    }
+
+    List<HistoryQuery.Row> query(HistoryScope scope, LocalDateTime from, LocalDateTime before, Set<String> requiredFields,
+                                 Map<String, HistoricalFieldDefinition> definitions) {
+        if (consoleDataScope != null) consoleDataScope.requireHistoryScope(scope.type(), scope.projectId());
         StringBuilder sql = new StringBuilder(
                 "SELECT l.id, l.trace_id, l.started_at, l.history_fields "
                         + "FROM rule_execution_log_current l "
@@ -50,21 +55,12 @@ public class ExecutionLogHistoryRepository {
         List<Object> parameters = new ArrayList<>();
         parameters.add(Timestamp.valueOf(from));
         parameters.add(Timestamp.valueOf(before));
-        if ("RULE".equals(scope)) {
-            DerivedVariableConfig.require(rootRuleId != null,
-                    "当前规则范围需要从规则测试或正式规则入口执行");
-            sql.append("AND l.root_rule_id = ? ");
-            parameters.add(rootRuleId);
+        scope.appendRuleFilter(sql, parameters, "l.root_rule_id");
+        if (scope.projectId() != null) {
+            sql.append(" AND l.execution_project_id = ?");
+            parameters.add(scope.projectId());
         }
-        if ("PROJECT".equals(scope) || "RULE".equals(scope)) {
-            DerivedVariableConfig.require(projectId != null && projectId > 0,
-                    "当前项目范围需要明确执行项目");
-            sql.append("AND l.execution_project_id = ? ");
-            parameters.add(projectId);
-        } else {
-            DerivedVariableConfig.require("GLOBAL".equals(scope), "历史统计范围无效");
-        }
-        sql.append("ORDER BY l.started_at, l.id LIMIT ").append(MAX_QUERY_ROWS + 1);
+        sql.append(" ORDER BY l.started_at, l.id LIMIT ").append(MAX_QUERY_ROWS + 1);
         long[] bytesRead = {0};
         Map<String, HistoryQuery.Row> rowsByTrace = new LinkedHashMap<>();
         Map<String, Set<Long>> expectedApis = new LinkedHashMap<>();
@@ -114,8 +110,8 @@ public class ExecutionLogHistoryRepository {
             args.add(region.latitudeKey());
             args.add(Timestamp.valueOf(from.truncatedTo(java.time.temporal.ChronoUnit.HOURS)));
             args.add(Timestamp.valueOf(selection.before()));
-            if (!"GLOBAL".equals(selection.scope())) { sql.append(" AND b.execution_project_id=?"); args.add(selection.projectId()); }
-            if ("RULE".equals(selection.scope())) { sql.append(" AND b.root_rule_id=?"); args.add(selection.ruleId()); }
+            if (selection.scope().projectId() != null) { sql.append(" AND b.execution_project_id=?"); args.add(selection.scope().projectId()); }
+            selection.scope().appendRuleFilter(sql, args, "b.root_rule_id");
             sql.append(" GROUP BY b.bucket_hour,b.execution_project_id,b.root_rule_id) suspect STRAIGHT_JOIN rule_history_root r "
                     + "ON r.started_at>=suspect.bucket_hour AND r.started_at<TIMESTAMPADD(HOUR,1,suspect.bucket_hour) "
                     + "AND COALESCE(r.execution_project_id,0)=suspect.execution_project_id AND COALESCE(r.root_rule_id,0)=suspect.root_rule_id ");
@@ -129,8 +125,8 @@ public class ExecutionLogHistoryRepository {
         args.add(region.latitudeKey());
         args.add(Timestamp.valueOf(from));
         args.add(Timestamp.valueOf(selection.before()));
-        if (!"GLOBAL".equals(selection.scope())) { sql.append(" AND r.execution_project_id=?"); args.add(selection.projectId()); }
-        if ("RULE".equals(selection.scope())) { sql.append(" AND r.root_rule_id=?"); args.add(selection.ruleId()); }
+        if (selection.scope().projectId() != null) { sql.append(" AND r.execution_project_id=?"); args.add(selection.scope().projectId()); }
+        selection.scope().appendRuleFilter(sql, args, "r.root_rule_id");
         if (consoleDataScope != null) sql.append(" AND (").append(consoleDataScope.predicate("rule_history_root", "r")).append(')');
         sql.append(" LIMIT ").append(MAX_QUERY_ROWS + 1);
         Map<String, HistoryQuery.Row> byTrace = new LinkedHashMap<>();

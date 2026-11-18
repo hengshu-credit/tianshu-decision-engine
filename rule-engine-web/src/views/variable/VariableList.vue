@@ -1302,6 +1302,7 @@
         <derived-variable-editor
           v-if="!isObjectField && form.varSource === 'DERIVED'"
           v-model="form.derivedConfig"
+          :project-id="form.scope === 'GLOBAL' ? 0 : form.projectId"
           :vars="listReferenceOptions"
           :functions="listFunctionOptions"
           :result-type="form.varType"

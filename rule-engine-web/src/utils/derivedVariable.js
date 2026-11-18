@@ -56,7 +56,8 @@ export function validateDerivedConfig(config) {
   }
   if (config.mode === 'EXPRESSION') return ''
   if (!Number.isInteger(config.window) || config.window < 1 || config.window > 36500) return '时间窗口必须是 1 至 36500 的整数'
-  if (!['RULE', 'PROJECT', 'GLOBAL'].includes(config.scope)) return '请选择历史统计范围'
+  if (!['RULE', 'SELECTED_RULES', 'PROJECT', 'GLOBAL'].includes(config.scope)) return '请选择历史统计范围'
+  if (config.scope === 'SELECTED_RULES' && (!Array.isArray(config.ruleIds) || !config.ruleIds.length)) return '请至少选择一条统计规则'
   if (!['MINUTE', 'HOUR', 'DAY', 'CALENDAR_DAY'].includes(config.windowUnit)) return '请选择时间窗口单位'
   const fieldError = field => !field || field.kind !== 'REFERENCE' || !field.refId || !field.refType
   if (config.aggregate === 'DISTINCT_COUNT' || config.recordMode === 'LATEST_PER_SUBJECT') {

@@ -31,19 +31,18 @@ public class ApplicationHistoryRepository {
 
     public List<HistoryQuery.Row> query(String scope, Long projectId, Long rootRuleId,
                                        LocalDateTime from, LocalDateTime before) {
-        if (consoleDataScope != null) consoleDataScope.requireHistoryScope(scope, projectId);
+        return query(HistoryScope.current(scope, projectId, rootRuleId), from, before);
+    }
+
+    List<HistoryQuery.Row> query(HistoryScope scope, LocalDateTime from, LocalDateTime before) {
+        if (consoleDataScope != null) consoleDataScope.requireHistoryScope(scope.type(), scope.projectId());
         StringBuilder sql = new StringBuilder("SELECT id, occurred_at, field_values FROM rule_application_history "
                 + "WHERE occurred_at >= ? AND occurred_at < ?");
         List<Object> parameters = new ArrayList<>(List.of(Timestamp.valueOf(from), Timestamp.valueOf(before)));
-        if ("RULE".equals(scope)) {
-            DerivedVariableConfig.require(rootRuleId != null, "当前规则范围需要从规则测试或正式规则入口执行");
-            sql.append(" AND root_rule_id = ?"); parameters.add(rootRuleId);
-        }
-        if ("PROJECT".equals(scope) || "RULE".equals(scope)) {
-            DerivedVariableConfig.require(projectId != null && projectId > 0, "当前项目范围需要明确执行项目");
-            sql.append(" AND project_id = ?"); parameters.add(projectId);
-        } else {
-            DerivedVariableConfig.require("GLOBAL".equals(scope), "历史统计范围无效");
+        scope.appendRuleFilter(sql, parameters, "root_rule_id");
+        if (scope.projectId() != null) {
+            sql.append(" AND project_id = ?");
+            parameters.add(scope.projectId());
         }
         sql.append(" ORDER BY occurred_at, id LIMIT ").append(MAX_QUERY_ROWS + 1);
         long[] bytesRead = {0};

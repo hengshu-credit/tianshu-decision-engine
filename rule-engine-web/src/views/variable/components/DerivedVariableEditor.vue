@@ -15,11 +15,19 @@
     <template v-else>
       <el-alert :closable="false" type="info" title="默认统计请求入参和进件当时三方调用日志中的结果；其他字段须先开启“记录字段结果”。不含测试和本次请求；旧的无ID快照日志不按当前名称回填。" />
       <el-form-item label="统计范围">
-        <el-select :model-value="config.scope" @update:model-value="patch({ scope: $event })">
+        <el-select :model-value="config.scope" @update:model-value="changeScope">
           <el-option label="当前最外层规则" value="RULE" />
+          <el-option label="指定规则（可多选）" value="SELECTED_RULES" />
           <el-option label="当前执行项目" value="PROJECT" />
           <el-option label="全局进件" value="GLOBAL" />
         </el-select>
+      </el-form-item>
+      <el-form-item v-if="config.scope === 'SELECTED_RULES'" label="统计规则">
+        <resource-picker :value="config.ruleIds || []" :resources="ruleOptions" category="rule" multiple
+          :disabled="ruleProject == null || rulesLoading" placeholder="选择一条或多条根规则" @update:value="patch({ ruleIds: $event })" />
+        <p v-if="ruleProject == null" class="derived-help">请先选择变量的作用范围和项目。</p>
+        <p v-else-if="rulesError" role="alert">{{ rulesError }} <el-button text @click="loadRules">重试</el-button></p>
+        <p v-else class="derived-help">合并当前执行项目内所选根规则的正式进件，包括直接调用和实验生产组。</p>
       </el-form-item>
       <el-form-item label="最近时间窗口">
         <el-input-number :model-value="config.window" :min="1" :max="36500" :precision="0" @update:model-value="patch({ window: $event })" />
@@ -87,21 +95,32 @@ import VarPicker from '@/components/common/VarPicker.vue'
 import ResourcePicker from '@/components/common/ResourcePicker.vue'
 import OperandValueDisplay from '@/components/common/OperandValueDisplay.vue'
 import { createReferenceOperand } from '@/utils/operand'
+import { loadPagedCatalog } from '@/utils/pagedCatalog'
+import { listProjectDefinitions } from '@/api/definition'
 import HistoryFilters from './HistoryFilters.vue'
 import { createDerivedConfig, DERIVED_OPERAND_KINDS, historyAggregateOptions, historyFieldEligible } from '@/utils/derivedVariable'
 
 export default {
   name: 'DerivedVariableEditor',
   components: { OperandPicker, VarPicker, ResourcePicker, OperandValueDisplay, HistoryFilters },
-  props: { modelValue: { type: Object, default: createDerivedConfig }, vars: { type: Array, default: () => [] }, functions: { type: Array, default: () => [] }, resultType: { type: String, default: '' } },
+  props: { projectId: { type: [String, Number], default: null }, modelValue: { type: Object, default: createDerivedConfig }, vars: { type: Array, default: () => [] }, functions: { type: Array, default: () => [] }, resultType: { type: String, default: '' } },
   emits: ['update:modelValue', 'type-change'],
   data() {
-    return { operandKinds: DERIVED_OPERAND_KINDS, geoItems: [
+    return { rules: [], rulesRequest: 0, rulesLoading: false, rulesError: '', operandKinds: DERIVED_OPERAND_KINDS, geoItems: [
       { key: 'longitude', label: '本次中心经度' }, { key: 'latitude', label: '本次中心纬度' }, { key: 'radiusMeters', label: '范围半径（米）' },
       { key: 'longitudeField', label: '历史经度字段', history: true }, { key: 'latitudeField', label: '历史纬度字段', history: true },
     ] }
   },
   computed: {
+    ruleProject() {
+      return this.config.mode === 'HISTORY' && this.config.scope === 'SELECTED_RULES' && this.projectId != null && this.projectId !== ''
+        ? String(this.projectId) : null
+    },
+    ruleOptions() {
+      const available = new Set(this.rules.map(rule => String(rule.id)))
+      const missing = (this.config.ruleIds || []).filter(id => !available.has(String(id)))
+      return [...this.rules, ...missing.map(id => ({ id, ruleName: `规则 ID ${id}`, disabled: true }))]
+    },
     historyVars() { return this.vars.filter(historyFieldEligible) },
     config() { return { ...createDerivedConfig(), ...this.modelValue } },
     valueType() {
@@ -111,7 +130,31 @@ export default {
     aggregateOptions() { return historyAggregateOptions(this.valueType) },
     subjectKeys() { return this.config.subjectFields.map(field => `${field.refType}:${field.refId}`) },
   },
+  watch: {
+    ruleProject: { immediate: true, handler: 'loadRules' },
+  },
   methods: {
+    changeScope(scope) {
+      const next = { ...this.config, scope }
+      delete next.ruleIds
+      this.$emit('update:modelValue', next)
+    },
+    async loadRules() {
+      const project = this.ruleProject
+      const request = ++this.rulesRequest
+      this.rules = []
+      this.rulesError = ''
+      this.rulesLoading = project != null
+      if (project == null) return
+      try {
+        const response = await loadPagedCatalog(params => listProjectDefinitions(project, params), project === '0' ? { scope: 'GLOBAL' } : {})
+        if (request === this.rulesRequest) this.rules = response.data.records || response.data
+      } catch {
+        if (request === this.rulesRequest) this.rulesError = '统计规则目录加载失败。'
+      } finally {
+        if (request === this.rulesRequest) this.rulesLoading = false
+      }
+    },
     patch(value) { this.$emit('update:modelValue', { ...this.config, ...value }) },
     setMode(mode) { this.patch({ mode }); if (mode === 'HISTORY') this.$emit('type-change', 'NUMBER') },
     setAggregate(aggregate) { this.patch({ aggregate }); if (aggregate !== 'CUSTOM') this.$emit('type-change', ['MIN', 'MAX'].includes(aggregate) ? this.valueType : 'NUMBER') },

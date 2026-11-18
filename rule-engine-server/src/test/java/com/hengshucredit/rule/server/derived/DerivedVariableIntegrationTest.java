@@ -135,8 +135,8 @@ public class DerivedVariableIntegrationTest {
     private static class FakeHistory extends ApplicationHistoryRepository {
         Long projectId; Long ruleId; LocalDateTime from; LocalDateTime before;
         FakeHistory() { super(null); }
-        @Override public List<HistoryQuery.Row> query(String scope, Long projectId, Long rootRuleId, LocalDateTime from, LocalDateTime before) {
-            this.projectId = projectId; this.ruleId = rootRuleId; this.from = from; this.before = before;
+        @Override public List<HistoryQuery.Row> query(HistoryScope scope, LocalDateTime from, LocalDateTime before) {
+            this.projectId = scope.projectId(); this.ruleId = scope.filtersRules() ? scope.ruleIds().get(0) : null; this.from = from; this.before = before;
             return List.of(new HistoryQuery.Row(1, from, Map.of()), new HistoryQuery.Row(2, from, Map.of()));
         }
     }

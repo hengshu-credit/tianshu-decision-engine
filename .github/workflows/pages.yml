@@ -9,6 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   pages: write
   id-token: write
@@ -39,6 +40,20 @@ jobs:
         with:
           name: github-pages-${{ github.run_attempt }}
           path: docs
+
+      - name: Wait for uploaded manual to be discoverable
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_NAME: github-pages-${{ github.run_attempt }}
+        run: |
+          for attempt in {1..12}; do
+            count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=$ARTIFACT_NAME" \
+              --jq '[.artifacts[] | select(.expired == false)] | length')
+            if [[ "$count" == 1 ]]; then exit 0; fi
+            sleep 5
+          done
+          echo "::error::Uploaded manual $ARTIFACT_NAME did not become visible for run $GITHUB_RUN_ID"
+          exit 1
 
       - name: Deploy to GitHub Pages
         id: deployment

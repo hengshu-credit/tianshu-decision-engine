@@ -88,6 +88,19 @@ public class ExecutionLogHistoryRepositoryTest {
     }
 
     @Test
+    public void selectedDefinitionsRestrictSuccessfulRootLogsAcrossBothProductionEntrypoints() {
+        var jdbc = new CapturingJdbc();
+        var scope = new HistoryScope("SELECTED_RULES", 3L, List.of(49L, 51L));
+        var cutoff = LocalDateTime.of(2026, 9, 23, 0, 0);
+        new ExecutionLogHistoryRepository(jdbc).query(scope, cutoff.minusDays(7), cutoff, java.util.Set.of(), Map.of());
+        assertTrue(jdbc.sql.contains("l.root_rule_id IN (?,?)"));
+        assertTrue(jdbc.sql.contains("l.execution_project_id = ?"));
+        assertTrue(jdbc.sql.contains("l.success = 1"));
+        assertTrue(jdbc.sql.contains("l.source IN ('CLIENT_SERVER','EXPERIMENT_LIVE')"));
+        assertEquals(5, jdbc.parameterCount);
+    }
+
+    @Test
     public void renamedDisplayPathCannotChangeHistoricalFieldIdentity() {
         CapturingJdbc jdbc = new CapturingJdbc();
         jdbc.roots = List.of(root("{\"version\":1,\"fields\":{\"VARIABLE:6\":88},\"apiIds\":[]}"));

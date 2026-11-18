@@ -1,8 +1,30 @@
 import { mount } from '@test-utils'
 import DerivedVariableEditor from '@/views/variable/components/DerivedVariableEditor.vue'
-import { createDerivedConfig } from '@/utils/derivedVariable'
+import { flushPromises } from '@vue/test-utils'
+import { listProjectDefinitions } from '@/api/definition'
+import { createDerivedConfig, validateDerivedConfig } from '@/utils/derivedVariable'
+
+vi.mock('@/api/definition', () => ({ listProjectDefinitions: vi.fn() }))
 
 describe('DerivedVariableEditor', () => {
+  test('指定规则按执行项目加载，保存长整数 ID 并在切换统计范围后清除选择', async () => {
+    const ruleIds = ['9007199254740993', '52']
+    listProjectDefinitions.mockResolvedValue({ data: { records: ruleIds.map(id => ({ id, ruleName: id })), total: 2 } })
+    const config = { ...createDerivedConfig(), mode: 'HISTORY', scope: 'SELECTED_RULES' }
+    const wrapper = mount(DerivedVariableEditor, { props: { projectId: '6', modelValue: config } })
+    await flushPromises()
+    expect(listProjectDefinitions).toHaveBeenCalledWith('6', expect.objectContaining({ pageNum: 1 }))
+    expect(validateDerivedConfig(config)).toBe('请至少选择一条统计规则')
+    const picker = wrapper.findComponent({ name: 'ResourcePicker' })
+    expect(picker.props('resources').map(rule => rule.id)).toEqual(ruleIds)
+    picker.vm.$emit('update:value', ruleIds)
+    const chosen = wrapper.emitted('update:modelValue').at(-1)[0]
+    expect(chosen.ruleIds).toEqual(ruleIds)
+    expect(validateDerivedConfig(chosen)).toBe('')
+    await wrapper.setProps({ modelValue: chosen })
+    wrapper.vm.changeScope('PROJECT')
+    expect(wrapper.emitted('update:modelValue').at(-1)[0]).not.toHaveProperty('ruleIds')
+  })
   test('主体字段通过统一目录按类型和 ID 去重，函数长整数 ID 原样保留', async () => {
     const id = '9007199254740993'
     const wrapper = mount(DerivedVariableEditor, { props: { modelValue: { ...createDerivedConfig(), mode: 'HISTORY' }, vars: [{ id, _refType: 'VARIABLE', varCode: 'mobile', varLabel: '手机号', varType: 'STRING', varSource: 'INPUT' }], functions: [{ id, funcCode: 'stat', returnType: 'NUMBER' }] } })
