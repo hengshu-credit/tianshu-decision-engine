@@ -27,6 +27,7 @@ import ElIconLoading from '@/components/common/AppLoadingIcon.vue'
 import { $emit } from '../../../utils/gogocodeTransfer'
 import { getMonacoScrollbarOptions, syncMonacoTheme } from '@/theme/monacoTheme'
 import { waitForMonaco } from '@/utils/monacoLoader'
+import { identifyMonacoFields } from '@/utils/monacoFieldIds'
 import { buildQlReferenceDecorations, collectQlScriptReferences } from '@/utils/qlScriptReferences'
 export default {
   components: {
@@ -134,6 +135,8 @@ export default {
       original: this.originalModel,
       modified: this.modifiedModel,
     })
+    identifyMonacoFields(this.diffEditor.getOriginalEditor?.())
+    identifyMonacoFields(this.diffEditor.getModifiedEditor?.())
     this.refreshReferenceDecorations()
     this.loading = false
     $emit(this, 'ready', this.diffEditor)

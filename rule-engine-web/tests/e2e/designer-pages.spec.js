@@ -4,6 +4,29 @@ const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createDesignerApiData } = require('./support/designerFixtures.cjs')
 const { platformResponse } = require('./support/platformResponse.cjs')
 
+test('决策表脚本预览和字段选择器的原生表单控件均可识别', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const { assertClean } = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: createDesignerApiData() })
+  await page.goto(`${origin}/#/designer/table/101`)
+  await page.getByRole('button', { name: '展开脚本面板' }).click()
+  const preview = page.locator('.script-panel')
+  await expect(preview.locator('textarea.inputarea')).toHaveAttribute('id', /\S/)
+  await expect(preview.locator('input.rename-input')).toHaveAttribute('id', /\S/)
+  await page.getByRole('button', { name: '添加行', exact: true }).click()
+  await page.getByPlaceholder('选择左操作数...').first().click()
+  const picker = page.getByRole('dialog', { name: '内容选择器' })
+  await expect(picker.getByRole('spinbutton', { name: '页码' })).toBeVisible()
+  const fields = page.locator('input, select, textarea')
+  expect(await fields.evaluateAll(nodes => nodes.filter(node => !node.name && !node.id).map(node => node.outerHTML))).toEqual([])
+  const ids = await fields.evaluateAll(nodes => nodes.map(node => node.id).filter(Boolean))
+  expect(new Set(ids).size).toBe(ids.length)
+  const audit = await page.context().newCDPSession(page)
+  await audit.send('Audits.enable')
+  const { formIssues } = await audit.send('Audits.checkFormsIssues')
+  expect(formIssues.filter(issue => issue.errorType === 'FormEmptyIdAndNameAttributesForInputError')).toEqual([])
+  assertClean()
+})
+
 for (const accentPreset of ['THEME_BLUE', 'MIDNIGHT_PURPLE', 'PEACH_PINK']) {
   test(`深色 ${accentPreset} 决策表添加动作在普通、悬停、键盘聚焦时均清晰可读`, async ({ page }) => {
     await page.addInitScript(preset => {

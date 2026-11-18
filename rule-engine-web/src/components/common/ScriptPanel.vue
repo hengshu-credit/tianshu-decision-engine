@@ -79,6 +79,8 @@
           <textarea
             v-else
             ref="fallbackEditorRef"
+            name="compiled-script-preview"
+            aria-label="编译脚本源码"
             :value="editScript"
             class="sp-editor readonly"
             readonly

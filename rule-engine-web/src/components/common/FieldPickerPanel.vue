@@ -61,9 +61,9 @@
         </div>
         <footer class="fp-pagination">
           <span>共 {{ rows.length }} 项</span>
-          <label>每页 <select :value="pageSize" aria-label="每页字段数" @change="changePageSize(Number($event.target.value))"><option v-for="size in pageSizes" :key="size" :value="size">{{ size }} 条</option></select></label>
+          <label>每页 <select :id="fieldId + '-page-size'" :value="pageSize" aria-label="每页字段数" @change="changePageSize(Number($event.target.value))"><option v-for="size in pageSizes" :key="size" :value="size">{{ size }} 条</option></select></label>
           <button type="button" aria-label="上一页" :disabled="page === 1" @click="setPage(page - 1)">‹</button>
-          <label><input :value="page" type="number" min="1" :max="pageCount" aria-label="页码" @change="setPage(Number($event.target.value))" /> / {{ pageCount }}</label>
+          <label><input :id="fieldId + '-page'" :value="page" type="number" min="1" :max="pageCount" aria-label="页码" @change="setPage(Number($event.target.value))" /> / {{ pageCount }}</label>
           <button type="button" aria-label="下一页" :disabled="page === pageCount" @click="setPage(page + 1)">›</button>
         </footer>
       </main>
@@ -73,7 +73,7 @@
 </template>
 
 <script>
-import { markRaw } from 'vue'
+import { markRaw, useId } from 'vue'
 import FieldPickerRow from './FieldPickerRow.vue'
 import { buildFieldTree, filterFieldTree, fieldAncestors, fieldCategoryGroups, FIELD_PAGE_SIZES, FIELD_ROW_HEIGHT, visibleFieldRows } from '@/utils/fieldPicker'
 import { FIELD_PICKER_COLUMNS, fitFieldColumnWidths, resizeFieldColumnWidths, normalizeFieldPageSize, preferredFieldCategoryWidth, setPreferredFieldCategoryWidth, preferredFieldColumnWidths, setPreferredFieldColumnWidths } from '@/utils/fieldPickerPreferences'
@@ -88,6 +88,7 @@ const categoryMeta = {
 }
 export default {
   name: 'FieldPickerPanel',
+  setup() { return { fieldId: useId() } },
   components: { FieldPickerRow },
   props: {
     embedded: Boolean,

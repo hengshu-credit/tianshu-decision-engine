@@ -17,6 +17,7 @@ import { $emit } from '../utils/gogocodeTransfer'
 import { getMonacoScrollbarOptions, syncMonacoTheme } from '@/theme/monacoTheme'
 import { contentSourceIcon } from '@/utils/contentDisplay'
 import { waitForMonaco } from '@/utils/monacoLoader'
+import { identifyMonacoFields } from '@/utils/monacoFieldIds'
 import {
   buildQlCompletionItems,
   buildQlHover,
@@ -211,6 +212,7 @@ export default {
     this.editor = markRaw(
       window.monaco.editor.create(this.$refs.container, options)
     )
+    identifyMonacoFields(this.editor)
     this.registerIntelligenceProviders(window.monaco)
     this.refreshReferenceDecorations()
 
