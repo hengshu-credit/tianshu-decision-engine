@@ -24,10 +24,16 @@ describe('ScriptPanel', () => {
   test('等待 Monaco 正常加载，明确加载失败才降级且保留原始源码', async () => {
     const { wrapper } = mountPanel({ compileSuccess: true, compiledScript: 'return age;' })
     expect(wrapper.vm.showFallbackEditor).toBe(false)
+    expect(wrapper.find('[aria-label="显示引用名称与版本"]').exists()).toBe(true)
     wrapper.findComponent({ name: 'MonacoEditor' }).vm.$emit('load-error')
     await wrapper.vm.$nextTick()
     expect(wrapper.get('textarea').element.value).toBe('return age;')
     expect(wrapper.get('textarea').element.readOnly).toBe(true)
+    expect(wrapper.find('[aria-label="显示引用名称与版本"]').exists()).toBe(false)
+    await wrapper.get('.sp-header').trigger('click')
+    await wrapper.get('[role="separator"]').trigger('keydown', { key: 'ArrowDown' })
+    expect(wrapper.get('.sp-editor-container').element.style.height).toBe('292px')
+    expect(wrapper.get('textarea').element.value).toBe('return age;')
     wrapper.unmount()
   })
   test('历史源码标明所选版本，保留原始文本且只读', async () => {

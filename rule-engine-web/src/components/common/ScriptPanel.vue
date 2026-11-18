@@ -30,6 +30,13 @@
     <transition name="sp-slide">
       <div v-show="expanded" class="sp-body">
         <div class="sp-statusbar">
+          <el-switch
+            v-if="!showFallbackEditor"
+            v-model="showReferences"
+            size="small"
+            active-text="显示引用名称与版本"
+            aria-label="显示引用名称与版本"
+          />
           <span
             v-if="content.compileMessage"
             class="sp-statusbar-item"
@@ -50,14 +57,15 @@
           </el-button>
         </div>
 
-        <div class="sp-editor-container">
+        <div class="sp-editor-container" :style="{ height: editorHeight + 'px' }">
           <MonacoEditor
             v-if="!showFallbackEditor"
             ref="editorRef"
             :value="editScript"
             language="ql"
-            :height="editorHeight"
+            height="100%"
             read-only
+            :show-reference-decorations="showReferences"
             :references="references"
             :functions="functions"
             :reference-versions="referenceVersions"
@@ -82,6 +90,25 @@
           />
         </div>
 
+        <div
+          class="sp-resizer"
+          role="separator"
+          tabindex="0"
+          aria-label="调整代码面板高度"
+          aria-orientation="horizontal"
+          :aria-valuemin="heightLimits.min"
+          :aria-valuemax="heightLimits.max"
+          :aria-valuenow="editorHeight"
+          title="拖动或用上下方向键调整高度，双击恢复默认"
+          @pointerdown="startResize"
+          @pointermove="resize"
+          @lostpointercapture="drag = null"
+          @keydown.up.prevent="setHeight(editorHeight - 32)"
+          @keydown.down.prevent="setHeight(editorHeight + 32)"
+          @keydown.home.prevent="setHeight(heightLimits.min)"
+          @keydown.end.prevent="setHeight(heightLimits.max)"
+          @dblclick="setHeight(heightLimits.initial)"
+        />
         <div class="sp-footer">
           <span class="sp-footer-tip">
             <el-icon><el-icon-info /></el-icon>
@@ -108,6 +135,8 @@ import {
   ArrowUp as ElIconArrowUp,
 } from '@element-plus/icons-vue'
 
+const heightLimits = Object.freeze({ min: 160, initial: 260, max: 1000 })
+
 export default {
   name: 'ScriptPanel',
   components: {
@@ -133,7 +162,10 @@ export default {
       content: {},
       editScript: '',
       showFallbackEditor: false,
-      editorHeight: '260px',
+      showReferences: false,
+      editorHeight: heightLimits.initial,
+      heightLimits,
+      drag: null,
       editorOptions: {
         readOnly: true,
         minimap: { enabled: false },
@@ -167,6 +199,17 @@ export default {
     },
   },
   methods: {
+    setHeight(height) {
+      this.editorHeight = Math.min(heightLimits.max, Math.max(heightLimits.min, Math.round(height)))
+    },
+    startResize(event) {
+      if (event.button !== 0 || !event.isPrimary) return
+      event.currentTarget.setPointerCapture(event.pointerId)
+      this.drag = { id: event.pointerId, top: event.clientY, height: this.editorHeight }
+    },
+    resize(event) {
+      if (this.drag?.id === event.pointerId) this.setHeight(this.drag.height + event.clientY - this.drag.top)
+    },
     toggleExpand() {
       this.expanded = !this.expanded
     },
@@ -263,6 +306,7 @@ export default {
 }
 
 .sp-statusbar {
+  flex-wrap: wrap;
   padding: 6px 12px;
   background: var(--tianshu-bg-muted);
   border-bottom: 1px solid var(--tianshu-border-subtle);
@@ -298,9 +342,30 @@ export default {
 
 .sp-editor-container {
   display: flex;
-  min-height: 200px;
-  max-height: 420px;
   overflow: hidden;
+}
+
+.sp-resizer {
+  display: grid;
+  height: 12px;
+  place-items: center;
+  cursor: row-resize;
+  touch-action: none;
+  user-select: none;
+  background: var(--tianshu-bg-muted);
+
+  &::after {
+    content: '';
+    width: 40px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--tianshu-text-tertiary);
+  }
+
+  &:hover::after,
+  &:focus-visible::after {
+    background: var(--el-color-primary);
+  }
 }
 
 .sp-line-numbers {
@@ -328,8 +393,7 @@ export default {
 .sp-editor {
   flex: 1;
   width: 100%;
-  min-height: 200px;
-  max-height: 420px;
+  min-height: 0;
   padding: 12px 16px;
   overflow: auto;
   color: var(--tianshu-text-primary);
@@ -354,17 +418,11 @@ export default {
 
 .sp-slide-enter-active,
 .sp-slide-leave-active {
-  overflow: hidden;
-  transition: max-height 0.25s ease;
+  transition: opacity 0.2s ease;
 }
 
 .sp-slide-enter-from,
 .sp-slide-leave-to {
-  max-height: 0;
-}
-
-.sp-slide-enter-to,
-.sp-slide-leave-from {
-  max-height: 600px;
+  opacity: 0;
 }
 </style>
