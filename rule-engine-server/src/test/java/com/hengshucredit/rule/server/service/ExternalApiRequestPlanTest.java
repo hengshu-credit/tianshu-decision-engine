@@ -118,6 +118,44 @@ public class ExternalApiRequestPlanTest {
         assertThrows(IllegalArgumentException.class, () -> ExternalApiRequestPlan.evaluate(
                 Map.of("kind", "FUNCTION", "functionCode", "imageToBase64", "args", java.util.List.of()), Map.of(), Map.of()));
     }
+    @Test public void equivalentApprovedAndMysqlRepresentationsUseOneTransportIdentity() {
+        var live = api();
+        live.setUnitPrice(new java.math.BigDecimal("0.350000"));
+        live.setRetryBackoffMultiplier(new java.math.BigDecimal("1.0000"));
+        var frozen = JSON.parseObject(JSON.toJSONString(live), RuleExternalApiConfig.class);
+        frozen.setExecutionConfig(com.hengshucredit.rule.server.artifact.CanonicalJson.write(JSON.parse(live.getExecutionConfig())));
+        frozen.setUnitPrice(new java.math.BigDecimal("0.35"));
+        frozen.setRetryBackoffMultiplier(java.math.BigDecimal.ONE);
+        var source = new com.hengshucredit.rule.model.entity.RuleExternalDatasource();
+        source.setId(9L); source.setBaseUrl("https://approved.example"); source.setProtocol("HTTP");
+        source.setProjectId(1L); source.setScope("PROJECT"); source.setAuthType("BEARER");
+        source.setAuthConfig("{\"token\":\"local-synthetic-token\"}");
+        var properties = new com.hengshucredit.rule.server.auth.ProjectAuthProperties();
+        properties.setActiveKeyId("test");
+        properties.setMasterKeys(Map.of("test", "test-key-for-transport"));
+        var signer = new LocalModelBindingSignature(properties);
+        Map<String,String> paths = Map.of("VARIABLE:1", "person");
+        Map<String,Object> input = Map.of("person", "demo");
+        java.util.function.Function<RuleExternalApiConfig,ExternalApiRequestPlan> bind = api ->
+                ExternalApiRequestPlan.prepare(api, input, Map.of(), paths, source.getAuthConfig()).withTransport(source, paths, signer);
+
+        var original = bind.apply(live);
+        var restored = bind.apply(frozen);
+        assertEquals(original.values(), restored.values());
+        assertEquals(original.identity(), restored.identity());
+        assertNotEquals(original.legacyIdentity(), restored.legacyIdentity());
+        assertNotEquals(original.identity(), ExternalApiRequestPlan.prepare(frozen, Map.of("person", "another"), Map.of(), paths,
+                source.getAuthConfig()).withTransport(source, paths, signer).identity());
+        frozen.setUnitPrice(new java.math.BigDecimal("0.36"));
+        assertNotEquals(original.identity(), bind.apply(frozen).identity());
+        frozen.setUnitPrice(new java.math.BigDecimal("0.35"));
+        frozen.setExecutionConfig(live.getExecutionConfig().replace("mobile", "differentRequestField"));
+        assertNotEquals(original.identity(), bind.apply(frozen).identity());
+        frozen.setExecutionConfig(live.getExecutionConfig());
+        source.setAuthConfig("{\"token\":\"another-synthetic-token\"}");
+        assertNotEquals(original.identity(), bind.apply(frozen).identity());
+    }
+
     private RuleExternalApiConfig api() {
         RuleExternalApiConfig api = new RuleExternalApiConfig();
         api.setId(7L);

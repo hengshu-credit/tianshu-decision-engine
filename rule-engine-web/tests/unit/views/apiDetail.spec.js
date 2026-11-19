@@ -365,6 +365,21 @@ describe('ApiDetail helpers', () => {
     })
   })
 
+  test('step billing round trips the submit step identity and raw boolean response path', () => {
+    const configured = { mode: 'STEP_RESPONSE', stepId: 'apply', flagPath: 'response.body.billable' }
+    const ctx = createContext({ form: { billingCondition: JSON.stringify(configured) } })
+    ctx.syncBillingConfigFromForm()
+    expect(ctx.billingConfig).toMatchObject(configured)
+    expect(ctx.buildBillingConditionConfig()).toEqual(configured)
+    const spec = { version: 2, steps: [
+      { id: 'apply', type: 'HTTP', name: '提交', responseSample: { billable: false } },
+      { id: 'poll', type: 'HTTP', poll: {} }, { id: 'receive', type: 'CALLBACK' },
+    ] }
+    ctx.form.executionConfig = JSON.stringify(spec)
+    expect(ApiDetail.computed.billingSteps.call(ctx).map(step => step.id)).toEqual(['apply'])
+    expect(ApiDetail.computed.billingStepPaths.call(ctx).some(path => path.value === 'response.body.billable')).toBe(true)
+  })
+
   test('business retry condition serializes a nested response condition tree', () => {
     const retryConditionRoot = {
       type: 'group',

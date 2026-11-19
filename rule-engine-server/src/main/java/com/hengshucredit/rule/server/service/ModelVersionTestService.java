@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.service;
 
+import com.alibaba.fastjson.JSONObject;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hengshucredit.rule.model.dto.RuleTestSchema;
 import com.hengshucredit.rule.model.entity.RuleModel;
@@ -9,6 +10,7 @@ import com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService;
 import com.hengshucredit.rule.server.artifact.CanonicalJson;
 import com.hengshucredit.rule.server.artifact.DecisionArtifactPackage;
 import com.hengshucredit.rule.server.artifact.DecisionArtifactPackageCodec;
+import com.hengshucredit.rule.server.artifact.ModelApiBindingComponent;
 import com.hengshucredit.rule.server.artifact.RuleDependencyClosureService;
 import com.hengshucredit.rule.server.artifact.Sha256Digests;
 import com.hengshucredit.rule.server.derived.DerivedVariableService;
@@ -28,6 +30,7 @@ import java.util.Set;
 public class ModelVersionTestService {
     @Resource private RuleDependencyClosureService dependencyClosure;
     @Resource private ArtifactRuntimeSnapshotService runtimeSnapshots;
+    @Resource private ModelExternalBindings externalBindings;
     @Resource @Lazy private RuleTestSchemaService schemas;
     @Resource @Lazy private VariableSourceResolver variableSourceResolver;
     @Resource private ObjectMapper objectMapper;
@@ -42,6 +45,9 @@ public class ModelVersionTestService {
         DecisionArtifactPackage pack = new DecisionArtifactPackage();
         pack.putMetadata("rootModelId", model.getId());
         pack.putMetadata("rootModelVersion", model.getCurrentVersion());
+        List<Long> apiIds = closure.getDependencies().stream()
+                .filter(dependency -> ("BINDING:EXTERNAL_API:" + dependency.getResourceId()).equals(dependency.getComponentId()))
+                .map(ArtifactDependency::getResourceId).distinct().sorted().toList();
         for (ArtifactDependency dependency : closure.getDependencies()) {
             Map<String, Object> metadata = new LinkedHashMap<>(dependency.getMetadata());
             metadata.put("resourceType", dependency.getResourceType());
@@ -49,10 +55,9 @@ public class ModelVersionTestService {
             metadata.put("resourceId", dependency.getResourceId());
             metadata.put("version", dependency.getVersion());
             metadata.put("embeddingMode", dependency.getEmbeddingMode());
+            if (!apiIds.isEmpty() && "MODEL".equals(dependency.getResourceType())
+                    && model.getId().equals(dependency.getResourceId())) metadata.put("frozenExternalApiIds", apiIds);
             pack.addComponent(dependency.getComponentPath(), dependency.getMediaType(), dependency.getContent(), metadata);
-            if ("EXPLICIT_BINDING".equals(dependency.getEmbeddingMode())) {
-                unavailable.add("该版本包含尚未冻结执行配置的外部资源：" + dependency.getComponentId());
-            }
             if ("MODEL".equals(dependency.getResourceType()) && !model.getId().equals(dependency.getResourceId())
                     && !metadata.containsKey("configurationDigest")) {
                 unavailable.add("依赖模型版本缺少完整配置快照：" + dependency.getComponentId());
@@ -62,6 +67,23 @@ public class ModelVersionTestService {
                 if (source != null && Set.of("API", "DB", "DATABASE").contains(String.valueOf(source).toUpperCase(java.util.Locale.ROOT))) {
                     unavailable.add("该版本的数据对象来源尚无独立执行快照：" + dependency.getComponentId());
                 }
+            }
+        }
+        // 环境绑定本身只说明资源身份。模型重现还需要能核验并恢复的本机正式执行版本。
+        for (ArtifactDependency dependency : closure.getDependencies()) {
+            if (!"EXPLICIT_BINDING".equals(dependency.getEmbeddingMode())) continue;
+            Long apiId = dependency.getResourceId();
+            if (apiId == null || !("BINDING:EXTERNAL_API:" + apiId).equals(dependency.getComponentId())
+                    || externalBindings == null) {
+                unavailable.add("该版本包含尚未冻结执行配置的外部资源：" + dependency.getComponentId());
+                continue;
+            }
+            try {
+                if (pack.getComponent(ModelApiBindingComponent.path(apiId)) != null) continue;
+                JSONObject descriptor = externalBindings.capture(apiId, model.getProjectId());
+                ModelApiBindingComponent.add(pack, apiId, descriptor);
+            } catch (IllegalArgumentException error) {
+                unavailable.add("无法冻结外数接口 " + apiId + "：" + error.getMessage());
             }
         }
         byte[] encoded = codec.encode(pack);
@@ -119,6 +141,8 @@ public class ModelVersionTestService {
     public Map<String, Object> execute(RuleModelVersion version, Map<String, Object> params, VariableResolveOptions options) {
         Loaded loaded = load(version);
         var runtime = loaded.runtime();
+        var parent = options.getRuntimeSnapshot();
+        if (parent != null && parent.isImported()) runtime.inheritImportedOrigin();
         RuleModel model = loaded.model();
         options.setRequiredScriptNames(Set.of(model.getModelCode()));
         options.setRequiredNamesUpstreamOnly(true);
@@ -191,7 +215,7 @@ public class ModelVersionTestService {
         try { content = Base64.getDecoder().decode(String.valueOf(snapshot.get("packageContent"))); }
         catch (IllegalArgumentException error) { throw new IllegalArgumentException("模型版本执行制品内容损坏", error); }
         var runtime = runtimeSnapshots.loadModelVersion(content, String.valueOf(snapshot.get("artifactDigest")),
-                String.valueOf(snapshot.get("packageDigest")), modelMetadata.getProjectId());
+                String.valueOf(snapshot.get("packageDigest")), modelMetadata.getProjectId(), requireExecutable);
         RuleModel root = runtime.getModels().stream().filter(model -> version.getModelId().equals(model.getId())
                 && version.getVersion().equals(model.getCurrentVersion())).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("模型版本执行制品缺少对应模型"));

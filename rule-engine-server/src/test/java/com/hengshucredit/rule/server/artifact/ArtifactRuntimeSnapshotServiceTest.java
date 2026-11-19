@@ -15,6 +15,41 @@ import java.util.Map;
 public class ArtifactRuntimeSnapshotServiceTest {
 
     @Test
+    public void modelApiNeedsASeparateFrozenVersionAndCannotUseSourceEnvironmentIdsAfterImport() {
+        var pack = new DecisionArtifactPackage();
+        pack.addComponent("bindings/resources/external_api/17.json", "application/json",
+                CanonicalJson.writeBytes(Map.of("targetResourceType", "EXTERNAL_API", "sourceResourceId", 17)),
+                Map.of("resourceType", "BINDING", "componentId", "BINDING:EXTERNAL_API:17",
+                        "resourceId", 17, "embeddingMode", "EXPLICIT_BINDING"));
+        Assert.assertThrows(IllegalArgumentException.class, () -> ModelApiBindingComponent.verifyModelClosure(pack));
+        ModelApiBindingComponent.add(pack, 17L, JSON.parseObject("{\"apiId\":17,\"apiVersionId\":41,\"paths\":{}}"));
+        pack.addComponent("models/7/1.pmml", "application/octet-stream", new byte[]{1},
+                Map.of("resourceType", "MODEL", "resourceId", 7, "model", Map.of("id", 7, "modelCode", "score"),
+                        "version", 1, "frozenExternalApiIds", List.of(17)));
+        ModelApiBindingComponent.verifyModelClosure(pack);
+        var codec = new DecisionArtifactPackageCodec();
+        byte[] bytes = codec.encode(pack);
+        var decoded = codec.decode(bytes);
+        var snapshot = new ArtifactRuntimeSnapshotService().loadModelVersion(bytes,
+                decoded.getArtifactDigest(), decoded.getPackageDigest(), 3L);
+        Assert.assertEquals(Long.valueOf(41), snapshot.getFrozenModelApis().get(17L).getLong("apiVersionId"));
+        Assert.assertTrue(snapshot.getFrozenModelApisFor(List.of(8L)).isEmpty());
+        Assert.assertEquals(snapshot.getFrozenModelApis(), snapshot.getFrozenModelApisFor(List.of(7L)));
+        Assert.assertThrows(IllegalArgumentException.class, snapshot::inheritImportedOrigin);
+    }
+
+    @Test
+    public void modelApiComponentMustIdentifyTheSameResourceInItsPathMetadataAndDescriptor() {
+        var pack = new DecisionArtifactPackage();
+        ModelApiBindingComponent.add(pack, 17L, JSON.parseObject("{\"apiId\":18}"));
+        var codec = new DecisionArtifactPackageCodec();
+        var bytes = codec.encode(pack);
+        var decoded = codec.decode(bytes);
+        Assert.assertThrows(IllegalArgumentException.class, () -> new ArtifactRuntimeSnapshotService()
+                .loadModelVersion(bytes, decoded.getArtifactDigest(), decoded.getPackageDigest(), 3L));
+    }
+
+    @Test
     public void exposesOpenApiContractFromSameVerifiedPackageWithoutAnotherDecode() {
         DecisionArtifactPackage pack = new DecisionArtifactPackage();
         String contract = "{\"requestBindings\":[{\"refType\":\"VARIABLE\",\"refId\":7}],\"enabled\":true}";

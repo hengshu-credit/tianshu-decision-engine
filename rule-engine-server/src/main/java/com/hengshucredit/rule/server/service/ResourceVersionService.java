@@ -81,7 +81,9 @@ public class ResourceVersionService {
             if (call.refType().startsWith("MODEL")) {
                 var context = modelVersions.context(payload.toJavaObject(RuleModelVersion.class));
                 var schema = (com.hengshucredit.rule.model.dto.RuleTestSchema) context.get("schema");
-                for (var field : schema.getInputs()) addInput(inputs, field.getScriptName(), field.getLabel(), field.getValueType());
+                for (var field : schema.getInputs()) {
+                    addInput(inputs, field.getScriptName(), field.getLabel(), field.getValueType(), field.getRefType(), field.getRefId());
+                }
             } else if ("VARIABLE".equals(call.refType())) {
                 RuleVariable variable = payload.toJavaObject(RuleVariable.class);
                 if ("INPUT".equals(variable.getVarSource())) addInput(inputs, first(variable.getScriptName(), variable.getVarCode()), variable.getVarLabel(), variable.getVarType());
@@ -99,13 +101,22 @@ public class ResourceVersionService {
     }
 
     private static void addInput(Map<String, RuleDefinitionInputField> inputs, String path, String label, String type) {
+        addInput(inputs, path, label, type, "PATH", null);
+    }
+
+    private static void addInput(Map<String, RuleDefinitionInputField> inputs, String path, String label, String type,
+                                 String refType, Long refId) {
         if (path == null || path.isBlank()) return;
         RuleDefinitionInputField field = new RuleDefinitionInputField();
-        // 原引用身份保存在 Operand；外部输入是历史版本声明的请求路径，不能回绑当前同名字段。
-        field.setRefType("PATH"); field.setFieldName(path); field.setScriptName(path);
+        // 受管模型输入沿用冻结字段的身份；原始路径仍是 PATH，不通过当前名称猜测 ID。
+        field.setRefType(refId == null ? "PATH" : refType); field.setVarId(refId);
+        field.setFieldName(path); field.setScriptName(path);
         field.setFieldLabel(label); field.setFieldType(type); field.setStatus(1);
         RuleDefinitionInputField previous = inputs.putIfAbsent(path, field);
-        if (previous != null && !Objects.equals(previous.getFieldType(), type)) throw new IllegalArgumentException("指定版本对同一路径声明了不兼容类型：" + path);
+        if (previous != null && (!Objects.equals(previous.getFieldType(), type)
+                || !Objects.equals(previous.getRefType(), field.getRefType()) || !Objects.equals(previous.getVarId(), refId))) {
+            throw new IllegalArgumentException("指定版本对同一路径声明了不兼容的引用或类型：" + path);
+        }
     }
 
     public Object resolve(ResourceVersionCall call, Long projectId, Map<String, Object> values, VariableResolveOptions options) {

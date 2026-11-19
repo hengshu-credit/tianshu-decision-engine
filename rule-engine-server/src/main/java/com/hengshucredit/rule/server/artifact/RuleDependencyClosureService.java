@@ -732,6 +732,7 @@ public class RuleDependencyClosureService {
                     || !decoded.getPackageDigest().equals(snapshot.get("packageDigest"))) {
                 throw new IllegalArgumentException("模型版本制品摘要不匹配");
             }
+            ModelApiBindingComponent.verifyModelClosure(decoded.getArtifactPackage());
             for (DecisionArtifactPackage.Component component : decoded.getArtifactPackage().getComponents().values()) {
                 Map<String, Object> metadata = new LinkedHashMap<>(component.getMetadata());
                 String type = String.valueOf(metadata.get("resourceType"));

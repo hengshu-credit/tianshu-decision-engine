@@ -1,9 +1,13 @@
 package com.hengshucredit.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.core.engine.ResourceVersionCall;
+import com.hengshucredit.rule.model.dto.ResolvedField;
+import com.hengshucredit.rule.model.dto.RuleTestSchema;
 import com.hengshucredit.rule.model.entity.GovernedResourceVersion;
 import com.hengshucredit.rule.model.entity.RuleFunction;
+import com.hengshucredit.rule.model.entity.RuleModelVersion;
 import com.hengshucredit.rule.server.artifact.Sha256Digests;
 import com.hengshucredit.rule.server.governance.GovernanceSecretCodec;
 import com.hengshucredit.rule.server.mapper.GovernedResourceVersionMapper;
@@ -17,6 +21,34 @@ import java.util.Map;
 import static org.junit.Assert.*;
 
 public class ResourceVersionServiceTest {
+    @Test public void pinnedModelInputsKeepTheOriginalFieldIdentityAndRejectAmbiguousPaths() {
+        var fields = new java.util.ArrayList<ResolvedField>();
+        var phone = new ResolvedField();
+        phone.setRefId(17L); phone.setRefType("VARIABLE"); phone.setScriptName("mobile_no"); phone.setValueType("STRING");
+        fields.add(phone);
+        var schema = new RuleTestSchema();
+        schema.setInputs(fields);
+        var resolver = new ResourceVersionService() {
+            @Override public JSONObject snapshot(ResourceVersionCall call, Long projectId) {
+                return JSON.parseObject("{\"payload\":{\"modelId\":7,\"version\":5}}");
+            }
+        };
+        ReflectionTestUtils.setField(resolver, "modelVersions", new ModelVersionTestService() {
+            @Override public Map<String, Object> context(RuleModelVersion version) {
+                return Map.of("schema", schema);
+            }
+        });
+        var operand = JSON.parseObject("{\"kind\":\"REFERENCE\",\"refType\":\"MODEL_OUTPUT\",\"refId\":61,\"versionMode\":\"FIXED\",\"versionId\":5}");
+        var selected = resolver.inputs(operand, 1L);
+        assertEquals(1, selected.size());
+        assertEquals("VARIABLE", selected.get(0).getRefType());
+        assertEquals(Long.valueOf(17), selected.get(0).getVarId());
+        var other = new ResolvedField();
+        org.springframework.beans.BeanUtils.copyProperties(phone, other);
+        other.setRefId(29L);
+        fields.add(other);
+        assertThrows(IllegalArgumentException.class, () -> resolver.inputs(operand, 1L));
+    }
     @Test public void wholeObjectVersionReadsDynamicChildrenWithoutFieldIds() {
         version("DATA_OBJECT", "{\"id\":11,\"scope\":\"GLOBAL\",\"objectCode\":\"request\",\"sourceType\":\"INPUT\",\"fields\":[]}");
         ReflectionTestUtils.setField(service, "objectResolver", new DataObjectSourceResolver());

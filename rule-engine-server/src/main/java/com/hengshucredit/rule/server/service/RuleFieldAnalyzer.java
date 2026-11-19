@@ -199,7 +199,7 @@ public class RuleFieldAnalyzer {
         Set<String> retainedLocalOutputs =
                 retainedLocalOutputNames(preparedOutputFields, localRuleCallOutputs);
         preparedInputFields = expandModelInputFields(preparedInputFields, varMetaMap);
-        if (resourceVersions != null) preparedInputFields.addAll(resourceVersions.inputs(parseObject(modelJson), projectId));
+        if (resourceVersions != null) mergeVersionInputs(preparedInputFields, resourceVersions.inputs(parseObject(modelJson), projectId));
         preparedInputFields = removeOutputFields(preparedInputFields, preparedOutputFields);
         for (RuleDefinitionInputField field : preparedInputFields) {
             RuleDefinitionInputField existing = existingInputFieldMap.get(inputFieldKey(field));
@@ -1028,6 +1028,17 @@ public class RuleFieldAnalyzer {
             for (RuleDefinitionInputField input : frozen.copyModelInputFields(field)) {
                 frozen.enrichFieldFromMeta(input, metadata);
                 inputs.add(input);
+            }
+        }
+        for (JSONObject api : snapshot.getFrozenModelApis().values()) {
+            JSONObject paths = api.getJSONObject("paths");
+            if (paths == null) throw new IllegalArgumentException("模型外数版本缺少冻结字段目录");
+            for (String ref : paths.keySet()) {
+                Map<String, Object> source = metadata.get("@" + ref);
+                if (source == null || !java.util.Objects.equals(source.get("scriptName"), paths.getString(ref))) {
+                    throw new IllegalArgumentException("模型外数请求字段与冻结引用不一致: " + ref);
+                }
+                inputs.add(frozen.inputFieldFromMeta(source));
             }
         }
         return frozen.expandModelInputFields(inputs, metadata);
@@ -2061,6 +2072,20 @@ public class RuleFieldAnalyzer {
             result.put(inputFieldKey(field), field);
         }
         return result;
+    }
+
+    private void mergeVersionInputs(List<RuleDefinitionInputField> inputs, List<RuleDefinitionInputField> historical) {
+        if (historical.isEmpty()) return;
+        Map<String, RuleDefinitionInputField> byId = new LinkedHashMap<>();
+        for (var input : inputs) byId.put(inputFieldKey(input), input);
+        for (var input : historical) {
+            var previous = byId.putIfAbsent(inputFieldKey(input), input);
+            if (previous == null) inputs.add(input);
+            else if (!java.util.Objects.equals(input.getScriptName(), previous.getScriptName())
+                    || !java.util.Objects.equals(input.getFieldType(), previous.getFieldType())) {
+                throw new IllegalArgumentException("同一输入引用的历史路径或类型与当前规则冲突：" + input.getScriptName());
+            }
+        }
     }
 
     private String inputFieldKey(RuleDefinitionInputField field) {

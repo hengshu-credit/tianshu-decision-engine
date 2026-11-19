@@ -56,7 +56,8 @@ public class SourceResolutionExecutor implements AutoCloseable {
         if (task == null) {
             throw new IllegalArgumentException("Source resolution task must not be null");
         }
-        Callable<T> scopedTask = consoleProjects == null ? task : consoleProjects.wrap(task);
+        Callable<T> frozenTask = FrozenExternalApiScope.wrap(task);
+        Callable<T> scopedTask = consoleProjects == null ? frozenTask : consoleProjects.wrap(frozenTask);
         submitted.incrementAndGet();
         if (closed) {
             CompletableFuture<T> rejected = CompletableFuture.failedFuture(

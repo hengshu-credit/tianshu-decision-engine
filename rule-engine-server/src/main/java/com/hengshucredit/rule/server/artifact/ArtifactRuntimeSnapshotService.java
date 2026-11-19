@@ -90,11 +90,17 @@ public class ArtifactRuntimeSnapshotService {
 
     /** 与规则制品共用有界解码缓存；模型测试没有部署重绑定或当前目录补齐。 */
     public RuntimeSnapshot loadModelVersion(byte[] content, String artifactDigest, String packageDigest, Long projectId) {
+        return loadModelVersion(content, artifactDigest, packageDigest, projectId, true);
+    }
+
+    public RuntimeSnapshot loadModelVersion(byte[] content, String artifactDigest, String packageDigest, Long projectId,
+                                            boolean requireExecutable) {
         DecisionArtifact artifact = new DecisionArtifact();
         artifact.setPackageContent(content);
         artifact.setArtifactDigest(artifactDigest);
         artifact.setPackageDigest(packageDigest);
         var decoded = decodeVerified(artifact);
+        if (requireExecutable) ModelApiBindingComponent.verifyModelClosure(decoded.getArtifactPackage());
         return buildSnapshot(decoded, Collections.emptyMap(), false, null, artifactDigest, projectId);
     }
 
@@ -124,6 +130,10 @@ public class ArtifactRuntimeSnapshotService {
                 variable.setStatus(1);
                 applyVariableBinding(variable, bindings);
                 snapshot.variables.add(variable);
+            } else if (ModelApiBindingComponent.TYPE.equals(resourceType)) {
+                if (imported) throw new IllegalArgumentException("导入制品包含本机模型外数版本绑定，请在目标环境重新绑定模型并发布");
+                JSONObject descriptor = ModelApiBindingComponent.read(component);
+                snapshot.frozenModelApis.put(descriptor.getLong("apiId"), descriptor);
             } else if ("RESOURCE_VERSION".equals(resourceType)) {
                 JSONObject version = JSON.parseObject(component.getContent());
                 snapshot.resourceVersions.put(version.getString("key"), version);
@@ -134,8 +144,11 @@ public class ArtifactRuntimeSnapshotService {
                 function.setStatus(1);
                 snapshot.functions.add(function);
             } else if ("MODEL".equals(resourceType)) {
-                snapshot.models.add(model(component, executionProjectId,
-                        decoded.getPackageDigest()));
+                RuleModel frozen = model(component, executionProjectId, decoded.getPackageDigest());
+                snapshot.models.add(frozen);
+                if (component.getMetadata().get("frozenExternalApiIds") instanceof List<?> apiIds) {
+                    snapshot.modelApiIds.put(frozen.getId(), apiIds.stream().map(id -> Long.valueOf(String.valueOf(id))).toList());
+                }
             } else if ("DATA_OBJECT_ROOT".equals(resourceType)) {
                 RuleDataObject object = JSON.parseObject(component.getContent(), RuleDataObject.class);
                 Long targetId = bindings.get("BINDING:DATA_OBJECT:" + object.getId());
@@ -172,6 +185,9 @@ public class ArtifactRuntimeSnapshotService {
                         new String(component.getContent(), StandardCharsets.UTF_8),
                         RuleDefinitionOutputField.class));
             }
+        }
+        if (!snapshot.getFrozenModelApisFor(snapshot.modelApiIds.keySet()).keySet().equals(snapshot.frozenModelApis.keySet())) {
+            throw new IllegalArgumentException("模型外数版本缺少所属模型，请重新发布完整模型版本");
         }
         return snapshot;
     }
@@ -358,6 +374,10 @@ public class ArtifactRuntimeSnapshotService {
     public static final class RuntimeSnapshot {
         private boolean imported;
         public boolean isImported() { return imported; }
+        public void inheritImportedOrigin() {
+            if (!frozenModelApis.isEmpty()) throw new IllegalArgumentException("导入模型须在目标环境重新绑定外数版本后发布");
+            imported = true;
+        }
         private Long artifactId;
         private String artifactDigest;
         private String modelType;
@@ -376,6 +396,20 @@ public class ArtifactRuntimeSnapshotService {
         private final Map<String, Long> bindings = new LinkedHashMap<>();
         private final Map<String, String> referencePaths = new LinkedHashMap<>();
         private final Map<String, JSONObject> resourceVersions = new LinkedHashMap<>();
+        private final Map<Long, JSONObject> frozenModelApis = new LinkedHashMap<>();
+        private final Map<Long, List<Long>> modelApiIds = new LinkedHashMap<>();
+        public Map<Long, JSONObject> getFrozenModelApis() { return Collections.unmodifiableMap(frozenModelApis); }
+        public Map<Long, JSONObject> getFrozenModelApisFor(java.util.Collection<Long> modelIds) {
+            Map<Long, JSONObject> selected = new LinkedHashMap<>();
+            for (Long modelId : modelIds) {
+                for (Long apiId : modelApiIds.getOrDefault(modelId, List.of())) {
+                    JSONObject binding = frozenModelApis.get(apiId);
+                    if (binding == null) throw new IllegalArgumentException("缺少模型外数版本绑定: " + apiId);
+                    selected.put(apiId, binding);
+                }
+            }
+            return selected;
+        }
         public Map<String, JSONObject> getResourceVersions() { return resourceVersions; }
 
         public Long getArtifactId() { return artifactId; }

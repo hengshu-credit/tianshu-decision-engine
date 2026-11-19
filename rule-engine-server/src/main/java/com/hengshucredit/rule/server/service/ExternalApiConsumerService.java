@@ -33,31 +33,42 @@ public class ExternalApiConsumerService {
     public Map<String, Object> resolve(Long projectId, Long apiId, Map<String, Object> binding,
                                        Map<String, Object> values, VariableResolveOptions options, String sourceKey,
                                        Map<String, Object> sourceValues) {
-        return resolveSelected(projectId, apiId, null, binding, values, options, sourceKey, sourceValues);
+        return resolveSelected(projectId, apiId, null, binding, values, options, sourceKey);
     }
 
     public Map<String, Object> resolveVersion(Long projectId, RuleExternalApiConfig snapshot,
                                               Map<String, Object> values, VariableResolveOptions options, String sourceKey) {
-        return resolveSelected(projectId, snapshot.getId(), snapshot, Map.of(), values, options, sourceKey, values);
+        return resolveSelected(projectId, snapshot.getId(), snapshot, Map.of(), values, options, sourceKey);
     }
 
     private Map<String, Object> resolveSelected(Long projectId, Long apiId, RuleExternalApiConfig snapshot,
                                                Map<String, Object> binding, Map<String, Object> values,
-                                               VariableResolveOptions options, String sourceKey, Map<String, Object> sourceValues) {
+                                               VariableResolveOptions options, String sourceKey) {
+        try (var ignored = FrozenExternalApiScope.bindApi(snapshot == null ? apiId : null)) {
+            return resolveCall(projectId, apiId, snapshot, binding, values, options, sourceKey);
+        }
+    }
+
+    private Map<String, Object> resolveCall(Long projectId, Long apiId, RuleExternalApiConfig snapshot,
+                                            Map<String, Object> binding, Map<String, Object> values,
+                                            VariableResolveOptions options, String sourceKey) {
         if (options.getInvocationCache() == null) options.setInvocationCache(new VariableResolutionInvocationCache());
         if (options.isOfflineReplay() || options.isSkipApiSources()) {
             options.getInvocationCache().recordReplayMissing("EXTERNAL_API", "API:" + apiId, String.valueOf(apiId));
             return Map.of("success", false, "status", Map.of("outcome", "NOT_EXECUTED"));
         }
-        RuleExternalApiConfig api = snapshot == null ? options.getInvocationCache().api(apiId, apiConfigMapper::selectById) : snapshot;
+        var frozen = FrozenExternalApiScope.invocation();
+        RuleExternalApiConfig api = frozen != null ? frozen.api(apiId)
+                : snapshot == null ? options.getInvocationCache().api(apiId, apiConfigMapper::selectById) : snapshot;
         if (api == null || api.getStatus() != null && api.getStatus() != 1) throw new IllegalArgumentException("外数 API 不存在或已停用: " + apiId);
         com.hengshucredit.rule.model.entity.RuleExternalDatasource datasource = null;
-        if (datasourceMapper != null) {
-            datasource = options.getInvocationCache().datasource(api.getDatasourceId(), datasourceMapper::selectById);
+        if (frozen != null || datasourceMapper != null) {
+            datasource = frozen != null ? frozen.datasource(api.getDatasourceId())
+                    : options.getInvocationCache().datasource(api.getDatasourceId(), datasourceMapper::selectById);
             if (datasource == null || !Integer.valueOf(1).equals(datasource.getStatus()) || !"GLOBAL".equals(datasource.getScope())
                     && !java.util.Objects.equals(projectId, datasource.getProjectId())) throw new IllegalArgumentException("外数 API 不属于当前项目可用范围");
         }
-        Map<String, String> paths = options.getDerivedReferencePaths();
+        Map<String, String> paths = frozen == null ? options.getDerivedReferencePaths() : frozen.paths();
         if (paths == null) paths = variableService.buildRefScriptNameMap(projectId);
         ExternalApiRequestPlan.validateBinding(binding);
         Map<String, Object> overrides = binding.get("requestOverrides") instanceof Map<?, ?> raw
@@ -76,12 +87,17 @@ public class ExternalApiConsumerService {
             }
             overrides = active;
         }
-        ExternalApiRequestPlan plan = ExternalApiRequestPlan.prepare(selected, values, overrides, paths, datasource == null ? null : datasource.getAuthConfig(), invokeService.linkedRequestInputs(selected));
+        ExternalApiRequestPlan prepared = ExternalApiRequestPlan.prepare(selected, values, overrides, paths, datasource == null ? null : datasource.getAuthConfig(), invokeService.linkedRequestInputs(selected));
+        ExternalApiRequestPlan plan = invokeService.transportPlan(prepared, datasource, paths);
         if (fieldValidationService != null) {
             fieldValidationService.validateApiPlan(projectId, plan);
         }
-        String key = plan.identity();
         VariableResolutionInvocationCache cache = options.getInvocationCache().originalCalls();
+        // 老版本没有记录传输配置；仅按原有入口和原请求身份恢复，模型冻结版本不能据此确认配置等价。
+        String checkpoint = plan.identity();
+        if (cache.originalCall(plan.legacyIdentity()) != null) checkpoint = plan.legacyIdentity();
+        else if (frozen == null && cache.originalCall(prepared.legacyIdentity()) != null) checkpoint = prepared.legacyIdentity();
+        final String key = checkpoint;
         // 检查点与 single-flight 使用同一请求身份，变量/对象换取值路径或增加中间值不会重复提交。
         VariableResolutionInvocationCache.SourceStep previous = cache.originalCall(key);
         final Map<String, Object> pendingMetadata = previous != null && "WAITING_EXTERNAL".equals(previous.getStatus())

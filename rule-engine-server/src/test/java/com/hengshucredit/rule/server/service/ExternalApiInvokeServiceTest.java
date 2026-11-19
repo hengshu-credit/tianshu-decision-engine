@@ -43,6 +43,123 @@ import static org.junit.Assert.assertTrue;
 import static com.hengshucredit.rule.server.service.ExternalApiTestConfig.*;
 
 public class ExternalApiInvokeServiceTest {
+    @Test public void acceptedSubmitBillsBeforePollingAndNeverAgainOnResume() throws Exception {
+        var submits = new AtomicInteger();
+        var polls = new AtomicInteger();
+        var bills = new RecordingBillingService();
+        var countsAtPoll = new ArrayList<Integer>();
+        var submitPayload = new AtomicReference<>("{\"ticket\":\"one\",\"billable\":true}");
+        var submitStatus = new AtomicInteger(200);
+        var ready = new java.util.concurrent.atomic.AtomicBoolean(false);
+        var server = HttpServer.create(new InetSocketAddress(0),0);
+        server.createContext("/submit", exchange -> {
+            submits.incrementAndGet();
+            byte[] body = submitPayload.get().getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(submitStatus.get(),body.length);
+            exchange.getResponseBody().write(body); exchange.close();
+        });
+        server.createContext("/poll", exchange -> {
+            polls.incrementAndGet();
+            countsAtPoll.add(bills.recordCount.get());
+            byte[] body = JSON.toJSONBytes(Map.of("status",ready.get() ? "READY" : "WAITING","billable",true));
+            exchange.sendResponseHeaders(200,body.length);
+            exchange.getResponseBody().write(body); exchange.close();
+        });
+        server.start();
+        try {
+            var api = basicApiConfig(501L,1L,"/submit");
+            api.setRequestMode("ASYNC"); api.setAsyncTimeoutMs(1000);
+            api.setExecutionConfig(pollingResult("/submit","/poll","body.status","READY",4,1800,"body"));
+            api.setBillingCondition("{\"mode\":\"STEP_RESPONSE\",\"stepId\":\"submit\",\"flagPath\":\"response.body.billable\"}");
+            var service = configuredService(api,httpDatasource(server));
+            ReflectionTestUtils.setField(service,"billingService",bills);
+            var plan = ExternalApiRequestPlan.prepare(api,Map.of(),Map.of(),Map.of());
+            var pending = org.junit.Assert.assertThrows(ExternalApiInvokeService.ApiInvokeException.class,
+                    () -> service.invokeCheckpointed(plan,null, saved -> {})).getPendingAsync();
+            assertNotNull(pending);
+            assertEquals(List.of(1),countsAtPoll);
+            assertEquals(true,pending.get("stepBilled"));
+            ready.set(true);
+            assertEquals(true,service.invokePending(plan,pending).get("success"));
+            assertEquals(1,submits.get()); assertEquals(1,bills.recordCount.get());
+            for(String payload : List.of("{\"billable\":false}", "{}", "{\"billable\":null}", "{\"billable\":\"true\"}")) {
+                submitPayload.set(payload);
+                assertEquals(true,service.invoke(501L,Map.of()).get("success"));
+                assertEquals(1,bills.recordCount.get());
+            }
+            int afterFree = polls.get();
+            submitStatus.set(400); submitPayload.set("{\"billable\":true}");
+            try { service.invoke(501L,Map.of()); } catch(ExternalApiInvokeService.ApiInvokeException ignored) { }
+            assertEquals(afterFree,polls.get()); assertEquals(1,bills.recordCount.get());
+        } finally {server.stop(0);}
+    }
+
+    @Test public void frozenAndLiveOrdersShareOnlyEquivalentTransportAndKeepFormalBilling() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        var calls = new ArrayList<String>();
+        for (String target : List.of("live", "old")) {
+            server.createContext("/" + target + "/score", exchange -> {
+                String header = exchange.getRequestHeaders().getFirst("X-Test-Key");
+                calls.add(target + "/" + header);
+                byte[] body = JSON.toJSONBytes(Map.of("target", target));
+                exchange.sendResponseHeaders(200, body.length);
+                exchange.getResponseBody().write(body);
+                exchange.close();
+            });
+        }
+        server.start();
+        try {
+            RuleExternalApiConfig api = basicApiConfig(615L, 1L, "/score");
+            api.setAuthMode("INHERIT");
+            RuleExternalDatasource live = httpDatasource(server);
+            live.setProjectId(3L); live.setStatus(1);
+            live.setBaseUrl(live.getBaseUrl()+"/live");
+            live.setAuthType("API_KEY");
+            live.setAuthConfig(JSON.toJSONString(Map.of("name","X-Test-Key","value",reference(1L,"originalName"))));
+            RuleExternalDatasource old = httpDatasource(server);
+            old.setProjectId(3L); old.setStatus(1);
+            old.setBaseUrl(old.getBaseUrl()+"/old");
+            old.setAuthType("API_KEY");
+            old.setAuthConfig(live.getAuthConfig());
+            var service = configuredService(api, live);
+            var billing = new RecordingBillingService();
+            var logs = new RecordingRuntimeCallLogService();
+            ReflectionTestUtils.setField(service, "billingService", billing);
+            ReflectionTestUtils.setField(service, "runtimeCallLogService", logs);
+            var keys = new com.hengshucredit.rule.server.auth.ProjectAuthProperties();
+            keys.setMasterKeys(Map.of("test", "local-only-credential-for-test")); keys.setActiveKeyId("test");
+            ReflectionTestUtils.setField(service, "bindingSignature", new LocalModelBindingSignature(keys));
+            var consumer = new ExternalApiConsumerService();
+            ReflectionTestUtils.setField(consumer, "apiConfigMapper", mapperProxy(RuleExternalApiConfigMapper.class, api));
+            ReflectionTestUtils.setField(consumer, "datasourceMapper", mapperProxy(RuleExternalDatasourceMapper.class, live));
+            ReflectionTestUtils.setField(consumer, "invokeService", service);
+            var options = VariableResolveOptions.defaults();
+            var currentPaths = Map.of("VARIABLE:1","mobile_no");
+            var oldPaths = Map.of("VARIABLE:1","historical_name");
+            var inputs = Map.<String,Object>of("mobile_no", "live-key", "historical_name", "old-key");
+            options.setDerivedReferencePaths(currentPaths);
+            var read = (java.util.function.Supplier<Object>) () -> {
+                var result = consumer.resolve(3L, 615L, Map.of(), inputs, options);
+                assertEquals(String.valueOf(result.get("errorMessage")), true, result.get("success"));
+                return ExternalApiConsumerService.select(result, "body.target");
+            };
+            assertEquals("live", read.get());
+            try (var current = FrozenExternalApiScope.open(Map.of(615L,api), Map.of(1L,live), currentPaths,"current")) {
+                assertEquals("live", read.get());
+                try (var historical = FrozenExternalApiScope.open(Map.of(615L,api), Map.of(1L,old), oldPaths,"previous")) {
+                    assertEquals("old", read.get());
+                    assertEquals("old", read.get());
+                    org.junit.Assert.assertThrows(IllegalArgumentException.class,
+                            () -> consumer.resolve(11L, 615L, Map.of(), Map.of(), options));
+                }
+                assertEquals("live", read.get());
+            }
+            assertEquals(List.of("live/live-key","old/old-key"), calls);
+            assertEquals(2, billing.recordCount.get());
+            assertEquals(2L, logs.logs.stream().filter(item -> "API_INVOKE".equals(item.getActionType())).count());
+        } finally { server.stop(0); }
+    }
+    private static final String EMPTY_BILLING_BRANCHES = "{\"version\":2,\"requestFields\":[],\"billingBranches\":[]}";
 
     @Test
     public void internalRuleDatasourceKeepsWorkerPolicyAndSeparatesDryRunCache() throws Exception {
@@ -574,14 +691,20 @@ public class ExternalApiInvokeServiceTest {
                     "/submit", "/result/${steps.submit.body.taskId}", "body.status", "SUCCESS", 3, 1, "body.data"));
             workflow.getJSONArray("steps").getJSONObject(0).put("successConditionTree", Map.of("field", "body.taskId", "operator", "exists"));
             workflow.getJSONArray("steps").getJSONObject(1).put("responseSample", Map.of("status", "SAMPLE_ONLY"));
+            workflow.put("billingBranches", List.of());
             config.setExecutionConfig(workflow.toJSONString());
+            config.setBillingCondition("{\"mode\":\"QUERY\"}");
             config.setPayloadCaptureConfig("{\"response\":{\"source\":\"ORIGINAL\",\"saveOriginal\":true}}");
-            Map<String, Object> result = configuredService(config, httpDatasource(server)).invoke(1L, Map.of());
+            ExternalApiInvokeService service = configuredService(config, httpDatasource(server));
+            RecordingBillingService billing = new RecordingBillingService();
+            ReflectionTestUtils.setField(service, "billingService", billing);
+            Map<String, Object> result = service.invoke(1L, Map.of());
             assertEquals(680, ((Map<?, ?>) result.get("body")).get("score"));
             assertEquals(680, com.alibaba.fastjson.JSON.parseObject(
                     (String) result.get("originalResponseBody")).getJSONObject("data").getInteger("score").intValue());
             assertEquals(1, submissions.get());
             assertEquals(2, polls.get());
+            assertEquals(1, billing.recordCount.get());
         } finally {
             server.stop(0);
         }
@@ -1462,13 +1585,47 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
+    public void emptyBillingBranchesUseConfiguredHitCondition() {
+        RuleExternalApiConfig config = ExternalApiTestConfig.api();
+        config.setExecutionConfig(EMPTY_BILLING_BRANCHES);
+        config.setBillingCondition("""
+                {"mode":"HIT","condition":{"path":"body.found","operator":"==","value":true}}
+                """);
+        ExternalApiInvokeService service = serviceWithFields();
+        assertEquals(true, ReflectionTestUtils.invokeMethod(service, "shouldRecordSuccessBilling",
+                config, Map.of("body", Map.of("found", true))));
+        assertEquals(false, ReflectionTestUtils.invokeMethod(service, "shouldRecordSuccessBilling",
+                config, Map.of("body", Map.of("found", false))));
+    }
+
+    @Test
+    public void emptyBillingBranchesChargeFailedQueriesOnlyAfterDispatch() throws Exception {
+        RuleExternalApiConfig config = ExternalApiTestConfig.api();
+        config.setExecutionConfig(EMPTY_BILLING_BRANCHES);
+        config.setBillingCondition("{\"mode\":\"QUERY\"}");
+        ExternalApiInvokeService service = serviceWithFields();
+        Object trace = failedBillingTrace();
+        assertEquals(true, ReflectionTestUtils.invokeMethod(service, "shouldRecordFailedBilling", config, trace));
+        ReflectionTestUtils.setField(trace, "requestIssued", false);
+        assertEquals(false, ReflectionTestUtils.invokeMethod(service, "shouldRecordFailedBilling", config, trace));
+    }
+
+    @Test
     public void failedUnifiedCallBillingCanMatchRawResponsePath() throws Exception {
         RuleExternalApiConfig config = ExternalApiTestConfig.api();
+        config.setBillingCondition("{\"mode\":\"QUERY\"}");
         config.setExecutionConfig("""
             {"version":2,"billingBranches":[{"id":"failed","bill":true,
               "condition":{"path":"response.body.code","operator":"==","value":"ERR"}}]}
             """);
         ExternalApiInvokeService service = serviceWithFields();
+        Object trace = failedBillingTrace();
+        assertEquals(true, ReflectionTestUtils.invokeMethod(service, "shouldRecordFailedBilling", config, trace));
+        ReflectionTestUtils.setField(trace, "responseDetails", Map.of("httpStatus", 500, "body", Map.of("code", "OTHER")));
+        assertEquals(false, ReflectionTestUtils.invokeMethod(service, "shouldRecordFailedBilling", config, trace));
+    }
+
+    private static Object failedBillingTrace() throws Exception {
         Class<?> traceType = java.util.Arrays.stream(ExternalApiInvokeService.class.getDeclaredClasses())
                 .filter(type -> "InvokeTrace".equals(type.getSimpleName())).findFirst().orElseThrow();
         var constructor = traceType.getDeclaredConstructor();
@@ -1479,7 +1636,7 @@ public class ExternalApiInvokeServiceTest {
         ReflectionTestUtils.setField(trace, "responseBody", Map.of("code", "ERR"));
         ReflectionTestUtils.setField(trace, "responseDetails", Map.of("httpStatus", 500, "body", Map.of("code", "ERR")));
 
-        assertEquals(true, ReflectionTestUtils.invokeMethod(service, "shouldRecordFailedBilling", config, trace));
+        return trace;
     }
 
     @Test
@@ -1538,6 +1695,8 @@ public class ExternalApiInvokeServiceTest {
             RuleExternalApiConfig config = ExternalApiTestConfig.api();
             config.setId(99L);
             config.setDatasourceId(7L);
+            config.setExecutionConfig(EMPTY_BILLING_BRANCHES);
+            config.setBillingCondition("{\"mode\":\"QUERY\"}");
             config.setRequestMethod("POST");
             config.setEndpointUrl("/score");
             config.setContentType("application/json");
@@ -1552,7 +1711,8 @@ public class ExternalApiInvokeServiceTest {
                     mapperProxy(RuleExternalApiConfigMapper.class, config));
             ReflectionTestUtils.setField(service, "datasourceMapper",
                     mapperProxy(RuleExternalDatasourceMapper.class, datasource));
-            ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+            RecordingBillingService billing = new RecordingBillingService();
+            ReflectionTestUtils.setField(service, "billingService", billing);
 
             Map<String, Object> params = new LinkedHashMap<>();
             params.put("request_id", "r1");
@@ -1561,6 +1721,9 @@ public class ExternalApiInvokeServiceTest {
             Map<String, Object> second = service.invoke(99L, params);
 
             assertEquals(1, callCount.get());
+            assertEquals(1, billing.recordCount.get());
+            assertEquals(true, ExternalApiRequestPlan.read(first, "status.billed"));
+            assertEquals(false, ExternalApiRequestPlan.read(second, "status.billed"));
             assertEquals(Boolean.FALSE, first.get("cached"));
             assertEquals(Boolean.TRUE, second.get("cached"));
             assertEquals(Boolean.TRUE, first.get("cacheConfigured"));

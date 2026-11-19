@@ -68,10 +68,12 @@ public final class ExternalApiConfigValidator {
         if (hasText(config.getBillingCondition())) {
             JSONObject billing = parseCondition(config.getBillingCondition(), "计费条件");
             String billingMode = billing.getString("mode");
-            if (billingMode != null && !Set.of("QUERY", "HIT").contains(billingMode.trim().toUpperCase(Locale.ROOT))) {
-                throw new IllegalArgumentException("计费模式只能是 QUERY 或 HIT");
-            }
-            if (!"QUERY".equalsIgnoreCase(billingMode)) {
+            var stepBilling = ExternalApiStepBilling.from(billing);
+            if (stepBilling != null) {
+                stepBilling.validate(config);
+            } else if (billingMode != null && !Set.of("QUERY", "HIT").contains(billingMode.trim().toUpperCase(Locale.ROOT))) {
+                throw new IllegalArgumentException("计费模式只能是 QUERY、HIT 或 STEP_RESPONSE");
+            } else if (!"QUERY".equalsIgnoreCase(billingMode)) {
                 validateCondition(billing.containsKey("condition") ? billing.getJSONObject("condition") : billing, "计费条件");
             }
         }

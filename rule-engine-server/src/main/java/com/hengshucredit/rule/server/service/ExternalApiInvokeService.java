@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.dto.RuleResult;
@@ -107,6 +108,11 @@ public class ExternalApiInvokeService {
     @Resource
     private EngineFieldValidationService fieldValidationService;
 
+    @Resource private LocalModelBindingSignature bindingSignature;
+
+    ExternalApiRequestPlan transportPlan(ExternalApiRequestPlan plan, RuleExternalDatasource owner, Map<String, String> paths) {
+        return plan.withTransport(owner, paths, bindingSignature);
+    }
     Map<String, Object> invokeTrial(RuleExternalApiConfig config, Map<String, Object> params,
                                     Map<String, Object> pending) {
         ExternalApiTrialContext.check();
@@ -122,6 +128,8 @@ public class ExternalApiInvokeService {
 
     private RuleExternalDatasource invocationDatasource(Long id) {
         ExternalApiTrialContext trial = ExternalApiTrialContext.current();
+        var model = FrozenExternalApiScope.invocation();
+        if (trial == null && model != null) return model.datasource(id);
         RuleExternalDatasource frozen = trial == null ? null : trial.datasource(id);
         if (trial != null && frozen == null) throw new IllegalArgumentException("数据源未包含在试运行冻结快照中");
         return trial == null ? datasourceMapper.selectById(id) : frozen;
@@ -129,6 +137,8 @@ public class ExternalApiInvokeService {
 
     private RuleExternalApiConfig invocationApi(Long id) {
         ExternalApiTrialContext trial = ExternalApiTrialContext.current();
+        var model = FrozenExternalApiScope.invocation();
+        if (trial == null && model != null) return model.api(id);
         RuleExternalApiConfig frozen = trial == null ? null : trial.api(id);
         if (trial != null && frozen == null) throw new IllegalArgumentException("API 未包含在试运行冻结快照中");
         return trial == null ? apiConfigMapper.selectById(id) : frozen;
@@ -136,6 +146,8 @@ public class ExternalApiInvokeService {
 
     private Map<String, String> invocationPaths(Long projectId) {
         ExternalApiTrialContext trial = ExternalApiTrialContext.current();
+        var model = FrozenExternalApiScope.invocation();
+        if (trial == null && model != null) return model.paths();
         if (trial == null) return apiVariableService == null ? Map.of() : apiVariableService.buildRefScriptNameMap(projectId);
         Map<String, String> paths = new LinkedHashMap<>();
         JSONObject saved = trial.snapshot.getJSONObject("paths");
@@ -231,7 +243,13 @@ public class ExternalApiInvokeService {
     }
 
     public Map<String, Object> invoke(Long apiConfigId, Map<String, Object> params) {
-        RuleExternalApiConfig apiConfig = apiConfigMapper.selectById(apiConfigId);
+        try (var ignored = FrozenExternalApiScope.bindApi(apiConfigId)) {
+            return invokeById(apiConfigId, params);
+        }
+    }
+
+    private Map<String, Object> invokeById(Long apiConfigId, Map<String, Object> params) {
+        RuleExternalApiConfig apiConfig = invocationApi(apiConfigId);
         if (apiConfig == null) {
             throw new IllegalArgumentException("API接口配置不存在");
         }
@@ -249,12 +267,12 @@ public class ExternalApiInvokeService {
     private Map<String, Object> invokeConfigured(RuleExternalApiConfig apiConfig, Map<String, Object> params, boolean useResponseCache) {
         try (var versions = bindResourceVersions(apiConfig, params)) {
         if (apiConfig.getExecutionConfig() != null && !apiConfig.getExecutionConfig().isBlank()) {
-            RuleExternalDatasource owner = datasourceMapper.selectById(apiConfig.getDatasourceId());
-            Map<String, String> paths = apiVariableService == null ? Map.of() : apiVariableService.buildRefScriptNameMap(owner.getProjectId());
+            RuleExternalDatasource owner = invocationDatasource(apiConfig.getDatasourceId());
+            Map<String, String> paths = invocationPaths(owner.getProjectId());
             ExternalApiRequestPlan plan = ExternalApiRequestPlan.prepare(
                     selectRequestBranch(apiConfig, params), params, Map.of(), paths, owner.getAuthConfig(), linkedRequestInputs(apiConfig));
             validateRequestPlan(plan);
-            return invokePlan(plan, useResponseCache, null, null);
+            return invokePlan(transportPlan(plan, owner, paths), useResponseCache, null, null);
         }
         throw new IllegalArgumentException("外数 API 必须配置 executionConfig");
         }
@@ -375,12 +393,17 @@ public class ExternalApiInvokeService {
                 ? null : externalApiResponseCache.get(apiConfig, responseCacheKey);
         long start = System.currentTimeMillis();
         InvokeTrace trace = new InvokeTrace();
+        trace.stepBilling = ExternalApiStepBilling.from(JSON.parseObject(apiConfig.getBillingCondition()));
         trace.progress = persist;
         trace.pendingAsync = pendingAsync == null ? null : new LinkedHashMap<>(pendingAsync);
         if (pendingAsync != null && "WORKFLOW".equalsIgnoreCase(String.valueOf(pendingAsync.get("kind")))) {
             trace.workflowResume = new LinkedHashMap<>(pendingAsync);
             // A polling transport failure cannot erase a ticket received in an earlier attempt.
             trace.workflowPending = new LinkedHashMap<>(pendingAsync);
+            if (trace.stepBilling != null && pendingAsync.get("stepBilled") instanceof Boolean billed) {
+                trace.stepBillingProcessed = true;
+                trace.billed = billed;
+            }
         }
         Object resumedCallId = pendingAsync == null ? null : pendingAsync.get("callId");
         trace.callId = resumedCallId == null || String.valueOf(resumedCallId).isBlank()
@@ -524,7 +547,7 @@ public class ExternalApiInvokeService {
             logDatasourceCall(apiConfig, datasource, trace, true, cached, message, cost);
             return cached;
         }
-        if (!apiConfig.isBillingSuppressed() && billingService != null && shouldRecordFailedBilling(apiConfig, trace)) {
+        if (trace.stepBilling == null && !apiConfig.isBillingSuppressed() && billingService != null && shouldRecordFailedBilling(apiConfig, trace)) {
             try { trace.billed = recordInvocationBilling(apiConfig, datasource, false, cost, message); }
             catch (RuntimeException failure) { throw billingFailure(apiConfig, datasource, trace, null, failure, cost); }
         }
@@ -762,14 +785,13 @@ public class ExternalApiInvokeService {
         if (apiConfigId == null) {
             throw new IllegalArgumentException("API接口配置ID不能为空");
         }
-        RuleExternalApiConfig config = apiConfigMapper == null
-                ? null : apiConfigMapper.selectById(apiConfigId);
+        var frozen = FrozenExternalApiScope.forApi(apiConfigId);
+        RuleExternalApiConfig config = frozen != null ? frozen.api(apiConfigId)
+                : apiConfigMapper == null ? null : apiConfigMapper.selectById(apiConfigId);
         String configuredKey = config == null ? null
                 : buildResponseCacheKey(apiConfigId, config.getCacheKeyConfig(), params);
-        if (configuredKey != null) {
-            return "API:" + configuredKey;
-        }
-        return "API:" + apiConfigId + ":PARAMS:" + sha256(canonicalParams(params));
+        String key = configuredKey != null ? "API:" + configuredKey : "API:" + apiConfigId + ":PARAMS:" + sha256(canonicalParams(params));
+        return frozen == null ? key : key + ":" + sha256(frozen.identity());
     }
 
     private String canonicalParams(Map<String, Object> params) {
@@ -1002,7 +1024,7 @@ public class ExternalApiInvokeService {
             recordTraceStep(trace, "RESPONSE_MAPPING", "组装响应结果", "SUCCESS", mappingInput,
                     result.get("body"), apiConfig.getId());
         }
-        if (!apiConfig.isBillingSuppressed() && billingService != null && shouldRecordSuccessBilling(apiConfig, result)) {
+        if (trace.stepBilling == null && !apiConfig.isBillingSuppressed() && billingService != null && shouldRecordSuccessBilling(apiConfig, result)) {
             try { trace.billed = recordInvocationBilling(apiConfig, datasource, true, cost, null); }
             catch (RuntimeException failure) { throw billingFailure(apiConfig, datasource, trace, result, failure, cost); }
         }
@@ -1021,10 +1043,18 @@ public class ExternalApiInvokeService {
         if (execution != null && execution.getJSONArray("steps") != null && !execution.getJSONArray("steps").isEmpty()) {
             trace.workflow = true;
             try {
+                // 收到回执后的断点先于记账持久化。如果两者间进程退出，重放已保存回执，沿用原 callId 去重。
+                if (trace.stepBilling != null && trace.workflowResume != null
+                        && trace.workflowResume.get("results") instanceof Map<?,?> completed
+                        && completed.get(trace.stepBilling.stepId()) instanceof Map<?,?> receipt
+                        && !"SKIPPED".equals(receipt.get("status"))) {
+                    billAcceptedStep(apiConfig, datasource, trace, trace.stepBilling.stepId(), copyMap(receipt));
+                }
                 Map<String, Object> result = ExternalApiWorkflow.execute(execution, params,
                         (step, context) -> invokeWorkflowStep(apiConfig, step, context, trace), callbackStore,
                         (condition, context) -> matchesResponseCondition(JSON.toJSONString(condition), context),
                         (step, response) -> {
+                            billAcceptedStep(apiConfig, datasource, trace, step.getString("id"), response);
                             if ("CALLBACK".equals(step.getString("type"))) {
                                 trace.workflowResults.put(step.getString("id"), response);
                                 trace.responseBody = response.get("body");
@@ -1122,6 +1152,21 @@ public class ExternalApiInvokeService {
         return result;
     }
 
+    private void billAcceptedStep(RuleExternalApiConfig api, RuleExternalDatasource source, InvokeTrace trace,
+                                  String stepId, Map<String,Object> response) {
+        if (trace.stepBilling == null || !trace.stepBilling.stepId().equals(stepId) || trace.stepBillingProcessed) return;
+        if (trace.stepBilling.charge(response)) {
+            long cost = response.get("costTimeMs") instanceof Number n ? n.longValue() : 0L;
+            try {
+                trace.billed = recordInvocationBilling(api, source, true, cost, null);
+            } catch (RuntimeException failure) {
+                throw billingFailure(api, source, trace, response, failure, cost);
+            }
+        }
+        trace.stepBillingProcessed = true;
+        if (trace.progress != null && trace.workflowPending != null) trace.progress.accept(trace.pendingAsyncSnapshot());
+    }
+
     private ExternalApiRequestPlan prepareWorkflowStep(RuleExternalApiConfig root, JSONObject step, Map<String, Object> context) {
         Long linkedId = step.getLong("apiConfigId");
         RuleExternalApiConfig template = linkedId == null ? root : invocationApi(linkedId);
@@ -1168,6 +1213,8 @@ public class ExternalApiInvokeService {
         if (ExternalApiExecutionConfig.hasCondition(step.get("exceptionConditionTree"))) config.put("exceptionCondition", step.getJSONObject("exceptionConditionTree").toJSONString());
         if (ExternalApiExecutionConfig.hasCondition(step.get("retryConditionTree"))) config.put("retryCondition", step.getJSONObject("retryConditionTree").toJSONString());
         config.put("billingSuppressed", true);
+        // 子请求不单独结算，不能把父异步流程的计费步骤带入同步步骤的校验。
+        if (ExternalApiStepBilling.from(JSON.parseObject(config.getString("billingCondition"))) != null) config.remove("billingCondition");
         config.put("responseMapping", null);
         JSONObject stageSpec = new JSONObject();
         stageSpec.put("version", 2);
@@ -1201,12 +1248,12 @@ public class ExternalApiInvokeService {
             for (Object raw : spec.getJSONArray("responseBranches")) {
                 JSONObject branch = JSON.parseObject(JSON.toJSONString(raw));
                 if (!matchesResponseCondition(JSON.toJSONString(branch.get("condition")), context)) continue;
-                Object assembled = ExternalApiRequestPlan.evaluate(branch.get("value"), context, Map.of());
+                Object assembled = ExternalApiRequestPlan.evaluate(branch.get("value"), context, frozenExpressionPaths());
                 if (!"VALUE".equals(branch.getString("mode")) && branch.getJSONArray("outputFields") != null) {
                     Map<String, Object> fields = new LinkedHashMap<>();
                     for (Object rawField : branch.getJSONArray("outputFields")) {
                         JSONObject field = JSON.parseObject(JSON.toJSONString(rawField));
-                        ExternalApiRequestPlan.write(fields, field.getString("path"), ExternalApiRequestPlan.evaluate(field.get("value"), context, Map.of()));
+                        ExternalApiRequestPlan.write(fields, field.getString("path"), ExternalApiRequestPlan.evaluate(field.get("value"), context, frozenExpressionPaths()));
                     }
                     assembled = fields;
                 }
@@ -1262,7 +1309,7 @@ public class ExternalApiInvokeService {
         for (Object raw : spec.getJSONArray("exceptionBranches")) {
             JSONObject branch = JSON.parseObject(JSON.toJSONString(raw));
             if (!matchesResponseCondition(JSON.toJSONString(branch.get("condition")), response)) continue;
-            response.put("body", ExternalApiRequestPlan.evaluate(branch.get("value"), response, Map.of()));
+            response.put("body", ExternalApiRequestPlan.evaluate(branch.get("value"), response, frozenExpressionPaths()));
             response.put("fallback", true);
             response.put("exceptionBranchId", branch.getString("id"));
             break;
@@ -2162,6 +2209,8 @@ public class ExternalApiInvokeService {
                                       Map<String, Object> params, Map<String, String> paths) {
         Map<String, Object> identity = new LinkedHashMap<>();
         identity.put("datasourceId", datasource.getId());
+        var frozen = FrozenExternalApiScope.invocation();
+        if (frozen != null) identity.put("modelBinding", frozen.identity());
         identity.put("apiConfigId", apiConfig.getId());
         identity.put("authMode", authMode);
         identity.put("tokenUrl", tokenUrl);
@@ -2174,7 +2223,8 @@ public class ExternalApiInvokeService {
         identity.put("headers", resolvedHeaders);
         identity.put("body", buildTokenRequestBody(config.get("body"), params, resolveTokenContentType(config), paths));
         identity.put("authConfigDigest", sha256(JSON.toJSONString(config)));
-        return sha256(JSON.toJSONString(identity));
+        String material = JSON.toJSONString(identity);
+        return bindingSignature == null ? sha256(material) : bindingSignature.sign("external-api-token-cache", material);
     }
 
     private ExternalTokenCache.CachedToken requestTokenFromProvider(
@@ -2883,7 +2933,12 @@ public class ExternalApiInvokeService {
     }
 
     private boolean responseConditionMatches(Object conditionObject, Map<String, Object> response, Object body) {
-        return responseConditionMatches(conditionObject, response, body, Map.of());
+        return responseConditionMatches(conditionObject, response, body, frozenExpressionPaths());
+    }
+
+    private Map<String, String> frozenExpressionPaths() {
+        var frozen = FrozenExternalApiScope.invocation();
+        return frozen == null ? Map.of() : frozen.paths();
     }
 
     private boolean responseConditionMatches(Object conditionObject, Map<String, Object> response, Object body, Map<String, String> paths) {
@@ -3146,8 +3201,9 @@ public class ExternalApiInvokeService {
 
     private boolean shouldRecordSuccessBilling(RuleExternalApiConfig apiConfig, Map<String, Object> result) {
         JSONObject spec = ExternalApiRequestPlan.specification(apiConfig);
-        if (spec != null && spec.getJSONArray("billingBranches") != null) {
-            for (Object raw : spec.getJSONArray("billingBranches")) {
+        JSONArray branches = spec == null ? null : spec.getJSONArray("billingBranches");
+        if (branches != null && !branches.isEmpty()) {
+            for (Object raw : branches) {
                 JSONObject branch = JSON.parseObject(JSON.toJSONString(raw));
                 if (matchesResponseCondition(JSON.toJSONString(branch.get("condition")), result)) return branch.getBooleanValue("bill");
             }
@@ -3210,7 +3266,7 @@ public class ExternalApiInvokeService {
     }
 
     private Object resolveValue(Object value, Map<String, Object> params) {
-        return resolveValue(value, params, Map.of());
+        return resolveValue(value, params, frozenExpressionPaths());
     }
 
     private Object resolveValue(Object value, Map<String, Object> params, Map<String, String> paths) {
@@ -3718,7 +3774,8 @@ public class ExternalApiInvokeService {
                     && matchesResponseCondition(apiConfig.getSuccessCondition(), conditionResponse)
                 : defaultRequestSuccess(success, conditionResponse);
         log.setRequestSuccess(requestSuccess ? 1 : 0);
-        log.setFound(requestSuccess && matchesBillingCondition(apiConfig.getBillingCondition(), conditionResponse) ? 1 : 0);
+        if (trace == null || trace.stepBilling == null)
+            log.setFound(requestSuccess && matchesBillingCondition(apiConfig.getBillingCondition(), conditionResponse) ? 1 : 0);
         if (trace != null) {
             log.setRequestMethod(trace.requestMethod);
             log.setRequestUrl(trace.requestUrl);
@@ -4027,6 +4084,8 @@ public class ExternalApiInvokeService {
         private Map<String, Object> requestDetails;
         private Map<String, Object> responseDetails;
         private boolean billed;
+        private ExternalApiStepBilling stepBilling;
+        private boolean stepBillingProcessed;
         private String callId;
         private boolean tokenRefreshAttempted;
         private RuntimeTraceService.ModuleTrace runtimeTrace;
@@ -4069,6 +4128,7 @@ public class ExternalApiInvokeService {
                 Map<String, Object> result = new LinkedHashMap<>(workflowPending);
                 result.put("callId", callId);
                 result.put("apiConfigId", apiConfigId);
+                if (stepBillingProcessed) result.put("stepBilled", billed);
                 if (workflowPending.get("results") instanceof Map<?, ?> results) {
                     result.put("completedStepIds", new ArrayList<>(results.keySet()));
                 }

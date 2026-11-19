@@ -839,11 +839,23 @@
               <el-radio-group v-model="billingConfig.mode">
                 <el-radio-button value="QUERY">查询计费</el-radio-button>
                 <el-radio-button value="HIT">查得计费</el-radio-button>
+                <el-radio-button v-if="form.requestMode === 'ASYNC' || billingConfig.mode === 'STEP_RESPONSE'" value="STEP_RESPONSE">步骤响应计费</el-radio-button>
               </el-radio-group>
-              <div class="field-help">
+              <div v-if="billingConfig.mode !== 'STEP_RESPONSE'" class="field-help">
                 查询计费：只要请求已发出就计费，本地参数校验失败不计费；查得计费：只有响应满足下面条件才计费。
               </div>
             </el-form-item>
+            <div v-if="billingConfig.mode === 'STEP_RESPONSE'" class="config-card">
+              <el-form-item label="计费步骤">
+                <el-select v-model="billingConfig.stepId" aria-label="计费步骤" placeholder="选择提交请求步骤" @change="billingConfig.flagPath = ''">
+                  <el-option v-for="step in billingSteps" :key="step.id" :label="step.name || step.id" :value="step.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="供应商收费标志">
+                <protocol-path-picker v-model:value="billingConfig.flagPath" :paths="billingStepPaths" context-label="提交步骤原始响应" placeholder="例如 response.body.billable" />
+                <div class="field-help">所选步骤成功且供应商返回布尔值 true 时立即按单次价格入账。后续轮询和恢复沿用本次计费结果。</div>
+              </el-form-item>
+            </div>
             <div v-if="billingConfig.mode === 'HIT'" class="config-card">
               <div class="section-title">查得条件</div>
               <div class="field-help">
@@ -1458,6 +1470,15 @@ export default {
       return catalogs
     },
     responsePathOptions() { return apiStagePaths(parseExecution(this.form.executionConfig), 'RESULT') },
+    billingSteps() {
+      return (parseExecution(this.form.executionConfig).steps || []).filter(step => step.type === 'HTTP' && !step.poll)
+    },
+    billingStepPaths() {
+      const execution = parseExecution(this.form.executionConfig)
+      const index = execution.steps.findIndex(step => step.id === this.billingConfig.stepId)
+      return index < 0 ? [] : apiStagePaths(execution, 'STEP_POLL', index)
+        .filter(field => field.value.startsWith('response.body.') || field.value.startsWith('response.body['))
+    },
     visibleConfigTabs() {
       return this.configTabs.filter((item) => {
         if (item.name === 'execution') return false
@@ -1769,6 +1790,8 @@ export default {
     emptyBillingConfig() {
       return {
         mode: 'QUERY',
+        stepId: '',
+        flagPath: '',
         conditionRoot: {
           type: 'group',
           operator: 'AND',
@@ -1878,6 +1901,8 @@ export default {
       const parsed = this.parseConfigForTemplate(this.form.billingCondition)
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         this.billingConfig = {
+          stepId: parsed.stepId || '',
+          flagPath: parsed.flagPath || '',
           mode:
             parsed.mode ||
             (parsed.condition || parsed.path || parsed.field ? 'HIT' : 'QUERY'),
@@ -2057,6 +2082,10 @@ export default {
       if (!this.billingConfig || this.billingConfig.mode === 'QUERY') {
         return { mode: 'QUERY' }
       }
+      if (this.billingConfig.mode === 'STEP_RESPONSE') {
+        const { stepId, flagPath } = this.billingConfig
+        return { mode: 'STEP_RESPONSE', stepId, flagPath: (flagPath || '').trim() }
+      }
       return {
         mode: 'HIT',
         condition: this.sanitizeApiConditionTree(
@@ -2167,6 +2196,12 @@ export default {
       if (retryError) throw new Error(retryError)
       const executionError = validateExecution(JSON.parse(data.executionConfig), data.requestMode)
       if (executionError) throw new Error(executionError)
+      if (this.billingConfig.mode === 'STEP_RESPONSE') {
+        if (data.requestMode !== 'ASYNC' || !this.billingSteps.some(step => step.id === this.billingConfig.stepId))
+          throw new Error('请选择异步接口中的非轮询 HTTP 提交步骤')
+        if (!/^response\.body(?:\.[\p{L}_$][\p{L}\p{N}_$-]*|\[\d+\]|\['[^'\r\n]+'\]|\["[^"\r\n]+"\])+$/u.test(this.billingConfig.flagPath || ''))
+          throw new Error('收费标志须为 response.body 下的单个布尔字段路径')
+      }
       const successCondition = this.buildSuccessConditionConfig()
       if (this.tokenFailureMode === 'CUSTOM') this.validateApiConditionTree(this.tokenFailureConditionRoot, 'Token鉴权失败条件')
       this.validateApiConditionTree(successCondition, '请求成功条件')

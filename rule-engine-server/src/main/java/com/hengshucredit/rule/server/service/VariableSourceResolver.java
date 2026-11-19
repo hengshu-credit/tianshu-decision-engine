@@ -56,6 +56,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Service
 public class VariableSourceResolver {
     @Resource @Lazy private ResourceVersionService resourceVersions;
+    @Resource @Lazy private ModelExternalBindings modelExternalBindings;
     @Resource private ExternalApiConsumerService externalApiConsumerService;
     @Resource @org.springframework.context.annotation.Lazy private DataObjectSourceResolver dataObjectSourceResolver;
 
@@ -248,6 +249,30 @@ public class VariableSourceResolver {
         }
         removeCallerConstantValues(frozenVariables, resolvedParams);
         applyConstantValues(frozenVariables, resolvedParams);
+        try (var modelApis = openModelInputs(frozenVariables, frozenModels, effectiveOptions)) {
+            return resolveSnapshotSources(frozenVariables, frozenModels, functions, resolvedParams, effectiveOptions);
+        }
+    }
+
+    private FrozenExternalApiScope openModelInputs(List<RuleVariable> variables, List<RuleModel> models, VariableResolveOptions options) {
+        var runtime = options.getRuntimeSnapshot();
+        if (runtime == null || runtime.getFrozenModelApis().isEmpty() || models.isEmpty()) return null;
+        Set<String> names = options.getRequiredScriptNames();
+        if (names != null) {
+            names = expandRequiredScriptNames(names, variables, models, options.isRequiredNamesUpstreamOnly(), options,
+                    runtime.getFrozenModelApis());
+        }
+        var ids = new ArrayList<Long>();
+        for (var model : models) {
+            if (model != null && model.getId() != null && model.getModelCode() != null
+                    && (names == null || isModelRequired(model.getModelCode(), names))) ids.add(model.getId());
+        }
+        var bindings = runtime.getFrozenModelApisFor(ids);
+        return bindings.isEmpty() ? null : modelExternalBindings.open(bindings, options.getExecutionProjectId());
+    }
+
+    private Map<String, Object> resolveSnapshotSources(List<RuleVariable> frozenVariables, List<RuleModel> frozenModels,
+                                                       List<RuleFunction> functions, Map<String, Object> resolvedParams, VariableResolveOptions effectiveOptions) {
         Set<String> requiredScriptNames = expandRequiredScriptNames(
                 effectiveOptions.getRequiredScriptNames(), frozenVariables, frozenModels,
                 effectiveOptions.isRequiredNamesUpstreamOnly(), effectiveOptions);
@@ -440,7 +465,10 @@ public class VariableSourceResolver {
             if ("API".equals(variable.getVarSource())) {
                 Map<String, Object> config = parseJsonMap(variable.getSourceConfig());
                 Long apiId = longValue(config.get("apiConfigId"));
-                if (apiId != null && apiConfigMapper != null) {
+                var frozen = FrozenExternalApiScope.forApi(apiId);
+                if (frozen != null) {
+                    snapshot.put("modelExternalBinding", frozen.identity());
+                } else if (apiId != null && apiConfigMapper != null) {
                     RuleExternalApiConfig api = apiConfigMapper.selectById(apiId);
                     if (api != null) {
                         snapshot.put("apiConfig", JSON.toJSON(api));
@@ -881,6 +909,15 @@ public class VariableSourceResolver {
     }
 
     private String variableCacheKey(RuleVariable variable) {
+        String key = variableSourceIdentity(variable);
+        if ("API".equals(variable.getVarSource()) && FrozenExternalApiScope.active()) {
+            var frozen = FrozenExternalApiScope.forApi(longValue(parseJsonMap(variable.getSourceConfig()).get("apiConfigId")));
+            if (frozen != null) return key + ":" + frozen.identity();
+        }
+        return key;
+    }
+
+    private String variableSourceIdentity(RuleVariable variable) {
         return "VARIABLE:" + (variable.getId() == null ? "DRAFT:" + resolveScriptName(variable) : variable.getId());
     }
 
@@ -1067,6 +1104,12 @@ public class VariableSourceResolver {
     private Set<String> expandRequiredScriptNames(Set<String> initial, List<RuleVariable> variables,
                                                    List<RuleModel> models, boolean upstreamOnly,
                                                    VariableResolveOptions options) {
+        return expandRequiredScriptNames(initial, variables, models, upstreamOnly, options, Map.of());
+    }
+
+    private Set<String> expandRequiredScriptNames(Set<String> initial, List<RuleVariable> variables,
+                                                  List<RuleModel> models, boolean upstreamOnly, VariableResolveOptions options,
+                                                  Map<Long, JSONObject> planningBindings) {
         Map<String, RuleVariable> variableMap = new LinkedHashMap<>();
         for (RuleVariable variable : variables) {
             String scriptName = resolveScriptName(variable);
@@ -1093,7 +1136,19 @@ public class VariableSourceResolver {
             String name = queue.get(index++);
             RuleVariable variable = variableMap.get(name);
             if (variable != null) {
-                for (String dependency : collectVariableDependencies(variable, options)) {
+                Set<String> dependencies;
+                var binding = !planningBindings.isEmpty() && "API".equals(variable.getVarSource())
+                        ? planningBindings.get(longValue(parseJsonMap(variable.getSourceConfig()).get("apiConfigId"))) : null;
+                if (binding != null) {
+                    // 先定位实际需要的模型，不能为了构造模型输入计划读取已经变更的实时 API。
+                    dependencies = new LinkedHashSet<>();
+                    binding.getJSONObject("paths").values().forEach(path -> dependencies.add(String.valueOf(path)));
+                    collectApiOperandDependencies(parseJsonMap(variable.getSourceConfig()).get("requestOverrides"),
+                            options.getDerivedReferencePaths(), dependencies);
+                } else {
+                    dependencies = collectVariableDependencies(variable, options);
+                }
+                for (String dependency : dependencies) {
                     if (expanded.add(dependency)) {
                         queue.add(dependency);
                     }
@@ -1226,12 +1281,16 @@ public class VariableSourceResolver {
             }
         } else if ("API".equals(varSource)) {
             ExternalApiRequestPlan.validateBinding(config);
-            Map<String, String> paths = options != null ? options.getDerivedReferencePaths() : null;
+            Long apiId = longValue(config.get("apiConfigId"));
+            var frozen = FrozenExternalApiScope.forApi(apiId);
+            Map<String, String> paths = options == null ? null : options.getDerivedReferencePaths();
+            if (frozen != null) paths = frozen.paths();
             if (paths == null && variableService != null) paths = variableService.buildRefScriptNameMap(variable.getProjectId());
             collectApiOperandDependencies(config.get("requestOverrides"), paths, dependencies);
-            Long apiId = longValue(config.get("apiConfigId"));
             var cache = options == null ? null : options.getInvocationCache();
-            RuleExternalApiConfig api = apiConfigMapper == null ? null : cache == null ? apiConfigMapper.selectById(apiId)
+            RuleExternalApiConfig api = null;
+            if (frozen != null) api = frozen.api(apiId);
+            else if (apiConfigMapper != null) api = cache == null ? apiConfigMapper.selectById(apiId)
                     : cache.api(apiId, apiConfigMapper::selectById);
             if (api != null) {
                 collectApiConfigDependencies(api, paths, dependencies, cache);
@@ -1273,8 +1332,11 @@ public class VariableSourceResolver {
                                               VariableResolutionInvocationCache cache) {
         collectApiOperandDependencies(ExternalApiAuthConfig.inputs(apiConfig.getAuthApiConfig()), paths, dependencies);
         if (externalApiInvokeService != null) collectApiOperandDependencies(externalApiInvokeService.linkedRequestInputs(apiConfig), paths, dependencies);
-        if ((apiConfig.getAuthMode() == null || "INHERIT".equals(apiConfig.getAuthMode())) && externalDatasourceMapper != null) {
-            RuleExternalDatasource datasource = cache == null ? externalDatasourceMapper.selectById(apiConfig.getDatasourceId())
+        var frozen = FrozenExternalApiScope.forApi(apiConfig.getId());
+        if (apiConfig.getAuthMode() == null || "INHERIT".equals(apiConfig.getAuthMode())) {
+            RuleExternalDatasource datasource = null;
+            if (frozen != null) datasource = frozen.datasource(apiConfig.getDatasourceId());
+            else if (externalDatasourceMapper != null) datasource = cache == null ? externalDatasourceMapper.selectById(apiConfig.getDatasourceId())
                     : cache.datasource(apiConfig.getDatasourceId(), externalDatasourceMapper::selectById);
             if (datasource != null) collectApiOperandDependencies(ExternalApiAuthConfig.inputs(datasource.getAuthConfig()), paths, dependencies);
         }
@@ -1788,7 +1850,7 @@ public class VariableSourceResolver {
         Map<String, Object> response;
         if (externalApiConsumerService != null) {
             response = externalApiConsumerService.resolve(variable.getProjectId(), apiConfigId, config, requestParams,
-                    options, variableCacheKey(variable), params);
+                    options, variableSourceIdentity(variable), params);
         } else {
             String cacheKey = externalApiInvokeService.invocationCacheKey(apiConfigId, requestParams);
             invocationCache.associateResponse(variableCacheKey(variable), cacheKey);

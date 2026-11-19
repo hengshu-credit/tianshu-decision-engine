@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.JSONPath;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
+import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
 import com.hengshucredit.rule.server.artifact.CanonicalJson;
 import com.hengshucredit.rule.server.artifact.Sha256Digests;
 
@@ -16,7 +17,12 @@ import java.util.Set;
 
 /** 无网络、无鉴权副作用的请求绑定。调用身份只取决于配置和生效的请求字段。 */
 public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, Object> values,
-                                     Map<String, Object> params, String identity) {
+                                     Map<String, Object> params, String identity, String legacyIdentity) {
+    public ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, Object> values,
+                                  Map<String, Object> params, String identity) {
+        this(config, values, params, identity, identity);
+    }
+
     public static ExternalApiRequestPlan prepare(RuleExternalApiConfig source, Map<String, Object> input,
                                                  Map<String, Object> overrides, Map<String, String> paths) {
         return prepare(source, input, overrides, paths, null);
@@ -113,7 +119,18 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
             }
             identityValues.put("authentication", authInputs);
             params.put("__apiAuthIdentity", Sha256Digests.text(CanonicalJson.write(authInputs)));
-            return new ExternalApiRequestPlan(api, effective, params, identity(source, identityValues));
+            Map<String, Object> rawConfig = identityConfig(source);
+            String fieldsDigest = Sha256Digests.text(CanonicalJson.write(identityValues));
+            String oldKey = identity(source.getId(), rawConfig, fieldsDigest);
+            // MySQL returns JSON as text and DECIMAL at the column scale. Approved snapshots
+            // store the same V2 document as an object and may omit insignificant decimal zeros.
+            rawConfig.put("executionConfig", specification);
+            for (String key : List.of("unitPrice", "retryBackoffMultiplier", "qpsLimit")) {
+                if (rawConfig.get(key) instanceof java.math.BigDecimal decimal) {
+                    rawConfig.put(key, decimal.stripTrailingZeros());
+                }
+            }
+            return new ExternalApiRequestPlan(api, effective, params, identity(source.getId(), rawConfig, fieldsDigest), oldKey);
         }
         throw new IllegalArgumentException("V2 executionConfig 缺少 requestFields");
     }
@@ -121,6 +138,73 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
     public static void validateBinding(Map<?, ?> binding) {
         if (binding.containsKey("inputOverrides") || binding.containsKey("paramMapping")) {
             throw new IllegalArgumentException("外数取值仅支持按请求字段 ID 配置 requestOverrides");
+        }
+    }
+
+    /** 同一笔请求的正式/模型取数只在路由、鉴权和受管映射都等价时共享。旧断点仍使用原键恢复。 */
+    ExternalApiRequestPlan withTransport(RuleExternalDatasource source, Map<String, String> paths,
+                                         LocalModelBindingSignature signer) {
+        if (source == null || signer == null) return this;
+        var transport = new LinkedHashMap<String, Object>();
+        transport.put("plan", identity);
+        transport.put("datasource", source.getId());
+        transport.put("project", source.getProjectId());
+        transport.put("scope", source.getScope());
+        transport.put("protocol", source.getProtocol());
+        transport.put("url", source.getBaseUrl());
+        transport.put("authType", source.getAuthType());
+        transport.put("tokenTtl", source.getTokenCacheSeconds());
+        Map<String, Object> references = new LinkedHashMap<>();
+        JSONObject spec = specification(config);
+        Map<String, Object> responseReferences = new LinkedHashMap<>();
+        for (String branch : List.of("responseBranches", "exceptionBranches", "billingBranches", "retryBranches")) {
+            collectBoundReferences(spec.get(branch), paths, params, responseReferences);
+        }
+        for (String definition : java.util.Arrays.asList(config.getSuccessCondition(), config.getExceptionCondition(),
+                config.getBillingCondition(), config.getRetryCondition(), config.getTokenFailureCondition())) {
+            if (definition != null && definition.contains("\"refId\"") && definition.trim().startsWith("{")) {
+                collectBoundReferences(JSON.parseObject(definition), paths, params, responseReferences);
+            }
+        }
+        // 响应侧受管引用在模型中用冻结路径求值，普通 API 按其既有协议上下文处理。
+        if (!responseReferences.isEmpty() && FrozenExternalApiScope.invocation() != null)
+            transport.put("frozenResponseReferences", responseReferences);
+        collectBoundReferences(spec, paths, params, references);
+        for (String auth : java.util.Arrays.asList(config.getAuthApiConfig(), source.getAuthConfig())) {
+            if (auth != null && auth.contains("\"refId\"") && auth.trim().startsWith("{"))
+                collectBoundReferences(JSON.parseObject(auth), paths, params, references);
+        }
+        transport.put("references", references);
+        String key = transportIdentity(transport, signer);
+        transport.put("plan", legacyIdentity);
+        String oldKey = identity.equals(legacyIdentity) ? key : transportIdentity(transport, signer);
+        var signedParams = new LinkedHashMap<>(params);
+        if (signedParams.get("__apiAuthIdentity") instanceof String auth) {
+            signedParams.put("__apiAuthIdentity", signer.sign("external-api-auth-identity", auth));
+        }
+        return new ExternalApiRequestPlan(config, values, signedParams, key, oldKey);
+    }
+
+    private String transportIdentity(Map<String, Object> transport, LocalModelBindingSignature signer) {
+        return "API_CHAIN:" + config.getId() + ":" + signer.sign("api-request-transport", CanonicalJson.write(transport));
+    }
+
+    private static void collectBoundReferences(Object node, Map<String, String> paths, Map<String, Object> params,
+                                                Map<String, Object> references) {
+        if (node instanceof Map<?, ?> map) {
+            if ("LITERAL".equals(map.get("kind"))) return;
+            if (map.containsKey("refId") && map.containsKey("refType")) {
+                String ref = map.get("refType") + ":" + map.get("refId");
+                String path = paths == null ? null : paths.get(ref);
+                references.put(ref, java.util.Arrays.asList(path, path == null ? null : read(params, path)));
+            } else {
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    if (!Set.of("samples", "requestSample", "responseSample", "sample").contains(String.valueOf(entry.getKey())))
+                        collectBoundReferences(entry.getValue(), paths, params, references);
+                }
+            }
+        } else if (node instanceof Iterable<?> items) {
+            for (Object item : items) collectBoundReferences(item, paths, params, references);
         }
     }
 
@@ -231,12 +315,15 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
         if (!JSONPath.set(root, target, value)) throw new IllegalArgumentException("字段路径无法写入: " + path);
     }
 
-    private static String identity(RuleExternalApiConfig api, Map<String, Object> fields) {
+    private static Map<String, Object> identityConfig(RuleExternalApiConfig api) {
         Map<String, Object> source = JSON.parseObject(JSON.toJSONString(api));
         source.remove("createTime"); source.remove("updateTime"); source.remove("testSampleParams");
         source.remove("executionCallId");
-        return checkpointIdentity("API_CHAIN:" + api.getId() + ":" + Sha256Digests.text(CanonicalJson.write(source))
-                + ":" + Sha256Digests.text(CanonicalJson.write(fields)));
+        return source;
+    }
+
+    private static String identity(Long id, Map<String, Object> config, String fieldsDigest) {
+        return checkpointIdentity("API_CHAIN:" + id + ":" + Sha256Digests.text(CanonicalJson.write(config)) + ":" + fieldsDigest);
     }
 
     // 兼容旧断点的双摘要键；库中 step_id 最多 128 字符。
