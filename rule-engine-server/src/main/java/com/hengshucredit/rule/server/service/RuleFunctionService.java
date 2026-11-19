@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.function.AggregateBuiltinFunctionRegistry;
 import com.hengshucredit.rule.core.function.FunctionParameterContract;
 import com.hengshucredit.rule.core.function.FunctionScriptContract;
 import com.hengshucredit.rule.core.function.ManagedFunctionInvoker;
@@ -322,7 +323,7 @@ public class RuleFunctionService {
         RuleResult ruleResult;
         try (var ignored = com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext().bindFunctions(
                 functionRegistrar.prepareFunctions(Collections.singletonList(function), qlExpressEngine.getRunner()))) {
-            ruleResult = qlExpressEngine.execute(buildFunctionTestScript(function, implType), context, true);
+            ruleResult = qlExpressEngine.execute(buildFunctionTestScript(function, implType, parseParamNames(function.getParamsJson())), context, true);
         }
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -355,6 +356,12 @@ public class RuleFunctionService {
         }
         List<String> paramNames = parseParamNames(function.getParamsJson());
         List<Object> values = args == null ? Collections.emptyList() : args;
+        if (values.size() == 5 && paramNames.size() == 7 && "JAVA".equals(function.getImplType())
+                && "scoreByBadRatePdo".equals(function.getFuncCode())
+                && AggregateBuiltinFunctionRegistry.matchesManagementMethod(function.getFuncCode(), function.getImplClass(),
+                        function.getImplMethod(), function.getParamsJson())) {
+            paramNames = List.of("current_bad_rate", "base_score", "base_odds", "pdo", "direction");
+        }
         if (paramNames.size() != values.size()) {
             throw new IllegalArgumentException("转换函数 " + function.getFuncCode() + " 参数数量应为 "
                     + paramNames.size() + "，实际为 " + values.size());
@@ -367,7 +374,7 @@ public class RuleFunctionService {
         RuleResult result;
         try (var ignored = com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext().bindFunctions(
                 functionRegistrar.prepareFunctions(Collections.singletonList(function), qlExpressEngine.getRunner()))) {
-            result = qlExpressEngine.execute(buildFunctionTestScript(function, implType), context, false);
+            result = qlExpressEngine.execute(buildFunctionTestScript(function, implType, paramNames), context, false);
         }
         if (!result.isSuccess()) {
             throw new IllegalArgumentException("转换函数 " + function.getFuncCode() + " 执行失败: " + result.getErrorMessage());
@@ -464,9 +471,8 @@ public class RuleFunctionService {
         return left.equals(right);
     }
 
-    private String buildFunctionTestScript(RuleFunction function, String implType) {
+    private String buildFunctionTestScript(RuleFunction function, String implType, List<String> paramNames) {
         String functionCode = FunctionScriptContract.requireIdentifier(function.getFuncCode());
-        List<String> paramNames = parseParamNames(function.getParamsJson());
         StringBuilder script = new StringBuilder();
         if ("SCRIPT".equals(implType)) {
             script.append(functionRegistrar.buildScriptFunctionPrefix(Collections.singletonList(function)));

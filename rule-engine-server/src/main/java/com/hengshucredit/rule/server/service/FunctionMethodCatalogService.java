@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.core.function.AggregateBuiltinFunctionRegistry;
 import com.hengshucredit.rule.core.function.FunctionParameterContract;
 import com.hengshucredit.rule.model.dto.FunctionMethodCatalog;
 import com.hengshucredit.rule.model.entity.RuleFunction;
@@ -66,13 +67,13 @@ public class FunctionMethodCatalogService {
             legacy = !parameters.isEmpty() && parameters.get(0).javaType() == null;
             Method selected = FunctionParameterContract.resolveMethod(implementation, function.getImplMethod(), function.getFuncCode(), function.getParamsJson());
             var platform = com.hengshucredit.rule.core.function.AggregateBuiltinFunctionRegistry.managementMethod(function.getFuncCode());
-            if (platform != null && (!javaClass || !platform.equals(selected)))
+            if (platform != null && (!javaClass || !AggregateBuiltinFunctionRegistry.isManagementMethod(function.getFuncCode(), selected)))
                 return new FunctionMethodCatalog("AVAILABLE", "该函数编码属于平台内置函数，请保留其原方法或使用其他函数编码", implementation.getName(), signature(selected), legacy, false, methods);
             if (com.hengshucredit.rule.core.function.ManagedFunctionInvoker.NAME.equals(function.getFuncCode()))
                 return new FunctionMethodCatalog("AVAILABLE", "该函数编码由引擎内部使用，请更换函数编码", implementation.getName(), signature(selected), legacy, false, methods);
             // 候选默认隐藏 Object 的通用方法，但已有显式绑定仍按真实公开方法核对。
             String unavailableReason = availability(implementation, selected, javaClass, function.getFuncCode());
-            return new FunctionMethodCatalog("AVAILABLE", unavailableReason == null ? (legacy ? "当前配置沿用旧参数映射；选择具体方法可固定精确签名" : "方法签名已在当前管理服务核对") : unavailableReason,
+            return new FunctionMethodCatalog("AVAILABLE", unavailableReason == null ? (legacy ? "已找到与当前参数匹配的方法。选择该方法并保存，即可记录每个参数的 Java 类型。" : "方法签名已在当前管理服务核对") : unavailableReason,
                     implementation.getName(), signature(selected), legacy, unavailableReason == null, methods);
         } catch (IllegalArgumentException error) {
             return new FunctionMethodCatalog("AVAILABLE", error.getMessage(), implementation.getName(), null, legacy, false, methods);
@@ -94,7 +95,7 @@ public class FunctionMethodCatalogService {
     private boolean isPlatformBinding(RuleFunction function) {
         Method platform = com.hengshucredit.rule.core.function.AggregateBuiltinFunctionRegistry.managementMethod(function.getFuncCode());
         if (platform == null || !"JAVA".equals(function.getImplType()) || !platform.getDeclaringClass().getName().equals(function.getImplClass())) return false;
-        try { return platform.equals(FunctionParameterContract.resolveMethod(platform.getDeclaringClass(), function.getImplMethod(), function.getFuncCode(), function.getParamsJson())); }
+        try { return AggregateBuiltinFunctionRegistry.isManagementMethod(function.getFuncCode(), FunctionParameterContract.resolveMethod(platform.getDeclaringClass(), function.getImplMethod(), function.getFuncCode(), function.getParamsJson())); }
         catch (IllegalArgumentException error) { return false; }
     }
 

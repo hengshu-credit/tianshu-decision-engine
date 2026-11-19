@@ -441,7 +441,7 @@ public class ClientFunctionRegistrar {
         Method method = FunctionParameterContract.resolveMethod(implementation, methodName, funcCode, function.getString("paramsJson"));
         com.hengshucredit.rule.core.function.NativeFunctionSecurity.requireAllowed(method, funcCode);
         Object instance = Modifier.isStatic(method.getModifiers()) ? null : implementation.getDeclaredConstructor().newInstance();
-        return new QMethodFunction(instance, method);
+        return AggregateBuiltinFunctionRegistry.bindNativeMethod(instance, method);
     }
 
     private CustomFunction buildBeanFunction(JSONObject function) throws Exception {

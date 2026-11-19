@@ -8,7 +8,7 @@ public final class NativeFunctionSecurity {
 
     public static boolean isAllowed(Method method, String functionCode) {
         return method.isAnnotationPresent(ScriptCallable.class)
-                || method.equals(AggregateBuiltinFunctionRegistry.managementMethod(functionCode));
+                || AggregateBuiltinFunctionRegistry.isManagementMethod(functionCode, method);
     }
 
     public static void requireAllowed(Method method, String functionCode) {

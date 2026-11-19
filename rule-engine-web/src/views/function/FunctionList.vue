@@ -341,13 +341,12 @@
                 <el-button link @click="nativeManual = !nativeManual">{{ nativeManual ? '返回方法选择' : '手工填写目标签名' }}</el-button>
               </div>
               <el-alert v-if="currentMethodCatalog" :title="currentMethodCatalog.message" :type="currentMethodCatalog.valid && !currentMethodCatalog.legacySignature ? 'success' : 'warning'" :closable="false" show-icon />
-              <div v-else class="function-method-help">选择方法会带出实际参数类型；业务名称和参数说明保持可编辑，保存前会再次核对。</div>
               <div v-if="nativeManual" class="function-method-help">用于目标运行端尚未安装的实现。请明确填写方法名和每个参数的实际类型；未验证状态会保留在审批预检中。</div>
             </div>
           </el-form-item>
         </template>
         <el-form-item label="参数列表">
-          <div class="function-form-help">参数名用于脚本调用；Java/Bean 函数的实际方法类型由方法选择结果带出，业务类型用于设计器字段类型匹配。</div>
+          <div class="function-form-help">脚本按参数顺序传值。<span v-if="isNativeFunction && !nativeManual && editParams.some((_, i) => !methodParameterType(i))">点击上方“读取方法”，可查看每个参数的 Java 类型。</span></div>
           <el-alert v-if="parameterConfigError" :title="parameterConfigError" type="error" :closable="false" show-icon>
             <el-button link @click="resetFunctionParameters">重新配置参数</el-button>
           </el-alert>
@@ -389,8 +388,9 @@
               :disabled="isNativeFunction && !nativeManual"
               @click="editParams.splice(pi, 1)"
             />
-            <div v-if="isNativeFunction" class="function-parameter-java-type">
-              <span>实际方法类型</span>
+            <div v-if="p.help" class="function-parameter-help">{{ p.help }}</div>
+            <div v-if="isNativeFunction && (nativeManual || methodParameterType(pi))" class="function-parameter-java-type">
+              <span>Java 参数类型</span>
               <el-select v-if="nativeManual" v-model="p.javaType" filterable allow-create default-first-option :aria-label="`参数 ${pi + 1} 实际方法类型`" placeholder="选择或填写精确 Java 类型">
                 <el-option v-for="type in functionJavaTypes" :key="type" :value="type" :label="type" />
               </el-select>
@@ -835,7 +835,7 @@ export default {
     methodParameterType(index) {
       const explicit = this.editParams[index]?.javaType
       if (explicit) return explicit
-      return this.currentMethodCatalog?.methods?.find(method => method.signature === this.currentMethodCatalog.signature)?.parameters?.[index]?.javaType || '旧映射，读取方法后确认'
+      return this.currentMethodCatalog?.methods?.find(method => method.signature === this.currentMethodCatalog.signature)?.parameters?.[index]?.javaType || ''
     },
     restoreCachedState() {
       const state = restorePageState(projectPageStateKey('FunctionList', this.currentProjectId))
@@ -1268,6 +1268,7 @@ export default {
 .function-parameter-row { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(130px, 1fr) minmax(90px, 1fr) 28px; gap: 6px; margin-bottom: 10px; }
 .code-error { color: var(--el-color-danger); font-size: 12px; }
 .function-parameter-row > * { min-width: 0; }
+.function-parameter-help { grid-column: 1 / -1; color: var(--tianshu-text-secondary); font-size: 12px; overflow-wrap: anywhere; }
 .function-parameter-java-type { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--tianshu-text-secondary); font-size: 12px; }
 .function-parameter-java-type code { overflow-wrap: anywhere; }
 .function-parameter-java-type .el-select { flex: 1; min-width: 180px; }

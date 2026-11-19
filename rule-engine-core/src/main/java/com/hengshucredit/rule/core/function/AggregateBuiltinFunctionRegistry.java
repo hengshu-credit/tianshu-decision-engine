@@ -1,6 +1,8 @@
 package com.hengshucredit.rule.core.function;
 
 import com.alibaba.qlexpress4.Express4Runner;
+import com.alibaba.qlexpress4.runtime.function.QMethodFunction;
+import com.alibaba.qlexpress4.runtime.function.CustomFunction;
 import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -47,6 +49,10 @@ public final class AggregateBuiltinFunctionRegistry {
     private static final Class<?>[] DOUBLE_DOUBLE_DOUBLE = {double.class, double.class, double.class};
     private static final Class<?>[] DOUBLE_DOUBLE_DOUBLE_STRING = {double.class, double.class, double.class, String.class};
     private static final Class<?>[] DOUBLE_DOUBLE_DOUBLE_DOUBLE_STRING = {double.class, double.class, double.class, double.class, String.class};
+    private static final String BAD_RATE_PDO = "scoreByBadRatePdo";
+    private static final Method CURRENT_PDO_METHOD = badRatePdoMethod(double.class, double.class, Number.class,
+            Number.class, double.class, double.class, String.class);
+    private static final Method LEGACY_PDO_METHOD = badRatePdoMethod(DOUBLE_DOUBLE_DOUBLE_DOUBLE_STRING);
     private static final Class<?>[] OBJECT_VARARGS = {Object[].class};
 
     private AggregateBuiltinFunctionRegistry() {
@@ -237,7 +243,8 @@ public final class AggregateBuiltinFunctionRegistry {
         registerMethod(runner, "scoreByOdds", DECISION_DELEGATE, "scoreByOdds", DOUBLE_DOUBLE_DOUBLE_STRING);
         registerMethod(runner, "scoreByProbability", DECISION_DELEGATE, "scoreByProbability", DOUBLE_DOUBLE_DOUBLE_STRING);
         registerMethod(runner, "scoreByOddsPdo", DECISION_DELEGATE, "scoreByOddsPdo", DOUBLE_DOUBLE_DOUBLE_DOUBLE_STRING);
-        registerMethod(runner, "scoreByBadRatePdo", DECISION_DELEGATE, "scoreByBadRatePdo", DOUBLE_DOUBLE_DOUBLE_DOUBLE_STRING);
+        MANAGEMENT_METHODS.putIfAbsent(BAD_RATE_PDO, CURRENT_PDO_METHOD);
+        if (runner != null) runner.addFunction(BAD_RATE_PDO, bindNativeMethod(DECISION_DELEGATE, CURRENT_PDO_METHOD));
         registerMethod(runner, "setRuntimeValue", RUNTIME_CONTEXT_DELEGATE, "setRuntimeValue", STRING_OBJECT);
         registerMethod(runner, "currentRule", RUNTIME_CONTEXT_DELEGATE, "currentRule", NO_ARGS);
         registerMethod(runner, "currentRuleName", RUNTIME_CONTEXT_DELEGATE, "currentRuleName", NO_ARGS);
@@ -248,6 +255,33 @@ public final class AggregateBuiltinFunctionRegistry {
         registerMethod(runner, "writeRuleList", RUNTIME_CONTEXT_DELEGATE, "writeRuleList", new Class<?>[]{String.class, Object.class});
         registerMethod(runner, "recordRuleSetItem", RUNTIME_CONTEXT_DELEGATE, "recordRuleSetItem", TWO_STRINGS_OBJECT);
         registerMethod(runner, "recordRuleSetSummary", RUNTIME_CONTEXT_DELEGATE, "recordRuleSetSummary", SINGLE_OBJECT);
+    }
+
+    private static Method badRatePdoMethod(Class<?>... types) {
+        try {
+            return DecisionBuiltinFunctions.class.getMethod(BAD_RATE_PDO, types);
+        } catch (NoSuchMethodException error) {
+            throw new IllegalStateException("评分函数方法不存在", error);
+        }
+    }
+
+    /** 旧制品继续精确绑定五参数方法，新版入口也接受已保存的五参数位置调用。 */
+    public static CustomFunction bindNativeMethod(Object instance, Method method) {
+        var current = new QMethodFunction(instance, method);
+        if (!CURRENT_PDO_METHOD.equals(method)) return current;
+        var legacy = new QMethodFunction(instance, LEGACY_PDO_METHOD);
+        return (context, args) -> {
+            try {
+                return (args.size() == LEGACY_PDO_METHOD.getParameterCount() ? legacy : current).call(context, args);
+            } catch (java.lang.reflect.InvocationTargetException error) {
+                if (error.getCause() instanceof IllegalArgumentException validation) throw validation;
+                throw error;
+            }
+        };
+    }
+
+    public static boolean isManagementMethod(String code, Method method) {
+        return method.equals(managementMethod(code)) || BAD_RATE_PDO.equals(code) && LEGACY_PDO_METHOD.equals(method);
     }
 
     private static void registerMethod(Express4Runner runner, String code, Object delegate, String methodName, Class<?>[] types) {
@@ -286,6 +320,6 @@ public final class AggregateBuiltinFunctionRegistry {
     public static boolean matchesManagementMethod(String code, String className, String methodName, String paramsJson) {
         Method expected = managementMethod(code);
         if (expected == null || !expected.getDeclaringClass().getName().equals(className)) return false;
-        return expected.equals(FunctionParameterContract.resolveMethod(expected.getDeclaringClass(), methodName, code, paramsJson));
+        return isManagementMethod(code, FunctionParameterContract.resolveMethod(expected.getDeclaringClass(), methodName, code, paramsJson));
     }
 }

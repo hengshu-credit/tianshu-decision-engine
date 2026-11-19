@@ -23,6 +23,37 @@ public class DecisionBuiltinFunctionsTest {
     private final DecisionBuiltinFunctions functions = new DecisionBuiltinFunctions();
 
     @Test
+    public void badRatePdoUsesOneBaselineAndConfigurableOddsMultiple() {
+        assertEquals("600.00", functions.scoreByBadRatePdo(.25, 600, 3, null, 2, 20, "ASC").toString());
+        assertEquals("620.00", functions.scoreByBadRatePdo(.1, 600, 3, null, 3, 20, "ASC").toString());
+        assertEquals("580.00", functions.scoreByBadRatePdo(.1, 600, null, .25, 3, 20, "DESC").toString());
+        assertEquals("560.00", functions.scoreByBadRatePdo(.5, 600, 4, null, 2, 20, "ASC").toString());
+        org.junit.Assert.assertThrows(IllegalArgumentException.class,
+                () -> functions.scoreByBadRatePdo(.1, 600, 3, .25, 3, 20, "ASC"));
+        org.junit.Assert.assertThrows(IllegalArgumentException.class,
+                () -> functions.scoreByBadRatePdo(.1, 600, null, null, 3, 20, "ASC"));
+        for (double invalid : new double[]{0, 1, Double.NaN}) {
+            org.junit.Assert.assertThrows(IllegalArgumentException.class,
+                    () -> functions.scoreByBadRatePdo(invalid, 600, 3, null, 3, 20, "ASC"));
+            org.junit.Assert.assertThrows(IllegalArgumentException.class,
+                    () -> functions.scoreByBadRatePdo(.1, 600, null, invalid, 3, 20, "ASC"));
+            org.junit.Assert.assertThrows(IllegalArgumentException.class,
+                    () -> functions.scoreByBadRatePdo(.1, 600, 3, null, invalid, 20, "ASC"));
+        }
+    }
+
+    @Test
+    public void oldAndNewScoreScriptsRunByName() {
+        QLExpressEngine engine = new QLExpressEngine();
+        for (String args : List.of("0.2, 600, 2, 20, 'ASC'", "0.1, 600, 3, null, 3, 20, 'ASC'",
+                "0.1, 600, null, 0.25, 3, 20, 'ASC'")) {
+            RuleResult result = engine.execute("scoreByBadRatePdo(" + args + ")", new LinkedHashMap<>());
+            assertTrue(result.getErrorMessage(), result.isSuccess());
+            assertEquals("620.00", result.getResult().toString());
+        }
+    }
+
+    @Test
     public void numberStringAndArrayFunctionsWork() {
         assertEquals(16.8d, functions.numAdd(12.3, 4.5).doubleValue(), 0.000001d);
         assertEquals(7.8d, functions.numSub(12.3, 4.5).doubleValue(), 0.000001d);

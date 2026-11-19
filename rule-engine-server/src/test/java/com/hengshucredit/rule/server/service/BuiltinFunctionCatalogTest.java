@@ -111,6 +111,28 @@ public class BuiltinFunctionCatalogTest {
         }
     }
 
+    @Test
+    public void pdoFunctionRunsByIdForNewAndFrozenDefinitions() {
+        RuleFunction function = BuiltinFunctionCatalog.definitions().stream()
+                .filter(f -> "scoreByBadRatePdo".equals(f.getFuncCode())).findFirst().orElseThrow();
+        function.setId(120L);
+        RuleFunctionService service = serviceWithFunction(function);
+        assertEquals("620.00", service.invokeSnapshot(function, List.of(.2, 600, 2, 20, "ASC")).toString());
+        assertEquals("580.00", service.invokeSnapshot(function, java.util.Arrays.asList(.1, 600, null, .25, 3, 20, "DESC")).toString());
+        Map<String, Object> params = exampleParams(function.getParamsJson());
+        params.put("bad_rate", .25);
+        Map<String, Object> invalid = service.testFunction(120L, params);
+        assertEquals(false, invalid.get("success"));
+        assertTrue(String.valueOf(invalid.get("errorMessage")).contains("必须只填一项"));
+
+        JSONArray legacy = new JSONArray();
+        for (String name : List.of("bad_rate", "base_score", "base_odds", "pdo", "direction")) {
+            legacy.add(Map.of("name", name, "type", "direction".equals(name) ? "STRING" : "NUMBER"));
+        }
+        function.setParamsJson(legacy.toJSONString());
+        assertEquals("620.00", service.invokeSnapshot(function, List.of(.2, 600, 2, 20, "ASC")).toString());
+    }
+
     private static RuleFunctionService serviceWithFunction(RuleFunction function) {
         RuleFunctionService service = new RuleFunctionService() {
             @Override

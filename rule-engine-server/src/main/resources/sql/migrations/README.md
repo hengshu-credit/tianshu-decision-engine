@@ -4,6 +4,12 @@
 
 自动部署时在安装目录用 `bash install-release.sh 发布包.zip --migration-script /绝对路径/本次迁移.sh` 接入已选定的迁移脚本，在停应用后、替换前执行；Bash 脚本须先完成数据库备份，遇错非零退出。可通过 `TIANSHU_RELEASE_DIR` 访问本包 SQL，`TIANSHU_DEPLOY_DIR` 访问外层 `config/` 生效 env 与 `docker/` Compose，`TIANSHU_BACKUP_DIR` 记录备份与迁移结果。不要把所有历史 SQL 自动拼接运行。
 
+## 坏账率 PDO 评分函数（2026-11-19）
+
+已有库使用 `2026-11-19-bad-rate-pdo.sql` 将全局内置函数的原厂五参数定义升级为七参数，并保留原函数 ID。升级前检查使用该 ID 的规则草稿、转换函数和待审批配置，按新版参数顺序调整后再发布。已冻结的五参数制品和直接按函数名调用的五参数脚本仍使用原评分口径。自行修改过的定义由管理员通过函数管理的草稿和审批流程调整。
+
+七参数依次为 `current_bad_rate, base_score, base_odds, bad_rate, rate, pdo, direction`。基础好坏比和基础坏账率只填一个，另一个位置传 `null`。例如 `scoreByBadRatePdo(0.1, 600, null, 0.25, 3, 20, "ASC")` 返回 620，基础好坏比为 3，待评分好坏比为 9。
+
 ## 执行时机
 
 1. 对照当前已部署版本、数据库结构与运维执行记录，选择本次跨版本升级尚未执行的适用脚本。不要盲目遍历目录执行全部历史 SQL。

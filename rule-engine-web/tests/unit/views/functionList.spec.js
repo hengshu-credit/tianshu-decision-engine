@@ -602,6 +602,7 @@ describe('FunctionList — 精确方法签名', () => {
   test('旧DOUBLE绑定Object明确展示且改说明时不自动迁移重载', async () => {
     const params = [{ name: 'amount', type: 'DOUBLE', label: '金额' }]
     wrapper.vm.handleEdit({ id: 9, scope: 'GLOBAL', implType: 'JAVA', implClass: 'example.Methods', implMethod: 'choose', funcCode: 'old', funcName: '旧函数', paramsJson: JSON.stringify(params) })
+    expect(wrapper.vm.methodParameterType(0)).toBe('')
     const legacy = catalog('choose(java.lang.Object)', { legacySignature: true })
     functionApi.inspectFunctionMethods.mockResolvedValue({ data: legacy })
     await wrapper.vm.loadFunctionMethods()

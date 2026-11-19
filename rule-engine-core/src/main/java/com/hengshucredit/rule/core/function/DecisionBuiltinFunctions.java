@@ -815,6 +815,30 @@ public class DecisionBuiltinFunctions {
         return scoreByOddsPdo(odds, baseScore, baseOdds, pdo, direction);
     }
 
+    public BigDecimal scoreByBadRatePdo(double currentBadRate, double baseScore, Number baseOdds, Number badRate,
+                                        double rate, double pdo, String direction) {
+        if ((baseOdds == null) == (badRate == null)) {
+            throw new IllegalArgumentException("基础好坏比 base_odds 和基础坏账率 bad_rate 必须只填一项");
+        }
+        if (!Double.isFinite(rate) || rate <= 1d || !Double.isFinite(pdo) || pdo <= 0d || !Double.isFinite(baseScore)) {
+            throw new IllegalArgumentException("rate 必须大于 1，pdo 必须大于 0，评分参数须为有限数值");
+        }
+        if (baseOdds != null && (!Double.isFinite(baseOdds.doubleValue()) || baseOdds.doubleValue() <= 0d)) {
+            throw new IllegalArgumentException("基础好坏比 base_odds 必须为正数");
+        }
+        double baseLogOdds = baseOdds == null ? logGoodBadOdds(badRate.doubleValue()) : Math.log(baseOdds.doubleValue());
+        double steps = (logGoodBadOdds(currentBadRate) - baseLogOdds) / Math.log(rate);
+        return decimal(baseScore).add(decimal(scoreDirectionSign(direction) * steps).multiply(decimal(pdo)))
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static double logGoodBadOdds(double probability) {
+        if (!(probability > 0d && probability < 1d)) {
+            throw new IllegalArgumentException("坏账率须大于 0 且小于 1，例如 10% 填 0.1");
+        }
+        return Math.log1p(-probability) - Math.log(probability);
+    }
+
     private static Object readByPath(Object source, String path) {
         if (source == null) {
             return null;

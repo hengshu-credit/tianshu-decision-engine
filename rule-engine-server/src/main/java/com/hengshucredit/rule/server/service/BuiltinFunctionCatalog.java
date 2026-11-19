@@ -208,12 +208,14 @@ public final class BuiltinFunctionCatalog {
                 p("base_odds", "NUMBER", "基础 odds", 20),
                 p("pdo", "NUMBER", "PDO", 20),
                 p("direction", "STRING", "方向", "ASC")), "NUMBER", DECISION_CLASS, "scoreByOddsPdo"));
-        list.add(fn("scoreByBadRatePdo", "坏账率按 PDO 转评分", "先将 bad_rate 转为 good/bad odds，再按基础分、基础 odds、PDO 和方向转换为评分", params(
-                p("bad_rate", "NUMBER", "坏账率", 0.05),
-                p("base_score", "NUMBER", "基础分", 600),
-                p("base_odds", "NUMBER", "基础 odds", 20),
-                p("pdo", "NUMBER", "PDO", 20),
-                p("direction", "STRING", "方向", "ASC")), "NUMBER", DECISION_CLASS, "scoreByBadRatePdo"));
+        list.add(fn("scoreByBadRatePdo", "坏账率按 PDO 转评分", "待评分坏账率和基础坏账率均用小数。基础好坏比与基础坏账率只填一项，另一项填 null。好坏比每变为原来的 rate 倍，ASC 加 pdo 分，DESC 减 pdo 分。", params(
+                nativeParam("current_bad_rate", "NUMBER", "待评分坏账率", 0.1, "double", null),
+                nativeParam("base_score", "NUMBER", "基础分", 600, "double", null),
+                nativeParam("base_odds", "NUMBER", "基础好坏比（二选一）", 3, "java.lang.Number", "base_odds = (1 − bad_rate) / bad_rate"),
+                nativeParam("bad_rate", "NUMBER", "基础坏账率（二选一）", null, "java.lang.Number", "bad_rate = 1 / (1 + base_odds)"),
+                nativeParam("rate", "NUMBER", "好坏比变化倍数", 3, "double", null),
+                nativeParam("pdo", "NUMBER", "每次变动的分数", 20, "double", null),
+                nativeParam("direction", "STRING", "评分方向", "ASC", "java.lang.String", null)), "NUMBER", DECISION_CLASS, "scoreByBadRatePdo"));
 
         addExtendedDefinitions(list);
         return list;
@@ -383,6 +385,13 @@ public final class BuiltinFunctionCatalog {
         JSONArray array = new JSONArray();
         array.addAll(Arrays.asList(params));
         return JSON.toJSONString(array, SerializerFeature.WriteMapNullValue);
+    }
+
+    private static JSONObject nativeParam(String name, String type, String label, Object example, String javaType, String help) {
+        JSONObject param = p(name, type, label, example);
+        param.put("javaType", javaType);
+        if (help != null) param.put("help", help);
+        return param;
     }
 
     private static JSONObject p(String name, String type, String label, Object example) {

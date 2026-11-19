@@ -2,9 +2,9 @@ package com.hengshucredit.rule.server.service;
 
 import com.alibaba.qlexpress4.Express4Runner;
 import com.alibaba.qlexpress4.runtime.function.CustomFunction;
-import com.alibaba.qlexpress4.runtime.function.QMethodFunction;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.core.function.FunctionParameterContract;
+import com.hengshucredit.rule.core.function.AggregateBuiltinFunctionRegistry;
 import com.hengshucredit.rule.core.function.FunctionScriptContract;
 import com.hengshucredit.rule.core.function.ManagedFunctionInvoker;
 import com.hengshucredit.rule.model.entity.RuleFunction;
@@ -147,7 +147,7 @@ public class FunctionRegistrar {
                     method = FunctionParameterContract.resolveMethod(instance.getClass(), key.method(), function.getFuncCode(), key.params());
                     com.hengshucredit.rule.core.function.NativeFunctionSecurity.requireAllowed(method, function.getFuncCode());
                 }
-                CustomFunction target = new QMethodFunction(instance, method);
+                CustomFunction target = AggregateBuiltinFunctionRegistry.bindNativeMethod(instance, method);
                 if (targets.size() >= MAX_FUNCTION_TARGETS) targets.remove(targets.keySet().iterator().next());
                 targets.put(key, target);
                 return target;
@@ -196,6 +196,11 @@ public class FunctionRegistrar {
 
     private boolean isBuiltin(RuleFunction function) {
         RuleFunction builtin = BUILTINS.get(function.getFuncCode());
+        if (builtin != null && "JAVA".equals(builtin.getImplType()) && "JAVA".equals(function.getImplType())
+                && Objects.equals(builtin.getImplBeanName(), function.getImplBeanName())) {
+            return AggregateBuiltinFunctionRegistry.matchesManagementMethod(function.getFuncCode(), function.getImplClass(),
+                    function.getImplMethod(), function.getParamsJson());
+        }
         return builtin != null && Objects.equals(builtin.getImplType(), function.getImplType())
                 && Objects.equals(builtin.getImplClass(), function.getImplClass())
                 && Objects.equals(builtin.getImplBeanName(), function.getImplBeanName())
