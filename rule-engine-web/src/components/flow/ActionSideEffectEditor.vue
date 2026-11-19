@@ -44,7 +44,7 @@
         <operand-picker :value="entry.valueOperand" :vars="contentFields" :selected-vars="editor.selectedVars" :functions="editor.functions" :allowed-kinds="['LITERAL', 'REFERENCE', 'PATH', 'FUNCTION', 'OPERATION', 'ACCESS', 'CAST']" placeholder="选择内容、输入阈值或配置表达式" @input="value => editor.setOperand(entry, 'valueOperand', value)" />
         <el-button link type="danger" :aria-label="`删除内容 ${index + 1}`" @click="removeEntry(index)">删除</el-button>
       </div>
-      <el-button @click="addEntry">添加内容字段</el-button>
+      <el-button class="action-add-button" @click="addEntry">添加内容字段</el-button>
       <p>合并保留更早生效时间和更晚失效时间，永久有效优先；空值不写入。已配置执行条件的动作在根规则结束时提交，后台异步写库。后续查询可能暂时读不到本次变更。</p>
     </template>
   </div>

@@ -1,41 +1,41 @@
 <template>
   <div class="block-editor">
-    <div
+    <action-block-card
       v-for="(block, bi) in blocks"
-      :key="bi"
-      class="block-item"
+      :key="blockKey(block)"
       :class="'block-' + block.type"
+      :label="typeLabel(block.type)"
+      :color="typeColor(block.type)"
+      :selected="selectedBlock === block"
+      @select="selectedBlock = block"
     >
-      <div class="block-header">
-        <span
-          class="block-type-tag"
-          :style="{ background: typeColor(block.type) }"
-          >{{ typeLabel(block.type) }}</span
-        >
-        <div class="block-header-actions">
-          <el-button
-            v-if="bi > 0"
-            link
-            size="small"
-            :icon="ElIconTop"
-            @click="moveBlock(bi, -1)"
-          />
-          <el-button
-            v-if="bi < blocks.length - 1"
-            link
-            size="small"
-            :icon="ElIconBottom"
-            @click="moveBlock(bi, 1)"
-          />
-          <el-button
-            link
-            size="small"
-            :icon="ElIconDelete"
-            class="danger"
-            @click="removeBlock(bi)"
-          />
-        </div>
-      </div>
+      <template #summary>{{ actionBlockSummary(block, $props) }}</template>
+      <template #actions>
+        <el-button
+          v-if="bi > 0"
+          link
+          size="small"
+          :icon="ElIconTop"
+          aria-label="上移动作"
+          @click="moveBlock(bi, -1)"
+        />
+        <el-button
+          v-if="bi < blocks.length - 1"
+          link
+          size="small"
+          :icon="ElIconBottom"
+          aria-label="下移动作"
+          @click="moveBlock(bi, 1)"
+        />
+        <el-button
+          link
+          size="small"
+          :icon="ElIconDelete"
+          aria-label="删除动作"
+          class="danger"
+          @click="removeBlock(bi)"
+        />
+      </template>
 
       <div class="block-body">
         <action-side-effect-editor v-if="['api-call', 'list-write'].includes(block.type)" :block="block" />
@@ -150,12 +150,14 @@
             <el-button
               v-if="!hasElse(block)"
               size="small"
+              class="action-add-button"
               @click="addBranch(block, 'elseif')"
               >+ ELSE IF</el-button
             >
             <el-button
               v-if="!hasElse(block)"
               size="small"
+              class="action-add-button"
               @click="addBranch(block, 'else')"
               >+ ELSE</el-button
             >
@@ -215,7 +217,7 @@
           <el-button
             size="small"
             :icon="ElIconPlus"
-            class="wide-button"
+            class="wide-button action-add-button"
             @click="addCase(block)"
             >添加 Case</el-button
           >
@@ -267,7 +269,7 @@
           <el-button
             size="small"
             :icon="ElIconPlus"
-            class="wide-button"
+            class="wide-button action-add-button"
             @click="addArrayOperand(block.args)"
             >添加参数</el-button
           >
@@ -495,7 +497,7 @@
           <el-button
             size="small"
             :icon="ElIconPlus"
-            class="wide-button"
+            class="wide-button action-add-button"
             @click="addArrayOperand(block.inOperands)"
             >添加候选值</el-button
           >
@@ -566,16 +568,16 @@
           <el-button
             size="small"
             :icon="ElIconPlus"
-            class="wide-button"
+            class="wide-button action-add-button"
             @click="addTemplatePart(block)"
             >添加片段</el-button
           >
         </template>
       </div>
-    </div>
+    </action-block-card>
 
     <el-dropdown trigger="click" class="add-block" @command="addBlock">
-      <el-button size="small" :icon="ElIconPlus" class="wide-button"
+      <el-button size="small" :icon="ElIconPlus" class="wide-button action-add-button"
         >添加动作块</el-button
       >
       <template v-slot:dropdown>
@@ -595,6 +597,8 @@
 </template>
 
 <script>
+import ActionBlockCard from './ActionBlockCard.vue'
+import { actionBlockSummary } from '@/utils/actionBlockSummary'
 import RuleCallVersionSelect from './RuleCallVersionSelect.vue'
 import ActionSideEffectEditor from './ActionSideEffectEditor.vue'
 import { markRaw } from 'vue'
@@ -630,6 +634,7 @@ import {
 } from '@/constants/conditionOperators'
 import { createFunctionOperand, inferOperandType } from '@/utils/operand'
 import { isRuleOutputMappingEnabled, selectedRuleCallVersion } from '@/utils/ruleCallConfig'
+const blockKeys = new WeakMap()
 const EMPTY_RULE_VERSIONS = Object.freeze([])
 
 export default {
@@ -638,6 +643,7 @@ export default {
   data() {
     return {
       blocks: [],
+      selectedBlock: null,
       ruleVersionFields: {},
       ruleSelectionRequestId: 0,
       blockTypes: BLOCK_TYPES,
@@ -652,6 +658,7 @@ export default {
     }
   },
   components: {
+    ActionBlockCard,
     ActionSideEffectEditor,
     RuleCallVersionSelect,
     AssignmentRow,
@@ -688,6 +695,11 @@ export default {
   watch: {
     actionData: {
       handler(value) {
+        // 父级回传刚编辑的草稿时保留控件实例；切换规则或载入其他数据时重新建块。
+        const isOwnUpdate = this.pendingActionData === JSON.stringify(value)
+        this.pendingActionData = null
+        if (isOwnUpdate) return
+        this.selectedBlock = null
         this.blocks = actionDataToBlocks(value || [])
       },
       immediate: true,
@@ -695,6 +707,7 @@ export default {
     },
   },
   methods: {
+    actionBlockSummary,
     replaceNestedActions(actions, value) { actions.splice(0, actions.length, ...value); this.sync() },
     acceptRuleCallVersions(payload) {
       if (payload.catalogKey != null && payload.catalogKey !== this.ruleCallCatalog.key) return
@@ -714,7 +727,9 @@ export default {
       this.sync()
     },
     sync() {
-      $emit(this, 'update', blocksToActionData(this.blocks))
+      const data = blocksToActionData(this.blocks)
+      this.pendingActionData = JSON.stringify(data)
+      $emit(this, 'update', data)
     },
     setOperand(holder, field, value) {
       holder[field] = value || null
@@ -817,11 +832,17 @@ export default {
       }
       this.sync()
     },
+    blockKey(block) {
+      if (!blockKeys.has(block)) blockKeys.set(block, Symbol())
+      return blockKeys.get(block)
+    },
     addBlock(type) {
       this.blocks.push(newBlock(type))
+      this.selectedBlock = this.blocks.at(-1)
       this.sync()
     },
     removeBlock(index) {
+      if (this.selectedBlock === this.blocks[index]) this.selectedBlock = null
       this.blocks.splice(index, 1)
       this.sync()
     },
@@ -1078,14 +1099,6 @@ export default {
 .block-editor {
   padding: 0;
 }
-.block-item {
-  border: 1px solid var(--tianshu-border-subtle);
-  border-radius: 4px;
-  margin-bottom: 8px;
-  background: var(--tianshu-bg-muted);
-  overflow: hidden;
-}
-.block-header,
 .nested-head,
 .inline-row,
 .condition-row,
@@ -1094,19 +1107,6 @@ export default {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-.block-header {
-  justify-content: space-between;
-  padding: 4px 8px;
-  background: var(--tianshu-bg-soft);
-  border-bottom: 1px solid var(--tianshu-border-subtle);
-}
-.block-type-tag {
-  font-size: 11px;
-  font-weight: 600;
-  color: #fff;
-  padding: 2px 8px;
-  border-radius: 3px;
 }
 .block-body {
   padding: 8px;

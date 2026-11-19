@@ -181,6 +181,7 @@ function isPickerDescendant(picker, ancestor) {
 }
 
 export default {
+  inject: { actionBlockContentVisible: { default: true } },
   data() {
     return {
       /** 当前是否处于手动输入模式 */
@@ -294,6 +295,9 @@ export default {
     restoreManualOnOpen: { type: Boolean, default: true },
   },
   watch: {
+    actionBlockContentVisible(visible) {
+      if (!visible && this.popoverVisible) this.closePopover({ restoreFocus: false })
+    },
     vars() {
       if (!this.hasVarOptions) {
         this.customMode = false

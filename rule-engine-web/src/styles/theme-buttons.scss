@@ -136,6 +136,14 @@
 
 .el-button.is-loading::before { background-color: transparent; }
 
+.el-button.action-add-button:not(:disabled) {
+  border-style: dashed;
+  --tianshu-button-soft-hover-bg: var(--tianshu-button-primary-bg);
+  --tianshu-button-soft-active-bg: var(--tianshu-button-primary-active-bg);
+  &:is(:hover, :focus-visible) { --tianshu-button-text: var(--tianshu-button-primary-text); }
+  &:active { --tianshu-button-text: var(--tianshu-button-primary-active-text); }
+}
+
 .uiue-button:focus-visible {
   outline: 2px solid var(--tianshu-primary-text);
   outline-offset: 2px;
