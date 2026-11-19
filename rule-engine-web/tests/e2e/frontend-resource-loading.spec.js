@@ -6,6 +6,79 @@ const { withTestExecutionIdentity } = require('./support/testExecutionFixtures.c
 
 const graphAsset = /\/(?:src\/components\/flow\/graphCanvas\.js|assets\/graphCanvas-[^/]+\.js)(?:\?.*)?$/
 
+test('执行日志追踪画布可调整视图并在详情内滚动查看完整条件', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const apiData = createOperationsApiData()
+  const row = apiData.get('/api/rule/log/list').records[0]
+  const code = 'creditDecisionField'.repeat(100) + '_last'
+  const condition = Array.from({ length: 80 }, (_, i) => `limit${i} > 0`).join(' &&\n')
+  const nodes = [
+    { id: 'start', type: 'start', name: '开始', x: 100, y: 150 },
+    { id: 'gate', type: 'decision', name: '准入判断', x: 340, y: 150 },
+    { id: 'end', type: 'end', name: '结束', x: 580, y: 150 },
+  ]
+  Object.assign(row, { modelType: 'FLOW', traceInfo: JSON.stringify({
+    schemaVersion: 2, traceKind: 'RULE', ruleCode: row.ruleCode, modelType: 'FLOW', status: 'SUCCESS',
+    modelJson: { nodes, edges: [
+      { id: 'a', source: 'start', target: 'gate' },
+      { id: 'b', source: 'gate', target: 'end', name: '准入分支', conditionExpression: condition },
+    ] },
+    expressionTrace: [[{ type: 'IF', children: [
+      { type: 'OPERATOR', token: '==', value: false, children: [
+        { type: 'VARIABLE', token: code, value: 0 }, { type: 'VALUE', value: 1 },
+      ] }, { type: 'BLOCK', children: [] },
+    ] }]],
+  }) })
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData })
+  await page.goto(`${origin}/#/log`)
+  await page.getByRole('row').filter({ hasText: row.traceId }).getByRole('button', { name: '详情' }).click()
+  await page.getByRole('tab', { name: '表达式追踪树' }).click()
+  const graph = page.getByRole('region', { name: '决策流执行图' })
+  const percent = graph.getByRole('button', { name: '恢复 100% 并居中' })
+  await percent.click()
+  await expect(percent).toHaveText('100%')
+  const transform = () => graph.locator('.lf-canvas-overlay g[transform]').first().getAttribute('transform')
+  const initial = await transform()
+  await graph.getByRole('button', { name: '放大执行图' }).click()
+  await expect.poll(transform).not.toBe(initial)
+  await expect.poll(async () => parseInt(await percent.textContent())).toBeGreaterThan(100)
+  await graph.getByRole('button', { name: '缩小执行图' }).click()
+  await expect(percent).toHaveText('100%')
+  await graph.getByRole('button', { name: '适配执行图' }).click()
+  const detail = graph.getByTestId('flow-trace-detail')
+  await graph.locator('.lf-node').filter({ hasText: '准入判断' }).click()
+  const token = detail.locator('[data-content-part="code"]')
+  await expect(token).toHaveText(code)
+  expect(await token.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  async function verifyScroll(locator) {
+    expect(await locator.evaluate(el => {
+      el.scrollTop = el.scrollHeight
+      return el.scrollTop > 0 && el.clientHeight + el.scrollTop >= el.scrollHeight - 1
+    })).toBe(true)
+  }
+  await verifyScroll(detail.locator('.flow-trace-condition'))
+  const evidence = detail.locator('details').filter({ hasText: '引擎表达式追踪' })
+  await evidence.locator('summary').click()
+  await expect(evidence.locator('pre')).toContainText(code)
+  await graph.locator('.lf-edge').getByText('准入分支', { exact: true }).click()
+  const expression = detail.locator('pre').first()
+  await expect(expression).toHaveJSProperty('textContent', condition)
+  await verifyScroll(expression)
+  const snapshot = detail.locator('details').filter({ hasText: '连线配置' })
+  await snapshot.locator('summary').click()
+  await expect(snapshot.locator('pre')).toContainText('"source": "gate"')
+  await page.setViewportSize({ width: 760, height: 820 })
+  await expect(expression).toBeVisible()
+  expect(await detail.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  await detail.getByRole('button', { name: '清除执行详情' }).click()
+  await expect(detail).toContainText('选择图中元素')
+  harness.assertClean()
+  expect(errors).toEqual([])
+})
+
 test('规则测试执行后才加载决策流画布，等待期间仍可查看节点详情', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1920, height: 1080 })
   const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'

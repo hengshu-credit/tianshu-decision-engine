@@ -181,7 +181,7 @@
         <flow-trace-graph
           v-if="effectiveType === 'FLOW' && modelData && modelData.nodes && modelData.nodes.length"
           :model-data="modelData"
-          :cards="flowCards"
+          :cards="flowExecutionCards"
         />
         <div
           v-if="effectiveType === 'FLOW' && modelData && modelData.nodes && modelData.nodes.length"
@@ -2054,19 +2054,22 @@ export default {
     },
 
     /** 决策流卡片式数据（增强版） */
-    flowCards: function () {
+    flowExecutionCards: function () {
       var cards = []
       var stmts = this._getStatements()
       var stepNo = { n: 1 }
       var nameIdx = { i: 0 }
       var nodeNames = this.orderedNodeNames
       this._buildFlowCards(stmts, cards, stepNo, nodeNames, nameIdx)
+      return cards
+    },
+    flowCards: function () {
+      var cards = this.flowExecutionCards.slice()
       if (cards.length > 0) {
-        var last = cards[cards.length - 1]
-        last.stepType = 'end'
-        last.title = '最终结果汇总'
-        last.status = 'end'
-        last.statusText = '流程结束'
+        cards[cards.length - 1] = {
+          ...cards[cards.length - 1], stepType: 'end', title: '最终结果汇总',
+          status: 'end', statusText: '流程结束',
+        }
       }
       return cards
     },
@@ -3759,6 +3762,8 @@ export default {
             status: condHit ? 'hit' : 'miss',
             statusText: condHit ? '命中规则' : '条件不满足',
             conditions: conditions,
+            expression: this._formatExprReadable(cond),
+            engineTrace: cond,
             actions: directActions,
             isElseBranch: !condHit,
           })
@@ -3785,6 +3790,7 @@ export default {
             funcName: fnName,
             funcArgs: fnArgs,
             expression: this._formatFuncCallExpr(s),
+            engineTrace: s,
             result: s.value,
             resultDisplay: this._flowCardValueDisplay(null, s.value),
           })
@@ -3826,11 +3832,9 @@ export default {
               : '计算完成',
             targetVar: target,
             targetLabel: targetLabel,
-            expression:
-              target === '_result'
-                ? '_result = { … }'
-                : target + ' = ' + this._formatExprReadable(rhs),
-            result: s.value,
+            expression: target + ' = ' + this._formatExprReadable(rhs),
+            engineTrace: s,
+            result: target === '_result' ? this.parsedOutput ?? s.value : s.value,
             resultDisplay: resultDisplay,
           }
           if (rhsIsFunc) {
@@ -4013,7 +4017,9 @@ export default {
             compareValue: cv,
             compareDisplay:
               typeof cv === 'string' ? '"' + cv + '"' : this._displayVal(cv),
-            actualValue: left.value,
+            leftOperand: traceContentValue(left, this.varMap),
+            rightOperand: traceContentValue(right, this.varMap),
+            actualValue: this._traceNodeValue(left),
             result: c.value === true,
           })
         }

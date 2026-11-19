@@ -15,7 +15,15 @@
 
     <div class="flow-trace-graph__body">
       <div class="flow-trace-canvas-wrap">
-        <div class="flow-trace-canvas" data-testid="flow-trace-canvas"></div>
+        <div ref="canvas" class="flow-trace-canvas" data-testid="flow-trace-canvas"></div>
+        <div v-if="graphMounted" class="flow-trace-tools" role="group" aria-label="执行图视图操作">
+          <el-button-group size="small">
+            <el-button aria-label="放大执行图" title="放大" @click="zoom(true)"><el-icon><zoom-in /></el-icon></el-button>
+            <el-button aria-label="缩小执行图" title="缩小" @click="zoom(false)"><el-icon><zoom-out /></el-icon></el-button>
+            <el-button aria-label="适配执行图" title="适配画布" @click="fitGraph"><el-icon><rank /></el-icon></el-button>
+          </el-button-group>
+          <el-button size="small" aria-label="恢复 100% 并居中" title="恢复 100% 并居中" @click="resetView">{{ zoomPercent }}%</el-button>
+        </div>
         <div v-if="!graphMounted" class="flow-trace-fallback" data-testid="flow-trace-fallback">
           <async-state v-if="graphLoading || graphError" compact :loading="graphLoading" :error="graphError" loading-text="正在加载执行图…" @retry="retryGraph" />
           <div class="flow-trace-fallback__title">执行节点</div>
@@ -61,40 +69,56 @@
             <div v-if="selected.execution.conditions && selected.execution.conditions.length" class="flow-trace-detail__section">
               <div class="flow-trace-detail__label">判断条件</div>
               <div v-for="(condition, index) in selected.execution.conditions" :key="index" class="flow-trace-condition">
-                <content-reference mode="trace" :value="condition.leftOperand || condition" />
+                <content-reference mode="trace" wrap :value="condition.leftOperand || condition" />
                 <span>{{ condition.operator }}</span>
-                <content-reference mode="trace" :value="condition.rightOperand || { kind: 'LITERAL', value: condition.compareDisplay, valueType: condition.varType }" />
+                <content-reference mode="trace" wrap :value="condition.rightOperand || { kind: 'LITERAL', value: condition.compareDisplay, valueType: condition.varType }" />
                 <b :class="condition.result ? 'is-hit' : 'is-miss'">{{ condition.result ? '满足' : '不满足' }}</b>
+                <div v-if="condition.actualValue !== undefined" class="flow-trace-condition__actual">实际值 <code>{{ displayValue(condition.actualValue) }}</code></div>
+                <div v-if="condition.rightOperand && condition.rightOperand.kind !== 'LITERAL' && condition.compareValue !== undefined" class="flow-trace-condition__actual">比较值 <code>{{ displayValue(condition.compareValue) }}</code></div>
               </div>
             </div>
             <div v-if="selected.execution.expression" class="flow-trace-detail__section">
               <div class="flow-trace-detail__label">规则表达式</div>
-              <pre>{{ selected.execution.expression }}</pre>
+              <pre tabindex="0">{{ selected.execution.expression }}</pre>
             </div>
-            <div v-if="selected.execution.resultDisplay !== undefined" class="flow-trace-detail__section">
+            <div v-if="selected.execution.resultDisplay !== undefined || selected.execution.result !== undefined" class="flow-trace-detail__section">
               <div class="flow-trace-detail__label">执行结果</div>
-              <pre>{{ selected.execution.resultDisplay }}</pre>
+              <pre tabindex="0">{{ selected.execution.result !== undefined ? displayValue(selected.execution.result) : selected.execution.resultDisplay }}</pre>
             </div>
             <div v-if="selected.execution.actions && selected.execution.actions.length" class="flow-trace-detail__section">
               <div class="flow-trace-detail__label">动作赋值</div>
               <div v-for="(action, index) in selected.execution.actions" :key="index" class="flow-trace-action">
-                <content-reference mode="trace" :value="action.targetOperand || { varCode: action.targetVar, varLabel: action.targetLabel }" />
+                <content-reference mode="trace" wrap :value="action.targetOperand || { varCode: action.targetVar, varLabel: action.targetLabel }" />
                 <span>=</span>
                 <code>{{ action.valueDisplay }}</code>
               </div>
             </div>
+            <div v-if="selected.execution.funcArgs?.length" class="flow-trace-detail__section">
+              <div class="flow-trace-detail__label">函数参数</div>
+              <div v-for="(arg, index) in selected.execution.funcArgs" :key="index" class="flow-trace-action">
+                <span>{{ arg.label }}</span><span>=</span><code>{{ arg.value }}</code>
+              </div>
+            </div>
+            <details v-if="selected.execution.engineTrace" :key="selected.snapshot.id" class="flow-trace-detail__section">
+              <summary class="flow-trace-detail__label">引擎表达式追踪</summary>
+              <pre tabindex="0">{{ displayValue(selected.execution.engineTrace) }}</pre>
+            </details>
           </template>
 
           <template v-if="selected.kind === 'edge'">
             <div class="flow-trace-detail__section">
               <div class="flow-trace-detail__label">分支条件</div>
-              <pre>{{ selected.condition || '无条件直连' }}</pre>
+              <pre tabindex="0">{{ selected.condition || displayValue(selected.conditionConfig || '无条件直连') }}</pre>
             </div>
             <div v-if="selected.sourceName || selected.targetName" class="flow-trace-detail__section">
               <div class="flow-trace-detail__label">路径</div>
               <div class="flow-trace-path">{{ selected.sourceName }} <span>→</span> {{ selected.targetName }}</div>
             </div>
           </template>
+          <details :key="selected.kind + selected.snapshot.id" class="flow-trace-detail__section">
+            <summary class="flow-trace-detail__label">{{ selected.kind === 'node' ? '节点配置' : '连线配置' }}</summary>
+            <pre tabindex="0">{{ displayValue(selected.snapshot) }}</pre>
+          </details>
         </template>
         <div v-else class="flow-trace-detail__empty">
           <span class="flow-trace-detail__empty-icon">↗</span>
@@ -107,6 +131,7 @@
 </template>
 
 <script>
+import { Rank, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import ContentReference from './ContentReference.vue'
 import AsyncState from './AsyncState.vue'
 
@@ -142,8 +167,18 @@ const STATUS_STYLES = {
   pending: { stroke: 'var(--tianshu-border-strong)', fill: 'var(--tianshu-bg-surface)' },
 }
 
+// 双格式快照的业务条件保存在 nodes/edges，画布形状和坐标保存在 logicflow。
+function snapshotElements(model, key) {
+  const records = model?.[key] || []
+  const shapes = model?.logicflow?.[key]
+  if (!Array.isArray(shapes)) return Array.isArray(records) ? records : []
+  if (!Array.isArray(records) || !records.length) return shapes
+  const byId = new Map(records.map(record => [record.id, record]))
+  return shapes.map(shape => ({ ...byId.get(shape.id), ...shape }))
+}
+
 export default {
-  components: { ContentReference, AsyncState },
+  components: { ContentReference, AsyncState, Rank, ZoomIn, ZoomOut },
   name: 'FlowTraceGraph',
   props: {
     modelData: { type: Object, default: null },
@@ -157,6 +192,7 @@ export default {
       graphError: '',
       graphImportFailed: false,
       graphRequestId: 0,
+      zoomPercent: 100,
       selected: null,
     }
   },
@@ -170,11 +206,8 @@ export default {
       ]
     },
     graphSnapshot() {
-      const source = this.modelData && this.modelData.logicflow
-        ? this.modelData.logicflow
-        : this.modelData || {}
-      const sourceNodes = Array.isArray(source.nodes) ? source.nodes : []
-      const sourceEdges = Array.isArray(source.edges) ? source.edges : []
+      const sourceNodes = snapshotElements(this.modelData, 'nodes')
+      const sourceEdges = snapshotElements(this.modelData, 'edges')
       const nodeDetails = this.buildNodeDetails(sourceNodes)
       const nodeById = new Map(nodeDetails.map(item => [item.node.id, item]))
       const nodes = nodeDetails.map(item => item.node)
@@ -184,7 +217,9 @@ export default {
         const sourceNode = nodeById.get(sourceId)
         const targetNode = nodeById.get(targetId)
         const status = this.edgeStatus(sourceId, targetId, nodeDetails)
-        const condition = edge.conditionExpression || edge.conditionExpr || edge.name || (edge.properties && edge.properties.conditionName) || ''
+        const condition = edge.conditionExpression || edge.conditionExpr || edge.properties?.conditionExpr || ''
+        const conditionConfig = edge.conditionConfig || edge.properties?.conditionConfig
+        const label = edge.name || edge.properties?.conditionName || edge.text?.value || (typeof edge.text === 'string' ? edge.text : '') || condition
         const style = STATUS_STYLES[status] || STATUS_STYLES.pending
         return {
           ...edge,
@@ -192,10 +227,10 @@ export default {
           type: edge.type || 'polyline',
           sourceNodeId: sourceId,
           targetNodeId: targetId,
-          text: condition ? { value: condition } : undefined,
+          text: label ? { ...(typeof edge.text === 'object' ? edge.text : {}), value: label } : undefined,
           properties: {
             ...(edge.properties || {}),
-            conditionName: condition,
+            conditionName: label,
             conditionExpr: condition,
             traceStatus: status,
             style: {
@@ -210,9 +245,11 @@ export default {
           trace: {
             kind: 'edge',
             status,
-            title: condition || '无条件直连',
+            title: label || (conditionConfig ? '条件分支' : '无条件直连'),
             typeLabel: '分支连线',
             condition,
+            conditionConfig,
+            snapshot: edge,
             sourceName: sourceNode ? sourceNode.node.properties.nodeName : sourceId,
             targetName: targetNode ? targetNode.node.properties.nodeName : targetId,
           },
@@ -225,19 +262,44 @@ export default {
     graphSnapshot: {
       deep: true,
       handler() {
+        this.selected = null
         if (this.lf) this.renderGraph()
       },
     },
   },
   mounted() {
     this.renderGraph()
+    if (typeof ResizeObserver !== 'undefined') {
+      this.canvasObserver = new ResizeObserver(([entry]) => {
+        if (!this.lf || !entry.contentRect.width || !entry.contentRect.height) return
+        this.lf.resize(entry.contentRect.width, entry.contentRect.height)
+        this.fitGraph()
+      })
+      this.canvasObserver.observe(this.$refs.canvas)
+    }
   },
   beforeUnmount() {
     this.graphRequestId++
+    this.canvasObserver?.disconnect()
     if (this.lf && typeof this.lf.destroy === 'function') this.lf.destroy()
     this.lf = null
   },
   methods: {
+    displayValue(value) {
+      return typeof value === 'string' && value.length ? value : JSON.stringify(value, null, 2)
+    },
+    zoom(direction) {
+      const { SCALE_X, SCALE_Y, TRANSLATE_X, TRANSLATE_Y } = this.lf.getTransform()
+      const { clientWidth, clientHeight } = this.$refs.canvas
+      this.lf.zoom(direction, [(clientWidth / 2 - TRANSLATE_X) / SCALE_X, (clientHeight / 2 - TRANSLATE_Y) / SCALE_Y])
+    },
+    fitGraph() {
+      this.lf?.fitView?.(48, 48)
+    },
+    resetView() {
+      this.lf.resetZoom()
+      this.lf.translateCenter()
+    },
     statusLabel(status) {
       return STATUS_LABELS[status] || '未知状态'
     },
@@ -270,7 +332,7 @@ export default {
       })
       const used = new Set()
       const executions = []
-      this.cards.filter(card => card && card.stepType !== 'end').forEach(card => {
+      this.cards.filter(card => card && card.stepType !== 'end' && card.targetVar !== '_result').forEach(card => {
         const type = card.stepType === 'decision' ? 'decision' : 'task'
         const title = card.title || ''
         let match = candidates.find(item => !used.has(item.node.id) && item.type === type && item.node.properties.nodeName === title)
@@ -291,15 +353,18 @@ export default {
         executions.push({ id: match.node.id, trace })
       })
       const executionMap = new Map(executions.map(item => [item.id, item.trace]))
+      const endNodes = candidates.filter(item => item.type === 'end')
+      const finalCard = this.cards.findLast(card => card?.targetVar === '_result')
       return candidates.map(item => {
         const trace = executionMap.get(item.node.id) || {
           kind: 'node',
           status: item.type === 'start' || (item.type === 'end' && this.cards.length) ? 'done' : 'pending',
           title: item.node.properties.nodeName,
           typeLabel: NODE_TYPE_LABELS[item.type],
-          execution: null,
+          execution: item.type === 'end' && endNodes.length === 1 ? finalCard : null,
         }
         const style = STATUS_STYLES[trace.status] || STATUS_STYLES.pending
+        item.node.trace = { ...trace, snapshot: item.raw }
         item.node.properties = {
           ...item.node.properties,
           traceStatus: trace.status,
@@ -310,7 +375,6 @@ export default {
             fill: style.fill,
             strokeWidth: trace.status === 'hit' ? 3 : 2,
           },
-          trace,
         }
         return { ...item, trace }
       })
@@ -334,9 +398,7 @@ export default {
       else this.renderGraph()
     },
     async renderGraph() {
-      const canvas = this.$el && this.$el.querySelector
-        ? this.$el.querySelector('[data-testid="flow-trace-canvas"]')
-        : null
+      const canvas = this.$refs.canvas
       if (!canvas) return
       const requestId = ++this.graphRequestId
       this.graphLoading = true
@@ -351,8 +413,6 @@ export default {
         if (this.lf && typeof this.lf.destroy === 'function') this.lf.destroy()
         this.lf = createGraphCanvas({
           container: canvas,
-          width: canvas.clientWidth || 820,
-          height: 470,
           isSilentMode: true,
           stopScrollGraph: false,
           stopZoomGraph: false,
@@ -375,8 +435,10 @@ export default {
       }
       this.graphMounted = true
       this.lf.render(this.graphSnapshot)
-      if (typeof this.lf.fitView === 'function') this.lf.fitView(24, 24)
       if (typeof this.lf.on === 'function') {
+        this.lf.on('graph:transform', ({ transform }) => {
+          this.zoomPercent = Math.round(transform.SCALE_X * 100)
+        })
         this.lf.on('node:click', payload => {
           const id = payload && payload.data && payload.data.id
           const node = this.graphSnapshot.nodes.find(item => item.id === id)
@@ -388,11 +450,10 @@ export default {
           if (edge) this.selected = edge.trace
         })
       }
+      this.fitGraph()
     },
     selectNode(node) {
-      this.selected = node && node.properties && node.properties.trace
-        ? node.properties.trace
-        : null
+      this.selected = node?.trace || null
     },
   },
 }
@@ -410,9 +471,11 @@ export default {
 .flow-trace-legend-dot.is-done { background: var(--tianshu-info-text); }
 .flow-trace-legend-dot.is-miss { background: var(--tianshu-danger-text); }
 .flow-trace-legend-dot.is-skipped { background: var(--tianshu-text-tertiary); }
-.flow-trace-graph__body { display: grid; grid-template-columns: minmax(0, 1fr) 255px; min-height: 470px; }
+.flow-trace-graph__body { display: grid; grid-template-columns: minmax(0, 1fr) clamp(255px, 30%, 380px); min-height: 470px; }
 .flow-trace-canvas-wrap { position: relative; min-width: 0; min-height: 470px; background: var(--tianshu-bg-workspace); }
 .flow-trace-canvas { width: 100%; height: 470px; }
+.flow-trace-tools { position: absolute; top: 10px; left: 10px; display: flex; align-items: center; gap: 6px; padding: 4px; border: 1px solid var(--tianshu-border-subtle); border-radius: 6px; background: var(--tianshu-bg-surface); }
+.flow-trace-tools > .el-button { min-width: 50px; font-variant-numeric: tabular-nums; }
 .flow-trace-detail { min-width: 0; padding: 14px; border-left: 1px solid var(--tianshu-border-subtle); background: var(--tianshu-bg-surface); }
 .flow-trace-detail__head, .flow-trace-detail__title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .flow-trace-detail__eyebrow, .flow-trace-detail__label { color: var(--tianshu-text-tertiary); font-size: 11px; font-weight: 700; }
@@ -446,5 +509,13 @@ export default {
 .flow-trace-fallback__node.is-done { border-color: var(--tianshu-info-text); background: var(--tianshu-info-bg); }
 .flow-trace-fallback__node.is-miss { border-color: var(--tianshu-danger-text); background: var(--tianshu-danger-bg); }
 .flow-trace-fallback__node.is-skipped { border-color: var(--tianshu-text-tertiary); background: var(--tianshu-bg-muted); }
-@media (max-width: 860px) { .flow-trace-graph__body { grid-template-columns: 1fr; } .flow-trace-detail { border-top: 1px solid var(--tianshu-border-subtle); border-left: 0; } .flow-trace-detail__empty { padding: 20px 8px; } }
+.flow-trace-detail { box-sizing: border-box; max-height: 470px; overflow: auto; overflow-wrap: anywhere; }
+.flow-trace-detail summary { cursor: pointer; }
+.flow-trace-detail__title-row strong, .flow-trace-path,
+.flow-trace-condition, .flow-trace-action { max-height: 150px; overflow: auto; }
+.flow-trace-condition__actual { flex-basis: 100%; }
+.flow-trace-condition code, .flow-trace-action code { white-space: pre-wrap; }
+.flow-trace-detail :deep(.content-ref--wrap) { flex-wrap: wrap; }
+.flow-trace-detail :deep(.content-ref__segment) { flex: 0 0 auto; width: auto; min-width: min(32px, 100%); padding-inline: 5px; white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; text-overflow: clip; }
+@media (max-width: 860px) { .flow-trace-graph__body { grid-template-columns: minmax(0, 1fr); } .flow-trace-detail { border-top: 1px solid var(--tianshu-border-subtle); border-left: 0; } .flow-trace-detail__empty { padding: 20px 8px; } }
 </style>
