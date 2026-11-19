@@ -13,7 +13,8 @@
       <p class="derived-help">支持多级衍生。字段按 ID 关联；测试和 API 入参会展开到最上游原始字段。身份证年龄可选内置 idCardAge；登记地址码不等同于当前户籍地。</p>
     </template>
     <template v-else>
-      <el-alert :closable="false" type="info" title="默认统计请求入参和进件当时三方调用日志中的结果；其他字段须先开启“记录字段结果”。不含测试和本次请求；旧的无ID快照日志不按当前名称回填。" />
+      <el-alert :closable="false" type="info" title="历史样本取自正式进件，支持请求入参、引擎内部字段、三方调用结果和已开启记录的字段。" />
+      <el-form-item label="本次订单"><el-switch :model-value="config.includeCurrent === true" active-text="包含本次订单" aria-label="包含本次订单" @update:model-value="patch({ includeCurrent: $event })" /></el-form-item>
       <el-form-item label="统计范围">
         <el-select :model-value="config.scope" @update:model-value="changeScope">
           <el-option label="当前最外层规则" value="RULE" />
@@ -30,11 +31,32 @@
         <p v-else class="derived-help">合并当前执行项目内所选根规则的正式进件，包括直接调用和实验生产组。</p>
       </el-form-item>
       <el-form-item label="最近时间窗口">
-        <el-input-number :model-value="config.window" :min="1" :max="36500" :precision="0" @update:model-value="patch({ window: $event })" />
-        <el-select class="unit-select" :model-value="config.windowUnit" @update:model-value="patch({ windowUnit: $event })">
+        <el-input-number v-if="config.windowUnit !== 'ALL'" :model-value="config.window" :min="1" :max="36500" :precision="0" @update:model-value="patch({ window: $event })" />
+        <el-select class="unit-select" aria-label="时间窗口单位" :model-value="config.windowUnit" @update:model-value="setWindowUnit">
           <el-option label="分钟" value="MINUTE" /><el-option label="小时" value="HOUR" /><el-option label="滚动天" value="DAY" /><el-option label="自然日（当日）" value="CALENDAR_DAY" />
+          <el-option label="不限制时间" value="ALL" />
         </el-select>
       </el-form-item>
+      <el-form-item v-if="config.windowUnit !== 'ALL'" label="时间依据">
+        <el-radio-group :model-value="config.timeSource" @update:model-value="setTimeSource">
+          <el-radio-button value="ENTRY">进件时间</el-radio-button>
+          <el-radio-button value="FIELD">指定时间字段</el-radio-button>
+        </el-radio-group>
+      </el-form-item>
+      <template v-if="config.windowUnit !== 'ALL' && config.timeSource === 'FIELD'">
+        <el-form-item label="时间字段">
+          <operand-picker :value="config.timeField" :vars="timeVars" :allowed-kinds="['REFERENCE']" placeholder="选择统计时间字段" @input="patch({ timeField: $event })" />
+          <p class="derived-help">以本次请求中该字段的值为截止时间，比较历史进件的同一字段。数值按毫秒时间戳读取。</p>
+        </el-form-item>
+        <el-form-item label="空时间处理">
+          <el-select :model-value="config.nullTimePolicy || 'EXCLUDE'" @update:model-value="patch({ nullTimePolicy: $event })">
+            <el-option label="排除空时间" value="EXCLUDE" />
+            <el-option label="空时间参与全部统计" value="INCLUDE" />
+            <el-option label="空时间使用各自的进件时间" value="ENTRY" />
+          </el-select>
+          <p v-if="config.nullTimePolicy === 'INCLUDE'" class="derived-help">本次时间为空时跳过时间限制；历史时间为空时可进入任意窗口。其他筛选照常生效。</p>
+        </el-form-item>
+      </template>
       <div class="history-steps">
         <h4>关联路径</h4>
         <p class="derived-help">不配置关联时统计范围内全部进件。例如：本次联系人 → 历史联系人 → 该进件申请人 → 此申请人的其他历史进件。每层命中记录只保留一次。</p>
@@ -98,7 +120,7 @@ import { createReferenceOperand } from '@/utils/operand'
 import { loadPagedCatalog } from '@/utils/pagedCatalog'
 import { listProjectDefinitions } from '@/api/definition'
 import HistoryFilters from './HistoryFilters.vue'
-import { createDerivedConfig, DERIVED_OPERAND_KINDS, historyAggregateOptions, historyFieldEligible } from '@/utils/derivedVariable'
+import { createDerivedConfig, DERIVED_OPERAND_KINDS, historyAggregateOptions, historyFieldEligible, supportsHistoryTime } from '@/utils/derivedVariable'
 
 export default {
   name: 'DerivedVariableEditor',
@@ -122,6 +144,7 @@ export default {
       return [...this.rules, ...missing.map(id => ({ id, ruleName: `规则 ID ${id}`, disabled: true }))]
     },
     historyVars() { return this.vars.filter(historyFieldEligible) },
+    timeVars() { return this.historyVars.filter(field => supportsHistoryTime(field.varType || field.valueType)) },
     config() { return { ...createDerivedConfig(), ...this.modelValue } },
     valueType() {
       const field = this.config.valueField
@@ -134,6 +157,13 @@ export default {
     ruleProject: { immediate: true, handler: 'loadRules' },
   },
   methods: {
+    setWindowUnit(windowUnit) {
+      if (windowUnit === 'ALL') this.patch({ windowUnit, timeSource: 'ENTRY', timeField: null, nullTimePolicy: 'EXCLUDE' })
+      else this.patch({ windowUnit })
+    },
+    setTimeSource(timeSource) {
+      this.patch({ timeSource, timeField: null, nullTimePolicy: 'EXCLUDE' })
+    },
     changeScope(scope) {
       const next = { ...this.config, scope }
       delete next.ruleIds

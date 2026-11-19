@@ -50,12 +50,14 @@ public class ExecutionLogHistoryRepository {
         StringBuilder sql = new StringBuilder(
                 "SELECT l.id, l.trace_id, l.started_at, l.history_fields "
                         + "FROM rule_execution_log_current l "
-                        + "WHERE l.started_at >= ? AND l.started_at < ? AND l.success = 1 "
+                        + "WHERE " + (from == null ? "COALESCE(l.started_at,l.create_time) < ?" : "l.started_at >= ? AND l.started_at < ?")
+                        + " AND l.success = 1 "
                         + "AND l.source IN ('CLIENT_SERVER','EXPERIMENT_LIVE') AND l.history_fields IS NOT NULL ");
         List<Object> parameters = new ArrayList<>();
-        parameters.add(Timestamp.valueOf(from));
+        if (from != null) parameters.add(Timestamp.valueOf(from));
         parameters.add(Timestamp.valueOf(before));
         scope.appendRuleFilter(sql, parameters, "l.root_rule_id");
+        scope.excludeCurrent(sql, parameters, "l.trace_id");
         if (scope.projectId() != null) {
             sql.append(" AND l.execution_project_id = ?");
             parameters.add(scope.projectId());
@@ -76,8 +78,15 @@ public class ExecutionLogHistoryRepository {
                 throw new IllegalStateException("历史字段快照版本无效，不能按当前名称推测历史值");
             }
             String trace = result.getString("trace_id");
-            var row = new HistoryQuery.Row(result.getLong("id"), result.getTimestamp("started_at").toLocalDateTime(),
+            Timestamp started = result.getTimestamp("started_at");
+            var row = new HistoryQuery.Row(result.getLong("id"), started == null ? null : started.toLocalDateTime(),
                     new LinkedHashMap<>(snapshot.getJSONObject("fields")));
+            for (String key : requiredFields) {
+                var definition = definitions.get(key);
+                if (definition == null || !"ENGINE".equals(definition.source())) continue;
+                if ("trace_id".equals(definition.path())) row.fields().put(key, trace);
+                if ("create_time".equals(definition.path())) row.fields().put(key, started == null ? null : started.toLocalDateTime().toString());
+            }
             rowsByTrace.put(trace, row);
             Set<Long> apis = new LinkedHashSet<>();
             if (snapshot.getJSONArray("apiIds") != null) for (Object id : snapshot.getJSONArray("apiIds")) apis.add(((Number) id).longValue());

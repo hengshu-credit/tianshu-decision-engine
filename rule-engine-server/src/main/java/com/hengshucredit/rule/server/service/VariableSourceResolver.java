@@ -191,7 +191,7 @@ public class VariableSourceResolver {
         if (derivedVariableService != null) {
             effectiveOptions.setDerivedReferencePaths(derivedVariableService.referencePaths(projectId, resolvedParams));
         }
-        removeCallerConstantValues(variables, resolvedParams);
+        prepareProtectedFields(variables, resolvedParams);
         applyConstantValues(variables, resolvedParams);
         List<RuleModel> models = loadProjectModels(projectId);
         if (explicitModel != null) {
@@ -247,7 +247,7 @@ public class VariableSourceResolver {
                     paths, effectiveOptions.getDataObjectReferencePaths(), resolvedParams);
             effectiveOptions.setDerivedReferencePaths(paths);
         }
-        removeCallerConstantValues(frozenVariables, resolvedParams);
+        prepareProtectedFields(frozenVariables, resolvedParams);
         applyConstantValues(frozenVariables, resolvedParams);
         try (var modelApis = openModelInputs(frozenVariables, frozenModels, effectiveOptions)) {
             return resolveSnapshotSources(frozenVariables, frozenModels, functions, resolvedParams, effectiveOptions);
@@ -2900,11 +2900,15 @@ public class VariableSourceResolver {
         }
     }
 
-    private void removeCallerConstantValues(List<RuleVariable> variables, Map<String, Object> resolvedParams) {
+    private void prepareProtectedFields(List<RuleVariable> variables, Map<String, Object> resolvedParams) {
         if (variables == null || resolvedParams == null) {
             return;
         }
         for (RuleVariable variable : variables) {
+            if (variable != null && "ENGINE".equals(variable.getVarSource())) {
+                String path = resolveScriptName(variable);
+                resolvedParams.put(path, RuntimeContextBridge.currentContext().engineFields().get(variable.getVarCode()));
+            }
             if (variable != null && "CONSTANT".equals(variable.getVarSource())) {
                 String scriptName = resolveScriptName(variable);
                 if (scriptName != null) {

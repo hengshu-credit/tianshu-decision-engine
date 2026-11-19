@@ -13,7 +13,7 @@ import java.util.HashSet;
 /** 历史侧字段资格来自资源 ID 与执行快照；展示名称不构成历史关联身份。 */
 public record HistoricalFieldDefinition(String key, String path, String source, boolean recordResult,
         String inputRootKey, Long apiId, String apiResultPath) {
-    public boolean queryable() { return "INPUT".equals(source) || "API".equals(source) || recordResult; }
+    public boolean queryable() { return "INPUT".equals(source) || "API".equals(source) || "ENGINE".equals(source) || recordResult; }
 
     public static Map<String, HistoricalFieldDefinition> build(List<RuleVariable> variables,
             List<RuleDataObjectField> fields, List<RuleModel> models, Map<String, String> paths) {

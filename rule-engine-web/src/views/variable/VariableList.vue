@@ -69,6 +69,7 @@
             <el-option label="接口调用" value="API" />
             <el-option label="名单查询" value="LIST" />
             <el-option label="计算得出" value="COMPUTED" />
+            <el-option label="引擎内部字段" value="ENGINE" />
             <el-option label="衍生变量" value="DERIVED" />
             <el-option label="常量" value="CONSTANT" />
           </el-select>
@@ -236,6 +237,8 @@
             </el-table-column>
             <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['详情', '编辑', '测试', '版本', '发布', '删除'])" align="center" fixed="right">
               <template v-slot="{ row }">
+                <el-tag v-if="row.systemConstant" size="small" type="info">{{ row.varSource === 'ENGINE' ? '引擎内部字段' : '系统常量' }} · 只读</el-tag>
+                <template v-else>
                 <el-button
                   v-if="isTestableSource(row)"
                   link
@@ -284,6 +287,7 @@
                   @click="handleVariableRowCommand('delete', row)"
                   >删除</el-button
                 >
+                </template>
               </template>
             </el-table-column>
           </lazy-field-table>
@@ -814,7 +818,7 @@
           </el-table-column>
           <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '版本', '发布', '删除'])" align="center" fixed="right">
             <template v-slot="{ row }">
-              <el-tag v-if="row.systemConstant" size="small" type="info">系统常量 · 只读</el-tag>
+              <el-tag v-if="row.systemConstant" size="small" type="info">{{ row.varSource === 'ENGINE' ? '引擎内部字段' : '系统常量' }} · 只读</el-tag>
               <template v-else>
               <el-button
                 v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
@@ -5746,6 +5750,7 @@ export default {
     sourceLabel(s) {
       return (
         {
+          ENGINE: '引擎内部字段',
           INPUT: '输入',
           COMPUTED: '计算',
           DERIVED: '衍生',

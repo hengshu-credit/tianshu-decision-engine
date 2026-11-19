@@ -5,8 +5,17 @@ const { installDistRoutes } = require('./support/distRoutes.cjs')
 
 test('衍生统计的主体字段与聚合函数也使用内容选择器', async ({ page }) => {
   const data = createManagementApiData()
+  let savedVariable
+  data.set('POST /api/rule/governance/drafts', ({ request }) => {
+    const body = request.postDataJSON()
+    savedVariable = JSON.parse(body.snapshotJson)
+    return { ...body, id: 991, resourceId: 301, status: 'EDITING', draftSnapshotJson: body.snapshotJson }
+  })
   data.set('/api/rule/variable/source-options', { apiOptions: [], databaseOptions: [], listOptions: [], sftpOptions: [] })
-  data.set('/api/rule/variable/project/1', [{ id: '77', varCode: 'address', varLabel: '地址', varType: 'STRING', varSource: 'INPUT', version: 3 }])
+  data.set('/api/rule/variable/project/1', [
+    { id: '77', varCode: 'address', varLabel: '地址', varType: 'STRING', varSource: 'INPUT', version: 3 },
+    { id: '79', varCode: 'requestedAt', varLabel: '申请时间', varType: 'DATE', varSource: 'INPUT', version: 1 },
+  ])
   data.set('/api/rule/dataobject/tree/1', [])
   data.set('/api/rule/model/project/1/all', [])
   data.set('/api/rule/function/project/1/all', [{ id: '78', funcCode: 'statValues', funcName: '统计列表', returnType: 'NUMBER', version: 2 }])
@@ -17,6 +26,21 @@ test('衍生统计的主体字段与聚合函数也使用内容选择器', async
   const dialog = page.getByRole('dialog', { name: '新建字段', exact: true })
   await dialog.getByRole('button', { name: /衍生变量/ }).click()
   await dialog.getByText('内部进件统计', { exact: true }).click()
+  await expect(dialog.getByRole('radio', { name: '进件时间', exact: true })).toBeChecked()
+  const currentOrder = dialog.getByRole('switch', { name: '包含本次订单' })
+  await expect(currentOrder).not.toBeChecked()
+  await dialog.getByText('包含本次订单', { exact: true }).click()
+  await expect(currentOrder).toBeChecked()
+  await dialog.getByText('指定时间字段', { exact: true }).click()
+  await dialog.getByPlaceholder('选择统计时间字段').click()
+  await page.locator('.fp-panel:visible').getByRole('row').filter({ has: page.getByRole('gridcell', { name: 'requestedAt', exact: true }) }).dblclick()
+  const emptyPolicy = dialog.locator('.el-form-item').filter({ hasText: /^空时间处理/ }).locator('.el-select')
+  await emptyPolicy.click()
+  await page.getByRole('option', { name: '空时间使用各自的进件时间' }).click()
+  await expect(emptyPolicy).toContainText('空时间使用各自的进件时间')
+  await dialog.locator('.el-form-item').filter({ hasText: /^最近时间窗口/ }).locator('.el-select').click()
+  await page.getByRole('option', { name: '不限制时间', exact: true }).click()
+  await expect(dialog.getByPlaceholder('选择统计时间字段')).toHaveCount(0)
   await dialog.getByPlaceholder('选择主体字段，可添加联合字段', { exact: true }).click()
   const picker = page.locator('.fp-panel:visible')
   await picker.getByRole('row').filter({ has: page.getByRole('gridcell', { name: 'address', exact: true }) }).dblclick()
@@ -32,6 +56,22 @@ test('衍生统计的主体字段与聚合函数也使用内容选择器', async
   await expect(fn.locator('.content-ref__type')).toHaveText('N')
   await expect(fn.locator('input')).toHaveValue('统计列表 statValues')
   await expect(fn.locator('.content-ref__version')).toContainText('v2')
+  await dialog.locator('.el-form-item').filter({ hasText: /^统计方法/ }).locator('.el-select').click()
+  await page.getByRole('option', { name: '进件数（记录计数）', exact: true }).click()
+  await dialog.locator('.el-form-item').filter({ hasText: /^最近时间窗口/ }).locator('.el-select').click()
+  await page.getByRole('option', { name: '滚动天', exact: true }).click()
+  await dialog.getByText('指定时间字段', { exact: true }).click()
+  await dialog.getByPlaceholder('选择统计时间字段').click()
+  await picker.getByRole('row').filter({ has: page.getByRole('gridcell', { name: 'requestedAt', exact: true }) }).dblclick()
+  await emptyPolicy.click()
+  await page.getByRole('option', { name: '空时间使用各自的进件时间' }).click()
+  await dialog.locator('.el-form-item').filter({ hasText: '字段编码' }).locator('input').fill('recentApplications')
+  await dialog.locator('.el-form-item').filter({ hasText: '字段名称' }).locator('input').fill('近期申请数')
+  await dialog.getByRole('button', { name: '保存草稿', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  expect(JSON.parse(savedVariable.sourceConfig)).toMatchObject({
+    windowUnit: 'DAY', timeSource: 'FIELD', timeField: { refType: 'VARIABLE', refId: '79' }, nullTimePolicy: 'ENTRY', includeCurrent: true,
+  })
   assertClean()
 })
 

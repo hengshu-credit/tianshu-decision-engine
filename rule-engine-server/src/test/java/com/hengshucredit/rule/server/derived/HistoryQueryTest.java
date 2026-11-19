@@ -14,6 +14,32 @@ import static org.junit.Assert.*;
 public class HistoryQueryTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 9, 21, 12, 0);
 
+    @Test public void businessClockUsesSameIdOnBothSidesAndHandlesMissingTimesExplicitly() {
+        JSONObject config = query("COUNT");
+        config.put("window", 1);
+        config.put("timeSource", "FIELD");
+        config.put("timeField", ref(9));
+        assertEquals(List.of(ref(9)), DerivedVariableConfig.currentInputs(config));
+        assertEquals(List.of(ref(9)), DerivedVariableConfig.historicalFields(config));
+        var window = HistoryWindow.resolve(config, NOW, field -> "2025-01-02 12:00:00");
+        assertTrue(window.matches(row(1, Map.of("VARIABLE:9", "2025-01-01T12:00:00"))));
+        assertFalse(window.matches(row(2, Map.of("VARIABLE:9", "2025-01-02T12:00:00"))));
+        assertFalse(window.matches(row(3, Map.of())));
+        config.put("nullTimePolicy", "INCLUDE");
+        assertTrue(HistoryWindow.resolve(config, NOW, field -> NOW).matches(row(4, Map.of())));
+        var withoutAnchor = HistoryWindow.resolve(config, NOW, field -> null);
+        assertTrue(withoutAnchor.matches(row(5, Map.of())));
+        assertTrue(withoutAnchor.matches(row(6, Map.of("VARIABLE:9", "1995-01-01"))));
+        config.put("nullTimePolicy", "ENTRY");
+        var fallback = HistoryWindow.resolve(config, NOW, field -> " ");
+        assertTrue(fallback.matches(new HistoryQuery.Row(6, NOW.minusHours(1), Map.of())));
+        assertFalse(fallback.matches(new HistoryQuery.Row(7, NOW.minusDays(2), Map.of())));
+        assertFalse(fallback.matches(new HistoryQuery.Row(8, NOW.minusHours(1), Map.of("VARIABLE:9", "bad"))));
+        config.put("windowUnit", "ALL");
+        assertTrue(DerivedVariableConfig.currentInputs(config).isEmpty());
+        assertTrue(HistoryWindow.resolve(config, NOW, f -> { throw new AssertionError(); }).matches(row(9, Map.of())));
+    }
+
     @Test
     public void countsApplicationsAndCompositeSubjectsWithoutStringKeyCollisions() {
         List<HistoryQuery.Row> rows = List.of(

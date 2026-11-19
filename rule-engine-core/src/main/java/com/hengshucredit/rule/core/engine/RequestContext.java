@@ -49,6 +49,7 @@ public final class RequestContext {
     public void setRootInput(Object input) { rootInput = snapshotValue(input); }
     public Object rootInput() { return snapshotValue(rootInput); }
     private java.time.LocalDateTime startedAt = java.time.LocalDateTime.now();
+    private Map<String, Object> engineFields = Map.of();
     private List<String> matchedConditions = Collections.emptyList();
     private Map<String, Object> constantValues;
     private Consumer<Map<String, Object>> traceEventListener;
@@ -319,7 +320,13 @@ public final class RequestContext {
                 ? Collections.<String>emptyList()
                 : Collections.unmodifiableList(new ArrayList<>(matchedConditions));
         this.rule = safeRule;
-        if (rootRule.isEmpty() && !safeRule.isEmpty()) rootRule = safeRule;
+        if (rootRule.isEmpty() && !safeRule.isEmpty()) {
+            rootRule = safeRule;
+            if (safeRule.get("traceId") != null) {
+                engineFields = Map.of("trace_id", safeRule.get("traceId"), "create_time",
+                        startedAt.truncatedTo(java.time.temporal.ChronoUnit.MICROS).toString());
+            }
+        }
         this.matchedConditions = safeConditions;
     }
 
@@ -334,6 +341,7 @@ public final class RequestContext {
         child.rootRule = rootRule;
         child.rootInput = rootInput;
         child.startedAt = startedAt;
+        child.engineFields = engineFields;
         child.matchedConditions = matchedConditions;
         child.sourceStates = sourceStates;
         child.sourceExecutionPolicy = sourceExecutionPolicy;
@@ -373,6 +381,7 @@ public final class RequestContext {
     public Map<String, Object> rootRule() { return rootRule; }
 
     public java.time.LocalDateTime startedAt() { return startedAt; }
+    public Map<String, Object> engineFields() { return engineFields; }
 
     public List<String> currentMatchedConditions() {
         List<String> conditions = this.matchedConditions;
@@ -498,6 +507,7 @@ public final class RequestContext {
 
     private Object setValue(String path, Object value, boolean recordRuntimeWrite) {
         String rootPath = rootPath(path);
+        if (rootPath != null && engineFields.containsKey(rootPath)) throw new IllegalStateException("引擎内部字段不允许赋值: " + rootPath);
         Map<String, Object> constants = constantValues;
         if (rootPath != null && constants != null && constants.containsKey(rootPath)) {
             throw new IllegalStateException("常量字段不允许赋值: " + rootPath);

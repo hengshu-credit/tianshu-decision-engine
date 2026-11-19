@@ -1583,7 +1583,7 @@ public class RuleFieldAnalyzer {
         String varSource = meta != null ? (String) meta.get("varSource") : null;
         applySampleValuesFromMeta(field, meta);
 
-        if ("CONSTANT".equals(refType) || "CONSTANT".equals(varSource)) {
+        if ("CONSTANT".equals(refType) || "CONSTANT".equals(varSource) || "ENGINE".equals(varSource)) {
             return;
         }
 

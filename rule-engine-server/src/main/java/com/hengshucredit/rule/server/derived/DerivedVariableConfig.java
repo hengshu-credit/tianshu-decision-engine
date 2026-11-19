@@ -22,6 +22,7 @@ public final class DerivedVariableConfig {
         if ("EXPRESSION".equals(config.getString("mode"))) {
             add(inputs, config.getJSONObject("expression"));
         } else if ("HISTORY".equals(config.getString("mode"))) {
+            add(inputs, windowField(config));
             List<JSONObject> steps = objects(config, "steps");
             if (!steps.isEmpty()) inputs.addAll(objects(steps.get(0), "inputs"));
             collectFilterInputs(config, inputs);
@@ -30,6 +31,9 @@ public final class DerivedVariableConfig {
             if (geo != null) {
                 for (String key : List.of("longitude", "latitude", "radiusMeters")) add(inputs, geo.getJSONObject(key));
             }
+            if (config.getBooleanValue("includeCurrent")) {
+                for (JSONObject field : historicalFields(config)) if (!inputs.contains(field)) inputs.add(field);
+            }
         }
         return inputs;
     }
@@ -37,6 +41,7 @@ public final class DerivedVariableConfig {
     public static List<JSONObject> historicalFields(JSONObject config) {
         List<JSONObject> fields = new ArrayList<>();
         if (!"HISTORY".equals(config.getString("mode"))) return fields;
+        add(fields, windowField(config));
         add(fields, config.getJSONObject("valueField"));
         fields.addAll(objects(config, "subjectFields"));
         for (JSONObject filter : objects(config, "filters")) add(fields, filter.getJSONObject("field"));
@@ -79,12 +84,9 @@ public final class DerivedVariableConfig {
             require("HISTORY".equals(config.getString("mode")), "衍生方式必须是表达式或历史进件统计");
             require(config.getString("scope") != null && Set.of("RULE", "SELECTED_RULES", "PROJECT", "GLOBAL").contains(config.getString("scope")), "请选择历史统计范围");
             if ("SELECTED_RULES".equals(config.getString("scope"))) selectedRuleIds(config);
-            Long window = config.getLong("window");
-            require(window != null && window > 0 && window <= 36500, "时间窗口必须是 1 至 36500 的整数");
-            require(new java.math.BigDecimal(String.valueOf(config.get("window"))).compareTo(java.math.BigDecimal.valueOf(window)) == 0,
-                    "时间窗口必须是整数，不能截断小数");
-            require(config.getString("windowUnit") != null
-                    && Set.of("MINUTE", "HOUR", "DAY", "CALENDAR_DAY").contains(config.getString("windowUnit")), "时间窗口单位无效");
+            String unit = config.getString("windowUnit");
+            require(unit != null && Set.of("MINUTE", "HOUR", "DAY", "CALENDAR_DAY", "ALL").contains(unit), "时间窗口单位无效");
+            if (!"ALL".equals(unit)) validateWindow(config);
             require(config.getString("aggregate") != null && AGGREGATES.contains(config.getString("aggregate")), "请选择支持的统计方法");
             String mode = config.getString("recordMode");
             require(mode == null || Set.of("ALL", "LATEST_PER_SUBJECT").contains(mode), "进件取值方式无效");
@@ -121,6 +123,25 @@ public final class DerivedVariableConfig {
             }
         }
         for (JSONObject input : currentInputs(config)) validateOperand(input);
+    }
+
+    static JSONObject windowField(JSONObject config) {
+        return !"ALL".equals(config.getString("windowUnit")) && "FIELD".equals(config.getString("timeSource"))
+                ? config.getJSONObject("timeField") : null;
+    }
+
+    private static void validateWindow(JSONObject config) {
+        Long window = config.getLong("window");
+        require(window != null && window > 0 && window <= 36500, "时间窗口必须是 1 至 36500 的整数");
+        require(new java.math.BigDecimal(String.valueOf(config.get("window"))).compareTo(java.math.BigDecimal.valueOf(window)) == 0,
+                "时间窗口必须是整数，不能截断小数");
+        String source = config.getString("timeSource");
+        require(source == null || Set.of("ENTRY", "FIELD").contains(source), "时间依据无效");
+        if ("FIELD".equals(source)) {
+            fieldKey(windowField(config));
+            String policy = config.getString("nullTimePolicy");
+            require(policy == null || Set.of("EXCLUDE", "INCLUDE", "ENTRY").contains(policy), "空时间处理方式无效");
+        }
     }
 
     private static void validateFilters(JSONObject config) {

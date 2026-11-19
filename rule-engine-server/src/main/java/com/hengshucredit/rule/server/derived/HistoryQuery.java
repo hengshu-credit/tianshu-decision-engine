@@ -57,7 +57,7 @@ public final class HistoryQuery {
         List<JSONObject> subjects = objects(config, "subjectFields");
         if ("LATEST_PER_SUBJECT".equals(config.getString("recordMode"))) {
             Map<List<Object>, Row> latest = new LinkedHashMap<>();
-            Comparator<Row> newer = Comparator.comparing(Row::occurredAt).thenComparingLong(Row::id);
+            Comparator<Row> newer = Comparator.comparing(Row::occurredAt, Comparator.nullsFirst(Comparator.naturalOrder())).thenComparingLong(Row::id);
             for (Row row : filtered) {
                 Set<List<Object>> keys = fieldKeys(row, subjects);
                 require(keys.size() <= 1, "主体 key 必须是标量字段，不能是多值列表");

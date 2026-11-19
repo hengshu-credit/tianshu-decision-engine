@@ -19,9 +19,21 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 public class QLExpressEngineTest {
+    @Test public void engineFieldsComeFromRootEvenInsideChildAndCannotBeSuppliedByCaller() {
+        var request = new RequestContext();
+        request.setRuleContext(Map.of("traceId", "root-id"), java.util.List.of());
+        request.setRuleContext(Map.of("traceId", "child-id"), java.util.List.of());
+        var engine = new QLExpressEngine();
+        var spoofed = Map.of("trace_id", "caller", "create_time", "caller-time");
+        assertEquals("root-id", engine.execute(engine.prepare("return trace_id;"), spoofed, false, request).getResult());
+        assertEquals(request.engineFields().get("create_time"),
+                engine.execute(engine.prepare("return create_time;"), new Object(), false, request).getResult());
+        assertThrows(IllegalStateException.class, () -> request.setValue("trace_id", "other"));
+    }
 
     public static class CapacityDelegate {
         public Object capacityFailure() {

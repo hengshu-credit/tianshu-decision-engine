@@ -4,7 +4,8 @@ import java.util.Collections;
 import java.util.List;
 
 /** Identifies the execution project and the set of root definitions included in a history query. */
-record HistoryScope(String type, Long projectId, List<Long> ruleIds) {
+record HistoryScope(String type, Long projectId, List<Long> ruleIds, String excludedTrace) {
+    HistoryScope(String type, Long projectId, List<Long> ruleIds) { this(type, projectId, ruleIds, null); }
     HistoryScope {
         if (!"GLOBAL".equals(type)) {
             DerivedVariableConfig.require(projectId != null && projectId > 0, "当前项目范围需要明确执行项目");
@@ -28,6 +29,13 @@ record HistoryScope(String type, Long projectId, List<Long> ruleIds) {
 
     boolean filtersRules() {
         return !ruleIds.isEmpty();
+    }
+
+    void excludeCurrent(StringBuilder sql, List<Object> parameters, String traceColumn) {
+        if (excludedTrace != null) {
+            sql.append(" AND (").append(traceColumn).append(" IS NULL OR ").append(traceColumn).append(" <> ?)");
+            parameters.add(excludedTrace);
+        }
     }
 
     void appendRuleFilter(StringBuilder sql, List<Object> parameters, String column) {

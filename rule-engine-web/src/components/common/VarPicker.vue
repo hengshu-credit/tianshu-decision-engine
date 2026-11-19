@@ -717,6 +717,7 @@ export default {
     },
     isWritableOption(item) {
       if (!this.writableOnly) return true
+      if (item?.varSource === 'ENGINE' || item?.varObj?.varSource === 'ENGINE') return false
       const category = (item && item._ref && item._ref.category) || 'standalone'
       return category === 'standalone' || category === 'object'
     },

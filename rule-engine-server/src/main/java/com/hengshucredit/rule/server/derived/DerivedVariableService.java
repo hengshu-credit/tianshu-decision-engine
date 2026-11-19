@@ -68,7 +68,7 @@ public class DerivedVariableService {
         var definitions = historyDefinitions(variableService.listByProject(projectId, null), List.of(), referencePaths(projectId));
         Map<String, HistoricalFieldDefinition> defaults = new LinkedHashMap<>();
         definitions.forEach((key, field) -> {
-            if ("INPUT".equals(field.source()) || "API".equals(field.source())) defaults.put(key, field);
+            if ("INPUT".equals(field.source()) || "API".equals(field.source()) || "ENGINE".equals(field.source())) defaults.put(key, field);
         });
         return defaults;
     }
@@ -138,12 +138,12 @@ public class DerivedVariableService {
         Long projectId = root.get("projectId") instanceof Number n ? n.longValue() : variable.getProjectId();
         Long rootRuleId = root.get("id") instanceof Number n ? n.longValue() : null;
         String scopeType = config.getString("scope");
-        HistoryScope scope = "SELECTED_RULES".equals(scopeType)
-                ? new HistoryScope(scopeType, projectId, DerivedVariableConfig.selectedRuleIds(config))
-                : HistoryScope.current(scopeType, projectId, rootRuleId);
-        LocalDateTime before = root.isEmpty() ? LocalDateTime.now() : context.startedAt();
-        long window = config.getLongValue("window");
-        LocalDateTime from = historyStart(before, window, config.getString("windowUnit"));
+        List<Long> ruleIds = "SELECTED_RULES".equals(scopeType) ? DerivedVariableConfig.selectedRuleIds(config)
+                : rootRuleId == null ? List.of() : List.of(rootRuleId);
+        HistoryScope scope = new HistoryScope(scopeType, projectId, ruleIds, (String) root.get("traceId"));
+        var window = HistoryWindow.resolve(config, root.isEmpty() ? LocalDateTime.now() : context.startedAt(), input);
+        LocalDateTime before = window.before();
+        LocalDateTime from = window.from();
         java.util.Set<String> historyKeys = new java.util.LinkedHashSet<>();
         for (JSONObject field : DerivedVariableConfig.historicalFields(config)) {
             String key = DerivedVariableConfig.fieldKey(field);
@@ -153,6 +153,15 @@ public class DerivedVariableService {
                 DerivedVariableConfig.require(definition != null && definition.queryable(),
                         "历史字段未开启结果记录；默认仅支持请求入参和三方调用结果: " + key);
             }
+        }
+        HistoryQuery.Row current = null;
+        if (before != null && config.getBooleanValue("includeCurrent")
+                && (!scope.filtersRules() || rootRuleId != null && scope.ruleIds().contains(rootRuleId))) {
+            Map<String, Object> fields = new LinkedHashMap<>();
+            for (JSONObject field : DerivedVariableConfig.historicalFields(config)) {
+                fields.put(DerivedVariableConfig.fieldKey(field), input.apply(field));
+            }
+            current = new HistoryQuery.Row(Long.MAX_VALUE, window.entryCutoff(), fields);
         }
         if (indexedCounts != null && simpleCount(config)) {
             JSONObject geo = config.getJSONObject("geo");
@@ -168,26 +177,42 @@ public class DerivedVariableService {
             var count = options == null || options.getInvocationCache() == null ? load.get().get(from)
                     : options.getInvocationCache().historyCount(selection, from, load);
             if (count != null) {
-                recordHistory(variable, config, from, before, count.candidates());
-                return checkedValue(variable, count.matched());
+                long currentMatches = current == null ? 0L : (Long) HistoryQuery.evaluate(config, List.of(current), input, invoker);
+                recordHistory(variable, config, from, before, count.candidates() + (current == null ? 0 : 1));
+                return checkedValue(variable, count.matched() + currentMatches);
             }
         }
-        List<HistoryQuery.Row> history = executionLogHistoryRepository == null
-                ? historyRepository.query(scope, from, before)
-                : executionLogHistoryRepository.query(scope,
-                from, before, historyKeys, definitions == null ? Map.of() : definitions);
+        List<HistoryQuery.Row> history = List.of();
+        if (before != null) {
+            LocalDateTime entryFrom = window.fieldKey() == null ? from : null;
+            history = executionLogHistoryRepository == null
+                    ? historyRepository.query(scope, entryFrom, window.entryCutoff())
+                    : executionLogHistoryRepository.query(scope, entryFrom, window.entryCutoff(), historyKeys,
+                            definitions == null ? Map.of() : definitions);
+            if (window.fieldKey() != null) history = history.stream().filter(window::matches).toList();
+            if (current != null) {
+                history = new java.util.ArrayList<>(history);
+                history.add(current);
+            }
+        }
         Object result = HistoryQuery.evaluate(config, history, input, invoker);
         recordHistory(variable, config, from, before, history.size());
         return checkedValue(variable, result);
     }
 
     private void recordHistory(RuleVariable variable, JSONObject config, LocalDateTime from, LocalDateTime before, long candidates) {
-        RuntimeContextBridge.addTraceEvent(new LinkedHashMap<>(Map.of("type", "DERIVED_HISTORY", "variableId", variable.getId() == null ? 0L : variable.getId(),
-                "scope", config.getString("scope"), "from", from.toString(), "before", before.toString(), "candidateCount", candidates)));
+        Map<String, Object> event = new LinkedHashMap<>(Map.of("type", "DERIVED_HISTORY", "variableId", variable.getId() == null ? 0L : variable.getId(),
+                "scope", config.getString("scope"), "candidateCount", candidates, "windowUnit", config.getString("windowUnit")));
+        if (from != null) event.put("from", from.toString());
+        if (before != null) event.put("before", before.toString());
+        if (DerivedVariableConfig.windowField(config) != null) event.put("timeField", DerivedVariableConfig.fieldKey(DerivedVariableConfig.windowField(config)));
+        event.put("includeCurrent", config.getBooleanValue("includeCurrent"));
+        RuntimeContextBridge.addTraceEvent(event);
     }
 
     private static boolean simpleCount(JSONObject config) {
         return "HISTORY".equals(config.getString("mode")) && "COUNT".equals(config.getString("aggregate"))
+                && !"ALL".equals(config.getString("windowUnit")) && !"FIELD".equals(config.getString("timeSource"))
                 && !"LATEST_PER_SUBJECT".equals(config.getString("recordMode"))
                 && DerivedVariableConfig.objects(config,"steps").isEmpty() && DerivedVariableConfig.objects(config,"filters").isEmpty();
     }

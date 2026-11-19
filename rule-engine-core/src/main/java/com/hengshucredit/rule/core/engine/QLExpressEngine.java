@@ -158,6 +158,13 @@ public class QLExpressEngine {
             // Runtime policy check against precomputed targets; no source scanning on execution.
             ScriptStaticChecks.assertDoesNotAssignConstants(prepared.assignmentRoots, request.constantNames());
             ExpressContext expressContext = mapContext == null ? new ObjectFieldExpressContext(context, runner) : mapContext;
+            var internal = request.engineFields();
+            if (!internal.isEmpty()) {
+                ScriptStaticChecks.assertDoesNotAssignConstants(prepared.assignmentRoots, internal.keySet());
+                ExpressContext delegate = expressContext;
+                expressContext = (attachments, name) -> internal.containsKey(name)
+                        ? new com.alibaba.qlexpress4.runtime.data.DataValue(internal.get(name)) : delegate.get(attachments, name);
+            }
             QLOptions options = mapContext == null ? (trace ? TRACE_OPTIONS : NORMAL_OPTIONS)
                     : (trace ? MAP_TRACE_OPTIONS : MAP_NORMAL_OPTIONS);
             QLResult result = runner.execute(prepared.loaded, expressContext, options);

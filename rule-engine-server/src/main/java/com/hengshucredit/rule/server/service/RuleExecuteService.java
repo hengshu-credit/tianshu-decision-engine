@@ -241,6 +241,7 @@ public class RuleExecuteService {
         runtimeRuleInvoker.setSourceExecutionPolicy(resolveOptions);
         bindInvocationCache(resolveOptions);
         long executionStart = System.currentTimeMillis();
+        executeParams.putAll(RuntimeContextBridge.currentContext().engineFields());
         java.time.LocalDateTime historyStartedAt = RuntimeContextBridge.currentContext().startedAt();
         RuleResult result = new RuleResult();
         try (var ignored = RuntimeContextBridge.currentContext().bindFunctions(functionBindings);
@@ -510,6 +511,7 @@ public class RuleExecuteService {
         }
         runtimeRuleInvoker.setTraceEnabled(collectTrace);
         long executionStart = System.currentTimeMillis();
+        executeParams.putAll(RuntimeContextBridge.currentContext().engineFields());
         java.time.LocalDateTime historyStartedAt = RuntimeContextBridge.currentContext().startedAt();
         RuleResult result = new RuleResult();
         try (var ignored = RuntimeContextBridge.currentContext().bindFunctions(functionBindings);

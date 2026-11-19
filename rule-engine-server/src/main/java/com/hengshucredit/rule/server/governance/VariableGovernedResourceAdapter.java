@@ -57,6 +57,7 @@ public class VariableGovernedResourceAdapter
     @Override
     public ResourceSnapshot normalizeDraft(ResourceSnapshot draft) {
         var value = JSON.parseObject(draft.snapshotJson());
+        if ("ENGINE".equals(value.getString("varSource"))) throw new IllegalArgumentException("引擎内部字段不能通过业务配置创建或修改");
         Long id = value.getLong("id");
         if (id != null) com.hengshucredit.rule.server.service.SystemConstantPolicy.requireMutable(variableStore.load(id));
         if (Boolean.TRUE.equals(value.getBoolean("systemConstant"))) throw new IllegalArgumentException("系统常量身份不能通过业务配置创建或修改");

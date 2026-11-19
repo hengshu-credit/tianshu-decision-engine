@@ -37,9 +37,12 @@ public class ApplicationHistoryRepository {
     List<HistoryQuery.Row> query(HistoryScope scope, LocalDateTime from, LocalDateTime before) {
         if (consoleDataScope != null) consoleDataScope.requireHistoryScope(scope.type(), scope.projectId());
         StringBuilder sql = new StringBuilder("SELECT id, occurred_at, field_values FROM rule_application_history "
-                + "WHERE occurred_at >= ? AND occurred_at < ?");
-        List<Object> parameters = new ArrayList<>(List.of(Timestamp.valueOf(from), Timestamp.valueOf(before)));
+                + (from == null ? "WHERE occurred_at < ?" : "WHERE occurred_at >= ? AND occurred_at < ?"));
+        List<Object> parameters = new ArrayList<>();
+        if (from != null) parameters.add(Timestamp.valueOf(from));
+        parameters.add(Timestamp.valueOf(before));
         scope.appendRuleFilter(sql, parameters, "root_rule_id");
+        scope.excludeCurrent(sql, parameters, "trace_id");
         if (scope.projectId() != null) {
             sql.append(" AND project_id = ?");
             parameters.add(scope.projectId());

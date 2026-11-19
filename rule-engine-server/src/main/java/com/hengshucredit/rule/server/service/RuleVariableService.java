@@ -371,6 +371,7 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
 
     @Override
     public boolean save(RuleVariable entity) {
+        if ("ENGINE".equals(entity.getVarSource())) throw new IllegalArgumentException("引擎内部字段不能通过业务配置创建或修改");
         validateAndNormalizeConstant(entity);
         // 确保 scope 有默认值
         if (entity.getScope() == null || entity.getScope().isEmpty()) {
@@ -394,6 +395,7 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
     @Override
     @Transactional
     public boolean updateById(RuleVariable entity) {
+        if (entity != null && "ENGINE".equals(entity.getVarSource())) throw new IllegalArgumentException("引擎内部字段不能通过业务配置创建或修改");
         RuleVariable current = entity != null && entity.getId() != null ? getById(entity.getId()) : null;
         SystemConstantPolicy.requireMutable(current);
         if (current != null && SCOPE_PROJECT.equals(current.getScope())

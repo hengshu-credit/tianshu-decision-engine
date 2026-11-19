@@ -22,6 +22,18 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 
 public class ExecutionLogHistoryRepositoryTest {
+    @Test public void fieldWindowsReadPriorOrdersByTraceAndResolveSystemValuesFromRootLog() {
+        var jdbc = new CapturingJdbc();
+        jdbc.roots = List.of(root("{\"version\":1,\"fields\":{\"VARIABLE:5\":\"caller\"}}"));
+        var definition = new HistoricalFieldDefinition("VARIABLE:5", "trace_id", "ENGINE", false, null, null, null);
+        var scope = new HistoryScope("PROJECT", 3L, List.of(), "this-order");
+        var cutoff = LocalDateTime.of(2026, 9, 23, 0, 0);
+        var rows = new ExecutionLogHistoryRepository(jdbc).query(scope, null, cutoff, Set.of(definition.key()), Map.of(definition.key(), definition));
+        assertFalse(jdbc.sql.contains("started_at >= ?"));
+        assertTrue(jdbc.sql.contains("l.trace_id <> ?"));
+        assertTrue(jdbc.boundValues.contains("this-order"));
+        assertEquals("root", rows.get(0).fields().get(definition.key()));
+    }
     @Test
     public void actualObjectInputWinsOverReusableApiFieldSnapshotIncludingNull() {
         for (String value : List.of("0", "null")) {

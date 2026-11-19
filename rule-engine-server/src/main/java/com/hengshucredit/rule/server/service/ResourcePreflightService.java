@@ -154,7 +154,7 @@ public class ResourcePreflightService {
         return report;
     }
 
-    private static final Set<String> SUPPORTED_SOURCES = Set.of("INPUT", "API", "DB", "LIST", "DERIVED", "COMPUTED", "CONSTANT");
+    private static final Set<String> SUPPORTED_SOURCES = Set.of("INPUT", "API", "DB", "LIST", "DERIVED", "COMPUTED", "CONSTANT", "ENGINE");
 
     private ResourcePreflightReport report(String type, Long id) {
         ResourcePreflightReport report = new ResourcePreflightReport();

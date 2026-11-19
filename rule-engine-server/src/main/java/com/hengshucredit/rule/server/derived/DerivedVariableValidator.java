@@ -62,6 +62,12 @@ public class DerivedVariableValidator {
                     "历史统计默认仅支持请求入参和三方结果；请先为所选字段开启结果记录: " + fieldKey(historical));
         }
         String aggregate = config.getString("aggregate");
+        JSONObject timeField = windowField(config);
+        if (timeField != null) {
+            String timeType = type(timeField);
+            require(NUMERIC.contains(timeType) || Set.of("DATE", "DATETIME", "STRING").contains(timeType),
+                    "时间字段必须是日期、日期时间、日期字符串或毫秒时间戳");
+        }
         JSONObject field = config.getJSONObject("valueField");
         String type = field == null ? "" : type(field);
         if (NUMERIC_AGGREGATES.contains(aggregate)) require(NUMERIC.contains(type), "该聚合方法只支持数值字段");
@@ -96,7 +102,8 @@ public class DerivedVariableValidator {
         Long id = field.getLong("refId");
         if ("VARIABLE".equals(field.getString("refType")) || "CONSTANT".equals(field.getString("refType"))) {
             RuleVariable variable = variables.getById(id);
-            return variable != null && ("INPUT".equals(variable.getVarSource()) || "API".equals(variable.getVarSource()) || Boolean.TRUE.equals(variable.getRecordResult()));
+            return variable != null && ("INPUT".equals(variable.getVarSource()) || "API".equals(variable.getVarSource())
+                    || "ENGINE".equals(variable.getVarSource()) || Boolean.TRUE.equals(variable.getRecordResult()));
         }
         if ("MODEL_OUTPUT".equals(field.getString("refType"))) {
             var output = modelFields.selectById(id);

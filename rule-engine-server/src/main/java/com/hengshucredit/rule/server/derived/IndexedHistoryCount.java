@@ -53,6 +53,13 @@ public class IndexedHistoryCount {
     public Map<LocalDateTime, Count> count(Selection selection, List<LocalDateTime> windows) {
         if (windows.isEmpty()) throw new IllegalArgumentException("缺少历史统计窗口");
         if (permissions != null) permissions.requireHistoryScope(selection.scope().type(), selection.scope().projectId());
+        var scope = selection.scope();
+        if (scope.excludedTrace() != null) {
+            // 重放同一根请求时，汇总桶无法扣除该进件，转到逐条去除 trace_id 的路径。
+            if (!jdbc.queryForList("SELECT 1 FROM rule_execution_log WHERE trace_id=? AND started_at<? AND success=1 LIMIT 1",
+                    Integer.class, scope.excludedTrace(), Timestamp.valueOf(selection.before())).isEmpty()) return Map.of();
+            selection = new Selection(new HistoryScope(scope.type(), scope.projectId(), scope.ruleIds()), selection.before(), selection.region());
+        }
         if (jdbc.queryForList("SELECT format_version FROM rule_history_index_state WHERE format_version=1", Integer.class).isEmpty())
             return Map.of();
         var earliest = windows.stream().min(LocalDateTime::compareTo).orElseThrow();

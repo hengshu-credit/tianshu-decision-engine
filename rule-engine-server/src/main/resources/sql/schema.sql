@@ -851,7 +851,7 @@ CREATE TABLE IF NOT EXISTS `rule_data_object` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据对象定义表（Java实体类/JSON对象）';
 
 CREATE TABLE IF NOT EXISTS `rule_variable` (
-  `system_constant` TINYINT NOT NULL DEFAULT 0 COMMENT '系统常量只读标记，业务接口不可修改',
+  `system_constant` TINYINT NOT NULL DEFAULT 0 COMMENT '系统只读标记：系统常量与引擎内部字段为1，禁止业务修改和删除',
   `record_result`    TINYINT NOT NULL DEFAULT 0 COMMENT '是否显式记录字段结果供历史统计：0=否，1=是',
   `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`        BIGINT       NOT NULL                COMMENT '所属项目ID',
@@ -861,7 +861,7 @@ CREATE TABLE IF NOT EXISTS `rule_variable` (
   `var_label`         VARCHAR(128) NOT NULL                COMMENT '变量中文名称',
   `script_name`       VARCHAR(128) DEFAULT NULL             COMMENT '脚本引用名称，原样保留用户配置，不自动转换大小写或命名格式',
   `var_type`          VARCHAR(32)  NOT NULL                COMMENT '变量或对象字段数据类型：STRING=字符串，NUMBER=数值，INTEGER=整数，DOUBLE=双精度数值，BOOLEAN=布尔，DATE=日期，ENUM=枚举，OBJECT=对象，LIST=列表，MAP=映射',
-  `var_source`        VARCHAR(32)  NOT NULL DEFAULT 'INPUT' COMMENT '变量来源：INPUT=请求输入，COMPUTED=计算变量，CONSTANT=常量，DB=数据库，API=外数接口，LIST=名单匹配，SFTP=远程文件，DERIVED=历史派生统计',
+  `var_source`        VARCHAR(32)  NOT NULL DEFAULT 'INPUT' COMMENT '变量来源：INPUT=请求输入，ENGINE=引擎内部字段，COMPUTED=计算变量，CONSTANT=常量，DB=数据库，API=外数接口，LIST=名单匹配，SFTP=远程文件，DERIVED=衍生变量',
   `source_config`     JSON         DEFAULT NULL             COMMENT '外部来源配置JSON：API/DB/LIST变量绑定接口、SQL、入参映射、结果路径等',
   `default_value`     TEXT         DEFAULT NULL             COMMENT '默认值（常量必填，可为较长 JSON）',
   `value_range`       VARCHAR(512) DEFAULT NULL             COMMENT '取值范围描述',
@@ -2335,6 +2335,16 @@ SELECT 1, 0, 'GLOBAL', 'DECISION_REJECT', '拒绝', 'DECISION_REJECT', 'NUMBER',
        '1', NULL, '1', '系统常量：决策结果为拒绝。', -987, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 ON DUPLICATE KEY UPDATE `id` = `id`;
 -- 决策结果系统常量结束。
+
+-- 全局执行身份：保留已有全局字段 ID，取值由引擎提供。
+INSERT INTO `rule_variable`
+  (`scope`, `project_id`, `var_code`, `script_name`, `var_label`, `var_type`, `var_source`, `system_constant`, `status`, `description`)
+VALUES ('GLOBAL', 0, 'trace_id', 'trace_id', '全局追踪 ID', 'STRING', 'ENGINE', 1, 1, '根执行的全局追踪 ID，子规则共享')
+ON DUPLICATE KEY UPDATE `script_name` = 'trace_id', `var_source` = 'ENGINE', `var_type` = 'STRING', `system_constant` = 1, `status` = 1;
+INSERT INTO `rule_variable`
+  (`scope`, `project_id`, `var_code`, `script_name`, `var_label`, `var_type`, `var_source`, `system_constant`, `status`, `description`)
+VALUES ('GLOBAL', 0, 'create_time', 'create_time', '进件时间', 'DATE', 'ENGINE', 1, 1, '根请求进入引擎的时间')
+ON DUPLICATE KEY UPDATE `script_name` = 'create_time', `var_source` = 'ENGINE', `var_type` = 'DATE', `system_constant` = 1, `status` = 1;
 
 -- 服务端自动升级先补齐依赖字段，再执行视图语句；以下守卫也兼容手工运行初始化脚本。
 

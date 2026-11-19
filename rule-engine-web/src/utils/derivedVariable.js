@@ -18,7 +18,7 @@ export const HISTORY_AGGREGATES = [
 ]
 
 export function createDerivedConfig() {
-  return { mode: 'EXPRESSION', expression: null, scope: 'PROJECT', window: 30, windowUnit: 'DAY', steps: [], filters: [],
+  return { mode: 'EXPRESSION', expression: null, scope: 'PROJECT', window: 30, windowUnit: 'DAY', timeSource: 'ENTRY', steps: [], filters: [],
     subjectFields: [], recordMode: 'ALL', aggregate: 'COUNT', valueField: null, functionId: null }
 }
 
@@ -26,10 +26,19 @@ export function derivedCurrentInputs(config) {
   if (config.mode === 'EXPRESSION') return config.expression ? [config.expression] : []
   const steps = config.steps || []
   const inputs = [...(steps[0]?.inputs || [])]
+  if (config.windowUnit !== 'ALL' && config.timeSource === 'FIELD') inputs.push(config.timeField)
   for (const filter of [...(config.filters || []), ...steps.flatMap(step => step.filters || [])]) {
     if (filter.value) inputs.push(filter.value)
   }
   if (config.geo) inputs.push(config.geo.longitude, config.geo.latitude, config.geo.radiusMeters)
+  if (config.includeCurrent) {
+    inputs.push(config.valueField, ...(config.subjectFields || []), config.geo?.longitudeField, config.geo?.latitudeField)
+    for (const [index, step] of steps.entries()) {
+      inputs.push(...(step.fields || []))
+      if (index > 0) inputs.push(...(step.fromFields || []))
+    }
+    for (const filter of [...(config.filters || []), ...steps.flatMap(step => step.filters || [])]) inputs.push(filter.field)
+  }
   return inputs.filter(Boolean)
 }
 
@@ -44,7 +53,11 @@ export function historyAggregateOptions(type) {
 export function historyFieldEligible(field) {
   const type = field._refType || field.refType
   const source = field.varSource || field.varObj?.varSource || (type === 'MODEL_OUTPUT' ? 'MODEL' : type === 'CONSTANT' ? 'CONSTANT' : 'INPUT')
-  return ['INPUT', 'API'].includes(source) || field.recordResult === true || field.varObj?.recordResult === true
+  return ['INPUT', 'API', 'ENGINE'].includes(source) || field.recordResult === true || field.varObj?.recordResult === true
+}
+
+export function supportsHistoryTime(type) {
+  return ['DATE', 'DATETIME', 'STRING', ...NUMERIC_TYPES].includes(type)
 }
 
 export function validateDerivedConfig(config) {
@@ -55,11 +68,15 @@ export function validateDerivedConfig(config) {
     if (errors.length) return errors[0].message
   }
   if (config.mode === 'EXPRESSION') return ''
-  if (!Number.isInteger(config.window) || config.window < 1 || config.window > 36500) return '时间窗口必须是 1 至 36500 的整数'
+  if (config.windowUnit !== 'ALL' && (!Number.isInteger(config.window) || config.window < 1 || config.window > 36500)) return '时间窗口必须是 1 至 36500 的整数'
   if (!['RULE', 'SELECTED_RULES', 'PROJECT', 'GLOBAL'].includes(config.scope)) return '请选择历史统计范围'
   if (config.scope === 'SELECTED_RULES' && (!Array.isArray(config.ruleIds) || !config.ruleIds.length)) return '请至少选择一条统计规则'
-  if (!['MINUTE', 'HOUR', 'DAY', 'CALENDAR_DAY'].includes(config.windowUnit)) return '请选择时间窗口单位'
+  if (!['MINUTE', 'HOUR', 'DAY', 'CALENDAR_DAY', 'ALL'].includes(config.windowUnit)) return '请选择时间窗口单位'
   const fieldError = field => !field || field.kind !== 'REFERENCE' || !field.refId || !field.refType
+  if (config.windowUnit !== 'ALL' && config.timeSource === 'FIELD') {
+    if (fieldError(config.timeField)) return '请选择统计时间字段'
+    if (!['EXCLUDE', 'INCLUDE', 'ENTRY'].includes(config.nullTimePolicy ?? 'EXCLUDE')) return '请选择空时间处理方式'
+  }
   if (config.aggregate === 'DISTINCT_COUNT' || config.recordMode === 'LATEST_PER_SUBJECT') {
     if (!config.subjectFields?.length || config.subjectFields.some(fieldError)) return '请选择主体 key 字段'
   }

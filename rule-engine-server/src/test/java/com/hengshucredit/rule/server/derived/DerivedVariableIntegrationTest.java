@@ -93,6 +93,47 @@ public class DerivedVariableIntegrationTest {
         assertEquals(List.of("123", "456"), snapshot.get("DATA_OBJECT:9"));
     }
 
+    @Test public void businessWindowFiltersBeforeAggregationWithoutClippingHistoryByEngineAge() {
+        var service = new DerivedVariableService();
+        var context = RuntimeContextBridge.currentContext();
+        context.setRuleContext(Map.of("id", 1L, "projectId", 1L), List.of());
+        var entered = context.startedAt().minusDays(1);
+        var rows = List.of(new HistoryQuery.Row(1, entered, Map.of("VARIABLE:7", "2025-02-02")),
+                new HistoryQuery.Row(2, entered, Map.of("VARIABLE:7", "2025-01-01")),
+                new HistoryQuery.Row(3, entered, Map.of()));
+        ReflectionTestUtils.setField(service, "historyRepository", new ApplicationHistoryRepository(null) {
+            @Override List<HistoryQuery.Row> query(HistoryScope scope, LocalDateTime from, LocalDateTime before) {
+                assertNull(from);
+                assertEquals(context.startedAt(), before);
+                return rows;
+            }
+        });
+        var config = JSON.parseObject("""
+                {"mode":"HISTORY","scope":"GLOBAL","windowUnit":"DAY","window":7,"aggregate":"COUNT",
+                 "timeSource":"FIELD","timeField":{"kind":"REFERENCE","refType":"VARIABLE","refId":7,"code":"obsolete"}}
+                """);
+        var path = Map.of("VARIABLE:7", "businessTime");
+        var counter = variable(20, "count", "DERIVED", config.toJSONString());
+        assertEquals(1L, service.resolve(counter, Map.of("businessTime", "2025-02-08"), path, Map.of()));
+        assertEquals(0L, service.resolve(counter, Map.of(), path, Map.of()));
+        config.put("windowUnit", "ALL");
+        counter.setSourceConfig(config.toJSONString());
+        assertEquals(3L, service.resolve(counter, Map.of(), Map.of(), Map.of()));
+        config.put("includeCurrent", true);
+        counter.setSourceConfig(config.toJSONString());
+        assertEquals(4L, service.resolve(counter, Map.of(), Map.of(), Map.of()));
+        config.put("aggregate", "DISTINCT_COUNT");
+        config.put("subjectFields", List.of(config.getJSONObject("timeField")));
+        counter.setSourceConfig(config.toJSONString());
+        assertEquals(2L, service.resolve(counter, Map.of("businessTime", "2025-02-02"), path, Map.of()));
+        config.put("aggregate", "COUNT");
+        config.remove("subjectFields");
+        config.put("scope", "SELECTED_RULES");
+        config.put("ruleIds", List.of(9L));
+        counter.setSourceConfig(config.toJSONString());
+        assertEquals(3L, service.resolve(counter, Map.of(), Map.of(), Map.of()));
+    }
+
     private static String expression(long id, String staleCode) {
         return "{\"mode\":\"EXPRESSION\",\"expression\":{\"kind\":\"OPERATION\",\"terms\":[{\"operand\":" + ref(id, staleCode) + "},{\"operator\":\"*\",\"operand\":{\"kind\":\"LITERAL\",\"valueType\":\"NUMBER\",\"value\":2}}]}}";
     }

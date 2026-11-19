@@ -555,6 +555,10 @@ public class VariableResolutionInvocationCache {
             }
         }
         for (HistoricalFieldDefinition field : definitions.values()) {
+            if ("ENGINE".equals(field.source())) {
+                fields.put(field.key(), HistoryFieldValues.read(values, field.path()));
+                continue;
+            }
             Object originalValue = HistoryFieldValues.read(original, field.path());
             if ("INPUT".equals(field.source()) && !resolvedObjectKeys.contains(field.key())
                     && (originalValue != null || inputKeys.contains(field.inputRootKey()))) {
