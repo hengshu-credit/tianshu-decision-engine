@@ -63,10 +63,10 @@
               :class="{ 'dtt-func-item--hit': child.status === 'hit' }"
             >
               <span class="dtt-func-icon">ƒ</span>
-              <content-reference mode="trace" :value="{ refType: 'FUNCTION', code: fc.name, label: funcDisplayName(fc.name), version: fc.version, valueType: fc.returnType }" />
+              <content-reference mode="trace" :value="fc.functionReference" />
               <span class="dtt-func-expr"
                 >({{
-                  fc.args
+                  fc.funcArgs
                     .map(function (a) {
                       return a.label + '=' + a.value
                     })
@@ -75,12 +75,12 @@
               >
               <span
                 class="dtt-func-result"
-                v-if="fc.value !== undefined && fc.value !== null"
+                v-if="fc.functionReference.value != null"
                 >→
                 {{
-                  typeof fc.value === 'object'
-                    ? JSON.stringify(fc.value)
-                    : String(fc.value)
+                  typeof fc.functionReference.value === 'object'
+                    ? JSON.stringify(fc.functionReference.value)
+                    : String(fc.functionReference.value)
                 }}</span
               >
             </div>
@@ -111,13 +111,6 @@ export default {
         return {}
       },
     },
-    /** 函数名→中文展示（含内置映射与项目配置，由 TraceTree 传入） */
-    functionNameMap: {
-      type: Object,
-      default: function () {
-        return {}
-      },
-    },
   },
   data: function () {
     return {
@@ -134,15 +127,6 @@ export default {
     }
   },
   methods: {
-    /**
-     * 将追踪中的函数标识转为中文展示名
-     */
-    funcDisplayName: function (code) {
-      if (code === undefined || code === null || code === '') return '?'
-      var s = String(code)
-      var m = this.functionNameMap
-      return (m && m[s]) || s
-    },
     statusLabel: function (status) {
       if (status === 'hit') return '命中'
       if (status === 'blocked') return '不满足'

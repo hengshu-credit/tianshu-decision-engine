@@ -20,6 +20,45 @@ async function pick(page, input, code) {
 }
 const variable = { id: 1, varCode: 'clientCode', varLabel: '客户编码', varType: 'STRING', varSource: 'INPUT', version: 3 }
 
+for (const modelType of ['FLOW', 'SCRIPT', 'TREE']) test(`${modelType} 执行日志按函数和方法各自的返回类型展示标签`, async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const apiData = createOperationsApiData()
+  const row = apiData.get('/api/rule/log/list').records[0]
+  const calls = [
+    { type: 'FUNCTION', token: 'setRuntimeValue', evaluated: true, value: { approved: true } },
+    { type: 'OPERATOR', token: '=', evaluated: true, value: true, children: [
+      { type: 'VARIABLE', token: 'approved', value: true },
+      { type: 'OPERATOR', token: '>', value: true, children: [
+        { type: 'METHOD', token: 'size', evaluated: true, value: 2, returnType: 'INTEGER', resolvedVersion: 3 },
+        { type: 'VALUE', token: '0', value: 0 },
+      ] },
+    ] },
+  ]
+  const trace = modelType === 'TREE' ? [{ type: 'IF', children: [
+    { type: 'VALUE', evaluated: true, value: true }, { type: 'BLOCK', children: calls },
+  ] }] : [...calls, { type: 'OPERATOR', token: '=', evaluated: true, value: true, children: [
+    { type: 'VARIABLE', token: '_result', value: true }, { type: 'VARIABLE', token: 'approved', value: true },
+  ] }]
+  // 旧日志只有日志行上的规则版本。新格式的每一层规则都记录自己的执行版本。
+  const frame = { schemaVersion: 2, traceKind: 'RULE', modelType, ruleCode: 'parent', ruleVersion: 7,
+    expressionTrace: trace, children: [
+      { schemaVersion: 2, traceKind: 'RULE', modelType, ruleCode: 'child', ruleVersion: 4, expressionTrace: trace },
+    ] }
+  const legacy = modelType === 'FLOW'
+  Object.assign(row, { modelType, ruleVersion: legacy ? 7 : 9, traceInfo: JSON.stringify(legacy ? trace : frame) })
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData })
+  await page.goto(`${origin}/#/log`)
+  await page.getByRole('row').filter({ hasText: row.traceId }).getByRole('button', { name: '详情' }).click()
+  await page.getByRole('tab', { name: '表达式追踪树' }).click()
+  const labels = page.locator(modelType === 'TREE' ? '.dtt-func-item .content-ref' : '.fc-func-name .content-ref')
+  const codes = ['setRuntimeValue', 'size'], types = ['{}', '123']
+  await expect(labels.locator('.content-ref__code')).toHaveText(legacy ? codes : [...codes, ...codes])
+  await expect(labels.locator('.content-ref__type')).toHaveText(legacy ? types : [...types, ...types])
+  await expect(labels.locator('.content-ref__version')).toHaveText(legacy ? ['规则 v7', 'v3'] : ['规则 v7', 'v3', '规则 v4', 'v3'])
+  if (!legacy) await expect(page.locator('.rule-trace-head .content-ref__version')).toHaveText(['v7', 'v4'])
+  harness.assertClean()
+})
+
 async function openReferenceScript(page, script = 'age + 1', configure = () => {}) {
   const data = createDesignerApiData()
   configure(data)

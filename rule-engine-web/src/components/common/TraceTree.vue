@@ -29,7 +29,6 @@
           :node="experimentRoutingTree"
           :is-root="true"
           :var-map="varMap"
-          :function-name-map="effectiveFunctionNameMap"
         />
       </div>
       <div
@@ -65,7 +64,7 @@
             ruleModelTypeLabel(ruleTraceFrame.modelType)
           }}</span>
           <div>
-            <content-reference :value="{ refType: 'RULE', refId: ruleTraceFrame.ruleId, code: ruleTraceFrame.ruleCode, label: ruleTraceFrame.ruleName, version: ruleTraceFrame.version, valueType: 'RULE' }" mode="trace" wrap />
+            <content-reference :value="{ refType: 'RULE', refId: ruleTraceFrame.ruleId, code: ruleTraceFrame.ruleCode, label: ruleTraceFrame.ruleName, version: executedRuleVersion, valueType: 'RULE' }" mode="trace" wrap />
           </div>
         </div>
         <div class="rule-trace-meta">
@@ -149,7 +148,8 @@
           :input-params="inputParams"
           :output-result="outputResult"
           :rule-name="ruleTraceFrame.ruleName"
-          :rule-version="ruleVersion"
+          :rule-version="executedRuleVersion"
+          :rule-revision-no="ruleRevisionNo"
           :execute-time-ms="ruleTraceFrame.durationMs"
           :model-data="ruleDefinitionModel"
           :definition-model="ruleDefinitionModel"
@@ -263,7 +263,7 @@
                     <div class="fc-func-row">
                       <div class="fc-func-name">
                         <span class="fc-func-icon">ƒ</span>
-                        <content-reference mode="trace" :value="{ refType: 'FUNCTION', code: card.funcName, label: effectiveFunctionNameMap[card.funcName] || card.funcName, valueType: card.returnType, version: card.funcVersion }" />
+                        <content-reference mode="trace" :value="card.functionReference" />
                       </div>
                       <div
                         v-if="card.funcArgs && card.funcArgs.length"
@@ -329,7 +329,6 @@
             :node="treeData"
             :is-root="true"
             :var-map="varMap"
-            :function-name-map="effectiveFunctionNameMap"
           />
         </div>
         <!-- 图例 -->
@@ -887,7 +886,7 @@ import DecisionTreeTraceNode from './DecisionTreeTraceNode.vue'
 import RuleSetConditionTraceNode from './RuleSetConditionTraceNode.vue'
 import ExternalCallTrace from './ExternalCallTrace.vue'
 import FlowTraceGraph from './FlowTraceGraph.vue'
-import { traceContentValue } from '@/utils/contentReference'
+import { traceContentValue, traceResourceVersions } from '@/utils/contentReference'
 import { compileOperand, operandDisplay } from '@/utils/operand'
 import { resolveTraceReferences } from '@/utils/traceReference'
 import { executionStatusLabel, executionStatusHint } from '@/utils/executionStatus'
@@ -965,7 +964,8 @@ export default {
     /** 规则名称（从 ExecutionLog 传入） */
     ruleName: { type: String, default: '' },
     /** 规则版本号 */
-    ruleVersion: { type: [Number, String], default: '' },
+    ruleVersion: { type: [Number, String], default: null },
+    ruleRevisionNo: { type: [Number, String], default: null },
     /** 执行耗时(ms) */
     executeTimeMs: { type: [Number, String], default: '' },
     /** 规则模型数据（含 nodes/edges，用于提取节点中文名称） */
@@ -989,6 +989,9 @@ export default {
     /** 是否为共享会话中的子规则追踪 */
     nested: { type: Boolean, default: false },
   },
+  provide() {
+    return { getTraceVersionContext: () => this.traceVersionContext }
+  },
   data: function () {
     return { fullscreen: false }
   },
@@ -1002,6 +1005,17 @@ export default {
     document.removeEventListener('keydown', this._onEsc)
   },
   computed: {
+    executedRuleVersion() {
+      return this.ruleTraceFrame?.ruleVersion ?? this.ruleTraceFrame?.version ?? this.ruleVersion
+    },
+    traceRuleVersionLabel() {
+      if (this.executedRuleVersion != null && this.executedRuleVersion !== '') return `规则 v${this.executedRuleVersion}`
+      if (this.ruleRevisionNo != null) return `规则修订 ${this.ruleRevisionNo}`
+      return '版本未记录'
+    },
+    traceVersionContext() {
+      return { ruleVersionLabel: this.traceRuleVersionLabel, resourceVersions: traceResourceVersions(this.ruleTraceFrame?.events || this.ruleSetEvents) }
+    },
     rawTraceData: function () {
       if (!this.traceInfo) return null
       try {
@@ -3497,34 +3511,14 @@ export default {
         if (!s) continue
         if (s.type === 'DEFINE_FUNCTION' || s.type === 'DEFINE_MACRO') continue
         if (s.type === 'FUNCTION' || s.type === 'METHOD') {
-          funcCalls.push({
-            name: s.token || '?',
-            args: this._buildFuncArgs(s),
-            expr: this._formatFuncCallExpr(s),
-            value: s.value,
-          })
+          funcCalls.push(this._traceFunctionCall(s))
         } else if (s.type === 'OPERATOR' && s.token === '=') {
           var ch = s.children || []
           var rhs = ch[1]
           var rhsFunc =
             rhs && (rhs.type === 'FUNCTION' || rhs.type === 'METHOD')
-          var nested = !rhsFunc ? this._findFuncCalls(rhs) : []
-          if (rhsFunc) {
-            funcCalls.push({
-              name: rhs.token || '?',
-              args: this._buildFuncArgs(rhs),
-              expr: this._formatFuncCallExpr(rhs),
-              value: rhs.value,
-            })
-          } else if (nested.length > 0) {
-            for (var fi = 0; fi < nested.length; fi++) {
-              funcCalls.push({
-                name: nested[fi].token || '?',
-                args: this._buildFuncArgs(nested[fi]),
-                expr: this._formatFuncCallExpr(nested[fi]),
-                value: nested[fi].value,
-              })
-            }
+          for (const call of rhsFunc ? [rhs] : this._findFuncCalls(rhs)) {
+            funcCalls.push(this._traceFunctionCall(call))
           }
           assigns.push({
             varName: ch[0] ? ch[0].token : '',
@@ -3554,7 +3548,7 @@ export default {
       }
       if (funcCalls.length > 0) {
         return {
-          label: this._fv(funcCalls[0].value),
+          label: this._fv(funcCalls[0].functionReference.value),
           resultVar: '',
           resultVarLabel: '',
           taskName: '',
@@ -3778,7 +3772,6 @@ export default {
           }
         } else if (s.type === 'FUNCTION' || s.type === 'METHOD') {
           var fnName = s.token || '?'
-          var fnArgs = this._buildFuncArgs(s)
           var nodeName3 = this._matchNodeName(nodeNames, nameIdx, 'task')
           var fnDisp = this.funcDisplayName(fnName)
           cards.push({
@@ -3787,8 +3780,7 @@ export default {
             title: nodeName3 || '调用 ' + fnDisp,
             status: 'done',
             statusText: '调用完成',
-            funcName: fnName,
-            funcArgs: fnArgs,
+            ...this._traceFunctionCall(s),
             expression: this._formatFuncCallExpr(s),
             engineTrace: s,
             result: s.value,
@@ -3800,32 +3792,26 @@ export default {
           var rhs = s.children && s.children[1]
           var rhsIsFunc =
             rhs && (rhs.type === 'FUNCTION' || rhs.type === 'METHOD')
-          var nestedFuncs = !rhsIsFunc ? this._findFuncCalls(rhs) : []
-          var hasFunc = rhsIsFunc || nestedFuncs.length > 0
-          var simpleAssign = !hasFunc && this._isFlowSimpleAssignmentRhs(rhs)
+          var call = rhsIsFunc ? rhs : this._findFuncCalls(rhs)[0]
+          var simpleAssign = !call && this._isFlowSimpleAssignmentRhs(rhs)
           var nodeName2 = this._matchNodeName(nodeNames, nameIdx, 'task')
           var resultDisplay = this._flowCardValueDisplay(target, s.value)
-          var callTok = rhsIsFunc
-            ? rhs.token
-            : nestedFuncs.length > 0
-            ? nestedFuncs[0].token
-            : ''
           var card = {
             stepNo: stepNo.n++,
-            stepType: hasFunc
+            stepType: call
               ? 'function'
               : simpleAssign
               ? 'assign'
               : 'calculation',
             title:
               nodeName2 ||
-              (hasFunc
-                ? '调用 ' + this.funcDisplayName(callTok)
+              (call
+                ? '调用 ' + this.funcDisplayName(call.token)
                 : simpleAssign
                 ? '赋值：' + targetLabel
                 : '计算' + targetLabel),
             status: 'done',
-            statusText: hasFunc
+            statusText: call
               ? '调用完成'
               : simpleAssign
               ? '赋值完成'
@@ -3837,13 +3823,7 @@ export default {
             result: target === '_result' ? this.parsedOutput ?? s.value : s.value,
             resultDisplay: resultDisplay,
           }
-          if (rhsIsFunc) {
-            card.funcName = rhs.token
-            card.funcArgs = this._buildFuncArgs(rhs)
-          } else if (nestedFuncs.length > 0) {
-            card.funcName = nestedFuncs[0].token
-            card.funcArgs = this._buildFuncArgs(nestedFuncs[0])
-          }
+          if (call) Object.assign(card, this._traceFunctionCall(call))
           cards.push(card)
         }
       }
@@ -4260,6 +4240,12 @@ export default {
           return this._fv(first.children[0].value)
       }
       return ''
+    },
+    _traceFunctionCall(node) {
+      return {
+        functionReference: traceContentValue(node, this.varMap, this.effectiveFunctionNameMap),
+        funcArgs: this._buildFuncArgs(node),
+      }
     },
     /** 从 FUNCTION/METHOD 追踪节点中提取参数列表 */
     _buildFuncArgs: function (funcNode) {

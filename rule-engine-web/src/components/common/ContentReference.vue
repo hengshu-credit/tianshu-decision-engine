@@ -8,8 +8,9 @@
 import { contentReferenceParts, contentPartClass } from '@/utils/contentReference'
 export default {
   name: 'ContentReference',
+  inject: { getTraceVersionContext: { default: null } },
   props: { value: { type: [Object, String, Number, Boolean, Array], default: null }, options: { type: Array, default: () => [] }, sensitive: Boolean, wrap: Boolean, cellRole: { type: String, default: '' }, mode: { type: String, default: 'configuration' } },
-  computed: { parts() { return contentReferenceParts(this.value, this.options, this.sensitive, this.mode) } },
+  computed: { parts() { return contentReferenceParts(this.value, this.options, this.sensitive, this.mode, this.getTraceVersionContext?.()) } },
   methods: { partClass: contentPartClass },
 }
 </script>

@@ -38,7 +38,7 @@ describe('名单条件的匹配内容', () => {
     const wrapper = mount(ListMatchContent, { props: {
       operand: { kind: 'REFERENCE', refType: 'VARIABLE', valueType: 'NUMBER', label: '年龄', code: 'Age', versionMode: 'LATEST', version: 2 }, actualValue: 0,
     } })
-    expect(wrapper.find('.content-ref__version').text()).toBe('跟随最新')
+    expect(wrapper.find('.content-ref__version').text()).toBe('最新')
     expect(wrapper.find('.content-ref__version').attributes('title')).toContain('未记录解析后的版本号')
     expect(wrapper.find('.content-ref__type').attributes('title')).toBe('数值 · NUMBER')
     expect(wrapper.find('.list-match-value').text()).toBe('0')

@@ -1,7 +1,7 @@
 import { h } from 'vue'
 import { mount } from '@test-utils'
 import ContentReference from '@/components/common/ContentReference.vue'
-import { contentReferenceParts, renderContentReference } from '@/utils/contentReference'
+import { contentReferenceParts, renderContentReference, traceContentValue, traceResourceVersions } from '@/utils/contentReference'
 
 test('未指定版本的字段在配置和编辑器中跟随最新，固定版本保留绑定信息', () => {
   const reference = { kind: 'REFERENCE', refType: 'VARIABLE', refId: 1, code: 'Original_Code', label: '原始名称', valueType: 'STRING' }
@@ -21,10 +21,53 @@ test('无版本策略的旧引用在追踪中优先显示日志记录的执行�
   const field = { refType: 'VARIABLE', refId: 1, varCode: 'age' }
   const options = [{ _refType: 'VARIABLE', _varId: 1, version: 9 }]
   const version = value => contentReferenceParts(value, options, false, 'trace').find(part => part.key === 'version').text
-  expect(version(field)).toBe('跟随最新')
+  expect(version(field)).toBe('最新')
   expect(version({ ...field, version: 2 })).toBe('v2')
   expect(version({ ...field, resolvedVersion: 3 })).toBe('v3')
   expect(version({ ...field, version: 2, resolvedVersion: 3 })).toBe('v3')
+})
+
+test('表达式追踪区分执行规则和引用版本，缺失时不会显示最新或配置时的版本', () => {
+  const value = { kind: 'REFERENCE', refType: 'VARIABLE', code: 'age', versionMode: 'LATEST', version: 9 }
+  const version = (override, ruleVersionLabel) => contentReferenceParts({ ...value, ...override }, [], false, 'trace', { ruleVersionLabel }).find(part => part.key === 'version')
+  expect(version({}, '规则 v2').text).toBe('规则 v2')
+  expect(version({}, '版本未记录').text).toBe('版本未记录')
+  expect(version({ resolvedVersion: 4 }, '规则 v2').text).toBe('v4')
+  expect(version({ versionMode: 'FIXED', version: 3 }, '规则 v2').text).toBe('固定 v3')
+})
+
+test('固定引用只使用同一来源、资源和绑定 ID 的实际执行版本', () => {
+  const event = { type: 'RESOURCE_VERSION', refType: 'FUNCTION', refId: '3', versionId: '25', versionSource: 'BUSINESS_VERSION', version: 4 }
+  const resourceVersions = traceResourceVersions([event, { ...event, versionSource: 'FUNCTION_HISTORY', version: 8 },
+    { ...event, refType: 'MODEL', version: 2 }, { ...event, versionId: '6', version: 1 }])
+  const value = { kind: 'FUNCTION', functionId: '3', functionCode: 'score', versionMode: 'FIXED', versionId: '25', versionSource: 'BUSINESS_VERSION' }
+  const version = operand => contentReferenceParts(operand, [], false, 'trace', { ruleVersionLabel: '规则 v7', resourceVersions }).find(part => part.key === 'version').text
+  expect(version(value)).toBe('固定 v4')
+  expect(version({ ...value, functionId: '9' })).toBe('规则 v7')
+})
+
+test.each([
+  ['FUNCTION', { value: 0 }, 'N'],
+  ['METHOD', { value: false }, 'T/F'],
+  ['METHOD', { value: '' }, 'Abc'],
+  ['FUNCTION', { value: [] }, '[]'],
+  ['FUNCTION', { value: {} }, '{}'],
+  ['METHOD', { returnType: 'MAP', value: {} }, '{k}'],
+  ['FUNCTION', { returnType: 'INTEGER', value: null }, '123'],
+  ['METHOD', { value: null }, '?'],
+])('%s 追踪按调用自己的输出展示 %j 为 %s', (type, fields, icon) => {
+  const operand = traceContentValue({ type, token: 'call', ...fields }, { call: { varType: 'DATE' } })
+  const parts = contentReferenceParts(operand, [], false, 'trace')
+  expect(parts.slice(0, 2).map(part => part.text)).toEqual(['方法', icon])
+})
+
+test('方法定义和表达式节点均按声明的返回类型显示', () => {
+  for (const method of [
+    { refType: 'FUNCTION', varType: 'FUNCTION', function: { returnType: 'LIST' } },
+    { kind: 'FUNCTION', valueType: 'FUNCTION', returnType: 'LIST' },
+  ]) {
+    expect(contentReferenceParts(method).find(part => part.key === 'type')).toMatchObject({ text: '[]', family: 'collection' })
+  }
 })
 
 test('无版本引用按 ID、类型和字段路径读取当前目录，忽略同 ID 的固定版本', () => {
