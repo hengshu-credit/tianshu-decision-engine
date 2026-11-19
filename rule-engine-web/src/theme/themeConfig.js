@@ -1,4 +1,5 @@
 const DEFAULT_GRADIENT_COLORS = Object.freeze(['#2639E9', '#873FF2'])
+export const SUCCESS_COLOR = '#BADC58'
 
 export const DEFAULT_THEME_CONFIG = Object.freeze({
   schemaVersion: 3,

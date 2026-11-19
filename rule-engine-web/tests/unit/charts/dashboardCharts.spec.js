@@ -45,6 +45,9 @@ describe('dashboard charts', () => {
     expect(option.series[0].data).toEqual([6, 4])
     expect(option.series[1].data).toEqual([60, 40])
     expect(option.series[2].data).toEqual([60, 100])
+    for (const series of option.series.slice(1)) {
+      expect(series).toMatchObject({ type: 'line', smooth: false, xAxisIndex: 1 })
+    }
     expect(option.xAxis[0].type).toBe('value')
     expect(option.yAxis.type).toBe('category')
   })
@@ -65,6 +68,7 @@ describe('dashboard charts', () => {
     applyTheme({ ...DEFAULT_THEME_CONFIG, accentMode: 'CUSTOM_SOLID', customSolidColor: '#873FF2' })
     const palette = createDashboardPalette(root)
     expect(palette.primary).toBe('#873FF2')
+    expect(regionalDecisionOption().color).toEqual(['#BADC58', '#873FF2'])
     expect(palette.chartAccent).not.toBe(before.chartAccent)
     expect(distributionPieOption().color).toEqual(palette.chartColors)
   })

@@ -75,8 +75,9 @@
   --tianshu-status-success-bg: #ecfdf3;
   --tianshu-status-success-border: #a7f3d0;
   --tianshu-status-success-text: #166534;
-  --tianshu-status-success-solid: #15803d;
-  --tianshu-status-success-solid-foreground: #ffffff;
+  --tianshu-status-success-solid: #badc58;
+  --tianshu-status-success-solid-foreground: #052e16;
+  --el-color-success: var(--tianshu-status-success-solid);
   --tianshu-status-warning-bg: #fff7ed;
   --tianshu-status-warning-border: #fed7aa;
   --tianshu-status-warning-text: #9a3412;
@@ -164,8 +165,6 @@
   --tianshu-status-success-bg: rgba(52, 211, 153, 0.18);
   --tianshu-status-success-border: rgba(52, 211, 153, 0.42);
   --tianshu-status-success-text: #a7f3d0;
-  --tianshu-status-success-solid: #34d399;
-  --tianshu-status-success-solid-foreground: #052e16;
   --tianshu-status-warning-bg: rgba(245, 158, 11, 0.18);
   --tianshu-status-warning-border: rgba(245, 158, 11, 0.42);
   --tianshu-status-warning-text: #fed7aa;

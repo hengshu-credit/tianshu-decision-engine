@@ -7,7 +7,7 @@ import {
   TooltipComponent
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { mixThemeColors } from '@/theme/themeConfig'
+import { mixThemeColors, SUCCESS_COLOR } from '@/theme/themeConfig'
 
 use([
   BarChart,
@@ -33,7 +33,7 @@ export function createDashboardPalette(root = document.documentElement) {
     primaryLight6: css(root, '--el-color-primary-light-6', '#c2c8ff'),
     primaryDark1: css(root, '--el-color-primary-dark-1', '#5261e6'),
     secondary: css(root, '--tianshu-color-secondary', '#f76e6c'),
-    success: css(root, '--el-color-success', '#22a06b'),
+    success: css(root, '--el-color-success', SUCCESS_COLOR),
     warning: css(root, '--el-color-warning', '#d99000'),
     danger: css(root, '--el-color-danger', '#d94a4a'),
     info: css(root, '--el-color-info', '#718096'),
@@ -216,8 +216,8 @@ export function regionalApplicationOption(regions = [], options = {}) {
     },
     series: [
       { name: '进件数', type: 'bar', xAxisIndex: 0, data: counts, barMaxWidth: 24, itemStyle: { borderRadius: [0, 5, 5, 0] } },
-      { name: '占比', type: 'line', xAxisIndex: 1, data: rates, smooth: true, symbol: 'circle', symbolSize: 6 },
-      { name: '累计占比', type: 'line', xAxisIndex: 1, data: cumulativeRates, smooth: true, symbol: 'none', areaStyle: { opacity: 0.16 } }
+      { name: '占比', type: 'line', xAxisIndex: 1, data: rates, smooth: false, symbol: 'circle', symbolSize: 6 },
+      { name: '累计占比', type: 'line', xAxisIndex: 1, data: cumulativeRates, smooth: false, symbol: 'none', areaStyle: { opacity: 0.16 } }
     ]
   }
 }
@@ -228,7 +228,7 @@ export function regionalDecisionOption(regions = [], options = {}) {
   const passRates = regions.map(region => Number(region.passRate || 0) * 100)
   const rejectRates = regions.map(region => Number(region.rejectRate || 0) * 100)
   return {
-    color: [palette.success, palette.danger],
+    color: [palette.success, palette.primary],
     tooltip: {
       ...tooltip(palette),
       renderMode: 'richText',

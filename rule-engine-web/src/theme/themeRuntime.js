@@ -1,5 +1,6 @@
 import {
   DEFAULT_THEME_CONFIG,
+  SUCCESS_COLOR,
   createPrimaryScale,
   mixThemeColors,
   normalizeThemeConfig,
@@ -153,12 +154,12 @@ function applySemanticStatusPalette(root, colorScheme) {
   const dark = colorScheme === 'DARK'
   const palette = dark
     ? {
-      success: ['rgba(52, 211, 153, 0.18)', 'rgba(52, 211, 153, 0.42)', '#A7F3D0', '#34D399', '#052E16'],
+      success: ['rgba(52, 211, 153, 0.18)', 'rgba(52, 211, 153, 0.42)', '#A7F3D0', SUCCESS_COLOR, '#052E16'],
       warning: ['rgba(245, 158, 11, 0.18)', 'rgba(245, 158, 11, 0.42)', '#FED7AA', '#F59E0B', '#451A03'],
       danger: ['rgba(248, 113, 113, 0.2)', 'rgba(248, 113, 113, 0.5)', '#FECCCA', '#F87171', '#450A0A'],
     }
     : {
-      success: ['#ECFDF3', '#A7F3D0', '#166534', '#15803D', '#FFFFFF'],
+      success: ['#ECFDF3', '#A7F3D0', '#166534', SUCCESS_COLOR, '#052E16'],
       warning: ['#FFF7ED', '#FED7AA', '#9A3412', '#D97706', '#451A03'],
       danger: ['#FEF3F2', '#FECDCA', '#B42318', '#DC2626', '#FFFFFF'],
     }
