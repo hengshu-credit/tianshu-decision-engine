@@ -297,7 +297,7 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
     public static Object read(Object root, String path) {
         if (path == null || path.isBlank() || "$".equals(path)) return root;
         if (root instanceof Map<?, ?> map && map.containsKey(path)) return map.get(path);
-        String jsonPath = path.startsWith("$") ? path : "$." + path;
+        String jsonPath = protocolJsonPath(path);
         Object value = JSONPath.eval(root, jsonPath);
         return value != null ? value : JSONPath.eval(root, jsonPath.replaceAll("\\.(\\d+)(?=\\.|\\[|$)", "[$1]"));
     }
@@ -305,8 +305,20 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
     public static boolean present(Object root, String path) {
         if (path == null || path.isBlank()) return false;
         if (root instanceof Map<?, ?> map && map.containsKey(path)) return true;
-        String jsonPath = path.startsWith("$") ? path : "$." + path;
+        String jsonPath = protocolJsonPath(path);
         return JSONPath.contains(root, jsonPath) || JSONPath.contains(root, jsonPath.replaceAll("\\.(\\d+)(?=\\.|\\[|$)", "[$1]"));
+    }
+
+    private static String protocolJsonPath(String path) {
+        String normalized = path.startsWith("$") ? path : "$." + path;
+        if (!normalized.startsWith("$.steps.")) return normalized;
+        // 步骤 ID 是对象键。旧配置的 UUID 含连字符或数字前缀，不能作为 JSONPath 标识符。
+        int start = "$.steps.".length();
+        int end = start;
+        while (end < normalized.length() && (Character.isLetterOrDigit(normalized.charAt(end))
+                || normalized.charAt(end) == '_' || normalized.charAt(end) == '-')) end++;
+        if (end == start || (end < normalized.length() && ".[".indexOf(normalized.charAt(end)) < 0)) return normalized;
+        return "$.steps['" + normalized.substring(start, end) + "']" + normalized.substring(end);
     }
 
     @SuppressWarnings("unchecked")

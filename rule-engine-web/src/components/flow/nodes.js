@@ -236,6 +236,7 @@ function ScriptTaskFactory(RectNode) {
       const name = properties.nodeName || '脚本任务'
       const colors = traceStyle(properties, { text: 'var(--tianshu-flow-node-text)' })
       return h('g', {}, [
+        h('title', {}, name),
         renderFlowRect(this.props.model),
         h('text', {
           x,
@@ -300,6 +301,7 @@ function ExclusiveGatewayFactory(DiamondNode, DiamondNodeModel) {
       const shortName = nodeName.length > 4 ? nodeName.substr(0, 4) : nodeName
       const colors = traceStyle(properties, { fill: '#fa8c16', stroke: '#d46b08', text: '#fff' })
       return h('g', {}, [
+        h('title', {}, nodeName),
         h('polygon', {
           points,
           fill: colors.fill,

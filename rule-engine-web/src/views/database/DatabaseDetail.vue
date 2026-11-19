@@ -102,7 +102,7 @@
 
     <el-form
       v-if="!detailError"
-      :disabled="!configurationReady"
+      :disabled="!configurationReady || saving"
       :aria-busy="detailLoading"
       ref="form"
       :model="form"
@@ -876,9 +876,9 @@ export default {
       return data
     },
     handleSubmit() {
-      if (!this.configurationReady || this.jdbcResolutionRequired) return
+      if (!this.configurationReady || this.jdbcResolutionRequired || this.saving) return
       this.$refs.form.validate(async (valid) => {
-        if (!valid || !this.configurationReady || this.jdbcResolutionRequired) return
+        if (!valid || !this.configurationReady || this.jdbcResolutionRequired || this.saving) return
         this.saving = true
         try {
           const data = this.normalizeForm(this.form)
@@ -886,14 +886,14 @@ export default {
           const response = this.isCreateMode
             ? await createDbDatasource(data)
             : await updateDbDatasource(data)
+          const unchanged = submittedFingerprint === this.configurationFingerprint
           this.applySavedCredentialState(data)
-          this.submissionSignature = submittedFingerprint
-          this.markConfigurationSaved(submittedFingerprint)
+          const createdId = !this.form.id && response.data?.resourceId
+          if (createdId) this.form.id = createdId
+          this.submissionSignature = unchanged ? this.configurationFingerprint : submittedFingerprint
+          this.markConfigurationSaved(this.submissionSignature)
           await completeResourceChange(this, response)
-            if (!this.form.id && response.data?.resourceId) {
-              this.form.id = response.data.resourceId
-              await this.$router.replace('/database/' + this.form.id)
-            }
+          if (createdId) await this.$router.replace('/database/' + createdId)
         } finally {
           this.saving = false
         }

@@ -75,6 +75,8 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
 
     @Resource
     private RuleDefinitionMapper definitionMapper;
+    @Resource
+    private com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper apiConfigMapper;
 
     @Resource
     private ProjectFilterService projectFilterService;
@@ -110,7 +112,33 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         wrapper.orderByDesc(RuleBillingConfig::getCreateTime);
         IPage<RuleBillingConfig> page = page(new Page<>(pageNum, pageSize), wrapper);
         fillConfigProjectName(page.getRecords());
+        fillApiBillingModes(page.getRecords());
         return page;
+    }
+
+    private void fillApiBillingModes(List<RuleBillingConfig> rows) {
+        var ids = rows.stream().filter(row -> TARGET_API.equals(row.getBillingTarget()) && row.getTargetRefId() != null)
+                .map(RuleBillingConfig::getTargetRefId).distinct().toList();
+        if (ids.isEmpty()) return;
+        var query = new LambdaQueryWrapper<RuleExternalApiConfig>()
+                .select(RuleExternalApiConfig::getId, RuleExternalApiConfig::getBillingCondition, RuleExternalApiConfig::getExecutionConfig)
+                .in(RuleExternalApiConfig::getId, ids);
+        Map<Long, String> modes = new java.util.HashMap<>();
+        for (var api : apiConfigMapper.selectList(query)) modes.put(api.getId(), apiBillingMode(api));
+        for (var row : rows) {
+            if (TARGET_API.equals(row.getBillingTarget())) row.setApiBillingMode(modes.get(row.getTargetRefId()));
+        }
+    }
+
+    static String apiBillingMode(RuleExternalApiConfig api) {
+        var condition = com.alibaba.fastjson.JSON.parseObject(api.getBillingCondition());
+        if (ExternalApiStepBilling.from(condition) != null) return ExternalApiStepBilling.MODE;
+        var spec = ExternalApiRequestPlan.specification(api);
+        if (spec != null && spec.getJSONArray("billingBranches") != null && !spec.getJSONArray("billingBranches").isEmpty()) return "BRANCH";
+        if (condition == null || condition.isEmpty()) return "QUERY";
+        String mode = condition.getString("mode");
+        if (mode == null) mode = condition.getString("billingMode");
+        return "QUERY".equalsIgnoreCase(mode) ? "QUERY" : "HIT";
     }
 
     public IPage<RuleBillingRecord> pageRecords(int pageNum, int pageSize, String billingTarget, String billingCode,
@@ -163,7 +191,7 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         if (hasText(endTime)) {
             wrapper.le(RuleBillingRecord::getOccurTime, endTime + " 23:59:59");
         }
-        wrapper.orderByDesc(RuleBillingRecord::getOccurTime);
+        wrapper.orderByDesc(RuleBillingRecord::getOccurTime, RuleBillingRecord::getId);
         return recordMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
     }
 

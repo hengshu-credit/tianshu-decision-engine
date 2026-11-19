@@ -439,7 +439,20 @@ public class VariableSourceReferenceValidator {
         validateResource(variable, datasource == null ? null : datasource.getScope(),
                 datasource == null ? null : datasource.getProjectId(), datasource == null ? null : datasource.getStatus(),
                 datasource == null, "SFTP数据源", "$.sourceConfig.sftpDatasourceId", issues);
-        if (config.getString("remotePath") == null || config.getString("remotePath").isBlank()) {
+        if (config.get("remotePath") instanceof JSONObject reference) {
+            String path = "$.sourceConfig.remotePath";
+            if (!"REFERENCE".equals(reference.getString("kind")) || longValue(reference.get("refId")) == null
+                    || text(reference.get("refType")).isBlank()) {
+                issues.add(issue(variable, "VARIABLE_SOURCE_REFERENCE_REQUIRED", "请选择有效的远端路径字段", path));
+            } else {
+                try {
+                    com.hengshucredit.rule.server.service.ExternalApiExecutionConfig.bindReferences(reference,
+                            variableService.buildRefScriptNameMap(variable.getProjectId()));
+                } catch (IllegalArgumentException error) {
+                    issues.add(issue(variable, "VARIABLE_SOURCE_REFERENCE_INVALID", error.getMessage(), path));
+                }
+            }
+        } else if (config.getString("remotePath") == null || config.getString("remotePath").isBlank()) {
             issues.add(issue(variable, "VARIABLE_SOURCE_PATH_REQUIRED", "请填写远端文件路径",
                     "$.sourceConfig.remotePath"));
         }

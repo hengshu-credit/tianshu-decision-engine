@@ -434,6 +434,7 @@ export default {
         edgeType: this.globalEdgeLineType,
       })
       this.selectNodeData({ id: result.node.id })
+      this.lf.focusOn(result.node.id)
       this.updateSelectedBusinessNodeCount()
     } catch (error) {
       this.$message.warning(error.message || '新增节点失败')

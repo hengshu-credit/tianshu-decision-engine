@@ -460,6 +460,8 @@
                         onTransformArgSelect(row, paramIndex, operand)
                     "
                   />
+                  <el-button v-if="param.javaType === 'java.lang.Number'" link :aria-label="param.name + ' 传入空值'"
+                    @click="onTransformArgSelect(row, paramIndex, { kind: 'LITERAL', valueType: 'NULL', value: null })">传入 null</el-button>
                 </div>
                 <code v-if="row.transformOperand" class="transform-formula">{{
                   transformFormula(row)
@@ -1772,7 +1774,7 @@ export default {
         defaultValue: row.defaultValue,
       }
     },
-    async saveInputField(row) {
+    async saveInputField(row, index) {
       row['_saving'] = true
       try {
         const response = await api.updateModelInputField(
@@ -1794,7 +1796,7 @@ export default {
             transformParams: row.transformParams,
             validValues: row.validValues,
           },
-          this.model.id
+          this.model.id, { index, fieldName: row.fieldName }
         )
         row['_editing'] = false
         row['_saving'] = false
@@ -1840,7 +1842,7 @@ export default {
         targetOperand: row.targetOperand,
       }
     },
-    async saveOutputField(row) {
+    async saveOutputField(row, index) {
       row['_saving'] = true
       try {
         const response = await api.updateModelOutputField(
@@ -1860,7 +1862,7 @@ export default {
               ? JSON.stringify(row.transformOperand)
               : null,
           },
-          this.model.id
+          this.model.id, { index, fieldName: row.fieldName }
         )
         row['_editing'] = false
         row['_saving'] = false
@@ -2099,11 +2101,7 @@ export default {
       )
     },
     testRequestErrorMessage(error, fallback) {
-      const responseMessage =
-        error &&
-        error.response &&
-        error.response.data &&
-        error.response.data.message
+      const responseMessage = error?.response?.data?.detail || error?.response?.data?.message
       const message = responseMessage || (error && error.message)
       return message && String(message).trim() ? String(message) : fallback
     },

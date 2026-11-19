@@ -51,6 +51,7 @@ public final class ExternalApiWorkflow {
         Map<String, String> registrations = new LinkedHashMap<>();
         boolean pending = false;
         String currentStepId = null;
+        boolean resumableRead = false;
         if (resume != null) {
             Object storedResults = resume.get("results");
             if (storedResults instanceof Map<?, ?> map) map.forEach((key, value) -> {
@@ -84,6 +85,7 @@ public final class ExternalApiWorkflow {
                 JSONObject step = JSON.parseObject(JSON.toJSONString(raw));
                 String id = step.getString("id");
                 currentStepId = id;
+                resumableRead = "CALLBACK".equals(step.getString("type")) || step.getJSONObject("poll") != null;
                 if (resume != null && !id.equals(resume.get("stepId")) && results.containsKey(id)) {
                     Object stored = results.get(id);
                     if (stored instanceof Map<?, ?> map && !"SKIPPED".equals(map.get("status"))) {
@@ -153,6 +155,7 @@ public final class ExternalApiWorkflow {
                             if (persist != null) {
                                 var stopped = checkpoint(id, results, registrations, callbackUrls);
                                 stopped.put("manualRetry", true);
+                                stopped.put("awaitingPoll", !failed || continueOnFailure);
                                 persist.accept(stopped);
                                 pending = true;
                             }
@@ -182,14 +185,14 @@ public final class ExternalApiWorkflow {
         } catch (java.util.concurrent.TimeoutException timeout) {
             if (currentStepId != null && RequestDeadlineContext.isDeadlineExceeded(timeout)) {
                 pending = true;
-                throw new PendingException(currentStepId, results, registrations, callbackUrls, timeout);
+                throw new PendingException(currentStepId, results, registrations, callbackUrls, resumableRead, timeout);
             }
             throw timeout;
         } catch (ExternalApiInvokeService.ApiInvokeException failure) {
             if (currentStepId != null && Boolean.FALSE.equals(failure.getRequestIssued())
                     && !failure.isUnknown() && RequestDeadlineContext.isDeadlineExceeded(failure)) {
                 pending = true;
-                throw new PendingException(currentStepId, results, registrations, callbackUrls, failure);
+                throw new PendingException(currentStepId, results, registrations, callbackUrls, resumableRead, failure);
             }
             throw failure;
         } finally {
@@ -217,15 +220,17 @@ public final class ExternalApiWorkflow {
         private final Map<String, Object> results;
         private final Map<String, String> registrations;
         private final Map<String, Object> callbacks;
+        private final boolean resumableRead;
 
         private PendingException(String stepId, Map<String, Object> results,
                                  Map<String, String> registrations, Map<String, Object> callbacks,
-                                 Throwable cause) {
+                                 boolean resumableRead, Throwable cause) {
             super("外数链路等待超时，待恢复步骤：" + stepId, cause);
             this.stepId = stepId;
             this.results = new LinkedHashMap<>(results);
             this.registrations = new LinkedHashMap<>(registrations);
             this.callbacks = new LinkedHashMap<>(callbacks);
+            this.resumableRead = resumableRead;
         }
 
         public Map<String, Object> toMap() {
@@ -235,6 +240,7 @@ public final class ExternalApiWorkflow {
             result.put("results", results);
             result.put("registrations", registrations);
             result.put("callbacks", callbacks);
+            if (resumableRead) result.put("awaitingPoll", true);
             return result;
         }
     }

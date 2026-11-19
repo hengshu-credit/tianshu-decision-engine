@@ -133,6 +133,9 @@ public class ExternalApiConsumerService {
                     Map<String, Object> pendingCall = error.getPendingAsync();
                     if (pendingCall != null && !pendingCall.isEmpty()) {
                         saveCall(cache, key, sourceKey, "WAITING_EXTERNAL", null, pendingCall);
+                        if (cache.hasSourceStepListener() && Boolean.TRUE.equals(pendingCall.get("awaitingPoll"))) {
+                            throw new ExternalApiWaitingException("供应商尚未完成处理，请沿用本次请求继续轮询", error);
+                        }
                     } else if (pendingMetadata != null && cache.hasSourceStepListener() && error.isUnknown()) {
                         saveCall(cache, key, sourceKey, "WAITING_EXTERNAL", null, pendingMetadata);
                     } else if (cache.hasSourceStepListener() && !error.isUnknown()) {
@@ -162,6 +165,19 @@ public class ExternalApiConsumerService {
 
     public static Object select(Map<String, Object> response, String path) {
         return ExternalApiRequestPlan.read(response, path == null || path.isBlank() ? "body" : path);
+    }
+
+    static Object selectRuleValue(Map<String, Object> response, String path) {
+        String field = path == null || path.isBlank() ? "body" : path;
+        if (field.startsWith("$.")) field = field.substring(2);
+        boolean businessData = field.equals("body") || field.startsWith("body.") || field.startsWith("body[")
+                || field.equals("response.body") || field.startsWith("response.body.") || field.startsWith("response.body[");
+        if (businessData && Boolean.FALSE.equals(response.get("success")) && !Boolean.TRUE.equals(response.get("fallback"))
+                && "FAIL_FAST".equals(response.get("exceptionStrategy"))) {
+            throw new com.hengshucredit.rule.model.PlatformException(com.hengshucredit.rule.model.PlatformCode.EXTERNAL_API_ERROR,
+                    "外数调用失败，无法读取业务字段 " + field);
+        }
+        return select(response, path);
     }
 
     public static void recordStatus(Map<String, Object> response, VariableResolveOptions options, String refType, Long refId) {

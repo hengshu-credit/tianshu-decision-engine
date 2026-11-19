@@ -18,7 +18,7 @@
     <div v-if="invalidKeys.length" class="api-binding-invalid"><span>部分覆盖字段已删除、调整或不再开放，请重新配置。</span><el-button link type="warning" @click="clearInvalid">清除失效覆盖</el-button></div>
     <div class="api-binding-result-picker">
       <span class="api-binding-result-picker__label">结果路径</span>
-      <protocol-path-picker :value="resultPath" :paths="modules" :expected-type="expectedType" :api-id="apiId" :context-label="apiName || '当前外数 API'" placeholder="选择模块、子字段或输入路径" @update:value="$emit('select-path', $event)" />
+      <protocol-path-picker :disabled="loading" :value="resultPath" :paths="modules" :expected-type="expectedType" :api-id="apiId" :context-label="apiName || '当前外数 API'" placeholder="选择模块、子字段或输入路径" @update:value="$emit('select-path', $event)" />
     </div>
   </section>
 </template>

@@ -46,6 +46,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(e.getHttpStatus()).contentType(org.springframework.http.MediaType.APPLICATION_JSON).body(body);
     }
 
+    @ExceptionHandler(org.springframework.dao.PessimisticLockingFailureException.class)
+    public ResponseEntity<ApiResponse<Void>> handleConcurrentWrite(org.springframework.dao.PessimisticLockingFailureException error) {
+        log.warn("并发写入冲突，事务未完成", error);
+        return json(ApiResponse.fail(PlatformCode.RESOURCE_CONFLICT, "其他操作正在更新相关数据，请刷新状态后重试"));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleException(Exception e) {
         if (e instanceof org.springframework.web.ErrorResponse response) {

@@ -1321,7 +1321,11 @@ public class VariableSourceResolver {
                 }
             }
         } else if ("SFTP".equals(varSource)) {
-            collectDependencyValues(config.get("remotePath"), dependencies);
+            if (config.get("remotePath") instanceof Map<?, ?> operand) {
+                collectApiOperandDependencies(operand, sourceReferencePaths(variable, options), dependencies);
+            } else {
+                collectDependencyValues(config.get("remotePath"), dependencies);
+            }
             collectDependencyValues(config.get("fileAddress"), dependencies);
             collectDependencyValues(config.get("uploadRemotePath"), dependencies);
         }
@@ -2035,7 +2039,10 @@ public class VariableSourceResolver {
                                        Map<String, Object> params, VariableResolveOptions options) throws Exception {
         Long datasourceId = longValue(config.get("sftpDatasourceId"));
         if (datasourceId == null) throw new IllegalArgumentException("SFTP变量缺少 sftpDatasourceId");
-        Object configuredPath = parseConfiguredValue(config.get("remotePath"), params);
+        Object path = config.get("remotePath");
+        Object configuredPath = path instanceof Map<?, ?>
+                ? ExternalApiRequestPlan.evaluate(path, params, sourceReferencePaths(variable, options))
+                : parseConfiguredValue(path, params);
         String remotePath = stringValue(configuredPath).trim();
         if (!hasText(remotePath)) throw new IllegalArgumentException("SFTP变量缺少远端文件路径");
         String fileAddress = stringValue(parseConfiguredValue(config.get("fileAddress"), params)).trim();
@@ -2774,11 +2781,14 @@ public class VariableSourceResolver {
         return Collections.unmodifiableMap(paths);
     }
 
-    private String dbReferencePath(RuleVariable variable, Map<?, ?> operand, VariableResolveOptions options) {
+    private Map<String, String> sourceReferencePaths(RuleVariable variable, VariableResolveOptions options) {
         Map<String, String> paths = options == null ? null : options.getDerivedReferencePaths();
         if (paths == null && options != null) paths = options.getVariableReferencePaths();
-        if (paths == null) paths = variableService.buildRefScriptNameMap(variable.getProjectId());
-        return SqlParameterValues.referencePath(operand, paths);
+        return paths != null ? paths : variableService.buildRefScriptNameMap(variable.getProjectId());
+    }
+
+    private String dbReferencePath(RuleVariable variable, Map<?, ?> operand, VariableResolveOptions options) {
+        return SqlParameterValues.referencePath(operand, sourceReferencePaths(variable, options));
     }
 
     private List<Object> buildDbParamList(RuleVariable variable, Object configured, Map<String, Object> values,

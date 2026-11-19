@@ -9,12 +9,27 @@ import {
   getModelVersionTestContext,
   publishModel,
   replaceModel,
+  updateModelInputField,
   saveTestParams
 } from '@/api/model'
 
 describe('model API', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  test('替换文件草稿中的无 ID 字段仅更新所编辑的行', async () => {
+    const model = { id: 10, inputFields: [{ fieldName: 'income' }, { fieldName: 'score' }] }
+    request.mockResolvedValueOnce({ data: model })
+    request.get.mockResolvedValueOnce({ data: null })
+    request.post.mockResolvedValueOnce({ data: { id: 91 } })
+    await updateModelInputField(undefined, { varId: '42', refType: 'VARIABLE' }, 10, { index: 1, fieldName: 'score' })
+    const submitted = JSON.parse(request.post.mock.calls.at(-1)[1].snapshotJson)
+    expect(submitted.inputFields).toEqual([{ fieldName: 'income' }, { fieldName: 'score', varId: '42', refType: 'VARIABLE' }])
+
+    request.mockResolvedValueOnce({ data: model })
+    request.get.mockResolvedValueOnce({ data: null })
+    await expect(updateModelInputField(undefined, { varId: '43' }, 10, { index: 0, fieldName: 'score' })).rejects.toThrow('模型字段已变更')
   })
 
   test('发布已有编辑草稿时复用同一申请，不创建冲突的启用申请', async () => {

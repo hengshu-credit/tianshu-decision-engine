@@ -266,6 +266,8 @@ export default {
       total: 0,
       loading: false,
       requestSequence: 0,
+      hasActivated: false,
+      summarySequence: 0,
       contextProjectId: null,
     }
   },
@@ -332,8 +334,27 @@ export default {
     this.loadSummary()
     this.loadRequests()
   },
-  beforeUnmount() { this.requestSequence++ },
+  activated() {
+    if (this.hasActivated) this.refreshApprovals()
+    this.hasActivated = true
+    window.addEventListener('focus', this.refreshApprovals)
+    window.addEventListener('tianshu:resource-draft-change', this.refreshApprovals)
+  },
+  deactivated() {
+    window.removeEventListener('focus', this.refreshApprovals)
+    window.removeEventListener('tianshu:resource-draft-change', this.refreshApprovals)
+  },
+  beforeUnmount() {
+    this.requestSequence++
+    this.summarySequence++
+    window.removeEventListener('focus', this.refreshApprovals)
+    window.removeEventListener('tianshu:resource-draft-change', this.refreshApprovals)
+  },
   methods: {
+    refreshApprovals() {
+      this.loadSummary()
+      this.loadRequests()
+    },
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     fetchKeywordOptions({ query, pageNum, pageSize }) {
       return listGovernanceRequests({
@@ -346,12 +367,13 @@ export default {
       })
     },
     async loadSummary() {
+      const sequence = ++this.summarySequence
       const response = await getGovernanceSummary({
         ...(this.contextProjectId
           ? { projectId: this.contextProjectId }
           : {}),
       })
-      this.summary = { ...this.summary, ...(response.data || {}) }
+      if (sequence === this.summarySequence) this.summary = { ...this.summary, ...(response.data || {}) }
     },
     async loadRequests() {
       const sequence = ++this.requestSequence
@@ -459,9 +481,9 @@ export default {
         return `${value.listName || '名单'} · ${count} 条内容变更`
       }
       return value.ruleName || value.modelName || value.funcName ||
-        value.apiName || value.datasourceName || value.projectName || value.varLabel ||
+        value.apiName || value.datasourceName || value.varLabel ||
         value.objectLabel || value.experimentName || value.listName ||
-        value.validationName || value.billingName ||
+        value.validationName || value.billingName || value.projectName ||
         `${this.resourceTypeLabel(row.resourceType)} #${row.resourceId}`
     },
     moduleInitial(type) {

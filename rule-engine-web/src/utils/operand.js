@@ -590,6 +590,7 @@ function optionRefType(option) {
 }
 
 function compileLiteral(value, valueType) {
+  if (valueType === 'NULL') return 'null'
   const text = value == null ? '' : String(value)
   const type = normalizeType(valueType)
   if (type === 'NUMBER') return text.trim()

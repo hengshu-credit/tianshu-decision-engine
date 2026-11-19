@@ -159,24 +159,29 @@ export function getTestParams(id) {
 }
 
 /** 更新模型输入字段（关联变量映射） */
-export async function updateModelInputField(id, data, modelId) {
+function updateDraftField(fields, id, changes, draftRow) {
+  const index = id == null ? draftRow?.index : fields.findIndex(field => String(field.id) === String(id))
+  const current = fields[index]
+  if (!current || (id == null && (current.id != null || !draftRow?.fieldName || current.fieldName !== draftRow.fieldName))) {
+    throw new Error('模型字段已变更，请刷新字段后重试')
+  }
+  return fields.map((field, i) => i === index ? { ...field, ...changes } : field)
+}
+
+export async function updateModelInputField(id, data, modelId, draftRow) {
   const response = await getEditableModel(modelId)
   const model = response.data || {}
-  model.inputFields = (model.inputFields || []).map(field =>
-    field.id === id ? { ...field, ...data } : field
-  )
+  model.inputFields = updateDraftField(model.inputFields || [], id, data, draftRow)
   return createResourceDraft('MODEL', model, 'UPDATE', {
     changeSummary: '修改模型输入字段'
   })
 }
 
 /** 更新模型输出字段（关联变量映射） */
-export async function updateModelOutputField(id, data, modelId) {
+export async function updateModelOutputField(id, data, modelId, draftRow) {
   const response = await getEditableModel(modelId)
   const model = response.data || {}
-  model.outputFields = (model.outputFields || []).map(field =>
-    field.id === id ? { ...field, ...data } : field
-  )
+  model.outputFields = updateDraftField(model.outputFields || [], id, data, draftRow)
   return createResourceDraft('MODEL', model, 'UPDATE', {
     changeSummary: '修改模型输出字段'
   })

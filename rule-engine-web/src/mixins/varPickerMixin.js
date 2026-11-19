@@ -152,6 +152,10 @@ export default {
       }).catch(() => { /* 标题读取失败不影响已验证的冻结引用；LIVE加载仍等待同一请求并处理失败。 */ })
       return pending
     },
+    async refreshLiveReferences() {
+      if (this.loadingVars || this.designerBusy || this.referenceCatalogMode !== 'LIVE') return
+      await this.loadDesignerReferenceCatalog(this.viewRevision, { livePreview: true })
+    },
     loadDesignerReferenceCatalog(view, { livePreview = false, afterSave = false } = {}) {
       const definitionId = String(this.definitionId || this.$route?.params?.id || '')
       const { source, key } = designerCatalogRequest(view, definitionId, this.viewRefreshToken)

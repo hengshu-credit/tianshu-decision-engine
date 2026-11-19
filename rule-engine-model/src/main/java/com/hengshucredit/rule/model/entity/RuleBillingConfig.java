@@ -30,6 +30,9 @@ public class RuleBillingConfig {
     private Integer status;
     @TableField(exist = false)
     private String projectName;
+    /** 外数接口实际生效的收费条件；chargeType 仍描述计量单位。 */
+    @TableField(exist = false)
+    private String apiBillingMode;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
     @TableField(fill = FieldFill.INSERT_UPDATE)

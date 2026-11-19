@@ -49,7 +49,7 @@ final class ConditionOperandCompiler {
         String left = leftOperand == null && collection != null ? "" : OperandCompiler.compile(leftOperand, varContext);
         requireRangeLeft(operator, left);
         requireCollectionLeft(collection, left);
-        if (empty(left)) return "true";
+        if (empty(left) || "*".equals(operator)) return "true";
         if (collection != null) {
             String predicate = left + " in " + OperandCompiler.compile(collection, varContext);
             return "not_in".equals(operator) ? "(!isBlank(" + left + ") && !(" + predicate + "))" : predicate;

@@ -25,6 +25,18 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 
 public class RuleBillingServiceTest {
+    @Test public void configurationListReportsTheActualApiChargeCondition() {
+        var api = new com.hengshucredit.rule.model.entity.RuleExternalApiConfig();
+        api.setExecutionConfig("{\"version\":2,\"billingBranches\":[]}");
+        api.setBillingCondition("{\"mode\":\"HIT\"}");
+        org.junit.Assert.assertEquals("HIT", RuleBillingService.apiBillingMode(api));
+        api.setBillingCondition("{\"mode\":\"QUERY\"}");
+        org.junit.Assert.assertEquals("QUERY", RuleBillingService.apiBillingMode(api));
+        api.setExecutionConfig("{\"version\":2,\"billingBranches\":[{}]}");
+        org.junit.Assert.assertEquals("BRANCH", RuleBillingService.apiBillingMode(api));
+        api.setBillingCondition("{\"mode\":\"STEP_RESPONSE\",\"stepId\":\"apply\",\"flagPath\":\"response.body.billable\"}");
+        org.junit.Assert.assertEquals("STEP_RESPONSE", RuleBillingService.apiBillingMode(api));
+    }
     @Test public void billingRetainsExecutedVersionWhenLatestChangesBeforePersistence() {
         KeyedBillingService service = new KeyedBillingService();
         service.configs = List.of(config(501L, "PROJECT", 7L, "VERSION_TEST", "1"));

@@ -419,6 +419,7 @@ export default {
     return {
       loading: false,
       actionLoading: false,
+      detailSequence: 0,
       detail: {},
       actionDialogVisible: false,
       activeAction: '',
@@ -560,9 +561,9 @@ export default {
         return `${value.listName || '名单'} · ${count} 条内容变更`
       }
       return value.ruleName || value.modelName || value.funcName ||
-        value.apiName || value.datasourceName || value.projectName || value.varLabel ||
+        value.apiName || value.datasourceName || value.varLabel ||
         value.objectLabel || value.experimentName || value.listName ||
-        value.validationName || value.billingName ||
+        value.validationName || value.billingName || value.projectName ||
         `${this.resourceTypeLabel(this.request.resourceType)} #${this.request.resourceId}`
     },
     preflightReport() { return this.parseReport(this.request?.validationReportJson) },
@@ -631,6 +632,9 @@ export default {
   },
   created() {
     this.loadDetail()
+  },
+  activated() {
+    if (this.request && String(this.route.params.id) === String(this.request.id)) this.loadDetail()
   },
   watch: { detail() { this.fieldPage = 1 }, fieldQuery() { this.fieldPage = 1 } },
   methods: {
@@ -734,9 +738,11 @@ export default {
       })
     },
     async loadDetail() {
+      const sequence = ++this.detailSequence
       this.loading = true
       try {
         const response = await getGovernanceRequest(this.route.params.id)
+        if (sequence !== this.detailSequence) return
         this.detail = response.data || {}
         const base = (this.detail.versions || []).find(version =>
           String(version.id) === String(this.detail.request?.baseVersionId)
@@ -745,7 +751,7 @@ export default {
         this.compareRightKey = 'CURRENT'
         this.fieldPanels = []
       } finally {
-        this.loading = false
+        if (sequence === this.detailSequence) this.loading = false
       }
     },
     async runPreflight() {
@@ -780,6 +786,9 @@ export default {
           this.request.id, this.actionComment.trim(), this.activeAction === 'submit' ? this.request.snapshotDigest : undefined
         )
         this.actionDialogVisible = false
+        if (String(response.data?.id) === String(this.request.id) && response.data.status) {
+          this.detail.request = { ...this.request, ...response.data }
+        }
         if (response.data && response.data.status === 'CONFLICT') {
           ElMessage.warning(
             '审批内容或依赖已变化，已生成可编辑草稿，请重新提交审批'
@@ -791,6 +800,7 @@ export default {
         }
         await this.loadDetail()
       } catch (error) {
+        if (error?.response?.status === 409) await this.loadDetail()
         if (!error?.requestErrorNotified) ElMessage.error(error?.message || '审批操作失败，请重试')
       } finally {
         this.actionLoading = false

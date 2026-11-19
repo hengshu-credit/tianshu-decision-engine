@@ -25,7 +25,7 @@ public class RuleActionRuntimeService {
             variables.resolveApiDependencies(projectId, Map.of("apiConfigId", effectiveId), values, options);
             var response = externalApis.resolve(projectId, effectiveId, Map.of(), values, options, "DIRECT_EXTERNAL_API:" + effectiveId);
             ExternalApiConsumerService.recordStatus(response, options, "EXTERNAL_API", apiId);
-            return ExternalApiConsumerService.select(response, path);
+            return ExternalApiConsumerService.selectRuleValue(response, path);
         });
     }
 

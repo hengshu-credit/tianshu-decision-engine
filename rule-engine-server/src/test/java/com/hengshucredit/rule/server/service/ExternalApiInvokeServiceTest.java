@@ -79,6 +79,7 @@ public class ExternalApiInvokeServiceTest {
             assertNotNull(pending);
             assertEquals(List.of(1),countsAtPoll);
             assertEquals(true,pending.get("stepBilled"));
+            assertEquals(true,pending.get("awaitingPoll"));
             ready.set(true);
             assertEquals(true,service.invokePending(plan,pending).get("success"));
             assertEquals(1,submits.get()); assertEquals(1,bills.recordCount.get());

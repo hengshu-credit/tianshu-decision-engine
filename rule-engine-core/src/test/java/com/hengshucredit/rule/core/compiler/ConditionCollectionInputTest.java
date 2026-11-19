@@ -13,6 +13,10 @@ import java.util.Map;
 import static org.junit.Assert.*;
 
 public class ConditionCollectionInputTest {
+    @Test public void wildcardWithASelectedFieldDoesNotRequireARightOperand() {
+        JSONObject leaf = JSON.parseObject("{\"operator\":\"*\",\"leftOperand\":{\"kind\":\"PATH\",\"value\":\"request_id\"}}");
+        assertEquals("true", ConditionOperandCompiler.compile(leaf, null));
+    }
     @Test
     public void typedStringMembersPreserveCommaWhitespaceEmptyAndEscapes() {
         JSONObject leaf = condition("in", strings("A,B", " padded ", "", "say\"yes", "path\\name"));

@@ -1395,8 +1395,17 @@
             <resource-picker v-model:value="form.sftpDatasourceId" :resources="sourceCatalog.sftpOptions" category="sftp" placeholder="选择 SFTP 数据源" />
           </el-form-item>
           <el-form-item label="远端文件路径">
-            <el-input v-model="form.sftpRemotePath" placeholder="/contracts/${customerId}/contract.pdf" />
-            <div class="field-help">支持 $.field 或 ${field} 引用请求参数；路径会在规则执行时从连接池读取。</div>
+            <el-radio-group v-model="form.sftpPathMode" aria-label="远端路径来源">
+              <el-radio-button value="TEMPLATE">路径模板</el-radio-button>
+              <el-radio-button value="FIELD">引用字段</el-radio-button>
+            </el-radio-group>
+            <operand-picker v-if="form.sftpPathMode === 'FIELD'" :value="form.sftpPathOperand"
+              :vars="listReferenceOptions" :allowed-kinds="['REFERENCE']" expected-type="STRING"
+              placeholder="选择提供文件路径的字段" @input="form.sftpPathOperand = $event" />
+            <template v-else>
+              <el-input v-model="form.sftpRemotePath" placeholder="/contracts/${customerId}/contract.pdf" />
+              <div class="field-help">支持 $.field 或 ${field} 引用请求参数；上游外数返回完整文件路径时请选择“引用字段”。</div>
+            </template>
           </el-form-item>
           <el-form-item label="业务文件地址">
             <el-input v-model="form.sftpFileAddress" placeholder="$.contractFileUrl" />
@@ -1595,6 +1604,7 @@
             <el-button v-permission="'field:edit'"
               type="primary"
               :loading="draftPreviewing"
+              :disabled="form.varSource === 'DERIVED' && form.derivedConfig?.mode === 'HISTORY' && form.derivedConfig.scope === 'RULE'"
               @click="previewDraftVariable"
             >
               {{ form.varSource === 'API' ? '真实调用测试' : '预览取值' }}
@@ -3103,7 +3113,8 @@ export default {
             !validateSqlParameters(this.form.dbSql, parseSqlParameters(this.form.dbParams))
         } catch (e) { sourced = false }
       } else if (this.form.varSource === 'SFTP') {
-        sourced = !!this.form.sftpDatasourceId && !!String(this.form.sftpRemotePath || '').trim()
+        sourced = !!this.form.sftpDatasourceId && (this.form.sftpPathMode === 'FIELD'
+          ? !!this.form.sftpPathOperand?.refId : !!String(this.form.sftpRemotePath || '').trim())
       } else if (this.form.varSource === 'LIST') {
         sourced =
           this.form.listIds.length > 0 &&
@@ -3285,6 +3296,8 @@ export default {
         dbFallbackValue: '',
         sftpDatasourceId: '',
         sftpRemotePath: '',
+        sftpPathMode: 'TEMPLATE',
+        sftpPathOperand: null,
         sftpFileAddress: '',
         sftpUploadRemotePath: '',
         sftpUploadTimeoutMs: 30000,
@@ -3592,7 +3605,9 @@ export default {
           config.fallbackValue != null ? String(config.fallbackValue) : ''
       } else if (this.form.varSource === 'SFTP') {
         this.form.sftpDatasourceId = config.sftpDatasourceId || ''
-        this.form.sftpRemotePath = config.remotePath || ''
+        this.form.sftpPathMode = config.remotePath?.kind === 'REFERENCE' ? 'FIELD' : 'TEMPLATE'
+        this.form.sftpPathOperand = this.form.sftpPathMode === 'FIELD' ? config.remotePath : null
+        this.form.sftpRemotePath = typeof config.remotePath === 'string' ? config.remotePath : ''
         this.form.sftpOutputFormat = config.outputFormat || 'TEXT'
         this.form.sftpCharset = config.charset || 'UTF-8'
         this.form.sftpExceptionStrategy = config.exceptionStrategy || 'ERROR'
@@ -3686,8 +3701,9 @@ export default {
           this.$message.warning('请选择 SFTP 数据源')
           return null
         }
-        if (!String(payload.sftpRemotePath || '').trim()) {
-          this.$message.warning('请输入远端文件路径')
+        const selectedPath = payload.sftpPathMode === 'FIELD' ? payload.sftpPathOperand : payload.sftpRemotePath
+        if (payload.sftpPathMode === 'FIELD' ? !selectedPath?.refId : !String(selectedPath || '').trim()) {
+          this.$message.warning('请配置远端文件路径')
           return null
         }
         if (String(payload.sftpFileAddress || '').trim() && !String(payload.sftpUploadRemotePath || '').trim()) {
@@ -3696,7 +3712,7 @@ export default {
         }
         payload.sourceConfig = JSON.stringify({
           sftpDatasourceId: payload.sftpDatasourceId,
-          remotePath: payload.sftpRemotePath,
+          remotePath: selectedPath,
           outputFormat: payload.sftpOutputFormat || 'TEXT',
           charset: payload.sftpCharset || 'UTF-8',
           exceptionStrategy: payload.sftpExceptionStrategy || 'ERROR',
@@ -3778,6 +3794,8 @@ export default {
         'dbFallbackValue',
         'sftpDatasourceId',
         'sftpRemotePath',
+        'sftpPathMode',
+        'sftpPathOperand',
         'sftpOutputFormat',
         'sftpCharset',
         'sftpExceptionStrategy',
@@ -4996,7 +5014,7 @@ export default {
       })
       this.loadVariableSourceCatalog(true)
       if (this.form.varSource === 'API') this.loadListExpressionOptions(true)
-      if (['LIST', 'DB', 'DERIVED'].includes(this.form.varSource)) this.loadListExpressionOptions(true)
+      if (['LIST', 'DB', 'SFTP', 'DERIVED'].includes(this.form.varSource)) this.loadListExpressionOptions(true)
       this.dialogVisible = true
       this.$nextTick(() => {
         if (this.$refs.form) this.$refs.form.clearValidate()

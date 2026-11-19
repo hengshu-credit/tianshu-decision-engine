@@ -63,7 +63,7 @@ public class ModelExternalBindings {
         this.variables = variables;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, noRollbackFor = IllegalArgumentException.class)
     public JSONObject capture(long apiId, Long ownerProjectId) {
         return load(apiId, ownerProjectId, null, new TreeMap<>()).descriptor();
     }
@@ -173,15 +173,24 @@ public class ModelExternalBindings {
                 && approval.getRequestNo() != null && !approval.getRequestNo().isBlank()
                 && Long.valueOf(id).equals(approval.getResourceId()) && type.equals(approval.getResourceType())
                 && projectId(approval.getProjectId()) == project && approval.getSubmittedSnapshotJson() != null
-                && Objects.equals(approval.getSnapshotDigest(), Sha256Digests.text(approval.getSubmittedSnapshotJson()))
-                && Objects.equals(approval.getSnapshotDigest(), version.getSnapshotDigest())
-                && Objects.equals(approval.getSecretDigest(), version.getSecretDigest()),
+                && Objects.equals(approval.getSnapshotDigest(), Sha256Digests.text(approval.getSubmittedSnapshotJson())),
                 "外数历史配置缺少完整的本机审批证据：" + type + ":" + versionId);
         var publicPayload = JSON.parseObject(version.getSnapshotJson());
         require(Long.valueOf(id).equals(publicPayload.getLong("id")), "审批快照内的资源 ID 不匹配");
-        verifySecrets(version, publicPayload);
+        verifySecrets(version.getSecretPayloadCiphertext(), version.getSecretDigest(), publicPayload);
         JSONObject payload = (JSONObject) JSON.toJSON(secrets.restore(new ResourceSnapshot(version.getSnapshotJson(),
                 version.getEffectiveStatus(), version.getSecretPayloadCiphertext(), version.getSecretDigest())));
+        boolean identical = Objects.equals(approval.getSnapshotDigest(), version.getSnapshotDigest())
+                && Objects.equals(approval.getSecretDigest(), version.getSecretDigest());
+        if (!identical) {
+            // 审批保留提交表示，而 MySQL JSON 列会重排对象键并规范空白。
+            // 分别验真两份快照，再比对全部实际配置（含恢复后的凭据），不能只凭版本行 ID 放行。
+            require(API.equals(type) && "UPDATE".equals(approval.getAction()), "外数审批配置与生效版本不一致");
+            verifySecrets(approval.getSecretPayloadCiphertext(), approval.getSecretDigest(), JSON.parseObject(approval.getSubmittedSnapshotJson()));
+            var submitted = secrets.restore(new ResourceSnapshot(approval.getSubmittedSnapshotJson(),
+                    version.getEffectiveStatus(), approval.getSecretPayloadCiphertext(), approval.getSecretDigest()));
+            require(comparableApi(submitted).equals(comparableApi(payload)), "外数接口审批配置与生效版本的业务内容不一致");
+        }
         // Domain-separated keyed seal protects the private evidence. Neither a plaintext secret
         // nor its (possibly dictionary-checkable) governance digest goes into the descriptor.
         String evidence = CanonicalJson.write(List.of(resource.getId(), versionId, approval.getRequestNo(),
@@ -189,9 +198,28 @@ public class ModelExternalBindings {
         return new Approved(payload, versionId, evidence);
     }
 
-    private void verifySecrets(GovernedResourceVersion version, JSONObject payload) {
-        String ciphertext = version.getSecretPayloadCiphertext();
-        String digest = version.getSecretDigest();
+    private static Map<String, Object> comparableApi(Map<String, Object> input) {
+        Map<String, Object> normalized = new TreeMap<>(input);
+        // 实体投影可能省略顶层值为 null 的属性；嵌套业务 JSON 仍区分 null 与缺失。
+        normalized.values().removeIf(Objects::isNull);
+        for (String key : List.of("unitPrice", "retryBackoffMultiplier")) {
+            if (normalized.get(key) instanceof Number number) {
+                normalized.put(key, new java.math.BigDecimal(number.toString()).stripTrailingZeros());
+            }
+        }
+        for (String key : List.of("executionConfig", "authApiConfig", "headerConfig", "asyncCallbackConfig",
+                "billingCondition", "payloadCaptureConfig", "successCondition", "retryCondition", "exceptionCondition",
+                "tokenFailureCondition", "cacheKeyConfig", "requestMapping", "responseMapping", "queryConfig")) {
+            if (normalized.get(key) instanceof String text) {
+                if (text.isBlank()) normalized.remove(key);
+                else if (text.stripLeading().startsWith("{") || text.stripLeading().startsWith("[")) normalized.put(key, JSON.parse(text));
+            }
+            if (normalized.get(key) == null) normalized.remove(key);
+        }
+        return normalized;
+    }
+
+    private void verifySecrets(String ciphertext, String digest, JSONObject payload) {
         JSONObject markers = payload.getJSONObject("_secretConfigured");
         if (ciphertext == null || ciphertext.isBlank()) {
             require((digest == null || digest.isBlank()) && (markers == null || markers.isEmpty()), "外数冻结凭据缺失");

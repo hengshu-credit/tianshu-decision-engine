@@ -764,7 +764,7 @@ public class RuleExecuteService {
             Map<String, Object> response = externalApiConsumerService.resolve(
                     executionProjectId, effectiveApiId, Map.of(), values, options,
                     "DIRECT_EXTERNAL_API:" + effectiveApiId);
-            return ExternalApiConsumerService.select(response, path);
+            return ExternalApiConsumerService.selectRuleValue(response, path);
         });
     }
 

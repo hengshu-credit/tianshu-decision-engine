@@ -2,6 +2,11 @@ package com.hengshucredit.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
+import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
+import com.hengshucredit.rule.server.artifact.CanonicalJson;
+import com.hengshucredit.rule.server.auth.ProjectAuthProperties;
+import java.math.BigDecimal;
+import java.util.function.Function;
 import org.junit.Test;
 
 import java.util.Map;
@@ -9,6 +14,14 @@ import java.util.Map;
 import static org.junit.Assert.*;
 
 public class ExternalApiRequestPlanTest {
+    @Test public void uiGeneratedStepIdsWorkInValueAndPresenceChecks() {
+        String id = "7b38b533-94d1-41ae-bc8c-94c64ae8d10b";
+        var context = Map.of("steps", Map.of(id, Map.of("response", Map.of("body", Map.of("billable", false)))));
+        String path = "steps." + id + ".response.body.billable";
+        assertEquals(false, ExternalApiRequestPlan.read(context, path));
+        org.junit.Assert.assertTrue(ExternalApiRequestPlan.present(context, "$." + path));
+        org.junit.Assert.assertFalse(ExternalApiRequestPlan.present(context, path + "Missing"));
+    }
     @Test public void oldChargeIdentityFitsDurableStepWithoutAliasingDistinctOrders() {
         String prefix = "API_CHAIN:9223372036854775807:" + "a".repeat(64) + ":";
         String first = ExternalApiRequestPlan.checkpointIdentity(prefix + "b".repeat(64));
@@ -120,23 +133,27 @@ public class ExternalApiRequestPlanTest {
     }
     @Test public void equivalentApprovedAndMysqlRepresentationsUseOneTransportIdentity() {
         var live = api();
-        live.setUnitPrice(new java.math.BigDecimal("0.350000"));
-        live.setRetryBackoffMultiplier(new java.math.BigDecimal("1.0000"));
+        live.setUnitPrice(new BigDecimal("0.350000"));
+        live.setRetryBackoffMultiplier(new BigDecimal("1.0000"));
         var frozen = JSON.parseObject(JSON.toJSONString(live), RuleExternalApiConfig.class);
-        frozen.setExecutionConfig(com.hengshucredit.rule.server.artifact.CanonicalJson.write(JSON.parse(live.getExecutionConfig())));
-        frozen.setUnitPrice(new java.math.BigDecimal("0.35"));
-        frozen.setRetryBackoffMultiplier(java.math.BigDecimal.ONE);
-        var source = new com.hengshucredit.rule.model.entity.RuleExternalDatasource();
-        source.setId(9L); source.setBaseUrl("https://approved.example"); source.setProtocol("HTTP");
-        source.setProjectId(1L); source.setScope("PROJECT"); source.setAuthType("BEARER");
+        frozen.setExecutionConfig(CanonicalJson.write(JSON.parse(live.getExecutionConfig())));
+        frozen.setUnitPrice(new BigDecimal("0.35"));
+        frozen.setRetryBackoffMultiplier(BigDecimal.ONE);
+        var source = new RuleExternalDatasource();
+        source.setId(9L);
+        source.setBaseUrl("https://approved.example");
+        source.setProtocol("HTTP");
+        source.setProjectId(1L);
+        source.setScope("PROJECT");
+        source.setAuthType("BEARER");
         source.setAuthConfig("{\"token\":\"local-synthetic-token\"}");
-        var properties = new com.hengshucredit.rule.server.auth.ProjectAuthProperties();
+        var properties = new ProjectAuthProperties();
         properties.setActiveKeyId("test");
         properties.setMasterKeys(Map.of("test", "test-key-for-transport"));
         var signer = new LocalModelBindingSignature(properties);
-        Map<String,String> paths = Map.of("VARIABLE:1", "person");
-        Map<String,Object> input = Map.of("person", "demo");
-        java.util.function.Function<RuleExternalApiConfig,ExternalApiRequestPlan> bind = api ->
+        Map<String, String> paths = Map.of("VARIABLE:1", "person");
+        Map<String, Object> input = Map.of("person", "demo");
+        Function<RuleExternalApiConfig, ExternalApiRequestPlan> bind = api ->
                 ExternalApiRequestPlan.prepare(api, input, Map.of(), paths, source.getAuthConfig()).withTransport(source, paths, signer);
 
         var original = bind.apply(live);
@@ -146,9 +163,9 @@ public class ExternalApiRequestPlanTest {
         assertNotEquals(original.legacyIdentity(), restored.legacyIdentity());
         assertNotEquals(original.identity(), ExternalApiRequestPlan.prepare(frozen, Map.of("person", "another"), Map.of(), paths,
                 source.getAuthConfig()).withTransport(source, paths, signer).identity());
-        frozen.setUnitPrice(new java.math.BigDecimal("0.36"));
+        frozen.setUnitPrice(new BigDecimal("0.36"));
         assertNotEquals(original.identity(), bind.apply(frozen).identity());
-        frozen.setUnitPrice(new java.math.BigDecimal("0.35"));
+        frozen.setUnitPrice(new BigDecimal("0.35"));
         frozen.setExecutionConfig(live.getExecutionConfig().replace("mobile", "differentRequestField"));
         assertNotEquals(original.identity(), bind.apply(frozen).identity());
         frozen.setExecutionConfig(live.getExecutionConfig());

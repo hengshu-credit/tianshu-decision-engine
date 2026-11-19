@@ -171,6 +171,27 @@ public class ModelExternalBindingsTest {
         assertThrows(IllegalArgumentException.class, () -> bindings.capture(1, PROJECT));
     }
 
+    @Test public void approvedApiUpdatesAllowDatabaseJsonFormattingButNotDifferentCharges() {
+        var version = storedVersions.get(apiOwner.getEffectiveVersionId());
+        var approval = storedApprovals.get(version.getApprovalRequestId());
+        approval.setAction("UPDATE");
+        var submitted = JSON.parseObject(approval.getSubmittedSnapshotJson());
+        var applied = JSON.parseObject(version.getSnapshotJson());
+        submitted.put("billingCondition", "{ \"mode\" : \"HIT\" }");
+        applied.put("billingCondition", "{\"mode\":\"HIT\"}");
+        submitted.put("unitPrice", 0.35);
+        applied.put("unitPrice", new java.math.BigDecimal("0.350000"));
+        approval.setSubmittedSnapshotJson(CanonicalJson.write(submitted));
+        approval.setSnapshotDigest(Sha256Digests.text(approval.getSubmittedSnapshotJson()));
+        version.setSnapshotJson(CanonicalJson.write(applied));
+        version.setSnapshotDigest(Sha256Digests.text(version.getSnapshotJson()));
+        assertNotNull(bindings.capture(1L, PROJECT));
+        applied.put("billingCondition", "{\"mode\":\"QUERY\"}");
+        version.setSnapshotJson(CanonicalJson.write(applied));
+        version.setSnapshotDigest(Sha256Digests.text(version.getSnapshotJson()));
+        assertThrows(IllegalArgumentException.class, () -> bindings.capture(1L, PROJECT));
+    }
+
     @Test public void keyRotationKeepsOldLocalApprovalsVerifiable() {
         JSONObject descriptor = bindings.capture(1, PROJECT);
         keys.setMasterKeys(Map.of("local-test", "unit-test-only-master-key-8e37d2", "new", "new-unit-test-key"));

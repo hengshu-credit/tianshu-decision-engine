@@ -14,6 +14,7 @@
         </el-form>
       </div>
       <p class="workspace-help">保存草稿后仍可编辑；发布审批通过后才生效。新增内容待审批时须先驳回才能删除。</p>
+      <el-button v-if="lastSubmitted && canReview" link type="primary" @click="review(lastSubmitted)">查看「{{ title(lastSubmitted) }}」的发布审批</el-button>
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
       <el-table :aria-busy="loading" :data="rows" empty-text="当前范围没有草稿或审批申请">
         <el-table-column label="内容" min-width="200" show-overflow-tooltip><template #default="{ row }">{{ title(row) }}</template></el-table-column>
@@ -47,7 +48,7 @@ const statuses = [{ value: 'EDITING', label: '草稿' }, { value: 'PENDING', lab
 export default {
   name: 'GovernanceWorkspaceToolbar',
   props: { resourceType: { type: String, default: '' }, projectId: { type: [String, Number], default: null } },
-  data: () => ({ visible: false, loading: false, busy: false, status: 'EDITING', viewScope: 'MINE', page: 1, total: 0, rows: [], error: '', sequence: 0, statuses }),
+  data: () => ({ visible: false, loading: false, busy: false, status: 'EDITING', viewScope: 'MINE', page: 1, total: 0, rows: [], lastSubmitted: null, error: '', sequence: 0, statuses }),
   computed: {
     tab() { return this.resourceType ? '' : 'FIELD' },
     canView() { return hasPermission(this.resourceType ? resourceViewPermission(this.resourceType) : 'field:view') },
@@ -58,7 +59,7 @@ export default {
     },
     contextKey() { return `${this.resourceType}:${this.tab}:${this.contextProjectId || ''}` },
   },
-  watch: { contextKey() { this.sequence++; this.visible = false; this.rows = []; this.loading = false } },
+  watch: { contextKey() { this.sequence++; this.visible = false; this.rows = []; this.lastSubmitted = null; this.loading = false } },
   mounted() { window.addEventListener('tianshu:resource-draft-change', this.refreshIfOpen) },
   beforeUnmount() { this.sequence++; window.removeEventListener('tianshu:resource-draft-change', this.refreshIfOpen) },
   methods: {
@@ -99,6 +100,7 @@ export default {
       try {
         await this.$confirm(`${this.submitLabel(row)}「${this.title(row)}」？审批通过后才会生效。`, '提交发布审批')
         await submitGovernanceRequest(row.id, '提交发布审批', row.snapshotDigest)
+        this.lastSubmitted = row
         this.$message.success('已提交审批'); await this.load()
       } catch (error) { if (error !== 'cancel' && error !== 'close' && !error?.requestErrorNotified) this.$message.error(error.message || '提交失败') }
       finally { this.busy = false }

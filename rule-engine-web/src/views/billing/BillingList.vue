@@ -151,9 +151,9 @@
               }}</el-tag></template
             >
           </el-table-column>
-          <el-table-column v-if="columnKey === 'chargeType'" label="方式" width="100" align="center">
+          <el-table-column v-if="columnKey === 'chargeType'" label="方式" min-width="120" align="center">
             <template v-slot="{ row }">{{
-              optionLabel(chargeTypeOptions, row.chargeType)
+              apiBillingModeLabels[row.apiBillingMode] || optionLabel(chargeTypeOptions, row.chargeType)
             }}</template>
           </el-table-column>
           <el-table-column v-if="columnKey === 'unitPrice'" label="单价" width="110" align="right">
@@ -1122,6 +1122,7 @@ export default {
         { label: '外数 API', value: 'API' },
         { label: '数据库查询', value: 'DB' },
       ],
+      apiBillingModeLabels: { QUERY: '查询计费', HIT: '查得计费', STEP_RESPONSE: '步骤响应计费', BRANCH: '响应分支计费' },
       chargeTypeOptions: [
         { label: '按次', value: 'COUNT' },
         { label: '成功计费', value: 'SUCCESS' },

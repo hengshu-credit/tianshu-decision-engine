@@ -11,6 +11,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.Assert.*;
 
 public class ExternalApiConsumerServiceTest {
+    @org.junit.Test public void failedRequiredApiCannotBeReadAsAnEmptyBusinessResult() {
+        Map<String, Object> failed = new java.util.HashMap<>(Map.of("success", false, "exceptionStrategy", "FAIL_FAST"));
+        org.junit.Assert.assertThrows(com.hengshucredit.rule.model.PlatformException.class,
+                () -> ExternalApiConsumerService.selectRuleValue(failed, "body.found"));
+        org.junit.Assert.assertEquals(false, ExternalApiConsumerService.selectRuleValue(failed, "success"));
+        failed.put("fallback", true);
+        failed.put("body", Map.of("found", false));
+        org.junit.Assert.assertEquals(false, ExternalApiConsumerService.selectRuleValue(failed, "body.found"));
+    }
     @Test public void requestOverridesResolveStableReferencesAndPreserveOtherInputs() {
         var consumer = service(new AtomicInteger(), false);
         RuleExternalApiConfig current = api();

@@ -217,7 +217,7 @@
       </div>
     </div>
 
-    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" :reference-mode="referenceCatalogMode" :can-use-current-resources="canEnterDesignerLivePreview" @use-current="runDesignerAction(enterDesignerLivePreview)" />
+    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" :reference-mode="referenceCatalogMode" :can-use-current-resources="canEnterDesignerLivePreview" @refresh-references="refreshLiveReferences" @use-current="runDesignerAction(enterDesignerLivePreview)" />
     <rule-designer-dialogs :choice="designerChoice" @resolve="resolveDesignerChoice" />
 
     <!-- 主体：画布 + 属性面板 -->

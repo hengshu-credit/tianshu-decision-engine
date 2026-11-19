@@ -2,6 +2,7 @@
   <div class="rule-designer-info" data-testid="designer-info">
     <span class="rule-designer-info__fields">{{ loading ? '正在加载引用目录…' : `已加载 ${fieldCount} 个可选引用` }}<span v-if="referenceMode"> · {{ referenceMode === 'FROZEN' ? '所选版本保存的资源' : referenceMode === 'LIVE' ? '当前环境资源' : '引用目录不可用' }}</span><span v-if="!loading && referenceMode === 'FROZEN' && !fieldCount" class="rule-designer-info__hint">此历史版本没有保存可选字段{{ canUseCurrentResources ? '，可使用当前资源继续编辑。' : '。' }}</span></span>
     <el-button v-if="canUseCurrentResources && !loading" link type="primary" size="small" data-testid="designer-use-current-references" @click="$emit('use-current')">使用当前资源编辑</el-button>
+    <el-button v-if="referenceMode === 'LIVE'" :loading="loading" link type="primary" size="small" @click="$emit('refresh-references')">刷新可选引用</el-button>
     <span class="rule-designer-info__status" role="status">{{ label }}<span v-if="sourceLabel"> · {{ sourceLabel }}</span></span>
   </div>
 </template>
@@ -19,7 +20,7 @@ export default {
   name: 'RuleDesignerStatus',
   props: { state: { type: String, default: 'CLEAN' }, fieldCount: { type: Number, default: 0 }, loading: Boolean, sourceLabel: { type: String, default: '' },
     referenceMode: { type: String, default: '' }, canUseCurrentResources: { type: Boolean, default: false } },
-  emits: ['use-current'],
+  emits: ['use-current', 'refresh-references'],
   computed: { label() { return LABELS[this.state] || LABELS.CLEAN } },
 }
 </script>

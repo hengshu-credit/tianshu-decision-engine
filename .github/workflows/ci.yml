@@ -98,7 +98,21 @@ jobs:
       - name: Run Maven tests
         env:
           SCHEMA_TEST_MYSQL_PORT: ${{ job.services.mysql.ports[3306] }}
-        run: mvn --batch-mode --no-transfer-progress -DschemaUpgrade.integration=true test
+        shell: bash
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/tianshu-maven-test.log"
+          for attempt in 1 2 3; do
+            if mvn --batch-mode --no-transfer-progress -U -DschemaUpgrade.integration=true test 2>&1 | tee "$log"; then
+              exit 0
+            else
+              result=$?
+            fi
+            if [[ $attempt == 3 ]] || ! grep -q 'DependencyResolutionException' "$log" || ! grep -Eq 'HTTP Status: 429|status code: 429' "$log"; then
+              exit "$result"
+            fi
+            sleep "$((30 * attempt))"
+          done
 
   frontend:
     name: Frontend (Node 22)
