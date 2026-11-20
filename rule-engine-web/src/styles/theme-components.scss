@@ -262,9 +262,7 @@ body,
   border-color: var(--tianshu-info-border) !important;
 }
 
-/* 页面级说明统一跟随主题提示色，覆盖各业务页遗留的固定浅蓝色。 */
-.module-hint,
-.linkage-hint {
+.module-hint {
   color: var(--tianshu-info-text) !important;
   background: var(--tianshu-info-bg) !important;
   border-color: var(--tianshu-info-border) !important;

@@ -166,13 +166,9 @@
           </div>
           <el-button size="small" @click="loadTokens">刷新</el-button>
         </div>
-        <el-alert
-          v-else
-          title="请先在“鉴权配置”中选择一项并点击 Token。"
-          type="info"
-          :closable="false"
-          show-icon
-        />
+        <dismissible-guidance v-else guide-id="project.auth-token" label="Token 获取说明">
+          请先在“鉴权配置”中选择一项并点击 Token。
+        </dismissible-guidance>
         <el-table show-overflow-tooltip
           v-if="selectedAuth"
           :aria-busy="tokenLoading"
@@ -646,6 +642,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { reservedCodeRule } from '@/utils/reservedContentCode'
 import { markRaw } from 'vue'
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
@@ -666,6 +663,7 @@ import {
 } from '@/api/project'
 
 export default {
+  components: { DismissibleGuidance },
   data() {
     const validateBasicField = (rule, value, callback) => {
       if (this.authForm.authType === 'BASIC' && !String(value || '').trim()) {

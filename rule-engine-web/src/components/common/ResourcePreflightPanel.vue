@@ -18,13 +18,9 @@
       >检查已保存配置</el-button>
     </div>
 
-    <el-alert
-      v-if="!hasResourceId"
-      type="info"
-      :closable="false"
-      show-icon
-      title="新建资源需要先保存并完成审批，之后才能检查已保存配置。"
-    />
+    <dismissible-guidance v-if="!hasResourceId" guide-id="preflight.new-resource" label="新建资源检查说明">
+      新建资源需要先保存并完成审批，之后才能检查已保存配置。
+    </dismissible-guidance>
     <el-alert
       v-else-if="requestError"
       type="error"
@@ -60,6 +56,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { ElMessage } from 'element-plus'
 import RuleValidationReport from '@/components/rule/RuleValidationReport.vue'
 import { getResourcePreflight } from '@/api/preflight'
@@ -68,7 +65,7 @@ const MAX_ATTEMPTS = 3
 
 export default {
   name: 'ResourcePreflightPanel',
-  components: { RuleValidationReport },
+  components: { DismissibleGuidance, RuleValidationReport },
   props: {
     resourceType: { type: String, required: true },
     resourceId: { type: [String, Number], default: null },

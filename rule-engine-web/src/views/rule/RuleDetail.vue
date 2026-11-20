@@ -753,12 +753,9 @@
               >
             </div>
           </div>
-          <el-alert
-            title="契约随规则版本发布；保存只更新草稿，发布后下游才会使用新配置。正常和异常共用同一个平台外层结构，只有 data 节点内容不同。"
-            type="info"
-            :closable="false"
-            show-icon
-          />
+          <dismissible-guidance guide-id="rule.contract" label="契约发布说明">
+            契约随规则版本发布；保存只更新草稿，发布后下游才会使用新配置。正常和异常共用同一个平台外层结构，只有 data 节点内容不同。
+          </dismissible-guidance>
 
           <div class="open-api-section">
             <div class="open-api-section-head">
@@ -1409,6 +1406,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
 import { loadPagedCatalog } from '@/utils/pagedCatalog'
 import { PLATFORM_CODES } from '@/utils/platformResponse'
@@ -1677,7 +1675,7 @@ export default {
       ElIconSetting: markRaw(ElIconSetting),
     }
   },
-  components: { VersionSnapshotPanel,
+  components: { DismissibleGuidance, VersionSnapshotPanel,
     ApiScenarioPanel,
     RuleVersionDiff,
     RuleLifecyclePanel,

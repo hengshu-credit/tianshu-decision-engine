@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
 import { clearCurrentUser, setCurrentUser } from '@/security/permissionState'
-import { restoreGuidance } from '@/utils/pageGuidance'
+import { hideGuidance, restoreGuidance } from '@/utils/pageGuidance'
 
 describe('配置步骤导航', () => {
   const items = [
@@ -35,7 +35,8 @@ describe('配置步骤导航', () => {
       { label: '配置', detail: '选择来源', ready: true },
       { label: '测试', detail: '核对结果', ready: false },
     ], showProgress: true } })
-    expect(wrapper.find('.config-layer-guide__items button').exists()).toBe(false)
+    expect(wrapper.find('button.config-layer-guide__item').exists()).toBe(false)
+    expect(wrapper.findAll('li button.guidance-close')).toHaveLength(2)
     expect(wrapper.get('[role="status"]').text()).toBe('1 / 2 已就绪')
     expect(wrapper.text()).toContain('核对结果')
   })
@@ -57,22 +58,42 @@ describe('配置步骤导航', () => {
     setCurrentUser({ userId: 12, username: 'first' })
     const wrapper = mount(ConfigLayerGuide, { props: { guideId: 'test.steps', title: '配置步骤', items, interactive: true } })
     try {
-      await wrapper.get('button[aria-label="关闭配置步骤"]').trigger('click')
-      expect(wrapper.find('section').exists()).toBe(false)
+      await wrapper.get('button[aria-label="关闭连接参数"]').trigger('click')
+      expect(wrapper.find('[aria-label="关闭连接参数"]').exists()).toBe(false)
+      expect(wrapper.find('[aria-label="关闭连接测试"]').exists()).toBe(true)
       expect(wrapper.emitted('select')).toBeUndefined()
       setCurrentUser({ userId: 13, username: 'second' })
       await wrapper.vm.$nextTick()
-      expect(wrapper.find('section').exists()).toBe(true)
+      expect(wrapper.find('[aria-label="关闭连接参数"]').exists()).toBe(true)
       restoreGuidance()
       setCurrentUser({ userId: 12, username: 'renamed' })
       await wrapper.vm.$nextTick()
-      expect(wrapper.find('section').exists()).toBe(false)
+      expect(wrapper.find('[aria-label="关闭连接参数"]').exists()).toBe(false)
       restoreGuidance()
       await wrapper.vm.$nextTick()
-      expect(wrapper.find('section').exists()).toBe(true)
+      expect(wrapper.find('[aria-label="关闭连接参数"]').exists()).toBe(true)
     } finally {
       wrapper.unmount()
       clearCurrentUser()
+    }
+  })
+
+  test('旧版关闭的整组引导在恢复后可逐条关闭，导航仍保留原始步骤序号', async () => {
+    hideGuidance('legacy.steps')
+    const wrapper = mount(ConfigLayerGuide, { props: { guideId: 'legacy.steps', items, interactive: true } })
+    try {
+      expect(wrapper.find('section').exists()).toBe(false)
+      restoreGuidance()
+      await wrapper.vm.$nextTick()
+      await wrapper.get('button[aria-label="关闭作用范围"]').trigger('click')
+      await wrapper.get('[data-step="connection"]').trigger('click')
+      expect(wrapper.emitted('select')[0]).toEqual([items[1], 1])
+      await wrapper.get('button[aria-label="关闭连接参数"]').trigger('click')
+      await wrapper.get('button[aria-label="关闭连接测试"]').trigger('click')
+      expect(wrapper.find('section').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
+      restoreGuidance()
     }
   })
 

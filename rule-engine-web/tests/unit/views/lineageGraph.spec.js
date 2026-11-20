@@ -702,13 +702,13 @@ describe('LineageGraph', () => {
   test('提供两跳展开和静态分析边界说明', () => {
     const wrapper = mountPage()
 
-    expect(wrapper.vm.lineageGuideCards.map(item => item.title)).toEqual([
+    expect(wrapper.vm.lineageGuideCards.map(item => item.label)).toEqual([
       '选择起点',
       '两跳展开',
       '静态分析边界'
     ])
-    expect(wrapper.vm.lineageGuideCards[1].text).toContain('两层')
-    expect(wrapper.vm.lineageGuideCards[2].text).toContain('静态分析')
+    expect(wrapper.vm.lineageGuideCards[1].detail).toContain('两层')
+    expect(wrapper.vm.lineageGuideCards[2].detail).toContain('静态分析')
     wrapper.unmount()
   })
 

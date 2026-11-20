@@ -738,7 +738,9 @@
         />
 
         <template v-if="genericOnnxInputs.length">
-          <el-alert title="通用 ONNX：按以下节点类型和维度填写参数，动态维度可使用实际批次数；数组各行长度必须一致。" type="info" :closable="false" />
+          <dismissible-guidance guide-id="model.onnx-inputs" label="ONNX 入参说明">
+            通用 ONNX：按以下节点类型和维度填写参数，动态维度可使用实际批次数；数组各行长度必须一致。
+          </dismissible-guidance>
           <el-table :data="genericOnnxInputs" size="small" border style="margin: 12px 0">
             <el-table-column prop="name" label="原始输入节点" />
             <el-table-column prop="type" label="元素类型" />
@@ -914,6 +916,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { historicalVersionMethods } from '@/mixins/historicalVersionMixin'
 import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
 import { loadPagedCatalog } from '@/utils/pagedCatalog'
@@ -1063,7 +1066,7 @@ export default {
       ElIconDelete: markRaw(ElIconDelete),
     }
   },
-  components: { VersionSnapshotPanel,
+  components: { DismissibleGuidance, VersionSnapshotPanel,
     ResourceVersionManager,
     ResourcePicker,
     OperandPicker,

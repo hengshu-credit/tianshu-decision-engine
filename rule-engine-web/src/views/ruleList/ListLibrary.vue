@@ -1,17 +1,11 @@
 <template>
   <div class="uiue-list-page list-library-page management-list-page">
-    <dismissible-guidance guide-id="list.intro" label="名单管理提示" class="module-hint">
-      <div class="hint-title">名单管理</div>
-      <div class="hint-text">
-        管理黑名单、灰名单、白名单及其他名单库，名单类型仅用于标识和筛选，规则执行通过名单查询变量命中有效期内记录。
-      </div>
+    <dismissible-guidance guide-id="list.intro" label="名单管理提示" heading="名单管理">
+      管理黑名单、灰名单、白名单及其他名单库，名单类型仅用于标识和筛选，规则执行通过名单查询变量命中有效期内记录。
     </dismissible-guidance>
 
-    <dismissible-guidance guide-id="list.approval" label="名单审批流程" class="approval-guide" role="note">
-      <div class="approval-guide-title">变更先审批，再生效</div>
-      <div class="approval-guide-text">
-        保存后为草稿，发布时提交审批。新增草稿无下游引用可直接删除；待审批的新增内容须先驳回。
-      </div>
+    <dismissible-guidance guide-id="list.approval" label="名单审批流程" class="approval-guide" heading="变更先审批，再生效">
+      保存后为草稿，发布时提交审批。新增草稿无下游引用可直接删除；待审批的新增内容须先驳回。
     </dismissible-guidance>
 
     <el-tabs class="management-table-region" v-model="activeTab">
@@ -531,41 +525,3 @@ export default {
   },
 }
 </script>
-
-<style scoped>
-.module-hint {
-  margin-bottom: 12px;
-  padding: 10px 12px;
-  background: var(--tianshu-bg-muted);
-  border-radius: 4px;
-  color: var(--tianshu-text-secondary);
-}
-.hint-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--tianshu-text-primary);
-  margin-bottom: 4px;
-}
-.hint-text {
-  font-size: 12px;
-  line-height: 1.6;
-}
-.approval-guide {
-  margin-bottom: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--tianshu-info-border);
-  border-radius: 6px;
-  background: var(--tianshu-info-bg);
-}
-.approval-guide-title {
-  color: var(--tianshu-info-text);
-  font-size: 13px;
-  font-weight: 600;
-}
-.approval-guide-text {
-  margin-top: 3px;
-  color: var(--tianshu-text-secondary);
-  font-size: 12px;
-  line-height: 1.6;
-}
-</style>

@@ -1,12 +1,12 @@
 <template>
   <div class="uiue-list-page dashboard-settings-page">
-    <div class="module-hint dashboard-settings-heading">
-      <div>
-        <div class="hint-title">数据看板设置</div>
-        <dismissible-guidance guide-id="dashboard-settings.intro" label="看板设置说明" class="hint-text">字段关联始终保存资源 ID；个人项目覆盖逐项继承个人默认，再继承管理员维护的公共默认。</dismissible-guidance>
-      </div>
+    <div class="dashboard-settings-heading">
+      <strong>数据看板设置</strong>
       <el-button @click="$router.push('/dashboard')">返回看板</el-button>
     </div>
+    <dismissible-guidance guide-id="dashboard-settings.intro" label="看板设置说明">
+      字段关联始终保存资源 ID；个人项目覆盖逐项继承个人默认，再继承管理员维护的公共默认。
+    </dismissible-guidance>
 
     <div class="uiue-search-container uiue-filter-toolbar">
       <el-form :inline="true" size="small">
@@ -39,7 +39,9 @@
       </div>
     </div>
 
-    <el-alert v-if="editSystemDefaults" title="公共默认仅可关联全局字段，保存后供所有账户继承；已有个人或项目覆盖继续保留。清空字段后保存即可移除该项公共配置。" type="info" :closable="false" />
+    <dismissible-guidance v-if="editSystemDefaults" guide-id="dashboard-settings.global" label="公共默认配置说明">
+      公共默认仅可关联全局字段，保存后供所有账户继承；已有个人或项目覆盖继续保留。清空字段后保存即可移除该项公共配置。
+    </dismissible-guidance>
     <el-alert
       v-if="!settings.editable && !loading"
       title="当前控制台未启用用户登录，仅可查看公共默认字段映射。"

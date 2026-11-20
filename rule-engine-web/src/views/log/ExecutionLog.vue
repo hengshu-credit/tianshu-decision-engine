@@ -19,7 +19,7 @@
       <el-tab-pane v-if="canViewRuntime" label="运行状态" name="runtime" />
     </el-tabs>
     <div class="management-table-region" v-if="activeView === 'logs'">
-      <dismissible-guidance tag="p" guide-id="log.outcome" label="执行结果说明" class="log-outcome-help">仅展示本人及明确授权的执行记录。执行成功表示规则运行完成，不等于业务通过；通过、拒绝或人工审核等业务结论请查看输出结果。</dismissible-guidance>
+      <dismissible-guidance tag="p" guide-id="log.outcome" label="执行结果说明">仅展示本人及明确授权的执行记录。执行成功表示规则运行完成，不等于业务通过；通过、拒绝或人工审核等业务结论请查看输出结果。</dismissible-guidance>
       <div class="uiue-search-container uiue-filter-toolbar">
         <el-form :inline="true" size="small" @keyup.enter="handleQuery">
           <el-form-item label="来源" style="width: 150px">
@@ -353,12 +353,9 @@
         </div>
       </div>
 
-      <el-alert
-        title="统计范围仅包含规则集；串行规则集中未执行、禁用及首条命中后跳过的规则不计入执行次数。"
-        type="info"
-        show-icon
-        :closable="false"
-      />
+      <dismissible-guidance guide-id="log.rule-set" label="规则集统计说明">
+        统计范围仅包含规则集；串行规则集中未执行、禁用及首条命中后跳过的规则不计入执行次数。
+      </dismissible-guidance>
       <el-alert v-if="ruleSetCoverageHint(ruleSetStats.coverage)"
         :title="ruleSetCoverageHint(ruleSetStats.coverage)" type="warning" :closable="false" show-icon
         class="rule-set-coverage" data-testid="rule-set-coverage" />
@@ -495,7 +492,7 @@
       </async-state>
     </div>
     <section v-else-if="activeView === 'runtime' && canViewRuntime" class="execution-runtime-view">
-      <dismissible-guidance tag="p" guide-id="log.runtime" label="运行状态说明" class="module-hint" data-testid="execution-runtime-scope">
+      <dismissible-guidance tag="p" guide-id="log.runtime" label="运行状态说明" data-testid="execution-runtime-scope">
         运行状态不受项目、规则或时间筛选影响。进程内指标与本地恢复日志属于当前响应节点，数据库恢复队列和发布队列为共享存储汇总。
         多节点部署时，请核对面板中的当前节点；项目筛选仅用于执行明细和规则集命中统计。
       </dismissible-guidance>
@@ -1403,7 +1400,6 @@ emits: ['pick']
 </script>
 
 <style scoped>
-.log-outcome-help { margin: 0 0 12px; color: var(--tianshu-text-secondary); font-size: 12px; line-height: 1.5; }
 .log-view-tabs {
   margin-bottom: 12px;
 }

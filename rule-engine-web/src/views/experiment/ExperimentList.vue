@@ -3,15 +3,7 @@
     <div class="page-head">
       <div>
         <h2>分流实验</h2>
-        <dismissible-guidance guide-id="experiment.intro" label="分流实验说明">
-          <div class="page-subtitle">
-            配置冠军挑战和测试组空跑，执行结果会返回实验标签并写入实验明细日志。
-          </div>
-          <div class="page-tip">
-            冠军组和挑战组参与生产分流；测试组在生产组执行后空跑，可按条件命中、互斥执行，并可控制是否调用
-            API 外数。
-          </div>
-        </dismissible-guidance>
+        <guidance-group guide-id="experiment.intro" label="分流实验说明" :items="experimentGuidance" />
       </div>
     </div>
 
@@ -471,7 +463,7 @@
 </template>
 
 <script>
-import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
+import GuidanceGroup from '@/components/common/GuidanceGroup.vue'
 import ResourceVersionSelect from '@/components/common/ResourceVersionSelect.vue'
 import { formatExperimentJson } from '@/utils/experimentResponse'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
@@ -506,6 +498,10 @@ import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operati
 export default {
   data() {
     return {
+      experimentGuidance: [
+        { key: 'overview', label: '分流实验说明', detail: '配置冠军挑战和测试组空跑，执行结果会返回实验标签并写入实验明细日志。' },
+        { key: 'traffic', label: '生产分流与空跑', detail: '冠军组和挑战组参与生产分流；测试组在生产组执行后空跑，可按条件命中、互斥执行，并可控制是否调用 API 外数。' },
+      ],
       tableColumnOrders: { experimentColumns: null },
       experimentColumns: [
         { key: 'experimentCode', label: '实验编码' },
@@ -554,7 +550,7 @@ export default {
     }
   },
   name: 'ExperimentList',
-  components: { DismissibleGuidance, ResourceVersionSelect, GovernancePublishAction, GovernanceWorkspaceToolbar,
+  components: { GuidanceGroup, ResourceVersionSelect, GovernancePublishAction, GovernanceWorkspaceToolbar,
     GovernanceResourceStatus,
     TableColumnSettings,
     MonacoEditor,
@@ -1005,18 +1001,6 @@ export default {
     font-size: 20px;
     font-weight: 700;
     color: var(--tianshu-text-primary);
-  }
-
-  .page-subtitle {
-    margin-top: 4px;
-    color: var(--tianshu-text-tertiary);
-    font-size: 13px;
-  }
-
-  .page-tip {
-    margin-top: 4px;
-    color: var(--tianshu-text-tertiary);
-    font-size: 12px;
   }
 
   .group-tag {

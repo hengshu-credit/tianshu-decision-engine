@@ -80,7 +80,7 @@ test('SFTP 往返切换、工作区页签和浏览器历史保持选中项与页
   })
   const expectPage = async (path, title, selected) => {
     await expect(page).toHaveURL(`${origin}/#${path}`)
-    await expect(page.locator('.module-hint .hint-title')).toHaveText(title)
+    await expect(page.locator('.dismissible-guidance .guidance-heading')).toHaveText(title)
     await expect(page.getByRole('tab', { name: selected, exact: true })).toHaveAttribute('aria-selected', 'true')
   }
   await page.goto(`${origin}/#/sftp`)

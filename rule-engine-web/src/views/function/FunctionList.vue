@@ -1,6 +1,6 @@
 <template>
   <div class="uiue-list-page management-list-page">
-    <dismissible-guidance guide-id="function.intro" label="函数管理提示" class="linkage-hint">
+    <dismissible-guidance guide-id="function.intro" label="函数管理提示">
       <el-icon><el-icon-info /></el-icon>
       自定义函数可在规则设计器的函数选择器中使用，无需手写调用表达式。支持脚本、Java 类或 Spring Bean 实现。
     </dismissible-guidance>
@@ -1213,14 +1213,6 @@ export default {
 <style scoped>
 .uiue-list-page {
   padding: 16px;
-}
-.linkage-hint {
-  font-size: 13px;
-  color: var(--tianshu-text-tertiary);
-  margin-bottom: 12px;
-  background: var(--tianshu-bg-muted);
-  padding: 8px 12px;
-  border-radius: 4px;
 }
 .function-context-hint {
   margin: 0 0 12px;

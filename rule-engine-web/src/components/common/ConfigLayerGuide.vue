@@ -1,43 +1,39 @@
 <template>
-  <dismissible-guidance tag="section" :guide-id="guideId" :label="title" class="config-layer-guide" :data-testid="testId" :aria-label="title">
-    <div class="config-layer-guide__heading">
-      <div>
-        <div class="config-layer-guide__title">{{ title }}</div>
-        <p v-if="description" class="config-layer-guide__description">{{ description }}</p>
+  <guidance-group :items="items" :guide-id="guideId" :label="title" class="config-layer-guide" :data-testid="testId" :aria-label="title">
+    <template #header>
+      <div class="config-layer-guide__heading">
+        <div>
+          <div class="config-layer-guide__title">{{ title }}</div>
+          <p v-if="description" class="config-layer-guide__description">{{ description }}</p>
+        </div>
+        <span v-if="showProgress" class="config-layer-guide__progress" role="status">{{ readyCount }} / {{ items.length }} {{ progressLabel }}</span>
       </div>
-      <span v-if="showProgress" class="config-layer-guide__progress" role="status">{{ readyCount }} / {{ items.length }} {{ progressLabel }}</span>
-    </div>
-    <ol class="config-layer-guide__items">
-      <li
-        v-for="(item, index) in items"
-        :key="item.key || item.label"
-        class="config-layer-guide__step"
+    </template>
+    <template #default="{ item, index }">
+      <component
+        :is="interactive ? 'button' : 'div'"
+        :type="interactive ? 'button' : undefined"
+        class="config-layer-guide__item"
+        :class="{ 'is-ready': isReady(item), 'is-active': index === currentIndex, 'is-interactive': interactive }"
+        :aria-current="index === currentIndex ? 'step' : undefined"
+        :data-testid="itemTestIdPrefix ? `${itemTestIdPrefix}-${item.key}` : undefined"
+        :data-step="item.key || undefined"
+        @click="select(item, index)"
       >
-        <component
-          :is="interactive ? 'button' : 'div'"
-          :type="interactive ? 'button' : undefined"
-          class="config-layer-guide__item"
-          :class="{ 'is-ready': isReady(item), 'is-active': index === currentIndex, 'is-interactive': interactive }"
-          :aria-current="index === currentIndex ? 'step' : undefined"
-          :data-testid="itemTestIdPrefix ? `${itemTestIdPrefix}-${item.key}` : undefined"
-          :data-step="item.key || undefined"
-          @click="select(item, index)"
-        >
-          <b class="config-layer-guide__number" aria-hidden="true">{{ isReady(item) ? '✓' : index + 1 }}</b>
-          <span class="config-layer-guide__copy">
-            <strong>{{ item.label }}<span v-if="showProgress" class="config-layer-guide__state">{{ isReady(item) ? readyStateLabel : index === currentIndex ? activeStateLabel : pendingStateLabel }}</span></strong>
-            <small v-if="item.help || item.detail">{{ item.help || item.detail }}</small>
-          </span>
-        </component>
-      </li>
-    </ol>
-  </dismissible-guidance>
+        <b class="config-layer-guide__number" aria-hidden="true">{{ isReady(item) ? '✓' : index + 1 }}</b>
+        <span class="config-layer-guide__copy">
+          <strong>{{ item.label }}<span v-if="showProgress" class="config-layer-guide__state">{{ isReady(item) ? readyStateLabel : index === currentIndex ? activeStateLabel : pendingStateLabel }}</span></strong>
+          <small v-if="item.help || item.detail">{{ item.help || item.detail }}</small>
+        </span>
+      </component>
+    </template>
+  </guidance-group>
 </template>
 
 <script>
-import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
+import GuidanceGroup from '@/components/common/GuidanceGroup.vue'
 export default {
-  components: { DismissibleGuidance },
+  components: { GuidanceGroup },
   name: 'ConfigLayerGuide',
   props: {
     guideId: { type: String, required: true },
@@ -69,14 +65,12 @@ export default {
 </script>
 
 <style scoped>
-.config-layer-guide { container-type: inline-size; margin-bottom: 16px; padding: 16px; background: var(--tianshu-bg-surface); border: 1px solid var(--tianshu-border-subtle); border-radius: 8px; }
+.config-layer-guide { container-type: inline-size; }
 .config-layer-guide__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
 .config-layer-guide__title { color: var(--tianshu-text-primary); font-size: 14px; font-weight: 600; line-height: 1.5; }
 .config-layer-guide__description { margin: 4px 0 0; color: var(--tianshu-text-secondary); font-size: 12px; line-height: 1.6; }
 .config-layer-guide__progress { flex: none; padding: 4px 10px; border-radius: 16px; background: var(--tianshu-info-bg); color: var(--tianshu-info-text); font-size: 12px; font-weight: 600; line-height: 1.5; }
-.config-layer-guide__items { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
-.config-layer-guide__step { min-width: 0; }
-.config-layer-guide__item { box-sizing: border-box; display: flex; width: 100%; height: 100%; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid var(--tianshu-border-subtle); border-radius: 6px; color: var(--tianshu-text-primary); background: var(--tianshu-bg-soft); font: inherit; text-align: left; }
+.config-layer-guide__item { box-sizing: border-box; display: flex; width: 100%; height: 100%; gap: 10px; align-items: flex-start; padding: 4px; border: 1px solid transparent; border-radius: 4px; color: var(--tianshu-text-primary); background: transparent; font: inherit; text-align: left; }
 .config-layer-guide__item.is-active { border-color: var(--tianshu-info-border); background: var(--tianshu-info-bg); }
 .config-layer-guide__item.is-interactive { cursor: pointer; transition: background-color 160ms, border-color 160ms; }
 .config-layer-guide__item.is-interactive:hover { border-color: var(--tianshu-info-text); background: var(--tianshu-bg-hover); }
@@ -90,5 +84,5 @@ export default {
 .is-ready .config-layer-guide__state { color: var(--tianshu-primary-text); }
 .is-active .config-layer-guide__state { color: var(--tianshu-info-text); }
 .config-layer-guide__copy small { color: var(--tianshu-text-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-@container (max-width: 480px) { .config-layer-guide__heading { flex-wrap: wrap; gap: 8px; } .config-layer-guide__items { grid-template-columns: 1fr; } }
+@container (max-width: 480px) { .config-layer-guide__heading { flex-wrap: wrap; gap: 8px; } }
 </style>

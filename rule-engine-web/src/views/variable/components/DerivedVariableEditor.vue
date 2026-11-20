@@ -13,7 +13,9 @@
       <p class="derived-help">支持多级衍生。字段按 ID 关联；测试和 API 入参会展开到最上游原始字段。身份证年龄可选内置 idCardAge；登记地址码不等同于当前户籍地。</p>
     </template>
     <template v-else>
-      <el-alert :closable="false" type="info" title="历史样本取自正式进件，支持请求入参、引擎内部字段、三方调用结果和已开启记录的字段。" />
+      <dismissible-guidance guide-id="variable.derived-history" label="历史样本说明">
+        历史样本取自正式进件，支持请求入参、引擎内部字段、三方调用结果和已开启记录的字段。
+      </dismissible-guidance>
       <el-form-item label="本次订单"><el-switch :model-value="config.includeCurrent === true" active-text="包含本次订单" aria-label="包含本次订单" @update:model-value="patch({ includeCurrent: $event })" /></el-form-item>
       <el-form-item label="统计范围">
         <el-select :model-value="config.scope" @update:model-value="changeScope">
@@ -112,6 +114,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import VarPicker from '@/components/common/VarPicker.vue'
 import ResourcePicker from '@/components/common/ResourcePicker.vue'
@@ -124,7 +127,7 @@ import { createDerivedConfig, DERIVED_OPERAND_KINDS, historyAggregateOptions, hi
 
 export default {
   name: 'DerivedVariableEditor',
-  components: { OperandPicker, VarPicker, ResourcePicker, OperandValueDisplay, HistoryFilters },
+  components: { DismissibleGuidance, OperandPicker, VarPicker, ResourcePicker, OperandValueDisplay, HistoryFilters },
   props: { projectId: { type: [String, Number], default: null }, modelValue: { type: Object, default: createDerivedConfig }, vars: { type: Array, default: () => [] }, functions: { type: Array, default: () => [] }, resultType: { type: String, default: '' } },
   emits: ['update:modelValue', 'type-change'],
   data() {

@@ -1,6 +1,6 @@
 <template>
   <div class="uiue-list-page management-list-page">
-    <dismissible-guidance guide-id="variable.intro" label="变量管理提示" class="linkage-hint">
+    <dismissible-guidance class="variable-intro" guide-id="variable.intro" label="变量管理提示">
       <el-icon><el-icon-info /></el-icon> 变量在规则设计时使用，<router-link
         to="/test"
         >规则测试</router-link
@@ -12,9 +12,9 @@
       title="变量配置步骤"
       test-id="variable-config-layers"
       :items="[
-        { label: '基础字段', detail: '编码、名称、脚本名和类型' },
-        { label: '取值来源', detail: '输入、接口、数据库、名单或计算' },
-        { label: '保存前验证', detail: '用样例确认结果，再送审生效' },
+        { key: 'fields', label: '基础字段', detail: '编码、名称、脚本名和类型' },
+        { key: 'source', label: '取值来源', detail: '输入、接口、数据库、名单或计算' },
+        { key: 'validation', label: '保存前验证', detail: '用样例确认结果，再送审生效' },
       ]"
     />
 
@@ -868,13 +868,9 @@
       </el-tab-pane>
 
       <el-tab-pane label="字段校验" lazy name="validations" class="management-table-region">
-        <el-alert
-          title="字段校验保存为草稿，发布审批通过后才能引用。新增草稿无下游引用可直接删除；待审批时须先驳回。"
-          type="info"
-          :closable="false"
-          show-icon
-          style="margin-bottom: 12px"
-        />
+        <dismissible-guidance guide-id="variable.validation-draft" label="字段校验审批说明">
+          字段校验保存为草稿，发布审批通过后才能引用。新增草稿无下游引用可直接删除；待审批时须先驳回。
+        </dismissible-guidance>
         <div class="tab-filter-row" @keyup.enter="handleFieldValidationQuery">
           <div class="tab-filter-fields">
           <el-select
@@ -1906,13 +1902,9 @@
         <span>{{ testTarget.varLabel || testTarget.varCode }}</span>
         <code>{{ testTarget.scriptName || testTarget.varCode }}</code>
       </div>
-      <el-alert
-        :title="testDialogHint"
-        type="info"
-        :closable="false"
-        show-icon
-        style="margin-bottom: 12px"
-      />
+      <dismissible-guidance :guide-id="'variable.test.' + (testTarget?.varSource || 'input')" label="变量测试入参说明">
+        {{ testDialogHint }}
+      </dismissible-guidance>
       <monaco-editor
         v-model:value="variableTestParamsText"
         language="json"
@@ -2995,9 +2987,9 @@ export default {
         this.objectForm.objectType
       )
       return [
-        { label: '确定归属', help: '选择全局或具体项目', ready: scoped },
-        { label: '填写定义', help: '补充编码、名称、脚本名和类型', ready: defined },
-        { label: '设置能力', help: '配置来源类型和懒加载策略', ready: defined && !!this.objectForm.sourceType },
+        { key: 'scope', label: '确定归属', help: '选择全局或具体项目', ready: scoped },
+        { key: 'definition', label: '填写定义', help: '补充编码、名称、脚本名和类型', ready: defined },
+        { key: 'capability', label: '设置能力', help: '配置来源类型和懒加载策略', ready: defined && !!this.objectForm.sourceType },
       ]
     },
     objectConfigurationReadyCount() {
@@ -3133,14 +3125,16 @@ export default {
       )
       const sourceReady = defined && sourced
       return [
-        { label: '确定归属', help: '选择全局或具体项目', ready: scoped },
-        { label: '填写定义', help: '补充编码、名称和类型', ready: defined },
+        { key: 'scope', label: '确定归属', help: '选择全局或具体项目', ready: scoped },
+        { key: 'definition', label: '填写定义', help: '补充编码、名称和类型', ready: defined },
         {
+          key: 'source',
           label: '配置取值',
           help: '选择来源并完成必填项',
           ready: sourceReady,
         },
         {
+          key: 'validation',
           label: '验证结果',
           help: requiresPreview ? '用样例参数预览一次取值' : '该来源无需在线预览',
           ready:
@@ -5805,19 +5799,11 @@ export default {
 .variable-column-options { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .db-sample-fields label { display: grid; gap: 4px; margin-bottom: 8px; }
 .db-preview-rows { display: grid; gap: 8px; margin-top: 12px; min-width: 0; }
-.linkage-hint {
-  font-size: 12px;
-  color: var(--tianshu-text-tertiary);
-  margin-bottom: 12px;
-  padding: 8px 12px;
-  background: var(--tianshu-bg-muted);
-  border-radius: 4px;
-}
-.linkage-hint a {
+.variable-intro a {
   color: var(--el-color-primary);
   text-decoration: none;
 }
-.linkage-hint a:hover {
+.variable-intro a:hover {
   text-decoration: underline;
 }
 .var-tabs {

@@ -89,13 +89,13 @@ describe('DatabaseList — 列表与只读查询', () => {
   })
 
   test('提供数据库变量配置说明和只读查询提示', () => {
-    expect(wrapper.vm.databaseGuideCards.map(item => item.title)).toEqual([
+    expect(wrapper.vm.databaseGuideCards.map(item => item.label)).toEqual([
       '只读连接',
       '查询模板',
       '数据库变量'
     ])
-    expect(wrapper.vm.databaseGuideCards[0].text).toContain('只读账号')
-    expect(wrapper.vm.databaseGuideCards[2].text).toContain('数据库查询')
+    expect(wrapper.vm.databaseGuideCards[0].detail).toContain('只读账号')
+    expect(wrapper.vm.databaseGuideCards[2].detail).toContain('数据库查询')
   })
 
   test('SQL 占位符统计会忽略字符串和注释中的问号', () => {

@@ -3,22 +3,10 @@
     class="uiue-list-page lineage-page"
     :class="{ 'is-embedded': embedded }"
   >
-    <dismissible-guidance guide-id="lineage.intro" label="血缘分析提示" v-if="!embedded" class="module-hint">
-      <div class="hint-title">血缘分析</div>
-      <div class="hint-text">
-        从变量、规则、项目、API、数据库、名单或模型出发，查看上游依赖与下游引用关系。
-      </div>
+    <dismissible-guidance guide-id="lineage.intro" label="血缘分析提示" v-if="!embedded" heading="血缘分析">
+      从变量、规则、项目、API、数据库、名单或模型出发，查看上游依赖与下游引用关系。
     </dismissible-guidance>
-    <dismissible-guidance guide-id="lineage.steps" label="血缘分析引导" v-if="!embedded" class="usage-guide">
-      <div
-        v-for="item in lineageGuideCards"
-        :key="item.title"
-        class="guide-item"
-      >
-        <div class="guide-title">{{ item.title }}</div>
-        <div class="guide-text">{{ item.text }}</div>
-      </div>
-    </dismissible-guidance>
+    <guidance-group guide-id="lineage.steps" label="血缘分析引导" v-if="!embedded" :items="lineageGuideCards" />
 
     <div v-if="!embedded" class="query-panel">
       <el-form :inline="true" size="small">
@@ -192,6 +180,7 @@
 </template>
 
 <script>
+import GuidanceGroup from '@/components/common/GuidanceGroup.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ContentReference from '@/components/common/ContentReference.vue'
 import AsyncState from '@/components/common/AsyncState.vue'
@@ -233,16 +222,19 @@ export default {
     return {
       lineageGuideCards: [
         {
-          title: '选择起点',
-          text: '先选择节点类型，再输入编码或名称搜索起点；适合从变量、规则、API、DB、SFTP、名单或模型定位影响范围。',
+          key: 'start',
+          label: '选择起点',
+          detail: '先选择节点类型，再输入编码或名称搜索起点；适合从变量、规则、API、DB、SFTP、名单或模型定位影响范围。',
         },
         {
-          title: '两跳展开',
-          text: '首次展示上下游各两层关系；数据对象默认收起字段，点击加号展开。共享节点只显示一次，收起分支仍保留其他路径的引用。',
+          key: 'expand',
+          label: '两跳展开',
+          detail: '首次展示上下游各两层关系；数据对象默认收起字段，点击加号展开。共享节点只显示一次，收起分支仍保留其他路径的引用。',
         },
         {
-          title: '静态分析边界',
-          text: '血缘基于结构化配置和脚本静态分析生成；复杂动态脚本引用需结合规则测试与执行日志复核。',
+          key: 'limits',
+          label: '静态分析边界',
+          detail: '血缘基于结构化配置和脚本静态分析生成；复杂动态脚本引用需结合规则测试与执行日志复核。',
         },
       ],
       loading: false,
@@ -314,7 +306,7 @@ export default {
     }
   },
   name: 'LineageGraph',
-  components: { DismissibleGuidance, ContentReference, AsyncState, GraphDesignerNavigator, CanvasBackgroundSettings },
+  components: { GuidanceGroup, DismissibleGuidance, ContentReference, AsyncState, GraphDesignerNavigator, CanvasBackgroundSettings },
   watch: {
     initialGraph: {
       deep: true,
@@ -1355,46 +1347,6 @@ export default {
     }
   }
 
-  .module-hint {
-    background: var(--tianshu-bg-soft);
-    border: 1px solid var(--tianshu-border-subtle);
-    border-radius: 4px;
-    padding: 12px 16px;
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .hint-title {
-    color: var(--tianshu-info-text);
-    font-weight: 700;
-    white-space: nowrap;
-  }
-  .hint-text {
-    color: var(--tianshu-text-tertiary);
-  }
-  .usage-guide {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-    gap: 12px;
-    margin-bottom: 16px;
-  }
-  .guide-item {
-    border: 1px solid var(--tianshu-border-subtle);
-    border-radius: 4px;
-    padding: 12px;
-    background: var(--tianshu-bg-surface);
-  }
-  .guide-title {
-    color: var(--tianshu-text-primary);
-    font-weight: 700;
-    margin-bottom: 4px;
-  }
-  .guide-text {
-    color: var(--tianshu-text-tertiary);
-    font-size: 12px;
-    line-height: 1.6;
-  }
   .query-panel {
     background: var(--tianshu-bg-surface);
     border: 1px solid var(--tianshu-border-subtle);

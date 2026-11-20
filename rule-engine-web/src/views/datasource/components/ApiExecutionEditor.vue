@@ -1,7 +1,9 @@
 <template>
   <section class="api-execution-editor" aria-label="统一外数链路配置">
     <el-alert v-if="config.__parseError" :closable="false" type="error" title="统一链路配置无法解析" :description="`请导出并修复 JSON 后重新导入：${config.__parseError}`" />
-    <el-alert :closable="false" type="info" title="API 只组装请求和统一响应；变量与对象选择结果路径，并覆盖已开放的入参。" />
+    <dismissible-guidance guide-id="api.request" label="请求组装说明">
+      API 只组装请求和统一响应；变量与对象选择结果路径，并覆盖已开放的入参。
+    </dismissible-guidance>
     <div><el-button @click="configImportVisible = true">导入链路配置</el-button><span class="field-help">可导入经过检查的请求字段、步骤和响应配置，导入后仍需审批生效。</span></div>
     <el-tabs v-model="tab" :class="{ 'embedded-tabs': embeddedTabs }">
       <el-tab-pane label="请求字段" name="request"><template v-if="tab === 'request'">
@@ -110,6 +112,7 @@
   </section>
 </template>
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { computed, markRaw } from 'vue'
 import ApiParameterFields from '@/components/common/ApiParameterFields.vue'
 import ApiValueEditor from '@/components/common/ApiValueEditor.vue'
@@ -127,7 +130,7 @@ import { getVariableSourceOptions, listAvailableFieldValidations } from '@/api/v
 import { loadApiReferenceCatalog } from '@/utils/apiReferenceCatalog'
 import request from '@/api/request'
 export default {
-  components: { ApiParameterFields, ApiValueEditor, ApiAuthEditor, ApiRequestSampleEditor, ApiSampleStructure, ResponseConditionTreeEditor, ResourcePicker, ProtocolPathPicker, MonacoEditor },
+  components: { DismissibleGuidance, ApiParameterFields, ApiValueEditor, ApiAuthEditor, ApiRequestSampleEditor, ApiSampleStructure, ResponseConditionTreeEditor, ResourcePicker, ProtocolPathPicker, MonacoEditor },
   props: { value: { type: String, default: '' }, projectId: { type: [Number, String], default: 0 }, asyncMode: Boolean, apiConfig: { type: Object, default: () => ({}) }, embeddedTabs: Boolean, activeTab: { type: String, default: '' }, activePolicy: { type: String, default: '' } },
   emits: ['update:value', 'select-sample', 'select-mode', 'update:activeTab'],
   data() { return { config: parseExecution(this.value), emittedConfig: '', emitTimer: null, pathCatalogs: markRaw(new Map()), draggingBranch: null, tab: this.activeTab || 'request', policyTab: this.activePolicy || 'exceptionBranches', vars: [], functions: [], apis: [], validationOptions: [], loadNumber: 0, sampleVisible: false, sampleText: '{}', sampleBranch: null, sampleStrategy: 'AUTO', configImportVisible: false, configImportText: '', responsePreview: '',

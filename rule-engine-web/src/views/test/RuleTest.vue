@@ -5,14 +5,14 @@
       title="规则测试步骤"
       test-id="rule-test-layers"
       :items="[
-        { label: '选择范围和规则', detail: '确定项目与规则版本' },
-        { label: '准备输入样例', detail: '加载字段或手工填写参数' },
-        { label: '执行并查看追踪', detail: '核对结果、耗时和命中路径' },
+        { key: 'scope', label: '选择范围和规则', detail: '确定项目与规则版本' },
+        { key: 'input', label: '准备输入样例', detail: '加载字段或手工填写参数' },
+        { key: 'trace', label: '执行并查看追踪', detail: '核对结果、耗时和命中路径' },
       ]"
     />
     <execution-impact-panel v-if="selectedRuleId" :runtime-nodes="testRuntimeNodes" :model="definitionModel" :model-type="inputExecutionIdentity?.modelType || selectedRule?.modelType || ''" :loaded="!!inputExecutionIdentity && !!definitionModel" />
-    <dismissible-guidance v-else guide-id="rule-test.notice" label="测试调用与写入说明" class="guidance-alert">
-      <el-alert class="test-impact-notice" title="测试调用与写入说明" description="先选择版本来源，再核对执行模式和影响清单。本页单次、固定用例和批量测试均为真实联调。" type="info" :closable="false" show-icon />
+    <dismissible-guidance v-else guide-id="rule-test.notice" label="测试调用与写入说明" heading="测试调用与写入说明">
+      先选择版本来源，再核对执行模式和影响清单。本页单次、固定用例和批量测试均为真实联调。
     </dismissible-guidance>
     <div class="test-layout">
       <!-- 左侧：选择规则 + 参数输入 -->
@@ -2102,7 +2102,6 @@ export default {
     flex: 0 0 auto;
   }
 }
-.test-impact-notice { flex-shrink: 0; margin-bottom: 12px; }
 .test-layout {
   display: flex;
   flex: 1;

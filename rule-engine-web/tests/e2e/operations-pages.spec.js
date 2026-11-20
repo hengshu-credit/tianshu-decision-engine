@@ -753,7 +753,7 @@ test('夜间模式下运行页面的提示区、代码块和血缘画布使用�
     '--tianshu-info-bg'
   )
   await expectStyleUsesToken(
-    page.locator('.approval-guide-title'),
+    page.locator('.approval-guide .guidance-heading'),
     'color',
     '--tianshu-info-text'
   )

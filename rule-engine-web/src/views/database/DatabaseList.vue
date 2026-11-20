@@ -1,21 +1,9 @@
 <template>
   <div class="uiue-list-page database-page management-list-page">
-    <dismissible-guidance guide-id="database.intro" label="数据库管理提示" class="module-hint">
-      <div class="hint-title">数据库管理</div>
-      <div class="hint-text">
-        统一维护可复用的数据库连接，在变量管理中选择“数据库查询”来获取业务数据。
-      </div>
+    <dismissible-guidance guide-id="database.intro" label="数据库管理提示" heading="数据库管理">
+      统一维护可复用的数据库连接，在变量管理中选择“数据库查询”来获取业务数据。
     </dismissible-guidance>
-    <dismissible-guidance guide-id="database.steps" label="数据库引导" class="usage-guide">
-      <div
-        v-for="item in databaseGuideCards"
-        :key="item.title"
-        class="guide-item"
-      >
-        <div class="guide-title">{{ item.title }}</div>
-        <div class="guide-text">{{ item.text }}</div>
-      </div>
-    </dismissible-guidance>
+    <guidance-group guide-id="database.steps" label="数据库引导" :items="databaseGuideCards" />
 
     <el-tabs class="management-table-region" v-model="activeTab">
       <el-tab-pane class="management-table-region" label="数据源配置" name="datasource">
@@ -448,6 +436,7 @@
 </template>
 
 <script>
+import GuidanceGroup from '@/components/common/GuidanceGroup.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
@@ -485,16 +474,19 @@ export default {
       ],
       databaseGuideCards: [
         {
-          title: '只读连接',
-          text: '使用只读账号，先测试数据库地址、账号和校验 SQL；通过 SSH 访问时，同时检查隧道设置。',
+          key: 'connection',
+          label: '只读连接',
+          detail: '使用只读账号，先测试数据库地址、账号和校验 SQL；通过 SSH 访问时，同时检查隧道设置。',
         },
         {
-          title: '查询模板',
-          text: '先在“查询”中验证 SELECT SQL 和参数，设置返回行数与超时，再用于变量取值。',
+          key: 'query',
+          label: '查询模板',
+          detail: '先在“查询”中验证 SELECT SQL 和参数，设置返回行数与超时，再用于变量取值。',
         },
         {
-          title: '数据库变量',
-          text: '在变量管理中选择“数据库查询”，依次选择连接、填写 SQL 与参数，再选择需要返回的字段；字段名保持数据库原样。',
+          key: 'variable',
+          label: '数据库变量',
+          detail: '在变量管理中选择“数据库查询”，依次选择连接、填写 SQL 与参数，再选择需要返回的字段；字段名保持数据库原样。',
         },
       ],
       contextProjectId: null,
@@ -576,7 +568,7 @@ export default {
     }
   },
   name: 'DatabaseList',
-  components: { DismissibleGuidance, GovernancePublishAction, GovernanceWorkspaceToolbar,
+  components: { GuidanceGroup, DismissibleGuidance, GovernancePublishAction, GovernanceWorkspaceToolbar,
     GovernanceResourceStatus,
     TableColumnSettings,
     ModuleCallLog,
@@ -870,24 +862,6 @@ export default {
 
 <style lang="scss" scoped>
 .database-page {
-  .module-hint {
-    background: #ecfdf5;
-    border: 1px solid #a7f3d0;
-    border-radius: 4px;
-    padding: 12px 14px;
-    margin-bottom: 14px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .hint-title {
-    color: #047857;
-    font-weight: 700;
-    white-space: nowrap;
-  }
-
-  .hint-text,
   .query-target {
     color: var(--tianshu-text-secondary);
     line-height: 1.5;
@@ -895,32 +869,6 @@ export default {
 
   .query-target {
     margin-bottom: 12px;
-  }
-
-  .usage-guide {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
-    margin-bottom: 14px;
-  }
-
-  .guide-item {
-    border: 1px solid var(--tianshu-border-subtle);
-    border-radius: 4px;
-    padding: 10px 12px;
-    background: var(--tianshu-bg-surface);
-  }
-
-  .guide-title {
-    color: var(--tianshu-text-primary);
-    font-weight: 700;
-    margin-bottom: 6px;
-  }
-
-  .guide-text {
-    color: var(--tianshu-text-tertiary);
-    font-size: 12px;
-    line-height: 1.6;
   }
 
   .sql-input :deep(textarea) {
@@ -1060,10 +1008,6 @@ export default {
   }
 
   @media (max-width: 1200px) {
-    .usage-guide {
-      grid-template-columns: repeat(1, minmax(0, 1fr));
-    }
-
     .query-placeholder-summary,
     .query-params,
     .query-no-params {

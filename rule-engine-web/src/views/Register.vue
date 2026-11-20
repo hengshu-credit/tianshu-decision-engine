@@ -17,7 +17,9 @@
     </el-result>
     <template v-else>
       <div v-if="!initializationRequired" class="auth-back"><router-link to="/login">← 返回登录</router-link></div>
-      <el-alert :title="initializationRequired ? '该账号将获得超级管理员权限。初始化完成后，此入口会自动关闭；无需配置邮箱或环境文件中的账号密码。' : '注册后默认没有业务权限，管理员赋权后才能访问引擎内容。'" type="info" :closable="false" show-icon />
+      <dismissible-guidance :key="initializationRequired" label="注册权限说明">
+        {{ initializationRequired ? '该账号将获得超级管理员权限。初始化完成后，此入口会自动关闭；无需配置邮箱或环境文件中的账号密码。' : '注册后默认没有业务权限，管理员赋权后才能访问引擎内容。' }}
+      </dismissible-guidance>
       <el-form ref="form" class="auth-form" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
         <el-form-item label="用户名" prop="username"><el-input v-model="form.username" autocomplete="username" clearable placeholder="3～64位用户名" /></el-form-item>
         <el-form-item label="显示名称" prop="displayName"><el-input v-model="form.displayName" clearable placeholder="请输入显示名称" /></el-form-item>
@@ -35,14 +37,15 @@
 </template>
 
 <script>
-import { ElAlert, ElButton, ElForm, ElFormItem, ElIcon, ElInput, ElResult, ElMessage } from 'element-plus'
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
+import { ElButton, ElForm, ElFormItem, ElIcon, ElInput, ElResult, ElMessage } from 'element-plus'
 import Loading from '@/components/common/AppLoadingIcon.vue'
 import AuthPageShell from '@/components/auth/AuthPageShell.vue'
 import { consoleRegister, verifyConsoleRegistration, resendConsoleRegistration, getConsoleAuthConfig, initializeConsoleAdministrator } from '@/api/auth'
 
 export default {
   name: 'Register',
-  components: { ElAlert, ElButton, ElForm, ElFormItem, ElIcon, ElInput, ElResult, AuthPageShell, Loading },
+  components: { DismissibleGuidance, ElButton, ElForm, ElFormItem, ElIcon, ElInput, ElResult, AuthPageShell, Loading },
   data() {
     const validateConfirm = (rule, value, callback) => {
       if (value !== this.form.password) callback(new Error('两次输入的密码不一致'))

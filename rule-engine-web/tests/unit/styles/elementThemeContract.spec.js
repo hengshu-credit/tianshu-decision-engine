@@ -152,13 +152,14 @@ test('文字拖选和组件选中态统一读取当前主题色', () => {
 
 test('页面提示容器统一读取当前主题衍生提示色', () => {
   const moduleHint = themeRuleBlock('.module-hint')
-  const linkageHint = themeRuleBlock('.linkage-hint')
+  const guidance = fs.readFileSync(path.join(sourceRoot, 'components/common/DismissibleGuidance.vue'), 'utf8')
 
-  for (const block of [moduleHint, linkageHint]) {
+  for (const block of [moduleHint, guidance]) {
     expect(block).toContain('color: var(--tianshu-info-text)')
     expect(block).toContain('background: var(--tianshu-info-bg)')
-    expect(block).toContain('border-color: var(--tianshu-info-border)')
   }
+  expect(moduleHint).toContain('border-color: var(--tianshu-info-border)')
+  expect(guidance).toContain('border: 1px solid var(--tianshu-info-border)')
 })
 
 test('操作按钮复用主题颜色，删除保留统一语义色和悬停背景', () => {

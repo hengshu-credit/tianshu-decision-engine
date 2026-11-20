@@ -1,22 +1,9 @@
 <template>
   <div class="uiue-list-page datasource-page management-list-page">
-    <dismissible-guidance guide-id="datasource.intro" label="外数管理提示" class="module-hint">
-      <div class="hint-title">外数管理</div>
-      <div class="hint-text">
-        集中配置第三方
-        API、鉴权流程、入参与响应映射、同步/异步调用、超时和重试策略，供接口变量使用。
-      </div>
+    <dismissible-guidance guide-id="datasource.intro" label="外数管理提示" heading="外数管理">
+      集中配置第三方 API、鉴权流程、入参与响应映射、同步/异步调用、超时和重试策略，供接口变量使用。
     </dismissible-guidance>
-    <dismissible-guidance guide-id="datasource.steps" label="外数引导" class="usage-guide">
-      <div
-        v-for="item in apiGuideTemplates"
-        :key="item.title"
-        class="guide-item"
-      >
-        <div class="guide-title">{{ item.title }}</div>
-        <div class="guide-text">{{ item.text }}</div>
-      </div>
-    </dismissible-guidance>
+    <guidance-group guide-id="datasource.steps" label="外数引导" :items="apiGuideTemplates" />
 
     <el-tabs class="management-table-region" v-model="activeTab" @tab-change="onTabChange">
       <el-tab-pane class="management-table-region" label="数据源" name="datasource">
@@ -499,12 +486,9 @@
         当前数据源：{{ authTestTarget.datasourceName }} /
         {{ authTestTarget.datasourceCode }}
       </div>
-      <el-alert
-        type="info"
-        :closable="false"
-        title="测试会按数据源鉴权配置请求 Token 接口；Token 在响应头时，tokenPath 可写 headers.Authorization。"
-        style="margin-bottom: 12px"
-      />
+      <dismissible-guidance guide-id="datasource.test-auth" label="鉴权测试提示">
+        测试会按数据源鉴权配置请求 Token 接口；Token 在响应头时，tokenPath 可写 headers.Authorization。
+      </dismissible-guidance>
       <el-form label-width="90px" size="small">
         <el-form-item label="测试参数">
           <monaco-editor
@@ -585,6 +569,7 @@
 </template>
 
 <script>
+import GuidanceGroup from '@/components/common/GuidanceGroup.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
@@ -639,16 +624,19 @@ export default {
       ],
       apiGuideTemplates: [
         {
-          title: 'HTTP 外数模板',
-          text: '先配置数据源地址与鉴权，再定义 API 请求字段、条件分支和响应结构。异步接口可编排多步请求、轮询与回调。',
+          key: 'http',
+          label: 'HTTP 外数模板',
+          detail: '先配置数据源地址与鉴权，再定义 API 请求字段、条件分支和响应结构。异步接口可编排多步请求、轮询与回调。',
         },
         {
-          title: '内部规则模板',
-          text: '协议选择内部规则引擎，endpointUrl 填已发布 ruleCode；在请求字段中定义 params 的子字段，并通过内容选择器绑定取值。',
+          key: 'internal',
+          label: '内部规则模板',
+          detail: '协议选择内部规则引擎，endpointUrl 填已发布 ruleCode；在请求字段中定义 params 的子字段，并通过内容选择器绑定取值。',
         },
         {
-          title: '变量与对象取值',
-          text: '变量或数据对象选择 API，按结果路径取值；只需覆盖接口开放的入参。大响应可整体绑定，无需逐字段重复映射。',
+          key: 'value',
+          label: '变量与对象取值',
+          detail: '变量或数据对象选择 API，按结果路径取值；只需覆盖接口开放的入参。大响应可整体绑定，无需逐字段重复映射。',
         },
       ],
       activeTab: 'datasource',
@@ -721,7 +709,7 @@ export default {
     }
   },
   name: 'DatasourceList',
-  components: { DismissibleGuidance, GovernancePublishAction, GovernanceWorkspaceToolbar,
+  components: { GuidanceGroup, DismissibleGuidance, GovernancePublishAction, GovernanceWorkspaceToolbar,
     GovernanceResourceStatus,
     TableColumnSettings,
     ModuleCallLog,
@@ -1014,49 +1002,6 @@ export default {
 
 <style lang="scss" scoped>
 .datasource-page {
-  .module-hint {
-    background: #eff6ff;
-    border: 1px solid #bfdbfe;
-    border-radius: 4px;
-    padding: 12px 14px;
-    margin-bottom: 14px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .hint-title {
-    color: #1d4ed8;
-    font-weight: 700;
-    white-space: nowrap;
-  }
-
-  .hint-text {
-    color: var(--tianshu-text-secondary);
-    line-height: 1.5;
-  }
-
-  .usage-guide {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
-    margin-bottom: 14px;
-  }
-
-  .guide-item {
-    border: 1px solid var(--tianshu-border-subtle);
-    border-radius: 4px;
-    padding: 10px 12px;
-    background: var(--tianshu-bg-surface);
-  }
-
-  .guide-title {
-    color: var(--tianshu-text-primary);
-    font-weight: 700;
-    margin-bottom: 6px;
-  }
-
-  .guide-text,
   .field-help {
     color: var(--tianshu-text-tertiary);
     font-size: 12px;

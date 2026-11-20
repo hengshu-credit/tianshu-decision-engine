@@ -1,6 +1,8 @@
 <template>
   <el-dialog :model-value="modelValue" title="跨环境部署决策制品" width="680px" @update:model-value="$emit('update:modelValue', $event)">
-    <el-alert title="按名称或编码搜索并选择部署目标；同编码仅作推荐，不会自动关联。部署会将制品发布到所选规则。" type="info" :closable="false" show-icon />
+    <dismissible-guidance guide-id="artifact.deployment-target" label="部署目标说明">
+      按名称或编码搜索并选择部署目标；同编码仅作推荐，不会自动关联。部署会将制品发布到所选规则。
+    </dismissible-guidance>
     <div v-if="optionsError" class="deployment-options-error">
       <el-alert data-testid="artifact-options-error" :title="optionsError" type="error" :closable="false" show-icon />
       <el-button data-testid="retry-artifact-options" size="small" :loading="optionsLoading" @click="loadOptions">重新读取制品</el-button>
@@ -74,6 +76,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { reservedCodeError } from '@/utils/reservedContentCode'
 import { getArtifactDeploymentOptions } from '@/api/artifact'
 import { listTransferResources } from '@/api/transfer'
@@ -95,7 +98,7 @@ function hasTargetId(value) {
 
 export default {
   name: 'ArtifactDeploymentDialog',
-  components: { TransferAssociationPanel, RemoteFilterSelect },
+  components: { DismissibleGuidance, TransferAssociationPanel, RemoteFilterSelect },
   props: {
     modelValue: { type: Boolean, default: false },
     artifactId: { type: [String, Number], required: true },

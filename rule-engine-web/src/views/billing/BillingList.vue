@@ -1,22 +1,14 @@
 <template>
   <div class="uiue-list-page billing-page management-list-page">
-    <dismissible-guidance guide-id="billing.intro" label="账单管理提示" class="module-hint">
-      <div class="hint-title">账单管理</div>
-      <div class="hint-text">
-        统一配置规则执行、外数 API
-        和数据库查询的计费项，查看调用明细并按日生成汇总。
-      </div>
+    <dismissible-guidance guide-id="billing.intro" label="账单管理提示" heading="账单管理">
+      统一配置规则执行、外数 API 和数据库查询的计费项，查看调用明细并按日生成汇总。
     </dismissible-guidance>
 
     <el-tabs class="management-table-region" v-model="activeTab" @tab-click="onTabChange">
       <el-tab-pane class="management-table-region" label="计费配置" name="config">
-        <el-alert
-          title="计费配置变更先审批、后生效；审批通过前，当前计费口径保持不变。计费明细查询和汇总刷新仍可即时使用。"
-          type="info"
-          :closable="false"
-          show-icon
-          style="margin-bottom: 12px"
-        />
+        <dismissible-guidance guide-id="billing.approval" label="计费审批说明">
+          计费配置变更先审批、后生效；审批通过前，当前计费口径保持不变。计费明细查询和汇总刷新仍可即时使用。
+        </dismissible-guidance>
         <div class="uiue-search-container uiue-filter-toolbar">
           <el-form :inline="true" size="small" @keyup.enter="handleConfigQuery">
             <el-form-item label="项目编码">
@@ -456,14 +448,9 @@
       </el-tab-pane>
 
       <el-tab-pane lazy class="management-table-region" label="计费汇总" name="summary">
-        <el-alert
-          data-testid="billing-summary-basis"
-          title="成功和未成功按计费时记录统计，不代表试运行最终成功率；后续状态请在计费明细中查看。"
-          type="info"
-          :closable="false"
-          show-icon
-          style="margin-bottom: 12px"
-        />
+        <dismissible-guidance data-testid="billing-summary-basis" guide-id="billing.summary-basis" label="计费汇总口径说明">
+          成功和未成功按计费时记录统计，不代表试运行最终成功率；后续状态请在计费明细中查看。
+        </dismissible-guidance>
         <div class="uiue-search-container uiue-filter-toolbar">
           <el-form
             :inline="true"
@@ -693,9 +680,9 @@
       @close="closeTrialDetail"
     >
       <div v-if="trialBillingRecord" class="billing-trial-detail" data-testid="billing-trial-detail">
-        <el-alert type="info" :closable="false" show-icon>
+        <dismissible-guidance guide-id="billing.trial-record" label="试运行计费说明">
           计费时记录不代表当前试运行状态。后续完成、取消或过期不会改写已发生的费用、单价和时间。
-        </el-alert>
+        </dismissible-guidance>
         <h3>计费时记录</h3>
         <dl class="billing-trial-facts">
           <dt>计费依据</dt><dd>草稿试运行</dd>
@@ -1649,27 +1636,4 @@ export default {
 .billing-trial-id { user-select: all; }
 .billing-trial-help { color: var(--tianshu-text-secondary); line-height: 1.6; font-size: 13px; }
 .billing-trial-current { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-.billing-page {
-  .module-hint {
-    background: #fff7ed;
-    border: 1px solid #fed7aa;
-    border-radius: 4px;
-    padding: 12px 14px;
-    margin-bottom: 14px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .hint-title {
-    color: #c2410c;
-    font-weight: 700;
-    white-space: nowrap;
-  }
-
-  .hint-text {
-    color: var(--tianshu-text-secondary);
-    line-height: 1.5;
-  }
-}
 </style>

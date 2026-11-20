@@ -28,11 +28,7 @@
       </el-tab-pane>
       <el-tab-pane label="项目规则" name="rules">
 
-    <dismissible-guidance guide-id="project.rules" label="项目规则说明" class="rule-section-heading">
-      <div>
-        <p>管理项目自有规则以及当前项目引用的全局规则。</p>
-      </div>
-    </dismissible-guidance>
+    <dismissible-guidance guide-id="project.rules" label="项目规则说明">管理项目自有规则以及当前项目引用的全局规则。</dismissible-guidance>
 
     <!-- 筛选条件 -->
     <div class="uiue-search-container uiue-filter-toolbar">
@@ -839,16 +835,6 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-.rule-section-heading {
-  margin-bottom: 12px;
-}
-
-.rule-section-heading p {
-  margin: 4px 0 0;
-  color: var(--tianshu-text-tertiary);
-  font-size: 12px;
-}
-
 .project-detail-tabs {
   :deep(.el-tabs__content) {
     overflow: visible;

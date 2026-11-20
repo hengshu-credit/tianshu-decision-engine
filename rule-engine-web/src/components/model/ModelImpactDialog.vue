@@ -1,7 +1,9 @@
 <template>
   <el-dialog :model-value="modelValue" title="模型引用影响确认" width="680px" @update:model-value="$emit('update:modelValue', $event)">
     <div :aria-busy="loading" class="impact-body">
-      <el-alert title="旧的已发布决策制品包含模型固化副本，不会被此次操作改写。" type="info" :closable="false" show-icon />
+      <dismissible-guidance guide-id="model.frozen-copy" label="模型固化副本说明">
+        旧的已发布决策制品包含模型固化副本，不会被此次操作改写。
+      </dismissible-guidance>
       <div v-if="analysis" class="impact-summary">
         <span>影响摘要</span>
         <code>{{ analysis.impactDigest }}</code>
@@ -17,9 +19,11 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { analyzeModelImpact } from '@/api/model'
 
 export default {
+  components: { DismissibleGuidance },
   name: 'ModelImpactDialog',
   props: {
     modelValue: { type: Boolean, default: false },

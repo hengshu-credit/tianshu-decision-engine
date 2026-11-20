@@ -310,7 +310,9 @@
           </el-select>
           <el-button v-if="permissionScope !== 'DEFAULT'" link @click="resetProjectPermissions">此项目全部继承默认</el-button>
         </el-form-item>
-        <el-alert title="项目权限决定可访问的业务范围；操作、日志及变更记录默认仅本人可见。查看其他账户的记录需要单独授予“跨账户查看记录”，项目权限覆盖不能授予该能力。" type="info" :closable="false" />
+        <dismissible-guidance guide-id="accounts.project-access" label="项目权限提示">
+          项目权限决定可访问的业务范围；操作、日志及变更记录默认仅本人可见。查看其他账户的记录需要单独授予“跨账户查看记录”，项目权限覆盖不能授予该能力。
+        </dismissible-guidance>
       </el-form>
       <el-table :data="permissionRows" max-height="420">
         <el-table-column prop="permissionGroup" label="模块" width="130" />

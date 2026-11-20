@@ -25,16 +25,7 @@
       </div>
     </div>
 
-    <dismissible-guidance guide-id="experiment-detail.steps" label="实验配置引导" class="usage-guide">
-      <div
-        v-for="item in experimentGuideCards"
-        :key="item.title"
-        class="guide-item"
-      >
-        <div class="guide-title">{{ item.title }}</div>
-        <div class="guide-text">{{ item.text }}</div>
-      </div>
-    </dismissible-guidance>
+    <guidance-group guide-id="experiment-detail.steps" label="实验配置引导" :items="experimentGuideCards" />
 
     <el-form
       ref="form"
@@ -802,7 +793,7 @@
 
 <script>
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
-import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
+import GuidanceGroup from '@/components/common/GuidanceGroup.vue'
 import { historicalVersionMethods } from '@/mixins/historicalVersionMixin'
 import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
 import { hasPermission } from '@/security/permissionState'
@@ -852,16 +843,19 @@ export default {
     return {
       experimentGuideCards: [
         {
-          title: '冠军组',
-          text: '当前生产主策略，必须且只能有一个；随机分流时冠军组和挑战组比例合计必须为 100%。',
+          key: 'champion',
+          label: '冠军组',
+          detail: '当前生产主策略，必须且只能有一个；随机分流时冠军组和挑战组比例合计必须为 100%。',
         },
         {
-          title: '挑战组',
-          text: '用于承接新策略流量，可配置多个；建议用描述记录和冠军组的规则差异、观察指标。',
+          key: 'challenger',
+          label: '挑战组',
+          detail: '用于承接新策略流量，可配置多个；建议用描述记录和冠军组的规则差异、观察指标。',
         },
         {
-          title: '空跑测试',
-          text: 'TEST 组只记录试算结果，不影响生产结果；适合验证新规则输出、耗时和异常情况。',
+          key: 'test',
+          label: '空跑测试',
+          detail: 'TEST 组只记录试算结果，不影响生产结果；适合验证新规则输出、耗时和异常情况。',
         },
       ],
       activeTab: 'champion',
@@ -912,7 +906,7 @@ export default {
     }
   },
   name: 'ExperimentDetail',
-  components: { DismissibleGuidance, VersionSnapshotPanel,
+  components: { GuidanceGroup, VersionSnapshotPanel,
     ConditionGroupEditor,
     OperandPicker,
     ProjectResourceSelect,
@@ -1765,32 +1759,6 @@ export default {
     gap: 8px;
   }
 
-  .usage-guide {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 10px;
-    margin-bottom: 12px;
-  }
-
-  .guide-item {
-    border: 1px solid var(--tianshu-border-subtle);
-    border-radius: 4px;
-    padding: 10px 12px;
-    background: var(--tianshu-bg-surface);
-  }
-
-  .guide-title {
-    color: var(--tianshu-text-primary);
-    font-weight: 700;
-    margin-bottom: 6px;
-  }
-
-  .guide-text {
-    color: var(--tianshu-text-tertiary);
-    font-size: 12px;
-    line-height: 1.6;
-  }
-
   .base-form,
   .detail-tabs {
     background: var(--tianshu-bg-surface);
@@ -1895,12 +1863,6 @@ export default {
       float: none;
       width: 100%;
       max-width: none;
-    }
-  }
-
-  @media (max-width: 1200px) {
-    .usage-guide {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 

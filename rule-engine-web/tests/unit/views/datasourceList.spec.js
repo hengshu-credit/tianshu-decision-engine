@@ -133,13 +133,13 @@ test('formatCacheSeconds displays common units', () => {
   test('apiGuideTemplates 解释外数 API 模板和变量读取路径', () => {
     const ctx = createContext()
 
-    expect(ctx.apiGuideTemplates.map(item => item.title)).toEqual([
+    expect(ctx.apiGuideTemplates.map(item => item.label)).toEqual([
       'HTTP 外数模板',
       '内部规则模板',
       '变量与对象取值'
     ])
-    expect(ctx.apiGuideTemplates[0].text).toContain('多步请求、轮询与回调')
-    expect(ctx.apiGuideTemplates[2].text).toContain('整体绑定')
-    expect(ctx.apiGuideTemplates[2].text).toContain('无需逐字段重复映射')
+    expect(ctx.apiGuideTemplates[0].detail).toContain('多步请求、轮询与回调')
+    expect(ctx.apiGuideTemplates[2].detail).toContain('整体绑定')
+    expect(ctx.apiGuideTemplates[2].detail).toContain('无需逐字段重复映射')
   })
 })

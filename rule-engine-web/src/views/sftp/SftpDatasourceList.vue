@@ -1,8 +1,7 @@
 <template>
   <div class="uiue-list-page management-list-page sftp-page">
-    <dismissible-guidance guide-id="sftp.intro" label="SFTP 数据源提示" class="module-hint">
-      <div class="hint-title">SFTP 数据源配置</div>
-      <div class="hint-text">维护可复用的 SFTP 连接池。规则执行时的 SFTP 文件读取会沿用当前规则 trace_id，并在查询日志中保留远端文件地址。</div>
+    <dismissible-guidance guide-id="sftp.intro" label="SFTP 数据源提示" heading="SFTP 数据源配置">
+      维护可复用的 SFTP 连接池。规则执行时的 SFTP 文件读取会沿用当前规则 trace_id，并在查询日志中保留远端文件地址。
     </dismissible-guidance>
 
     <el-tabs model-value="datasource" class="sftp-tabs" :before-leave="navigateTab">
@@ -204,23 +203,9 @@ export default {
 </script>
 
 <style scoped>
-.sftp-page .module-hint {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  margin-bottom: 12px;
-  border: 1px solid var(--tianshu-info-border);
-  border-radius: 6px;
-  background: var(--tianshu-info-bg);
-  color: var(--tianshu-info-text);
-}
-.sftp-page .hint-title { color: inherit; font-weight: 700; white-space: nowrap; }
-.sftp-page .hint-text { color: var(--tianshu-text-secondary); line-height: 1.5; }
 .sftp-tabs { margin-bottom: 12px; }
 .form-section { padding: 12px; margin: 4px 0 14px; border: 1px solid var(--tianshu-border-subtle); border-radius: 8px; }
 .section-title { margin-bottom: 10px; color: var(--tianshu-text-primary); font-size: 13px; font-weight: 700; }
 .field-help { margin-left: 8px; color: var(--tianshu-text-tertiary); font-size: 12px; }
 @media (max-width: 900px) { .sftp-page :deep(.uiue-search-container) { align-items: flex-start; } }
-@media (max-width: 720px) { .sftp-page .module-hint { align-items: flex-start; flex-direction: column; gap: 4px; } }
 </style>

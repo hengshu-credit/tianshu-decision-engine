@@ -388,12 +388,9 @@
           name="scripts"
         >
           <div class="tab-section">
-            <el-alert
-              type="info"
-              :closable="false"
-              show-icon
-              title="简单字段继续使用映射；仅把动态时间、签名、加解密和响应解包写入脚本。请求预览不会访问任何外部地址。"
-            />
+            <dismissible-guidance guide-id="api.mapping" label="脚本与映射说明">
+              简单字段继续使用映射；仅把动态时间、签名、加解密和响应解包写入脚本。请求预览不会访问任何外部地址。
+            </dismissible-guidance>
             <div class="section-toolbar script-variable-toolbar">
               <div>
                 <div class="section-title">脚本变量</div>
@@ -891,18 +888,12 @@
           name="payloadCapture"
         >
           <div class="tab-section payload-capture-section" data-testid="payload-capture-tab">
-            <el-alert
-              type="info"
-              :closable="false"
-              show-icon
-              title="只影响调用日志留存和提供给外部分析系统的副本，不改变实时规则结果。"
-            >
-              <template #default>
-                复杂脚本如需留存中间明文，请在脚本中显式设置
-                <code>state.logRequestBody</code> 或
-                <code>state.logResponseBody</code>；选择 PROCESSED 不会额外执行解密脚本。
-              </template>
-            </el-alert>
+            <dismissible-guidance guide-id="api.payload-capture" label="报文留存说明">
+              只影响调用日志留存和提供给外部分析系统的副本，不改变实时规则结果。
+              复杂脚本如需留存中间明文，请在脚本中显式设置
+              <code>state.logRequestBody</code> 或
+              <code>state.logResponseBody</code>；选择 PROCESSED 不会额外执行解密脚本。
+            </dismissible-guidance>
             <el-alert
               v-if="payloadCaptureError"
               class="payload-capture-warning"
@@ -1222,6 +1213,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import { getDatasource } from '@/api/datasource'
@@ -1408,7 +1400,7 @@ export default {
   },
   name: 'ApiDetail',
   mixins: [configurationDraftMixin(vm => ({ form: vm.form, apiAuthConfig: vm.apiAuthConfig, scriptVariableRows: vm.scriptVariableRows, cacheKeyRows: vm.cacheKeyRows, successConditionRoot: vm.successConditionRoot, exceptionConditionRoot: vm.exceptionConditionRoot, retryConditionRoot: vm.retryConditionRoot, tokenFailureMode: vm.tokenFailureMode, tokenFailureConditionRoot: vm.tokenFailureConditionRoot, billingConfig: vm.billingConfig, payloadCapture: vm.payloadCapture })), workspaceTabTitleMixin(vm => vm.form.apiName)],
-  components: { RemoteFilterSelect,
+  components: { DismissibleGuidance, RemoteFilterSelect,
     ProtocolPathPicker,
     ApiRequestSampleEditor,
     ConfigLayerGuide,

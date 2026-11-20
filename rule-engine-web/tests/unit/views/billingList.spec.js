@@ -90,7 +90,7 @@ describe('BillingList 草稿试运行计费事实与当前状态', () => {
       expect(dialog.text()).toContain('执行完成')
       expect(dialog.text()).toContain('2026-10-09 03:35:21')
       expect(dialog.text()).toContain('0.120000')
-      expect(dialog.find('[role="alert"]').text()).toContain('不代表当前试运行状态')
+      expect(dialog.get('[role="note"][aria-label="试运行计费说明"]').text()).toContain('不代表当前试运行状态')
       expect(wrapper.vm.recordList[0]).toEqual(row)
     } finally { wrapper.unmount() }
   })

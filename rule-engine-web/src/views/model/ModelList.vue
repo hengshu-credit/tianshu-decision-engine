@@ -1,7 +1,7 @@
 <template>
   <div class="uiue-list-page management-list-page">
     <!-- 提示信息 -->
-    <dismissible-guidance guide-id="model.intro" label="模型管理提示" class="linkage-hint">
+    <dismissible-guidance guide-id="model.intro" label="模型管理提示">
       <el-icon><el-icon-info /></el-icon> 支持导入 PMML、ONNX 模型，在规则中调用预测结果；上传后到详情页配置输入输出并执行测试。
     </dismissible-guidance>
 
@@ -1572,14 +1572,6 @@ export default {
 </script>
 
 <style scoped>
-.linkage-hint {
-  font-size: 12px;
-  color: var(--tianshu-text-tertiary);
-  margin-bottom: 12px;
-  padding: 8px 12px;
-  background: var(--tianshu-bg-muted);
-  border-radius: 4px;
-}
 .tab-filter-row {
   display: flex;
   gap: 8px;

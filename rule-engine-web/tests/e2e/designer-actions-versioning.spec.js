@@ -225,7 +225,7 @@ for (const route of ['flow', 'tree']) for (const direction of ['right', 'bottom'
     await page.getByRole('button', { name: '一键美化', exact: true }).click()
     const readPositions = () => canvasNodes.evaluateAll(elements => Object.fromEntries(elements.map(element => {
       const box = element.querySelector('circle, rect, polygon').getBBox()
-      return [element.textContent.trim(), { x: box.x + box.width / 2, y: box.y + box.height / 2 }]
+      return [element.querySelector('title').textContent, { x: box.x + box.width / 2, y: box.y + box.height / 2 }]
     })))
     const axis = direction === 'right' ? 'y' : 'x'
     const positions = await readPositions()
@@ -265,7 +265,7 @@ for (const route of ['flow', 'tree']) for (const direction of ['right', 'bottom'
       const paths = Object.fromEntries([...element.querySelectorAll('.lf-edge polyline[marker-end]')]
         .filter(edge => !edge.closest('.lf-mini-map'))
         .map(edge => [edge.getAttribute('marker-end').match(/#marker-end-(.+)\)/)[1], edge.getAttribute('points').trim().split(/\s+/).map(point => point.split(',').map(Number))]))
-      const middle = [...element.querySelectorAll('.lf-node')].find(node => !node.closest('.lf-mini-map') && node.textContent === '合规评分')
+      const middle = [...element.querySelectorAll('.lf-node')].find(node => !node.closest('.lf-mini-map') && node.querySelector('title')?.textContent === '合规评分')
       const bounds = middle.querySelector('polygon').getBBox()
       return { paths, center: [bounds.x + bounds.width / 2, bounds.y + bounds.height / 2] }
     })

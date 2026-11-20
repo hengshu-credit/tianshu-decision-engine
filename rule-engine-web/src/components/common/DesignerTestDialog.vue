@@ -10,7 +10,9 @@
   >
     <div class="designer-test-dialog">
       <el-alert v-if="executionSource" :title="executionSourceLabel(executionSource, executionSourceName || resolvedIdentity)" type="info" :closable="false" show-icon style="margin-bottom: 10px" />
-      <el-alert title="测试调用与写入说明" description="画布预览按当前依赖真实执行。若配置了外数、数据库、SFTP 或名单动作，将按实际配置调用或写入，并应用计费规则。" type="info" :closable="false" show-icon style="margin-bottom: 10px" />
+      <dismissible-guidance guide-id="designer.test-impact" heading="测试调用与写入说明" label="测试调用与写入说明">
+        画布预览按当前依赖真实执行。若配置了外数、数据库、SFTP 或名单动作，将按实际配置调用或写入，并应用计费规则。
+      </dismissible-guidance>
       <div
         style="
           margin-bottom: 10px;
@@ -103,6 +105,7 @@
 </template>
 
 <script>
+import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { markRaw } from 'vue'
 import { VideoPlay as ElIconVideoPlay } from '@element-plus/icons-vue'
@@ -142,7 +145,7 @@ export default {
     }
   },
   name: 'DesignerTestDialog',
-  components: { MonacoEditor, TraceTree, DialogResizeHandle, RuleValidationReport },
+  components: { DismissibleGuidance, MonacoEditor, TraceTree, DialogResizeHandle, RuleValidationReport },
   props: {
     visible: {
       type: Boolean,

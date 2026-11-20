@@ -1,6 +1,6 @@
 <template>
   <div class="uiue-list-page dashboard-page">
-    <dismissible-guidance guide-id="dashboard.intro" label="数据看板提示" class="module-hint dashboard-heading">
+    <dismissible-guidance guide-id="dashboard.intro" label="数据看板提示" class="dashboard-heading">
       <div class="dashboard-heading-line">
         <span class="hint-title">数据看板</span>
         <span class="dashboard-heading-divider" aria-hidden="true" />
@@ -840,12 +840,7 @@ export default {
   gap: 16px;
 }
 
-.dashboard-heading {
-  min-width: 0;
-  padding: 12px 16px;
-  border: 1px solid var(--tianshu-info-border);
-  border-radius: 8px;
-}
+.dashboard-heading { margin-bottom: 0; }
 
 .dashboard-heading-line {
   display: flex;
@@ -855,6 +850,7 @@ export default {
 }
 
 .dashboard-heading-line .hint-title {
+  color: var(--tianshu-info-text);
   flex: 0 0 auto;
   font-size: 14px;
   font-weight: 600;

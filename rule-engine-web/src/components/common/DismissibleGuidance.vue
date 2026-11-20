@@ -1,54 +1,96 @@
 <template>
-  <component :is="tag" v-if="!isGuidanceHidden(guideId)" class="dismissible-guidance">
-    <slot />
-    <button type="button" class="guidance-close" :aria-label="closeLabel" :title="closeLabel" @click="hideGuidance(guideId)">
-      <span aria-hidden="true">×</span>
+  <component :is="tag" v-if="visible" class="dismissible-guidance" :role="tag === 'li' ? undefined : 'note'" :aria-label="label">
+    <component :is="tag === 'p' ? 'span' : 'div'" class="guidance-content" :class="{ 'with-heading': heading }">
+      <strong v-if="heading" class="guidance-heading">{{ heading }}</strong>
+      <component :is="tag === 'p' ? 'span' : 'div'" class="guidance-body"><slot /></component>
+    </component>
+    <button type="button" class="guidance-close" :aria-label="closeLabel" :title="closeLabel" @click="close">
+      <Close aria-hidden="true" />
     </button>
   </component>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { Close } from '@element-plus/icons-vue'
 import { hideGuidance, isGuidanceHidden } from '@/utils/pageGuidance'
 
 const props = defineProps({
   tag: { type: String, default: 'div' },
-  guideId: { type: String, required: true },
+  guideId: { type: String, default: '' },
   label: { type: String, required: true },
+  heading: { type: String, default: '' },
 })
+const closed = ref(false)
+const visible = computed(() => props.guideId ? !isGuidanceHidden(props.guideId) : !closed.value)
+function close() {
+  if (props.guideId) hideGuidance(props.guideId)
+  else closed.value = true
+}
 const closeLabel = computed(() => '关闭' + props.label)
 </script>
 
 <style scoped>
 .dismissible-guidance {
-  position: relative;
-  min-height: 24px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex-shrink: 0;
+  margin: 0 0 12px;
+  padding: 8px 10px 8px 14px;
+  border: 1px solid var(--tianshu-info-border);
+  border-radius: 8px;
+  background: var(--tianshu-info-bg);
+  color: var(--tianshu-info-text);
+  font-size: 13px;
+  line-height: 1.6;
 }
-.dismissible-guidance:not(.guidance-alert), .guidance-alert :deep(.el-alert) {
-  padding-inline-end: 36px !important;
+.guidance-content, .guidance-body {
+  min-width: 0;
+  color: var(--tianshu-text-secondary);
+  overflow-wrap: anywhere;
+}
+.with-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+}
+.with-heading .guidance-body {
+  flex: 1 1 min(100%, 14rem);
+}
+.guidance-heading {
+  color: var(--tianshu-info-text);
+  font-weight: 600;
 }
 .guidance-close {
-  position: absolute;
-  inset-block-start: 3px;
-  inset-inline-end: 4px;
+  align-self: start;
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: 6px;
   background: transparent;
-  color: var(--tianshu-text-secondary);
+  color: var(--tianshu-info-text);
   cursor: pointer;
-  font: 18px/1 sans-serif;
+}
+.guidance-close svg {
+  width: 16px;
+  height: 16px;
 }
 .guidance-close:hover, .guidance-close:focus-visible {
-  background: var(--tianshu-bg-hover);
-  color: var(--tianshu-text-primary);
+  background: var(--tianshu-primary-soft-hover-bg);
 }
 .guidance-close:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: -2px;
+  outline: 2px solid var(--tianshu-info-text);
+  outline-offset: 1px;
+}
+@media (pointer: coarse) {
+  .guidance-close { width: 36px; height: 36px; }
 }
 </style>

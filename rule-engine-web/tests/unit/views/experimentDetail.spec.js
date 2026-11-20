@@ -319,12 +319,12 @@ describe('ExperimentDetail', () => {
   test('experimentGuideCards 解释冠军挑战和空跑测试', () => {
     const ctx = createContext()
 
-    expect(ctx.experimentGuideCards.map(item => item.title)).toEqual([
+    expect(ctx.experimentGuideCards.map(item => item.label)).toEqual([
       '冠军组',
       '挑战组',
       '空跑测试'
     ])
-    expect(ctx.experimentGuideCards[2].text).toContain('不影响生产结果')
+    expect(ctx.experimentGuideCards[2].detail).toContain('不影响生产结果')
   })
 })
 
